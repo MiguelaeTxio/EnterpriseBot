@@ -295,6 +295,26 @@
                             <i class="bi bi-journal-x"></i>Categorías de ausencia
                         </a>
                     </li>
+                    {# Vacaciones -- H24. Gate propio ADMIN/SUPERVISOR         #}
+                    {# (coincide exactamente con SupervisorAccessMixin, el     #}
+                    {# mixin real de las vistas hr_calendar -- WORKSHOPBOSS    #}
+                    {# no tiene acceso a estas vistas, así que tampoco ve el   #}
+                    {# enlace, a diferencia del resto de este acordeón que sí  #}
+                    {# incluye WORKSHOPBOSS en su gate exterior).              #}
+                    {# Vacaciones -- H24. Own gate ADMIN/SUPERVISOR (exactly   #}
+                    {# matches SupervisorAccessMixin, the real mixin on the    #}
+                    {# hr_calendar views -- WORKSHOPBOSS has no access to      #}
+                    {# those views, so it doesn't see the link either, unlike  #}
+                    {# the rest of this accordion whose outer gate does        #}
+                    {# include WORKSHOPBOSS).                                  #}
+                    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' %}
+                        <li class="nav-item">
+                            <a class="nav-link {% if active_nav == 'vacation_periods' %}active{% endif %}"
+                               href="{% url 'hr_calendar:vacation_period_list' %}">
+                                <i class="bi bi-airplane"></i>Vacaciones
+                            </a>
+                        </li>
+                    {% endif %}
                     {# Laboratorio de Análisis — movido aquí desde la sección propia #}
                     {# "Analítica" (2026-07-08). Solo ADMIN, gate sin cambios.       #}
                     {# Analytics Lab — moved here from its own standalone            #}

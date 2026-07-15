@@ -83,4 +83,10 @@ urlpatterns = [
         'panel/documentacion-centros-gasto/',
         include('machine_documents.urls', namespace='machine_documents'),
     ),
+    # HR vacation periods & calendar — periodos de vacaciones y calendario
+    # de RRHH (Hito 24).
+    path(
+        'panel/vacaciones/',
+        include('hr_calendar.urls', namespace='hr_calendar'),
+    ),
 ]
