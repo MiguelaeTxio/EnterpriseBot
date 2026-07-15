@@ -48,6 +48,7 @@ from panel.views_workorders import (
     AbsenceCategoryUpdateView,
     AbsenceCategoryToggleView,
     WorkOrderAdminHistoryView,
+    WorkOrderDetailView,
     WorkPeriodLockView,
     WorkPeriodGroupDetailView,
     WorkPeriodGroupCreateView,
