@@ -1186,7 +1186,22 @@
                 var hc   = _val("entrada_" + i + "_hc");
                 var hf   = _val("entrada_" + i + "_hf");
                 var desc = _val("entrada_" + i + "_fault_description");
-                var isAbsenceBlk = maq.trim().toUpperCase() === _personalCode;
+                // El autocompletado rellena el campo visible con
+                // "CODIGO — descripcion" (ver btn.textContent = asset.code +
+                // " — " + asset.brand_model, más arriba en este archivo), no
+                // con el código exacto -- comparar solo con el texto
+                // completo dejaba isAbsenceBlk en false para bloques
+                // PERSONAL seleccionados por autocompletado en vez de
+                // tecleados a mano, exigiendo entonces la descripción de
+                // avería igual que un bloque de reparación normal (bug
+                // real, reportado por Miguel Ángel 2026-07-15 con el caso
+                // de Antonio Fontalba Serón). Se extrae la parte antes de
+                // " — " para cubrir ambos casos, mismo criterio que la
+                // Pasada 3 de resolución en panel/views_operator.py::
+                // _parse_entry_lines_from_post.
+                var maqCodePart = maq.split(" — ")[0].trim();
+                var isAbsenceBlk = maq.trim().toUpperCase() === _personalCode ||
+                    maqCodePart.toUpperCase() === _personalCode;
                 var absCat = _val("entrada_" + i + "_absence_category");
 
                 _markField("entrada_" + i + "_machine_raw", !maq);
