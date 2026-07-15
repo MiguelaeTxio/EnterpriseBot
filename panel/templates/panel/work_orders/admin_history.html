@@ -657,7 +657,7 @@
         {# ============================================================== #}
         {% elif active_tab == 'reviewed' %}
         <div class="p-0">
-            {% include "panel/work_orders/_wo_table.html" with wo_list=reviewed_list tab_key="reviewed" show_reviewed_by=True show_excel=True show_unmark_reviewed_row=True bulk_mark_reviewed=True bulk_unmark_reviewed=True bulk_export=True show_totals=True totals=reviewed_totals empty_icon="bi-inbox" empty_text="No hay partes revisados con los filtros aplicados." %}
+            {% include "panel/work_orders/_wo_table.html" with wo_list=reviewed_list tab_key="reviewed" show_reviewed_by=True show_excel=True show_unmark_reviewed_row=True show_detail=True bulk_mark_reviewed=True bulk_unmark_reviewed=True bulk_export=True show_totals=True totals=reviewed_totals empty_icon="bi-inbox" empty_text="No hay partes revisados con los filtros aplicados." %}
         </div>
 
         {# ============================================================== #}

@@ -12,7 +12,7 @@ from django.forms import modelformset_factory
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 
-from panel.mixins import SupervisorAccessMixin, AdminRoleRequiredMixin, WorkOrderFormAccessMixin
+from panel.mixins import SupervisorAccessMixin, AdminRoleRequiredMixin, WorkOrderFormAccessMixin, CompanyUserRequiredMixin
 from ivr_config.models import (
     CompanyUser,
     PresenceStatus,
@@ -3568,6 +3568,73 @@ class AbsenceCategoryToggleView (SupervisorAccessMixin ,View ):
         f"Categoría '{category.label}' {state} correctamente.",
         )
         return redirect (LIST_URL )
+
+
+class WorkOrderDetailView (CompanyUserRequiredMixin ,View ):
+    """
+    Read-only detail view of a single WorkOrder -- a column listing of
+    the part's full content (entries, lines, spare parts), NOT the
+    edit form. Added at Miguel Ángel's explicit request (2026-07-15):
+    the "Revisados" tab only had "Borrar" as an action -- needed a way
+    to actually look at a reviewed part's content without editing it.
+
+    Access: ADMIN/SUPERVISOR/WORKSHOPBOSS only -- same gate as the
+    "Ver" button in _wo_table.html (is_elevated), enforced here too so
+    a WORKSHOP operator can't reach another operator's part by
+    guessing the URL even though they never see the button.
+    ---
+    Vista de detalle de solo lectura de un WorkOrder -- un listado por
+    columnas del contenido completo del parte (entries, líneas,
+    repuestos), NO el formulario de edición. Añadida a petición
+    explícita de Miguel Ángel (2026-07-15): la pestaña "Revisados" solo
+    tenía "Borrar" como acción -- hacía falta una forma de consultar el
+    contenido de un parte revisado sin editarlo.
+
+    Acceso: solo ADMIN/SUPERVISOR/WORKSHOPBOSS -- mismo gate que el
+    botón "Ver" en _wo_table.html (is_elevated), impuesto también aquí
+    para que un operario WORKSHOP no pueda llegar al parte de otro
+    adivinando la URL, aunque nunca vea el botón.
+    """
+    template_name = "panel/work_orders/detail.html"
+
+    def get (self ,request ,pk ,*args ,**kwargs ):
+        from django .shortcuts import get_object_or_404 as _get_404 
+        from django .http import HttpResponseForbidden 
+
+        cu =request .user .company_user 
+        company =cu .company 
+
+        if cu .role not in (
+        CompanyUser .ROLE_ADMIN ,
+        CompanyUser .ROLE_SUPERVISOR ,
+        CompanyUser .ROLE_WORKSHOPBOSS ,
+        ):
+            return HttpResponseForbidden (
+            "Acción no disponible para tu rol."
+            )
+
+        work_order =_get_404 (
+        WorkOrder .objects .select_related (
+        "uploaded_by__user","reviewed_by__user","generated_by__user",
+        ),
+        pk =pk ,company =company ,
+        )
+        entries =(
+        work_order .entries 
+        .order_by ("page_number")
+        .prefetch_related (
+        "lines__machine_asset",
+        "lines__spare_parts",
+        )
+        )
+
+        return render (request ,self .template_name ,{
+        "company":company ,
+        "company_user":cu ,
+        "active_nav":"work_order_admin_history",
+        "work_order":work_order ,
+        "entries":entries ,
+        })
 
 
 class WorkOrderAdminHistoryView (WorkOrderFormAccessMixin ,View ):

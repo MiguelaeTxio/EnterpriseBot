@@ -1,0 +1,172 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/work_orders/detail.html #}
+{# Vista de detalle de solo lectura de un WorkOrder -- listado por      #}
+{# columnas, NO el formulario de edición. Añadida a petición de Miguel  #}
+{# Ángel (2026-07-15): la pestaña "Revisados" solo tenía "Borrar".      #}
+{% extends "panel/base.html" %}
+
+{% block page_title %}Detalle del parte{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
+    <h5 class="mb-0 fw-semibold">
+        Parte #{{ work_order.pk }}
+        {% if work_order.reviewed %}
+            <span class="badge bg-success-subtle text-success-emphasis ms-2">
+                <i class="bi bi-check2-circle me-1"></i>Revisado
+            </span>
+        {% else %}
+            <span class="badge bg-warning-subtle text-warning-emphasis ms-2">Pendiente</span>
+        {% endif %}
+    </h5>
+    <a href="{% url 'panel:work_order_admin_history' %}?tab=reviewed" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-arrow-left me-1"></i>Volver al historial
+    </a>
+</div>
+
+<div class="card shadow-sm mb-3">
+    <div class="card-body">
+        <div class="row g-3 small">
+            <div class="col-6 col-md-3">
+                <div class="text-muted">Operario/chófer</div>
+                <div class="fw-semibold">
+                    {% if work_order.uploaded_by %}
+                        {{ work_order.uploaded_by.user.get_full_name|default:work_order.uploaded_by.user.username }}
+                    {% else %}—{% endif %}
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="text-muted">Origen</div>
+                <div class="fw-semibold">{{ work_order.get_source_display }}</div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="text-muted">Estado</div>
+                <div class="fw-semibold">{{ work_order.get_status_display }}</div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="text-muted">Subida</div>
+                <div class="fw-semibold">{{ work_order.upload_date|date:"d/m/Y H:i" }}</div>
+            </div>
+            {% if work_order.reviewed %}
+            <div class="col-6 col-md-3">
+                <div class="text-muted">Revisado por</div>
+                <div class="fw-semibold">
+                    {% if work_order.reviewed_by %}
+                        {{ work_order.reviewed_by.user.get_full_name|default:work_order.reviewed_by.user.username }}
+                    {% else %}—{% endif %}
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="text-muted">Fecha de revisión</div>
+                <div class="fw-semibold">{{ work_order.reviewed_at|date:"d/m/Y H:i"|default:"—" }}</div>
+            </div>
+            {% endif %}
+            {% if work_order.generated_by %}
+            <div class="col-6 col-md-3">
+                <div class="text-muted">Generado por</div>
+                <div class="fw-semibold">
+                    {{ work_order.generated_by.user.get_full_name|default:work_order.generated_by.user.username }}
+                </div>
+            </div>
+            {% endif %}
+            {% if work_order.excel_file %}
+            <div class="col-6 col-md-3">
+                <div class="text-muted">Informe Excel</div>
+                <div class="fw-semibold">
+                    <a href="{{ work_order.excel_file.url }}" download>
+                        <i class="bi bi-file-earmark-excel me-1"></i>Descargar
+                    </a>
+                </div>
+            </div>
+            {% endif %}
+            {% if work_order.error_log %}
+            <div class="col-12">
+                <div class="text-muted">Registro de error</div>
+                <div class="fw-semibold text-danger">{{ work_order.error_log }}</div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+{% for entry in entries %}
+<div class="card shadow-sm mb-3">
+    <div class="card-header fw-semibold">
+        <i class="bi bi-calendar3 me-1"></i>{{ entry.work_date|date:"d/m/Y"|default:"Sin fecha" }}
+        <span class="text-muted small ms-2">{{ entry.worker_name }}</span>
+        {% if entry.uncertain_date %}
+            <span class="badge bg-warning-subtle text-warning-emphasis ms-2">Fecha incierta</span>
+        {% endif %}
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0 small">
+                <thead class="table-light">
+                    <tr>
+                        <th>#</th>
+                        <th>Máquina / CdG</th>
+                        <th>H.C.</th>
+                        <th>H.F.</th>
+                        <th>Δ Horas</th>
+                        <th>Descripción avería</th>
+                        <th>Reparación / Motivo</th>
+                        <th>O.R.</th>
+                        <th>Familia</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for line in entry.lines.all %}
+                    <tr>
+                        <td>{{ line.line_number }}</td>
+                        <td>
+                            {% if line.machine_asset %}
+                                {{ line.machine_asset.code }} — {{ line.machine_asset.brand_model }}
+                            {% else %}
+                                {{ line.machine_raw|default:"—" }}
+                            {% endif %}
+                        </td>
+                        <td>{{ line.hc|time:"H:i"|default:"—" }}</td>
+                        <td>{{ line.hf|time:"H:i"|default:"—" }}</td>
+                        <td>{{ line.delta_hours|default:"—" }}</td>
+                        <td>{{ line.fault_description|default:"—" }}</td>
+                        <td>{{ line.repair_notes|default:"—" }}</td>
+                        <td>{{ line.or_val|default:"—" }}</td>
+                        <td>{{ line.get_fault_category_display|default:"—" }}</td>
+                    </tr>
+                    {% if line.spare_parts.all %}
+                    <tr class="table-light">
+                        <td></td>
+                        <td colspan="8">
+                            <div class="small text-muted mb-1">
+                                <i class="bi bi-box-seam me-1"></i>Repuestos:
+                            </div>
+                            <ul class="mb-0 ps-3">
+                                {% for sp in line.spare_parts.all %}
+                                <li>
+                                    {{ sp.material }}
+                                    {% if sp.reference %}({{ sp.reference }}){% endif %}
+                                    — {{ sp.quantity }}
+                                    {% if sp.supplier %}· {{ sp.supplier }}{% endif %}
+                                </li>
+                                {% endfor %}
+                            </ul>
+                        </td>
+                    </tr>
+                    {% endif %}
+                    {% empty %}
+                    <tr>
+                        <td colspan="9" class="text-center text-muted py-3">
+                            Este día no tiene bloques de trabajo registrados.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% empty %}
+<div class="alert alert-info">
+    <i class="bi bi-info-circle me-1"></i>Este parte no tiene ninguna entrada registrada.
+</div>
+{% endfor %}
+{% endblock %}

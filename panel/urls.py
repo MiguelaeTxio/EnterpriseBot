@@ -74,6 +74,7 @@ from panel.views import (
     WorkOrderEntryConfirmView,
     WorkOrderEntryFormView,
     WorkOrderEntryPartsReviewView,
+    WorkOrderDetailView,
     WorkOrderAdminHistoryView,
     WorkerAbsenceCreateView,
     MachineAssetListView,
@@ -318,6 +319,7 @@ urlpatterns = [
     # WorkOrder admin history — Historial de gestión para ADMIN y SUPERVISOR (cuatro pestañas).
     # 1ª Acción — Hito 7 Sesión 016 (2026-05-08)
     path("work-orders/history/", WorkOrderAdminHistoryView.as_view(), name="work_order_admin_history"),
+    path("work-orders/<int:pk>/detail/", WorkOrderDetailView.as_view(), name="work_order_detail"),
 
     # Work period management — CRUD de periodos de trabajo para SUPERVISOR y ADMIN.
     # 1ª Acción — Hito 7 Sesión 017 (2026-05-08)
