@@ -176,11 +176,29 @@
                     <option value="">-- Selecciona una categoría --</option>
                     {% for cat in absence_categories_list %}
                         <option value="{{ cat.id }}"
-                                data-requires-note="{% if cat.requires_note %}1{% else %}0{% endif %}">
+                                data-requires-note="{% if cat.requires_note %}1{% else %}0{% endif %}"
+                                data-code="{{ cat.code }}">
                             {{ cat.label }}
                         </option>
                     {% endfor %}
                 </select>
+            </div>
+            {# Fecha fin de vacaciones -- H24 (S019). Solo visible cuando la  #}
+            {# categoría seleccionada es VACATION (ver _toggleVacationField  #}
+            {# en form_entry_assets.js). De esta tarea se deriva el          #}
+            {# VacationPeriod real -- nunca al revés.                        #}
+            <div class="col-12 col-md-6 vacation-end-date-wrap d-none" id="vacation-end-date-wrap-1">
+                <label class="form-label fw-medium">
+                    Fecha de fin de vacaciones <span class="text-danger">*</span>
+                </label>
+                <input type="date"
+                       name="entrada_1_vacation_end_date"
+                       id="entrada_1_vacation_end_date"
+                       class="form-control eb-field">
+                <div class="form-text text-muted mt-1">
+                    Tus vacaciones empiezan al día siguiente de hoy.
+                    Indica aquí el último día que estarás de vacaciones.
+                </div>
             </div>
             {# empresa-selector-wrap — populated by JS when EMPRESA_* asset selected #}
             <div class="col-12 col-md-6 empresa-selector-wrap d-none"

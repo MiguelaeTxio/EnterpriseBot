@@ -347,7 +347,8 @@
                 var opts = "<option value=\"\">— Selecciona el motivo de ausencia —</option>";
                 EB_CFG.absenceCategories.forEach(function (cat) {
                     opts += "<option value=\"" + cat.id + "\" data-requires-note=\"" +
-                        (cat.requires_note ? "1" : "0") + "\">" + cat.label + "</option>";
+                        (cat.requires_note ? "1" : "0") + "\" data-code=\"" +
+                        (cat.code || "") + "\">" + cat.label + "</option>";
                 });
                 var absContent =
                     "<label class=\"form-label fw-medium\">" +
@@ -371,6 +372,25 @@
                     absWrap = nad;
                 }
                 absWrap = document.getElementById("absence-selector-wrap-" + idx);
+
+                // H24 (S019) — campo de fecha de fin de vacaciones, mismo
+                // patron de relleno perezoso que absWrap: en bloques
+                // dinamicos (2+) el div ya existe vacio (ver plantilla de
+                // clonado de bloque, mas abajo en este archivo) y se
+                // rellena aqui la primera vez que se activa modo ausencia.
+                var vacWrap = document.getElementById("vacation-end-date-wrap-" + idx);
+                if (vacWrap && vacWrap.innerHTML.trim() === "") {
+                    vacWrap.innerHTML =
+                        "<label class=\"form-label fw-medium\">" +
+                        "Fecha de fin de vacaciones <span class=\"text-danger\">*</span></label>" +
+                        "<input type=\"date\" name=\"entrada_" + idx + "_vacation_end_date\" " +
+                        "id=\"entrada_" + idx + "_vacation_end_date\" " +
+                        "class=\"form-control eb-field\">" +
+                        "<div class=\"form-text text-muted mt-1\">" +
+                        "Tus vacaciones empiezan al día siguiente de hoy. " +
+                        "Indica aquí el último día que estarás de vacaciones." +
+                        "</div>";
+                }
                 var rdr = blockDiv.querySelector("[name=\"entrada_" + idx + "_repair_notes\"]");
                 if (rdr) {
                     rdr.placeholder = "Describe brevemente el motivo de la ausencia (opcional).";
@@ -400,7 +420,13 @@
             if (repairWrap) { repairWrap.classList.remove("d-none"); }
             var catSel = document.getElementById("entrada_" + idx + "_absence_category");
             if (catSel) {
-                catSel.addEventListener("change", function () { _adjustRepairNotes(idx, catSel); });
+                catSel.addEventListener("change", function () {
+                    _adjustRepairNotes(idx, catSel);
+                    _toggleVacationField(idx, catSel);
+                });
+                // Estado inicial -- por si el bloque se reabre con VACATION
+                // ya seleccionado (p. ej. corrección de un parte existente).
+                _toggleVacationField(idx, catSel);
             }
         } else {
             absWrap.classList.add("d-none");
@@ -409,6 +435,13 @@
             if (rdrReset) { rdrReset.placeholder = "Descripción de la reparación"; }
             if (repairLbl) { repairLbl.innerHTML = "Reparación realizada <span class=\"text-danger\">*</span>"; }
             if (repairWrap) { repairWrap.classList.remove("d-none"); }
+            var vacWrapReset = document.getElementById("vacation-end-date-wrap-" + idx);
+            var vacInputReset = document.getElementById("entrada_" + idx + "_vacation_end_date");
+            if (vacWrapReset) { vacWrapReset.classList.add("d-none"); }
+            if (vacInputReset) {
+                vacInputReset.removeAttribute("required");
+                vacInputReset.value = "";
+            }
         }
     }
 
@@ -502,6 +535,37 @@
             }
             var rdrReset = document.querySelector("[name=\"entrada_" + idx + "_repair_notes\"]");
             if (rdrReset) { rdrReset.placeholder = "Descripción de la reparación"; }
+        }
+    }
+
+    // ==================================================================
+    // _toggleVacationField
+    // Shows/hides the "Fecha de fin de vacaciones" field based on whether
+    // the selected AbsenceCategory's code matches EB_CONFIG.vacationAbsenceCode
+    // (H24, S019 -- el operario indica aquí la fecha de fin de sus
+    // vacaciones; de esta tarea se deriva el VacationPeriod real).
+    // Muestra/oculta el campo "Fecha de fin de vacaciones" según si el
+    // code de la AbsenceCategory seleccionada coincide con
+    // EB_CONFIG.vacationAbsenceCode (H24, S019).
+    // ==================================================================
+    function _toggleVacationField(idx, catSel) {
+        var vacWrap = document.getElementById("vacation-end-date-wrap-" + idx);
+        var vacInput = document.getElementById("entrada_" + idx + "_vacation_end_date");
+        if (!vacWrap) { return; }
+        var EB_CFG = window.EB_CONFIG || {};
+        var selOpt = catSel.options[catSel.selectedIndex];
+        var selCode = (selOpt && selOpt.dataset.code) || "";
+        var isVacation = EB_CFG.vacationAbsenceCode &&
+            selCode === EB_CFG.vacationAbsenceCode;
+        if (isVacation) {
+            vacWrap.classList.remove("d-none");
+            if (vacInput) { vacInput.setAttribute("required", "required"); }
+        } else {
+            vacWrap.classList.add("d-none");
+            if (vacInput) {
+                vacInput.removeAttribute("required");
+                vacInput.value = "";
+            }
         }
     }
 
@@ -747,6 +811,7 @@
                     '<input type="number" step="0.1" min="0" name="entrada_' + idx + '_crane_hours_reading" class="form-control horometro-input" placeholder="Horas grúa">' +
                 '</div>' +
                 '<div class="col-12 col-md-6 absence-selector-wrap d-none" id="absence-selector-wrap-' + idx + '"></div>' +
+                '<div class="col-12 col-md-6 vacation-end-date-wrap d-none" id="vacation-end-date-wrap-' + idx + '"></div>' +
                 '<div class="col-12 col-md-6 empresa-selector-wrap d-none" id="empresa-selector-wrap-' + idx + '"></div>' +
                 '<div class="col-12 col-md-6" id="fault-description-wrap-' + idx + '">' +
                     '<label class="form-label fw-medium">Descripción avería <span class="text-danger">*</span></label>' +
@@ -1137,6 +1202,24 @@
                     _markField("entrada_" + i + "_absence_category", !absCat);
                     if (!absCat) {
                         errors.push(blk + ": selecciona una categoria de ausencia.");
+                    }
+                    // H24 (S019) — si la categoria es VACATION, la fecha de
+                    // fin de vacaciones es obligatoria; de esta tarea se
+                    // deriva el VacationPeriod real del operario.
+                    var absCatSel = form ? form.querySelector(
+                        '[name="entrada_' + i + '_absence_category"]'
+                    ) : null;
+                    var absCatCode = "";
+                    if (absCatSel && absCatSel.options && absCatSel.selectedIndex >= 0) {
+                        var absCatOpt = absCatSel.options[absCatSel.selectedIndex];
+                        absCatCode = (absCatOpt && absCatOpt.dataset.code) || "";
+                    }
+                    if (absCatCode && absCatCode === (_cfgVal.vacationAbsenceCode || "VACATION")) {
+                        var vacEnd = _val("entrada_" + i + "_vacation_end_date");
+                        _markField("entrada_" + i + "_vacation_end_date", !vacEnd);
+                        if (!vacEnd) {
+                            errors.push(blk + ": indica la fecha de fin de tus vacaciones.");
+                        }
                     }
                 } else {
                     _markField("entrada_" + i + "_fault_description", !desc);

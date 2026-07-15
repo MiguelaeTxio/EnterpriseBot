@@ -133,6 +133,112 @@ def _last_working_day_before(target_date, base):
     return cursor
 
 
+def register_vacation_period_from_line(
+    entry_line, vacation_end_date, operator, company, created_by,
+):
+    """
+    Real-world flow (S019 correction to the S018 design): the operator
+    themselves adds the PERSONAL/VACATION line on their own last working
+    day, via the normal daily digital work order form (the pre-existing
+    H7/H10 PERSONAL-absence mechanism, panel/views_operator.py::
+    _parse_entry_lines_from_post + the WorkdayGap creation blocks in
+    WorkOrderEntryConfirmView and WorkOrderEntryFormView), indicating the
+    end date of their vacation in a dedicated field. That real, operator-
+    entered line is what should exist -- generate_vacation_task() above
+    (creating a whole new standalone WorkOrder) is the wrong direction for
+    this flow and is now scoped to the panel CRUD only (hr_calendar/views.py),
+    which Miguel Ángel keeps as a secondary/administrative path, not the
+    primary one.
+
+    Creates the VacationPeriod with generated_entry_line already pointing
+    at the real, just-persisted line -- so VacationPeriod.save()'s own
+    auto-generation (see hr_calendar/models.py) is a no-op here
+    (generated_entry_line_id is already set at creation time, no new
+    WorkOrder gets created).
+
+    date_start is the day after entry_line.entry.work_date (the day after
+    the operator's own last working day) -- date_start itself is never
+    asked of the operator, only date_end (per Miguel Ángel: "el periodo
+    vacacional lo crea el operario cuando añade en un día una tarea de
+    vacaciones de una hora, donde indica el final de su periodo
+    vacacional").
+
+    Idempotent per (operator, date_start) rather than per exact line pk:
+    the operator's own daily form (panel/views_operator.py::
+    WorkOrderEntryFormView, action=save_blocks) deletes and recreates
+    every WorkOrderEntryLine on each intermediate re-save while the
+    operator is still filling out the form (WorkdayGap gets recreated
+    too), so the "same" vacation task can arrive here pointing at a
+    different line pk each time the operator saves again before finally
+    closing the day's part. Matching on (operator, date_start) instead --
+    the last working day never changes for the same vacation task --
+    means a re-save updates the existing VacationPeriod in place
+    (refreshing date_end and re-pointing generated_entry_line at the
+    latest line) instead of creating a duplicate.
+    ---
+    Idempotente por (operario, date_start) en vez de por pk de línea
+    exacta: el propio parte diario del operario (panel/views_operator.py::
+    WorkOrderEntryFormView, action=save_blocks) borra y recrea cada
+    WorkOrderEntryLine en cada reguardado intermedio mientras el operario
+    sigue rellenando el formulario (el WorkdayGap también se recrea), así
+    que la "misma" tarea de vacaciones puede llegar aquí apuntando a un pk
+    de línea distinto cada vez que el operario vuelve a guardar antes de
+    cerrar definitivamente el parte del día. Emparejar por (operario,
+    date_start) en vez de eso -- la última jornada laboral nunca cambia
+    para la misma tarea de vacaciones -- hace que un reguardado actualice
+    el VacationPeriod existente en su sitio (refrescando date_end y
+    reapuntando generated_entry_line a la línea más reciente) en vez de
+    crear un duplicado.
+    """
+    from hr_calendar.models import VacationPeriod
+
+    work_date = entry_line.entry.work_date
+    date_start = work_date + timedelta(days=1)
+    if vacation_end_date < date_start:
+        raise ValueError(
+            f"La fecha de fin de vacaciones ({vacation_end_date}) no puede "
+            f"ser anterior al día siguiente a la última jornada laboral "
+            f"({date_start})."
+        )
+
+    existing = VacationPeriod.objects.filter(
+        operator=operator, company=company, date_start=date_start,
+    ).first()
+    if existing is not None:
+        _update_fields = []
+        if existing.date_end != vacation_end_date:
+            existing.date_end = vacation_end_date
+            _update_fields.append("date_end")
+        if existing.generated_entry_line_id != entry_line.pk:
+            existing.generated_entry_line = entry_line
+            _update_fields.append("generated_entry_line")
+        if _update_fields:
+            existing.save(update_fields=_update_fields)
+            logger.info(
+                "# [hr_calendar/services] VacationPeriod actualizado tras "
+                "reguardado del operario. vacation_period_pk=%r "
+                "line_pk=%r campos=%r",
+                existing.pk, entry_line.pk, _update_fields,
+            )
+        return existing
+
+    period = VacationPeriod.objects.create(
+        company=company,
+        operator=operator,
+        created_by=created_by,
+        date_start=date_start,
+        date_end=vacation_end_date,
+        generated_entry_line=entry_line,
+    )
+    logger.info(
+        "# [hr_calendar/services] VacationPeriod registrado desde tarea "
+        "real del operario. line_pk=%r operator=%r date_start=%r "
+        "date_end=%r vacation_period_pk=%r",
+        entry_line.pk, operator.pk, date_start, vacation_end_date, period.pk,
+    )
+    return period
+
+
 def generate_vacation_task(vacation_period):
     """
     Creates the PERSONAL/VACATION ghost task for a newly-created

@@ -594,6 +594,7 @@ window.EB_CONFIG = {
     endTimeAfternoon:   "{{ end_time_afternoon }}",
     startTimeAfternoon: "{{ start_time_afternoon }}",
     personalAssetCode:  "{{ personal_asset_code }}",
+    vacationAbsenceCode: "{{ vacation_absence_code|default:'VACATION' }}",
     absenceCategories:  JSON.parse('{{ absence_categories|default:"[]"|escapejs }}'),
     empresaSubtypes:    JSON.parse('{{ empresa_subtypes|default:"{}"|escapejs }}'),
     intensiveToggleUrl: "{% url 'panel:operator_intensive_toggle' %}",

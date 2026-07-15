@@ -663,6 +663,7 @@ def _parse_entry_lines_from_post (POST ,company ):
 
 
         absence_category_obj =None 
+        _vacation_end_date =None 
         _is_personal_block =(
         machine_asset is not None 
         and machine_asset .code .upper ()==_PERSONAL_CODE .upper ()
@@ -683,6 +684,29 @@ def _parse_entry_lines_from_post (POST ,company ):
 
 
                     desc_averia =absence_category_obj .label 
+
+                    # H24 (S019, flujo real) — cuando la categoria es
+                    # VACATION, el propio operario indica aqui la fecha
+                    # de fin de su periodo; hr_calendar.services.
+                    # register_vacation_period_from_line la usa para
+                    # crear el VacationPeriod a partir de esta linea
+                    # real, ver los bloques de creacion de WorkdayGap en
+                    # WorkOrderEntryConfirmView/WorkOrderEntryFormView.
+                    from hr_calendar .services import VACATION_ABSENCE_CODE as _VAC_CODE_PARSE 
+                    if absence_category_obj .code ==_VAC_CODE_PARSE :
+                        from datetime import datetime as _dt_vac 
+                        _vac_end_raw =POST .get (f"{pfx}vacation_end_date","").strip ()
+                        if _vac_end_raw :
+                            try :
+                                _vacation_end_date =_dt_vac .strptime (
+                                _vac_end_raw ,"%Y-%m-%d"
+                                ).date ()
+                            except ValueError :
+                                logger .warning (
+                                "# [_parse_entry_lines] vacation_end_date=%r "
+                                "invalido para entrada_%d — se omite.",
+                                _vac_end_raw ,i ,
+                                )
                 except (ValueError ,TypeError ):
                     logger .warning (
                     "# [_parse_entry_lines] absence_category pk=%r inválido "
@@ -766,6 +790,7 @@ def _parse_entry_lines_from_post (POST ,company ):
         "crane_hours_reading":crane_hours_reading ,
         "absence_category":absence_category_obj ,
         "is_personal":_is_personal_block ,
+        "vacation_end_date":_vacation_end_date ,
         "is_on_site":_is_on_site ,
         "is_empresa":_is_empresa_block ,
         "ticket_action":_ticket_action ,
@@ -1372,6 +1397,16 @@ class WorkOrderEntryConfirmView (WorkshopRequiredMixin ,View ):
                     f"{blk}: esta categoría de ausencia requiere que "
                     f"describas brevemente el motivo."
                     )
+                # H24 (S019) — fecha de fin de vacaciones obligatoria
+                # cuando la categoria es VACATION; de esta tarea se deriva
+                # el VacationPeriod real del operario (ver hr_calendar.
+                # services.register_vacation_period_from_line).
+                from hr_calendar .services import VACATION_ABSENCE_CODE as _VAC_CODE_GATE1 
+                if (getattr (_abs_cat ,"code",None )==_VAC_CODE_GATE1 
+                        and not ld .get ("vacation_end_date")):
+                    integrity_errors .append (
+                    f"{blk}: indica la fecha de fin de tus vacaciones."
+                    )
             else :
                 if not ld ["fault_description"]:
                     integrity_errors .append (
@@ -1814,6 +1849,7 @@ class WorkOrderEntryConfirmView (WorkshopRequiredMixin ,View ):
 
 
         from work_order_processor .models import WorkdayGap as _WDG_CO 
+        from hr_calendar .services import VACATION_ABSENCE_CODE as _VAC_CODE_CO 
         for _co_ld in entry_lines_data :
             if not _co_ld .get ("is_personal"):
                 continue 
@@ -1843,6 +1879,32 @@ class WorkOrderEntryConfirmView (WorkshopRequiredMixin ,View ):
             work_order .pk ,_co_hc ,_co_hf ,
             _co_abs_cat .label if _co_abs_cat else None ,
             )
+
+            # H24 (S019, flujo real) — si esta es la tarea de vacaciones
+            # que el propio operario acaba de meter (categoria VACATION +
+            # fecha de fin indicada), se deriva el VacationPeriod real a
+            # partir de ELLA. Nunca al reves -- ver hr_calendar.services.
+            # register_vacation_period_from_line.
+            _co_vac_end =_co_ld .get ("vacation_end_date")
+            if (getattr (_co_abs_cat ,"code",None )==_VAC_CODE_CO 
+                    and _co_vac_end is not None ):
+                _co_persisted_line =created_lines .get (_co_ld ["line_number"])
+                if _co_persisted_line is not None :
+                    from hr_calendar .services import register_vacation_period_from_line as _reg_vac_co 
+                    try :
+                        _reg_vac_co (
+                        entry_line =_co_persisted_line ,
+                        vacation_end_date =_co_vac_end ,
+                        operator =cu ,
+                        company =company ,
+                        created_by =cu ,
+                        )
+                    except ValueError as _vac_val_err :
+                        logger .warning (
+                        "# [FormView/close_order] VacationPeriod no "
+                        "registrado (fecha inválida). line_pk=%r: %s",
+                        _co_persisted_line .pk ,_vac_val_err ,
+                        )
 
 
 
@@ -2171,7 +2233,7 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
         _absence_cats_ctx =list (
             _AbsCatCtx .objects .filter (company =company ,is_active =True )
             .order_by ("order","label")
-            .values ("id","label","requires_note")
+            .values ("id","label","requires_note","code")
         )
         return {
         "company":company ,
@@ -2403,6 +2465,7 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
             from ivr_config .models import AbsenceCategory as _AbsCat 
             from fleet .models import MachineAsset as _MA 
             from work_order_processor .management .commands .seed_personal_asset import PERSONAL_ASSET_CODE 
+            from hr_calendar .services import VACATION_ABSENCE_CODE as _VAC_CODE_CTX1 
             from work_order_processor .management .commands .seed_empresa_assets import (
                 EMPRESA_SUBTYPES as _ES_MAP_IP ,
                 get_empresa_subtype_group as _get_es_group_ip ,
@@ -2421,7 +2484,7 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
             _absence_cats =list (
             _AbsCat .objects .filter (company =company ,is_active =True )
             .order_by ("order","label")
-            .values ("id","label","requires_note")
+            .values ("id","label","requires_note","code")
             )
             context .update ({
             "in_progress_mode":True ,
@@ -2443,6 +2506,7 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
             "start_time_afternoon":_ip_lunch_end ,
             "absence_categories":_json_fix .dumps (_absence_cats) ,
             "personal_asset_code":PERSONAL_ASSET_CODE ,
+            "vacation_absence_code":_VAC_CODE_CTX1 ,
             "is_intensive_override":getattr (cu ,"is_intensive_override",False ),
             "empresa_subtypes":_json_fix .dumps (_empresa_subtypes_ip ),
             })
@@ -2483,6 +2547,7 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
         import json as _json_fix 
         from ivr_config .models import AbsenceCategory as _AbsCat 
         from work_order_processor .management .commands .seed_personal_asset import PERSONAL_ASSET_CODE 
+        from hr_calendar .services import VACATION_ABSENCE_CODE as _VAC_CODE_CTX2 
         from work_order_processor .management .commands .seed_empresa_assets import (
             EMPRESA_SUBTYPES as _ES_MAP ,
             get_empresa_subtype_group as _get_es_group ,
@@ -2502,7 +2567,7 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
         _absence_cats =list (
         _AbsCat .objects .filter (company =company ,is_active =True )
         .order_by ("order","label")
-        .values ("id","label","requires_note")
+        .values ("id","label","requires_note","code")
         )
         context =self ._get_context_base (request )
         context .update ({
@@ -2521,6 +2586,7 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
         "start_time_afternoon":_lunch_end ,
         "absence_categories":_json_fix .dumps (_absence_cats) ,
         "personal_asset_code":PERSONAL_ASSET_CODE ,
+        "vacation_absence_code":_VAC_CODE_CTX2 ,
         "is_intensive_override":getattr (cu ,"is_intensive_override",False ),
         "empresa_subtypes":_json_fix .dumps (_empresa_subtypes_ctx ),
         })
@@ -3632,6 +3698,7 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
 
 
                     from work_order_processor .models import WorkdayGap as _WDG_IP 
+                    from hr_calendar .services import VACATION_ABSENCE_CODE as _VAC_CODE_IP 
                     _WDG_IP .objects .filter (
                     work_order =_ip_wo ,
                     resolved =True ,
@@ -3667,6 +3734,36 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
                         _ip_entry .pk ,_ip_p_hc ,_ip_p_hf ,
                         _ip_abs_cat .label if _ip_abs_cat else None ,
                         )
+
+                        # H24 (S019, flujo real) — si esta es la tarea de
+                        # vacaciones que el propio operario acaba de meter
+                        # (categoria VACATION + fecha de fin indicada), se
+                        # deriva el VacationPeriod real a partir de ELLA.
+                        # Nunca al reves -- ver hr_calendar.services.
+                        # register_vacation_period_from_line.
+                        _ip_vac_end =_ip_ld_p .get ("vacation_end_date")
+                        if (getattr (_ip_abs_cat ,"code",None )==_VAC_CODE_IP 
+                                and _ip_vac_end is not None ):
+                            _ip_persisted_line =_ip_created_lines .get (
+                            _ip_ld_p ["line_number"]
+                            )
+                            if _ip_persisted_line is not None :
+                                from hr_calendar .services import register_vacation_period_from_line as _reg_vac_ip 
+                                try :
+                                    _reg_vac_ip (
+                                    entry_line =_ip_persisted_line ,
+                                    vacation_end_date =_ip_vac_end ,
+                                    operator =cu ,
+                                    company =company ,
+                                    created_by =cu ,
+                                    )
+                                except ValueError as _vac_val_err_ip :
+                                    logger .warning (
+                                    "# [FormView/save_blocks] VacationPeriod "
+                                    "no registrado (fecha inválida). "
+                                    "line_pk=%r: %s",
+                                    _ip_persisted_line .pk ,_vac_val_err_ip ,
+                                    )
 
                 logger .info (
                 "# [FormView/save_blocks] WorkOrder IN_PROGRESS #%d actualizado. "
@@ -4793,7 +4890,7 @@ class WorkshopIntensiveToggleView (WorkshopRequiredMixin ,View ):
             _AbsCat .objects
             .filter (company =company ,is_active =True )
             .order_by ('label')
-            .values ('id','label','requires_note')
+            .values ('id','label','requires_note','code')
         )
 
         _first_hc = first_hc
