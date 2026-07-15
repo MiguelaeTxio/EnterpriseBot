@@ -784,15 +784,13 @@
         {% elif active_tab == 'periods' %}
         <div class="p-0">
 
-            {# Action bar #}
-            <div class="px-4 py-3 border-bottom bg-light d-flex align-items-center justify-content-between flex-wrap gap-2">
+            {# Action bar -- ya no hay creación manual (H24/S020): el
+               periodo se asegura solo, por fecha, la primera vez que
+               hace falta (calendario de vacaciones). #}
+            <div class="px-4 py-3 border-bottom bg-light">
                 <span class="text-sm fw-semibold text-muted">
                     <i class="bi bi-calendar-range me-1"></i>Gestión de períodos de trabajo
                 </span>
-                <button type="button" class="btn btn-primary btn-sm px-3"
-                        data-bs-toggle="modal" data-bs-target="#modalCreatePeriodGroup">
-                    <i class="bi bi-plus-circle me-1"></i>Nuevo periodo
-                </button>
             </div>
 
             {# Period group list #}
@@ -822,10 +820,12 @@
                                         {% else %}<span class="text-muted">—</span>{% endif %}
                                     </td>
                                     <td>
-                                        {% if g.is_closed %}
-                                        <span class="badge bg-danger">Liquidado</span>
+                                        {% if g.status == "LIQUIDATED" %}
+                                        <span class="badge bg-danger">{{ g.status_label }}</span>
+                                        {% elif g.status == "PENDING_LIQUIDATION" %}
+                                        <span class="badge bg-warning text-dark">{{ g.status_label }}</span>
                                         {% else %}
-                                        <span class="badge bg-success">Activo</span>
+                                        <span class="badge bg-success">{{ g.status_label }}</span>
                                         {% endif %}
                                     </td>
                                     <td class="text-sm">
@@ -870,11 +870,11 @@
             {% else %}
             <div class="px-4 py-5 text-center text-muted">
                 <i class="bi bi-calendar-range fs-3 d-block mb-2"></i>
-                <p class="text-sm mb-3">No hay períodos de trabajo registrados.</p>
-                <button type="button" class="btn btn-primary btn-sm"
-                        data-bs-toggle="modal" data-bs-target="#modalCreatePeriodGroup">
-                    <i class="bi bi-plus-circle me-1"></i>Crear el primer periodo
-                </button>
+                <p class="text-sm mb-0">
+                    No hay períodos de trabajo registrados todavía. Se
+                    creará automáticamente en cuanto haga falta (p. ej.
+                    al abrir el calendario de vacaciones).
+                </p>
             </div>
             {% endif %}
 
@@ -953,70 +953,6 @@
     </div>
 </div>
 
-
-{# ------------------------------------------------------------------ #}
-{# Modal — Crear nuevo periodo de trabajo                              #}
-{# ------------------------------------------------------------------ #}
-{# ------------------------------------------------------------------ #}
-{# Modal — Nuevo periodo (WorkPeriodGroup)                            #}
-{# ------------------------------------------------------------------ #}
-<div class="modal fade" id="modalCreatePeriodGroup" tabindex="-1"
-     aria-labelledby="modalCreatePeriodGroupLabel" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content border-0 shadow">
-            <div class="modal-header border-bottom py-3">
-                <h6 class="modal-title fw-semibold" id="modalCreatePeriodGroupLabel">
-                    <i class="bi bi-calendar-plus me-2 text-muted"></i>Nuevo periodo de trabajo
-                </h6>
-                <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body p-4">
-                <form method="post" id="formCreatePeriodGroup"
-                      action="{% url 'panel:work_period_group_create' %}">
-                    {% csrf_token %}
-                    <div class="mb-3">
-                        <label class="form-label text-sm fw-semibold">
-                            Etiqueta <span class="text-danger">*</span>
-                        </label>
-                        <input type="text" name="label"
-                               class="form-control form-control-sm"
-                               placeholder="Ej: Julio-Agosto 2026" required>
-                    </div>
-                    <div class="row g-3">
-                        <div class="col-6">
-                            <label class="form-label text-sm fw-semibold">
-                                Fecha de inicio <span class="text-danger">*</span>
-                            </label>
-                            <input type="date" name="start_date"
-                                   class="form-control form-control-sm" required>
-                        </div>
-                        <div class="col-6">
-                            <label class="form-label text-sm fw-semibold">
-                                Fecha de fin
-                                <span class="text-muted fw-normal">(opcional)</span>
-                            </label>
-                            <input type="date" name="end_date"
-                                   class="form-control form-control-sm">
-                        </div>
-                    </div>
-                    <p class="form-text text-muted mt-3 mb-0">
-                        <i class="bi bi-info-circle me-1"></i>
-                        El periodo se creará para todos los operarios activos sin periodo
-                        abierto. Puedes añadir o excluir operarios desde el detalle del periodo.
-                    </p>
-                </form>
-            </div>
-            <div class="modal-footer border-top py-3">
-                <button type="button" class="btn btn-outline-secondary btn-sm px-3"
-                        data-bs-dismiss="modal">Cancelar</button>
-                <button type="submit" form="formCreatePeriodGroup"
-                        class="btn btn-primary btn-sm px-4">
-                    <i class="bi bi-check2 me-1"></i>Crear periodo
-                </button>
-            </div>
-        </div>
-    </div>
-</div>
 
 {# ------------------------------------------------------------------ #}
 {# Modal — Editar ausencia existente                                   #}

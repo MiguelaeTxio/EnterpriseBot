@@ -51,8 +51,6 @@ from panel.views_workorders import (
     WorkOrderDetailView,
     WorkPeriodLockView,
     WorkPeriodGroupDetailView,
-    WorkPeriodGroupCreateView,
-    WorkPeriodGroupAddOperatorView,
     WorkPeriodGroupCloseView,
     WorkPeriodGroupLockView,
     WorkOrderAdminExportView,

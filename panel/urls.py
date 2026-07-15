@@ -90,8 +90,6 @@ from panel.views import (
     WorkerAbsenceDeleteView,
     WorkOrderAdminExportView,
     WorkPeriodGroupDetailView,
-    WorkPeriodGroupCreateView,
-    WorkPeriodGroupAddOperatorView,
     WorkPeriodGroupCloseView,
     WorkPeriodGroupLockView,
     WorkPeriodLockView,
@@ -323,9 +321,7 @@ urlpatterns = [
 
     # Work period management — CRUD de periodos de trabajo para SUPERVISOR y ADMIN.
     # 1ª Acción — Hito 7 Sesión 017 (2026-05-08)
-    path("work-periods/create/", WorkPeriodGroupCreateView.as_view(), name="work_period_group_create"),
     path("work-periods/<int:pk>/", WorkPeriodGroupDetailView.as_view(), name="work_period_group_detail"),
-    path("work-periods/<int:pk>/add-operator/", WorkPeriodGroupAddOperatorView.as_view(), name="work_period_group_add_operator"),
     path("work-periods/<int:pk>/close/", WorkPeriodGroupCloseView.as_view(), name="work_period_group_close"),
     path("work-periods/<int:pk>/lock/", WorkPeriodGroupLockView.as_view(), name="work_period_group_lock"),
     path("work-periods/operator/<int:pk>/lock/", WorkPeriodLockView.as_view(), name="work_period_lock"),

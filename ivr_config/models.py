@@ -13,7 +13,7 @@ El orden de creación respeta todas las dependencias FK para evitar referencias 
 Última actualización: 2026-04-13 — Extensiones de modelo acordadas en sesión.
 """
 
-from datetime import timedelta
+from datetime import date, timedelta
 
 from django.db import models
 from django.contrib.auth.models import User
@@ -2106,21 +2106,242 @@ class WorkPeriodGroup(models.Model):
         verbose_name="Última modificación",
     )
 
+    # Computed status values (H24/S020 redesign) -- never stored, always
+    # derived from is_closed + today's date vs. the period's own range.
+    # A group is ACTIVE while today falls within its range, regardless of
+    # is_closed; several groups can be simultaneously PENDING_LIQUIDATION
+    # if liquidation lags -- that is expected, not a bug (ver anexo V24
+    # "Hoja de Ruta para la Siguiente Sesión", puntos 1-2).
+    # ---
+    # Valores de estado calculados (rediseño H24/S020) -- nunca se
+    # guardan, siempre se derivan de is_closed + la fecha de hoy frente al
+    # propio rango del periodo. Un grupo está ACTIVE mientras hoy caiga
+    # dentro de su rango, sin importar is_closed; pueden convivir varios
+    # grupos PENDING_LIQUIDATION a la vez si la liquidación se retrasa --
+    # es el comportamiento esperado, no un bug (ver anexo V24 "Hoja de
+    # Ruta para la Siguiente Sesión", puntos 1-2).
+    STATUS_ACTIVE = "ACTIVE"
+    STATUS_PENDING_LIQUIDATION = "PENDING_LIQUIDATION"
+    STATUS_LIQUIDATED = "LIQUIDATED"
+
+    STATUS_LABELS_ES = {
+        STATUS_ACTIVE: "Activo",
+        STATUS_PENDING_LIQUIDATION: "Cerrado, pendiente de liquidar",
+        STATUS_LIQUIDATED: "Liquidado",
+    }
+
     class Meta:
         verbose_name = "Grupo de periodos de trabajo"
         verbose_name_plural = "Grupos de periodos de trabajo"
         ordering = ["-start_date"]
+
+    @property
+    def status(self):
+        """
+        Returns one of STATUS_ACTIVE / STATUS_PENDING_LIQUIDATION /
+        STATUS_LIQUIDATED. Liquidated wins over date range. Otherwise,
+        the period is active while today falls inside [start_date,
+        end_date] (or there is no end_date yet); once today passes
+        end_date without liquidation, it becomes PENDING_LIQUIDATION.
+        ---
+        Devuelve STATUS_ACTIVE / STATUS_PENDING_LIQUIDATION /
+        STATUS_LIQUIDATED. Liquidado gana siempre sobre el rango de
+        fechas. Si no, el periodo está activo mientras hoy caiga dentro
+        de [start_date, end_date] (o no tenga aún end_date); en cuanto
+        hoy supera end_date sin liquidar, pasa a PENDING_LIQUIDATION.
+        """
+        if self.is_closed:
+            return self.STATUS_LIQUIDATED
+        today = now().date()
+        if self.end_date is not None and today > self.end_date:
+            return self.STATUS_PENDING_LIQUIDATION
+        return self.STATUS_ACTIVE
+
+    @property
+    def status_label(self):
+        """
+        Human-readable Spanish label for `status`, for direct use in
+        templates without repeating the mapping.
+        ---
+        Etiqueta en castellano legible para `status`, para usarse
+        directamente en templates sin repetir el mapeo.
+        """
+        return self.STATUS_LABELS_ES[self.status]
 
     def __str__(self):
         end_label = (
             self.end_date.strftime("%d/%m/%Y") if self.end_date
             else "sin fecha fin"
         )
-        closed_label = " [LIQUIDADO]" if self.is_closed else ""
         return (
             f"{self.company.name} — {self.label} "
-            f"({self.start_date:%d/%m/%Y} / {end_label})"
-            + closed_label
+            f"({self.start_date:%d/%m/%Y} / {end_label}) "
+            f"[{self.status_label.upper()}]"
+        )
+
+
+# ---------------------------------------------------------------------------
+# WorkPeriodGroup — cálculo de ciclo por fecha (rediseño H24/S020)
+# ---------------------------------------------------------------------------
+# Replaces the old manual creation flow (free label/start_date/end_date
+# typed by the supervisor, WorkPeriodGroupCreateView -- removed): periods
+# now follow a fixed cycle, the 21st of a month to the 20th of the next,
+# computed on demand, never pre-created in advance. The row is ensured
+# ("asegurada") the first time something actually needs it -- currently
+# only the calendar's default (no group_pk) resolution, see
+# hr_calendar/services.py::resolve_period_group_for_calendar.
+# ---
+# Sustituye al antiguo flujo de creación manual (label/start_date/end_date
+# libres tecleados por el supervisor, WorkPeriodGroupCreateView --
+# eliminada): los periodos siguen ahora un ciclo fijo, del día 21 de un
+# mes al 20 del siguiente, calculado bajo demanda, nunca precreado por
+# adelantado. La fila se asegura la primera vez que hace falta de verdad
+# -- por ahora, solo la resolución por defecto del calendario (sin
+# group_pk), ver hr_calendar/services.py::resolve_period_group_for_calendar.
+
+_WORK_PERIOD_MONTH_NAMES_ES = {
+    1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril",
+    5: "Mayo", 6: "Junio", 7: "Julio", 8: "Agosto",
+    9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre",
+}
+
+
+def compute_period_bounds_for_date(target_date):
+    """
+    Computes (start_date, end_date, label) for the fixed 21-to-20 cycle
+    that contains target_date. Pure function, no DB access.
+
+    Rule (confirmed by Miguel Ángel, no ambiguity): every period runs
+    from the 21st of a month to the 20th of the following month
+    (21/07-20/08, 21/08-20/09, ...). A date on day >= 21 belongs to the
+    period starting that same month; a date on day <= 20 belongs to the
+    period that started the previous month.
+    ---
+    Calcula (start_date, end_date, label) del ciclo fijo 21-al-20 que
+    contiene target_date. Función pura, sin acceso a BD.
+
+    Regla (confirmada por Miguel Ángel, sin ambigüedad): cada periodo va
+    del día 21 de un mes al día 20 del mes siguiente (21/07-20/08,
+    21/08-20/09, ...). Una fecha en día >= 21 pertenece al periodo que
+    arranca ese mismo mes; una fecha en día <= 20 pertenece al periodo
+    que arrancó el mes anterior.
+    """
+    if target_date.day >= 21:
+        start_month = target_date.month
+        start_year = target_date.year
+    else:
+        start_month = target_date.month - 1
+        start_year = target_date.year
+        if start_month == 0:
+            start_month = 12
+            start_year -= 1
+
+    start_date = date(start_year, start_month, 21)
+
+    end_month = start_month + 1
+    end_year = start_year
+    if end_month == 13:
+        end_month = 1
+        end_year += 1
+    end_date = date(end_year, end_month, 20)
+
+    start_name = _WORK_PERIOD_MONTH_NAMES_ES[start_month]
+    end_name = _WORK_PERIOD_MONTH_NAMES_ES[end_month]
+    if start_year == end_year:
+        label = f"{start_name}-{end_name} {end_year}"
+    else:
+        label = f"{start_name} {start_year}-{end_name} {end_year}"
+
+    return start_date, end_date, label
+
+
+def ensure_work_period_group_for_date(company, target_date, created_by=None):
+    """
+    Ensures the WorkPeriodGroup covering target_date exists for company,
+    following the 21-to-20 cycle, and returns (group, created).
+
+    1. Looks for an existing group (any -- including historical/free-date
+       ones such as the "prehistoric" period that predates this cycle)
+       whose [start_date, end_date] already covers target_date. Never
+       duplicates a group that already covers the date.
+    2. If none covers it, computes the canonical 21-20 bounds and
+       get_or_create's the group with those exact bounds.
+    3. On creation only, auto-assigns a WorkPeriod to every active
+       WORKSHOP operator of the company (Opción A confirmada por Miguel
+       Ángel 2026-07-15 -- ya no hay asignación manual uno a uno).
+
+    Never touches is_closed. Several groups can legitimately be open at
+    once while liquidation lags -- see WorkPeriodGroup.status.
+    ---
+    Asegura que exista el WorkPeriodGroup que cubre target_date para
+    company, siguiendo el ciclo 21-al-20, y devuelve (group, created).
+
+    1. Busca un grupo ya existente (cualquiera -- incluidos los
+       históricos/de fechas libres, como el periodo "prehistórico"
+       anterior a este ciclo) cuyo [start_date, end_date] ya cubra
+       target_date. Nunca duplica un grupo que ya cubre la fecha.
+    2. Si ninguno la cubre, calcula los márgenes 21-20 canónicos y hace
+       get_or_create del grupo con esas fechas exactas.
+    3. Solo al crearlo, asigna automáticamente un WorkPeriod a cada
+       operario WORKSHOP activo de la empresa (Opción A confirmada por
+       Miguel Ángel 2026-07-15 -- ya no hay asignación manual uno a uno).
+
+    Nunca toca is_closed. Pueden convivir legítimamente varios grupos
+    abiertos a la vez si la liquidación se retrasa -- ver
+    WorkPeriodGroup.status.
+    """
+    existing = (
+        WorkPeriodGroup.objects
+        .filter(company=company, start_date__lte=target_date)
+        .filter(
+            models.Q(end_date__gte=target_date)
+            | models.Q(end_date__isnull=True)
+        )
+        .order_by("-start_date")
+        .first()
+    )
+    if existing is not None:
+        return existing, False
+
+    start_date, end_date, label = compute_period_bounds_for_date(
+        target_date
+    )
+    group, created = WorkPeriodGroup.objects.get_or_create(
+        company=company,
+        start_date=start_date,
+        end_date=end_date,
+        defaults={"label": label, "created_by": created_by},
+    )
+    if created:
+        _assign_all_active_operators_to_group(group, created_by)
+    return group, created
+
+
+def _assign_all_active_operators_to_group(group, created_by):
+    """
+    Creates a WorkPeriod for every active WORKSHOP operator of the
+    group's company, pointing at the group's own dates. Idempotent per
+    (operator, group) pair via get_or_create.
+    ---
+    Crea un WorkPeriod para cada operario WORKSHOP activo de la empresa
+    del grupo, apuntando a las fechas propias del grupo. Idempotente por
+    par (operario, grupo) vía get_or_create.
+    """
+    operators = CompanyUser.objects.filter(
+        company=group.company,
+        is_active=True,
+        role=CompanyUser.ROLE_WORKSHOP,
+    )
+    for operator in operators:
+        WorkPeriod.objects.get_or_create(
+            company_user=operator,
+            group=group,
+            defaults={
+                "start_date": group.start_date,
+                "end_date": group.end_date,
+                "label": group.label,
+                "created_by": created_by,
+            },
         )
 
 

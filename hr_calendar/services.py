@@ -513,58 +513,61 @@ def compute_calendar_days(operator, company, date_from, date_to):
 def resolve_period_group_for_calendar(company, group_pk=None):
     """
     Resolves which WorkPeriodGroup the calendar should display, following
-    ENTERPRISEBOT_ATTACHED_MILESTONE_V24.md sección 3.3 (cerrada en S018):
-    the calendar groups by WorkPeriodGroup instead of a hardcoded "21 al
-    20" cycle or a bare natural month.
+    the H24/S020 redesign (cálculo por fecha, ciclo 21-al-20): the period
+    considered "active" is always the one whose date range contains
+    today, regardless of is_closed -- see WorkPeriodGroup.status.
 
       - group_pk given -> that exact group (scoped to company), for
         prev/next navigation between periods.
-      - group_pk not given -> the most recent WorkPeriodGroup with
-        is_closed=False (the active one); if none is open, falls back to
-        the single most recent WorkPeriodGroup overall (all closed).
-      - No WorkPeriodGroup exists at all for the company -> returns None;
-        the caller falls back to the current natural month (documented
-        default behaviour in the anexo).
+      - group_pk not given -> ensures (creates if missing, per the fixed
+        21-20 cycle) and returns the group covering today's date -- see
+        ivr_config.models.ensure_work_period_group_for_date.
 
     Also returns prev_group_pk/next_group_pk (by start_date ordering) so
     the view can render "<- mes anterior" / "mes siguiente ->" navigation
     without the template needing to know about WorkPeriodGroup ordering.
     ---
-    Resuelve qué WorkPeriodGroup debe mostrar el calendario, siguiendo
-    ENTERPRISEBOT_ATTACHED_MILESTONE_V24.md sección 3.3 (cerrada en
-    S018): el calendario se agrupa por WorkPeriodGroup en vez de un ciclo
-    "21 al 20" hardcodeado o un mes natural a secas.
+    Resuelve qué WorkPeriodGroup debe mostrar el calendario, siguiendo el
+    rediseño H24/S020 (cálculo por fecha, ciclo 21-al-20): el periodo
+    considerado "activo" es siempre aquel cuyo rango de fechas contiene
+    hoy, sin importar is_closed -- ver WorkPeriodGroup.status.
 
       - Si se da group_pk -> ese grupo exacto (acotado a la empresa),
         para la navegación anterior/siguiente entre periodos.
-      - Si no se da group_pk -> el WorkPeriodGroup más reciente con
-        is_closed=False (el activo); si ninguno está abierto, cae al
-        WorkPeriodGroup más reciente en general (todos liquidados).
-      - Si no existe ningún WorkPeriodGroup para la empresa -> devuelve
-        None; el llamante cae al mes natural actual (comportamiento por
-        defecto documentado en el anexo).
+      - Si no se da group_pk -> se asegura (se crea si falta, según el
+        ciclo fijo 21-20) y se devuelve el grupo que cubre la fecha de
+        hoy -- ver ivr_config.models.ensure_work_period_group_for_date.
 
     También devuelve prev_group_pk/next_group_pk (por orden de
     start_date) para que la vista pueda renderizar la navegación
     "<- mes anterior" / "mes siguiente ->" sin que la plantilla necesite
     conocer el orden de WorkPeriodGroup.
     """
-    from ivr_config.models import WorkPeriodGroup
+    from django.utils.timezone import now as _tz_now
+    from ivr_config.models import (
+        WorkPeriodGroup,
+        ensure_work_period_group_for_date,
+    )
+
+    if group_pk is None:
+        group, _created = ensure_work_period_group_for_date(
+            company, _tz_now().date(),
+        )
+    else:
+        group = WorkPeriodGroup.objects.filter(
+            company=company, pk=group_pk,
+        ).first()
+        if group is None:
+            group, _created = ensure_work_period_group_for_date(
+                company, _tz_now().date(),
+            )
+
+    if group is None:
+        return None
 
     groups = list(
         WorkPeriodGroup.objects.filter(company=company).order_by("start_date")
     )
-    if not groups:
-        return None
-
-    if group_pk is not None:
-        group = next((g for g in groups if g.pk == group_pk), None)
-        if group is None:
-            group = groups[-1]
-    else:
-        open_groups = [g for g in groups if not g.is_closed]
-        group = open_groups[-1] if open_groups else groups[-1]
-
     idx = groups.index(group)
     prev_group_pk = groups[idx - 1].pk if idx > 0 else None
     next_group_pk = groups[idx + 1].pk if idx < len(groups) - 1 else None
@@ -574,112 +577,3 @@ def resolve_period_group_for_calendar(company, group_pk=None):
         "prev_group_pk": prev_group_pk,
         "next_group_pk": next_group_pk,
     }
-    """
-    Creates the PERSONAL/VACATION ghost task for a newly-created
-    VacationPeriod and points vacation_period.generated_entry_line at it.
-
-    Idempotent: if vacation_period.generated_entry_line_id is already set,
-    returns the existing line without creating anything new.
-
-    Raises MachineAsset.DoesNotExist / AbsenceCategory.DoesNotExist if the
-    PERSONAL cost centre or the VACATION category are missing for the
-    company -- deliberately not swallowed, this is a genuine setup gap
-    (seed_personal_asset / seed_absence_categories not run for this
-    company) that must surface, not fail silently.
-    ---
-    Crea la tarea fantasma PERSONAL/VACACIONES para un VacationPeriod recién
-    creado y apunta vacation_period.generated_entry_line a ella.
-
-    Idempotente: si vacation_period.generated_entry_line_id ya está fijado,
-    devuelve la línea existente sin crear nada nuevo.
-
-    Lanza MachineAsset.DoesNotExist / AbsenceCategory.DoesNotExist si falta
-    el centro de gasto PERSONAL o la categoría VACATION para la empresa --
-    deliberadamente no se capturan, es un hueco real de configuración
-    (seed_personal_asset / seed_absence_categories no ejecutados para esta
-    empresa) que debe salir a la luz, no fallar en silencio.
-    """
-    from fleet.models import MachineAsset
-    from ivr_config.models import AbsenceCategory
-    from work_order_processor.management.commands.seed_personal_asset import (
-        PERSONAL_ASSET_CODE,
-    )
-    from work_order_processor.models import (
-        WorkOrder,
-        WorkOrderEntry,
-        WorkOrderEntryLine,
-    )
-
-    if vacation_period.generated_entry_line_id:
-        return vacation_period.generated_entry_line
-
-    operator = vacation_period.operator
-    company = vacation_period.company
-
-    personal_asset = MachineAsset.objects.get(
-        company=company, code=PERSONAL_ASSET_CODE,
-    )
-    vacation_category = AbsenceCategory.objects.get(
-        company=company, code=VACATION_ABSENCE_CODE,
-    )
-
-    work_day = _last_working_day_before(
-        vacation_period.date_start, operator.base,
-    )
-
-    worker_name = (
-        operator.user.get_full_name() or operator.user.username
-    ).upper()
-    synthetic_name = (
-        f"VACACIONES_{work_day.strftime('%Y%m%d')}_"
-        f"{operator.user.username.upper()}.pdf"
-    )
-
-    with transaction.atomic():
-        work_order = WorkOrder.objects.create(
-            company=company,
-            uploaded_by=operator,
-            generated_by=vacation_period.created_by,
-            source=WorkOrder.Source.GENERATED,
-            status=WorkOrder.Status.DONE,
-        )
-        work_order.source_pdf.name = synthetic_name
-        work_order.save()
-
-        entry = WorkOrderEntry.objects.create(
-            work_order=work_order,
-            page_number=1,
-            worker_name=worker_name,
-            work_date=work_day,
-            uncertain_date=False,
-            extraction_confidence=WorkOrderEntry.Confidence.HIGH,
-            raw_gemini_response=None,
-        )
-
-        line = WorkOrderEntryLine.objects.create(
-            entry=entry,
-            line_number=1,
-            machine_asset=personal_asset,
-            machine_raw=PERSONAL_ASSET_CODE,
-            machine_norm=PERSONAL_ASSET_CODE,
-            fault_description=vacation_category.label,
-            repair_notes=(
-                f"Vacaciones hasta el {vacation_period.date_end:%d/%m/%Y}."
-            ),
-            hc=None,
-            hf=None,
-            or_val="",
-            delta_hours=Decimal("1"),
-            flags=[],
-        )
-
-        vacation_period.generated_entry_line = line
-        vacation_period.save(update_fields=["generated_entry_line"])
-
-    logger.info(
-        "# [hr_calendar/services] Tarea fantasma de vacaciones generada. "
-        "vacation_period_pk=%r operator=%r work_day=%r work_order_pk=%r "
-        "entry_line_pk=%r",
-        vacation_period.pk, operator.pk, work_day, work_order.pk, line.pk,
-    )
-    return line

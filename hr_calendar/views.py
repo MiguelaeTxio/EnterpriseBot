@@ -268,7 +268,7 @@ class VacationCalendarView(CompanyUserRequiredMixin, View):
             group = resolved["group"]
             date_from = group.start_date
             date_to = group.end_date or date.today()
-            period_kind = "Periodo liquidado" if group.is_closed else "Periodo activo"
+            period_kind = group.status_label
             _start_m = _MESES_ES[date_from.month]
             _end_m = _MESES_ES[date_to.month]
             if date_from.month == date_to.month and date_from.year == date_to.year:

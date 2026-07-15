@@ -4320,28 +4320,6 @@ class WorkOrderAdminHistoryView (WorkOrderFormAccessMixin ,View ):
 
 
         if is_elevated :
-            from ivr_config .models import WorkPeriod 
-            from datetime import timedelta as _td 
-            last_closed =(
-            WorkPeriod .objects 
-            .filter (
-            company_user__company =company ,
-            end_date__isnull =False ,
-            )
-            .order_by ("-end_date")
-            .values_list ("end_date","start_date")
-            .first ()
-            )
-            if last_closed :
-                _last_end =last_closed [0 ]
-                _last_start =last_closed [1 ]
-                _period_len =_last_end -_last_start 
-                suggested_period_start =(_last_end +_td (days =1 )).strftime ("%Y-%m-%d")
-                suggested_period_end =(_last_end +_td (days =1 )+_period_len ).strftime ("%Y-%m-%d")
-            else :
-                suggested_period_start =""
-                suggested_period_end =""
-
             # Build period_groups for the Períodos tab (WorkPeriodGroup-based).
             # Construir period_groups para la pestaña Períodos (basado en WorkPeriodGroup).
             from ivr_config.models import WorkPeriodGroup as _WPG_H
@@ -4373,8 +4351,6 @@ class WorkOrderAdminHistoryView (WorkOrderFormAccessMixin ,View ):
             # WORKSHOP: the Períodos tab is pure management, not part of
             # what any of the replaced views offered -- hidden in the
             # template, so none of this needs computing.
-            suggested_period_start =""
-            suggested_period_end =""
             period_groups =[]
             period_operator_groups =[]
 
@@ -4472,8 +4448,6 @@ class WorkOrderAdminHistoryView (WorkOrderFormAccessMixin ,View ):
         "reviewed_totals":reviewed_totals ,
         "history_list":history_list ,
         "absences_list":absences_list ,
-        "suggested_period_start":suggested_period_start ,
-        "suggested_period_end":suggested_period_end ,
         "templates_propias":_templates_propias ,
         "templates_globales":_templates_globales ,
         "is_admin":cu .role =="ADMIN",
@@ -4776,8 +4750,8 @@ class WorkPeriodLockView (AdminRoleRequiredMixin ,View ):
       - If is_closed=False → set is_closed=True  (lock / liquidate).
       - If is_closed=True  → set is_closed=False (unlock / reopen).
 
-    Returns a redirect to the referring URL (HTTP_REFERER) or to
-    panel:work_period_list as fallback.
+    Returns a redirect to the referring URL (HTTP_REFERER) or to the
+    Períodos tab of panel:work_order_admin_history as fallback.
     ---
     Alterna el flag is_closed de un WorkPeriod individual identificado por pk.
     Solo ADMIN.
@@ -4788,8 +4762,8 @@ class WorkPeriodLockView (AdminRoleRequiredMixin ,View ):
       - Si is_closed=False → pone is_closed=True  (liquidar).
       - Si is_closed=True  → pone is_closed=False (reabrir).
 
-    Devuelve una redirección a la URL referente (HTTP_REFERER) o a
-    panel:work_period_list como fallback.
+    Devuelve una redirección a la URL referente (HTTP_REFERER) o a la
+    pestaña Períodos de panel:work_order_admin_history como fallback.
     """
 
     def post (self ,request ,pk ,*args ,**kwargs ):
@@ -4851,7 +4825,10 @@ class WorkPeriodLockView (AdminRoleRequiredMixin ,View ):
             )
 
         referer =request .META .get ("HTTP_REFERER","")
-        return redirect (referer or reverse ("panel:work_period_list"))
+        return redirect (
+        referer 
+        or reverse ("panel:work_order_admin_history")+"?tab=periods"
+        )
 
 
 class WorkOrderAdminExportView (SupervisorAccessMixin ,View ):
@@ -6194,278 +6171,6 @@ class WorkPeriodGroupDetailView(SupervisorAccessMixin, View):
             "is_admin":            cu.role == "ADMIN",
         }
         return render(request, self.template_name, context)
-
-
-class WorkPeriodGroupCreateView(SupervisorAccessMixin, View):
-    """
-    Creates a new WorkPeriodGroup and, optionally, individual WorkPeriod
-    records for selected (or all) active WORKSHOP operators.
-
-    POST /panel/work-period-groups/create/
-         label       (str, required)
-         start_date  (YYYY-MM-DD, required)
-         end_date    (YYYY-MM-DD, optional)
-         operator_pks (int list, optional — if absent, targets all WORKSHOP)
-    ---
-    Crea un nuevo WorkPeriodGroup y, opcionalmente, registros WorkPeriod
-    individuales para los operarios WORKSHOP seleccionados (o todos).
-
-    POST /panel/work-period-groups/create/
-    """
-
-    def post(self, request, *args, **kwargs):
-        """
-        Validates POST data, creates the group and individual WorkPeriod
-        records, and redirects to the new group's detail page.
-        ---
-        Valida los datos POST, crea el grupo y los registros WorkPeriod
-        individuales, y redirige al detalle del nuevo grupo.
-        """
-        from datetime import datetime
-        from django.urls import reverse
-        from ivr_config.models import WorkPeriodGroup, WorkPeriod
-
-        cu = request.user.company_user
-        company = cu.company
-        LIST_URL = (
-            reverse("panel:work_order_admin_history") + "?tab=periods"
-        )
-
-        # -- Parse label (required). --
-        label = request.POST.get("label", "").strip()
-        if not label:
-            django_messages.error(
-                request,
-                "La etiqueta del periodo es obligatoria.",
-            )
-            return redirect(LIST_URL)
-
-        # -- Parse start_date (required). --
-        raw_start = request.POST.get("start_date", "").strip()
-        try:
-            start_date = datetime.strptime(raw_start, "%Y-%m-%d").date()
-        except (ValueError, AttributeError):
-            django_messages.error(
-                request,
-                "La fecha de inicio es obligatoria (formato YYYY-MM-DD).",
-            )
-            return redirect(LIST_URL)
-
-        # -- Parse optional end_date. --
-        raw_end = request.POST.get("end_date", "").strip()
-        end_date = None
-        if raw_end:
-            try:
-                end_date = datetime.strptime(raw_end, "%Y-%m-%d").date()
-                if end_date < start_date:
-                    django_messages.error(
-                        request,
-                        "La fecha de fin no puede ser anterior a la de inicio.",
-                    )
-                    return redirect(LIST_URL)
-            except (ValueError, AttributeError):
-                end_date = None
-
-        # -- Create the group. --
-        group = WorkPeriodGroup.objects.create(
-            company=company,
-            label=label,
-            start_date=start_date,
-            end_date=end_date,
-            created_by=cu,
-        )
-
-        # -- Resolve target operators. --
-        raw_op_pks = request.POST.getlist("operator_pks")
-        selected_pks = []
-        for raw_pk in raw_op_pks:
-            try:
-                selected_pks.append(int(raw_pk))
-            except (ValueError, TypeError):
-                pass
-
-        base_qs = (
-            CompanyUser.objects
-            .filter(company=company, is_active=True, role=CompanyUser.ROLE_WORKSHOP)
-            .select_related("user")
-            .order_by("user__last_name", "user__first_name")
-        )
-        operators = list(
-            base_qs.filter(pk__in=selected_pks) if selected_pks else base_qs
-        )
-
-        # -- Create individual WorkPeriod per operator. --
-        # Skip operators that already have an open period (is_closed=False).
-        # Omitir operarios con periodo abierto (is_closed=False).
-        created_count = 0
-        skipped_names = []
-        for operator in operators:
-            if WorkPeriod.objects.filter(
-                company_user=operator, is_closed=False
-            ).exists():
-                skipped_names.append(
-                    operator.user.get_full_name() or operator.user.username
-                )
-                continue
-            WorkPeriod.objects.create(
-                company_user=operator,
-                group=group,
-                start_date=start_date,
-                end_date=end_date,
-                label=label,
-                created_by=cu,
-            )
-            created_count += 1
-
-        if created_count > 0:
-            django_messages.success(
-                request,
-                f"Periodo '{label}' creado con {created_count} operario"
-                f"{'s' if created_count != 1 else ''}.",
-            )
-        else:
-            django_messages.warning(
-                request,
-                f"Grupo '{label}' creado, pero ningún operario fue asignado "
-                f"(todos tenían ya un periodo abierto).",
-            )
-        if skipped_names:
-            django_messages.warning(
-                request,
-                "Omitidos por tener periodo abierto: "
-                + ", ".join(skipped_names) + ".",
-            )
-
-        logger.info(
-            "# [WorkPeriodGroup] Grupo '%s' creado por %s. "
-            "%d operario(s) asignado(s).",
-            label, cu.user.username, created_count,
-        )
-        return redirect(
-            reverse("panel:work_period_group_detail", kwargs={"pk": group.pk})
-        )
-
-
-class WorkPeriodGroupAddOperatorView(SupervisorAccessMixin, View):
-    """
-    Adds one or more WORKSHOP operators to an existing WorkPeriodGroup by
-    creating individual WorkPeriod records linked to that group.
-    Operators already assigned or with an open period are skipped.
-
-    POST /panel/work-period-groups/<pk>/add-operator/
-         operator_pks (int list, required — one or more)
-    ---
-    Añade uno o más operarios WORKSHOP a un WorkPeriodGroup existente
-    creando registros WorkPeriod individuales vinculados al grupo.
-    Los operarios ya asignados o con periodo abierto se omiten.
-
-    POST /panel/work-period-groups/<pk>/add-operator/
-    """
-
-    def post(self, request, pk, *args, **kwargs):
-        """
-        Resolves the group, validates operators and creates WorkPeriod
-        records. Redirects to the group detail page.
-        ---
-        Resuelve el grupo, valida los operarios y crea los registros
-        WorkPeriod. Redirige al detalle del grupo.
-        """
-        from django.shortcuts import get_object_or_404
-        from django.urls import reverse
-        from ivr_config.models import WorkPeriodGroup, WorkPeriod
-
-        cu = request.user.company_user
-        company = cu.company
-
-        group = get_object_or_404(
-            WorkPeriodGroup, pk=pk, company=company
-        )
-        DETAIL_URL = reverse(
-            "panel:work_period_group_detail", kwargs={"pk": group.pk}
-        )
-
-        if group.is_closed:
-            django_messages.error(
-                request,
-                f"El periodo '{group.label}' está liquidado. "
-                f"Reabre el periodo antes de añadir operarios.",
-            )
-            return redirect(DETAIL_URL)
-
-        # -- Resolve operator_pks. --
-        raw_op_pks = request.POST.getlist("operator_pks")
-        selected_pks = []
-        for raw_pk in raw_op_pks:
-            try:
-                selected_pks.append(int(raw_pk))
-            except (ValueError, TypeError):
-                pass
-
-        if not selected_pks:
-            django_messages.error(
-                request, "Selecciona al menos un operario."
-            )
-            return redirect(DETAIL_URL)
-
-        operators = list(
-            CompanyUser.objects
-            .filter(
-                pk__in=selected_pks,
-                company=company,
-                is_active=True,
-                role=CompanyUser.ROLE_WORKSHOP,
-            )
-            .select_related("user")
-        )
-
-        # Already assigned to this group.
-        # Ya asignados a este grupo.
-        already_in_group = set(
-            group.operator_periods.values_list("company_user_id", flat=True)
-        )
-
-        created_count = 0
-        skipped_names = []
-        for operator in operators:
-            op_name = operator.user.get_full_name() or operator.user.username
-            if operator.pk in already_in_group:
-                skipped_names.append(f"{op_name} (ya en este periodo)")
-                continue
-            if WorkPeriod.objects.filter(
-                company_user=operator, is_closed=False
-            ).exclude(group=group).exists():
-                skipped_names.append(f"{op_name} (tiene otro periodo abierto)")
-                continue
-            WorkPeriod.objects.create(
-                company_user=operator,
-                group=group,
-                start_date=group.start_date,
-                end_date=group.end_date,
-                label=group.label,
-                created_by=cu,
-            )
-            created_count += 1
-
-        if created_count > 0:
-            django_messages.success(
-                request,
-                f"{created_count} operario"
-                f"{'s' if created_count != 1 else ''} "
-                f"añadido{'s' if created_count != 1 else ''} al periodo "
-                f"'{group.label}'.",
-            )
-        if skipped_names:
-            django_messages.warning(
-                request,
-                "Omitidos: " + ", ".join(skipped_names) + ".",
-            )
-
-        logger.info(
-            "# [WorkPeriodGroup] %d operario(s) añadido(s) al grupo pk=%d "
-            "('%s') por %s.",
-            created_count, group.pk, group.label, cu.user.username,
-        )
-        return redirect(DETAIL_URL)
 
 
 class WorkPeriodGroupCloseView(SupervisorAccessMixin, View):
