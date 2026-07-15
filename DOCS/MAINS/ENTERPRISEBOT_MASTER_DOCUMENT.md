@@ -465,3 +465,41 @@ como coste de `PERSONAL`) — ver `ENTERPRISEBOT_ATTACHED_MILESTONE_V24.md`
 sección 3.1. Las horas reales de los días de vacaciones sí generan coste
 en `PERSONAL`, y ESE coste es el que algún día se repercutirá según esta
 deuda técnica.
+
+#### 4.8. DIRECTRIZ CRÍTICA — Fidelidad absoluta a las instrucciones explícitas de Miguel Ángel (añadida S019, 2026-07-15)
+
+**Regla, sin excepción:** cuando Miguel Ángel especifica un flujo, diseño
+o comportamiento de forma explícita, el modelo lo implementa TAL CUAL lo
+ha dicho — sin reinterpretarlo, sin "mejorarlo" y sin sustituirlo por un
+diseño alternativo que al modelo le parezca más elegante, más robusto o
+más completo. Si algo no se entiende, o el modelo cree que se podría
+plantear de otra forma, se **pregunta antes de implementar** — nunca se
+decide unilateralmente y se sigue adelante dando por hecho que la
+interpretación propia es válida. Mientras Miguel Ángel no diga lo
+contrario, se hace única y exclusivamente lo que él ha dicho.
+
+Cualquier instrucción explícita de flujo/diseño que dé Miguel Ángel debe
+quedar plasmada **tal cual** en el anexo del hito correspondiente — nunca
+una reinterpretación del modelo, nunca una versión "probablemente" o
+"candidato natural" inventada para rellenar un hueco de especificación.
+Si una sesión anterior dejó una decisión sin cerrar (marcada como
+pregunta abierta, "a confirmar", "probablemente", etc.), la sesión que la
+retome debe **preguntar a Miguel Ángel antes de construir nada sobre
+ella**, no asumir la interpretación que le resulte más natural y darla
+por buena.
+
+**Origen — incidente S019 (H24):** el anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V24.md`
+(escrito en S018) dejaba anotado, sin cerrar del todo ("probablemente"),
+que la tarea automática de vacaciones se dispararía "desde el alta/
+edición de un periodo de vacaciones en el nuevo módulo de calendario".
+La sesión S019 tomó esa nota como decisión cerrada y construyó un CRUD de
+panel completo (`hr_calendar/views.py`, formulario de alta/edición) bajo
+la premisa de que un ADMIN/SUPERVISOR registra el periodo y de ahí se
+genera la tarea. Miguel Ángel corrigió en S019: el flujo real es el
+inverso — **el propio operario añade su tarea de vacaciones (1 hora,
+centro de gasto PERSONAL) en su parte digital normal, en su última
+jornada laboral, indicando ahí mismo la fecha de fin de su periodo; de
+esa tarea real se deriva el `VacationPeriod`, nunca al revés.** El CRUD
+de panel no es lo que él pidió y no debía haberse construido sin
+confirmárselo primero explícitamente.
+
