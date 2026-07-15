@@ -164,8 +164,8 @@ class DeliveryNoteDetailView(CompanyUserRequiredMixin, View):
     corregir un valor a mano. Esto obliga a una buena calidad de foto
     (legible, bien iluminada) en vez de depender de arreglos
     manuales, y evita cualquier forma de sortear la norma del código
-    de máquina/centro de gasto en Observaciones desde la propia
-    pantalla de revisión.
+    de máquina/centro de gasto (u palabra clave de almacén) desde la
+    propia pantalla de revisión.
 
     GET: renderiza todos los campos de cabecera y línea en solo
     lectura, más el resultado de validate_document_assignment()
@@ -256,11 +256,11 @@ class DeliveryNoteConfirmView(CompanyUserRequiredMixin, View):
 
         # S015-H10, primer punto de la hoja de ruta: no se puede
         # confirmar un albarán sin el código único de máquina/centro
-        # de gasto obligatorio (leído exclusivamente de Observaciones
-        # por el prompt de extracción). Defensa en profundidad -- la
-        # plantilla ya oculta el botón "Confirmar" cuando esto falla,
-        # pero un POST directo (fuera de la UI normal) debe rechazarse
-        # igualmente aquí.
+        # de gasto obligatorio, o sin el fallback de palabra clave de
+        # almacén (S020) -- resuelto por el prompt de extracción.
+        # Defensa en profundidad -- la plantilla ya oculta el botón
+        # "Confirmar" cuando esto falla, pero un POST directo (fuera
+        # de la UI normal) debe rechazarse igualmente aquí.
         is_valid, rejection_reason, _, _ = validate_document_assignment(
             delivery_note, company,
         )
@@ -362,7 +362,9 @@ class DeliveryNoteRejectView(CompanyUserRequiredMixin, View):
             request,
             'Albarán rechazado. Vuelve a fotografiarlo asegurándote '
             'de que se lea bien y de que el proveedor haya anotado el '
-            'centro de gasto o la máquina de destino en Observaciones.',
+            'centro de gasto o la máquina de destino en Observaciones, '
+            'delimitado con #, * o " en una línea, o mencionado como '
+            'repuesto/stock/almacén si va a almacén general.',
         )
         return redirect('spare_parts:delivery_note_upload')
 

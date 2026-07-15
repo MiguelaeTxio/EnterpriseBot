@@ -154,31 +154,53 @@ class DeliveryNoteExtraction(BaseModel):
         description='Código de máquina o centro de gasto (o nombre '
                      'de dependencia: "Almacén", "Taller Mecánico", '
                      '"Administración", etc.) al que va destinado TODO '
-                     'el albarán, leído EXCLUSIVAMENTE del campo '
-                     'impreso "Observaciones" o "Notas" de la '
-                     'cabecera o el pie del documento. Debe venir '
-                     'impreso/escrito por el propio proveedor en ese '
-                     'campo -- nunca una anotación a mano (bolígrafo/'
-                     'lápiz) sobre la foto, y nunca deducido de otra '
-                     'parte del documento. Transcribe tal cual está '
-                     'escrito, sin normalizar ni corregir, sin las '
-                     'almohadillas si las lleva (ej. "#B14#" -> '
-                     '"B14"). Null si el campo Observaciones/Notas '
-                     'está vacío o no contiene un código reconocible.',
+                     'el albarán. Búscalo en DOS sitios posibles, por '
+                     'este orden de preferencia: '
+                     '1) El campo impreso "Observaciones" o "Notas" de '
+                     'la cabecera o el pie del documento. '
+                     '2) Si el campo Observaciones/Notas está vacío o '
+                     'no lo usa este proveedor, un código encerrado '
+                     'entre almohadillas, asteriscos o comillas (ej. '
+                     '"#B14#", "*B14*", "\\"B14\\"") dentro de la '
+                     'descripción de una línea de artículo -- el '
+                     'mismo carácter debe aparecer antes Y después del '
+                     'código. Transcribe tal cual está escrito, sin '
+                     'normalizar ni corregir, y sin los caracteres '
+                     'delimitadores (ej. "#B14#" -> "B14"). Null si no '
+                     'encuentras un código reconocible en ninguno de '
+                     'los dos sitios.',
     )
     document_code_found_as_line_item: bool = Field(
         default=False,
-        description='True si detectas un código de máquina/centro de '
-                     'gasto candidato (patrón #CODIGO#, o una fila '
-                     'con categoría/familia "TEXTO"/"NOTA", precio 0 '
-                     'y sin descripción de producto real) que NO está '
-                     'en el campo Observaciones/Notas sino insertado '
-                     'como si fuera una línea de artículo del '
-                     'albarán. En ese caso, general_machine_code_raw '
-                     'debe quedar en null (esa fuente ya no es '
-                     'válida) y este campo debe ir en true, para que '
-                     'el sistema rechace el albarán con un motivo '
-                     'preciso. False en cualquier otro caso.',
+        description='True si ves un fragmento que PARECE un código de '
+                     'máquina/centro de gasto metido como si fuera una '
+                     'línea de artículo o suelto en el documento, pero '
+                     'SIN los delimitadores exigidos (almohadilla, '
+                     'asterisco o comillas antes Y después) -- p. ej. '
+                     'un código suelto sin marcar, o una fila con '
+                     'categoría/familia "TEXTO"/"NOTA" que menciona '
+                     'una máquina sin usar el patrón delimitado. En '
+                     'ese caso, general_machine_code_raw debe quedar '
+                     'en null (fuente ambigua, no válida) y este campo '
+                     'debe ir en true, para que el sistema rechace el '
+                     'albarán con un motivo preciso. False en '
+                     'cualquier otro caso, incluido cuando el código '
+                     'SÍ está correctamente delimitado (eso es un '
+                     'general_machine_code_raw válido, no esto).',
+    )
+    general_warehouse_keyword_found: bool = Field(
+        default=False,
+        description='True si, y solo si, general_machine_code_raw ha '
+                     'quedado en null (no hay código de máquina ni en '
+                     'Observaciones ni delimitado en ninguna línea) '
+                     'PERO el propio texto del albarán (cabecera, '
+                     'Observaciones, o la descripción de alguna línea) '
+                     'contiene la palabra "repuesto", "stock" o '
+                     '"almacén" (o variantes con tilde/mayúsculas) '
+                     'indicando que el envío completo va a almacén en '
+                     'vez de a una máquina concreta. False si ya hay '
+                     'general_machine_code_raw, o si no aparece '
+                     'ninguna de esas palabras.',
     )
     lines: list[DeliveryNoteLineExtraction] = Field(
         default_factory=list,
@@ -215,8 +237,10 @@ artículo -- ver el punto 5 para qué hacer con su contenido.
 5. El código de máquina o centro de gasto/dependencia al que va \
 destinado TODO el albarán (norma vigente desde S015: un albarán \
 completo va SIEMPRE a un único destino, nunca uno distinto por \
-línea). Busca EXCLUSIVAMENTE en el campo impreso "Observaciones" o \
-"Notas" de la cabecera o el pie del documento. Puede ser: \
+línea). Búscalo en DOS sitios posibles, por este orden de \
+preferencia: \
+  a) El campo impreso "Observaciones" o "Notas" de la cabecera o el \
+pie del documento. Puede ser: \
   - Un código de máquina o matrícula (ej. "B14", "A-054", "G12"). \
   - El nombre de una dependencia o centro de gasto general de la \
 empresa, escrito tal cual (ej. "ALMACEN", "TALLER MECANICO", \
@@ -224,23 +248,43 @@ empresa, escrito tal cual (ej. "ALMACEN", "TALLER MECANICO", \
 "TALLER ELEVACION", "ALMACEN ELEVACION"). \
 Puede venir encerrada entre almohadillas (ej. "#B14#", \
 "#TALLER MECANICO#") -- si ves ese patrón, transcribe únicamente el \
-texto entre las almohadillas, sin ellas. Transcribe la anotación tal \
-cual está escrita en el campo general_machine_code_raw, sin \
-normalizar ni corregir. Dos reglas estrictas, sin excepción: \
-  a) SOLO cuenta si está IMPRESO/ESCRITO POR EL PROVEEDOR en el \
-propio campo Observaciones/Notas del documento. Una anotación a mano \
-(bolígrafo/lápiz) sobre la foto, hecha por otra persona, NUNCA es \
-válida -- ignórala por completo, no la transcribas ni la uses. \
-  b) Si el único candidato a código que ves NO está en el campo \
-Observaciones/Notas sino que aparece como si fuera una línea de \
-artículo del albarán (ver el patrón "TEXTO"/"NOTA" del punto 4) o \
-suelto en cualquier otro sitio del documento, general_machine_code_raw \
-debe quedar en null y document_code_found_as_line_item debe ir en \
-true -- no lo aceptes como válido bajo ningún concepto, solo se \
-reporta para que el sistema explique el motivo del rechazo. \
-Si el campo Observaciones/Notas está vacío o no contiene ningún \
-código reconocible, deja general_machine_code_raw en null y \
+texto entre las almohadillas, sin ellas. \
+  b) Si el campo Observaciones/Notas está vacío o este proveedor no \
+lo usa, busca en la descripción de las líneas de artículo un código \
+encerrado entre almohadillas, asteriscos o comillas -- el MISMO \
+carácter debe aparecer antes Y después del código (ej. "#B14#", \
+"*B14*", "\"B14\""). Transcribe únicamente el código, sin los \
+caracteres delimitadores. \
+Transcribe la anotación tal cual está escrita en el campo \
+general_machine_code_raw, sin normalizar ni corregir. Reglas \
+estrictas, sin excepción: \
+  - SOLO cuenta si está IMPRESO/ESCRITO POR EL PROVEEDOR (en \
+Observaciones/Notas, o delimitado en una línea como en b). Una \
+anotación a mano (bolígrafo/lápiz) sobre la foto, hecha por otra \
+persona, NUNCA es válida -- ignórala por completo, no la \
+transcribas ni la uses. \
+  - Si ves un fragmento que PARECE un código pero NO está ni en \
+Observaciones/Notas ni correctamente delimitado (almohadilla, \
+asterisco o comillas antes Y después) en una línea -- p. ej. un \
+código suelto sin marcar, o una fila con categoría/familia \
+"TEXTO"/"NOTA" que lo menciona sin delimitarlo -- \
+general_machine_code_raw debe quedar en null y \
+document_code_found_as_line_item debe ir en true -- no lo aceptes \
+como válido bajo ningún concepto, solo se reporta para que el \
+sistema explique el motivo del rechazo. \
+Si no encuentras ningún código reconocible en ninguno de los dos \
+sitios, deja general_machine_code_raw en null y \
 document_code_found_as_line_item en false.
+6. SOLO si general_machine_code_raw ha quedado en null (no hay \
+código de máquina en Observaciones ni delimitado en ninguna línea): \
+comprueba si el propio texto del albarán (cabecera, Observaciones, o \
+la descripción de alguna línea) contiene la palabra "repuesto", \
+"stock" o "almacén" (con o sin tilde, en cualquier mayúscula/ \
+minúscula) indicando que el envío completo va a almacén general en \
+vez de a una máquina concreta. Si es así, general_warehouse_keyword_found \
+debe ir en true. Si ya hay general_machine_code_raw, o si no aparece \
+ninguna de esas palabras, general_warehouse_keyword_found debe ir en \
+false.
 
 No inventes datos que no sean legibles en el documento -- usa null \
 en los campos opcionales cuando no puedas leerlos con certeza. Los \
@@ -682,16 +726,64 @@ def resolve_line_assignment(raw_code: Optional[str], company):
     return 'UNASSIGNED', None
 
 
+def resolve_document_assignment(raw_code, warehouse_keyword_found, company):
+    """
+    Resolves the single whole-document destination (S015: always one
+    per document, never one per line) combining, in priority order:
+    (1) an explicit machine/cost-centre code (raw_code, resolved via
+    resolve_line_assignment -- from Observaciones or a delimited line
+    per S020), and (2) the S020 keyword fallback: if no code was
+    found at all, but the delivery note's own wording ("repuesto",
+    "stock", "almacén") signals a warehouse destination, assigns
+    WAREHOUSE undifferentiated -- confirmed by Miguel Ángel
+    (2026-07-15): for now everything the supplier marks this way goes
+    to the single WAREHOUSE bucket, with no distinction by workshop/
+    family (Mecánico/Elevación/Huelva); that differentiation is
+    deliberately deferred to a future session.
+
+    Returns (assignment_type, machine), same contract as
+    resolve_line_assignment.
+    ---
+    Resuelve el destino único de todo el albarán (S015: siempre uno
+    por documento, nunca uno distinto por línea) combinando, por este
+    orden de prioridad: (1) un código explícito de máquina/centro de
+    gasto (raw_code, resuelto vía resolve_line_assignment -- desde
+    Observaciones o delimitado en línea según S020), y (2) el
+    fallback de palabra clave de S020: si no se encontró ningún
+    código, pero el propio texto del albarán ("repuesto", "stock",
+    "almacén") señala un destino de almacén, asigna WAREHOUSE sin
+    diferenciar -- confirmado por Miguel Ángel (2026-07-15): de
+    momento todo lo que el proveedor marque así va al mismo cajón
+    WAREHOUSE, sin distinguir por taller/familia (Mecánico/Elevación/
+    Huelva); esa diferenciación queda deliberadamente pospuesta a una
+    sesión futura.
+
+    Devuelve (assignment_type, machine), mismo contrato que
+    resolve_line_assignment.
+    """
+    if raw_code and raw_code.strip():
+        assignment_type, machine = resolve_line_assignment(raw_code, company)
+        if assignment_type != 'UNASSIGNED':
+            return assignment_type, machine
+
+    if warehouse_keyword_found:
+        return 'WAREHOUSE', None
+
+    return 'UNASSIGNED', None
+
+
 def validate_document_assignment(delivery_note, company):
     """
     Validates the mandatory whole-document assignment rule (annex
     H10, S015 roadmap point 1): every delivery note must carry
-    exactly one machine/cost-centre code, printed by the supplier in
-    the document's own "Observaciones"/"Notas" field, applying to
-    every line. No manual correction is allowed -- if the extraction
-    doesn't meet this rule, the operator must re-upload a clearer
-    photo instead of editing the data (confirmed by Miguel Ángel,
-    S015).
+    exactly one machine/cost-centre code -- printed by the supplier
+    in the document's own "Observaciones"/"Notas" field, OR (S020)
+    delimited by #, * or " within an article line -- OR, absent any
+    code, flagged as a warehouse destination via the "repuesto"/
+    "stock"/"almacén" keyword fallback. No manual correction is
+    allowed -- if the extraction doesn't meet this rule, the operator
+    must re-upload a clearer photo instead of editing the data
+    (confirmed by Miguel Ángel, S015).
 
     Returns a tuple (is_valid, reason, assignment_type, machine).
     reason is a human-readable Spanish string explaining the specific
@@ -704,12 +796,14 @@ def validate_document_assignment(delivery_note, company):
     Valida la norma obligatoria de asignación completa por albarán
     (anexo H10, primer punto de la hoja de ruta de S015): todo
     albarán debe llevar exactamente un código de máquina/centro de
-    gasto, impreso por el proveedor en el propio campo
-    "Observaciones"/"Notas" del documento, aplicable a todas sus
-    líneas. No se admite corrección manual -- si la extracción no
-    cumple esta norma, el operario debe volver a subir una foto más
-    clara en vez de corregir el dato (confirmado por Miguel Ángel,
-    S015).
+    gasto -- impreso por el proveedor en el propio campo
+    "Observaciones"/"Notas" del documento, O (S020) delimitado con #,
+    * o " dentro de una línea de artículo -- O, en ausencia de
+    código, marcado como destino de almacén vía el fallback de
+    palabra clave "repuesto"/"stock"/"almacén". No se admite
+    corrección manual -- si la extracción no cumple esta norma, el
+    operario debe volver a subir una foto más clara en vez de
+    corregir el dato (confirmado por Miguel Ángel, S015).
 
     Devuelve una tupla (is_valid, reason, assignment_type, machine).
     reason es un texto en castellano legible explicando el motivo
@@ -723,27 +817,37 @@ def validate_document_assignment(delivery_note, company):
         return (
             False,
             'El código de máquina/departamento aparece como si fuera '
-            'un artículo del albarán, no en el campo Observaciones. '
-            'El proveedor debe anotarlo correctamente en '
-            'Observaciones antes de volver a fotografiarlo.',
+            'un artículo del albarán, sin delimitar correctamente '
+            '(almohadilla, asterisco o comillas antes y después) ni '
+            'estar en el campo Observaciones. El proveedor debe '
+            'anotarlo en Observaciones, o delimitarlo con #, * o " '
+            'en la línea, antes de volver a fotografiarlo.',
             'UNASSIGNED', None,
         )
 
     raw_code = (delivery_note.general_machine_code_raw or '').strip()
-    if not raw_code:
+    warehouse_keyword_found = bool(
+        extraction_raw.get('general_warehouse_keyword_found')
+    )
+
+    if not raw_code and not warehouse_keyword_found:
         return (
             False,
-            'Falta el código de máquina o departamento en el campo '
-            'Observaciones del albarán. El proveedor debe anotarlo '
-            'antes de volver a fotografiarlo.',
+            'Falta el código de máquina o departamento (en '
+            'Observaciones o delimitado con #, * o " en una línea) y '
+            'no se detecta ninguna palabra clave de almacén '
+            '(repuesto/stock/almacén) en el albarán. El proveedor '
+            'debe anotarlo antes de volver a fotografiarlo.',
             'UNASSIGNED', None,
         )
 
-    assignment_type, machine = resolve_line_assignment(raw_code, company)
+    assignment_type, machine = resolve_document_assignment(
+        raw_code or None, warehouse_keyword_found, company,
+    )
     if assignment_type == 'UNASSIGNED':
         return (
             False,
-            f'El código «{raw_code}» leído en Observaciones no se '
+            f'El código «{raw_code}» leído en el albarán no se '
             f'reconoce como ninguna máquina ni departamento de la '
             f'empresa. Revisa que esté escrito correctamente en el '
             f'albarán físico y vuelve a fotografiarlo.',

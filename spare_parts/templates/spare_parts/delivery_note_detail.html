@@ -129,22 +129,34 @@
                     <div class="card-header fw-semibold">
                         Centro de gasto / máquina de destino
                         <span class="d-block small text-muted fw-normal mt-1">
-                            Único para todo el albarán — leído exclusivamente del campo
-                            Observaciones/Notas del documento. No se admite corrección
-                            manual: si falta o no se reconoce, hay que volver a
-                            fotografiar el albarán.
+                            Único para todo el albarán — leído del campo
+                            Observaciones/Notas, o delimitado con #, * o "
+                            en una línea de artículo si el proveedor no usa
+                            Observaciones. Si no hay código pero el albarán
+                            menciona "repuesto", "stock" o "almacén", va a
+                            almacén general. No se admite corrección
+                            manual: si no se reconoce ninguno de los dos,
+                            hay que volver a fotografiar el albarán.
                         </span>
                     </div>
                     <div class="card-body">
                         {% if delivery_note.status == 'ASSIGNED' %}
                             <div class="mb-0">
-                                Código leído: <strong>{{ delivery_note.general_machine_code_raw|default:"—" }}</strong>
+                                {% if delivery_note.general_machine_code_raw %}
+                                Código leído: <strong>{{ delivery_note.general_machine_code_raw }}</strong>
+                                {% else %}
+                                <strong>Almacén general</strong> (por palabra clave, sin código)
+                                {% endif %}
                             </div>
                         {% elif is_valid %}
                             <div class="alert alert-success mb-0 d-flex align-items-center gap-2">
                                 <i class="bi bi-check-circle-fill"></i>
                                 <span>
+                                    {% if delivery_note.general_machine_code_raw %}
                                     Código leído: <strong>{{ delivery_note.general_machine_code_raw }}</strong>
+                                    {% else %}
+                                    <strong>Almacén general</strong> (por palabra clave, sin código)
+                                    {% endif %}
                                     {% if resolved_type == 'WAREHOUSE' %}
                                         — <span class="badge bg-info text-dark">Almacén</span>
                                     {% elif resolved_type == 'MACHINE' %}

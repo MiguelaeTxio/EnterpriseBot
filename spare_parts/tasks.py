@@ -39,7 +39,7 @@ from .models import DeliveryNote, DeliveryNoteLine
 from .services import (
     GeminiVisionExtractionService,
     parse_decimal,
-    resolve_line_assignment,
+    resolve_document_assignment,
     resolve_recipient_company_code,
 )
 
@@ -180,8 +180,17 @@ def extract_delivery_note_data(self, delivery_note_id: int) -> None:
     # screen (DeliveryNoteDetailView) and on confirmation
     # (DeliveryNoteConfirmView) to decide whether the note can be
     # confirmed or must be rejected.
-    assignment_type, machine = resolve_line_assignment(
-        delivery_note.general_machine_code_raw or None, company,
+    # S020 (2026-07-15): además del código (Observaciones o
+    # delimitado en línea), si no hay código pero el texto del
+    # albarán contiene "repuesto"/"stock"/"almacén",
+    # general_warehouse_keyword_found llega en true desde la propia
+    # extracción -- resolve_document_assignment aplica el fallback a
+    # WAREHOUSE sin diferenciar (ver docstring, confirmado por Miguel
+    # Ángel).
+    assignment_type, machine = resolve_document_assignment(
+        delivery_note.general_machine_code_raw or None,
+        extraction.general_warehouse_keyword_found,
+        company,
     )
 
     for line_data in extraction.lines:
