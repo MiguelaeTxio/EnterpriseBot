@@ -26,14 +26,17 @@ from django.utils.timezone import now
 from django.views import View
 
 import csv
-import os
 import io
+import logging
+import os
 
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment
 import weasyprint
 from docx import Document
 from docx.shared import Pt, RGBColor
+
+logger = logging.getLogger(__name__)
 
 from budgets.models import (
     Base,
@@ -759,8 +762,18 @@ class BudgetRouteCalcView(AssistanceRequiredMixin, View):
             service_time_obj = _dt.time.fromisoformat(service_time_str)
             service_datetime = _dt.datetime.combine(service_date, service_time_obj)
         except Exception as exc:
+            logger.warning(
+                "# [budgets] Datos inválidos en formulario de ruta. "
+                "base_id=%r pk_km_raw=%r service_date_str=%r "
+                "service_time_str=%r: %s",
+                base_id, pk_km_raw, service_date_str, service_time_str, exc,
+                exc_info=True,
+            )
             return render(request, self.template_name, {
-                "error": f"Datos inválidos: {exc}",
+                "error": (
+                    "Datos inválidos. Revisa la base, el punto kilométrico, "
+                    "la fecha y la hora del servicio."
+                ),
             })
 
         # Any date (past, present or future) is now accepted — the service
@@ -879,8 +892,18 @@ class BudgetRouteDualView(AssistanceRequiredMixin, View):
                 service_date, service_time_obj,
             )
         except Exception as exc:
+            logger.warning(
+                "# [budgets] Datos inválidos en formulario de ruta (dual). "
+                "base_id=%r pk_km_raw=%r service_date_str=%r "
+                "service_time_str=%r: %s",
+                base_id, pk_km_raw, service_date_str, service_time_str, exc,
+                exc_info=True,
+            )
             return render(request, self.template_name, {
-                "error": f"Datos inválidos: {exc}",
+                "error": (
+                    "Datos inválidos. Revisa la base, el punto kilométrico, "
+                    "la fecha y la hora del servicio."
+                ),
                 "show_dual": False,
                 "route_with_tolls": None,
                 "route_without_tolls": None,
@@ -1139,8 +1162,12 @@ class BudgetWaypointView(AssistanceRequiredMixin, View):
             if not isinstance(waypoints, list) or not waypoints:
                 raise ValueError("La lista de paradas esta vacia.")
         except (ValueError, _json.JSONDecodeError) as exc:
+            logger.warning(
+                "# [budgets] Paradas inválidas. waypoints_json_str=%r: %s",
+                waypoints_json_str, exc, exc_info=True,
+            )
             return JsonResponse(
-                {"error": f"Paradas inválidas: {exc}"}, status=400
+                {"error": "La lista de paradas no es válida."}, status=400
             )
 
         # Parse service datetime.
@@ -1152,8 +1179,14 @@ class BudgetWaypointView(AssistanceRequiredMixin, View):
                 service_date, service_time_obj,
             )
         except Exception as exc:
+            logger.warning(
+                "# [budgets] Fecha u hora inválidas. "
+                "service_date_str=%r service_time_str=%r: %s",
+                service_date_str, service_time_str, exc, exc_info=True,
+            )
             return JsonResponse(
-                {"error": f"Fecha u hora inválidas: {exc}"}, status=400
+                {"error": "La fecha o la hora del servicio no son válidas."},
+                status=400,
             )
 
         # Any date (past, present or future) is now accepted — the
@@ -2413,9 +2446,14 @@ class InsurerDeleteView(AdminRoleRequiredMixin, View):
                 f"Aseguradora '{name}' eliminada correctamente.",
             )
         except Exception as exc:
+            logger.error(
+                "# [budgets] Error eliminando aseguradora pk=%r name=%r: %s",
+                insurer.pk, name, exc, exc_info=True,
+            )
             messages.error(
                 request,
-                f"No se pudo eliminar la aseguradora '{name}': {exc}",
+                f"No se pudo eliminar la aseguradora '{name}'. Puede que "
+                "tenga tarifas o presupuestos asociados.",
             )
         return redirect("budgets:insurer_list")
 
@@ -4919,9 +4957,25 @@ class BaseSyncCalendarsView(AdminRoleRequiredMixin, View):
                 base.save(update_fields=["labor_calendar", "calendar_synced_at"])
                 ok_results.append({"name": base.name, "count": len(holidays), "year": year})
             except KeyError as exc:
-                error_results.append({"name": base.name, "error": str(exc)})
+                logger.warning(
+                    "# [budgets] sync_base_calendars: falta clave en la "
+                    "respuesta para base pk=%r (%s): %s",
+                    base.pk, base.municipality, exc, exc_info=True,
+                )
+                error_results.append({
+                    "name": base.name,
+                    "error": "Respuesta incompleta del servicio de festivos.",
+                })
             except Exception as exc:
-                error_results.append({"name": base.name, "error": f"Error inesperado: {exc}"})
+                logger.error(
+                    "# [budgets] sync_base_calendars: error inesperado "
+                    "para base pk=%r (%s): %s",
+                    base.pk, base.municipality, exc, exc_info=True,
+                )
+                error_results.append({
+                    "name": base.name,
+                    "error": "Error inesperado. Revisa el registro del servidor.",
+                })
 
         html_parts = []
         if ok_results:
@@ -6317,7 +6371,8 @@ class InsurerTariffPdfUploadView(AdminRoleRequiredMixin, View):
                 )
             messages.error(
                 request,
-                f"Error durante la extracción del PDF: {exc}",
+                "Error durante la extracción del PDF. Revisa el archivo "
+                "o inténtalo de nuevo.",
             )
             return redirect("budgets:insurer_update", pk=pk)
 

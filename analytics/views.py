@@ -1876,8 +1876,12 @@ class AnalyticsLabDataView(SupervisorAccessMixin, View):
                 if not isinstance(fields, list):
                     raise ValueError("fields must be a list")
             except (ValueError, _json.JSONDecodeError) as exc:
+                logger.warning(
+                    "# [analytics] fields JSON inválido. fields_raw=%r: %s",
+                    fields_raw, exc, exc_info=True,
+                )
                 return JsonResponse(
-                    {"ok": False, "error": f"fields JSON invalido: {exc}"},
+                    {"ok": False, "error": "Parámetros de consulta inválidos."},
                     status=400,
                 )
             # Filter out empty types -- Filtrar tipos vacios

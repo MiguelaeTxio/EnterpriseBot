@@ -767,7 +767,7 @@ def process_work_order_pdf(self, work_order_id: int) -> None:
                 return
 
             work_order.status    = WorkOrder.Status.ERROR
-            work_order.error_log = f"Error en procesamiento de PDF: {exc}"
+            work_order.error_log = "Error en el procesamiento del PDF. Revisa el registro del servidor."
             work_order.save(update_fields=["status", "error_log"])
 
         # Re-raise so Celery retry logic can engage.

@@ -1834,7 +1834,7 @@ class WorkOrderEntryConfirmView (WorkshopRequiredMixin ,View ):
             )
             context =self ._get_context_base (request )
             context ["error"]=(
-            f"Error al guardar el parte: {exc}. "
+            "Error al guardar el parte. "
             "Por favor, inténtalo de nuevo o contacta con el administrador."
             )
             return render (request ,self .template_name ,context )
@@ -3781,7 +3781,7 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
                 )
                 context =self ._get_context_base (request )
                 context ["error"]=(
-                f"Error al guardar los bloques: {_exc_ip}. "
+                "Error al guardar los bloques. "
                 "Por favor, inténtalo de nuevo."
                 )
                 return render (request ,self .template_name ,context )
@@ -4284,7 +4284,7 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
             )
             context =self ._get_context_base (request )
             context ["error"]=(
-            f"Error al guardar el parte: {exc}. "
+            "Error al guardar el parte. "
             "Por favor, intentalo de nuevo o contacta con el administrador."
             )
             return render (request ,self .template_name ,context )

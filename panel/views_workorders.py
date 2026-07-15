@@ -4682,7 +4682,7 @@ class WorkOrderAdminHistoryView (WorkOrderFormAccessMixin ,View ):
             )
             django_messages .error (
             request ,
-            f"Error al generar los partes: {exc}. "
+            "Error al generar los partes. "
             "Por favor, inténtalo de nuevo o contacta con el administrador.",
             )
             return redirect (reverse ("panel:work_order_admin_history")+"?tab=absences")

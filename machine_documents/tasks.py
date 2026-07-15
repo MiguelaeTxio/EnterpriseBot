@@ -172,7 +172,7 @@ def process_machine_document_batch(self, document_pks: list[int]) -> None:
                 document.pk, exc, exc_info=True,
             )
             document.status = MachineDocument.Status.ERROR
-            document.error_message = f"No se pudo leer el archivo: {exc}"
+            document.error_message = "No se pudo leer el archivo."
             document.save(update_fields=["status", "error_message"])
             continue
         finally:

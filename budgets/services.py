@@ -388,12 +388,21 @@ def _call_routes_api(
             routes_data = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace")
+        import logging as _log_routes
+        _log_routes.getLogger(__name__).error(
+            "# [budgets] Routes API HTTP %s: %s", exc.code, body[:300],
+        )
         raise RouteCalculationError(
-            f"Routes API: HTTP {exc.code} — {body[:300]}"
+            "No se pudo calcular la ruta (error del servicio de rutas)."
         ) from exc
     except Exception as exc:
+        import logging as _log_routes2
+        _log_routes2.getLogger(__name__).error(
+            "# [budgets] Routes API: error de red: %s", exc, exc_info=True,
+        )
         raise RouteCalculationError(
-            f"Routes API: error de red — {exc}"
+            "No se pudo calcular la ruta. Comprueba la conexión o "
+            "inténtalo de nuevo."
         ) from exc
 
     routes = routes_data.get("routes", [])
@@ -512,9 +521,15 @@ def calculate_route(
             with urllib.request.urlopen(geocode_url, timeout=10) as resp:
                 geo_data = json.loads(resp.read().decode("utf-8"))
         except Exception as exc:
+            import logging as _log_geo
+            _log_geo.getLogger(__name__).error(
+                "# [budgets] Error de red geocodificando la base "
+                "pk=%r (%r): %s",
+                base.pk, base.name, exc, exc_info=True,
+            )
             raise RouteCalculationError(
-                "Geocoding API: error de red geocodificando la base "
-                f"'{base.name}': {exc}"
+                f"No se pudo geocodificar la base '{base.name}'. "
+                "Comprueba la conexión o inténtalo de nuevo."
             ) from exc
         if (
             geo_data.get("status") != "OK"
@@ -563,9 +578,16 @@ def calculate_route(
         with urllib.request.urlopen(geocode_dest_url, timeout=10) as resp:
             dest_data = json.loads(resp.read().decode("utf-8"))
     except Exception as exc:
+        import logging as _log_geo_dest
+        _log_geo_dest.getLogger(__name__).error(
+            "# [budgets] Error de red geocodificando el punto de "
+            "destino %r: %s",
+            dest_query_str, exc, exc_info=True,
+        )
         raise RouteCalculationError(
-            "Geocoding API: error de red geocodificando el punto "
-            f"'{dest_query_str}': {exc}"
+            f"No se pudo geocodificar el punto de destino "
+            f"'{dest_query_str}'. Comprueba la conexión o inténtalo "
+            "de nuevo."
         ) from exc
     if (
         dest_data.get("status") != "OK"
@@ -809,12 +831,24 @@ def _call_routes_multileg(
             routes_data = _json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace")
+        import logging as _log_routes_ml
+        _log_routes_ml.getLogger(__name__).error(
+            "# [budgets] Routes API (multileg) HTTP %s: %s",
+            exc.code, body[:300],
+        )
         raise RouteCalculationError(
-            f"Routes API (multileg): HTTP {exc.code} — {body[:300]}"
+            "No se pudo calcular la ruta multitramo (error del "
+            "servicio de rutas)."
         ) from exc
     except Exception as exc:
+        import logging as _log_routes_ml2
+        _log_routes_ml2.getLogger(__name__).error(
+            "# [budgets] Routes API (multileg): error de red: %s",
+            exc, exc_info=True,
+        )
         raise RouteCalculationError(
-            f"Routes API (multileg): error de red — {exc}"
+            "No se pudo calcular la ruta multitramo. Comprueba la "
+            "conexión o inténtalo de nuevo."
         ) from exc
 
     routes = routes_data.get("routes", [])

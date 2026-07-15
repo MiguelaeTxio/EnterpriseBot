@@ -2231,7 +2231,7 @@ def generate_work_order_excel(work_order_id: int) -> None:
             exc_info=True,
         )
         work_order.status    = WorkOrder.Status.ERROR
-        work_order.error_log = f"Error en generación de Excel: {exc}"
+        work_order.error_log = "Error en la generación del Excel. Revisa el registro del servidor."
         work_order.save(update_fields=["status", "error_log"])
         raise
 
