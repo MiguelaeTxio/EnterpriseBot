@@ -4320,6 +4320,7 @@ class WorkOrderAdminHistoryView (WorkOrderFormAccessMixin ,View ):
 
 
         if is_elevated :
+            own_period_groups =[]
             # Build period_groups for the Períodos tab (WorkPeriodGroup-based).
             # Construir period_groups para la pestaña Períodos (basado en WorkPeriodGroup).
             from ivr_config.models import WorkPeriodGroup as _WPG_H
@@ -4345,41 +4346,61 @@ class WorkOrderAdminHistoryView (WorkOrderFormAccessMixin ,View ):
             # Fallback legacy: mantener period_operator_groups por compatibilidad.
             period_operator_groups = []
         else :
-            # WORKSHOP: la pestaña Períodos es gestión pura, no es parte de
-            # lo que ofrecía ninguna de las vistas sustituidas -- se oculta
-            # en el template, así que no hace falta calcular nada de esto.
-            # WORKSHOP: the Períodos tab is pure management, not part of
-            # what any of the replaced views offered -- hidden in the
-            # template, so none of this needs computing.
+            # WORKSHOP/DRIVER: la pestaña Períodos es gestión pura, no es
+            # parte de lo que ofrecía ninguna de las vistas sustituidas --
+            # se oculta en el template. En su lugar, "Mis periodos": sus
+            # propios WorkPeriodGroup (H24/S020 punto 4, para que puedan
+            # llegar al detalle y ver sus horas extra de cada uno).
+            # ---
+            # WORKSHOP/DRIVER: the Períodos tab is pure management, not
+            # part of what any of the replaced views offered -- hidden in
+            # the template. Instead, "Mis periodos": their own
+            # WorkPeriodGroup records (H24/S020 point 4, so they can reach
+            # the detail and see their own overtime per period).
             period_groups =[]
             period_operator_groups =[]
+            from ivr_config .models import WorkPeriod as _WP_OWN 
+            own_period_groups =list (
+            _WP_OWN .objects 
+            .filter (company_user =cu )
+            .select_related ("group")
+            .order_by ("-group__start_date")
+            )
 
-        # Resumen de horas extra del periodo activo -- traspasado desde la
-        # antigua pestaña "Horas extra" de operator_history (eliminada).
-        # Solo se calcula, y solo tiene sentido, para WORKSHOP.
+        # Resumen de horas extra ACUMULADAS PENDIENTES -- H24/S020 punto 3:
+        # ya no es "el periodo activo" (uno solo, por fecha), es la suma de
+        # TODOS los periodos sin liquidar (is_closed=False) del operario,
+        # tengan o no partes reales todavía. Al liquidar un periodo, sus
+        # horas dejan de sumar aquí y pasan a ser solo consultables como
+        # histórico (ver punto 4, visor por periodo). Solo se calcula, y
+        # solo tiene sentido, para WORKSHOP.
         # ---
-        # Active-period overtime summary -- folded in from the deleted
-        # operator_history "Horas extra" tab. Only computed, and only
-        # meaningful, for WORKSHOP.
+        # Pending ACCUMULATED overtime summary -- H24/S020 point 3: no
+        # longer "the active period" (a single one, by date), it's the sum
+        # of ALL of the operator's unliquidated periods (is_closed=False),
+        # whether or not they have real work orders yet. Once a period is
+        # liquidated, its hours stop counting here and become
+        # historical-only (see point 4, per-period viewer). Only computed,
+        # and only meaningful, for WORKSHOP.
         overtime_hours =None 
         if not is_elevated :
-            from datetime import date as _date_OT 
             from ivr_config .models import WorkPeriod as _WP_OT 
             from decimal import Decimal as _Dec_OT 
-            _active_period =(
+            _open_periods =list (
             _WP_OT .objects 
-            .filter (company_user =cu )
-            .filter (Q (end_date__isnull =True )|Q (end_date__gte =_date_OT .today ()))
-            .order_by ("-start_date")
-            .first ()
+            .filter (company_user =cu ,is_closed =False )
+            .order_by ("start_date")
             )
-            if _active_period :
+            if _open_periods :
                 overtime_hours =sum (
                 (wo ["horas_extra"]for wo in pending_list +reviewed_list 
                 if wo ["operator_pk"]==cu .pk 
                 and wo ["fecha"]is not None 
-                and _active_period .start_date <=wo ["fecha"]
-                and (_active_period .end_date is None or wo ["fecha"]<=_active_period .end_date )
+                and any (
+                p .start_date <=wo ["fecha"]
+                and (p .end_date is None or wo ["fecha"]<=p .end_date )
+                for p in _open_periods 
+                )
                 ),
                 _Dec_OT ("0"),
                 )
@@ -4453,6 +4474,7 @@ class WorkOrderAdminHistoryView (WorkOrderFormAccessMixin ,View ):
         "is_admin":cu .role =="ADMIN",
         "period_operator_groups":period_operator_groups ,
         "period_groups":period_groups ,
+        "own_period_groups":own_period_groups ,
         "column_choices":[
         ("fecha","Fecha"),
         ("operario","Operario"),
@@ -6103,34 +6125,112 @@ class WorkOrderAdminExportByTemplateView (SupervisorAccessMixin ,View ):
 # Arquitectura: el periodo es la entidad primaria de la UI. Los operarios
 # son subordinados al grupo.
 # ===========================================================================
-class WorkPeriodGroupDetailView(SupervisorAccessMixin, View):
+def _compute_period_overtime(operator, group):
     """
-    Shows detail of a single WorkPeriodGroup: header data, list of assigned
-    operators with their individual WorkPeriod status, and list of active
-    WORKSHOP operators NOT yet assigned to this group (available to add).
-
-    GET /panel/work-period-groups/<pk>/
+    Sums overtime hours (H24/S020 punto 4, "visor de horas extra por
+    periodo") for `operator` within `group`'s date range: for every
+    WorkOrder of that operator with at least one entry whose work_date
+    falls inside [group.start_date, group.end_date] (or today, if the
+    group has no end_date yet), adds max(0, daily_total_hours - 8) --
+    same per-day overtime definition as _enrich_work_orders above, so
+    figures stay consistent across the panel.
     ---
-    Muestra el detalle de un WorkPeriodGroup: datos de cabecera, lista de
-    operarios asignados con su estado WorkPeriod individual, y lista de
-    operarios WORKSHOP activos aún NO asignados al grupo (disponibles
-    para añadir).
+    Suma las horas extra (H24/S020 punto 4, "visor de horas extra por
+    periodo") de `operator` dentro del rango de fechas de `group`: para
+    cada WorkOrder de ese operario con al menos un entry cuyo work_date
+    caiga dentro de [group.start_date, group.end_date] (u hoy, si el
+    grupo aún no tiene end_date), suma max(0, horas_totales_del_día - 8)
+    -- misma definición de horas extra por día que _enrich_work_orders
+    arriba, para que las cifras sean coherentes en todo el panel.
+    """
+    from decimal import Decimal
+
+    from django.utils.timezone import now as _tz_now
+
+    from work_order_processor.models import WorkOrder
+
+    date_to = group.end_date or _tz_now().date()
+    work_orders = (
+        WorkOrder.objects
+        .filter(
+            uploaded_by=operator,
+            entries__work_date__gte=group.start_date,
+            entries__work_date__lte=date_to,
+        )
+        .distinct()
+        .prefetch_related("entries__lines")
+    )
+    total = Decimal("0")
+    for wo in work_orders:
+        entries_list = list(wo.entries.all())
+        horas_totales = sum(
+            (
+                line.delta_hours
+                for entry in entries_list
+                for line in entry.lines.all()
+                if line.delta_hours is not None
+            ),
+            Decimal("0"),
+        )
+        total += max(Decimal("0"), horas_totales - Decimal("8"))
+    return total
+
+
+class WorkPeriodGroupDetailView(CompanyUserRequiredMixin, View):
+    """
+    Shows detail of a single WorkPeriodGroup.
+
+    Elevated roles (ADMIN/SUPERVISOR/WORKSHOPBOSS) see the full detail:
+    header data, list of assigned operators with their individual
+    WorkPeriod status, list of active WORKSHOP operators NOT yet
+    assigned (informational, H24/S020 -- assignment is now automatic),
+    and an operator selector to view that operator's overtime hours
+    within this period (H24/S020 punto 4, "visor por periodo").
+
+    WORKSHOP/DRIVER operators may only open a group they themselves
+    belong to (their own WorkPeriod within it) -- see own overtime
+    hours for this period only, no operator list, no management
+    actions.
 
     GET /panel/work-period-groups/<pk>/
+        operator_pk (int, optional, elevated roles only -- selects
+                     whose overtime to display)
+    ---
+    Muestra el detalle de un WorkPeriodGroup.
+
+    Los roles elevados (ADMIN/SUPERVISOR/WORKSHOPBOSS) ven el detalle
+    completo: datos de cabecera, lista de operarios asignados con su
+    estado WorkPeriod individual, lista de operarios WORKSHOP activos
+    aún no asignados (informativa, H24/S020 -- la asignación ya es
+    automática), y un selector de operario para ver sus horas extra
+    dentro de este periodo (H24/S020 punto 4, "visor por periodo").
+
+    Los operarios WORKSHOP/DRIVER solo pueden abrir un grupo al que
+    ellos mismos pertenezcan (su propio WorkPeriod dentro de él) -- ven
+    solo sus propias horas extra de ese periodo, sin lista de
+    operarios ni acciones de gestión.
+
+    GET /panel/work-period-groups/<pk>/
+        operator_pk (int, opcional, solo roles elevados -- selecciona
+                     de quién mostrar las horas extra)
     """
 
     template_name = "panel/work_orders/work_period_detail.html"
 
     def get(self, request, pk, *args, **kwargs):
         """
-        Resolves the group, builds assigned and available operator lists,
-        and renders the detail template.
+        Resolves the group, enforces per-role access, builds assigned
+        and available operator lists (elevated roles only), resolves
+        the operator whose overtime to show, and renders the template.
         ---
-        Resuelve el grupo, construye las listas de operarios asignados y
-        disponibles, y renderiza el template de detalle.
+        Resuelve el grupo, impone el acceso por rol, construye las
+        listas de operarios asignados y disponibles (solo roles
+        elevados), resuelve el operario cuyas horas extra mostrar, y
+        renderiza el template.
         """
+        from django.http import HttpResponseForbidden
         from django.shortcuts import get_object_or_404
-        from ivr_config.models import WorkPeriodGroup
+        from ivr_config.models import WorkPeriod, WorkPeriodGroup
 
         cu = request.user.company_user
         company = cu.company
@@ -6139,36 +6239,95 @@ class WorkPeriodGroupDetailView(SupervisorAccessMixin, View):
             WorkPeriodGroup, pk=pk, company=company
         )
 
-        # Operators already assigned to this group.
-        # Operarios ya asignados a este grupo.
-        assigned_periods = list(
-            group.operator_periods
-            .select_related("company_user__user")
-            .order_by(
-                "company_user__user__last_name",
-                "company_user__user__first_name",
-            )
+        is_elevated = cu.role in (
+            CompanyUser.ROLE_ADMIN,
+            CompanyUser.ROLE_SUPERVISOR,
+            CompanyUser.ROLE_WORKSHOPBOSS,
         )
-        assigned_cu_pks = {wp.company_user_id for wp in assigned_periods}
 
-        # Active WORKSHOP operators NOT yet assigned to this group.
-        # Operarios WORKSHOP activos aún NO asignados a este grupo.
-        available_operators = list(
-            CompanyUser.objects
-            .filter(company=company, is_active=True, role=CompanyUser.ROLE_WORKSHOP)
-            .exclude(pk__in=assigned_cu_pks)
-            .select_related("user")
-            .order_by("user__last_name", "user__first_name")
-        )
+        if is_elevated:
+            # Operators already assigned to this group.
+            # Operarios ya asignados a este grupo.
+            assigned_periods = list(
+                group.operator_periods
+                .select_related("company_user__user")
+                .order_by(
+                    "company_user__user__last_name",
+                    "company_user__user__first_name",
+                )
+            )
+            assigned_cu_pks = {wp.company_user_id for wp in assigned_periods}
+
+            # Active WORKSHOP operators NOT yet assigned to this group
+            # -- informational only since H24/S020, assignment is
+            # automatic; this only surfaces operators who became
+            # active after the group was created.
+            # Operarios WORKSHOP activos aún NO asignados a este grupo
+            # -- informativo desde H24/S020, la asignación es
+            # automática; esto solo saca a la luz operarios que
+            # pasaron a activos después de crearse el grupo.
+            available_operators = list(
+                CompanyUser.objects
+                .filter(
+                    company=company, is_active=True,
+                    role=CompanyUser.ROLE_WORKSHOP,
+                )
+                .exclude(pk__in=assigned_cu_pks)
+                .select_related("user")
+                .order_by("user__last_name", "user__first_name")
+            )
+
+            # Operator whose overtime to show -- explicit choice via
+            # ?operator_pk=, must belong to this group. No selection by
+            # default (nothing computed until the supervisor picks
+            # someone).
+            # Operario cuyas horas extra mostrar -- elección explícita
+            # vía ?operator_pk=, debe pertenecer a este grupo. Sin
+            # selección por defecto (no se calcula nada hasta que el
+            # supervisor elige a alguien).
+            overtime_operator = None
+            _op_pk_raw = request.GET.get("operator_pk", "").strip()
+            if _op_pk_raw.isdigit():
+                overtime_operator = next(
+                    (
+                        wp.company_user for wp in assigned_periods
+                        if wp.company_user_id == int(_op_pk_raw)
+                    ),
+                    None,
+                )
+        else:
+            # WORKSHOP/DRIVER: solo pueden ver un grupo al que
+            # pertenezcan -- comprobación de objeto, no solo de rol.
+            # WORKSHOP/DRIVER: can only view a group they belong to --
+            # object-level check, not just role.
+            own_period = WorkPeriod.objects.filter(
+                company_user=cu, group=group,
+            ).first()
+            if own_period is None:
+                return HttpResponseForbidden(
+                    "No perteneces a este periodo de trabajo."
+                )
+            assigned_periods = [own_period]
+            available_operators = []
+            overtime_operator = cu
+
+        overtime_hours_period = None
+        if overtime_operator is not None:
+            overtime_hours_period = _compute_period_overtime(
+                overtime_operator, group,
+            )
 
         context = {
-            "company":             company,
-            "company_user":        cu,
-            "active_nav":          "work_period_list",
-            "group":               group,
-            "assigned_periods":    assigned_periods,
-            "available_operators": available_operators,
-            "is_admin":            cu.role == "ADMIN",
+            "company":               company,
+            "company_user":          cu,
+            "active_nav":            "work_period_list",
+            "group":                 group,
+            "assigned_periods":      assigned_periods,
+            "available_operators":   available_operators,
+            "is_admin":              cu.role == "ADMIN",
+            "is_elevated":           is_elevated,
+            "overtime_operator":     overtime_operator,
+            "overtime_hours_period": overtime_hours_period,
         }
         return render(request, self.template_name, context)
 

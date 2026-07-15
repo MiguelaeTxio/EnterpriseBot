@@ -643,10 +643,28 @@
                 <div class="alert alert-{% if overtime_hours > 0 %}warning{% else %}light border{% endif %} py-2 px-3 mb-0 d-flex align-items-center gap-2">
                     <i class="bi bi-stopwatch"></i>
                     <span class="text-sm">
-                        Horas extra de tu periodo activo:
+                        Horas extra acumuladas pendientes:
                         <strong>{{ overtime_hours }}h</strong>
                     </span>
                 </div>
+            </div>
+            {% endif %}
+            {% if not is_elevated and own_period_groups %}
+            <div class="px-4 pt-2">
+                <details class="text-sm">
+                    <summary class="text-muted" style="cursor: pointer;">
+                        <i class="bi bi-calendar-range me-1"></i>Mis periodos
+                    </summary>
+                    <div class="d-flex flex-wrap gap-2 mt-2">
+                        {% for wp in own_period_groups %}
+                        <a href="{% url 'panel:work_period_group_detail' wp.group.pk %}"
+                           class="badge bg-light text-dark border text-decoration-none py-2 px-3">
+                            {{ wp.group.label }}
+                            {% if wp.is_closed %}<i class="bi bi-lock ms-1 text-muted"></i>{% endif %}
+                        </a>
+                        {% endfor %}
+                    </div>
+                </details>
             </div>
             {% endif %}
             {% include "panel/work_orders/_wo_table.html" with wo_list=pending_list tab_key="pending" show_pipeline_status=True show_edit=True show_mark_reviewed_row=True bulk_mark_reviewed=True empty_icon="bi-check2-all text-success" empty_text="No hay partes pendientes de revisión." %}

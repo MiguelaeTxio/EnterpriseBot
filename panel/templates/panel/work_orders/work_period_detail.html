@@ -1,7 +1,8 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/work_orders/work_period_detail.html #}
 {#                                                                                                       #}
-{# Supervisor/Admin view — WorkPeriodGroup detail.                                                      #}
-{# Shows period header, assigned operators and available operators to add.                              #}
+{# WorkPeriodGroup detail. Elevated roles (ADMIN/SUPERVISOR/WORKSHOPBOSS) #}
+{# see the full management view; WORKSHOP/DRIVER only see their own       #}
+{# overtime hours within this period (H24/S020 punto 4).                  #}
 {% extends "panel/base.html" %}
 
 {% block title %}Periodo: {{ group.label }}{% endblock %}
@@ -53,11 +54,13 @@
                                 — <em>sin fecha fin</em>
                                 {% endif %}
                             </span>
+                            {% if is_elevated %}
                             <span>
                                 <i class="bi bi-people me-1"></i>
                                 {{ assigned_periods|length }} operario{{ assigned_periods|length|pluralize }}
                                 asignado{{ assigned_periods|length|pluralize }}
                             </span>
+                            {% endif %}
                             {% if group.created_by %}
                             <span>
                                 <i class="bi bi-person me-1"></i>
@@ -91,10 +94,12 @@
                             <i class="bi bi-check-circle me-1"></i>{{ group.status_label }}
                         </span>
                         {% endif %}
+                        {% if is_elevated %}
                         <button type="button" class="btn btn-outline-success btn-sm px-3"
                                 data-bs-toggle="modal" data-bs-target="#modalCloseGroup">
                             <i class="bi bi-calendar-check me-1"></i>Liquidar periodo
                         </button>
+                        {% endif %}
                         {% endif %}
                     </div>
                 </div>
@@ -102,6 +107,7 @@
         </div>
     </div>
 
+    {% if is_elevated %}
     {# ------------------------------------------------------------------ #}
     {# Assigned operators                                                  #}
     {# ------------------------------------------------------------------ #}
@@ -203,11 +209,62 @@
         </div>
     </div>
     {% endif %}
+    {% endif %}{# /is_elevated #}
+
+    {# ------------------------------------------------------------------ #}
+    {# Horas extra en este periodo (H24/S020 punto 4, visor por periodo). #}
+    {# Roles elevados: selector de operario (recarga con ?operator_pk=). #}
+    {# WORKSHOP/DRIVER: siempre sus propias horas, sin selector.          #}
+    {# ------------------------------------------------------------------ #}
+    <div class="px-4 mb-4">
+        <h6 class="fw-semibold mb-3 text-muted text-uppercase eb-section-label">
+            Horas extra en este periodo
+        </h6>
+        <div class="card border-0 shadow-sm">
+            <div class="card-body p-3">
+                {% if is_elevated %}
+                <form method="get" class="d-flex flex-wrap align-items-end gap-2 mb-3">
+                    <div>
+                        <label class="form-label text-sm fw-semibold mb-1">Operario</label>
+                        <select name="operator_pk" class="form-select form-select-sm"
+                                onchange="this.form.submit()">
+                            <option value="">Selecciona un operario…</option>
+                            {% for wp in assigned_periods %}
+                            <option value="{{ wp.company_user.pk }}"
+                                    {% if overtime_operator.pk == wp.company_user.pk %}selected{% endif %}>
+                                {{ wp.company_user.user.get_full_name|default:wp.company_user.user.username }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <noscript><button type="submit" class="btn btn-outline-primary btn-sm">Ver</button></noscript>
+                </form>
+                {% endif %}
+
+                {% if overtime_operator %}
+                <div class="alert alert-{% if overtime_hours_period > 0 %}warning{% else %}light border{% endif %} py-2 px-3 mb-0 d-flex align-items-center gap-2">
+                    <i class="bi bi-stopwatch"></i>
+                    <span class="text-sm">
+                        {% if is_elevated %}
+                        Horas extra de {{ overtime_operator.user.get_full_name|default:overtime_operator.user.username }}
+                        en este periodo:
+                        {% else %}
+                        Tus horas extra en este periodo:
+                        {% endif %}
+                        <strong>{{ overtime_hours_period }}h</strong>
+                    </span>
+                </div>
+                {% elif is_elevated %}
+                <p class="text-sm text-muted mb-0">Selecciona un operario para ver sus horas extra.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
 
     {# ------------------------------------------------------------------ #}
     {# Modal — Liquidar periodo (DENTRO del block content)                #}
     {# ------------------------------------------------------------------ #}
-    {% if not group.is_closed %}
+    {% if not group.is_closed and is_elevated %}
     <div class="modal fade" id="modalCloseGroup" tabindex="-1"
          aria-labelledby="modalCloseGroupLabel" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
