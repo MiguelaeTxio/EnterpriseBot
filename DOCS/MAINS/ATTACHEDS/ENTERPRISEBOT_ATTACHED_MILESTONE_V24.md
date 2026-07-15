@@ -468,56 +468,116 @@ visor de horas extra por periodo) se deja para sesión nueva por
 decisión explícita de Miguel Ángel ("lo veo más coherente empezarlo
 limpio").
 
+### COMPLETADAS EN S020 (2026-07-15)
+
+**Los 5 puntos de la "Tarea principal" quedaron cerrados en esta
+sesión** (rediseño de `WorkPeriodGroup`, motivado por el bug de
+activación automática sin control detectado al cierre de S019):
+
+1. **Cálculo de periodo por fecha, sin precrear filas (commit
+   `cd5d14b`):** `compute_period_bounds_for_date`/
+   `ensure_work_period_group_for_date` nuevas en `ivr_config/models.py`
+   -- ciclo fijo 21-al-20 calculado al vuelo, la fila se asegura solo
+   la primera vez que hace falta (por ahora, la resolución por defecto
+   del calendario). Al crearse, `WorkPeriod` se asigna automáticamente
+   a todos los operarios WORKSHOP activos (Opción A confirmada por
+   Miguel Ángel: se mantiene el registro individual por operario,
+   necesario para Analítica, pero la asignación deja de ser manual).
+   Eliminadas `WorkPeriodGroupCreateView`/`WorkPeriodGroupAddOperatorView`
+   y sus botones/modales en los tres templates afectados -- confirmado
+   explícitamente por Miguel Ángel que ni siquiera hace falta un botón.
+2. **Activación solo por liquidación explícita + tercer estado
+   (mismo commit):** nuevo `WorkPeriodGroup.status`/`status_label`
+   (ACTIVE / PENDING_LIQUIDATION / LIQUIDATED) -- a petición explícita
+   de Miguel Ángel durante la sesión: el periodo activo es siempre
+   aquel cuya fecha de hoy cae dentro de sus márgenes (21-20), sin
+   importar `is_closed`; pueden convivir varios periodos sin liquidar
+   a la vez (el que ya venció por fecha sin liquidar pasa a
+   `PENDING_LIQUIDATION`, no es un bug). Aplicado en el calendario y en
+   la pestaña Períodos/detalle de periodo del panel.
+3. **Horas extra acumuladas pendientes (commit `205346e`):** el
+   resumen del operario ya no mira "el periodo activo" único, suma
+   TODOS los `WorkPeriod` sin liquidar (`is_closed=False`) del
+   operario, tengan o no partes reales -- criterio confirmado por
+   Miguel Ángel. Al liquidar un periodo, sus horas dejan de contar y
+   pasan a histórico.
+4. **Visor de horas extra por periodo (mismo commit):** dentro del
+   detalle de cada `WorkPeriodGroup`, confirmado por Miguel Ángel.
+   `WorkPeriodGroupDetailView` pasa de `SupervisorAccessMixin` a
+   `CompanyUserRequiredMixin` con control de acceso por objeto:
+   ADMIN/SUPERVISOR/WORKSHOPBOSS ven gestión completa + selector de
+   operario (`?operator_pk=`); WORKSHOP/DRIVER solo pueden abrir un
+   periodo al que pertenezcan y ven directamente sus propias horas
+   extra, sin lista de operarios ni acciones de gestión. Nuevo enlace
+   "Mis periodos" en la pestaña Pendientes de Partes Digitales.
+5. **`resolve_period_group_for_calendar` (commit `cd5d14b`):**
+   reescrita para usar `ensure_work_period_group_for_date` en vez de
+   "el más reciente `is_closed=False`" -- resuelto de facto al mismo
+   tiempo que el punto 1, sin necesitar un paso aparte.
+
+**Fuera de H24, corregido en la misma sesión (directriz de errores
+fuera de alcance):** código muerto duplicado en `hr_calendar/services.py`
+(cuerpo huérfano de `generate_vacation_task` tras el `return` de
+`resolve_period_group_for_calendar`); `WorkPeriodLockView`
+(`panel/views_workorders.py`) apuntaba a una URL inexistente
+(`panel:work_period_list`) como fallback -- habría dado `NoReverseMatch`
+sin `HTTP_REFERER`, corregido al fallback real.
+
+**Comprobación pedida por Miguel Ángel:** el CRUD secundario de
+vacaciones (`VacationPeriodListView`/`Create`/`Update`/`Delete`,
+`vacation_periods.html`) revisado línea a línea -- no depende en
+absoluto de `WorkPeriodGroup`, solo gestiona `VacationPeriod`. Sigue
+bien tal cual, sin cambios. El único punto que sí dependía de
+`WorkPeriodGroup` es el calendario (`VacationCalendarView`), ya
+actualizado en el punto 5.
+
+**Desvío puntual a H10 (Caso A, sin PCH, marcador `EN PROGRESO` sin
+mover) -- incidencia real de albaranes de proveedor, ver
+`ENTERPRISEBOT_ATTACHED_MILESTONE_V10.md` fila S020 para el detalle
+completo:** código de máquina ahora también válido si viene delimitado
+(`#`/`*`/`"`) dentro de una línea de artículo, cuando el proveedor no
+usa Observaciones; nuevo fallback por palabra clave
+(repuesto/stock/almacén) a `WAREHOUSE` sin diferenciar, cuando no hay
+código en ninguna fuente -- commit `2aa236c`.
+
+**Incidencia nueva reportada por Miguel Ángel al cierre, sin
+diagnosticar todavía en esta sesión (ver hoja de ruta abajo):**
+captura de pantalla mostrando que, en "Subir Documentación de Centro
+de Gasto" (`/panel/documentacion-centros-gasto/subir/`), un usuario
+`alvarez_admin` con rol ADMIN ve el sidebar de operario de taller
+(WORKSHOP) en vez del sidebar de administrador -- no investigado
+todavía, primera tarea de la siguiente sesión.
+
 ### Hoja de Ruta para la Siguiente Sesión
 
-**Tarea principal — rediseño de `WorkPeriodGroup` (fuera de H24, pero
-retomar antes o junto con H24 según decida Miguel Ángel al abrir la
-sesión):**
+**Prioridad 1 -- incidencia real de sidebar, a resolver primero:**
+1. Diagnosticar por qué `alvarez_admin` (rol ADMIN, confirmado por
+   Miguel Ángel) ve el sidebar de WORKSHOP en la vista de subida de
+   Documentación de Centros de Gasto (`machine_documents` app, H23) en
+   vez del sidebar de administrador -- empezar por el contexto/mixin de
+   esa vista y por `panel/_nav_items.html` (u homólogo de
+   `machine_documents`), método empírico: verificar el rol real del
+   usuario contra lo que renderiza el template antes de asumir nada.
 
-1. **Cálculo de periodo por fecha, sin precrear filas.** Cada periodo
-   va del día 21 de un mes al día 20 del mes siguiente (regla exacta,
-   confirmada por Miguel Ángel, sin ambigüedad: 21/07–20/08,
-   21/08–20/09, 21/09–20/10...). Dado cualquier día, debe poder
-   calcularse matemáticamente a qué periodo pertenece, sin tabla de
-   periodos futuros precreados ("al vuelo", decisión explícita de
-   Miguel Ángel frente a la alternativa de generación por adelantado).
-   La fila de `WorkPeriodGroup` correspondiente se asegura/crea la
-   primera vez que hace falta, nunca antes.
-2. **Un periodo pasa a "activo" solo al liquidar explícitamente el
-   anterior** — nunca por fecha, nunca por crearlo. Mientras no se
-   liquide, pueden convivir varios periodos sin liquidar a la vez (el
-   que ya venció por fecha y el que ya ha empezado) — estado normal,
-   no bug, cuando la liquidación se retrasa.
-3. **Cómputo de horas extra "acumuladas pendientes":** propuesta
-   planteada a Miguel Ángel y pendiente de su confirmación explícita al
-   abrir la sesión (no cerrada del todo en esta sesión, no dar por
-   buena sin más): sumar TODOS los periodos sin liquidar que tengan
-   partes reales (no solo el nominal "activo"), como saldo de lo
-   todavía no pagado. Al liquidar un periodo, sus horas dejan de contar
-   en ese acumulado pendiente y pasan a ser solo consultables como
-   histórico.
-4. **Visor de horas extra por periodo (nuevo, no existe hoy):**
-   supervisor elige cualquier operario + cualquier periodo (liquidado o
-   no) y ve el total de horas extra de ese periodo; el propio operario
-   puede consultar sus propios periodos pasados igual.
-5. Impacto conocido a revisar en el propio código de esta sesión:
-   `hr_calendar.services.resolve_period_group_for_calendar` (calendario,
-   H24 paso 3) usa "el `WorkPeriodGroup` más reciente con
-   `is_closed=False`" — hay que decidir si sigue teniendo sentido tal
-   cual una vez exista el nuevo mecanismo de cálculo al vuelo, o si debe
-   consultar directamente la función de cálculo por fecha en lugar de
-   filtrar por `is_closed`.
-
-**Cuando se retome H24 (o en paralelo, a decidir con Miguel Ángel):**
-6. Confirmar con Miguel Ángel si el CRUD de vacaciones
-   (`hr_calendar/views.py`, vía secundaria) sigue vivo tal cual o si
-   hay que ajustarlo tras el rediseño de `WorkPeriodGroup`.
-7. Una vez cerrado lo anterior, retomar H23 (Documentación de Centros
-   de Gasto) — orden ya confirmado en S018, sigue vigente.
+**Prioridad 2 -- retomar H23 (Documentación de Centros de Gasto),
+orden ya confirmado en S018, sigue vigente:**
+2. Una vez resuelta la incidencia de sidebar, continuar con la hoja de
+   ruta de H23 (sección 5 de `ENTERPRISEBOT_ATTACHED_MILESTONE_V23.md`,
+   intacta desde S018).
+3. Miguel Ángel traerá una carpeta tipo con la documentación real de un
+   trabajador (cursos, certificados, etc.) para plantear con él, al
+   abrir la sesión, cómo modelar la clasificación de documentos de
+   personal -- **muy dinámico, cada trabajador puede tener una cantidad
+   de cursos completamente distinta de otro** (posible estructura de
+   diccionario/JSON en vez de un esquema de columnas fijas; a estudiar
+   juntos antes de construir nada, sin decisión de diseño cerrada
+   todavía -- directriz 4.8, no asumir un modelo antes de verlo con él).
 
 **No abordado, sin fecha decidida:** migración de Google Drive a Google
-Cloud Storage (ver "COMPLETADAS EN S019" arriba) — reescritura de
-`spare_parts/gdrive_service.py`.
+Cloud Storage (ver "COMPLETADAS EN S019") -- reescritura de
+`spare_parts/gdrive_service.py`. Deuda técnica de reparto de coste de
+`PERSONAL` (sección 4.7 del master document) -- explícitamente no
+abordada por decisión de Miguel Ángel.
 
 ---
 
@@ -527,3 +587,4 @@ Cloud Storage (ver "COMPLETADAS EN S019" arriba) — reescritura de
 |---|---|---|
 | S018 | 2026-07-14 | Hito creado (desvío desde H23). App `hr_calendar`, modelo `VacationPeriod`, campo `CompanyUser.base`, comando `assign_operator_bases` ejecutado en producción (14 operarios/chóferes, bases Maqueda/Huelva), onboarding WhatsApp ampliado, y las 7 preguntas de la sección 4 resueltas. Ver "COMPLETADAS EN S018" arriba para el detalle completo. Siguiente sesión: construir la generación automática de la tarea, el formulario de alta y la vista de calendario (hoja de ruta arriba). |
 | S019 | 2026-07-15 | Pasos 1-3 de la hoja de ruta construidos, con corrección de flujo a mitad de sesión (directriz 4.8): la generación automática se deriva de la tarea real del operario, no de un CRUD de supervisor. Calendario con código de colores y agrupación por `WorkPeriodGroup` construido y desplegado. Ocho incidencias reales encontradas y corregidas en producción (dos `ImportError` que tumbaron el despliegue, `FieldError`, sidebar rota, dos bugs de validación que bloqueaban el flujo real, autorrelleno de H.C./H.F., patrón de errores en crudo en 17 sitios fuera de H24). Vista de detalle de solo lectura para Partes Digitales añadida (fuera de H24). Diagnosticados con datos reales dos casos de "parte no encontrado" sin causa técnica. Decidida la migración futura de Google Drive a Google Cloud Storage (sin implementar). Detectado al cierre un bug real en `WorkPeriodGroup` (activación automática sin control) que Miguel Ángel decide abordar en sesión nueva junto con un rediseño más amplio (cálculo de periodo 21-20 al vuelo, horas extra acumuladas, visor por periodo) — ver "COMPLETADAS EN S019" y la hoja de ruta arriba para el detalle completo. |
+| S020 | 2026-07-15 | Rediseño completo de `WorkPeriodGroup` cerrado (5/5 puntos de la tarea principal, commits `cd5d14b`/`205346e`); CRUD de vacaciones comprobado y confirmado correcto sin cambios; desvío puntual a H10 por incidencia real de albaranes (commit `2aa236c`, ver anexo H10 fila S020); nueva incidencia de sidebar reportada por Miguel Ángel al cierre, sin diagnosticar todavía -- primera tarea de la siguiente sesión. Ver "COMPLETADAS EN S020" arriba para el detalle completo. |
