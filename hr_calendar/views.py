@@ -252,6 +252,8 @@ class VacationCalendarView(CompanyUserRequiredMixin, View):
             # Empresa sin ningún CompanyUser activo -- caso límite, nada
             # que pintar.
             return render(request, self.template_name, {
+                "company": company,
+                "company_user": cu,
                 "active_nav": "vacation_calendar",
                 "is_elevated": is_elevated,
                 "operators": operators,
@@ -301,6 +303,8 @@ class VacationCalendarView(CompanyUserRequiredMixin, View):
         ]
 
         return render(request, self.template_name, {
+            "company": company,
+            "company_user": cu,
             "active_nav": "vacation_calendar",
             "is_elevated": is_elevated,
             "operators": operators,
@@ -355,6 +359,8 @@ class VacationPeriodListView(SupervisorAccessMixin, View):
         )
 
         return render(request, self.template_name, {
+            "company": company,
+            "company_user": cu,
             "active_nav": "vacation_periods",
             "periods": periods,
             "operators": operators,
