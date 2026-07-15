@@ -253,11 +253,13 @@ def compute_calendar_days(operator, company, date_from, date_to):
       light_blue — same as blue but WITH a resolved WorkdayGap that day
                    (partial PERSONAL absence, e.g. missing 2-3h) —
                    incomplete day.
-      orange     — no real task that day, but a PERSONAL absence line
-                   with an AbsenceCategory other than VACATION covers it
-                   (or a legacy WorkerAbsence-generated line with no
-                   machine_asset at all -- same underlying meaning, see
-                   note below).
+      orange     — no real task that day, but a resolved WorkdayGap for
+                   that day carries an AbsenceCategory other than
+                   VACATION (absence_category lives on WorkdayGap, not on
+                   WorkOrderEntryLine -- bug fixed 2026-07-15 after a
+                   FieldError in production, see git log), or a legacy
+                   WorkerAbsence-generated line with no machine_asset at
+                   all -- same underlying meaning, see note below.
       yellow     — public holiday (Base.labor_calendar via
                    budgets.services._is_holiday, weekday only -- weekends
                    are excluded from "yellow" on purpose, see note below).
@@ -335,15 +337,17 @@ def compute_calendar_days(operator, company, date_from, date_to):
     )
 
     absence_non_vacation_dates = set(
-        WorkOrderEntryLine.objects.filter(
-            entry__work_order__company=company,
-            entry__work_order__uploaded_by=operator,
-            entry__work_date__range=(date_from, date_to),
-            machine_asset__code=PERSONAL_ASSET_CODE,
+        WorkdayGap.objects.filter(
+            work_order__company=company,
+            work_order__uploaded_by=operator,
+            work_order__entries__work_date__range=(date_from, date_to),
+            resolved=True,
             absence_category__isnull=False,
         ).exclude(
             absence_category__code=VACATION_ABSENCE_CODE,
-        ).values_list("entry__work_date", flat=True).distinct()
+        ).values_list(
+            "work_order__entries__work_date", flat=True,
+        ).distinct()
     )
     absence_non_vacation_dates |= set(
         WorkOrderEntryLine.objects.filter(
