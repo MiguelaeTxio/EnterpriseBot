@@ -239,6 +239,118 @@ def register_vacation_period_from_line(
     return period
 
 
+def generate_vacation_task(vacation_period):
+    """
+    Creates the PERSONAL/VACATION ghost task for a newly-created
+    VacationPeriod and points vacation_period.generated_entry_line at it.
+
+    Idempotent: if vacation_period.generated_entry_line_id is already set,
+    returns the existing line without creating anything new.
+
+    Raises MachineAsset.DoesNotExist / AbsenceCategory.DoesNotExist if the
+    PERSONAL cost centre or the VACATION category are missing for the
+    company -- deliberately not swallowed, this is a genuine setup gap
+    (seed_personal_asset / seed_absence_categories not run for this
+    company) that must surface, not fail silently.
+    ---
+    Crea la tarea fantasma PERSONAL/VACACIONES para un VacationPeriod recién
+    creado y apunta vacation_period.generated_entry_line a ella.
+
+    Idempotente: si vacation_period.generated_entry_line_id ya está fijado,
+    devuelve la línea existente sin crear nada nuevo.
+
+    Lanza MachineAsset.DoesNotExist / AbsenceCategory.DoesNotExist si falta
+    el centro de gasto PERSONAL o la categoría VACATION para la empresa --
+    deliberadamente no se capturan, es un hueco real de configuración
+    (seed_personal_asset / seed_absence_categories no ejecutados para esta
+    empresa) que debe salir a la luz, no fallar en silencio.
+    """
+    from fleet.models import MachineAsset
+    from ivr_config.models import AbsenceCategory
+    from work_order_processor.management.commands.seed_personal_asset import (
+        PERSONAL_ASSET_CODE,
+    )
+    from work_order_processor.models import (
+        WorkOrder,
+        WorkOrderEntry,
+        WorkOrderEntryLine,
+    )
+
+    if vacation_period.generated_entry_line_id:
+        return vacation_period.generated_entry_line
+
+    operator = vacation_period.operator
+    company = vacation_period.company
+
+    personal_asset = MachineAsset.objects.get(
+        company=company, code=PERSONAL_ASSET_CODE,
+    )
+    vacation_category = AbsenceCategory.objects.get(
+        company=company, code=VACATION_ABSENCE_CODE,
+    )
+
+    work_day = _last_working_day_before(
+        vacation_period.date_start, operator.base,
+    )
+
+    worker_name = (
+        operator.user.get_full_name() or operator.user.username
+    ).upper()
+    synthetic_name = (
+        f"VACACIONES_{work_day.strftime('%Y%m%d')}_"
+        f"{operator.user.username.upper()}.pdf"
+    )
+
+    with transaction.atomic():
+        work_order = WorkOrder.objects.create(
+            company=company,
+            uploaded_by=operator,
+            generated_by=vacation_period.created_by,
+            source=WorkOrder.Source.GENERATED,
+            status=WorkOrder.Status.DONE,
+        )
+        work_order.source_pdf.name = synthetic_name
+        work_order.save()
+
+        entry = WorkOrderEntry.objects.create(
+            work_order=work_order,
+            page_number=1,
+            worker_name=worker_name,
+            work_date=work_day,
+            uncertain_date=False,
+            extraction_confidence=WorkOrderEntry.Confidence.HIGH,
+            raw_gemini_response=None,
+        )
+
+        line = WorkOrderEntryLine.objects.create(
+            entry=entry,
+            line_number=1,
+            machine_asset=personal_asset,
+            machine_raw=PERSONAL_ASSET_CODE,
+            machine_norm=PERSONAL_ASSET_CODE,
+            fault_description=vacation_category.label,
+            repair_notes=(
+                f"Vacaciones hasta el {vacation_period.date_end:%d/%m/%Y}."
+            ),
+            hc=None,
+            hf=None,
+            or_val="",
+            delta_hours=Decimal("1"),
+            flags=[],
+        )
+
+        vacation_period.generated_entry_line = line
+        vacation_period.save(update_fields=["generated_entry_line"])
+
+    logger.info(
+        "# [hr_calendar/services] Tarea fantasma de vacaciones generada. "
+        "vacation_period_pk=%r operator=%r work_day=%r work_order_pk=%r "
+        "entry_line_pk=%r",
+        vacation_period.pk, operator.pk, work_day, work_order.pk, line.pk,
+    )
+    return line
+
+
 def compute_calendar_days(operator, company, date_from, date_to):
     """
     Returns a dict {date: {"color": ..., "label": ...}} for every calendar

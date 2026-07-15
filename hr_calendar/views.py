@@ -437,25 +437,38 @@ class VacationPeriodCreateView(SupervisorAccessMixin, View):
                 date_end=date_end,
             )
         except Exception as exc:
+            from fleet.models import MachineAsset
+            from ivr_config.models import AbsenceCategory
+
             # MachineAsset.DoesNotExist / AbsenceCategory.DoesNotExist
             # (seed_personal_asset / seed_absence_categories no ejecutados
             # para esta empresa) llegan aquí sin capturar desde
             # VacationPeriod.save() -- deliberado, ver docstring del
-            # módulo. Cualquier otro fallo también se muestra tal cual,
-            # mismo principio empírico del resto del proyecto: nunca a
-            # ciegas.
+            # módulo. El detalle técnico completo (str(exc) + traceback)
+            # va SOLO al log del servidor -- nunca en el mensaje que ve el
+            # usuario (incidente 2026-07-15: un ImportError de desarrollo
+            # se mostró tal cual en la interfaz, con ruta de servidor y
+            # nombre de módulo interno incluidos).
             logger.error(
                 "# [hr_calendar/views] Error creando VacationPeriod. "
                 "operator_pk=%r date_start=%r date_end=%r: %s",
                 operator_pk, date_start, date_end, exc, exc_info=True,
             )
-            django_messages.error(
-                request,
-                f"Error al registrar el periodo de vacaciones: {exc}. "
-                "Si el error menciona PERSONAL o VACATION, contacta con "
-                "el administrador de la plataforma -- faltan datos base "
-                "de configuración para esta empresa.",
-            )
+            if isinstance(exc, (MachineAsset.DoesNotExist, AbsenceCategory.DoesNotExist)):
+                user_message = (
+                    "No se ha podido registrar el periodo: faltan datos "
+                    "base de configuración para esta empresa (centro de "
+                    "gasto PERSONAL o categoría de ausencia Vacaciones). "
+                    "Contacta con el administrador de la plataforma."
+                )
+            else:
+                user_message = (
+                    "Error al registrar el periodo de vacaciones. Por "
+                    "favor, inténtalo de nuevo o contacta con el "
+                    "administrador de la plataforma si el problema "
+                    "persiste."
+                )
+            django_messages.error(request, user_message)
             return redirect(LIST_URL)
 
         django_messages.success(
@@ -579,7 +592,9 @@ class VacationPeriodUpdateView(SupervisorAccessMixin, View):
             )
             django_messages.error(
                 request,
-                f"Error al actualizar el periodo de vacaciones: {exc}.",
+                "Error al actualizar el periodo de vacaciones. Por "
+                "favor, inténtalo de nuevo o contacta con el "
+                "administrador de la plataforma si el problema persiste.",
             )
             return redirect(LIST_URL)
 
