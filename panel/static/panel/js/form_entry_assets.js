@@ -547,7 +547,39 @@
     // Muestra/oculta el campo "Fecha de fin de vacaciones" según si el
     // code de la AbsenceCategory seleccionada coincide con
     // EB_CONFIG.vacationAbsenceCode (H24, S019).
+    //
+    // También autorrellena H.C./H.F. con una duración fija de 1 hora a
+    // partir de la última hora de trabajo (HF del bloque anterior más
+    // reciente con valor) -- a petición explícita de Miguel Ángel
+    // (2026-07-15, tras el caso real de Antonio Fontalba Serón: dejar
+    // que el operario tecleara HC/HF a mano llevó a HC=HF=15:00, que
+    // dispara "H.F. debe ser posterior a H.C."). La duración exacta es
+    // irrelevante -- ni esa hora ni esa media hora cuentan en ningún
+    // cómputo (VacationPeriod.generated_entry_line, ver
+    // hr_calendar/services.py) -- lo único que importa es que HC < HF
+    // y que el operario no tenga que escribir nada.
+    // También autorrellena H.C./H.F. -- ver docstring en inglés arriba.
     // ==================================================================
+    function _addOneHour(hhmm) {
+        if (!hhmm) { return ""; }
+        var parts = hhmm.split(":");
+        var h = parseInt(parts[0], 10);
+        var m = parseInt(parts[1], 10) || 0;
+        if (isNaN(h)) { return ""; }
+        h = (h + 1) % 24;
+        return (h < 10 ? "0" + h : String(h)) + ":" + (m < 10 ? "0" + m : String(m));
+    }
+
+    function _findLastWorkHour(idx) {
+        // Busca hacia atrás, entre los bloques anteriores a idx, el H.F.
+        // más reciente que tenga valor.
+        for (var j = idx - 1; j >= 1; j--) {
+            var hfEl = document.querySelector('[name="entrada_' + j + '_hf"]');
+            if (hfEl && hfEl.value) { return hfEl.value; }
+        }
+        return "";
+    }
+
     function _toggleVacationField(idx, catSel) {
         var vacWrap = document.getElementById("vacation-end-date-wrap-" + idx);
         var vacInput = document.getElementById("entrada_" + idx + "_vacation_end_date");
@@ -560,6 +592,16 @@
         if (isVacation) {
             vacWrap.classList.remove("d-none");
             if (vacInput) { vacInput.setAttribute("required", "required"); }
+            var hcEl = document.querySelector('[name="entrada_' + idx + '_hc"]');
+            var hfEl = document.querySelector('[name="entrada_' + idx + '_hf"]');
+            if (hcEl && hfEl) {
+                var lastHf = _findLastWorkHour(idx);
+                var newHc = lastHf || hcEl.value || "";
+                if (newHc) {
+                    hcEl.value = newHc;
+                    hfEl.value = _addOneHour(newHc);
+                }
+            }
         } else {
             vacWrap.classList.add("d-none");
             if (vacInput) {
