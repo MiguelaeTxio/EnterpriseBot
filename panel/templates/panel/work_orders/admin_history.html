@@ -665,7 +665,7 @@
         {# ============================================================== #}
         {% elif active_tab == 'history' %}
         <div class="p-0">
-            {% include "panel/work_orders/_wo_table.html" with wo_list=history_list tab_key="history" show_reviewed_badge=True show_origen=True bulk_mark_reviewed=True empty_icon="bi-inbox" empty_text="No hay partes con los filtros aplicados." %}
+            {% include "panel/work_orders/_wo_table.html" with wo_list=history_list tab_key="history" show_reviewed_badge=True show_origen=True show_detail=True bulk_mark_reviewed=True empty_icon="bi-inbox" empty_text="No hay partes con los filtros aplicados." %}
         </div>
 
         {# ============================================================== #}
