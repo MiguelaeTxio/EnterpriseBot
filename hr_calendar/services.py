@@ -239,7 +239,225 @@ def register_vacation_period_from_line(
     return period
 
 
-def generate_vacation_task(vacation_period):
+def compute_calendar_days(operator, company, date_from, date_to):
+    """
+    Returns a dict {date: {"color": ..., "label": ...}} for every calendar
+    date in [date_from, date_to] (inclusive), following the day
+    color-coding rules closed in S018
+    (ENTERPRISEBOT_ATTACHED_MILESTONE_V24.md sección 3.2):
+
+      green      — day covered by a VacationPeriod.
+      blue       — real task that day (a WorkOrderEntryLine with
+                   machine_asset set and machine_asset.code != PERSONAL)
+                   AND no resolved WorkdayGap that same day — full day.
+      light_blue — same as blue but WITH a resolved WorkdayGap that day
+                   (partial PERSONAL absence, e.g. missing 2-3h) —
+                   incomplete day.
+      orange     — no real task that day, but a PERSONAL absence line
+                   with an AbsenceCategory other than VACATION covers it
+                   (or a legacy WorkerAbsence-generated line with no
+                   machine_asset at all -- same underlying meaning, see
+                   note below).
+      yellow     — public holiday (Base.labor_calendar via
+                   budgets.services._is_holiday, weekday only -- weekends
+                   are excluded from "yellow" on purpose, see note below).
+      red        — working day (weekday, not a holiday) with none of the
+                   above -- unexplained gap.
+      None       — weekend with nothing recorded (not part of the 6-color
+                   spec; rendered neutral).
+
+    Note on weekday vs weekend: budgets.services._is_holiday() returns
+    True for BOTH weekends and Base.labor_calendar entries (it exists for
+    a different purpose, the NYF budget surcharge). Section 3.2 defines
+    "yellow" as specifically "festivo" (a named holiday) and "red" as
+    specifically "día laborable ... sin explicar" -- a weekend is neither
+    of those on its own. Since _is_holiday(d, base) is only True for a
+    weekday when d is genuinely listed in the calendar (weekends already
+    satisfy the weekend branch of that function regardless of the
+    calendar), checking `d.weekday() < 5 and _is_holiday(d, base)`
+    isolates real holidays without re-implementing the calendar lookup.
+
+    Note on the legacy WorkerAbsence/GENERATED mechanism (H7,
+    panel/views_workorders.py::AdminHistoryView.post,
+    action=generate_absence_parts): those lines have machine_asset=None
+    (no PERSONAL asset, no AbsenceCategory FK at all) rather than going
+    through the PERSONAL+AbsenceCategory mechanism this anexo builds on.
+    They represent the same real-world fact (operator absent that day) so
+    they are folded into "orange" here too -- excluded from "real task"
+    (machine_asset is null, not "a machine_asset whose code differs from
+    PERSONAL") and detected as an absence day in their own right.
+
+    Priority when several conditions could apply to the same date
+    (documented here since the anexo lists the six colors but does not
+    state an explicit priority order for edge-case overlaps): vacation
+    (green) first, then real task (blue/light_blue), then non-vacation
+    absence (orange), then holiday (yellow), then unexplained working day
+    (red).
+    ---
+    Devuelve un dict {date: {"color": ..., "label": ...}} para cada fecha
+    de calendario en [date_from, date_to] (ambas inclusive), siguiendo las
+    reglas de color por día cerradas en S018
+    (ENTERPRISEBOT_ATTACHED_MILESTONE_V24.md sección 3.2). Ver docstring
+    en inglés arriba para el detalle completo de cada color y las notas
+    sobre fin de semana vs festivo, el mecanismo legado WorkerAbsence, y
+    la prioridad aplicada cuando varias condiciones podrían coincidir en
+    la misma fecha (vacaciones primero, luego tarea real, luego ausencia
+    no vacacional, luego festivo, luego laborable sin explicar).
+    """
+    from budgets.services import _is_holiday
+    from hr_calendar.models import VacationPeriod
+    from work_order_processor.management.commands.seed_personal_asset import (
+        PERSONAL_ASSET_CODE,
+    )
+    from work_order_processor.models import WorkdayGap, WorkOrderEntryLine
+
+    real_task_dates = set(
+        WorkOrderEntryLine.objects.filter(
+            entry__work_order__company=company,
+            entry__work_order__uploaded_by=operator,
+            entry__work_date__range=(date_from, date_to),
+            machine_asset__isnull=False,
+        ).exclude(
+            machine_asset__code=PERSONAL_ASSET_CODE,
+        ).values_list("entry__work_date", flat=True).distinct()
+    )
+
+    gap_resolved_dates = set(
+        WorkdayGap.objects.filter(
+            work_order__company=company,
+            work_order__uploaded_by=operator,
+            work_order__entries__work_date__range=(date_from, date_to),
+            resolved=True,
+            gap_type=WorkdayGap.GapType.GAP,
+        ).values_list(
+            "work_order__entries__work_date", flat=True,
+        ).distinct()
+    )
+
+    absence_non_vacation_dates = set(
+        WorkOrderEntryLine.objects.filter(
+            entry__work_order__company=company,
+            entry__work_order__uploaded_by=operator,
+            entry__work_date__range=(date_from, date_to),
+            machine_asset__code=PERSONAL_ASSET_CODE,
+            absence_category__isnull=False,
+        ).exclude(
+            absence_category__code=VACATION_ABSENCE_CODE,
+        ).values_list("entry__work_date", flat=True).distinct()
+    )
+    absence_non_vacation_dates |= set(
+        WorkOrderEntryLine.objects.filter(
+            entry__work_order__company=company,
+            entry__work_order__uploaded_by=operator,
+            entry__work_date__range=(date_from, date_to),
+            machine_asset__isnull=True,
+        ).values_list("entry__work_date", flat=True).distinct()
+    )
+    # No cuentan como "tarea real" -- ver nota del mecanismo legado arriba.
+    absence_non_vacation_dates -= real_task_dates
+
+    vacation_dates = set()
+    for vp in VacationPeriod.objects.filter(
+        company=company, operator=operator,
+        date_start__lte=date_to, date_end__gte=date_from,
+    ):
+        cursor = max(vp.date_start, date_from)
+        vp_end = min(vp.date_end, date_to)
+        while cursor <= vp_end:
+            vacation_dates.add(cursor)
+            cursor += timedelta(days=1)
+
+    base = operator.base
+    result = {}
+    cursor = date_from
+    while cursor <= date_to:
+        if cursor in vacation_dates:
+            result[cursor] = {"color": "green", "label": "Vacaciones"}
+        elif cursor in real_task_dates:
+            if cursor in gap_resolved_dates:
+                result[cursor] = {
+                    "color": "light_blue", "label": "Jornada incompleta",
+                }
+            else:
+                result[cursor] = {
+                    "color": "blue", "label": "Jornada completa",
+                }
+        elif cursor in absence_non_vacation_dates:
+            result[cursor] = {"color": "orange", "label": "Ausencia"}
+        elif cursor.weekday() < 5 and _is_holiday(cursor, base):
+            result[cursor] = {"color": "yellow", "label": "Festivo"}
+        elif cursor.weekday() < 5:
+            result[cursor] = {"color": "red", "label": "Sin explicar"}
+        else:
+            result[cursor] = {"color": None, "label": "Fin de semana"}
+        cursor += timedelta(days=1)
+    return result
+
+
+def resolve_period_group_for_calendar(company, group_pk=None):
+    """
+    Resolves which WorkPeriodGroup the calendar should display, following
+    ENTERPRISEBOT_ATTACHED_MILESTONE_V24.md sección 3.3 (cerrada en S018):
+    the calendar groups by WorkPeriodGroup instead of a hardcoded "21 al
+    20" cycle or a bare natural month.
+
+      - group_pk given -> that exact group (scoped to company), for
+        prev/next navigation between periods.
+      - group_pk not given -> the most recent WorkPeriodGroup with
+        is_closed=False (the active one); if none is open, falls back to
+        the single most recent WorkPeriodGroup overall (all closed).
+      - No WorkPeriodGroup exists at all for the company -> returns None;
+        the caller falls back to the current natural month (documented
+        default behaviour in the anexo).
+
+    Also returns prev_group_pk/next_group_pk (by start_date ordering) so
+    the view can render "<- mes anterior" / "mes siguiente ->" navigation
+    without the template needing to know about WorkPeriodGroup ordering.
+    ---
+    Resuelve qué WorkPeriodGroup debe mostrar el calendario, siguiendo
+    ENTERPRISEBOT_ATTACHED_MILESTONE_V24.md sección 3.3 (cerrada en
+    S018): el calendario se agrupa por WorkPeriodGroup en vez de un ciclo
+    "21 al 20" hardcodeado o un mes natural a secas.
+
+      - Si se da group_pk -> ese grupo exacto (acotado a la empresa),
+        para la navegación anterior/siguiente entre periodos.
+      - Si no se da group_pk -> el WorkPeriodGroup más reciente con
+        is_closed=False (el activo); si ninguno está abierto, cae al
+        WorkPeriodGroup más reciente en general (todos liquidados).
+      - Si no existe ningún WorkPeriodGroup para la empresa -> devuelve
+        None; el llamante cae al mes natural actual (comportamiento por
+        defecto documentado en el anexo).
+
+    También devuelve prev_group_pk/next_group_pk (por orden de
+    start_date) para que la vista pueda renderizar la navegación
+    "<- mes anterior" / "mes siguiente ->" sin que la plantilla necesite
+    conocer el orden de WorkPeriodGroup.
+    """
+    from ivr_config.models import WorkPeriodGroup
+
+    groups = list(
+        WorkPeriodGroup.objects.filter(company=company).order_by("start_date")
+    )
+    if not groups:
+        return None
+
+    if group_pk is not None:
+        group = next((g for g in groups if g.pk == group_pk), None)
+        if group is None:
+            group = groups[-1]
+    else:
+        open_groups = [g for g in groups if not g.is_closed]
+        group = open_groups[-1] if open_groups else groups[-1]
+
+    idx = groups.index(group)
+    prev_group_pk = groups[idx - 1].pk if idx > 0 else None
+    next_group_pk = groups[idx + 1].pk if idx < len(groups) - 1 else None
+
+    return {
+        "group": group,
+        "prev_group_pk": prev_group_pk,
+        "next_group_pk": next_group_pk,
+    }
     """
     Creates the PERSONAL/VACATION ghost task for a newly-created
     VacationPeriod and points vacation_period.generated_entry_line at it.

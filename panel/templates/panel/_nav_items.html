@@ -127,6 +127,18 @@
                             <i class="bi bi-person-circle"></i>Mi perfil
                         </a>
                     </li>
+                    {# Calendario -- H24. Visible a todo rol autenticado    #}
+                    {# (VacationCalendarView no restringe rol, solo         #}
+                    {# CompanyUserRequiredMixin) -- mismo gate que el resto #}
+                    {# de este acordeon (!= ASSISTANCE). ADMIN/SUPERVISOR   #}
+                    {# ven selector de operario dentro de la propia vista;  #}
+                    {# WORKSHOP/DRIVER ven solo el suyo.                    #}
+                    <li class="nav-item">
+                        <a class="nav-link {% if active_nav == 'vacation_calendar' %}active{% endif %}"
+                           href="{% url 'hr_calendar:calendar' %}">
+                            <i class="bi bi-calendar3"></i>Calendario
+                        </a>
+                    </li>
                     {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
                         <li class="nav-item">
                             <a class="nav-link {% if active_nav == 'presence' %}active{% endif %}"

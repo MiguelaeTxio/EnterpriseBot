@@ -1,0 +1,129 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/hr_calendar/templates/hr_calendar/calendar.html #}
+{# Calendario H24 (paso 3, sección 3.2/3.3 del anexo). Visible a todo    #}
+{# rol autenticado. ADMIN/SUPERVISOR tienen selector de operario;        #}
+{# WORKSHOP/DRIVER solo ven el suyo. Agrupado por WorkPeriodGroup, con   #}
+{# navegación anterior/siguiente entre periodos.                         #}
+{% extends "panel/base.html" %}
+
+{% block page_title %}Calendario{% endblock %}
+
+{% block extra_head %}
+<style>
+    .eb-cal-table { border-collapse: collapse; width: 100%; table-layout: fixed; }
+    .eb-cal-table th { text-align: center; font-size: .75rem; font-weight: 600; color: #6c757d; padding: .25rem; }
+    .eb-cal-table td { text-align: center; vertical-align: middle; height: 2.5rem; border: 1px solid #e9ecef; font-size: .85rem; }
+    .eb-cal-day { position: relative; }
+    .eb-cal-day.eb-today { outline: 2px solid #0d6efd; outline-offset: -2px; }
+    .eb-cal-blue       { background-color: #cfe2ff; }
+    .eb-cal-light_blue { background-color: #e7f1ff; }
+    .eb-cal-green      { background-color: #d1e7dd; }
+    .eb-cal-orange     { background-color: #ffe5d0; }
+    .eb-cal-red        { background-color: #f8d7da; }
+    .eb-cal-yellow     { background-color: #fff3cd; }
+    .eb-cal-legend-swatch { display: inline-block; width: .9rem; height: .9rem; border-radius: 3px; vertical-align: middle; margin-right: .3rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
+    <h5 class="mb-0 fw-semibold">Calendario</h5>
+    {% if is_elevated %}
+        <a href="{% url 'hr_calendar:vacation_period_list' %}" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-gear me-1"></i>Gestión de periodos (CRUD)
+        </a>
+    {% endif %}
+</div>
+
+{% if not target_operator %}
+    <div class="alert alert-warning">
+        No hay ningún operario/chófer activo para mostrar.
+    </div>
+{% else %}
+
+{% if is_elevated and operators %}
+<div class="card shadow-sm mb-3">
+    <div class="card-body py-2">
+        <form method="get" class="row g-2 align-items-end">
+            <div class="col-auto">
+                <label class="form-label small mb-0">Operario/chófer</label>
+                <select name="operator_pk" class="form-select form-select-sm" onchange="this.form.submit()">
+                    {% for op in operators %}
+                        <option value="{{ op.pk }}" {% if op.pk == target_operator.pk %}selected{% endif %}>
+                            {{ op.user.get_full_name|default:op.user.username }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+        </form>
+    </div>
+</div>
+{% endif %}
+
+<div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+    <div>
+        {% if prev_group_pk %}
+            <a class="btn btn-sm btn-outline-secondary"
+               href="?group_pk={{ prev_group_pk }}{% if target_operator and is_elevated %}&operator_pk={{ target_operator.pk }}{% endif %}">
+                <i class="bi bi-chevron-left"></i> Periodo anterior
+            </a>
+        {% endif %}
+    </div>
+    <h6 class="mb-0 fw-semibold">{{ period_label }}</h6>
+    <div>
+        {% if next_group_pk %}
+            <a class="btn btn-sm btn-outline-secondary"
+               href="?group_pk={{ next_group_pk }}{% if target_operator and is_elevated %}&operator_pk={{ target_operator.pk }}{% endif %}">
+                Periodo siguiente <i class="bi bi-chevron-right"></i>
+            </a>
+        {% endif %}
+    </div>
+</div>
+
+<div class="row g-3">
+    {% for month in months %}
+    <div class="col-12 col-lg-6">
+        <div class="card shadow-sm h-100">
+            <div class="card-header fw-semibold text-center">{{ month.label }}</div>
+            <div class="card-body p-2">
+                <table class="eb-cal-table">
+                    <thead>
+                        <tr>
+                            <th>L</th><th>M</th><th>X</th><th>J</th><th>V</th><th>S</th><th>D</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for week in month.weeks %}
+                        <tr>
+                            {% for cell in week %}
+                                {% if cell %}
+                                <td class="eb-cal-day {% if cell.color %}eb-cal-{{ cell.color }}{% endif %} {% if cell.is_today %}eb-today{% endif %}"
+                                    title="{{ cell.label }}">
+                                    {{ cell.day }}
+                                </td>
+                                {% else %}
+                                <td></td>
+                                {% endif %}
+                            {% endfor %}
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<div class="card shadow-sm mt-3">
+    <div class="card-body py-2 small">
+        <span class="me-3"><span class="eb-cal-legend-swatch eb-cal-blue"></span>Jornada completa</span>
+        <span class="me-3"><span class="eb-cal-legend-swatch eb-cal-light_blue"></span>Jornada incompleta</span>
+        <span class="me-3"><span class="eb-cal-legend-swatch eb-cal-green"></span>Vacaciones</span>
+        <span class="me-3"><span class="eb-cal-legend-swatch eb-cal-orange"></span>Ausencia</span>
+        <span class="me-3"><span class="eb-cal-legend-swatch eb-cal-red"></span>Sin explicar</span>
+        <span class="me-3"><span class="eb-cal-legend-swatch eb-cal-yellow"></span>Festivo</span>
+    </div>
+</div>
+
+{% endif %}
+{% endblock %}

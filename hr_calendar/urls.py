@@ -9,6 +9,7 @@ Servida bajo /panel/vacaciones/ según enterprise_core/urls.py.
 from django.urls import path
 
 from hr_calendar.views import (
+    VacationCalendarView,
     VacationPeriodListView,
     VacationPeriodCreateView,
     VacationPeriodUpdateView,
@@ -20,6 +21,11 @@ app_name = "hr_calendar"
 urlpatterns = [
     path(
         "",
+        VacationCalendarView.as_view(),
+        name="calendar",
+    ),
+    path(
+        "gestion/",
         VacationPeriodListView.as_view(),
         name="vacation_period_list",
     ),

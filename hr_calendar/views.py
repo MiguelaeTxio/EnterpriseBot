@@ -77,7 +77,7 @@ fantasma (hr_calendar/services.py) que WorkerAbsence no tiene:
      work_order_processor/services.py y analytics/views.py, mismo
      commit que hr_calendar/services.py).
 """
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
 from django.contrib import messages as django_messages
 from django.shortcuts import redirect, render
@@ -85,13 +85,232 @@ from django.urls import reverse
 from django.views.generic import View
 
 from ivr_config.models import CompanyUser
-from panel.mixins import SupervisorAccessMixin
+from panel.mixins import CompanyUserRequiredMixin, SupervisorAccessMixin
 
 from hr_calendar.models import VacationPeriod
 
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+_MESES_ES = {
+    1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril",
+    5: "Mayo", 6: "Junio", 7: "Julio", 8: "Agosto",
+    9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre",
+}
+
+
+def _last_day_of_month(year, month):
+    """
+    Returns the last calendar date of the given year/month.
+    ---
+    Devuelve la última fecha de calendario del año/mes dado.
+    """
+    if month == 12:
+        return date(year, 12, 31)
+    return date(year, month + 1, 1) - timedelta(days=1)
+
+
+def _build_month_grid(year, month, days_map):
+    """
+    Builds a Monday-first month grid (list of weeks, each a list of 7
+    cells) for the given year/month. Each cell is either None (padding
+    outside the month) or a dict with day, date, color and label -- color/
+    label come from days_map (see hr_calendar.services.
+    compute_calendar_days) when the date falls within the range that was
+    actually computed; days of this month outside that range render with
+    color=None (e.g. the tail end of a month that belongs to the next
+    WorkPeriodGroup).
+    ---
+    Construye una cuadrícula de mes empezando en lunes (lista de semanas,
+    cada una una lista de 7 celdas) para el año/mes dado. Cada celda es
+    None (relleno fuera del mes) o un dict con day, date, color y label --
+    color/label vienen de days_map (ver hr_calendar.services.
+    compute_calendar_days) cuando la fecha cae dentro del rango realmente
+    calculado; los días de este mes fuera de ese rango se renderizan con
+    color=None (p. ej. la cola de un mes que pertenece al siguiente
+    WorkPeriodGroup).
+    """
+    first_day = date(year, month, 1)
+    last_day = _last_day_of_month(year, month)
+    # Monday=0 ... Sunday=6 -- ya es el orden de weekday() de Python.
+    leading_blanks = first_day.weekday()
+
+    weeks = []
+    week = [None] * leading_blanks
+    cursor = first_day
+    while cursor <= last_day:
+        info = days_map.get(cursor, {"color": None, "label": ""})
+        week.append({
+            "day": cursor.day,
+            "date": cursor,
+            "color": info["color"],
+            "label": info["label"],
+            "is_today": cursor == date.today(),
+        })
+        if len(week) == 7:
+            weeks.append(week)
+            week = []
+        cursor += timedelta(days=1)
+    if week:
+        week.extend([None] * (7 - len(week)))
+        weeks.append(week)
+
+    return {
+        "label": f"{_MESES_ES[month]} {year}",
+        "weeks": weeks,
+    }
+
+
+def _months_between(date_from, date_to):
+    """
+    Returns the ordered list of (year, month) tuples touched by
+    [date_from, date_to] (inclusive) -- typically 1-3 for a WorkPeriodGroup
+    span, per Miguel Ángel: "podemos poner los dos meses, los dos meses"
+    (sección 3.3 del anexo, mostrar los meses completos del periodo, no
+    solo los días dentro de rango).
+    ---
+    Devuelve la lista ordenada de tuplas (año, mes) tocadas por
+    [date_from, date_to] (ambas inclusive) -- típicamente 1-3 para el
+    rango de un WorkPeriodGroup, según Miguel Ángel: "podemos poner los
+    dos meses, los dos meses" (sección 3.3 del anexo, mostrar los meses
+    completos del periodo, no solo los días dentro de rango).
+    """
+    months = []
+    cursor = date(date_from.year, date_from.month, 1)
+    end_marker = date(date_to.year, date_to.month, 1)
+    while cursor <= end_marker:
+        months.append((cursor.year, cursor.month))
+        if cursor.month == 12:
+            cursor = date(cursor.year + 1, 1, 1)
+        else:
+            cursor = date(cursor.year, cursor.month + 1, 1)
+    return months
+
+
+class VacationCalendarView(CompanyUserRequiredMixin, View):
+    """
+    Calendar view for H24 -- visible to every authenticated role
+    (ENTERPRISEBOT_ATTACHED_MILESTONE_V24.md sección 3.2: "Visible para
+    todo el mundo (todos los roles autenticados)"). ADMIN/SUPERVISOR get
+    an operator selector and can view anyone's calendar; WORKSHOP/DRIVER
+    (and any other role) see only their own, no selector -- matches the
+    access matrix in the anexo exactly.
+
+    Grouped by WorkPeriodGroup (sección 3.3), with prev/next navigation
+    between periods. Falls back to the current natural month when the
+    company has no WorkPeriodGroup at all (documented default in the
+    anexo).
+    ---
+    Vista de calendario para H24 -- visible a todo rol autenticado
+    (ENTERPRISEBOT_ATTACHED_MILESTONE_V24.md sección 3.2: "Visible para
+    todo el mundo (todos los roles autenticados)"). ADMIN/SUPERVISOR
+    tienen selector de operario y pueden ver el calendario de cualquiera;
+    WORKSHOP/DRIVER (y cualquier otro rol) solo ven el suyo propio, sin
+    selector -- coincide exactamente con la matriz de acceso del anexo.
+
+    Agrupado por WorkPeriodGroup (sección 3.3), con navegación anterior/
+    siguiente entre periodos. Cae al mes natural actual cuando la empresa
+    no tiene ningún WorkPeriodGroup (comportamiento por defecto
+    documentado en el anexo).
+    """
+    template_name = "hr_calendar/calendar.html"
+
+    def get(self, request, *args, **kwargs):
+        from hr_calendar.services import (
+            compute_calendar_days,
+            resolve_period_group_for_calendar,
+        )
+
+        cu = request.user.company_user
+        company = cu.company
+        is_elevated = cu.role in (
+            CompanyUser.ROLE_ADMIN, CompanyUser.ROLE_SUPERVISOR,
+        )
+
+        operators = None
+        if is_elevated:
+            operators = list(
+                CompanyUser.objects
+                .filter(company=company, is_active=True)
+                .select_related("user")
+                .order_by("user__first_name", "user__last_name", "user__username")
+            )
+            _op_pk_raw = request.GET.get("operator_pk", "").strip()
+            target_operator = None
+            if _op_pk_raw.isdigit():
+                target_operator = next(
+                    (o for o in operators if o.pk == int(_op_pk_raw)), None,
+                )
+            if target_operator is None and operators:
+                target_operator = operators[0]
+        else:
+            target_operator = cu
+
+        if target_operator is None:
+            # Empresa sin ningún CompanyUser activo -- caso límite, nada
+            # que pintar.
+            return render(request, self.template_name, {
+                "active_nav": "vacation_calendar",
+                "is_elevated": is_elevated,
+                "operators": operators,
+                "target_operator": None,
+            })
+
+        _group_pk_raw = request.GET.get("group_pk", "").strip()
+        group_pk = int(_group_pk_raw) if _group_pk_raw.isdigit() else None
+        resolved = resolve_period_group_for_calendar(company, group_pk)
+
+        if resolved is not None:
+            group = resolved["group"]
+            date_from = group.start_date
+            date_to = group.end_date or date.today()
+            period_kind = "Periodo liquidado" if group.is_closed else "Periodo activo"
+            _start_m = _MESES_ES[date_from.month]
+            _end_m = _MESES_ES[date_to.month]
+            if date_from.month == date_to.month and date_from.year == date_to.year:
+                period_label = f"{period_kind}: {_start_m} {date_from.year}"
+            elif date_from.year == date_to.year:
+                period_label = (
+                    f"{period_kind}: {_start_m} y {_end_m} {date_to.year}"
+                )
+            else:
+                period_label = (
+                    f"{period_kind}: {_start_m} {date_from.year} y "
+                    f"{_end_m} {date_to.year}"
+                )
+            prev_group_pk = resolved["prev_group_pk"]
+            next_group_pk = resolved["next_group_pk"]
+            group_pk_current = group.pk
+        else:
+            today = date.today()
+            date_from = today.replace(day=1)
+            date_to = _last_day_of_month(today.year, today.month)
+            period_label = f"{_MESES_ES[today.month]} {today.year}"
+            prev_group_pk = None
+            next_group_pk = None
+            group_pk_current = None
+
+        days_map = compute_calendar_days(
+            target_operator, company, date_from, date_to,
+        )
+        months = [
+            _build_month_grid(y, m, days_map)
+            for (y, m) in _months_between(date_from, date_to)
+        ]
+
+        return render(request, self.template_name, {
+            "active_nav": "vacation_calendar",
+            "is_elevated": is_elevated,
+            "operators": operators,
+            "target_operator": target_operator,
+            "period_label": period_label,
+            "prev_group_pk": prev_group_pk,
+            "next_group_pk": next_group_pk,
+            "group_pk_current": group_pk_current,
+            "months": months,
+        })
 
 
 def _parse_iso(value):
