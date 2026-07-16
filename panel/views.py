@@ -55,6 +55,7 @@ from panel.views_workorders import (
     WorkPeriodGroupLockView,
     WorkOrderAdminExportView,
     WorkOrderMachineFilterView,
+    WorkOrderDraftListView,
     ExportTemplateListView,
     ExportTemplateCreateView,
     ExportTemplateUpdateView,
