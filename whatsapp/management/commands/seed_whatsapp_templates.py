@@ -20,7 +20,7 @@ Template inventory (11 total):
     - breakdown_info_request     UTILITY   HXe3baa955000b20e312d6d000f775533b
     - breakdown_assigned         UTILITY   HX41a742714147cc5ec92fa83dbf5c3db6
     - breakdown_broadcast        UTILITY   HXa1b32520e94663a32d3c7c1453429fe3
-    - document_expiry_alert      UTILITY   HXc85c75b0d8ba412025ff09db4960cd35
+    - document_expiry_alert      UTILITY   HX55da66276bb2025f691c378abff0123e
 
   NOT SUBMITTED (1 — created previously, pending Meta submission decision):
     - employee_help_menu         UTILITY   HXe8c20c02d4cf4ab340924ed5e2b0ac6f
@@ -175,14 +175,27 @@ TEMPLATE_DEFINITIONS = [
         # approaching, to alert about a cost-center document nearing expiry
         # (ITV, OCA certificate, insurance, etc.). Not yet wired to any
         # sender task -- created ahead of the alerting feature itself.
-        # Body: "Usted recibe este mensaje porque consta como trabajador de
-        #        Grupo Alvarez. El documento {{2}} de la maquina {{3}}
-        #        caduca el {{4}}. Consulte el panel para mas detalles, {{1}}."
+        # REJECTED once (HXc85c75b0d8ba412025ff09db4960cd35) and again on a
+        # duplicate attempt (HX1b943a259babe8fe3e9f329bf7f7b25b) by Meta:
+        # "Variables can't be at the start or end of the template" -- the
+        # body ended in "..., {{1}}.". Both deleted from Twilio, replaced by
+        # this corrected body with the greeting variable moved to the start
+        # and the message ending in plain text.
+        # Body: "Hola {{1}}. Usted recibe este mensaje porque consta como
+        #        trabajador de Grupo Alvarez. El documento {{2}} de la
+        #        maquina {{3}} caduca el {{4}}. Consulte el panel para mas
+        #        detalles."
         # Enviado de forma business-initiated cuando un documento de centro
         # de gasto esta proximo a caducar. Aun sin tarea de envio conectada
         # -- creada antes de construir la propia funcionalidad de alarmas.
+        # RECHAZADA una vez (HXc85c75b0d8ba412025ff09db4960cd35) y de nuevo
+        # en un intento duplicado (HX1b943a259babe8fe3e9f329bf7f7b25b) por
+        # Meta: "Variables can't be at the start or end of the template" --
+        # el cuerpo terminaba en "..., {{1}}.". Ambas borradas de Twilio,
+        # sustituidas por este cuerpo corregido con la variable de saludo
+        # movida al principio y el mensaje terminando en texto plano.
         "name":        "document_expiry_alert",
-        "content_sid": "HXc85c75b0d8ba412025ff09db4960cd35",
+        "content_sid": "HX55da66276bb2025f691c378abff0123e",
         "category":    WhatsAppTemplate.CATEGORY_UTILITY,
         "language":    "es",
     },
