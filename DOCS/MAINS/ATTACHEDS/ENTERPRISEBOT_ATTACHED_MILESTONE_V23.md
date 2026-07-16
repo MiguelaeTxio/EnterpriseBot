@@ -293,6 +293,58 @@ la sección 4):**
    antes de poder enviarlas (proceso externo, con plazo de aprobación
    fuera del control del proyecto — contemplar en la planificación).
 
+#### Decisiones cerradas en S021 (tal cual las dio Miguel Ángel, sin reinterpretar -- directriz 4.8)
+
+1. **Criterio de vigencia:** "Todos los documentos serán vigentes
+   cuando la fecha de caducidad no se haya alcanzado o fecha de
+   emisión o el periodo de referencia sean más modernos." Es decir,
+   un documento es vigente si `expiry_date` (cuando existe) todavía
+   no ha pasado, O si su `issue_date`/periodo de referencia es más
+   reciente que el de otro documento del mismo tipo para la misma
+   máquina. Pendiente de implementar (no construido todavía en S021 --
+   solo el modelo de datos que lo soporta, ver punto 4).
+2. **Archivado (no borrado directo):** "Se marca y en el visor de
+   documentación se pone abajo en archivados y con la posibilidad de
+   que se borre." Un documento superado por uno más vigente se marca
+   como archivado (nuevo campo booleano, pendiente de añadir al
+   modelo) y se muestra en una sección "Archivados" al final del
+   visor de documentación, con opción de borrado manual desde ahí.
+   Pendiente de implementar.
+3. **Alarmas WhatsApp -- PRIORIDAD del propio Miguel Ángel dentro de
+   esta hoja de ruta:** "Prioridad diseñar la plantilla usando la API
+   de Twilio y solicitar la revisión de meta, estamos usando la
+   coletilla de ser trabajador de la empresa para que nos las acepten
+   como utility, mira a ver como están hechas las plantillas para que
+   sea igual a las ya hechas." Diseñar la plantilla nueva replicando
+   el formato/coletilla de las plantillas WhatsApp ya aprobadas del
+   proyecto (ver `whatsapp/models.py` `WhatsAppTemplate` y el panel de
+   gestión de plantillas de H4), enviarla a revisión de Meta como
+   categoría *utility* con la misma coletilla de "trabajador de la
+   empresa" ya usada en las plantillas existentes. Pendiente de
+   diseñar -- primera tarea recomendada de la siguiente sesión sobre
+   H23, por ser la única de las tres con plazo externo (aprobación de
+   Meta) fuera de nuestro control.
+4. **Modelo de datos dinámico por tipo de documento (construido en
+   S021):** aclaración explícita de Miguel Ángel -- "Todas estas
+   fechas deberían de tener sus campos en la base de datos... tenemos
+   que ser dinámicos con esto, puesto que no sabemos qué documentos
+   podemos llegar a encontrar... Cuando lleguemos al tema de personal,
+   también tendremos muchos tipos de documentos, cursos, certificados,
+   etcétera." Diseño híbrido acordado (Opción A JSON vs. Opción B EAV
+   planteadas, Miguel Ángel confirma el híbrido): columnas propias con
+   tipo real para los campos que se repiten entre varios tipos de
+   documento (`period_start`/`period_end` -- periodo de cobro/
+   cobertura, ej. pagos trimestrales de seguro, distinto de
+   `issue_date`/`expiry_date`; `amount` -- importe en euros), más un
+   campo `extra_data` (JSONField, sin lista cerrada de claves) para lo
+   genuinamente impredecible por tipo de documento, pensado sobre todo
+   para cuando se aborde documentación de personal. Migración
+   `0004_machinedocument_period_amount_extra_data` escrita en esta
+   sesión. La lógica de vigencia (punto 1) y el campo/vista de
+   archivado (punto 2) siguen sin implementar -- son la continuación
+   natural de la siguiente sesión sobre H23, después de la plantilla
+   WhatsApp (punto 3, prioridad explícita).
+
 ### Funcionalidad nueva anotada por Miguel Ángel al cierre — evaluar si abre hito propio
 
 Miguel Ángel especificó al cierre de esta sesión una funcionalidad de

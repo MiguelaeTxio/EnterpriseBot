@@ -251,6 +251,56 @@ class MachineDocument(models.Model):
                   "aseguradora, OCA, Junta de Andalucía), cuando se "
                   "identifica en el contenido.",
     )
+    period_start = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name="Inicio de periodo",
+        help_text="Inicio del periodo de cobro/cobertura extraído del "
+                  "contenido (ej. pagos trimestrales de seguro, periodo "
+                  "de cobertura de una póliza) -- distinto de "
+                  "issue_date/expiry_date, que son fecha de emisión y "
+                  "fecha de caducidad del documento en sí. Nulo si el "
+                  "documento no tiene periodo de cobro/cobertura.",
+    )
+    period_end = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name="Fin de periodo",
+        help_text="Fin del periodo de cobro/cobertura extraído del "
+                  "contenido. Nulo si el documento no tiene periodo de "
+                  "cobro/cobertura.",
+    )
+    amount = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Importe",
+        help_text="Importe en euros extraído del contenido (ej. prima "
+                  "de un periodo de seguro), cuando el documento lleva "
+                  "una cantidad monetaria reconocible. Nulo si no "
+                  "aplica o no se pudo extraer.",
+    )
+    extra_data = models.JSONField(
+        null=True,
+        blank=True,
+        default=dict,
+        verbose_name="Metadatos adicionales",
+        help_text="Diseño híbrido acordado con Miguel Ángel (S021): los "
+                  "campos de fecha/importe que se repiten entre varios "
+                  "tipos de documento tienen columna propia con tipo "
+                  "real (expiry_date, issue_date, period_start, "
+                  "period_end, amount) para poder ordenar/filtrar por "
+                  "SQL sin trucos; este campo JSON es exclusivamente "
+                  "para lo genuinamente impredecible por tipo de "
+                  "documento -- pensado sobre todo para cuando H23 se "
+                  "extienda a documentación de personal (cursos, "
+                  "certificados, etc.), donde cada tipo puede tener una "
+                  "forma completamente distinta. Gemini decide qué "
+                  "claves rellenar según lo que detecte, sin lista "
+                  "cerrada, mismo espíritu que document_type libre. "
+                  "Vacío ({}) por defecto.",
+    )
 
     # ------------------------------------------------------------------
     # Cloud persistence — same fields/rationale as
