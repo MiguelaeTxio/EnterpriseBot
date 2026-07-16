@@ -132,6 +132,36 @@ _MIME_TYPES = {
 }
 
 
+def sanitize_path_component(value) -> str:
+    """
+    Sustituye '/' por '-' en un componente de gcs_blob_name derivado
+    de un dato de negocio (número de albarán, código de máquina...).
+
+    GCS trata '/' como separador visual de "carpeta" dentro del
+    nombre del objeto -- un dato real con '/' en medio (visto en
+    producción, S022: números de albarán con formato 'BA/2606366')
+    crearía una jerarquía anidada no intencionada en vez de un único
+    segmento plano, exactamente el desorden que esta migración existe
+    para eliminar (ver docstring del módulo, "servidor de archivos").
+    Corregido en S022 tras detectarlo en los 10 primeros albaranes
+    migrados de Drive.
+
+    ---
+
+    Replaces '/' with '-' in a gcs_blob_name component derived from a
+    business value (delivery number, machine code...).
+
+    GCS treats '/' as a visual "folder" separator within the object
+    name -- a real value containing '/' (seen in production, S022:
+    delivery numbers formatted like 'BA/2606366') would create an
+    unintended nested hierarchy instead of a single flat segment,
+    exactly the mess this migration exists to remove (see module
+    docstring, "servidor de archivos"). Fixed in S022 after being
+    detected in the first 10 delivery notes migrated from Drive.
+    """
+    return str(value).replace('/', '-')
+
+
 class GCSNotConfigured(Exception):
     """
     Se lanza cuando faltan las variables de entorno necesarias para
@@ -269,7 +299,10 @@ def upload_task_photo_file(photo) -> str:
     machine_label = (
         photo.machine_asset.code if photo.machine_asset_id else 'sin-maquina'
     )
-    blob_name = f'{year_month}/{photo.pk}_{machine_label}_{file_name}'
+    blob_name = (
+        f'{year_month}/{photo.pk}_{sanitize_path_component(machine_label)}'
+        f'_{file_name}'
+    )
 
     result = upload_file(TASK_PHOTOS_BUCKET, blob_name, file_path)
     logger.info(
@@ -298,7 +331,7 @@ def upload_delivery_note_file(delivery_note) -> str:
     file_name = os.path.basename(file_path)
     year_month = delivery_note.created_at.strftime('%Y-%m')
     identifier = delivery_note.delivery_number or delivery_note.pk
-    blob_name = f'{year_month}/{identifier}_{file_name}'
+    blob_name = f'{year_month}/{sanitize_path_component(identifier)}_{file_name}'
 
     result = upload_file(DELIVERY_NOTES_BUCKET, blob_name, file_path)
     logger.info(
@@ -327,8 +360,8 @@ def upload_machine_document_file(document) -> str:
     extension = os.path.splitext(file_path)[1].lower()
     machine_code = document.machine_asset.code
     blob_name = (
-        f'{machine_code}/{document.document_type} - '
-        f'{document.display_name}{extension}'
+        f'{machine_code}/{sanitize_path_component(document.document_type)} - '
+        f'{sanitize_path_component(document.display_name)}{extension}'
     )
 
     result = upload_file(MACHINE_DOCUMENTS_BUCKET, blob_name, file_path)
