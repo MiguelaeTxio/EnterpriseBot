@@ -46,8 +46,8 @@ Cumple dos funciones inseparables:
 | **H20** | **Laboratorio de Análisis Unificado** | **`ENTERPRISEBOT_ATTACHED_MILESTONE_V20.md`** |
 | H21 | Refactorización Arquitectónica Split views.py | `ENTERPRISEBOT_ATTACHED_MILESTONE_V21.md` |
 | H22 | Visor de Historial de Máquinas (Operario) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V22.md` |
-| H23 | Documentación de Centros de Gasto | `ENTERPRISEBOT_ATTACHED_MILESTONE_V23.md` |
-| H24 | Vacaciones y Calendario | `ENTERPRISEBOT_ATTACHED_MILESTONE_V24.md` ← EN PROGRESO |
+| H23 | Documentación de Centros de Gasto | `ENTERPRISEBOT_ATTACHED_MILESTONE_V23.md` ← EN PROGRESO |
+| H24 | Vacaciones y Calendario | `ENTERPRISEBOT_ATTACHED_MILESTONE_V24.md` |
 
 Todos los anexos viven en `DOCS/MAINS/ATTACHEDS/`.
 
@@ -55,12 +55,15 @@ Todos los anexos viven en `DOCS/MAINS/ATTACHEDS/`.
 
 ## 3. Resultado Actual
 
-**Hito EN PROGRESO:** H24 — Vacaciones y Calendario →
-`ENTERPRISEBOT_ATTACHED_MILESTONE_V24.md`
+**Hito EN PROGRESO:** H23 — Documentación de Centros de Gasto →
+`ENTERPRISEBOT_ATTACHED_MILESTONE_V23.md`
 
-**Hito PAUSADO en esta sesión (S018):** H23 — Documentación de Centros de
-Gasto → `ENTERPRISEBOT_ATTACHED_MILESTONE_V23.md`. Sin trabajo de código
-en S018; retomar por su hoja de ruta intacta (sección 5 del anexo).
+**Hito PAUSADO en esta sesión (S021):** H24 — Vacaciones y Calendario →
+`ENTERPRISEBOT_ATTACHED_MILESTONE_V24.md`. Funcionalidad de vacaciones/
+calendario en sí completa desde S020 (sin trabajo pendiente propio); el
+único punto abierto que quedaba (migración Google Drive → Google Cloud
+Storage, ver anexo V24 "COMPLETADAS EN S019") pasa a rastrearse como
+primera tarea de H23, por afectar también a H23 (`MachineDocument`).
 
 ---
 

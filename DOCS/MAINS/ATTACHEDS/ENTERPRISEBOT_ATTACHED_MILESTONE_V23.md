@@ -280,18 +280,15 @@ la sección 4):**
 
 ### Hoja de ruta — continuación de este hito
 
-1. **Prevalencia de documentos vigentes** — cuando se sube una versión
-   nueva de un documento cuyo tipo ya existe para la misma máquina
-   (ej. un certificado OCA renovado), decidir el criterio de qué
-   documento es "el vigente" frente a versiones anteriores.
-2. **Archivado y borrado de documentos obsoletos** — política a
-   definir con Miguel Ángel: ¿se archivan (se mantienen pero se
-   marcan como no vigentes) o se borran directamente de BD/Drive?
-3. **Alarmas vía WhatsApp** para documentos próximos a caducar —
-   `expiry_date` ya se captura desde esta sesión precisamente para
-   esto. Requiere presentar plantillas nuevas para aprobación de Meta
-   antes de poder enviarlas (proceso externo, con plazo de aprobación
-   fuera del control del proyecto — contemplar en la planificación).
+1. **Prevalencia de documentos vigentes** — criterio cerrado en S021
+   (ver más abajo), lógica de cálculo pendiente de implementar.
+2. **Archivado y borrado de documentos obsoletos** — diseño cerrado en
+   S021 (ver más abajo), campo/vista pendientes de implementar.
+3. ~~**Alarmas vía WhatsApp** para documentos próximos a caducar~~ —
+   **plantilla creada, corregida tras rechazo de Meta, y en revisión**
+   (ver "COMPLETADAS EN S021"). Falta la tarea que la dispare de verdad
+   (detectar documentos próximos a caducar y enviar el mensaje) — no
+   construida todavía, la plantilla es solo el primer paso.
 
 #### Decisiones cerradas en S021 (tal cual las dio Miguel Ángel, sin reinterpretar -- directriz 4.8)
 
@@ -301,29 +298,45 @@ la sección 4):**
    un documento es vigente si `expiry_date` (cuando existe) todavía
    no ha pasado, O si su `issue_date`/periodo de referencia es más
    reciente que el de otro documento del mismo tipo para la misma
-   máquina. Pendiente de implementar (no construido todavía en S021 --
-   solo el modelo de datos que lo soporta, ver punto 4).
+   máquina. **Pendiente de implementar** — el modelo de datos que lo
+   soporta ya está construido (punto 4), falta la lógica en sí
+   (método/manager que calcule `is_current`, o cómputo al vuelo en la
+   vista).
 2. **Archivado (no borrado directo):** "Se marca y en el visor de
    documentación se pone abajo en archivados y con la posibilidad de
    que se borre." Un documento superado por uno más vigente se marca
-   como archivado (nuevo campo booleano, pendiente de añadir al
-   modelo) y se muestra en una sección "Archivados" al final del
-   visor de documentación, con opción de borrado manual desde ahí.
-   Pendiente de implementar.
-3. **Alarmas WhatsApp -- PRIORIDAD del propio Miguel Ángel dentro de
-   esta hoja de ruta:** "Prioridad diseñar la plantilla usando la API
-   de Twilio y solicitar la revisión de meta, estamos usando la
-   coletilla de ser trabajador de la empresa para que nos las acepten
-   como utility, mira a ver como están hechas las plantillas para que
-   sea igual a las ya hechas." Diseñar la plantilla nueva replicando
-   el formato/coletilla de las plantillas WhatsApp ya aprobadas del
-   proyecto (ver `whatsapp/models.py` `WhatsAppTemplate` y el panel de
-   gestión de plantillas de H4), enviarla a revisión de Meta como
-   categoría *utility* con la misma coletilla de "trabajador de la
-   empresa" ya usada en las plantillas existentes. Pendiente de
-   diseñar -- primera tarea recomendada de la siguiente sesión sobre
-   H23, por ser la única de las tres con plazo externo (aprobación de
-   Meta) fuera de nuestro control.
+   como archivado (nuevo campo booleano, **pendiente de añadir al
+   modelo** — no construido en S021) y se muestra en una sección
+   "Archivados" al final del visor de documentación, con opción de
+   borrado manual desde ahí. Los documentos vigentes solo se pueden
+   ver, no se pueden borrar directamente — salvo la excepción del
+   punto siguiente.
+   **Precisión añadida por Miguel Ángel al cierre de S021, tal cual:**
+   "Podríamos tener la posibilidad de poder borrarlos por si se suben
+   documentos equivocados" — es decir, aunque la regla general es que
+   los vigentes no se borran, sí debe existir una vía de borrado
+   manual para el caso de subida errónea (a diseñar: ¿acción directa
+   con confirmación, o siempre pasa primero por archivado?).
+3. **Alarmas WhatsApp -- construida en S021, con una corrección real a
+   mitad de sesión:** plantilla `document_expiry_alert` diseñada
+   siguiendo el patrón de coletilla "trabajador de Grupo Alvarez" ya
+   usado en las plantillas de H17, creada vía API de Twilio (Content
+   API v1) y enviada a revisión de Meta. **Primer intento rechazado
+   dos veces** (`HXc85c75b0d8ba412025ff09db4960cd35` y su duplicado
+   `HX1b943a259babe8fe3e9f329bf7f7b25b`, motivo real de Meta:
+   "Variables can't be at the start or end of the template" -- el
+   cuerpo terminaba en "..., {{1}}."). Ambas borradas de Twilio vía
+   API (`DELETE /v1/Content/{Sid}`, confirmado). Cuerpo corregido por
+   Miguel Ángel (variable de saludo `{{1}}` movida al principio,
+   cierre en texto plano) y **plantilla nueva enviada a revisión**:
+   `content_sid = HX55da66276bb2025f691c378abff0123e`, `status =
+   received`, categoría `UTILITY` — **pendiente de que Meta confirme
+   la aprobación**, primer punto a verificar al abrir la sesión
+   siguiente. Registrada en `whatsapp/management/commands/
+   seed_whatsapp_templates.py` como `PENDING_APPROVAL`. **No
+   construida todavía:** la tarea (Celery, probablemente periódica)
+   que detecte documentos próximos a caducar y dispare el envío real
+   -- la plantilla es el primer paso, no la funcionalidad completa.
 4. **Modelo de datos dinámico por tipo de documento (construido en
    S021):** aclaración explícita de Miguel Ángel -- "Todas estas
    fechas deberían de tener sus campos en la base de datos... tenemos
@@ -339,11 +352,54 @@ la sección 4):**
    campo `extra_data` (JSONField, sin lista cerrada de claves) para lo
    genuinamente impredecible por tipo de documento, pensado sobre todo
    para cuando se aborde documentación de personal. Migración
-   `0004_machinedocument_period_amount_extra_data` escrita en esta
-   sesión. La lógica de vigencia (punto 1) y el campo/vista de
-   archivado (punto 2) siguen sin implementar -- son la continuación
-   natural de la siguiente sesión sobre H23, después de la plantilla
-   WhatsApp (punto 3, prioridad explícita).
+   `0004_machinedocument_period_amount_extra_data` escrita y
+   desplegada en esta sesión (verificado `[X]` aplicada en producción).
+
+### Hoja de Ruta para la Sesión Siguiente (S022) -- orden confirmado explícitamente por Miguel Ángel al cierre de S021
+
+**Prioridad 0 -- ANTES que cualquier pieza nueva de H23, palabras
+textuales de Miguel Ángel: "no sin antes ya hacer ya la migración a
+Google Cloud, y quitar lo de Google Drive" / "Siguiente sesión
+migramos":**
+0. Migración de `spare_parts/gdrive_service.py` (Google Drive) a
+   Google Cloud Storage. **No es solo de H23** -- afecta también a H7
+   (`TaskPhoto`) y H10 (`DeliveryNote`), que reutilizan el mismo
+   servicio. Antes de escribir código: verificación online obligatoria
+   de la API actual de `google-cloud-storage` (directriz 4.4, SINE QUA
+   NON -- no hecha todavía), y cerrar con Miguel Ángel las decisiones
+   de diseño reales que esto implica (no asumir ninguna, directriz
+   4.8): ¿bucket único o uno por tipo de documento?, ¿se migran los
+   archivos ya subidos a Drive o solo los nuevos van a GCS?, ¿los
+   campos `drive_file_id`/`drive_web_link` de los tres modelos cambian
+   de significado o se añaden campos nuevos?, ¿acceso público directo
+   o URLs firmadas con expiración?
+
+**Después de la migración, continuación de H23 (orden según lo
+descrito por Miguel Ángel al cierre de S021):**
+1. Comprobar el estado de aprobación de la plantilla
+   `document_expiry_alert` (`HX55da66276bb2025f691c378abff0123e`) en
+   Twilio/Meta.
+2. Implementar la lógica de vigencia (punto 1 de las decisiones S021).
+3. Añadir el campo de archivado al modelo + sección "Archivados" en el
+   visor de documentación + acción de borrado manual, tanto para
+   archivados como para vigentes subidos por error (punto 2 de las
+   decisiones S021, incluida la precisión del cierre).
+4. Construir el modal de "Crear alerta" por documento -- palabras de
+   Miguel Ángel: "una de las acciones sería precisamente esa, crear
+   alerta y un modal para la creación de la alerta y que quede
+   asociada a ese documento y a su centro de gasto, a la máquina."
+   Nuevo modelo (a diseñar) para la alerta en sí, asociada a
+   `MachineDocument` + `MachineAsset`, y la tarea Celery que la
+   dispare usando la plantilla `document_expiry_alert` ya aprobada.
+5. Revisar si el CRUD de documentación necesita mejoras más allá de
+   lo anterior -- Miguel Ángel lo dejó abierto ("no sé si habrá que
+   mejorar el CRUD... está bien, pero habría que dotar las diferentes
+   funcionalidades") -- confirmar alcance concreto con él al empezar,
+   no asumir qué falta.
+6. Miguel Ángel sigue pendiente de traer una carpeta tipo con
+   documentación real de un trabajador (cursos, certificados) para
+   plantear juntos, al abrir la sesión, cómo modelar la documentación
+   de personal (ver punto 3 de S017, nunca abordado todavía).
 
 ### Funcionalidad nueva anotada por Miguel Ángel al cierre — evaluar si abre hito propio
 
@@ -386,6 +442,11 @@ empezar**.
     sin baja (ausencia no justificada / hueco a revisar).
   - **Amarillo** — festivo.
 
+**Nota de cierre (S021):** esta funcionalidad abrió como hito propio,
+**H24 — Vacaciones y Calendario**, en S018, y quedó completa en S020.
+Se deja esta sección tal cual como registro histórico de cómo se
+originó, sin más acción pendiente aquí.
+
 ---
 
 ## 6. Registro de Sesiones
@@ -394,3 +455,4 @@ empezar**.
 |---|---|---|
 | — | — | Hito creado en S016 (desvío desde H17), a petición explícita de Miguel Ángel. Sin trabajo de código todavía — ver sección 4 (preguntas abiertas) y sección 5 (hoja de ruta) para el punto de partida de la siguiente sesión. |
 | S017 | 2026-07-14 | Primera sesión de código del hito. Modelo `MachineDocument` + app `machine_documents` + rol `DOCS_SUPERVISOR`, servicio de clasificación Gemini Vision (clasificación + metadatos en una sola llamada), integración en Historial de Máquina/Centros de gasto, pipeline migrado de síncrono a asíncrono (Celery) tras un 504 real de PythonAnywhere. Bug de traducción de categorías de avería corregido de paso (fuera de este hito). Ver COMPLETADAS EN S017 arriba para el detalle completo. |
+| S021 | 2026-07-16 | Sesión con H24 EN PROGRESO al arrancar, pero prácticamente todo el trabajo real fue de H23 (**PCH H24→H23 ejecutado al cierre**, confirmado por Miguel Ángel). Fix de sidebar de `alvarez_admin` (commit `e2a5ecc` -- `company_user` ausente del contexto de `MachineDocumentBatchUploadView`). Modelo dinámico de metadatos: `period_start`/`period_end`/`amount` + `extra_data` JSON (commit `4ffebee`, migración `0004` verificada aplicada en producción). Plantilla WhatsApp `document_expiry_alert` creada, rechazada dos veces por Meta ("Variables can't be at the start or end of the template"), plantillas rechazadas borradas de Twilio, rediseñada y reenviada a revisión (`HX55da66276bb2025f691c378abff0123e`, pendiente de aprobación). Desvío puntual a H07 (sin PCH, marcador no se movió hasta el cierre): verificación del mecanismo `PARTE-BACKUP` (confirmado funcional, 39 líneas reales en `error.log`), dos partes recuperados a mano por Miguel Ángel (Antonio Fontalba 22/06, Pablo Cañamero 03/07), y nueva vista de Administración "Borradores de Partes" + `SuperuserRequiredMixin` (sustituye el hardcode de username `alvarez_admin` por `is_superuser` de Django) -- ver anexo H07 para el detalle completo de esa pieza. Un incidente de despliegue propio (`ImportError` por `WorkOrderDraftListView` sin re-exportar en `panel/views.py`) diagnosticado con datos reales y corregido en la misma sesión (commit `7344d46`). Cuatro decisiones de diseño cerradas con Miguel Ángel para la continuación de H23 (vigencia, archivado, plantilla, modelo dinámico) -- ver "Decisiones cerradas en S021" y "Hoja de Ruta para la Sesión Siguiente (S022)" arriba. |

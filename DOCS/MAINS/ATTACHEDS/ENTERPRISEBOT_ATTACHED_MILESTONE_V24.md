@@ -566,34 +566,29 @@ pantalla de cambio de contraseña). Verificado que no queda ningún
 
 ### Hoja de Ruta para la Siguiente Sesión
 
-**Prioridad 1 -- incidencia real de sidebar, a resolver primero:**
-1. Diagnosticar por qué `alvarez_admin` (rol ADMIN, confirmado por
-   Miguel Ángel) ve el sidebar de WORKSHOP en la vista de subida de
-   Documentación de Centros de Gasto (`machine_documents` app, H23) en
-   vez del sidebar de administrador -- empezar por el contexto/mixin de
-   esa vista y por `panel/_nav_items.html` (u homólogo de
-   `machine_documents`), método empírico: verificar el rol real del
-   usuario contra lo que renderiza el template antes de asumir nada.
+### Cierre de Hito (S021) -- hito pausado vía PCH, ver ENTERPRISEBOT_ANNEX_ROUTER.md
 
-**Prioridad 2 -- retomar H23 (Documentación de Centros de Gasto),
-orden ya confirmado en S018, sigue vigente:**
-2. Una vez resuelta la incidencia de sidebar, continuar con la hoja de
-   ruta de H23 (sección 5 de `ENTERPRISEBOT_ATTACHED_MILESTONE_V23.md`,
-   intacta desde S018).
-3. Miguel Ángel traerá una carpeta tipo con la documentación real de un
-   trabajador (cursos, certificados, etc.) para plantear con él, al
-   abrir la sesión, cómo modelar la clasificación de documentos de
-   personal -- **muy dinámico, cada trabajador puede tener una cantidad
-   de cursos completamente distinta de otro** (posible estructura de
-   diccionario/JSON en vez de un esquema de columnas fijas; a estudiar
-   juntos antes de construir nada, sin decisión de diseño cerrada
-   todavía -- directriz 4.8, no asumir un modelo antes de verlo con él).
+**Prioridad 1 de la hoja de ruta anterior, resuelta en S021:**
+1. Diagnosticada y corregida la incidencia de sidebar de `alvarez_admin`
+   -- causa raíz: `MachineDocumentBatchUploadView` (GET y las dos ramas
+   de error de POST) era la única vista de todo el panel que no pasaba
+   `company_user` al contexto del template, dejando `_nav_items.html` sin
+   poder gatear ningún bloque por rol. Corregido en `machine_documents/
+   views.py` (commit `e2a5ecc`) -- ver anexo H23 para el detalle, la
+   vista pertenece a esa app.
 
-**No abordado, sin fecha decidida:** migración de Google Drive a Google
-Cloud Storage (ver "COMPLETADAS EN S019") -- reescritura de
-`spare_parts/gdrive_service.py`. Deuda técnica de reparto de coste de
-`PERSONAL` (sección 4.7 del master document) -- explícitamente no
-abordada por decisión de Miguel Ángel.
+**Funcionalidad de vacaciones/calendario:** completa desde S020, sin
+trabajo propio pendiente. El único punto que quedaba anotado sin fecha
+(migración Google Drive → Google Cloud Storage) no es específico de
+H24 -- afecta también a H7 (`TaskPhoto`), H10 (`DeliveryNote`) y H23
+(`MachineDocument`, construido en esta misma sesión) -- pasa a
+rastrearse como primera tarea de H23 (ver anexo V23, confirmado
+explícitamente por Miguel Ángel al cierre de S021: "siguiente sesión
+migramos" -- antes que cualquier otra pieza nueva de H23).
+
+**Pendiente sin fecha, no de H24 específicamente:** deuda técnica de
+reparto de coste de `PERSONAL` (sección 4.7 del master document) --
+explícitamente no abordada por decisión de Miguel Ángel.
 
 ---
 
@@ -604,3 +599,4 @@ abordada por decisión de Miguel Ángel.
 | S018 | 2026-07-14 | Hito creado (desvío desde H23). App `hr_calendar`, modelo `VacationPeriod`, campo `CompanyUser.base`, comando `assign_operator_bases` ejecutado en producción (14 operarios/chóferes, bases Maqueda/Huelva), onboarding WhatsApp ampliado, y las 7 preguntas de la sección 4 resueltas. Ver "COMPLETADAS EN S018" arriba para el detalle completo. Siguiente sesión: construir la generación automática de la tarea, el formulario de alta y la vista de calendario (hoja de ruta arriba). |
 | S019 | 2026-07-15 | Pasos 1-3 de la hoja de ruta construidos, con corrección de flujo a mitad de sesión (directriz 4.8): la generación automática se deriva de la tarea real del operario, no de un CRUD de supervisor. Calendario con código de colores y agrupación por `WorkPeriodGroup` construido y desplegado. Ocho incidencias reales encontradas y corregidas en producción (dos `ImportError` que tumbaron el despliegue, `FieldError`, sidebar rota, dos bugs de validación que bloqueaban el flujo real, autorrelleno de H.C./H.F., patrón de errores en crudo en 17 sitios fuera de H24). Vista de detalle de solo lectura para Partes Digitales añadida (fuera de H24). Diagnosticados con datos reales dos casos de "parte no encontrado" sin causa técnica. Decidida la migración futura de Google Drive a Google Cloud Storage (sin implementar). Detectado al cierre un bug real en `WorkPeriodGroup` (activación automática sin control) que Miguel Ángel decide abordar en sesión nueva junto con un rediseño más amplio (cálculo de periodo 21-20 al vuelo, horas extra acumuladas, visor por periodo) — ver "COMPLETADAS EN S019" y la hoja de ruta arriba para el detalle completo. |
 | S020 | 2026-07-15 | Rediseño completo de `WorkPeriodGroup` cerrado (5/5 puntos de la tarea principal, commits `cd5d14b`/`205346e`); CRUD de vacaciones comprobado y confirmado correcto sin cambios; desvío puntual a H10 por incidencia real de albaranes (commit `2aa236c`, ver anexo H10 fila S020); bug real de comentarios Django `{# #}` multilínea rotos detectado y corregido tras el primer cierre (commit `d27fec1`, 3 sitios); nueva incidencia de sidebar reportada por Miguel Ángel, sin diagnosticar todavía -- primera tarea de la siguiente sesión. Ver "COMPLETADAS EN S020" arriba para el detalle completo. |
+| S021 | 2026-07-16 | Prioridad 1 resuelta (sidebar de `alvarez_admin`, commit `e2a5ecc` -- el bug vivía en `machine_documents`, app de H23). Sin más trabajo propio de H24: funcionalidad de vacaciones/calendario completa desde S020. **PCH ejecutado al cierre: H24 → H23** (confirmado explícitamente por Miguel Ángel). Migración Drive→GCS, anotada aquí desde S019 sin fecha, pasa a rastrearse en el anexo H23 como primera tarea de la sesión siguiente. Ver anexo H23 (S021) para el resto del trabajo real de esta sesión -- H24 solo tuvo el desvío puntual de arriba. |
