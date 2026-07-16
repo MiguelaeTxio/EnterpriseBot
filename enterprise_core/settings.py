@@ -95,6 +95,10 @@ INSTALLED_APPS = [
     # Vacation/absence calendar management — gestión del calendario de
     # vacaciones/ausencias (Hito 24).
     'hr_calendar',
+    # Shared document infrastructure (alerts, PDF merge, email
+    # templates, substitution) consumed by H23/H25 — infraestructura
+    # documental compartida (Hito 26).
+    'document_management',
 ]
 
 # Middleware stack optimized for async processing in Django 5.2.12.
