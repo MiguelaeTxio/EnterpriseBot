@@ -242,13 +242,15 @@ CELERY_BEAT_SCHEDULE = {
     # CHAT IRC TASKS — Hito 13
     # Tareas del módulo de chat IRC — Hito 13.
     # ---------------------------------------------------------------------------
-
-    # Deletes ChatMessage records older than 7 days and BreakdownConversationTurn
-    # records from RESOLVED tickets older than 7 days. BreakdownTickets are kept.
-    # Elimina ChatMessage con más de 7 días y BreakdownConversationTurn de tickets
-    # RESOLVED con más de 7 días. Los BreakdownTicket se conservan indefinidamente.
-    'purge-old-chat-messages': {
-        'task':     'chat.tasks.purge_old_chat_messages',
-        'schedule': crontab(hour=3, minute=0),
-    },
+    # 'purge-old-chat-messages' ELIMINADA (2026-07-16, S023): ChatRoom/
+    # ChatMessage y purge_old_chat_messages() se retiraron en H17 Paso 1
+    # (solo queda BreakdownTicket, comunicación uno a uno vía WhatsApp).
+    # Esta entrada llevaba desde entonces apuntando a una tarea inexistente
+    # -- disparándose en el vacío cada día a las 3:00, sin fallar visible
+    # porque Celery simplemente no encontraba la tarea registrada. Bug real
+    # detectado y corregido en la misma sesión, fuera de alcance de H26/H23
+    # (ver ENTERPRISEBOT_ATTACHED_MILESTONE_V17.md para el registro).
+    # El hueco horario (3:00) se reutiliza para la tarea de alertas de
+    # documentos de H26 en cuanto esa tarea exista (decisión explícita de
+    # Miguel Ángel, S023).
 }
