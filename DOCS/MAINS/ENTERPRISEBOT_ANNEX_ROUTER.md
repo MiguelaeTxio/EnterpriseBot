@@ -48,6 +48,7 @@ Cumple dos funciones inseparables:
 | H22 | Visor de Historial de Máquinas (Operario) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V22.md` |
 | H23 | Documentación de Centros de Gasto | `ENTERPRISEBOT_ATTACHED_MILESTONE_V23.md` ← EN PROGRESO |
 | H24 | Vacaciones y Calendario | `ENTERPRISEBOT_ATTACHED_MILESTONE_V24.md` |
+| H25 | Documentación de Personal | `ENTERPRISEBOT_ATTACHED_MILESTONE_V25.md` |
 
 Todos los anexos viven en `DOCS/MAINS/ATTACHEDS/`.
 

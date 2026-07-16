@@ -40,7 +40,7 @@ sesión — actualizar esta lista cada vez que se instale o retire una app:
 | `history` | Visor de Historial de Máquinas de solo lectura para rol WORKSHOP (H22), incluye galería de fotos (H7) y sección de documentación (H23). |
 | `delivery_notes` | CRUD de administración de albaranes de proveedor (gap detectado 2026-07-08). |
 | `machine_documents` | Documentación oficial de centros de gasto vía Gemini Vision + Drive (H23, en curso). |
-| `hr_calendar` | Vacaciones y calendario de operario/chófer — **app nueva, en construcción (H24, en curso, sin modelos todavía a fecha de esta edición).** |
+| `hr_calendar` | Vacaciones y calendario de operario/chófer (H24). |
 
 **Fuera de `INSTALLED_APPS`, scripts auxiliares independientes** (no Django
 apps, no se cargan en el proyecto): `file_organizer/organizer_probe.py`
@@ -268,6 +268,28 @@ app de dominio.
   vacaciones, baja, ausencia no justificada, festivo), visible para todos
   los roles autenticados, con filtro por operario/chófer para
   ADMIN/SUPERVISOR y vista propia sin selector para WORKSHOP/DRIVER.
+
+#### Hito 25: Documentación de Personal
+(Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V25.md`)
+- Ingesta y clasificación de documentación oficial de cada trabajador/
+  chófer (identidad, contractual, carnets/permisos con vigencia,
+  reconocimientos médicos, cursos de formación, EPIS, etc.) vía Gemini
+  Vision, siguiendo el mismo principio de "servidor de archivos" ya
+  aplicado en H23: el usuario nunca gestiona carpetas, solo indica qué
+  documentación sube o necesita y el sistema la organiza.
+- Modelo y app Django propios, separados de `machine_documents` (H23) —
+  decisión explícita de modularidad de Miguel Ángel en S022, coherente
+  con la directriz arquitectónica de H22.
+- Persistencia en Google Cloud Storage (bucket
+  `enterprisebot-alvarez-personnel-documents`), dentro de la misma
+  migración fuera de Google Drive que afecta a H7/H10/H23.
+- Vigencia explícita cuando el propio documento la indica (ej.
+  reconocimiento médico con validez anual, calculada desde la fecha real
+  del examen); calculada solo cuando no hay ninguna referencia explícita
+  en el documento — decisión de Miguel Ángel en S022.
+- Origen: carpeta de ejemplo real de un trabajador (chófer) aportada por
+  Miguel Ángel en S022 como caso de estudio — ver anexo para el análisis
+  completo de la estructura de documentos real.
 
 ---
 
