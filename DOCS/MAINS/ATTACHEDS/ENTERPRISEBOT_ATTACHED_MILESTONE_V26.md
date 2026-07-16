@@ -121,6 +121,19 @@ Flujo tal cual lo describió, a implementar sin reinterpretar (directriz
   sus 7 preguntas abiertas, ver anexo V25) — este hito no cambia ese
   bloqueo, solo asegura que cuando se construya su interfaz, reutilice
   este servicio en vez de duplicar lógica.
+- **Confirmación de Miguel Ángel tras el cierre de S022** (ver anexo
+  V25 sección "3.bis"): "las operaciones que vamos a realizar son
+  prácticamente las mismas [entre H23 y H25], por no decir las
+  mismas" — lo que cambia entre ambos dominios es volumen y variedad
+  de tipos de documento, no la lógica de alertas/subida/archivado/CRUD
+  que construye este hito. Refuerza la Opción B como acertada. Único
+  matiz real a tener en cuenta al construir el diálogo de sustitución
+  (sección 2.4): en personal no todos los tipos de documento
+  participan en una relación de "sustitución" (ej. cursos de
+  formación distintos no se sustituyen entre sí) — el diseño debe
+  permitir marcar, por tipo de documento, si participa o no en ese
+  diálogo, en vez de asumir que todo documento nuevo del mismo tipo
+  sustituye al anterior.
 
 ---
 

@@ -100,6 +100,47 @@ representativos:
 
 ---
 
+## 3.bis. Similitudes y diferencias reales frente a H23 (reflexión de Miguel Ángel, S022, tras el cierre)
+
+Palabras de Miguel Ángel: "personal es bastante más complicado que la
+flota de vehículos, pero básicamente vamos a tener lo mismo [...]
+alertas, documentación, subida, dejar a archivo, el CRUD [...]
+básicamente va a ser igual, con pequeños matices [...] las operaciones
+que vamos a realizar son prácticamente las mismas, por no decir las
+mismas." Confirma y refuerza la decisión de H26 (infraestructura
+compartida): las operaciones (alertas, subida, archivado, CRUD) son
+esencialmente iguales entre H23 y H25 — lo que cambia es volumen y
+variedad de tipos de documento, no la lógica.
+
+**Matices reales identificados (Claude, a validar con Miguel Ángel al
+diseñar H25 a fondo, no asumidos como decisión cerrada):**
+
+1. **Volumen y variedad de `document_type`** — una máquina tiene un
+   catálogo corto y estable (ITV, permiso de circulación, CAP, ficha
+   técnica, seguro, manual de uso — "pocos documentos más va a haber",
+   palabras de Miguel Ángel). Un trabajador puede tener docenas de
+   tipos distintos (cada curso de formación es, en la práctica, un
+   `document_type` propio — ver el análisis de la sección 3, ~15
+   certificados de curso distintos en una sola carpeta de ejemplo).
+   Esto probablemente exija una UI de filtrado/categorización más rica
+   en H25 que el listado simple que tiene H23 hoy.
+2. **Sensibilidad del dato** — documentación de personal incluye DNI y
+   datos médicos, que H23 no maneja. Ya recogido como pregunta abierta
+   4 más abajo (rol de acceso, probablemente más restringido que
+   centros de gasto) — este punto lo confirma con más peso todavía.
+3. **La "vigencia por sustitución" no aplica igual a todo tipo de
+   documento en personal.** En H23 casi todo sigue el patrón "1
+   documento vigente + histórico de archivados" (ver H26, diálogo de
+   sustitución). En personal, un curso de formación de 2024 no queda
+   "obsoleto" cuando se hace un curso de 2025 de un tipo distinto —
+   solo aplica sustitución entre documentos genuinamente del mismo
+   tipo (ej. dos reconocimientos médicos, dos permisos de circulación
+   con la misma finalidad). Habrá que decidir, tipo por tipo, cuáles
+   participan en el diálogo de sustitución de H26 y cuáles son
+   simplemente acumulativos sin relación de vigencia entre ellos.
+
+---
+
 ## 4. Preguntas Abiertas — Resolver al Retomar Este Hito
 
 1. **Nombre de la app Django** — no decidido todavía en S022 (sesión
