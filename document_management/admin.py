@@ -14,7 +14,7 @@ from .models import DocumentAlert
 @admin.register(DocumentAlert)
 class DocumentAlertAdmin(admin.ModelAdmin):
     list_display = (
-        "id", "company", "content_type", "object_id", "expiry_date",
+        "id", "company", "subject_label", "document_label", "expiry_date",
         "status", "sent_at", "resolved_at",
     )
     list_filter = ("company", "status", "content_type")

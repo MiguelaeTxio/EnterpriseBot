@@ -253,4 +253,18 @@ CELERY_BEAT_SCHEDULE = {
     # El hueco horario (3:00) se reutiliza para la tarea de alertas de
     # documentos de H26 en cuanto esa tarea exista (decisión explícita de
     # Miguel Ángel, S023).
+
+    # ---------------------------------------------------------------------------
+    # SHARED DOCUMENT INFRASTRUCTURE TASKS — Hito 26
+    # Tareas de infraestructura documental compartida — Hito 26.
+    # ---------------------------------------------------------------------------
+
+    # Detects documents whose expiry alert date has been reached and sends
+    # a WhatsApp alert to their assigned contact(s) via document_expiry_alert.
+    # Detecta documentos cuya fecha de aviso ha llegado y envía una alerta
+    # WhatsApp a su(s) contacto(s) asignado(s) vía document_expiry_alert.
+    'send-document-expiry-alerts': {
+        'task':     'document_management.tasks.send_document_expiry_alerts',
+        'schedule': crontab(hour=3, minute=0),
+    },
 }

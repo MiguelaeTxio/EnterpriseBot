@@ -142,6 +142,27 @@ class DocumentAlert(models.Model):
     )
     document = GenericForeignKey("content_type", "object_id")
 
+    # ------------------------------------------------------------
+    # Campos denormalizados de texto legible -- rellenados por quien
+    # crea la alerta (H23/H25), NUNCA calculados aqui a partir del
+    # objeto generico. Evita que este modulo tenga que conocer los
+    # campos internos de MachineDocument ni del futuro modelo de H25
+    # (mismo principio DRY/desacoplo que motivo el hito).
+    # ------------------------------------------------------------
+    document_label = models.CharField(
+        max_length=255,
+        verbose_name="Nombre legible del documento",
+        help_text="Ej. 'Certificado OCA 2025-2026'.",
+    )
+    subject_label = models.CharField(
+        max_length=255,
+        verbose_name="Nombre legible del sujeto",
+        help_text=(
+            "Ej. 'A-45 -- LIEBHERR LTM 1055' (maquina) hoy; nombre de "
+            "trabajador cuando H25 lo consuma."
+        ),
+    )
+
     company = models.ForeignKey(
         Company,
         on_delete=models.CASCADE,
