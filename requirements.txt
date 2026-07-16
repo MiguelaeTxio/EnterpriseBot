@@ -113,7 +113,10 @@ frozenlist==1.8.0
     #   aiohttp
     #   aiosignal
 google-api-core==2.31.0
-    # via google-api-python-client
+    # via
+    #   google-api-python-client
+    #   google-cloud-core
+    #   google-cloud-storage
 google-api-python-client==2.198.0
     # via -r requirements.in
 google-auth[requests]==2.49.1
@@ -122,13 +125,25 @@ google-auth[requests]==2.49.1
     #   google-api-python-client
     #   google-auth-httplib2
     #   google-auth-oauthlib
+    #   google-cloud-core
+    #   google-cloud-storage
     #   google-genai
 google-auth-httplib2==0.4.0
     # via google-api-python-client
 google-auth-oauthlib==1.4.0
     # via -r requirements.in
+google-cloud-core==2.6.0
+    # via google-cloud-storage
+google-cloud-storage==3.13.0
+    # via -r requirements.in
+google-crc32c==1.8.0
+    # via
+    #   google-cloud-storage
+    #   google-resumable-media
 google-genai==2.7.0
     # via -r requirements.in
+google-resumable-media==2.10.0
+    # via google-cloud-storage
 googleapis-common-protos==1.75.0
     # via google-api-core
 h11==0.16.0
@@ -238,6 +253,7 @@ requests==2.33.1
     #   -r requirements.in
     #   google-api-core
     #   google-auth
+    #   google-cloud-storage
     #   google-genai
     #   requests-oauthlib
     #   twilio
