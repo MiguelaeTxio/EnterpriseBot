@@ -44,14 +44,28 @@ psutil==7.2.2
 google-genai==2.7.0
 
 # Cloud Storage -- Google Drive (S014-H10) / Almacenamiento en la nube --
-# Google Drive (S014-H10). Sustituye la persistencia por correo de las
-# fotos/PDF de albaranes de proveedor. Autenticación OAuth 2.0 delegada
-# al usuario (no Service Account -- ver spare_parts/gdrive_service.py
-# para el motivo: los Service Accounts no tienen cuota de
-# almacenamiento propia fuera de una Shared Drive de Google Workspace,
-# y esta cuenta de Google es personal, sin Workspace).
+# Google Drive (S014-H10). LEGADO desde S022 -- en migración a Google
+# Cloud Storage (ver más abajo). Se mantiene la dependencia mientras
+# existan campos drive_file_id/drive_web_link legados por migrar/leer.
+# Autenticación OAuth 2.0 delegada al usuario (no Service Account -- ver
+# spare_parts/gdrive_service.py para el motivo: los Service Accounts no
+# tienen cuota de almacenamiento propia fuera de una Shared Drive de
+# Google Workspace, y esta cuenta de Google es personal, sin Workspace).
 google-api-python-client==2.198.0
 google-auth-oauthlib==1.4.0
+
+# Cloud Storage -- Google Cloud Storage (S022) / Almacenamiento en la
+# nube -- Google Cloud Storage (S022). Sustituye a Google Drive como
+# destino de persistencia para albaranes (H10), fotos de tarea (H7) y
+# documentación de centros de gasto/personal (H23/H25). A diferencia de
+# Drive, se autentica con la misma Service Account JSON ya usada para
+# Vertex AI (GCP_CREDENTIALS_PATH) -- GCS factura al proyecto GCP, no a
+# una cuota de Drive personal, así que el problema de cuota de Service
+# Account que forzó OAuth delegado en Drive no aplica aquí (verificado
+# online, directriz 4.4, S022). Versión verificada en línea el
+# 2026-07-16: 3.13.0, Requires: Python >=3.10 (compatible con el 3.10.5
+# del proyecto).
+google-cloud-storage==3.13.0
 
 # Task Queue / Cola de Tareas Asíncronas
 # Required for background task processing and scheduled jobs (presence reminders, etc.).
