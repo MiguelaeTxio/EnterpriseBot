@@ -108,13 +108,15 @@ class MachineDocumentBatchUploadView(DocsUploadAccessMixin, View):
     template_name = "machine_documents/upload.html"
 
     def get(self, request):
-        company = request.user.company_user.company
+        company_user = request.user.company_user
+        company = company_user.company
         machines = MachineAsset.objects.filter(
             company=company,
         ).order_by("code")
         preselected_machine_pk = request.GET.get("machine", "")
         return render(request, self.template_name, {
             "active_nav": "machine_documents_upload",
+            "company_user": company_user,
             "machines": machines,
             "preselected_machine_pk": preselected_machine_pk,
         })
@@ -141,6 +143,7 @@ class MachineDocumentBatchUploadView(DocsUploadAccessMixin, View):
         if not machine_asset:
             return render(request, self.template_name, {
                 "active_nav": "machine_documents_upload",
+                "company_user": company_user,
                 "machines": machines,
                 "error": (
                     "Selecciona una máquina/centro de gasto válido "
@@ -151,6 +154,7 @@ class MachineDocumentBatchUploadView(DocsUploadAccessMixin, View):
         if not uploaded_files:
             return render(request, self.template_name, {
                 "active_nav": "machine_documents_upload",
+                "company_user": company_user,
                 "machines": machines,
                 "preselected_machine_pk": machine_pk,
                 "error": (
