@@ -291,6 +291,30 @@ app de dominio.
   Miguel Ángel en S022 como caso de estudio — ver anexo para el análisis
   completo de la estructura de documentos real.
 
+#### Hito 26: Infraestructura Documental Compartida (Alertas, PDF, Email, Sustitución)
+(Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V26.md`)
+- Servicio transversal (mismo patrón que `ai_services`/
+  `spare_parts/gcs_service.py`), consumido tanto por la interfaz de
+  Administración de documentación de centros de gasto (H23) como por
+  la de documentación de personal (H25) — nunca duplicado entre las
+  dos, decisión explícita de Miguel Ángel en S022 para evitar el
+  patrón de la taxonomía de averías duplicada en cuatro sitios.
+- Motor de alertas de vencimiento de documentos.
+- Fusión/generación de PDF bajo demanda: dossier de documentos
+  agrupados en un único PDF para adjuntar a un correo.
+- Generación de plantilla de texto de correo (asunto + cuerpo) para
+  copiar y pegar en el cliente de correo del usuario — nunca envío
+  automático, no hay integración SMTP/API de email en el alcance de
+  este hito.
+- Diálogo de sustitución de documentos: al subir un documento del
+  mismo tipo que uno ya existente, compara fechas y ofrece archivar
+  el obsoleto y dejar el nuevo como vigente, o revertir la subida y
+  anular el nuevo documento.
+- Interfaces de Administración completas (subida, borrado,
+  sustitución, alertas) para centros de gasto y personal se
+  construyen sobre este servicio, no antes — decisión de Miguel Ángel
+  en S022 (Opción B, frente a construirlo dos veces por dominio).
+
 ---
 
 ### 4. Directrices Técnicas Vinculantes

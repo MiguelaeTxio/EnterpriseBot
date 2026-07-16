@@ -49,6 +49,7 @@ Cumple dos funciones inseparables:
 | H23 | Documentación de Centros de Gasto | `ENTERPRISEBOT_ATTACHED_MILESTONE_V23.md` ← EN PROGRESO |
 | H24 | Vacaciones y Calendario | `ENTERPRISEBOT_ATTACHED_MILESTONE_V24.md` |
 | H25 | Documentación de Personal | `ENTERPRISEBOT_ATTACHED_MILESTONE_V25.md` |
+| H26 | Infraestructura Documental Compartida (Alertas, PDF, Email, Sustitución) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V26.md` |
 
 Todos los anexos viven en `DOCS/MAINS/ATTACHEDS/`.
 

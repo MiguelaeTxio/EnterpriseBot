@@ -280,15 +280,31 @@ la sección 4):**
 
 ### Hoja de ruta — continuación de este hito
 
+**Nota de reordenación (S022):** al plantear cómo continuar estos tres
+puntos, Miguel Ángel identificó que la interfaz de Administración
+completa (alertas, subida, borrado, sustitución, dossier PDF, plantilla
+de email) no debe construirse por separado para cada dominio documental
+(centros de gasto aquí, personal en H25) — eligió construir primero un
+hito de infraestructura compartida, **H26 — Infraestructura Documental
+Compartida** (ver `ENTERPRISEBOT_ATTACHED_MILESTONE_V26.md`), del que
+los tres puntos de abajo pasan a depender. El criterio de vigencia
+(punto 1) y el diseño de archivado (punto 2) siguen siendo los cerrados
+en S021 (sin cambios) — lo que cambia es que su implementación en
+interfaz vive ahora dentro de H26/su consumo desde aquí, no como pieza
+aislada de este anexo.
+
 1. **Prevalencia de documentos vigentes** — criterio cerrado en S021
-   (ver más abajo), lógica de cálculo pendiente de implementar.
+   (ver más abajo), lógica de cálculo pendiente de implementar. Su
+   comparación de fechas es la misma que usará el diálogo de
+   sustitución de H26.
 2. **Archivado y borrado de documentos obsoletos** — diseño cerrado en
    S021 (ver más abajo), campo/vista pendientes de implementar.
 3. ~~**Alarmas vía WhatsApp** para documentos próximos a caducar~~ —
    **plantilla creada, corregida tras rechazo de Meta, y en revisión**
-   (ver "COMPLETADAS EN S021"). Falta la tarea que la dispare de verdad
-   (detectar documentos próximos a caducar y enviar el mensaje) — no
-   construida todavía, la plantilla es solo el primer paso.
+   (ver "COMPLETADAS EN S021"). Estado verificado en S022 vía API de
+   Twilio: **`pending`**, Meta no la ha resuelto todavía. Falta la
+   tarea que la dispare de verdad — construida dentro de H26 (motor de
+   alertas, sección 2.1 de ese anexo), no aquí.
 
 #### Decisiones cerradas en S021 (tal cual las dio Miguel Ángel, sin reinterpretar -- directriz 4.8)
 
