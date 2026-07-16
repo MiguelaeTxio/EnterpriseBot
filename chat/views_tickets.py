@@ -282,6 +282,27 @@ class BreakdownTicketDetailView(CompanyUserRequiredMixin, View):
                 ticket.fault_category, ticket.fault_category
             )
 
+        # URL de descarga resuelta aquí (S022, directriz de plantillas
+        # tontas): gcs_blob_name -> URL firmada bajo demanda;
+        # drive_web_link (legado) se usa tal cual. Mismo criterio que
+        # history.views.MachineHistoryView.
+        from spare_parts.gcs_service import TASK_PHOTOS_BUCKET, generate_signed_url
+        for photo in ticket.task_photos.all():
+            photo.download_url = None
+            if photo.gcs_blob_name:
+                try:
+                    photo.download_url = generate_signed_url(
+                        TASK_PHOTOS_BUCKET, photo.gcs_blob_name,
+                    )
+                except Exception:
+                    logger.exception(
+                        "# [BreakdownTicketDetailView] Fallo generando "
+                        "URL firmada para TaskPhoto #%d (blob=%s).",
+                        photo.pk, photo.gcs_blob_name,
+                    )
+            elif photo.drive_web_link:
+                photo.download_url = photo.drive_web_link
+
         return render(request, self.template_name, {
             "ticket":                 ticket,
             "company_user":           company_user,

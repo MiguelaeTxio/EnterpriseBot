@@ -2,23 +2,33 @@
 {# Widget HTMX de fotos opcionales de tarea (H7, S016). Se recarga entero #}
 {# tras cada subida/borrado -- misma estrategia simple que el resto del  #}
 {# formulario de partes digitales, sin JS adicional a mantener.          #}
+{# Desde S022: persistencia en GCS -- signed_url ya viene resuelto desde #}
+{# la vista (panel/views_task_photos.py, _build_photo_entries), nunca    #}
+{# calculado aquí (directriz "plantillas tontas").                       #}
 <div class="d-flex flex-wrap gap-2 mb-2">
-    {% for photo in photos %}
+    {% for entry in photo_entries %}
+    {% with photo=entry.photo signed_url=entry.signed_url %}
     <div class="position-relative" style="width:72px;">
-        {% if photo.drive_web_link %}
+        {% if signed_url %}
+        <a href="{{ signed_url }}" target="_blank" rel="noopener">
+            <img src="{{ signed_url }}"
+                 class="rounded border" style="width:72px;height:72px;object-fit:cover;"
+                 alt="{{ photo.caption|default:'Foto de tarea' }}">
+        </a>
+        {% elif photo.drive_web_link %}
         <a href="{{ photo.drive_web_link }}" target="_blank" rel="noopener">
             <img src="https://drive.google.com/thumbnail?id={{ photo.drive_file_id }}"
                  class="rounded border" style="width:72px;height:72px;object-fit:cover;"
-                 alt="{{ photo.caption|default:'Foto de tarea' }}">
+                 alt="{{ photo.caption|default:'Foto de tarea (legado Drive)' }}">
         </a>
         {% elif photo.image %}
         <img src="{{ photo.image.url }}"
              class="rounded border" style="width:72px;height:72px;object-fit:cover;"
              alt="{{ photo.caption|default:'Foto de tarea (subiendo...)' }}"
-             title="Subiendo a Google Drive...">
+             title="Subiendo a Google Cloud Storage...">
         {% else %}
         <div class="rounded border d-flex align-items-center justify-content-center text-muted small text-center"
-             style="width:72px;height:72px;" title="Subiendo a Google Drive...">
+             style="width:72px;height:72px;" title="Subiendo a Google Cloud Storage...">
             <i class="bi bi-cloud-arrow-up"></i>
         </div>
         {% endif %}
@@ -34,6 +44,7 @@
             <i class="bi bi-x" style="font-size:0.7rem;"></i>
         </button>
     </div>
+    {% endwith %}
     {% endfor %}
 </div>
 <form hx-post="{% url 'panel:task_photo_upload' line_pk=line.pk %}"

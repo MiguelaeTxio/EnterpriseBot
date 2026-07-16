@@ -15,6 +15,7 @@ resultados de extracción y el diagnóstico de errores.
 """
 
 from django.contrib import admin
+from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 
 from .models import TaskPhoto, WorkOrder, WorkOrderEntry, WorkOrderEntryLine
@@ -319,6 +320,7 @@ class TaskPhotoAdmin(admin.ModelAdmin):
         "machine_asset",
         "breakdown_ticket",
         "uploaded_by",
+        "gcs_blob_name",
         "drive_web_link",
         "created_at",
     )
@@ -338,7 +340,36 @@ class TaskPhotoAdmin(admin.ModelAdmin):
         "image",
         "drive_file_id",
         "drive_web_link",
+        "gcs_blob_name",
+        "descargar_gcs",
         "created_at",
     )
     raw_id_fields = ("line", "breakdown_ticket", "machine_asset", "uploaded_by")
     ordering = ("-created_at",)
+
+    @admin.display(description="Descarga (GCS, URL firmada temporal)")
+    def descargar_gcs(self, obj) -> str:
+        """
+        Genera una URL firmada V4 bajo demanda solo en la vista de
+        detalle (nunca en list_display, para no firmar N URLs en cada
+        carga del listado). Si el objeto no tiene gcs_blob_name (aún
+        no migrado o legado en Drive) o si GCS no está configurado, se
+        muestra un texto informativo en vez de un enlace roto.
+        ---
+        Generates a V4 signed URL on demand, only in the detail view
+        (never in list_display, to avoid signing N URLs on every list
+        page load). If the object has no gcs_blob_name (not migrated
+        yet, or Drive legacy) or GCS isn't configured, shows an
+        informational text instead of a broken link.
+        """
+        if not obj.gcs_blob_name:
+            return "(sin archivo en GCS -- ver drive_web_link si es legado)"
+        try:
+            from spare_parts.gcs_service import (
+                TASK_PHOTOS_BUCKET,
+                generate_signed_url,
+            )
+            url = generate_signed_url(TASK_PHOTOS_BUCKET, obj.gcs_blob_name)
+            return format_html('<a href="{}" target="_blank">Descargar</a>', url)
+        except Exception as exc:
+            return f"(error generando URL firmada: {exc})"

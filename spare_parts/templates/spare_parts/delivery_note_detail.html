@@ -33,15 +33,15 @@
                 <div class="alert alert-success">
                     Este albarán ya ha sido confirmado. Los datos quedan
                     bloqueados para edición.
-                    {% if delivery_note.drive_web_link %}
-                        <a href="{{ delivery_note.drive_web_link }}"
+                    {% if download_url %}
+                        <a href="{{ download_url }}"
                            target="_blank" rel="noopener"
                            class="alert-link ms-1">
-                            <i class="bi bi-google me-1"></i>Ver archivo original en Drive
+                            <i class="bi bi-file-earmark-arrow-down me-1"></i>Ver archivo original
                         </a>
                     {% else %}
                         <span class="d-block small text-muted mt-1">
-                            Archivo original subiéndose a Google Drive en segundo
+                            Archivo original subiéndose en segundo
                             plano -- el enlace aparecerá aquí en cuanto termine.
                         </span>
                     {% endif %}

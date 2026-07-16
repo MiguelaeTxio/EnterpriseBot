@@ -43,7 +43,7 @@ from celery.contrib.django.task import DjangoTask
 from django.db import connection, transaction
 from enterprise_core.celery import app
 
-from spare_parts.gdrive_service import GDriveNotConfigured, upload_task_photo_file
+from spare_parts.gcs_service import GCSNotConfigured, upload_task_photo_file
 
 from .models import TaskPhoto, WorkOrder, WorkOrderEntry, WorkOrderEntryLine
 from .services import (
@@ -1084,19 +1084,24 @@ def generate_period_excel(self, work_order_id: int) -> None:
 @app.task(base=DjangoTask, bind=True, max_retries=3, default_retry_delay=60)
 def upload_task_photo_to_drive(self, task_photo_id: int) -> None:
     """
-    Uploads a TaskPhoto's image to Google Drive
-    (spare_parts.gdrive_service.upload_task_photo_file, H7/S016) and
-    deletes the local file only after a successful upload + share.
+    Uploads a TaskPhoto's image to Google Cloud Storage
+    (spare_parts.gcs_service.upload_task_photo_file, S022 -- replaces
+    the Drive upload from H7/S016, see gcs_service.py docstring for
+    why) and deletes the local file only after a successful upload.
     Mirrors spare_parts.tasks.upload_delivery_note_photo_to_drive
-    exactly, including the retry/GDriveNotConfigured handling.
+    exactly, including the retry/GCSNotConfigured handling and the
+    decision to keep the task's historical name unchanged.
 
     ---
 
-    Sube la imagen de un TaskPhoto a Google Drive
-    (spare_parts.gdrive_service.upload_task_photo_file, H7/S016) y borra
-    el archivo local solo tras una subida + compartición con éxito.
-    Replica exactamente spare_parts.tasks.upload_delivery_note_photo_to_drive,
-    incluido el manejo de reintentos/GDriveNotConfigured.
+    Sube la imagen de un TaskPhoto a Google Cloud Storage
+    (spare_parts.gcs_service.upload_task_photo_file, S022 -- sustituye
+    a la subida a Drive de H7/S016, ver el docstring de gcs_service.py
+    para el motivo) y borra el archivo local solo tras una subida con
+    éxito. Replica exactamente
+    spare_parts.tasks.upload_delivery_note_photo_to_drive, incluido el
+    manejo de reintentos/GCSNotConfigured y la decisión de mantener el
+    nombre histórico de la tarea sin cambiar.
     """
     try:
         photo = TaskPhoto.objects.get(pk=task_photo_id)
@@ -1116,29 +1121,28 @@ def upload_task_photo_to_drive(self, task_photo_id: int) -> None:
         return
 
     try:
-        result = upload_task_photo_file(photo)
-    except GDriveNotConfigured as exc:
+        blob_name = upload_task_photo_file(photo)
+    except GCSNotConfigured as exc:
         logger.error(
-            "# [Tarea] Google Drive no configurado todavía -- TaskPhoto "
+            "# [Tarea] Google Cloud Storage no configurado -- TaskPhoto "
             "#%d NO subida, archivo NO borrado. %s",
             task_photo_id, exc,
         )
         return
     except Exception as exc:
         logger.exception(
-            "# [Tarea] Fallo subiendo a Drive TaskPhoto #%d (intento "
+            "# [Tarea] Fallo subiendo a GCS TaskPhoto #%d (intento "
             "%d/%d). El archivo NO se borra.",
             task_photo_id, self.request.retries + 1, self.max_retries,
         )
         raise self.retry(exc=exc)
 
-    photo.drive_file_id = result["file_id"]
-    photo.drive_web_link = result["web_link"]
+    photo.gcs_blob_name = blob_name
     photo.image.delete(save=False)
-    photo.save(update_fields=["drive_file_id", "drive_web_link", "image"])
+    photo.save(update_fields=["gcs_blob_name", "image"])
 
     logger.info(
-        "# [Tarea] TaskPhoto #%d subida a Google Drive (file_id=%s) y "
-        "archivo origen eliminado del servidor.",
-        task_photo_id, result["file_id"],
+        "# [Tarea] TaskPhoto #%d subida a Google Cloud Storage (blob=%s) "
+        "y archivo origen eliminado del servidor.",
+        task_photo_id, blob_name,
     )

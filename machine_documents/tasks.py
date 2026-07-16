@@ -78,8 +78,8 @@ from celery.contrib.django.task import DjangoTask
 from django.core.files.base import ContentFile
 
 from enterprise_core.celery import app
-from spare_parts.gdrive_service import (
-    GDriveNotConfigured,
+from spare_parts.gcs_service import (
+    GCSNotConfigured,
     upload_machine_document_file,
 )
 
@@ -325,19 +325,33 @@ def process_machine_document_batch(self, document_pks: list[int]) -> None:
     # archivo local se conserva para no perder nada y poder
     # reintentar a mano.
     # ------------------------------------------------------------
+    # ------------------------------------------------------------
+    # Step 3 -- upload every CLASSIFIED document without a GCS blob
+    # yet. Deletes the local file only after a successful upload
+    # (mirrors upload_task_photo_to_drive /
+    # upload_delivery_note_photo_to_drive exactly) -- on failure the
+    # local file stays so nothing is lost and a manual retry stays
+    # possible.
+    # Paso 3 -- subir cada documento CLASSIFIED que todavía no tenga
+    # blob de GCS. Borra el archivo local solo tras una subida
+    # con éxito (replica exactamente upload_task_photo_to_drive /
+    # upload_delivery_note_photo_to_drive) -- ante un fallo el
+    # archivo local se conserva para no perder nada y poder
+    # reintentar a mano.
+    # ------------------------------------------------------------
     for item in classified.values():
         document = item["document"]
         if document.status != MachineDocument.Status.CLASSIFIED:
             continue
-        if document.drive_file_id:
+        if document.gcs_blob_name:
             continue
 
         try:
-            drive_result = upload_machine_document_file(document)
-        except GDriveNotConfigured as exc:
+            blob_name = upload_machine_document_file(document)
+        except GCSNotConfigured as exc:
             logger.error(
-                "# [process_machine_document_batch] #%d: Google Drive "
-                "no configurado todavía -- documento NO subido, "
+                "# [process_machine_document_batch] #%d: Google Cloud "
+                "Storage no configurado -- documento NO subido, "
                 "archivo local NO borrado. %s",
                 document.pk, exc,
             )
@@ -345,21 +359,20 @@ def process_machine_document_batch(self, document_pks: list[int]) -> None:
         except Exception as exc:
             logger.error(
                 "# [process_machine_document_batch] #%d: fallo "
-                "subiendo a Drive: %s",
+                "subiendo a GCS: %s",
                 document.pk, exc, exc_info=True,
             )
             continue
 
-        document.drive_file_id = drive_result["file_id"]
-        document.drive_web_link = drive_result["web_link"]
+        document.gcs_blob_name = blob_name
         document.source_file.delete(save=False)
         document.save(update_fields=[
-            "drive_file_id", "drive_web_link", "source_file",
+            "gcs_blob_name", "source_file",
         ])
         logger.info(
-            "# [process_machine_document_batch] #%d subido a Drive "
-            "(file_id=%s) y archivo local eliminado.",
-            document.pk, drive_result["file_id"],
+            "# [process_machine_document_batch] #%d subido a GCS "
+            "(blob=%s) y archivo local eliminado.",
+            document.pk, blob_name,
         )
 
     logger.info(

@@ -12,10 +12,11 @@ el estado pasa por Starting/Restarting y vuelve a Running.
 Defines extract_delivery_note_data() (Gemini Vision extraction, runs
 in the background after upload) and
 upload_delivery_note_photo_to_drive() (S014-H10: uploads the confirmed
-delivery note's source photo/PDF to Google Drive and deletes it from
-the server -- replaces the email-based persistence that existed up to
-S014, see spare_parts/gdrive_service.py for the full design rationale
-of the Drive integration).
+delivery note's source photo/PDF and deletes it from the server --
+replaces the email-based persistence that existed up to S014;
+migrated from Google Drive to Google Cloud Storage in S022, task name
+kept unchanged, see spare_parts/gcs_service.py for the full design
+rationale of the GCS integration).
 
 ---
 
@@ -23,10 +24,11 @@ Tareas Celery para la aplicación spare_parts.
 
 Define extract_delivery_note_data() (extracción Gemini Vision, corre
 en segundo plano tras la subida) y upload_delivery_note_photo_to_drive()
-(S014-H10: sube la foto/PDF origen del albarán confirmado a Google
-Drive y la borra del servidor -- sustituye la persistencia por correo
-que existía hasta S014, ver spare_parts/gdrive_service.py para el
-razonamiento completo del diseño de la integración con Drive).
+(S014-H10: sube la foto/PDF origen del albarán confirmado y la borra
+del servidor -- sustituye la persistencia por correo que existía hasta
+S014; migrada de Google Drive a Google Cloud Storage en S022, nombre
+de tarea sin cambiar, ver spare_parts/gcs_service.py para el
+razonamiento completo del diseño de la integración con GCS).
 """
 import logging
 from datetime import date
@@ -34,7 +36,7 @@ from datetime import date
 from celery.contrib.django.task import DjangoTask
 from enterprise_core.celery import app
 
-from .gdrive_service import GDriveNotConfigured, upload_delivery_note_file
+from .gcs_service import DELIVERY_NOTES_BUCKET, GCSNotConfigured, upload_delivery_note_file
 from .models import DeliveryNote, DeliveryNoteLine
 from .services import (
     GeminiVisionExtractionService,
@@ -217,34 +219,51 @@ def extract_delivery_note_data(self, delivery_note_id: int) -> None:
 def upload_delivery_note_photo_to_drive(self, delivery_note_id: int) -> None:
     """
     Uploads the confirmed delivery note's source file (photo or PDF)
-    to Google Drive (spare_parts.gdrive_service, S014-H10) and deletes
-    the file from disk only after a successful upload + share.
-    Replaces send_delivery_note_photo_email(), removed in S014.
+    to Google Cloud Storage (spare_parts.gcs_service, S022 -- see
+    that module's docstring for why GCS replaced Drive) and deletes
+    the file from disk only after a successful upload. Replaces
+    send_delivery_note_photo_email(), removed in S014, and the Drive
+    upload that replaced it in turn.
+
+    Task name kept unchanged (upload_delivery_note_photo_to_drive)
+    despite no longer touching Drive -- renaming would ripple through
+    several call sites (spare_parts/views.py,
+    attach_delivery_note_photo.py) outside the scope of this
+    migration; tracked as minor tech debt, not urgent.
 
     Never deletes the file if the upload fails -- Celery retries up to
     max_retries times before giving up, and the file stays on the
     server (safe default) if all retries are exhausted, logged as an
-    error for manual follow-up. GDriveNotConfigured (missing env vars,
-    i.e. the one-time authorization at /panel/gdrive/authorize/ hasn't
-    been done yet) is NOT retried -- retrying won't fix a missing
-    credential, it would just spam the log every 60s until someone
-    notices; logged once as an actionable error instead.
+    error for manual follow-up. GCSNotConfigured (missing env vars --
+    should not normally happen, since GCP_CREDENTIALS_PATH/
+    GOOGLE_CLOUD_PROJECT already exist for Vertex AI) is NOT retried --
+    retrying won't fix a missing credential, it would just spam the
+    log every 60s until someone notices; logged once as an actionable
+    error instead.
 
     ---
 
-    Sube la foto/PDF origen del albarán confirmado a Google Drive
-    (spare_parts.gdrive_service, S014-H10) y borra el archivo del
-    disco solo tras una subida + compartición con éxito. Sustituye a
-    send_delivery_note_photo_email(), eliminada en S014.
+    Sube la foto/PDF origen del albarán confirmado a Google Cloud
+    Storage (spare_parts.gcs_service, S022 -- ver el docstring de ese
+    módulo para el motivo del cambio desde Drive) y borra el archivo
+    del disco solo tras una subida con éxito. Sustituye a
+    send_delivery_note_photo_email(), eliminada en S014, y a la
+    subida a Drive que la sustituyó a su vez.
+
+    Nombre de la tarea sin cambiar (upload_delivery_note_photo_to_drive)
+    pese a que ya no toca Drive -- renombrarla afectaría a varios
+    puntos de llamada (spare_parts/views.py,
+    attach_delivery_note_photo.py) fuera del alcance de esta
+    migración; queda anotado como deuda técnica menor, sin urgencia.
 
     Nunca borra el archivo si la subida falla -- Celery reintenta hasta
     max_retries veces antes de desistir, y si se agotan los reintentos
     el archivo se queda en el servidor (comportamiento seguro por
     defecto), registrado como error para seguimiento manual.
-    GDriveNotConfigured (faltan variables de entorno, es decir, la
-    autorización de un solo uso en /panel/gdrive/authorize/ todavía no
-    se ha hecho) NO se reintenta -- reintentar no arregla una
-    credencial que falta, solo llenaría el log cada 60s hasta que
+    GCSNotConfigured (faltan variables de entorno -- no debería pasar
+    normalmente, ya que GCP_CREDENTIALS_PATH/GOOGLE_CLOUD_PROJECT ya
+    existen para Vertex AI) NO se reintenta -- reintentar no arregla
+    una credencial que falta, solo llenaría el log cada 60s hasta que
     alguien lo note; se registra una sola vez como error accionable.
     """
     try:
@@ -267,42 +286,42 @@ def upload_delivery_note_photo_to_drive(self, delivery_note_id: int) -> None:
         return
 
     try:
-        result = upload_delivery_note_file(delivery_note)
-    except GDriveNotConfigured as exc:
+        blob_name = upload_delivery_note_file(delivery_note)
+    except GCSNotConfigured as exc:
         logger.error(
-            '# [Tarea] Google Drive no configurado todavía -- albarán '
+            '# [Tarea] Google Cloud Storage no configurado -- albarán '
             '#%d NO subido, archivo NO borrado. %s',
             delivery_note_id, exc,
         )
         return
     except Exception as exc:
         logger.exception(
-            '# [Tarea] Fallo subiendo a Drive el albarán #%d (intento '
+            '# [Tarea] Fallo subiendo a GCS el albarán #%d (intento '
             '%d/%d). El archivo NO se borra.',
             delivery_note_id, self.request.retries + 1, self.max_retries,
         )
         raise self.retry(exc=exc)
 
-    # Success: persist the Drive reference, then delete the local file
+    # Success: persist the GCS reference, then delete the local file
     # and clear the model reference -- same order/safety principle the
-    # email flow had (never delete before confirming the destination
-    # succeeded).
-    # Éxito: persistir la referencia de Drive, después borrar el
+    # email/Drive flows had (never delete before confirming the
+    # destination succeeded).
+    # Éxito: persistir la referencia de GCS, después borrar el
     # archivo local y limpiar la referencia del modelo -- mismo
-    # orden/principio de seguridad que tenía el flujo de correo (nunca
-    # borrar antes de confirmar que el destino tuvo éxito).
-    delivery_note.drive_file_id = result['file_id']
-    delivery_note.drive_web_link = result['web_link']
+    # orden/principio de seguridad que tenían los flujos de correo/
+    # Drive (nunca borrar antes de confirmar que el destino tuvo
+    # éxito).
+    delivery_note.gcs_blob_name = blob_name
     if delivery_note.image:
         delivery_note.image.delete(save=False)
     if delivery_note.pdf_file:
         delivery_note.pdf_file.delete(save=False)
     delivery_note.save(update_fields=[
-        'drive_file_id', 'drive_web_link', 'image', 'pdf_file',
+        'gcs_blob_name', 'image', 'pdf_file',
     ])
 
     logger.info(
-        '# [Tarea] Albarán #%d subido a Google Drive (file_id=%s) y '
-        'archivo origen eliminado del servidor.',
-        delivery_note_id, result['file_id'],
+        '# [Tarea] Albarán #%d subido a Google Cloud Storage '
+        '(bucket=%s, blob=%s) y archivo origen eliminado del servidor.',
+        delivery_note_id, DELIVERY_NOTES_BUCKET, blob_name,
     )

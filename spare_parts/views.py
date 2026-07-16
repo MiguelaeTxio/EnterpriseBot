@@ -12,6 +12,8 @@ el flujo de ingesta de albaranes descrito en el anexo H10, sección
 3.1: subida -> extracción con Gemini Vision -> revisión manual ->
 confirmación del circuito de asignación.
 """
+import logging
+
 from django.contrib import messages
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views import View
@@ -19,12 +21,15 @@ from django.views import View
 from panel.mixins import CompanyUserRequiredMixin, SupervisorAccessMixin
 
 from .forms import SupplierForm
+from .gcs_service import DELIVERY_NOTES_BUCKET, generate_signed_url
 from .models import DeliveryNote, Supplier
 from .services import (
     confirm_delivery_note,
     validate_document_assignment,
 )
 from .tasks import extract_delivery_note_data, upload_delivery_note_photo_to_drive
+
+logger = logging.getLogger(__name__)
 
 
 # Accepted upload extensions and their DeliveryNote.source_type.
@@ -193,6 +198,24 @@ class DeliveryNoteDetailView(CompanyUserRequiredMixin, View):
                 validate_document_assignment(delivery_note, company)
             )
 
+        # URL de descarga resuelta aquí (S022, directriz de plantillas
+        # tontas): gcs_blob_name -> URL firmada bajo demanda;
+        # drive_web_link (legado) se usa tal cual.
+        download_url = None
+        if delivery_note.gcs_blob_name:
+            try:
+                download_url = generate_signed_url(
+                    DELIVERY_NOTES_BUCKET, delivery_note.gcs_blob_name,
+                )
+            except Exception:
+                logger.exception(
+                    '# [DeliveryNoteDetailView] Fallo generando URL '
+                    'firmada para albarán #%d (blob=%s).',
+                    delivery_note.pk, delivery_note.gcs_blob_name,
+                )
+        elif delivery_note.drive_web_link:
+            download_url = delivery_note.drive_web_link
+
         return render(request, self.template_name, {
             'company_user': request.user.company_user,
             'active_nav': 'spare_parts_upload',
@@ -203,6 +226,7 @@ class DeliveryNoteDetailView(CompanyUserRequiredMixin, View):
             'rejection_reason': rejection_reason,
             'resolved_type': resolved_type,
             'resolved_machine': resolved_machine,
+            'download_url': download_url,
         })
 
 
@@ -211,18 +235,21 @@ class DeliveryNoteConfirmView(CompanyUserRequiredMixin, View):
     Executes the assignment circuit (annex H10, section 3.1, step 5)
     for a reviewed delivery note. POST only. On success, enqueues
     upload_delivery_note_photo_to_drive() (spare_parts/tasks.py,
-    S014-H10): the source photo/PDF is uploaded to Google Drive and
-    then deleted from the server -- extracted data stays in BD
-    permanently, only the file is removed.
+    S014-H10, migrated to Google Cloud Storage in S022 -- task name
+    kept unchanged, see spare_parts/gcs_service.py): the source
+    photo/PDF is uploaded to GCS and then deleted from the server --
+    extracted data stays in BD permanently, only the file is removed.
 
     ---
 
     Ejecuta el circuito de asignación (anexo H10, sección 3.1, paso
     5) para un albarán ya revisado. Solo POST. En caso de éxito,
     encola upload_delivery_note_photo_to_drive() (spare_parts/tasks.py,
-    S014-H10): la foto/PDF origen se sube a Google Drive y después se
-    borra del servidor -- los datos extraídos se quedan en BD
-    permanentemente, solo se elimina el archivo.
+    S014-H10, migrada a Google Cloud Storage en S022 -- nombre de
+    tarea sin cambiar, ver spare_parts/gcs_service.py): la foto/PDF
+    origen se sube a GCS y después se borra del servidor -- los datos
+    extraídos se quedan en BD permanentemente, solo se elimina el
+    archivo.
     """
 
     def post(self, request, pk):

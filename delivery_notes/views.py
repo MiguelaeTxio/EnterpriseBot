@@ -41,13 +41,18 @@ desincronizaría esos registros del albarán en silencio. Por tanto:
     aquí -- revertir sus efectos de stock es una decisión aparte y
     mayor, no solicitada todavía.
 """
+import logging
+
 from django.contrib import messages
 from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views import View
 
 from panel.mixins import SupervisorAccessMixin
+from spare_parts.gcs_service import DELIVERY_NOTES_BUCKET, generate_signed_url
 from spare_parts.models import DeliveryNote
+
+logger = logging.getLogger(__name__)
 
 
 class DeliveryNoteAdminListView(SupervisorAccessMixin, View):
@@ -114,6 +119,23 @@ class DeliveryNoteAdminListView(SupervisorAccessMixin, View):
             note.progress_label = self._PROGRESS_LABEL.get(state, '')
             note.progress_assigned = assigned
             note.progress_total = total
+            # URL de descarga resuelta aquí (S022, misma directriz de
+            # plantillas tontas): gcs_blob_name -> URL firmada bajo
+            # demanda; drive_web_link (legado) se usa tal cual.
+            note.download_url = None
+            if note.gcs_blob_name:
+                try:
+                    note.download_url = generate_signed_url(
+                        DELIVERY_NOTES_BUCKET, note.gcs_blob_name,
+                    )
+                except Exception:
+                    logger.exception(
+                        '# [DeliveryNoteAdminListView] Fallo generando '
+                        'URL firmada para albarán #%d (blob=%s).',
+                        note.pk, note.gcs_blob_name,
+                    )
+            elif note.drive_web_link:
+                note.download_url = note.drive_web_link
 
         recipient_codes = (
             DeliveryNote.objects

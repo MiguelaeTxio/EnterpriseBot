@@ -42,13 +42,18 @@ Las tres vistas acotan el WorkOrderEntryLine a
 request.user.company_user.company -- mismo aislamiento por empresa que
 aplica el resto del formulario.
 """
+import logging
+
 from django.shortcuts import get_object_or_404, render
 from django.views import View
 
+from spare_parts.gcs_service import TASK_PHOTOS_BUCKET, generate_signed_url
 from work_order_processor.models import TaskPhoto, WorkOrderEntryLine
 from work_order_processor.tasks import upload_task_photo_to_drive
 
 from .mixins import WorkOrderFormAccessMixin
+
+logger = logging.getLogger(__name__)
 
 _WIDGET_TEMPLATE = "panel/operator/_task_photo_widget.html"
 
@@ -62,6 +67,49 @@ def _get_line(request, line_pk):
     )
 
 
+def _build_photo_entries(photos) -> list[dict]:
+    """
+    Builds the widget's rendering context for a queryset of photos:
+    one dict per photo with the photo itself plus its signed GCS URL
+    already resolved (or None if not applicable) -- logic lives here,
+    never in the template (project-wide directriz: "dumb templates").
+
+    A photo with gcs_blob_name gets a signed URL generated on demand
+    (S022 -- see spare_parts/gcs_service.py); a legacy photo with only
+    drive_web_link (uploaded before the GCS migration) keeps using
+    that link untouched, with no attempt to re-sign anything.
+
+    ---
+
+    Construye el contexto de renderizado del widget para un queryset
+    de fotos: un diccionario por foto con la propia foto más su URL
+    firmada de GCS ya resuelta (o None si no aplica) -- la lógica vive
+    aquí, nunca en el template (directriz del proyecto: "plantillas
+    tontas").
+
+    Una foto con gcs_blob_name obtiene una URL firmada generada bajo
+    demanda (S022 -- ver spare_parts/gcs_service.py); una foto legada
+    con solo drive_web_link (subida antes de la migración a GCS) sigue
+    usando ese enlace tal cual, sin intentar refirmar nada.
+    """
+    entries = []
+    for photo in photos:
+        signed_url = None
+        if photo.gcs_blob_name:
+            try:
+                signed_url = generate_signed_url(
+                    TASK_PHOTOS_BUCKET, photo.gcs_blob_name,
+                )
+            except Exception:
+                logger.exception(
+                    "# [views_task_photos] Fallo generando URL firmada "
+                    "para TaskPhoto #%d (blob=%s).",
+                    photo.pk, photo.gcs_blob_name,
+                )
+        entries.append({"photo": photo, "signed_url": signed_url})
+    return entries
+
+
 class TaskPhotoWidgetView(WorkOrderFormAccessMixin, View):
     """
     Renders the photo widget (upload form + thumbnails) for a single
@@ -73,7 +121,7 @@ class TaskPhotoWidgetView(WorkOrderFormAccessMixin, View):
         line = _get_line(request, line_pk)
         return render(request, _WIDGET_TEMPLATE, {
             "line": line,
-            "photos": line.photos.all(),
+            "photo_entries": _build_photo_entries(line.photos.all()),
         })
 
 
@@ -81,10 +129,12 @@ class TaskPhotoUploadView(WorkOrderFormAccessMixin, View):
     """
     Handles the multipart upload of a single photo for a line. Creates
     the TaskPhoto with company/breakdown_ticket/machine_asset
-    denormalised from the line at this exact moment, enqueues the Drive
-    upload task, and re-renders the widget so the new thumbnail appears
-    immediately (upload still pending in the background -- the widget
-    shows a "subiendo..." state until drive_web_link is set).
+    denormalised from the line at this exact moment, enqueues the GCS
+    upload task (S022 -- see work_order_processor.tasks for the
+    task name history), and re-renders the widget so the new
+    thumbnail appears immediately (upload still pending in the
+    background -- the widget shows a "subiendo..." state until
+    gcs_blob_name is set).
     """
 
     def post(self, request, line_pk):
@@ -103,7 +153,7 @@ class TaskPhotoUploadView(WorkOrderFormAccessMixin, View):
             upload_task_photo_to_drive.delay(photo.pk)
         return render(request, _WIDGET_TEMPLATE, {
             "line": line,
-            "photos": line.photos.all(),
+            "photo_entries": _build_photo_entries(line.photos.all()),
         })
 
 
@@ -124,5 +174,5 @@ class TaskPhotoDeleteView(WorkOrderFormAccessMixin, View):
         photo.delete()
         return render(request, _WIDGET_TEMPLATE, {
             "line": line,
-            "photos": line.photos.all(),
+            "photo_entries": _build_photo_entries(line.photos.all()),
         })

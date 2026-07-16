@@ -259,9 +259,9 @@
         </div>
         <div class="card-body d-flex flex-wrap gap-2">
           {% for photo in ticket.task_photos.all %}
-          {% if photo.drive_web_link %}
-          <a href="{{ photo.drive_web_link }}" target="_blank" rel="noopener">
-            <img src="https://drive.google.com/thumbnail?id={{ photo.drive_file_id }}"
+          {% if photo.download_url %}
+          <a href="{{ photo.download_url }}" target="_blank" rel="noopener">
+            <img src="{{ photo.download_url }}"
                  alt="{{ photo.caption|default:'Foto de tarea' }}"
                  width="160" height="120"
                  class="rounded object-fit-cover border">
@@ -269,7 +269,7 @@
           {% elif photo.image %}
           <img src="{{ photo.image.url }}"
                alt="{{ photo.caption|default:'Foto de tarea (subiendo...)' }}"
-               title="Subiendo a Google Drive..."
+               title="Subiendo a Google Cloud Storage..."
                width="160" height="120"
                class="rounded object-fit-cover border">
           {% endif %}

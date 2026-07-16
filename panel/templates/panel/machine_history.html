@@ -294,15 +294,15 @@
                     </a>
                     {% endfor %}
                     {% for photo in ticket.task_photos.all %}
-                    {% if photo.drive_web_link %}
-                    <a href="{{ photo.drive_web_link }}" target="_blank" rel="noopener">
-                        <img src="https://drive.google.com/thumbnail?id={{ photo.drive_file_id }}"
+                    {% if photo.download_url %}
+                    <a href="{{ photo.download_url }}" target="_blank" rel="noopener">
+                        <img src="{{ photo.download_url }}"
                              alt="{{ photo.caption|default:'Foto de tarea' }}"
                              width="90" height="90" class="rounded object-fit-cover border">
                     </a>
                     {% elif photo.image %}
                     <img src="{{ photo.image.url }}"
-                         alt="Foto de tarea (subiendo...)" title="Subiendo a Google Drive..."
+                         alt="Foto de tarea (subiendo...)" title="Subiendo a Google Cloud Storage..."
                          width="90" height="90" class="rounded object-fit-cover border">
                     {% endif %}
                     {% endfor %}
@@ -413,8 +413,8 @@
                             </td>
                             <td class="small text-nowrap">{{ doc.created_at|date:"d/m/Y H:i" }}</td>
                             <td class="text-end">
-                                {% if doc.drive_web_link %}
-                                <a href="{{ doc.drive_web_link }}" target="_blank" rel="noopener noreferrer" class="btn btn-outline-secondary btn-sm">
+                                {% if doc.download_url %}
+                                <a href="{{ doc.download_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-outline-secondary btn-sm">
                                     <i class="bi bi-box-arrow-up-right"></i>Abrir
                                 </a>
                                 {% else %}

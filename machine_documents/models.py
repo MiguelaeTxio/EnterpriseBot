@@ -320,6 +320,18 @@ class MachineDocument(models.Model):
         default="",
         verbose_name="Enlace de Google Drive",
     )
+    # Persistencia en Google Cloud Storage (S022) -- ver
+    # spare_parts.gcs_service.MACHINE_DOCUMENTS_BUCKET. Los documentos
+    # ya subidos a Drive en esta app son de prueba (S017) y se borran,
+    # no se migran -- decisión explícita de Miguel Ángel en S022 (ver
+    # anexo H23 sección 5). drive_file_id/drive_web_link quedan como
+    # campos legado por coherencia con los otros dos modelos.
+    gcs_blob_name = models.CharField(
+        max_length=500,
+        blank=True,
+        default="",
+        verbose_name="Ruta del objeto en Google Cloud Storage",
+    )
 
     # ------------------------------------------------------------------
     # Local staging file / Archivo local de staging

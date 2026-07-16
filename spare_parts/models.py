@@ -296,6 +296,18 @@ class DeliveryNote(models.Model):
         blank=True,
         verbose_name='Enlace de Google Drive',
     )
+    # Persistencia en Google Cloud Storage (S022) -- sustituye a Drive
+    # para toda subida nueva (spare_parts.gcs_service). drive_file_id/
+    # drive_web_link se mantienen como legado, sin tocar, para
+    # trazabilidad de lo ya subido a Drive -- decisión de Miguel Ángel.
+    # Bucket fijo (spare_parts.gcs_service.DELIVERY_NOTES_BUCKET), sin
+    # campo propio -- gcs_blob_name es la ruta del objeto dentro de él.
+    # Sin URL persistida: se firma (V4, con expiración) bajo demanda.
+    gcs_blob_name = models.CharField(
+        max_length=500,
+        blank=True,
+        verbose_name='Ruta del objeto en Google Cloud Storage',
+    )
     supplier = models.ForeignKey(
         Supplier,
         on_delete=models.SET_NULL,

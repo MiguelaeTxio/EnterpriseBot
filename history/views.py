@@ -16,6 +16,11 @@ from django.shortcuts import render
 
 from fleet.models import MachineAsset
 from panel.mixins import CompanyUserRequiredMixin
+from spare_parts.gcs_service import (
+    MACHINE_DOCUMENTS_BUCKET,
+    TASK_PHOTOS_BUCKET,
+    generate_signed_url,
+)
 from work_order_processor.models import (
     FaultCategory,
     FaultSubcategory,
@@ -274,6 +279,26 @@ class MachineHistoryView(CompanyUserRequiredMixin, View):
                 .prefetch_related("task_photos")
                 .order_by("-created_at")
             )
+            # URL de descarga resuelta aquí (S022, directriz de
+            # plantillas tontas): gcs_blob_name -> URL firmada bajo
+            # demanda; drive_web_link (legado) se usa tal cual.
+            for ticket in tickets:
+                for photo in ticket.task_photos.all():
+                    photo.download_url = None
+                    if photo.gcs_blob_name:
+                        try:
+                            photo.download_url = generate_signed_url(
+                                TASK_PHOTOS_BUCKET, photo.gcs_blob_name,
+                            )
+                        except Exception:
+                            logger.exception(
+                                "# [MachineHistoryView] Fallo generando "
+                                "URL firmada para TaskPhoto #%d "
+                                "(blob=%s).",
+                                photo.pk, photo.gcs_blob_name,
+                            )
+                    elif photo.drive_web_link:
+                        photo.download_url = photo.drive_web_link
 
         # -- Cost-center documentation (H23) --------------------------------
         # Integrada aquí en vez de en un listado global cruzando las
@@ -293,6 +318,21 @@ class MachineHistoryView(CompanyUserRequiredMixin, View):
                 selected_machine.documents
                 .order_by("-created_at")
             )
+            for document in documents:
+                document.download_url = None
+                if document.gcs_blob_name:
+                    try:
+                        document.download_url = generate_signed_url(
+                            MACHINE_DOCUMENTS_BUCKET, document.gcs_blob_name,
+                        )
+                    except Exception:
+                        logger.exception(
+                            "# [MachineHistoryView] Fallo generando URL "
+                            "firmada para MachineDocument #%d (blob=%s).",
+                            document.pk, document.gcs_blob_name,
+                        )
+                elif document.drive_web_link:
+                    document.download_url = document.drive_web_link
 
         context = {
             "company": company,

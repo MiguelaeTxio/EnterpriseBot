@@ -2043,6 +2043,17 @@ class TaskPhoto(models.Model):
         blank=True,
         default="",
     )
+    # Persistencia en Google Cloud Storage (S022) -- ver
+    # spare_parts.gcs_service.TASK_PHOTOS_BUCKET. drive_file_id/
+    # drive_web_link quedan como legado (no hay fotos ya subidas a
+    # Drive a fecha de esta migración, per Miguel Ángel S022, pero se
+    # mantienen los campos por coherencia con los otros dos modelos).
+    gcs_blob_name = models.CharField(
+        _("Ruta del objeto en Google Cloud Storage"),
+        max_length=500,
+        blank=True,
+        default="",
+    )
 
     created_at = models.DateTimeField(
         _("Fecha de creación"),

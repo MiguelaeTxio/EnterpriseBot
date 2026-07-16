@@ -100,10 +100,10 @@
                         {% else %}—{% endif %}
                     </td>
                     <td class="text-end">
-                        {% if note.drive_web_link %}
-                        <a href="{{ note.drive_web_link }}" target="_blank" rel="noopener"
-                           class="btn btn-sm btn-outline-secondary" title="Ver archivo original en Drive">
-                            <i class="bi bi-google"></i>
+                        {% if note.download_url %}
+                        <a href="{{ note.download_url }}" target="_blank" rel="noopener"
+                           class="btn btn-sm btn-outline-secondary" title="Ver archivo original">
+                            <i class="bi bi-file-earmark-arrow-down"></i>
                         </a>
                         {% endif %}
                         {% if note.status == 'ASSIGNED' %}
