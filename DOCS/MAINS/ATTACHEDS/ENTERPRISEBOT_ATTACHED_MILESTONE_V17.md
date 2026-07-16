@@ -269,6 +269,24 @@ reabrir ninguno sin instrucción explícita.
 
 Incidencias menores registradas para futura atención (sin prioridad
 sobre los bloques de arriba, no iniciar sin instrucción explícita):
+
+**CORREGIDA EN S023 (no pendiente, registrada aquí solo como
+histórico):** `CELERY_BEAT_SCHEDULE` (`enterprise_core/settings.py`)
+seguía disparando a diario (3:00) `chat.tasks.purge_old_chat_messages`
+— función eliminada por completo en este mismo Paso 1 de H17 junto con
+`ChatRoom`/`ChatMessage`/`BreakdownConversationTurn` (`chat/tasks.py`
+quedó como placeholder vacío desde entonces). La tarea llevaba
+disparándose en el vacío desde ese momento sin fallar de forma
+visible — Celery simplemente no encontraba nada que ejecutar cada día.
+Detectado por Miguel Ángel durante una sesión de H23/H26, verificado
+contra el código real (no contra el anexo) antes de corregir. Entrada
+eliminada de `CELERY_BEAT_SCHEDULE`; el hueco horario (3:00) se
+reutilizó para la tarea de alertas de vencimiento de documentos de
+H26 (`send_document_expiry_alerts`) — ver
+`ENTERPRISEBOT_ATTACHED_MILESTONE_V23.md` y
+`ENTERPRISEBOT_ATTACHED_MILESTONE_V26.md` sección "COMPLETADAS EN
+S023" para el detalle completo.
+
 - **views_workorders.py — bug preexistente detectado por pyflakes en
   S012 (sin relación con los cambios de esa sesión)**: en
   `WorkOrderAdminExportView`, modo `export_mode="digital_full"`

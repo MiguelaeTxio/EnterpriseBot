@@ -166,16 +166,106 @@ Flujo tal cual lo describió, a implementar sin reinterpretar (directriz
 
 ## 5. Hoja de Ruta para la Sesión Siguiente que Retome Este Hito
 
-1. Resolver las 5 preguntas abiertas de la sección 4 con Miguel Ángel.
-2. Decidir la ubicación del servicio compartido (app nueva vs. app
-   existente).
-3. Construir, en este orden sugerido (a confirmar con Miguel Ángel, no
-   asumido): diálogo de sustitución (bloquea cualquier subida nueva
-   coherente) → fusión/generación de PDF → plantilla de email → motor
-   de alertas (depende de que la plantilla WhatsApp de H23 esté
-   aprobada por Meta, todavía `pending` a fecha de S022).
-4. Solo después: construir las interfaces de Administración de H23 y
-   H25 sobre este servicio.
+**Las 4 capacidades base están construidas y desplegadas (S023) --
+ver "COMPLETADAS EN S023" abajo para el detalle completo.** Este hito
+no tiene trabajo propio pendiente ahora mismo -- lo que queda es que
+H23 (siguiente sesión, S024) y más adelante H25 construyan sus
+interfaces de panel consumiendo estos servicios:
+
+- `document_management.vigencia_service` -- `is_current()`,
+  `evaluate_substitution()`.
+- `document_management.pdf_merge_service` -- `merge_pdfs()`.
+- `document_management.tasks.send_document_expiry_alerts` -- ya
+  desplegada en Celery Beat (3:00), pendiente de que exista alguna fila
+  real de `DocumentAlert` para tener algo que enviar (las crea la
+  futura interfaz de H23) y de que Meta apruebe la plantilla WhatsApp
+  `document_expiry_alert` (~24h desde S021, debería estar resuelta
+  para S024).
+- `EmailTemplate` -- modelo listo, sin interfaz de edición todavía
+  (decisión explícita de Miguel Ángel, S023: nunca construir una
+  pantalla mínima desechable -- se construye cuando haga falta de
+  verdad, o no se construye).
+
+Si en el futuro una sesión vuelve a este hito porque H25 necesita algo
+que hoy no está cubierto (p. ej. el ámbito del diálogo de sustitución
+para personal, con tipos de documento que no participan en
+sustitución -- ver sección 3), tratarlo como incidencia puntual sobre
+este servicio, no como una reapertura completa del hito.
+
+### COMPLETADAS EN S023
+
+Sesión con H23 EN PROGRESO (nunca se movió el marcador -- desvío Caso
+A desde H23, ver `ENTERPRISEBOT_ANNEX_ROUTER.md` y el propio anexo H23
+"COMPLETADAS EN S023" para el incidente real que motivó parte de la
+sesión). Miguel Ángel delegó explícitamente en el modelo la decisión
+de por dónde continuar tras cerrar el incidente ("lo que consideres
+mejor"), y se siguió la recomendación ya anotada en el anexo H23: abrir
+H26 antes que H25.
+
+**Las 5 preguntas abiertas de la sección 4, resueltas con Miguel
+Ángel:**
+1. App nueva transversal dedicada: `document_management` (nunca
+   plegada en `ai_services` ni `spare_parts`).
+2. Motor de fusión de PDF: `PyMuPDF` (`pymupdf==1.27.2.2`, ya
+   instalado) es suficiente -- `Document.insert_pdf()` -- verificado
+   online (directriz 4.4), sin dependencia nueva.
+3. Plantilla de email: "cualquier cosa genérica y modificable desde la
+   misma aplicación, luego que lo rellene la persona encargada de
+   documentación" -- **nunca dijo "admin"**; el modelo lo interpretó
+   mal una vez (Django admin, al que solo Miguel Ángel tiene acceso),
+   corregido explícitamente por él antes de desplegar. Decisión final:
+   modelo `EmailTemplate` sin ninguna interfaz de edición por ahora --
+   "no vamos a hacer una interfaz pequeña para luego borrarla y poner
+   la definitiva. No."
+4. Motor de alertas -- periodicidad y disparo: `Celery Beat` **ya
+   estaba en uso en producción** (`CELERY_BEAT_SCHEDULE` en
+   `settings.py`, 3 tareas reales del canal WhatsApp + 1 de limpieza
+   de chat) -- la nota de la sección 4 sobre "no usado todavía" estaba
+   desactualizada, corregido al verificar el código real en vez de
+   fiarse del anexo. Horario elegido: 3:00 -- reutilizando el hueco
+   que dejó libre la tarea muerta `purge_old_chat_messages`
+   (eliminada en H17, seguía programada; ver anexo H17), sugerencia
+   del propio Miguel Ángel.
+5. Diálogo de sustitución -- ámbito: confirmado, solo centros de gasto
+   (H23/`MachineDocument`) por ahora; personal (H25) queda pendiente
+   hasta cerrar su modelo de datos.
+
+**Construido, verificado y desplegado (commits `29c333d`, `a28f6fb`,
+`09fa8aa`, `bebb691`, `5e64a9f`):**
+- App `document_management` (`INSTALLED_APPS`), modelos
+  `EmailTemplate` y `DocumentAlert` (migración `0001_initial`).
+  `DocumentAlert` vinculado genéricamente (Content Type framework) a
+  cualquier documento de cualquier dominio -- nunca importa
+  `MachineDocument` ni el futuro modelo de H25. Campos según
+  especificación literal de Miguel Ángel: documento, fecha de
+  caducidad, días de antelación, contacto(s) (M2M a `CompanyUser`),
+  resolución.
+- `document_label`/`subject_label` añadidos a `DocumentAlert`
+  (migración `0002`) tras aclarar con Miguel Ángel que estos campos
+  los rellena automáticamente la vista que crea la alerta (máquina y
+  documento ya conocidos por contexto), nunca la persona a mano --
+  evita que este módulo tenga que inspeccionar el objeto genérico.
+- `vigencia_service.py`: `is_current()`/`evaluate_substitution()`,
+  implementando el criterio de vigencia de H23 S021 con la lectura
+  confirmada por Miguel Ángel (documentos con `expiry_date`: vigentes
+  hasta que caduquen, sin compararse entre sí -- permite varios
+  vigentes a la vez por periodo, ej. seguros trimestrales; documentos
+  sin `expiry_date`: el más reciente `issue_date` de su tipo es el
+  vigente). Verificado con 4 casos de prueba reales antes del commit.
+- `pdf_merge_service.py`: `merge_pdfs()` con `PyMuPDF`. Verificado
+  empíricamente generando PDFs reales y comprobando páginas/orden.
+- `tasks.py`: `send_document_expiry_alerts`, reutilizando el patrón
+  real ya en producción de `whatsapp.tasks.check_in_meeting_reminders`
+  (mismo decorador `@shared_task(name=...)`, mismo mecanismo Twilio
+  Content API/`content_variables`) -- verificado contra el código real
+  antes de escribir, incluida una falsa alarma resuelta comparando el
+  método de comprobación contra una tarea ya conocida en producción
+  (`app.tasks` requiere `autodiscover_tasks(force=True)` para
+  poblarse en un shell normal).
+- Verificación de despliegue con datos reales (no solo semáforo verde,
+  incluidas migraciones): `git log -1` + `showmigrations` +
+  comprobación de registro de tarea Celery en el servidor real tras
+  cada push relevante.
 
 ---
 
@@ -184,3 +274,4 @@ Flujo tal cual lo describió, a implementar sin reinterpretar (directriz
 | Sesión | Fecha | Trabajo realizado |
 |---|---|---|
 | S022 | 2026-07-16 | Hito creado durante la planificación de la continuación de H23: Miguel Ángel identificó la necesidad de una aplicación de gestión documental completa (no solo el pipeline de ingesta actual) y, tras plantearle las opciones, eligió construir la infraestructura pesada compartida (alertas, PDF, email, sustitución) como hito propio antes que las interfaces de H23/H25, para evitar duplicar lógica entre dominios. Especificación completa de las 4 capacidades capturada tal cual (sección 2). Sin código todavía — hito registrado como PAUSADO. Ver sección 4 (preguntas abiertas) y sección 5 (hoja de ruta) para el punto de partida de la siguiente sesión. |
+| S023 | 2026-07-16 | Desvío Caso A desde H23 (marcador nunca movido a este hito). Las 5 preguntas abiertas de sección 4 resueltas con Miguel Ángel (app nueva `document_management`, PyMuPDF suficiente para fusión, plantilla de email sin UI por decisión explícita, Celery Beat ya en uso — corrección de una nota desactualizada del propio anexo, sustitución solo centros de gasto por ahora). Las 4 capacidades construidas y desplegadas: modelos `EmailTemplate`/`DocumentAlert` (migraciones `0001`/`0002`), `vigencia_service.py` (verificado con 4 casos de prueba), `pdf_merge_service.py` (verificado con PDFs reales), `send_document_expiry_alerts` (verificado registrado en Celery del servidor real). Un error de rumbo propio corregido por Miguel Ángel en el momento (Django admin para `EmailTemplate`, nunca pedido). Ver "COMPLETADAS EN S023" arriba para el detalle técnico completo. |

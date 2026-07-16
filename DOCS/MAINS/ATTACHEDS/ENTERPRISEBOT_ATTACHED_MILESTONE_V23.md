@@ -437,55 +437,130 @@ Resumen:
   Documental Compartida** creados como hitos nuevos PAUSADOS (Caso C),
   ver sus propios anexos para el detalle completo.
 
-### Hoja de Ruta para la Sesión Siguiente (S023)
+### COMPLETADAS EN S023
 
-**Prioridad 0 de S022 -- COMPLETADA en esta sesión.** Migración
-Google Drive -> Google Cloud Storage hecha, verificada y desplegada
-(ver "COMPLETADAS EN S022" arriba). No queda ninguna acción pendiente
-de esa migración salvo el borrado manual de los 10 archivos
-originales en Drive, que Miguel Ángel se encarga de hacer él mismo.
+Sesión que arrancó con H23 EN PROGRESO. El trabajo real se dividió en
+dos bloques: un incidente real detectado por Miguel Ángel al probar
+(dentro del propio dominio de H23), y un desvío deliberado a H26 para
+construir la infraestructura compartida que la hoja de ruta de S022
+dejaba como bloqueante — el marcador `EN PROGRESO` **no se movió** en
+ningún momento (Caso A de `ENTERPRISEBOT_ANNEX_ROUTER.md`: desvío de
+sesión, no cambio de hito).
 
-**Recomendación de Claude para abrir S023 (Miguel Ángel dejó la
-decisión abierta al cierre de S022, "como tú lo veas mejor"):**
-empezar por **H26 -- Infraestructura Documental Compartida**
-(`ENTERPRISEBOT_ATTACHED_MILESTONE_V26.md`), no por H25. Motivo: los
-tres puntos pendientes de este propio hito (vigencia, archivado,
-alarmas) ya tienen datos reales esperando y están bloqueados
-exactamente por lo que construye H26; H25 en cambio todavía tiene 7
-preguntas de diseño sin cerrar (ver anexo V25 sección 4) antes de
-poder escribir código. Confirmar con Miguel Ángel al empezar la
-sesión si se sigue esta recomendación o se prefiere lo contrario --
-no asumir, preguntar primero (directriz 4.8).
+**Incidente real — Vertex AI roto para toda la plataforma tras la
+migración a GCS de S022:**
+- Miguel Ángel detectó al reintentar subir los 11 documentos de prueba
+  de A-45 (los mismos borrados en S021) que solo 1 de 11 se procesó
+  (el manual de uso, único que no llama a Gemini). Diagnóstico
+  exclusivamente por logs reales (`alwayson-log-242133.log`,
+  `bridge.log`), nunca por hipótesis — Miguel Ángel corrigió
+  explícitamente al modelo cuando este empezó a especular sobre el
+  proyecto GCP en vez de seguir el log.
+- **Causa raíz confirmada:** al conceder el rol `Storage Admin` a la
+  cuenta de servicio `enterprisebot-vertex@gen-lang-client-0961484137`
+  para la migración GCS de S022, la consola de IAM **sustituyó** los
+  roles existentes en vez de añadirlos — la cuenta se quedó sin ningún
+  rol de Vertex AI. Afectó a `generateContent` (documentos) y a
+  `BidiGenerateContent`/Live API (IVR) por igual, mismo permiso
+  denegado (`aiplatform.endpoints.predict`) en ambos casos, confirmado
+  en `alwayson-log-242133.log` y en `bridge.log` respectivamente.
+- **Hallazgo adicional:** la llamada de prueba al IVR que Miguel Ángel
+  hizo creyendo que "funcionaba" en realidad fallaba igual (confirmado
+  por `bridge.log` — la sesión de voz moría con el mismo error nada
+  más descolgar, el usuario solo oía la llamada conectar a nivel
+  Twilio). Corregido tras el fix de IAM y reverificado con una llamada
+  real posterior: audio bidireccional confirmado en el log.
+- **Arreglo:** añadido el rol `Agent Platform User` (`roles/
+  aiplatform.user` — nombre nuevo tras el rebranding de Vertex AI,
+  verificado online) junto a `Storage Admin`, sin quitar este último.
+- **Verificación con datos reales:** los 10 documentos de A-45 en
+  `ERROR` se resetearon a `PENDING` (sin volver a subir archivos —
+  `source_file` seguía en el servidor porque el fallo ocurría antes de
+  llegar a Drive/GCS) y se reencolaron; los 10 quedaron `CLASSIFIED` y
+  subidos a GCS, incluida la detección correcta del PDF maestro
+  (`#34`, cobertura completa por los 9 individuales). Llamada IVR real
+  posterior con audio `GEMINI-TX`/`GEMINI-RX` confirmado en `bridge.log`.
+- Detectado de paso (fuera de alcance de H23, corregido igual):
+  `CELERY_BEAT_SCHEDULE` seguía disparando a diario
+  `chat.tasks.purge_old_chat_messages`, tarea eliminada por completo
+  en H17 Paso 1 junto con `ChatRoom`/`ChatMessage`/
+  `BreakdownConversationTurn` — ver `ENTERPRISEBOT_ATTACHED_MILESTONE_V17.md`
+  para el registro de esa corrección. El hueco horario (3:00) se
+  reutilizó para la tarea de alertas de H26.
 
-**Si se empieza por H26** (ver ese anexo para el detalle completo):
-1. Resolver las 5 preguntas abiertas del anexo V26 sección 4 con
-   Miguel Ángel (ubicación del servicio, motor de fusión de PDF,
-   contenido de la plantilla de email, periodicidad del motor de
-   alertas, ámbito del diálogo de sustitución).
-2. Construir en el orden sugerido en ese mismo anexo (a confirmar):
-   diálogo de sustitución -> fusión/generación de PDF -> plantilla de
-   email -> motor de alertas.
-3. Verificar de nuevo el estado de la plantilla WhatsApp
-   `document_expiry_alert` (`HX55da66276bb2025f691c378abff0123e`) --
-   estado a fecha de S022: `pending`, Meta todavía no la ha resuelto.
-   Si sigue `pending`, el motor de alertas puede construirse igual,
-   pero no podrá enviar mensajes reales hasta que Meta apruebe.
-4. Una vez H26 tenga las capacidades base, retomar los tres puntos
-   pendientes de este propio hito (vigencia, archivado, modal de
-   alerta) construyéndolos como consumidores de H26, no por separado.
+**Desvío a H26 — Infraestructura Documental Compartida completada:**
+las cuatro capacidades del anexo V26 sección 2 construidas y
+desplegadas (app `document_management` nueva, servicio de vigencia/
+sustitución, fusión de PDF, motor de alertas) — ver
+`ENTERPRISEBOT_ATTACHED_MILESTONE_V26.md` sección "COMPLETADAS EN
+S023" para el detalle técnico completo (commits, decisiones,
+verificaciones). Relevante para H23: el modelo dinámico de metadatos
+construido en S021 (`period_start`/`period_end`, `issue_date`,
+`expiry_date`) es exactamente lo que consume el nuevo
+`document_management.vigencia_service` — sin cambios necesarios en
+`MachineDocument` para que H23 empiece a usarlo.
 
-**Si en cambio se empieza por H25** (ver `ENTERPRISEBOT_ATTACHED_MILESTONE_V25.md`
-sección 4 y 5 para el detalle completo): resolver primero sus 7
-preguntas abiertas de diseño (nombre de app, modelo exacto, categorías,
-roles con acceso, relación con CompanyUser, ubicación de la vista,
-vigencia de la API de Gemini Vision).
+**Corrección explícita de rumbo por Miguel Ángel durante la sesión:**
+al proponer que `EmailTemplate` (H26) fuera editable desde el admin de
+Django, Miguel Ángel corrigió — él nunca mencionó "admin", pidió
+"desde la misma aplicación"/"desde el panel", y solo él tiene acceso
+al admin. Revertido antes de desplegar. Decisión final de Miguel Ángel
+sobre esa misma pieza: no construir ninguna interfaz mínima desechable
+para plantillas de email — se deja como modelo sin UI hasta que haga
+falta de verdad, sin deuda técnica.
 
-**Sin cambios, sigue pendiente independientemente de por dónde se
-empiece:** revisión del CRUD de documentación de centros de gasto más
-allá de lo anterior -- Miguel Ángel lo dejó abierto en S021 ("no sé si
-habrá que mejorar el CRUD... está bien, pero habría que dotar las
-diferentes funcionalidades") -- confirmar alcance concreto con él, no
-asumir qué falta.
+### Hoja de Ruta para la Sesión Siguiente (S024)
+
+**Punto de partida confirmado por Miguel Ángel al cierre de S023:**
+construir la interfaz de panel de H23 que consuma los servicios de
+`document_management` ya desplegados. No asumir el diseño de pantalla
+— preguntar antes de construir (directriz 4.8), especialmente en:
+
+1. **Vigencia visible + archivado** (criterio ya cerrado en S021,
+   lógica ya implementada en `document_management.vigencia_service`
+   S023): la vista de "Documentación de Centros de Gasto" debe marcar
+   qué documentos son vigentes vs. archivados, con sección "Archivados"
+   al final y opción de borrado manual — ver anexo H26 sección 2.4 y
+   "Decisiones cerradas en S021" más arriba para el diseño exacto
+   (incluida la excepción de borrado manual de vigentes por subida
+   errónea).
+2. **Diálogo de sustitución en la subida:** al subir un documento de un
+   tipo ya existente para la misma máquina, llamar a
+   `document_management.vigencia_service.evaluate_substitution()` y
+   mostrar el diálogo con las dos acciones (archivar el obsoleto /
+   revertir la subida) — flujo exacto en anexo H26 sección 2.4.
+3. **Botón "generar dossier":** llamar a
+   `document_management.pdf_merge_service.merge_pdfs()` con los
+   documentos seleccionados por el usuario (acción bajo demanda,
+   nunca automática).
+4. **Formulario de alta de alerta:** crear un `DocumentAlert` desde la
+   vista de un documento concreto — máquina y documento ya conocidos
+   por contexto (rellenar `document_label`/`subject_label`
+   automáticamente desde el `MachineDocument`, nunca a mano), el
+   usuario solo indica `alert_offset_days` y `contacts` (confirmado
+   con Miguel Ángel en S023, contacto por defecto = quien crea la
+   alerta + desplegable/autocompletado para añadir otros, igual patrón
+   que los códigos de máquina existentes).
+5. **Verificar primero** el estado de la plantilla WhatsApp
+   `document_expiry_alert` vía API de Twilio — Miguel Ángel indicó en
+   S023 que la aprobación de Meta suele tardar ~24h desde el envío
+   (S021), así que a la fecha de S024 debería estar resuelta. Si sigue
+   `pending`, el motor de alertas ya construido funciona igual, solo
+   no podrá enviar mensajes reales.
+
+**Sin cambios, sigue pendiente independientemente de lo anterior:**
+revisión del CRUD de documentación de centros de gasto más allá de lo
+anterior — Miguel Ángel lo dejó abierto en S021 ("no sé si habrá que
+mejorar el CRUD... está bien, pero habría que dotar las diferentes
+funcionalidades") — confirmar alcance concreto con él, no asumir qué
+falta.
+
+**Observación sin acción inmediata (S023):** PythonAnywhere limita las
+versiones de Python disponibles a 3.10 (y anteriores) a fecha de esta
+sesión; `google-api-core` dejará de dar soporte a Python 3.10 el
+2026-10-04. Sin acción posible por nuestra parte (depende de que
+PythonAnywhere añada una versión superior) — vigilar antes de esa
+fecha si no ha cambiado, para planificar la migración con margen.
 
 ### Funcionalidad nueva anotada por Miguel Ángel al cierre — evaluar si abre hito propio
 
@@ -542,3 +617,4 @@ originó, sin más acción pendiente aquí.
 | — | — | Hito creado en S016 (desvío desde H17), a petición explícita de Miguel Ángel. Sin trabajo de código todavía — ver sección 4 (preguntas abiertas) y sección 5 (hoja de ruta) para el punto de partida de la siguiente sesión. |
 | S017 | 2026-07-14 | Primera sesión de código del hito. Modelo `MachineDocument` + app `machine_documents` + rol `DOCS_SUPERVISOR`, servicio de clasificación Gemini Vision (clasificación + metadatos en una sola llamada), integración en Historial de Máquina/Centros de gasto, pipeline migrado de síncrono a asíncrono (Celery) tras un 504 real de PythonAnywhere. Bug de traducción de categorías de avería corregido de paso (fuera de este hito). Ver COMPLETADAS EN S017 arriba para el detalle completo. |
 | S021 | 2026-07-16 | Sesión con H24 EN PROGRESO al arrancar, pero prácticamente todo el trabajo real fue de H23 (**PCH H24→H23 ejecutado al cierre**, confirmado por Miguel Ángel). Fix de sidebar de `alvarez_admin` (commit `e2a5ecc` -- `company_user` ausente del contexto de `MachineDocumentBatchUploadView`). Modelo dinámico de metadatos: `period_start`/`period_end`/`amount` + `extra_data` JSON (commit `4ffebee`, migración `0004` verificada aplicada en producción). Plantilla WhatsApp `document_expiry_alert` creada, rechazada dos veces por Meta ("Variables can't be at the start or end of the template"), plantillas rechazadas borradas de Twilio, rediseñada y reenviada a revisión (`HX55da66276bb2025f691c378abff0123e`, pendiente de aprobación). Desvío puntual a H07 (sin PCH, marcador no se movió hasta el cierre): verificación del mecanismo `PARTE-BACKUP` (confirmado funcional, 39 líneas reales en `error.log`), dos partes recuperados a mano por Miguel Ángel (Antonio Fontalba 22/06, Pablo Cañamero 03/07), y nueva vista de Administración "Borradores de Partes" + `SuperuserRequiredMixin` (sustituye el hardcode de username `alvarez_admin` por `is_superuser` de Django) -- ver anexo H07 para el detalle completo de esa pieza. Un incidente de despliegue propio (`ImportError` por `WorkOrderDraftListView` sin re-exportar en `panel/views.py`) diagnosticado con datos reales y corregido en la misma sesión (commit `7344d46`). Cuatro decisiones de diseño cerradas con Miguel Ángel para la continuación de H23 (vigencia, archivado, plantilla, modelo dinámico) -- ver "Decisiones cerradas en S021" y "Hoja de Ruta para la Sesión Siguiente (S022)" arriba. |
+| S023 | 2026-07-16 | H23 EN PROGRESO durante toda la sesión (desvío Caso A, marcador nunca movido). Incidente real: Vertex AI roto para toda la plataforma (documentos + IVR) tras el cambio de IAM de S022 (rol de Vertex AI sustituido por `Storage Admin` en vez de añadido); diagnosticado exclusivamente por logs reales (`alwayson-log-242133.log`, `bridge.log`) tras corrección explícita de Miguel Ángel cuando el modelo empezó a especular sobre el proyecto GCP; arreglado añadiendo `Agent Platform User` (`roles/aiplatform.user`); verificado reprocesando los 10 documentos de A-45 (todos `CLASSIFIED`, maestro detectado correctamente) y con una llamada IVR real (audio bidireccional confirmado). Hallazgo: el IVR llevaba roto desde el cambio de IAM aunque Miguel Ángel creía que funcionaba -- confirmado por log, no por suposición. Bug fuera de alcance corregido de paso: tarea Celery muerta `purge_old_chat_messages` (eliminada en H17, seguía en `CELERY_BEAT_SCHEDULE`) -- ver anexo H17. Desvío al resto de la sesión: H26 -- Infraestructura Documental Compartida completada por entero (app `document_management`, servicio de vigencia/sustitución, fusión de PDF, motor de alertas) -- ver anexo H26 "COMPLETADAS EN S023" para el detalle. Corrección de rumbo de Miguel Ángel durante la sesión: `EmailTemplate` no se edita desde el admin de Django (nunca lo pidió), y no se construye ninguna interfaz mínima desechable -- se queda como modelo sin UI. Ver "Hoja de Ruta para la Sesión Siguiente (S024)" arriba para el punto de partida: interfaz de panel de H23 consumiendo los servicios de H26. |
