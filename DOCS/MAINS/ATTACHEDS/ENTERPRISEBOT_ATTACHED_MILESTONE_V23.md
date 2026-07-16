@@ -371,51 +371,121 @@ aislada de este anexo.
    `0004_machinedocument_period_amount_extra_data` escrita y
    desplegada en esta sesión (verificado `[X]` aplicada en producción).
 
-### Hoja de Ruta para la Sesión Siguiente (S022) -- orden confirmado explícitamente por Miguel Ángel al cierre de S021
+### COMPLETADAS EN S022
 
-**Prioridad 0 -- ANTES que cualquier pieza nueva de H23, palabras
-textuales de Miguel Ángel: "no sin antes ya hacer ya la migración a
-Google Cloud, y quitar lo de Google Drive" / "Siguiente sesión
-migramos":**
-0. Migración de `spare_parts/gdrive_service.py` (Google Drive) a
-   Google Cloud Storage. **No es solo de H23** -- afecta también a H7
-   (`TaskPhoto`) y H10 (`DeliveryNote`), que reutilizan el mismo
-   servicio. Antes de escribir código: verificación online obligatoria
-   de la API actual de `google-cloud-storage` (directriz 4.4, SINE QUA
-   NON -- no hecha todavía), y cerrar con Miguel Ángel las decisiones
-   de diseño reales que esto implica (no asumir ninguna, directriz
-   4.8): ¿bucket único o uno por tipo de documento?, ¿se migran los
-   archivos ya subidos a Drive o solo los nuevos van a GCS?, ¿los
-   campos `drive_file_id`/`drive_web_link` de los tres modelos cambian
-   de significado o se añaden campos nuevos?, ¿acceso público directo
-   o URLs firmadas con expiración?
+**Prioridad 0 -- Migración Google Drive -> Google Cloud Storage,
+completada y verificada de principio a fin.** Ver
+`ENTERPRISEBOT_ATTACHED_MILESTONE_V26.md` para el hito nuevo nacido de
+esta misma sesión (infraestructura documental compartida) y el propio
+`spare_parts/gcs_service.py` para el detalle técnico completo.
+Resumen:
 
-**Después de la migración, continuación de H23 (orden según lo
-descrito por Miguel Ángel al cierre de S021):**
-1. Comprobar el estado de aprobación de la plantilla
-   `document_expiry_alert` (`HX55da66276bb2025f691c378abff0123e`) en
-   Twilio/Meta.
-2. Implementar la lógica de vigencia (punto 1 de las decisiones S021).
-3. Añadir el campo de archivado al modelo + sección "Archivados" en el
-   visor de documentación + acción de borrado manual, tanto para
-   archivados como para vigentes subidos por error (punto 2 de las
-   decisiones S021, incluida la precisión del cierre).
-4. Construir el modal de "Crear alerta" por documento -- palabras de
-   Miguel Ángel: "una de las acciones sería precisamente esa, crear
-   alerta y un modal para la creación de la alerta y que quede
-   asociada a ese documento y a su centro de gasto, a la máquina."
-   Nuevo modelo (a diseñar) para la alerta en sí, asociada a
-   `MachineDocument` + `MachineAsset`, y la tarea Celery que la
-   dispare usando la plantilla `document_expiry_alert` ya aprobada.
-5. Revisar si el CRUD de documentación necesita mejoras más allá de
-   lo anterior -- Miguel Ángel lo dejó abierto ("no sé si habrá que
-   mejorar el CRUD... está bien, pero habría que dotar las diferentes
-   funcionalidades") -- confirmar alcance concreto con él al empezar,
-   no asumir qué falta.
-6. Miguel Ángel sigue pendiente de traer una carpeta tipo con
-   documentación real de un trabajador (cursos, certificados) para
-   plantear juntos, al abrir la sesión, cómo modelar la documentación
-   de personal (ver punto 3 de S017, nunca abordado todavía).
+- Verificación online (directriz 4.4): `google-cloud-storage==3.13.0`,
+  compatible con Python 3.10.5 del proyecto; confirmado que
+  `*.googleapis.com` está en la whitelist de red de PythonAnywhere.
+- 4 decisiones de diseño cerradas con Miguel Ángel: un bucket por tipo
+  (`enterprisebot-alvarez-{task-photos,delivery-notes,
+  machine-documents,personnel-documents}`), solo se migran a GCS los
+  archivos con datos reales (albaranes -- la documentación de H23 era
+  de prueba y se borró en vez de migrarse, ver más abajo), campos
+  `drive_file_id`/`drive_web_link` mantenidos como legado + campo
+  nuevo `gcs_blob_name`, buckets privados con acceso uniforme + URL
+  firmada V4 generada bajo demanda (nunca acceso público, nunca
+  persistida en BD).
+- `spare_parts/gcs_service.py` nuevo, sucesor de `gdrive_service.py`
+  para toda subida nueva de `TaskPhoto`/`DeliveryNote`/`MachineDocument`.
+  Autenticación con la misma Service Account de Vertex AI -- el
+  problema de cuota que forzó OAuth delegado en Drive no aplica a GCS.
+- Migraciones `spare_parts.0010`, `work_order_processor.0031`,
+  `machine_documents.0005` (campo `gcs_blob_name`), desplegadas y
+  verificadas con datos reales (`showmigrations`, `manage.py check`)
+  tras un incidente real de despliegue (ver más abajo).
+- Las tres tareas Celery de subida migradas de `gdrive_service` a
+  `gcs_service`. Vistas de `history`, `chat`, `delivery_notes`,
+  `spare_parts` y el admin de `TaskPhoto` resuelven la URL de descarga
+  en la vista (nunca en el template), con GCS preferente y Drive
+  legado como fallback.
+- **Incidente real de despliegue:** `pip-compile requirements.in`
+  ejecutado sin `-o` reescribió `requirements.txt` directamente en el
+  árbol de trabajo del servidor, dejando una modificación local sin
+  commitear que bloqueó dos `git pull` consecutivos del Action (commits
+  `6146d22` y `fefbcdb`, ambos en rojo en GitHub Actions -- confirmado
+  con `git log -1`/`showmigrations` reales en el servidor, no solo con
+  el semáforo). Corregido con `git checkout -- requirements.txt` +
+  pull manual; las 3 migraciones se aplicaron correctamente. El push
+  siguiente (`f42aa2b`) sí desplegó en verde.
+- **Bug real detectado y corregido en la misma sesión:**
+  `migrate_delivery_notes_to_gcs` anteponía el número de albarán al
+  nombre de blob aunque el nombre ya guardado en Drive lo llevaba de
+  antes, generando nombres duplicados/anidados cuando el número
+  contenía `/` (ej. `BA/2606366`). Corregido con
+  `gcs_service.sanitize_path_component()` + modo `--repair` del propio
+  comando; los 10 albaranes ya migrados se repararon y se verificó
+  abriendo la URL firmada de uno de ellos (foto real del albarán #12
+  cargó correctamente).
+- 10 albaranes reales migrados de Drive a GCS (`drive_file_id`/
+  `drive_web_link` intactos, Miguel Ángel se encarga de borrar los
+  originales de Drive él mismo).
+- 11 documentos de prueba de H23 (máquina A45) borrados de BD y Drive
+  vía `reset_machine_documents --machine-code A45 --confirm` (comando
+  ya existente de S017), confirmado también visualmente por Miguel
+  Ángel en Drive.
+- Estado de la plantilla WhatsApp `document_expiry_alert`
+  (`HX55da66276bb2025f691c378abff0123e`) verificado vía API de Twilio:
+  **`pending`**, Meta no la ha resuelto todavía.
+- **H25 -- Documentación de Personal** y **H26 -- Infraestructura
+  Documental Compartida** creados como hitos nuevos PAUSADOS (Caso C),
+  ver sus propios anexos para el detalle completo.
+
+### Hoja de Ruta para la Sesión Siguiente (S023)
+
+**Prioridad 0 de S022 -- COMPLETADA en esta sesión.** Migración
+Google Drive -> Google Cloud Storage hecha, verificada y desplegada
+(ver "COMPLETADAS EN S022" arriba). No queda ninguna acción pendiente
+de esa migración salvo el borrado manual de los 10 archivos
+originales en Drive, que Miguel Ángel se encarga de hacer él mismo.
+
+**Recomendación de Claude para abrir S023 (Miguel Ángel dejó la
+decisión abierta al cierre de S022, "como tú lo veas mejor"):**
+empezar por **H26 -- Infraestructura Documental Compartida**
+(`ENTERPRISEBOT_ATTACHED_MILESTONE_V26.md`), no por H25. Motivo: los
+tres puntos pendientes de este propio hito (vigencia, archivado,
+alarmas) ya tienen datos reales esperando y están bloqueados
+exactamente por lo que construye H26; H25 en cambio todavía tiene 7
+preguntas de diseño sin cerrar (ver anexo V25 sección 4) antes de
+poder escribir código. Confirmar con Miguel Ángel al empezar la
+sesión si se sigue esta recomendación o se prefiere lo contrario --
+no asumir, preguntar primero (directriz 4.8).
+
+**Si se empieza por H26** (ver ese anexo para el detalle completo):
+1. Resolver las 5 preguntas abiertas del anexo V26 sección 4 con
+   Miguel Ángel (ubicación del servicio, motor de fusión de PDF,
+   contenido de la plantilla de email, periodicidad del motor de
+   alertas, ámbito del diálogo de sustitución).
+2. Construir en el orden sugerido en ese mismo anexo (a confirmar):
+   diálogo de sustitución -> fusión/generación de PDF -> plantilla de
+   email -> motor de alertas.
+3. Verificar de nuevo el estado de la plantilla WhatsApp
+   `document_expiry_alert` (`HX55da66276bb2025f691c378abff0123e`) --
+   estado a fecha de S022: `pending`, Meta todavía no la ha resuelto.
+   Si sigue `pending`, el motor de alertas puede construirse igual,
+   pero no podrá enviar mensajes reales hasta que Meta apruebe.
+4. Una vez H26 tenga las capacidades base, retomar los tres puntos
+   pendientes de este propio hito (vigencia, archivado, modal de
+   alerta) construyéndolos como consumidores de H26, no por separado.
+
+**Si en cambio se empieza por H25** (ver `ENTERPRISEBOT_ATTACHED_MILESTONE_V25.md`
+sección 4 y 5 para el detalle completo): resolver primero sus 7
+preguntas abiertas de diseño (nombre de app, modelo exacto, categorías,
+roles con acceso, relación con CompanyUser, ubicación de la vista,
+vigencia de la API de Gemini Vision).
+
+**Sin cambios, sigue pendiente independientemente de por dónde se
+empiece:** revisión del CRUD de documentación de centros de gasto más
+allá de lo anterior -- Miguel Ángel lo dejó abierto en S021 ("no sé si
+habrá que mejorar el CRUD... está bien, pero habría que dotar las
+diferentes funcionalidades") -- confirmar alcance concreto con él, no
+asumir qué falta.
 
 ### Funcionalidad nueva anotada por Miguel Ángel al cierre — evaluar si abre hito propio
 
