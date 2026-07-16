@@ -6,7 +6,7 @@ the Twilio Content Template Builder after Meta approval. Idempotent — safe
 to run multiple times via get_or_create. ContentSid values must be updated
 in the TEMPLATE_DEFINITIONS constant below once obtained from Twilio Console.
 
-Template inventory (10 total):
+Template inventory (11 total):
   APPROVED (5):
     - presence_reminder          UTILITY   HXe0ea154a5fa8756be305f6f0c24023c4
     - welcome_message            MARKETING HX6619d4bded96b01c62fada40e6259dd8
@@ -14,12 +14,13 @@ Template inventory (10 total):
     - chat_session_renewal       UTILITY   HX7e0f3f4d9b8553acc58240e7767f2133
     - ivr_capture_notification   UTILITY   HX1a301d32db3acaedf6b13d83fd7579ac
 
-  PENDING APPROVAL (5 — created in H17 S055, awaiting Meta review):
+  PENDING APPROVAL (6 — 5 created in H17 S055, 1 created in H23 S021, awaiting Meta review):
     - breakdown_ticket_created   UTILITY   HX32d590d2a40360c789060a7f88fa50ef
     - breakdown_location_request UTILITY   HXb9139eb63adb500855a679957d3de232
     - breakdown_info_request     UTILITY   HXe3baa955000b20e312d6d000f775533b
     - breakdown_assigned         UTILITY   HX41a742714147cc5ec92fa83dbf5c3db6
     - breakdown_broadcast        UTILITY   HXa1b32520e94663a32d3c7c1453429fe3
+    - document_expiry_alert      UTILITY   HXc85c75b0d8ba412025ff09db4960cd35
 
   NOT SUBMITTED (1 — created previously, pending Meta submission decision):
     - employee_help_menu         UTILITY   HXe8c20c02d4cf4ab340924ed5e2b0ac6f
@@ -162,6 +163,26 @@ TEMPLATE_DEFINITIONS = [
         # Quick-reply de difusion al taller al crear un nuevo ticket de averia.
         "name":        "breakdown_broadcast",
         "content_sid": "HXa1b32520e94663a32d3c7c1453429fe3",
+        "category":    WhatsAppTemplate.CATEGORY_UTILITY,
+        "language":    "es",
+    },
+    # ------------------------------------------------------------------
+    # H23 DOCUMENT EXPIRY ALERT — Created S021, pending Meta approval.
+    # Uses the same "trabajador de Grupo Alvarez" UTILITY anchor pattern.
+    # ------------------------------------------------------------------
+    {
+        # Sent business-initiated when a MachineDocument.expiry_date is
+        # approaching, to alert about a cost-center document nearing expiry
+        # (ITV, OCA certificate, insurance, etc.). Not yet wired to any
+        # sender task -- created ahead of the alerting feature itself.
+        # Body: "Usted recibe este mensaje porque consta como trabajador de
+        #        Grupo Alvarez. El documento {{2}} de la maquina {{3}}
+        #        caduca el {{4}}. Consulte el panel para mas detalles, {{1}}."
+        # Enviado de forma business-initiated cuando un documento de centro
+        # de gasto esta proximo a caducar. Aun sin tarea de envio conectada
+        # -- creada antes de construir la propia funcionalidad de alarmas.
+        "name":        "document_expiry_alert",
+        "content_sid": "HXc85c75b0d8ba412025ff09db4960cd35",
         "category":    WhatsAppTemplate.CATEGORY_UTILITY,
         "language":    "es",
     },
