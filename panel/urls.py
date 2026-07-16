@@ -94,6 +94,7 @@ from panel.views import (
     WorkPeriodGroupLockView,
     WorkPeriodLockView,
     WorkOrderMachineFilterView,
+    WorkOrderDraftListView,
     WorkdayScheduleView,
     AbsenceCategoryListView,
     AbsenceCategoryCreateView,
@@ -329,6 +330,10 @@ urlpatterns = [
     # Workday schedule management — Gestión de horarios de jornada (rol SUPERVISOR y ADMIN).
     # Paso G — CUARTA ACCION Hito 7 Sesion 029 (2026-05-14)
     path("workday-schedule/", WorkdayScheduleView.as_view(), name="workday_schedule"),
+
+    # Draft (IN_PROGRESS) digital work orders — Borradores de partes digitales.
+    # Superuser-only (S021) — ver panel/mixins.py SuperuserRequiredMixin.
+    path("work-orders/drafts/", WorkOrderDraftListView.as_view(), name="work_order_drafts"),
 
     # Absence category management — Gestión de categorías de ausencia (rol SUPERVISOR y ADMIN).
     # Paso G — CUARTA ACCION Hito 7 Sesion 029 (2026-05-14)

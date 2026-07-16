@@ -684,10 +684,18 @@
         </li>
     {% endif %}
     {# ------------------------------------------------------------------ #}
-    {# Enlace al admin de Django — exclusivo para alvarez_admin            #}
-    {# Django admin link — alvarez_admin only                              #}
+    {# Enlace al admin de Django y a Borradores de partes — exclusivo      #}
+    {# para superusuarios (is_superuser), no un rol de CompanyUser.       #}
+    {# Django admin link and Draft Work Orders — superuser only            #}
+    {# (Django is_superuser, not a CompanyUser role).                      #}
     {# ------------------------------------------------------------------ #}
-    {% if request.user.username == 'alvarez_admin' %}
+    {% if request.user.is_superuser %}
+        <li class="nav-item mt-2">
+            <a class="nav-link {% if active_nav == 'work_order_drafts' %}active{% endif %}"
+               href="{% url 'panel:work_order_drafts' %}">
+                <i class="bi bi-file-earmark-lock2"></i>Borradores de Partes
+            </a>
+        </li>
         <li class="nav-item mt-2">
             <a class="nav-link"
                href="/admin/"
@@ -698,6 +706,7 @@
         </li>
     {% endif %}
 </ul>
+
 {# ================================================================== #}
 {# JS: Acordeón sidebar — persistencia via sessionStorage              #}
 {# Abre automáticamente la sección activa al cargar la página.            #}

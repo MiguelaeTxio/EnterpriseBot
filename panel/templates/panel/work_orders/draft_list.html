@@ -1,0 +1,87 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/work_orders/draft_list.html #}
+{#                                                                                               #}
+{# Draft (IN_PROGRESS) digital work orders — superuser-only (S021).                              #}
+{#   Lists WorkOrder rows saved via "Guardar bloques" but never closed.                          #}
+{#   Data already persisted in real WorkOrderEntry/WorkOrderEntryLine rows -- this view only      #}
+{#   makes it visible from Administration, it does not introduce a new draft model.               #}
+{#                                                                                                 #}
+{# Borradores (IN_PROGRESS) de partes digitales — solo superusuario (S021).                       #}
+{#   Lista los WorkOrder guardados vía "Guardar bloques" pero nunca cerrados.                     #}
+{#   Los datos ya están persistidos en filas reales de WorkOrderEntry/WorkOrderEntryLine -- esta   #}
+{#   vista solo los hace visibles desde Administración, no introduce un modelo de borrador nuevo.  #}
+{% extends "panel/base.html" %}
+
+{% block title %}Borradores de partes{% endblock %}
+
+{% block page_title %}Borradores de Partes de Trabajo{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-0 workday-container">
+
+    <div class="alert alert-info small mb-4">
+        <i class="bi bi-info-circle me-1"></i>
+        Partes que un operario empezó y guardó con "Guardar bloques" pero
+        todavía no ha cerrado. Los datos ya están persistidos en base de
+        datos -- puedes abrirlos, revisarlos y cerrarlos tú mismo si hace
+        falta.
+    </div>
+
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-light border-bottom py-2 px-4 d-flex align-items-center justify-content-between">
+            <span class="fw-semibold text-sm">
+                <i class="bi bi-file-earmark-lock2 me-2 text-muted"></i>Borradores sin cerrar
+            </span>
+            <span class="badge bg-secondary">{{ draft_rows|length }}</span>
+        </div>
+
+        {% if draft_rows %}
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th class="px-4 text-sm fw-semibold">Operario</th>
+                        <th class="text-sm fw-semibold">Fecha del parte</th>
+                        <th class="text-sm fw-semibold">Máquinas / Centros de gasto</th>
+                        <th class="text-sm fw-semibold">Bloques guardados</th>
+                        <th class="text-sm fw-semibold">Creado</th>
+                        <th class="text-sm fw-semibold">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in draft_rows %}
+                    <tr>
+                        <td class="px-4 text-sm fw-semibold">
+                            {{ row.worker_name|default:"—" }}
+                        </td>
+                        <td class="text-sm">
+                            {{ row.work_date|date:"d/m/Y"|default:"—" }}
+                        </td>
+                        <td class="text-sm">
+                            {% for machine in row.machines %}
+                                <span class="badge bg-light text-dark border">{{ machine }}</span>
+                            {% empty %}
+                                <span class="text-muted">—</span>
+                            {% endfor %}
+                        </td>
+                        <td class="text-sm">{{ row.line_count }}</td>
+                        <td class="text-sm">{{ row.work_order.upload_date|date:"d/m/Y H:i" }}</td>
+                        <td class="text-sm">
+                            <a href="{% url 'panel:operator_form_edit' wo_pk=row.work_order.pk %}"
+                               class="btn btn-outline-primary btn-sm">
+                                <i class="bi bi-pencil-square me-1"></i>Abrir / Cerrar
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="card-body text-center text-muted py-5">
+            <i class="bi bi-check-circle display-6 d-block mb-2"></i>
+            No hay ningún borrador sin cerrar ahora mismo.
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

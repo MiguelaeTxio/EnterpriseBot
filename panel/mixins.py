@@ -18,6 +18,12 @@ Mixin hierarchy:
                                  per-user can_view_budget_breakdown flag.
                                  Introduced for special ASSISTANCE users who
                                  need budget history/breakdown visibility.
+  SuperuserRequiredMixin       — restricts to Django is_superuser=True, not a
+                                 CompanyUser role. Introduced in S021 for
+                                 sections meant for a single trusted account
+                                 (e.g. draft work orders), replacing the
+                                 hardcoded-username antipattern previously
+                                 used in the sidebar for the Django Admin link.
 ---
 Mixins de autenticación y autorización para la aplicación panel.
 Proporciona control de acceso por capas para las cuentas CompanyUser.
@@ -36,6 +42,13 @@ Jerarquía de mixins:
                                  por usuario can_view_budget_breakdown.
                                  Introducido para usuarios ASISTENCIA especiales
                                  que necesitan visibilidad de historial/desglose.
+  SuperuserRequiredMixin       — restringe a is_superuser=True de Django, no a
+                                 un rol de CompanyUser. Introducido en S021 para
+                                 secciones pensadas para una única cuenta de
+                                 confianza (p. ej. borradores de partes),
+                                 sustituyendo el antipatrón de username
+                                 hardcodeado usado antes en el sidebar para el
+                                 enlace al Django Admin.
 """
 
 from django.contrib.auth.mixins import LoginRequiredMixin
@@ -483,5 +496,49 @@ class WorkOrderFormAccessMixin(CompanyUserRequiredMixin):
 
         return response
 
+
+class SuperuserRequiredMixin(CompanyUserRequiredMixin):
+    """
+    Mixin that restricts access to Django superusers (request.user.is_superuser).
+    Unlike every other mixin in this module, this does NOT check CompanyUser.role
+    -- it checks the underlying Django auth.User flag directly. Introduced in
+    S021 as the replacement for the hardcoded-username antipattern
+    (request.user.username == 'alvarez_admin') previously used in
+    panel/templates/panel/_nav_items.html to gate the Django Admin link.
+    Granting this level of access to another account in the future is a BD
+    change (User.is_superuser = True), never a code change.
+    ---
+    Mixin que restringe el acceso a superusuarios de Django
+    (request.user.is_superuser). A diferencia de cualquier otro mixin de este
+    módulo, este NO comprueba CompanyUser.role -- comprueba directamente el
+    flag de auth.User de Django. Introducido en S021 como sustituto del
+    antipatrón de username hardcodeado (request.user.username ==
+    'alvarez_admin') usado antes en panel/templates/panel/_nav_items.html
+    para gatear el enlace al Django Admin. Dar este nivel de acceso a otra
+    cuenta en el futuro es un cambio de BD (User.is_superuser = True), nunca
+    un cambio de código.
+    """
+
+    def dispatch(self, request, *args, **kwargs):
+        """
+        Verify that the authenticated user is a Django superuser.
+        Delegates to parent for authentication and CompanyUser checks first.
+        ---
+        Verifica que el usuario autenticado es superusuario de Django.
+        Delega al padre las comprobaciones de autenticación y CompanyUser
+        primero.
+        """
+        response = super().dispatch(request, *args, **kwargs)
+        if not request.user.is_authenticated:
+            return response
+
+        if not request.user.is_superuser:
+            messages.error(
+                request,
+                "Acceso denegado. Esta sección está reservada.",
+            )
+            return redirect("/panel/")
+
+        return response
 
 

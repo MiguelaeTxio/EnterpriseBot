@@ -12,7 +12,7 @@ from django.forms import modelformset_factory
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 
-from panel.mixins import SupervisorAccessMixin, AdminRoleRequiredMixin, WorkOrderFormAccessMixin, CompanyUserRequiredMixin
+from panel.mixins import SupervisorAccessMixin, AdminRoleRequiredMixin, WorkOrderFormAccessMixin, CompanyUserRequiredMixin, SuperuserRequiredMixin
 from ivr_config.models import (
     CompanyUser,
     PresenceStatus,
@@ -6509,3 +6509,87 @@ class WorkPeriodGroupLockView(AdminRoleRequiredMixin, View):
             or reverse("panel:work_period_group_detail", kwargs={"pk": group.pk})
         )
 
+
+class WorkOrderDraftListView(SuperuserRequiredMixin, View):
+    """
+    Lists digital WorkOrders left in IN_PROGRESS status ("Guardar bloques"
+    was used but the part was never closed) -- these already persist real
+    WorkOrderEntry/WorkOrderEntryLine rows in the database, exactly like a
+    closed part, they're just not marked DONE yet. Introduced in S021 after
+    confirming this progressive-save mechanism already existed
+    (WorkOrder.Status.IN_PROGRESS + FormView.save_blocks) and only lacked
+    an Administration view to see it -- no new draft model was needed.
+
+    Restricted to Django superusers only (SuperuserRequiredMixin), not any
+    CompanyUser role -- Miguel Ángel's explicit decision, not even SUPERVISOR
+    should see this section.
+
+    GET /panel/work-orders/drafts/
+    ---
+    Lista los WorkOrder digitales que quedaron en estado IN_PROGRESS ("Guardar
+    bloques" se usó pero el parte nunca se cerró) -- ya persisten filas reales
+    de WorkOrderEntry/WorkOrderEntryLine en BD, exactamente igual que un parte
+    cerrado, solo que sin marcar DONE todavía. Introducida en S021 tras
+    confirmar que este mecanismo de guardado progresivo ya existía
+    (WorkOrder.Status.IN_PROGRESS + FormView.save_blocks) y solo faltaba una
+    vista de Administración para verlo -- no hizo falta ningún modelo de
+    borrador nuevo.
+
+    Restringida a superusuarios de Django exclusivamente
+    (SuperuserRequiredMixin), no a ningún rol de CompanyUser -- decisión
+    explícita de Miguel Ángel, ni siquiera SUPERVISOR debe ver esta sección.
+
+    GET /panel/work-orders/drafts/
+    """
+
+    template_name = "panel/work_orders/draft_list.html"
+
+    def get(self, request, *args, **kwargs):
+        """
+        Renders the list of IN_PROGRESS digital work orders for the
+        authenticated superuser's company, most recently created first.
+        ---
+        Renderiza el listado de partes digitales IN_PROGRESS de la empresa
+        del superusuario autenticado, más recientemente creados primero.
+        """
+        cu = request.user.company_user
+        company = cu.company
+
+        drafts = (
+            WorkOrder.objects
+            .filter(
+                company=company,
+                status=WorkOrder.Status.IN_PROGRESS,
+                source=WorkOrder.Source.DIGITAL,
+            )
+            .select_related("uploaded_by")
+            .prefetch_related("entries__lines__machine_asset")
+            .order_by("-upload_date")
+        )
+
+        draft_rows = []
+        for wo in drafts:
+            lines = [
+                line
+                for entry in wo.entries.all()
+                for line in entry.lines.all()
+            ]
+            first_entry = wo.entries.first()
+            draft_rows.append({
+                "work_order": wo,
+                "worker_name": first_entry.worker_name if first_entry else "",
+                "work_date": first_entry.work_date if first_entry else None,
+                "line_count": len(lines),
+                "machines": [
+                    line.machine_asset.code if line.machine_asset else line.machine_raw
+                    for line in lines
+                ],
+            })
+
+        context = {
+            "company": company,
+            "company_user": cu,
+            "active_nav": "work_order_drafts",
+            "draft_rows": draft_rows,
+        }
+        return render(request, self.template_name, context)
