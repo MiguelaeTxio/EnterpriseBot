@@ -1182,9 +1182,10 @@ class DocumentationFolderUploadView(DocsUploadAccessMixin, View):
         success_message = (
             f"{len(ingested_pks)} documento(s) en cola de "
             f"clasificación automática. Puede tardar unos minutos -- "
-            f"recarga esta página para ver el resultado en la pestaña "
-            f"correspondiente (o en \"sin asignar\" si no se pudo "
-            f"determinar la máquina/trabajador con confianza)."
+            f"usa el botón \"Actualizar\" de la pestaña correspondiente "
+            f"(o de \"Sin asignar\" si no se pudo determinar la "
+            f"máquina/trabajador con confianza) para ver el resultado, "
+            f"sin recargar la página."
         )
         if skipped_duplicates:
             success_message += (

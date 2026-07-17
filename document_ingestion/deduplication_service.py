@@ -36,23 +36,38 @@ def compute_content_hash(file_bytes: bytes) -> str:
 
 def find_duplicate(company, content_hash: str):
     """
-    Busca un documento YA persistido (MachineDocument o
-    PersonalDocument, cualquiera de los dos dominios) con el mismo
-    content_hash para `company`. Devuelve la instancia encontrada
-    (para poder informar de qué documento es duplicado), o None si no
-    hay ninguno.
+    Busca un documento con el mismo content_hash para `company`, en
+    dos sitios:
+    1. YA persistido (MachineDocument o PersonalDocument, cualquiera
+       de los dos dominios).
+    2. TODAVÍA EN COLA de enrutado (IngestedFile con
+       status=PENDING_ROUTING) -- añadido S024-bis tras un caso real:
+       Miguel Ángel subió la misma carpeta dos veces con 34 segundos
+       de diferencia, y el segundo lote no se detectó como duplicado
+       porque en ese momento el primer lote todavía no se había
+       enrutado a MachineDocument (cada lote puede tardar varios
+       minutos en procesarse -- confirmado con el log real del worker
+       Celery, ~5-13s por llamada a Gemini y ~20+ documentos en fila).
+       Sin esta comprobación, dos subidas rápidas del mismo archivo
+       generan trabajo duplicado real (dos llamadas de enrutado + dos
+       de clasificación por archivo) antes de que la comprobación
+       contra documentos ya persistidos tuviera ninguna posibilidad de
+       detectarlo.
 
-    NUNCA compara contra IngestedFile -- esas filas son staging
-    transitorio (su source_file se borra al enrutar, ver
-    document_ingestion.tasks.route_ingested_files) y no representan
-    documentos ya persistidos de verdad.
+    Devuelve la instancia encontrada (para poder informar de qué
+    documento es duplicado), o None si no hay ninguno.
 
     ---
 
-    Looks up an ALREADY persisted document (MachineDocument or
-    PersonalDocument, either domain) with the same content_hash for
-    `company`. Returns the found instance, or None.
+    Looks up a document with the same content_hash for `company`, in
+    two places: already persisted (MachineDocument/PersonalDocument),
+    or still queued for routing (IngestedFile, PENDING_ROUTING) --
+    added S024-bis after a real case where two uploads of the same
+    folder 34 seconds apart weren't caught, because the first batch
+    hadn't been routed into MachineDocument yet (batches can take
+    several minutes to process).
     """
+    from document_ingestion.models import IngestedFile
     from machine_documents.models import MachineDocument
     from personal_documents.models import PersonalDocument
 
@@ -67,8 +82,20 @@ def find_duplicate(company, content_hash: str):
     if machine_match:
         return machine_match
 
-    return (
+    personal_match = (
         PersonalDocument.objects
         .filter(company=company, content_hash=content_hash)
+        .first()
+    )
+    if personal_match:
+        return personal_match
+
+    return (
+        IngestedFile.objects
+        .filter(
+            company=company,
+            content_hash=content_hash,
+            status=IngestedFile.Status.PENDING_ROUTING,
+        )
         .first()
     )
