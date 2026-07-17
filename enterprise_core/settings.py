@@ -95,6 +95,9 @@ INSTALLED_APPS = [
     # Vacation/absence calendar management — gestión del calendario de
     # vacaciones/ausencias (Hito 24).
     'hr_calendar',
+    # Personnel documentation ingestion and classification — ingesta y
+    # clasificación de documentación de personal (Hito 25).
+    'personal_documents',
     # Shared document infrastructure (alerts, PDF merge, email
     # templates, substitution) consumed by H23/H25 — infraestructura
     # documental compartida (Hito 26).

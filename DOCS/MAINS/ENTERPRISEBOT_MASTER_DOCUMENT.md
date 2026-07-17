@@ -41,6 +41,7 @@ sesión — actualizar esta lista cada vez que se instale o retire una app:
 | `delivery_notes` | CRUD de administración de albaranes de proveedor (gap detectado 2026-07-08). |
 | `machine_documents` | Documentación oficial de centros de gasto vía Gemini Vision + Drive (H23, en curso). |
 | `hr_calendar` | Vacaciones y calendario de operario/chófer (H24). |
+| `personal_documents` | Documentación oficial de personal vía Gemini Vision + GCS (H25, en curso). |
 
 **Fuera de `INSTALLED_APPS`, scripts auxiliares independientes** (no Django
 apps, no se cargan en el proyecto): `file_organizer/organizer_probe.py`
