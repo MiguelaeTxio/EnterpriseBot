@@ -128,10 +128,17 @@ logger = logging.getLogger(__name__)
 # lista (no un único check hardcodeado) para que futuras categorías
 # basadas en nombre de archivo puedan añadirse igual sin tocar el código
 # que llama.
+# Extraída a constante nombrada (S024) para que el dossier
+# (panel/views_documentation.py, DossierGenerateView) pueda excluir
+# los manuales sin repetir el string "Manual de uso" a mano en otro
+# archivo -- decisión de Miguel Ángel: "se envía toda la documentación
+# excepto el manual, en un dosier. Y el manual aparte."
+MANUAL_DOCUMENT_TYPE = "Manual de uso"
+
 _FILENAME_HEURISTIC_RULES = [
     # (palabra clave, MAYÚSCULAS, buscada como subcadena en el nombre de
     # archivo en mayúsculas -> document_type asignado sin pasar por Gemini)
-    ("MANUAL", "Manual de uso"),
+    ("MANUAL", MANUAL_DOCUMENT_TYPE),
 ]
 
 

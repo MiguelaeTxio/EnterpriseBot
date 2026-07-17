@@ -286,6 +286,31 @@ def download_bytes(bucket_name: str, blob_name: str) -> bytes:
     return blob.download_as_bytes()
 
 
+def upload_bytes(bucket_name: str, blob_name: str, data: bytes) -> str:
+    """
+    Sube bytes crudos directamente a un blob, sin pasar por un archivo
+    local -- añadida S024 para dos casos que no tienen un
+    FileField/ruta local disponible: (1) el reenrutado de documentos
+    "sin asignar" (document_ingestion.tasks.retry_unassigned_routing),
+    donde el blob ya se descargó en memoria y hay que subirlo de
+    nuevo bajo la ruta correcta tras encontrar la entidad real; (2) el
+    dossier temporal (panel/views_documentation.py,
+    DossierGenerateView), que nunca toca disco local -- se genera en
+    memoria (pdf_merge_service.merge_pdfs()) y se sube directamente.
+    Devuelve el gcs_blob_name (idéntico a `blob_name`, por coherencia
+    de firma con upload_file()).
+    """
+    client = get_storage_client()
+    bucket = ensure_bucket(client, bucket_name)
+    blob = bucket.blob(blob_name)
+    blob.upload_from_string(data, content_type="application/pdf")
+    logger.info(
+        "# [gcs_service] %d bytes subidos directamente a gs://%s/%s.",
+        len(data), bucket_name, blob_name,
+    )
+    return blob_name
+
+
 # ----------------------------------------------------------------------
 # Funciones upload_* por modelo -- mismo patrón/firma que
 # gdrive_service.py, para que work_order_processor/tasks.py,

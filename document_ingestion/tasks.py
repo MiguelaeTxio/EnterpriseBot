@@ -207,3 +207,169 @@ def route_ingested_files(self, ingested_file_pks: list[int]) -> None:
             "encolado(s) para clasificación: %s.",
             len(new_personal_pks), new_personal_pks,
         )
+
+
+@app.task(base=DjangoTask, bind=True, max_retries=1, default_retry_delay=60)
+def retry_unassigned_routing(self, domain: str, company_pk: int) -> None:
+    """
+    Reintenta el enrutado de todos los documentos "sin asignar"
+    (status=UNASSIGNED) de un dominio para una empresa -- a petición
+    de Miguel Ángel tras detectar que la versión anterior del prompt
+    de enrutado (antes de S024-bis) ignoraba el nombre de archivo,
+    dejando "sin asignar" documentos con el código/matrícula/DNI
+    literalmente en el nombre. NO reclasifica el documento
+    (document_type/display_name ya están bien, eso no falló) -- solo
+    reintenta encontrar la máquina/trabajador real, con la versión
+    corregida de entity_matching_service.classify_and_route().
+
+    Descarga el blob desde GCS (carpeta SIN_ASIGNAR), reintenta el
+    enrutado, y si encuentra coincidencia: actualiza machine_asset/
+    company_user, pasa a CLASSIFIED, limpia el hint detectado, MUEVE
+    el blob de GCS a la carpeta real (sube bajo la ruta nueva + borra
+    la antigua -- nunca dos copias) y corrige subject_label en
+    cualquier DocumentAlert ya creada. Si sigue sin encontrar
+    coincidencia, lo deja tal cual -- nunca fuerza una asignación
+    dudosa.
+    """
+    from django.contrib.contenttypes.models import ContentType
+
+    from document_management.models import DocumentAlert
+    from ivr_config.models import Company
+    from spare_parts.gcs_service import (
+        MACHINE_DOCUMENTS_BUCKET,
+        PERSONNEL_DOCUMENTS_BUCKET,
+        delete_file,
+        download_bytes,
+        sanitize_path_component,
+        upload_bytes,
+    )
+
+    company = Company.objects.filter(pk=company_pk).first()
+    if company is None:
+        logger.error(
+            "# [retry_unassigned_routing] Company #%s no encontrada.",
+            company_pk,
+        )
+        return
+
+    if domain == "machine":
+        model = MachineDocument
+        bucket_name = MACHINE_DOCUMENTS_BUCKET
+    elif domain == "personal":
+        model = PersonalDocument
+        bucket_name = PERSONNEL_DOCUMENTS_BUCKET
+    else:
+        logger.error(
+            "# [retry_unassigned_routing] Dominio no válido: %r.", domain,
+        )
+        return
+
+    unassigned_docs = list(
+        model.objects
+        .filter(company=company, status=model.Status.UNASSIGNED)
+        .exclude(gcs_blob_name="")
+    )
+    if not unassigned_docs:
+        logger.info(
+            "# [retry_unassigned_routing] Ningún documento sin asignar "
+            "para %s en %s.",
+            domain, company,
+        )
+        return
+
+    logger.info(
+        "# [retry_unassigned_routing] Reintentando %d documento(s) "
+        "sin asignar (%s, %s).",
+        len(unassigned_docs), domain, company,
+    )
+
+    resolved_count = 0
+    for document in unassigned_docs:
+        try:
+            file_bytes = download_bytes(bucket_name, document.gcs_blob_name)
+        except Exception as exc:
+            logger.error(
+                "# [retry_unassigned_routing] #%d: error descargando "
+                "blob %s: %s",
+                document.pk, document.gcs_blob_name, exc, exc_info=True,
+            )
+            continue
+
+        filename = document.original_filename or document.gcs_blob_name
+        route = classify_and_route(file_bytes, filename)
+
+        if domain == "machine":
+            hint = route["machine_reference_hint"]
+            target = (
+                match_machine_asset(company, hint)
+                if route["is_confident"] else None
+            )
+        else:
+            hint = route["worker_dni_hint"]
+            target = (
+                match_company_user(company, hint)
+                if route["is_confident"] else None
+            )
+
+        if target is None:
+            logger.info(
+                "# [retry_unassigned_routing] #%d (%s): sigue sin "
+                "coincidencia (pista=%r).",
+                document.pk, domain, hint,
+            )
+            continue
+
+        old_blob_name = document.gcs_blob_name
+        if domain == "machine":
+            document.machine_asset = target
+            document.detected_reference_hint = ""
+            new_subject_label = target.code
+            new_blob_name = (
+                f"{target.code}/"
+                f"{sanitize_path_component(document.document_type)} - "
+                f"{sanitize_path_component(document.display_name)}.pdf"
+            )
+        else:
+            document.company_user = target
+            document.detected_dni_hint = ""
+            new_subject_label = (
+                target.user.get_full_name() or target.user.username
+            )
+            new_blob_name = (
+                f"{sanitize_path_component(target.dni or new_subject_label)}/"
+                f"{sanitize_path_component(document.document_type)} - "
+                f"{sanitize_path_component(document.display_name)}.pdf"
+            )
+
+        try:
+            upload_bytes(bucket_name, new_blob_name, file_bytes)
+            delete_file(bucket_name, old_blob_name)
+        except Exception as exc:
+            logger.error(
+                "# [retry_unassigned_routing] #%d: error moviendo blob "
+                "de GCS: %s",
+                document.pk, exc, exc_info=True,
+            )
+            continue
+
+        document.gcs_blob_name = new_blob_name
+        document.status = model.Status.CLASSIFIED
+        document.save()
+
+        content_type = ContentType.objects.get_for_model(document)
+        DocumentAlert.objects.filter(
+            content_type=content_type, object_id=document.pk,
+        ).update(subject_label=new_subject_label)
+
+        resolved_count += 1
+        logger.info(
+            "# [retry_unassigned_routing] #%d (%s) vinculado a %s tras "
+            "reintento.",
+            document.pk, domain, new_subject_label,
+        )
+
+    logger.info(
+        "# [retry_unassigned_routing] %d/%d documento(s) vinculados "
+        "tras reintento (%s, company=%s).",
+        resolved_count, len(unassigned_docs), domain, company,
+    )

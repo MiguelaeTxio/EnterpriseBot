@@ -1,24 +1,33 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation/_personal_detail.html #}
 {# Fragmento HTMX, cargado perezosamente al desplegar el accordion-item de un trabajador. #}
-{# El formulario del dossier vive fuera de los <li> (los checkboxes se asocian con el   #}
-{# atributo form=, HTML5) porque los <form> de alertas/borrado ya viven dentro de cada  #}
-{# <li> y los <form> no se pueden anidar.                                                #}
+{# Dossier de personal: MANUAL, vía casillas -- "lo suyo es casillero... seleccionar     #}
+{# todo o ir marcando casilla" (Miguel Ángel, S024-bis). El formulario del dossier vive  #}
+{# fuera de los <li> (los checkboxes se asocian con el atributo form=, HTML5) porque los #}
+{# <form> de alertas/borrado ya viven dentro de cada <li> y no se pueden anidar.         #}
 
 <form id="dossierForm-personal-{{ worker.pk }}" method="post"
-      action="{% url 'panel:documentation_dossier_generate' domain='personal' %}"
-      target="_blank">
+      action="{% url 'panel:documentation_dossier_generate' domain='personal' entity_pk=worker.pk %}">
     {% csrf_token %}
 </form>
 
-<div class="d-flex justify-content-between mb-2">
-    <button type="submit" form="dossierForm-personal-{{ worker.pk }}" class="btn btn-sm btn-outline-secondary">
-        <i class="bi bi-file-earmark-pdf me-1"></i>Generar dossier con los seleccionados
-    </button>
-    <button class="btn btn-sm btn-outline-secondary" disabled
-            title="Próximamente -- subida desde esta vista (hoja de ruta H25, paso de subida de carpeta)">
-        <i class="bi bi-upload me-1"></i>Subir documentación
-    </button>
+<div class="d-flex justify-content-between align-items-center mb-2">
+    <div class="form-check">
+        <input type="checkbox" class="form-check-input" id="dossier-select-all-{{ worker.pk }}"
+               onchange="document.querySelectorAll('#dossierForm-personal-{{ worker.pk }}-checkboxes input[type=checkbox]').forEach(function(cb){cb.checked=this.checked;}, this);">
+        <label class="form-check-label small" for="dossier-select-all-{{ worker.pk }}">Seleccionar todo</label>
+    </div>
+    <div class="d-flex gap-2">
+        <button type="submit" form="dossierForm-personal-{{ worker.pk }}" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-file-earmark-pdf me-1"></i>Generar dossier de los seleccionados
+        </button>
+        <button class="btn btn-sm btn-outline-secondary" disabled
+                title="Próximamente -- subida desde esta vista (hoja de ruta H25, paso de subida de carpeta)">
+            <i class="bi bi-upload me-1"></i>Subir documentación
+        </button>
+    </div>
 </div>
+
+<div id="dossierForm-personal-{{ worker.pk }}-checkboxes">
 
 <h6 class="text-success"><i class="bi bi-check-circle me-1"></i>Vigente</h6>
 {% if current_docs %}
@@ -127,3 +136,5 @@
 {% else %}
 <p class="text-muted small mb-0">Sin documentación archivada.</p>
 {% endif %}
+
+</div>

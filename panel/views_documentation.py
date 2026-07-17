@@ -61,6 +61,7 @@ corregirá cuando toque construir el borrado/archivado manual de esta
 misma vista.
 """
 import logging
+import uuid
 from datetime import timedelta
 
 from django.contrib import messages
@@ -78,13 +79,14 @@ from document_ingestion.deduplication_service import (
     find_duplicate,
 )
 from document_ingestion.models import IngestedFile
-from document_ingestion.tasks import route_ingested_files
+from document_ingestion.tasks import retry_unassigned_routing, route_ingested_files
 from document_management.alert_service import DEFAULT_EXPIRY_ALERT_OFFSETS_DAYS
 from document_management.models import DocumentAlert, EmailTemplate
 from document_management.pdf_merge_service import EmptyDocumentListError, merge_pdfs
 from document_management.vigencia_service import DocumentSnapshot, is_current
 from fleet.models import MachineAsset
 from ivr_config.models import CompanyUser
+from machine_documents.document_classification_service import MANUAL_DOCUMENT_TYPE
 from machine_documents.models import MachineDocument
 from panel.mixins import DocsUploadAccessMixin
 from personal_documents.models import PersonalDocument
@@ -94,6 +96,7 @@ from spare_parts.gcs_service import (
     delete_file,
     download_bytes,
     generate_signed_url,
+    upload_bytes,
 )
 
 logger = logging.getLogger(__name__)
@@ -628,42 +631,82 @@ class EmailTemplateDeleteView(DocsUploadAccessMixin, View):
 
 class DossierGenerateView(DocsUploadAccessMixin, View):
     """
-    POST: genera un único PDF combinando los documentos seleccionados
-    (checkboxes en _machine_detail.html/_personal_detail.html) --
-    "generar dossier", anexo H23 sección hoja de ruta S024 / H26
-    sección 2.2 (document_management.pdf_merge_service.merge_pdfs()).
-    Acción bajo demanda, nunca automática (palabras de Miguel Ángel en
-    S022, ver ese módulo). Descarga cada PDF desde GCS
-    (spare_parts.gcs_service.download_bytes), los combina en el orden
-    en que llegaron marcados, y devuelve el resultado como descarga
-    directa -- no se persiste en ningún sitio, es un artefacto de un
-    solo uso.
+    POST: genera un dossier combinando documentos y lo deja EN
+    TEMPORAL en GCS (nunca en BD, nunca persistido de forma
+    permanente) hasta que el usuario confirme -- diseño exacto que
+    describió Miguel Ángel: "el dossier se crea y cuando se descarga
+    se borra... pasa por un modal en el que se pregunte si se borra o
+    no... la única copia que quedará será la de la descarga".
+
+    Selección de documentos SEGÚN EL DOMINIO, también a petición
+    explícita de Miguel Ángel -- criterios distintos, no una única
+    regla genérica:
+      - MACHINE: automático, SIN checkboxes. Toda la documentación
+        VIGENTE de la máquina, EXCEPTO los manuales de uso
+        (machine_documents.document_classification_service.
+        MANUAL_DOCUMENT_TYPE) -- "se envía toda la documentación
+        excepto el manual, en un dosier. Y el manual aparte" (el
+        manual se sigue descargando suelto, con el enlace de descarga
+        normal de cada documento, nunca se mete en el dossier).
+      - PERSONAL: manual, vía checkboxes (ver _personal_detail.html) --
+        "lo suyo es casillero... seleccionar todo o ir marcando
+        casilla".
+
+    No hay una única llamada de "generar y descargar": esta vista solo
+    genera y muestra la confirmación (_dossier_confirm.html). La
+    descarga real (y el borrado) vive en DossierDownloadView; el
+    descarte vive en DossierDiscardView.
     """
 
-    def post(self, request, domain):
+    def post(self, request, domain, entity_pk):
         company = request.user.company_user.company
-        document_pks = request.POST.getlist("document_pks")
-        if not document_pks:
-            messages.error(
-                request, "Selecciona al menos un documento para el dossier.",
-            )
-            return redirect(reverse("panel:documentation_hub"))
-
-        model = _DOMAIN_MODELS.get(domain)
         bucket_name = _DOMAIN_BUCKETS.get(domain)
-        if model is None:
+        if bucket_name is None:
             raise Http404("Dominio no válido.")
 
-        documents = list(
-            model.objects
-            .filter(pk__in=document_pks, company=company)
-            .exclude(gcs_blob_name="")
-        )
+        if domain == "machine":
+            machine = MachineAsset.objects.filter(
+                pk=entity_pk, company=company,
+            ).first()
+            if machine is None:
+                raise Http404("Máquina no encontrada.")
+            all_docs = list(
+                MachineDocument.objects
+                .filter(
+                    machine_asset=machine,
+                    status=MachineDocument.Status.CLASSIFIED,
+                )
+                .exclude(document_type=MANUAL_DOCUMENT_TYPE)
+            )
+            documents, _archived = _split_current_archived(all_docs)
+            entity_label = machine.code
+        else:
+            worker = CompanyUser.objects.filter(
+                pk=entity_pk, company=company,
+            ).select_related("user").first()
+            if worker is None:
+                raise Http404("Trabajador no encontrado.")
+            selected_pks = request.POST.getlist("document_pks")
+            if not selected_pks:
+                messages.error(
+                    request,
+                    "Selecciona al menos un documento para el dossier.",
+                )
+                return redirect(reverse("panel:documentation_hub"))
+            documents = list(
+                PersonalDocument.objects
+                .filter(
+                    pk__in=selected_pks, company_user=worker, company=company,
+                )
+            )
+            entity_label = worker.user.get_full_name() or worker.user.username
+
+        documents = [d for d in documents if d.gcs_blob_name]
         if not documents:
             messages.error(
                 request,
-                "Ninguno de los documentos seleccionados tiene "
-                "archivo disponible todavía.",
+                "No hay documentos disponibles para el dossier "
+                "(¿todavía en cola de procesamiento?).",
             )
             return redirect(reverse("panel:documentation_hub"))
 
@@ -675,8 +718,8 @@ class DossierGenerateView(DocsUploadAccessMixin, View):
                 )
             except Exception as exc:
                 logger.error(
-                    "# [DossierGenerateView] Error descargando %s "
-                    "#%d (blob=%s): %s",
+                    "# [DossierGenerateView] Error descargando %s #%d "
+                    "(blob=%s): %s",
                     domain, document.pk, document.gcs_blob_name, exc,
                     exc_info=True,
                 )
@@ -691,17 +734,108 @@ class DossierGenerateView(DocsUploadAccessMixin, View):
             )
             return redirect(reverse("panel:documentation_hub"))
 
+        token = uuid.uuid4().hex
+        temp_blob_name = f"_dossiers_temporales/{token}.pdf"
+        upload_bytes(bucket_name, temp_blob_name, merged_bytes)
+
         logger.info(
-            "# [DossierGenerateView] Dossier generado con %d/%d "
-            "documento(s) (%s).",
-            len(pdf_bytes_list), len(documents), domain,
+            "# [DossierGenerateView] Dossier temporal %s generado con "
+            "%d/%d documento(s) (%s, %s) -- pendiente de confirmación.",
+            token, len(pdf_bytes_list), len(documents), domain, entity_label,
         )
 
-        response = HttpResponse(merged_bytes, content_type="application/pdf")
+        return render(request, "panel/documentation/_dossier_confirm.html", {
+            "domain": domain,
+            "token": token,
+            "entity_label": entity_label,
+            "documents": documents,
+        })
+
+
+class DossierDownloadView(DocsUploadAccessMixin, View):
+    """
+    POST: descarga el dossier temporal confirmado y lo BORRA de GCS en
+    la misma petición -- "la única copia que quedará será la de la
+    descarga" (Miguel Ángel). Si el token ya no existe (descargado o
+    descartado antes), 404 -- nunca hay una segunda copia a la que
+    recurrir.
+    """
+
+    def post(self, request, domain, token):
+        bucket_name = _DOMAIN_BUCKETS.get(domain)
+        if bucket_name is None:
+            raise Http404("Dominio no válido.")
+        blob_name = f"_dossiers_temporales/{token}.pdf"
+
+        try:
+            data = download_bytes(bucket_name, blob_name)
+        except Exception:
+            raise Http404(
+                "Este dossier ya no está disponible -- puede que ya se "
+                "haya descargado o descartado."
+            )
+        delete_file(bucket_name, blob_name)
+
+        logger.info(
+            "# [DossierDownloadView] Dossier temporal %s descargado y "
+            "borrado (%s).",
+            token, domain,
+        )
+        response = HttpResponse(data, content_type="application/pdf")
         response["Content-Disposition"] = (
             'attachment; filename="dossier_documentacion.pdf"'
         )
         return response
+
+
+class DossierDiscardView(DocsUploadAccessMixin, View):
+    """
+    POST: descarta el dossier temporal SIN descargarlo -- botón
+    "Volver atrás" del modal de confirmación (el usuario quiere
+    modificar la selección de documentos antes de descargar de
+    verdad).
+    """
+
+    def post(self, request, domain, token):
+        bucket_name = _DOMAIN_BUCKETS.get(domain)
+        if bucket_name is None:
+            raise Http404("Dominio no válido.")
+        blob_name = f"_dossiers_temporales/{token}.pdf"
+        delete_file(bucket_name, blob_name)
+
+        logger.info(
+            "# [DossierDiscardView] Dossier temporal %s descartado (%s).",
+            token, domain,
+        )
+        messages.info(request, "Dossier descartado -- nada se descargó.")
+        return redirect(reverse("panel:documentation_hub"))
+
+
+class RetryUnassignedRoutingView(DocsUploadAccessMixin, View):
+    """
+    POST: encola document_ingestion.tasks.retry_unassigned_routing
+    para TODOS los documentos "sin asignar" de un dominio -- a
+    petición de Miguel Ángel tras el bug del prompt de enrutado que
+    ignoraba el nombre de archivo (corregido en el commit 28de508):
+    "habrá que crear un reenrutado para que vuelva a intentarlo, por
+    si hay fallos". Asíncrono (puede implicar varias llamadas a
+    Gemini) -- no bloquea la petición.
+    """
+
+    def post(self, request, domain):
+        company = request.user.company_user.company
+        retry_unassigned_routing.delay(domain, company.pk)
+        logger.info(
+            "# [RetryUnassignedRoutingView] Reenrutado encolado para "
+            "%s (%s).",
+            domain, company,
+        )
+        messages.success(
+            request,
+            "Reintento de enrutado en cola -- puede tardar unos "
+            "minutos, recarga la página para ver el resultado.",
+        )
+        return redirect(reverse("panel:documentation_hub"))
 
 
 class DocumentationHubView(DocsUploadAccessMixin, View):

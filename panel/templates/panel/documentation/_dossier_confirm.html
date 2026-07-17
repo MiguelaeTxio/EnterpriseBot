@@ -1,0 +1,47 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation/_dossier_confirm.html #}
+{% extends "panel/base.html" %}
+
+{% block title %}Confirmar dossier{% endblock %}
+{% block page_title %}Documentación{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-3 pt-3">
+    <div class="row justify-content-center">
+        <div class="col-12 col-lg-6">
+            <div class="card card-body">
+                <h5 class="mb-3"><i class="bi bi-file-earmark-pdf me-2"></i>Dossier generado -- {{ entity_label }}</h5>
+
+                <p>Incluye {{ documents|length }} documento(s):</p>
+                <ul class="list-group list-group-flush mb-3">
+                    {% for doc in documents %}
+                    <li class="list-group-item px-0">{{ doc.display_name|default:doc.document_type }}</li>
+                    {% endfor %}
+                </ul>
+
+                <div class="alert alert-warning small">
+                    <i class="bi bi-exclamation-triangle-fill me-1"></i>
+                    Este dossier NO se guarda en ningún sitio. Si continúas, se descargará y se
+                    borrará por completo del servidor de inmediato -- la única copia que quedará
+                    será la que descargues ahora. Si necesitas cambiar la selección de documentos,
+                    vuelve atrás y genera uno nuevo.
+                </div>
+
+                <div class="d-flex gap-2">
+                    <form method="post" action="{% url 'panel:documentation_dossier_discard' domain=domain token=token %}">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-outline-secondary">
+                            <i class="bi bi-arrow-left me-1"></i>Volver atrás (modificar selección)
+                        </button>
+                    </form>
+                    <form method="post" action="{% url 'panel:documentation_dossier_download' domain=domain token=token %}">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-download me-1"></i>Descargar y borrar
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

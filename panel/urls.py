@@ -32,10 +32,13 @@ from panel.views_documentation import (
     DocumentationMachineListFragmentView,
     DocumentationPersonalDetailFragmentView,
     DocumentationPersonalListFragmentView,
+    DossierDiscardView,
+    DossierDownloadView,
     DossierGenerateView,
     EmailTemplateDeleteView,
     EmailTemplateListFragmentView,
     EmailTemplateSaveView,
+    RetryUnassignedRoutingView,
 )
 from panel.views import (
     PanelLoginView,
@@ -402,7 +405,10 @@ urlpatterns = [
     path("documentacion/plantillas-email/", EmailTemplateListFragmentView.as_view(), name="documentation_email_templates"),
     path("documentacion/plantillas-email/guardar/", EmailTemplateSaveView.as_view(), name="documentation_email_template_save"),
     path("documentacion/plantillas-email/<int:template_pk>/borrar/", EmailTemplateDeleteView.as_view(), name="documentation_email_template_delete"),
-    path("documentacion/<str:domain>/dossier/", DossierGenerateView.as_view(), name="documentation_dossier_generate"),
+    path("documentacion/<str:domain>/dossier/<int:entity_pk>/generar/", DossierGenerateView.as_view(), name="documentation_dossier_generate"),
+    path("documentacion/<str:domain>/dossier/<str:token>/descargar/", DossierDownloadView.as_view(), name="documentation_dossier_download"),
+    path("documentacion/<str:domain>/dossier/<str:token>/descartar/", DossierDiscardView.as_view(), name="documentation_dossier_discard"),
+    path("documentacion/<str:domain>/reenrutar/", RetryUnassignedRoutingView.as_view(), name="documentation_retry_unassigned"),
 
     # Section default role — Endpoint AJAX para pre-rellenar rol al crear usuario (H13).
     path("sections/<int:pk>/default-role/", SectionDefaultRoleView.as_view(), name="section_default_role"),
