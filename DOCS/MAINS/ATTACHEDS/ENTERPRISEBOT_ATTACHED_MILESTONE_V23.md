@@ -564,6 +564,30 @@ responsabilidad única -- evitar archivos grandes que mezclen varias
 responsabilidades, tanto en código como en documentación, para no
 penalizar la escalabilidad futura.
 
+### Corrección de rumbo — vista de documentación completamente aparte (S024, tal cual la dio Miguel Ángel -- directriz 4.8)
+
+El modelo propuso mal en un turno de S024 mezclar el acceso de esta
+interfaz nueva con el de Historial de Máquina/Centros de gasto
+(visible a cualquier usuario no-ASISTENCIA). Miguel Ángel corrigió de
+forma explícita y sin ambigüedad:
+
+- **La interfaz nueva de "Documentación" es una vista COMPLETAMENTE
+  APARTE**, sin ninguna relación con Historial de Máquina ni con
+  Centros de gasto. Esa vista existente **no se toca, sigue exactamente
+  igual**, con su acceso y su propósito actuales (ver intervenciones,
+  ver qué mecánico ha tocado la máquina, etc.).
+- **Acceso: única y exclusivamente ADMIN y DOCS_SUPERVISOR, en las DOS
+  pestañas (Maquinaria y Personal), sin excepción.** Palabras de Miguel
+  Ángel: "aquí no tiene que entrar nadie, nadie, a excepción de un
+  administrador y doc supervisor. Nadie más, ni otros supervisores, ni
+  operarios, ni jefes de taller, nada de nada." Queda descartada
+  cualquier variante con acceso ampliado para la pestaña de Maquinaria.
+- **Alcance funcional de esta vista, único y exclusivo (nada de
+  historial de intervenciones/mecánicos):** subir documentación,
+  descargar documentación, ver la documentación vigente, ver la
+  documentación archivada/obsoleta, borrar documentación archivada,
+  modificar documentación vigente.
+
 ### Hoja de Ruta para la Sesión Siguiente (S024)
 
 **Punto de partida confirmado por Miguel Ángel al cierre de S023:**
