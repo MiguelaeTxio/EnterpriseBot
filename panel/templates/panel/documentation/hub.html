@@ -42,7 +42,9 @@
                     <span id="folderBatchSummary" class="text-muted small">Ninguna carpeta añadida todavía.</span>
                 </div>
                 <div class="mt-3">
-                    <button type="submit" class="btn btn-sm btn-primary" id="folderUploadSubmitBtn" disabled>
+                    <button type="submit" class="btn btn-sm btn-primary" id="folderUploadSubmitBtn" disabled
+                            hx-disabled-elt="this">
+                        <span class="htmx-indicator spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
                         <i class="bi bi-cloud-upload me-1"></i>Subir y clasificar
                     </button>
                 </div>
@@ -169,6 +171,33 @@
         </div>
     </div>
 </div>
+
+{# --- Modal de confirmación de borrado con cuenta atrás de 5s (S024-quinquies) --- #}
+<div class="modal fade" id="deleteConfirmModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-exclamation-triangle-fill text-danger me-2"></i>Eliminar documento</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-0">
+                    ¿Seguro que quieres eliminar <strong id="deleteConfirmDocName">este documento</strong>?
+                    Esta operación no podrá revertirse.
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <form id="deleteConfirmForm" method="post">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-danger" id="deleteConfirmBtn" disabled>
+                        <i class="bi bi-trash me-1"></i>Eliminar <span id="deleteConfirmCountdown"></span>
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_scripts %}
@@ -256,6 +285,54 @@
             var modal = bootstrap.Modal.getOrCreateInstance(modalEl);
             modal.show();
         }
+    });
+
+    // Confirmación de borrado con cuenta atrás de 5s (S024-quinquies,
+    // Miguel Ángel: "cuenta cuatro o cinco segundos antes de que se
+    // encienda el botón de poder eliminar... si no, el de cancelar
+    // siempre está activo"). window.openDeleteConfirm() es llamada
+    // por cada botón de papelera (vigente o archivado), con la URL de
+    // borrado, el selector CSS del accordion-body a refrescar tras
+    // borrar, y el nombre del documento para el texto del modal.
+    var deleteConfirmForm = document.getElementById('deleteConfirmForm');
+    var deleteConfirmBtn = document.getElementById('deleteConfirmBtn');
+    var deleteConfirmCountdown = document.getElementById('deleteConfirmCountdown');
+    var deleteConfirmDocName = document.getElementById('deleteConfirmDocName');
+    var deleteCountdownInterval = null;
+
+    window.openDeleteConfirm = function (url, targetSelector, docName) {
+        deleteConfirmForm.setAttribute('action', url);
+        deleteConfirmForm.setAttribute('hx-post', url);
+        deleteConfirmForm.setAttribute('hx-target', targetSelector);
+        deleteConfirmForm.setAttribute('hx-swap', 'innerHTML');
+        htmx.process(deleteConfirmForm);
+        deleteConfirmDocName.textContent = docName;
+
+        var seconds = 5;
+        deleteConfirmBtn.disabled = true;
+        deleteConfirmCountdown.textContent = '(' + seconds + ')';
+        if (deleteCountdownInterval) { clearInterval(deleteCountdownInterval); }
+        deleteCountdownInterval = setInterval(function () {
+            seconds -= 1;
+            if (seconds <= 0) {
+                clearInterval(deleteCountdownInterval);
+                deleteConfirmBtn.disabled = false;
+                deleteConfirmCountdown.textContent = '';
+            } else {
+                deleteConfirmCountdown.textContent = '(' + seconds + ')';
+            }
+        }, 1000);
+
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('deleteConfirmModal')).show();
+    };
+
+    // Al cerrar el modal (cancelar, o pulsar fuera) se corta la cuenta
+    // atrás y se vuelve a desactivar el botón -- si se reabre para
+    // otro documento, empieza siempre desde cero.
+    document.getElementById('deleteConfirmModal').addEventListener('hidden.bs.modal', function () {
+        if (deleteCountdownInterval) { clearInterval(deleteCountdownInterval); }
+        deleteConfirmBtn.disabled = true;
+        deleteConfirmCountdown.textContent = '';
     });
 })();
 </script>

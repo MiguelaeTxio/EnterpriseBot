@@ -5,6 +5,8 @@
 {# Dossier de maquinaria: AUTOMÁTICO, sin casillas -- toda la documentación vigente       #}
 {# excepto los manuales de uso (decisión explícita de Miguel Ángel). El manual se sigue   #}
 {# descargando suelto con el enlace de descarga normal de su fila.                        #}
+{# Eliminar (vigente Y archivado) pasa por el modal de confirmación con cuenta atrás de   #}
+{# 5s (openDeleteConfirm(), hub.html) -- S024-quinquies.                                  #}
 
 <form id="dossierForm-machine-{{ machine.pk }}" method="post"
       action="{% url 'panel:documentation_dossier_generate' domain='machine' entity_pk=machine.pk %}"
@@ -47,6 +49,11 @@
                         data-bs-toggle="collapse" data-bs-target="#edit-machine-{{ doc.pk }}"
                         title="Modificar">
                     <i class="bi bi-pencil"></i>
+                </button>
+                <button class="btn btn-sm btn-outline-danger" type="button"
+                        onclick="openDeleteConfirm('{% url 'panel:documentation_document_delete' domain='machine' pk=doc.pk %}', '#machine-collapse-{{ machine.pk }} .accordion-body', '{{ doc.display_name|default:doc.document_type|escapejs }}')"
+                        title="Eliminar">
+                    <i class="bi bi-trash"></i>
                 </button>
             </div>
         </div>
@@ -93,16 +100,11 @@
                     <i class="bi bi-bell"></i>
                 </button>
                 {% endif %}
-                <form method="post"
-                      action="{% url 'panel:documentation_document_delete' domain='machine' pk=doc.pk %}"
-                      hx-post="{% url 'panel:documentation_document_delete' domain='machine' pk=doc.pk %}"
-                      hx-target="closest .accordion-body" hx-swap="innerHTML"
-                      hx-confirm="¿Borrar definitivamente este documento archivado?">
-                    {% csrf_token %}
-                    <button type="submit" class="btn btn-sm btn-outline-danger" title="Borrar">
-                        <i class="bi bi-trash"></i>
-                    </button>
-                </form>
+                <button class="btn btn-sm btn-outline-danger" type="button"
+                        onclick="openDeleteConfirm('{% url 'panel:documentation_document_delete' domain='machine' pk=doc.pk %}', '#machine-collapse-{{ machine.pk }} .accordion-body', '{{ doc.display_name|default:doc.document_type|escapejs }}')"
+                        title="Eliminar">
+                    <i class="bi bi-trash"></i>
+                </button>
             </div>
         </div>
         {% if doc.expiry_date %}

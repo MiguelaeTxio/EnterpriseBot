@@ -83,7 +83,9 @@ from document_management.models import DocumentAlert
 from document_ingestion.deduplication_service import compute_content_hash
 from enterprise_core.celery import app
 from spare_parts.gcs_service import (
+    MACHINE_DOCUMENTS_BUCKET,
     GCSNotConfigured,
+    download_bytes,
     upload_machine_document_file,
 )
 
@@ -289,6 +291,48 @@ def process_machine_document_batch(self, document_pks: list[int]) -> None:
             for other_pk, other in classified.items()
             if other_pk != pk and not other["via_heuristic"]
         ]
+
+        # Ampliar con documentos YA PERSISTIDOS de la misma máquina --
+        # bug real (Miguel Ángel, caso concreto): al volver a subir un
+        # lote donde los individuales ya existían de una subida
+        # anterior, la deduplicación por hash los descarta ANTES de
+        # llegar aquí (nunca entran en `classified`), así que el
+        # maestro se quedaba comparando contra una lista vacía y se
+        # persistía entero como si fuera un documento nuevo -- "el
+        # dosier se lo ha tragado entero". El maestro nunca se
+        # persiste (masters_to_discard lo borra siempre que se
+        # descarta a mano), así que tampoco hay un hash suyo contra el
+        # que comparar en la siguiente subida -- la única forma
+        # robusta es comparar su contenido contra lo que YA está
+        # vigente para esta máquina, no solo contra el resto del lote
+        # actual.
+        machine_asset = item["document"].machine_asset
+        if machine_asset is not None:
+            persisted_siblings = MachineDocument.objects.filter(
+                machine_asset=machine_asset,
+                status=MachineDocument.Status.CLASSIFIED,
+            ).exclude(pk__in=classified.keys())
+            for sibling in persisted_siblings:
+                if not sibling.gcs_blob_name:
+                    continue
+                try:
+                    sibling_bytes = download_bytes(
+                        MACHINE_DOCUMENTS_BUCKET, sibling.gcs_blob_name,
+                    )
+                except Exception as exc:
+                    logger.error(
+                        "# [process_machine_document_batch] #%d (%s): "
+                        "error descargando documento ya persistido #%d "
+                        "(%s) para comparar cobertura: %s",
+                        pk, item["filename"], sibling.pk,
+                        sibling.gcs_blob_name, exc, exc_info=True,
+                    )
+                    continue
+                individuals.append((
+                    sibling.original_filename or sibling.display_name,
+                    sibling_bytes,
+                ))
+
         if not individuals:
             # Sin nada contra lo que comparar -- se conserva tal cual,
             # el Paso 2 no vuelve a tocarlo. Limpiar el flag para que

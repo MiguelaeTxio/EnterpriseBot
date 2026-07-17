@@ -1435,12 +1435,15 @@ class DocumentAssignView(DocsUploadAccessMixin, View):
 
 class DocumentDeleteView(DocsUploadAccessMixin, View):
     """
-    POST: borra un documento ARCHIVADO (nunca uno vigente -- lo
-    comprueba de verdad en el servidor, recalculando vigencia con
-    document_management.vigencia_service, no se fía de que el botón
-    solo aparezca en la lista de archivados en el HTML). Borra el
-    blob de GCS, cualquier DocumentAlert asociada, y la fila del
-    documento.
+    POST: borra un documento, vigente O archivado -- a petición
+    explícita de Miguel Ángel (S024-quinquies: "sí es necesario que en
+    los documentos vigentes también haya un botón de eliminar"). La
+    salvaguarda contra el borrado accidental ya no vive aquí en el
+    backend (antes, solo se permitía borrar archivados) -- vive en el
+    frontend, en el modal de confirmación con cuenta atrás de 5
+    segundos (_delete_confirm_modal, hub.html) que antecede a
+    cualquier POST a esta vista. Borra el blob de GCS, cualquier
+    DocumentAlert asociada, y la fila del documento.
     """
 
     def post(self, request, domain, pk):
@@ -1448,38 +1451,6 @@ class DocumentDeleteView(DocsUploadAccessMixin, View):
         document = _resolve_document(domain, pk, company)
         if document is None:
             raise Http404("Documento no encontrado.")
-
-        siblings_qs = _DOMAIN_MODELS[domain].objects.filter(
-            company=company,
-            document_type=document.document_type,
-            status=_DOMAIN_MODELS[domain].Status.CLASSIFIED,
-        )
-        if domain == "machine":
-            siblings_qs = siblings_qs.filter(
-                machine_asset=document.machine_asset,
-            )
-        else:
-            siblings_qs = siblings_qs.filter(
-                company_user=document.company_user,
-            )
-        _current, archived = _split_current_archived(
-            list(siblings_qs), effective_expiry_attr=_DOMAIN_EXPIRY_ATTR[domain],
-        )
-        if document.pk not in [d.pk for d in archived]:
-            messages.error(
-                request,
-                "Este documento está vigente -- solo se puede borrar "
-                "documentación archivada.",
-            )
-            entity_pk = (
-                document.machine_asset_id if domain == "machine"
-                else document.company_user_id
-            )
-            fragment_name = (
-                "panel:documentation_machine_detail" if domain == "machine"
-                else "panel:documentation_personal_detail"
-            )
-            return redirect(reverse(fragment_name, kwargs={"pk": entity_pk}))
 
         content_type = ContentType.objects.get_for_model(document)
         DocumentAlert.objects.filter(
