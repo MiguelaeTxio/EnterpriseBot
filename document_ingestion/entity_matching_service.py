@@ -101,6 +101,7 @@ este módulo.
 """
 import json
 import logging
+import re
 
 from google.genai.types import (
     GenerateContentConfig,
@@ -155,6 +156,16 @@ servicios de grúa en España. Recibes un documento PDF llamado "{filename}" y
 debes determinar a qué DOMINIO pertenece, ANTES de que otro sistema lo
 clasifique en detalle.
 
+IMPORTANTE sobre las pistas de máquina/trabajador: en esta empresa es muy
+habitual que el propio nombre de archivo ya incluya el código o la matrícula
+de la máquina (ej. "A-45 E-6998-BDY Manual.pdf", "A-45_E-6998-BDY_02.pdf",
+"E6998BDY A45 ALLIANZ.pdf") -- a veces con guiones, a veces sin ellos, a
+veces con espacios o guiones bajos en su lugar. Debes MIRAR TANTO el nombre
+de archivo COMO el contenido del documento para extraer la pista -- nunca
+ignores el nombre de archivo. Si el nombre de archivo contiene un código o
+matrícula reconocible,úsalo como pista aunque el contenido del documento no
+lo repita literalmente.
+
 1. domain: "MACHINE" si el documento es documentación oficial de una
    máquina/vehículo/centro de gasto (ficha técnica, ITV, certificado
    de inspección, seguro de un vehículo, permiso de circulación de un
@@ -165,25 +176,31 @@ clasifique en detalle.
    "UNKNOWN" si no puedes determinar el dominio con ninguna confianza
    real.
 2. machine_reference_hint: si domain es "MACHINE", el código interno
-   o la matrícula de la máquina/vehículo tal como aparece literalmente
-   en el documento (ej. "A-45", "E-6998-BDY"). Cadena vacía "" si
-   domain no es "MACHINE" o no aparece ninguna referencia reconocible.
+   o la matrícula de la máquina/vehículo -- búscalo tanto en el nombre
+   de archivo como en el contenido del documento (ver nota de arriba).
+   Devuelve la pista LIMPIA (solo el código o la matrícula en sí, sin
+   texto adicional alrededor, ej. "A-45" o "E-6998-BDY", nunca "A-45
+   E-6998-BDY Manual"). Si aparecen tanto el código como la matrícula,
+   prefiere el código (más corto, más fiable). Cadena vacía "" si
+   domain no es "MACHINE" o no aparece ninguna referencia reconocible
+   en ningún sitio.
 3. worker_dni_hint: si domain es "PERSONAL", el DNI/NIF del
-   trabajador tal como aparece literalmente en el documento. Cadena
-   vacía "" si domain no es "PERSONAL" o no aparece un DNI/NIF
-   reconocible.
+   trabajador -- búscalo tanto en el nombre de archivo como en el
+   contenido del documento. Cadena vacía "" si domain no es "PERSONAL"
+   o no aparece un DNI/NIF reconocible en ningún sitio.
 4. worker_name_hint: si domain es "PERSONAL", el nombre completo del
-   trabajador tal como aparece en el documento (útil como respaldo
-   cuando no hay DNI legible, ej. un carnet escaneado de baja
-   calidad). Cadena vacía "" si domain no es "PERSONAL" o no se
-   identifica un nombre.
+   trabajador -- búscalo tanto en el nombre de archivo como en el
+   contenido del documento (útil como respaldo cuando no hay DNI
+   legible). Cadena vacía "" si domain no es "PERSONAL" o no se
+   identifica un nombre en ningún sitio.
 5. is_confident: true únicamente si domain es "MACHINE" o "PERSONAL"
    Y además hay una pista identificativa (machine_reference_hint o
-   worker_dni_hint/worker_name_hint) reconocible en el documento.
-   false en cualquier otro caso, incluido cuando el dominio está claro
-   pero no hay ninguna pista para identificar a QUÉ máquina o QUÉ
-   trabajador concreto pertenece.
-6. reasoning: explicación breve (1-2 frases) de la decisión.
+   worker_dni_hint/worker_name_hint) reconocible en el nombre de
+   archivo o en el documento. false en cualquier otro caso, incluido
+   cuando el dominio está claro pero no hay ninguna pista para
+   identificar a QUÉ máquina o QUÉ trabajador concreto pertenece.
+6. reasoning: explicación breve (1-2 frases) de la decisión, indicando
+   si la pista salió del nombre de archivo, del contenido, o de ambos.
 
 Responde únicamente con el JSON solicitado."""
 
@@ -311,13 +328,38 @@ def classify_and_route(pdf_bytes: bytes, filename: str) -> dict:
 # demasiado estricto en la práctica, relajarlo es una decisión de
 # seguimiento a tomar CON Miguel Ángel, no un criterio unilateral aquí.
 
+def _normalize_for_matching(value: str) -> str:
+    """
+    Quita todo lo que no sea letra o dígito y pasa a mayúsculas --
+    para que "E-6998-BDY", "E6998BDY" y "e_6998_bdy" comparen igual.
+    Añadido S024 tras un caso real (Miguel Ángel): archivos con el
+    código de máquina en el nombre, en formatos distintos al
+    almacenado en el catálogo, se quedaban "sin asignar" pese a llevar
+    la referencia literal -- el emparejamiento exacto byte a byte no
+    los reconocía. NUNCA se aplican aquí las sustituciones OCR de
+    work_order_processor._normalise_machine_code (letra↔dígito para
+    partes manuscritos escaneados) -- ese es un problema distinto
+    (mala lectura óptica de escritura a mano), no aplica a texto ya
+    limpio extraído de un nombre de archivo o de un PDF nativo.
+    ---
+    Strips everything that isn't a letter or digit and uppercases --
+    so "E-6998-BDY", "E6998BDY" and "e_6998_bdy" compare equal.
+    """
+    return re.sub(r"[^A-Z0-9]", "", (value or "").upper())
+
+
 def match_machine_asset(company, machine_reference_hint: str):
     """
-    Looks up a fleet.MachineAsset by exact match (case-insensitive) of
-    its `code` or `plate` against the hint extracted by
-    classify_and_route(), scoped to `company`. Returns the matching
-    MachineAsset instance, or None if no exact match is found (or the
-    hint is empty) -- callers treat None as "route to sin asignar".
+    Looks up a fleet.MachineAsset by NORMALIZED match (ignoring
+    hyphens/spaces/underscores/case) of its `code` or `plate` against
+    the hint extracted by classify_and_route(), scoped to `company`.
+    Returns the matching MachineAsset instance, or None if no
+    normalized match is found (or the hint is empty) -- callers treat
+    None as "route to sin asignar".
+
+    Normalized, not exact-string, matching on purpose (S024, real
+    case): "E6998BDY" and "E-6998-BDY" must match the same machine --
+    see _normalize_for_matching() above.
 
     Args:
         company: ivr_config.Company instance to scope the lookup to.
@@ -326,12 +368,17 @@ def match_machine_asset(company, machine_reference_hint: str):
 
     ---
 
-    Busca un fleet.MachineAsset por coincidencia exacta (sin distinguir
-    mayúsculas/minúsculas) de su `code` o `plate` contra la pista
-    extraída por classify_and_route(), acotado a `company`. Devuelve la
-    instancia de MachineAsset que coincide, o None si no hay
-    coincidencia exacta (o la pista está vacía) -- quien llama trata
-    None como "enrutar a sin asignar".
+    Busca un fleet.MachineAsset por coincidencia NORMALIZADA (ignora
+    guiones/espacios/guiones bajos/mayúsculas) de su `code` o `plate`
+    contra la pista extraída por classify_and_route(), acotado a
+    `company`. Devuelve la instancia que coincide, o None si no hay
+    coincidencia normalizada (o la pista está vacía) -- quien llama
+    trata None como "enrutar a sin asignar".
+
+    Emparejamiento normalizado, no exacto carácter a carácter, a
+    propósito (S024, caso real): "E6998BDY" y "E-6998-BDY" deben
+    emparejar con la misma máquina -- ver _normalize_for_matching()
+    arriba.
 
     Args:
         company: instancia de ivr_config.Company a la que acotar la
@@ -341,46 +388,32 @@ def match_machine_asset(company, machine_reference_hint: str):
     """
     from fleet.models import MachineAsset
 
-    hint = (machine_reference_hint or "").strip().upper()
-    if not hint:
+    normalized_hint = _normalize_for_matching(machine_reference_hint)
+    if not normalized_hint:
         return None
 
-    match = (
-        MachineAsset.objects
-        .filter(company=company)
-        .filter(models_q_code_or_plate(hint))
-        .first()
+    for machine in MachineAsset.objects.filter(company=company):
+        if _normalize_for_matching(machine.code) == normalized_hint:
+            logger.info(
+                "# [match_machine_asset] Pista %r -> MachineAsset #%d "
+                "(%s) por código normalizado.",
+                machine_reference_hint, machine.pk, machine.code,
+            )
+            return machine
+        if machine.plate and _normalize_for_matching(machine.plate) == normalized_hint:
+            logger.info(
+                "# [match_machine_asset] Pista %r -> MachineAsset #%d "
+                "(%s) por matrícula normalizada.",
+                machine_reference_hint, machine.pk, machine.code,
+            )
+            return machine
+
+    logger.warning(
+        "# [match_machine_asset] Pista %r (normalizada: %r) sin "
+        "coincidencia en company=%s -- sin asignar.",
+        machine_reference_hint, normalized_hint, company,
     )
-    if match:
-        logger.info(
-            "# [match_machine_asset] Pista %r -> MachineAsset #%d (%s).",
-            hint, match.pk, match.code,
-        )
-    else:
-        logger.warning(
-            "# [match_machine_asset] Pista %r sin coincidencia exacta "
-            "en company=%s -- sin asignar.",
-            hint, company,
-        )
-    return match
-
-
-def models_q_code_or_plate(hint: str):
-    """
-    Builds the Q() filter for match_machine_asset() -- kept as a
-    separate tiny function only so the import of django.db.models.Q
-    stays local to this module's single use site (this file otherwise
-    has no Django ORM query-building elsewhere), not for reuse.
-    ---
-    Construye el filtro Q() de match_machine_asset() -- se mantiene
-    como función diminuta aparte solo para que el import de
-    django.db.models.Q quede local al único sitio de este archivo que
-    lo usa (el resto del archivo no construye queries ORM), no para
-    reutilización.
-    """
-    from django.db.models import Q
-
-    return Q(code__iexact=hint) | Q(plate__iexact=hint)
+    return None
 
 
 def match_company_user(company, worker_dni_hint: str):
@@ -435,26 +468,24 @@ def match_company_user(company, worker_dni_hint: str):
     """
     from ivr_config.models import CompanyUser
 
-    hint = (worker_dni_hint or "").strip().upper()
-    if not hint:
+    normalized_hint = _normalize_for_matching(worker_dni_hint)
+    if not normalized_hint:
         return None
 
-    match = (
-        CompanyUser.objects
-        .filter(company=company, dni__iexact=hint)
-        .first()
+    for company_user in CompanyUser.objects.filter(company=company).select_related("user"):
+        if company_user.dni and _normalize_for_matching(company_user.dni) == normalized_hint:
+            logger.info(
+                "# [match_company_user] DNI %r -> CompanyUser #%d (%s) "
+                "por coincidencia normalizada.",
+                worker_dni_hint, company_user.pk,
+                company_user.user.get_full_name() or company_user.user.username,
+            )
+            return company_user
+
+    logger.warning(
+        "# [match_company_user] DNI %r (normalizado: %r) sin "
+        "coincidencia en company=%s -- sin asignar (detected_dni_hint "
+        "conserva la pista).",
+        worker_dni_hint, normalized_hint, company,
     )
-    if match:
-        logger.info(
-            "# [match_company_user] DNI %r -> CompanyUser #%d (%s).",
-            hint, match.pk,
-            match.user.get_full_name() or match.user.username,
-        )
-    else:
-        logger.warning(
-            "# [match_company_user] DNI %r sin coincidencia exacta en "
-            "company=%s -- sin asignar (detected_dni_hint conserva la "
-            "pista).",
-            hint, company,
-        )
-    return match
+    return None
