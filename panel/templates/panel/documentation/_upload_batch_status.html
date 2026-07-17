@@ -1,0 +1,79 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation/_upload_batch_status.html #}
+{# Visor de subida en vivo (S024-ter, Miguel Ángel: "una interfaz verbosa que comunique, #}
+{# sin tocar nada"). Se sondea a sí mismo cada 3s mientras quede algo pendiente -- el      #}
+{# propio backend (_render_upload_batch_status) decide si incluir el hx-trigger o no.      #}
+
+<div id="upload-batch-status-{{ batch_id }}"
+     {% if any_pending %}
+     hx-get="{% url 'panel:documentation_upload_batch_status' batch_id=batch_id %}"
+     hx-trigger="every 3s"
+     hx-target="this" hx-swap="outerHTML"
+     {% endif %}>
+
+    {% if skipped_duplicates %}
+    <div class="alert alert-info small mb-2">
+        {{ skipped_duplicates }} archivo(s) omitido(s) por estar ya subido(s) (duplicados por contenido).
+    </div>
+    {% endif %}
+
+    <div class="d-flex align-items-center gap-2 mb-2">
+        {% if any_pending %}
+        <span class="spinner-border spinner-border-sm text-primary" role="status"></span>
+        <span class="small text-muted">Procesando {{ rows|length }} archivo(s)…</span>
+        {% else %}
+        <i class="bi bi-check-circle-fill text-success"></i>
+        <span class="small text-muted">Lote completado -- {{ rows|length }} archivo(s).</span>
+        {% endif %}
+    </div>
+
+    <div class="border rounded upload-batch-status-list">
+        <table class="table table-sm mb-0 align-middle">
+            <tbody>
+                {% for row in rows %}
+                <tr>
+                    <td class="upload-batch-status-icon-cell">
+                        {% if row.is_pending %}
+                        <span class="spinner-border spinner-border-sm text-primary" role="status"></span>
+                        {% elif row.state == 'classified' %}
+                        <i class="bi bi-check-circle-fill text-success"></i>
+                        {% elif row.state == 'unassigned' or row.state == 'needs_review' %}
+                        <i class="bi bi-question-circle-fill text-warning"></i>
+                        {% elif row.state == 'discarded' %}
+                        <i class="bi bi-info-circle-fill text-info"></i>
+                        {% else %}
+                        <i class="bi bi-x-circle-fill text-danger"></i>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <div class="fw-semibold small">{{ row.ingested.original_filename }}</div>
+                        {% if row.ingested.source_folder_path %}
+                        <div class="text-muted upload-batch-status-folder-path">
+                            <i class="bi bi-folder2 me-1"></i>{{ row.ingested.source_folder_path }}
+                        </div>
+                        {% endif %}
+                    </td>
+                    <td class="text-end small">
+                        {% if row.state == 'routing' %}
+                        <span class="badge bg-secondary-subtle text-secondary-emphasis">En cola -- enrutando…</span>
+                        {% elif row.state == 'classifying' %}
+                        <span class="badge bg-primary-subtle text-primary-emphasis">Clasificando…</span>
+                        {% elif row.state == 'classified' %}
+                        <span class="badge bg-success-subtle text-success-emphasis">Asignado a {{ row.subject_label }}</span>
+                        {% elif row.state == 'unassigned' %}
+                        <span class="badge bg-warning-subtle text-warning-emphasis">Clasificado, sin asignar</span>
+                        {% elif row.state == 'needs_review' %}
+                        <span class="badge bg-warning-subtle text-warning-emphasis">Sin identificar -- revisar a mano</span>
+                        {% elif row.state == 'discarded' %}
+                        <span class="badge bg-info-subtle text-info-emphasis">Documento combinado -- descartado</span>
+                        {% elif row.state == 'ingest_error' %}
+                        <span class="badge bg-danger-subtle text-danger-emphasis">Error: {{ row.ingested.error_message|default:"enrutado fallido" }}</span>
+                        {% elif row.state == 'doc_error' %}
+                        <span class="badge bg-danger-subtle text-danger-emphasis">Error: {{ row.subject_label|default:"clasificación fallida" }}</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>

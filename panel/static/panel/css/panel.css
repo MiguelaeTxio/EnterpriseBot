@@ -1080,3 +1080,25 @@ table.table #toll-thead ~ tbody tr:nth-child(even):not(.table-secondary) td {
         height: 50vh;
     }
 }
+
+/* Visor de subida en vivo (Documentación, S024-ter) -- lista desplazable
+   de archivos con la rueda del ratón, el dedo (touch) o barra de
+   desplazamiento, según dispositivo. Sustituye a los estilos inline que
+   marcó djlint (H021) en _upload_batch_status.html.
+   Live upload status viewer (Documentation, S024-ter) -- scrollable file
+   list via mouse wheel, touch, or scrollbar depending on device.
+   Replaces the inline styles flagged by djlint (H021) in
+   _upload_batch_status.html. */
+.upload-batch-status-list {
+    max-height: 320px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.upload-batch-status-icon-cell {
+    width: 2rem;
+}
+
+.upload-batch-status-folder-path {
+    font-size: 0.75rem;
+}

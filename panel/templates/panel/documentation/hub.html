@@ -34,6 +34,7 @@
                 {% csrf_token %}
                 <input type="file" id="folderPickerInput" webkitdirectory multiple hidden>
                 <input type="file" id="folderBatchInput" name="folder" multiple hidden>
+                <div id="folderPathsContainer" hidden></div>
                 <div class="d-flex align-items-center gap-2 flex-wrap">
                     <button type="button" class="btn btn-sm btn-outline-secondary" id="addFolderBtn">
                         <i class="bi bi-folder-plus me-1"></i>Añadir carpeta
@@ -200,6 +201,7 @@
     // los navegadores del taller, sin dependencia nueva).
     var pickerInput = document.getElementById('folderPickerInput');
     var batchInput = document.getElementById('folderBatchInput');
+    var pathsContainer = document.getElementById('folderPathsContainer');
     var addFolderBtn = document.getElementById('addFolderBtn');
     var summaryEl = document.getElementById('folderBatchSummary');
     var submitBtn = document.getElementById('folderUploadSubmitBtn');
@@ -222,6 +224,20 @@
         var dt = new DataTransfer();
         accumulated.forEach(function (f) { dt.items.add(f); });
         batchInput.files = dt.files;
+
+        // Un <input type="file"> no lleva metadatos propios -- la
+        // carpeta de origen (webkitRelativePath) se manda aparte, en
+        // el mismo orden, como campos ocultos folder_paths (S024-ter,
+        // "el visor debe indicar la carpeta de donde ha salido cada
+        // archivo").
+        pathsContainer.innerHTML = '';
+        accumulated.forEach(function (f) {
+            var hiddenInput = document.createElement('input');
+            hiddenInput.type = 'hidden';
+            hiddenInput.name = 'folder_paths';
+            hiddenInput.value = f.webkitRelativePath || f.name;
+            pathsContainer.appendChild(hiddenInput);
+        });
     }
 
     addFolderBtn.addEventListener('click', function () {

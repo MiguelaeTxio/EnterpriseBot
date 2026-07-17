@@ -57,6 +57,27 @@ class IngestedFile(models.Model):
         default="",
         verbose_name="Nombre de archivo original",
     )
+    source_folder_path = models.CharField(
+        max_length=500,
+        blank=True,
+        default="",
+        verbose_name="Carpeta de origen",
+        help_text="webkitRelativePath del navegador (S024-ter) -- solo "
+                  "trazabilidad para el visor de subida en vivo, nunca "
+                  "se usa para enrutar ni para nombrar el blob en GCS.",
+    )
+    upload_batch_id = models.CharField(
+        max_length=40,
+        blank=True,
+        default="",
+        db_index=True,
+        verbose_name="Lote de subida",
+        help_text="Identificador compartido por todos los archivos de "
+                  "una misma subida (S024-ter) -- permite al visor en "
+                  "vivo (panel/views_documentation.py,  "
+                  "UploadBatchStatusFragmentView) consultar el estado "
+                  "de todo un lote sin depender del nombre de archivo.",
+    )
     source_file = models.FileField(
         upload_to="document_ingestion/%Y/%m/",
         blank=True,
@@ -92,6 +113,21 @@ class IngestedFile(models.Model):
         help_text="MACHINE/PERSONAL/UNKNOWN (ver "
                   "document_ingestion.entity_matching_service) -- "
                   "trazabilidad, no se usa para enrutar de nuevo.",
+    )
+    routed_document_pk = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        verbose_name="PK del documento resultante",
+        help_text="PK del MachineDocument/PersonalDocument creado al "
+                  "enrutar (S024-ter) -- junto con routed_domain, "
+                  "enlace directo para que el visor de subida en vivo "
+                  "consulte el estado real de clasificación sin "
+                  "adivinar por nombre de archivo. Nulo si el archivo "
+                  "no llegó a enrutarse a ningún documento "
+                  "(NEEDS_REVIEW/ERROR), o si el documento resultante "
+                  "se borró después por ser un documento maestro "
+                  "descartado (ver masters_to_discard en "
+                  "machine_documents.tasks/personal_documents.tasks).",
     )
     created_at = models.DateTimeField(
         auto_now_add=True,

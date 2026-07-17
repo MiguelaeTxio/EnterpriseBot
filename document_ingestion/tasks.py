@@ -134,9 +134,11 @@ def route_ingested_files(self, ingested_file_pks: list[int]) -> None:
 
             ingested.status = IngestedFile.Status.ROUTED
             ingested.routed_domain = DOMAIN_MACHINE
+            ingested.routed_document_pk = new_document.pk
             ingested.source_file.delete(save=False)
             ingested.save(update_fields=[
-                "status", "routed_domain", "source_file",
+                "status", "routed_domain", "routed_document_pk",
+                "source_file",
             ])
             logger.info(
                 "# [route_ingested_files] #%d (%s) -> MACHINE "
@@ -169,9 +171,11 @@ def route_ingested_files(self, ingested_file_pks: list[int]) -> None:
 
             ingested.status = IngestedFile.Status.ROUTED
             ingested.routed_domain = DOMAIN_PERSONAL
+            ingested.routed_document_pk = new_document.pk
             ingested.source_file.delete(save=False)
             ingested.save(update_fields=[
-                "status", "routed_domain", "source_file",
+                "status", "routed_domain", "routed_document_pk",
+                "source_file",
             ])
             logger.info(
                 "# [route_ingested_files] #%d (%s) -> PERSONAL "

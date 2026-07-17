@@ -226,6 +226,110 @@ def _unassigned_documents(company, domain: str):
     return docs
 
 
+def _batch_status_rows(company, batch_id: str):
+    """
+    Resuelve el estado EN VIVO de cada archivo de un lote de subida
+    (S024-ter) -- una fila por IngestedFile, con su estado real de
+    enrutado/clasificación y si sigue en curso (`is_pending`) o ya
+    terminó (`is_terminal`). Usado tanto por la respuesta inicial de
+    DocumentationFolderUploadView como por el sondeo periódico de
+    UploadBatchStatusFragmentView -- misma lógica, un único sitio.
+
+    Estados posibles por fila:
+      - "routing"    -- IngestedFile.PENDING_ROUTING, en cola de
+                        enrutado (no en curso).
+      - "needs_review" -- IngestedFile.NEEDS_REVIEW (terminal).
+      - "ingest_error" -- IngestedFile.ERROR (terminal).
+      - "classifying" -- ROUTED, el documento resultante sigue PENDING
+                        (Gemini todavía no ha respondido).
+      - "classified"  -- documento CLASSIFIED (terminal, con
+                        subject_label del código/nombre asignado).
+      - "unassigned"  -- documento UNASSIGNED (terminal).
+      - "doc_error"   -- documento con status=ERROR (terminal).
+      - "discarded"   -- ROUTED pero el documento ya no existe (era un
+                        documento maestro, descartado tras extraer su
+                        contenido -- ver masters_to_discard en
+                        machine_documents.tasks/personal_documents.tasks;
+                        terminal, no es un fallo).
+    """
+    rows = []
+    ingested_qs = (
+        IngestedFile.objects
+        .filter(company=company, upload_batch_id=batch_id)
+        .order_by("created_at")
+    )
+    for ingested in ingested_qs:
+        row = {
+            "ingested": ingested,
+            "state": "routing",
+            "subject_label": "",
+            "is_pending": True,
+        }
+
+        if ingested.status == IngestedFile.Status.PENDING_ROUTING:
+            row["state"] = "routing"
+            row["is_pending"] = True
+        elif ingested.status == IngestedFile.Status.NEEDS_REVIEW:
+            row["state"] = "needs_review"
+            row["is_pending"] = False
+        elif ingested.status == IngestedFile.Status.ERROR:
+            row["state"] = "ingest_error"
+            row["is_pending"] = False
+        elif ingested.status == IngestedFile.Status.ROUTED:
+            model = _DOMAIN_MODELS.get(
+                "machine" if ingested.routed_domain == "MACHINE" else "personal"
+            )
+            document = (
+                model.objects.filter(pk=ingested.routed_document_pk).first()
+                if ingested.routed_document_pk else None
+            )
+            if document is None:
+                row["state"] = "discarded"
+                row["is_pending"] = False
+            elif document.status in (
+                model.Status.PENDING,
+            ):
+                row["state"] = "classifying"
+                row["is_pending"] = True
+            elif document.status == model.Status.CLASSIFIED:
+                row["state"] = "classified"
+                row["is_pending"] = False
+                row["subject_label"] = _subject_label_for(
+                    document,
+                    "machine" if ingested.routed_domain == "MACHINE" else "personal",
+                )
+            elif document.status == model.Status.UNASSIGNED:
+                row["state"] = "unassigned"
+                row["is_pending"] = False
+            else:
+                row["state"] = "doc_error"
+                row["is_pending"] = False
+                row["subject_label"] = document.error_message
+
+        rows.append(row)
+    return rows
+
+
+def _render_upload_batch_status(request, batch_id: str, skipped_duplicates: int):
+    """
+    Renderiza panel/documentation/_upload_batch_status.html -- visor
+    en vivo del lote, con `hx-trigger="every 3s"` incluido en la
+    plantilla SOLO si queda algún archivo pendiente (sondeo que se
+    detiene solo cuando todo el lote ha terminado, patrón estándar de
+    HTMX). Compartido entre la respuesta inicial de
+    DocumentationFolderUploadView y UploadBatchStatusFragmentView
+    (el propio sondeo periódico).
+    """
+    company = request.user.company_user.company
+    rows = _batch_status_rows(company, batch_id)
+    return render(request, "panel/documentation/_upload_batch_status.html", {
+        "batch_id": batch_id,
+        "rows": rows,
+        "any_pending": any(r["is_pending"] for r in rows),
+        "skipped_duplicates": skipped_duplicates,
+    })
+
+
 # ---------------------------------------------------------------------------
 # CRUD de alertas (S024, a petición explícita de Miguel Ángel: "ese
 # CRUD es necesario, así que tenemos que construirlo") -- generico
@@ -1104,21 +1208,41 @@ class DocumentationFolderUploadView(DocsUploadAccessMixin, View):
     A diferencia de MachineDocumentBatchUploadView (H23, sin tocar):
     aquí NO se elige máquina/trabajador de antemano -- se detecta
     automáticamente por contenido (document_ingestion, S024).
+
+    S024-ter, "interfaz verbosa" (Miguel Ángel: "quiero que cuando se
+    le dé a subir... esté viendo todo lo que está ocurriendo. Una
+    interfaz verbosa que comunique, sin tocar nada"): esta vista ya no
+    devuelve un simple mensaje -- genera un `upload_batch_id`
+    compartido por todos los archivos del lote y devuelve directamente
+    el visor de seguimiento en vivo (UploadBatchStatusFragmentView),
+    que se autoactualiza por sondeo mientras quede algo sin terminar.
     """
 
     def post(self, request):
         company = request.user.company_user.company
         company_user = request.user.company_user
 
-        uploaded_files = [
-            f for f in request.FILES.getlist("folder")
+        uploaded_files = request.FILES.getlist("folder")
+        folder_paths = request.POST.getlist("folder_paths")
+        # folder_paths llega en el mismo orden que uploaded_files (ver
+        # hub.html, el JS construye ambas listas iterando el mismo
+        # array `accumulated`) -- si por lo que sea no coincide en
+        # longitud (formulario enviado sin JS, por ejemplo), se ignora
+        # en vez de desalinear el resto del lote.
+        if len(folder_paths) != len(uploaded_files):
+            folder_paths = [""] * len(uploaded_files)
+
+        pdf_files = [
+            (f, path) for f, path in zip(uploaded_files, folder_paths)
             if f.name.lower().endswith(".pdf")
         ]
-        if not uploaded_files:
+        if not pdf_files:
             return render(request, "panel/documentation/_upload_result.html", {
                 "is_error": True,
                 "message": "No se encontró ningún PDF en la(s) carpeta(s) seleccionada(s).",
             })
+
+        batch_id = uuid.uuid4().hex
 
         # Deduplicación por hash (S024) -- antes de crear cualquier
         # IngestedFile, para no gastar ni la llamada de enrutado ni la
@@ -1129,7 +1253,7 @@ class DocumentationFolderUploadView(DocsUploadAccessMixin, View):
         ingested_pks = []
         skipped_duplicates = 0
         batch_hashes: set[str] = set()
-        for uploaded_file in uploaded_files:
+        for uploaded_file, folder_path in pdf_files:
             file_bytes = uploaded_file.read()
             content_hash = compute_content_hash(file_bytes)
             uploaded_file.seek(0)
@@ -1150,6 +1274,8 @@ class DocumentationFolderUploadView(DocsUploadAccessMixin, View):
                 company=company,
                 uploaded_by=company_user,
                 original_filename=uploaded_file.name,
+                source_folder_path=folder_path,
+                upload_batch_id=batch_id,
                 content_hash=content_hash,
                 status=IngestedFile.Status.PENDING_ROUTING,
             )
@@ -1174,28 +1300,25 @@ class DocumentationFolderUploadView(DocsUploadAccessMixin, View):
 
         logger.info(
             "# [DocumentationFolderUploadView] %d documento(s) en "
-            "cola de enrutado para %s, tarea encolada. %d "
+            "cola de enrutado para %s, lote=%s, tarea encolada. %d "
             "duplicado(s) omitido(s).",
-            len(ingested_pks), company, skipped_duplicates,
+            len(ingested_pks), company, batch_id, skipped_duplicates,
         )
 
-        success_message = (
-            f"{len(ingested_pks)} documento(s) en cola de "
-            f"clasificación automática. Puede tardar unos minutos -- "
-            f"usa el botón \"Actualizar\" de la pestaña correspondiente "
-            f"(o de \"Sin asignar\" si no se pudo determinar la "
-            f"máquina/trabajador con confianza) para ver el resultado, "
-            f"sin recargar la página."
-        )
-        if skipped_duplicates:
-            success_message += (
-                f" ({skipped_duplicates} archivo(s) omitido(s) por "
-                f"estar ya subido(s).)"
-            )
-        return render(request, "panel/documentation/_upload_result.html", {
-            "is_error": False,
-            "message": success_message,
-        })
+        return _render_upload_batch_status(request, batch_id, skipped_duplicates)
+
+
+class UploadBatchStatusFragmentView(DocsUploadAccessMixin, View):
+    """
+    GET (HTMX): re-renderiza el visor de un lote de subida -- el
+    propio `_upload_batch_status.html` se pide a sí mismo cada 3s
+    (`hx-trigger="every 3s"`) mientras quede algo pendiente, y deja de
+    incluir ese trigger en cuanto todo el lote termina (sondeo que se
+    autodetiene, S024-ter).
+    """
+
+    def get(self, request, batch_id):
+        return _render_upload_batch_status(request, batch_id, skipped_duplicates=0)
 
 
 class DocumentAssignView(DocsUploadAccessMixin, View):

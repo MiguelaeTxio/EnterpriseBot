@@ -41,6 +41,7 @@ from panel.views_documentation import (
     RetryUnassignedRoutingView,
     UnassignedMachineFragmentView,
     UnassignedPersonalFragmentView,
+    UploadBatchStatusFragmentView,
 )
 from panel.views import (
     PanelLoginView,
@@ -413,6 +414,7 @@ urlpatterns = [
     path("documentacion/<str:domain>/reenrutar/", RetryUnassignedRoutingView.as_view(), name="documentation_retry_unassigned"),
     path("documentacion/maquinaria/sin-asignar/", UnassignedMachineFragmentView.as_view(), name="documentation_unassigned_machine"),
     path("documentacion/personal/sin-asignar/", UnassignedPersonalFragmentView.as_view(), name="documentation_unassigned_personal"),
+    path("documentacion/lote/<str:batch_id>/", UploadBatchStatusFragmentView.as_view(), name="documentation_upload_batch_status"),
 
     # Section default role — Endpoint AJAX para pre-rellenar rol al crear usuario (H13).
     path("sections/<int:pk>/default-role/", SectionDefaultRoleView.as_view(), name="section_default_role"),
