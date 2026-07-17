@@ -509,6 +509,61 @@ sobre esa misma pieza: no construir ninguna interfaz mínima desechable
 para plantillas de email — se deja como modelo sin UI hasta que haga
 falta de verdad, sin deuda técnica.
 
+### Decisiones cerradas en S024 (tal cual las dio Miguel Ángel, sin reinterpretar -- directriz 4.8)
+
+**Contexto:** al arrancar S024 con el punto de partida heredado de
+S023 (construir la interfaz de panel de H23 sobre los servicios de
+`document_management`), Miguel Ángel especificó el diseño completo de
+esa interfaz antes de empezar a construir. Sustituye por completo
+cualquier diseño de pantalla no cerrado que quedara pendiente de S023.
+
+1. **Lo ya construido (subida por máquina individual) se mantiene
+   intacto.** El flujo actual -- elegir una máquina, subirle su propia
+   documentación, clasificarla -- no se toca ni se reemplaza.
+2. **Nueva vía de entrada: subida de carpeta completa.** Se examina
+   cada documento de la carpeta, se determina automáticamente a qué
+   `MachineAsset` (o, para documentación de personal, a qué
+   trabajador) pertenece cada uno, se clasifica y se persiste con sus
+   metadatos en BD -- sin que el usuario indique la máquina/trabajador
+   de antemano.
+3. **Listado en pestañas:** "Maquinaria" y "Personal" como dos
+   pestañas separadas del mismo listado.
+4. **Vista de detalle en acordeón:** al entrar en una máquina o un
+   trabajador, su documentación se organiza en acordeón -- vigente /
+   archivada, y también por tipo de documento cuando proceda.
+5. **Navegación listado → detalle también en acordeón, sin cambiar de
+   vista.** El propio listado se despliega en acordeón y, al acceder a
+   un elemento, su detalle se abre igualmente en acordeón dentro de la
+   misma pantalla -- nunca una navegación que saque de la interfaz de
+   listado.
+6. **Filtros de búsqueda en vivo**, imprescindibles: localizar máquina
+   o trabajador según se escribe, sin acción explícita de "buscar".
+
+**Propuestas del modelo, admitidas explícitamente por Miguel Ángel sin
+modificación -- incorporarlas tal cual:**
+
+a. Reutilizar el mismo servicio de clasificación de fondo tanto para
+   la vía de "subida de carpeta" (aquí) como para la futura ingesta de
+   correo (H27) -- nunca duplicar el motor de clasificación entre
+   vías de entrada (DRY).
+b. Contenido del acordeón de detalle cargado vía HTMX de forma
+   perezosa al desplegarse, no todo de golpe en el HTML inicial, si el
+   volumen de máquinas/personal lo justifica.
+c. Filtro en vivo vía HTMX con `hx-trigger="keyup changed
+   delay:300ms"` sobre el listado, para no disparar una petición por
+   cada tecla.
+d. Estado intermedio "sin asignar" para documentos de la subida de
+   carpeta donde Gemini no tenga confianza suficiente para decidir a
+   qué máquina/trabajador pertenecen -- bloque propio en el listado en
+   vez de forzar una asignación dudosa. Previsto en el diseño, no
+   necesariamente implementado en el primer corte.
+
+**Premisa explícita de implementación (aplica a H23 y a H27 por
+igual):** máxima modularización. Archivos pequeños y con
+responsabilidad única -- evitar archivos grandes que mezclen varias
+responsabilidades, tanto en código como en documentación, para no
+penalizar la escalabilidad futura.
+
 ### Hoja de Ruta para la Sesión Siguiente (S024)
 
 **Punto de partida confirmado por Miguel Ángel al cierre de S023:**

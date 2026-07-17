@@ -315,6 +315,20 @@ app de dominio.
   construyen sobre este servicio, no antes — decisión de Miguel Ángel
   en S022 (Opción B, frente a construirlo dos veces por dominio).
 
+#### Hito 27: Ingesta de Documentación vía Correo Electrónico
+(Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V27.md`)
+- Hito nuevo, abierto en S024 a petición explícita de Miguel Ángel
+  durante la planificación de la interfaz de H23 — decidido como hito
+  independiente (no colgado de H23) por su peso propio: alta de una
+  cuenta de correo dedicada, integración con la API de lectura de esa
+  cuenta, y clasificación de los documentos que lleguen como adjunto.
+- Reutiliza el servicio de clasificación Gemini Vision ya construido
+  en H23/H26 (mismo principio DRY que evita duplicar el motor de
+  clasificación entre vías de entrada) en vez de duplicarlo.
+- Premisa explícita de Miguel Ángel para la implementación: máxima
+  modularización — evitar archivos grandes que mezclen
+  responsabilidades, para no penalizar la escalabilidad futura.
+
 ---
 
 ### 4. Directrices Técnicas Vinculantes
@@ -548,4 +562,32 @@ jornada laboral, indicando ahí mismo la fecha de fin de su periodo; de
 esa tarea real se deriva el `VacationPeriod`, nunca al revés.** El CRUD
 de panel no es lo que él pidió y no debía haberse construido sin
 confirmárselo primero explícitamente.
+
+#### 4.9. DIRECTRIZ CRÍTICA — Ningún hallazgo real se deja como deuda técnica sin reparar (añadida S019, ampliada S024)
+
+**Regla, sin excepción:** si durante una sesión se detecta un error real
+en el código — aunque no pertenezca al hito o tarea en curso, y aunque
+no se haya introducido en la sesión actual — se corrige de inmediato en
+la misma sesión. Nunca se deja anotado como "deuda técnica" o "fuera de
+alcance" a la espera de confirmación. Al cierre de sesión (PCS) se
+documenta en el anexo correspondiente al hito donde vivía el error (no
+en el anexo del hito que se estaba trabajando, salvo que coincidan).
+
+**Ampliación S024, a petición explícita de Miguel Ángel:** esta regla
+cubre también los avisos de linter no bloqueantes — aquellos que no
+impiden el funcionamiento del script (ej. estilos inline en HTML,
+avisos de formato) — no solo errores que rompen la ejecución. Si al
+pasar el linter sobre un archivo tocado en la sesión aparece un aviso
+de este tipo, se repara igualmente en la misma sesión, sin dejarlo
+anotado para más adelante, exista o no relación con la tarea en curso.
+
+**Origen:** incidente S019 — el modelo detectó que el patrón de mostrar
+`{exc}` (texto crudo de excepción) directamente en mensajes de usuario
+existía ya en varios archivos de producción desplegados
+(`panel/views_operator.py`, `panel/views_workorders.py`,
+`budgets/views.py`) y, en vez de corregirlo, lo dejó anotado
+preguntando si abordarlo como tarea aparte — corregido por instrucción
+explícita de Miguel Ángel. Ampliada en S024 durante la planificación de
+H23/H27, cuando Miguel Ángel extendió explícitamente el mismo criterio
+a los avisos de linter no bloqueantes.
 
