@@ -62,6 +62,16 @@ class IngestedFile(models.Model):
         blank=True,
         verbose_name="Archivo",
     )
+    content_hash = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        db_index=True,
+        verbose_name="Hash de contenido (SHA-256)",
+        help_text="Calculado en la vista de subida (S024) -- se "
+                  "propaga al MachineDocument/PersonalDocument "
+                  "resultante al enrutar, sin recalcular.",
+    )
     status = models.CharField(
         max_length=20,
         choices=Status.choices,

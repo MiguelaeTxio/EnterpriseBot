@@ -79,6 +79,10 @@ from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.views import View
 
+from document_ingestion.deduplication_service import (
+    compute_content_hash,
+    find_duplicate,
+)
 from fleet.models import MachineAsset
 from panel.mixins import DocsUploadAccessMixin
 
@@ -171,14 +175,40 @@ class MachineDocumentBatchUploadView(DocsUploadAccessMixin, View):
         # status=PENDING. Ninguna llamada a Gemini/Drive aquí; todo
         # eso vive en la tarea Celery (2026-07-14, ver el docstring
         # del módulo para el motivo).
+        #
+        # Deduplicación por hash (S024) -- antes de crear cada fila,
+        # nunca después: ni una llamada a Gemini desperdiciada en un
+        # archivo que ya está subido. Comprueba contra BD (cualquiera
+        # de los dos dominios, ver find_duplicate) Y contra los demás
+        # archivos de este MISMO lote (batch_hashes), para que subir
+        # el mismo PDF dos veces en la misma carpeta tampoco se cuele.
         # ------------------------------------------------------------
         document_pks = []
+        skipped_duplicates = 0
+        batch_hashes: set[str] = set()
         for uploaded_file in uploaded_files:
+            file_bytes = uploaded_file.read()
+            content_hash = compute_content_hash(file_bytes)
+            uploaded_file.seek(0)
+
+            if content_hash in batch_hashes or find_duplicate(
+                company, content_hash,
+            ):
+                logger.warning(
+                    "# [MachineDocumentBatchUploadView] %s: ya subido "
+                    "(hash %s) -- omitido.",
+                    uploaded_file.name, content_hash[:12],
+                )
+                skipped_duplicates += 1
+                continue
+            batch_hashes.add(content_hash)
+
             document = MachineDocument(
                 machine_asset=machine_asset,
                 company=company,
                 uploaded_by=company_user,
                 original_filename=uploaded_file.name,
+                content_hash=content_hash,
                 status=MachineDocument.Status.PENDING,
             )
             document.source_file.save(
@@ -187,21 +217,43 @@ class MachineDocumentBatchUploadView(DocsUploadAccessMixin, View):
             document.save()
             document_pks.append(document.pk)
 
+        if not document_pks:
+            return render(request, self.template_name, {
+                "active_nav": "machine_documents_upload",
+                "company_user": company_user,
+                "machines": machines,
+                "preselected_machine_pk": machine_pk,
+                "error": (
+                    "Todos los archivos seleccionados ya estaban "
+                    "subidos (duplicados por contenido)."
+                    if skipped_duplicates else
+                    "No se encontró ningún PDF en la carpeta "
+                    "seleccionada."
+                ),
+            })
+
         process_machine_document_batch.delay(document_pks)
 
         logger.info(
             "# [MachineDocumentBatchUploadView] %d documento(s) en "
-            "cola para %s (máquina %s), tarea encolada.",
+            "cola para %s (máquina %s), tarea encolada. %d "
+            "duplicado(s) omitido(s).",
             len(document_pks), company, machine_asset.code,
+            skipped_duplicates,
         )
 
-        messages.success(
-            request,
+        success_message = (
             f"{len(document_pks)} documento(s) en cola de "
             f"procesamiento para {machine_asset.code}. La "
             f"clasificación puede tardar unos minutos -- recarga esta "
-            f"página para ver el resultado.",
+            f"página para ver el resultado."
         )
+        if skipped_duplicates:
+            success_message += (
+                f" ({skipped_duplicates} archivo(s) omitido(s) por "
+                f"estar ya subido(s).)"
+            )
+        messages.success(request, success_message)
         return redirect(
             reverse("history:machine_history")
             + f"?machine_code={machine_asset.code}#documentacion"

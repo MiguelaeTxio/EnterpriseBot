@@ -119,6 +119,7 @@ def route_ingested_files(self, ingested_file_pks: list[int]) -> None:
                 company=company,
                 uploaded_by=ingested.uploaded_by,
                 original_filename=filename,
+                content_hash=ingested.content_hash,
                 status=MachineDocument.Status.PENDING,
                 detected_reference_hint=(
                     "" if matched_machine
@@ -154,6 +155,7 @@ def route_ingested_files(self, ingested_file_pks: list[int]) -> None:
                 company=company,
                 uploaded_by=ingested.uploaded_by,
                 original_filename=filename,
+                content_hash=ingested.content_hash,
                 status=PersonalDocument.Status.PENDING,
                 detected_dni_hint=(
                     "" if matched_worker else route["worker_dni_hint"]

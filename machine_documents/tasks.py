@@ -77,6 +77,8 @@ import logging
 from celery.contrib.django.task import DjangoTask
 from django.core.files.base import ContentFile
 
+from document_management.alert_service import create_default_expiry_alert
+from document_ingestion.deduplication_service import compute_content_hash
 from enterprise_core.celery import app
 from spare_parts.gcs_service import (
     GCSNotConfigured,
@@ -221,6 +223,18 @@ def process_machine_document_batch(self, document_pks: list[int]) -> None:
             "document_number", "issuing_entity", "status",
         ])
 
+        create_default_expiry_alert(
+            document=document,
+            expiry_date=document.expiry_date,
+            document_label=document.display_name,
+            subject_label=(
+                document.machine_asset.code if document.machine_asset_id
+                else "Sin asignar"
+            ),
+            company=document.company,
+            default_contact=document.uploaded_by,
+        )
+
         classified[document.pk] = {
             "document": document,
             "bytes": file_bytes,
@@ -298,6 +312,7 @@ def process_machine_document_batch(self, document_pks: list[int]) -> None:
             issue_date=extra_result["issue_date"],
             document_number=extra_result["document_number"],
             issuing_entity=extra_result["issuing_entity"],
+            content_hash=compute_content_hash(extracted_bytes),
             status=(
                 MachineDocument.Status.CLASSIFIED
                 if item["document"].machine_asset_id
@@ -307,6 +322,17 @@ def process_machine_document_batch(self, document_pks: list[int]) -> None:
         )
         new_document.source_file.save(
             extracted_filename, ContentFile(extracted_bytes), save=True,
+        )
+        create_default_expiry_alert(
+            document=new_document,
+            expiry_date=new_document.expiry_date,
+            document_label=new_document.display_name,
+            subject_label=(
+                new_document.machine_asset.code
+                if new_document.machine_asset_id else "Sin asignar"
+            ),
+            company=new_document.company,
+            default_contact=new_document.uploaded_by,
         )
         logger.info(
             "# [process_machine_document_batch] Documento nuevo #%d "

@@ -46,6 +46,8 @@ from ai_services.document_vision_service import (
     assess_master_coverage,
     extract_pages,
 )
+from document_management.alert_service import create_default_expiry_alert
+from document_ingestion.deduplication_service import compute_content_hash
 from enterprise_core.celery import app
 from spare_parts.gcs_service import (
     GCSNotConfigured,
@@ -147,6 +149,19 @@ def process_personal_document_batch(self, document_pks: list[int]) -> None:
             "issuing_entity", "status",
         ])
 
+        create_default_expiry_alert(
+            document=document,
+            expiry_date=document.expiry_date or document.computed_expiry_date,
+            document_label=document.display_name,
+            subject_label=(
+                (document.company_user.user.get_full_name()
+                 or document.company_user.user.username)
+                if document.company_user_id else "Sin asignar"
+            ),
+            company=document.company,
+            default_contact=document.uploaded_by,
+        )
+
         classified[document.pk] = {
             "document": document,
             "bytes": file_bytes,
@@ -215,6 +230,7 @@ def process_personal_document_batch(self, document_pks: list[int]) -> None:
             computed_expiry_date=extra_result["computed_expiry_date"],
             document_number=extra_result["document_number"],
             issuing_entity=extra_result["issuing_entity"],
+            content_hash=compute_content_hash(extracted_bytes),
             status=(
                 PersonalDocument.Status.CLASSIFIED
                 if item["document"].company_user_id
@@ -224,6 +240,20 @@ def process_personal_document_batch(self, document_pks: list[int]) -> None:
         )
         new_document.source_file.save(
             extracted_filename, ContentFile(extracted_bytes), save=True,
+        )
+        create_default_expiry_alert(
+            document=new_document,
+            expiry_date=(
+                new_document.expiry_date or new_document.computed_expiry_date
+            ),
+            document_label=new_document.display_name,
+            subject_label=(
+                (new_document.company_user.user.get_full_name()
+                 or new_document.company_user.user.username)
+                if new_document.company_user_id else "Sin asignar"
+            ),
+            company=new_document.company,
+            default_contact=new_document.uploaded_by,
         )
         logger.info(
             "# [process_personal_document_batch] Documento nuevo #%d "

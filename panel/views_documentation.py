@@ -68,6 +68,10 @@ from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.views import View
 
+from document_ingestion.deduplication_service import (
+    compute_content_hash,
+    find_duplicate,
+)
 from document_ingestion.models import IngestedFile
 from document_ingestion.tasks import route_ingested_files
 from document_management.vigencia_service import DocumentSnapshot, is_current
@@ -407,12 +411,37 @@ class DocumentationFolderUploadView(DocsUploadAccessMixin, View):
             )
             return redirect(reverse("panel:documentation_hub"))
 
+        # Deduplicación por hash (S024) -- antes de crear cualquier
+        # IngestedFile, para no gastar ni la llamada de enrutado ni la
+        # de clasificación en un archivo que ya está subido. Mismo
+        # criterio que MachineDocumentBatchUploadView: comprueba
+        # contra BD (los dos dominios, find_duplicate) y contra el
+        # resto de archivos de este mismo lote.
         ingested_pks = []
+        skipped_duplicates = 0
+        batch_hashes: set[str] = set()
         for uploaded_file in uploaded_files:
+            file_bytes = uploaded_file.read()
+            content_hash = compute_content_hash(file_bytes)
+            uploaded_file.seek(0)
+
+            if content_hash in batch_hashes or find_duplicate(
+                company, content_hash,
+            ):
+                logger.warning(
+                    "# [DocumentationFolderUploadView] %s: ya subido "
+                    "(hash %s) -- omitido.",
+                    uploaded_file.name, content_hash[:12],
+                )
+                skipped_duplicates += 1
+                continue
+            batch_hashes.add(content_hash)
+
             ingested = IngestedFile(
                 company=company,
                 uploaded_by=company_user,
                 original_filename=uploaded_file.name,
+                content_hash=content_hash,
                 status=IngestedFile.Status.PENDING_ROUTING,
             )
             ingested.source_file.save(
@@ -421,20 +450,37 @@ class DocumentationFolderUploadView(DocsUploadAccessMixin, View):
             ingested.save()
             ingested_pks.append(ingested.pk)
 
+        if not ingested_pks:
+            messages.error(
+                request,
+                "Todos los archivos seleccionados ya estaban subidos "
+                "(duplicados por contenido)."
+                if skipped_duplicates else
+                "No se encontró ningún PDF en la(s) carpeta(s) "
+                "seleccionada(s).",
+            )
+            return redirect(reverse("panel:documentation_hub"))
+
         route_ingested_files.delay(ingested_pks)
 
         logger.info(
             "# [DocumentationFolderUploadView] %d documento(s) en "
-            "cola de enrutado para %s, tarea encolada.",
-            len(ingested_pks), company,
+            "cola de enrutado para %s, tarea encolada. %d "
+            "duplicado(s) omitido(s).",
+            len(ingested_pks), company, skipped_duplicates,
         )
 
-        messages.success(
-            request,
+        success_message = (
             f"{len(ingested_pks)} documento(s) en cola de "
             f"clasificación automática. Puede tardar unos minutos -- "
             f"recarga esta página para ver el resultado en la pestaña "
             f"correspondiente (o en \"sin asignar\" si no se pudo "
-            f"determinar la máquina/trabajador con confianza).",
+            f"determinar la máquina/trabajador con confianza)."
         )
+        if skipped_duplicates:
+            success_message += (
+                f" ({skipped_duplicates} archivo(s) omitido(s) por "
+                f"estar ya subido(s).)"
+            )
+        messages.success(request, success_message)
         return redirect(reverse("panel:documentation_hub"))

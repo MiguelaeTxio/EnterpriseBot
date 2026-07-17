@@ -175,6 +175,16 @@ class PersonalDocument(models.Model):
                   "manualmente en cuanto exista el CRUD de "
                   "pre-registro. Vacío en cualquier otro caso.",
     )
+    content_hash = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        db_index=True,
+        verbose_name="Hash de contenido (SHA-256)",
+        help_text="SHA-256 de los bytes crudos del archivo, calculado "
+                  "en la subida -- deduplicación (S024, ver "
+                  "document_ingestion.deduplication_service).",
+    )
 
     # ------------------------------------------------------------------
     # Processing status / Estado de procesamiento

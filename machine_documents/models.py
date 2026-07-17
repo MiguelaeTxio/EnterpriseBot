@@ -189,6 +189,17 @@ class MachineDocument(models.Model):
                   "caso. Simétrico a "
                   "PersonalDocument.detected_dni_hint (S024).",
     )
+    content_hash = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        db_index=True,
+        verbose_name="Hash de contenido (SHA-256)",
+        help_text="SHA-256 de los bytes crudos del archivo, calculado "
+                  "en la subida -- deduplicación (S024, ver "
+                  "document_ingestion.deduplication_service). Vacío "
+                  "solo en filas anteriores a S024.",
+    )
 
     # ------------------------------------------------------------------
     # Processing status / Estado de procesamiento
