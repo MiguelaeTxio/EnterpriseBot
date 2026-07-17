@@ -259,7 +259,8 @@ def delete_file(bucket_name: str, blob_name: str) -> None:
     """
     Borra el objeto indicado del bucket. Idempotente frente a un
     objeto ya inexistente (no lanza si no existe) -- mismo criterio
-    de tolerancia que reset_machine_documents.py aplica sobre Drive.
+    de tolerancia que document_ingestion.management.commands.
+    reset_documentation aplica sobre GCS.
     """
     from google.cloud.exceptions import NotFound
 
