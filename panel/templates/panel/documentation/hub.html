@@ -62,6 +62,20 @@
                 <i class="bi bi-people me-1"></i>Personal
             </button>
         </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="tab-alerts-btn" data-bs-toggle="tab"
+                    data-bs-target="#tab-alerts" type="button" role="tab"
+                    aria-controls="tab-alerts" aria-selected="false">
+                <i class="bi bi-bell me-1"></i>Alertas
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="tab-templates-btn" data-bs-toggle="tab"
+                    data-bs-target="#tab-templates" type="button" role="tab"
+                    aria-controls="tab-templates" aria-selected="false">
+                <i class="bi bi-envelope me-1"></i>Plantillas de email
+            </button>
+        </li>
     </ul>
 
     <div class="tab-content" id="documentationTabsContent">
@@ -173,6 +187,26 @@
             </div>
             <div id="personal-accordion-container">
                 {% include "panel/documentation/_personal_accordion.html" with workers=workers %}
+            </div>
+        </div>
+
+        {# --- Pestaña Alertas --- #}
+        <div class="tab-pane fade" id="tab-alerts" role="tabpanel" aria-labelledby="tab-alerts-btn">
+            <div id="alerts-dashboard-lazy"
+                 hx-get="{% url 'panel:documentation_alerts_dashboard' %}"
+                 hx-trigger="shown.bs.tab once from:#tab-alerts-btn"
+                 hx-target="this" hx-swap="innerHTML">
+                <div class="text-muted small"><i class="bi bi-hourglass-split me-1"></i>Cargando alertas…</div>
+            </div>
+        </div>
+
+        {# --- Pestaña Plantillas de email --- #}
+        <div class="tab-pane fade" id="tab-templates" role="tabpanel" aria-labelledby="tab-templates-btn">
+            <div id="email-templates-lazy"
+                 hx-get="{% url 'panel:documentation_email_templates' %}"
+                 hx-trigger="shown.bs.tab once from:#tab-templates-btn"
+                 hx-target="this" hx-swap="innerHTML">
+                <div class="text-muted small"><i class="bi bi-hourglass-split me-1"></i>Cargando plantillas…</div>
             </div>
         </div>
 

@@ -1,0 +1,70 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation/_email_templates.html #}
+{# Fragmento HTMX -- resuelve el "pendiente de confirmar ubicación" anotado en #}
+{# document_management/admin.py desde S023: esto es "desde el panel", no Django admin. #}
+
+<p class="text-muted small">
+    Texto genérico para copiar y pegar en tu cliente de correo junto con el PDF del
+    dossier generado -- esta plataforma nunca envía el email por sí misma (H26).
+</p>
+
+{% if templates %}
+<div class="row g-3 mb-4">
+    {% for template in templates %}
+    <div class="col-12 col-md-6">
+        <div class="card card-body h-100 {% if not template.is_active %}border-secondary opacity-75{% endif %}">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+                <h6 class="mb-0">{{ template.name }}{% if not template.is_active %} <span class="badge bg-secondary">Inactiva</span>{% endif %}</h6>
+            </div>
+            <p class="small mb-1"><strong>Asunto:</strong> {{ template.subject }}</p>
+            <textarea class="form-control form-control-sm mb-2" rows="3" readonly onclick="this.select();">{{ template.body }}</textarea>
+            <div class="d-flex gap-2">
+                <button class="btn btn-sm btn-outline-secondary" type="button"
+                        data-bs-toggle="collapse" data-bs-target="#edit-template-{{ template.pk }}">
+                    <i class="bi bi-pencil me-1"></i>Editar
+                </button>
+                <form method="post" action="{% url 'panel:documentation_email_template_delete' template_pk=template.pk %}"
+                      onsubmit="return confirm('¿Borrar esta plantilla?');">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-sm btn-outline-danger">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </form>
+            </div>
+            <div class="collapse mt-2" id="edit-template-{{ template.pk }}">
+                <form method="post" action="{% url 'panel:documentation_email_template_save' %}" class="border-top pt-2">
+                    {% csrf_token %}
+                    <input type="hidden" name="template_pk" value="{{ template.pk }}">
+                    <input type="text" name="name" class="form-control form-control-sm mb-1" value="{{ template.name }}" required>
+                    <input type="text" name="subject" class="form-control form-control-sm mb-1" value="{{ template.subject }}" required>
+                    <textarea name="body" class="form-control form-control-sm mb-1" rows="3" required>{{ template.body }}</textarea>
+                    <div class="form-check form-check-sm mb-2">
+                        <input type="checkbox" class="form-check-input" name="is_active" id="active-{{ template.pk }}" {% if template.is_active %}checked{% endif %}>
+                        <label class="form-check-label small" for="active-{{ template.pk }}">Activa</label>
+                    </div>
+                    <button type="submit" class="btn btn-sm btn-primary">Guardar cambios</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<p class="text-muted small">Sin plantillas todavía.</p>
+{% endif %}
+
+<div class="card card-body">
+    <h6 class="mb-2"><i class="bi bi-plus-lg me-1"></i>Nueva plantilla</h6>
+    <form method="post" action="{% url 'panel:documentation_email_template_save' %}">
+        {% csrf_token %}
+        <input type="text" name="name" class="form-control form-control-sm mb-1" placeholder="Nombre interno" required>
+        <input type="text" name="subject" class="form-control form-control-sm mb-1" placeholder="Asunto" required>
+        <textarea name="body" class="form-control form-control-sm mb-1" rows="3" placeholder="Cuerpo del mensaje" required></textarea>
+        <div class="form-check form-check-sm mb-2">
+            <input type="checkbox" class="form-check-input" name="is_active" id="active-new" checked>
+            <label class="form-check-label small" for="active-new">Activa</label>
+        </div>
+        <button type="submit" class="btn btn-sm btn-primary">
+            <i class="bi bi-plus-lg me-1"></i>Crear plantilla
+        </button>
+    </form>
+</div>

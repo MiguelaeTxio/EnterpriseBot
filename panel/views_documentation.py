@@ -61,12 +61,14 @@ corregirá cuando toque construir el borrado/archivado manual de esta
 misma vista.
 """
 import logging
+from datetime import timedelta
 
 from django.contrib import messages
 from django.contrib.contenttypes.models import ContentType
-from django.http import Http404
+from django.http import Http404, HttpResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
+from django.utils.timezone import now
 from django.views import View
 
 from ai_services.document_vision_service import parse_iso_date
@@ -78,7 +80,8 @@ from document_ingestion.deduplication_service import (
 from document_ingestion.models import IngestedFile
 from document_ingestion.tasks import route_ingested_files
 from document_management.alert_service import DEFAULT_EXPIRY_ALERT_OFFSETS_DAYS
-from document_management.models import DocumentAlert
+from document_management.models import DocumentAlert, EmailTemplate
+from document_management.pdf_merge_service import EmptyDocumentListError, merge_pdfs
 from document_management.vigencia_service import DocumentSnapshot, is_current
 from fleet.models import MachineAsset
 from ivr_config.models import CompanyUser
@@ -89,6 +92,7 @@ from spare_parts.gcs_service import (
     MACHINE_DOCUMENTS_BUCKET,
     PERSONNEL_DOCUMENTS_BUCKET,
     delete_file,
+    download_bytes,
     generate_signed_url,
 )
 
@@ -348,7 +352,11 @@ class DocumentAlertCreateView(DocsUploadAccessMixin, View):
 class DocumentAlertUpdateView(DocsUploadAccessMixin, View):
     """
     POST (HTMX): modifica los días de antelación y/o los contactos de
-    una alerta ya existente.
+    una alerta ya existente. Si el formulario incluye un campo oculto
+    `next`, redirige ahí al terminar (usado por el panel de Alertas,
+    S024-bis, para no sacar al usuario de la lista general) -- si no,
+    mantiene el comportamiento de siempre (volver al fragmento de
+    alertas del documento).
     """
 
     def post(self, request, alert_pk):
@@ -378,6 +386,9 @@ class DocumentAlertUpdateView(DocsUploadAccessMixin, View):
             alert.pk,
         )
 
+        next_url = request.POST.get("next")
+        if next_url:
+            return redirect(next_url)
         domain = (
             "machine" if alert.content_type.model == "machinedocument"
             else "personal"
@@ -395,7 +406,8 @@ class DocumentAlertDeleteView(DocsUploadAccessMixin, View):
     POST (HTMX): borra una alerta. Sin confirmación server-side --
     la confirmación vive en el propio botón del template (JS
     `onsubmit="return confirm(...)"`, mismo patrón ligero que el resto
-    del panel para acciones destructivas de poco riesgo).
+    del panel para acciones destructivas de poco riesgo). Mismo
+    soporte de `next` que DocumentAlertUpdateView.
     """
 
     def post(self, request, alert_pk):
@@ -408,18 +420,288 @@ class DocumentAlertDeleteView(DocsUploadAccessMixin, View):
             else "personal"
         )
         document_pk = alert.object_id
+        next_url = request.POST.get("next")
         alert.delete()
 
         logger.info(
             "# [DocumentAlertDeleteView] Alerta #%s borrada (%s #%d).",
             alert_pk, domain, document_pk,
         )
+        if next_url:
+            return redirect(next_url)
         return redirect(
             reverse(
                 "panel:documentation_alerts_fragment",
                 kwargs={"domain": domain, "pk": document_pk},
             )
         )
+
+
+class DocumentAlertResolveView(DocsUploadAccessMixin, View):
+    """
+    POST: marca una alerta como RESUELTA a mano (campos ya existían en
+    el modelo DocumentAlert desde H26 -- resolved_at/resolved_by/
+    resolution_notes -- pero nunca tenían ninguna vía de escritura
+    hasta ahora). Pensada para el caso que describió Miguel Ángel: una
+    alerta vencida que nunca llegó a enviarse (plantilla de WhatsApp
+    sin aprobar, por ejemplo) pero cuyo asunto ya se resolvió por otra
+    vía -- se marca resuelta a mano, con una nota opcional.
+    """
+
+    def post(self, request, alert_pk):
+        alert = DocumentAlert.objects.filter(pk=alert_pk).first()
+        if alert is None or alert.company_id != request.user.company_user.company_id:
+            raise Http404("Alerta no encontrada.")
+
+        alert.status = DocumentAlert.Status.RESOLVED
+        alert.resolved_at = now()
+        alert.resolved_by = request.user.company_user
+        alert.resolution_notes = request.POST.get("resolution_notes", "").strip()
+        alert.save(update_fields=[
+            "status", "resolved_at", "resolved_by", "resolution_notes",
+        ])
+
+        logger.info(
+            "# [DocumentAlertResolveView] Alerta #%d resuelta a mano "
+            "por %s.",
+            alert.pk, request.user.company_user,
+        )
+        next_url = request.POST.get("next")
+        return redirect(next_url or reverse("panel:documentation_hub"))
+
+
+class AlertsDashboardFragmentView(DocsUploadAccessMixin, View):
+    """
+    GET (HTMX): panel general de TODAS las alertas de la empresa
+    (los dos dominios juntos), no solo las de un documento concreto --
+    lo que faltaba según Miguel Ángel: "no tenemos previsto ver las
+    alertas que hay... si se han enviado, si no se han enviado, a
+    quién se le envía, cuándo se le van a enviar, las alertas que
+    están pasadas [de fecha] que no se han enviado".
+
+    Calcula fire_date (expiry_date - alert_offset_days, en Python --
+    no es un campo de BD) y is_overdue (fire_date ya pasada Y
+    status=PENDING) por cada alerta, y ordena las vencidas sin enviar
+    primero. Filtro por estado vía `status` en query string (PENDING/
+    SENT/RESOLVED/ninguno=todas).
+    """
+
+    template_name = "panel/documentation/_alerts_dashboard.html"
+
+    def get(self, request):
+        company = request.user.company_user.company
+        status_filter = request.GET.get("status", "")
+
+        alerts_qs = (
+            DocumentAlert.objects
+            .filter(company=company)
+            .select_related("content_type")
+            .prefetch_related("contacts__user", "resolved_by__user")
+        )
+        if status_filter in dict(DocumentAlert.Status.choices):
+            alerts_qs = alerts_qs.filter(status=status_filter)
+
+        today = now().date()
+        rows = []
+        for alert in alerts_qs:
+            fire_date = alert.expiry_date - timedelta(days=alert.alert_offset_days)
+            is_overdue = (
+                alert.status == DocumentAlert.Status.PENDING
+                and fire_date <= today
+            )
+            domain = (
+                "machine" if alert.content_type.model == "machinedocument"
+                else "personal"
+            )
+            rows.append({
+                "alert": alert,
+                "fire_date": fire_date,
+                "is_overdue": is_overdue,
+                "domain": domain,
+            })
+
+        # Vencidas sin enviar primero, luego por fecha de disparo más
+        # próxima -- lo mas urgente arriba siempre.
+        rows.sort(key=lambda r: (not r["is_overdue"], r["fire_date"]))
+
+        return render(request, self.template_name, {
+            "rows": rows,
+            "status_filter": status_filter,
+            "status_choices": DocumentAlert.Status.choices,
+            "overdue_count": sum(1 for r in rows if r["is_overdue"]),
+        })
+
+
+class EmailTemplateListFragmentView(DocsUploadAccessMixin, View):
+    """
+    GET (HTMX): lista las plantillas de email de la empresa +
+    formulario de alta. Resuelve el "pendiente de confirmar su
+    ubicación exacta" anotado en document_management/admin.py desde
+    S023 -- Miguel Ángel nunca pidió Django admin, pidió "desde la
+    misma aplicación"/"desde el panel"; esto es esa vista.
+    """
+
+    template_name = "panel/documentation/_email_templates.html"
+
+    def get(self, request):
+        company = request.user.company_user.company
+        templates = EmailTemplate.objects.filter(
+            company=company,
+        ).order_by("-is_active", "name")
+        return render(request, self.template_name, {
+            "templates": templates,
+        })
+
+
+class EmailTemplateSaveView(DocsUploadAccessMixin, View):
+    """
+    POST: crea una plantilla nueva (sin `template_pk` en el POST) o
+    modifica una existente (con `template_pk`) -- un único endpoint
+    para las dos operaciones, mismo criterio de simplicidad que el
+    resto de formularios de esta interfaz.
+    """
+
+    def post(self, request):
+        company = request.user.company_user.company
+        template_pk = request.POST.get("template_pk", "").strip()
+
+        name = request.POST.get("name", "").strip()
+        subject = request.POST.get("subject", "").strip()
+        body = request.POST.get("body", "").strip()
+        is_active = bool(request.POST.get("is_active"))
+
+        if not name or not subject or not body:
+            messages.error(
+                request,
+                "Nombre, asunto y cuerpo son obligatorios en una "
+                "plantilla de email.",
+            )
+            return redirect(reverse("panel:documentation_hub"))
+
+        if template_pk:
+            template = EmailTemplate.objects.filter(
+                pk=template_pk, company=company,
+            ).first()
+            if template is None:
+                raise Http404("Plantilla no encontrada.")
+            template.name = name
+            template.subject = subject
+            template.body = body
+            template.is_active = is_active
+            template.save()
+            logger.info(
+                "# [EmailTemplateSaveView] Plantilla #%d modificada.",
+                template.pk,
+            )
+        else:
+            template = EmailTemplate.objects.create(
+                company=company, name=name, subject=subject,
+                body=body, is_active=is_active,
+            )
+            logger.info(
+                "# [EmailTemplateSaveView] Plantilla #%d creada.",
+                template.pk,
+            )
+
+        messages.success(request, "Plantilla de email guardada.")
+        return redirect(reverse("panel:documentation_hub"))
+
+
+class EmailTemplateDeleteView(DocsUploadAccessMixin, View):
+    """POST: borra una plantilla de email."""
+
+    def post(self, request, template_pk):
+        company = request.user.company_user.company
+        template = EmailTemplate.objects.filter(
+            pk=template_pk, company=company,
+        ).first()
+        if template is None:
+            raise Http404("Plantilla no encontrada.")
+        template.delete()
+        logger.info(
+            "# [EmailTemplateDeleteView] Plantilla #%s borrada.",
+            template_pk,
+        )
+        messages.success(request, "Plantilla de email borrada.")
+        return redirect(reverse("panel:documentation_hub"))
+
+
+class DossierGenerateView(DocsUploadAccessMixin, View):
+    """
+    POST: genera un único PDF combinando los documentos seleccionados
+    (checkboxes en _machine_detail.html/_personal_detail.html) --
+    "generar dossier", anexo H23 sección hoja de ruta S024 / H26
+    sección 2.2 (document_management.pdf_merge_service.merge_pdfs()).
+    Acción bajo demanda, nunca automática (palabras de Miguel Ángel en
+    S022, ver ese módulo). Descarga cada PDF desde GCS
+    (spare_parts.gcs_service.download_bytes), los combina en el orden
+    en que llegaron marcados, y devuelve el resultado como descarga
+    directa -- no se persiste en ningún sitio, es un artefacto de un
+    solo uso.
+    """
+
+    def post(self, request, domain):
+        company = request.user.company_user.company
+        document_pks = request.POST.getlist("document_pks")
+        if not document_pks:
+            messages.error(
+                request, "Selecciona al menos un documento para el dossier.",
+            )
+            return redirect(reverse("panel:documentation_hub"))
+
+        model = _DOMAIN_MODELS.get(domain)
+        bucket_name = _DOMAIN_BUCKETS.get(domain)
+        if model is None:
+            raise Http404("Dominio no válido.")
+
+        documents = list(
+            model.objects
+            .filter(pk__in=document_pks, company=company)
+            .exclude(gcs_blob_name="")
+        )
+        if not documents:
+            messages.error(
+                request,
+                "Ninguno de los documentos seleccionados tiene "
+                "archivo disponible todavía.",
+            )
+            return redirect(reverse("panel:documentation_hub"))
+
+        pdf_bytes_list = []
+        for document in documents:
+            try:
+                pdf_bytes_list.append(
+                    download_bytes(bucket_name, document.gcs_blob_name)
+                )
+            except Exception as exc:
+                logger.error(
+                    "# [DossierGenerateView] Error descargando %s "
+                    "#%d (blob=%s): %s",
+                    domain, document.pk, document.gcs_blob_name, exc,
+                    exc_info=True,
+                )
+
+        try:
+            merged_bytes = merge_pdfs(pdf_bytes_list)
+        except EmptyDocumentListError:
+            messages.error(
+                request,
+                "No se pudo descargar ningún documento seleccionado "
+                "-- dossier no generado.",
+            )
+            return redirect(reverse("panel:documentation_hub"))
+
+        logger.info(
+            "# [DossierGenerateView] Dossier generado con %d/%d "
+            "documento(s) (%s).",
+            len(pdf_bytes_list), len(documents), domain,
+        )
+
+        response = HttpResponse(merged_bytes, content_type="application/pdf")
+        response["Content-Disposition"] = (
+            'attachment; filename="dossier_documentacion.pdf"'
+        )
+        return response
 
 
 class DocumentationHubView(DocsUploadAccessMixin, View):

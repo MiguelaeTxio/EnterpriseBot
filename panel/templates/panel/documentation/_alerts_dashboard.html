@@ -1,0 +1,88 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation/_alerts_dashboard.html #}
+{# Fragmento HTMX -- panel general de alertas (S024-bis, a petición de Miguel Ángel: #}
+{# "no tenemos previsto ver las alertas que hay"). Todo el contenido va dentro de UN #}
+{# único contenedor (#alerts-dashboard-wrapper) que se sustituye entero (outerHTML) al #}
+{# cambiar el filtro -- así el <select> nunca se duplica anidándose sobre sí mismo. #}
+
+<div id="alerts-dashboard-wrapper">
+    {% if overdue_count %}
+    <div class="alert alert-warning d-flex align-items-center mb-3" role="alert">
+        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+        {{ overdue_count }} alerta(s) vencida(s) sin enviar -- su fecha de aviso ya pasó y sigue en estado Pendiente
+        (probablemente porque la plantilla de WhatsApp todavía no está aprobada, o no se ha ejecutado la tarea periódica).
+    </div>
+    {% endif %}
+
+    <div class="d-flex align-items-center gap-2 mb-3">
+        <label class="form-label form-label-sm mb-0">Estado:</label>
+        <select class="form-select form-select-sm w-auto"
+                name="status"
+                hx-get="{% url 'panel:documentation_alerts_dashboard' %}"
+                hx-target="#alerts-dashboard-wrapper"
+                hx-swap="outerHTML"
+                hx-trigger="change">
+            <option value="" {% if not status_filter %}selected{% endif %}>Todas</option>
+            {% for value, label in status_choices %}
+            <option value="{{ value }}" {% if status_filter == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    {% if rows %}
+    <div class="table-responsive">
+        <table class="table table-sm align-middle">
+            <thead>
+                <tr>
+                    <th></th>
+                    <th>Documento</th>
+                    <th>Sujeto</th>
+                    <th>Caduca</th>
+                    <th>Aviso</th>
+                    <th>Se dispara</th>
+                    <th>Estado</th>
+                    <th>Contactos</th>
+                    <th>Enviada/Resuelta</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in rows %}
+                <tr class="{% if row.is_overdue %}table-warning{% endif %}">
+                    <td>{% if row.is_overdue %}<i class="bi bi-exclamation-triangle-fill text-warning" title="Vencida sin enviar"></i>{% endif %}</td>
+                    <td>{{ row.alert.document_label }}</td>
+                    <td>{{ row.alert.subject_label }}</td>
+                    <td>{{ row.alert.expiry_date|date:"d/m/Y" }}</td>
+                    <td>{{ row.alert.alert_offset_days }} días antes</td>
+                    <td>{{ row.fire_date|date:"d/m/Y" }}</td>
+                    <td>
+                        <span class="badge {% if row.alert.status == 'PENDING' %}bg-warning-subtle text-warning-emphasis{% elif row.alert.status == 'SENT' %}bg-info-subtle text-info-emphasis{% else %}bg-success-subtle text-success-emphasis{% endif %}">
+                            {{ row.alert.get_status_display }}
+                        </span>
+                    </td>
+                    <td>
+                        {% for c in row.alert.contacts.all %}{{ c.user.get_full_name|default:c.user.username }}{% if not forloop.last %}, {% endif %}{% empty %}<span class="text-muted">sin contactos</span>{% endfor %}
+                    </td>
+                    <td class="small text-muted">
+                        {% if row.alert.sent_at %}Enviada {{ row.alert.sent_at|date:"d/m/Y H:i" }}{% endif %}
+                        {% if row.alert.resolved_at %}Resuelta {{ row.alert.resolved_at|date:"d/m/Y" }}{% if row.alert.resolved_by %} por {{ row.alert.resolved_by.user.get_full_name|default:row.alert.resolved_by.user.username }}{% endif %}{% endif %}
+                    </td>
+                    <td>
+                        {% if row.alert.status != 'RESOLVED' %}
+                        <form method="post" action="{% url 'panel:documentation_alert_resolve' alert_pk=row.alert.pk %}" class="d-inline">
+                            {% csrf_token %}
+                            <input type="hidden" name="next" value="{% url 'panel:documentation_hub' %}">
+                            <button type="submit" class="btn btn-sm btn-outline-success" title="Marcar como resuelta">
+                                <i class="bi bi-check-circle"></i>
+                            </button>
+                        </form>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="text-muted small">No hay alertas{% if status_filter %} con ese estado{% endif %}.</p>
+    {% endif %}
+</div>

@@ -272,6 +272,20 @@ def delete_file(bucket_name: str, blob_name: str) -> None:
         pass
 
 
+def download_bytes(bucket_name: str, blob_name: str) -> bytes:
+    """
+    Descarga y devuelve los bytes crudos de un objeto -- añadida S024
+    para el "generar dossier" de document_management.pdf_merge_service
+    (anexo H26 sección 2.2): el llamador (vista de panel) resuelve qué
+    documentos combinar y usa esta función para bajar cada PDF antes
+    de fusionarlos.
+    """
+    client = get_storage_client()
+    bucket = client.bucket(bucket_name)
+    blob = bucket.blob(blob_name)
+    return blob.download_as_bytes()
+
+
 # ----------------------------------------------------------------------
 # Funciones upload_* por modelo -- mismo patrón/firma que
 # gdrive_service.py, para que work_order_processor/tasks.py,

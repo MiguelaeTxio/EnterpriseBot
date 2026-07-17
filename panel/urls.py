@@ -16,9 +16,11 @@ from panel.views_task_photos import (
     TaskPhotoWidgetView,
 )
 from panel.views_documentation import (
+    AlertsDashboardFragmentView,
     DocumentAlertCreateView,
     DocumentAlertDeleteView,
     DocumentAlertListFragmentView,
+    DocumentAlertResolveView,
     DocumentAlertUpdateView,
     DocumentAssignView,
     DocumentDeleteView,
@@ -30,6 +32,10 @@ from panel.views_documentation import (
     DocumentationMachineListFragmentView,
     DocumentationPersonalDetailFragmentView,
     DocumentationPersonalListFragmentView,
+    DossierGenerateView,
+    EmailTemplateDeleteView,
+    EmailTemplateListFragmentView,
+    EmailTemplateSaveView,
 )
 from panel.views import (
     PanelLoginView,
@@ -391,6 +397,12 @@ urlpatterns = [
     path("documentacion/<str:domain>/<int:pk>/borrar/", DocumentDeleteView.as_view(), name="documentation_document_delete"),
     path("documentacion/<str:domain>/<int:pk>/editar/", DocumentEditFormFragmentView.as_view(), name="documentation_document_edit_form"),
     path("documentacion/<str:domain>/<int:pk>/guardar/", DocumentUpdateView.as_view(), name="documentation_document_update"),
+    path("documentacion/alertas/resolver/<int:alert_pk>/", DocumentAlertResolveView.as_view(), name="documentation_alert_resolve"),
+    path("documentacion/panel-alertas/", AlertsDashboardFragmentView.as_view(), name="documentation_alerts_dashboard"),
+    path("documentacion/plantillas-email/", EmailTemplateListFragmentView.as_view(), name="documentation_email_templates"),
+    path("documentacion/plantillas-email/guardar/", EmailTemplateSaveView.as_view(), name="documentation_email_template_save"),
+    path("documentacion/plantillas-email/<int:template_pk>/borrar/", EmailTemplateDeleteView.as_view(), name="documentation_email_template_delete"),
+    path("documentacion/<str:domain>/dossier/", DossierGenerateView.as_view(), name="documentation_dossier_generate"),
 
     # Section default role — Endpoint AJAX para pre-rellenar rol al crear usuario (H13).
     path("sections/<int:pk>/default-role/", SectionDefaultRoleView.as_view(), name="section_default_role"),
