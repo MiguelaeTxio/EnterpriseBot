@@ -40,6 +40,7 @@ diseño.
 import logging
 
 from celery.contrib.django.task import DjangoTask
+from django.contrib.contenttypes.models import ContentType
 from django.core.files.base import ContentFile
 
 from ai_services.document_vision_service import (
@@ -47,6 +48,7 @@ from ai_services.document_vision_service import (
     extract_pages,
 )
 from document_management.alert_service import create_default_expiry_alerts
+from document_management.models import DocumentAlert
 from document_ingestion.deduplication_service import compute_content_hash
 from enterprise_core.celery import app
 from spare_parts.gcs_service import (
@@ -172,7 +174,15 @@ def process_personal_document_batch(self, document_pks: list[int]) -> None:
     # ------------------------------------------------------------
     # Step 2 -- master-document coverage comparison, agnóstico de
     # dominio (ai_services.document_vision_service).
+    #
+    # BUGFIX (S024-bis, mismo caso real reportado por Miguel Ángel y
+    # corregido en machine_documents/tasks.py, ver ese docstring para
+    # el detalle completo): un maestro procesado con éxito (cubierto
+    # del todo o con extracción exitosa) nunca debe llegar al Paso 3
+    # -- se descarta, nunca se sube a GCS ni se persiste.
     # ------------------------------------------------------------
+    masters_to_discard: set[int] = set()
+
     for pk, item in list(classified.items()):
         if not item["result"]["is_possible_master"]:
             continue
@@ -189,6 +199,7 @@ def process_personal_document_batch(self, document_pks: list[int]) -> None:
             item["bytes"], item["filename"], individuals,
         )
         if not coverage["uncovered_pages"]:
+            masters_to_discard.add(pk)
             continue
 
         try:
@@ -267,6 +278,30 @@ def process_personal_document_batch(self, document_pks: list[int]) -> None:
             "filename": extracted_filename,
             "result": extra_result,
         }
+        # Extracción con éxito -- el maestro se descarta, ver nota al
+        # principio de este bloque.
+        masters_to_discard.add(pk)
+
+    # Descartar de verdad los maestros procesados con éxito: borrar su
+    # archivo local (nunca llegó a subirse a GCS) y su fila de BD, y
+    # quitarlos de `classified` para que el Paso 3 no los toque.
+    for pk in masters_to_discard:
+        master_item = classified.pop(pk, None)
+        if master_item is None:
+            continue
+        master_document = master_item["document"]
+        DocumentAlert.objects.filter(
+            content_type=ContentType.objects.get_for_model(PersonalDocument),
+            object_id=master_document.pk,
+        ).delete()
+        if master_document.source_file:
+            master_document.source_file.delete(save=False)
+        master_document.delete()
+        logger.info(
+            "# [process_personal_document_batch] Maestro #%d (%s) "
+            "descartado -- nunca se sube a GCS ni se persiste.",
+            pk, master_item["filename"],
+        )
 
     # ------------------------------------------------------------
     # Step 3 -- upload every CLASSIFIED/UNASSIGNED document without a

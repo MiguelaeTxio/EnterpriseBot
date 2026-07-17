@@ -13,13 +13,9 @@
     {% csrf_token %}
 </form>
 
-<div class="d-flex justify-content-between mb-2">
+<div class="d-flex justify-content-end mb-2">
     <button type="submit" form="dossierForm-machine-{{ machine.pk }}" class="btn btn-sm btn-outline-secondary">
         <i class="bi bi-file-earmark-pdf me-1"></i>Generar dossier (toda la documentación, sin manuales)
-    </button>
-    <button class="btn btn-sm btn-outline-secondary" disabled
-            title="Próximamente -- subida desde esta vista (hoja de ruta H23, paso de subida de carpeta)">
-        <i class="bi bi-upload me-1"></i>Subir documentación
     </button>
 </div>
 

@@ -75,9 +75,11 @@ del hilo de la petición.
 import logging
 
 from celery.contrib.django.task import DjangoTask
+from django.contrib.contenttypes.models import ContentType
 from django.core.files.base import ContentFile
 
 from document_management.alert_service import create_default_expiry_alerts
+from document_management.models import DocumentAlert
 from document_ingestion.deduplication_service import compute_content_hash
 from enterprise_core.celery import app
 from spare_parts.gcs_service import (
@@ -249,6 +251,24 @@ def process_machine_document_batch(self, document_pks: list[int]) -> None:
     # content as a new MachineDocument. Heuristic-classified entries
     # (manuals) are excluded from the comparison set -- their bytes
     # must never reach Gemini.
+    #
+    # BUGFIX (S024-bis, real caso reportado por Miguel Ángel con
+    # ejemplo concreto): un maestro procesado con éxito -- ya sea
+    # "fully_covered" (nada que extraer) o con extracción exitosa de
+    # las páginas no cubiertas -- NUNCA debe llegar al Paso 3 (subida
+    # a GCS). Antes de esta corrección, el maestro se clasificaba en
+    # el Paso 1 igual que cualquier documento y este bucle nunca lo
+    # quitaba de `classified`, así que acababa subido y persistido
+    # como un MachineDocument más (confirmado con datos reales: las
+    # filas "Dossier de Maquinaria - E-6998-BDY" encontradas en el
+    # reset de zona cero). `masters_to_discard` recoge los pks a
+    # borrar (fila + archivo local) y excluir de `classified` al
+    # terminar el bucle -- solo en los dos casos donde el maestro se
+    # procesó con éxito; si falla la extracción o la clasificación del
+    # contenido extraído, el maestro se CONSERVA como red de
+    # seguridad (perder la única copia del contenido sería peor que
+    # dejarlo duplicado).
+    #
     # Paso 2 -- para cada candidato a maestro de ESTE lote, comparar
     # contra el resto del lote y extraer cualquier contenido no
     # cubierto como un MachineDocument nuevo. Las entradas
@@ -256,6 +276,8 @@ def process_machine_document_batch(self, document_pks: list[int]) -> None:
     # conjunto de comparación -- sus bytes nunca deben llegar a
     # Gemini.
     # ------------------------------------------------------------
+    masters_to_discard: set[int] = set()
+
     for pk, item in list(classified.items()):
         if item["via_heuristic"] or not item["result"]["is_possible_master"]:
             continue
@@ -272,6 +294,9 @@ def process_machine_document_batch(self, document_pks: list[int]) -> None:
             item["bytes"], item["filename"], individuals,
         )
         if not coverage["uncovered_pages"]:
+            # Todo el contenido del maestro ya está cubierto por los
+            # individuales -- se descarta sin más, nunca se sube.
+            masters_to_discard.add(pk)
             continue
 
         try:
@@ -347,6 +372,30 @@ def process_machine_document_batch(self, document_pks: list[int]) -> None:
             "result": extra_result,
             "via_heuristic": False,
         }
+        # Extracción con éxito -- el maestro se descarta, ver nota al
+        # principio de este bloque.
+        masters_to_discard.add(pk)
+
+    # Descartar de verdad los maestros procesados con éxito: borrar su
+    # archivo local (nunca llegó a subirse a GCS) y su fila de BD, y
+    # quitarlos de `classified` para que el Paso 3 no los toque.
+    for pk in masters_to_discard:
+        master_item = classified.pop(pk, None)
+        if master_item is None:
+            continue
+        master_document = master_item["document"]
+        DocumentAlert.objects.filter(
+            content_type=ContentType.objects.get_for_model(MachineDocument),
+            object_id=master_document.pk,
+        ).delete()
+        if master_document.source_file:
+            master_document.source_file.delete(save=False)
+        master_document.delete()
+        logger.info(
+            "# [process_machine_document_batch] Maestro #%d (%s) "
+            "descartado -- nunca se sube a GCS ni se persiste.",
+            pk, master_item["filename"],
+        )
 
     # ------------------------------------------------------------
     # Step 3 -- upload every CLASSIFIED document without a Drive
