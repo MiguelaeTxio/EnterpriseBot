@@ -15,6 +15,13 @@ from panel.views_task_photos import (
     TaskPhotoUploadView,
     TaskPhotoWidgetView,
 )
+from panel.views_documentation import (
+    DocumentationHubView,
+    DocumentationMachineDetailFragmentView,
+    DocumentationMachineListFragmentView,
+    DocumentationPersonalDetailFragmentView,
+    DocumentationPersonalListFragmentView,
+)
 from panel.views import (
     PanelLoginView,
     PanelLogoutView,
@@ -358,6 +365,14 @@ urlpatterns = [
     path("fleet/<int:pk>/delete/", MachineAssetDeleteView.as_view(), name="fleet_delete"),
     # Fleet analytics — Hito 12 Paso PRIORIDAD 2
     path("fleet/analytics/", MachineAssetAnalyticsView.as_view(), name="fleet_analytics"),
+
+    # --- Documentación (H23/H25) -- vista exclusiva, ADMIN/DOCS_SUPERVISOR únicamente,
+    # sin relación con Historial de Máquina/Centros de gasto (ver panel/views_documentation.py) ---
+    path("documentacion/", DocumentationHubView.as_view(), name="documentation_hub"),
+    path("documentacion/maquinaria/", DocumentationMachineListFragmentView.as_view(), name="documentation_machine_list"),
+    path("documentacion/personal/", DocumentationPersonalListFragmentView.as_view(), name="documentation_personal_list"),
+    path("documentacion/maquinaria/<int:pk>/", DocumentationMachineDetailFragmentView.as_view(), name="documentation_machine_detail"),
+    path("documentacion/personal/<int:pk>/", DocumentationPersonalDetailFragmentView.as_view(), name="documentation_personal_detail"),
 
     # Section default role — Endpoint AJAX para pre-rellenar rol al crear usuario (H13).
     path("sections/<int:pk>/default-role/", SectionDefaultRoleView.as_view(), name="section_default_role"),

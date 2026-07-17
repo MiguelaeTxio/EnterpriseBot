@@ -1,9 +1,10 @@
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/document_management/vigencia_service.py
 """
 Servicio de vigencia y sustitucion de documentos (Hito 26, anexo
-seccion 2.4). Consumido hoy unicamente por H23/machine_documents --
-personal (H25) queda pendiente hasta que se cierre su modelo de datos
-(decision explicita de Miguel Angel, S023).
+seccion 2.4). Consumido por H23/machine_documents desde S023, y desde
+S024 tambien por panel/views_documentation.py para personal_documents
+(H25) -- ya no bloqueado por el modelo de datos de H25, cerrado en
+S024 (ver commit 5640da6).
 
 Implementa el criterio de vigencia cerrado en H23 S021 ("Todos los
 documentos seran vigentes cuando la fecha de caducidad no se haya

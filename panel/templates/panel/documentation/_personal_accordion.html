@@ -1,0 +1,33 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation/_personal_accordion.html #}
+{# Fragmento HTMX -- también incluido directamente en hub.html para el render inicial (sin filtro). #}
+<div class="accordion" id="personalAccordion">
+    {% for worker in workers %}
+    <div class="accordion-item">
+        <h2 class="accordion-header" id="worker-heading-{{ worker.pk }}">
+            <button class="accordion-button collapsed" type="button"
+                    data-bs-toggle="collapse"
+                    data-bs-target="#worker-collapse-{{ worker.pk }}"
+                    aria-expanded="false"
+                    aria-controls="worker-collapse-{{ worker.pk }}">
+                <i class="bi bi-person me-2"></i>
+                <span class="fw-semibold me-2">{{ worker.user.get_full_name|default:worker.user.username }}</span>
+                {% if worker.dni %}<span class="text-muted small">{{ worker.dni }}</span>{% endif %}
+            </button>
+        </h2>
+        <div id="worker-collapse-{{ worker.pk }}"
+             class="accordion-collapse collapse"
+             aria-labelledby="worker-heading-{{ worker.pk }}"
+             data-bs-parent="#personalAccordion">
+            <div class="accordion-body"
+                 hx-get="{% url 'panel:documentation_personal_detail' pk=worker.pk %}"
+                 hx-trigger="shown.bs.collapse once from:#worker-collapse-{{ worker.pk }}"
+                 hx-target="this"
+                 hx-swap="innerHTML">
+                <div class="text-muted small"><i class="bi bi-hourglass-split me-1"></i>Cargando documentación…</div>
+            </div>
+        </div>
+    </div>
+    {% empty %}
+    <div class="text-muted small py-3">No se encontraron trabajadores.</div>
+    {% endfor %}
+</div>

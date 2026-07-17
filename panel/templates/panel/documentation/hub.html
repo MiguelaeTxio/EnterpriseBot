@@ -1,0 +1,74 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation/hub.html #}
+{% extends "panel/base.html" %}
+{% load static %}
+
+{% block title %}Documentación{% endblock %}
+{% block page_title %}Documentación{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-3 pt-3">
+
+    <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+        <h5 class="mb-0 fw-semibold"><i class="bi bi-folder2-open me-2"></i>Documentación</h5>
+    </div>
+
+    <ul class="nav nav-tabs mb-3" id="documentationTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="tab-machines-btn" data-bs-toggle="tab"
+                    data-bs-target="#tab-machines" type="button" role="tab"
+                    aria-controls="tab-machines" aria-selected="true">
+                <i class="bi bi-truck me-1"></i>Maquinaria
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="tab-personal-btn" data-bs-toggle="tab"
+                    data-bs-target="#tab-personal" type="button" role="tab"
+                    aria-controls="tab-personal" aria-selected="false">
+                <i class="bi bi-people me-1"></i>Personal
+            </button>
+        </li>
+    </ul>
+
+    <div class="tab-content" id="documentationTabsContent">
+
+        {# --- Pestaña Maquinaria --- #}
+        <div class="tab-pane fade show active" id="tab-machines" role="tabpanel" aria-labelledby="tab-machines-btn">
+            <div class="card card-body mb-3 py-2">
+                <label class="form-label form-label-sm mb-1">Búsqueda</label>
+                <input id="filter-machines-search"
+                       type="search"
+                       class="form-control form-control-sm"
+                       placeholder="Código, matrícula, marca/modelo…"
+                       name="search"
+                       hx-get="{% url 'panel:documentation_machine_list' %}"
+                       hx-target="#machine-accordion-container"
+                       hx-include="#filter-machines-search"
+                       hx-trigger="input changed delay:300ms, search">
+            </div>
+            <div id="machine-accordion-container">
+                {% include "panel/documentation/_machine_accordion.html" with machines=machines %}
+            </div>
+        </div>
+
+        {# --- Pestaña Personal --- #}
+        <div class="tab-pane fade" id="tab-personal" role="tabpanel" aria-labelledby="tab-personal-btn">
+            <div class="card card-body mb-3 py-2">
+                <label class="form-label form-label-sm mb-1">Búsqueda</label>
+                <input id="filter-personal-search"
+                       type="search"
+                       class="form-control form-control-sm"
+                       placeholder="Nombre o DNI…"
+                       name="search"
+                       hx-get="{% url 'panel:documentation_personal_list' %}"
+                       hx-target="#personal-accordion-container"
+                       hx-include="#filter-personal-search"
+                       hx-trigger="input changed delay:300ms, search">
+            </div>
+            <div id="personal-accordion-container">
+                {% include "panel/documentation/_personal_accordion.html" with workers=workers %}
+            </div>
+        </div>
+
+    </div>
+</div>
+{% endblock %}

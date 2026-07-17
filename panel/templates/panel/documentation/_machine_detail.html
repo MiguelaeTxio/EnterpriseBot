@@ -1,0 +1,65 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation/_machine_detail.html #}
+{# Fragmento HTMX, cargado perezosamente al desplegar el accordion-item de una máquina. #}
+
+<div class="d-flex justify-content-end mb-2">
+    <button class="btn btn-sm btn-outline-secondary" disabled
+            title="Próximamente -- subida desde esta vista (hoja de ruta H23, paso de subida de carpeta)">
+        <i class="bi bi-upload me-1"></i>Subir documentación
+    </button>
+</div>
+
+<h6 class="text-success"><i class="bi bi-check-circle me-1"></i>Vigente</h6>
+{% if current_docs %}
+<ul class="list-group list-group-flush mb-3">
+    {% for doc in current_docs %}
+    <li class="list-group-item d-flex justify-content-between align-items-center px-0">
+        <div>
+            <span class="fw-semibold">{{ doc.display_name|default:doc.document_type }}</span>
+            <span class="badge bg-light text-dark border ms-1">{{ doc.document_type }}</span>
+            {% if doc.expiry_date %}<span class="text-muted small ms-1">caduca {{ doc.expiry_date|date:"d/m/Y" }}</span>{% endif %}
+        </div>
+        <div class="d-flex gap-1">
+            {% if doc.download_url %}
+            <a href="{{ doc.download_url }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary">
+                <i class="bi bi-download"></i>
+            </a>
+            {% endif %}
+            <button class="btn btn-sm btn-outline-secondary" disabled
+                    title="Próximamente -- modificar documento vigente">
+                <i class="bi bi-pencil"></i>
+            </button>
+        </div>
+    </li>
+    {% endfor %}
+</ul>
+{% else %}
+<p class="text-muted small">Sin documentación vigente.</p>
+{% endif %}
+
+<h6 class="text-muted"><i class="bi bi-archive me-1"></i>Archivados</h6>
+{% if archived_docs %}
+<ul class="list-group list-group-flush">
+    {% for doc in archived_docs %}
+    <li class="list-group-item d-flex justify-content-between align-items-center px-0 text-muted">
+        <div>
+            <span>{{ doc.display_name|default:doc.document_type }}</span>
+            <span class="badge bg-light text-muted border ms-1">{{ doc.document_type }}</span>
+            {% if doc.expiry_date %}<span class="small ms-1">caducó {{ doc.expiry_date|date:"d/m/Y" }}</span>{% endif %}
+        </div>
+        <div class="d-flex gap-1">
+            {% if doc.download_url %}
+            <a href="{{ doc.download_url }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-download"></i>
+            </a>
+            {% endif %}
+            <button class="btn btn-sm btn-outline-danger" disabled
+                    title="Próximamente -- borrar documento archivado">
+                <i class="bi bi-trash"></i>
+            </button>
+        </div>
+    </li>
+    {% endfor %}
+</ul>
+{% else %}
+<p class="text-muted small mb-0">Sin documentación archivada.</p>
+{% endif %}

@@ -387,6 +387,34 @@
         </li>
     {% endif %}
     {# ------------------------------------------------------------------ #}
+    {# Sección: Documentación — H23/H25, S024. Acordeón propio y separado, #}
+    {# a propósito NO forma parte de "Administración" (que se abre a       #}
+    {# ADMIN/SUPERVISOR/WORKSHOPBOSS): el gate de esta sección es          #}
+    {# ÚNICAMENTE ADMIN/DOCS_SUPERVISOR, y DOCS_SUPERVISOR no pertenece al #}
+    {# gate de Administración -- de vivir ahí dentro, un DOCS_SUPERVISOR   #}
+    {# sin ningún otro rol nunca vería la sección entera. Sin relación     #}
+    {# alguna con Historial de Máquina/Centros de gasto (Taller Mecánico,  #}
+    {# más abajo) -- corrección explícita de Miguel Ángel en S024, ver     #}
+    {# ENTERPRISEBOT_ATTACHED_MILESTONE_V23.md "Corrección de rumbo".      #}
+    {# Section: Documentación — H23/H25, S024. Own, separate accordion,    #}
+    {# deliberately NOT part of "Administración" (opens to ADMIN/          #}
+    {# SUPERVISOR/WORKSHOPBOSS): this section's gate is ONLY ADMIN/        #}
+    {# DOCS_SUPERVISOR, and DOCS_SUPERVISOR isn't part of Administración's #}
+    {# gate -- living inside it, a DOCS_SUPERVISOR with no other role      #}
+    {# would never see the section at all. No relation whatsoever to      #}
+    {# Historial de Máquina/Centros de gasto (Taller Mecánico, below) --   #}
+    {# explicit correction from Miguel Ángel in S024, see                  #}
+    {# ENTERPRISEBOT_ATTACHED_MILESTONE_V23.md "Corrección de rumbo".      #}
+    {# ------------------------------------------------------------------ #}
+    {% if company_user.role == 'ADMIN' or company_user.role == 'DOCS_SUPERVISOR' %}
+        <li class="nav-item">
+            <a class="nav-link {% if active_nav == 'documentation_hub' %}active{% endif %}"
+               href="{% url 'panel:documentation_hub' %}">
+                <i class="bi bi-folder2-open"></i>Documentación
+            </a>
+        </li>
+    {% endif %}
+    {# ------------------------------------------------------------------ #}
     {# Sección: Taller Mecánico — FUSIONADA 2026-07-08 a petición de       #}
     {# Miguel Ángel ("simplificar al máximo la sidebar"). Une en un solo   #}
     {# acordeón lo que hasta ahora eran 4 secciones separadas (Taller,     #}
