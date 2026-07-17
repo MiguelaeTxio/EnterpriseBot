@@ -10,6 +10,41 @@
 
     <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
         <h5 class="mb-0 fw-semibold"><i class="bi bi-folder2-open me-2"></i>Documentación</h5>
+        <button class="btn btn-sm btn-primary" type="button"
+                data-bs-toggle="collapse" data-bs-target="#uploadPanel"
+                aria-expanded="false" aria-controls="uploadPanel">
+            <i class="bi bi-upload me-1"></i>Subir documentación
+        </button>
+    </div>
+
+    {# --- Panel de subida (varias carpetas, detección automática) --- #}
+    <div class="collapse mb-3" id="uploadPanel">
+        <div class="card card-body">
+            <p class="text-muted small mb-2">
+                Selecciona una o varias carpetas. Cada documento se examina y se
+                asigna automáticamente a su máquina o trabajador por contenido
+                -- si no se puede determinar con confianza, queda en el bloque
+                "Sin asignar" de la pestaña correspondiente.
+            </p>
+            <form id="folderUploadForm" method="post"
+                  action="{% url 'panel:documentation_folder_upload' %}"
+                  enctype="multipart/form-data">
+                {% csrf_token %}
+                <input type="file" id="folderPickerInput" webkitdirectory multiple hidden>
+                <input type="file" id="folderBatchInput" name="folder" multiple hidden>
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="addFolderBtn">
+                        <i class="bi bi-folder-plus me-1"></i>Añadir carpeta
+                    </button>
+                    <span id="folderBatchSummary" class="text-muted small">Ninguna carpeta añadida todavía.</span>
+                </div>
+                <div class="mt-3">
+                    <button type="submit" class="btn btn-sm btn-primary" id="folderUploadSubmitBtn" disabled>
+                        <i class="bi bi-cloud-upload me-1"></i>Subir y clasificar
+                    </button>
+                </div>
+            </form>
+        </div>
     </div>
 
     <ul class="nav nav-tabs mb-3" id="documentationTabs" role="tablist">
@@ -33,6 +68,32 @@
 
         {# --- Pestaña Maquinaria --- #}
         <div class="tab-pane fade show active" id="tab-machines" role="tabpanel" aria-labelledby="tab-machines-btn">
+
+            {% if unassigned_machine_docs %}
+            <div class="card card-body mb-3 border-warning">
+                <h6 class="text-warning-emphasis mb-2"><i class="bi bi-question-circle me-1"></i>Sin asignar ({{ unassigned_machine_docs|length }})</h6>
+                <ul class="list-group list-group-flush">
+                    {% for doc in unassigned_machine_docs %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center px-0">
+                        <div>
+                            <span class="fw-semibold">{{ doc.display_name|default:doc.document_type }}</span>
+                            <span class="badge bg-light text-dark border ms-1">{{ doc.document_type }}</span>
+                            {% if doc.detected_reference_hint %}<span class="text-muted small ms-1">pista: {{ doc.detected_reference_hint }}</span>{% endif %}
+                        </div>
+                        <div class="d-flex gap-1">
+                            {% if doc.download_url %}
+                            <a href="{{ doc.download_url }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary"><i class="bi bi-download"></i></a>
+                            {% endif %}
+                            <button class="btn btn-sm btn-outline-secondary" disabled title="Próximamente -- vincular a mano a una máquina">
+                                <i class="bi bi-link-45deg"></i>
+                            </button>
+                        </div>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
             <div class="card card-body mb-3 py-2">
                 <label class="form-label form-label-sm mb-1">Búsqueda</label>
                 <input id="filter-machines-search"
@@ -52,6 +113,32 @@
 
         {# --- Pestaña Personal --- #}
         <div class="tab-pane fade" id="tab-personal" role="tabpanel" aria-labelledby="tab-personal-btn">
+
+            {% if unassigned_personal_docs %}
+            <div class="card card-body mb-3 border-warning">
+                <h6 class="text-warning-emphasis mb-2"><i class="bi bi-question-circle me-1"></i>Sin asignar ({{ unassigned_personal_docs|length }})</h6>
+                <ul class="list-group list-group-flush">
+                    {% for doc in unassigned_personal_docs %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center px-0">
+                        <div>
+                            <span class="fw-semibold">{{ doc.display_name|default:doc.document_type }}</span>
+                            <span class="badge bg-light text-dark border ms-1">{{ doc.document_type }}</span>
+                            {% if doc.detected_dni_hint %}<span class="text-muted small ms-1">DNI detectado: {{ doc.detected_dni_hint }}</span>{% endif %}
+                        </div>
+                        <div class="d-flex gap-1">
+                            {% if doc.download_url %}
+                            <a href="{{ doc.download_url }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary"><i class="bi bi-download"></i></a>
+                            {% endif %}
+                            <button class="btn btn-sm btn-outline-secondary" disabled title="Próximamente -- vincular a mano a un trabajador">
+                                <i class="bi bi-link-45deg"></i>
+                            </button>
+                        </div>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
             <div class="card card-body mb-3 py-2">
                 <label class="form-label form-label-sm mb-1">Búsqueda</label>
                 <input id="filter-personal-search"
@@ -71,4 +158,58 @@
 
     </div>
 </div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(function () {
+    'use strict';
+    // Acumula los archivos de varias selecciones de carpeta (cada
+    // click en "Añadir carpeta" reabre el picker webkitdirectory) en
+    // un único input oculto antes de enviar el formulario -- un
+    // <input type="file"> normal solo conserva la última selección,
+    // así que la fusión se hace aquí con DataTransfer (soportado por
+    // los navegadores del taller, sin dependencia nueva).
+    var pickerInput = document.getElementById('folderPickerInput');
+    var batchInput = document.getElementById('folderBatchInput');
+    var addFolderBtn = document.getElementById('addFolderBtn');
+    var summaryEl = document.getElementById('folderBatchSummary');
+    var submitBtn = document.getElementById('folderUploadSubmitBtn');
+    var accumulated = [];
+
+    function refreshSummary() {
+        if (accumulated.length === 0) {
+            summaryEl.textContent = 'Ninguna carpeta añadida todavía.';
+            submitBtn.disabled = true;
+            return;
+        }
+        var pdfCount = accumulated.filter(function (f) {
+            return f.name.toLowerCase().endsWith('.pdf');
+        }).length;
+        summaryEl.textContent = pdfCount + ' PDF(s) en cola (' + accumulated.length + ' archivo(s) explorado(s) en total).';
+        submitBtn.disabled = pdfCount === 0;
+    }
+
+    function syncBatchInput() {
+        var dt = new DataTransfer();
+        accumulated.forEach(function (f) { dt.items.add(f); });
+        batchInput.files = dt.files;
+    }
+
+    addFolderBtn.addEventListener('click', function () {
+        pickerInput.value = '';
+        pickerInput.click();
+    });
+
+    pickerInput.addEventListener('change', function () {
+        Array.prototype.forEach.call(pickerInput.files, function (f) {
+            accumulated.push(f);
+        });
+        syncBatchInput();
+        refreshSummary();
+    });
+
+    refreshSummary();
+})();
+</script>
 {% endblock %}

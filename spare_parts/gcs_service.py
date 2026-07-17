@@ -346,7 +346,11 @@ def upload_machine_document_file(document) -> str:
     Sube el source_file de un MachineDocument a
     MACHINE_DOCUMENTS_BUCKET, bajo el prefijo del código de máquina
     (document.machine_asset.code) -- mismo criterio que tenía Drive
-    (documentación organizada por centro de gasto, no por mes).
+    (documentación organizada por centro de gasto, no por mes). Si
+    machine_asset es nulo (documento "sin asignar" de la ingesta
+    automática de carpeta, S024 -- ver MachineDocument.Status.UNASSIGNED),
+    usa la subcarpeta fija 'SIN_ASIGNAR' en su lugar, para no fallar ni
+    bloquear la subida mientras nadie lo vincula a mano.
     Devuelve el gcs_blob_name. NO borra el archivo local ni toca el
     modelo -- responsabilidad del caller (machine_documents/tasks.py).
     """
@@ -358,7 +362,10 @@ def upload_machine_document_file(document) -> str:
 
     file_path = document.source_file.path
     extension = os.path.splitext(file_path)[1].lower()
-    machine_code = document.machine_asset.code
+    machine_code = (
+        document.machine_asset.code if document.machine_asset_id
+        else 'SIN_ASIGNAR'
+    )
     blob_name = (
         f'{machine_code}/{sanitize_path_component(document.document_type)} - '
         f'{sanitize_path_component(document.display_name)}{extension}'
@@ -369,5 +376,44 @@ def upload_machine_document_file(document) -> str:
         '# [gcs_service] MachineDocument #%d subido a GCS (blob=%s, '
         'máquina %s).',
         document.pk, result, machine_code,
+    )
+    return result
+
+
+def upload_personal_document_file(document) -> str:
+    """
+    Sube el source_file de un PersonalDocument a
+    PERSONNEL_DOCUMENTS_BUCKET, bajo el prefijo del DNI del trabajador
+    (document.company_user.dni) cuando hay trabajador enlazado, o la
+    subcarpeta fija 'SIN_ASIGNAR' si company_user es nulo (documento
+    "sin asignar" de la ingesta automática de carpeta, S024 -- ver
+    PersonalDocument.Status.UNASSIGNED). Mismo criterio de
+    organización que MachineDocument (por entidad, no por mes).
+    Devuelve el gcs_blob_name. NO borra el archivo local ni toca el
+    modelo -- responsabilidad del caller (personal_documents/tasks.py).
+    """
+    if not document.source_file:
+        raise ValueError(
+            f'PersonalDocument #{document.pk} sin archivo asociado -- '
+            f'nada que subir.'
+        )
+
+    file_path = document.source_file.path
+    extension = os.path.splitext(file_path)[1].lower()
+    if document.company_user_id and document.company_user.dni:
+        worker_label = document.company_user.dni
+    else:
+        worker_label = 'SIN_ASIGNAR'
+    blob_name = (
+        f'{sanitize_path_component(worker_label)}/'
+        f'{sanitize_path_component(document.document_type)} - '
+        f'{sanitize_path_component(document.display_name)}{extension}'
+    )
+
+    result = upload_file(PERSONNEL_DOCUMENTS_BUCKET, blob_name, file_path)
+    logger.info(
+        '# [gcs_service] PersonalDocument #%d subido a GCS (blob=%s, '
+        'trabajador %s).',
+        document.pk, result, worker_label,
     )
     return result

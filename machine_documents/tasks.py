@@ -208,7 +208,14 @@ def process_machine_document_batch(self, document_pks: list[int]) -> None:
         document.issue_date = result["issue_date"]
         document.document_number = result["document_number"]
         document.issuing_entity = result["issuing_entity"]
-        document.status = MachineDocument.Status.CLASSIFIED
+        # UNASSIGNED en vez de CLASSIFIED cuando no hay máquina enlazada
+        # (ingesta automática de carpeta, S024) -- ver
+        # MachineDocument.Status.UNASSIGNED.
+        document.status = (
+            MachineDocument.Status.CLASSIFIED
+            if document.machine_asset_id
+            else MachineDocument.Status.UNASSIGNED
+        )
         document.save(update_fields=[
             "document_type", "display_name", "expiry_date", "issue_date",
             "document_number", "issuing_entity", "status",
@@ -291,7 +298,11 @@ def process_machine_document_batch(self, document_pks: list[int]) -> None:
             issue_date=extra_result["issue_date"],
             document_number=extra_result["document_number"],
             issuing_entity=extra_result["issuing_entity"],
-            status=MachineDocument.Status.CLASSIFIED,
+            status=(
+                MachineDocument.Status.CLASSIFIED
+                if item["document"].machine_asset_id
+                else MachineDocument.Status.UNASSIGNED
+            ),
             original_filename=extracted_filename,
         )
         new_document.source_file.save(
@@ -341,7 +352,10 @@ def process_machine_document_batch(self, document_pks: list[int]) -> None:
     # ------------------------------------------------------------
     for item in classified.values():
         document = item["document"]
-        if document.status != MachineDocument.Status.CLASSIFIED:
+        if document.status not in (
+            MachineDocument.Status.CLASSIFIED,
+            MachineDocument.Status.UNASSIGNED,
+        ):
             continue
         if document.gcs_blob_name:
             continue

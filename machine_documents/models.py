@@ -108,15 +108,36 @@ class MachineDocument(models.Model):
     class Status(models.TextChoices):
         """
         Processing status -- set to PENDING at creation (upload
-        request thread), moved to CLASSIFIED or ERROR by
+        request thread), moved to CLASSIFIED, UNASSIGNED or ERROR by
         machine_documents.tasks.process_machine_document_batch.
+
+        UNASSIGNED added S024 alongside the automatic folder-ingestion
+        feature (document_ingestion.entity_matching_service): a
+        document routed to the MACHINE domain whose code/plate couldn't
+        be matched with confidence against a real MachineAsset is
+        still classified (document_type/display_name/etc. filled in),
+        just not linked to any machine yet -- machine_asset stays null
+        until a human assigns it by hand from the "sin asignar" bucket
+        (same principle already applied to PersonalDocument in S024).
         ---
         Estado de procesamiento -- se pone a PENDING en la creación
-        (hilo de la petición de subida), y pasa a CLASSIFIED o ERROR
-        desde machine_documents.tasks.process_machine_document_batch.
+        (hilo de la petición de subida), y pasa a CLASSIFIED,
+        UNASSIGNED o ERROR desde
+        machine_documents.tasks.process_machine_document_batch.
+
+        UNASSIGNED añadido en S024 junto con la ingesta automática de
+        carpeta (document_ingestion.entity_matching_service): un
+        documento enrutado al dominio MACHINE cuyo código/matrícula no
+        se pudo emparejar con confianza contra un MachineAsset real
+        sigue clasificado (document_type/display_name/etc. rellenos),
+        solo que sin enlazar todavía a ninguna máquina -- machine_asset
+        se queda a null hasta que una persona lo asigne a mano desde el
+        bloque "sin asignar" (mismo principio ya aplicado a
+        PersonalDocument en S024).
         """
         PENDING = "PENDING", "Pendiente"
         CLASSIFIED = "CLASSIFIED", "Clasificado"
+        UNASSIGNED = "UNASSIGNED", "Clasificado, sin asignar"
         ERROR = "ERROR", "Error"
 
     # ------------------------------------------------------------------
@@ -125,10 +146,17 @@ class MachineDocument(models.Model):
     machine_asset = models.ForeignKey(
         MachineAsset,
         on_delete=models.CASCADE,
+        null=True,
+        blank=True,
         related_name="documents",
         verbose_name="Máquina / Centro de gasto",
         help_text="Máquina o centro de gasto al que pertenece este "
-                  "documento.",
+                  "documento. Nulo cuando la ingesta automática de "
+                  "carpeta (S024) detecta un código/matrícula que no "
+                  "se pudo emparejar con confianza -- ver "
+                  "Status.UNASSIGNED. Nunca nulo en la subida manual "
+                  "de una sola máquina (el usuario elige siempre la "
+                  "máquina antes de subir).",
     )
     company = models.ForeignKey(
         Company,
@@ -148,6 +176,18 @@ class MachineDocument(models.Model):
         verbose_name="Subido por",
         help_text="Usuario del panel (ADMIN o DOCS_SUPERVISOR) que "
                   "subió este documento.",
+    )
+    detected_reference_hint = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        verbose_name="Código/matrícula detectado (sin asignar)",
+        help_text="Código o matrícula leído por Gemini en el propio "
+                  "documento cuando machine_asset es nulo -- "
+                  "trazabilidad para vincular manualmente desde el "
+                  "bloque \"sin asignar\". Vacío en cualquier otro "
+                  "caso. Simétrico a "
+                  "PersonalDocument.detected_dni_hint (S024).",
     )
 
     # ------------------------------------------------------------------

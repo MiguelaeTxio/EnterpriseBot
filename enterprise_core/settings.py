@@ -98,6 +98,10 @@ INSTALLED_APPS = [
     # Personnel documentation ingestion and classification — ingesta y
     # clasificación de documentación de personal (Hito 25).
     'personal_documents',
+    # Domain routing (machine vs. personnel) for automatic folder
+    # ingestion — enrutado de dominio (máquina vs. personal) para la
+    # ingesta automática de carpeta (Hito 23/25, S024).
+    'document_ingestion',
     # Shared document infrastructure (alerts, PDF merge, email
     # templates, substitution) consumed by H23/H25 — infraestructura
     # documental compartida (Hito 26).

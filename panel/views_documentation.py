@@ -64,9 +64,12 @@ import logging
 
 from django.contrib import messages
 from django.http import Http404
-from django.shortcuts import render
+from django.shortcuts import redirect, render
+from django.urls import reverse
 from django.views import View
 
+from document_ingestion.models import IngestedFile
+from document_ingestion.tasks import route_ingested_files
 from document_management.vigencia_service import DocumentSnapshot, is_current
 from fleet.models import MachineAsset
 from ivr_config.models import CompanyUser
@@ -192,11 +195,40 @@ class DocumentationHubView(DocsUploadAccessMixin, View):
             company=company,
         ).select_related("user").order_by("user__first_name", "user__last_name")
 
+        unassigned_machine_docs = list(
+            MachineDocument.objects
+            .filter(
+                company=company,
+                machine_asset__isnull=True,
+                status=MachineDocument.Status.UNASSIGNED,
+            )
+            .order_by("-created_at")
+        )
+        unassigned_personal_docs = list(
+            PersonalDocument.objects
+            .filter(
+                company=company,
+                company_user__isnull=True,
+                status=PersonalDocument.Status.UNASSIGNED,
+            )
+            .order_by("-created_at")
+        )
+        for doc in unassigned_machine_docs:
+            doc.download_url = _resolve_download_url(
+                doc, MACHINE_DOCUMENTS_BUCKET,
+            )
+        for doc in unassigned_personal_docs:
+            doc.download_url = _resolve_download_url(
+                doc, PERSONNEL_DOCUMENTS_BUCKET,
+            )
+
         return render(request, self.template_name, {
             "active_nav": "documentation_hub",
             "company_user": company_user,
             "machines": machines,
             "workers": workers,
+            "unassigned_machine_docs": unassigned_machine_docs,
+            "unassigned_personal_docs": unassigned_personal_docs,
         })
 
 
@@ -340,3 +372,69 @@ class DocumentationPersonalDetailFragmentView(DocsUploadAccessMixin, View):
             "current_docs": current_docs,
             "archived_docs": archived_docs,
         })
+
+
+class DocumentationFolderUploadView(DocsUploadAccessMixin, View):
+    """
+    POST: recibe el lote acumulado de una o varias carpetas (JS del
+    lado del navegador, ver hub.html -- el input real es
+    `<input type="file" webkitdirectory multiple>` invocado varias
+    veces y fusionado en un único FormData antes de enviar). Crea una
+    fila IngestedFile por PDF (status=PENDING_ROUTING, rápido, sin
+    llamadas a Gemini) y encola UNA tarea
+    document_ingestion.tasks.route_ingested_files para todo el lote --
+    mismo principio async que el resto de subidas de esta plataforma
+    (incidente 2026-07-14, 504 de PythonAnywhere).
+
+    A diferencia de MachineDocumentBatchUploadView (H23, sin tocar):
+    aquí NO se elige máquina/trabajador de antemano -- se detecta
+    automáticamente por contenido (document_ingestion, S024).
+    """
+
+    def post(self, request):
+        company = request.user.company_user.company
+        company_user = request.user.company_user
+
+        uploaded_files = [
+            f for f in request.FILES.getlist("folder")
+            if f.name.lower().endswith(".pdf")
+        ]
+        if not uploaded_files:
+            messages.error(
+                request,
+                "No se encontró ningún PDF en la(s) carpeta(s) "
+                "seleccionada(s).",
+            )
+            return redirect(reverse("panel:documentation_hub"))
+
+        ingested_pks = []
+        for uploaded_file in uploaded_files:
+            ingested = IngestedFile(
+                company=company,
+                uploaded_by=company_user,
+                original_filename=uploaded_file.name,
+                status=IngestedFile.Status.PENDING_ROUTING,
+            )
+            ingested.source_file.save(
+                uploaded_file.name, uploaded_file, save=False,
+            )
+            ingested.save()
+            ingested_pks.append(ingested.pk)
+
+        route_ingested_files.delay(ingested_pks)
+
+        logger.info(
+            "# [DocumentationFolderUploadView] %d documento(s) en "
+            "cola de enrutado para %s, tarea encolada.",
+            len(ingested_pks), company,
+        )
+
+        messages.success(
+            request,
+            f"{len(ingested_pks)} documento(s) en cola de "
+            f"clasificación automática. Puede tardar unos minutos -- "
+            f"recarga esta página para ver el resultado en la pestaña "
+            f"correspondiente (o en \"sin asignar\" si no se pudo "
+            f"determinar la máquina/trabajador con confianza).",
+        )
+        return redirect(reverse("panel:documentation_hub"))
