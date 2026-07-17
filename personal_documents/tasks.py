@@ -138,6 +138,7 @@ def process_personal_document_batch(self, document_pks: list[int]) -> None:
         document.computed_expiry_date = result["computed_expiry_date"]
         document.document_number = result["document_number"]
         document.issuing_entity = result["issuing_entity"]
+        document.is_possible_master = result["is_possible_master"]
         # UNASSIGNED en vez de CLASSIFIED cuando no hay trabajador
         # enlazado (ingesta automática de carpeta, S024).
         document.status = (
@@ -148,7 +149,7 @@ def process_personal_document_batch(self, document_pks: list[int]) -> None:
         document.save(update_fields=[
             "document_type", "display_name", "expiry_date", "issue_date",
             "validity_rule", "computed_expiry_date", "document_number",
-            "issuing_entity", "status",
+            "issuing_entity", "is_possible_master", "status",
         ])
 
         create_default_expiry_alerts(
@@ -193,6 +194,8 @@ def process_personal_document_batch(self, document_pks: list[int]) -> None:
             if other_pk != pk
         ]
         if not individuals:
+            item["document"].is_possible_master = False
+            item["document"].save(update_fields=["is_possible_master"])
             continue
 
         coverage = assess_master_coverage(
@@ -213,6 +216,8 @@ def process_personal_document_batch(self, document_pks: list[int]) -> None:
                 pk, item["filename"], coverage["uncovered_pages"], exc,
                 exc_info=True,
             )
+            item["document"].is_possible_master = False
+            item["document"].save(update_fields=["is_possible_master"])
             continue
 
         extracted_filename = (
@@ -226,6 +231,8 @@ def process_personal_document_batch(self, document_pks: list[int]) -> None:
                 "clasificación falló -- se descarta.",
                 pk, item["filename"],
             )
+            item["document"].is_possible_master = False
+            item["document"].save(update_fields=["is_possible_master"])
             continue
 
         # Segunda salvaguarda (S024-bis, mismo caso real corregido en

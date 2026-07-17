@@ -43,9 +43,9 @@ from personal_documents.tasks import process_personal_document_batch
 from .entity_matching_service import (
     DOMAIN_MACHINE,
     DOMAIN_PERSONAL,
-    classify_and_route,
     match_company_user,
     match_machine_asset,
+    route_document,
 )
 from .models import IngestedFile
 
@@ -104,8 +104,8 @@ def route_ingested_files(self, ingested_file_pks: list[int]) -> None:
             ingested.source_file.close()
 
         filename = ingested.original_filename or ingested.source_file.name
-        route = classify_and_route(file_bytes, filename)
         company = ingested.company
+        route = route_document(file_bytes, filename, company)
 
         if route["domain"] == DOMAIN_MACHINE:
             matched_machine = (
@@ -300,7 +300,7 @@ def retry_unassigned_routing(self, domain: str, company_pk: int) -> None:
             continue
 
         filename = document.original_filename or document.gcs_blob_name
-        route = classify_and_route(file_bytes, filename)
+        route = route_document(file_bytes, filename, company)
 
         if domain == "machine":
             hint = route["machine_reference_hint"]

@@ -185,6 +185,13 @@ class PersonalDocument(models.Model):
                   "en la subida -- deduplicación (S024, ver "
                   "document_ingestion.deduplication_service).",
     )
+    is_possible_master = models.BooleanField(
+        default=False,
+        verbose_name="Posible documento maestro (pendiente de resolver)",
+        help_text="Mismo criterio que MachineDocument.is_possible_master "
+                  "(S024-cuater) -- ver ese modelo para el detalle "
+                  "completo.",
+    )
 
     # ------------------------------------------------------------------
     # Processing status / Estado de procesamiento

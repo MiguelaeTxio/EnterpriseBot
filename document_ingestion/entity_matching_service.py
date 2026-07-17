@@ -306,6 +306,76 @@ def classify_and_route(pdf_bytes: bytes, filename: str) -> dict:
         return dict(_fallback)
 
 
+def route_document(pdf_bytes: bytes, filename: str, company) -> dict:
+    """
+    Envoltorio de classify_and_route() que evita llamar a Gemini por
+    completo para manuales de uso -- bug real corregido en S024-cuater
+    (Miguel Ángel: "el manual de uso se asigna directamente a la
+    máquina... no tiene datos que extraer... va directamente a la
+    máquina y ya está. No sé por qué tenemos esta regresión"). El
+    enrutado nuevo (H23/S024) reintrodujo el incidente del 2026-07-14
+    (manual pesado -> timeout de Gemini) porque llamaba a
+    classify_and_route() sobre los bytes completos del manual ANTES de
+    llegar al punto donde machine_documents.document_classification_
+    service ya evita Gemini para manuales -- ese heurístico solo vivía
+    en la CLASIFICACIÓN, nunca en el ENRUTADO, que es un punto de
+    llamada a Gemini distinto y anterior.
+
+    Si machine_documents.document_classification_service.
+    is_manual_by_filename(filename) es True: nunca toca los bytes ni
+    llama a Gemini -- determina la máquina por coincidencia de texto
+    del propio nombre de archivo contra el código/matrícula de las
+    máquinas de `company` (match_machine_asset_by_filename), y
+    devuelve domain=MACHINE directamente, is_confident según haya
+    habido coincidencia o no (si no la hay, se enruta igual como
+    MACHINE pero sin pista -- nunca "sin identificar": un manual
+    SIEMPRE es de dominio máquina, decisión explícita de Miguel Ángel,
+    aunque no sepamos de cuál en concreto por el nombre de archivo).
+
+    En cualquier otro caso, delega en classify_and_route() tal cual.
+
+    ---
+
+    Wrapper around classify_and_route() that skips Gemini entirely for
+    user manuals -- see docstring above (Spanish) for the full
+    incident writeup. Manuals always route to MACHINE domain directly
+    via filename-only matching, never touching Gemini nor falling into
+    "sin identificar".
+    """
+    from machine_documents.document_classification_service import (
+        is_manual_by_filename,
+    )
+
+    if is_manual_by_filename(filename):
+        matched_machine = match_machine_asset_by_filename(company, filename)
+        result = {
+            "domain": DOMAIN_MACHINE,
+            "machine_reference_hint": matched_machine.code if matched_machine else "",
+            "worker_dni_hint": "",
+            "worker_name_hint": "",
+            "is_confident": matched_machine is not None,
+            "reasoning": (
+                "Manual de uso (heurística de nombre de archivo) -- "
+                "nunca se envía a Gemini, ni para enrutar ni para "
+                "clasificar. Máquina determinada por coincidencia de "
+                "texto del nombre de archivo."
+                if matched_machine else
+                "Manual de uso (heurística de nombre de archivo) -- "
+                "nunca se envía a Gemini. No se encontró ninguna "
+                "máquina cuyo código/matrícula aparezca en el nombre "
+                "de archivo -- se enruta como MACHINE sin asignar."
+            ),
+        }
+        logger.info(
+            "# [route_document] %s -> MANUAL DE USO, sin llamada a "
+            "Gemini -- maquina=%s.",
+            filename, matched_machine.code if matched_machine else "SIN ASIGNAR",
+        )
+        return result
+
+    return classify_and_route(pdf_bytes, filename)
+
+
 # ---------------------------------------------------------------------------
 # Step 2 -- matching the hint against real DB records / Paso 2 --
 # emparejar la pista contra registros reales de BD
@@ -346,6 +416,48 @@ def _normalize_for_matching(value: str) -> str:
     so "E-6998-BDY", "E6998BDY" and "e_6998_bdy" compare equal.
     """
     return re.sub(r"[^A-Z0-9]", "", (value or "").upper())
+
+
+def match_machine_asset_by_filename(company, filename: str):
+    """
+    Busca un fleet.MachineAsset cuyo `code` o `plate` (normalizados,
+    ver _normalize_for_matching) aparezcan como SUBCADENA del nombre
+    de archivo (normalizado igual) -- añadida S024-cuater
+    exclusivamente para route_document()/manuales de uso: nunca se usa
+    para documentos normales (esos sí pasan por Gemini y por
+    match_machine_asset(), que compara contra la pista que Gemini
+    extrajo, no contra el nombre de archivo entero). Un manual no
+    tiene ninguna pista de Gemini que comparar -- Gemini nunca llega a
+    verlo -- así que aquí se busca directamente en el propio nombre de
+    archivo completo.
+
+    Devuelve la primera coincidencia, o None si ninguna máquina de
+    `company` aparece en el nombre de archivo.
+
+    ---
+
+    Looks up a fleet.MachineAsset whose `code` or `plate` (normalized)
+    appears as a SUBSTRING of the filename (also normalized) -- added
+    S024-cuater exclusively for route_document()/user manuals. Never
+    used for regular documents (those go through Gemini and
+    match_machine_asset() instead, comparing against Gemini's
+    extracted hint, not the whole filename).
+    """
+    from fleet.models import MachineAsset
+
+    normalized_filename = _normalize_for_matching(filename)
+    if not normalized_filename:
+        return None
+
+    for machine in MachineAsset.objects.filter(company=company):
+        normalized_code = _normalize_for_matching(machine.code)
+        if normalized_code and normalized_code in normalized_filename:
+            return machine
+        if machine.plate:
+            normalized_plate = _normalize_for_matching(machine.plate)
+            if normalized_plate and normalized_plate in normalized_filename:
+                return machine
+    return None
 
 
 def match_machine_asset(company, machine_reference_hint: str):

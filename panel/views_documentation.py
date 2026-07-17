@@ -286,9 +286,24 @@ def _batch_status_rows(company, batch_id: str):
             if document is None:
                 row["state"] = "discarded"
                 row["is_pending"] = False
-            elif document.status in (
-                model.Status.PENDING,
-            ):
+            elif document.status == model.Status.PENDING:
+                row["state"] = "classifying"
+                row["is_pending"] = True
+            elif document.is_possible_master:
+                # Ya clasificado (CLASSIFIED/UNASSIGNED), pero el Paso 2
+                # de process_machine_document_batch/
+                # process_personal_document_batch todavía no ha
+                # resuelto si es un documento maestro de verdad -- NO
+                # es terminal. Bug real (Miguel Ángel, captura con
+                # "Asignado a A45" para el propio documento maestro):
+                # sin esta comprobación, el sondeo veía CLASSIFIED, lo
+                # daba por terminado, dejaba de sondear, y nunca
+                # llegaba a ver el descarte posterior -- se quedaba
+                # mostrando "Asignado" para siempre.
+                # is_possible_master se pone a False en cuanto el Paso
+                # 2 resuelve el documento (se borra por completo, o se
+                # confirma como real) -- señal exacta, no una
+                # aproximación por gcs_blob_name.
                 row["state"] = "classifying"
                 row["is_pending"] = True
             elif document.status == model.Status.CLASSIFIED:
@@ -319,15 +334,41 @@ def _render_upload_batch_status(request, batch_id: str, skipped_duplicates: int)
     HTMX). Compartido entre la respuesta inicial de
     DocumentationFolderUploadView y UploadBatchStatusFragmentView
     (el propio sondeo periódico).
+
+    Mientras el lote siga en curso, la misma respuesta lleva TAMBIÉN
+    los "out-of-band swaps" (`hx-swap-oob`, mecanismo nativo de HTMX)
+    que refrescan el acordeón de Maquinaria/Personal y los bloques
+    "Sin asignar" -- sustituye por completo al botón "Actualizar"
+    (Miguel Ángel: "hay que eliminar el botón de actualizar... cuando
+    estén cargados los documentos, tienen que ir apareciendo [solos],
+    que si no, nunca sabemos, tenemos que seguir dándole al botón").
+    Un único sondeo (el del visor de subida) empuja los cuatro
+    contenedores a la vez -- no hay pollers independientes por
+    contenedor. Se omite por completo en cuanto el lote termina, para
+    no seguir refrescando el acordeón sin motivo el resto de la
+    sesión.
     """
     company = request.user.company_user.company
     rows = _batch_status_rows(company, batch_id)
-    return render(request, "panel/documentation/_upload_batch_status.html", {
+    any_pending = any(r["is_pending"] for r in rows)
+
+    context = {
         "batch_id": batch_id,
         "rows": rows,
-        "any_pending": any(r["is_pending"] for r in rows),
+        "any_pending": any_pending,
         "skipped_duplicates": skipped_duplicates,
-    })
+    }
+    if any_pending:
+        context["oob_machines"] = MachineAsset.objects.filter(
+            company=company,
+        ).order_by("code")
+        context["oob_workers"] = CompanyUser.objects.filter(
+            company=company,
+        ).select_related("user").order_by("user__first_name", "user__last_name")
+        context["oob_unassigned_machine_docs"] = _unassigned_documents(company, "machine")
+        context["oob_unassigned_personal_docs"] = _unassigned_documents(company, "personal")
+
+    return render(request, "panel/documentation/_upload_batch_status.html", context)
 
 
 # ---------------------------------------------------------------------------

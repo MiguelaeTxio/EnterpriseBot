@@ -142,6 +142,27 @@ _FILENAME_HEURISTIC_RULES = [
 ]
 
 
+def is_manual_by_filename(filename: str) -> bool:
+    """
+    True si el nombre de archivo coincide con la regla heurística de
+    manual de uso -- extraída como función pública (S024-cuater) para
+    que document_ingestion.entity_matching_service pueda saltarse
+    TAMBIÉN la llamada de ENRUTADO (no solo la de clasificación) antes
+    de tocar los bytes del PDF. Bug real reportado por Miguel Ángel:
+    el enrutado nuevo (H23/S024, decide a qué máquina pertenece un
+    archivo antes de clasificarlo) reintrodujo el incidente original
+    del 2026-07-14 -- el manual es pesado, la llamada de enrutado a
+    Gemini hacía timeout (504 DEADLINE_EXCEEDED, confirmado con el log
+    real del worker) y el archivo caía en "sin identificar" en vez de
+    ir directo a la máquina sin pasar por Gemini en ningún punto del
+    pipeline, ni en enrutado ni en clasificación -- "el manual de uso
+    se asigna directamente a la máquina... no tiene datos que
+    extraer... va directamente a la máquina y ya está" (Miguel Ángel).
+    """
+    upper_name = filename.upper()
+    return any(keyword in upper_name for keyword, _ in _FILENAME_HEURISTIC_RULES)
+
+
 def classify_by_filename_heuristic(filename: str) -> dict | None:
     """
     Classifies a document purely from its filename, WITHOUT calling

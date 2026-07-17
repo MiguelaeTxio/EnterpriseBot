@@ -64,7 +64,7 @@
                         {% elif row.state == 'needs_review' %}
                         <span class="badge bg-warning-subtle text-warning-emphasis">Sin identificar -- revisar a mano</span>
                         {% elif row.state == 'discarded' %}
-                        <span class="badge bg-info-subtle text-info-emphasis">Documento combinado -- descartado</span>
+                        <span class="badge bg-info-subtle text-info-emphasis">Cotejado con el resto -- descartado (contenido ya incluido)</span>
                         {% elif row.state == 'ingest_error' %}
                         <span class="badge bg-danger-subtle text-danger-emphasis">Error: {{ row.ingested.error_message|default:"enrutado fallido" }}</span>
                         {% elif row.state == 'doc_error' %}
@@ -77,3 +77,20 @@
         </table>
     </div>
 </div>
+
+{% if oob_machines is not None %}
+{# Out-of-band swaps -- refrescan el acordeón y "sin asignar" a la vez que este     #}
+{# mismo sondeo, sin botón "Actualizar" ni sondeos independientes por contenedor.   #}
+<div id="unassigned-machine-container" hx-swap-oob="true">
+    {% include "panel/documentation/_unassigned_machine.html" with unassigned_machine_docs=oob_unassigned_machine_docs machines=oob_machines %}
+</div>
+<div id="unassigned-personal-container" hx-swap-oob="true">
+    {% include "panel/documentation/_unassigned_personal.html" with unassigned_personal_docs=oob_unassigned_personal_docs workers=oob_workers %}
+</div>
+<div id="machine-accordion-container" hx-swap-oob="true">
+    {% include "panel/documentation/_machine_accordion.html" with machines=oob_machines %}
+</div>
+<div id="personal-accordion-container" hx-swap-oob="true">
+    {% include "panel/documentation/_personal_accordion.html" with workers=oob_workers %}
+</div>
+{% endif %}

@@ -93,24 +93,15 @@
 
             <div class="card card-body mb-3 py-2">
                 <label class="form-label form-label-sm mb-1">Búsqueda</label>
-                <div class="d-flex gap-2">
-                    <input id="filter-machines-search"
-                           type="search"
-                           class="form-control form-control-sm"
-                           placeholder="Código, matrícula, marca/modelo…"
-                           name="search"
-                           hx-get="{% url 'panel:documentation_machine_list' %}"
-                           hx-target="#machine-accordion-container"
-                           hx-include="#filter-machines-search"
-                           hx-trigger="input changed delay:300ms, search">
-                    <button type="button" class="btn btn-sm btn-outline-secondary flex-shrink-0"
-                            hx-get="{% url 'panel:documentation_machine_list' %}"
-                            hx-target="#machine-accordion-container"
-                            hx-include="#filter-machines-search"
-                            title="Actualizar (sin recargar la página)">
-                        <i class="bi bi-arrow-clockwise"></i>
-                    </button>
-                </div>
+                <input id="filter-machines-search"
+                       type="search"
+                       class="form-control form-control-sm"
+                       placeholder="Código, matrícula, marca/modelo…"
+                       name="search"
+                       hx-get="{% url 'panel:documentation_machine_list' %}"
+                       hx-target="#machine-accordion-container"
+                       hx-include="#filter-machines-search"
+                       hx-trigger="input changed delay:300ms, search">
             </div>
             <div id="machine-accordion-container">
                 {% include "panel/documentation/_machine_accordion.html" with machines=machines %}
@@ -126,24 +117,15 @@
 
             <div class="card card-body mb-3 py-2">
                 <label class="form-label form-label-sm mb-1">Búsqueda</label>
-                <div class="d-flex gap-2">
-                    <input id="filter-personal-search"
-                           type="search"
-                           class="form-control form-control-sm"
-                           placeholder="Nombre o DNI…"
-                           name="search"
-                           hx-get="{% url 'panel:documentation_personal_list' %}"
-                           hx-target="#personal-accordion-container"
-                           hx-include="#filter-personal-search"
-                           hx-trigger="input changed delay:300ms, search">
-                    <button type="button" class="btn btn-sm btn-outline-secondary flex-shrink-0"
-                            hx-get="{% url 'panel:documentation_personal_list' %}"
-                            hx-target="#personal-accordion-container"
-                            hx-include="#filter-personal-search"
-                            title="Actualizar (sin recargar la página)">
-                        <i class="bi bi-arrow-clockwise"></i>
-                    </button>
-                </div>
+                <input id="filter-personal-search"
+                       type="search"
+                       class="form-control form-control-sm"
+                       placeholder="Nombre o DNI…"
+                       name="search"
+                       hx-get="{% url 'panel:documentation_personal_list' %}"
+                       hx-target="#personal-accordion-container"
+                       hx-include="#filter-personal-search"
+                       hx-trigger="input changed delay:300ms, search">
             </div>
             <div id="personal-accordion-container">
                 {% include "panel/documentation/_personal_accordion.html" with workers=workers %}

@@ -200,6 +200,27 @@ class MachineDocument(models.Model):
                   "document_ingestion.deduplication_service). Vacío "
                   "solo en filas anteriores a S024.",
     )
+    is_possible_master = models.BooleanField(
+        default=False,
+        verbose_name="Posible documento maestro (pendiente de resolver)",
+        help_text="True desde el Paso 1 de "
+                  "process_machine_document_batch hasta que el Paso 2 "
+                  "lo resuelve (S024-cuater) -- mientras es True, el "
+                  "documento sigue CLASSIFIED/UNASSIGNED pero "
+                  "TODAVÍA puede acabar borrado (si resulta ser un "
+                  "maestro ya cubierto o extraído) o confirmado como "
+                  "documento real (si la extracción falla y se "
+                  "conserva como red de seguridad). El visor de "
+                  "subida en vivo (panel/views_documentation.py, "
+                  "_batch_status_rows) lo usa para NO marcar la fila "
+                  "como terminada mientras siga en True -- bug real "
+                  "reportado por Miguel Ángel: sin este campo, el "
+                  "visor mostraba \"Asignado\" para un documento que "
+                  "un instante después se borraba por ser un maestro, "
+                  "sin ninguna nota de qué había pasado. Se pone a "
+                  "False en cuanto el Paso 2 resuelve el documento "
+                  "(se borra, o se confirma como real).",
+    )
 
     # ------------------------------------------------------------------
     # Processing status / Estado de procesamiento

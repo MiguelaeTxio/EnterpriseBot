@@ -212,6 +212,7 @@ def process_machine_document_batch(self, document_pks: list[int]) -> None:
         document.issue_date = result["issue_date"]
         document.document_number = result["document_number"]
         document.issuing_entity = result["issuing_entity"]
+        document.is_possible_master = result["is_possible_master"]
         # UNASSIGNED en vez de CLASSIFIED cuando no hay máquina enlazada
         # (ingesta automática de carpeta, S024) -- ver
         # MachineDocument.Status.UNASSIGNED.
@@ -222,7 +223,8 @@ def process_machine_document_batch(self, document_pks: list[int]) -> None:
         )
         document.save(update_fields=[
             "document_type", "display_name", "expiry_date", "issue_date",
-            "document_number", "issuing_entity", "status",
+            "document_number", "issuing_entity", "is_possible_master",
+            "status",
         ])
 
         create_default_expiry_alerts(
@@ -288,6 +290,12 @@ def process_machine_document_batch(self, document_pks: list[int]) -> None:
             if other_pk != pk and not other["via_heuristic"]
         ]
         if not individuals:
+            # Sin nada contra lo que comparar -- se conserva tal cual,
+            # el Paso 2 no vuelve a tocarlo. Limpiar el flag para que
+            # el visor de subida en vivo deje de considerarlo
+            # "pendiente de resolver" (S024-cuater).
+            item["document"].is_possible_master = False
+            item["document"].save(update_fields=["is_possible_master"])
             continue
 
         coverage = assess_master_coverage(
@@ -310,6 +318,8 @@ def process_machine_document_batch(self, document_pks: list[int]) -> None:
                 pk, item["filename"], coverage["uncovered_pages"], exc,
                 exc_info=True,
             )
+            item["document"].is_possible_master = False
+            item["document"].save(update_fields=["is_possible_master"])
             continue
 
         extracted_filename = (
@@ -320,10 +330,12 @@ def process_machine_document_batch(self, document_pks: list[int]) -> None:
             logger.warning(
                 "# [process_machine_document_batch] #%d (%s): "
                 "extracción de páginas no cubiertas obtenida pero su "
-                "clasificación falló -- se descarta, no se crea "
-                "documento nuevo.",
+                "clasificación falló -- se descarta la extracción, "
+                "el maestro se conserva tal cual.",
                 pk, item["filename"],
             )
+            item["document"].is_possible_master = False
+            item["document"].save(update_fields=["is_possible_master"])
             continue
 
         # Segunda salvaguarda (S024-bis, caso real): el juicio de
