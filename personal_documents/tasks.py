@@ -46,7 +46,7 @@ from ai_services.document_vision_service import (
     assess_master_coverage,
     extract_pages,
 )
-from document_management.alert_service import create_default_expiry_alert
+from document_management.alert_service import create_default_expiry_alerts
 from document_ingestion.deduplication_service import compute_content_hash
 from enterprise_core.celery import app
 from spare_parts.gcs_service import (
@@ -149,7 +149,7 @@ def process_personal_document_batch(self, document_pks: list[int]) -> None:
             "issuing_entity", "status",
         ])
 
-        create_default_expiry_alert(
+        create_default_expiry_alerts(
             document=document,
             expiry_date=document.expiry_date or document.computed_expiry_date,
             document_label=document.display_name,
@@ -241,7 +241,7 @@ def process_personal_document_batch(self, document_pks: list[int]) -> None:
         new_document.source_file.save(
             extracted_filename, ContentFile(extracted_bytes), save=True,
         )
-        create_default_expiry_alert(
+        create_default_expiry_alerts(
             document=new_document,
             expiry_date=(
                 new_document.expiry_date or new_document.computed_expiry_date
