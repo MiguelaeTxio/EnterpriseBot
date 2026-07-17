@@ -32,8 +32,9 @@
                     <i class="bi bi-bell"></i>
                 </button>
                 {% endif %}
-                <button class="btn btn-sm btn-outline-secondary" disabled
-                        title="Próximamente -- modificar documento vigente">
+                <button class="btn btn-sm btn-outline-secondary" type="button"
+                        data-bs-toggle="collapse" data-bs-target="#edit-machine-{{ doc.pk }}"
+                        title="Modificar">
                     <i class="bi bi-pencil"></i>
                 </button>
             </div>
@@ -45,6 +46,11 @@
              hx-target="this" hx-swap="innerHTML">
         </div>
         {% endif %}
+        <div class="collapse mt-2" id="edit-machine-{{ doc.pk }}"
+             hx-get="{% url 'panel:documentation_document_edit_form' domain='machine' pk=doc.pk %}"
+             hx-trigger="shown.bs.collapse once"
+             hx-target="this" hx-swap="innerHTML">
+        </div>
     </li>
     {% endfor %}
 </ul>
@@ -76,10 +82,14 @@
                     <i class="bi bi-bell"></i>
                 </button>
                 {% endif %}
-                <button class="btn btn-sm btn-outline-danger" disabled
-                        title="Próximamente -- borrar documento archivado">
-                    <i class="bi bi-trash"></i>
-                </button>
+                <form method="post"
+                      action="{% url 'panel:documentation_document_delete' domain='machine' pk=doc.pk %}"
+                      onsubmit="return confirm('¿Borrar definitivamente este documento archivado?');">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-sm btn-outline-danger" title="Borrar">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </form>
             </div>
         </div>
         {% if doc.expiry_date %}

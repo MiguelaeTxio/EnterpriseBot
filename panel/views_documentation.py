@@ -69,6 +69,8 @@ from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.views import View
 
+from ai_services.document_vision_service import parse_iso_date
+
 from document_ingestion.deduplication_service import (
     compute_content_hash,
     find_duplicate,
@@ -86,6 +88,7 @@ from personal_documents.models import PersonalDocument
 from spare_parts.gcs_service import (
     MACHINE_DOCUMENTS_BUCKET,
     PERSONNEL_DOCUMENTS_BUCKET,
+    delete_file,
     generate_signed_url,
 )
 
@@ -191,6 +194,14 @@ def _resolve_download_url(document, bucket_name: str) -> str:
 _DOMAIN_MODELS = {
     "machine": MachineDocument,
     "personal": PersonalDocument,
+}
+_DOMAIN_BUCKETS = {
+    "machine": MACHINE_DOCUMENTS_BUCKET,
+    "personal": PERSONNEL_DOCUMENTS_BUCKET,
+}
+_DOMAIN_EXPIRY_ATTR = {
+    "machine": "expiry_date",
+    "personal": "computed_expiry_date",
 }
 
 
@@ -718,4 +729,230 @@ class DocumentationFolderUploadView(DocsUploadAccessMixin, View):
                 f"estar ya subido(s).)"
             )
         messages.success(request, success_message)
+        return redirect(reverse("panel:documentation_hub"))
+
+
+class DocumentAssignView(DocsUploadAccessMixin, View):
+    """
+    POST: vincula a mano un documento "sin asignar" (machine_asset/
+    company_user nulo, status UNASSIGNED) a una máquina o trabajador
+    real elegido en el formulario -- pieza pendiente anotada
+    explícitamente en el commit 107d8ef ("vincular a mano un documento
+    sin asignar... anotado en la interfaz, no prometido como si
+    funcionara"), construida ahora a petición de Miguel Ángel.
+
+    Pasa el documento a CLASSIFIED, limpia el hint de detección
+    (detected_reference_hint/detected_dni_hint -- ya no hace falta,
+    el documento tiene entidad real), y actualiza subject_label en
+    cualquier DocumentAlert ya creada para ese documento (las 3
+    automáticas se crearon con subject_label="Sin asignar" en su
+    momento -- quedarían desactualizadas si no se corrigen aquí).
+    """
+
+    def post(self, request, domain):
+        company = request.user.company_user.company
+        document_pk = request.POST.get("document_pk")
+        target_pk = request.POST.get("target_pk")
+
+        document = _resolve_document(domain, document_pk, company)
+        if document is None:
+            raise Http404("Documento no encontrado.")
+
+        if domain == "machine":
+            target = MachineAsset.objects.filter(
+                pk=target_pk, company=company,
+            ).first()
+            if target is None:
+                messages.error(request, "Máquina no válida.")
+                return redirect(reverse("panel:documentation_hub"))
+            document.machine_asset = target
+            document.detected_reference_hint = ""
+            new_subject_label = target.code
+        else:
+            target = CompanyUser.objects.filter(
+                pk=target_pk, company=company,
+            ).select_related("user").first()
+            if target is None:
+                messages.error(request, "Trabajador no válido.")
+                return redirect(reverse("panel:documentation_hub"))
+            document.company_user = target
+            document.detected_dni_hint = ""
+            new_subject_label = (
+                target.user.get_full_name() or target.user.username
+            )
+
+        document.status = _DOMAIN_MODELS[domain].Status.CLASSIFIED
+        document.save()
+
+        content_type = ContentType.objects.get_for_model(document)
+        DocumentAlert.objects.filter(
+            content_type=content_type, object_id=document.pk,
+        ).update(subject_label=new_subject_label)
+
+        logger.info(
+            "# [DocumentAssignView] %s #%d vinculado a mano -> %s.",
+            domain, document.pk, new_subject_label,
+        )
+        messages.success(
+            request, f"Documento vinculado a {new_subject_label}.",
+        )
+        return redirect(reverse("panel:documentation_hub"))
+
+
+class DocumentDeleteView(DocsUploadAccessMixin, View):
+    """
+    POST: borra un documento ARCHIVADO (nunca uno vigente -- lo
+    comprueba de verdad en el servidor, recalculando vigencia con
+    document_management.vigencia_service, no se fía de que el botón
+    solo aparezca en la lista de archivados en el HTML). Borra el
+    blob de GCS, cualquier DocumentAlert asociada, y la fila del
+    documento.
+    """
+
+    def post(self, request, domain, pk):
+        company = request.user.company_user.company
+        document = _resolve_document(domain, pk, company)
+        if document is None:
+            raise Http404("Documento no encontrado.")
+
+        siblings_qs = _DOMAIN_MODELS[domain].objects.filter(
+            company=company,
+            document_type=document.document_type,
+            status=_DOMAIN_MODELS[domain].Status.CLASSIFIED,
+        )
+        if domain == "machine":
+            siblings_qs = siblings_qs.filter(
+                machine_asset=document.machine_asset,
+            )
+        else:
+            siblings_qs = siblings_qs.filter(
+                company_user=document.company_user,
+            )
+        _current, archived = _split_current_archived(
+            list(siblings_qs), effective_expiry_attr=_DOMAIN_EXPIRY_ATTR[domain],
+        )
+        if document.pk not in [d.pk for d in archived]:
+            messages.error(
+                request,
+                "Este documento está vigente -- solo se puede borrar "
+                "documentación archivada.",
+            )
+            return redirect(reverse("panel:documentation_hub"))
+
+        content_type = ContentType.objects.get_for_model(document)
+        DocumentAlert.objects.filter(
+            content_type=content_type, object_id=document.pk,
+        ).delete()
+
+        if document.gcs_blob_name:
+            try:
+                delete_file(_DOMAIN_BUCKETS[domain], document.gcs_blob_name)
+            except Exception as exc:
+                logger.error(
+                    "# [DocumentDeleteView] Error borrando blob GCS "
+                    "de %s #%d (blob=%s): %s",
+                    domain, document.pk, document.gcs_blob_name, exc,
+                    exc_info=True,
+                )
+
+        document_label = document.display_name
+        document.delete()
+
+        logger.info(
+            "# [DocumentDeleteView] %s #%s (%s) borrado.",
+            domain, pk, document_label,
+        )
+        messages.success(
+            request, f"Documento archivado \"{document_label}\" borrado.",
+        )
+        return redirect(reverse("panel:documentation_hub"))
+
+
+class DocumentEditFormFragmentView(DocsUploadAccessMixin, View):
+    """
+    GET (HTMX): formulario de edición de un documento VIGENTE, cargado
+    bajo demanda al pulsar el lápiz. Campos comunes a ambos dominios
+    (document_type, display_name, expiry_date, issue_date,
+    document_number, issuing_entity) + validity_rule/
+    computed_expiry_date, solo en personal.
+    """
+
+    template_name = "panel/documentation/_document_edit_form.html"
+
+    def get(self, request, domain, pk):
+        company = request.user.company_user.company
+        document = _resolve_document(domain, pk, company)
+        if document is None:
+            raise Http404("Documento no encontrado.")
+
+        return render(request, self.template_name, {
+            "domain": domain,
+            "document": document,
+        })
+
+
+class DocumentUpdateView(DocsUploadAccessMixin, View):
+    """
+    POST: guarda la edición de un documento vigente. Si expiry_date
+    (o, en personal, expiry_date/computed_expiry_date) cambia, corrige
+    también el expiry_date denormalizado de cualquier DocumentAlert ya
+    creada para ese documento -- si no, las alertas seguirían
+    disparándose contra la fecha vieja.
+    """
+
+    def post(self, request, domain, pk):
+        company = request.user.company_user.company
+        document = _resolve_document(domain, pk, company)
+        if document is None:
+            raise Http404("Documento no encontrado.")
+
+        document.document_type = request.POST.get(
+            "document_type", document.document_type,
+        ).strip()
+        document.display_name = request.POST.get(
+            "display_name", document.display_name,
+        ).strip()
+        document.issuing_entity = request.POST.get(
+            "issuing_entity", document.issuing_entity,
+        ).strip()
+        document.document_number = request.POST.get(
+            "document_number", document.document_number,
+        ).strip()
+
+        for date_field in ("expiry_date", "issue_date"):
+            raw_value = request.POST.get(date_field, "").strip()
+            setattr(
+                document, date_field,
+                parse_iso_date(raw_value) if raw_value else None,
+            )
+        if domain == "personal":
+            document.validity_rule = request.POST.get(
+                "validity_rule", document.validity_rule,
+            ).strip()
+            raw_computed = request.POST.get(
+                "computed_expiry_date", "",
+            ).strip()
+            document.computed_expiry_date = (
+                parse_iso_date(raw_computed) if raw_computed else None
+            )
+
+        document.save()
+
+        effective_expiry = getattr(
+            document, _DOMAIN_EXPIRY_ATTR[domain], None,
+        ) or document.expiry_date
+        content_type = ContentType.objects.get_for_model(document)
+        if effective_expiry is not None:
+            DocumentAlert.objects.filter(
+                content_type=content_type, object_id=document.pk,
+            ).update(
+                expiry_date=effective_expiry,
+                document_label=document.display_name,
+            )
+
+        logger.info(
+            "# [DocumentUpdateView] %s #%d modificado a mano.",
+            domain, document.pk,
+        )
+        messages.success(request, "Documento actualizado.")
         return redirect(reverse("panel:documentation_hub"))

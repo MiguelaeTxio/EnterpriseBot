@@ -20,6 +20,10 @@ from panel.views_documentation import (
     DocumentAlertDeleteView,
     DocumentAlertListFragmentView,
     DocumentAlertUpdateView,
+    DocumentAssignView,
+    DocumentDeleteView,
+    DocumentEditFormFragmentView,
+    DocumentUpdateView,
     DocumentationFolderUploadView,
     DocumentationHubView,
     DocumentationMachineDetailFragmentView,
@@ -383,6 +387,10 @@ urlpatterns = [
     path("documentacion/alertas/<str:domain>/<int:pk>/crear/", DocumentAlertCreateView.as_view(), name="documentation_alert_create"),
     path("documentacion/alertas/editar/<int:alert_pk>/", DocumentAlertUpdateView.as_view(), name="documentation_alert_update"),
     path("documentacion/alertas/borrar/<int:alert_pk>/", DocumentAlertDeleteView.as_view(), name="documentation_alert_delete"),
+    path("documentacion/vincular/<str:domain>/", DocumentAssignView.as_view(), name="documentation_assign"),
+    path("documentacion/<str:domain>/<int:pk>/borrar/", DocumentDeleteView.as_view(), name="documentation_document_delete"),
+    path("documentacion/<str:domain>/<int:pk>/editar/", DocumentEditFormFragmentView.as_view(), name="documentation_document_edit_form"),
+    path("documentacion/<str:domain>/<int:pk>/guardar/", DocumentUpdateView.as_view(), name="documentation_document_update"),
 
     # Section default role — Endpoint AJAX para pre-rellenar rol al crear usuario (H13).
     path("sections/<int:pk>/default-role/", SectionDefaultRoleView.as_view(), name="section_default_role"),

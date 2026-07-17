@@ -80,13 +80,23 @@
                             <span class="badge bg-light text-dark border ms-1">{{ doc.document_type }}</span>
                             {% if doc.detected_reference_hint %}<span class="text-muted small ms-1">pista: {{ doc.detected_reference_hint }}</span>{% endif %}
                         </div>
-                        <div class="d-flex gap-1">
+                        <div class="d-flex gap-1 align-items-center">
                             {% if doc.download_url %}
                             <a href="{{ doc.download_url }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary"><i class="bi bi-download"></i></a>
                             {% endif %}
-                            <button class="btn btn-sm btn-outline-secondary" disabled title="Próximamente -- vincular a mano a una máquina">
-                                <i class="bi bi-link-45deg"></i>
-                            </button>
+                            <form method="post" action="{% url 'panel:documentation_assign' domain='machine' %}" class="d-flex gap-1">
+                                {% csrf_token %}
+                                <input type="hidden" name="document_pk" value="{{ doc.pk }}">
+                                <select name="target_pk" class="form-select form-select-sm" required>
+                                    <option value="" disabled selected>Vincular a…</option>
+                                    {% for machine in machines %}
+                                    <option value="{{ machine.pk }}">{{ machine.code }}</option>
+                                    {% endfor %}
+                                </select>
+                                <button type="submit" class="btn btn-sm btn-outline-secondary" title="Vincular">
+                                    <i class="bi bi-link-45deg"></i>
+                                </button>
+                            </form>
                         </div>
                     </li>
                     {% endfor %}
@@ -125,13 +135,23 @@
                             <span class="badge bg-light text-dark border ms-1">{{ doc.document_type }}</span>
                             {% if doc.detected_dni_hint %}<span class="text-muted small ms-1">DNI detectado: {{ doc.detected_dni_hint }}</span>{% endif %}
                         </div>
-                        <div class="d-flex gap-1">
+                        <div class="d-flex gap-1 align-items-center">
                             {% if doc.download_url %}
                             <a href="{{ doc.download_url }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary"><i class="bi bi-download"></i></a>
                             {% endif %}
-                            <button class="btn btn-sm btn-outline-secondary" disabled title="Próximamente -- vincular a mano a un trabajador">
-                                <i class="bi bi-link-45deg"></i>
-                            </button>
+                            <form method="post" action="{% url 'panel:documentation_assign' domain='personal' %}" class="d-flex gap-1">
+                                {% csrf_token %}
+                                <input type="hidden" name="document_pk" value="{{ doc.pk }}">
+                                <select name="target_pk" class="form-select form-select-sm" required>
+                                    <option value="" disabled selected>Vincular a…</option>
+                                    {% for worker in workers %}
+                                    <option value="{{ worker.pk }}">{{ worker.user.get_full_name|default:worker.user.username }}</option>
+                                    {% endfor %}
+                                </select>
+                                <button type="submit" class="btn btn-sm btn-outline-secondary" title="Vincular">
+                                    <i class="bi bi-link-45deg"></i>
+                                </button>
+                            </form>
                         </div>
                     </li>
                     {% endfor %}

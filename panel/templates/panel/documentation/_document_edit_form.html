@@ -1,0 +1,61 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation/_document_edit_form.html #}
+{# Fragmento HTMX, cargado al pulsar el lápiz de un documento vigente. #}
+
+<form method="post"
+      action="{% url 'panel:documentation_document_update' domain=domain pk=document.pk %}"
+      class="card card-body">
+    {% csrf_token %}
+    <div class="row g-2">
+        <div class="col-12 col-md-6">
+            <label class="form-label form-label-sm mb-1">Tipo de documento</label>
+            <input type="text" name="document_type" class="form-control form-control-sm"
+                   value="{{ document.document_type }}">
+        </div>
+        <div class="col-12 col-md-6">
+            <label class="form-label form-label-sm mb-1">Nombre legible</label>
+            <input type="text" name="display_name" class="form-control form-control-sm"
+                   value="{{ document.display_name }}">
+        </div>
+        <div class="col-6 col-md-3">
+            <label class="form-label form-label-sm mb-1">Fecha de caducidad</label>
+            <input type="date" name="expiry_date" class="form-control form-control-sm"
+                   value="{{ document.expiry_date|date:'Y-m-d' }}">
+        </div>
+        <div class="col-6 col-md-3">
+            <label class="form-label form-label-sm mb-1">Fecha de emisión</label>
+            <input type="date" name="issue_date" class="form-control form-control-sm"
+                   value="{{ document.issue_date|date:'Y-m-d' }}">
+        </div>
+        <div class="col-6 col-md-3">
+            <label class="form-label form-label-sm mb-1">Número/referencia</label>
+            <input type="text" name="document_number" class="form-control form-control-sm"
+                   value="{{ document.document_number }}">
+        </div>
+        <div class="col-6 col-md-3">
+            <label class="form-label form-label-sm mb-1">Entidad emisora</label>
+            <input type="text" name="issuing_entity" class="form-control form-control-sm"
+                   value="{{ document.issuing_entity }}">
+        </div>
+        {% if domain == 'personal' %}
+        <div class="col-12 col-md-8">
+            <label class="form-label form-label-sm mb-1">Regla de vigencia (texto)</label>
+            <input type="text" name="validity_rule" class="form-control form-control-sm"
+                   value="{{ document.validity_rule }}"
+                   placeholder="Ej. ANUAL desde la fecha del examen">
+        </div>
+        <div class="col-12 col-md-4">
+            <label class="form-label form-label-sm mb-1">Caducidad calculada</label>
+            <input type="date" name="computed_expiry_date" class="form-control form-control-sm"
+                   value="{{ document.computed_expiry_date|date:'Y-m-d' }}">
+        </div>
+        {% endif %}
+    </div>
+    <div class="mt-3 d-flex gap-2">
+        <button type="submit" class="btn btn-sm btn-primary">
+            <i class="bi bi-check-lg me-1"></i>Guardar
+        </button>
+        <span class="text-muted small align-self-center">
+            Si cambias la fecha de caducidad, las alertas ya creadas para este documento se actualizan también.
+        </span>
+    </div>
+</form>
