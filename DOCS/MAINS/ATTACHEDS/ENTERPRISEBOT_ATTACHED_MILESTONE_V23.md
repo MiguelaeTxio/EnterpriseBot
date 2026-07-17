@@ -588,7 +588,7 @@ forma explícita y sin ambigüedad:
   documentación archivada/obsoleta, borrar documentación archivada,
   modificar documentación vigente.
 
-### Hoja de Ruta para la Sesión Siguiente (S024)
+### Hoja de Ruta para la Sesión Siguiente (S024) — COMPLETADA, ver COMPLETADAS EN S024 más abajo
 
 **Punto de partida confirmado por Miguel Ángel al cierre de S023:**
 construir la interfaz de panel de H23 que consuma los servicios de
@@ -640,6 +640,209 @@ sesión; `google-api-core` dejará de dar soporte a Python 3.10 el
 2026-10-04. Sin acción posible por nuestra parte (depende de que
 PythonAnywhere añada una versión superior) — vigilar antes de esa
 fecha si no ha cambiado, para planificar la migración con margen.
+
+### COMPLETADAS EN S024 (2026-07-17)
+
+Sesión larguísima, un único hito EN PROGRESO (H23) durante toda la
+sesión, sin desvíos ni PCH. 26 commits reales, 61 archivos tocados,
++7795/-560 líneas. Resumen narrativo completo por bloques:
+
+**1. Cierre del alcance de H23/H25 (commits `e14e517`…`2c47244`).**
+Abierto H25 (app `personal_documents` + modelo `PersonalDocument`,
+espejo de `MachineDocument`) y H27 (ingesta por correo, PAUSADO, sin
+código). Refactor `ai_services` para extraer los helpers de Gemini
+Vision agnósticos de dominio (antes solo en `machine_documents`) más
+un limitador de cuota proactivo (`gemini_rate_limiter.py`, token
+bucket, `GEMINI_VISION_MAX_RPM`). Construida desde cero la app
+`document_ingestion`: `entity_matching_service.py` (enrutado
+máquina-vs-trabajador), `deduplication_service.py` (hash SHA-256),
+modelo `IngestedFile` de staging, tarea `route_ingested_files`. Nueva
+vista exclusiva "Documentación" (acceso único ADMIN + DOCS_SUPERVISOR,
+confirmado explícitamente por Miguel Ángel sin excepciones), con
+pestañas Maquinaria/Personal, subida de carpeta con detección
+automática (sin elegir máquina/trabajador de antemano), deduplicación
+por hash antes de gastar ninguna llamada a Gemini, alertas automáticas
+de caducidad (30/15/7 días, corregido de una sola a tres tras aviso de
+Miguel Ángel), CRUD completo de alertas por documento, y cierre del
+resto del alcance pendiente: vincular a mano documentos "sin asignar",
+borrar documentación archivada, modificar documento vigente.
+
+**2. Corrección real del enrutado (commit `28de508`).** Miguel Ángel
+mostró una captura real: archivos con el código/matrícula de la
+máquina literalmente en el nombre (`A-45 E-6998-BDY Manual.pdf`)
+caían en "sin asignar". Causa doble: (a) el prompt de enrutado
+prohibía a Gemini mirar el nombre de archivo, calco erróneo de un
+principio de H23 que no aplicaba aquí; (b) el emparejamiento contra la
+BD era exacto carácter a carácter, sin normalizar guiones/espacios.
+Corregido: el prompt ahora mira nombre de archivo Y contenido, y el
+emparejamiento normaliza (quita todo lo que no sea letra/dígito) antes
+de comparar.
+
+**3. Panel de alertas completo + CRUD de plantillas de email +
+generación de dossier (commits `2c47244`, `e2ec236`).** A petición
+explícita de Miguel Ángel tras corregir que "10 puntos hechos" no era
+lo mismo que "el hito completo": pestaña "Alertas" con TODAS las
+alertas de la empresa (fecha de disparo calculada, vencidas-sin-enviar
+resaltadas, resolución manual), pestaña "Plantillas de email" (CRUD
+completo, resuelve un "pendiente de confirmar ubicación" anotado desde
+S023), y generación de dossier PDF (nunca persistido, temporal en GCS
+hasta confirmar, automático-sin-manuales para máquina vía
+`MANUAL_DOCUMENT_TYPE`, con casillas para personal) — rediseñado varias
+veces a lo largo de la sesión según las especificaciones exactas que
+fue dando Miguel Ángel. Añadido también reenrutado a demanda
+(`retry_unassigned_routing`) para documentos que se quedaron "sin
+asignar" con lógica de enrutado antigua.
+
+**4. Conversión completa a HTMX, sin recargas de página (commit
+`3d9ae4e`).** Auditoría de las 16 apariciones de `redirect` a la
+página completa en `views_documentation.py` — varias no eran solo
+"recarga molesta" sino un bug real (formularios con `hx-post`
+apuntando a contenedores pequeños que, al redirigir a la página
+completa, metían TODO el HTML dentro de esa tarjeta). Corregidas
+todas: vistas de fragmento nuevas para "sin asignar"
+(`UnassignedMachineFragmentView`/`...PersonalFragmentView`), redirects
+de borrar/editar documento al fragmento de detalle de la entidad, y el
+dossier convertido de página aparte a modal cargado por HTMX.
+
+**5. `reset_documentation` — zona cero completa (commit `d88e52d`).**
+Comando de gestión nuevo (BD + GCS, los dos dominios + staging +
+alertas, `--dry-run`/`--confirm`/`--company`), usado repetidamente a
+lo largo de la sesión para poder repetir pruebas reales desde limpio.
+De paso, eliminado `reset_machine_documents.py` (comando anterior,
+alcance a una sola máquina) — llevaba meses obsoleto, seguía llamando
+a Google Drive sin que nadie lo hubiera actualizado tras la migración
+completa a GCS en S022.
+
+**6. El documento maestro se persistía pese a procesarse con éxito
+(commits `b44dd39`, `153f1f2`, y refinado en `18deb8a`).** Bug real
+confirmado con datos reales del reset de zona cero (filas "Dossier de
+Maquinaria" que nunca deberían existir). El maestro se clasificaba en
+el Paso 1 igual que cualquier documento y nunca se excluía de
+`classified` en los casos de éxito del Paso 2 — corregido con
+`masters_to_discard` (borra fila + archivo local + alertas huérfanas).
+Segunda salvaguarda añadida tras otro caso real: el juicio de Gemini
+sobre qué páginas del maestro están "sin cubrir" puede equivocarse —
+ahora se comprueba también contra documentos ya persistidos del mismo
+tipo y fecha antes de crear el documento extraído.
+
+**7. Visor de subida en vivo (commit `f93e966`, S024-ter, "interfaz
+verbosa que comunique, sin tocar nada").** Nuevos campos en
+`IngestedFile` (`upload_batch_id`, `routed_document_pk`,
+`source_folder_path`, migración `0003`). La subida ya no devuelve un
+mensaje — devuelve un visor que se sondea a sí mismo cada 3s mientras
+quede algo pendiente, con spinner, estado por archivo (en cola,
+clasificando, asignado a X, sin asignar, descartado por ser maestro,
+error), carpeta de origen, y lista desplazable.
+
+**8. Regresión del manual de uso + falso "Asignado" del maestro +
+quitar el botón "Actualizar" (commit `18deb8a`, S024-cuater).** El
+manual (pesado, provoca 504 de Gemini) volvió a fallar porque el
+ENRUTADO nuevo (distinto de la clasificación) no tenía el mismo
+heurístico de "nunca llamar a Gemini para esto" — corregido con
+`route_document()`/`is_manual_by_filename()`/
+`match_machine_asset_by_filename()`, un manual enruta siempre a
+MACHINE sin pasar por Gemini. Campo nuevo `is_possible_master`
+(migraciones `machine_documents` `0008` y `personal_documents` `0003`)
+para que el visor sepa distinguir "clasificado de verdad" de
+"clasificado pero el Paso 2 todavía puede descartarlo" — antes el
+maestro aparecía como "Asignado" un instante antes de desaparecer.
+Quitados los 4 botones "Actualizar": el sondeo del visor de subida
+ahora empuja también, vía `hx-swap-oob`, el acordeón y los bloques
+"sin asignar" — un único sondeo, cuatro contenedores.
+
+**9. Fix del modal del dossier que se quedaba abierto (commit
+`59fb650`).** "Descargar y borrar" no cerraba el modal (comportamiento
+normal de un adjunto vía POST no-AJAX) — se cierra ahora en el propio
+`onsubmit`.
+
+**10. Bug de visualización del listado de usuarios (commit
+`c6c62a2`).** Miguel Ángel reportó que `yolanda.bandera` aparecía como
+"Operador" pese a haberla creado como Supervisor de Documentación —
+**antes de tocar nada**, comprobación real en BD (rol, contraseña,
+`must_change_password` correctos desde el principio) que confirmó que
+el fallo era solo de visualización: el listado (`panel/users/list.html`)
+tenía un `if/elif` que solo distinguía 4 de los 8 roles reales,
+`WORKSHOPBOSS`/`ASSISTANCE`/`DOCS_SUPERVISOR` caían en el "Operador"
+genérico. Corregido, con la lección explícita de Miguel Ángel de no
+dar nada por hecho sin mirar antes los datos.
+
+**11. Spinner + maestro "tragado entero" + borrar vigente con cuenta
+atrás (commit `893a166`, S024-quinquies).** Botón de subida con
+spinner nativo de HTMX visible desde el clic (lotes de 100+ archivos
+no daban ninguna señal). Fix real: al repetir una subida donde los
+individuales ya existían (deduplicados antes de llegar al enrutado),
+el maestro se quedaba comparando contra una lista vacía y se
+persistía entero — ahora también compara contra documentos YA
+persistidos de la misma máquina/trabajador, descargados de GCS.
+Añadido botón de eliminar también en documentos vigentes (antes solo
+archivados), con modal de confirmación y cuenta atrás de 5 segundos
+antes de activar el botón "Eliminar" — salvaguarda trasladada del
+backend al frontend, a petición explícita de Miguel Ángel.
+
+**12. Subida de carpetas grandes troceada automáticamente (commit
+`48ad447`, S024-sexies).** Incidente real: la carpeta de la A36 (121
+archivos, 112 PDF) nunca llegó a `DocumentationFolderUploadView` — sin
+traceback, solo dos "OSError: write error" en el log web. Diagnosticado
+con logs reales (Celery + web error) y confirmado con búsqueda del
+foro oficial de PythonAnywhere: límite DURO de 100 MiB por petición
+HTTP, sin excepción ni en cuentas de pago, no configurable, y al
+superarlo no queda ningún rastro en la aplicación (coincide
+exactamente con lo observado). El JS del navegador ahora trocea la
+subida en tandas de hasta 70 MiB, enviadas secuencialmente con el
+mismo `batch_id` compartido — el visor de subida en vivo no necesitó
+ningún cambio, ya filtraba solo por `batch_id`.
+
+**Incidencias reales encontradas y corregidas (no solo trabajo de
+código nuevo):** doble subida casi simultánea no detectada por la
+deduplicación (corregido comparando también contra `IngestedFile`
+pendientes, no solo documentos ya persistidos); mensaje de subida que
+seguía pidiendo "recarga esta página" pese a que el mecanismo ya no lo
+hacía; botón "Subir documentación" sobrante dentro de cada
+máquina/trabajador (remanente sin función, señalado por Miguel Ángel y
+eliminado); Miguel Ángel corrigió al modelo en dos ocasiones por dar
+cosas por hechas sin comprobar datos primero (la creación del usuario,
+y si el descarte del dossier fue automático o manual) — ambas
+correcciones aceptadas explícitamente sin defensa, con el compromiso
+de comprobar antes de afirmar.
+
+### Hoja de Ruta para la Sesión Siguiente (S025)
+
+1. **Verificar la subida de la A36 con el troceo automático** (commit
+   `48ad447`, sin probar de verdad todavía en el momento del cierre de
+   S024) — confirmar que una carpeta grande (100+ archivos) se sube y
+   procesa completa, en varias tandas, sin que se pierda ningún
+   archivo entre trozos.
+2. **Probar el dominio Personal de extremo a extremo** — a fecha de
+   cierre de S024, `PersonalDocument` sigue en 0 filas reales (todas
+   las pruebas de la sesión fueron sobre la máquina A-45/A45). Subir
+   una carpeta real de documentación de un trabajador y confirmar que
+   el enrutado, la clasificación, el CRUD de alertas y el dossier
+   (con casillas, distinto del automático de máquina) funcionan igual
+   de bien que en Maquinaria.
+3. **Diálogo de sustitución en la subida** — sigue sin construirse
+   (ver punto 2 de la hoja de ruta de S024, nunca abordado esta
+   sesión por volumen de trabajo real/incidencias). Al subir un
+   documento de un tipo ya existente para la misma máquina, llamar a
+   `document_management.vigencia_service.evaluate_substitution()` y
+   mostrar el diálogo con las dos acciones (archivar el obsoleto /
+   revertir la subida) — flujo exacto en anexo H26 sección 2.4.
+4. **Verificar el estado de la plantilla WhatsApp** `document_expiry_alert`
+   vía API de Twilio — sigue sin comprobarse desde S023 (pendiente de
+   aprobación de Meta en aquel momento). El motor de alertas construido
+   en H26/S024 funciona igual sin ella, solo no podrá enviar mensajes
+   reales hasta que esté aprobada.
+5. **Revisión general del CRUD de documentación** más allá de lo ya
+   cerrado en S024 — Miguel Ángel lo dejó abierto en S021 sin alcance
+   concreto todavía; confirmar con él si queda algo pendiente antes de
+   asumir que el hito está completo del todo.
+
+**Observación sin acción inmediata (arrastrada de S023):**
+PythonAnywhere limita las versiones de Python disponibles a 3.10 (y
+anteriores) a fecha de esta sesión; `google-api-core` dejará de dar
+soporte a Python 3.10 el 2026-10-04. Sin acción posible por nuestra
+parte (depende de que PythonAnywhere añada una versión superior) —
+vigilar antes de esa fecha si no ha cambiado, para planificar la
+migración con margen.
 
 ### Funcionalidad nueva anotada por Miguel Ángel al cierre — evaluar si abre hito propio
 
@@ -697,3 +900,4 @@ originó, sin más acción pendiente aquí.
 | S017 | 2026-07-14 | Primera sesión de código del hito. Modelo `MachineDocument` + app `machine_documents` + rol `DOCS_SUPERVISOR`, servicio de clasificación Gemini Vision (clasificación + metadatos en una sola llamada), integración en Historial de Máquina/Centros de gasto, pipeline migrado de síncrono a asíncrono (Celery) tras un 504 real de PythonAnywhere. Bug de traducción de categorías de avería corregido de paso (fuera de este hito). Ver COMPLETADAS EN S017 arriba para el detalle completo. |
 | S021 | 2026-07-16 | Sesión con H24 EN PROGRESO al arrancar, pero prácticamente todo el trabajo real fue de H23 (**PCH H24→H23 ejecutado al cierre**, confirmado por Miguel Ángel). Fix de sidebar de `alvarez_admin` (commit `e2a5ecc` -- `company_user` ausente del contexto de `MachineDocumentBatchUploadView`). Modelo dinámico de metadatos: `period_start`/`period_end`/`amount` + `extra_data` JSON (commit `4ffebee`, migración `0004` verificada aplicada en producción). Plantilla WhatsApp `document_expiry_alert` creada, rechazada dos veces por Meta ("Variables can't be at the start or end of the template"), plantillas rechazadas borradas de Twilio, rediseñada y reenviada a revisión (`HX55da66276bb2025f691c378abff0123e`, pendiente de aprobación). Desvío puntual a H07 (sin PCH, marcador no se movió hasta el cierre): verificación del mecanismo `PARTE-BACKUP` (confirmado funcional, 39 líneas reales en `error.log`), dos partes recuperados a mano por Miguel Ángel (Antonio Fontalba 22/06, Pablo Cañamero 03/07), y nueva vista de Administración "Borradores de Partes" + `SuperuserRequiredMixin` (sustituye el hardcode de username `alvarez_admin` por `is_superuser` de Django) -- ver anexo H07 para el detalle completo de esa pieza. Un incidente de despliegue propio (`ImportError` por `WorkOrderDraftListView` sin re-exportar en `panel/views.py`) diagnosticado con datos reales y corregido en la misma sesión (commit `7344d46`). Cuatro decisiones de diseño cerradas con Miguel Ángel para la continuación de H23 (vigencia, archivado, plantilla, modelo dinámico) -- ver "Decisiones cerradas en S021" y "Hoja de Ruta para la Sesión Siguiente (S022)" arriba. |
 | S023 | 2026-07-16 | H23 EN PROGRESO durante toda la sesión (desvío Caso A, marcador nunca movido). Incidente real: Vertex AI roto para toda la plataforma (documentos + IVR) tras el cambio de IAM de S022 (rol de Vertex AI sustituido por `Storage Admin` en vez de añadido); diagnosticado exclusivamente por logs reales (`alwayson-log-242133.log`, `bridge.log`) tras corrección explícita de Miguel Ángel cuando el modelo empezó a especular sobre el proyecto GCP; arreglado añadiendo `Agent Platform User` (`roles/aiplatform.user`); verificado reprocesando los 10 documentos de A-45 (todos `CLASSIFIED`, maestro detectado correctamente) y con una llamada IVR real (audio bidireccional confirmado). Hallazgo: el IVR llevaba roto desde el cambio de IAM aunque Miguel Ángel creía que funcionaba -- confirmado por log, no por suposición. Bug fuera de alcance corregido de paso: tarea Celery muerta `purge_old_chat_messages` (eliminada en H17, seguía en `CELERY_BEAT_SCHEDULE`) -- ver anexo H17. Desvío al resto de la sesión: H26 -- Infraestructura Documental Compartida completada por entero (app `document_management`, servicio de vigencia/sustitución, fusión de PDF, motor de alertas) -- ver anexo H26 "COMPLETADAS EN S023" para el detalle. Corrección de rumbo de Miguel Ángel durante la sesión: `EmailTemplate` no se edita desde el admin de Django (nunca lo pidió), y no se construye ninguna interfaz mínima desechable -- se queda como modelo sin UI. Ver "Hoja de Ruta para la Sesión Siguiente (S024)" arriba para el punto de partida: interfaz de panel de H23 consumiendo los servicios de H26. |
+| S024 | 2026-07-17 | H23 EN PROGRESO durante toda la sesión, sin desvíos ni PCH. Sesión larguísima: 26 commits, 61 archivos, +7795/-560 líneas. Interfaz de panel de H23/H25 construida y cerrada por completo (vincular sin asignar, borrar archivado, modificar vigente, panel de alertas, CRUD de plantillas de email, generación de dossier), reconvertida entera a HTMX sin recargas de página, con visor de subida en vivo (sondeo automático, sin botones "Actualizar") y comando `reset_documentation` para poder repetir pruebas reales desde limpio. Encontrados y corregidos en la misma sesión, todos con datos reales (logs del worker Celery, log web, consultas de solo lectura a BD, búsqueda del foro oficial de PythonAnywhere): enrutado que ignoraba el nombre de archivo y comparaba códigos de máquina byte a byte; documento maestro que se persistía en GCS pese a descartarse su contenido (dos capas de corrección, incluida una segunda salvaguarda semántica); regresión del manual de uso en el enrutado (heurístico "nunca llamar a Gemini" que faltaba en el punto nuevo); falso estado "Asignado" del maestro en el visor por una condición de carrera con la Fase 2; listado de usuarios mostrando "Operador" para 3 de los 8 roles reales (bug de visualización puro, la BD nunca estuvo mal -- Miguel Ángel corrigió al modelo por dar la creación del usuario por fallida sin comprobar antes); doble subida no detectada por la deduplicación; y el hallazgo más grande de la sesión, un límite duro de 100 MiB por petición HTTP de PythonAnywhere (no configurable, sin rastro en la aplicación al superarlo) que impedía subir la carpeta de la A36 (121 archivos) -- resuelto troceando la subida automáticamente en el navegador. Ver "COMPLETADAS EN S024" arriba para el detalle completo, y "Hoja de Ruta para la Sesión Siguiente (S025)" para el punto de partida. |
