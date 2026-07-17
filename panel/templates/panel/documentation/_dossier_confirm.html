@@ -28,7 +28,8 @@
             <i class="bi bi-arrow-left me-1"></i>Volver atrás (modificar selección)
         </button>
     </form>
-    <form method="post" action="{% url 'panel:documentation_dossier_download' domain=domain token=token %}">
+    <form method="post" action="{% url 'panel:documentation_dossier_download' domain=domain token=token %}"
+          onsubmit="bootstrap.Modal.getInstance(document.getElementById('dossierModal'))?.hide();">
         {% csrf_token %}
         <button type="submit" class="btn btn-primary">
             <i class="bi bi-download me-1"></i>Descargar y borrar
