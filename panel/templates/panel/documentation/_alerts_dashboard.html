@@ -68,9 +68,11 @@
                     </td>
                     <td>
                         {% if row.alert.status != 'RESOLVED' %}
-                        <form method="post" action="{% url 'panel:documentation_alert_resolve' alert_pk=row.alert.pk %}" class="d-inline">
+                        <form method="post" action="{% url 'panel:documentation_alert_resolve' alert_pk=row.alert.pk %}"
+                              hx-post="{% url 'panel:documentation_alert_resolve' alert_pk=row.alert.pk %}"
+                              hx-target="#alerts-dashboard-wrapper" hx-swap="outerHTML" class="d-inline">
                             {% csrf_token %}
-                            <input type="hidden" name="next" value="{% url 'panel:documentation_hub' %}">
+                            <input type="hidden" name="next" value="{% url 'panel:documentation_alerts_dashboard' %}">
                             <button type="submit" class="btn btn-sm btn-outline-success" title="Marcar como resuelta">
                                 <i class="bi bi-check-circle"></i>
                             </button>

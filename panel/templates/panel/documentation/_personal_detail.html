@@ -1,12 +1,16 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation/_personal_detail.html #}
-{# Fragmento HTMX, cargado perezosamente al desplegar el accordion-item de un trabajador. #}
+{# Fragmento HTMX, cargado al desplegar el accordion-item de un trabajador -- SIEMPRE en #}
+{# fresco (sin "once" en el trigger), para que un cambio hecho desde otra parte de la    #}
+{# interfaz se refleje al reabrir sin recargar la página (S024-bis).                     #}
 {# Dossier de personal: MANUAL, vía casillas -- "lo suyo es casillero... seleccionar     #}
-{# todo o ir marcando casilla" (Miguel Ángel, S024-bis). El formulario del dossier vive  #}
-{# fuera de los <li> (los checkboxes se asocian con el atributo form=, HTML5) porque los #}
-{# <form> de alertas/borrado ya viven dentro de cada <li> y no se pueden anidar.         #}
+{# todo o ir marcando casilla" (Miguel Ángel). El formulario del dossier vive fuera de   #}
+{# los <li> (los checkboxes se asocian con el atributo form=, HTML5) porque los <form>   #}
+{# de alertas/borrado ya viven dentro de cada <li> y no se pueden anidar.                #}
 
 <form id="dossierForm-personal-{{ worker.pk }}" method="post"
-      action="{% url 'panel:documentation_dossier_generate' domain='personal' entity_pk=worker.pk %}">
+      action="{% url 'panel:documentation_dossier_generate' domain='personal' entity_pk=worker.pk %}"
+      hx-post="{% url 'panel:documentation_dossier_generate' domain='personal' entity_pk=worker.pk %}"
+      hx-target="#dossierModalBody" hx-swap="innerHTML">
     {% csrf_token %}
 </form>
 
@@ -68,13 +72,13 @@
         {% if doc.expiry_date or doc.computed_expiry_date %}
         <div class="collapse mt-2" id="alerts-personal-{{ doc.pk }}"
              hx-get="{% url 'panel:documentation_alerts_fragment' domain='personal' pk=doc.pk %}"
-             hx-trigger="shown.bs.collapse once"
+             hx-trigger="shown.bs.collapse"
              hx-target="this" hx-swap="innerHTML">
         </div>
         {% endif %}
         <div class="collapse mt-2" id="edit-personal-{{ doc.pk }}"
              hx-get="{% url 'panel:documentation_document_edit_form' domain='personal' pk=doc.pk %}"
-             hx-trigger="shown.bs.collapse once"
+             hx-trigger="shown.bs.collapse"
              hx-target="this" hx-swap="innerHTML">
         </div>
     </li>
@@ -115,7 +119,9 @@
                 {% endif %}
                 <form method="post"
                       action="{% url 'panel:documentation_document_delete' domain='personal' pk=doc.pk %}"
-                      onsubmit="return confirm('¿Borrar definitivamente este documento archivado?');">
+                      hx-post="{% url 'panel:documentation_document_delete' domain='personal' pk=doc.pk %}"
+                      hx-target="closest .accordion-body" hx-swap="innerHTML"
+                      hx-confirm="¿Borrar definitivamente este documento archivado?">
                     {% csrf_token %}
                     <button type="submit" class="btn btn-sm btn-outline-danger" title="Borrar">
                         <i class="bi bi-trash"></i>
@@ -126,7 +132,7 @@
         {% if doc.expiry_date or doc.computed_expiry_date %}
         <div class="collapse mt-2" id="alerts-personal-{{ doc.pk }}"
              hx-get="{% url 'panel:documentation_alerts_fragment' domain='personal' pk=doc.pk %}"
-             hx-trigger="shown.bs.collapse once"
+             hx-trigger="shown.bs.collapse"
              hx-target="this" hx-swap="innerHTML">
         </div>
         {% endif %}

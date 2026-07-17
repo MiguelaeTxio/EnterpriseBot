@@ -28,7 +28,9 @@
             </p>
             <form id="folderUploadForm" method="post"
                   action="{% url 'panel:documentation_folder_upload' %}"
-                  enctype="multipart/form-data">
+                  hx-post="{% url 'panel:documentation_folder_upload' %}"
+                  hx-target="#uploadResult" hx-swap="innerHTML"
+                  hx-encoding="multipart/form-data">
                 {% csrf_token %}
                 <input type="file" id="folderPickerInput" webkitdirectory multiple hidden>
                 <input type="file" id="folderBatchInput" name="folder" multiple hidden>
@@ -44,6 +46,7 @@
                     </button>
                 </div>
             </form>
+            <div id="uploadResult" class="mt-2"></div>
         </div>
     </div>
 
@@ -83,48 +86,9 @@
         {# --- Pestaña Maquinaria --- #}
         <div class="tab-pane fade show active" id="tab-machines" role="tabpanel" aria-labelledby="tab-machines-btn">
 
-            {% if unassigned_machine_docs %}
-            <div class="card card-body mb-3 border-warning">
-                <div class="d-flex justify-content-between align-items-center mb-2">
-                    <h6 class="text-warning-emphasis mb-0"><i class="bi bi-question-circle me-1"></i>Sin asignar ({{ unassigned_machine_docs|length }})</h6>
-                    <form method="post" action="{% url 'panel:documentation_retry_unassigned' domain='machine' %}">
-                        {% csrf_token %}
-                        <button type="submit" class="btn btn-sm btn-outline-secondary">
-                            <i class="bi bi-arrow-repeat me-1"></i>Reintentar enrutado automático
-                        </button>
-                    </form>
-                </div>
-                <ul class="list-group list-group-flush">
-                    {% for doc in unassigned_machine_docs %}
-                    <li class="list-group-item d-flex justify-content-between align-items-center px-0">
-                        <div>
-                            <span class="fw-semibold">{{ doc.display_name|default:doc.document_type }}</span>
-                            <span class="badge bg-light text-dark border ms-1">{{ doc.document_type }}</span>
-                            {% if doc.detected_reference_hint %}<span class="text-muted small ms-1">pista: {{ doc.detected_reference_hint }}</span>{% endif %}
-                        </div>
-                        <div class="d-flex gap-1 align-items-center">
-                            {% if doc.download_url %}
-                            <a href="{{ doc.download_url }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary"><i class="bi bi-download"></i></a>
-                            {% endif %}
-                            <form method="post" action="{% url 'panel:documentation_assign' domain='machine' %}" class="d-flex gap-1">
-                                {% csrf_token %}
-                                <input type="hidden" name="document_pk" value="{{ doc.pk }}">
-                                <select name="target_pk" class="form-select form-select-sm" required>
-                                    <option value="" disabled selected>Vincular a…</option>
-                                    {% for machine in machines %}
-                                    <option value="{{ machine.pk }}">{{ machine.code }}</option>
-                                    {% endfor %}
-                                </select>
-                                <button type="submit" class="btn btn-sm btn-outline-secondary" title="Vincular">
-                                    <i class="bi bi-link-45deg"></i>
-                                </button>
-                            </form>
-                        </div>
-                    </li>
-                    {% endfor %}
-                </ul>
+            <div id="unassigned-machine-container">
+                {% include "panel/documentation/_unassigned_machine.html" with unassigned_machine_docs=unassigned_machine_docs machines=machines %}
             </div>
-            {% endif %}
 
             <div class="card card-body mb-3 py-2">
                 <label class="form-label form-label-sm mb-1">Búsqueda</label>
@@ -146,48 +110,9 @@
         {# --- Pestaña Personal --- #}
         <div class="tab-pane fade" id="tab-personal" role="tabpanel" aria-labelledby="tab-personal-btn">
 
-            {% if unassigned_personal_docs %}
-            <div class="card card-body mb-3 border-warning">
-                <div class="d-flex justify-content-between align-items-center mb-2">
-                    <h6 class="text-warning-emphasis mb-0"><i class="bi bi-question-circle me-1"></i>Sin asignar ({{ unassigned_personal_docs|length }})</h6>
-                    <form method="post" action="{% url 'panel:documentation_retry_unassigned' domain='personal' %}">
-                        {% csrf_token %}
-                        <button type="submit" class="btn btn-sm btn-outline-secondary">
-                            <i class="bi bi-arrow-repeat me-1"></i>Reintentar enrutado automático
-                        </button>
-                    </form>
-                </div>
-                <ul class="list-group list-group-flush">
-                    {% for doc in unassigned_personal_docs %}
-                    <li class="list-group-item d-flex justify-content-between align-items-center px-0">
-                        <div>
-                            <span class="fw-semibold">{{ doc.display_name|default:doc.document_type }}</span>
-                            <span class="badge bg-light text-dark border ms-1">{{ doc.document_type }}</span>
-                            {% if doc.detected_dni_hint %}<span class="text-muted small ms-1">DNI detectado: {{ doc.detected_dni_hint }}</span>{% endif %}
-                        </div>
-                        <div class="d-flex gap-1 align-items-center">
-                            {% if doc.download_url %}
-                            <a href="{{ doc.download_url }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary"><i class="bi bi-download"></i></a>
-                            {% endif %}
-                            <form method="post" action="{% url 'panel:documentation_assign' domain='personal' %}" class="d-flex gap-1">
-                                {% csrf_token %}
-                                <input type="hidden" name="document_pk" value="{{ doc.pk }}">
-                                <select name="target_pk" class="form-select form-select-sm" required>
-                                    <option value="" disabled selected>Vincular a…</option>
-                                    {% for worker in workers %}
-                                    <option value="{{ worker.pk }}">{{ worker.user.get_full_name|default:worker.user.username }}</option>
-                                    {% endfor %}
-                                </select>
-                                <button type="submit" class="btn btn-sm btn-outline-secondary" title="Vincular">
-                                    <i class="bi bi-link-45deg"></i>
-                                </button>
-                            </form>
-                        </div>
-                    </li>
-                    {% endfor %}
-                </ul>
+            <div id="unassigned-personal-container">
+                {% include "panel/documentation/_unassigned_personal.html" with unassigned_personal_docs=unassigned_personal_docs workers=workers %}
             </div>
-            {% endif %}
 
             <div class="card card-body mb-3 py-2">
                 <label class="form-label form-label-sm mb-1">Búsqueda</label>
@@ -226,6 +151,21 @@
             </div>
         </div>
 
+    </div>
+</div>
+
+{# --- Modal del dossier: generar/confirmar/descartar/descargar, todo sin salir de esta página (S024-bis) --- #}
+<div class="modal fade" id="dossierModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Dossier</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body" id="dossierModalBody">
+                <div class="text-muted small"><i class="bi bi-hourglass-split me-1"></i>Generando dossier…</div>
+            </div>
+        </div>
     </div>
 </div>
 {% endblock %}
@@ -280,6 +220,27 @@
     });
 
     refreshSummary();
+
+    // Tras subir con éxito, vaciar la cola local para no reenviar los
+    // mismos archivos si se abre el panel otra vez.
+    document.body.addEventListener('htmx:afterRequest', function (evt) {
+        if (evt.detail.elt && evt.detail.elt.id === 'folderUploadForm' && evt.detail.successful) {
+            accumulated = [];
+            syncBatchInput();
+            refreshSummary();
+        }
+    });
+
+    // Abre el modal del dossier en cuanto llega contenido nuevo a su
+    // cuerpo (generar, descartar o error quedan todos dentro del
+    // mismo modal, nunca navegan a otra página -- S024-bis).
+    document.body.addEventListener('htmx:afterSwap', function (evt) {
+        if (evt.detail.target && evt.detail.target.id === 'dossierModalBody') {
+            var modalEl = document.getElementById('dossierModal');
+            var modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+            modal.show();
+        }
+    });
 })();
 </script>
 {% endblock %}

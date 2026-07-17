@@ -189,6 +189,43 @@ def _resolve_download_url(document, bucket_name: str) -> str:
         return ""
 
 
+def _unassigned_documents(company, domain: str):
+    """
+    Devuelve la lista de documentos "sin asignar" (status=UNASSIGNED,
+    sin machine_asset/company_user) de un dominio para `company`, con
+    download_url ya resuelto. Extraído a helper compartido (S024-bis)
+    entre DocumentationHubView (render inicial) y
+    UnassignedMachineFragmentView/UnassignedPersonalFragmentView
+    (refresco parcial vía HTMX, sin recargar el resto de la página).
+    """
+    if domain == "machine":
+        docs = list(
+            MachineDocument.objects
+            .filter(
+                company=company,
+                machine_asset__isnull=True,
+                status=MachineDocument.Status.UNASSIGNED,
+            )
+            .order_by("-created_at")
+        )
+        bucket_name = MACHINE_DOCUMENTS_BUCKET
+    else:
+        docs = list(
+            PersonalDocument.objects
+            .filter(
+                company=company,
+                company_user__isnull=True,
+                status=PersonalDocument.Status.UNASSIGNED,
+            )
+            .order_by("-created_at")
+        )
+        bucket_name = PERSONNEL_DOCUMENTS_BUCKET
+
+    for doc in docs:
+        doc.download_url = _resolve_download_url(doc, bucket_name)
+    return docs
+
+
 # ---------------------------------------------------------------------------
 # CRUD de alertas (S024, a petición explícita de Miguel Ángel: "ese
 # CRUD es necesario, así que tenemos que construirlo") -- generico
@@ -311,7 +348,10 @@ class DocumentAlertCreateView(DocsUploadAccessMixin, View):
                 "Este documento no tiene fecha de caducidad conocida "
                 "-- no se puede crear una alerta.",
             )
-            return redirect(reverse("panel:documentation_hub"))
+            return redirect(reverse(
+                "panel:documentation_alerts_fragment",
+                kwargs={"domain": domain, "pk": document.pk},
+            ))
 
         try:
             offset_days = int(request.POST.get("alert_offset_days", ""))
@@ -321,7 +361,10 @@ class DocumentAlertCreateView(DocsUploadAccessMixin, View):
             messages.error(
                 request, "Días de antelación no válidos.",
             )
-            return redirect(reverse("panel:documentation_hub"))
+            return redirect(reverse(
+                "panel:documentation_alerts_fragment",
+                kwargs={"domain": domain, "pk": document.pk},
+            ))
 
         content_type = ContentType.objects.get_for_model(document)
         alert = DocumentAlert.objects.create(
@@ -579,7 +622,7 @@ class EmailTemplateSaveView(DocsUploadAccessMixin, View):
                 "Nombre, asunto y cuerpo son obligatorios en una "
                 "plantilla de email.",
             )
-            return redirect(reverse("panel:documentation_hub"))
+            return redirect(reverse("panel:documentation_email_templates"))
 
         if template_pk:
             template = EmailTemplate.objects.filter(
@@ -607,7 +650,7 @@ class EmailTemplateSaveView(DocsUploadAccessMixin, View):
             )
 
         messages.success(request, "Plantilla de email guardada.")
-        return redirect(reverse("panel:documentation_hub"))
+        return redirect(reverse("panel:documentation_email_templates"))
 
 
 class EmailTemplateDeleteView(DocsUploadAccessMixin, View):
@@ -626,7 +669,7 @@ class EmailTemplateDeleteView(DocsUploadAccessMixin, View):
             template_pk,
         )
         messages.success(request, "Plantilla de email borrada.")
-        return redirect(reverse("panel:documentation_hub"))
+        return redirect(reverse("panel:documentation_email_templates"))
 
 
 class DossierGenerateView(DocsUploadAccessMixin, View):
@@ -688,11 +731,9 @@ class DossierGenerateView(DocsUploadAccessMixin, View):
                 raise Http404("Trabajador no encontrado.")
             selected_pks = request.POST.getlist("document_pks")
             if not selected_pks:
-                messages.error(
-                    request,
-                    "Selecciona al menos un documento para el dossier.",
-                )
-                return redirect(reverse("panel:documentation_hub"))
+                return render(request, "panel/documentation/_dossier_error.html", {
+                    "message": "Selecciona al menos un documento para el dossier.",
+                })
             documents = list(
                 PersonalDocument.objects
                 .filter(
@@ -703,12 +744,12 @@ class DossierGenerateView(DocsUploadAccessMixin, View):
 
         documents = [d for d in documents if d.gcs_blob_name]
         if not documents:
-            messages.error(
-                request,
-                "No hay documentos disponibles para el dossier "
-                "(¿todavía en cola de procesamiento?).",
-            )
-            return redirect(reverse("panel:documentation_hub"))
+            return render(request, "panel/documentation/_dossier_error.html", {
+                "message": (
+                    "No hay documentos disponibles para el dossier "
+                    "(¿todavía en cola de procesamiento?)."
+                ),
+            })
 
         pdf_bytes_list = []
         for document in documents:
@@ -727,12 +768,12 @@ class DossierGenerateView(DocsUploadAccessMixin, View):
         try:
             merged_bytes = merge_pdfs(pdf_bytes_list)
         except EmptyDocumentListError:
-            messages.error(
-                request,
-                "No se pudo descargar ningún documento seleccionado "
-                "-- dossier no generado.",
-            )
-            return redirect(reverse("panel:documentation_hub"))
+            return render(request, "panel/documentation/_dossier_error.html", {
+                "message": (
+                    "No se pudo descargar ningún documento seleccionado "
+                    "-- dossier no generado."
+                ),
+            })
 
         token = uuid.uuid4().hex
         temp_blob_name = f"_dossiers_temporales/{token}.pdf"
@@ -807,8 +848,7 @@ class DossierDiscardView(DocsUploadAccessMixin, View):
             "# [DossierDiscardView] Dossier temporal %s descartado (%s).",
             token, domain,
         )
-        messages.info(request, "Dossier descartado -- nada se descargó.")
-        return redirect(reverse("panel:documentation_hub"))
+        return render(request, "panel/documentation/_dossier_discarded.html")
 
 
 class RetryUnassignedRoutingView(DocsUploadAccessMixin, View):
@@ -833,9 +873,13 @@ class RetryUnassignedRoutingView(DocsUploadAccessMixin, View):
         messages.success(
             request,
             "Reintento de enrutado en cola -- puede tardar unos "
-            "minutos, recarga la página para ver el resultado.",
+            "minutos.",
         )
-        return redirect(reverse("panel:documentation_hub"))
+        fragment_name = (
+            "panel:documentation_unassigned_machine" if domain == "machine"
+            else "panel:documentation_unassigned_personal"
+        )
+        return redirect(reverse(fragment_name))
 
 
 class DocumentationHubView(DocsUploadAccessMixin, View):
@@ -861,40 +905,45 @@ class DocumentationHubView(DocsUploadAccessMixin, View):
             company=company,
         ).select_related("user").order_by("user__first_name", "user__last_name")
 
-        unassigned_machine_docs = list(
-            MachineDocument.objects
-            .filter(
-                company=company,
-                machine_asset__isnull=True,
-                status=MachineDocument.Status.UNASSIGNED,
-            )
-            .order_by("-created_at")
-        )
-        unassigned_personal_docs = list(
-            PersonalDocument.objects
-            .filter(
-                company=company,
-                company_user__isnull=True,
-                status=PersonalDocument.Status.UNASSIGNED,
-            )
-            .order_by("-created_at")
-        )
-        for doc in unassigned_machine_docs:
-            doc.download_url = _resolve_download_url(
-                doc, MACHINE_DOCUMENTS_BUCKET,
-            )
-        for doc in unassigned_personal_docs:
-            doc.download_url = _resolve_download_url(
-                doc, PERSONNEL_DOCUMENTS_BUCKET,
-            )
-
         return render(request, self.template_name, {
             "active_nav": "documentation_hub",
             "company_user": company_user,
             "machines": machines,
             "workers": workers,
-            "unassigned_machine_docs": unassigned_machine_docs,
-            "unassigned_personal_docs": unassigned_personal_docs,
+            "unassigned_machine_docs": _unassigned_documents(company, "machine"),
+            "unassigned_personal_docs": _unassigned_documents(company, "personal"),
+        })
+
+
+class UnassignedMachineFragmentView(DocsUploadAccessMixin, View):
+    """
+    GET (HTMX): bloque "Sin asignar" de Maquinaria, aislado en su
+    propio fragmento (S024-bis, "no vamos a estar recargando la
+    página") -- se refresca solo tras vincular a mano
+    (DocumentAssignView) o encolar un reenrutado
+    (RetryUnassignedRoutingView), sin recargar el resto de la página.
+    """
+
+    template_name = "panel/documentation/_unassigned_machine.html"
+
+    def get(self, request):
+        company = request.user.company_user.company
+        return render(request, self.template_name, {
+            "unassigned_machine_docs": _unassigned_documents(company, "machine"),
+            "machines": MachineAsset.objects.filter(company=company).order_by("code"),
+        })
+
+
+class UnassignedPersonalFragmentView(DocsUploadAccessMixin, View):
+    """GET (HTMX): igual que UnassignedMachineFragmentView, para Personal."""
+
+    template_name = "panel/documentation/_unassigned_personal.html"
+
+    def get(self, request):
+        company = request.user.company_user.company
+        return render(request, self.template_name, {
+            "unassigned_personal_docs": _unassigned_documents(company, "personal"),
+            "workers": CompanyUser.objects.filter(company=company).select_related("user").order_by("user__first_name", "user__last_name"),
         })
 
 
@@ -1066,12 +1115,10 @@ class DocumentationFolderUploadView(DocsUploadAccessMixin, View):
             if f.name.lower().endswith(".pdf")
         ]
         if not uploaded_files:
-            messages.error(
-                request,
-                "No se encontró ningún PDF en la(s) carpeta(s) "
-                "seleccionada(s).",
-            )
-            return redirect(reverse("panel:documentation_hub"))
+            return render(request, "panel/documentation/_upload_result.html", {
+                "is_error": True,
+                "message": "No se encontró ningún PDF en la(s) carpeta(s) seleccionada(s).",
+            })
 
         # Deduplicación por hash (S024) -- antes de crear cualquier
         # IngestedFile, para no gastar ni la llamada de enrutado ni la
@@ -1113,15 +1160,15 @@ class DocumentationFolderUploadView(DocsUploadAccessMixin, View):
             ingested_pks.append(ingested.pk)
 
         if not ingested_pks:
-            messages.error(
-                request,
-                "Todos los archivos seleccionados ya estaban subidos "
-                "(duplicados por contenido)."
-                if skipped_duplicates else
-                "No se encontró ningún PDF en la(s) carpeta(s) "
-                "seleccionada(s).",
-            )
-            return redirect(reverse("panel:documentation_hub"))
+            return render(request, "panel/documentation/_upload_result.html", {
+                "is_error": True,
+                "message": (
+                    "Todos los archivos seleccionados ya estaban subidos "
+                    "(duplicados por contenido)."
+                    if skipped_duplicates else
+                    "No se encontró ningún PDF en la(s) carpeta(s) seleccionada(s)."
+                ),
+            })
 
         route_ingested_files.delay(ingested_pks)
 
@@ -1144,8 +1191,10 @@ class DocumentationFolderUploadView(DocsUploadAccessMixin, View):
                 f" ({skipped_duplicates} archivo(s) omitido(s) por "
                 f"estar ya subido(s).)"
             )
-        messages.success(request, success_message)
-        return redirect(reverse("panel:documentation_hub"))
+        return render(request, "panel/documentation/_upload_result.html", {
+            "is_error": False,
+            "message": success_message,
+        })
 
 
 class DocumentAssignView(DocsUploadAccessMixin, View):
@@ -1180,7 +1229,7 @@ class DocumentAssignView(DocsUploadAccessMixin, View):
             ).first()
             if target is None:
                 messages.error(request, "Máquina no válida.")
-                return redirect(reverse("panel:documentation_hub"))
+                return redirect(reverse("panel:documentation_unassigned_machine"))
             document.machine_asset = target
             document.detected_reference_hint = ""
             new_subject_label = target.code
@@ -1190,7 +1239,7 @@ class DocumentAssignView(DocsUploadAccessMixin, View):
             ).select_related("user").first()
             if target is None:
                 messages.error(request, "Trabajador no válido.")
-                return redirect(reverse("panel:documentation_hub"))
+                return redirect(reverse("panel:documentation_unassigned_personal"))
             document.company_user = target
             document.detected_dni_hint = ""
             new_subject_label = (
@@ -1212,7 +1261,11 @@ class DocumentAssignView(DocsUploadAccessMixin, View):
         messages.success(
             request, f"Documento vinculado a {new_subject_label}.",
         )
-        return redirect(reverse("panel:documentation_hub"))
+        fragment_name = (
+            "panel:documentation_unassigned_machine" if domain == "machine"
+            else "panel:documentation_unassigned_personal"
+        )
+        return redirect(reverse(fragment_name))
 
 
 class DocumentDeleteView(DocsUploadAccessMixin, View):
@@ -1253,7 +1306,15 @@ class DocumentDeleteView(DocsUploadAccessMixin, View):
                 "Este documento está vigente -- solo se puede borrar "
                 "documentación archivada.",
             )
-            return redirect(reverse("panel:documentation_hub"))
+            entity_pk = (
+                document.machine_asset_id if domain == "machine"
+                else document.company_user_id
+            )
+            fragment_name = (
+                "panel:documentation_machine_detail" if domain == "machine"
+                else "panel:documentation_personal_detail"
+            )
+            return redirect(reverse(fragment_name, kwargs={"pk": entity_pk}))
 
         content_type = ContentType.objects.get_for_model(document)
         DocumentAlert.objects.filter(
@@ -1271,6 +1332,10 @@ class DocumentDeleteView(DocsUploadAccessMixin, View):
                     exc_info=True,
                 )
 
+        entity_pk = (
+            document.machine_asset_id if domain == "machine"
+            else document.company_user_id
+        )
         document_label = document.display_name
         document.delete()
 
@@ -1281,7 +1346,11 @@ class DocumentDeleteView(DocsUploadAccessMixin, View):
         messages.success(
             request, f"Documento archivado \"{document_label}\" borrado.",
         )
-        return redirect(reverse("panel:documentation_hub"))
+        fragment_name = (
+            "panel:documentation_machine_detail" if domain == "machine"
+            else "panel:documentation_personal_detail"
+        )
+        return redirect(reverse(fragment_name, kwargs={"pk": entity_pk}))
 
 
 class DocumentEditFormFragmentView(DocsUploadAccessMixin, View):
@@ -1371,4 +1440,12 @@ class DocumentUpdateView(DocsUploadAccessMixin, View):
             domain, document.pk,
         )
         messages.success(request, "Documento actualizado.")
-        return redirect(reverse("panel:documentation_hub"))
+        entity_pk = (
+            document.machine_asset_id if domain == "machine"
+            else document.company_user_id
+        )
+        fragment_name = (
+            "panel:documentation_machine_detail" if domain == "machine"
+            else "panel:documentation_personal_detail"
+        )
+        return redirect(reverse(fragment_name, kwargs={"pk": entity_pk}))

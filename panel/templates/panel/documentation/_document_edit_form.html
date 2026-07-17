@@ -3,6 +3,8 @@
 
 <form method="post"
       action="{% url 'panel:documentation_document_update' domain=domain pk=document.pk %}"
+      hx-post="{% url 'panel:documentation_document_update' domain=domain pk=document.pk %}"
+      hx-target="closest .accordion-body" hx-swap="innerHTML"
       class="card card-body">
     {% csrf_token %}
     <div class="row g-2">

@@ -39,6 +39,8 @@ from panel.views_documentation import (
     EmailTemplateListFragmentView,
     EmailTemplateSaveView,
     RetryUnassignedRoutingView,
+    UnassignedMachineFragmentView,
+    UnassignedPersonalFragmentView,
 )
 from panel.views import (
     PanelLoginView,
@@ -409,6 +411,8 @@ urlpatterns = [
     path("documentacion/<str:domain>/dossier/<str:token>/descargar/", DossierDownloadView.as_view(), name="documentation_dossier_download"),
     path("documentacion/<str:domain>/dossier/<str:token>/descartar/", DossierDiscardView.as_view(), name="documentation_dossier_discard"),
     path("documentacion/<str:domain>/reenrutar/", RetryUnassignedRoutingView.as_view(), name="documentation_retry_unassigned"),
+    path("documentacion/maquinaria/sin-asignar/", UnassignedMachineFragmentView.as_view(), name="documentation_unassigned_machine"),
+    path("documentacion/personal/sin-asignar/", UnassignedPersonalFragmentView.as_view(), name="documentation_unassigned_personal"),
 
     # Section default role — Endpoint AJAX para pre-rellenar rol al crear usuario (H13).
     path("sections/<int:pk>/default-role/", SectionDefaultRoleView.as_view(), name="section_default_role"),
