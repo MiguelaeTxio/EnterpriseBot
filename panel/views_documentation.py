@@ -1236,27 +1236,38 @@ class DocumentationPersonalDetailFragmentView(DocsUploadAccessMixin, View):
 
 class DocumentationFolderUploadView(DocsUploadAccessMixin, View):
     """
-    POST: recibe el lote acumulado de una o varias carpetas (JS del
-    lado del navegador, ver hub.html -- el input real es
-    `<input type="file" webkitdirectory multiple>` invocado varias
-    veces y fusionado en un único FormData antes de enviar). Crea una
-    fila IngestedFile por PDF (status=PENDING_ROUTING, rápido, sin
-    llamadas a Gemini) y encola UNA tarea
-    document_ingestion.tasks.route_ingested_files para todo el lote --
-    mismo principio async que el resto de subidas de esta plataforma
+    POST: recibe UN TROZO del lote acumulado de una o varias carpetas.
+    Desde S024-sexies, el JS del navegador (hub.html) trocea la
+    subida en varias peticiones si hace falta -- PythonAnywhere impone
+    un límite DURO de 100 MiB por petición HTTP a cualquier aplicación
+    web, sin excepción ni siquiera en cuentas de pago (confirmado con
+    el foro oficial: "There is a hard limit of 100MiB imposed by us.
+    If you want to upload something bigger, you would need your
+    frontend code to split it into chunks and upload them
+    separately"). Superarlo NO genera ni un error de Django ni un
+    traceback -- la conexión se corta antes de que la petición llegue
+    a nuestro código (confirmado con log real: dos "OSError: write
+    error" sin ninguna traza de esta vista, en el momento exacto en
+    que Miguel Ángel subió una carpeta de 121 archivos/112 PDF de la
+    A36 -- nunca llegó a crearse ni un solo IngestedFile).
+
+    Cada trozo trae un `batch_id` generado por el JAVASCRIPT del
+    navegador (no por esta vista) para que TODOS los trozos de una
+    misma subida compartan el mismo lote -- si no viene (compatibilidad
+    con llamadas directas sin JS), se genera uno aquí como antes. El
+    visor de subida en vivo (UploadBatchStatusFragmentView) no sabe ni
+    le importa cuántas peticiones HTTP hicieron falta para completar
+    un lote, solo filtra por upload_batch_id.
+
+    Crea una fila IngestedFile por PDF del trozo (status=
+    PENDING_ROUTING, rápido, sin llamadas a Gemini) y encola UNA tarea
+    document_ingestion.tasks.route_ingested_files por trozo -- mismo
+    principio async que el resto de subidas de esta plataforma
     (incidente 2026-07-14, 504 de PythonAnywhere).
 
     A diferencia de MachineDocumentBatchUploadView (H23, sin tocar):
     aquí NO se elige máquina/trabajador de antemano -- se detecta
     automáticamente por contenido (document_ingestion, S024).
-
-    S024-ter, "interfaz verbosa" (Miguel Ángel: "quiero que cuando se
-    le dé a subir... esté viendo todo lo que está ocurriendo. Una
-    interfaz verbosa que comunique, sin tocar nada"): esta vista ya no
-    devuelve un simple mensaje -- genera un `upload_batch_id`
-    compartido por todos los archivos del lote y devuelve directamente
-    el visor de seguimiento en vivo (UploadBatchStatusFragmentView),
-    que se autoactualiza por sondeo mientras quede algo sin terminar.
     """
 
     def post(self, request):
@@ -1283,7 +1294,10 @@ class DocumentationFolderUploadView(DocsUploadAccessMixin, View):
                 "message": "No se encontró ningún PDF en la(s) carpeta(s) seleccionada(s).",
             })
 
-        batch_id = uuid.uuid4().hex
+        # batch_id compartido entre trozos (S024-sexies) -- generado
+        # por el JS del navegador y reenviado igual en cada trozo. Se
+        # genera aquí solo como fallback si llega vacío/ausente.
+        batch_id = request.POST.get("batch_id", "").strip() or uuid.uuid4().hex
 
         # Deduplicación por hash (S024) -- antes de crear cualquier
         # IngestedFile, para no gastar ni la llamada de enrutado ni la

@@ -27,14 +27,9 @@
                 "Sin asignar" de la pestaña correspondiente.
             </p>
             <form id="folderUploadForm" method="post"
-                  action="{% url 'panel:documentation_folder_upload' %}"
-                  hx-post="{% url 'panel:documentation_folder_upload' %}"
-                  hx-target="#uploadResult" hx-swap="innerHTML"
-                  hx-encoding="multipart/form-data">
+                  action="{% url 'panel:documentation_folder_upload' %}">
                 {% csrf_token %}
                 <input type="file" id="folderPickerInput" webkitdirectory multiple hidden>
-                <input type="file" id="folderBatchInput" name="folder" multiple hidden>
-                <div id="folderPathsContainer" hidden></div>
                 <div class="d-flex align-items-center gap-2 flex-wrap">
                     <button type="button" class="btn btn-sm btn-outline-secondary" id="addFolderBtn">
                         <i class="bi bi-folder-plus me-1"></i>Añadir carpeta
@@ -42,9 +37,8 @@
                     <span id="folderBatchSummary" class="text-muted small">Ninguna carpeta añadida todavía.</span>
                 </div>
                 <div class="mt-3">
-                    <button type="submit" class="btn btn-sm btn-primary" id="folderUploadSubmitBtn" disabled
-                            hx-disabled-elt="this">
-                        <span class="htmx-indicator spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                    <button type="submit" class="btn btn-sm btn-primary" id="folderUploadSubmitBtn" disabled>
+                        <span id="folderUploadSpinner" class="spinner-border spinner-border-sm me-1 d-none" role="status" aria-hidden="true"></span>
                         <i class="bi bi-cloud-upload me-1"></i>Subir y clasificar
                     </button>
                 </div>
@@ -205,18 +199,25 @@
 (function () {
     'use strict';
     // Acumula los archivos de varias selecciones de carpeta (cada
-    // click en "Añadir carpeta" reabre el picker webkitdirectory) en
-    // un único input oculto antes de enviar el formulario -- un
-    // <input type="file"> normal solo conserva la última selección,
-    // así que la fusión se hace aquí con DataTransfer (soportado por
-    // los navegadores del taller, sin dependencia nueva).
+    // click en "Añadir carpeta" reabre el picker webkitdirectory).
     var pickerInput = document.getElementById('folderPickerInput');
-    var batchInput = document.getElementById('folderBatchInput');
-    var pathsContainer = document.getElementById('folderPathsContainer');
     var addFolderBtn = document.getElementById('addFolderBtn');
     var summaryEl = document.getElementById('folderBatchSummary');
     var submitBtn = document.getElementById('folderUploadSubmitBtn');
+    var submitSpinner = document.getElementById('folderUploadSpinner');
+    var uploadForm = document.getElementById('folderUploadForm');
+    var uploadResultEl = document.getElementById('uploadResult');
     var accumulated = [];
+
+    // PythonAnywhere impone un límite DURO de 100 MiB por petición
+    // HTTP a cualquier aplicación web (confirmado con el foro
+    // oficial, S024-sexies) -- superarlo no da ni error de Django, la
+    // conexión se corta antes de llegar a nuestro código (caso real:
+    // 121 archivos/112 PDF de la A36, "OSError: write error" sin
+    // ninguna traza de la vista). 70 MiB por trozo deja margen real
+    // para la sobrecarga de multipart (cabeceras + límites de cada
+    // parte), sin acercarse al límite.
+    var MAX_CHUNK_BYTES = 70 * 1024 * 1024;
 
     function refreshSummary() {
         if (accumulated.length === 0) {
@@ -224,31 +225,13 @@
             submitBtn.disabled = true;
             return;
         }
-        var pdfCount = accumulated.filter(function (f) {
+        var pdfFiles = accumulated.filter(function (f) {
             return f.name.toLowerCase().endsWith('.pdf');
-        }).length;
-        summaryEl.textContent = pdfCount + ' PDF(s) en cola (' + accumulated.length + ' archivo(s) explorado(s) en total).';
-        submitBtn.disabled = pdfCount === 0;
-    }
-
-    function syncBatchInput() {
-        var dt = new DataTransfer();
-        accumulated.forEach(function (f) { dt.items.add(f); });
-        batchInput.files = dt.files;
-
-        // Un <input type="file"> no lleva metadatos propios -- la
-        // carpeta de origen (webkitRelativePath) se manda aparte, en
-        // el mismo orden, como campos ocultos folder_paths (S024-ter,
-        // "el visor debe indicar la carpeta de donde ha salido cada
-        // archivo").
-        pathsContainer.innerHTML = '';
-        accumulated.forEach(function (f) {
-            var hiddenInput = document.createElement('input');
-            hiddenInput.type = 'hidden';
-            hiddenInput.name = 'folder_paths';
-            hiddenInput.value = f.webkitRelativePath || f.name;
-            pathsContainer.appendChild(hiddenInput);
         });
+        var totalBytes = pdfFiles.reduce(function (sum, f) { return sum + f.size; }, 0);
+        var totalMb = (totalBytes / (1024 * 1024)).toFixed(1);
+        summaryEl.textContent = pdfFiles.length + ' PDF(s) en cola (' + accumulated.length + ' archivo(s) explorado(s), ' + totalMb + ' MB).';
+        submitBtn.disabled = pdfFiles.length === 0;
     }
 
     addFolderBtn.addEventListener('click', function () {
@@ -260,20 +243,106 @@
         Array.prototype.forEach.call(pickerInput.files, function (f) {
             accumulated.push(f);
         });
-        syncBatchInput();
         refreshSummary();
     });
 
     refreshSummary();
 
-    // Tras subir con éxito, vaciar la cola local para no reenviar los
-    // mismos archivos si se abre el panel otra vez.
-    document.body.addEventListener('htmx:afterRequest', function (evt) {
-        if (evt.detail.elt && evt.detail.elt.id === 'folderUploadForm' && evt.detail.successful) {
-            accumulated = [];
-            syncBatchInput();
-            refreshSummary();
+    // Divide `accumulated` en trozos que se mantengan por debajo de
+    // MAX_CHUNK_BYTES -- greedy: mientras quepa en el trozo actual sin
+    // pasarse, se añade; si no cabe y el trozo ya tiene algo, se cierra
+    // y se abre uno nuevo (un archivo individual más grande que el
+    // límite va solo en su propio trozo, caso raro pero sin bloquear
+    // el resto).
+    function buildChunks(files) {
+        var chunks = [];
+        var current = [];
+        var currentBytes = 0;
+        files.forEach(function (f) {
+            if (current.length > 0 && currentBytes + f.size > MAX_CHUNK_BYTES) {
+                chunks.push(current);
+                current = [];
+                currentBytes = 0;
+            }
+            current.push(f);
+            currentBytes += f.size;
+        });
+        if (current.length > 0) { chunks.push(current); }
+        return chunks;
+    }
+
+    function uploadChunk(files, batchId, csrfToken) {
+        var formData = new FormData();
+        formData.append('csrfmiddlewaretoken', csrfToken);
+        formData.append('batch_id', batchId);
+        files.forEach(function (f) {
+            formData.append('folder', f, f.name);
+            formData.append('folder_paths', f.webkitRelativePath || f.name);
+        });
+        return fetch(uploadForm.action, {
+            method: 'POST',
+            body: formData,
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        });
+    }
+
+    uploadForm.addEventListener('submit', function (evt) {
+        evt.preventDefault();
+        if (accumulated.length === 0) { return; }
+
+        var pdfFiles = accumulated.filter(function (f) {
+            return f.name.toLowerCase().endsWith('.pdf');
+        });
+        var chunks = buildChunks(pdfFiles);
+        var batchId = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random()).replace(/-/g, '');
+        var csrfToken = uploadForm.querySelector('[name=csrfmiddlewaretoken]').value;
+
+        submitBtn.disabled = true;
+        submitSpinner.classList.remove('d-none');
+        uploadResultEl.innerHTML = '<div class="text-muted small"><i class="bi bi-hourglass-split me-1"></i>Subiendo '
+            + pdfFiles.length + ' documento(s)'
+            + (chunks.length > 1 ? ' en ' + chunks.length + ' tandas (lote grande, dividido automáticamente por el límite de subida del servidor)' : '')
+            + '…</div>';
+
+        var chunkIndex = 0;
+        function sendNextChunk() {
+            if (chunkIndex >= chunks.length) {
+                // Todos los trozos enviados -- mostrar el visor en vivo
+                // del lote completo (le da igual cuántas peticiones
+                // hicieron falta, solo filtra por batch_id).
+                fetch('{% url "panel:documentation_upload_batch_status" batch_id="__BATCH__" %}'.replace('__BATCH__', batchId))
+                    .then(function (resp) { return resp.text(); })
+                    .then(function (html) {
+                        uploadResultEl.innerHTML = html;
+                        htmx.process(uploadResultEl);
+                        accumulated = [];
+                        refreshSummary();
+                        submitBtn.disabled = true;
+                        submitSpinner.classList.add('d-none');
+                    });
+                return;
+            }
+            var thisChunk = chunkIndex + 1;
+            if (chunks.length > 1) {
+                uploadResultEl.querySelector('.text-muted').innerHTML =
+                    '<i class="bi bi-hourglass-split me-1"></i>Subiendo tanda ' + thisChunk + ' de ' + chunks.length + '…';
+            }
+            uploadChunk(chunks[chunkIndex], batchId, csrfToken)
+                .then(function (resp) {
+                    if (!resp.ok) { throw new Error('HTTP ' + resp.status); }
+                    chunkIndex += 1;
+                    sendNextChunk();
+                })
+                .catch(function (err) {
+                    uploadResultEl.innerHTML = '<div class="alert alert-danger mb-0">'
+                        + 'Fallo subiendo la tanda ' + thisChunk + ' de ' + chunks.length + ' (' + err.message + '). '
+                        + 'Las tandas anteriores ya se han subido y están en proceso -- revisa la pestaña '
+                        + 'correspondiente antes de reintentar el resto.</div>';
+                    submitBtn.disabled = false;
+                    submitSpinner.classList.add('d-none');
+                });
         }
+        sendNextChunk();
     });
 
     // Abre el modal del dossier en cuanto llega contenido nuevo a su
