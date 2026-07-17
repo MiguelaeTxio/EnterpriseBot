@@ -63,6 +63,7 @@ misma vista.
 import logging
 
 from django.contrib import messages
+from django.contrib.contenttypes.models import ContentType
 from django.http import Http404
 from django.shortcuts import redirect, render
 from django.urls import reverse
@@ -74,6 +75,8 @@ from document_ingestion.deduplication_service import (
 )
 from document_ingestion.models import IngestedFile
 from document_ingestion.tasks import route_ingested_files
+from document_management.alert_service import DEFAULT_EXPIRY_ALERT_OFFSETS_DAYS
+from document_management.models import DocumentAlert
 from document_management.vigencia_service import DocumentSnapshot, is_current
 from fleet.models import MachineAsset
 from ivr_config.models import CompanyUser
@@ -174,6 +177,238 @@ def _resolve_download_url(document, bucket_name: str) -> str:
             document, document.gcs_blob_name, exc, exc_info=True,
         )
         return ""
+
+
+# ---------------------------------------------------------------------------
+# CRUD de alertas (S024, a petición explícita de Miguel Ángel: "ese
+# CRUD es necesario, así que tenemos que construirlo") -- generico
+# sobre las dos apps de dominio, vía el mismo mapa `_DOMAIN_MODELS`
+# que usan las vistas de detalle de arriba. document_management NUNCA
+# construye interfaz propia (ver su docstring) -- estas vistas viven
+# aquí, en la interfaz de Documentación que sí las consume.
+# ---------------------------------------------------------------------------
+
+_DOMAIN_MODELS = {
+    "machine": MachineDocument,
+    "personal": PersonalDocument,
+}
+
+
+def _resolve_document(domain: str, pk: int, company):
+    """
+    Resuelve un MachineDocument o PersonalDocument real por dominio +
+    pk, acotado a `company` -- nunca deja acceder a un documento de
+    otra empresa. Devuelve None si el dominio no es válido o el
+    documento no existe/no pertenece a la empresa.
+    """
+    model = _DOMAIN_MODELS.get(domain)
+    if model is None:
+        return None
+    return model.objects.filter(pk=pk, company=company).first()
+
+
+def _subject_label_for(document, domain: str) -> str:
+    """
+    Mismo criterio de etiqueta de sujeto que ya usan
+    machine_documents.tasks/personal_documents.tasks al crear las
+    alertas por defecto -- reutilizado aquí para las alertas creadas
+    a mano desde el CRUD, para que ambas vías queden con el mismo
+    formato.
+    """
+    if domain == "machine":
+        return document.machine_asset.code if document.machine_asset_id else "Sin asignar"
+    return (
+        (document.company_user.user.get_full_name()
+         or document.company_user.user.username)
+        if document.company_user_id else "Sin asignar"
+    )
+
+
+class DocumentAlertListFragmentView(DocsUploadAccessMixin, View):
+    """
+    GET (HTMX): lista las alertas de un documento concreto + un
+    formulario compacto para añadir una alerta nueva. Se abre bajo
+    demanda desde el botón "Alertas" de cada documento en
+    _machine_detail.html/_personal_detail.html -- no viene precargado
+    en el listado principal (mismo criterio de carga perezosa que el
+    resto de esta interfaz).
+    """
+
+    template_name = "panel/documentation/_document_alerts.html"
+
+    def get(self, request, domain, pk):
+        company = request.user.company_user.company
+        document = _resolve_document(domain, pk, company)
+        if document is None:
+            raise Http404("Documento no encontrado.")
+
+        content_type = ContentType.objects.get_for_model(document)
+        alerts = (
+            DocumentAlert.objects
+            .filter(content_type=content_type, object_id=document.pk)
+            .prefetch_related("contacts__user")
+            .order_by("alert_offset_days")
+        )
+        company_users = (
+            CompanyUser.objects
+            .filter(company=company)
+            .select_related("user")
+            .order_by("user__first_name", "user__last_name")
+        )
+
+        return render(request, self.template_name, {
+            "domain": domain,
+            "document": document,
+            "alerts": alerts,
+            "company_users": company_users,
+            "suggested_offsets": DEFAULT_EXPIRY_ALERT_OFFSETS_DAYS,
+        })
+
+
+class DocumentAlertCreateView(DocsUploadAccessMixin, View):
+    """
+    POST (HTMX): crea una alerta nueva sobre un documento (offset_days
+    + contactos elegidos a mano) y devuelve el fragmento de lista
+    actualizado. No pasa por create_default_expiry_alerts() (esa
+    función es solo para las tres alertas automáticas al clasificar,
+    con idempotencia por offset) -- aquí el usuario puede añadir
+    cuantas alertas adicionales quiera, incluso con un offset
+    repetido, a propósito (p. ej. querer avisar dos veces a 15 días
+    con contactos distintos).
+    """
+
+    def post(self, request, domain, pk):
+        company = request.user.company_user.company
+        document = _resolve_document(domain, pk, company)
+        if document is None:
+            raise Http404("Documento no encontrado.")
+
+        effective_expiry = (
+            document.expiry_date if domain == "machine"
+            else (document.expiry_date or document.computed_expiry_date)
+        )
+        if effective_expiry is None:
+            messages.error(
+                request,
+                "Este documento no tiene fecha de caducidad conocida "
+                "-- no se puede crear una alerta.",
+            )
+            return redirect(reverse("panel:documentation_hub"))
+
+        try:
+            offset_days = int(request.POST.get("alert_offset_days", ""))
+            if offset_days < 0:
+                raise ValueError
+        except (TypeError, ValueError):
+            messages.error(
+                request, "Días de antelación no válidos.",
+            )
+            return redirect(reverse("panel:documentation_hub"))
+
+        content_type = ContentType.objects.get_for_model(document)
+        alert = DocumentAlert.objects.create(
+            content_type=content_type,
+            object_id=document.pk,
+            document_label=document.display_name,
+            subject_label=_subject_label_for(document, domain),
+            company=company,
+            expiry_date=effective_expiry,
+            alert_offset_days=offset_days,
+        )
+        contact_pks = request.POST.getlist("contacts")
+        if contact_pks:
+            alert.contacts.set(
+                CompanyUser.objects.filter(pk__in=contact_pks, company=company)
+            )
+
+        logger.info(
+            "# [DocumentAlertCreateView] Alerta #%d creada a mano "
+            "para %s #%d (%d días).",
+            alert.pk, domain, document.pk, offset_days,
+        )
+        return redirect(
+            reverse(
+                "panel:documentation_alerts_fragment",
+                kwargs={"domain": domain, "pk": document.pk},
+            )
+        )
+
+
+class DocumentAlertUpdateView(DocsUploadAccessMixin, View):
+    """
+    POST (HTMX): modifica los días de antelación y/o los contactos de
+    una alerta ya existente.
+    """
+
+    def post(self, request, alert_pk):
+        alert = DocumentAlert.objects.filter(pk=alert_pk).first()
+        if alert is None or alert.company_id != request.user.company_user.company_id:
+            raise Http404("Alerta no encontrada.")
+
+        try:
+            offset_days = int(request.POST.get("alert_offset_days", ""))
+            if offset_days < 0:
+                raise ValueError
+        except (TypeError, ValueError):
+            messages.error(request, "Días de antelación no válidos.")
+        else:
+            alert.alert_offset_days = offset_days
+            alert.save(update_fields=["alert_offset_days"])
+
+        contact_pks = request.POST.getlist("contacts")
+        alert.contacts.set(
+            CompanyUser.objects.filter(
+                pk__in=contact_pks, company=alert.company,
+            )
+        )
+
+        logger.info(
+            "# [DocumentAlertUpdateView] Alerta #%d modificada.",
+            alert.pk,
+        )
+
+        domain = (
+            "machine" if alert.content_type.model == "machinedocument"
+            else "personal"
+        )
+        return redirect(
+            reverse(
+                "panel:documentation_alerts_fragment",
+                kwargs={"domain": domain, "pk": alert.object_id},
+            )
+        )
+
+
+class DocumentAlertDeleteView(DocsUploadAccessMixin, View):
+    """
+    POST (HTMX): borra una alerta. Sin confirmación server-side --
+    la confirmación vive en el propio botón del template (JS
+    `onsubmit="return confirm(...)"`, mismo patrón ligero que el resto
+    del panel para acciones destructivas de poco riesgo).
+    """
+
+    def post(self, request, alert_pk):
+        alert = DocumentAlert.objects.filter(pk=alert_pk).first()
+        if alert is None or alert.company_id != request.user.company_user.company_id:
+            raise Http404("Alerta no encontrada.")
+
+        domain = (
+            "machine" if alert.content_type.model == "machinedocument"
+            else "personal"
+        )
+        document_pk = alert.object_id
+        alert.delete()
+
+        logger.info(
+            "# [DocumentAlertDeleteView] Alerta #%s borrada (%s #%d).",
+            alert_pk, domain, document_pk,
+        )
+        return redirect(
+            reverse(
+                "panel:documentation_alerts_fragment",
+                kwargs={"domain": domain, "pk": document_pk},
+            )
+        )
 
 
 class DocumentationHubView(DocsUploadAccessMixin, View):

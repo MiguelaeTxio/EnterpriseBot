@@ -16,6 +16,10 @@ from panel.views_task_photos import (
     TaskPhotoWidgetView,
 )
 from panel.views_documentation import (
+    DocumentAlertCreateView,
+    DocumentAlertDeleteView,
+    DocumentAlertListFragmentView,
+    DocumentAlertUpdateView,
     DocumentationFolderUploadView,
     DocumentationHubView,
     DocumentationMachineDetailFragmentView,
@@ -375,6 +379,10 @@ urlpatterns = [
     path("documentacion/maquinaria/<int:pk>/", DocumentationMachineDetailFragmentView.as_view(), name="documentation_machine_detail"),
     path("documentacion/personal/<int:pk>/", DocumentationPersonalDetailFragmentView.as_view(), name="documentation_personal_detail"),
     path("documentacion/subir/", DocumentationFolderUploadView.as_view(), name="documentation_folder_upload"),
+    path("documentacion/alertas/<str:domain>/<int:pk>/", DocumentAlertListFragmentView.as_view(), name="documentation_alerts_fragment"),
+    path("documentacion/alertas/<str:domain>/<int:pk>/crear/", DocumentAlertCreateView.as_view(), name="documentation_alert_create"),
+    path("documentacion/alertas/editar/<int:alert_pk>/", DocumentAlertUpdateView.as_view(), name="documentation_alert_update"),
+    path("documentacion/alertas/borrar/<int:alert_pk>/", DocumentAlertDeleteView.as_view(), name="documentation_alert_delete"),
 
     # Section default role — Endpoint AJAX para pre-rellenar rol al crear usuario (H13).
     path("sections/<int:pk>/default-role/", SectionDefaultRoleView.as_view(), name="section_default_role"),
