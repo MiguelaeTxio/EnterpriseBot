@@ -326,6 +326,52 @@ def process_machine_document_batch(self, document_pks: list[int]) -> None:
             )
             continue
 
+        # Segunda salvaguarda (S024-bis, caso real): el juicio de
+        # Gemini sobre qué páginas del maestro están "sin cubrir"
+        # puede equivocarse -- confirmado con un caso real donde
+        # assess_master_coverage marcó como no cubiertas páginas que
+        # en realidad correspondían a documentos ya subidos
+        # individualmente en el MISMO lote (mismo document_type,
+        # misma fecha), generando un duplicado semántico que el hash
+        # nunca detecta (la extracción produce un PDF nuevo,
+        # bytes distintos al original aunque el contenido sea el
+        # mismo). Si ya existe, para esta MISMA máquina, un documento
+        # CLASSIFIED del mismo tipo con la misma fecha de caducidad (o,
+        # si ninguno tiene caducidad, la misma fecha de emisión), se
+        # descarta la extracción sin crear el duplicado -- se confía
+        # en el documento subido individualmente, no en el extraído.
+        machine_asset = item["document"].machine_asset
+        if machine_asset is not None:
+            duplicate_candidates = MachineDocument.objects.filter(
+                machine_asset=machine_asset,
+                document_type=extra_result["document_type"],
+                status=MachineDocument.Status.CLASSIFIED,
+            ).exclude(pk=pk)
+            is_duplicate = any(
+                (
+                    extra_result["expiry_date"] is not None
+                    and candidate.expiry_date == extra_result["expiry_date"]
+                ) or (
+                    extra_result["expiry_date"] is None
+                    and candidate.expiry_date is None
+                    and extra_result["issue_date"] is not None
+                    and candidate.issue_date == extra_result["issue_date"]
+                )
+                for candidate in duplicate_candidates
+            )
+            if is_duplicate:
+                logger.warning(
+                    "# [process_machine_document_batch] #%d (%s): "
+                    "extracción descartada -- ya existe un documento "
+                    "%r para %s con la misma fecha (assess_master_"
+                    "coverage marcó incorrectamente estas páginas "
+                    "como no cubiertas).",
+                    pk, item["filename"], extra_result["document_type"],
+                    machine_asset.code,
+                )
+                masters_to_discard.add(pk)
+                continue
+
         new_document = MachineDocument.objects.create(
             machine_asset=item["document"].machine_asset,
             company=item["document"].company,

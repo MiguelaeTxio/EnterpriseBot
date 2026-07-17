@@ -228,6 +228,51 @@ def process_personal_document_batch(self, document_pks: list[int]) -> None:
             )
             continue
 
+        # Segunda salvaguarda (S024-bis, mismo caso real corregido en
+        # machine_documents/tasks.py -- ver ese docstring para el
+        # detalle completo): si ya existe, para el MISMO trabajador,
+        # un documento CLASSIFIED del mismo tipo con la misma fecha
+        # efectiva de caducidad (expiry_date o, si ninguno la tiene,
+        # computed_expiry_date) o la misma fecha de emisión, se
+        # descarta la extracción -- el juicio de Gemini sobre
+        # cobertura del maestro puede equivocarse, y el hash nunca
+        # detecta este caso (la extracción genera bytes nuevos).
+        company_user = item["document"].company_user
+        if company_user is not None:
+            extra_effective_expiry = (
+                extra_result["expiry_date"] or extra_result["computed_expiry_date"]
+            )
+            duplicate_candidates = PersonalDocument.objects.filter(
+                company_user=company_user,
+                document_type=extra_result["document_type"],
+                status=PersonalDocument.Status.CLASSIFIED,
+            ).exclude(pk=pk)
+            is_duplicate = any(
+                (
+                    extra_effective_expiry is not None
+                    and (candidate.expiry_date or candidate.computed_expiry_date)
+                    == extra_effective_expiry
+                ) or (
+                    extra_effective_expiry is None
+                    and candidate.expiry_date is None
+                    and candidate.computed_expiry_date is None
+                    and extra_result["issue_date"] is not None
+                    and candidate.issue_date == extra_result["issue_date"]
+                )
+                for candidate in duplicate_candidates
+            )
+            if is_duplicate:
+                logger.warning(
+                    "# [process_personal_document_batch] #%d (%s): "
+                    "extracción descartada -- ya existe un documento "
+                    "%r con la misma fecha (assess_master_coverage "
+                    "marcó incorrectamente estas páginas como no "
+                    "cubiertas).",
+                    pk, item["filename"], extra_result["document_type"],
+                )
+                masters_to_discard.add(pk)
+                continue
+
         new_document = PersonalDocument.objects.create(
             company_user=item["document"].company_user,
             company=item["document"].company,
