@@ -1102,3 +1102,11 @@ table.table #toll-thead ~ tbody tr:nth-child(even):not(.table-secondary) td {
 .upload-batch-status-folder-path {
     font-size: 0.75rem;
 }
+
+/* Listado de usuarios -- columna de checkbox de selección. Sustituye al
+   estilo inline que marcó djlint (H021) en panel/users/list.html.
+   User list -- checkbox selection column. Replaces the inline style
+   flagged by djlint (H021) in panel/users/list.html. */
+.user-list-checkbox-col {
+    width: 40px;
+}

@@ -58,7 +58,7 @@
                     {# Server-side sort headers. Build URL preserving current filters. #}
                     {# Cabeceras con sort server-side. La URL preserva filtros activos. #}
                     <tr>
-                        <th class="ps-3" style="width:40px">
+                        <th class="ps-3 user-list-checkbox-col">
                             <input type="checkbox" id="cb-select-all"
                                    class="form-check-input"
                                    title="Seleccionar todos">
@@ -129,6 +129,18 @@
                             {% elif cu.role == 'WORKSHOP' %}
                                 <span class="badge badge-workshop">
                                     <i class="bi bi-wrench me-1"></i>Operario de taller
+                                </span>
+                            {% elif cu.role == 'WORKSHOPBOSS' %}
+                                <span class="badge badge-workshop">
+                                    <i class="bi bi-wrench-adjustable me-1"></i>Jefe de taller
+                                </span>
+                            {% elif cu.role == 'ASSISTANCE' %}
+                                <span class="badge badge-supervisor">
+                                    <i class="bi bi-calculator me-1"></i>Operario de Asistencia
+                                </span>
+                            {% elif cu.role == 'DOCS_SUPERVISOR' %}
+                                <span class="badge badge-supervisor">
+                                    <i class="bi bi-folder2-open me-1"></i>Supervisor de Documentación
                                 </span>
                             {% elif cu.role == 'DRIVER' %}
                                 <span class="badge badge-external">
