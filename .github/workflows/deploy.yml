@@ -148,7 +148,7 @@ jobs:
               echo "Bridge de voz: sin cambios relevantes, no se reinicia."
             fi
 
-            if echo "$CHANGED" | grep -qE '(tasks\.py$|ai_services/|enterprise_core/celery\.py|start_celery_worker\.sh|machine_documents/|personal_documents/|document_ingestion/|document_management/|spare_parts/gcs_service\.py|spare_parts/services\.py)'; then
+            if echo "$CHANGED" | grep -qE '(tasks\.py$|ai_services/|enterprise_core/celery\.py|enterprise_core/settings\.py|start_celery_worker\.sh|machine_documents/|personal_documents/|document_ingestion/|document_management/|spare_parts/gcs_service\.py|spare_parts/services\.py)'; then
               echo "--- Worker Celery: cambios relevantes detectados, reiniciando (id 242133) ---"
               curl -sf -X POST "https://www.pythonanywhere.com/api/v0/user/MiguelAeTxio/always_on/242133/restart/" \
                 -H "Authorization: Token ${{ secrets.PA_API_TOKEN }}"

@@ -218,6 +218,49 @@ CELERY_ENABLE_UTC        = True
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_DEFAULT_QUEUE  = 'work_orders'
 
+# ---------------------------------------------------------------------------
+# Resiliencia ante caída del worker (S025) -- hallazgo real de Miguel
+# Ángel: un lote de 95 documentos se quedó a medias (4 documentos
+# perdidos, #207-210) sin ningún error en el log. Causa raíz
+# confirmada: Celery, con la configuración por defecto que tenía este
+# proyecto hasta ahora (acks_late=False, prefetch_multiplier=4),
+# reserva hasta 4 tareas en el buffer local del worker ANTES de
+# ejecutarlas, y las marca como "entregadas" ante Redis en ese mismo
+# momento -- no cuando terminan. Si el proceso muere con esas tareas
+# en el buffer (el worker corre en un contenedor separado de
+# PythonAnywhere, reiniciado varias veces hoy durante los despliegues
+# de esta sesión), se pierden sin dejar ningún rastro. Encajaba
+# exactamente con los 4 documentos perdidos (concurrency=1 x
+# prefetch_multiplier=4 por defecto = 4).
+#
+# Verificado en línea (directriz 4.4, 2026-07-20) contra la
+# documentación oficial de Celery 5.6.3 (misma versión instalada) --
+# combinación recomendada exactamente para este caso:
+#   - CELERY_TASK_ACKS_LATE: la tarea solo se confirma como entregada
+#     tras terminar (éxito o fallo), nunca al recibirla -- si el
+#     worker muere antes de acabarla, Redis la redistribuye a otro
+#     worker (o al mismo, tras recuperarse) en vez de perderla.
+#   - CELERY_WORKER_PREFETCH_MULTIPLIER = 1: reduce el buffer de
+#     tareas reservadas por adelantado al mínimo (1, igual a la
+#     concurrencia real de este worker) -- si hoy se perdían hasta 4
+#     tareas de golpe, a partir de ahora el máximo posible es 1.
+#   - CELERY_TASK_REJECT_ON_WORKER_LOST: cubre el caso distinto de que
+#     el worker muera A MITAD de ejecutar una tarea (acks_late por sí
+#     solo NO lo cubre -- Celery confirma la entrega igualmente si el
+#     proceso hijo termina abruptamente mientras corre, ver
+#     documentación oficial) -- con este ajuste, esa tarea también se
+#     reencola en vez de darse por perdida.
+#
+# Seguro para las tareas reales de este proyecto porque todas ya son
+# idempotentes a nivel de documento individual (ver docstring de
+# process_machine_document_batch/process_personal_document_batch:
+# "solo se recogen las filas PENDING en cada ejecución" -- un
+# reintento tras una caída nunca reprocesa lo que ya tuvo éxito).
+# ---------------------------------------------------------------------------
+CELERY_TASK_ACKS_LATE = True
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+CELERY_TASK_REJECT_ON_WORKER_LOST = True
+
 CELERY_BEAT_SCHEDULE = {
     # ---------------------------------------------------------------------------
     # WHATSAPP CHANNEL TASKS
