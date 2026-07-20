@@ -5,6 +5,22 @@
 {% block title %}Documentación{% endblock %}
 {% block page_title %}Documentación{% endblock %}
 
+{% block extra_head %}
+<style>
+    /* Alturas fijas de las barras de progreso del modal de subida
+       (S025) y ancho inicial de sus progress-bar -- extraídas de
+       estilos inline (S026, aviso de djlint H021 reparado en la
+       misma sesión, directriz 4.9). El ancho real de cada barra lo
+       sigue fijando el JS en tiempo de ejecución vía
+       element.style.width -- esta clase solo cubre el valor inicial
+       0% del HTML estático, no interfiere con esas actualizaciones. */
+    .upload-progress-thin { height: 8px; }
+    .upload-progress-thick { height: 14px; }
+    .progress-bar-start { width: 0%; }
+    .discard-list-scroll { max-height: 320px; overflow-y: auto; }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="container-fluid px-3 pt-3">
 
@@ -259,17 +275,17 @@
             </div>
             <div class="modal-body">
                 <p class="small text-muted mb-2" id="uploadModalOverallLabel">Preparando subida…</p>
-                <div class="progress mb-3" style="height: 8px;">
-                    <div class="progress-bar" id="uploadModalOverallBar" role="progressbar"
-                         style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+                <div class="progress mb-3 upload-progress-thin">
+                    <div class="progress-bar progress-bar-start" id="uploadModalOverallBar" role="progressbar"
+                         aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
                 </div>
                 <p class="small mb-1">
                     <i class="bi bi-file-earmark-pdf me-1"></i>
                     <span id="uploadModalCurrentFileName">--</span>
                 </p>
-                <div class="progress mb-3" style="height: 14px;">
-                    <div class="progress-bar bg-info" id="uploadModalFileBar" role="progressbar"
-                         style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+                <div class="progress mb-3 upload-progress-thick">
+                    <div class="progress-bar bg-info progress-bar-start" id="uploadModalFileBar" role="progressbar"
+                         aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
                         <span id="uploadModalFilePct" class="small"></span>
                     </div>
                 </div>
@@ -279,6 +295,39 @@
                     perdería lo que quede pendiente de esta tanda. En cuanto termine la subida
                     podrás navegar con normalidad; la clasificación sigue en segundo plano.
                 </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# --- Modal de conformidad de la lista de descarte previa a la subida (S026) --- #}
+{# Flujo: leer nombre de archivo -> heurística -> lista de descarte -> #}
+{# conformidad del supervisor -> subir únicamente los que pasen el filtro. #}
+{# Solo se muestra si el preflight encontró algo que descartar -- si la #}
+{# lista viene vacía, la subida sigue directa sin este paso intermedio. #}
+<div class="modal fade" id="discardConfirmModal" tabindex="-1" aria-hidden="true"
+     data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-funnel-fill text-warning me-2"></i>Documentos descartados antes de subir</h5>
+            </div>
+            <div class="modal-body">
+                <p class="small text-muted mb-2">
+                    Estos archivos no se van a subir -- por nombre, parecen documentos
+                    maestros/combinados ya cubiertos por otros del mismo lote, o
+                    versiones antiguas de un documento del que ya hay una más
+                    reciente. Revisa la lista antes de confirmar.
+                </p>
+                <ul class="list-group small mb-0 discard-list-scroll" id="discardConfirmList"></ul>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="discardConfirmCancelBtn">
+                    Cancelar subida
+                </button>
+                <button type="button" class="btn btn-primary btn-sm" id="discardConfirmProceedBtn">
+                    <i class="bi bi-cloud-upload me-1"></i>Confirmar y subir el resto
+                </button>
             </div>
         </div>
     </div>
@@ -427,19 +476,34 @@
 
     refreshSummary();
 
-    uploadForm.addEventListener('submit', function (evt) {
-        evt.preventDefault();
-        if (accumulated.length === 0) { return; }
+    // Elementos del modal de conformidad de descarte (S026).
+    var discardConfirmModalEl = document.getElementById('discardConfirmModal');
+    var discardConfirmModal = null; // instanciado en el primer uso, igual que progressModal
+    var discardConfirmListEl = document.getElementById('discardConfirmList');
+    var discardConfirmCancelBtn = document.getElementById('discardConfirmCancelBtn');
+    var discardConfirmProceedBtn = document.getElementById('discardConfirmProceedBtn');
 
-        var pdfFiles = accumulated.filter(function (f) {
-            return f.name.toLowerCase().endsWith('.pdf');
-        });
-        var total = pdfFiles.length;
+    function resetSubmitButton() {
+        submitBtn.disabled = accumulated.length === 0;
+        submitSpinner.classList.add('d-none');
+    }
+
+    // Sube realmente `filesToUpload` (ya filtrados -- sin los
+    // descartados por el preflight, si los hubo) -- mismo mecanismo
+    // que existía antes de S026, solo que ahora extraído a función
+    // propia para poder llamarlo tanto directamente (sin nada que
+    // descartar) como tras la conformidad del modal.
+    function beginActualUpload(filesToUpload) {
+        var total = filesToUpload.length;
+        if (total === 0) {
+            uploadResultEl.innerHTML = '<div class="alert alert-warning mb-0">'
+                + 'No queda ningún archivo por subir tras aplicar el filtro de descarte.</div>';
+            resetSubmitButton();
+            return;
+        }
         var batchId = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random()).replace(/-/g, '');
         var csrfToken = uploadForm.querySelector('[name=csrfmiddlewaretoken]').value;
 
-        submitBtn.disabled = true;
-        submitSpinner.classList.remove('d-none');
         uploadResultEl.innerHTML = '<div class="text-muted small"><i class="bi bi-hourglass-split me-1"></i>'
             + 'Subida en curso -- ver progreso en el cuadro de diálogo.</div>';
 
@@ -474,7 +538,7 @@
                     });
                 return;
             }
-            var file = pdfFiles[index];
+            var file = filesToUpload[index];
             var folderPath = file.webkitRelativePath || file.name;
             uploadSingleFile(file, folderPath, batchId, csrfToken, index, total)
                 .then(function () {
@@ -488,11 +552,73 @@
                         + 'Fallo subiendo "' + file.name + '" (archivo ' + (index + 1) + ' de ' + total
                         + ', ' + err.message + '). Los archivos anteriores ya se han subido y están en '
                         + 'proceso -- revisa la pestaña correspondiente antes de reintentar el resto.</div>';
-                    submitBtn.disabled = false;
-                    submitSpinner.classList.add('d-none');
+                    resetSubmitButton();
                 });
         }
         sendNext();
+    }
+
+    uploadForm.addEventListener('submit', function (evt) {
+        evt.preventDefault();
+        if (accumulated.length === 0) { return; }
+
+        var pdfFiles = accumulated.filter(function (f) {
+            return f.name.toLowerCase().endsWith('.pdf');
+        });
+        var csrfToken = uploadForm.querySelector('[name=csrfmiddlewaretoken]').value;
+
+        submitBtn.disabled = true;
+        submitSpinner.classList.remove('d-none');
+        uploadResultEl.innerHTML = '<div class="text-muted small"><i class="bi bi-hourglass-split me-1"></i>'
+            + 'Comprobando nombres de archivo antes de subir…</div>';
+
+        // Preflight (S026) -- solo nombres, nunca bytes, antes de
+        // trocear/subir nada. Si el servidor no responde o falla, se
+        // sube todo sin filtrar en vez de bloquear la subida (nunca
+        // se pierde una subida real por un fallo de este filtro
+        // opcional).
+        fetch('{% url "panel:documentation_preflight_discard" %}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken,
+            },
+            body: JSON.stringify({
+                filenames: pdfFiles.map(function (f) { return f.name; }),
+            }),
+        })
+            .then(function (resp) { return resp.ok ? resp.json() : { discard: [] }; })
+            .catch(function () { return { discard: [] }; })
+            .then(function (result) {
+                var discardList = result.discard || [];
+                if (discardList.length === 0) {
+                    beginActualUpload(pdfFiles);
+                    return;
+                }
+
+                var discardedNames = discardList.map(function (d) { return d.filename; });
+                discardConfirmListEl.innerHTML = discardList.map(function (d) {
+                    return '<li class="list-group-item">'
+                        + '<div class="fw-semibold"><i class="bi bi-file-earmark-x text-warning me-1"></i>' + d.filename + '</div>'
+                        + '<div class="text-muted">' + d.reason + '</div></li>';
+                }).join('');
+
+                if (!discardConfirmModal) { discardConfirmModal = new bootstrap.Modal(discardConfirmModalEl); }
+                discardConfirmModal.show();
+
+                discardConfirmProceedBtn.onclick = function () {
+                    discardConfirmModal.hide();
+                    var survivors = pdfFiles.filter(function (f) {
+                        return discardedNames.indexOf(f.name) === -1;
+                    });
+                    beginActualUpload(survivors);
+                };
+                discardConfirmCancelBtn.onclick = function () {
+                    discardConfirmModal.hide();
+                    uploadResultEl.innerHTML = '';
+                    resetSubmitButton();
+                };
+            });
     });
 
     // Abre el modal del dossier / última clasificación en cuanto llega

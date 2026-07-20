@@ -61,13 +61,14 @@ haría falta esa migración -- anotado aquí para no perderlo, se
 corregirá cuando toque construir el borrado/archivado manual de esta
 misma vista.
 """
+import json
 import logging
 import uuid
 from datetime import timedelta
 
 from django.contrib import messages
 from django.contrib.contenttypes.models import ContentType
-from django.http import Http404, HttpResponse
+from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils.timezone import now
@@ -79,7 +80,9 @@ from document_ingestion.deduplication_service import (
     compute_content_hash,
     find_duplicate,
 )
+from document_ingestion.entity_matching_service import match_machine_asset_by_filename
 from document_ingestion.models import IngestedFile
+from document_ingestion.preflight_discard_service import evaluate_batch
 from document_ingestion.tasks import retry_unassigned_routing, route_ingested_files
 from document_management.alert_service import (
     DEFAULT_EXPIRY_ALERT_OFFSETS_DAYS,
@@ -1550,6 +1553,84 @@ class DocumentationPersonalDetailFragmentView(DocsUploadAccessMixin, View):
             "current_docs": current_docs,
             "archived_docs": archived_docs,
         })
+
+
+class DocumentationPreflightDiscardView(DocsUploadAccessMixin, View):
+    """
+    POST (fetch JSON, no HTMX): recibe únicamente los NOMBRES de los
+    PDF seleccionados (nunca sus bytes -- se llama antes de que el JS
+    de hub.html empiece a subir nada) y devuelve la lista de descarte
+    calculada por document_ingestion.preflight_discard_service (S026,
+    decisión explícita de Miguel Ángel a raíz del incidente real de
+    S025: 13 documentos maestros de la A-45 perdidos, que analizados
+    uno a uno resultaron ser todos redundantes -- nunca deberían
+    haberse llegado a subir). Flujo: "Leer nombre de archivo ->
+    heurística -> lista de descarte -> conformidad -> subir
+    únicamente los que pasen el primer filtro".
+
+    Agrupa los nombres por máquina detectada
+    (document_ingestion.entity_matching_service.match_machine_asset_by_filename,
+    sin llamar a Gemini) para poder comparar cada candidato contra lo
+    YA PERSISTIDO de esa máquina en BD. Los archivos cuya máquina no
+    se identifica por nombre se evalúan igualmente contra la REGLA A
+    (estructural, no necesita máquina) pero nunca contra la REGLA B
+    (obsolescencia de grupo, necesita con qué comparar).
+
+    Cuerpo esperado: {"filenames": ["a.pdf", "b.pdf", ...]}.
+    Respuesta: {"discard": [{"filename": ..., "reason": ...}, ...]}.
+    Nunca crea ni modifica ningún registro -- de solo lectura.
+    """
+
+    def post(self, request):
+        company = request.user.company_user.company
+        try:
+            payload = json.loads(request.body or b"{}")
+        except (ValueError, TypeError):
+            return JsonResponse(
+                {"error": "Cuerpo JSON inválido."}, status=400,
+            )
+
+        filenames = [
+            name for name in (payload.get("filenames") or [])
+            if isinstance(name, str) and name.lower().endswith(".pdf")
+        ]
+        if not filenames:
+            return JsonResponse({"discard": []})
+
+        # Agrupa por máquina detectada por nombre -- None para los
+        # archivos sin máquina identificable (se evalúan igual, solo
+        # que sin comparación contra BD, ver evaluate_batch()).
+        filenames_by_machine: dict = {}
+        for filename in filenames:
+            machine = match_machine_asset_by_filename(company, filename)
+            filenames_by_machine.setdefault(machine, []).append(filename)
+
+        discard_entries = []
+        for machine, machine_filenames in filenames_by_machine.items():
+            persisted_documents = (
+                list(
+                    MachineDocument.objects.filter(
+                        machine_asset=machine, company=company,
+                    ).exclude(status=MachineDocument.Status.ERROR)
+                )
+                if machine is not None else []
+            )
+            verdicts = evaluate_batch(
+                machine_filenames,
+                machine=machine,
+                persisted_documents=persisted_documents,
+            )
+            discard_entries.extend(
+                {"filename": v.filename, "reason": v.reason}
+                for v in verdicts if v.discard
+            )
+
+        logger.info(
+            "# [DocumentationPreflightDiscardView] %d archivo(s) "
+            "evaluados, %d descartado(s) para %s.",
+            len(filenames), len(discard_entries), company,
+        )
+        return JsonResponse({"discard": discard_entries})
 
 
 class DocumentationFolderUploadView(DocsUploadAccessMixin, View):

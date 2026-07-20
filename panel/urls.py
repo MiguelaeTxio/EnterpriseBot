@@ -34,6 +34,7 @@ from panel.views_documentation import (
     DocumentationMachineListFragmentView,
     DocumentationPersonalDetailFragmentView,
     DocumentationPersonalListFragmentView,
+    DocumentationPreflightDiscardView,
     DossierDiscardView,
     DossierDownloadView,
     DossierGenerateView,
@@ -402,6 +403,7 @@ urlpatterns = [
     path("documentacion/documento/<int:pk>/markdown/", DocumentMarkdownConvertView.as_view(), name="documentation_document_markdown_convert"),
     path("documentacion/personal/<int:pk>/", DocumentationPersonalDetailFragmentView.as_view(), name="documentation_personal_detail"),
     path("documentacion/subir/", DocumentationFolderUploadView.as_view(), name="documentation_folder_upload"),
+    path("documentacion/subir/preflight/", DocumentationPreflightDiscardView.as_view(), name="documentation_preflight_discard"),
     # ⛔ ORDEN CRÍTICO (bug real S025, ver commit de este mismo bloque):
     # Django resuelve URLs por orden de aparición -- las rutas
     # LITERALES específicas (editar/borrar/resolver/enviar-ahora) DEBEN

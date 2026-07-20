@@ -937,13 +937,122 @@ la auditoría completa pedida por Miguel Ángel tras el primer fallo,
 contra la documentación oficial de Twilio (error 21656) antes de
 corregir, tal como exige la directriz 4.4.
 
+### Decisiones cerradas en S026 (tal cual las dio Miguel Ángel, sin
+reinterpretar -- directriz 4.8)
+
+**Corrección sobre la hoja de ruta heredada de S025:** Miguel Ángel
+indicó explícitamente que **no** hace falta recuperar los 13
+documentos maestros perdidos (punto 1 de la hoja de ruta anterior,
+ver más abajo) -- al analizar sus nombres reales, ninguno de los 13
+debería haberse subido nunca. Prioridad real de la sesión: construir
+un filtro de descarte por nombre de archivo que se ejecute ANTES de
+la subida.
+
+**Flujo, palabras textuales de Miguel Ángel:** "Leer nombre de
+archivo -> heurística -> lista de descarte -> conformidad -> subir
+únicamente los que pasen el primer filtro. Cuando se descartan se
+presenta la lista de descartados para subir, para que el supervisor
+confirme."
+
+**Regla de agrupación por obsolescencia, palabras textuales:** "Yo
+crearía un diccionario... con una palabra que se repita y añades
+todo... forma grupos, conjuntos. Conjunto de archivos con palabras
+clave que se repite [ITV, OCA, seguro, Allianz, etcétera]. Lo agrupa
+y se coge el más moderno, porque los otros son obsoletos. Y ya
+subimos única y exclusivamente lo más moderno." Confirmado
+explícitamente que el código de máquina y la matrícula se excluyen
+siempre del análisis ("eso no lo vas a poner... tú tienes que meter
+en lo que es ya el nombre que diferencia el documento"). Confirmado
+también: "podemos comparar contra lo que ya hay [BD]... el candidato
+será el más moderno del lote, evidentemente, es una pérdida de
+tiempo comparar los más antiguos del lote [entre sí]" -- y los
+archivos cuya fecha no se identifique bien "hay que subirlos" (nunca
+se descartan por no tener fecha reconocible).
+
+**Datos reales usados para diseñar la heurística** (nunca
+hipotetizados -- empirismo, ver log real del worker Celery,
+`grep` dirigido sobre `/var/log/alwayson-log-242133.log`): los 13
+nombres de archivo reales de los documentos perdidos en S025, todos
+de la A-45 (E-6998-BDY):
+
+`_compressed (7).pdf`, `FICHA TECNICA+ ITV 03-7-2024.pdf`,
+`POLIZA ALLIANZ+REC 1-1-2023.pdf`,
+`REC SEG ALLIANZ 01-01-2026_unlocked.pdf`, `_unlocked.pdf`,
+`FICHA TECNICA+ ITV 24-4-19.pdf`, `FICHA TECNICA+ ITV 24-4-2020.pdf`,
+`FICHA TECNICA+ ITV 24-4-2021.pdf`, `FICHA TECNICA+ ITV 24-4-2022.pdf`,
+`FICHA TECNICA+ ITV 24-4-2023.pdf`, `FICHA TECNICA+ ITV 28-4-18.pdf`,
+`FICHA TECNICA+ ITV 5-5-17.pdf`, `FICHA TECNICA+ITV 24-4-2020.pdf`
+(prefijo común `A-45 E-6998-BDY` omitido).
+
+**Implementación (S026), decisiones técnicas no explícitas de Miguel
+Ángel, declaradas como suposición y no bloqueantes** (regla de
+preferencia de sesión: se decide de forma autónoma cuando no bloquea
+el avance):
+- Comparación contra lo ya persistido usa los campos reales ya
+  extraídos por Gemini (`issue_date`/`period_end`/`period_start`/
+  `expiry_date` de `MachineDocument`), no un re-parseo del nombre de
+  los ya persistidos -- más fiable.
+- Identificación de máquina en el preflight reutiliza
+  `document_ingestion.entity_matching_service.match_machine_asset_by_filename()`
+  (ya existente), sin llamar a Gemini.
+- El filtro se engancha en el hub genérico
+  (`panel/documentation/hub.html` + `DocumentationFolderUploadView`),
+  punto de entrada real de producción (confirmado por el log de esta
+  sesión) -- la vista manual antigua (`MachineDocumentBatchUploadView`,
+  H23 original) no se toca, sigue sin usarse en producción.
+- El modal de conformidad solo aparece si hay algo que descartar; si
+  el preflight no encuentra nada, la subida sigue directa.
+- Si el servidor del preflight falla o no responde, el JS sube todo
+  sin filtrar (nunca se bloquea una subida real por un fallo de este
+  filtro opcional).
+
+### COMPLETADAS EN S026 (parcial, sesión en curso)
+
+1. **`document_ingestion/preflight_discard_service.py`** (nuevo) --
+   REGLA A (descarte estructural: `+` combinando dos tipos, o sufijo
+   `UNLOCKED`/`COMPRIMIDO`/`COMPRESSED`, excluyendo siempre los
+   manuales de uso) y REGLA B (obsolescencia de grupo: diccionario de
+   palabras clave -- FICHA TECNICA, ITV, OCA, SEGURO/ALLIANZ/POLIZA
+   unificados, LIBRO HISTORIAL, MANTENIMIENTO -- excluyendo código de
+   máquina/matrícula, se queda el más moderno del lote por fecha de
+   nombre, y se compara contra lo ya persistido en BD). Probado
+   manualmente en este workspace contra los 13 nombres reales de S025
+   (los 13 se descartan) y contra los individuales vigentes del mismo
+   lote (ninguno se descarta) -- encontrado y corregido un falso
+   positivo real en la propia prueba: el manual de uso
+   ("...MANUAL DE USO-comprimido-2.pdf") se descartaba por contener
+   "comprimido" en su propio nombre; corregido excluyendo siempre
+   `is_manual_by_filename()` antes de aplicar la REGLA A.
+2. **`panel/views_documentation.py`** -- nueva vista
+   `DocumentationPreflightDiscardView` (solo lectura, JSON, agrupa
+   los nombres recibidos por máquina detectada y llama al servicio).
+3. **`panel/urls.py`** -- ruta `documentacion/subir/preflight/`.
+4. **`panel/templates/panel/documentation/hub.html`** -- modal de
+   conformidad de descarte nuevo (`discardConfirmModal`) + JS: el
+   submit llama primero al preflight (solo nombres, nunca bytes),
+   muestra la lista de descarte con motivo por archivo si hay algo,
+   y solo sube lo que el supervisor confirme tras pulsar "Confirmar y
+   subir el resto" (o cancela con "Cancelar subida"). Subida real
+   extraída a función propia (`beginActualUpload`) para poder
+   llamarse tanto directa como tras la conformidad.
+5. **Aviso de linter no bloqueante reparado en la misma sesión**
+   (directriz 4.9, ampliación S024): `djlint` marcó 5 estilos inline
+   en `hub.html` al tocar el archivo -- 4 preexistentes (barras de
+   progreso del modal de subida, S025) y 1 propio de esta sesión
+   (lista de descarte). Los 5 extraídos a clases CSS nuevas en un
+   bloque `{% block extra_head %}` (`upload-progress-thin/thick`,
+   `progress-bar-start`, `discard-list-scroll`) -- el ancho dinámico
+   de las barras lo sigue fijando el JS en tiempo de ejecución, sin
+   cambios de comportamiento.
+
 ### Hoja de Ruta para la Sesión Siguiente (S026)
 
-1. **Recuperar los 13 documentos maestros perdidos** (ver incidente
-   arriba, lista completa de nombres de archivo) — confirmar con
-   Miguel Ángel/Yolanda si conservan copia fuera del sistema y
-   volver a subirlos (ahora sí se procesarán bien con el fix
-   desplegado).
+1. ~~Recuperar los 13 documentos maestros perdidos~~ -- **descartado
+   explícitamente por Miguel Ángel en S026**: analizados los nombres
+   reales, ninguno de los 13 debería haberse subido nunca (ver
+   "Decisiones cerradas en S026" arriba). Sustituido por la
+   construcción del filtro de descarte previo a la subida -- ver
+   "COMPLETADAS EN S026" arriba.
 2. **Probar el dominio Personal de extremo a extremo** — sigue sin
    probarse (arrastrado de S024). `PersonalDocument` sigue en 0 filas
    reales. El accordion de Personal (`_personal_accordion.html`) NO
