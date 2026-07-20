@@ -888,6 +888,11 @@ class DossierGenerateView(DocsUploadAccessMixin, View):
                     status=MachineDocument.Status.CLASSIFIED,
                 )
                 .exclude(document_type=MANUAL_DOCUMENT_TYPE)
+                # is_possible_master=True (S025, mismo hallazgo que
+                # DocumentationMachineDetailFragmentView) -- un dossier
+                # generado mientras un maestro sigue pendiente de
+                # resolver podría incluirlo antes de que se descarte.
+                .exclude(is_possible_master=True)
             )
             documents, _archived = _split_current_archived(all_docs)
             entity_label = machine.code
@@ -1195,6 +1200,18 @@ class DocumentationMachineDetailFragmentView(DocsUploadAccessMixin, View):
                 machine_asset=machine,
                 status=MachineDocument.Status.CLASSIFIED,
             )
+            # is_possible_master=True (S025, hallazgo real): un
+            # documento maestro sigue en CLASSIFIED mientras el Paso 2
+            # de process_machine_document_batch no lo ha resuelto
+            # todavía (puede acabar borrado, o confirmado como real) --
+            # mismo campo que ya protegía al visor de subida en vivo
+            # desde S024 (_batch_status_rows), pero nunca se aplicó
+            # aquí. Sin esta exclusión, un maestro pendiente de
+            # resolver aparecía como documento "vigente" normal en el
+            # detalle de la máquina -- más visible con los reintentos
+            # reales de Vertex AI (429) de esta sesión, que alargan la
+            # ventana de "pendiente" de segundos a varios minutos.
+            .exclude(is_possible_master=True)
             .order_by("document_type", "-created_at")
         )
         current_docs, archived_docs = _split_current_archived(documents)
@@ -1239,6 +1256,10 @@ class DocumentationPersonalDetailFragmentView(DocsUploadAccessMixin, View):
                 company_user=worker,
                 status=PersonalDocument.Status.CLASSIFIED,
             )
+            # is_possible_master=True (S025, mismo hallazgo que
+            # DocumentationMachineDetailFragmentView) -- ver el
+            # comentario equivalente en esa vista.
+            .exclude(is_possible_master=True)
             .order_by("document_type", "-created_at")
         )
         current_docs, archived_docs = _split_current_archived(
