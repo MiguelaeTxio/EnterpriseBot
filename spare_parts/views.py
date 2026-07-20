@@ -200,7 +200,19 @@ class DeliveryNoteDetailView(CompanyUserRequiredMixin, View):
 
         # URL de descarga resuelta aquí (S022, directriz de plantillas
         # tontas): gcs_blob_name -> URL firmada bajo demanda;
-        # drive_web_link (legado) se usa tal cual.
+        # drive_web_link (legado) se usa tal cual. Fallback al archivo
+        # LOCAL (S025, hallazgo real de Miguel Ángel: "hay algunos que
+        # no puedo ver las fotos originales, su estado es procesado")
+        # -- la subida a GCS solo ocurre al CONFIRMAR
+        # (upload_delivery_note_photo_to_drive, spare_parts/tasks.py),
+        # así que un albarán en PROCESSED que nunca llegó a
+        # confirmarse (típicamente porque validate_document_assignment
+        # lo bloqueó) sigue teniendo su archivo original en disco,
+        # nunca en GCS -- sin este fallback, esa foto era invisible
+        # para siempre desde esta pantalla pese a existir de verdad.
+        # Mismo patrón ya usado en otras plantillas del proyecto
+        # (panel/machine_history.html, _task_photo_widget.html:
+        # {{ photo.image.url }}, MEDIA_URL ya configurado).
         download_url = None
         if delivery_note.gcs_blob_name:
             try:
@@ -215,6 +227,10 @@ class DeliveryNoteDetailView(CompanyUserRequiredMixin, View):
                 )
         elif delivery_note.drive_web_link:
             download_url = delivery_note.drive_web_link
+        elif delivery_note.image:
+            download_url = delivery_note.image.url
+        elif delivery_note.pdf_file:
+            download_url = delivery_note.pdf_file.url
 
         return render(request, self.template_name, {
             'company_user': request.user.company_user,
