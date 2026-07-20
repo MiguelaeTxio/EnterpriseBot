@@ -805,36 +805,167 @@ y si el descarte del dossier fue automático o manual) — ambas
 correcciones aceptadas explícitamente sin defensa, con el compromiso
 de comprobar antes de afirmar.
 
-### Hoja de Ruta para la Sesión Siguiente (S025)
+### COMPLETADAS EN S025
 
-1. **Verificar la subida de la A36 con el troceo automático** (commit
-   `48ad447`, sin probar de verdad todavía en el momento del cierre de
-   S024) — confirmar que una carpeta grande (100+ archivos) se sube y
-   procesa completa, en varias tandas, sin que se pierda ningún
-   archivo entre trozos.
-2. **Probar el dominio Personal de extremo a extremo** — a fecha de
-   cierre de S024, `PersonalDocument` sigue en 0 filas reales (todas
-   las pruebas de la sesión fueron sobre la máquina A-45/A45). Subir
-   una carpeta real de documentación de un trabajador y confirmar que
-   el enrutado, la clasificación, el CRUD de alertas y el dossier
-   (con casillas, distinto del automático de máquina) funcionan igual
-   de bien que en Maquinaria.
-3. **Diálogo de sustitución en la subida** — sigue sin construirse
-   (ver punto 2 de la hoja de ruta de S024, nunca abordado esta
-   sesión por volumen de trabajo real/incidencias). Al subir un
-   documento de un tipo ya existente para la misma máquina, llamar a
-   `document_management.vigencia_service.evaluate_substitution()` y
-   mostrar el diálogo con las dos acciones (archivar el obsoleto /
-   revertir la subida) — flujo exacto en anexo H26 sección 2.4.
-4. **Verificar el estado de la plantilla WhatsApp** `document_expiry_alert`
-   vía API de Twilio — sigue sin comprobarse desde S023 (pendiente de
-   aprobación de Meta en aquel momento). El motor de alertas construido
-   en H26/S024 funciona igual sin ella, solo no podrá enviar mensajes
-   reales hasta que esté aprobada.
-5. **Revisión general del CRUD de documentación** más allá de lo ya
-   cerrado en S024 — Miguel Ángel lo dejó abierto en S021 sin alcance
-   concreto todavía; confirmar con él si queda algo pendiente antes de
-   asumir que el hito está completo del todo.
+Sesión larguísima, sin desvíos de hito (H23 EN PROGRESO durante toda
+la sesión, aunque con un desvío puntual real a `spare_parts` H10 —
+albaranes de proveedor — por petición explícita de Miguel Ángel, sin
+PCH, el marcador nunca se movió). 27 commits, 37 archivos,
++2657/-458 líneas.
+
+**Bloque 1 — Documentación (H23):** subida archivo por archivo con
+modal de progreso real (`_TokenBucket` corregido para arrancar
+vacío, bajado a 12 RPM). Sustitución silenciosa de documentos +
+historial visible (nuevo modelo `DocumentSubstitutionLog`) —
+revierte el diseño original de diálogo interactivo de H26 §2.4
+(decisión explícita de Miguel Ángel: "no tiene sentido que salte...
+se hace el cambio simplemente y no se avisa"). Plantilla WhatsApp
+`document_expiry_alert` verificada **aprobada** vía API real de
+Twilio. Panel de Alertas rediseñado (una fila por documento, columnas
+30/15/7 días) tras un incidente real de worker Celery sin reiniciar
+(patrón de `deploy.yml` ampliado varias veces a lo largo de la
+sesión: `document_management/`, `spare_parts/services.py`,
+`spare_parts/gcs_service.py`, `whatsapp/services.py`,
+`whatsapp/models.py`, `enterprise_core/settings.py` — todos
+encontrados como huecos reales, no hipotéticos). Descarte heurístico
+del documento maestro/dossier por nombre+peso, sin ninguna llamada a
+Gemini. Envío manual de alertas por WhatsApp + edición de contactos
+— encontrado y corregido un 405 real (orden de patrones de URL,
+genérico antes que literal) que llevaba desde S023/S024 rompiendo
+editar/borrar/resolver/enviar-ahora sin que nadie lo hubiera
+detectado. Filtro de búsqueda por máquina/centro de gasto en el panel
+de Alertas. Barra de progreso real del lote de subida (contador X/Y +
+porcentaje), sustituyendo el spinner suelto anterior.
+
+**Restructuración de navegación (H23, decisión explícita de Miguel
+Ángel):** el listado de Maquinaria dejó de desplegar un accordion
+in-situ (sin URL propia, un F5 perdía el filtro) — ahora cada máquina
+enlaza a una **ficha de página completa propia**
+(`MachinePageView`, URL `/documentacion/maquinaria/<pk>/ficha/`),
+con su documentación, sus alertas ya acotadas a esa máquina
+(reutilizando `_alerts_dashboard_context()` con `search` precargado,
+sin duplicar lógica), dossier y conversión a Markdown. La vista
+general de Documentación se queda como listado + Alertas cruzadas
+filtrables (conviven las dos vistas, cada una con su propósito).
+`DocumentationMachineDetailFragmentView` (el fragmento HTMX antiguo)
+se conserva sin borrar, ya no enlazado desde ningún sitio — deuda
+técnica menor anotada.
+
+**Conversión de manuales a Markdown (H23, petición explícita de
+Miguel Ángel: "los manuales son muy pesados"):** verificado en línea
+(directriz 4.4) antes de elegir librería — `pymupdf4llm`, extensión
+oficial de PyMuPDF, sin GPU/API externa, instalada y confirmada en
+producción. Botón "Convertir a Markdown"/"Descargar Markdown" en la
+ficha de máquina, solo para manuales; persistencia en el mismo bucket
+GCS que el PDF original.
+
+**Desvío a `spare_parts` H10 (albaranes de proveedor), sin PCH:**
+petición explícita de Miguel Ángel tras varios albaranes reales
+rechazados (foto ilegible, código a mano, código sin delimitar en
+línea). Foto original invisible en albaranes `PROCESSED` nunca
+confirmados corregida (fallback a archivo local, la subida a GCS solo
+ocurría al confirmar). Asignación **manual** de máquina/centro de
+gasto cuando la extracción automática falla — revierte parcialmente
+la norma de S015 ("no se admite corrección manual"), pero queda
+siempre marcada como tal (`manually_assigned`/`manually_assigned_by`/
+`manually_assigned_at`, migración `0011`). Prompt de extracción
+ampliado: reconoce campos impresos estructurados ("Matrícula: X")
+además de Observaciones/línea delimitada, y transcribe anotaciones
+**a mano** como pista para el operario (nunca automática) — commit
+sin migración, campo ya vivía en `extraction_raw` (JSON).
+
+**Bug crítico real encontrado y corregido — pérdida de contenido en
+`assess_master_coverage()`:** ante un error de Gemini (aquí, límite
+de tokens superado por acumular muchos individuales ya persistidos
+de la A-45), el sistema interpretaba el fallo como "cobertura
+confirmada" y descartaba el documento maestro **sin haberlo
+comparado de verdad**. Corregido con un campo `comparison_failed`
+explícito en el dict de retorno, comprobado ANTES de mirar
+`uncovered_pages` en los dos llamadores (`machine_documents.tasks` y
+`personal_documents.tasks`) — a partir del despliegue (11:37 UTC), el
+maestro se conserva como documento real ante cualquier error de
+comparación, nunca se descarta sin comparar.
+
+**⚠️ INCIDENTE REAL — 13 documentos maestros perdidos ANTES del fix
+de arriba**, todos de la A-45 (E-6998-BDY), confirmado buscando en el
+log completo del worker (no solo fragmentos): pks 110, 155, 164, 170,
+173, 176, 177, 178, 179, 180, 181, 182, 183 — archivos "FICHA
+TECNICA+ITV" de varios años, pólizas Allianz, y algún PDF
+desbloqueado/comprimido. Se borraron de verdad (nunca se subieron a
+GCS, archivo local eliminado) — no recuperables desde el sistema.
+Miguel Ángel informado con la lista completa de nombres de archivo
+antes de cerrar sesión, para que compruebe si Yolanda conserva copia
+fuera del sistema y pueda volver a subirlos (ahora sí se procesarán
+bien).
+
+**⚠️ INCIDENTE REAL — worker Celery caído en medio de un lote de 95
+documentos**, sin ningún error en el log (10+ minutos de silencio
+total). Diagnóstico con datos reales en cada paso (nunca supuesto):
+`ps aux` resultó no fiable en este entorno (la always-on task corre
+en un contenedor propio, invisible desde la consola SSH); la señal
+real fue el silencio del log + el banner `(recovery)` de Celery al
+reiniciar (confirmación propia de Celery de una caída no limpia);
+consulta real a BD identificó exactamente 4 documentos huérfanos
+(#207-210, `PENDING` sin ninguna tarea encolada) — reencolados a
+mano tras confirmar que seguían `PENDING` justo antes de tocarlos.
+**Causa raíz identificada y corregida**: `enterprise_core/celery.py`
+no configuraba `task_acks_late` ni `worker_prefetch_multiplier` —
+con los valores por defecto de Celery (concurrency=1 x
+prefetch_multiplier=4 por defecto) el worker reservaba hasta 4 tareas
+en su buffer local ANTES de ejecutarlas, marcándolas como entregadas
+ante Redis en ese mismo instante — encaja exactamente con los 4
+documentos perdidos. Verificado en línea (directriz 4.4) contra la
+documentación oficial de Celery 5.6.3 (misma versión instalada);
+corregido con `CELERY_TASK_ACKS_LATE=True` +
+`CELERY_WORKER_PREFETCH_MULTIPLIER=1` +
+`CELERY_TASK_REJECT_ON_WORKER_LOST=True`, verificado cargado en el
+proceso real tras el reinicio. Se descartó explícitamente la cuota de
+CPU de PythonAnywhere como causa de que el auto-reinicio no saltara
+solo (7% usado, captura de pantalla real de Miguel Ángel) — causa
+exacta de ese punto concreto sin determinar, anotada para vigilar si
+se repite.
+
+**Errores propios corregidos en la misma sesión, reconocidos sin
+excusas:** nombre de variable de entorno inventado sin comprobar
+(`WHATSAPP_SENDER_NUMBER` en vez del real `TWILIO_WHATSAPP_SENDER`) —
+corregido tras que Miguel Ángel señalara la contradicción real
+("otras plantillas se están enviando... sin ningún error"). Mismo
+patrón repetido: `content_variables` de Twilio sin `json.dumps()` en
+dos sitios (`document_management/alert_service.py` y, encontrado en
+la auditoría completa pedida por Miguel Ángel tras el primer fallo,
+`whatsapp/services.py send_capture_notification()`) — verificado
+contra la documentación oficial de Twilio (error 21656) antes de
+corregir, tal como exige la directriz 4.4.
+
+### Hoja de Ruta para la Sesión Siguiente (S026)
+
+1. **Recuperar los 13 documentos maestros perdidos** (ver incidente
+   arriba, lista completa de nombres de archivo) — confirmar con
+   Miguel Ángel/Yolanda si conservan copia fuera del sistema y
+   volver a subirlos (ahora sí se procesarán bien con el fix
+   desplegado).
+2. **Probar el dominio Personal de extremo a extremo** — sigue sin
+   probarse (arrastrado de S024). `PersonalDocument` sigue en 0 filas
+   reales. El accordion de Personal (`_personal_accordion.html`) NO
+   se tocó esta sesión -- sigue con el diseño antiguo (sin ficha de
+   página propia); decidir con Miguel Ángel si aplicar la misma
+   restructuración que a Maquinaria antes o después de probar el
+   dominio.
+3. **Confirmar el resultado de la prueba real con Yolanda** —
+   quedó pendiente en esta sesión (Miguel Ángel pasó a otros temas
+   antes de cerrar el ciclo de esa prueba).
+4. **Considerar limitar el tamaño de "individuales" enviados a
+   `assess_master_coverage()`** — el límite de tokens de Gemini
+   (1.048.576) se ha tocado repetidamente en esta sesión al acumular
+   muchos documentos ya persistidos de la misma máquina; el fix de
+   hoy evita la pérdida de contenido, pero no evita que la
+   comparación siga fallando por este motivo cada vez con más
+   frecuencia según crezca el histórico de cada máquina -- mejora
+   aparte, no implementada todavía.
+5. **Vigilar si se repite el silencio prolongado del worker sin
+   auto-reinicio** de PythonAnywhere (causa exacta sin determinar
+   esta sesión, cuota de CPU descartada) -- si se repite, abrir
+   ticket de soporte con PythonAnywhere con la hora exacta.
 
 **Observación sin acción inmediata (arrastrada de S023):**
 PythonAnywhere limita las versiones de Python disponibles a 3.10 (y
@@ -901,3 +1032,4 @@ originó, sin más acción pendiente aquí.
 | S021 | 2026-07-16 | Sesión con H24 EN PROGRESO al arrancar, pero prácticamente todo el trabajo real fue de H23 (**PCH H24→H23 ejecutado al cierre**, confirmado por Miguel Ángel). Fix de sidebar de `alvarez_admin` (commit `e2a5ecc` -- `company_user` ausente del contexto de `MachineDocumentBatchUploadView`). Modelo dinámico de metadatos: `period_start`/`period_end`/`amount` + `extra_data` JSON (commit `4ffebee`, migración `0004` verificada aplicada en producción). Plantilla WhatsApp `document_expiry_alert` creada, rechazada dos veces por Meta ("Variables can't be at the start or end of the template"), plantillas rechazadas borradas de Twilio, rediseñada y reenviada a revisión (`HX55da66276bb2025f691c378abff0123e`, pendiente de aprobación). Desvío puntual a H07 (sin PCH, marcador no se movió hasta el cierre): verificación del mecanismo `PARTE-BACKUP` (confirmado funcional, 39 líneas reales en `error.log`), dos partes recuperados a mano por Miguel Ángel (Antonio Fontalba 22/06, Pablo Cañamero 03/07), y nueva vista de Administración "Borradores de Partes" + `SuperuserRequiredMixin` (sustituye el hardcode de username `alvarez_admin` por `is_superuser` de Django) -- ver anexo H07 para el detalle completo de esa pieza. Un incidente de despliegue propio (`ImportError` por `WorkOrderDraftListView` sin re-exportar en `panel/views.py`) diagnosticado con datos reales y corregido en la misma sesión (commit `7344d46`). Cuatro decisiones de diseño cerradas con Miguel Ángel para la continuación de H23 (vigencia, archivado, plantilla, modelo dinámico) -- ver "Decisiones cerradas en S021" y "Hoja de Ruta para la Sesión Siguiente (S022)" arriba. |
 | S023 | 2026-07-16 | H23 EN PROGRESO durante toda la sesión (desvío Caso A, marcador nunca movido). Incidente real: Vertex AI roto para toda la plataforma (documentos + IVR) tras el cambio de IAM de S022 (rol de Vertex AI sustituido por `Storage Admin` en vez de añadido); diagnosticado exclusivamente por logs reales (`alwayson-log-242133.log`, `bridge.log`) tras corrección explícita de Miguel Ángel cuando el modelo empezó a especular sobre el proyecto GCP; arreglado añadiendo `Agent Platform User` (`roles/aiplatform.user`); verificado reprocesando los 10 documentos de A-45 (todos `CLASSIFIED`, maestro detectado correctamente) y con una llamada IVR real (audio bidireccional confirmado). Hallazgo: el IVR llevaba roto desde el cambio de IAM aunque Miguel Ángel creía que funcionaba -- confirmado por log, no por suposición. Bug fuera de alcance corregido de paso: tarea Celery muerta `purge_old_chat_messages` (eliminada en H17, seguía en `CELERY_BEAT_SCHEDULE`) -- ver anexo H17. Desvío al resto de la sesión: H26 -- Infraestructura Documental Compartida completada por entero (app `document_management`, servicio de vigencia/sustitución, fusión de PDF, motor de alertas) -- ver anexo H26 "COMPLETADAS EN S023" para el detalle. Corrección de rumbo de Miguel Ángel durante la sesión: `EmailTemplate` no se edita desde el admin de Django (nunca lo pidió), y no se construye ninguna interfaz mínima desechable -- se queda como modelo sin UI. Ver "Hoja de Ruta para la Sesión Siguiente (S024)" arriba para el punto de partida: interfaz de panel de H23 consumiendo los servicios de H26. |
 | S024 | 2026-07-17 | H23 EN PROGRESO durante toda la sesión, sin desvíos ni PCH. Sesión larguísima: 26 commits, 61 archivos, +7795/-560 líneas. Interfaz de panel de H23/H25 construida y cerrada por completo (vincular sin asignar, borrar archivado, modificar vigente, panel de alertas, CRUD de plantillas de email, generación de dossier), reconvertida entera a HTMX sin recargas de página, con visor de subida en vivo (sondeo automático, sin botones "Actualizar") y comando `reset_documentation` para poder repetir pruebas reales desde limpio. Encontrados y corregidos en la misma sesión, todos con datos reales (logs del worker Celery, log web, consultas de solo lectura a BD, búsqueda del foro oficial de PythonAnywhere): enrutado que ignoraba el nombre de archivo y comparaba códigos de máquina byte a byte; documento maestro que se persistía en GCS pese a descartarse su contenido (dos capas de corrección, incluida una segunda salvaguarda semántica); regresión del manual de uso en el enrutado (heurístico "nunca llamar a Gemini" que faltaba en el punto nuevo); falso estado "Asignado" del maestro en el visor por una condición de carrera con la Fase 2; listado de usuarios mostrando "Operador" para 3 de los 8 roles reales (bug de visualización puro, la BD nunca estuvo mal -- Miguel Ángel corrigió al modelo por dar la creación del usuario por fallida sin comprobar antes); doble subida no detectada por la deduplicación; y el hallazgo más grande de la sesión, un límite duro de 100 MiB por petición HTTP de PythonAnywhere (no configurable, sin rastro en la aplicación al superarlo) que impedía subir la carpeta de la A36 (121 archivos) -- resuelto troceando la subida automáticamente en el navegador. Ver "COMPLETADAS EN S024" arriba para el detalle completo, y "Hoja de Ruta para la Sesión Siguiente (S025)" para el punto de partida. |
+| S025 | 2026-07-20 | H23 EN PROGRESO durante toda la sesión (un desvío puntual real a `spare_parts` H10 -- albaranes de proveedor -- sin PCH). Sesión larguísima: 27 commits, 37 archivos, +2657/-458 líneas. Ver "COMPLETADAS EN S025" arriba para el detalle completo -- resumen: modal de subida rediseñado, sustitución silenciosa + historial, plantilla WhatsApp confirmada aprobada, panel de Alertas rediseñado con envío manual/filtro por máquina, descarte heurístico de dossiers, restructuración de navegación (ficha de página completa por máquina, con URL propia), conversión de manuales a Markdown, asignación manual + prompt ampliado en albaranes, y dos incidentes reales de producción diagnosticados y corregidos con datos reales en cada paso: (1) bug crítico de `assess_master_coverage()` que interpretaba un error de Gemini como "cobertura confirmada" y descartaba maestros sin comparar -- **13 documentos reales perdidos antes del fix**, lista completa entregada a Miguel Ángel para recuperación manual; (2) worker Celery caído en medio de un lote de 95 documentos sin ningún error en el log -- causa raíz identificada (Celery sin `acks_late`/`prefetch_multiplier` configurados) y corregida con los tres ajustes de resiliencia recomendados por la documentación oficial de Celery 5.6.3. Ver "Hoja de Ruta para la Sesión Siguiente (S026)" arriba para el punto de partida. |
