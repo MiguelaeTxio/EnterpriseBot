@@ -96,6 +96,7 @@ from .document_classification_service import (
     classify_by_filename_heuristic,
     classify_document,
     extract_pages,
+    is_probable_master_by_filename_and_size,
 )
 from .models import MachineDocument
 
@@ -187,6 +188,31 @@ def process_machine_document_batch(self, document_pks: list[int]) -> None:
             document.source_file.close()
 
         filename = document.original_filename or document.source_file.name
+
+        # S025, decisión explícita de Miguel Ángel: un posible
+        # maestro/dossier detectado por nombre+peso se descarta AQUÍ
+        # MISMO, sin ninguna llamada a Gemini de ningún tipo (ni
+        # clasificación, ni comparación de cobertura) -- nunca entra
+        # en `classified`, así que el Paso 2 (comparación de
+        # cobertura) ni se entera de que existió. El enrutado
+        # (document_ingestion.entity_matching_service.route_document)
+        # ya aplicó el mismo heurístico para no gastar tampoco esa
+        # llamada. IngestedFile.routed_document_pk sigue apuntando a
+        # este pk ya borrado -- el visor de subida en vivo lo muestra
+        # como "descartado" igual que un maestro real comparado por
+        # Gemini (_batch_status_rows, panel/views_documentation.py).
+        if is_probable_master_by_filename_and_size(filename, len(file_bytes)):
+            logger.info(
+                "# [process_machine_document_batch] #%d (%s): posible "
+                "maestro/dossier detectado por nombre+peso -- "
+                "descartado SIN llamada a Gemini (ni clasificación ni "
+                "comparación de cobertura).",
+                document.pk, filename,
+            )
+            if document.source_file:
+                document.source_file.delete(save=False)
+            document.delete()
+            continue
 
         heuristic_result = classify_by_filename_heuristic(filename)
         if heuristic_result is not None:

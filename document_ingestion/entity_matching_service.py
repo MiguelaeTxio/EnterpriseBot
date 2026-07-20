@@ -373,6 +373,43 @@ def route_document(pdf_bytes: bytes, filename: str, company) -> dict:
         )
         return result
 
+    from machine_documents.document_classification_service import (
+        is_probable_master_by_filename_and_size,
+    )
+
+    if is_probable_master_by_filename_and_size(filename, len(pdf_bytes)):
+        # S025, decisión explícita de Miguel Ángel: un dossier
+        # detectado por nombre+peso nunca toca Gemini, ni siquiera
+        # para enrutar -- se descarta por completo más adelante en
+        # machine_documents.tasks (Paso 1), sin ninguna comparación de
+        # contenido. Aun así necesita una máquina asignada (aunque sea
+        # "sin asignar") para que el resto del pipeline de
+        # trazabilidad (IngestedFile -> MachineDocument -> descartado)
+        # funcione igual que con cualquier otro documento.
+        matched_machine = match_machine_asset_by_filename(company, filename)
+        result = {
+            "domain": DOMAIN_MACHINE,
+            "machine_reference_hint": matched_machine.code if matched_machine else "",
+            "worker_dni_hint": "",
+            "worker_name_hint": "",
+            "is_confident": matched_machine is not None,
+            "reasoning": (
+                "Posible documento maestro/dossier (heurística de "
+                "nombre 'comprimido'/'compressed' + peso) -- nunca se "
+                "envía a Gemini, ni para enrutar ni para clasificar ni "
+                "para comparar cobertura. Se descarta directamente en "
+                "el Paso 1 de clasificación, por diseño de negocio "
+                "siempre redundante con los documentos vigentes."
+            ),
+        }
+        logger.info(
+            "# [route_document] %s -> POSIBLE MAESTRO/DOSSIER "
+            "(heurística nombre+peso), sin llamada a Gemini -- "
+            "maquina=%s.",
+            filename, matched_machine.code if matched_machine else "SIN ASIGNAR",
+        )
+        return result
+
     return classify_and_route(pdf_bytes, filename)
 
 

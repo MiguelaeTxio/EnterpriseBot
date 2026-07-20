@@ -163,6 +163,64 @@ def is_manual_by_filename(filename: str) -> bool:
     return any(keyword in upper_name for keyword, _ in _FILENAME_HEURISTIC_RULES)
 
 
+# ---------------------------------------------------------------------------
+# Master/dossier filename+size heuristic -- NUNCA llama a Gemini, en
+# NINGÚN punto (S025, decisión explícita de Miguel Ángel, distinta del
+# manual). Origen: subida real de la A-45 con un documento maestro
+# ("A-45_E-6998-BDY_compressed (7).pdf") que tardó 287s solo en su
+# propia clasificación -- con lotes grandes (A-36, 121 archivos, caso
+# real pendiente de probar) un maestro puede ser enorme y arriesgar
+# timeout, además de malgastar tiempo en algo que por diseño de
+# negocio siempre es redundante.
+#
+# Palabras de Miguel Ángel (S025): "el dosier se saca de los
+# documentos vigentes para enviarlo. Por tanto, sí o sí, está
+# duplicado [...] en cuanto detectemos que es un documento maestro,
+# ese dosier ya no hay que enviárselo a Gemini. Porque es redundante y
+# lo único que puede causar es problemas [...] puede que haya un
+# documento que no se lea bien y lo que hagamos sea duplicarlo."
+#
+# A diferencia del descarte YA existente (masters_to_discard en
+# machine_documents.tasks/personal_documents.tasks, que SÍ pasa por
+# Gemini -- assess_master_coverage compara contenido real antes de
+# decidir si descartar o extraer páginas no cubiertas): este heurístico
+# es una vía de descarte ANTERIOR y más agresiva, exclusivamente por
+# nombre+peso, que NUNCA llega a esa comparación de contenido -- se
+# descarta sin más en cuanto se detecta, sin ninguna llamada a Gemini
+# de ningún tipo (ni enrutado, ni clasificación, ni cobertura).
+#
+# Umbral de peso conservador a propósito (1 MiB) -- los documentos
+# individuales reales vistos hasta ahora (ficha técnica, ITV,
+# certificados OCA, recibos de seguro) van de 16 KB a 875 KB; un
+# dossier combinado ya supera ese rango con margen. Ajustar si algún
+# caso real demuestra que hace falta.
+_MASTER_HEURISTIC_KEYWORDS = ["COMPRIMIDO", "COMPRESSED"]
+_MASTER_HEURISTIC_MIN_SIZE_BYTES = 1024 * 1024  # 1 MiB
+
+
+def is_probable_master_by_filename_and_size(
+    filename: str, file_size_bytes: int,
+) -> bool:
+    """
+    True si el nombre de archivo sugiere un documento maestro/dossier
+    ("comprimido"/"compressed") Y el peso supera el umbral conservador
+    -- las dos señales son necesarias a la vez (criterio explícito de
+    Miguel Ángel: "por el nombre... y por el peso"), para reducir el
+    riesgo de que un individual pequeño con esa palabra en el nombre
+    se descarte por error. Nunca coincide si is_manual_by_filename()
+    ya es True -- el manual tiene su propio heurístico y prioridad,
+    aunque en la práctica no deberían solaparse.
+    """
+    if is_manual_by_filename(filename):
+        return False
+    if file_size_bytes < _MASTER_HEURISTIC_MIN_SIZE_BYTES:
+        return False
+    upper_name = filename.upper()
+    return any(
+        keyword in upper_name for keyword in _MASTER_HEURISTIC_KEYWORDS
+    )
+
+
 def classify_by_filename_heuristic(filename: str) -> dict | None:
     """
     Classifies a document purely from its filename, WITHOUT calling
