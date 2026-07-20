@@ -9,6 +9,12 @@ de verdad, en producción, el reinicio condicional del worker Celery
 del Action y en la pestaña Tasks del dashboard de PythonAnywhere que
 el estado pasa por Starting/Restarting y vuelve a Running.
 
+Nota S025 (2026-07-20): mismo mecanismo, esta vez para que el worker
+recoja el prompt de extracción ampliado de spare_parts/services.py
+(campos estructurados impresos + pista de anotación manuscrita,
+commit anterior) -- ese archivo no coincidía con el patrón de
+reinicio hasta este mismo commit (deploy.yml corregido en paralelo).
+
 Defines extract_delivery_note_data() (Gemini Vision extraction, runs
 in the background after upload) and
 upload_delivery_note_photo_to_drive() (S014-H10: uploads the confirmed
