@@ -56,8 +56,23 @@ def _build_twilio_client():
 
 
 def _get_whatsapp_sender() -> str:
-    """Mismo patrón que whatsapp.tasks._get_whatsapp_sender()."""
-    return os.environ["WHATSAPP_SENDER_NUMBER"]
+    """
+    Devuelve el número sender de WhatsApp principal del entorno.
+    Lee TWILIO_WHATSAPP_SENDER -- el número E.164 registrado como
+    sender de WhatsApp en el Console de Twilio para Grupo Álvarez,
+    con TWILIO_PHONE_NUMBER como fallback por compatibilidad. Mismo
+    patrón EXACTO que whatsapp.tasks._get_whatsapp_sender() (S025,
+    corregido tras un error real: la primera versión de esta función
+    usaba el nombre inventado WHATSAPP_SENDER_NUMBER, que nunca
+    existió en el entorno -- provocaba un 500 real en producción,
+    confirmado por Miguel Ángel: "otras plantillas se están enviando
+    desde ese sender y no está dando ningún tipo de error", señal de
+    que el nombre real era otro).
+    """
+    return os.environ.get(
+        "TWILIO_WHATSAPP_SENDER",
+        os.environ.get("TWILIO_PHONE_NUMBER", ""),
+    )
 
 
 def send_alert_now(alert: DocumentAlert) -> tuple[bool, str]:
@@ -97,14 +112,13 @@ def send_alert_now(alert: DocumentAlert) -> tuple[bool, str]:
         sender_number = _get_whatsapp_sender()
     except KeyError as exc:
         # S025, hallazgo real: una variable de entorno de Twilio
-        # ausente (p.ej. WHATSAPP_SENDER_NUMBER, TWILIO_API_KEY_SID,
-        # TWILIO_API_KEY_SECRET, TWILIO_ACCOUNT_SID) reventaba con un
-        # 500 sin capturar -- HTMX no sustituye nada en pantalla ante
-        # una respuesta 500, así que el botón "no hacía nada" en
-        # apariencia mientras el error real vivía solo en el log web.
-        # Nunca debe romper la petición -- se convierte en el mismo
-        # tipo de fallo controlado que "sin contactos" o "plantilla no
-        # aprobada".
+        # ausente (TWILIO_API_KEY_SID/TWILIO_API_KEY_SECRET/
+        # TWILIO_ACCOUNT_SID) reventaba con un 500 sin capturar --
+        # HTMX no sustituye nada en pantalla ante una respuesta 500,
+        # así que el botón "no hacía nada" en apariencia mientras el
+        # error real vivía solo en el log web. Nunca debe romper la
+        # petición -- se convierte en el mismo tipo de fallo
+        # controlado que "sin contactos" o "plantilla no aprobada".
         logger.error(
             "# [send_alert_now] Variable de entorno de Twilio ausente "
             "en el proceso web: %s.", exc,
@@ -112,6 +126,16 @@ def send_alert_now(alert: DocumentAlert) -> tuple[bool, str]:
         return False, (
             f"Falta configurar la variable de entorno {exc} en el "
             "servidor -- contacta con el administrador."
+        )
+
+    if not sender_number:
+        logger.error(
+            "# [send_alert_now] Ni TWILIO_WHATSAPP_SENDER ni "
+            "TWILIO_PHONE_NUMBER están configurados en el proceso web.",
+        )
+        return False, (
+            "No hay ningún número remitente de WhatsApp configurado "
+            "en el servidor -- contacta con el administrador."
         )
 
     notified = []
