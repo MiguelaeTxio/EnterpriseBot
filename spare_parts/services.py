@@ -202,6 +202,24 @@ class DeliveryNoteExtraction(BaseModel):
                      'general_machine_code_raw, o si no aparece '
                      'ninguna de esas palabras.',
     )
+    handwritten_annotation_raw: Optional[str] = Field(
+        default=None,
+        description='SOLO informativo, NUNCA usado para asignación '
+                     'automática (S025): cualquier anotación escrita '
+                     'A MANO (bolígrafo, lápiz, rotulador -- nunca '
+                     'texto impreso por el proveedor) que parezca '
+                     'referirse a una máquina, matrícula o '
+                     'departamento, aunque no cumpla ningún requisito '
+                     'de validez (ej. "P14", "P21", "a67" escritos a '
+                     'mano en un margen o círculo). Transcribe tal '
+                     'cual está escrito. Si hay varias anotaciones a '
+                     'mano distintas, sepáralas por coma. Null si no '
+                     'hay ninguna anotación a mano visible en el '
+                     'documento. Este campo existe para que un '
+                     'operario humano pueda resolver la asignación a '
+                     'mano con contexto, nunca para que el sistema '
+                     'decida solo.',
+    )
     lines: list[DeliveryNoteLineExtraction] = Field(
         default_factory=list,
         description='Líneas de artículo extraídas del albarán, en '
@@ -237,7 +255,7 @@ artículo -- ver el punto 5 para qué hacer con su contenido.
 5. El código de máquina o centro de gasto/dependencia al que va \
 destinado TODO el albarán (norma vigente desde S015: un albarán \
 completo va SIEMPRE a un único destino, nunca uno distinto por \
-línea). Búscalo en DOS sitios posibles, por este orden de \
+línea). Búscalo en los siguientes sitios posibles, por este orden de \
 preferencia: \
   a) El campo impreso "Observaciones" o "Notas" de la cabecera o el \
 pie del documento. Puede ser: \
@@ -249,31 +267,42 @@ empresa, escrito tal cual (ej. "ALMACEN", "TALLER MECANICO", \
 Puede venir encerrada entre almohadillas (ej. "#B14#", \
 "#TALLER MECANICO#") -- si ves ese patrón, transcribe únicamente el \
 texto entre las almohadillas, sin ellas. \
-  b) Si el campo Observaciones/Notas está vacío o este proveedor no \
-lo usa, busca en la descripción de las líneas de artículo un código \
-encerrado entre almohadillas, asteriscos o comillas -- el MISMO \
-carácter debe aparecer antes Y después del código (ej. "#B14#", \
-"*B14*", "\"B14\""). Transcribe únicamente el código, sin los \
-caracteres delimitadores. \
+  b) (AMPLIADO S025) Cualquier OTRO campo impreso ESTRUCTURADO del \
+propio albarán, en la cabecera o el pie, con una etiqueta clara \
+seguida de un valor -- ej. "Matrícula: A-67", "Máquina: B14", \
+"Vehículo: G12", "Equipo: A-054", "Centro de coste: TALLER \
+MECANICO". Estos campos son tan válidos como Observaciones/Notas -- \
+mismo criterio: SOLO si está IMPRESO por el proveedor, con su propia \
+etiqueta y valor, nunca una anotación suelta sin etiquetar. \
+Transcribe únicamente el valor, sin la etiqueta. \
+  c) Si ninguno de los campos estructurados de arriba (a, b) está \
+presente o vacío, busca en la descripción de las líneas de artículo \
+un código encerrado entre almohadillas, asteriscos o comillas -- el \
+MISMO carácter debe aparecer antes Y después del código (ej. \
+"#B14#", "*B14*", "\"B14\""). Transcribe únicamente el código, sin \
+los caracteres delimitadores. \
 Transcribe la anotación tal cual está escrita en el campo \
 general_machine_code_raw, sin normalizar ni corregir. Reglas \
 estrictas, sin excepción: \
   - SOLO cuenta si está IMPRESO/ESCRITO POR EL PROVEEDOR (en \
-Observaciones/Notas, o delimitado en una línea como en b). Una \
-anotación a mano (bolígrafo/lápiz) sobre la foto, hecha por otra \
-persona, NUNCA es válida -- ignórala por completo, no la \
-transcribas ni la uses. \
+Observaciones/Notas, en un campo estructurado como en b, o \
+delimitado en una línea como en c). Una anotación a mano \
+(bolígrafo/lápiz/rotulador) sobre la foto, hecha por otra persona \
+tras recibir el albarán, NUNCA es válida para este campo -- \
+ignórala por completo aquí, no la transcribas ni la uses como \
+general_machine_code_raw (ver el punto 7 más abajo para qué hacer \
+con ella). \
   - Si ves un fragmento que PARECE un código pero NO está ni en \
-Observaciones/Notas ni correctamente delimitado (almohadilla, \
-asterisco o comillas antes Y después) en una línea -- p. ej. un \
-código suelto sin marcar, o una fila con categoría/familia \
-"TEXTO"/"NOTA" que lo menciona sin delimitarlo -- \
-general_machine_code_raw debe quedar en null y \
+Observaciones/Notas, ni en un campo estructurado etiquetado, ni \
+correctamente delimitado (almohadilla, asterisco o comillas antes Y \
+después) en una línea -- p. ej. un código suelto sin marcar, o una \
+fila con categoría/familia "TEXTO"/"NOTA" que lo menciona sin \
+delimitarlo -- general_machine_code_raw debe quedar en null y \
 document_code_found_as_line_item debe ir en true -- no lo aceptes \
 como válido bajo ningún concepto, solo se reporta para que el \
 sistema explique el motivo del rechazo. \
-Si no encuentras ningún código reconocible en ninguno de los dos \
-sitios, deja general_machine_code_raw en null y \
+Si no encuentras ningún código reconocible en ninguno de los sitios \
+de arriba, deja general_machine_code_raw en null y \
 document_code_found_as_line_item en false.
 6. SOLO si general_machine_code_raw ha quedado en null (no hay \
 código de máquina en Observaciones ni delimitado en ninguna línea): \
@@ -285,6 +314,20 @@ vez de a una máquina concreta. Si es así, general_warehouse_keyword_found \
 debe ir en true. Si ya hay general_machine_code_raw, o si no aparece \
 ninguna de esas palabras, general_warehouse_keyword_found debe ir en \
 false.
+7. (AMPLIADO S025) handwritten_annotation_raw: revisa TODO el \
+documento en busca de cualquier anotación escrita A MANO (bolígrafo, \
+lápiz, rotulador -- nunca texto impreso por el proveedor) que \
+parezca referirse a una máquina, matrícula o departamento, aunque no \
+cumpla ningún requisito de validez del punto 5 (ej. un código suelto \
+en un margen, dentro de un círculo, subrayado, etc.). Transcribe tal \
+cual está escrito -- SOLO para que un operario humano la use como \
+pista al asignar la máquina a mano, NUNCA para asignación \
+automática. Si hay varias anotaciones a mano distintas o dudosas, \
+transcribe todas separadas por coma. Null si no ves ninguna \
+anotación a mano en el documento. Esto es independiente e \
+INCLUSO SI general_machine_code_raw ya tiene un valor válido -- \
+repórtalo igualmente si lo ves, para que quede constancia por si el \
+operario lo necesita.
 
 No inventes datos que no sean legibles en el documento -- usa null \
 en los campos opcionales cuando no puedas leerlos con certeza. Los \

@@ -185,6 +185,15 @@
                                 <i class="bi bi-x-octagon-fill me-1"></i>
                                 {{ rejection_reason }}
                             </div>
+                            {% if handwritten_annotation %}
+                            <div class="alert alert-info mb-3">
+                                <i class="bi bi-pencil-fill me-1"></i>
+                                Se ha detectado esto escrito <strong>a mano</strong> en el
+                                documento: <strong>«{{ handwritten_annotation }}»</strong>.
+                                No se usa automáticamente -- compruébalo contra la foto y
+                                selecciona la máquina/centro de gasto correspondiente abajo.
+                            </div>
+                            {% endif %}
                             {# S025: asignación manual cuando la extracción automática falla -- #}
                             {# petición explícita de Miguel Ángel, queda siempre marcada como tal. #}
                             <form method="post"

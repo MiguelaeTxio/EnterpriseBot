@@ -207,11 +207,22 @@ class DeliveryNoteDetailView(CompanyUserRequiredMixin, View):
         # is_valid ya no importa para decidir si mostrar el
         # formulario, ver plantilla).
         assignable_machines = None
+        handwritten_annotation = None
         if not is_valid and not delivery_note.manually_assigned:
             assignable_machines = (
                 MachineAsset.objects
                 .filter(company=company)
                 .order_by('code')
+            )
+            # Pista informativa (S025, petición explícita de Miguel
+            # Ángel: "cuando venga escrito bolígrafo... hay que
+            # preguntar a qué máquina se asigna y que lo resuelva el
+            # usuario") -- NUNCA se usa para decidir nada
+            # automáticamente, solo se muestra en pantalla para que
+            # el operario tenga contexto al elegir en el desplegable.
+            handwritten_annotation = (
+                (delivery_note.extraction_raw or {})
+                .get('handwritten_annotation_raw')
             )
 
         # URL de descarga resuelta aquí (S022, directriz de plantillas
@@ -260,6 +271,7 @@ class DeliveryNoteDetailView(CompanyUserRequiredMixin, View):
             'resolved_machine': resolved_machine,
             'download_url': download_url,
             'assignable_machines': assignable_machines,
+            'handwritten_annotation': handwritten_annotation,
         })
 
 
