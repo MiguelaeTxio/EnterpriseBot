@@ -92,8 +92,27 @@ def send_alert_now(alert: DocumentAlert) -> tuple[bool, str]:
     if not contacts:
         return False, "Esta alerta no tiene ningún contacto asignado."
 
-    twilio_client = _build_twilio_client()
-    sender_number = _get_whatsapp_sender()
+    try:
+        twilio_client = _build_twilio_client()
+        sender_number = _get_whatsapp_sender()
+    except KeyError as exc:
+        # S025, hallazgo real: una variable de entorno de Twilio
+        # ausente (p.ej. WHATSAPP_SENDER_NUMBER, TWILIO_API_KEY_SID,
+        # TWILIO_API_KEY_SECRET, TWILIO_ACCOUNT_SID) reventaba con un
+        # 500 sin capturar -- HTMX no sustituye nada en pantalla ante
+        # una respuesta 500, así que el botón "no hacía nada" en
+        # apariencia mientras el error real vivía solo en el log web.
+        # Nunca debe romper la petición -- se convierte en el mismo
+        # tipo de fallo controlado que "sin contactos" o "plantilla no
+        # aprobada".
+        logger.error(
+            "# [send_alert_now] Variable de entorno de Twilio ausente "
+            "en el proceso web: %s.", exc,
+        )
+        return False, (
+            f"Falta configurar la variable de entorno {exc} en el "
+            "servidor -- contacta con el administrador."
+        )
 
     notified = []
     skipped = []
