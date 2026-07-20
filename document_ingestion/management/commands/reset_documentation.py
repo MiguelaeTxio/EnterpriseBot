@@ -17,15 +17,20 @@ directriz de no dejar hallazgos sin reparar.
 A diferencia del comando antiguo (una sola máquina, vía --machine-code),
 este cubre TODA la documentación de la plataforma en un solo golpe --
 los dos dominios (MachineDocument/PersonalDocument), el staging de
-ingesta (IngestedFile) y las alertas asociadas (DocumentAlert, vía
+ingesta (IngestedFile), las alertas asociadas (DocumentAlert, vía
 ContentType -- nunca se borran solas al borrar el documento porque es
-una relación genérica, no un FK con CASCADE):
+una relación genérica, no un FK con CASCADE) y (S025, hallazgo real
+detectado al retomar este comando en la misma sesión que creó el
+modelo) el historial de sustituciones (DocumentSubstitutionLog, misma
+razón -- relación genérica sin CASCADE, quedaría apuntando a
+documentos ya borrados si no se limpia aquí también):
 
 1. DocumentAlert de MachineDocument/PersonalDocument.
-2. MachineDocument -- fila + blob de GCS (MACHINE_DOCUMENTS_BUCKET) +
+2. DocumentSubstitutionLog de MachineDocument/PersonalDocument (S025).
+3. MachineDocument -- fila + blob de GCS (MACHINE_DOCUMENTS_BUCKET) +
    archivo local de staging si quedara alguno.
-3. PersonalDocument -- igual, PERSONNEL_DOCUMENTS_BUCKET.
-4. IngestedFile -- fila + archivo local de staging si quedara alguno
+4. PersonalDocument -- igual, PERSONNEL_DOCUMENTS_BUCKET.
+5. IngestedFile -- fila + archivo local de staging si quedara alguno
    (normalmente ya se borra solo al enrutar, pero una fila NEEDS_REVIEW
    o ERROR puede conservarlo).
 
@@ -43,7 +48,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.core.management.base import BaseCommand, CommandError
 
 from document_ingestion.models import IngestedFile
-from document_management.models import DocumentAlert
+from document_management.models import DocumentAlert, DocumentSubstitutionLog
 from ivr_config.models import Company
 from machine_documents.models import MachineDocument
 from personal_documents.models import PersonalDocument
@@ -131,7 +136,24 @@ class Command(BaseCommand):
             alerts_qs.delete()
 
         # ------------------------------------------------------------
-        # 2. MachineDocument -- fila + blob GCS + staging local.
+        # 2. DocumentSubstitutionLog (S025) -- misma razón que
+        #    DocumentAlert: relación genérica sin CASCADE, hay que
+        #    limpiarla explícitamente o quedaría apuntando a
+        #    documentos ya borrados por este mismo comando.
+        # ------------------------------------------------------------
+        substitution_logs_qs = DocumentSubstitutionLog.objects.filter(
+            **company_filter,
+        )
+        substitution_logs_count = substitution_logs_qs.count()
+        self.stdout.write(
+            f"# {substitution_logs_count} DocumentSubstitutionLog "
+            "encontrado(s)."
+        )
+        if not dry_run:
+            substitution_logs_qs.delete()
+
+        # ------------------------------------------------------------
+        # 3. MachineDocument -- fila + blob GCS + staging local.
         # ------------------------------------------------------------
         machine_docs = list(MachineDocument.objects.filter(**company_filter))
         self.stdout.write(
@@ -158,7 +180,7 @@ class Command(BaseCommand):
             document.delete()
 
         # ------------------------------------------------------------
-        # 3. PersonalDocument -- igual, PERSONNEL_DOCUMENTS_BUCKET.
+        # 4. PersonalDocument -- igual, PERSONNEL_DOCUMENTS_BUCKET.
         # ------------------------------------------------------------
         personal_docs = list(PersonalDocument.objects.filter(**company_filter))
         self.stdout.write(
@@ -185,7 +207,7 @@ class Command(BaseCommand):
             document.delete()
 
         # ------------------------------------------------------------
-        # 4. IngestedFile -- fila + staging local si quedara alguno
+        # 5. IngestedFile -- fila + staging local si quedara alguno
         #    (NEEDS_REVIEW/ERROR pueden conservarlo; ROUTED ya lo
         #    borró al enrutar).
         # ------------------------------------------------------------
@@ -211,6 +233,7 @@ class Command(BaseCommand):
         else:
             self.stdout.write(
                 f"# Zona cero lista: {alerts_count} alerta(s), "
+                f"{substitution_logs_count} registro(s) de sustitución, "
                 f"{len(machine_docs)} documento(s) de máquina, "
                 f"{len(personal_docs)} documento(s) de personal y "
                 f"{len(ingested_files)} archivo(s) en ingesta eliminados "

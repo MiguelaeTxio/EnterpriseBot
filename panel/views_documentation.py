@@ -10,14 +10,15 @@ Acceso: ÚNICA Y EXCLUSIVAMENTE ADMIN y DOCS_SUPERVISOR, en las DOS
 pestañas (Maquinaria y Personal), sin excepción -- DocsUploadAccessMixin
 en todas las vistas de este archivo, sin variantes de acceso ampliado.
 
-Alcance funcional (S024): subir documentación, descargar documentación,
-ver vigente, ver archivada, borrar archivada, modificar vigente. Este
-commit construye el LISTADO (ver vigente/archivada + descarga) -- subir
-desde esta vista nueva, borrar archivada y modificar vigente quedan
-para los siguientes pasos de la hoja de ruta (subida de carpeta en
-lote, según lo acordado con Miguel Ángel). La subida de una sola
-máquina ya construida en H23 (MachineDocumentBatchUploadView) sigue
-existiendo tal cual, sin relación con esta vista.
+Alcance funcional (S024, completo): subir documentación (carpeta con
+detección automática), vincular manualmente "sin asignar", ver
+vigente/archivada (calculado dinámicamente por fechas), borrar
+vigente Y archivada (con cuenta atrás de 5s), modificar vigente,
+descarga directa por documento (icono, enlace GCS firmado), CRUD de
+alertas por documento + panel general, CRUD de plantillas de email,
+generación de dossier PDF bajo demanda. (S025) diálogo de sustitución
+sustituido por sustitución silenciosa + historial visible -- ver
+SubstitutionLogFragmentView.
 
 Cuatro vistas HTMX-friendly, mismo patrón que panel/fleet/list.html
 (filtro en vivo hx-get + hx-trigger="input changed delay:300ms"):
