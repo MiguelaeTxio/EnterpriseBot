@@ -238,6 +238,20 @@ def process_personal_document_batch(self, document_pks: list[int]) -> None:
         coverage = assess_master_coverage(
             item["bytes"], item["filename"], individuals,
         )
+        if coverage.get("comparison_failed"):
+            # S025, mismo hallazgo que machine_documents.tasks -- ver
+            # ese módulo para el detalle completo del bug real
+            # encontrado.
+            logger.warning(
+                "# [process_personal_document_batch] #%d (%s): la "
+                "comparación de cobertura falló de verdad (%s) -- "
+                "maestro CONSERVADO como documento real, nunca "
+                "descartado sin comparar.",
+                pk, item["filename"], coverage.get("reasoning", ""),
+            )
+            item["document"].is_possible_master = False
+            item["document"].save(update_fields=["is_possible_master"])
+            continue
         if not coverage["uncovered_pages"]:
             masters_to_discard.add(pk)
             continue

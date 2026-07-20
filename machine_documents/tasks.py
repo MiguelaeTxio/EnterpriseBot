@@ -384,6 +384,27 @@ def process_machine_document_batch(self, document_pks: list[int]) -> None:
         coverage = assess_master_coverage(
             item["bytes"], item["filename"], individuals,
         )
+        if coverage.get("comparison_failed"):
+            # S025, hallazgo real de Miguel Ángel con log de
+            # producción: un error de Gemini durante la comparación
+            # (ej. 400 INVALID_ARGUMENT por límite de tokens al
+            # acumular muchos individuales ya persistidos para la
+            # misma máquina) NUNCA debe tratarse como "cobertura
+            # confirmada" -- el maestro se CONSERVA como documento
+            # real (misma red de seguridad que ya existía para el
+            # fallo de extracción/clasificación de páginas no
+            # cubiertas, más abajo), nunca se descarta sin haber
+            # comparado nada de verdad.
+            logger.warning(
+                "# [process_machine_document_batch] #%d (%s): la "
+                "comparación de cobertura falló de verdad (%s) -- "
+                "maestro CONSERVADO como documento real, nunca "
+                "descartado sin comparar.",
+                pk, item["filename"], coverage.get("reasoning", ""),
+            )
+            item["document"].is_possible_master = False
+            item["document"].save(update_fields=["is_possible_master"])
+            continue
         if not coverage["uncovered_pages"]:
             # Todo el contenido del maestro ya está cubierto por los
             # individuales -- se descarta sin más, nunca se sube.

@@ -251,9 +251,15 @@ def assess_master_coverage(
             that case.
 
     Returns a dict with is_master (bool), fully_covered (bool),
-    uncovered_pages (list[int], 1-indexed) and reasoning (str). On any
-    error, returns a conservative fallback (is_master=False) and logs
-    the exception -- never raises.
+    uncovered_pages (list[int], 1-indexed), reasoning (str) and
+    comparison_failed (bool, S025). On any error, comparison_failed
+    is True and the caller MUST treat this as "comparison never
+    happened" -- never as "fully covered" (fully_covered=True in the
+    fallback dict is a historical default value, kept for backward
+    key-shape compatibility, NOT a real determination) -- see the
+    caller's handling in machine_documents.tasks/personal_documents.
+    tasks, which preserves the candidate document instead of
+    discarding it when comparison_failed is True. Never raises.
 
     ---
 
@@ -278,15 +284,23 @@ def assess_master_coverage(
             completo en ese caso.
 
     Devuelve un dict con is_master (bool), fully_covered (bool),
-    uncovered_pages (list[int], 1-indexado) y reasoning (str). Ante
-    cualquier error, devuelve un fallback conservador
-    (is_master=False) y registra la excepción -- nunca lanza.
+    uncovered_pages (list[int], 1-indexado), reasoning (str) y
+    comparison_failed (bool, S025). Ante cualquier error,
+    comparison_failed va en True y quien llama DEBE tratarlo como
+    "la comparación nunca llegó a hacerse" -- nunca como "cobertura
+    completa" (fully_covered=True en el dict de fallback es un valor
+    histórico por defecto, mantenido solo por compatibilidad de forma
+    del dict, NO una determinación real) -- ver el manejo real en
+    machine_documents.tasks/personal_documents.tasks, que conserva el
+    documento candidato en vez de descartarlo cuando comparison_failed
+    es True. Nunca lanza excepción.
     """
     _fallback = {
         "is_master": False,
         "fully_covered": True,
         "uncovered_pages": [],
         "reasoning": "",
+        "comparison_failed": False,
     }
 
     if not individual_docs:
@@ -336,6 +350,7 @@ def assess_master_coverage(
                 int(p) for p in parsed.get("uncovered_pages", [])
             ],
             "reasoning": str(parsed.get("reasoning", "")).strip(),
+            "comparison_failed": False,
         }
         logger.info(
             "# [assess_master_coverage] %s -> maestro=%s cubierto=%s "
@@ -350,7 +365,24 @@ def assess_master_coverage(
             "# [assess_master_coverage] Error comparando %s: %s",
             candidate_filename, exc, exc_info=True,
         )
-        return dict(_fallback)
+        # S025, hallazgo real (Miguel Ángel, log real de producción):
+        # un error de la API (ej. 400 INVALID_ARGUMENT por límite de
+        # tokens al acumular muchos individuales ya persistidos para
+        # la misma máquina) NUNCA debe interpretarse como "cobertura
+        # confirmada" -- el _fallback de arriba (fully_covered=True,
+        # uncovered_pages=[]) es idéntico a como se ve una comparación
+        # real que SÍ determinó cobertura completa, así que sin este
+        # flag el llamador (machine_documents.tasks/personal_documents.
+        # tasks) descartaba el maestro sin haber comparado nada de
+        # verdad -- riesgo real de perder contenido único. Con
+        # comparison_failed=True, el llamador debe CONSERVAR el
+        # maestro como documento real (misma red de seguridad que ya
+        # existía para el fallo de extract_pages/classify_document del
+        # contenido extraído).
+        error_fallback = dict(_fallback)
+        error_fallback["comparison_failed"] = True
+        error_fallback["reasoning"] = f"Comparación fallida: {exc}"
+        return error_fallback
 
 
 # ---------------------------------------------------------------------------
