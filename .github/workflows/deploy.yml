@@ -93,9 +93,17 @@ jobs:
         #
         # Patrones de disparo, decididos con Miguel Ángel en S014:
         #   Bridge -- vox_bridge/**, voice_orchestrator.py,
-        #             voice_sidecar_bridge.py, ivr_config/services.py
-        #             (construye el system prompt que carga el bridge
-        #             en cada llamada, ver anexo H17 STEP 4C).
+        #             voice_sidecar_bridge.py, ivr_config/services.py,
+        #             y (AMPLIADO S025, hallazgo real) whatsapp/** --
+        #             vox_bridge/services.py importa whatsapp.services
+        #             (send_capture_notification, send_template,
+        #             send_quick_reply) con imports locales dentro de
+        #             funciones; Python cachea el módulo tras la
+        #             primera importación del proceso, así que un fix
+        #             en whatsapp/services.py no llega al bridge en
+        #             ejecución sin reiniciarlo. NUNCA reiniciar el
+        #             bridge sin confirmar antes con Miguel Ángel --
+        #             corta llamadas IVR en curso.
         #   Celery -- cualquier tasks.py del proyecto, ai_services/**
         #             (cliente Gemini compartido usado por las tareas),
         #             enterprise_core/celery.py, start_celery_worker.sh,
@@ -130,7 +138,7 @@ jobs:
             echo "$CHANGED"
             echo ""
 
-            if echo "$CHANGED" | grep -qE '^(vox_bridge/|voice_orchestrator\.py|voice_sidecar_bridge\.py|ivr_config/services\.py)'; then
+            if echo "$CHANGED" | grep -qE '^(vox_bridge/|voice_orchestrator\.py|voice_sidecar_bridge\.py|ivr_config/services\.py|whatsapp/services\.py|whatsapp/models\.py)'; then
               echo "--- Bridge de voz: cambios relevantes detectados, reiniciando (id 234987) ---"
               curl -sf -X POST "https://www.pythonanywhere.com/api/v0/user/MiguelAeTxio/always_on/234987/restart/" \
                 -H "Authorization: Token ${{ secrets.PA_API_TOKEN }}"
