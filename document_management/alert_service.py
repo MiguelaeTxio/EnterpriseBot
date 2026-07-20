@@ -16,6 +16,7 @@ PersonalDocument -- quien llama (machine_documents.tasks/
 personal_documents.tasks) ya resuelve document_label/subject_label/
 expiry_date/company/default_contact antes de invocar esto.
 """
+import json
 import logging
 import os
 from datetime import date
@@ -156,12 +157,20 @@ def send_alert_now(alert: DocumentAlert) -> tuple[bool, str]:
                 from_=f"whatsapp:{sender_number}",
                 to=f"whatsapp:{contact.phone_number}",
                 content_sid=template.content_sid,
-                content_variables={
+                # json.dumps() obligatorio -- la API REST de Twilio
+                # espera este parámetro como cadena JSON codificada,
+                # nunca un dict de Python en crudo (S025, hallazgo
+                # real: error 21656 "The Content Variables parameter
+                # is invalid" confirmado en el log real de Twilio al
+                # pasarlo sin codificar). Mismo patrón exacto que
+                # whatsapp.services (líneas 667/714), que sí envía
+                # correctamente en producción.
+                content_variables=json.dumps({
                     "1": company_user.user.get_full_name() or company_user.user.username,
                     "2": alert.document_label,
                     "3": alert.subject_label,
                     "4": alert.expiry_date.strftime("%d/%m/%Y"),
-                },
+                }),
             )
             notified.append(company_user)
         except Exception as exc:
@@ -169,7 +178,7 @@ def send_alert_now(alert: DocumentAlert) -> tuple[bool, str]:
                 "# [send_alert_now] Error enviando alerta #%d a %s: %s",
                 alert.pk, contact.phone_number, exc,
             )
-            skipped.append(f"{company_user} (error de envío)")
+            skipped.append(f"{company_user} (error de Twilio: {exc})")
 
     if notified:
         alert.status = DocumentAlert.Status.SENT
