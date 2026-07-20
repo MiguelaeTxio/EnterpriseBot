@@ -81,7 +81,10 @@ from document_ingestion.deduplication_service import (
 )
 from document_ingestion.models import IngestedFile
 from document_ingestion.tasks import retry_unassigned_routing, route_ingested_files
-from document_management.alert_service import DEFAULT_EXPIRY_ALERT_OFFSETS_DAYS
+from document_management.alert_service import (
+    DEFAULT_EXPIRY_ALERT_OFFSETS_DAYS,
+    send_alert_now,
+)
 from document_management.models import DocumentAlert, DocumentSubstitutionLog, EmailTemplate
 from document_management.pdf_merge_service import EmptyDocumentListError, merge_pdfs
 from document_management.vigencia_service import DocumentSnapshot, is_current
@@ -662,6 +665,98 @@ class DocumentAlertResolveView(DocsUploadAccessMixin, View):
         return redirect(next_url or reverse("panel:documentation_hub"))
 
 
+def _alerts_dashboard_context(request, status_filter: str, send_result: dict | None = None) -> dict:
+    """
+    Construye el contexto completo del panel de Alertas -- extraído a
+    función (S025) para que tanto AlertsDashboardFragmentView (GET)
+    como DocumentAlertSendNowView (POST, envío manual) puedan
+    reutilizarlo sin duplicar la lógica de agrupación. `send_result`
+    (opcional) inyecta el banner de resultado del envío manual más
+    reciente, mostrado una sola vez en la respuesta que lo generó.
+    """
+    company = request.user.company_user.company
+
+    alerts_qs = (
+        DocumentAlert.objects
+        .filter(company=company)
+        .select_related("content_type")
+        .prefetch_related("contacts__user", "resolved_by__user")
+    )
+    if status_filter in dict(DocumentAlert.Status.choices):
+        alerts_qs = alerts_qs.filter(status=status_filter)
+
+    today = now().date()
+    groups: dict = {}
+    group_order: list = []
+    for alert in alerts_qs:
+        fire_date = alert.expiry_date - timedelta(days=alert.alert_offset_days)
+        is_overdue = (
+            alert.status == DocumentAlert.Status.PENDING
+            and fire_date <= today
+        )
+        domain = (
+            "machine" if alert.content_type.model == "machinedocument"
+            else "personal"
+        )
+        key = (alert.content_type_id, alert.object_id)
+        if key not in groups:
+            groups[key] = {
+                "document_label": alert.document_label,
+                "subject_label": alert.subject_label,
+                "expiry_date": alert.expiry_date,
+                "domain": domain,
+                "object_id": alert.object_id,
+                "cells": {},
+                "has_overdue": False,
+                "min_fire_date": fire_date,
+            }
+            group_order.append(key)
+        group = groups[key]
+        group["cells"][alert.alert_offset_days] = {
+            "alert": alert,
+            "fire_date": fire_date,
+            "is_overdue": is_overdue,
+        }
+        if is_overdue:
+            group["has_overdue"] = True
+        group["min_fire_date"] = min(group["min_fire_date"], fire_date)
+
+    rows = []
+    for key in group_order:
+        group = groups[key]
+        rows.append({
+            "document_label": group["document_label"],
+            "subject_label": group["subject_label"],
+            "expiry_date": group["expiry_date"],
+            "domain": group["domain"],
+            "object_id": group["object_id"],
+            "has_overdue": group["has_overdue"],
+            "cells": [
+                group["cells"].get(offset)
+                for offset in AlertsDashboardFragmentView.OFFSET_COLUMNS
+            ],
+            "min_fire_date": group["min_fire_date"],
+        })
+
+    # Documentos con alguna celda vencida primero, luego por fecha
+    # de disparo más próxima -- lo más urgente arriba siempre.
+    rows.sort(key=lambda r: (not r["has_overdue"], r["min_fire_date"]))
+
+    overdue_count = sum(
+        1 for r in rows for cell in r["cells"]
+        if cell is not None and cell["is_overdue"]
+    )
+
+    return {
+        "rows": rows,
+        "offset_columns": AlertsDashboardFragmentView.OFFSET_COLUMNS,
+        "status_filter": status_filter,
+        "status_choices": DocumentAlert.Status.choices,
+        "overdue_count": overdue_count,
+        "send_result": send_result,
+    }
+
+
 class AlertsDashboardFragmentView(DocsUploadAccessMixin, View):
     """
     GET (HTMX): panel general de TODAS las alertas de la empresa
@@ -698,84 +793,39 @@ class AlertsDashboardFragmentView(DocsUploadAccessMixin, View):
     OFFSET_COLUMNS = [30, 15, 7]
 
     def get(self, request):
-        company = request.user.company_user.company
         status_filter = request.GET.get("status", "")
+        context = _alerts_dashboard_context(request, status_filter)
+        return render(request, self.template_name, context)
 
-        alerts_qs = (
-            DocumentAlert.objects
-            .filter(company=company)
-            .select_related("content_type")
-            .prefetch_related("contacts__user", "resolved_by__user")
+
+class DocumentAlertSendNowView(DocsUploadAccessMixin, View):
+    """
+    POST (HTMX): envío MANUAL inmediato de una alerta concreta (S025,
+    petición explícita de Miguel Ángel: "tenemos que tener la
+    disponibilidad de lanzar el aviso, la notificación por WhatsApp,
+    de forma manual [...] se han subido documentos y ya ha pasado la
+    fecha de las notificaciones [...] poder enviar esa notificación").
+    Delega en document_management.alert_service.send_alert_now()
+    (misma lógica que usa la tarea periódica). Re-renderiza el panel
+    de Alertas completo con un banner de resultado (éxito/error) --
+    nunca un redirect, para que el feedback sea inmediato dentro del
+    propio swap de HTMX, sin depender de Django messages (que no se
+    ven en un swap parcial).
+    """
+
+    def post(self, request, alert_pk):
+        alert = DocumentAlert.objects.filter(pk=alert_pk).first()
+        if alert is None or alert.company_id != request.user.company_user.company_id:
+            raise Http404("Alerta no encontrada.")
+
+        success, detail = send_alert_now(alert)
+        send_result = {"success": success, "detail": detail}
+
+        status_filter = request.POST.get("status_filter", "")
+        context = _alerts_dashboard_context(request, status_filter, send_result)
+        return render(
+            request, "panel/documentation/_alerts_dashboard.html", context,
         )
-        if status_filter in dict(DocumentAlert.Status.choices):
-            alerts_qs = alerts_qs.filter(status=status_filter)
-
-        today = now().date()
-        groups: dict = {}
-        group_order: list = []
-        for alert in alerts_qs:
-            fire_date = alert.expiry_date - timedelta(days=alert.alert_offset_days)
-            is_overdue = (
-                alert.status == DocumentAlert.Status.PENDING
-                and fire_date <= today
-            )
-            domain = (
-                "machine" if alert.content_type.model == "machinedocument"
-                else "personal"
-            )
-            key = (alert.content_type_id, alert.object_id)
-            if key not in groups:
-                groups[key] = {
-                    "document_label": alert.document_label,
-                    "subject_label": alert.subject_label,
-                    "expiry_date": alert.expiry_date,
-                    "domain": domain,
-                    "cells": {},
-                    "has_overdue": False,
-                    "min_fire_date": fire_date,
-                }
-                group_order.append(key)
-            group = groups[key]
-            group["cells"][alert.alert_offset_days] = {
-                "alert": alert,
-                "fire_date": fire_date,
-                "is_overdue": is_overdue,
-            }
-            if is_overdue:
-                group["has_overdue"] = True
-            group["min_fire_date"] = min(group["min_fire_date"], fire_date)
-
-        rows = []
-        for key in group_order:
-            group = groups[key]
-            rows.append({
-                "document_label": group["document_label"],
-                "subject_label": group["subject_label"],
-                "expiry_date": group["expiry_date"],
-                "domain": group["domain"],
-                "has_overdue": group["has_overdue"],
-                "cells": [
-                    group["cells"].get(offset) for offset in self.OFFSET_COLUMNS
-                ],
-                "min_fire_date": group["min_fire_date"],
-            })
-
-        # Documentos con alguna celda vencida primero, luego por fecha
-        # de disparo más próxima -- lo más urgente arriba siempre.
-        rows.sort(key=lambda r: (not r["has_overdue"], r["min_fire_date"]))
-
-        overdue_count = sum(
-            1 for r in rows for cell in r["cells"]
-            if cell is not None and cell["is_overdue"]
-        )
-
-        return render(request, self.template_name, {
-            "rows": rows,
-            "offset_columns": self.OFFSET_COLUMNS,
-            "status_filter": status_filter,
-            "status_choices": DocumentAlert.Status.choices,
-            "overdue_count": overdue_count,
-        })
 
 
 class SubstitutionLogFragmentView(DocsUploadAccessMixin, View):

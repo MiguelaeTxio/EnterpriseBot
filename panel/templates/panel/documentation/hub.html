@@ -191,6 +191,29 @@
 </div>
 
 {% comment %}
+    Modal "Ver / editar alertas de un documento" (S025) -- reutiliza
+    tal cual la vista/plantilla del CRUD de alertas ya existente por
+    documento (DocumentAlertListFragmentView/_document_alerts.html,
+    S023/S024), abierto ahora también desde el botón de lápiz de cada
+    fila del panel general de Alertas -- petición explícita de Miguel
+    Ángel: "esto sería ya entrando en la propia alerta. Tendríamos que
+    tener un botón de visionado y edición de la alerta."
+{% endcomment %}
+<div class="modal fade" id="documentAlertsModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-bell me-2"></i>Alertas del documento</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body" id="documentAlertsModalBody">
+                <div class="text-muted small"><i class="bi bi-hourglass-split me-1"></i>Cargando…</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% comment %}
     Modal "Última clasificación" (S025) -- petición explícita de
     Miguel Ángel: acceso al visor de subida en vivo desde un botón fijo
     de la cabecera, para poder consultarlo aunque se haya navegado
@@ -480,6 +503,7 @@
     var AFTER_SWAP_MODAL_MAP = {
         'dossierModalBody': 'dossierModal',
         'lastUploadModalBody': 'lastUploadModal',
+        'documentAlertsModalBody': 'documentAlertsModal',
     };
     document.body.addEventListener('htmx:afterSwap', function (evt) {
         var targetId = evt.detail.target && evt.detail.target.id;

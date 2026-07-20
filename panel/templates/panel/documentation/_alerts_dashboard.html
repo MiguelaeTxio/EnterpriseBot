@@ -3,15 +3,24 @@
 {# "no tenemos previsto ver las alertas que hay"). Todo el contenido va dentro de UN #}
 {# único contenedor (#alerts-dashboard-wrapper) que se sustituye entero (outerHTML) al #}
 {# cambiar el filtro -- así el <select> nunca se duplica anidándose sobre sí mismo. #}
-{# REDISEÑADO S025: una fila por documento (antes, una fila por alerta -- el mismo #}
-{# documento aparecía tres veces, una por offset 30/15/7 días). #}
+{# REDISEÑADO S025: una fila por documento (antes, una fila por alerta). Añadidos: #}
+{# banner de resultado de envío manual, botón "Enviar ahora" por celda, botón #}
+{# "Ver/editar" por documento (abre el modal con el CRUD de alertas ya existente). #}
 
 <div id="alerts-dashboard-wrapper">
+    {% if send_result %}
+    <div class="alert {% if send_result.success %}alert-success{% else %}alert-danger{% endif %} d-flex align-items-center mb-3" role="alert">
+        <i class="bi {% if send_result.success %}bi-check-circle-fill{% else %}bi-x-circle-fill{% endif %} me-2"></i>
+        {{ send_result.detail }}
+    </div>
+    {% endif %}
+
     {% if overdue_count %}
     <div class="alert alert-warning d-flex align-items-center mb-3" role="alert">
         <i class="bi bi-exclamation-triangle-fill me-2"></i>
         {{ overdue_count }} alerta(s) vencida(s) sin enviar -- su fecha de aviso ya pasó y sigue en estado Pendiente
         (probablemente porque la plantilla de WhatsApp todavía no está aprobada, o no se ha ejecutado la tarea periódica).
+        Puedes enviarla a mano con el botón <i class="bi bi-send"></i> de cada celda.
     </div>
     {% endif %}
 
@@ -42,6 +51,7 @@
                     {% for offset in offset_columns %}
                     <th class="text-center">{{ offset }} días</th>
                     {% endfor %}
+                    <th></th>
                 </tr>
             </thead>
             <tbody>
@@ -59,23 +69,44 @@
                                   title="Se dispara {{ cell.fire_date|date:'d/m/Y' }}">
                                 {{ cell.alert.get_status_display }}
                             </span>
-                            {% if cell.alert.status != 'RESOLVED' %}
-                            <form method="post" action="{% url 'panel:documentation_alert_resolve' alert_pk=cell.alert.pk %}"
-                                  hx-post="{% url 'panel:documentation_alert_resolve' alert_pk=cell.alert.pk %}"
-                                  hx-target="#alerts-dashboard-wrapper" hx-swap="outerHTML" class="d-inline">
-                                {% csrf_token %}
-                                <input type="hidden" name="next" value="{% url 'panel:documentation_alerts_dashboard' %}">
-                                <button type="submit" class="btn btn-sm btn-outline-success py-0 px-1" title="Marcar como resuelta">
-                                    <i class="bi bi-check-circle"></i>
-                                </button>
-                            </form>
-                            {% endif %}
+                            <div class="d-flex gap-1">
+                                {% if cell.alert.status == 'PENDING' %}
+                                <form method="post" action="{% url 'panel:documentation_alert_send_now' alert_pk=cell.alert.pk %}"
+                                      hx-post="{% url 'panel:documentation_alert_send_now' alert_pk=cell.alert.pk %}"
+                                      hx-target="#alerts-dashboard-wrapper" hx-swap="outerHTML" class="d-inline">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="status_filter" value="{{ status_filter }}">
+                                    <button type="submit" class="btn btn-sm btn-outline-primary py-0 px-1" title="Enviar ahora por WhatsApp">
+                                        <i class="bi bi-send"></i>
+                                    </button>
+                                </form>
+                                {% endif %}
+                                {% if cell.alert.status != 'RESOLVED' %}
+                                <form method="post" action="{% url 'panel:documentation_alert_resolve' alert_pk=cell.alert.pk %}"
+                                      hx-post="{% url 'panel:documentation_alert_resolve' alert_pk=cell.alert.pk %}"
+                                      hx-target="#alerts-dashboard-wrapper" hx-swap="outerHTML" class="d-inline">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="next" value="{% url 'panel:documentation_alerts_dashboard' %}">
+                                    <button type="submit" class="btn btn-sm btn-outline-success py-0 px-1" title="Marcar como resuelta">
+                                        <i class="bi bi-check-circle"></i>
+                                    </button>
+                                </form>
+                                {% endif %}
+                            </div>
                         </div>
                         {% else %}
                         <span class="text-muted small">—</span>
                         {% endif %}
                     </td>
                     {% endfor %}
+                    <td class="text-center">
+                        <button type="button" class="btn btn-sm btn-outline-secondary"
+                                hx-get="{% url 'panel:documentation_alerts_fragment' domain=row.domain pk=row.object_id %}"
+                                hx-target="#documentAlertsModalBody" hx-swap="innerHTML"
+                                title="Ver / editar contactos de este documento">
+                            <i class="bi bi-pencil-square"></i>
+                        </button>
+                    </td>
                 </tr>
                 {% endfor %}
             </tbody>

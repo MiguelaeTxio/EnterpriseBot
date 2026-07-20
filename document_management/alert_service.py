@@ -17,9 +17,11 @@ personal_documents.tasks) ya resuelve document_label/subject_label/
 expiry_date/company/default_contact antes de invocar esto.
 """
 import logging
+import os
 from datetime import date
 
 from django.contrib.contenttypes.models import ContentType
+from django.utils.timezone import now
 
 from .models import DocumentAlert
 
@@ -29,6 +31,122 @@ logger = logging.getLogger(__name__)
 # todo documento con fecha de caducidad -- un mes, 15 días y una
 # semana antes. Orden de más lejana a más cercana.
 DEFAULT_EXPIRY_ALERT_OFFSETS_DAYS = [30, 15, 7]
+
+# Nombre de la plantilla WhatsApp usada tanto por la tarea periódica
+# (document_management.tasks.send_document_expiry_alerts) como por el
+# envío manual (send_alert_now(), S025) -- mismo Content SID en los
+# dos sitios, un único punto de verdad.
+TEMPLATE_NAME = "document_expiry_alert"
+
+
+def _build_twilio_client():
+    """
+    Mismo patrón que whatsapp.tasks._build_twilio_client() -- import
+    perezoso de twilio.rest.Client aquí dentro (no a nivel de módulo)
+    para que este archivo siga siendo importable sin credenciales de
+    Twilio configuradas en entornos donde no hagan falta (tests,
+    shell, etc.).
+    """
+    from twilio.rest import Client as TwilioClient
+    return TwilioClient(
+        username=os.environ["TWILIO_API_KEY_SID"],
+        password=os.environ["TWILIO_API_KEY_SECRET"],
+        account_sid=os.environ["TWILIO_ACCOUNT_SID"],
+    )
+
+
+def _get_whatsapp_sender() -> str:
+    """Mismo patrón que whatsapp.tasks._get_whatsapp_sender()."""
+    return os.environ["WHATSAPP_SENDER_NUMBER"]
+
+
+def send_alert_now(alert: DocumentAlert) -> tuple[bool, str]:
+    """
+    Envía INMEDIATAMENTE el WhatsApp de vencimiento de `alert` a todos
+    sus contactos con teléfono válido -- sin esperar a la tarea
+    periódica (S025, petición explícita de Miguel Ángel: "tenemos que
+    tener la disponibilidad de lanzar el aviso, la notificación por
+    WhatsApp, de forma manual"). Misma plantilla y mismas variables de
+    contenido que la tarea periódica
+    (document_management.tasks.send_document_expiry_alerts), que a su
+    vez reutiliza esta misma función para no duplicar la lógica de
+    envío en dos sitios.
+
+    Marca `alert` como SENT si al menos un contacto recibió el
+    mensaje. Devuelve (éxito, mensaje legible) para mostrar feedback
+    directo al usuario en el panel -- a diferencia de la tarea
+    periódica, que solo registra en logs (nadie está mirando en ese
+    momento).
+    """
+    from ivr_config.models import Contact
+    from whatsapp.models import WhatsAppTemplate
+
+    try:
+        template = WhatsAppTemplate.objects.get(
+            company=alert.company, name=TEMPLATE_NAME, is_active=True,
+        )
+    except WhatsAppTemplate.DoesNotExist:
+        return False, "La plantilla de WhatsApp no está activa/aprobada todavía."
+
+    contacts = list(alert.contacts.all())
+    if not contacts:
+        return False, "Esta alerta no tiene ningún contacto asignado."
+
+    twilio_client = _build_twilio_client()
+    sender_number = _get_whatsapp_sender()
+
+    notified = []
+    skipped = []
+    for company_user in contacts:
+        try:
+            contact = Contact.objects.get(
+                company_user=company_user, is_internal=True,
+            )
+        except Contact.DoesNotExist:
+            skipped.append(f"{company_user} (sin ficha de contacto)")
+            continue
+        if not contact.phone_number:
+            skipped.append(f"{company_user} (sin teléfono)")
+            continue
+        try:
+            twilio_client.messages.create(
+                from_=f"whatsapp:{sender_number}",
+                to=f"whatsapp:{contact.phone_number}",
+                content_sid=template.content_sid,
+                content_variables={
+                    "1": company_user.user.get_full_name() or company_user.user.username,
+                    "2": alert.document_label,
+                    "3": alert.subject_label,
+                    "4": alert.expiry_date.strftime("%d/%m/%Y"),
+                },
+            )
+            notified.append(company_user)
+        except Exception as exc:
+            logger.error(
+                "# [send_alert_now] Error enviando alerta #%d a %s: %s",
+                alert.pk, contact.phone_number, exc,
+            )
+            skipped.append(f"{company_user} (error de envío)")
+
+    if notified:
+        alert.status = DocumentAlert.Status.SENT
+        alert.sent_at = now()
+        alert.save(update_fields=["status", "sent_at"])
+        message = f"Enviada a {len(notified)} contacto(s)."
+        if skipped:
+            message += f" Omitido(s): {', '.join(skipped)}."
+        logger.info(
+            "# [send_alert_now] Alerta #%d enviada manualmente -- %s",
+            alert.pk, message,
+        )
+        return True, message
+
+    message = (
+        "No se pudo enviar a ningún contacto -- " + "; ".join(skipped)
+        if skipped else
+        "No se pudo enviar a ningún contacto."
+    )
+    return False, message
 
 
 def create_default_expiry_alerts(
