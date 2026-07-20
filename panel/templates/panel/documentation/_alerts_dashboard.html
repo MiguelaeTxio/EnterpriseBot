@@ -27,19 +27,33 @@
     </div>
     {% endif %}
 
-    <div class="d-flex align-items-center gap-2 mb-3">
+    <div class="d-flex align-items-center gap-2 mb-3 flex-wrap">
         <label class="form-label form-label-sm mb-0">Estado:</label>
         <select class="form-select form-select-sm w-auto"
+                id="alerts-status-filter"
                 name="status"
                 hx-get="{% url 'panel:documentation_alerts_dashboard' %}"
                 hx-target="#alerts-dashboard-wrapper"
                 hx-swap="outerHTML"
-                hx-trigger="change">
+                hx-trigger="change"
+                hx-include="#alerts-search-filter">
             <option value="" {% if not status_filter %}selected{% endif %}>Todas</option>
             {% for value, label in status_choices %}
             <option value="{{ value }}" {% if status_filter == value %}selected{% endif %}>{{ label }}</option>
             {% endfor %}
         </select>
+        <label class="form-label form-label-sm mb-0 ms-2">Máquina / centro de gasto:</label>
+        <input type="search"
+               class="form-control form-control-sm w-auto"
+               id="alerts-search-filter"
+               name="search"
+               value="{{ search }}"
+               placeholder="Código, matrícula…"
+               hx-get="{% url 'panel:documentation_alerts_dashboard' %}"
+               hx-target="#alerts-dashboard-wrapper"
+               hx-swap="outerHTML"
+               hx-trigger="input changed delay:300ms, search"
+               hx-include="#alerts-status-filter">
     </div>
 
     {% if rows %}
@@ -79,6 +93,7 @@
                                       hx-target="#alerts-dashboard-wrapper" hx-swap="outerHTML" class="d-inline">
                                     {% csrf_token %}
                                     <input type="hidden" name="status_filter" value="{{ status_filter }}">
+                                    <input type="hidden" name="search" value="{{ search }}">
                                     <button type="submit" class="btn btn-sm btn-outline-primary py-0 px-1" title="Enviar ahora por WhatsApp">
                                         <i class="bi bi-send"></i>
                                     </button>
@@ -89,7 +104,7 @@
                                       hx-post="{% url 'panel:documentation_alert_resolve' alert_pk=cell.alert.pk %}"
                                       hx-target="#alerts-dashboard-wrapper" hx-swap="outerHTML" class="d-inline">
                                     {% csrf_token %}
-                                    <input type="hidden" name="next" value="{% url 'panel:documentation_alerts_dashboard' %}">
+                                    <input type="hidden" name="next" value="{% url 'panel:documentation_alerts_dashboard' %}?status={{ status_filter|urlencode }}&search={{ search|urlencode }}">
                                     <button type="submit" class="btn btn-sm btn-outline-success py-0 px-1" title="Marcar como resuelta">
                                         <i class="bi bi-check-circle"></i>
                                     </button>

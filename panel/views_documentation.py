@@ -665,7 +665,10 @@ class DocumentAlertResolveView(DocsUploadAccessMixin, View):
         return redirect(next_url or reverse("panel:documentation_hub"))
 
 
-def _alerts_dashboard_context(request, status_filter: str, send_result: dict | None = None) -> dict:
+def _alerts_dashboard_context(
+    request, status_filter: str, send_result: dict | None = None,
+    search: str = "",
+) -> dict:
     """
     Construye el contexto completo del panel de Alertas -- extraído a
     función (S025) para que tanto AlertsDashboardFragmentView (GET)
@@ -673,6 +676,12 @@ def _alerts_dashboard_context(request, status_filter: str, send_result: dict | N
     reutilizarlo sin duplicar la lógica de agrupación. `send_result`
     (opcional) inyecta el banner de resultado del envío manual más
     reciente, mostrado una sola vez en la respuesta que lo generó.
+    `search` (S025, petición explícita de Miguel Ángel: "búsqueda de
+    alertas por máquina... un filtrado por centro de gasto") filtra
+    por `subject_label` -- mismo campo denormalizado que ya muestra la
+    columna "Sujeto" de la tabla, así que el filtro busca exactamente
+    sobre lo que el usuario ve (código de máquina o nombre de
+    trabajador), sin tener que resolver el objeto genérico.
     """
     company = request.user.company_user.company
 
@@ -684,6 +693,8 @@ def _alerts_dashboard_context(request, status_filter: str, send_result: dict | N
     )
     if status_filter in dict(DocumentAlert.Status.choices):
         alerts_qs = alerts_qs.filter(status=status_filter)
+    if search:
+        alerts_qs = alerts_qs.filter(subject_label__icontains=search)
 
     today = now().date()
     groups: dict = {}
@@ -754,6 +765,7 @@ def _alerts_dashboard_context(request, status_filter: str, send_result: dict | N
         "status_choices": DocumentAlert.Status.choices,
         "overdue_count": overdue_count,
         "send_result": send_result,
+        "search": search,
     }
 
 
@@ -794,7 +806,8 @@ class AlertsDashboardFragmentView(DocsUploadAccessMixin, View):
 
     def get(self, request):
         status_filter = request.GET.get("status", "")
-        context = _alerts_dashboard_context(request, status_filter)
+        search = request.GET.get("search", "").strip()
+        context = _alerts_dashboard_context(request, status_filter, search=search)
         return render(request, self.template_name, context)
 
 
@@ -822,7 +835,8 @@ class DocumentAlertSendNowView(DocsUploadAccessMixin, View):
         send_result = {"success": success, "detail": detail}
 
         status_filter = request.POST.get("status_filter", "")
-        context = _alerts_dashboard_context(request, status_filter, send_result)
+        search = request.POST.get("search", "").strip()
+        context = _alerts_dashboard_context(request, status_filter, send_result, search=search)
         return render(
             request, "panel/documentation/_alerts_dashboard.html", context,
         )
