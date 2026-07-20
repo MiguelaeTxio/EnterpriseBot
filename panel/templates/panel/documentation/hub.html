@@ -183,17 +183,19 @@
     </div>
 </div>
 
-{# --- Modal de progreso de subida (S025) -- archivo por archivo, con
-     barra de progreso real por archivo. Convive con el panel inline
-     (#uploadResult): el modal salta SIEMPRE al iniciar la subida,
-     independientemente de si el usuario se ha desplazado o ha
-     colapsado el panel -- Miguel Ángel: "el que salte el modal hace
-     mucho, porque si te has desplazado... el modal salta y lo ves
-     claramente". Sin botón de cerrar ni backdrop/Esc mientras dura la
-     transferencia real (data-bs-backdrop="static" data-bs-keyboard="false"
-     + botón de cerrar oculto) -- en cuanto termina la última subida y
-     empieza la fase asíncrona (Gemini/Celery), el modal se cierra solo
-     y el visor en vivo ya existente (#uploadResult) toma el relevo. #}
+{% comment %}
+    Modal de progreso de subida (S025) -- archivo por archivo, con
+    barra de progreso real por archivo. Convive con el panel inline
+    (#uploadResult): el modal salta SIEMPRE al iniciar la subida,
+    independientemente de si el usuario se ha desplazado o ha
+    colapsado el panel -- Miguel Ángel: "el que salte el modal hace
+    mucho, porque si te has desplazado... el modal salta y lo ves
+    claramente". Sin botón de cerrar ni backdrop/Esc mientras dura la
+    transferencia real (data-bs-backdrop="static" data-bs-keyboard="false"
+    + botón de cerrar oculto) -- en cuanto termina la última subida y
+    empieza la fase asíncrona (Gemini/Celery), el modal se cierra solo
+    y el visor en vivo ya existente (#uploadResult) toma el relevo.
+{% endcomment %}
 <div class="modal fade" id="uploadProgressModal" tabindex="-1" aria-hidden="true"
      data-bs-backdrop="static" data-bs-keyboard="false">
     <div class="modal-dialog modal-dialog-centered">
