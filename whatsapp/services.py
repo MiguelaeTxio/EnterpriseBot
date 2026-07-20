@@ -1079,18 +1079,34 @@ def send_capture_notification(
 
     # Build Twilio Content Template API payload.
     # Construir el payload de la API Content Template de Twilio.
+    #
+    # json.dumps() obligatorio (hallazgo real S025, mismo bug que en
+    # document_management.alert_service.send_alert_now -- confirmado
+    # contra la documentación actual de Twilio, error 21656: "Send
+    # ContentVariables as a JSON string"). Esta función llama a
+    # messages.create() DIRECTAMENTE en vez de pasar por
+    # WhatsAppContentService.send_template()/send_quick_reply() (que sí
+    # lo hacían bien, ver esos métodos más arriba en este mismo
+    # archivo) -- por eso el bug pasó desapercibido hasta ahora: nunca
+    # se detectó porque el except Exception de abajo lo capturaba en
+    # silencio (solo quedaba en el log, nunca visible en el panel), y
+    # nadie había comprobado en producción si esta notificación
+    # concreta (tras captura de datos IVR) llegaba a enviarse de
+    # verdad.
+    import json
+
     try:
         twilio_client = _build_twilio_client()
         message = twilio_client.messages.create(
             from_=f"whatsapp:{whatsapp_sender}",
             to=f"whatsapp:{contact.phone_number}",
             content_sid=template.content_sid,
-            content_variables={
+            content_variables=json.dumps({
                 "1": section_name,
                 "2": captured_name,
                 "3": captured_phone,
                 "4": captured_motive,
-            },
+            }),
         )
         logger.info(
             "# [CAPTURE NOTIFY] Notificacion enviada a %s — SID: %s",
