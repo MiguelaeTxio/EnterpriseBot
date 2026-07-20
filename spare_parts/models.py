@@ -208,24 +208,33 @@ class DeliveryNote(models.Model):
     # Código único y OBLIGATORIO de máquina/centro de gasto (S007-H10,
     # reescrito en S015). Hasta S015 era opcional y actuaba solo como
     # respaldo de las anotaciones por línea; desde S015 (primer punto de
-    # la hoja de ruta, confirmado por Miguel Ángel) es la ÚNICA fuente de
-    # asignación: un albarán completo va SIEMPRE a una única máquina o
-    # centro de gasto, anotado EXCLUSIVAMENTE por el proveedor en el
-    # campo impreso "Observaciones"/"Notas" del propio documento -- nunca
-    # a mano, nunca por línea. Sin este código el albarán se rechaza
-    # (ver services.validate_document_assignment()) y el operario debe
-    # volver a fotografiarlo, nunca corregirlo a mano en el formulario.
+    # la hoja de ruta, confirmado por Miguel Ángel) es la fuente de
+    # asignación AUTOMÁTICA: un albarán completo va SIEMPRE a una única
+    # máquina o centro de gasto, anotado por el proveedor en el campo
+    # impreso "Observaciones"/"Notas" del propio documento (o delimitado
+    # en línea, S020). Sin este código, hasta S025 el albarán se
+    # rechazaba sin excepción (ver services.validate_document_assignment()).
+    #
+    # REVERTIDO PARCIALMENTE EN S025 (decisión explícita de Miguel Ángel,
+    # "estamos teniendo un problema grave con esto"): cuando la extracción
+    # automática no encuentra código válido, ahora SÍ se permite que un
+    # operario asigne la máquina/centro de gasto A MANO desde
+    # DeliveryNoteDetailView (ver DeliveryNoteManualAssignView) -- pero
+    # esa asignación queda SIEMPRE marcada como manual (manually_assigned/
+    # manually_assigned_by/manually_assigned_at, más abajo), nunca se
+    # confunde con una asignación automática real.
     # ------------------------------------------------------------------
     # Single, MANDATORY machine/cost-centre code (S007-H10, rewritten in
-    # S015). Until S015 it was optional and only acted as a fallback for
+    # S015, partially reverted in S025 -- see manually_assigned below).
+    # Until S015 it was optional and only acted as a fallback for
     # per-line annotations; since S015 (first roadmap point, confirmed by
-    # Miguel Ángel) it is the ONLY assignment source: a whole delivery
-    # note always goes to a single machine or cost centre, annotated
-    # EXCLUSIVELY by the supplier in the document's own printed
-    # "Observaciones"/"Notas" field -- never by hand, never per line.
-    # Without this code the delivery note is rejected (see
-    # services.validate_document_assignment()) and the operator must
-    # re-photograph it, never correct it by hand in the form.
+    # Miguel Ángel) it is the AUTOMATIC assignment source: a whole
+    # delivery note always goes to a single machine or cost centre,
+    # annotated by the supplier in the document's own printed
+    # "Observaciones"/"Notas" field (or delimited in a line, S020).
+    # Without this code, until S025 the delivery note was rejected
+    # outright (see services.validate_document_assignment()) -- S025
+    # allows a manual operator override instead, always flagged as such.
     # ------------------------------------------------------------------
     general_machine_code_raw = models.CharField(
         max_length=100,
@@ -234,10 +243,42 @@ class DeliveryNote(models.Model):
         help_text=(
             'Código único de máquina o centro de gasto que aplica a '
             'TODO el albarán, leído exclusivamente del campo impreso '
-            'Observaciones/Notas por Gemini Vision. Obligatorio desde '
-            'S015 -- vacío significa que el albarán se rechaza y debe '
-            'volver a fotografiarse, nunca corregirse a mano.'
+            'Observaciones/Notas por Gemini Vision. Si queda vacío, '
+            'desde S025 un operario puede asignarlo a mano (ver '
+            'manually_assigned) en vez de tener que volver a '
+            'fotografiar el albarán.'
         ),
+    )
+    # ------------------------------------------------------------------
+    # Asignación MANUAL (S025) -- trazabilidad obligatoria de cuándo la
+    # asignación de máquina/centro de gasto NO vino de la extracción
+    # automática (general_machine_code_raw) sino de que un operario la
+    # eligió a mano en DeliveryNoteManualAssignView, porque la extracción
+    # no encontró ningún código válido. Nunca se pone a True por la vía
+    # automática -- solo esa vista la marca.
+    # ------------------------------------------------------------------
+    manually_assigned = models.BooleanField(
+        default=False,
+        verbose_name='Asignación manual',
+        help_text=(
+            'True si la máquina/centro de gasto de este albarán se '
+            'asignó a mano (la extracción automática no encontró '
+            'ningún código válido) -- nunca confundir con una '
+            'asignación automática real.'
+        ),
+    )
+    manually_assigned_by = models.ForeignKey(
+        'ivr_config.CompanyUser',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='delivery_notes_manually_assigned',
+        verbose_name='Asignado manualmente por',
+    )
+    manually_assigned_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name='Fecha de asignación manual',
     )
     source_type = models.CharField(
         max_length=10,

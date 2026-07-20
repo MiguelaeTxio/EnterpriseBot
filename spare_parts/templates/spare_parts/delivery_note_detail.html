@@ -129,9 +129,10 @@
                             en una línea de artículo si el proveedor no usa
                             Observaciones. Si no hay código pero el albarán
                             menciona "repuesto", "stock" o "almacén", va a
-                            almacén general. No se admite corrección
-                            manual: si no se reconoce ninguno de los dos,
-                            hay que volver a fotografiar el albarán.
+                            almacén general. Si no se reconoce ninguno de
+                            los dos automáticamente, un operario puede
+                            asignarlo a mano -- queda siempre registrado
+                            como asignación manual.
                         </span>
                     </div>
                     <div class="card-body">
@@ -142,9 +143,18 @@
                                 {% else %}
                                 <strong>Almacén general</strong> (por palabra clave, sin código)
                                 {% endif %}
+                                {% if delivery_note.manually_assigned %}
+                                <span class="badge bg-warning text-dark ms-1">
+                                    <i class="bi bi-person-fill-gear me-1"></i>Asignación manual
+                                </span>
+                                <div class="text-muted small mt-1">
+                                    Asignado a mano por {{ delivery_note.manually_assigned_by }}
+                                    el {{ delivery_note.manually_assigned_at|date:"d/m/Y H:i" }}.
+                                </div>
+                                {% endif %}
                             </div>
-                        {% elif is_valid %}
-                            <div class="alert alert-success mb-0 d-flex align-items-center gap-2">
+                        {% elif is_valid or delivery_note.manually_assigned %}
+                            <div class="alert alert-success mb-0 d-flex align-items-center gap-2 flex-wrap">
                                 <i class="bi bi-check-circle-fill"></i>
                                 <span>
                                     {% if delivery_note.general_machine_code_raw %}
@@ -157,13 +167,46 @@
                                     {% elif resolved_type == 'MACHINE' %}
                                         — <span class="badge bg-primary">{{ resolved_machine.code|default:"Máquina" }}</span>
                                     {% endif %}
+                                    {% if delivery_note.manually_assigned %}
+                                    <span class="badge bg-warning text-dark">
+                                        <i class="bi bi-person-fill-gear me-1"></i>Asignación manual
+                                    </span>
+                                    {% endif %}
                                 </span>
                             </div>
+                            {% if delivery_note.manually_assigned %}
+                            <div class="text-muted small mt-1">
+                                Asignado a mano por {{ delivery_note.manually_assigned_by }}
+                                el {{ delivery_note.manually_assigned_at|date:"d/m/Y H:i" }}.
+                            </div>
+                            {% endif %}
                         {% else %}
-                            <div class="alert alert-danger mb-0">
+                            <div class="alert alert-danger mb-3">
                                 <i class="bi bi-x-octagon-fill me-1"></i>
                                 {{ rejection_reason }}
                             </div>
+                            {# S025: asignación manual cuando la extracción automática falla -- #}
+                            {# petición explícita de Miguel Ángel, queda siempre marcada como tal. #}
+                            <form method="post"
+                                  action="{% url 'spare_parts:delivery_note_manual_assign' pk=delivery_note.pk %}"
+                                  class="row g-2 align-items-center">
+                                {% csrf_token %}
+                                <div class="col-auto flex-grow-1">
+                                    <select name="assignment_choice" class="form-select form-select-sm" required>
+                                        <option value="">Selecciona máquina / centro de gasto…</option>
+                                        <option value="WAREHOUSE">Almacén general (sin diferenciar)</option>
+                                        {% for m in assignable_machines %}
+                                        <option value="{{ m.pk }}">{{ m.code }}{% if m.brand_model %} — {{ m.brand_model }}{% endif %}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="col-auto">
+                                    <button type="submit" class="btn btn-sm btn-warning"
+                                            onclick="return confirm('¿Asignar esta máquina/centro de gasto a mano? Quedará registrado como asignación manual.');">
+                                        <i class="bi bi-person-fill-gear me-1"></i>Asignar a mano
+                                    </button>
+                                </div>
+                            </form>
                         {% endif %}
                     </div>
                 </div>
@@ -205,10 +248,10 @@
                             {% csrf_token %}
                             <button type="submit" class="btn btn-outline-danger">
                                 <i class="bi bi-x-circle me-1"></i>
-                                {% if is_valid %}No es correcto — volver a subir{% else %}Volver a subir la foto{% endif %}
+                                {% if is_valid or delivery_note.manually_assigned %}No es correcto — volver a subir{% else %}Volver a subir la foto{% endif %}
                             </button>
                         </form>
-                        {% if is_valid %}
+                        {% if is_valid or delivery_note.manually_assigned %}
                         <form method="post"
                               action="{% url 'spare_parts:delivery_note_confirm' pk=delivery_note.pk %}"
                               onsubmit="return confirm('¿Confirmar la asignación de este albarán? Esta acción creará los repuestos y movimientos de stock correspondientes.');"

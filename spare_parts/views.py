@@ -16,13 +16,15 @@ import logging
 
 from django.contrib import messages
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils.timezone import now
 from django.views import View
 
+from fleet.models import MachineAsset
 from panel.mixins import CompanyUserRequiredMixin, SupervisorAccessMixin
 
 from .forms import SupplierForm
 from .gcs_service import DELIVERY_NOTES_BUCKET, generate_signed_url
-from .models import DeliveryNote, Supplier
+from .models import DeliveryNote, DeliveryNoteLine, Supplier
 from .services import (
     confirm_delivery_note,
     validate_document_assignment,
@@ -198,6 +200,20 @@ class DeliveryNoteDetailView(CompanyUserRequiredMixin, View):
                 validate_document_assignment(delivery_note, company)
             )
 
+        # S025: lista de máquinas/centros de gasto para el desplegable
+        # de asignación manual -- solo se necesita cuando la
+        # extracción automática falló y el albarán todavía no se ha
+        # asignado a mano (si ya se asignó, manually_assigned=True y
+        # is_valid ya no importa para decidir si mostrar el
+        # formulario, ver plantilla).
+        assignable_machines = None
+        if not is_valid and not delivery_note.manually_assigned:
+            assignable_machines = (
+                MachineAsset.objects
+                .filter(company=company)
+                .order_by('code')
+            )
+
         # URL de descarga resuelta aquí (S022, directriz de plantillas
         # tontas): gcs_blob_name -> URL firmada bajo demanda;
         # drive_web_link (legado) se usa tal cual. Fallback al archivo
@@ -243,7 +259,109 @@ class DeliveryNoteDetailView(CompanyUserRequiredMixin, View):
             'resolved_type': resolved_type,
             'resolved_machine': resolved_machine,
             'download_url': download_url,
+            'assignable_machines': assignable_machines,
         })
+
+
+class DeliveryNoteManualAssignView(CompanyUserRequiredMixin, View):
+    """
+    POST: asigna a mano la máquina/centro de gasto (o "Almacén" sin
+    diferenciar) de un albarán cuya extracción automática no encontró
+    ningún código válido (S025, petición explícita de Miguel Ángel:
+    "deberíamos de incluir esa corrección manual indicando que es una
+    corrección manual, asignarla a la máquina, pero dejando constancia
+    de que ha sido una asignación manual, porque estamos teniendo un
+    problema grave con esto"). Revierte PARCIALMENTE la norma de S015
+    ("no se admite corrección manual") -- la corrección ahora se
+    admite, pero queda SIEMPRE marcada como manual
+    (manually_assigned/manually_assigned_by/manually_assigned_at en
+    DeliveryNote), nunca se confunde con una asignación automática
+    real.
+
+    Aplica el mismo assignment_type/machine elegido a TODAS las
+    líneas del albarán (mismo criterio "un albarán, un destino" ya
+    vigente desde S015 para la vía automática -- ver
+    services.resolve_document_assignment()), para que
+    confirm_delivery_note() (que lee assignment_type/machine ya
+    fijados en cada línea, sin recalcular nada) funcione exactamente
+    igual después de una asignación manual que después de una
+    automática.
+
+    Solo disponible mientras el albarán no se ha confirmado
+    (status=PROCESSED) y no está ya asignado a mano -- una vez
+    asignado a mano, el flujo normal de "Confirmar" queda disponible
+    igual que si la extracción automática hubiera tenido éxito.
+    """
+
+    def post(self, request, pk):
+        company = request.user.company_user.company
+        delivery_note = get_object_or_404(
+            DeliveryNote, pk=pk, company=company,
+        )
+
+        if delivery_note.status != 'PROCESSED':
+            messages.error(
+                request,
+                'Solo se puede asignar a mano un albarán ya extraído '
+                'y todavía sin confirmar.',
+            )
+            return redirect(
+                'spare_parts:delivery_note_detail', pk=delivery_note.pk,
+            )
+
+        choice = request.POST.get('assignment_choice', '').strip()
+        if not choice:
+            messages.error(
+                request, 'Selecciona una máquina, centro de gasto o '
+                '"Almacén" antes de asignar.',
+            )
+            return redirect(
+                'spare_parts:delivery_note_detail', pk=delivery_note.pk,
+            )
+
+        if choice == 'WAREHOUSE':
+            assignment_type, machine = 'WAREHOUSE', None
+        else:
+            machine = MachineAsset.objects.filter(
+                pk=choice, company=company,
+            ).first()
+            if machine is None:
+                messages.error(
+                    request,
+                    'La máquina/centro de gasto seleccionado no es '
+                    'válido.',
+                )
+                return redirect(
+                    'spare_parts:delivery_note_detail', pk=delivery_note.pk,
+                )
+            assignment_type = 'MACHINE'
+
+        DeliveryNoteLine.objects.filter(
+            delivery_note=delivery_note,
+        ).update(assignment_type=assignment_type, machine=machine)
+
+        delivery_note.manually_assigned = True
+        delivery_note.manually_assigned_by = request.user.company_user
+        delivery_note.manually_assigned_at = now()
+        delivery_note.save(update_fields=[
+            'manually_assigned', 'manually_assigned_by',
+            'manually_assigned_at',
+        ])
+
+        logger.info(
+            '# [DeliveryNoteManualAssignView] Albarán #%d asignado a '
+            'mano por %s -- %s (%s).',
+            delivery_note.pk, request.user.company_user,
+            assignment_type, machine.code if machine else 'Almacén',
+        )
+        messages.success(
+            request,
+            'Asignación manual guardada -- ya puedes confirmar el '
+            'albarán. Queda registrado que esta asignación fue manual.',
+        )
+        return redirect(
+            'spare_parts:delivery_note_detail', pk=delivery_note.pk,
+        )
 
 
 class DeliveryNoteConfirmView(CompanyUserRequiredMixin, View):
@@ -304,14 +422,25 @@ class DeliveryNoteConfirmView(CompanyUserRequiredMixin, View):
         # Defensa en profundidad -- la plantilla ya oculta el botón
         # "Confirmar" cuando esto falla, pero un POST directo (fuera
         # de la UI normal) debe rechazarse igualmente aquí.
-        is_valid, rejection_reason, _, _ = validate_document_assignment(
-            delivery_note, company,
-        )
-        if not is_valid:
-            messages.error(request, rejection_reason)
-            return redirect(
-                'spare_parts:delivery_note_detail', pk=delivery_note.pk,
+        #
+        # EXCEPCIÓN S025: si delivery_note.manually_assigned es True,
+        # un operario ya asignó máquina/centro de gasto a mano
+        # (DeliveryNoteManualAssignView) y las líneas ya tienen su
+        # assignment_type/machine reales -- validate_document_
+        # assignment() seguiría diciendo "inválido" porque
+        # general_machine_code_raw sigue vacío a propósito (nunca se
+        # reescribe con un valor manual, para no simular una
+        # extracción automática que nunca ocurrió), así que se omite
+        # ese bloqueo cuando la asignación ya es manual.
+        if not delivery_note.manually_assigned:
+            is_valid, rejection_reason, _, _ = validate_document_assignment(
+                delivery_note, company,
             )
+            if not is_valid:
+                messages.error(request, rejection_reason)
+                return redirect(
+                    'spare_parts:delivery_note_detail', pk=delivery_note.pk,
+                )
 
         if not delivery_note.recipient_company_code:
             messages.warning(
