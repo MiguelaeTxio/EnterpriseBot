@@ -371,11 +371,29 @@ def _render_upload_batch_status(request, batch_id: str, skipped_duplicates: int)
     rows = _batch_status_rows(company, batch_id)
     any_pending = any(r["is_pending"] for r in rows)
 
+    # S025, petición explícita de Miguel Ángel: "no sabes por dónde
+    # vas... tendríamos que tener... una barra de progreso... del
+    # proceso total". El sondeo cada 3s ya existía -- el problema real
+    # no era la frecuencia, era la falta de un resumen fijo y legible
+    # de "cuánto llevo" frente a la lista de filas, que crece/cambia y
+    # se hace difícil de seguir de un vistazo. done_count cuenta
+    # cualquier fila is_pending=False (terminal, sea cual sea su
+    # estado final -- clasificado, sin asignar, error, descartado...
+    # todo cuenta como "ya resuelto" a efectos de progreso).
+    total_count = len(rows)
+    done_count = sum(1 for r in rows if not r["is_pending"])
+    progress_percent = (
+        round(done_count / total_count * 100) if total_count else 0
+    )
+
     context = {
         "batch_id": batch_id,
         "rows": rows,
         "any_pending": any_pending,
         "skipped_duplicates": skipped_duplicates,
+        "total_count": total_count,
+        "done_count": done_count,
+        "progress_percent": progress_percent,
     }
     if any_pending:
         context["oob_machines"] = MachineAsset.objects.filter(

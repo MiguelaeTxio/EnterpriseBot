@@ -15,21 +15,33 @@
      hx-target="this" hx-swap="outerHTML"
      {% endif %}>
 
+    <div class="mb-2">
+        <div class="d-flex align-items-center justify-content-between gap-2 mb-1">
+            {% if any_pending %}
+            <span class="small text-muted">
+                <span class="spinner-border spinner-border-sm text-primary me-1" role="status"></span>
+                Procesando… {{ done_count }} de {{ total_count }} archivo(s)
+            </span>
+            {% else %}
+            <span class="small text-muted">
+                <i class="bi bi-check-circle-fill text-success me-1"></i>
+                Lote completado -- {{ total_count }} archivo(s).
+            </span>
+            {% endif %}
+            <span class="small fw-semibold">{{ progress_percent }}%</span>
+        </div>
+        <div class="progress" style="height: 8px;" role="progressbar"
+             aria-valuenow="{{ progress_percent }}" aria-valuemin="0" aria-valuemax="100">
+            <div class="progress-bar {% if not any_pending %}bg-success{% endif %}"
+                 style="width: {{ progress_percent }}%;"></div>
+        </div>
+    </div>
+
     {% if skipped_duplicates %}
     <div class="alert alert-info small mb-2">
         {{ skipped_duplicates }} archivo(s) omitido(s) por estar ya subido(s) (duplicados por contenido).
     </div>
     {% endif %}
-
-    <div class="d-flex align-items-center gap-2 mb-2">
-        {% if any_pending %}
-        <span class="spinner-border spinner-border-sm text-primary" role="status"></span>
-        <span class="small text-muted">Procesando {{ rows|length }} archivo(s)…</span>
-        {% else %}
-        <i class="bi bi-check-circle-fill text-success"></i>
-        <span class="small text-muted">Lote completado -- {{ rows|length }} archivo(s).</span>
-        {% endif %}
-    </div>
 
     <div class="border rounded upload-batch-status-list">
         <table class="table table-sm mb-0 align-middle">
