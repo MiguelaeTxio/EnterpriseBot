@@ -11,15 +11,18 @@
     {% if send_result %}
     <div class="alert {% if send_result.success %}alert-success{% else %}alert-danger{% endif %} d-flex align-items-center mb-3" role="alert">
         <i class="bi {% if send_result.success %}bi-check-circle-fill{% else %}bi-x-circle-fill{% endif %} me-2"></i>
-        {{ send_result.detail }}
+        {% if send_result.success %}
+        <strong class="me-1">Alerta enviada manualmente por WhatsApp.</strong> {{ send_result.detail }}
+        {% else %}
+        <strong class="me-1">No se pudo enviar la alerta manualmente.</strong> {{ send_result.detail }}
+        {% endif %}
     </div>
     {% endif %}
 
     {% if overdue_count %}
     <div class="alert alert-warning d-flex align-items-center mb-3" role="alert">
         <i class="bi bi-exclamation-triangle-fill me-2"></i>
-        {{ overdue_count }} alerta(s) vencida(s) sin enviar -- su fecha de aviso ya pasó y sigue en estado Pendiente
-        (probablemente porque la plantilla de WhatsApp todavía no está aprobada, o no se ha ejecutado la tarea periódica).
+        {{ overdue_count }} alerta(s) vencida(s) sin enviar -- su fecha de aviso ya pasó y sigue en estado Pendiente.
         Puedes enviarla a mano con el botón <i class="bi bi-send"></i> de cada celda.
     </div>
     {% endif %}

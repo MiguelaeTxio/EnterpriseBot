@@ -398,16 +398,29 @@ urlpatterns = [
     path("documentacion/maquinaria/<int:pk>/", DocumentationMachineDetailFragmentView.as_view(), name="documentation_machine_detail"),
     path("documentacion/personal/<int:pk>/", DocumentationPersonalDetailFragmentView.as_view(), name="documentation_personal_detail"),
     path("documentacion/subir/", DocumentationFolderUploadView.as_view(), name="documentation_folder_upload"),
-    path("documentacion/alertas/<str:domain>/<int:pk>/", DocumentAlertListFragmentView.as_view(), name="documentation_alerts_fragment"),
-    path("documentacion/alertas/<str:domain>/<int:pk>/crear/", DocumentAlertCreateView.as_view(), name="documentation_alert_create"),
+    # ⛔ ORDEN CRÍTICO (bug real S025, ver commit de este mismo bloque):
+    # Django resuelve URLs por orden de aparición -- las rutas
+    # LITERALES específicas (editar/borrar/resolver/enviar-ahora) DEBEN
+    # ir ANTES que el patrón genérico <str:domain>/<int:pk>/ de la
+    # línea siguiente, o ese patrón las "traga" primero interpretando
+    # la palabra literal como si fuera el valor de `domain` (ej.
+    # "alertas/editar/157/" -> domain="editar", pk=157, resuelto por
+    # DocumentAlertListFragmentView en vez de DocumentAlertUpdateView
+    # -- 405 Method Not Allowed en cuanto se intenta POST, porque esa
+    # vista solo tiene GET). Afectaba a editar/borrar/resolver desde
+    # que se escribieron (nunca alcanzables), no solo a enviar-ahora
+    # (S025) -- detectado hoy porque fue el primero en probarse de
+    # verdad con una petición POST real.
     path("documentacion/alertas/editar/<int:alert_pk>/", DocumentAlertUpdateView.as_view(), name="documentation_alert_update"),
     path("documentacion/alertas/borrar/<int:alert_pk>/", DocumentAlertDeleteView.as_view(), name="documentation_alert_delete"),
+    path("documentacion/alertas/resolver/<int:alert_pk>/", DocumentAlertResolveView.as_view(), name="documentation_alert_resolve"),
+    path("documentacion/alertas/enviar-ahora/<int:alert_pk>/", DocumentAlertSendNowView.as_view(), name="documentation_alert_send_now"),
+    path("documentacion/alertas/<str:domain>/<int:pk>/", DocumentAlertListFragmentView.as_view(), name="documentation_alerts_fragment"),
+    path("documentacion/alertas/<str:domain>/<int:pk>/crear/", DocumentAlertCreateView.as_view(), name="documentation_alert_create"),
     path("documentacion/vincular/<str:domain>/", DocumentAssignView.as_view(), name="documentation_assign"),
     path("documentacion/<str:domain>/<int:pk>/borrar/", DocumentDeleteView.as_view(), name="documentation_document_delete"),
     path("documentacion/<str:domain>/<int:pk>/editar/", DocumentEditFormFragmentView.as_view(), name="documentation_document_edit_form"),
     path("documentacion/<str:domain>/<int:pk>/guardar/", DocumentUpdateView.as_view(), name="documentation_document_update"),
-    path("documentacion/alertas/resolver/<int:alert_pk>/", DocumentAlertResolveView.as_view(), name="documentation_alert_resolve"),
-    path("documentacion/alertas/enviar-ahora/<int:alert_pk>/", DocumentAlertSendNowView.as_view(), name="documentation_alert_send_now"),
     path("documentacion/panel-alertas/", AlertsDashboardFragmentView.as_view(), name="documentation_alerts_dashboard"),
     path("documentacion/sustituciones/", SubstitutionLogFragmentView.as_view(), name="documentation_substitution_log"),
     path("documentacion/plantillas-email/", EmailTemplateListFragmentView.as_view(), name="documentation_email_templates"),
