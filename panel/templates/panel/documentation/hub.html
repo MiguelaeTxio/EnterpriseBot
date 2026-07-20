@@ -166,6 +166,51 @@
     </div>
 </div>
 
+{# --- Modal de progreso de subida (S025) -- archivo por archivo, con
+     barra de progreso real por archivo. Convive con el panel inline
+     (#uploadResult): el modal salta SIEMPRE al iniciar la subida,
+     independientemente de si el usuario se ha desplazado o ha
+     colapsado el panel -- Miguel Ángel: "el que salte el modal hace
+     mucho, porque si te has desplazado... el modal salta y lo ves
+     claramente". Sin botón de cerrar ni backdrop/Esc mientras dura la
+     transferencia real (data-bs-backdrop="static" data-bs-keyboard="false"
+     + botón de cerrar oculto) -- en cuanto termina la última subida y
+     empieza la fase asíncrona (Gemini/Celery), el modal se cierra solo
+     y el visor en vivo ya existente (#uploadResult) toma el relevo. #}
+<div class="modal fade" id="uploadProgressModal" tabindex="-1" aria-hidden="true"
+     data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-cloud-upload me-2"></i>Subiendo documentación</h5>
+            </div>
+            <div class="modal-body">
+                <p class="small text-muted mb-2" id="uploadModalOverallLabel">Preparando subida…</p>
+                <div class="progress mb-3" style="height: 8px;">
+                    <div class="progress-bar" id="uploadModalOverallBar" role="progressbar"
+                         style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+                </div>
+                <p class="small mb-1">
+                    <i class="bi bi-file-earmark-pdf me-1"></i>
+                    <span id="uploadModalCurrentFileName">--</span>
+                </p>
+                <div class="progress mb-3" style="height: 14px;">
+                    <div class="progress-bar bg-info" id="uploadModalFileBar" role="progressbar"
+                         style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+                        <span id="uploadModalFilePct" class="small"></span>
+                    </div>
+                </div>
+                <div class="alert alert-warning small py-2 mb-0" id="uploadModalWarning">
+                    <i class="bi bi-exclamation-triangle me-1"></i>
+                    No cierres ni recargues esta página mientras se suben los archivos -- se
+                    perdería lo que quede pendiente de esta tanda. En cuanto termine la subida
+                    podrás navegar con normalidad; la clasificación sigue en segundo plano.
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 {# --- Modal de confirmación de borrado con cuenta atrás de 5s (S024-quinquies) --- #}
 <div class="modal fade" id="deleteConfirmModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
@@ -209,15 +254,76 @@
     var uploadResultEl = document.getElementById('uploadResult');
     var accumulated = [];
 
-    // PythonAnywhere impone un límite DURO de 100 MiB por petición
-    // HTTP a cualquier aplicación web (confirmado con el foro
-    // oficial, S024-sexies) -- superarlo no da ni error de Django, la
-    // conexión se corta antes de llegar a nuestro código (caso real:
-    // 121 archivos/112 PDF de la A36, "OSError: write error" sin
-    // ninguna traza de la vista). 70 MiB por trozo deja margen real
-    // para la sobrecarga de multipart (cabeceras + límites de cada
-    // parte), sin acercarse al límite.
-    var MAX_CHUNK_BYTES = 70 * 1024 * 1024;
+    // Elementos del modal de progreso (S025).
+    var progressModalEl = document.getElementById('uploadProgressModal');
+    var progressModal = null; // instanciado en el primer submit (evita crear el objeto Bootstrap si nunca se usa)
+    var overallLabelEl = document.getElementById('uploadModalOverallLabel');
+    var overallBarEl = document.getElementById('uploadModalOverallBar');
+    var currentFileNameEl = document.getElementById('uploadModalCurrentFileName');
+    var fileBarEl = document.getElementById('uploadModalFileBar');
+    var filePctEl = document.getElementById('uploadModalFilePct');
+
+    // S025, instrucción explícita de Miguel Ángel: nada de trocear por
+    // bytes -- un archivo raramente supera los 100 MiB, así que cada
+    // PDF se sube en SU PROPIA petición, uno detrás de otro (nunca en
+    // paralelo -- "subimos un archivo, se ha subido, siguiente"). Esto
+    // deja el límite duro de 100 MiB/petición de PythonAnywhere
+    // (S024-sexies) resuelto sin necesidad de trocear nada -- un solo
+    // archivo por petición ya está muy por debajo salvo un caso
+    // extremo, que se deja avisado en vez de bloqueado.
+
+    // Bloqueo de cierre/recarga de página SOLO durante la transferencia
+    // real (Miguel Ángel: "una vez que esté en subida sí podemos
+    // cerrar" -- la fase de clasificación es asíncrona vía Celery y no
+    // depende de que la pestaña siga abierta). Se activa al empezar la
+    // primera petición y se desactiva en cuanto la última termina,
+    // tanto si acaba bien como si falla.
+    function beforeUnloadGuard(evt) {
+        evt.preventDefault();
+        evt.returnValue = '';
+        return '';
+    }
+
+    function uploadSingleFile(file, folderPath, batchId, csrfToken, index, total) {
+        return new Promise(function (resolve, reject) {
+            var xhr = new XMLHttpRequest();
+            xhr.open('POST', uploadForm.action, true);
+            xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+
+            xhr.upload.addEventListener('progress', function (evt) {
+                if (!evt.lengthComputable) { return; }
+                var pct = Math.round((evt.loaded / evt.total) * 100);
+                fileBarEl.style.width = pct + '%';
+                fileBarEl.setAttribute('aria-valuenow', pct);
+                filePctEl.textContent = pct + '%';
+            });
+
+            xhr.addEventListener('load', function () {
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    resolve();
+                } else {
+                    reject(new Error('HTTP ' + xhr.status));
+                }
+            });
+            xhr.addEventListener('error', function () { reject(new Error('Error de red')); });
+
+            currentFileNameEl.textContent = (index + 1) + '/' + total + ' -- ' + file.name;
+            fileBarEl.style.width = '0%';
+            fileBarEl.setAttribute('aria-valuenow', 0);
+            filePctEl.textContent = '0%';
+            overallLabelEl.textContent = 'Subiendo archivo ' + (index + 1) + ' de ' + total + '…';
+            var overallPct = Math.round((index / total) * 100);
+            overallBarEl.style.width = overallPct + '%';
+            overallBarEl.setAttribute('aria-valuenow', overallPct);
+
+            var formData = new FormData();
+            formData.append('csrfmiddlewaretoken', csrfToken);
+            formData.append('batch_id', batchId);
+            formData.append('folder', file, file.name);
+            formData.append('folder_paths', folderPath);
+            xhr.send(formData);
+        });
+    }
 
     function refreshSummary() {
         if (accumulated.length === 0) {
@@ -248,44 +354,6 @@
 
     refreshSummary();
 
-    // Divide `accumulated` en trozos que se mantengan por debajo de
-    // MAX_CHUNK_BYTES -- greedy: mientras quepa en el trozo actual sin
-    // pasarse, se añade; si no cabe y el trozo ya tiene algo, se cierra
-    // y se abre uno nuevo (un archivo individual más grande que el
-    // límite va solo en su propio trozo, caso raro pero sin bloquear
-    // el resto).
-    function buildChunks(files) {
-        var chunks = [];
-        var current = [];
-        var currentBytes = 0;
-        files.forEach(function (f) {
-            if (current.length > 0 && currentBytes + f.size > MAX_CHUNK_BYTES) {
-                chunks.push(current);
-                current = [];
-                currentBytes = 0;
-            }
-            current.push(f);
-            currentBytes += f.size;
-        });
-        if (current.length > 0) { chunks.push(current); }
-        return chunks;
-    }
-
-    function uploadChunk(files, batchId, csrfToken) {
-        var formData = new FormData();
-        formData.append('csrfmiddlewaretoken', csrfToken);
-        formData.append('batch_id', batchId);
-        files.forEach(function (f) {
-            formData.append('folder', f, f.name);
-            formData.append('folder_paths', f.webkitRelativePath || f.name);
-        });
-        return fetch(uploadForm.action, {
-            method: 'POST',
-            body: formData,
-            headers: { 'X-Requested-With': 'XMLHttpRequest' },
-        });
-    }
-
     uploadForm.addEventListener('submit', function (evt) {
         evt.preventDefault();
         if (accumulated.length === 0) { return; }
@@ -293,26 +361,37 @@
         var pdfFiles = accumulated.filter(function (f) {
             return f.name.toLowerCase().endsWith('.pdf');
         });
-        var chunks = buildChunks(pdfFiles);
+        var total = pdfFiles.length;
         var batchId = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random()).replace(/-/g, '');
         var csrfToken = uploadForm.querySelector('[name=csrfmiddlewaretoken]').value;
 
         submitBtn.disabled = true;
         submitSpinner.classList.remove('d-none');
-        uploadResultEl.innerHTML = '<div class="text-muted small"><i class="bi bi-hourglass-split me-1"></i>Subiendo '
-            + pdfFiles.length + ' documento(s)'
-            + (chunks.length > 1 ? ' en ' + chunks.length + ' tandas (lote grande, dividido automáticamente por el límite de subida del servidor)' : '')
-            + '…</div>';
+        uploadResultEl.innerHTML = '<div class="text-muted small"><i class="bi bi-hourglass-split me-1"></i>'
+            + 'Subida en curso -- ver progreso en el cuadro de diálogo.</div>';
 
-        var chunkIndex = 0;
-        function sendNextChunk() {
-            if (chunkIndex >= chunks.length) {
-                // Todos los trozos enviados -- mostrar el visor en vivo
-                // del lote completo (le da igual cuántas peticiones
-                // hicieron falta, solo filtra por batch_id).
+        if (!progressModal) { progressModal = new bootstrap.Modal(progressModalEl); }
+        overallBarEl.style.width = '0%';
+        overallBarEl.setAttribute('aria-valuenow', 0);
+        overallLabelEl.textContent = 'Preparando subida de ' + total + ' documento(s)…';
+        progressModal.show();
+
+        window.addEventListener('beforeunload', beforeUnloadGuard);
+
+        var index = 0;
+        function sendNext() {
+            if (index >= total) {
+                // Todos los archivos subidos -- fin de la transferencia
+                // real, ya se puede cerrar/recargar la página (Miguel
+                // Ángel: la clasificación que sigue es asíncrona).
+                window.removeEventListener('beforeunload', beforeUnloadGuard);
+                overallBarEl.style.width = '100%';
+                overallBarEl.setAttribute('aria-valuenow', 100);
+                overallLabelEl.textContent = 'Subida completa -- pasando a clasificación en segundo plano…';
                 fetch('{% url "panel:documentation_upload_batch_status" batch_id="__BATCH__" %}'.replace('__BATCH__', batchId))
                     .then(function (resp) { return resp.text(); })
                     .then(function (html) {
+                        progressModal.hide();
                         uploadResultEl.innerHTML = html;
                         htmx.process(uploadResultEl);
                         accumulated = [];
@@ -322,27 +401,25 @@
                     });
                 return;
             }
-            var thisChunk = chunkIndex + 1;
-            if (chunks.length > 1) {
-                uploadResultEl.querySelector('.text-muted').innerHTML =
-                    '<i class="bi bi-hourglass-split me-1"></i>Subiendo tanda ' + thisChunk + ' de ' + chunks.length + '…';
-            }
-            uploadChunk(chunks[chunkIndex], batchId, csrfToken)
-                .then(function (resp) {
-                    if (!resp.ok) { throw new Error('HTTP ' + resp.status); }
-                    chunkIndex += 1;
-                    sendNextChunk();
+            var file = pdfFiles[index];
+            var folderPath = file.webkitRelativePath || file.name;
+            uploadSingleFile(file, folderPath, batchId, csrfToken, index, total)
+                .then(function () {
+                    index += 1;
+                    sendNext();
                 })
                 .catch(function (err) {
+                    window.removeEventListener('beforeunload', beforeUnloadGuard);
+                    progressModal.hide();
                     uploadResultEl.innerHTML = '<div class="alert alert-danger mb-0">'
-                        + 'Fallo subiendo la tanda ' + thisChunk + ' de ' + chunks.length + ' (' + err.message + '). '
-                        + 'Las tandas anteriores ya se han subido y están en proceso -- revisa la pestaña '
-                        + 'correspondiente antes de reintentar el resto.</div>';
+                        + 'Fallo subiendo "' + file.name + '" (archivo ' + (index + 1) + ' de ' + total
+                        + ', ' + err.message + '). Los archivos anteriores ya se han subido y están en '
+                        + 'proceso -- revisa la pestaña correspondiente antes de reintentar el resto.</div>';
                     submitBtn.disabled = false;
                     submitSpinner.classList.add('d-none');
                 });
         }
-        sendNextChunk();
+        sendNext();
     });
 
     // Abre el modal del dossier en cuanto llega contenido nuevo a su
