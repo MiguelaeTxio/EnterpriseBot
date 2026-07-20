@@ -95,17 +95,24 @@ logger = logging.getLogger(__name__)
 
 # Conservador a propósito -- ajustar vía variable de entorno según lo
 # que muestren los logs reales, nunca a ciegas (mismo principio
-# empírico de siempre). Sin GEMINI_VISION_MAX_RPM en el entorno, 20
-# RPM por proceso worker es un punto de partida prudente para Standard
-# PayGo sin haber visto todavía 429 reales en producción con el
-# volumen de una carpeta completa.
+# empírico de siempre).
+#
+# BAJADO A 12 EN S025 (decisión explícita de Miguel Ángel, tras 429
+# reales en la subida de la A-45): "creo que son 15 llamadas máximo
+# para Gemini... no hacer más de 12 llamadas por minuto, dejar 3
+# llamadas de colchón". 12 es el valor por defecto sin
+# GEMINI_VISION_MAX_RPM en el entorno; el operador puede seguir
+# ajustándolo por variable de entorno si el límite real resulta ser
+# otro.
 #
 # Conservative on purpose -- adjust via environment variable based on
 # real logs, never blindly (same empirical principle as always).
-# Without GEMINI_VISION_MAX_RPM in the environment, 20 RPM per worker
-# process is a prudent starting point for Standard PayGo without
-# having seen real 429s yet at folder-batch volume.
-_DEFAULT_MAX_RPM = 20
+#
+# LOWERED TO 12 IN S025 (Miguel Ángel's explicit decision, after real
+# 429s during the A-45 upload): assumed real cap ~15 calls/minute,
+# leaving a 3-call buffer. 12 is the default without
+# GEMINI_VISION_MAX_RPM in the environment.
+_DEFAULT_MAX_RPM = 12
 
 
 class _TokenBucket:
@@ -123,7 +130,17 @@ class _TokenBucket:
     def __init__(self, requests_per_minute: int):
         self.rate_per_second = requests_per_minute / 60.0
         self.max_tokens = float(requests_per_minute)
-        self.tokens = float(requests_per_minute)
+        # Arranca VACÍO, no lleno (hallazgo real S025): con el bucket
+        # lleno desde el principio, un lote por debajo de
+        # requests_per_minute documentos sale entero en ráfaga sin
+        # ningún espaciado real -- eso es exactamente lo que pasó con
+        # los 9 documentos de la A-45 (muy por debajo del tope de 20
+        # anterior), y es lo que provocó los 429 que Miguel Ángel pidió
+        # evitar "a toda costa". Arrancando en 0, incluso la primera
+        # llamada espera a que se acumule un token -- cada llamada
+        # queda espaciada desde el principio, nunca solo a partir de la
+        # número max_tokens+1.
+        self.tokens = 0.0
         self.last_refill = time.monotonic()
         self.lock = threading.Lock()
 
