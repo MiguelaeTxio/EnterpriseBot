@@ -17,6 +17,7 @@ personal_documents.tasks) ya resuelve document_label/subject_label/
 expiry_date/company/default_contact antes de invocar esto.
 """
 import logging
+from datetime import date
 
 from django.contrib.contenttypes.models import ContentType
 
@@ -48,6 +49,17 @@ def create_default_expiry_alerts(
     crear la que faltara si dos de las tres ya existían). No hace nada
     si `expiry_date` es None.
 
+    QUEDA TERMINANTEMENTE PROHIBIDO crear ninguna alerta si
+    `expiry_date` ya pasó (S025, decisión explícita de Miguel Ángel:
+    "cuando un documento ya está archivado... no tiene sentido crear
+    ningún tipo de alerta"). Un documento con fecha de caducidad
+    anterior a hoy está archivado por definición
+    (vigencia_service.is_current -- expiry_date >= hoy), así que
+    avisar de una caducidad que ya pasó no tiene sentido de negocio --
+    origen real: documentación histórica subida hoy pero con fechas de
+    hace meses/años generaba alertas "vencidas sin enviar" desde el
+    primer instante.
+
     Args:
         document: instancia MachineDocument o PersonalDocument.
         expiry_date: fecha de caducidad efectiva ya resuelta por quien
@@ -65,15 +77,25 @@ def create_default_expiry_alerts(
             DEFAULT_EXPIRY_ALERT_OFFSETS_DAYS más arriba.
 
     Devuelve la lista de DocumentAlert creadas en esta llamada (puede
-    ser más corta que `offsets_days` si alguna ya existía).
+    ser más corta que `offsets_days` si alguna ya existía, o vacía si
+    `expiry_date` es None o ya pasó).
 
     ---
 
     Creates `document`'s default expiry alerts -- one per value in
     `offsets_days` (30/15/7 by default), idempotent per offset. Does
-    nothing if `expiry_date` is None.
+    nothing if `expiry_date` is None or already in the past.
     """
     if expiry_date is None:
+        return []
+
+    if expiry_date < date.today():
+        logger.info(
+            "# [create_default_expiry_alerts] #%d (%s): expiry_date "
+            "%s ya pasó -- documento archivado por definición, no se "
+            "crea ninguna alerta.",
+            document.pk, document_label, expiry_date,
+        )
         return []
 
     content_type = ContentType.objects.get_for_model(document)

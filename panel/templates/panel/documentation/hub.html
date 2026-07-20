@@ -10,11 +10,18 @@
 
     <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
         <h5 class="mb-0 fw-semibold"><i class="bi bi-folder2-open me-2"></i>Documentación</h5>
-        <button class="btn btn-sm btn-primary" type="button"
-                data-bs-toggle="collapse" data-bs-target="#uploadPanel"
-                aria-expanded="false" aria-controls="uploadPanel">
-            <i class="bi bi-upload me-1"></i>Subir documentación
-        </button>
+        <div class="d-flex gap-2">
+            <button class="btn btn-sm btn-outline-secondary" type="button"
+                    hx-get="{% url 'panel:documentation_last_upload' %}"
+                    hx-target="#lastUploadModalBody" hx-swap="innerHTML">
+                <i class="bi bi-eye me-1"></i>Ver última clasificación
+            </button>
+            <button class="btn btn-sm btn-primary" type="button"
+                    data-bs-toggle="collapse" data-bs-target="#uploadPanel"
+                    aria-expanded="false" aria-controls="uploadPanel">
+                <i class="bi bi-upload me-1"></i>Subir documentación
+            </button>
+        </div>
     </div>
 
     {# --- Panel de subida (varias carpetas, detección automática) --- #}
@@ -178,6 +185,30 @@
             </div>
             <div class="modal-body" id="dossierModalBody">
                 <div class="text-muted small"><i class="bi bi-hourglass-split me-1"></i>Generando dossier…</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% comment %}
+    Modal "Última clasificación" (S025) -- petición explícita de
+    Miguel Ángel: acceso al visor de subida en vivo desde un botón fijo
+    de la cabecera, para poder consultarlo aunque se haya navegado
+    fuera de la pantalla donde se subió. Solo la ÚLTIMA subida de la
+    empresa, nunca un historial completo. Reutiliza
+    _upload_batch_status.html tal cual (mismo sondeo de 3s si sigue
+    pendiente) -- LastUploadBatchFragmentView resuelve el batch_id más
+    reciente por created_at.
+{% endcomment %}
+<div class="modal fade" id="lastUploadModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-eye me-2"></i>Última clasificación</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body" id="lastUploadModalBody">
+                <div class="text-muted small"><i class="bi bi-hourglass-split me-1"></i>Cargando…</div>
             </div>
         </div>
     </div>
@@ -441,12 +472,20 @@
         sendNext();
     });
 
-    // Abre el modal del dossier en cuanto llega contenido nuevo a su
-    // cuerpo (generar, descartar o error quedan todos dentro del
-    // mismo modal, nunca navegan a otra página -- S024-bis).
+    // Abre el modal del dossier / última clasificación en cuanto llega
+    // contenido nuevo a su cuerpo respectivo (generar, descartar o
+    // error quedan todos dentro del mismo modal, nunca navegan a otra
+    // página -- S024-bis; "Última clasificación" añadido en S025,
+    // mismo mecanismo).
+    var AFTER_SWAP_MODAL_MAP = {
+        'dossierModalBody': 'dossierModal',
+        'lastUploadModalBody': 'lastUploadModal',
+    };
     document.body.addEventListener('htmx:afterSwap', function (evt) {
-        if (evt.detail.target && evt.detail.target.id === 'dossierModalBody') {
-            var modalEl = document.getElementById('dossierModal');
+        var targetId = evt.detail.target && evt.detail.target.id;
+        var modalId = AFTER_SWAP_MODAL_MAP[targetId];
+        if (modalId) {
+            var modalEl = document.getElementById(modalId);
             var modal = bootstrap.Modal.getOrCreateInstance(modalEl);
             modal.show();
         }

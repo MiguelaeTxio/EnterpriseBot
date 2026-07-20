@@ -3,6 +3,11 @@
 {# sin tocar nada"). Se sondea a sí mismo cada 3s mientras quede algo pendiente -- el      #}
 {# propio backend (_render_upload_batch_status) decide si incluir el hx-trigger o no.      #}
 
+{% if no_uploads_yet %}
+<div class="text-muted small py-3">
+    <i class="bi bi-info-circle me-1"></i>Todavía no se ha subido ningún documento en esta empresa.
+</div>
+{% else %}
 <div id="upload-batch-status-{{ batch_id }}"
      {% if any_pending %}
      hx-get="{% url 'panel:documentation_upload_batch_status' batch_id=batch_id %}"
@@ -77,6 +82,7 @@
         </table>
     </div>
 </div>
+{% endif %}
 
 {% if oob_machines is not None %}
 {# Out-of-band swaps -- refrescan el acordeón y "sin asignar" a la vez que este     #}

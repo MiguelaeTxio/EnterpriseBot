@@ -38,6 +38,7 @@ from panel.views_documentation import (
     EmailTemplateDeleteView,
     EmailTemplateListFragmentView,
     EmailTemplateSaveView,
+    LastUploadBatchFragmentView,
     RetryUnassignedRoutingView,
     SubstitutionLogFragmentView,
     UnassignedMachineFragmentView,
@@ -417,6 +418,7 @@ urlpatterns = [
     path("documentacion/maquinaria/sin-asignar/", UnassignedMachineFragmentView.as_view(), name="documentation_unassigned_machine"),
     path("documentacion/personal/sin-asignar/", UnassignedPersonalFragmentView.as_view(), name="documentation_unassigned_personal"),
     path("documentacion/lote/<str:batch_id>/", UploadBatchStatusFragmentView.as_view(), name="documentation_upload_batch_status"),
+    path("documentacion/ultima-subida/", LastUploadBatchFragmentView.as_view(), name="documentation_last_upload"),
 
     # Section default role — Endpoint AJAX para pre-rellenar rol al crear usuario (H13).
     path("sections/<int:pk>/default-role/", SectionDefaultRoleView.as_view(), name="section_default_role"),

@@ -1420,6 +1420,48 @@ class UploadBatchStatusFragmentView(DocsUploadAccessMixin, View):
         return _render_upload_batch_status(request, batch_id, skipped_duplicates=0)
 
 
+class LastUploadBatchFragmentView(DocsUploadAccessMixin, View):
+    """
+    GET (HTMX): visor de la ÚLTIMA subida de la empresa, accesible
+    desde un botón fijo en la cabecera de Documentación (S025,
+    petición explícita de Miguel Ángel: "echo en falta... si te sales
+    luego no puedes volver a ver el progreso de clasificación...
+    pasarlo a un modal y tener acceso a ese modal desde algún botón").
+    Solo la ÚLTIMA -- nunca un historial de subidas completo (Miguel
+    Ángel: "no vamos a tener un historial de clasificación de
+    subidas, simplemente para ver la última").
+
+    IngestedFile.source_file se borra al enrutar, pero la FILA se
+    conserva con status=ROUTED (ver document_ingestion.models,
+    document_ingestion.tasks.route_ingested_files) -- suficiente para
+    reconstruir qué upload_batch_id fue el más reciente sin necesitar
+    ningún modelo ni campo nuevo.
+    """
+
+    template_name = "panel/documentation/_upload_batch_status.html"
+
+    def get(self, request):
+        company = request.user.company_user.company
+        last_ingested = (
+            IngestedFile.objects
+            .filter(company=company)
+            .exclude(upload_batch_id="")
+            .order_by("-created_at")
+            .first()
+        )
+        if last_ingested is None:
+            return render(request, self.template_name, {
+                "batch_id": "",
+                "rows": [],
+                "any_pending": False,
+                "skipped_duplicates": 0,
+                "no_uploads_yet": True,
+            })
+        return _render_upload_batch_status(
+            request, last_ingested.upload_batch_id, skipped_duplicates=0,
+        )
+
+
 class DocumentAssignView(DocsUploadAccessMixin, View):
     """
     POST: vincula a mano un documento "sin asignar" (machine_asset/
