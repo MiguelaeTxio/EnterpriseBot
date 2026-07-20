@@ -232,3 +232,113 @@ class DocumentAlert(models.Model):
 
     def __str__(self) -> str:
         return f"Alerta {self.get_status_display()} -- vence {self.expiry_date}"
+
+
+class DocumentSubstitutionLog(models.Model):
+    """
+    Registro de trazabilidad de una sustitución de documento aplicada
+    EN SILENCIO durante la subida (S025, corrige explícitamente el
+    diseño original del anexo H26 sección 2.4 -- decisión de Miguel
+    Angel: "no tiene sentido que salte [un dialogo]... se hace el
+    cambio simplemente y no se avisa. Se sustituye un documento por
+    otro y se deja el vigente [...] que quede registrado como en una
+    especie de log visible").
+
+    La sustitucion en si NUNCA la decide este modelo -- la calcula
+    document_management.vigencia_service.evaluate_substitution() (logica
+    pura, agnostica de dominio) a partir de las fechas de los
+    documentos; esta tabla solo persiste el resultado para poder
+    consultarlo despues. Alcance actual: solo centros de gasto
+    (machine_documents/H23) -- personal (H25) queda pendiente hasta
+    cerrar que tipos de documento participan en sustitucion (anexo H26
+    seccion 3).
+
+    Igual que DocumentAlert, vinculado genericamente (ContentType) a
+    los dos documentos reales -- este modulo nunca importa
+    MachineDocument ni el futuro modelo de H25.
+    ---
+    Traceability record of a document substitution applied SILENTLY
+    during upload (S025) -- see H26 annex section 2.4 for the original
+    (superseded) design and the S025 correction.
+    """
+
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.CASCADE,
+        related_name="document_substitution_logs",
+        verbose_name="Empresa",
+    )
+
+    # ------------------------------------------------------------
+    # Documento que queda vigente (gana la comparacion de fechas).
+    # ------------------------------------------------------------
+    superseding_content_type = models.ForeignKey(
+        ContentType,
+        on_delete=models.CASCADE,
+        related_name="+",
+        verbose_name="Tipo del documento vigente",
+    )
+    superseding_object_id = models.PositiveBigIntegerField(
+        verbose_name="ID del documento vigente",
+    )
+    superseding_document = GenericForeignKey(
+        "superseding_content_type", "superseding_object_id",
+    )
+    superseding_label = models.CharField(
+        max_length=255,
+        verbose_name="Nombre legible del documento vigente",
+    )
+
+    # ------------------------------------------------------------
+    # Documento que queda archivado (pierde la comparacion).
+    # ------------------------------------------------------------
+    superseded_content_type = models.ForeignKey(
+        ContentType,
+        on_delete=models.CASCADE,
+        related_name="+",
+        verbose_name="Tipo del documento archivado",
+    )
+    superseded_object_id = models.PositiveBigIntegerField(
+        verbose_name="ID del documento archivado",
+    )
+    superseded_document = GenericForeignKey(
+        "superseded_content_type", "superseded_object_id",
+    )
+    superseded_label = models.CharField(
+        max_length=255,
+        verbose_name="Nombre legible del documento archivado",
+    )
+
+    subject_label = models.CharField(
+        max_length=255,
+        verbose_name="Nombre legible del sujeto",
+        help_text="Ej. 'A-45 -- LIEBHERR LTM 1055' (maquina).",
+    )
+    document_type = models.CharField(
+        max_length=100,
+        verbose_name="Tipo de documento",
+    )
+    reasoning = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        verbose_name="Motivo",
+        help_text="Texto de vigencia_service.evaluate_substitution() "
+                  "explicando por que prevalece uno u otro.",
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Fecha de la sustitucion",
+    )
+
+    class Meta:
+        verbose_name = "Registro de sustitución de documento"
+        verbose_name_plural = "Historial de sustituciones de documentos"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["company", "-created_at"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.superseded_label} -> {self.superseding_label}"

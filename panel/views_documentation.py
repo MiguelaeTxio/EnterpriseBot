@@ -81,7 +81,7 @@ from document_ingestion.deduplication_service import (
 from document_ingestion.models import IngestedFile
 from document_ingestion.tasks import retry_unassigned_routing, route_ingested_files
 from document_management.alert_service import DEFAULT_EXPIRY_ALERT_OFFSETS_DAYS
-from document_management.models import DocumentAlert, EmailTemplate
+from document_management.models import DocumentAlert, DocumentSubstitutionLog, EmailTemplate
 from document_management.pdf_merge_service import EmptyDocumentListError, merge_pdfs
 from document_management.vigencia_service import DocumentSnapshot, is_current
 from fleet.models import MachineAsset
@@ -721,6 +721,28 @@ class AlertsDashboardFragmentView(DocsUploadAccessMixin, View):
             "status_choices": DocumentAlert.Status.choices,
             "overdue_count": sum(1 for r in rows if r["is_overdue"]),
         })
+
+
+class SubstitutionLogFragmentView(DocsUploadAccessMixin, View):
+    """
+    GET (HTMX): historial de sustituciones silenciosas aplicadas en la
+    subida (S025). Corrige el diseño original del anexo H26 sección
+    2.4 (diálogo interactivo) -- decisión explícita de Miguel Ángel:
+    la sustitución se aplica sin preguntar, y este listado es el
+    "log visible" que pidió para la trazabilidad. Alcance actual:
+    solo Maquinaria (ver document_management.models.DocumentSubstitutionLog).
+    """
+
+    template_name = "panel/documentation/_substitution_log.html"
+
+    def get(self, request):
+        company = request.user.company_user.company
+        logs = (
+            DocumentSubstitutionLog.objects
+            .filter(company=company)
+            .order_by("-created_at")[:200]
+        )
+        return render(request, self.template_name, {"logs": logs})
 
 
 class EmailTemplateListFragmentView(DocsUploadAccessMixin, View):

@@ -79,7 +79,8 @@ from django.contrib.contenttypes.models import ContentType
 from django.core.files.base import ContentFile
 
 from document_management.alert_service import create_default_expiry_alerts
-from document_management.models import DocumentAlert
+from document_management.models import DocumentAlert, DocumentSubstitutionLog
+from document_management.vigencia_service import DocumentSnapshot, evaluate_substitution
 from document_ingestion.deduplication_service import compute_content_hash
 from enterprise_core.celery import app
 from spare_parts.gcs_service import (
@@ -90,6 +91,7 @@ from spare_parts.gcs_service import (
 )
 
 from .document_classification_service import (
+    MANUAL_DOCUMENT_TYPE,
     assess_master_coverage,
     classify_by_filename_heuristic,
     classify_document,
@@ -498,6 +500,101 @@ def process_machine_document_batch(self, document_pks: list[int]) -> None:
             "descartado -- nunca se sube a GCS ni se persiste.",
             pk, master_item["filename"],
         )
+
+    # ------------------------------------------------------------
+    # Step 2bis (S025) -- sustitución SILENCIOSA por documento_type,
+    # registrada en un log de trazabilidad. Corrige explícitamente el
+    # diseño original del anexo H26 sección 2.4 (diálogo interactivo
+    # que preguntaba al usuario) -- decisión de Miguel Ángel en S025:
+    # "no tiene sentido que salte... se hace el cambio simplemente y
+    # no se avisa [...] que quede registrado como en una especie de
+    # log visible". La comparación de fechas la hace
+    # vigencia_service.evaluate_substitution() (lógica pura, agnóstica
+    # de dominio) -- este bloque solo persiste el resultado. Solo
+    # documentos CLASSIFIED con máquina asignada (los UNASSIGNED no
+    # tienen con qué comparar todavía) y que ya superaron el Paso 2
+    # (masters_to_discard ya aplicado, `classified` ya no contiene
+    # maestros descartados).
+    # ------------------------------------------------------------
+    machine_content_type = ContentType.objects.get_for_model(MachineDocument)
+    for item in classified.values():
+        document = item["document"]
+        if (
+            document.status != MachineDocument.Status.CLASSIFIED
+            or not document.machine_asset_id
+            or document.document_type == MANUAL_DOCUMENT_TYPE
+        ):
+            continue
+
+        existing_same_type = list(
+            MachineDocument.objects.filter(
+                machine_asset_id=document.machine_asset_id,
+                document_type=document.document_type,
+                status=MachineDocument.Status.CLASSIFIED,
+            ).exclude(pk=document.pk)
+        )
+        if not existing_same_type:
+            continue
+
+        incoming_snapshot = DocumentSnapshot(
+            identifier=document.pk,
+            expiry_date=document.expiry_date,
+            issue_date=document.issue_date,
+        )
+        existing_snapshots = [
+            DocumentSnapshot(
+                identifier=sibling.pk,
+                expiry_date=sibling.expiry_date,
+                issue_date=sibling.issue_date,
+            )
+            for sibling in existing_same_type
+        ]
+        result = evaluate_substitution(incoming_snapshot, existing_snapshots)
+        if not result.has_existing_of_same_type:
+            continue
+
+        siblings_by_pk = {sibling.pk: sibling for sibling in existing_same_type}
+        machine_label = document.machine_asset.code
+
+        if result.incoming_should_prevail:
+            for archived_pk in result.existing_to_archive:
+                archived_document = siblings_by_pk.get(archived_pk)
+                if archived_document is None:
+                    continue
+                DocumentSubstitutionLog.objects.create(
+                    company=document.company,
+                    superseding_content_type=machine_content_type,
+                    superseding_object_id=document.pk,
+                    superseding_label=document.display_name,
+                    superseded_content_type=machine_content_type,
+                    superseded_object_id=archived_document.pk,
+                    superseded_label=archived_document.display_name,
+                    subject_label=machine_label,
+                    document_type=document.document_type,
+                    reasoning=result.reasoning,
+                )
+        else:
+            # El entrante no prevalece -- el/los existente(s) del
+            # mismo tipo se quedan como estaban. Se registra contra el
+            # existente más reciente (criterio de vigencia_service:
+            # expiry_date si lo tiene, si no issue_date), como
+            # referencia legible de "quién sigue vigente".
+            prevailing = max(
+                existing_same_type,
+                key=lambda d: d.expiry_date or d.issue_date or d.created_at.date(),
+            )
+            DocumentSubstitutionLog.objects.create(
+                company=document.company,
+                superseding_content_type=machine_content_type,
+                superseding_object_id=prevailing.pk,
+                superseding_label=prevailing.display_name,
+                superseded_content_type=machine_content_type,
+                superseded_object_id=document.pk,
+                superseded_label=document.display_name,
+                subject_label=machine_label,
+                document_type=document.document_type,
+                reasoning=result.reasoning,
+            )
 
     # ------------------------------------------------------------
     # Step 3 -- upload every CLASSIFIED document without a Drive

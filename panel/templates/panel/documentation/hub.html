@@ -70,6 +70,13 @@
             </button>
         </li>
         <li class="nav-item" role="presentation">
+            <button class="nav-link" id="tab-substitutions-btn" data-bs-toggle="tab"
+                    data-bs-target="#tab-substitutions" type="button" role="tab"
+                    aria-controls="tab-substitutions" aria-selected="false">
+                <i class="bi bi-clock-history me-1"></i>Historial de sustituciones
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
             <button class="nav-link" id="tab-templates-btn" data-bs-toggle="tab"
                     data-bs-target="#tab-templates" type="button" role="tab"
                     aria-controls="tab-templates" aria-selected="false">
@@ -135,6 +142,16 @@
                  hx-trigger="shown.bs.tab once from:#tab-alerts-btn"
                  hx-target="this" hx-swap="innerHTML">
                 <div class="text-muted small"><i class="bi bi-hourglass-split me-1"></i>Cargando alertas…</div>
+            </div>
+        </div>
+
+        {# --- Pestaña Historial de sustituciones (S025) --- #}
+        <div class="tab-pane fade" id="tab-substitutions" role="tabpanel" aria-labelledby="tab-substitutions-btn">
+            <div id="substitution-log-lazy"
+                 hx-get="{% url 'panel:documentation_substitution_log' %}"
+                 hx-trigger="shown.bs.tab once from:#tab-substitutions-btn"
+                 hx-target="this" hx-swap="innerHTML">
+                <div class="text-muted small"><i class="bi bi-hourglass-split me-1"></i>Cargando historial…</div>
             </div>
         </div>
 
