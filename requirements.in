@@ -27,6 +27,12 @@ mysqlclient
 # Requerido por el ImageField de Django en ivr_config.Company (campo logo).
 Pillow
 PyMuPDF
+# pymupdf4llm (S025): conversión de PDF a Markdown para manuales de
+# uso pesados -- extensión oficial de PyMuPDF (mismo fabricante),
+# sin GPU ni API externa, verificado en línea (directriz 4.4,
+# 2026-07-20) contra pypi.org/project/pymupdf4llm. Instala/actualiza
+# PyMuPDF automáticamente si hiciera falta.
+pymupdf4llm
 
 # Voice and Networking / Voz y Redes
 # ✅ SECURITY FIX APRIL 2026: Pinning aiohttp to 3.13.5 to mitigate CVE-2026-34517 (DoS vulnerability).
