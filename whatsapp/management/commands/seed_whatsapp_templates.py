@@ -7,20 +7,20 @@ to run multiple times via get_or_create. ContentSid values must be updated
 in the TEMPLATE_DEFINITIONS constant below once obtained from Twilio Console.
 
 Template inventory (11 total):
-  APPROVED (5):
+  APPROVED (6):
     - presence_reminder          UTILITY   HXe0ea154a5fa8756be305f6f0c24023c4
     - welcome_message            MARKETING HX6619d4bded96b01c62fada40e6259dd8
     - chat_onboarding            UTILITY   HX9c92dd8981366dda0764900958b7abbc
     - chat_session_renewal       UTILITY   HX7e0f3f4d9b8553acc58240e7767f2133
     - ivr_capture_notification   UTILITY   HX1a301d32db3acaedf6b13d83fd7579ac
+    - document_expiry_alert      UTILITY   HX55da66276bb2025f691c378abff0123e (confirmado S025, 2026-07-20)
 
-  PENDING APPROVAL (6 — 5 created in H17 S055, 1 created in H23 S021, awaiting Meta review):
+  PENDING APPROVAL (5 — creadas en H17 S055, awaiting Meta review):
     - breakdown_ticket_created   UTILITY   HX32d590d2a40360c789060a7f88fa50ef
     - breakdown_location_request UTILITY   HXb9139eb63adb500855a679957d3de232
     - breakdown_info_request     UTILITY   HXe3baa955000b20e312d6d000f775533b
     - breakdown_assigned         UTILITY   HX41a742714147cc5ec92fa83dbf5c3db6
     - breakdown_broadcast        UTILITY   HXa1b32520e94663a32d3c7c1453429fe3
-    - document_expiry_alert      UTILITY   HX55da66276bb2025f691c378abff0123e
 
   NOT SUBMITTED (1 — created previously, pending Meta submission decision):
     - employee_help_menu         UTILITY   HXe8c20c02d4cf4ab340924ed5e2b0ac6f
@@ -167,8 +167,13 @@ TEMPLATE_DEFINITIONS = [
         "language":    "es",
     },
     # ------------------------------------------------------------------
-    # H23 DOCUMENT EXPIRY ALERT — Created S021, pending Meta approval.
-    # Uses the same "trabajador de Grupo Alvarez" UTILITY anchor pattern.
+    # H23 DOCUMENT EXPIRY ALERT -- Created S021, APPROVED (confirmado
+    # via API de Twilio en S025, 2026-07-20: {"status": "approved"}).
+    # Comentario "pending Meta approval" de mas abajo desactualizado
+    # hasta este mismo commit -- corregido tras el hallazgo real de
+    # que este seed nunca se habia ejecutado desde que se anadio esta
+    # entrada, dejando la tabla WhatsAppTemplate sin fila para esta
+    # plantilla pese a que Twilio ya la tenia aprobada.
     # ------------------------------------------------------------------
     {
         # Sent business-initiated when a MachineDocument.expiry_date is
