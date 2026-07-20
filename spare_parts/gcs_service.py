@@ -287,7 +287,10 @@ def download_bytes(bucket_name: str, blob_name: str) -> bytes:
     return blob.download_as_bytes()
 
 
-def upload_bytes(bucket_name: str, blob_name: str, data: bytes) -> str:
+def upload_bytes(
+    bucket_name: str, blob_name: str, data: bytes,
+    content_type: str = "application/pdf",
+) -> str:
     """
     Sube bytes crudos directamente a un blob, sin pasar por un archivo
     local -- añadida S024 para dos casos que no tienen un
@@ -298,16 +301,24 @@ def upload_bytes(bucket_name: str, blob_name: str, data: bytes) -> str:
     dossier temporal (panel/views_documentation.py,
     DossierGenerateView), que nunca toca disco local -- se genera en
     memoria (pdf_merge_service.merge_pdfs()) y se sube directamente.
+
+    `content_type` por defecto "application/pdf" (S025, parámetro
+    nuevo, valor por defecto = comportamiento anterior sin cambios
+    para las dos llamadas ya existentes) -- añadido para el nuevo caso
+    de subir texto Markdown (machine_documents.markdown_service),
+    donde el content-type correcto es "text/markdown", no PDF.
+
     Devuelve el gcs_blob_name (idéntico a `blob_name`, por coherencia
     de firma con upload_file()).
     """
     client = get_storage_client()
     bucket = ensure_bucket(client, bucket_name)
     blob = bucket.blob(blob_name)
-    blob.upload_from_string(data, content_type="application/pdf")
+    blob.upload_from_string(data, content_type=content_type)
     logger.info(
-        "# [gcs_service] %d bytes subidos directamente a gs://%s/%s.",
-        len(data), bucket_name, blob_name,
+        "# [gcs_service] %d bytes subidos directamente a gs://%s/%s "
+        "(content_type=%s).",
+        len(data), bucket_name, blob_name, content_type,
     )
     return blob_name
 

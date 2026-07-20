@@ -91,6 +91,10 @@ from document_management.vigencia_service import DocumentSnapshot, is_current
 from fleet.models import MachineAsset
 from ivr_config.models import CompanyUser
 from machine_documents.document_classification_service import MANUAL_DOCUMENT_TYPE
+from machine_documents.markdown_service import (
+    MarkdownConversionError,
+    convert_document_to_markdown,
+)
 from machine_documents.models import MachineDocument
 from panel.mixins import DocsUploadAccessMixin
 from personal_documents.models import PersonalDocument
@@ -180,15 +184,26 @@ def _resolve_download_url(document, bucket_name: str) -> str:
     spare_parts.gcs_service.generate_signed_url elsewhere in the
     project).
     """
-    if not document.gcs_blob_name:
+    return _resolve_blob_download_url(document.gcs_blob_name, bucket_name)
+
+
+def _resolve_blob_download_url(blob_name: str, bucket_name: str) -> str:
+    """
+    Igual que _resolve_download_url, pero a partir de un blob_name
+    cualquiera en vez de document.gcs_blob_name -- extraída (S025)
+    para reutilizarla también con document.markdown_blob_name (botón
+    "Descargar Markdown", MachinePageView). Cadena vacía si blob_name
+    está vacío.
+    """
+    if not blob_name:
         return ""
     try:
-        return generate_signed_url(bucket_name, document.gcs_blob_name)
+        return generate_signed_url(bucket_name, blob_name)
     except Exception as exc:
         logger.error(
-            "# [_resolve_download_url] Error generando URL firmada "
-            "para %s (blob=%s): %s",
-            document, document.gcs_blob_name, exc, exc_info=True,
+            "# [_resolve_blob_download_url] Error generando URL "
+            "firmada para blob=%s: %s",
+            blob_name, exc, exc_info=True,
         )
         return ""
 
@@ -1291,6 +1306,48 @@ class DocumentationPersonalListFragmentView(DocsUploadAccessMixin, View):
         return render(request, self.template_name, {"workers": workers})
 
 
+def _machine_documents_view_data(machine):
+    """
+    Construye (current_docs, archived_docs) de una máquina, con
+    download_url (PDF) y markdown_download_url (S025, solo si ya se
+    convirtió) resueltos por documento -- extraída de
+    DocumentationMachineDetailFragmentView para reutilizarla también
+    en MachinePageView (ficha de página completa) sin duplicar la
+    consulta ni la exclusión de is_possible_master.
+    """
+    documents = list(
+        MachineDocument.objects
+        .filter(
+            machine_asset=machine,
+            status=MachineDocument.Status.CLASSIFIED,
+        )
+        # is_possible_master=True (S025, hallazgo real): un
+        # documento maestro sigue en CLASSIFIED mientras el Paso 2
+        # de process_machine_document_batch no lo ha resuelto
+        # todavía (puede acabar borrado, o confirmado como real) --
+        # mismo campo que ya protegía al visor de subida en vivo
+        # desde S024 (_batch_status_rows), pero nunca se aplicó
+        # aquí. Sin esta exclusión, un maestro pendiente de
+        # resolver aparecía como documento "vigente" normal en el
+        # detalle de la máquina -- más visible con los reintentos
+        # reales de Vertex AI (429) de esta sesión, que alargan la
+        # ventana de "pendiente" de segundos a varios minutos.
+        .exclude(is_possible_master=True)
+        .order_by("document_type", "-created_at")
+    )
+    current_docs, archived_docs = _split_current_archived(documents)
+
+    for doc in current_docs + archived_docs:
+        doc.download_url = _resolve_download_url(
+            doc, MACHINE_DOCUMENTS_BUCKET,
+        )
+        doc.markdown_download_url = _resolve_blob_download_url(
+            doc.markdown_blob_name, MACHINE_DOCUMENTS_BUCKET,
+        )
+
+    return current_docs, archived_docs
+
+
 class DocumentationMachineDetailFragmentView(DocsUploadAccessMixin, View):
     """
     GET (HTMX): documentación CLASSIFIED de UNA máquina, ya separada
@@ -1298,6 +1355,13 @@ class DocumentationMachineDetailFragmentView(DocsUploadAccessMixin, View):
     Se carga al desplegar el accordion-item de esa máquina (carga
     perezosa, propuesta aprobada en S024) -- nunca viene en el HTML
     inicial de DocumentationHubView.
+
+    ⚠ NOTA S025: el acordeón que llamaba a esta vista fue sustituido
+    por enlaces directos a MachinePageView (ficha de página completa
+    con URL propia) -- esta vista ya no está enlazada desde ningún
+    sitio de la interfaz, pero se conserva sin borrar por si algún
+    flujo antiguo la necesitara todavía (deuda técnica menor, no
+    urgente).
     """
 
     template_name = "panel/documentation/_machine_detail.html"
@@ -1312,38 +1376,112 @@ class DocumentationMachineDetailFragmentView(DocsUploadAccessMixin, View):
         if machine is None:
             raise Http404("Máquina no encontrada.")
 
-        documents = list(
-            MachineDocument.objects
-            .filter(
-                machine_asset=machine,
-                status=MachineDocument.Status.CLASSIFIED,
-            )
-            # is_possible_master=True (S025, hallazgo real): un
-            # documento maestro sigue en CLASSIFIED mientras el Paso 2
-            # de process_machine_document_batch no lo ha resuelto
-            # todavía (puede acabar borrado, o confirmado como real) --
-            # mismo campo que ya protegía al visor de subida en vivo
-            # desde S024 (_batch_status_rows), pero nunca se aplicó
-            # aquí. Sin esta exclusión, un maestro pendiente de
-            # resolver aparecía como documento "vigente" normal en el
-            # detalle de la máquina -- más visible con los reintentos
-            # reales de Vertex AI (429) de esta sesión, que alargan la
-            # ventana de "pendiente" de segundos a varios minutos.
-            .exclude(is_possible_master=True)
-            .order_by("document_type", "-created_at")
-        )
-        current_docs, archived_docs = _split_current_archived(documents)
-
-        for doc in current_docs + archived_docs:
-            doc.download_url = _resolve_download_url(
-                doc, MACHINE_DOCUMENTS_BUCKET,
-            )
+        current_docs, archived_docs = _machine_documents_view_data(machine)
 
         return render(request, self.template_name, {
             "machine": machine,
             "current_docs": current_docs,
             "archived_docs": archived_docs,
         })
+
+
+class MachinePageView(DocsUploadAccessMixin, View):
+    """
+    GET: ficha de PÁGINA COMPLETA de una máquina/centro de gasto, con
+    URL propia (S025, decisión explícita de Miguel Ángel tras detectar
+    el problema real del diseño anterior: "cuando entramos presentamos
+    la misma página, la documentación... si actualizas la página...
+    pierdes el filtro... lo suyo es poder entrar a una vista propia
+    para cada máquina"). Sustituye al accordion desplegable
+    (_machine_accordion.html ya no expande in-situ, ahora enlaza aquí
+    directamente) -- un F5 en esta URL nunca pierde nada, porque no
+    depende de ningún estado de UI, todo viene resuelto en la propia
+    URL (pk).
+
+    Reúne en una sola pantalla, tal como especificó Miguel Ángel:
+    "ya tenemos el visor de esa máquina, las alertas que son de esa
+    propia máquina... tendríamos la vista del centro de gasto, con su
+    documentación, alertas, etcétera":
+      - Documentación vigente/archivada (_machine_documents_view_data,
+        misma lógica que el fragmento antiguo).
+      - Alertas de ESTA máquina únicamente, reutilizando
+        _alerts_dashboard_context() con search=machine.code
+        precargado -- nunca se duplica la lógica de agrupación del
+        panel general de Alertas, solo se acota su resultado.
+      - Botón de generar dossier (ya existente, sin cambios).
+      - Conversión a Markdown de manuales (S025, nueva) -- ver
+        DocumentMarkdownConvertView.
+
+    La vista general de Documentación (DocumentationHubView) sigue
+    siendo el listado con búsqueda y la pestaña de Alertas SIN acotar
+    (con su propio filtro por máquina, S025 commit anterior) -- las
+    dos vistas conviven, cada una con su propósito: listado cruzado
+    filtrable vs. ficha operativa de una máquina concreta.
+    """
+
+    template_name = "panel/documentation/machine_page.html"
+
+    def get(self, request, pk):
+        company = request.user.company_user.company
+        machine = (
+            MachineAsset.objects
+            .filter(pk=pk, company=company)
+            .first()
+        )
+        if machine is None:
+            raise Http404("Máquina no encontrada.")
+
+        current_docs, archived_docs = _machine_documents_view_data(machine)
+
+        alerts_context = _alerts_dashboard_context(
+            request, status_filter="", search=machine.code,
+        )
+
+        return render(request, self.template_name, {
+            "machine": machine,
+            "current_docs": current_docs,
+            "archived_docs": archived_docs,
+            **alerts_context,
+        })
+
+
+class DocumentMarkdownConvertView(DocsUploadAccessMixin, View):
+    """
+    POST: convierte un MachineDocument (típicamente un manual de uso
+    pesado) a Markdown y lo persiste en GCS -- S025, petición
+    explícita de Miguel Ángel (ver machine_documents.markdown_service
+    para el detalle completo de la decisión y la librería elegida).
+    Idempotente en el sentido de "seguro reintentar": si ya existe
+    markdown_blob_name, se sobrescribe con una conversión nueva (por
+    si el documento cambió o la primera conversión quedó incompleta).
+    Nunca deja que un fallo de conversión reviente como 500 -- se
+    captura MarkdownConversionError y se muestra como mensaje legible,
+    mismo criterio que send_alert_now (S025).
+    """
+
+    def post(self, request, pk):
+        company = request.user.company_user.company
+        document = MachineDocument.objects.filter(
+            pk=pk, company=company,
+        ).first()
+        if document is None:
+            raise Http404("Documento no encontrado.")
+
+        try:
+            convert_document_to_markdown(document)
+        except MarkdownConversionError as exc:
+            messages.error(request, str(exc))
+        else:
+            messages.success(
+                request,
+                f'"{document.display_name or document.document_type}" '
+                "convertido a Markdown correctamente.",
+            )
+
+        redirect_pk = document.machine_asset_id
+        return redirect(
+            reverse("panel:documentation_machine_page", kwargs={"pk": redirect_pk}),
+        )
 
 
 class DocumentationPersonalDetailFragmentView(DocsUploadAccessMixin, View):
@@ -1701,7 +1839,7 @@ class DocumentDeleteView(DocsUploadAccessMixin, View):
             request, f"Documento archivado \"{document_label}\" borrado.",
         )
         fragment_name = (
-            "panel:documentation_machine_detail" if domain == "machine"
+            "panel:documentation_machine_page" if domain == "machine"
             else "panel:documentation_personal_detail"
         )
         return redirect(reverse(fragment_name, kwargs={"pk": entity_pk}))
@@ -1799,7 +1937,7 @@ class DocumentUpdateView(DocsUploadAccessMixin, View):
             else document.company_user_id
         )
         fragment_name = (
-            "panel:documentation_machine_detail" if domain == "machine"
+            "panel:documentation_machine_page" if domain == "machine"
             else "panel:documentation_personal_detail"
         )
         return redirect(reverse(fragment_name, kwargs={"pk": entity_pk}))

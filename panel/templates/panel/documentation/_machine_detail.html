@@ -34,9 +34,24 @@
             </div>
             <div class="d-flex gap-1">
                 {% if doc.download_url %}
-                <a href="{{ doc.download_url }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary">
+                <a href="{{ doc.download_url }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary" title="Descargar PDF">
                     <i class="bi bi-download"></i>
                 </a>
+                {% endif %}
+                {% if doc.document_type == "Manual de uso" %}
+                    {# S025: conversión a Markdown -- solo manuales (petición explícita de Miguel Ángel, "los manuales son muy pesados"). #}
+                    {% if doc.markdown_download_url %}
+                    <a href="{{ doc.markdown_download_url }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-success" title="Descargar Markdown">
+                        <i class="bi bi-filetype-md"></i>
+                    </a>
+                    {% else %}
+                    <form method="post" action="{% url 'panel:documentation_document_markdown_convert' pk=doc.pk %}" class="d-inline">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-sm btn-outline-success" title="Convertir a Markdown">
+                            <i class="bi bi-file-earmark-text"></i>
+                        </button>
+                    </form>
+                    {% endif %}
                 {% endif %}
                 {% if doc.expiry_date %}
                 <button class="btn btn-sm btn-outline-warning" type="button"
@@ -51,7 +66,7 @@
                     <i class="bi bi-pencil"></i>
                 </button>
                 <button class="btn btn-sm btn-outline-danger" type="button"
-                        onclick="openDeleteConfirm('{% url 'panel:documentation_document_delete' domain='machine' pk=doc.pk %}', '#machine-collapse-{{ machine.pk }} .accordion-body', '{{ doc.display_name|default:doc.document_type|escapejs }}')"
+                        onclick="openDeleteConfirm('{% url 'panel:documentation_document_delete' domain='machine' pk=doc.pk %}', '#machine-detail-container', '{{ doc.display_name|default:doc.document_type|escapejs }}')"
                         title="Eliminar">
                     <i class="bi bi-trash"></i>
                 </button>
@@ -89,9 +104,23 @@
             </div>
             <div class="d-flex gap-1">
                 {% if doc.download_url %}
-                <a href="{{ doc.download_url }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary">
+                <a href="{{ doc.download_url }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary" title="Descargar PDF">
                     <i class="bi bi-download"></i>
                 </a>
+                {% endif %}
+                {% if doc.document_type == "Manual de uso" %}
+                    {% if doc.markdown_download_url %}
+                    <a href="{{ doc.markdown_download_url }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-success" title="Descargar Markdown">
+                        <i class="bi bi-filetype-md"></i>
+                    </a>
+                    {% else %}
+                    <form method="post" action="{% url 'panel:documentation_document_markdown_convert' pk=doc.pk %}" class="d-inline">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-sm btn-outline-success" title="Convertir a Markdown">
+                            <i class="bi bi-file-earmark-text"></i>
+                        </button>
+                    </form>
+                    {% endif %}
                 {% endif %}
                 {% if doc.expiry_date %}
                 <button class="btn btn-sm btn-outline-warning" type="button"
@@ -101,7 +130,7 @@
                 </button>
                 {% endif %}
                 <button class="btn btn-sm btn-outline-danger" type="button"
-                        onclick="openDeleteConfirm('{% url 'panel:documentation_document_delete' domain='machine' pk=doc.pk %}', '#machine-collapse-{{ machine.pk }} .accordion-body', '{{ doc.display_name|default:doc.document_type|escapejs }}')"
+                        onclick="openDeleteConfirm('{% url 'panel:documentation_document_delete' domain='machine' pk=doc.pk %}', '#machine-detail-container', '{{ doc.display_name|default:doc.document_type|escapejs }}')"
                         title="Eliminar">
                     <i class="bi bi-trash"></i>
                 </button>

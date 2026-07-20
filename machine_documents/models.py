@@ -404,6 +404,30 @@ class MachineDocument(models.Model):
         default="",
         verbose_name="Ruta del objeto en Google Cloud Storage",
     )
+    # ------------------------------------------------------------------
+    # Conversión a Markdown (S025) -- petición explícita de Miguel
+    # Ángel: "los manuales son muy pesados... interesaría poder
+    # convertirlos a Markdown... tener un botón de conversión en la
+    # documentación para convertirlos a Markdown y poder descargarlos
+    # [...] persistir la copia Markdown y dejarla en Google Cloud
+    # Storage para reutilizarla cuando se necesite". Vacío hasta que
+    # se pulsa "Convertir a Markdown" (machine_documents.
+    # markdown_service.convert_document_to_markdown()) -- bajo
+    # demanda, nunca automático al subir. Se persiste en el MISMO
+    # bucket que el PDF original (MACHINE_DOCUMENTS_BUCKET), con
+    # extensión .md, para reutilizarla sin volver a convertir.
+    # ------------------------------------------------------------------
+    markdown_blob_name = models.CharField(
+        max_length=500,
+        blank=True,
+        default="",
+        verbose_name="Ruta del Markdown en Google Cloud Storage",
+        help_text=(
+            "Vacío hasta que se convierte a mano (botón 'Convertir a "
+            "Markdown'). Una vez convertido, se reutiliza sin volver "
+            "a procesar el PDF."
+        ),
+    )
 
     # ------------------------------------------------------------------
     # Local staging file / Archivo local de staging

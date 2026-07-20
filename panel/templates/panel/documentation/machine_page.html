@@ -1,0 +1,170 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation/machine_page.html #}
+{% extends "panel/base.html" %}
+{% load static %}
+
+{% comment %}
+    Ficha de PÁGINA COMPLETA de una máquina/centro de gasto (S025,
+    decisión explícita de Miguel Ángel -- ver MachinePageView para el
+    detalle completo). Autónoma: no depende de hub.html (modal de
+    borrado y modal de edición de alertas duplicados aquí a propósito,
+    self-contained, en vez de arriesgar tocar el script ya probado de
+    hub.html en la misma sesión).
+{% endcomment %}
+
+{% block title %}{{ machine.code }} — Documentación{% endblock %}
+{% block page_title %}{{ machine.code }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-3 pt-3">
+
+    <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+        <div>
+            <a href="{% url 'panel:documentation_hub' %}" class="text-decoration-none small text-muted">
+                <i class="bi bi-arrow-left me-1"></i>Volver a Documentación
+            </a>
+            <h5 class="mb-0 fw-semibold mt-1">
+                <i class="bi bi-truck me-2"></i>{{ machine.code }}
+                <span class="text-muted small">{{ machine.brand_model }}{% if machine.plate %} — {{ machine.plate }}{% endif %}</span>
+            </h5>
+        </div>
+    </div>
+
+    <div class="card shadow-sm mb-4">
+        <div class="card-header fw-semibold"><i class="bi bi-folder2-open me-1"></i>Documentación</div>
+        <div class="card-body" id="machine-detail-container">
+            {% include "panel/documentation/_machine_detail.html" %}
+        </div>
+    </div>
+
+    <div class="card shadow-sm mb-4">
+        <div class="card-header fw-semibold"><i class="bi bi-bell me-1"></i>Alertas de {{ machine.code }}</div>
+        <div class="card-body">
+            {% include "panel/documentation/_alerts_dashboard.html" %}
+        </div>
+    </div>
+
+</div>
+
+{# --- Modal de confirmación de borrado con cuenta atrás de 5s (mismo patrón que hub.html, S024-quinquies) --- #}
+<div class="modal fade" id="deleteConfirmModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-exclamation-triangle-fill text-danger me-2"></i>Eliminar documento</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-0">
+                    ¿Seguro que quieres eliminar <strong id="deleteConfirmDocName">este documento</strong>?
+                    Esta operación no podrá revertirse.
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <form id="deleteConfirmForm" method="post">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-danger" id="deleteConfirmBtn" disabled>
+                        <i class="bi bi-trash me-1"></i>Eliminar <span id="deleteConfirmCountdown"></span>
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# --- Modal "Ver / editar alertas de un documento" (mismo patrón que hub.html, S025) --- #}
+<div class="modal fade" id="documentAlertsModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-bell me-2"></i>Alertas del documento</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body" id="documentAlertsModalBody">
+                <div class="text-muted small"><i class="bi bi-hourglass-split me-1"></i>Cargando…</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# --- Modal del dossier (mismo patrón que hub.html, S024-bis) --- #}
+<div class="modal fade" id="dossierModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Dossier</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body" id="dossierModalBody">
+                <div class="text-muted small"><i class="bi bi-hourglass-split me-1"></i>Generando dossier…</div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(function () {
+    'use strict';
+
+    // Abre dossierModal / documentAlertsModal en cuanto llega contenido
+    // nuevo a su cuerpo respectivo -- mismo patrón (mapa target->modal)
+    // que hub.html, self-contained aquí para no depender de ese script.
+    var AFTER_SWAP_MODAL_MAP = {
+        'dossierModalBody': 'dossierModal',
+        'documentAlertsModalBody': 'documentAlertsModal',
+    };
+    document.body.addEventListener('htmx:afterSwap', function (evt) {
+        var targetId = evt.detail.target && evt.detail.target.id;
+        var modalId = AFTER_SWAP_MODAL_MAP[targetId];
+        if (modalId) {
+            var modalEl = document.getElementById(modalId);
+            var modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+            modal.show();
+        }
+    });
+
+    // Confirmación de borrado con cuenta atrás de 5s -- mismo patrón
+    // que hub.html (S024-quinquies). window.openDeleteConfirm() es
+    // llamada por cada botón de papelera de _machine_detail.html.
+    var deleteConfirmForm = document.getElementById('deleteConfirmForm');
+    var deleteConfirmBtn = document.getElementById('deleteConfirmBtn');
+    var deleteConfirmCountdown = document.getElementById('deleteConfirmCountdown');
+    var deleteConfirmDocName = document.getElementById('deleteConfirmDocName');
+    var deleteCountdownInterval = null;
+
+    window.openDeleteConfirm = function (url, targetSelector, docName) {
+        deleteConfirmForm.setAttribute('action', url);
+        deleteConfirmForm.setAttribute('hx-post', url);
+        deleteConfirmForm.setAttribute('hx-target', targetSelector);
+        deleteConfirmForm.setAttribute('hx-swap', 'innerHTML');
+        htmx.process(deleteConfirmForm);
+        deleteConfirmDocName.textContent = docName;
+
+        var seconds = 5;
+        deleteConfirmBtn.disabled = true;
+        deleteConfirmCountdown.textContent = '(' + seconds + ')';
+        if (deleteCountdownInterval) { clearInterval(deleteCountdownInterval); }
+        deleteCountdownInterval = setInterval(function () {
+            seconds -= 1;
+            if (seconds <= 0) {
+                clearInterval(deleteCountdownInterval);
+                deleteConfirmBtn.disabled = false;
+                deleteConfirmCountdown.textContent = '';
+            } else {
+                deleteConfirmCountdown.textContent = '(' + seconds + ')';
+            }
+        }, 1000);
+
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('deleteConfirmModal')).show();
+    };
+
+    document.getElementById('deleteConfirmModal').addEventListener('hidden.bs.modal', function () {
+        if (deleteCountdownInterval) { clearInterval(deleteCountdownInterval); }
+        deleteConfirmBtn.disabled = true;
+        deleteConfirmCountdown.textContent = '';
+    });
+})();
+</script>
+{% endblock %}
