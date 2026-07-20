@@ -200,7 +200,10 @@ determina:
    vigencia se deriva de una regla textual en vez de una fecha directa
    (ver validity_rule/computed_expiry_date más abajo). Nunca rellenes
    expiry_date Y computed_expiry_date a la vez para el mismo
-   documento.
+   documento. ATENCIÓN especial con documentos que describan un
+   PERIODO (ej. un recibo o certificado con periodo de cobertura/
+   vigencia): expiry_date es SIEMPRE la fecha de FIN de ese periodo,
+   NUNCA la fecha de pago/emisión ni la fecha de INICIO del periodo.
 5. issue_date: fecha de emisión/expedición del documento, o fecha real
    del examen/curso/trámite, en formato "YYYY-MM-DD". Cadena vacía ""
    si no aplica o no se identifica.

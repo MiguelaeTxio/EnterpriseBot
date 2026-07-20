@@ -98,11 +98,29 @@ jobs:
         #             en cada llamada, ver anexo H17 STEP 4C).
         #   Celery -- cualquier tasks.py del proyecto, ai_services/**
         #             (cliente Gemini compartido usado por las tareas),
-        #             enterprise_core/celery.py, start_celery_worker.sh.
+        #             enterprise_core/celery.py, start_celery_worker.sh,
+        #             y (AMPLIADO S025, hallazgo real -- ver más abajo)
+        #             machine_documents/**, personal_documents/**,
+        #             document_ingestion/**, document_management/**,
+        #             spare_parts/gcs_service.py.
         #
-        # Deliberadamente NO se reinicia el bridge en cada push (corta
-        # llamadas IVR en curso, ~5 min de caída) -- solo cuando el
-        # diff real lo justifica.
+        # ⛔ INCIDENTE S025: el patrón original solo cubría tasks.py y
+        # ai_services/, pero machine_documents.tasks/document_ingestion.
+        # tasks/personal_documents.tasks importan de verdad módulos de
+        # document_management/ (alert_service.py, vigencia_service.py,
+        # models.py), document_ingestion/ (entity_matching_service.py,
+        # deduplication_service.py) y spare_parts/gcs_service.py -- un
+        # fix real en document_management/alert_service.py (S025, no
+        # crear alertas de documentos ya caducados) se desplegó al
+        # servidor (git pull correcto, verificado) pero el worker
+        # Celery NUNCA se reinició porque ningún patrón lo cubría --
+        # el proceso en memoria siguió ejecutando la versión vieja
+        # durante varias pruebas reales, hasta que Miguel Ángel
+        # reportó con datos que las alertas de documentos caducados
+        # seguían creándose pese al fix ya desplegado. Patrón
+        # ampliado a las carpetas completas de dominio, no solo a
+        # tasks.py, para que esto no vuelva a pasar con ningún otro
+        # módulo que esas tareas importen.
         if: success()
         run: |
           set -o pipefail
@@ -122,7 +140,7 @@ jobs:
               echo "Bridge de voz: sin cambios relevantes, no se reinicia."
             fi
 
-            if echo "$CHANGED" | grep -qE '(tasks\.py$|ai_services/|enterprise_core/celery\.py|start_celery_worker\.sh)'; then
+            if echo "$CHANGED" | grep -qE '(tasks\.py$|ai_services/|enterprise_core/celery\.py|start_celery_worker\.sh|machine_documents/|personal_documents/|document_ingestion/|document_management/|spare_parts/gcs_service\.py)'; then
               echo "--- Worker Celery: cambios relevantes detectados, reiniciando (id 242133) ---"
               curl -sf -X POST "https://www.pythonanywhere.com/api/v0/user/MiguelAeTxio/always_on/242133/restart/" \
                 -H "Authorization: Token ${{ secrets.PA_API_TOKEN }}"

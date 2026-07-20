@@ -231,17 +231,28 @@ def process_machine_document_batch(self, document_pks: list[int]) -> None:
             "status",
         ])
 
-        create_default_expiry_alerts(
-            document=document,
-            expiry_date=document.expiry_date,
-            document_label=document.display_name,
-            subject_label=(
-                document.machine_asset.code if document.machine_asset_id
-                else "Sin asignar"
-            ),
-            company=document.company,
-            default_contact=document.uploaded_by,
-        )
+        # S025, decisión explícita de Miguel Ángel: "en el dosier no
+        # nos tenemos que fiar absolutamente en nada... no tiene
+        # sentido ninguno alertar del documento maestro". Un posible
+        # maestro normalmente se descarta en el Paso 2 (y con él sus
+        # alertas, ver más abajo), pero mientras sigue is_possible_
+        # master=True aquí (todavía sin resolver) nunca debe generar
+        # alertas -- ni siquiera en el caso raro donde sobrevive como
+        # red de seguridad (extracción fallida): un documento maestro
+        # nunca es sujeto propio de alerta, su contenido ya está
+        # representado por los documentos individuales reales.
+        if not document.is_possible_master:
+            create_default_expiry_alerts(
+                document=document,
+                expiry_date=document.expiry_date,
+                document_label=document.display_name,
+                subject_label=(
+                    document.machine_asset.code if document.machine_asset_id
+                    else "Sin asignar"
+                ),
+                company=document.company,
+                default_contact=document.uploaded_by,
+            )
 
         classified[document.pk] = {
             "document": document,

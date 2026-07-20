@@ -3,6 +3,8 @@
 {# "no tenemos previsto ver las alertas que hay"). Todo el contenido va dentro de UN #}
 {# único contenedor (#alerts-dashboard-wrapper) que se sustituye entero (outerHTML) al #}
 {# cambiar el filtro -- así el <select> nunca se duplica anidándose sobre sí mismo. #}
+{# REDISEÑADO S025: una fila por documento (antes, una fila por alerta -- el mismo #}
+{# documento aparecía tres veces, una por offset 30/15/7 días). #}
 
 <div id="alerts-dashboard-wrapper">
     {% if overdue_count %}
@@ -37,48 +39,43 @@
                     <th>Documento</th>
                     <th>Sujeto</th>
                     <th>Caduca</th>
-                    <th>Aviso</th>
-                    <th>Se dispara</th>
-                    <th>Estado</th>
-                    <th>Contactos</th>
-                    <th>Enviada/Resuelta</th>
-                    <th></th>
+                    {% for offset in offset_columns %}
+                    <th class="text-center">{{ offset }} días</th>
+                    {% endfor %}
                 </tr>
             </thead>
             <tbody>
                 {% for row in rows %}
-                <tr class="{% if row.is_overdue %}table-warning{% endif %}">
-                    <td>{% if row.is_overdue %}<i class="bi bi-exclamation-triangle-fill text-warning" title="Vencida sin enviar"></i>{% endif %}</td>
-                    <td>{{ row.alert.document_label }}</td>
-                    <td>{{ row.alert.subject_label }}</td>
-                    <td>{{ row.alert.expiry_date|date:"d/m/Y" }}</td>
-                    <td>{{ row.alert.alert_offset_days }} días antes</td>
-                    <td>{{ row.fire_date|date:"d/m/Y" }}</td>
-                    <td>
-                        <span class="badge {% if row.alert.status == 'PENDING' %}bg-warning-subtle text-warning-emphasis{% elif row.alert.status == 'SENT' %}bg-info-subtle text-info-emphasis{% else %}bg-success-subtle text-success-emphasis{% endif %}">
-                            {{ row.alert.get_status_display }}
-                        </span>
-                    </td>
-                    <td>
-                        {% for c in row.alert.contacts.all %}{{ c.user.get_full_name|default:c.user.username }}{% if not forloop.last %}, {% endif %}{% empty %}<span class="text-muted">sin contactos</span>{% endfor %}
-                    </td>
-                    <td class="small text-muted">
-                        {% if row.alert.sent_at %}Enviada {{ row.alert.sent_at|date:"d/m/Y H:i" }}{% endif %}
-                        {% if row.alert.resolved_at %}Resuelta {{ row.alert.resolved_at|date:"d/m/Y" }}{% if row.alert.resolved_by %} por {{ row.alert.resolved_by.user.get_full_name|default:row.alert.resolved_by.user.username }}{% endif %}{% endif %}
-                    </td>
-                    <td>
-                        {% if row.alert.status != 'RESOLVED' %}
-                        <form method="post" action="{% url 'panel:documentation_alert_resolve' alert_pk=row.alert.pk %}"
-                              hx-post="{% url 'panel:documentation_alert_resolve' alert_pk=row.alert.pk %}"
-                              hx-target="#alerts-dashboard-wrapper" hx-swap="outerHTML" class="d-inline">
-                            {% csrf_token %}
-                            <input type="hidden" name="next" value="{% url 'panel:documentation_alerts_dashboard' %}">
-                            <button type="submit" class="btn btn-sm btn-outline-success" title="Marcar como resuelta">
-                                <i class="bi bi-check-circle"></i>
-                            </button>
-                        </form>
+                <tr class="{% if row.has_overdue %}table-warning{% endif %}">
+                    <td>{% if row.has_overdue %}<i class="bi bi-exclamation-triangle-fill text-warning" title="Alguna alerta vencida sin enviar"></i>{% endif %}</td>
+                    <td>{{ row.document_label }}</td>
+                    <td>{{ row.subject_label }}</td>
+                    <td>{{ row.expiry_date|date:"d/m/Y" }}</td>
+                    {% for cell in row.cells %}
+                    <td class="text-center">
+                        {% if cell %}
+                        <div class="d-flex flex-column align-items-center gap-1">
+                            <span class="badge {% if cell.is_overdue %}bg-warning-subtle text-warning-emphasis{% elif cell.alert.status == 'PENDING' %}bg-secondary-subtle text-secondary-emphasis{% elif cell.alert.status == 'SENT' %}bg-info-subtle text-info-emphasis{% else %}bg-success-subtle text-success-emphasis{% endif %}"
+                                  title="Se dispara {{ cell.fire_date|date:'d/m/Y' }}">
+                                {{ cell.alert.get_status_display }}
+                            </span>
+                            {% if cell.alert.status != 'RESOLVED' %}
+                            <form method="post" action="{% url 'panel:documentation_alert_resolve' alert_pk=cell.alert.pk %}"
+                                  hx-post="{% url 'panel:documentation_alert_resolve' alert_pk=cell.alert.pk %}"
+                                  hx-target="#alerts-dashboard-wrapper" hx-swap="outerHTML" class="d-inline">
+                                {% csrf_token %}
+                                <input type="hidden" name="next" value="{% url 'panel:documentation_alerts_dashboard' %}">
+                                <button type="submit" class="btn btn-sm btn-outline-success py-0 px-1" title="Marcar como resuelta">
+                                    <i class="bi bi-check-circle"></i>
+                                </button>
+                            </form>
+                            {% endif %}
+                        </div>
+                        {% else %}
+                        <span class="text-muted small">—</span>
                         {% endif %}
                     </td>
+                    {% endfor %}
                 </tr>
                 {% endfor %}
             </tbody>

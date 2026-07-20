@@ -154,18 +154,22 @@ def process_personal_document_batch(self, document_pks: list[int]) -> None:
             "issuing_entity", "is_possible_master", "status",
         ])
 
-        create_default_expiry_alerts(
-            document=document,
-            expiry_date=document.expiry_date or document.computed_expiry_date,
-            document_label=document.display_name,
-            subject_label=(
-                (document.company_user.user.get_full_name()
-                 or document.company_user.user.username)
-                if document.company_user_id else "Sin asignar"
-            ),
-            company=document.company,
-            default_contact=document.uploaded_by,
-        )
+        # S025, mismo criterio que machine_documents.tasks (decisión
+        # explícita de Miguel Ángel: un documento maestro nunca es
+        # sujeto propio de alerta).
+        if not document.is_possible_master:
+            create_default_expiry_alerts(
+                document=document,
+                expiry_date=document.expiry_date or document.computed_expiry_date,
+                document_label=document.display_name,
+                subject_label=(
+                    (document.company_user.user.get_full_name()
+                     or document.company_user.user.username)
+                    if document.company_user_id else "Sin asignar"
+                ),
+                company=document.company,
+                default_contact=document.uploaded_by,
+            )
 
         classified[document.pk] = {
             "document": document,

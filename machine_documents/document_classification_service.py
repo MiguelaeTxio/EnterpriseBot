@@ -271,6 +271,14 @@ determina:
    (ITV, certificado OCA, póliza de seguro, etc.), en formato
    "YYYY-MM-DD". Cadena vacía "" si el documento no tiene fecha de
    caducidad (ej. una ficha técnica) o no aparece en el contenido.
+   ATENCIÓN especial con recibos/pólizas de seguro y cualquier
+   documento que describa un PERIODO de cobertura o facturación
+   (ej. "periodo 01/01/2025 - 01/01/2026"): expiry_date es SIEMPRE
+   la fecha de FIN de ese periodo (cuándo deja de estar cubierto/
+   vigente), NUNCA la fecha de pago, de emisión del recibo, ni la
+   fecha de INICIO del periodo -- coger la fecha de inicio como
+   expiry_date haría que el documento apareciera caducado desde el
+   mismo día en que se sube, lo cual es incorrecto.
 5. issue_date: fecha de emisión/expedición del documento, en formato
    "YYYY-MM-DD". Cadena vacía "" si no aplica o no se identifica.
 6. document_number: número de expediente, póliza, certificado o

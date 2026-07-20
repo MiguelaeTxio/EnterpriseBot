@@ -671,14 +671,31 @@ class AlertsDashboardFragmentView(DocsUploadAccessMixin, View):
     quién se le envía, cuándo se le van a enviar, las alertas que
     están pasadas [de fecha] que no se han enviado".
 
+    REDISEÑADO S025 (hallazgo real de Miguel Ángel, con captura):
+    "el nombre del documento debe aparecer una vez, y tenemos tres
+    columnas: 30 días, 15 días, 7 días... si no, vamos a ver una
+    cantidad de alertas impresionante cuando es el mismo documento que
+    está tres veces". Antes: una fila por DocumentAlert (siempre en
+    tríos de 30/15/7 por documento). Ahora: agrupado por documento
+    (content_type + object_id) -- una fila por documento, con tres
+    celdas (una por offset) en vez de tres filas idénticas salvo el
+    offset.
+
     Calcula fire_date (expiry_date - alert_offset_days, en Python --
     no es un campo de BD) y is_overdue (fire_date ya pasada Y
-    status=PENDING) por cada alerta, y ordena las vencidas sin enviar
-    primero. Filtro por estado vía `status` en query string (PENDING/
-    SENT/RESOLVED/ninguno=todas).
+    status=PENDING) por cada alerta individual antes de agrupar, y
+    ordena los documentos con alguna celda vencida primero. Filtro por
+    estado vía `status` en query string (PENDING/SENT/RESOLVED/
+    ninguno=todas) -- afecta a qué ALERTAS individuales entran en el
+    cálculo, así que con un filtro puesto una celda sin alerta que lo
+    cumpla queda vacía, no en blanco por error.
     """
 
     template_name = "panel/documentation/_alerts_dashboard.html"
+
+    # Offsets siempre en este orden en las columnas -- ver
+    # document_management.alert_service.DEFAULT_EXPIRY_ALERT_OFFSETS_DAYS.
+    OFFSET_COLUMNS = [30, 15, 7]
 
     def get(self, request):
         company = request.user.company_user.company
@@ -694,7 +711,8 @@ class AlertsDashboardFragmentView(DocsUploadAccessMixin, View):
             alerts_qs = alerts_qs.filter(status=status_filter)
 
         today = now().date()
-        rows = []
+        groups: dict = {}
+        group_order: list = []
         for alert in alerts_qs:
             fire_date = alert.expiry_date - timedelta(days=alert.alert_offset_days)
             is_overdue = (
@@ -705,22 +723,58 @@ class AlertsDashboardFragmentView(DocsUploadAccessMixin, View):
                 "machine" if alert.content_type.model == "machinedocument"
                 else "personal"
             )
-            rows.append({
+            key = (alert.content_type_id, alert.object_id)
+            if key not in groups:
+                groups[key] = {
+                    "document_label": alert.document_label,
+                    "subject_label": alert.subject_label,
+                    "expiry_date": alert.expiry_date,
+                    "domain": domain,
+                    "cells": {},
+                    "has_overdue": False,
+                    "min_fire_date": fire_date,
+                }
+                group_order.append(key)
+            group = groups[key]
+            group["cells"][alert.alert_offset_days] = {
                 "alert": alert,
                 "fire_date": fire_date,
                 "is_overdue": is_overdue,
-                "domain": domain,
+            }
+            if is_overdue:
+                group["has_overdue"] = True
+            group["min_fire_date"] = min(group["min_fire_date"], fire_date)
+
+        rows = []
+        for key in group_order:
+            group = groups[key]
+            rows.append({
+                "document_label": group["document_label"],
+                "subject_label": group["subject_label"],
+                "expiry_date": group["expiry_date"],
+                "domain": group["domain"],
+                "has_overdue": group["has_overdue"],
+                "cells": [
+                    group["cells"].get(offset) for offset in self.OFFSET_COLUMNS
+                ],
+                "min_fire_date": group["min_fire_date"],
             })
 
-        # Vencidas sin enviar primero, luego por fecha de disparo más
-        # próxima -- lo mas urgente arriba siempre.
-        rows.sort(key=lambda r: (not r["is_overdue"], r["fire_date"]))
+        # Documentos con alguna celda vencida primero, luego por fecha
+        # de disparo más próxima -- lo más urgente arriba siempre.
+        rows.sort(key=lambda r: (not r["has_overdue"], r["min_fire_date"]))
+
+        overdue_count = sum(
+            1 for r in rows for cell in r["cells"]
+            if cell is not None and cell["is_overdue"]
+        )
 
         return render(request, self.template_name, {
             "rows": rows,
+            "offset_columns": self.OFFSET_COLUMNS,
             "status_filter": status_filter,
             "status_choices": DocumentAlert.Status.choices,
-            "overdue_count": sum(1 for r in rows if r["is_overdue"]),
+            "overdue_count": overdue_count,
         })
 
 
