@@ -1040,7 +1040,92 @@ el avance):
   sin filtrar (nunca se bloquea una subida real por un fallo de este
   filtro opcional).
 
-### COMPLETADAS EN S026 (parcial, sesión en curso)
+### COMPLETADAS EN S026 -- reconstrucción completa del pipeline de ingesta de maquinaria (5 fases, todas cerradas)
+
+Tras registrar el punto 1 (parcial, arriba), Miguel Ángel pidió parar
+y rediseñar el flujo completo con calma ("te has liado a hacer cosas,
+quizás deberíamos haber hablado un poco más... creo que debemos
+dedicarle más tiempo a esto"). El resto de la sesión se dedicó
+íntegramente a la reconstrucción del pipeline de ingesta de
+documentación de maquinaria, en 5 fases, cada una comiteada y
+verificada por separado antes de pasar a la siguiente:
+
+1. **Modelo de aprendizaje** (`d95a6d2`→`fff4f93` para el modelo real)
+   -- `document_ingestion.LearnedDocumentTypeKeyword`, migración
+   escrita a mano y verificada empíricamente (`makemigrations --check`
+   contra sqlite: cero diferencias).
+2. **Motor de tipo por máquina+tipo+fecha** (`382ed73`) --
+   diccionario dinámico (estático + `budgets.Insurer` real de BD +
+   aprendizaje), coincidencia por la keyword más larga,
+   `learn_from_classification()`. Gap cerrado de paso:
+   INSTRUCTIONS/INSTRUCCIONES añadidas a la heurística de manual.
+3. **Gemini como extractor** (`ae73966`) -- cuando la heurística ya
+   tiene el tipo claro, Gemini se sigue llamando (única vía de
+   extracción de fechas/número/entidad) pero su `document_type` se
+   sustituye por la etiqueta de la heurística; cuando no lo reconoce,
+   se aprende de lo que Gemini clasificó.
+4. **Pantalla de revisión con dos listas** (`d719481`) -- Descartados
+   / Se van a subir, casillas por archivo, marcar/desmarcar todos por
+   lista, un único botón "Subir seleccionados". Se muestra siempre
+   tras el preflight, no solo cuando hay algo que descartar. De paso,
+   aclarado el aviso de "carpeta añadida, todavía no se ha subido
+   nada" (confusión real de Miguel Ángel con el botón "Subir" del
+   selector nativo del navegador, ajeno a la aplicación).
+5. **CRUD del diccionario aprendido** (`e59e6a2`) -- pestaña nueva en
+   el hub, listado/edición/alta manual/borrado. Bug real encontrado y
+   corregido por la propia prueba de extremo a extremo antes de
+   comitear: una ruta genérica ya existente
+   (`documentacion/<domain>/<pk>/borrar/`) interceptaba la ruta nueva
+   por orden de coincidencia en `panel/urls.py` -- corregido
+   reordenando, verificado con Django test Client real que las cuatro
+   operaciones (crear/editar/listar/borrar) funcionan y que la ruta
+   genérica sigue intacta para los dominios reales.
+
+Decisiones de negocio cerradas con Miguel Ángel a lo largo de las 5
+fases (verbatim, íntegro):
+
+- **Corrección sobre la primera regla de descarte:** "el signo más
+  combinando dos tipos" se mantiene como señal de descarte
+  incondicional ("casi con toda seguridad esos mismos documentos van
+  a estar por separado"); COMPRIMIDO/COMPRESSED también, pero
+  **excluyendo siempre manuales/instrucciones** ("si lleva la
+  palabra... manual de instrucciones... no es para eliminarlo").
+- **Criterio de tres factores:** "encontrar el código de la máquina...
+  encontrar la matrícula si viene... determinamos la máquina, el tipo
+  de documento y la fecha a la que hace referencia el documento,
+  podemos discriminar perfectamente los archivos a subir o no."
+- **Comparación por nombre insegura a largo plazo:** el nombre de
+  archivo puede cambiar de formato/aseguradora de un año a otro (ej.
+  Allianz → AXA) -- resuelto comparando siempre contra el
+  `document_type`/fecha ya persistidos en BD (dato estructurado, no
+  el nombre de archivo antiguo), y contra un diccionario que crece
+  (aseguradoras reales de BD + aprendizaje), no contra texto fijo.
+- **Tipos sin fecha de caducidad:** "se hacen una vez y sirven para
+  toda la vida útil de la máquina... esos habrá que subirlos
+  inequívocamente" -- inferido directamente de la ausencia de fecha
+  en el nombre, sin necesitar un diccionario tipo→caduca aparte.
+- **Aprendizaje automático:** "el propio sistema propone
+  automáticamente nuevas entradas de diccionario... se usa en la
+  propia sesión de subida... por empresa... hay que construirlo ya."
+- **Gemini dejó de decidir el tipo cuando la heurística ya lo sabe**
+  ("directamente lo tenemos ya clasificado por el nombre"), pero
+  sigue siendo la única vía de extracción de datos del contenido --
+  matiz importante frente a la decisión de S016 (Gemini propone
+  categorías libres): esa libertad se conserva íntegra para los casos
+  que la heurística NO reconoce, que es donde alimenta el
+  aprendizaje.
+
+Hallazgo aparte, señalado a Miguel Ángel pero sin corregir en esta
+sesión (requiere su consola de PythonAnywhere, sin acceso de red desde
+esta sesión GitHub-directa): `pymupdf4llm` está en `requirements.in`
+desde S025 pero nunca se propagó a `requirements.txt` -- pendiente de
+`pip-compile requirements.in` + `pip-sync requirements.txt`.
+
+Personal (H25) queda como siguiente capítulo natural, reutilizando
+toda esta infraestructura tal cual -- `document_ingestion` es
+agnóstico de dominio a propósito desde el diseño de H26.
+
+### COMPLETADAS EN S026 (parcial, sesión en curso) -- registro original del punto 1
 
 1. **`document_ingestion/preflight_discard_service.py`** (nuevo) --
    REGLA A (descarte estructural: `+` combinando dos tipos, o sufijo
