@@ -82,6 +82,11 @@ from document_management.alert_service import create_default_expiry_alerts
 from document_management.models import DocumentAlert, DocumentSubstitutionLog
 from document_management.vigencia_service import DocumentSnapshot, evaluate_substitution
 from document_ingestion.deduplication_service import compute_content_hash
+from document_ingestion.preflight_discard_service import (
+    CANONICAL_GROUP_DISPLAY_NAMES,
+    find_obsolescence_group,
+    learn_from_classification,
+)
 from enterprise_core.celery import app
 from spare_parts.gcs_service import (
     MACHINE_DOCUMENTS_BUCKET,
@@ -219,8 +224,62 @@ def process_machine_document_batch(self, document_pks: list[int]) -> None:
             result = heuristic_result
             via_heuristic = True
         else:
+            # S026, fase 3 -- máquina+tipo+fecha (REGLA B de
+            # document_ingestion.preflight_discard_service) YA decidió
+            # el tipo en el preflight previo a la subida para la
+            # mayoría de los casos; aquí se vuelve a comprobar (mismo
+            # diccionario dinámico: estático + Insurer de BD +
+            # aprendizaje) porque este documento puede haber llegado
+            # por una vía que no pasó por el preflight (ingesta
+            # automática de carpeta) o el aprendizaje puede haber
+            # cambiado entre el preflight y este punto del mismo lote.
+            # Miguel Ángel: "caso de que por heurística determinamos
+            # un tipo conocido... directamente lo tenemos ya
+            # clasificado por el nombre. Que no lo tenemos claro, a
+            # eso entra Gemini, lo clasifica ella" -- Gemini SIGUE
+            # llamándose siempre (es la única vía para extraer fechas/
+            # número de documento/entidad emisora, que la heurística
+            # nunca lee del contenido), pero su document_type se
+            # descarta a favor del de la heurística cuando el grupo es
+            # uno de los conocidos con etiqueta legible
+            # (CANONICAL_GROUP_DISPLAY_NAMES) -- los grupos dinámicos
+            # (aseguradora real o aprendidos) no tienen etiqueta manual
+            # y se dejan tal cual los devuelva Gemini.
+            heuristic_group = find_obsolescence_group(
+                filename,
+                machine=document.machine_asset,
+                company=document.company,
+            )
             result = classify_document(file_bytes, filename)
             via_heuristic = False
+
+            if heuristic_group is not None:
+                display_label = CANONICAL_GROUP_DISPLAY_NAMES.get(
+                    heuristic_group,
+                )
+                if display_label and result.get("document_type"):
+                    logger.info(
+                        "# [process_machine_document_batch] #%d (%s): "
+                        "tipo ya conocido por heurística (%r) -- "
+                        "Gemini usado solo para extracción de datos, "
+                        "document_type de Gemini (%r) sustituido.",
+                        document.pk, filename, heuristic_group,
+                        result["document_type"],
+                    )
+                    result["document_type"] = display_label
+            elif result.get("document_type"):
+                # La heurística NO reconoció el tipo y Gemini sí pudo
+                # clasificarlo -- se aprende para que el resto del
+                # lote (y futuras subidas) ya lo reconozcan por nombre
+                # sin volver a llamar a Gemini (Miguel Ángel, S026: "el
+                # propio sistema propone automáticamente nuevas
+                # entradas de diccionario... se usa en la propia
+                # sesión de subida").
+                learn_from_classification(
+                    filename, result["document_type"],
+                    machine=document.machine_asset,
+                    company=document.company,
+                )
 
         if not result["document_type"]:
             logger.warning(

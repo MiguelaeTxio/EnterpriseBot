@@ -211,6 +211,24 @@ _OBSOLESCENCE_GROUP_KEYWORDS: list[tuple[str, str]] = [
     ("CERT.MANTENIMIENTO", "MANTENIMIENTO"),
 ]
 
+# Etiqueta legible por grupo CANÓNICO ESTÁTICO -- usada por
+# machine_documents.tasks (S026, fase 3) para sustituir el
+# document_type que devolvería Gemini cuando la heurística YA tenía
+# el tipo claro por máquina+tipo+fecha (Miguel Ángel: "directamente lo
+# tenemos ya clasificado por el nombre"). Solo cubre los grupos
+# estáticos de arriba -- los grupos dinámicos (aseguradora real de BD,
+# o aprendidos) no tienen aquí una etiqueta manual, se dejan tal cual
+# los devuelva Gemini (su propio document_type/display_name), ya que
+# no hay un texto mejor que inventar sin datos.
+CANONICAL_GROUP_DISPLAY_NAMES: dict[str, str] = {
+    "FICHA TECNICA": "Ficha técnica",
+    "ITV": "Tarjeta ITV",
+    "OCA": "Certificado OCA",
+    "SEGURO": "Recibo de seguro",
+    "LIBRO HISTORIAL": "Libro historial",
+    "MANTENIMIENTO": "Certificado de mantenimiento",
+}
+
 # Fecha en el nombre: SIEMPRE día-mes-año en español (Miguel Ángel,
 # S026: "siempre va a ser día, mes y año"), pero de FORMATO
 # desconocido de antemano -- ancho de dígitos y separador variables,
