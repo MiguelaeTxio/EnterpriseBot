@@ -302,6 +302,49 @@ def process_machine_document_batch(self, document_pks: list[int]) -> None:
         document.document_number = result["document_number"]
         document.issuing_entity = result["issuing_entity"]
         document.is_possible_master = result["is_possible_master"]
+
+        # Salvaguarda de discrepancia nombre/contenido (S026, cierre de
+        # sesión) -- Miguel Ángel, tras un caso real (documento de la
+        # A-45 archivado en la carpeta de la A-36, pero con el número
+        # de identificación real de la A-45 en el contenido): "no
+        # deberíamos de dejarlo única y exclusivamente al nombre del
+        # archivo... si se sube y se asigna a esa máquina, marcarlo
+        # con incidencia y decir, ojo, el interior no coincide con el
+        # exterior". La máquina YA quedó asignada por nombre de
+        # archivo (document_ingestion.tasks.route_ingested_files, sin
+        # tocar Gemini) -- esto NUNCA cambia esa asignación, solo
+        # avisa cuando el contenido, según Gemini, menciona una
+        # referencia de unidad distinta.
+        document.content_mismatch_warning = ""
+        reference_in_content = result.get("machine_reference_in_content", "")
+        if reference_in_content and document.machine_asset_id:
+            from document_ingestion.entity_matching_service import (
+                _normalize_for_matching,
+            )
+            normalized_reference = _normalize_for_matching(reference_in_content)
+            normalized_code = _normalize_for_matching(
+                document.machine_asset.code,
+            )
+            normalized_plate = _normalize_for_matching(
+                document.machine_asset.plate or "",
+            )
+            if normalized_reference and normalized_reference not in (
+                normalized_code, normalized_plate,
+            ):
+                document.content_mismatch_warning = (
+                    f"El nombre de archivo asignó este documento a "
+                    f"{document.machine_asset.code}, pero su contenido "
+                    f"menciona la referencia {reference_in_content!r} -- "
+                    f"revisar a mano si está bien archivado."
+                )
+                logger.warning(
+                    "# [process_machine_document_batch] #%d (%s): "
+                    "discrepancia nombre/contenido -- asignado a %s "
+                    "por nombre, contenido menciona %r.",
+                    document.pk, filename, document.machine_asset.code,
+                    reference_in_content,
+                )
+
         # UNASSIGNED en vez de CLASSIFIED cuando no hay máquina enlazada
         # (ingesta automática de carpeta, S024) -- ver
         # MachineDocument.Status.UNASSIGNED.
@@ -313,7 +356,7 @@ def process_machine_document_batch(self, document_pks: list[int]) -> None:
         document.save(update_fields=[
             "document_type", "display_name", "expiry_date", "issue_date",
             "document_number", "issuing_entity", "is_possible_master",
-            "status",
+            "content_mismatch_warning", "status",
         ])
 
         # S025, decisión explícita de Miguel Ángel: "en el dosier no

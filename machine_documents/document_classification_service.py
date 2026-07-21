@@ -286,6 +286,7 @@ def classify_by_filename_heuristic(filename: str) -> dict | None:
                 "issue_date": None,
                 "document_number": "",
                 "issuing_entity": "",
+                "machine_reference_in_content": "",
             }
     return None
 
@@ -304,10 +305,12 @@ _CLASSIFY_RESPONSE_SCHEMA = {
         "issue_date": {"type": "string"},
         "document_number": {"type": "string"},
         "issuing_entity": {"type": "string"},
+        "machine_reference_in_content": {"type": "string"},
     },
     "required": [
         "document_type", "display_name", "is_possible_master",
         "expiry_date", "issue_date", "document_number", "issuing_entity",
+        "machine_reference_in_content",
     ],
 }
 
@@ -355,6 +358,27 @@ determina:
 7. issuing_entity: organismo o empresa que emite el documento (ej.
    una aseguradora, un OCA concreto, la Junta de Andalucía). Cadena
    vacía "" si no se identifica.
+8. machine_reference_in_content: si el documento identifica una
+   UNIDAD FÍSICA CONCRETA (no un modelo genérico), su matrícula,
+   número de bastidor/serie, o código interno de flota tal como
+   aparece literalmente en el documento (ej. "E-6998-BDY",
+   "VHX2FF1P204251036", "A-45"). Cadena vacía "" si no aparece
+   ninguna referencia de unidad, o si solo aparece el modelo/tipo
+   genérico del fabricante.
+
+   ATENCIÓN CRÍTICA -- distingue SIEMPRE modelo/tipo de fabricante
+   (NUNCA es esto) de identificador de unidad concreta (SÍ es esto):
+   una denominación comercial de modelo como "AC 35L", "LTM 1055-3.1"
+   o "2FF1P2" NO es una referencia de unidad -- es el tipo de máquina,
+   compartido por TODAS las unidades de ese modelo (un certificado CE
+   o un manual de instrucciones de un modelo es idéntico para
+   cualquier grúa de ese mismo modelo, aunque pertenezcan a máquinas
+   distintas). Solo cuenta como machine_reference_in_content un dato
+   que identifique una unidad FÍSICA concreta y no se repita en otra
+   unidad del mismo modelo: matrícula, número de bastidor/serie, o
+   anotación explícita de código de flota. Si tienes dudas entre
+   modelo y unidad, deja el campo vacío -- un falso positivo aquí
+   genera una alerta de discrepancia innecesaria.
 
 Responde únicamente con el JSON solicitado."""
 
@@ -426,6 +450,7 @@ def classify_document(pdf_bytes: bytes, filename: str) -> dict:
         "issue_date": None,
         "document_number": "",
         "issuing_entity": "",
+        "machine_reference_in_content": "",
     }
 
     try:
@@ -460,6 +485,9 @@ def classify_document(pdf_bytes: bytes, filename: str) -> dict:
             ).strip(),
             "issuing_entity": str(
                 parsed.get("issuing_entity", "")
+            ).strip(),
+            "machine_reference_in_content": str(
+                parsed.get("machine_reference_in_content", "")
             ).strip(),
         }
         logger.info(

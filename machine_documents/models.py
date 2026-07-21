@@ -454,6 +454,39 @@ class MachineDocument(models.Model):
         verbose_name="Archivo",
     )
 
+    # ------------------------------------------------------------------
+    # Salvaguarda de discrepancia nombre/contenido (S026, cierre de
+    # sesión) -- la máquina se asigna PRIMERO por nombre de archivo/
+    # carpeta (ver document_ingestion.tasks.route_ingested_files), sin
+    # llamar a Gemini para eso. Pero un documento puede haberse
+    # archivado en la carpeta equivocada por error humano -- caso real
+    # que motivó este campo: un certificado CE de la A-45 archivado en
+    # la carpeta de la A-36, con "A-45" en el propio nombre, pero cuyo
+    # contenido (número de identificación real de la unidad) sí
+    # correspondía a la A-45. Miguel Ángel, explícito: "no deberíamos
+    # de dejarlo única y exclusivamente al nombre del archivo... si se
+    # sube y se asigna a esa máquina, marcarlo con incidencia y decir,
+    # ojo, el interior no coincide con el exterior". Gemini SIGUE
+    # llamándose siempre (fase 3, extracción de datos) y ahora también
+    # extrae machine_reference_in_content
+    # (document_classification_service.classify_document) -- si esa
+    # referencia no coincide con la máquina ya asignada por nombre,
+    # este campo guarda el aviso. Vacío mientras no haya discrepancia
+    # detectada.
+    # ------------------------------------------------------------------
+    content_mismatch_warning = models.CharField(
+        max_length=500,
+        blank=True,
+        default="",
+        verbose_name="Aviso de discrepancia nombre/contenido",
+        help_text="Se rellena cuando Gemini detecta, dentro del "
+                  "propio contenido del documento, una referencia de "
+                  "unidad (matrícula/número de serie) distinta de la "
+                  "máquina a la que se asignó por nombre de archivo. "
+                  "Nunca bloquea la subida -- solo avisa para revisión "
+                  "manual.",
+    )
+
     created_at = models.DateTimeField(
         auto_now_add=True,
         verbose_name="Fecha de creación",
