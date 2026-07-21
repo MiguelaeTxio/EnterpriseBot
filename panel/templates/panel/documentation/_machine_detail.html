@@ -25,7 +25,12 @@
 {% if current_docs %}
 <ul class="list-group list-group-flush mb-3">
     {% for doc in current_docs %}
-    <li class="list-group-item px-0">
+    <li class="list-group-item px-0 {% if doc.content_mismatch_warning %}border-start border-4 border-warning{% endif %}">
+        {% if doc.content_mismatch_warning %}
+        <div class="alert alert-warning py-1 px-2 small mb-2">
+            <i class="bi bi-exclamation-triangle-fill me-1"></i>{{ doc.content_mismatch_warning }}
+        </div>
+        {% endif %}
         <div class="d-flex justify-content-between align-items-center">
             <div>
                 <span class="fw-semibold">{{ doc.display_name|default:doc.document_type }}</span>
@@ -95,7 +100,12 @@
 {% if archived_docs %}
 <ul class="list-group list-group-flush">
     {% for doc in archived_docs %}
-    <li class="list-group-item px-0 text-muted">
+    <li class="list-group-item px-0 text-muted {% if doc.content_mismatch_warning %}border-start border-4 border-warning{% endif %}">
+        {% if doc.content_mismatch_warning %}
+        <div class="alert alert-warning py-1 px-2 small mb-2">
+            <i class="bi bi-exclamation-triangle-fill me-1"></i>{{ doc.content_mismatch_warning }}
+        </div>
+        {% endif %}
         <div class="d-flex justify-content-between align-items-center">
             <div>
                 <span>{{ doc.display_name|default:doc.document_type }}</span>

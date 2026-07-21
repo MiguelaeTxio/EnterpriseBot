@@ -29,6 +29,20 @@
         </div>
     </div>
 
+    {% if incidence_machines %}
+    <div class="alert alert-warning d-flex align-items-center flex-wrap gap-2 mb-4">
+        <i class="bi bi-exclamation-triangle-fill me-1"></i>
+        <span class="me-2">Documentación con posible incidencia:</span>
+        {% for row in incidence_machines %}
+        <a href="{% url 'panel:documentation_machine_transfer' %}?machine_a={{ machine.pk }}&machine_b={{ row.content_mismatch_candidate_machine }}"
+           class="btn btn-sm btn-warning">
+            <i class="bi bi-arrow-left-right me-1"></i>Resolver con {{ row.content_mismatch_candidate_machine__code }}
+            <span class="badge bg-dark ms-1">{{ row.count }}</span>
+        </a>
+        {% endfor %}
+    </div>
+    {% endif %}
+
     <div class="card shadow-sm mb-4">
         <div class="card-header fw-semibold"><i class="bi bi-folder2-open me-1"></i>Documentación</div>
         <div class="card-body" id="machine-detail-container">

@@ -323,6 +323,7 @@ def process_machine_document_batch(self, document_pks: list[int]) -> None:
         if reference_in_content and document.machine_asset_id:
             from document_ingestion.entity_matching_service import (
                 _normalize_for_matching,
+                match_machine_asset,
             )
             normalized_reference = _normalize_for_matching(reference_in_content)
             normalized_code = _normalize_for_matching(
@@ -339,6 +340,18 @@ def process_machine_document_batch(self, document_pks: list[int]) -> None:
                     f"pero el CONTENIDO del documento menciona la "
                     f"referencia {reference_in_content!r} -- revisar a "
                     f"mano si está bien archivado."
+                )
+                # Resuelve la referencia a una MachineAsset real, si es
+                # posible -- necesario para el botón "Resolver
+                # incidencia con <máquina>" de la ficha de máquina
+                # (S026). match_machine_asset compara por igualdad
+                # normalizada exacta (no subcadena, a diferencia de
+                # match_machine_asset_by_filename) -- coherente con
+                # que aquí la referencia ya viene limpia, extraída por
+                # Gemini del contenido, no de un nombre de archivo con
+                # texto alrededor.
+                document.content_mismatch_candidate_machine = (
+                    match_machine_asset(document.company, reference_in_content)
                 )
                 logger.warning(
                     "# [process_machine_document_batch] #%d (%s): "
@@ -359,7 +372,8 @@ def process_machine_document_batch(self, document_pks: list[int]) -> None:
         document.save(update_fields=[
             "document_type", "display_name", "expiry_date", "issue_date",
             "document_number", "issuing_entity", "is_possible_master",
-            "content_mismatch_warning", "status",
+            "content_mismatch_warning", "content_mismatch_candidate_machine",
+            "status",
         ])
 
         # S025, decisión explícita de Miguel Ángel: "en el dosier no

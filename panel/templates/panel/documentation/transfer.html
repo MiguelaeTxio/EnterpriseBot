@@ -1,0 +1,77 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation/transfer.html #}
+{% extends "panel/base.html" %}
+
+{% comment %}
+    Pantalla partida para mover documentación entre dos máquinas a
+    mano (S026, cierre de sesión) -- Miguel Ángel: "dividir la
+    pantalla en dos y tener en un lado una máquina y en el otro lado
+    otra, y poder pasar de una a otra la documentación que esté
+    marcada como errónea". El movimiento NUNCA es automático -- esta
+    es la ÚNICA vía para reasignar un documento de máquina, siempre
+    con un clic explícito del supervisor (DocumentMoveToMachineView).
+    Se accede normalmente desde el botón "Resolver con <máquina>" de
+    machine_page.html, que ya trae las dos máquinas en la querystring
+    -- pero los selectores de aquí permiten también elegir cualquier
+    otro par a mano.
+{% endcomment %}
+
+{% block title %}Mover documentación entre máquinas{% endblock %}
+{% block page_title %}Mover documentación entre máquinas{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-3 pt-3">
+
+    <a href="{% url 'panel:documentation_hub' %}" class="text-decoration-none small text-muted d-inline-block mb-2">
+        <i class="bi bi-arrow-left me-1"></i>Volver a Documentación
+    </a>
+
+    <form method="get" class="row g-2 align-items-end mb-4">
+        <div class="col-12 col-md-5">
+            <label class="form-label small">Máquina A</label>
+            <select name="machine_a" class="form-select form-select-sm" onchange="this.form.submit()">
+                <option value="">— Selecciona —</option>
+                {% for m in machines %}
+                <option value="{{ m.pk }}" {% if machine_a.pk == m.pk %}selected{% endif %}>{{ m.code }} — {{ m.brand_model }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-12 col-md-5">
+            <label class="form-label small">Máquina B</label>
+            <select name="machine_b" class="form-select form-select-sm" onchange="this.form.submit()">
+                <option value="">— Selecciona —</option>
+                {% for m in machines %}
+                <option value="{{ m.pk }}" {% if machine_b.pk == m.pk %}selected{% endif %}>{{ m.code }} — {{ m.brand_model }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </form>
+
+    {% if machine_a and machine_b %}
+    <div class="row g-3">
+        <div class="col-12 col-md-6">
+            <div class="card shadow-sm h-100">
+                <div class="card-header fw-semibold">
+                    <i class="bi bi-truck me-1"></i>{{ machine_a.code }} — {{ machine_a.brand_model }}
+                </div>
+                <div class="card-body">
+                    {% include "panel/documentation/_transfer_column.html" with docs=docs_a other_machine=machine_b this_machine=machine_a %}
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-md-6">
+            <div class="card shadow-sm h-100">
+                <div class="card-header fw-semibold">
+                    <i class="bi bi-truck me-1"></i>{{ machine_b.code }} — {{ machine_b.brand_model }}
+                </div>
+                <div class="card-body">
+                    {% include "panel/documentation/_transfer_column.html" with docs=docs_b other_machine=machine_a this_machine=machine_b %}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <p class="text-muted small">Elige las dos máquinas para comparar su documentación.</p>
+    {% endif %}
+
+</div>
+{% endblock %}

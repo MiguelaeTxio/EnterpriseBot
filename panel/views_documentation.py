@@ -1336,8 +1336,15 @@ class DocumentationHubView(DocsUploadAccessMixin, View):
         company_user = request.user.company_user
         company = company_user.company
 
+        from django.db.models import Count, Q
+
         machines = MachineAsset.objects.filter(
             company=company,
+        ).annotate(
+            incidence_count=Count(
+                "documents",
+                filter=~Q(documents__content_mismatch_warning=""),
+            ),
         ).order_by("code")
         workers = CompanyUser.objects.filter(
             company=company,
@@ -1398,9 +1405,15 @@ class DocumentationMachineListFragmentView(DocsUploadAccessMixin, View):
         company = request.user.company_user.company
         search = request.GET.get("search", "").strip()
 
-        machines = MachineAsset.objects.filter(company=company)
+        from django.db.models import Count, Q
+
+        machines = MachineAsset.objects.filter(company=company).annotate(
+            incidence_count=Count(
+                "documents",
+                filter=~Q(documents__content_mismatch_warning=""),
+            ),
+        )
         if search:
-            from django.db.models import Q
             machines = machines.filter(
                 Q(code__icontains=search)
                 | Q(plate__icontains=search)
@@ -1570,12 +1583,37 @@ class MachinePageView(DocsUploadAccessMixin, View):
             request, status_filter="", search=machine.code,
         )
 
+        # Botón de resolución por cada máquina distinta implicada en
+        # una incidencia de esta máquina (S026, cierre de sesión).
+        # Miguel Ángel: "un botón con cada una de las incidencias...
+        # pulsando el botón, nos dividirá la pantalla y nos muestra
+        # la máquina y la máquina con la que hemos pulsado el botón
+        # que tiene incidencia. Se resuelve esa incidencia, desaparece
+        # el botón". Se recalcula en cada carga -- en cuanto no quede
+        # ningún MachineDocument de esta máquina con esa candidata,
+        # el botón deja de aparecer solo, sin ningún estado que
+        # mantener a mano.
+        from django.db.models import Count
+
+        incidence_machines = list(
+            MachineDocument.objects
+            .filter(machine_asset=machine)
+            .exclude(content_mismatch_candidate_machine__isnull=True)
+            .values(
+                "content_mismatch_candidate_machine",
+                "content_mismatch_candidate_machine__code",
+            )
+            .annotate(count=Count("pk"))
+            .order_by("content_mismatch_candidate_machine__code")
+        )
+
         return render(request, self.template_name, {
             "active_nav": "documentation_hub",
             "company_user": company_user,
             "machine": machine,
             "current_docs": current_docs,
             "archived_docs": archived_docs,
+            "incidence_machines": incidence_machines,
             **alerts_context,
         })
 
@@ -2108,6 +2146,122 @@ class DocumentEditFormFragmentView(DocsUploadAccessMixin, View):
             "domain": domain,
             "document": document,
         })
+
+
+class MachineDocumentTransferView(DocsUploadAccessMixin, View):
+    """
+    GET: pantalla partida (dos máquinas, una a cada lado) para mover
+    documentación mal archivada de una a otra a mano -- Miguel Ángel,
+    S026, cierre de sesión: "para resolverlas, poder enviar la
+    documentación a otra máquina... dividir la pantalla en dos y
+    tener en un lado una máquina y en el otro lado otra, y poder
+    pasar de una a otra la documentación que esté marcada como
+    errónea". El movimiento NUNCA es automático (ver
+    document_ingestion.tasks.route_ingested_files) -- esta es la
+    única vía para reasignar un documento de máquina, siempre a mano.
+
+    Las dos máquinas se eligen por querystring (`machine_a`,
+    `machine_b`) para poder recargar la página sin perder el
+    contexto tras mover un documento. Cada documento con
+    `content_mismatch_warning` se resalta -- pero se puede mover
+    CUALQUIER documento, no solo los marcados.
+    """
+
+    template_name = "panel/documentation/transfer.html"
+
+    def get(self, request):
+        company_user = request.user.company_user
+        company = company_user.company
+
+        machines = MachineAsset.objects.filter(
+            company=company,
+        ).order_by("code")
+
+        machine_a_pk = request.GET.get("machine_a", "").strip()
+        machine_b_pk = request.GET.get("machine_b", "").strip()
+        machine_a = machines.filter(pk=machine_a_pk).first() if machine_a_pk else None
+        machine_b = machines.filter(pk=machine_b_pk).first() if machine_b_pk else None
+
+        docs_a = (
+            MachineDocument.objects.filter(
+                machine_asset=machine_a,
+            ).exclude(status=MachineDocument.Status.ERROR)
+            .order_by("-content_mismatch_warning", "document_type", "-created_at")
+            if machine_a else []
+        )
+        docs_b = (
+            MachineDocument.objects.filter(
+                machine_asset=machine_b,
+            ).exclude(status=MachineDocument.Status.ERROR)
+            .order_by("-content_mismatch_warning", "document_type", "-created_at")
+            if machine_b else []
+        )
+
+        return render(request, self.template_name, {
+            "active_nav": "documentation_hub",
+            "company_user": company_user,
+            "machines": machines,
+            "machine_a": machine_a,
+            "machine_b": machine_b,
+            "docs_a": docs_a,
+            "docs_b": docs_b,
+        })
+
+
+class DocumentMoveToMachineView(DocsUploadAccessMixin, View):
+    """
+    POST: reasigna un MachineDocument a otra máquina -- ÚNICA vía de
+    movimiento entre máquinas, siempre a mano (S026). Limpia
+    content_mismatch_warning/detected_reference_hint al mover (la
+    incidencia queda resuelta con el movimiento manual) y redirige de
+    vuelta a MachineDocumentTransferView con las mismas dos máquinas
+    en la querystring, para no perder el contexto.
+    """
+
+    def post(self, request, pk):
+        company = request.user.company_user.company
+        document = MachineDocument.objects.filter(
+            pk=pk, company=company,
+        ).first()
+        if document is None:
+            raise Http404("Documento no encontrado.")
+
+        target_machine_pk = request.POST.get("target_machine_pk", "").strip()
+        target_machine = MachineAsset.objects.filter(
+            pk=target_machine_pk, company=company,
+        ).first()
+        if target_machine is None:
+            raise Http404("Máquina de destino no encontrada.")
+
+        origin_label = (
+            document.machine_asset.code if document.machine_asset
+            else "SIN ASIGNAR"
+        )
+        document.machine_asset = target_machine
+        document.content_mismatch_warning = ""
+        document.detected_reference_hint = ""
+        document.status = MachineDocument.Status.CLASSIFIED
+        document.save(update_fields=[
+            "machine_asset", "content_mismatch_warning",
+            "detected_reference_hint", "status",
+        ])
+        logger.info(
+            "# [DocumentMoveToMachineView] MachineDocument #%d movido "
+            "de %s a %s a mano.",
+            document.pk, origin_label, target_machine.code,
+        )
+        messages.success(
+            request,
+            f'"{document.display_name or document.document_type}" '
+            f"movido de {origin_label} a {target_machine.code}.",
+        )
+
+        machine_a = request.POST.get("machine_a", "")
+        machine_b = request.POST.get("machine_b", "")
+        return redirect(
+            f"{reverse('panel:documentation_machine_transfer')}"
+            f"?machine_a={machine_a}&machine_b={machine_b}",
+        )
 
 
 class DocumentUpdateView(DocsUploadAccessMixin, View):

@@ -1,0 +1,36 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation/_transfer_column.html #}
+{# Columna de la pantalla partida (transfer.html) -- lista los documentos de #}
+{# `this_machine`, resaltando los que tienen incidencia con `other_machine` #}
+{# concretamente, con un botón para moverlos ahí. Cualquier documento se     #}
+{# puede mover, no solo los marcados (Miguel Ángel no lo restringió).       #}
+
+{% if docs %}
+<ul class="list-group list-group-flush">
+    {% for doc in docs %}
+    <li class="list-group-item px-0 {% if doc.content_mismatch_candidate_machine_id == other_machine.pk %}border-start border-4 border-warning{% endif %}">
+        <div class="d-flex justify-content-between align-items-center gap-2">
+            <div>
+                <span class="fw-semibold">{{ doc.display_name|default:doc.document_type }}</span>
+                <span class="badge bg-light text-dark border ms-1">{{ doc.document_type }}</span>
+                {% if doc.content_mismatch_warning %}
+                <div class="text-warning small mt-1">
+                    <i class="bi bi-exclamation-triangle-fill me-1"></i>{{ doc.content_mismatch_warning }}
+                </div>
+                {% endif %}
+            </div>
+            <form method="post" action="{% url 'panel:documentation_document_move' pk=doc.pk %}" class="flex-shrink-0">
+                {% csrf_token %}
+                <input type="hidden" name="target_machine_pk" value="{{ other_machine.pk }}">
+                <input type="hidden" name="machine_a" value="{{ this_machine.pk }}">
+                <input type="hidden" name="machine_b" value="{{ other_machine.pk }}">
+                <button type="submit" class="btn btn-sm btn-outline-primary" title="Mover a {{ other_machine.code }}">
+                    <i class="bi bi-arrow-right"></i> {{ other_machine.code }}
+                </button>
+            </form>
+        </div>
+    </li>
+    {% endfor %}
+</ul>
+{% else %}
+<p class="text-muted small mb-0">Sin documentación.</p>
+{% endif %}

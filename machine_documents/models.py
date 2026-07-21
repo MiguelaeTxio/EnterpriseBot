@@ -486,6 +486,25 @@ class MachineDocument(models.Model):
                   "Nunca bloquea la subida -- solo avisa para revisión "
                   "manual.",
     )
+    content_mismatch_candidate_machine = models.ForeignKey(
+        MachineAsset,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name="Máquina candidata en conflicto",
+        help_text="La OTRA máquina real que la carpeta/nombre/"
+                  "contenido sugieren para este documento, cuando se "
+                  "pudo resolver a una fleet.MachineAsset concreta -- "
+                  "Miguel Ángel, S026: \"pulsando el botón, nos "
+                  "dividirá la pantalla y nos muestra la máquina y la "
+                  "máquina con la que hemos pulsado el botón que "
+                  "tiene incidencia\". Permite generar un botón de "
+                  "resolución por cada máquina distinta implicada en "
+                  "la ficha de máquina, en vez de un aviso de solo "
+                  "texto. Vacío si el conflicto no se pudo resolver a "
+                  "una máquina real conocida.",
+    )
 
     created_at = models.DateTimeField(
         auto_now_add=True,

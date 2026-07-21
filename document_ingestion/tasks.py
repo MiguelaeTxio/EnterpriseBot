@@ -151,6 +151,7 @@ def route_ingested_files(self, ingested_file_pks: list[int]) -> None:
         )
 
         initial_mismatch_warning = ""
+        initial_mismatch_candidate_machine = None
 
         if folder_matched_machine is not None:
             domain = DOMAIN_MACHINE
@@ -179,6 +180,7 @@ def route_ingested_files(self, ingested_file_pks: list[int]) -> None:
                     f"{filename_matched_machine.code} -- revisar a "
                     f"mano si está bien archivado."
                 )
+                initial_mismatch_candidate_machine = filename_matched_machine
                 logger.warning(
                     "# [route_ingested_files] #%d (%s): discrepancia "
                     "carpeta/nombre -- carpeta dice %s, nombre dice "
@@ -228,6 +230,9 @@ def route_ingested_files(self, ingested_file_pks: list[int]) -> None:
                     else machine_reference_hint
                 ),
                 content_mismatch_warning=initial_mismatch_warning,
+                content_mismatch_candidate_machine=(
+                    initial_mismatch_candidate_machine
+                ),
             )
             new_document.source_file.save(
                 filename, ContentFile(file_bytes), save=False,
