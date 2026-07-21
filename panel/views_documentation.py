@@ -81,7 +81,7 @@ from document_ingestion.deduplication_service import (
     find_duplicate,
 )
 from document_ingestion.entity_matching_service import match_machine_asset_by_filename
-from document_ingestion.models import IngestedFile
+from document_ingestion.models import IngestedFile, LearnedDocumentTypeKeyword
 from document_ingestion.preflight_discard_service import evaluate_batch
 from document_ingestion.tasks import retry_unassigned_routing, route_ingested_files
 from document_management.alert_service import (
@@ -992,6 +992,112 @@ class EmailTemplateDeleteView(DocsUploadAccessMixin, View):
         )
         messages.success(request, "Plantilla de email borrada.")
         return redirect(reverse("panel:documentation_email_templates"))
+
+
+class LearnedKeywordListFragmentView(DocsUploadAccessMixin, View):
+    """
+    GET (HTMX): lista el diccionario de tipos de documento APRENDIDO
+    automáticamente (S026, fase 5) + formulario de alta manual --
+    Miguel Ángel: "una vista de listado simple o CRUD para poder
+    gestionar el diccionario... poder listar todo ese diccionario...
+    aunque luego podamos manualmente decir, no, esto lo quitamos o
+    añadimos esto". Mismo patrón que EmailTemplateListFragmentView.
+    """
+
+    template_name = "panel/documentation/_learned_keywords.html"
+
+    def get(self, request):
+        company = request.user.company_user.company
+        keywords = LearnedDocumentTypeKeyword.objects.filter(
+            company=company,
+        ).order_by("-is_active", "-occurrences", "-last_seen")
+        return render(request, self.template_name, {
+            "keywords": keywords,
+        })
+
+
+class LearnedKeywordSaveView(DocsUploadAccessMixin, View):
+    """
+    POST: crea una entrada nueva a mano (sin `keyword_pk`) o modifica
+    una existente (con `keyword_pk`) -- un único endpoint para las dos
+    operaciones, mismo criterio que EmailTemplateSaveView. Una entrada
+    creada a mano nunca lleva `source_filename`/`source_document_type`
+    (quedan vacíos -- son trazabilidad de un aprendizaje automático
+    real, no aplica a un alta manual).
+    """
+
+    def post(self, request):
+        company = request.user.company_user.company
+        keyword_pk = request.POST.get("keyword_pk", "").strip()
+
+        keyword_text = request.POST.get("keyword", "").strip().upper()
+        canonical_group = request.POST.get("canonical_group", "").strip().upper()
+        is_active = bool(request.POST.get("is_active"))
+
+        if not keyword_text or not canonical_group:
+            messages.error(
+                request,
+                "La palabra clave y el grupo canónico son obligatorios.",
+            )
+            return redirect(reverse("panel:documentation_learned_keywords"))
+
+        if keyword_pk:
+            entry = LearnedDocumentTypeKeyword.objects.filter(
+                pk=keyword_pk, company=company,
+            ).first()
+            if entry is None:
+                raise Http404("Entrada no encontrada.")
+            entry.keyword = keyword_text
+            entry.canonical_group = canonical_group
+            entry.is_active = is_active
+            entry.save(update_fields=["keyword", "canonical_group", "is_active"])
+            logger.info(
+                "# [LearnedKeywordSaveView] Entrada #%d modificada a "
+                "mano (%r -> %r).",
+                entry.pk, keyword_text, canonical_group,
+            )
+        else:
+            entry, created = LearnedDocumentTypeKeyword.objects.get_or_create(
+                company=company, keyword=keyword_text,
+                defaults={
+                    "canonical_group": canonical_group,
+                    "is_active": is_active,
+                },
+            )
+            if not created:
+                messages.error(
+                    request,
+                    f"Ya existe una entrada para «{keyword_text}» -- "
+                    f"edítala en vez de crear otra.",
+                )
+                return redirect(reverse("panel:documentation_learned_keywords"))
+            logger.info(
+                "# [LearnedKeywordSaveView] Entrada #%d creada a mano "
+                "(%r -> %r).",
+                entry.pk, keyword_text, canonical_group,
+            )
+
+        messages.success(request, "Diccionario de tipos de documento guardado.")
+        return redirect(reverse("panel:documentation_learned_keywords"))
+
+
+class LearnedKeywordDeleteView(DocsUploadAccessMixin, View):
+    """POST: borra una entrada del diccionario aprendido."""
+
+    def post(self, request, keyword_pk):
+        company = request.user.company_user.company
+        entry = LearnedDocumentTypeKeyword.objects.filter(
+            pk=keyword_pk, company=company,
+        ).first()
+        if entry is None:
+            raise Http404("Entrada no encontrada.")
+        entry.delete()
+        logger.info(
+            "# [LearnedKeywordDeleteView] Entrada #%s borrada.",
+            keyword_pk,
+        )
+        messages.success(request, "Entrada del diccionario borrada.")
+        return redirect(reverse("panel:documentation_learned_keywords"))
 
 
 class DossierGenerateView(DocsUploadAccessMixin, View):

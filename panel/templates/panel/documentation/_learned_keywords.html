@@ -1,0 +1,109 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation/_learned_keywords.html #}
+{# Fragmento HTMX -- CRUD del diccionario de tipos de documento aprendido #}
+{# automáticamente (S026, fase 5). Miguel Ángel: "una vista de listado #}
+{# simple o CRUD para poder gestionar el diccionario... poder listar todo #}
+{# ese diccionario... aunque luego podamos manualmente decir, no, esto lo #}
+{# quitamos o añadimos esto". #}
+{# Cada fila usa hx-include="closest tr" en vez de envolver la fila en un #}
+{# <form> -- un <form> no puede ser hijo directo de <tr>/<table> en HTML #}
+{# válido. El CSRF de toda petición HTMX ya lo inyecta panel/base.html #}
+{# (meta csrf-token + htmx:configRequest), así que no hace falta ningún #}
+{# csrf_token ahí para las peticiones de guardar/borrar por fila. #}
+
+<p class="text-muted small">
+    Cada vez que la heurística de nombre de archivo no reconoce el tipo de
+    un documento y Gemini lo clasifica, se propone aquí una entrada nueva,
+    activa de inmediato -- ver
+    <code>document_ingestion.preflight_discard_service.learn_from_classification()</code>.
+    Desactiva una entrada si aprendió algo que no debía, o edítala/bórrala
+    directamente. Las entradas creadas a mano no llevan "origen".
+</p>
+
+{% if keywords %}
+<div class="table-responsive mb-4">
+    <table class="table table-sm align-middle">
+        <thead>
+            <tr>
+                <th>Palabra clave</th>
+                <th>Grupo canónico</th>
+                <th class="text-center">Repet.</th>
+                <th>Origen</th>
+                <th>Último visto</th>
+                <th class="text-center">Activa</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for entry in keywords %}
+            <tr class="{% if not entry.is_active %}opacity-50{% endif %}">
+                <td>
+                    <input type="hidden" name="keyword_pk" value="{{ entry.pk }}">
+                    <input type="text" name="keyword" class="form-control form-control-sm"
+                           value="{{ entry.keyword }}" required>
+                </td>
+                <td>
+                    <input type="text" name="canonical_group" class="form-control form-control-sm"
+                           value="{{ entry.canonical_group }}" required>
+                </td>
+                <td class="text-center">{{ entry.occurrences }}</td>
+                <td class="small text-muted">
+                    {% if entry.source_filename %}
+                        <span title="{{ entry.source_filename }}">{{ entry.source_document_type|default:"—" }}</span>
+                    {% else %}
+                        (añadida a mano)
+                    {% endif %}
+                </td>
+                <td class="small text-muted">{{ entry.last_seen|date:"d/m/Y H:i" }}</td>
+                <td class="text-center">
+                    <input type="checkbox" class="form-check-input" name="is_active"
+                           {% if entry.is_active %}checked{% endif %}>
+                </td>
+                <td class="text-nowrap">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" title="Guardar cambios"
+                            hx-post="{% url 'panel:documentation_learned_keyword_save' %}"
+                            hx-include="closest tr" hx-target="#learned-keywords-lazy" hx-swap="innerHTML">
+                        <i class="bi bi-check-lg"></i>
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-danger" title="Borrar"
+                            hx-post="{% url 'panel:documentation_learned_keyword_delete' keyword_pk=entry.pk %}"
+                            hx-target="#learned-keywords-lazy" hx-swap="innerHTML"
+                            hx-confirm="¿Borrar esta entrada del diccionario?">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<p class="text-muted small">Todavía no se ha aprendido ninguna palabra clave.</p>
+{% endif %}
+
+<div class="card card-body">
+    <h6 class="mb-2"><i class="bi bi-plus-lg me-1"></i>Añadir a mano</h6>
+    <form method="post" action="{% url 'panel:documentation_learned_keyword_save' %}"
+          hx-post="{% url 'panel:documentation_learned_keyword_save' %}"
+          hx-target="#learned-keywords-lazy" hx-swap="innerHTML">
+        {% csrf_token %}
+        <div class="row g-2 align-items-center">
+            <div class="col-12 col-md-4">
+                <input type="text" name="keyword" class="form-control form-control-sm" placeholder="Palabra clave" required>
+            </div>
+            <div class="col-12 col-md-4">
+                <input type="text" name="canonical_group" class="form-control form-control-sm" placeholder="Grupo canónico" required>
+            </div>
+            <div class="col-6 col-md-2">
+                <div class="form-check form-check-sm">
+                    <input type="checkbox" class="form-check-input" name="is_active" id="active-new-keyword" checked>
+                    <label class="form-check-label small" for="active-new-keyword">Activa</label>
+                </div>
+            </div>
+            <div class="col-6 col-md-2">
+                <button type="submit" class="btn btn-sm btn-primary w-100">
+                    <i class="bi bi-plus-lg me-1"></i>Añadir
+                </button>
+            </div>
+        </div>
+    </form>
+</div>

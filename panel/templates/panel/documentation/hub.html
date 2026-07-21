@@ -106,6 +106,13 @@
                 <i class="bi bi-envelope me-1"></i>Plantillas de email
             </button>
         </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="tab-learned-keywords-btn" data-bs-toggle="tab"
+                    data-bs-target="#tab-learned-keywords" type="button" role="tab"
+                    aria-controls="tab-learned-keywords" aria-selected="false">
+                <i class="bi bi-book me-1"></i>Diccionario aprendido
+            </button>
+        </li>
     </ul>
 
     <div class="tab-content" id="documentationTabsContent">
@@ -185,6 +192,16 @@
                  hx-trigger="shown.bs.tab once from:#tab-templates-btn"
                  hx-target="this" hx-swap="innerHTML">
                 <div class="text-muted small"><i class="bi bi-hourglass-split me-1"></i>Cargando plantillas…</div>
+            </div>
+        </div>
+
+        {# --- Pestaña Diccionario aprendido (S026, fase 5) --- #}
+        <div class="tab-pane fade" id="tab-learned-keywords" role="tabpanel" aria-labelledby="tab-learned-keywords-btn">
+            <div id="learned-keywords-lazy"
+                 hx-get="{% url 'panel:documentation_learned_keywords' %}"
+                 hx-trigger="shown.bs.tab once from:#tab-learned-keywords-btn"
+                 hx-target="this" hx-swap="innerHTML">
+                <div class="text-muted small"><i class="bi bi-hourglass-split me-1"></i>Cargando diccionario…</div>
             </div>
         </div>
 
