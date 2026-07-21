@@ -54,7 +54,7 @@
                     <i class="bi bi-truck me-1"></i>{{ machine_a.code }} — {{ machine_a.brand_model }}
                 </div>
                 <div class="card-body">
-                    {% include "panel/documentation/_transfer_column.html" with docs=docs_a other_machine=machine_b this_machine=machine_a %}
+                    {% include "panel/documentation/_transfer_column.html" with docs=docs_a other_machine=machine_b this_machine=machine_a all_machines=machines %}
                 </div>
             </div>
         </div>
@@ -64,7 +64,25 @@
                     <i class="bi bi-truck me-1"></i>{{ machine_b.code }} — {{ machine_b.brand_model }}
                 </div>
                 <div class="card-body">
-                    {% include "panel/documentation/_transfer_column.html" with docs=docs_b other_machine=machine_a this_machine=machine_b %}
+                    {% include "panel/documentation/_transfer_column.html" with docs=docs_b other_machine=machine_a this_machine=machine_b all_machines=machines %}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% elif machine_a %}
+    {# Modo "sin asignar" (S026, cierre de sesión) -- no hay ninguna #}
+    {# máquina candidata conocida, así que se muestra solo la columna  #}
+    {# de origen con un SELECTOR de máquina por documento en vez de un #}
+    {# botón fijo a una máquina concreta. #}
+    <div class="row g-3">
+        <div class="col-12 col-md-6">
+            <div class="card shadow-sm h-100">
+                <div class="card-header fw-semibold">
+                    <i class="bi bi-truck me-1"></i>{{ machine_a.code }} — {{ machine_a.brand_model }}
+                    <span class="badge bg-warning text-dark ms-1">Sin asignar</span>
+                </div>
+                <div class="card-body">
+                    {% include "panel/documentation/_transfer_column.html" with docs=docs_a other_machine=None this_machine=machine_a all_machines=machines %}
                 </div>
             </div>
         </div>

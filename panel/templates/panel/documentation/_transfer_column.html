@@ -1,14 +1,17 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation/_transfer_column.html #}
 {# Columna de la pantalla partida (transfer.html) -- lista los documentos de #}
-{# `this_machine`, resaltando los que tienen incidencia con `other_machine` #}
-{# concretamente, con un botón para moverlos ahí. Cualquier documento se     #}
-{# puede mover, no solo los marcados (Miguel Ángel no lo restringió).       #}
+{# `this_machine`. Dos modos:                                                #}
+{#  - other_machine definido: botón fijo "mover a <other_machine>", resalta #}
+{#    los documentos cuya incidencia apunta justo a esa máquina.            #}
+{#  - other_machine=None (caso "sin asignar", S026): no hay ninguna máquina #}
+{#    candidata conocida -- selector desplegable de CUALQUIER máquina por   #}
+{#    documento en vez de un botón fijo.                                    #}
 
 {% if docs %}
 <ul class="list-group list-group-flush">
     {% for doc in docs %}
-    <li class="list-group-item px-0 {% if doc.content_mismatch_candidate_machine_id == other_machine.pk %}border-start border-4 border-warning{% endif %}">
-        <div class="d-flex justify-content-between align-items-center gap-2">
+    <li class="list-group-item px-0 {% if other_machine and doc.content_mismatch_candidate_machine_id == other_machine.pk %}border-start border-4 border-warning{% elif not other_machine and doc.content_mismatch_warning %}border-start border-4 border-warning{% endif %}">
+        <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap">
             <div>
                 <span class="fw-semibold">{{ doc.display_name|default:doc.document_type }}</span>
                 <span class="badge bg-light text-dark border ms-1">{{ doc.document_type }}</span>
@@ -18,6 +21,7 @@
                 </div>
                 {% endif %}
             </div>
+            {% if other_machine %}
             <form method="post" action="{% url 'panel:documentation_document_move' pk=doc.pk %}" class="flex-shrink-0">
                 {% csrf_token %}
                 <input type="hidden" name="target_machine_pk" value="{{ other_machine.pk }}">
@@ -27,6 +31,23 @@
                     <i class="bi bi-arrow-right"></i> {{ other_machine.code }}
                 </button>
             </form>
+            {% else %}
+            <form method="post" action="{% url 'panel:documentation_document_move' pk=doc.pk %}" class="flex-shrink-0 d-flex gap-1">
+                {% csrf_token %}
+                <input type="hidden" name="machine_a" value="{{ this_machine.pk }}">
+                <select name="target_machine_pk" class="form-select form-select-sm" required>
+                    <option value="">— Mover a… —</option>
+                    {% for m in all_machines %}
+                        {% if m.pk != this_machine.pk %}
+                        <option value="{{ m.pk }}">{{ m.code }}</option>
+                        {% endif %}
+                    {% endfor %}
+                </select>
+                <button type="submit" class="btn btn-sm btn-outline-primary" title="Mover">
+                    <i class="bi bi-arrow-right"></i>
+                </button>
+            </form>
+            {% endif %}
         </div>
     </li>
     {% endfor %}

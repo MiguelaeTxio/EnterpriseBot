@@ -29,7 +29,7 @@
         </div>
     </div>
 
-    {% if incidence_machines %}
+    {% if incidence_machines or unassigned_incidence_count %}
     <div class="alert alert-warning d-flex align-items-center flex-wrap gap-2 mb-4">
         <i class="bi bi-exclamation-triangle-fill me-1"></i>
         <span class="me-2">Documentación con posible incidencia:</span>
@@ -40,6 +40,13 @@
             <span class="badge bg-dark ms-1">{{ row.count }}</span>
         </a>
         {% endfor %}
+        {% if unassigned_incidence_count %}
+        <a href="{% url 'panel:documentation_machine_transfer' %}?machine_a={{ machine.pk }}"
+           class="btn btn-sm btn-outline-warning">
+            <i class="bi bi-question-diamond me-1"></i>Sin asignar
+            <span class="badge bg-dark ms-1">{{ unassigned_incidence_count }}</span>
+        </a>
+        {% endif %}
     </div>
     {% endif %}
 

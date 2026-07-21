@@ -1607,12 +1607,30 @@ class MachinePageView(DocsUploadAccessMixin, View):
             .order_by("content_mismatch_candidate_machine__code")
         )
 
+        # Caso distinto (Miguel Ángel, S026): un documento con
+        # incidencia (content_mismatch_warning) pero SIN ninguna
+        # máquina candidata resuelta -- "no está claro que el
+        # documento pertenezca a la máquina. Y tampoco está claro que
+        # pertenezca a ninguna otra... aparecería el botón con la
+        # leyenda sin asignar". Botón único (no uno por máquina, aquí
+        # no hay ninguna candidata) que lleva a la pantalla partida en
+        # modo de una sola columna, con selector de máquina por
+        # documento.
+        unassigned_incidence_count = (
+            MachineDocument.objects
+            .filter(machine_asset=machine)
+            .exclude(content_mismatch_warning="")
+            .filter(content_mismatch_candidate_machine__isnull=True)
+            .count()
+        )
+
         return render(request, self.template_name, {
             "active_nav": "documentation_hub",
             "company_user": company_user,
             "machine": machine,
             "current_docs": current_docs,
             "archived_docs": archived_docs,
+            "unassigned_incidence_count": unassigned_incidence_count,
             "incidence_machines": incidence_machines,
             **alerts_context,
         })
@@ -2239,10 +2257,12 @@ class DocumentMoveToMachineView(DocsUploadAccessMixin, View):
         )
         document.machine_asset = target_machine
         document.content_mismatch_warning = ""
+        document.content_mismatch_candidate_machine = None
         document.detected_reference_hint = ""
         document.status = MachineDocument.Status.CLASSIFIED
         document.save(update_fields=[
             "machine_asset", "content_mismatch_warning",
+            "content_mismatch_candidate_machine",
             "detected_reference_hint", "status",
         ])
         logger.info(
