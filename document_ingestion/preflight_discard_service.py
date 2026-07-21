@@ -282,6 +282,21 @@ _DATE_PATTERN = re.compile(
     r"(\d{1,2})[-_./ ]+(\d{1,2})[-_./ ]+(\d{2,4})(?!\d)",
 )
 
+# Periodo DDMMAA "AL" DDMMAA -- SIN separador alguno dentro de cada
+# fecha (S026, cierre de sesión, caso real: "RECIBO 150311 AL
+# 150611.pdf" = periodo del 15-03-11 al 15-06-11). Formato distinto
+# de _DATE_PATTERN (que exige separador entre día/mes/año) -- aquí los
+# tres campos van pegados en un único bloque de 6 dígitos, y son DOS
+# bloques así, unidos por la palabra "AL". Exige la palabra "AL"
+# literal entre los dos bloques -- deliberadamente estricto, para no
+# arriesgarse a confundir un número de póliza/expediente cualquiera de
+# 6 cifras con una fecha. Se usa la fecha de FIN del periodo (segundo
+# bloque) como referencia, mismo criterio que el resto de rangos.
+_COMPACT_DATE_RANGE_PATTERN = re.compile(
+    r"(\d{2})(\d{2})(\d{2})\s*AL\s*(\d{2})(\d{2})(\d{2})",
+    re.IGNORECASE,
+)
+
 # Periodo AAAA-AAAA (S026, hallazgo real de la sesión: certificados
 # OCA/pólizas de seguro con nombres como "OCA 2015-2016.pdf",
 # "OCA 2016-2017.pdf"... nunca llevan una fecha D-M-Y única, solo el
@@ -625,34 +640,25 @@ def learn_from_classification(
     )
 
 
-# Periodo AAAA-AAAA (S026, hallazgo real de la sesión: certificados
-# OCA/pólizas de seguro con nombres como "OCA 2015-2016.pdf",
-# "OCA 2016-2017.pdf"... nunca llevan una fecha D-M-Y única, solo el
-# rango de años del periodo de vigencia -- _DATE_PATTERN nunca los
-# reconocía (exige TRES grupos numéricos, un rango de año solo tiene
-# dos), así que cada uno caía en "sin fecha -- se sube siempre" y la
-# REGLA B nunca los comparaba entre sí. Cadena real detectada por
-# Miguel Ángel en la subida de la A-36: "2014, 2015, 2016, 2017,
-# 2018... hemos ido encadenando una serie de errores". Se usa el año
-# MÁS RECIENTE del rango (fin del periodo) como fecha de referencia,
-# como respaldo SOLO si no hay ningún patrón D-M-Y reconocible.
-_YEAR_RANGE_PATTERN = re.compile(r"(?<!\d)(\d{4})[-_./](\d{4})(?!\d)")
-
-
 def parse_date_from_filename(filename: str) -> date | None:
     """
-    Extrae la fecha del nombre de archivo. Tres formatos reconocidos,
-    en este orden:
+    Extrae la fecha del nombre de archivo. Cuatro formatos
+    reconocidos, en este orden:
 
     1. D-M-Y (formato español, ancho de dígitos y separador
        desconocidos de antemano -- ver _DATE_PATTERN).
-    2. Periodo AAAA-AAAA (ver _YEAR_RANGE_PATTERN arriba) -- solo si
-       el (1) no encontró nada. Se usa el año más reciente del rango.
-    3. Año SUELTO, sin día ni mes (ver _BARE_YEAR_PATTERN arriba,
-       S026 -- caso real: "SEGURO 2014.pdf") -- solo si (1) y (2) no
-       encontraron nada.
+    2. Periodo DDMMAA "AL" DDMMAA, SIN separador interno (ver
+       _COMPACT_DATE_RANGE_PATTERN arriba, S026 -- caso real:
+       "RECIBO 150311 AL 150611.pdf") -- solo si (1) no encontró
+       nada. Se usa la fecha de FIN del periodo.
+    3. Periodo AAAA-AAAA (ver _YEAR_RANGE_PATTERN arriba) -- solo si
+       (1) y (2) no encontraron nada. Se usa el año más reciente del
+       rango.
+    4. Año SUELTO, sin día ni mes (ver _BARE_YEAR_PATTERN arriba,
+       S026 -- caso real: "SEGURO 2014.pdf") -- solo si (1), (2) y
+       (3) no encontraron nada.
 
-    Devuelve None si ninguno de los tres patrones aparece, o si el
+    Devuelve None si ninguno de los cuatro patrones aparece, o si el
     único patrón D-M-Y encontrado no es una fecha válida (ej. un
     número de expediente que por casualidad tiene la forma X-Y-Z pero
     no es una fecha real) -- en cualquiera de los casos, el llamador
@@ -676,6 +682,29 @@ def parse_date_from_filename(filename: str) -> date | None:
                 "es una fecha valida -- tratado como sin fecha "
                 "identificada.",
                 filename, day_str, month_str, year_str,
+            )
+            return None
+
+    compact_range_matches = _COMPACT_DATE_RANGE_PATTERN.findall(filename)
+    if compact_range_matches:
+        d1, m1, y1, d2, m2, y2 = compact_range_matches[-1]
+        try:
+            start = date(int(y1) + 2000, int(m1), int(d1))
+            end = date(int(y2) + 2000, int(m2), int(d2))
+            winner = max(start, end)
+            logger.info(
+                "# [parse_date_from_filename] %s: periodo compacto "
+                "%s%s%s AL %s%s%s -- usando %s (fin del periodo) "
+                "como fecha de referencia.",
+                filename, d1, m1, y1, d2, m2, y2, winner.isoformat(),
+            )
+            return winner
+        except ValueError:
+            logger.info(
+                "# [parse_date_from_filename] %s: patrón compacto "
+                "%s%s%s AL %s%s%s no es una fecha válida -- "
+                "tratado como sin fecha identificada.",
+                filename, d1, m1, y1, d2, m2, y2,
             )
             return None
 
