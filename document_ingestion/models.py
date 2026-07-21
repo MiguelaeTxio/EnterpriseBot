@@ -141,3 +141,112 @@ class IngestedFile(models.Model):
 
     def __str__(self) -> str:
         return f"{self.original_filename or '(sin nombre)'} — {self.status}"
+
+
+class LearnedDocumentTypeKeyword(models.Model):
+    """
+    Entrada del diccionario de tipos de documento APRENDIDA
+    automáticamente (H23/H25, S026) -- cuando la heurística de nombre
+    de archivo no reconoce el tipo de un documento y Gemini lo
+    clasifica, se propone una palabra/frase candidata extraída del
+    propio nombre (ver
+    document_ingestion.preflight_discard_service.learn_from_classification())
+    asociada al grupo canónico correspondiente al document_type que
+    dio Gemini. Queda activa DE INMEDIATO -- utilizable ya dentro del
+    mismo lote de subida en curso (Miguel Ángel, S026: "cuando una
+    keyword nueva se propone, se usa en la propia sesión de subida"),
+    sin revisión previa -- pero sí revisable/editable a mano después
+    (is_active permite desactivar una entrada mala sin perder el
+    histórico, ver también LearnedDocumentTypeKeywordCRUD*).
+
+    Aprendizaje POR EMPRESA (Miguel Ángel, S026: "yo lo veo también
+    mejor por empresa") -- cada company acumula su propio diccionario,
+    aislado del resto.
+
+    Agnóstico de dominio a propósito (vive en document_ingestion, no
+    en machine_documents) -- personal_documents (H25) lo reutiliza tal
+    cual cuando se conecte ahí, mismo principio DRY que
+    entity_matching_service/IngestedFile.
+    """
+
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.CASCADE,
+        related_name="learned_document_type_keywords",
+        verbose_name="Empresa",
+    )
+    keyword = models.CharField(
+        max_length=100,
+        verbose_name="Palabra clave aprendida",
+        help_text="Candidata extraída del nombre de archivo tras "
+                  "quitar código de máquina/matrícula, fecha y "
+                  "extensión -- ver "
+                  "preflight_discard_service._extract_candidate_keyword().",
+    )
+    canonical_group = models.CharField(
+        max_length=100,
+        verbose_name="Grupo canónico",
+        help_text="Grupo al que se asocia esta keyword -- si el "
+                  "document_type de Gemini coincidió con un grupo ya "
+                  "existente (ver _OBSOLESCENCE_GROUP_KEYWORDS) se usa "
+                  "ese; si no, se crea un grupo nuevo a partir del "
+                  "propio document_type de Gemini, normalizado "
+                  "(Miguel Ángel, S016: Gemini puede proponer "
+                  "categorías libres, sin lista cerrada -- este campo "
+                  "hereda esa libertad).",
+    )
+    source_filename = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        verbose_name="Nombre de archivo de origen",
+        help_text="Trazabilidad -- el nombre de archivo real que "
+                  "disparó este aprendizaje la primera vez.",
+    )
+    source_document_type = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        verbose_name="document_type de Gemini (origen)",
+        help_text="Texto tal cual lo devolvió Gemini la primera vez "
+                  "-- trazabilidad, no se usa para matching (para eso "
+                  "está canonical_group).",
+    )
+    occurrences = models.PositiveIntegerField(
+        default=1,
+        verbose_name="Repeticiones",
+        help_text="Se incrementa cada vez que esta misma keyword "
+                  "vuelve a aprenderse a partir de otro documento -- "
+                  "señal de confianza para la revisión manual "
+                  "posterior, nunca desactiva/activa nada por sí sola.",
+    )
+    is_active = models.BooleanField(
+        default=True,
+        verbose_name="Activa",
+        help_text="False si se desactivó a mano desde el listado -- "
+                  "una entrada inactiva nunca participa en la "
+                  "determinación de tipo, pero se conserva para "
+                  "histórico/auditoría en vez de borrarse.",
+    )
+    first_seen = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Primera vez vista",
+    )
+    last_seen = models.DateTimeField(
+        auto_now=True,
+        verbose_name="Última vez vista",
+    )
+
+    class Meta:
+        verbose_name = "Palabra clave de tipo de documento (aprendida)"
+        verbose_name_plural = "Palabras clave de tipo de documento (aprendidas)"
+        ordering = ["-last_seen"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company", "keyword"],
+                name="unique_learned_keyword_per_company",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.keyword} → {self.canonical_group} ({self.company})"
