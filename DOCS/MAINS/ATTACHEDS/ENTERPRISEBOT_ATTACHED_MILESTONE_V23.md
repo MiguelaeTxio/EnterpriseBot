@@ -1125,6 +1125,62 @@ Personal (H25) queda como siguiente capítulo natural, reutilizando
 toda esta infraestructura tal cual -- `document_ingestion` es
 agnóstico de dominio a propósito desde el diseño de H26.
 
+### CIERRE DE S026 -- prueba en limpio con otra máquina, fixes adicionales
+
+Tras cerrar las 5 fases, Miguel Ángel pidió dejar H23 "a cero" para
+repetir la subida con una máquina distinta de la A-45 y probar todo
+el pipeline nuevo de extremo a extremo. Tres cosas más, en el mismo
+cierre de sesión:
+
+1. **Fix real de enrutado** (`f929ae0`) -- 3 documentos de la subida
+   original de la A-45 quedaron `SIN ASIGNAR` porque el propio
+   escáner les puso nombres genéricos (`doc06655820240605095138.pdf`,
+   sin código de máquina). Miguel Ángel: "aunque en el nombre no
+   tenga el código de la máquina, están en la carpeta de la
+   máquina... los documentos que se están subiendo de esa carpeta
+   pertenecen a esa máquina". `document_ingestion.tasks.route_ingested_files`
+   ahora hereda la máquina de los hermanos de la MISMA carpeta del
+   mismo lote, solo si todos los hermanos ya emparejados coinciden en
+   una única máquina.
+
+2. **Timeout de despliegue** (`6780d21`) -- `--max-time 60` añadido a
+   las tres llamadas curl del workflow contra la API de
+   PythonAnywhere (reload webapp, reinicio bridge/worker). Miguel
+   Ángel: "hay mucho tráfico en PythonAnywhere y suele dar error por
+   eso... el error es única y exclusivamente por el tema del
+   timeout". Confirmado en vivo: dos despliegues de esta misma sesión
+   fallaron en el paso de reload pese al fix (tráfico real alto ese
+   día), resueltos reintentando el job vía API sin necesitar un
+   commit nuevo.
+
+3. **⚠ Incidente real -- comando de reset duplicado con bug, corregido
+   en la misma sesión (`3622420`):** para dejar la zona a cero, se
+   escribió `machine_documents/management/commands/reset_machine_documents.py`
+   SIN comprobar antes si ya existía una herramienta equivalente. Ya
+   existía `document_ingestion/management/commands/reset_documentation.py`
+   -- creado explícitamente para SUSTITUIR a un comando con ese mismo
+   nombre y propósito, borrado en su día por quedar obsoleto tras la
+   migración de Drive a GCS. El comando nuevo reintrodujo el mismo
+   tipo de fallo: nunca borraba el blob real de GCS
+   (`MACHINE_DOCUMENTS_BUCKET`), solo el archivo local de staging
+   (`source_file`, vacío para documentos ya `CLASSIFIED`, cuyo
+   contenido real vive en `gcs_blob_name`). Se ejecutó con `--confirm`
+   antes de detectar el fallo: 84 `MachineDocument` borrados
+   correctamente de BD, pero 74 blobs de GCS quedaron huérfanos.
+   Corregido: comando duplicado eliminado,
+   `document_ingestion/management/commands/purge_orphaned_gcs_blobs.py`
+   nuevo (lista blobs sin referencia en BD, dry-run por defecto) para
+   limpiar el estropicio -- verificado con dry-run (74 huérfanos en
+   `MACHINE_DOCUMENTS_BUCKET`, 0 en personal) y confirmado tras el
+   borrado real (74 borrados, coincide exacto). `reset_documentation.py`
+   sigue siendo la herramienta correcta para "zona cero" completa --
+   `python manage.py reset_documentation --confirm` (o `--company
+   <slug>` para acotar).
+
+Estado real al cierre: BD y GCS de documentación de maquinaria en
+CERO para Grupo Álvarez -- listo para la prueba de subida con una
+máquina distinta de la A-45.
+
 ### COMPLETADAS EN S026 (parcial, sesión en curso) -- registro original del punto 1
 
 1. **`document_ingestion/preflight_discard_service.py`** (nuevo) --
