@@ -106,6 +106,7 @@
                 <i class="bi bi-envelope me-1"></i>Plantillas de email
             </button>
         </li>
+        {% if user.is_superuser %}
         <li class="nav-item" role="presentation">
             <button class="nav-link" id="tab-learned-keywords-btn" data-bs-toggle="tab"
                     data-bs-target="#tab-learned-keywords" type="button" role="tab"
@@ -113,6 +114,7 @@
                 <i class="bi bi-book me-1"></i>Diccionario aprendido
             </button>
         </li>
+        {% endif %}
     </ul>
 
     <div class="tab-content" id="documentationTabsContent">
@@ -195,7 +197,8 @@
             </div>
         </div>
 
-        {# --- Pestaña Diccionario aprendido (S026, fase 5) --- #}
+        {# --- Pestaña Diccionario aprendido (S026, fase 5 -- solo superusuario) --- #}
+        {% if user.is_superuser %}
         <div class="tab-pane fade" id="tab-learned-keywords" role="tabpanel" aria-labelledby="tab-learned-keywords-btn">
             <div id="learned-keywords-lazy"
                  hx-get="{% url 'panel:documentation_learned_keywords' %}"
@@ -204,6 +207,7 @@
                 <div class="text-muted small"><i class="bi bi-hourglass-split me-1"></i>Cargando diccionario…</div>
             </div>
         </div>
+        {% endif %}
 
     </div>
 </div>

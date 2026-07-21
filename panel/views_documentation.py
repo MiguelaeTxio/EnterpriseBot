@@ -99,7 +99,7 @@ from machine_documents.markdown_service import (
     convert_document_to_markdown,
 )
 from machine_documents.models import MachineDocument
-from panel.mixins import DocsUploadAccessMixin
+from panel.mixins import DocsUploadAccessMixin, SuperuserRequiredMixin
 from personal_documents.models import PersonalDocument
 from spare_parts.gcs_service import (
     MACHINE_DOCUMENTS_BUCKET,
@@ -994,14 +994,19 @@ class EmailTemplateDeleteView(DocsUploadAccessMixin, View):
         return redirect(reverse("panel:documentation_email_templates"))
 
 
-class LearnedKeywordListFragmentView(DocsUploadAccessMixin, View):
+class LearnedKeywordListFragmentView(SuperuserRequiredMixin, View):
     """
     GET (HTMX): lista el diccionario de tipos de documento APRENDIDO
     automáticamente (S026, fase 5) + formulario de alta manual --
     Miguel Ángel: "una vista de listado simple o CRUD para poder
     gestionar el diccionario... poder listar todo ese diccionario...
     aunque luego podamos manualmente decir, no, esto lo quitamos o
-    añadimos esto". Mismo patrón que EmailTemplateListFragmentView.
+    añadimos esto". Mismo patrón que EmailTemplateListFragmentView,
+    salvo el acceso: restringido a SuperuserRequiredMixin (S026,
+    cierre de sesión, Miguel Ángel explícito: "esta vista debería ser
+    visible única y exclusivamente para mi usuario") -- nunca por
+    username hardcodeado (antipatrón corregido en S021, ver
+    panel/mixins.py), por is_superuser real de Django.
     """
 
     template_name = "panel/documentation/_learned_keywords.html"
@@ -1016,7 +1021,7 @@ class LearnedKeywordListFragmentView(DocsUploadAccessMixin, View):
         })
 
 
-class LearnedKeywordSaveView(DocsUploadAccessMixin, View):
+class LearnedKeywordSaveView(SuperuserRequiredMixin, View):
     """
     POST: crea una entrada nueva a mano (sin `keyword_pk`) o modifica
     una existente (con `keyword_pk`) -- un único endpoint para las dos
@@ -1081,7 +1086,7 @@ class LearnedKeywordSaveView(DocsUploadAccessMixin, View):
         return redirect(reverse("panel:documentation_learned_keywords"))
 
 
-class LearnedKeywordDeleteView(DocsUploadAccessMixin, View):
+class LearnedKeywordDeleteView(SuperuserRequiredMixin, View):
     """POST: borra una entrada del diccionario aprendido."""
 
     def post(self, request, keyword_pk):
