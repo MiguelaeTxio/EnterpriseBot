@@ -303,19 +303,22 @@ def process_machine_document_batch(self, document_pks: list[int]) -> None:
         document.issuing_entity = result["issuing_entity"]
         document.is_possible_master = result["is_possible_master"]
 
-        # Salvaguarda de discrepancia nombre/contenido (S026, cierre de
-        # sesión) -- Miguel Ángel, tras un caso real (documento de la
-        # A-45 archivado en la carpeta de la A-36, pero con el número
-        # de identificación real de la A-45 en el contenido): "no
-        # deberíamos de dejarlo única y exclusivamente al nombre del
-        # archivo... si se sube y se asigna a esa máquina, marcarlo
-        # con incidencia y decir, ojo, el interior no coincide con el
-        # exterior". La máquina YA quedó asignada por nombre de
-        # archivo (document_ingestion.tasks.route_ingested_files, sin
-        # tocar Gemini) -- esto NUNCA cambia esa asignación, solo
-        # avisa cuando el contenido, según Gemini, menciona una
-        # referencia de unidad distinta.
-        document.content_mismatch_warning = ""
+        # Salvaguarda de discrepancia (S026, cierre de sesión) --
+        # Miguel Ángel: "no deberíamos de dejarlo única y
+        # exclusivamente al nombre del archivo... si se sube y se
+        # asigna a esa máquina, marcarlo con incidencia y decir, ojo,
+        # el interior no coincide con el exterior". La máquina YA
+        # quedó asignada por CARPETA (prioridad 1) o por nombre de
+        # archivo (prioridad 2, solo sin carpeta reconocible) en
+        # document_ingestion.tasks.route_ingested_files -- esto NUNCA
+        # cambia esa asignación, solo avisa.
+        #
+        # content_mismatch_warning puede venir YA relleno desde el
+        # enrutado (carpeta y nombre de archivo discreparon entre sí)
+        # -- NUNCA se resetea a ciegas aquí: si Gemini no encuentra
+        # ninguna discrepancia de contenido, se deja tal cual estaba;
+        # si sí encuentra una, la sustituye (la de contenido es más
+        # específica -- lee dentro del propio documento).
         reference_in_content = result.get("machine_reference_in_content", "")
         if reference_in_content and document.machine_asset_id:
             from document_ingestion.entity_matching_service import (
@@ -332,10 +335,10 @@ def process_machine_document_batch(self, document_pks: list[int]) -> None:
                 normalized_code, normalized_plate,
             ):
                 document.content_mismatch_warning = (
-                    f"El nombre de archivo asignó este documento a "
-                    f"{document.machine_asset.code}, pero su contenido "
-                    f"menciona la referencia {reference_in_content!r} -- "
-                    f"revisar a mano si está bien archivado."
+                    f"Máquina asignada: {document.machine_asset.code}, "
+                    f"pero el CONTENIDO del documento menciona la "
+                    f"referencia {reference_in_content!r} -- revisar a "
+                    f"mano si está bien archivado."
                 )
                 logger.warning(
                     "# [process_machine_document_batch] #%d (%s): "

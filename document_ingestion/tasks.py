@@ -112,40 +112,94 @@ def route_ingested_files(self, ingested_file_pks: list[int]) -> None:
 
         filename = ingested.original_filename or ingested.source_file.name
         company = ingested.company
+        # webkitRelativePath (origen real de source_folder_path, ver
+        # hub.html JS) incluye el nombre de archivo como ÚLTIMO
+        # segmento ("A36/A-35 CE.pdf") -- hay que quedarse solo con la
+        # parte de carpeta antes de buscar la máquina ahí, o el propio
+        # nombre de archivo (que puede mencionar OTRA máquina, caso
+        # real de esta sesión) contaminaría la búsqueda por carpeta.
+        folder_only_path = (
+            ingested.source_folder_path.rsplit("/", 1)[0]
+            if ingested.source_folder_path
+            and "/" in ingested.source_folder_path
+            else ""
+        )
 
-        # S026 (cierre de sesión) -- la máquina se determina PRIMERO
-        # por el nombre de archivo, sin gastar ninguna llamada a
-        # Gemini, reutilizando el mismo emparejamiento ya construido
-        # para el filtro de descarte previo a la subida
-        # (match_machine_asset_by_filename, busca código O matrícula
-        # como subcadena del nombre). Miguel Ángel, explícito, tras un
-        # caso real (un documento de la carpeta de la A-36 enrutado a
-        # la A-35 por el contenido, pese a llevar "A-36" en el propio
-        # nombre): "vamos por el nombre de archivo, la mayor cantidad
-        # de información la tenemos en el nombre de archivo... Gemini
-        # ya no clasifica, Gemini extrae los datos". Solo si el nombre
-        # NO trae ningún código/matrícula reconocible se cae al
-        # análisis de CONTENIDO (route_document, Gemini) como
-        # respaldo -- mismo principio ya aplicado a los manuales de
-        # uso (is_manual_by_filename), generalizado aquí a cualquier
-        # documento de máquina.
+        # S026 (cierre de sesión, ampliado) -- la CARPETA manda.
+        # Miguel Ángel, explícito: "la carpeta es la que manda.
+        # Supuestamente, dentro de esa carpeta de esa máquina está su
+        # documentación. Todos los errores que detectemos dentro...
+        # la vamos a subir y la vamos a marcar como incidencia".
+        # Orden de prioridad para determinar la máquina:
+        #   1. CARPETA (source_folder_path) -- si identifica una
+        #      máquina, ES la máquina asignada, sin excepción.
+        #   2. NOMBRE DE ARCHIVO individual -- solo decide la máquina
+        #      cuando la carpeta NO identificó ninguna (subida plana,
+        #      sin subcarpetas). Si la carpeta SÍ identificó una
+        #      máquina pero el nombre del archivo individual menciona
+        #      OTRA distinta, eso NUNCA reasigna -- se registra como
+        #      incidencia (content_mismatch_warning) para revisión
+        #      manual, nunca se mueve solo.
+        #   3. CONTENIDO (Gemini, route_document) -- solo si ni
+        #      carpeta ni nombre de archivo identificaron nada.
+        folder_matched_machine = (
+            match_machine_asset_by_filename(company, folder_only_path)
+            if folder_only_path else None
+        )
         filename_matched_machine = match_machine_asset_by_filename(
             company, filename,
         )
 
-        if filename_matched_machine is not None:
+        initial_mismatch_warning = ""
+
+        if folder_matched_machine is not None:
+            domain = DOMAIN_MACHINE
+            matched_machine = folder_matched_machine
+            machine_reference_hint = ""
+            worker_dni_hint = ""
+            is_confident = True
+            reasoning = (
+                "Máquina identificada por la carpeta de origen -- "
+                "sin llamada a Gemini."
+            )
+            logger.info(
+                "# [route_ingested_files] #%d (%s) -> máquina %s por "
+                "CARPETA (%r), sin Gemini.",
+                ingested.pk, filename, folder_matched_machine.code,
+                folder_only_path,
+            )
+            if (
+                filename_matched_machine is not None
+                and filename_matched_machine.pk != folder_matched_machine.pk
+            ):
+                initial_mismatch_warning = (
+                    f"La carpeta de origen asignó este documento a "
+                    f"{folder_matched_machine.code}, pero su propio "
+                    f"nombre de archivo menciona "
+                    f"{filename_matched_machine.code} -- revisar a "
+                    f"mano si está bien archivado."
+                )
+                logger.warning(
+                    "# [route_ingested_files] #%d (%s): discrepancia "
+                    "carpeta/nombre -- carpeta dice %s, nombre dice "
+                    "%s.",
+                    ingested.pk, filename, folder_matched_machine.code,
+                    filename_matched_machine.code,
+                )
+        elif filename_matched_machine is not None:
             domain = DOMAIN_MACHINE
             matched_machine = filename_matched_machine
             machine_reference_hint = ""
             worker_dni_hint = ""
             is_confident = True
             reasoning = (
-                "Máquina identificada directamente por nombre de "
-                "archivo -- sin llamada a Gemini."
+                "Máquina identificada por nombre de archivo (sin "
+                "carpeta reconocible) -- sin llamada a Gemini."
             )
             logger.info(
                 "# [route_ingested_files] #%d (%s) -> máquina %s por "
-                "NOMBRE DE ARCHIVO, sin Gemini.",
+                "NOMBRE DE ARCHIVO (sin carpeta reconocible), sin "
+                "Gemini.",
                 ingested.pk, filename, filename_matched_machine.code,
             )
         else:
@@ -173,6 +227,7 @@ def route_ingested_files(self, ingested_file_pks: list[int]) -> None:
                     "" if matched_machine
                     else machine_reference_hint
                 ),
+                content_mismatch_warning=initial_mismatch_warning,
             )
             new_document.source_file.save(
                 filename, ContentFile(file_bytes), save=False,
