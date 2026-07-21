@@ -358,6 +358,30 @@ def find_obsolescence_group(
     return _group_for_text(stripped, pairs)
 
 
+# Palabras GENÉRICAS de nombre de archivo -- nunca deben aprenderse
+# como palabra clave de tipo de documento, por muy "limpias" que
+# queden tras quitar máquina/matrícula/fecha/extensión. Son nombres
+# que pone el propio software del escáner o la cámara, no dicen nada
+# sobre el CONTENIDO del documento -- y como se repiten en TODOS los
+# archivos generados por el mismo aparato, aprender una de estas
+# palabras contamina cualquier archivo futuro de ese escáner con la
+# clasificación del primer error, sin volver a consultar a Gemini
+# nunca más. Hallazgo real (S026, cierre de sesión): "SCAN" se
+# aprendió -> grupo ITV a partir de UN documento mal clasificado por
+# Gemini ("Scan2025-10-27_094743.pdf", en realidad un libro de
+# revisiones técnicas, no una tarjeta ITV) -- desde entonces, CUALQUIER
+# archivo nombrado "Scan..." (así nombra este escáner concreto todos
+# sus archivos, sin excepción) heredó ciegamente esa clasificación
+# incorrecta. Miguel Ángel: "eso no es, eso es un libro de historial,
+# no es la tarjeta de la ITV".
+_GENERIC_FILENAME_WORDS = {
+    "SCAN", "ESCANEO", "ESCANEADO", "DIGITALIZACION", "DIGITALIZADO",
+    "IMG", "IMAGEN", "IMAGE", "DOC", "DOCUMENTO", "DOCUMENT",
+    "FOTO", "PHOTO", "PICTURE", "FILE", "ARCHIVO", "PDF", "COPIA",
+    "COPY", "NUEVO", "NEW", "SINTITULO", "UNTITLED", "DSC", "IMG_",
+}
+
+
 def _extract_candidate_keyword(filename: str, machine=None) -> str:
     """
     Extrae la palabra/frase candidata a aprender de un nombre de
@@ -365,12 +389,14 @@ def _extract_candidate_keyword(filename: str, machine=None) -> str:
     máquina/matrícula, la fecha (mismo patrón que
     parse_date_from_filename), la extensión, y separadores/números
     sueltos. Si lo que queda es demasiado corto para ser una palabra
-    con sentido (ruido), devuelve "" -- el llamador
-    (learn_from_classification) no aprende nada en ese caso, en vez
-    de ensuciar el diccionario con basura (Miguel Ángel no pidió
-    aprender "lo que sea", pidió aprender palabras que "diferencian
-    el documento", mismo criterio que ya aplicamos para excluir
-    máquina/matrícula del agrupamiento).
+    con sentido (ruido), o si es una de las palabras GENÉRICAS de
+    _GENERIC_FILENAME_WORDS (nombre puesto por el propio escáner, sin
+    relación con el contenido -- ver esa constante), devuelve "" -- el
+    llamador (learn_from_classification) no aprende nada en ese caso,
+    en vez de ensuciar el diccionario con basura (Miguel Ángel no
+    pidió aprender "lo que sea", pidió aprender palabras que
+    "diferencian el documento", mismo criterio que ya aplicamos para
+    excluir máquina/matrícula del agrupamiento).
     """
     stripped = _strip_machine_reference(filename, machine)
     stripped = re.sub(r"\.PDF$", "", stripped)
@@ -378,6 +404,8 @@ def _extract_candidate_keyword(filename: str, machine=None) -> str:
     stripped = re.sub(r"[0-9_./-]+", " ", stripped)
     candidate = " ".join(stripped.split()).strip()
     if len(candidate) < 3:
+        return ""
+    if candidate in _GENERIC_FILENAME_WORDS:
         return ""
     return candidate
 
