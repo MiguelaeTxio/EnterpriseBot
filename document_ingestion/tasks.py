@@ -45,6 +45,7 @@ from .entity_matching_service import (
     DOMAIN_PERSONAL,
     match_company_user,
     match_machine_asset,
+    match_machine_asset_by_filename,
     route_document,
 )
 from .models import IngestedFile
@@ -111,15 +112,56 @@ def route_ingested_files(self, ingested_file_pks: list[int]) -> None:
 
         filename = ingested.original_filename or ingested.source_file.name
         company = ingested.company
-        route = route_document(file_bytes, filename, company)
 
-        if route["domain"] == DOMAIN_MACHINE:
-            matched_machine = (
-                match_machine_asset(
-                    company, route["machine_reference_hint"],
-                )
-                if route["is_confident"] else None
+        # S026 (cierre de sesión) -- la máquina se determina PRIMERO
+        # por el nombre de archivo, sin gastar ninguna llamada a
+        # Gemini, reutilizando el mismo emparejamiento ya construido
+        # para el filtro de descarte previo a la subida
+        # (match_machine_asset_by_filename, busca código O matrícula
+        # como subcadena del nombre). Miguel Ángel, explícito, tras un
+        # caso real (un documento de la carpeta de la A-36 enrutado a
+        # la A-35 por el contenido, pese a llevar "A-36" en el propio
+        # nombre): "vamos por el nombre de archivo, la mayor cantidad
+        # de información la tenemos en el nombre de archivo... Gemini
+        # ya no clasifica, Gemini extrae los datos". Solo si el nombre
+        # NO trae ningún código/matrícula reconocible se cae al
+        # análisis de CONTENIDO (route_document, Gemini) como
+        # respaldo -- mismo principio ya aplicado a los manuales de
+        # uso (is_manual_by_filename), generalizado aquí a cualquier
+        # documento de máquina.
+        filename_matched_machine = match_machine_asset_by_filename(
+            company, filename,
+        )
+
+        if filename_matched_machine is not None:
+            domain = DOMAIN_MACHINE
+            matched_machine = filename_matched_machine
+            machine_reference_hint = ""
+            worker_dni_hint = ""
+            is_confident = True
+            reasoning = (
+                "Máquina identificada directamente por nombre de "
+                "archivo -- sin llamada a Gemini."
             )
+            logger.info(
+                "# [route_ingested_files] #%d (%s) -> máquina %s por "
+                "NOMBRE DE ARCHIVO, sin Gemini.",
+                ingested.pk, filename, filename_matched_machine.code,
+            )
+        else:
+            route = route_document(file_bytes, filename, company)
+            domain = route["domain"]
+            machine_reference_hint = route["machine_reference_hint"]
+            worker_dni_hint = route["worker_dni_hint"]
+            is_confident = route["is_confident"]
+            reasoning = route["reasoning"]
+            matched_machine = (
+                match_machine_asset(company, machine_reference_hint)
+                if domain == DOMAIN_MACHINE and is_confident
+                else None
+            )
+
+        if domain == DOMAIN_MACHINE:
             new_document = MachineDocument(
                 machine_asset=matched_machine,
                 company=company,
@@ -129,7 +171,7 @@ def route_ingested_files(self, ingested_file_pks: list[int]) -> None:
                 status=MachineDocument.Status.PENDING,
                 detected_reference_hint=(
                     "" if matched_machine
-                    else route["machine_reference_hint"]
+                    else machine_reference_hint
                 ),
             )
             new_document.source_file.save(
@@ -156,10 +198,10 @@ def route_ingested_files(self, ingested_file_pks: list[int]) -> None:
                 "asignado" if matched_machine else "SIN ASIGNAR",
             )
 
-        elif route["domain"] == DOMAIN_PERSONAL:
+        elif domain == DOMAIN_PERSONAL:
             matched_worker = (
-                match_company_user(company, route["worker_dni_hint"])
-                if route["is_confident"] else None
+                match_company_user(company, worker_dni_hint)
+                if is_confident else None
             )
             new_document = PersonalDocument(
                 company_user=matched_worker,
@@ -169,7 +211,7 @@ def route_ingested_files(self, ingested_file_pks: list[int]) -> None:
                 content_hash=ingested.content_hash,
                 status=PersonalDocument.Status.PENDING,
                 detected_dni_hint=(
-                    "" if matched_worker else route["worker_dni_hint"]
+                    "" if matched_worker else worker_dni_hint
                 ),
             )
             new_document.source_file.save(
@@ -195,15 +237,15 @@ def route_ingested_files(self, ingested_file_pks: list[int]) -> None:
 
         else:
             ingested.status = IngestedFile.Status.NEEDS_REVIEW
-            ingested.routed_domain = route["domain"]
-            ingested.error_message = route["reasoning"]
+            ingested.routed_domain = domain
+            ingested.error_message = reasoning
             ingested.save(update_fields=[
                 "status", "routed_domain", "error_message",
             ])
             logger.warning(
                 "# [route_ingested_files] #%d (%s) -> dominio no "
                 "identificado (%s) -- NEEDS_REVIEW.",
-                ingested.pk, filename, route["domain"],
+                ingested.pk, filename, domain,
             )
 
     # Herencia de máquina por carpeta (Miguel Ángel, S026, cierre de
