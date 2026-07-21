@@ -1554,7 +1554,8 @@ class MachinePageView(DocsUploadAccessMixin, View):
     template_name = "panel/documentation/machine_page.html"
 
     def get(self, request, pk):
-        company = request.user.company_user.company
+        company_user = request.user.company_user
+        company = company_user.company
         machine = (
             MachineAsset.objects
             .filter(pk=pk, company=company)
@@ -1570,6 +1571,8 @@ class MachinePageView(DocsUploadAccessMixin, View):
         )
 
         return render(request, self.template_name, {
+            "active_nav": "documentation_hub",
+            "company_user": company_user,
             "machine": machine,
             "current_docs": current_docs,
             "archived_docs": archived_docs,
