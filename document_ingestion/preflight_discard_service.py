@@ -92,9 +92,42 @@ REGLA B -- descarte por OBSOLESCENCIA DE GRUPO, criterio de TRES
 
     Documentos cuyo TIPO no se reconoce por nombre -- incluido
     cualquier caso "raro" como UNLOCKED sin mas contexto -- se suben
-    siempre, para que los lea Gemini (Miguel Angel: "documentos que no
-    sepamos bien lo que son... habra que subirlo para que Gemini lo
-    lea y vea que es").
+    siempre SALVO que la REGLA B-bis (ver abajo) los descarte por
+    obsolescencia de grupo desconocido. Sin fecha identificable, se
+    suben siempre sin excepcion, para que los lea Gemini (Miguel
+    Angel: "documentos que no sepamos bien lo que son... habra que
+    subirlo para que Gemini lo lea y vea que es").
+
+REGLA B-bis -- descarte por obsolescencia de GRUPO DESCONOCIDO (S026,
+    cierre de sesion, tras varios casos reales: "GDR 2011, GDR 2012...
+    no sabemos lo que es. ¿Subimos el ultimo? Si, evidentemente").
+    Cuando ningun diccionario (estatico, aseguradora real, o
+    aprendido) reconoce el TIPO de un archivo, pero SI tiene fecha
+    identificable, se agrupa por su "molde" (mismo nombre quitando
+    maquina/matricula/fecha/sufijo de copia -- ver
+    _filename_skeleton()) contra los DEMAS archivos del MISMO LOTE que
+    comparten ese molde -- sin necesitar saber el nombre del tipo,
+    "mismo molde, fecha distinta" ya basta para quedarse solo con el
+    mas moderno. A diferencia de la REGLA B, esta comparacion es
+    SIEMPRE dentro del propio lote, nunca contra BD (no hay ningun
+    campo estable con el que reconocer un molde ya persistido). El
+    superviviente sigue mostrandose "tipo no reconocido -- se sube
+    para que Gemini lo clasifique", solo que ya sin las versiones
+    obsoletas del mismo molde.
+
+    "COPIA"/"COPY" en el nombre se ignora al construir el molde
+    (Miguel Angel: "si ya hemos subido el archivo, la copia no se
+    sube") -- un archivo y su copia comparten molde y fecha, asi que
+    caen en el mismo grupo y solo sobrevive uno (en empate exacto de
+    fecha, sobrevive el que NO lleva "copia" en el nombre).
+
+Fix de fondo aplicado tambien en esta misma sesion: la normalizacion
+usada al APRENDER una palabra clave y la usada al BUSCARLA en un
+archivo nuevo eran distintas (la aprendida colapsaba separadores a
+espacio, la busqueda no) -- una keyword aprendida nunca podia volver
+a encontrarse a si misma. Unificado en _normalize_group_search_text(),
+usada en los dos lados sin excepcion -- ver esa funcion para el
+detalle completo del caso real que lo probo.
 
 Este modulo es agnostico de vista/HTTP -- solo recibe datos ya
 resueltos por el llamador (nombres de archivo, maquina opcional,
@@ -241,10 +274,34 @@ CANONICAL_GROUP_DISPLAY_NAMES: dict[str, str] = {
 # la ÚLTIMA coincidencia del nombre (las fechas van al final, antes
 # de ".pdf", en todos los casos reales) -- evita que un número suelto
 # de expediente confunda el parseo si alguna vez coincidiera por
-# casualidad con D-M-Y.
+# casualidad con D-M-Y. No exige separador de palabra antes/después --
+# "ITC03-07-27.pdf" (identificador pegado directamente a la fecha,
+# sin espacio, caso real S026) también se reconoce: findall() busca
+# el patrón en cualquier punto del texto, no solo aislado.
 _DATE_PATTERN = re.compile(
     r"(\d{1,2})[-_./ ]+(\d{1,2})[-_./ ]+(\d{2,4})(?!\d)",
 )
+
+# Periodo AAAA-AAAA (S026, hallazgo real de la sesión: certificados
+# OCA/pólizas de seguro con nombres como "OCA 2015-2016.pdf",
+# "OCA 2016-2017.pdf"... nunca llevan una fecha D-M-Y única, solo el
+# rango de años del periodo de vigencia -- _DATE_PATTERN nunca los
+# reconocía (exige TRES grupos numéricos, un rango de año solo tiene
+# dos), así que cada uno caía en "sin fecha -- se sube siempre" y la
+# REGLA B nunca los comparaba entre sí. Cadena real detectada por
+# Miguel Ángel en la subida de la A-36: "2014, 2015, 2016, 2017,
+# 2018... hemos ido encadenando una serie de errores". Se usa el año
+# MÁS RECIENTE del rango (fin del periodo) como fecha de referencia,
+# como respaldo SOLO si no hay ningún patrón D-M-Y reconocible.
+_YEAR_RANGE_PATTERN = re.compile(r"(?<!\d)(\d{4})[-_./](\d{4})(?!\d)")
+
+# Año SUELTO, sin día ni mes (S026, cierre de sesión -- caso real:
+# "A-36 E-2052-BCW SEGURO 2014.pdf", sin ningún D-M-Y ni rango, solo
+# el año). Único respaldo, tercer y último nivel -- solo si ni D-M-Y
+# ni AAAA-AAAA aparecen. Rango acotado a años plausibles (1950-2049)
+# para no confundir un número de expediente/póliza de 4 cifras con un
+# año real.
+_BARE_YEAR_PATTERN = re.compile(r"(?<!\d)(19[5-9]\d|20[0-4]\d)(?!\d)")
 
 
 def _strip_accents_upper(value: str) -> str:
@@ -262,15 +319,56 @@ def _strip_machine_reference(filename: str, machine) -> str:
     se va a repetir, esa parte tampoco la vas a poner". Sin esto, un
     codigo de maquina que por casualidad contuviera una de las palabras
     clave de grupo podria falsear el agrupamiento.
+
+    Comparación TOLERANTE a separadores (S026, cierre de sesión, fix
+    de un bug real): antes se hacía un `.replace()` literal del código
+    tal cual está en BD ("A36", sin guion) contra el nombre de archivo
+    real ("A-36", con guion) -- nunca coincidían, así que el código de
+    máquina se quedaba SIN quitar, dejando residuos ("A", "E BCW" tras
+    el colapso de dígitos posterior) contaminando cualquier palabra
+    clave aprendida a partir de ese nombre. Ahora se construye un
+    patrón que acepta cualquier separador (o ninguno) entre cada
+    carácter del código/matrícula, para que "A36" también elimine
+    "A-36"/"A_36"/"A 36" del nombre real.
     """
     upper_name = _strip_accents_upper(filename)
     if machine is None:
         return upper_name
     for reference in (getattr(machine, "code", "") or "", getattr(machine, "plate", "") or ""):
         reference_upper = _strip_accents_upper(reference)
-        if reference_upper:
-            upper_name = upper_name.replace(reference_upper, "")
+        if not reference_upper:
+            continue
+        pattern = r"[-_./\s]*".join(re.escape(ch) for ch in reference_upper)
+        upper_name = re.sub(pattern, "", upper_name)
     return upper_name
+
+
+def _normalize_group_search_text(text: str) -> str:
+    """
+    Normalización ÚNICA Y COMPARTIDA para toda búsqueda/aprendizaje de
+    palabra clave de grupo -- mayúsculas, sin acentos, sin fechas
+    reconocidas (D-M-Y, AAAA-AAAA, año suelto), separadores y dígitos
+    sueltos colapsados a un único espacio.
+
+    Bug real corregido en S026 (cierre de sesión, tras varios casos
+    reales de Miguel Ángel -- "CONTRATO ARRENDAMIENTO 1-1-16.pdf"
+    seguía saliendo "tipo no reconocido" pese a que un archivo
+    anterior con ese mismo tipo YA se había aprendido): una keyword
+    APRENDIDA se guardaba con los separadores ya colapsados (p. ej.
+    "A E BCW CONTRATO ARRENDAMIENTO"), pero la BÚSQUEDA sobre un
+    nombre de archivo NUEVO se hacía sobre el texto SIN colapsar (con
+    guiones intactos, "A-36 E-2052-BCW CONTRATO ARRENDAMIENTO...") --
+    la keyword aprendida nunca podía encontrarse a sí misma en un
+    archivo futuro, porque "A E BCW" (con espacios) nunca es subcadena
+    de "A-36 E-2052-BCW" (con guiones). Aplicar EXACTAMENTE la misma
+    normalización en los dos lados (aprendizaje Y búsqueda), usando
+    esta única función en ambos puntos, resuelve el problema de raíz.
+    """
+    text = _strip_accents_upper(text)
+    text = _DATE_PATTERN.sub(" ", text)
+    text = _YEAR_RANGE_PATTERN.sub(" ", text)
+    text = re.sub(r"[0-9_./-]+", " ", text)
+    return " ".join(text.split())
 
 
 def _dynamic_keyword_group_pairs(company) -> list[tuple[str, str]]:
@@ -284,7 +382,15 @@ def _dynamic_keyword_group_pairs(company) -> list[tuple[str, str]]:
     `company` (nunca debería pasar en producción, solo pruebas
     aisladas) se queda solo con el estático.
     """
-    pairs = list(_OBSOLESCENCE_GROUP_KEYWORDS)
+    # El diccionario estático también se normaliza aquí -- algunas
+    # entradas ("CERT.MANTENIMIENTO") llevan un punto literal que ya
+    # no coincidiría contra el texto de búsqueda, colapsado por
+    # _normalize_group_search_text (mismo motivo que las palabras
+    # aprendidas -- ver docstring de esa función).
+    pairs = [
+        (_normalize_group_search_text(keyword), group)
+        for keyword, group in _OBSOLESCENCE_GROUP_KEYWORDS
+    ]
     if company is None:
         return pairs
 
@@ -301,7 +407,7 @@ def _dynamic_keyword_group_pairs(company) -> list[tuple[str, str]]:
         .distinct()
     )
     for name in insurer_names:
-        normalized = _strip_accents_upper(name)
+        normalized = _normalize_group_search_text(name)
         if normalized:
             pairs.append((normalized, "SEGURO"))
 
@@ -309,7 +415,7 @@ def _dynamic_keyword_group_pairs(company) -> list[tuple[str, str]]:
         company=company, is_active=True,
     ).values_list("keyword", "canonical_group")
     for keyword, group in learned:
-        normalized_keyword = _strip_accents_upper(keyword)
+        normalized_keyword = _normalize_group_search_text(keyword)
         if normalized_keyword:
             pairs.append((normalized_keyword, group))
 
@@ -318,17 +424,18 @@ def _dynamic_keyword_group_pairs(company) -> list[tuple[str, str]]:
 
 def _group_for_text(text: str, pairs: list[tuple[str, str]]) -> str | None:
     """
-    Busca en `text` (se normaliza aquí mismo) todas las keywords de
-    `pairs` que aparezcan como subcadena, y devuelve el grupo de la
-    MÁS LARGA que coincida -- evita que una palabra genérica (p. ej.
-    "SEGURO") tape a una más específica (p. ej. el nombre real de una
-    aseguradora) cuando ambas aparecen en el mismo nombre. None si
-    ninguna coincide.
+    Busca en `text` (se normaliza aquí mismo, con
+    _normalize_group_search_text -- misma función usada al aprender)
+    todas las keywords de `pairs` que aparezcan como subcadena, y
+    devuelve el grupo de la MÁS LARGA que coincida -- evita que una
+    palabra genérica (p. ej. "SEGURO") tape a una más específica
+    (p. ej. el nombre real de una aseguradora) cuando ambas aparecen
+    en el mismo nombre. None si ninguna coincide.
     """
-    upper_text = _strip_accents_upper(text)
+    normalized_text = _normalize_group_search_text(text)
     matches = [
         (keyword, group) for keyword, group in pairs
-        if keyword and keyword in upper_text
+        if keyword and keyword in normalized_text
     ]
     if not matches:
         return None
@@ -382,14 +489,41 @@ _GENERIC_FILENAME_WORDS = {
 }
 
 
+def _filename_skeleton(filename: str, machine=None) -> str:
+    """
+    "Molde" de un nombre de archivo -- máquina/matrícula, extensión,
+    sufijo de copia ("COPIA"/"COPY") y fecha reconocida, todos
+    quitados, dejando solo lo que diferencia el documento. Se usa en
+    DOS sitios (S026, cierre de sesión):
+
+    1. _extract_candidate_keyword() -- qué palabra clave proponer al
+       diccionario aprendido cuando Gemini clasifica un tipo nuevo.
+    2. evaluate_batch() -- REGLA B-bis: agrupar por "mismo molde,
+       fecha distinta" archivos cuyo TIPO todavía no se reconoce por
+       ningún diccionario (ni estático, ni aseguradora, ni aprendido)
+       -- Miguel Ángel, caso real: "GDR 2011, GDR 2012... no sabemos
+       lo que es. ¿Subimos el último? Sí, evidentemente". No hace
+       falta saber el NOMBRE del tipo para poder descartar versiones
+       obsoletas del mismo molde -- basta con que el molde coincida.
+
+    "COPIA"/"COPY" se quita explícitamente (Miguel Ángel: "si ya
+    hemos subido el archivo, la copia no se sube") -- dos archivos
+    idénticos salvo por ese sufijo comparten molde y fecha, así que
+    caen en el mismo grupo y solo sobrevive uno.
+    """
+    stripped = _strip_machine_reference(filename, machine)
+    stripped = re.sub(r"\.PDF$", "", stripped)
+    stripped = re.sub(r"\bCOPIA\b|\bCOPY\b", " ", stripped)
+    return _normalize_group_search_text(stripped)
+
+
 def _extract_candidate_keyword(filename: str, machine=None) -> str:
     """
     Extrae la palabra/frase candidata a aprender de un nombre de
-    archivo cuyo tipo NO reconoció la heurística -- quita código de
-    máquina/matrícula, la fecha (mismo patrón que
-    parse_date_from_filename), la extensión, y separadores/números
-    sueltos. Si lo que queda es demasiado corto para ser una palabra
-    con sentido (ruido), o si es una de las palabras GENÉRICAS de
+    archivo cuyo tipo NO reconoció la heurística -- ver
+    _filename_skeleton() para el detalle de qué se quita. Si lo que
+    queda es demasiado corto para ser una palabra con sentido
+    (ruido), o si es una de las palabras GENÉRICAS de
     _GENERIC_FILENAME_WORDS (nombre puesto por el propio escáner, sin
     relación con el contenido -- ver esa constante), devuelve "" -- el
     llamador (learn_from_classification) no aprende nada en ese caso,
@@ -398,11 +532,7 @@ def _extract_candidate_keyword(filename: str, machine=None) -> str:
     "diferencian el documento", mismo criterio que ya aplicamos para
     excluir máquina/matrícula del agrupamiento).
     """
-    stripped = _strip_machine_reference(filename, machine)
-    stripped = re.sub(r"\.PDF$", "", stripped)
-    stripped = _DATE_PATTERN.sub(" ", stripped)
-    stripped = re.sub(r"[0-9_./-]+", " ", stripped)
-    candidate = " ".join(stripped.split()).strip()
+    candidate = _filename_skeleton(filename, machine)
     if len(candidate) < 3:
         return ""
     if candidate in _GENERIC_FILENAME_WORDS:
@@ -511,15 +641,18 @@ _YEAR_RANGE_PATTERN = re.compile(r"(?<!\d)(\d{4})[-_./](\d{4})(?!\d)")
 
 def parse_date_from_filename(filename: str) -> date | None:
     """
-    Extrae la fecha del nombre de archivo. Dos formatos reconocidos,
+    Extrae la fecha del nombre de archivo. Tres formatos reconocidos,
     en este orden:
 
     1. D-M-Y (formato español, ancho de dígitos y separador
        desconocidos de antemano -- ver _DATE_PATTERN).
     2. Periodo AAAA-AAAA (ver _YEAR_RANGE_PATTERN arriba) -- solo si
        el (1) no encontró nada. Se usa el año más reciente del rango.
+    3. Año SUELTO, sin día ni mes (ver _BARE_YEAR_PATTERN arriba,
+       S026 -- caso real: "SEGURO 2014.pdf") -- solo si (1) y (2) no
+       encontraron nada.
 
-    Devuelve None si ninguno de los dos patrones aparece, o si el
+    Devuelve None si ninguno de los tres patrones aparece, o si el
     único patrón D-M-Y encontrado no es una fecha válida (ej. un
     número de expediente que por casualidad tiene la forma X-Y-Z pero
     no es una fecha real) -- en cualquiera de los casos, el llamador
@@ -558,7 +691,32 @@ def parse_date_from_filename(filename: str) -> date | None:
         )
         return date(year, 1, 1)
 
+    bare_year_matches = _BARE_YEAR_PATTERN.findall(filename)
+    if bare_year_matches:
+        year = int(bare_year_matches[-1])
+        logger.info(
+            "# [parse_date_from_filename] %s: año suelto %d (sin día "
+            "ni mes) -- usando 1 de enero de ese año como fecha de "
+            "referencia.",
+            filename, year,
+        )
+        return date(year, 1, 1)
+
     return None
+
+
+def _winner_sort_key(entry: tuple[str, date]) -> tuple[date, int]:
+    """
+    Clave de selección del superviviente dentro de un grupo/molde --
+    fecha más reciente gana; en caso de EMPATE de fecha (típicamente
+    un archivo y su "copia", Miguel Ángel: "si ya hemos subido el
+    archivo, la copia no se sube"), se prefiere el que NO lleve
+    "copia"/"copy" en el nombre.
+    """
+    filename, parsed_date = entry
+    lowered = filename.lower()
+    is_not_copy = 0 if ("copia" in lowered or "copy" in lowered) else 1
+    return (parsed_date, is_not_copy)
 
 
 @dataclass(frozen=True)
@@ -603,6 +761,19 @@ def evaluate_batch(
     ya resuelto por el llamador (este modulo nunca consulta BD, salvo
     Insurer/LearnedDocumentTypeKeyword para el diccionario dinámico).
 
+    REGLA B-bis (S026, cierre de sesión) -- Miguel Ángel, caso real:
+    "GDR 2011, GDR 2012... no sabemos lo que es. ¿Subimos el último?
+    Sí, evidentemente". Un archivo cuyo TIPO no reconoce ningún
+    diccionario (ni estático, ni aseguradora, ni aprendido) pero SÍ
+    tiene fecha identificable, se agrupa por su "molde" (mismo nombre
+    quitando máquina/fecha/copia -- ver _filename_skeleton()) contra
+    los DEMÁS archivos del lote con ese mismo molde -- sin necesitar
+    saber el nombre del tipo, "mismo molde, fecha distinta" ya basta
+    para descartar las versiones más antiguas. A diferencia de la
+    REGLA B (tipo conocido), esta comparación es SOLO dentro del
+    propio lote -- nunca contra BD, porque no hay ningún campo estable
+    (document_type) con el que reconocer un "molde" ya persistido.
+
     Devuelve un veredicto por archivo, en el mismo orden de entrada.
     """
     persisted_documents = persisted_documents or []
@@ -616,12 +787,13 @@ def evaluate_batch(
     keyword_pairs = _dynamic_keyword_group_pairs(company)
 
     # Paso 1 -- REGLA A, y de paso, fecha/grupo de los que la superan
-    # (necesarios para la REGLA B en el paso 2). Sin MAQUINA
-    # identificada, la REGLA B no se aplica en absoluto -- "principal,
+    # (necesarios para la REGLA B/B-bis en el paso 2). Sin MAQUINA
+    # identificada, ninguna de las dos se aplica -- "principal,
     # encontrar el código de la máquina" (Miguel Ángel, S026): sin
     # ese primer factor no hay contra qué agrupar ni comparar con
     # seguridad, ni siquiera dentro del propio lote.
-    survivors: list[tuple[str, str | None, date | None]] = []
+    survivors_known: list[tuple[str, str, date | None]] = []
+    survivors_unknown: list[tuple[str, str, date]] = []
     for filename in filenames:
         if is_structural_discard_candidate(filename):
             verdicts.append(PreflightVerdict(
@@ -638,26 +810,52 @@ def evaluate_batch(
         if machine is None:
             verdicts.append(PreflightVerdict(filename=filename, discard=False))
             continue
+
         group = find_obsolescence_group(
             filename, machine=machine, keyword_pairs=keyword_pairs,
         )
-        parsed_date = parse_date_from_filename(filename) if group else None
-        survivors.append((filename, group, parsed_date))
+        if group is not None:
+            parsed_date = parse_date_from_filename(filename)
+            survivors_known.append((filename, group, parsed_date))
+            continue
 
-    # Paso 2 -- REGLA B, solo entre los que tienen grupo Y fecha
-    # identificados. Un archivo sin grupo, o con grupo pero sin fecha,
-    # se sube directo (verdict discard=False) sin pasar por esta
-    # comparación -- ver docstring del módulo.
+        # Tipo desconocido -- REGLA B-bis: intentar agrupar por molde
+        # si al menos hay fecha. Sin fecha, se sube sin más (fail-safe
+        # sin cambios, Miguel Ángel: "los que no se identifiquen bien,
+        # hay que subirlos").
+        parsed_date = parse_date_from_filename(filename)
+        if parsed_date is None:
+            verdicts.append(PreflightVerdict(
+                filename=filename, discard=False, group=None,
+                parsed_date=None,
+            ))
+            continue
+
+        skeleton = _filename_skeleton(filename, machine)
+        if len(skeleton) < 2:
+            # Nada reconocible con lo que agrupar -- se sube sin más.
+            verdicts.append(PreflightVerdict(
+                filename=filename, discard=False, group=None,
+                parsed_date=parsed_date,
+            ))
+            continue
+
+        survivors_unknown.append((filename, skeleton, parsed_date))
+
+    # Paso 2 -- REGLA B (tipo conocido), solo entre los que tienen
+    # grupo Y fecha identificados. Un archivo con grupo pero sin
+    # fecha se sube directo (verdict discard=False) sin pasar por
+    # esta comparación -- ver docstring del módulo.
     by_group: dict[str, list[tuple[str, date]]] = {}
-    for filename, group, parsed_date in survivors:
-        if group is not None and parsed_date is not None:
+    for filename, group, parsed_date in survivors_known:
+        if parsed_date is not None:
             by_group.setdefault(group, []).append((filename, parsed_date))
 
     # Candidato mas moderno del lote por grupo -- nunca se comparan los
     # mas antiguos del lote entre si (Miguel Angel, S026: perdida de
     # tiempo), se descartan todos salvo el maximo directamente.
     batch_winner_by_group: dict[str, tuple[str, date]] = {
-        group: max(entries, key=lambda entry: entry[1])
+        group: max(entries, key=_winner_sort_key)
         for group, entries in by_group.items()
     }
 
@@ -685,8 +883,8 @@ def evaluate_batch(
         if current_latest is None or candidate_date > current_latest:
             persisted_latest_by_group[group] = candidate_date
 
-    for filename, group, parsed_date in survivors:
-        if group is None or parsed_date is None:
+    for filename, group, parsed_date in survivors_known:
+        if parsed_date is None:
             verdicts.append(PreflightVerdict(
                 filename=filename, discard=False, group=group,
                 parsed_date=parsed_date,
@@ -724,6 +922,40 @@ def evaluate_batch(
 
         verdicts.append(PreflightVerdict(
             filename=filename, discard=False, group=group,
+            parsed_date=parsed_date,
+        ))
+
+    # Paso 3 -- REGLA B-bis (tipo desconocido, agrupado por molde
+    # dentro del propio lote -- ver docstring de la función). Nunca
+    # se compara contra BD (no hay campo estable con el que
+    # reconocer un molde ya persistido).
+    by_skeleton: dict[str, list[tuple[str, date]]] = {}
+    for filename, skeleton, parsed_date in survivors_unknown:
+        by_skeleton.setdefault(skeleton, []).append((filename, parsed_date))
+
+    skeleton_winner: dict[str, tuple[str, date]] = {
+        skeleton: max(entries, key=_winner_sort_key)
+        for skeleton, entries in by_skeleton.items()
+    }
+
+    for filename, skeleton, parsed_date in survivors_unknown:
+        winner_filename, _winner_date = skeleton_winner[skeleton]
+        if filename != winner_filename:
+            verdicts.append(PreflightVerdict(
+                filename=filename,
+                discard=True,
+                reason=(
+                    "Versión obsoleta -- hay otro archivo del mismo "
+                    "lote, de nombre casi idéntico, con fecha más "
+                    "reciente (tipo todavía no identificado)."
+                ),
+                group=None,
+                parsed_date=parsed_date,
+            ))
+            continue
+
+        verdicts.append(PreflightVerdict(
+            filename=filename, discard=False, group=None,
             parsed_date=parsed_date,
         ))
 
