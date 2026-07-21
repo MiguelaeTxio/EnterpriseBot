@@ -1224,36 +1224,221 @@ máquina distinta de la A-45.
    de las barras lo sigue fijando el JS en tiempo de ejecución, sin
    cambios de comportamiento.
 
-### Hoja de Ruta para la Sesión Siguiente (S026)
+### CIERRE DE S026, PARTE 2 — sistema de incidencias, REGLA B-bis, hallazgo de datos de flota
 
-1. ~~Recuperar los 13 documentos maestros perdidos~~ -- **descartado
-   explícitamente por Miguel Ángel en S026**: analizados los nombres
-   reales, ninguno de los 13 debería haberse subido nunca (ver
-   "Decisiones cerradas en S026" arriba). Sustituido por la
-   construcción del filtro de descarte previo a la subida -- ver
-   "COMPLETADAS EN S026" arriba.
-2. **Probar el dominio Personal de extremo a extremo** — sigue sin
-   probarse (arrastrado de S024). `PersonalDocument` sigue en 0 filas
-   reales. El accordion de Personal (`_personal_accordion.html`) NO
-   se tocó esta sesión -- sigue con el diseño antiguo (sin ficha de
-   página propia); decidir con Miguel Ángel si aplicar la misma
-   restructuración que a Maquinaria antes o después de probar el
-   dominio.
-3. **Confirmar el resultado de la prueba real con Yolanda** —
-   quedó pendiente en esta sesión (Miguel Ángel pasó a otros temas
-   antes de cerrar el ciclo de esa prueba).
-4. **Considerar limitar el tamaño de "individuales" enviados a
-   `assess_master_coverage()`** — el límite de tokens de Gemini
-   (1.048.576) se ha tocado repetidamente en esta sesión al acumular
-   muchos documentos ya persistidos de la misma máquina; el fix de
-   hoy evita la pérdida de contenido, pero no evita que la
-   comparación siga fallando por este motivo cada vez con más
-   frecuencia según crezca el histórico de cada máquina -- mejora
-   aparte, no implementada todavía.
-5. **Vigilar si se repite el silencio prolongado del worker sin
-   auto-reinicio** de PythonAnywhere (causa exacta sin determinar
-   esta sesión, cuota de CPU descartada) -- si se repite, abrir
-   ticket de soporte con PythonAnywhere con la hora exacta.
+Continuación de la misma sesión S026 (mismo día, chat renovado por
+límite de contexto) tras la prueba real de subida completa de la
+A-36. Miguel Ángel probó el sistema en persona (sin depender de
+Yolanda) y fue encontrando, uno a uno, problemas reales con datos
+reales -- todos corregidos en la misma sesión:
+
+1. **Timeout de despliegue** (`6780d21`) -- `--max-time 60` en las
+   tres llamadas curl de `deploy.yml` contra la API de PythonAnywhere.
+   PythonAnywhere siguió teniendo días de tráfico alto que hacían
+   fallar igualmente el paso de recarga varias veces a lo largo de la
+   sesión (nunca el `git pull`) -- Miguel Ángel decidió, a mitad de
+   sesión, que el modelo **deje de reintentar el Action** y avise
+   directamente para que él recargue a mano desde el panel
+   (aplicación web y/o worker según qué tocara el commit) -- "es un
+   problema de infraestructura de PythonAnywhere con el que no
+   podemos lidiar".
+
+2. **Comando de reset duplicado con bug real, corregido en la misma
+   sesión** (`3622420`) -- se escribió
+   `machine_documents/management/commands/reset_machine_documents.py`
+   sin comprobar antes si ya existía una herramienta equivalente. Ya
+   existía `document_ingestion/management/commands/reset_documentation.py`
+   (creado explícitamente para sustituir a un comando con ese mismo
+   nombre, borrado en su día por quedar obsoleto tras la migración de
+   Drive a GCS) -- el nuevo reintrodujo el mismo fallo: nunca borraba
+   el blob real de GCS. Se ejecutó con `--confirm` antes de detectarlo
+   (84 filas de BD borradas bien, 74 blobs de GCS quedaron huérfanos).
+   Corregido: comando duplicado eliminado,
+   `document_ingestion/management/commands/purge_orphaned_gcs_blobs.py`
+   nuevo para limpiar el estropicio (dry-run por defecto, verificado:
+   74 huérfanos detectados y borrados, coincide exacto).
+
+3. **Restricción del Diccionario aprendido a superusuario** (`0bb5615`)
+   -- Miguel Ángel, tras ver la pestaña nueva en producción: "esta
+   vista debería ser visible única y exclusivamente para mi usuario".
+   `SuperuserRequiredMixin` (ya existente, creado en S021 para
+   sustituir el antipatrón de username hardcodeado) reutilizado en las
+   tres vistas del CRUD, en vez de reintroducir ese antipatrón.
+
+4. **La máquina se determina PRIMERO por nombre de archivo, no por
+   contenido** (`8a99e60`, urgente, con subida real en curso) --
+   `document_ingestion.tasks.route_ingested_files` seguía
+   determinando la máquina por CONTENIDO (Gemini) exclusivamente; la
+   decisión de "nombre de archivo manda" de las fases 2-3 solo se
+   había aplicado a la determinación del TIPO, nunca al enrutado real.
+   Corregido: `match_machine_asset_by_filename()` primero, Gemini
+   como respaldo solo si el nombre no trae código reconocible.
+
+5. **Barra lateral vacía en la ficha de máquina** (`fc61454`) --
+   `MachinePageView` (S025) nunca pasaba `company_user`/`active_nav`
+   al contexto -- sin esos dos valores, `_nav_items.html` no puede
+   evaluar ninguno de sus condicionales por rol. Bug distinto del
+   corregido en S021 (aquel fue en la vista antigua de subida).
+
+6. **Salvaguarda de Gemini para discrepancias nombre/contenido**
+   (`b6d8f57`) -- caso real: certificado CE de la A-45 archivado en
+   la carpeta de la A-36, con el número de bastidor real de la A-45
+   en el contenido. Miguel Ángel: "no deberíamos de dejarlo única y
+   exclusivamente al nombre del archivo... si se sube y se asigna a
+   esa máquina, marcarlo con incidencia". Campo nuevo
+   `content_mismatch_warning` en `MachineDocument` + extracción de
+   `machine_reference_in_content` en `classify_document()` (Gemini),
+   comparado contra la máquina ya asignada -- nunca reasigna sola,
+   solo avisa.
+
+7. **La CARPETA manda sobre el nombre de archivo individual**
+   (`b521699`, `df81f75`) -- Miguel Ángel, tras comprobar que el
+   fix (4) había movido automáticamente un documento a otra máquina
+   sin dejar rastro del error: "el movimiento no debe ser
+   automático... para que salte la liebre de que el mismo error
+   puede estar también en otros sistemas". Prioridad invertida:
+   carpeta > nombre de archivo individual > contenido (Gemini). Bug
+   real detectado y corregido en la misma verificación: `source_folder_path`
+   (de `webkitRelativePath`) incluye el nombre de archivo como último
+   segmento -- buscar la máquina sobre el string completo colaba el
+   código mencionado en el propio nombre dentro de la búsqueda "por
+   carpeta"; corregido quedándose solo con la parte de carpeta.
+   También en este commit: reconocimiento de fechas `AAAA-AAAA`
+   (cadena real de certificados OCA 2014→2018 subida entera por no
+   reconocerse ese formato de fecha).
+
+8. **Sistema completo de resolución manual de incidencias** (`97b5be4`,
+   `d089df5`) -- campo FK `content_mismatch_candidate_machine` +
+   columna de incidencias en el listado de máquinas + botón "Resolver
+   con `<máquina>`" por cada máquina distinta implicada, visible solo
+   si existe esa incidencia concreta + pantalla partida
+   (`MachineDocumentTransferView`/`transfer.html`) para mover
+   documentación entre dos máquinas a mano, siempre con clic explícito
+   (`DocumentMoveToMachineView`) -- nunca automático. Caso "sin
+   asignar" (sin máquina candidata resuelta) con selector libre de
+   máquina por documento, en vez de un botón fijo.
+
+9. **Rediseño completo del reconocimiento de tipo por nombre**
+   (`5182081`, `e9e347a`, `6e3b855`) -- tras una tanda de capturas
+   reales de Miguel Ángel mostrando decenas de archivos "tipo no
+   reconocido" pese a tener un tipo claramente inferible:
+   - Bug de fondo real: la normalización usada al APRENDER una
+     palabra clave (separadores colapsados a espacio) era distinta de
+     la usada al BUSCARLA en un archivo nuevo (separadores intactos)
+     -- una keyword aprendida nunca podía volver a encontrarse a sí
+     misma. Unificado en `_normalize_group_search_text()`, usada en
+     los dos lados sin excepción.
+   - "SCAN"/"IMG"/etc. (nombres de escáner genéricos) ya no se
+     aprenden como palabra clave -- caso real: "SCAN" se había
+     aprendido → grupo ITV a partir de un único error de Gemini, y
+     contaminó todos los archivos futuros de ese escáner.
+   - REGLA B-bis nueva: archivos de tipo DESCONOCIDO (ningún
+     diccionario los reconoce) pero con fecha identificable se
+     agrupan por "molde" (mismo nombre sin máquina/fecha/copia)
+     dentro del propio lote -- sin necesitar saber el nombre del
+     tipo (caso real: "GDR 2011...2026", "IPO ...", "ITC..." -- se
+     queda solo con el más moderno de cada molde).
+   - "COPIA"/"COPY" se ignora al construir el molde -- un archivo y
+     su copia comparten molde y fecha, sobrevive el que NO es copia.
+   - Año suelto (`SEGURO 2014.pdf`) y periodo compacto SIN separador
+     interno unido por "AL" (`RECIBO 150311 AL 150611.pdf`) añadidos
+     como nuevos formatos de fecha reconocidos.
+   - Verificado con Django real, ciclo completo aprendizaje→BD→
+     búsqueda futura, y con TODOS los ejemplos reales aportados por
+     Miguel Ángel en sus capturas.
+
+10. **Prueba real completa de la A-36 (42 documentos) -- resultado
+    limpio**: 42/42 correctamente asignados a la A-36, cero fugas a
+    la A-35, cero sin asignar. `Scan2025-10-28_175658.pdf` clasificado
+    correctamente como "Libro de revisiones periódicas" (antes:
+    "Tarjeta ITV", por el bug de "SCAN" ya corregido).
+
+11. **Hallazgo real, sin corregir todavía**: los avisos de
+    "discrepancia nombre/contenido" tienen falsos positivos
+    sistemáticos cuando Gemini extrae un número de BASTIDOR/SERIE del
+    contenido (ej. "VHX2FF1P204251036", el bastidor real y correcto
+    de la propia A-36) -- `MachineAsset` no tiene ningún campo de
+    bastidor con el que comparar, así que ese dato SIEMPRE sale como
+    "incidencia" aunque sea correcto. Miguel Ángel: "hay que
+    enriquecer el modelo con el campo de bastidor, por supuesto" --
+    pendiente para la sesión siguiente.
+
+12. **Hallazgo real, sin corregir todavía, no es un bug de código**:
+    varias decenas de filas de `fleet.MachineAsset` (empresa Grupo
+    Álvarez) tienen datos corruptos -- `code`/`plate`/`brand_model`
+    con FECHAS en vez de código/matrícula reales (ej. `pk=375
+    code='08/06/2020' plate='0'`, `pk=432 code='01/01/2000'`, `pk=418
+    code='PEUGEOT 206' plate='16/06/2017'`). Esto explica avisos de
+    discrepancia carpeta/nombre sin sentido aparente ("nombre dice
+    A20", "nombre dice 08/06/2020") -- son coincidencias reales contra
+    datos de flota mal importados, no invenciones del sistema. Miguel
+    Ángel pidió el listado completo para revisar la matrícula real de
+    esos vehículos -- **pendiente de entregar, sesión siguiente**
+    (la petición llegó justo al cierre, sin tiempo de generarlo).
+
+### Hoja de Ruta para la Sesión Siguiente (S027)
+
+1. **Enriquecer `fleet.MachineAsset` con un campo de número de
+   bastidor/serie** — Miguel Ángel, explícito: "hay que enriquecer el
+   modelo con el campo de bastidor, por supuesto". Necesario para que
+   la salvaguarda de discrepancia nombre/contenido
+   (`content_mismatch_warning`) pueda comparar el bastidor que
+   extrae Gemini contra el bastidor REAL de la máquina, en vez de
+   marcar como incidencia cualquier bastidor mencionado (ahora mismo
+   siempre sale como discrepancia, incluso cuando es correcto, porque
+   no hay campo con el que compararlo -- ver punto 11 de "CIERRE DE
+   S026, PARTE 2" arriba). Migración nueva, y decidir con Miguel
+   Ángel si se rellena a mano para las máquinas ya existentes o solo
+   a partir de ahora (vía extracción de Gemini de la Ficha
+   Técnica/Declaración CE, con confirmación manual).
+2. **Generar y entregar a Miguel Ángel el listado completo de
+   `fleet.MachineAsset` con datos corruptos** (código/matrícula/
+   marca-modelo con fechas en vez de valores reales) — pedido
+   explícito al cierre de S026, sin tiempo de generarlo. Consulta de
+   referencia usada en S026 para detectar el patrón (ampliar a TODA
+   la tabla, no solo una muestra por coincidencia de "20"/"2020"):
+   ```python
+   from django.db.models import Q
+   import re
+   from fleet.models import MachineAsset
+   fecha_pattern = re.compile(r'\d{1,2}[-/]\d{1,2}[-/]\d{2,4}')
+   for m in MachineAsset.objects.filter(company_id=1):
+       if any(fecha_pattern.search(str(v)) for v in (m.code, m.plate, m.brand_model)):
+           print(m.pk, repr(m.code), repr(m.plate), repr(m.brand_model))
+   ```
+   Miguel Ángel quiere revisar la matrícula real de esos vehículos
+   antes de decidir cómo corregir los datos -- no corregir nada sin
+   su confirmación explícita fila por fila (puede haber columnas
+   desplazadas, no solo un dato mal escrito).
+3. **Probar el dominio Personal de extremo a extremo** — sigue sin
+   probarse (arrastrado de S024/S025/S026). `PersonalDocument` sigue
+   en 0 filas reales. El accordion de Personal
+   (`_personal_accordion.html`) NO se tocó en toda la reconstrucción
+   de S026 -- sigue con el diseño antiguo (sin ficha de página
+   propia, sin sistema de incidencias, sin REGLA B-bis conectada).
+   Decidir con Miguel Ángel si aplicar la misma restructuración que a
+   Maquinaria antes o después de probar el dominio.
+4. **Vigilar si se repite el silencio prolongado del worker sin
+   auto-reinicio** de PythonAnywhere (arrastrado de S025, causa
+   exacta sin determinar) -- si se repite, abrir ticket de soporte
+   con PythonAnywhere con la hora exacta. Relacionado pero distinto:
+   en S026 se confirmó que PythonAnywhere tiene días de tráfico alto
+   que hacen fallar el paso de RECARGA del despliegue (nunca el
+   `git pull`) -- Miguel Ángel decidió que el modelo deje de
+   reintentar el Action y avise para que él recargue a mano (ver
+   punto 1 de "CIERRE DE S026, PARTE 2").
+5. **Considerar limitar el tamaño de "individuales" enviados a
+   `assess_master_coverage()`** (arrastrado de S025) — el límite de
+   tokens de Gemini (1.048.576) se ha tocado repetidamente al
+   acumular muchos documentos ya persistidos de la misma máquina --
+   mejora aparte, no implementada todavía.
+6. **Repetir la prueba de subida completa de la A-36 una vez añadido
+   el campo de bastidor** (punto 1) -- para confirmar que los avisos
+   de discrepancia por bastidor dejan de ser falsos positivos en los
+   documentos que ya se subieron bien en S026 (Ficha Técnica,
+   Declaración CE, Pegatina, Acta de revisión, Libro historial -- ver
+   punto 11 de "CIERRE DE S026, PARTE 2" para la lista completa de
+   `pk` afectados).
 
 **Observación sin acción inmediata (arrastrada de S023):**
 PythonAnywhere limita las versiones de Python disponibles a 3.10 (y
@@ -1321,3 +1506,4 @@ originó, sin más acción pendiente aquí.
 | S023 | 2026-07-16 | H23 EN PROGRESO durante toda la sesión (desvío Caso A, marcador nunca movido). Incidente real: Vertex AI roto para toda la plataforma (documentos + IVR) tras el cambio de IAM de S022 (rol de Vertex AI sustituido por `Storage Admin` en vez de añadido); diagnosticado exclusivamente por logs reales (`alwayson-log-242133.log`, `bridge.log`) tras corrección explícita de Miguel Ángel cuando el modelo empezó a especular sobre el proyecto GCP; arreglado añadiendo `Agent Platform User` (`roles/aiplatform.user`); verificado reprocesando los 10 documentos de A-45 (todos `CLASSIFIED`, maestro detectado correctamente) y con una llamada IVR real (audio bidireccional confirmado). Hallazgo: el IVR llevaba roto desde el cambio de IAM aunque Miguel Ángel creía que funcionaba -- confirmado por log, no por suposición. Bug fuera de alcance corregido de paso: tarea Celery muerta `purge_old_chat_messages` (eliminada en H17, seguía en `CELERY_BEAT_SCHEDULE`) -- ver anexo H17. Desvío al resto de la sesión: H26 -- Infraestructura Documental Compartida completada por entero (app `document_management`, servicio de vigencia/sustitución, fusión de PDF, motor de alertas) -- ver anexo H26 "COMPLETADAS EN S023" para el detalle. Corrección de rumbo de Miguel Ángel durante la sesión: `EmailTemplate` no se edita desde el admin de Django (nunca lo pidió), y no se construye ninguna interfaz mínima desechable -- se queda como modelo sin UI. Ver "Hoja de Ruta para la Sesión Siguiente (S024)" arriba para el punto de partida: interfaz de panel de H23 consumiendo los servicios de H26. |
 | S024 | 2026-07-17 | H23 EN PROGRESO durante toda la sesión, sin desvíos ni PCH. Sesión larguísima: 26 commits, 61 archivos, +7795/-560 líneas. Interfaz de panel de H23/H25 construida y cerrada por completo (vincular sin asignar, borrar archivado, modificar vigente, panel de alertas, CRUD de plantillas de email, generación de dossier), reconvertida entera a HTMX sin recargas de página, con visor de subida en vivo (sondeo automático, sin botones "Actualizar") y comando `reset_documentation` para poder repetir pruebas reales desde limpio. Encontrados y corregidos en la misma sesión, todos con datos reales (logs del worker Celery, log web, consultas de solo lectura a BD, búsqueda del foro oficial de PythonAnywhere): enrutado que ignoraba el nombre de archivo y comparaba códigos de máquina byte a byte; documento maestro que se persistía en GCS pese a descartarse su contenido (dos capas de corrección, incluida una segunda salvaguarda semántica); regresión del manual de uso en el enrutado (heurístico "nunca llamar a Gemini" que faltaba en el punto nuevo); falso estado "Asignado" del maestro en el visor por una condición de carrera con la Fase 2; listado de usuarios mostrando "Operador" para 3 de los 8 roles reales (bug de visualización puro, la BD nunca estuvo mal -- Miguel Ángel corrigió al modelo por dar la creación del usuario por fallida sin comprobar antes); doble subida no detectada por la deduplicación; y el hallazgo más grande de la sesión, un límite duro de 100 MiB por petición HTTP de PythonAnywhere (no configurable, sin rastro en la aplicación al superarlo) que impedía subir la carpeta de la A36 (121 archivos) -- resuelto troceando la subida automáticamente en el navegador. Ver "COMPLETADAS EN S024" arriba para el detalle completo, y "Hoja de Ruta para la Sesión Siguiente (S025)" para el punto de partida. |
 | S025 | 2026-07-20 | H23 EN PROGRESO durante toda la sesión (un desvío puntual real a `spare_parts` H10 -- albaranes de proveedor -- sin PCH). Sesión larguísima: 27 commits, 37 archivos, +2657/-458 líneas. Ver "COMPLETADAS EN S025" arriba para el detalle completo -- resumen: modal de subida rediseñado, sustitución silenciosa + historial, plantilla WhatsApp confirmada aprobada, panel de Alertas rediseñado con envío manual/filtro por máquina, descarte heurístico de dossiers, restructuración de navegación (ficha de página completa por máquina, con URL propia), conversión de manuales a Markdown, asignación manual + prompt ampliado en albaranes, y dos incidentes reales de producción diagnosticados y corregidos con datos reales en cada paso: (1) bug crítico de `assess_master_coverage()` que interpretaba un error de Gemini como "cobertura confirmada" y descartaba maestros sin comparar -- **13 documentos reales perdidos antes del fix**, lista completa entregada a Miguel Ángel para recuperación manual; (2) worker Celery caído en medio de un lote de 95 documentos sin ningún error en el log -- causa raíz identificada (Celery sin `acks_late`/`prefetch_multiplier` configurados) y corregida con los tres ajustes de resiliencia recomendados por la documentación oficial de Celery 5.6.3. Ver "Hoja de Ruta para la Sesión Siguiente (S026)" arriba para el punto de partida. |
+| S026 | 2026-07-21 | H23 EN PROGRESO durante toda la sesión, sin desvíos ni PCH. La sesión más larga del hito hasta la fecha (varios chats consecutivos por límite de contexto, mismo número de sesión): 22 commits, 22 archivos, +3172/-49 líneas. Reconstrucción completa del pipeline de ingesta de documentación de maquinaria en 5 fases (reglas heurísticas de descarte por nombre, modelo de aprendizaje automático de tipos, Gemini como extractor puro cuando la heurística ya sabe el tipo, pantalla de revisión con checkboxes, CRUD del diccionario), seguida de una prueba real de subida completa de la A-36 que fue encontrando, uno a uno, una cadena larga de bugs reales -- todos corregidos en la misma sesión con datos reales (logs del worker, consultas de BD, capturas de Miguel Ángel): comando de reset duplicado con el mismo bug que motivó sustituir uno anterior (blobs de GCS huérfanos, limpiados con comando nuevo); la máquina se determinaba por contenido en vez de por nombre de archivo pese a la decisión ya cerrada; barra lateral vacía en la ficha de máquina (`company_user` ausente del contexto, bug distinto del de S021); tras un movimiento automático entre máquinas sin dejar rastro del error, Miguel Ángel cerró que el movimiento NUNCA debe ser automático -- la CARPETA manda, con sistema completo de resolución manual de incidencias (botón "Resolver con `<máquina>`" por cada máquina distinta implicada, pantalla partida, caso "sin asignar" con selector libre); "SCAN" (nombre de escáner genérico) aprendido como palabra clave de tipo ITV a partir de un único error de Gemini, contaminando todos los archivos futuros de ese escáner; y el hallazgo más grande de la sesión, un bug de fondo en la normalización de palabras clave (lo aprendido nunca podía volver a encontrarse a sí mismo en un archivo futuro) que explicaba casi todos los "tipo no reconocido" de las capturas de Miguel Ángel -- corregido de raíz junto con una REGLA B-bis nueva (agrupar por "molde" archivos de tipo desconocido, sin necesitar saber el nombre del tipo) y varios formatos de fecha nuevos (año suelto, rango `AAAA-AAAA`, periodo compacto `DDMMAA AL DDMMAA`). Prueba final de 42 documentos: 42/42 correctamente asignados a la A-36, cero fugas, cero sin asignar. Dos hallazgos reales sin corregir todavía, ambos primera tarea de la sesión siguiente: falsos positivos de discrepancia por bastidor (`MachineAsset` no tiene ese campo) y datos corruptos en varias decenas de filas de `fleet.MachineAsset` (fechas en vez de código/matrícula real). Ver "CIERRE DE S026, PARTE 2" arriba para el detalle completo, y "Hoja de Ruta para la Sesión Siguiente (S027)" para el punto de partida. |
