@@ -984,6 +984,40 @@ de la A-45 (E-6998-BDY):
 `FICHA TECNICA+ ITV 5-5-17.pdf`, `FICHA TECNICA+ITV 24-4-2020.pdf`
 (prefijo común `A-45 E-6998-BDY` omitido).
 
+**Corrección sobre UNLOCKED, misma sesión (S026):** Miguel Ángel
+señaló que, a diferencia de COMPRIMIDO/COMPRESSED (que sí reconoce
+sin ambigüedad como señal de dossier completo), no encuentra ninguna
+relación entre "UNLOCKED" y "dossier" -- palabras textuales: "no le
+encuentro relación con el dossier... para mí unlocked es algo que se
+ha abierto, que ya no tiene llave". Preguntó si quedaba copia del
+archivo real en el servidor para comprobarlo -- confirmado que NO:
+un maestro descartado borra su archivo local y "nunca llegó a
+subirse a GCS" (ver `machine_documents.tasks.process_machine_document_batch`),
+así que no hay ningún sitio con una copia recuperable. Con el nombre
+real delante (`REC SEG ALLIANZ 01-01-2026_unlocked.pdf`), Miguel Ángel
+concluyó: "ya el nombre nos está diciendo lo que es. Es el recibo del
+seguro de Allianz... y es de 2026. Ese no se puede descartar" --
+confirmando que el criterio correcto es el de tres factores (máquina +
+tipo + fecha), no palabras sueltas como UNLOCKED. **UNLOCKED se retira
+de la REGLA A estructural** -- solo quedan `+` y COMPRIMIDO/COMPRESSED
+como señales de descarte incondicional.
+
+**Formato de fecha en el nombre, palabras textuales:** "siempre el
+formato va a ser español, día, mes y año, pero no sabemos el formato
+que va a tener, si va a venir el día con dos dígitos, con uno, si el
+año va a tener dos dígitos, cuatro, si van a estar separados por un
+guion, por un guion bajo... no lo vamos a saber" -- `parse_date_from_filename()`
+reescrito para ser agnóstico de separador (`-`, `_`, `.`, `/`,
+espacio, en cualquier combinación) y de ancho de dígitos, siempre en
+orden día-mes-año.
+
+**Máquina como condición previa de la REGLA B:** "principal, encontrar
+el código de la máquina... encontrar la matrícula si viene. Si no
+viene, no. Pero si viene, hay que encontrarla" (ya cubierto por
+`match_machine_asset_by_filename`, que busca código O matrícula). Sin
+máquina identificada en BD, la REGLA B nunca se aplica -- ni siquiera
+la comparación dentro del propio lote.
+
 **Implementación (S026), decisiones técnicas no explícitas de Miguel
 Ángel, declaradas como suposición y no bloqueantes** (regla de
 preferencia de sesión: se decide de forma autónoma cuando no bloquea
@@ -1010,19 +1044,23 @@ el avance):
 
 1. **`document_ingestion/preflight_discard_service.py`** (nuevo) --
    REGLA A (descarte estructural: `+` combinando dos tipos, o sufijo
-   `UNLOCKED`/`COMPRIMIDO`/`COMPRESSED`, excluyendo siempre los
-   manuales de uso) y REGLA B (obsolescencia de grupo: diccionario de
-   palabras clave -- FICHA TECNICA, ITV, OCA, SEGURO/ALLIANZ/POLIZA
-   unificados, LIBRO HISTORIAL, MANTENIMIENTO -- excluyendo código de
-   máquina/matrícula, se queda el más moderno del lote por fecha de
-   nombre, y se compara contra lo ya persistido en BD). Probado
-   manualmente en este workspace contra los 13 nombres reales de S025
-   (los 13 se descartan) y contra los individuales vigentes del mismo
-   lote (ninguno se descarta) -- encontrado y corregido un falso
-   positivo real en la propia prueba: el manual de uso
-   ("...MANUAL DE USO-comprimido-2.pdf") se descartaba por contener
-   "comprimido" en su propio nombre; corregido excluyendo siempre
-   `is_manual_by_filename()` antes de aplicar la REGLA A.
+   `COMPRIMIDO`/`COMPRESSED`, excluyendo siempre los manuales de uso;
+   `UNLOCKED` retirado de esta lista en la misma sesión, ver
+   corrección arriba) y REGLA B (criterio de tres factores -- máquina
+   identificada en BD, tipo por diccionario de palabras clave
+   excluyendo código/matrícula, y fecha de nombre agnóstica de
+   separador/ancho de dígitos; sin los tres, se sube sin comparar).
+   Se queda el más moderno del lote por fecha, comparado después
+   contra lo ya persistido en BD. Probado manualmente en este
+   workspace contra los 13 nombres reales de S025 (11 se descartan
+   por REGLA A, los 2 "unlocked" ya NO se descartan -- uno por ser el
+   recibo de seguro más reciente, otro por no tener tipo reconocible)
+   y contra los individuales vigentes del mismo lote (ninguno se
+   descarta) -- encontrado y corregido un falso positivo real en la
+   propia prueba: el manual de uso ("...MANUAL DE USO-comprimido-2.pdf")
+   se descartaba por contener "comprimido" en su propio nombre;
+   corregido excluyendo siempre `is_manual_by_filename()` antes de
+   aplicar la REGLA A.
 2. **`panel/views_documentation.py`** -- nueva vista
    `DocumentationPreflightDiscardView` (solo lectura, JSON, agrupa
    los nombres recibidos por máquina detectada y llama al servicio).

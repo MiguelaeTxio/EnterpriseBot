@@ -18,34 +18,83 @@ Dos reglas independientes, en este orden:
 
 REGLA A -- descarte ESTRUCTURAL (siempre, sin comparar fechas):
     un nombre que combina dos tipos de documento ("+") o lleva un
-    sufijo de compresion/desbloqueo (UNLOCKED/COMPRIMIDO/COMPRESSED)
-    es, por construccion, un documento maestro/dossier -- ya cubierto
-    por los individuales que se suben en el mismo lote (mismo
-    principio que _MASTER_HEURISTIC_KEYWORDS de
+    sufijo de compresion COMPRIMIDO/COMPRESSED es, por construccion,
+    un documento maestro/dossier -- ya cubierto por los individuales
+    que se suben en el mismo lote (mismo principio que
+    _MASTER_HEURISTIC_KEYWORDS de
     machine_documents.document_classification_service, pero aplicado
     ANTES de la subida, no despues, y sin exigir un tamano minimo:
     aqui no hay bytes que pesar todavia).
 
-REGLA B -- descarte por OBSOLESCENCIA DE GRUPO (requiere fecha en el
-    nombre): documentos que NO son un maestro estructural pero
-    representan una version antigua del mismo tipo de documento (3
-    ITV, 4 OCA...) -- se agrupan por palabra clave (excluyendo SIEMPRE
-    el codigo de maquina y la matricula, que se repiten en todos los
-    archivos del lote y no aportan nada para agrupar), se queda solo
-    el mas moderno POR FECHA DE NOMBRE dentro del propio lote (Miguel
-    Angel, S026: "el candidato sera el mas moderno del lote,
-    evidentemente. Es una perdida de tiempo comparar los mas antiguos
-    del lote entre si"), y ese candidato se compara despues contra lo
-    YA PERSISTIDO en BD para esa maquina (issue_date/period_end/
-    expiry_date reales, extraidos por Gemini -- mas fiables que
-    volver a adivinar la fecha de un nombre de archivo ya persistido).
+    NO incluye "UNLOCKED" (retirado en S026, mismo dia, tras
+    contraejemplo real de Miguel Angel): a diferencia de
+    COMPRIMIDO/COMPRESSED, que Miguel Angel reconoce sin ambiguedad
+    como "todo junto, dossier", UNLOCKED no tiene para el ningun
+    significado reconocible por si solo -- palabras suyas: "no le
+    encuentro relacion con el dossier... para mi unlocked es algo que
+    se ha abierto, que ya no tiene llave". El caso real que lo prueba:
+    "A-45 E-6998-BDY REC SEG ALLIANZ 01-01-2026_unlocked.pdf" (uno de
+    los 13 perdidos en S025) es, por su propio nombre, un recibo de
+    seguro Allianz vigente de 2026 -- el mas reciente de su grupo, no
+    un dossier -- y bajo el criterio correcto NUNCA deberia haberse
+    descartado solo por llevar "_unlocked". Confirmado ademas que no
+    queda copia en ningun sitio del sistema para poder abrir el
+    archivo y comprobarlo con certeza (ver
+    machine_documents.tasks.process_machine_document_batch: un
+    maestro descartado se borra local, "nunca llego a subirse a
+    GCS") -- sin ese archivo, cualquier regla sobre UNLOCKED seria
+    hipotesis sin datos, prohibido por principio de sesion.
 
-    Archivos SIN fecha reconocible en el nombre nunca se descartan por
-    esta regla -- se suben siempre (Miguel Angel, S026: "los que no se
-    identifiquen bien, hay que subirlos"). Tampoco se descartan si no
-    se pudo identificar la maquina por nombre (match_machine_asset_by_filename
-    sin resultado): sin maquina no hay contra que comparar en BD, ni
-    dentro del propio lote se puede agrupar con seguridad.
+REGLA B -- descarte por OBSOLESCENCIA DE GRUPO, criterio de TRES
+    FACTORES (Miguel Angel, S026, palabras textuales): "si
+    determinamos la maquina, el tipo de documento y la fecha a la que
+    hace referencia el documento, podemos discriminar perfectamente
+    los archivos a subir o no". Los TRES deben identificarse con
+    confianza para poder descartar -- si falta cualquiera de los tres,
+    se sube sin comparar, sin excepcion:
+
+    1. MAQUINA -- "principal, encontrar el codigo de la maquina" (en
+       BD, via match_machine_asset_by_filename, que tambien reconoce
+       la matricula "si viene" -- Miguel Angel: "si no viene, no,
+       pero si viene, hay que encontrarla", ya cubierto por esa
+       funcion, que busca codigo O matricula). Sin maquina
+       identificada, la REGLA B nunca se aplica -- ni siquiera la
+       comparacion dentro del propio lote.
+    2. TIPO DE DOCUMENTO -- por palabra clave del nombre (ver
+       _OBSOLESCENCE_GROUP_KEYWORDS), excluyendo SIEMPRE el codigo de
+       maquina y la matricula del propio nombre antes de buscar la
+       palabra clave (se repiten en todos los archivos del lote, no
+       diferencian nada -- Miguel Angel: "el cuello de la maquina...
+       esa parte no la vas a poner... tu tienes que meter en lo que
+       es ya el nombre que diferencia el documento").
+    3. FECHA -- "es importantisimo determinar la fecha del documento
+       en el nombre, porque se puede haber generado mas tarde el
+       documento y realmente ser de un año mucho anterior" -- SIEMPRE
+       formato español dia-mes-año, pero de ANCHO Y SEPARADOR
+       DESCONOCIDOS de antemano (Miguel Angel: "no sabemos el formato
+       que va a tener, si va a venir el dia con dos digitos, con
+       uno... separados por un guion, por un guion bajo... no lo
+       vamos a saber") -- ver parse_date_from_filename(), agnostica
+       de separador y de ancho de digitos. Documentos de un tipo que
+       NUNCA caduca (se hacen una vez para toda la vida util de la
+       maquina) no llevan fecha en el nombre -- esos se suben siempre,
+       sin comparar (Miguel Angel: "esos habra que subirlos
+       inequivocamente").
+
+    Con los tres factores identificados: se queda solo el mas
+    moderno POR FECHA DE NOMBRE dentro del propio lote (Miguel Angel,
+    S026: "el candidato sera el mas moderno del lote, evidentemente.
+    Es una perdida de tiempo comparar los mas antiguos del lote entre
+    si"), y ese candidato se compara despues contra lo YA PERSISTIDO
+    en BD para esa maquina (issue_date/period_end/expiry_date reales,
+    extraidos por Gemini -- mas fiables que volver a adivinar la
+    fecha de un nombre de archivo ya persistido).
+
+    Documentos cuyo TIPO no se reconoce por nombre -- incluido
+    cualquier caso "raro" como UNLOCKED sin mas contexto -- se suben
+    siempre, para que los lea Gemini (Miguel Angel: "documentos que no
+    sepamos bien lo que son... habra que subirlo para que Gemini lo
+    lea y vea que es").
 
 Este modulo es agnostico de vista/HTTP -- solo recibe datos ya
 resueltos por el llamador (nombres de archivo, maquina opcional,
@@ -72,7 +121,11 @@ logger = logging.getLogger(__name__)
 # constante sigue exigiendo tamano minimo porque decide si un archivo YA
 # SUBIDO se manda o no a Gemini; esta decide si un archivo NUNCA llega a
 # subirse, sin bytes que pesar. Evolucionan por separado.
-_STRUCTURAL_DISCARD_KEYWORDS = ["UNLOCKED", "COMPRIMIDO", "COMPRESSED"]
+#
+# NO incluye "UNLOCKED" -- ver docstring del modulo, retirado en S026
+# tras contraejemplo real de Miguel Angel (recibo de seguro vigente
+# descartado por error solo por llevar ese sufijo).
+_STRUCTURAL_DISCARD_KEYWORDS = ["COMPRIMIDO", "COMPRESSED"]
 
 
 def is_structural_discard_candidate(filename: str) -> bool:
@@ -80,12 +133,13 @@ def is_structural_discard_candidate(filename: str) -> bool:
     True si el nombre de archivo, por si solo, delata un documento
     maestro/dossier que combina contenido ya cubierto por los
     individuales del mismo lote -- nunca se sube. Dos senales, ambas
-    suficientes por si solas (Miguel Angel, S026, confirmado sobre los
-    13 casos reales de S025):
+    suficientes por si solas (Miguel Angel, S026, confirmadas sobre
+    los 13 casos reales de S025 -- pero ver docstring del modulo:
+    "UNLOCKED" quedo fuera de esta lista, no es una senal fiable):
 
     - Un "+" en el nombre, uniendo dos tipos de documento
       ("FICHA TECNICA+ITV", "POLIZA ALLIANZ+REC").
-    - Sufijo de compresion/desbloqueo: UNLOCKED, COMPRIMIDO, COMPRESSED.
+    - Sufijo de compresion: COMPRIMIDO, COMPRESSED.
 
     Excluye SIEMPRE los manuales de uso (is_manual_by_filename) antes
     de mirar cualquiera de las dos senales -- falso positivo real
@@ -141,13 +195,22 @@ _OBSOLESCENCE_GROUP_KEYWORDS: list[tuple[str, str]] = [
     ("CERT.MANTENIMIENTO", "MANTENIMIENTO"),
 ]
 
-# Fecha en el nombre: D(D)-M(M)-Y(Y o YYYY), unico separador visto en los
-# 13 casos reales y en los individuales del mismo lote ("-"). Se toma la
-# ULTIMA coincidencia del nombre (las fechas van al final, antes de
-# ".pdf", en todos los casos reales) -- evita que un numero suelto de
-# expediente/matricula normalizada confunda el parseo si alguna vez
-# coincidiera por casualidad con D-M-Y.
-_DATE_PATTERN = re.compile(r"(\d{1,2})-(\d{1,2})-(\d{2,4})")
+# Fecha en el nombre: SIEMPRE día-mes-año en español (Miguel Ángel,
+# S026: "siempre va a ser día, mes y año"), pero de FORMATO
+# desconocido de antemano -- ancho de dígitos y separador variables,
+# palabras textuales: "no sabemos el formato que va a tener, si va a
+# venir el día con dos dígitos, con uno, si el año va a tener dos
+# dígitos, cuatro, si van a estar separados por un guion, por un
+# guion bajo... no lo vamos a saber". Separador: cualquier secuencia
+# de guion/guion bajo/punto/barra/espacio (independiente entre cada
+# par de campos -- "24_4-19" es tan válido como "24-4-19"). Se toma
+# la ÚLTIMA coincidencia del nombre (las fechas van al final, antes
+# de ".pdf", en todos los casos reales) -- evita que un número suelto
+# de expediente confunda el parseo si alguna vez coincidiera por
+# casualidad con D-M-Y.
+_DATE_PATTERN = re.compile(
+    r"(\d{1,2})[-_./ ]+(\d{1,2})[-_./ ]+(\d{2,4})(?!\d)",
+)
 
 
 def _strip_accents_upper(value: str) -> str:
@@ -265,7 +328,11 @@ def evaluate_batch(
     verdicts: list[PreflightVerdict] = []
 
     # Paso 1 -- REGLA A, y de paso, fecha/grupo de los que la superan
-    # (necesarios para la REGLA B en el paso 2).
+    # (necesarios para la REGLA B en el paso 2). Sin MAQUINA
+    # identificada, la REGLA B no se aplica en absoluto -- "principal,
+    # encontrar el código de la máquina" (Miguel Ángel, S026): sin
+    # ese primer factor no hay contra qué agrupar ni comparar con
+    # seguridad, ni siquiera dentro del propio lote.
     survivors: list[tuple[str, str | None, date | None]] = []
     for filename in filenames:
         if is_structural_discard_candidate(filename):
@@ -274,11 +341,14 @@ def evaluate_batch(
                 discard=True,
                 reason=(
                     "Nombre de archivo indica documento maestro/dossier "
-                    "combinado (\"+\" entre tipos, o sufijo de compresión/"
-                    "desbloqueo) -- su contenido ya está cubierto por los "
-                    "documentos individuales del mismo lote."
+                    "combinado (\"+\" entre tipos, o sufijo de "
+                    "compresión) -- su contenido ya está cubierto por "
+                    "los documentos individuales del mismo lote."
                 ),
             ))
+            continue
+        if machine is None:
+            verdicts.append(PreflightVerdict(filename=filename, discard=False))
             continue
         group = find_obsolescence_group(filename, machine)
         parsed_date = parse_date_from_filename(filename) if group else None
