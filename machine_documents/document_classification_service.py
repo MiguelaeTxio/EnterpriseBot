@@ -139,6 +139,16 @@ _FILENAME_HEURISTIC_RULES = [
     # (palabra clave, MAYÚSCULAS, buscada como subcadena en el nombre de
     # archivo en mayúsculas -> document_type asignado sin pasar por Gemini)
     ("MANUAL", MANUAL_DOCUMENT_TYPE),
+    # INSTRUCTIONS/INSTRUCCIONES añadidas en S026 -- gap real detectado
+    # al construir el filtro de descarte previo a la subida: un manual
+    # nombrado "...instructions_compressed.pdf" pasaba de largo esta
+    # regla y se arriesgaba a ser tratado como dossier comprimido por
+    # document_ingestion.preflight_discard_service, exactamente el
+    # falso positivo que esta regla existe para evitar. Miguel Ángel,
+    # ejemplo textual: "si pone instructions compressed, tampoco se
+    # puede descartar".
+    ("INSTRUCTIONS", MANUAL_DOCUMENT_TYPE),
+    ("INSTRUCCIONES", MANUAL_DOCUMENT_TYPE),
 ]
 
 

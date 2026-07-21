@@ -1618,6 +1618,7 @@ class DocumentationPreflightDiscardView(DocsUploadAccessMixin, View):
             verdicts = evaluate_batch(
                 machine_filenames,
                 machine=machine,
+                company=company,
                 persisted_documents=persisted_documents,
             )
             discard_entries.extend(

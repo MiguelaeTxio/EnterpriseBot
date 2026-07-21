@@ -172,21 +172,37 @@ def is_structural_discard_candidate(filename: str) -> bool:
 # REGLA B -- descarte por obsolescencia de grupo
 # ---------------------------------------------------------------------------
 #
-# Diccionario palabra clave -> grupo canonico (Miguel Angel, S026: "yo
-# crearia un diccionario... con una palabra que se repite y anades
-# todo... forma grupos, conjuntos"). ALLIANZ/POLIZA/SEGURO se lumpean
-# en un unico grupo SEGURO -- son la misma categoria de negocio (recibo/
-# poliza de seguro), visto en los 13 casos reales (S025) y en el
-# individual vigente del mismo lote ("..._04_Recibo_Seguro_Allianz_2025.pdf",
-# lleva las dos palabras a la vez). Orden de la lista SIN relevancia para
-# el resultado (se recorre entera, primera coincidencia por grupo distinto
-# no se pisa entre si salvo ALLIANZ/POLIZA/SEGURO, que comparten grupo a
-# proposito).
+# Diccionario ESTÁTICO palabra clave -> grupo canonico (Miguel Angel,
+# S026: "yo crearia un diccionario... con una palabra que se repite y
+# anades todo... forma grupos, conjuntos"). ALLIANZ/POLIZA/SEGURO se
+# lumpean en un unico grupo SEGURO -- son la misma categoria de
+# negocio (recibo/poliza de seguro), visto en los 13 casos reales
+# (S025) y en el individual vigente del mismo lote
+# ("..._04_Recibo_Seguro_Allianz_2025.pdf", lleva las dos palabras a
+# la vez). Este diccionario estatico es solo el ARRANQUE -- en tiempo
+# real se combina con las aseguradoras reales de BD
+# (budgets.models.Insurer) y con lo aprendido automaticamente
+# (document_ingestion.models.LearnedDocumentTypeKeyword) -- ver
+# _dynamic_keyword_group_pairs().
 _OBSOLESCENCE_GROUP_KEYWORDS: list[tuple[str, str]] = [
     ("FICHA TECNICA", "FICHA TECNICA"),
     ("ITV", "ITV"),
     ("OCA", "OCA"),
+    ("PERMISO DE CIRCULACION", "SEGURO"),
     ("ALLIANZ", "SEGURO"),
+    ("MAPFRE", "SEGURO"),
+    ("AXA", "SEGURO"),
+    ("LINEA DIRECTA", "SEGURO"),
+    ("MUTUA MADRILEÑA", "SEGURO"),
+    ("MUTUA MADRILENA", "SEGURO"),
+    ("ZURICH", "SEGURO"),
+    ("GENERALI", "SEGURO"),
+    ("PELAYO", "SEGURO"),
+    ("REALE", "SEGURO"),
+    ("CATALANA OCCIDENTE", "SEGURO"),
+    ("PLUS ULTRA", "SEGURO"),
+    ("LIBERTY", "SEGURO"),
+    ("SEGUROS BILBAO", "SEGURO"),
     ("POLIZA", "SEGURO"),
     ("SEGURO", "SEGURO"),
     ("LIBRO HISTORIAL", "LIBRO HISTORIAL"),
@@ -239,18 +255,198 @@ def _strip_machine_reference(filename: str, machine) -> str:
     return upper_name
 
 
-def find_obsolescence_group(filename: str, machine=None) -> str | None:
+def _dynamic_keyword_group_pairs(company) -> list[tuple[str, str]]:
     """
-    Devuelve el grupo canonico (ver _OBSOLESCENCE_GROUP_KEYWORDS) al
-    que pertenece `filename`, o None si no coincide con ninguna
-    palabra clave -- en cuyo caso el llamador nunca debe aplicar la
-    REGLA B sobre este archivo (se sube sin comparar).
+    Diccionario COMPLETO en tiempo real: estático (arriba) + nombres
+    de aseguradoras reales de la empresa (budgets.models.Insurer,
+    Miguel Ángel S026: "tenemos también una lista de aseguradoras...
+    que esa también nos sirve para añadirla al diccionario") + lo
+    aprendido automáticamente y activo
+    (document_ingestion.models.LearnedDocumentTypeKeyword). Sin
+    `company` (nunca debería pasar en producción, solo pruebas
+    aisladas) se queda solo con el estático.
+    """
+    pairs = list(_OBSOLESCENCE_GROUP_KEYWORDS)
+    if company is None:
+        return pairs
+
+    # Imports perezosos -- mismo motivo que is_manual_by_filename más
+    # abajo: evitar acoplar el import de módulo de este archivo
+    # ligero a apps con dependencias más pesadas.
+    from budgets.models import Insurer
+    from document_ingestion.models import LearnedDocumentTypeKeyword
+
+    insurer_names = (
+        Insurer.objects.filter(company=company)
+        .exclude(insurer_company_name="")
+        .values_list("insurer_company_name", flat=True)
+        .distinct()
+    )
+    for name in insurer_names:
+        normalized = _strip_accents_upper(name)
+        if normalized:
+            pairs.append((normalized, "SEGURO"))
+
+    learned = LearnedDocumentTypeKeyword.objects.filter(
+        company=company, is_active=True,
+    ).values_list("keyword", "canonical_group")
+    for keyword, group in learned:
+        normalized_keyword = _strip_accents_upper(keyword)
+        if normalized_keyword:
+            pairs.append((normalized_keyword, group))
+
+    return pairs
+
+
+def _group_for_text(text: str, pairs: list[tuple[str, str]]) -> str | None:
+    """
+    Busca en `text` (se normaliza aquí mismo) todas las keywords de
+    `pairs` que aparezcan como subcadena, y devuelve el grupo de la
+    MÁS LARGA que coincida -- evita que una palabra genérica (p. ej.
+    "SEGURO") tape a una más específica (p. ej. el nombre real de una
+    aseguradora) cuando ambas aparecen en el mismo nombre. None si
+    ninguna coincide.
+    """
+    upper_text = _strip_accents_upper(text)
+    matches = [
+        (keyword, group) for keyword, group in pairs
+        if keyword and keyword in upper_text
+    ]
+    if not matches:
+        return None
+    _best_keyword, best_group = max(matches, key=lambda pair: len(pair[0]))
+    return best_group
+
+
+def find_obsolescence_group(
+    filename: str, machine=None, company=None,
+    keyword_pairs: list[tuple[str, str]] | None = None,
+) -> str | None:
+    """
+    Devuelve el grupo canonico al que pertenece `filename`, o None si
+    no coincide con ninguna palabra clave conocida (estática, de
+    aseguradora real, o aprendida) -- en cuyo caso el llamador nunca
+    debe aplicar la REGLA B sobre este archivo (se sube sin comparar,
+    para que lo clasifique Gemini). `keyword_pairs` permite reutilizar
+    un diccionario ya calculado (evaluate_batch lo calcula UNA vez por
+    lote en vez de una consulta a BD por archivo) -- si no se pasa, se
+    calcula aquí mismo a partir de `company`.
     """
     stripped = _strip_machine_reference(filename, machine)
-    for keyword, group in _OBSOLESCENCE_GROUP_KEYWORDS:
-        if keyword in stripped:
-            return group
-    return None
+    pairs = (
+        keyword_pairs if keyword_pairs is not None
+        else _dynamic_keyword_group_pairs(company)
+    )
+    return _group_for_text(stripped, pairs)
+
+
+def _extract_candidate_keyword(filename: str, machine=None) -> str:
+    """
+    Extrae la palabra/frase candidata a aprender de un nombre de
+    archivo cuyo tipo NO reconoció la heurística -- quita código de
+    máquina/matrícula, la fecha (mismo patrón que
+    parse_date_from_filename), la extensión, y separadores/números
+    sueltos. Si lo que queda es demasiado corto para ser una palabra
+    con sentido (ruido), devuelve "" -- el llamador
+    (learn_from_classification) no aprende nada en ese caso, en vez
+    de ensuciar el diccionario con basura (Miguel Ángel no pidió
+    aprender "lo que sea", pidió aprender palabras que "diferencian
+    el documento", mismo criterio que ya aplicamos para excluir
+    máquina/matrícula del agrupamiento).
+    """
+    stripped = _strip_machine_reference(filename, machine)
+    stripped = re.sub(r"\.PDF$", "", stripped)
+    stripped = _DATE_PATTERN.sub(" ", stripped)
+    stripped = re.sub(r"[0-9_./-]+", " ", stripped)
+    candidate = " ".join(stripped.split()).strip()
+    if len(candidate) < 3:
+        return ""
+    return candidate
+
+
+def _canonical_group_for_gemini_type(gemini_document_type: str, company) -> str:
+    """
+    Decide el grupo canónico para una keyword nueva aprendida a
+    partir de lo que clasificó Gemini: si el propio texto de
+    `gemini_document_type` ya contiene una palabra clave conocida
+    (estática, aseguradora real, o ya aprendida antes), se reutiliza
+    ESE grupo -- si no, se crea un grupo nuevo a partir del propio
+    `gemini_document_type`, normalizado (Miguel Ángel, S016: Gemini
+    puede proponer categorías libres, sin lista cerrada -- este
+    aprendizaje hereda esa libertad en vez de forzar todo a los
+    grupos ya conocidos).
+    """
+    pairs = _dynamic_keyword_group_pairs(company)
+    matched = _group_for_text(gemini_document_type, pairs)
+    if matched:
+        return matched
+    return _strip_accents_upper(gemini_document_type)
+
+
+def learn_from_classification(
+    filename: str, gemini_document_type: str, machine=None, company=None,
+) -> None:
+    """
+    Aprendizaje automático (Miguel Ángel, S026: "el propio sistema
+    propone automáticamente nuevas entradas de diccionario... se usa
+    en la propia sesión de subida"). Se llama desde
+    machine_documents.tasks cada vez que la heurística de nombre NO
+    reconoció el tipo de un documento y Gemini lo clasificó -- nunca
+    al revés (si la heurística ya lo tenía claro, no hay nada que
+    aprender). Activa de inmediato (is_active=True por defecto en el
+    modelo) -- el resto de archivos del MISMO lote, procesados a
+    continuación en la misma tarea, ya pueden beneficiarse de esta
+    keyword nueva.
+
+    Sin `company` o sin `gemini_document_type`, o si no queda ninguna
+    palabra candidata aprovechable en el nombre (ver
+    _extract_candidate_keyword), no se aprende nada -- nunca se
+    inventa una entrada de diccionario sin una señal real de nombre
+    de archivo que la respalde.
+    """
+    if not company or not gemini_document_type:
+        return
+
+    from document_ingestion.models import LearnedDocumentTypeKeyword
+
+    candidate = _extract_candidate_keyword(filename, machine)
+    if not candidate:
+        logger.info(
+            "# [learn_from_classification] %s: sin palabra clave "
+            "aprovechable tras quitar máquina/matrícula/fecha/"
+            "extensión -- no se aprende nada.",
+            filename,
+        )
+        return
+
+    canonical_group = _canonical_group_for_gemini_type(
+        gemini_document_type, company,
+    )
+
+    obj, created = LearnedDocumentTypeKeyword.objects.get_or_create(
+        company=company,
+        keyword=candidate,
+        defaults={
+            "canonical_group": canonical_group,
+            "source_filename": filename,
+            "source_document_type": gemini_document_type,
+        },
+    )
+    if not created:
+        obj.occurrences += 1
+        obj.canonical_group = canonical_group
+        obj.source_filename = filename
+        obj.source_document_type = gemini_document_type
+        obj.save(update_fields=[
+            "occurrences", "canonical_group", "source_filename",
+            "source_document_type", "last_seen",
+        ])
+
+    logger.info(
+        "# [learn_from_classification] %s -> keyword=%r grupo=%r "
+        "(nueva=%s, empresa=%s).",
+        filename, candidate, canonical_group, created, company,
+    )
 
 
 def parse_date_from_filename(filename: str) -> date | None:
@@ -310,6 +506,7 @@ class PreflightVerdict:
 def evaluate_batch(
     filenames: list[str],
     machine=None,
+    company=None,
     persisted_documents: list | None = None,
 ) -> list[PreflightVerdict]:
     """
@@ -317,15 +514,27 @@ def evaluate_batch(
     llamador ya debe haber resuelto machine con
     document_ingestion.entity_matching_service.match_machine_asset_by_filename()
     antes de invocar esto, agrupando el lote por maquina si hace
-    falta). `persisted_documents` son objetos con .document_type,
-    .issue_date, .period_end, .expiry_date -- normalmente
+    falta). `company` habilita el diccionario dinámico completo
+    (aseguradoras reales + aprendizaje, ver
+    _dynamic_keyword_group_pairs) -- sin él, solo se usa el
+    diccionario estático de arranque. `persisted_documents` son
+    objetos con .document_type, .issue_date, .period_end,
+    .expiry_date -- normalmente
     machine_documents.models.MachineDocument.objects.filter(machine_asset=machine)
-    ya resuelto por el llamador (este modulo nunca consulta BD).
+    ya resuelto por el llamador (este modulo nunca consulta BD, salvo
+    Insurer/LearnedDocumentTypeKeyword para el diccionario dinámico).
 
     Devuelve un veredicto por archivo, en el mismo orden de entrada.
     """
     persisted_documents = persisted_documents or []
     verdicts: list[PreflightVerdict] = []
+
+    # Diccionario dinámico calculado UNA sola vez para todo el lote
+    # (evita una consulta a Insurer/LearnedDocumentTypeKeyword por
+    # archivo) -- se reutiliza tanto para agrupar los archivos del
+    # lote como para reconocer el grupo de los documentos ya
+    # persistidos.
+    keyword_pairs = _dynamic_keyword_group_pairs(company)
 
     # Paso 1 -- REGLA A, y de paso, fecha/grupo de los que la superan
     # (necesarios para la REGLA B en el paso 2). Sin MAQUINA
@@ -350,7 +559,9 @@ def evaluate_batch(
         if machine is None:
             verdicts.append(PreflightVerdict(filename=filename, discard=False))
             continue
-        group = find_obsolescence_group(filename, machine)
+        group = find_obsolescence_group(
+            filename, machine=machine, keyword_pairs=keyword_pairs,
+        )
         parsed_date = parse_date_from_filename(filename) if group else None
         survivors.append((filename, group, parsed_date))
 
@@ -372,26 +583,28 @@ def evaluate_batch(
     }
 
     # Fecha mas reciente ya persistida en BD por grupo, para comparar
-    # el candidato del lote contra ella.
+    # el candidato del lote contra ella -- mismo diccionario dinámico
+    # que el paso 1, para que un documento persistido clasificado bajo
+    # una aseguradora real o una keyword aprendida también se
+    # reconozca aquí (no solo el estático).
     persisted_latest_by_group: dict[str, date] = {}
     for document in persisted_documents:
-        document_type_upper = _strip_accents_upper(
-            getattr(document, "document_type", "") or "",
+        group = _group_for_text(
+            getattr(document, "document_type", "") or "", keyword_pairs,
         )
-        for keyword, group in _OBSOLESCENCE_GROUP_KEYWORDS:
-            if keyword not in document_type_upper:
-                continue
-            candidate_date = (
-                getattr(document, "issue_date", None)
-                or getattr(document, "period_end", None)
-                or getattr(document, "period_start", None)
-                or getattr(document, "expiry_date", None)
-            )
-            if candidate_date is None:
-                continue
-            current_latest = persisted_latest_by_group.get(group)
-            if current_latest is None or candidate_date > current_latest:
-                persisted_latest_by_group[group] = candidate_date
+        if group is None:
+            continue
+        candidate_date = (
+            getattr(document, "issue_date", None)
+            or getattr(document, "period_end", None)
+            or getattr(document, "period_start", None)
+            or getattr(document, "expiry_date", None)
+        )
+        if candidate_date is None:
+            continue
+        current_latest = persisted_latest_by_group.get(group)
+        if current_latest is None or candidate_date > current_latest:
+            persisted_latest_by_group[group] = candidate_date
 
     for filename, group, parsed_date in survivors:
         if group is None or parsed_date is None:
