@@ -426,7 +426,7 @@
                                     <label class="form-label fw-medium">Procedencia</label>
                                     <select name="repuesto_{{ rep.ridx }}_origen" class="form-select">
                                         <option value="WAREHOUSE" {% if rep.origen == 'WAREHOUSE' %}selected{% endif %}>Almacén</option>
-                                        <option value="SUPPLIER"  {% if rep.origen == 'SUPPLIER'  %}selected{% endif %}>Proveedor</option>
+                                        <option value="SUPPLIER" {% if rep.origen == 'SUPPLIER' %}selected{% endif %}>Proveedor</option>
                                     </select>
                                 </div>
                                 <div class="col-12 col-md-4">
@@ -749,8 +749,3 @@ window.EB_CONFIG = {
 {# Time Picker Widget #}
 {% include "panel/_time_picker_widget.html" %}
 {% endblock %}
-
-
-
-
-

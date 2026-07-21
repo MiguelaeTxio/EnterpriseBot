@@ -666,7 +666,7 @@
             {% if not is_elevated and own_period_groups %}
             <div class="px-4 pt-2">
                 <details class="text-sm">
-                    <summary class="text-muted" style="cursor: pointer;">
+                    <summary class="text-muted section-summary-toggle">
                         <i class="bi bi-calendar-range me-1"></i>Mis periodos
                     </summary>
                     <div class="d-flex flex-wrap gap-2 mt-2">
@@ -1088,6 +1088,26 @@
         cursor: pointer;
     }
     .filter-machine-dropdown li:hover { background-color: #f0f4ff; }
+    /* Section title for export-template groups (H021, 2026-07-21) --
+       título de sección de grupos de plantillas de exportación */
+    .section-title {
+        font-size: 0.8rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: #6c757d;
+        border-bottom: 1px solid #dee2e6;
+        padding-bottom: 0.4rem;
+    }
+    /* Collapsible "Mis periodos" toggle (H021, 2026-07-21) --
+       activador plegable de "Mis periodos" */
+    .section-summary-toggle { cursor: pointer; }
+    /* Small badge for template metadata/columns (H021, 2026-07-21) --
+       badge pequeño para metadatos/columnas de plantilla */
+    .badge-xs { font-size: 0.7rem; }
+    /* Template metadata line: format/scope (H021, 2026-07-21) --
+       línea de metadatos de plantilla: formato/alcance */
+    .tpl-meta-text { font-size: 0.75rem; }
 </style>
 <script>
 /* Initialise WorkPeriodCreate modal — pre-fill dates from suggested values.
@@ -1191,7 +1211,7 @@
                 </div>
 
                 {# Plantillas personales #}
-                <div class="section-title mt-2 mb-3" style="font-size:0.8rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:#6c757d;border-bottom:1px solid #dee2e6;padding-bottom:0.4rem;">
+                <div class="section-title mt-2 mb-3">
                     <i class="bi bi-person me-1"></i>Mis plantillas
                 </div>
                 {% if templates_propias %}
@@ -1203,18 +1223,18 @@
                                 <div class="d-flex align-items-start justify-content-between mb-2">
                                     <h6 class="fw-bold mb-0 text-sm">{{ tpl.name }}</h6>
                                     {% if tpl.is_default %}
-                                    <span class="badge bg-success rounded-pill ms-2 text-nowrap" style="font-size:0.7rem;">
+                                    <span class="badge bg-success rounded-pill ms-2 text-nowrap badge-xs">
                                         <i class="bi bi-star-fill me-1"></i>Por defecto
                                     </span>
                                     {% endif %}
                                 </div>
-                                <div class="mb-2 text-muted" style="font-size:0.75rem;">
+                                <div class="mb-2 text-muted tpl-meta-text">
                                     {% if tpl.sheet_format == "single_sheet" %}Una sola hoja{% else %}Una hoja por operario{% endif %}
                                     · {% if tpl.operator_scope == "all" %}Todos los operarios{% else %}Selección manual{% endif %}
                                 </div>
                                 <div class="d-flex flex-wrap gap-1 mb-2">
                                     {% for col in tpl.columns %}
-                                    <span class="badge bg-light text-dark border" style="font-size:0.7rem;">{{ col }}</span>
+                                    <span class="badge bg-light text-dark border badge-xs">{{ col }}</span>
                                     {% endfor %}
                                 </div>
                                 <div class="d-flex gap-2 flex-wrap">
@@ -1267,7 +1287,7 @@
 
                 {# Plantillas globales #}
                 {% if templates_globales %}
-                <div class="section-title mt-2 mb-3" style="font-size:0.8rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:#6c757d;border-bottom:1px solid #dee2e6;padding-bottom:0.4rem;">
+                <div class="section-title mt-2 mb-3">
                     <i class="bi bi-globe me-1"></i>Plantillas de empresa
                 </div>
                 <div class="row g-3 mb-2">
@@ -1277,17 +1297,17 @@
                             <div class="card-body p-3">
                                 <div class="d-flex align-items-start justify-content-between mb-2">
                                     <h6 class="fw-bold mb-0 text-sm">{{ tpl.name }}</h6>
-                                    <span class="badge bg-primary rounded-pill ms-2 text-nowrap" style="font-size:0.7rem;">
+                                    <span class="badge bg-primary rounded-pill ms-2 text-nowrap badge-xs">
                                         <i class="bi bi-globe me-1"></i>Global
                                     </span>
                                 </div>
-                                <div class="mb-2 text-muted" style="font-size:0.75rem;">
+                                <div class="mb-2 text-muted tpl-meta-text">
                                     {% if tpl.sheet_format == "single_sheet" %}Una sola hoja{% else %}Una hoja por operario{% endif %}
                                     · {% if tpl.operator_scope == "all" %}Todos los operarios{% else %}Selección manual{% endif %}
                                 </div>
                                 <div class="d-flex flex-wrap gap-1 mb-2">
                                     {% for col in tpl.columns %}
-                                    <span class="badge bg-light text-dark border" style="font-size:0.7rem;">{{ col }}</span>
+                                    <span class="badge bg-light text-dark border badge-xs">{{ col }}</span>
                                     {% endfor %}
                                 </div>
                                 <div class="d-flex gap-2">
@@ -1540,7 +1560,3 @@ window.EB_EXPORT_TEMPLATES = {
 </script>
 <script src="{% static 'panel/js/export_templates.js' %}"></script>
 {% endblock %}
-
-
-
-
