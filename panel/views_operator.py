@@ -2277,7 +2277,14 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
                 request ,
                 "El parte no existe, ya ha sido revisado o no te pertenece.",
                 )
-                return redirect ("/panel/operator/history/")
+                # Hallazgo real fuera de alcance, corregido de inmediato
+                # (directriz 4.9): "/panel/operator/history/" ya no existe
+                # -- WorkOrderEntryHistoryView fue eliminada en la
+                # unificación H17 S012 (2026-07-10) y este redirect
+                # hardcodeado nunca se actualizó, dejando un 404 real cada
+                # vez que se disparaba esta rama.
+                from django .urls import reverse as _reverse_dne
+                return redirect (_reverse_dne ("panel:work_order_admin_history"))
 
 
 
@@ -2349,10 +2356,30 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
 
             _first_hf_edit =_end_time_morning_edit if _end_time_morning_edit else _end_time_afternoon_edit 
 
+            # is_elevated / back_url -- gap señalado por Miguel Ángel
+            # 2026-07-21: al editar/ver un parte digital como ADMIN o
+            # SUPERVISOR faltaba el botón "Marcar revisado" (además de
+            # Guardar tareas/Cerrar parte), y al volver se perdían los
+            # filtros de la lista de origen. back_url llega por GET desde
+            # el enlace "Editar / Revisar" de _wo_table.html.
+            from panel .url_utils import safe_back_url as _safe_back_url_edit
+            from django .urls import reverse as _reverse_edit_ctx
+            _is_elevated_edit =cu .role in (
+            CompanyUser .ROLE_ADMIN ,
+            CompanyUser .ROLE_SUPERVISOR ,
+            CompanyUser .ROLE_WORKSHOPBOSS ,
+            )
+            _back_url_edit =_safe_back_url_edit (
+            request ,request .GET .get ("back_url",""),
+            _reverse_edit_ctx ("panel:work_order_admin_history"),
+            )
+
             context =self ._get_context_base (request )
             context .update ({
             "edit_mode":True ,
             "edit_wo_pk":wo_pk ,
+            "is_elevated":_is_elevated_edit ,
+            "back_url":_back_url_edit ,
             "num_entradas":len (entradas_enriched )or 1 ,
             "num_repuestos":len (repuestos_enriched ),
             "fecha":fecha_str ,
@@ -2622,9 +2649,55 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
         company =cu .company 
         POST =request .POST 
 
+        # form_action=mark_reviewed -- botón "Marcar revisado" para
+        # ADMIN/SUPERVISOR/WORKSHOPBOSS al editar/ver un parte digital
+        # (gap señalado por Miguel Ángel 2026-07-21: existía la acción
+        # equivalente por fila en el listado, pero no dentro del propio
+        # editor, junto a Guardar tareas/Cerrar parte). Acción
+        # independiente y previa a todo el pipeline de parseo/guardado de
+        # bloques -- no toca ni valida ninguno de los datos del
+        # formulario, solo el flag reviewed del WorkOrder en edición.
+        # ---
+        # form_action=mark_reviewed -- "Marcar revisado" button for
+        # ADMIN/SUPERVISOR/WORKSHOPBOSS when editing/viewing a digital
+        # part (gap flagged by Miguel Ángel 2026-07-21: the equivalent
+        # per-row action existed in the list, but not inside the editor
+        # itself, next to Guardar tareas/Cerrar parte). Independent
+        # action, short-circuited before the whole block-parsing/saving
+        # pipeline -- touches/validates none of the form data, only the
+        # reviewed flag of the WorkOrder being edited.
+        if POST .get ("form_action","").strip ()=="mark_reviewed":
+            from panel .url_utils import safe_back_url as _safe_back_url_mr 
+            from django .urls import reverse as _reverse_mr 
 
+            if cu .role not in (
+            CompanyUser .ROLE_ADMIN ,
+            CompanyUser .ROLE_SUPERVISOR ,
+            CompanyUser .ROLE_WORKSHOPBOSS ,
+            ):
+                from django .http import HttpResponseForbidden 
+                return HttpResponseForbidden ("Acción no disponible para tu rol.")
 
+            _fallback_mr =_reverse_mr ("panel:work_order_admin_history")
+            _back_url_mr =_safe_back_url_mr (request ,POST .get ("back_url",""),_fallback_mr )
 
+            try :
+                _wo_mr_pk =int (POST .get ("edit_wo_pk","").strip ())
+                _wo_mr =WorkOrder .objects .get (
+                pk =_wo_mr_pk ,
+                company =company ,
+                source__in =[WorkOrder .Source .DIGITAL ,WorkOrder .Source .GENERATED ],
+                )
+            except (ValueError ,TypeError ,WorkOrder .DoesNotExist ):
+                django_messages .error (request ,"Parte no encontrado o no pertenece a esta empresa.")
+                return redirect (_back_url_mr )
+
+            _wo_mr .reviewed =True 
+            _wo_mr .reviewed_by =cu 
+            _wo_mr .reviewed_at =now ()
+            _wo_mr .save (update_fields =["reviewed","reviewed_by","reviewed_at"])
+            django_messages .success (request ,f"Parte #{_wo_mr.pk} marcado como revisado.")
+            return redirect (_back_url_mr )
 
         from datetime import time as _dt_time_lb 
         def _parse_time_field (raw ):
@@ -4514,7 +4587,17 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
             _reverse_co ("panel:operator_parts_review",kwargs ={"entry_pk":entry .pk }),
             )
 
-        return redirect (_reverse_co ("panel:work_order_admin_history"))
+        # back_url -- preservar los filtros activos de la lista de origen
+        # al volver tras cerrar/guardar el parte (gap señalado por Miguel
+        # Ángel 2026-07-21). Llega por POST desde el hidden field del
+        # formulario, poblado a su vez desde el GET inicial (back_url en
+        # el enlace "Editar / Revisar" de _wo_table.html).
+        from panel .url_utils import safe_back_url as _safe_back_url_close
+        _back_url_close =_safe_back_url_close (
+        request ,POST .get ("back_url",""),
+        _reverse_co ("panel:work_order_admin_history"),
+        )
+        return redirect (_back_url_close )
 
 
 class WorkOrderEntryPartsReviewView(WorkshopRequiredMixin, View):

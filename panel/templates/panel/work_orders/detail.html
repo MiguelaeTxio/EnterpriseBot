@@ -18,7 +18,7 @@
             <span class="badge bg-warning-subtle text-warning-emphasis ms-2">Pendiente</span>
         {% endif %}
     </h5>
-    <a href="{% url 'panel:work_order_admin_history' %}?tab=reviewed" class="btn btn-outline-secondary btn-sm">
+    <a href="{{ back_url }}" class="btn btn-outline-secondary btn-sm">
         <i class="bi bi-arrow-left me-1"></i>Volver al historial
     </a>
 </div>

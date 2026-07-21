@@ -239,6 +239,30 @@
             form.submit();
         });
     }
+
+    /*
+     * "Marcar revisado" trigger -- ADMIN/SUPERVISOR/WORKSHOPBOSS only,
+     * edit_mode only (gap señalado por Miguel Ángel 2026-07-21: faltaba
+     * junto a Guardar tareas/Cerrar parte). Same pattern as
+     * btnSaveBlocks: native form.submit() with no modal chain -- the
+     * backend short-circuits this form_action before any block-parsing
+     * or gate validation (panel/views_operator.py).
+     *
+     * Disparador de "Marcar revisado" -- solo ADMIN/SUPERVISOR/
+     * WORKSHOPBOSS, solo edit_mode (gap señalado por Miguel Ángel
+     * 2026-07-21: faltaba junto a Guardar tareas/Cerrar parte). Mismo
+     * patrón que btnSaveBlocks: form.submit() nativo sin cadena de
+     * modales -- el backend corta este form_action antes de cualquier
+     * parseo de bloques o validación de barrera
+     * (panel/views_operator.py).
+     */
+    var btnMarkReviewed = document.getElementById("btn-mark-reviewed");
+    if (btnMarkReviewed && form && formActionEl) {
+        btnMarkReviewed.addEventListener("click", function () {
+            formActionEl.value = "mark_reviewed";
+            form.submit();
+        });
+    }
 }
 
 /*

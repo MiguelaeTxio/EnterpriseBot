@@ -3628,12 +3628,21 @@ class WorkOrderDetailView (CompanyUserRequiredMixin ,View ):
         )
         )
 
+        # back_url -- preservar los filtros activos de la lista de origen
+        # (gap señalado por Miguel Ángel 2026-07-21). Fallback a la
+        # pestaña Revisados sin filtros, comportamiento previo.
+        from panel .url_utils import safe_back_url as _safe_back_url_det
+        from django .urls import reverse as _reverse_det
+        _fallback_det =_reverse_det ("panel:work_order_admin_history")+"?tab=reviewed"
+        back_url =_safe_back_url_det (request ,request .GET .get ("back_url",""),_fallback_det )
+
         return render (request ,self .template_name ,{
         "company":company ,
         "company_user":cu ,
         "active_nav":"work_order_admin_history",
         "work_order":work_order ,
         "entries":entries ,
+        "back_url":back_url ,
         })
 
 
@@ -4410,6 +4419,40 @@ class WorkOrderAdminHistoryView (WorkOrderFormAccessMixin ,View ):
         _templates_propias = _ET.objects.filter(company_user=cu, is_global=False).order_by("-is_default", "name")
         _templates_globales = _ET.objects.filter(company=cu.company, is_global=True).order_by("name")
 
+        # back_url / filters_qs -- gap señalado por Miguel Ángel 2026-07-21:
+        # al unificar las vistas de partes (H17 S012) se perdió la
+        # preservación de filtros al navegar a editar/ver un parte y
+        # volver al listado. Se construye aquí la URL completa de vuelta
+        # con TODOS los filtros activos (no solo tab, como antes), para
+        # propagarla vía _wo_table.html a los enlaces Editar/Ver y al
+        # formulario bulk, y desde ahí hasta WorkOrderEntryFormView /
+        # WorkOrderDetailView y de vuelta.
+        # ---
+        # back_url / filters_qs -- gap flagged by Miguel Ángel 2026-07-21:
+        # unifying the work-order views (H17 S012) dropped filter
+        # preservation when navigating to edit/view a part and back to the
+        # list. Builds here the full return URL with ALL active filters
+        # (not just tab, as before), to propagate it via _wo_table.html to
+        # the Editar/Ver links and the bulk form, and from there through
+        # WorkOrderEntryFormView / WorkOrderDetailView and back.
+        from urllib.parse import urlencode as _urlencode_fq
+        from django.urls import reverse as _reverse_fq
+        _filters_dict = {
+            "tab": active_tab,
+            "operator_pk": operator_pk,
+            "date_from": request.GET.get("date_from", ""),
+            "date_to": request.GET.get("date_to", ""),
+            "machine": machine,
+            "fault_category": fault_category,
+            "q": q,
+            "status": status,
+            "sort_stack": sort_stack_str,
+        }
+        filters_qs = _urlencode_fq({k: v for k, v in _filters_dict.items() if v})
+        back_url = _reverse_fq("panel:work_order_admin_history") + (
+            f"?{filters_qs}" if filters_qs else ""
+        )
+
         # Compute aggregate totals for the Revisados tab.
         # Calcular totales agregados para la pestaña Revisados.
         from decimal import Decimal as _Dec
@@ -4464,6 +4507,8 @@ class WorkOrderAdminHistoryView (WorkOrderFormAccessMixin ,View ):
         "sort_stack_str":sort_stack_str ,
         "sort_primary_col":sort_primary_col ,
         "sort_primary_dir":sort_primary_dir ,
+        "filters_qs":filters_qs ,
+        "back_url":back_url ,
         "pending_list":pending_list ,
         "reviewed_list":reviewed_list ,
         "reviewed_totals":reviewed_totals ,
@@ -4567,8 +4612,12 @@ class WorkOrderAdminHistoryView (WorkOrderFormAccessMixin ,View ):
                 request ,
                 "Parte no encontrado o no pertenece a esta empresa.",
                 )
+            # back_url -- preservar TODOS los filtros activos al volver,
+            # no solo tab (gap señalado por Miguel Ángel 2026-07-21).
+            from panel .url_utils import safe_back_url as _safe_back_url_del
+            _fallback_del =reverse ("panel:work_order_admin_history")+f"?tab={active_tab}"
             return redirect (
-            reverse ("panel:work_order_admin_history")+f"?tab={active_tab}"
+            _safe_back_url_del (request ,request .POST .get ("back_url",""),_fallback_del )
             )
 
 
@@ -4585,11 +4634,13 @@ class WorkOrderAdminHistoryView (WorkOrderFormAccessMixin ,View ):
             except (ValueError ,TypeError ):
                 pk_list =[]
 
+            from panel .url_utils import safe_back_url as _safe_back_url_bulk
+            _fallback_bulk =reverse ("panel:work_order_admin_history")+f"?tab={active_tab}"
+            _back_url_bulk =_safe_back_url_bulk (request ,request .POST .get ("back_url",""),_fallback_bulk )
+
             if not pk_list :
                 django_messages .warning (request ,"No se ha seleccionado ningún parte.")
-                return redirect (
-                reverse ("panel:work_order_admin_history")+f"?tab={active_tab}"
-                )
+                return redirect (_back_url_bulk )
 
 
 
@@ -4632,9 +4683,7 @@ class WorkOrderAdminHistoryView (WorkOrderFormAccessMixin ,View ):
             else :
                 django_messages .error (request ,"Operación en bloque no reconocida.")
 
-            return redirect (
-            reverse ("panel:work_order_admin_history")+f"?tab={active_tab}"
-            )
+            return redirect (_back_url_bulk )
 
         if action !="generate_absence_parts":
             django_messages .error (request ,"Acción no reconocida.")

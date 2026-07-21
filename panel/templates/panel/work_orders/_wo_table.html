@@ -23,6 +23,8 @@
 {#   totals                    — dict con horas_totales/horas_extra/dietas — solo si show_totals    #}
 {#   empty_icon                — clase bootstrap-icons para el estado vacío                         #}
 {#   empty_text                — texto del estado vacío                                             #}
+{#   back_url                  — URL de vuelta con todos los filtros activos, propagada a Editar/    #}
+{#                               Ver y al formulario bulk (2026-07-21, gap de filtros perdidos)      #}
 {#                                                                                                #}
 {# Toda decisión de negocio (colores de badge, alcance por rol, qué acciones existen) llega ya     #}
 {# resuelta desde la vista o desde los parámetros del include — este parcial solo renderiza.       #}
@@ -34,6 +36,8 @@
     {% csrf_token %}
     <input type="hidden" name="action" value="bulk_action">
     <input type="hidden" name="active_tab" value="{{ tab_key }}">
+    {# back_url -- preserva TODOS los filtros activos al volver tras borrar/marcar en bloque (gap señalado por Miguel Ángel 2026-07-21) #}
+    <input type="hidden" name="back_url" value="{{ back_url }}">
     {% if is_elevated %}
     <div class="px-4 py-2 border-bottom bg-light d-flex align-items-center gap-2 flex-wrap bulk-action-bar"
          id="bulk-bar-{{ tab_key }}">
@@ -222,14 +226,14 @@
                     <td class="text-sm">
                         <div class="d-flex gap-2 flex-wrap">
                             {% if show_edit %}
-                            <a href="{% url 'panel:operator_form_edit' wo.pk %}?from=taller"
+                            <a href="{% url 'panel:operator_form_edit' wo.pk %}?from=taller&back_url={{ back_url|urlencode }}"
                                class="btn btn-outline-primary btn-sm py-0 px-2">
                                 <i class="bi bi-pencil me-1"></i>Editar / Revisar
                             </a>
                             {% endif %}
                             {% if is_elevated %}
                                 {% if show_detail %}
-                                <a href="{% url 'panel:work_order_detail' wo.pk %}"
+                                <a href="{% url 'panel:work_order_detail' wo.pk %}?back_url={{ back_url|urlencode }}"
                                    class="btn btn-outline-secondary btn-sm py-0 px-2">
                                     <i class="bi bi-eye me-1"></i>Ver
                                 </a>

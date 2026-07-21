@@ -506,6 +506,20 @@
                 </div>
                 {% endif %}
 
+                {% if is_elevated and period_groups %}
+                <div class="col-12 col-md-2">
+                    <label class="form-label text-sm fw-semibold mb-1">Periodo</label>
+                    <select id="filter-period-select" class="form-select form-select-sm">
+                        <option value="">— Elegir periodo —</option>
+                        {% for row in period_groups %}
+                        <option value="{{ row.group.start_date|date:'Y-m-d' }}|{{ row.group.end_date|date:'Y-m-d' }}">
+                            {{ row.group.label }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                {% endif %}
+
                 <div class="col-12 col-md-2">
                     <label class="form-label text-sm fw-semibold mb-1">Fecha desde</label>
                     <input type="date" name="date_from" class="form-control form-control-sm"
@@ -667,7 +681,7 @@
                 </details>
             </div>
             {% endif %}
-            {% include "panel/work_orders/_wo_table.html" with wo_list=pending_list tab_key="pending" show_pipeline_status=True show_edit=True show_mark_reviewed_row=True bulk_mark_reviewed=True empty_icon="bi-check2-all text-success" empty_text="No hay partes pendientes de revisión." %}
+            {% include "panel/work_orders/_wo_table.html" with wo_list=pending_list tab_key="pending" show_pipeline_status=True show_edit=True show_mark_reviewed_row=True bulk_mark_reviewed=True back_url=back_url empty_icon="bi-check2-all text-success" empty_text="No hay partes pendientes de revisión." %}
         </div>
 
         {# ============================================================== #}
@@ -675,7 +689,7 @@
         {# ============================================================== #}
         {% elif active_tab == 'reviewed' %}
         <div class="p-0">
-            {% include "panel/work_orders/_wo_table.html" with wo_list=reviewed_list tab_key="reviewed" show_reviewed_by=True show_excel=True show_unmark_reviewed_row=True show_detail=True bulk_mark_reviewed=True bulk_unmark_reviewed=True bulk_export=True show_totals=True totals=reviewed_totals empty_icon="bi-inbox" empty_text="No hay partes revisados con los filtros aplicados." %}
+            {% include "panel/work_orders/_wo_table.html" with wo_list=reviewed_list tab_key="reviewed" show_reviewed_by=True show_excel=True show_unmark_reviewed_row=True show_detail=True bulk_mark_reviewed=True bulk_unmark_reviewed=True bulk_export=True show_totals=True totals=reviewed_totals back_url=back_url empty_icon="bi-inbox" empty_text="No hay partes revisados con los filtros aplicados." %}
         </div>
 
         {# ============================================================== #}
@@ -683,7 +697,7 @@
         {# ============================================================== #}
         {% elif active_tab == 'history' %}
         <div class="p-0">
-            {% include "panel/work_orders/_wo_table.html" with wo_list=history_list tab_key="history" show_reviewed_badge=True show_origen=True show_detail=True bulk_mark_reviewed=True empty_icon="bi-inbox" empty_text="No hay partes con los filtros aplicados." %}
+            {% include "panel/work_orders/_wo_table.html" with wo_list=history_list tab_key="history" show_reviewed_badge=True show_origen=True show_detail=True bulk_mark_reviewed=True back_url=back_url empty_icon="bi-inbox" empty_text="No hay partes con los filtros aplicados." %}
         </div>
 
         {# ============================================================== #}

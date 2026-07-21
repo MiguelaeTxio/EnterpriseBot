@@ -233,11 +233,36 @@
 
     });
 
+    // ------------------------------------------------------------------
+    // Period filter shortcut — Atajo de filtro de periodo.
+    // Snaps date_from/date_to to the start/end of an existing
+    // WorkPeriodGroup (fixed 21-to-20 cycle) chosen from the dropdown --
+    // gap flagged by Miguel Ángel 2026-07-21: date filters had no
+    // relation to the periods already in use.
+    // Ajusta date_from/date_to al inicio/fin de un WorkPeriodGroup
+    // existente (ciclo fijo 21-al-20) elegido en el desplegable -- gap
+    // señalado por Miguel Ángel 2026-07-21: los filtros de fecha no
+    // tenían ninguna relación con los periodos ya en uso.
+    // ------------------------------------------------------------------
+    function initPeriodFilterShortcut() {
+        var select   = document.getElementById("filter-period-select");
+        var dateFrom = document.querySelector("[name='date_from']");
+        var dateTo   = document.querySelector("[name='date_to']");
+        if (!select || !dateFrom || !dateTo) { return; }
+        select.addEventListener("change", function () {
+            if (!select.value) { return; }
+            var parts = select.value.split("|");
+            dateFrom.value = parts[0];
+            dateTo.value   = parts[1];
+        });
+    }
+
     document.addEventListener("DOMContentLoaded", function () {
         initBulkGroup("pending");
         initBulkGroup("reviewed");
         initBulkGroup("history");
         initMachineAutocomplete();
+        initPeriodFilterShortcut();
     });
 
 }());
