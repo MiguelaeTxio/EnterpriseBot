@@ -85,6 +85,12 @@ def route_ingested_files(self, ingested_file_pks: list[int]) -> None:
 
     new_machine_pks: list[int] = []
     new_personal_pks: list[int] = []
+    # Seguimiento para el fallback de herencia de máquina por carpeta
+    # (Miguel Ángel, S026, cierre de sesión -- ver el bloque tras el
+    # bucle principal): (MachineDocument, source_folder_path,
+    # MachineAsset|None) de cada archivo enrutado a MACHINE en este
+    # mismo lote.
+    machine_routing_records: list[tuple] = []
 
     for ingested in ingested_files:
         try:
@@ -131,6 +137,9 @@ def route_ingested_files(self, ingested_file_pks: list[int]) -> None:
             )
             new_document.save()
             new_machine_pks.append(new_document.pk)
+            machine_routing_records.append((
+                new_document, ingested.source_folder_path, matched_machine,
+            ))
 
             ingested.status = IngestedFile.Status.ROUTED
             ingested.routed_domain = DOMAIN_MACHINE
@@ -195,6 +204,59 @@ def route_ingested_files(self, ingested_file_pks: list[int]) -> None:
                 "# [route_ingested_files] #%d (%s) -> dominio no "
                 "identificado (%s) -- NEEDS_REVIEW.",
                 ingested.pk, filename, route["domain"],
+            )
+
+    # Herencia de máquina por carpeta (Miguel Ángel, S026, cierre de
+    # sesión -- caso real: 3 documentos de una misma carpeta quedaron
+    # SIN ASIGNAR porque su propio nombre de archivo no llevaba el
+    # código/matrícula de la máquina, aunque el resto de la carpeta sí
+    # se identificó bien). Palabras textuales: "aunque en el nombre no
+    # tenga el código de la máquina, están en la carpeta de la
+    # máquina. Entonces, una vez que tenemos determinado qué máquina
+    # es, los documentos que se están subiendo de esa carpeta
+    # pertenecen a esa máquina."
+    #
+    # Un documento MACHINE sin máquina emparejada hereda la de sus
+    # HERMANOS de la MISMA carpeta (source_folder_path) del MISMO
+    # lote, solo si todos los hermanos ya emparejados de esa carpeta
+    # coinciden en una única máquina -- si la carpeta mezcla más de
+    # una máquina distinta entre sus hermanos, o ninguno se emparejó,
+    # se deja sin asignar (nunca se adivina a ciegas sin una señal
+    # real de la propia carpeta).
+    folder_matched_machine_pks: dict[str, set] = {}
+    folder_unassigned_documents: dict[str, list] = {}
+    machines_by_pk: dict[int, object] = {}
+    for document, folder_path, matched_machine in machine_routing_records:
+        if not folder_path:
+            continue
+        if matched_machine is not None:
+            machines_by_pk[matched_machine.pk] = matched_machine
+            folder_matched_machine_pks.setdefault(folder_path, set()).add(
+                matched_machine.pk,
+            )
+        else:
+            folder_unassigned_documents.setdefault(folder_path, []).append(
+                document,
+            )
+
+    for folder_path, unassigned_documents in folder_unassigned_documents.items():
+        matched_pks = folder_matched_machine_pks.get(folder_path)
+        if not matched_pks or len(matched_pks) != 1:
+            continue
+        inherited_machine = machines_by_pk[next(iter(matched_pks))]
+        for document in unassigned_documents:
+            document.machine_asset = inherited_machine
+            document.detected_reference_hint = ""
+            document.save(update_fields=[
+                "machine_asset", "detected_reference_hint",
+            ])
+            logger.info(
+                "# [route_ingested_files] MachineDocument #%d (%s) "
+                "heredó máquina %s de sus hermanos de carpeta %r -- "
+                "no se pudo emparejar por contenido ni por nombre, "
+                "pero el resto de la carpeta sí (S026).",
+                document.pk, document.original_filename,
+                inherited_machine.code, folder_path,
             )
 
     if new_machine_pks:
