@@ -467,37 +467,70 @@ def learn_from_classification(
     )
 
 
+# Periodo AAAA-AAAA (S026, hallazgo real de la sesión: certificados
+# OCA/pólizas de seguro con nombres como "OCA 2015-2016.pdf",
+# "OCA 2016-2017.pdf"... nunca llevan una fecha D-M-Y única, solo el
+# rango de años del periodo de vigencia -- _DATE_PATTERN nunca los
+# reconocía (exige TRES grupos numéricos, un rango de año solo tiene
+# dos), así que cada uno caía en "sin fecha -- se sube siempre" y la
+# REGLA B nunca los comparaba entre sí. Cadena real detectada por
+# Miguel Ángel en la subida de la A-36: "2014, 2015, 2016, 2017,
+# 2018... hemos ido encadenando una serie de errores". Se usa el año
+# MÁS RECIENTE del rango (fin del periodo) como fecha de referencia,
+# como respaldo SOLO si no hay ningún patrón D-M-Y reconocible.
+_YEAR_RANGE_PATTERN = re.compile(r"(?<!\d)(\d{4})[-_./](\d{4})(?!\d)")
+
+
 def parse_date_from_filename(filename: str) -> date | None:
     """
-    Extrae la fecha del nombre de archivo (formato D-M-Y visto en los
-    13 casos reales de S025, incluidos los formatos irregulares
-    "24-4-19"/"5-5-17" con ano de 2 digitos -- se asume siglo 2000).
-    Devuelve None si no hay ningun patron D-M-Y reconocible, o si el
-    unico patron encontrado no es una fecha valida (ej. un numero de
-    expediente que por casualidad tiene la forma X-Y-Z pero no es una
-    fecha real) -- en cualquiera de los dos casos, el llamador debe
-    tratarlo como "no identificado" y subir el archivo sin comparar
-    (Miguel Angel, S026: "los que no se identifiquen bien, hay que
-    subirlos").
+    Extrae la fecha del nombre de archivo. Dos formatos reconocidos,
+    en este orden:
+
+    1. D-M-Y (formato español, ancho de dígitos y separador
+       desconocidos de antemano -- ver _DATE_PATTERN).
+    2. Periodo AAAA-AAAA (ver _YEAR_RANGE_PATTERN arriba) -- solo si
+       el (1) no encontró nada. Se usa el año más reciente del rango.
+
+    Devuelve None si ninguno de los dos patrones aparece, o si el
+    único patrón D-M-Y encontrado no es una fecha válida (ej. un
+    número de expediente que por casualidad tiene la forma X-Y-Z pero
+    no es una fecha real) -- en cualquiera de los casos, el llamador
+    debe tratarlo como "no identificado" y subir el archivo sin
+    comparar (Miguel Ángel, S026: "los que no se identifiquen bien,
+    hay que subirlos").
     """
     matches = _DATE_PATTERN.findall(filename)
-    if not matches:
-        return None
-    day_str, month_str, year_str = matches[-1]
-    try:
-        day = int(day_str)
-        month = int(month_str)
-        year = int(year_str)
-        if year < 100:
-            year += 2000
-        return date(year, month, day)
-    except ValueError:
+    if matches:
+        day_str, month_str, year_str = matches[-1]
+        try:
+            day = int(day_str)
+            month = int(month_str)
+            year = int(year_str)
+            if year < 100:
+                year += 2000
+            return date(year, month, day)
+        except ValueError:
+            logger.info(
+                "# [parse_date_from_filename] %s: patron %s-%s-%s no "
+                "es una fecha valida -- tratado como sin fecha "
+                "identificada.",
+                filename, day_str, month_str, year_str,
+            )
+            return None
+
+    range_matches = _YEAR_RANGE_PATTERN.findall(filename)
+    if range_matches:
+        year1_str, year2_str = range_matches[-1]
+        year = max(int(year1_str), int(year2_str))
         logger.info(
-            "# [parse_date_from_filename] %s: patron %s-%s-%s no es una "
-            "fecha valida -- tratado como sin fecha identificada.",
-            filename, day_str, month_str, year_str,
+            "# [parse_date_from_filename] %s: periodo %s-%s -- usando "
+            "%d (año más reciente del rango) como fecha de "
+            "referencia.",
+            filename, year1_str, year2_str, year,
         )
-        return None
+        return date(year, 1, 1)
+
+    return None
 
 
 @dataclass(frozen=True)
