@@ -72,9 +72,21 @@ jobs:
         # ejecutarse con código a medio desplegar -- if: success() es
         # el comportamiento por defecto de GitHub Actions, se deja
         # explícito aquí para que quede claro que es intencional.
+        #
+        # --max-time 60 (S026, Miguel Ángel): el reload de PythonAnywhere
+        # puede tardar hasta 45s cuando hay mucho tráfico en la
+        # plataforma -- sin este flag, curl usaba su comportamiento por
+        # defecto (sin límite explícito de tiempo total), y varios
+        # despliegues reales fallaron ("git pull + migrate +
+        # collectstatic" en éxito, este paso en fallo) exactamente por
+        # eso. Confirmado por Miguel Ángel: "el error es única y
+        # exclusivamente por el tema del timeout" -- puede reiniciar la
+        # web app a mano desde el botón verde del panel de PythonAnywhere
+        # cuando pasa. Un minuto de margen, por encima de los 45s reales
+        # observados.
         if: success()
         run: |
-          curl -sf -X POST \
+          curl -sf --max-time 60 -X POST \
             "https://www.pythonanywhere.com/api/v0/user/MiguelAeTxio/webapps/enterprisebot-miguelaetxio.pythonanywhere.com/reload/" \
             -H "Authorization: Token ${{ secrets.PA_API_TOKEN }}"
           echo "--- Reload solicitado OK ---"
@@ -140,7 +152,7 @@ jobs:
 
             if echo "$CHANGED" | grep -qE '^(vox_bridge/|voice_orchestrator\.py|voice_sidecar_bridge\.py|ivr_config/services\.py|whatsapp/services\.py|whatsapp/models\.py)'; then
               echo "--- Bridge de voz: cambios relevantes detectados, reiniciando (id 234987) ---"
-              curl -sf -X POST "https://www.pythonanywhere.com/api/v0/user/MiguelAeTxio/always_on/234987/restart/" \
+              curl -sf --max-time 60 -X POST "https://www.pythonanywhere.com/api/v0/user/MiguelAeTxio/always_on/234987/restart/" \
                 -H "Authorization: Token ${{ secrets.PA_API_TOKEN }}"
               echo ""
               echo "Bridge de voz: reinicio solicitado OK."
@@ -150,7 +162,7 @@ jobs:
 
             if echo "$CHANGED" | grep -qE '(tasks\.py$|ai_services/|enterprise_core/celery\.py|enterprise_core/settings\.py|start_celery_worker\.sh|machine_documents/|personal_documents/|document_ingestion/|document_management/|spare_parts/gcs_service\.py|spare_parts/services\.py)'; then
               echo "--- Worker Celery: cambios relevantes detectados, reiniciando (id 242133) ---"
-              curl -sf -X POST "https://www.pythonanywhere.com/api/v0/user/MiguelAeTxio/always_on/242133/restart/" \
+              curl -sf --max-time 60 -X POST "https://www.pythonanywhere.com/api/v0/user/MiguelAeTxio/always_on/242133/restart/" \
                 -H "Authorization: Token ${{ secrets.PA_API_TOKEN }}"
               echo ""
               echo "Worker Celery: reinicio solicitado OK."
