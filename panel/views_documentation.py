@@ -1559,14 +1559,17 @@ class DocumentationPreflightDiscardView(DocsUploadAccessMixin, View):
     """
     POST (fetch JSON, no HTMX): recibe únicamente los NOMBRES de los
     PDF seleccionados (nunca sus bytes -- se llama antes de que el JS
-    de hub.html empiece a subir nada) y devuelve la lista de descarte
-    calculada por document_ingestion.preflight_discard_service (S026,
+    de hub.html empiece a subir nada) y devuelve las DOS listas
+    calculadas por document_ingestion.preflight_discard_service (S026,
     decisión explícita de Miguel Ángel a raíz del incidente real de
     S025: 13 documentos maestros de la A-45 perdidos, que analizados
     uno a uno resultaron ser todos redundantes -- nunca deberían
-    haberse llegado a subir). Flujo: "Leer nombre de archivo ->
-    heurística -> lista de descarte -> conformidad -> subir
-    únicamente los que pasen el primer filtro".
+    haberse llegado a subir). Flujo completo (S026, ampliado en la
+    misma sesión tras revisar el primer diseño con Miguel Ángel):
+    "leer nombre de archivo -> heurística -> lista de descartados Y de
+    no descartados, cada una con el motivo -> el supervisor marca a
+    mano archivo por archivo en cualquiera de las dos listas -> sube
+    únicamente lo que quede marcado".
 
     Agrupa los nombres por máquina detectada
     (document_ingestion.entity_matching_service.match_machine_asset_by_filename,
@@ -1577,9 +1580,27 @@ class DocumentationPreflightDiscardView(DocsUploadAccessMixin, View):
     (obsolescencia de grupo, necesita con qué comparar).
 
     Cuerpo esperado: {"filenames": ["a.pdf", "b.pdf", ...]}.
-    Respuesta: {"discard": [{"filename": ..., "reason": ...}, ...]}.
-    Nunca crea ni modifica ningún registro -- de solo lectura.
+    Respuesta: {"discard": [...], "keep": [...]}, cada entrada con
+    filename/reason/group/parsed_date -- el frontend decide qué
+    marcar por defecto (descartados sin marcar, no descartados
+    marcados), pero el supervisor puede cambiar cualquiera de los dos
+    en cualquier sentido antes de subir. Nunca crea ni modifica ningún
+    registro -- de solo lectura.
     """
+
+    @staticmethod
+    def _keep_reason(group, parsed_date):
+        if group is None:
+            return (
+                "Tipo no reconocido por nombre -- se sube para que "
+                "Gemini lo clasifique."
+            )
+        if parsed_date is None:
+            return f"Tipo «{group}», sin fecha de caducidad -- se sube siempre."
+        return (
+            f"Tipo «{group}», fecha {parsed_date.isoformat()} -- el más "
+            f"reciente disponible."
+        )
 
     def post(self, request):
         company = request.user.company_user.company
@@ -1595,7 +1616,7 @@ class DocumentationPreflightDiscardView(DocsUploadAccessMixin, View):
             if isinstance(name, str) and name.lower().endswith(".pdf")
         ]
         if not filenames:
-            return JsonResponse({"discard": []})
+            return JsonResponse({"discard": [], "keep": []})
 
         # Agrupa por máquina detectada por nombre -- None para los
         # archivos sin máquina identificable (se evalúan igual, solo
@@ -1606,6 +1627,7 @@ class DocumentationPreflightDiscardView(DocsUploadAccessMixin, View):
             filenames_by_machine.setdefault(machine, []).append(filename)
 
         discard_entries = []
+        keep_entries = []
         for machine, machine_filenames in filenames_by_machine.items():
             persisted_documents = (
                 list(
@@ -1621,17 +1643,23 @@ class DocumentationPreflightDiscardView(DocsUploadAccessMixin, View):
                 company=company,
                 persisted_documents=persisted_documents,
             )
-            discard_entries.extend(
-                {"filename": v.filename, "reason": v.reason}
-                for v in verdicts if v.discard
-            )
+            for v in verdicts:
+                if v.discard:
+                    discard_entries.append({
+                        "filename": v.filename, "reason": v.reason,
+                    })
+                else:
+                    keep_entries.append({
+                        "filename": v.filename,
+                        "reason": self._keep_reason(v.group, v.parsed_date),
+                    })
 
         logger.info(
             "# [DocumentationPreflightDiscardView] %d archivo(s) "
-            "evaluados, %d descartado(s) para %s.",
-            len(filenames), len(discard_entries), company,
+            "evaluados, %d descartado(s) / %d no descartado(s) para %s.",
+            len(filenames), len(discard_entries), len(keep_entries), company,
         )
-        return JsonResponse({"discard": discard_entries})
+        return JsonResponse({"discard": discard_entries, "keep": keep_entries})
 
 
 class DocumentationFolderUploadView(DocsUploadAccessMixin, View):

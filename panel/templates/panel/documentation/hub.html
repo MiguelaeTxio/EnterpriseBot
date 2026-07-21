@@ -300,33 +300,62 @@
     </div>
 </div>
 
-{# --- Modal de conformidad de la lista de descarte previa a la subida (S026) --- #}
-{# Flujo: leer nombre de archivo -> heurística -> lista de descarte -> #}
-{# conformidad del supervisor -> subir únicamente los que pasen el filtro. #}
-{# Solo se muestra si el preflight encontró algo que descartar -- si la #}
-{# lista viene vacía, la subida sigue directa sin este paso intermedio. #}
-<div class="modal fade" id="discardConfirmModal" tabindex="-1" aria-hidden="true"
+{# --- Modal de revisión previa a la subida (S026, fase 4) --- #}
+{# Flujo completo: leer nombre de archivo -> heurística -> DOS listas #}
+{# (descartados / no descartados), cada una con su motivo -> el #}
+{# supervisor marca a mano archivo por archivo en cualquiera de las #}
+{# dos -> sube únicamente lo que quede marcado. Se muestra SIEMPRE #}
+{# tras el preflight (ya no solo cuando hay algo que descartar) -- el #}
+{# supervisor revisa las dos listas antes de cualquier subida real. #}
+<div class="modal fade" id="reviewUploadModal" tabindex="-1" aria-hidden="true"
      data-bs-backdrop="static" data-bs-keyboard="false">
-    <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-dialog modal-dialog-centered modal-xl">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title"><i class="bi bi-funnel-fill text-warning me-2"></i>Documentos descartados antes de subir</h5>
+                <h5 class="modal-title"><i class="bi bi-funnel-fill text-warning me-2"></i>Revisar antes de subir</h5>
             </div>
             <div class="modal-body">
-                <p class="small text-muted mb-2">
-                    Estos archivos no se van a subir -- por nombre, parecen documentos
-                    maestros/combinados ya cubiertos por otros del mismo lote, o
-                    versiones antiguas de un documento del que ya hay una más
-                    reciente. Revisa la lista antes de confirmar.
-                </p>
-                <ul class="list-group small mb-0 discard-list-scroll" id="discardConfirmList"></ul>
+                <div class="mb-3">
+                    <div class="d-flex align-items-center justify-content-between mb-1 flex-wrap gap-1">
+                        <h6 class="mb-0 text-danger">
+                            <i class="bi bi-x-circle me-1"></i>Descartados por la heurística
+                            (<span id="reviewDiscardCount">0</span>)
+                        </h6>
+                        <div>
+                            <button type="button" class="btn btn-sm btn-link py-0" data-review-list="discard" data-review-action="all">Marcar todos</button>
+                            <button type="button" class="btn btn-sm btn-link py-0" data-review-list="discard" data-review-action="none">Desmarcar todos</button>
+                        </div>
+                    </div>
+                    <p class="small text-muted mb-1">
+                        Sin marcar por defecto -- parecen documentos maestros/combinados ya
+                        cubiertos por otros del lote, o versiones antiguas de un documento
+                        del que ya hay una más reciente. Marca los que quieras subir igualmente.
+                    </p>
+                    <ul class="list-group small discard-list-scroll" id="reviewDiscardList"></ul>
+                </div>
+                <div>
+                    <div class="d-flex align-items-center justify-content-between mb-1 flex-wrap gap-1">
+                        <h6 class="mb-0 text-success">
+                            <i class="bi bi-check-circle me-1"></i>Se van a subir
+                            (<span id="reviewKeepCount">0</span>)
+                        </h6>
+                        <div>
+                            <button type="button" class="btn btn-sm btn-link py-0" data-review-list="keep" data-review-action="all">Marcar todos</button>
+                            <button type="button" class="btn btn-sm btn-link py-0" data-review-list="keep" data-review-action="none">Desmarcar todos</button>
+                        </div>
+                    </div>
+                    <p class="small text-muted mb-1">
+                        Marcados por defecto. Desmarca los que no quieras subir en esta tanda.
+                    </p>
+                    <ul class="list-group small discard-list-scroll" id="reviewKeepList"></ul>
+                </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-outline-secondary btn-sm" id="discardConfirmCancelBtn">
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="reviewCancelBtn">
                     Cancelar subida
                 </button>
-                <button type="button" class="btn btn-primary btn-sm" id="discardConfirmProceedBtn">
-                    <i class="bi bi-cloud-upload me-1"></i>Confirmar y subir el resto
+                <button type="button" class="btn btn-primary btn-sm" id="reviewProceedBtn">
+                    <i class="bi bi-cloud-upload me-1"></i>Subir seleccionados (<span id="reviewSelectedCount">0</span>)
                 </button>
             </div>
         </div>
@@ -458,7 +487,7 @@
         });
         var totalBytes = pdfFiles.reduce(function (sum, f) { return sum + f.size; }, 0);
         var totalMb = (totalBytes / (1024 * 1024)).toFixed(1);
-        summaryEl.textContent = pdfFiles.length + ' PDF(s) en cola (' + accumulated.length + ' archivo(s) explorado(s), ' + totalMb + ' MB).';
+        summaryEl.textContent = pdfFiles.length + ' PDF(s) en cola (' + accumulated.length + ' archivo(s) explorado(s), ' + totalMb + ' MB) -- todavía no se ha subido nada, pulsa "Subir y clasificar" cuando quieras empezar.';
         submitBtn.disabled = pdfFiles.length === 0;
     }
 
@@ -476,28 +505,32 @@
 
     refreshSummary();
 
-    // Elementos del modal de conformidad de descarte (S026).
-    var discardConfirmModalEl = document.getElementById('discardConfirmModal');
-    var discardConfirmModal = null; // instanciado en el primer uso, igual que progressModal
-    var discardConfirmListEl = document.getElementById('discardConfirmList');
-    var discardConfirmCancelBtn = document.getElementById('discardConfirmCancelBtn');
-    var discardConfirmProceedBtn = document.getElementById('discardConfirmProceedBtn');
+    // Elementos de la pantalla de revisión previa a la subida (S026,
+    // fase 4).
+    var reviewModalEl = document.getElementById('reviewUploadModal');
+    var reviewModal = null; // instanciado en el primer uso, igual que progressModal
+    var reviewDiscardListEl = document.getElementById('reviewDiscardList');
+    var reviewKeepListEl = document.getElementById('reviewKeepList');
+    var reviewDiscardCountEl = document.getElementById('reviewDiscardCount');
+    var reviewKeepCountEl = document.getElementById('reviewKeepCount');
+    var reviewSelectedCountEl = document.getElementById('reviewSelectedCount');
+    var reviewCancelBtn = document.getElementById('reviewCancelBtn');
+    var reviewProceedBtn = document.getElementById('reviewProceedBtn');
 
     function resetSubmitButton() {
         submitBtn.disabled = accumulated.length === 0;
         submitSpinner.classList.add('d-none');
     }
 
-    // Sube realmente `filesToUpload` (ya filtrados -- sin los
-    // descartados por el preflight, si los hubo) -- mismo mecanismo
-    // que existía antes de S026, solo que ahora extraído a función
-    // propia para poder llamarlo tanto directamente (sin nada que
-    // descartar) como tras la conformidad del modal.
+    // Sube realmente `filesToUpload` (ya filtrados según lo que el
+    // supervisor haya dejado marcado en la pantalla de revisión) --
+    // mismo mecanismo que existía antes de S026, extraído a función
+    // propia para poder llamarlo tras la conformidad de la revisión.
     function beginActualUpload(filesToUpload) {
         var total = filesToUpload.length;
         if (total === 0) {
             uploadResultEl.innerHTML = '<div class="alert alert-warning mb-0">'
-                + 'No queda ningún archivo por subir tras aplicar el filtro de descarte.</div>';
+                + 'No se ha marcado ningún archivo para subir.</div>';
             resetSubmitButton();
             return;
         }
@@ -558,6 +591,49 @@
         sendNext();
     }
 
+    // Renderiza una de las dos listas de la pantalla de revisión con
+    // una casilla por archivo -- `checkedByDefault` marca o no cada
+    // fila según venga de "descartados" (False) o "no descartados"
+    // (True), pero el supervisor puede cambiar cualquiera a mano
+    // (Miguel Ángel, S026: "con unos casilleros para marcar los
+    // archivos, poder marcar todos, poder desmarcar individualmente
+    // un archivo").
+    function renderReviewList(listEl, entries, checkedByDefault) {
+        listEl.innerHTML = entries.map(function (entry, idx) {
+            var checkboxId = 'reviewCheckbox-' + listEl.id + '-' + idx;
+            return '<li class="list-group-item d-flex gap-2">'
+                + '<input type="checkbox" class="form-check-input mt-1 review-checkbox" '
+                + 'id="' + checkboxId + '" data-filename="' + entry.filename.replace(/"/g, '&quot;') + '" '
+                + (checkedByDefault ? 'checked' : '') + '>'
+                + '<label for="' + checkboxId + '" class="flex-grow-1">'
+                + '<div class="fw-semibold">' + entry.filename + '</div>'
+                + '<div class="text-muted">' + entry.reason + '</div></label></li>';
+        }).join('');
+    }
+
+    // Recuenta cuántas casillas quedan marcadas en total (las dos
+    // listas juntas) y actualiza contadores + el número del botón de
+    // subir.
+    function updateReviewCounts() {
+        var discardChecked = reviewDiscardListEl.querySelectorAll('.review-checkbox:checked').length;
+        var keepChecked = reviewKeepListEl.querySelectorAll('.review-checkbox:checked').length;
+        reviewSelectedCountEl.textContent = discardChecked + keepChecked;
+    }
+
+    reviewModalEl.addEventListener('change', function (evt) {
+        if (evt.target.classList.contains('review-checkbox')) { updateReviewCounts(); }
+    });
+
+    // Botones "Marcar todos"/"Desmarcar todos" por lista.
+    reviewModalEl.querySelectorAll('[data-review-list]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var listEl = btn.getAttribute('data-review-list') === 'discard' ? reviewDiscardListEl : reviewKeepListEl;
+            var checkAll = btn.getAttribute('data-review-action') === 'all';
+            listEl.querySelectorAll('.review-checkbox').forEach(function (cb) { cb.checked = checkAll; });
+            updateReviewCounts();
+        });
+    });
+
     uploadForm.addEventListener('submit', function (evt) {
         evt.preventDefault();
         if (accumulated.length === 0) { return; }
@@ -570,13 +646,13 @@
         submitBtn.disabled = true;
         submitSpinner.classList.remove('d-none');
         uploadResultEl.innerHTML = '<div class="text-muted small"><i class="bi bi-hourglass-split me-1"></i>'
-            + 'Comprobando nombres de archivo antes de subir…</div>';
+            + 'Analizando nombres de archivo antes de subir…</div>';
 
         // Preflight (S026) -- solo nombres, nunca bytes, antes de
         // trocear/subir nada. Si el servidor no responde o falla, se
-        // sube todo sin filtrar en vez de bloquear la subida (nunca
-        // se pierde una subida real por un fallo de este filtro
-        // opcional).
+        // trata como si todo el lote fuera "no descartado" en vez de
+        // bloquear la subida (nunca se pierde una subida real por un
+        // fallo de este filtro opcional).
         fetch('{% url "panel:documentation_preflight_discard" %}', {
             method: 'POST',
             headers: {
@@ -587,34 +663,36 @@
                 filenames: pdfFiles.map(function (f) { return f.name; }),
             }),
         })
-            .then(function (resp) { return resp.ok ? resp.json() : { discard: [] }; })
-            .catch(function () { return { discard: [] }; })
+            .then(function (resp) { return resp.ok ? resp.json() : null; })
+            .catch(function () { return null; })
             .then(function (result) {
-                var discardList = result.discard || [];
-                if (discardList.length === 0) {
-                    beginActualUpload(pdfFiles);
-                    return;
-                }
+                var discardList = (result && result.discard) || [];
+                var keepList = (result && result.keep) || pdfFiles.map(function (f) {
+                    return { filename: f.name, reason: 'Sin comprobar (fallo de red en el filtro previo).' };
+                });
 
-                var discardedNames = discardList.map(function (d) { return d.filename; });
-                discardConfirmListEl.innerHTML = discardList.map(function (d) {
-                    return '<li class="list-group-item">'
-                        + '<div class="fw-semibold"><i class="bi bi-file-earmark-x text-warning me-1"></i>' + d.filename + '</div>'
-                        + '<div class="text-muted">' + d.reason + '</div></li>';
-                }).join('');
+                renderReviewList(reviewDiscardListEl, discardList, false);
+                renderReviewList(reviewKeepListEl, keepList, true);
+                reviewDiscardCountEl.textContent = discardList.length;
+                reviewKeepCountEl.textContent = keepList.length;
+                updateReviewCounts();
 
-                if (!discardConfirmModal) { discardConfirmModal = new bootstrap.Modal(discardConfirmModalEl); }
-                discardConfirmModal.show();
+                if (!reviewModal) { reviewModal = new bootstrap.Modal(reviewModalEl); }
+                reviewModal.show();
 
-                discardConfirmProceedBtn.onclick = function () {
-                    discardConfirmModal.hide();
-                    var survivors = pdfFiles.filter(function (f) {
-                        return discardedNames.indexOf(f.name) === -1;
+                reviewProceedBtn.onclick = function () {
+                    var selectedNames = Array.prototype.map.call(
+                        reviewModalEl.querySelectorAll('.review-checkbox:checked'),
+                        function (cb) { return cb.getAttribute('data-filename'); },
+                    );
+                    reviewModal.hide();
+                    var selectedFiles = pdfFiles.filter(function (f) {
+                        return selectedNames.indexOf(f.name) !== -1;
                     });
-                    beginActualUpload(survivors);
+                    beginActualUpload(selectedFiles);
                 };
-                discardConfirmCancelBtn.onclick = function () {
-                    discardConfirmModal.hide();
+                reviewCancelBtn.onclick = function () {
+                    reviewModal.hide();
                     uploadResultEl.innerHTML = '';
                     resetSubmitButton();
                 };
