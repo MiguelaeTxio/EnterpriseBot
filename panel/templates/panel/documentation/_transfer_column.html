@@ -1,21 +1,30 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation/_transfer_column.html #}
 {# Columna de la pantalla partida (transfer.html) -- lista los documentos de #}
 {# `this_machine`. Dos modos:                                                #}
-{#  - other_machine definido: mecanismo de "puntero" (S028) -- radio para    #}
-{#    elegir el destino (this_machine u other_machine) que se puede cambiar  #}
-{#    tantas veces como se quiera SIN tocar la base de datos, y un único     #}
-{#    botón "Resolver" que confirma (con cuenta atrás, ver                   #}
-{#    countdown_confirm.js) y ESE es el único momento en que se escribe en   #}
-{#    BD -- Miguel Ángel: "no hacerlo efectivo en base de datos hasta que se #}
-{#    pulsa el botón de incidencia resuelta".                                #}
+{#  - other_machine definido: mecanismo de "puntero visual" (S028, v2) --   #}
+{#    la flecha mueve la TARJETA de verdad entre las dos <ul> del DOM       #}
+{#    (countdown_confirm.js/toggleDocPointer), sin ningún POST ni toggle    #}
+{#    interno -- Miguel Ángel: "le das a la flecha y visualmente el         #}
+{#    usuario ve cómo se mueve el documento a la otra máquina... vuelves,   #}
+{#    miras la pantalla y sabes perfectamente dónde está el documento".    #}
+{#    Estado puramente en atributos data-* del propio <li> (nunca BD) --   #}
+{#    "variables temporales... cuando se resuelva, esas variables          #}
+{#    temporales dejarán de existir". Resolver lee data-current-machine    #}
+{#    de la tarjeta -- dondequiera que esté sentada en ese momento.        #}
 {#  - other_machine=None (caso "sin asignar", S026): no hay ninguna máquina #}
 {#    candidata conocida -- selector desplegable de CUALQUIER máquina por   #}
-{#    documento en vez de un puntero de dos posiciones, con envío directo.  #}
+{#    documento en vez del mecanismo de puntero, con envío directo.        #}
 
-{% if docs %}
-<ul class="list-group list-group-flush">
+{% if other_machine %}
+<ul class="list-group list-group-flush" id="doclist-{{ this_machine.pk }}">
     {% for doc in docs %}
-    <li class="list-group-item px-0 {% if other_machine and doc.content_mismatch_candidate_machine_id == other_machine.pk %}border-start border-4 border-warning{% elif not other_machine and doc.content_mismatch_warning %}border-start border-4 border-warning{% endif %}">
+    <li class="list-group-item px-0 border-start border-4 border-warning"
+        id="doc-row-{{ doc.pk }}"
+        data-doc-name="{{ doc.display_name|default:doc.document_type|escapejs }}"
+        data-machine-a="{{ page_machine_a.pk }}" data-machine-a-code="{{ page_machine_a.code|escapejs }}"
+        data-machine-b="{{ page_machine_b.pk }}" data-machine-b-code="{{ page_machine_b.code|escapejs }}"
+        data-current-machine="{{ this_machine.pk }}"
+        data-resolve-url="{% url 'panel:documentation_document_move' pk=doc.pk %}">
         <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap">
             <div>
                 <span class="fw-semibold">{{ doc.display_name|default:doc.document_type }}</span>
@@ -27,55 +36,69 @@
                 {% endif %}
             </div>
             <div class="d-flex align-items-center gap-2 flex-shrink-0">
-            {% if doc.download_url %}
-            <a href="{{ doc.download_url }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary" title="Ver documento">
-                <i class="bi bi-eye"></i>
-            </a>
-            {% endif %}
-            {% if other_machine %}
-            {# Puntero (S028): dos posiciones, this_machine u other_machine -- #}
-            {# nunca envía nada por sí solo, solo cambia qué radio queda       #}
-            {# marcado. Por defecto apunta a other_machine (la candidata que   #}
-            {# generó la incidencia), pero se puede volver a this_machine      #}
-            {# tantas veces como se quiera antes de pulsar Resolver.           #}
-            <div class="btn-group btn-group-sm" role="group" aria-label="Destino">
-                <input type="radio" class="btn-check" name="target-{{ doc.pk }}" id="target-{{ doc.pk }}-stay" value="{{ this_machine.pk }}" data-machine-code="{{ this_machine.code }}" data-resolve-url="{% url 'panel:documentation_document_move' pk=doc.pk %}" autocomplete="off">
-                <label class="btn btn-outline-secondary" for="target-{{ doc.pk }}-stay" title="Mantener en {{ this_machine.code }}">{{ this_machine.code }}</label>
-                <input type="radio" class="btn-check" name="target-{{ doc.pk }}" id="target-{{ doc.pk }}-move" value="{{ other_machine.pk }}" data-machine-code="{{ other_machine.code }}" data-resolve-url="{% url 'panel:documentation_document_move' pk=doc.pk %}" autocomplete="off" checked>
-                <label class="btn btn-outline-primary" for="target-{{ doc.pk }}-move" title="Mover a {{ other_machine.code }}">{{ other_machine.code }}</label>
-            </div>
-            <button type="button" class="btn btn-sm btn-outline-success" title="Resolver incidencia con el destino marcado arriba"
-                    onclick="openResolveConfirm({{ doc.pk }}, '{{ doc.display_name|default:doc.document_type|escapejs }}', '{{ page_machine_a.pk }}', '{{ page_machine_b.pk }}')">
-                <i class="bi bi-check2-circle"></i> Resolver
-            </button>
-            {% else %}
-            <form method="post" action="{% url 'panel:documentation_document_move' pk=doc.pk %}" class="d-flex gap-1">
-                {% csrf_token %}
-                <input type="hidden" name="machine_a" value="{{ this_machine.pk }}">
-                <select name="target_machine_pk" class="form-select form-select-sm" required>
-                    <option value="">— Mover a… —</option>
-                    {% for m in all_machines %}
-                        {% if m.pk != this_machine.pk %}
-                        <option value="{{ m.pk }}">{{ m.code }}</option>
-                        {% endif %}
-                    {% endfor %}
-                </select>
-                <button type="submit" class="btn btn-sm btn-outline-primary" title="Mover">
-                    <i class="bi bi-arrow-right"></i>
+                {% if doc.download_url %}
+                <a href="{{ doc.download_url }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary" title="Ver documento">
+                    <i class="bi bi-eye"></i>
+                </a>
+                {% endif %}
+                <button type="button" class="btn btn-sm btn-outline-primary" title="Mover a {{ other_machine.code }}"
+                        onclick="toggleDocPointer({{ doc.pk }})">
+                    <i class="bi bi-arrow-left-right"></i> <span data-move-label>{{ other_machine.code }}</span>
                 </button>
-            </form>
-            {% endif %}
+                <button type="button" class="btn btn-sm btn-outline-success" title="Resolver incidencia -- asigna a la máquina donde está la tarjeta ahora mismo"
+                        onclick="openResolveConfirm({{ doc.pk }})">
+                    <i class="bi bi-check2-circle"></i> Resolver
+                </button>
+            </div>
+        </div>
+    </li>
+    {% endfor %}
+</ul>
+<p class="text-muted small mb-0" id="doclist-{{ this_machine.pk }}-empty" {% if docs %}style="display:none"{% endif %}>
+    Sin incidencias que relacionen esta máquina con {{ other_machine.code }}.
+</p>
+{% else %}
+{% if docs %}
+<ul class="list-group list-group-flush">
+    {% for doc in docs %}
+    <li class="list-group-item px-0 {% if doc.content_mismatch_warning %}border-start border-4 border-warning{% endif %}">
+        <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap">
+            <div>
+                <span class="fw-semibold">{{ doc.display_name|default:doc.document_type }}</span>
+                <span class="badge bg-light text-dark border ms-1">{{ doc.document_type }}</span>
+                {% if doc.content_mismatch_warning %}
+                <div class="text-warning small mt-1">
+                    <i class="bi bi-exclamation-triangle-fill me-1"></i>{{ doc.content_mismatch_warning }}
+                </div>
+                {% endif %}
+            </div>
+            <div class="d-flex align-items-center gap-2 flex-shrink-0">
+                {% if doc.download_url %}
+                <a href="{{ doc.download_url }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary" title="Ver documento">
+                    <i class="bi bi-eye"></i>
+                </a>
+                {% endif %}
+                <form method="post" action="{% url 'panel:documentation_document_move' pk=doc.pk %}" class="d-flex gap-1">
+                    {% csrf_token %}
+                    <input type="hidden" name="machine_a" value="{{ this_machine.pk }}">
+                    <select name="target_machine_pk" class="form-select form-select-sm" required>
+                        <option value="">— Mover a… —</option>
+                        {% for m in all_machines %}
+                            {% if m.pk != this_machine.pk %}
+                            <option value="{{ m.pk }}">{{ m.code }}</option>
+                            {% endif %}
+                        {% endfor %}
+                    </select>
+                    <button type="submit" class="btn btn-sm btn-outline-primary" title="Mover">
+                        <i class="bi bi-arrow-right"></i>
+                    </button>
+                </form>
             </div>
         </div>
     </li>
     {% endfor %}
 </ul>
 {% else %}
-<p class="text-muted small mb-0">
-    {% if other_machine %}
-        Sin incidencias que relacionen esta máquina con {{ other_machine.code }}.
-    {% else %}
-        Sin documentación.
-    {% endif %}
-</p>
+<p class="text-muted small mb-0">Sin documentación.</p>
+{% endif %}
 {% endif %}

@@ -127,29 +127,82 @@
 (function () {
     'use strict';
 
-    // Lee el puntero actual de un documento (el radio marcado en su
-    // fila, ver _transfer_column.html) y abre el modal de
-    // confirmación de "Resolver" con ese destino -- window.htmx no
-    // hace falta aquí, esta pantalla siempre recarga completa tras
-    // resolver (redirige con las dos máquinas en la querystring).
-    window.openResolveConfirm = function (docPk, docName, machineA, machineB) {
-        var checked = document.querySelector('input[name="target-' + docPk + '"]:checked');
-        if (!checked) { return; }
-        var targetMachineCode = checked.getAttribute('data-machine-code');
+    // Puntero visual (S028, v2) -- Miguel Ángel: "le das a la flecha y
+    // visualmente el usuario ve cómo se mueve el documento a la otra
+    // máquina... tienes ya un feedback visual". Mueve la tarjeta
+    // (<li>) de verdad de una <ul> a la otra -- ningún POST, ningún
+    // dato en BD, todo el estado vive en los atributos data-* del
+    // propio <li> ("variables temporales... cuando se resuelva, esas
+    // variables temporales dejarán de existir"). appendChild sobre un
+    // nodo ya insertado en el DOM lo REUBICA (lo quita de donde
+    // estaba y lo pone en el nuevo padre) -- no hace falta borrar
+    // nada a mano primero.
+    window.toggleDocPointer = function (docPk) {
+        var row = document.getElementById('doc-row-' + docPk);
+        if (!row) { return; }
+
+        var machineA = row.getAttribute('data-machine-a');
+        var machineACode = row.getAttribute('data-machine-a-code');
+        var machineB = row.getAttribute('data-machine-b');
+        var machineBCode = row.getAttribute('data-machine-b-code');
+        var current = row.getAttribute('data-current-machine');
+        var newMachine = (current === machineA) ? machineB : machineA;
+        var newOtherCode = (newMachine === machineA) ? machineBCode : machineACode;
+
+        row.setAttribute('data-current-machine', newMachine);
+        var label = row.querySelector('[data-move-label]');
+        if (label) { label.textContent = newOtherCode; }
+
+        var targetList = document.getElementById('doclist-' + newMachine);
+        if (targetList) { targetList.appendChild(row); }
+
+        updateEmptyStates(machineA, machineB);
+    };
+
+    // Tras mover una tarjeta, cada columna puede haber quedado vacía o
+    // haber dejado de estarlo -- el mensaje "Sin incidencias..." de
+    // cada columna (siempre presente en el DOM, oculto o visible) se
+    // actualiza según el número de <li> reales que tenga su <ul> en
+    // este momento.
+    function updateEmptyStates(machineA, machineB) {
+        [machineA, machineB].forEach(function (machinePk) {
+            var list = document.getElementById('doclist-' + machinePk);
+            var empty = document.getElementById('doclist-' + machinePk + '-empty');
+            if (list && empty) {
+                empty.style.display = list.children.length ? 'none' : '';
+            }
+        });
+    }
+
+    // "Resolver" no depende de ningún toggle ni radio -- lee
+    // directamente dónde está sentada la tarjeta AHORA MISMO
+    // (data-current-machine), que es exactamente lo que
+    // toggleDocPointer va actualizando en cada movimiento visual.
+    window.openResolveConfirm = function (docPk) {
+        var row = document.getElementById('doc-row-' + docPk);
+        if (!row) { return; }
+
+        var machineA = row.getAttribute('data-machine-a');
+        var machineACode = row.getAttribute('data-machine-a-code');
+        var machineB = row.getAttribute('data-machine-b');
+        var machineBCode = row.getAttribute('data-machine-b-code');
+        var current = row.getAttribute('data-current-machine');
+        var currentCode = (current === machineA) ? machineACode : machineBCode;
+        var docName = row.getAttribute('data-doc-name');
 
         window.openCountdownConfirm({
             modalId: 'resolveConfirmModal',
-            url: checked.getAttribute('data-resolve-url'),
+            url: row.getAttribute('data-resolve-url'),
             bodyParts: [
                 { text: 'El documento ' },
                 { strong: docName },
                 { text: ' quedará asignado a ' },
-                { strong: targetMachineCode },
+                { strong: currentCode },
                 { text: '.' },
             ],
             seconds: 4,
             extraFields: {
-                target_machine_pk: checked.value,
+                target_machine_pk: current,
                 machine_a: machineA,
                 machine_b: machineB,
             },
