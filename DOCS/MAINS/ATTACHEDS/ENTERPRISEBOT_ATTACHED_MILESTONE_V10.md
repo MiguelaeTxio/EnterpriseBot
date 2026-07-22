@@ -529,6 +529,32 @@ tarea + tipo_tarea + transición de estado en la misma operación).
 
 ## 5. Hoja de Ruta para la Siguiente Sesión
 
+### PENDIENTE -- petición nueva anotada en S028 (2026-07-22, mención durante sesión de H23, sin investigar todavía)
+
+Miguel Ángel, al cierre de una sesión de H23: "hay que arreglar
+también una cosa en el tema de los albaranes, que es cuando se
+devuelve mercadería para que puedan subir la foto de los abonos."
+
+Sin más contexto todavía -- ni código tocado ni investigado, solo
+mención verbal registrada para no perderla. Al empezar la sesión que
+retome esto, aclarar con Miguel Ángel antes de tocar nada:
+
+- ¿"Abonos" se refiere a un documento/nota de crédito del proveedor
+  por la mercancía devuelta, distinto del propio albarán de entrada?
+- ¿Dónde vive hoy el flujo de "devolución de mercadería" en el
+  circuito de repuestos (ver sección 3, "Circuito de Repuestos — Flujo
+  Completo") -- existe ya alguna pantalla/paso para devoluciones, o es
+  funcionalidad enteramente nueva?
+- ¿La foto del abono se sube como parte del mismo albarán, o como un
+  documento independiente asociado a la devolución?
+
+Dado que H10 quedó cerrado por completo en S015 (ver "CIERRE DE S015"
+abajo), esto reabre el hito -- confirmar con Miguel Ángel si procede
+tratarlo como continuación de H10 o si merece su propio punto de
+`nfs-enterprisebot-pch`.
+
+---
+
 ### CIERRE DE S015 (2026-07-13)
 
 **Primer punto obligatorio COMPLETADO** (ver fila S015 en el Registro

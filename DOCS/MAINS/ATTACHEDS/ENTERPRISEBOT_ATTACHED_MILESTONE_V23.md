@@ -1376,69 +1376,200 @@ reales -- todos corregidos en la misma sesión:
     esos vehículos -- **pendiente de entregar, sesión siguiente**
     (la petición llegó justo al cierre, sin tiempo de generarlo).
 
-### Hoja de Ruta para la Sesión Siguiente (S028)
+### COMPLETADAS EN S028 (2026-07-22)
 
-1. **Enriquecer `fleet.MachineAsset` con un campo de número de
-   bastidor/serie** — Miguel Ángel, explícito: "hay que enriquecer el
-   modelo con el campo de bastidor, por supuesto". Necesario para que
-   la salvaguarda de discrepancia nombre/contenido
-   (`content_mismatch_warning`) pueda comparar el bastidor que
-   extrae Gemini contra el bastidor REAL de la máquina, en vez de
-   marcar como incidencia cualquier bastidor mencionado (ahora mismo
-   siempre sale como discrepancia, incluso cuando es correcto, porque
-   no hay campo con el que compararlo -- ver punto 11 de "CIERRE DE
-   S026, PARTE 2" arriba). Migración nueva, y decidir con Miguel
-   Ángel si se rellena a mano para las máquinas ya existentes o solo
-   a partir de ahora (vía extracción de Gemini de la Ficha
-   Técnica/Declaración CE, con confirmación manual).
-2. **Generar y entregar a Miguel Ángel el listado completo de
-   `fleet.MachineAsset` con datos corruptos** (código/matrícula/
-   marca-modelo con fechas en vez de valores reales) — pedido
-   explícito al cierre de S026, sin tiempo de generarlo. Consulta de
-   referencia usada en S026 para detectar el patrón (ampliar a TODA
-   la tabla, no solo una muestra por coincidencia de "20"/"2020"):
-   ```python
-   from django.db.models import Q
-   import re
-   from fleet.models import MachineAsset
-   fecha_pattern = re.compile(r'\d{1,2}[-/]\d{1,2}[-/]\d{2,4}')
-   for m in MachineAsset.objects.filter(company_id=1):
-       if any(fecha_pattern.search(str(v)) for v in (m.code, m.plate, m.brand_model)):
-           print(m.pk, repr(m.code), repr(m.plate), repr(m.brand_model))
-   ```
-   Miguel Ángel quiere revisar la matrícula real de esos vehículos
-   antes de decidir cómo corregir los datos -- no corregir nada sin
-   su confirmación explícita fila por fila (puede haber columnas
-   desplazadas, no solo un dato mal escrito).
-3. **Probar el dominio Personal de extremo a extremo** — sigue sin
-   probarse (arrastrado de S024/S025/S026). `PersonalDocument` sigue
-   en 0 filas reales. El accordion de Personal
-   (`_personal_accordion.html`) NO se tocó en toda la reconstrucción
-   de S026 -- sigue con el diseño antiguo (sin ficha de página
-   propia, sin sistema de incidencias, sin REGLA B-bis conectada).
-   Decidir con Miguel Ángel si aplicar la misma restructuración que a
-   Maquinaria antes o después de probar el dominio.
-4. **Vigilar si se repite el silencio prolongado del worker sin
-   auto-reinicio** de PythonAnywhere (arrastrado de S025, causa
-   exacta sin determinar) -- si se repite, abrir ticket de soporte
-   con PythonAnywhere con la hora exacta. Relacionado pero distinto:
-   en S026 se confirmó que PythonAnywhere tiene días de tráfico alto
-   que hacen fallar el paso de RECARGA del despliegue (nunca el
-   `git pull`) -- Miguel Ángel decidió que el modelo deje de
-   reintentar el Action y avise para que él recargue a mano (ver
-   punto 1 de "CIERRE DE S026, PARTE 2").
+H23 EN PROGRESO durante toda la sesión, con dos desvíos puntuales
+breves (Caso A, marcador nunca movido): a H07 (investigación de un
+bug real, ver anexo H07 fila `S_H07_13` para el detalle completo) y a
+H10 (una petición nueva anotada para su propia hoja de ruta, sin
+trabajo de código). Sesión larguísima: 22 commits, 18 archivos,
++2173/-298 líneas.
+
+**Cierre retroactivo de S027** (commit `5cc30ae`, al empezar): sesión
+anterior había quedado interrumpida por una caída de herramientas del
+modelo -- verificado que los dos commits pendientes (`372faae`,
+`6eb7bbb`) llegaron bien a producción, cerrado formalmente.
+
+**Bastidor de `fleet.MachineAsset` y falsos positivos de discrepancia**
+(primera tarea heredada de S026/S027, cerrada por completo):
+- Descubierto que el campo `chassis_number` YA EXISTÍA en el modelo
+  (la nota de S026 que decía lo contrario era incorrecta) -- el
+  problema real era que la comparación de discrepancia
+  (`machine_documents/tasks.py`) nunca lo tenía en cuenta, solo
+  code/plate (commit `3f9b77c`). Añadido relleno progresivo: cuando el
+  bastidor está vacío y un documento lo menciona, se rellena solo, sin
+  backfill retroactivo -- decisión explícita de Miguel Ángel.
+- **Hallazgo real más profundo, encontrado con datos reales de la
+  A-36** (commits `dc0c3c2`, `67cddc6`, `2c59abf`): un documento con
+  matrícula E-2052-BCW Y bastidor VHX2FF1P204251036 a la vez se
+  marcaba como discrepancia porque (a) `match_machine_asset_by_filename`
+  comparaba por subcadena libre sobre el nombre de archivo entero
+  pegado sin separadores, y "A20" aparecía por pura coincidencia de
+  caracteres dentro de "...POLIZA2024..." -- corregido a comparación
+  por token completo; y (b) Gemini solo podía extraer UNA referencia
+  por documento (`machine_reference_in_content`), así que si elegía el
+  bastidor y este no coincidía con el `chassis_number` ya guardado (a
+  su vez contaminado por un documento anterior con un dígito
+  equivocado), se generaba una incidencia falsa aunque la matrícula,
+  también presente, ya demostrara la máquina correcta sin duda.
+  Solución de fondo: Gemini ahora extrae matrícula/bastidor/código de
+  flota como TRES campos separados, que pueden rellenarse a la vez; si
+  matrícula o código coinciden con la máquina asignada, la identidad
+  queda confirmada y NUNCA se marca discrepancia, y un bastidor
+  confirmado por matrícula puede CORREGIR uno no confirmado ya
+  guardado (verificado con simulación del peor caso de orden de
+  procesamiento posible). Bastidor real de la A-36 confirmado y
+  corregido: `VHX2FF1P204251036` (el guardado antes,
+  `...037`, era el erróneo).
+- Auditoría completa de los 566 `MachineAsset` de la empresa: 58 filas
+  borradas (código=fecha, código numérico duplicado de otra máquina
+  real, o carpetas basura con 0 documentos enlazados, verificado
+  contra las 10 relaciones inversas antes de borrar cada una) y 31
+  máquinas reales con bastidor placeholder/autoduplicado vaciado a
+  mano, a petición explícita de Miguel Ángel.
+
+**Pantalla de transferencia de incidencias -- rediseño completo**
+(commits `42e7e4f`, `01fa6ee`, `027c306`, `f6754b7`, `0f589f5`,
+`b42e46a`, `e91e401`): visor de documento, filtro de columna acotado a
+la máquina candidata real, botón "Correcto" (más tarde superado por el
+mecanismo de puntero), modal de confirmación con cuenta atrás extraído
+a parcial reutilizable (DRY, sustituye a la duplicación entre
+`hub.html`/`machine_page.html`), mecanismo de puntero visual definitivo
+(la tarjeta se mueve de verdad entre columnas del DOM, sin toggle
+interno), y preservación del `back_url` de origen al volver.
+
+**Candidatos a documento obsoleto -- funcionalidad completa nueva**
+(commit `945fc27` en adelante, el bloque de trabajo más grande de la
+sesión): a partir de un caso real (un recibo de seguro de 2015-2016
+marcado como incidencia de máquina cuando en realidad solo era
+papeleo obsoleto), Miguel Ángel: "que sea Gemini quien decida... solo
+que la decisión final de eliminar sea de un humano". Gemini juzga por
+el contenido (`is_obsolete_candidate`/`obsolete_reason`, nuevos campos
+del mismo JSON de clasificación, sin llamada extra) si un documento ya
+no tiene valor operativo; nunca se borra solo. Prioridad de resolución
+explícita: mientras un documento sea candidato a obsoleto, se excluye
+de la cola de incidencias de máquina (la obsolescencia se resuelve
+primero). Sección nueva y separada en la ficha de máquina, con el
+mismo patrón de borrado con cuenta atrás. Ampliada en el resto de la
+sesión con selección múltiple + borrado en bloque (`297aa44`),
+generalizada después a vigente/archivado también (`52251c1`,
+restringida inicialmente a solo obsoletos, luego abierta a cualquier
+documento del dominio -- misma barrera de seguridad, cuenta atrás +
+selección explícita, que el borrado individual), comparación de dos
+documentos vía Gemini (`compare_documents`, nueva llamada) para
+detectar duplicados reales (`52251c1`, corregida en `f5fd389` para
+marcar los DOS documentos comparados como candidatos, no elegir uno
+automáticamente -- "prefiero... escoger... el que quiere quedarse", y
+con modal de espera con spinner en `0c0cbeb` para que no pareciera que
+la página se había bloqueado durante la llamada síncrona a Gemini), y
+las dos acciones en bloque simétricas que faltaban (`3e417dc`):
+descartar obsoletos en bloque y marcar como obsoleto en bloque desde
+vigente/archivado, unificadas en una sola vista genérica
+(`DocumentBulkObsoleteToggleView`).
+
+**Vigencia forzada manualmente -- "recuperar del cajón de archivos"**
+(commit `8f6f428`): `document_management.vigencia_service` es
+deliberadamente genérico (solo fechas, sin conocimiento de dominio) y
+no tenía ningún mecanismo de anulación manual -- confirmado antes de
+construir nada. Nuevo campo `MachineDocument.force_current` (migración
+`0013`): un documento marcado así se trata siempre como vigente, y
+queda excluido de la comparación automática de "siblings" del mismo
+tipo, para no influir en si otros documentos se consideran vigentes.
+Botón "Recuperar como vigente" por fila archivada. Misma sesión,
+pulido de UX: barra de acciones (Comparar/Eliminar
+seleccionados/Marcar como obsoleto) duplicada encima de "Archivados"
+(antes solo arriba del todo, "muy tedioso subir arriba") -- convertida
+de IDs únicos a clases compartidas para que todas las copias se
+sincronicen entre sí.
+
+**Otro fix real encontrado y corregido en la misma sesión** (commit
+`3fd7ccf`): los manuales de uso mostraban "Tipo no reconocido por
+nombre -- se sube para que Gemini lo clasifique" en la pantalla de
+preflight, pese a que la regla real (nunca llamar a Gemini para un
+manual) seguía intacta -- el problema era solo el mensaje, que usaba
+un diccionario de "grupo" completamente distinto sin conocimiento de
+manuales; corregido con un caso especial en el mensaje, sin tocar la
+lógica real de descarte (que sí lo tenía en cuenta correctamente para
+evitar tratarlo como dossier).
+
+**Desvío a H07** (investigación, sin código tocado -- ver anexo H07
+fila `S_H07_13`): mientras esperaba el reinicio del worker, Miguel
+Ángel reportó que el modo edición de partes digitales "no está
+renderizando exactamente lo que la base de datos tiene". Confirmado
+con lectura directa de `panel/views_operator.py`: es un riesgo real de
+PÉRDIDA DE DATOS, no solo de visualización -- `show_lunch_break` en
+edición se calcula del horario EN VIVO del operario, no de los datos
+reales del `first_entry`, y al guardar puede sobrescribir con `None`
+una pausa de comida real ya guardada. Registrado como primer punto de
+la próxima sesión de H07, sin arreglar todavía por decisión explícita
+de Miguel Ángel ("no es cosa de dos minutos... prefiero ir con cuidado
+en vez de rápido").
+
+**Prueba real con Yolanda (supervisora de documentación) al cierre**:
+zona cero + subida completa, confirmación de que el bastidor de la
+A-36 persiste correctamente (no se toca con zona cero, solo borra
+documentos). Feedback muy positivo, con dos incidencias menores
+reportadas para la sesión siguiente (ver hoja de ruta abajo).
+
+### Hoja de Ruta para la Sesión Siguiente (S029)
+
+1. **PRIORITARIO -- investigar condición de carrera en el borrado con
+   cuenta atrás.** Miguel Ángel, tras la prueba con Yolanda: "cuando
+   se comparan documentos y, en general, cuando se le da a eliminar,
+   cuando se marcan, se da a eliminar, ahí está fallando. Porque se
+   eliminan realmente, pero el modal... la das y ya no hace nada
+   porque ya se ha eliminado. Hay que ver que puede ser por
+   condiciones de carrera." El borrado en sí funciona (el documento
+   desaparece de verdad), pero el modal de cuenta atrás
+   (`countdown_confirm.js`, `openCountdownConfirm`/`openDeleteConfirm`)
+   no se comporta como se espera tras la confirmación -- investigar
+   con datos reales (reproducir el caso, mirar la consola del
+   navegador con Eruda en móvil) antes de tocar nada. Empezar por
+   `panel/static/panel/js/countdown_confirm.js` y los puntos donde se
+   invoca (`_machine_detail.html`, `machine_page.html`) -- sospecha
+   inicial sin confirmar: posible doble disparo del evento de
+   confirmación, o un `htmx:afterSwap`/redirect que compite con el
+   propio cierre del modal.
+2. **Usar más HTMX en vez de recargas de página completa.** Miguel
+   Ángel: "algunas veces hay que recargar la página... deberíamos de
+   utilizar más el HTMX siempre que se pueda para evitar tener que
+   recargar la página." Varias acciones nuevas de esta sesión
+   (`DocumentBulkDeleteView`, `DocumentBulkObsoleteToggleView`,
+   `DocumentCompareView`, `DocumentForceCurrentView`) usan
+   `form.submit()` de página completa + redirect en vez de HTMX --
+   revisar cuáles se pueden convertir a peticiones HTMX con
+   `hx-target`/`hx-swap` sobre `#machine-detail-container` (o el
+   contenedor que corresponda) sin perder la confirmación con cuenta
+   atrás donde ya existe. Empezar aquí solo después de resolver el
+   punto 1 -- puede que ambos estén relacionados (una migración a
+   HTMX bien hecha podría resolver también la condición de carrera).
+3. **H10 -- fotos de abonos al devolver mercadería.** Miguel Ángel,
+   petición nueva anotada al cierre de esta sesión, sin investigar
+   todavía: "hay que arreglar también una cosa en el tema de los
+   albaranes, que es cuando se devuelve mercadería para que puedan
+   subir la foto de los abonos." Ver anexo H10
+   (`ENTERPRISEBOT_ATTACHED_MILESTONE_V10.md`) para el detalle -- este
+   anexo solo deja la referencia, el punto de partida completo vive
+   allí.
+4. **Probar el dominio Personal de extremo a extremo** — sigue sin
+   probarse, arrastrado desde S024 (cuarta sesión consecutiva sin
+   atenderse). `PersonalDocument` sigue en 0 filas reales. El
+   accordion de Personal (`_personal_accordion.html`) sigue con el
+   diseño antiguo (sin ficha de página propia, sin sistema de
+   incidencias, sin candidatos a obsoleto, sin vigencia forzada, sin
+   selección múltiple ni comparación) -- decidir con Miguel Ángel si
+   aplicar toda la reconstrucción de Maquinaria de las últimas
+   sesiones antes o después de probar el dominio tal cual está.
 5. **Considerar limitar el tamaño de "individuales" enviados a
-   `assess_master_coverage()`** (arrastrado de S025) — el límite de
-   tokens de Gemini (1.048.576) se ha tocado repetidamente al
-   acumular muchos documentos ya persistidos de la misma máquina --
-   mejora aparte, no implementada todavía.
-6. **Repetir la prueba de subida completa de la A-36 una vez añadido
-   el campo de bastidor** (punto 1) -- para confirmar que los avisos
-   de discrepancia por bastidor dejan de ser falsos positivos en los
-   documentos que ya se subieron bien en S026 (Ficha Técnica,
-   Declaración CE, Pegatina, Acta de revisión, Libro historial -- ver
-   punto 11 de "CIERRE DE S026, PARTE 2" para la lista completa de
-   `pk` afectados).
+   `assess_master_coverage()`** (arrastrado desde S025) — el límite de
+   tokens de Gemini se ha tocado repetidamente al acumular muchos
+   documentos ya persistidos de la misma máquina -- mejora aparte, no
+   implementada todavía.
+6. **Dos ambigüedades de datos sin resolver de la auditoría de
+   `MachineAsset`** (arrastradas de esta sesión, sin urgencia): valores
+   cortos ambiguos que no se tocaron (A28=3388, A42=39053, series de 5
+   dígitos D01/D02/D03, etc.) -- se corregirán solos conforme se suba
+   documentación real de esas máquinas, no requieren acción activa.
 
 **Observación sin acción inmediata (arrastrada de S023):**
 PythonAnywhere limita las versiones de Python disponibles a 3.10 (y
@@ -1446,7 +1577,9 @@ anteriores) a fecha de esta sesión; `google-api-core` dejará de dar
 soporte a Python 3.10 el 2026-10-04. Sin acción posible por nuestra
 parte (depende de que PythonAnywhere añada una versión superior) —
 vigilar antes de esa fecha si no ha cambiado, para planificar la
-migración con margen.
+migración con margen. Correo a soporte de PythonAnywhere redactado y
+entregado a Miguel Ángel en esta sesión (sin confirmar si llegó a
+enviarse ni respuesta recibida -- preguntar al empezar la siguiente).
 
 ### Funcionalidad nueva anotada por Miguel Ángel al cierre — evaluar si abre hito propio
 
@@ -1508,3 +1641,4 @@ originó, sin más acción pendiente aquí.
 | S025 | 2026-07-20 | H23 EN PROGRESO durante toda la sesión (un desvío puntual real a `spare_parts` H10 -- albaranes de proveedor -- sin PCH). Sesión larguísima: 27 commits, 37 archivos, +2657/-458 líneas. Ver "COMPLETADAS EN S025" arriba para el detalle completo -- resumen: modal de subida rediseñado, sustitución silenciosa + historial, plantilla WhatsApp confirmada aprobada, panel de Alertas rediseñado con envío manual/filtro por máquina, descarte heurístico de dossiers, restructuración de navegación (ficha de página completa por máquina, con URL propia), conversión de manuales a Markdown, asignación manual + prompt ampliado en albaranes, y dos incidentes reales de producción diagnosticados y corregidos con datos reales en cada paso: (1) bug crítico de `assess_master_coverage()` que interpretaba un error de Gemini como "cobertura confirmada" y descartaba maestros sin comparar -- **13 documentos reales perdidos antes del fix**, lista completa entregada a Miguel Ángel para recuperación manual; (2) worker Celery caído en medio de un lote de 95 documentos sin ningún error en el log -- causa raíz identificada (Celery sin `acks_late`/`prefetch_multiplier` configurados) y corregida con los tres ajustes de resiliencia recomendados por la documentación oficial de Celery 5.6.3. Ver "Hoja de Ruta para la Sesión Siguiente (S026)" arriba para el punto de partida. |
 | S026 | 2026-07-21 | H23 EN PROGRESO durante toda la sesión, sin desvíos ni PCH. La sesión más larga del hito hasta la fecha (varios chats consecutivos por límite de contexto, mismo número de sesión): 22 commits, 22 archivos, +3172/-49 líneas. Reconstrucción completa del pipeline de ingesta de documentación de maquinaria en 5 fases (reglas heurísticas de descarte por nombre, modelo de aprendizaje automático de tipos, Gemini como extractor puro cuando la heurística ya sabe el tipo, pantalla de revisión con checkboxes, CRUD del diccionario), seguida de una prueba real de subida completa de la A-36 que fue encontrando, uno a uno, una cadena larga de bugs reales -- todos corregidos en la misma sesión con datos reales (logs del worker, consultas de BD, capturas de Miguel Ángel): comando de reset duplicado con el mismo bug que motivó sustituir uno anterior (blobs de GCS huérfanos, limpiados con comando nuevo); la máquina se determinaba por contenido en vez de por nombre de archivo pese a la decisión ya cerrada; barra lateral vacía en la ficha de máquina (`company_user` ausente del contexto, bug distinto del de S021); tras un movimiento automático entre máquinas sin dejar rastro del error, Miguel Ángel cerró que el movimiento NUNCA debe ser automático -- la CARPETA manda, con sistema completo de resolución manual de incidencias (botón "Resolver con `<máquina>`" por cada máquina distinta implicada, pantalla partida, caso "sin asignar" con selector libre); "SCAN" (nombre de escáner genérico) aprendido como palabra clave de tipo ITV a partir de un único error de Gemini, contaminando todos los archivos futuros de ese escáner; y el hallazgo más grande de la sesión, un bug de fondo en la normalización de palabras clave (lo aprendido nunca podía volver a encontrarse a sí mismo en un archivo futuro) que explicaba casi todos los "tipo no reconocido" de las capturas de Miguel Ángel -- corregido de raíz junto con una REGLA B-bis nueva (agrupar por "molde" archivos de tipo desconocido, sin necesitar saber el nombre del tipo) y varios formatos de fecha nuevos (año suelto, rango `AAAA-AAAA`, periodo compacto `DDMMAA AL DDMMAA`). Prueba final de 42 documentos: 42/42 correctamente asignados a la A-36, cero fugas, cero sin asignar. Dos hallazgos reales sin corregir todavía, ambos primera tarea de la sesión siguiente: falsos positivos de discrepancia por bastidor (`MachineAsset` no tiene ese campo) y datos corruptos en varias decenas de filas de `fleet.MachineAsset` (fechas en vez de código/matrícula real). Ver "CIERRE DE S026, PARTE 2" arriba para el detalle completo, y "Hoja de Ruta para la Sesión Siguiente (S027)" para el punto de partida. |
 | S027 | 2026-07-21 | **NOTA DE DESVÍO — sin trabajo directo en H23, sesión interrumpida por caída de herramientas del modelo.** Sesión arrancada para ejecutar la hoja de ruta de arriba, desviada de inmediato (Caso D del enrutador de anexos, sin PCH, marcador `EN PROGRESO` sin mover) para atender 4 incidencias reales que Miguel Ángel reportó al empezar en la vista unificada de partes digitales, ninguna ligada a H23: selector de periodo y preservación de filtros en `WorkOrderAdminHistoryView` (dominio H17, unificada allí en S012), botón "Marcar revisado" en el editor de parte digital (dominio H07, `form_entry.html`/`WorkOrderEntryFormView`), verificación sin cambios de la suma de horas del filtro en Revisados, y un 404 real corregido de paso (redirect roto desde la unificación H17-S012). Detalle técnico completo, los dos commits (`372faae`, `6eb7bbb`) y la verificación de despliegue en `ENTERPRISEBOT_ATTACHED_MILESTONE_V07.md` (fila `S_H07_12`) y `ENTERPRISEBOT_ATTACHED_MILESTONE_V17.md` (fila `S027`). Las herramientas del modelo cayeron antes de poder volver a la hoja de ruta de H23 y sin poder cerrar la sesión formalmente ni registrar el desvío -- confirmado por Miguel Ángel al reanudar que ningún commit se perdió (ambos en `origin/main`, ambos con despliegue verificado vía API de GitHub Actions, sin migración) y que las dos decisiones de diseño autónomas de la sesión (selector de periodo como desplegable, no auto-ajuste; suma de horas correcta sin cambios) funcionan perfectamente en producción. Cierre de S027 documentado retroactivamente en sesión posterior (S028), que retoma la hoja de ruta de abajo sin cambios -- Caso D: "el hito no avanzó". |
+| S028 | 2026-07-22 | H23 EN PROGRESO durante toda la sesión, con dos desvíos puntuales breves (Caso A, marcador nunca movido): a H07 (investigación de un bug real de pérdida de datos en modo edición de partes digitales, sin código tocado -- ver anexo H07 fila `S_H07_13`) y a H10 (una petición nueva sobre fotos de abonos al devolver mercadería, anotada en su propia hoja de ruta, sin trabajo de código). Sesión larguísima: 22 commits, 18 archivos, +2173/-298 líneas. Cerró retroactivamente S027 al empezar. Cerró por completo la primera tarea heredada de S026 (bastidor de `fleet.MachineAsset`): el campo ya existía, el problema real era que la comparación de discrepancia nunca lo tenía en cuenta; encontrado y corregido además un hallazgo más profundo con datos reales de la A-36 -- un documento con matrícula Y bastidor a la vez se marcaba como discrepancia falsa por dos causas encadenadas (comparación de nombre de archivo por subcadena libre en vez de token completo, y Gemini solo podía extraer una referencia por documento) -- solución de fondo: tres campos separados (matrícula/bastidor/código de flota), matrícula o código como ancla fuerte de identidad que nunca marca discrepancia y que puede CORREGIR un bastidor no confirmado ya guardado, verificado con simulación del peor caso de orden de procesamiento. Auditoría completa de los 566 `MachineAsset`: 58 filas borradas, 31 bastidores placeholder vaciados a mano. Rediseño completo de la pantalla de transferencia de incidencias (visor de documento, mecanismo de puntero visual definitivo, modal de cuenta atrás extraído a parcial reutilizable). Bloque de trabajo más grande de la sesión: funcionalidad nueva completa de "candidatos a documento obsoleto" (Gemini juzga por contenido, un humano siempre confirma el borrado, prioridad de resolución sobre incidencias de máquina), ampliada con selección múltiple y borrado en bloque, generalizada después a vigente/archivado (mismo mecanismo, sin restricción), comparación de dos documentos vía Gemini para detectar duplicados reales (con modal de espera, y corregida para marcar los DOS documentos comparados en vez de elegir uno automáticamente -- decisión explícita de Miguel Ángel), y las dos acciones en bloque simétricas (marcar/descartar obsoleto) en una sola vista genérica. Nuevo campo `force_current` para poder "recuperar documentos del cajón de archivos" -- vigencia forzada manualmente cuando el cálculo automático por fechas archivaría por error un documento que sigue siendo válido para toda la vida útil de la máquina. Otro fix real de paso: mensaje incorrecto en la pantalla de preflight para manuales de uso (la regla real nunca se había perdido, solo el texto mostrado). Prueba real con Yolanda (supervisora de documentación) al cierre, con feedback muy positivo ("de escándalo, de lujo, de cine") y dos incidencias menores para la sesión siguiente. Ver "COMPLETADAS EN S028" arriba para el detalle completo, y "Hoja de Ruta para la Sesión Siguiente (S029)" para el punto de partida. |
