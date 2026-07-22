@@ -6,6 +6,9 @@
 {#  - other_machine=None (caso "sin asignar", S026): no hay ninguna máquina #}
 {#    candidata conocida -- selector desplegable de CUALQUIER máquina por   #}
 {#    documento en vez de un botón fijo.                                    #}
+{# Además (S028), si el documento tiene content_mismatch_warning, botón     #}
+{# "Correcto" que resuelve la incidencia SIN mover -- para cuando la        #}
+{# supervisión humana confirma que la máquina ya asignada es la correcta.   #}
 
 {% if docs %}
 <ul class="list-group list-group-flush">
@@ -26,6 +29,16 @@
             <a href="{{ doc.download_url }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary" title="Ver documento">
                 <i class="bi bi-eye"></i>
             </a>
+            {% endif %}
+            {% if doc.content_mismatch_warning %}
+            <form method="post" action="{% url 'panel:documentation_document_dismiss_mismatch' pk=doc.pk %}">
+                {% csrf_token %}
+                <input type="hidden" name="machine_a" value="{{ this_machine.pk }}">
+                <input type="hidden" name="machine_b" value="{{ other_machine.pk|default:'' }}">
+                <button type="submit" class="btn btn-sm btn-outline-success" title="Está bien archivado en {{ this_machine.code }} -- resolver incidencia sin mover">
+                    <i class="bi bi-check-circle"></i> Correcto
+                </button>
+            </form>
             {% endif %}
             {% if other_machine %}
             <form method="post" action="{% url 'panel:documentation_document_move' pk=doc.pk %}">

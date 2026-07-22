@@ -2328,7 +2328,64 @@ class DocumentMoveToMachineView(DocsUploadAccessMixin, View):
         )
 
 
-class DocumentUpdateView(DocsUploadAccessMixin, View):
+class DocumentDismissMismatchView(DocsUploadAccessMixin, View):
+    """
+    POST: resuelve una incidencia de discrepancia SIN mover el
+    documento -- Miguel Ángel (S028), tras revisar a mano un caso
+    real: "falta el botón de revocar incidencia, es decir, resolver
+    la incidencia porque no existe o porque está bien, y debe de estar
+    asignada a la máquina que está asignada". La supervisión humana es
+    la última palabra: si la máquina ya asignada es la correcta (falso
+    positivo de Gemini, o coincidencia real que el emparejamiento
+    automático no supo resolver), esto limpia el aviso sin tocar
+    `machine_asset`. Mismos campos que limpia el movimiento
+    (DocumentMoveToMachineView) salvo `machine_asset`, que aquí no se
+    toca.
+    """
+
+    def post(self, request, pk):
+        company = request.user.company_user.company
+        document = MachineDocument.objects.filter(
+            pk=pk, company=company,
+        ).first()
+        if document is None:
+            raise Http404("Documento no encontrado.")
+
+        machine_label = (
+            document.machine_asset.code if document.machine_asset
+            else "SIN ASIGNAR"
+        )
+        document.content_mismatch_warning = ""
+        document.content_mismatch_candidate_machine = None
+        document.detected_reference_hint = ""
+        document.status = MachineDocument.Status.CLASSIFIED
+        document.save(update_fields=[
+            "content_mismatch_warning",
+            "content_mismatch_candidate_machine",
+            "detected_reference_hint", "status",
+        ])
+        logger.info(
+            "# [DocumentDismissMismatchView] Incidencia de "
+            "MachineDocument #%d resuelta a mano SIN mover -- "
+            "confirmada la asignación a %s.",
+            document.pk, machine_label,
+        )
+        messages.success(
+            request,
+            f'"{document.display_name or document.document_type}" '
+            f"confirmado como correcto en {machine_label} -- "
+            "incidencia resuelta.",
+        )
+
+        machine_a = request.POST.get("machine_a", "")
+        machine_b = request.POST.get("machine_b", "")
+        return redirect(
+            f"{reverse('panel:documentation_machine_transfer')}"
+            f"?machine_a={machine_a}&machine_b={machine_b}",
+        )
+
+
+
     """
     POST: guarda la edición de un documento vigente. Si expiry_date
     (o, en personal, expiry_date/computed_expiry_date) cambia, corrige
