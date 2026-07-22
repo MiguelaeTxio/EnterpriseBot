@@ -458,41 +458,78 @@ def _normalize_for_matching(value: str) -> str:
 def match_machine_asset_by_filename(company, filename: str):
     """
     Busca un fleet.MachineAsset cuyo `code` o `plate` (normalizados,
-    ver _normalize_for_matching) aparezcan como SUBCADENA del nombre
-    de archivo (normalizado igual) -- añadida S024-cuater
-    exclusivamente para route_document()/manuales de uso: nunca se usa
-    para documentos normales (esos sí pasan por Gemini y por
-    match_machine_asset(), que compara contra la pista que Gemini
-    extrajo, no contra el nombre de archivo entero). Un manual no
-    tiene ninguna pista de Gemini que comparar -- Gemini nunca llega a
-    verlo -- así que aquí se busca directamente en el propio nombre de
-    archivo completo.
+    ver _normalize_for_matching) coincidan EXACTAMENTE con alguno de
+    los TOKENS del nombre de archivo -- añadida S024-cuater
+    exclusivamente para route_document()/manuales de uso, ampliada en
+    la práctica a document_ingestion.tasks.route_ingested_files para
+    TODOS los documentos (folder/filename matching), no solo manuales
+    -- el docstring original decía "nunca se usa para documentos
+    normales", desactualizado, corregido aquí.
 
-    Devuelve la primera coincidencia, o None si ninguna máquina de
-    `company` aparece en el nombre de archivo.
+    S028, bug real confirmado (Miguel Ángel, caso A36):
+    'A-36 E-2052-BCW POLIZA 2024.pdf' generaba un aviso de
+    discrepancia falso con la máquina A20 -- la versión anterior
+    pegaba TODO el nombre de archivo en una sola cadena sin
+    separadores ("A36E2052BCWPOLIZA2024PDF") y buscaba "A20" como
+    SUBCADENA libre, que aparecía por pura casualidad dentro de
+    "...POLIZA2024..." (...polIZA20\
+24...), sin ninguna relación real
+    con la máquina A20. Solución: dividir el nombre de archivo en
+    TOKENS por separadores "duros" (espacio, punto, paréntesis,
+    corchetes, coma, guion bajo) -- el guion NO es separador duro,
+    para seguir reconociendo "E-6998-BDY" como un único token (se
+    normaliza igual que el código/matrícula almacenados) -- y exigir
+    coincidencia EXACTA de un token completo, nunca una subcadena
+    dentro de un token más largo o a caballo entre dos tokens
+    distintos que la normalización anterior fusionaba sin querer.
+
+    Devuelve la primera coincidencia, o None si ningún token del
+    nombre de archivo coincide exactamente con el código o la
+    matrícula (normalizados) de alguna máquina de `company`.
 
     ---
 
     Looks up a fleet.MachineAsset whose `code` or `plate` (normalized)
-    appears as a SUBSTRING of the filename (also normalized) -- added
-    S024-cuater exclusively for route_document()/user manuals. Never
-    used for regular documents (those go through Gemini and
-    match_machine_asset() instead, comparing against Gemini's
-    extracted hint, not the whole filename).
+    EXACTLY matches one of the filename's TOKENS -- added S024-cuater
+    exclusively for route_document()/user manuals, in practice widened
+    to document_ingestion.tasks.route_ingested_files for ALL documents
+    (folder/filename matching), not just manuals -- the original
+    docstring said "never used for regular documents", stale, fixed
+    here.
+
+    S028, confirmed real bug (Miguel Ángel, A36 case):
+    'A-36 E-2052-BCW POLIZA 2024.pdf' produced a false discrepancy
+    warning against machine A20 -- the previous version glued the
+    WHOLE filename into one separator-free string
+    ("A36E2052BCWPOLIZA2024PDF") and searched for "A20" as a free
+    substring, which happened to appear purely by coincidence inside
+    "...POLIZA2024..." with zero real relation to machine A20. Fix:
+    split the filename into TOKENS on "hard" separators (space, dot,
+    parentheses, brackets, comma, underscore) -- hyphen is NOT a hard
+    separator, so "E-6998-BDY" still normalizes to a single token the
+    same way the stored code/plate does -- and require an EXACT match
+    of a whole token, never a substring inside a longer token or
+    spanning across two different tokens that the previous
+    normalization fused together by accident.
     """
     from fleet.models import MachineAsset
 
-    normalized_filename = _normalize_for_matching(filename)
-    if not normalized_filename:
+    tokens = {
+        _normalize_for_matching(token)
+        for token in re.split(r"[\s.(),\[\]_]+", filename or "")
+        if token
+    }
+    tokens.discard("")
+    if not tokens:
         return None
 
     for machine in MachineAsset.objects.filter(company=company):
         normalized_code = _normalize_for_matching(machine.code)
-        if normalized_code and normalized_code in normalized_filename:
+        if normalized_code and normalized_code in tokens:
             return machine
         if machine.plate:
             normalized_plate = _normalize_for_matching(machine.plate)
-            if normalized_plate and normalized_plate in normalized_filename:
+            if normalized_plate and normalized_plate in tokens:
                 return machine
     return None
 
