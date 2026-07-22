@@ -95,6 +95,7 @@ from fleet.models import MachineAsset
 from ivr_config.models import CompanyUser
 from machine_documents.document_classification_service import (
     MANUAL_DOCUMENT_TYPE,
+    compare_documents,
     is_manual_by_filename,
 )
 from machine_documents.markdown_service import (
@@ -1723,34 +1724,42 @@ class ObsoleteCandidateDismissView(DocsUploadAccessMixin, View):
         )
 
 
-class ObsoleteCandidateBulkDeleteView(DocsUploadAccessMixin, View):
+class DocumentBulkDeleteView(DocsUploadAccessMixin, View):
     """
-    POST: borra en bloque varios MachineDocument candidatos a
-    obsoleto a la vez -- Miguel Ángel (S028), tras encontrar 17
-    candidatos reales en la primera prueba real: "si hace falta el uso
-    de casilleras, casilleras para marcar todos y eliminar todos,
-    porque estar eliminando uno a uno... se deja la eliminación uno a
-    uno, perfecto, pero marcaje y eliminar marcados". Pasa por el
-    mismo modal de confirmación con cuenta atrás que el borrado
+    POST: borra en bloque varios documentos (vigente, archivado, u
+    obsoleto -- cualquier combinación, mismo dominio) a la vez.
+    Generaliza lo que antes era ObsoleteCandidateBulkDeleteView (solo
+    para candidatos a obsoleto) -- Miguel Ángel (S028), tras el primer
+    caso real (17 candidatos a obsoleto de golpe): "casilleras para
+    marcar todos y eliminar todos... marcaje y eliminar marcados", y
+    ampliado explícitamente después a vigente/archivado: "el tema de
+    marcar y marcar todos deberíamos aplicarlo también a los
+    archivados... siempre nos queda la copia en Microsoft 365". Pasa
+    por el mismo modal de confirmación con cuenta atrás que el borrado
     individual (countdown_confirm.js, extraFields con array de pks).
 
     Reutiliza exactamente la misma lógica de borrado que
     DocumentDeleteView (blob de GCS + DocumentAlert asociada + fila),
-    en bucle -- pero restringida por seguridad a documentos que de
-    verdad tengan obsolete_candidate=True en este momento (nunca un
-    endpoint de borrado en bloque genérico por id, aunque solo esta
-    pantalla llegue a usarlo hoy).
+    en bucle, acotada por `domain` + `company` -- SIN restricción de
+    obsolete_candidate (la confirmación con cuenta atrás + la
+    selección explícita de casillas por un supervisor ya autenticado
+    es la misma barrera de seguridad que protege el borrado individual
+    en cualquier otro sitio del panel, ninguna razón para exigir más
+    aquí).
     """
 
-    def post(self, request):
+    def post(self, request, domain):
         company = request.user.company_user.company
-        pks = request.POST.getlist("pks")
-        machine_pk = request.POST.get("machine_pk", "").strip()
+        model = _DOMAIN_MODELS.get(domain)
+        bucket = _DOMAIN_BUCKETS.get(domain)
+        if model is None or bucket is None:
+            raise Http404("Dominio no válido.")
 
-        documents = MachineDocument.objects.filter(
-            pk__in=pks, company=company, obsolete_candidate=True,
-        )
-        content_type = ContentType.objects.get_for_model(MachineDocument)
+        pks = request.POST.getlist("pks")
+        entity_pk = request.POST.get("entity_pk", "").strip()
+
+        documents = model.objects.filter(pk__in=pks, company=company)
+        content_type = ContentType.objects.get_for_model(model)
 
         deleted_count = 0
         for document in documents:
@@ -1759,28 +1768,26 @@ class ObsoleteCandidateBulkDeleteView(DocsUploadAccessMixin, View):
             ).delete()
             if document.gcs_blob_name:
                 try:
-                    delete_file(MACHINE_DOCUMENTS_BUCKET, document.gcs_blob_name)
+                    delete_file(bucket, document.gcs_blob_name)
                 except Exception as exc:
                     logger.error(
-                        "# [ObsoleteCandidateBulkDeleteView] Error "
-                        "borrando blob GCS de MachineDocument #%d "
-                        "(blob=%s): %s",
-                        document.pk, document.gcs_blob_name, exc,
-                        exc_info=True,
+                        "# [DocumentBulkDeleteView] Error borrando "
+                        "blob GCS de %s #%d (blob=%s): %s",
+                        domain, document.pk, document.gcs_blob_name,
+                        exc, exc_info=True,
                     )
             document.delete()
             deleted_count += 1
 
         logger.info(
-            "# [ObsoleteCandidateBulkDeleteView] %d documento(s) "
-            "obsoleto(s) borrados en bloque (de %d solicitado(s)) "
-            "para máquina #%s.",
-            deleted_count, len(pks), machine_pk,
+            "# [DocumentBulkDeleteView] %d documento(s) de %s "
+            "borrados en bloque (de %d solicitado(s)) para entidad "
+            "#%s.",
+            deleted_count, domain, len(pks), entity_pk,
         )
         if deleted_count:
             messages.success(
-                request,
-                f"{deleted_count} documento(s) obsoleto(s) eliminado(s).",
+                request, f"{deleted_count} documento(s) eliminado(s).",
             )
         else:
             messages.warning(
@@ -1789,12 +1796,123 @@ class ObsoleteCandidateBulkDeleteView(DocsUploadAccessMixin, View):
                 "vacía o ya resuelta.",
             )
 
-        return redirect(
-            reverse(
-                "panel:documentation_machine_page",
-                kwargs={"pk": machine_pk},
-            ),
+        fragment_name = (
+            "panel:documentation_machine_page" if domain == "machine"
+            else "panel:documentation_personal_detail"
         )
+        return redirect(reverse(fragment_name, kwargs={"pk": entity_pk}))
+
+
+class DocumentCompareView(DocsUploadAccessMixin, View):
+    """
+    POST: compara el contenido de EXACTAMENTE dos documentos vía
+    Gemini (machine_documents.document_classification_service.
+    compare_documents) -- Miguel Ángel (S028), tras la limpieza real
+    de 120 a 18 documentos vigentes en la A36: "dotar de un botón para
+    comparar documentos... dos documentos marcados y enviarlos a
+    Gemini para compararlos y ver si el contenido es el mismo".
+
+    Decisión de diseño, mismo principio ya aplicado a los candidatos a
+    obsoleto por contenido (Gemini decide, un humano confirma el
+    borrado): si Gemini determina que son duplicados, esta vista NUNCA
+    borra nada por sí misma -- marca uno de los dos como
+    obsolete_candidate=True (con obsolete_reason explicando la
+    comparación), para que entre en la sección "Candidatos a documento
+    obsoleto" ya construida, con el mismo botón de borrado con cuenta
+    atrás. El propuesto para marcar es siempre el de `created_at` más
+    antiguo -- se conserva por defecto el más reciente de los dos (sin
+    comprobar cuál es "vigente"/"archivado", ambos pueden ser
+    archivados; el supervisor puede descartar la sugerencia igual que
+    con cualquier otro candidato a obsoleto si prefiere quedarse con
+    el otro).
+    """
+
+    def post(self, request, domain):
+        company = request.user.company_user.company
+        model = _DOMAIN_MODELS.get(domain)
+        bucket = _DOMAIN_BUCKETS.get(domain)
+        if model is None or bucket is None:
+            raise Http404("Dominio no válido.")
+
+        pks = request.POST.getlist("pks")
+        entity_pk = request.POST.get("entity_pk", "").strip()
+        fragment_name = (
+            "panel:documentation_machine_page" if domain == "machine"
+            else "panel:documentation_personal_detail"
+        )
+
+        if len(pks) != 2:
+            messages.error(
+                request, "Selecciona exactamente 2 documentos para comparar.",
+            )
+            return redirect(reverse(fragment_name, kwargs={"pk": entity_pk}))
+
+        doc_a = model.objects.filter(pk=pks[0], company=company).first()
+        doc_b = model.objects.filter(pk=pks[1], company=company).first()
+        if doc_a is None or doc_b is None:
+            messages.error(request, "Documento no encontrado.")
+            return redirect(reverse(fragment_name, kwargs={"pk": entity_pk}))
+
+        if not doc_a.gcs_blob_name or not doc_b.gcs_blob_name:
+            messages.error(
+                request,
+                "Alguno de los dos documentos todavía no tiene archivo "
+                "disponible para comparar.",
+            )
+            return redirect(reverse(fragment_name, kwargs={"pk": entity_pk}))
+
+        try:
+            bytes_a = download_bytes(bucket, doc_a.gcs_blob_name)
+            bytes_b = download_bytes(bucket, doc_b.gcs_blob_name)
+        except Exception as exc:
+            logger.error(
+                "# [DocumentCompareView] Error descargando blobs para "
+                "comparar %s #%s / #%s: %s",
+                domain, doc_a.pk, doc_b.pk, exc, exc_info=True,
+            )
+            messages.error(
+                request, "No se pudo descargar alguno de los documentos.",
+            )
+            return redirect(reverse(fragment_name, kwargs={"pk": entity_pk}))
+
+        result = compare_documents(
+            bytes_a, doc_a.original_filename or str(doc_a.pk),
+            bytes_b, doc_b.original_filename or str(doc_b.pk),
+        )
+
+        if result["are_duplicates"]:
+            keep, mark = (
+                (doc_a, doc_b) if doc_a.created_at >= doc_b.created_at
+                else (doc_b, doc_a)
+            )
+            mark.obsolete_candidate = True
+            mark.obsolete_reason = (
+                f"Comparado con IA frente a "
+                f"«{keep.display_name or keep.document_type}»: "
+                f"{result['reasoning'] or 'mismo contenido.'}"
+            )
+            mark.save(update_fields=["obsolete_candidate", "obsolete_reason"])
+            logger.info(
+                "# [DocumentCompareView] %s #%d y #%d marcados como "
+                "duplicados por Gemini -- #%d propuesto para borrado.",
+                domain, doc_a.pk, doc_b.pk, mark.pk,
+            )
+            messages.success(
+                request,
+                f'Gemini confirma que "{mark.display_name or mark.document_type}" '
+                f'es el mismo contenido que "{keep.display_name or keep.document_type}" '
+                "-- marcado como candidato a obsoleto para tu revisión.",
+            )
+        else:
+            messages.info(
+                request,
+                "Gemini ha comparado los dos documentos y no son el "
+                "mismo contenido"
+                + (f": {result['reasoning']}" if result["reasoning"] else "")
+                + ".",
+            )
+
+        return redirect(reverse(fragment_name, kwargs={"pk": entity_pk}))
 
 
 class DocumentMarkdownConvertView(DocsUploadAccessMixin, View):

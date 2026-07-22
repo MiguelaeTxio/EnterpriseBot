@@ -7,6 +7,16 @@
 {# descargando suelto con el enlace de descarga normal de su fila.                        #}
 {# Eliminar (vigente Y archivado) pasa por el modal de confirmación con cuenta atrás de   #}
 {# 5s (openDeleteConfirm(), hub.html) -- S024-quinquies.                                  #}
+{# Selección múltiple + Comparar (S028) -- Miguel Ángel: "el tema de marcar y marcar      #}
+{# todos deberíamos aplicarlo también a los archivados... siempre nos queda la copia en   #}
+{# Microsoft 365" + "dotar de un botón para comparar documentos... dos documentos         #}
+{# marcados y enviarlos a Gemini para compararlos". Checkbox por fila en AMBAS listas      #}
+{# (vigente y archivado), "Seleccionar todos" por sección, y una única barra combinada     #}
+{# arriba con el total marcado en cualquiera de las dos -- "Eliminar seleccionados"        #}
+{# (mismo modal de cuenta atrás, endpoint genérico DocumentBulkDeleteView) y "Comparar"    #}
+{# (habilitado solo con exactamente 2 marcados, DocumentCompareView -- Gemini decide si    #}
+{# son duplicados y los marca como candidato a obsoleto para revisión humana, nunca borra  #}
+{# solo -- mismo principio ya aplicado a los candidatos a obsoleto por contenido).         #}
 
 <form id="dossierForm-machine-{{ machine.pk }}" method="post"
       action="{% url 'panel:documentation_dossier_generate' domain='machine' entity_pk=machine.pk %}"
@@ -15,13 +25,30 @@
     {% csrf_token %}
 </form>
 
-<div class="d-flex justify-content-end mb-2">
-    <button type="submit" form="dossierForm-machine-{{ machine.pk }}" class="btn btn-sm btn-outline-secondary">
+<div class="d-flex align-items-center justify-content-between mb-2 flex-wrap gap-2">
+    <div class="d-flex align-items-center gap-2 d-none" id="doc-select-bar">
+        <span class="small text-muted" id="doc-select-count">0 seleccionados</span>
+        <button type="button" class="btn btn-sm btn-outline-primary" id="doc-compare-btn" disabled title="Marca exactamente 2 documentos para compararlos">
+            <i class="bi bi-arrow-left-right me-1"></i>Comparar
+        </button>
+        <button type="button" class="btn btn-sm btn-danger" id="doc-bulk-delete-btn">
+            <i class="bi bi-trash me-1"></i>Eliminar seleccionados
+        </button>
+    </div>
+    <button type="submit" form="dossierForm-machine-{{ machine.pk }}" class="btn btn-sm btn-outline-secondary ms-auto">
         <i class="bi bi-file-earmark-pdf me-1"></i>Generar dossier (toda la documentación, sin manuales)
     </button>
 </div>
 
-<h6 class="text-success"><i class="bi bi-check-circle me-1"></i>Vigente</h6>
+<div class="d-flex align-items-center justify-content-between">
+    <h6 class="text-success mb-0"><i class="bi bi-check-circle me-1"></i>Vigente</h6>
+    {% if current_docs %}
+    <div class="form-check">
+        <input type="checkbox" class="form-check-input doc-select-all" id="doc-select-all-current" data-select-group="current">
+        <label class="form-check-label small" for="doc-select-all-current">Seleccionar todos</label>
+    </div>
+    {% endif %}
+</div>
 {% if current_docs %}
 <ul class="list-group list-group-flush mb-3">
     {% for doc in current_docs %}
@@ -32,10 +59,13 @@
         </div>
         {% endif %}
         <div class="d-flex justify-content-between align-items-center">
-            <div>
-                <span class="fw-semibold">{{ doc.display_name|default:doc.document_type }}</span>
-                <span class="badge bg-light text-dark border ms-1">{{ doc.document_type }}</span>
-                {% if doc.expiry_date %}<span class="text-muted small ms-1">caduca {{ doc.expiry_date|date:"d/m/Y" }}</span>{% endif %}
+            <div class="d-flex align-items-center gap-2">
+                <input type="checkbox" class="form-check-input doc-select-item" data-select-group="current" value="{{ doc.pk }}" data-doc-name="{{ doc.display_name|default:doc.document_type }}">
+                <div>
+                    <span class="fw-semibold">{{ doc.display_name|default:doc.document_type }}</span>
+                    <span class="badge bg-light text-dark border ms-1">{{ doc.document_type }}</span>
+                    {% if doc.expiry_date %}<span class="text-muted small ms-1">caduca {{ doc.expiry_date|date:"d/m/Y" }}</span>{% endif %}
+                </div>
             </div>
             <div class="d-flex gap-1">
                 {% if doc.download_url %}
@@ -96,7 +126,15 @@
 <p class="text-muted small">Sin documentación vigente.</p>
 {% endif %}
 
-<h6 class="text-muted"><i class="bi bi-archive me-1"></i>Archivados</h6>
+<div class="d-flex align-items-center justify-content-between">
+    <h6 class="text-muted mb-0"><i class="bi bi-archive me-1"></i>Archivados</h6>
+    {% if archived_docs %}
+    <div class="form-check">
+        <input type="checkbox" class="form-check-input doc-select-all" id="doc-select-all-archived" data-select-group="archived">
+        <label class="form-check-label small" for="doc-select-all-archived">Seleccionar todos</label>
+    </div>
+    {% endif %}
+</div>
 {% if archived_docs %}
 <ul class="list-group list-group-flush">
     {% for doc in archived_docs %}
@@ -107,10 +145,13 @@
         </div>
         {% endif %}
         <div class="d-flex justify-content-between align-items-center">
-            <div>
-                <span>{{ doc.display_name|default:doc.document_type }}</span>
-                <span class="badge bg-light text-muted border ms-1">{{ doc.document_type }}</span>
-                {% if doc.expiry_date %}<span class="small ms-1">caducó {{ doc.expiry_date|date:"d/m/Y" }}</span>{% endif %}
+            <div class="d-flex align-items-center gap-2">
+                <input type="checkbox" class="form-check-input doc-select-item" data-select-group="archived" value="{{ doc.pk }}" data-doc-name="{{ doc.display_name|default:doc.document_type }}">
+                <div>
+                    <span>{{ doc.display_name|default:doc.document_type }}</span>
+                    <span class="badge bg-light text-muted border ms-1">{{ doc.document_type }}</span>
+                    {% if doc.expiry_date %}<span class="small ms-1">caducó {{ doc.expiry_date|date:"d/m/Y" }}</span>{% endif %}
+                </div>
             </div>
             <div class="d-flex gap-1">
                 {% if doc.download_url %}
@@ -159,3 +200,81 @@
 {% else %}
 <p class="text-muted small mb-0">Sin documentación archivada.</p>
 {% endif %}
+
+<script>
+(function () {
+    'use strict';
+    // Selección múltiple combinada vigente+archivado (S028) -- se
+    // reinicializa cada vez que HTMX recarga este fragmento (hx-get
+    // SIEMPRE en fresco, ver comentario de cabecera), por eso vive
+    // aquí y no en el <script> de machine_page.html, que solo se
+    // ejecuta una vez al cargar la página completa.
+    var container = document.currentScript.parentElement;
+    var selectAllBoxes = Array.prototype.slice.call(container.querySelectorAll('.doc-select-all'));
+    var itemBoxes = Array.prototype.slice.call(container.querySelectorAll('.doc-select-item'));
+    var bar = container.querySelector('#doc-select-bar');
+    var countLabel = container.querySelector('#doc-select-count');
+    var compareBtn = container.querySelector('#doc-compare-btn');
+    var bulkDeleteBtn = container.querySelector('#doc-bulk-delete-btn');
+
+    function checkedItems() {
+        return itemBoxes.filter(function (cb) { return cb.checked; });
+    }
+
+    function updateBar() {
+        var checked = checkedItems();
+        if (bar) { bar.classList.toggle('d-none', checked.length === 0); }
+        if (countLabel) {
+            countLabel.textContent = checked.length + ' seleccionado' + (checked.length === 1 ? '' : 's');
+        }
+        if (compareBtn) { compareBtn.disabled = checked.length !== 2; }
+        selectAllBoxes.forEach(function (allBox) {
+            var group = allBox.getAttribute('data-select-group');
+            var groupItems = itemBoxes.filter(function (cb) { return cb.getAttribute('data-select-group') === group; });
+            var groupChecked = groupItems.filter(function (cb) { return cb.checked; });
+            allBox.checked = groupChecked.length > 0 && groupChecked.length === groupItems.length;
+            allBox.indeterminate = groupChecked.length > 0 && groupChecked.length < groupItems.length;
+        });
+    }
+
+    selectAllBoxes.forEach(function (allBox) {
+        allBox.addEventListener('change', function () {
+            var group = allBox.getAttribute('data-select-group');
+            itemBoxes
+                .filter(function (cb) { return cb.getAttribute('data-select-group') === group; })
+                .forEach(function (cb) { cb.checked = allBox.checked; });
+            updateBar();
+        });
+    });
+    itemBoxes.forEach(function (cb) { cb.addEventListener('change', updateBar); });
+
+    if (bulkDeleteBtn) {
+        bulkDeleteBtn.addEventListener('click', function () {
+            var checked = checkedItems();
+            if (!checked.length) { return; }
+            var pks = checked.map(function (cb) { return cb.value; });
+            window.openCountdownConfirm({
+                modalId: 'countdownConfirmModal',
+                url: '{% url "panel:documentation_bulk_delete" domain="machine" %}',
+                bodyParts: [
+                    { text: 'Se eliminarán ' + pks.length + ' documento' + (pks.length === 1 ? '' : 's') + '. Esta operación no podrá revertirse.' },
+                ],
+                seconds: 5,
+                extraFields: { pks: pks, entity_pk: '{{ machine.pk }}' },
+            });
+        });
+    }
+
+    if (compareBtn) {
+        compareBtn.addEventListener('click', function () {
+            var checked = checkedItems();
+            if (checked.length !== 2) { return; }
+            var pks = checked.map(function (cb) { return cb.value; });
+            var names = checked.map(function (cb) { return cb.getAttribute('data-doc-name'); });
+            if (window.openCompareConfirm) {
+                window.openCompareConfirm(pks, names, '{{ machine.pk }}');
+            }
+        });
+    }
+})();
+</script>

@@ -237,18 +237,59 @@
 
             window.openCountdownConfirm({
                 modalId: 'countdownConfirmModal',
-                url: '{% url "panel:documentation_obsolete_bulk_delete" %}',
+                url: '{% url "panel:documentation_bulk_delete" domain="machine" %}',
                 bodyParts: [
                     { text: 'Se eliminarán ' + pks.length + ' documento' + (pks.length === 1 ? '' : 's') + ' obsoleto' + (pks.length === 1 ? '' : 's') + '. Esta operación no podrá revertirse.' },
                 ],
                 seconds: 5,
                 extraFields: {
                     pks: pks,
-                    machine_pk: '{{ machine.pk }}',
+                    entity_pk: '{{ machine.pk }}',
                 },
             });
         });
     }
+
+    // Comparar documentos (S028) -- llamada desde el botón "Comparar"
+    // de _machine_detail.html (vigente/archivado), definida como
+    // función global porque ese fragmento se recarga por HTMX en
+    // fresco y necesita poder invocarla sin depender de que este
+    // <script> (que solo se ejecuta una vez, al cargar la página
+    // completa) se vuelva a ejecutar. Envío directo, sin modal de
+    // cuenta atrás -- comparar NUNCA borra nada por sí solo (ver
+    // DocumentCompareView), solo puede como mucho MARCAR un
+    // documento como candidato a obsoleto para revisión humana, el
+    // mismo nivel de reversibilidad que "No es obsoleto".
+    window.openCompareConfirm = function (pks, names, machinePk) {
+        if (!pks || pks.length !== 2) { return; }
+        var form = document.createElement('form');
+        form.method = 'post';
+        form.action = '{% url "panel:documentation_compare" domain="machine" %}';
+        form.style.display = 'none';
+
+        var csrfInput = document.createElement('input');
+        csrfInput.type = 'hidden';
+        csrfInput.name = 'csrfmiddlewaretoken';
+        csrfInput.value = document.querySelector('[name=csrfmiddlewaretoken]').value;
+        form.appendChild(csrfInput);
+
+        pks.forEach(function (pk) {
+            var input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'pks';
+            input.value = pk;
+            form.appendChild(input);
+        });
+
+        var entityInput = document.createElement('input');
+        entityInput.type = 'hidden';
+        entityInput.name = 'entity_pk';
+        entityInput.value = machinePk;
+        form.appendChild(entityInput);
+
+        document.body.appendChild(form);
+        form.submit();
+    };
 })();
 </script>
 {% endblock %}

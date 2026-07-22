@@ -577,6 +577,134 @@ def classify_document(pdf_bytes: bytes, filename: str) -> dict:
         return dict(_empty)
 
 
+# ---------------------------------------------------------------------------
+# Comparación de dos documentos / Two-document comparison (S028)
+# ---------------------------------------------------------------------------
+# Miguel Ángel, tras la limpieza real de 120 a 18 documentos vigentes en la
+# A36: "dotar de un botón para comparar documentos... dos documentos
+# marcados y enviarlos a Gemini para compararlos y ver si el contenido es
+# el mismo". Decisión de diseño (mismo principio ya aplicado a los
+# candidatos a obsoleto): Gemini decide si son duplicados, pero la
+# eliminación real SIEMPRE pasa por confirmación humana -- nunca borra
+# solo, marca uno de los dos como obsolete_candidate (ver
+# panel.views_documentation.DocumentCompareView) para que entre en la
+# misma sección "Candidatos a documento obsoleto" ya construida, con el
+# mismo botón de borrado con cuenta atrás.
+
+_COMPARE_RESPONSE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "are_duplicates": {"type": "boolean"},
+        "reasoning": {"type": "string"},
+    },
+    "required": ["are_duplicates", "reasoning"],
+}
+
+_COMPARE_PROMPT = """Eres un sistema de comparación de documentos oficiales de
+maquinaria industrial pesada (grúas, carretillas elevadoras, equipos de obra,
+camiones) para una empresa de servicios de grúa en España.
+
+Se te proporcionan DOS documentos PDF: "{filename_a}" y "{filename_b}".
+Analiza el CONTENIDO de ambos (nunca el nombre de archivo, que puede ser
+arbitrario) y determina si son, en la práctica, EL MISMO documento --
+duplicados exactos, o copias/escaneos redundantes del mismo documento
+original (misma fecha, mismo número de referencia/póliza/expediente,
+mismo contenido sustantivo), de forma que conservar los dos no aporta
+ningún valor real y uno de ellos se podría eliminar sin perder ninguna
+información.
+
+NO cuentan como duplicados: dos documentos del mismo TIPO pero de
+PERIODOS o fechas distintas (dos recibos de seguro de trimestres
+diferentes, dos certificados OCA de años distintos, dos revisiones
+periódicas sucesivas) -- son documentos legítimamente distintos aunque
+se parezcan mucho en formato y procedan del mismo emisor. Solo cuenta
+como duplicado si de verdad es la MISMA copia del MISMO documento
+concreto. Ante la duda, false -- un falso positivo aquí propone borrar
+un documento real por error.
+
+Responde con:
+1. are_duplicates: true si son el mismo documento (duplicado real),
+   false en caso contrario.
+2. reasoning: una frase breve y concreta explicando tu conclusión (ej.
+   "Mismo recibo de seguro Allianz, misma póliza y mismo periodo de
+   cobertura, aparente doble escaneo del mismo papel").
+
+Responde únicamente con el JSON solicitado."""
+
+
+def compare_documents(
+    pdf_bytes_a: bytes, filename_a: str,
+    pdf_bytes_b: bytes, filename_b: str,
+) -> dict:
+    """
+    Compares two PDF documents via Gemini Vision in a SINGLE call,
+    returning whether they are, in practice, duplicates of the same
+    real document (not just two documents of the same type from
+    different periods). Never deletes anything itself -- callers
+    (panel.views_documentation.DocumentCompareView) mark one of the
+    two as obsolete_candidate for human-confirmed deletion, same
+    principle as the content-based obsolescence judgement.
+
+    Returns a dict with are_duplicates (bool) and reasoning (str). On
+    any error, returns are_duplicates=False and logs the exception --
+    never raises, never proposes a deletion it couldn't actually
+    verify.
+
+    ---
+
+    Compara dos documentos PDF vía Gemini Vision en UNA SOLA llamada,
+    devolviendo si son, en la práctica, duplicados del mismo documento
+    real (no solo dos documentos del mismo tipo de periodos
+    distintos). Nunca borra nada por sí misma -- quien la llama
+    (panel.views_documentation.DocumentCompareView) marca uno de los
+    dos como obsolete_candidate para que el borrado lo confirme un
+    humano, mismo principio que el juicio de obsolescencia por
+    contenido.
+
+    Devuelve un dict con are_duplicates (bool) y reasoning (str). Ante
+    cualquier error, devuelve are_duplicates=False y registra la
+    excepción -- nunca lanza excepción, nunca propone un borrado que
+    no pudo verificar de verdad.
+    """
+    try:
+        client = get_gemini_client()
+        response = _generate_content_with_retry(
+            client,
+            model=DEFAULT_MODEL,
+            contents=[
+                Part.from_bytes(data=pdf_bytes_a, mime_type="application/pdf"),
+                Part.from_bytes(data=pdf_bytes_b, mime_type="application/pdf"),
+                _COMPARE_PROMPT.format(
+                    filename_a=filename_a, filename_b=filename_b,
+                ),
+            ],
+            config=GenerateContentConfig(
+                http_options=HttpOptions(timeout=60_000),
+                response_mime_type="application/json",
+                response_schema=_COMPARE_RESPONSE_SCHEMA,
+                thinking_config=ThinkingConfig(thinking_budget=0),
+                temperature=0.0,
+            ),
+        )
+        parsed = json.loads(response.text.strip())
+        result = {
+            "are_duplicates": bool(parsed.get("are_duplicates", False)),
+            "reasoning": str(parsed.get("reasoning", "")).strip(),
+        }
+        logger.info(
+            "# [compare_documents] %s vs %s -> duplicados=%s (%s)",
+            filename_a, filename_b, result["are_duplicates"],
+            result["reasoning"],
+        )
+        return result
+    except Exception as exc:
+        logger.error(
+            "# [compare_documents] Error comparando %s vs %s: %s",
+            filename_a, filename_b, exc, exc_info=True,
+        )
+        return {"are_duplicates": False, "reasoning": ""}
+
+
 # assess_master_coverage() y extract_pages() son agnósticas de dominio
 # -- viven en ai_services.document_vision_service e importadas arriba,
 # reexportadas para machine_documents/tasks.py (ver docstring del
