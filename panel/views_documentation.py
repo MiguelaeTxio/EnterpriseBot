@@ -1414,7 +1414,20 @@ class DocumentationMachineListFragmentView(DocsUploadAccessMixin, View):
     """
     GET (HTMX): fragmento del acordeón de máquinas, filtrado por el
     parámetro `search` (código, matrícula o marca/modelo -- búsqueda
-    en vivo, mismo patrón que panel/fleet/list.html).
+    en vivo, mismo patrón que panel/fleet/list.html) y por el
+    parámetro `doc_status` (S029, toggle documentados/sin documentar
+    -- valores `all` (por defecto), `documented`, `undocumented`).
+
+    `doc_count` usa el mismo criterio de "documento real" que
+    `_machine_documents_view_data`/`_machine_obsolete_candidates`:
+    CLASSIFIED, excluyendo maestro pendiente de resolver
+    (`is_possible_master`) y candidato a obsoleto
+    (`obsolete_candidate`) -- verificado empíricamente contra la BD
+    real antes de implementar (508 centros de gasto, 2 documentados
+    -- A36 y A29 -- con este criterio y con el de "cualquier
+    documento" coincidiendo hoy, porque los 30 `MachineDocument`
+    existentes están todos en CLASSIFIED sin ninguno marcado como
+    maestro pendiente ni candidato a obsoleto).
     """
 
     template_name = "panel/documentation/_machine_accordion.html"
@@ -1422,6 +1435,7 @@ class DocumentationMachineListFragmentView(DocsUploadAccessMixin, View):
     def get(self, request):
         company = request.user.company_user.company
         search = request.GET.get("search", "").strip()
+        doc_status = request.GET.get("doc_status", "all")
 
         from django.db.models import Count, Q
 
@@ -1430,6 +1444,13 @@ class DocumentationMachineListFragmentView(DocsUploadAccessMixin, View):
                 "documents",
                 filter=~Q(documents__content_mismatch_warning=""),
             ),
+            doc_count=Count(
+                "documents",
+                filter=Q(documents__status=MachineDocument.Status.CLASSIFIED)
+                & ~Q(documents__is_possible_master=True)
+                & ~Q(documents__obsolete_candidate=True),
+                distinct=True,
+            ),
         )
         if search:
             machines = machines.filter(
@@ -1437,9 +1458,16 @@ class DocumentationMachineListFragmentView(DocsUploadAccessMixin, View):
                 | Q(plate__icontains=search)
                 | Q(brand_model__icontains=search)
             )
+        if doc_status == "documented":
+            machines = machines.filter(doc_count__gt=0)
+        elif doc_status == "undocumented":
+            machines = machines.filter(doc_count=0)
         machines = machines.order_by("code")
 
-        return render(request, self.template_name, {"machines": machines})
+        return render(request, self.template_name, {
+            "machines": machines,
+            "doc_status": doc_status,
+        })
 
 
 class DocumentationPersonalListFragmentView(DocsUploadAccessMixin, View):

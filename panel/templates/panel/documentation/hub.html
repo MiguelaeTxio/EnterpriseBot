@@ -127,16 +127,45 @@
             </div>
 
             <div class="card card-body mb-3 py-2">
-                <label class="form-label form-label-sm mb-1">Búsqueda</label>
-                <input id="filter-machines-search"
-                       type="search"
-                       class="form-control form-control-sm"
-                       placeholder="Código, matrícula, marca/modelo…"
-                       name="search"
-                       hx-get="{% url 'panel:documentation_machine_list' %}"
-                       hx-target="#machine-accordion-container"
-                       hx-include="#filter-machines-search"
-                       hx-trigger="input changed delay:300ms, search">
+                <div class="row g-2 align-items-end">
+                    <div class="col">
+                        <label class="form-label form-label-sm mb-1">Búsqueda</label>
+                        <input id="filter-machines-search"
+                               type="search"
+                               class="form-control form-control-sm"
+                               placeholder="Código, matrícula, marca/modelo…"
+                               name="search"
+                               hx-get="{% url 'panel:documentation_machine_list' %}"
+                               hx-target="#machine-accordion-container"
+                               hx-include="closest .card"
+                               hx-trigger="input changed delay:300ms, search">
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-label form-label-sm mb-1 d-block">Documentación</label>
+                        <div class="btn-group btn-group-sm" role="group" aria-label="Filtro por documentación">
+                            <input type="radio" class="btn-check" name="doc_status" id="doc-status-all" value="all" autocomplete="off" checked
+                                   hx-get="{% url 'panel:documentation_machine_list' %}"
+                                   hx-target="#machine-accordion-container"
+                                   hx-include="closest .card"
+                                   hx-trigger="change">
+                            <label class="btn btn-outline-secondary" for="doc-status-all">Todas</label>
+
+                            <input type="radio" class="btn-check" name="doc_status" id="doc-status-documented" value="documented" autocomplete="off"
+                                   hx-get="{% url 'panel:documentation_machine_list' %}"
+                                   hx-target="#machine-accordion-container"
+                                   hx-include="closest .card"
+                                   hx-trigger="change">
+                            <label class="btn btn-outline-secondary" for="doc-status-documented">Documentadas</label>
+
+                            <input type="radio" class="btn-check" name="doc_status" id="doc-status-undocumented" value="undocumented" autocomplete="off"
+                                   hx-get="{% url 'panel:documentation_machine_list' %}"
+                                   hx-target="#machine-accordion-container"
+                                   hx-include="closest .card"
+                                   hx-trigger="change">
+                            <label class="btn btn-outline-secondary" for="doc-status-undocumented">Sin documentar</label>
+                        </div>
+                    </div>
+                </div>
             </div>
             <div id="machine-accordion-container">
                 {% include "panel/documentation/_machine_accordion.html" with machines=machines %}
