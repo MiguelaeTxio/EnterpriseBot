@@ -1,0 +1,39 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation/_countdown_confirm_modal.html #}
+{# Modal de confirmación genérico con cuenta atrás (S028) -- extraído  #}
+{# de hub.html/machine_page.html, donde vivía duplicado byte a byte   #}
+{# como deleteConfirmModal (DRY, Miguel Ángel: "no vamos a quitarnos  #}
+{# la regla de Don't Repeat Yourself"). El JS que lo controla         #}
+{# (window.openCountdownConfirm) vive en                              #}
+{# panel/static/panel/js/countdown_confirm.js -- cargarlo una vez     #}
+{# ({% static %}) en cualquier plantilla que incluya este parcial.    #}
+{#                                                                     #}
+{# Parámetros del include (todos opcionales, con valores por defecto  #}
+{# pensados para el caso de borrado, el primero en usarlo):           #}
+{#   modal_id     -- id del modal, 'countdownConfirmModal' por defecto#}
+{#   modal_title  -- 'Confirmar acción' por defecto                   #}
+{#   modal_icon   -- clases bi-* del icono de cabecera                #}
+{#   button_label -- 'Confirmar' por defecto                          #}
+{#   button_icon  -- clase bi-* del icono del botón                   #}
+{#   button_class -- 'btn-danger' por defecto                         #}
+<div class="modal fade" id="{{ modal_id|default:'countdownConfirmModal' }}" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi {{ modal_icon|default:'bi-exclamation-triangle-fill text-danger' }} me-2"></i>{{ modal_title|default:"Confirmar acción" }}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-0" data-countdown-body></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <form method="post">
+                    {% csrf_token %}
+                    <button type="submit" class="btn {{ button_class|default:'btn-danger' }}" data-countdown-btn disabled>
+                        <i class="bi {{ button_icon|default:'bi-trash' }} me-1"></i>{{ button_label|default:"Confirmar" }} <span data-countdown-label></span>
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>

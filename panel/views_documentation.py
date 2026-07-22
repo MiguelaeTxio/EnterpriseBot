@@ -2220,11 +2220,25 @@ class MachineDocumentTransferView(DocsUploadAccessMixin, View):
         # (machine_a y machine_b, no el modo "sin asignar"), cada
         # columna se acota a los documentos cuya
         # content_mismatch_candidate_machine sea justo la OTRA
-        # máquina del par -- nunca se ofrece mover un documento a una
-        # máquina con la que no tiene ninguna incidencia real. El modo
-        # "sin asignar" (machine_b=None) no se toca: ahí no hay una
-        # única "otra máquina" candidata, sigue mostrando todos los
-        # documentos de esa máquina con el selector libre.
+        # máquina del par -- nunca se ofrece resolver un documento
+        # hacia una máquina con la que no tiene ninguna incidencia
+        # real. El modo "sin asignar" (machine_b=None) no se toca:
+        # ahí no hay una única "otra máquina" candidata, sigue
+        # mostrando todos los documentos de esa máquina con el
+        # selector libre.
+        #
+        # Deshacer un movimiento (S028) -- en vez de un modo "ver
+        # todos" (descartado explícitamente por Miguel Ángel: "esto es
+        # mucho más fácil"), cada documento de esta lista tiene un
+        # selector de destino puramente de interfaz (puntero,
+        # `_transfer_column.html` + `countdown_confirm.js`) que se
+        # puede cambiar tantas veces como se quiera SIN tocar la base
+        # de datos -- solo se escribe al pulsar "Resolver", con el
+        # valor que el puntero tenga en ese momento. Por eso no hace
+        # falta ninguna vía para "recuperar" un documento ya resuelto:
+        # mientras la incidencia siga abierta (esté en esta lista),
+        # el puntero puede apuntar a cualquiera de las dos máquinas
+        # del par, indefinidamente, hasta que se confirme.
         docs_a = (
             MachineDocument.objects.filter(
                 machine_asset=machine_a,
@@ -2259,6 +2273,7 @@ class MachineDocumentTransferView(DocsUploadAccessMixin, View):
         for doc in docs_b:
             doc.download_url = _resolve_download_url(doc, MACHINE_DOCUMENTS_BUCKET)
 
+
         return render(request, self.template_name, {
             "active_nav": "documentation_hub",
             "company_user": company_user,
@@ -2272,12 +2287,32 @@ class MachineDocumentTransferView(DocsUploadAccessMixin, View):
 
 class DocumentMoveToMachineView(DocsUploadAccessMixin, View):
     """
-    POST: reasigna un MachineDocument a otra máquina -- ÚNICA vía de
-    movimiento entre máquinas, siempre a mano (S026). Limpia
-    content_mismatch_warning/detected_reference_hint al mover (la
-    incidencia queda resuelta con el movimiento manual) y redirige de
-    vuelta a MachineDocumentTransferView con las mismas dos máquinas
-    en la querystring, para no perder el contexto.
+    POST: resuelve una incidencia de discrepancia, asignando el
+    documento a la máquina que el supervisor haya dejado seleccionada
+    en el momento de pulsar "Resolver" -- ÚNICA vía de reasignación
+    entre máquinas, siempre a mano (S026, ampliado S028).
+
+    S028, mecanismo de "puntero" (Miguel Ángel, tras detectar que el
+    movimiento inmediato no dejaba forma de deshacerlo: "nosotros lo
+    único que hacemos es utilizar un puntero, que nos dice a qué
+    máquina está asignado en ese momento el documento... en el
+    momento en que pulsas resolución de la incidencia, ¿a dónde está
+    apuntando el puntero? Pues ahí grabamos en base de datos y ya
+    está"). `target_machine_pk` puede ser la MISMA máquina a la que
+    el documento ya está asignado (equivalente a "estaba bien
+    archivado, no hacía falta moverlo") o la otra máquina del par
+    (equivalente al movimiento clásico) -- el código no distingue los
+    dos casos, ambos son solo "asignar a target_machine_pk y limpiar
+    la incidencia". El puntero en sí (a qué máquina apunta antes de
+    pulsar Resolver) es puramente de interfaz (`_transfer_column.html`
+    + `countdown_confirm.js`) -- esta vista nunca ve los toggles
+    intermedios, solo el valor final confirmado tras la cuenta atrás
+    del modal (`panel/documentation/_countdown_confirm_modal.html`).
+
+    Limpia content_mismatch_warning/detected_reference_hint al
+    resolver (la incidencia queda cerrada) y redirige de vuelta a
+    MachineDocumentTransferView con las mismas dos máquinas en la
+    querystring, para no perder el contexto.
     """
 
     def post(self, request, pk):
@@ -2299,6 +2334,7 @@ class DocumentMoveToMachineView(DocsUploadAccessMixin, View):
             document.machine_asset.code if document.machine_asset
             else "SIN ASIGNAR"
         )
+        stayed_put = document.machine_asset_id == target_machine.pk
         document.machine_asset = target_machine
         document.content_mismatch_warning = ""
         document.content_mismatch_candidate_machine = None
@@ -2310,71 +2346,22 @@ class DocumentMoveToMachineView(DocsUploadAccessMixin, View):
             "detected_reference_hint", "status",
         ])
         logger.info(
-            "# [DocumentMoveToMachineView] MachineDocument #%d movido "
-            "de %s a %s a mano.",
-            document.pk, origin_label, target_machine.code,
+            "# [DocumentMoveToMachineView] Incidencia de "
+            "MachineDocument #%d resuelta a mano -- %s.",
+            document.pk,
+            f"confirmada la asignación a {target_machine.code}"
+            if stayed_put else
+            f"movido de {origin_label} a {target_machine.code}",
         )
         messages.success(
             request,
             f'"{document.display_name or document.document_type}" '
-            f"movido de {origin_label} a {target_machine.code}.",
-        )
-
-        machine_a = request.POST.get("machine_a", "")
-        machine_b = request.POST.get("machine_b", "")
-        return redirect(
-            f"{reverse('panel:documentation_machine_transfer')}"
-            f"?machine_a={machine_a}&machine_b={machine_b}",
-        )
-
-
-class DocumentDismissMismatchView(DocsUploadAccessMixin, View):
-    """
-    POST: resuelve una incidencia de discrepancia SIN mover el
-    documento -- Miguel Ángel (S028), tras revisar a mano un caso
-    real: "falta el botón de revocar incidencia, es decir, resolver
-    la incidencia porque no existe o porque está bien, y debe de estar
-    asignada a la máquina que está asignada". La supervisión humana es
-    la última palabra: si la máquina ya asignada es la correcta (falso
-    positivo de Gemini, o coincidencia real que el emparejamiento
-    automático no supo resolver), esto limpia el aviso sin tocar
-    `machine_asset`. Mismos campos que limpia el movimiento
-    (DocumentMoveToMachineView) salvo `machine_asset`, que aquí no se
-    toca.
-    """
-
-    def post(self, request, pk):
-        company = request.user.company_user.company
-        document = MachineDocument.objects.filter(
-            pk=pk, company=company,
-        ).first()
-        if document is None:
-            raise Http404("Documento no encontrado.")
-
-        machine_label = (
-            document.machine_asset.code if document.machine_asset
-            else "SIN ASIGNAR"
-        )
-        document.content_mismatch_warning = ""
-        document.content_mismatch_candidate_machine = None
-        document.detected_reference_hint = ""
-        document.status = MachineDocument.Status.CLASSIFIED
-        document.save(update_fields=[
-            "content_mismatch_warning",
-            "content_mismatch_candidate_machine",
-            "detected_reference_hint", "status",
-        ])
-        logger.info(
-            "# [DocumentDismissMismatchView] Incidencia de "
-            "MachineDocument #%d resuelta a mano SIN mover -- "
-            "confirmada la asignación a %s.",
-            document.pk, machine_label,
-        )
-        messages.success(
-            request,
-            f'"{document.display_name or document.document_type}" '
-            f"confirmado como correcto en {machine_label} -- "
-            "incidencia resuelta.",
+            + (
+                f"confirmado como correcto en {target_machine.code}"
+                if stayed_put else
+                f"movido de {origin_label} a {target_machine.code}"
+            )
+            + " -- incidencia resuelta.",
         )
 
         machine_a = request.POST.get("machine_a", "")

@@ -1,5 +1,6 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation/transfer.html #}
 {% extends "panel/base.html" %}
+{% load static %}
 
 {% comment %}
     Pantalla partida para mover documentación entre dos máquinas a
@@ -13,6 +14,28 @@
     machine_page.html, que ya trae las dos máquinas en la querystring
     -- pero los selectores de aquí permiten también elegir cualquier
     otro par a mano.
+
+    Mecanismo de "puntero" (S028) -- Miguel Ángel, tras detectar que
+    el movimiento inmediato (escritura en BD en cuanto se pulsaba
+    "mover") no dejaba ninguna forma de deshacerlo: "nosotros lo único
+    que hacemos es utilizar un puntero, que nos dice a qué máquina
+    está asignado en ese momento el documento... pulsamos añadir a la
+    otra máquina, el puntero apunta a la otra máquina. Volvemos atrás,
+    el puntero vuelve a apuntar a la de origen. En el momento en que
+    pulsas resolución de la incidencia, ¿a dónde está apuntando el
+    puntero? Pues ahí grabamos en base de datos". Cada documento con
+    incidencia (`_transfer_column.html`) tiene un selector de destino
+    puramente de interfaz que se puede cambiar tantas veces como se
+    quiera SIN ninguna escritura en BD -- solo al pulsar "Resolver" se
+    envía el POST con el valor que el puntero tenga en ese momento, y
+    solo entonces (DocumentMoveToMachineView) se toca la base de
+    datos. Además, "Resolver" pasa por el modal de confirmación con
+    cuenta atrás (`_countdown_confirm_modal.html` +
+    `countdown_confirm.js`, mismo parcial reutilizable que usa el
+    borrado de documentos) para blindar contra un clic accidental --
+    "puedes darle por error, puedes estar en el momento que te llaman
+    por teléfono... tienes que tener la posibilidad de revocar el
+    cambio".
 {% endcomment %}
 
 {% block title %}Mover documentación entre máquinas{% endblock %}
@@ -54,7 +77,7 @@
                     <i class="bi bi-truck me-1"></i>{{ machine_a.code }} — {{ machine_a.brand_model }}
                 </div>
                 <div class="card-body">
-                    {% include "panel/documentation/_transfer_column.html" with docs=docs_a other_machine=machine_b this_machine=machine_a all_machines=machines %}
+                    {% include "panel/documentation/_transfer_column.html" with docs=docs_a other_machine=machine_b this_machine=machine_a all_machines=machines page_machine_a=machine_a page_machine_b=machine_b %}
                 </div>
             </div>
         </div>
@@ -64,7 +87,7 @@
                     <i class="bi bi-truck me-1"></i>{{ machine_b.code }} — {{ machine_b.brand_model }}
                 </div>
                 <div class="card-body">
-                    {% include "panel/documentation/_transfer_column.html" with docs=docs_b other_machine=machine_a this_machine=machine_b all_machines=machines %}
+                    {% include "panel/documentation/_transfer_column.html" with docs=docs_b other_machine=machine_a this_machine=machine_b all_machines=machines page_machine_a=machine_a page_machine_b=machine_b %}
                 </div>
             </div>
         </div>
@@ -82,7 +105,7 @@
                     <span class="badge bg-warning text-dark ms-1">Sin asignar</span>
                 </div>
                 <div class="card-body">
-                    {% include "panel/documentation/_transfer_column.html" with docs=docs_a other_machine=None this_machine=machine_a all_machines=machines %}
+                    {% include "panel/documentation/_transfer_column.html" with docs=docs_a other_machine=None this_machine=machine_a all_machines=machines page_machine_a=machine_a page_machine_b=machine_b %}
                 </div>
             </div>
         </div>
@@ -92,4 +115,46 @@
     {% endif %}
 
 </div>
+
+{# --- Modal de confirmación de resolución con cuenta atrás (S028, mismo parcial reutilizable que el borrado -- ver countdown_confirm.js) --- #}
+{% include "panel/documentation/_countdown_confirm_modal.html" with modal_id="resolveConfirmModal" modal_title="Resolver incidencia" modal_icon="bi-check2-circle text-success" button_label="Resolver" button_icon="bi-check2-circle" button_class="btn-success" %}
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{% static 'panel/js/countdown_confirm.js' %}"></script>
+<script>
+(function () {
+    'use strict';
+
+    // Lee el puntero actual de un documento (el radio marcado en su
+    // fila, ver _transfer_column.html) y abre el modal de
+    // confirmación de "Resolver" con ese destino -- window.htmx no
+    // hace falta aquí, esta pantalla siempre recarga completa tras
+    // resolver (redirige con las dos máquinas en la querystring).
+    window.openResolveConfirm = function (docPk, docName, machineA, machineB) {
+        var checked = document.querySelector('input[name="target-' + docPk + '"]:checked');
+        if (!checked) { return; }
+        var targetMachineCode = checked.getAttribute('data-machine-code');
+
+        window.openCountdownConfirm({
+            modalId: 'resolveConfirmModal',
+            url: checked.getAttribute('data-resolve-url'),
+            bodyParts: [
+                { text: 'El documento ' },
+                { strong: docName },
+                { text: ' quedará asignado a ' },
+                { strong: targetMachineCode },
+                { text: '.' },
+            ],
+            seconds: 4,
+            extraFields: {
+                target_machine_pk: checked.value,
+                machine_a: machineA,
+                machine_b: machineB,
+            },
+        });
+    };
+})();
+</script>
 {% endblock %}
