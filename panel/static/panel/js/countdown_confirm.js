@@ -79,12 +79,21 @@
         });
         if (config.extraFields) {
             Object.keys(config.extraFields).forEach(function (name) {
-                var input = document.createElement('input');
-                input.type = 'hidden';
-                input.name = name;
-                input.value = config.extraFields[name];
-                input.setAttribute('data-countdown-extra', '1');
-                form.appendChild(input);
+                var value = config.extraFields[name];
+                // Valor array (S028, borrado en bloque) -- un input
+                // hidden por elemento, mismo name, para que
+                // request.POST.getlist(name) en Django los recoja
+                // todos. Valor simple: un único input, igual que
+                // antes.
+                var values = Array.isArray(value) ? value : [value];
+                values.forEach(function (v) {
+                    var input = document.createElement('input');
+                    input.type = 'hidden';
+                    input.name = name;
+                    input.value = v;
+                    input.setAttribute('data-countdown-extra', '1');
+                    form.appendChild(input);
+                });
             });
         }
 

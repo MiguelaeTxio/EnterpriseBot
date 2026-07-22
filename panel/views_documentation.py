@@ -1723,6 +1723,80 @@ class ObsoleteCandidateDismissView(DocsUploadAccessMixin, View):
         )
 
 
+class ObsoleteCandidateBulkDeleteView(DocsUploadAccessMixin, View):
+    """
+    POST: borra en bloque varios MachineDocument candidatos a
+    obsoleto a la vez -- Miguel Ángel (S028), tras encontrar 17
+    candidatos reales en la primera prueba real: "si hace falta el uso
+    de casilleras, casilleras para marcar todos y eliminar todos,
+    porque estar eliminando uno a uno... se deja la eliminación uno a
+    uno, perfecto, pero marcaje y eliminar marcados". Pasa por el
+    mismo modal de confirmación con cuenta atrás que el borrado
+    individual (countdown_confirm.js, extraFields con array de pks).
+
+    Reutiliza exactamente la misma lógica de borrado que
+    DocumentDeleteView (blob de GCS + DocumentAlert asociada + fila),
+    en bucle -- pero restringida por seguridad a documentos que de
+    verdad tengan obsolete_candidate=True en este momento (nunca un
+    endpoint de borrado en bloque genérico por id, aunque solo esta
+    pantalla llegue a usarlo hoy).
+    """
+
+    def post(self, request):
+        company = request.user.company_user.company
+        pks = request.POST.getlist("pks")
+        machine_pk = request.POST.get("machine_pk", "").strip()
+
+        documents = MachineDocument.objects.filter(
+            pk__in=pks, company=company, obsolete_candidate=True,
+        )
+        content_type = ContentType.objects.get_for_model(MachineDocument)
+
+        deleted_count = 0
+        for document in documents:
+            DocumentAlert.objects.filter(
+                content_type=content_type, object_id=document.pk,
+            ).delete()
+            if document.gcs_blob_name:
+                try:
+                    delete_file(MACHINE_DOCUMENTS_BUCKET, document.gcs_blob_name)
+                except Exception as exc:
+                    logger.error(
+                        "# [ObsoleteCandidateBulkDeleteView] Error "
+                        "borrando blob GCS de MachineDocument #%d "
+                        "(blob=%s): %s",
+                        document.pk, document.gcs_blob_name, exc,
+                        exc_info=True,
+                    )
+            document.delete()
+            deleted_count += 1
+
+        logger.info(
+            "# [ObsoleteCandidateBulkDeleteView] %d documento(s) "
+            "obsoleto(s) borrados en bloque (de %d solicitado(s)) "
+            "para máquina #%s.",
+            deleted_count, len(pks), machine_pk,
+        )
+        if deleted_count:
+            messages.success(
+                request,
+                f"{deleted_count} documento(s) obsoleto(s) eliminado(s).",
+            )
+        else:
+            messages.warning(
+                request,
+                "No se ha eliminado ningún documento -- selección "
+                "vacía o ya resuelta.",
+            )
+
+        return redirect(
+            reverse(
+                "panel:documentation_machine_page",
+                kwargs={"pk": machine_pk},
+            ),
+        )
+
+
 class DocumentMarkdownConvertView(DocsUploadAccessMixin, View):
     """
     POST: convierte un MachineDocument (típicamente un manual de uso

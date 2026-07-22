@@ -56,23 +56,41 @@
     {# la cola de arriba ni en la documentación normal de abajo (ver exclusiones en MachinePageView.get()).   #}
     {% if obsolete_candidates %}
     <div class="card shadow-sm mb-4 border-warning">
-        <div class="card-header fw-semibold">
-            <i class="bi bi-hourglass-bottom me-1"></i>Candidatos a documento obsoleto
-            <span class="badge bg-warning text-dark ms-1">{{ obsolete_candidates|length }}</span>
+        <div class="card-header fw-semibold d-flex align-items-center justify-content-between flex-wrap gap-2">
+            <div>
+                <i class="bi bi-hourglass-bottom me-1"></i>Candidatos a documento obsoleto
+                <span class="badge bg-warning text-dark ms-1">{{ obsolete_candidates|length }}</span>
+            </div>
+            {# Barra de selección múltiple (S028) -- Miguel Ángel: "casilleras para marcar todos y eliminar #}
+            {# todos, porque estar eliminando uno a uno... se deja la eliminación uno a uno, perfecto, pero  #}
+            {# marcaje y eliminar marcados". Oculta hasta que haya al menos una casilla marcada.             #}
+            <div class="d-flex align-items-center gap-2 d-none" id="obsolete-bulk-bar">
+                <span class="small text-muted" id="obsolete-bulk-count">0 seleccionados</span>
+                <button type="button" class="btn btn-sm btn-danger" id="obsolete-bulk-delete-btn">
+                    <i class="bi bi-trash me-1"></i>Eliminar seleccionados
+                </button>
+            </div>
         </div>
         <div class="card-body">
+            <div class="form-check mb-2">
+                <input type="checkbox" class="form-check-input" id="obsolete-select-all">
+                <label class="form-check-label small" for="obsolete-select-all">Seleccionar todos</label>
+            </div>
             <ul class="list-group list-group-flush">
                 {% for doc in obsolete_candidates %}
                 <li class="list-group-item px-0">
                     <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap">
-                        <div>
-                            <span class="fw-semibold">{{ doc.display_name|default:doc.document_type }}</span>
-                            <span class="badge bg-light text-dark border ms-1">{{ doc.document_type }}</span>
-                            {% if doc.obsolete_reason %}
-                            <div class="text-muted small mt-1">
-                                <i class="bi bi-robot me-1"></i>{{ doc.obsolete_reason }}
+                        <div class="d-flex align-items-start gap-2">
+                            <input type="checkbox" class="form-check-input mt-1 obsolete-select-item" value="{{ doc.pk }}">
+                            <div>
+                                <span class="fw-semibold">{{ doc.display_name|default:doc.document_type }}</span>
+                                <span class="badge bg-light text-dark border ms-1">{{ doc.document_type }}</span>
+                                {% if doc.obsolete_reason %}
+                                <div class="text-muted small mt-1">
+                                    <i class="bi bi-robot me-1"></i>{{ doc.obsolete_reason }}
+                                </div>
+                                {% endif %}
                             </div>
-                            {% endif %}
                         </div>
                         <div class="d-flex align-items-center gap-1 flex-shrink-0">
                             {% if doc.download_url %}
@@ -171,6 +189,66 @@
             modal.show();
         }
     });
+
+    // Selección múltiple de candidatos a obsoleto (S028) -- Miguel
+    // Ángel: "casilleras para marcar todos y eliminar todos... se
+    // deja la eliminación uno a uno, perfecto, pero marcaje y
+    // eliminar marcados". El botón "Eliminar seleccionados" reutiliza
+    // el MISMO modal de cuenta atrás ya incluido en esta página para
+    // el borrado individual (título "Eliminar documento") -- basta
+    // con cambiarle la URL y el texto del cuerpo antes de abrirlo.
+    var selectAllCheckbox = document.getElementById('obsolete-select-all');
+    var itemCheckboxes = Array.prototype.slice.call(
+        document.querySelectorAll('.obsolete-select-item'),
+    );
+    var bulkBar = document.getElementById('obsolete-bulk-bar');
+    var bulkCount = document.getElementById('obsolete-bulk-count');
+    var bulkDeleteBtn = document.getElementById('obsolete-bulk-delete-btn');
+
+    function updateBulkBar() {
+        var checked = itemCheckboxes.filter(function (cb) { return cb.checked; });
+        if (bulkBar) {
+            bulkBar.classList.toggle('d-none', checked.length === 0);
+        }
+        if (bulkCount) {
+            bulkCount.textContent = checked.length + ' seleccionado' + (checked.length === 1 ? '' : 's');
+        }
+        if (selectAllCheckbox) {
+            selectAllCheckbox.checked = checked.length > 0 && checked.length === itemCheckboxes.length;
+            selectAllCheckbox.indeterminate = checked.length > 0 && checked.length < itemCheckboxes.length;
+        }
+    }
+
+    if (selectAllCheckbox) {
+        selectAllCheckbox.addEventListener('change', function () {
+            itemCheckboxes.forEach(function (cb) { cb.checked = selectAllCheckbox.checked; });
+            updateBulkBar();
+        });
+    }
+    itemCheckboxes.forEach(function (cb) {
+        cb.addEventListener('change', updateBulkBar);
+    });
+
+    if (bulkDeleteBtn) {
+        bulkDeleteBtn.addEventListener('click', function () {
+            var checked = itemCheckboxes.filter(function (cb) { return cb.checked; });
+            if (!checked.length) { return; }
+            var pks = checked.map(function (cb) { return cb.value; });
+
+            window.openCountdownConfirm({
+                modalId: 'countdownConfirmModal',
+                url: '{% url "panel:documentation_obsolete_bulk_delete" %}',
+                bodyParts: [
+                    { text: 'Se eliminarán ' + pks.length + ' documento' + (pks.length === 1 ? '' : 's') + ' obsoleto' + (pks.length === 1 ? '' : 's') + '. Esta operación no podrá revertirse.' },
+                ],
+                seconds: 5,
+                extraFields: {
+                    pks: pks,
+                    machine_pk: '{{ machine.pk }}',
+                },
+            });
+        });
+    }
 })();
 </script>
 {% endblock %}
