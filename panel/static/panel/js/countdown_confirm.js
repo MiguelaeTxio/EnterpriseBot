@@ -72,6 +72,30 @@
             form.removeAttribute('hx-swap');
         }
 
+        // Cierra el modal tras una respuesta HTMX exitosa (S029,
+        // hallazgo real: Miguel Ángel, tras la prueba con Yolanda --
+        // "se eliminan realmente, pero el modal... la das y ya no
+        // hace nada porque ya se ha eliminado"). No existía ningún
+        // código que cerrara el modal en la vía HTMX -- solo se
+        // limpiaba el intervalo en 'hidden.bs.modal', que nunca se
+        // disparaba porque nada llamaba a hide(). El listener se
+        // quita y se vuelve a poner en cada apertura porque el form
+        // es el mismo nodo reutilizado por todas las acciones que
+        // usan este modal (borrar, comparar, forzar vigencia, etc.),
+        // cada una con su propia config.hxTarget.
+        if (form._afterRequestHandler) {
+            form.removeEventListener('htmx:afterRequest', form._afterRequestHandler);
+            form._afterRequestHandler = null;
+        }
+        if (config.hxTarget) {
+            form._afterRequestHandler = function (evt) {
+                if (evt.detail.successful) {
+                    bootstrap.Modal.getOrCreateInstance(modalEl).hide();
+                }
+            };
+            form.addEventListener('htmx:afterRequest', form._afterRequestHandler);
+        }
+
         // Limpia inputs hidden extra de una apertura anterior del
         // mismo modal antes de añadir los de esta llamada.
         form.querySelectorAll('[data-countdown-extra]').forEach(function (el) {
