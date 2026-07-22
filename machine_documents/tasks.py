@@ -186,7 +186,23 @@ def process_machine_document_batch(self, document_pks: list[int]) -> None:
     # mismo lote. Se inicializa con lo que YA había en BD la primera
     # vez que se toca cada máquina, y se actualiza en memoria en
     # cuanto este bucle rellena un bastidor nuevo.
-    known_chassis_by_machine: dict[int, str] = {}
+    #
+    # "confirmed" (S028, ampliado): un bastidor puede llegar a este
+    # caché de dos formas muy distintas en fiabilidad -- confirmado
+    # por matrícula/código de flota coincidente en el mismo documento
+    # (fiable, la identidad de la máquina no admite duda), o relleno a
+    # ciegas por una mención SUELTA de bastidor sin ninguna otra
+    # corroboración (mucho más débil -- un solo documento con un
+    # dígito mal leído puede "envenenar" el campo). El valor ya
+    # guardado en BD al empezar el lote se trata siempre como NO
+    # confirmado (no sabemos cómo llegó ahí) -- así, si dentro de este
+    # mismo lote aparece un documento con matrícula/código coincidente
+    # que dé un bastidor DISTINTO, ese sí puede corregirlo. Una vez que
+    # un valor queda confirmado en este lote, ya no se corrige por una
+    # mención suelta sin matrícula/código -- esas van a discrepancia
+    # normal para revisión humana, nunca sobrescriben a ciegas un dato
+    # ya confirmado.
+    known_chassis_by_machine: dict[int, dict] = {}
     for document in documents:
         try:
             document.source_file.open("rb")
@@ -397,8 +413,13 @@ def process_machine_document_batch(self, document_pks: list[int]) -> None:
             )
             machine = document.machine_asset
             if machine.pk not in known_chassis_by_machine:
-                known_chassis_by_machine[machine.pk] = machine.chassis_number or ""
-            current_chassis = known_chassis_by_machine[machine.pk]
+                known_chassis_by_machine[machine.pk] = {
+                    "value": machine.chassis_number or "",
+                    "confirmed": False,
+                }
+            cached = known_chassis_by_machine[machine.pk]
+            current_chassis = cached["value"]
+            current_confirmed = cached["confirmed"]
 
             normalized_plate_ref = _normalize_for_matching(content_plate_reference)
             normalized_chassis_ref = _normalize_for_matching(content_chassis_reference)
@@ -416,7 +437,9 @@ def process_machine_document_batch(self, document_pks: list[int]) -> None:
                 if normalized_chassis_ref and not normalized_chassis:
                     machine.chassis_number = content_chassis_reference
                     machine.save(update_fields=["chassis_number"])
-                    known_chassis_by_machine[machine.pk] = content_chassis_reference
+                    known_chassis_by_machine[machine.pk] = {
+                        "value": content_chassis_reference, "confirmed": True,
+                    }
                     logger.info(
                         "# [process_machine_document_batch] #%d (%s): "
                         "bastidor auto-completado para %s a partir del "
@@ -429,34 +452,65 @@ def process_machine_document_batch(self, document_pks: list[int]) -> None:
                     normalized_chassis_ref and normalized_chassis
                     and normalized_chassis_ref != normalized_chassis
                 ):
-                    # Identidad confirmada, pero el bastidor de este
-                    # documento no coincide con el ya guardado -- no
-                    # es una discrepancia de MÁQUINA (sabemos que es
-                    # esta), puede ser un dígito mal leído en este
-                    # documento o en el que rellenó el campo. Se dejar
-                    # constancia en el log para revisión futura, sin
-                    # generar incidencia ni sobrescribir el valor ya
-                    # guardado -- la corrección de bastidores ya
-                    # rellenados es tarea de la auditoría de datos, no
-                    # de este mecanismo.
-                    logger.info(
-                        "# [process_machine_document_batch] #%d (%s): "
-                        "identidad confirmada para %s por matrícula/"
-                        "código de flota, pero el bastidor del "
-                        "documento (%r) no coincide con el ya "
-                        "guardado (%r) -- posible dígito mal leído en "
-                        "alguno de los dos documentos, sin generar "
-                        "incidencia.",
-                        document.pk, filename, machine.code,
-                        content_chassis_reference, current_chassis,
-                    )
+                    if not current_confirmed:
+                        # El valor ya guardado NUNCA fue confirmado por
+                        # matrícula/código (llegó de una mención suelta
+                        # de bastidor, en este lote o en uno anterior,
+                        # o del catálogo original) -- este documento SÍ
+                        # trae esa confirmación, así que corrige el
+                        # valor. Caso real que motivó esto (Miguel
+                        # Ángel): la A36 tenía guardado un bastidor con
+                        # un dígito equivocado, contaminado por un
+                        # único documento sin matrícula; un certificado
+                        # posterior con matrícula Y bastidor a la vez
+                        # debe poder corregirlo, no limitarse a
+                        # avisar.
+                        machine.chassis_number = content_chassis_reference
+                        machine.save(update_fields=["chassis_number"])
+                        known_chassis_by_machine[machine.pk] = {
+                            "value": content_chassis_reference,
+                            "confirmed": True,
+                        }
+                        logger.info(
+                            "# [process_machine_document_batch] #%d "
+                            "(%s): bastidor CORREGIDO para %s -- el "
+                            "valor guardado (%r) no estaba confirmado "
+                            "por matrícula/código, este documento sí "
+                            "confirma la identidad y trae un bastidor "
+                            "distinto (%r).",
+                            document.pk, filename, machine.code,
+                            current_chassis, content_chassis_reference,
+                        )
+                    else:
+                        # El valor guardado SÍ quedó confirmado por
+                        # matrícula/código en este mismo lote, y este
+                        # documento (también con identidad confirmada)
+                        # trae un bastidor distinto -- conflicto real
+                        # entre dos documentos oficiales, no se puede
+                        # decidir solo con código. Se deja constancia,
+                        # sin generar incidencia (sabemos que la
+                        # máquina es correcta) ni tocar el valor ya
+                        # confirmado -- caso raro, para revisión
+                        # humana si llega a darse.
+                        logger.warning(
+                            "# [process_machine_document_batch] #%d "
+                            "(%s): CONFLICTO -- %s ya tiene bastidor "
+                            "%r confirmado por matrícula/código en "
+                            "este mismo lote, pero este documento "
+                            "(también confirmado) trae %r distinto.",
+                            document.pk, filename, machine.code,
+                            current_chassis, content_chassis_reference,
+                        )
             elif normalized_chassis_ref and normalized_chassis_ref not in (
                 normalized_code, normalized_plate, normalized_chassis,
             ):
                 if not normalized_chassis:
                     machine.chassis_number = content_chassis_reference
                     machine.save(update_fields=["chassis_number"])
-                    known_chassis_by_machine[machine.pk] = content_chassis_reference
+                    known_chassis_by_machine[machine.pk] = {
+                        "value": content_chassis_reference,
+                        "confirmed": False,
+                    }
                     logger.info(
                         "# [process_machine_document_batch] #%d (%s): "
                         "bastidor auto-completado para %s a partir del "
