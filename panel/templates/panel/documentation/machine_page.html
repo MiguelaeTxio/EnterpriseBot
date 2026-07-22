@@ -168,6 +168,21 @@
         </div>
     </div>
 </div>
+
+{# --- Modal de espera al comparar con IA (S028) -- Miguel Ángel: "cuando la damos a comparar, debe saltar un modal que nos indique que se ha llamado a Gemini y que se está comparando... para que no parezca que se ha bloqueado la página". Sin botón de cerrar ni backdrop clicable -- el envío es un POST síncrono de página completa (form.submit() normal, no fetch), la propia navegación del navegador sustituye a esta página en cuanto Gemini responde, no hay nada que "cerrar" antes de eso. #}
+<div class="modal fade" id="compareLoadingModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-body text-center py-4">
+                <div class="spinner-border text-primary mb-3" role="status">
+                    <span class="visually-hidden">Comparando…</span>
+                </div>
+                <p class="mb-0">Comparando los documentos con Gemini…</p>
+                <p class="text-muted small mb-0">Puede tardar unos segundos, no cierres ni recargues la página.</p>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_scripts %}
@@ -316,6 +331,10 @@
     // mismo nivel de reversibilidad que "No es obsoleto".
     window.openCompareConfirm = function (pks, names, machinePk) {
         if (!pks || pks.length !== 2) { return; }
+        var loadingModalEl = document.getElementById('compareLoadingModal');
+        if (loadingModalEl) {
+            bootstrap.Modal.getOrCreateInstance(loadingModalEl).show();
+        }
         window.submitBulkPksForm(
             '{% url "panel:documentation_compare" domain="machine" %}',
             pks,
