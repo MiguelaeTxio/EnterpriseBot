@@ -93,7 +93,10 @@ from document_management.pdf_merge_service import EmptyDocumentListError, merge_
 from document_management.vigencia_service import DocumentSnapshot, is_current
 from fleet.models import MachineAsset
 from ivr_config.models import CompanyUser
-from machine_documents.document_classification_service import MANUAL_DOCUMENT_TYPE
+from machine_documents.document_classification_service import (
+    MANUAL_DOCUMENT_TYPE,
+    is_manual_by_filename,
+)
 from machine_documents.markdown_service import (
     MarkdownConversionError,
     convert_document_to_markdown,
@@ -1843,7 +1846,35 @@ class DocumentationPreflightDiscardView(DocsUploadAccessMixin, View):
     """
 
     @staticmethod
-    def _keep_reason(group, parsed_date):
+    def _keep_reason(filename, group, parsed_date):
+        # Manual de uso (S028, hallazgo real de Miguel Ángel): "los
+        # manuales de uso no se envían a Gemini, se suben
+        # directamente... yo no sé esta regla dónde ha ido a parar" --
+        # la regla SIGUE intacta y es correcta (route_document() /
+        # is_manual_by_filename() nunca llaman a Gemini para un
+        # manual, ni para enrutar ni para clasificar), el problema
+        # real era que ESTA pantalla de preflight usa un diccionario
+        # de "grupo de obsolescencia" completamente distinto
+        # (_dynamic_keyword_group_pairs, en
+        # document_ingestion.preflight_discard_service) que nunca
+        # incluyó "MANUAL"/"INSTRUCTIONS"/"INSTRUCCIONES" -- por eso
+        # `group` daba None para un manual y el mensaje genérico decía
+        # incorrectamente "se sube para que Gemini lo clasifique",
+        # aunque el propio pipeline de subida nunca fuera a llamar a
+        # Gemini para ese archivo. NUNCA se añade "MANUAL" al
+        # diccionario de grupo -- eso activaría la REGLA B
+        # (comparación de obsolescencia dentro del mismo grupo) sobre
+        # archivos que en realidad son partes DISTINTAS del mismo
+        # manual (portada, índice, cuerpo comprimido...), no versiones
+        # sucesivas que se sustituyen entre sí -- se descartarían por
+        # error las unas a las otras. Caso especial aislado, solo para
+        # el mensaje mostrado, sin tocar la lógica de REGLA B/discard.
+        if is_manual_by_filename(filename):
+            return (
+                "Manual de uso -- se sube directamente a la máquina, "
+                "nunca pasa por Gemini (ni para enrutar ni para "
+                "clasificar)."
+            )
         if group is None:
             return (
                 "Tipo no reconocido por nombre -- se sube para que "
@@ -1905,7 +1936,9 @@ class DocumentationPreflightDiscardView(DocsUploadAccessMixin, View):
                 else:
                     keep_entries.append({
                         "filename": v.filename,
-                        "reason": self._keep_reason(v.group, v.parsed_date),
+                        "reason": self._keep_reason(
+                            v.filename, v.group, v.parsed_date,
+                        ),
                     })
 
         logger.info(
