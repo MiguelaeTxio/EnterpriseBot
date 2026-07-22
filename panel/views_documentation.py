@@ -2385,7 +2385,7 @@ class DocumentDismissMismatchView(DocsUploadAccessMixin, View):
         )
 
 
-
+class DocumentUpdateView(DocsUploadAccessMixin, View):
     """
     POST: guarda la edición de un documento vigente. Si expiry_date
     (o, en personal, expiry_date/computed_expiry_date) cambia, corrige
