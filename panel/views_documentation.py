@@ -1479,6 +1479,12 @@ def _machine_documents_view_data(machine):
         # reales de Vertex AI (429) de esta sesión, que alargan la
         # ventana de "pendiente" de segundos a varios minutos.
         .exclude(is_possible_master=True)
+        # Candidato a obsoleto (S028) -- sección nueva y separada
+        # (Miguel Ángel), nunca mezclado con la lista normal de
+        # vigente/archivado mientras esté pendiente de revisión
+        # humana. Ver MachinePageView.get() para el queryset propio
+        # de "Candidatos a documento obsoleto".
+        .exclude(obsolete_candidate=True)
         .order_by("document_type", "-created_at")
     )
     current_docs, archived_docs = _split_current_archived(documents)
@@ -1600,6 +1606,12 @@ class MachinePageView(DocsUploadAccessMixin, View):
             MachineDocument.objects
             .filter(machine_asset=machine)
             .exclude(content_mismatch_candidate_machine__isnull=True)
+            # Candidato a obsoleto (S028) -- prioridad de resolución
+            # explícita de Miguel Ángel: mientras un documento esté
+            # pendiente de revisión de obsolescencia, no cuenta como
+            # incidencia de máquina resoluble (ver misma exclusión en
+            # MachineDocumentTransferView.get()).
+            .exclude(obsolete_candidate=True)
             .values(
                 "content_mismatch_candidate_machine",
                 "content_mismatch_candidate_machine__code",
@@ -1622,8 +1634,29 @@ class MachinePageView(DocsUploadAccessMixin, View):
             .filter(machine_asset=machine)
             .exclude(content_mismatch_warning="")
             .filter(content_mismatch_candidate_machine__isnull=True)
+            .exclude(obsolete_candidate=True)
             .count()
         )
+
+        # Candidatos a documento obsoleto (S028) -- sección nueva y
+        # separada, decisión explícita de Miguel Ángel: "que sea
+        # Gemini quien decida... solo que la decisión final de
+        # eliminar sea de un humano". Nunca se mezclan con
+        # current_docs/archived_docs (_machine_documents_view_data ya
+        # los excluye) ni con la cola de incidencias de máquina
+        # (exclusiones de arriba) -- viven únicamente aquí hasta que
+        # un humano confirme el borrado o descarte la sugerencia
+        # (ObsoleteCandidateDismissView).
+        obsolete_candidates = list(
+            MachineDocument.objects
+            .filter(machine_asset=machine, obsolete_candidate=True)
+            .exclude(status=MachineDocument.Status.ERROR)
+            .order_by("-created_at")
+        )
+        for doc in obsolete_candidates:
+            doc.download_url = _resolve_download_url(
+                doc, MACHINE_DOCUMENTS_BUCKET,
+            )
 
         return render(request, self.template_name, {
             "active_nav": "documentation_hub",
@@ -1633,8 +1666,58 @@ class MachinePageView(DocsUploadAccessMixin, View):
             "archived_docs": archived_docs,
             "unassigned_incidence_count": unassigned_incidence_count,
             "incidence_machines": incidence_machines,
+            "obsolete_candidates": obsolete_candidates,
             **alerts_context,
         })
+
+
+class ObsoleteCandidateDismissView(DocsUploadAccessMixin, View):
+    """
+    POST: descarta la sugerencia de obsolescencia de Gemini SIN
+    borrar el documento -- Miguel Ángel (S028): "si el documento no
+    está obsoleto, se resuelve la incidencia sacándolo de ahí y ya
+    pasa a quedar como incidencia de asignación errónea, hasta que se
+    resuelva". Limpia obsolete_candidate/obsolete_reason; el
+    documento vuelve a la lista normal de vigente/archivado
+    (_machine_documents_view_data) y, si seguía teniendo una
+    content_mismatch_warning pendiente, entra de nuevo en la cola de
+    incidencias de máquina (MachineDocumentTransferView) -- ninguna
+    de las dos exclusiones por obsolete_candidate=True le sigue
+    afectando una vez en False. Nunca requiere cuenta atrás -- a
+    diferencia de borrar, es una acción reversible sin pérdida de
+    datos (un reprocesado futuro podría volver a sugerirlo si Gemini
+    sigue pensando lo mismo).
+    """
+
+    def post(self, request, pk):
+        company = request.user.company_user.company
+        document = MachineDocument.objects.filter(
+            pk=pk, company=company,
+        ).first()
+        if document is None:
+            raise Http404("Documento no encontrado.")
+
+        document.obsolete_candidate = False
+        document.obsolete_reason = ""
+        document.save(update_fields=["obsolete_candidate", "obsolete_reason"])
+
+        logger.info(
+            "# [ObsoleteCandidateDismissView] MachineDocument #%d -- "
+            "sugerencia de obsolescencia descartada a mano.",
+            document.pk,
+        )
+        messages.success(
+            request,
+            f'"{document.display_name or document.document_type}" '
+            "no es obsoleto -- sugerencia descartada.",
+        )
+
+        return redirect(
+            reverse(
+                "panel:documentation_machine_page",
+                kwargs={"pk": document.machine_asset_id},
+            ),
+        )
 
 
 class DocumentMarkdownConvertView(DocsUploadAccessMixin, View):
@@ -2264,6 +2347,19 @@ class MachineDocumentTransferView(DocsUploadAccessMixin, View):
             MachineDocument.objects.filter(
                 machine_asset=machine_a,
             ).exclude(status=MachineDocument.Status.ERROR)
+            # Candidato a obsoleto (S028) -- prioridad de resolución
+            # explícita de Miguel Ángel: "lo primero que hay que
+            # resolver siempre es la obsolencia. Si el documento está
+            # obsoleto, se borra y se acaba la incidencia. Si el
+            # documento no está obsoleto, se resuelve la incidencia
+            # sacándolo de ahí" -- mientras obsolete_candidate=True,
+            # el documento vive solo en la sección "Candidatos a
+            # documento obsoleto" de la ficha de máquina
+            # (MachinePageView), nunca aquí. Al descartar la
+            # sugerencia (ObsoleteCandidateDismissView), vuelve a
+            # aparecer en esta cola si seguía teniendo una incidencia
+            # de máquina pendiente.
+            .exclude(obsolete_candidate=True)
             .order_by("-content_mismatch_warning", "document_type", "-created_at")
             if machine_a else []
         )
@@ -2271,6 +2367,7 @@ class MachineDocumentTransferView(DocsUploadAccessMixin, View):
             MachineDocument.objects.filter(
                 machine_asset=machine_b,
             ).exclude(status=MachineDocument.Status.ERROR)
+            .exclude(obsolete_candidate=True)
             .order_by("-content_mismatch_warning", "document_type", "-created_at")
             if machine_b else []
         )

@@ -314,6 +314,14 @@ def process_machine_document_batch(self, document_pks: list[int]) -> None:
         document.document_number = result["document_number"]
         document.issuing_entity = result["issuing_entity"]
         document.is_possible_master = result["is_possible_master"]
+        # Candidato a obsoleto (S028) -- juicio de Gemini sobre el
+        # propio contenido, independiente de la discrepancia de
+        # máquina (ver comentario junto al campo en models.py sobre la
+        # prioridad de resolución). La heurística por nombre de
+        # archivo nunca marca esto (siempre False/"" en su dict) --
+        # solo Gemini lee el contenido real.
+        document.obsolete_candidate = result["is_obsolete_candidate"]
+        document.obsolete_reason = result["obsolete_reason"]
 
         # Salvaguarda de discrepancia (S026, cierre de sesión) --
         # Miguel Ángel: "no deberíamos de dejarlo única y
@@ -422,6 +430,7 @@ def process_machine_document_batch(self, document_pks: list[int]) -> None:
             "document_type", "display_name", "expiry_date", "issue_date",
             "document_number", "issuing_entity", "is_possible_master",
             "content_mismatch_warning", "content_mismatch_candidate_machine",
+            "obsolete_candidate", "obsolete_reason",
             "status",
         ])
 

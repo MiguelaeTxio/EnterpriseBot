@@ -50,6 +50,55 @@
     </div>
     {% endif %}
 
+    {# Candidatos a documento obsoleto (S028) -- sección nueva y separada, decisión explícita de Miguel Ángel: #}
+    {# "que sea Gemini quien decida... solo que la decisión final de eliminar sea de un humano". Se resuelve  #}
+    {# SIEMPRE antes que cualquier incidencia de máquina -- mientras un documento esté aquí, no aparece en    #}
+    {# la cola de arriba ni en la documentación normal de abajo (ver exclusiones en MachinePageView.get()).   #}
+    {% if obsolete_candidates %}
+    <div class="card shadow-sm mb-4 border-warning">
+        <div class="card-header fw-semibold">
+            <i class="bi bi-hourglass-bottom me-1"></i>Candidatos a documento obsoleto
+            <span class="badge bg-warning text-dark ms-1">{{ obsolete_candidates|length }}</span>
+        </div>
+        <div class="card-body">
+            <ul class="list-group list-group-flush">
+                {% for doc in obsolete_candidates %}
+                <li class="list-group-item px-0">
+                    <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap">
+                        <div>
+                            <span class="fw-semibold">{{ doc.display_name|default:doc.document_type }}</span>
+                            <span class="badge bg-light text-dark border ms-1">{{ doc.document_type }}</span>
+                            {% if doc.obsolete_reason %}
+                            <div class="text-muted small mt-1">
+                                <i class="bi bi-robot me-1"></i>{{ doc.obsolete_reason }}
+                            </div>
+                            {% endif %}
+                        </div>
+                        <div class="d-flex align-items-center gap-1 flex-shrink-0">
+                            {% if doc.download_url %}
+                            <a href="{{ doc.download_url }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary" title="Ver documento">
+                                <i class="bi bi-eye"></i>
+                            </a>
+                            {% endif %}
+                            <form method="post" action="{% url 'panel:documentation_document_dismiss_obsolete' pk=doc.pk %}" class="d-inline">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-sm btn-outline-secondary" title="No es obsoleto -- devolver a la documentación normal">
+                                    <i class="bi bi-x-circle"></i> No es obsoleto
+                                </button>
+                            </form>
+                            <button type="button" class="btn btn-sm btn-outline-danger" title="Eliminar"
+                                    onclick="openDeleteConfirm('{% url 'panel:documentation_document_delete' domain='machine' pk=doc.pk %}', '#machine-detail-container', '{{ doc.display_name|default:doc.document_type|escapejs }}')">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+    {% endif %}
+
     <div class="card shadow-sm mb-4">
         <div class="card-header fw-semibold"><i class="bi bi-folder2-open me-1"></i>Documentación</div>
         <div class="card-body" id="machine-detail-container">

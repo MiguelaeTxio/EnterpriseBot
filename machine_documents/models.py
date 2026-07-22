@@ -506,6 +506,51 @@ class MachineDocument(models.Model):
                   "una máquina real conocida.",
     )
 
+    # ------------------------------------------------------------------
+    # Candidato a obsoleto (S028) -- Miguel Ángel, tras un caso real: un
+    # recibo de seguro de la A36 de 2015-2016 (caducado hace una
+    # década) generaba una incidencia de discrepancia de máquina, pero
+    # el problema real no era a qué máquina pertenece, sino que ya no
+    # aporta nada. Decisión explícita: "que sea Gemini quien decida...
+    # solo que la decisión final de eliminar sea de un humano". Gemini
+    # (machine_documents.document_classification_service.
+    # classify_document) juzga por el propio contenido si el documento
+    # es papeleo claramente obsoleto -- nunca se borra solo, siempre
+    # requiere confirmación humana explícita (mismo patrón de
+    # cuenta atrás que el borrado normal de documentos).
+    #
+    # PRIORIDAD sobre la incidencia de máquina (Miguel Ángel, explícito):
+    # si un documento es candidato a obsoleto Y ADEMÁS tiene una
+    # incidencia de discrepancia de máquina, la obsolescencia se
+    # resuelve PRIMERO -- MachineDocumentTransferView excluye de la
+    # pantalla de incidencias cualquier documento con
+    # obsolete_candidate=True. Si el humano confirma que es obsoleto,
+    # se borra y la incidencia de máquina queda moot. Si el humano
+    # descarta la sugerencia (no es obsoleto), obsolete_candidate
+    # vuelve a False y el documento entra en la cola normal de
+    # incidencias de máquina si seguía teniendo una pendiente.
+    # ------------------------------------------------------------------
+    obsolete_candidate = models.BooleanField(
+        default=False,
+        verbose_name="Candidato a documento obsoleto",
+        help_text="Marcado por Gemini durante la clasificación cuando "
+                  "el propio contenido del documento sugiere que ya no "
+                  "tiene ningún valor operativo (p.ej. un recibo de "
+                  "seguro caducado hace muchos años). Nunca se borra "
+                  "solo -- aparece en la sección \"Candidatos a "
+                  "documento obsoleto\" de la ficha de máquina para "
+                  "revisión y confirmación humana.",
+    )
+    obsolete_reason = models.CharField(
+        max_length=500,
+        blank=True,
+        default="",
+        verbose_name="Motivo de obsolescencia (Gemini)",
+        help_text="Justificación breve que dio Gemini al marcar el "
+                  "documento como candidato a obsoleto. Vacío si "
+                  "obsolete_candidate es False.",
+    )
+
     created_at = models.DateTimeField(
         auto_now_add=True,
         verbose_name="Fecha de creación",

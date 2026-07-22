@@ -82,6 +82,7 @@ clasificación y las reglas de heurística de nombre de archivo.
 """
 import json
 import logging
+from datetime import date
 
 from ai_services.document_vision_service import (
     _generate_content_with_retry,
@@ -287,6 +288,8 @@ def classify_by_filename_heuristic(filename: str) -> dict | None:
                 "document_number": "",
                 "issuing_entity": "",
                 "machine_reference_in_content": "",
+                "is_obsolete_candidate": False,
+                "obsolete_reason": "",
             }
     return None
 
@@ -306,11 +309,14 @@ _CLASSIFY_RESPONSE_SCHEMA = {
         "document_number": {"type": "string"},
         "issuing_entity": {"type": "string"},
         "machine_reference_in_content": {"type": "string"},
+        "is_obsolete_candidate": {"type": "boolean"},
+        "obsolete_reason": {"type": "string"},
     },
     "required": [
         "document_type", "display_name", "is_possible_master",
         "expiry_date", "issue_date", "document_number", "issuing_entity",
-        "machine_reference_in_content",
+        "machine_reference_in_content", "is_obsolete_candidate",
+        "obsolete_reason",
     ],
 }
 
@@ -380,6 +386,29 @@ determina:
    modelo y unidad, deja el campo vacío -- un falso positivo aquí
    genera una alerta de discrepancia innecesaria.
 
+9. is_obsolete_candidate: true si, por su propio contenido, este
+   documento es papeleo claramente obsoleto sin ningún valor
+   operativo, legal o de referencia histórica para la gestión actual
+   de la máquina -- por ejemplo, un recibo o póliza de seguro cuyo
+   periodo de cobertura terminó hace muchísimos años (hoy es
+   {today}), un certificado de inspección o revisión hace mucho tiempo
+   superado por el propio paso del tiempo, o cualquier documento de
+   naturaleza periódica/renovable cuya vigencia expiró hace tanto que
+   ya no aporta nada salvo ocupar espacio. false para CUALQUIER
+   documento cuya validez no caduca por naturaleza aunque sea antiguo
+   (ficha técnica, declaración de conformidad CE, inscripción de
+   registro, manual de uso, permiso de circulación) y para cualquier
+   documento periódico que, aun caducado, sea razonablemente reciente
+   -- la caducidad reciente es completamente normal y NO es motivo de
+   obsolescencia, solo lo es una antigüedad tan extrema que el
+   documento ha perdido todo sentido práctico. Ante la duda, false --
+   un falso positivo aquí propone borrar un documento real por error.
+10. obsolete_reason: si is_obsolete_candidate es true, una frase breve
+   y concreta explicando por qué (ej. "Recibo de seguro caducado hace
+   más de nueve años, ampliamente superado por pólizas posteriores más
+   recientes de la misma máquina"). Cadena vacía "" si
+   is_obsolete_candidate es false.
+
 Responde únicamente con el JSON solicitado."""
 
 
@@ -407,10 +436,14 @@ def classify_document(pdf_bytes: bytes, filename: str) -> dict:
 
     Returns a dict with document_type (str), display_name (str),
     is_possible_master (bool), expiry_date (date | None), issue_date
-    (date | None), document_number (str) and issuing_entity (str). On
-    any error (including exhausting the 429 retry budget), returns an
-    empty/False/None fallback and logs the exception -- callers decide
-    how to surface the failure (never raises).
+    (date | None), document_number (str), issuing_entity (str) and
+    (S028) is_obsolete_candidate (bool) / obsolete_reason (str) --
+    Gemini's own judgement on whether the document is clearly obsolete
+    paperwork with no remaining operational value, independent of the
+    machine-mismatch check. On any error (including exhausting the
+    429 retry budget), returns an empty/False/None fallback and logs
+    the exception -- callers decide how to surface the failure (never
+    raises).
 
     ---
 
@@ -436,7 +469,11 @@ def classify_document(pdf_bytes: bytes, filename: str) -> dict:
 
     Devuelve un dict con document_type (str), display_name (str),
     is_possible_master (bool), expiry_date (date | None), issue_date
-    (date | None), document_number (str) e issuing_entity (str). Ante
+    (date | None), document_number (str), issuing_entity (str) y
+    (S028) is_obsolete_candidate (bool) / obsolete_reason (str) --
+    juicio propio de Gemini sobre si el documento es papeleo
+    claramente obsoleto sin ningún valor operativo restante,
+    independiente de la comprobación de discrepancia de máquina. Ante
     cualquier error (incluido agotar el presupuesto de reintentos por
     429), devuelve un fallback vacío/False/None y registra la
     excepción -- quien llama decide cómo mostrar el fallo (nunca lanza
@@ -451,6 +488,8 @@ def classify_document(pdf_bytes: bytes, filename: str) -> dict:
         "document_number": "",
         "issuing_entity": "",
         "machine_reference_in_content": "",
+        "is_obsolete_candidate": False,
+        "obsolete_reason": "",
     }
 
     try:
@@ -460,7 +499,9 @@ def classify_document(pdf_bytes: bytes, filename: str) -> dict:
             model=DEFAULT_MODEL,
             contents=[
                 Part.from_bytes(data=pdf_bytes, mime_type="application/pdf"),
-                _CLASSIFY_PROMPT.format(filename=filename),
+                _CLASSIFY_PROMPT.format(
+                    filename=filename, today=date.today().isoformat(),
+                ),
             ],
             config=GenerateContentConfig(
                 http_options=HttpOptions(timeout=60_000),
@@ -489,12 +530,19 @@ def classify_document(pdf_bytes: bytes, filename: str) -> dict:
             "machine_reference_in_content": str(
                 parsed.get("machine_reference_in_content", "")
             ).strip(),
+            "is_obsolete_candidate": bool(
+                parsed.get("is_obsolete_candidate", False)
+            ),
+            "obsolete_reason": str(
+                parsed.get("obsolete_reason", "")
+            ).strip(),
         }
         logger.info(
             "# [classify_document] %s -> tipo=%r maestro_posible=%s "
-            "caducidad=%s",
+            "caducidad=%s obsoleto_candidato=%s",
             filename, result["document_type"],
             result["is_possible_master"], result["expiry_date"],
+            result["is_obsolete_candidate"],
         )
         return result
 
