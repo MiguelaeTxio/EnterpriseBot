@@ -140,13 +140,25 @@ def _split_current_archived(documents, effective_expiry_attr="expiry_date"):
     vigencia_service.is_current() separately per document_type -- two
     documents of different types never compete against each other for
     currency (see vigencia_service, criterion closed in H23 S021).
-    """
-    by_type: dict[str, list] = {}
-    for doc in documents:
-        by_type.setdefault(doc.document_type, []).append(doc)
 
+    force_current (S028) -- checked BEFORE grouping by type. A
+    document with force_current=True (MachineDocument only today,
+    getattr with default for PersonalDocument which doesn't have the
+    field yet) always lands in current_docs and is excluded entirely
+    from the by-type comparison -- it must never act as a "sibling"
+    that could push another document of the same type into archived,
+    since it's deliberately outside the automatic date-based
+    calculation by the supervisor's own explicit choice.
+    """
     current_docs = []
     archived_docs = []
+
+    by_type: dict[str, list] = {}
+    for doc in documents:
+        if getattr(doc, "force_current", False):
+            current_docs.append(doc)
+            continue
+        by_type.setdefault(doc.document_type, []).append(doc)
 
     for _doc_type, docs_of_type in by_type.items():
         snapshots = {}
@@ -1714,6 +1726,55 @@ class ObsoleteCandidateDismissView(DocsUploadAccessMixin, View):
             request,
             f'"{document.display_name or document.document_type}" '
             "no es obsoleto -- sugerencia descartada.",
+        )
+
+        return redirect(
+            reverse(
+                "panel:documentation_machine_page",
+                kwargs={"pk": document.machine_asset_id},
+            ),
+        )
+
+
+class DocumentForceCurrentView(DocsUploadAccessMixin, View):
+    """
+    POST: marca un MachineDocument archivado como vigente forzado a
+    mano ("recuperado del cajón de archivos") -- Miguel Ángel (S028):
+    "habrá documentos con una fecha... que puede que sea hace diez
+    años, pero realmente no son documentos obsoletos, sino que son
+    documentos vigentes para toda la vida útil de la maquinaria... es
+    necesario dotar al sistema de la capacidad de recuperar estos
+    documentos del cajón de archivos". Distinto del botón "No es
+    obsoleto" de los candidatos de Gemini (obsolete_candidate) -- este
+    es para el cajón normal de "Archivados", que se calcula solo por
+    fechas (document_management.vigencia_service) y hasta ahora no
+    tenía ninguna vía de anulación manual.
+
+    Pone force_current=True; `_split_current_archived()` lo saca de
+    inmediato de la comparación automática y lo trata como vigente sin
+    más, en la siguiente carga de la ficha de máquina.
+    """
+
+    def post(self, request, pk):
+        company = request.user.company_user.company
+        document = MachineDocument.objects.filter(
+            pk=pk, company=company,
+        ).first()
+        if document is None:
+            raise Http404("Documento no encontrado.")
+
+        document.force_current = True
+        document.save(update_fields=["force_current"])
+
+        logger.info(
+            "# [DocumentForceCurrentView] MachineDocument #%d -- "
+            "vigencia forzada a mano, recuperado de Archivados.",
+            document.pk,
+        )
+        messages.success(
+            request,
+            f'"{document.display_name or document.document_type}" '
+            "recuperado como vigente.",
         )
 
         return redirect(

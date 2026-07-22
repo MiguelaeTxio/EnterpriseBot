@@ -556,6 +556,36 @@ class MachineDocument(models.Model):
                   "obsolete_candidate es False.",
     )
 
+    # ------------------------------------------------------------------
+    # Vigencia forzada manualmente (S028) -- Miguel Ángel, tras separar
+    # los candidatos a obsoleto de Gemini del cajón normal de
+    # "Archivados": "habrá documentos con una fecha en la que se
+    # hicieron, que puede que sea hace diez años, pero realmente no
+    # son documentos obsoletos, sino que son documentos vigentes para
+    # toda la vida útil de la maquinaria... es necesario dotar al
+    # sistema de la capacidad de recuperar estos documentos del cajón
+    # de archivos". document_management.vigencia_service es
+    # deliberadamente genérico y solo compara fechas (sin conocimiento
+    # de dominio, ver su propio docstring) -- no tiene ni puede tener
+    # ningún mecanismo de anulación manual. force_current vive aquí,
+    # en el dominio, y panel.views_documentation._split_current_archived
+    # lo comprueba ANTES de llamar a vigencia_service: si es True, el
+    # documento se considera vigente sin más y ni siquiera entra en la
+    # comparación de "siblings" del mismo tipo (no debe influir en si
+    # OTROS documentos del mismo tipo se consideran vigentes o no,
+    # queda fuera del cálculo automático por decisión explícita).
+    # ------------------------------------------------------------------
+    force_current = models.BooleanField(
+        default=False,
+        verbose_name="Vigencia forzada manualmente",
+        help_text="Si está marcado, el documento se trata SIEMPRE como "
+                  "vigente, sin importar lo que calcule "
+                  "vigencia_service por fechas -- para documentos que "
+                  "siguen siendo válidos indefinidamente (p.ej. una "
+                  "ficha técnica antigua) aunque el cálculo automático "
+                  "los archivara por error.",
+    )
+
     created_at = models.DateTimeField(
         auto_now_add=True,
         verbose_name="Fecha de creación",

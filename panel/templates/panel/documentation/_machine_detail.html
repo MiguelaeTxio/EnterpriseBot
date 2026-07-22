@@ -26,12 +26,12 @@
 </form>
 
 <div class="d-flex align-items-center justify-content-between mb-2 flex-wrap gap-2">
-    <div class="d-flex align-items-center gap-2 d-none" id="doc-select-bar">
-        <span class="small text-muted" id="doc-select-count">0 seleccionados</span>
-        <button type="button" class="btn btn-sm btn-outline-primary" id="doc-compare-btn" disabled title="Marca exactamente 2 documentos para compararlos">
+    <div class="d-flex align-items-center gap-2 d-none doc-select-bar">
+        <span class="small text-muted doc-select-count">0 seleccionados</span>
+        <button type="button" class="btn btn-sm btn-outline-primary doc-compare-btn" disabled title="Marca exactamente 2 documentos para compararlos">
             <i class="bi bi-arrow-left-right me-1"></i>Comparar
         </button>
-        <button type="button" class="btn btn-sm btn-danger" id="doc-bulk-delete-btn">
+        <button type="button" class="btn btn-sm btn-danger doc-bulk-delete-btn">
             <i class="bi bi-trash me-1"></i>Eliminar seleccionados
         </button>
     </div>
@@ -126,14 +126,26 @@
 <p class="text-muted small">Sin documentación vigente.</p>
 {% endif %}
 
-<div class="d-flex align-items-center justify-content-between">
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
     <h6 class="text-muted mb-0"><i class="bi bi-archive me-1"></i>Archivados</h6>
-    {% if archived_docs %}
-    <div class="form-check">
-        <input type="checkbox" class="form-check-input doc-select-all" id="doc-select-all-archived" data-select-group="archived">
-        <label class="form-check-label small" for="doc-select-all-archived">Seleccionar todos</label>
+    <div class="d-flex align-items-center gap-2">
+        {# Misma barra que arriba, duplicada aquí (S028) -- Miguel Ángel: "es muy tedioso tener que subir arriba... deben de aparecernos los botones duplicados por encima de la leyenda de archivar". Misma clase, no mismo id -- se sincroniza sola con la de arriba. #}
+        <div class="d-flex align-items-center gap-2 d-none doc-select-bar">
+            <span class="small text-muted doc-select-count">0 seleccionados</span>
+            <button type="button" class="btn btn-sm btn-outline-primary doc-compare-btn" disabled title="Marca exactamente 2 documentos para compararlos">
+                <i class="bi bi-arrow-left-right me-1"></i>Comparar
+            </button>
+            <button type="button" class="btn btn-sm btn-danger doc-bulk-delete-btn">
+                <i class="bi bi-trash me-1"></i>Eliminar seleccionados
+            </button>
+        </div>
+        {% if archived_docs %}
+        <div class="form-check mb-0">
+            <input type="checkbox" class="form-check-input doc-select-all" id="doc-select-all-archived" data-select-group="archived">
+            <label class="form-check-label small" for="doc-select-all-archived">Seleccionar todos</label>
+        </div>
+        {% endif %}
     </div>
-    {% endif %}
 </div>
 {% if archived_docs %}
 <ul class="list-group list-group-flush">
@@ -180,6 +192,12 @@
                     <i class="bi bi-bell"></i>
                 </button>
                 {% endif %}
+                <form method="post" action="{% url 'panel:documentation_document_force_current' pk=doc.pk %}" class="d-inline">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-sm btn-outline-success" title="No es obsoleto -- recuperar como vigente">
+                        <i class="bi bi-arrow-up-circle"></i>
+                    </button>
+                </form>
                 <button class="btn btn-sm btn-outline-danger" type="button"
                         onclick="openDeleteConfirm('{% url 'panel:documentation_document_delete' domain='machine' pk=doc.pk %}', '#machine-detail-container', '{{ doc.display_name|default:doc.document_type|escapejs }}')"
                         title="Eliminar">
@@ -212,10 +230,16 @@
     var container = document.currentScript.parentElement;
     var selectAllBoxes = Array.prototype.slice.call(container.querySelectorAll('.doc-select-all'));
     var itemBoxes = Array.prototype.slice.call(container.querySelectorAll('.doc-select-item'));
-    var bar = container.querySelector('#doc-select-bar');
-    var countLabel = container.querySelector('#doc-select-count');
-    var compareBtn = container.querySelector('#doc-compare-btn');
-    var bulkDeleteBtn = container.querySelector('#doc-bulk-delete-btn');
+    // Barra duplicada (S028) -- Miguel Ángel: "es muy tedioso tener
+    // que subir arriba... deben de aparecernos los botones duplicados
+    // por encima de la leyenda de archivar". Ya no hay un único id,
+    // puede haber varias copias de la misma barra (una arriba, otra
+    // encima de Archivados) -- todas comparten clase, se actualizan a
+    // la vez con querySelectorAll en vez de getElementById.
+    var bars = Array.prototype.slice.call(container.querySelectorAll('.doc-select-bar'));
+    var countLabels = Array.prototype.slice.call(container.querySelectorAll('.doc-select-count'));
+    var compareBtns = Array.prototype.slice.call(container.querySelectorAll('.doc-compare-btn'));
+    var bulkDeleteBtns = Array.prototype.slice.call(container.querySelectorAll('.doc-bulk-delete-btn'));
 
     function checkedItems() {
         return itemBoxes.filter(function (cb) { return cb.checked; });
@@ -223,11 +247,11 @@
 
     function updateBar() {
         var checked = checkedItems();
-        if (bar) { bar.classList.toggle('d-none', checked.length === 0); }
-        if (countLabel) {
-            countLabel.textContent = checked.length + ' seleccionado' + (checked.length === 1 ? '' : 's');
-        }
-        if (compareBtn) { compareBtn.disabled = checked.length !== 2; }
+        bars.forEach(function (b) { b.classList.toggle('d-none', checked.length === 0); });
+        countLabels.forEach(function (label) {
+            label.textContent = checked.length + ' seleccionado' + (checked.length === 1 ? '' : 's');
+        });
+        compareBtns.forEach(function (btn) { btn.disabled = checked.length !== 2; });
         selectAllBoxes.forEach(function (allBox) {
             var group = allBox.getAttribute('data-select-group');
             var groupItems = itemBoxes.filter(function (cb) { return cb.getAttribute('data-select-group') === group; });
@@ -248,7 +272,7 @@
     });
     itemBoxes.forEach(function (cb) { cb.addEventListener('change', updateBar); });
 
-    if (bulkDeleteBtn) {
+    bulkDeleteBtns.forEach(function (bulkDeleteBtn) {
         bulkDeleteBtn.addEventListener('click', function () {
             var checked = checkedItems();
             if (!checked.length) { return; }
@@ -263,9 +287,9 @@
                 extraFields: { pks: pks, entity_pk: '{{ machine.pk }}' },
             });
         });
-    }
+    });
 
-    if (compareBtn) {
+    compareBtns.forEach(function (compareBtn) {
         compareBtn.addEventListener('click', function () {
             var checked = checkedItems();
             if (checked.length !== 2) { return; }
@@ -275,6 +299,6 @@
                 window.openCompareConfirm(pks, names, '{{ machine.pk }}');
             }
         });
-    }
+    });
 })();
 </script>
