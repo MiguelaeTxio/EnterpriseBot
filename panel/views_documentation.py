@@ -70,6 +70,7 @@ from django.contrib import messages
 from django.contrib.contenttypes.models import ContentType
 from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
+from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.timezone import now
 from django.views import View
@@ -1516,6 +1517,85 @@ def _machine_documents_view_data(machine):
     return current_docs, archived_docs
 
 
+def _machine_obsolete_candidates(machine):
+    """
+    Candidatos a documento obsoleto (S028) de una máquina -- sección
+    separada, decisión explícita de Miguel Ángel: "que sea Gemini
+    quien decida... solo que la decisión final de eliminar sea de un
+    humano". Nunca se mezclan con current_docs/archived_docs
+    (_machine_documents_view_data ya los excluye) ni con la cola de
+    incidencias de máquina -- viven únicamente aquí hasta que un
+    humano confirme el borrado o descarte la sugerencia
+    (ObsoleteCandidateDismissView). Extraído a helper (S029, DRY) --
+    lo usan MachinePageView y _machine_detail_htmx_response.
+    """
+    candidates = list(
+        MachineDocument.objects
+        .filter(machine_asset=machine, obsolete_candidate=True)
+        .exclude(status=MachineDocument.Status.ERROR)
+        .order_by("-created_at")
+    )
+    for doc in candidates:
+        doc.download_url = _resolve_download_url(
+            doc, MACHINE_DOCUMENTS_BUCKET,
+        )
+    return candidates
+
+
+def _machine_detail_htmx_response(request, machine):
+    """
+    Respuesta HTMX correcta tras una acción que modifica la
+    documentación de UNA máquina (S029): el fragmento
+    _machine_detail.html actualizado en fresco + los mensajes de
+    Django (messages.success/error/warning) como hx-swap-oob dirigido
+    a #panel-messages-container (panel/base.html) -- ver
+    panel/_messages_oob.html -- + la sección "Candidatos a documento
+    obsoleto" (fuera de #machine-detail-container, en machine_page.html)
+    como otro hx-swap-oob, porque las 5 vistas que usan este helper
+    pueden alterarla (DocumentCompareView AÑADE candidatos nuevos si
+    Gemini detecta duplicados; DocumentBulkObsoleteToggleView,
+    DocumentBulkDeleteView y DocumentDeleteView pueden QUITARLOS) --
+    sin este segundo OOB, la sección se quedaría con datos obsoletos
+    de verdad hasta el próximo F5.
+
+    Sustituye al patrón anterior de
+    redirect(reverse("panel:documentation_machine_page", ...)), que
+    HTMX seguía de forma transparente hasta la página completa
+    (MachinePageView, que extiende panel/base.html entero) y acababa
+    metiendo esa página completa dentro de #machine-detail-container.
+
+    Solo para el dominio "machine" -- el dominio "personal" no tiene
+    este problema porque su vista de redirect
+    (DocumentationPersonalDetailFragmentView) ya es un fragmento
+    puro, sin extends, desde su origen (y tampoco tiene, todavía,
+    candidatos a obsoleto ni ninguna de estas 5 acciones -- ver
+    hoja de ruta S029, "Probar el dominio Personal de extremo a
+    extremo").
+    """
+    current_docs, archived_docs = _machine_documents_view_data(machine)
+    fragment_html = render_to_string(
+        "panel/documentation/_machine_detail.html",
+        {
+            "machine": machine,
+            "current_docs": current_docs,
+            "archived_docs": archived_docs,
+        },
+        request=request,
+    )
+    obsolete_html = render_to_string(
+        "panel/documentation/_obsolete_candidates_section.html",
+        {
+            "machine": machine,
+            "obsolete_candidates": _machine_obsolete_candidates(machine),
+        },
+        request=request,
+    )
+    messages_html = render_to_string(
+        "panel/_messages_oob.html", {}, request=request,
+    )
+    return HttpResponse(fragment_html + obsolete_html + messages_html)
+
+
 class DocumentationMachineDetailFragmentView(DocsUploadAccessMixin, View):
     """
     GET (HTMX): documentación CLASSIFIED de UNA máquina, ya separada
@@ -1654,25 +1734,7 @@ class MachinePageView(DocsUploadAccessMixin, View):
             .count()
         )
 
-        # Candidatos a documento obsoleto (S028) -- sección nueva y
-        # separada, decisión explícita de Miguel Ángel: "que sea
-        # Gemini quien decida... solo que la decisión final de
-        # eliminar sea de un humano". Nunca se mezclan con
-        # current_docs/archived_docs (_machine_documents_view_data ya
-        # los excluye) ni con la cola de incidencias de máquina
-        # (exclusiones de arriba) -- viven únicamente aquí hasta que
-        # un humano confirme el borrado o descarte la sugerencia
-        # (ObsoleteCandidateDismissView).
-        obsolete_candidates = list(
-            MachineDocument.objects
-            .filter(machine_asset=machine, obsolete_candidate=True)
-            .exclude(status=MachineDocument.Status.ERROR)
-            .order_by("-created_at")
-        )
-        for doc in obsolete_candidates:
-            doc.download_url = _resolve_download_url(
-                doc, MACHINE_DOCUMENTS_BUCKET,
-            )
+        obsolete_candidates = _machine_obsolete_candidates(machine)
 
         return render(request, self.template_name, {
             "active_nav": "documentation_hub",
@@ -1777,6 +1839,9 @@ class DocumentForceCurrentView(DocsUploadAccessMixin, View):
             "recuperado como vigente.",
         )
 
+        if request.headers.get("HX-Request") == "true":
+            return _machine_detail_htmx_response(request, document.machine_asset)
+
         return redirect(
             reverse(
                 "panel:documentation_machine_page",
@@ -1859,6 +1924,13 @@ class DocumentBulkObsoleteToggleView(DocsUploadAccessMixin, View):
                 "vacía o ya resuelta.",
             )
 
+        if domain == "machine" and request.headers.get("HX-Request") == "true":
+            machine = MachineAsset.objects.filter(
+                pk=entity_pk, company=company,
+            ).first()
+            if machine is not None:
+                return _machine_detail_htmx_response(request, machine)
+
         return redirect(reverse(fragment_name, kwargs={"pk": entity_pk}))
 
 
@@ -1934,6 +2006,13 @@ class DocumentBulkDeleteView(DocsUploadAccessMixin, View):
                 "vacía o ya resuelta.",
             )
 
+        if domain == "machine" and request.headers.get("HX-Request") == "true":
+            machine = MachineAsset.objects.filter(
+                pk=entity_pk, company=company,
+            ).first()
+            if machine is not None:
+                return _machine_detail_htmx_response(request, machine)
+
         fragment_name = (
             "panel:documentation_machine_page" if domain == "machine"
             else "panel:documentation_personal_detail"
@@ -1979,17 +2058,32 @@ class DocumentCompareView(DocsUploadAccessMixin, View):
             else "panel:documentation_personal_detail"
         )
 
+        # S029 -- misma rama HTMX que el resto de vistas de este
+        # bloque de trabajo (DocumentDeleteView, DocumentForceCurrentView,
+        # DocumentBulkObsoleteToggleView, DocumentBulkDeleteView), pero
+        # aquí con 4 puntos de retorno (3 de validación + el final) --
+        # se centraliza en una función interna para no repetir la
+        # comprobación 4 veces.
+        def _respond():
+            if domain == "machine" and request.headers.get("HX-Request") == "true":
+                machine = MachineAsset.objects.filter(
+                    pk=entity_pk, company=company,
+                ).first()
+                if machine is not None:
+                    return _machine_detail_htmx_response(request, machine)
+            return redirect(reverse(fragment_name, kwargs={"pk": entity_pk}))
+
         if len(pks) != 2:
             messages.error(
                 request, "Selecciona exactamente 2 documentos para comparar.",
             )
-            return redirect(reverse(fragment_name, kwargs={"pk": entity_pk}))
+            return _respond()
 
         doc_a = model.objects.filter(pk=pks[0], company=company).first()
         doc_b = model.objects.filter(pk=pks[1], company=company).first()
         if doc_a is None or doc_b is None:
             messages.error(request, "Documento no encontrado.")
-            return redirect(reverse(fragment_name, kwargs={"pk": entity_pk}))
+            return _respond()
 
         if not doc_a.gcs_blob_name or not doc_b.gcs_blob_name:
             messages.error(
@@ -1997,7 +2091,7 @@ class DocumentCompareView(DocsUploadAccessMixin, View):
                 "Alguno de los dos documentos todavía no tiene archivo "
                 "disponible para comparar.",
             )
-            return redirect(reverse(fragment_name, kwargs={"pk": entity_pk}))
+            return _respond()
 
         try:
             bytes_a = download_bytes(bucket, doc_a.gcs_blob_name)
@@ -2011,7 +2105,7 @@ class DocumentCompareView(DocsUploadAccessMixin, View):
             messages.error(
                 request, "No se pudo descargar alguno de los documentos.",
             )
-            return redirect(reverse(fragment_name, kwargs={"pk": entity_pk}))
+            return _respond()
 
         result = compare_documents(
             bytes_a, doc_a.original_filename or str(doc_a.pk),
@@ -2057,7 +2151,7 @@ class DocumentCompareView(DocsUploadAccessMixin, View):
                 + ".",
             )
 
-        return redirect(reverse(fragment_name, kwargs={"pk": entity_pk}))
+        return _respond()
 
 
 class DocumentMarkdownConvertView(DocsUploadAccessMixin, View):
@@ -2590,6 +2684,14 @@ class DocumentDeleteView(DocsUploadAccessMixin, View):
         messages.success(
             request, f"Documento archivado \"{document_label}\" borrado.",
         )
+
+        if domain == "machine" and request.headers.get("HX-Request") == "true":
+            machine = MachineAsset.objects.filter(
+                pk=entity_pk, company=company,
+            ).first()
+            if machine is not None:
+                return _machine_detail_htmx_response(request, machine)
+
         fragment_name = (
             "panel:documentation_machine_page" if domain == "machine"
             else "panel:documentation_personal_detail"

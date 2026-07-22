@@ -1,0 +1,74 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation/_obsolete_candidates_section.html #}
+{# Extraído de machine_page.html (S029) -- Candidatos a documento obsoleto (S028), decisión explícita de   #}
+{# Miguel Ángel: "que sea Gemini quien decida... solo que la decisión final de eliminar sea de un humano". #}
+{# El contenedor con id existe SIEMPRE (vacío si no hay candidatos), condición necesaria para que un OOB   #}
+{# swap posterior (tras DocumentCompareView/DocumentBulkObsoleteToggleView/DocumentBulkDeleteView/         #}
+{# DocumentDeleteView) encuentre el id -- ver _machine_detail_htmx_response, panel/views_documentation.py. #}
+{# Pasar oob=True solo desde ese helper; el render normal de MachinePageView no lo pasa.                   #}
+<div id="obsolete-candidates-section"{% if oob %} hx-swap-oob="true"{% endif %}>
+{% if obsolete_candidates %}
+<div class="card shadow-sm mb-4 border-warning">
+    <div class="card-header fw-semibold d-flex align-items-center justify-content-between flex-wrap gap-2">
+        <div>
+            <i class="bi bi-hourglass-bottom me-1"></i>Candidatos a documento obsoleto
+            <span class="badge bg-warning text-dark ms-1">{{ obsolete_candidates|length }}</span>
+        </div>
+        {# Barra de selección múltiple (S028) -- Miguel Ángel: "casilleras para marcar todos y eliminar #}
+        {# todos, porque estar eliminando uno a uno... se deja la eliminación uno a uno, perfecto, pero  #}
+        {# marcaje y eliminar marcados". Oculta hasta que haya al menos una casilla marcada.             #}
+        <div class="d-flex align-items-center gap-2 d-none" id="obsolete-bulk-bar">
+            <span class="small text-muted" id="obsolete-bulk-count">0 seleccionados</span>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="obsolete-bulk-dismiss-btn">
+                <i class="bi bi-x-circle me-1"></i>No son obsoletos
+            </button>
+            <button type="button" class="btn btn-sm btn-danger" id="obsolete-bulk-delete-btn">
+                <i class="bi bi-trash me-1"></i>Eliminar seleccionados
+            </button>
+        </div>
+    </div>
+    <div class="card-body">
+        <div class="form-check mb-2">
+            <input type="checkbox" class="form-check-input" id="obsolete-select-all">
+            <label class="form-check-label small" for="obsolete-select-all">Seleccionar todos</label>
+        </div>
+        <ul class="list-group list-group-flush">
+            {% for doc in obsolete_candidates %}
+            <li class="list-group-item px-0">
+                <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap">
+                    <div class="d-flex align-items-start gap-2">
+                        <input type="checkbox" class="form-check-input mt-1 obsolete-select-item" value="{{ doc.pk }}">
+                        <div>
+                            <span class="fw-semibold">{{ doc.display_name|default:doc.document_type }}</span>
+                            <span class="badge bg-light text-dark border ms-1">{{ doc.document_type }}</span>
+                            {% if doc.obsolete_reason %}
+                            <div class="text-muted small mt-1">
+                                <i class="bi bi-robot me-1"></i>{{ doc.obsolete_reason }}
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="d-flex align-items-center gap-1 flex-shrink-0">
+                        {% if doc.download_url %}
+                        <a href="{{ doc.download_url }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary" title="Ver documento">
+                            <i class="bi bi-eye"></i>
+                        </a>
+                        {% endif %}
+                        <form method="post" action="{% url 'panel:documentation_document_dismiss_obsolete' pk=doc.pk %}" class="d-inline">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-sm btn-outline-secondary" title="No es obsoleto -- devolver a la documentación normal">
+                                <i class="bi bi-x-circle"></i> No es obsoleto
+                            </button>
+                        </form>
+                        <button type="button" class="btn btn-sm btn-outline-danger" title="Eliminar"
+                                onclick="openDeleteConfirm('{% url 'panel:documentation_document_delete' domain='machine' pk=doc.pk %}', '#machine-detail-container', '{{ doc.display_name|default:doc.document_type|escapejs }}')">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </div>
+                </div>
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+</div>
+{% endif %}
+</div>

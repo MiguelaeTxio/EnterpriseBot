@@ -198,7 +198,9 @@
                     <i class="bi bi-bell"></i>
                 </button>
                 {% endif %}
-                <form method="post" action="{% url 'panel:documentation_document_force_current' pk=doc.pk %}" class="d-inline">
+                <form method="post" action="{% url 'panel:documentation_document_force_current' pk=doc.pk %}" class="d-inline"
+                      hx-post="{% url 'panel:documentation_document_force_current' pk=doc.pk %}"
+                      hx-target="#machine-detail-container" hx-swap="innerHTML">
                     {% csrf_token %}
                     <button type="submit" class="btn btn-sm btn-outline-success" title="No es obsoleto -- recuperar como vigente">
                         <i class="bi bi-arrow-up-circle"></i>
@@ -289,6 +291,7 @@
                     '{% url "panel:documentation_bulk_obsolete_toggle" domain="machine" %}',
                     pks,
                     { entity_pk: '{{ machine.pk }}', set_obsolete: '1' },
+                    '#machine-detail-container',
                 );
             }
         });
@@ -302,6 +305,7 @@
             window.openCountdownConfirm({
                 modalId: 'countdownConfirmModal',
                 url: '{% url "panel:documentation_bulk_delete" domain="machine" %}',
+                hxTarget: '#machine-detail-container',
                 bodyParts: [
                     { text: 'Se eliminarán ' + pks.length + ' documento' + (pks.length === 1 ? '' : 's') + '. Esta operación no podrá revertirse.' },
                 ],

@@ -50,75 +50,10 @@
     </div>
     {% endif %}
 
-    {# Candidatos a documento obsoleto (S028) -- sección nueva y separada, decisión explícita de Miguel Ángel: #}
-    {# "que sea Gemini quien decida... solo que la decisión final de eliminar sea de un humano". Se resuelve  #}
-    {# SIEMPRE antes que cualquier incidencia de máquina -- mientras un documento esté aquí, no aparece en    #}
-    {# la cola de arriba ni en la documentación normal de abajo (ver exclusiones en MachinePageView.get()).   #}
-    {% if obsolete_candidates %}
-    <div class="card shadow-sm mb-4 border-warning">
-        <div class="card-header fw-semibold d-flex align-items-center justify-content-between flex-wrap gap-2">
-            <div>
-                <i class="bi bi-hourglass-bottom me-1"></i>Candidatos a documento obsoleto
-                <span class="badge bg-warning text-dark ms-1">{{ obsolete_candidates|length }}</span>
-            </div>
-            {# Barra de selección múltiple (S028) -- Miguel Ángel: "casilleras para marcar todos y eliminar #}
-            {# todos, porque estar eliminando uno a uno... se deja la eliminación uno a uno, perfecto, pero  #}
-            {# marcaje y eliminar marcados". Oculta hasta que haya al menos una casilla marcada.             #}
-            <div class="d-flex align-items-center gap-2 d-none" id="obsolete-bulk-bar">
-                <span class="small text-muted" id="obsolete-bulk-count">0 seleccionados</span>
-                <button type="button" class="btn btn-sm btn-outline-secondary" id="obsolete-bulk-dismiss-btn">
-                    <i class="bi bi-x-circle me-1"></i>No son obsoletos
-                </button>
-                <button type="button" class="btn btn-sm btn-danger" id="obsolete-bulk-delete-btn">
-                    <i class="bi bi-trash me-1"></i>Eliminar seleccionados
-                </button>
-            </div>
-        </div>
-        <div class="card-body">
-            <div class="form-check mb-2">
-                <input type="checkbox" class="form-check-input" id="obsolete-select-all">
-                <label class="form-check-label small" for="obsolete-select-all">Seleccionar todos</label>
-            </div>
-            <ul class="list-group list-group-flush">
-                {% for doc in obsolete_candidates %}
-                <li class="list-group-item px-0">
-                    <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap">
-                        <div class="d-flex align-items-start gap-2">
-                            <input type="checkbox" class="form-check-input mt-1 obsolete-select-item" value="{{ doc.pk }}">
-                            <div>
-                                <span class="fw-semibold">{{ doc.display_name|default:doc.document_type }}</span>
-                                <span class="badge bg-light text-dark border ms-1">{{ doc.document_type }}</span>
-                                {% if doc.obsolete_reason %}
-                                <div class="text-muted small mt-1">
-                                    <i class="bi bi-robot me-1"></i>{{ doc.obsolete_reason }}
-                                </div>
-                                {% endif %}
-                            </div>
-                        </div>
-                        <div class="d-flex align-items-center gap-1 flex-shrink-0">
-                            {% if doc.download_url %}
-                            <a href="{{ doc.download_url }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary" title="Ver documento">
-                                <i class="bi bi-eye"></i>
-                            </a>
-                            {% endif %}
-                            <form method="post" action="{% url 'panel:documentation_document_dismiss_obsolete' pk=doc.pk %}" class="d-inline">
-                                {% csrf_token %}
-                                <button type="submit" class="btn btn-sm btn-outline-secondary" title="No es obsoleto -- devolver a la documentación normal">
-                                    <i class="bi bi-x-circle"></i> No es obsoleto
-                                </button>
-                            </form>
-                            <button type="button" class="btn btn-sm btn-outline-danger" title="Eliminar"
-                                    onclick="openDeleteConfirm('{% url 'panel:documentation_document_delete' domain='machine' pk=doc.pk %}', '#machine-detail-container', '{{ doc.display_name|default:doc.document_type|escapejs }}')">
-                                <i class="bi bi-trash"></i>
-                            </button>
-                        </div>
-                    </div>
-                </li>
-                {% endfor %}
-            </ul>
-        </div>
-    </div>
-    {% endif %}
+    {# Candidatos a documento obsoleto (S028) -- extraído a partial (S029), ver ese archivo para el detalle. #}
+    {# Se resuelve SIEMPRE antes que cualquier incidencia de máquina -- mientras un documento esté aquí, no  #}
+    {# aparece en la cola de arriba ni en la documentación normal de abajo (MachinePageView.get()).          #}
+    {% include "panel/documentation/_obsolete_candidates_section.html" %}
 
     <div class="card shadow-sm mb-4">
         <div class="card-header fw-semibold"><i class="bi bi-folder2-open me-1"></i>Documentación</div>
@@ -206,6 +141,18 @@
             var modal = bootstrap.Modal.getOrCreateInstance(modalEl);
             modal.show();
         }
+        // S029 -- Comparar (openCompareConfirm) ya no navega de página
+        // completa, ahora envía por HTMX contra #machine-detail-container
+        // -- hay que cerrar el modal de "comparando..." en cuanto llega
+        // el fragmento actualizado, cosa que antes hacía sola la
+        // recarga de página.
+        if (targetId === 'machine-detail-container') {
+            var loadingModalEl = document.getElementById('compareLoadingModal');
+            if (loadingModalEl) {
+                var loadingModal = bootstrap.Modal.getInstance(loadingModalEl);
+                if (loadingModal) { loadingModal.hide(); }
+            }
+        }
     });
 
     // Selección múltiple de candidatos a obsoleto (S028) -- Miguel
@@ -248,12 +195,17 @@
         cb.addEventListener('change', updateBulkBar);
     });
 
-    // Envío directo de un POST con varios pks -- sin modal de cuenta
-    // atrás, reutilizado por "No son obsoletos" en bloque aquí y por
-    // "Marcar como obsoleto" en bloque en _machine_detail.html
-    // (definida como función global por el mismo motivo que
-    // openCompareConfirm: ese fragmento se recarga por HTMX en fresco).
-    window.submitBulkPksForm = function (url, pks, extraFields) {
+    // Envío de un POST con varios pks -- sin modal de cuenta atrás,
+    // reutilizado por "No son obsoletos" en bloque aquí y por "Marcar
+    // como obsoleto" en bloque en _machine_detail.html (definida como
+    // función global por el mismo motivo que openCompareConfirm: ese
+    // fragmento se recarga por HTMX en fresco). S029 -- admite un
+    // hxTarget opcional: si se pasa (y htmx está disponible), el envío
+    // va por HTMX (el servidor ya devuelve el fragmento actualizado +
+    // mensajes OOB en vez de redirigir a la página completa -- ver
+    // _machine_detail_htmx_response) en vez de una navegación de
+    // página completa.
+    window.submitBulkPksForm = function (url, pks, extraFields, hxTarget) {
         var form = document.createElement('form');
         form.method = 'post';
         form.action = url;
@@ -282,7 +234,20 @@
         });
 
         document.body.appendChild(form);
-        form.submit();
+
+        if (hxTarget && window.htmx) {
+            form.setAttribute('hx-post', url);
+            form.setAttribute('hx-target', hxTarget);
+            form.setAttribute('hx-swap', 'innerHTML');
+            window.htmx.process(form);
+            form.addEventListener('htmx:afterRequest', function onAfterRequest() {
+                form.removeEventListener('htmx:afterRequest', onAfterRequest);
+                form.remove();
+            });
+            window.htmx.trigger(form, 'submit');
+        } else {
+            form.submit();
+        }
     };
 
     if (bulkDismissBtn) {
@@ -294,6 +259,7 @@
                 '{% url "panel:documentation_bulk_obsolete_toggle" domain="machine" %}',
                 pks,
                 { entity_pk: '{{ machine.pk }}', set_obsolete: '0' },
+                '#machine-detail-container',
             );
         });
     }
@@ -307,6 +273,7 @@
             window.openCountdownConfirm({
                 modalId: 'countdownConfirmModal',
                 url: '{% url "panel:documentation_bulk_delete" domain="machine" %}',
+                hxTarget: '#machine-detail-container',
                 bodyParts: [
                     { text: 'Se eliminarán ' + pks.length + ' documento' + (pks.length === 1 ? '' : 's') + ' obsoleto' + (pks.length === 1 ? '' : 's') + '. Esta operación no podrá revertirse.' },
                 ],
@@ -328,7 +295,10 @@
     // cuenta atrás -- comparar NUNCA borra nada por sí solo (ver
     // DocumentCompareView), solo puede como mucho MARCAR un
     // documento como candidato a obsoleto para revisión humana, el
-    // mismo nivel de reversibilidad que "No es obsoleto".
+    // mismo nivel de reversibilidad que "No es obsoleto". S029 -- ya
+    // no navega de página completa (ver hxTarget en submitBulkPksForm);
+    // el cierre de compareLoadingModal pasa al listener htmx:afterSwap
+    // de arriba, disparado en cuanto llega el fragmento actualizado.
     window.openCompareConfirm = function (pks, names, machinePk) {
         if (!pks || pks.length !== 2) { return; }
         var loadingModalEl = document.getElementById('compareLoadingModal');
@@ -339,6 +309,7 @@
             '{% url "panel:documentation_compare" domain="machine" %}',
             pks,
             { entity_pk: machinePk },
+            '#machine-detail-container',
         );
     };
 })();

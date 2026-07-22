@@ -1,0 +1,18 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/_messages_oob.html #}
+{# Partial reutilizable (S029) -- ver panel/base.html #panel-messages-container. #}
+{# Concatenar el resultado de esto a cualquier respuesta HTMX que          #}
+{# devuelva un fragmento en vez de redirigir, para que messages.success/   #}
+{# error/warning se vean sin necesitar una recarga de página completa      #}
+{# (que es la única plantilla, base.html, que pintaba {% if messages %}    #}
+{# hasta ahora). Requiere que la vista renderice esto con render_to_string #}
+{# pasando request=request, para que el context processor de messages     #}
+{# rellene la variable "messages" igual que en cualquier render normal.    #}
+<div class="{% if messages %}px-3 pt-3{% endif %}" id="panel-messages-container" hx-swap-oob="true">
+    {% for message in messages %}
+    <div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show"
+         role="alert">
+        {{ message }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endfor %}
+</div>

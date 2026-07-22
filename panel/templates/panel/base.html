@@ -158,8 +158,12 @@
         </div>
 
         <!-- Django messages — Mensajes de Django -->
-        {% if messages %}
-        <div class="px-3 pt-3">
+        <!-- id permanente (S029) -- objetivo reutilizable de hx-swap-oob -->
+        <!-- para cualquier vista HTMX del panel que necesite mostrar     -->
+        <!-- mensajes sin recargar la página completa. Debe existir      -->
+        <!-- siempre en el DOM, incluso sin mensajes en la carga inicial,-->
+        <!-- para que un OOB swap posterior encuentre el id.             -->
+        <div class="{% if messages %}px-3 pt-3{% endif %}" id="panel-messages-container">
             {% for message in messages %}
             <div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show"
                  role="alert">
@@ -168,7 +172,6 @@
             </div>
             {% endfor %}
         </div>
-        {% endif %}
 
         <!-- Page content block — Bloque de contenido de página -->
         <div class="page-content{% if active_nav == 'chat' %} page-content-flush{% endif %}">
