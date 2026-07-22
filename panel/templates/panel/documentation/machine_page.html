@@ -66,6 +66,9 @@
             {# marcaje y eliminar marcados". Oculta hasta que haya al menos una casilla marcada.             #}
             <div class="d-flex align-items-center gap-2 d-none" id="obsolete-bulk-bar">
                 <span class="small text-muted" id="obsolete-bulk-count">0 seleccionados</span>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="obsolete-bulk-dismiss-btn">
+                    <i class="bi bi-x-circle me-1"></i>No son obsoletos
+                </button>
                 <button type="button" class="btn btn-sm btn-danger" id="obsolete-bulk-delete-btn">
                     <i class="bi bi-trash me-1"></i>Eliminar seleccionados
                 </button>
@@ -204,6 +207,7 @@
     var bulkBar = document.getElementById('obsolete-bulk-bar');
     var bulkCount = document.getElementById('obsolete-bulk-count');
     var bulkDeleteBtn = document.getElementById('obsolete-bulk-delete-btn');
+    var bulkDismissBtn = document.getElementById('obsolete-bulk-dismiss-btn');
 
     function updateBulkBar() {
         var checked = itemCheckboxes.filter(function (cb) { return cb.checked; });
@@ -228,6 +232,56 @@
     itemCheckboxes.forEach(function (cb) {
         cb.addEventListener('change', updateBulkBar);
     });
+
+    // Envío directo de un POST con varios pks -- sin modal de cuenta
+    // atrás, reutilizado por "No son obsoletos" en bloque aquí y por
+    // "Marcar como obsoleto" en bloque en _machine_detail.html
+    // (definida como función global por el mismo motivo que
+    // openCompareConfirm: ese fragmento se recarga por HTMX en fresco).
+    window.submitBulkPksForm = function (url, pks, extraFields) {
+        var form = document.createElement('form');
+        form.method = 'post';
+        form.action = url;
+        form.style.display = 'none';
+
+        var csrfInput = document.createElement('input');
+        csrfInput.type = 'hidden';
+        csrfInput.name = 'csrfmiddlewaretoken';
+        csrfInput.value = document.querySelector('[name=csrfmiddlewaretoken]').value;
+        form.appendChild(csrfInput);
+
+        pks.forEach(function (pk) {
+            var input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'pks';
+            input.value = pk;
+            form.appendChild(input);
+        });
+
+        Object.keys(extraFields || {}).forEach(function (name) {
+            var input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = name;
+            input.value = extraFields[name];
+            form.appendChild(input);
+        });
+
+        document.body.appendChild(form);
+        form.submit();
+    };
+
+    if (bulkDismissBtn) {
+        bulkDismissBtn.addEventListener('click', function () {
+            var checked = itemCheckboxes.filter(function (cb) { return cb.checked; });
+            if (!checked.length) { return; }
+            var pks = checked.map(function (cb) { return cb.value; });
+            window.submitBulkPksForm(
+                '{% url "panel:documentation_bulk_obsolete_toggle" domain="machine" %}',
+                pks,
+                { entity_pk: '{{ machine.pk }}', set_obsolete: '0' },
+            );
+        });
+    }
 
     if (bulkDeleteBtn) {
         bulkDeleteBtn.addEventListener('click', function () {
@@ -262,33 +316,11 @@
     // mismo nivel de reversibilidad que "No es obsoleto".
     window.openCompareConfirm = function (pks, names, machinePk) {
         if (!pks || pks.length !== 2) { return; }
-        var form = document.createElement('form');
-        form.method = 'post';
-        form.action = '{% url "panel:documentation_compare" domain="machine" %}';
-        form.style.display = 'none';
-
-        var csrfInput = document.createElement('input');
-        csrfInput.type = 'hidden';
-        csrfInput.name = 'csrfmiddlewaretoken';
-        csrfInput.value = document.querySelector('[name=csrfmiddlewaretoken]').value;
-        form.appendChild(csrfInput);
-
-        pks.forEach(function (pk) {
-            var input = document.createElement('input');
-            input.type = 'hidden';
-            input.name = 'pks';
-            input.value = pk;
-            form.appendChild(input);
-        });
-
-        var entityInput = document.createElement('input');
-        entityInput.type = 'hidden';
-        entityInput.name = 'entity_pk';
-        entityInput.value = machinePk;
-        form.appendChild(entityInput);
-
-        document.body.appendChild(form);
-        form.submit();
+        window.submitBulkPksForm(
+            '{% url "panel:documentation_compare" domain="machine" %}',
+            pks,
+            { entity_pk: machinePk },
+        );
     };
 })();
 </script>

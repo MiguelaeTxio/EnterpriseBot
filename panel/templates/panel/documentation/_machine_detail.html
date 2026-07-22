@@ -31,6 +31,9 @@
         <button type="button" class="btn btn-sm btn-outline-primary doc-compare-btn" disabled title="Marca exactamente 2 documentos para compararlos">
             <i class="bi bi-arrow-left-right me-1"></i>Comparar
         </button>
+        <button type="button" class="btn btn-sm btn-outline-warning doc-obsolete-btn" title="Marcar como candidato a obsoleto, para revisión y borrado posterior">
+            <i class="bi bi-hourglass-bottom me-1"></i>Marcar como obsoleto
+        </button>
         <button type="button" class="btn btn-sm btn-danger doc-bulk-delete-btn">
             <i class="bi bi-trash me-1"></i>Eliminar seleccionados
         </button>
@@ -134,6 +137,9 @@
             <span class="small text-muted doc-select-count">0 seleccionados</span>
             <button type="button" class="btn btn-sm btn-outline-primary doc-compare-btn" disabled title="Marca exactamente 2 documentos para compararlos">
                 <i class="bi bi-arrow-left-right me-1"></i>Comparar
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-warning doc-obsolete-btn" title="Marcar como candidato a obsoleto, para revisión y borrado posterior">
+                <i class="bi bi-hourglass-bottom me-1"></i>Marcar como obsoleto
             </button>
             <button type="button" class="btn btn-sm btn-danger doc-bulk-delete-btn">
                 <i class="bi bi-trash me-1"></i>Eliminar seleccionados
@@ -239,6 +245,7 @@
     var bars = Array.prototype.slice.call(container.querySelectorAll('.doc-select-bar'));
     var countLabels = Array.prototype.slice.call(container.querySelectorAll('.doc-select-count'));
     var compareBtns = Array.prototype.slice.call(container.querySelectorAll('.doc-compare-btn'));
+    var obsoleteBtns = Array.prototype.slice.call(container.querySelectorAll('.doc-obsolete-btn'));
     var bulkDeleteBtns = Array.prototype.slice.call(container.querySelectorAll('.doc-bulk-delete-btn'));
 
     function checkedItems() {
@@ -271,6 +278,21 @@
         });
     });
     itemBoxes.forEach(function (cb) { cb.addEventListener('change', updateBar); });
+
+    obsoleteBtns.forEach(function (obsoleteBtn) {
+        obsoleteBtn.addEventListener('click', function () {
+            var checked = checkedItems();
+            if (!checked.length) { return; }
+            var pks = checked.map(function (cb) { return cb.value; });
+            if (window.submitBulkPksForm) {
+                window.submitBulkPksForm(
+                    '{% url "panel:documentation_bulk_obsolete_toggle" domain="machine" %}',
+                    pks,
+                    { entity_pk: '{{ machine.pk }}', set_obsolete: '1' },
+                );
+            }
+        });
+    });
 
     bulkDeleteBtns.forEach(function (bulkDeleteBtn) {
         bulkDeleteBtn.addEventListener('click', function () {

@@ -1785,6 +1785,83 @@ class DocumentForceCurrentView(DocsUploadAccessMixin, View):
         )
 
 
+class DocumentBulkObsoleteToggleView(DocsUploadAccessMixin, View):
+    """
+    POST: marca o desmarca en bloque varios documentos como
+    obsolete_candidate a la vez -- generaliza las dos direcciones que
+    Miguel Ángel pidió tras usar la selección múltiple por primera vez
+    (S028): "en obsoletos... cuando se marcan, poder... desarchivarlos
+    [en bloque]. Ya tenemos el desarchivado individual, tenerlo
+    también en el marcaje, cuando marcamos varios elementos... [e]
+    incluir en los vigentes el mecanismo para marcar varios y para
+    hacer obsoleto algún documento de manera forzada".
+
+    `set_obsolete=1` -> equivalente en bloque de "Marcar como
+    obsoleto" (nuevo, no existía ni individual ni en bloque -- único
+    punto de entrada, sin botón por fila, mismo criterio que
+    "Comparar", que tampoco tiene versión individual).
+    `set_obsolete` ausente/distinto de "1" -> equivalente en bloque de
+    ObsoleteCandidateDismissView ("No es obsoleto"), que sí existía
+    pero solo documento a documento.
+
+    Documentos ya `force_current=True` no se tocan aquí -- si se
+    marcan como obsoleto candidato, simplemente salen de
+    vigente/archivado igual que cualquier otro (ver exclusión en
+    `_split_current_archived`/`_machine_documents_view_data`), sin
+    ninguna incompatibilidad real entre los dos campos.
+    """
+
+    def post(self, request, domain):
+        company = request.user.company_user.company
+        model = _DOMAIN_MODELS.get(domain)
+        if model is None:
+            raise Http404("Dominio no válido.")
+
+        pks = request.POST.getlist("pks")
+        entity_pk = request.POST.get("entity_pk", "").strip()
+        set_obsolete = request.POST.get("set_obsolete", "").strip() == "1"
+        fragment_name = (
+            "panel:documentation_machine_page" if domain == "machine"
+            else "panel:documentation_personal_detail"
+        )
+
+        documents = model.objects.filter(pk__in=pks, company=company)
+        updated = 0
+        for document in documents:
+            document.obsolete_candidate = set_obsolete
+            document.obsolete_reason = (
+                "Marcado manualmente como obsoleto por un supervisor."
+                if set_obsolete else ""
+            )
+            document.save(update_fields=[
+                "obsolete_candidate", "obsolete_reason",
+            ])
+            updated += 1
+
+        logger.info(
+            "# [DocumentBulkObsoleteToggleView] %d documento(s) de %s "
+            "%s en bloque (de %d solicitado(s)) para entidad #%s.",
+            updated, domain,
+            "marcados como obsoletos" if set_obsolete else "descartados como obsoletos",
+            len(pks), entity_pk,
+        )
+        if updated:
+            messages.success(
+                request,
+                f"{updated} documento(s) "
+                + ("marcado(s) como obsoleto(s)." if set_obsolete
+                   else "confirmado(s) como correcto(s) -- ya no son obsoletos."),
+            )
+        else:
+            messages.warning(
+                request,
+                "No se ha actualizado ningún documento -- selección "
+                "vacía o ya resuelta.",
+            )
+
+        return redirect(reverse(fragment_name, kwargs={"pk": entity_pk}))
+
+
 class DocumentBulkDeleteView(DocsUploadAccessMixin, View):
     """
     POST: borra en bloque varios documentos (vigente, archivado, u
