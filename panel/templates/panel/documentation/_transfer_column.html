@@ -20,11 +20,12 @@
     {% for doc in docs %}
     <li class="list-group-item px-0 border-start border-4 border-warning"
         id="doc-row-{{ doc.pk }}"
-        data-doc-name="{{ doc.display_name|default:doc.document_type|escapejs }}"
-        data-machine-a="{{ page_machine_a.pk }}" data-machine-a-code="{{ page_machine_a.code|escapejs }}"
-        data-machine-b="{{ page_machine_b.pk }}" data-machine-b-code="{{ page_machine_b.code|escapejs }}"
+        data-doc-name="{{ doc.display_name|default:doc.document_type }}"
+        data-machine-a="{{ page_machine_a.pk }}" data-machine-a-code="{{ page_machine_a.code }}"
+        data-machine-b="{{ page_machine_b.pk }}" data-machine-b-code="{{ page_machine_b.code }}"
         data-current-machine="{{ this_machine.pk }}"
-        data-resolve-url="{% url 'panel:documentation_document_move' pk=doc.pk %}">
+        data-resolve-url="{% url 'panel:documentation_document_move' pk=doc.pk %}"
+        data-back-url="{{ back_url }}">
         <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap">
             <div>
                 <span class="fw-semibold">{{ doc.display_name|default:doc.document_type }}</span>
@@ -81,6 +82,7 @@
                 <form method="post" action="{% url 'panel:documentation_document_move' pk=doc.pk %}" class="d-flex gap-1">
                     {% csrf_token %}
                     <input type="hidden" name="machine_a" value="{{ this_machine.pk }}">
+                    <input type="hidden" name="back_url" value="{{ back_url }}">
                     <select name="target_machine_pk" class="form-select form-select-sm" required>
                         <option value="">— Mover a… —</option>
                         {% for m in all_machines %}

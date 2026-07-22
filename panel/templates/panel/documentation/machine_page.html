@@ -34,14 +34,14 @@
         <i class="bi bi-exclamation-triangle-fill me-1"></i>
         <span class="me-2">Documentación con posible incidencia:</span>
         {% for row in incidence_machines %}
-        <a href="{% url 'panel:documentation_machine_transfer' %}?machine_a={{ machine.pk }}&machine_b={{ row.content_mismatch_candidate_machine }}"
+        <a href="{% url 'panel:documentation_machine_transfer' %}?machine_a={{ machine.pk }}&machine_b={{ row.content_mismatch_candidate_machine }}&back_url={{ request.path|urlencode }}"
            class="btn btn-sm btn-warning">
             <i class="bi bi-arrow-left-right me-1"></i>Resolver con {{ row.content_mismatch_candidate_machine__code }}
             <span class="badge bg-dark ms-1">{{ row.count }}</span>
         </a>
         {% endfor %}
         {% if unassigned_incidence_count %}
-        <a href="{% url 'panel:documentation_machine_transfer' %}?machine_a={{ machine.pk }}"
+        <a href="{% url 'panel:documentation_machine_transfer' %}?machine_a={{ machine.pk }}&back_url={{ request.path|urlencode }}"
            class="btn btn-sm btn-outline-warning">
             <i class="bi bi-question-diamond me-1"></i>Sin asignar
             <span class="badge bg-dark ms-1">{{ unassigned_incidence_count }}</span>

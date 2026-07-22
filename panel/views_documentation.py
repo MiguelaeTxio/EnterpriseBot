@@ -100,6 +100,7 @@ from machine_documents.markdown_service import (
 )
 from machine_documents.models import MachineDocument
 from panel.mixins import DocsUploadAccessMixin, SuperuserRequiredMixin
+from panel.url_utils import safe_back_url
 from personal_documents.models import PersonalDocument
 from spare_parts.gcs_service import (
     MACHINE_DOCUMENTS_BUCKET,
@@ -2192,6 +2193,18 @@ class MachineDocumentTransferView(DocsUploadAccessMixin, View):
     equivocado). El modo "sin asignar" (machine_b=None, sin candidata
     fija) es la única excepción -- ahí sí se listan todos los
     documentos de esa máquina, con un selector libre de destino.
+
+    back_url (S028) -- mismo patrón ya usado en
+    WorkOrderAdminHistoryView (panel.url_utils.safe_back_url, gap de
+    S027): Miguel Ángel, tras reconciliar documentación real de la
+    A36, "cuando le das a volver a documentación... vuelve al listado
+    sin filtro... hemos perdido el foco". `machine_page.html` (origen
+    habitual, botón "Resolver con <máquina>") ya propaga su propia URL
+    como back_url; si no viene ninguno (p.ej. acceso directo eligiendo
+    las dos máquinas a mano desde los selectores de arriba), cae a
+    documentation_hub. Se propaga también en el redirect de
+    DocumentMoveToMachineView para no perderlo entre resoluciones
+    sucesivas.
     """
 
     template_name = "panel/documentation/transfer.html"
@@ -2208,6 +2221,14 @@ class MachineDocumentTransferView(DocsUploadAccessMixin, View):
         machine_b_pk = request.GET.get("machine_b", "").strip()
         machine_a = machines.filter(pk=machine_a_pk).first() if machine_a_pk else None
         machine_b = machines.filter(pk=machine_b_pk).first() if machine_b_pk else None
+
+        # back_url -- preservar el foco de origen al volver (S028, ver
+        # docstring de la clase). Sin back_url válido (o manipulado),
+        # cae al listado general de documentación.
+        back_url = safe_back_url(
+            request, request.GET.get("back_url", ""),
+            reverse("panel:documentation_hub"),
+        )
 
         # Filtrado por candidata específica (S028) -- Miguel Ángel,
         # tras un caso real: la A36 tenía varias incidencias con
@@ -2273,7 +2294,6 @@ class MachineDocumentTransferView(DocsUploadAccessMixin, View):
         for doc in docs_b:
             doc.download_url = _resolve_download_url(doc, MACHINE_DOCUMENTS_BUCKET)
 
-
         return render(request, self.template_name, {
             "active_nav": "documentation_hub",
             "company_user": company_user,
@@ -2282,6 +2302,7 @@ class MachineDocumentTransferView(DocsUploadAccessMixin, View):
             "machine_b": machine_b,
             "docs_a": docs_a,
             "docs_b": docs_b,
+            "back_url": back_url,
         })
 
 
@@ -2366,9 +2387,21 @@ class DocumentMoveToMachineView(DocsUploadAccessMixin, View):
 
         machine_a = request.POST.get("machine_a", "")
         machine_b = request.POST.get("machine_b", "")
+        # back_url -- se propaga tal cual llegó (ya validado por
+        # MachineDocumentTransferView.get() al construir el formulario
+        # que la envió); se vuelve a validar aquí igualmente por
+        # defensa en profundidad, nunca confiar en un campo hidden sin
+        # comprobar. Sin esto, "Volver a Documentación" perdería el
+        # foco de origen tras la PRIMERA resolución (S028).
+        from urllib.parse import quote as _quote_back_url
+        back_url = safe_back_url(
+            request, request.POST.get("back_url", ""),
+            reverse("panel:documentation_hub"),
+        )
         return redirect(
             f"{reverse('panel:documentation_machine_transfer')}"
-            f"?machine_a={machine_a}&machine_b={machine_b}",
+            f"?machine_a={machine_a}&machine_b={machine_b}"
+            f"&back_url={_quote_back_url(back_url, safe='')}",
         )
 
 
