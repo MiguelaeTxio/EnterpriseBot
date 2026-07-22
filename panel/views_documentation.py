@@ -1953,16 +1953,16 @@ class DocumentCompareView(DocsUploadAccessMixin, View):
     Decisión de diseño, mismo principio ya aplicado a los candidatos a
     obsoleto por contenido (Gemini decide, un humano confirma el
     borrado): si Gemini determina que son duplicados, esta vista NUNCA
-    borra nada por sí misma -- marca uno de los dos como
-    obsolete_candidate=True (con obsolete_reason explicando la
-    comparación), para que entre en la sección "Candidatos a documento
-    obsoleto" ya construida, con el mismo botón de borrado con cuenta
-    atrás. El propuesto para marcar es siempre el de `created_at` más
-    antiguo -- se conserva por defecto el más reciente de los dos (sin
-    comprobar cuál es "vigente"/"archivado", ambos pueden ser
-    archivados; el supervisor puede descartar la sugerencia igual que
-    con cualquier otro candidato a obsoleto si prefiere quedarse con
-    el otro).
+    borra nada por sí misma -- marca los DOS como
+    obsolete_candidate=True (cada uno con su obsolete_reason
+    explicando la comparación contra el otro), para que ambos entren
+    en la sección "Candidatos a documento obsoleto" ya construida.
+    Miguel Ángel, explícito: "prefiero que ponga los dos y así me
+    quedo con el que tenga el nombre más intuitivo... que el usuario
+    pueda escoger... el que quiere quedarse" -- decisión revertida
+    respecto al diseño inicial (que elegía automáticamente el más
+    antiguo por created_at para proponer solo ese); el criterio de
+    cuál conservar es del supervisor, no del sistema.
     """
 
     def post(self, request, domain):
@@ -2019,27 +2019,34 @@ class DocumentCompareView(DocsUploadAccessMixin, View):
         )
 
         if result["are_duplicates"]:
-            keep, mark = (
-                (doc_a, doc_b) if doc_a.created_at >= doc_b.created_at
-                else (doc_b, doc_a)
-            )
-            mark.obsolete_candidate = True
-            mark.obsolete_reason = (
+            reason = (
                 f"Comparado con IA frente a "
-                f"«{keep.display_name or keep.document_type}»: "
+                f"«{doc_b.display_name or doc_b.document_type}»: "
                 f"{result['reasoning'] or 'mismo contenido.'}"
             )
-            mark.save(update_fields=["obsolete_candidate", "obsolete_reason"])
+            reason_b = (
+                f"Comparado con IA frente a "
+                f"«{doc_a.display_name or doc_a.document_type}»: "
+                f"{result['reasoning'] or 'mismo contenido.'}"
+            )
+            doc_a.obsolete_candidate = True
+            doc_a.obsolete_reason = reason
+            doc_a.save(update_fields=["obsolete_candidate", "obsolete_reason"])
+            doc_b.obsolete_candidate = True
+            doc_b.obsolete_reason = reason_b
+            doc_b.save(update_fields=["obsolete_candidate", "obsolete_reason"])
             logger.info(
                 "# [DocumentCompareView] %s #%d y #%d marcados como "
-                "duplicados por Gemini -- #%d propuesto para borrado.",
-                domain, doc_a.pk, doc_b.pk, mark.pk,
+                "duplicados por Gemini -- LOS DOS propuestos para "
+                "revisión, el humano decide cuál conservar.",
+                domain, doc_a.pk, doc_b.pk,
             )
             messages.success(
                 request,
-                f'Gemini confirma que "{mark.display_name or mark.document_type}" '
-                f'es el mismo contenido que "{keep.display_name or keep.document_type}" '
-                "-- marcado como candidato a obsoleto para tu revisión.",
+                f'Gemini confirma que "{doc_a.display_name or doc_a.document_type}" '
+                f'y "{doc_b.display_name or doc_b.document_type}" son el mismo '
+                "contenido -- los dos aparecen como candidatos a obsoleto para "
+                "que elijas cuál conservar.",
             )
         else:
             messages.info(
