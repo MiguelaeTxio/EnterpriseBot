@@ -60,5 +60,11 @@
     {% endfor %}
 </ul>
 {% else %}
-<p class="text-muted small mb-0">Sin documentación.</p>
+<p class="text-muted small mb-0">
+    {% if other_machine %}
+        Sin incidencias que relacionen esta máquina con {{ other_machine.code }}.
+    {% else %}
+        Sin documentación.
+    {% endif %}
+</p>
 {% endif %}

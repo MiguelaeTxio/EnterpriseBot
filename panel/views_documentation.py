@@ -2180,9 +2180,18 @@ class MachineDocumentTransferView(DocsUploadAccessMixin, View):
 
     Las dos máquinas se eligen por querystring (`machine_a`,
     `machine_b`) para poder recargar la página sin perder el
-    contexto tras mover un documento. Cada documento con
-    `content_mismatch_warning` se resalta -- pero se puede mover
-    CUALQUIER documento, no solo los marcados.
+    contexto tras mover un documento.
+
+    Con las DOS máquinas fijas (modo normal, no "sin asignar"), cada
+    columna se acota ÚNICAMENTE a los documentos cuya
+    content_mismatch_candidate_machine sea justo la OTRA máquina del
+    par (S028, hallazgo real de Miguel Ángel: mostrar TODOS los
+    documentos de la máquina con un botón fijo "mover a la otra"
+    encima de cada uno, aunque la mayoría no tuviera ninguna
+    incidencia real con ella, invitaba a mover por error el documento
+    equivocado). El modo "sin asignar" (machine_b=None, sin candidata
+    fija) es la única excepción -- ahí sí se listan todos los
+    documentos de esa máquina, con un selector libre de destino.
     """
 
     template_name = "panel/documentation/transfer.html"
@@ -2200,6 +2209,22 @@ class MachineDocumentTransferView(DocsUploadAccessMixin, View):
         machine_a = machines.filter(pk=machine_a_pk).first() if machine_a_pk else None
         machine_b = machines.filter(pk=machine_b_pk).first() if machine_b_pk else None
 
+        # Filtrado por candidata específica (S028) -- Miguel Ángel,
+        # tras un caso real: la A36 tenía varias incidencias con
+        # candidatas DISTINTAS, pero esta pantalla enseñaba TODOS sus
+        # documentos con un botón fijo "mover a 58" encima de cada
+        # uno, aunque solo UNO de ellos señalaba de verdad a la 58 --
+        # "no tiene sentido que pongamos el resto de incidencias y
+        # que pongamos que se pueden pasar a la 58, porque no son de
+        # la 58... puede tender a error". Con las DOS máquinas fijas
+        # (machine_a y machine_b, no el modo "sin asignar"), cada
+        # columna se acota a los documentos cuya
+        # content_mismatch_candidate_machine sea justo la OTRA
+        # máquina del par -- nunca se ofrece mover un documento a una
+        # máquina con la que no tiene ninguna incidencia real. El modo
+        # "sin asignar" (machine_b=None) no se toca: ahí no hay una
+        # única "otra máquina" candidata, sigue mostrando todos los
+        # documentos de esa máquina con el selector libre.
         docs_a = (
             MachineDocument.objects.filter(
                 machine_asset=machine_a,
@@ -2214,6 +2239,15 @@ class MachineDocumentTransferView(DocsUploadAccessMixin, View):
             .order_by("-content_mismatch_warning", "document_type", "-created_at")
             if machine_b else []
         )
+        if machine_a and machine_b:
+            docs_a = [
+                d for d in docs_a
+                if d.content_mismatch_candidate_machine_id == machine_b.pk
+            ]
+            docs_b = [
+                d for d in docs_b
+                if d.content_mismatch_candidate_machine_id == machine_a.pk
+            ]
         # Visor de documento (S028) -- Miguel Ángel, al resolver
         # incidencias reales de la A36: "aquí haría falta un visor de
         # la documentación, porque si no la puedes ver, ¿cómo
