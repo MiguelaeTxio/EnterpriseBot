@@ -287,7 +287,9 @@ def classify_by_filename_heuristic(filename: str) -> dict | None:
                 "issue_date": None,
                 "document_number": "",
                 "issuing_entity": "",
-                "machine_reference_in_content": "",
+                "content_plate_reference": "",
+                "content_chassis_reference": "",
+                "content_fleet_code_reference": "",
                 "is_obsolete_candidate": False,
                 "obsolete_reason": "",
             }
@@ -308,14 +310,17 @@ _CLASSIFY_RESPONSE_SCHEMA = {
         "issue_date": {"type": "string"},
         "document_number": {"type": "string"},
         "issuing_entity": {"type": "string"},
-        "machine_reference_in_content": {"type": "string"},
+        "content_plate_reference": {"type": "string"},
+        "content_chassis_reference": {"type": "string"},
+        "content_fleet_code_reference": {"type": "string"},
         "is_obsolete_candidate": {"type": "boolean"},
         "obsolete_reason": {"type": "string"},
     },
     "required": [
         "document_type", "display_name", "is_possible_master",
         "expiry_date", "issue_date", "document_number", "issuing_entity",
-        "machine_reference_in_content", "is_obsolete_candidate",
+        "content_plate_reference", "content_chassis_reference",
+        "content_fleet_code_reference", "is_obsolete_candidate",
         "obsolete_reason",
     ],
 }
@@ -364,29 +369,39 @@ determina:
 7. issuing_entity: organismo o empresa que emite el documento (ej.
    una aseguradora, un OCA concreto, la Junta de Andalucía). Cadena
    vacía "" si no se identifica.
-8. machine_reference_in_content: si el documento identifica una
-   UNIDAD FÍSICA CONCRETA (no un modelo genérico), su matrícula,
-   número de bastidor/serie, o código interno de flota tal como
+8. content_plate_reference: si el documento identifica una UNIDAD
+   FÍSICA CONCRETA (no un modelo genérico), su matrícula tal como
    aparece literalmente en el documento (ej. "E-6998-BDY",
-   "VHX2FF1P204251036", "A-45"). Cadena vacía "" si no aparece
-   ninguna referencia de unidad, o si solo aparece el modelo/tipo
-   genérico del fabricante.
+   "E-2052-BCW"). Cadena vacía "" si no aparece ninguna matrícula.
+9. content_chassis_reference: igual que el anterior pero para el
+   número de bastidor/serie del fabricante tal como aparece
+   literalmente en el documento (ej. "VHX2FF1P204251036"). Cadena
+   vacía "" si no aparece ningún número de bastidor/serie.
+10. content_fleet_code_reference: igual que los dos anteriores pero
+   para una anotación EXPLÍCITA de código interno de flota tal como
+   aparece literalmente en el documento (ej. "A-45", "Z-34") -- nunca
+   lo infieras del nombre del archivo ni de ningún otro dato, solo si
+   aparece escrito dentro del propio contenido. Cadena vacía "" si no
+   aparece ninguno.
 
-   ATENCIÓN CRÍTICA -- distingue SIEMPRE modelo/tipo de fabricante
-   (NUNCA es esto) de identificador de unidad concreta (SÍ es esto):
-   una denominación comercial de modelo como "AC 35L", "LTM 1055-3.1"
-   o "2FF1P2" NO es una referencia de unidad -- es el tipo de máquina,
-   compartido por TODAS las unidades de ese modelo (un certificado CE
-   o un manual de instrucciones de un modelo es idéntico para
-   cualquier grúa de ese mismo modelo, aunque pertenezcan a máquinas
-   distintas). Solo cuenta como machine_reference_in_content un dato
-   que identifique una unidad FÍSICA concreta y no se repita en otra
-   unidad del mismo modelo: matrícula, número de bastidor/serie, o
-   anotación explícita de código de flota. Si tienes dudas entre
-   modelo y unidad, deja el campo vacío -- un falso positivo aquí
-   genera una alerta de discrepancia innecesaria.
+   Un mismo documento puede mencionar varios de estos tres datos a la
+   vez (matrícula, bastidor Y/O código de flota) -- en ese caso,
+   rellena TODOS los campos que apliquen, nunca elijas solo uno.
 
-9. is_obsolete_candidate: true si, por su propio contenido, este
+   ATENCIÓN CRÍTICA (aplica a los tres campos anteriores) -- distingue
+   SIEMPRE modelo/tipo de fabricante (NUNCA cuenta) de identificador
+   de unidad concreta (SÍ cuenta): una denominación comercial de
+   modelo como "AC 35L", "LTM 1055-3.1" o "2FF1P2" NO es una
+   referencia de unidad -- es el tipo de máquina, compartido por
+   TODAS las unidades de ese modelo (un certificado CE o un manual de
+   instrucciones de un modelo es idéntico para cualquier grúa de ese
+   mismo modelo, aunque pertenezcan a máquinas distintas). Solo cuenta
+   un dato que identifique una unidad FÍSICA concreta y no se repita
+   en otra unidad del mismo modelo. Si tienes dudas entre modelo y
+   unidad, deja el campo vacío -- un falso positivo aquí genera una
+   alerta de discrepancia innecesaria.
+
+11. is_obsolete_candidate: true si, por su propio contenido, este
    documento es papeleo claramente obsoleto sin ningún valor
    operativo, legal o de referencia histórica para la gestión actual
    de la máquina -- por ejemplo, un recibo o póliza de seguro cuyo
@@ -403,7 +418,7 @@ determina:
    obsolescencia, solo lo es una antigüedad tan extrema que el
    documento ha perdido todo sentido práctico. Ante la duda, false --
    un falso positivo aquí propone borrar un documento real por error.
-10. obsolete_reason: si is_obsolete_candidate es true, una frase breve
+12. obsolete_reason: si is_obsolete_candidate es true, una frase breve
    y concreta explicando por qué (ej. "Recibo de seguro caducado hace
    más de nueve años, ampliamente superado por pólizas posteriores más
    recientes de la misma máquina"). Cadena vacía "" si
@@ -487,7 +502,9 @@ def classify_document(pdf_bytes: bytes, filename: str) -> dict:
         "issue_date": None,
         "document_number": "",
         "issuing_entity": "",
-        "machine_reference_in_content": "",
+        "content_plate_reference": "",
+        "content_chassis_reference": "",
+        "content_fleet_code_reference": "",
         "is_obsolete_candidate": False,
         "obsolete_reason": "",
     }
@@ -527,8 +544,14 @@ def classify_document(pdf_bytes: bytes, filename: str) -> dict:
             "issuing_entity": str(
                 parsed.get("issuing_entity", "")
             ).strip(),
-            "machine_reference_in_content": str(
-                parsed.get("machine_reference_in_content", "")
+            "content_plate_reference": str(
+                parsed.get("content_plate_reference", "")
+            ).strip(),
+            "content_chassis_reference": str(
+                parsed.get("content_chassis_reference", "")
+            ).strip(),
+            "content_fleet_code_reference": str(
+                parsed.get("content_fleet_code_reference", "")
             ).strip(),
             "is_obsolete_candidate": bool(
                 parsed.get("is_obsolete_candidate", False)

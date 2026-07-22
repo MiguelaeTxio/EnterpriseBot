@@ -340,29 +340,57 @@ def process_machine_document_batch(self, document_pks: list[int]) -> None:
         # si sí encuentra una, la sustituye (la de contenido es más
         # específica -- lee dentro del propio documento).
         #
-        # Relleno progresivo de bastidor (S028) -- la comparación
-        # original (S026) solo miraba code/plate, nunca
-        # chassis_number, lo que generaba discrepancia SIEMPRE que un
-        # documento mencionaba el bastidor real de la propia máquina
-        # (confirmado con datos reales: 4 avisos de la A36 citando
-        # su propio bastidor, 3 de ellos coincidentes entre sí en 3
-        # documentos independientes). Decisión explícita de Miguel
-        # Ángel: nada de backfill retroactivo ni de rellenar a mano --
-        # "cuando lo vaya leyendo Gemini, rellenarlo... conforme se
-        # vaya subiendo la propia documentación". Por eso, cuando la
-        # referencia del contenido no coincide con code/plate/chassis
-        # YA conocidos y el bastidor de la máquina está vacío, esta
-        # referencia se toma como el bastidor real y se guarda --
-        # nunca se sobrescribe un bastidor que ya tenía algo (eso es
-        # tarea de la auditoría de datos corruptos, no de este
-        # mecanismo). Si un documento posterior de la misma máquina
-        # menciona un bastidor DISTINTO del ya guardado (por esta vía
-        # o por el catálogo original), sí se marca discrepancia contra
-        # él -- red de seguridad natural para desacuerdos entre
-        # documentos, incluso dentro del mismo lote (ver
-        # `known_chassis_by_machine`).
-        reference_in_content = result.get("machine_reference_in_content", "")
-        if reference_in_content and document.machine_asset_id:
+        # Matrícula/código de flota como ANCLA FUERTE de identidad
+        # (S028, hallazgo real de Miguel Ángel): un documento puede
+        # mencionar matrícula Y bastidor a la vez (caso real: un
+        # certificado de reforma de neumáticos de la A36 que cita
+        # "matrícula E-2052-BCW, Nº de bastidor: VHX2FF1P204251036" --
+        # ambos datos de la MISMA máquina, el mismo documento). La
+        # versión anterior solo comparaba UNA referencia (Gemini tenía
+        # que elegir entre matrícula o bastidor) contra
+        # code/plate/chassis -- si elegía el bastidor y el
+        # chassis_number guardado estaba vacío o era distinto (por
+        # ejemplo, contaminado por un documento anterior con un solo
+        # dígito mal leído), el documento se marcaba como discrepancia
+        # de máquina AUNQUE la propia matrícula, también presente en
+        # el contenido, ya demostrara sin ninguna duda que era la
+        # máquina correcta. Ahora Gemini devuelve los tres datos por
+        # separado (content_plate_reference/content_chassis_reference/
+        # content_fleet_code_reference, puede rellenar más de uno a la
+        # vez) -- si la matrícula o el código de flota coinciden con
+        # los de la máquina ya asignada, la identidad queda CONFIRMADA
+        # sin ninguna duda y NUNCA se marca discrepancia, sea lo que
+        # sea lo que diga el bastidor de ese mismo documento. Miguel
+        # Ángel, explícito: "de uno de ellos, podemos inferir que
+        # tanto la matrícula pertenece a la A36... el número de
+        # bastidor que viene pertenece también a dicha máquina. Ya
+        # podemos poblar el campo".
+        #
+        # Relleno progresivo de bastidor (S028) -- igual que antes:
+        # nunca backfill retroactivo ni relleno a mano, solo conforme
+        # se lee documentación real. Con identidad confirmada por
+        # matrícula/código de flota, el bastidor mencionado en ESE
+        # MISMO documento se usa para rellenar el campo si está vacío
+        # -- nunca se sobrescribe un bastidor que ya tenía algo (la
+        # corrección de valores ya guardados, aunque fueran erróneos,
+        # es tarea de la auditoría de datos corruptos, no de este
+        # mecanismo). Sin matrícula/código que confirme la identidad,
+        # se mantiene el comportamiento anterior basado únicamente en
+        # el bastidor: si no coincide con code/plate/chassis conocidos
+        # y el bastidor está vacío, se rellena; si ya había algo
+        # distinto, se marca discrepancia -- red de seguridad natural
+        # para desacuerdos entre documentos, incluso dentro del mismo
+        # lote (ver `known_chassis_by_machine`).
+        content_plate_reference = result.get("content_plate_reference", "")
+        content_chassis_reference = result.get("content_chassis_reference", "")
+        content_fleet_code_reference = result.get(
+            "content_fleet_code_reference", "",
+        )
+        if (
+            (content_plate_reference or content_chassis_reference
+             or content_fleet_code_reference)
+            and document.machine_asset_id
+        ):
             from document_ingestion.entity_matching_service import (
                 _normalize_for_matching,
                 match_machine_asset,
@@ -372,31 +400,76 @@ def process_machine_document_batch(self, document_pks: list[int]) -> None:
                 known_chassis_by_machine[machine.pk] = machine.chassis_number or ""
             current_chassis = known_chassis_by_machine[machine.pk]
 
-            normalized_reference = _normalize_for_matching(reference_in_content)
+            normalized_plate_ref = _normalize_for_matching(content_plate_reference)
+            normalized_chassis_ref = _normalize_for_matching(content_chassis_reference)
+            normalized_fleet_ref = _normalize_for_matching(content_fleet_code_reference)
             normalized_code = _normalize_for_matching(machine.code)
             normalized_plate = _normalize_for_matching(machine.plate or "")
             normalized_chassis = _normalize_for_matching(current_chassis)
 
-            if normalized_reference and normalized_reference not in (
+            identity_confirmed = (
+                (normalized_plate_ref and normalized_plate_ref == normalized_plate)
+                or (normalized_fleet_ref and normalized_fleet_ref == normalized_code)
+            )
+
+            if identity_confirmed:
+                if normalized_chassis_ref and not normalized_chassis:
+                    machine.chassis_number = content_chassis_reference
+                    machine.save(update_fields=["chassis_number"])
+                    known_chassis_by_machine[machine.pk] = content_chassis_reference
+                    logger.info(
+                        "# [process_machine_document_batch] #%d (%s): "
+                        "bastidor auto-completado para %s a partir del "
+                        "contenido del documento (identidad confirmada "
+                        "por matrícula/código de flota) -- %r.",
+                        document.pk, filename, machine.code,
+                        content_chassis_reference,
+                    )
+                elif (
+                    normalized_chassis_ref and normalized_chassis
+                    and normalized_chassis_ref != normalized_chassis
+                ):
+                    # Identidad confirmada, pero el bastidor de este
+                    # documento no coincide con el ya guardado -- no
+                    # es una discrepancia de MÁQUINA (sabemos que es
+                    # esta), puede ser un dígito mal leído en este
+                    # documento o en el que rellenó el campo. Se dejar
+                    # constancia en el log para revisión futura, sin
+                    # generar incidencia ni sobrescribir el valor ya
+                    # guardado -- la corrección de bastidores ya
+                    # rellenados es tarea de la auditoría de datos, no
+                    # de este mecanismo.
+                    logger.info(
+                        "# [process_machine_document_batch] #%d (%s): "
+                        "identidad confirmada para %s por matrícula/"
+                        "código de flota, pero el bastidor del "
+                        "documento (%r) no coincide con el ya "
+                        "guardado (%r) -- posible dígito mal leído en "
+                        "alguno de los dos documentos, sin generar "
+                        "incidencia.",
+                        document.pk, filename, machine.code,
+                        content_chassis_reference, current_chassis,
+                    )
+            elif normalized_chassis_ref and normalized_chassis_ref not in (
                 normalized_code, normalized_plate, normalized_chassis,
             ):
                 if not normalized_chassis:
-                    machine.chassis_number = reference_in_content
+                    machine.chassis_number = content_chassis_reference
                     machine.save(update_fields=["chassis_number"])
-                    known_chassis_by_machine[machine.pk] = reference_in_content
+                    known_chassis_by_machine[machine.pk] = content_chassis_reference
                     logger.info(
                         "# [process_machine_document_batch] #%d (%s): "
                         "bastidor auto-completado para %s a partir del "
                         "contenido del documento -- %r.",
                         document.pk, filename, machine.code,
-                        reference_in_content,
+                        content_chassis_reference,
                     )
                 else:
                     document.content_mismatch_warning = (
                         f"Máquina asignada: {machine.code}, "
                         f"pero el CONTENIDO del documento menciona la "
-                        f"referencia {reference_in_content!r} -- revisar a "
-                        f"mano si está bien archivado."
+                        f"referencia {content_chassis_reference!r} -- "
+                        f"revisar a mano si está bien archivado."
                     )
                     # Resuelve la referencia a una MachineAsset real, si es
                     # posible -- necesario para el botón "Resolver
@@ -406,16 +479,22 @@ def process_machine_document_batch(self, document_pks: list[int]) -> None:
                     # match_machine_asset_by_filename) -- coherente con
                     # que aquí la referencia ya viene limpia, extraída por
                     # Gemini del contenido, no de un nombre de archivo con
-                    # texto alrededor.
+                    # texto alrededor. Nunca resuelve contra chassis_number
+                    # de otras máquinas (match_machine_asset solo compara
+                    # code/plate) -- una referencia de bastidor puro que no
+                    # sea de esta máquina puede quedar "sin asignar" a
+                    # falta de más contexto, revisión manual.
                     document.content_mismatch_candidate_machine = (
-                        match_machine_asset(document.company, reference_in_content)
+                        match_machine_asset(
+                            document.company, content_chassis_reference,
+                        )
                     )
                     logger.warning(
                         "# [process_machine_document_batch] #%d (%s): "
                         "discrepancia nombre/contenido -- asignado a %s "
                         "por nombre, contenido menciona %r.",
                         document.pk, filename, machine.code,
-                        reference_in_content,
+                        content_chassis_reference,
                     )
 
         # UNASSIGNED en vez de CLASSIFIED cuando no hay máquina enlazada

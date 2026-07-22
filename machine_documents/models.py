@@ -468,7 +468,12 @@ class MachineDocument(models.Model):
     # sube y se asigna a esa máquina, marcarlo con incidencia y decir,
     # ojo, el interior no coincide con el exterior". Gemini SIGUE
     # llamándose siempre (fase 3, extracción de datos) y ahora también
-    # extrae machine_reference_in_content
+    # extrae content_plate_reference/content_chassis_reference/
+    # content_fleet_code_reference (S028, antes un único campo
+    # machine_reference_in_content -- separado para poder usar
+    # matrícula/código de flota como ancla fuerte de identidad incluso
+    # cuando el bastidor mencionado no coincida con el ya guardado, ver
+    # machine_documents.tasks.process_machine_document_batch)
     # (document_classification_service.classify_document) -- si esa
     # referencia no coincide con la máquina ya asignada por nombre,
     # este campo guarda el aviso. Vacío mientras no haya discrepancia
