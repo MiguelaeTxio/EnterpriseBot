@@ -1511,62 +1511,109 @@ A-36 persiste correctamente (no se toca con zona cero, solo borra
 documentos). Feedback muy positivo, con dos incidencias menores
 reportadas para la sesión siguiente (ver hoja de ruta abajo).
 
-### Hoja de Ruta para la Sesión Siguiente (S029)
+### COMPLETADAS EN S029
 
-1. **PRIORITARIO -- investigar condición de carrera en el borrado con
-   cuenta atrás.** Miguel Ángel, tras la prueba con Yolanda: "cuando
-   se comparan documentos y, en general, cuando se le da a eliminar,
-   cuando se marcan, se da a eliminar, ahí está fallando. Porque se
-   eliminan realmente, pero el modal... la das y ya no hace nada
-   porque ya se ha eliminado. Hay que ver que puede ser por
-   condiciones de carrera." El borrado en sí funciona (el documento
-   desaparece de verdad), pero el modal de cuenta atrás
-   (`countdown_confirm.js`, `openCountdownConfirm`/`openDeleteConfirm`)
-   no se comporta como se espera tras la confirmación -- investigar
-   con datos reales (reproducir el caso, mirar la consola del
-   navegador con Eruda en móvil) antes de tocar nada. Empezar por
-   `panel/static/panel/js/countdown_confirm.js` y los puntos donde se
-   invoca (`_machine_detail.html`, `machine_page.html`) -- sospecha
-   inicial sin confirmar: posible doble disparo del evento de
-   confirmación, o un `htmx:afterSwap`/redirect que compite con el
-   propio cierre del modal.
-2. **Usar más HTMX en vez de recargas de página completa.** Miguel
-   Ángel: "algunas veces hay que recargar la página... deberíamos de
-   utilizar más el HTMX siempre que se pueda para evitar tener que
-   recargar la página." Varias acciones nuevas de esta sesión
-   (`DocumentBulkDeleteView`, `DocumentBulkObsoleteToggleView`,
-   `DocumentCompareView`, `DocumentForceCurrentView`) usan
-   `form.submit()` de página completa + redirect en vez de HTMX --
-   revisar cuáles se pueden convertir a peticiones HTMX con
-   `hx-target`/`hx-swap` sobre `#machine-detail-container` (o el
-   contenedor que corresponda) sin perder la confirmación con cuenta
-   atrás donde ya existe. Empezar aquí solo después de resolver el
-   punto 1 -- puede que ambos estén relacionados (una migración a
-   HTMX bien hecha podría resolver también la condición de carrera).
-3. **H10 -- fotos de abonos al devolver mercadería.** Miguel Ángel,
-   petición nueva anotada al cierre de esta sesión, sin investigar
-   todavía: "hay que arreglar también una cosa en el tema de los
-   albaranes, que es cuando se devuelve mercadería para que puedan
-   subir la foto de los abonos." Ver anexo H10
+**Sesión partida en dos chats por una caída de herramientas del lado
+de Anthropic**, no del proyecto. El primer chat llegó a commitear y
+pushear los dos primeros puntos de la hoja de ruta antes de caerse,
+sin poder cerrar sesión formalmente ni registrar nada en este anexo.
+El segundo chat ("Continuación") arrancó sin dar nada por hecho:
+releyó este anexo (que todavía mostraba los tres puntos como
+pendientes -- desfase de documentación, no de código) y verificó con
+`git log`/`git diff --stat` contra el remoto que el trabajo descrito
+por Miguel Ángel sí estaba realmente en `origin/main` antes de
+continuar. Sin pérdida real de código: solo la bitácora de este anexo
+quedó un paso por detrás del repositorio.
+
+**Punto 1 -- condición de carrera del modal de cuenta atrás (commit
+`a54d6dd`, primer chat):** el borrado se ejecutaba de verdad en el
+servidor, pero el modal HTMX se quedaba abierto indefinidamente
+porque nada llamaba a `hide()` en la vía HTMX -- solo se limpiaba el
+intervalo en `hidden.bs.modal`, evento que nunca se disparaba.
+Solución: listener `htmx:afterRequest` que cierra el modal
+(`bootstrap.Modal.hide()`) cuando `evt.detail.successful` es `true`,
+añadido/quitado en cada apertura porque el `<form>` es el mismo nodo
+DOM reutilizado por todas las acciones del modal genérico.
+
+**Punto 2 -- HTMX real en vez de recarga de página completa (commit
+`201bb0b`, primer chat):** causa de fondo encontrada -- `DocumentDeleteView`
+ya estaba enganchada a `hx-target=#machine-detail-container`, pero
+seguía haciendo `redirect()` a `MachinePageView` (página completa);
+HTMX sigue redirecciones de forma transparente, así que lo que se
+metía en el contenedor era la página entera. Nuevo helper
+`_machine_detail_htmx_response()` aplicado a las 5 vistas que mutan
+documentación de máquina (`DocumentDeleteView`,
+`DocumentForceCurrentView`, `DocumentBulkObsoleteToggleView`,
+`DocumentBulkDeleteView`, `DocumentCompareView`), con dos regresiones
+evitadas de forma general (no solo parcheadas): mensajes Django vía
+`panel/_messages_oob.html` (OOB, reutilizable por cualquier vista HTMX
+futura del panel) y sección "Candidatos a documento obsoleto" también
+como OOB para no quedarse con datos obsoletos hasta el próximo F5.
+Dominio Personal no tocado (su vista de redirect ya era un fragmento
+puro, sin el problema).
+
+**Toggle documentadas/sin documentar (commit `088055b`, segundo
+chat):** antes de escribir código, criterio de "documentado" verificado
+empíricamente contra la BD real (Comando S vía consola PythonAnywhere,
+shell Django/ORM) usando la A-36 como caso conocido documentado que
+Miguel Ángel indicó -- hallazgo real de paso: el código en BD es `A36`
+(sin guion), no `A-36`. Con el código correcto: 508 `MachineAsset` en
+total, solo 2 documentadas (`A36`, `A29`), 506 sin documentar. `doc_count`
+anotado con el mismo criterio que `_machine_documents_view_data`/
+`_machine_obsolete_candidates` (CLASSIFIED, excluyendo maestro
+pendiente y candidato a obsoleto) -- coincide hoy con "cualquier
+documento" porque los 30 `MachineDocument` reales no tienen ninguno de
+esos dos flags activos, pero es el criterio semánticamente correcto de
+cara a volumen futuro. UI: grupo de radio botones (Todas/Documentadas/
+Sin documentar, `btn-check` de Bootstrap) junto al buscador existente
+en `hub.html`, mismo patrón `hx-get`+`hx-trigger=change` que el resto
+del panel; `hx-include` cambiado de un solo campo a `closest .card`
+para que buscador y toggle compartan valores en cada petición.
+
+**Decisión cerrada con Miguel Ángel:** planteado un badge por máquina
+en el listado además del toggle -- descartado explícitamente: *"con el
+toggle todas/documentadas/sin documentar no hace falta badge por
+máquina"*. No se implementa.
+
+**Cierre de sesión:** Miguel Ángel considera esta parte del hito
+(documentación de maquinaria) "supuestamente cerrada" -- en su propia
+aclaración, los hitos nunca se cierran de verdad, solo se pausan; H23
+permanece `EN PROGRESO` en el enrutador, sin PCH. Los puntos que
+quedaron sin empezar hoy se trasladan íntegros a la hoja de ruta de
+mañana.
+
+### Hoja de Ruta para la Sesión Siguiente (S030)
+
+1. **H10 -- fotos de abonos al devolver mercadería.** Arrastrado sin
+   cambios desde S028: "hay que arreglar también una cosa en el tema
+   de los albaranes, que es cuando se devuelve mercadería para que
+   puedan subir la foto de los abonos." Ver anexo H10
    (`ENTERPRISEBOT_ATTACHED_MILESTONE_V10.md`) para el detalle -- este
    anexo solo deja la referencia, el punto de partida completo vive
-   allí.
-4. **Probar el dominio Personal de extremo a extremo** — sigue sin
-   probarse, arrastrado desde S024 (cuarta sesión consecutiva sin
+   allí. Sin investigar todavía.
+2. **Decidir si la funcionalidad de vacaciones/calendario abre hito
+   propio.** Sigue sin decidir -- ver sección "Funcionalidad nueva
+   anotada por Miguel Ángel al cierre" más abajo para el detalle
+   íntegro registrado en S028. Primera decisión de la sesión: hito
+   nuevo (`nfs-enterprisebot-pch` Caso C / `com-picp`) o colgarlo de
+   H23.
+3. **Probar el dominio Personal de extremo a extremo** — sigue sin
+   probarse, arrastrado desde S024 (quinta sesión consecutiva sin
    atenderse). `PersonalDocument` sigue en 0 filas reales. El
    accordion de Personal (`_personal_accordion.html`) sigue con el
    diseño antiguo (sin ficha de página propia, sin sistema de
    incidencias, sin candidatos a obsoleto, sin vigencia forzada, sin
-   selección múltiple ni comparación) -- decidir con Miguel Ángel si
-   aplicar toda la reconstrucción de Maquinaria de las últimas
-   sesiones antes o después de probar el dominio tal cual está.
-5. **Considerar limitar el tamaño de "individuales" enviados a
+   selección múltiple ni comparación, y ahora tampoco tiene el toggle
+   documentadas/sin documentar que sí tiene Maquinaria) -- decidir con
+   Miguel Ángel si aplicar toda la reconstrucción de Maquinaria de las
+   últimas sesiones antes o después de probar el dominio tal cual está.
+4. **Considerar limitar el tamaño de "individuales" enviados a
    `assess_master_coverage()`** (arrastrado desde S025) — el límite de
    tokens de Gemini se ha tocado repetidamente al acumular muchos
    documentos ya persistidos de la misma máquina -- mejora aparte, no
    implementada todavía.
-6. **Dos ambigüedades de datos sin resolver de la auditoría de
-   `MachineAsset`** (arrastradas de esta sesión, sin urgencia): valores
+5. **Dos ambigüedades de datos sin resolver de la auditoría de
+   `MachineAsset`** (arrastradas desde S028, sin urgencia): valores
    cortos ambiguos que no se tocaron (A28=3388, A42=39053, series de 5
    dígitos D01/D02/D03, etc.) -- se corregirán solos conforme se suba
    documentación real de esas máquinas, no requieren acción activa.
@@ -1578,7 +1625,7 @@ soporte a Python 3.10 el 2026-10-04. Sin acción posible por nuestra
 parte (depende de que PythonAnywhere añada una versión superior) —
 vigilar antes de esa fecha si no ha cambiado, para planificar la
 migración con margen. Correo a soporte de PythonAnywhere redactado y
-entregado a Miguel Ángel en esta sesión (sin confirmar si llegó a
+entregado a Miguel Ángel en S028 (sin confirmar todavía si llegó a
 enviarse ni respuesta recibida -- preguntar al empezar la siguiente).
 
 ### Funcionalidad nueva anotada por Miguel Ángel al cierre — evaluar si abre hito propio
@@ -1642,3 +1689,4 @@ originó, sin más acción pendiente aquí.
 | S026 | 2026-07-21 | H23 EN PROGRESO durante toda la sesión, sin desvíos ni PCH. La sesión más larga del hito hasta la fecha (varios chats consecutivos por límite de contexto, mismo número de sesión): 22 commits, 22 archivos, +3172/-49 líneas. Reconstrucción completa del pipeline de ingesta de documentación de maquinaria en 5 fases (reglas heurísticas de descarte por nombre, modelo de aprendizaje automático de tipos, Gemini como extractor puro cuando la heurística ya sabe el tipo, pantalla de revisión con checkboxes, CRUD del diccionario), seguida de una prueba real de subida completa de la A-36 que fue encontrando, uno a uno, una cadena larga de bugs reales -- todos corregidos en la misma sesión con datos reales (logs del worker, consultas de BD, capturas de Miguel Ángel): comando de reset duplicado con el mismo bug que motivó sustituir uno anterior (blobs de GCS huérfanos, limpiados con comando nuevo); la máquina se determinaba por contenido en vez de por nombre de archivo pese a la decisión ya cerrada; barra lateral vacía en la ficha de máquina (`company_user` ausente del contexto, bug distinto del de S021); tras un movimiento automático entre máquinas sin dejar rastro del error, Miguel Ángel cerró que el movimiento NUNCA debe ser automático -- la CARPETA manda, con sistema completo de resolución manual de incidencias (botón "Resolver con `<máquina>`" por cada máquina distinta implicada, pantalla partida, caso "sin asignar" con selector libre); "SCAN" (nombre de escáner genérico) aprendido como palabra clave de tipo ITV a partir de un único error de Gemini, contaminando todos los archivos futuros de ese escáner; y el hallazgo más grande de la sesión, un bug de fondo en la normalización de palabras clave (lo aprendido nunca podía volver a encontrarse a sí mismo en un archivo futuro) que explicaba casi todos los "tipo no reconocido" de las capturas de Miguel Ángel -- corregido de raíz junto con una REGLA B-bis nueva (agrupar por "molde" archivos de tipo desconocido, sin necesitar saber el nombre del tipo) y varios formatos de fecha nuevos (año suelto, rango `AAAA-AAAA`, periodo compacto `DDMMAA AL DDMMAA`). Prueba final de 42 documentos: 42/42 correctamente asignados a la A-36, cero fugas, cero sin asignar. Dos hallazgos reales sin corregir todavía, ambos primera tarea de la sesión siguiente: falsos positivos de discrepancia por bastidor (`MachineAsset` no tiene ese campo) y datos corruptos en varias decenas de filas de `fleet.MachineAsset` (fechas en vez de código/matrícula real). Ver "CIERRE DE S026, PARTE 2" arriba para el detalle completo, y "Hoja de Ruta para la Sesión Siguiente (S027)" para el punto de partida. |
 | S027 | 2026-07-21 | **NOTA DE DESVÍO — sin trabajo directo en H23, sesión interrumpida por caída de herramientas del modelo.** Sesión arrancada para ejecutar la hoja de ruta de arriba, desviada de inmediato (Caso D del enrutador de anexos, sin PCH, marcador `EN PROGRESO` sin mover) para atender 4 incidencias reales que Miguel Ángel reportó al empezar en la vista unificada de partes digitales, ninguna ligada a H23: selector de periodo y preservación de filtros en `WorkOrderAdminHistoryView` (dominio H17, unificada allí en S012), botón "Marcar revisado" en el editor de parte digital (dominio H07, `form_entry.html`/`WorkOrderEntryFormView`), verificación sin cambios de la suma de horas del filtro en Revisados, y un 404 real corregido de paso (redirect roto desde la unificación H17-S012). Detalle técnico completo, los dos commits (`372faae`, `6eb7bbb`) y la verificación de despliegue en `ENTERPRISEBOT_ATTACHED_MILESTONE_V07.md` (fila `S_H07_12`) y `ENTERPRISEBOT_ATTACHED_MILESTONE_V17.md` (fila `S027`). Las herramientas del modelo cayeron antes de poder volver a la hoja de ruta de H23 y sin poder cerrar la sesión formalmente ni registrar el desvío -- confirmado por Miguel Ángel al reanudar que ningún commit se perdió (ambos en `origin/main`, ambos con despliegue verificado vía API de GitHub Actions, sin migración) y que las dos decisiones de diseño autónomas de la sesión (selector de periodo como desplegable, no auto-ajuste; suma de horas correcta sin cambios) funcionan perfectamente en producción. Cierre de S027 documentado retroactivamente en sesión posterior (S028), que retoma la hoja de ruta de abajo sin cambios -- Caso D: "el hito no avanzó". |
 | S028 | 2026-07-22 | H23 EN PROGRESO durante toda la sesión, con dos desvíos puntuales breves (Caso A, marcador nunca movido): a H07 (investigación de un bug real de pérdida de datos en modo edición de partes digitales, sin código tocado -- ver anexo H07 fila `S_H07_13`) y a H10 (una petición nueva sobre fotos de abonos al devolver mercadería, anotada en su propia hoja de ruta, sin trabajo de código). Sesión larguísima: 22 commits, 18 archivos, +2173/-298 líneas. Cerró retroactivamente S027 al empezar. Cerró por completo la primera tarea heredada de S026 (bastidor de `fleet.MachineAsset`): el campo ya existía, el problema real era que la comparación de discrepancia nunca lo tenía en cuenta; encontrado y corregido además un hallazgo más profundo con datos reales de la A-36 -- un documento con matrícula Y bastidor a la vez se marcaba como discrepancia falsa por dos causas encadenadas (comparación de nombre de archivo por subcadena libre en vez de token completo, y Gemini solo podía extraer una referencia por documento) -- solución de fondo: tres campos separados (matrícula/bastidor/código de flota), matrícula o código como ancla fuerte de identidad que nunca marca discrepancia y que puede CORREGIR un bastidor no confirmado ya guardado, verificado con simulación del peor caso de orden de procesamiento. Auditoría completa de los 566 `MachineAsset`: 58 filas borradas, 31 bastidores placeholder vaciados a mano. Rediseño completo de la pantalla de transferencia de incidencias (visor de documento, mecanismo de puntero visual definitivo, modal de cuenta atrás extraído a parcial reutilizable). Bloque de trabajo más grande de la sesión: funcionalidad nueva completa de "candidatos a documento obsoleto" (Gemini juzga por contenido, un humano siempre confirma el borrado, prioridad de resolución sobre incidencias de máquina), ampliada con selección múltiple y borrado en bloque, generalizada después a vigente/archivado (mismo mecanismo, sin restricción), comparación de dos documentos vía Gemini para detectar duplicados reales (con modal de espera, y corregida para marcar los DOS documentos comparados en vez de elegir uno automáticamente -- decisión explícita de Miguel Ángel), y las dos acciones en bloque simétricas (marcar/descartar obsoleto) en una sola vista genérica. Nuevo campo `force_current` para poder "recuperar documentos del cajón de archivos" -- vigencia forzada manualmente cuando el cálculo automático por fechas archivaría por error un documento que sigue siendo válido para toda la vida útil de la máquina. Otro fix real de paso: mensaje incorrecto en la pantalla de preflight para manuales de uso (la regla real nunca se había perdido, solo el texto mostrado). Prueba real con Yolanda (supervisora de documentación) al cierre, con feedback muy positivo ("de escándalo, de lujo, de cine") y dos incidencias menores para la sesión siguiente. Ver "COMPLETADAS EN S028" arriba para el detalle completo, y "Hoja de Ruta para la Sesión Siguiente (S029)" para el punto de partida. |
+| S029 | 2026-07-22 | **Sesión partida en dos chats por una caída de herramientas del lado de Anthropic (no del proyecto), sin pérdida real de código.** H23 EN PROGRESO durante toda la sesión, sin PCH. Primer chat: resueltos los dos primeros puntos heredados de S028 y commiteados/pusheados antes de la caída -- condición de carrera del modal de cuenta atrás (`a54d6dd`, listener `htmx:afterRequest` que cierra el modal tras respuesta HTMX exitosa) y migración a HTMX real de las 5 vistas que mutan documentación de máquina (`201bb0b`, nuevo helper `_machine_detail_htmx_response()`, con mensajes Django y "Candidatos a documento obsoleto" resueltos como `hx-swap-oob` reutilizable). Segundo chat ("Continuación", título puesto por Miguel Ángel): arrancó verificando con `git log`/`git diff --stat` contra `origin/main` -- sin dar nada por hecho de memoria -- que el trabajo del primer chat sí estaba realmente commiteado y desplegado (el anexo, al no haberse cerrado la sesión anterior, seguía mostrando esos dos puntos como pendientes: desfase de documentación, no de código). Implementó el tercer punto pendiente, el toggle documentadas/sin documentar en el listado de Documentación (`088055b`): criterio de "documentado" verificado empíricamente contra la BD real antes de escribir código (Comando S vía consola PythonAnywhere), usando la A-36 como caso conocido -- hallazgo de paso: el código real en BD es `A36` sin guion; con eso corregido, 508 `MachineAsset` en total, solo 2 documentadas (`A36`, `A29`). `doc_count` con el mismo criterio que `_machine_documents_view_data` (CLASSIFIED, sin maestro pendiente, sin candidato a obsoleto). Badge por máquina planteado y descartado explícitamente por Miguel Ángel ("con el toggle... no hace falta badge por máquina"). Cierre: Miguel Ángel da esta parte del hito (documentación de maquinaria) por "supuestamente cerrada" -- aclarando él mismo que los hitos nunca se cierran de verdad, solo se pausan; H23 sigue `EN PROGRESO`. Ver "COMPLETADAS EN S029" arriba para el detalle completo, y "Hoja de Ruta para la Sesión Siguiente (S030)" para el punto de partida: H10 (fotos de abonos), decisión sobre hito de vacaciones/calendario, y prueba end-to-end del dominio Personal (quinta sesión consecutiva sin atenderse). |
