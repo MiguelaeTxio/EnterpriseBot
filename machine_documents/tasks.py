@@ -175,6 +175,18 @@ def process_machine_document_batch(self, document_pks: list[int]) -> None:
     # contrario.
     # ------------------------------------------------------------
     classified: dict[int, dict] = {}
+    # Caché en memoria de bastidores ya conocidos/auto-rellenados en
+    # ESTE MISMO lote (S028) -- necesario porque `documents` viene de
+    # un único select_related() antes del bucle: si el documento A
+    # rellena el bastidor de una máquina y el documento B, más abajo
+    # en el mismo lote, es de la MISMA máquina, `document.machine_asset`
+    # de B seguiría mostrando el bastidor vacío en memoria (objeto
+    # cargado antes de que A lo guardara) sin este caché -- el
+    # emparejamiento no vería el bastidor ya fijado por A dentro del
+    # mismo lote. Se inicializa con lo que YA había en BD la primera
+    # vez que se toca cada máquina, y se actualiza en memoria en
+    # cuanto este bucle rellena un bastidor nuevo.
+    known_chassis_by_machine: dict[int, str] = {}
     for document in documents:
         try:
             document.source_file.open("rb")
@@ -319,47 +331,84 @@ def process_machine_document_batch(self, document_pks: list[int]) -> None:
         # ninguna discrepancia de contenido, se deja tal cual estaba;
         # si sí encuentra una, la sustituye (la de contenido es más
         # específica -- lee dentro del propio documento).
+        #
+        # Relleno progresivo de bastidor (S028) -- la comparación
+        # original (S026) solo miraba code/plate, nunca
+        # chassis_number, lo que generaba discrepancia SIEMPRE que un
+        # documento mencionaba el bastidor real de la propia máquina
+        # (confirmado con datos reales: 4 avisos de la A36 citando
+        # su propio bastidor, 3 de ellos coincidentes entre sí en 3
+        # documentos independientes). Decisión explícita de Miguel
+        # Ángel: nada de backfill retroactivo ni de rellenar a mano --
+        # "cuando lo vaya leyendo Gemini, rellenarlo... conforme se
+        # vaya subiendo la propia documentación". Por eso, cuando la
+        # referencia del contenido no coincide con code/plate/chassis
+        # YA conocidos y el bastidor de la máquina está vacío, esta
+        # referencia se toma como el bastidor real y se guarda --
+        # nunca se sobrescribe un bastidor que ya tenía algo (eso es
+        # tarea de la auditoría de datos corruptos, no de este
+        # mecanismo). Si un documento posterior de la misma máquina
+        # menciona un bastidor DISTINTO del ya guardado (por esta vía
+        # o por el catálogo original), sí se marca discrepancia contra
+        # él -- red de seguridad natural para desacuerdos entre
+        # documentos, incluso dentro del mismo lote (ver
+        # `known_chassis_by_machine`).
         reference_in_content = result.get("machine_reference_in_content", "")
         if reference_in_content and document.machine_asset_id:
             from document_ingestion.entity_matching_service import (
                 _normalize_for_matching,
                 match_machine_asset,
             )
+            machine = document.machine_asset
+            if machine.pk not in known_chassis_by_machine:
+                known_chassis_by_machine[machine.pk] = machine.chassis_number or ""
+            current_chassis = known_chassis_by_machine[machine.pk]
+
             normalized_reference = _normalize_for_matching(reference_in_content)
-            normalized_code = _normalize_for_matching(
-                document.machine_asset.code,
-            )
-            normalized_plate = _normalize_for_matching(
-                document.machine_asset.plate or "",
-            )
+            normalized_code = _normalize_for_matching(machine.code)
+            normalized_plate = _normalize_for_matching(machine.plate or "")
+            normalized_chassis = _normalize_for_matching(current_chassis)
+
             if normalized_reference and normalized_reference not in (
-                normalized_code, normalized_plate,
+                normalized_code, normalized_plate, normalized_chassis,
             ):
-                document.content_mismatch_warning = (
-                    f"Máquina asignada: {document.machine_asset.code}, "
-                    f"pero el CONTENIDO del documento menciona la "
-                    f"referencia {reference_in_content!r} -- revisar a "
-                    f"mano si está bien archivado."
-                )
-                # Resuelve la referencia a una MachineAsset real, si es
-                # posible -- necesario para el botón "Resolver
-                # incidencia con <máquina>" de la ficha de máquina
-                # (S026). match_machine_asset compara por igualdad
-                # normalizada exacta (no subcadena, a diferencia de
-                # match_machine_asset_by_filename) -- coherente con
-                # que aquí la referencia ya viene limpia, extraída por
-                # Gemini del contenido, no de un nombre de archivo con
-                # texto alrededor.
-                document.content_mismatch_candidate_machine = (
-                    match_machine_asset(document.company, reference_in_content)
-                )
-                logger.warning(
-                    "# [process_machine_document_batch] #%d (%s): "
-                    "discrepancia nombre/contenido -- asignado a %s "
-                    "por nombre, contenido menciona %r.",
-                    document.pk, filename, document.machine_asset.code,
-                    reference_in_content,
-                )
+                if not normalized_chassis:
+                    machine.chassis_number = reference_in_content
+                    machine.save(update_fields=["chassis_number"])
+                    known_chassis_by_machine[machine.pk] = reference_in_content
+                    logger.info(
+                        "# [process_machine_document_batch] #%d (%s): "
+                        "bastidor auto-completado para %s a partir del "
+                        "contenido del documento -- %r.",
+                        document.pk, filename, machine.code,
+                        reference_in_content,
+                    )
+                else:
+                    document.content_mismatch_warning = (
+                        f"Máquina asignada: {machine.code}, "
+                        f"pero el CONTENIDO del documento menciona la "
+                        f"referencia {reference_in_content!r} -- revisar a "
+                        f"mano si está bien archivado."
+                    )
+                    # Resuelve la referencia a una MachineAsset real, si es
+                    # posible -- necesario para el botón "Resolver
+                    # incidencia con <máquina>" de la ficha de máquina
+                    # (S026). match_machine_asset compara por igualdad
+                    # normalizada exacta (no subcadena, a diferencia de
+                    # match_machine_asset_by_filename) -- coherente con
+                    # que aquí la referencia ya viene limpia, extraída por
+                    # Gemini del contenido, no de un nombre de archivo con
+                    # texto alrededor.
+                    document.content_mismatch_candidate_machine = (
+                        match_machine_asset(document.company, reference_in_content)
+                    )
+                    logger.warning(
+                        "# [process_machine_document_batch] #%d (%s): "
+                        "discrepancia nombre/contenido -- asignado a %s "
+                        "por nombre, contenido menciona %r.",
+                        document.pk, filename, machine.code,
+                        reference_in_content,
+                    )
 
         # UNASSIGNED en vez de CLASSIFIED cuando no hay máquina enlazada
         # (ingesta automática de carpeta, S024) -- ver
