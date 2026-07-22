@@ -2214,6 +2214,16 @@ class MachineDocumentTransferView(DocsUploadAccessMixin, View):
             .order_by("-content_mismatch_warning", "document_type", "-created_at")
             if machine_b else []
         )
+        # Visor de documento (S028) -- Miguel Ángel, al resolver
+        # incidencias reales de la A36: "aquí haría falta un visor de
+        # la documentación, porque si no la puedes ver, ¿cómo
+        # compruebo manualmente cuál es?". Mismo helper ya usado en
+        # MachinePageView/DocumentationHub -- URL firmada de GCS,
+        # nunca persistida, generada al vuelo en cada petición.
+        for doc in docs_a:
+            doc.download_url = _resolve_download_url(doc, MACHINE_DOCUMENTS_BUCKET)
+        for doc in docs_b:
+            doc.download_url = _resolve_download_url(doc, MACHINE_DOCUMENTS_BUCKET)
 
         return render(request, self.template_name, {
             "active_nav": "documentation_hub",
