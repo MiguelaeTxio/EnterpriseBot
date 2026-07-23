@@ -182,16 +182,45 @@
             </div>
 
             <div class="card card-body mb-3 py-2">
-                <label class="form-label form-label-sm mb-1">Búsqueda</label>
-                <input id="filter-personal-search"
-                       type="search"
-                       class="form-control form-control-sm"
-                       placeholder="Nombre o DNI…"
-                       name="search"
-                       hx-get="{% url 'panel:documentation_personal_list' %}"
-                       hx-target="#personal-accordion-container"
-                       hx-include="#filter-personal-search"
-                       hx-trigger="input changed delay:300ms, search">
+                <div class="row g-2 align-items-end">
+                    <div class="col">
+                        <label class="form-label form-label-sm mb-1">Búsqueda</label>
+                        <input id="filter-personal-search"
+                               type="search"
+                               class="form-control form-control-sm"
+                               placeholder="Nombre o DNI…"
+                               name="search"
+                               hx-get="{% url 'panel:documentation_personal_list' %}"
+                               hx-target="#personal-accordion-container"
+                               hx-include="closest .card"
+                               hx-trigger="input changed delay:300ms, search">
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-label form-label-sm mb-1 d-block">Documentación</label>
+                        <div class="btn-group btn-group-sm" role="group" aria-label="Filtro por documentación">
+                            <input type="radio" class="btn-check" name="doc_status" id="doc-status-personal-all" value="all" autocomplete="off" checked
+                                   hx-get="{% url 'panel:documentation_personal_list' %}"
+                                   hx-target="#personal-accordion-container"
+                                   hx-include="closest .card"
+                                   hx-trigger="change">
+                            <label class="btn btn-outline-secondary" for="doc-status-personal-all">Todos</label>
+
+                            <input type="radio" class="btn-check" name="doc_status" id="doc-status-personal-documented" value="documented" autocomplete="off"
+                                   hx-get="{% url 'panel:documentation_personal_list' %}"
+                                   hx-target="#personal-accordion-container"
+                                   hx-include="closest .card"
+                                   hx-trigger="change">
+                            <label class="btn btn-outline-secondary" for="doc-status-personal-documented">Documentados</label>
+
+                            <input type="radio" class="btn-check" name="doc_status" id="doc-status-personal-undocumented" value="undocumented" autocomplete="off"
+                                   hx-get="{% url 'panel:documentation_personal_list' %}"
+                                   hx-target="#personal-accordion-container"
+                                   hx-include="closest .card"
+                                   hx-trigger="change">
+                            <label class="btn btn-outline-secondary" for="doc-status-personal-undocumented">Sin documentar</label>
+                        </div>
+                    </div>
+                </div>
             </div>
             <div id="personal-accordion-container">
                 {% include "panel/documentation/_personal_accordion.html" with workers=workers %}

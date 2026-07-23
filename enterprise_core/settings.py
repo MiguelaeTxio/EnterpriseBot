@@ -317,4 +317,25 @@ CELERY_BEAT_SCHEDULE = {
         'task':     'document_management.tasks.send_document_expiry_alerts',
         'schedule': crontab(hour=3, minute=0),
     },
+
+    # ---------------------------------------------------------------------------
+    # PERSONAL DOCUMENT INGESTION — Hito 25
+    # Ingesta de documentación de personal — Hito 25.
+    # ---------------------------------------------------------------------------
+
+    # Self-healing: re-attempts automatic worker pre-registration for
+    # PersonalDocument rows left unassigned when route_ingested_files
+    # was interrupted mid-task (deploy-triggered worker restart, a
+    # transient Gemini failure, etc.) -- real incident 2026-07-23
+    # (S030), Miguel Ángel: "el código tiene que ser resiliente...
+    # debe de autocurarse".
+    # Autocuración: reintenta el pre-registro automático de
+    # trabajadores para PersonalDocument que quedaron sin asignar
+    # porque route_ingested_files se interrumpió a mitad de tarea
+    # (reinicio del worker disparado por un despliegue, un fallo
+    # puntual de Gemini, etc.) -- incidente real 2026-07-23 (S030).
+    'self-heal-unassigned-personal-documents': {
+        'task':     'document_ingestion.tasks.self_heal_unassigned_personal_documents',
+        'schedule': crontab(minute='*/15'),
+    },
 }

@@ -1473,7 +1473,13 @@ class DocumentationMachineListFragmentView(DocsUploadAccessMixin, View):
 class DocumentationPersonalListFragmentView(DocsUploadAccessMixin, View):
     """
     GET (HTMX): fragmento del acordeón de trabajadores, filtrado por
-    el parámetro `search` (nombre o DNI -- búsqueda en vivo).
+    el parámetro `search` (nombre o DNI -- búsqueda en vivo) y por
+    `doc_status` (2026-07-23, mismo toggle "documentados/sin
+    documentar" que ya tenía Maquinaria desde S029 -- Miguel Ángel:
+    "hay que aprovechar para tener los mismos botones que en la
+    pantalla de la pestaña de maquinaria"). Mismo criterio de
+    "documento real": CLASSIFIED, sin filtrar por is_possible_master
+    (Personal no tiene ese concepto de documento maestro).
     """
 
     template_name = "panel/documentation/_personal_accordion.html"
@@ -1481,20 +1487,37 @@ class DocumentationPersonalListFragmentView(DocsUploadAccessMixin, View):
     def get(self, request):
         company = request.user.company_user.company
         search = request.GET.get("search", "").strip()
+        doc_status = request.GET.get("doc_status", "all")
+
+        from django.db.models import Count, Q
 
         workers = CompanyUser.objects.filter(
             company=company,
-        ).select_related("user")
+        ).select_related("user").annotate(
+            doc_count=Count(
+                "personal_documents",
+                filter=Q(
+                    personal_documents__status=PersonalDocument.Status.CLASSIFIED,
+                ),
+                distinct=True,
+            ),
+        )
         if search:
-            from django.db.models import Q
             workers = workers.filter(
                 Q(user__first_name__icontains=search)
                 | Q(user__last_name__icontains=search)
                 | Q(dni__icontains=search)
             )
+        if doc_status == "documented":
+            workers = workers.filter(doc_count__gt=0)
+        elif doc_status == "undocumented":
+            workers = workers.filter(doc_count=0)
         workers = workers.order_by("user__first_name", "user__last_name")
 
-        return render(request, self.template_name, {"workers": workers})
+        return render(request, self.template_name, {
+            "workers": workers,
+            "doc_status": doc_status,
+        })
 
 
 def _machine_documents_view_data(machine):

@@ -642,3 +642,92 @@ def retry_unassigned_routing(self, domain: str, company_pk: int) -> None:
         "tras reintento (%s, company=%s).",
         resolved_count, len(unassigned_docs), domain, company,
     )
+
+
+@app.task(base=DjangoTask, bind=True)
+def self_heal_unassigned_personal_documents(self) -> None:
+    """
+    Tarea periódica de autocuración (2026-07-23, Celery Beat, cada 15
+    min) -- Miguel Ángel, tras el incidente real de S030 donde el
+    pre-registro de Manuel Alonso Pedrosa se perdió porque el
+    reinicio del worker (disparado por un despliegue) cortó
+    route_ingested_files a mitad de tarea sin dejar rastro de error:
+    "el código tiene que ser resiliente... no podemos permitirnos
+    estos errores, porque debe de autocurarse".
+
+    Para cada empresa, agrupa los PersonalDocument sin trabajador
+    (company_user=None, status=UNASSIGNED) por su
+    detected_dni_hint (ya normalizado al guardarse, ver
+    normalize_dni) -- documentos sin ningún hint se dejan intactos,
+    nunca se pre-registra a ciegas sin dato alguno. Si ya existe un
+    CompanyUser con ese DNI (real o pre-registrado de una pasada
+    anterior), los vincula directo. Si no existe ninguno, crea el
+    pre-registro -- mismo create_preregistered_worker() que
+    route_ingested_files, con el nombre de carpeta recuperado del
+    IngestedFile original (sigue existiendo aunque el PersonalDocument
+    ya esté creado).
+
+    No reemplaza al post-loop de route_ingested_files (que sigue
+    siendo el camino normal, inmediato) -- esta tarea es solo la red
+    de seguridad para cuando ese camino normal no llegó a completarse.
+    """
+    from ivr_config.models import Company, CompanyUser
+
+    total_linked = 0
+    total_preregistered = 0
+
+    for company in Company.objects.all():
+        pending = PersonalDocument.objects.filter(
+            company=company,
+            company_user__isnull=True,
+            status=PersonalDocument.Status.UNASSIGNED,
+        ).exclude(detected_dni_hint="")
+        if not pending.exists():
+            continue
+
+        by_dni: dict[str, list] = {}
+        for document in pending:
+            by_dni.setdefault(document.detected_dni_hint, []).append(document)
+
+        for dni_hint, documents in by_dni.items():
+            worker = CompanyUser.objects.filter(
+                company=company, dni=dni_hint,
+            ).first()
+
+            if worker is None:
+                ingested = IngestedFile.objects.filter(
+                    routed_domain=DOMAIN_PERSONAL,
+                    routed_document_pk=documents[0].pk,
+                ).first()
+                folder_name = (
+                    ingested.source_folder_path.split("/", 1)[0]
+                    if ingested and ingested.source_folder_path else ""
+                )
+                worker = create_preregistered_worker(
+                    company, folder_name, dni_hint,
+                )
+                if worker is None:
+                    logger.warning(
+                        "# [self_heal_unassigned_personal_documents] "
+                        "DNI %r (%d documento(s)) sin nombre de carpeta "
+                        "recuperable -- se deja para revisión manual.",
+                        dni_hint, len(documents),
+                    )
+                    continue
+                total_preregistered += 1
+
+            for document in documents:
+                document.company_user = worker
+                document.detected_dni_hint = ""
+                document.status = PersonalDocument.Status.CLASSIFIED
+                document.save(update_fields=[
+                    "company_user", "detected_dni_hint", "status",
+                ])
+                total_linked += 1
+
+    if total_linked:
+        logger.info(
+            "# [self_heal_unassigned_personal_documents] %d documento(s) "
+            "vinculados (%d pre-registro(s) nuevo(s) creados).",
+            total_linked, total_preregistered,
+        )
