@@ -37,6 +37,30 @@ class IngestedFile(models.Model):
         NEEDS_REVIEW = "NEEDS_REVIEW", "Dominio no identificado -- revisar a mano"
         ERROR = "ERROR", "Error"
 
+    class ForcedDomain(models.TextChoices):
+        MACHINE = "MACHINE", "Maquinaria"
+        PERSONAL = "PERSONAL", "Personal"
+
+    forced_domain = models.CharField(
+        max_length=20,
+        choices=ForcedDomain.choices,
+        blank=True,
+        default="",
+        verbose_name="Dominio elegido al subir",
+        help_text=(
+            "Dominio (Maquinaria/Personal) elegido explícitamente por "
+            "el usuario en el formulario de subida (2026-07-23, tras "
+            "un caso real: un documento de personal cuyo nombre de "
+            "archivo contenía la palabra 'VARIOS' se emparejó por "
+            "error contra una MachineAsset con ese mismo código). "
+            "Mientras esté informado, route_ingested_files NUNCA "
+            "prueba a emparejar contra el dominio contrario, sea cual "
+            "sea el contenido del archivo. Vacío únicamente en filas "
+            "antiguas previas a este cambio -- mantienen el "
+            "comportamiento de detección automática de siempre."
+        ),
+    )
+
     company = models.ForeignKey(
         Company,
         on_delete=models.CASCADE,

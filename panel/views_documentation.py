@@ -2456,6 +2456,23 @@ class DocumentationFolderUploadView(DocsUploadAccessMixin, View):
         company = request.user.company_user.company
         company_user = request.user.company_user
 
+        # Dominio elegido explícitamente en el formulario (2026-07-23,
+        # tras el caso real de mezcla máquina/personal) -- vacío se
+        # trata como "sin elegir" y se rechaza, nunca se cae de nuevo
+        # a detección automática cruzada sin que el usuario lo sepa.
+        domain = request.POST.get("domain", "").strip().upper()
+        if domain not in (
+            IngestedFile.ForcedDomain.MACHINE,
+            IngestedFile.ForcedDomain.PERSONAL,
+        ):
+            return render(request, "panel/documentation/_upload_result.html", {
+                "is_error": True,
+                "message": (
+                    "Selecciona si la carpeta es de Maquinaria o de "
+                    "Personal antes de subir."
+                ),
+            })
+
         uploaded_files = request.FILES.getlist("folder")
         folder_paths = request.POST.getlist("folder_paths")
         # folder_paths llega en el mismo orden que uploaded_files (ver
@@ -2515,6 +2532,7 @@ class DocumentationFolderUploadView(DocsUploadAccessMixin, View):
                 upload_batch_id=batch_id,
                 content_hash=content_hash,
                 status=IngestedFile.Status.PENDING_ROUTING,
+                forced_domain=domain,
             )
             ingested.source_file.save(
                 uploaded_file.name, uploaded_file, save=False,

@@ -53,6 +53,29 @@
                   action="{% url 'panel:documentation_folder_upload' %}">
                 {% csrf_token %}
                 <input type="file" id="folderPickerInput" webkitdirectory multiple hidden>
+                <div class="mb-3">
+                    <label class="form-label fw-medium small mb-1 d-block">
+                        ¿Qué estás subiendo? <span class="text-danger">*</span>
+                    </label>
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="radio" name="domain"
+                               id="uploadDomainMachine" value="MACHINE" required>
+                        <label class="form-check-label" for="uploadDomainMachine">
+                            <i class="bi bi-truck me-1"></i>Maquinaria
+                        </label>
+                    </div>
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="radio" name="domain"
+                               id="uploadDomainPersonal" value="PERSONAL" required>
+                        <label class="form-check-label" for="uploadDomainPersonal">
+                            <i class="bi bi-people me-1"></i>Personal
+                        </label>
+                    </div>
+                    <div class="form-text">
+                        Cada archivo se compara únicamente contra ese dominio -- nunca
+                        se prueba a emparejar Personal contra máquinas ni al revés.
+                    </div>
+                </div>
                 <div class="d-flex align-items-center gap-2 flex-wrap">
                     <button type="button" class="btn btn-sm btn-outline-secondary" id="addFolderBtn">
                         <i class="bi bi-folder-plus me-1"></i>Añadir carpeta
@@ -462,7 +485,7 @@
         return '';
     }
 
-    function uploadSingleFile(file, folderPath, batchId, csrfToken, index, total) {
+    function uploadSingleFile(file, folderPath, batchId, csrfToken, domain, index, total) {
         return new Promise(function (resolve, reject) {
             var xhr = new XMLHttpRequest();
             xhr.open('POST', uploadForm.action, true);
@@ -497,6 +520,7 @@
             var formData = new FormData();
             formData.append('csrfmiddlewaretoken', csrfToken);
             formData.append('batch_id', batchId);
+            formData.append('domain', domain);
             formData.append('folder', file, file.name);
             formData.append('folder_paths', folderPath);
             xhr.send(formData);
@@ -563,6 +587,8 @@
         }
         var batchId = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random()).replace(/-/g, '');
         var csrfToken = uploadForm.querySelector('[name=csrfmiddlewaretoken]').value;
+        var domainInput = uploadForm.querySelector('[name=domain]:checked');
+        var domain = domainInput ? domainInput.value : '';
 
         uploadResultEl.innerHTML = '<div class="text-muted small"><i class="bi bi-hourglass-split me-1"></i>'
             + 'Subida en curso -- ver progreso en el cuadro de diálogo.</div>';
@@ -600,7 +626,7 @@
             }
             var file = filesToUpload[index];
             var folderPath = file.webkitRelativePath || file.name;
-            uploadSingleFile(file, folderPath, batchId, csrfToken, index, total)
+            uploadSingleFile(file, folderPath, batchId, csrfToken, domain, index, total)
                 .then(function () {
                     index += 1;
                     sendNext();

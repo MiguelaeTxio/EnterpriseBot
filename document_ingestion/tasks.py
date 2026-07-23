@@ -143,12 +143,23 @@ def route_ingested_files(self, ingested_file_pks: list[int]) -> None:
         #      manual, nunca se mueve solo.
         #   3. CONTENIDO (Gemini, route_document) -- solo si ni
         #      carpeta ni nombre de archivo identificaron nada.
+        # Dominio elegido por el usuario al subir (2026-07-23) -- si
+        # es PERSONAL, el emparejamiento por carpeta/nombre de archivo
+        # contra MachineAsset NUNCA se intenta, sea cual sea el texto
+        # del nombre (caso real que motivó esto: "DOC VARIOS ALONSO
+        # PEDROSA,MANUEL.pdf" -- una carpeta de personal -- coincidió
+        # por la palabra "VARIOS" con una MachineAsset basura real de
+        # ese mismo código, mezclando personal con maquinaria).
+        _skip_machine_matching = (
+            ingested.forced_domain == IngestedFile.ForcedDomain.PERSONAL
+        )
         folder_matched_machine = (
             match_machine_asset_by_filename(company, folder_only_path)
-            if folder_only_path else None
+            if folder_only_path and not _skip_machine_matching else None
         )
-        filename_matched_machine = match_machine_asset_by_filename(
-            company, filename,
+        filename_matched_machine = (
+            match_machine_asset_by_filename(company, filename)
+            if not _skip_machine_matching else None
         )
 
         initial_mismatch_warning = ""
@@ -212,6 +223,19 @@ def route_ingested_files(self, ingested_file_pks: list[int]) -> None:
             worker_dni_hint = route["worker_dni_hint"]
             is_confident = route["is_confident"]
             reasoning = route["reasoning"]
+            # El dominio elegido por el usuario al subir manda siempre
+            # sobre lo que Gemini crea reconocer en el contenido
+            # (2026-07-23) -- si subió como Personal, nunca se acepta
+            # un resultado MACHINE de esta llamada, y viceversa. Solo
+            # aplica cuando el usuario SÍ eligió explícitamente
+            # (forced_domain no vacío); las filas antiguas sin ese
+            # dato siguen confiando en route_document tal cual.
+            if ingested.forced_domain:
+                domain = ingested.forced_domain
+                if domain != DOMAIN_MACHINE:
+                    machine_reference_hint = ""
+                if domain != DOMAIN_PERSONAL:
+                    worker_dni_hint = ""
             matched_machine = (
                 match_machine_asset(company, machine_reference_hint)
                 if domain == DOMAIN_MACHINE and is_confident
