@@ -224,72 +224,22 @@ desde el formulario de edición de sección.
 | S_H07_11 | 2026-07-16 | **DESVÍO desde H24 (EN PROGRESO al empezar la sesión) — recuperación de dos partes "perdidos" (22/06 y 03/07) y nueva vista de Borradores.** Miguel Ángel reportó dos partes que parecían no haberse guardado. Verificado empíricamente que el log `# [PARTE-BACKUP]` (S045) sí funciona en producción (39 líneas reales en `error.log`, pese a que `settings.py` no tiene bloque `LOGGING` explícito — PythonAnywhere enruta igualmente el `logger.info()` de la app ahí). Filtrando por `work_date` dentro del JSON del log (no por la fecha en que se escribió la línea, que puede ser un día distinto) aparecieron los dos partes buscados (David Contreras 22/06 `wo_pk=299`, Antonio Fontalba 22/06 `wo_pk=316`, Pablo Cañamero 03/07 `wo_pk=322`) — verificado también en BD que los tres `WorkOrder` existen con `status=DONE` y el mismo número de líneas que el log. Confirmado por Miguel Ángel: Fontalba y Cañamero eran justo los dos que buscaba, y ya los había recuperado él mismo reintroduciéndolos a mano (por eso el `wo_pk`/fecha de log de ambos es de hoy y de ayer, no del día real del parte) — el mecanismo de log solo cubre "se guardó pero algo falló después", nunca "nunca se llegó a guardar". A raíz de esto, Miguel Ángel pidió un mecanismo para no depender solo de ese log — verificado que **ya existe** un guardado progresivo real en BD (`WorkOrder.Status.IN_PROGRESS` + botón "Guardar bloques" en `FormView.save_blocks`, sin usar hasta ahora desde Administración): nueva `WorkOrderDraftListView` (`/panel/work-orders/drafts/`) que lista esos `WorkOrder` sin cerrar, y nuevo `SuperuserRequiredMixin` (`panel/mixins.py`, basado en `request.user.is_superuser` de Django) para restringirla — sustituye de paso el antipatrón de username hardcodeado (`request.user.username == 'alvarez_admin'`) que vivía en `panel/_nav_items.html` para el enlace al Django Admin. `alvarez_admin` promovido a superusuario real de Django (`is_staff`/`is_superuser`, cambio de BD vía shell, no de código) — necesario tanto para esta vista nueva como para que el enlace ya existente al Django Admin (bloqueado hasta ahora por `CompanyUserAdminBlockMiddleware`) funcionara de verdad. **Error propio cometido y corregido en la misma sesión:** `WorkOrderDraftListView` se añadió a `views_workorders.py` pero se olvidó re-exportar en el fichero fino `panel/views.py` (arquitectura post-H21) — rompió el despliegue real (`ImportError`, confirmado con `manage.py check` vía Comando S, nunca dado por bueno ni por malo solo con el icono de Actions), corregido en el mismo tramo y verificado limpio en producción. Archivos: `panel/mixins.py`, `panel/views_workorders.py`, `panel/views.py`, `panel/urls.py`, `panel/templates/panel/_nav_items.html`, `panel/templates/panel/work_orders/draft_list.html` (nuevo). Sin migración (ningún modelo nuevo). Sesión desviada a H23 después de esto (ver ese anexo) — PCH ejecutado al cierre: H24 → H23. |
 | S_H07_12 | 2026-07-21 | **DESVÍO desde H23 (EN PROGRESO al empezar S027) — 4 incidencias reales reportadas por Miguel Ángel en `WorkOrderAdminHistoryView`/`WorkOrderEntryFormView`, 3 resueltas con código nuevo, 1 verificada sin cambios.** Parte compartida con H17 (unificación S012) — ver también `ENTERPRISEBOT_ATTACHED_MILESTONE_V17.md`, fila `S027`, para el detalle de la mitad correspondiente a `admin_history.html`. Piezas propias de H07 (`form_entry.html`/`views_operator.py`): **[1]** botón "Marcar revisado" para ADMIN/SUPERVISOR/WORKSHOPBOSS al editar/ver un parte digital — nuevo botón visible solo si `edit_mode and is_elevated`, nueva rama `form_action=mark_reviewed` al inicio de `WorkOrderEntryFormView.post()`, independiente y previa a todo el pipeline de parseo/guardado, sin tocar ni validar datos del formulario; JS en `form_entry_modal.js` (`btn-mark-reviewed`, mismo patrón que `btn-save-blocks`). **[2]** propagación de `back_url` (con todos los filtros activos) a `WorkOrderEntryFormView` y `WorkOrderDetailView` y de vuelta en todos sus redirects (guardado/cierre de parte, `mark_reviewed`, "Volver" de `detail.html`) — nuevo `panel/url_utils.py` (`safe_back_url`, previene open-redirect). **Hallazgo real fuera de alcance, corregido de inmediato (directriz 4.9):** `WorkOrderEntryFormView.get()` redirigía a `/panel/operator/history/`, URL eliminada en la unificación H17-S012 — 404 real cada vez que se disparaba esa rama (parte inexistente/ya revisado/ajeno); ahora redirige a `work_order_admin_history`. Verificado: `py_compile` (`views_workorders.py`, `views_operator.py`, `url_utils.py`) OK, `node --check` (`form_entry_modal.js`) OK. Limpieza posterior de los 12 avisos djlint preexistentes en `form_entry.html` (commit `6eb7bbb`, a petición de Miguel Ángel): 1 espacio doble sobrante en `value="SUPPLIER"` + 1 línea en blanco sobrante al final del archivo. **Confirmado por Miguel Ángel en producción: todo funciona correctamente**, ambos commits (`372faae`, `6eb7bbb`) verificados desplegados vía API de GitHub Actions (el primero con fallo real solo en el paso de recarga, corregido por el despliegue exitoso del segundo — ver `com-bash-commands`/`nfs-enterprisebot-edit` para el criterio de verificación). Commits sin migración. Sesión interrumpida por caída de herramientas del modelo antes de volver a H23 — cierre formal de S027 documentado retroactivamente en sesión posterior (S028). |
 | S_H07_13 | 2026-07-22 | **DESVÍO desde H23 (EN PROGRESO, S028) — investigación de un bug real reportado por Miguel Ángel mientras esperaba el reinicio del worker Celery, SIN código tocado, solo diagnóstico.** "Cuando se editan los partes, no se está renderizando exactamente lo que la base de datos tiene... dietas, he parado/no he parado a comer, horario, pausa, si la jornada es intensiva". Confirmado con lectura directa del código (`panel/views_operator.py`, `WorkOrderEntryFormView`): en modo edición, `show_lunch_break` (si se muestran los campos de pausa) se calcula con `_resolve_operator_schedule(cu, company)` — el horario EN VIVO del operario, sin parámetro de fecha, nunca a partir de los datos reales del `first_entry` en edición. Si el horario del operario cambió desde que se guardó el parte, el formulario puede ocultar campos de pausa que sí existen en BD — y al guardar, como esos campos nunca llegan en el POST, `entry.lunch_break_start = None if _no_lunch_break else _lb_start` (líneas ~3560-3561/3579-3580) los sobrescribe con `None`: **riesgo real de pérdida de datos**, no solo de visualización. `no_lunch_break` sí lee bien de `first_entry`. Dietas/horario mencionados por Miguel Ángel como sospechosos pero sin auditar con el mismo detalle por falta de tiempo. Solución identificada (derivar `show_lunch_break` de los datos guardados del `first_entry`, nunca del horario en vivo) pero NO implementada — archivo muy denso, varias decenas de referencias a `lunch_break_start`/`lunch_break_end` en distintas rutas de guardado, Miguel Ángel decidió dejarlo anotado como primer punto de la próxima sesión de H07 en vez de arreglarlo con prisa: "no es cosa de dos minutos... prefiero ir con cuidado en vez de rápido" (dicho por el propio modelo, confirmado por Miguel Ángel: "aunque cuando lo resolvamos pasemos con lo que quede de lo que estamos haciendo ahora si no terminamos en esta sesión"). Ver detalle técnico completo en la Hoja de Ruta (sección 8) de este mismo anexo. Sin cambio de hito EN PROGRESO — H23 permanece `← EN PROGRESO` en el enrutador, este desvío no avanzó ningún paso de H23. |
+| S_H07_14 | 2026-07-23 | **DESVÍO desde H23 (EN PROGRESO, S030) — cierre completo del bug de S_H07_13, con auditoría real de producción.** Corregido en `WorkOrderEntryFormView` (modo edición y modo reanudación de parte en curso): `show_lunch_break` pasa a derivarse de `first_entry`/`_ip_first_entry` (tiene `lunch_break_start`/`end` o `no_lunch_break=True` → fue partida; si no → intensiva), nunca del horario en vivo (commit `fc55e5c`). **Segundo hallazgo real del mismo origen, corregido en el mismo bloque:** `has_diet` no estaba en absoluto en el contexto de `get()` (ni edición ni reanudación) — el checkbox de dieta se veía siempre desmarcado al editar y se borraba al guardar, sin ninguna condición (peor que el de pausa, que solo fallaba si cambiaba el horario). Auditoría sistemática de todo `WorkOrderEntryFormView` aplicando el principio explícito de Miguel Ángel ("editar sin tocar nada debe grabar exactamente igual; la lógica de creación-vs-edición va en la vista, nunca en la plantilla"): encontrado un tercer punto, `first_block_hc`/`first_block_hf` en modo edición seguían calculándose del horario en vivo — sin causar daño real solo porque la plantilla los ocultaba con `{% if not entradas_enriched %}`, pero dependían de ese guard como única protección; fijados explícitamente a `""` en la vista en ambos modos (commit `749b795`). **Cuarto hallazgo, distinto pero mismo patrón, encontrado investigando la pregunta original de Miguel Ángel sobre repuestos sin vincular a máquina:** el selector "Bloque asociado" mostrado para repuestos ya guardados al editar no estaba conectado a nada (ni JS ni backend lo leían) — el contexto enviaba `vehiculo_raw=""` siempre para repuestos existentes, perdiendo su vínculo con la máquina en cada edición y regrabado, sin que el operario tocara nada. Corregido: se rellena con el código real de `spare.vehicle`, y el selector pasa a ser el mismo mecanismo ya probado de los repuestos nuevos (`repuesto_N_vehiculo_raw` + opción "Otro"), con `cdg_options` calculado en la vista (no en la plantilla, mismo commit `749b795`). **Auditoría de producción, a petición explícita de Miguel Ángel — comparación real contra logs, no solo heurística:** consulta ORM sobre 76 `WorkOrderEntry` con posible inconsistencia semanal de horario/pausa entre operarios, 19 avisos brutos; cruzados contra el log `# [PARTE-BACKUP]` (actual + 9 archivos rotados `.log.1`/`.log.2-9.gz`, cobertura real hasta el 21/06) para los 14 casos de `lunch_break_start=None` divergente. Resultado: **13 de 14 coincidían exactamente entre el guardado original en log y la BD actual — falsos positivos de la heurística, días reales sin pausa**; el único con discrepancia real entre log y BD (francisco.carvajal, 06/07, `wo_pk=269`, pausa 07:00–17:30 en el log) fue confirmado por Miguel Ángel como error de tecleo del propio operario corregido después a mano, no el bug. **Ningún parte de los 14 resultó víctima real del bug.** De paso, corregidos con datos reales los 15 `SparePartLine` con `vehicle=NULL` en tareas con máquina real detectados en la auditoría de repuestos (script dedicado, vehículo asignado desde la máquina real de su propia `entry_line`, verificados los 15 antes de tocar cada uno). **Hallazgo adicional del modal global de repuestos (H10, mismo desvío):** aviso real de Miguel Ángel probando en el propio parte — la tabla de resultados del modal "Añadir repuesto" no era usable en móvil (5 columnas, campo de cantidad inalcanzable sin scroll horizontal); rediseñada a lista apilada, mismo patrón que `_warehouse_search_results.html` (commit `6f28113`). Verificado en los cuatro commits: `py_compile`/`node --check` limpios; djlint no disponible en este workspace, balance de etiquetas comprobado a mano. Sin migración en ningún commit. Sesión desviada después a H23 (documentación de maquinaria) — ver ese anexo. |
 
 
 ---
 
 ## 8. Hoja de Ruta para la Siguiente Sesion
 
-**PRIORITARIO -- primer punto de la próxima sesión dedicada a H07
-(S_H07_13, desvío puntual desde H23/S028, sin código tocado, solo
-investigación).** Miguel Ángel, mientras esperaba el reinicio del
-worker en una sesión de H23: "cuando se editan los partes, no se está
-renderizando exactamente lo que la base de datos tiene... las
-cabeceras de dietas, he parado/no he parado a comer, horario, pausa,
-y si la jornada es intensiva o no". Investigado y confirmado -- es más
-grave que un problema de renderizado, es un **riesgo real de pérdida
-de datos al guardar**:
-
-- Causa raíz: en el modo edición de `WorkOrderEntryFormView.get()`
-  (`panel/views_operator.py`, rama `wo_pk is not None`, hoy ~línea
-  2335), `_show_lunch_edit` (que controla el context var
-  `show_lunch_break`, si se muestran o no los campos de pausa de
-  comida) se calcula a partir de `_resolve_operator_schedule(cu,
-  company)` -- el horario EN VIVO del operario ahora mismo, sin
-  ningún parámetro de fecha -- nunca a partir de los datos reales ya
-  guardados en el `first_entry` que se está editando.
-- Consecuencia real: si el horario del operario cambió desde que se
-  guardó el parte (antes partida, ahora intensiva, o al revés), al
-  abrir un parte antiguo para editar, el formulario puede OCULTAR por
-  completo los campos de pausa aunque el parte SÍ tenga
-  `lunch_break_start`/`lunch_break_end` reales en BD.
-- **Pérdida de datos confirmada en el código**: al no renderizarse los
-  campos, nunca llegan en el `POST`. En
-  `WorkOrderEntryFormView.post()` (hoy ~líneas 3560-3561 y
-  3579-3580): `entry.lunch_break_start = None if _no_lunch_break else
-  _lb_start` -- con `_lb_start` valiendo `None` porque
-  `POST.get("lunch_break_start", "")` nunca llegó a tener valor. Abrir
-  y guardar un parte antiguo así **borra una pausa de comida real ya
-  guardada**, sin que el operario haga nada raro.
-- `no_lunch_break` (el checkbox "he parado/no he parado a comer") SÍ
-  lee correctamente de `first_entry.no_lunch_break` -- ese campo en
-  concreto está bien. El problema es específicamente la puerta
-  `show_lunch_break`.
-- Dietas y horario (`has_diet`, `first_block_hc`/`first_block_hf`,
-  `end_time_morning`/`end_time_afternoon`) -- Miguel Ángel los
-  mencionó también como sospechosos, pero no se llegaron a auditar
-  con el mismo detalle por falta de tiempo en el desvío -- revisar
-  también al retomar, mismo criterio (¿lee del `first_entry` real, o
-  se recalcula del horario en vivo/del operario actual?).
-- Solución de fondo ya identificada, sin implementar: `show_lunch_break`
-  (y en general "esta jornada fue intensiva o partida") en modo
-  edición debe derivarse de lo que el propio `first_entry` tiene
-  guardado (tiene `lunch_break_start`/`lunch_break_end` o
-  `no_lunch_break=True` -> fue partida; si no tiene nada de eso -> fue
-  intensiva), nunca del horario en vivo del operario. Revisar con
-  cuidado TODOS los sitios donde se usa `show_lunch_break`/el horario
-  de edición antes de tocar nada -- archivo muy denso, con varias
-  decenas de referencias a `lunch_break_start`/`lunch_break_end` en
-  distintas rutas de guardado (`save_blocks`, `close_order`,
-  re-renderizado de errores) que hay que revisar una a una para no
-  dejar ningún cabo suelto.
-- Decisión explícita de Miguel Ángel sobre el orden: "aunque cuando lo
-  resolvamos pasemos con lo que quede de lo que estamos haciendo ahora
-  si no terminamos en esta sesión" -- primer punto de la sesión de
-  H07, pero sin bloquear el resto de la hoja de ruta de abajo si da
-  tiempo a más.
+**Nota S_H07_14 (cierre del punto PRIORITARIO de S_H07_13):** el bug de
+pérdida de datos al editar (pausa de comida, dieta, `first_block_hc`/hf,
+y el hallazgo adicional de repuestos sin máquina) quedó corregido y
+desplegado, con auditoría completa de producción sin daño real
+encontrado. Ver Registro de Sesiones, fila `S_H07_14`, para el detalle
+íntegro. Sin puntos pendientes propios de este bloque.
 
 **Nota S_H07_12:** desvío puntual al empezar S027, sin deuda pendiente
+
 propia — las 4 incidencias reportadas por Miguel Ángel quedaron
 resueltas (o verificadas sin necesidad de cambio) y confirmadas en
 producción por él mismo, sin ningún punto pendiente de verificación.
