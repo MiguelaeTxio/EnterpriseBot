@@ -2339,8 +2339,22 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
             _show_lunch_edit =False 
             _end_time_morning_edit =""
             _end_time_afternoon_edit =""
-            if _schedule_edit and not _schedule_edit .is_intensive :
+            # Fix S_H07_13 (2026-07-23): en modo edicion, si la jornada fue
+            # partida o intensiva se deriva de los datos REALES ya guardados
+            # en first_entry -- nunca del horario en vivo del operario, que
+            # pudo cambiar desde que se guardo este parte concreto. Antes de
+            # este fix, un cambio de horario (partida<->intensiva) podia
+            # ocultar la pausa de comida real ya guardada y borrarla al
+            # volver a guardar el parte.
+            if first_entry is not None :
+                _show_lunch_edit =bool (
+                first_entry .lunch_break_start 
+                or first_entry .lunch_break_end 
+                or first_entry .no_lunch_break 
+                )
+            elif _schedule_edit and not _schedule_edit .is_intensive :
                 _show_lunch_edit =True 
+            if _schedule_edit and not _schedule_edit .is_intensive :
                 if _schedule_edit .end_time_morning :
                     _lunch_start_edit =_schedule_edit .end_time_morning .strftime ("%H:%M")
                     _end_time_morning_edit =_lunch_start_edit 
@@ -2391,6 +2405,7 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
             "first_block_hc":_first_hc_edit ,
             "first_block_hf":_first_hf_edit ,
             "no_lunch_break":first_entry .no_lunch_break if first_entry else False ,
+            "has_diet":first_entry .has_diet if first_entry else False ,
             "show_lunch_break":_show_lunch_edit ,
             "end_time_morning":_end_time_morning_edit ,
             "end_time_afternoon":_end_time_afternoon_edit ,
@@ -2463,8 +2478,18 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
             _ip_show_lunch =False 
             _ip_end_time_morning =""
             _ip_end_time_afternoon =""
-            if _schedule_ip and not _schedule_ip .is_intensive :
+            # Fix S_H07_13 (2026-07-23): mismo criterio que en modo edicion --
+            # derivar de los datos reales de _ip_first_entry, no del horario
+            # en vivo del operario.
+            if _ip_first_entry is not None :
+                _ip_show_lunch =bool (
+                _ip_first_entry .lunch_break_start 
+                or _ip_first_entry .lunch_break_end 
+                or _ip_first_entry .no_lunch_break 
+                )
+            elif _schedule_ip and not _schedule_ip .is_intensive :
                 _ip_show_lunch =True 
+            if _schedule_ip and not _schedule_ip .is_intensive :
                 if _schedule_ip .end_time_morning :
                     _ip_lunch_start =_schedule_ip .end_time_morning .strftime ("%H:%M")
                     _ip_end_time_morning =_ip_lunch_start 
@@ -2527,6 +2552,7 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
             "first_block_hc":_ip_first_hc ,
             "first_block_hf":_ip_first_hf ,
             "no_lunch_break":_ip_no_lunch ,
+            "has_diet":_ip_first_entry .has_diet if _ip_first_entry else False ,
             "show_lunch_break":_ip_show_lunch ,
             "end_time_morning":_ip_end_time_morning ,
             "end_time_afternoon":_ip_end_time_afternoon ,
