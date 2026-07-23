@@ -646,6 +646,116 @@ def normalize_dni(value: str) -> str:
     return f"{digits}{letter}"
 
 
+def _parse_worker_name_from_folder(folder_name: str):
+    """
+    Extrae (first_name, last_name1, last_name2) del nombre de una
+    carpeta de personal, formato observado en la carpeta real
+    aportada por Yolanda Bandera: "APELLIDO1 APELLIDO2, NOMBRE",
+    a veces con un sufijo entre paréntesis a ignorar ("ALONSO
+    PEDROSA, MANUEL (PTE TR)"). Sin coma reconocible, se trata todo
+    el texto como nombre de pila (mejor esfuerzo, sin inventar
+    apellidos que no están).
+    ---
+    Extracts (first_name, last_name1, last_name2) from a personal
+    folder name, format observed in the real folder Yolanda Bandera
+    provided: "SURNAME1 SURNAME2, FIRSTNAME", sometimes with a
+    parenthesised suffix to ignore. Without a recognisable comma, the
+    whole text is treated as the first name (best effort, never
+    inventing surnames that aren't there).
+    """
+    cleaned = re.sub(r"\s*\([^)]*\)\s*", " ", folder_name or "").strip()
+    if "," in cleaned:
+        surnames_part, first_part = cleaned.split(",", 1)
+        surname_words = surnames_part.split()
+        last_name1 = surname_words[0] if surname_words else ""
+        last_name2 = " ".join(surname_words[1:]) if len(surname_words) > 1 else ""
+        first_name = first_part.strip()
+        return first_name, last_name1, last_name2
+    return cleaned, "", ""
+
+
+def create_preregistered_worker(company, folder_name: str, dni_hint: str):
+    """
+    Crea un CompanyUser "pre-registrado" (pending_onboarding=True,
+    is_active=False, sin contraseña utilizable) a partir del nombre
+    de una carpeta de personal, cuando la ingesta de documentación no
+    encontró ningún trabajador real con ese DNI -- Miguel Ángel,
+    2026-07-23: "leemos el nombre de la carpeta... ¿tenemos coincidencia
+    en base de datos? No. Iniciamos el proceso de registro. Y vamos
+    asignando toda la documentación que viene en la carpeta". El
+    onboarding real por WhatsApp completa este registro más adelante
+    (WhatsAppOnboardingService._create_user) en vez de crear uno
+    duplicado, cuando el DNI introducido en el chat coincide.
+
+    Devuelve el CompanyUser creado, o None si no se pudo derivar
+    ningún nombre utilizable de la carpeta (carpeta vacía/genérica --
+    nunca se crea un pre-registro sin nombre).
+    ---
+    Creates a "pre-registered" CompanyUser (pending_onboarding=True,
+    is_active=False, no usable password) from a personal folder name,
+    when document ingestion found no real worker with that DNI. The
+    real WhatsApp onboarding completes this record later instead of
+    creating a duplicate, when the DNI entered in chat matches.
+
+    Returns the created CompanyUser, or None if no usable name could
+    be derived from the folder (empty/generic folder -- a nameless
+    pre-registration is never created).
+    """
+    import unicodedata
+
+    from django.contrib.auth.models import User as DjangoUser
+
+    from ivr_config.models import CompanyUser
+
+    first_name, last_name1, last_name2 = _parse_worker_name_from_folder(
+        folder_name,
+    )
+    if not first_name and not last_name1:
+        return None
+
+    def _normalize(value: str) -> str:
+        return "".join(
+            c for c in unicodedata.normalize("NFD", value)
+            if unicodedata.category(c) != "Mn"
+        ).lower()
+
+    def _clean(value: str) -> str:
+        return re.sub(r"[^a-z0-9.]", "", value)
+
+    fn = _normalize(first_name)
+    ln1 = _normalize(last_name1)
+    base_username = _clean(f"{fn}.{ln1}") if ln1 else _clean(fn)
+    username = base_username or f"trabajador{DjangoUser.objects.count() + 1}"
+    suffix = 2
+    while DjangoUser.objects.filter(username=username).exists():
+        username = f"{base_username}{suffix}"
+        suffix += 1
+
+    django_user = DjangoUser.objects.create_user(
+        username=username,
+        password=DjangoUser.objects.make_random_password(),
+        first_name=first_name,
+        last_name=f"{last_name1} {last_name2}".strip(),
+        is_active=False,
+        is_staff=False,
+    )
+    company_user = CompanyUser.objects.create(
+        company=company,
+        user=django_user,
+        role=CompanyUser.ROLE_WORKSHOP,
+        is_active=False,
+        must_change_password=True,
+        pending_onboarding=True,
+        dni=normalize_dni(dni_hint),
+    )
+    logger.info(
+        "# [create_preregistered_worker] Pre-registro creado: "
+        "CompanyUser #%d (%s) desde carpeta %r, DNI=%r.",
+        company_user.pk, username, folder_name, normalize_dni(dni_hint),
+    )
+    return company_user
+
+
 def match_company_user(company, worker_dni_hint: str):
     """
     Looks up an ivr_config.CompanyUser by exact match (case-

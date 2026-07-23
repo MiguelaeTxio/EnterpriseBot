@@ -2066,24 +2066,59 @@ class OnboardingService:
         dni_digits = _re.sub(r"[^0-9]", "", dni)
         password   = dni_digits[-4:] if len(dni_digits) >= 4 else dni_digits.zfill(4)
 
+        # Pre-registro pendiente (2026-07-23, H25): si la ingesta de
+        # documentación ya creó un CompanyUser para este DNI al subir
+        # su carpeta (document_ingestion.entity_matching_service.
+        # create_preregistered_worker, pending_onboarding=True), este
+        # es el momento de completarlo -- nunca crear uno nuevo y
+        # duplicar al trabajador. Username/first_name/last_name del
+        # pre-registro se conservan (ya vienen del nombre real de la
+        # carpeta); aquí solo se activa la cuenta, se fija contraseña
+        # real, y se rellenan los datos que el pre-registro no podía
+        # tener (rol/sección/base/teléfono -- ver Contact más abajo).
+        _preregistered = _CU.objects.filter(
+            company=company, dni=dni, pending_onboarding=True,
+        ).select_related("user").first()
+
         try:
-            django_user = DjangoUser.objects.create_user(
-                username=username,
-                password=password,
-                first_name=first_name,
-                last_name=f"{last_name1} {last_name2}".strip(),
-                is_active=True,
-                is_staff=False,
-            )
-            company_user = _CU.objects.create(
-                company=company,
-                user=django_user,
-                role=role,
-                base=base,
-                is_active=True,
-                must_change_password=False,
-                dni=dni,
-            )
+            if _preregistered is not None:
+                django_user = _preregistered.user
+                django_user.set_password(password)
+                django_user.is_active = True
+                django_user.save(update_fields=["password", "is_active"])
+                company_user = _preregistered
+                company_user.role = role
+                company_user.base = base
+                company_user.is_active = True
+                company_user.must_change_password = False
+                company_user.pending_onboarding = False
+                company_user.save(update_fields=[
+                    "role", "base", "is_active", "must_change_password",
+                    "pending_onboarding",
+                ])
+                logger.info(
+                    "# [ONBOARDING] Pre-registro CompanyUser #%d "
+                    "completado (DNI coincidente) -- ya no duplicado.",
+                    company_user.pk,
+                )
+            else:
+                django_user = DjangoUser.objects.create_user(
+                    username=username,
+                    password=password,
+                    first_name=first_name,
+                    last_name=f"{last_name1} {last_name2}".strip(),
+                    is_active=True,
+                    is_staff=False,
+                )
+                company_user = _CU.objects.create(
+                    company=company,
+                    user=django_user,
+                    role=role,
+                    base=base,
+                    is_active=True,
+                    must_change_password=False,
+                    dni=dni,
+                )
             contact = _Contact.objects.create(
                 company=company,
                 name=f"{first_name} {last_name1} {last_name2}".strip(),

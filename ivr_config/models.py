@@ -284,6 +284,26 @@ class CompanyUser(models.Model):
             "automáticamente al crear el usuario o cuando el ADMIN fuerza un reset."
         ),
     )
+    pending_onboarding = models.BooleanField(
+        default=False,
+        verbose_name="Pre-registro pendiente de onboarding",
+        help_text=(
+            "2026-07-23 (H25) -- True cuando este CompanyUser se creó "
+            "automáticamente al subir documentación de un trabajador "
+            "que todavía no tenía cuenta (\"pre-registro\": Miguel "
+            "Ángel, \"leemos el nombre de la carpeta... iniciamos ya "
+            "el proceso de registro... lo único que nos va a faltar "
+            "es el teléfono, que lo obtendremos cuando el trabajador "
+            "inicie la conversación con el chatbot\"). Mientras esté "
+            "activo: is_active=False (no puede entrar al panel), sin "
+            "contraseña utilizable, sin Contact/teléfono, rol y "
+            "sección todavía sin confirmar. Se pone a False cuando el "
+            "propio trabajador completa el alta real por WhatsApp "
+            "(WhatsAppOnboardingService._create_user, DNI coincidente "
+            "-- ese momento activa la cuenta y rellena lo que faltaba, "
+            "en vez de crear un CompanyUser duplicado)."
+        ),
+    )
     trusted_device_token = models.UUIDField(
         null=True,
         blank=True,

@@ -43,6 +43,7 @@ from personal_documents.tasks import process_personal_document_batch
 from .entity_matching_service import (
     DOMAIN_MACHINE,
     DOMAIN_PERSONAL,
+    create_preregistered_worker,
     match_company_user,
     match_machine_asset,
     match_machine_asset_by_filename,
@@ -93,6 +94,10 @@ def route_ingested_files(self, ingested_file_pks: list[int]) -> None:
     # MachineAsset|None) de cada archivo enrutado a MACHINE en este
     # mismo lote.
     machine_routing_records: list[tuple] = []
+    # Mismo seguimiento para el pre-registro automático de personal
+    # (2026-07-23, ver bloque tras el bucle principal): (PersonalDocument,
+    # top_folder, CompanyUser|None) de cada archivo enrutado a PERSONAL.
+    personal_routing_records: list[tuple] = []
 
     for ingested in ingested_files:
         try:
@@ -305,6 +310,13 @@ def route_ingested_files(self, ingested_file_pks: list[int]) -> None:
             )
             new_document.save()
             new_personal_pks.append(new_document.pk)
+            _top_folder = (
+                ingested.source_folder_path.split("/", 1)[0]
+                if ingested.source_folder_path else ""
+            )
+            personal_routing_records.append((
+                new_document, _top_folder, matched_worker,
+            ))
 
             ingested.status = IngestedFile.Status.ROUTED
             ingested.routed_domain = DOMAIN_PERSONAL
@@ -386,6 +398,69 @@ def route_ingested_files(self, ingested_file_pks: list[int]) -> None:
                 document.pk, document.original_filename,
                 inherited_machine.code, folder_path,
             )
+
+    # Pre-registro automático de personal por carpeta (2026-07-23,
+    # Miguel Ángel, tras la primera prueba real fallida -- "el proceso
+    # de registro ha fallado por completo... todos los documentos han
+    # caído al vacío"). Especificación explícita: "leemos el nombre de
+    # la carpeta... ¿tenemos coincidencia en base de datos? No.
+    # Iniciamos el proceso de registro. Y vamos asignando toda la
+    # documentación que viene en la carpeta". Solo se pre-registra
+    # cuando NINGÚN documento de la carpeta emparejó con un trabajador
+    # real -- si al menos uno sí emparejó, esa carpeta ya tiene dueño
+    # real y el resto se deja para revisión manual (mismo criterio de
+    # nunca adivinar a ciegas que ya usa la herencia de máquina).
+    personal_by_folder: dict[str, list] = {}
+    personal_matched_folders: set = set()
+    for document, top_folder, matched_worker in personal_routing_records:
+        if not top_folder:
+            continue
+        if matched_worker is not None:
+            personal_matched_folders.add(top_folder)
+        else:
+            personal_by_folder.setdefault(top_folder, []).append(document)
+
+    for top_folder, unassigned_documents in personal_by_folder.items():
+        if top_folder in personal_matched_folders:
+            continue
+        # DNI a usar para el pre-registro: el hint no vacío más
+        # repetido entre los documentos de esta misma carpeta -- una
+        # sola lectura de Gemini puede fallar, pero si la mayoría
+        # coincide (ya normalizados, ver normalize_dni) es una señal
+        # razonable para dejar constancia, nunca definitiva.
+        hint_counts: dict[str, int] = {}
+        for document in unassigned_documents:
+            hint = document.detected_dni_hint
+            if hint:
+                hint_counts[hint] = hint_counts.get(hint, 0) + 1
+        best_dni_hint = (
+            max(hint_counts, key=hint_counts.get) if hint_counts else ""
+        )
+
+        preregistered = create_preregistered_worker(
+            company, top_folder, best_dni_hint,
+        )
+        if preregistered is None:
+            logger.warning(
+                "# [route_ingested_files] Carpeta de personal %r sin "
+                "nombre utilizable -- %d documento(s) quedan sin "
+                "asignar, sin pre-registro.",
+                top_folder, len(unassigned_documents),
+            )
+            continue
+
+        for document in unassigned_documents:
+            document.company_user = preregistered
+            document.detected_dni_hint = ""
+            document.status = PersonalDocument.Status.CLASSIFIED
+            document.save(update_fields=[
+                "company_user", "detected_dni_hint", "status",
+            ])
+        logger.info(
+            "# [route_ingested_files] %d documento(s) de la carpeta "
+            "%r vinculados al pre-registro CompanyUser #%d.",
+            len(unassigned_documents), top_folder, preregistered.pk,
+        )
 
     if new_machine_pks:
         process_machine_document_batch.delay(new_machine_pks)
