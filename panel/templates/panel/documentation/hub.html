@@ -44,38 +44,17 @@
     <div class="collapse mb-3" id="uploadPanel">
         <div class="card card-body">
             <p class="text-muted small mb-2">
-                Selecciona una o varias carpetas. Cada documento se examina y se
-                asigna automáticamente a su máquina o trabajador por contenido
-                -- si no se puede determinar con confianza, queda en el bloque
+                Selecciona una o varias carpetas. El dominio se detecta solo por el
+                nombre de la carpeta: <strong>con número</strong> → Maquinaria,
+                <strong>sin número</strong> → Personal. Cada documento se examina
+                después y se asigna automáticamente a su máquina o trabajador --
+                si no se puede determinar con confianza, queda en el bloque
                 "Sin asignar" de la pestaña correspondiente.
             </p>
             <form id="folderUploadForm" method="post"
                   action="{% url 'panel:documentation_folder_upload' %}">
                 {% csrf_token %}
                 <input type="file" id="folderPickerInput" webkitdirectory multiple hidden>
-                <div class="mb-3">
-                    <label class="form-label fw-medium small mb-1 d-block">
-                        ¿Qué estás subiendo? <span class="text-danger">*</span>
-                    </label>
-                    <div class="form-check form-check-inline">
-                        <input class="form-check-input" type="radio" name="domain"
-                               id="uploadDomainMachine" value="MACHINE" required>
-                        <label class="form-check-label" for="uploadDomainMachine">
-                            <i class="bi bi-truck me-1"></i>Maquinaria
-                        </label>
-                    </div>
-                    <div class="form-check form-check-inline">
-                        <input class="form-check-input" type="radio" name="domain"
-                               id="uploadDomainPersonal" value="PERSONAL" required>
-                        <label class="form-check-label" for="uploadDomainPersonal">
-                            <i class="bi bi-people me-1"></i>Personal
-                        </label>
-                    </div>
-                    <div class="form-text">
-                        Cada archivo se compara únicamente contra ese dominio -- nunca
-                        se prueba a emparejar Personal contra máquinas ni al revés.
-                    </div>
-                </div>
                 <div class="d-flex align-items-center gap-2 flex-wrap">
                     <button type="button" class="btn btn-sm btn-outline-secondary" id="addFolderBtn">
                         <i class="bi bi-folder-plus me-1"></i>Añadir carpeta
@@ -385,18 +364,17 @@
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content border-warning">
             <div class="modal-header bg-warning bg-opacity-10 border-bottom border-warning">
-                <h5 class="modal-title"><i class="bi bi-exclamation-triangle-fill text-warning me-2"></i>Revisa el dominio elegido</h5>
+                <h5 class="modal-title"><i class="bi bi-exclamation-triangle-fill text-warning me-2"></i>Confirma el dominio detectado</h5>
             </div>
             <div class="modal-body">
-                <p id="domainMismatchText" class="mb-2"></p>
-                <ul id="domainMismatchList" class="small text-muted mb-0"></ul>
+                <ul id="domainMismatchList" class="small mb-0"></ul>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-outline-secondary btn-sm" id="domainMismatchCancelBtn">
-                    <i class="bi bi-arrow-left me-1"></i>Revisar selección
+                    <i class="bi bi-arrow-left me-1"></i>Cancelar
                 </button>
                 <button type="button" class="btn btn-warning btn-sm" id="domainMismatchProceedBtn">
-                    Continuar de todas formas
+                    Aceptar <span id="domainMismatchCountdown"></span>
                 </button>
             </div>
         </div>
@@ -610,8 +588,6 @@
         }
         var batchId = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random()).replace(/-/g, '');
         var csrfToken = uploadForm.querySelector('[name=csrfmiddlewaretoken]').value;
-        var domainInput = uploadForm.querySelector('[name=domain]:checked');
-        var domain = domainInput ? domainInput.value : '';
 
         uploadResultEl.innerHTML = '<div class="text-muted small"><i class="bi bi-hourglass-split me-1"></i>'
             + 'Subida en curso -- ver progreso en el cuadro de diálogo.</div>';
@@ -649,6 +625,8 @@
             }
             var file = filesToUpload[index];
             var folderPath = file.webkitRelativePath || file.name;
+            var topFolder = folderPath.split('/')[0];
+            var domain = detectDomainFromFolderName(topFolder);
             uploadSingleFile(file, folderPath, batchId, csrfToken, domain, index, total)
                 .then(function () {
                     index += 1;
@@ -710,38 +688,67 @@
         });
     });
 
-    // Salvaguarda automática de dominio (2026-07-23) -- Miguel Ángel,
-    // tras el caso real de "VARIOS": "lo más normal del mundo es que
-    // te pongas a subir documentación y se te olvide marcar eso...
-    // si el nombre de la carpeta no nos coincide con ninguna máquina,
-    // es algo de personal, sí o sí... en cuanto aparece un número, ya
-    // sabemos que son códigos de maquinaria, matrículas". Heurística
-    // deliberadamente simple y 100% cliente (sin ir al servidor):
-    // cualquier dígito en el nombre de carpeta -> parece maquinaria;
-    // sin dígitos y 3+ palabras solo de letras (nombre + apellido +
-    // apellido) -> parece personal. Nunca bloquea -- solo avisa con
-    // el modal si lo detectado no coincide con el radio marcado, el
-    // usuario decide si corrige o continúa.
+    // Detección automática de dominio por nombre de carpeta
+    // (2026-07-23, Miguel Ángel, versión simplificada tras probarlo:
+    // "¿tiene números? con toda seguridad es una máquina. Si no
+    // tiene números, con toda seguridad es una persona... ni tres
+    // palabras, ni dos, ni cuatro"). Sin selector manual -- se avisa
+    // siempre antes de subir, con cuenta atrás de 5 a 0 que acepta
+    // sola si no se cancela (para no tener ni que pulsar).
     function detectDomainFromFolderName(name) {
-        if (/\d/.test(name)) { return 'MACHINE'; }
-        var words = (name || '').split(/[^A-Za-zÀ-ÖØ-öø-ÿ]+/).filter(function (w) { return w.length > 0; });
-        if (words.length >= 3) { return 'PERSONAL'; }
-        return '';
+        return /\d/.test(name || '') ? 'MACHINE' : 'PERSONAL';
     }
 
     var domainMismatchModalEl = document.getElementById('domainMismatchModal');
     var domainMismatchModal = null;
-    var domainMismatchTextEl = document.getElementById('domainMismatchText');
     var domainMismatchListEl = document.getElementById('domainMismatchList');
     var domainMismatchCancelBtn = document.getElementById('domainMismatchCancelBtn');
     var domainMismatchProceedBtn = document.getElementById('domainMismatchProceedBtn');
+    var domainMismatchCountdownEl = document.getElementById('domainMismatchCountdown');
+    var domainConfirmTimer = null;
+
+    function showDomainConfirm(topFolders, onAccept) {
+        var domainLabel = { MACHINE: 'Maquinaria (lleva número)', PERSONAL: 'Personal (sin número)' };
+        domainMismatchListEl.innerHTML = topFolders.map(function (item) {
+            return '<li><strong>' + item.name + '</strong> -- ' + domainLabel[item.detected] + '</li>';
+        }).join('');
+
+        if (!domainMismatchModal) { domainMismatchModal = new bootstrap.Modal(domainMismatchModalEl); }
+
+        var seconds = 5;
+        function tick() {
+            domainMismatchCountdownEl.textContent = '(' + seconds + ')';
+            if (seconds <= 0) {
+                clearInterval(domainConfirmTimer);
+                domainMismatchModal.hide();
+                onAccept();
+                return;
+            }
+            seconds -= 1;
+        }
+        if (domainConfirmTimer) { clearInterval(domainConfirmTimer); }
+        tick();
+        domainConfirmTimer = setInterval(tick, 1000);
+
+        domainMismatchProceedBtn.onclick = function () {
+            clearInterval(domainConfirmTimer);
+            domainMismatchModal.hide();
+            onAccept();
+        };
+        domainMismatchCancelBtn.onclick = function () {
+            clearInterval(domainConfirmTimer);
+            domainMismatchModal.hide();
+        };
+        domainMismatchModalEl.addEventListener('hidden.bs.modal', function onHide() {
+            clearInterval(domainConfirmTimer);
+            domainMismatchModalEl.removeEventListener('hidden.bs.modal', onHide);
+        });
+        domainMismatchModal.show();
+    }
 
     uploadForm.addEventListener('submit', function (evt) {
         evt.preventDefault();
         if (accumulated.length === 0) { return; }
-
-        var chosenDomainInput = uploadForm.querySelector('[name=domain]:checked');
-        var chosenDomain = chosenDomainInput ? chosenDomainInput.value : '';
 
         var topFolders = [];
         accumulated.forEach(function (f) {
@@ -749,9 +756,9 @@
             var top = rel.split('/')[0];
             if (topFolders.indexOf(top) === -1) { topFolders.push(top); }
         });
-        var mismatches = topFolders
-            .map(function (name) { return { name: name, detected: detectDomainFromFolderName(name) }; })
-            .filter(function (item) { return item.detected && item.detected !== chosenDomain; });
+        var detectedFolders = topFolders.map(function (name) {
+            return { name: name, detected: detectDomainFromFolderName(name) };
+        });
 
         function proceedWithUpload() {
             var pdfFiles = accumulated.filter(function (f) {
@@ -815,26 +822,7 @@
             });
         }
 
-        if (mismatches.length) {
-            var domainLabel = chosenDomain === 'PERSONAL' ? 'Personal' : 'Maquinaria';
-            domainMismatchTextEl.textContent = 'Has marcado "' + domainLabel
-                + '", pero al menos una carpeta no encaja con esa elección:';
-            domainMismatchListEl.innerHTML = mismatches.map(function (item) {
-                var detectedLabel = item.detected === 'MACHINE' ? 'parece maquinaria (lleva números)' : 'parece personal (nombre y apellidos)';
-                return '<li><strong>' + item.name + '</strong> -- ' + detectedLabel + '</li>';
-            }).join('');
-            if (!domainMismatchModal) { domainMismatchModal = new bootstrap.Modal(domainMismatchModalEl); }
-            domainMismatchModal.show();
-            domainMismatchProceedBtn.onclick = function () {
-                domainMismatchModal.hide();
-                proceedWithUpload();
-            };
-            domainMismatchCancelBtn.onclick = function () {
-                domainMismatchModal.hide();
-            };
-        } else {
-            proceedWithUpload();
-        }
+        showDomainConfirm(detectedFolders, proceedWithUpload);
     });
 
     // Abre el modal del dossier / última clasificación en cuanto llega
