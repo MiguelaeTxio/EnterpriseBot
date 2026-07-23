@@ -1963,6 +1963,10 @@ class OnboardingService:
         last_name1  = (data.get("last_name1") or "").strip()
         last_name2  = (data.get("last_name2") or "").strip()
         dni         = (data.get("dni") or "").strip().upper()
+        from document_ingestion.entity_matching_service import (
+            normalize_dni as _normalize_dni_signup,
+        )
+        dni = _normalize_dni_signup(dni) or dni
         section_name = (data.get("section") or "").strip()
         base_name    = (data.get("base") or "").strip()
 
@@ -2112,11 +2116,15 @@ class OnboardingService:
             from django.contrib.contenttypes.models import (
                 ContentType as _ContentType,
             )
+            from document_ingestion.entity_matching_service import (
+                normalize_dni as _normalize_dni_ob,
+            )
+            _normalized_dni = _normalize_dni_ob(dni)
             _preregistered_docs = _PD.objects.filter(
                 company=company,
                 company_user__isnull=True,
-                detected_dni_hint=dni,
-            )
+                detected_dni_hint=_normalized_dni,
+            ) if _normalized_dni else _PD.objects.none()
             _linked_count = _preregistered_docs.count()
             if _linked_count:
                 _pd_content_type = _ContentType.objects.get_for_model(_PD)

@@ -46,6 +46,7 @@ from .entity_matching_service import (
     match_company_user,
     match_machine_asset,
     match_machine_asset_by_filename,
+    normalize_dni,
     route_document,
 )
 from .models import IngestedFile
@@ -271,7 +272,8 @@ def route_ingested_files(self, ingested_file_pks: list[int]) -> None:
                 content_hash=ingested.content_hash,
                 status=PersonalDocument.Status.PENDING,
                 detected_dni_hint=(
-                    "" if matched_worker else worker_dni_hint
+                    "" if matched_worker
+                    else normalize_dni(worker_dni_hint)
                 ),
             )
             new_document.source_file.save(

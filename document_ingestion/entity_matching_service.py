@@ -602,6 +602,50 @@ def match_machine_asset(company, machine_reference_hint: str):
     return None
 
 
+def normalize_dni(value: str) -> str:
+    """
+    Normalizes a Spanish DNI/NIF to its canonical shape: exactly 8
+    digits followed by the check letter, uppercase, no separators --
+    "8 dígitos primero y la letra al final en mayúscula" (Miguel
+    Ángel, 2026-07-23, tras el hallazgo real en la carpeta de personal
+    de un mismo DNI extraído en 4 formatos distintos por Gemini Vision
+    entre documentos: "74859500C", "74859500-C", "074859500C" (con un
+    cero de más delante) y "74859500" (sin la letra)).
+
+    Strips separators/uppercases first (same as _normalize_for_matching),
+    then keeps only the LAST 8 digits before any trailing letter --
+    fixes the leading-zero case without needing to guess. A hint
+    without a trailing letter is returned as digits-only (still
+    useful for a human reviewing "sin asignar" by eye, but callers
+    should treat a letter-less hint as a weaker signal, never an
+    automatic exact match against a DNI that does carry its letter).
+    ---
+    Normaliza un DNI/NIF español a su forma canónica: exactamente 8
+    dígitos seguidos de la letra de control, en mayúscula, sin
+    separadores.
+
+    Primero quita separadores/pasa a mayúsculas (igual que
+    _normalize_for_matching), y después se queda solo con los ÚLTIMOS
+    8 dígitos antes de una letra final -- corrige el caso del cero de
+    más delante sin tener que adivinar nada. Una pista sin letra final
+    se devuelve solo con los dígitos (sigue siendo útil para una
+    revisión humana del bloque "sin asignar", pero quien la use debe
+    tratarla como una señal más débil, nunca como coincidencia exacta
+    automática contra un DNI que sí lleva su letra).
+    """
+    cleaned = _normalize_for_matching(value)
+    if not cleaned:
+        return ""
+    match = re.match(r"^(\d+)([A-Z]?)$", cleaned)
+    if not match:
+        # Forma irreconocible (letras intercaladas, etc.) -- se
+        # devuelve tal cual limpiado, sin inventar estructura.
+        return cleaned
+    digits, letter = match.groups()
+    digits = digits[-8:].zfill(8)
+    return f"{digits}{letter}"
+
+
 def match_company_user(company, worker_dni_hint: str):
     """
     Looks up an ivr_config.CompanyUser by exact match (case-
@@ -654,12 +698,12 @@ def match_company_user(company, worker_dni_hint: str):
     """
     from ivr_config.models import CompanyUser
 
-    normalized_hint = _normalize_for_matching(worker_dni_hint)
+    normalized_hint = normalize_dni(worker_dni_hint)
     if not normalized_hint:
         return None
 
     for company_user in CompanyUser.objects.filter(company=company).select_related("user"):
-        if company_user.dni and _normalize_for_matching(company_user.dni) == normalized_hint:
+        if company_user.dni and normalize_dni(company_user.dni) == normalized_hint:
             logger.info(
                 "# [match_company_user] DNI %r -> CompanyUser #%d (%s) "
                 "por coincidencia normalizada.",
