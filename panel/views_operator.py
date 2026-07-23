@@ -3878,6 +3878,87 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
                         )
                         _ip_created_lines [_ip_line_num ]=_ip_line_obj 
 
+                    # Fix critico (2026-07-23, reportado por Miguel Angel en
+                    # produccion): save_blocks nunca materializaba
+                    # consume_part_pks ni consume_warehouse_items -- los
+                    # repuestos pre-asignados/de almacen elegidos via el
+                    # modal global "Anadir repuesto" (o el checklist de
+                    # pre-asignados por maquina) se perdian en silencio si
+                    # el operario guardaba bloques sin cerrar el parte.
+                    # Mismo patron que la rama close_order (ver bloque
+                    # equivalente mas abajo en esta vista), aplicado aqui
+                    # linea a linea usando _ip_created_lines.
+                    for _ip_ld in entry_lines_data :
+                        _ip_target_line =_ip_created_lines .get (
+                        _ip_ld ["line_number"]
+                        )
+                        if _ip_target_line is None :
+                            continue 
+                        for _ip_part_pk in _ip_ld .get ("consume_part_pks",[]):
+                            from spare_parts .models import SparePartEntry as _SPE_ip_consume
+                            from spare_parts .services import StockAssignmentService as _SAS_ip_consume
+                            try :
+                                _ip_spare_entry =_SPE_ip_consume .objects .get (
+                                pk =_ip_part_pk ,
+                                company =company ,
+                                status =_SPE_ip_consume .STATUS_PRE_ASSIGNED ,
+                                )
+                                _SAS_ip_consume .consume_pre_assigned (
+                                _ip_spare_entry ,_ip_target_line ,cu ,
+                                )
+                                logger .info (
+                                "# [FormView/save_blocks] Repuesto pk=%s "
+                                "consumido en línea pk=%s.",
+                                _ip_spare_entry .pk ,_ip_target_line .pk ,
+                                )
+                            except _SPE_ip_consume .DoesNotExist :
+                                logger .warning (
+                                "# [FormView/save_blocks] consume_part_pk=%s "
+                                "no encontrado o ya no PRE_ASSIGNED -- omitido.",
+                                _ip_part_pk ,
+                                )
+                            except ValueError as _ip_consume_exc :
+                                logger .warning (
+                                "# [FormView/save_blocks] Error consumiendo "
+                                "repuesto pk=%s: %s",
+                                _ip_part_pk ,_ip_consume_exc ,
+                                )
+                        for _ip_wh_item in _ip_ld .get ("consume_warehouse_items",[]):
+                            from spare_parts .models import SparePartEntry as _SPE_ip_wh
+                            from spare_parts .services import StockAssignmentService as _SAS_ip_wh
+                            try :
+                                _ip_wh_entry =_SPE_ip_wh .objects .get (
+                                pk =_ip_wh_item ["entry_pk"],
+                                company =company ,
+                                status =_SPE_ip_wh .STATUS_WAREHOUSE ,
+                                )
+                                _SAS_ip_wh .consume_from_warehouse (
+                                entry =_ip_wh_entry ,
+                                entry_line =_ip_target_line ,
+                                machine =_ip_target_line .machine_asset ,
+                                breakdown_ticket =_ip_target_line .breakdown_ticket ,
+                                created_by =cu ,
+                                quantity_used =_ip_wh_item ["quantity_used"],
+                                new_level =_ip_wh_item ["new_level"],
+                                )
+                                logger .info (
+                                "# [FormView/save_blocks] Repuesto de almacen "
+                                "pk=%s consumido en línea pk=%s.",
+                                _ip_wh_entry .pk ,_ip_target_line .pk ,
+                                )
+                            except _SPE_ip_wh .DoesNotExist :
+                                logger .warning (
+                                "# [FormView/save_blocks] consume_warehouse "
+                                "pk=%s no encontrado o ya no WAREHOUSE -- omitido.",
+                                _ip_wh_item ["entry_pk"],
+                                )
+                            except ValueError as _ip_consume_wh_exc :
+                                logger .warning (
+                                "# [FormView/save_blocks] Error consumiendo "
+                                "repuesto de almacen pk=%s: %s",
+                                _ip_wh_item ["entry_pk"],_ip_consume_wh_exc ,
+                                )
+
 
 
                     for _ip_spd in spare_parts_data :
