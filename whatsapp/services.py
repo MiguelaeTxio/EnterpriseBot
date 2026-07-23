@@ -2092,6 +2092,57 @@ class OnboardingService:
                 contact=contact,
                 priority=99,
             )
+
+            # Vinculación automática de documentación pre-registrada
+            # (2026-07-23, a petición de Miguel Ángel): la ingesta de
+            # carpeta (H25/H27) puede haber dejado documentos
+            # PersonalDocument con company_user=None y
+            # detected_dni_hint=<DNI> cuando el trabajador todavía no
+            # tenía cuenta -- "el pre-registro que tenemos" (ver
+            # PersonalDocument.company_user, nullable desde S024). En
+            # el momento en que el DNI introducido en el propio
+            # onboarding coincide EXACTO con ese hint, es la
+            # confirmación fehaciente de que es la misma persona --
+            # vinculación automática y silenciosa, sin cola de
+            # revisión (decisión explícita de Miguel Ángel: solo se
+            # revisa a mano cuando el DNI NO coincide, vía la pantalla
+            # "Sin asignar" ya existente, DocumentAssignView).
+            from personal_documents.models import PersonalDocument as _PD
+            from document_management.models import DocumentAlert as _DocAlert
+            from django.contrib.contenttypes.models import (
+                ContentType as _ContentType,
+            )
+            _preregistered_docs = _PD.objects.filter(
+                company=company,
+                company_user__isnull=True,
+                detected_dni_hint=dni,
+            )
+            _linked_count = _preregistered_docs.count()
+            if _linked_count:
+                _pd_content_type = _ContentType.objects.get_for_model(_PD)
+                _new_subject_label = (
+                    django_user.get_full_name() or django_user.username
+                )
+                for _doc in _preregistered_docs:
+                    _doc.company_user = company_user
+                    _doc.detected_dni_hint = ""
+                    _doc.status = _PD.Status.CLASSIFIED
+                    _doc.save(update_fields=[
+                        "company_user", "detected_dni_hint", "status",
+                    ])
+                _DocAlert.objects.filter(
+                    content_type=_pd_content_type,
+                    object_id__in=_preregistered_docs.values_list(
+                        "pk", flat=True,
+                    ),
+                ).update(subject_label=_new_subject_label)
+                logger.info(
+                    "# [ONBOARDING] %d documento(s) pre-registrados "
+                    "vinculados automaticamente a CompanyUser #%d "
+                    "(DNI coincidente).",
+                    _linked_count, company_user.pk,
+                )
+
             cls.clear_state(session)
 
             role_label = dict(_CU.ROLE_CHOICES).get(role, role)
