@@ -733,7 +733,13 @@ def create_preregistered_worker(company, folder_name: str, dni_hint: str):
 
     django_user = DjangoUser.objects.create_user(
         username=username,
-        password=DjangoUser.objects.make_random_password(),
+        # Fix (2026-07-23): BaseUserManager.make_random_password() fue
+        # eliminado en Django 5.1 (verificado contra la documentación
+        # oficial de la versión). password=None hace que
+        # create_user() llame internamente a set_unusable_password() --
+        # coincide exactamente con la intención ya documentada de esta
+        # función ("sin contraseña utilizable"), sin generar nada al azar.
+        password=None,
         first_name=first_name,
         last_name=f"{last_name1} {last_name2}".strip(),
         is_active=False,
