@@ -380,6 +380,29 @@
 {# dos -> sube únicamente lo que quede marcado. Se muestra SIEMPRE #}
 {# tras el preflight (ya no solo cuando hay algo que descartar) -- el #}
 {# supervisor revisa las dos listas antes de cualquier subida real. #}
+<div class="modal fade" id="domainMismatchModal" tabindex="-1" aria-hidden="true"
+     data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-warning">
+            <div class="modal-header bg-warning bg-opacity-10 border-bottom border-warning">
+                <h5 class="modal-title"><i class="bi bi-exclamation-triangle-fill text-warning me-2"></i>Revisa el dominio elegido</h5>
+            </div>
+            <div class="modal-body">
+                <p id="domainMismatchText" class="mb-2"></p>
+                <ul id="domainMismatchList" class="small text-muted mb-0"></ul>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="domainMismatchCancelBtn">
+                    <i class="bi bi-arrow-left me-1"></i>Revisar selección
+                </button>
+                <button type="button" class="btn btn-warning btn-sm" id="domainMismatchProceedBtn">
+                    Continuar de todas formas
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="modal fade" id="reviewUploadModal" tabindex="-1" aria-hidden="true"
      data-bs-backdrop="static" data-bs-keyboard="false">
     <div class="modal-dialog modal-dialog-centered modal-xl">
@@ -687,19 +710,59 @@
         });
     });
 
+    // Salvaguarda automática de dominio (2026-07-23) -- Miguel Ángel,
+    // tras el caso real de "VARIOS": "lo más normal del mundo es que
+    // te pongas a subir documentación y se te olvide marcar eso...
+    // si el nombre de la carpeta no nos coincide con ninguna máquina,
+    // es algo de personal, sí o sí... en cuanto aparece un número, ya
+    // sabemos que son códigos de maquinaria, matrículas". Heurística
+    // deliberadamente simple y 100% cliente (sin ir al servidor):
+    // cualquier dígito en el nombre de carpeta -> parece maquinaria;
+    // sin dígitos y 3+ palabras solo de letras (nombre + apellido +
+    // apellido) -> parece personal. Nunca bloquea -- solo avisa con
+    // el modal si lo detectado no coincide con el radio marcado, el
+    // usuario decide si corrige o continúa.
+    function detectDomainFromFolderName(name) {
+        if (/\d/.test(name)) { return 'MACHINE'; }
+        var words = (name || '').split(/[^A-Za-zÀ-ÖØ-öø-ÿ]+/).filter(function (w) { return w.length > 0; });
+        if (words.length >= 3) { return 'PERSONAL'; }
+        return '';
+    }
+
+    var domainMismatchModalEl = document.getElementById('domainMismatchModal');
+    var domainMismatchModal = null;
+    var domainMismatchTextEl = document.getElementById('domainMismatchText');
+    var domainMismatchListEl = document.getElementById('domainMismatchList');
+    var domainMismatchCancelBtn = document.getElementById('domainMismatchCancelBtn');
+    var domainMismatchProceedBtn = document.getElementById('domainMismatchProceedBtn');
+
     uploadForm.addEventListener('submit', function (evt) {
         evt.preventDefault();
         if (accumulated.length === 0) { return; }
 
-        var pdfFiles = accumulated.filter(function (f) {
-            return f.name.toLowerCase().endsWith('.pdf');
-        });
-        var csrfToken = uploadForm.querySelector('[name=csrfmiddlewaretoken]').value;
+        var chosenDomainInput = uploadForm.querySelector('[name=domain]:checked');
+        var chosenDomain = chosenDomainInput ? chosenDomainInput.value : '';
 
-        submitBtn.disabled = true;
-        submitSpinner.classList.remove('d-none');
-        uploadResultEl.innerHTML = '<div class="text-muted small"><i class="bi bi-hourglass-split me-1"></i>'
-            + 'Analizando nombres de archivo antes de subir…</div>';
+        var topFolders = [];
+        accumulated.forEach(function (f) {
+            var rel = f.webkitRelativePath || f.name;
+            var top = rel.split('/')[0];
+            if (topFolders.indexOf(top) === -1) { topFolders.push(top); }
+        });
+        var mismatches = topFolders
+            .map(function (name) { return { name: name, detected: detectDomainFromFolderName(name) }; })
+            .filter(function (item) { return item.detected && item.detected !== chosenDomain; });
+
+        function proceedWithUpload() {
+            var pdfFiles = accumulated.filter(function (f) {
+                return f.name.toLowerCase().endsWith('.pdf');
+            });
+            var csrfToken = uploadForm.querySelector('[name=csrfmiddlewaretoken]').value;
+
+            submitBtn.disabled = true;
+            submitSpinner.classList.remove('d-none');
+            uploadResultEl.innerHTML = '<div class="text-muted small"><i class="bi bi-hourglass-split me-1"></i>'
+                + 'Analizando nombres de archivo antes de subir…</div>';
 
         // Preflight (S026) -- solo nombres, nunca bytes, antes de
         // trocear/subir nada. Si el servidor no responde o falla, se
@@ -750,6 +813,28 @@
                     resetSubmitButton();
                 };
             });
+        }
+
+        if (mismatches.length) {
+            var domainLabel = chosenDomain === 'PERSONAL' ? 'Personal' : 'Maquinaria';
+            domainMismatchTextEl.textContent = 'Has marcado "' + domainLabel
+                + '", pero al menos una carpeta no encaja con esa elección:';
+            domainMismatchListEl.innerHTML = mismatches.map(function (item) {
+                var detectedLabel = item.detected === 'MACHINE' ? 'parece maquinaria (lleva números)' : 'parece personal (nombre y apellidos)';
+                return '<li><strong>' + item.name + '</strong> -- ' + detectedLabel + '</li>';
+            }).join('');
+            if (!domainMismatchModal) { domainMismatchModal = new bootstrap.Modal(domainMismatchModalEl); }
+            domainMismatchModal.show();
+            domainMismatchProceedBtn.onclick = function () {
+                domainMismatchModal.hide();
+                proceedWithUpload();
+            };
+            domainMismatchCancelBtn.onclick = function () {
+                domainMismatchModal.hide();
+            };
+        } else {
+            proceedWithUpload();
+        }
     });
 
     // Abre el modal del dossier / última clasificación en cuanto llega
