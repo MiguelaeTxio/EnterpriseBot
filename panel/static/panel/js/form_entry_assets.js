@@ -1550,7 +1550,7 @@
         // Habilitar/deshabilitar el input de cantidad o nivel de cada checkbox.
         document.addEventListener("change", function (e) {
             if (!e.target || !e.target.classList.contains("global-repuesto-check")) { return; }
-            var row = e.target.closest("tr");
+            var row = e.target.closest("li");
             if (!row) { return; }
             [row.querySelector(".global-repuesto-qty"), row.querySelector(".global-repuesto-level")]
                 .forEach(function (el) {
@@ -1579,7 +1579,7 @@
                 var status = cb.dataset.status;
                 var uncountable = cb.dataset.uncountable === "1";
                 var desc = cb.dataset.description;
-                var row = cb.closest("tr");
+                var row = cb.closest("li");
                 if (status === "WAREHOUSE") {
                     if (uncountable) {
                         var levelInput = row.querySelector(".global-repuesto-level");
@@ -1645,7 +1645,7 @@
             // Reiniciar checkboxes/inputs y cerrar el modal.
             document.querySelectorAll(".global-repuesto-check:checked").forEach(function (cb) {
                 cb.checked = false;
-                var row = cb.closest("tr");
+                var row = cb.closest("li");
                 if (!row) { return; }
                 [row.querySelector(".global-repuesto-qty"), row.querySelector(".global-repuesto-level")]
                     .forEach(function (el) { if (el) { el.disabled = true; el.value = ""; } });
