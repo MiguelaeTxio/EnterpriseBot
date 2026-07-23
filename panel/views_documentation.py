@@ -2863,6 +2863,18 @@ class MachineDocumentTransferView(DocsUploadAccessMixin, View):
             .order_by("-content_mismatch_warning", "document_type", "-created_at")
             if machine_a else []
         )
+        # Corrección 2026-07-23 (Miguel Ángel, captura real de la A29):
+        # en el modo "sin asignar" (sin machine_b, sin candidata fija)
+        # se listaban TODOS los documentos de la máquina, no solo los
+        # que tienen incidencia -- "cuando le das a resolver la
+        # incidencia... solo abre un listado de cosas que tienden a
+        # confusión y promueven que se muevan documentos que no es
+        # necesario que se muevan". El modo de dos máquinas fijas ya
+        # se acota por pareja de candidata más abajo; este modo se
+        # acota aquí mismo a los que de verdad tienen
+        # content_mismatch_warning.
+        if machine_a and not machine_b:
+            docs_a = [d for d in docs_a if d.content_mismatch_warning]
         docs_b = (
             MachineDocument.objects.filter(
                 machine_asset=machine_b,
