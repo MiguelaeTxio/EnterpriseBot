@@ -79,6 +79,18 @@
                     <i class="bi bi-eye"></i>
                 </a>
                 {% endif %}
+                {% if doc.content_mismatch_warning %}
+                <form method="post" action="{% url 'panel:documentation_document_move' pk=doc.pk %}" class="d-flex gap-1">
+                    {% csrf_token %}
+                    <input type="hidden" name="machine_a" value="{{ this_machine.pk }}">
+                    <input type="hidden" name="back_url" value="{{ back_url }}">
+                    <input type="hidden" name="target_machine_pk" value="{{ this_machine.pk }}">
+                    <button type="submit" class="btn btn-sm btn-outline-success"
+                            title="El documento SÍ es de esta máquina -- descarta el aviso sin moverlo">
+                        <i class="bi bi-check2-circle"></i> No es incidencia
+                    </button>
+                </form>
+                {% endif %}
                 <form method="post" action="{% url 'panel:documentation_document_move' pk=doc.pk %}" class="d-flex gap-1">
                     {% csrf_token %}
                     <input type="hidden" name="machine_a" value="{{ this_machine.pk }}">
