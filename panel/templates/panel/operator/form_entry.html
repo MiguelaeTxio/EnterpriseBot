@@ -438,16 +438,24 @@
                                            placeholder="Nombre proveedor (si aplica)">
                                 </div>
                                 <div class="col-12 col-md-5">
-                                    <label class="form-label fw-medium">Bloque asociado</label>
-                                    <select name="repuesto_{{ rep.ridx }}_entry_idx" class="form-select">
-                                        {% for entrada in entradas_enriched %}
-                                        <option value="{{ entrada.idx }}"
-                                            {% if rep.ridx == entrada.idx %}selected{% endif %}>
-                                            Tarea {{ entrada.idx }}
-                                            {% if entrada.machine_raw %}— {{ entrada.machine_raw }}{% endif %}
+                                    <label class="form-label fw-medium">Centro de gasto</label>
+                                    <select name="repuesto_{{ rep.ridx }}_vehiculo_raw"
+                                            class="form-select form-select-sm repuesto-cdg-select"
+                                            data-repuesto-idx="{{ rep.ridx }}">
+                                        {% for code in rep.cdg_options %}
+                                        <option value="{{ code }}" {% if rep.vehiculo_raw == code %}selected{% endif %}>
+                                            {{ code }}
                                         </option>
                                         {% endfor %}
+                                        <option value="__otro__" {% if not rep.vehiculo_raw %}selected{% endif %}>
+                                            Otro — introducir CdG manualmente
+                                        </option>
                                     </select>
+                                    <input type="text"
+                                           name="repuesto_{{ rep.ridx }}_cdg_free"
+                                           class="form-control form-control-sm repuesto-cg-libre cg-libre-input mt-1 {% if rep.vehiculo_raw %}d-none{% endif %}"
+                                           value="{{ rep.vehiculo_raw }}"
+                                           placeholder="Código de máquina">
                                 </div>
                             </div>
                         </div>

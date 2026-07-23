@@ -2366,7 +2366,12 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
                         repuestos_enriched .append ({
                         "ridx":ridx ,
                         "referencia":spare .reference or "",
-                        "vehiculo_raw":"",
+                        # Fix (2026-07-23, a peticion de Miguel Angel):
+                        # antes viajaba vacio -- ningun repuesto ya
+                        # guardado enviaba su maquina real al reeditar
+                        # y regrabar el parte, perdiendo el vinculo en
+                        # silencio aunque el operario no tocara nada.
+                        "vehiculo_raw":spare .vehicle .code if spare .vehicle else "",
                         "vehicle_asset":spare .vehicle ,
                         "material":spare .material or "",
                         "unidades":str (spare .quantity )if spare .quantity is not None else "",
@@ -2377,6 +2382,21 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
                         "spare_part_entry_pk":spare .spare_part_entry_id or "",
                         })
                         ridx +=1 
+
+            # cdg_options por repuesto (2026-07-23): codigos unicos de las
+            # tareas de este parte, garantizando que el codigo REAL ya
+            # asignado al repuesto siempre este presente en la lista aunque
+            # no coincida con ninguna tarea actual -- logica en la vista,
+            # nunca en la plantilla, a peticion explicita de Miguel Angel.
+            _cdg_codes_edit =[]
+            for _ent in entradas_enriched :
+                if _ent ["machine_raw"] and _ent ["machine_raw"] not in _cdg_codes_edit :
+                    _cdg_codes_edit .append (_ent ["machine_raw"])
+            for _rep in repuestos_enriched :
+                _opts =list (_cdg_codes_edit )
+                if _rep ["vehiculo_raw"] and _rep ["vehiculo_raw"] not in _opts :
+                    _opts .append (_rep ["vehiculo_raw"])
+                _rep ["cdg_options"] =_opts 
 
 
 
@@ -2450,8 +2470,15 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
             "min_date":min_date .isoformat ()if min_date else "",
             "lunch_break_start":first_entry .lunch_break_start .strftime ("%H:%M")if first_entry and first_entry .lunch_break_start else _lunch_start_edit ,
             "lunch_break_end":first_entry .lunch_break_end .strftime ("%H:%M")if first_entry and first_entry .lunch_break_end else _lunch_end_edit ,
-            "first_block_hc":_first_hc_edit ,
-            "first_block_hf":_first_hf_edit ,
+            # first_block_hc/hf son EXCLUSIVOS del bloque "Tarea 1" de
+            # creacion (ver _schedule_fields_fragment.html, guardado con
+            # {% if not entradas_enriched %}) -- en modo edicion no deben
+            # depender del horario en vivo del operario ni de ese guard de
+            # plantilla como unica proteccion. Explicito en la vista, a
+            # peticion de Miguel Angel (2026-07-23): la logica de
+            # creacion-vs-edicion se decide aqui, nunca en el template.
+            "first_block_hc":"" ,
+            "first_block_hf":"" ,
             "no_lunch_break":first_entry .no_lunch_break if first_entry else False ,
             "has_diet":first_entry .has_diet if first_entry else False ,
             "show_lunch_break":_show_lunch_edit ,
@@ -2507,7 +2534,7 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
                         _ip_repuestos .append ({
                         "ridx":_ip_ridx ,
                         "referencia":_ip_spare .reference or "",
-                        "vehiculo_raw":"",
+                        "vehiculo_raw":_ip_spare .vehicle .code if _ip_spare .vehicle else "",
                         "vehicle_asset":_ip_spare .vehicle ,
                         "material":_ip_spare .material or "",
                         "unidades":str (_ip_spare .quantity )if _ip_spare .quantity is not None else "",
@@ -2517,6 +2544,16 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
                         "flags":_ip_spare .flags or [],
                         })
                         _ip_ridx +=1 
+
+            _ip_cdg_codes =[]
+            for _ip_ent in _ip_entradas :
+                if _ip_ent ["machine_raw"] and _ip_ent ["machine_raw"] not in _ip_cdg_codes :
+                    _ip_cdg_codes .append (_ip_ent ["machine_raw"])
+            for _ip_rep in _ip_repuestos :
+                _ip_opts =list (_ip_cdg_codes )
+                if _ip_rep ["vehiculo_raw"] and _ip_rep ["vehiculo_raw"] not in _ip_opts :
+                    _ip_opts .append (_ip_rep ["vehiculo_raw"])
+                _ip_rep ["cdg_options"] =_ip_opts 
 
 
             _schedule_ip =_resolve_operator_schedule (cu ,company )
@@ -2597,8 +2634,10 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
             "min_date":min_date .isoformat ()if min_date else "",
             "lunch_break_start":_ip_first_entry .lunch_break_start .strftime ("%H:%M")if _ip_first_entry and _ip_first_entry .lunch_break_start else "",
             "lunch_break_end":_ip_first_entry .lunch_break_end .strftime ("%H:%M")if _ip_first_entry and _ip_first_entry .lunch_break_end else "",
-            "first_block_hc":_ip_first_hc ,
-            "first_block_hf":_ip_first_hf ,
+            # Mismo criterio que en modo edicion: exclusivo de creacion,
+            # nunca del horario en vivo (2026-07-23).
+            "first_block_hc":"" ,
+            "first_block_hf":"" ,
             "no_lunch_break":_ip_no_lunch ,
             "has_diet":_ip_first_entry .has_diet if _ip_first_entry else False ,
             "show_lunch_break":_ip_show_lunch ,
