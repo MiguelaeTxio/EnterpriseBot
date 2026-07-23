@@ -34,6 +34,17 @@
         <button type="button" class="btn btn-sm btn-outline-warning doc-obsolete-btn" title="Marcar como candidato a obsoleto, para revisión y borrado posterior">
             <i class="bi bi-hourglass-bottom me-1"></i>Marcar como obsoleto
         </button>
+        <select class="form-select form-select-sm doc-bulk-move-select" style="width: auto;">
+            <option value="">— Mover a… —</option>
+            {% for m in all_machines %}
+                {% if m.pk != machine.pk %}
+                <option value="{{ m.pk }}">{{ m.code }}</option>
+                {% endif %}
+            {% endfor %}
+        </select>
+        <button type="button" class="btn btn-sm btn-outline-primary doc-bulk-move-btn">
+            <i class="bi bi-truck me-1"></i>Mover seleccionados
+        </button>
         <button type="button" class="btn btn-sm btn-danger doc-bulk-delete-btn">
             <i class="bi bi-trash me-1"></i>Eliminar seleccionados
         </button>
@@ -167,6 +178,17 @@
             <button type="button" class="btn btn-sm btn-outline-warning doc-obsolete-btn" title="Marcar como candidato a obsoleto, para revisión y borrado posterior">
                 <i class="bi bi-hourglass-bottom me-1"></i>Marcar como obsoleto
             </button>
+            <select class="form-select form-select-sm doc-bulk-move-select" style="width: auto;">
+                <option value="">— Mover a… —</option>
+                {% for m in all_machines %}
+                    {% if m.pk != machine.pk %}
+                    <option value="{{ m.pk }}">{{ m.code }}</option>
+                    {% endif %}
+                {% endfor %}
+            </select>
+            <button type="button" class="btn btn-sm btn-outline-primary doc-bulk-move-btn">
+                <i class="bi bi-truck me-1"></i>Mover seleccionados
+            </button>
             <button type="button" class="btn btn-sm btn-danger doc-bulk-delete-btn">
                 <i class="bi bi-trash me-1"></i>Eliminar seleccionados
             </button>
@@ -297,6 +319,7 @@
     var compareBtns = Array.prototype.slice.call(container.querySelectorAll('.doc-compare-btn'));
     var obsoleteBtns = Array.prototype.slice.call(container.querySelectorAll('.doc-obsolete-btn'));
     var bulkDeleteBtns = Array.prototype.slice.call(container.querySelectorAll('.doc-bulk-delete-btn'));
+    var bulkMoveBtns = Array.prototype.slice.call(container.querySelectorAll('.doc-bulk-move-btn'));
 
     function checkedItems() {
         return itemBoxes.filter(function (cb) { return cb.checked; });
@@ -360,6 +383,29 @@
                 seconds: 5,
                 extraFields: { pks: pks, entity_pk: '{{ machine.pk }}' },
             });
+        });
+    });
+
+    bulkMoveBtns.forEach(function (bulkMoveBtn) {
+        bulkMoveBtn.addEventListener('click', function () {
+            var checked = checkedItems();
+            if (!checked.length) { return; }
+            var bar = bulkMoveBtn.closest('.doc-select-bar');
+            var select = bar ? bar.querySelector('.doc-bulk-move-select') : null;
+            var targetPk = select ? select.value : '';
+            if (!targetPk) {
+                if (select) { select.classList.add('is-invalid'); select.focus(); }
+                return;
+            }
+            var pks = checked.map(function (cb) { return cb.value; });
+            if (window.submitBulkPksForm) {
+                window.submitBulkPksForm(
+                    '{% url "panel:documentation_bulk_move" %}',
+                    pks,
+                    { entity_pk: '{{ machine.pk }}', target_machine_pk: targetPk },
+                    '#machine-detail-container',
+                );
+            }
         });
     });
 

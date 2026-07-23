@@ -3032,6 +3032,78 @@ class DocumentMoveToMachineView(DocsUploadAccessMixin, View):
         return redirect(back_url)
 
 
+class DocumentBulkMoveView(DocsUploadAccessMixin, View):
+    """
+    POST: mueve en bloque varios MachineDocument a otra máquina --
+    generaliza a selección múltiple el "Mover a otra máquina" ya
+    existente por fila (DocumentMoveToMachineView), a petición de
+    Miguel Ángel (2026-07-23): "todos los botones que podamos mover o
+    usar individualmente y sean susceptibles de ser usados para
+    varios documentos, debemos de incluirlos en el tema de marcajes,
+    de casilleros" -- mismo patrón que DocumentBulkObsoleteToggleView/
+    DocumentBulkDeleteView, incluida la limpieza de
+    content_mismatch_warning/candidate_machine por documento.
+
+    Solo dominio "machine" -- "personal" no tiene máquina a la que
+    mover nada.
+    """
+
+    def post(self, request):
+        company = request.user.company_user.company
+
+        pks = request.POST.getlist("pks")
+        entity_pk = request.POST.get("entity_pk", "").strip()
+        target_machine_pk = request.POST.get("target_machine_pk", "").strip()
+
+        target_machine = MachineAsset.objects.filter(
+            pk=target_machine_pk, company=company,
+        ).first()
+        if target_machine is None:
+            messages.error(request, "Selecciona una máquina de destino antes de mover.")
+        else:
+            documents = MachineDocument.objects.filter(pk__in=pks, company=company)
+            moved = 0
+            for document in documents:
+                document.machine_asset = target_machine
+                document.content_mismatch_warning = ""
+                document.content_mismatch_candidate_machine = None
+                document.detected_reference_hint = ""
+                document.status = MachineDocument.Status.CLASSIFIED
+                document.save(update_fields=[
+                    "machine_asset", "content_mismatch_warning",
+                    "content_mismatch_candidate_machine",
+                    "detected_reference_hint", "status",
+                ])
+                moved += 1
+
+            logger.info(
+                "# [DocumentBulkMoveView] %d documento(s) movidos a %s "
+                "en bloque (de %d solicitado(s)) desde entidad #%s.",
+                moved, target_machine.code, len(pks), entity_pk,
+            )
+            if moved:
+                messages.success(
+                    request,
+                    f"{moved} documento(s) movido(s) a {target_machine.code}.",
+                )
+            else:
+                messages.warning(
+                    request,
+                    "No se ha movido ningún documento -- selección vacía.",
+                )
+
+        if request.headers.get("HX-Request") == "true":
+            machine = MachineAsset.objects.filter(
+                pk=entity_pk, company=company,
+            ).first()
+            if machine is not None:
+                return _machine_detail_htmx_response(request, machine)
+
+        return redirect(
+            reverse("panel:documentation_machine_page", kwargs={"pk": entity_pk}),
+        )
+
+
 class DocumentUpdateView(DocsUploadAccessMixin, View):
     """
     POST: guarda la edición de un documento vigente. Si expiry_date
