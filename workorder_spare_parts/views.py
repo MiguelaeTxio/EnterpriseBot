@@ -1037,6 +1037,45 @@ class TaskTicketResolutionView(CatalogReadAccessMixin, View):
         })
 
 
+class SparePartGlobalSearchView(CatalogReadAccessMixin, View):
+    """
+    HTMX endpoint: modal global "Añadir repuesto" (2026-07-23, a
+    peticion de Miguel Angel). A diferencia de
+    SparePartWarehouseSearchView (Caso A, solo WAREHOUSE de la propia
+    tarea) y SparePartPreAssignedListView (Caso B, solo de una
+    maquina/ticket concreto), este endpoint busca en TODA la empresa,
+    combinando WAREHOUSE y PRE_ASSIGNED -- para poder rescatar del
+    limbo un repuesto pre-asignado a una maquina que nunca lo consumio,
+    o asignar uno de almacen sin maquina, desde cualquier tarea del
+    parte, no solo la que coincide con su codigo de maquina. No esta
+    ligado a ninguna WorkOrderEntryLine todavia (se usa tanto en
+    creacion como en edicion, antes de guardar el parte) -- la
+    materializacion real ocurre al guardar el formulario completo, ver
+    panel/views_operator.py::_parse_entry_lines_from_post y
+    WorkOrderEntryFormView.post().
+
+    GET params:
+      q -- texto de busqueda libre (ref. interna, ref. proveedor,
+           descripcion). Vacio -> listado completo, ordenado
+           alfabeticamente por descripcion.
+    """
+
+    template_name = 'workorder_spare_parts/_global_search_results.html'
+
+    def get(self, request):
+        from spare_parts.services import StockAssignmentService
+
+        query = request.GET.get('q', '')
+        results = StockAssignmentService.search_global(
+            company=request.user.company_user.company,
+            query=query,
+        )
+        return render(request, self.template_name, {
+            'results': results,
+            'query': query,
+        })
+
+
 # =============================================================================
 # H10 Paso 7 -- Alta de repuestos por canibalización (anexo, sección 3.6)
 # =============================================================================

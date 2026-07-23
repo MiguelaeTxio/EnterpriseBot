@@ -1489,6 +1489,41 @@ class StockAssignmentService:
         )[:limit]
 
     @staticmethod
+    def search_global(company, query='', limit=50):
+        """
+        Busqueda global "Añadir repuesto" (2026-07-23, a peticion de
+        Miguel Angel): combina WAREHOUSE (sin maquina) y PRE_ASSIGNED
+        (reservado a una maquina, "en el limbo") de TODA la empresa --
+        a diferencia de search_warehouse() (solo WAREHOUSE) y
+        list_pre_assigned() (solo de una maquina/ticket concreto).
+        Nunca incluye CONSUMED. Sin query, devuelve el listado
+        completo ordenado alfabeticamente por descripcion (autocarga
+        al abrir el modal, igual que list_pre_assigned). Con query,
+        filtra ademas por referencia/descripcion.
+        """
+        from django.db.models import Q
+
+        from .models import SparePartEntry
+
+        qs = SparePartEntry.objects.filter(
+            company=company,
+            status__in=[
+                SparePartEntry.STATUS_WAREHOUSE,
+                SparePartEntry.STATUS_PRE_ASSIGNED,
+            ],
+        ).select_related('machine')
+
+        query = (query or '').strip()
+        if query:
+            qs = qs.filter(
+                Q(internal_reference__icontains=query)
+                | Q(reference__icontains=query)
+                | Q(description__icontains=query)
+            )
+
+        return qs.order_by('description')[:limit]
+
+    @staticmethod
     def _next_line_number(entry_line):
         """Siguiente line_number libre para una SparePartLine nueva."""
         from work_order_processor.models import SparePartLine

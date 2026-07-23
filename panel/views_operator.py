@@ -758,6 +758,53 @@ def _parse_entry_lines_from_post (POST ,company ):
             if _pk_suffix.isdigit():
                 _consume_part_pks.append(int(_pk_suffix))
 
+        # Modal global "Añadir repuesto" (2026-07-23, a peticion de
+        # Miguel Angel): repuestos de almacen (status=WAREHOUSE, sin
+        # maquina asignada o de otra maquina distinta) que el mecanico
+        # selecciona y asigna a esta tarea, con cantidad/nivel indicado
+        # por el propio operario -- casillas
+        # entrada_{i}_consume_warehouse_{pk}_qty (contables) o
+        # entrada_{i}_consume_warehouse_{pk}_level (incontables).
+        from decimal import Decimal as _Decimal_wh, InvalidOperation as _InvalidOp_wh
+        _consume_warehouse_items = []
+        _consume_wh_qty_prefix = f"{pfx}consume_warehouse_"
+        _consume_wh_seen_pks = set()
+        for _post_key in POST.keys():
+            if not _post_key.startswith(_consume_wh_qty_prefix):
+                continue
+            _rest = _post_key[len(_consume_wh_qty_prefix):]
+            if _rest.endswith("_qty"):
+                _pk_suffix = _rest[: -len("_qty")]
+            elif _rest.endswith("_level"):
+                _pk_suffix = _rest[: -len("_level")]
+            else:
+                continue
+            if not _pk_suffix.isdigit():
+                continue
+            _consume_wh_seen_pks.add(int(_pk_suffix))
+        for _wh_pk in _consume_wh_seen_pks:
+            _qty_raw = POST.get(
+                f"{_consume_wh_qty_prefix}{_wh_pk}_qty", ""
+            ).strip()
+            _level_raw = POST.get(
+                f"{_consume_wh_qty_prefix}{_wh_pk}_level", ""
+            ).strip()
+            _quantity_used = None
+            if _qty_raw:
+                try:
+                    _quantity_used = _Decimal_wh(_qty_raw.replace(",", "."))
+                except _InvalidOp_wh:
+                    _quantity_used = None
+            if _quantity_used is None and not _level_raw:
+                # Fila presente en el POST pero sin cantidad ni nivel
+                # (checkbox nunca se marco de verdad) -- se omite.
+                continue
+            _consume_warehouse_items.append({
+                "entry_pk": _wh_pk,
+                "quantity_used": _quantity_used,
+                "new_level": _level_raw or None,
+            })
+
         # EMPRESA_* block — detect and resolve subtype label.
         # Bloque EMPRESA_* — detectar y resolver el label del subtipo.
         _is_empresa_block = (
@@ -799,6 +846,7 @@ def _parse_entry_lines_from_post (POST ,company ):
         "ticket_chosen_pk":_ticket_chosen_pk ,
         "ticket_closed":_ticket_closed ,
         "consume_part_pks":_consume_part_pks ,
+        "consume_warehouse_items":_consume_warehouse_items ,
         })
 
     return entry_lines_data 
@@ -4331,6 +4379,53 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
                                 "# [FormView] Error consumiendo"
                                 " repuesto pk=%s en línea pk=%s: %s",
                                 _part_pk, line.pk, _consume_exc,
+                            )
+
+                    # Modal global "Añadir repuesto" (2026-07-23, a
+                    # peticion de Miguel Angel): repuestos de almacen
+                    # (status=WAREHOUSE, de cualquier maquina o sin
+                    # asignar) que el mecanico elige y cuantifica el
+                    # mismo desde este mismo parte, sin necesitar que
+                    # el codigo de esta tarea coincida con el suyo.
+                    # Reutiliza StockAssignmentService.
+                    # consume_from_warehouse() (Caso A), sin cambios ahi.
+                    for _wh_item in ld.get("consume_warehouse_items", []):
+                        from spare_parts.models import SparePartEntry as _SPE_wh
+                        from spare_parts.services import StockAssignmentService as _SAS_wh
+                        try:
+                            _wh_entry = _SPE_wh.objects.get(
+                                pk=_wh_item["entry_pk"],
+                                company=company,
+                                status=_SPE_wh.STATUS_WAREHOUSE,
+                            )
+                            _SAS_wh.consume_from_warehouse(
+                                entry=_wh_entry,
+                                entry_line=line,
+                                machine=line.machine_asset,
+                                breakdown_ticket=line.breakdown_ticket,
+                                created_by=cu,
+                                quantity_used=_wh_item["quantity_used"],
+                                new_level=_wh_item["new_level"],
+                            )
+                            logger.info(
+                                "# [FormView] Repuesto de almacen pk=%s"
+                                " consumido en línea pk=%s (modal"
+                                " global).",
+                                _wh_entry.pk, line.pk,
+                            )
+                        except _SPE_wh.DoesNotExist:
+                            logger.warning(
+                                "# [FormView] consume_warehouse pk=%s no"
+                                " encontrado o ya no WAREHOUSE para"
+                                " empresa pk=%s -- omitido.",
+                                _wh_item["entry_pk"], company.pk,
+                            )
+                        except ValueError as _consume_wh_exc:
+                            logger.warning(
+                                "# [FormView] Error consumiendo repuesto"
+                                " de almacen pk=%s en línea pk=%s: %s",
+                                _wh_item["entry_pk"], line.pk,
+                                _consume_wh_exc,
                             )
 
                 for spd in spare_parts_data :

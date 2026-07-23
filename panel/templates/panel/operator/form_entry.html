@@ -461,12 +461,23 @@
 
                     <div id="extra-repuestos-container"></div>
 
-                    <div class="d-flex justify-content-start mt-3">
+                    <div class="d-flex justify-content-start gap-2 mt-3 flex-wrap">
                         <button type="button" id="btn-add-repuesto"
                                 class="btn btn-outline-secondary btn-sm">
                             <i class="bi bi-plus-lg me-1"></i>Añadir repuesto
                         </button>
+                        <button type="button" id="btn-open-global-repuesto-modal"
+                                class="btn btn-outline-primary btn-sm"
+                                data-bs-toggle="modal"
+                                data-bs-target="#globalRepuestoModal">
+                            <i class="bi bi-box-seam me-1"></i>Repuesto de almacén / pre-asignado
+                        </button>
                     </div>
+
+                    {# Lista de repuestos globales añadidos en esta sesión de edición -- #}
+                    {# reflejan los campos ocultos que se envían con el resto del parte. #}
+                    <ul id="global-repuesto-pending-list" class="list-unstyled small mt-2 mb-0"></ul>
+                    <div id="global-repuesto-hidden-fields"></div>
 
                 </div>
             </div>
@@ -576,6 +587,56 @@
             <div class="modal-footer border-top py-2">
                 <button type="button" class="btn btn-outline-secondary btn-sm px-3" data-bs-dismiss="modal">
                     Cancelar
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# ================================================================ #}
+{# Modal global "Añadir repuesto" -- almacén (WAREHOUSE) sin máquina  #}
+{# o pre-asignados (PRE_ASSIGNED) de cualquier máquina, "en el limbo" #}
+{# (2026-07-23, a petición de Miguel Ángel). No requiere que el      #}
+{# código de la tarea coincida -- se elige la tarea destino aquí.    #}
+{# ================================================================ #}
+<div class="modal fade" id="globalRepuestoModal" tabindex="-1"
+     aria-labelledby="globalRepuestoModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header border-bottom py-3">
+                <h6 class="modal-title fw-semibold" id="globalRepuestoModalLabel">
+                    <i class="bi bi-box-seam me-2 text-muted"></i>Añadir repuesto de almacén o pre-asignado
+                </h6>
+                <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-4">
+                <div class="mb-3">
+                    <label class="form-label small fw-medium" for="globalRepuestoTaskSelect">
+                        Asignar a la tarea
+                    </label>
+                    <select id="globalRepuestoTaskSelect" class="form-select form-select-sm"></select>
+                </div>
+                <label class="form-label small text-muted mb-1">Buscar</label>
+                <input type="text" id="globalRepuestoSearchInput" name="q" class="form-control mb-2"
+                       placeholder="Ref. interna, ref. proveedor o descripción..." autocomplete="off"
+                       hx-get="{% url 'workorder_spare_parts:search_global' %}"
+                       hx-trigger="keyup changed delay:400ms"
+                       hx-target="#globalRepuestoResults"
+                       hx-swap="innerHTML">
+                <div id="globalRepuestoResults" class="mb-2"
+                     hx-get="{% url 'workorder_spare_parts:search_global' %}"
+                     hx-trigger="load"
+                     hx-swap="innerHTML">
+                    <p class="text-muted small mb-0">Cargando...</p>
+                </div>
+                <div id="globalRepuestoError" class="text-danger small mb-0 d-none"></div>
+            </div>
+            <div class="modal-footer border-top py-2">
+                <button type="button" class="btn btn-outline-secondary btn-sm px-3" data-bs-dismiss="modal">
+                    Cancelar
+                </button>
+                <button type="button" id="globalRepuestoAddBtn" class="btn btn-primary btn-sm px-3">
+                    Añadir seleccionados
                 </button>
             </div>
         </div>

@@ -1493,6 +1493,169 @@
     // No se necesita transformación en submit — los inputs asset-search siempre
     // contienen el código limpio. El span .asset-label es solo visual, no se envía.
 
+    // ==================================================================
+    // Modal global "Añadir repuesto" -- almacén (sin máquina) o
+    // pre-asignados (limbo) de CUALQUIER máquina, elegidos por el
+    // operario y asignados a una tarea concreta del parte (2026-07-23,
+    // a petición de Miguel Ángel). Los campos ocultos que genera viajan
+    // con el resto del formulario y se materializan al guardar (ver
+    // panel/views_operator.py::_parse_entry_lines_from_post).
+    // ==================================================================
+    (function () {
+        var modalEl = document.getElementById("globalRepuestoModal");
+        if (!modalEl) { return; }
+
+        var taskSelect   = document.getElementById("globalRepuestoTaskSelect");
+        var addBtn       = document.getElementById("globalRepuestoAddBtn");
+        var errorBox     = document.getElementById("globalRepuestoError");
+        var hiddenFields = document.getElementById("global-repuesto-hidden-fields");
+        var pendingList  = document.getElementById("global-repuesto-pending-list");
+        if (!taskSelect || !addBtn || !hiddenFields || !pendingList) { return; }
+
+        function _refreshGlobalRepuestoTaskSelect() {
+            var current = taskSelect.value;
+            taskSelect.innerHTML = "";
+            document.querySelectorAll(".confirm-block").forEach(function (blk) {
+                var maqInput = blk.querySelector('[name$="_machine_raw"]');
+                var hcInput  = blk.querySelector('[name$="_hc"]');
+                if (!maqInput || !hcInput) { return; }
+                var m = hcInput.name.match(/^entrada_(\d+)_hc$/);
+                if (!m) { return; }
+                var idx = m[1];
+                var maqVal = (maqInput.dataset.codeValue || maqInput.value || "").trim();
+                var opt = document.createElement("option");
+                opt.value = idx;
+                opt.textContent = "Tarea " + idx + (maqVal ? " — " + maqVal : "");
+                taskSelect.appendChild(opt);
+            });
+            if (current) { taskSelect.value = current; }
+        }
+
+        function _clearError() {
+            if (errorBox) { errorBox.classList.add("d-none"); errorBox.textContent = ""; }
+        }
+
+        function _showError(msg) {
+            if (!errorBox) { return; }
+            errorBox.textContent = msg;
+            errorBox.classList.remove("d-none");
+        }
+
+        modalEl.addEventListener("show.bs.modal", function () {
+            _refreshGlobalRepuestoTaskSelect();
+            _clearError();
+        });
+
+        // Enable/disable the qty or level input tied to each checkbox.
+        // Habilitar/deshabilitar el input de cantidad o nivel de cada checkbox.
+        document.addEventListener("change", function (e) {
+            if (!e.target || !e.target.classList.contains("global-repuesto-check")) { return; }
+            var row = e.target.closest("tr");
+            if (!row) { return; }
+            [row.querySelector(".global-repuesto-qty"), row.querySelector(".global-repuesto-level")]
+                .forEach(function (el) {
+                    if (!el) { return; }
+                    el.disabled = !e.target.checked;
+                    if (!e.target.checked) { el.value = ""; }
+                });
+        });
+
+        addBtn.addEventListener("click", function () {
+            _clearError();
+            var idx = taskSelect.value;
+            if (!idx) {
+                _showError("No hay ninguna tarea a la que asignar el repuesto — añade primero una tarea con su máquina.");
+                return;
+            }
+            var checks = document.querySelectorAll(".global-repuesto-check:checked");
+            if (!checks.length) {
+                _showError("Marca al menos un repuesto.");
+                return;
+            }
+
+            var toAdd = [];
+            for (var i = 0; i < checks.length; i++) {
+                var cb = checks[i];
+                var status = cb.dataset.status;
+                var uncountable = cb.dataset.uncountable === "1";
+                var desc = cb.dataset.description;
+                var row = cb.closest("tr");
+                if (status === "WAREHOUSE") {
+                    if (uncountable) {
+                        var levelInput = row.querySelector(".global-repuesto-level");
+                        var level = levelInput ? levelInput.value : "";
+                        if (!level) { _showError('Indica el nivel de "' + desc + '".'); return; }
+                        toAdd.push({ pk: cb.dataset.entryPk, status: status, level: level, desc: desc });
+                    } else {
+                        var qtyInput = row.querySelector(".global-repuesto-qty");
+                        var qty = qtyInput ? parseFloat(qtyInput.value) : NaN;
+                        if (!qty || qty <= 0) { _showError('Indica la cantidad de "' + desc + '".'); return; }
+                        toAdd.push({ pk: cb.dataset.entryPk, status: status, qty: qtyInput.value, desc: desc });
+                    }
+                } else {
+                    toAdd.push({ pk: cb.dataset.entryPk, status: status, desc: desc });
+                }
+            }
+
+            toAdd.forEach(function (item) {
+                // Si el mismo repuesto ya se había añadido a esta misma
+                // tarea, sustituye los campos ocultos en vez de duplicarlos.
+                var fieldId = "global-hidden-" + idx + "-" + item.pk;
+                var liId    = "global-pending-" + idx + "-" + item.pk;
+                var existingField = document.getElementById(fieldId);
+                if (existingField) { existingField.remove(); }
+                var existingLi = document.getElementById(liId);
+                if (existingLi) { existingLi.remove(); }
+
+                var wrap = document.createElement("span");
+                wrap.id = fieldId;
+                if (item.status === "PRE_ASSIGNED") {
+                    wrap.innerHTML =
+                        '<input type="hidden" name="entrada_' + idx + '_consume_part_' + item.pk + '" value="1">';
+                } else if (item.level) {
+                    wrap.innerHTML =
+                        '<input type="hidden" name="entrada_' + idx + '_consume_warehouse_' + item.pk +
+                        '_level" value="' + item.level + '">';
+                } else {
+                    wrap.innerHTML =
+                        '<input type="hidden" name="entrada_' + idx + '_consume_warehouse_' + item.pk +
+                        '_qty" value="' + item.qty + '">';
+                }
+                hiddenFields.appendChild(wrap);
+
+                var qtyLabel = item.level
+                    ? "nivel " + item.level
+                    : (item.qty ? item.qty + " ud." : "reservado, se consume entero");
+                var li = document.createElement("li");
+                li.id = liId;
+                li.className = "d-flex align-items-center gap-2 mb-1";
+                li.innerHTML =
+                    '<i class="bi bi-check-circle text-success"></i>' +
+                    '<span>Tarea ' + idx + ' — ' + item.desc + ' (' + qtyLabel + ')</span>' +
+                    '<button type="button" class="btn btn-link btn-sm text-danger p-0 ms-1" title="Quitar">&times;</button>';
+                li.querySelector("button").addEventListener("click", function () {
+                    var h = document.getElementById(fieldId);
+                    if (h) { h.remove(); }
+                    li.remove();
+                });
+                pendingList.appendChild(li);
+            });
+
+            // Reset checkboxes/inputs and close the modal.
+            // Reiniciar checkboxes/inputs y cerrar el modal.
+            document.querySelectorAll(".global-repuesto-check:checked").forEach(function (cb) {
+                cb.checked = false;
+                var row = cb.closest("tr");
+                if (!row) { return; }
+                [row.querySelector(".global-repuesto-qty"), row.querySelector(".global-repuesto-level")]
+                    .forEach(function (el) { if (el) { el.disabled = true; el.value = ""; } });
+            });
+            if (window.bootstrap && bootstrap.Modal) {
+                bootstrap.Modal.getOrCreateInstance(modalEl).hide();
+            }
+        });
+    }());
+
 }());
 
 

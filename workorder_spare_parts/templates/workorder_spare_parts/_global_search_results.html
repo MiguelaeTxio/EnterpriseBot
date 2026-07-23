@@ -1,0 +1,68 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/workorder_spare_parts/templates/workorder_spare_parts/_global_search_results.html #}
+{# Fragmento HTMX -- modal global "Añadir repuesto" (2026-07-23). #}
+{% load spare_parts_extras %}
+{% if results %}
+<table class="table table-sm align-middle mb-0" id="global-repuesto-results-table">
+    <thead>
+        <tr class="small text-muted border-bottom">
+            <th style="width:2rem;"></th>
+            <th>Repuesto</th>
+            <th>Ref. interna</th>
+            <th>Máquina</th>
+            <th style="width:9rem;">Cantidad / Nivel</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for entry in results %}
+        <tr>
+            <td>
+                <input class="form-check-input global-repuesto-check" type="checkbox"
+                       id="id_global_repuesto_{{ entry.pk }}"
+                       data-entry-pk="{{ entry.pk }}"
+                       data-status="{{ entry.status }}"
+                       data-uncountable="{{ entry.is_uncountable|yesno:'1,0' }}"
+                       data-description="{{ entry.description }}">
+            </td>
+            <td>
+                <label class="mb-0" for="id_global_repuesto_{{ entry.pk }}">
+                    {{ entry.description }}
+                </label>
+            </td>
+            <td><code>{{ entry.internal_reference|default:"—" }}</code></td>
+            <td>
+                {% if entry.status == 'PRE_ASSIGNED' %}
+                    <span class="badge bg-warning text-dark">{{ entry.machine.code|default:"—" }}</span>
+                {% else %}
+                    <span class="text-muted">--</span>
+                {% endif %}
+            </td>
+            <td>
+                {% if entry.status == 'WAREHOUSE' %}
+                    {% if entry.is_uncountable %}
+                    <select class="form-select form-select-sm global-repuesto-level"
+                            data-entry-pk="{{ entry.pk }}" disabled>
+                        <option value="FULL">Lleno</option>
+                        <option value="MEDIUM">Medio</option>
+                        <option value="LOW">Bajo</option>
+                        <option value="EMPTY">Vacío</option>
+                    </select>
+                    {% else %}
+                    <input type="number" step="0.01" min="0.01"
+                           class="form-control form-control-sm global-repuesto-qty"
+                           data-entry-pk="{{ entry.pk }}"
+                           placeholder="Cantidad" disabled>
+                    <small class="text-muted">Stock: {{ entry.stock_quantity }}</small>
+                    {% endif %}
+                {% else %}
+                    <span class="text-muted small">Pre-asignado — se consume entero</span>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% elif query %}
+<p class="text-muted small mb-0">Sin resultados para "{{ query }}".</p>
+{% else %}
+<p class="text-muted small mb-0">No hay repuestos en almacén ni pre-asignados pendientes.</p>
+{% endif %}

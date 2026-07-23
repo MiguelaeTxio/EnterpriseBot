@@ -82,6 +82,13 @@ urlpatterns = [
         views.TaskTicketResolutionView.as_view(),
         name='task_ticket_resolution',
     ),
+    # --- Modal global "Anadir repuesto" (2026-07-23): busqueda cruzada ---
+    # --- WAREHOUSE + PRE_ASSIGNED de toda la empresa, antes de guardar ---
+    path(
+        'buscar-global/',
+        views.SparePartGlobalSearchView.as_view(),
+        name='search_global',
+    ),
     # --- H10 Paso 7: alta de repuestos por canibalizacion ---
     path(
         'canibalizacion/crear/',
