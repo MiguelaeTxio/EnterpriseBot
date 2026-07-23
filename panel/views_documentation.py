@@ -1601,12 +1601,16 @@ def _machine_detail_htmx_response(request, machine):
     extremo").
     """
     current_docs, archived_docs = _machine_documents_view_data(machine)
+    all_machines = (
+        MachineAsset.objects.filter(company=machine.company).order_by("code")
+    )
     fragment_html = render_to_string(
         "panel/documentation/_machine_detail.html",
         {
             "machine": machine,
             "current_docs": current_docs,
             "archived_docs": archived_docs,
+            "all_machines": all_machines,
         },
         request=request,
     )
@@ -1763,6 +1767,9 @@ class MachinePageView(DocsUploadAccessMixin, View):
         )
 
         obsolete_candidates = _machine_obsolete_candidates(machine)
+        all_machines = (
+            MachineAsset.objects.filter(company=company).order_by("code")
+        )
 
         return render(request, self.template_name, {
             "active_nav": "documentation_hub",
@@ -1773,6 +1780,7 @@ class MachinePageView(DocsUploadAccessMixin, View):
             "unassigned_incidence_count": unassigned_incidence_count,
             "incidence_machines": incidence_machines,
             "obsolete_candidates": obsolete_candidates,
+            "all_machines": all_machines,
             **alerts_context,
         })
 
@@ -2994,8 +3002,8 @@ class DocumentMoveToMachineView(DocsUploadAccessMixin, View):
             + " -- incidencia resuelta.",
         )
 
-        machine_a = request.POST.get("machine_a", "")
-        machine_b = request.POST.get("machine_b", "")
+        machine_a = request.POST.get("machine_a", "").strip()
+        machine_b = request.POST.get("machine_b", "").strip()
         # back_url -- se propaga tal cual llegó (ya validado por
         # MachineDocumentTransferView.get() al construir el formulario
         # que la envió); se vuelve a validar aquí igualmente por
@@ -3007,11 +3015,21 @@ class DocumentMoveToMachineView(DocsUploadAccessMixin, View):
             request, request.POST.get("back_url", ""),
             reverse("panel:documentation_hub"),
         )
-        return redirect(
-            f"{reverse('panel:documentation_machine_transfer')}"
-            f"?machine_a={machine_a}&machine_b={machine_b}"
-            f"&back_url={_quote_back_url(back_url, safe='')}",
-        )
+        if machine_a:
+            # Viene de la pantalla de transferencia (resolución de
+            # incidencia) -- mantiene el contexto de las dos máquinas.
+            return redirect(
+                f"{reverse('panel:documentation_machine_transfer')}"
+                f"?machine_a={machine_a}&machine_b={machine_b}"
+                f"&back_url={_quote_back_url(back_url, safe='')}",
+            )
+        # Viene del listado normal de documentos (mover a otra máquina
+        # sin que haya ninguna incidencia de por medio, 2026-07-23,
+        # Miguel Ángel: "deberíamos dejarlo implícito en la lista de
+        # documentos... un botón de acciones para mover los documentos
+        # a otra máquina") -- vuelve a la ficha de origen, nunca a la
+        # pantalla de transferencia.
+        return redirect(back_url)
 
 
 class DocumentUpdateView(DocsUploadAccessMixin, View):

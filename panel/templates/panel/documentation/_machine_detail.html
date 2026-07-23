@@ -103,6 +103,11 @@
                         title="Modificar">
                     <i class="bi bi-pencil"></i>
                 </button>
+                <button class="btn btn-sm btn-outline-secondary" type="button"
+                        data-bs-toggle="collapse" data-bs-target="#move-machine-{{ doc.pk }}"
+                        title="Mover a otra máquina">
+                    <i class="bi bi-truck"></i>
+                </button>
                 <button class="btn btn-sm btn-outline-danger" type="button"
                         onclick="openDeleteConfirm('{% url 'panel:documentation_document_delete' domain='machine' pk=doc.pk %}', '#machine-detail-container', '{{ doc.display_name|default:doc.document_type|escapejs }}')"
                         title="Eliminar">
@@ -121,6 +126,27 @@
              hx-get="{% url 'panel:documentation_document_edit_form' domain='machine' pk=doc.pk %}"
              hx-trigger="shown.bs.collapse"
              hx-target="this" hx-swap="innerHTML">
+        </div>
+        {# Mover a otra máquina (2026-07-23, Miguel Ángel): acción explícita, #}
+        {# separada de la resolución de incidencias -- disponible en          #}
+        {# cualquier documento, tenga o no aviso; reutiliza el mismo endpoint #}
+        {# que ya sabe resolver incidencias (documentation_document_move).   #}
+        <div class="collapse mt-2" id="move-machine-{{ doc.pk }}">
+            <form method="post" action="{% url 'panel:documentation_document_move' pk=doc.pk %}" class="d-flex gap-1">
+                {% csrf_token %}
+                <input type="hidden" name="back_url" value="{% url 'panel:documentation_machine_page' pk=machine.pk %}">
+                <select name="target_machine_pk" class="form-select form-select-sm" required>
+                    <option value="">— Mover a… —</option>
+                    {% for m in all_machines %}
+                        {% if m.pk != machine.pk %}
+                        <option value="{{ m.pk }}">{{ m.code }}</option>
+                        {% endif %}
+                    {% endfor %}
+                </select>
+                <button type="submit" class="btn btn-sm btn-outline-primary" title="Mover">
+                    <i class="bi bi-arrow-right"></i>
+                </button>
+            </form>
         </div>
     </li>
     {% endfor %}
@@ -206,6 +232,11 @@
                         <i class="bi bi-arrow-up-circle"></i>
                     </button>
                 </form>
+                <button class="btn btn-sm btn-outline-secondary" type="button"
+                        data-bs-toggle="collapse" data-bs-target="#move-machine-{{ doc.pk }}"
+                        title="Mover a otra máquina">
+                    <i class="bi bi-truck"></i>
+                </button>
                 <button class="btn btn-sm btn-outline-danger" type="button"
                         onclick="openDeleteConfirm('{% url 'panel:documentation_document_delete' domain='machine' pk=doc.pk %}', '#machine-detail-container', '{{ doc.display_name|default:doc.document_type|escapejs }}')"
                         title="Eliminar">
@@ -220,6 +251,23 @@
              hx-target="this" hx-swap="innerHTML">
         </div>
         {% endif %}
+        <div class="collapse mt-2" id="move-machine-{{ doc.pk }}">
+            <form method="post" action="{% url 'panel:documentation_document_move' pk=doc.pk %}" class="d-flex gap-1">
+                {% csrf_token %}
+                <input type="hidden" name="back_url" value="{% url 'panel:documentation_machine_page' pk=machine.pk %}">
+                <select name="target_machine_pk" class="form-select form-select-sm" required>
+                    <option value="">— Mover a… —</option>
+                    {% for m in all_machines %}
+                        {% if m.pk != machine.pk %}
+                        <option value="{{ m.pk }}">{{ m.code }}</option>
+                        {% endif %}
+                    {% endfor %}
+                </select>
+                <button type="submit" class="btn btn-sm btn-outline-primary" title="Mover">
+                    <i class="bi bi-arrow-right"></i>
+                </button>
+            </form>
+        </div>
     </li>
     {% endfor %}
 </ul>
