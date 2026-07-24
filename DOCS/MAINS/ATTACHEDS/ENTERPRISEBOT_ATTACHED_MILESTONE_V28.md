@@ -86,47 +86,60 @@ todavía el volumen y la forma real de la suciedad del cubo sucio).
    ni documento versionado; vive solo en la máquina Windows local,
    fuera de este repositorio).
 
-## 4. Hoja de Ruta para la Siguiente Sesión de H28
+## 4. Decisiones de diseño cerradas por Miguel Ángel (S031)
 
-**Antes de escribir una sola línea de código**, cerrar con Miguel
-Ángel (directriz 4.8, no decidir nada de esto unilateralmente):
+Los 5 puntos que la Hoja de Ruta de S030 dejaba abiertos quedan
+cerrados, verbatim, sin reinterpretación (directriz 4.8):
 
-1. **Alcance de la primera copia real.** ¿Se abre el agente ya
-   apuntando a elegir cualquier carpeta bajo `DOCUMENTOS GRUPO
-   ALVAREZ`, o se acota la primera prueba real a `DOC. MAQUINAS` y
-   `DOC. PERSONAL` únicamente, dejando el resto (`DOC. GRUAS ALVAREZ`,
-   `DOC. GRUAS LARIOS`, etc.) para una copia posterior una vez
-   validado el agente con las dos carpetas ya conocidas?
-2. **Nombre y estructura del cubo sucio en GCS.** Proponer un nombre
-   de cubo nuevo (ej. `enterprisebot-{company}-migracion-sucia` o
-   similar) y confirmar si dentro del cubo se replica la ruta local
-   completa tal cual (`DOCUMENTOS GRUPO ALVAREZ/DOC. MAQUINAS/...`) o
-   se usa una raíz distinta.
-3. **Carpeta/cubo de cuarentena.** Decidir la ubicación exacta (prefijo
-   dentro del mismo cubo sucio, ej. `_CUARENTENA/`, o un cubo GCS
-   aparte) — pendiente desde el punto 3 de la sección 3 de este anexo.
-4. **Cuenta de servicio del agente.** Crear en Google Cloud Console una
-   cuenta de servicio nueva, con permiso de escritura ÚNICAMENTE sobre
-   el cubo sucio (y el de cuarentena) — nunca reutilizar una cuenta de
-   servicio con permisos más amplios (principio de mínimo privilegio).
-   Miguel Ángel gestiona la creación y la custodia de la clave
-   descargada, igual que ya hace con `.env` (ver el incidente de
-   seguridad de `GOOGLE_MAPS_API_KEY`, mismo cuidado aplicado aquí
-   desde el principio).
-5. **Tecnología del agente.** Con las cuatro decisiones ya tomadas
-   (subida directa, vigilancia continua, cuarentena para lo nuevo),
-   el candidato más directo es un script Python con la librería
-   `watchdog` (vigilancia de carpeta en tiempo real) +
-   `google-cloud-storage` (subida), empaquetado como ejecutable de
-   Windows (PyInstaller) o corriendo como tarea programada — a
-   confirmar con Miguel Ángel el formato de entrega final (¿ejecutable
-   con icono en bandeja del sistema, tarea silenciosa en segundo
-   plano, o consola visible?).
-6. Una vez cerrados los puntos 1-5, construir: (a) el diálogo de
-   selección de carpeta(s), (b) la copia inicial en bruto al cubo
-   sucio con barra de progreso/log visible, (c) el modo vigilancia
-   posterior con cuarentena para archivos nuevos.
+1. **Alcance de la primera copia real.** No hay lista fija ni
+   acotación previa a dos carpetas concretas: "el alcance es copiar
+   las carpetas que se digan, se van a copiar. Es decir, voy a coger
+   una carpeta y voy a decir, esta carpeta se copia. Entonces se va a
+   copiar esa carpeta, todas las subcarpetas, todos los archivos,
+   todo. Todo lo que haya dentro de esa carpeta de forma recursiva.
+   Todo absolutamente." — coherente con el punto 1 de la sección 3
+   (selección dinámica), pero precisa que cada carpeta elegida se
+   copia siempre de forma recursiva y completa, sin excepciones ni
+   filtrado de contenido.
+2. **Nombre y estructura del cubo sucio en GCS: `cgs_grupo_alvarez`**
+   (en minúsculas — GCS no admite mayúsculas en nombres de bucket,
+   verificado en línea contra la documentación oficial de Google
+   Cloud el 2026-07-24; Miguel Ángel propuso el nombre en mayúsculas y
+   confirmó el paso a minúsculas al conocer la restricción). Dentro
+   del cubo se replica la ruta local completa tal cual.
+3. **Cubo de cuarentena: aparte y dedicado**, distinto del cubo sucio
+   `cgs_grupo_alvarez` (no un prefijo dentro del mismo cubo). Nombre
+   del cubo de cuarentena pendiente de asignar en la sesión de
+   construcción.
+4. **Cuenta de servicio del agente:** Miguel Ángel la crea él mismo en
+   Google Cloud Console, guiado paso a paso por el modelo durante la
+   sesión de construcción — con permiso de escritura únicamente sobre
+   el cubo sucio y el de cuarentena (principio de mínimo privilegio,
+   sección 3 punto 4).
+5. **Tecnología y formato de entrega del agente: ejecutable** —
+   script Python (`watchdog` + `google-cloud-storage`) empaquetado
+   con PyInstaller, con icono en la bandeja del sistema.
 
-Sin código todavía — este anexo se abre en S030 solo con el diseño
-cerrado, la implementación empieza en la sesión siguiente dedicada a
-H28.
+## 5. Hoja de Ruta para la Siguiente Sesión de H28
+
+Con las 5 decisiones ya cerradas, la sesión de construcción de la
+Fase 1 hace, en este orden:
+
+1. Guiar a Miguel Ángel paso a paso en la creación de la cuenta de
+   servicio dedicada en Google Cloud Console (sección 4, punto 4) y
+   en la creación de los cubos `cgs_grupo_alvarez` y el de cuarentena
+   (nombre a asignar en esa misma sesión).
+2. Construir el diálogo de selección de carpeta(s) local del agente
+   Windows.
+3. Construir la copia inicial en bruto al cubo sucio (recursiva,
+   completa, sin transformar — sección 3 punto 2) con barra de
+   progreso/log visible.
+4. Construir el modo vigilancia posterior (`watchdog`) con escritura
+   en el cubo de cuarentena para archivos nuevos, nunca en el árbol
+   espejo del cubo sucio (sección 3 punto 3).
+5. Empaquetar como ejecutable con PyInstaller, icono en bandeja del
+   sistema (sección 4, punto 5).
+
+Sin código todavía — este anexo se cierra en S031 con las 5
+decisiones de diseño confirmadas, la implementación empieza en la
+sesión siguiente dedicada a H28.
