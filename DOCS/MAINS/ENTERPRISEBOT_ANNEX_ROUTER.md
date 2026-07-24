@@ -46,12 +46,12 @@ Cumple dos funciones inseparables:
 | **H20** | **Laboratorio de Análisis Unificado** | **`ENTERPRISEBOT_ATTACHED_MILESTONE_V20.md`** |
 | H21 | Refactorización Arquitectónica Split views.py | `ENTERPRISEBOT_ATTACHED_MILESTONE_V21.md` |
 | H22 | Visor de Historial de Máquinas (Operario) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V22.md` |
-| H23 | Documentación de Centros de Gasto | `ENTERPRISEBOT_ATTACHED_MILESTONE_V23.md` ← EN PROGRESO |
+| H23 | Documentación de Centros de Gasto | `ENTERPRISEBOT_ATTACHED_MILESTONE_V23.md` |
 | H24 | Vacaciones y Calendario | `ENTERPRISEBOT_ATTACHED_MILESTONE_V24.md` |
 | H25 | Documentación de Personal | `ENTERPRISEBOT_ATTACHED_MILESTONE_V25.md` |
 | H26 | Infraestructura Documental Compartida (Alertas, PDF, Email, Sustitución) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V26.md` |
 | H27 | Ingesta de Documentación vía Correo Electrónico | `ENTERPRISEBOT_ATTACHED_MILESTONE_V27.md` |
-| H28 | Migración y Reorganización de Documentación Histórica | `ENTERPRISEBOT_ATTACHED_MILESTONE_V28.md` |
+| H28 | Migración y Reorganización de Documentación Histórica | `ENTERPRISEBOT_ATTACHED_MILESTONE_V28.md` ← EN PROGRESO |
 
 Todos los anexos viven en `DOCS/MAINS/ATTACHEDS/`.
 
@@ -59,15 +59,15 @@ Todos los anexos viven en `DOCS/MAINS/ATTACHEDS/`.
 
 ## 3. Resultado Actual
 
-**Hito EN PROGRESO:** H23 — Documentación de Centros de Gasto →
-`ENTERPRISEBOT_ATTACHED_MILESTONE_V23.md`
+**Hito EN PROGRESO:** H28 — Migración y Reorganización de Documentación
+Histórica → `ENTERPRISEBOT_ATTACHED_MILESTONE_V28.md`
 
-**Hito PAUSADO en esta sesión (S021):** H24 — Vacaciones y Calendario →
-`ENTERPRISEBOT_ATTACHED_MILESTONE_V24.md`. Funcionalidad de vacaciones/
-calendario en sí completa desde S020 (sin trabajo pendiente propio); el
-único punto abierto que quedaba (migración Google Drive → Google Cloud
-Storage, ver anexo V24 "COMPLETADAS EN S019") pasa a rastrearse como
-primera tarea de H23, por afectar también a H23 (`MachineDocument`).
+**Hito PAUSADO en esta sesión (S030→S031):** H23 — Documentación de
+Centros de Gasto → `ENTERPRISEBOT_ATTACHED_MILESTONE_V23.md`. Sin
+trabajo pendiente urgente propio (ver hoja de ruta de ese anexo);
+H28 lo precede y condiciona -- la documentación histórica real debe
+migrarse y limpiarse antes de que las pruebas de H23/H25 tengan
+sentido pleno contra datos reales.
 
 ---
 
