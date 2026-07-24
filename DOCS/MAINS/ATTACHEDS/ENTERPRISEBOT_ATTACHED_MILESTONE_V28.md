@@ -259,15 +259,37 @@ una carpeta de prueba real (`prueba_h28`, 2 archivos + 1 subcarpeta):
 - Datos de prueba limpiados de ambos cubos y de la máquina local
   tras la validación.
 
-**Único punto sin probar en S031: el empaquetado con PyInstaller**
-(`pyinstaller --onefile --windowed`) — se ejecutó y verificó todo en
-modo consola (`python main.py`), no como `.exe`. Pendiente para la
-sesión siguiente.
+**Empaquetado con PyInstaller, probado en S031** —
+`pyinstaller --onefile --windowed --name AgenteMigracionH28 main.py`
+generó `dist\AgenteMigracionH28.exe` sin errores (solo un
+`SyntaxWarning` interno de la librería `pystray`, ajeno a este
+código, sin efecto funcional). Corrección previa necesaria antes de
+empaquetar: `_configure_logging()` en `main.py` no debía añadir
+`logging.StreamHandler()` cuando `sys.stdout` es `None` — caso real
+en `--windowed`, sin consola — o el primer log hacía petar la app
+(ver commit `c0abeb0`).
 
-Infraestructura GCP lista, código de los 5 puntos escrito y probado
-end-to-end en modo consola contra datos reales. La sesión que retome
-H28 empieza por: (1) el empaquetado con PyInstaller y su propia
-prueba, y (2) los puntos abiertos documentados en
-`h28_migration_agent/README.md` sección 5 (persistencia entre
-reinicios, formato exacto de blob name, arranque automático de la
-máquina Windows).
+Prueba real del `.exe`: icono de bandeja correcto, copia real de una
+carpeta de prueba con 3 archivos — 3/3 subidos, 0 fallos — y sin
+procesos duplicados (dos PIDs por instancia es el comportamiento
+normal del cargador `--onefile`, no una segunda instancia).
+
+**Incidencia menor de sesión — variable de entorno de usuario y caché
+de `explorer.exe`:** al lanzar el `.exe` por primera vez con doble
+clic, dio el mismo error de "clave no configurada" aunque
+`$env:H28_AGENT_KEY_PATH` estaba fijada — porque esa fijación solo
+vivía en una ventana de PowerShell concreta, no a nivel de usuario.
+Se corrigió con
+`[System.Environment]::SetEnvironmentVariable(..., "User")`, pero
+`explorer.exe` (y cualquier proceso ya abierto antes del cambio)
+sigue usando su copia de entorno antigua hasta que se reinicia — para
+lanzar el `.exe` por doble clic sin este problema, cerrar sesión de
+Windows una vez tras fijar la variable.
+
+Infraestructura GCP lista, código de los 5 puntos escrito, probado
+end-to-end en modo consola y también como ejecutable empaquetado,
+todo contra datos reales. La sesión que retome H28 empieza por los
+puntos abiertos documentados en `h28_migration_agent/README.md`
+sección 5 (persistencia entre reinicios, formato exacto de blob
+name, arranque automático de la máquina Windows) — no queda ningún
+punto de la Fase 1 sin construir ni sin probar.
