@@ -236,16 +236,38 @@ progreso gráfica dedicada. Si Miguel Ángel quiere una barra visual
 real, es una mejora de UI a añadir en la sesión siguiente, no
 construida en S031.
 
-**Sin probar en un entorno Windows real** — todo el código de
-S031 pasó `python3 -m py_compile` (sintaxis) en el workspace Linux
-del modelo, pero ni el diálogo tkinter, ni la subida real contra los
-cubos, ni el icono de bandeja pystray, ni el empaquetado PyInstaller
-se han ejecutado de verdad. La sesión siguiente de H28 debe empezar
-por una prueba end-to-end en la máquina Windows de Miguel Ángel
-(`python main.py` en modo consola primero, antes de empaquetar) y
-corregir lo que falle contra comportamiento real, nunca asumir que
-compilar sin errores de sintaxis equivale a que funcione.
+**Probado en un entorno Windows real, dentro de la propia sesión
+S031** — Miguel Ángel clonó el repo (`C:\EnterpriseBot`), creó el
+entorno virtual, instaló `requirements.txt` sin ningún error de
+compilación (confirmado: Python 3.14.6, `pyinstaller 6.21.0`,
+`watchdog 6.0.0`, todo con wheels precompiladas, nada que compilar
+desde fuente), configuró `H28_AGENT_KEY_PATH`, y ejecutó
+`python main.py` en modo consola. Prueba end-to-end completa contra
+una carpeta de prueba real (`prueba_h28`, 2 archivos + 1 subcarpeta):
 
-Infraestructura GCP lista y código de los 5 puntos escrito. La sesión
-que retome H28 empieza por la prueba end-to-end en Windows real (ver
-nota más arriba), no por escribir código nuevo.
+- Icono de bandeja aparece correctamente, con el tooltip esperado.
+- Diálogo de selección de carpeta (tkinter) funciona.
+- Copia inicial: 2/2 archivos subidos, 0 fallos — verificado con
+  `gcloud storage ls -r` que `archivo1.txt` y
+  `subcarpeta/archivo2.txt` llegaron a
+  `gs://cgs_grupo_alvarez/prueba_h28/` con la estructura de carpetas
+  preservada.
+- Vigilancia continua: un archivo nuevo creado tras la copia inicial
+  (`archivo3_nuevo.txt`) se subió automáticamente a
+  `gs://cgs_grupo_alvarez_cuarentena/prueba_h28/`, nunca al cubo
+  sucio — comportamiento de cuarentena confirmado correcto.
+- Datos de prueba limpiados de ambos cubos y de la máquina local
+  tras la validación.
+
+**Único punto sin probar en S031: el empaquetado con PyInstaller**
+(`pyinstaller --onefile --windowed`) — se ejecutó y verificó todo en
+modo consola (`python main.py`), no como `.exe`. Pendiente para la
+sesión siguiente.
+
+Infraestructura GCP lista, código de los 5 puntos escrito y probado
+end-to-end en modo consola contra datos reales. La sesión que retome
+H28 empieza por: (1) el empaquetado con PyInstaller y su propia
+prueba, y (2) los puntos abiertos documentados en
+`h28_migration_agent/README.md` sección 5 (persistencia entre
+reinicios, formato exacto de blob name, arranque automático de la
+máquina Windows).
