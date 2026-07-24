@@ -120,6 +120,78 @@ cerrados, verbatim, sin reinterpretación (directriz 4.8):
    script Python (`watchdog` + `google-cloud-storage`) empaquetado
    con PyInstaller, con icono en la bandeja del sistema.
 
+## 4bis. Recursos GCP reales creados en S031 (guiado paso a paso)
+
+- **Proyecto:** el mismo `GOOGLE_CLOUD_PROJECT` que ya usa EnterpriseBot
+  para Vertex AI (`gen-lang-client-0961484137`) — sin proyecto separado.
+- **Cubo sucio:** `cgs_grupo_alvarez` — eu (multi-region), Standard,
+  Uniform access, Not public (public access prevention enforced),
+  Soft-delete (retención por defecto, 7 días), **Hierarchical
+  namespace: Enabled**. Sin Object versioning ni Retention.
+- **Cubo de cuarentena:** `cgs_grupo_alvarez_cuarentena` — misma
+  configuración exacta que el cubo sucio (eu multi-region, Standard,
+  Uniform, Not public, Soft-delete, Hierarchical namespace Enabled).
+- **Labels aplicadas a ambos cubos:** `milestone: h28`,
+  `purpose: dirty-migration` (cubo sucio) / `purpose: quarantine`
+  (cuarentena).
+- **Justificación de Hierarchical namespace (verificado en línea,
+  documentación oficial de Google Cloud, 2026-07-24):** GCS no admite
+  renombrado atómico de carpetas en un bucket sin HNS — cada
+  renombrado de carpeta con muchos objetos son N operaciones de
+  copia+borrado. Con HNS es una operación atómica sobre la carpeta,
+  lo que beneficia directamente a la Fase 2 (reorganización,
+  deduplicación, renombrado de dosieres). No soporta ACLs de objeto,
+  versioning ni retention lock — no se pierde nada real porque ya se
+  había decidido Uniform access sin versioning/retention para estos
+  cubos de tránsito. **Restricción dura de la plataforma:** el ajuste
+  HNS no se puede cambiar después de crear el bucket.
+- **Rapid Cache: descartado.** Es una capa de caché de alto throughput
+  pensada para cargas de lectura intensiva tipo entrenamiento ML;
+  esta migración es un volcado periódico, no lectura repetitiva de
+  alta frecuencia — no aporta beneficio y añade coste/complejidad.
+- **Cuenta de servicio del agente:** creada sin roles a nivel de
+  proyecto (permisos concedidos solo a nivel de bucket, mínimo
+  privilegio). **Nombre real:**
+  `enterprisebot-h28-migration-ag@gen-lang-client-0961484137.iam.gserviceaccount.com`
+  — truncado por Google Cloud a 30 caracteres respecto al nombre
+  propuesto originalmente (`enterprisebot-h28-migration-agent`, 34
+  caracteres). **Usar siempre el nombre real (`...-ag@...`), nunca el
+  propuesto originalmente (`...-agent@...`)** en cualquier código,
+  configuración o documentación de sesiones futuras — origen de una
+  incidencia real en S031 (ver más abajo).
+- **Permisos concedidos (verificados con `gcloud storage buckets
+  get-iam-policy`):** `roles/storage.objectAdmin` para
+  `enterprisebot-h28-migration-ag@...` en `cgs_grupo_alvarez` y en
+  `cgs_grupo_alvarez_cuarentena`. Aplicados vía Cloud Shell
+  (`gcloud storage buckets add-iam-policy-binding`), no vía el
+  formulario "Grant access" de la consola — ver incidencia.
+- **Clave de la cuenta de servicio:** pendiente de generar y
+  descargar en la sesión de construcción, cuando el agente Windows
+  esté listo para recibirla. Vive solo en la máquina Windows local,
+  nunca en este repositorio ni en ningún commit (mismo cuidado que el
+  incidente de `GOOGLE_MAPS_API_KEY`).
+
+### Incidencia S031 — nombre de cuenta de servicio truncado a 30 caracteres
+
+**Origen:** el modelo propuso el nombre `enterprisebot-h28-migration-agent`
+(34 caracteres) sin verificar el límite de 30 caracteres de Google
+Cloud para IDs de cuenta de servicio. La consola lo truncó
+silenciosamente a `enterprisebot-h28-migration-ag` al crearla, sin
+aviso visible en el paso de creación. Esto causó una cascada de
+fallos aparentemente inconexos con el email incorrecto
+(`...-agent@...`): el campo "Grant access" de la consola no
+reconocía el principal, el desplegable de autocompletado no lo
+sugería, y `gcloud iam service-accounts describe` devolvía
+`NOT_FOUND` — todos síntomas del mismo error de origen (email
+inexistente), no de propagación de IAM ni de un bug de la consola,
+como se llegó a sospechar durante la sesión antes de verificar con
+`gcloud iam service-accounts list`, que reveló el nombre real.
+**Lección:** verificar límites de longitud de nombre antes de
+proponer identificadores de recursos GCP, y ante un fallo de
+validación repetido en varias interfaces distintas, comprobar primero
+si el dato de entrada es exacto (`gcloud ... list` sin filtro) antes
+de atribuirlo a un problema de la plataforma.
+
 ## 5. Hoja de Ruta para la Siguiente Sesión de H28
 
 Con las 5 decisiones ya cerradas, la sesión de construcción de la
