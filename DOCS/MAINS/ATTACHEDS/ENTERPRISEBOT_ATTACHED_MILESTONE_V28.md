@@ -352,30 +352,58 @@ carpetas reales.
 
 ## 7. Hoja de Ruta para la Siguiente Sesión de H28
 
-La Fase 1 (Copia) queda completa y probada — ver "COMPLETADAS EN
-S031" y las secciones 5 y 6 de arriba. La siguiente sesión no repite
-ni revisa ese trabajo salvo que surja una incidencia real usándolo.
-Orden de trabajo:
+### COMPLETADAS EN S032
 
-1. **Primera migración real.** Miguel Ángel elige, desde el agente ya
-   instalado y con arranque automático activo, la primera carpeta
-   real de `DOCUMENTOS GRUPO ALVAREZ` a copiar (él decide cuál —
-   nunca asumir `DOC. MAQUINAS`/`DOC. PERSONAL` por precedente de
-   sesiones anteriores sin que lo confirme explícitamente en la
-   sesión). Confirmar que la copia real se completa sin fallos y que
-   la vigilancia queda activa.
-2. **Opcional, solo si Miguel Ángel lo pide:** cerrar el punto abierto
+- **Primera migración real ejecutada y verificada.** Miguel Ángel
+  arrancó el agente ya instalado y eligió `DOC. MAQUINAS` como
+  primera carpeta real de `DOCUMENTOS GRUPO ALVAREZ` a copiar.
+  Verificado cifra contra cifra entre local, agente y GCS: 16.019
+  archivos, 17.430.554.398 bytes exactos en los tres sitios
+  (`gcloud storage du -s`, notificación del `.exe`, Propiedades de
+  Windows). Copia sin fallos.
+- **Mecanismo de materialización de OneDrive confirmado contra
+  código, no solo por hipótesis.** `uploader.py` usa
+  `transfer_manager.upload_many_from_filenames`, que abre/lee cada
+  archivo con la API estándar de Python antes de subirlo — en
+  Windows con OneDrive Files On-Demand, ese `open` fuerza la
+  descarga si el archivo está "solo en la nube". Explica por qué
+  `DOC. MAQUINAS` acabó cuadrando en tamaño pese a no estar
+  materializada de antemano, y confirma que `DOC. PERSONAL` (vista
+  con "Tamaño en disco" muy inferior al real, mismo síntoma) no
+  necesita materialización manual previa — el propio agente la
+  fuerza sobre la marcha al leer cada archivo.
+- **Segunda migración real, `DOC. PERSONAL`, iniciada pero sin
+  terminar al cierre de esta sesión.** Miguel Ángel la lanzó tras la
+  confirmación anterior; sigue subiendo a `gs://cgs_grupo_alvarez/`
+  a cierre de sesión (9,97 GB reales pendientes de completar y
+  verificar).
+- **Decisión explícita de Miguel Ángel:** no se abre el diseño de la
+  Fase 2 todavía. Se planteó adelantarlo en paralelo mientras
+  `DOC. PERSONAL` terminaba de subir, pero contradice directamente la
+  sección 2 de este anexo ("evitar diseñar a ciegas... sin haber
+  visto todavía el volumen y la forma real de la suciedad") y el
+  punto 3 de esta misma hoja de ruta heredada de S031 — señalado
+  explícitamente antes de proceder, sin decidir por cuenta propia
+  (directriz 4.8). Miguel Ángel no llegó a confirmar el adelanto;
+  la sesión se cerró con `DOC. PERSONAL` todavía en curso.
+
+### Hoja de ruta para la siguiente sesión
+
+1. **Confirmar el cierre de `DOC. PERSONAL`.** Verificar con el mismo
+   método cifra contra cifra que se usó para `DOC. MAQUINAS`
+   (`gcloud storage du -s gs://cgs_grupo_alvarez/DOC.\ PERSONAL/` +
+   recuento de objetos vs. Propiedades de Windows) antes de dar la
+   segunda migración por completa.
+2. **Diseño de la Fase 2 (Clasificación) — solo ahora sí, con volumen
+   real de dos carpetas migradas** (`DOC. MAQUINAS` completa,
+   `DOC. PERSONAL` a confirmar en el punto 1): herramienta de
+   clasificación asistida por Gemini + heurística, detección de
+   duplicados, limpieza de carpetas vacías y dosieres redundantes.
+3. **Opcional, solo si Miguel Ángel lo pide:** cerrar el punto abierto
    de `h28_migration_agent/README.md` sección 6 — escaneo de "puesta
-   al día" para detectar archivos aparecidos mientras el agente
-   estaba apagado, más allá de los eventos en vivo de watchdog.
-3. **Diseño de la Fase 2 (Clasificación) — no antes de tener volumen
-   real en el cubo sucio** (ver sección 2 de este anexo: "evitar
-   diseñar a ciegas... sin haber visto todavía el volumen y la forma
-   real de la suciedad"). Una vez haya al menos una carpeta real
-   migrada (punto 1), abrir el diseño de la Fase 2 con Miguel Ángel:
-   herramienta de clasificación asistida por Gemini + heurística,
-   detección de duplicados, limpieza de carpetas vacías y dosieres
-   redundantes.
+   al día" para archivos aparecidos con el agente apagado.
 
-No hay código pendiente de la Fase 1. Esta hoja de ruta empieza en
-uso real del agente, no en desarrollo.
+No hay código pendiente de la Fase 1 — sigue completa y probada
+(S031). Esta hoja de ruta sigue centrada en uso real del agente, no
+en desarrollo, hasta que el punto 2 abra el diseño de la Fase 2.
+
