@@ -51,6 +51,7 @@ Cumple dos funciones inseparables:
 | H25 | Documentación de Personal | `ENTERPRISEBOT_ATTACHED_MILESTONE_V25.md` |
 | H26 | Infraestructura Documental Compartida (Alertas, PDF, Email, Sustitución) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V26.md` |
 | H27 | Ingesta de Documentación vía Correo Electrónico | `ENTERPRISEBOT_ATTACHED_MILESTONE_V27.md` |
+| H28 | Migración y Reorganización de Documentación Histórica | `ENTERPRISEBOT_ATTACHED_MILESTONE_V28.md` |
 
 Todos los anexos viven en `DOCS/MAINS/ATTACHEDS/`.
 

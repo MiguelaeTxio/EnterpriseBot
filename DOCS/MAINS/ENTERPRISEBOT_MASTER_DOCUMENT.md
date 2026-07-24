@@ -330,6 +330,42 @@ app de dominio.
   modularización — evitar archivos grandes que mezclen
   responsabilidades, para no penalizar la escalabilidad futura.
 
+#### Hito 28: Migración y Reorganización de Documentación Histórica
+(Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V28.md`)
+- Hito nuevo, abierto en S030 a petición explícita de Miguel Ángel:
+  "vamos a cambiar radicalmente el tema de la documentación, tanto de
+  personal como de la maquinaria" — decidido como hito independiente
+  (no colgado de H23/H25) porque precede y condiciona a ambos: mientras
+  la documentación histórica real (OneDrive/Microsoft 365, carpetas
+  `DOC. MAQUINAS`, `DOC. PERSONAL` y otras hermanas bajo `DOCUMENTOS
+  GRUPO ALVAREZ`) siga sin migrar y sin limpiar, cualquier prueba real
+  de H23/H25 sigue partiendo de datos "de la selva" (carpetas vacías,
+  duplicados, dosieres redundantes, nombres inconsistentes entre
+  versiones del mismo documento).
+- Motivo explícito de Miguel Ángel: "eliminar la selva... quiero
+  reorganizarlo todo, los archivos que sean iguales quitarlos, los
+  dosieres que ya tienen partes en el archivo, eliminarlos... y dejar
+  un directorio limpio, sin carpetas vacías, sin archivos duplicados,
+  sin archivos redundantes."
+- **No toca** la ingesta ya construida de partes de trabajo ni de
+  albaranes/repuestos — explícitamente fuera de alcance ("eso no se
+  toca, eso va a seguir exactamente igual").
+- Tres fases, secuenciales, cada una condición de la siguiente:
+  1. **Copia** — agente residente en Windows, sube en bruto (estructura
+     tal cual, con toda la suciedad real) a un cubo de GCS dedicado
+     ("cubo sucio", separado de los cubos de producción de H23/H25).
+  2. **Clasificación** — herramienta exclusiva para Miguel Ángel:
+     explorador de archivos en la nube con clasificación asistida por
+     Gemini + heurística, detección de duplicados, limpieza de carpetas
+     vacías y dosieres redundantes, hasta dejar el árbol coherente y
+     con nombres de archivo estables tanto para máquina como para
+     humano.
+  3. **Despachador** — interfaz de servidor de archivos para el resto
+     de usuarios (subida/descarga ordenada), construida solo cuando la
+     Fase 2 ya ha dejado el árbol limpio -- nunca antes.
+- Detalle técnico completo, incluidas las cuatro decisiones de diseño
+  de la Fase 1 y la hoja de ruta ejecutable, en el anexo H28.
+
 ---
 
 ### 4. Directrices Técnicas Vinculantes
