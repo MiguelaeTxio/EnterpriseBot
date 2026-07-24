@@ -1582,54 +1582,144 @@ permanece `EN PROGRESO` en el enrutador, sin PCH. Los puntos que
 quedaron sin empezar hoy se trasladan íntegros a la hoja de ruta de
 mañana.
 
-### Hoja de Ruta para la Sesión Siguiente (S031)
+### COMPLETADAS EN S030
 
-1. **Prueba end-to-end del dominio Personal — EN CURSO, punto de
-   partida de esta sesión.** Miguel Ángel confirmó con Yolanda Bandera
-   (supervisora de documentación) la ruta real de la carpeta de
-   operarios antes de cerrar S030 -- la sesión siguiente arranca
-   directamente con esa ruta, sin más bloqueos. `PersonalDocument`
-   sigue en 0 filas reales. El accordion de Personal
-   (`_personal_accordion.html`) sigue con el diseño antiguo (sin ficha
-   de página propia, sin sistema de incidencias, sin candidatos a
-   obsoleto, sin vigencia forzada, sin selección múltiple ni
-   comparación, sin el toggle documentadas/sin documentar) -- decidir
-   con Miguel Ángel si aplicar toda la reconstrucción de Maquinaria de
-   las últimas sesiones antes o después de probar el dominio tal cual
-   está, ahora que hay datos reales con los que probarlo.
-2. **H10 -- fotos de abonos al devolver mercadería.** Arrastrado sin
-   cambios desde S028: "hay que arreglar también una cosa en el tema
-   de los albaranes, que es cuando se devuelve mercadería para que
-   puedan subir la foto de los abonos." Ver anexo H10
-   (`ENTERPRISEBOT_ATTACHED_MILESTONE_V10.md`) para el detalle -- este
-   anexo solo deja la referencia, el punto de partida completo vive
-   allí. Sin investigar todavía.
+**Sesión larguísima, con H23 EN PROGRESO durante toda ella, sin PCH
+hasta el cierre (abre H28).** Resumen por bloques:
+
+**1. Bug de pérdida de datos al editar partes (desvío a H07, ver ese
+anexo `S_H07_14` para el detalle íntegro).** Cerrado el punto
+PRIORITARIO heredado de S028: `show_lunch_break`/`has_diet`/
+`first_block_hc`/hf dejan de calcularse del horario en vivo en modo
+edición, se derivan de los datos reales ya guardados. Auditoría de
+producción contra el log `# [PARTE-BACKUP]` (actual + 9 archivos
+rotados): 13/14 avisos de la heurística semanal resultaron falsos
+positivos, el único real fue un error de tecleo del propio operario ya
+corregido a mano -- ningún parte fue víctima real del bug.
+
+**2. Repuestos (desvío a H10, ver ese anexo).** Investigando la
+pregunta original de Miguel Ángel sobre repuestos sin vincular a
+máquina: encontrado y corregido el selector "Bloque asociado" huérfano
+(perdía el vínculo de máquina de repuestos ya guardados en cada
+edición). Construido el modal global "Añadir repuesto" (rescate de
+repuestos pre-asignados/de almacén desde cualquier tarea, no solo la
+de su propia máquina), con fix de responsividad posterior (tabla ->
+lista apilada, aviso real en móvil). 15 `SparePartLine` sin máquina de
+la auditoría, corregidos con datos reales. Bug crítico encontrado y
+corregido: "Guardar bloques" nunca materializaba `consume_part_pks`/
+`consume_warehouse_items` -- los repuestos elegidos en el modal se
+perdían en silencio si el parte no se cerraba del todo.
+
+**3. Documentación de maquinaria, trabajo directo en H23.** Aclarada
+la falsa "decisión pendiente" de vacaciones/calendario (H24 ya cerrado
+desde S020). Botón "No es incidencia" para el modo sin candidata
+resuelta. Filtro del modo "sin asignar" a solo incidencias reales
+(antes mostraba todos los documentos de la máquina). Mover documentos
+individual y en bloque, separado de la resolución de incidencias.
+
+**4. Incidente de seguridad real, resuelto de principio a fin.**
+GitGuardian detectó `GOOGLE_MAPS_API_KEY` expuesta -- causa raíz: el
+valor real se documentó en el CUERPO de un commit de H18/S001 (meses
+atrás), visible en todo el historial desde entonces; se hizo público
+al poner el repositorio en público esa misma sesión (cuota de Actions
+agotada al 90% por `MiMoo`, repositorio ajeno de la misma cuenta).
+Resuelto: clave revocada/regenerada por Miguel Ángel, `.env`
+actualizado y recargado; historial de Git completo reescrito
+(`git filter-repo --replace-text`) y forzado a GitHub; servidor
+resincronizado (`git fetch && git reset --hard origin/main`, excepción
+explícita autorizada por Miguel Ángel). Tres skills de sistema
+actualizadas con la directriz de origen (`com-standards`,
+`nfs-enterprisebot-edit`, `nfs-enterprisebot-token`) vía `skill-creator`
+de Anthropic + `present_files` + "Guardar habilidad" -- el flujo de
+edición directa de archivos de skill no aplica en esta plataforma.
+
+**5. Dominio de personal (H25) -- primera prueba real con datos de
+Yolanda Bandera, tres iteraciones hasta funcionar.** Primer intento:
+mezcla real máquina/personal (un documento de personal se enrutó a una
+`MachineAsset` basura llamada "VARIOS" por coincidencia de texto en el
+nombre de archivo) -- corregido separando la subida por dominio
+(`IngestedFile.forced_domain`, migración 0005), primero con selector
+manual + salvaguarda automática, simplificado después a petición de
+Miguel Ángel a detección 100% automática (dígito en el nombre de
+carpeta -> Maquinaria, sin dígito -> Personal, con confirmación de 5s
+de cuenta atrás que se autoacepta). DNI normalizado en todo el
+circuito (`normalize_dni`, 8 dígitos + letra) tras encontrar el mismo
+DNI extraído en 4 formatos distintos entre documentos de la misma
+persona. Pre-registro automático real construido (`CompanyUser.
+pending_onboarding`, migración 0043, `create_preregistered_worker`):
+al subir la carpeta de un trabajador sin cuenta, se crea su registro
+directamente (sin acceso, sin contraseña utilizable) y se le vincula
+toda la documentación de golpe -- completado (no duplicado) cuando el
+propio trabajador se da de alta real por WhatsApp con su DNI. Bug real
+en el primer despliegue (`BaseUserManager.make_random_password()`
+eliminado en Django 5.1, crasheaba el worker de Celery en silencio) --
+corregido en un hilo paralelo de la misma sesión, verificado y
+confirmado aquí. Incidente de tareas perdidas por coincidir la subida
+con el reinicio del worker (deploy en curso) -- diagnosticado
+ejecutando la tarea en directo, resuelto a mano para el lote afectado,
+y cubierto de raíz con una tarea periódica de autocuración
+(`self_heal_unassigned_personal_documents`, Celery Beat cada 15 min).
+Añadida también paridad con Maquinaria: toggle Documentados/Sin
+documentar en la pestaña Personal.
+
+**6. Cierre: apertura de H28 (PCH Caso C).** "Migración y
+Reorganización de Documentación Histórica" -- agente Windows residente
+que copia en bruto la documentación real (OneDrive/Microsoft 365) a un
+cubo de GCS dedicado, vigilancia continua con cuarentena para archivos
+nuevos tras la copia inicial, subida directa a GCS. Tres fases (copia
+/ clasificación asistida para Miguel Ángel / despachador para el
+resto de la empresa), solo la Fase 1 con hoja de ruta ejecutable por
+ahora -- ver anexo H28.
+
+
+
+1. **Dominio Personal -- continuar la prueba real con la carpeta de
+   Manuel Alonso Pedrosa.** Ya funciona de extremo a extremo (subida
+   detectada como Personal, clasificación, pre-registro automático,
+   38/42 documentos vinculados) -- quedan 4 documentos sin revisar
+   (pks 84, 88, 94, 98, probablemente deduplicados durante la
+   clasificación) y falta probar el alta real por WhatsApp de un
+   trabajador pre-registrado (activación de la cuenta, no duplicado).
+   El accordion de Personal sigue con el diseño antiguo más allá del
+   toggle Documentados/Sin documentar ya añadido esta sesión (sin
+   ficha de página propia, sin sistema de incidencias, sin candidatos
+   a obsoleto, sin vigencia forzada, sin selección múltiple ni
+   comparación) -- decidir con Miguel Ángel si se aplica el resto de
+   la reconstrucción de Maquinaria ahora o más adelante.
+2. **H28 recién abierto -- Fase 1 (agente de copia) sin código
+   todavía.** Ver anexo H28 para las cuatro decisiones de diseño ya
+   cerradas y las cinco preguntas concretas pendientes antes de
+   empezar a implementar (alcance de la primera copia, nombre del
+   cubo sucio, ubicación de la cuarentena, cuenta de servicio
+   dedicada, tecnología del agente).
 3. **Repositorio de GitHub sigue en público.** Puesto así en S030 para
    sortear el límite de minutos de Actions de la cuenta (`MiMoo`,
    ajeno a EnterpriseBot, responsable del 88% del gasto) durante el
    incidente de seguridad de la clave de Google Maps -- confirmar con
    Miguel Ángel al empezar si ya lo volvió a privado o si sigue
    pendiente.
-4. **Considerar limitar el tamaño de "individuales" enviados a
-   `assess_master_coverage()`** (arrastrado desde S025) — el límite de
-   tokens de Gemini se ha tocado repetidamente al acumular muchos
-   documentos ya persistidos de la misma máquina -- mejora aparte, no
-   implementada todavía.
-5. **Dos ambigüedades de datos sin resolver de la auditoría de
-   `MachineAsset`** (arrastradas desde S028, sin urgencia): valores
-   cortos ambiguos que no se tocaron (A28=3388, A42=39053, series de 5
-   dígitos D01/D02/D03, etc.) -- se corregirán solos conforme se suba
-   documentación real de esas máquinas, no requieren acción activa.
+4. **H10 -- fotos de abonos al devolver mercadería.** Arrastrado sin
+   cambios desde S028. Ver anexo H10 para el detalle -- sin investigar
+   todavía.
+5. **Vigilar la tarea periódica nueva** (`self_heal_unassigned_personal_documents`,
+   Celery Beat cada 15 min, añadida al cierre de S030) -- confirmar en
+   la primera sesión siguiente que el worker Celery recogió el cambio
+   de `CELERY_BEAT_SCHEDULE` (necesita reinicio del worker, no solo
+   recarga de la web app) y que la tarea se está disparando de verdad.
+6. **Considerar limitar el tamaño de "individuales" enviados a
+   `assess_master_coverage()`** (arrastrado desde S025) -- sin
+   implementar todavía.
+7. **Dos ambigüedades de datos sin resolver de la auditoría de
+   `MachineAsset`** (arrastradas desde S028, sin urgencia) -- se
+   corregirán solas conforme se suba documentación real.
 
 **Observación sin acción inmediata (arrastrada de S023):**
 PythonAnywhere limita las versiones de Python disponibles a 3.10 (y
 anteriores) a fecha de esta sesión; `google-api-core` dejará de dar
 soporte a Python 3.10 el 2026-10-04. Sin acción posible por nuestra
-parte (depende de que PythonAnywhere añada una versión superior) —
-vigilar antes de esa fecha si no ha cambiado, para planificar la
-migración con margen. Correo a soporte de PythonAnywhere redactado y
-entregado a Miguel Ángel en S028 (sin confirmar todavía si llegó a
-enviarse ni respuesta recibida -- preguntar al empezar la siguiente).
+parte -- vigilar antes de esa fecha si no ha cambiado. Correo a
+soporte de PythonAnywhere redactado y entregado a Miguel Ángel en
+S028 (sin confirmar todavía si llegó a enviarse ni respuesta recibida).
 
 ### Funcionalidad nueva anotada por Miguel Ángel al cierre — evaluar si abre hito propio
 
@@ -1693,4 +1783,4 @@ originó, sin más acción pendiente aquí.
 | S027 | 2026-07-21 | **NOTA DE DESVÍO — sin trabajo directo en H23, sesión interrumpida por caída de herramientas del modelo.** Sesión arrancada para ejecutar la hoja de ruta de arriba, desviada de inmediato (Caso D del enrutador de anexos, sin PCH, marcador `EN PROGRESO` sin mover) para atender 4 incidencias reales que Miguel Ángel reportó al empezar en la vista unificada de partes digitales, ninguna ligada a H23: selector de periodo y preservación de filtros en `WorkOrderAdminHistoryView` (dominio H17, unificada allí en S012), botón "Marcar revisado" en el editor de parte digital (dominio H07, `form_entry.html`/`WorkOrderEntryFormView`), verificación sin cambios de la suma de horas del filtro en Revisados, y un 404 real corregido de paso (redirect roto desde la unificación H17-S012). Detalle técnico completo, los dos commits (`372faae`, `6eb7bbb`) y la verificación de despliegue en `ENTERPRISEBOT_ATTACHED_MILESTONE_V07.md` (fila `S_H07_12`) y `ENTERPRISEBOT_ATTACHED_MILESTONE_V17.md` (fila `S027`). Las herramientas del modelo cayeron antes de poder volver a la hoja de ruta de H23 y sin poder cerrar la sesión formalmente ni registrar el desvío -- confirmado por Miguel Ángel al reanudar que ningún commit se perdió (ambos en `origin/main`, ambos con despliegue verificado vía API de GitHub Actions, sin migración) y que las dos decisiones de diseño autónomas de la sesión (selector de periodo como desplegable, no auto-ajuste; suma de horas correcta sin cambios) funcionan perfectamente en producción. Cierre de S027 documentado retroactivamente en sesión posterior (S028), que retoma la hoja de ruta de abajo sin cambios -- Caso D: "el hito no avanzó". |
 | S028 | 2026-07-22 | H23 EN PROGRESO durante toda la sesión, con dos desvíos puntuales breves (Caso A, marcador nunca movido): a H07 (investigación de un bug real de pérdida de datos en modo edición de partes digitales, sin código tocado -- ver anexo H07 fila `S_H07_13`) y a H10 (una petición nueva sobre fotos de abonos al devolver mercadería, anotada en su propia hoja de ruta, sin trabajo de código). Sesión larguísima: 22 commits, 18 archivos, +2173/-298 líneas. Cerró retroactivamente S027 al empezar. Cerró por completo la primera tarea heredada de S026 (bastidor de `fleet.MachineAsset`): el campo ya existía, el problema real era que la comparación de discrepancia nunca lo tenía en cuenta; encontrado y corregido además un hallazgo más profundo con datos reales de la A-36 -- un documento con matrícula Y bastidor a la vez se marcaba como discrepancia falsa por dos causas encadenadas (comparación de nombre de archivo por subcadena libre en vez de token completo, y Gemini solo podía extraer una referencia por documento) -- solución de fondo: tres campos separados (matrícula/bastidor/código de flota), matrícula o código como ancla fuerte de identidad que nunca marca discrepancia y que puede CORREGIR un bastidor no confirmado ya guardado, verificado con simulación del peor caso de orden de procesamiento. Auditoría completa de los 566 `MachineAsset`: 58 filas borradas, 31 bastidores placeholder vaciados a mano. Rediseño completo de la pantalla de transferencia de incidencias (visor de documento, mecanismo de puntero visual definitivo, modal de cuenta atrás extraído a parcial reutilizable). Bloque de trabajo más grande de la sesión: funcionalidad nueva completa de "candidatos a documento obsoleto" (Gemini juzga por contenido, un humano siempre confirma el borrado, prioridad de resolución sobre incidencias de máquina), ampliada con selección múltiple y borrado en bloque, generalizada después a vigente/archivado (mismo mecanismo, sin restricción), comparación de dos documentos vía Gemini para detectar duplicados reales (con modal de espera, y corregida para marcar los DOS documentos comparados en vez de elegir uno automáticamente -- decisión explícita de Miguel Ángel), y las dos acciones en bloque simétricas (marcar/descartar obsoleto) en una sola vista genérica. Nuevo campo `force_current` para poder "recuperar documentos del cajón de archivos" -- vigencia forzada manualmente cuando el cálculo automático por fechas archivaría por error un documento que sigue siendo válido para toda la vida útil de la máquina. Otro fix real de paso: mensaje incorrecto en la pantalla de preflight para manuales de uso (la regla real nunca se había perdido, solo el texto mostrado). Prueba real con Yolanda (supervisora de documentación) al cierre, con feedback muy positivo ("de escándalo, de lujo, de cine") y dos incidencias menores para la sesión siguiente. Ver "COMPLETADAS EN S028" arriba para el detalle completo, y "Hoja de Ruta para la Sesión Siguiente (S029)" para el punto de partida. |
 | S029 | 2026-07-22 | **Sesión partida en dos chats por una caída de herramientas del lado de Anthropic (no del proyecto), sin pérdida real de código.** H23 EN PROGRESO durante toda la sesión, sin PCH. Primer chat: resueltos los dos primeros puntos heredados de S028 y commiteados/pusheados antes de la caída -- condición de carrera del modal de cuenta atrás (`a54d6dd`, listener `htmx:afterRequest` que cierra el modal tras respuesta HTMX exitosa) y migración a HTMX real de las 5 vistas que mutan documentación de máquina (`201bb0b`, nuevo helper `_machine_detail_htmx_response()`, con mensajes Django y "Candidatos a documento obsoleto" resueltos como `hx-swap-oob` reutilizable). Segundo chat ("Continuación", título puesto por Miguel Ángel): arrancó verificando con `git log`/`git diff --stat` contra `origin/main` -- sin dar nada por hecho de memoria -- que el trabajo del primer chat sí estaba realmente commiteado y desplegado (el anexo, al no haberse cerrado la sesión anterior, seguía mostrando esos dos puntos como pendientes: desfase de documentación, no de código). Implementó el tercer punto pendiente, el toggle documentadas/sin documentar en el listado de Documentación (`088055b`): criterio de "documentado" verificado empíricamente contra la BD real antes de escribir código (Comando S vía consola PythonAnywhere), usando la A-36 como caso conocido -- hallazgo de paso: el código real en BD es `A36` sin guion; con eso corregido, 508 `MachineAsset` en total, solo 2 documentadas (`A36`, `A29`). `doc_count` con el mismo criterio que `_machine_documents_view_data` (CLASSIFIED, sin maestro pendiente, sin candidato a obsoleto). Badge por máquina planteado y descartado explícitamente por Miguel Ángel ("con el toggle... no hace falta badge por máquina"). Cierre: Miguel Ángel da esta parte del hito (documentación de maquinaria) por "supuestamente cerrada" -- aclarando él mismo que los hitos nunca se cierran de verdad, solo se pausan; H23 sigue `EN PROGRESO`. Ver "COMPLETADAS EN S029" arriba para el detalle completo, y "Hoja de Ruta para la Sesión Siguiente (S030)" para el punto de partida: H10 (fotos de abonos), decisión sobre hito de vacaciones/calendario, y prueba end-to-end del dominio Personal (quinta sesión consecutiva sin atenderse). |
-| S030 | 2026-07-23 | **H23 EN PROGRESO durante toda la sesión, sin PCH, con desvíos puntuales a H07 y H10 (ver esos anexos, filas `S_H07_14` y `S030` respectivamente) e incidente de seguridad real resuelto en la misma sesión.** Sesión larguísima. Aclarada de entrada la "decisión sobre hito de vacaciones/calendario" heredada de S029: no existía tal decisión pendiente -- H24 ya es hito propio desde S018, cerrado desde S020, `PAUSADO` desde S021; el texto de la hoja de ruta era un residuo sin limpiar, corregido en esta sesión (ver sección 8). **Documentación de maquinaria (esta app):** botón **"No es incidencia"** en el modo "sin asignar" de `MachineDocumentTransferView` -- caso real de Miguel Ángel (A29, documento sin ninguna referencia a la máquina en su contenido, pero correctamente archivado): el desplegable "Mover a…" excluía a propósito la máquina actual, sin vía para confirmar "está bien archivado" sin moverlo. Reutiliza `DocumentMoveToMachineView` tal cual (`target_machine_pk` = máquina actual ya trataba ese caso como "confirmada, no movida" desde S026/S028) -- sin cambios de backend. **Corrección del mismo modo, aviso real con captura de pantalla:** el listado "sin asignar" mostraba TODOS los documentos de la máquina, no solo los que tienen incidencia -- "tienden a confusión y promueven que se muevan documentos que no es necesario que se muevan"; `docs_a` acotado a `content_mismatch_warning` real cuando no hay `machine_b`. **Mover documentos, nueva función explícita separada de la resolución de incidencias** (Miguel Ángel: "esta pantalla es de solucionar incidencia, no de mover documentos sin ton ni son... el mover documentos debería quedar implícito en la lista, con un botón de acciones"): botón "Mover a otra máquina" por fila en `_machine_detail.html` (vigente y archivado), reutilizando `DocumentMoveToMachineView` -- ajustado su redirect para volver a `back_url` cuando no llega `machine_a` (antes SIEMPRE volvía a la pantalla de transferencia). Generalizado después a selección múltiple, a petición explícita de Miguel Ángel ("todos los botones que podamos... usar para varios documentos, debemos de incluirlos en el tema de marcajes"): nueva `DocumentBulkMoveView` + selector "Mover a…" en la barra de selección ya existente (Comparar/Marcar obsoleto/Eliminar seleccionados), mismo patrón que las demás acciones en bloque. `all_machines` añadido al contexto de `MachinePageView` y `_machine_detail_htmx_response()` para poblar los selectores nuevos. **Incidente de seguridad real, resuelto de principio a fin en la misma sesión:** GitGuardian detectó `GOOGLE_MAPS_API_KEY` expuesta -- causa raíz: el valor real de la clave se había documentado literalmente en el CUERPO de un mensaje de commit de S001 de H18 (sección "Variable de entorno"), visible en el historial completo desde entonces; la exposición se hizo pública porque el repositorio se puso temporalmente en público esa misma sesión (ver más abajo, cuota de GitHub Actions). Resuelto: clave revocada y regenerada en Google Cloud Console por Miguel Ángel, `.env` actualizado y recargado en producción (confirmado: `GOOGLE_MAPS_API_KEY` no la usa ni el worker de Celery ni el bridge de voz, solo `budgets/`, así que no hizo falta reiniciar esos dos); historial de Git completo reescrito (`git filter-repo --replace-text`) y forzado a GitHub; servidor resincronizado con `git fetch && git reset --hard origin/main` (excepción explícita autorizada por Miguel Ángel a la prohibición de `com-bash-commands` sección 7, verificado que `.env` no se tocó). **Tres skills de sistema actualizadas con la directriz de origen** (empaquetadas con `skill-creator` de Anthropic tras localizar la herramienta -- el flujo habitual de edición directa de archivos de skill no aplica, Miguel Ángel confirmó que siempre es empaquetar + `present_files` + "Guardar habilidad" suya): `com-standards` (nueva sección "Secretos", prohibición general), `nfs-enterprisebot-edit` (aviso en el PASO 5, antes del commit), `nfs-enterprisebot-token` (punto 5 de prohibiciones, extendido a cualquier secreto, no solo el PAT). **Cuota de GitHub Actions (contexto del incidente):** disparos de despliegue retrasados/perdidos varias veces en la sesión -- diagnosticado como cuenta `MiguelaeTxio` al 90% de sus 2.000 minutos incluidos (`MiMoo`, otro repositorio de la cuenta, responsable del 88% del gasto, no EnterpriseBot); Miguel Ángel puso el repositorio en público temporalmente como solución (Actions ilimitado en público) -- **repositorio sigue en público al cierre de esta fila, pendiente de que Miguel Ángel lo vuelva a privado.** **Auditoría de producción del bug de pérdida de datos de H07 (ver ese anexo para el detalle):** 19 avisos brutos de heurística semanal, cruzados contra el log real `# [PARTE-BACKUP]` (actual + 9 archivos rotados) -- 13/14 casos de `lunch_break_start` divergente resultaron ser días reales sin pausa (falsos positivos de la heurística), el único con discrepancia real (francisco.carvajal, 06/07) fue un error de tecleo del propio operario ya corregido a mano por él -- **ningún parte de los 14 fue víctima real del bug.** Cierre: Miguel Ángel pidió documentar todo lo anterior y arrancar la prueba end-to-end del dominio Personal, con la ruta de la carpeta de operarios ya confirmada por Yolanda Bandera -- ver "Hoja de Ruta para la Sesión Siguiente" para el punto de partida. |
+| S030 | 2026-07-23 | **H23 EN PROGRESO toda la sesión, sin PCH hasta el cierre (abre H28) -- desvíos a H07 y H10, incidente de seguridad real resuelto, dominio Personal funcionando de extremo a extremo por primera vez.** Ver "COMPLETADAS EN S030" arriba para el detalle íntegro por bloques (bug de pérdida de datos de H07, repuestos/modal global de H10, documentación de maquinaria, incidente `GOOGLE_MAPS_API_KEY`, separación de dominio + pre-registro + autocuración de Personal, apertura de H28) y "Hoja de Ruta para la Sesión Siguiente" para el punto de partida. |
