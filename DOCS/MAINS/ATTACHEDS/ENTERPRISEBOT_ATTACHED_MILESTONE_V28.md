@@ -165,11 +165,14 @@ cerrados, verbatim, sin reinterpretación (directriz 4.8):
   `cgs_grupo_alvarez_cuarentena`. Aplicados vía Cloud Shell
   (`gcloud storage buckets add-iam-policy-binding`), no vía el
   formulario "Grant access" de la consola — ver incidencia.
-- **Clave de la cuenta de servicio:** pendiente de generar y
-  descargar en la sesión de construcción, cuando el agente Windows
-  esté listo para recibirla. Vive solo en la máquina Windows local,
-  nunca en este repositorio ni en ningún commit (mismo cuidado que el
-  incidente de `GOOGLE_MAPS_API_KEY`).
+- **Clave de la cuenta de servicio:** generada en S031 vía
+  `gcloud iam service-accounts keys create` (Key ID
+  `3309552c7eafa004aea366390f04b0f10cd729c6`), descargada por Miguel
+  Ángel a su máquina Windows desde Cloud Shell y borrada de forma
+  segura de Cloud Shell (`shred -u`) tras la descarga. Vive solo en la
+  máquina Windows local, fuera de este repositorio — nunca debe
+  aparecer en ningún commit ni documento versionado (mismo cuidado que
+  el incidente de `GOOGLE_MAPS_API_KEY`).
 
 ### Incidencia S031 — nombre de cuenta de servicio truncado a 30 caracteres
 
@@ -197,10 +200,12 @@ de atribuirlo a un problema de la plataforma.
 Con las 5 decisiones ya cerradas, la sesión de construcción de la
 Fase 1 hace, en este orden:
 
-1. Guiar a Miguel Ángel paso a paso en la creación de la cuenta de
-   servicio dedicada en Google Cloud Console (sección 4, punto 4) y
-   en la creación de los cubos `cgs_grupo_alvarez` y el de cuarentena
-   (nombre a asignar en esa misma sesión).
+1. ~~Guiar a Miguel Ángel en la creación de la cuenta de servicio
+   dedicada y de los cubos `cgs_grupo_alvarez` y
+   `cgs_grupo_alvarez_cuarentena`.~~ **COMPLETADO en S031** — ver
+   sección 4bis para los recursos reales, nombres exactos y permisos
+   concedidos. Clave de la cuenta de servicio ya generada y en poder
+   de Miguel Ángel en su máquina Windows.
 2. Construir el diálogo de selección de carpeta(s) local del agente
    Windows.
 3. Construir la copia inicial en bruto al cubo sucio (recursiva,
@@ -212,6 +217,6 @@ Fase 1 hace, en este orden:
 5. Empaquetar como ejecutable con PyInstaller, icono en bandeja del
    sistema (sección 4, punto 5).
 
-Sin código todavía — este anexo se cierra en S031 con las 5
-decisiones de diseño confirmadas, la implementación empieza en la
-sesión siguiente dedicada a H28.
+Infraestructura GCP lista. La sesión que retome H28 empieza
+directamente en el punto 2 (código del agente) — sin código todavía a
+fecha de cierre de S031.
