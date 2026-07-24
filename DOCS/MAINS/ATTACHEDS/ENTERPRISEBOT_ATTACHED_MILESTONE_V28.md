@@ -206,17 +206,46 @@ Fase 1 hace, en este orden:
    sección 4bis para los recursos reales, nombres exactos y permisos
    concedidos. Clave de la cuenta de servicio ya generada y en poder
    de Miguel Ángel en su máquina Windows.
-2. Construir el diálogo de selección de carpeta(s) local del agente
-   Windows.
-3. Construir la copia inicial en bruto al cubo sucio (recursiva,
+2. ~~Construir el diálogo de selección de carpeta(s) local del
+   agente Windows.~~ **CÓDIGO ESCRITO en S031** —
+   `h28_migration_agent/main.py` (tkinter `filedialog.askdirectory`,
+   invocado desde el menú del icono de bandeja).
+3. ~~Construir la copia inicial en bruto al cubo sucio (recursiva,
    completa, sin transformar — sección 3 punto 2) con barra de
-   progreso/log visible.
-4. Construir el modo vigilancia posterior (`watchdog`) con escritura
-   en el cubo de cuarentena para archivos nuevos, nunca en el árbol
-   espejo del cubo sucio (sección 3 punto 3).
-5. Empaquetar como ejecutable con PyInstaller, icono en bandeja del
-   sistema (sección 4, punto 5).
+   progreso/log visible.~~ **CÓDIGO ESCRITO en S031** —
+   `h28_migration_agent/uploader.py`
+   (`transfer_manager.upload_many_from_filenames`, progreso vía log
+   y notificaciones de bandeja, no barra visual gráfica — ver nota
+   más abajo).
+4. ~~Construir el modo vigilancia posterior (`watchdog`) con
+   escritura en el cubo de cuarentena para archivos nuevos, nunca en
+   el árbol espejo del cubo sucio (sección 3 punto 3).~~ **CÓDIGO
+   ESCRITO en S031** — `h28_migration_agent/watcher.py`.
+5. ~~Empaquetar como ejecutable con PyInstaller, icono en bandeja
+   del sistema (sección 4, punto 5).~~ **DOCUMENTADO en S031** —
+   comando de empaquetado en `h28_migration_agent/README.md` sección
+   4. **No ejecutado todavía**: el modelo no tiene un entorno Windows
+   real donde correr `pyinstaller` ni probar el icono de bandeja —
+   pendiente de que Miguel Ángel lo ejecute y confirme.
 
-Infraestructura GCP lista. La sesión que retome H28 empieza
-directamente en el punto 2 (código del agente) — sin código todavía a
-fecha de cierre de S031.
+**Nota sobre "barra de progreso" (punto 3):** la hoja de ruta original
+pedía "barra de progreso/log visible". Lo construido en S031 es log
+en archivo + consola + notificaciones puntuales de la bandeja del
+sistema (recuento de archivos subidos/fallidos) — no una barra de
+progreso gráfica dedicada. Si Miguel Ángel quiere una barra visual
+real, es una mejora de UI a añadir en la sesión siguiente, no
+construida en S031.
+
+**Sin probar en un entorno Windows real** — todo el código de
+S031 pasó `python3 -m py_compile` (sintaxis) en el workspace Linux
+del modelo, pero ni el diálogo tkinter, ni la subida real contra los
+cubos, ni el icono de bandeja pystray, ni el empaquetado PyInstaller
+se han ejecutado de verdad. La sesión siguiente de H28 debe empezar
+por una prueba end-to-end en la máquina Windows de Miguel Ángel
+(`python main.py` en modo consola primero, antes de empaquetar) y
+corregir lo que falle contra comportamiento real, nunca asumir que
+compilar sin errores de sintaxis equivale a que funcione.
+
+Infraestructura GCP lista y código de los 5 puntos escrito. La sesión
+que retome H28 empieza por la prueba end-to-end en Windows real (ver
+nota más arriba), no por escribir código nuevo.
