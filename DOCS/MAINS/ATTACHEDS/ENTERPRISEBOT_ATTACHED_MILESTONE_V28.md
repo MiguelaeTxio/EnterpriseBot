@@ -286,10 +286,69 @@ sigue usando su copia de entorno antigua hasta que se reinicia — para
 lanzar el `.exe` por doble clic sin este problema, cerrar sesión de
 Windows una vez tras fijar la variable.
 
-Infraestructura GCP lista, código de los 5 puntos escrito, probado
-end-to-end en modo consola y también como ejecutable empaquetado,
-todo contra datos reales. La sesión que retome H28 empieza por los
-puntos abiertos documentados en `h28_migration_agent/README.md`
-sección 5 (persistencia entre reinicios, formato exacto de blob
-name, arranque automático de la máquina Windows) — no queda ningún
-punto de la Fase 1 sin construir ni sin probar.
+## 6. Cierre de la Fase 1 (S031, continuación) — persistencia, reubicación de la clave, formato de blob confirmado, arranque automático
+
+**Persistencia de carpetas vigiladas entre reinicios — decisión
+verbatim de Miguel Ángel:** "el agente tiene que recordar qué estaba
+haciendo y seguir haciéndolo". Implementado en `state.py`
+(`agent_data/watched_folders.json`) y `main.py`
+(`_resume_watched_folders()`, usado como `setup` de
+`pystray.Icon.run()`). Alcance real, documentado como límite
+conocido: retoma la *vigilancia* de cada carpeta, pero no repite la
+copia inicial ni escanea archivos aparecidos mientras el agente
+estaba apagado — solo los eventos en vivo de watchdog llegan a
+cuarentena. Ver `h28_migration_agent/README.md` sección 6 para el
+punto abierto derivado.
+
+**Reubicación de la clave de la cuenta de servicio — incidencia de
+Miguel Ángel:** la clave vivía en una carpeta de descargas ajena al
+agente (`sdcard`, junto a decenas de archivos sin relación). Ahora
+vive en `h28_migration_agent/agent_data/service_account_key.json`
+(carpeta local nunca versionada — ver `.gitignore` nuevo en S031),
+resuelta por defecto sin necesidad de variable de entorno
+(`config.get_service_account_key_path()`); `H28_AGENT_KEY_PATH`
+sigue soportada como alternativa opcional, con prioridad si está
+fijada. Miguel Ángel movió la clave real y eliminó la variable de
+entorno antigua durante la propia sesión.
+
+**Formato del nombre de blob dentro del cubo sucio — confirmado
+verbatim por Miguel Ángel:** "la ruta la vamos a guardar como raíz
+esa carpeta" — la carpeta elegida en el diálogo es siempre la raíz
+dentro del cubo; lo que haya por encima de ella en la ruta local de
+Windows (unidad, OneDrive, `DOCUMENTOS GRUPO ALVAREZ`, etc.) nunca
+se incluye. Confirma la implementación ya escrita en
+`build_blob_name()` (`uploader.py`) — sin cambios de código
+necesarios, solo cierre de la duda de diseño.
+
+**Arranque automático — decisión de Miguel Ángel: tarea programada.**
+Registrada `EnterpriseBot_H28_MigrationAgent` vía
+`Register-ScheduledTask`, disparador `AtLogOn` del usuario de Windows
+(no SYSTEM — un icono de bandeja necesita sesión de escritorio real),
+sin privilegios de administrador (`-RunLevel Limited`). Comando
+completo en `h28_migration_agent/README.md` sección 5. Probada en
+S031 con `Start-ScheduledTask`: icono de bandeja apareció
+correctamente. `LastTaskResult: 267009`
+(`SCHED_S_TASK_RUNNING`) confirmado como resultado normal para una
+tarea que se queda corriendo indefinidamente, no un error.
+
+**Incidencia de sesión — reconstrucción del `.exe` bloqueada:** al
+reconstruir el ejecutable tras los cambios de persistencia, PyInstaller
+falló con `PermissionError: Acceso denegado` sobre
+`AgenteMigracionH28.exe` — causa real: una instancia anterior del
+`.exe` seguía en ejecución y Windows bloquea archivos abiertos por un
+proceso. Resuelto cerrando el proceso (`Stop-Process`) antes de
+reconstruir. Recordatorio para sesiones futuras: cualquier
+reconstrucción del ejecutable requiere cerrar primero toda instancia
+en marcha, incluida la que pueda haber arrancado la propia tarea
+programada.
+
+**Estado final de la Fase 1 al cierre de S031: completa.**
+Infraestructura GCP, código de los 5 puntos originales, persistencia
+entre reinicios, ubicación ordenada de la clave, formato de blob
+confirmado, y arranque automático — todo construido y probado con
+datos reales en la máquina Windows de Miguel Ángel. Ningún punto de
+la Fase 1 queda sin decidir, sin construir o sin probar. Único punto
+abierto para el futuro: el alcance de la persistencia frente a
+archivos aparecidos con el agente apagado (`README.md` sección 6) —
+mejora opcional, no bloqueante para empezar a usar el agente en
+carpetas reales.

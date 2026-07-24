@@ -82,7 +82,34 @@ provisional (generado por código en `_build_tray_image()`,
 entregue, añadir `--icon=ruta\icono.ico` al comando de PyInstaller
 de arriba.
 
-## 5. Puntos abiertos para la siguiente sesión de H28 (no decididos en S031)
+## 5. Arranque automático (decisión S031: tarea programada)
+
+Registrada una tarea programada de Windows que arranca el `.exe` en
+cuanto el usuario inicia sesión (no requiere permisos de
+administrador ni cuenta SYSTEM — un icono de bandeja necesita una
+sesión de escritorio real):
+
+```powershell
+$Action = New-ScheduledTaskAction -Execute "C:\EnterpriseBot\h28_migration_agent\dist\AgenteMigracionH28.exe" -WorkingDirectory "C:\EnterpriseBot\h28_migration_agent\dist"
+$Trigger = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERNAME"
+$Settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
+$Principal = New-ScheduledTaskPrincipal -UserId "$env:USERNAME" -LogonType Interactive -RunLevel Limited
+Register-ScheduledTask -TaskName "EnterpriseBot_H28_MigrationAgent" -Action $Action -Trigger $Trigger -Settings $Settings -Principal $Principal -Description "Agente de migracion H28 - sube documentacion historica a GCS"
+```
+
+Probada en S031 con `Start-ScheduledTask -TaskName
+"EnterpriseBot_H28_MigrationAgent"` — icono de bandeja apareció
+correctamente. `LastTaskResult: 267009` en
+`Get-ScheduledTaskInfo` es `SCHED_S_TASK_RUNNING`, no un error — es
+el código normal para una tarea que se queda corriendo indefinidamente
+(la app de bandeja nunca termina sola).
+
+**El `.exe` debe reconstruirse tras cualquier cambio de código**
+(sección 4) — y recuerda copiar también la clave actualizada a
+`dist\agent_data\service_account_key.json` si `dist\` se genera de
+cero.
+
+## 6. Punto abierto para la siguiente sesión de H28
 
 - **Alcance de la persistencia entre reinicios.** Lo construido en
   S031 retoma la *vigilancia* de las carpetas ya elegidas, pero no
@@ -90,15 +117,6 @@ de arriba.
   mientras el agente estaba cerrado — solo los eventos en vivo de
   watchdog (agente corriendo) llegan a cuarentena. Si Miguel Ángel
   quiere que también se detecten archivos nuevos aparecidos durante
-  el tiempo que el agente estuvo apagado, hace falta diseñar un
+  el tiempo que el agente estuvo apagado (por ejemplo, mientras la
+  máquina estaba apagada de un día para otro), hace falta diseñar un
   escaneo de "puesta al día" al arrancar — no construido en S031.
-- **Formato exacto del nombre de blob dentro del cubo sucio.** Esta
-  sesión implementó `{nombre_de_la_carpeta_elegida}/{ruta_relativa
-  interna}` como interpretación pragmática de "replicar la ruta
-  local completa" (ver docstring de `build_blob_name()` en
-  `uploader.py`) — no incluye la ruta absoluta de Windows completa
-  (unidad, OneDrive, etc.). Confirmar con Miguel Ángel si esto es lo
-  que se quería decir, o si hace falta algo distinto.
-- **Arranque automático de la máquina Windows** (tarea programada,
-  inicio de sesión, servicio de Windows) — no decidido ni construido
-  todavía, solo el ejecutable en sí.

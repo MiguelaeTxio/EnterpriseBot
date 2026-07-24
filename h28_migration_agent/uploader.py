@@ -50,18 +50,20 @@ def build_blob_name(selected_folder, relative_path):
     ---
     Construye el nombre del blob de destino dentro del cubo sucio.
 
-    Nota de implementacion (S031, pendiente de confirmar en la
-    sesion siguiente de H28): se usa el nombre de la carpeta
-    seleccionada como raiz dentro del cubo, seguido de la ruta
-    relativa interna — no la ruta absoluta completa de Windows
-    (unidad, OneDrive, etc.), que no aporta valor real dentro del
-    cubo y complica la lectura humana. Confirmar con Miguel Angel si
-    esto coincide con lo que se entendia por "replicar la ruta local
-    completa".
+    Confirmado por Miguel Angel (S031): la carpeta elegida es
+    siempre la raiz de la ruta dentro del cubo — nunca se incluye lo
+    que hay por encima de ella en la ruta local de Windows (unidad,
+    OneDrive, DOCUMENTOS GRUPO ALVAREZ, etc.).
+    ---
+    Confirmed by Miguel Angel (S031): the chosen folder is always
+    the root of the path inside the bucket — whatever sits above it
+    in the local Windows path (drive, OneDrive, DOCUMENTOS GRUPO
+    ALVAREZ, etc.) is never included.
     """
     folder_name = os.path.basename(os.path.normpath(selected_folder))
     posix_relative = relative_path.replace(os.sep, "/")
     return f"{folder_name}/{posix_relative}"
+
 
 
 def upload_folder_recursive(
