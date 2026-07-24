@@ -86,6 +86,34 @@ todavía el volumen y la forma real de la suciedad del cubo sucio).
    ni documento versionado; vive solo en la máquina Windows local,
    fuera de este repositorio).
 
+### COMPLETADAS EN S031
+
+Resumen ejecutivo de la sesión (detalle completo en las secciones 4,
+4bis, 5 y 6 de este mismo anexo):
+
+- Cerradas verbatim las 5 decisiones de diseño que dejó abiertas
+  S030 (alcance de copia, nombre del cubo sucio, cubo de cuarentena,
+  cuenta de servicio, formato de entrega del agente).
+- Infraestructura GCP real creada y verificada: cubos
+  `cgs_grupo_alvarez` y `cgs_grupo_alvarez_cuarentena` (con
+  Hierarchical namespace), cuenta de servicio con permisos mínimos,
+  clave generada y entregada a Miguel Ángel.
+- Directriz técnica nueva 4.10 en el documento maestro: infraestructura
+  GCP siempre vía Cloud Shell/`gcloud`, nunca guiando por formularios
+  de la consola web — origen: incidencia real de esta sesión (nombre
+  de cuenta de servicio truncado sin aviso visible en la consola).
+- Agente de migración construido de cero (`h28_migration_agent/`):
+  diálogo de selección de carpeta, copia inicial recursiva, vigilancia
+  con cuarentena, empaquetado ejecutable, persistencia de carpetas
+  vigiladas entre reinicios, y arranque automático vía tarea
+  programada de Windows.
+- Todo probado end-to-end con datos reales en la máquina Windows de
+  Miguel Ángel — en modo consola y como ejecutable empaquetado — no
+  solo verificado por sintaxis.
+- Fase 1 de H28 queda completa. Único punto abierto: alcance de la
+  persistencia frente a archivos aparecidos con el agente apagado
+  (mejora opcional, no bloqueante).
+
 ## 4. Decisiones de diseño cerradas por Miguel Ángel (S031)
 
 Los 5 puntos que la Hoja de Ruta de S030 dejaba abiertos quedan
@@ -195,46 +223,15 @@ validación repetido en varias interfaces distintas, comprobar primero
 si el dato de entrada es exacto (`gcloud ... list` sin filtro) antes
 de atribuirlo a un problema de la plataforma.
 
-## 5. Hoja de Ruta para la Siguiente Sesión de H28
+## 5. Pruebas end-to-end de la Fase 1 (S031)
 
-Con las 5 decisiones ya cerradas, la sesión de construcción de la
-Fase 1 hace, en este orden:
-
-1. ~~Guiar a Miguel Ángel en la creación de la cuenta de servicio
-   dedicada y de los cubos `cgs_grupo_alvarez` y
-   `cgs_grupo_alvarez_cuarentena`.~~ **COMPLETADO en S031** — ver
-   sección 4bis para los recursos reales, nombres exactos y permisos
-   concedidos. Clave de la cuenta de servicio ya generada y en poder
-   de Miguel Ángel en su máquina Windows.
-2. ~~Construir el diálogo de selección de carpeta(s) local del
-   agente Windows.~~ **CÓDIGO ESCRITO en S031** —
-   `h28_migration_agent/main.py` (tkinter `filedialog.askdirectory`,
-   invocado desde el menú del icono de bandeja).
-3. ~~Construir la copia inicial en bruto al cubo sucio (recursiva,
-   completa, sin transformar — sección 3 punto 2) con barra de
-   progreso/log visible.~~ **CÓDIGO ESCRITO en S031** —
-   `h28_migration_agent/uploader.py`
-   (`transfer_manager.upload_many_from_filenames`, progreso vía log
-   y notificaciones de bandeja, no barra visual gráfica — ver nota
-   más abajo).
-4. ~~Construir el modo vigilancia posterior (`watchdog`) con
-   escritura en el cubo de cuarentena para archivos nuevos, nunca en
-   el árbol espejo del cubo sucio (sección 3 punto 3).~~ **CÓDIGO
-   ESCRITO en S031** — `h28_migration_agent/watcher.py`.
-5. ~~Empaquetar como ejecutable con PyInstaller, icono en bandeja
-   del sistema (sección 4, punto 5).~~ **DOCUMENTADO en S031** —
-   comando de empaquetado en `h28_migration_agent/README.md` sección
-   4. **No ejecutado todavía**: el modelo no tiene un entorno Windows
-   real donde correr `pyinstaller` ni probar el icono de bandeja —
-   pendiente de que Miguel Ángel lo ejecute y confirme.
-
-**Nota sobre "barra de progreso" (punto 3):** la hoja de ruta original
-pedía "barra de progreso/log visible". Lo construido en S031 es log
-en archivo + consola + notificaciones puntuales de la bandeja del
-sistema (recuento de archivos subidos/fallidos) — no una barra de
-progreso gráfica dedicada. Si Miguel Ángel quiere una barra visual
-real, es una mejora de UI a añadir en la sesión siguiente, no
-construida en S031.
+**Nota sobre "barra de progreso" (punto 3 de la sección 4):** la
+hoja de ruta de S030 pedía "barra de progreso/log visible". Lo
+construido en S031 es log en archivo + consola + notificaciones
+puntuales de la bandeja del sistema (recuento de archivos
+subidos/fallidos) — no una barra de progreso gráfica dedicada. Si
+Miguel Ángel quiere una barra visual real, es una mejora de UI para
+una sesión futura, no construida en S031.
 
 **Probado en un entorno Windows real, dentro de la propia sesión
 S031** — Miguel Ángel clonó el repo (`C:\EnterpriseBot`), creó el
@@ -352,3 +349,33 @@ abierto para el futuro: el alcance de la persistencia frente a
 archivos aparecidos con el agente apagado (`README.md` sección 6) —
 mejora opcional, no bloqueante para empezar a usar el agente en
 carpetas reales.
+
+## 7. Hoja de Ruta para la Siguiente Sesión de H28
+
+La Fase 1 (Copia) queda completa y probada — ver "COMPLETADAS EN
+S031" y las secciones 5 y 6 de arriba. La siguiente sesión no repite
+ni revisa ese trabajo salvo que surja una incidencia real usándolo.
+Orden de trabajo:
+
+1. **Primera migración real.** Miguel Ángel elige, desde el agente ya
+   instalado y con arranque automático activo, la primera carpeta
+   real de `DOCUMENTOS GRUPO ALVAREZ` a copiar (él decide cuál —
+   nunca asumir `DOC. MAQUINAS`/`DOC. PERSONAL` por precedente de
+   sesiones anteriores sin que lo confirme explícitamente en la
+   sesión). Confirmar que la copia real se completa sin fallos y que
+   la vigilancia queda activa.
+2. **Opcional, solo si Miguel Ángel lo pide:** cerrar el punto abierto
+   de `h28_migration_agent/README.md` sección 6 — escaneo de "puesta
+   al día" para detectar archivos aparecidos mientras el agente
+   estaba apagado, más allá de los eventos en vivo de watchdog.
+3. **Diseño de la Fase 2 (Clasificación) — no antes de tener volumen
+   real en el cubo sucio** (ver sección 2 de este anexo: "evitar
+   diseñar a ciegas... sin haber visto todavía el volumen y la forma
+   real de la suciedad"). Una vez haya al menos una carpeta real
+   migrada (punto 1), abrir el diseño de la Fase 2 con Miguel Ángel:
+   herramienta de clasificación asistida por Gemini + heurística,
+   detección de duplicados, limpieza de carpetas vacías y dosieres
+   redundantes.
+
+No hay código pendiente de la Fase 1. Esta hoja de ruta empieza en
+uso real del agente, no en desarrollo.
