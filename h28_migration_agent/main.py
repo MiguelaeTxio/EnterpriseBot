@@ -27,20 +27,20 @@ from PIL import Image, ImageDraw
 
 from config import DIRTY_BUCKET_NAME, LOG_FILE_NAME
 from gcs_client import MissingCredentialsError, build_client
+from state import load_watched_folders, save_watched_folders
 from uploader import upload_folder_recursive
 from watcher import start_watching
 
 logger = logging.getLogger(__name__)
 
-# Folders already being watched in this run, keyed by local path.
-# Not persisted across restarts yet — pendiente de confirmar con
-# Miguel Angel en la sesion siguiente de H28 si hace falta
-# persistencia entre reinicios del agente.
+# Folders being watched in this run, keyed by local path. Persisted
+# to disk (state.py) so the agent resumes them automatically on the
+# next restart — decision from Miguel Angel, S031.
 # ---
-# Carpetas ya vigiladas en esta ejecucion, indexadas por ruta local.
-# No se persisten entre reinicios todavia — pendiente de confirmar
-# con Miguel Angel en la sesion siguiente de H28 si hace falta
-# persistencia entre reinicios del agente.
+# Carpetas vigiladas en esta ejecucion, indexadas por ruta local.
+# Se persisten en disco (state.py) para que el agente las retome
+# automaticamente en el siguiente reinicio — decision de Miguel
+# Angel, S031.
 _active_observers = {}
 
 
@@ -150,8 +150,93 @@ def _select_folder_and_copy(icon, _menu_item):
 
     observer = start_watching(client, selected_folder)
     _active_observers[selected_folder] = observer
+    save_watched_folders(_active_observers.keys())
     icon.notify(
         f"Vigilancia continua activa sobre:\n{selected_folder}",
+        title="Agente H28",
+    )
+
+
+def _resume_watched_folders(icon):
+    """Resume watching every folder persisted from a previous run.
+    ---
+    Retoma la vigilancia de cada carpeta persistida de una
+    ejecución anterior.
+
+    Called once, right after the tray icon becomes visible (pystray
+    ``setup`` callback) — decision from Miguel Ángel (S031): "el
+    agente tiene que recordar qué estaba haciendo y seguir
+    haciéndolo".
+
+    Known gap (documented, not solved in S031): this only resumes
+    *watching* — it does not redo the initial bulk copy, and it does
+    not scan for files that appeared while the agent was closed
+    between runs. Only watchdog's live events (while the agent is
+    running) reach the quarantine bucket.
+    ---
+    Hueco conocido (documentado, no resuelto en S031): esto solo
+    retoma la *vigilancia* — no repite la copia inicial, y no
+    escanea archivos que hayan aparecido mientras el agente estaba
+    cerrado entre ejecuciones. Solo los eventos en vivo de watchdog
+    (con el agente corriendo) llegan al cubo de cuarentena.
+    """
+    # pystray exige que, al sustituir el setup por defecto, este
+    # mismo lo deje visible explicitamente -- si no, el icono nunca
+    # aparece (verificado en la documentacion oficial de pystray).
+    # ---
+    # pystray requires that, when the default setup is replaced,
+    # this one makes the icon visible itself -- otherwise it never
+    # shows (verified against the official pystray documentation).
+    icon.visible = True
+
+    persisted_folders = load_watched_folders()
+    if not persisted_folders:
+        return
+
+    missing_folders = [
+        folder for folder in persisted_folders
+        if not os.path.isdir(folder)
+    ]
+    valid_folders = [
+        folder for folder in persisted_folders
+        if os.path.isdir(folder)
+    ]
+    for missing_folder in missing_folders:
+        logger.warning(
+            "Carpeta persistida ya no existe, se descarta: %s",
+            missing_folder,
+        )
+
+    if not valid_folders:
+        save_watched_folders([])
+        return
+
+    try:
+        client = build_client()
+    except MissingCredentialsError as error:
+        logger.error(
+            "No se pudieron retomar %d carpetas persistidas: %s",
+            len(valid_folders),
+            error,
+        )
+        icon.notify(
+            "No se pudo retomar la vigilancia de sesiones "
+            "anteriores: falta la clave de la cuenta de servicio.",
+            title="Agente H28",
+        )
+        return
+
+    for folder in valid_folders:
+        observer = start_watching(client, folder)
+        _active_observers[folder] = observer
+        logger.info("Vigilancia retomada sobre: %s", folder)
+
+    if missing_folders:
+        save_watched_folders(_active_observers.keys())
+
+    icon.notify(
+        f"Vigilancia retomada sobre {len(valid_folders)} "
+        "carpeta(s) de la sesión anterior.",
         title="Agente H28",
     )
 
@@ -191,7 +276,7 @@ def main():
         "EnterpriseBot — Agente de Migracion H28",
         menu=menu,
     )
-    icon.run()
+    icon.run(setup=_resume_watched_folders)
 
 
 if __name__ == "__main__":

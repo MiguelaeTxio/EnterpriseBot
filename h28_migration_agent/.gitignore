@@ -1,0 +1,16 @@
+# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/h28_migration_agent/.gitignore
+# Carpeta local de datos del agente: clave de la cuenta de servicio
+# y estado de carpetas vigiladas. Nunca debe versionarse (ver
+# com-standards, seccion "Secretos").
+agent_data/
+
+# Artefactos locales de compilacion y del entorno virtual.
+build/
+dist/
+*.spec
+h28_agent_venv/
+__pycache__/
+*.pyc
+
+# Log local de ejecucion.
+h28_migration_agent.log

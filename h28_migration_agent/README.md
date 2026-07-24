@@ -16,21 +16,28 @@ py -m venv h28_agent_venv
 pip install -r requirements.txt
 ```
 
-## 2. Configurar la clave de la cuenta de servicio
+## 2. Colocar la clave de la cuenta de servicio
 
-La clave JSON descargada en S031 (Key ID
-`3309552c7eafa004aea366390f04b0f10cd729c6`) vive **solo en esta
-máquina Windows, nunca en este repositorio**. Antes de arrancar el
-agente, fija la variable de entorno con su ruta local:
+**Cambio S031, respecto a versiones anteriores de este README:** la
+clave ya no necesita variable de entorno para el uso normal. Vive en
+una carpeta propia del agente, `agent_data\` (nunca versionada — ver
+`.gitignore`), junto al script o junto al ejecutable una vez
+empaquetado.
 
-```powershell
-$env:H28_AGENT_KEY_PATH = "C:\ruta\segura\enterprisebot-h28-migration-ag-key.json"
+Copia ahí la clave JSON descargada en S031 (Key ID
+`3309552c7eafa004aea366390f04b0f10cd729c6`) con este nombre exacto:
+
+```
+h28_migration_agent\agent_data\service_account_key.json
 ```
 
-(Para que persista entre sesiones de PowerShell, usar
-`[System.Environment]::SetEnvironmentVariable(...)` a nivel de
-usuario, o configurarla en el Programador de tareas de Windows si el
-agente se lanza como tarea.)
+Si `agent_data\` no existe todavía, créala — el propio agente también
+la crea sola al arrancar si hace falta.
+
+**Alternativa (opcional):** si prefieres guardar la clave en otro
+sitio, sigue funcionando fijando la variable de entorno
+`H28_AGENT_KEY_PATH` con la ruta completa — esta tiene prioridad
+sobre la ubicación por defecto de `agent_data\`.
 
 ## 3. Ejecutar en modo consola (desarrollo/pruebas)
 
@@ -48,7 +55,11 @@ de Migración H28"). Clic derecho:
   se sube al cubo de cuarentena (`cgs_grupo_alvarez_cuarentena`), no
   al árbol espejo del cubo sucio.
 - **Salir** — detiene todas las vigilancias en marcha y cierra el
-  agente.
+  agente. **No olvida las carpetas** — quedan guardadas en
+  `agent_data\watched_folders.json` y se retoman automáticamente en
+  el siguiente arranque, sin volver a seleccionarlas (decisión S031:
+  "el agente tiene que recordar qué estaba haciendo y seguir
+  haciéndolo").
 
 El log completo de cada ejecución queda en
 `h28_migration_agent.log`, junto al script (o junto al ejecutable
@@ -61,9 +72,9 @@ pyinstaller --onefile --windowed --name AgenteMigracionH28 main.py
 ```
 
 El ejecutable resultante queda en `dist\AgenteMigracionH28.exe`. La
-variable de entorno `H28_AGENT_KEY_PATH` debe seguir configurada en
-la máquina donde se ejecute el `.exe`, exactamente igual que en modo
-consola.
+clave sigue resolviéndose igual (sección 2) — colócala en
+`dist\agent_data\service_account_key.json`, junto al `.exe`, o usa
+la variable de entorno.
 
 **Pendiente (fuera de esta sesión):** sustituir el icono de bandeja
 provisional (generado por código en `_build_tray_image()`,
@@ -73,12 +84,14 @@ de arriba.
 
 ## 5. Puntos abiertos para la siguiente sesión de H28 (no decididos en S031)
 
-- **Persistencia de carpetas vigiladas entre reinicios del agente.**
-  Ahora mismo, si se cierra el agente y se vuelve a abrir, hay que
-  volver a seleccionar cada carpeta manualmente — no hay ninguna
-  lista guardada. Si Miguel Ángel quiere que las carpetas ya elegidas
-  se retomen automáticamente al reiniciar, hace falta diseñarlo
-  (archivo de estado local, ¿dónde vive?) antes de implementarlo.
+- **Alcance de la persistencia entre reinicios.** Lo construido en
+  S031 retoma la *vigilancia* de las carpetas ya elegidas, pero no
+  repite la copia inicial ni escanea archivos que hayan aparecido
+  mientras el agente estaba cerrado — solo los eventos en vivo de
+  watchdog (agente corriendo) llegan a cuarentena. Si Miguel Ángel
+  quiere que también se detecten archivos nuevos aparecidos durante
+  el tiempo que el agente estuvo apagado, hace falta diseñar un
+  escaneo de "puesta al día" al arrancar — no construido en S031.
 - **Formato exacto del nombre de blob dentro del cubo sucio.** Esta
   sesión implementó `{nombre_de_la_carpeta_elegida}/{ruta_relativa
   interna}` como interpretación pragmática de "replicar la ruta

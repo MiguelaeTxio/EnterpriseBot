@@ -4,6 +4,7 @@
 Cliente GCS compartido para el agente de migracion H28."""
 
 import logging
+import os
 
 from google.cloud import storage
 
@@ -13,10 +14,10 @@ logger = logging.getLogger(__name__)
 
 
 class MissingCredentialsError(RuntimeError):
-    """Raised when no service account key path is configured.
+    """Raised when the service account key file cannot be found.
     ---
-    Se lanza cuando no hay ruta de clave de cuenta de servicio
-    configurada.
+    Se lanza cuando no se encuentra el archivo de clave de la
+    cuenta de servicio.
     """
 
 
@@ -29,15 +30,21 @@ def build_client():
     Raises
     ------
     MissingCredentialsError
-        If the H28_AGENT_KEY_PATH environment variable is not set.
+        If the resolved key path does not point to an existing
+        file.
         ---
-        Si la variable de entorno H28_AGENT_KEY_PATH no esta fijada.
+        Si la ruta de clave resuelta no apunta a un archivo
+        existente.
     """
     key_path = get_service_account_key_path()
-    if not key_path:
+    if not key_path or not os.path.isfile(key_path):
         raise MissingCredentialsError(
-            "No se ha configurado la ruta de la clave de la cuenta "
-            "de servicio (variable de entorno H28_AGENT_KEY_PATH)."
+            "No se encuentra el archivo de la clave de la cuenta de "
+            f"servicio en:\n{key_path}\n\n"
+            "Copia ahi el JSON descargado de Google Cloud (o fija la "
+            "variable de entorno H28_AGENT_KEY_PATH apuntando a otra "
+            "ubicacion)."
         )
     logger.info("Autenticando con la clave de servicio configurada.")
     return storage.Client.from_service_account_json(key_path)
+
