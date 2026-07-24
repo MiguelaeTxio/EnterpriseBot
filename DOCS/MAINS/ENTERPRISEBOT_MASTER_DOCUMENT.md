@@ -628,3 +628,32 @@ explícita de Miguel Ángel. Ampliada en S024 durante la planificación de
 H23/H27, cuando Miguel Ángel extendió explícitamente el mismo criterio
 a los avisos de linter no bloqueantes.
 
+#### 4.10. DIRECTRIZ CRÍTICA — Infraestructura Google Cloud SIEMPRE vía Cloud Shell / `gcloud`, nunca guiando paso a paso por los formularios de la consola web (añadida S031)
+
+**Regla, sin excepción:** cualquier operación sobre recursos de Google
+Cloud (buckets de GCS, cuentas de servicio, permisos IAM, y cualquier
+otro recurso gestionable por `gcloud`) se hace siempre entregando a
+Miguel Ángel comandos `gcloud`/`gcloud storage` completos y listos
+para pegar en Cloud Shell — nunca describiendo paso a paso los clics,
+menús y campos de la consola web para que Miguel Ángel los siga
+manualmente, capture pantallas y el modelo las interprete una a una.
+
+**Origen:** incidente S031 (creación de infraestructura GCP para H28
+Fase 1) — guiar por la consola web generó una sesión larga y
+frustrante de capturas de pantalla, interpretación visual y
+confirmaciones, con un coste añadido crítico: el nombre de una cuenta
+de servicio propuesto por el modelo excedía el límite de 30 caracteres
+de GCP, la consola lo truncó **silenciosamente sin aviso visible**, y
+el error no se detectó hasta varios pasos después, generando una
+cascada de fallos que se llegaron a atribuir erróneamente a
+propagación de IAM o a un bug de la consola. Con `gcloud` directo, el
+mismo error (`ERROR: ... does not exist` o el propio nombre truncado
+en la salida del comando `create`) se habría detectado de inmediato,
+en el primer comando, con datos exactos en texto plano en vez de
+interpretación visual de capturas.
+
+**Excepción:** si una operación concreta no tiene equivalente
+practicable en `gcloud` (algún asistente visual sin CLI, o Miguel
+Ángel pide explícitamente ver/usar la consola web para un caso
+puntual), se puede recurrir a ella — pero nunca como modo por defecto.
+
