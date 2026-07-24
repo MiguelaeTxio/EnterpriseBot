@@ -45,20 +45,31 @@ _active_observers = {}
 
 
 def _configure_logging():
-    """Configure console and file logging for the agent.
+    """Configure file logging, and console logging when available.
     ---
-    Configura el log de consola y de archivo del agente.
+    Configura el log de archivo, y el de consola cuando esta
+    disponible.
+
+    Nota (S031): empaquetado con PyInstaller --windowed no da
+    consola a la app — sys.stdout/sys.stderr quedan en None. Anadir
+    un StreamHandler en ese caso hace petar el primer log.write().
+    Se comprueba antes de anadirlo.
+    ---
+    Note (S031): PyInstaller --windowed packaging gives the app no
+    console — sys.stdout/sys.stderr are None. Adding a
+    StreamHandler in that case crashes on the first log.write().
+    Checked before adding it.
     """
     log_path = os.path.join(
         os.path.dirname(os.path.abspath(sys.argv[0])), LOG_FILE_NAME
     )
+    handlers = [logging.FileHandler(log_path, encoding="utf-8")]
+    if sys.stdout is not None:
+        handlers.append(logging.StreamHandler())
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-        handlers=[
-            logging.FileHandler(log_path, encoding="utf-8"),
-            logging.StreamHandler(),
-        ],
+        handlers=handlers,
     )
 
 
