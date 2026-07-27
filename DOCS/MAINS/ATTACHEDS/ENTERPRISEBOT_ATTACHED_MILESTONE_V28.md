@@ -473,24 +473,72 @@ carpetas reales.
   causa. **Sin decidir todavía si se implementa antes de abrir la
   Fase 2 o se deja anotado para más adelante.**
 
+**Punto de resiliencia (ver COMPLETADAS EN S033) — confirmado
+verbatim por Miguel Ángel e implementado en la misma sesión:**
+"El sistema debe de poder afrontar los errores, tener los manejos
+de errores, para que pueda recuperarse y que no se pierda
+información. Y sobre todo, no tener que estar echando mano de
+consola para una cosa que debe hacerse desde la plataforma, desde
+el agente que hemos creado en disco." Motivación explícita: no se
+puede diseñar la Fase 2 sobre una Fase 1 que exige intervención
+manual por consola cada vez que el escaneo o la subida fallan —
+harán falta más carpetas después de estas dos primeras.
+
+**Implementado:**
+1. Nuevo módulo `h28_migration_agent/reconciler.py` —
+   `reconcile_folder()` vuelve a comparar la carpeta local contra el
+   cubo (por tamaño, vía `google-cloud-storage`, nunca `gcloud`
+   CLI), reintenta con backoff (3 intentos: 5s/15s/45s —
+   `config.RECONCILE_MAX_RETRIES` /
+   `RECONCILE_RETRY_DELAYS_SECONDS`) lo que falte o no coincida, y
+   registra `IRRECUPERABLE: <ruta>` en el log para lo que siga
+   fallando tras agotar reintentos.
+2. **Automática:** se ejecuta sola al terminar cada copia inicial
+   (`_run_reconciliation()` en `main.py`), sin paso manual
+   adicional.
+3. **Bajo demanda:** nuevo ítem de menú de bandeja **"Verificar y
+   reparar carpeta"** (`_verify_and_repair_folder()`) — selecciona
+   cualquier carpeta (ya migrada o nueva) y ejecuta la misma
+   reconciliación en cualquier momento, sin salir del agente ni
+   abrir ninguna consola.
+4. `uploader.py`: `_iter_relative_file_paths` pasa a pública
+   (`iter_relative_file_paths`) para reutilizarse desde
+   `reconciler.py`, sin duplicar lógica de escaneo local.
+5. **Probado con datos reales, no solo por sintaxis:** cliente/cubo
+   simulados con archivos reales en disco, cubriendo tanto la
+   reparación exitosa (2/2 archivos ausentes detectados y subidos)
+   como el fallo persistente (marcado `IRRECUPERABLE` tras agotar
+   los 3 reintentos, sin excepciones sin capturar). `py_compile` y
+   longitud de línea (79 caracteres, PEP8) verificados en todo el
+   agente tras los cambios.
+
+**Matiz documentado como pendiente, no resuelto en S033** (ver
+`h28_migration_agent/README.md` sección 6): la reconciliación bajo
+demanda no se dispara sola al arrancar el agente sobre las carpetas
+persistidas (`_resume_watched_folders()`) — hoy requiere que Miguel
+Ángel abra el menú y la pida. Si se quiere automática también al
+reinicio, queda pendiente de decisión explícita.
+
+Commits: `84ff9d3` (documentación del cierre de `DOC. PERSONAL`),
+`d5d00b5` (código de reconciliación).
+
 ### Hoja de ruta para la siguiente sesión
 
-1. **Decidir el punto de resiliencia del agente** (ver COMPLETADAS EN
-   S033, último punto): implementar la reconciliación automática
-   ahora, o dejarla anotada y pasar directamente al punto 2.
-2. **Diseño de la Fase 2 (Clasificación) — con volumen real de las
+1. **Diseño de la Fase 2 (Clasificación) — con volumen real de las
    dos carpetas migradas y verificadas** (`DOC. MAQUINAS` y
-   `DOC. PERSONAL`, ambas cifra contra cifra): herramienta de
+   `DOC. PERSONAL`, ambas cifra contra cifra, y ahora con mecanismo
+   de recuperación de errores ya construido): herramienta de
    clasificación asistida por Gemini + heurística, detección de
    duplicados, limpieza de carpetas vacías y dosieres redundantes.
-3. **Opcional, solo si Miguel Ángel lo pide:** cerrar el punto abierto
-   de `h28_migration_agent/README.md` sección 6 — escaneo de "puesta
-   al día" para archivos aparecidos con el agente apagado (si no se
-   ha absorbido ya dentro del punto 1).
+2. **Opcional, solo si Miguel Ángel lo pide:** decidir si la
+   reconciliación de carpetas persistidas debe dispararse también
+   sola al arrancar el agente (matiz documentado arriba), o dejarla
+   como está (bajo demanda).
 
 No hay código pendiente de la Fase 1 en su alcance original — sigue
 completa y probada (S031), con sus dos primeras migraciones reales
 (`DOC. MAQUINAS`, `DOC. PERSONAL`) verificadas cifra contra cifra
-(S032-S033). El punto 1 de esta hoja de ruta es una ampliación de
-diseño nueva, no una carencia de lo ya construido.
+(S032-S033), y ahora con mecanismo de recuperación de errores propio
+del agente (S033). La Fase 2 es el único punto que queda por diseñar
+antes de empezar a construir.
 
