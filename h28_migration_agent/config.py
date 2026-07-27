@@ -47,6 +47,20 @@ AGENT_DATA_FOLDER_NAME = "agent_data"
 SERVICE_ACCOUNT_KEY_FILE_NAME = "service_account_key.json"
 WATCHED_FOLDERS_STATE_FILE_NAME = "watched_folders.json"
 
+# Visor de historial (S033, decision de Miguel Angel: "el propio
+# agente" da el visor de tareas, no la plataforma web -- agente y
+# plataforma quedan separados). Guarda los ultimos eventos (copias y
+# reconciliaciones) para poder verlos desde una ventana del agente,
+# sin tirar de logs.
+# ---
+# History viewer (S033, Miguel Angel's decision: "the agent itself"
+# provides the task viewer, not the web platform -- agent and
+# platform stay separate). Stores the latest events (copies and
+# reconciliations) so they can be seen from an agent window, without
+# digging through logs.
+HISTORY_STATE_FILE_NAME = "history.json"
+HISTORY_MAX_EVENTS = 200
+
 # Number of parallel upload workers used for the initial bulk copy.
 # ---
 # Numero de workers paralelos para la copia inicial en bruto.
@@ -121,5 +135,15 @@ def get_watched_folders_state_path():
     """
     return os.path.join(
         get_agent_data_dir(), WATCHED_FOLDERS_STATE_FILE_NAME
+    )
+
+
+def get_history_state_path():
+    """Return the path of the history persistence file.
+    ---
+    Devuelve la ruta del archivo de persistencia del historial.
+    """
+    return os.path.join(
+        get_agent_data_dir(), HISTORY_STATE_FILE_NAME
     )
 

@@ -60,6 +60,14 @@ de Migración H28"). Clic derecho:
   cualquier hueco, sin salir del agente ni tocar ninguna consola.
   Útil para volver a comprobar una carpeta ya migrada en cualquier
   momento.
+- **Ver historial** *(S033)* — abre una ventana de solo lectura con
+  los eventos recientes del agente (copias y reconciliaciones), más
+  reciente primero, sin necesidad de abrir `h28_migration_agent.log`.
+  Decisión de Miguel Ángel: el visor de tareas vive en el propio
+  agente, no en la plataforma web — agente y plataforma quedan
+  deliberadamente separados. Guardado en
+  `agent_data\history.json`, con los últimos
+  `config.HISTORY_MAX_EVENTS` eventos (200 por defecto).
 - **Salir** — detiene todas las vigilancias en marcha y cierra el
   agente. **No olvida las carpetas** — quedan guardadas en
   `agent_data\watched_folders.json` y se retoman automáticamente en

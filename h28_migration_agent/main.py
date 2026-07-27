@@ -20,13 +20,14 @@ import logging
 import os
 import sys
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, ttk
 
 import pystray
 from PIL import Image, ImageDraw
 
 from config import DIRTY_BUCKET_NAME, LOG_FILE_NAME
 from gcs_client import MissingCredentialsError, build_client
+from history import append_event, load_events
 from reconciler import reconcile_folder
 from state import load_watched_folders, save_watched_folders
 from uploader import upload_folder_recursive
@@ -120,25 +121,29 @@ def _run_reconciliation(icon, client, selected_folder):
 
     if not repaired_count and not skipped_in_quarantine_count \
             and not unrecoverable_paths:
-        icon.notify(
-            "Reconciliacion: todo correcto, sin huecos.",
-            title="Agente H28",
-        )
+        summary = "Todo correcto, sin huecos"
     elif unrecoverable_paths:
-        icon.notify(
-            f"Reconciliacion: {repaired_count} reparado(s), "
+        summary = (
+            f"{repaired_count} reparado(s), "
             f"{skipped_in_quarantine_count} ya en cuarentena, "
-            f"{len(unrecoverable_paths)} irrecuperable(s). "
-            "Ver el log para el detalle.",
+            f"{len(unrecoverable_paths)} irrecuperable(s)"
+        )
+    else:
+        summary = (
+            f"{repaired_count} reparado(s), "
+            f"{skipped_in_quarantine_count} ya en cuarentena"
+        )
+
+    if unrecoverable_paths:
+        icon.notify(
+            f"Reconciliacion: {summary}. Ver el log para el "
+            "detalle.",
             title="Agente H28",
         )
     else:
-        icon.notify(
-            f"Reconciliacion: {repaired_count} archivo(s) "
-            f"reparado(s), {skipped_in_quarantine_count} ya en "
-            "cuarentena (sin duplicar).",
-            title="Agente H28",
-        )
+        icon.notify(f"Reconciliacion: {summary}.", title="Agente H28")
+
+    append_event("Reconciliacion", selected_folder, summary)
 
 
 def _verify_and_repair_folder(icon, _menu_item):
@@ -176,6 +181,66 @@ def _verify_and_repair_folder(icon, _menu_item):
         f"Verificando {selected_folder}...", title="Agente H28",
     )
     _run_reconciliation(icon, client, selected_folder)
+
+
+def _show_history(icon, _menu_item):
+    """Open a read-only window listing the agent's recent events.
+    ---
+    Abre una ventana de solo lectura con los eventos recientes del
+    agente.
+
+    S033, decision de Miguel Angel: el visor de tareas vive en el
+    propio agente, no en la plataforma web. Muestra los eventos
+    guardados por history.py (copias y reconciliaciones), mas
+    reciente primero -- sin necesidad de abrir el log.
+    ---
+    S033, Miguel Angel's decision: the task viewer lives in the
+    agent itself, not the web platform. Shows the events stored by
+    history.py (copies and reconciliations), most recent first --
+    without needing to open the log.
+    """
+    events = load_events()
+
+    window = tk.Tk()
+    window.title("Agente H28 — Historial")
+    window.geometry("820x420")
+    window.attributes("-topmost", True)
+
+    columns = ("timestamp", "event_type", "folder", "summary")
+    headings = {
+        "timestamp": "Fecha/hora (UTC)",
+        "event_type": "Accion",
+        "folder": "Carpeta",
+        "summary": "Resultado",
+    }
+    tree = ttk.Treeview(window, columns=columns, show="headings")
+    for column in columns:
+        tree.heading(column, text=headings[column])
+    tree.column("timestamp", width=160, anchor="w")
+    tree.column("event_type", width=120, anchor="w")
+    tree.column("folder", width=320, anchor="w")
+    tree.column("summary", width=200, anchor="w")
+
+    if not events:
+        tree.insert("", "end", values=(
+            "", "", "Sin eventos todavia", "",
+        ))
+    for event in events:
+        tree.insert("", "end", values=(
+            event.get("timestamp", ""),
+            event.get("event_type", ""),
+            event.get("folder", ""),
+            event.get("summary", ""),
+        ))
+
+    scrollbar = ttk.Scrollbar(
+        window, orient="vertical", command=tree.yview,
+    )
+    tree.configure(yscrollcommand=scrollbar.set)
+    tree.pack(side="left", fill="both", expand=True)
+    scrollbar.pack(side="right", fill="y")
+
+    window.mainloop()
 
 
 def _select_folder_and_copy(icon, _menu_item):
@@ -230,11 +295,19 @@ def _select_folder_and_copy(icon, _menu_item):
             "Reconciliando automaticamente...",
             title="Agente H28",
         )
+        append_event(
+            "Copia inicial", selected_folder,
+            f"{uploaded_count} subidos, {len(failed_paths)} fallos",
+        )
     else:
         icon.notify(
             f"Copia completada: {uploaded_count} archivos. "
             "Verificando integridad...",
             title="Agente H28",
+        )
+        append_event(
+            "Copia inicial", selected_folder,
+            f"{uploaded_count} archivos, 0 fallos",
         )
 
     # Reconciliacion automatica (S033): tras la copia, se vuelve a
@@ -371,6 +444,7 @@ def main():
         pystray.MenuItem(
             "Verificar y reparar carpeta", _verify_and_repair_folder
         ),
+        pystray.MenuItem("Ver historial", _show_history),
         pystray.MenuItem("Salir", _quit_agent),
     )
     icon = pystray.Icon(
