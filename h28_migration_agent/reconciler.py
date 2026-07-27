@@ -30,11 +30,14 @@ size-mismatched, and clearly records whatever still cannot be
 uploaded.
 """
 
+import base64
+import hashlib
 import logging
 import os
 import time
 
 from config import (
+    HASH_CHUNK_SIZE_BYTES,
     QUARANTINE_BUCKET_NAME,
     RECONCILE_MAX_RETRIES,
     RECONCILE_RETRY_DELAYS_SECONDS,
@@ -44,25 +47,83 @@ from uploader import build_blob_name, iter_relative_file_paths
 logger = logging.getLogger(__name__)
 
 
-def _list_remote_sizes(bucket, blob_name_prefix):
-    """Return a dict of blob_name -> size for every blob under
+def compute_md5_base64(local_path):
+    """Return the base64-encoded MD5 of a local file, GCS style.
+
+    ---
+    Devuelve el MD5 en base64 de un archivo local, en el mismo
+    formato que usa GCS.
+
+    Verificado en linea el 2026-07-27 (directriz 4.4) contra la
+    documentacion oficial de google-cloud-storage: `blob.md5_hash`
+    viene codificado en BASE64, no en hexadecimal -- comparar contra
+    un `hexdigest()` daria distinto siempre, aunque el contenido
+    fuese identico.
+    ---
+    Verified online on 2026-07-27 (directive 4.4) against the
+    official google-cloud-storage documentation: `blob.md5_hash` is
+    BASE64-encoded, not hexadecimal -- comparing it against a
+    `hexdigest()` would always differ, even for identical content.
+    """
+    digest = hashlib.md5()
+    with open(local_path, "rb") as file_handle:
+        while True:
+            chunk = file_handle.read(HASH_CHUNK_SIZE_BYTES)
+            if not chunk:
+                break
+            digest.update(chunk)
+    return base64.b64encode(digest.digest()).decode("ascii")
+
+
+def _list_remote_info(bucket, blob_name_prefix):
+    """Return blob_name -> (size, md5_base64) for every blob under
     blob_name_prefix.
     ---
-    Devuelve un diccionario blob_name -> tamano para cada blob bajo
+    Devuelve blob_name -> (tamano, md5_base64) para cada blob bajo
     blob_name_prefix.
+
+    El MD5 llega en el mismo listado paginado, sin ninguna llamada
+    extra a la API -- por eso la comparacion por hash del lado
+    remoto es gratis, y solo cuesta leer el archivo local.
+
+    `md5_hash` puede ser None (objetos compuestos, segun la
+    documentacion oficial); quien llama debe preverlo.
+    ---
+    The MD5 arrives in the same paginated listing, with no extra API
+    call -- which is why hash comparison is free on the remote side.
+    `md5_hash` may be None (composite objects, per the official
+    documentation); callers must handle that.
     """
-    remote_sizes = {}
+    remote_info = {}
     for blob in bucket.list_blobs(prefix=blob_name_prefix):
-        remote_sizes[blob.name] = blob.size
-    return remote_sizes
+        remote_info[blob.name] = (blob.size, blob.md5_hash)
+    return remote_info
 
 
-def _find_mismatches(selected_folder, remote_sizes):
-    """Return files absent from the dirty bucket, or present with a
-    different size.
+def _find_mismatches(selected_folder, remote_info):
+    """Return files absent from the dirty bucket, or present with
+    different content.
     ---
     Devuelve los archivos ausentes del cubo sucio, o presentes con
-    un tamano distinto.
+    contenido distinto.
+
+    Comparacion hibrida, decision de Miguel Angel (S034), por coste
+    asimetrico: primero el tamano, que es gratis; y solo cuando el
+    tamano coincide se calcula el MD5 local para descartar el falso
+    negativo de un documento revisado que pese exactamente lo mismo
+    que el original (p.ej. un permiso de circulacion reexpedido). La
+    alternativa de comparar siempre por hash obligaria a leer los
+    28 GB enteros en cada arranque del agente.
+
+    Si el blob remoto no expone MD5 (objetos compuestos, ver
+    `_list_remote_info`), no hay nada contra lo que comparar: se da
+    por bueno el tamano y se registra, para no mandar a cuarentena un
+    archivo entero por falta de metadato.
+    ---
+    Hybrid comparison, Miguel Angel's decision (S034), driven by
+    asymmetric cost: size first, which is free; the local MD5 is
+    computed only when sizes match, to rule out the false negative of
+    a revised document weighing exactly the same as the original.
 
     Returns
     -------
@@ -81,12 +142,70 @@ def _find_mismatches(selected_folder, remote_sizes):
                 local_path, error,
             )
             continue
-        remote_size = remote_sizes.get(blob_name)
+
+        remote_size, remote_md5 = remote_info.get(
+            blob_name, (None, None),
+        )
+
         if remote_size != local_size:
             mismatches.append(
                 (relative_path, blob_name, local_path, local_size)
             )
+            continue
+
+        if remote_md5 is None:
+            logger.info(
+                "El blob %s no expone MD5; se acepta la coincidencia "
+                "de tamano.", blob_name,
+            )
+            continue
+
+        try:
+            local_md5 = compute_md5_base64(local_path)
+        except OSError as error:
+            logger.error(
+                "No se pudo calcular el MD5 local de %s: %s",
+                local_path, error,
+            )
+            continue
+
+        if local_md5 != remote_md5:
+            logger.info(
+                "Mismo tamano pero distinto contenido: %s",
+                relative_path,
+            )
+            mismatches.append(
+                (relative_path, blob_name, local_path, local_size)
+            )
     return mismatches
+
+
+def _is_same_content(local_path, local_size, remote_size, remote_md5):
+    """Return True if a local file matches a remote blob's content.
+
+    ---
+    Devuelve True si el archivo local coincide en contenido con el
+    blob remoto.
+
+    Mismo criterio hibrido que `_find_mismatches`: el tamano decide
+    cuando difiere, y solo si coincide se recurre al MD5. Si el blob
+    no expone MD5, la coincidencia de tamano se da por buena.
+    ---
+    Same hybrid criterion as `_find_mismatches`: size decides when it
+    differs, and only when it matches is the MD5 consulted.
+    """
+    if remote_size != local_size:
+        return False
+    if remote_md5 is None:
+        return True
+    try:
+        return compute_md5_base64(local_path) == remote_md5
+    except OSError as error:
+        logger.error(
+            "No se pudo calcular el MD5 local de %s: %s",
+            local_path, error,
+        )
+        return True
 
 
 def _upload_with_retries(bucket, relative_path, blob_name, local_path):
@@ -202,17 +321,17 @@ def reconcile_folder(client, bucket_name, selected_folder,
     logger.info(
         "Reconciliacion: listando cubo sucio para %s", selected_folder,
     )
-    remote_sizes = _list_remote_sizes(bucket, blob_name_prefix)
+    remote_info = _list_remote_info(bucket, blob_name_prefix)
 
     logger.info(
         "Reconciliacion: listando cubo de cuarentena para %s",
         selected_folder,
     )
-    quarantine_sizes = _list_remote_sizes(
+    quarantine_info = _list_remote_info(
         quarantine_bucket, blob_name_prefix,
     )
 
-    mismatches = _find_mismatches(selected_folder, remote_sizes)
+    mismatches = _find_mismatches(selected_folder, remote_info)
     total_count = len(mismatches)
     logger.info(
         "Reconciliacion: %d archivo(s) ausente(s) o con tamano "
@@ -226,9 +345,13 @@ def reconcile_folder(client, bucket_name, selected_folder,
     for checked_count, (
         relative_path, blob_name, local_path, local_size
     ) in enumerate(mismatches, start=1):
-        quarantined_size = quarantine_sizes.get(blob_name)
+        quarantined_size, quarantined_md5 = quarantine_info.get(
+            blob_name, (None, None),
+        )
 
-        if quarantined_size == local_size:
+        if quarantined_size is not None and _is_same_content(
+            local_path, local_size, quarantined_size, quarantined_md5,
+        ):
             # Ya esta en la cola de cuarentena, con el mismo tamano:
             # no hay nada que hacer, la tarea clasificadora lo
             # recogera cuando le toque.

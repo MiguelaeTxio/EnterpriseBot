@@ -100,7 +100,7 @@ AUDIT_FOLDER_NAME = "audits"
 # Tamano de trozo al calcular el hash. 1 MiB equilibra el coste de
 # syscalls contra la memoria, dados los manuales escaneados de
 # varios cientos de MB que hay en el arbol real.
-AUDIT_HASH_CHUNK_SIZE_BYTES = 1024 * 1024
+HASH_CHUNK_SIZE_BYTES = 1024 * 1024
 
 # How often the audit reports progress to the log/tray. The audit
 # runs over ~37.500 files, so silence for minutes would look like a

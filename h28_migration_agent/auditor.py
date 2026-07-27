@@ -35,7 +35,7 @@ import os
 from datetime import datetime
 
 from config import (
-    AUDIT_HASH_CHUNK_SIZE_BYTES,
+    HASH_CHUNK_SIZE_BYTES,
     AUDIT_PROGRESS_EVERY_FILES,
     get_audit_output_dir,
 )
@@ -108,7 +108,7 @@ def compute_sha256(absolute_path):
     digest = hashlib.sha256()
     with open(to_long_path(absolute_path), "rb") as file_handle:
         while True:
-            chunk = file_handle.read(AUDIT_HASH_CHUNK_SIZE_BYTES)
+            chunk = file_handle.read(HASH_CHUNK_SIZE_BYTES)
             if not chunk:
                 break
             digest.update(chunk)
