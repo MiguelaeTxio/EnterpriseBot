@@ -556,23 +556,149 @@ duplicar)` — exactamente el resultado esperado.
 
 Commits: `d5d00b5` (versión inicial con el bug), `96637f8` (fix).
 
+**Visor local de historial — confirmado verbatim por Miguel Ángel e
+implementado en la misma sesión:** "el propio agente" da el visor de
+tareas, agente y plataforma quedan deliberadamente separados (no se
+construye nada en EnterpriseBot para esto). Nuevo módulo
+`h28_migration_agent/history.py` — persiste cada copia y cada
+reconciliación como evento estructurado
+(`agent_data/history.json`, últimos `config.HISTORY_MAX_EVENTS`,
+200 por defecto). Nuevo ítem de menú **"Ver historial"** — ventana
+`tkinter`/`ttk.Treeview` de solo lectura, más reciente primero.
+Probado con datos reales en producción: vacío ("Sin eventos
+todavía") antes de cualquier acción, y con la fila real de la
+reconciliación tras ejecutarla — confirmado con captura de pantalla,
+no solo por construcción de código.
+
+Commits: `aef90cf` (visor de historial).
+
+**Estado final del agente H28 al cierre de S033:** copia inicial,
+vigilancia continua con cuarentena, persistencia entre reinicios,
+reconciliación automática y bajo demanda respetando la cuarentena, y
+visor de historial local — todo construido, probado con datos
+reales (no solo sintaxis) y verificado en producción sobre las dos
+carpetas ya migradas. Miguel Ángel decidió cerrar el trabajo sobre
+el agente aquí y abrir la Fase 2 en una sesión nueva, no continuar
+en esta misma.
+
+## 8. Fase 2 — Decisiones de diseño confirmadas por Miguel Ángel (S033, sesión de planificación, sin ejecución todavía)
+
+Miguel Ángel confirmó explícitamente: **GCS sigue siendo la copia
+centralizada y definitiva.** Se descartó explícitamente la
+alternativa de servir archivos en vivo desde el PC de cada usuario
+sin copia central — riesgo de disponibilidad (PC apagado, sin
+conexión, equipo averiado o dado de baja) inaceptable para
+documentación de empresa. El patrón confirmado para el futuro
+(múltiples usuarios, cada uno con su propio agente) es híbrido: cada
+máquina sigue siendo donde se genera/edita el archivo, pero todo se
+sincroniza igualmente hacia GCS como fuente de verdad — la
+plataforma podrá controlar agentes remotos (sondeo periódico de
+órdenes pendientes, patrón ya usado en germen por este mismo
+agente), pero el archivo final siempre vive en GCS, nunca solo en un
+PC. **No diseñado en detalle todavía — es una ampliación futura,
+posterior a Fase 2 y Fase 3.**
+
+**H28 no es un sistema aparte de H23/H25 — es la misma
+infraestructura, verbatim:** "H23 y H25 fueron una aproximación
+errónea... es la misma infraestructura... cuando hagamos el barrido
+final, la información que tengamos ahí se va a meter en los centros
+de gasto y en los personales." La diferencia entre H23/H25 y H28 es
+solo el punto de entrada: H23/H25 filtraban en la subida (solo
+entraba lo vigente, ya asignado); H28 subió todo en bruto primero, y
+ahora hace falta un paso de limpieza antes del "barrido final" que
+lo vuelca en los mismos modelos ya existentes
+(`MachineDocument`, `PersonalDocument`).
+
+**Alcance de la Fase 2 — solo limpieza, tres frentes, sin
+asignación a centro de gasto/personal todavía (eso es el "barrido
+final" de la Fase 3):**
+
+1. **Deduplicación por hash de contenido (SHA-256).** Mismo hash =
+   mismo archivo. Decisión verbatim sobre qué copia conservar: "da
+   igual... nos vamos a quedar con uno... porque lo vamos a
+   renombrar" — el criterio de selección entre duplicados es
+   irrelevante porque el paso 3 (renombrado) sustituye el nombre de
+   todos modos.
+2. **Detección de dosieres, tratados como una forma más de
+   duplicidad** (ya se subieron en la Fase 1, sin filtrar, tal como
+   estaba decidido para esa fase). Heurística propuesta por Miguel
+   Ángel, verbatim: comparar peso y número de páginas de cada
+   archivo contra la media de su carpeta — un archivo que se sale
+   claramente por encima es candidato a ser un dosier que agrupa a
+   los demás. **Matiz difícil, señalado explícitamente y sin
+   resolver todavía:** un archivo puede pertenecer a más de un
+   dosier a la vez dentro de la misma carpeta (solapamiento parcial
+   entre compilaciones distintas) — la fórmula exacta para ese caso
+   queda pendiente de diseño con datos reales delante.
+3. **Renombrado sistemático por tipo de documento**, patrón híbrido
+   máquina/humano — reconocible y mecanizable a la vez (ej. "ITV",
+   "PermCirc"), nunca códigos opacos. Los documentos con fecha de
+   caducidad llevan la fecha impresa en el propio nombre.
+   Motivación explícita de Miguel Ángel: hoy existe una "selva de
+   nombres" por rotación de personal a lo largo de los años (mismo
+   tipo de documento subido con nombres distintos por cada persona
+   que ha pasado por el puesto), que impide filtrar de forma fiable.
+
+**Secuencia de trabajo confirmada, con el matiz de local-primero
+añadido por Miguel Ángel:**
+
+1. **Auditoría real contra la copia local** (hoy prácticamente un
+   espejo de lo subido) — hash, tamaño, número de páginas, extensión
+   y carpeta de cada archivo. Se hace en local por velocidad (evita
+   las llamadas lentas a la API de GCS vistas hoy, ~40-45 min para
+   un `ls -r` recursivo completo) y para no gastar cuota.
+2. **La copia local nunca se modifica** — es solo dataset de lectura
+   para diseñar las reglas (patrones de nombre, umbral de la
+   heurística de dosieres) con datos reales delante, nunca a ciegas.
+3. **Dry-run en la nube:** con las reglas ya calibradas en local, se
+   simula sobre GCS (qué se borraría, qué se detectaría como dosier,
+   cómo quedaría cada nombre) sin ejecutar nada real — solo informe.
+4. **Verificación de coherencia** entre las cifras del dry-run y lo
+   observado en local, antes de aplicar nada.
+5. **Ejecución real en GCS**, solo tras la verificación del paso 4.
+   Coherente con el principio ya establecido del sistema: ninguna
+   eliminación automática sin confirmación humana (sección de
+   "Key learnings" del sistema).
+
+**Fuera de alcance de la Fase 2, anotado para la Fase 3 (barrido
+final e ingesta en base de datos):** asignación de documentos a
+centro de gasto/personal; generación de dosieres bajo demanda para
+envío (se ensamblan y descargan en el momento, nunca se persisten en
+GCS — decisión explícita: "no nos interesa subir los dosieres...
+información redundante que no necesitamos estar pagando por ella");
+gestión de altas/bajas de maquinaria desde la plataforma. La
+conversión de manuales a Markdown **ya existe en producción** (H23,
+S025 — botón "Convertir a Markdown" en la ficha de máquina, vía
+`pymupdf4llm`) — pendiente de decidir en su momento si la Fase 3
+reutiliza ese mismo mecanismo tal cual sobre los manuales que salgan
+limpios de H28, o si hace falta algo distinto por venir de un origen
+distinto (cubo migrado vs. subida directa del usuario).
+
+**No ejecutado nada de la Fase 2 en esta sesión — solo diseño y
+decisiones.** El primer paso real (la auditoría del punto 1) queda
+para la siguiente sesión, con sesión fresca dedicada enteramente a
+ello, según decisión explícita de Miguel Ángel al cierre.
+
 ### Hoja de ruta para la siguiente sesión
 
-1. **Diseño de la Fase 2 (Clasificación) — con volumen real de las
-   dos carpetas migradas y verificadas** (`DOC. MAQUINAS` y
-   `DOC. PERSONAL`, ambas cifra contra cifra, y ahora con mecanismo
-   de recuperación de errores ya construido): herramienta de
-   clasificación asistida por Gemini + heurística, detección de
-   duplicados, limpieza de carpetas vacías y dosieres redundantes.
-2. **Opcional, solo si Miguel Ángel lo pide:** decidir si la
-   reconciliación de carpetas persistidas debe dispararse también
-   sola al arrancar el agente (matiz documentado arriba), o dejarla
-   como está (bajo demanda).
+1. **Auditoría local de `DOC. MAQUINAS` y `DOC. PERSONAL`** (paso 1
+   de la secuencia de la sección 8): script que recorra la copia
+   local y calcule, por archivo, hash SHA-256, tamaño, número de
+   páginas (PDF) y carpeta — sin modificar nada, solo lectura.
+2. Con los datos reales de la auditoría delante, **definir junto a
+   Miguel Ángel**: el umbral/fórmula final de la heurística de
+   dosieres (incluido el caso de solapamiento, sin resolver todavía)
+   y el catálogo de patrones de nombre por tipo de documento.
+3. Dry-run en la nube, verificación de coherencia, y solo entonces
+   ejecución real — según la secuencia de la sección 8.
 
 No hay código pendiente de la Fase 1 en su alcance original — sigue
 completa y probada (S031), con sus dos primeras migraciones reales
 (`DOC. MAQUINAS`, `DOC. PERSONAL`) verificadas cifra contra cifra
-(S032-S033), y ahora con mecanismo de recuperación de errores propio
-del agente (S033). La Fase 2 es el único punto que queda por diseñar
-antes de empezar a construir.
+(S032-S033), con mecanismo de recuperación de errores propio del
+agente y visor de historial local (S033). La Fase 2 es el siguiente
+trabajo real, ya diseñada en sus líneas maestras — falta la
+auditoría con datos reales para cerrar los últimos detalles
+(heurística de dosieres, catálogo de patrones de nombre) antes de
+ejecutar nada.
 
