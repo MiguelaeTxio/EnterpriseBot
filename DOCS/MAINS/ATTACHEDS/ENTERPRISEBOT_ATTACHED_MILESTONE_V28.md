@@ -387,23 +387,110 @@ carpetas reales.
   (directriz 4.8). Miguel Ángel no llegó a confirmar el adelanto;
   la sesión se cerró con `DOC. PERSONAL` todavía en curso.
 
+### COMPLETADAS EN S033
+
+- **`DOC. PERSONAL` verificada y cerrada, cifra contra cifra, en los
+  dos ejes:** bytes (`10.721.747.350` en Windows y en
+  `gcloud storage du -s`) y número de archivos (`21.506` en ambos
+  lados, usando `ls -r ... | grep -v '/\$'` / equivalente
+  `findstr /v /e /c:"/" | find /c /v ""` en `cmd.exe`, para excluir
+  las entradas de carpeta propias de un cubo con Hierarchical
+  Namespace). Ambos comandos ejecutados sobre GCS tardan varios
+  minutos sin mostrar salida (~40-45 min para el recuento completo
+  con `ls -r` sobre >21.000 objetos desde una conexión móvil) — no es
+  un cuelgue, es el comportamiento normal al no haber progreso
+  intermedio; para sesiones futuras, lanzar este tipo de comandos con
+  `nohup ... &` o similar en vez de esperar con la consola abierta.
+- **Primera comparación (`du -s` vs Propiedades de Windows) detectó
+  una discrepancia real de `10.540.883 bytes` y `5 archivos`.**
+  Aislada por bisección manual de subcarpetas (comparar `du -s` de
+  cada subcarpeta de primer nivel, descender solo en la que no
+  cuadra, repetir) en vez de comparar listados completos — técnica
+  mucho más rápida que un `ls -r` recursivo sobre el árbol entero y
+  a reutilizar en verificaciones futuras similares.
+- **Causas raíz identificadas, las 5 con evidencia directa, ninguna
+  por hipótesis sin confirmar:**
+  1. 1 archivo (`.../BAJAS/FM-FORM-5.0_17136_VSA-...(4).pdf`, 922.711
+     bytes) — fallo real de subida registrado en
+     `h28_migration_agent.log` (`[Errno 22] Invalid argument`).
+     Longitud de ruta investigada (256 caracteres) y descartada como
+     causa concluyente (por debajo del límite clásico de 260); causa
+     exacta no confirmada, pero irrelevante para la resolución.
+  2. 4 archivos (3 en `OPERARIOS/CAMPOS ROMAN, DOMINGO (TR)/`, 1 en
+     `OPERARIOS/MILHEIRO FELICIO JORGE (GR)/`) — **no aparecen como
+     fallo en el log**; el propio recuento inicial del agente
+     (`21.502` archivos detectados) ya no los incluía. El hueco
+     ocurrió en el momento del escaneo (`os.walk`), no en el de la
+     subida. Causa exacta no confirmada — se investigó la hipótesis
+     de fecha de creación/modificación posterior al corte de la
+     copia inicial y se descartó con datos (`Get-ChildItem ... Where
+     CreationTime/LastWriteTime -gt $corte` devolvió cero
+     resultados). Hipótesis más plausible sin confirmar: archivos
+     "solo en la nube" de OneDrive Files On-Demand no materializados
+     en el instante exacto del escaneo.
+  3. **Los 4 archivos NO fueron a cuarentena** — se verificó
+     directamente (`gcloud storage du -s` sobre
+     `cgs_grupo_alvarez_cuarentena/` dio solo 1 objeto, de
+     `DOC. MAQUINAS`, nada de `DOC. PERSONAL`). Confirma que el
+     diseño de cuarentena (sección 3 punto 3 de este anexo) solo
+     cubre archivos detectados por el watchdog en vivo con el agente
+     corriendo — no archivos que el escaneo inicial se saltó sin
+     que el agente lo supiera.
+- **Los 5 archivos subidos manualmente**, verificados uno a uno por
+  nombre y tamaño antes de subir (nunca a ciegas): 4 con
+  `gcloud storage cp` directo, 1 (el de ruta larga) con el prefijo
+  `\\?\` de Windows para forzar la API a ignorar el límite clásico de
+  ruta — funcionó a la primera, lo que sugiere que la longitud de
+  ruta sí era la causa de ese fallo concreto, aunque sin poder
+  descartar del todo otra causa coincidente.
+- **Incidencia de sesión — consolas Windows mezcladas sin criterio
+  claro**, señalada explícitamente por Miguel Ángel como fuente de
+  fricción real. Aclarado para el resto de la sesión y para
+  siguientes: `gcloud` autenticado y funcional solo en la consola
+  "Google Cloud SDK Shell" (`cmd.exe` con prompt
+  `...AppData\Local\Google\Cloud SDK>`), no en PowerShell (sin
+  `gcloud` en el PATH) ni en `cmd.exe` genérico sin inicializar. Esa
+  misma consola crasheó una vez con `UnicodeEncodeError` al procesar
+  un carácter acentuado combinado (`\u0303`) en un nombre de
+  carpeta/archivo — resuelto con `set PYTHONUTF8=1` al inicio de la
+  sesión de consola, antes de cualquier comando `gcloud` que liste
+  contenido con acentos.
+- **Punto de diseño planteado por Miguel Ángel, pendiente de
+  decisión explícita — no implementado sin confirmación (directriz
+  4.8):** el agente no tiene ningún mecanismo de reconciliación
+  posterior a la copia inicial; si el escaneo se salta archivos (como
+  ha ocurrido aquí) o falla una subida, no hay detección ni reintento
+  automático, solo lo que aparece en el log si se revisa a mano.
+  Propuesta sobre la mesa: añadir un paso de reconciliación al final
+  de `upload_folder_recursive()` que vuelva a listar local vs. cubo
+  con la librería `google-cloud-storage`, reintente automáticamente
+  las diferencias con backoff, y registre aparte
+  (`IRRECUPERABLE: ...`) lo que siga sin subir tras varios intentos —
+  generalizando así el punto ya abierto de
+  `h28_migration_agent/README.md` sección 6 (que hoy solo cubre
+  archivos nuevos aparecidos con el agente apagado) a cualquier
+  archivo que el escaneo inicial no haya visto, sea cual sea la
+  causa. **Sin decidir todavía si se implementa antes de abrir la
+  Fase 2 o se deja anotado para más adelante.**
+
 ### Hoja de ruta para la siguiente sesión
 
-1. **Confirmar el cierre de `DOC. PERSONAL`.** Verificar con el mismo
-   método cifra contra cifra que se usó para `DOC. MAQUINAS`
-   (`gcloud storage du -s gs://cgs_grupo_alvarez/DOC.\ PERSONAL/` +
-   recuento de objetos vs. Propiedades de Windows) antes de dar la
-   segunda migración por completa.
-2. **Diseño de la Fase 2 (Clasificación) — solo ahora sí, con volumen
-   real de dos carpetas migradas** (`DOC. MAQUINAS` completa,
-   `DOC. PERSONAL` a confirmar en el punto 1): herramienta de
+1. **Decidir el punto de resiliencia del agente** (ver COMPLETADAS EN
+   S033, último punto): implementar la reconciliación automática
+   ahora, o dejarla anotada y pasar directamente al punto 2.
+2. **Diseño de la Fase 2 (Clasificación) — con volumen real de las
+   dos carpetas migradas y verificadas** (`DOC. MAQUINAS` y
+   `DOC. PERSONAL`, ambas cifra contra cifra): herramienta de
    clasificación asistida por Gemini + heurística, detección de
    duplicados, limpieza de carpetas vacías y dosieres redundantes.
 3. **Opcional, solo si Miguel Ángel lo pide:** cerrar el punto abierto
    de `h28_migration_agent/README.md` sección 6 — escaneo de "puesta
-   al día" para archivos aparecidos con el agente apagado.
+   al día" para archivos aparecidos con el agente apagado (si no se
+   ha absorbido ya dentro del punto 1).
 
-No hay código pendiente de la Fase 1 — sigue completa y probada
-(S031). Esta hoja de ruta sigue centrada en uso real del agente, no
-en desarrollo, hasta que el punto 2 abra el diseño de la Fase 2.
+No hay código pendiente de la Fase 1 en su alcance original — sigue
+completa y probada (S031), con sus dos primeras migraciones reales
+(`DOC. MAQUINAS`, `DOC. PERSONAL`) verificadas cifra contra cifra
+(S032-S033). El punto 1 de esta hoja de ruta es una ampliación de
+diseño nueva, no una carencia de lo ya construido.
 
