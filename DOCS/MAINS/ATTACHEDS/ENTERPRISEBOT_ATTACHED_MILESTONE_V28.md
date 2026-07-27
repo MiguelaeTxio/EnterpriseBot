@@ -519,8 +519,42 @@ persistidas (`_resume_watched_folders()`) — hoy requiere que Miguel
 Ángel abra el menú y la pida. Si se quiere automática también al
 reinicio, queda pendiente de decisión explícita.
 
-Commits: `84ff9d3` (documentación del cierre de `DOC. PERSONAL`),
-`d5d00b5` (código de reconciliación).
+**Bug real encontrado en la primera prueba en producción, corregido
+en la misma sesión (S033, continuación):** al probar "Verificar y
+reparar carpeta" sobre las dos carpetas ya migradas, la
+reconciliación encontró y "reparó" 8 huecos reales — 1 en
+`DOC. PERSONAL` (archivo nuevo genuino, `PERSONAL/TALLER/VELOSO
+SAMPAIO, ESTEVAO/Plantilla_RYMP TRANSPORTE
+V4_897512981 PETRU IORDACHI 1.pdf`, subido correctamente) y 7 en
+`DOC. MAQUINAS`. De esos 7, **6 eran huecos genuinos del escaneo
+inicial de S032** (nunca detectados hasta ahora porque nunca se
+había ejecutado una reconciliación sobre esa carpeta) y se
+repararon bien. El **séptimo era un error real**: el archivo
+`PLATAFORMAS (Z)/Z-123 6795MTL/Z-123 6795MTL FICHA TECNICA.pdf` ya
+vivía correctamente en el cubo de cuarentena (detectado por el
+watchdog como archivo nuevo tras la copia inicial, verificado ese
+mismo día a primera hora de esta sesión) — la reconciliación no
+tenía ninguna noción de cuarentena y lo subió también al árbol
+principal, duplicándolo y saltándose el flujo de revisión que la
+cuarentena existe para proteger (sección 3, punto 3 de este anexo).
+
+**Corregido de inmediato, dentro de la misma sesión (directriz sobre
+errores fuera de alcance detectados en sesión — aunque aquí sí
+estaba en alcance, al ser código de la propia sesión):**
+`reconcile_folder()` ahora comprueba primero si el blob ya existe en
+`config.QUARANTINE_BUCKET_NAME` antes de subir cualquier archivo
+"ausente"; si está en cuarentena, se deja intacto y se cuenta aparte
+(`skipped_in_quarantine_count`), sin duplicar. El duplicado ya creado
+en producción se borró manualmente
+(`gcloud storage rm` sobre la copia del cubo sucio, cuarentena
+intacta). Probado con datos reales (mock de dos cubos, caso
+"ausente en ambos" vs. "presente solo en cuarentena") antes de
+subir, y **confirmado también en producción tras reconstruir el
+`.exe`**: nueva ejecución de "Verificar y reparar carpeta" sobre
+`DOC. MAQUINAS` devolvió `0 reparados, 1 ya en cuarentena (sin
+duplicar)` — exactamente el resultado esperado.
+
+Commits: `d5d00b5` (versión inicial con el bug), `96637f8` (fix).
 
 ### Hoja de ruta para la siguiente sesión
 
