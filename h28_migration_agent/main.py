@@ -118,27 +118,30 @@ def _run_reconciliation(icon, client, selected_folder):
             selected_folder, checked_count, total_count,
         )
 
-    repaired_count, skipped_in_quarantine_count, unrecoverable_paths = (
-        reconcile_folder(
+    quarantined_count, already_queued_count, needs_decision_paths, \
+        unrecoverable_paths = reconcile_folder(
             client, DIRTY_BUCKET_NAME, selected_folder,
             _log_reconcile_progress,
         )
-    )
 
-    if not repaired_count and not skipped_in_quarantine_count \
-            and not unrecoverable_paths:
+    if not any((
+        quarantined_count, already_queued_count,
+        needs_decision_paths, unrecoverable_paths,
+    )):
         summary = "Todo correcto, sin huecos"
-    elif unrecoverable_paths:
-        summary = (
-            f"{repaired_count} reparado(s), "
-            f"{skipped_in_quarantine_count} ya en cuarentena, "
-            f"{len(unrecoverable_paths)} irrecuperable(s)"
-        )
     else:
-        summary = (
-            f"{repaired_count} reparado(s), "
-            f"{skipped_in_quarantine_count} ya en cuarentena"
-        )
+        parts = [f"{quarantined_count} a cuarentena"]
+        if already_queued_count:
+            parts.append(f"{already_queued_count} ya en cola")
+        if needs_decision_paths:
+            parts.append(
+                f"{len(needs_decision_paths)} pendiente(s) de decisión"
+            )
+        if unrecoverable_paths:
+            parts.append(
+                f"{len(unrecoverable_paths)} irrecuperable(s)"
+            )
+        summary = ", ".join(parts)
 
     # La carpeta se nombra en la notificacion desde S034: al
     # ejecutarse la reconciliacion automaticamente sobre varias
@@ -153,7 +156,7 @@ def _run_reconciliation(icon, client, selected_folder):
     # spot.
     folder_label = os.path.basename(os.path.normpath(selected_folder))
 
-    if unrecoverable_paths:
+    if unrecoverable_paths or needs_decision_paths:
         icon.notify(
             f"Reconciliación de {folder_label}: {summary}. "
             "Ver el log para el detalle.",

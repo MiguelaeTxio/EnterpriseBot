@@ -58,11 +58,16 @@ def _list_remote_sizes(bucket, blob_name_prefix):
 
 
 def _find_mismatches(selected_folder, remote_sizes):
-    """Return the list of (relative_path, blob_name) not present in
-    remote_sizes, or present with a different size.
+    """Return files absent from the dirty bucket, or present with a
+    different size.
     ---
-    Devuelve la lista de (relative_path, blob_name) ausentes en
-    remote_sizes, o presentes con un tamano distinto.
+    Devuelve los archivos ausentes del cubo sucio, o presentes con
+    un tamano distinto.
+
+    Returns
+    -------
+    list[tuple[str, str, str, int]]
+        (relative_path, blob_name, local_path, local_size)
     """
     mismatches = []
     for relative_path in iter_relative_file_paths(selected_folder):
@@ -78,7 +83,9 @@ def _find_mismatches(selected_folder, remote_sizes):
             continue
         remote_size = remote_sizes.get(blob_name)
         if remote_size != local_size:
-            mismatches.append((relative_path, blob_name, local_path))
+            mismatches.append(
+                (relative_path, blob_name, local_path, local_size)
+            )
     return mismatches
 
 
@@ -128,37 +135,48 @@ def _upload_with_retries(bucket, relative_path, blob_name, local_path):
 
 def reconcile_folder(client, bucket_name, selected_folder,
                       progress_callback=None):
-    """Compare selected_folder against the bucket and repair gaps.
+    """Compare selected_folder against the dirty bucket and send any
+    gap to quarantine.
     ---
-    Compara selected_folder contra el cubo y repara los huecos.
+    Compara selected_folder contra el cubo sucio y manda a cuarentena
+    cualquier hueco.
 
-    Before uploading anything to the dirty bucket, checks whether the
-    same blob already exists in the quarantine bucket. If it does,
-    the file is left alone -- uploading it here would duplicate it
-    and bypass the review flow that quarantine exists for (H28 annex
-    section 3, point 3: files that appear after the initial copy
-    must never be written straight into the dirty bucket's mirror
-    tree). Bug found and fixed the same session it was introduced
-    (S033): the first version of this function had no notion of
-    quarantine at all.
+    Cambio de destino, decision explicita de Miguel Angel (S034): lo
+    que la reconciliacion encuentra ya NO se sube al cubo sucio, se
+    sube al cubo de CUARENTENA, y la copia del cubo sucio no se toca
+    jamas. Motivo: el reconciliador no puede distinguir un hueco del
+    escaneo inicial de un archivo nuevo o revisado aparecido despues,
+    y el punto 3 de la seccion 3 del anexo H28 exige que todo lo
+    posterior a la copia inicial pase por revision. Consecuencia
+    querida: el cubo sucio queda como foto fija de la copia inicial,
+    base estable para la Fase 2, y la cuarentena se convierte en cola
+    de proceso para la tarea clasificadora asincrona de la Fase 3.
+
+    Criterio verbatim de Miguel Angel sobre nombres repetidos: "no
+    estamos hablando del mismo archivo, sino de un archivo con el
+    mismo nombre... Miramos hash, son dos archivos diferentes. Tiene
+    que clasificarse." Dos documentos con el mismo nombre y distinto
+    contenido son dos documentos reales -- se conservan ambos y se
+    diferencian al clasificar (00, 01); la decision final de borrar
+    es de la supervisora de documentacion desde el explorador de la
+    plataforma, nunca automatica.
     ---
-    Antes de subir nada al cubo sucio, comprueba si ese mismo blob ya
-    existe en el cubo de cuarentena. Si existe, el archivo se deja
-    tal cual -- subirlo aqui lo duplicaria y se saltaria el flujo de
-    revision para el que existe la cuarentena (anexo H28, seccion 3,
-    punto 3: los archivos que aparecen despues de la copia inicial
-    nunca deben escribirse directamente en el arbol espejo del cubo
-    sucio). Fallo detectado y corregido en la misma sesion en que se
-    introdujo (S033): la primera version de esta funcion no sabia
-    nada de cuarentena.
+    Destination change, Miguel Angel's explicit decision (S034):
+    whatever reconciliation finds is NO LONGER uploaded to the dirty
+    bucket but to the QUARANTINE bucket, and the dirty bucket's copy
+    is never touched. The dirty bucket becomes a fixed snapshot of
+    the initial copy, and quarantine becomes the processing queue for
+    Phase 3's asynchronous classifier task.
 
     Parameters
     ----------
     client : google.cloud.storage.Client
     bucket_name : str
-        The dirty bucket -- never the quarantine bucket.
+        The dirty bucket -- read only, used as the reference to
+        compare against. Never written to.
         ---
-        El cubo sucio -- nunca el cubo de cuarentena.
+        El cubo sucio -- solo lectura, referencia contra la que se
+        compara. Nunca se escribe en el.
     selected_folder : str
         Local folder to reconcile -- must be the same folder
         originally passed to upload_folder_recursive.
@@ -172,9 +190,9 @@ def reconcile_folder(client, bucket_name, selected_folder,
 
     Returns
     -------
-    tuple[int, int, list[str]]
-        (repaired_count, skipped_in_quarantine_count,
-        unrecoverable_relative_paths)
+    tuple[int, int, list[str], list[str]]
+        (quarantined_count, already_queued_count,
+        needs_decision_relative_paths, unrecoverable_relative_paths)
     """
     bucket = client.bucket(bucket_name)
     quarantine_bucket = client.bucket(QUARANTINE_BUCKET_NAME)
@@ -201,22 +219,54 @@ def reconcile_folder(client, bucket_name, selected_folder,
         "distinto en %s", total_count, selected_folder,
     )
 
-    repaired_count = 0
-    skipped_in_quarantine_count = 0
+    quarantined_count = 0
+    already_queued_count = 0
+    needs_decision_paths = []
     unrecoverable_relative_paths = []
-    for checked_count, (relative_path, blob_name, local_path) in (
-        enumerate(mismatches, start=1)
-    ):
-        if blob_name in quarantine_sizes:
-            skipped_in_quarantine_count += 1
+    for checked_count, (
+        relative_path, blob_name, local_path, local_size
+    ) in enumerate(mismatches, start=1):
+        quarantined_size = quarantine_sizes.get(blob_name)
+
+        if quarantined_size == local_size:
+            # Ya esta en la cola de cuarentena, con el mismo tamano:
+            # no hay nada que hacer, la tarea clasificadora lo
+            # recogera cuando le toque.
+            # ---
+            # Already queued in quarantine at the same size: nothing
+            # to do, the classifier task will pick it up.
+            already_queued_count += 1
             logger.info(
-                "Reconciliacion: %s ya esta en cuarentena, no se "
-                "duplica en el cubo sucio.", relative_path,
+                "Reconciliacion: %s ya esta en cola de cuarentena.",
+                relative_path,
+            )
+        elif quarantined_size is not None:
+            # Hay una version distinta esperando en cuarentena.
+            # Subir encima la destruiria, y el criterio de Miguel
+            # Angel (S034) es que dos documentos con el mismo nombre
+            # y distinto contenido son dos documentos reales que hay
+            # que conservar y diferenciar (00, 01) al clasificarlos,
+            # nunca uno que pisa al otro. No se toca nada: se
+            # registra para decision explicita.
+            # ---
+            # A different version is already waiting in quarantine.
+            # Uploading over it would destroy it, and Miguel Angel's
+            # criterion (S034) is that two documents sharing a name
+            # with different content are two real documents to be
+            # kept and told apart (00, 01) at classification time,
+            # never one overwriting the other. Nothing is touched:
+            # recorded for an explicit decision.
+            needs_decision_paths.append(relative_path)
+            logger.warning(
+                "PENDIENTE DE DECISION: %s ya tiene una version "
+                "distinta en cuarentena (local %d bytes, en "
+                "cuarentena %d bytes). No se sobrescribe.",
+                relative_path, local_size, quarantined_size,
             )
         elif _upload_with_retries(
-            bucket, relative_path, blob_name, local_path,
+            quarantine_bucket, relative_path, blob_name, local_path,
         ):
-            repaired_count += 1
+            quarantined_count += 1
         else:
             unrecoverable_relative_paths.append(relative_path)
             logger.error(
@@ -227,12 +277,14 @@ def reconcile_folder(client, bucket_name, selected_folder,
             progress_callback(checked_count, total_count)
 
     logger.info(
-        "Reconciliacion completada en %s: %d reparados, %d ya en "
-        "cuarentena (sin duplicar), %d irrecuperables.",
-        selected_folder, repaired_count, skipped_in_quarantine_count,
+        "Reconciliacion completada en %s: %d a cuarentena, %d ya en "
+        "cola, %d pendientes de decision, %d irrecuperables. El cubo "
+        "sucio no se ha modificado.",
+        selected_folder, quarantined_count, already_queued_count,
+        len(needs_decision_paths),
         len(unrecoverable_relative_paths),
     )
     return (
-        repaired_count, skipped_in_quarantine_count,
+        quarantined_count, already_queued_count, needs_decision_paths,
         unrecoverable_relative_paths,
     )
