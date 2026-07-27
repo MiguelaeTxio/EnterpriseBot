@@ -140,14 +140,30 @@ def _run_reconciliation(icon, client, selected_folder):
             f"{skipped_in_quarantine_count} ya en cuarentena"
         )
 
+    # La carpeta se nombra en la notificacion desde S034: al
+    # ejecutarse la reconciliacion automaticamente sobre varias
+    # carpetas al arrancar, dos avisos sin nombre son
+    # indistinguibles entre si. Detectado en la primera ejecucion
+    # real de la reconciliacion de arranque, corregido en el acto.
+    # ---
+    # The folder is named in the notification since S034: with
+    # reconciliation running automatically over several folders at
+    # startup, two unnamed notices are indistinguishable. Spotted on
+    # the first real run of the startup reconciliation, fixed on the
+    # spot.
+    folder_label = os.path.basename(os.path.normpath(selected_folder))
+
     if unrecoverable_paths:
         icon.notify(
-            f"Reconciliacion: {summary}. Ver el log para el "
-            "detalle.",
+            f"Reconciliación de {folder_label}: {summary}. "
+            "Ver el log para el detalle.",
             title="Agente H28",
         )
     else:
-        icon.notify(f"Reconciliacion: {summary}.", title="Agente H28")
+        icon.notify(
+            f"Reconciliación de {folder_label}: {summary}.",
+            title="Agente H28",
+        )
 
     append_event("Reconciliacion", selected_folder, summary)
 
@@ -268,7 +284,7 @@ def _audit_folder(icon, _menu_item):
         f"{stats['file_count']} archivos, "
         f"{stats['error_count']} errores"
     )
-    icon.notify(f"Auditoria terminada: {summary}.", title="Agente H28")
+    icon.notify(f"Auditoría terminada: {summary}.", title="Agente H28")
     append_event("Auditoria", selected_folder, summary)
 
     messagebox.showinfo(
@@ -580,7 +596,7 @@ def main():
     icon = pystray.Icon(
         "h28_migration_agent",
         _build_tray_image(),
-        "EnterpriseBot — Agente de Migracion H28",
+        "EnterpriseBot — Agente de Migración H28",
         menu=menu,
     )
     icon.run(setup=_resume_watched_folders)
