@@ -34,7 +34,11 @@ import logging
 import os
 import time
 
-from config import RECONCILE_MAX_RETRIES, RECONCILE_RETRY_DELAYS_SECONDS
+from config import (
+    QUARANTINE_BUCKET_NAME,
+    RECONCILE_MAX_RETRIES,
+    RECONCILE_RETRY_DELAYS_SECONDS,
+)
 from uploader import build_blob_name, iter_relative_file_paths
 
 logger = logging.getLogger(__name__)
@@ -128,10 +132,33 @@ def reconcile_folder(client, bucket_name, selected_folder,
     ---
     Compara selected_folder contra el cubo y repara los huecos.
 
+    Before uploading anything to the dirty bucket, checks whether the
+    same blob already exists in the quarantine bucket. If it does,
+    the file is left alone -- uploading it here would duplicate it
+    and bypass the review flow that quarantine exists for (H28 annex
+    section 3, point 3: files that appear after the initial copy
+    must never be written straight into the dirty bucket's mirror
+    tree). Bug found and fixed the same session it was introduced
+    (S033): the first version of this function had no notion of
+    quarantine at all.
+    ---
+    Antes de subir nada al cubo sucio, comprueba si ese mismo blob ya
+    existe en el cubo de cuarentena. Si existe, el archivo se deja
+    tal cual -- subirlo aqui lo duplicaria y se saltaria el flujo de
+    revision para el que existe la cuarentena (anexo H28, seccion 3,
+    punto 3: los archivos que aparecen despues de la copia inicial
+    nunca deben escribirse directamente en el arbol espejo del cubo
+    sucio). Fallo detectado y corregido en la misma sesion en que se
+    introdujo (S033): la primera version de esta funcion no sabia
+    nada de cuarentena.
+
     Parameters
     ----------
     client : google.cloud.storage.Client
     bucket_name : str
+        The dirty bucket -- never the quarantine bucket.
+        ---
+        El cubo sucio -- nunca el cubo de cuarentena.
     selected_folder : str
         Local folder to reconcile -- must be the same folder
         originally passed to upload_folder_recursive.
@@ -145,17 +172,27 @@ def reconcile_folder(client, bucket_name, selected_folder,
 
     Returns
     -------
-    tuple[int, list[str]]
-        (repaired_count, unrecoverable_relative_paths)
+    tuple[int, int, list[str]]
+        (repaired_count, skipped_in_quarantine_count,
+        unrecoverable_relative_paths)
     """
     bucket = client.bucket(bucket_name)
+    quarantine_bucket = client.bucket(QUARANTINE_BUCKET_NAME)
     folder_name = os.path.basename(os.path.normpath(selected_folder))
     blob_name_prefix = f"{folder_name}/"
 
     logger.info(
-        "Reconciliacion: listando cubo para %s", selected_folder,
+        "Reconciliacion: listando cubo sucio para %s", selected_folder,
     )
     remote_sizes = _list_remote_sizes(bucket, blob_name_prefix)
+
+    logger.info(
+        "Reconciliacion: listando cubo de cuarentena para %s",
+        selected_folder,
+    )
+    quarantine_sizes = _list_remote_sizes(
+        quarantine_bucket, blob_name_prefix,
+    )
 
     mismatches = _find_mismatches(selected_folder, remote_sizes)
     total_count = len(mismatches)
@@ -165,11 +202,18 @@ def reconcile_folder(client, bucket_name, selected_folder,
     )
 
     repaired_count = 0
+    skipped_in_quarantine_count = 0
     unrecoverable_relative_paths = []
     for checked_count, (relative_path, blob_name, local_path) in (
         enumerate(mismatches, start=1)
     ):
-        if _upload_with_retries(
+        if blob_name in quarantine_sizes:
+            skipped_in_quarantine_count += 1
+            logger.info(
+                "Reconciliacion: %s ya esta en cuarentena, no se "
+                "duplica en el cubo sucio.", relative_path,
+            )
+        elif _upload_with_retries(
             bucket, relative_path, blob_name, local_path,
         ):
             repaired_count += 1
@@ -183,9 +227,12 @@ def reconcile_folder(client, bucket_name, selected_folder,
             progress_callback(checked_count, total_count)
 
     logger.info(
-        "Reconciliacion completada en %s: %d reparados, %d "
-        "irrecuperables.",
-        selected_folder, repaired_count,
+        "Reconciliacion completada en %s: %d reparados, %d ya en "
+        "cuarentena (sin duplicar), %d irrecuperables.",
+        selected_folder, repaired_count, skipped_in_quarantine_count,
         len(unrecoverable_relative_paths),
     )
-    return repaired_count, unrecoverable_relative_paths
+    return (
+        repaired_count, skipped_in_quarantine_count,
+        unrecoverable_relative_paths,
+    )

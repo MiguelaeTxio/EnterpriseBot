@@ -111,12 +111,15 @@ def _run_reconciliation(icon, client, selected_folder):
             selected_folder, checked_count, total_count,
         )
 
-    repaired_count, unrecoverable_paths = reconcile_folder(
-        client, DIRTY_BUCKET_NAME, selected_folder,
-        _log_reconcile_progress,
+    repaired_count, skipped_in_quarantine_count, unrecoverable_paths = (
+        reconcile_folder(
+            client, DIRTY_BUCKET_NAME, selected_folder,
+            _log_reconcile_progress,
+        )
     )
 
-    if not repaired_count and not unrecoverable_paths:
+    if not repaired_count and not skipped_in_quarantine_count \
+            and not unrecoverable_paths:
         icon.notify(
             "Reconciliacion: todo correcto, sin huecos.",
             title="Agente H28",
@@ -124,6 +127,7 @@ def _run_reconciliation(icon, client, selected_folder):
     elif unrecoverable_paths:
         icon.notify(
             f"Reconciliacion: {repaired_count} reparado(s), "
+            f"{skipped_in_quarantine_count} ya en cuarentena, "
             f"{len(unrecoverable_paths)} irrecuperable(s). "
             "Ver el log para el detalle.",
             title="Agente H28",
@@ -131,7 +135,8 @@ def _run_reconciliation(icon, client, selected_folder):
     else:
         icon.notify(
             f"Reconciliacion: {repaired_count} archivo(s) "
-            "reparado(s) automaticamente.",
+            f"reparado(s), {skipped_in_quarantine_count} ya en "
+            "cuarentena (sin duplicar).",
             title="Agente H28",
         )
 
