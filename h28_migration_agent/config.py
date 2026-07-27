@@ -81,6 +81,36 @@ UPLOAD_MAX_WORKERS = 8
 RECONCILE_MAX_RETRIES = 3
 RECONCILE_RETRY_DELAYS_SECONDS = (5, 15, 45)
 
+# Auditoria local de la Fase 2 (S034, decision de Miguel Angel: "lo
+# integramos en el agente"). Solo lectura sobre la copia local: es el
+# paso 1 de la secuencia de la seccion 8 del anexo H28, el dataset
+# con el que se calibran las reglas de limpieza con datos reales
+# delante en vez de a ciegas.
+# ---
+# Phase 2 local audit (S034, Miguel Angel's decision to integrate it
+# into the agent). Read-only over the local copy: step 1 of the
+# sequence in section 8 of the H28 annex, the dataset used to
+# calibrate the cleanup rules against real data instead of blindly.
+AUDIT_FOLDER_NAME = "audits"
+
+# Chunk size used when hashing a file. 1 MiB balances syscall
+# overhead against memory for the several-hundred-MB scanned manuals
+# present in the real tree.
+# ---
+# Tamano de trozo al calcular el hash. 1 MiB equilibra el coste de
+# syscalls contra la memoria, dados los manuales escaneados de
+# varios cientos de MB que hay en el arbol real.
+AUDIT_HASH_CHUNK_SIZE_BYTES = 1024 * 1024
+
+# How often the audit reports progress to the log/tray. The audit
+# runs over ~37.500 files, so silence for minutes would look like a
+# hang -- same lesson as the gcloud commands of S033.
+# ---
+# Cada cuantos archivos informa de progreso la auditoria. Recorre
+# ~37.500 archivos, asi que varios minutos en silencio pareceria un
+# cuelgue -- misma leccion que los comandos gcloud de S033.
+AUDIT_PROGRESS_EVERY_FILES = 500
+
 # Local log file, written next to the executable.
 # ---
 # Archivo de log local, escrito junto al ejecutable.
@@ -146,4 +176,23 @@ def get_history_state_path():
     return os.path.join(
         get_agent_data_dir(), HISTORY_STATE_FILE_NAME
     )
+
+
+def get_audit_output_dir():
+    """Return the audit output folder, creating it if needed.
+    ---
+    Devuelve la carpeta de salida de auditorias, creandola si hace
+    falta.
+
+    Cuelga de agent_data/, que ya esta en .gitignore: el inventario
+    contiene la estructura documental real de la empresa y nunca
+    debe poder acabar en un commit por descuido.
+    ---
+    Hangs off agent_data/, already in .gitignore: the inventory
+    holds the company's real document structure and must never be
+    able to end up in a commit by accident.
+    """
+    audit_dir = os.path.join(get_agent_data_dir(), AUDIT_FOLDER_NAME)
+    os.makedirs(audit_dir, exist_ok=True)
+    return audit_dir
 

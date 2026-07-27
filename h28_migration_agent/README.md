@@ -60,6 +60,23 @@ de Migración H28"). Clic derecho:
   cualquier hueco, sin salir del agente ni tocar ninguna consola.
   Útil para volver a comprobar una carpeta ya migrada en cualquier
   momento.
+- **Auditar carpeta (Fase 2)** *(S034)* — abre el diálogo de
+  selección de carpeta y genera el inventario de la copia local:
+  por cada archivo, su ruta relativa, carpeta contenedora, nombre,
+  extensión, tamaño en bytes, hash SHA-256 y —si es PDF— su número
+  de páginas. **No toca GCS ni la cuenta de servicio, y no modifica
+  ni borra absolutamente nada:** es estrictamente local y
+  estrictamente de lectura (paso 1 y 2 de la secuencia de la
+  sección 8 del anexo H28). Es el dataset con el que se calibran las
+  reglas de la Fase 2 —deduplicación, heurística de dosieres y
+  catálogo de patrones de nombre— con datos reales delante en vez de
+  a ciegas. Salida en `agent_data\audits\`: un CSV con el inventario
+  completo y un `_resumen.txt` en castellano con los totales,
+  duplicados exactos detectados y reparto por extensión. Como hay
+  que leer cada archivo entero para calcular su hash, la pasada
+  tarda varios minutos sobre una carpeta grande y el menú no
+  responde mientras tanto — se avisa antes de empezar y se pide
+  confirmación.
 - **Ver historial** *(S033)* — abre una ventana de solo lectura con
   los eventos recientes del agente (copias y reconciliaciones), más
   reciente primero, sin necesidad de abrir `h28_migration_agent.log`.
@@ -148,21 +165,34 @@ el código normal para una tarea que se queda corriendo indefinidamente
 `dist\agent_data\service_account_key.json` si `dist\` se genera de
 cero.
 
-## 6. Punto abierto para la siguiente sesión de H28
+## 6. Reconciliación automática al arrancar (S034) — punto cerrado
 
-- **Alcance de la persistencia entre reinicios — parcialmente
-  cubierto por la reconciliación de S033.** Lo construido en S031
-  retoma la *vigilancia* de las carpetas ya elegidas, pero no repite
-  la copia inicial al arrancar — solo los eventos en vivo de
-  watchdog (agente corriendo) llegan a cuarentena. La reconciliación
-  de S033 (**Verificar y reparar carpeta**, sección 3 arriba) ya
-  permite detectar y reparar manualmente, en cualquier momento,
-  cualquier archivo que se haya quedado fuera — incluidos los que
-  aparecieron con el agente apagado, sin necesitar un escaneo
-  específico al arrancar. **Matiz sin resolver:** esto es bajo
-  demanda (Miguel Ángel tiene que abrir el menú y elegir la
-  carpeta), no automático al reiniciar el agente. Si se quiere que
-  la reconciliación de las carpetas persistidas se dispare sola al
-  arrancar (dentro de `_resume_watched_folders()`, `main.py`), sin
-  esperar a que Miguel Ángel la pida, queda pendiente de decisión
-  explícita — no implementado sin confirmación (directriz 4.8).
+El matiz que S031 dejó documentado y S033 dejó pendiente de decisión
+explícita queda **cerrado en S034**, por decisión de Miguel Ángel:
+*"creo que es lo más lógico de hacerlo de forma automática una vez
+que arranque el agente"*.
+
+`_resume_watched_folders()` (`main.py`) ya no se limita a retomar la
+vigilancia de las carpetas persistidas: tras arrancar los
+vigilantes, ejecuta también una reconciliación completa sobre cada
+una de ellas, con el mismo mecanismo de **Verificar y reparar
+carpeta**. Los archivos aparecidos con el agente apagado dejan de
+quedar invisibles hasta que alguien se acuerde de pedir una
+verificación a mano.
+
+Dos detalles de implementación, deliberados:
+
+- **La vigilancia arranca antes que la reconciliación.** Reconciliar
+  una carpeta grande tarda minutos, y durante esa ventana los
+  archivos que se creen en local deben llegar igualmente a
+  cuarentena. Al revés se perderían esos eventos.
+- **Cada carpeta se reconcilia dentro de su propio guardado de
+  errores.** Que una falle no puede impedir que las demás se
+  reconcilien, ni tumbar el arranque del agente.
+
+Consecuencia práctica: el arranque del agente sobre carpetas ya
+migradas grandes tarda ahora bastante más que antes, porque compara
+el árbol entero contra el cubo antes de quedarse en reposo. Es el
+coste esperado de la decisión, no un síntoma de cuelgue — el
+progreso queda en `h28_migration_agent.log` y el resultado como
+notificación de bandeja y entrada de **Ver historial**.

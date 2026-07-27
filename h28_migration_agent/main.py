@@ -25,6 +25,12 @@ from tkinter import filedialog, messagebox, ttk
 import pystray
 from PIL import Image, ImageDraw
 
+from auditor import (
+    audit_folder,
+    build_audit_output_path,
+    build_summary_text,
+    write_summary,
+)
 from config import DIRTY_BUCKET_NAME, LOG_FILE_NAME
 from gcs_client import MissingCredentialsError, build_client
 from history import append_event, load_events
@@ -181,6 +187,95 @@ def _verify_and_repair_folder(icon, _menu_item):
         f"Verificando {selected_folder}...", title="Agente H28",
     )
     _run_reconciliation(icon, client, selected_folder)
+
+
+def _audit_folder(icon, _menu_item):
+    """Run the read-only Phase 2 audit over a chosen local folder.
+    ---
+    Ejecuta la auditoria de solo lectura de la Fase 2 sobre una
+    carpeta local elegida.
+
+    S034, decision de Miguel Angel ("podemos integrarlo en el
+    agente"): el paso 1 de la Fase 2 se lanza desde aqui, no desde
+    una consola. No toca GCS ni la cuenta de servicio -- es
+    estrictamente local y estrictamente de lectura, asi que no
+    requiere credenciales.
+    ---
+    S034, Miguel Angel's decision: Phase 2 step 1 is launched from
+    here, not from a console. It never touches GCS nor the service
+    account -- it is strictly local and strictly read-only, so no
+    credentials are required.
+    """
+    root = tk.Tk()
+    root.withdraw()
+    root.attributes("-topmost", True)
+    selected_folder = filedialog.askdirectory(
+        title="Selecciona la carpeta a auditar (H28 Fase 2)",
+        parent=root,
+    )
+    if not selected_folder:
+        root.destroy()
+        return
+    selected_folder = os.path.normpath(selected_folder)
+
+    confirmed = messagebox.askyesno(
+        "Agente H28",
+        f"Se va a auditar:\n{selected_folder}\n\n"
+        "Se calculará el hash SHA-256 de cada archivo, por lo que "
+        "hay que leerlos todos enteros: puede tardar bastantes "
+        "minutos y el menú del agente no responderá mientras tanto."
+        "\n\nNo se modifica ni se borra nada: la pasada es "
+        "exclusivamente de lectura.\n\n¿Continuar?",
+        parent=root,
+    )
+    root.destroy()
+    if not confirmed:
+        return
+
+    icon.notify(
+        f"Auditando {selected_folder}...", title="Agente H28",
+    )
+    logger.info("Inicio de auditoria: %s", selected_folder)
+
+    def _log_audit_progress(file_count, total_bytes):
+        logger.info(
+            "Progreso auditoria %s: %d archivos, %d bytes",
+            selected_folder, file_count, total_bytes,
+        )
+
+    csv_path = build_audit_output_path(selected_folder)
+    try:
+        stats = audit_folder(
+            selected_folder, csv_path, _log_audit_progress,
+        )
+    except OSError as error:
+        logger.error(
+            "Auditoria abortada sobre %s: %s", selected_folder, error,
+        )
+        messagebox.showerror(
+            "Agente H28",
+            f"No se pudo completar la auditoría:\n{error}",
+        )
+        append_event("Auditoria", selected_folder, f"Error: {error}")
+        return
+
+    summary_text = build_summary_text(
+        selected_folder, csv_path, stats,
+    )
+    summary_path = write_summary(summary_text, csv_path)
+
+    summary = (
+        f"{stats['file_count']} archivos, "
+        f"{stats['error_count']} errores"
+    )
+    icon.notify(f"Auditoria terminada: {summary}.", title="Agente H28")
+    append_event("Auditoria", selected_folder, summary)
+
+    messagebox.showinfo(
+        "Agente H28",
+        f"Auditoría completada.\n\n{summary_text}\n\n"
+        f"Resumen guardado en:\n{summary_path}",
+    )
 
 
 def _show_history(icon, _menu_item):
@@ -341,17 +436,22 @@ def _resume_watched_folders(icon):
     agente tiene que recordar qué estaba haciendo y seguir
     haciéndolo".
 
-    Known gap (documented, not solved in S031): this only resumes
-    *watching* — it does not redo the initial bulk copy, and it does
-    not scan for files that appeared while the agent was closed
-    between runs. Only watchdog's live events (while the agent is
-    running) reach the quarantine bucket.
+    S034 closes the gap S031 left documented and S033 left pending
+    an explicit decision: reconciliation now runs automatically over
+    every resumed folder, so files that appeared while the agent was
+    closed no longer stay invisible until someone remembers to ask
+    for a manual check. Miguel Ángel's decision, verbatim: "creo que
+    es lo más lógico de hacerlo de forma automática una vez que
+    arranque el agente".
     ---
-    Hueco conocido (documentado, no resuelto en S031): esto solo
-    retoma la *vigilancia* — no repite la copia inicial, y no
-    escanea archivos que hayan aparecido mientras el agente estaba
-    cerrado entre ejecuciones. Solo los eventos en vivo de watchdog
-    (con el agente corriendo) llegan al cubo de cuarentena.
+    S034 cierra el hueco que S031 dejó documentado y S033 dejó
+    pendiente de decisión explícita: la reconciliación se ejecuta
+    ahora automáticamente sobre cada carpeta retomada, de modo que
+    los archivos aparecidos con el agente cerrado dejan de quedar
+    invisibles hasta que alguien se acuerde de pedir una
+    verificación manual. Decisión de Miguel Ángel, verbatim: "creo
+    que es lo más lógico de hacerlo de forma automática una vez que
+    arranque el agente".
     """
     # pystray exige que, al sustituir el setup por defecto, este
     # mismo lo deje visible explicitamente -- si no, el icono nunca
@@ -399,6 +499,15 @@ def _resume_watched_folders(icon):
         )
         return
 
+    # La vigilancia se arranca ANTES de reconciliar, a propósito: la
+    # reconciliación de una carpeta grande tarda minutos, y durante
+    # esa ventana los archivos que se creen en local deben llegar
+    # igualmente a cuarentena. Al revés se perderían esos eventos.
+    # ---
+    # Watching starts BEFORE reconciling on purpose: reconciling a
+    # large folder takes minutes, and files created locally during
+    # that window must still reach quarantine. The other order would
+    # lose those events.
     for folder in valid_folders:
         observer = start_watching(client, folder)
         _active_observers[folder] = observer
@@ -409,9 +518,29 @@ def _resume_watched_folders(icon):
 
     icon.notify(
         f"Vigilancia retomada sobre {len(valid_folders)} "
-        "carpeta(s) de la sesión anterior.",
+        "carpeta(s) de la sesión anterior. Verificando "
+        "integridad...",
         title="Agente H28",
     )
+
+    # Reconciliación automática al arrancar (S034). Cada carpeta se
+    # protege por separado: que una falle no puede impedir que las
+    # demás se reconcilien, ni tumbar el arranque del agente.
+    # ---
+    # Automatic reconciliation on startup (S034). Each folder is
+    # guarded separately: one failing must neither prevent the
+    # others from being reconciled nor bring down agent startup.
+    for folder in valid_folders:
+        try:
+            _run_reconciliation(icon, client, folder)
+        except Exception as error:
+            logger.error(
+                "Fallo en la reconciliación automática de arranque "
+                "sobre %s: %s", folder, error,
+            )
+            append_event(
+                "Reconciliacion", folder, f"Error: {error}",
+            )
 
 
 def _quit_agent(icon, _menu_item):
@@ -444,6 +573,7 @@ def main():
         pystray.MenuItem(
             "Verificar y reparar carpeta", _verify_and_repair_folder
         ),
+        pystray.MenuItem("Auditar carpeta (Fase 2)", _audit_folder),
         pystray.MenuItem("Ver historial", _show_history),
         pystray.MenuItem("Salir", _quit_agent),
     )
