@@ -52,6 +52,21 @@ WATCHED_FOLDERS_STATE_FILE_NAME = "watched_folders.json"
 # Numero de workers paralelos para la copia inicial en bruto.
 UPLOAD_MAX_WORKERS = 8
 
+# Reconciliation retries after the initial copy (S033, Miguel Angel's
+# decision): local vs. bucket is compared, and any missing/mismatched
+# file is retried this many times, waiting RECONCILE_RETRY_DELAYS[i]
+# seconds before retry i. Whatever still fails after all retries is
+# logged as unrecoverable.
+# ---
+# Reintentos de reconciliacion tras la copia inicial (S033, decision
+# de Miguel Angel): se compara local contra el cubo, y cualquier
+# archivo ausente o con tamano distinto se reintenta este numero de
+# veces, esperando RECONCILE_RETRY_DELAYS[i] segundos antes del
+# reintento i. Lo que siga fallando tras todos los reintentos se
+# registra como irrecuperable.
+RECONCILE_MAX_RETRIES = 3
+RECONCILE_RETRY_DELAYS_SECONDS = (5, 15, 45)
+
 # Local log file, written next to the executable.
 # ---
 # Archivo de log local, escrito junto al ejecutable.

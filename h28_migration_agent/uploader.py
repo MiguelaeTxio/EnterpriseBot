@@ -21,7 +21,7 @@ from config import UPLOAD_MAX_WORKERS
 logger = logging.getLogger(__name__)
 
 
-def _iter_relative_file_paths(root_folder):
+def iter_relative_file_paths(root_folder):
     """Yield every file path under root_folder, recursively.
     ---
     Genera cada ruta de archivo bajo root_folder, de forma
@@ -87,7 +87,7 @@ def upload_folder_recursive(
         Se llama con (subidos, total) tras cada lote.
     """
     bucket = client.bucket(bucket_name)
-    relative_paths = list(_iter_relative_file_paths(selected_folder))
+    relative_paths = list(iter_relative_file_paths(selected_folder))
     total_count = len(relative_paths)
     logger.info(
         "Copia inicial: %d archivos encontrados bajo %s",

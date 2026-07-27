@@ -54,6 +54,12 @@ de Migración H28"). Clic derecho:
   esa carpeta indefinidamente: cualquier archivo nuevo que aparezca
   se sube al cubo de cuarentena (`cgs_grupo_alvarez_cuarentena`), no
   al árbol espejo del cubo sucio.
+- **Verificar y reparar carpeta** *(S033)* — abre el mismo diálogo
+  de selección de carpeta y ejecuta una reconciliación bajo demanda:
+  vuelve a comparar la carpeta local contra el cubo y repara
+  cualquier hueco, sin salir del agente ni tocar ninguna consola.
+  Útil para volver a comprobar una carpeta ya migrada en cualquier
+  momento.
 - **Salir** — detiene todas las vigilancias en marcha y cierra el
   agente. **No olvida las carpetas** — quedan guardadas en
   `agent_data\watched_folders.json` y se retoman automáticamente en
@@ -64,6 +70,31 @@ de Migración H28"). Clic derecho:
 El log completo de cada ejecución queda en
 `h28_migration_agent.log`, junto al script (o junto al ejecutable
 una vez empaquetado).
+
+### Reconciliación automática tras la copia (S033)
+
+Confirmado por Miguel Ángel: el sistema debe poder afrontar errores y
+recuperarse solo, sin intervención manual por consola. Al terminar
+**Seleccionar carpeta y copiar**, el agente ejecuta automáticamente
+`reconciler.reconcile_folder()`:
+
+1. Vuelve a listar la carpeta local y compara cada archivo, por
+   tamaño, contra lo que hay realmente en el cubo — usando la
+   librería `google-cloud-storage`, nunca `gcloud` CLI.
+2. Cualquier archivo ausente o con tamaño distinto se reintenta
+   automáticamente hasta 3 veces, con espera creciente entre
+   intentos (5s, 15s, 45s — `config.RECONCILE_MAX_RETRIES` /
+   `RECONCILE_RETRY_DELAYS_SECONDS`).
+3. Lo que siga sin subir tras los 3 intentos queda registrado en el
+   log con la etiqueta `IRRECUPERABLE`, distinta de un fallo
+   normal, para que salte a la vista sin necesidad de revisar todo
+   el log línea a línea.
+4. El resultado se muestra siempre como notificación de bandeja
+   (reparados / irrecuperables), sin necesidad de abrir el log salvo
+   que se quiera el detalle.
+
+El mismo mecanismo es el que usa **Verificar y reparar carpeta** bajo
+demanda.
 
 ## 4. Empaquetar como ejecutable (decisión S031: ejecutable con icono en bandeja)
 
@@ -111,12 +142,19 @@ cero.
 
 ## 6. Punto abierto para la siguiente sesión de H28
 
-- **Alcance de la persistencia entre reinicios.** Lo construido en
-  S031 retoma la *vigilancia* de las carpetas ya elegidas, pero no
-  repite la copia inicial ni escanea archivos que hayan aparecido
-  mientras el agente estaba cerrado — solo los eventos en vivo de
-  watchdog (agente corriendo) llegan a cuarentena. Si Miguel Ángel
-  quiere que también se detecten archivos nuevos aparecidos durante
-  el tiempo que el agente estuvo apagado (por ejemplo, mientras la
-  máquina estaba apagada de un día para otro), hace falta diseñar un
-  escaneo de "puesta al día" al arrancar — no construido en S031.
+- **Alcance de la persistencia entre reinicios — parcialmente
+  cubierto por la reconciliación de S033.** Lo construido en S031
+  retoma la *vigilancia* de las carpetas ya elegidas, pero no repite
+  la copia inicial al arrancar — solo los eventos en vivo de
+  watchdog (agente corriendo) llegan a cuarentena. La reconciliación
+  de S033 (**Verificar y reparar carpeta**, sección 3 arriba) ya
+  permite detectar y reparar manualmente, en cualquier momento,
+  cualquier archivo que se haya quedado fuera — incluidos los que
+  aparecieron con el agente apagado, sin necesitar un escaneo
+  específico al arrancar. **Matiz sin resolver:** esto es bajo
+  demanda (Miguel Ángel tiene que abrir el menú y elegir la
+  carpeta), no automático al reiniciar el agente. Si se quiere que
+  la reconciliación de las carpetas persistidas se dispare sola al
+  arrancar (dentro de `_resume_watched_folders()`, `main.py`), sin
+  esperar a que Miguel Ángel la pida, queda pendiente de decisión
+  explícita — no implementado sin confirmación (directriz 4.8).

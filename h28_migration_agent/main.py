@@ -27,6 +27,7 @@ from PIL import Image, ImageDraw
 
 from config import DIRTY_BUCKET_NAME, LOG_FILE_NAME
 from gcs_client import MissingCredentialsError, build_client
+from reconciler import reconcile_folder
 from state import load_watched_folders, save_watched_folders
 from uploader import upload_folder_recursive
 from watcher import start_watching
@@ -90,6 +91,88 @@ def _build_tray_image():
     return image
 
 
+def _run_reconciliation(icon, client, selected_folder):
+    """Run reconciliation on selected_folder and notify the result.
+    ---
+    Ejecuta la reconciliacion sobre selected_folder y notifica el
+    resultado.
+
+    Shared by the automatic run right after a copy and by the manual
+    "Verificar y reparar carpeta" menu item (S033).
+    ---
+    Compartida por la ejecucion automatica justo tras una copia y
+    por el item de menu manual "Verificar y reparar carpeta" (S033).
+    """
+    logger.info("Inicio de reconciliacion: %s", selected_folder)
+
+    def _log_reconcile_progress(checked_count, total_count):
+        logger.info(
+            "Progreso reconciliacion %s: %d/%d",
+            selected_folder, checked_count, total_count,
+        )
+
+    repaired_count, unrecoverable_paths = reconcile_folder(
+        client, DIRTY_BUCKET_NAME, selected_folder,
+        _log_reconcile_progress,
+    )
+
+    if not repaired_count and not unrecoverable_paths:
+        icon.notify(
+            "Reconciliacion: todo correcto, sin huecos.",
+            title="Agente H28",
+        )
+    elif unrecoverable_paths:
+        icon.notify(
+            f"Reconciliacion: {repaired_count} reparado(s), "
+            f"{len(unrecoverable_paths)} irrecuperable(s). "
+            "Ver el log para el detalle.",
+            title="Agente H28",
+        )
+    else:
+        icon.notify(
+            f"Reconciliacion: {repaired_count} archivo(s) "
+            "reparado(s) automaticamente.",
+            title="Agente H28",
+        )
+
+
+def _verify_and_repair_folder(icon, _menu_item):
+    """Let Miguel Angel pick a folder and reconcile it on demand.
+    ---
+    Permite a Miguel Angel elegir una carpeta y reconciliarla bajo
+    demanda.
+
+    S033: cubre la verificacion/reparacion de cualquier carpeta ya
+    migrada (o nueva) sin salir del agente ni tocar ninguna consola.
+    ---
+    S033: covers verifying/repairing any already-migrated (or new)
+    folder without leaving the agent or touching any console.
+    """
+    root = tk.Tk()
+    root.withdraw()
+    root.attributes("-topmost", True)
+    selected_folder = filedialog.askdirectory(
+        title="Selecciona la carpeta a verificar y reparar (H28)",
+        parent=root,
+    )
+    root.destroy()
+
+    if not selected_folder:
+        return
+    selected_folder = os.path.normpath(selected_folder)
+
+    try:
+        client = build_client()
+    except MissingCredentialsError as error:
+        messagebox.showerror("Agente H28", str(error))
+        return
+
+    icon.notify(
+        f"Verificando {selected_folder}...", title="Agente H28",
+    )
+    _run_reconciliation(icon, client, selected_folder)
+
+
 def _select_folder_and_copy(icon, _menu_item):
     """Open the folder picker, then copy and watch it.
     ---
@@ -139,14 +222,26 @@ def _select_folder_and_copy(icon, _menu_item):
     if failed_paths:
         icon.notify(
             f"Copia terminada con {len(failed_paths)} fallos. "
-            "Ver el log para el detalle.",
+            "Reconciliando automaticamente...",
             title="Agente H28",
         )
     else:
         icon.notify(
-            f"Copia completada: {uploaded_count} archivos.",
+            f"Copia completada: {uploaded_count} archivos. "
+            "Verificando integridad...",
             title="Agente H28",
         )
+
+    # Reconciliacion automatica (S033): tras la copia, se vuelve a
+    # comparar local vs. cubo y se repara cualquier hueco -- ya sea
+    # un fallo de subida o un archivo que el escaneo inicial se
+    # salto -- sin intervencion manual por consola.
+    # ---
+    # Automatic reconciliation (S033): after the copy, local vs.
+    # bucket is compared again and any gap is repaired -- whether an
+    # upload failure or a file the initial scan missed -- without
+    # manual console intervention.
+    _run_reconciliation(icon, client, selected_folder)
 
     observer = start_watching(client, selected_folder)
     _active_observers[selected_folder] = observer
@@ -267,6 +362,9 @@ def main():
     menu = pystray.Menu(
         pystray.MenuItem(
             "Seleccionar carpeta y copiar", _select_folder_and_copy
+        ),
+        pystray.MenuItem(
+            "Verificar y reparar carpeta", _verify_and_repair_folder
         ),
         pystray.MenuItem("Salir", _quit_agent),
     )
