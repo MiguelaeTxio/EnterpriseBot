@@ -1326,41 +1326,297 @@ archivos ausentes. Durante la sesión hubo que recurrir a
 `ReadTransferCount` del proceso en Windows para saber por dónde iba.
 
 
+### COMPLETADAS EN S035
+
+**Punto 1 de la hoja de ruta anterior — cerrado.** `.exe` reconstruido
+sobre `4a1d3b1`, empaquetado desde un entorno virtual aislado y con un
+árbol de dependencias fijado y versionado por primera vez. Verificado
+en producción: `pip list` con las 30 versiones exactas del candado,
+`IMPORTS OK`, `pyvenv.cfg` con `include-system-site-packages = false`,
+y versiones del venv distintas de las del Python del sistema
+(`pillow` 12.3.0 frente a 12.2.0, `cryptography` 49.0.0 frente a
+48.0.1). `pypdf` correctamente empaquetado pese a importarse dentro de
+una función: prueba de humo con 13 de 13 PDF y 0 errores.
+
+**Punto 2 — hecho.** Auditadas las dos carpetas completas:
+`DOC. MAQUINAS` (16.022 archivos) y `DOC. PERSONAL` (21.507 archivos,
+10.729.113.705 bytes, 23 errores de lectura). Más tres auditorías de
+carpeta individual para extraer vocabulario documental. Total analizado
+para el diseño del patrón de nombres: 37.529 nombres reales.
+
+**Duplicación exacta: los dos mundos son opuestos.** `DOC. PERSONAL`
+tiene 1.962 grupos de duplicados exactos, 4.091 archivos implicados y
+**1.008.082.518 bytes recuperables** dejando una sola copia. En
+`DOC. MAQUINAS` la duplicación exacta es marginal y el ahorro está en
+las variantes de compresión. Las reglas de limpieza no pueden ser las
+mismas para las dos carpetas.
+
+#### Flujo completo de la Fase 2, dictado por Miguel Ángel (literal)
+
+1. OneDrive sincroniza a local.
+2. El agente vigila la carpeta local.
+3. Cuando entra un archivo desde otro puesto de la red vía OneDrive,
+   no se ve. Hay que verlo y hay que forzar su descarga.
+4. Una vez descargado, se sube a cuarentena.
+5. En cuarentena, el clasificador lo clasifica y lo renombra.
+6. Si falta información para clasificar, se llama a Gemini para que lo
+   lea y lo determine.
+7. Con la clasificación y la carpeta de destino resueltas, sale de
+   cuarentena y va a su carpeta.
+8. Si tiene que dejar constancia en base de datos, se deja.
+9. Si es un documento de EPIs, Gemini extrae los datos y se actualiza
+   la tabla del operario al que pertenece.
+10. **Todo el trabajo de organización se hace sobre la copia de Google
+    Cloud Storage.** Esa copia es un espejo de OneDrive y es sobre ella
+    sobre la que se trabaja: se organiza, se renombra y se mueve.
+
+#### Corrección de una interpretación errónea del modelo (S034 → S035)
+
+En S034 quedó escrito «el cubo sucio como foto fija», y el modelo lo
+arrastró en S035 como si fuera una prohibición general de tocar el
+cubo, llegando a plantear un tercer cubo de trabajo para no violarla.
+**Miguel Ángel lo desmintió expresamente:** nunca dijo que la copia
+fuera inamovible. Lo que hay es un espejo de OneDrive, y sobre ese
+espejo se trabaja sin más condiciones que las que él ponga. El alcance
+real de aquella frase es únicamente que **la reconciliación repara
+contra cuarentena y no modifica el cubo mientras repara** — que es lo
+que el propio código registra en cada pasada (`El cubo sucio no se ha
+modificado`). Queda anotado aquí para que ningún modelo futuro vuelva a
+extrapolarlo.
+
+Consecuencia técnica favorable, verificada en línea (directriz 4.4):
+en un cubo con Namespace Jerárquico **renombrar y mover carpetas es una
+operación solo de metadatos, atómica y sin coste de copia**
+(`gcloud storage mv`, y `objects.move` para objetos sueltos). Todo el
+trabajo de reorganización de la Fase 2 se hace dentro del mismo cubo,
+gratis. La decisión de S030 de crear los cubos con Namespace Jerárquico
+resulta ser la que hace viable la Fase 2.
+
+#### Rehidratación de archivos solo-en-nube — mecanismo validado en producción
+
+La auditoría de `DOC. PERSONAL` arrojó 23 errores de lectura, 17 de
+ellos `[Errno 22] Invalid argument` sobre archivos de un mismo
+operario. Diagnóstico completo, por descarte y con datos:
+
+- **No es longitud de ruta.** Con 268 caracteres, `os.path.getsize`
+  funciona perfectamente; lo que falla es `open()`. Metadatos sí,
+  contenido no.
+- **No es el prefijo `\\?\`.** Falla igual con él y sin él.
+- **Es OneDrive.** El atributo `RECALL_ON_DATA_ACCESS` (`0x00400000`)
+  está encendido: son marcadores de posición sincronizados desde otro
+  puesto, sin contenido en disco. El archivo de control, sano, no tiene
+  ninguna marca.
+
+**Detección: gratis.** El atributo viene en los metadatos del
+directorio. No hay que abrir nada. `Get-ChildItem` filtrando por ese
+bit dio exactamente 17, el mismo número que los errores de la auditoría
+por una vía independiente.
+
+**Rehidratación: `attrib.exe` NO sirve para este árbol.** Devuelve
+`Formato de parámetros incorrecto` sobre rutas de 268 caracteres — es
+una herramienta heredada sujeta al límite de 260. El bit `PINNED` no
+llegó a ponerse. Lo que sí funciona es llamar directamente a la API de
+Windows:
+
+```python
+k32.SetFileAttributesW("\\\\?\\" + os.path.abspath(ruta), nuevo_attr)
+```
+
+Con `PINNED` (`0x00080000`) puesto por esa vía, los 17 se anclaron sin
+un solo fallo y OneDrive los descargó: `RECALL` pasó de 17 a 0 y el PDF
+de prueba se abrió devolviendo `%PDF-`. La reconciliación posterior los
+subió sola: **13 a cuarentena, 20 ya en cola, 1 pendiente de decisión**.
+
+**Regla derivada:** cualquier automatización de la Fase 2 que toque
+estos archivos debe ir por la API de Windows con prefijo `\\?\`, nunca
+por herramientas de línea de comandos heredadas. Comprobado en
+producción, no en la documentación.
+
+#### Defectos reales localizados en código de producción
+
+**1. Corregido en esta sesión (commit `42bd826`) — ventana vacía
+imposible de cerrar.** Las cuatro funciones que usaban Tkinter creaban
+su propia `tk.Tk()` y la destruían **antes** de los `messagebox`
+posteriores. Sin raíz viva y sin `parent=`, Tkinter fabrica una raíz
+implícita para dibujar el diálogo: nace visible, sin un solo widget
+dentro, y nadie la destruye. Al abrir después el historial,
+`_show_history` hacía otra `tk.Tk()` con esa raíz huérfana viva — dos
+raíces Tk en el mismo proceso, caso roto de fábrica: la ventana no
+dibujaba, su bucle de eventos no atendía y solo se cerraba desde el
+administrador de tareas, matando el agente entero. Corregido con una
+raíz única y oculta (`_get_tk_root`), `parent=` explícito en los siete
+`messagebox`, y `_show_history` sobre `tk.Toplevel` con `wait_window()`
+en vez de `mainloop()`. **Verificado por Miguel Ángel en producción:**
+el historial abre correctamente incluso con el agente reconciliando.
+
+**2. Pendiente — `os.walk` sin `onerror` en el recorrido que copia y
+verifica.** `iter_relative_file_paths` (`uploader.py` línea 41) usa
+`os.walk(root_folder)` a secas. Esa función la usan
+`upload_folder_recursive` (la copia de la Fase 1) y
+`_find_mismatches` (la reconciliación). El blindaje escrito en S034
+—`_on_walk_error`— se quedó **solo en `auditor.py`**. El propio
+docstring de `_on_walk_error` documenta por qué importa: los 4 archivos
+de `DOC. PERSONAL` que nunca llegaron al cubo en S032 se perdieron
+exactamente así. Un directorio ilegible se descarta en silencio, y lo
+que el recorrido no ve, la reconciliación tampoco puede repararlo.
+
+**3. Pendiente — ceguera ante archivos solo-en-nube.** Ni la copia ni
+la reconciliación comprueban `RECALL_ON_DATA_ACCESS`. Un archivo que
+llega por sincronización sin contenido no se puede abrir, luego no se
+sube ni se hashea, y no deja constancia de fallo en ningún sitio salvo
+si pasa el auditor. El mecanismo de rehidratación ya está validado
+(punto anterior); falta integrarlo.
+
+**4. Pendiente — el vigilante se traga excepciones no `OSError`.**
+`_upload_new_file` (`watcher.py`) captura solo `OSError`. Cualquier
+otra excepción —un error del SDK de GCS, por ejemplo— desaparece **sin
+dejar rastro alguno**, porque ocurre en un hilo demonio de una
+aplicación compilada con `--windowed`, sin consola donde imprimir.
+Tampoco registra los éxitos, así que su silencio es ambiguo por
+diseño.
+
+**5. Pendiente — fase silenciosa del reconciliador.**
+`_find_mismatches` no invoca el `progress_callback`:
+`total_count = len(mismatches)`, de modo que el contador solo empieza
+después, sobre la lista ya detectada. La fase larga —11 minutos de hash
+por carpeta— transcurre sin una sola línea de log. Durante la sesión
+hubo que recurrir a `ReadTransferCount` del proceso en Windows para
+saber por dónde iba.
+
+#### Coste medido de la comparación híbrida (decisión 4)
+
+Primera ejecución con MD5 real: `DOC. MAQUINAS` 11,5 minutos (18,09 GB
+leídos por el proceso contra los 17,4 GB de la carpeta — se lee
+entera), `DOC. PERSONAL` 11,5 minutos. **23 minutos de reconciliación
+de arranque en cada inicio de sesión de Windows**, frente a los 14-17
+segundos que tardaba sin MD5.
+
+**Pero el MD5 hace falta, y hay caso real que lo prueba.** El conflicto
+de `EPIS MILHEIRO FELICIO, JORGE.docx` se resolvió descargando el blob
+de cuarentena y descomprimiendo ambos `.docx`: único cambio de texto en
+38 párrafos, `A fecha (10/07/2026)` → `A fecha (27/07/2026)`, con
+`word/document.xml` **idéntico en peso** (72.871 bytes) y CRC distinto.
+Los 8 bytes de diferencia del archivo entero venían de los `rsid` de
+Word en `settings.xml`, no del cambio. Si ese archivo no llega a crecer
+26 bytes, el `.docx` habría pesado exactamente igual y **solo el MD5**
+lo habría visto. El falso negativo que motivó la decisión 4 no es
+hipotético.
+
+Queda pendiente rediseñar **cuándo** se recalcula ese hash, no si se
+calcula: hoy se rehace entero en cada arranque.
+
+#### Cabos sueltos de S034 — los dos cerrados
+
+**Z-42 1089-KNL ITV 02-08-2026: fue un traslado, no un hueco.** El
+archivo (556.981 bytes) está en el cubo sucio bajo la carpeta activa
+(subido el 24/07) y en local bajo `OBSOLETOS/`. **Rocío, de
+plataformas, lo movió a obsoletos el 27 de julio** porque ya había
+salido el ITV nuevo. Mover un archivo conserva sus fechas pero genera
+un evento de creación en la ruta nueva: por eso tenía fechas de 2025 y
+aun así estaba en cola de cuarentena. **El sistema funcionó
+correctamente de extremo a extremo**, con una persona real de la
+empresa como origen del cambio.
+
+**Los 22 archivos de LAVADO NAVARRO no fueron reorganización.** El diff
+de rutas completas dio «en el cubo y no en local: 0» — pura adición. El
+subárbol entero llegó por sincronización de OneDrive **hoy a las
+11:01:30**, hora y media después de la reconciliación de las 09:18 y
+seis minutos antes de que terminara la auditoría. La reconciliación no
+los vio porque no existían.
+
+#### Corrección: la fecha de los ITV es `VH`, no `EM`
+
+En el análisis de nombres de esta misma sesión se escribió que la serie
+`ITV 28-4-23 → 28-4-24 → 28-04-2025 → 28-04-2026` era «claramente fecha
+de inspección (`EM`)». **Es falso.** La carpeta activa de la Z-42
+contiene hoy `ITV 02-08-2027`, con fecha futura: una inspección con
+fecha futura es imposible. Lo que hay es un ITV que caduca el
+02-08-2026 y su renovación, que caduca el 02-08-2027. La fecha del
+nombre es **caducidad**. Refuerza el hallazgo 4: la semántica de la
+fecha no es derivable del nombre ni del tipo.
+
+#### Otras correcciones de registro
+
+- La hoja de ruta de S034 decía «cuatro commits sin recoger
+  (`a8b7409`..`404092e`)». Eran **tres** (`1692f78`, `e4c413a`,
+  `404092e`): el `.exe` era de `a8b7409`, confirmado por el `git pull`
+  de la máquina Windows, que partía de ese commit.
+- Durante la sesión el modelo afirmó que no existía línea de fin de
+  reconciliación en el log. **Existe**: `reconciler` la escribe
+  (`Reconciliacion completada en ...`). La afirmación salió de mirar
+  solo `main.py`.
+
+#### Pendiente de decisión de Miguel Ángel
+
+**`EPIS MILHEIRO FELICIO, JORGE.docx` tiene tres versiones vivas**, no
+dos: 32.844 bytes en el cubo sucio (migrada el 24/07), 32.882 en
+cuarentena (27/07, «A fecha 10/07/2026») y 32.890 en local (vigente,
+«A fecha 27/07/2026»). Tres reediciones en cuatro días. La decisión
+registrada es mantener ambas versiones numeradas `00` y `01`, pero con
+tres en juego queda por concretar: si se numeran las tres o solo se
+conserva la vigente, y si el `00` es la más antigua o la vigente.
+
+Es el argumento más fuerte de la sesión a favor de sacar los EPIs a
+base de datos: cada reedición genera un conflicto que pide decisión
+humana sobre algo que no es una decisión.
+
+---
+
 ### Hoja de ruta para la siguiente sesión
 
-1. **Reconstruir el `.exe` en la máquina Windows.** Arrastra cuatro
-   commits sin recoger (`a8b7409`..`404092e`). Antes, `git pull`;
-   y cerrar toda instancia en marcha, incluida la de la tarea
-   programada, por la incidencia de `PermissionError` de S031. Aviso:
-   la primera reconciliación con el código nuevo mandará a cuarentena
-   cosas que antes iban al cubo sucio — es lo correcto y esperado.
-2. **Auditar `DOC. PERSONAL`** (~21.507 archivos, 10,7 GB) con el
-   mismo mecanismo, y analizar su CSV. `DOC. PERSONAL` tiene una
-   naturaleza documental distinta a `DOC. MAQUINAS` (documentos de
-   persona, no manuales de modelo), así que **no se pueden dar por
-   trasladados los hallazgos A-D sin comprobarlos**.
-3. **Diseñar la tabla de manuales por modelo** (decisión 6): modelo
-   de máquina como clave, un único objeto en GCS, punteros desde cada
-   máquina. Es lo que desbloquea los 1,833 GB de duplicados entre
-   carpetas sin borrar documentación de nadie. Encaje con
-   `MachineDocument` (H23) pendiente de definir.
-4. **Añadir la deduplicación de variantes de compresión como cuarto
-   frente de la Fase 2** — hoy el mayor ahorro individual (3,247 GB
-   solo en `DOC. MAQUINAS`) y el más seguro. Pendiente de decidir el
-   criterio de qué copia se conserva: la grande suele ser la original
-   sin degradar, la pequeña puede haber perdido calidad de escaneo.
-5. **Rediseñar la heurística de dosieres** a la luz del hallazgo C:
-   ampliar el vocabulario de exclusión de manuales
-   (`despiece`, `tabla de carga`, `parts`, `bal`, `MUM`, `catálogo`,
-   `handbook`) y buscar una señal complementaria para los códigos
-   opacos de fabricante, donde el nombre no sirve.
-6. Solo después: dry-run en la nube, verificación de coherencia y
-   ejecución real, según la secuencia de la sección 8.
+1. **Corregir los cuatro defectos pendientes**, en este orden de
+   gravedad: el `onerror` ausente en `iter_relative_file_paths`
+   (`uploader.py`), que compromete la integridad de la copia y de la
+   reconciliación; la detección de archivos solo-en-nube con
+   rehidratación por `SetFileAttributesW` + `\\?\`; el
+   `except OSError` del vigilante, que debe capturar `Exception` y
+   registrar también los éxitos; y el progreso de `_find_mismatches`
+   durante la fase de hash.
+2. **Modo "puesta al día" del agente**, que los tres primeros defectos
+   habilitan: barrido periódico de la carpeta → detectar por atributo
+   los que están solo en la nube → anclarlos → esperar descarga →
+   dejar que la reconciliación los suba. No puede colgar solo del
+   vigilante: watchdog no reaccionó a la llegada sincronizada de los 22
+   archivos de LAVADO NAVARRO.
+3. **Cerrar el vocabulario de tipos documentales** de los dos mundos, a
+   partir del análisis de nombres de esta sesión. Son vocabularios
+   disjuntos: la carpeta raíz decide qué diccionario aplica.
+4. **Escribir el normalizador de nombres** sobre las reglas ya
+   validadas contra los 16.022 nombres de `DOC. MAQUINAS`: excluir la
+   familia WhatsApp antes de nada; patrón principal
+   `d[-._]m[-._](aa|aaaa)` con validación de calendario y expansión
+   `20aa` solo entre 05 y 35; marcador `CAD.` → `VH`, que la empresa ya
+   usa; `aammdd` solo dentro de un `AL`; ISO `aaaa-mm-dd` y `aaaammdd`
+   como familias propias; y todo lo demás marcado para revisión, no
+   convertido. Falta pasarlo por los 21.507 nombres de
+   `DOC. PERSONAL`.
+5. **Diseñar la extracción de EPIs a base de datos**, colgando del
+   operario: qué EPI, código, fecha de entrega y todo lo referente a la
+   entrega. Es decisión ya tomada y con plazo dado por Miguel Ángel.
+6. **Diseñar la interfaz de limpieza**: árbol de directorios con
+   iconos y nombres, y herramientas de renombrado. Y el volcado a base
+   de datos de todos los documentos y sus rutas por centro de coste y
+   por operario — probablemente el mismo trabajo que el punto 5 visto
+   desde otro sitio.
+7. **Tabla de manuales por modelo** (decisión 6 de S034) y
+   **deduplicación de variantes de compresión** como cuarto frente, con
+   el dato nuevo de esta sesión: en la carpeta de la A-29 esas
+   variantes son el 79% del volumen.
+8. Solo después: dry-run sobre el cubo, verificación de coherencia y
+   ejecución real.
 
-La Fase 1 sigue completa y probada, con sus dos migraciones reales
-verificadas cifra contra cifra (S032-S033) y las dos carpetas
-confirmadas íntegras de nuevo en S034. El paso 1 de la Fase 2 (la
-auditoría) está construido y ejecutado sobre `DOC. MAQUINAS`; falta
-`DOC. PERSONAL` y el rediseño de las reglas que los datos reales han
-obligado a replantear.
+**Estado de la Fase 1:** completa y probada. Las dos migraciones
+verificadas cifra contra cifra (S032-S033), las carpetas confirmadas
+íntegras en S034, y en S035 verificadas por primera vez **a nivel de
+contenido** con MD5 real: 3 discrepancias sobre 16.019 en
+`DOC. MAQUINAS` y 1 en `DOC. PERSONAL`, todas identificadas por ruta y
+todas explicadas. El agente tiene ya candado de dependencias real y un
+ciclo de reconstrucción probado.
 
+**Nota sobre la clasificación:** los dos ITV nuevos que subió Rocío se
+repararon en la reconciliación de arranque de las 06:37, cuando el
+`.exe` era todavía el antiguo, así que fueron **al cubo sucio y no a
+cuarentena** — no pasaron por la cola de revisión. No es grave, porque
+la Fase 2 repasa el espejo entero, pero es un caso real de documentos
+que se saltaron el paso de clasificación y conviene tenerlo presente al
+diseñar el clasificador.
