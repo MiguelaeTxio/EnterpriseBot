@@ -77,6 +77,11 @@ todavía el volumen y la forma real de la suciedad del cubo sucio).
    qué son y a dónde corresponden, en vez de asumir que un archivo
    nuevo pertenece automáticamente al mismo sitio donde se detectó
    localmente.
+   **Concretado en S036:** la duda que este punto dejaba abierta
+   ("dentro del mismo cubo o en otro dedicado") se resolvió primero
+   como cubo dedicado (decisión 3 de la sección 4, S031) y se ha
+   revertido después a **prefijo dentro del mismo cubo** — ver
+   DECISIONES DE DISEÑO DE MIGUEL ÁNGEL — S036, punto 1.
 4. **Subida directa a Google Cloud Storage**, no a través del
    servidor/endpoint de subida ya existente — usando la librería
    `google-cloud-storage`, con una cuenta de servicio dedicada para
@@ -159,6 +164,10 @@ cerrados, verbatim, sin reinterpretación (directriz 4.8):
 - **Cubo de cuarentena:** `cgs_grupo_alvarez_cuarentena` — misma
   configuración exacta que el cubo sucio (eu multi-region, Standard,
   Uniform, Not public, Soft-delete, Hierarchical namespace Enabled).
+  **PARA ELIMINAR (decisión de S036, punto 1):** la cuarentena pasa a
+  ser un prefijo en la raíz de `cgs_grupo_alvarez`. El borrado del
+  cubo va al final, y solo tras verificar que su contenido vivo se ha
+  migrado al prefijo nuevo — es irreversible.
 - **Labels aplicadas a ambos cubos:** `milestone: h28`,
   `purpose: dirty-migration` (cubo sucio) / `purpose: quarantine`
   (cuarentena).
@@ -1559,6 +1568,134 @@ conserva la vigente, y si el `00` es la más antigua o la vigente.
 Es el argumento más fuerte de la sesión a favor de sacar los EPIs a
 base de datos: cada reedición genera un conflicto que pide decisión
 humana sobre algo que no es una decisión.
+
+---
+
+### DECISIONES DE DISEÑO DE MIGUEL ÁNGEL — S036
+
+Registradas literalmente según se dictaron (directriz 4.8). No son
+reinterpretación del modelo.
+
+#### 1. La cuarentena pasa a ser un prefijo dentro del cubo sucio
+
+Verbatim: *"Me parece una buena decisión cambiar la cuarentena como
+prefijo dentro del mismo cubo y eliminar el cubo de la cuarentena."*
+
+**Sustituye a la decisión 3 de la sección 4 (S031)**, que fijó la
+cuarentena como cubo aparte y dedicado, y deja sin uso el cubo
+`cgs_grupo_alvarez_cuarentena` descrito en la sección 4bis.
+
+**Motivo técnico que llevó a plantearlo**, verificado en S035 contra
+la documentación oficial: renombrar y mover **dentro** de un cubo con
+Namespace Jerárquico es una operación solo de metadatos, atómica y sin
+coste de copia. Cruzar frontera de cubo no lo es: es copia real más
+borrado, con su coste, en **cada archivo clasificado**. Con la
+cuarentena como cubo aparte, el flujo completo de la Fase 2 pagaba una
+copia por documento al salir de la cola; como prefijo del mismo cubo,
+todo el movimiento es gratis.
+
+**Constricción técnica derivada, pendiente de que Miguel Ángel fije el
+nombre:** el prefijo de cuarentena debe vivir en la **raíz del cubo**,
+como hermano de las carpetas migradas (`DOC. MAQUINAS`,
+`DOC. PERSONAL`, ...), nunca dentro de ninguna de ellas. El
+reconciliador lista el cubo con `prefix=f"{folder_name}/"`
+(`_list_remote_info`, `reconciler.py`): si la cuarentena colgara de una
+carpeta migrada, sus blobs entrarían en esa misma lista y contaminarían
+la comparación local-contra-cubo. El nombre concreto del prefijo queda
+sin decidir; debe ser uno que no pueda colisionar jamás con una carpeta
+real de OneDrive.
+
+**Trabajo que implica, no ejecutado todavía:** migrar el contenido vivo
+del cubo de cuarentena al prefijo nuevo (no se pierde nada), adaptar
+`config.QUARANTINE_BUCKET_NAME` y sus tres consumidores
+(`uploader.upload_single_file_to_quarantine`,
+`reconciler.reconcile_folder`, `_list_remote_info`), reconstruir el
+`.exe`, y solo entonces eliminar el cubo. El borrado del cubo es
+irreversible y va al final, nunca antes de verificar la migración.
+
+#### 2. El consumidor de la cuarentena vive en una tarea always-on ya existente
+
+Verbatim: *"El vigilante de la cola de la cuarentena ya no va a estar
+ejecutándose en una máquina, sino será una parte de una always on task.
+Tendremos que aprovechar las que tenemos para no aumentar la cuota de
+Python Anywhere."*
+
+Concreta la decisión 2 de S034, que ya anotaba "una tarea always-on
+clasificadora que se diseñará en la Fase 3", añadiendo la restricción
+nueva: **sin ampliar cuota**.
+
+**Verificado en el código real durante esta sesión, no supuesto:**
+`enterprise_core/settings.py` ya define un `CELERY_BEAT_SCHEDULE` con
+cinco tareas periódicas activas (`expire-whatsapp-sessions` cada 30
+min, `check-in-meeting-reminders` cada 15, `expire-presence-statuses`
+cada 5, `send-document-expiry-alerts` a las 3:00,
+`self-heal-unassigned-personal-documents` cada 15). Que esas cinco se
+disparen implica que Celery Beat corre dentro de la always-on `242133`
+(worker Celery, ver `SESSION_VARIABLES.md`).
+
+**Consecuencia:** el consumidor es **una entrada más en ese schedule y
+un `tasks.py`** — cero tareas always-on nuevas, cuota intacta. La otra
+always-on de EnterpriseBot (`234987`, bridge de voz) queda descartada
+por ser un puente de audio sensible a latencia.
+
+**Precedente de forma casi idéntica ya en producción:**
+`self_heal_unassigned_personal_documents` barre cada 15 minutos las
+filas pendientes y las procesa con Gemini. El consumidor de cuarentena
+es el mismo patrón — barrer, clasificar, mover — y hereda el blindaje
+de resiliencia que settings ya trae desde S025 (`acks_late`,
+`prefetch_multiplier=1`, `reject_on_worker_lost`), con la misma
+exigencia de idempotencia por documento.
+
+#### 3. Todo archivo que entre en cuarentena genera una llamada a Gemini
+
+Verbatim: *"Todos los archivos de cuarentena deben generar una llamada
+a Gemini para que los catalogue. De tal forma que si nosotros enviamos
+un archivo a cuarentena con un nombre que no tenga nada que ver con el
+archivo, Gemini, leyendo el archivo, debe de poder clasificarlo bien y
+enviarlo a la ruta adecuada."*
+
+El nombre del archivo deja de ser fuente de clasificación. Gemini lee
+el contenido, determina qué es, y de ahí sale la ruta de destino. Es
+coherente con el hallazgo 4 de S035 (la semántica de la fecha no es
+derivable del nombre) y lo lleva más lejos: tampoco el tipo lo es.
+
+**Dimensionamiento a tener presente:** combinado con la decisión 2 de
+S034 (la reconciliación repara *contra cuarentena*), cada
+reconciliación que encuentre huecos dispara una llamada por archivo. En
+la de S035 fueron 13 + 20 + 1.
+
+#### 4. Cuenta de servicio: pendiente de verificación empírica
+
+Verbatim: *"La cuenta de servicio es la misma. O debería ser la misma.
+Habrá que verlo."*
+
+**Dato registrado en la sección 4bis (S031):**
+`roles/storage.objectAdmin` sobre los cubos de H28 se concedió **solo**
+a `enterprisebot-h28-migration-ag@...`, a nivel de cubo, sin roles de
+proyecto, por mínimo privilegio. Si la cuenta que la plataforma usa
+para Vertex AI y GCS es otra, hoy no puede ni listar la cuarentena y
+hace falta un binding nuevo vía `gcloud` (directriz 4.10). **No se
+asume ni una cosa ni la otra: se comprueba antes de diseñar el
+consumidor.**
+
+#### 5. `EPIS MILHEIRO FELICIO, JORGE.docx` — las tres versiones se conservan
+
+Cierra el punto que S035 dejó abierto. Verbatim: *"Los archivos de
+Milheiro se nombrarán pues uno con 00, otro con 01 y otro con 02, como
+ya habíamos dicho. Por fecha de creación de archivo, tomamos el 00 como
+la más antigua."* Y sobre el destino: *"creo que lo mejor es subirlos
+ya directamente a la cuarentena, para luego ya clasificarlos con el
+clasificador y con el vigilante de la cuarentena."*
+
+Con las cifras de S035 eso ordena así: `00` la del cubo sucio (32.844
+bytes, migrada el 24/07), `01` la de cuarentena (32.882, «A fecha
+10/07/2026»), `02` la local vigente (32.890, «A fecha 27/07/2026»).
+
+**Punto abierto señalado y no resuelto:** para que las tres coexistan
+en la cuarentena hacen falta tres nombres de blob distintos — subidas
+con el mismo nombre, cada una pisa a la anterior. Queda por decidir si
+el sufijo `00`/`01`/`02` se aplica al subir o si la cola usa otra
+convención.
 
 ---
 
