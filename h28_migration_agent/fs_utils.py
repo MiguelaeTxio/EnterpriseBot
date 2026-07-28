@@ -157,6 +157,28 @@ def make_walk_error_handler(context_label):
     return _on_walk_error
 
 
+def to_safe_name(folder_path):
+    """Turn a folder path into a name usable as a file name.
+
+    ---
+    Convierte la ruta de una carpeta en un nombre valido como nombre
+    de archivo.
+
+    Las carpetas reales llevan espacios, puntos, tildes y parentesis
+    (`DOC. MAQUINAS`, `A-29 E-0356-BBZ (GR)`), asi que no se pueden
+    usar tal cual para nombrar los archivos derivados que el agente
+    genera. Se queda solo con lo alfanumerico.
+    ---
+    Real folders carry spaces, dots, accents and parentheses, so they
+    cannot name derived files directly. Only alphanumerics survive.
+    """
+    folder_name = os.path.basename(os.path.normpath(folder_path))
+    return "".join(
+        character if character.isalnum() else "_"
+        for character in folder_name
+    ).strip("_") or "carpeta"
+
+
 def get_file_attributes(path):
     """Return the Windows attribute bitmask of a file, or None.
 

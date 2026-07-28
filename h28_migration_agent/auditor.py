@@ -39,7 +39,7 @@ from config import (
     AUDIT_PROGRESS_EVERY_FILES,
     get_audit_output_dir,
 )
-from fs_utils import make_walk_error_handler, to_long_path
+from fs_utils import make_walk_error_handler, to_long_path, to_safe_name
 
 logger = logging.getLogger(__name__)
 
@@ -130,11 +130,7 @@ def build_audit_output_path(root_folder):
     which holds the company's real document structure -- can never
     end up in a commit by accident.
     """
-    folder_name = os.path.basename(os.path.normpath(root_folder))
-    safe_name = "".join(
-        character if character.isalnum() else "_"
-        for character in folder_name
-    ).strip("_") or "carpeta"
+    safe_name = to_safe_name(root_folder)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     return os.path.join(
         get_audit_output_dir(),

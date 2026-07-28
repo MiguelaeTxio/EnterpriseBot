@@ -19,6 +19,7 @@ completely (Miguel Angel's verbatim decision, S031).
 import logging
 import os
 import sys
+import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
@@ -31,7 +32,12 @@ from auditor import (
     build_summary_text,
     write_summary,
 )
-from config import DIRTY_BUCKET_NAME, LOG_FILE_NAME
+from catchup import sweep_folder
+from config import (
+    CATCHUP_INTERVAL_SECONDS,
+    DIRTY_BUCKET_NAME,
+    LOG_FILE_NAME,
+)
 from gcs_client import MissingCredentialsError, build_client
 from history import append_event, load_events
 from reconciler import reconcile_folder
@@ -50,6 +56,18 @@ logger = logging.getLogger(__name__)
 # automaticamente en el siguiente reinicio — decision de Miguel
 # Angel, S031.
 _active_observers = {}
+
+# Estado del hilo del barrido de puesta al dia (S036). El evento de
+# despertar permite lanzar un barrido inmediato sin esperar a que
+# expire el temporizador; el de parada, cerrar el agente sin esperar
+# media hora.
+# ---
+# Catch-up sweep thread state (S036). The wake event allows an
+# immediate sweep without waiting out the timer; the stop event lets
+# the agent close without waiting half an hour.
+_catchup_thread = None
+_catchup_stop_event = threading.Event()
+_catchup_wake_event = threading.Event()
 
 # Raiz Tk unica y oculta de todo el agente, creada bajo demanda en el
 # hilo del bucle de mensajes -- que es donde pystray ejecuta los
@@ -513,6 +531,12 @@ def _select_folder_and_copy(icon, _menu_item):
     observer = start_watching(client, selected_folder)
     _active_observers[selected_folder] = observer
     save_watched_folders(_active_observers.keys())
+    # Por si esta es la primera carpeta de una ejecución que arrancó
+    # sin ninguna persistida: el hilo es idempotente y no se duplica.
+    # ---
+    # In case this is the first folder of a run that started with
+    # none persisted: starting the thread is idempotent.
+    _start_catchup_thread(icon)
     icon.notify(
         f"Vigilancia continua activa sobre:\n{selected_folder}",
         title="Agente H28",
@@ -636,6 +660,167 @@ def _resume_watched_folders(icon):
                 "Reconciliacion", folder, f"Error: {error}",
             )
 
+    # El barrido arranca DESPUÉS de la reconciliación, a propósito.
+    # La reconciliación compara contra el cubo de verdad y establece
+    # el estado real; el barrido solo mantiene el delta a partir de
+    # ahí. Al revés, el primer barrido sembraría su índice sobre un
+    # árbol todavía sin verificar.
+    # ---
+    # The sweep starts AFTER reconciliation on purpose: reconciliation
+    # compares against the bucket itself and establishes the real
+    # state; the sweep only maintains the delta from there.
+    _start_catchup_thread(icon)
+
+
+def _run_catchup_pass(icon, client):
+    """Sweep every watched folder once and report only if there is
+    news.
+    ---
+    Barre una vez cada carpeta vigilada e informa solo si hay
+    novedades.
+
+    Cada carpeta va dentro de su propio guardado de errores, mismo
+    criterio que la reconciliacion de arranque: que una falle no
+    puede impedir que las demas se barran ni tumbar el hilo.
+    ---
+    Each folder is guarded separately, same criterion as the startup
+    reconciliation: one failing must not stop the others.
+    """
+    for selected_folder in list(_active_observers.keys()):
+        try:
+            resumen = sweep_folder(client, selected_folder)
+        except Exception as error:  # noqa: BLE001
+            logger.exception(
+                "Puesta al dia: fallo barriendo %s: %s",
+                selected_folder, error,
+            )
+            append_event(
+                "Puesta al dia", selected_folder, f"Error: {error}",
+            )
+            continue
+
+        # Solo se notifica cuando hay algo que contar. Un aviso cada
+        # media hora diciendo "sin novedades" seria ruido puro y
+        # acabaria haciendo que no se mire ninguno.
+        # ---
+        # Only notified when there is something to report. A "nothing
+        # new" popup every half hour would be pure noise.
+        if resumen["seeded"]:
+            append_event(
+                "Puesta al dia", selected_folder,
+                f"Indice sembrado con {resumen['total']} archivos",
+            )
+            continue
+
+        if not (resumen["uploaded"] or resumen["failed"]
+                or resumen["hydration_requested"]):
+            continue
+
+        partes = []
+        if resumen["uploaded"]:
+            partes.append(f"{resumen['uploaded']} a cuarentena")
+        if resumen["hydration_requested"]:
+            partes.append(
+                f"{resumen['hydration_requested']} descargando de "
+                "OneDrive"
+            )
+        if resumen["failed"]:
+            partes.append(f"{resumen['failed']} fallido(s)")
+        texto = ", ".join(partes)
+
+        folder_label = os.path.basename(
+            os.path.normpath(selected_folder)
+        )
+        icon.notify(
+            f"Puesta al día de {folder_label}: {texto}.",
+            title="Agente H28",
+        )
+        append_event("Puesta al dia", selected_folder, texto)
+
+
+def _catchup_loop(icon):
+    """Run the catch-up sweep every CATCHUP_INTERVAL_SECONDS.
+    ---
+    Ejecuta el barrido de puesta al dia cada
+    CATCHUP_INTERVAL_SECONDS.
+
+    Vive en su propio hilo a proposito. Los callbacks de menu de
+    `pystray` se ejecutan en el bucle de mensajes, y por eso la
+    auditoria bloquea el menu mientras corre -- limitacion conocida
+    anotada en el anexo (S034). El barrido no puede repetir ese
+    error: corre cada media hora, indefinidamente.
+    ---
+    Lives in its own thread on purpose. `pystray` menu callbacks run
+    on the message loop, which is why the audit blocks the menu while
+    running -- a known limitation noted in the annex (S034). The
+    sweep must not repeat that mistake.
+    """
+    while not _catchup_stop_event.is_set():
+        # `wait` devuelve antes de tiempo si alguien pide un barrido
+        # inmediato, y permite cerrar el agente sin esperar media
+        # hora a que expire el temporizador.
+        # ---
+        # `wait` returns early when an immediate sweep is requested,
+        # and lets the agent shut down without waiting out the timer.
+        _catchup_wake_event.wait(CATCHUP_INTERVAL_SECONDS)
+        _catchup_wake_event.clear()
+        if _catchup_stop_event.is_set():
+            break
+        if not _active_observers:
+            continue
+        try:
+            client = build_client()
+        except MissingCredentialsError as error:
+            logger.error(
+                "Puesta al dia: no se pudo construir el cliente: %s",
+                error,
+            )
+            continue
+        _run_catchup_pass(icon, client)
+
+
+def _start_catchup_thread(icon):
+    """Start the catch-up sweep thread once.
+    ---
+    Arranca una sola vez el hilo del barrido de puesta al dia.
+    """
+    global _catchup_thread
+    if _catchup_thread is not None and _catchup_thread.is_alive():
+        return
+    _catchup_thread = threading.Thread(
+        target=_catchup_loop, args=(icon,), daemon=True,
+    )
+    _catchup_thread.start()
+    logger.info(
+        "Puesta al dia: barrido periodico activo cada %d minutos.",
+        CATCHUP_INTERVAL_SECONDS // 60,
+    )
+
+
+def _catchup_now(icon, _menu_item):
+    """Wake the catch-up thread so it sweeps immediately.
+    ---
+    Despierta al hilo de puesta al dia para que barra ya.
+
+    No hace el barrido en este hilo: solo levanta el evento y vuelve
+    de inmediato. Asi el menu de bandeja nunca se queda bloqueado,
+    que es la limitacion que si tiene la auditoria.
+    ---
+    Does not sweep on this thread: it just raises the event and
+    returns at once, so the tray menu is never blocked.
+    """
+    if not _active_observers:
+        icon.notify(
+            "No hay ninguna carpeta vigilada que poner al día.",
+            title="Agente H28",
+        )
+        return
+    _catchup_wake_event.set()
+    icon.notify(
+        "Puesta al día lanzada en segundo plano.",
+        title="Agente H28",
+    )
+
 
 def _quit_agent(icon, _menu_item):
     """Stop every observer and exit the agent.
@@ -644,6 +829,14 @@ def _quit_agent(icon, _menu_item):
     """
     logger.info("Cerrando el agente: deteniendo %d vigilantes.",
                 len(_active_observers))
+    # Se levantan los dos eventos: el de parada para que el bucle
+    # salga, y el de despertar para que no se quede esperando a que
+    # expire el temporizador de media hora.
+    # ---
+    # Both events are raised: stop so the loop exits, and wake so it
+    # does not sit waiting out the half-hour timer.
+    _catchup_stop_event.set()
+    _catchup_wake_event.set()
     for observer in _active_observers.values():
         observer.stop()
     for observer in _active_observers.values():
@@ -667,6 +860,7 @@ def main():
         pystray.MenuItem(
             "Verificar y reparar carpeta", _verify_and_repair_folder
         ),
+        pystray.MenuItem("Poner al día ahora", _catchup_now),
         pystray.MenuItem("Auditar carpeta (Fase 2)", _audit_folder),
         pystray.MenuItem("Ver historial", _show_history),
         pystray.MenuItem("Salir", _quit_agent),

@@ -111,6 +111,28 @@ RECONCILE_PROGRESS_EVERY_FILES = 500
 # calibrate the cleanup rules against real data instead of blindly.
 AUDIT_FOLDER_NAME = "audits"
 
+# Modo "puesta al dia" (S036, punto 2 de la hoja de ruta de S035).
+#
+# Barrido PERIODICO, no por evento: watchdog no reacciono a la
+# llegada sincronizada de los 22 archivos de LAVADO NAVARRO, que
+# entraron a las 11:01:30 y no se detectaron hasta la auditoria
+# (anexo H28, S035). Un vigilante de eventos no basta cuando el
+# origen del cambio es la sincronizacion de OneDrive desde otro
+# puesto.
+#
+# 30 minutos: detectar es solo metadatos, asi que un barrido de las
+# dos carpetas son segundos, no minutos. Acota a media hora la
+# ventana en la que un archivo puede existir sin que nadie lo sepa,
+# a coste practicamente nulo.
+# ---
+# "Catch-up" mode (S036). A PERIODIC sweep, not event-driven:
+# watchdog did not react to the 22 LAVADO NAVARRO files arriving by
+# OneDrive sync. 30 minutes: detection is metadata-only, so sweeping
+# both folders takes seconds, and it bounds to half an hour the
+# window in which a file can exist unnoticed.
+CATCHUP_INTERVAL_SECONDS = 30 * 60
+CATCHUP_INDEX_FOLDER_NAME = "catchup_index"
+
 # Chunk size used when hashing a file. 1 MiB balances syscall
 # overhead against memory for the several-hundred-MB scanned manuals
 # present in the real tree.
@@ -194,6 +216,26 @@ def get_history_state_path():
     return os.path.join(
         get_agent_data_dir(), HISTORY_STATE_FILE_NAME
     )
+
+
+def get_catchup_index_dir():
+    """Return the catch-up index folder, creating it if needed.
+    ---
+    Devuelve la carpeta del indice de puesta al dia, creandola si
+    hace falta.
+
+    Cuelga de agent_data/, ya cubierta por .gitignore: el indice
+    contiene rutas reales de la documentacion de la empresa y nunca
+    debe poder acabar en un commit.
+    ---
+    Hangs off agent_data/, already covered by .gitignore: the index
+    holds real paths of company documentation.
+    """
+    index_dir = os.path.join(
+        get_agent_data_dir(), CATCHUP_INDEX_FOLDER_NAME
+    )
+    os.makedirs(index_dir, exist_ok=True)
+    return index_dir
 
 
 def get_audit_output_dir():
