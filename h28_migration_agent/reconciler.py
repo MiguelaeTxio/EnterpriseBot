@@ -42,6 +42,7 @@ from config import (
     RECONCILE_MAX_RETRIES,
     RECONCILE_RETRY_DELAYS_SECONDS,
 )
+from fs_utils import to_long_path
 from uploader import build_blob_name, iter_relative_file_paths
 
 logger = logging.getLogger(__name__)
@@ -66,7 +67,7 @@ def compute_md5_base64(local_path):
     `hexdigest()` would always differ, even for identical content.
     """
     digest = hashlib.md5()
-    with open(local_path, "rb") as file_handle:
+    with open(to_long_path(local_path), "rb") as file_handle:
         while True:
             chunk = file_handle.read(HASH_CHUNK_SIZE_BYTES)
             if not chunk:
@@ -131,11 +132,13 @@ def _find_mismatches(selected_folder, remote_info):
         (relative_path, blob_name, local_path, local_size)
     """
     mismatches = []
-    for relative_path in iter_relative_file_paths(selected_folder):
+    for relative_path in iter_relative_file_paths(
+        selected_folder, "Reconciliacion"
+    ):
         blob_name = build_blob_name(selected_folder, relative_path)
         local_path = os.path.join(selected_folder, relative_path)
         try:
-            local_size = os.path.getsize(local_path)
+            local_size = os.path.getsize(to_long_path(local_path))
         except OSError as error:
             logger.error(
                 "No se pudo leer el tamano local de %s: %s",

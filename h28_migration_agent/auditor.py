@@ -39,6 +39,7 @@ from config import (
     AUDIT_PROGRESS_EVERY_FILES,
     get_audit_output_dir,
 )
+from fs_utils import make_walk_error_handler, to_long_path
 
 logger = logging.getLogger(__name__)
 
@@ -59,36 +60,6 @@ CSV_COLUMNS = (
     "page_count",
     "read_error",
 )
-
-
-def to_long_path(path):
-    """Return a Windows long-path-safe version of an absolute path.
-
-    ---
-    Devuelve una version de la ruta absoluta segura frente al limite
-    clasico de 260 caracteres de Windows.
-
-    Origen real (anexo H28, S033): un archivo de `DOC. PERSONAL` con
-    una ruta de 256 caracteres fallo la subida con
-    `[Errno 22] Invalid argument` y solo se pudo tratar anteponiendo
-    el prefijo `\\\\?\\`. La auditoria recorre exactamente el mismo
-    arbol, asi que se blinda de entrada en vez de esperar a que
-    vuelva a fallar.
-
-    No se aplica fuera de Windows ni a rutas UNC/ya prefijadas.
-    ---
-    Real origin (H28 annex, S033): a `DOC. PERSONAL` file with a
-    256-character path failed to upload with
-    `[Errno 22] Invalid argument` and could only be handled with the
-    `\\\\?\\` prefix. The audit walks that very same tree, so it is
-    hardened up front rather than waiting for the failure to repeat.
-    """
-    if os.name != "nt":
-        return path
-    absolute_path = os.path.abspath(path)
-    if absolute_path.startswith("\\\\"):
-        return absolute_path
-    return "\\\\?\\" + absolute_path
 
 
 def compute_sha256(absolute_path):
@@ -143,32 +114,6 @@ def count_pdf_pages(absolute_path):
 
     reader = PdfReader(to_long_path(absolute_path))
     return len(reader.pages)
-
-
-def _on_walk_error(error):
-    """Log a directory that os.walk could not read, never swallow it.
-
-    ---
-    Registra un directorio que os.walk no ha podido leer, sin
-    tragarselo en silencio.
-
-    Origen real (anexo H28, S033): 4 archivos de `DOC. PERSONAL` no
-    llegaron nunca al cubo y no aparecian como fallo en el log --
-    el hueco ocurrio en el momento del escaneo (`os.walk`), no en el
-    de la subida, y `os.walk` descarta los errores por defecto sin
-    decir nada. Aqui se registran explicitamente para que un hueco
-    equivalente sea visible de inmediato en vez de detectarse
-    semanas despues comparando cifras.
-    ---
-    Real origin (H28 annex, S033): 4 files never reached the bucket
-    and never showed up as a failure -- the gap happened during the
-    scan, and `os.walk` silently discards errors by default. Logged
-    explicitly here so an equivalent gap is visible immediately.
-    """
-    logger.error(
-        "Auditoria: no se pudo leer el directorio %s: %s",
-        getattr(error, "filename", "?"), error,
-    )
 
 
 def build_audit_output_path(root_folder):
@@ -242,7 +187,7 @@ def audit_folder(root_folder, csv_path, progress_callback=None):
         writer.writerow(CSV_COLUMNS)
 
         for current_dir, _dirs, file_names in os.walk(
-            root_folder, onerror=_on_walk_error,
+            root_folder, onerror=make_walk_error_handler("Auditoria"),
         ):
             for file_name in file_names:
                 absolute_path = os.path.join(current_dir, file_name)

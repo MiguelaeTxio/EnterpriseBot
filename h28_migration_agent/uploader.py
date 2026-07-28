@@ -17,15 +17,39 @@ import os
 from google.cloud.storage import transfer_manager
 
 from config import UPLOAD_MAX_WORKERS
+from fs_utils import make_walk_error_handler, to_long_path
 
 logger = logging.getLogger(__name__)
 
 
-def iter_relative_file_paths(root_folder):
+def iter_relative_file_paths(
+    root_folder, context_label="Escaneo local"
+):
     """Yield every file path under root_folder, recursively.
     ---
     Genera cada ruta de archivo bajo root_folder, de forma
     recursiva.
+
+    Un directorio ilegible NO se descarta en silencio: se registra
+    via `fs_utils.make_walk_error_handler`. Sin ese manejador,
+    `os.walk` se traga el error y esta funcion devuelve menos
+    archivos sin que nada lo delate -- y como de ella parten tanto la
+    copia inicial (`upload_folder_recursive`) como la reconciliacion
+    (`reconciler._find_mismatches`), el hueco quedaba invisible en
+    los dos sitios a la vez: lo que el recorrido no ve, la
+    reconciliacion tampoco puede repararlo. Es exactamente el fallo
+    documentado en el anexo H28 (S032-S033), donde 4 archivos de
+    `DOC. PERSONAL` nunca llegaron al cubo sin dejar rastro. El
+    blindaje se escribio en S034 pero se quedo solo en `auditor.py`;
+    aqui se cierra el hueco (S036).
+
+    Parameters
+    ----------
+    root_folder : str
+    context_label : str, optional
+        Operacion que recorre el arbol, para el log de errores.
+        ---
+        Operation walking the tree, used in the error log line.
 
     Returns
     -------
@@ -37,8 +61,18 @@ def iter_relative_file_paths(root_folder):
         Rutas relativas a root_folder, con barra "/" — validas
         tanto para la busqueda local (Windows acepta "/") como para
         formar parte de un nombre de blob de GCS.
+    ---
+    An unreadable directory is NOT silently discarded: it is logged
+    through `fs_utils.make_walk_error_handler`. Without that handler
+    `os.walk` swallows the error and this function returns fewer
+    files with nothing giving it away -- and since both the initial
+    copy and reconciliation start from it, the gap was invisible in
+    both at once.
     """
-    for current_dir, _dirs, file_names in os.walk(root_folder):
+    walk_error_handler = make_walk_error_handler(context_label)
+    for current_dir, _dirs, file_names in os.walk(
+        root_folder, onerror=walk_error_handler,
+    ):
         for file_name in file_names:
             full_path = os.path.join(current_dir, file_name)
             relative_path = os.path.relpath(full_path, root_folder)
@@ -87,7 +121,9 @@ def upload_folder_recursive(
         Se llama con (subidos, total) tras cada lote.
     """
     bucket = client.bucket(bucket_name)
-    relative_paths = list(iter_relative_file_paths(selected_folder))
+    relative_paths = list(
+        iter_relative_file_paths(selected_folder, "Copia inicial")
+    )
     total_count = len(relative_paths)
     logger.info(
         "Copia inicial: %d archivos encontrados bajo %s",
@@ -159,7 +195,15 @@ def upload_single_file_to_quarantine(
     relative_path = os.path.relpath(absolute_file_path, selected_folder)
     blob_name = build_blob_name(selected_folder, relative_path)
     blob = bucket.blob(blob_name)
-    blob.upload_from_filename(absolute_file_path)
+    # El nombre del blob se calcula SIEMPRE con la ruta original: el
+    # prefijo de ruta larga es un detalle de la API de Windows y no
+    # debe filtrarse jamas al arbol del cubo. Solo se usa en el
+    # momento de abrir el archivo (anexo H28, S033).
+    # ---
+    # The blob name is ALWAYS computed from the original path: the
+    # long-path prefix is a Windows API detail and must never leak
+    # into the bucket tree. It is used only when opening the file.
+    blob.upload_from_filename(to_long_path(absolute_file_path))
     logger.info("Cuarentena: %s -> gs://%s/%s",
                 absolute_file_path, bucket_name, blob_name)
     return blob_name
