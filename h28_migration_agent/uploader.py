@@ -17,7 +17,12 @@ import os
 from google.cloud.storage import transfer_manager
 
 from config import UPLOAD_MAX_WORKERS
-from fs_utils import make_walk_error_handler, to_long_path
+from fs_utils import (
+    is_cloud_only,
+    make_walk_error_handler,
+    request_hydration,
+    to_long_path,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +105,57 @@ def build_blob_name(selected_folder, relative_path):
 
 
 
+def request_hydration_for_cloud_only(selected_folder, relative_paths):
+    """Pin every cloud-only file under selected_folder for download.
+
+    ---
+    Ancla para su descarga todos los archivos solo-en-nube bajo
+    selected_folder.
+
+    Se ejecuta ANTES de la copia. Un marcador de posicion de OneDrive
+    no se puede abrir, luego no se sube ni se hashea, y hasta S035 eso
+    no dejaba constancia en ningun sitio salvo si pasaba el auditor
+    (anexo H28, defecto 3 de S035). Detectarlos es gratis -- solo
+    metadatos -- asi que la pasada previa no penaliza de forma
+    apreciable.
+
+    La descarga que dispara OneDrive es asincrona: esta funcion no la
+    espera. Los que no lleguen a tiempo fallaran la subida, quedaran
+    registrados como fallo, y la reconciliacion -- que ahora tambien
+    los detecta -- los recogera despues. El barrido con espera activa
+    es el modo "puesta al dia" del punto 2 de la hoja de ruta, y no se
+    inventa aqui.
+    ---
+    Runs BEFORE the copy. A OneDrive placeholder cannot be opened, so
+    it is neither uploaded nor hashed, and until S035 that left no
+    trace anywhere unless the auditor happened to run. Detection is
+    free -- metadata only. The download OneDrive triggers is
+    asynchronous and is not awaited here.
+
+    Returns
+    -------
+    int
+        Numero de archivos para los que se pidio la descarga.
+        ---
+        Number of files hydration was requested for.
+    """
+    requested_count = 0
+    for relative_path in relative_paths:
+        absolute_path = os.path.join(selected_folder, relative_path)
+        if is_cloud_only(absolute_path) and request_hydration(
+            absolute_path
+        ):
+            requested_count += 1
+    if requested_count:
+        logger.warning(
+            "%d archivo(s) estaban solo en la nube y se han anclado "
+            "para su descarga. Los que no se materialicen a tiempo "
+            "fallaran en esta copia y los recogera la "
+            "reconciliacion.", requested_count,
+        )
+    return requested_count
+
+
 def upload_folder_recursive(
     client, bucket_name, selected_folder, progress_callback=None
 ):
@@ -133,6 +189,8 @@ def upload_folder_recursive(
 
     folder_name = os.path.basename(os.path.normpath(selected_folder))
     blob_name_prefix = f"{folder_name}/"
+
+    request_hydration_for_cloud_only(selected_folder, relative_paths)
 
     # worker_type="thread": la carga es de I/O de red, no de CPU, y
     # el tipo por defecto ("process") requiere

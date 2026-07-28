@@ -168,14 +168,15 @@ def _run_reconciliation(icon, client, selected_folder):
         )
 
     quarantined_count, already_queued_count, needs_decision_paths, \
-        unrecoverable_paths = reconcile_folder(
+        pending_hydration_paths, unrecoverable_paths = reconcile_folder(
             client, DIRTY_BUCKET_NAME, selected_folder,
             _log_reconcile_progress,
         )
 
     if not any((
         quarantined_count, already_queued_count,
-        needs_decision_paths, unrecoverable_paths,
+        needs_decision_paths, pending_hydration_paths,
+        unrecoverable_paths,
     )):
         summary = "Todo correcto, sin huecos"
     else:
@@ -185,6 +186,11 @@ def _run_reconciliation(icon, client, selected_folder):
         if needs_decision_paths:
             parts.append(
                 f"{len(needs_decision_paths)} pendiente(s) de decisión"
+            )
+        if pending_hydration_paths:
+            parts.append(
+                f"{len(pending_hydration_paths)} descargando de "
+                "OneDrive"
             )
         if unrecoverable_paths:
             parts.append(

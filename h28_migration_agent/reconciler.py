@@ -42,7 +42,7 @@ from config import (
     RECONCILE_MAX_RETRIES,
     RECONCILE_RETRY_DELAYS_SECONDS,
 )
-from fs_utils import to_long_path
+from fs_utils import is_cloud_only, request_hydration, to_long_path
 from uploader import build_blob_name, iter_relative_file_paths
 
 logger = logging.getLogger(__name__)
@@ -126,17 +126,43 @@ def _find_mismatches(selected_folder, remote_info):
     computed only when sizes match, to rule out the false negative of
     a revised document weighing exactly the same as the original.
 
+    Un archivo solo-en-nube NO entra en la lista de diferencias. No se
+    puede leer, luego no se puede subir ni hashear: intentarlo quema
+    los tres reintentos y lo marca `IRRECUPERABLE`, que es exactamente
+    lo que ocurrio en S033. Se ancla para su descarga y se devuelve
+    aparte, para que la pasada siguiente -- ya con el contenido en
+    disco -- lo trate con normalidad.
+
     Returns
     -------
-    list[tuple[str, str, str, int]]
-        (relative_path, blob_name, local_path, local_size)
+    tuple[list[tuple[str, str, str, int]], list[str]]
+        (diferencias, rutas_relativas_pendientes_de_descarga), donde
+        cada diferencia es
+        (relative_path, blob_name, local_path, local_size).
+        ---
+        (mismatches, relative paths awaiting hydration).
     """
     mismatches = []
+    pending_hydration_paths = []
     for relative_path in iter_relative_file_paths(
         selected_folder, "Reconciliacion"
     ):
         blob_name = build_blob_name(selected_folder, relative_path)
         local_path = os.path.join(selected_folder, relative_path)
+
+        # Se comprueba ANTES que nada: de un marcador de posicion,
+        # `getsize` devuelve el tamano logico real y enganaria a la
+        # comparacion de tamano, mientras que `open()` -- y por tanto
+        # el MD5 y la subida -- falla con `[Errno 22]`.
+        # ---
+        # Checked first: for a placeholder, `getsize` returns the real
+        # logical size and would fool the size comparison, while
+        # `open()` -- and hence the MD5 and the upload -- fails.
+        if is_cloud_only(local_path):
+            request_hydration(local_path)
+            pending_hydration_paths.append(relative_path)
+            continue
+
         try:
             local_size = os.path.getsize(to_long_path(local_path))
         except OSError as error:
@@ -180,7 +206,7 @@ def _find_mismatches(selected_folder, remote_info):
             mismatches.append(
                 (relative_path, blob_name, local_path, local_size)
             )
-    return mismatches
+    return mismatches, pending_hydration_paths
 
 
 def _is_same_content(local_path, local_size, remote_size, remote_md5):
@@ -312,9 +338,11 @@ def reconcile_folder(client, bucket_name, selected_folder,
 
     Returns
     -------
-    tuple[int, int, list[str], list[str]]
+    tuple[int, int, list[str], list[str], list[str]]
         (quarantined_count, already_queued_count,
-        needs_decision_relative_paths, unrecoverable_relative_paths)
+        needs_decision_relative_paths,
+        pending_hydration_relative_paths,
+        unrecoverable_relative_paths)
     """
     bucket = client.bucket(bucket_name)
     quarantine_bucket = client.bucket(QUARANTINE_BUCKET_NAME)
@@ -334,12 +362,22 @@ def reconcile_folder(client, bucket_name, selected_folder,
         quarantine_bucket, blob_name_prefix,
     )
 
-    mismatches = _find_mismatches(selected_folder, remote_info)
+    mismatches, pending_hydration_paths = _find_mismatches(
+        selected_folder, remote_info,
+    )
     total_count = len(mismatches)
     logger.info(
         "Reconciliacion: %d archivo(s) ausente(s) o con tamano "
         "distinto en %s", total_count, selected_folder,
     )
+    if pending_hydration_paths:
+        logger.warning(
+            "Reconciliacion: %d archivo(s) estaban solo en la nube y "
+            "se han anclado para su descarga en %s. No se han podido "
+            "comprobar en esta pasada; la siguiente los tratara con "
+            "normalidad.",
+            len(pending_hydration_paths), selected_folder,
+        )
 
     quarantined_count = 0
     already_queued_count = 0
@@ -404,13 +442,13 @@ def reconcile_folder(client, bucket_name, selected_folder,
 
     logger.info(
         "Reconciliacion completada en %s: %d a cuarentena, %d ya en "
-        "cola, %d pendientes de decision, %d irrecuperables. El cubo "
-        "sucio no se ha modificado.",
+        "cola, %d pendientes de decision, %d pendientes de descarga, "
+        "%d irrecuperables. El cubo sucio no se ha modificado.",
         selected_folder, quarantined_count, already_queued_count,
-        len(needs_decision_paths),
+        len(needs_decision_paths), len(pending_hydration_paths),
         len(unrecoverable_relative_paths),
     )
     return (
         quarantined_count, already_queued_count, needs_decision_paths,
-        unrecoverable_relative_paths,
+        pending_hydration_paths, unrecoverable_relative_paths,
     )
