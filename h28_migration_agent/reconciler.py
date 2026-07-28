@@ -40,6 +40,7 @@ from config import (
     HASH_CHUNK_SIZE_BYTES,
     QUARANTINE_BUCKET_NAME,
     RECONCILE_MAX_RETRIES,
+    RECONCILE_PROGRESS_EVERY_FILES,
     RECONCILE_RETRY_DELAYS_SECONDS,
 )
 from fs_utils import is_cloud_only, request_hydration, to_long_path
@@ -101,7 +102,9 @@ def _list_remote_info(bucket, blob_name_prefix):
     return remote_info
 
 
-def _find_mismatches(selected_folder, remote_info):
+def _find_mismatches(
+    selected_folder, remote_info, progress_callback=None
+):
     """Return files absent from the dirty bucket, or present with
     different content.
     ---
@@ -142,11 +145,38 @@ def _find_mismatches(selected_folder, remote_info):
         ---
         (mismatches, relative paths awaiting hydration).
     """
+    # La lista se materializa en vez de recorrer el generador al
+    # vuelo, para poder dar un total real y que el progreso diga
+    # "1.234/16.022" en vez de un contador suelto. El recorrido es
+    # solo metadatos y tarda segundos; lo que tarda 11 minutos es el
+    # hash que viene despues (S035), asi que el coste anadido es
+    # despreciable frente a lo que se gana en observabilidad.
+    # ---
+    # The list is materialised rather than streamed so progress can
+    # show a real total. The walk is metadata-only and takes seconds;
+    # what takes 11 minutes is the hashing that follows.
+    relative_paths = list(
+        iter_relative_file_paths(selected_folder, "Reconciliacion")
+    )
+    total_count = len(relative_paths)
+    logger.info(
+        "Reconciliacion: comparando %d archivo(s) de %s contra el "
+        "cubo. Esta fase lee los archivos para calcular su MD5 y es "
+        "la que mas tarda.", total_count, selected_folder,
+    )
+
     mismatches = []
     pending_hydration_paths = []
-    for relative_path in iter_relative_file_paths(
-        selected_folder, "Reconciliacion"
+    hashed_bytes = 0
+
+    for checked_count, relative_path in enumerate(
+        relative_paths, start=1
     ):
+        if (
+            progress_callback is not None
+            and checked_count % RECONCILE_PROGRESS_EVERY_FILES == 0
+        ):
+            progress_callback(checked_count, total_count, hashed_bytes)
         blob_name = build_blob_name(selected_folder, relative_path)
         local_path = os.path.join(selected_folder, relative_path)
 
@@ -198,6 +228,15 @@ def _find_mismatches(selected_folder, remote_info):
             )
             continue
 
+        # Se contabiliza aqui y no antes: son los bytes REALMENTE
+        # leidos de disco, que es lo unico que predice cuanto queda.
+        # Un archivo cuyo tamano ya difiere no se llega a hashear.
+        # ---
+        # Counted here and not earlier: these are the bytes actually
+        # read from disk, the only figure that predicts remaining
+        # time. A file whose size already differs is never hashed.
+        hashed_bytes += local_size
+
         if local_md5 != remote_md5:
             logger.info(
                 "Mismo tamano pero distinto contenido: %s",
@@ -206,6 +245,10 @@ def _find_mismatches(selected_folder, remote_info):
             mismatches.append(
                 (relative_path, blob_name, local_path, local_size)
             )
+
+    if progress_callback is not None and total_count:
+        progress_callback(total_count, total_count, hashed_bytes)
+
     return mismatches, pending_hydration_paths
 
 
@@ -282,7 +325,8 @@ def _upload_with_retries(bucket, relative_path, blob_name, local_path):
 
 
 def reconcile_folder(client, bucket_name, selected_folder,
-                      progress_callback=None):
+                      progress_callback=None,
+                      scan_progress_callback=None):
     """Compare selected_folder against the dirty bucket and send any
     gap to quarantine.
     ---
@@ -332,9 +376,23 @@ def reconcile_folder(client, bucket_name, selected_folder,
         Carpeta local a reconciliar -- debe ser la misma carpeta
         pasada originalmente a upload_folder_recursive.
     progress_callback : callable, optional
-        Called with (checked_count, total_count) while comparing.
+        Called with (checked_count, total_count) while repairing.
         ---
-        Se llama con (comprobados, total) durante la comparacion.
+        Se llama con (comprobados, total) durante la reparacion.
+    scan_progress_callback : callable, optional
+        Called with (checked_count, total_count, hashed_bytes) during
+        the comparison phase -- the long one, which reads every file
+        to hash it. Kept separate from `progress_callback` on purpose:
+        they measure different things over different totals, and
+        reusing one callback for both would make the log unreadable
+        (a counter running to 16.022 followed by another running to 3,
+        with the same wording).
+        ---
+        Se llama con (comprobados, total, bytes_hasheados) durante la
+        fase de comparacion -- la larga, la que lee cada archivo para
+        hashearlo. Separado a proposito de `progress_callback`: miden
+        cosas distintas sobre totales distintos, y reutilizar uno solo
+        haria el log ilegible.
 
     Returns
     -------
@@ -363,7 +421,7 @@ def reconcile_folder(client, bucket_name, selected_folder,
     )
 
     mismatches, pending_hydration_paths = _find_mismatches(
-        selected_folder, remote_info,
+        selected_folder, remote_info, scan_progress_callback,
     )
     total_count = len(mismatches)
     logger.info(

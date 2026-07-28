@@ -81,6 +81,24 @@ UPLOAD_MAX_WORKERS = 8
 RECONCILE_MAX_RETRIES = 3
 RECONCILE_RETRY_DELAYS_SECONDS = (5, 15, 45)
 
+# Cada cuantos archivos informa de progreso la FASE DE COMPARACION de
+# la reconciliacion (la del hash, no la de reparacion). Medido en
+# produccion en S035: 11,5 minutos por carpeta, con `DOC. MAQUINAS` y
+# `DOC. PERSONAL` sumando 23 minutos en cada arranque de sesion de
+# Windows. Hasta ahora esa fase no emitia ni una sola linea entre
+# "listando cubo de cuarentena" y el recuento final, y durante la
+# sesion hubo que recurrir al `ReadTransferCount` del proceso para
+# saber si seguia viva. Mismo criterio que
+# AUDIT_PROGRESS_EVERY_FILES.
+# ---
+# How often the reconciliation's COMPARISON phase (the hashing one,
+# not the repair one) reports progress. Measured in production in
+# S035: 11.5 minutes per folder, 23 minutes total on every Windows
+# logon. Until now that phase emitted no log line at all, and the
+# process's `ReadTransferCount` had to be inspected to tell whether it
+# was still alive.
+RECONCILE_PROGRESS_EVERY_FILES = 500
+
 # Auditoria local de la Fase 2 (S034, decision de Miguel Angel: "lo
 # integramos en el agente"). Solo lectura sobre la copia local: es el
 # paso 1 de la secuencia de la seccion 8 del anexo H28, el dataset

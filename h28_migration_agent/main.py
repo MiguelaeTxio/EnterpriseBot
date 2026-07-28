@@ -167,10 +167,27 @@ def _run_reconciliation(icon, client, selected_folder):
             selected_folder, checked_count, total_count,
         )
 
+    # Fase de comparacion: la larga. Se registra aparte de la de
+    # reparacion porque miden cosas distintas -- aqui el total son
+    # todos los archivos de la carpeta, alli solo las diferencias
+    # encontradas. Los MB leidos son lo unico que deja estimar cuanto
+    # queda: en S035 hubo que mirar el `ReadTransferCount` del proceso
+    # en Windows para saberlo, porque el agente no lo decia.
+    # ---
+    # Comparison phase: the long one. Logged separately from the
+    # repair phase because they measure different things. The MB read
+    # are the only figure that allows estimating what is left.
+    def _log_scan_progress(checked_count, total_count, hashed_bytes):
+        logger.info(
+            "Comprobando %s: %d/%d archivos, %d MB leidos",
+            selected_folder, checked_count, total_count,
+            hashed_bytes // (1024 * 1024),
+        )
+
     quarantined_count, already_queued_count, needs_decision_paths, \
         pending_hydration_paths, unrecoverable_paths = reconcile_folder(
             client, DIRTY_BUCKET_NAME, selected_folder,
-            _log_reconcile_progress,
+            _log_reconcile_progress, _log_scan_progress,
         )
 
     if not any((
