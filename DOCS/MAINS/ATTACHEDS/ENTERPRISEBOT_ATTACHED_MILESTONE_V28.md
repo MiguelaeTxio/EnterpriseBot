@@ -679,26 +679,277 @@ decisiones.** El primer paso real (la auditoría del punto 1) queda
 para la siguiente sesión, con sesión fresca dedicada enteramente a
 ello, según decisión explícita de Miguel Ángel al cierre.
 
+### COMPLETADAS EN S034
+
+Primera sesión de ejecución real de la Fase 2. Se construyó el paso 1
+de la secuencia (la auditoría local), se ejecutó sobre
+`DOC. MAQUINAS`, y **los datos reales invalidaron parte del diseño de
+la sección 8**. Además se cerraron tres decisiones de arquitectura que
+estaban abiertas desde S031/S033.
+
+#### Decisiones de diseño cerradas por Miguel Ángel
+
+1. **Reconciliación automática al arrancar el agente**, sobre las
+   carpetas persistidas. Verbatim: *"creo que es lo más lógico de
+   hacerlo de forma automática una vez que arranque el agente."*
+   Cierra el punto que S031 dejó documentado y S033 dejó pendiente de
+   decisión.
+
+2. **La reconciliación manda a CUARENTENA, no al cubo sucio, y la
+   copia del cubo sucio no se toca jamás.** Motivo: el reconciliador
+   no puede distinguir un hueco del escaneo inicial de un archivo
+   nuevo aparecido después — ambos se ven igual. Consecuencias
+   queridas y confirmadas antes de implementar: el cubo sucio pasa a
+   ser **foto fija de la copia inicial**, base estable para analizar
+   sin que el árbol se mueva bajo los pies; y la cuarentena deja de
+   ser un aparcamiento para convertirse en **cola de proceso**, con
+   consumidor propio — una tarea always-on clasificadora que se
+   diseñará en la Fase 3, de modo que todo lo que entre en cuarentena
+   se clasifique de forma asíncrona.
+
+3. **Dos documentos con el mismo nombre y distinto contenido son dos
+   documentos reales.** Verbatim: *"no estamos hablando del mismo
+   archivo, sino de un archivo con el mismo nombre... Miramos hash,
+   son dos archivos diferentes. Tiene que clasificarse."* Caso de uso
+   citado: un permiso de circulación sin fecha de caducidad pero
+   reexpedido por cambio de titular o importación. Se conservan ambos
+   y se diferencian al clasificar — el primero pasa a `00` y el
+   segundo entra como `01`. **La decisión final de borrar corresponde
+   a la supervisora de documentación (Yolanda) desde el explorador de
+   archivos de la plataforma, nunca automática.**
+
+4. **Comparación híbrida tamaño+MD5** en la reconciliación, elegida
+   entre tres opciones por coste asimétrico: el MD5 remoto llega
+   gratis en el mismo listado paginado de `list_blobs`, pero el local
+   obliga a leer el archivo entero. El tamaño decide cuando difiere;
+   el MD5 local solo se calcula cuando los tamaños coinciden.
+
+5. **El solapamiento de dosieres queda disuelto, no resuelto por
+   fórmula.** El matiz que S033 dejó explícitamente sin resolver — un
+   archivo que pertenece a más de un dosier a la vez — deja de ser un
+   problema. Verbatim: *"si lo que vamos a eliminar es el dosier, no
+   el archivo."* Cada dosier se evalúa por su cuenta y los archivos
+   individuales no se tocan nunca, así que la pertenencia múltiple es
+   irrelevante.
+
+6. **Los manuales van en una tabla aparte, indexados por MODELO de
+   máquina, no por centro de gasto.** Decisión tomada al ver los
+   datos de la auditoría. Verbatim: *"un modelo determinado de grúa,
+   pluma, camión, va a tener su manual de uso. Independientemente de
+   si tienes siete vehículos del mismo tipo, es una tontería tener
+   guardados siete manuales. Guardas uno y dices, el manual es este...
+   Guardamos siete punteros y un manual."* Esto **resuelve el
+   conflicto entre deduplicación y asignación a máquina** sin borrar
+   documentación: no se elimina el manual de ninguna máquina, se
+   sustituye la copia por una referencia al único objeto real.
+
+#### Trabajo de código (4 commits)
+
+- `a8b7409` — Módulo `auditor.py` nuevo y nuevo ítem de menú
+  **"Auditar carpeta (Fase 2)"**. Decisión de Miguel Ángel: *"podemos
+  integrarlo en el agente"* — nada de scripts sueltos por consola,
+  coherente con su criterio de S033. Estrictamente local y de solo
+  lectura, sin tocar GCS ni la cuenta de servicio. Genera por archivo
+  ruta relativa, carpeta, nombre, extensión, tamaño, SHA-256 y número
+  de páginas si es PDF; salida a `agent_data/audits/` (ya cubierta
+  por `.gitignore`) como CSV en streaming más un resumen en
+  castellano. Incluye la reconciliación automática de arranque
+  (decisión 1), con los vigilantes arrancando **antes** de reconciliar
+  para no perder eventos en vivo durante los minutos que dura, y cada
+  carpeta dentro de su propio guardado de errores.
+- `1692f78` — La notificación de reconciliación nombra la carpeta.
+  Defecto detectado en la primera ejecución real: con dos carpetas
+  reconciliándose sola, dos avisos idénticos son indistinguibles.
+  Más dos tildes en texto visible (`Auditoría terminada`, tooltip
+  `Agente de Migración H28`).
+- `e4c413a` — Destino de la reconciliación cambiado a cuarentena
+  (decisión 2). `reconcile_folder` pasa a devolver cuatro elementos.
+  Caso nuevo `PENDIENTE DE DECISIÓN`: si el archivo ya tiene en
+  cuarentena una versión de distinto contenido, **no se sobrescribe**
+  — destruirla es exactamente lo que prohíbe la decisión 3.
+- `404092e` — Comparación híbrida tamaño+MD5 (decisión 4).
+
+**Librerías verificadas en línea antes de implementar (directriz
+4.4), con dos hallazgos que habrían fallado de escribirse de
+memoria:**
+
+- `pypdf` **6.14.2**, BSD-3-Clause, Python puro (`py3-none-any`). Se
+  descartó PyMuPDF a propósito: AGPL y con extensión compilada, y el
+  agente corre empaquetado sobre Python 3.14 en Windows.
+- `blob.md5_hash` viene codificado en **BASE64, no en hexadecimal**.
+  Compararlo contra un `hexdigest()` habría dado distinto siempre,
+  incluso con contenido idéntico — es decir, habría mandado el árbol
+  entero a cuarentena en cada arranque. La documentación advierte
+  además de que la propiedad puede ser `None` (objetos compuestos);
+  se prevé explícitamente.
+
+**Endurecimientos derivados de incidencias reales ya documentadas**,
+no de hipótesis: `to_long_path()` con prefijo `\\?\` en Windows, por
+el archivo de ruta de 256 caracteres que falló en S033 con
+`[Errno 22]`; y `os.walk(onerror=...)`, que registra un directorio
+ilegible en vez de descartarlo en silencio — la hipótesis más
+plausible detrás de los 4 archivos que el escaneo inicial de S032 se
+saltó sin dejar rastro.
+
+#### Resultado de la auditoría de `DOC. MAQUINAS`
+
+Ejecutada el 2026-07-27, ~33 minutos para 17,4 GB.
+
+| Métrica | Valor |
+|---|---|
+| Archivos | 16.022 |
+| Bytes | 17.441.055.320 |
+| Errores | 4 (todos de conteo de páginas, ninguno de lectura) |
+| PDFs | 14.707 (14.703 con páginas leídas, 147.441 páginas) |
+| Grupos de duplicados exactos | 1.521 (3.414 archivos) |
+
+**Los 4 errores**, todos con su SHA-256 calculado correctamente y por
+tanto deduplicables — solo falló el conteo de páginas. Dos requieren
+subsanarse **desde origen**, según criterio explícito de Miguel Ángel:
+
+- `PLATAFORMAS (Z)/Z-22/Z-22 FACTURA COMPRA.pdf` — **0 bytes, archivo
+  vacío**.
+- `PLATAFORMAS (Z)/Z-43 1479-KTJ/.../Z-43 Catalogo partes.pdf` —
+  48 MB con bytes corruptos a mitad de archivo.
+- `MANUAL DE INSTRUCCIONES/A-44/A44.pdf` — 31 MB, `/Pages`
+  malformado (benigno).
+- `VEHICULOS DE EMPRESA/.../Factura contraseña B29405040.pdf` — PDF
+  cifrado con contraseña (benigno).
+
+#### Hallazgos que invalidan parte del diseño de la sección 8
+
+**A. La deduplicación exacta no es donde está el ahorro, y donde lo
+está es peligrosa.**
+
+| Categoría | Archivos | Espacio |
+|---|---|---|
+| Variantes de compresión, misma carpeta | 736 | **3,247 GB** |
+| Duplicados exactos entre carpetas | 1.827 | 1,833 GB |
+| Duplicados exactos, misma carpeta | 66 | 0,046 GB |
+
+De los 1.521 grupos de duplicados exactos, **1.456 están repartidos
+entre carpetas distintas** — son manuales compartidos por varias
+máquinas del mismo modelo, uno por carpeta. Borrarlos chocaba de
+frente con la regla de oro (*la carpeta es la asignación a máquina*).
+**Resuelto por la decisión 6**: tabla de manuales por modelo con
+punteros, no borrado.
+
+**B. La mayor ganancia está en una categoría que no figuraba en el
+plan de tres frentes: las variantes de compresión.** 3,247 GB, el
+18,6% de la carpeta entera, setenta veces más que los duplicados
+exactos seguros — y es la categoría **más segura**, porque todas las
+copias viven en la carpeta de la misma máquina. El SHA-256 no las ve:
+comprimir cambia los bytes. Caso extremo real, mismo manual de 568
+páginas cuatro veces en la carpeta de la A-29: 176,5 MB + 38,5 MB
+(`-comp`) + 26,1 MB (`-opt`) + 17,6 MB (`-opt2`) = 258 MB para un
+documento de 17,6 MB. Otro: `A-62 ... MANUAL USO-print.pdf` ocupa
+441 MB frente a los 17,7 MB del mismo manual de 1.354 páginas.
+
+**C. La heurística de dosieres de la sección 8 no detecta dosieres:
+detecta manuales.** La mediana de páginas de un PDF en `DOC. MAQUINAS`
+es **1**, y el 75% tiene 2 o menos — es un archivo de ITVs, permisos y
+fichas de una página. Cualquier manual se sale por encima de la media
+de su carpeta y dispara la alarma. Los candidatos más extremos son
+`TABLA DE CARGA.pdf` (2.240 págs), `MANUAL USO LTM 1230-5.1`
+(2.223 págs), `MANUAL OPERADOR` (1.843 págs): documentos legítimos de
+una pieza, no compilaciones.
+
+Miguel Ángel propuso discriminar por nombre: los manuales llevan
+impresa la palabra *manual*, *instrucciones*, *manual de uso*.
+**Verificado empíricamente contra el CSV: la regla es correcta en el
+fondo pero el vocabulario se queda corto** — con
+`manual|instrucciones|operador|catálogo` solo se filtra el **37%** de
+los 979 candidatos. Lo que sobrevive sigue siendo documentación de
+modelo con otras palabras: `DESPIECE`, `TABLA DE CARGA`, `PARTS`,
+`bal_` (*Betriebsanleitung*), `MUM` (*Manual de Uso y
+Mantenimiento*). Y hay códigos opacos de fabricante donde el nombre
+no dice nada en absoluto
+(`es_1465114_SKI-MAN-DE2ES-10384-3521.pdf`,
+`3121172_AF_1250AJP_JLG_Parts_English.pdf`). **El nombre solo no
+bastará; el vocabulario hay que ampliarlo y complementarlo.**
+
+**D. El caso de dos nombres contradictorios para el mismo contenido.**
+Ejemplo real en `CAMIONES BRAZO (B)/B-40 8985JLF`: los archivos
+`8985-JLF FICHA TÉCNICA.PDF` y `B-40 8985-JLF PERMISO DE
+CIRCULACION.PDF` tienen el mismo SHA-256 exacto — un nombre de los
+dos miente. No lo resuelve ninguna regla automática: es exactamente
+el tipo de decisión que la decisión 3 asigna a Yolanda.
+
+#### Incidencias de sesión
+
+- **Clon local de Windows parado tres sesiones.** El `git pull` de
+  apertura abortó: el árbol de trabajo tenía el código de S031-S033
+  como modificaciones locales sin commitear, sobre un `47b4550`
+  anterior a las tres. Causa: en S033 los archivos llegaron a la
+  máquina por descarga y copia manual en vez de por `pull`. Resuelto
+  con `git stash push -u` y verificación de que no se perdía nada —
+  365 inserciones y **cero borrados** al comparar contra `f92f111`,
+  prueba de que no había trabajo local sin subir. **Criterio
+  establecido para el futuro: `git pull` en la máquina Windows al
+  empezar cada sesión, y compilar desde ahí — nunca descarga y copia
+  manual.**
+- **18 archivos entraron al cubo sucio la madrugada del 28.** El
+  agente se reconcilió solo a las 04:37 UTC (6 en `DOC. MAQUINAS`,
+  12 en `DOC. PERSONAL`) todavía con el `.exe` de `a8b7409`:
+  reconciliación automática ya activa, pero destino aún el cubo
+  sucio. **Miguel Ángel lo dio por no problemático**, verbatim: *"no
+  te preocupes por las copias que hayan ocurrido... de todas maneras
+  todavía no hemos limpiado nada... el programa ha funcionado
+  bien."* No requiere reparación; a partir de la próxima
+  reconstrucción del `.exe` irán a cuarentena.
+
+#### Limitaciones conocidas, anotadas y no resueltas
+
+- **La auditoría bloquea el menú de bandeja mientras corre.** Los
+  callbacks de menú de `pystray` se ejecutan en el bucle de mensajes;
+  el `setup` de arranque no (verificado en la documentación oficial
+  de `pystray` 0.19.5, que confirma que corre en hilo aparte y que
+  `stop()` intenta unirlo, con espera hasta `SETUP_THREAD_TIMEOUT`).
+  La auditoría debería correr en su propio hilo. No tocado en S034
+  para no matar la auditoría en curso.
+- **Caso `PENDIENTE DE DECISIÓN`** del reconciliador: derivado del
+  criterio de Miguel Ángel, no dictado explícitamente por él. Queda
+  pendiente de confirmación.
+- **No se pueden identificar los 3 archivos de diferencia** entre los
+  16.022 de la auditoría y los 16.019 verificados en S032: la
+  verificación de entonces fue por conteo, no por lista, y no existe
+  inventario de aquel momento.
+
 ### Hoja de ruta para la siguiente sesión
 
-1. **Auditoría local de `DOC. MAQUINAS` y `DOC. PERSONAL`** (paso 1
-   de la secuencia de la sección 8): script que recorra la copia
-   local y calcule, por archivo, hash SHA-256, tamaño, número de
-   páginas (PDF) y carpeta — sin modificar nada, solo lectura.
-2. Con los datos reales de la auditoría delante, **definir junto a
-   Miguel Ángel**: el umbral/fórmula final de la heurística de
-   dosieres (incluido el caso de solapamiento, sin resolver todavía)
-   y el catálogo de patrones de nombre por tipo de documento.
-3. Dry-run en la nube, verificación de coherencia, y solo entonces
-   ejecución real — según la secuencia de la sección 8.
+1. **Reconstruir el `.exe` en la máquina Windows.** Arrastra cuatro
+   commits sin recoger (`a8b7409`..`404092e`). Antes, `git pull`;
+   y cerrar toda instancia en marcha, incluida la de la tarea
+   programada, por la incidencia de `PermissionError` de S031. Aviso:
+   la primera reconciliación con el código nuevo mandará a cuarentena
+   cosas que antes iban al cubo sucio — es lo correcto y esperado.
+2. **Auditar `DOC. PERSONAL`** (~21.507 archivos, 10,7 GB) con el
+   mismo mecanismo, y analizar su CSV. `DOC. PERSONAL` tiene una
+   naturaleza documental distinta a `DOC. MAQUINAS` (documentos de
+   persona, no manuales de modelo), así que **no se pueden dar por
+   trasladados los hallazgos A-D sin comprobarlos**.
+3. **Diseñar la tabla de manuales por modelo** (decisión 6): modelo
+   de máquina como clave, un único objeto en GCS, punteros desde cada
+   máquina. Es lo que desbloquea los 1,833 GB de duplicados entre
+   carpetas sin borrar documentación de nadie. Encaje con
+   `MachineDocument` (H23) pendiente de definir.
+4. **Añadir la deduplicación de variantes de compresión como cuarto
+   frente de la Fase 2** — hoy el mayor ahorro individual (3,247 GB
+   solo en `DOC. MAQUINAS`) y el más seguro. Pendiente de decidir el
+   criterio de qué copia se conserva: la grande suele ser la original
+   sin degradar, la pequeña puede haber perdido calidad de escaneo.
+5. **Rediseñar la heurística de dosieres** a la luz del hallazgo C:
+   ampliar el vocabulario de exclusión de manuales
+   (`despiece`, `tabla de carga`, `parts`, `bal`, `MUM`, `catálogo`,
+   `handbook`) y buscar una señal complementaria para los códigos
+   opacos de fabricante, donde el nombre no sirve.
+6. Solo después: dry-run en la nube, verificación de coherencia y
+   ejecución real, según la secuencia de la sección 8.
 
-No hay código pendiente de la Fase 1 en su alcance original — sigue
-completa y probada (S031), con sus dos primeras migraciones reales
-(`DOC. MAQUINAS`, `DOC. PERSONAL`) verificadas cifra contra cifra
-(S032-S033), con mecanismo de recuperación de errores propio del
-agente y visor de historial local (S033). La Fase 2 es el siguiente
-trabajo real, ya diseñada en sus líneas maestras — falta la
-auditoría con datos reales para cerrar los últimos detalles
-(heurística de dosieres, catálogo de patrones de nombre) antes de
-ejecutar nada.
+La Fase 1 sigue completa y probada, con sus dos migraciones reales
+verificadas cifra contra cifra (S032-S033) y las dos carpetas
+confirmadas íntegras de nuevo en S034. El paso 1 de la Fase 2 (la
+auditoría) está construido y ejecutado sobre `DOC. MAQUINAS`; falta
+`DOC. PERSONAL` y el rediseño de las reglas que los datos reales han
+obligado a replantear.
 
