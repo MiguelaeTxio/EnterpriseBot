@@ -51,6 +51,55 @@ logger = logging.getLogger(__name__)
 # Angel, S031.
 _active_observers = {}
 
+# Raiz Tk unica y oculta de todo el agente, creada bajo demanda en el
+# hilo del bucle de mensajes -- que es donde pystray ejecuta los
+# callbacks de menu.
+#
+# Origen real (S035): cada funcion creaba su propia `tk.Tk()` y la
+# destruia ANTES de los `messagebox` posteriores. Sin raiz viva y sin
+# `parent=`, Tkinter se fabrica una raiz implicita para poder dibujar
+# el dialogo; esa raiz nace visible, sin un solo widget dentro -- una
+# ventana vacia -- y nadie la destruye nunca. Al abrir despues el
+# historial coexistian dos raices Tk en el mismo proceso, caso roto de
+# fabrica: la ventana no dibujaba sus widgets, su bucle de eventos no
+# atendia y solo se podia cerrar desde el administrador de tareas.
+# ---
+# Single hidden Tk root for the whole agent, created on demand on the
+# message-loop thread, where pystray runs menu callbacks.
+#
+# Real origin (S035): each function created its own `tk.Tk()` and
+# destroyed it BEFORE the later `messagebox` calls. With no live root
+# and no `parent=`, Tkinter builds an implicit root to draw the
+# dialog; that root is born visible, with no widgets at all -- an
+# empty window -- and nobody ever destroys it.
+_tk_root = None
+
+
+def _get_tk_root():
+    """Return the shared hidden Tk root, creating it once.
+    ---
+    Devuelve la raiz Tk compartida y oculta, creandola una sola vez.
+
+    Nunca se destruye durante la vida del agente: destruirla obligaria
+    a Tkinter a fabricar una raiz implicita en el siguiente dialogo,
+    que es exactamente el fallo que esta funcion existe para evitar.
+    ---
+    It is never destroyed while the agent lives: destroying it would
+    force Tkinter to build an implicit root on the next dialog, which
+    is precisely the bug this function exists to prevent.
+    """
+    global _tk_root
+    if _tk_root is not None:
+        try:
+            _tk_root.winfo_exists()
+            return _tk_root
+        except tk.TclError:
+            _tk_root = None
+    _tk_root = tk.Tk()
+    _tk_root.withdraw()
+    _tk_root.attributes("-topmost", True)
+    return _tk_root
+
 
 def _configure_logging():
     """Configure file logging, and console logging when available.
@@ -183,14 +232,11 @@ def _verify_and_repair_folder(icon, _menu_item):
     S033: covers verifying/repairing any already-migrated (or new)
     folder without leaving the agent or touching any console.
     """
-    root = tk.Tk()
-    root.withdraw()
-    root.attributes("-topmost", True)
+    root = _get_tk_root()
     selected_folder = filedialog.askdirectory(
         title="Selecciona la carpeta a verificar y reparar (H28)",
         parent=root,
     )
-    root.destroy()
 
     if not selected_folder:
         return
@@ -199,7 +245,7 @@ def _verify_and_repair_folder(icon, _menu_item):
     try:
         client = build_client()
     except MissingCredentialsError as error:
-        messagebox.showerror("Agente H28", str(error))
+        messagebox.showerror("Agente H28", str(error), parent=root)
         return
 
     icon.notify(
@@ -225,15 +271,12 @@ def _audit_folder(icon, _menu_item):
     account -- it is strictly local and strictly read-only, so no
     credentials are required.
     """
-    root = tk.Tk()
-    root.withdraw()
-    root.attributes("-topmost", True)
+    root = _get_tk_root()
     selected_folder = filedialog.askdirectory(
         title="Selecciona la carpeta a auditar (H28 Fase 2)",
         parent=root,
     )
     if not selected_folder:
-        root.destroy()
         return
     selected_folder = os.path.normpath(selected_folder)
 
@@ -247,7 +290,6 @@ def _audit_folder(icon, _menu_item):
         "exclusivamente de lectura.\n\n¿Continuar?",
         parent=root,
     )
-    root.destroy()
     if not confirmed:
         return
 
@@ -274,6 +316,7 @@ def _audit_folder(icon, _menu_item):
         messagebox.showerror(
             "Agente H28",
             f"No se pudo completar la auditoría:\n{error}",
+            parent=root,
         )
         append_event("Auditoria", selected_folder, f"Error: {error}")
         return
@@ -294,6 +337,7 @@ def _audit_folder(icon, _menu_item):
         "Agente H28",
         f"Auditoría completada.\n\n{summary_text}\n\n"
         f"Resumen guardado en:\n{summary_path}",
+        parent=root,
     )
 
 
@@ -315,10 +359,11 @@ def _show_history(icon, _menu_item):
     """
     events = load_events()
 
-    window = tk.Tk()
+    window = tk.Toplevel(_get_tk_root())
     window.title("Agente H28 — Historial")
     window.geometry("820x420")
     window.attributes("-topmost", True)
+    window.protocol("WM_DELETE_WINDOW", window.destroy)
 
     columns = ("timestamp", "event_type", "folder", "summary")
     headings = {
@@ -354,7 +399,16 @@ def _show_history(icon, _menu_item):
     tree.pack(side="left", fill="both", expand=True)
     scrollbar.pack(side="right", fill="y")
 
-    window.mainloop()
+    # `wait_window` bombea eventos hasta que la ventana se destruye,
+    # sin arrancar un segundo bucle principal. El `mainloop()` que
+    # habia aqui montaba un bucle propio sobre una raiz propia, que es
+    # la otra mitad del fallo de S035.
+    # ---
+    # `wait_window` pumps events until the window is destroyed,
+    # without starting a second main loop. The `mainloop()` that used
+    # to be here ran its own loop on its own root -- the other half of
+    # the S035 bug.
+    window.wait_window()
 
 
 def _select_folder_and_copy(icon, _menu_item):
@@ -362,14 +416,11 @@ def _select_folder_and_copy(icon, _menu_item):
     ---
     Abre el selector de carpetas, y la copia y vigila.
     """
-    root = tk.Tk()
-    root.withdraw()
-    root.attributes("-topmost", True)
+    root = _get_tk_root()
     selected_folder = filedialog.askdirectory(
         title="Selecciona la carpeta a migrar (H28)",
         parent=root,
     )
-    root.destroy()
 
     if not selected_folder:
         return
@@ -379,13 +430,14 @@ def _select_folder_and_copy(icon, _menu_item):
         messagebox.showinfo(
             "Agente H28",
             f"Esta carpeta ya se esta vigilando:\n{selected_folder}",
+            parent=root,
         )
         return
 
     try:
         client = build_client()
     except MissingCredentialsError as error:
-        messagebox.showerror("Agente H28", str(error))
+        messagebox.showerror("Agente H28", str(error), parent=root)
         return
 
     icon.notify(f"Copiando {selected_folder}...", title="Agente H28")
