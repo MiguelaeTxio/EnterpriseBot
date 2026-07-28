@@ -915,6 +915,417 @@ el tipo de decisión que la decisión 3 asigna a Yolanda.
   verificación de entonces fue por conteo, no por lista, y no existe
   inventario de aquel momento.
 
+### DECISIONES DE DISEÑO DE MIGUEL ÁNGEL — S035
+
+Registradas literalmente según se dictaron (directriz 4.8). No son
+reinterpretación del modelo.
+
+#### 1. Patrón de nombres normalizado
+
+Antes de cerrar cómo se clasifica, se cierra el patrón de nombres. El
+objetivo es que el propio nombre del archivo informe de todo su
+contenido, sin nombres distintos para lo mismo ni formatos de fecha
+distintos.
+
+```
+IDENTIFICADOR_TIPO_XXaaaammdd[_aaaammdd].ext
+```
+
+- **Identificador.** En máquinas, el código de la máquina (`A-29`,
+  `Z-71`), que está bien admitido en la empresa. En personal,
+  apellidos y nombre. Va delante para que un listado plano quede
+  ordenado como si estuviera en carpetas.
+- **Tipo de documento**, en mayúsculas.
+- **Fecha**: `aaaammdd`, ocho dígitos seguidos, **sin guiones ni
+  espacios dentro de la fecha**. El orden año-mes-día se eligió
+  expresamente para que el orden alfabético coincida con el
+  cronológico; con `ddmmaaaa` no ocurre. Con el año a cuatro dígitos
+  el formato se lee solo, porque ningún día ni mes empieza por `20`.
+- **Código de dos letras delante de cada fecha**, que declara qué es
+  esa fecha:
+  - `EM` — fecha de emisión
+  - `VH` — válido hasta
+  - `PV` — periodo de validez, seguido de las dos fechas
+- **Separador entre bloques**: guion bajo.
+- La nomenclatura es tipo de documento y fecha si la tiene.
+
+Ejemplos dictados por Miguel Ángel:
+
+```
+RECOMED_EM22102026_VH22092027.pdf
+POLIZA_PV01012026_01012027.pdf
+```
+
+**Sobre incluir el identificador en el nombre** (decidido tras
+plantearlo Miguel Ángel y razonarlo en sesión): se incluye. En
+máquinas, solo el código, **no la matrícula** — el código es
+institucional y permanente, la matrícula puede cambiar si la máquina
+se rematricula y dejaría mintiendo a todos los nombres. En personal,
+apellidos y nombre en mayúsculas, sin tildes, sin coma
+(`ALONSO PEDROSA MANUEL`), **generado siempre por la herramienta
+desde la ficha del operario en base de datos, nunca tecleado a mano**.
+Esa condición es la que evita que se repita el caso `PEDREGOSA`
+documentado más abajo, y permite corregir un apellido en un solo sitio
+y regenerar los nombres.
+
+Los tipos van en español y sin tildes: son nombres de archivo, no
+identificadores de código, así que la Regla de Oro del Idioma no
+aplica, y el ASCII evita problemas de codificación y de orden
+alfabético entre Windows y GCS.
+
+#### 2. Los EPIs salen del sistema de archivos y pasan a base de datos
+
+Mantener un archivo que se reedita cada vez que un operario recibe una
+prenda es, en palabras de Miguel Ángel, una burrada. Toda la
+información de EPIs se extrae y se lleva a base de datos, colgando del
+operario: qué EPI, código, fecha de entrega y todo lo referente a la
+entrega. Es mucho más eficiente: no se guardan archivos, se actualiza
+la lista de EPIs que ha recibido el operario.
+
+Plazo dictado: se hace ya, y si no da tiempo, al día siguiente.
+
+Mientras se implementa, el criterio provisional es **coger las copias
+últimas como vigentes y guardar las obsoletas**.
+
+En el nombre de archivo, mientras existan, el acrónimo `EPI` de tres
+letras delimita perfectamente el contenido en la carpeta de personal.
+(Nota de datos reales: los archivos existentes usan `EPIS`, en plural,
+así que el detector debe aceptar ambas formas.)
+
+#### 3. Versiones en conflicto: se mantienen ambas
+
+Ante el caso real de `EPIS MILHEIRO FELICIO, JORGE.docx` (ver más
+abajo), la decisión es **mantener ambas versiones y numerarlas `00` y
+`01`**, y resolver el asunto a nivel de base de datos cuando los EPIs
+pasen a tabla.
+
+#### 4. Interfaz de limpieza — pendiente de diseño
+
+Habrá que ver cómo es la interfaz con la que se hará la limpieza: las
+carpetas que hay con iconos, nombres y su árbol de directorios, y
+herramientas de renombrado. Y habrá que ir añadiendo a la base de
+datos todos los documentos y las rutas a cada centro de coste y a cada
+operario.
+
+---
+
+### ANÁLISIS DE NOMBRES REALES — S035
+
+Tres auditorías de la Fase 2 ejecutadas en sesión sobre carpetas
+completas, para extraer el vocabulario documental y el catálogo de
+formatos de fecha antes de escribir ninguna regla:
+
+| Carpeta | Archivos | Bytes | Páginas PDF |
+|---|---|---|---|
+| `ALONSO PEDROSA, MANUEL (PTE TR)` (operario) | 48 | 28.558.942 | 147 |
+| `A-29 E-0356-BBZ (GR)` (máquina) | 85 | 303.801.561 | 2.540 |
+
+Errores de lectura: 0 en las tres. Grupos de duplicados exactos
+(SHA-256): **0 en las tres**.
+
+#### Hallazgo 1 — Las variantes de compresión son el 79% de la carpeta
+
+```
+568 pág | 176,5 MB | A-29 E-0356-BBZ MANUAL USO.pdf
+568 pág |  38,5 MB | A-29 E-0356-BBZ MANUAL USO-comp.pdf
+568 pág |  26,1 MB | A-29 E-0356-BBZ MANUAL USO-opt.pdf
+568 pág |  17,6 MB | A-29 E-0356-BBZ MANUAL USO-opt2.pdf
+```
+
+Cuatro archivos, las mismas 568 páginas, cuatro tamaños. Suman
+258,7 MB de los 303,8 MB de la carpeta. Dejando solo el menor se
+recuperan **241 MB, el 79% de la carpeta**, que pasaría de 303,8 MB a
+62,7 MB.
+
+La deduplicación exacta encuentra **cero**: los cuatro tienen hash
+distinto. La señal que los relaciona es el nombre base más el número
+de páginas. Confirma el cuarto frente de la Fase 2 con un caso
+medido, y da la escala: donde S034 midió un 18,6% sobre toda
+`DOC. MAQUINAS`, aquí es el 79% de una carpeta.
+
+**Segunda familia de variantes, no de compresión**: sufijo
+`_unlocked` (original protegido y copia desbloqueada). Casos reales:
+`REC SEG AXA 31-12-2025` / `..._unlocked`, y `REC.SEG AXA 01-01-2025`
+/ `..._unlocked`. El mecanismo es el mismo, el sufijo distinto.
+
+#### Hallazgo 2 — Vocabularios disjuntos entre los dos mundos
+
+**Máquinas:** FICHA TECNICA, PERM.CIRCULACION, ITV, IPO, OCA, CE,
+RAE, C.ADECUACION, CERT.NO TARJ.TTES, CERT MANTENIMIENTO, LIBRO
+HISTORIAL, TABLA DE CARGA, MANUAL USO, POLIZA, REC.SEG, SEGURO, BAJA
+TEMPORAL.
+
+**Personal:** RM, ALTA, APTO DEFINITIVO, AUT USO MAQ, CARNET DE
+CONDUCIR, TARJETA DEL CONDUCTOR, TARJETA CUALIFICACION CONDUCTOR,
+RENOVACION CAP, DNI, CONTRATO INDEF, COMUNIC CONTRATO INDEF, Mod 145,
+IDC, ENTREGA INFORMACION, EPIS, FORM (2H, 6H, 60H), ESTIBA DE
+PLATAFORMAS, PARTE VACACIONES, DOC VARIOS.
+
+**Ni un tipo en común.** La carpeta raíz decide qué diccionario aplica
+el clasificador.
+
+#### Hallazgo 3 — Catálogo completo de formatos de fecha
+
+Sobre los 133 archivos únicos de las dos carpetas: 92 tienen fecha en
+el nombre, 41 no. 101 ocurrencias de fecha en total.
+
+| Ocurrencias | Formato | Ejemplos |
+|---|---|---|
+| 46 | `DD-MM-AA` | `6-3-23`, `08-05-26` |
+| 40 | `DD-MM-AAAA` | `21-07-2027`, `28-10-2028` |
+| 6 | `AAMMDD` | `150611`, `150911` |
+| 3 | `AAAA` solo | `2025`, `2024` |
+| 2 | `DD-MM` sin año | `18-08`, `01-09` |
+| 2 | día + mes en palabra + año | `19 agost 2013` |
+| 1 | `MM-AAAA` | `10-2014` |
+| 1 | dos `AAMMDD` pegadas | `151210150311` |
+
+**El 85% de las fechas son el mismo formato** —día-mes-año separado
+por guion— y solo varía la longitud del año. La selva aparente son
+**15 ocurrencias** en seis familias marginales.
+
+Los años de dos dígitos presentes son 15, 16, 17, 18, 20, 21, 22, 23,
+24, 25, 26, 27 y 31: **todos del siglo XXI**, sin un solo caso
+anterior a 2013. La expansión `20` + `aa` es segura en este corpus.
+
+#### Hallazgo 4 — La semántica de la fecha NO es derivable del nombre
+
+Dos archivos del **mismo tipo** en la misma carpeta de operario:
+
+- `RM ALONSO PEDROSA, MANUEL 04-04-2026.pdf` — fecha pasada, es
+  emisión.
+- `RM ALONSO PEDROSA, MANUEL 21-07-2027.pdf` — fecha futura, es
+  caducidad.
+
+Una tabla de "qué significa la fecha según el tipo" **no resuelve el
+problema**, porque dentro de un mismo tipo aparecen los dos
+significados. Lo mismo ocurre en máquinas: la serie
+`ITV 28-4-23 → 28-4-24 → 28-04-2025 → 28-04-2026` es claramente fecha
+de inspección (`EM`), mientras que `OCA ... 23-1-27` es caducidad.
+
+**Consecuencia de diseño:** la normalización del *formato* es
+mecánica y automatizable; la asignación de `EM`/`VH`/`PV` **exige
+leer el documento**. Es el argumento técnico que sostiene la intuición
+de Miguel Ángel de clasificar con llamadas a Gemini: no es preferencia,
+es que la información no está en el nombre.
+
+#### Hallazgo 5 — Casos que rompen el patrón
+
+- **Un archivo, dos tipos.** El `+` se usa como "contiene ambos":
+  `FICHA TECNICA+PERM CIRC`, `CE+RAE`, `FICHA TECNICA+ITV 12-3-2021`,
+  `POLIZA AXA+REC.SEG AXA 31-12-22`. El patrón asume un tipo por
+  archivo.
+- **Colisión de tipo y fecha idénticos.** `FORM 2H PRL CONDUCTOR- ...
+  1-3-23` y `FORM 2H PRL CONDUCTOR-GRUISTA ... 1-3-23`; y
+  `EPIS 6-3-23` frente a `EPIS 6-3-23 desglosados`. Al quitar el
+  nombre del operario, quedarían con el mismo nombre exacto.
+- **Estados dentro del nombre**: `-signed`, `firmado 1`, `des`,
+  `_unlocked`, `-comp`, `-opt`, `-opt2`, `_compressed (1)`.
+- **Suciedad léxica**: espacio antes de la extensión
+  (`RENOVACION CAP .pdf`, `RAE .pdf`, `ITC .pdf`), doble espacio
+  interno (`A-29 E-0356-BBZ  ITV.pdf`), coma sin espacio
+  (`ALONSO PEDROSA,MANUEL`), extensión en mayúsculas (`RECIBO2.PDF`).
+- **Nombres opacos de escáner**: `doc06420120240227093305.pdf`.
+  Contienen `20240227 093305`, es decir fecha y hora de escaneo en
+  `aaaammdd`. Es una señal aprovechable para el hallazgo C de S034.
+- **Fecha seguida de guion y palabra** (`08-05-24-signed`): rompe los
+  parseadores ingenuos que exigen fin de token tras la fecha.
+  Detectado al fallar el primer clasificador escrito en esta sesión.
+- **Periodos escritos de cuatro maneras**: `27-2-20 A 31-12-20`,
+  `150611 AL 150911`, `151210150311` (sin separador), y
+  `18-08 AL 01-09` con el año en otro bloque del nombre.
+- **`RECIBO 151210150311.pdf`**: la serie de recibos trimestrales
+  (`150311 AL 150611`, `150611 AL 150911`, `150911 AL 151211`) sugiere
+  que este debería cubrir diciembre 2015 a marzo 2016, pero la segunda
+  fecha dice `150311`. Probable error en el original; requiere leer el
+  documento.
+- **El nombre del operario aparece de ocho formas** en 48 archivos:
+  `ALONSO PEDROSA, MANUEL`, `ALONSO PEDROSA MANUEL`,
+  `MANUEL ALONSO PEDROSA`, `D. MANUEL ALONSO PEDROSA`, `Manuel
+  Alonso`, `Alonso Pedrosa`, `ALONSO PEDROSA`, y `ALONSO PEDREGOSA`
+  (apellido erróneo, en dos archivos). La carpeta dice `PEDROSA`:
+  caso de manual para la regla de oro de que la carpeta prevalece.
+
+#### Hallazgo 6 — Nivel de carpeta duplicado, en los dos mundos
+
+- `ALONSO PEDROSA, MANUEL (PTE TR)/ALONSO PEDROSA MANUEL/`
+- `A-29 E-0356-BBZ (GR)/A-29/`
+- `Z-42 1089-KNL/Z-42 1089-KNL/` (detectado en la reconciliación)
+
+El nivel interno **tiene contenido real**: en el operario, 45 de los
+48 archivos cuelgan de él y solo 3 quedan en la raíz. No es una
+carpeta vacía que se pueda colapsar sin más. Es sistemático, no un
+despiste suelto.
+
+#### Hallazgo 7 — Dato personal fuera de sitio
+
+`ALONSO PEDROSA MANUEL/cta bco Alonso Pedrosa.txt`: una cuenta
+bancaria en texto plano dentro de la carpeta del operario, ya subida
+al cubo. No es documentación laboral. Requiere decisión propia sobre
+si debe estar ahí.
+
+---
+
+### INCIDENCIA S035 — El agente estaba fuera de `pip-tools`
+
+Detectada por Miguel Ángel al revisar un `pip install -r
+requirements.txt` que el modelo había entregado para reconstruir el
+`.exe`.
+
+`h28_migration_agent/` se creó en S031 con un `requirements.txt`
+escrito a mano, con rangos `>=` y sin `requirements.in`, y se editó a
+mano dos veces más (`23fbdc1`, `a8b7409`). Incumplía
+`com-environment-management` sección 2 y la directriz 4.3 desde el
+primer día.
+
+**Consecuencia real ya materializada:** al no haber ninguna versión
+fijada, esa instalación resolvió libremente y dejó el Python del
+sistema de la máquina Windows con un árbol de dependencias distinto
+del que compiló el `.exe` anterior, sin registro de cuál era. Las
+versiones de aquella compilación son irrecuperables.
+
+**Corregido en la misma sesión** (directriz 4.9), commits `41f8f21` y
+`4a1d3b1`:
+
+- `requirements.in` con las seis dependencias directas.
+- `requirements.txt` generado con `pip-compile` 7.6.0 **en la máquina
+  Windows y con Python 3.14.6**: 30 paquetes con versión exacta, cero
+  rangos. Un candado compilado en otra plataforma no sería válido
+  (ruedas `pywin32-ctypes`, `pefile`, `watchdog` win_amd64,
+  `google-crc32c` cp314-win_amd64).
+- Entorno virtual `h28_agent_venv` **rehecho de cero** sobre Python
+  3.14.6. El anterior no se había usado nunca: la directiva de
+  ejecución de PowerShell bloqueaba `Activate.ps1` sin que nadie lo
+  detectara, y las instalaciones acababan en el Python del sistema. Se
+  invoca el intérprete del venv directamente
+  (`.\h28_agent_venv\Scripts\python.exe -m piptools ...`), que no es
+  un script y no está sujeto a esa restricción, en vez de rebajar la
+  política de seguridad de la máquina.
+- Aislamiento verificado con datos: `pyvenv.cfg` declara
+  `include-system-site-packages = false`, y las versiones del venv
+  difieren de las del sistema (`pillow` 12.3.0 frente a 12.2.0,
+  `cryptography` 49.0.0 frente a 48.0.1, `certifi` 2026.7.22 frente a
+  2026.5.20).
+
+**Aclaración de la skill.** La ambigüedad que permitió el desvío era
+que `com-environment-management` estaba redactada enteramente en
+contexto PythonAnywhere/Django (prefijo `python -m dotenv run`,
+`SERVER_VENV`, salida a SWAP) y se leyó como si solo cubriera ese
+contexto. Por instrucción expresa de Miguel Ángel se elimina la
+ambigüedad: se añade una sección 1.1 de **alcance universal** —la
+norma cubre cualquier entorno Python, cualquier máquina, cualquier
+sistema operativo, con o sin Django, incluidos agentes de escritorio y
+ejecutables empaquetados—, con prohibición expresa de justificar un
+`pip install` suelto apelando a que "eso corre en Windows" o "es solo
+un script auxiliar". Se añaden además: sección 3.0 aclarando el
+prefijo `dotenv`, 3.4 obligando a compilar el candado en la plataforma
+de destino, 2.2 con el criterio de archivo único incluyendo
+herramienta de compilación, 4.1 sobre invocación directa del
+intérprete en Windows, y el aviso de que `pip-sync` nunca se ejecuta
+contra el Python del sistema.
+
+**Dos hallazgos verificados en línea** antes de ejecutar (directriz
+4.4) que habrían estropeado el resultado de haberse escrito de
+memoria:
+
+- `pip-compile` no regenera nada si encuentra un `requirements.txt`
+  existente que ya satisface las dependencias. El archivo escrito a
+  mano había que borrarlo **antes** de compilar.
+- `pip-sync` no desinstala `pip`, `setuptools` ni el propio
+  `pip-tools`, así que la herramienta sobrevive al `sync`.
+
+**Pendiente:** `pip-tools` 7.6.0 avisa de que `--strip-extras` pasa a
+ser el comportamiento por defecto en 8.0.0. No altera este candado
+porque ningún paquete del árbol declara extras, pero conviene fijar la
+opción explícitamente para que una actualización de `pip-tools` no
+cambie el resultado en silencio.
+
+---
+
+### VERIFICACIONES EN PRODUCCIÓN — S035
+
+**Reconstrucción del `.exe`.** Compilado desde el venv aislado con
+`python -m PyInstaller` (invocación como módulo, verificada en la
+documentación oficial de PyInstaller 6.21.0: el comando `pyinstaller`
+no estaba en el PATH). Artefacto de 29.258.728 bytes. El log declara
+`Python environment: ...\h28_agent_venv`, no el del sistema.
+
+**`pypdf` correctamente empaquetado pese a importarse dentro de una
+función.** Prueba de humo sobre una carpeta de 13 PDF: 13 de 13 con
+número de páginas leído, 0 errores. Los avisos de PyInstaller
+(`collections.abc`, `typing_extensions`, `fontTools`, `Crypto`) son
+todos falsos positivos o dependencias opcionales que el conteo de
+páginas no toca: `pypdf` usa `cryptography`, que sí está en el candado.
+
+**Decisión 2 confirmada en producción.** La reconciliación de arranque
+registró literalmente `El cubo sucio no se ha modificado`: repara
+contra cuarentena y deja el cubo sucio como foto fija.
+
+**Primera verificación de contenido de las dos carpetas.** Hasta ahora
+la verificación era cifra contra cifra (recuento y bytes). Con MD5
+real, `DOC. MAQUINAS` arrojó 3 discrepancias sobre 16.019 archivos
+(1 subida a cuarentena, 2 ya en cola) y `DOC. PERSONAL` 1. Las cuatro
+identificadas por ruta. Ninguna era diferencia de contenido con
+tamaño igual.
+
+**Los 3 de `DOC. MAQUINAS` no son los 3 de la pregunta abierta de
+S034.** Fechas locales: `Z-71 cert. mantenimiento` creado el
+2026-07-28 a las 08:22 (mientras el agente estaba parado por la
+reconstrucción), `B-48 6440 NMK FICHA TECNICA` modificado el
+2026-07-27 a las 14:14 (después de la auditoría de esa mañana). El
+tercero, `Z-42 1089-KNL ITV 02-08-2026`, es de agosto de 2025 y no se
+ha modificado desde julio de 2025 — **queda como cabo suelto**: si
+fuera un hueco antiguo del escaneo de S032, la reconciliación de S033,
+que ya comparaba presencia y tamaño, debería haberlo detectado. Sin
+explicación.
+
+**Coste medido de la comparación híbrida (decisión 4).** Primera
+ejecución con MD5 real: `DOC. MAQUINAS` 11,5 minutos (18,09 GB leídos
+por el proceso, contra los 17,4 GB de la carpeta: se lee entera),
+`DOC. PERSONAL` 11,5 minutos. **23 minutos de reconciliación de
+arranque, en cada inicio de sesión de Windows**, frente a los 14-17
+segundos que tardaba sin MD5.
+
+El comentario de `_find_mismatches` justifica el híbrido diciendo que
+comparar siempre por hash obligaría a leer los 28 GB en cada arranque,
+pero el código solo se salta el MD5 cuando el tamaño ya difiere o el
+blob no expone MD5: en una carpeta sana el tamaño coincide en todos
+los archivos, así que **se leen los 28 GB igualmente**. El ahorro
+buscado no se materializa en el caso común.
+
+**Pero el caso real demuestra que el MD5 hace falta.** El conflicto de
+`EPIS MILHEIRO FELICIO, JORGE.docx` (local 32.890 bytes, cuarentena
+32.882) se descargó y se comparó descomprimiendo ambos `.docx`:
+
+| Parte del ZIP | Local | Cuarentena |
+|---|---|---|
+| `word/document.xml` | 72.871 B | 72.871 B, **CRC distinto** |
+| `word/settings.xml` | 5.134 B | 5.108 B |
+| `docProps/core.xml` | 722 B | 722 B, CRC distinto |
+| `docProps/app.xml` | 989 B | 989 B, CRC distinto |
+
+Único cambio de texto en 38 párrafos: `A fecha (10/07/2026)` →
+`A fecha (27/07/2026)`. **El contenido cambió con `document.xml`
+idéntico en peso**; los 8 bytes de diferencia del archivo entero
+vienen de los `rsid` de Word en `settings.xml`, no del cambio. Si
+`settings.xml` no llega a crecer, el `.docx` habría pesado
+exactamente igual y solo el MD5 lo habría visto. El falso negativo que
+motivó la decisión 4 no es hipotético.
+
+**Estado a resolver:** la nube tiene la versión del 10/07 y la vigente
+del 27/07 solo existe en el disco de la oficina. El reconciliador se
+negó a sobrescribir, que es lo correcto según el criterio, pero la
+copia buena no está subida.
+
+**Carencia de observabilidad confirmada.** `_find_mismatches` no
+invoca el `progress_callback`: `total_count = len(mismatches)`, de modo
+que el contador solo empieza después, sobre la lista de diferencias ya
+detectada. La fase larga —11 minutos de hash— transcurre sin una sola
+línea de log entre "listando cubo de cuarentena" y el recuento de
+archivos ausentes. Durante la sesión hubo que recurrir a
+`ReadTransferCount` del proceso en Windows para saber por dónde iba.
+
+
 ### Hoja de ruta para la siguiente sesión
 
 1. **Reconstruir el `.exe` en la máquina Windows.** Arrastra cuatro
