@@ -38,13 +38,17 @@ import time
 
 from config import (
     HASH_CHUNK_SIZE_BYTES,
-    QUARANTINE_BUCKET_NAME,
+    QUARANTINE_PREFIX,
     RECONCILE_MAX_RETRIES,
     RECONCILE_PROGRESS_EVERY_FILES,
     RECONCILE_RETRY_DELAYS_SECONDS,
 )
 from fs_utils import is_cloud_only, request_hydration, to_long_path
-from uploader import build_blob_name, iter_relative_file_paths
+from uploader import (
+    build_blob_name,
+    build_quarantine_blob_name,
+    iter_relative_file_paths,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -403,21 +407,34 @@ def reconcile_folder(client, bucket_name, selected_folder,
         unrecoverable_relative_paths)
     """
     bucket = client.bucket(bucket_name)
-    quarantine_bucket = client.bucket(QUARANTINE_BUCKET_NAME)
     folder_name = os.path.basename(os.path.normpath(selected_folder))
     blob_name_prefix = f"{folder_name}/"
+    quarantine_name_prefix = QUARANTINE_PREFIX + blob_name_prefix
 
     logger.info(
-        "Reconciliacion: listando cubo sucio para %s", selected_folder,
+        "Reconciliacion: listando el arbol espejo de %s",
+        selected_folder,
     )
     remote_info = _list_remote_info(bucket, blob_name_prefix)
 
+    # Desde S036 la cuarentena es un prefijo del MISMO cubo, no un
+    # cubo aparte. Los dos listados siguen siendo independientes
+    # porque `_CUARENTENA/` cuelga de la raiz, como hermano de las
+    # carpetas migradas: un listado por `DOC. MAQUINAS/` no incluye
+    # jamas `_CUARENTENA/DOC. MAQUINAS/`. Si la cuarentena colgara de
+    # dentro de la carpeta, sus blobs entrarian en el listado del
+    # espejo y contaminarian la comparacion.
+    # ---
+    # Since S036 quarantine is a prefix of the SAME bucket. The two
+    # listings stay independent because `_CUARENTENA/` hangs off the
+    # root as a sibling of the migrated folders: a listing of
+    # `DOC. MAQUINAS/` never includes `_CUARENTENA/DOC. MAQUINAS/`.
     logger.info(
-        "Reconciliacion: listando cubo de cuarentena para %s",
+        "Reconciliacion: listando la cola de cuarentena de %s",
         selected_folder,
     )
     quarantine_info = _list_remote_info(
-        quarantine_bucket, blob_name_prefix,
+        bucket, quarantine_name_prefix,
     )
 
     mismatches, pending_hydration_paths = _find_mismatches(
@@ -444,8 +461,16 @@ def reconcile_folder(client, bucket_name, selected_folder,
     for checked_count, (
         relative_path, blob_name, local_path, local_size
     ) in enumerate(mismatches, start=1):
+        # La clave de busqueda NO es la misma que la del espejo: en
+        # cuarentena el mismo archivo vive bajo `_CUARENTENA/`.
+        # ---
+        # The lookup key is NOT the mirror's: in quarantine the same
+        # file lives under `_CUARENTENA/`.
+        quarantine_blob_name = build_quarantine_blob_name(
+            selected_folder, relative_path,
+        )
         quarantined_size, quarantined_md5 = quarantine_info.get(
-            blob_name, (None, None),
+            quarantine_blob_name, (None, None),
         )
 
         if quarantined_size is not None and _is_same_content(
@@ -486,7 +511,7 @@ def reconcile_folder(client, bucket_name, selected_folder,
                 relative_path, local_size, quarantined_size,
             )
         elif _upload_with_retries(
-            quarantine_bucket, relative_path, blob_name, local_path,
+            bucket, relative_path, quarantine_blob_name, local_path,
         ):
             quarantined_count += 1
         else:

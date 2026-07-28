@@ -16,7 +16,7 @@ import os
 
 from google.cloud.storage import transfer_manager
 
-from config import UPLOAD_MAX_WORKERS
+from config import QUARANTINE_PREFIX, UPLOAD_MAX_WORKERS
 from fs_utils import (
     is_cloud_only,
     make_walk_error_handler,
@@ -103,6 +103,32 @@ def build_blob_name(selected_folder, relative_path):
     posix_relative = relative_path.replace(os.sep, "/")
     return f"{folder_name}/{posix_relative}"
 
+
+
+def build_quarantine_blob_name(selected_folder, relative_path):
+    """Build the destination blob name inside the quarantine prefix.
+    ---
+    Construye el nombre del blob de destino dentro del prefijo de
+    cuarentena.
+
+    Desde S036 la cuarentena es un prefijo en la raiz del MISMO cubo,
+    no un cubo aparte: el arbol espejo vive en `{carpeta}/...` y su
+    cola de revision en `_CUARENTENA/{carpeta}/...`. Se conserva la
+    ruta relativa completa para que, al clasificar, se sepa de donde
+    salio cada archivo.
+
+    Que sean hermanos en la raiz y no anidados es lo que mantiene
+    separados los dos listados por prefijo del reconciliador -- ver
+    `config.QUARANTINE_PREFIX`.
+    ---
+    Since S036 quarantine is a prefix at the root of the SAME bucket:
+    the mirror tree lives at `{folder}/...` and its review queue at
+    `_CUARENTENA/{folder}/...`. Being siblings at the root is what
+    keeps the reconciler's two prefix listings apart.
+    """
+    return QUARANTINE_PREFIX + build_blob_name(
+        selected_folder, relative_path
+    )
 
 
 def request_hydration_for_cloud_only(selected_folder, relative_paths):
@@ -237,21 +263,31 @@ def upload_folder_recursive(
 def upload_single_file_to_quarantine(
     client, bucket_name, selected_folder, absolute_file_path
 ):
-    """Upload one new file to the quarantine bucket.
+    """Upload one new file to the quarantine prefix.
     ---
-    Sube un archivo nuevo al cubo de cuarentena.
+    Sube un archivo nuevo al prefijo de cuarentena.
 
-    Used by the watchdog handler for files that appear after the
-    initial copy — never written to the dirty bucket mirror tree
-    (Fase 1 punto 3 del anexo H28).
+    Usado por el vigilante (`watcher.py`) para archivos que aparecen
+    despues de la copia inicial, y por el barrido de puesta al dia
+    (`catchup.py`) para los que llegan por sincronizacion sin generar
+    evento -- nunca se escriben en el arbol espejo (Fase 1 punto 3
+    del anexo H28).
+
+    `bucket_name` es ahora el cubo UNICO: desde S036 la cuarentena es
+    un prefijo dentro de el, no un cubo aparte.
     ---
-    Usado por el manejador de watchdog para archivos que aparecen
-    despues de la copia inicial — nunca se escriben en el arbol
-    espejo del cubo sucio (Fase 1 punto 3 del anexo H28).
+    Used by the watcher for files appearing after the initial copy,
+    and by the catch-up sweep for those arriving by sync without
+    raising an event -- never written into the mirror tree.
+
+    `bucket_name` is now the single bucket: since S036 quarantine is
+    a prefix inside it, not a separate bucket.
     """
     bucket = client.bucket(bucket_name)
     relative_path = os.path.relpath(absolute_file_path, selected_folder)
-    blob_name = build_blob_name(selected_folder, relative_path)
+    blob_name = build_quarantine_blob_name(
+        selected_folder, relative_path
+    )
     blob = bucket.blob(blob_name)
     # El nombre del blob se calcula SIEMPRE con la ruta original: el
     # prefijo de ruta larga es un detalle de la API de Windows y no

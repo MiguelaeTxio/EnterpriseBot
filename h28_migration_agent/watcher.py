@@ -18,7 +18,7 @@ import threading
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
-from config import QUARANTINE_BUCKET_NAME
+from config import DIRTY_BUCKET_NAME
 from uploader import upload_single_file_to_quarantine
 
 logger = logging.getLogger(__name__)
@@ -103,7 +103,7 @@ class QuarantineEventHandler(FileSystemEventHandler):
         try:
             blob_name = upload_single_file_to_quarantine(
                 self._client,
-                QUARANTINE_BUCKET_NAME,
+                DIRTY_BUCKET_NAME,
                 self._selected_folder,
                 absolute_file_path,
             )

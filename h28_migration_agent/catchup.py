@@ -52,7 +52,7 @@ import logging
 import os
 
 from config import (
-    QUARANTINE_BUCKET_NAME,
+    DIRTY_BUCKET_NAME,
     get_catchup_index_dir,
 )
 from fs_utils import (
@@ -293,7 +293,7 @@ def sweep_folder(client, selected_folder):
         try:
             upload_single_file_to_quarantine(
                 client,
-                QUARANTINE_BUCKET_NAME,
+                DIRTY_BUCKET_NAME,
                 selected_folder,
                 absolute_path,
             )

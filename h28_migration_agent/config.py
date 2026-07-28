@@ -6,11 +6,48 @@ Constantes de configuracion del agente de migracion H28."""
 import os
 import sys
 
-# GCS bucket names, confirmed by Miguel Angel in S031.
+# Cubo unico de GCS. Confirmado por Miguel Angel en S031; la
+# cuarentena dejo de ser un cubo aparte en S036.
 # ---
-# Nombres de los cubos GCS, confirmados por Miguel Angel en S031.
+# Single GCS bucket. Confirmed by Miguel Angel in S031; quarantine
+# stopped being a separate bucket in S036.
 DIRTY_BUCKET_NAME = "cgs_grupo_alvarez"
-QUARANTINE_BUCKET_NAME = "cgs_grupo_alvarez_cuarentena"
+
+# Prefijo de cuarentena DENTRO del cubo sucio (decision 1 de S036,
+# sustituye al cubo dedicado `cgs_grupo_alvarez_cuarentena` de S031).
+#
+# Motivo: verificado en linea en S035 que renombrar y mover DENTRO de
+# un cubo con Namespace Jerarquico es una operacion solo de
+# metadatos, atomica y sin coste de copia. Cruzar frontera de cubo no
+# lo es -- es copia real mas borrado, con coste por cada archivo
+# clasificado. Con la cuarentena dentro, todo el movimiento de la
+# Fase 2 es gratis. Ademas, la documentacion oficial exige
+# `storage.folders.rename` en el cubo ORIGEN y
+# `storage.folders.create` en el DESTINO: con un solo cubo basta un
+# binding, y `enterprisebot-vertex@` ya lo tiene sobre este
+# (verificado en S036 con `get-iam-policy`).
+#
+# **Debe vivir en la RAIZ del cubo**, como hermano de las carpetas
+# migradas, nunca dentro de ninguna de ellas: el reconciliador lista
+# el arbol espejo con `prefix=f"{carpeta}/"`, y si la cuarentena
+# colgara de una carpeta migrada sus blobs entrarian en ese mismo
+# listado y contaminarian la comparacion local-contra-cubo.
+#
+# El guion bajo inicial hace la colision imposible: las carpetas
+# reales de OneDrive son `DOC. MAQUINAS`, `DOC. PERSONAL`,
+# `LAVADO NAVARRO`... ninguna empieza por `_`. En castellano y sin
+# tildes por el mismo criterio que fijo Miguel Angel en S035 para los
+# nombres de archivo: son datos visibles por personas, no
+# identificadores de codigo, asi que la Regla de Oro del Idioma no
+# aplica, y el ASCII evita problemas de codificacion entre Windows y
+# GCS.
+# ---
+# Quarantine prefix INSIDE the dirty bucket (S036 decision 1). Moving
+# within an HNS bucket is a metadata-only, atomic, free operation;
+# crossing a bucket boundary is a real copy plus delete. It MUST live
+# at the bucket root, never inside a migrated folder, or its blobs
+# would pollute the reconciler's prefix listing.
+QUARANTINE_PREFIX = "_CUARENTENA/"
 
 # Real (truncated) service account email — see H28 annex, S031
 # incident. GCP truncated the proposed 34-character name to 30.
