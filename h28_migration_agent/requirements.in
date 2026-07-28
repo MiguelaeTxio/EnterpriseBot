@@ -1,0 +1,59 @@
+# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/h28_migration_agent/requirements.in
+# H28 Migration Agent: direct dependencies. Single editable source.
+# requirements.txt is generated from this file with pip-compile and is
+# NEVER edited by hand (com-environment-management, section 2).
+#
+# The lock MUST be compiled on the Windows machine where the agent runs
+# and is packaged, with the same Python version (3.14) — platform
+# specific wheels make a lock generated elsewhere invalid
+# (com-environment-management, section 3.4).
+# ---
+# Agente de Migración H28: dependencias directas. Única fuente editable.
+# requirements.txt se genera desde este archivo con pip-compile y NUNCA
+# se edita a mano (com-environment-management, sección 2).
+#
+# El candado DEBE compilarse en la máquina Windows donde el agente corre
+# y se empaqueta, con la misma versión de Python (3.14) — las ruedas
+# específicas de plataforma invalidan un candado generado en otro sitio
+# (com-environment-management, sección 3.4).
+
+# Cloud Storage / Almacenamiento en la nube
+# Direct upload to GCS, never through the server endpoint (H28 design
+# decision 4, S030). Also used by reconciler.py — never the gcloud CLI.
+# Subida directa a GCS, nunca a través del endpoint del servidor
+# (decisión de diseño 4 de H28, S030). Usada también por reconciler.py
+# — nunca el CLI de gcloud.
+google-cloud-storage>=2.18.0
+
+# Folder watching / Vigilancia de carpetas
+# Continuous watchdog over the selected folders; new files go to the
+# quarantine bucket (H28 design decision 3, S030).
+# Vigilancia continua de las carpetas elegidas; los archivos nuevos van
+# al cubo de cuarentena (decisión de diseño 3 de H28, S030).
+watchdog>=4.0.0
+
+# System tray interface / Interfaz de bandeja del sistema
+# The agent is a tray application, not a console script (S031).
+# El agente es una aplicación de bandeja, no un script de consola (S031).
+pystray>=0.19.5
+Pillow>=10.0.0
+
+# PDF page counting for the Phase 2 audit / Conteo de páginas de PDF
+# para la auditoría de la Fase 2 (S034).
+# PyMuPDF was deliberately rejected: AGPL licence and compiled
+# extension, unsuitable for an executable packaged on Windows. pypdf is
+# BSD-3-Clause and pure Python (py3-none-any wheel).
+# PyMuPDF se descartó a propósito: licencia AGPL y extensión compilada,
+# inadecuada para un ejecutable empaquetado en Windows. pypdf es
+# BSD-3-Clause y Python puro (rueda py3-none-any).
+pypdf>=6.14.2
+
+# Packaging / Empaquetado
+# Build tooling lives in this same file, following the convention of the
+# project root requirements.in (djlint, esprima) — no separate dev file
+# (com-environment-management, section 2.2).
+# La herramienta de compilación vive en este mismo archivo, siguiendo la
+# convención del requirements.in raíz del proyecto (djlint, esprima) —
+# sin archivo de desarrollo aparte (com-environment-management, sección
+# 2.2).
+pyinstaller>=6.17.0
