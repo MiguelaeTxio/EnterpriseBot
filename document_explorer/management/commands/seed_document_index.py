@@ -52,6 +52,7 @@ from django.apps import apps
 from django.contrib.contenttypes.models import ContentType
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
+from django.db.models import Count
 
 from document_explorer.buckets import (
     DOMAIN_MODEL_BY_BUCKET,
@@ -143,6 +144,7 @@ class Command(BaseCommand):
 
         files = {}
         folder_paths = set()
+        real_folder_objects = 0
         skipped_marks = 0
         with_size = with_crc = with_md5 = with_generation = 0
 
@@ -152,6 +154,7 @@ class Command(BaseCommand):
                 continue
             if blob.name.endswith("/"):
                 folder_paths.add(blob.name.rstrip("/"))
+                real_folder_objects += 1
                 continue
 
             parent_path, name = split_path(blob.name)
@@ -178,9 +181,21 @@ class Command(BaseCommand):
 
         total = len(files)
         self.stdout.write(
-            "  %d archivo(s), %d carpeta(s) derivada(s), %d marca(s) "
-            "ignorada(s)." % (total, len(folder_paths), skipped_marks)
+            "  %d archivo(s), %d carpeta(s), %d marca(s) ignorada(s)."
+            % (total, len(folder_paths), skipped_marks)
         )
+        self.stdout.write(
+            "  De esas carpetas, %d llegaron como objeto real del cubo "
+            "y %d se dedujeron de las rutas de archivo."
+            % (real_folder_objects, len(folder_paths) - real_folder_objects)
+        )
+        if not real_folder_objects and folder_paths:
+            self.stdout.write(self.style.WARNING(
+                "  Aviso: el listado no devuelve objetos-carpeta, asi "
+                "que una carpeta VACIA es invisible para el indice. "
+                "Relevante para la limpieza de la Fase 2 de H28, que "
+                "existe justamente para eliminar carpetas vacias."
+            ))
         self._report_metadata(
             total, with_size, with_crc, with_md5, with_generation,
         )
@@ -193,16 +208,15 @@ class Command(BaseCommand):
 
         sizes = self._folder_sizes(files, folder_paths)
         with transaction.atomic():
-            created, updated = self._write_folders(
-                bucket_name, folder_paths, sizes,
+            created, updated = self._persist(
+                bucket_name, files, folder_paths, sizes,
             )
-            f_created, f_updated = self._write_files(bucket_name, files)
+            self._recount_children(bucket_name)
             self._link_domain_objects(bucket_name)
 
         self.stdout.write(self.style.SUCCESS(
-            "  Carpetas: %d nueva(s), %d actualizada(s). "
-            "Archivos: %d nuevo(s), %d actualizado(s)."
-            % (created, updated, f_created, f_updated)
+            "  %d fila(s) nueva(s), %d actualizada(s)."
+            % (created, updated)
         ))
 
     def _report_metadata(self, total, size, crc, md5, generation):
@@ -253,115 +267,157 @@ class Command(BaseCommand):
                     sizes[ancestor] += size
         return sizes
 
-    def _write_folders(self, bucket_name, folder_paths, sizes):
+    def _row_defaults(self):
         """
-        Upsert one row per folder.
+        Uniform field set, required by bulk_update.
 
         ---
 
-        Inserta o actualiza una fila por carpeta.
+        Conjunto uniforme de campos, que bulk_update exige.
         """
-        created = updated = 0
+        return {
+            "entry_kind": DocumentIndexEntry.KIND_FILE,
+            "blob_name": "",
+            "parent_path": "",
+            "parent_path_hash": "",
+            "name": "",
+            "size_bytes": None,
+            "content_type": "",
+            "crc32c": "",
+            "md5_hash": "",
+            "generation": None,
+            "gcs_updated_at": None,
+            "total_size_bytes": 0,
+        }
+
+    def _build_rows(self, files, folder_paths, sizes):
+        """
+        Build one normalised row per folder and per file.
+
+        ---
+
+        Construye una fila normalizada por cada carpeta y cada
+        archivo.
+        """
+        rows = []
         for path in sorted(folder_paths):
             parent_path, name = split_path(path)
-            defaults = {
+            row = self._row_defaults()
+            row.update({
                 "entry_kind": DocumentIndexEntry.KIND_FOLDER,
                 "blob_name": path,
                 "parent_path": parent_path,
                 "parent_path_hash": path_digest(parent_path),
                 "name": name,
                 "total_size_bytes": sizes.get(path, 0),
-            }
-            if self._upsert(bucket_name, path, defaults):
-                created += 1
-            else:
-                updated += 1
-        self._recount_children(bucket_name)
-        return created, updated
+            })
+            rows.append(row)
 
-    def _write_files(self, bucket_name, files):
-        """
-        Upsert one row per object.
-
-        ---
-
-        Inserta o actualiza una fila por objeto.
-        """
-        created = updated = 0
         for blob_name, info in files.items():
-            defaults = dict(info)
-            defaults["entry_kind"] = DocumentIndexEntry.KIND_FILE
-            defaults["blob_name"] = blob_name
-            defaults["parent_path_hash"] = path_digest(
-                info["parent_path"],
-            )
-            if self._upsert(bucket_name, blob_name, defaults):
-                created += 1
-            else:
-                updated += 1
-        return created, updated
+            row = self._row_defaults()
+            row.update(info)
+            row.update({
+                "entry_kind": DocumentIndexEntry.KIND_FILE,
+                "blob_name": blob_name,
+                "parent_path_hash": path_digest(info["parent_path"]),
+            })
+            rows.append(row)
+        return rows
 
-    def _upsert(self, bucket_name, blob_name, defaults):
+    def _persist(self, bucket_name, files, folder_paths, sizes):
         """
-        Create or update a live row. Returns True when created.
+        Write every row in batches instead of one query per row.
 
-        A row already sitting in someone's trash is left untouched:
-        the bucket does not get to overrule a deletion made from the
-        panel.
+        The whole bucket is read in a single query, partitioned in
+        memory, and written with bulk_create/bulk_update. A row
+        already sitting in someone\'s trash is skipped: the bucket
+        does not get to overrule a deletion made from the panel.
 
         ---
 
-        Crea o actualiza una fila viva. Devuelve True si la ha creado.
+        Escribe todas las filas por lotes en vez de una consulta por
+        fila.
 
-        Una fila que ya está en la papelera de alguien se deja intacta:
-        el cubo no puede revocar un borrado hecho desde el panel.
+        El cubo entero se lee en una sola consulta, se reparte en
+        memoria y se escribe con bulk_create/bulk_update. Una fila que
+        ya está en la papelera de alguien se omite: el cubo no puede
+        revocar un borrado hecho desde el panel.
         """
-        digest = path_digest(blob_name)
-        entry = DocumentIndexEntry.objects.filter(
-            bucket=bucket_name,
-            blob_name_hash=digest,
-            purged_at__isnull=True,
-        ).first()
-
-        if entry is None:
-            DocumentIndexEntry.objects.create(
-                bucket=bucket_name,
-                blob_name_hash=digest,
-                **defaults
+        existing = {
+            digest: (pk, deleted_at)
+            for digest, pk, deleted_at in (
+                DocumentIndexEntry.objects
+                .filter(bucket=bucket_name, purged_at__isnull=True)
+                .values_list("blob_name_hash", "id", "deleted_at")
             )
-            return True
+        }
 
-        if entry.deleted_at is not None:
-            return False
+        fields = sorted(self._row_defaults().keys())
+        to_create = []
+        to_update = []
 
-        for field, value in defaults.items():
-            setattr(entry, field, value)
-        entry.save()
-        return False
+        for row in self._build_rows(files, folder_paths, sizes):
+            digest = path_digest(row["blob_name"])
+            found = existing.get(digest)
+            if found is None:
+                to_create.append(DocumentIndexEntry(
+                    bucket=bucket_name,
+                    blob_name_hash=digest,
+                    **row
+                ))
+            elif found[1] is None:
+                to_update.append(DocumentIndexEntry(
+                    id=found[0],
+                    bucket=bucket_name,
+                    blob_name_hash=digest,
+                    **row
+                ))
+
+        DocumentIndexEntry.objects.bulk_create(
+            to_create, batch_size=1000,
+        )
+        if to_update:
+            DocumentIndexEntry.objects.bulk_update(
+                to_update, fields, batch_size=1000,
+            )
+        return len(to_create), len(to_update)
 
     def _recount_children(self, bucket_name):
         """
-        Refresh the precomputed direct-child counter of each folder.
+        Refresh every folder counter with two queries, not one per
+        folder.
 
         ---
 
-        Refresca el contador precalculado de hijos directos de cada
-        carpeta.
+        Refresca el contador de todas las carpetas con dos consultas,
+        no una por carpeta.
         """
-        folders = DocumentIndexEntry.objects.filter(
-            bucket=bucket_name,
-            entry_kind=DocumentIndexEntry.KIND_FOLDER,
-            deleted_at__isnull=True,
-            purged_at__isnull=True,
-        )
-        for folder in folders:
-            folder.child_count = DocumentIndexEntry.objects.filter(
+        counts = dict(
+            DocumentIndexEntry.objects
+            .filter(
                 bucket=bucket_name,
-                parent_path_hash=path_digest(folder.blob_name),
                 deleted_at__isnull=True,
                 purged_at__isnull=True,
-            ).count()
-            folder.save(update_fields=["child_count"])
+            )
+            .values_list("parent_path_hash")
+            .annotate(total=Count("id"))
+        )
+        folders = list(
+            DocumentIndexEntry.objects.filter(
+                bucket=bucket_name,
+                entry_kind=DocumentIndexEntry.KIND_FOLDER,
+                deleted_at__isnull=True,
+                purged_at__isnull=True,
+            )
+        )
+        for folder in folders:
+            folder.child_count = counts.get(
+                path_digest(folder.blob_name), 0,
+            )
+        if folders:
+            DocumentIndexEntry.objects.bulk_update(
+                folders, ["child_count"], batch_size=1000,
+            )
 
     def _link_domain_objects(self, bucket_name):
         """
@@ -393,17 +449,22 @@ class Command(BaseCommand):
             entry_kind=DocumentIndexEntry.KIND_FILE,
             domain_object_id__isnull=True,
         )
-        linked = 0
+        pending = []
         for entry in entries:
             object_id = by_blob_name.get(entry.blob_name)
             if object_id is None:
                 continue
             entry.domain_content_type = content_type
             entry.domain_object_id = object_id
-            entry.save(update_fields=[
-                "domain_content_type", "domain_object_id",
-            ])
-            linked += 1
+            pending.append(entry)
+
+        if pending:
+            DocumentIndexEntry.objects.bulk_update(
+                pending,
+                ["domain_content_type", "domain_object_id"],
+                batch_size=1000,
+            )
+        linked = len(pending)
 
         self.stdout.write(
             "  Vinculados %d objeto(s) con %s."
