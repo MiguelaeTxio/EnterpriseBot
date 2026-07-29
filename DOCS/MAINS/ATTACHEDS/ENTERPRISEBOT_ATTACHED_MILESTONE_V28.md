@@ -1748,61 +1748,329 @@ insuficiente para bajar a 30.
 
 ---
 
+### COMPLETADAS EN S036
+
+Sesión larga y enteramente sobre el agente de migración. Trece
+commits, 1.845 inserciones y 316 eliminaciones sobre 11 archivos. Todo
+lo escrito quedó **verificado en producción** sobre el árbol real
+antes de cerrar, con cinco ciclos de recompilación del `.exe`.
+
+#### Los cuatro defectos del punto 1 de la hoja de ruta — cerrados
+
+1. **`onerror` ausente en `iter_relative_file_paths`** (`5c7579e`). El
+   blindaje escrito en S034 se había quedado solo en `auditor.py`. Se
+   extrajo a un módulo nuevo `fs_utils.py`, sin dependencia de GCS,
+   para que `auditor.py` conserve su frontera de "estrictamente local"
+   y no existan dos copias. La copia inicial y la reconciliación se
+   etiquetan por separado, porque comparten escaneo y sin etiqueta no
+   se sabe cuál dejó el hueco. Probado contra un directorio realmente
+   ilegible: sin el manejador se pierde un archivo y se emiten **cero**
+   líneas de log; con él, los mismos archivos y un ERROR nombrando
+   operación y directorio.
+   Por la 4.9 se corrigieron además dos huecos de la misma familia
+   detectados al leer el código: `upload_single_file_to_quarantine` y
+   el reconciliador abrían archivos sin el prefijo de ruta larga, que
+   es exactamente lo que hizo fallar un archivo real de 256 caracteres
+   en S033 — y en el reconciliador acababa en un `continue` silencioso.
+
+2. **Ceguera ante archivos solo-en-nube** (`189d98b`). Constantes
+   verificadas en línea antes de escribir nada, con un hallazgo que el
+   anexo no registraba: un archivo solo-en-nube tiene `PINNED=0`,
+   `UNPINNED=1`, `RECALL_ON_DATA_ACCESS=1`, de modo que **anclar no es
+   solo encender `PINNED`** — hay que apagar `UNPINNED` en la misma
+   máscara o se le dan a OneDrive dos órdenes opuestas. La aritmética
+   de bits vive en su propia función pura para poder probarse fuera de
+   Windows, y de paso evita el error de precedencia de `a | P & ~U`.
+   En la reconciliación, el archivo solo-en-nube ya no entra en la
+   lista de diferencias: antes se intentaba subir, se quemaban los tres
+   reintentos con sus esperas de 5/15/45 s y acababa marcado
+   IRRECUPERABLE sin serlo. `reconcile_folder` pasa a devolver cinco
+   elementos y `main.py` los muestra.
+
+3. **El vigilante se tragaba las excepciones** (`7edde53`). Capturaba
+   solo `OSError`; cualquier otra desaparecía sin rastro en un hilo
+   demonio de una aplicación `--windowed` sin consola. Tres ramas
+   ahora: `OSError` como aviso (archivo a medio escribir), cualquier
+   otra con `logger.exception` y traza, y el éxito nombrando el blob.
+   `BaseException` deliberadamente NO se captura. Se añadió además el
+   registro de la RECEPCIÓN del evento, para distinguir "watchdog no lo
+   vio" de "lo vio y falló callando".
+   Corrección de registro: el defecto de S035 decía que "tampoco
+   registra los éxitos"; era impreciso — el éxito ya se registraba un
+   nivel más abajo, en `upload_single_file_to_quarantine`.
+
+4. **Fase de hash muda** (`16ea121`). `_find_mismatches` no invocaba el
+   callback. Ahora informa cada 500 archivos con total real y **MB
+   realmente leídos de disco** — no el tamaño acumulado de la carpeta,
+   porque un archivo cuyo tamaño ya difiere nunca se hashea y contarlo
+   daría una barra que miente justo donde se mira para estimar. Se
+   separó del callback de reparación: miden cosas distintas sobre
+   totales distintos, y compartirlo dejaría un contador subiendo a
+   16.040 seguido de otro subiendo a 3, con la misma redacción.
+
+#### Modo "puesta al día" (`fcc6602`) y su evolución
+
+Módulo nuevo `catchup.py` con índice ligero por carpeta. Decisiones de
+diseño consultadas antes de construir, no después.
+
+- **Comparación por RUTA, no por fecha**, deliberadamente: en S035
+  Rocío movió un ITV a `OBSOLETOS/`, y mover conserva las fechas, así
+  que un criterio de "modificado desde el último barrido" no lo habría
+  visto nunca. Probado replicando el caso exacto.
+- **El primer barrido sin índice previo no sube nada**, solo siembra.
+  Tratar los 37.500 archivos ya migrados como novedades volcaría el
+  árbol entero a cuarentena y, con la decisión 3, dispararía 37.500
+  llamadas a Gemini. Igual ante un índice corrupto. Ambos casos
+  cubiertos por prueba.
+- Un fallo de subida **no se apunta en el índice**, de modo que el
+  barrido siguiente lo reintenta solo.
+- Ítem de menú "Poner al día ahora", que solo levanta un evento y
+  vuelve sin bloquear el menú de bandeja.
+
+#### La cuarentena pasa a ser un prefijo (`b437276`)
+
+`_CUARENTENA/` en la raíz de `cgs_grupo_alvarez`. La propiedad de
+corrección más delicada —que los dos listados por prefijo no se
+contaminen— está cubierta por prueba explícita en ambos sentidos.
+Beneficio no previsto al decidirlo: renombrar carpetas exige
+`storage.folders.rename` en el cubo ORIGEN y `storage.folders.create`
+en el DESTINO, así que con un solo cubo basta un binding.
+
+**Migración ejecutada y verificada cifra contra cifra:** 45 objetos y
+251.858.773 bytes, idénticos en origen y destino, con `gcloud storage
+rsync` (que valida sumas de verificación) y sin la bandera de borrado.
+El cubo `cgs_grupo_alvarez_cuarentena` quedó **eliminado**, con ventana
+de restauración de 7 días.
+
+#### Hallazgos de producción, ninguno anticipado desde el código
+
+- **Temporales de OneDrive tratados como documentación** (`dd3abd8`).
+  El primer barrido real ancló `A-59 E-5068-BHH_ DOCUMENTACION.pdf
+  ~RF3913c72c.TMP` y dos más. No se subió ninguno porque estaban solo
+  en la nube, pero fue suerte: uno con contenido en disco sí se habría
+  subido, disparando una llamada a Gemini por basura. Y el historial
+  mostró que llevaba **quince horas** anclando los mismos cuatro, una y
+  otra vez. El filtro se aplica en el único recorrido del que beben
+  copia, reconciliación y barrido. Validado contra los **37.606 nombres
+  reales del cubo**: descarta 2 (`.partial`) y conserva los 23 nombres
+  cortos de MS-DOS (`SEGUR~12.doc`) y los once nombres legítimos
+  probados a propósito, incluido `TMP GRUAS 2026.pdf`.
+- **Carrera de renombrado** (`d83eabd`). Durante la renovación de la
+  ITV del B-38, el barrido vio `...ITV 29-07-26.pdf` y al subirlo ya se
+  llamaba `...ITV 29-01-27.pdf`. El sistema se recuperó solo —el fallo
+  no entró en el índice y el barrido siguiente subió el nombre nuevo—,
+  lo que valida ese diseño. Pero estaba mal categorizado: pasa a aviso
+  sin traza, porque sobre un árbol vivo esto ocurrirá a diario y un
+  ERROR con traceback entrena a ignorar los errores.
+- **Subidas triplicadas** (`0d659f3`). `B-38 9161-GVJ ITV
+  29-01-27.pdf` se subió tres veces en dos minutos: vigilante 08:09:31,
+  barrido 08:10:54, vigilante otra vez 08:11:30 (OneDrive reescribió el
+  archivo al terminar de sincronizar). Ver decisión abajo.
+
+#### Verificación IAM — la duda de la cuenta de servicio, resuelta
+
+`enterprisebot-vertex@` (plataforma) y `enterprisebot-h28-migration-ag@`
+(agente) son cuentas **distintas**. Pero `enterprisebot-vertex@` ya
+tiene `roles/storage.objectAdmin` sobre `cgs_grupo_alvarez` — la
+sección 4bis, que decía que los permisos se dieron solo a la del
+agente, era incompleta.
+
+**Error del modelo, corregido con datos:** se afirmó que `objectAdmin`
+no incluía `storage.folders.*` y que por tanto la Fase 2 fallaría. Era
+falso. La fuente usada era la referencia de la biblioteca cliente de
+Java, que describe un ayudante del SDK y no el rol vigente.
+`gcloud iam roles describe` contra el proyecto real demuestra que
+`objectAdmin` es un **superconjunto estricto** de `objectUser`: mismos
+`storage.folders.*` más cuatro permisos de IAM por objeto y retención.
+**Conclusión: no hay ningún binding que crear.** Lección: los permisos
+exactos de un rol se comprueban con `gcloud iam roles describe` contra
+el proyecto, nunca contra páginas de referencia de bibliotecas cliente.
+
+#### Mediciones reales, que sustituyen a las estimaciones
+
+| Medida | Valor |
+|---|---|
+| Barrido `DOC. MAQUINAS` (16.039 arch.) | 4,7 s |
+| Barrido `DOC. PERSONAL` (21.511 arch.) | 6,5 s |
+| Ciclo completo del barrido | **11,2 s** (en caliente) |
+| Ciclo con el `.exe` del doble `os.stat` | ~34 s |
+| Reconciliación, fase de hash | ~15-20 s por cada 500 archivos |
+| `.exe` con vigilante | 29.280.863 bytes |
+| `.exe` sin vigilante | 29.145.436 bytes |
+
+Los 11,2 s son **en caliente**, con los metadatos del directorio en
+caché tras horas barriendo. Un barrido en frío será más lento, y para
+eso el bucle vigila su propia duración y avisa si un ciclo excede el
+intervalo.
+
+#### Análisis del inventario completo del cubo — material para Fase 2
+
+37.606 objetos: 21.519 en `DOC. PERSONAL`, 16.031 en `DOC. MAQUINAS`,
+56 en `_CUARENTENA`. Doce caracteres problemáticos distintos:
+
+- **15 nombres con acentos DESCOMPUESTOS** (U+0301 combinante ×13,
+  U+0303 ×2). `Notificación venta.pdf` no lleva una `ó`: lleva `o` más
+  un acento combinante invisible. En pantalla son idénticos a los
+  normales pero son **bytes distintos**, y cualquier comparación de
+  cadenas los trata como archivos diferentes. El normalizador tendrá
+  que aplicar NFC antes de nada o generará duplicados fantasma. Es el
+  hallazgo con más potencial de daño silencioso.
+- **2 nombres ya corruptos, irrecuperables automáticamente:**
+  `Allianz_P<U+FFFD>liza_...` (el byte original se perdió) y
+  `13072020__Fecha_ ■ Validez_ ]Firma ysellQ^ MartiR_ CoRstEora I
+  E.pdf`, que parece salida de OCR mal hecha. Necesitan decisión
+  humana.
+- Erratas humanas: `TRANSPÒRTE` (acento grave), `N“ 3` (comilla
+  tipográfica por `º`), `EPI´S` (acento suelto). Y 1.034 apariciones
+  legítimas de `º`.
+- **2 archivos `.partial`** de descargas interrumpidas, ambos con su
+  PDF completo al lado. Quedan como huérfanos en el cubo tras el
+  filtro: limpieza de Fase 2, 2 objetos sobre 37.606.
+
+#### Incidencia de sesión — encabezado del anexo eliminado cuatro veces
+
+Al insertar secciones nuevas con `str_replace` usando como ancla
+`### Hoja de ruta para la siguiente sesión`, el modelo sustituyó el
+encabezado en vez de insertar antes de él. Ocurrió **cuatro veces**,
+la última en el propio bloque que documentaba la regla para evitarlo.
+Detectado y reparado en el acto las cuatro, con `git diff --stat`
+confirmando cero eliminaciones netas.
+
+**Regla para futuras sesiones:** al insertar antes de una sección
+existente, el texto de reemplazo debe incluir siempre el encabezado
+ancla. Y para reescribir una sección final completa —como la hoja de
+ruta en el PCS—, es más seguro reconstruir el archivo por líneas que
+usar `str_replace` con el encabezado como ancla.
+
+#### Incidencia de sesión — sintaxis de consola equivocada
+
+Se entregaron comandos con sintaxis de bash (`\` y `&&` como
+continuación) para la Google Cloud SDK Shell, que es `cmd.exe`, pese a
+estar registrado desde S033. Y se sugirió lanzar `gcloud` desde
+PowerShell, donde resuelve a `gcloud.ps1` y la directiva de ejecución
+lo bloquea. **Regla:** `gcloud` va en `cmd.exe`, un comando por línea;
+si hiciera falta desde PowerShell, se invoca `gcloud.cmd`. Nunca se
+cambia la política de seguridad de la máquina por esto.
+
+#### Corrección de registro sobre el borrado de cubos
+
+Se afirmó tres veces que borrar el cubo era irreversible. **No lo es**:
+con eliminación temporal activada, borrar un cubo lo deja en estado
+soft-deleted y permite restaurarlo entero, o sus objetos, durante la
+retención — 7 días en este proyecto.
+
+
+---
+
 ### Hoja de ruta para la siguiente sesión
 
-1. **Corregir los cuatro defectos pendientes**, en este orden de
-   gravedad: el `onerror` ausente en `iter_relative_file_paths`
-   (`uploader.py`), que compromete la integridad de la copia y de la
-   reconciliación; la detección de archivos solo-en-nube con
-   rehidratación por `SetFileAttributesW` + `\\?\`; el
-   `except OSError` del vigilante, que debe capturar `Exception` y
-   registrar también los éxitos; y el progreso de `_find_mismatches`
-   durante la fase de hash.
-2. **Modo "puesta al día" del agente**, que los tres primeros defectos
-   habilitan: barrido periódico de la carpeta → detectar por atributo
-   los que están solo en la nube → anclarlos → esperar descarga →
-   dejar que la reconciliación los suba. No puede colgar solo del
-   vigilante: watchdog no reaccionó a la llegada sincronizada de los 22
-   archivos de LAVADO NAVARRO.
-3. **Cerrar el vocabulario de tipos documentales** de los dos mundos, a
-   partir del análisis de nombres de esta sesión. Son vocabularios
+**Dirección fijada por Miguel Ángel al cierre de S036:** la próxima
+sesión se centra en **la plataforma, no en el agente**. Concretamente,
+un explorador de archivos en el panel para navegar Google Cloud
+Storage.
+
+Verbatim: *"ya tenemos que centrarnos en la plataforma, en el panel,
+para ubicar el visor, o sea, el explorador de archivos, para explorar
+precisamente la Google Cloud Storage. Mi idea, en principio, era
+hacerlo, montar tabla de base de datos, montar tabla de base de datos
+para que las exploraciones sean más rápidas y no contemos con
+cadencias en la consola. Es decir, tener una sincronización entre lo
+que es la base de datos y lo que realmente hay en consola, la
+cuarentena, en el cubo de cuarentena, la carpeta de la cuarentena y el
+resto del cubo, así como las fotos, albaranes y todo, tener acceso
+real vía interfaz de explorador de archivos en el panel. Ya te digo,
+trabajando con base de datos solamente hasta que necesites ver el
+contenido de un archivo. En ese caso, ya se accede directamente al
+archivo y se muestra."*
+
+Lo que eso fija, y lo que deja abierto:
+
+1. **Tabla de índice en base de datos** que refleje el contenido real
+   de GCS: el prefijo `_CUARENTENA/`, el resto de `cgs_grupo_alvarez`,
+   y también los cubos propios de la plataforma
+   (`enterprisebot-alvarez-machine-documents`,
+   `...-personnel-documents`, `...-delivery-notes`,
+   `...-task-photos`). El explorador consulta **solo** la base de
+   datos.
+2. **Acceso al archivo únicamente al ver su contenido.** Navegar,
+   buscar y listar no tocan GCS; abrir un documento sí.
+3. **Sincronización entre la tabla y el cubo**, que es la parte con
+   más miga y no está diseñada. Preguntas abiertas antes de escribir
+   una línea: quién la dispara y con qué cadencia (¿otra entrada en
+   `CELERY_BEAT_SCHEDULE`, como el consumidor de cuarentena?); si es
+   completa o incremental; cómo se detecta lo borrado en el cubo; y
+   qué pasa mientras la tabla va por detrás de la realidad.
+4. **Punto de partida ya disponible:** el inventario completo de los
+   37.606 objetos se listó en S036 y su análisis de caracteres está en
+   este anexo. Sirve para dimensionar la tabla sin volver a recorrer
+   el cubo.
+5. **Decidir si esto es H28 o un hito nuevo.** Un explorador de GCS en
+   el panel es infraestructura de plataforma y podría no pertenecer a
+   "Migración y Reorganización de Documentación Histórica". Si procede
+   abrir hito, hay que ejecutar `nfs-enterprisebot-pch` — y solo
+   Miguel Ángel lo decide.
+
+**Trabajo de Fase 2 que sigue pendiente, sin orden fijado:**
+
+6. **Cerrar el vocabulario de tipos documentales** de los dos mundos,
+   a partir del análisis de nombres de S035. Son vocabularios
    disjuntos: la carpeta raíz decide qué diccionario aplica.
-4. **Escribir el normalizador de nombres** sobre las reglas ya
-   validadas contra los 16.022 nombres de `DOC. MAQUINAS`: excluir la
-   familia WhatsApp antes de nada; patrón principal
-   `d[-._]m[-._](aa|aaaa)` con validación de calendario y expansión
-   `20aa` solo entre 05 y 35; marcador `CAD.` → `VH`, que la empresa ya
-   usa; `aammdd` solo dentro de un `AL`; ISO `aaaa-mm-dd` y `aaaammdd`
-   como familias propias; y todo lo demás marcado para revisión, no
-   convertido. Falta pasarlo por los 21.507 nombres de
+7. **Escribir el normalizador de nombres** sobre las reglas ya
+   validadas contra los 16.022 nombres de `DOC. MAQUINAS`. **Requisito
+   nuevo de S036, previo a todo lo demás: normalización Unicode NFC**,
+   por los 15 nombres con acentos descompuestos hallados en el
+   inventario. Sin eso, el normalizador generará duplicados fantasma.
+   Falta además pasar las reglas por los 21.507 nombres de
    `DOC. PERSONAL`.
-5. **Diseñar la extracción de EPIs a base de datos**, colgando del
-   operario: qué EPI, código, fecha de entrega y todo lo referente a la
-   entrega. Es decisión ya tomada y con plazo dado por Miguel Ángel.
-6. **Diseñar la interfaz de limpieza**: árbol de directorios con
-   iconos y nombres, y herramientas de renombrado. Y el volcado a base
-   de datos de todos los documentos y sus rutas por centro de coste y
-   por operario — probablemente el mismo trabajo que el punto 5 visto
-   desde otro sitio.
-7. **Tabla de manuales por modelo** (decisión 6 de S034) y
-   **deduplicación de variantes de compresión** como cuarto frente, con
-   el dato nuevo de esta sesión: en la carpeta de la A-29 esas
-   variantes son el 79% del volumen.
-8. Solo después: dry-run sobre el cubo, verificación de coherencia y
-   ejecución real.
+8. **Diseñar la extracción de EPIs a base de datos**, colgando del
+   operario: qué EPI, código, fecha de entrega y todo lo referente a
+   la entrega.
+9. **Diseñar la interfaz de limpieza**: árbol de directorios con
+   iconos y nombres, y herramientas de renombrado. Probablemente
+   converge con el punto 1 — conviene mirarlos juntos y no por
+   separado.
+10. **Tabla de manuales por modelo** (decisión 6 de S034) y
+    **deduplicación de variantes de compresión**: en la carpeta de la
+    A-29 esas variantes son el 79% del volumen.
+11. **Consumidor de la cuarentena** (Fase 3): entrada en
+    `CELERY_BEAT_SCHEDULE` dentro de la always-on `242133`, sin
+    ampliar cuota. `enterprisebot-vertex@` ya tiene permisos
+    suficientes sobre `cgs_grupo_alvarez` — verificado en S036, no hay
+    IAM que tocar. **Debe ser idempotente por diseño** (decisión de
+    S036): ignorar un archivo ya clasificado cuyo hash no ha cambiado.
+12. Solo después: dry-run sobre el cubo, verificación de coherencia y
+    ejecución real.
+
+**Cabos sueltos menores, ninguno bloqueante:**
+
+- Los tres `EPIS MILHEIRO FELICIO, JORGE.docx` siguen sin numerar como
+  `00`/`01`/`02`, y falta decidir si el sufijo se aplica al subir o si
+  la cola usa otra convención (para que las tres coexistan hacen falta
+  tres nombres de blob distintos).
+- `main.py` dice todavía `Vigilancia retomada sobre:` al arrancar,
+  cuando ya no hay vigilancia — solo carpetas registradas para barrer.
+  Cosmético.
+- `pip-compile` sigue avisando de que `--strip-extras` será el
+  comportamiento por defecto en pip-tools 8.0.0. Pendiente fijarlo
+  explícito en el candado del agente.
+- Dos `.partial` huérfanos en el cubo, y dos nombres corruptos
+  (`Allianz_P<U+FFFD>liza_...` y el de salida de OCR) que necesitan
+  decisión humana.
 
 **Estado de la Fase 1:** completa y probada. Las dos migraciones
 verificadas cifra contra cifra (S032-S033), las carpetas confirmadas
-íntegras en S034, y en S035 verificadas por primera vez **a nivel de
-contenido** con MD5 real: 3 discrepancias sobre 16.019 en
-`DOC. MAQUINAS` y 1 en `DOC. PERSONAL`, todas identificadas por ruta y
-todas explicadas. El agente tiene ya candado de dependencias real y un
-ciclo de reconstrucción probado.
+íntegras en S034, y en S035 verificadas a nivel de **contenido** con
+MD5 real. El agente tiene candado de dependencias real, ciclo de
+reconstrucción probado, y desde S036 está **verificado en producción
+de extremo a extremo**: los cuatro defectos corregidos, el barrido de
+puesta al día como única vía de entrada a la cuarentena cada 30
+segundos, y el prefijo `_CUARENTENA/` confirmado por partida doble en
+las reconciliaciones de arranque.
 
-**Nota sobre la clasificación:** los dos ITV nuevos que subió Rocío se
-repararon en la reconciliación de arranque de las 06:37, cuando el
-`.exe` era todavía el antiguo, así que fueron **al cubo sucio y no a
-cuarentena** — no pasaron por la cola de revisión. No es grave, porque
-la Fase 2 repasa el espejo entero, pero es un caso real de documentos
-que se saltaron el paso de clasificación y conviene tenerlo presente al
-diseñar el clasificador.
+**Nota sobre la clasificación (S035, sigue vigente):** los dos ITV
+nuevos que subió Rocío se repararon en la reconciliación de arranque
+de las 06:37, cuando el `.exe` era todavía el antiguo, así que fueron
+**al cubo sucio y no a cuarentena** — no pasaron por la cola de
+revisión. No es grave, porque la Fase 2 repasa el espejo entero, pero
+es un caso real de documentos que se saltaron el paso de clasificación
+y conviene tenerlo presente al diseñar el clasificador.
