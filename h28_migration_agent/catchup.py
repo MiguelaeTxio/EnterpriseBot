@@ -173,9 +173,19 @@ def scan_folder(selected_folder):
         selected_folder, "Puesta al dia"
     ):
         absolute_path = os.path.join(selected_folder, relative_path)
-        if is_cloud_only(absolute_path):
-            cloud_only_paths.append(relative_path)
-            continue
+        # UN SOLO `os.stat` por archivo. `st_file_attributes` ya viene
+        # en el resultado, asi que la deteccion de solo-en-nube se
+        # resuelve con el mismo dato y no hace falta una segunda
+        # llamada. A cadencia de 30 minutos daba igual; a cadencia de
+        # un minuto sobre ~37.500 archivos son 37.500 llamadas al
+        # sistema por barrido en vez de 75.000, y ese barrido corre en
+        # la maquina en la que Miguel Angel esta trabajando.
+        # ---
+        # A SINGLE `os.stat` per file. `st_file_attributes` already
+        # comes in the result, so the cloud-only check reuses it. At a
+        # 30-minute cadence this was irrelevant; at one minute over
+        # ~37,500 files it halves the syscalls per sweep, on the very
+        # machine the user is working on.
         try:
             stat_result = os.stat(to_long_path(absolute_path))
         except OSError as error:
@@ -183,6 +193,10 @@ def scan_folder(selected_folder):
                 "Puesta al dia: no se pudo leer %s: %s",
                 absolute_path, error,
             )
+            continue
+        attributes = getattr(stat_result, "st_file_attributes", None)
+        if is_cloud_only(absolute_path, attributes):
+            cloud_only_paths.append(relative_path)
             continue
         fingerprint[relative_path] = [
             stat_result.st_size, int(stat_result.st_mtime),
@@ -274,7 +288,14 @@ def sweep_folder(client, selected_folder):
 
     changed_paths = find_changes(previous_entries, fingerprint)
     if not changed_paths and not hydration_requested:
-        logger.info(
+        # A DEBUG y no a INFO: con cadencia de un minuto, esta linea
+        # en INFO serian 1.440 entradas diarias de ruido. El latido
+        # periodico que emite `main` es lo que prueba que el hilo
+        # sigue vivo.
+        # ---
+        # DEBUG rather than INFO: at a one-minute cadence this line
+        # would be 1,440 daily entries of noise.
+        logger.debug(
             "Puesta al dia: sin novedades en %s (%d archivos).",
             selected_folder, len(fingerprint),
         )

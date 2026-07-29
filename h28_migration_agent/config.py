@@ -157,18 +157,43 @@ AUDIT_FOLDER_NAME = "audits"
 # origen del cambio es la sincronizacion de OneDrive desde otro
 # puesto.
 #
-# 30 minutos: detectar es solo metadatos, asi que un barrido de las
-# dos carpetas son segundos, no minutos. Acota a media hora la
-# ventana en la que un archivo puede existir sin que nadie lo sepa,
-# a coste practicamente nulo.
+# 60 segundos. La cadencia inicial fue de 30 minutos y Miguel Angel
+# la rechazo el 29-07-2026: media hora de ventana ciega es demasiado
+# cuando el vigilante ya ha fallado una vez. Su instruccion fue "cada
+# 30 segundos o un minuto como mucho"; se toma el techo que dio, por
+# ser el extremo conservador, hasta tener medida la duracion real de
+# un barrido sobre el arbol de produccion. Bajar a 30 es una linea.
+#
+# La cadencia del consumidor de la cuarentena es INDEPENDIENTE de
+# esta: aquella corre en una tarea always-on de PythonAnywhere y
+# tiene su propio ritmo, gobernado por CELERY_BEAT_SCHEDULE.
 # ---
-# "Catch-up" mode (S036). A PERIODIC sweep, not event-driven:
-# watchdog did not react to the 22 LAVADO NAVARRO files arriving by
-# OneDrive sync. 30 minutes: detection is metadata-only, so sweeping
-# both folders takes seconds, and it bounds to half an hour the
-# window in which a file can exist unnoticed.
-CATCHUP_INTERVAL_SECONDS = 30 * 60
+# A PERIODIC sweep, not event-driven: watchdog did not react to the
+# 22 LAVADO NAVARRO files arriving by OneDrive sync.
+#
+# 60 seconds. The initial 30-minute cadence was rejected by Miguel
+# Angel on 2026-07-29: half an hour of blind window is too much when
+# the watcher has already failed once. His instruction was "every 30
+# seconds, a minute at most"; the ceiling he gave is taken as the
+# conservative starting point until a real sweep has been measured
+# against the production tree.
+#
+# The quarantine consumer's cadence is INDEPENDENT of this one: it
+# runs in a PythonAnywhere always-on task with its own rhythm.
+CATCHUP_INTERVAL_SECONDS = 60
 CATCHUP_INDEX_FOLDER_NAME = "catchup_index"
+
+# Cada cuantos barridos sin novedades se emite un latido en el log.
+# A cadencia de un minuto, registrar "sin novedades" en cada pasada
+# serian 1.440 lineas al dia de ruido puro que acabarian haciendo el
+# log inservible. Las pasadas mudas van a DEBUG y cada N se emite un
+# resumen en INFO, que es lo que prueba que el hilo sigue vivo.
+# ---
+# How many uneventful sweeps between log heartbeats. At a one-minute
+# cadence, logging "nothing new" every pass would be 1,440 lines of
+# pure noise per day. Silent passes go to DEBUG and every N a summary
+# is emitted at INFO, which is what proves the thread is alive.
+CATCHUP_HEARTBEAT_EVERY_SWEEPS = 30
 
 # Chunk size used when hashing a file. 1 MiB balances syscall
 # overhead against memory for the several-hundred-MB scanned manuals

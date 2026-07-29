@@ -20,6 +20,7 @@ import logging
 import os
 import sys
 import threading
+import time
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
@@ -34,6 +35,7 @@ from auditor import (
 )
 from catchup import sweep_folder
 from config import (
+    CATCHUP_HEARTBEAT_EVERY_SWEEPS,
     CATCHUP_INTERVAL_SECONDS,
     DIRTY_BUCKET_NAME,
     LOG_FILE_NAME,
@@ -682,10 +684,20 @@ def _run_catchup_pass(icon, client):
     Cada carpeta va dentro de su propio guardado de errores, mismo
     criterio que la reconciliacion de arranque: que una falle no
     puede impedir que las demas se barran ni tumbar el hilo.
+
+    Returns
+    -------
+    bool
+        True si alguna carpeta ha dado novedades. Lo usa el bucle
+        para decidir si emitir latido o callarse.
+        ---
+        True when any folder produced news; used by the loop to
+        decide whether to beat or stay quiet.
     ---
     Each folder is guarded separately, same criterion as the startup
     reconciliation: one failing must not stop the others.
     """
+    had_news = False
     for selected_folder in list(_active_observers.keys()):
         try:
             resumen = sweep_folder(client, selected_folder)
@@ -697,24 +709,27 @@ def _run_catchup_pass(icon, client):
             append_event(
                 "Puesta al dia", selected_folder, f"Error: {error}",
             )
+            had_news = True
             continue
 
         # Solo se notifica cuando hay algo que contar. Un aviso cada
-        # media hora diciendo "sin novedades" seria ruido puro y
-        # acabaria haciendo que no se mire ninguno.
+        # minuto diciendo "sin novedades" seria ruido puro y acabaria
+        # haciendo que no se mire ninguno.
         # ---
-        # Only notified when there is something to report. A "nothing
-        # new" popup every half hour would be pure noise.
+        # Only notified when there is something to report.
         if resumen["seeded"]:
             append_event(
                 "Puesta al dia", selected_folder,
                 f"Indice sembrado con {resumen['total']} archivos",
             )
+            had_news = True
             continue
 
         if not (resumen["uploaded"] or resumen["failed"]
                 or resumen["hydration_requested"]):
             continue
+
+        had_news = True
 
         partes = []
         if resumen["uploaded"]:
@@ -737,6 +752,8 @@ def _run_catchup_pass(icon, client):
         )
         append_event("Puesta al dia", selected_folder, texto)
 
+    return had_news
+
 
 def _catchup_loop(icon):
     """Run the catch-up sweep every CATCHUP_INTERVAL_SECONDS.
@@ -748,17 +765,28 @@ def _catchup_loop(icon):
     `pystray` se ejecutan en el bucle de mensajes, y por eso la
     auditoria bloquea el menu mientras corre -- limitacion conocida
     anotada en el anexo (S034). El barrido no puede repetir ese
-    error: corre cada media hora, indefinidamente.
+    error: corre cada minuto, indefinidamente.
+
+    Mide su propia duracion y avisa si un ciclo tarda mas que el
+    intervalo. A cadencia de un minuto sobre ~37.500 archivos eso
+    deja de ser teorico: si el barrido tarda mas de lo que dura el
+    intervalo, el hilo encadena barridos sin descanso y castiga el
+    disco de la maquina en la que se esta trabajando. Nadie ha medido
+    todavia cuanto tarda de verdad sobre el arbol de produccion, asi
+    que se mide en vez de suponerlo.
     ---
-    Lives in its own thread on purpose. `pystray` menu callbacks run
-    on the message loop, which is why the audit blocks the menu while
-    running -- a known limitation noted in the annex (S034). The
-    sweep must not repeat that mistake.
+    Lives in its own thread on purpose, and measures its own
+    duration, warning when a cycle takes longer than the interval. At
+    a one-minute cadence over ~37,500 files that is no longer
+    theoretical: a sweep slower than its interval would chain sweeps
+    back to back. Nobody has measured the real duration against the
+    production tree yet, so it is measured rather than assumed.
     """
+    uneventful_sweeps = 0
     while not _catchup_stop_event.is_set():
         # `wait` devuelve antes de tiempo si alguien pide un barrido
-        # inmediato, y permite cerrar el agente sin esperar media
-        # hora a que expire el temporizador.
+        # inmediato, y permite cerrar el agente sin esperar a que
+        # expire el temporizador.
         # ---
         # `wait` returns early when an immediate sweep is requested,
         # and lets the agent shut down without waiting out the timer.
@@ -776,7 +804,31 @@ def _catchup_loop(icon):
                 error,
             )
             continue
-        _run_catchup_pass(icon, client)
+
+        started_at = time.monotonic()
+        had_news = _run_catchup_pass(icon, client)
+        elapsed_seconds = time.monotonic() - started_at
+
+        if elapsed_seconds > CATCHUP_INTERVAL_SECONDS:
+            logger.warning(
+                "Puesta al dia: el barrido ha tardado %.1f s, mas que "
+                "el intervalo de %d s. El siguiente arranca de "
+                "inmediato, sin pausa. Conviene subir "
+                "CATCHUP_INTERVAL_SECONDS.",
+                elapsed_seconds, CATCHUP_INTERVAL_SECONDS,
+            )
+
+        if had_news:
+            uneventful_sweeps = 0
+            continue
+
+        uneventful_sweeps += 1
+        if uneventful_sweeps % CATCHUP_HEARTBEAT_EVERY_SWEEPS == 0:
+            logger.info(
+                "Puesta al dia: %d barridos seguidos sin novedades. "
+                "Ultimo ciclo: %.1f s.",
+                uneventful_sweeps, elapsed_seconds,
+            )
 
 
 def _start_catchup_thread(icon):

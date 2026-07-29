@@ -1699,6 +1699,55 @@ convención.
 
 ---
 
+### CORRECCIÓN DE LA CADENCIA DEL BARRIDO (S036, 29-07-2026)
+
+Miguel Ángel rechaza la cadencia de 30 minutos que se acordó al
+diseñar el modo "puesta al día". Verbatim: *"el barrido de 30 minutos
+es algo inviable, tenemos que ir al minuto e incluso menos, para el
+agente, la always on task con su frecuencia, pero el agente cada 30
+segundos o un minuto como mucho."*
+
+**Sustituye a la decisión 1 del punto 2** registrada más arriba en esta
+misma sesión. Media hora de ventana ciega es demasiado cuando el
+vigilante ya falló una vez con la sincronización de OneDrive.
+
+**Distinción explícita que fija esta instrucción:** la cadencia del
+agente y la del consumidor de la cuarentena son **independientes**. El
+agente barre cada minuto en la máquina de Windows; el consumidor
+always-on de la Fase 3 tiene su propio ritmo, gobernado por
+`CELERY_BEAT_SCHEDULE` en PythonAnywhere.
+
+**Valor tomado: 60 segundos**, el techo que dio Miguel Ángel, por ser
+el extremo conservador. Bajar a 30 es una línea en `config.py`, y se
+hará cuando haya medida real de cuánto tarda un barrido sobre el árbol
+de producción — que a día de hoy no la hay.
+
+**Consecuencias técnicas que arrastra el cambio, ninguna trivial:**
+
+1. **Doble `os.stat` por archivo, corregido.** `scan_folder` consultaba
+   los atributos dentro de `is_cloud_only` y volvía a llamar a
+   `os.stat` después. Sobre ~37.500 archivos eran 75.000 llamadas al
+   sistema por barrido. `st_file_attributes` ya viene en el resultado
+   de `os.stat`, así que se reutiliza: 37.500. A cadencia de media
+   hora era irrelevante; a un minuto, en la máquina donde Miguel Ángel
+   trabaja, no.
+2. **Medición de la duración del ciclo.** Nadie ha medido cuánto tarda
+   un barrido sobre el árbol real. Si tarda más que el intervalo, el
+   hilo encadena barridos sin descanso. El bucle mide su propio tiempo
+   y emite un `WARNING` explícito si un ciclo excede
+   `CATCHUP_INTERVAL_SECONDS`. Se mide en vez de suponerlo.
+3. **Ruido de log.** Registrar "sin novedades" en cada pasada serían
+   1.440 líneas diarias. Las pasadas mudas bajan a `DEBUG` y se emite
+   un latido en `INFO` cada `CATCHUP_HEARTBEAT_EVERY_SWEEPS` barridos
+   (30, es decir ~30 minutos) con la duración del último ciclo. Así el
+   log sigue probando que el hilo está vivo sin ser ilegible.
+
+**Pendiente de dato real:** la primera cifra de duración que emita el
+agente en producción decide si 60 segundos es holgado, justo, o
+insuficiente para bajar a 30.
+
+---
+
 ### Hoja de ruta para la siguiente sesión
 
 1. **Corregir los cuatro defectos pendientes**, en este orden de
