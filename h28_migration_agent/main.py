@@ -844,8 +844,8 @@ def _start_catchup_thread(icon):
     )
     _catchup_thread.start()
     logger.info(
-        "Puesta al dia: barrido periodico activo cada %d minutos.",
-        CATCHUP_INTERVAL_SECONDS // 60,
+        "Puesta al dia: barrido periodico activo cada %d segundos.",
+        CATCHUP_INTERVAL_SECONDS,
     )
 
 

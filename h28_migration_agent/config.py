@@ -157,43 +157,64 @@ AUDIT_FOLDER_NAME = "audits"
 # origen del cambio es la sincronizacion de OneDrive desde otro
 # puesto.
 #
-# 60 segundos. La cadencia inicial fue de 30 minutos y Miguel Angel
-# la rechazo el 29-07-2026: media hora de ventana ciega es demasiado
-# cuando el vigilante ya ha fallado una vez. Su instruccion fue "cada
-# 30 segundos o un minuto como mucho"; se toma el techo que dio, por
-# ser el extremo conservador, hasta tener medida la duracion real de
-# un barrido sobre el arbol de produccion. Bajar a 30 es una linea.
+# 30 segundos. La cadencia inicial fue de 30 minutos, Miguel Angel la
+# rechazo el 29-07-2026 ("cada 30 segundos o un minuto como mucho") y
+# se puso en 60 a la espera de medir. Medido ya sobre el arbol de
+# produccion -- 4,7 s para 16.039 archivos de `DOC. MAQUINAS` y 6,5 s
+# para 21.511 de `DOC. PERSONAL`, 11,2 s el ciclo completo -- se baja
+# a 30 por instruccion suya. A 30 s el periodo real ronda los 41 s y
+# el barrido ocupa el disco un 27% del tiempo, solo leyendo
+# metadatos.
+#
+# Matiz sobre la medida: 11,2 s es en CALIENTE, con el agente llevando
+# horas barriendo cada minuto y los metadatos del directorio en cache.
+# Un barrido en frio, justo tras arrancar el equipo, sera mas lento.
+# Por eso el bucle vigila su propia duracion y avisa si un ciclo
+# excede el intervalo.
+#
+# Motivo de Miguel Angel, registrado tal cual: un minuto de espera
+# entre soltar un archivo y verlo disponible en la cuarentena "puede
+# ser desesperante", mas aun si se anade la posibilidad de
+# clasificarlo a mano antes de disparar la llamada a Gemini.
+#
+# Precision tecnica que conviene no perder: para un archivo que se
+# suelta LOCALMENTE en la carpeta, el vigilante reacciona al evento y
+# lo sube en el acto -- la cadencia no interviene. Los 30 segundos
+# gobiernan el caso que de verdad fallo: archivos que llegan por
+# sincronizacion de OneDrive desde otro puesto, que no generan evento
+# alguno (los 22 de LAVADO NAVARRO, S035).
 #
 # La cadencia del consumidor de la cuarentena es INDEPENDIENTE de
 # esta: aquella corre en una tarea always-on de PythonAnywhere y
 # tiene su propio ritmo, gobernado por CELERY_BEAT_SCHEDULE.
 # ---
-# A PERIODIC sweep, not event-driven: watchdog did not react to the
-# 22 LAVADO NAVARRO files arriving by OneDrive sync.
+# 30 seconds, measured against the production tree: 11.2 s for a full
+# cycle over both folders. Note the measurement is WARM; a cold sweep
+# right after boot will be slower, which is why the loop watches its
+# own duration.
 #
-# 60 seconds. The initial 30-minute cadence was rejected by Miguel
-# Angel on 2026-07-29: half an hour of blind window is too much when
-# the watcher has already failed once. His instruction was "every 30
-# seconds, a minute at most"; the ceiling he gave is taken as the
-# conservative starting point until a real sweep has been measured
-# against the production tree.
-#
-# The quarantine consumer's cadence is INDEPENDENT of this one: it
-# runs in a PythonAnywhere always-on task with its own rhythm.
-CATCHUP_INTERVAL_SECONDS = 60
+# Technical precision worth keeping: for a file dropped LOCALLY the
+# watcher reacts to the filesystem event and uploads at once -- the
+# cadence plays no part. The 30 seconds govern the case that actually
+# failed: files arriving by OneDrive sync from another workstation,
+# which raise no event at all.
+CATCHUP_INTERVAL_SECONDS = 30
 CATCHUP_INDEX_FOLDER_NAME = "catchup_index"
 
 # Cada cuantos barridos sin novedades se emite un latido en el log.
-# A cadencia de un minuto, registrar "sin novedades" en cada pasada
-# serian 1.440 lineas al dia de ruido puro que acabarian haciendo el
-# log inservible. Las pasadas mudas van a DEBUG y cada N se emite un
-# resumen en INFO, que es lo que prueba que el hilo sigue vivo.
+# A cadencia de 30 segundos, registrar "sin novedades" en cada pasada
+# serian mas de 2.000 lineas al dia de ruido puro que acabarian
+# haciendo el log inservible. Las pasadas mudas van a DEBUG y cada N
+# se emite un resumen en INFO, que es lo que prueba que el hilo sigue
+# vivo. Con 40 barridos y un periodo real de ~41 s, el latido sale
+# cada ~27 minutos.
 # ---
-# How many uneventful sweeps between log heartbeats. At a one-minute
-# cadence, logging "nothing new" every pass would be 1,440 lines of
-# pure noise per day. Silent passes go to DEBUG and every N a summary
-# is emitted at INFO, which is what proves the thread is alive.
-CATCHUP_HEARTBEAT_EVERY_SWEEPS = 30
+# How many uneventful sweeps between log heartbeats. At a 30-second
+# cadence, logging "nothing new" every pass would be over 2,000 lines
+# of pure noise per day. Silent passes go to DEBUG and every N a
+# summary is emitted at INFO, which is what proves the thread is
+# alive.
+CATCHUP_HEARTBEAT_EVERY_SWEEPS = 40
 
 # Chunk size used when hashing a file. 1 MiB balances syscall
 # overhead against memory for the several-hundred-MB scanned manuals

@@ -14,17 +14,37 @@ auditoria los encontro, hora y media despues. Un archivo que aparece
 por sincronizacion desde otro puesto no genera necesariamente los
 eventos de sistema de archivos que watchdog vigila.
 
-Reparto de responsabilidades, para no duplicar trabajo caro:
+Reparto real de responsabilidades, corregido por Miguel Angel el
+29-07-2026. Verbatim: *"el 99% de los archivos van a entrar por
+sincronizacion de Drive y nunca, nunca a mano en este equipo. Por
+tanto, es fundamental esos 30 segundos."*
 
-- **Vigilante** (`watcher.py`): reaccion inmediata a eventos locales.
-  Barato, pero ciego a la sincronizacion.
-- **Barrido de puesta al dia** (este modulo): cada 30 minutos, solo
-  metadatos. Detecta lo que el vigilante no vio y lo sube dirigido a
-  cuarentena. Barato y periodico.
+- **Barrido de puesta al dia** (este modulo): la VIA PRINCIPAL de
+  entrada. Cada 30 segundos, solo metadatos. Es lo unico que ve los
+  archivos que llegan por sincronizacion de OneDrive desde otro
+  puesto, que son el 99% del flujo real y no generan evento de
+  sistema de archivos alguno.
+- **Vigilante** (`watcher.py`): SECUNDARIO. Reacciona en el acto a
+  archivos soltados localmente en esta maquina, que segun Miguel
+  Angel son el 1% restante. No se retira porque no cuesta nada
+  estando parado y cubre ese caso con latencia cero, pero no es el
+  mecanismo del que depende el sistema.
 - **Reconciliacion** (`reconciler.py`): comparacion completa contra
   el cubo, con MD5. Cara -- 11,5 minutos por carpeta, medido en S035
   -- y por eso se reserva al arranque del agente y a peticion
   manual, nunca en cada barrido.
+
+Este reparto invierte el que se escribio al disenar el modulo, que
+daba por primario al vigilante y por red de seguridad al barrido.
+Era al reves, y la consecuencia practica es que la cadencia del
+barrido gobierna la latencia percibida de TODO el sistema.
+
+Latencia real que cabe esperar, para no prometer de mas: un archivo
+que llega sincronizado CON contenido en disco entra en cuarentena en
+30 segundos como mucho. Uno que llega como marcador de posicion
+necesita ademas que OneDrive lo descargue, asi que seran 30 segundos
+mas lo que tarde la hidratacion, resolviendose sola en barridos
+sucesivos. Ambos casos se han observado en produccion el 28-07-2026.
 
 Decision de Miguel Angel (S036) sobre el mecanismo de subida: los
 archivos detectados se suben **dirigidos y directamente a
