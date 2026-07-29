@@ -141,11 +141,20 @@ class Command(BaseCommand):
 
         file_rows = [index_writer.file_row(b) for b in blobs]
         rows = [
+            # total_size_bytes queda en su valor por defecto (0) para
+            # todas estas filas: un listado de un solo nivel no ve el
+            # contenido de subcarpetas más profundas, así que 0 aquí
+            # NUNCA es un dato real. persist_rows lo excluye de la
+            # actualización (skip_fields más abajo) precisamente para
+            # no sobrescribir con 0 un total correcto que ya calculó
+            # un barrido completo. El tamaño de una carpeta solo se
+            # conoce con precisión tras seed_document_index.
             index_writer.folder_row(path) for path in subfolders
         ] + file_rows
 
         # La propia carpeta refrescada también debe existir como fila,
-        # salvo que sea la raíz del cubo, que no es una carpeta.
+        # salvo que sea la raíz del cubo, que no es una carpeta. Mismo
+        # motivo: su total_size_bytes no se toca en la actualización.
         if folder_path:
             rows.append(index_writer.folder_row(folder_path))
 
@@ -154,6 +163,7 @@ class Command(BaseCommand):
         with transaction.atomic():
             created, updated = index_writer.persist_rows(
                 bucket_name, rows, scope_hashes=scope,
+                skip_fields=("total_size_bytes",),
             )
             touched = index_writer.recount_children(
                 bucket_name,

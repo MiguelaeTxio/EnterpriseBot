@@ -169,13 +169,24 @@ def accumulate_folder_sizes(file_rows, folder_paths):
     return sizes
 
 
-def persist_rows(bucket_name, rows, scope_hashes=None):
+def persist_rows(bucket_name, rows, scope_hashes=None, skip_fields=()):
     """
     Create or update the given rows. Returns (created, updated).
 
     `scope_hashes` limits the single read query to a known set of blob
     hashes -- used by the per-folder refresh so it does not have to
     load the whole bucket to update one folder.
+
+    `skip_fields` excludes columns from the UPDATE. `bulk_update` only
+    writes the fields it is told to, so a field left out here keeps
+    whatever value the row already had in the database -- the row
+    passed in still carries a default for it (0, ""...), but that
+    default is never sent. This exists because `total_size_bytes` is
+    only ever known accurately after a full recursive sweep: a
+    single-folder refresh sees direct children, not the whole subtree,
+    so writing 0 there would silently erase a real total computed
+    earlier. Bug found in production (S037): refreshing "DOC. MAQUINAS"
+    zeroed out its 1.7 TB total and that of its 64 direct subfolders.
 
     ---
 
@@ -184,6 +195,18 @@ def persist_rows(bucket_name, rows, scope_hashes=None):
     `scope_hashes` acota la única consulta de lectura a un conjunto
     conocido de resúmenes -- lo usa el refresco por carpeta para no
     tener que cargar el cubo entero por actualizar una sola carpeta.
+
+    `skip_fields` excluye columnas de la actualización. `bulk_update`
+    solo escribe los campos que se le indican, así que uno omitido
+    aquí conserva el valor que ya tuviera la fila en base de datos --
+    la fila pasada sigue llevando un valor por defecto para él (0,
+    ""...), pero ese valor nunca se envía. Existe porque
+    `total_size_bytes` solo se conoce con precisión tras un barrido
+    recursivo completo: el refresco de una sola carpeta ve los hijos
+    directos, no todo el subárbol, así que escribir 0 ahí borraría en
+    silencio un total real calculado antes. Fallo hallado en producción
+    (S037): refrescar "DOC. MAQUINAS" puso a cero su total de 1,7 TB y
+    el de sus 64 subcarpetas directas.
     """
     query = DocumentIndexEntry.objects.filter(
         bucket=bucket_name, purged_at__isnull=True,
@@ -198,7 +221,9 @@ def persist_rows(bucket_name, rows, scope_hashes=None):
         )
     }
 
-    fields = sorted(row_defaults().keys())
+    fields = [
+        f for f in sorted(row_defaults().keys()) if f not in skip_fields
+    ]
     to_create = []
     to_update = []
 
