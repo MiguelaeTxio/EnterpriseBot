@@ -51,8 +51,8 @@ Cumple dos funciones inseparables:
 | H25 | Documentación de Personal | `ENTERPRISEBOT_ATTACHED_MILESTONE_V25.md` |
 | H26 | Infraestructura Documental Compartida (Alertas, PDF, Email, Sustitución) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V26.md` |
 | H27 | Ingesta de Documentación vía Correo Electrónico | `ENTERPRISEBOT_ATTACHED_MILESTONE_V27.md` |
-| H28 | Migración y Reorganización de Documentación Histórica | `ENTERPRISEBOT_ATTACHED_MILESTONE_V28.md` ← EN PROGRESO |
-| H29 | Explorador de Archivos y Gobierno Documental del Panel sobre GCS | `ENTERPRISEBOT_ATTACHED_MILESTONE_V29.md` |
+| H28 | Migración y Reorganización de Documentación Histórica | `ENTERPRISEBOT_ATTACHED_MILESTONE_V28.md` |
+| H29 | Explorador de Archivos y Gobierno Documental del Panel sobre GCS | `ENTERPRISEBOT_ATTACHED_MILESTONE_V29.md` ← EN PROGRESO |
 
 Todos los anexos viven en `DOCS/MAINS/ATTACHEDS/`.
 
@@ -60,10 +60,22 @@ Todos los anexos viven en `DOCS/MAINS/ATTACHEDS/`.
 
 ## 3. Resultado Actual
 
-**Hito EN PROGRESO:** H28 — Migración y Reorganización de Documentación
-Histórica → `ENTERPRISEBOT_ATTACHED_MILESTONE_V28.md`
+**Hito EN PROGRESO:** H29 — Explorador de Archivos y Gobierno Documental
+del Panel sobre Google Cloud Storage →
+`ENTERPRISEBOT_ATTACHED_MILESTONE_V29.md`
 
-**Hito PAUSADO en esta sesión (S030→S031):** H23 — Documentación de
+**Hito PAUSADO en esta sesión (S036→S037):** H28 — Migración y
+Reorganización de Documentación Histórica →
+`ENTERPRISEBOT_ATTACHED_MILESTONE_V28.md`. Su Fase 1 quedó completa y
+verificada en producción de extremo a extremo al cierre de S036. El
+trabajo restante (normalizador de nombres, vocabulario de tipos
+documentales, deduplicación, extracción de EPIs y consumidor de la
+cuarentena) sigue vivo en su propia hoja de ruta. H29 se abre por
+decisión explícita de Miguel Ángel: un explorador de Google Cloud
+Storage en el panel es infraestructura de plataforma, no migración de
+documentación histórica.
+
+**Hito PAUSADO desde S030→S031:** H23 — Documentación de
 Centros de Gasto → `ENTERPRISEBOT_ATTACHED_MILESTONE_V23.md`. Sin
 trabajo pendiente urgente propio (ver hoja de ruta de ese anexo);
 H28 lo precede y condiciona -- la documentación histórica real debe
