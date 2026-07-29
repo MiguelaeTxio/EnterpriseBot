@@ -135,6 +135,7 @@ class ExplorerView(ExplorerAccessMixin, TemplateView):
 
         folder_path = (self.request.GET.get("path") or "").strip("/")
         context.update({
+            "active_nav": "document_explorer",
             "buckets": buckets,
             "bucket": bucket,
             "folder_path": folder_path,
@@ -370,6 +371,7 @@ class TrashView(ExplorerAccessMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         company_user = self.request.user.company_user
+        context["active_nav"] = "document_explorer"
         context["entries"] = list(
             DocumentIndexEntry.objects.filter(
                 deleted_by=company_user,

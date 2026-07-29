@@ -142,6 +142,11 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                # CompanyUser y Company disponibles en TODAS las
+                # plantillas -- la sidebar los exige y hasta S037 cada
+                # vista tenia que inyectarlos a mano, perdiendo medio
+                # menu la que se olvidara. Ver panel/context_processors.
+                'panel.context_processors.company_context',
             ],
         },
     },
