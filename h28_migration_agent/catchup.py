@@ -338,6 +338,32 @@ def sweep_folder(client, selected_folder):
                 selected_folder,
                 absolute_path,
             )
+        except FileNotFoundError:
+            # El archivo existia al recorrer y ya no existe al subir.
+            # Es una CARRERA normal, no un fallo: alguien lo renombro
+            # o lo movio en ese intervalo. Observado en produccion el
+            # 29-07-2026 con la renovacion de la ITV del B-38 -- el
+            # barrido vio `...ITV 29-07-26.pdf` y para cuando fue a
+            # subirlo ya se llamaba `...ITV 29-01-27.pdf`.
+            #
+            # Va como aviso y sin traza: en una carpeta viva esto
+            # ocurre a diario, y registrarlo como ERROR con traceback
+            # acabaria haciendo que nadie mire los errores de verdad.
+            # No se apunta en el indice, asi que si sigue existiendo
+            # bajo otro nombre el barrido siguiente lo recoge -- que
+            # es justo lo que paso.
+            # ---
+            # The file existed during the walk and is gone by upload
+            # time. A normal RACE, not a failure: someone renamed or
+            # moved it. Logged as a warning without a traceback,
+            # because in a live folder this happens daily and logging
+            # it as an ERROR would train everyone to ignore errors.
+            failed_paths.append(relative_path)
+            fingerprint.pop(relative_path, None)
+            logger.warning(
+                "Puesta al dia: %s ya no existe (renombrado o movido "
+                "mientras se subia). Se reintentara.", absolute_path,
+            )
         except Exception as error:  # noqa: BLE001
             # Mismo criterio que el vigilante tras S036: cualquier
             # excepcion queda registrada con su traza, y el archivo
