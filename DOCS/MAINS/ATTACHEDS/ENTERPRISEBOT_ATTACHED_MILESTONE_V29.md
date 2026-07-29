@@ -225,6 +225,55 @@ explorador para todo el mundo. Solo lo ve quien lo borró, en su propia
 papelera, y de su gestión depende que vuelva a estar disponible para el
 resto. No hay estado intermedio de "visible pero marcado".
 
+### 3.12. Consolidación de cubos y renombrado de pestañas (S038, apunte para cuando se toque el código)
+
+Registrada literalmente según se dictó (directriz 4.8). **No se implementa
+en esta sesión** — es una instrucción explícita para cuando se aborde el
+código donde residen los nombres de cubo/pestaña del explorador y las
+apps `machine_documents`/`personal_documents`. Miguel Ángel lo introdujo
+como apunte, no como tarea de arranque de S038.
+
+**Renombrado de pestañas visibles a castellano**, verbatim: *"lo que es
+los nombres visibles de las 'pestañas' o mejor dicho 'cubos' habrá que
+cambiarlos cuando toquemos la parte del código donde residen para que
+tengan los nombres en castellano: `Fotos Partes`, `Fotos Albaranes` y
+`Directorio Principal`."*
+
+**Eliminación de los cubos de documentación de máquina y de personal**,
+verbatim: *"Lo que son los cubos, tanto el de documentación como el de
+maquinaria, esos van a quedar eliminados. El de CGS Grupo Álvarez va a
+pasar a ser el directorio principal."*
+
+**Motivo explícito**, verbatim: *"¿Por qué es eliminar los otros dos
+grupos? Bueno, pues muy fácil, porque van a estar integrados en lo que es
+el cubo del directorio principal. Entonces va a ser redundante tenerlos
+ahí."*
+
+**Consecuencia sobre la vía de subida tipada** (decisión 3.8, punto
+abierto 2 de la hoja de ruta), verbatim: *"Como vamos a adaptar lo que se
+hizo en el tema de subida de documentación, vamos a cambiarlo, lo vamos a
+poner de otra forma, pero van a subir directamente, no a esos cubos, sino
+ya al cubo principal, a su carpeta correspondiente. Y vamos a tener la
+reordenación de todo el directorio, no tiene sentido conservar esos dos
+cubos."*
+
+**Lectura de lo dicho, sin resolver nada por interpretación propia
+(pendiente de confirmar con Miguel Ángel antes de tocar código):**
+- `cgs_grupo_alvarez` (hoy "Directorio Principal" implícito, sin ese
+  nombre visible todavía) absorbe el contenido de los cubos hoy
+  gestionados por las apps `machine_documents` (H23) y `personal_documents`
+  (H25).
+- Los otros dos cubos de la plataforma no se mencionan como eliminados:
+  los nombres en castellano dados (`Fotos Partes`, `Fotos Albaranes`)
+  corresponden previsiblemente a `task_photos`/`delivery_notes` — **a
+  confirmar con Miguel Ángel cuando se aborde**, nunca asumido.
+- Afecta como mínimo a: `document_explorer` (pestañas de H29),
+  `machine_documents`/`personal_documents` (H23/H25, cuyo cubo propio
+  desaparece), y la vía de subida tipada de H26 (decisión 3.8 de este
+  mismo anexo, que aún no se ha diseñado).
+- **No se decide aquí ni la fecha ni el hito exacto** en que se aborda —
+  Miguel Ángel no lo ha fijado todavía.
+
 ## 4. Consecuencia directa: las tres únicas vías de escritura
 
 De 3.1, 3.2 y 3.8 se sigue que un objeto solo puede aparecer o
