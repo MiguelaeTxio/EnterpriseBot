@@ -625,3 +625,60 @@ que estaban desincronizadas de su fuente antes de S037
 pueden volver a desincronizarse tras el punto 2 de "hallazgos no
 buscados", pero no se ha verificado si las fuentes actuales son las
 versiones correctas o si el desfase escondía una regresión real.
+
+---
+
+## 7. Incidencia real fuera de alcance, corregida en S038 (directriz 4.9)
+
+Reportada por Pablo durante la sesión: el activo `A59` (Grúa móvil
+Liebherr LTM 1230-5.1, `GRUAS ADOLFO ALVAREZ, S.L.`, pk=78) no dejaba
+cerrar un parte que lo referenciaba — error "no existe" pese a que el
+código está en BD, activo, y visible en el desplegable.
+
+**Causa raíz confirmada con datos reales** (no supuesta): `A59` tenía
+`brand_model=""` en BD. El desplegable compone el label como
+`código + " — " + brand_model`; con `brand_model` vacío queda
+`"A59 —"` sin nada detrás del guion. `machine_raw` pierde cualquier
+espacio final por el `.strip()` aplicado al leerlo del POST. La
+Pasada 3 de resolución de máquina en `_parse_entry_lines_from_post`
+(`panel/views_operator.py`) exigía `\s+` (una o más espacios) tras el
+guion largo/corto, lo que nunca casaba sin texto detrás — y las
+Pasadas 1, 2 y 4 tampoco resuelven en ese caso. Resultado:
+`machine_asset` quedaba `None` y el cierre fallaba.
+
+**Bug genérico, no exclusivo de A59** — afecta a cualquier activo con
+`brand_model` vacío.
+
+**Corrección de código** (commit `fdc546e`, desplegado y verificado
+en Actions — `git pull + migrate + collectstatic` y recarga de la
+webapp con conclusión `success`, no solo el icono verde): cambiado
+`\s+` por `\s*` tras el guion en la Pasada 3. Verificado con los
+cuatro casos reales (con y sin espacio final, con y sin descripción)
+antes de comitear.
+
+**Corrección de dato provisional** (pk=78): `brand_model` rellenado a
+`"LIEBHERR LTM 1230-5.1"` — únicamente para desbloquear el cierre de
+partes ya. Verbatim de Miguel Ángel: *"pon el valor que nos está
+molestando y cuando acabemos con el hito 29 tendrá su verdadero valor
+cada campo"*, y aclarado después: *"ahora es la descripción de la
+máquina, para que se puedan cerrar los partes, el resto de datos,
+cuando terminemos con la documentación se pondrán justamente los
+suyos sacados de la documentación real"*.
+
+**`chassis_number` y `plate` de A59, NO tocados, pendientes de H28:**
+- `chassis_number` = `"LIEBHERR LTM1230"` — texto de marca/modelo, no
+  un número de bastidor.
+- `plate` = `"E-5068-BHH WLFA54CZ2LEZZ0299"` — parece matrícula
+  española (`E-5068-BHH`) y VIN de 17 caracteres
+  (`WLFA54CZ2LEZZ0299`) concatenados en el mismo campo.
+- Miguel Ángel ha localizado documentación real en GCS con datos de
+  fábrica (tipo `LTM 1230-5.1`, n.º de serie de fábrica `094190`) que
+  no necesariamente coincide con el VIN del chasis portante — una
+  grúa automotriz tiene identificador propio de grúa e identificador
+  de vehículo portante, son cosas distintas. **No asumir cuál va en
+  cada campo sin confirmación explícita cuando se aborde.**
+- Indicio de un desplazamiento de columnas en la importación original
+  del catálogo de este activo concreto (`fleet/management/commands/
+  import_machine_catalog.py`, H23) — a revisar si se repite en otros
+  activos cuando se aborde la documentación real en H28, sin asumir
+  que es un caso aislado.
