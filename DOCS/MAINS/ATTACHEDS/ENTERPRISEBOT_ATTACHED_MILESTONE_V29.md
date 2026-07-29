@@ -327,23 +327,201 @@ decisiones 3.9, 3.10 y 3.11.
 
 ## 7. Hoja de ruta para la siguiente sesión
 
-Ejecutable de forma autónoma, en este orden:
+### COMPLETADAS EN S037
 
-1. **Auditoría del estado real**, leyendo los archivos del clon: los
-   cuatro puntos de la sección 5. Sin este paso no se escribe una línea
-   de modelo.
-2. **Cerrar con Miguel Ángel los puntos abiertos 1 a 3** de la sección
-   6, que son los que condicionan el esquema. Los puntos 4 y 5 pueden
-   esperar.
-3. **Diseñar el modelo de datos del índice**: fila por objeto, con cubo,
-   ruta completa, nombre, tamaño, hash, tipo documental, bandera de
-   existencia local, estado de borrado lógico y usuario propietario de
-   la papelera. Dimensionado sobre las cifras reales del inventario de
-   S036 (37.606 objetos en `cgs_grupo_alvarez`, más los cubos de la
-   plataforma, aún por contar).
-4. **Diseñar el modelo de permisos**: concesión recursiva desde una
-   carpeta, por usuario o por rol, con el administrador exento.
-5. **Escribir modelo y migración** en el mismo commit (directriz 4.5).
-6. **Sembrado inicial del índice** a partir del contenido real de los
-   cubos, como comando de gestión idempotente y reejecutable.
-7. Solo después: vistas del explorador, papelera y navegación.
+Sesión larga: 14 commits, 179 archivos tocados, 3.712 inserciones y
+37.646 eliminaciones (la cifra de eliminaciones la domina la limpieza
+de `STATIC_ROOT`, ver más abajo). Los siete pasos de la hoja de ruta
+que dejó abierta la apertura del hito quedan **completos y verificados
+en producción**, no solo escritos.
+
+#### Cierre de los tres puntos abiertos (verbatim, directriz 4.8)
+
+Decisiones 3.9, 3.10 y 3.11 registradas en la sección 3: manifiesto de
+existencia local por carpeta en `_CUARENTENA/_MARCAS/` sobrescrito en
+cada barrido; el vaciado de papelera conserva la fila como registro
+histórico de auditoría; un archivo marcado como borrado es invisible
+para todos salvo su dueño desde el instante del borrado.
+
+#### Auditoría del código real (paso 1)
+
+`spare_parts/gcs_service.py` es el servicio compartido único, con los
+cuatro cubos de la plataforma en `ALL_BUCKETS` — `cgs_grupo_alvarez`
+deliberadamente fuera, porque esa tupla la consume
+`create_gcs_buckets`. `CompanyUser` tiene ocho roles reales, incluido
+`DOCS_SUPERVISOR`, pero ninguna granularidad por carpeta: de ahí sale
+`DocumentFolderGrant`. Reparación colateral del mapa de apps del
+documento maestro (directriz 4.9): faltaban `document_ingestion` y
+`document_management`, y `panel` listaba un `views_fleet.py`
+inexistente.
+
+#### Modelo de datos y migración (pasos 3-5)
+
+`document_explorer/models.py`: `DocumentIndexEntry` (una fila por
+objeto o carpeta, con `blob_name_hash`/`parent_path_hash` como
+resúmenes SHA-256 de 64 caracteres para sortear el límite de índice de
+InnoDB sobre una ruta de hasta 1024 bytes UTF-8) y
+`DocumentFolderGrant` (permiso recursivo por prefijo). Seis decisiones
+de rendimiento incorporadas: navegación por igualdad indexada nunca
+por LIKE, carpetas como filas con contadores precalculados, CRC32C
+como hash autoritativo (verificado en línea: MD5 no está garantizado
+en objetos compuestos ni en subidas multipart de la API XML),
+`GenericForeignKey` nunca resuelto al navegar, permisos resueltos una
+vez por petición, y `path_digest()` normalizando a NFC por los 15
+nombres con acentos descompuestos del inventario de S036.
+
+Migración `0001_initial.py` **no escrita a ojo**: generada con Django
+5.2.12 real sobre un proyecto mínimo en el entorno de verificación del
+modelo, verificada con `makemigrations --check --dry-run` ("No changes
+detected") antes de comitear.
+
+#### Sembrado del índice y las dos vías de descubrimiento de carpetas (pasos 6-7)
+
+`seed_document_index` (barrido completo, caro, para sembrar/reparar) y
+`refresh_document_folder` (refresco por carpeta, el camino rutinario)
+comparten toda su lógica de escritura vía `document_explorer/
+index_writer.py`, para no duplicarla entre los dos comandos.
+
+Verificado en producción con datos reales: el barrido completo de
+`cgs_grupo_alvarez` (37.628 archivos) tardó **3m34s** contra Storage
+Control; el refresco de una sola carpeta (`DOC. MAQUINAS`, 44 archivos
+y 64 subcarpetas) tardó **11 segundos** — veinte veces más barato,
+confirmando la recomendación oficial de Google. Metadatos completos al
+100% en el listado (tamaño, crc32c, md5, generación) en los cinco
+cubos: no hace falta leer objeto por objeto.
+
+Hallazgo revisado sobre la marcha: **cero carpetas vacías** en todo el
+cubo histórico. La primera lectura del aviso de "carpeta vacía
+invisible" se emitía también en los cuatro cubos planos de la
+plataforma, donde una carpeta vacía no puede existir por definición
+(es solo el prefijo de un objeto). Corregido para informar de HNS/no-HNS
+por separado.
+
+Dependencia nueva `google-cloud-storage-control==1.12.0` (vía A) más
+`include_folders_as_prefixes` de `google-cloud-storage` (vía B), ambas
+verificadas por introspección real contra la versión exacta fijada en
+el candado, nunca contra documentación genérica.
+
+#### Vistas, plantillas y permisos (paso 7, cierre)
+
+`document_explorer/permissions.py` resuelve el permiso **una vez**,
+contra la carpeta que se abre, nunca fila a fila — filtrar por prefijo
+habría exigido un `LIKE` sobre `blob_name`, justo lo que el índice
+existe para evitar. Tres respuestas (`ALL`/`PARTIAL`/`NONE`), con
+`PARTIAL` mostrando solo los hijos que llevan hacia una concesión más
+profunda.
+
+Vistas basadas en clases sobre `CompanyUserRequiredMixin` (convención
+real del panel, `panel/mixins.py`). Listado paginado **por cursor**
+(terna tipo/nombre/id de la última fila), nunca por `OFFSET`. GCS solo
+se toca en dos momentos: `OpenDocumentView` (URL firmada al abrir un
+documento) y `PurgeTrashView` (vaciado real, solo ADMIN). El explorador
+**no sube documentos**, conforme a la decisión 3.8.
+
+Contra HTMX **1.9.12** (la que carga `panel/base.html`), no la 2.0.9
+estable actual — anotado, no abordado: el salto de versión mayor no es
+trabajo de este hito.
+
+Probado en producción por Miguel Ángel: navegación, scroll infinito
+sobre `DOC. PERSONAL` (21.500+ archivos) y apertura de documento con
+URL firmada, los tres correctos a la primera. Veredicto explícito:
+"Ha quedado de lujo […] tal y como yo quería".
+
+#### Hallazgos no buscados, los cuatro reparados en la misma sesión (directriz 4.9)
+
+1. **`requirements.txt` le faltaban 11 paquetes** (`pymupdf4llm` y su
+   cadena completa), desde S025 — nueve días. Un `pip-sync` en esa
+   ventana habría desinstalado la conversión PDF→Markdown de H23 en
+   producción. Detectado al regenerar el candado para añadir
+   `google-cloud-storage-control`. Documentado también en el anexo de
+   H23 por ser desvío (directriz 4.9), sin mover el marcador de hito.
+2. **`STATIC_ROOT` (`static/`) estaba versionado**: 147 archivos,
+   ninguno huérfano (127 del paquete `django.contrib.admin`, 20 de las
+   fuentes de `panel/` y `vox_bridge/`), pero 4 desincronizados de su
+   fuente y el directorio se ensuciaba en cada `collectstatic`, que es
+   lo que causó el primer fallo real de despliegue de la sesión. Sacado
+   del control de versiones (`/static/` y `celerybeat-schedule` al
+   `.gitignore`); las fuentes reales siguen versionadas donde deben.
+3. **Deuda técnica con fecha, documentada por primera vez**: fin de
+   soporte de Python 3.10 el 4 de octubre de 2026 (aviso real de
+   `google-api-core` visto en producción), con la respuesta ya obtenida
+   del soporte de PythonAnywhere. Sección 4.3.1 nueva en el documento
+   maestro.
+4. **La sidebar perdía entradas de forma recurrente**, reportado por
+   Miguel Ángel como algo "habitual". Causa raíz: `_nav_items.html`
+   condiciona casi todo a `company_user` sin que ningún procesador de
+   contexto lo proveyera — 23 vistas de `panel/` lo inyectaban a mano y
+   cualquiera que se olvidara perdía medio menú en silencio. Reparado
+   con `panel/context_processors.company_context`, registrado en
+   `settings.py`: corrige de golpe todas las vistas pasadas y futuras.
+
+#### Incidencia de sesión — dos despliegues fallidos, verificados y corregidos
+
+El modelo dejó de comprobar despliegues tras confirmar el primero con
+la migración inicial, tratando pushes de dependencias como "triviales"
+— no lo eran. Dos despliegues seguidos fallaron
+(`bded7e9`, `e04e693`) por `git pull` en el servidor negándose a
+sobrescribir un `requirements.txt` modificado localmente, porque una
+sesión anterior había ejecutado `pip-compile` directamente en la
+consola del servidor sin descartar después la copia del árbol de
+trabajo. Diagnosticado con la API de GitHub Actions (permisos
+`actions:write`/`contents:write` ya concedidos), reparado con
+`git checkout -- requirements.txt` (contenido idéntico al de
+`origin/main`, descarte inocuo) y **verificado paso a paso**, no solo
+por el icono verde, antes de continuar. Corregido a partir de ahí:
+verificación de los siete pasos del Action tras cada push, sin
+excepción por tipo de commit.
+
+**Limitación de red anotada, no resuelta:** la descarga de logs de
+Actions redirige a `productionresultssa*.blob.core.windows.net`, y
+solo `...sa17...` está en la lista de red permitida del modelo. El
+diagnóstico se hizo por otras vías (estado de jobs/steps por API,
+anotaciones, y el log pegado directamente por Miguel Ángel). Si se
+amplía la lista de red con el comodín, el modelo podría leer los logs
+de Actions sin depender de que se los peguen.
+
+**Estado de la Fase 1 de H29 (los siete pasos de la hoja de ruta):**
+completa, con modelo, migración, permisos, sembrado, las dos vías de
+descubrimiento de carpetas y la interfaz del panel, todo verificado en
+producción con datos reales, no solo desplegado.
+
+### Hoja de ruta para la siguiente sesión
+
+Ninguno de estos puntos es bloqueante para dar H29 por operativo; son
+mejoras y trabajo que se dejó fuera de forma explícita.
+
+1. **Consumidor de la cuarentena** (Fase 3 de H28, no de H29): sigue
+   sin construirse. Los 78 archivos reales de `_CUARENTENA` ya son
+   visibles y navegables en el explorador, pero nada los clasifica ni
+   los mueve todavía — decisión 3 de S036, entrada en
+   `CELERY_BEAT_SCHEDULE`.
+2. **Subida tipada desde gestión de documentación** (decisión 3.8):
+   el explorador delibradamente no sube nada; la vía de alta por tipo
+   documental declarado no se ha diseñado todavía.
+3. **Auditoría de coherencia tabla↔cubo** (punto abierto 1 de la
+   sección 6): sigue sin cadencia ni mecanismo. Precedente real ya en
+   el proyecto,
+   `document_ingestion/management/commands/purge_orphaned_gcs_blobs.py`,
+   pendiente de leer antes de diseñar nada nuevo.
+4. **Confirmación de `storage.folders.list`** en la cuenta de la
+   plataforma (`enterprisebot-vertex@`) vía `gcloud`, para cuando haga
+   falta escribir en vez de solo leer con Storage Control (renombrado y
+   borrado atómico de carpeta, que necesitará la Fase 2 de H28).
+5. **Migración de Python 3.10 → 3.12/3.13** antes del 4 de octubre de
+   2026 (sección 4.3.1 del documento maestro, procedimiento completo en
+   `com-environment-management` sección 4.2). Incluye verificar si las
+   *always-on* referencian el entorno virtual por ruta.
+6. **Salto de HTMX 1.9.12 a la serie 2.x**, anotado pero no evaluado:
+   tiene cambios incompatibles y afecta a todo `panel/base.html`, no
+   solo a esta app.
+7. **Frontera con H28** (punto abierto 2 de la sección 6, sigue sin
+   cerrar): si la interfaz de limpieza de la Fase 2 converge con este
+   explorador, decidir en qué hito vive.
+
+**Cabo suelto menor, no bloqueante:** las cuatro copias de estáticos
+que estaban desincronizadas de su fuente antes de S037
+(`panel/css/panel.css`, `panel/js/admin_history.js`,
+`panel/js/form_entry_assets.js`, `panel/js/form_entry_modal.js`) ya no
+pueden volver a desincronizarse tras el punto 2 de "hallazgos no
+buscados", pero no se ha verificado si las fuentes actuales son las
+versiones correctas o si el desfase escondía una regresión real.
