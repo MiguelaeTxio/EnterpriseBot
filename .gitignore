@@ -6,6 +6,20 @@ __pycache__/
 db.sqlite3
 /media/
 /staticfiles_production/
+
+# STATIC_ROOT: salida de `collectstatic`, no código fuente. Se
+# regenera en cada despliegue a partir de los `static/` de cada app
+# (panel/static/, vox_bridge/static/) y de los paquetes instalados
+# (django.contrib.admin, fijado por django==5.2.12 en el candado).
+# Versionarlo mantenía copias obsoletas y, sobre todo, dejaba el árbol
+# del servidor sucio tras cada `collectstatic`, lo que hacía fallar el
+# `git pull` del despliegue. Ver S037.
+/static/
+
+# Estado de ejecución de Celery Beat (última ejecución de cada tarea
+# periódica). Es un artefacto vivo del proceso, no configuración.
+celerybeat-schedule
+
 *_venv/
 gcp_credentials.json
 work_orders/
