@@ -591,10 +591,22 @@ mejoras y trabajo que se dejó fuera de forma explícita.
    el proyecto,
    `document_ingestion/management/commands/purge_orphaned_gcs_blobs.py`,
    pendiente de leer antes de diseñar nada nuevo.
-4. **Confirmación de `storage.folders.list`** en la cuenta de la
-   plataforma (`enterprisebot-vertex@`) vía `gcloud`, para cuando haga
-   falta escribir en vez de solo leer con Storage Control (renombrado y
-   borrado atómico de carpeta, que necesitará la Fase 2 de H28).
+4. ~~Confirmación de `storage.folders.list` en la cuenta de la
+   plataforma (`enterprisebot-vertex@`) vía `gcloud`.~~ **Resuelto en
+   S038** con datos reales: `enterprisebot-vertex@gen-lang-client-
+   0961484137.iam.gserviceaccount.com` tiene, a nivel de **proyecto**
+   (`gen-lang-client-0961484137`, heredado por los cinco cubos
+   relevantes), los roles `roles/aiplatform.user` y
+   `roles/storage.admin` — verificado con
+   `gcloud projects get-iam-policy` ejecutado por Miguel Ángel en su
+   entorno local (ver nota de entorno gcloud en `SESSION_VARIABLES.md`).
+   `roles/storage.admin` incluye el bloque completo `storage.folders.*`
+   (`create`, `delete`, `get`, `list`, `rename`), verificado en línea
+   contra la referencia oficial actual de roles de Cloud Storage — la
+   cuenta ya tiene todo lo necesario para el renombrado y borrado
+   atómico de carpeta de la Fase 2 de H28, sin necesidad de conceder
+   nada nuevo. Ningún binding directo a nivel de bucket en los cuatro
+   cubos de plataforma (heredan del proyecto, no hace falta añadirlo).
 5. **Migración de Python 3.10 → 3.12/3.13** antes del 4 de octubre de
    2026 (sección 4.3.1 del documento maestro, procedimiento completo en
    `com-environment-management` sección 4.2). Incluye verificar si las
