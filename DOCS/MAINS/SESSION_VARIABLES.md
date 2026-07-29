@@ -57,6 +57,53 @@ EnterpriseBot — ver tabla.
 | `LOG_WEB_ERROR` | `/var/log/enterprisebot-miguelaetxio.pythonanywhere.com.error.log` | EnterpriseBot — error log estándar de la web app (ídem) |
 | `LOG_WEB_SERVER` | `/var/log/enterprisebot-miguelaetxio.pythonanywhere.com.server.log` | EnterpriseBot — server log estándar de la web app (ídem) |
 
+---
+
+## GCLOUD — ENTORNO REAL EN EL PC DE MIGUEL ÁNGEL (verificado S038, 2026-07-29)
+
+**QUEDA CONFIRMADO Y REGISTRADO** tras dos incidencias reales de sintaxis
+equivocada en la misma sesión: cuando la directriz 4.10 del documento
+maestro pide "comandos `gcloud`/`gcloud storage` listos para pegar en
+Cloud Shell", el destino real **no es el Cloud Shell del navegador** —
+es el **SDK de Google Cloud instalado en local sobre Windows**, usado
+desde una ventana de **`cmd.exe`** (Windows Command Processor) anclada a
+la barra de tareas desde la instalación del SDK.
+
+**Consecuencias de obligado cumplimiento a partir de ahora:**
+
+1. **Nunca entregar sintaxis bash** (`$VAR`, `for ... do ... done` con
+   continuación de línea `\`, heredoc `<< EOF`) para comandos `gcloud`
+   de este proyecto — falla con errores confusos de `cmd.exe` ("no se
+   reconoce como un comando interno o externo") y en versiones antiguas
+   del SDK, con errores de PowerShell mezclados
+   (`gcloud.ps1`/política de ejecución deshabilitada) si el lanzador cae
+   por debajo a PowerShell.
+2. **Sintaxis correcta:** batch de Windows (`set VAR=...`,
+   `for %%X in (...) do (...)` con `%%` doblado — dentro de un archivo
+   `.bat`, nunca en la línea de comandos interactiva, donde sería `%X`
+   simple).
+3. **Para cualquier comando con bucle o multilínea:** entregar como
+   contenido de un archivo `.bat` a crear vía `notepad archivo.bat` (el
+   pegado en el Bloc de notas es fiable; pegar bucles multilínea
+   directamente en `cmd.exe` no lo es), guardar y ejecutar
+   `archivo.bat`.
+4. **El directorio de arranque por defecto de esa ventana es
+   `C:\Windows\SysWOW64`** — carpeta protegida del sistema, deniega
+   escritura de archivos nuevos sin elevación. **Siempre `cd /d
+   %USERPROFILE%\Desktop`** (o directorio de trabajo equivalente) antes
+   de crear cualquier archivo `.bat` o de salida.
+5. `gcloud --version` verificado en S038: SDK `577.0.0`, `core
+   2026.07.17` — el SDK en sí funciona con normalidad; los fallos
+   previos eran de sintaxis/entorno, no de instalación rota.
+
+**Origen:** dos incidencias seguidas en S038 (bucle bash pegado en
+`cmd.exe`, y antes de eso una captura histórica con error de política de
+ejecución de PowerShell) antes de que Miguel Ángel aclarara
+explícitamente que la ventana usada desde el principio es la del propio
+`cmd.exe` local, nunca el Cloud Shell del navegador.
+
+---
+
 **QUEDA TERMINANTEMENTE PROHIBIDO usar estas dos rutas para EnterpriseBot** —
 pertenecen a otro proyecto de la cuenta (Campus Studio Online), no a
 esta plataforma. Anotadas aquí únicamente para que nunca se confundan:
