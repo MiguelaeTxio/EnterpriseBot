@@ -69,6 +69,8 @@ click-repl==0.3.0
     # via celery
 colorama==0.4.6
     # via djlint
+coloredlogs==15.0.1
+    # via onnxruntime
 cryptography==46.0.6
     # via google-auth
 cssbeautifier==1.15.4
@@ -106,17 +108,20 @@ exceptiongroup==1.3.1
     # via
     #   anyio
     #   celery
+flatbuffers==25.12.19
+    # via onnxruntime
 fonttools[woff]==4.63.0
     # via weasyprint
 frozenlist==1.8.0
     # via
     #   aiohttp
     #   aiosignal
-google-api-core==2.31.0
+google-api-core[grpc]==2.31.0
     # via
     #   google-api-python-client
     #   google-cloud-core
     #   google-cloud-storage
+    #   google-cloud-storage-control
 google-api-python-client==2.198.0
     # via -r requirements.in
 google-auth[requests]==2.49.1
@@ -127,6 +132,7 @@ google-auth[requests]==2.49.1
     #   google-auth-oauthlib
     #   google-cloud-core
     #   google-cloud-storage
+    #   google-cloud-storage-control
     #   google-genai
 google-auth-httplib2==0.4.0
     # via google-api-python-client
@@ -136,6 +142,8 @@ google-cloud-core==2.6.0
     # via google-cloud-storage
 google-cloud-storage==3.13.0
     # via -r requirements.in
+google-cloud-storage-control==1.12.0
+    # via -r requirements.in
 google-crc32c==1.8.0
     # via
     #   google-cloud-storage
@@ -144,7 +152,21 @@ google-genai==2.7.0
     # via -r requirements.in
 google-resumable-media==2.10.0
     # via google-cloud-storage
-googleapis-common-protos==1.75.0
+googleapis-common-protos[grpc]==1.75.0
+    # via
+    #   google-api-core
+    #   grpc-google-iam-v1
+    #   grpcio-status
+grpc-google-iam-v1==0.14.4
+    # via google-cloud-storage-control
+grpcio==1.83.0
+    # via
+    #   google-api-core
+    #   google-cloud-storage-control
+    #   googleapis-common-protos
+    #   grpc-google-iam-v1
+    #   grpcio-status
+grpcio-status==1.83.0
     # via google-api-core
 h11==0.16.0
     # via httpcore
@@ -156,6 +178,8 @@ httplib2==0.32.0
     #   google-auth-httplib2
 httpx==0.28.1
     # via google-genai
+humanfriendly==10.0
+    # via coloredlogs
 idna==3.11
     # via
     #   anyio
@@ -174,6 +198,8 @@ lxml==6.1.1
     # via python-docx
 more-itertools==11.1.0
     # via cssutils
+mpmath==1.3.0
+    # via sympy
 multidict==6.7.1
     # via
     #   aiohttp
@@ -182,13 +208,22 @@ mysqlclient==2.2.8
     # via -r requirements.in
 narwhals==2.20.0
     # via plotly
+networkx==3.4.2
+    # via pymupdf-layout
+numpy==2.2.6
+    # via
+    #   onnxruntime
+    #   pymupdf-layout
 oauthlib==3.3.1
     # via requests-oauthlib
+onnxruntime==1.23.2
+    # via pymupdf-layout
 openpyxl==3.1.5
     # via -r requirements.in
 packaging==26.0
     # via
     #   kombu
+    #   onnxruntime
     #   plotly
 pathspec==1.0.4
     # via djlint
@@ -208,11 +243,17 @@ propcache==0.4.1
     #   aiohttp
     #   yarl
 proto-plus==1.28.1
-    # via google-api-core
+    # via
+    #   google-api-core
+    #   google-cloud-storage-control
 protobuf==7.35.1
     # via
     #   google-api-core
+    #   google-cloud-storage-control
     #   googleapis-common-protos
+    #   grpc-google-iam-v1
+    #   grpcio-status
+    #   onnxruntime
     #   proto-plus
 psutil==7.2.2
     # via -r requirements.in
@@ -231,6 +272,13 @@ pydyf==0.12.1
 pyjwt==2.12.1
     # via twilio
 pymupdf==1.27.2.2
+    # via
+    #   -r requirements.in
+    #   pymupdf-layout
+    #   pymupdf4llm
+pymupdf-layout==1.27.2.2
+    # via pymupdf4llm
+pymupdf4llm==1.27.2.2
     # via -r requirements.in
 pyparsing==3.3.2
     # via httplib2
@@ -243,7 +291,9 @@ python-docx==1.2.0
 python-dotenv==1.2.2
     # via -r requirements.in
 pyyaml==6.0.3
-    # via djlint
+    # via
+    #   djlint
+    #   pymupdf-layout
 redis==7.4.0
     # via -r requirements.in
 regex==2026.3.32
@@ -268,6 +318,10 @@ sniffio==1.3.1
     # via google-genai
 sqlparse==0.5.5
     # via django
+sympy==1.14.0
+    # via onnxruntime
+tabulate==0.10.0
+    # via pymupdf4llm
 tenacity==9.1.4
     # via google-genai
 tinycss2==1.5.1
@@ -291,6 +345,7 @@ typing-extensions==4.15.0
     #   djlint
     #   exceptiongroup
     #   google-genai
+    #   grpcio
     #   multidict
     #   pydantic
     #   pydantic-core
