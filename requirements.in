@@ -73,6 +73,31 @@ google-auth-oauthlib==1.4.0
 # del proyecto).
 google-cloud-storage==3.13.0
 
+# Storage Control API (S037, H29) / API de control de almacenamiento.
+# Plano de control de GCS, separado de la API de objetos: es la ÚNICA
+# vía para las operaciones sobre carpetas de un cubo con Namespace
+# Jerárquico. Se añade por dos motivos distintos y ambos reales:
+#
+# 1. list_folders() devuelve TODAS las carpetas del cubo, incluidas las
+#    VACÍAS. Verificado empíricamente en S037: list_blobs() no devuelve
+#    ningún objeto-carpeta en ninguno de los cinco cubos, de modo que
+#    hoy una carpeta vacía es invisible para el índice de H29 -- y las
+#    carpetas vacías son uno de los tres problemas que H28 existe para
+#    eliminar. Además, la documentación oficial advierte de que
+#    acumular carpetas vacías degrada el rendimiento del listado de
+#    objetos en cubos con Namespace Jerárquico.
+# 2. rename_folder() / delete_folder() / delete_folder_recursive(): el
+#    renombrado ATÓMICO de carpeta que motivó elegir Namespace
+#    Jerárquico en S031 no es accesible desde google-cloud-storage;
+#    vive aquí. La Fase 2 de H28 (reorganización y limpieza) lo
+#    necesita.
+#
+# Versión verificada en línea y por introspección real el 2026-07-29:
+# 1.12.0. Ella y sus transitivas nuevas (grpcio, grpcio-status,
+# grpc-google-iam-v1) declaran Requires-Python >=3.10, compatible con
+# el 3.10.5 del servidor. Arrastra grpcio, que es rueda compilada.
+google-cloud-storage-control==1.12.0
+
 # Task Queue / Cola de Tareas Asíncronas
 # Required for background task processing and scheduled jobs (presence reminders, etc.).
 # La versión 5.6.3 incluye correcciones críticas de memory leaks en Python 3.10+ y

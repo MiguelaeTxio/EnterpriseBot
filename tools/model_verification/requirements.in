@@ -44,3 +44,9 @@ google-cloud-storage==3.13.0
 # Formateo del código generado al estilo del proyecto. No tiene
 # equivalente en el servidor: es herramienta de este entorno.
 black
+
+# Storage Control API -- endpoint dedicado de carpetas para cubos con
+# Namespace Jerárquico (list_folders). Se inspecciona aquí ANTES de
+# proponer añadirlo al proyecto: en el servidor no está instalado, y
+# el candado del proyecto se compila allí, no aquí (sección 3.4).
+google-cloud-storage-control
