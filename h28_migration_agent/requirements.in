@@ -25,13 +25,6 @@
 # — nunca el CLI de gcloud.
 google-cloud-storage>=2.18.0
 
-# Folder watching / Vigilancia de carpetas
-# Continuous watchdog over the selected folders; new files go to the
-# quarantine bucket (H28 design decision 3, S030).
-# Vigilancia continua de las carpetas elegidas; los archivos nuevos van
-# al cubo de cuarentena (decisión de diseño 3 de H28, S030).
-watchdog>=4.0.0
-
 # System tray interface / Interfaz de bandeja del sistema
 # The agent is a tray application, not a console script (S031).
 # El agente es una aplicación de bandeja, no un script de consola (S031).

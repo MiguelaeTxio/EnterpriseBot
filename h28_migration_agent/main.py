@@ -45,7 +45,6 @@ from history import append_event, load_events
 from reconciler import reconcile_folder
 from state import load_watched_folders, save_watched_folders
 from uploader import upload_folder_recursive
-from watcher import start_watching
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +56,7 @@ logger = logging.getLogger(__name__)
 # Se persisten en disco (state.py) para que el agente las retome
 # automaticamente en el siguiente reinicio — decision de Miguel
 # Angel, S031.
-_active_observers = {}
+_watched_folders = []
 
 # Estado del hilo del barrido de puesta al dia (S036). El evento de
 # despertar permite lanzar un barrido inmediato sin esperar a que
@@ -469,7 +468,7 @@ def _select_folder_and_copy(icon, _menu_item):
         return
     selected_folder = os.path.normpath(selected_folder)
 
-    if selected_folder in _active_observers:
+    if selected_folder in _watched_folders:
         messagebox.showinfo(
             "Agente H28",
             f"Esta carpeta ya se esta vigilando:\n{selected_folder}",
@@ -530,9 +529,8 @@ def _select_folder_and_copy(icon, _menu_item):
     # manual console intervention.
     _run_reconciliation(icon, client, selected_folder)
 
-    observer = start_watching(client, selected_folder)
-    _active_observers[selected_folder] = observer
-    save_watched_folders(_active_observers.keys())
+    _watched_folders.append(selected_folder)
+    save_watched_folders(_watched_folders)
     # Por si esta es la primera carpeta de una ejecución que arrancó
     # sin ninguna persistida: el hilo es idempotente y no se duplica.
     # ---
@@ -629,12 +627,11 @@ def _resume_watched_folders(icon):
     # that window must still reach quarantine. The other order would
     # lose those events.
     for folder in valid_folders:
-        observer = start_watching(client, folder)
-        _active_observers[folder] = observer
+        _watched_folders.append(folder)
         logger.info("Vigilancia retomada sobre: %s", folder)
 
     if missing_folders:
-        save_watched_folders(_active_observers.keys())
+        save_watched_folders(_watched_folders)
 
     icon.notify(
         f"Vigilancia retomada sobre {len(valid_folders)} "
@@ -698,7 +695,7 @@ def _run_catchup_pass(icon, client):
     reconciliation: one failing must not stop the others.
     """
     had_news = False
-    for selected_folder in list(_active_observers.keys()):
+    for selected_folder in list(_watched_folders):
         try:
             resumen = sweep_folder(client, selected_folder)
         except Exception as error:  # noqa: BLE001
@@ -794,7 +791,7 @@ def _catchup_loop(icon):
         _catchup_wake_event.clear()
         if _catchup_stop_event.is_set():
             break
-        if not _active_observers:
+        if not _watched_folders:
             continue
         try:
             client = build_client()
@@ -861,7 +858,7 @@ def _catchup_now(icon, _menu_item):
     Does not sweep on this thread: it just raises the event and
     returns at once, so the tray menu is never blocked.
     """
-    if not _active_observers:
+    if not _watched_folders:
         icon.notify(
             "No hay ninguna carpeta vigilada que poner al día.",
             title="Agente H28",
@@ -875,12 +872,14 @@ def _catchup_now(icon, _menu_item):
 
 
 def _quit_agent(icon, _menu_item):
-    """Stop every observer and exit the agent.
+    """Stop the catch-up sweep and exit the agent.
     ---
-    Detiene todos los observadores y sale del agente.
+    Detiene el barrido de puesta al dia y sale del agente.
     """
-    logger.info("Cerrando el agente: deteniendo %d vigilantes.",
-                len(_active_observers))
+    logger.info(
+        "Cerrando el agente: deteniendo el barrido sobre %d carpeta(s).",
+        len(_watched_folders),
+    )
     # Se levantan los dos eventos: el de parada para que el bucle
     # salga, y el de despertar para que no se quede esperando a que
     # expire el temporizador de media hora.
@@ -889,10 +888,6 @@ def _quit_agent(icon, _menu_item):
     # does not sit waiting out the half-hour timer.
     _catchup_stop_event.set()
     _catchup_wake_event.set()
-    for observer in _active_observers.values():
-        observer.stop()
-    for observer in _active_observers.values():
-        observer.join()
     icon.stop()
 
 

@@ -14,37 +14,40 @@ auditoria los encontro, hora y media despues. Un archivo que aparece
 por sincronizacion desde otro puesto no genera necesariamente los
 eventos de sistema de archivos que watchdog vigila.
 
-Reparto real de responsabilidades, corregido por Miguel Angel el
-29-07-2026. Verbatim: *"el 99% de los archivos van a entrar por
-sincronizacion de Drive y nunca, nunca a mano en este equipo. Por
-tanto, es fundamental esos 30 segundos."*
+Reparto de responsabilidades, cerrado por Miguel Angel el 29-07-2026.
+Verbatim: *"el 99% de los archivos van a entrar por sincronizacion de
+Drive y nunca, nunca a mano en este equipo. Por tanto, es fundamental
+esos 30 segundos."*
 
-- **Barrido de puesta al dia** (este modulo): la VIA PRINCIPAL de
-  entrada. Cada 30 segundos, solo metadatos. Es lo unico que ve los
-  archivos que llegan por sincronizacion de OneDrive desde otro
-  puesto, que son el 99% del flujo real y no generan evento de
-  sistema de archivos alguno.
-- **Vigilante** (`watcher.py`): SECUNDARIO. Reacciona en el acto a
-  archivos soltados localmente en esta maquina, que segun Miguel
-  Angel son el 1% restante. No se retira porque no cuesta nada
-  estando parado y cubre ese caso con latencia cero, pero no es el
-  mecanismo del que depende el sistema.
+- **Barrido de puesta al dia** (este modulo): la UNICA via de entrada
+  a la cuarentena. Cada 30 segundos, solo metadatos.
 - **Reconciliacion** (`reconciler.py`): comparacion completa contra
   el cubo, con MD5. Cara -- 11,5 minutos por carpeta, medido en S035
   -- y por eso se reserva al arranque del agente y a peticion
   manual, nunca en cada barrido.
 
-Este reparto invierte el que se escribio al disenar el modulo, que
-daba por primario al vigilante y por red de seguridad al barrido.
-Era al reves, y la consecuencia practica es que la cadencia del
-barrido gobierna la latencia percibida de TODO el sistema.
+**El vigilante de eventos (`watcher.py`) se ha retirado.** Servia al
+1% de los casos --archivos soltados a mano en esta maquina-- y a
+cambio duplicaba subidas: al no compartir el indice con el barrido,
+un mismo archivo se subia por las dos vias. Observado en produccion
+el 29-07-2026, con `B-38 9161-GVJ ITV 29-01-27.pdf` subido tres veces
+en dos minutos (vigilante 08:09:31, barrido 08:10:54, vigilante otra
+vez 08:11:30, esta ultima porque OneDrive reescribio el archivo al
+terminar de sincronizarlo). Con la decision de que toda entrada en
+cuarentena dispara una llamada a Gemini, cada subida repetida es
+dinero. Retirarlo elimina el solapamiento de raiz en vez de
+coordinarlo, y de paso quita un hilo y una dependencia
+(`watchdog`).
 
-Latencia real que cabe esperar, para no prometer de mas: un archivo
-que llega sincronizado CON contenido en disco entra en cuarentena en
-30 segundos como mucho. Uno que llega como marcador de posicion
-necesita ademas que OneDrive lo descargue, asi que seran 30 segundos
-mas lo que tarde la hidratacion, resolviendose sola en barridos
-sucesivos. Ambos casos se han observado en produccion el 28-07-2026.
+El precio es que ese 1% pasa de latencia cero a esperar como mucho un
+barrido. Aceptado explicitamente.
+
+**Segunda salvaguarda, pendiente de construir (Fase 3):** el
+consumidor de la cuarentena debe ser IDEMPOTENTE por diseno --
+ignorar un archivo que ya clasifico y cuyo hash no ha cambiado. Un
+mismo documento puede reaparecer por vias que el agente no controla,
+y la no duplicacion no puede descansar solo en que el productor se
+porte bien.
 
 Decision de Miguel Angel (S036) sobre el mecanismo de subida: los
 archivos detectados se suben **dirigidos y directamente a
