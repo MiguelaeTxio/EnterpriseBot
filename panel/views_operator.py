@@ -585,7 +585,25 @@ def _parse_entry_lines_from_post (POST ,company ):
         # y reintentar las pasadas 1 y 2.
         if machine_asset is None and machine_raw :
             import re as _re
-            _label_match = _re.match(r"^([^—–\-]+?)\s*[—–]\s+", machine_raw)
+            # \s* (not \s+) after the dash: when the asset's brand_model is
+            # empty, the label is "CODE —" with nothing after the dash, and
+            # machine_raw already lost any trailing space via the .strip()
+            # applied when it was read from POST above. Requiring \s+ here
+            # made resolution fail for every asset with a blank brand_model
+            # (real incident: A59, brand_model="", closing a parte referencing
+            # it failed with "no existe" even though the code exists and is
+            # active). \s* matches both "CODE —" and "CODE — Description".
+            #
+            # \s* (no \s+) tras el guion: cuando el brand_model del activo
+            # está vacío, el label es "CODIGO —" sin nada detrás, y
+            # machine_raw ya perdió cualquier espacio final por el .strip()
+            # aplicado al leerlo del POST más arriba. Exigir \s+ aquí hacía
+            # fallar la resolución para cualquier activo con brand_model en
+            # blanco (incidente real: A59, brand_model="", el cierre de un
+            # parte que lo referenciaba fallaba con "no existe" pese a que
+            # el código existe y está activo). \s* casa tanto "CODIGO —"
+            # como "CODIGO — Descripción".
+            _label_match = _re.match(r"^([^—–\-]+?)\s*[—–]\s*", machine_raw)
             if _label_match :
                 _code_from_label = _label_match .group (1).strip ()
                 _norm_from_label = _normalise_machine_code (_code_from_label )
