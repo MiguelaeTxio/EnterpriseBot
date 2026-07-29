@@ -482,6 +482,41 @@ modelo antes de desplegar a producción.
 - **Log de errores:** `/var/log/enterprisebot-miguelaetxio.pythonanywhere.com.error.log`
 - **Log de servidor:** `/var/log/enterprisebot-miguelaetxio.pythonanywhere.com.server.log`
 
+#### 4.3.1. DEUDA TÉCNICA CON FECHA — Migración de Python 3.10 antes del 4 de octubre de 2026
+
+**Origen:** el cliente `google-api-core` emite un `FutureWarning` en
+cada invocación avisando de que Google dejará de dar soporte a Python
+3.10 en las versiones nuevas de la librería cuando esa versión alcance
+su fin de vida, el **4 de octubre de 2026**. Visible en la salida real
+del servidor, capturada en S037 al verificar un `showmigrations`.
+
+**Consultado al soporte de PythonAnywhere** (Miguel Ángel, 2026-07-22;
+respuesta del equipo recibida y aportada en S037), con tres respuestas
+concretas:
+
+1. **No hay que esperar a nada.** Python 3.12 y 3.13 son
+   seleccionables hoy para entornos virtuales nuevos. Referencia que
+   dieron: `https://help.pythonanywhere.com/pages/InstallingNewModules`.
+2. El procedimiento es crear un entorno virtual nuevo sobre la versión
+   de destino (`mkvirtualenv ... --python=python3.13`), reinstalar allí
+   las dependencias, cambiar la ruta del entorno virtual de la webapp
+   en la pestaña *Web* y recargar.
+3. **No hay ventana de caída:** el entorno virtual antiguo queda
+   intacto y el cambio solo surte efecto al recargar.
+
+**Detalle operativo completo en `com-environment-management` sección
+4.2**, incluida la obligación de **recompilar el candado en el
+intérprete nuevo** (un `requirements.txt` compilado bajo 3.10 no es
+válido para 3.13, sección 3.4 de esa misma skill) y el punto que queda
+pendiente de verificar antes de ejecutar nada: si el comando de
+arranque de las tareas *always-on* (worker de Celery `242133` y puente
+de voz `234987`) referencia el entorno virtual, en cuyo caso hay que
+actualizarlo también. Migrar solo la webapp dejaría los procesos de
+fondo sobre el intérprete antiguo.
+
+**Acción pendiente:** ejecutar la migración con margen suficiente antes
+del 4 de octubre de 2026, no en la semana previa.
+
 #### 4.4. Requisito SINE QUA NON
 
 Antes de entregar o implementar cualquier código que involucre servicios
