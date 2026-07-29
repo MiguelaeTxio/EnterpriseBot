@@ -366,6 +366,36 @@ app de dominio.
 - Detalle técnico completo, incluidas las cuatro decisiones de diseño
   de la Fase 1 y la hoja de ruta ejecutable, en el anexo H28.
 
+#### Hito 29: Explorador de Archivos y Gobierno Documental del Panel sobre Google Cloud Storage
+(Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V29.md`)
+- Hito nuevo, abierto en S037 por decisión explícita de Miguel Ángel al
+  plantearse si un explorador de GCS en el panel pertenecía a H28
+  ("Migración y Reorganización de Documentación Histórica") o merecía
+  hito propio: es infraestructura de plataforma, no migración, y se
+  abre separado.
+- Explorador de archivos en el panel servido **exclusivamente desde una
+  tabla de índice en base de datos**. Navegar, listar y buscar nunca
+  tocan Google Cloud Storage; solo la visualización del contenido de un
+  documento concreto accede al objeto real.
+- Alcance del índice: el prefijo de cuarentena y el resto del cubo
+  `cgs_grupo_alvarez`, más los cubos propios de la plataforma
+  (`...-machine-documents`, `...-personnel-documents`,
+  `...-delivery-notes`, `...-task-photos`).
+- Modelo de permisos en base de datos, no en IAM de Google Cloud:
+  recursivos desde cualquier carpeta, por cubo y por sección, porque lo
+  que se concede es acceso a una parte de la tabla.
+- Borrado en dos niveles: lógico a papelera propia de cada usuario
+  (recuperable solo por su dueño) y borrado real reservado al
+  administrador.
+- **Un borrado en local nunca se refleja como desaparición en la nube.**
+  El único reflejo que se toma del sistema de archivos local es una
+  bandera de existencia por fila.
+- Objetivo de fondo, en palabras de Miguel Ángel: blindar el
+  mantenimiento del directorio documental en Google Cloud Storage y
+  evitar la selva de nombres, los borrados accidentales y los archivos
+  mal nombrados o mal ubicados, canalizando toda la gestión por el
+  panel.
+
 ---
 
 ### 4. Directrices Técnicas Vinculantes
