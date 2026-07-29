@@ -1,0 +1,60 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/document_explorer/templates/document_explorer/_rows.html #}
+{% comment %}
+    Solo filas. Se usa dos veces: incluida por _panel.html en la
+    primera página, y devuelta suelta por el scroll infinito para
+    anexar la siguiente.
+
+    El centinela del final se sustituye a sí mismo (hx-swap="outerHTML")
+    por el bloque de filas siguiente, que trae su propio centinela si
+    aún queda más. Paginación por cursor, nunca por OFFSET.
+{% endcomment %}
+
+{% for entry in entries %}
+    <tr>
+        <td>
+            {% if entry.is_folder %}
+                <i class="bi bi-folder-fill text-warning"></i>
+            {% else %}
+                <i class="bi bi-file-earmark text-secondary"></i>
+            {% endif %}
+        </td>
+        <td class="text-break">
+            {% if entry.is_folder %}
+                <a href="#"
+                   hx-get="{% url 'document_explorer:listing' %}?bucket={{ bucket|urlencode }}&path={{ entry.blob_name|urlencode }}"
+                   hx-target="#explorer-panel"
+                   hx-swap="innerHTML">{{ entry.name }}</a>
+            {% else %}
+                <a href="{% url 'document_explorer:open' entry.pk %}"
+                   target="_blank" rel="noopener">{{ entry.name }}</a>
+            {% endif %}
+        </td>
+        <td class="text-end small text-muted">{{ entry.display_size }}</td>
+        <td class="text-end small text-muted">
+            {% if entry.is_folder %}{{ entry.child_count }} elem.{% endif %}
+        </td>
+        <td class="text-end small text-muted">
+            {{ entry.gcs_updated_at|date:"d/m/Y H:i"|default:"—" }}
+        </td>
+        {% if show_delete %}
+            <td class="text-end">
+                <form method="post"
+                      action="{% url 'document_explorer:trash_add' entry.pk %}">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-sm btn-link text-danger p-0"
+                            title="Mover a mi papelera">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </form>
+            </td>
+        {% endif %}
+    </tr>
+{% endfor %}
+
+{% if next_cursor %}
+    <tr hx-get="{% url 'document_explorer:listing' %}?bucket={{ bucket|urlencode }}&path={{ folder_path|urlencode }}&after_kind={{ next_cursor.after_kind|urlencode }}&after_name={{ next_cursor.after_name|urlencode }}&after_id={{ next_cursor.after_id }}"
+        hx-trigger="revealed"
+        hx-swap="outerHTML">
+        <td colspan="6" class="text-center text-muted small py-2">Cargando más…</td>
+    </tr>
+{% endif %}

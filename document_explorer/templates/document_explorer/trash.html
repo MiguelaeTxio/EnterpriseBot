@@ -1,0 +1,85 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/document_explorer/templates/document_explorer/trash.html #}
+{% extends "panel/base.html" %}
+{% load static %}
+
+{% block extra_head %}
+    <link rel="stylesheet" href="{% static 'document_explorer/css/explorer.css' %}">
+{% endblock extra_head %}
+
+{% comment %}
+    Papelera personal. Cada usuario ve únicamente la suya: la vista
+    filtra por deleted_by, así que aquí no hay ninguna comprobación de
+    permiso que hacer ni que olvidar.
+
+    Restaurar lo hace el dueño. Vaciar, que borra el objeto de verdad
+    en Google Cloud Storage, solo el administrador -- y aun así la
+    fila sobrevive como registro de auditoría.
+{% endcomment %}
+
+{% block title %}Mi papelera{% endblock title %}
+{% block page_title %}Mi papelera{% endblock page_title %}
+
+{% block content %}
+<div class="container-fluid px-3 pt-3">
+
+    <div class="d-flex align-items-center justify-content-between mb-3">
+        <p class="text-muted small mb-0">
+            Lo que borras deja de verse para todos los demás al instante.
+            Aquí puedes devolverlo a su carpeta.
+        </p>
+        <a class="btn btn-sm btn-outline-secondary"
+           href="{% url 'document_explorer:explorer' %}">
+            <i class="bi bi-arrow-left"></i> Volver al explorador
+        </a>
+    </div>
+
+    {% if not entries %}
+        <p class="text-muted small mb-0">Tu papelera está vacía.</p>
+    {% else %}
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th>Nombre</th>
+                        <th>Ubicación</th>
+                        <th class="text-end dx-col-date">Borrado</th>
+                        <th class="text-end dx-col-trash-actions"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for entry in entries %}
+                        <tr>
+                            <td class="text-break">{{ entry.name }}</td>
+                            <td class="text-break small text-muted">
+                                {{ entry.bucket }}/{{ entry.parent_path }}
+                            </td>
+                            <td class="text-end small text-muted">
+                                {{ entry.deleted_at|date:"d/m/Y H:i" }}
+                            </td>
+                            <td class="text-end">
+                                <form method="post" class="d-inline"
+                                      action="{% url 'document_explorer:trash_restore' entry.pk %}">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn btn-sm btn-outline-primary">
+                                        <i class="bi bi-arrow-counterclockwise"></i> Restaurar
+                                    </button>
+                                </form>
+                                {% if is_admin %}
+                                    <form method="post" class="d-inline"
+                                          action="{% url 'document_explorer:trash_purge' entry.pk %}">
+                                        {% csrf_token %}
+                                        <button type="submit" class="btn btn-sm btn-outline-danger">
+                                            <i class="bi bi-x-octagon"></i> Vaciar
+                                        </button>
+                                    </form>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% endif %}
+
+</div>
+{% endblock content %}

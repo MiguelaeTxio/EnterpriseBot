@@ -15,11 +15,23 @@ cffi==2.1.0
 charset-normalizer==3.4.9
     # via requests
 click==8.4.2
-    # via black
+    # via
+    #   black
+    #   djlint
+colorama==0.4.6
+    # via djlint
 cryptography==49.0.0
     # via google-auth
+cssbeautifier==2.0.3
+    # via djlint
 django==5.2.12
     # via -r requirements.in
+djlint==1.36.4
+    # via -r requirements.in
+editorconfig==0.17.1
+    # via
+    #   cssbeautifier
+    #   jsbeautifier
 google-api-core[grpc]==2.33.0
     # via
     #   google-cloud-core
@@ -61,12 +73,20 @@ grpcio-status==1.83.0
     # via google-api-core
 idna==3.18
     # via requests
+jsbeautifier==2.0.3
+    # via
+    #   cssbeautifier
+    #   djlint
+json5==0.15.0
+    # via djlint
 mypy-extensions==1.1.0
     # via black
 packaging==26.2
     # via black
 pathspec==1.1.1
-    # via black
+    # via
+    #   black
+    #   djlint
 platformdirs==4.11.0
     # via black
 proto-plus==1.28.2
@@ -89,12 +109,18 @@ pycparser==3.0
     # via cffi
 pytokens==0.4.1
     # via black
+pyyaml==6.0.3
+    # via djlint
+regex==2026.7.19
+    # via djlint
 requests==2.34.2
     # via
     #   google-api-core
     #   google-cloud-storage
 sqlparse==0.5.5
     # via django
+tqdm==4.70.0
+    # via djlint
 typing-extensions==4.16.0
     # via grpcio
 urllib3==2.7.0

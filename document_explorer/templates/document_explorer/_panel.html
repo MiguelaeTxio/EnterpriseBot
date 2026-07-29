@@ -1,0 +1,59 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/document_explorer/templates/document_explorer/_panel.html #}
+{% comment %}
+    Fragmento completo de una carpeta: miga de pan más tabla. Se
+    inyecta en #explorer-panel al navegar. La paginación NO usa esta
+    plantilla sino _rows.html, para no duplicar la miga de pan en cada
+    página.
+{% endcomment %}
+
+<nav aria-label="Ruta" class="mb-2">
+    <ol class="breadcrumb mb-0 small">
+        {% for crumb in breadcrumbs %}
+            <li class="breadcrumb-item">
+                <a href="#"
+                   hx-get="{% url 'document_explorer:listing' %}?bucket={{ bucket|urlencode }}&path={{ crumb.path|urlencode }}"
+                   hx-target="#explorer-panel"
+                   hx-swap="innerHTML">{{ crumb.label }}</a>
+            </li>
+        {% endfor %}
+    </ol>
+</nav>
+
+{% if denied %}
+    <div class="alert alert-warning mb-0">
+        No tienes permiso sobre esta carpeta.
+    </div>
+{% else %}
+    <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle mb-0">
+            <thead>
+                <tr>
+                    <th class="dx-col-icon"></th>
+                    <th>Nombre</th>
+                    <th class="text-end dx-col-size">Tamaño</th>
+                    <th class="text-end dx-col-count">Contenido</th>
+                    <th class="text-end dx-col-date">Modificado</th>
+                    {% if show_delete %}<th class="dx-col-actions"></th>{% endif %}
+                </tr>
+            </thead>
+            <tbody id="explorer-rows">
+                {% if has_parent %}
+                    <tr>
+                        <td><i class="bi bi-arrow-90deg-up text-muted"></i></td>
+                        <td colspan="5">
+                            <a href="#"
+                               hx-get="{% url 'document_explorer:listing' %}?bucket={{ bucket|urlencode }}&path={{ parent_path|urlencode }}"
+                               hx-target="#explorer-panel"
+                               hx-swap="innerHTML">..</a>
+                        </td>
+                    </tr>
+                {% endif %}
+                {% include "document_explorer/_rows.html" %}
+            </tbody>
+        </table>
+    </div>
+
+    {% if not entries and not has_parent %}
+        <p class="text-muted small mt-3 mb-0">Esta carpeta está vacía.</p>
+    {% endif %}
+{% endif %}

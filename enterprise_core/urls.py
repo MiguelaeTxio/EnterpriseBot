@@ -89,4 +89,12 @@ urlpatterns = [
         'panel/vacaciones/',
         include('hr_calendar.urls', namespace='hr_calendar'),
     ),
+    # Database-backed file explorer over Google Cloud Storage, with
+    # folder-level permissions and two-tier deletion — explorador de
+    # archivos sobre Google Cloud Storage servido desde base de datos,
+    # con permisos por carpeta y borrado en dos niveles (Hito 29).
+    path(
+        'panel/explorador/',
+        include('document_explorer.urls', namespace='document_explorer'),
+    ),
 ]

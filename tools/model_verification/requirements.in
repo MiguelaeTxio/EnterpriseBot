@@ -50,3 +50,9 @@ black
 # proponer añadirlo al proyecto: en el servidor no está instalado, y
 # el candado del proyecto se compila allí, no aquí (sección 3.4).
 google-cloud-storage-control
+
+# Linter de plantillas Django. Debe coincidir con djlint del
+# requirements.txt del proyecto: verificar una plantilla con una
+# version distinta de la que corre en el servidor daria avisos que
+# alli no existen, o callaria los que si.
+djlint==1.36.4

@@ -1,0 +1,57 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/document_explorer/templates/document_explorer/explorer.html #}
+{% extends "panel/base.html" %}
+{% load static %}
+
+{% block extra_head %}
+    <link rel="stylesheet" href="{% static 'document_explorer/css/explorer.css' %}">
+{% endblock extra_head %}
+
+{% comment %}
+    Armazón del explorador de archivos sobre Google Cloud Storage
+    (H29). Plantilla idiota: toda la lógica vive en ExplorerView y
+    FolderListingView. Aquí no se decide nada, solo se pinta lo que
+    llega en el contexto.
+
+    El listado no se renderiza en esta plantilla: lo trae HTMX al
+    cargar, contra el mismo endpoint que usan después la navegación y
+    el scroll infinito. Así hay un único camino de renderizado del
+    listado y no dos que puedan divergir.
+{% endcomment %}
+
+{% block title %}Explorador de documentación{% endblock title %}
+{% block page_title %}Explorador de documentación{% endblock page_title %}
+
+{% block content %}
+<div class="container-fluid px-3 pt-3">
+
+    {% if not has_buckets %}
+        <div class="alert alert-warning">
+            No tienes acceso a ningún almacén de documentación.
+            Habla con el administrador si crees que es un error.
+        </div>
+    {% else %}
+
+        <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+            <div class="btn-group btn-group-sm" role="group">
+                {% for name in buckets %}
+                    <a class="btn {% if name == bucket %}btn-primary{% else %}btn-outline-secondary{% endif %}"
+                       href="?bucket={{ name|urlencode }}">{{ name }}</a>
+                {% endfor %}
+            </div>
+            <a class="btn btn-sm btn-outline-secondary"
+               href="{% url 'document_explorer:trash' %}">
+                <i class="bi bi-trash"></i> Mi papelera
+            </a>
+        </div>
+
+        <div id="explorer-panel"
+             hx-get="{% url 'document_explorer:listing' %}?bucket={{ bucket|urlencode }}&path={{ folder_path|urlencode }}"
+             hx-trigger="load"
+             hx-swap="innerHTML">
+            <div class="text-muted small py-4">Cargando…</div>
+        </div>
+
+    {% endif %}
+
+</div>
+{% endblock content %}

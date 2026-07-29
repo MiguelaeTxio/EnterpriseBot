@@ -1,0 +1,25 @@
+/* /home/MiguelAeTxio/PROJECTS/EnterpriseBot/document_explorer/static/document_explorer/css/explorer.css */
+/*
+ * Column widths for the explorer tables (H29).
+ *
+ * They live here instead of as inline `style` attributes because the
+ * project's linter rejects those (djlint H021), and instead of going
+ * into panel.css because this app owns them -- same modularity
+ * criterion Miguel Angel set for H27.
+ *
+ * ---
+ *
+ * Anchuras de columna de las tablas del explorador (H29).
+ *
+ * Viven aqui en vez de como atributos `style` en linea porque el
+ * linter del proyecto los rechaza (djlint H021), y en vez de en
+ * panel.css porque son propiedad de esta app -- mismo criterio de
+ * modularidad que fijo Miguel Angel para H27.
+ */
+
+.dx-col-icon { width: 2rem; }
+.dx-col-size { width: 8rem; }
+.dx-col-count { width: 7rem; }
+.dx-col-date { width: 11rem; }
+.dx-col-actions { width: 3rem; }
+.dx-col-trash-actions { width: 12rem; }

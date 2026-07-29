@@ -71,6 +71,7 @@ import hashlib
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
 from django.db import models
+from django.template.defaultfilters import filesizeformat
 
 
 def path_digest(value: str) -> str:
@@ -311,6 +312,43 @@ class DocumentIndexEntry(models.Model):
 
     def __str__(self):
         return f"{self.bucket}/{self.blob_name}"
+
+    @property
+    def is_folder(self) -> bool:
+        """
+        Whether this row is a folder.
+
+        ---
+
+        Si esta fila es una carpeta.
+        """
+        return self.entry_kind == self.KIND_FOLDER
+
+    @property
+    def display_size(self) -> str:
+        """
+        Human-readable size: the object's own, or a folder's total.
+
+        Both are already stored, so this never triggers a query. A
+        folder's total was accumulated at indexing time precisely to
+        avoid asking the database for a recursive sum here.
+
+        ---
+
+        Tamaño legible: el propio del objeto, o el acumulado de la
+        carpeta.
+
+        Los dos están ya guardados, así que esto no dispara ninguna
+        consulta. El acumulado de una carpeta se calculó al indexar
+        justamente para no pedirle aquí a la base de datos una suma
+        recursiva.
+        """
+        value = (
+            self.total_size_bytes if self.is_folder else self.size_bytes
+        )
+        if not value:
+            return "—"
+        return filesizeformat(value)
 
 
 class DocumentFolderGrant(models.Model):
