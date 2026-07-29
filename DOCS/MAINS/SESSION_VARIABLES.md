@@ -95,6 +95,15 @@ la barra de tareas desde la instalación del SDK.
 5. `gcloud --version` verificado en S038: SDK `577.0.0`, `core
    2026.07.17` — el SDK en sí funciona con normalidad; los fallos
    previos eran de sintaxis/entorno, no de instalación rota.
+6. **`gcloud storage buckets get-iam-policy` NO admite `--filter`**
+   (verificado en línea en S038 contra la referencia oficial actual:
+   solo admite las GCLOUD WIDE FLAGS — `--flatten`, `--format`, etc. —
+   a diferencia de `gcloud projects get-iam-policy`, que sí soporta
+   `--filter` por ser comando de tipo lista). Para acotar la salida a
+   un principal concreto: `--flatten="bindings[].members"` +
+   `--format="table(bindings.role,bindings.members)"` y filtrar con
+   `findstr` (Windows) o `grep` (bash) sobre la salida ya obtenida,
+   nunca con `--filter` en este comando.
 
 **Origen:** dos incidencias seguidas en S038 (bucle bash pegado en
 `cmd.exe`, y antes de eso una captura histórica con error de política de
