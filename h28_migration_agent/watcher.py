@@ -19,6 +19,7 @@ from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
 from config import DIRTY_BUCKET_NAME
+from fs_utils import is_transient_file
 from uploader import upload_single_file_to_quarantine
 
 logger = logging.getLogger(__name__)
@@ -41,6 +42,22 @@ class QuarantineEventHandler(FileSystemEventHandler):
         Maneja un evento de creacion de archivo (o carpeta).
         """
         if event.is_directory:
+            return
+        # Los temporales de Office/OneDrive llegan aqui por otra via
+        # que el recorrido de `iter_relative_file_paths`, asi que hay
+        # que filtrarlos tambien. Sin esto, cada guardado de un Word
+        # subiria su archivo de bloqueo `~$...` a la cuarentena, y
+        # cada uno dispararia una llamada a Gemini.
+        # ---
+        # Office/OneDrive temporaries reach this handler by a
+        # different route than the walk, so they are filtered here
+        # too. Without it, every Word save would upload its `~$...`
+        # lock file to quarantine, each triggering a Gemini call.
+        if is_transient_file(event.src_path):
+            logger.debug(
+                "Vigilante: ignorado archivo temporal %s",
+                event.src_path,
+            )
             return
         # Se registra la RECEPCION del evento, no solo su resultado.
         # Sin esta linea, "no hay nada en el log" es ambiguo: no

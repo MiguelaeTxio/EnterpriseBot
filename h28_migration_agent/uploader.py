@@ -19,6 +19,7 @@ from google.cloud.storage import transfer_manager
 from config import QUARANTINE_PREFIX, UPLOAD_MAX_WORKERS
 from fs_utils import (
     is_cloud_only,
+    is_transient_file,
     make_walk_error_handler,
     request_hydration,
     to_long_path,
@@ -75,13 +76,41 @@ def iter_relative_file_paths(
     both at once.
     """
     walk_error_handler = make_walk_error_handler(context_label)
+    skipped_transient_count = 0
     for current_dir, _dirs, file_names in os.walk(
         root_folder, onerror=walk_error_handler,
     ):
         for file_name in file_names:
+            # Los temporales de Office/OneDrive no son documentacion y
+            # no deben llegar ni al cubo ni a la cola de cuarentena
+            # (anexo H28, S036). Se filtran en el UNICO recorrido del
+            # que beben la copia, la reconciliacion y el barrido, para
+            # que los tres compartan exactamente el mismo criterio.
+            # ---
+            # Office/OneDrive temporaries are not documentation.
+            # Filtered in the SINGLE walk that the copy, the
+            # reconciliation and the sweep all draw from, so the three
+            # share exactly the same criterion.
+            if is_transient_file(file_name):
+                skipped_transient_count += 1
+                continue
             full_path = os.path.join(current_dir, file_name)
             relative_path = os.path.relpath(full_path, root_folder)
             yield relative_path.replace(os.sep, "/")
+
+    if skipped_transient_count:
+        # A DEBUG: el barrido corre cada minuto y esto seria ruido en
+        # INFO. Pero se registra, porque un numero anormalmente alto
+        # significaria que el filtro esta descartando algo que no
+        # deberia.
+        # ---
+        # DEBUG: the sweep runs every minute. Logged all the same,
+        # because an abnormally high number would mean the filter is
+        # discarding something it should not.
+        logger.debug(
+            "%s: %d archivo(s) temporal(es) omitido(s).",
+            context_label, skipped_transient_count,
+        )
 
 
 def build_blob_name(selected_folder, relative_path):

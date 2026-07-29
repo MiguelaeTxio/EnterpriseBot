@@ -157,6 +157,62 @@ def make_walk_error_handler(context_label):
     return _on_walk_error
 
 
+# Nombres y sufijos de archivos que NO son documentacion: temporales
+# de Office/OneDrive, bloqueos de edicion y metadatos del sistema.
+#
+# Origen real (anexo H28, S036, 29-07-2026): el primer barrido de
+# puesta al dia en produccion anclo para descarga tres archivos con
+# forma `A-59 E-5068-BHH_ DOCUMENTACION.pdf~RF3913c72c.TMP`. Son
+# temporales que Office y OneDrive crean mientras sincronizan. Esa
+# vez no se subio ninguno porque estaban solo en la nube, pero un
+# temporal con contenido en disco SI se habria subido a cuarentena --
+# y como toda entrada en cuarentena dispara una llamada a Gemini
+# (decision 3 de S036), habria sido basura clasificandose y costando
+# dinero. Ademas aparecen y desaparecen sin cesar, de modo que el
+# indice del barrido los veia como novedad una y otra vez.
+# ---
+# Names and suffixes that are NOT documentation: Office/OneDrive
+# temporaries, edit locks and system metadata. Real origin (H28
+# annex, S036): the first production catch-up sweep pinned three
+# `...pdf~RF3913c72c.TMP` files. A temporary WITH content on disk
+# would have been uploaded to quarantine, and since every quarantined
+# file triggers a Gemini call, that is rubbish being classified at a
+# real cost.
+TRANSIENT_FILE_PREFIXES = ("~$", ".~lock.")
+TRANSIENT_FILE_SUFFIXES = (".tmp", ".crdownload", ".partial")
+TRANSIENT_FILE_NAMES = ("thumbs.db", "desktop.ini", ".ds_store")
+
+
+def is_transient_file(path):
+    """Return True if the file is a temporary, lock or metadata file.
+
+    ---
+    Devuelve True si el archivo es un temporal, un bloqueo de edicion
+    o un metadato del sistema, y por tanto NO es documentacion.
+
+    Se comprueba solo sobre el nombre, sin tocar el disco: es una
+    decision de nombre, no de contenido, y el barrido la ejecuta
+    sobre decenas de miles de rutas cada minuto.
+
+    Cubre los tres patrones vistos en el arbol real:
+    - `~$Documento.docx` -- bloqueo de edicion de Office.
+    - `Documento.pdf~RF3913c72c.TMP` -- temporal de sincronizacion de
+      OneDrive/Office. Termina en `.TMP`, no empieza por nada
+      reconocible, de ahi que haga falta mirar tambien el sufijo.
+    - `Thumbs.db`, `desktop.ini` -- metadatos de Windows/OneDrive.
+    ---
+    Checked on the name alone, without touching disk: it is a naming
+    decision, not a content one, and the sweep runs it over tens of
+    thousands of paths every minute.
+    """
+    file_name = os.path.basename(path).lower()
+    if file_name in TRANSIENT_FILE_NAMES:
+        return True
+    if file_name.startswith(TRANSIENT_FILE_PREFIXES):
+        return True
+    return file_name.endswith(TRANSIENT_FILE_SUFFIXES)
+
+
 def to_safe_name(folder_path):
     """Turn a folder path into a name usable as a file name.
 
