@@ -106,6 +106,11 @@ INSTALLED_APPS = [
     # templates, substitution) consumed by H23/H25 — infraestructura
     # documental compartida (Hito 26).
     'document_management',
+    # DB-backed index over every governed GCS bucket, folder-level
+    # permissions and two-tier deletion, feeding the panel file
+    # explorer — explorador de archivos y gobierno documental sobre
+    # Google Cloud Storage (Hito 29).
+    'document_explorer',
 ]
 
 # Middleware stack optimized for async processing in Django 5.2.12.
