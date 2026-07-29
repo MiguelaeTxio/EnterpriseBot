@@ -485,6 +485,45 @@ completa, con modelo, migración, permisos, sembrado, las dos vías de
 descubrimiento de carpetas y la interfaz del panel, todo verificado en
 producción con datos reales, no solo desplegado.
 
+#### Addenda tras el cierre formal de S037 — bug real corregido en producción
+
+Dos commits sueltos, posteriores al commit de cierre (`acc2d62`), a raíz
+de una comprobación de Miguel Ángel sobre el propio explorador ya en
+uso: `DOC. MAQUINAS` mostraba el tamaño en blanco mientras
+`DOC. PERSONAL` y `_CUARENTENA` lo mostraban con normalidad.
+
+**Causa:** en la verificación de la sesión se había ejecutado
+`refresh_document_folder --path "DOC. MAQUINAS"` para medir el tiempo
+de la vía B. Ese comando construye la fila de la carpeta refrescada sin
+tamaño (valor por defecto `0`), y `persist_rows` actualizaba entonces
+**todos** los campos de la fila existente, pisando el total real de
+1,7 TB calculado por el barrido completo. Lo mismo le pasó a sus 64
+subcarpetas directas. No fue un fallo de visualización: el dato en base
+de datos estaba realmente a cero.
+
+**Corrección** (`42429b6`): `index_writer.persist_rows()` acepta ahora
+`skip_fields`, que excluye columnas de la actualización por lotes —
+`bulk_update` solo escribe los campos indicados, así que uno omitido
+conserva el valor ya guardado. `refresh_document_folder` pasa
+`skip_fields=("total_size_bytes",)`, porque un refresco de un solo
+nivel nunca puede conocer el total recursivo real.
+`seed_document_index` no cambia: un barrido completo sí es autoritativo
+sobre el tamaño y debe seguir escribiéndolo.
+
+**Reparación del dato:** reejecutado `seed_document_index --bucket
+cgs_grupo_alvarez` en producción (3m22s, 41.109 filas), verificado el
+despliegue de ambos commits paso a paso vía API de GitHub Actions
+(`success`, sin fallos).
+
+**Implicación anotada para el diseño futuro, no resuelta:** cualquier
+refresco por carpeta sobre una carpeta ya sembrada deja su tamaño «sin
+dato» hasta el siguiente barrido completo — la contrapartida correcta
+de no escribir un cero falso, pero significa que el tamaño puede
+quedar temporalmente desactualizado tras usos puntuales de la vía B. Si
+el futuro consumidor de la cuarentena dispara refrescos con frecuencia,
+decidir entonces si calcular el tamaño real (archivos directos + total
+ya guardado de cada subcarpeta) en vez de dejarlo en blanco.
+
 ### Hoja de ruta para la siguiente sesión
 
 Ninguno de estos puntos es bloqueante para dar H29 por operativo; son
