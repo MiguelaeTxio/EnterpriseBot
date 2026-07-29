@@ -183,6 +183,48 @@ salvar de esto va a ser la de cuarentena, en la que si hay documentación
 nueva que se mete por la vía normal, como lo de obsoletos, esa sí irá a
 la cuarentena. El resto, nada."*
 
+### 3.9. Las marcas de existencia local: un manifiesto por carpeta
+
+Cierra el punto abierto 1. Verbatim: *"Un manifiesto por carpeta
+vigilada en `_CUARENTENA/_MARCAS/`, sobrescrito en cada barrido."*
+
+**Propiedades que se siguen de esa forma, y que el diseño debe
+preservar:** al reutilizar siempre el mismo nombre de blob por carpeta,
+el manifiesto es idempotente por construcción —cada barrido pisa al
+anterior y el consumidor solo lee el último estado— y el número de
+objetos generados no crece con el tiempo, a diferencia de una marca por
+archivo desaparecido, que obligaría además a decidir cuándo se limpian.
+
+**Exclusión obligatoria:** el prefijo `_CUARENTENA/_MARCAS/` no contiene
+documentos y no debe generar ninguna llamada a Gemini. El consumidor de
+la cuarentena tiene que excluirlo explícitamente (decisión 3 de S036).
+La ubicación bajo `_CUARENTENA/` es segura respecto al reconciliador,
+que lista con `prefix=f"{folder_name}/"` sobre carpetas migradas y por
+tanto nunca alcanza este subprefijo.
+
+### 3.10. El vaciado de papelera conserva la fila como registro histórico
+
+Cierra el punto abierto 2. Verbatim: *"Registro histórico puede ser útil
+para auditorías."*
+
+El vaciado que ejecuta el administrador elimina el objeto en Google
+Cloud Storage, pero **la fila de la tabla de índice sobrevive** como
+constancia de que ese documento existió, quién lo borró y cuándo. El
+esquema debe contemplar por tanto filas sin objeto asociado, y el
+explorador debe distinguirlas de las vivas.
+
+### 3.11. Lo marcado como borrado es invisible para los demás
+
+Cierra el punto abierto 3. Verbatim: *"Creo que la visibilidad, en
+cuanto se marque, debe ser invisible. Porque además lo va a marcar la
+persona que es la que tiene el acceso al borrado virtual. Por tanto los
+demás deben depender de su gestión."*
+
+En cuanto un usuario con permiso borra un archivo, este desaparece del
+explorador para todo el mundo. Solo lo ve quien lo borró, en su propia
+papelera, y de su gestión depende que vuelva a estar disponible para el
+resto. No hay estado intermedio de "visible pero marcado".
+
 ## 4. Consecuencia directa: las tres únicas vías de escritura
 
 De 3.1, 3.2 y 3.8 se sigue que un objeto solo puede aparecer o
@@ -203,46 +245,83 @@ desaparecer en Google Cloud Storage por tres caminos, y ninguno más:
 **El explorador nunca escribe documentos.** Su superficie es lectura,
 borrado lógico a la papelera propia y recuperación desde ella.
 
-## 5. Verificaciones pendientes contra el código real
+## 5. Auditoría del código real (S037)
 
-Ninguna de estas afirmaciones se da por buena hasta comprobarla leyendo
-el archivo real del clon (método empírico, nunca "bola de cristal").
-Todas proceden de documentación de sesiones anteriores, no de
-inspección directa en S037:
+Auditoría ejecutada en S037 leyendo los archivos reales del clon
+(método empírico, nunca "bola de cristal"). Lo que sigue son hallazgos
+verificados, no documentación heredada:
 
-1. **Cómo escriben hoy en GCS H23, H25, H10 y H7.** Nombres reales de
-   los cubos, servicio compartido que usan (`spare_parts/gcs_service.py`
-   y equivalentes), y si existe ya algún registro en base de datos por
-   documento que pueda servir de base al índice en vez de duplicarlo.
-2. **Modelo de usuarios y roles.** Si `CompanyUser` y los roles
-   existentes (ADMIN, SUPERVISOR, WORKSHOPBOSS, WORKSHOP, DRIVER,
-   ASSISTANCE, DOCS_SUPERVISOR) bastan para el modelo de permisos por
-   carpeta, o hace falta un modelo de concesión aparte.
-3. **`CELERY_BEAT_SCHEDULE` real** en `enterprise_core/settings.py` y la
-   always-on `242133`, si la sincronización de auditoría acaba
-   necesitando una entrada periódica.
-4. **Permisos efectivos de `enterprisebot-vertex@`** sobre los cubos a
-   indexar. Sobre `cgs_grupo_alvarez` se verificó en S036 que ya tiene
-   `objectAdmin`; sobre los cubos de la plataforma no se ha comprobado.
+1. **El servicio compartido de GCS ya existe y es único:**
+   `spare_parts/gcs_service.py`, 470 líneas. Declara los cuatro cubos de
+   la plataforma como constantes y los agrupa en `ALL_BUCKETS`; expone
+   `get_storage_client()` (credenciales por `GCP_CREDENTIALS_PATH` y
+   `GOOGLE_CLOUD_PROJECT`, las mismas de la directriz 4.1),
+   `generate_signed_url()` con `SIGNED_URL_EXPIRATION` de 30 minutos,
+   `sanitize_path_component()` y `ensure_bucket()`. Lo consumen
+   `machine_documents`, `personal_documents`, `delivery_notes`,
+   `spare_parts`, `work_order_processor`, `history`, `chat`,
+   `document_ingestion` y tres módulos del panel. **H29 no construye
+   cliente propio: extiende este.**
+   Su propio comentario sobre `SIGNED_URL_EXPIRATION` ya expresa el
+   principio que H29 generaliza: el control de acceso real es la
+   autenticación del panel, y la URL firmada es solo el mecanismo de
+   entrega puntual de un archivo ya autorizado.
+2. **`cgs_grupo_alvarez` no figura en `ALL_BUCKETS`.** La plataforma hoy
+   no conoce el cubo de H28. Incorporarlo forma parte del alcance de
+   este hito.
+3. **Existe ya media solución al problema de coherencia:**
+   `document_ingestion/management/commands/purge_orphaned_gcs_blobs.py`
+   detecta blobs huérfanos —objetos en GCS sin fila en base de datos—,
+   que es una de las dos direcciones de la sincronización tabla-cubo.
+   Debe leerse antes de diseñar el sembrado y la auditoría del índice.
+4. **Los roles dan la base pero no la granularidad.** `CompanyUser`
+   (`ivr_config/models.py`) define ocho roles reales: ADMIN, OPERATOR,
+   WORKSHOP, WORKSHOPBOSS, SUPERVISOR, DRIVER, ASSISTANCE y
+   DOCS_SUPERVISOR ("Supervisor de Documentación"), que es la figura de
+   la decisión 3.7. Pero `role` es un `CharField` con `choices`, un enum
+   plano: no puede expresar "manda en esta carpeta y no en aquella".
+   **El permiso recursivo por carpeta exige un modelo de concesión
+   aparte** colgado de `CompanyUser`.
+5. **`CELERY_BEAT_SCHEDULE` confirmado** en `enterprise_core/settings.py`
+   con cinco tareas periódicas activas, coincidiendo con lo registrado
+   en el anexo de H28. Dos de ellas viven en las apps documentales:
+   `send_document_expiry_alerts` en `document_management` y
+   `self_heal_unassigned_personal_documents` en `document_ingestion`.
+6. **Pendiente, requiere Cloud Shell y no puede hacerlo el modelo:**
+   permisos efectivos de `enterprisebot-vertex@` sobre los cuatro cubos
+   de la plataforma. Sobre `cgs_grupo_alvarez` se verificó en S036 que
+   ya tiene `objectAdmin`; sobre los otros cuatro no se ha comprobado, y
+   la comprobación va por `gcloud` (directriz 4.10).
+
+### Hallazgo colateral reparado en la misma sesión (directriz 4.9)
+
+El mapa de apps del `ENTERPRISEBOT_MASTER_DOCUMENT.md` (§1.1) estaba
+desactualizado en tres puntos, corregidos en S037 sin dejarlos anotados
+como deuda:
+
+- Faltaban dos apps presentes en `INSTALLED_APPS`: `document_ingestion`
+  y `document_management`.
+- La fila de `panel` listaba `views_fleet.py`, que **no existe** en el
+  árbol y al que ningún módulo hace referencia, y omitía tres módulos
+  reales (`views_documentation.py`, `views_task_photos.py`,
+  `views_gdrive_setup.py`).
+- Las filas de `machine_documents` y `personal_documents` anotaban "en
+  curso", una mención de estado de hito prohibida fuera del enrutador de
+  anexos. Además `machine_documents` decía "Drive" cuando su
+  persistencia real es GCS, verificado por sus propios imports.
 
 ## 6. Puntos abiertos
 
-Ninguno se resuelve por interpretación del modelo (directriz 4.8).
+Ninguno se resuelve por interpretación del modelo (directriz 4.8). Los
+puntos 1 a 3 originales quedaron cerrados en S037 y viven ahora como
+decisiones 3.9, 3.10 y 3.11.
 
-1. **Formato y ubicación exacta de las marcas de existencia local.**
-   ¿Un manifiesto por carpeta que se sobrescribe en cada barrido, o una
-   marca por archivo? ¿Bajo `_CUARENTENA/` con subprefijo propio, o en
-   un prefijo hermano en la raíz del cubo? La ubicación condiciona la
-   exclusión que deberá aplicar el consumidor de la cuarentena.
-2. **Qué hace exactamente el vaciado de papelera del administrador.**
-   ¿Elimina el objeto en Google Cloud Storage y conserva la fila como
-   registro histórico, o desaparece todo?
-3. **Visibilidad del archivo en papelera.** Confirmado que cada usuario
-   ve solo la suya; falta fijar si el archivo desaparece del explorador
-   para el resto de usuarios en cuanto entra en una papelera ajena.
-4. **Cadencia de la auditoría de coherencia** entre tabla y cubo, si se
-   decide que exista como red de seguridad.
-5. **Frontera con H28.** Si la interfaz de limpieza de la Fase 2
+1. **Cadencia de la auditoría de coherencia** entre tabla y cubo, si se
+   decide que exista como red de seguridad. Existe precedente directo en
+   el proyecto: `document_ingestion/management/commands/purge_orphaned_gcs_blobs.py`
+   ya detecta objetos en GCS sin fila en base de datos — hay que leerlo
+   antes de diseñar nada nuevo.
+2. **Frontera con H28.** Si la interfaz de limpieza de la Fase 2
    converge con este explorador (punto 9 de la hoja de ruta de S036),
    decidir en qué hito vive.
 

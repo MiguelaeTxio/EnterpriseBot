@@ -28,7 +28,7 @@ sesión — actualizar esta lista cada vez que se instale o retire una app:
 | `ai_services` | Cliente Gemini compartido, transversal a otras apps (principio DRY, H10). |
 | `vox_bridge` | Puente de voz principal: Twilio Media Streams ↔ Gemini Live (transcodificación mu-law/A-law ↔ PCM). |
 | `ivr_config` | Motor de configuración IVR multiempresa: `Company`, `CompanyUser`, `Section`, `Contact`, `CallFlow`, `PhoneNumber`, `PresenceStatus`, `AbsenceCategory`, etc. Núcleo de datos multiempresa del que dependen casi todas las demás apps. |
-| `panel` | Panel de administración/operación (vistas, sin modelos propios salvo `AnalyticsProfile`). Tras el split de H21: `views_operator.py`, `views_workorders.py`, `views_fleet.py`, `views_ivr.py`, `views_auth.py`. |
+| `panel` | Panel de administración/operación (vistas, sin modelos propios salvo `AnalyticsProfile`). Módulos de vistas reales, verificados contra el árbol en S037: `views.py`, `views_operator.py`, `views_workorders.py`, `views_ivr.py`, `views_auth.py`, `views_documentation.py`, `views_task_photos.py`, `views_gdrive_setup.py`. **`views_fleet.py` no existe** en el árbol y ningún módulo lo referencia — el mapa lo listaba por error hasta S037. |
 | `whatsapp` | Canal WhatsApp: `WhatsAppSession`, `WhatsAppMessage`, `WhatsAppTemplate` — chatbot conversacional y sistema de presencia (H4). |
 | `work_order_processor` | Pipeline completo de partes de trabajo: `WorkOrder`, `WorkOrderEntry`, `WorkdayGap` — extracción PDF→Excel (H6/H8), entrada digital Form/STT/Upload (H7), gates de integridad de jornada (Gate 1-4). |
 | `fleet` | Flota / centros de gasto: `MachineAsset` (entidad central de centro de gasto, H12), `MaintenanceLog`, `MaintenanceItem`. |
@@ -39,9 +39,11 @@ sesión — actualizar esta lista cada vez que se instale o retire una app:
 | `analytics` | Laboratorio de Análisis Unificado — sustituye a Gráficas/Analítica CdG/Informes, gráficas vía Apache ECharts (H20). |
 | `history` | Visor de Historial de Máquinas de solo lectura para rol WORKSHOP (H22), incluye galería de fotos (H7) y sección de documentación (H23). |
 | `delivery_notes` | CRUD de administración de albaranes de proveedor (gap detectado 2026-07-08). |
-| `machine_documents` | Documentación oficial de centros de gasto vía Gemini Vision + Drive (H23, en curso). |
+| `machine_documents` | Documentación oficial de centros de gasto vía Gemini Vision + GCS (H23). |
 | `hr_calendar` | Vacaciones y calendario de operario/chófer (H24). |
-| `personal_documents` | Documentación oficial de personal vía Gemini Vision + GCS (H25, en curso). |
+| `personal_documents` | Documentación oficial de personal vía Gemini Vision + GCS (H25). |
+| `document_ingestion` | Ingesta de documentación y enrutado (H23/H25, S024): `IngestedFile` — staging de un archivo subido antes de saber a qué dominio y entidad pertenece — y `LearnedDocumentTypeKeyword`. Incluye `entity_matching_service.py` y la tarea periódica `self_heal_unassigned_personal_documents`. **Ausente de este mapa hasta S037.** |
+| `document_management` | Infraestructura Documental Compartida (H26): `EmailTemplate`, `DocumentAlert`, `DocumentSubstitutionLog`. Aquí vive la tarea periódica `send_document_expiry_alerts`. **Ausente de este mapa hasta S037.** |
 
 **Fuera de `INSTALLED_APPS`, scripts auxiliares independientes** (no Django
 apps, no se cargan en el proyecto): `file_organizer/organizer_probe.py`
