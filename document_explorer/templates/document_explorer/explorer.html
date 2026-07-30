@@ -33,9 +33,9 @@
 
         <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
             <div class="btn-group btn-group-sm" role="group">
-                {% for name in buckets %}
-                    <a class="btn {% if name == bucket %}btn-primary{% else %}btn-outline-secondary{% endif %}"
-                       href="?bucket={{ name|urlencode }}">{{ name }}</a>
+                {% for tab in buckets %}
+                    <a class="btn {% if tab.active %}btn-primary{% else %}btn-outline-secondary{% endif %}"
+                       href="?bucket={{ tab.name|urlencode }}">{{ tab.label }}</a>
                 {% endfor %}
             </div>
             <a class="btn btn-sm btn-outline-secondary"

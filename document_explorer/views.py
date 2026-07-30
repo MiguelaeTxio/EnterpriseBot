@@ -58,6 +58,7 @@ from panel.mixins import CompanyUserRequiredMixin
 from spare_parts.gcs_service import delete_file, generate_signed_url
 
 from document_explorer import permissions
+from document_explorer.buckets import BUCKET_DISPLAY_NAMES
 from document_explorer.models import DocumentIndexEntry, path_digest
 
 PAGE_SIZE = 200
@@ -94,12 +95,25 @@ def build_breadcrumbs(bucket, folder_path):
     """
     Build the navigation trail. Logic lives here, never in a template.
 
+    The root crumb shows the Spanish display name (BUCKET_DISPLAY_NAMES)
+    when there is one, falling back to the raw bucket name otherwise --
+    never blank, never the technical name for buckets that do have a
+    Spanish label.
+
     ---
 
     Construye la miga de pan. La lógica vive aquí, nunca en la
     plantilla.
+
+    La miga raíz muestra el nombre en castellano
+    (BUCKET_DISPLAY_NAMES) cuando existe, y si no, el nombre técnico
+    del cubo -- nunca en blanco, nunca el nombre técnico para cubos que
+    sí tienen etiqueta en castellano.
     """
-    crumbs = [{"label": bucket, "path": ""}]
+    crumbs = [{
+        "label": BUCKET_DISPLAY_NAMES.get(bucket, bucket),
+        "path": "",
+    }]
     if not folder_path:
         return crumbs
     parts = folder_path.split("/")
@@ -109,6 +123,28 @@ def build_breadcrumbs(bucket, folder_path):
             "path": "/".join(parts[:index + 1]),
         })
     return crumbs
+
+
+def bucket_tabs(buckets, active_bucket):
+    """
+    Build the tab list: technical name for the URL, Spanish label for
+    display, and which one is active. Logic lives here, never in the
+    template.
+
+    ---
+
+    Construye la lista de pestañas: nombre técnico para la URL,
+    etiqueta en castellano para mostrar, y cuál está activa. La lógica
+    vive aquí, nunca en la plantilla.
+    """
+    return [
+        {
+            "name": name,
+            "label": BUCKET_DISPLAY_NAMES.get(name, name),
+            "active": name == active_bucket,
+        }
+        for name in buckets
+    ]
 
 
 class ExplorerView(ExplorerAccessMixin, TemplateView):
@@ -136,7 +172,7 @@ class ExplorerView(ExplorerAccessMixin, TemplateView):
         folder_path = (self.request.GET.get("path") or "").strip("/")
         context.update({
             "active_nav": "document_explorer",
-            "buckets": buckets,
+            "buckets": bucket_tabs(buckets, bucket),
             "bucket": bucket,
             "folder_path": folder_path,
             "has_buckets": bool(buckets),

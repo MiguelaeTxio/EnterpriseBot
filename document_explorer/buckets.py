@@ -27,8 +27,6 @@ aquí.
 """
 from spare_parts.gcs_service import (
     DELIVERY_NOTES_BUCKET,
-    MACHINE_DOCUMENTS_BUCKET,
-    PERSONNEL_DOCUMENTS_BUCKET,
     TASK_PHOTOS_BUCKET,
 )
 
@@ -47,10 +45,25 @@ MARKS_PREFIX = "_CUARENTENA/_MARCAS/"
 INDEXED_BUCKETS = (
     TASK_PHOTOS_BUCKET,
     DELIVERY_NOTES_BUCKET,
-    MACHINE_DOCUMENTS_BUCKET,
-    PERSONNEL_DOCUMENTS_BUCKET,
     HISTORICAL_BUCKET,
 )
+
+# Nombres visibles en castellano de las pestañas del explorador
+# (decisión de Miguel Ángel, S038, anexo H29 sección 3.12). Los cubos
+# de documentación de máquina y de personal se eliminaron de GCS en la
+# misma sesión (contenido ya integrado en HISTORICAL_BUCKET desde
+# H28) y por eso ya no aparecen ni aquí ni en INDEXED_BUCKETS.
+#
+# Spanish display names for the explorer tabs (Miguel Ángel's
+# decision, S038, H29 annex section 3.12). The machine-documents and
+# personnel-documents buckets were deleted from GCS in the same
+# session (their content was already folded into HISTORICAL_BUCKET
+# via H28) so they no longer appear here or in INDEXED_BUCKETS.
+BUCKET_DISPLAY_NAMES = {
+    TASK_PHOTOS_BUCKET: "Fotos Partes",
+    DELIVERY_NOTES_BUCKET: "Fotos Albaranes",
+    HISTORICAL_BUCKET: "Directorio Principal",
+}
 
 # Cubo -> (app_label, model_name, campo que guarda el nombre de blob).
 # El cubo histórico no aparece: sus 37.606 objetos no tienen modelo de
@@ -61,11 +74,5 @@ DOMAIN_MODEL_BY_BUCKET = {
     ),
     DELIVERY_NOTES_BUCKET: (
         "spare_parts", "DeliveryNote", "gcs_blob_name",
-    ),
-    MACHINE_DOCUMENTS_BUCKET: (
-        "machine_documents", "MachineDocument", "gcs_blob_name",
-    ),
-    PERSONNEL_DOCUMENTS_BUCKET: (
-        "personal_documents", "PersonalDocument", "gcs_blob_name",
     ),
 }
