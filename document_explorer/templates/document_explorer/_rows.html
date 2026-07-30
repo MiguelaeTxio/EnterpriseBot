@@ -27,6 +27,14 @@
     `pk` real -- de ahí el `{% if entry.pk %}` antes del botón de
     borrado, para no intentar borrar una carpeta que no existe como
     fila del índice.
+
+    Nombres amigables (S039): un archivo vinculado a un DeliveryNote/
+    TaskPhoto (`entry.friendly_name`, resuelto en bloque por
+    document_explorer.friendly_names -- ver ese módulo) se muestra con
+    proveedor/máquina/fecha en vez del nombre de blob opaco que puso
+    la cámara; el nombre real queda en el atributo `title` del enlace.
+    Ordenar por "Nombre" sigue ordenando por el nombre de blob real,
+    no por el amigable -- limitación conocida, sin resolver todavía.
 {% endcomment %}
 
 {% for entry in entries %}
@@ -46,7 +54,8 @@
                    hx-swap="innerHTML">{{ entry.name }}</a>
             {% else %}
                 <a href="{% url 'document_explorer:open' entry.pk %}"
-                   target="_blank" rel="noopener">{{ entry.name }}</a>
+                   target="_blank" rel="noopener"
+                   title="{{ entry.name }}">{{ entry.friendly_name|default:entry.name }}</a>
             {% endif %}
             {% if is_search and entry.display_path %}
                 <div class="small text-muted text-break">

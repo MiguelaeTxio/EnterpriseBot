@@ -134,7 +134,7 @@ from django.views.generic import TemplateView
 from panel.mixins import CompanyUserRequiredMixin
 from spare_parts.gcs_service import delete_file, generate_signed_url
 
-from document_explorer import permissions
+from document_explorer import friendly_names, permissions
 from document_explorer.buckets import (
     BUCKET_DISPLAY_NAMES, INDEXED_BUCKETS, PRIMARY_BUCKET,
 )
@@ -768,6 +768,7 @@ class FolderListingView(ExplorerAccessMixin, TemplateView):
         query = self._apply_cursor(query, field)
 
         results = list(query[:PAGE_SIZE + 1])
+        friendly_names.resolve_display_names(results)
         is_search = scope != SCOPE_HERE
         for entry in results:
             if entry.is_folder:
