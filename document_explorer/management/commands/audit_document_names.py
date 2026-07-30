@@ -60,13 +60,19 @@ from django.core.management.base import BaseCommand, CommandError
 from document_explorer.buckets import INDEXED_BUCKETS, QUARANTINE_PREFIX
 from document_explorer.models import DocumentIndexEntry
 
-# Catálogo de formatos de fecha, tal cual los catalogó S035 (Hallazgo 3
-# del anexo H28), de más específico a menos para que el primero que
-# case gane. Todos exigen borde de palabra para no comerse un
-# identificador de máquina (`A-29`) o similar.
+# Catálogo de formatos de fecha. Arranca del catálogo que S035 cerró a
+# mano (Hallazgo 3 del anexo H28), ampliado tras el primer barrido real
+# sobre el corpus completo (S039, 2026-07-30): esa muestra de dos
+# carpetas no incluía ningún caso de fecha de 8 dígitos pegados sin
+# separador (DDMMAAAA/AAAAMMDD, p.ej. `04022026_BHiRB.pdf`,
+# `13042026_CONTRATO...`), que en el corpus completo resulta muy
+# frecuente, sobre todo en DOC. PERSONAL. De más específico a menos
+# para que el primero que case gane.
 _DATE_PATTERNS = [
     # Dos AAMMDD pegadas: 151210150311
     r"\d{12}",
+    # DDMMAAAA / AAAAMMDD pegados sin separador: 04022026
+    r"\d{8}",
     # AAMMDD: 150611
     r"\d{6}",
     # DD-MM-AAAA / DD.MM.AAAA / DD_MM_AAAA
@@ -82,8 +88,13 @@ _DATE_PATTERNS = [
     # AAAA suelto, siglo XXI (S035: ni un caso anterior a 2013)
     r"(19|20)\d{2}",
 ]
+# Límite de palabra propio: el guion bajo es un separador real en estos
+# nombres (`04022026_BHiRB`), no una continuación de palabra -- \w de
+# Python lo trata como carácter de palabra e impediría casar una fecha
+# pegada a un guion bajo. Solo letras y dígitos cuentan como
+# continuación aquí; guion bajo, guion, espacio y punto son frontera.
 _DATE_RE = re.compile(
-    r"(?<![\w-])(?:%s)(?![\w])" % "|".join(_DATE_PATTERNS),
+    r"(?<![A-Za-z0-9])(?:%s)(?![A-Za-z0-9])" % "|".join(_DATE_PATTERNS),
     re.IGNORECASE,
 )
 
@@ -92,6 +103,18 @@ _DATE_RE = re.compile(
 # (p. ej. un código de máquina).
 _SEPARATOR_RE = re.compile(r"[_,]+")
 _MULTISPACE_RE = re.compile(r"\s+")
+
+# Ruido evidente detectado en el primer barrido real sobre el corpus
+# completo (S039, 2026-07-30): artefactos de sincronización de OneDrive
+# /Windows y capturas sueltas de mensajería, ninguno es un documento
+# clasificable. Se separan en su propia categoría para no ensuciar la
+# lista de revisión manual -- no se borra nada, es solo agrupación del
+# informe; la decisión de qué hacer con ellos es de Miguel Ángel.
+_JUNK_STEM_RE = re.compile(
+    r"^(?:ppinfocache|00000000|whatsapp image|imagen de whatsapp)$",
+    re.IGNORECASE,
+)
+_JUNK_NUMERIC_RE = re.compile(r"^\d{8,}$")
 
 
 class Command(BaseCommand):
@@ -173,24 +196,39 @@ class Command(BaseCommand):
         for root in selected_roots:
             self._audit_root(root, by_root[root], top_n)
 
+    def _clean_candidate(self, text):
+        text = _SEPARATOR_RE.sub(" ", text)
+        text = _MULTISPACE_RE.sub(" ", text).strip(" -")
+        return text.upper()
+
     def _audit_root(self, root, blob_names, top_n):
         phrase_counts = {}
         undated = []
+        junk = []
 
         for blob_name in blob_names:
             file_name = blob_name.rsplit("/", 1)[-1]
             stem = file_name.rsplit(".", 1)[0] if "." in file_name \
                 else file_name
 
+            if _JUNK_STEM_RE.match(stem) or _JUNK_NUMERIC_RE.match(stem):
+                junk.append(file_name)
+                continue
+
             match = _DATE_RE.search(stem)
             if not match:
                 undated.append(file_name)
                 continue
 
-            candidate = stem[:match.start()]
-            candidate = _SEPARATOR_RE.sub(" ", candidate)
-            candidate = _MULTISPACE_RE.sub(" ", candidate).strip(" -")
-            candidate = candidate.upper()
+            before = self._clean_candidate(stem[:match.start()])
+            after = self._clean_candidate(stem[match.end():])
+            # Casi siempre el tipo va antes de la fecha
+            # ("Z-15 CERT.MANTENIMIENTO 04-04-26"), pero en DOC.
+            # PERSONAL es frecuente el patrón inverso, típico de
+            # escáner ("04022026_PARTE MEDICO DE CONFIRMACION...") --
+            # si no hay nada antes, se usa lo que viene después en vez
+            # de descartar el archivo como si no tuviera fecha.
+            candidate = before or after
             if not candidate:
                 undated.append(file_name)
                 continue
@@ -200,8 +238,12 @@ class Command(BaseCommand):
             "\n--- %s -- %d archivo(s) ---" % (root, len(blob_names))
         ))
         self.stdout.write(
-            "  %d con fecha reconocible, %d sin ella."
-            % (len(blob_names) - len(undated), len(undated))
+            "  %d con fecha reconocible, %d sin ella, %d ruido evidente "
+            "(sync/capturas sueltas)."
+            % (
+                len(blob_names) - len(undated) - len(junk),
+                len(undated), len(junk),
+            )
         )
 
         ranked = sorted(
@@ -225,3 +267,10 @@ class Command(BaseCommand):
                 self.stdout.write(
                     "    ... y %d más." % (len(undated) - top_n)
                 )
+
+        if junk:
+            self.stdout.write(
+                "\n  Ruido evidente, muestra (%d en total):" % len(junk)
+            )
+            for file_name in sorted(junk)[:10]:
+                self.stdout.write("    %s" % file_name)
