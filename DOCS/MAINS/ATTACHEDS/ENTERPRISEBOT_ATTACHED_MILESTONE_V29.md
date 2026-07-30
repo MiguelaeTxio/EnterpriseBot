@@ -227,11 +227,12 @@ resto. No hay estado intermedio de "visible pero marcado".
 
 ### 3.12. Consolidación de cubos y renombrado de pestañas (S038, apunte para cuando se toque el código)
 
-Registrada literalmente según se dictó (directriz 4.8). **No se implementa
-en esta sesión** — es una instrucción explícita para cuando se aborde el
-código donde residen los nombres de cubo/pestaña del explorador y las
-apps `machine_documents`/`personal_documents`. Miguel Ángel lo introdujo
-como apunte, no como tarea de arranque de S038.
+Registrada literalmente según se dictó (directriz 4.8). **La parte de
+código (renombrado de pestañas, retirada de las apps
+`machine_documents`/`personal_documents`, rediseño de la subida
+tipada) no se implementa en esta sesión** — sigue siendo instrucción
+explícita para cuando se aborde. **La parte de infraestructura (borrado
+de los dos cubos) SÍ se ejecutó en esta misma sesión — ver 3.13.**
 
 **Renombrado de pestañas visibles a castellano**, verbatim: *"lo que es
 los nombres visibles de las 'pestañas' o mejor dicho 'cubos' habrá que
@@ -273,6 +274,39 @@ cubos."*
   mismo anexo, que aún no se ha diseñado).
 - **No se decide aquí ni la fecha ni el hito exacto** en que se aborda —
   Miguel Ángel no lo ha fijado todavía.
+
+### 3.13. Ejecución del borrado de los dos cubos (S038)
+
+**Ejecutado por Miguel Ángel en su consola local (PowerShell,
+confirmado con salida real), no por el modelo** — el modelo no tiene
+acceso de red a GCP desde este entorno.
+
+Premisa confirmada por Miguel Ángel, verbatim, tras una comprobación
+por nombre de archivo que dio 0 coincidencias y generó confusión
+innecesaria (S038): *"Los objetos que se subieron a esos cubos están
+dentro de las carpetas de personal y de docmáquinas en el directorio
+principal. Así que se pueden borrar con toda la tranquilidad del
+mundo."* Instrucción de ejecución inmediata, verbatim: *"Los borras
+ahora mismo, no compruebes más nada. [...] Si se pierde la información
+es por mi culpa."*
+
+Comando ejecutado: `gcloud storage rm --recursive gs://BUCKET_NAME`
+sobre los dos cubos. Resultado real, confirmado con la salida de la
+consola:
+- `enterprisebot-alvarez-machine-documents`: 29/29 objetos borrados,
+  cubo borrado (`Completed 1/1`).
+- `enterprisebot-alvarez-personnel-documents`: 39/39 objetos borrados,
+  cubo borrado (`Completed 1/1`).
+
+**Riesgo operativo señalado por el modelo tras la ejecución, todavía
+sin resolver:** el código de `machine_documents`/`personal_documents`
+(subida de documentos, `document_ingestion/management/commands/
+purge_orphaned_gcs_blobs.py`, `create_gcs_buckets`) sigue apuntando a
+estos dos nombres de cubo, que ya no existen. Cualquier subida real
+por esa vía en producción fallaría ahora mismo. Pendiente de que
+Miguel Ángel confirme si sigue habiendo subida activa por esa vía
+(pese a que H23/H25 están pausados como hitos) o si puede quedar así
+hasta abordar el código de consolidación de 3.12.
 
 ## 4. Consecuencia directa: las tres únicas vías de escritura
 
