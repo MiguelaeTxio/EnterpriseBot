@@ -108,7 +108,7 @@ from urllib.parse import urlencode
 
 from django.contrib import messages
 from django.db.models import (
-    BigIntegerField, Case, F, Q, Value, When,
+    BigIntegerField, Case, DateTimeField, F, Q, Value, When,
 )
 from django.db.models.functions import Coalesce
 from django.http import Http404, HttpResponseRedirect
@@ -540,27 +540,86 @@ class FolderListingView(ExplorerAccessMixin, TemplateView):
                 query = query.filter(restriction)
 
         query = self._apply_filters(query)
-        query = query.annotate(
-            sort_size=Coalesce(
-                Case(
-                    When(
-                        entry_kind=DocumentIndexEntry.KIND_FOLDER,
-                        then=F("total_size_bytes"),
-                    ),
-                    default=F("size_bytes"),
-                    output_field=BigIntegerField(),
-                ),
-                Value(0),
-            ),
-            sort_date=Coalesce(F("gcs_updated_at"), Value(_EPOCH)),
-        )
-
         field = self._sort_field()
+        query = self._annotate_sort_field(query, field)
+
         order_field = field if self.sort_dir == "asc" else "-%s" % field
         query = query.order_by("-entry_kind", order_field, "id")
         query = self._apply_cursor(query, field)
 
         return list(query[:PAGE_SIZE + 1])
+
+    def _annotate_sort_field(self, query, field):
+        """
+        Annotate only the column the active sort actually needs.
+
+        Bug found in production (S039, 2026-07-30): the first version
+        of this method always annotated both `sort_size` and
+        `sort_date` regardless of `sort_key`, so every folder listing
+        -- not just date-sorted ones -- evaluated
+        `Coalesce(F("gcs_updated_at"), Value(_EPOCH))`. On MySQL, a
+        `Value()` with no explicit `output_field` is not adapted
+        through `DateTimeField.get_prep_value()`, so the aware
+        `_EPOCH` sentinel reached the driver in a shape MySQL typed as
+        text rather than `DATETIME`; the result column came back a
+        plain `str`, and Django's `make_aware()` converter crashed
+        with `AttributeError: 'str' object has no attribute
+        'utcoffset'` on every request, in production, for two of the
+        three buckets (Albaranes and Directorio Principal). The
+        explicit `output_field=DateTimeField()` on the `Value()` below
+        is the actual fix; annotating only what the active sort needs
+        is the defence in depth that also makes the common case (the
+        default name sort) skip this code path entirely, exactly as
+        it did before S039.
+
+        ---
+
+        Anota solo la columna que el orden activo necesita de verdad.
+
+        Fallo encontrado en producción (S039, 2026-07-30): la primera
+        versión de este método anotaba siempre `sort_size` y
+        `sort_date` sin mirar `sort_key`, así que cualquier listado de
+        carpeta -- no solo los ordenados por fecha -- evaluaba
+        `Coalesce(F("gcs_updated_at"), Value(_EPOCH))`. En MySQL, un
+        `Value()` sin `output_field` explícito no se adapta a través
+        de `DateTimeField.get_prep_value()`, así que el centinela
+        `_EPOCH` (consciente de zona horaria) llegaba al driver en una
+        forma que MySQL tipaba como texto en vez de `DATETIME`; la
+        columna resultante volvía como `str` plano, y el conversor
+        `make_aware()` de Django fallaba con `AttributeError: 'str'
+        object has no attribute 'utcoffset'` en cada petición, en
+        producción, para dos de los tres cubos (Albaranes y Directorio
+        Principal). El `output_field=DateTimeField()` explícito del
+        `Value()` de abajo es la corrección real; anotar solo lo que
+        el orden activo necesita es la defensa en profundidad que
+        además hace que el caso común (el orden por nombre por
+        defecto) se salte por completo esta ruta de código, igual que
+        antes de S039.
+        """
+        if field == "sort_size":
+            return query.annotate(
+                sort_size=Coalesce(
+                    Case(
+                        When(
+                            entry_kind=DocumentIndexEntry.KIND_FOLDER,
+                            then=F("total_size_bytes"),
+                        ),
+                        default=F("size_bytes"),
+                        output_field=BigIntegerField(),
+                    ),
+                    Value(0, output_field=BigIntegerField()),
+                    output_field=BigIntegerField(),
+                ),
+            )
+        if field == "sort_date":
+            return query.annotate(
+                sort_date=Coalesce(
+                    F("gcs_updated_at"),
+                    Value(_EPOCH, output_field=DateTimeField()),
+                    output_field=DateTimeField(),
+                ),
+            )
+        return query
 
     def _apply_filters(self, query):
         """
