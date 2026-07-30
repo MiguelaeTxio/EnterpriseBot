@@ -134,7 +134,7 @@ from django.views.generic import TemplateView
 from panel.mixins import CompanyUserRequiredMixin
 from spare_parts.gcs_service import delete_file, generate_signed_url
 
-from document_explorer import friendly_names, move_service, permissions
+from document_explorer import friendly_names, index_writer, move_service, permissions
 from document_explorer.buckets import (
     BUCKET_DISPLAY_NAMES, INDEXED_BUCKETS, PRIMARY_BUCKET,
 )
@@ -420,6 +420,7 @@ class FolderListingView(ExplorerAccessMixin, TemplateView):
             "sort_dir": self.sort_dir,
             "sort_columns": self._sort_columns(),
             "can_move": permissions.is_unrestricted(company_user),
+            "primary_bucket": PRIMARY_BUCKET,
         }
 
         if scope == SCOPE_HERE:
@@ -1059,45 +1060,44 @@ class SendToTrashView(ExplorerAccessMixin, View):
         )
 
 
-class MoveFileView(ExplorerAccessMixin, View):
+class MoveScopeMixin(ExplorerAccessMixin):
     """
-    Move a live FILE entry to a different folder within the same
-    bucket (H29, S039). Files only -- see the module docstring of
-    `document_explorer.move_service` for why folders are out of scope
-    for this first version.
+    Shared entry-resolution for every move-related view (H29, S039).
 
-    Gated to unrestricted (ADMIN) users only, for now: it is the
-    explorer's first operation that writes to GCS beyond the trash's
-    delete, and today's only real user of the explorer is
-    `alvarez_admin` -- narrowed on purpose rather than reusing
-    `can_delete_in`, which was designed for a different, narrower
-    action (send to one's own trash within a folder one already has a
-    grant on), not for creating brand new folder structure anywhere in
-    the tree.
+    Two rules, both explicit and PERMANENT decisions of Miguel Angel,
+    not a v1 placeholder to loosen later:
+
+    1. Restricted to unrestricted (ADMIN) users, always -- "de momento
+       solamente yo voy a poder mover cosas aquí... ni siquiera mi
+       jefe... es una decisión de una salvaguarda de seguridad total."
+    2. Scoped entirely to `PRIMARY_BUCKET` (Directorio Principal real)
+       -- move never touches Fotos Partes/Fotos Albaranes, neither as
+       source nor as destination: "eso es inamovible, incluso ni yo
+       siquiera puedo mover eso." A file that does not live in
+       `PRIMARY_BUCKET` never even shows the move button (see
+       `_rows.html`, `entry.bucket == primary_bucket`); this is the
+       server-side backstop for that same rule.
 
     ---
 
-    Mueve una entrada FILE viva a otra carpeta dentro del mismo cubo
-    (H29, S039). Solo archivos -- ver el docstring del módulo
-    `document_explorer.move_service` para por qué las carpetas quedan
-    fuera del alcance de esta primera versión.
+    Resolución de entrada compartida por todas las vistas de mover
+    (H29, S039).
 
-    Restringido a usuarios sin restricción (ADMIN) por ahora: es la
-    primera operación del explorador que escribe en GCS más allá del
-    borrado de la papelera, y hoy el único usuario real del explorador
-    es `alvarez_admin` -- acotado a propósito en vez de reutilizar
-    `can_delete_in`, pensado para una acción distinta y más estrecha
-    (mandar a la propia papelera dentro de una carpeta sobre la que ya
-    se tiene concesión), no para crear estructura de carpetas nueva en
-    cualquier punto del árbol.
+    Dos reglas, ambas decisiones explícitas y PERMANENTES de Miguel
+    Ángel, no un provisional de v1 a relajar después:
+
+    1. Restringido a usuarios sin restricción (ADMIN), siempre -- "de
+       momento solamente yo voy a poder mover cosas aquí... ni
+       siquiera mi jefe... es una decisión de una salvaguarda de
+       seguridad total."
+    2. Acotado por completo a `PRIMARY_BUCKET` (Directorio Principal
+       real) -- mover nunca toca Fotos Partes/Fotos Albaranes, ni como
+       origen ni como destino: "eso es inamovible, incluso ni yo
+       siquiera puedo mover eso." Un archivo que no vive en
+       `PRIMARY_BUCKET` ni siquiera muestra el botón de mover (ver
+       `_rows.html`, `entry.bucket == primary_bucket`); esto es el
+       respaldo del lado del servidor de esa misma regla.
     """
-
-    template_name = "document_explorer/move.html"
-    #: Tope de carpetas sugeridas en el desplegable -- un cubo grande
-    #: puede tener varios miles; esto evita mandar una lista enorme al
-    #: navegador por una comodidad menor. Escribir la ruta a mano
-    #: siempre funciona igual, esté o no en la lista.
-    FOLDER_SUGGESTIONS_LIMIT = 3000
 
     def _entry_or_404(self, request, pk):
         entry = get_object_or_404(
@@ -1110,25 +1110,115 @@ class MoveFileView(ExplorerAccessMixin, View):
         company_user = request.user.company_user
         if not permissions.is_unrestricted(company_user):
             raise Http404("Solo el administrador puede mover archivos.")
+        if entry.bucket != PRIMARY_BUCKET:
+            raise Http404(
+                "Mover solo está disponible dentro de Directorio "
+                "Principal."
+            )
         return entry
+
+    def _browse_context(self, entry, path):
+        """
+        Context for `_move_browse.html`: the modal-body fragment used
+        both by `MoveBrowseView` (navigating) and `MoveCreateFolderView`
+        (right after creating a folder, to land inside it).
+
+        ---
+
+        Contexto para `_move_browse.html`: el fragmento del cuerpo del
+        modal que usan tanto `MoveBrowseView` (al navegar) como
+        `MoveCreateFolderView` (justo tras crear una carpeta, para
+        aterrizar dentro de ella).
+        """
+        subfolders = list(
+            DocumentIndexEntry.objects.filter(
+                bucket=PRIMARY_BUCKET,
+                entry_kind=DocumentIndexEntry.KIND_FOLDER,
+                parent_path_hash=path_digest(path),
+                deleted_at__isnull=True, purged_at__isnull=True,
+            ).order_by("name").values_list("blob_name", "name")
+        )
+        return {
+            "entry": entry,
+            "path": path,
+            "path_label": path or "(raíz de Directorio Principal)",
+            "parent_path": path.rsplit("/", 1)[0] if "/" in path else "",
+            "has_parent": bool(path),
+            "subfolders": subfolders,
+        }
+
+
+class MoveBrowseView(MoveScopeMixin, View):
+    """
+    HTMX fragment: the folder tree shown inside the move modal.
+    Navigating up/down never leaves the request/response cycle -- each
+    click re-fetches this same fragment for the new path and swaps the
+    modal body, so the modal itself never closes while browsing.
+
+    ---
+
+    Fragmento HTMX: el árbol de carpetas que se muestra dentro del
+    modal de mover. Subir/bajar nunca sale del ciclo petición/
+    respuesta -- cada clic vuelve a pedir este mismo fragmento para la
+    nueva ruta y sustituye el cuerpo del modal, así que el modal en sí
+    nunca se cierra mientras se navega.
+    """
 
     def get(self, request, pk):
         entry = self._entry_or_404(request, pk)
-        folders = list(
-            DocumentIndexEntry.objects.filter(
-                bucket=entry.bucket,
-                entry_kind=DocumentIndexEntry.KIND_FOLDER,
-                deleted_at__isnull=True, purged_at__isnull=True,
-            )
-            .order_by("blob_name")
-            .values_list("blob_name", flat=True)[:self.FOLDER_SUGGESTIONS_LIMIT]
+        path = (request.GET.get("path") or "").strip("/")
+        return render(
+            request, "document_explorer/_move_browse.html",
+            self._browse_context(entry, path),
         )
-        return render(request, self.template_name, {
-            "active_nav": "document_explorer",
-            "entry": entry,
-            "current_folder": entry.parent_path or "(raíz del cubo)",
-            "folder_suggestions": folders,
-        })
+
+
+class MoveCreateFolderView(MoveScopeMixin, View):
+    """
+    Create a new subfolder under the folder currently shown in the
+    move modal, then land inside it -- "crear carpeta o pegar aquí,
+    como un explorador de archivos."
+
+    ---
+
+    Crea una subcarpeta nueva bajo la carpeta que se muestra ahora
+    mismo en el modal de mover, y aterriza dentro de ella -- "crear
+    carpeta o pegar aquí, como un explorador de archivos."
+    """
+
+    def post(self, request, pk):
+        entry = self._entry_or_404(request, pk)
+        parent_path = (request.POST.get("path") or "").strip("/")
+        name = (request.POST.get("folder_name") or "").strip()
+
+        new_path = parent_path
+        if not name or "/" in name:
+            messages.error(request, "Nombre de carpeta no válido.")
+        else:
+            new_path = "%s/%s" % (parent_path, name) if parent_path \
+                else name
+            index_writer.ensure_folder_chain(PRIMARY_BUCKET, new_path)
+
+        return render(
+            request, "document_explorer/_move_browse.html",
+            self._browse_context(entry, new_path),
+        )
+
+
+class MoveFileView(MoveScopeMixin, View):
+    """
+    Execute the move chosen in the modal. A plain (non-HTMX) form
+    submit -- after moving, the browser leaves the modal behind
+    entirely and lands on the destination folder's real listing,
+    exactly like `SendToTrashView` already does after a delete.
+
+    ---
+
+    Ejecuta el movimiento elegido en el modal. Un envío de formulario
+    normal (sin HTMX) -- tras mover, el navegador abandona el modal
+    por completo y aterriza en el listado real de la carpeta destino,
+    igual que ya hace `SendToTrashView` tras un borrado.
+    """
 
     def post(self, request, pk):
         entry = self._entry_or_404(request, pk)
@@ -1138,12 +1228,17 @@ class MoveFileView(ExplorerAccessMixin, View):
             move_service.move_entry(entry, destination)
         except move_service.MoveConflict as exc:
             messages.error(request, str(exc))
-            return redirect("document_explorer:move", pk=entry.pk)
+            return redirect(
+                "%s?bucket=%s&path=%s" % (
+                    reverse("document_explorer:explorer"),
+                    entry.bucket, entry.parent_path,
+                )
+            )
 
         messages.success(
             request,
             "«%s» se ha movido a «%s»."
-            % (entry.name, destination or "la raíz del cubo"),
+            % (entry.name, destination or "la raíz de Directorio Principal"),
         )
         return redirect(
             "%s?bucket=%s&path=%s" % (

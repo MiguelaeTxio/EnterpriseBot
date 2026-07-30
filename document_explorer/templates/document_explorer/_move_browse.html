@@ -1,0 +1,67 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/document_explorer/templates/document_explorer/_move_browse.html #}
+{% comment %}
+    Cuerpo del modal de mover (H29, S039). Se sustituye entero cada
+    vez que se sube/baja una carpeta o se crea una nueva -- el modal
+    en sí (definido una vez en explorer.html) nunca se cierra ni se
+    vuelve a abrir mientras se navega, solo cambia su contenido.
+
+    Acotado siempre a PRIMARY_BUCKET (Directorio Principal real) --
+    ver MoveScopeMixin en views.py. Toda la lógica (qué subcarpetas
+    hay, si se puede subir de nivel) llega resuelta desde la vista.
+{% endcomment %}
+
+<div class="mb-2">
+    <strong>Mover:</strong> {{ entry.name }}
+    <div class="text-muted small">
+        Ubicación actual: {{ entry.parent_path|default:"(raíz)" }}
+    </div>
+</div>
+
+<div class="fw-bold small mb-1">
+    <i class="bi bi-folder2-open"></i> {{ path_label }}
+</div>
+
+<div class="list-group mb-3 dx-move-tree">
+    {% if has_parent %}
+        <button type="button" class="list-group-item list-group-item-action"
+                hx-get="{% url 'document_explorer:move_browse' entry.pk %}?path={{ parent_path|urlencode }}"
+                hx-target="#move-modal-body">
+            <i class="bi bi-arrow-90deg-up text-muted"></i> ..
+        </button>
+    {% endif %}
+    {% for folder_path, folder_name in subfolders %}
+        <button type="button" class="list-group-item list-group-item-action"
+                hx-get="{% url 'document_explorer:move_browse' entry.pk %}?path={{ folder_path|urlencode }}"
+                hx-target="#move-modal-body">
+            <i class="bi bi-folder-fill text-warning"></i> {{ folder_name }}
+        </button>
+    {% endfor %}
+    {% if not subfolders and not has_parent %}
+        <p class="text-muted small mb-0 p-2">
+            Esta carpeta no tiene subcarpetas.
+        </p>
+    {% endif %}
+</div>
+
+<form class="d-flex gap-2 mb-3"
+      hx-post="{% url 'document_explorer:move_create_folder' entry.pk %}"
+      hx-target="#move-modal-body">
+    {% csrf_token %}
+    <input type="hidden" name="path" value="{{ path }}">
+    <input type="text" name="folder_name"
+           class="form-control form-control-sm"
+           placeholder="Nombre de la carpeta nueva" required>
+    <button type="submit"
+            class="btn btn-sm btn-outline-secondary text-nowrap">
+        <i class="bi bi-folder-plus"></i> Crear aquí
+    </button>
+</form>
+
+<form method="post" action="{% url 'document_explorer:move' entry.pk %}">
+    {% csrf_token %}
+    <input type="hidden" name="destination_folder" value="{{ path }}">
+    <button type="submit" class="btn btn-primary w-100">
+        <i class="bi bi-folder-symlink"></i>
+        Mover aquí — {{ path_label }}
+    </button>
+</form>

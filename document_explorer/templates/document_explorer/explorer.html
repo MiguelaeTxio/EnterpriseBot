@@ -45,6 +45,33 @@
             <div class="text-muted small py-4">Cargando…</div>
         </div>
 
+        {% comment %}
+            Modal de mover (H29, S039). Vive aquí, fuera de
+            #explorer-panel, para que sobreviva a la navegación por
+            carpetas -- solo su cuerpo (#move-modal-body) se sustituye,
+            vía HTMX, cada vez que se abre o se navega dentro de él.
+        {% endcomment %}
+        <div class="modal fade" id="moveModal" tabindex="-1"
+             aria-labelledby="moveModalLabel" aria-hidden="true">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="moveModalLabel">
+                            Mover archivo
+                        </h5>
+                        <button type="button" class="btn-close"
+                                data-bs-dismiss="modal"
+                                aria-label="Cerrar"></button>
+                    </div>
+                    <div class="modal-body" id="move-modal-body">
+                        <div class="text-muted small py-4 text-center">
+                            Cargando…
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
     {% endif %}
 
 </div>

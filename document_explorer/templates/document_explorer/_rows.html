@@ -74,12 +74,15 @@
         </td>
         {% if show_delete or can_move %}
             <td class="text-end text-nowrap">
-                {% if can_move and entry.pk and not entry.is_folder and not is_search %}
-                    <a href="{% url 'document_explorer:move' entry.pk %}"
-                       class="btn btn-sm btn-link p-0 me-2"
-                       title="Mover a otra carpeta">
+                {% if can_move and entry.pk and not entry.is_folder and not is_search and entry.bucket == primary_bucket %}
+                    <button type="button"
+                            class="btn btn-sm btn-link p-0 me-2"
+                            title="Mover a otra carpeta"
+                            data-bs-toggle="modal" data-bs-target="#moveModal"
+                            hx-get="{% url 'document_explorer:move_browse' entry.pk %}?path={{ entry.parent_path|urlencode }}"
+                            hx-target="#move-modal-body">
                         <i class="bi bi-folder-symlink"></i>
-                    </a>
+                    </button>
                 {% endif %}
                 {% if show_delete and entry.pk %}
                     <form method="post" class="d-inline"

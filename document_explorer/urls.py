@@ -36,6 +36,16 @@ urlpatterns = [
         name="trash_add",
     ),
     path(
+        "mover/<int:pk>/navegar/",
+        views.MoveBrowseView.as_view(),
+        name="move_browse",
+    ),
+    path(
+        "mover/<int:pk>/crear-carpeta/",
+        views.MoveCreateFolderView.as_view(),
+        name="move_create_folder",
+    ),
+    path(
         "mover/<int:pk>/",
         views.MoveFileView.as_view(),
         name="move",

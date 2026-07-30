@@ -81,3 +81,13 @@
 .dx-search-bar {
     row-gap: 0.5rem;
 }
+
+/*
+ * Árbol de carpetas del modal de mover (S039). Altura acotada con
+ * scroll propio -- una carpeta con muchas subcarpetas no debe alargar
+ * el modal más allá de la pantalla.
+ */
+.dx-move-tree {
+    max-height: 260px;
+    overflow-y: auto;
+}
