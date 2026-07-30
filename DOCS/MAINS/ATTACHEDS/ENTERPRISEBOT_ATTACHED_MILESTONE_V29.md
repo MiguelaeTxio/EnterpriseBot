@@ -598,9 +598,13 @@ mejoras y trabajo que se dejó fuera de forma explícita.
    cubos indexados, compara filas FILE vivas contra los objetos
    reales, informa huérfanas. Solo informa, nunca escribe en BD ni con
    flag de confirmación — marcar `purged_at` es decisión de
-   administrador, caso por caso. **Pendiente: ejecutarlo una vez sobre
-   los cinco cubos reales** para tener el primer informe (todavía no
-   se ha corrido contra producción en esta sesión).
+   administrador, caso por caso. **Ejecutado en S038 contra los cinco
+   cubos reales: 0 huérfanas.** Único dato a explicar, no un problema:
+   `cgs_grupo_alvarez` mostró 37651 filas FILE vivas frente a 37654
+   objetos reales — 3 objetos de más en el cubo que en el índice, la
+   dirección contraria a lo que audita este comando (ya cubierta por
+   `seed_document_index`/`refresh_document_folder`), probablemente 3
+   archivos subidos por el agente de H28 tras el último sembrado.
 4. ~~Confirmación de `storage.folders.list` en la cuenta de la
    plataforma (`enterprisebot-vertex@`) vía `gcloud`.~~ **Resuelto en
    S038** con datos reales: `enterprisebot-vertex@gen-lang-client-
