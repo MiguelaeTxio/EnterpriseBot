@@ -122,7 +122,7 @@ cosmético, no bloqueante, candidato a una futura herramienta de
 "carpetas vacías", no resuelto aquí.
 """
 from django.db import transaction
-from django.db.models import F
+from django.db.models import Case, F, When
 
 from document_explorer.index_writer import ancestors_of, ensure_folder_chain
 from document_explorer.models import DocumentIndexEntry, path_digest
@@ -318,3 +318,202 @@ def _adjust_child_count(bucket, folder_path, delta):
         bucket=bucket, blob_name_hash=path_digest(folder_path),
         deleted_at__isnull=True, purged_at__isnull=True,
     ).update(child_count=F("child_count") + delta)
+
+
+def _bulk_adjust(bucket, field_name, deltas):
+    """
+    Apply many different per-folder deltas to `field_name` in a SINGLE
+    UPDATE, via one `CASE WHEN blob_name_hash = ... THEN field + delta
+    ...` per folder -- the real fix for `move_entries`' query count.
+
+    `move_entry`'s own `_adjust_total_size`/`_adjust_child_count` issue
+    one UPDATE per folder per call, which was fine for a single file
+    but does not scale: measured in production (S039), moving ~190
+    files that way took ~75 seconds even after every other
+    optimisation (batching HTTP requests, skipping repeated
+    `ensure_folder_chain` calls) -- each of those still-separate
+    UPDATEs pays real MySQL round-trip latency on this host, and
+    hundreds of them add up on their own, independently of how many
+    HTTP requests it took to get there. This collapses however many
+    distinct folders a whole batch touches into one query, full stop.
+
+    ---
+
+    Aplica muchas diferencias distintas por carpeta a `field_name` en
+    una ÚNICA UPDATE, vía un `CASE WHEN blob_name_hash = ... THEN
+    field + delta ...` por carpeta -- la corrección real al número de
+    consultas de `move_entries`.
+
+    Las propias `_adjust_total_size`/`_adjust_child_count` de
+    `move_entry` emiten una UPDATE por carpeta y por llamada, que
+    estaba bien para un solo archivo pero no escala: medido en
+    producción (S039), mover ~190 archivos así seguía tardando ~75
+    segundos incluso después de cualquier otra optimización (agrupar
+    peticiones HTTP, saltarse `ensure_folder_chain` repetido) -- cada
+    una de esas UPDATE seguía pagando latencia real de ida y vuelta a
+    MySQL en este servidor, y cientos de ellas suman por su cuenta, con
+    independencia de en cuántas peticiones HTTP se hubiera repartido.
+    Esto reduce a una sola consulta las carpetas distintas que toque
+    un lote entero, sean las que sean.
+    """
+    deltas = {
+        folder_path: delta for folder_path, delta in deltas.items()
+        if delta and folder_path
+    }
+    if not deltas:
+        return
+    hash_to_delta = {
+        path_digest(folder_path): delta
+        for folder_path, delta in deltas.items()
+    }
+    whens = [
+        When(blob_name_hash=digest, then=F(field_name) + delta)
+        for digest, delta in hash_to_delta.items()
+    ]
+    DocumentIndexEntry.objects.filter(
+        bucket=bucket, blob_name_hash__in=list(hash_to_delta.keys()),
+        deleted_at__isnull=True, purged_at__isnull=True,
+    ).update(**{field_name: Case(*whens, default=F(field_name))})
+
+
+def move_entries(entries, destination_folder):
+    """
+    Move many files into `destination_folder` at once, in a FIXED,
+    small number of database round trips regardless of batch size --
+    what `MoveView` actually calls now. Not `move_entry()` looped:
+    that was still ~6 queries per file (collision check, save, four
+    size/count adjustments), each paying real round-trip latency on
+    this host, and a loop of those was measured taking ~75 seconds for
+    ~190 files even in a single HTTP request (S039) -- the request
+    count was never the real bottleneck past a certain point, the
+    per-file query count was.
+
+    What this does instead:
+
+    1. One query to read every name already taken at the destination
+       (`_virtual_location_taken` would have repeated this per file).
+    2. Collision resolution for the whole batch happens in Python
+       against that one set, extended in memory as each file claims
+       its name -- so two files in the SAME batch that would collide
+       with each other are also numbered correctly, not just against
+       what already existed before the move started.
+    3. One `bulk_update()` for every moved entry's `parent_path`/
+       `parent_path_hash`/`name`.
+    4. One `_bulk_adjust()` call for `total_size_bytes` and one for
+       `child_count`, covering every distinct folder the whole batch
+       touches (old locations and the new one) in a single UPDATE
+       each, via `Case`/`When` -- see `_bulk_adjust`.
+
+    Files already sitting in `destination_folder` are skipped (same
+    no-op rule as `move_entry`). Returns a list of
+    `(original_name, final_name)` for every file actually moved, in
+    the same order as `entries` -- `final_name` differs from
+    `original_name` exactly when a collision was renamed.
+
+    ---
+
+    Mueve muchos archivos a `destination_folder` de una vez, en un
+    número FIJO y pequeño de viajes de ida y vuelta a la base de
+    datos, sea cual sea el tamaño del lote -- lo que llama `MoveView`
+    ahora de verdad. No es `move_entry()` en un bucle: eso seguían
+    siendo ~6 consultas por archivo (comprobación de colisión, guardado,
+    cuatro ajustes de tamaño/contenido), cada una pagando latencia real
+    de ida y vuelta en este servidor, y un bucle de esas se midió
+    tardando ~75 segundos para ~190 archivos incluso en una sola
+    petición HTTP (S039) -- el número de peticiones dejó de ser el
+    cuello de botella real a partir de cierto punto; el número de
+    consultas por archivo sí lo era.
+
+    Lo que hace esto en su lugar:
+
+    1. Una consulta para leer todos los nombres ya ocupados en el
+       destino (`_virtual_location_taken` la habría repetido por
+       archivo).
+    2. La resolución de colisiones de todo el lote ocurre en Python
+       contra ese único conjunto, ampliado en memoria según cada
+       archivo reclama su nombre -- así que dos archivos del MISMO
+       lote que chocarían entre sí también se numeran bien, no solo
+       contra lo que ya existía antes de empezar a mover.
+    3. Un único `bulk_update()` para el `parent_path`/`parent_path_hash`/
+       `name` de cada entrada movida.
+    4. Una llamada a `_bulk_adjust()` para `total_size_bytes` y otra
+       para `child_count`, cubriendo todas las carpetas distintas que
+       toca el lote entero (ubicaciones antiguas y la nueva) en una
+       única UPDATE cada una, vía `Case`/`When` -- ver `_bulk_adjust`.
+
+    Los archivos que ya estén en `destination_folder` se omiten (misma
+    regla de no-op que `move_entry`). Devuelve una lista de
+    `(nombre_original, nombre_final)` por cada archivo movido de
+    verdad, en el mismo orden que `entries` -- `nombre_final` difiere
+    de `nombre_original` justo cuando hubo una colisión renombrada.
+    """
+    if not entries:
+        return []
+
+    bucket = entries[0].bucket
+    destination_folder = destination_folder.strip("/")
+    ensure_folder_chain(bucket, destination_folder)
+
+    movable = [
+        entry for entry in entries
+        if entry.parent_path != destination_folder
+    ]
+    if not movable:
+        return []
+
+    used_names = set(
+        DocumentIndexEntry.objects.filter(
+            bucket=bucket,
+            parent_path_hash=path_digest(destination_folder),
+            deleted_at__isnull=True, purged_at__isnull=True,
+        )
+        .exclude(pk__in=[entry.pk for entry in movable])
+        .values_list("name", flat=True)
+    )
+
+    size_deltas = {}
+    count_deltas = {}
+    results = []
+
+    for entry in movable:
+        original_name = entry.name
+        final_name = original_name
+        if final_name in used_names:
+            stem, ext = _split_name(original_name)
+            suffix = 1
+            while final_name in used_names:
+                final_name = "%s (%d)%s" % (stem, suffix, ext)
+                suffix += 1
+        used_names.add(final_name)
+
+        old_parent_path = entry.parent_path
+        size = entry.size_bytes or 0
+
+        entry.parent_path = destination_folder
+        entry.parent_path_hash = path_digest(destination_folder)
+        entry.name = final_name
+
+        for ancestor in ancestors_of(old_parent_path):
+            size_deltas[ancestor] = size_deltas.get(ancestor, 0) - size
+        for ancestor in ancestors_of(destination_folder):
+            size_deltas[ancestor] = size_deltas.get(ancestor, 0) + size
+
+        count_deltas[old_parent_path] = (
+            count_deltas.get(old_parent_path, 0) - 1
+        )
+        count_deltas[destination_folder] = (
+            count_deltas.get(destination_folder, 0) + 1
+        )
+
+        results.append((original_name, final_name))
+
+    with transaction.atomic():
+        DocumentIndexEntry.objects.bulk_update(
+            movable,
+            ["parent_path", "parent_path_hash", "name"],
+            batch_size=500,
+        )
+        _bulk_adjust(bucket, "total_size_bytes", size_deltas)
+        _bulk_adjust(bucket, "child_count", count_deltas)
+
+    return results

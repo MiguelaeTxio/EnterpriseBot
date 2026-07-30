@@ -1319,13 +1319,17 @@ class MoveView(MoveScopeMixin, View):
     this one) "seguía tardando bastante", and deciding the trade-off
     was not worth it, verbatim: "que le den a la visibilidad...
     vamos a probar sin visibilidad y hacerlo todo de golpe. Como mucho
-    un spinner." One request, one round trip, the fastest this can go
-    without touching `move_entry`'s own query count -- the button's
-    own `onsubmit` in `_move_browse.html` disables it and shows a
-    Bootstrap spinner for as long as the browser is waiting on this
-    view; no AJAX, no JSON, just a normal form POST and the same final
-    redirect every other mutating view in this app already uses
-    (`SendToTrashView`, `PurgeTrashView`...).
+    un spinner." The button's own `onsubmit` in `_move_browse.html`
+    disables it and shows a Bootstrap spinner for as long as the
+    browser is waiting on this view; no AJAX, no JSON, just a normal
+    form POST and the same final redirect every other mutating view
+    in this app already uses (`SendToTrashView`, `PurgeTrashView`...).
+
+    Even a single request was still measured taking ~75 seconds for
+    ~190 files (S039) -- `move_service.move_entries()` (not
+    `move_entry()` looped) is what actually fixed that, collapsing the
+    whole batch into a handful of queries regardless of size. See its
+    own docstring for why.
 
     ---
 
@@ -1335,14 +1339,18 @@ class MoveView(MoveScopeMixin, View):
     versión anterior a esta) "seguía tardando bastante", y decidir que
     el compromiso no merecía la pena, verbatim: "que le den a la
     visibilidad... vamos a probar sin visibilidad y hacerlo todo de
-    golpe. Como mucho un spinner." Una petición, un viaje de ida y
-    vuelta, lo más rápido que esto puede ir sin tocar el número de
-    consultas del propio `move_entry` -- el propio `onsubmit` del
-    botón en `_move_browse.html` lo desactiva y muestra un spinner de
-    Bootstrap mientras el navegador espera esta vista; sin AJAX, sin
-    JSON, solo un envío de formulario normal y la misma redirección
-    final que ya usa cualquier otra vista mutadora de esta app
-    (`SendToTrashView`, `PurgeTrashView`...).
+    golpe. Como mucho un spinner." El propio `onsubmit` del botón en
+    `_move_browse.html` lo desactiva y muestra un spinner de Bootstrap
+    mientras el navegador espera esta vista; sin AJAX, sin JSON, solo
+    un envío de formulario normal y la misma redirección final que ya
+    usa cualquier otra vista mutadora de esta app (`SendToTrashView`,
+    `PurgeTrashView`...).
+
+    Incluso una sola petición se midió tardando ~75 segundos para ~190
+    archivos (S039) -- `move_service.move_entries()` (no `move_entry()`
+    en un bucle) es lo que lo arregló de verdad, reduciendo el lote
+    entero a un puñado de consultas sea cual sea su tamaño. Ver su
+    propio docstring para el porqué.
     """
 
     def post(self, request):
@@ -1352,17 +1360,14 @@ class MoveView(MoveScopeMixin, View):
         destination = (request.POST.get("destination_folder") or "").strip()
         bucket = entries[0].bucket
 
-        index_writer.ensure_folder_chain(PRIMARY_BUCKET, destination)
+        results = move_service.move_entries(entries, destination)
 
-        moved, renamed = [], []
-        for entry in entries:
-            original_name = entry.name
-            move_service.move_entry(
-                entry, destination, ensure_folder=False,
-            )
-            moved.append(entry.name)
-            if entry.name != original_name:
-                renamed.append("%s → %s" % (original_name, entry.name))
+        moved = [final_name for _, final_name in results]
+        renamed = [
+            "%s → %s" % (original_name, final_name)
+            for original_name, final_name in results
+            if final_name != original_name
+        ]
 
         destination_label = destination or "la raíz de Directorio Principal"
         if moved:
