@@ -8,11 +8,13 @@
     por el bloque de filas siguiente, que trae su propio centinela si
     aún queda más. Paginación por cursor, nunca por OFFSET.
 
-    Diseño responsivo: en pantallas por debajo de "md" las columnas de
-    tamaño/contenido/fecha se ocultan (ver d-none d-md-table-cell en
-    _panel.html) y su información se repite aquí, en una línea
-    secundaria bajo el nombre, visible solo en esas pantallas
-    (d-md-none) para no duplicarla en escritorio.
+    Diseño responsivo (corregido S039, feedback real de Miguel Ángel):
+    la tabla completa se desplaza horizontalmente en pantallas
+    estrechas dentro de .table-responsive (ya en _panel.html) -- nunca
+    se ocultan columnas. La primera versión ocultaba tamaño/contenido/
+    fecha por debajo de "md", lo que dejaba a Miguel Ángel sin forma de
+    llegar a esas columnas en el móvil; corregido a scroll horizontal
+    puro, sin duplicar la información en ningún sitio.
 
     En modo búsqueda (is_search) se añade también la ruta de la
     carpeta contenedora, siempre visible -- sin ella, un listado
@@ -38,24 +40,19 @@
                 <a href="{% url 'document_explorer:open' entry.pk %}"
                    target="_blank" rel="noopener">{{ entry.name }}</a>
             {% endif %}
-            <div class="small text-muted d-md-none">
-                {{ entry.display_size }}
-                {% if entry.is_folder %}· {{ entry.child_count }} elem.{% endif %}
-                · {{ entry.gcs_updated_at|date:"d/m/Y H:i"|default:"—" }}
-            </div>
             {% if is_search and entry.parent_path %}
                 <div class="small text-muted text-break">
                     <i class="bi bi-signpost-2"></i> {{ entry.parent_path }}
                 </div>
             {% endif %}
         </td>
-        <td class="text-end small text-muted d-none d-md-table-cell">
+        <td class="text-end small text-muted">
             {{ entry.display_size }}
         </td>
-        <td class="text-end small text-muted d-none d-md-table-cell">
+        <td class="text-end small text-muted">
             {% if entry.is_folder %}{{ entry.child_count }} elem.{% endif %}
         </td>
-        <td class="text-end small text-muted d-none d-md-table-cell">
+        <td class="text-end small text-muted">
             {{ entry.gcs_updated_at|date:"d/m/Y H:i"|default:"—" }}
         </td>
         {% if show_delete %}

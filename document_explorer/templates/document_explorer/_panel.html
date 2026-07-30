@@ -99,7 +99,7 @@
     </div>
 {% else %}
     <div class="table-responsive">
-        <table class="table table-sm table-hover align-middle mb-0">
+        <table class="table table-sm table-hover align-middle mb-0 dx-explorer-table">
             <thead>
                 <tr>
                     <th class="dx-col-icon"></th>
@@ -113,7 +113,7 @@
                             {% endif %}
                         </a>
                     </th>
-                    <th class="text-end dx-col-size d-none d-md-table-cell">
+                    <th class="text-end dx-col-size">
                         <a href="#" class="dx-sort-link"
                            hx-get="{{ sort_columns.size.url }}"
                            hx-target="#explorer-panel" hx-swap="innerHTML">
@@ -123,10 +123,10 @@
                             {% endif %}
                         </a>
                     </th>
-                    <th class="text-end dx-col-count d-none d-md-table-cell">
+                    <th class="text-end dx-col-count">
                         Contenido
                     </th>
-                    <th class="text-end dx-col-date d-none d-md-table-cell">
+                    <th class="text-end dx-col-date">
                         <a href="#" class="dx-sort-link"
                            hx-get="{{ sort_columns.date.url }}"
                            hx-target="#explorer-panel" hx-swap="innerHTML">

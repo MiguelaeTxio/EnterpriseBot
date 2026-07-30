@@ -25,6 +25,25 @@
 .dx-col-trash-actions { width: 12rem; }
 
 /*
+ * Scroll horizontal en pantallas estrechas (S039, corregido tras
+ * feedback real de Miguel Ángel: la primera versión ocultaba columnas
+ * en vez de dejar desplazarse). .table-responsive ya envuelve la
+ * tabla; esto solo fija una anchura mínima para que las columnas no
+ * se compriman hasta ilegibilidad antes de que aparezca el scroll.
+ *
+ * ---
+ *
+ * Horizontal scroll on narrow screens (S039, fixed after Miguel
+ * Angel's real feedback: the first version hid columns instead of
+ * letting the user scroll). .table-responsive already wraps the
+ * table; this only sets a minimum width so columns do not compress
+ * into illegibility before the scrollbar kicks in.
+ */
+.dx-explorer-table {
+    min-width: 40rem;
+}
+
+/*
  * Cabeceras ordenables (S039). Mismo color que el texto normal de la
  * cabecera -- no deben parecer un enlace de navegación cualquiera,
  * solo dejar claro con el cursor y el subrayado al pasar el ratón que

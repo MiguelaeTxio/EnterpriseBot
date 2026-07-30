@@ -105,12 +105,13 @@ convertirse justo en la comprobación fila a fila que todo el diseño
 evita.
 """
 from urllib.parse import urlencode
+import datetime
 
 from django.contrib import messages
 from django.db.models import (
     BigIntegerField, Case, DateTimeField, F, Q, Value, When,
 )
-from django.db.models.functions import Coalesce
+from django.db.models.functions import Cast, Coalesce
 from django.http import Http404, HttpResponseRedirect
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
@@ -147,8 +148,11 @@ DEFAULT_DIR = "asc"
 # metadato). Ordenar y paginar necesitan un valor comparable siempre
 # -- nunca comparar contra NULL. Las filas sin fecha real quedan al
 # principio en orden ascendente y al final en descendente, igual que
-# el resto de valores "más antiguos que cualquier otro".
-_EPOCH = timezone.datetime(1970, 1, 1, tzinfo=timezone.get_default_timezone())
+# el resto de valores "más antiguos que cualquier otro". UTC explícito
+# de la librería estándar, sin depender de `timezone.get_default_
+# timezone()` (Europe/Madrid) -- ni el valor ni el razonamiento sobre
+# él deben cambiar si algún día cambia TIME_ZONE en settings.py.
+_EPOCH = datetime.datetime(1970, 1, 1, tzinfo=datetime.timezone.utc)
 
 
 class ExplorerAccessMixin(CompanyUserRequiredMixin):
@@ -595,6 +599,15 @@ class FolderListingView(ExplorerAccessMixin, TemplateView):
         además hace que el caso común (el orden por nombre por
         defecto) se salte por completo esta ruta de código, igual que
         antes de S039.
+
+        Segunda vuelta (2026-07-30, mismo día): Miguel Ángel confirmó
+        que el `output_field` explícito no bastaba -- el clic en
+        "Modificado" seguía sin ordenar en producción. Se añade
+        `Cast(..., output_field=DateTimeField())` alrededor del
+        `Coalesce` completo: fuerza el tipo `CAST(... AS DATETIME)` en
+        el SQL generado, el patrón documentado para este fallo cuando
+        el `output_field` por sí solo no es suficiente para que MySQL
+        deje de tipar el resultado como texto.
         """
         if field == "sort_size":
             return query.annotate(
@@ -613,9 +626,12 @@ class FolderListingView(ExplorerAccessMixin, TemplateView):
             )
         if field == "sort_date":
             return query.annotate(
-                sort_date=Coalesce(
-                    F("gcs_updated_at"),
-                    Value(_EPOCH, output_field=DateTimeField()),
+                sort_date=Cast(
+                    Coalesce(
+                        F("gcs_updated_at"),
+                        Value(_EPOCH, output_field=DateTimeField()),
+                        output_field=DateTimeField(),
+                    ),
                     output_field=DateTimeField(),
                 ),
             )
