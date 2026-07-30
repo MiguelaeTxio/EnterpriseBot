@@ -122,7 +122,7 @@ cosmético, no bloqueante, candidato a una futura herramienta de
 "carpetas vacías", no resuelto aquí.
 """
 from django.db import transaction
-from django.db.models import Case, F, When
+from django.db.models import Case, F, Value, When
 
 from document_explorer.index_writer import ancestors_of, ensure_folder_chain
 from document_explorer.models import DocumentIndexEntry, path_digest
@@ -366,14 +366,28 @@ def _bulk_adjust(bucket, field_name, deltas):
         path_digest(folder_path): delta
         for folder_path, delta in deltas.items()
     }
+    # Value(delta) sin más se infiere como IntegerField pase lo que
+    # pase el campo real -- combinado con F("total_size_bytes")
+    # (BigIntegerField) en el mismo Case(), Django no sabe qué tipo de
+    # salida darle y lanza FieldError ("mixed types: IntegerField,
+    # BigIntegerField. You must set output_field."), visto en
+    # producción (S039). Usar el propio campo del modelo como
+    # output_field, tanto en cada Value() como en el Case(), lo deja
+    # sin ambigüedad.
+    field = DocumentIndexEntry._meta.get_field(field_name)
     whens = [
-        When(blob_name_hash=digest, then=F(field_name) + delta)
+        When(
+            blob_name_hash=digest,
+            then=F(field_name) + Value(delta, output_field=field),
+        )
         for digest, delta in hash_to_delta.items()
     ]
     DocumentIndexEntry.objects.filter(
         bucket=bucket, blob_name_hash__in=list(hash_to_delta.keys()),
         deleted_at__isnull=True, purged_at__isnull=True,
-    ).update(**{field_name: Case(*whens, default=F(field_name))})
+    ).update(**{
+        field_name: Case(*whens, default=F(field_name), output_field=field),
+    })
 
 
 def move_entries(entries, destination_folder):
