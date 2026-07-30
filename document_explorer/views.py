@@ -1251,10 +1251,12 @@ class MoveFileView(MoveScopeMixin, View):
     delete.
 
     Each file is moved independently (`move_service.move_entry` per
-    entry, not a single all-or-nothing transaction): a name collision
-    on one file must not block the rest of a batch like "todos los
-    manuales" from moving -- the conflicting ones are reported back by
-    name, moved and skipped both counted in the confirmation message.
+    entry, not a single all-or-nothing transaction). A name collision
+    at the destination no longer blocks anything -- `move_entry`
+    resolves it on its own with a correlative numeric suffix (Miguel
+    Ángel's decision, S039: never cancel the batch nor ask name by
+    name) -- but it is counted and reported in the confirmation
+    message so it is never a silent surprise.
 
     ---
 
@@ -1266,10 +1268,12 @@ class MoveFileView(MoveScopeMixin, View):
 
     Cada archivo se mueve de forma independiente
     (`move_service.move_entry` por entrada, no una única transacción
-    todo-o-nada): una colisión de nombre en un archivo no debe bloquear
-    el resto de un lote como "todos los manuales" -- los que colisionan
-    se informan por nombre, movidos y omitidos se cuentan los dos en el
-    mensaje de confirmación.
+    todo-o-nada). Una colisión de nombre en el destino ya no bloquea
+    nada -- `move_entry` la resuelve sola con un sufijo numérico
+    correlativo (decisión de Miguel Ángel, S039: nunca cancelar el
+    lote ni preguntar nombre por nombre) -- pero se cuenta e informa
+    en el mensaje de confirmación para que nunca sea una sorpresa
+    silenciosa.
     """
 
     def post(self, request):
@@ -1279,13 +1283,13 @@ class MoveFileView(MoveScopeMixin, View):
         destination = (request.POST.get("destination_folder") or "").strip()
         bucket = entries[0].bucket
 
-        moved, conflicts = [], []
+        moved, renamed = [], []
         for entry in entries:
-            try:
-                move_service.move_entry(entry, destination)
-                moved.append(entry.name)
-            except move_service.MoveConflict:
-                conflicts.append(entry.name)
+            original_name = entry.name
+            move_service.move_entry(entry, destination)
+            moved.append(entry.name)
+            if entry.name != original_name:
+                renamed.append("%s → %s" % (original_name, entry.name))
 
         destination_label = destination or "la raíz de Directorio Principal"
         if moved:
@@ -1301,11 +1305,12 @@ class MoveFileView(MoveScopeMixin, View):
                     "%d archivo(s) movido(s) a «%s»."
                     % (len(moved), destination_label),
                 )
-        if conflicts:
+        if renamed:
             messages.warning(
                 request,
-                "No se movieron (ya existe un archivo con ese nombre "
-                "en el destino): %s" % ", ".join(conflicts),
+                "Ya había un archivo con ese nombre en el destino, "
+                "renombrado(s) automáticamente con un número: %s"
+                % ", ".join(renamed),
             )
 
         return redirect(
