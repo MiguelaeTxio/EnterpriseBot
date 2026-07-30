@@ -7,6 +7,16 @@
     El centinela del final se sustituye a sí mismo (hx-swap="outerHTML")
     por el bloque de filas siguiente, que trae su propio centinela si
     aún queda más. Paginación por cursor, nunca por OFFSET.
+
+    Diseño responsivo: en pantallas por debajo de "md" las columnas de
+    tamaño/contenido/fecha se ocultan (ver d-none d-md-table-cell en
+    _panel.html) y su información se repite aquí, en una línea
+    secundaria bajo el nombre, visible solo en esas pantallas
+    (d-md-none) para no duplicarla en escritorio.
+
+    En modo búsqueda (is_search) se añade también la ruta de la
+    carpeta contenedora, siempre visible -- sin ella, un listado
+    aplanado de varias carpetas no se puede interpretar.
 {% endcomment %}
 
 {% for entry in entries %}
@@ -21,19 +31,31 @@
         <td class="text-break">
             {% if entry.is_folder %}
                 <a href="#"
-                   hx-get="{% url 'document_explorer:listing' %}?bucket={{ bucket|urlencode }}&path={{ entry.blob_name|urlencode }}"
+                   hx-get="{% url 'document_explorer:listing' %}?bucket={{ bucket|urlencode }}&path={{ entry.blob_name|urlencode }}&sort={{ sort_key|urlencode }}&dir={{ sort_dir|urlencode }}"
                    hx-target="#explorer-panel"
                    hx-swap="innerHTML">{{ entry.name }}</a>
             {% else %}
                 <a href="{% url 'document_explorer:open' entry.pk %}"
                    target="_blank" rel="noopener">{{ entry.name }}</a>
             {% endif %}
+            <div class="small text-muted d-md-none">
+                {{ entry.display_size }}
+                {% if entry.is_folder %}· {{ entry.child_count }} elem.{% endif %}
+                · {{ entry.gcs_updated_at|date:"d/m/Y H:i"|default:"—" }}
+            </div>
+            {% if is_search and entry.parent_path %}
+                <div class="small text-muted text-break">
+                    <i class="bi bi-signpost-2"></i> {{ entry.parent_path }}
+                </div>
+            {% endif %}
         </td>
-        <td class="text-end small text-muted">{{ entry.display_size }}</td>
-        <td class="text-end small text-muted">
+        <td class="text-end small text-muted d-none d-md-table-cell">
+            {{ entry.display_size }}
+        </td>
+        <td class="text-end small text-muted d-none d-md-table-cell">
             {% if entry.is_folder %}{{ entry.child_count }} elem.{% endif %}
         </td>
-        <td class="text-end small text-muted">
+        <td class="text-end small text-muted d-none d-md-table-cell">
             {{ entry.gcs_updated_at|date:"d/m/Y H:i"|default:"—" }}
         </td>
         {% if show_delete %}
@@ -51,8 +73,8 @@
     </tr>
 {% endfor %}
 
-{% if next_cursor %}
-    <tr hx-get="{% url 'document_explorer:listing' %}?bucket={{ bucket|urlencode }}&path={{ folder_path|urlencode }}&after_kind={{ next_cursor.after_kind|urlencode }}&after_name={{ next_cursor.after_name|urlencode }}&after_id={{ next_cursor.after_id }}"
+{% if next_page_url %}
+    <tr hx-get="{{ next_page_url }}"
         hx-trigger="revealed"
         hx-swap="outerHTML">
         <td colspan="6" class="text-center text-muted small py-2">Cargando más…</td>

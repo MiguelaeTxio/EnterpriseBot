@@ -206,3 +206,51 @@ def readable_buckets(company_user):
         .values_list("bucket", flat=True)
     )
     return [b for b in INDEXED_BUCKETS if b in granted]
+
+
+def readable_prefixes(company_user, bucket):
+    """
+    Grant prefixes to use as an OR filter in a recursive search
+    (S039), never as a per-row check.
+
+    Returns `None` when the user may read the whole bucket without
+    restriction (ADMIN, or an explicit empty-prefix grant) -- the
+    caller then applies no extra filter at all. Otherwise returns the
+    list of prefixes the user may read, which may be empty (no access
+    to this bucket whatsoever).
+
+    This is deliberately a different trade-off than `visibility()`:
+    that function resolves a single folder and lets the caller avoid
+    ever touching `blob_name`. A recursive search has no single folder
+    to resolve against -- it inherently scans a subtree -- so the
+    permission check here is the same handful of grant strings applied
+    as `blob_name__startswith` conditions, still O(number of grants),
+    never O(number of rows).
+
+    ---
+
+    Prefijos de concesión para usar como filtro OR en una búsqueda
+    recursiva (S039), nunca como comprobación fila a fila.
+
+    Devuelve `None` cuando el usuario puede leer el cubo entero sin
+    restricción (ADMIN, o una concesión explícita de prefijo vacío) --
+    quien llame no aplica entonces ningún filtro adicional. Si no,
+    devuelve la lista de prefijos que el usuario puede leer, que puede
+    estar vacía (sin ningún acceso a este cubo).
+
+    Es deliberadamente un compromiso distinto al de `visibility()`:
+    esa función resuelve una única carpeta y evita que quien llama
+    toque nunca `blob_name`. Una búsqueda recursiva no tiene una única
+    carpeta que resolver -- por su propia naturaleza recorre un
+    subárbol -- así que la comprobación de permiso aquí es el mismo
+    puñado de cadenas de concesión aplicadas como condiciones
+    `blob_name__startswith`, sigue siendo O(número de concesiones),
+    nunca O(número de filas).
+    """
+    if is_unrestricted(company_user):
+        return None
+    grants = grants_for(company_user, bucket)
+    prefixes = [prefix for prefix, can_read, _delete in grants if can_read]
+    if "" in prefixes:
+        return None
+    return prefixes
