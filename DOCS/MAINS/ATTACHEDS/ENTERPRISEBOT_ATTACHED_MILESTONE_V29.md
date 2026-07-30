@@ -225,14 +225,16 @@ explorador para todo el mundo. Solo lo ve quien lo borró, en su propia
 papelera, y de su gestión depende que vuelva a estar disponible para el
 resto. No hay estado intermedio de "visible pero marcado".
 
-### 3.12. Consolidación de cubos y renombrado de pestañas (S038, apunte para cuando se toque el código)
+### 3.12. Consolidación de cubos y renombrado de pestañas (S038 — pestañas completadas, resto pendiente)
 
-Registrada literalmente según se dictó (directriz 4.8). **La parte de
-código (renombrado de pestañas, retirada de las apps
-`machine_documents`/`personal_documents`, rediseño de la subida
-tipada) no se implementa en esta sesión** — sigue siendo instrucción
-explícita para cuando se aborde. **La parte de infraestructura (borrado
-de los dos cubos) SÍ se ejecutó en esta misma sesión — ver 3.13.**
+Registrada literalmente según se dictó (directriz 4.8). **El
+renombrado de pestañas y la retirada de los dos cubos borrados de la
+lista SÍ se implementaron en esta sesión** (commit `5d51d8c`,
+desplegado y verificado en Actions). **Lo que sigue pendiente para
+cuando se aborde de nuevo:** retirar por completo las apps
+`machine_documents`/`personal_documents` (modelos, vistas de subida,
+`purge_orphaned_gcs_blobs.py`) y rediseñar la vía de subida tipada
+(decisión 3.8) para escribir directamente en `cgs_grupo_alvarez`.
 
 **Renombrado de pestañas visibles a castellano**, verbatim: *"lo que es
 los nombres visibles de las 'pestañas' o mejor dicho 'cubos' habrá que
