@@ -92,24 +92,3 @@
     max-height: 260px;
     overflow-y: auto;
 }
-
-/*
- * Registro en vivo de la barra de progreso de mover (S039). Altura
- * acotada con scroll propio, igual criterio que .dx-move-tree -- un
- * lote de cientos de archivos no debe alargar el modal sin límite.
- */
-.dx-move-log {
-    max-height: 200px;
-    overflow-y: auto;
-    font-family: monospace;
-}
-
-/*
- * Ancho inicial de la barra de progreso de mover (S039). JS actualiza
- * el ancho en tiempo real vía .style.width según avanza el lote --
- * esto solo fija el punto de partida sin usar un atributo style en el
- * HTML estático (el linter del proyecto lo rechaza, H021).
- */
-.dx-move-progress-bar {
-    width: 0%;
-}

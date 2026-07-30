@@ -46,9 +46,9 @@ urlpatterns = [
         name="move_create_folder",
     ),
     path(
-        "mover/lote/",
-        views.MoveBatchView.as_view(),
-        name="move_batch",
+        "mover/",
+        views.MoveView.as_view(),
+        name="move",
     ),
     path("papelera/", views.TrashView.as_view(), name="trash"),
     path(

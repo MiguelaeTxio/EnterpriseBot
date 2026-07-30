@@ -221,7 +221,7 @@ def move_entry(entry, destination_folder, ensure_folder=True):
 
     `ensure_folder=False` skips `ensure_folder_chain` -- for a batch
     of several entries going to the same destination in one request
-    (`MoveBatchView`), the chain only needs creating once, not once
+    (`MoveView`), the chain only needs creating once, not once
     per file: measured in production (S039), each move was paying
     ~350-420 ms of pure server time, largely from repeating this same
     existence check on every single call for a destination that, past
@@ -240,7 +240,7 @@ def move_entry(entry, destination_folder, ensure_folder=True):
 
     `ensure_folder=False` se salta `ensure_folder_chain` -- para un
     lote de varias entradas con el mismo destino en una sola petición
-    (`MoveBatchView`), la cadena solo hace falta crearla una vez, no
+    (`MoveView`), la cadena solo hace falta crearla una vez, no
     una por archivo: medido en producción (S039), cada movimiento
     pagaba ~350-420 ms de tiempo puro de servidor, en buena parte por
     repetir esta misma comprobación de existencia en cada llamada para

@@ -12,19 +12,16 @@
     que releerla de los casilleros de la página que hay detrás del
     modal después de la primera petición.
 
-    Barra de progreso (S039, petición explícita de Miguel Ángel: "hay
-    que incluir la barra de progreso con los nombres de archivos que
-    se están copiando... antes estábamos a ciegas totalmente"). El
-    botón final "Mover aquí" ya no es un submit normal -- es un botón
-    que dispara dxMoveStart(), una función mínima en JS puro (sin
-    librería nueva) que trocea la selección en bloques
-    (DX_MOVE_CHUNK_SIZE) y llama a MoveBatchView una vez por bloque,
-    en secuencia, pintando la barra y un registro en vivo de cada
-    nombre según llega la respuesta. La primera versión llamaba una
-    vez por archivo (MoveOneView): medido en producción, 197 archivos
-    tardaban ~197 segundos reales, casi todo peaje de red/Django
-    repetido 197 veces -- agrupar en bloques reparte ese coste fijo
-    sin perder la visibilidad que pidió Miguel Ángel.
+    Mover en sí (S039): formulario normal, sin AJAX ni JSON --
+    #move-entries-form envía un POST normal a MoveView, que mueve todo
+    el lote en una única petición y redirige al listado real de la
+    carpeta destino. El único adorno es un spinner en el propio botón
+    mientras el navegador espera la respuesta (dxMoveSubmitting()).
+    Hubo una versión intermedia con barra de progreso y registro en
+    vivo, archivo a archivo y luego por bloques -- retirada a petición
+    explícita de Miguel Ángel tras medir que seguía tardando "bastante"
+    incluso en bloques: "que le den a la visibilidad... como mucho un
+    spinner."
 
     Acotado siempre a PRIMARY_BUCKET (Directorio Principal real) --
     ver MoveScopeMixin en views.py. Toda la lógica (qué subcarpetas
@@ -87,127 +84,36 @@
     </button>
 </form>
 
-<form id="move-entries-form">
+<form method="post" action="{% url 'document_explorer:move' %}"
+      id="move-entries-form" onsubmit="dxMoveSubmitting()">
     {% csrf_token %}
     {% for entry in entries %}
         <input type="hidden" name="entries" value="{{ entry.pk }}">
     {% endfor %}
     <input type="hidden" name="destination_folder" value="{{ path }}">
-    <button type="button" id="move-start-btn" class="btn btn-primary w-100"
-            onclick="dxMoveStart()">
+    <button type="submit" id="move-start-btn" class="btn btn-primary w-100">
         <i class="bi bi-folder-symlink"></i>
         Mover aquí — {{ path_label }}
     </button>
 </form>
 
-<div id="move-progress" class="d-none">
-    <div class="progress mb-2" role="progressbar" aria-label="Progreso">
-        <div id="move-progress-bar" class="progress-bar dx-move-progress-bar">
-            0 / 0
-        </div>
-    </div>
-    <div id="move-progress-log" class="small dx-move-log mb-2"></div>
-    <a id="move-progress-done" class="btn btn-outline-primary w-100 d-none"
-       href="{% url 'document_explorer:explorer' %}?bucket={{ bucket|urlencode }}&path={{ path|urlencode }}">
-        <i class="bi bi-check2"></i> Ver «{{ path_label }}»
-    </a>
-</div>
-
 <script>
-    // dxMoveStart: trocea la selección en bloques y dispara
-    // MoveBatchView una vez por bloque, en secuencia, pintando la
-    // barra y el registro en vivo -- ver el comentario de arriba
-    // (S039, petición de Miguel Ángel de no quedar "a ciegas").
-    //
-    // CHUNK_SIZE: medido en producción (S039) que una petición por
-    // archivo pagaba ~350-420 ms de servidor más el viaje de red
-    // completo, 197 archivos ≈ 197 segundos reales. Agrupar en
-    // bloques reparte ese coste fijo entre varios archivos a la vez
-    // -- ver MoveBatchView. La barra y el registro se pintan igual,
-    // por bloque en vez de por archivo, así que sigue sin quedar "a
-    // ciegas".
-    const DX_MOVE_CHUNK_SIZE = 15;
-
-    function dxChunks(array, size) {
-        const chunks = [];
-        for (let i = 0; i < array.length; i += size) {
-            chunks.push(array.slice(i, i + size));
-        }
-        return chunks;
-    }
-
-    async function dxMoveStart() {
-        const form = document.getElementById("move-entries-form");
-        const entryValues = Array.from(
-            form.querySelectorAll("[name=entries]"),
-        ).map(function (input) { return input.value; });
-        const destination = form.querySelector(
-            "[name=destination_folder]",
-        ).value;
-        const csrftoken = form.querySelector(
-            "[name=csrfmiddlewaretoken]",
-        ).value;
-        const total = entryValues.length;
-
-        document.getElementById("move-start-btn").disabled = true;
-        document.getElementById("move-nav-section").classList.add("d-none");
-        document.getElementById("move-create-form").classList.add("d-none");
-        form.classList.add("d-none");
-        const progressWrap = document.getElementById("move-progress");
-        const bar = document.getElementById("move-progress-bar");
-        const log = document.getElementById("move-progress-log");
-        const doneLink = document.getElementById("move-progress-done");
-        progressWrap.classList.remove("d-none");
-
-        let done = 0;
-        for (const chunk of dxChunks(entryValues, DX_MOVE_CHUNK_SIZE)) {
-            const body = new FormData();
-            for (const pk of chunk) {
-                body.append("entries", pk);
-            }
-            body.append("destination_folder", destination);
-
-            let results = null;
-            try {
-                const response = await fetch(
-                    "{% url 'document_explorer:move_batch' %}",
-                    {
-                        method: "POST",
-                        headers: {"X-CSRFToken": csrftoken},
-                        body: body,
-                    },
-                );
-                if (!response.ok) {
-                    throw new Error("HTTP " + response.status);
-                }
-                const data = await response.json();
-                results = data.results;
-            } catch (error) {
-                results = chunk.map(function () { return null; });
-            }
-
-            for (const result of results) {
-                const line = document.createElement("div");
-                if (result === null) {
-                    line.className = "text-danger";
-                    line.textContent = "✗ error moviendo un archivo";
-                } else if (result.renamed) {
-                    line.textContent = "✓ " + result.original_name + " → "
-                        + result.final_name + " (nombre repetido, "
-                        + "renombrado)";
-                } else {
-                    line.textContent = "✓ " + result.final_name;
-                }
-                log.appendChild(line);
-
-                done += 1;
-                const percent = Math.round((done / total) * 100);
-                bar.style.width = percent + "%";
-                bar.textContent = done + " / " + total;
-            }
-            log.scrollTop = log.scrollHeight;
-        }
-
-        doneLink.classList.remove("d-none");
+    // dxMoveSubmitting: solo un spinner en el propio botón mientras
+    // el navegador espera la respuesta de MoveView -- sin AJAX, sin
+    // JSON, el formulario sigue su envío normal y la propia vista
+    // redirige al terminar (S039, decisión de Miguel Ángel de
+    // renunciar a la visibilidad en vivo a cambio de velocidad).
+    function dxMoveSubmitting() {
+        const btn = document.getElementById("move-start-btn");
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm" '
+            + 'role="status" aria-hidden="true"></span> Moviendo…';
+        document.getElementById("move-nav-section").classList.add(
+            "d-none",
+        );
+        document.getElementById("move-create-form").classList.add(
+            "d-none",
+        );
+        // No preventDefault(): el formulario sigue su envío normal.
     }
 </script>

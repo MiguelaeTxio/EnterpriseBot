@@ -136,7 +136,7 @@ from django.db.models import (
     BigIntegerField, Case, DateTimeField, F, Q, Value, When,
 )
 from django.db.models.functions import Cast, Coalesce
-from django.http import Http404, HttpResponseRedirect, JsonResponse
+from django.http import Http404, HttpResponseRedirect
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -1311,52 +1311,38 @@ class MoveCreateFolderView(MoveScopeMixin, View):
         )
 
 
-class MoveBatchView(MoveScopeMixin, View):
+class MoveView(MoveScopeMixin, View):
     """
-    Move a batch of files (a chunk, not necessarily the whole
-    selection) and report each result as JSON. The move modal's own
-    JavaScript splits the full selection into chunks and calls this
-    once per chunk, in sequence, painting a progress bar and a live
-    log of file names as each chunk comes back -- Miguel Ángel's
-    explicit request (S039), verbatim: "hay que incluir la barra de
-    progreso con los nombres de archivos que se están copiando... para
-    que el usuario sepa que se está haciendo algo... antes estábamos a
-    ciegas totalmente."
-
-    One request per file (`MoveOneView`, the first version of this
-    endpoint) measured ~350-420 ms of real server time per file in
-    production, dominated by `ensure_folder_chain` repeating the same
-    existence check on every single call for a destination that, past
-    the first file, already exists. Chunking cuts both costs at once:
-    fewer HTTP round trips (network + Django request overhead paid
-    once per chunk, not once per file), and `ensure_folder_chain` runs
-    exactly once per chunk (`move_service.move_entry(..., ensure_
-    folder=False)` for the rest) instead of once per file.
+    Move every selected file in a single request -- no progress
+    display. Explicit reversal by Miguel Ángel (S039) after measuring
+    that even chunked batches (`MoveBatchView`, the version before
+    this one) "seguía tardando bastante", and deciding the trade-off
+    was not worth it, verbatim: "que le den a la visibilidad...
+    vamos a probar sin visibilidad y hacerlo todo de golpe. Como mucho
+    un spinner." One request, one round trip, the fastest this can go
+    without touching `move_entry`'s own query count -- the button's
+    own `onsubmit` in `_move_browse.html` disables it and shows a
+    Bootstrap spinner for as long as the browser is waiting on this
+    view; no AJAX, no JSON, just a normal form POST and the same final
+    redirect every other mutating view in this app already uses
+    (`SendToTrashView`, `PurgeTrashView`...).
 
     ---
 
-    Mueve un lote de archivos (un bloque, no necesariamente toda la
-    selección) e informa de cada resultado en JSON. El propio
-    JavaScript del modal de mover divide la selección completa en
-    bloques y llama a esto una vez por bloque, en secuencia, pintando
-    una barra de progreso y un registro en vivo de nombres de archivo
-    según vuelve cada bloque -- petición explícita de Miguel Ángel
-    (S039), verbatim: "hay que incluir la barra de progreso con los
-    nombres de archivos que se están copiando... para que el usuario
-    sepa que se está haciendo algo... antes estábamos a ciegas
-    totalmente."
-
-    Una petición por archivo (`MoveOneView`, la primera versión de
-    este endpoint) medía ~350-420 ms de tiempo real de servidor por
-    archivo en producción, dominado por `ensure_folder_chain`
-    repitiendo la misma comprobación de existencia en cada llamada
-    para un destino que, a partir del primer archivo, ya existe.
-    Agrupar en bloques recorta los dos costes a la vez: menos viajes
-    de ida y vuelta HTTP (red + gasto fijo de petición de Django
-    pagado una vez por bloque, no una vez por archivo), y
-    `ensure_folder_chain` se ejecuta exactamente una vez por bloque
-    (`move_service.move_entry(..., ensure_folder=False)` para el
-    resto) en vez de una vez por archivo.
+    Mueve todos los archivos seleccionados en una única petición -- sin
+    visualización de progreso. Marcha atrás explícita de Miguel Ángel
+    (S039) tras medir que incluso los bloques (`MoveBatchView`, la
+    versión anterior a esta) "seguía tardando bastante", y decidir que
+    el compromiso no merecía la pena, verbatim: "que le den a la
+    visibilidad... vamos a probar sin visibilidad y hacerlo todo de
+    golpe. Como mucho un spinner." Una petición, un viaje de ida y
+    vuelta, lo más rápido que esto puede ir sin tocar el número de
+    consultas del propio `move_entry` -- el propio `onsubmit` del
+    botón en `_move_browse.html` lo desactiva y muestra un spinner de
+    Bootstrap mientras el navegador espera esta vista; sin AJAX, sin
+    JSON, solo un envío de formulario normal y la misma redirección
+    final que ya usa cualquier otra vista mutadora de esta app
+    (`SendToTrashView`, `PurgeTrashView`...).
     """
 
     def post(self, request):
@@ -1364,22 +1350,48 @@ class MoveBatchView(MoveScopeMixin, View):
             request, request.POST.getlist("entries"),
         )
         destination = (request.POST.get("destination_folder") or "").strip()
+        bucket = entries[0].bucket
 
         index_writer.ensure_folder_chain(PRIMARY_BUCKET, destination)
 
-        results = []
+        moved, renamed = [], []
         for entry in entries:
             original_name = entry.name
             move_service.move_entry(
                 entry, destination, ensure_folder=False,
             )
-            results.append({
-                "original_name": original_name,
-                "final_name": entry.name,
-                "renamed": entry.name != original_name,
-            })
+            moved.append(entry.name)
+            if entry.name != original_name:
+                renamed.append("%s → %s" % (original_name, entry.name))
 
-        return JsonResponse({"results": results})
+        destination_label = destination or "la raíz de Directorio Principal"
+        if moved:
+            if len(moved) == 1:
+                messages.success(
+                    request,
+                    "«%s» se ha movido a «%s»."
+                    % (moved[0], destination_label),
+                )
+            else:
+                messages.success(
+                    request,
+                    "%d archivo(s) movido(s) a «%s»."
+                    % (len(moved), destination_label),
+                )
+        if renamed:
+            messages.warning(
+                request,
+                "Ya había un archivo con ese nombre en el destino, "
+                "renombrado(s) automáticamente con un número: %s"
+                % ", ".join(renamed),
+            )
+
+        return redirect(
+            "%s?bucket=%s&path=%s" % (
+                reverse("document_explorer:explorer"),
+                bucket, destination,
+            )
+        )
 
 
 class TrashView(ExplorerAccessMixin, TemplateView):
