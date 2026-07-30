@@ -6,7 +6,9 @@ Navigation never touches Google Cloud Storage. Every listing is a
 single indexed equality lookup on `parent_path_hash`, ordered folders
 first, paginated by cursor. GCS is contacted at exactly two moments:
 when a document's content is opened (a signed URL is minted) and when
-the administrator empties a trash (the object is really deleted).
+the administrator empties a trash (the object is really deleted) --
+moving (S039, see `move_service`) is NOT a third moment: it is purely
+a pointer change in the index, never touches GCS.
 
 Pagination is by cursor, not OFFSET: the cost of page 40 is the same
 as page 1. The cursor is now a triple of (entry_kind, sort_field,
@@ -24,13 +26,18 @@ S039 adds three search scopes on top of plain folder browsing:
   from any folder without navigating there first.
 
 The recursive scopes are the one place this module accepts an
-unindexed `blob_name__startswith` scan -- a deliberate, occasional
-search action, not a page-load-critical navigation path, and bounded
-by the size of one bucket (tens of thousands of rows at most, per the
-H28 inventory). Permission scoping for those two modes still follows
-the same "resolve once per request" principle as `permissions.py`:
-`readable_prefixes()` returns a handful of grant prefixes, applied as
-one small OR condition, never as a per-row check in Python.
+unindexed scan -- a deliberate, occasional search action, not a
+page-load-critical navigation path, and bounded by the size of one
+bucket (tens of thousands of rows at most, per the H28 inventory).
+Since S039's move redesign (`move_service`, pointer-only: a move
+writes `parent_path`, never `blob_name`), "is this under folder X"
+has two different answers depending on entry kind -- see
+`_virtual_descendant_q` for the split (files: `parent_path`; folders,
+which never move: `blob_name`). Permission scoping for the recursive
+modes still follows the same "resolve once per request" principle as
+`permissions.py`: `readable_prefixes()` returns a handful of grant
+prefixes, applied as one small OR condition, never as a per-row check
+in Python.
 
 Permissions are resolved once per request, in Python, against the
 folder being opened -- see `permissions.py` for why rows are never
@@ -56,7 +63,9 @@ búsqueda indexada por igualdad sobre `parent_path_hash`, ordenada con
 las carpetas primero y paginada por cursor. Con GCS se habla en
 exactamente dos momentos: al abrir el contenido de un documento (se
 acuña una URL firmada) y cuando el administrador vacía una papelera
-(el objeto se borra de verdad).
+(el objeto se borra de verdad) -- mover (S039, ver `move_service`) NO
+es un tercer momento: es puramente un cambio de puntero en el índice,
+nunca toca GCS.
 
 La paginación es por cursor, no por OFFSET: la página 40 cuesta lo
 mismo que la 1. El cursor es ahora una terna (tipo de entrada, campo
@@ -78,15 +87,19 @@ carpeta:
   primero.
 
 Los alcances recursivos son el único sitio de este módulo donde se
-acepta un barrido sin índice sobre `blob_name__startswith` -- una
-acción de búsqueda deliberada y ocasional, no una ruta de navegación
-crítica en cada carga de página, y acotada al tamaño de un cubo
-(decenas de miles de filas como mucho, según el inventario de H28). El
-acotado de permisos de esos dos modos sigue el mismo principio de
-"resolver una vez por petición" que `permissions.py`:
-`readable_prefixes()` devuelve un puñado de prefijos de concesión,
-aplicados como una única condición OR pequeña, nunca como una
-comprobación fila a fila en Python.
+acepta un barrido sin índice -- una acción de búsqueda deliberada y
+ocasional, no una ruta de navegación crítica en cada carga de página,
+y acotada al tamaño de un cubo (decenas de miles de filas como mucho,
+según el inventario de H28). Desde el rediseño de mover de S039
+(`move_service`, puramente por puntero: mover escribe `parent_path`,
+nunca `blob_name`), "¿esto está bajo la carpeta X?" tiene dos
+respuestas distintas según el tipo de entrada -- ver
+`_virtual_descendant_q` para el reparto (archivos: `parent_path`;
+carpetas, que nunca se mueven: `blob_name`). El acotado de permisos de
+los modos recursivos sigue el mismo principio de "resolver una vez por
+petición" que `permissions.py`: `readable_prefixes()` devuelve un
+puñado de prefijos de concesión, aplicados como una única condición OR
+pequeña, nunca como una comprobación fila a fila en Python.
 
 Los permisos se resuelven una vez por petición, en Python, contra la
 carpeta que se abre -- ver `permissions.py` para por qué no se filtran
@@ -674,6 +687,67 @@ class FolderListingView(ExplorerAccessMixin, TemplateView):
             "date": "sort_date",
         }[self.sort_key]
 
+    def _virtual_descendant_q(self, prefix):
+        """
+        Q matching every entry (file or folder) whose CURRENT,
+        VIRTUAL location is `prefix` itself or falls under it.
+        Written for `move_service`'s pointer-only redesign (S039):
+        `blob_name__startswith` used to answer "is this under folder
+        X", correctly, back when moving a file also moved its real
+        object. Since move_service.move_entry only ever writes
+        `parent_path`, that question now has two different answers
+        depending on entry kind:
+
+        - FILES: `parent_path` is the only field a move ever changes,
+          so it is the one virtual-location field to trust. `entry`
+          itself has no children, so checking its own container is
+          enough.
+        - FOLDERS: out of scope for moving (Miguel Ángel's decision,
+          `move_service` docstring) -- they never move, so their own
+          `blob_name` still reliably equals their virtual path.
+
+        Empty `prefix` means "no restriction" (the whole bucket),
+        matching `permissions.covers()`'s own convention for an empty
+        grant prefix.
+
+        ---
+
+        Q que casa con cualquier entrada (archivo o carpeta) cuya
+        ubicación VIRTUAL actual es `prefix` en sí misma o cae bajo
+        ella. Escrito para el rediseño de mover puramente por puntero
+        (S039): `blob_name__startswith` respondía correctamente "¿esto
+        está bajo la carpeta X?" cuando mover un archivo también movía
+        su objeto real. Como `move_service.move_entry` ahora solo
+        escribe `parent_path`, esa pregunta tiene dos respuestas
+        distintas según el tipo de entrada:
+
+        - ARCHIVOS: `parent_path` es el único campo que un movimiento
+          cambia, así que es el campo de ubicación virtual del que
+          fiarse. La propia entrada no tiene hijos, así que comprobar
+          su propio contenedor basta.
+        - CARPETAS: fuera de alcance para mover (decisión de Miguel
+          Ángel, docstring de `move_service`) -- nunca se mueven, así
+          que su propio `blob_name` sigue siendo su ruta virtual de
+          fiar.
+
+        `prefix` vacío significa "sin restricción" (el cubo entero),
+        misma convención que ya sigue `permissions.covers()` para un
+        prefijo de concesión vacío.
+        """
+        if not prefix:
+            return Q()
+        return (
+            Q(entry_kind=DocumentIndexEntry.KIND_FILE) & (
+                Q(parent_path=prefix)
+                | Q(parent_path__startswith=prefix + "/")
+            )
+        ) | (
+            Q(entry_kind=DocumentIndexEntry.KIND_FOLDER) & (
+                Q(blob_name=prefix)
+                | Q(blob_name__startswith=prefix + "/")
+            )
+        )
+
     def _page(self, bucket, folder_path, mode, allowed):
         """
         One indexed page of children (scope=here), or one page of a
@@ -726,12 +800,8 @@ class FolderListingView(ExplorerAccessMixin, TemplateView):
                     restriction |= Q(bucket=search_bucket)
                     continue
                 for prefix in prefixes:
-                    restriction |= Q(
-                        bucket=search_bucket, blob_name=prefix,
-                    ) | Q(
-                        bucket=search_bucket,
-                        blob_name__startswith=prefix + "/",
-                    )
+                    restriction |= Q(bucket=search_bucket) & \
+                        self._virtual_descendant_q(prefix)
             query = query.filter(restriction) if search_buckets else \
                 query.none()
         else:
@@ -748,7 +818,7 @@ class FolderListingView(ExplorerAccessMixin, TemplateView):
             else:
                 if folder_path:
                     query = query.filter(
-                        blob_name__startswith=folder_path + "/",
+                        self._virtual_descendant_q(folder_path),
                     )
                 prefixes = permissions.readable_prefixes(
                     self.company_user, bucket,
@@ -756,9 +826,7 @@ class FolderListingView(ExplorerAccessMixin, TemplateView):
                 if prefixes is not None:
                     restriction = Q()
                     for prefix in prefixes:
-                        restriction |= Q(blob_name=prefix) | Q(
-                            blob_name__startswith=prefix + "/",
-                        )
+                        restriction |= self._virtual_descendant_q(prefix)
                     query = query.filter(restriction)
 
         query = self._apply_filters(query)
