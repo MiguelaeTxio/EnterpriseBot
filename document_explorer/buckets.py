@@ -48,6 +48,16 @@ INDEXED_BUCKETS = (
     HISTORICAL_BUCKET,
 )
 
+# Cubo raíz de la unificación visual (S039, decisión de Miguel Ángel):
+# el explorador deja de mostrar pestañas de cubo -- todo se presenta
+# como un único árbol que empieza en "Directorio Principal". Ese cubo
+# es HISTORICAL_BUCKET; su carpeta raíz real ES la raíz visual, y las
+# raíces de los demás cubos indexados se inyectan como si fueran
+# subcarpetas suyas (ver `document_explorer.views` -- entradas
+# sintéticas). "Nadie tiene por qué saber que son cubos diferentes":
+# verbatim de Miguel Ángel.
+PRIMARY_BUCKET = HISTORICAL_BUCKET
+
 # Nombres visibles en castellano de las pestañas del explorador
 # (decisión de Miguel Ángel, S038, anexo H29 sección 3.12). Los cubos
 # de documentación de máquina y de personal se eliminaron de GCS en la

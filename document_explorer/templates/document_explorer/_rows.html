@@ -19,6 +19,14 @@
     En modo búsqueda (is_search) se añade también la ruta de la
     carpeta contenedora, siempre visible -- sin ella, un listado
     aplanado de varias carpetas no se puede interpretar.
+
+    Unificación visual (S039): en la raíz de Directorio Principal,
+    `entries` puede traer filas sintéticas (VirtualBucketFolder, ver
+    views.py) por delante de las reales, representando Fotos Partes/
+    Fotos Albaranes como si fueran subcarpetas normales. No tienen
+    `pk` real -- de ahí el `{% if entry.pk %}` antes del botón de
+    borrado, para no intentar borrar una carpeta que no existe como
+    fila del índice.
 {% endcomment %}
 
 {% for entry in entries %}
@@ -33,7 +41,7 @@
         <td class="text-break">
             {% if entry.is_folder %}
                 <a href="#"
-                   hx-get="{% url 'document_explorer:listing' %}?bucket={{ bucket|urlencode }}&path={{ entry.blob_name|urlencode }}&sort={{ sort_key|urlencode }}&dir={{ sort_dir|urlencode }}"
+                   hx-get="{{ entry.nav_url }}"
                    hx-target="#explorer-panel"
                    hx-swap="innerHTML">{{ entry.name }}</a>
             {% else %}
@@ -57,14 +65,16 @@
         </td>
         {% if show_delete %}
             <td class="text-end">
-                <form method="post"
-                      action="{% url 'document_explorer:trash_add' entry.pk %}">
-                    {% csrf_token %}
-                    <button type="submit" class="btn btn-sm btn-link text-danger p-0"
-                            title="Mover a mi papelera">
-                        <i class="bi bi-trash"></i>
-                    </button>
-                </form>
+                {% if entry.pk %}
+                    <form method="post"
+                          action="{% url 'document_explorer:trash_add' entry.pk %}">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-sm btn-link text-danger p-0"
+                                title="Mover a mi papelera">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </form>
+                {% endif %}
             </td>
         {% endif %}
     </tr>

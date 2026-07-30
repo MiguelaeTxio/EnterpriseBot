@@ -16,7 +16,7 @@
         {% for crumb in breadcrumbs %}
             <li class="breadcrumb-item">
                 <a href="#"
-                   hx-get="{% url 'document_explorer:listing' %}?bucket={{ bucket|urlencode }}&path={{ crumb.path|urlencode }}&sort={{ sort_key|urlencode }}&dir={{ sort_dir|urlencode }}"
+                   hx-get="{{ crumb.url }}"
                    hx-target="#explorer-panel"
                    hx-swap="innerHTML">{{ crumb.label }}</a>
             </li>
@@ -145,7 +145,7 @@
                         <td><i class="bi bi-arrow-90deg-up text-muted"></i></td>
                         <td colspan="5">
                             <a href="#"
-                               hx-get="{% url 'document_explorer:listing' %}?bucket={{ bucket|urlencode }}&path={{ parent_path|urlencode }}&sort={{ sort_key|urlencode }}&dir={{ sort_dir|urlencode }}"
+                               hx-get="{{ parent_nav_url }}"
                                hx-target="#explorer-panel"
                                hx-swap="innerHTML">..</a>
                         </td>

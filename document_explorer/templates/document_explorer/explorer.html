@@ -31,13 +31,7 @@
         </div>
     {% else %}
 
-        <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
-            <div class="btn-group btn-group-sm" role="group">
-                {% for tab in buckets %}
-                    <a class="btn {% if tab.active %}btn-primary{% else %}btn-outline-secondary{% endif %}"
-                       href="?bucket={{ tab.name|urlencode }}">{{ tab.label }}</a>
-                {% endfor %}
-            </div>
+        <div class="d-flex align-items-center justify-content-end mb-3">
             <a class="btn btn-sm btn-outline-secondary"
                href="{% url 'document_explorer:trash' %}">
                 <i class="bi bi-trash"></i> Mi papelera

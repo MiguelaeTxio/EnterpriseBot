@@ -103,6 +103,17 @@ distintos, y el indicador único `show_delete` por petición en el que
 se apoya este módulo no puede expresar una respuesta por fila sin
 convertirse justo en la comprobación fila a fila que todo el diseño
 evita.
+
+Unificación visual del árbol (S039, decisión explícita de Miguel
+Ángel): el explorador deja de mostrar pestañas de cubo. Todo se
+presenta como un único árbol que empieza en "Directorio Principal"
+(`PRIMARY_BUCKET`, el cubo histórico); las raíces de los demás cubos
+indexados (Fotos Partes, Fotos Albaranes) se inyectan como filas de
+carpeta sintéticas (`VirtualBucketFolder`) en la primera página de la
+raíz de `PRIMARY_BUCKET`, y `build_breadcrumbs` antepone una miga
+"Directorio Principal" al entrar en cualquiera de ellas -- "nadie
+tiene por qué saber que son cubos diferentes". Ver
+`FolderListingView._virtual_root_entries` y `_folder_nav_url`.
 """
 from urllib.parse import urlencode
 import datetime
@@ -124,7 +135,9 @@ from panel.mixins import CompanyUserRequiredMixin
 from spare_parts.gcs_service import delete_file, generate_signed_url
 
 from document_explorer import permissions
-from document_explorer.buckets import BUCKET_DISPLAY_NAMES
+from document_explorer.buckets import (
+    BUCKET_DISPLAY_NAMES, INDEXED_BUCKETS, PRIMARY_BUCKET,
+)
 from document_explorer.models import DocumentIndexEntry, path_digest
 
 PAGE_SIZE = 200
@@ -186,65 +199,84 @@ def build_breadcrumbs(bucket, folder_path):
     """
     Build the navigation trail. Logic lives here, never in a template.
 
-    The root crumb shows the Spanish display name (BUCKET_DISPLAY_NAMES)
-    when there is one, falling back to the raw bucket name otherwise --
-    never blank, never the technical name for buckets that do have a
-    Spanish label.
+    S039, explicit decision of Miguel Angel: the explorer no longer
+    shows bucket tabs. Everything is presented as a single tree
+    starting at "Directorio Principal" -- "nadie tiene por qué saber
+    que son cubos diferentes" ("nobody needs to know these are
+    different buckets"). `PRIMARY_BUCKET` (the historical bucket) IS
+    that root: browsing its own real root already reads "Directorio
+    Principal" via BUCKET_DISPLAY_NAMES, so it needs no extra crumb.
+    Any OTHER bucket (Fotos Partes, Fotos Albaranes) gets a
+    "Directorio Principal" crumb prepended, pointing back at
+    PRIMARY_BUCKET's root -- so from the person's point of view those
+    buckets' roots look like ordinary subfolders one level under it,
+    exactly like `DOC. MAQUINAS` or `DOC. PERSONAL` do.
+
+    Every crumb carries its own `bucket`, because the trail can now
+    span more than one -- the template must never assume a single
+    page-level bucket applies to every crumb link.
 
     ---
 
     Construye la miga de pan. La lógica vive aquí, nunca en la
     plantilla.
 
-    La miga raíz muestra el nombre en castellano
-    (BUCKET_DISPLAY_NAMES) cuando existe, y si no, el nombre técnico
-    del cubo -- nunca en blanco, nunca el nombre técnico para cubos que
-    sí tienen etiqueta en castellano.
+    S039, decisión explícita de Miguel Ángel: el explorador deja de
+    mostrar pestañas de cubo. Todo se presenta como un único árbol que
+    empieza en "Directorio Principal" -- "nadie tiene por qué saber
+    que son cubos diferentes". `PRIMARY_BUCKET` (el cubo histórico) ES
+    esa raíz: navegar su propia raíz real ya se lee "Directorio
+    Principal" vía BUCKET_DISPLAY_NAMES, así que no necesita miga
+    extra. Cualquier OTRO cubo (Fotos Partes, Fotos Albaranes) recibe
+    una miga "Directorio Principal" antepuesta, apuntando a la raíz de
+    PRIMARY_BUCKET -- así que, desde el punto de vista de la persona,
+    las raíces de esos cubos parecen subcarpetas normales un nivel por
+    debajo, exactamente igual que `DOC. MAQUINAS` o `DOC. PERSONAL`.
+
+    Cada miga lleva su propio `bucket`, porque el recorrido puede
+    abarcar ahora más de uno -- la plantilla nunca debe asumir que un
+    único cubo de página aplica a todos los enlaces de migas.
     """
-    crumbs = [{
+    crumbs = []
+    if bucket != PRIMARY_BUCKET:
+        crumbs.append({
+            "label": BUCKET_DISPLAY_NAMES.get(PRIMARY_BUCKET, PRIMARY_BUCKET),
+            "bucket": PRIMARY_BUCKET,
+            "path": "",
+        })
+    crumbs.append({
         "label": BUCKET_DISPLAY_NAMES.get(bucket, bucket),
+        "bucket": bucket,
         "path": "",
-    }]
+    })
     if not folder_path:
         return crumbs
     parts = folder_path.split("/")
     for index, part in enumerate(parts):
         crumbs.append({
             "label": part,
+            "bucket": bucket,
             "path": "/".join(parts[:index + 1]),
         })
     return crumbs
 
 
-def bucket_tabs(buckets, active_bucket):
-    """
-    Build the tab list: technical name for the URL, Spanish label for
-    display, and which one is active. Logic lives here, never in the
-    template.
-
-    ---
-
-    Construye la lista de pestañas: nombre técnico para la URL,
-    etiqueta en castellano para mostrar, y cuál está activa. La lógica
-    vive aquí, nunca en la plantilla.
-    """
-    return [
-        {
-            "name": name,
-            "label": BUCKET_DISPLAY_NAMES.get(name, name),
-            "active": name == active_bucket,
-        }
-        for name in buckets
-    ]
-
-
 class ExplorerView(ExplorerAccessMixin, TemplateView):
     """
-    Explorer shell: bucket picker plus the first folder listing.
+    Explorer shell: just the container that HTMX-loads the first
+    folder listing. Since S039 there is no bucket picker -- browsing
+    always starts at `PRIMARY_BUCKET`'s root ("Directorio Principal")
+    unless the URL names a specific bucket/path (a deep link, or the
+    person continuing where they left off inside a nested bucket).
 
     ---
 
-    Armazón del explorador: selector de cubo y primer listado.
+    Armazón del explorador: solo el contenedor que carga por HTMX el
+    primer listado de carpeta. Desde S039 no hay selector de cubo -- la
+    navegación empieza siempre en la raíz de `PRIMARY_BUCKET`
+    ("Directorio Principal") salvo que la URL nombre un cubo/ruta
+    concreto (un enlace directo, o retomar donde se dejó dentro de un
+    cubo anidado).
     """
 
     template_name = "document_explorer/explorer.html"
@@ -254,22 +286,73 @@ class ExplorerView(ExplorerAccessMixin, TemplateView):
         company_user = self.request.user.company_user
         buckets = permissions.readable_buckets(company_user)
 
-        bucket = self.request.GET.get("bucket") or (
-            buckets[0] if buckets else ""
-        )
+        requested_bucket = self.request.GET.get("bucket")
+        if requested_bucket:
+            bucket = requested_bucket
+        elif PRIMARY_BUCKET in buckets:
+            bucket = PRIMARY_BUCKET
+        else:
+            bucket = buckets[0] if buckets else ""
+
         if bucket and bucket not in buckets:
             raise Http404("Sin acceso a ese cubo.")
 
         folder_path = (self.request.GET.get("path") or "").strip("/")
         context.update({
             "active_nav": "document_explorer",
-            "buckets": bucket_tabs(buckets, bucket),
             "bucket": bucket,
             "folder_path": folder_path,
             "has_buckets": bool(buckets),
-            "breadcrumbs": build_breadcrumbs(bucket, folder_path),
         })
         return context
+
+
+class VirtualBucketFolder:
+    """
+    A synthetic "folder" row standing in for another indexed bucket's
+    root, so `PRIMARY_BUCKET`'s root can present Fotos Partes/Fotos
+    Albaranes as ordinary subfolders (S039, explicit decision of
+    Miguel Angel -- see the module docstring and `build_breadcrumbs`).
+
+    Deliberately duck-types just the attributes `_rows.html` needs from
+    a real `DocumentIndexEntry` folder row -- `is_folder`, `name`,
+    `display_size`, `child_count`, `gcs_updated_at`, `entry_kind`, and
+    `nav_url` (computed the same way as for real folders, see
+    `FolderListingView._folder_nav_url`). It is never sorted by the
+    database: `FolderListingView._page` always places these ahead of
+    the real, queried entries on the first page of `PRIMARY_BUCKET`'s
+    root, in a fixed order, because they have no real `size_bytes`/
+    `gcs_updated_at` to compare against a chosen sort column.
+
+    ---
+
+    Una fila de "carpeta" sintética que representa la raíz de otro
+    cubo indexado, para que la raíz de `PRIMARY_BUCKET` pueda presentar
+    Fotos Partes/Fotos Albaranes como subcarpetas normales (S039,
+    decisión explícita de Miguel Ángel -- ver el docstring del módulo
+    y `build_breadcrumbs`).
+
+    Imita a propósito solo los atributos que `_rows.html` necesita de
+    una fila de carpeta real de `DocumentIndexEntry` -- `is_folder`,
+    `name`, `display_size`, `child_count`, `gcs_updated_at`,
+    `entry_kind`, y `nav_url` (calculado igual que para las carpetas
+    reales, ver `FolderListingView._folder_nav_url`). Nunca se ordena
+    en base de datos: `FolderListingView._page` siempre las coloca por
+    delante de las entradas reales consultadas, en la primera página de
+    la raíz de `PRIMARY_BUCKET`, en un orden fijo, porque no tienen
+    `size_bytes`/`gcs_updated_at` reales con los que compararse contra
+    una columna de orden elegida.
+    """
+
+    entry_kind = DocumentIndexEntry.KIND_FOLDER
+    is_folder = True
+    display_size = "—"
+    gcs_updated_at = None
+
+    def __init__(self, name, child_count, nav_url):
+        self.name = name
+        self.child_count = child_count
+        self.nav_url = nav_url
 
 
 class FolderListingView(ExplorerAccessMixin, TemplateView):
@@ -321,10 +404,16 @@ class FolderListingView(ExplorerAccessMixin, TemplateView):
         scope = self.filters["scope"]
         is_search = scope != SCOPE_HERE
 
+        breadcrumbs = build_breadcrumbs(bucket, folder_path)
+        for crumb in breadcrumbs:
+            crumb["url"] = self._folder_nav_url(
+                crumb["bucket"], crumb["path"],
+            )
+
         common = {
             "bucket": bucket,
             "folder_path": folder_path,
-            "breadcrumbs": build_breadcrumbs(bucket, folder_path),
+            "breadcrumbs": breadcrumbs,
             "is_search": is_search,
             "filters": self.filters,
             "sort_key": self.sort_key,
@@ -362,6 +451,7 @@ class FolderListingView(ExplorerAccessMixin, TemplateView):
                 "show_delete": False,
                 "has_parent": has_parent,
                 "parent_path": parent_path,
+                "parent_nav_url": self._folder_nav_url(bucket, parent_path),
             })
             return context
 
@@ -369,12 +459,20 @@ class FolderListingView(ExplorerAccessMixin, TemplateView):
         has_more = len(entries) > PAGE_SIZE
         entries = entries[:PAGE_SIZE]
 
+        is_first_page = not request.GET.get("after_id")
+        if (
+            scope == SCOPE_HERE and bucket == PRIMARY_BUCKET
+            and not folder_path and is_first_page
+        ):
+            entries = self._virtual_root_entries(company_user) + entries
+
         context.update(common)
         context.update({
             "entries": entries,
             "denied": False,
             "parent_path": parent_path,
             "has_parent": has_parent,
+            "parent_nav_url": self._folder_nav_url(bucket, parent_path),
             "show_delete": show_delete,
             "next_page_url": (
                 self._build_page_url(self._cursor(entries[-1]))
@@ -382,6 +480,42 @@ class FolderListingView(ExplorerAccessMixin, TemplateView):
             ),
         })
         return context
+
+    def _virtual_root_entries(self, company_user):
+        """
+        Synthetic folder rows for the other indexed buckets, injected
+        ahead of `PRIMARY_BUCKET`'s own real root entries -- see
+        `VirtualBucketFolder` and the module docstring. Only for
+        buckets the user can actually read; a bucket with zero grants
+        simply does not appear, same as it would not have appeared as
+        a tab before S039.
+
+        ---
+
+        Filas de carpeta sintéticas para los demás cubos indexados,
+        inyectadas por delante de las entradas reales de la propia raíz
+        de `PRIMARY_BUCKET` -- ver `VirtualBucketFolder` y el docstring
+        del módulo. Solo para los cubos que el usuario puede leer de
+        verdad; un cubo sin ninguna concesión simplemente no aparece,
+        igual que no habría aparecido como pestaña antes de S039.
+        """
+        readable = permissions.readable_buckets(company_user)
+        virtual = []
+        for bucket_name in INDEXED_BUCKETS:
+            if bucket_name == PRIMARY_BUCKET or bucket_name not in readable:
+                continue
+            child_count = DocumentIndexEntry.objects.filter(
+                bucket=bucket_name,
+                parent_path_hash=path_digest(""),
+                deleted_at__isnull=True,
+                purged_at__isnull=True,
+            ).count()
+            virtual.append(VirtualBucketFolder(
+                name=BUCKET_DISPLAY_NAMES.get(bucket_name, bucket_name),
+                child_count=child_count,
+                nav_url=self._folder_nav_url(bucket_name, ""),
+            ))
+        return virtual
 
     # -- Orden y filtros (S039) -------------------------------------
 
@@ -485,6 +619,32 @@ class FolderListingView(ExplorerAccessMixin, TemplateView):
             reverse("document_explorer:listing"), urlencode(params),
         )
 
+    def _folder_nav_url(self, bucket, path):
+        """
+        URL for navigating into a folder (real or virtual): bucket and
+        path change, sort/direction carry over, everything else
+        (scope/q/ext/local) resets -- a fresh location starts a fresh
+        listing, same rule as any other folder click already followed
+        before S039's virtual root existed.
+
+        ---
+
+        URL para navegar a una carpeta (real o virtual): cambian cubo y
+        ruta, se conserva orden/dirección, y se reinicia todo lo demás
+        (scope/q/ext/local) -- una ubicación nueva empieza un listado
+        nuevo, la misma regla que ya seguía cualquier clic de carpeta
+        antes de que existiera la raíz virtual de S039.
+        """
+        params = {
+            "bucket": bucket,
+            "path": path,
+            "sort": self.sort_key,
+            "dir": self.sort_dir,
+        }
+        return "%s?%s" % (
+            reverse("document_explorer:listing"), urlencode(params),
+        )
+
     # -- Consulta -----------------------------------------------------
 
     def _sort_field(self):
@@ -551,7 +711,11 @@ class FolderListingView(ExplorerAccessMixin, TemplateView):
         query = query.order_by("-entry_kind", order_field, "id")
         query = self._apply_cursor(query, field)
 
-        return list(query[:PAGE_SIZE + 1])
+        results = list(query[:PAGE_SIZE + 1])
+        for entry in results:
+            if entry.is_folder:
+                entry.nav_url = self._folder_nav_url(bucket, entry.blob_name)
+        return results
 
     def _annotate_sort_field(self, query, field):
         """
