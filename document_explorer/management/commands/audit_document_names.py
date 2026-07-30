@@ -124,7 +124,18 @@ _JUNK_STEM_RE = re.compile(
 # fecha; solo las imágenes con nombre opaco se apartan como fotos.
 _OPAQUE_STEM_RE = re.compile(
     r"^(?:[0-9a-f]{8,}"
-    r"|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$",
+    r"|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+    # Prefijo de cámara/WhatsApp IMG, confirmado con datos reales
+    # (S039, 2026-07-30): "IMG 1", "IMG-20160208-WA0000",
+    # "IMG-20230208-WA0011 (1)" -- siempre que lo que sigue a "IMG" (y
+    # al "WA" opcional) sean solo dígitos, espacios, guiones,
+    # paréntesis o corchetes. Restringido a extensión de imagen (ver
+    # _IMAGE_EXTENSIONS más abajo): existe al menos un caso real,
+    # `IMG-20250408-WA0019[1].pdf`, con el mismo patrón de nombre pero
+    # que sí es un documento real -- ese nunca debe caer aquí, y no
+    # cae porque la extensión no es de imagen.
+    r"|img(?:wa|[\d\s\-_()\[\].])*"
+    r")$",
     re.IGNORECASE,
 )
 _IMAGE_EXTENSIONS = {"jpg", "jpeg", "png", "heic", "heif", "gif", "bmp"}
