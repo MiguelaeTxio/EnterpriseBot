@@ -36,17 +36,17 @@ urlpatterns = [
         name="trash_add",
     ),
     path(
-        "mover/<int:pk>/navegar/",
+        "mover/navegar/",
         views.MoveBrowseView.as_view(),
         name="move_browse",
     ),
     path(
-        "mover/<int:pk>/crear-carpeta/",
+        "mover/crear-carpeta/",
         views.MoveCreateFolderView.as_view(),
         name="move_create_folder",
     ),
     path(
-        "mover/<int:pk>/",
+        "mover/",
         views.MoveFileView.as_view(),
         name="move",
     ),

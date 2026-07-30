@@ -1074,9 +1074,19 @@ class MoveScopeMixin(ExplorerAccessMixin):
        -- move never touches Fotos Partes/Fotos Albaranes, neither as
        source nor as destination: "eso es inamovible, incluso ni yo
        siquiera puedo mover eso." A file that does not live in
-       `PRIMARY_BUCKET` never even shows the move button (see
-       `_rows.html`, `entry.bucket == primary_bucket`); this is the
-       server-side backstop for that same rule.
+       `PRIMARY_BUCKET` never even shows the move checkbox (see
+       `_rows.html`, `entry.bucket == primary_bucket`); resolving by
+       `bucket=PRIMARY_BUCKET` below is the server-side backstop for
+       that same rule -- an id for a file in another bucket, however it
+       reached the request, is silently dropped, never 404s the whole
+       batch.
+
+    Works over a LIST of entries throughout, not a single one: added
+    for "mover todos los manuales" (S039) -- Miguel Ángel's own idea,
+    built on what already existed rather than a new mechanism: filter
+    the existing recursive/global search by a keyword, tick the
+    checkboxes, move everything ticked in one go through the same
+    modal a single file already used.
 
     ---
 
@@ -1094,41 +1104,63 @@ class MoveScopeMixin(ExplorerAccessMixin):
        real) -- mover nunca toca Fotos Partes/Fotos Albaranes, ni como
        origen ni como destino: "eso es inamovible, incluso ni yo
        siquiera puedo mover eso." Un archivo que no vive en
-       `PRIMARY_BUCKET` ni siquiera muestra el botón de mover (ver
-       `_rows.html`, `entry.bucket == primary_bucket`); esto es el
-       respaldo del lado del servidor de esa misma regla.
+       `PRIMARY_BUCKET` ni siquiera muestra el casillero de mover (ver
+       `_rows.html`, `entry.bucket == primary_bucket`); resolver por
+       `bucket=PRIMARY_BUCKET` abajo es el respaldo del lado del
+       servidor de esa misma regla -- un id de un archivo de otro
+       cubo, llegue como llegue en la petición, se descarta en
+       silencio, nunca hace fallar el lote entero con un 404.
+
+    Trabaja sobre una LISTA de entradas de principio a fin, no sobre
+    una sola: añadido para "mover todos los manuales" (S039) -- idea
+    del propio Miguel Ángel, construida sobre lo que ya existía en vez
+    de un mecanismo nuevo: filtrar la búsqueda recursiva/global ya
+    existente por una palabra clave, marcar los casilleros, mover todo
+    lo marcado de una vez por el mismo modal que ya usaba un solo
+    archivo.
     """
 
-    def _entry_or_404(self, request, pk):
-        entry = get_object_or_404(
-            DocumentIndexEntry,
-            pk=pk,
-            entry_kind=DocumentIndexEntry.KIND_FILE,
-            deleted_at__isnull=True,
-            purged_at__isnull=True,
-        )
+    def _entries_or_404(self, request, pks):
         company_user = request.user.company_user
         if not permissions.is_unrestricted(company_user):
             raise Http404("Solo el administrador puede mover archivos.")
-        if entry.bucket != PRIMARY_BUCKET:
-            raise Http404(
-                "Mover solo está disponible dentro de Directorio "
-                "Principal."
+        entries = list(
+            DocumentIndexEntry.objects.filter(
+                pk__in=pks,
+                entry_kind=DocumentIndexEntry.KIND_FILE,
+                bucket=PRIMARY_BUCKET,
+                deleted_at__isnull=True, purged_at__isnull=True,
             )
-        return entry
+        )
+        if not entries:
+            raise Http404(
+                "No hay archivos válidos seleccionados para mover."
+            )
+        return entries
 
-    def _browse_context(self, entry, path):
+    def _browse_context(self, entries, path):
         """
         Context for `_move_browse.html`: the modal-body fragment used
-        both by `MoveBrowseView` (navigating) and `MoveCreateFolderView`
-        (right after creating a folder, to land inside it).
+        by `MoveBrowseView` (navigating) and `MoveCreateFolderView`
+        (right after creating a folder, to land inside it). The
+        selected entries travel forward as hidden inputs inside the
+        fragment itself (`entries` in the template) -- every further
+        click inside the modal re-includes them via `hx-include`, so
+        the selection never has to be re-read from the checkboxes in
+        the page behind the modal after the first request.
 
         ---
 
         Contexto para `_move_browse.html`: el fragmento del cuerpo del
-        modal que usan tanto `MoveBrowseView` (al navegar) como
+        modal que usan `MoveBrowseView` (al navegar) y
         `MoveCreateFolderView` (justo tras crear una carpeta, para
-        aterrizar dentro de ella).
+        aterrizar dentro de ella). Las entradas seleccionadas viajan
+        hacia adelante como campos ocultos dentro del propio fragmento
+        (`entries` en la plantilla) -- cada clic siguiente dentro del
+        modal las vuelve a incluir vía `hx-include`, así que la
+        selección no tiene que releerse de los casilleros de la
+        página que hay detrás del modal después de la primera
+        petición.
         """
         subfolders = list(
             DocumentIndexEntry.objects.filter(
@@ -1139,7 +1171,8 @@ class MoveScopeMixin(ExplorerAccessMixin):
             ).order_by("name").values_list("blob_name", "name")
         )
         return {
-            "entry": entry,
+            "entries": entries,
+            "entry_count": len(entries),
             "path": path,
             "path_label": path or "(raíz de Directorio Principal)",
             "parent_path": path.rsplit("/", 1)[0] if "/" in path else "",
@@ -1164,12 +1197,14 @@ class MoveBrowseView(MoveScopeMixin, View):
     nunca se cierra mientras se navega.
     """
 
-    def get(self, request, pk):
-        entry = self._entry_or_404(request, pk)
-        path = (request.GET.get("path") or "").strip("/")
+    def post(self, request):
+        entries = self._entries_or_404(
+            request, request.POST.getlist("entries"),
+        )
+        path = (request.POST.get("path") or "").strip("/")
         return render(
             request, "document_explorer/_move_browse.html",
-            self._browse_context(entry, path),
+            self._browse_context(entries, path),
         )
 
 
@@ -1186,8 +1221,10 @@ class MoveCreateFolderView(MoveScopeMixin, View):
     carpeta o pegar aquí, como un explorador de archivos."
     """
 
-    def post(self, request, pk):
-        entry = self._entry_or_404(request, pk)
+    def post(self, request):
+        entries = self._entries_or_404(
+            request, request.POST.getlist("entries"),
+        )
         parent_path = (request.POST.get("path") or "").strip("/")
         name = (request.POST.get("folder_name") or "").strip()
 
@@ -1201,49 +1238,80 @@ class MoveCreateFolderView(MoveScopeMixin, View):
 
         return render(
             request, "document_explorer/_move_browse.html",
-            self._browse_context(entry, new_path),
+            self._browse_context(entries, new_path),
         )
 
 
 class MoveFileView(MoveScopeMixin, View):
     """
-    Execute the move chosen in the modal. A plain (non-HTMX) form
-    submit -- after moving, the browser leaves the modal behind
-    entirely and lands on the destination folder's real listing,
-    exactly like `SendToTrashView` already does after a delete.
+    Execute the move(s) chosen in the modal, one or many. A plain
+    (non-HTMX) form submit -- after moving, the browser leaves the
+    modal behind entirely and lands on the destination folder's real
+    listing, exactly like `SendToTrashView` already does after a
+    delete.
+
+    Each file is moved independently (`move_service.move_entry` per
+    entry, not a single all-or-nothing transaction): a name collision
+    on one file must not block the rest of a batch like "todos los
+    manuales" from moving -- the conflicting ones are reported back by
+    name, moved and skipped both counted in the confirmation message.
 
     ---
 
-    Ejecuta el movimiento elegido en el modal. Un envío de formulario
-    normal (sin HTMX) -- tras mover, el navegador abandona el modal
-    por completo y aterriza en el listado real de la carpeta destino,
-    igual que ya hace `SendToTrashView` tras un borrado.
+    Ejecuta el movimiento o movimientos elegidos en el modal, uno o
+    varios. Un envío de formulario normal (sin HTMX) -- tras mover, el
+    navegador abandona el modal por completo y aterriza en el listado
+    real de la carpeta destino, igual que ya hace `SendToTrashView`
+    tras un borrado.
+
+    Cada archivo se mueve de forma independiente
+    (`move_service.move_entry` por entrada, no una única transacción
+    todo-o-nada): una colisión de nombre en un archivo no debe bloquear
+    el resto de un lote como "todos los manuales" -- los que colisionan
+    se informan por nombre, movidos y omitidos se cuentan los dos en el
+    mensaje de confirmación.
     """
 
-    def post(self, request, pk):
-        entry = self._entry_or_404(request, pk)
+    def post(self, request):
+        entries = self._entries_or_404(
+            request, request.POST.getlist("entries"),
+        )
         destination = (request.POST.get("destination_folder") or "").strip()
+        bucket = entries[0].bucket
 
-        try:
-            move_service.move_entry(entry, destination)
-        except move_service.MoveConflict as exc:
-            messages.error(request, str(exc))
-            return redirect(
-                "%s?bucket=%s&path=%s" % (
-                    reverse("document_explorer:explorer"),
-                    entry.bucket, entry.parent_path,
+        moved, conflicts = [], []
+        for entry in entries:
+            try:
+                move_service.move_entry(entry, destination)
+                moved.append(entry.name)
+            except move_service.MoveConflict:
+                conflicts.append(entry.name)
+
+        destination_label = destination or "la raíz de Directorio Principal"
+        if moved:
+            if len(moved) == 1:
+                messages.success(
+                    request,
+                    "«%s» se ha movido a «%s»."
+                    % (moved[0], destination_label),
                 )
+            else:
+                messages.success(
+                    request,
+                    "%d archivo(s) movido(s) a «%s»."
+                    % (len(moved), destination_label),
+                )
+        if conflicts:
+            messages.warning(
+                request,
+                "No se movieron (ya existe un archivo con ese nombre "
+                "en el destino): %s" % ", ".join(conflicts),
             )
 
-        messages.success(
-            request,
-            "«%s» se ha movido a «%s»."
-            % (entry.name, destination or "la raíz de Directorio Principal"),
-        )
         return redirect(
             "%s?bucket=%s&path=%s" % (
                 reverse("document_explorer:explorer"),
-                entry.bucket, destination,
+                bucket, destination,
             )
         )
 

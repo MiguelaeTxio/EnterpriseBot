@@ -35,10 +35,26 @@
     la cámara; el nombre real queda en el atributo `title` del enlace.
     Ordenar por "Nombre" sigue ordenando por el nombre de blob real,
     no por el amigable -- limitación conocida, sin resolver todavía.
+
+    Mover en bloque (S039, idea de Miguel Ángel: "filtramos con la
+    palabra manual... marcamos el casillero y movemos todo de un
+    golpe"): el casillero `name="entries"` aparece también en modo
+    búsqueda -- a diferencia del borrado, mover está siempre acotado a
+    administrador y a PRIMARY_BUCKET (ver MoveScopeMixin en views.py),
+    así que no hereda el problema de permisos mixtos por carpeta que
+    sí tiene el borrado en un listado aplanado.
 {% endcomment %}
 
 {% for entry in entries %}
     <tr>
+        {% if can_move %}
+            <td>
+                {% if entry.pk and not entry.is_folder and entry.bucket == primary_bucket %}
+                    <input type="checkbox" name="entries" value="{{ entry.pk }}"
+                           class="form-check-input" aria-label="Seleccionar">
+                {% endif %}
+            </td>
+        {% endif %}
         <td>
             {% if entry.is_folder %}
                 <i class="bi bi-folder-fill text-warning"></i>
@@ -74,12 +90,13 @@
         </td>
         {% if show_delete or can_move %}
             <td class="text-end text-nowrap">
-                {% if can_move and entry.pk and not entry.is_folder and not is_search and entry.bucket == primary_bucket %}
+                {% if can_move and entry.pk and not entry.is_folder and entry.bucket == primary_bucket %}
                     <button type="button"
                             class="btn btn-sm btn-link p-0 me-2"
                             title="Mover a otra carpeta"
                             data-bs-toggle="modal" data-bs-target="#moveModal"
-                            hx-get="{% url 'document_explorer:move_browse' entry.pk %}?path={{ entry.parent_path|urlencode }}"
+                            hx-post="{% url 'document_explorer:move_browse' %}"
+                            hx-vals='{"entries": [{{ entry.pk }}], "path": "{{ entry.parent_path|escapejs }}"}'
                             hx-target="#move-modal-body">
                         <i class="bi bi-folder-symlink"></i>
                     </button>
@@ -103,6 +120,6 @@
     <tr hx-get="{{ next_page_url }}"
         hx-trigger="revealed"
         hx-swap="outerHTML">
-        <td colspan="6" class="text-center text-muted small py-2">Cargando más…</td>
+        <td colspan="100%" class="text-center text-muted small py-2">Cargando más…</td>
     </tr>
 {% endif %}

@@ -93,6 +93,25 @@
     </p>
 {% endif %}
 
+{% if can_move %}
+    <div class="d-flex align-items-center gap-3 mb-2">
+        <label class="form-check-label small text-muted mb-0">
+            <input type="checkbox" class="form-check-input me-1"
+                   title="Seleccionar todo"
+                   onclick="document.querySelectorAll('#explorer-rows [name=entries]').forEach(function(cb){cb.checked=this.checked;}, this)">
+            Seleccionar todo
+        </label>
+        <button type="button" class="btn btn-sm btn-outline-primary"
+                data-bs-toggle="modal" data-bs-target="#moveModal"
+                hx-post="{% url 'document_explorer:move_browse' %}"
+                hx-include="#explorer-rows [name='entries']:checked"
+                hx-vals='{"path": ""}'
+                hx-target="#move-modal-body">
+            <i class="bi bi-folder-symlink"></i> Mover seleccionados
+        </button>
+    </div>
+{% endif %}
+
 {% if denied %}
     <div class="alert alert-warning mb-0">
         No tienes permiso sobre esta carpeta.
@@ -102,6 +121,7 @@
         <table class="table table-sm table-hover align-middle mb-0 dx-explorer-table">
             <thead>
                 <tr>
+                    {% if can_move %}<th class="dx-col-select"></th>{% endif %}
                     <th class="dx-col-icon"></th>
                     <th>
                         <a href="#" class="dx-sort-link"
@@ -143,7 +163,7 @@
                 {% if has_parent %}
                     <tr>
                         <td><i class="bi bi-arrow-90deg-up text-muted"></i></td>
-                        <td colspan="5">
+                        <td colspan="100%">
                             <a href="#"
                                hx-get="{{ parent_nav_url }}"
                                hx-target="#explorer-panel"
