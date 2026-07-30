@@ -48,9 +48,9 @@
                 <a href="{% url 'document_explorer:open' entry.pk %}"
                    target="_blank" rel="noopener">{{ entry.name }}</a>
             {% endif %}
-            {% if is_search and entry.parent_path %}
+            {% if is_search and entry.display_path %}
                 <div class="small text-muted text-break">
-                    <i class="bi bi-signpost-2"></i> {{ entry.parent_path }}
+                    <i class="bi bi-signpost-2"></i> {{ entry.display_path }}
                 </div>
             {% endif %}
         </td>

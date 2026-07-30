@@ -431,8 +431,17 @@ class FolderListingView(ExplorerAccessMixin, TemplateView):
             )
         else:
             mode, allowed = None, None
-            prefixes = permissions.readable_prefixes(company_user, bucket)
-            denied = prefixes is not None and not prefixes
+            if scope == SCOPE_GLOBAL:
+                search_buckets = [
+                    name for name in INDEXED_BUCKETS
+                    if name in permissions.readable_buckets(company_user)
+                ]
+                denied = not search_buckets
+            else:
+                prefixes = permissions.readable_prefixes(
+                    company_user, bucket,
+                )
+                denied = prefixes is not None and not prefixes
             # Borrado desactivado en resultados de búsqueda -- ver
             # docstring del módulo.
             show_delete = False
@@ -670,38 +679,85 @@ class FolderListingView(ExplorerAccessMixin, TemplateView):
         always first, then the chosen column/direction, then `id` as
         tie-breaker.
 
+        `scope=global` searches across every indexed bucket the user
+        can read, not just the current one -- decision of Miguel Angel
+        (S039), made once the bucket tabs disappeared: with a single
+        unified tree, "todo el cubo" has to mean everything visible,
+        or a search from the root would silently miss anything living
+        in Fotos Partes/Fotos Albaranes. Pagination stays correct
+        across buckets because `id` is unique across the whole table,
+        not per bucket.
+
         ---
 
         Una página indexada de hijos (scope=here), o una página de una
         búsqueda recursiva (scope=here_recursive/global), siempre con
         las carpetas primero, luego la columna/dirección elegida, y
         por último `id` como desempate.
+
+        `scope=global` busca en todos los cubos indexados que el
+        usuario puede leer, no solo en el actual -- decisión de Miguel
+        Ángel (S039), tomada al desaparecer las pestañas de cubo: con
+        un árbol unificado, "todo el cubo" tiene que significar todo lo
+        visible, o una búsqueda desde la raíz se perdería en silencio
+        cualquier cosa que viva en Fotos Partes/Fotos Albaranes. La
+        paginación sigue siendo correcta entre cubos porque `id` es
+        único en toda la tabla, no por cubo.
         """
         scope = self.filters["scope"]
-        query = DocumentIndexEntry.objects.filter(
-            bucket=bucket, deleted_at__isnull=True, purged_at__isnull=True,
-        )
 
-        if scope == SCOPE_HERE:
-            query = query.filter(parent_path_hash=path_digest(folder_path))
-            if mode == permissions.PARTIAL:
-                query = query.filter(name__in=list(allowed))
-        else:
-            scope_path = folder_path if scope == SCOPE_RECURSIVE else ""
-            if scope_path:
-                query = query.filter(
-                    blob_name__startswith=scope_path + "/",
-                )
-            prefixes = permissions.readable_prefixes(
-                self.company_user, bucket,
+        if scope == SCOPE_GLOBAL:
+            search_buckets = [
+                name for name in INDEXED_BUCKETS
+                if name in permissions.readable_buckets(self.company_user)
+            ]
+            query = DocumentIndexEntry.objects.filter(
+                bucket__in=search_buckets,
+                deleted_at__isnull=True, purged_at__isnull=True,
             )
-            if prefixes is not None:
-                restriction = Q()
+            restriction = Q()
+            for search_bucket in search_buckets:
+                prefixes = permissions.readable_prefixes(
+                    self.company_user, search_bucket,
+                )
+                if prefixes is None:
+                    restriction |= Q(bucket=search_bucket)
+                    continue
                 for prefix in prefixes:
-                    restriction |= Q(blob_name=prefix) | Q(
+                    restriction |= Q(
+                        bucket=search_bucket, blob_name=prefix,
+                    ) | Q(
+                        bucket=search_bucket,
                         blob_name__startswith=prefix + "/",
                     )
-                query = query.filter(restriction)
+            query = query.filter(restriction) if search_buckets else \
+                query.none()
+        else:
+            query = DocumentIndexEntry.objects.filter(
+                bucket=bucket,
+                deleted_at__isnull=True, purged_at__isnull=True,
+            )
+            if scope == SCOPE_HERE:
+                query = query.filter(
+                    parent_path_hash=path_digest(folder_path),
+                )
+                if mode == permissions.PARTIAL:
+                    query = query.filter(name__in=list(allowed))
+            else:
+                if folder_path:
+                    query = query.filter(
+                        blob_name__startswith=folder_path + "/",
+                    )
+                prefixes = permissions.readable_prefixes(
+                    self.company_user, bucket,
+                )
+                if prefixes is not None:
+                    restriction = Q()
+                    for prefix in prefixes:
+                        restriction |= Q(blob_name=prefix) | Q(
+                            blob_name__startswith=prefix + "/",
+                        )
+                    query = query.filter(restriction)
 
         query = self._apply_filters(query)
         field = self._sort_field()
@@ -712,10 +768,42 @@ class FolderListingView(ExplorerAccessMixin, TemplateView):
         query = self._apply_cursor(query, field)
 
         results = list(query[:PAGE_SIZE + 1])
+        is_search = scope != SCOPE_HERE
         for entry in results:
             if entry.is_folder:
-                entry.nav_url = self._folder_nav_url(bucket, entry.blob_name)
+                # entry.bucket, no el `bucket` de contexto: en
+                # scope=global cada fila puede pertenecer a un cubo
+                # distinto del que se está pisando.
+                entry.nav_url = self._folder_nav_url(
+                    entry.bucket, entry.blob_name,
+                )
+            if is_search:
+                entry.display_path = self._display_path(bucket, entry)
         return results
+
+    def _display_path(self, current_bucket, entry):
+        """
+        Path shown under a search result's name. Bare `parent_path`
+        when the row lives in the bucket being browsed; prefixed with
+        the bucket's Spanish label when it comes from another one
+        (only possible under scope=global) -- otherwise two buckets
+        with coincidentally identical relative paths would look like
+        the same folder.
+
+        ---
+
+        Ruta que se muestra bajo el nombre de un resultado de
+        búsqueda. `parent_path` a secas cuando la fila vive en el cubo
+        que se está recorriendo; con la etiqueta en castellano del
+        cubo por delante cuando viene de otro (solo posible en
+        scope=global) -- si no, dos cubos con una ruta relativa
+        coincidente por casualidad parecerían la misma carpeta.
+        """
+        if entry.bucket == current_bucket:
+            return entry.parent_path
+        label = BUCKET_DISPLAY_NAMES.get(entry.bucket, entry.bucket)
+        return "%s/%s" % (label, entry.parent_path) if entry.parent_path \
+            else label
 
     def _annotate_sort_field(self, query, field):
         """
