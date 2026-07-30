@@ -124,7 +124,7 @@ from django.db.models import (
 )
 from django.db.models.functions import Cast, Coalesce
 from django.http import Http404, HttpResponseRedirect
-from django.shortcuts import get_object_or_404, redirect
+from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
@@ -134,7 +134,7 @@ from django.views.generic import TemplateView
 from panel.mixins import CompanyUserRequiredMixin
 from spare_parts.gcs_service import delete_file, generate_signed_url
 
-from document_explorer import friendly_names, permissions
+from document_explorer import friendly_names, move_service, permissions
 from document_explorer.buckets import (
     BUCKET_DISPLAY_NAMES, INDEXED_BUCKETS, PRIMARY_BUCKET,
 )
@@ -419,6 +419,7 @@ class FolderListingView(ExplorerAccessMixin, TemplateView):
             "sort_key": self.sort_key,
             "sort_dir": self.sort_dir,
             "sort_columns": self._sort_columns(),
+            "can_move": permissions.is_unrestricted(company_user),
         }
 
         if scope == SCOPE_HERE:
@@ -1054,6 +1055,100 @@ class SendToTrashView(ExplorerAccessMixin, View):
                 reverse("document_explorer:explorer"),
                 entry.bucket,
                 entry.parent_path,
+            )
+        )
+
+
+class MoveFileView(ExplorerAccessMixin, View):
+    """
+    Move a live FILE entry to a different folder within the same
+    bucket (H29, S039). Files only -- see the module docstring of
+    `document_explorer.move_service` for why folders are out of scope
+    for this first version.
+
+    Gated to unrestricted (ADMIN) users only, for now: it is the
+    explorer's first operation that writes to GCS beyond the trash's
+    delete, and today's only real user of the explorer is
+    `alvarez_admin` -- narrowed on purpose rather than reusing
+    `can_delete_in`, which was designed for a different, narrower
+    action (send to one's own trash within a folder one already has a
+    grant on), not for creating brand new folder structure anywhere in
+    the tree.
+
+    ---
+
+    Mueve una entrada FILE viva a otra carpeta dentro del mismo cubo
+    (H29, S039). Solo archivos -- ver el docstring del módulo
+    `document_explorer.move_service` para por qué las carpetas quedan
+    fuera del alcance de esta primera versión.
+
+    Restringido a usuarios sin restricción (ADMIN) por ahora: es la
+    primera operación del explorador que escribe en GCS más allá del
+    borrado de la papelera, y hoy el único usuario real del explorador
+    es `alvarez_admin` -- acotado a propósito en vez de reutilizar
+    `can_delete_in`, pensado para una acción distinta y más estrecha
+    (mandar a la propia papelera dentro de una carpeta sobre la que ya
+    se tiene concesión), no para crear estructura de carpetas nueva en
+    cualquier punto del árbol.
+    """
+
+    template_name = "document_explorer/move.html"
+    #: Tope de carpetas sugeridas en el desplegable -- un cubo grande
+    #: puede tener varios miles; esto evita mandar una lista enorme al
+    #: navegador por una comodidad menor. Escribir la ruta a mano
+    #: siempre funciona igual, esté o no en la lista.
+    FOLDER_SUGGESTIONS_LIMIT = 3000
+
+    def _entry_or_404(self, request, pk):
+        entry = get_object_or_404(
+            DocumentIndexEntry,
+            pk=pk,
+            entry_kind=DocumentIndexEntry.KIND_FILE,
+            deleted_at__isnull=True,
+            purged_at__isnull=True,
+        )
+        company_user = request.user.company_user
+        if not permissions.is_unrestricted(company_user):
+            raise Http404("Solo el administrador puede mover archivos.")
+        return entry
+
+    def get(self, request, pk):
+        entry = self._entry_or_404(request, pk)
+        folders = list(
+            DocumentIndexEntry.objects.filter(
+                bucket=entry.bucket,
+                entry_kind=DocumentIndexEntry.KIND_FOLDER,
+                deleted_at__isnull=True, purged_at__isnull=True,
+            )
+            .order_by("blob_name")
+            .values_list("blob_name", flat=True)[:self.FOLDER_SUGGESTIONS_LIMIT]
+        )
+        return render(request, self.template_name, {
+            "active_nav": "document_explorer",
+            "entry": entry,
+            "current_folder": entry.parent_path or "(raíz del cubo)",
+            "folder_suggestions": folders,
+        })
+
+    def post(self, request, pk):
+        entry = self._entry_or_404(request, pk)
+        destination = (request.POST.get("destination_folder") or "").strip()
+
+        try:
+            move_service.move_entry(entry, destination)
+        except move_service.MoveConflict as exc:
+            messages.error(request, str(exc))
+            return redirect("document_explorer:move", pk=entry.pk)
+
+        messages.success(
+            request,
+            "«%s» se ha movido a «%s»."
+            % (entry.name, destination or "la raíz del cubo"),
+        )
+        return redirect(
+            "%s?bucket=%s&path=%s" % (
+                reverse("document_explorer:explorer"),
+                entry.bucket, destination,
             )
         )
 

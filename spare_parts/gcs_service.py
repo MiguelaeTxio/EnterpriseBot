@@ -273,6 +273,19 @@ def delete_file(bucket_name: str, blob_name: str) -> None:
         pass
 
 
+def move_file(bucket_name: str, old_blob_name: str, new_blob_name: str) -> None:
+    """
+    Renombra/mueve un objeto dentro del mismo cubo (herramienta de
+    mover del explorador, H29, S039). Usa `Bucket.rename_blob`, que en
+    el SDK es copia + borrado del original en una sola llamada -- nunca
+    cruza de cubo, solo cambia la ruta dentro del mismo.
+    """
+    client = get_storage_client()
+    bucket = client.bucket(bucket_name)
+    blob = bucket.blob(old_blob_name)
+    bucket.rename_blob(blob, new_blob_name)
+
+
 def download_bytes(bucket_name: str, blob_name: str) -> bytes:
     """
     Descarga y devuelve los bytes crudos de un objeto -- añadida S024

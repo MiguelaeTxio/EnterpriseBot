@@ -1,0 +1,69 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/document_explorer/templates/document_explorer/move.html #}
+{% extends "panel/base.html" %}
+
+{% comment %}
+    Formulario de mover archivo (H29, S039). Plantilla idiota: toda la
+    decisión (a qué carpeta pertenece hoy, qué carpetas se sugieren)
+    llega resuelta desde MoveFileView.
+
+    El campo de destino es un <input list="..."> con <datalist> de
+    carpetas ya indexadas -- se puede elegir una sugerencia o escribir
+    una ruta nueva a mano, en cuyo caso se crea al mover (ver
+    document_explorer.move_service.ensure_folder_chain). Soporte nativo
+    del navegador, sin JavaScript propio.
+{% endcomment %}
+
+{% block title %}Mover archivo{% endblock title %}
+{% block page_title %}Mover archivo{% endblock page_title %}
+
+{% block content %}
+<div class="container-fluid px-3 pt-3">
+
+    <div class="d-flex align-items-center justify-content-between mb-3">
+        <p class="text-muted small mb-0">
+            Solo se mueve el archivo indicado -- las carpetas se mueven
+            en bloque más adelante, no todavía.
+        </p>
+        <a class="btn btn-sm btn-outline-secondary"
+           href="{% url 'document_explorer:explorer' %}?bucket={{ entry.bucket|urlencode }}&path={{ entry.parent_path|urlencode }}">
+            <i class="bi bi-arrow-left"></i> Cancelar
+        </a>
+    </div>
+
+    <div class="card">
+        <div class="card-body">
+            <p class="mb-1"><strong>Archivo:</strong> {{ entry.name }}</p>
+            <p class="text-muted small mb-3">
+                <strong>Ubicación actual:</strong> {{ current_folder }}
+            </p>
+
+            <form method="post">
+                {% csrf_token %}
+                <label for="destination_folder" class="form-label">
+                    Carpeta destino
+                </label>
+                <input type="text" id="destination_folder"
+                       name="destination_folder"
+                       class="form-control mb-1"
+                       list="folder-suggestions"
+                       placeholder="p. ej. DOC. MAQUINAS/MANUALES DE USO"
+                       value="{{ current_folder }}"
+                       autocomplete="off">
+                <datalist id="folder-suggestions">
+                    {% for folder in folder_suggestions %}
+                        <option value="{{ folder }}"></option>
+                    {% endfor %}
+                </datalist>
+                <p class="form-text mb-3">
+                    Elige una carpeta ya existente de la lista, o
+                    escribe una ruta nueva -- se crea sola al mover.
+                </p>
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-folder-symlink"></i> Mover
+                </button>
+            </form>
+        </div>
+    </div>
+
+</div>
+{% endblock content %}

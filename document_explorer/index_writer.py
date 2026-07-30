@@ -65,6 +65,54 @@ def ancestors_of(parent_path):
     return ["/".join(parts[:i + 1]) for i in range(len(parts))]
 
 
+def ensure_folder_chain(bucket_name, folder_path):
+    """
+    Make sure every ancestor of `folder_path`, and the folder itself,
+    exists as a live FOLDER row -- so navigating into a brand new
+    destination created by a move (H29, S039) works immediately,
+    without waiting for a reseed. Never touches an already-existing
+    row (its real `total_size_bytes`/`child_count` are left alone,
+    corrected instead by the caller's own size-propagation step);
+    only inserts the missing links of the chain, with
+    `total_size_bytes=0` as a fresh starting point.
+
+    ---
+
+    Asegura que cada antecesor de `folder_path`, y la propia carpeta,
+    existen como fila FOLDER viva -- para que navegar a un destino
+    nuevo creado por un movimiento (H29, S039) funcione de inmediato,
+    sin esperar a un resembrado. Nunca toca una fila ya existente (su
+    `total_size_bytes`/`child_count` reales se dejan como están,
+    corregidos en cambio por el propio paso de propagación de tamaño
+    de quien llama); solo inserta los eslabones que faltan de la
+    cadena, con `total_size_bytes=0` como punto de partida.
+    """
+    if not folder_path:
+        return
+    chain = ancestors_of(folder_path)
+    hashes = [path_digest(path) for path in chain]
+    existing = set(
+        DocumentIndexEntry.objects.filter(
+            bucket=bucket_name, blob_name_hash__in=hashes,
+            deleted_at__isnull=True, purged_at__isnull=True,
+        ).values_list("blob_name_hash", flat=True)
+    )
+    missing = [
+        path for path, digest in zip(chain, hashes)
+        if digest not in existing
+    ]
+    if not missing:
+        return
+    DocumentIndexEntry.objects.bulk_create([
+        DocumentIndexEntry(
+            bucket=bucket_name,
+            blob_name_hash=path_digest(path),
+            **folder_row(path),
+        )
+        for path in missing
+    ])
+
+
 def row_defaults():
     """
     Uniform field set, required by bulk_update.

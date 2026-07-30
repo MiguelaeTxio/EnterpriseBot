@@ -35,6 +35,11 @@ urlpatterns = [
         views.SendToTrashView.as_view(),
         name="trash_add",
     ),
+    path(
+        "mover/<int:pk>/",
+        views.MoveFileView.as_view(),
+        name="move",
+    ),
     path("papelera/", views.TrashView.as_view(), name="trash"),
     path(
         "papelera/restaurar/<int:pk>/",

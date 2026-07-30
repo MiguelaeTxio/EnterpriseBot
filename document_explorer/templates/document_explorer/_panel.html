@@ -136,7 +136,7 @@
                             {% endif %}
                         </a>
                     </th>
-                    {% if show_delete %}<th class="dx-col-actions"></th>{% endif %}
+                    {% if show_delete or can_move %}<th class="dx-col-actions"></th>{% endif %}
                 </tr>
             </thead>
             <tbody id="explorer-rows">

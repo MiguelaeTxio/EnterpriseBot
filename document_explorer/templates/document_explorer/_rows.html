@@ -72,10 +72,17 @@
         <td class="text-end small text-muted">
             {{ entry.gcs_updated_at|date:"d/m/Y H:i"|default:"—" }}
         </td>
-        {% if show_delete %}
-            <td class="text-end">
-                {% if entry.pk %}
-                    <form method="post"
+        {% if show_delete or can_move %}
+            <td class="text-end text-nowrap">
+                {% if can_move and entry.pk and not entry.is_folder and not is_search %}
+                    <a href="{% url 'document_explorer:move' entry.pk %}"
+                       class="btn btn-sm btn-link p-0 me-2"
+                       title="Mover a otra carpeta">
+                        <i class="bi bi-folder-symlink"></i>
+                    </a>
+                {% endif %}
+                {% if show_delete and entry.pk %}
+                    <form method="post" class="d-inline"
                           action="{% url 'document_explorer:trash_add' entry.pk %}">
                         {% csrf_token %}
                         <button type="submit" class="btn btn-sm btn-link text-danger p-0"
