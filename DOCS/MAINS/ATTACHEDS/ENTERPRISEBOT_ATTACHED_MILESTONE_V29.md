@@ -586,11 +586,21 @@ mejoras y trabajo que se dejó fuera de forma explícita.
 2. **Subida tipada desde gestión de documentación** (decisión 3.8):
    el explorador delibradamente no sube nada; la vía de alta por tipo
    documental declarado no se ha diseñado todavía.
-3. **Auditoría de coherencia tabla↔cubo** (punto abierto 1 de la
-   sección 6): sigue sin cadencia ni mecanismo. Precedente real ya en
-   el proyecto,
-   `document_ingestion/management/commands/purge_orphaned_gcs_blobs.py`,
-   pendiente de leer antes de diseñar nada nuevo.
+3. ~~Auditoría de coherencia tabla↔cubo~~ **Herramienta creada en
+   S038** (commit `c6fbb59`, desplegado y verificado en Actions). Tras
+   leer el precedente real (`purge_orphaned_gcs_blobs.py`) y
+   `seed_document_index.py`, el alcance se redujo: sembrado/refresco
+   ya cubre traer objetos de GCS hacia el índice (crea lo que falta,
+   refresca generación/metadatos en cada reejecución). Lo único que
+   faltaba de verdad: detectar una fila viva de `DocumentIndexEntry`
+   cuyo blob se borró directamente en GCS por fuera del explorador.
+   Nuevo comando `find_orphaned_index_entries` — recorre los cinco
+   cubos indexados, compara filas FILE vivas contra los objetos
+   reales, informa huérfanas. Solo informa, nunca escribe en BD ni con
+   flag de confirmación — marcar `purged_at` es decisión de
+   administrador, caso por caso. **Pendiente: ejecutarlo una vez sobre
+   los cinco cubos reales** para tener el primer informe (todavía no
+   se ha corrido contra producción en esta sesión).
 4. ~~Confirmación de `storage.folders.list` en la cuenta de la
    plataforma (`enterprisebot-vertex@`) vía `gcloud`.~~ **Resuelto en
    S038** con datos reales: `enterprisebot-vertex@gen-lang-client-
