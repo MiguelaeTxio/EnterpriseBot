@@ -106,15 +106,28 @@ _MULTISPACE_RE = re.compile(r"\s+")
 
 # Ruido evidente detectado en el primer barrido real sobre el corpus
 # completo (S039, 2026-07-30): artefactos de sincronización de OneDrive
-# /Windows y capturas sueltas de mensajería, ninguno es un documento
-# clasificable. Se separan en su propia categoría para no ensuciar la
-# lista de revisión manual -- no se borra nada, es solo agrupación del
-# informe; la decisión de qué hacer con ellos es de Miguel Ángel.
+# /Windows, ninguno es un documento clasificable.
 _JUNK_STEM_RE = re.compile(
     r"^(?:ppinfocache|00000000|whatsapp image|imagen de whatsapp)$",
     re.IGNORECASE,
 )
-_JUNK_NUMERIC_RE = re.compile(r"^\d{8,}$")
+
+# Fotos sueltas con nombre opaco (cámara/mensajería: puramente
+# numérico o hexadecimal tipo UUID) -- pero SOLO cuando la extensión es
+# de imagen. Corregido tras la segunda pasada real (S039, 2026-07-30):
+# la primera versión trataba cualquier nombre puramente numérico como
+# ruido, y eso metía en el saco documentos de escáner reales en PDF
+# (`05032025000023.pdf`, `140703012854.pdf`) que sí tienen fecha
+# reconocible y son documentación legítima -- error de categorización
+# propio, corregido en la misma sesión (directriz 4.9). Los PDF/Word
+# con nombre numérico siguen ahora el flujo normal de detección de
+# fecha; solo las imágenes con nombre opaco se apartan como fotos.
+_OPAQUE_STEM_RE = re.compile(
+    r"^(?:[0-9a-f]{8,}"
+    r"|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$",
+    re.IGNORECASE,
+)
+_IMAGE_EXTENSIONS = {"jpg", "jpeg", "png", "heic", "heif", "gif", "bmp"}
 
 
 class Command(BaseCommand):
@@ -208,10 +221,16 @@ class Command(BaseCommand):
 
         for blob_name in blob_names:
             file_name = blob_name.rsplit("/", 1)[-1]
-            stem = file_name.rsplit(".", 1)[0] if "." in file_name \
-                else file_name
+            if "." in file_name:
+                stem, extension = file_name.rsplit(".", 1)
+                extension = extension.lower()
+            else:
+                stem, extension = file_name, ""
 
-            if _JUNK_STEM_RE.match(stem) or _JUNK_NUMERIC_RE.match(stem):
+            if _JUNK_STEM_RE.match(stem):
+                junk.append(file_name)
+                continue
+            if extension in _IMAGE_EXTENSIONS and _OPAQUE_STEM_RE.match(stem):
                 junk.append(file_name)
                 continue
 
