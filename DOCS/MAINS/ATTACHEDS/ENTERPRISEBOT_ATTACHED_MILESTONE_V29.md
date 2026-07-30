@@ -673,55 +673,179 @@ comandos sueltos sin bucle) — ambas corregidas dentro de la propia
 sesión y documentadas en `SESSION_VARIABLES.md` y la skill nueva para
 no repetirse.
 
-### Hoja de ruta para la siguiente sesión (S039)
+### COMPLETADAS EN S039
 
-Ninguno de estos puntos es bloqueante para dar H29 por operativo; son
-mejoras y trabajo que se dejó fuera de forma explícita.
+Sesión larga, dedicada en su mayor parte al punto 1 de la hoja de ruta
+de S038 (funcionalidad avanzada del panel del explorador) y, dentro de
+ella, a construir y **reconstruir cuatro veces** la herramienta de
+mover archivos hasta dar con el diseño correcto — el desarrollo más
+extenso de toda la sesión y el que más aprendizajes de fondo dejó.
 
-1. **Funcionalidad del panel del explorador — pedido explícito de
-   Miguel Ángel al cierre de S038:** la interfaz actual (listado
-   simple por cursor) se queda corta. Verbatim: *"faltan que las
-   columnas sean ordenables, faltan filtros, etcétera, etcétera.
-   Tenemos que dejar una interfaz que sea bastante más funcional de lo
-   que es ahora mismo."* Sin diseño todavía — ni qué columnas
-   (nombre, tamaño, modificado, tipo…), ni qué filtros, ni si el orden
-   por cursor actual (necesario para no paginar por OFFSET sobre
-   decenas de miles de filas) es compatible con ordenar por columnas
-   arbitrarias sin reintroducir ese coste. **Diseñar con Miguel Ángel
-   antes de tocar código — no asumir alcance.**
-2. **Terminar la consolidación de cubos (resto de 3.12):** retirar por
-   completo las apps `machine_documents`/`personal_documents`
-   (modelos, vistas de subida, `purge_orphaned_gcs_blobs.py`,
-   referencias en `create_gcs_buckets`) y decidir qué pasa con
-   `MachineDocument.gcs_blob_name`/`PersonalDocument.gcs_blob_name`
-   ahora que sus objetos ya no están en un cubo propio.
+**1. Funcionalidad avanzada del explorador** (commits `3fb8af1`,
+`4254aad`, `37d3af4`): columnas ordenables (nombre/tamaño/fecha, con
+carpetas siempre primero — decisión explícita de Miguel Ángel, "como
+en el Explorador de Windows"), tres alcances de búsqueda (`here`,
+`here_recursive`, `global`), filtros por extensión y por bandera
+`exists_in_local`, y diseño responsivo real (scroll horizontal en
+móvil, corregido tras feedback directo de Miguel Ángel viendo la
+interfaz rota en su teléfono — la primera versión ocultaba columnas
+por debajo de `md`, dejándolo sin forma de llegar a ellas). Dos
+incidentes de producción reales corregidos en el camino: un 500 en
+todos los cubos por `Coalesce(gcs_updated_at, Value)` sin
+`output_field` explícito en MySQL, y el propio bug de scroll móvil.
+
+**2. Auditoría de vocabulario documental y duplicados**
+(`audit_document_names`, `find_duplicate_documents` — commits
+`1cc76b8`, `a95807f`, `49c8ba9`, `145721c`, `11b4398`, `6269df0`):
+comandos de gestión sobre el corpus ya indexado (sin barrer GCS de
+nuevo). Vocabulario parcialmente cerrado con datos reales (EPIS, RM,
+IDC, ALTA/BAJA, NOMINA vs. PAGO CORRIENTE, CARNET_CONDUCIR,
+AUT_TEMP_CONDUCIR, ITV, REV_TACOGRAFO, MANUAL_USO/MANUAL_DE_
+INSTRUCCIONES compartidos por modelo de máquina, entre otros).
+Duplicados exactos por `(crc32c, size_bytes)`: 2,7 GB recuperables en
+3.541 grupos. Corregido un falso positivo real en variantes de
+compresión: sufijos `(001)`/`(002)`/`(004)` de un libro de familia
+escaneado son numeración de página, no compresión — retirado del
+patrón automático.
+
+**3. Unificación visual del árbol del explorador** (commit `4d47c68`):
+decisión verbatim de Miguel Ángel — "nadie tiene por qué saber que son
+cubos diferentes... por construcción no vamos a cambiar la
+construcción". Las pestañas de cubo desaparecen; Fotos Partes, Fotos
+Albaranes y Cuarentena pasan a mostrarse como subcarpetas normales de
+un único `Directorio Principal`, vía filas sintéticas
+(`VirtualBucketFolder`) inyectadas solo en la raíz.
+
+**4. Búsqueda "Todo el cubo" pasa a buscar en los tres cubos reales**
+(commit `4b62627`): con el árbol unificado, una búsqueda desde la raíz
+que solo mirara el cubo histórico se perdería en silencio cualquier
+cosa en Fotos Partes/Fotos Albaranes — justo el problema que Miguel
+Ángel señaló probándolo ("vas a buscar un parte y no te lo va a
+encontrar"). Descartada la alternativa de fusionar físicamente los
+cubos (también planteada por Miguel Ángel): el campo `id` de
+`DocumentIndexEntry` es único en toda la tabla, no por cubo, así que
+la paginación por cursor sigue siendo correcta buscando en varios
+cubos a la vez sin tocar la infraestructura de GCS.
+
+**5. Nombres amigables para albaranes y fotos de tarea** (commit
+`d5f90d1`, `document_explorer/friendly_names.py` nuevo): decisión
+verbatim de Miguel Ángel viendo nombres de cámara opacos en
+producción — "esto realmente no es un explorador de archivos, es a
+base de base de datos, podemos presentar lo que queramos". Resuelto en
+bloque (una consulta por modelo de dominio y página, nunca fila a
+fila) para no reintroducir el N+1 que el propio `domain_object` ya
+advertía evitar.
+
+**6. Herramienta de mover archivos — cuatro iteraciones completas,**
+todas con Miguel Ángel probando en producción real y corrigiendo el
+rumbo con datos, no con suposiciones:
+
+- **v1 (commit `13d3974` y siguientes hasta `23dd04c`):** copia física
+  en GCS (`gcs_service.move_file`, copy+delete real), modal con árbol
+  navegable y "crear carpeta aquí" (sin escribir rutas a mano — primer
+  feedback: "parece que estamos trabajando desde consola"), selección
+  múltiple con "mover todos los manuales" reutilizando la búsqueda
+  recursiva ya existente, y colisión de nombre resuelta con
+  numeración correlativa automática (nunca cancelar el lote ni
+  preguntar uno a uno — decisión explícita ante el caso real de cinco
+  `MANUAL DEL OPERADOR.pdf` distintos con el mismo nombre genérico).
+  Dos salvaguardas fijadas como **permanentes**, no de v1: mover
+  restringido para siempre a administrador únicamente (ni el jefe de
+  Miguel Ángel), y acotado para siempre al cubo histórico real — Fotos
+  Partes/Fotos Albaranes son inamovibles, ni como origen ni como
+  destino.
+- **v2 — rediseño a puntero puro (commit `c1cb827`):** fallo de diseño
+  real señalado por Miguel Ángel tras ver el coste de mover un manual
+  de 400 MB sin barra de progreso: *"deberíamos de haberlo hecho casi
+  a nivel de base de datos y no mover archivos realmente... si
+  movemos, movemos punteros"* (su propia analogía: la pista de
+  directorio de un disquete frente a la pista de datos).
+  `move_service.move_entry()` deja de tocar GCS por completo —
+  `blob_name` (la ruta real y permanente) nunca vuelve a escribirse;
+  solo cambia `parent_path`/`name` (la ubicación virtual). La
+  navegación normal (`scope=here`) ya funcionaba así sin querer desde
+  el primer día de H29; hubo que corregir la búsqueda recursiva y el
+  acotado de permisos, que sí usaban `blob_name` como si fuera la
+  ubicación real (`_virtual_descendant_q`, con reparto por tipo de
+  entrada: archivos por `parent_path`, carpetas —que nunca se mueven—
+  por `blob_name`).
+- **v3 — barra de progreso, luego retirada (commits `de5b84f`,
+  `20ccf3e`, `d844bb0`):** petición explícita de Miguel Ángel de no
+  quedar "a ciegas" mientras mueve un lote grande. Primero archivo a
+  archivo (`MoveOneView`), medido en producción en ~197 segundos para
+  197 archivos — diagnóstico correcto de Miguel Ángel confirmado con
+  el `response-time` real del log de acceso: ~350-420 ms de servidor
+  por archivo más el viaje de red completo repetido 197 veces. Luego
+  en bloques de 15 (`MoveBatchView`), mejor pero "seguía tardando
+  bastante". Miguel Ángel decidió entonces renunciar del todo a la
+  visibilidad en vivo a cambio de velocidad — *"que le den a la
+  visibilidad... como mucho un spinner"* — vuelta a una única petición
+  con spinner en el propio botón, sin AJAX ni JSON.
+- **v4 — consultas agrupadas para el lote entero (commits `c1be2bd`,
+  `a20cb4d`):** incluso en una sola petición, 190 archivos tardaban
+  ~75 segundos — la causa real ya no era la red, era que
+  `move_entry()` seguía haciendo ~6 consultas separadas por archivo.
+  Nueva `move_service.move_entries()`: resuelve colisiones del lote
+  entero con una sola consulta de lectura (ampliada en memoria para
+  que dos archivos del mismo lote que choquen entre sí también se
+  numeren bien), un único `bulk_update()` para todas las filas
+  movidas, y un único `UPDATE ... CASE WHEN` por campo
+  (`total_size_bytes`, `child_count`) cubriendo todas las carpetas
+  distintas que toca el lote — en vez de una `UPDATE` por carpeta y
+  por archivo. Verificado con una simulación local (sin base de
+  datos) antes de desplegar, contra un caso con colisiones dentro del
+  mismo lote, colisión con lo ya existente, y una carpeta ancestro
+  compartida por origen y destino. Un `FieldError` real de Django
+  (`Case`/`When` mezclando `IntegerField` con `BigIntegerField` al
+  combinar `F(field) + delta`) apareció en el primer despliegue y se
+  corrigió pasando el campo real del modelo como `output_field`
+  explícito. **Resultado final, confirmado por Miguel Ángel: de 75
+  segundos a ~2.**
+
+**Incidencia real corregida fuera de alcance, según directriz 4.9:**
+ninguna detectada esta sesión más allá de las ya resueltas dentro del
+propio desarrollo de la herramienta de mover.
+
+**Limitación conocida, documentada, no bloqueante:** una carpeta
+vaciada al mover todo su contenido fuera queda como fila huérfana en
+el índice (`child_count=0`, sin borrarse) — candidata a una futura
+herramienta de "carpetas vacías".
+
+### Hoja de ruta para la siguiente sesión (S040)
+
+1. **Verificar en frío la herramienta de mover** con un lote de
+   trabajo real (no de prueba) — confirmar que el resultado de
+   `move_entries()` en producción es sólido con datos y volúmenes
+   distintos a los usados durante el desarrollo de esta sesión.
+2. **Terminar la consolidación de cubos** (resto de 3.12, aplazado
+   otra sesión más): retirar por completo las apps
+   `machine_documents`/`personal_documents` (modelos, vistas de
+   subida, `purge_orphaned_gcs_blobs.py`, referencias en
+   `create_gcs_buckets`) y decidir qué pasa con
+   `MachineDocument.gcs_blob_name`/`PersonalDocument.gcs_blob_name`.
 3. **Subida tipada desde gestión de documentación** (decisión 3.8):
-   depende del punto 2 — Miguel Ángel ya adelantó que subirá
-   directamente al cubo principal, a su carpeta correspondiente, en
-   vez de a los cubos retirados.
-4. **Consumidor de la cuarentena** (Fase 3 de H28, no de H29): sigue
-   sin construirse. Los 78 archivos reales de `_CUARENTENA` ya son
-   visibles y navegables en el explorador, pero nada los clasifica ni
-   los mueve todavía — decisión 3 de S036, entrada en
-   `CELERY_BEAT_SCHEDULE`.
-5. **Migración de Python 3.10 → 3.12/3.13** antes del 4 de octubre de
-   2026 (sección 4.3.1 del documento maestro, procedimiento completo en
-   `com-environment-management` sección 4.2). Incluye verificar si las
-   *always-on* referencian el entorno virtual por ruta.
-6. **Salto de HTMX 1.9.12 a la serie 2.x**, anotado pero no evaluado:
-   tiene cambios incompatibles y afecta a todo `panel/base.html`, no
-   solo a esta app.
-7. **Frontera con H28** (punto abierto 2 de la sección 6, sigue sin
-   cerrar): si la interfaz de limpieza de la Fase 2 converge con este
-   explorador, decidir en qué hito vive.
+   depende del punto 2.
+4. **Herramienta de "carpetas vacías"**, mencionada como candidata
+   varias veces esta sesión — limpiar las filas huérfanas que deja
+   mover archivos fuera de una carpeta sin vaciarla del índice.
+5. **Consumidor de la cuarentena** (Fase 3 de H28, no de H29): sigue
+   sin construirse.
+6. **Migración de Python 3.10 → 3.12/3.13** antes del 4 de octubre de
+   2026 (sección 4.3.1 del documento maestro).
+7. **Salto de HTMX 1.9.12 a la serie 2.x**, anotado pero no evaluado.
+8. **Frontera con H28** (si la interfaz de limpieza de la Fase 2
+   converge con este explorador) — sigue sin cerrar.
+9. **Comenzar a mover manuales de verdad** a `DOC. MAQUINAS/MANUALES
+   DE USO` usando la herramienta ya operativa, ahora que está
+   verificada y a velocidad aceptable — es el caso de uso original que
+   motivó construirla.
 
-**Cabo suelto menor, no bloqueante:** las cuatro copias de estáticos
-que estaban desincronizadas de su fuente antes de S037
+**Cabo suelto menor, no bloqueante, arrastrado de S037:** las cuatro
+copias de estáticos desincronizadas de su fuente
 (`panel/css/panel.css`, `panel/js/admin_history.js`,
-`panel/js/form_entry_assets.js`, `panel/js/form_entry_modal.js`) ya no
-pueden volver a desincronizarse tras el punto 2 de "hallazgos no
-buscados", pero no se ha verificado si las fuentes actuales son las
-versiones correctas o si el desfase escondía una regresión real.
+`panel/js/form_entry_assets.js`, `panel/js/form_entry_modal.js`) —
+sigue sin verificarse si las fuentes actuales son las versiones
+correctas.
 
 ---
 
