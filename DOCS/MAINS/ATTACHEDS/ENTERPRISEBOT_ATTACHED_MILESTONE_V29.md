@@ -610,54 +610,100 @@ el futuro consumidor de la cuarentena dispara refrescos con frecuencia,
 decidir entonces si calcular el tamaño real (archivos directos + total
 ya guardado de cada subcarpeta) en vez de dejarlo en blanco.
 
-### Hoja de ruta para la siguiente sesión
+### COMPLETADAS EN S038
+
+Sesión de 13 commits, 7 archivos tocados (458 inserciones, 25
+eliminaciones). Empezó como continuación de la hoja de ruta de S037 y
+acabó incluyendo una incidencia real de producción y una skill nueva
+de plataforma.
+
+**Incidencia real de producción, corregida en la misma sesión**
+(directriz 4.9, fuera de H29): Pablo no podía cerrar un parte con la
+máquina `A59` — "no existe" pese a estar en BD, activa y visible en el
+desplegable. Causa raíz confirmada con datos reales: `brand_model`
+vacío rompía la extracción de código de la Pasada 3 en
+`_parse_entry_lines_from_post` (exigía `\s+` tras el guion, nunca
+casaba sin texto detrás). Bug genérico, no exclusivo de A59. Corregido
+(`fdc546e`, `\s+` → `\s*`) y verificado con los cuatro casos reales
+antes de comitear; `brand_model` de A59 relleno con dato provisional
+(`"LIEBHERR LTM 1230-5.1"`) por instrucción explícita de Miguel Ángel,
+a la espera del dato definitivo de H28.
+
+**Punto 4 de la hoja de ruta de S037 resuelto:** permisos de
+`enterprisebot-vertex@` verificados con datos reales
+(`roles/storage.admin` a nivel de proyecto, incluye `storage.folders.*`
+completo) — la Fase 2 de H28 ya tiene lo que necesita, sin conceder
+nada nuevo.
+
+**Punto 1 (auditoría de coherencia) resuelto con alcance reducido:**
+tras leer `purge_orphaned_gcs_blobs.py` y `seed_document_index.py`, se
+detectó que solo faltaba una dirección real de comprobación —
+`find_orphaned_index_entries` (commit `c6fbb59`), que audita filas
+vivas del índice sin blob real en GCS. Ejecutado contra los cinco
+cubos reales: 0 huérfanas.
+
+**Consolidación de cubos (decisión verbatim de Miguel Ángel, anexo
+3.12):** los cubos `enterprisebot-alvarez-machine-documents` (29
+objetos) y `enterprisebot-alvarez-personnel-documents` (39 objetos) se
+borraron por completo de GCS (`gcloud storage rm --recursive`,
+ejecutado por Miguel Ángel, confirmado con salida real) — su contenido
+ya vivía duplicado en `cgs_grupo_alvarez` desde la migración de H28.
+Las apps `machine_documents`/`personal_documents` en sí NO se tocaron
+(retirada de código pendiente). El explorador se actualizó para
+reflejarlo: `INDEXED_BUCKETS` ya no incluye esos dos cubos, y las tres
+pestañas restantes muestran nombre en castellano (`Fotos Partes`,
+`Fotos Albaranes`, `Directorio Principal`) vía un nuevo
+`BUCKET_DISPLAY_NAMES` en `buckets.py`, con la lógica de mapeo en la
+vista (`bucket_tabs()`, `build_breadcrumbs()`), nunca en la plantilla.
+
+**Nueva skill de plataforma, fuera del repositorio del proyecto:**
+`com-gcloud-windows`, tras verificar en línea que el entorno real de
+Miguel Ángel es el SDK de Google Cloud instalado en local sobre
+Windows (nunca Cloud Shell del navegador). Documenta el patrón de
+bucle sin archivo en PowerShell (evita el problema de `%%` de
+`cmd.exe`), el patrón de script de una sola caja con here-string, la
+corrección de política de ejecución (`Set-ExecutionPolicy -Scope
+CurrentUser RemoteSigned`, ya aplicada y verificada), y las trampas de
+sintaxis de `gcloud storage buckets get-iam-policy` ya conocidas.
+
+**Desvíos de la sesión:** dos vueltas evitables por no verificar el
+entorno real antes de generar comandos (sintaxis bash entregada para
+un entorno que resultó ser `cmd.exe`, y luego Notepad innecesario para
+comandos sueltos sin bucle) — ambas corregidas dentro de la propia
+sesión y documentadas en `SESSION_VARIABLES.md` y la skill nueva para
+no repetirse.
+
+### Hoja de ruta para la siguiente sesión (S039)
 
 Ninguno de estos puntos es bloqueante para dar H29 por operativo; son
 mejoras y trabajo que se dejó fuera de forma explícita.
 
-1. **Consumidor de la cuarentena** (Fase 3 de H28, no de H29): sigue
+1. **Funcionalidad del panel del explorador — pedido explícito de
+   Miguel Ángel al cierre de S038:** la interfaz actual (listado
+   simple por cursor) se queda corta. Verbatim: *"faltan que las
+   columnas sean ordenables, faltan filtros, etcétera, etcétera.
+   Tenemos que dejar una interfaz que sea bastante más funcional de lo
+   que es ahora mismo."* Sin diseño todavía — ni qué columnas
+   (nombre, tamaño, modificado, tipo…), ni qué filtros, ni si el orden
+   por cursor actual (necesario para no paginar por OFFSET sobre
+   decenas de miles de filas) es compatible con ordenar por columnas
+   arbitrarias sin reintroducir ese coste. **Diseñar con Miguel Ángel
+   antes de tocar código — no asumir alcance.**
+2. **Terminar la consolidación de cubos (resto de 3.12):** retirar por
+   completo las apps `machine_documents`/`personal_documents`
+   (modelos, vistas de subida, `purge_orphaned_gcs_blobs.py`,
+   referencias en `create_gcs_buckets`) y decidir qué pasa con
+   `MachineDocument.gcs_blob_name`/`PersonalDocument.gcs_blob_name`
+   ahora que sus objetos ya no están en un cubo propio.
+3. **Subida tipada desde gestión de documentación** (decisión 3.8):
+   depende del punto 2 — Miguel Ángel ya adelantó que subirá
+   directamente al cubo principal, a su carpeta correspondiente, en
+   vez de a los cubos retirados.
+4. **Consumidor de la cuarentena** (Fase 3 de H28, no de H29): sigue
    sin construirse. Los 78 archivos reales de `_CUARENTENA` ya son
    visibles y navegables en el explorador, pero nada los clasifica ni
    los mueve todavía — decisión 3 de S036, entrada en
    `CELERY_BEAT_SCHEDULE`.
-2. **Subida tipada desde gestión de documentación** (decisión 3.8):
-   el explorador delibradamente no sube nada; la vía de alta por tipo
-   documental declarado no se ha diseñado todavía.
-3. ~~Auditoría de coherencia tabla↔cubo~~ **Herramienta creada en
-   S038** (commit `c6fbb59`, desplegado y verificado en Actions). Tras
-   leer el precedente real (`purge_orphaned_gcs_blobs.py`) y
-   `seed_document_index.py`, el alcance se redujo: sembrado/refresco
-   ya cubre traer objetos de GCS hacia el índice (crea lo que falta,
-   refresca generación/metadatos en cada reejecución). Lo único que
-   faltaba de verdad: detectar una fila viva de `DocumentIndexEntry`
-   cuyo blob se borró directamente en GCS por fuera del explorador.
-   Nuevo comando `find_orphaned_index_entries` — recorre los cinco
-   cubos indexados, compara filas FILE vivas contra los objetos
-   reales, informa huérfanas. Solo informa, nunca escribe en BD ni con
-   flag de confirmación — marcar `purged_at` es decisión de
-   administrador, caso por caso. **Ejecutado en S038 contra los cinco
-   cubos reales: 0 huérfanas.** Único dato a explicar, no un problema:
-   `cgs_grupo_alvarez` mostró 37651 filas FILE vivas frente a 37654
-   objetos reales — 3 objetos de más en el cubo que en el índice, la
-   dirección contraria a lo que audita este comando (ya cubierta por
-   `seed_document_index`/`refresh_document_folder`), probablemente 3
-   archivos subidos por el agente de H28 tras el último sembrado.
-4. ~~Confirmación de `storage.folders.list` en la cuenta de la
-   plataforma (`enterprisebot-vertex@`) vía `gcloud`.~~ **Resuelto en
-   S038** con datos reales: `enterprisebot-vertex@gen-lang-client-
-   0961484137.iam.gserviceaccount.com` tiene, a nivel de **proyecto**
-   (`gen-lang-client-0961484137`, heredado por los cinco cubos
-   relevantes), los roles `roles/aiplatform.user` y
-   `roles/storage.admin` — verificado con
-   `gcloud projects get-iam-policy` ejecutado por Miguel Ángel en su
-   entorno local (ver nota de entorno gcloud en `SESSION_VARIABLES.md`).
-   `roles/storage.admin` incluye el bloque completo `storage.folders.*`
-   (`create`, `delete`, `get`, `list`, `rename`), verificado en línea
-   contra la referencia oficial actual de roles de Cloud Storage — la
-   cuenta ya tiene todo lo necesario para el renombrado y borrado
-   atómico de carpeta de la Fase 2 de H28, sin necesidad de conceder
-   nada nuevo. Ningún binding directo a nivel de bucket en los cuatro
-   cubos de plataforma (heredan del proyecto, no hace falta añadirlo).
 5. **Migración de Python 3.10 → 3.12/3.13** antes del 4 de octubre de
    2026 (sección 4.3.1 del documento maestro, procedimiento completo en
    `com-environment-management` sección 4.2). Incluye verificar si las
@@ -679,7 +725,7 @@ versiones correctas o si el desfase escondía una regresión real.
 
 ---
 
-## 7. Incidencia real fuera de alcance, corregida en S038 (directriz 4.9)
+## 8. Incidencia real fuera de alcance, corregida en S038 (directriz 4.9)
 
 Reportada por Pablo durante la sesión: el activo `A59` (Grúa móvil
 Liebherr LTM 1230-5.1, `GRUAS ADOLFO ALVAREZ, S.L.`, pk=78) no dejaba
