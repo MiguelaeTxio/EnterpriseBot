@@ -89,10 +89,19 @@ from document_explorer.models import DocumentIndexEntry
 # Sufijos de variante conocidos, catalogados a mano por S035 (Hallazgo
 # 1 del anexo H28: familia de compresión "-comp"/"-opt"/"-opt2", y
 # familia de desbloqueo "_unlocked") más los que han ido apareciendo en
-# las búsquedas de S039 ("comprimido", " (1)", " comp"). Se quitan del
-# final del nombre base, en cualquier combinación, antes de comparar.
+# las búsquedas de S039 ("comprimido", " comp"). Se quitan del final
+# del nombre base, en cualquier combinación, antes de comparar.
+#
+# NO se incluye "(N)" -- falso positivo real confirmado con datos de
+# producción (S039, 2026-07-30): "libro familia (001).jpg" / "(002)" /
+# "(004)" son tres páginas distintas de un mismo documento escaneado,
+# no copias ni versiones del mismo archivo. Un número entre paréntesis
+# al final del nombre es ambiguo entre "página N" y "copia N" y no se
+# puede resolver por el nombre solo -- se deja fuera del stripping
+# automático para no generar candidatos falsos en una sección que ya
+# es, por diseño, la más débil y menos confirmable de las dos.
 _VARIANT_SUFFIX_RE = re.compile(
-    r"[\s_-]*(?:comp|opt2|opt|unlocked|comprimido|copia|\(\d+\))+$",
+    r"[\s_-]*(?:comp|opt2|opt|unlocked|comprimido|copia)+$",
     re.IGNORECASE,
 )
 
