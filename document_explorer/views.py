@@ -136,7 +136,7 @@ from django.db.models import (
     BigIntegerField, Case, DateTimeField, F, Q, Value, When,
 )
 from django.db.models.functions import Cast, Coalesce
-from django.http import Http404, HttpResponseRedirect
+from django.http import Http404, HttpResponseRedirect, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -1241,6 +1241,7 @@ class MoveScopeMixin(ExplorerAccessMixin):
         return {
             "entries": entries,
             "entry_count": len(entries),
+            "bucket": PRIMARY_BUCKET,
             "path": path,
             "path_label": path or "(raíz de Directorio Principal)",
             "parent_path": path.rsplit("/", 1)[0] if "/" in path else "",
@@ -1310,83 +1311,57 @@ class MoveCreateFolderView(MoveScopeMixin, View):
         )
 
 
-class MoveFileView(MoveScopeMixin, View):
+class MoveOneView(MoveScopeMixin, View):
     """
-    Execute the move(s) chosen in the modal, one or many. A plain
-    (non-HTMX) form submit -- after moving, the browser leaves the
-    modal behind entirely and lands on the destination folder's real
-    listing, exactly like `SendToTrashView` already does after a
-    delete.
-
-    Each file is moved independently (`move_service.move_entry` per
-    entry, not a single all-or-nothing transaction). A name collision
-    at the destination no longer blocks anything -- `move_entry`
-    resolves it on its own with a correlative numeric suffix (Miguel
-    Ángel's decision, S039: never cancel the batch nor ask name by
-    name) -- but it is counted and reported in the confirmation
-    message so it is never a silent surprise.
+    Move exactly one file and report the result as JSON. Deliberately
+    small and single-purpose: the move modal's own JavaScript drives a
+    batch by calling this once per selected file, in sequence, so it
+    can paint a progress bar and a live log of file names as it goes
+    -- Miguel Ángel's explicit request (S039), verbatim: "hay que
+    incluir la barra de progreso con los nombres de archivos que se
+    están copiando... para que el usuario sepa que se está haciendo
+    algo... antes estábamos a ciegas totalmente." Even though a move
+    is now a pure index write with no GCS contact (see
+    `move_service`), moving hundreds of files in one click ("mover
+    todos los manuales") still takes several real seconds end to end
+    -- silent and blocking behind one single request was exactly the
+    "a ciegas" he was pointing at, independently of what got faster
+    underneath.
 
     ---
 
-    Ejecuta el movimiento o movimientos elegidos en el modal, uno o
-    varios. Un envío de formulario normal (sin HTMX) -- tras mover, el
-    navegador abandona el modal por completo y aterriza en el listado
-    real de la carpeta destino, igual que ya hace `SendToTrashView`
-    tras un borrado.
-
-    Cada archivo se mueve de forma independiente
-    (`move_service.move_entry` por entrada, no una única transacción
-    todo-o-nada). Una colisión de nombre en el destino ya no bloquea
-    nada -- `move_entry` la resuelve sola con un sufijo numérico
-    correlativo (decisión de Miguel Ángel, S039: nunca cancelar el
-    lote ni preguntar nombre por nombre) -- pero se cuenta e informa
-    en el mensaje de confirmación para que nunca sea una sorpresa
-    silenciosa.
+    Mueve exactamente un archivo e informa del resultado en JSON.
+    Deliberadamente pequeña y de propósito único: el propio JavaScript
+    del modal de mover dispara un lote llamando a esto una vez por
+    archivo seleccionado, en secuencia, para poder pintar una barra de
+    progreso y un registro en vivo de nombres de archivo según avanza
+    -- petición explícita de Miguel Ángel (S039), verbatim: "hay que
+    incluir la barra de progreso con los nombres de archivos que se
+    están copiando... para que el usuario sepa que se está haciendo
+    algo... antes estábamos a ciegas totalmente." Aunque mover ya es
+    una escritura de índice pura sin contacto con GCS (ver
+    `move_service`), mover cientos de archivos de un clic ("mover
+    todos los manuales") sigue tardando varios segundos reales de
+    principio a fin -- silencioso y bloqueante detrás de una única
+    petición era justo el "a ciegas" que señalaba, con independencia
+    de lo que se hubiera acelerado por debajo.
     """
 
     def post(self, request):
         entries = self._entries_or_404(
             request, request.POST.getlist("entries"),
         )
+        entry = entries[0]
         destination = (request.POST.get("destination_folder") or "").strip()
-        bucket = entries[0].bucket
 
-        moved, renamed = [], []
-        for entry in entries:
-            original_name = entry.name
-            move_service.move_entry(entry, destination)
-            moved.append(entry.name)
-            if entry.name != original_name:
-                renamed.append("%s → %s" % (original_name, entry.name))
+        original_name = entry.name
+        move_service.move_entry(entry, destination)
 
-        destination_label = destination or "la raíz de Directorio Principal"
-        if moved:
-            if len(moved) == 1:
-                messages.success(
-                    request,
-                    "«%s» se ha movido a «%s»."
-                    % (moved[0], destination_label),
-                )
-            else:
-                messages.success(
-                    request,
-                    "%d archivo(s) movido(s) a «%s»."
-                    % (len(moved), destination_label),
-                )
-        if renamed:
-            messages.warning(
-                request,
-                "Ya había un archivo con ese nombre en el destino, "
-                "renombrado(s) automáticamente con un número: %s"
-                % ", ".join(renamed),
-            )
-
-        return redirect(
-            "%s?bucket=%s&path=%s" % (
-                reverse("document_explorer:explorer"),
-                bucket, destination,
-            )
-        )
+        return JsonResponse({
+            "original_name": original_name,
+            "final_name": entry.name,
+            "renamed": entry.name != original_name,
+        })
 
 
 class TrashView(ExplorerAccessMixin, TemplateView):

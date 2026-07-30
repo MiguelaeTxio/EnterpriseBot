@@ -12,6 +12,19 @@
     que releerla de los casilleros de la página que hay detrás del
     modal después de la primera petición.
 
+    Barra de progreso (S039, petición explícita de Miguel Ángel: "hay
+    que incluir la barra de progreso con los nombres de archivos que
+    se están copiando... antes estábamos a ciegas totalmente"). El
+    botón final "Mover aquí" ya no es un submit normal -- es un botón
+    que dispara moveEntriesSequentially(), una función mínima en JS
+    puro (sin librería nueva) que llama a MoveOneView una vez por
+    archivo, en secuencia, y va pintando la barra y un registro en
+    vivo de cada nombre según se mueve. Aunque mover ya es una
+    escritura de índice pura (ver document_explorer.move_service), un
+    lote de cientos de archivos ("mover todos los manuales") sigue
+    tardando varios segundos reales -- esto es lo que evita que quede
+    "a ciegas" mientras tanto.
+
     Acotado siempre a PRIMARY_BUCKET (Directorio Principal real) --
     ver MoveScopeMixin en views.py. Toda la lógica (qué subcarpetas
     hay, si se puede subir de nivel) llega resuelta desde la vista.
@@ -32,7 +45,7 @@
     <i class="bi bi-folder2-open"></i> {{ path_label }}
 </div>
 
-<div class="list-group mb-3 dx-move-tree">
+<div class="list-group mb-3 dx-move-tree" id="move-nav-section">
     {% if has_parent %}
         <button type="button" class="list-group-item list-group-item-action"
                 hx-post="{% url 'document_explorer:move_browse' %}"
@@ -58,7 +71,7 @@
     {% endif %}
 </div>
 
-<form class="d-flex gap-2 mb-3"
+<form class="d-flex gap-2 mb-3" id="move-create-form"
       hx-post="{% url 'document_explorer:move_create_folder' %}"
       hx-include="#move-entries-form"
       hx-target="#move-modal-body">
@@ -73,15 +86,97 @@
     </button>
 </form>
 
-<form method="post" action="{% url 'document_explorer:move' %}"
-      id="move-entries-form">
+<form id="move-entries-form">
     {% csrf_token %}
     {% for entry in entries %}
         <input type="hidden" name="entries" value="{{ entry.pk }}">
     {% endfor %}
     <input type="hidden" name="destination_folder" value="{{ path }}">
-    <button type="submit" class="btn btn-primary w-100">
+    <button type="button" id="move-start-btn" class="btn btn-primary w-100"
+            onclick="dxMoveStart()">
         <i class="bi bi-folder-symlink"></i>
         Mover aquí — {{ path_label }}
     </button>
 </form>
+
+<div id="move-progress" class="d-none">
+    <div class="progress mb-2" role="progressbar" aria-label="Progreso">
+        <div id="move-progress-bar" class="progress-bar dx-move-progress-bar">
+            0 / 0
+        </div>
+    </div>
+    <div id="move-progress-log" class="small dx-move-log mb-2"></div>
+    <a id="move-progress-done" class="btn btn-outline-primary w-100 d-none"
+       href="{% url 'document_explorer:explorer' %}?bucket={{ bucket|urlencode }}&path={{ path|urlencode }}">
+        <i class="bi bi-check2"></i> Ver «{{ path_label }}»
+    </a>
+</div>
+
+<script>
+    // dxMoveStart: dispara MoveOneView una vez por archivo
+    // seleccionado, en secuencia, pintando la barra y el registro en
+    // vivo. JS puro, sin librería nueva -- ver el comentario de
+    // arriba (S039, petición de Miguel Ángel de no quedar "a
+    // ciegas").
+    async function dxMoveStart() {
+        const form = document.getElementById("move-entries-form");
+        const entryInputs = Array.from(
+            form.querySelectorAll("[name=entries]"),
+        );
+        const destination = form.querySelector(
+            "[name=destination_folder]",
+        ).value;
+        const csrftoken = form.querySelector(
+            "[name=csrfmiddlewaretoken]",
+        ).value;
+        const total = entryInputs.length;
+
+        document.getElementById("move-start-btn").disabled = true;
+        document.getElementById("move-nav-section").classList.add("d-none");
+        document.getElementById("move-create-form").classList.add("d-none");
+        form.classList.add("d-none");
+        const progressWrap = document.getElementById("move-progress");
+        const bar = document.getElementById("move-progress-bar");
+        const log = document.getElementById("move-progress-log");
+        const doneLink = document.getElementById("move-progress-done");
+        progressWrap.classList.remove("d-none");
+
+        let done = 0;
+        for (const input of entryInputs) {
+            const body = new FormData();
+            body.append("entries", input.value);
+            body.append("destination_folder", destination);
+            const line = document.createElement("div");
+            try {
+                const response = await fetch(
+                    "{% url 'document_explorer:move_one' %}",
+                    {
+                        method: "POST",
+                        headers: {"X-CSRFToken": csrftoken},
+                        body: body,
+                    },
+                );
+                if (!response.ok) {
+                    throw new Error("HTTP " + response.status);
+                }
+                const data = await response.json();
+                line.textContent = data.renamed
+                    ? ("✓ " + data.original_name + " → " + data.final_name
+                        + " (nombre repetido, renombrado)")
+                    : ("✓ " + data.final_name);
+            } catch (error) {
+                line.className = "text-danger";
+                line.textContent = "✗ error moviendo un archivo";
+            }
+            log.appendChild(line);
+            log.scrollTop = log.scrollHeight;
+
+            done += 1;
+            const percent = Math.round((done / total) * 100);
+            bar.style.width = percent + "%";
+            bar.textContent = done + " / " + total;
+        }
+
+        doneLink.classList.remove("d-none");
+    }
+</script>
