@@ -16,14 +16,15 @@
     que incluir la barra de progreso con los nombres de archivos que
     se están copiando... antes estábamos a ciegas totalmente"). El
     botón final "Mover aquí" ya no es un submit normal -- es un botón
-    que dispara moveEntriesSequentially(), una función mínima en JS
-    puro (sin librería nueva) que llama a MoveOneView una vez por
-    archivo, en secuencia, y va pintando la barra y un registro en
-    vivo de cada nombre según se mueve. Aunque mover ya es una
-    escritura de índice pura (ver document_explorer.move_service), un
-    lote de cientos de archivos ("mover todos los manuales") sigue
-    tardando varios segundos reales -- esto es lo que evita que quede
-    "a ciegas" mientras tanto.
+    que dispara dxMoveStart(), una función mínima en JS puro (sin
+    librería nueva) que trocea la selección en bloques
+    (DX_MOVE_CHUNK_SIZE) y llama a MoveBatchView una vez por bloque,
+    en secuencia, pintando la barra y un registro en vivo de cada
+    nombre según llega la respuesta. La primera versión llamaba una
+    vez por archivo (MoveOneView): medido en producción, 197 archivos
+    tardaban ~197 segundos reales, casi todo peaje de red/Django
+    repetido 197 veces -- agrupar en bloques reparte ese coste fijo
+    sin perder la visibilidad que pidió Miguel Ángel.
 
     Acotado siempre a PRIMARY_BUCKET (Directorio Principal real) --
     ver MoveScopeMixin en views.py. Toda la lógica (qué subcarpetas
@@ -113,23 +114,40 @@
 </div>
 
 <script>
-    // dxMoveStart: dispara MoveOneView una vez por archivo
-    // seleccionado, en secuencia, pintando la barra y el registro en
-    // vivo. JS puro, sin librería nueva -- ver el comentario de
-    // arriba (S039, petición de Miguel Ángel de no quedar "a
-    // ciegas").
+    // dxMoveStart: trocea la selección en bloques y dispara
+    // MoveBatchView una vez por bloque, en secuencia, pintando la
+    // barra y el registro en vivo -- ver el comentario de arriba
+    // (S039, petición de Miguel Ángel de no quedar "a ciegas").
+    //
+    // CHUNK_SIZE: medido en producción (S039) que una petición por
+    // archivo pagaba ~350-420 ms de servidor más el viaje de red
+    // completo, 197 archivos ≈ 197 segundos reales. Agrupar en
+    // bloques reparte ese coste fijo entre varios archivos a la vez
+    // -- ver MoveBatchView. La barra y el registro se pintan igual,
+    // por bloque en vez de por archivo, así que sigue sin quedar "a
+    // ciegas".
+    const DX_MOVE_CHUNK_SIZE = 15;
+
+    function dxChunks(array, size) {
+        const chunks = [];
+        for (let i = 0; i < array.length; i += size) {
+            chunks.push(array.slice(i, i + size));
+        }
+        return chunks;
+    }
+
     async function dxMoveStart() {
         const form = document.getElementById("move-entries-form");
-        const entryInputs = Array.from(
+        const entryValues = Array.from(
             form.querySelectorAll("[name=entries]"),
-        );
+        ).map(function (input) { return input.value; });
         const destination = form.querySelector(
             "[name=destination_folder]",
         ).value;
         const csrftoken = form.querySelector(
             "[name=csrfmiddlewaretoken]",
         ).value;
-        const total = entryInputs.length;
+        const total = entryValues.length;
 
         document.getElementById("move-start-btn").disabled = true;
         document.getElementById("move-nav-section").classList.add("d-none");
@@ -142,14 +160,17 @@
         progressWrap.classList.remove("d-none");
 
         let done = 0;
-        for (const input of entryInputs) {
+        for (const chunk of dxChunks(entryValues, DX_MOVE_CHUNK_SIZE)) {
             const body = new FormData();
-            body.append("entries", input.value);
+            for (const pk of chunk) {
+                body.append("entries", pk);
+            }
             body.append("destination_folder", destination);
-            const line = document.createElement("div");
+
+            let results = null;
             try {
                 const response = await fetch(
-                    "{% url 'document_explorer:move_one' %}",
+                    "{% url 'document_explorer:move_batch' %}",
                     {
                         method: "POST",
                         headers: {"X-CSRFToken": csrftoken},
@@ -160,21 +181,31 @@
                     throw new Error("HTTP " + response.status);
                 }
                 const data = await response.json();
-                line.textContent = data.renamed
-                    ? ("✓ " + data.original_name + " → " + data.final_name
-                        + " (nombre repetido, renombrado)")
-                    : ("✓ " + data.final_name);
+                results = data.results;
             } catch (error) {
-                line.className = "text-danger";
-                line.textContent = "✗ error moviendo un archivo";
+                results = chunk.map(function () { return null; });
             }
-            log.appendChild(line);
-            log.scrollTop = log.scrollHeight;
 
-            done += 1;
-            const percent = Math.round((done / total) * 100);
-            bar.style.width = percent + "%";
-            bar.textContent = done + " / " + total;
+            for (const result of results) {
+                const line = document.createElement("div");
+                if (result === null) {
+                    line.className = "text-danger";
+                    line.textContent = "✗ error moviendo un archivo";
+                } else if (result.renamed) {
+                    line.textContent = "✓ " + result.original_name + " → "
+                        + result.final_name + " (nombre repetido, "
+                        + "renombrado)";
+                } else {
+                    line.textContent = "✓ " + result.final_name;
+                }
+                log.appendChild(line);
+
+                done += 1;
+                const percent = Math.round((done / total) * 100);
+                bar.style.width = percent + "%";
+                bar.textContent = done + " / " + total;
+            }
+            log.scrollTop = log.scrollHeight;
         }
 
         doneLink.classList.remove("d-none");

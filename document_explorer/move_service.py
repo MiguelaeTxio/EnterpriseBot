@@ -208,7 +208,7 @@ def _resolve_free_name(bucket, destination_folder, name, exclude_pk=None):
         suffix += 1
 
 
-def move_entry(entry, destination_folder):
+def move_entry(entry, destination_folder, ensure_folder=True):
     """
     Move `entry` (a live FILE `DocumentIndexEntry`) into
     `destination_folder` (a folder path string, `""` for the bucket
@@ -218,6 +218,14 @@ def move_entry(entry, destination_folder):
     collision at the destination never blocks the move -- see
     `_resolve_free_name`; `entry.name` may come back different from
     what it was before the call, when that happened.
+
+    `ensure_folder=False` skips `ensure_folder_chain` -- for a batch
+    of several entries going to the same destination in one request
+    (`MoveBatchView`), the chain only needs creating once, not once
+    per file: measured in production (S039), each move was paying
+    ~350-420 ms of pure server time, largely from repeating this same
+    existence check on every single call for a destination that, past
+    the first file, always already exists.
 
     ---
 
@@ -229,12 +237,21 @@ def move_entry(entry, destination_folder):
     colisión de nombre en el destino nunca bloquea el movimiento -- ver
     `_resolve_free_name`; `entry.name` puede volver distinto de como
     estaba antes de la llamada, cuando eso ha ocurrido.
+
+    `ensure_folder=False` se salta `ensure_folder_chain` -- para un
+    lote de varias entradas con el mismo destino en una sola petición
+    (`MoveBatchView`), la cadena solo hace falta crearla una vez, no
+    una por archivo: medido en producción (S039), cada movimiento
+    pagaba ~350-420 ms de tiempo puro de servidor, en buena parte por
+    repetir esta misma comprobación de existencia en cada llamada para
+    un destino que, a partir del primer archivo, ya existe siempre.
     """
     destination_folder = destination_folder.strip("/")
     if destination_folder == entry.parent_path:
         return
 
-    ensure_folder_chain(entry.bucket, destination_folder)
+    if ensure_folder:
+        ensure_folder_chain(entry.bucket, destination_folder)
     new_name = _resolve_free_name(
         entry.bucket, destination_folder, entry.name, exclude_pk=entry.pk,
     )

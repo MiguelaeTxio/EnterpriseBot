@@ -1311,57 +1311,75 @@ class MoveCreateFolderView(MoveScopeMixin, View):
         )
 
 
-class MoveOneView(MoveScopeMixin, View):
+class MoveBatchView(MoveScopeMixin, View):
     """
-    Move exactly one file and report the result as JSON. Deliberately
-    small and single-purpose: the move modal's own JavaScript drives a
-    batch by calling this once per selected file, in sequence, so it
-    can paint a progress bar and a live log of file names as it goes
-    -- Miguel Ángel's explicit request (S039), verbatim: "hay que
-    incluir la barra de progreso con los nombres de archivos que se
-    están copiando... para que el usuario sepa que se está haciendo
-    algo... antes estábamos a ciegas totalmente." Even though a move
-    is now a pure index write with no GCS contact (see
-    `move_service`), moving hundreds of files in one click ("mover
-    todos los manuales") still takes several real seconds end to end
-    -- silent and blocking behind one single request was exactly the
-    "a ciegas" he was pointing at, independently of what got faster
-    underneath.
+    Move a batch of files (a chunk, not necessarily the whole
+    selection) and report each result as JSON. The move modal's own
+    JavaScript splits the full selection into chunks and calls this
+    once per chunk, in sequence, painting a progress bar and a live
+    log of file names as each chunk comes back -- Miguel Ángel's
+    explicit request (S039), verbatim: "hay que incluir la barra de
+    progreso con los nombres de archivos que se están copiando... para
+    que el usuario sepa que se está haciendo algo... antes estábamos a
+    ciegas totalmente."
+
+    One request per file (`MoveOneView`, the first version of this
+    endpoint) measured ~350-420 ms of real server time per file in
+    production, dominated by `ensure_folder_chain` repeating the same
+    existence check on every single call for a destination that, past
+    the first file, already exists. Chunking cuts both costs at once:
+    fewer HTTP round trips (network + Django request overhead paid
+    once per chunk, not once per file), and `ensure_folder_chain` runs
+    exactly once per chunk (`move_service.move_entry(..., ensure_
+    folder=False)` for the rest) instead of once per file.
 
     ---
 
-    Mueve exactamente un archivo e informa del resultado en JSON.
-    Deliberadamente pequeña y de propósito único: el propio JavaScript
-    del modal de mover dispara un lote llamando a esto una vez por
-    archivo seleccionado, en secuencia, para poder pintar una barra de
-    progreso y un registro en vivo de nombres de archivo según avanza
-    -- petición explícita de Miguel Ángel (S039), verbatim: "hay que
-    incluir la barra de progreso con los nombres de archivos que se
-    están copiando... para que el usuario sepa que se está haciendo
-    algo... antes estábamos a ciegas totalmente." Aunque mover ya es
-    una escritura de índice pura sin contacto con GCS (ver
-    `move_service`), mover cientos de archivos de un clic ("mover
-    todos los manuales") sigue tardando varios segundos reales de
-    principio a fin -- silencioso y bloqueante detrás de una única
-    petición era justo el "a ciegas" que señalaba, con independencia
-    de lo que se hubiera acelerado por debajo.
+    Mueve un lote de archivos (un bloque, no necesariamente toda la
+    selección) e informa de cada resultado en JSON. El propio
+    JavaScript del modal de mover divide la selección completa en
+    bloques y llama a esto una vez por bloque, en secuencia, pintando
+    una barra de progreso y un registro en vivo de nombres de archivo
+    según vuelve cada bloque -- petición explícita de Miguel Ángel
+    (S039), verbatim: "hay que incluir la barra de progreso con los
+    nombres de archivos que se están copiando... para que el usuario
+    sepa que se está haciendo algo... antes estábamos a ciegas
+    totalmente."
+
+    Una petición por archivo (`MoveOneView`, la primera versión de
+    este endpoint) medía ~350-420 ms de tiempo real de servidor por
+    archivo en producción, dominado por `ensure_folder_chain`
+    repitiendo la misma comprobación de existencia en cada llamada
+    para un destino que, a partir del primer archivo, ya existe.
+    Agrupar en bloques recorta los dos costes a la vez: menos viajes
+    de ida y vuelta HTTP (red + gasto fijo de petición de Django
+    pagado una vez por bloque, no una vez por archivo), y
+    `ensure_folder_chain` se ejecuta exactamente una vez por bloque
+    (`move_service.move_entry(..., ensure_folder=False)` para el
+    resto) en vez de una vez por archivo.
     """
 
     def post(self, request):
         entries = self._entries_or_404(
             request, request.POST.getlist("entries"),
         )
-        entry = entries[0]
         destination = (request.POST.get("destination_folder") or "").strip()
 
-        original_name = entry.name
-        move_service.move_entry(entry, destination)
+        index_writer.ensure_folder_chain(PRIMARY_BUCKET, destination)
 
-        return JsonResponse({
-            "original_name": original_name,
-            "final_name": entry.name,
-            "renamed": entry.name != original_name,
-        })
+        results = []
+        for entry in entries:
+            original_name = entry.name
+            move_service.move_entry(
+                entry, destination, ensure_folder=False,
+            )
+            results.append({
+                "original_name": original_name,
+                "final_name": entry.name,
+                "renamed": entry.name != original_name,
+            })
+
+        return JsonResponse({"results": results})
 
 
 class TrashView(ExplorerAccessMixin, TemplateView):
