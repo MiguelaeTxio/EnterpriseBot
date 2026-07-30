@@ -298,15 +298,16 @@ consola:
 - `enterprisebot-alvarez-personnel-documents`: 39/39 objetos borrados,
   cubo borrado (`Completed 1/1`).
 
-**Riesgo operativo señalado por el modelo tras la ejecución, todavía
-sin resolver:** el código de `machine_documents`/`personal_documents`
+**Riesgo operativo señalado por el modelo tras la ejecución — cerrado
+por Miguel Ángel:** el código de `machine_documents`/`personal_documents`
 (subida de documentos, `document_ingestion/management/commands/
 purge_orphaned_gcs_blobs.py`, `create_gcs_buckets`) sigue apuntando a
-estos dos nombres de cubo, que ya no existen. Cualquier subida real
-por esa vía en producción fallaría ahora mismo. Pendiente de que
-Miguel Ángel confirme si sigue habiendo subida activa por esa vía
-(pese a que H23/H25 están pausados como hitos) o si puede quedar así
-hasta abordar el código de consolidación de 3.12.
+estos dos nombres de cubo, que ya no existen. Miguel Ángel confirma,
+verbatim: *"nadie va a subir documentación a esos cubos, porque la
+persona que lo está usando está avisada de que no funciona [...] y que
+hemos cambiado el sistema, así que no hay problema."* Sin guardia de
+código añadida — el aviso directo a la usuaria (Yolanda, DOCS_SUPERVISOR)
+cubre el riesgo hasta que se aborde el código de consolidación de 3.12.
 
 ## 4. Consecuencia directa: las tres únicas vías de escritura
 
