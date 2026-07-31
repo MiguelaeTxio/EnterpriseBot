@@ -132,12 +132,14 @@ from urllib.parse import urlencode
 import datetime
 
 from django.contrib import messages
+from django.core.paginator import Paginator
 from django.db.models import (
     BigIntegerField, Case, DateTimeField, F, Q, Value, When,
 )
 from django.db.models.functions import Cast, Coalesce
 from django.http import Http404, HttpResponseRedirect
 from django.shortcuts import get_object_or_404, redirect, render
+from django.template.defaultfilters import filesizeformat
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
@@ -152,7 +154,9 @@ from document_explorer import classification_service, duplicates_service
 from document_explorer.buckets import (
     BUCKET_DISPLAY_NAMES, INDEXED_BUCKETS, PRIMARY_BUCKET,
 )
-from document_explorer.models import DocumentIndexEntry, path_digest
+from document_explorer.models import (
+    DataOperationLog, DataOperationLogEntry, DocumentIndexEntry, path_digest,
+)
 
 PAGE_SIZE = 200
 
@@ -1572,9 +1576,18 @@ class DuplicatesView(ExplorerAccessMixin, TemplateView):
     confirma" igual que si lo decidiera una máquina en silencio. Todas
     las casillas arrancan sin marcar; Miguel Ángel elige qué copias
     van a su papelera.
+
+    El listado detallado, fila a fila, se acota a `_MANUAL_LIST_LIMIT`
+    grupos -- con miles de grupos reales (S040: 3.570), pintar cada
+    fila de cada copia de cada grupo en una sola página sería una
+    respuesta enorme para un caso de uso que, según el propio Miguel
+    Ángel, prefiere resolver todo de golpe. El botón de resolución
+    automática (`ResolveDuplicatesView`) no tiene ese límite -- opera
+    sobre todos los grupos encontrados, los liste esta vista o no.
     """
 
     template_name = "document_explorer/duplicates.html"
+    _MANUAL_LIST_LIMIT = 200
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -1592,8 +1605,9 @@ class DuplicatesView(ExplorerAccessMixin, TemplateView):
         context.update({
             "active_nav": "document_explorer",
             "path_prefix": path_prefix,
-            "groups": groups,
+            "groups": groups[:self._MANUAL_LIST_LIMIT],
             "group_count": len(groups),
+            "manual_list_limit": self._MANUAL_LIST_LIMIT,
             "total_wasted": total_wasted,
         })
         return context
@@ -1668,6 +1682,210 @@ class SendDuplicatesToTrashView(ExplorerAccessMixin, View):
                 reverse("document_explorer:duplicates"), path_prefix,
             )
         )
+
+
+class ResolveDuplicatesView(ExplorerAccessMixin, View):
+    """
+    Keep exactly one copy of every duplicate group, send every other
+    copy to trash -- all in one click, no per-row checkbox. Miguel
+    Ángel, S040, after seeing 3.570 real groups: "Esto es un rollo (...)
+    Yo lo que quiero es una única copia de cada uno de los archivos. Y
+    todas las demás copias a la papelera (...) me da igual dónde
+    estén." Which copy survives is arbitrary and explicitly doesn't
+    matter to him -- content is byte-identical by definition (same
+    `crc32c`+`size_bytes`), and where a file virtually sits stops
+    mattering once classification is done at the machine/person level,
+    not by folder.
+
+    Two queries total for the actual trashing, regardless of how many
+    thousands of groups there are -- one `UPDATE ... WHERE pk IN (...)`
+    (same discipline `move_service.move_entries()` already applies for
+    exactly this reason, S039), never one `.save()` per row. The audit
+    log (`DataOperationLog`/`DataOperationLogEntry`, see their
+    docstrings) is written with two more queries: one `INSERT` for the
+    log header, one `bulk_create` for every line.
+
+    Still never a hard delete -- every trashed row is fully
+    recoverable until an administrator purges it, same two-tier trash
+    as everywhere else in this app.
+
+    ---
+
+    Conserva exactamente una copia de cada grupo de duplicados, envía
+    cualquier otra copia a la papelera -- todo en un clic, sin casillas
+    una a una. Miguel Ángel, S040, al ver 3.570 grupos reales: "Esto es
+    un rollo (...) Yo lo que quiero es una única copia de cada uno de
+    los archivos. Y todas las demás copias a la papelera (...) me da
+    igual dónde estén." Qué copia sobrevive es arbitrario y
+    explícitamente no le importa -- el contenido es idéntico byte a
+    byte por definición (mismo `crc32c`+`size_bytes`), y dónde vive
+    virtualmente un archivo deja de importar en cuanto la clasificación
+    se hace a nivel de máquina/persona, no por carpeta.
+
+    Dos consultas en total para el envío a papelera en sí, sea cual sea
+    el número de miles de grupos -- un único `UPDATE ... WHERE pk IN
+    (...)` (misma disciplina que ya aplica `move_service.move_entries()`
+    por el mismo motivo, S039), nunca un `.save()` por fila. El registro
+    de auditoría (`DataOperationLog`/`DataOperationLogEntry`, ver sus
+    docstrings) se escribe con dos consultas más: un `INSERT` para la
+    cabecera, un `bulk_create` para todas las líneas.
+
+    Sigue sin ser nunca un borrado duro -- cada fila enviada a papelera
+    es totalmente recuperable hasta que un administrador la vacíe,
+    misma papelera de dos niveles que en el resto de esta app.
+    """
+
+    def post(self, request):
+        company_user = request.user.company_user
+        if not permissions.is_unrestricted(company_user):
+            raise Http404("Solo el administrador puede resolver duplicados.")
+
+        path_prefix = (request.POST.get("path") or "").strip("/")
+        groups = duplicates_service.find_duplicate_groups(
+            PRIMARY_BUCKET, path_prefix,
+        )
+        if not groups:
+            messages.info(request, "No hay duplicados que resolver.")
+            return redirect(
+                "%s?path=%s" % (
+                    reverse("document_explorer:duplicates"), path_prefix,
+                )
+            )
+
+        kept_entries = []
+        trashed_entries = []
+        log_lines = []  # [(action, entry), ...] -- built once, linear in total entries
+        for group in groups:
+            keep, *rest = group
+            kept_entries.append(keep)
+            log_lines.append((DataOperationLogEntry.ACTION_KEPT, keep))
+            for dup in rest:
+                trashed_entries.append(dup)
+                log_lines.append((DataOperationLogEntry.ACTION_TRASHED, dup))
+
+        trash_pks = [entry.pk for entry in trashed_entries]
+        bytes_recovered = sum(
+            (entry.size_bytes or 0) for entry in trashed_entries
+        )
+        now = timezone.now()
+
+        DocumentIndexEntry.objects.filter(pk__in=trash_pks).update(
+            deleted_at=now, deleted_by=company_user,
+        )
+
+        log = DataOperationLog.objects.create(
+            operation_type=DataOperationLog.OPERATION_DUPLICATE_RESOLUTION,
+            performed_by=company_user,
+            bucket=PRIMARY_BUCKET,
+            path_prefix=path_prefix,
+            groups_count=len(groups),
+            kept_count=len(kept_entries),
+            trashed_count=len(trashed_entries),
+            bytes_recovered=bytes_recovered,
+        )
+        DataOperationLogEntry.objects.bulk_create([
+            DataOperationLogEntry(
+                log=log,
+                action=action,
+                index_entry=entry,
+                bucket=entry.bucket,
+                blob_name=entry.blob_name,
+                name=entry.name,
+                parent_path=entry.parent_path,
+                size_bytes=entry.size_bytes,
+            )
+            for action, entry in log_lines
+        ])
+
+        messages.success(
+            request,
+            "%d grupo(s) resueltos: %d copia(s) conservadas, %d "
+            "enviada(s) a la papelera (%s recuperables). Historial: "
+            "operación #%d."
+            % (
+                len(groups), len(kept_entries), len(trashed_entries),
+                filesizeformat(bytes_recovered), log.pk,
+            ),
+        )
+        return redirect(
+            reverse("document_explorer:operation_log_detail", args=[log.pk])
+        )
+
+
+class DataOperationLogListView(ExplorerAccessMixin, TemplateView):
+    """
+    History of bulk database-only operations (H29, S040) -- Miguel
+    Ángel: "tenemos que dejar un informe (...) un historial de qué
+    hemos hecho (...) para poder hacer una auditoría en el momento que
+    queramos." Admin-only, same as the operations themselves.
+
+    ---
+
+    Historial de operaciones masivas de solo base de datos (H29,
+    S040) -- Miguel Ángel: "tenemos que dejar un informe (...) un
+    historial de qué hemos hecho (...) para poder hacer una auditoría
+    en el momento que queramos." Solo administrador, igual que las
+    propias operaciones.
+    """
+
+    template_name = "document_explorer/operation_log_list.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        company_user = self.request.user.company_user
+        if not permissions.is_unrestricted(company_user):
+            raise Http404("Solo el administrador puede ver el historial.")
+        context["active_nav"] = "document_explorer"
+        context["logs"] = DataOperationLog.objects.all()[:PAGE_SIZE]
+        return context
+
+
+class DataOperationLogDetailView(ExplorerAccessMixin, TemplateView):
+    """
+    Full line-by-line detail of one `DataOperationLog` -- every file
+    kept, every file trashed, paginated (a single duplicate-resolution
+    run can easily produce tens of thousands of lines). Regular
+    offset pagination is an acceptable trade-off here, unlike the main
+    explorer's cursor pagination -- this is an occasional audit view,
+    never a hot navigation path.
+
+    ---
+
+    Detalle línea a línea completo de un `DataOperationLog` -- cada
+    archivo conservado, cada archivo enviado a papelera, paginado (una
+    sola ejecución de resolución de duplicados puede producir
+    fácilmente decenas de miles de líneas). La paginación normal por
+    offset es un compromiso aceptable aquí, a diferencia de la
+    paginación por cursor del explorador principal -- esta es una
+    vista de auditoría ocasional, nunca una ruta de navegación
+    caliente.
+    """
+
+    template_name = "document_explorer/operation_log_detail.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        company_user = self.request.user.company_user
+        if not permissions.is_unrestricted(company_user):
+            raise Http404("Solo el administrador puede ver el historial.")
+
+        log = get_object_or_404(DataOperationLog, pk=kwargs["pk"])
+        action_filter = self.request.GET.get("action") or ""
+        entries_qs = log.entries.order_by("bucket", "parent_path", "name")
+        if action_filter in dict(DataOperationLogEntry.ACTION_CHOICES):
+            entries_qs = entries_qs.filter(action=action_filter)
+
+        paginator = Paginator(entries_qs, PAGE_SIZE)
+        page_number = self.request.GET.get("page") or 1
+        page = paginator.get_page(page_number)
+
+        context.update({
+            "active_nav": "document_explorer",
+            "log": log,
+            "page": page,
+            "action_filter": action_filter,
+        })
+        return context
 
 
 class RestoreFromTrashView(ExplorerAccessMixin, View):

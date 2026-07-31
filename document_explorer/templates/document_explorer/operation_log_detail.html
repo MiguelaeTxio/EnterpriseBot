@@ -1,0 +1,110 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/document_explorer/templates/document_explorer/operation_log_detail.html #}
+{% extends "panel/base.html" %}
+{% load static %}
+
+{% block extra_head %}
+    <link rel="stylesheet" href="{% static 'document_explorer/css/explorer.css' %}">
+{% endblock extra_head %}
+
+{% comment %}
+    Detalle línea a línea de una operación masiva (H29, S040). Paginación
+    normal por offset a propósito -- ver DataOperationLogDetailView.
+{% endcomment %}
+
+{% block title %}Operación #{{ log.pk }}{% endblock title %}
+{% block page_title %}Operación #{{ log.pk }} -- {{ log.get_operation_type_display }}{% endblock page_title %}
+
+{% block content %}
+<div class="container-fluid px-3 pt-3">
+
+    <div class="d-flex align-items-center justify-content-between mb-3">
+        <p class="text-muted small mb-0">
+            {{ log.performed_at|date:"d/m/Y H:i" }} -- ejecutada por
+            {{ log.performed_by|default:"—" }} -- ámbito:
+            {{ log.bucket }}{% if log.path_prefix %}/{{ log.path_prefix }}{% endif %}
+            -- {{ log.groups_count }} grupo(s), {{ log.kept_count }}
+            conservada(s), {{ log.trashed_count }} a papelera
+            ({{ log.bytes_recovered_display }} recuperables).
+        </p>
+        <a class="btn btn-sm btn-outline-secondary"
+           href="{% url 'document_explorer:operation_log_list' %}">
+            <i class="bi bi-arrow-left"></i> Volver al historial
+        </a>
+    </div>
+
+    <div class="btn-group btn-group-sm mb-3" role="group">
+        <a class="btn btn-outline-secondary {% if not action_filter %}active{% endif %}"
+           href="?">Todas</a>
+        <a class="btn btn-outline-secondary {% if action_filter == 'KEPT' %}active{% endif %}"
+           href="?action=KEPT">Conservadas</a>
+        <a class="btn btn-outline-secondary {% if action_filter == 'TRASHED' %}active{% endif %}"
+           href="?action=TRASHED">Enviadas a papelera</a>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle mb-0">
+            <thead>
+                <tr>
+                    <th>Acción</th>
+                    <th>Nombre</th>
+                    <th>Ubicación</th>
+                    <th class="text-end">Tamaño</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for line in page %}
+                    <tr>
+                        <td>
+                            {% if line.action == "TRASHED" %}
+                                <span class="text-danger small">
+                                    <i class="bi bi-trash"></i> Papelera
+                                </span>
+                            {% else %}
+                                <span class="text-success small">
+                                    <i class="bi bi-check2"></i> Conservada
+                                </span>
+                            {% endif %}
+                        </td>
+                        <td class="text-break">
+                            {% if line.index_entry_id %}
+                                <a href="{% url 'document_explorer:open' line.index_entry_id %}"
+                                   target="_blank" rel="noopener">{{ line.name }}</a>
+                            {% else %}
+                                {{ line.name }}
+                                <span class="text-muted small">(fila ya vaciada)</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-break small text-muted">
+                            {{ line.bucket }}/{{ line.parent_path }}
+                        </td>
+                        <td class="text-end small text-muted">
+                            {{ line.size_bytes|filesizeformat|default:"—" }}
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {% if page.has_other_pages %}
+        <nav class="mt-2">
+            <ul class="pagination pagination-sm">
+                {% if page.has_previous %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ page.previous_page_number }}{% if action_filter %}&action={{ action_filter }}{% endif %}">Anterior</a>
+                    </li>
+                {% endif %}
+                <li class="page-item disabled">
+                    <span class="page-link">Página {{ page.number }} de {{ page.paginator.num_pages }}</span>
+                </li>
+                {% if page.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ page.next_page_number }}{% if action_filter %}&action={{ action_filter }}{% endif %}">Siguiente</a>
+                    </li>
+                {% endif %}
+            </ul>
+        </nav>
+    {% endif %}
+
+</div>
+{% endblock content %}

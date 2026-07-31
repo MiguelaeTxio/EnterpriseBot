@@ -43,10 +43,39 @@
     </div>
 
     {% if groups %}
+        <div class="alert alert-secondary d-flex align-items-center justify-content-between mb-4">
+            <div class="small">
+                <strong>Resolver todo de golpe:</strong> conserva una
+                copia de cada grupo (cualquiera, no importa cuál) y
+                envía el resto a tu papelera -- sin marcar nada a mano.
+                Queda registrado en el
+                <a href="{% url 'document_explorer:operation_log_list' %}">historial de operaciones</a>.
+            </div>
+            <form method="post"
+                  action="{% url 'document_explorer:duplicates_resolve' %}"
+                  onsubmit="return confirm('¿Enviar a la papelera todas las copias de más de los ' + {{ group_count }} + ' grupos? Queda una copia de cada uno.');">
+                {% csrf_token %}
+                <input type="hidden" name="path" value="{{ path_prefix }}">
+                <button type="submit" class="btn btn-sm btn-danger text-nowrap">
+                    <i class="bi bi-lightning"></i> Resolver todo automáticamente
+                </button>
+            </form>
+        </div>
+
         <form method="post"
               action="{% url 'document_explorer:duplicates_trash' %}">
             {% csrf_token %}
             <input type="hidden" name="path" value="{{ path_prefix }}">
+
+            <p class="text-muted small">
+                O, si prefieres elegir a mano grupo por grupo
+                {% if group_count > manual_list_limit %}
+                    (mostrando los primeros {{ manual_list_limit }} de
+                    {{ group_count }}):
+                {% else %}
+                    :
+                {% endif %}
+            </p>
 
             {% for group in groups %}
                 <div class="card mb-3">

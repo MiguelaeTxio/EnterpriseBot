@@ -816,6 +816,59 @@ se preselecciona para borrar -- ver docstring de `DuplicatesView` para
 el motivo. El borrado sigue pasando por la papelera de dos niveles ya
 existente (3.6/3.10), nunca un borrado duro directo.
 
+### 3.22. Corrección sobre 3.21: resolución automática en bloque + registro de auditoría persistente (S040)
+
+Registrada literalmente según se dictó (directriz 4.8). Corrige el
+diseño "sin preselección" de 3.21 en cuanto se vio el volumen real.
+
+**El diseño manual de 3.21 no escala -- 3.570 grupos reales.**
+Verbatim: *"Hay 3.570 grupos. Es decir, tendría que hacer 3.750 marcas
+y luego enviar a la papelera. Esto es un rollo. Luego aparte, estamos
+sacando nada más duplicados. Puede haber triplicados, puede haber
+cuadriplicados. Yo lo que quiero es una única copia de cada uno de los
+archivos. Y todas las demás copias a la papelera."*
+
+**Da igual qué copia se conserve ni dónde esté -- el hash ya lo
+garantiza, y la ubicación deja de importar en cuanto se clasifica por
+máquina/persona, no por carpeta.** Verbatim: *"Con el hash nos
+aseguramos que si tienen el mismo hash, son exactamente el mismo
+archivo (...) me da igual dónde estén (...) la clasificación total va
+a ser por máquina, a nivel de base de datos (...) poco importa también
+dónde los dejemos, puesto que luego va a ser la propia hoja ficha de
+la máquina la que nos va a decir dónde está cada documento (...)
+anotar qué documento es el que queda, dónde está, cuál es su puntero
+virtual. Si es necesario luego, movemos el puntero virtual donde
+corresponde."* Confirma y refuerza 3.19 (todo virtual, nunca se toca
+GCS) también para esta operación.
+
+**`ResolveDuplicatesView`**, un solo clic: conserva una copia
+arbitraria de cada grupo, el resto a la papelera del administrador --
+dos consultas en total para el envío a papelera (`UPDATE ... WHERE pk
+IN (...)`, nunca un `.save()` por fila), mismo principio que
+`move_service.move_entries()` (S039). El listado manual de 3.21 se
+conserva como alternativa, acotado a 200 grupos por página para no
+generar una respuesta enorme, pero deja de ser el camino principal.
+
+**Registro de auditoría -- nueva necesidad, sin la cual esta operación
+sería opaca.** Verbatim: *"Tenemos que dejar un informe (...) un
+historial de qué hemos hecho (...) para que podamos decir, pues mira,
+se han eliminado tantos miles de archivos, las carpetas que se han
+visto afectadas han sido estas, y el listado de todos los archivos que
+se han eliminado, que realmente no hemos eliminado, que simplemente
+están marcados como eliminados, para poder hacer una auditoría en el
+momento que queramos."* Nuevos modelos `DataOperationLog` (cabecera:
+cuándo, quién, ámbito, cuántos grupos/conservados/enviados a papelera,
+bytes recuperables) y `DataOperationLogEntry` (una línea por archivo,
+con foto fija de `bucket`/`blob_name`/`name`/`parent_path`/
+`size_bytes` en el momento de la operación, para que el informe siga
+leyéndose bien aunque la fila real cambie o se vacíe después).
+Migración `0005_dataoperationlog.py`. Historial navegable desde el
+panel (enlace "Historial" junto a "Duplicados"), paginado por offset
+(vista ocasional de auditoría, no ruta de navegación caliente).
+`operation_type` es genérico a propósito para que futuras operaciones
+masivas (clasificación por lote, consumidor de cuarentena) registren
+de la misma forma.
+
 ## 4. Consecuencia directa: las tres únicas vías de escritura
 
 De 3.1, 3.2 y 3.8 se sigue que un objeto solo puede aparecer o

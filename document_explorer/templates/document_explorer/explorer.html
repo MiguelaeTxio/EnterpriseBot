@@ -37,6 +37,10 @@
                    href="{% url 'document_explorer:duplicates' %}">
                     <i class="bi bi-files"></i> Duplicados
                 </a>
+                <a class="btn btn-sm btn-outline-secondary"
+                   href="{% url 'document_explorer:operation_log_list' %}">
+                    <i class="bi bi-clock-history"></i> Historial
+                </a>
             {% endif %}
             <a class="btn btn-sm btn-outline-secondary"
                href="{% url 'document_explorer:trash' %}">

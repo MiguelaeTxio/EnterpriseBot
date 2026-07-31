@@ -1,0 +1,76 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/document_explorer/templates/document_explorer/operation_log_list.html #}
+{% extends "panel/base.html" %}
+{% load static %}
+
+{% block extra_head %}
+    <link rel="stylesheet" href="{% static 'document_explorer/css/explorer.css' %}">
+{% endblock extra_head %}
+
+{% comment %}
+    Historial de operaciones masivas de solo base de datos (H29,
+    S040). Solo administrador -- ver DataOperationLogListView.
+{% endcomment %}
+
+{% block title %}Historial de operaciones{% endblock title %}
+{% block page_title %}Historial de operaciones{% endblock page_title %}
+
+{% block content %}
+<div class="container-fluid px-3 pt-3">
+
+    <div class="d-flex align-items-center justify-content-between mb-3">
+        <p class="text-muted small mb-0">
+            Registro de auditoría de operaciones masivas (nada de esto
+            toca Google Cloud Storage -- solo cambios de base de datos).
+        </p>
+        <a class="btn btn-sm btn-outline-secondary"
+           href="{% url 'document_explorer:explorer' %}">
+            <i class="bi bi-arrow-left"></i> Volver al explorador
+        </a>
+    </div>
+
+    {% if not logs %}
+        <p class="text-muted small mb-0">Todavía no hay ninguna operación registrada.</p>
+    {% else %}
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th>Fecha</th>
+                        <th>Operación</th>
+                        <th>Ejecutada por</th>
+                        <th>Ámbito</th>
+                        <th class="text-end">Grupos</th>
+                        <th class="text-end">Conservadas</th>
+                        <th class="text-end">A papelera</th>
+                        <th class="text-end">Recuperable</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for log in logs %}
+                        <tr>
+                            <td class="small text-muted">{{ log.performed_at|date:"d/m/Y H:i" }}</td>
+                            <td>{{ log.get_operation_type_display }}</td>
+                            <td class="small text-muted">{{ log.performed_by|default:"—" }}</td>
+                            <td class="small text-muted text-break">
+                                {{ log.bucket }}{% if log.path_prefix %}/{{ log.path_prefix }}{% endif %}
+                            </td>
+                            <td class="text-end">{{ log.groups_count }}</td>
+                            <td class="text-end">{{ log.kept_count }}</td>
+                            <td class="text-end">{{ log.trashed_count }}</td>
+                            <td class="text-end">{{ log.bytes_recovered_display }}</td>
+                            <td class="text-end">
+                                <a class="btn btn-sm btn-outline-secondary"
+                                   href="{% url 'document_explorer:operation_log_detail' log.pk %}">
+                                    Ver detalle
+                                </a>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% endif %}
+
+</div>
+{% endblock content %}

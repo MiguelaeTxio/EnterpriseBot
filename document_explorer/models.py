@@ -515,3 +515,176 @@ class DocumentTypeCatalog(models.Model):
 
     def __str__(self):
         return f"{self.code} ({self.label})"
+
+
+class DataOperationLog(models.Model):
+    """
+    Audit record for a bulk, database-only operation over the index
+    (H29, S040) -- Miguel Angel: "tenemos que dejar un informe (...)
+    un historial de qué hemos hecho." First consumer is duplicate
+    resolution (`keep-one-per-group, rest to trash`), but the model is
+    generic on purpose (`operation_type`) for future bulk operations
+    (batch classification, the future quarantine consumer) to log
+    themselves the same way instead of each inventing its own report.
+
+    Deliberately snapshots numbers at the moment of the operation
+    (`groups_count`, `kept_count`, `trashed_count`, `bytes_recovered`)
+    rather than only linking rows and recomputing on demand -- a
+    later purge or restore must never silently change what a past
+    report says happened.
+
+    ---
+
+    Registro de auditoría de una operación masiva, solo de base de
+    datos, sobre el índice (H29, S040) -- Miguel Ángel: "tenemos que
+    dejar un informe (...) un historial de qué hemos hecho." Primer
+    consumidor es la resolución de duplicados ("quedarnos con una
+    copia por grupo, el resto a la papelera"), pero el modelo es
+    genérico a propósito (`operation_type`) para que futuras
+    operaciones masivas (clasificación por lote, el futuro consumidor
+    de la cuarentena) registren de la misma forma en vez de que cada
+    una se invente su propio informe.
+
+    Deliberadamente fotografía los números en el momento de la
+    operación (`groups_count`, `kept_count`, `trashed_count`,
+    `bytes_recovered`) en vez de solo enlazar filas y recalcular bajo
+    demanda -- un vaciado o una restauración posteriores nunca deben
+    cambiar en silencio lo que dice un informe ya pasado.
+    """
+
+    OPERATION_DUPLICATE_RESOLUTION = "DUPLICATE_RESOLUTION"
+    OPERATION_CHOICES = [
+        (OPERATION_DUPLICATE_RESOLUTION, "Resolución de duplicados"),
+    ]
+
+    operation_type = models.CharField(
+        max_length=40,
+        choices=OPERATION_CHOICES,
+        verbose_name="Tipo de operación",
+    )
+    performed_by = models.ForeignKey(
+        "ivr_config.CompanyUser",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="data_operation_logs",
+        verbose_name="Ejecutada por",
+    )
+    performed_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Fecha y hora",
+    )
+    bucket = models.CharField(
+        max_length=63,
+        verbose_name="Cubo",
+    )
+    path_prefix = models.TextField(
+        blank=True,
+        verbose_name="Prefijo de carpeta acotado",
+        help_text="Cadena vacía si se ejecutó sobre el cubo entero.",
+    )
+    groups_count = models.PositiveIntegerField(
+        default=0,
+        verbose_name="Grupos afectados",
+    )
+    kept_count = models.PositiveIntegerField(
+        default=0,
+        verbose_name="Copias conservadas",
+    )
+    trashed_count = models.PositiveIntegerField(
+        default=0,
+        verbose_name="Copias enviadas a papelera",
+    )
+    bytes_recovered = models.BigIntegerField(
+        default=0,
+        verbose_name="Bytes recuperables",
+        help_text=(
+            "Tamaño total de las copias enviadas a papelera -- "
+            "recuperable de verdad solo cuando el administrador vacíe "
+            "esas papeleras, ver DocumentIndexEntry.purged_at."
+        ),
+    )
+
+    class Meta:
+        verbose_name = "Registro de operación masiva"
+        verbose_name_plural = "Registros de operaciones masivas"
+        ordering = ["-performed_at"]
+
+    def __str__(self):
+        return f"{self.get_operation_type_display()} -- {self.performed_at:%Y-%m-%d %H:%M}"
+
+    @property
+    def bytes_recovered_display(self) -> str:
+        if not self.bytes_recovered:
+            return "—"
+        return filesizeformat(self.bytes_recovered)
+
+
+class DataOperationLogEntry(models.Model):
+    """
+    One line of a `DataOperationLog` -- one file, one action taken on
+    it. Snapshots `bucket`/`blob_name`/`name`/`parent_path`/
+    `size_bytes` at the moment of the operation rather than only
+    pointing at the live `DocumentIndexEntry`, so the audit trail
+    reads correctly even if the row it refers to is later purged
+    (`index_entry` goes null on that path, per `on_delete=SET_NULL`)
+    or its virtual name/location changes afterwards for an unrelated
+    reason.
+
+    ---
+
+    Una línea de un `DataOperationLog` -- un archivo, una acción
+    tomada sobre él. Fotografía `bucket`/`blob_name`/`name`/
+    `parent_path`/`size_bytes` en el momento de la operación en vez de
+    solo apuntar a la `DocumentIndexEntry` viva, así el rastro de
+    auditoría se lee correctamente incluso si la fila a la que se
+    refiere se vacía después (`index_entry` queda a null por ese
+    camino, según `on_delete=SET_NULL`) o su ubicación/nombre virtual
+    cambia después por un motivo no relacionado.
+    """
+
+    ACTION_KEPT = "KEPT"
+    ACTION_TRASHED = "TRASHED"
+    ACTION_CHOICES = [
+        (ACTION_KEPT, "Conservada"),
+        (ACTION_TRASHED, "Enviada a papelera"),
+    ]
+
+    log = models.ForeignKey(
+        DataOperationLog,
+        on_delete=models.CASCADE,
+        related_name="entries",
+        verbose_name="Operación",
+    )
+    action = models.CharField(
+        max_length=10,
+        choices=ACTION_CHOICES,
+        verbose_name="Acción",
+    )
+    index_entry = models.ForeignKey(
+        DocumentIndexEntry,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="operation_log_entries",
+        verbose_name="Fila del índice",
+    )
+    bucket = models.CharField(max_length=63, verbose_name="Cubo")
+    blob_name = models.TextField(verbose_name="Ruta real en el cubo")
+    name = models.CharField(max_length=512, verbose_name="Nombre (virtual)")
+    parent_path = models.TextField(
+        blank=True, verbose_name="Carpeta contenedora (virtual)",
+    )
+    size_bytes = models.BigIntegerField(
+        null=True, blank=True, verbose_name="Tamaño en bytes",
+    )
+
+    class Meta:
+        verbose_name = "Línea de operación masiva"
+        verbose_name_plural = "Líneas de operación masiva"
+        indexes = [
+            models.Index(fields=["log", "action"], name="dxoplog_log_action"),
+        ]
+
+    def __str__(self):
+        return f"{self.get_action_display()}: {self.bucket}/{self.blob_name}"
