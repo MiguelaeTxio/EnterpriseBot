@@ -16,10 +16,8 @@ def update_itv_label(apps, schema_editor):
     DocumentTypeCatalog = apps.get_model("document_explorer", "DocumentTypeCatalog")
     DocumentTypeCatalog.objects.filter(code="ITV").update(
         label=(
-            "ITV -- Tarjeta de Inspección Técnica, incluye datos "
-            "técnicos del vehículo y el historial de inspecciones "
-            "periódicas firmadas/selladas (con hojas adicionales si "
-            "hacen falta, es el mismo documento)"
+            "ITV (incluye datos técnicos + historial de inspecciones, "
+            "con hojas adicionales -- es un único documento)"
         ),
     )
 
