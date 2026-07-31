@@ -49,7 +49,16 @@ clasificación por lote/producción.** Quien llama recibe la sugerencia
 en crudo y decide qué hacer con ella (en esta sesión: un botón
 "Clasificar" en el explorador que muestra la sugerencia vía mensajes
 de Django, sin aplicar nada automáticamente).
+**Extended S040 (misma sesión): ya aplica de verdad, pero 100%
+virtual.** Miguel Ángel, verbatim: *"En realidad no vamos a tocar
+CGS, lo vamos a hacer todo a nivel de datos (...) Al clasificarla le
+damos el nombre nuevo en base de datos."* Aplicar una clasificación
+escribe únicamente `DocumentIndexEntry.name` (el nombre VIRTUAL) --
+`blob_name` (la ruta real en el cubo) nunca se toca, exactamente el
+mismo principio que `move_service` (v2, puntero puro, S039). Ver
+`apply_classification()`.
 """
+import datetime
 import logging
 import time
 
@@ -58,6 +67,9 @@ from google.genai.types import GenerateContentConfig, HttpOptions, Part
 from ai_services.gemini_client import DEFAULT_MODEL, get_gemini_client
 from ai_services.gemini_rate_limiter import acquire_gemini_slot
 from spare_parts.gcs_service import download_bytes
+
+from . import naming_service
+from .move_service import _resolve_free_name
 
 from .models import DocumentTypeCatalog
 
@@ -284,3 +296,153 @@ def classify_entry(entry, domain: str | None = None) -> dict:
             entry.blob_name, exc, exc_info=True,
         )
         return {"error": str(exc)}
+
+
+def _resolve_date(entry, result) -> datetime.date:
+    """
+    Real date extracted by Gemini when available (`date_hint`,
+    AAAA-MM-DD); falls back to the object's own GCS modification date,
+    and only then to today -- never blocks naming just because the
+    document itself didn't carry a readable date.
+
+    ---
+
+    Fecha real extraída por Gemini cuando está disponible
+    (`date_hint`, AAAA-MM-DD); si no, cae en la fecha de modificación
+    propia del objeto en GCS, y solo entonces en hoy -- nunca bloquea
+    el nombrado solo porque el documento en sí no traía una fecha
+    legible.
+    """
+    date_hint = (result.get("date_hint") or "").strip()
+    if date_hint:
+        try:
+            return datetime.date.fromisoformat(date_hint)
+        except ValueError:
+            pass
+    if entry.gcs_updated_at:
+        return entry.gcs_updated_at.date()
+    return datetime.date.today()
+
+
+def build_new_name(entry, domain: str, result: dict) -> str | None:
+    """
+    Build the virtual filename `naming_service` would produce from a
+    Gemini suggestion, or None when there isn't enough to go on
+    (unknown type, or missing the field the chosen domain's format
+    requires) -- callers must treat None as "leave this one for manual
+    review", never invent a placeholder.
+
+    ---
+
+    Construye el nombre de archivo virtual que produciría
+    `naming_service` a partir de una sugerencia de Gemini, o None
+    cuando no hay suficiente con qué construirlo (tipo desconocido, o
+    falta el campo que exige el formato de ese dominio) -- quien llama
+    debe tratar None como "dejar este para revisión manual", nunca
+    inventar un valor de relleno.
+    """
+    code = result.get("document_type_code") or ""
+    if not code or code == "DESCONOCIDO":
+        return None
+    extension = entry.name.rsplit(".", 1)[-1] if "." in entry.name else "pdf"
+    date = _resolve_date(entry, result)
+
+    if domain == "MACHINE":
+        machine_code = (result.get("machine_code_hint") or "").strip()
+        if not machine_code:
+            return None
+        return naming_service.build_filename_machine(
+            machine_code, code, date, extension=extension,
+        )
+    if domain == "PERSONAL":
+        first_surname = (result.get("first_surname_hint") or "").strip()
+        given_name = (result.get("given_name_hint") or "").strip()
+        if not first_surname or not given_name:
+            return None
+        second_surname = (result.get("second_surname_hint") or "").strip()
+        return naming_service.build_filename_personal(
+            first_surname, second_surname, given_name, code, date,
+            extension=extension,
+        )
+    return None
+
+
+def apply_classification(entry) -> dict:
+    """
+    Classifies `entry` and, if there was enough to build a proper
+    name, applies it -- **virtually only**: writes `DocumentIndexEntry.
+    name`, never touches `blob_name` or moves anything in GCS. Miguel
+    Ángel, S040: "no vamos a tocar CGS, lo vamos a hacer todo a nivel
+    de base de datos (...) al clasificarla le damos el nombre nuevo en
+    base de datos."
+
+    `entry.parent_path` is left untouched by this function -- for
+    files already living under DOC. MAQUINAS/DOC. PERSONAL this is
+    exactly the wanted behaviour (rename in place). Relocating a
+    quarantine file into its classified folder virtually is a
+    separate, still-unbuilt step (the future always-on task) that will
+    reuse `move_service`'s own virtual-relocation machinery, not this
+    function.
+
+    Collision-safe: reuses `move_service._resolve_free_name` (already
+    validated for "mover todos los manuales", S039) so two files that
+    would both resolve to the exact same virtual name in the same
+    virtual folder never overwrite one another -- a numeric suffix is
+    appended to the second one instead.
+
+    Returns the raw Gemini result dict, plus `new_name` (None if
+    nothing could be applied) and `renamed` (bool, whether the name
+    actually changed).
+
+    ---
+
+    Clasifica `entry` y, si hubo suficiente para construir un nombre
+    correcto, lo aplica -- **solo de forma virtual**: escribe
+    `DocumentIndexEntry.name`, nunca toca `blob_name` ni mueve nada en
+    GCS. Miguel Ángel, S040: "no vamos a tocar CGS, lo vamos a hacer
+    todo a nivel de base de datos (...) al clasificarla le damos el
+    nombre nuevo en base de datos."
+
+    `entry.parent_path` queda intacto en esta función -- para archivos
+    que ya viven bajo DOC. MAQUINAS/DOC. PERSONAL es exactamente el
+    comportamiento deseado (renombrar en el sitio). Reubicar
+    virtualmente un archivo de cuarentena en su carpeta clasificada es
+    un paso aparte, todavía sin construir (la futura tarea always-on)
+    que reutilizará la maquinaria de reubicación virtual de
+    `move_service`, no esta función.
+
+    A salvo de colisiones: reutiliza `move_service._resolve_free_name`
+    (ya validada para "mover todos los manuales", S039) para que dos
+    archivos que resolverían al mismo nombre virtual en la misma
+    carpeta virtual nunca se pisen -- al segundo se le añade un sufijo
+    numérico.
+
+    Devuelve el dict de resultado en crudo de Gemini, más `new_name`
+    (None si no se pudo aplicar nada) y `renamed` (bool, si el nombre
+    cambió de verdad).
+    """
+    domain = domain_for_entry(entry)
+    result = classify_entry(entry, domain)
+    if "error" in result:
+        result["new_name"] = None
+        result["renamed"] = False
+        return result
+
+    effective_domain = domain or result.get("domain")
+    candidate_name = build_new_name(entry, effective_domain, result)
+    if not candidate_name:
+        result["new_name"] = None
+        result["renamed"] = False
+        return result
+
+    final_name = _resolve_free_name(
+        entry.bucket, entry.parent_path, candidate_name, exclude_pk=entry.pk,
+    )
+    renamed = final_name != entry.name
+    if renamed:
+        entry.name = final_name
+        entry.save(update_fields=["name", "updated_at"])
+
+    result["new_name"] = final_name
+    result["renamed"] = renamed
+    return result

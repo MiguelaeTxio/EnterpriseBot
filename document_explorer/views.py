@@ -1402,37 +1402,42 @@ class MoveView(MoveScopeMixin, View):
 
 class ClassifyView(MoveScopeMixin, View):
     """
-    Testing-phase batch classification (H29, S040 -- Miguel Ángel:
-    "generar ya el prompt para empezar a hacer las pruebas de
-    clasificación de la carpeta de cuarentena"). Same scope mixin as
-    `MoveView` (admin-only, live files in `PRIMARY_BUCKET`) since this
-    also fires a real, billable Gemini call per file.
+    Batch classification (H29, S040 -- Miguel Ángel: "comenzamos ya la
+    clasificación de las dos carpetas, que habrá que hacerlo ya").
+    Same scope mixin as `MoveView` (admin-only, live files in
+    `PRIMARY_BUCKET`) since this also fires a real, billable Gemini
+    call per file.
 
-    Deliberately the simplest possible version: no progress display,
-    no AJAX, a normal form POST that redirects back with one Django
-    message per file showing Gemini's raw suggestion. Nothing gets
-    renamed or moved here -- this view exists purely to look at
-    Gemini's answers over real documents before wiring anything
-    automatic. `ClassifyView` never imports anything from
-    `document_ingestion`/`machine_documents`/`personal_documents`, per
-    the H29 annex 3.15 isolation rule.
+    **Applies for real now, but only virtually** -- Miguel Ángel,
+    S040: "no vamos a tocar CGS, lo vamos a hacer todo a nivel de
+    base de datos." `classification_service.apply_classification()`
+    only ever writes `DocumentIndexEntry.name`; the real object in GCS
+    is never touched, exactly like `MoveView` above never touches
+    `blob_name`. Deliberately the simplest possible version otherwise:
+    no progress display, no AJAX, a normal form POST that redirects
+    back with one Django message per file showing what Gemini
+    suggested and whether it was applied. `ClassifyView` never imports
+    anything from `document_ingestion`/`machine_documents`/
+    `personal_documents`, per the H29 annex 3.15 isolation rule.
 
     ---
 
-    Clasificación por lote en fase de pruebas (H29, S040 -- Miguel
-    Ángel: "generar ya el prompt para empezar a hacer las pruebas de
-    clasificación de la carpeta de cuarentena"). Mismo mixin de
-    alcance que `MoveView` (solo administrador, archivos vivos en
-    `PRIMARY_BUCKET`) porque esto también dispara una llamada real y
-    facturable a Gemini por archivo.
+    Clasificación por lote (H29, S040 -- Miguel Ángel: "comenzamos ya
+    la clasificación de las dos carpetas, que habrá que hacerlo ya").
+    Mismo mixin de alcance que `MoveView` (solo administrador,
+    archivos vivos en `PRIMARY_BUCKET`) porque esto también dispara
+    una llamada real y facturable a Gemini por archivo.
 
-    Deliberadamente la versión más simple posible: sin visualización
-    de progreso, sin AJAX, un envío de formulario normal que redirige
-    de vuelta con un mensaje de Django por archivo mostrando la
-    respuesta en crudo de Gemini. Aquí no se renombra ni se mueve nada
-    -- esta vista existe solo para mirar las respuestas de Gemini
-    sobre documentos reales antes de conectar nada automático.
-    `ClassifyView` nunca importa nada de
+    **Ya aplica de verdad, pero solo de forma virtual** -- Miguel
+    Ángel, S040: "no vamos a tocar CGS, lo vamos a hacer todo a nivel
+    de base de datos." `classification_service.apply_classification()`
+    únicamente escribe `DocumentIndexEntry.name`; el objeto real en
+    GCS nunca se toca, exactamente igual que `MoveView` de arriba
+    nunca toca `blob_name`. Deliberadamente la versión más simple
+    posible en todo lo demás: sin visualización de progreso, sin
+    AJAX, un envío de formulario normal que redirige de vuelta con un
+    mensaje de Django por archivo mostrando lo que sugirió Gemini y si
+    se aplicó. `ClassifyView` nunca importa nada de
     `document_ingestion`/`machine_documents`/`personal_documents`,
     según la regla de aislamiento 3.15 del anexo H29.
     """
@@ -1445,13 +1450,13 @@ class ClassifyView(MoveScopeMixin, View):
         path = (request.POST.get("path") or "").strip("/")
 
         for entry in entries:
-            domain = classification_service.domain_for_entry(entry)
-            result = classification_service.classify_entry(entry, domain)
+            original_name = entry.name
+            result = classification_service.apply_classification(entry)
             if "error" in result:
                 messages.error(
                     request,
                     "«%s» -- fallo al clasificar: %s"
-                    % (entry.name, result["error"]),
+                    % (original_name, result["error"]),
                 )
                 continue
             hints = ", ".join(
@@ -1465,18 +1470,32 @@ class ClassifyView(MoveScopeMixin, View):
                     result.get("date_hint"),
                 ])
             )
-            messages.info(
-                request,
-                "«%s» -- dominio: %s -- tipo sugerido: %s (%s) -- %s%s"
-                % (
-                    entry.name,
-                    result.get("domain", "?"),
-                    result.get("document_type_code", "?"),
-                    result.get("confidence", "?"),
-                    result.get("reasoning", ""),
-                    " -- pistas: %s" % hints if hints else "",
-                ),
-            )
+            if result.get("renamed"):
+                messages.success(
+                    request,
+                    "«%s» → «%s» -- dominio: %s -- tipo: %s (%s)"
+                    % (
+                        original_name, result["new_name"],
+                        result.get("domain", "?"),
+                        result.get("document_type_code", "?"),
+                        result.get("confidence", "?"),
+                    ),
+                )
+            else:
+                messages.warning(
+                    request,
+                    "«%s» -- no se pudo aplicar (faltan datos para el "
+                    "nombre) -- dominio: %s -- tipo sugerido: %s (%s) -- "
+                    "%s%s"
+                    % (
+                        original_name,
+                        result.get("domain", "?"),
+                        result.get("document_type_code", "?"),
+                        result.get("confidence", "?"),
+                        result.get("reasoning", ""),
+                        " -- pistas: %s" % hints if hints else "",
+                    ),
+                )
 
         return redirect(
             "%s?bucket=%s&path=%s" % (

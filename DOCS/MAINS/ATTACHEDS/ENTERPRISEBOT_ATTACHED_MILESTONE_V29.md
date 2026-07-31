@@ -738,6 +738,58 @@ motivo bajo ninguna circunstancia.
   del nombre (ya apuntado como pendiente en 3.17) antes de que
   `ClassifyView` pueda aplicar nada de verdad sobre `DOC. PERSONAL`.
 
+### 3.20. Plan ampliado tras la interfaz de clasificación (S040)
+
+Registrada literalmente según se dictó (directriz 4.8). Ninguno de
+estos puntos está construido todavía salvo el primero (clasificación
+real de las dos carpetas), que se aborda en esta misma sesión --
+`ClassifyView` pasa de solo mostrar la sugerencia a aplicarla de
+verdad (siempre virtual, ver 3.19).
+
+Verbatim, orden de trabajo dado por Miguel Ángel: *"con el tema de la
+interfaz y comenzamos ya la clasificación de las dos carpetas, que
+habrá que hacerlo ya. Y una vez que tengamos la clasificación
+correcta, habrá que realizar, implementar la always on task que
+clasifique la carpeta de cuarentena. Y tras ello, tenemos que preparar
+la vuelta (...) La vuelta y la clasificación en local. Y preparando
+también el buzón, el buzón de documentación, donde van a ir los
+documentos adjuntos. Hay que preparar la interfaz de la plataforma del
+panel también para gestionar esa carpeta, para saber lo que ha entrado
+nuevo, lo que se ha clasificado, lo que está no conforme, etcétera. De
+igual manera, también necesitamos una carpeta de no conformidad para
+el tema de la cuarentena, o marcar los archivos, no sé si tendremos
+que hacer alguna migración, si hay que hacerla, pues se hace."*
+
+**Orden de trabajo, sin fecha ni sesión fijada para cada punto --
+depende de cómo avance la clasificación real:**
+
+1. Clasificación real de `DOC. MAQUINAS`/`DOC. PERSONAL` -- en curso
+   en esta sesión (`ClassifyView`/`apply_classification`).
+2. Always-on Task que clasifique automáticamente la cuarentena --
+   sustituye/concreta al "consumidor de la cuarentena" (Fase 3 de
+   H28) ya anotado en la hoja de ruta. Reutilizará
+   `apply_classification()`, pero además tendrá que escribir la
+   ubicación VIRTUAL (`parent_path`) además del nombre, ya que un
+   archivo de cuarentena sí cambia de carpeta clasificada (a
+   diferencia de renombrar en el sitio, que es lo único que hace hoy
+   `apply_classification()` sobre las dos carpetas ya pobladas).
+3. "La vuelta" y la clasificación en local (agente de Windows, H28) --
+   depende de 3.14, todavía sin hito asignado.
+4. Interfaz de panel para el buzón de documentación (3.14): qué ha
+   entrado nuevo, qué se ha clasificado, qué está no conforme.
+5. Carpeta/marca de "no conformidad" también para la cuarentena (no
+   solo para la vuelta del buzón, 3.14) -- Miguel Ángel deja abierto
+   si hace falta migración nueva, delegando la decisión: *"no sé si
+   tendremos que hacer alguna migración, si hay que hacerla, pues se
+   hace."*
+
+**No resuelto por interpretación propia, a decidir cuando se aborde
+cada punto:** el esquema exacto de "no conformidad" para cuarentena
+(¿campo en `DocumentIndexEntry`, o carpeta virtual dedicada tipo
+`_NO_CONFORME/` dentro del árbol clasificado?), y el diseño completo
+de la interfaz del buzón (2 y 4 dependen de que 3.14 tenga hito
+asignado).
+
 ## 4. Consecuencia directa: las tres únicas vías de escritura
 
 De 3.1, 3.2 y 3.8 se sigue que un objeto solo puede aparecer o
