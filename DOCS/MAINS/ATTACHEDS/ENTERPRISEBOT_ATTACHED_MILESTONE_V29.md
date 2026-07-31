@@ -1015,6 +1015,34 @@ Tiene que avisar."*
 forma activa con el aviso (hoy es solo informativo -- no mueve, no
 reclasifica, no crea ninguna tarea de revisión aparte).
 
+### 3.26. Corrección: reclasificar un archivo ya bien nombrado se mostraba como fallo (S040)
+
+Diagnosticado con datos reales del servidor (`classify_entry`/
+`build_new_name` ejecutados a mano contra un caso concreto, PK 8282),
+nunca por especulación -- Miguel Ángel repitió la clasificación sobre
+los mismos 21 archivos de la primera prueba (varios ya renombrados
+correctamente) y la mayoría de los ya correctos salieron como "no se
+pudo aplicar (faltan datos para el nombre)", con `machine_code_hint`
+presente en las propias pistas mostradas -- contradicción visible que
+disparó el diagnóstico.
+
+**Causa raíz real:** `build_new_name()` funcionaba perfectamente y
+devolvía el nombre correcto -- que resultó ser idéntico al nombre que
+el archivo ya tenía (clasificado bien en la sesión anterior). Como
+`renamed = final_name != entry.name` daba `False` en ese caso, y
+`apply_classification()`/`ClassifyView` solo distinguían
+`renamed=True` de `renamed=False`, un "ya estaba bien, no hacía falta
+tocar nada" se mostraba exactamente igual que un fallo genuino.
+
+**Corregido:** `apply_classification()` devuelve ahora también
+`classified` (bool -- se pudo construir un nombre válido, sea cual
+sea el resultado) además de `renamed` (bool -- el nombre cambió de
+verdad). `ClassifyView` distingue tres casos: renombrado (éxito, con
+flecha `->`), ya correcto (éxito, sin cambios, mensaje informativo
+aparte), y fallo real (sin datos suficientes, aviso). Los dos
+primeros cuentan como éxito en el registro de auditoría -- solo el
+tercero cuenta como "sin poder aplicar".
+
 ## 4. Consecuencia directa: las tres únicas vías de escritura
 
 De 3.1, 3.2 y 3.8 se sigue que un objeto solo puede aparecer o

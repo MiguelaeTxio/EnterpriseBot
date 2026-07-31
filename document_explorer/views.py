@@ -1535,6 +1535,29 @@ class ClassifyView(MoveScopeMixin, View):
                         result.get("confidence", "?"),
                     ),
                 )
+            elif result.get("classified"):
+                # Corrección real S040: clasificó bien, pero el nombre
+                # ya era el correcto (típico al reclasificar un archivo
+                # ya aplicado antes) -- esto NO es un fallo. Antes se
+                # contaba junto con "no se pudo aplicar" y generaba
+                # avisos falsos en cada reclasificación de un archivo
+                # ya bien nombrado.
+                applied_count += 1
+                log_lines.append((
+                    group_number, DataOperationLogEntry.ACTION_CLASSIFIED,
+                    entry, original_name, detail,
+                ))
+                messages.info(
+                    request,
+                    "«%s» -- ya tenía el nombre correcto (sin cambios) "
+                    "-- dominio: %s -- tipo: %s (%s)"
+                    % (
+                        original_name,
+                        result.get("domain", "?"),
+                        result.get("document_type_code", "?"),
+                        result.get("confidence", "?"),
+                    ),
+                )
             else:
                 not_applied_count += 1
                 log_lines.append((

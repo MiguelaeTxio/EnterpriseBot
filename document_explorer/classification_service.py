@@ -580,8 +580,11 @@ def apply_classification(entry) -> dict:
     `..._1.pdf` ordinal.
 
     Returns the raw Gemini result dict, plus `new_name` (None if
-    nothing could be applied) and `renamed` (bool, whether the name
-    actually changed).
+    nothing could be applied), `classified` (bool -- whether a valid
+    name could be built at all, true even if it turned out identical
+    to the current one) and `renamed` (bool, whether the name
+    actually changed). `classified=True, renamed=False` means "already
+    had the right name" -- callers must never treat that as a failure.
 
     ---
 
@@ -618,6 +621,7 @@ def apply_classification(entry) -> dict:
     result = classify_entry(entry, domain)
     if "error" in result:
         result["new_name"] = None
+        result["classified"] = False
         result["renamed"] = False
         return result
 
@@ -626,7 +630,17 @@ def apply_classification(entry) -> dict:
     effective_domain = domain or result.get("domain")
     candidate_name = build_new_name(entry, effective_domain, result)
     if not candidate_name:
+        # Bug real S040: esto es un fallo genuino (no hubo suficiente
+        # para construir un nombre) -- distinto de "ya tenía el nombre
+        # correcto", que es el caso de abajo. Antes de esta corrección
+        # los dos caminos devolvían renamed=False y ClassifyView los
+        # mostraba igual como "no se pudo aplicar", generando falsos
+        # avisos cada vez que se reclasificaba un archivo ya bien
+        # nombrado (incidente real: Miguel Ángel repitió la prueba
+        # sobre los mismos 21 archivos y la mayoría de los ya
+        # correctos salieron como fallo).
         result["new_name"] = None
+        result["classified"] = False
         result["renamed"] = False
         return result
 
@@ -646,5 +660,6 @@ def apply_classification(entry) -> dict:
         entry.save(update_fields=["name", "updated_at"])
 
     result["new_name"] = final_name
+    result["classified"] = True
     result["renamed"] = renamed
     return result
