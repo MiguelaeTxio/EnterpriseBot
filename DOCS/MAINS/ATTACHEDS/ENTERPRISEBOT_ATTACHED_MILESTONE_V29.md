@@ -411,6 +411,65 @@ implementar (directriz 4.8):**
   usuario (3.6, recuperable) o borrado directo con confirmación
   (3.10, registro histórico)?
 
+**Aclaración de Miguel Ángel (misma sesión, S040):**
+
+**Duplicados — criterio confirmado:** hash de contenido, de momento.
+Verbatim: *"Hash de momento."*
+
+**Clasificación y renombrado — dos responsabilidades separadas,
+NUNCA una sola llamada a Gemini que decida el nombre final.** Verbatim:
+*"Tendremos muchos archivos, hay que definir los formatos y nombrarlos
+siguiendo siempre el mismo formato, quizás Gemini sugiere el tipo y el
+renombrado lo tendremos que hacer nosotros con un método dedicado y
+automatizado. No creo que Gemini siga siempre un formato fijo
+establecido y podemos llegar a tener inconsistencias de nomenclatura
+que no tendríamos si parseamos los nombres de archivo y luego
+renombramos cuando ya tenemos una clasificación."*
+
+Lectura directa de lo dicho, sin añadir nada: Gemini se limita a
+**sugerir el tipo documental** (y la extracción de datos que
+corresponda); el **nombre final se construye siempre con un método
+propio, determinista**, a partir de esa clasificación — nunca se usa
+el nombre que devuelva Gemini directamente. Pendiente de localizar
+(antes de escribir código nuevo) si ya existe un método así en H23/H25
+que se pueda reutilizar, o si hay que crearlo desde cero para H29.
+
+**Formato de renombrado — confirmado por Miguel Ángel (misma sesión):**
+
+- **Máquina:** confirmado el formato propuesto por el modelo —
+  `{CÓDIGO_MÁQUINA}_{TIPO_DOCUMENTO}_{FECHA}.pdf`.
+- **Personal — NUNCA por DNI ni identificador numérico.** Verbatim:
+  *"Para los trabajadores, imagínate un montón de números con tipo de
+  documento y fecha. No. Para los trabajadores lo que nos sirve es
+  apellido, nombre, tipo de documento y fecha, para que cuando estés
+  mirando el archivo sepas perfectamente de quién estás hablando."*
+  Formato: `{APELLIDO}_{NOMBRE}_{TIPO_DOCUMENTO}_{FECHA}.pdf`.
+
+**Diccionario de tipos documentales — pendiente de crear.** Verbatim:
+*"hay que crear un diccionario con los tipos de documentos que
+tenemos. Porque tenemos ITV, tenemos OCA, tenemos recibo del seguro,
+tenemos cursos, tenemos DNI, tenemos, no sé, tarjeta de la seguridad
+social, reconocimientos médicos. Hay que catalogarlo todo, hay que
+catalogarlo todo y generar un diccionario con lo, bueno, un diccionario
+o lo que creas más conveniente para luego poder reutilizarlo a la hora
+del motor de renombrado."* Lista inicial de tipos citada, no
+necesariamente cerrada: ITV, OCA, recibo del seguro, cursos, DNI,
+tarjeta de la seguridad social, reconocimientos médicos.
+
+**Tensión detectada por el modelo con lo ya existente en producción
+(H23/H25, S026) — a resolver con Miguel Ángel antes de implementar:**
+`document_ingestion.LearnedDocumentTypeKeyword.canonical_group` ya es
+un diccionario de tipos, pero **de categorías libres sin lista
+cerrada** — cada `company` aprende sus propios grupos a partir de lo
+que Gemini proponga, sin catálogo fijo (decisión S016: "Gemini puede
+proponer categorías libres, sin lista cerrada"). Es exactamente la
+fuente de inconsistencia que Miguel Ángel quiere evitar para el motor
+de renombrado. **No se decide aquí** si el diccionario nuevo para H29
+sustituye/consolida ese sistema existente o es independiente y
+paralelo (motor de renombrado con catálogo cerrado, clasificación
+`canonical_group` de H23/H25 sin tocar) — pendiente de confirmación
+explícita.
+
 ## 4. Consecuencia directa: las tres únicas vías de escritura
 
 De 3.1, 3.2 y 3.8 se sigue que un objeto solo puede aparecer o
