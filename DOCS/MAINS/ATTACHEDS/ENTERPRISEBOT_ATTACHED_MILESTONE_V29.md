@@ -904,6 +904,54 @@ mismo detalle agrupado por `group_number` de 3.22 -- ninguna plantilla
 nueva, el historial de clasificación se ve con el mismo diseño de
 tarjetas que ya validó Miguel Ángel para duplicados.
 
+### 3.24. Archivos "dos en uno" (dosieres): desdoblar en documentos únicos, nunca conservar el combinado (S040)
+
+Registrada literalmente según se dictó (directriz 4.8), a raíz de dos
+hallazgos reales de la primera prueba controlada (`CE+RAE.pdf`, y una
+Tarjeta ITV con Hoja Adicional de Inspecciones que mezcla ficha
+técnica + historial ITV en un mismo escaneo -- confirmado por Miguel
+Ángel subiendo las páginas reales al chat).
+
+Verbatim: *"Cuando van dos en uno deben existir dos documentos con
+cada uno y se borra el que contiene a los dos. Dejamos archivos con
+documentos únicos en vez de dosieres, eso sí, los componentes
+unitarios de los dosieres debe existir sí o sí."*
+
+Lectura directa, sin resolver nada por interpretación propia:
+
+1. Un archivo que contiene dos (o más) tipos documentales distintos
+   (`CE+RAE`, ficha técnica+ITV...) es un "dosier" -- el objetivo final
+   es que cada tipo exista como **documento único e independiente**,
+   nunca como combinado.
+2. El combinado se borra (a papelera, como todo en este proyecto) una
+   vez que **cada componente unitario existe de verdad** como archivo
+   propio -- ya sea porque ya existía por separado en otro sitio, o
+   porque hay que generarlo desde el propio combinado.
+3. **Nunca se borra un combinado dejando un componente sin existir en
+   ningún sitio** -- "los componentes unitarios de los dosieres debe
+   existir sí o sí" es una condición previa al borrado, no posterior.
+
+**No resuelto por interpretación propia, pendiente antes de
+implementar nada de esto:**
+
+- **Cuando el componente NO existe ya por separado, ¿cómo se genera?**
+  Si hace falta partir un PDF en páginas (p. ej. separar la Hoja
+  Adicional ITV de la ficha técnica), eso es escribir un objeto nuevo
+  real en GCS -- **tensiona directamente con 3.19** ("clasificar nunca
+  toca GCS"). 3.19 hablaba de renombrar/reubicar sin tocar el
+  contenido; extraer páginas a un PDF nuevo es otra operación
+  distinta, con otro coste y otro riesgo, y no hay decisión tomada
+  sobre si es una excepción aceptada o si hay que resolverlo de otra
+  forma (¿dejar el dosier marcado para partición manual en vez de
+  automática?).
+- **Cómo detecta el motor de clasificación que un archivo es un
+  dosier** en primer lugar -- hoy Gemini simplemente elige un tipo del
+  catálogo cerrado; no hay ningún mecanismo para que responda "esto es
+  en realidad dos documentos".
+- **Cómo se decide si el componente ya existe por separado** antes de
+  borrar el combinado (¿comparar contenido con hash, con tipo+máquina+
+  fecha, otra cosa?).
+
 ## 4. Consecuencia directa: las tres únicas vías de escritura
 
 De 3.1, 3.2 y 3.8 se sigue que un objeto solo puede aparecer o

@@ -133,8 +133,15 @@ usa el código "DESCONOCIDO" y explica por qué en "reasoning".
 
 Además del tipo, extrae estas pistas SI aparecen de forma clara en el propio \
 documento (deja la cadena vacía "" si no aparecen -- nunca inventes un valor):
-- machine_code_hint: código interno o matrícula de la máquina/vehículo al \
-que se refiere el documento (solo si el dominio es de máquina).
+- machine_code_hint: el código interno de flota o la matrícula de la \
+máquina/vehículo (solo si el dominio es de máquina) -- casi siempre con \
+forma "LETRA-NÚMERO" (p. ej. "A-29") y/o una matrícula española \
+("E-0356-BBZ", "1532-DVF"). NUNCA el "Tipo"/modelo/denominación \
+comercial que dé el FABRICANTE (p. ej. "AT-35/32" en una Declaración \
+CE es el modelo del fabricante, no el código de flota -- ignóralo para \
+este campo aunque sea el dato más visible del documento). Si el \
+documento no deja claro cuál es el código de flota/matrícula real, \
+deja el campo vacío en vez de usar el modelo del fabricante.
 - first_surname_hint, second_surname_hint, given_name_hint: primer apellido, \
 segundo apellido y nombre de pila de la persona a la que se refiere el \
 documento (solo si el dominio es de personal). Si el documento es un DNI, \
