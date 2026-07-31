@@ -906,11 +906,8 @@ tarjetas que ya validó Miguel Ángel para duplicados.
 
 ### 3.24. Archivos "dos en uno" (dosieres): desdoblar en documentos únicos, nunca conservar el combinado (S040)
 
-Registrada literalmente según se dictó (directriz 4.8), a raíz de dos
-hallazgos reales de la primera prueba controlada (`CE+RAE.pdf`, y una
-Tarjeta ITV con Hoja Adicional de Inspecciones que mezcla ficha
-técnica + historial ITV en un mismo escaneo -- confirmado por Miguel
-Ángel subiendo las páginas reales al chat).
+Registrada literalmente según se dictó (directriz 4.8), a raíz de un
+hallazgo real de la primera prueba controlada (`CE+RAE.pdf`).
 
 Verbatim: *"Cuando van dos en uno deben existir dos documentos con
 cada uno y se borra el que contiene a los dos. Dejamos archivos con
@@ -920,9 +917,9 @@ unitarios de los dosieres debe existir sí o sí."*
 Lectura directa, sin resolver nada por interpretación propia:
 
 1. Un archivo que contiene dos (o más) tipos documentales distintos
-   (`CE+RAE`, ficha técnica+ITV...) es un "dosier" -- el objetivo final
-   es que cada tipo exista como **documento único e independiente**,
-   nunca como combinado.
+   (`CE+RAE`) es un "dosier" -- el objetivo final es que cada tipo
+   exista como **documento único e independiente**, nunca como
+   combinado.
 2. El combinado se borra (a papelera, como todo en este proyecto) una
    vez que **cada componente unitario existe de verdad** como archivo
    propio -- ya sea porque ya existía por separado en otro sitio, o
@@ -931,14 +928,35 @@ Lectura directa, sin resolver nada por interpretación propia:
    ningún sitio** -- "los componentes unitarios de los dosieres debe
    existir sí o sí" es una condición previa al borrado, no posterior.
 
+**Corrección importante, misma sesión -- la Tarjeta ITV NO es un
+ejemplo de dosier.** El modelo interpretó por error que la Tarjeta ITV
+con Hoja Adicional de Inspecciones (Hallazgo 3 de la primera prueba
+controlada) mezclaba dos documentos (ficha técnica + historial ITV).
+Miguel Ángel corrige: es un único documento por diseño. Verbatim:
+*"la tarjeta de inspección técnica es un documento que tiene dos
+partes (...) Eso es un documento completo. No son dos documentos.
+Eso normalmente viene como documento completo. ¿Qué ocurre cuando una
+máquina ha rellenado todo el historial? Lo que se hace es meter una
+hoja adicional, pero forma parte del mismo documento. Lo único que
+pasa es que los huecos para la firma y sello de las diferentes
+inspecciones periódicas técnicas ya están rellenos, y se añade una
+hoja adicional para seguir rellenando, pero es el mismo documento. Es
+lo que llamamos normalmente ITV."* Con vida útil larga, se van
+añadiendo más hojas adicionales conforme se llenan los huecos de
+sellado (el ejemplo real tenía 12 huecos en la hoja adicional).
+**Consecuencia:** ese archivo concreto de la prueba estaba mal
+clasificado como `FICHA_TECNICA` -- debía ser `ITV`. No es un caso de
+dosier; es un fallo de clasificación normal, a tener en cuenta al
+seguir probando (ver también el ajuste de descripción del tipo `ITV`
+en el catálogo, mismo commit).
+
 **No resuelto por interpretación propia, pendiente antes de
 implementar nada de esto:**
 
 - **Cuando el componente NO existe ya por separado, ¿cómo se genera?**
-  Si hace falta partir un PDF en páginas (p. ej. separar la Hoja
-  Adicional ITV de la ficha técnica), eso es escribir un objeto nuevo
-  real en GCS -- **tensiona directamente con 3.19** ("clasificar nunca
-  toca GCS"). 3.19 hablaba de renombrar/reubicar sin tocar el
+  Si hace falta partir un PDF en páginas, eso es escribir un objeto
+  nuevo real en GCS -- **tensiona directamente con 3.19** ("clasificar
+  nunca toca GCS"). 3.19 hablaba de renombrar/reubicar sin tocar el
   contenido; extraer páginas a un PDF nuevo es otra operación
   distinta, con otro coste y otro riesgo, y no hay decisión tomada
   sobre si es una excepción aceptada o si hay que resolverlo de otra
