@@ -553,8 +553,10 @@ class DataOperationLog(models.Model):
     """
 
     OPERATION_DUPLICATE_RESOLUTION = "DUPLICATE_RESOLUTION"
+    OPERATION_BATCH_CLASSIFICATION = "BATCH_CLASSIFICATION"
     OPERATION_CHOICES = [
         (OPERATION_DUPLICATE_RESOLUTION, "Resolución de duplicados"),
+        (OPERATION_BATCH_CLASSIFICATION, "Clasificación por lote"),
     ]
 
     operation_type = models.CharField(
@@ -585,23 +587,29 @@ class DataOperationLog(models.Model):
     )
     groups_count = models.PositiveIntegerField(
         default=0,
-        verbose_name="Grupos afectados",
+        verbose_name="Grupos/archivos afectados",
+        help_text=(
+            "Grupos de duplicados en una resolución; archivos "
+            "procesados en una clasificación por lote."
+        ),
     )
     kept_count = models.PositiveIntegerField(
         default=0,
-        verbose_name="Copias conservadas",
+        verbose_name="Conservadas / clasificadas con éxito",
     )
     trashed_count = models.PositiveIntegerField(
         default=0,
-        verbose_name="Copias enviadas a papelera",
+        verbose_name="A papelera / sin poder aplicar",
     )
     bytes_recovered = models.BigIntegerField(
         default=0,
         verbose_name="Bytes recuperables",
         help_text=(
-            "Tamaño total de las copias enviadas a papelera -- "
+            "Solo tiene sentido en una resolución de duplicados -- "
+            "tamaño total de las copias enviadas a papelera, "
             "recuperable de verdad solo cuando el administrador vacíe "
-            "esas papeleras, ver DocumentIndexEntry.purged_at."
+            "esas papeleras (ver DocumentIndexEntry.purged_at). Queda "
+            "en 0 para otros tipos de operación."
         ),
     )
 
@@ -618,6 +626,19 @@ class DataOperationLog(models.Model):
         if not self.bytes_recovered:
             return "—"
         return filesizeformat(self.bytes_recovered)
+
+    @property
+    def primary_count_label(self) -> str:
+        if self.operation_type == self.OPERATION_BATCH_CLASSIFICATION:
+            return "Clasificadas con éxito"
+        return "Copias conservadas"
+
+    @property
+    def secondary_count_label(self) -> str:
+        if self.operation_type == self.OPERATION_BATCH_CLASSIFICATION:
+            return "Sin poder aplicar"
+        return "Copias enviadas a papelera"
+
 
 
 class DataOperationLogEntry(models.Model):
@@ -645,9 +666,13 @@ class DataOperationLogEntry(models.Model):
 
     ACTION_KEPT = "KEPT"
     ACTION_TRASHED = "TRASHED"
+    ACTION_CLASSIFIED = "CLASSIFIED"
+    ACTION_NOT_CLASSIFIED = "NOT_CLASSIFIED"
     ACTION_CHOICES = [
         (ACTION_KEPT, "Conservada"),
         (ACTION_TRASHED, "Enviada a papelera"),
+        (ACTION_CLASSIFIED, "Clasificada y renombrada"),
+        (ACTION_NOT_CLASSIFIED, "No se pudo aplicar"),
     ]
 
     log = models.ForeignKey(
@@ -670,7 +695,7 @@ class DataOperationLogEntry(models.Model):
         ),
     )
     action = models.CharField(
-        max_length=10,
+        max_length=14,
         choices=ACTION_CHOICES,
         verbose_name="Acción",
     )
@@ -685,6 +710,16 @@ class DataOperationLogEntry(models.Model):
     bucket = models.CharField(max_length=63, verbose_name="Cubo")
     blob_name = models.TextField(verbose_name="Ruta real en el cubo")
     name = models.CharField(max_length=512, verbose_name="Nombre (virtual)")
+    previous_name = models.CharField(
+        max_length=512,
+        blank=True,
+        verbose_name="Nombre anterior (virtual)",
+        help_text=(
+            "Solo relevante en clasificación -- nombre virtual antes "
+            "de aplicar. Vacío en resolución de duplicados (el nombre "
+            "no cambia, solo la ubicación en papelera)."
+        ),
+    )
     parent_path = models.TextField(
         blank=True, verbose_name="Carpeta contenedora (virtual)",
     )
@@ -700,6 +735,15 @@ class DataOperationLogEntry(models.Model):
             "permite comprobar a simple vista que todas las líneas de "
             "un mismo grupo comparten hash y tamaño, sin tener que "
             "fiarse solo del agrupado."
+        ),
+    )
+    detail = models.TextField(
+        blank=True,
+        verbose_name="Detalle",
+        help_text=(
+            "Texto libre según el tipo de operación -- en "
+            "clasificación, tipo/dominio/confianza/razonamiento "
+            "sugeridos por Gemini."
         ),
     )
 

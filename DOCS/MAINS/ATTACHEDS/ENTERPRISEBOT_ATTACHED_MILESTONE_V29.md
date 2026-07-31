@@ -869,6 +869,41 @@ panel (enlace "Historial" junto a "Duplicados"), paginado por offset
 masivas (clasificación por lote, consumidor de cuarentena) registren
 de la misma forma.
 
+### 3.23. Registro de auditoría extendido a la clasificación (S040)
+
+Registrada literalmente según se dictó (directriz 4.8). Confirma la
+previsión genérica de `operation_type` en 3.22: verbatim, Miguel
+Ángel, al retomar tras confirmar que la resolución de duplicados
+funcionó de verdad en producción ("ha entrado una persona, le he dado
+duplicado y me ha dicho que ya no existe ninguno"): *"el registro de
+auditoría es fundamental. Y deja eso preparado primero y hacemos
+primero una pequeña prueba controlada."*
+
+`ClassifyView` ahora escribe `DataOperationLog`
+(`operation_type=BATCH_CLASSIFICATION`) igual que
+`ResolveDuplicatesView`. Ampliaciones necesarias en los modelos
+(migración `0007_dataoperationlog_classification_support.py`, sin
+backfill porque no había ninguna fila de clasificación previa):
+
+- Dos acciones nuevas en `DataOperationLogEntry`: `CLASSIFIED`
+  (aplicada) y `NOT_CLASSIFIED` (sin datos suficientes, o error de
+  Gemini).
+- `previous_name`: nombre virtual antes de aplicar -- vacío en
+  duplicados (ahí el nombre no cambia, solo la ubicación en papelera).
+- `detail`: texto libre -- en clasificación, dominio/tipo/confianza/
+  razonamiento de Gemini; reutilizable por cualquier operación futura
+  que necesite explicar su decisión.
+- `DataOperationLog.primary_count_label`/`secondary_count_label`:
+  propiedades que traducen `kept_count`/`trashed_count` a la etiqueta
+  correcta según `operation_type` ("Clasificadas con éxito"/"Sin
+  poder aplicar" vs. "Copias conservadas"/"Copias enviadas a
+  papelera"), sin necesitar columnas nuevas por tipo de operación.
+
+Cada archivo clasificado es su propio "grupo" de tamaño 1 en el
+mismo detalle agrupado por `group_number` de 3.22 -- ninguna plantilla
+nueva, el historial de clasificación se ve con el mismo diseño de
+tarjetas que ya validó Miguel Ángel para duplicados.
+
 ## 4. Consecuencia directa: las tres únicas vías de escritura
 
 De 3.1, 3.2 y 3.8 se sigue que un objeto solo puede aparecer o

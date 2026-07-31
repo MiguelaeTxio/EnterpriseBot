@@ -1444,7 +1444,27 @@ class ClassifyView(MoveScopeMixin, View):
     mensaje de Django por archivo mostrando lo que sugirió Gemini y si
     se aplicó. `ClassifyView` nunca importa nada de
     `document_ingestion`/`machine_documents`/`personal_documents`,
-    según la regla de aislamiento 3.15 del anexo H29.
+    **También deja registro de auditoría, igual que
+    `ResolveDuplicatesView`** -- Miguel Ángel, S040: "el registro de
+    auditoría es fundamental." Un `DataOperationLog` por lote
+    clasificado, una `DataOperationLogEntry` por archivo (nombre
+    anterior/nuevo, tipo/dominio/confianza/razonamiento de Gemini en
+    `detail`), agrupadas en el mismo patrón "una tarjeta por archivo"
+    que ya usa el detalle de duplicados -- cada archivo es su propio
+    grupo de tamaño 1, así el historial reutiliza exactamente la misma
+    plantilla sin duplicar diseño.
+
+    ---
+
+    **También deja registro de auditoría, igual que
+    `ResolveDuplicatesView`** -- Miguel Ángel, S040: "el registro de
+    auditoría es fundamental." Un `DataOperationLog` por lote
+    clasificado, una `DataOperationLogEntry` por archivo (nombre
+    anterior/nuevo, tipo/dominio/confianza/razonamiento de Gemini en
+    `detail`), agrupadas con el mismo patrón "una tarjeta por archivo"
+    que ya usa el detalle de duplicados -- cada archivo es su propio
+    grupo de tamaño 1, así el historial reutiliza exactamente la misma
+    plantilla sin duplicar diseño.
     """
 
     def post(self, request):
@@ -1453,8 +1473,13 @@ class ClassifyView(MoveScopeMixin, View):
         )
         bucket = entries[0].bucket
         path = (request.POST.get("path") or "").strip("/")
+        company_user = request.user.company_user
 
-        for entry in entries:
+        log_lines = []  # [(group_number, action, entry, previous_name, detail), ...]
+        applied_count = 0
+        not_applied_count = 0
+
+        for group_number, entry in enumerate(entries, start=1):
             original_name = entry.name
             result = classification_service.apply_classification(entry)
             if "error" in result:
@@ -1463,6 +1488,11 @@ class ClassifyView(MoveScopeMixin, View):
                     "«%s» -- fallo al clasificar: %s"
                     % (original_name, result["error"]),
                 )
+                not_applied_count += 1
+                log_lines.append((
+                    group_number, DataOperationLogEntry.ACTION_NOT_CLASSIFIED,
+                    entry, original_name, "Error: %s" % result["error"],
+                ))
                 continue
             hints = ", ".join(
                 filter(None, [
@@ -1475,7 +1505,22 @@ class ClassifyView(MoveScopeMixin, View):
                     result.get("date_hint"),
                 ])
             )
+            detail = (
+                "Dominio: %s -- Tipo: %s (%s) -- %s%s"
+                % (
+                    result.get("domain", "?"),
+                    result.get("document_type_code", "?"),
+                    result.get("confidence", "?"),
+                    result.get("reasoning", ""),
+                    " -- Pistas: %s" % hints if hints else "",
+                )
+            )
             if result.get("renamed"):
+                applied_count += 1
+                log_lines.append((
+                    group_number, DataOperationLogEntry.ACTION_CLASSIFIED,
+                    entry, original_name, detail,
+                ))
                 messages.success(
                     request,
                     "«%s» → «%s» -- dominio: %s -- tipo: %s (%s)"
@@ -1487,6 +1532,11 @@ class ClassifyView(MoveScopeMixin, View):
                     ),
                 )
             else:
+                not_applied_count += 1
+                log_lines.append((
+                    group_number, DataOperationLogEntry.ACTION_NOT_CLASSIFIED,
+                    entry, original_name, detail,
+                ))
                 messages.warning(
                     request,
                     "«%s» -- no se pudo aplicar (faltan datos para el "
@@ -1501,6 +1551,38 @@ class ClassifyView(MoveScopeMixin, View):
                         " -- pistas: %s" % hints if hints else "",
                     ),
                 )
+
+        log = DataOperationLog.objects.create(
+            operation_type=DataOperationLog.OPERATION_BATCH_CLASSIFICATION,
+            performed_by=company_user,
+            bucket=bucket,
+            path_prefix=path,
+            groups_count=len(entries),
+            kept_count=applied_count,
+            trashed_count=not_applied_count,
+            bytes_recovered=0,
+        )
+        DataOperationLogEntry.objects.bulk_create([
+            DataOperationLogEntry(
+                log=log,
+                group_number=group_number,
+                action=action,
+                index_entry=entry,
+                bucket=entry.bucket,
+                blob_name=entry.blob_name,
+                name=entry.name,
+                previous_name=previous_name,
+                parent_path=entry.parent_path,
+                size_bytes=entry.size_bytes,
+                crc32c=entry.crc32c,
+                detail=detail,
+            )
+            for group_number, action, entry, previous_name, detail in log_lines
+        ])
+        messages.info(
+            request,
+            "Registrado en el historial: operación #%d." % log.pk,
+        )
 
         return redirect(
             "%s?bucket=%s&path=%s" % (

@@ -25,9 +25,10 @@
             {{ log.performed_at|date:"d/m/Y H:i" }} -- ejecutada por
             {{ log.performed_by|default:"—" }} -- ámbito:
             {{ log.bucket }}{% if log.path_prefix %}/{{ log.path_prefix }}{% endif %}
-            -- {{ log.groups_count }} grupo(s), {{ log.kept_count }}
-            conservada(s), {{ log.trashed_count }} a papelera
-            ({{ log.bytes_recovered_display }} recuperables).
+            -- {{ log.groups_count }} grupo(s)/archivo(s),
+            {{ log.kept_count }} {{ log.primary_count_label|lower }},
+            {{ log.trashed_count }} {{ log.secondary_count_label|lower }}
+            {% if log.bytes_recovered %}({{ log.bytes_recovered_display }} recuperables){% endif %}.
         </p>
         <a class="btn btn-sm btn-outline-secondary"
            href="{% url 'document_explorer:operation_log_list' %}">
@@ -51,11 +52,19 @@
                 <table class="table table-sm table-hover align-middle mb-0">
                     <tbody>
                         {% for line in entries %}
-                            <tr class="{% if line.action == 'TRASHED' %}table-light{% endif %}">
+                            <tr class="{% if line.action == 'TRASHED' or line.action == 'NOT_CLASSIFIED' %}table-light{% endif %}">
                                 <td class="text-nowrap">
                                     {% if line.action == "TRASHED" %}
                                         <span class="text-danger small">
                                             <i class="bi bi-trash"></i> Papelera
+                                        </span>
+                                    {% elif line.action == "NOT_CLASSIFIED" %}
+                                        <span class="text-warning small">
+                                            <i class="bi bi-question-circle"></i> Sin aplicar
+                                        </span>
+                                    {% elif line.action == "CLASSIFIED" %}
+                                        <span class="text-success small fw-bold">
+                                            <i class="bi bi-robot"></i> Clasificada
                                         </span>
                                     {% else %}
                                         <span class="text-success small fw-bold">
@@ -64,12 +73,19 @@
                                     {% endif %}
                                 </td>
                                 <td class="text-break">
+                                    {% if line.previous_name and line.previous_name != line.name %}
+                                        <span class="text-muted text-decoration-line-through">{{ line.previous_name }}</span>
+                                        →
+                                    {% endif %}
                                     {% if line.index_entry_id %}
                                         <a href="{% url 'document_explorer:open' line.index_entry_id %}"
                                            target="_blank" rel="noopener">{{ line.name }}</a>
                                     {% else %}
                                         {{ line.name }}
                                         <span class="text-muted small">(fila ya vaciada)</span>
+                                    {% endif %}
+                                    {% if line.detail %}
+                                        <div class="small text-muted">{{ line.detail }}</div>
                                     {% endif %}
                                 </td>
                                 <td class="text-break small text-muted">
