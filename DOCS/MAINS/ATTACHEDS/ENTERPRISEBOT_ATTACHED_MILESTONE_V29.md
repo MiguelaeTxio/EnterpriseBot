@@ -970,6 +970,51 @@ implementar nada de esto:**
   borrar el combinado (¿comparar contenido con hash, con tipo+máquina+
   fecha, otra cosa?).
 
+### 3.25. Aviso de máquina equivocada: marca/modelo del documento contra `fleet.MachineAsset` (S040)
+
+Registrada literalmente según se dictó (directriz 4.8). Distinta del
+fallo #4 de la primera prueba (ese era `machine_code_hint` leyendo el
+modelo del fabricante en vez del código de flota, ya corregido) --
+este caso es al revés: el documento SÍ es de verdad de esa máquina
+por marca/modelo, pero puede estar archivado en la carpeta de otra
+máquina distinta.
+
+Verbatim, con ejemplo explícito para descartar el falso positivo:
+*"aquí hemos visto un documento que es de la máquina Luna tal (...)
+Ese documento está en la carpeta de esa máquina porque esa máquina
+realmente es una Luna tal, aunque (...) puso el modelo real de la
+máquina [en vez del código interno] (...) realmente ese documento sí
+pertenece a esa máquina [-- eso NO debe avisar]. Entonces, lo que hay
+que detectar es cuando (...) ese documento que es de una Luna, de una
+grúa Luna, modelo tal, se encuentra en (...) la B34 que resulta que es
+una Liebherr. Y ahora nos encontramos que es una Liebherr y nos
+encontramos un documento que dice que es la Luna modelo tal. Error.
+Tiene que avisar."*
+
+**Construido en la misma sesión** (no queda pendiente, a diferencia de
+3.24):
+
+- Nuevo campo `brand_model_hint` en la respuesta de Gemini (marca +
+  modelo tal cual los dé el propio documento, p. ej. "LUNA AT-35/32"),
+  distinto y complementario de `machine_code_hint`.
+- `classification_service.resolve_machine_asset()`: resuelve la
+  máquina real de la carpeta buscando un segmento con forma de código
+  de flota en `parent_path` y consultando `fleet.MachineAsset.code`
+  (sin guiones, sin distinguir mayúsculas). `fleet` (H12) es
+  infraestructura viva en producción, no H17-H25 -- consultarla en
+  solo lectura no rompe el aislamiento de 3.15.
+- `classification_service.check_machine_mismatch()`: compara solo la
+  **marca** (primera palabra), sin distinguir mayúsculas, contra
+  `MachineAsset.brand_model` -- a propósito basto, para no generar
+  falsos positivos por variantes de modelo dentro de la misma marca.
+  Devuelve un aviso solo cuando la marca no coincide en absoluto.
+- El aviso aparece como mensaje en `ClassifyView` y queda también en
+  el `detail` de `DataOperationLogEntry`, visible en el Historial.
+
+**No resuelto, pendiente si hace falta más adelante:** qué hacer de
+forma activa con el aviso (hoy es solo informativo -- no mueve, no
+reclasifica, no crea ninguna tarea de revisión aparte).
+
 ## 4. Consecuencia directa: las tres únicas vías de escritura
 
 De 3.1, 3.2 y 3.8 se sigue que un objeto solo puede aparecer o

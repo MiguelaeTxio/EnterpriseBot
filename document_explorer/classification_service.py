@@ -60,12 +60,14 @@ mismo principio que `move_service` (v2, puntero puro, S039). Ver
 """
 import datetime
 import logging
+import re
 import time
 
 from google.genai.types import GenerateContentConfig, HttpOptions, Part
 
 from ai_services.gemini_client import DEFAULT_MODEL, get_gemini_client
 from ai_services.gemini_rate_limiter import acquire_gemini_slot
+from fleet.models import MachineAsset
 from spare_parts.gcs_service import download_bytes
 
 from . import naming_service
@@ -105,6 +107,7 @@ _RESPONSE_SCHEMA = {
         "confidence": {"type": "string", "enum": ["ALTA", "MEDIA", "BAJA"]},
         "reasoning": {"type": "string"},
         "machine_code_hint": {"type": "string"},
+        "brand_model_hint": {"type": "string"},
         "first_surname_hint": {"type": "string"},
         "second_surname_hint": {"type": "string"},
         "given_name_hint": {"type": "string"},
@@ -112,7 +115,8 @@ _RESPONSE_SCHEMA = {
     },
     "required": [
         "domain", "document_type_code", "confidence", "reasoning",
-        "machine_code_hint", "first_surname_hint", "second_surname_hint",
+        "machine_code_hint", "brand_model_hint",
+        "first_surname_hint", "second_surname_hint",
         "given_name_hint", "date_hint",
     ],
 }
@@ -142,6 +146,12 @@ CE es el modelo del fabricante, no el código de flota -- ignóralo para \
 este campo aunque sea el dato más visible del documento). Si el \
 documento no deja claro cuál es el código de flota/matrícula real, \
 deja el campo vacío en vez de usar el modelo del fabricante.
+- brand_model_hint: la MARCA y el MODELO del fabricante que diga el propio \
+documento (solo si el dominio es de máquina) -- p. ej. "LUNA AT-35/32", \
+"LIEBHERR LTM 1055". Aquí SÍ interesa exactamente el dato que se ignora \
+para machine_code_hint -- sirve para comprobar después, por otra vía, que \
+el documento corresponde de verdad a la máquina de la carpeta donde está \
+archivado.
 - first_surname_hint, second_surname_hint, given_name_hint: primer apellido, \
 segundo apellido y nombre de pila de la persona a la que se refiere el \
 documento (solo si el dominio es de personal). Si el documento es un DNI, \
@@ -266,6 +276,130 @@ def domain_for_entry(entry) -> str | None:
     if entry.blob_name.startswith("DOC. PERSONAL/"):
         return DocumentTypeCatalog.DOMAIN_PERSONAL
     return None
+
+
+# Un segmento de carpeta empieza por el código de flota si arranca con
+# letra(s) + guion opcional + dígitos, tal como usa fleet.MachineAsset.code
+# (S040: "A54, Z45, B27") y como se ve en las rutas reales del explorador
+# ("A-29 E-0356-BBZ (GR)/A-29").
+_FOLDER_MACHINE_CODE_RE = re.compile(r"^([A-Z]+-?\d+)")
+
+
+def resolve_machine_asset(entry) -> MachineAsset | None:
+    """
+    Best-effort lookup of the real `fleet.MachineAsset` a MACHINE-domain
+    file's folder belongs to, by scanning `parent_path` segments for
+    something matching a fleet code and querying `MachineAsset.code`
+    (dashes stripped, case-insensitive -- folders write "A-29", the
+    fleet catalogue writes "A29"). Read-only, `fleet` (H12) is live
+    production infrastructure, not H17-H25 -- safe to query per the
+    H29 annex 3.15 isolation rule, which only excludes
+    document_ingestion/entity_matching_service/machine_documents/
+    personal_documents.
+
+    Returns None if nothing in the path matches any real machine --
+    callers must treat that as "can't check", never as "no mismatch".
+
+    ---
+
+    Búsqueda de mejor esfuerzo del `fleet.MachineAsset` real al que
+    pertenece la carpeta de un archivo de dominio MÁQUINA, recorriendo
+    los segmentos de `parent_path` en busca de algo con forma de código
+    de flota y consultando `MachineAsset.code` (sin guiones, sin
+    distinguir mayúsculas -- las carpetas escriben "A-29", el catálogo
+    de flota escribe "A29"). Solo lectura, `fleet` (H12) es
+    infraestructura viva en producción, no H17-H25 -- consultarlo es
+    seguro según la regla de aislamiento 3.15 del anexo H29, que solo
+    excluye document_ingestion/entity_matching_service/
+    machine_documents/personal_documents.
+
+    Devuelve None si nada en la ruta coincide con ninguna máquina real
+    -- quien llama debe tratarlo como "no se puede comprobar", nunca
+    como "no hay discrepancia".
+    """
+    for segment in entry.parent_path.split("/"):
+        match = _FOLDER_MACHINE_CODE_RE.match(segment.strip())
+        if not match:
+            continue
+        candidate_code = match.group(1).replace("-", "")
+        asset = MachineAsset.objects.filter(code__iexact=candidate_code).first()
+        if asset:
+            return asset
+    return None
+
+
+def check_machine_mismatch(entry, result: dict) -> str | None:
+    """
+    Compares Gemini's `brand_model_hint` against the REAL brand/model
+    of the machine whose folder this file lives in (via
+    `resolve_machine_asset`) -- Miguel Ángel, S040: "cuando ese
+    documento (...) se encuentra en (...) resulta que es una Liebherr.
+    Y ahora nos encontramos que es una Liebherr y nos encontramos un
+    documento que dice que es la Luna modelo tal. Error. Tiene que
+    avisar." Deliberately NOT the same check as `machine_code_hint`
+    (that one is about which fleet code the document names, already
+    fixed to ignore the manufacturer's own model -- this one is about
+    whether the manufacturer's own model, which the document DOES
+    genuinely carry, matches the folder it's filed under).
+
+    Compares only the first word (the brand) case-insensitively --
+    deliberately coarse. A mismatched model within the same brand
+    ("LUNA GT-60/42" filed under a "LUNA AT-35/32" machine) is far more
+    likely to be a real variant/typo than a genuinely wrong machine;
+    a mismatched BRAND ("LUNA" vs "LIEBHERR") is the case Miguel Ángel
+    described and is safe to flag automatically without false
+    positives from minor model-string differences.
+
+    Returns a warning string when brands clearly differ, or None when
+    there's nothing to flag (hint missing, asset not resolved, or
+    brands match) -- callers must never escalate None into a warning.
+
+    ---
+
+    Compara el `brand_model_hint` de Gemini contra la marca/modelo REAL
+    de la máquina de la carpeta donde vive el archivo (vía
+    `resolve_machine_asset`) -- Miguel Ángel, S040: "cuando ese
+    documento (...) se encuentra en (...) resulta que es una Liebherr.
+    Y ahora nos encontramos que es una Liebherr y nos encontramos un
+    documento que dice que es la Luna modelo tal. Error. Tiene que
+    avisar." Deliberadamente NO es la misma comprobación que
+    `machine_code_hint` (esa es sobre qué código de flota nombra el
+    documento, ya corregida para ignorar el modelo propio del
+    fabricante -- esta es sobre si el modelo propio del fabricante, que
+    el documento SÍ lleva de verdad, coincide con la carpeta donde está
+    archivado).
+
+    Compara solo la primera palabra (la marca) sin distinguir
+    mayúsculas -- deliberadamente basto. Un modelo distinto dentro de
+    la misma marca ("LUNA GT-60/42" archivado bajo una máquina "LUNA
+    AT-35/32") es mucho más probable que sea una variante/errata real
+    que una máquina genuinamente equivocada; una MARCA distinta ("LUNA"
+    frente a "LIEBHERR") es el caso que describió Miguel Ángel y es
+    seguro avisar automáticamente sin falsos positivos por pequeñas
+    diferencias en la cadena del modelo.
+
+    Devuelve una cadena de aviso cuando las marcas difieren claramente,
+    o None cuando no hay nada que señalar (falta la pista, no se pudo
+    resolver la máquina, o las marcas coinciden) -- quien llama nunca
+    debe convertir None en un aviso.
+    """
+    brand_model_hint = (result.get("brand_model_hint") or "").strip()
+    if not brand_model_hint:
+        return None
+    asset = resolve_machine_asset(entry)
+    if not asset or not asset.brand_model:
+        return None
+
+    hint_brand = brand_model_hint.split()[0].upper()
+    real_brand = asset.brand_model.split()[0].upper()
+    if hint_brand == real_brand:
+        return None
+
+    return (
+        "⚠️ Posible documento archivado en la máquina equivocada -- el "
+        "documento dice ser de «%s», pero la máquina de esta carpeta "
+        "(%s) es «%s»." % (brand_model_hint, asset.code, asset.brand_model)
+    )
 
 
 def classify_entry(entry, domain: str | None = None) -> dict:
@@ -486,6 +620,8 @@ def apply_classification(entry) -> dict:
         result["new_name"] = None
         result["renamed"] = False
         return result
+
+    result["machine_mismatch_warning"] = check_machine_mismatch(entry, result)
 
     effective_domain = domain or result.get("domain")
     candidate_name = build_new_name(entry, effective_domain, result)

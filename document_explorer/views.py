@@ -1505,16 +1505,20 @@ class ClassifyView(MoveScopeMixin, View):
                     result.get("date_hint"),
                 ])
             )
+            mismatch_warning = result.get("machine_mismatch_warning")
             detail = (
-                "Dominio: %s -- Tipo: %s (%s) -- %s%s"
+                "Dominio: %s -- Tipo: %s (%s) -- %s%s%s"
                 % (
                     result.get("domain", "?"),
                     result.get("document_type_code", "?"),
                     result.get("confidence", "?"),
                     result.get("reasoning", ""),
                     " -- Pistas: %s" % hints if hints else "",
+                    " -- %s" % mismatch_warning if mismatch_warning else "",
                 )
             )
+            if mismatch_warning:
+                messages.warning(request, "«%s» -- %s" % (original_name, mismatch_warning))
             if result.get("renamed"):
                 applied_count += 1
                 log_lines.append((
