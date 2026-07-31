@@ -311,6 +311,106 @@ hemos cambiado el sistema, así que no hay problema."* Sin guardia de
 código añadida — el aviso directo a la usuaria (Yolanda, DOCS_SUPERVISOR)
 cubre el riesgo hasta que se aborde el código de consolidación de 3.12.
 
+### 3.14. Buzón de documentación, "la vuelta" y carpeta de no conformes (S040 — diseño registrado, SIN HITO ASIGNADO, no construir sin confirmación)
+
+Registrada literalmente según se dictó (directriz 4.8). **Ninguna
+parte de esto se ha implementado todavía.** Miguel Ángel señaló él
+mismo que podría ser un hito propio, sin decidirlo — queda como
+punto abierto de enrutamiento, no como trabajo en curso de H29.
+
+**Punto de partida — problema real a resolver:** facilitar la tarea
+a las personas que gestionan documentación cuando la reciben por
+correo electrónico como adjunto.
+
+**Buzón de documentación (carpeta local nueva):** verbatim: *"vamos a
+poner una regla para que los documentos adjuntos vayan a parar a una
+carpeta. Esta carpeta, que vamos a denominarla buzón de documentación,
+está en local (...) vamos a tener que modificar el agente que tenemos
+local, el agente de migración, el H28, lo vamos a modificar para que
+vigile esta carpeta del buzón de entrada, además de vigilar las
+carpetas que ya está vigilando. De tal forma que cuando entre ahí
+algún archivo, bien porque venga a través de un correo electrónico
+como adjunto, o bien porque la persona que está dedicada a gestionar
+algún tipo de documentación lo suelte ahí, el agente, como hacemos
+barridos cada 30 segundos, lo va a coger y los va a enviar a
+cuarentena. Cuarentena los va a recoger cada 5 minutos, la tarea
+Always on Task, los va a clasificar y los va a enviar cada uno a su
+carpeta."*
+
+**El problema de la selva, y "la vuelta" como solución:** verbatim:
+*"Si no hacemos nada más, la carpeta buzón de documentación irá
+acumulando archivos uno detrás de otro, hasta que será una auténtica
+selva. ¿Cómo solucionamos esto? Muy sencillo, con una vuelta. Cuando
+Gemini haya clasificado correctamente dicho documento, lo habrá
+renombrado con el formato que tenemos para renombrar, el agente debe
+recoger esa información y hacer lo mismo, renombrar el archivo y
+colocarlo en la carpeta correspondiente, y eliminarlo, evidentemente,
+de la carpeta del buzón de documentación."*
+
+**Carpeta de "no conformes" para lo rechazado por Gemini:** verbatim:
+*"¿Qué ocurre con los archivos que no se puedan clasificar o que sean
+erróneos y queden rechazados por Gemini? Pues muy simple, los vamos a
+echar a una carpeta de rechazados o no conformes. Mejor, no conformes.
+En esa carpeta de no conformes se guardarán en la Google Cloud Storage
+dentro del directorio principal y haremos lo mismo en la vuelta, en el
+local, lo guardaremos en una carpeta de no conformes. Y además haremos
+una anotación en el servidor, en el panel, para que se sepa por qué se
+ha puesto este archivo en no conforme. Bien, porque ya hubiese un
+archivo exactamente igual, bien, porque no cumpla o porque no sea
+ningún tipo de documento de los que se necesita guardar, etcétera."*
+
+**Valoración de Miguel Ángel sobre el alcance:** verbatim: *"esto en
+sí mismo puede que sea ya un hito por sí solo."* — no decidido, no
+asignado a H28, H29 ni a un hito nuevo. **Pendiente de confirmación
+explícita antes de tocar código o de crear anexo:** a qué hito
+pertenece (H28 por vivir en el agente de migración, H29 por vivir en
+el panel, o hito nuevo, dado que toca ambos: el agente local de H28
+y el panel/BD de H29).
+
+**No resueltos por interpretación propia, a confirmar cuando se
+aborde:** el formato exacto de renombrado que debe replicar el
+agente en la vuelta, el mecanismo de correlación entre el archivo
+original en el buzón y el resultado ya clasificado en cuarentena/
+directorio principal (¿mismo nombre de blob de cuarentena?, ¿algún
+identificador?), y el detalle de qué escribe exactamente la
+anotación en el panel para un archivo no conforme.
+
+### 3.15. Enriquecimiento de la interfaz del explorador (S040): clasificación, búsqueda y eliminación de duplicados
+
+Registrada literalmente según se dictó (directriz 4.8). **Esto sí es
+trabajo de S040, dentro de H29** — continuación explícita de lo
+añadido "ayer" (mover archivos): *"De momento, lo que nos vamos a
+dedicar es a enriquecer la interfaz de gestión del directorio. Ya
+añadimos ayer el tema para mover archivos. Vamos a añadir hoy, pues,
+temas de clasificación, búsqueda de duplicados, eliminación de
+duplicados, etcétera, etcétera."*
+
+**Objetivo de fondo explícito, ligado a 3.14:** verbatim: *"ya lo que
+nos toca es clasificar todo lo que, todas las carpetas, clasificar
+tipos de documentos, extracción de información, etcétera. Dotar a la
+interfaz de todos esos métodos que luego se van a reutilizar en la
+clasificación automática de la carpeta de la cuarentena."* Los
+métodos de clasificación que se construyan en el explorador de H29
+deben quedar diseñados para ser reutilizables después por el
+consumidor de la cuarentena (H28 Fase 3) y, si se confirma, por la
+vuelta del buzón de documentación (3.14) — sin acoplarlos
+innecesariamente a la interfaz.
+
+**No especificado por Miguel Ángel, pendiente de confirmar antes de
+implementar (directriz 4.8):**
+- Criterio exacto de detección de duplicados (¿hash de contenido del
+  objeto GCS, nombre normalizado, o ambos combinados?).
+- Acción exacta que dispara "clasificación" desde la interfaz sobre
+  un archivo o carpeta ya existente en el índice (¿llamada a Gemini
+  bajo demanda por archivo, por carpeta completa, o ambas?) y qué
+  hace con el resultado (¿solo sugiere tipo/nombre para revisión
+  humana, o renombra/mueve directamente?) — coherente con el
+  principio ya vigente de que Gemini propone y el humano confirma
+  (sin borrados automáticos).
+- Flujo exacto de "eliminación de duplicados": ¿a la papelera del
+  usuario (3.6, recuperable) o borrado directo con confirmación
+  (3.10, registro histórico)?
+
 ## 4. Consecuencia directa: las tres únicas vías de escritura
 
 De 3.1, 3.2 y 3.8 se sigue que un objeto solo puede aparecer o
