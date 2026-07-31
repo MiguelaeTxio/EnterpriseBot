@@ -656,6 +656,19 @@ class DataOperationLogEntry(models.Model):
         related_name="entries",
         verbose_name="Operación",
     )
+    group_number = models.PositiveIntegerField(
+        default=0,
+        verbose_name="Número de grupo",
+        help_text=(
+            "Correlativo dentro de esta operación (1, 2, 3...) -- las "
+            "líneas que comparten número de grupo son EL MISMO grupo "
+            "de duplicados: una o más 'Conservada' + cero o más "
+            "'Enviada a papelera'. Sin esto, una lista plana no "
+            "permite saber qué se conservó de cuál grupo (incidente "
+            "real S040: Miguel Ángel no pudo correlacionar el "
+            "historial con el propio Alejandro)."
+        ),
+    )
     action = models.CharField(
         max_length=10,
         choices=ACTION_CHOICES,
@@ -678,12 +691,27 @@ class DataOperationLogEntry(models.Model):
     size_bytes = models.BigIntegerField(
         null=True, blank=True, verbose_name="Tamaño en bytes",
     )
+    crc32c = models.CharField(
+        max_length=16,
+        blank=True,
+        verbose_name="CRC32C",
+        help_text=(
+            "Copiado del objeto real en el momento de la operación -- "
+            "permite comprobar a simple vista que todas las líneas de "
+            "un mismo grupo comparten hash y tamaño, sin tener que "
+            "fiarse solo del agrupado."
+        ),
+    )
 
     class Meta:
         verbose_name = "Línea de operación masiva"
         verbose_name_plural = "Líneas de operación masiva"
+        ordering = ["group_number", "action"]
         indexes = [
             models.Index(fields=["log", "action"], name="dxoplog_log_action"),
+            models.Index(
+                fields=["log", "group_number"], name="dxoplog_log_group",
+            ),
         ]
 
     def __str__(self):

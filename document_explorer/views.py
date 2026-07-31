@@ -1754,14 +1754,24 @@ class ResolveDuplicatesView(ExplorerAccessMixin, View):
 
         kept_entries = []
         trashed_entries = []
-        log_lines = []  # [(action, entry), ...] -- built once, linear in total entries
-        for group in groups:
+        # [(group_number, action, entry), ...] -- built once, linear in
+        # total entries. group_number is 1-indexed and is what lets the
+        # detail view/template reconstruct "this was kept, these were
+        # its trashed siblings" instead of a flat, uncorrelated list
+        # (S040 incident: Miguel Ángel couldn't tell what corresponded
+        # to what).
+        log_lines = []
+        for group_number, group in enumerate(groups, start=1):
             keep, *rest = group
             kept_entries.append(keep)
-            log_lines.append((DataOperationLogEntry.ACTION_KEPT, keep))
+            log_lines.append(
+                (group_number, DataOperationLogEntry.ACTION_KEPT, keep),
+            )
             for dup in rest:
                 trashed_entries.append(dup)
-                log_lines.append((DataOperationLogEntry.ACTION_TRASHED, dup))
+                log_lines.append(
+                    (group_number, DataOperationLogEntry.ACTION_TRASHED, dup),
+                )
 
         trash_pks = [entry.pk for entry in trashed_entries]
         bytes_recovered = sum(
@@ -1786,6 +1796,7 @@ class ResolveDuplicatesView(ExplorerAccessMixin, View):
         DataOperationLogEntry.objects.bulk_create([
             DataOperationLogEntry(
                 log=log,
+                group_number=group_number,
                 action=action,
                 index_entry=entry,
                 bucket=entry.bucket,
@@ -1793,8 +1804,9 @@ class ResolveDuplicatesView(ExplorerAccessMixin, View):
                 name=entry.name,
                 parent_path=entry.parent_path,
                 size_bytes=entry.size_bytes,
+                crc32c=entry.crc32c,
             )
-            for action, entry in log_lines
+            for group_number, action, entry in log_lines
         ])
 
         messages.success(
@@ -1842,26 +1854,54 @@ class DataOperationLogListView(ExplorerAccessMixin, TemplateView):
 
 class DataOperationLogDetailView(ExplorerAccessMixin, TemplateView):
     """
-    Full line-by-line detail of one `DataOperationLog` -- every file
-    kept, every file trashed, paginated (a single duplicate-resolution
-    run can easily produce tens of thousands of lines). Regular
-    offset pagination is an acceptable trade-off here, unlike the main
-    explorer's cursor pagination -- this is an occasional audit view,
-    never a hot navigation path.
+    Group-by-group detail of one `DataOperationLog` -- **not** a flat
+    line list. Real incident, S040: the first version paginated and
+    ordered by name/path, which scattered a group's "Conservada" line
+    away from its own "Enviada a papelera" siblings; Miguel Ángel
+    (verbatim): "no te puedo decir a qué corresponde lo que pone que
+    está en papelera ni a qué corresponde lo que se ha conservado (...)
+    esto (...) lo único que me da a entender es que no sabemos lo que
+    hemos hecho." Fixed by pagination over `group_number` (added in
+    migration 0006, backfilled for the run that already happened) --
+    each page is a fixed number of whole groups, kept entry and all its
+    trashed siblings always rendered together, mirroring the same card
+    layout `DuplicatesView` already uses so the two screens read the
+    same way.
+
+    Paginating over group COUNT (not entry count) means a page's exact
+    row count varies with how many copies each group had (a
+    triplicate/quadruplicate group renders more rows than a plain
+    duplicate) -- intentional, the alternative (splitting a group
+    across two pages) would reintroduce exactly the same correlation
+    problem this fixes.
 
     ---
 
-    Detalle línea a línea completo de un `DataOperationLog` -- cada
-    archivo conservado, cada archivo enviado a papelera, paginado (una
-    sola ejecución de resolución de duplicados puede producir
-    fácilmente decenas de miles de líneas). La paginación normal por
-    offset es un compromiso aceptable aquí, a diferencia de la
-    paginación por cursor del explorador principal -- esta es una
-    vista de auditoría ocasional, nunca una ruta de navegación
-    caliente.
+    Detalle grupo a grupo de un `DataOperationLog` -- **no** una lista
+    plana de líneas. Incidente real, S040: la primera versión paginaba
+    y ordenaba por nombre/ruta, lo que dispersaba la línea "Conservada"
+    de un grupo lejos de sus propias líneas "Enviada a papelera"
+    hermanas; Miguel Ángel, verbatim: "no te puedo decir a qué
+    corresponde lo que pone que está en papelera ni a qué corresponde
+    lo que se ha conservado (...) esto (...) lo único que me da a
+    entender es que no sabemos lo que hemos hecho." Corregido paginando
+    sobre `group_number` (añadido en la migración 0006, rellenado hacia
+    atrás para la ejecución que ya había ocurrido) -- cada página es un
+    número fijo de grupos completos, la conservada y todas sus
+    hermanas de papelera siempre se pintan juntas, replicando la misma
+    tarjeta que ya usa `DuplicatesView` para que las dos pantallas se
+    lean igual.
+
+    Paginar por número de GRUPOS (no de líneas) significa que el
+    número exacto de filas de una página varía según cuántas copias
+    tuviera cada grupo (un grupo triplicado/cuadriplicado pinta más
+    filas que un duplicado simple) -- intencional, la alternativa
+    (partir un grupo entre dos páginas) reintroduciría exactamente el
+    mismo problema de correlación que esto corrige.
     """
 
     template_name = "document_explorer/operation_log_detail.html"
+    _GROUPS_PER_PAGE = 50
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -1870,20 +1910,29 @@ class DataOperationLogDetailView(ExplorerAccessMixin, TemplateView):
             raise Http404("Solo el administrador puede ver el historial.")
 
         log = get_object_or_404(DataOperationLog, pk=kwargs["pk"])
-        action_filter = self.request.GET.get("action") or ""
-        entries_qs = log.entries.order_by("bucket", "parent_path", "name")
-        if action_filter in dict(DataOperationLogEntry.ACTION_CHOICES):
-            entries_qs = entries_qs.filter(action=action_filter)
 
-        paginator = Paginator(entries_qs, PAGE_SIZE)
+        group_numbers = list(
+            log.entries.order_by("group_number")
+            .values_list("group_number", flat=True).distinct()
+        )
+        paginator = Paginator(group_numbers, self._GROUPS_PER_PAGE)
         page_number = self.request.GET.get("page") or 1
-        page = paginator.get_page(page_number)
+        group_page = paginator.get_page(page_number)
+
+        entries = list(
+            log.entries
+            .filter(group_number__in=list(group_page))
+            .order_by("group_number", "action")
+        )
+        groups = {}
+        for entry in entries:
+            groups.setdefault(entry.group_number, []).append(entry)
 
         context.update({
             "active_nav": "document_explorer",
             "log": log,
-            "page": page,
-            "action_filter": action_filter,
+            "group_page": group_page,
+            "groups": groups,
         })
         return context
 
