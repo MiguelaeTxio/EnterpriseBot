@@ -434,3 +434,84 @@ class DocumentFolderGrant(models.Model):
 
     def __str__(self):
         return f"{self.user_id} -> {self.bucket}/{self.path_prefix}"
+
+
+class DocumentTypeCatalog(models.Model):
+    """
+    Closed catalog of document types for the H29 renaming engine.
+
+    Deliberately independent from
+    `document_ingestion.LearnedDocumentTypeKeyword` (H23/H25, open
+    per-company categories learned from whatever Gemini proposes) --
+    Miguel Angel decided in S040 to build H29 fully isolated from
+    H17-H25, since that infrastructure was abandoned mid-way. Gemini
+    only ever *suggests* a `code` from this fixed catalog; the actual
+    filename is always built by `naming_service`, never taken from
+    Gemini's own wording.
+
+    ---
+
+    Catálogo cerrado de tipos documentales para el motor de renombrado
+    de H29.
+
+    Deliberadamente independiente de
+    `document_ingestion.LearnedDocumentTypeKeyword` (H23/H25,
+    categorías libres por empresa aprendidas de lo que proponga
+    Gemini) -- Miguel Ángel decidió en S040 construir H29 totalmente
+    aislado de H17-H25, por ser infraestructura abandonada a medias.
+    Gemini únicamente *sugiere* un `code` de este catálogo fijo; el
+    nombre de archivo final siempre lo construye `naming_service`,
+    nunca se toma tal cual de lo que devuelva Gemini.
+    """
+
+    DOMAIN_MACHINE = "MACHINE"
+    DOMAIN_PERSONAL = "PERSONAL"
+    DOMAIN_BOTH = "BOTH"
+    DOMAIN_CHOICES = [
+        (DOMAIN_MACHINE, "Maquinaria"),
+        (DOMAIN_PERSONAL, "Personal"),
+        (DOMAIN_BOTH, "Ambos"),
+    ]
+
+    code = models.CharField(
+        max_length=40,
+        unique=True,
+        verbose_name="Código",
+        help_text=(
+            "Código corto usado literalmente en el nombre de archivo "
+            "generado por naming_service (mayúsculas, sin espacios ni "
+            "acentos, p. ej. 'ITV', 'RECONOCIMIENTO_MEDICO')."
+        ),
+    )
+    label = models.CharField(
+        max_length=150,
+        verbose_name="Nombre visible",
+        help_text="Nombre legible mostrado en la interfaz del explorador.",
+    )
+    domain = models.CharField(
+        max_length=8,
+        choices=DOMAIN_CHOICES,
+        default=DOMAIN_BOTH,
+        verbose_name="Dominio",
+        help_text="A qué tipo de entidad aplica este tipo documental.",
+    )
+    is_active = models.BooleanField(
+        default=True,
+        verbose_name="Activo",
+        help_text=(
+            "Desactivar en vez de borrar conserva el histórico de "
+            "archivos ya renombrados con este código."
+        ),
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Fecha de alta",
+    )
+
+    class Meta:
+        verbose_name = "Tipo documental"
+        verbose_name_plural = "Catálogo de tipos documentales"
+        ordering = ["label"]
+
+    def __str__(self):
+        return f"{self.code} ({self.label})"
