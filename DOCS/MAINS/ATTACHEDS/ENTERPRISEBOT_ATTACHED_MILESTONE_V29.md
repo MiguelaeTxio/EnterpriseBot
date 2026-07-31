@@ -574,6 +574,29 @@ sin asumir nada:** `IDC` (237 casos) y `CSS ADOLFO ALVAREZ` (88
 casos) -- abreviaturas no identificables por el modelo solo con el
 nombre de archivo.
 
+**Confirmado leyendo el contenido real de las muestras subidas por
+Miguel Ángel (S040) -- cuatro tipos distintos, ninguno fusionable con
+otro:**
+
+- **`CSS`** -- Certificado de estar al corriente en las obligaciones
+  de Seguridad Social, emitido por la Tesorería General de la
+  Seguridad Social.
+- **`IDC`** -- Informe de Datos para la Cotización: historial de
+  cotización/relación laboral de un trabajador, emitido por
+  Seguridad Social. Documento distinto de `CSS` pese a compartir
+  organismo emisor.
+- **`NOMINA`** -- Nómina real, individual, mensual, por trabajador.
+- **`PAGO_CORRIENTE`** -- **No es una nómina.** Declaración de la
+  propia empresa (firmada por Adolfo Álvarez como administrador),
+  listando varios trabajadores a la vez, certificando que están al
+  corriente de cobro de salarios, emitida **por obra/cliente**
+  (ADITEL, ANFRASA...) para subcontratación -- nunca un documento
+  individual del trabajador. Confirma la corrección de Miguel Ángel
+  al inicio de esta sección.
+
+Añadidos al catálogo (migración `0003_seed_confirmed_types.py`, datos
+únicamente, sin cambio de esquema), los cuatro con `domain=PERSONAL`.
+
 ## 4. Consecuencia directa: las tres únicas vías de escritura
 
 De 3.1, 3.2 y 3.8 se sigue que un objeto solo puede aparecer o
