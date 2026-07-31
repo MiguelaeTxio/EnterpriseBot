@@ -1,0 +1,95 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/document_explorer/templates/document_explorer/duplicates.html #}
+{% extends "panel/base.html" %}
+{% load static %}
+
+{% block extra_head %}
+    <link rel="stylesheet" href="{% static 'document_explorer/css/explorer.css' %}">
+{% endblock extra_head %}
+
+{% comment %}
+    Informe de duplicados (H29, S040). Solo administrador -- ver
+    DuplicatesView. Ningún checkbox arranca marcado a propósito: dos
+    copias byte-idénticas no dicen cuál ruta es la "correcta" a
+    conservar, así que quien decide es siempre Miguel Ángel, nunca el
+    sistema por su cuenta.
+
+    Un único formulario envuelve TODOS los grupos -- se puede marcar
+    duplicados de varios grupos distintos y enviarlos todos a la
+    papelera en un solo envío, igual que el resto de acciones por lote
+    de este explorador.
+{% endcomment %}
+
+{% block title %}Duplicados{% endblock title %}
+{% block page_title %}Duplicados{% endblock page_title %}
+
+{% block content %}
+<div class="container-fluid px-3 pt-3">
+
+    <div class="d-flex align-items-center justify-content-between mb-3">
+        <p class="text-muted small mb-0">
+            {% if group_count %}
+                {{ group_count }} grupo(s) de duplicados exactos (mismo
+                contenido) -- hasta {{ total_wasted|filesizeformat }}
+                recuperables si te quedas solo con una copia de cada uno.
+            {% else %}
+                Sin duplicados exactos detectados
+                {% if path_prefix %}bajo «{{ path_prefix }}»{% endif %}.
+            {% endif %}
+        </p>
+        <a class="btn btn-sm btn-outline-secondary"
+           href="{% url 'document_explorer:explorer' %}">
+            <i class="bi bi-arrow-left"></i> Volver al explorador
+        </a>
+    </div>
+
+    {% if groups %}
+        <form method="post"
+              action="{% url 'document_explorer:duplicates_trash' %}">
+            {% csrf_token %}
+            <input type="hidden" name="path" value="{{ path_prefix }}">
+
+            {% for group in groups %}
+                <div class="card mb-3">
+                    <div class="card-header small text-muted">
+                        Grupo {{ forloop.counter }} -- {{ group.0.display_size }}
+                        cada copia, {{ group|length }} copias
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover align-middle mb-0">
+                            <tbody>
+                                {% for entry in group %}
+                                    <tr>
+                                        <td class="dx-col-select">
+                                            <input type="checkbox" name="entries"
+                                                   value="{{ entry.pk }}"
+                                                   class="form-check-input"
+                                                   aria-label="Enviar a la papelera">
+                                        </td>
+                                        <td class="text-break">
+                                            <a href="{% url 'document_explorer:open' entry.pk %}"
+                                               target="_blank" rel="noopener">
+                                                {{ entry.name }}
+                                            </a>
+                                        </td>
+                                        <td class="text-break small text-muted">
+                                            {{ entry.bucket }}/{{ entry.parent_path }}
+                                        </td>
+                                        <td class="text-end small text-muted">
+                                            {{ entry.gcs_updated_at|date:"d/m/Y H:i"|default:"—" }}
+                                        </td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            {% endfor %}
+
+            <button type="submit" class="btn btn-sm btn-outline-danger">
+                <i class="bi bi-trash"></i> Enviar marcados a mi papelera
+            </button>
+        </form>
+    {% endif %}
+
+</div>
+{% endblock content %}

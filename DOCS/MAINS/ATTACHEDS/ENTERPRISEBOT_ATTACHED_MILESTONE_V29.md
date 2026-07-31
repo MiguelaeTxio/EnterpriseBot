@@ -790,6 +790,32 @@ cada punto:** el esquema exacto de "no conformidad" para cuarentena
 de la interfaz del buzón (2 y 4 dependen de que 3.14 tenga hito
 asignado).
 
+### 3.21. Un manual por modelo de máquina: diferido; eliminación de duplicados: conectada a la interfaz ya (S040)
+
+Registrada literalmente según se dictó (directriz 4.8).
+
+**Un manual por modelo, no por máquina -- diferido explícitamente,
+sin resolver aquí.** Verbatim: *"en la clasificación de los manuales,
+que, como ya sabes, que vamos a tener solamente un manual por modelo
+de máquina, y no por máquina que se tenga. Porque si hay tres máquinas
+que son iguales, no vamos a tener tres manuales. Vamos a conservar
+uno, y cada una va a decir que tiene ese manual (...) O lo hacemos
+luego."* Pendiente sin fecha: diseñar cómo un único `DocumentIndexEntry`
+de manual queda "asociado" a varias máquinas del mismo modelo (¿tabla
+puente, `domain_object` múltiple, algo distinto?) -- **no se decide
+nada de esto aquí, ni se construye.**
+
+**Eliminación de duplicados -- esto sí, ya, en esta sesión.** Verbatim:
+*"Eliminar los duplicados de los manuales y de bueno y de todo. Porque
+no lo he visto en la interfaz."* Corrección de un hueco real: el
+modelo había construido `duplicates_service.find_duplicate_groups()`
+antes en la misma sesión pero nunca lo conectó a ninguna vista --
+`DuplicatesView`/`SendDuplicatesToTrashView` (enlace "Duplicados" en
+el explorador, solo administrador) cierran ese hueco. Ningún duplicado
+se preselecciona para borrar -- ver docstring de `DuplicatesView` para
+el motivo. El borrado sigue pasando por la papelera de dos niveles ya
+existente (3.6/3.10), nunca un borrado duro directo.
+
 ## 4. Consecuencia directa: las tres únicas vías de escritura
 
 De 3.1, 3.2 y 3.8 se sigue que un objeto solo puede aparecer o

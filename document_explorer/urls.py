@@ -55,6 +55,16 @@ urlpatterns = [
         views.ClassifyView.as_view(),
         name="classify",
     ),
+    path(
+        "duplicados/",
+        views.DuplicatesView.as_view(),
+        name="duplicates",
+    ),
+    path(
+        "duplicados/papelera/",
+        views.SendDuplicatesToTrashView.as_view(),
+        name="duplicates_trash",
+    ),
     path("papelera/", views.TrashView.as_view(), name="trash"),
     path(
         "papelera/restaurar/<int:pk>/",

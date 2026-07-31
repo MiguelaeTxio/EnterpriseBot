@@ -31,7 +31,13 @@
         </div>
     {% else %}
 
-        <div class="d-flex align-items-center justify-content-end mb-3">
+        <div class="d-flex align-items-center justify-content-end gap-2 mb-3">
+            {% if can_move %}
+                <a class="btn btn-sm btn-outline-secondary"
+                   href="{% url 'document_explorer:duplicates' %}">
+                    <i class="bi bi-files"></i> Duplicados
+                </a>
+            {% endif %}
             <a class="btn btn-sm btn-outline-secondary"
                href="{% url 'document_explorer:trash' %}">
                 <i class="bi bi-trash"></i> Mi papelera

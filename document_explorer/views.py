@@ -148,7 +148,7 @@ from panel.mixins import CompanyUserRequiredMixin
 from spare_parts.gcs_service import delete_file, generate_signed_url
 
 from document_explorer import friendly_names, index_writer, move_service, permissions
-from document_explorer import classification_service
+from document_explorer import classification_service, duplicates_service
 from document_explorer.buckets import (
     BUCKET_DISPLAY_NAMES, INDEXED_BUCKETS, PRIMARY_BUCKET,
 )
@@ -317,6 +317,7 @@ class ExplorerView(ExplorerAccessMixin, TemplateView):
             "bucket": bucket,
             "folder_path": folder_path,
             "has_buckets": bool(buckets),
+            "can_move": permissions.is_unrestricted(company_user),
         })
         return context
 
@@ -1528,6 +1529,145 @@ class TrashView(ExplorerAccessMixin, TemplateView):
         )
         context["is_admin"] = permissions.is_unrestricted(company_user)
         return context
+
+
+class DuplicatesView(ExplorerAccessMixin, TemplateView):
+    """
+    Read-only duplicate report over `PRIMARY_BUCKET`, browsable from
+    the panel -- Miguel Ángel, S040: "Eliminar los duplicados de los
+    manuales y de bueno y de todo (...) no lo he visto en la
+    interfaz." `duplicates_service.find_duplicate_groups()` was built
+    earlier this session but never wired to any view -- this closes
+    that gap.
+
+    Admin-only, same criterion as moving/classifying (`can_move` /
+    `permissions.is_unrestricted`), since acting on a duplicate found
+    here can touch files across folders with mixed permissions.
+
+    Deliberately does NOT pre-select anything for deletion -- exact
+    duplicates being byte-identical doesn't tell us which path is the
+    "right" one to keep, and guessing would violate the platform's own
+    "Gemini/el sistema propone, el humano confirma" principle just as
+    much as if a machine picked it silently. Every checkbox starts
+    unchecked; Miguel Ángel picks which copies go to his trash.
+
+    ---
+
+    Informe de duplicados de solo lectura sobre `PRIMARY_BUCKET`,
+    navegable desde el panel -- Miguel Ángel, S040: "Eliminar los
+    duplicados de los manuales y de bueno y de todo (...) no lo he
+    visto en la interfaz." `duplicates_service.find_duplicate_groups()`
+    se construyó antes en esta misma sesión pero nunca se conectó a
+    ninguna vista -- esto cierra ese hueco.
+
+    Solo administrador, mismo criterio que mover/clasificar
+    (`can_move` / `permissions.is_unrestricted`), porque actuar sobre
+    un duplicado encontrado aquí puede tocar archivos de carpetas con
+    permisos distintos.
+
+    Deliberadamente NO preselecciona nada para borrar -- que los
+    duplicados exactos sean idénticos byte a byte no dice cuál ruta es
+    la "correcta" para conservar, y adivinarlo violaría el mismo
+    principio de la plataforma de que "el sistema propone, el humano
+    confirma" igual que si lo decidiera una máquina en silencio. Todas
+    las casillas arrancan sin marcar; Miguel Ángel elige qué copias
+    van a su papelera.
+    """
+
+    template_name = "document_explorer/duplicates.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        company_user = self.request.user.company_user
+        if not permissions.is_unrestricted(company_user):
+            raise Http404("Solo el administrador puede ver duplicados.")
+
+        path_prefix = (self.request.GET.get("path") or "").strip("/")
+        groups = duplicates_service.find_duplicate_groups(
+            PRIMARY_BUCKET, path_prefix,
+        )
+        total_wasted = sum(
+            (group[0].size_bytes or 0) * (len(group) - 1) for group in groups
+        )
+        context.update({
+            "active_nav": "document_explorer",
+            "path_prefix": path_prefix,
+            "groups": groups,
+            "group_count": len(groups),
+            "total_wasted": total_wasted,
+        })
+        return context
+
+
+class SendDuplicatesToTrashView(ExplorerAccessMixin, View):
+    """
+    Sends every checked entry to ITS OWN owner's trash -- the same
+    logical, two-tier delete `SendToTrashView` already uses for a
+    single file (S037 design, 3.6/3.10 of the H29 annex), just batched
+    for a set of duplicate rows instead of one row from a click.
+    Never a hard delete: still recoverable from the trash, still
+    purged only by the administrator.
+
+    One bad row (permission denied, already gone) never aborts the
+    rest of the batch -- same tolerance already used by `MoveView`/
+    `ClassifyView`.
+
+    ---
+
+    Envía cada entrada marcada a la papelera de SU PROPIO dueño --
+    el mismo borrado lógico de dos niveles que ya usa `SendToTrashView`
+    para un solo archivo (diseño de S037, 3.6/3.10 del anexo H29), solo
+    que en lote para un conjunto de filas duplicadas en vez de una fila
+    por clic. Nunca un borrado duro: sigue siendo recuperable desde la
+    papelera, sigue vaciándose solo por el administrador.
+
+    Una fila mala (permiso denegado, ya desaparecida) nunca aborta el
+    resto del lote -- misma tolerancia que ya usan `MoveView`/
+    `ClassifyView`.
+    """
+
+    def post(self, request):
+        company_user = request.user.company_user
+        path_prefix = (request.POST.get("path") or "").strip("/")
+        pks = request.POST.getlist("entries")
+        entries = DocumentIndexEntry.objects.filter(
+            pk__in=pks,
+            bucket=PRIMARY_BUCKET,
+            entry_kind=DocumentIndexEntry.KIND_FILE,
+            deleted_at__isnull=True, purged_at__isnull=True,
+        )
+
+        sent, denied = 0, 0
+        for entry in entries:
+            if not permissions.can_delete_in(
+                company_user, entry.bucket, entry.parent_path,
+            ):
+                denied += 1
+                continue
+            entry.deleted_at = timezone.now()
+            entry.deleted_by = company_user
+            entry.save(update_fields=["deleted_at", "deleted_by"])
+            sent += 1
+
+        if sent:
+            messages.success(
+                request,
+                "%d duplicado(s) enviado(s) a tu papelera." % sent,
+            )
+        if denied:
+            messages.warning(
+                request,
+                "%d archivo(s) no se enviaron por falta de permiso en "
+                "su carpeta." % denied,
+            )
+        if not sent and not denied:
+            messages.info(request, "No se marcó ningún duplicado.")
+
+        return redirect(
+            "%s?path=%s" % (
+                reverse("document_explorer:duplicates"), path_prefix,
+            )
+        )
 
 
 class RestoreFromTrashView(ExplorerAccessMixin, View):
