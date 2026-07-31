@@ -2,21 +2,44 @@
 """
 Deterministic renaming engine for H29 (S040).
 
-Gemini's job stops at *suggesting* a `DocumentTypeCatalog.code` (and,
-where relevant, the machine code / person name it read off the
-document). Building the actual filename is always this module's job,
-never Gemini's own wording -- Miguel Angel, S040: a free-form name
-from Gemini would drift in format over time; a dedicated, deterministic
+Gemini's job stops at *suggesting* a `DocumentTypeCatalog.code`.
+Building the actual filename is always this module's job, never
+Gemini's own wording -- Miguel Angel, S040: a free-form name from
+Gemini would drift in format over time; a dedicated, deterministic
 method never does.
 
-Two formats only, both confirmed verbatim by Miguel Angel in S040:
+Two formats only, both confirmed verbatim by Miguel Angel in S040,
+**personal format revised same session** after seeing how badly a
+person's name drifts across real filenames (H28 annex, Hallazgo 5: the
+same operator's name spelled eight different ways, typos included):
 
-- Machine:  {MACHINE_CODE}_{DOCUMENT_TYPE_CODE}_{DATE}.pdf
-- Personal: {SURNAME}_{GIVEN_NAME}_{DOCUMENT_TYPE_CODE}_{DATE}.pdf
-  (never by DNI or any numeric identifier -- explicitly rejected by
-  Miguel Angel: "para los trabajadores lo que nos sirve es apellido,
-  nombre, tipo de documento y fecha, para que cuando estés mirando el
-  archivo sepas perfectamente de quién estás hablando").
+- Machine:  {MACHINE_CODE}_{DOCUMENT_TYPE_CODE}_{DATE}[_{ORDINAL}].pdf
+- Personal: {FIRST_SURNAME}_{SECOND_SURNAME}_{GIVEN_NAME}_{DOCUMENT_TYPE_CODE}_{DATE}[_{ORDINAL}].pdf
+
+**Source of truth for the personal name is the person's own DNI
+document content, never the source filename** -- Miguel Angel, S040:
+"Tenemos que sacar los nombres y apellidos del DNI. No hay otra. En el
+DNI viene nombre por un lado y apellidos por otro. Viene, es más,
+viene como primer apellido, segundo apellido y nombre." This module
+only builds the string from already-resolved name components; where
+those components come from (DNI extraction) is the classification
+engine's job, not this one's.
+
+Why surname-first for people and code-first for machines, same
+underlying reason for both -- Miguel Angel, S040: "si sacamos diversos
+documentos de diversos trabajadores y los metemos en una carpeta, van
+a quedar perfectamente ordenados por trabajador (...) si formamos un
+dossier para enviarlo a alguna otra empresa, ese mismo orden nos va a
+ayudar a que los PDFs del dossier (...) estén también ordenadas de
+forma correcta." Plain alphabetical filename sort keeps every
+person's/machine's documents grouped together even outside the
+explorer's own folders (a flat dump, a mailed dossier, a zip export).
+
+Optional trailing ordinal, for real collisions (same person/machine,
+same type, same date) -- Miguel Angel, S040: "...fecha y ordinal por
+si hay varios documentos que se llamen igual o que tengan la misma
+fecha." Callers pass it only when a collision is actually detected;
+this module never invents one on its own.
 
 Date format: `%Y%m%d` (compact, no separators of its own, consistent
 with the only other filename-timestamp precedent in this repo --
@@ -26,22 +49,46 @@ with the only other filename-timestamp precedent in this repo --
 
 Motor de renombrado determinista para H29 (S040).
 
-El trabajo de Gemini termina en *sugerir* un `DocumentTypeCatalog.code`
-(y, cuando aplique, el código de máquina / nombre de persona que haya
-leído en el documento). Construir el nombre de archivo final es
-siempre trabajo de este módulo, nunca la redacción propia de Gemini --
-Miguel Ángel, S040: un nombre libre de Gemini derivaría de formato con
-el tiempo; un método propio y determinista, nunca.
+El trabajo de Gemini termina en *sugerir* un `DocumentTypeCatalog.code`.
+Construir el nombre de archivo final es siempre trabajo de este
+módulo, nunca la redacción propia de Gemini -- Miguel Ángel, S040: un
+nombre libre de Gemini derivaría de formato con el tiempo; un método
+propio y determinista, nunca.
 
 Dos formatos únicamente, ambos confirmados verbatim por Miguel Ángel
-en S040:
+en S040, **formato personal revisado en la misma sesión** al ver lo
+mal que deriva el nombre de una persona entre nombres de archivo
+reales (anexo H28, Hallazgo 5: el nombre del mismo operario escrito de
+ocho formas distintas, con errores incluidos):
 
-- Máquina:  {CÓDIGO_MÁQUINA}_{CÓDIGO_TIPO_DOCUMENTO}_{FECHA}.pdf
-- Personal: {APELLIDO}_{NOMBRE}_{CÓDIGO_TIPO_DOCUMENTO}_{FECHA}.pdf
-  (nunca por DNI ni identificador numérico -- rechazado explícitamente
-  por Miguel Ángel: "para los trabajadores lo que nos sirve es
-  apellido, nombre, tipo de documento y fecha, para que cuando estés
-  mirando el archivo sepas perfectamente de quién estás hablando").
+- Máquina:  {CÓDIGO_MÁQUINA}_{CÓDIGO_TIPO_DOCUMENTO}_{FECHA}[_{ORDINAL}].pdf
+- Personal: {PRIMER_APELLIDO}_{SEGUNDO_APELLIDO}_{NOMBRE}_{CÓDIGO_TIPO_DOCUMENTO}_{FECHA}[_{ORDINAL}].pdf
+
+**La fuente de verdad del nombre personal es el contenido real del
+propio DNI de la persona, nunca el nombre de archivo de origen** --
+Miguel Ángel, S040: "Tenemos que sacar los nombres y apellidos del
+DNI. No hay otra. En el DNI viene nombre por un lado y apellidos por
+otro. Viene, es más, viene como primer apellido, segundo apellido y
+nombre." Este módulo solo construye la cadena a partir de componentes
+de nombre ya resueltos; de dónde salen esos componentes (extracción
+del DNI) es trabajo del motor de clasificación, no de este módulo.
+
+Por qué apellidos primero para personas y código primero para
+máquinas, mismo motivo de fondo en los dos casos -- Miguel Ángel,
+S040: "si sacamos diversos documentos de diversos trabajadores y los
+metemos en una carpeta, van a quedar perfectamente ordenados por
+trabajador (...) si formamos un dossier para enviarlo a alguna otra
+empresa, ese mismo orden nos va a ayudar a que los PDFs del dossier
+(...) estén también ordenadas de forma correcta." El orden alfabético
+llano del nombre de archivo mantiene agrupados los documentos de cada
+persona/máquina incluso fuera de las carpetas del explorador (un
+volcado plano, un dossier enviado por correo, un zip exportado).
+
+Ordinal final opcional, para colisiones reales (misma persona/máquina,
+mismo tipo, misma fecha) -- Miguel Ángel, S040: "...fecha y ordinal por
+si hay varios documentos que se llamen igual o que tengan la misma
+fecha." Quien llame a este módulo solo lo pasa cuando detecta una
+colisión real; este módulo nunca se inventa uno por su cuenta.
 
 Formato de fecha: `%Y%m%d` (compacto, sin separadores propios,
 coherente con el único precedente real de timestamp en nombre de
@@ -79,10 +126,29 @@ def _sanitize_token(value: str) -> str:
     return collapsed.upper()
 
 
+def _build_filename(parts, date, ordinal, extension):
+    """
+    Shared assembly: sanitised parts + date + optional ordinal + extension.
+
+    ---
+
+    Ensamblado compartido: partes saneadas + fecha + ordinal opcional
+    + extensión.
+    """
+    tokens = [_sanitize_token(part) for part in parts]
+    tokens.append(date.strftime("%Y%m%d"))
+    if ordinal is not None:
+        tokens.append(str(ordinal))
+    return "_".join(token for token in tokens if token) + (
+        f".{extension.lstrip('.').lower()}"
+    )
+
+
 def build_filename_machine(
     machine_code: str,
     document_type_code: str,
     date: datetime.date,
+    ordinal: int = None,
     extension: str = "pdf",
 ) -> str:
     """
@@ -93,39 +159,42 @@ def build_filename_machine(
     Construye el nombre de archivo de formato fijo para un documento
     de dominio MÁQUINA.
     """
-    parts = [
-        _sanitize_token(machine_code),
-        _sanitize_token(document_type_code),
-        date.strftime("%Y%m%d"),
-    ]
-    return "_".join(parts) + f".{extension.lstrip('.').lower()}"
+    return _build_filename(
+        [machine_code, document_type_code], date, ordinal, extension,
+    )
 
 
 def build_filename_personal(
-    surname: str,
+    first_surname: str,
+    second_surname: str,
     given_name: str,
     document_type_code: str,
     date: datetime.date,
+    ordinal: int = None,
     extension: str = "pdf",
 ) -> str:
     """
     Build the fixed-format filename for a PERSONAL-domain document.
 
-    Deliberately surname/given-name based, never DNI or any numeric
-    identifier -- see module docstring.
+    `first_surname`/`second_surname`/`given_name` must come from the
+    person's own DNI content (resolved upstream, by the classification
+    engine) -- never parsed back out of the source filename. An empty
+    `second_surname` (rare, but not impossible) is simply omitted
+    instead of leaving a stray double underscore.
 
     ---
 
     Construye el nombre de archivo de formato fijo para un documento
     de dominio PERSONAL.
 
-    Deliberadamente basado en apellido/nombre, nunca en DNI ni
-    identificador numérico -- ver docstring del módulo.
+    `first_surname`/`second_surname`/`given_name` deben venir del
+    contenido real del DNI de la persona (resuelto aguas arriba, por
+    el motor de clasificación) -- nunca extraídos de nuevo del nombre
+    de archivo de origen. Un `second_surname` vacío (raro, pero
+    posible) simplemente se omite en vez de dejar un doble guion bajo
+    suelto.
     """
-    parts = [
-        _sanitize_token(surname),
-        _sanitize_token(given_name),
-        _sanitize_token(document_type_code),
-        date.strftime("%Y%m%d"),
-    ]
-    return "_".join(parts) + f".{extension.lstrip('.').lower()}"
+    return _build_filename(
+        [first_surname, second_surname, given_name, document_type_code],
+        date, ordinal, extension,
+    )

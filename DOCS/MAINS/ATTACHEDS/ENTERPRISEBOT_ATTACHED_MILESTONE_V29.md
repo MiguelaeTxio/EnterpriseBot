@@ -597,7 +597,56 @@ otro:**
 Añadidos al catálogo (migración `0003_seed_confirmed_types.py`, datos
 únicamente, sin cambio de esquema), los cuatro con `domain=PERSONAL`.
 
-## 4. Consecuencia directa: las tres únicas vías de escritura
+### 3.17. Formato definitivo de renombrado personal: apellido1_apellido2_nombre, con el nombre real extraído del DNI (S040)
+
+Registrada literalmente según se dictó (directriz 4.8). Sustituye por
+completo al formato provisional de 3.15
+(`{APELLIDO}_{NOMBRE}_{TIPO}_{FECHA}`).
+
+**Fuente de verdad del nombre real -- el DNI, no el nombre de
+archivo.** Verbatim: *"Tenemos que sacar los nombres y apellidos del
+DNI. No hay otra. En el DNI viene nombre por un lado y apellidos por
+otro. Viene, es más, viene como primer apellido, segundo apellido y
+nombre. Con lo cual podemos perfectamente inferir el nombre del
+DNI."* Cierra directamente el problema de Hallazgo 5 (el nombre del
+operario aparece de ocho formas distintas en el propio nombre de
+archivo, con errores incluidos) -- el nombre de archivo deja de ser la
+fuente, lo es el contenido real del documento DNI de esa persona.
+
+**Motivo de fondo -- orden alfabético útil en cualquier contexto,
+mezclados o no en carpetas.** Verbatim: *"Lo digo porque es
+importante que el nombre del archivo, tanto en la máquina vaya primero
+con el código de la máquina, como el personal vaya primero con los
+apellidos y el nombre del personal. De tal manera que van a quedar
+ordenados, digamos, si estuvieran todos juntos sin meter en carpetas,
+estarían bien ordenados. Es decir, si sacamos diversos documentos de
+diversos trabajadores y los metemos en una carpeta, van a quedar
+perfectamente ordenados por trabajador. Y de un vistazo vas a saber
+cuáles documentos pertenecen a cada uno de los trabajadores. Si
+formamos un dossier para enviarlo a alguna otra empresa, ese mismo
+orden nos va a ayudar a que los PDFs del dossier, las hojas, estén
+también ordenadas de forma correcta."*
+
+**Formato exacto**, verbatim: *"la nomenclatura debe de ser, primer
+apellido, guión bajo, segundo apellido, guión bajo, nombre, guión
+bajo, tipo de documento, y fecha y ordinal por si hay varios
+documentos que se llamen igual o que tengan la misma fecha."*
+
+```
+{PRIMER_APELLIDO}_{SEGUNDO_APELLIDO}_{NOMBRE}_{TIPO_DOCUMENTO}_{FECHA}[_{ORDINAL}].pdf
+```
+
+El formato de máquina (3.15) no cambia -- ya cumplía la misma regla de
+fondo (código primero) desde el principio:
+`{CÓDIGO_MÁQUINA}_{TIPO_DOCUMENTO}_{FECHA}[_{ORDINAL}].pdf`.
+
+**No resuelto por interpretación propia, pendiente cuando se aborde
+la extracción real:** cómo se obtiene el DNI de cada trabajador para
+leerlo (¿un DNI de referencia por persona, ya clasificado una vez, que
+sirve para todos sus demás documentos? ¿re-lectura si no se
+encuentra?), y qué pasa con personas cuyo DNI no está todavía en el
+corpus o no se puede leer. Se resuelve al diseñar el motor de
+clasificación real, no aquí.
 
 De 3.1, 3.2 y 3.8 se sigue que un objeto solo puede aparecer o
 desaparecer en Google Cloud Storage por tres caminos, y ninguno más:
