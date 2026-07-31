@@ -375,6 +375,27 @@ directorio principal (¿mismo nombre de blob de cuarentena?, ¿algún
 identificador?), y el detalle de qué escribe exactamente la
 anotación en el panel para un archivo no conforme.
 
+**Recordatorio añadido (S040, misma sesión que 3.19/3.24/3.25 más
+abajo) -- el agente debe reportar de qué carpeta subió cada
+archivo.** Verbatim: *"que no se nos olvide modificar el agente que
+funciona en local para que nos diga desde qué carpeta ha subido
+determinado documento. Porque si ha subido (...) desde el buzón de
+documentación, pues ha subido desde el buzón de documentación. Pero
+si se ha subido porque la persona que está encargada de la
+documentación ha soltado un archivo en la carpeta correspondiente a
+un trabajador o a una máquina, ya desde ahí sabemos cuál es el código
+de la máquina. Y lo único que tendríamos que hacer en un momento dado
+es una comprobación rutinaria, simple y sencilla (...) que sepa
+Gemini que tiene que comprobar el dato con el nombre de la carpeta."*
+
+Mismo principio que ya se aplicó en la sesión al motor de
+clasificación real (ver más abajo, corrección sobre `build_new_name`):
+cuando ya se sabe la carpeta/máquina real por otra vía distinta del
+propio documento, esa vía prevalece sobre lo que Gemini lea dentro
+del contenido -- Gemini deja de tener que adivinar lo que el sistema
+ya sabe con certeza. Sigue sin hito asignado, sin construir nada
+todavía.
+
 ### 3.15. Enriquecimiento de la interfaz del explorador (S040): clasificación, búsqueda y eliminación de duplicados
 
 Registrada literalmente según se dictó (directriz 4.8). **Esto sí es
@@ -1042,6 +1063,25 @@ flecha `->`), ya correcto (éxito, sin cambios, mensaje informativo
 aparte), y fallo real (sin datos suficientes, aviso). Los dos
 primeros cuentan como éxito en el registro de auditoría -- solo el
 tercero cuenta como "sin poder aplicar".
+
+### 3.27. El código de máquina de la carpeta prevalece sobre lo que lea Gemini (S040)
+
+Hallazgo real de la segunda repetición de la prueba controlada:
+`E0356BBZ_PERMISO_CIRCULACION_20200225.pdf` (máquina A-29, confirmado
+por `blob_name`) se reclasificó una vez con `machine_code_hint`
+correcto (`E0356BBZ`) y la siguiente vez con uno incorrecto (`A-24`,
+inventado) para el mismo archivo sin cambios -- Gemini no es
+perfectamente determinista entre llamadas pese a `temperature=0.0`.
+
+**Corregido:** `build_new_name()` ahora resuelve primero la máquina
+real de la carpeta vía `resolve_machine_asset()` (ya construida para
+3.25) y, si la resuelve, usa siempre `MachineAsset.code` -- ignorando
+por completo `machine_code_hint` de Gemini. Gemini solo decide el
+código de máquina cuando la carpeta no resuelve a ninguna máquina
+real (el caso futuro de cuarentena, antes de clasificar). Mismo
+principio anotado como recordatorio en 3.14 para el agente de
+Windows y el buzón de documentación: cuando el sistema ya sabe la
+respuesta por otra vía fiable, Gemini deja de tener que adivinarla.
 
 ## 4. Consecuencia directa: las tres únicas vías de escritura
 

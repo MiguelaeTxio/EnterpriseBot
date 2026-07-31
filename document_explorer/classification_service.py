@@ -534,7 +534,21 @@ def build_new_name(
     date = _resolve_date(entry, result)
 
     if domain == "MACHINE":
-        machine_code = (result.get("machine_code_hint") or "").strip()
+        # Corrección S040, misma sesión: para archivos que ya viven en
+        # una carpeta de máquina conocida, el código de flota real
+        # (resuelto por carpeta, determinista) prevalece siempre sobre
+        # lo que Gemini lea dentro del documento -- Gemini no es
+        # perfectamente determinista entre llamadas (temperature=0.0
+        # no lo garantiza al 100%) y ya se ha visto en producción
+        # devolver un código de máquina distinto para el mismo archivo
+        # en dos pasadas seguidas. Gemini solo decide el código cuando
+        # la carpeta no resuelve a ninguna máquina real -- el caso de
+        # cuarentena, que es donde de verdad hace falta que adivine.
+        asset = resolve_machine_asset(entry)
+        machine_code = (
+            asset.code if asset
+            else (result.get("machine_code_hint") or "").strip()
+        )
         if not machine_code:
             return None
         return naming_service.build_filename_machine(
