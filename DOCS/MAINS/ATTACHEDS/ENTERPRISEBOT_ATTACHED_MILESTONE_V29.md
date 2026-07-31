@@ -661,6 +661,85 @@ Migración `0004_seed_closed_vocabulary.py`, solo datos. Fusionado
 formato de la misma sigla administrativa) -- extensible, no cerrado
 para siempre. Detalle completo en el propio archivo de migración.
 
+### 3.19. Clasificar es 100% virtual: nunca se toca GCS, ni para mover ni para renombrar (S040)
+
+Registrada literalmente según se dictó (directriz 4.8). Corrige un
+vacío de diseño de `ClassifyView` (S040, ver más abajo): la vista
+actual (commit `ec71779`) es de solo lectura -- muestra la sugerencia
+de Gemini por mensaje, sin persistir nada -- así que no contradice
+esta decisión, pero el paso de "aplicar" la clasificación (todavía sin
+construir) debe seguir esta regla desde el primer commit, sin excepción.
+
+**Ni renombrado real, ni movimiento real -- mismo patrón que
+`move_service` (v2, puntero puro, S039).** Verbatim: *"vamos a hacer
+igual que con los... como cuando movemos archivos. En realidad no
+vamos a tocar CGS, lo vamos a hacer todo a nivel de datos, o sea, a
+nivel de base de datos, para que sea lo más rápido posible. Cuando se
+descargue un archivo, es cuando lo descargaremos, lo descargaremos
+con el nombre ya correcto. Mientras tanto, se quedan con el nombre con
+el que se subieron a CGS. Al clasificarla le damos el nombre nuevo en
+base de datos, con lo cual es muchísimo más rápido que cambiar los
+nombres de los archivos en la nube. Y una vez que vayan a
+descargarlos porque se vayan a usar, es cuando les cambiamos el
+nombre."*
+
+**Por qué no hace falta tocar el nombre real nunca en GCS:** verbatim:
+*"los que vamos a tener en CGS, como el nombre que vamos a presentar,
+lo vamos a presentar nosotros en las plantillas, no es necesario
+cambiarles el nombre realmente, tan solo cambiarlo cuando se van a
+descargar."*
+
+**Tampoco se mueve nada de cuarentena -- la ubicación clasificada
+también es solo un puntero.** Verbatim: *"realmente no vamos a mover
+los archivos de cuarentena. Simplemente le vamos a decir que están en
+tal carpeta a nivel de datos (...) aunque los archivos sigan en
+cuarentena. Todo va a quedar de forma virtual y en base de datos."*
+Confirma explícitamente que esto ya se había decidido antes: *"esto se
+dijo ayer (...) para no mover archivos realmente, para no borrar
+archivos realmente (...) por flags, banderas (...) y con anotaciones
+de punteros que realmente los archivos no se mueven y quedan siempre
+en el mismo sitio. Hemos hecho un primer movimiento que sí fue real,
+pero ahora realmente quedará todo en (...) cuarentena y de cuarentena
+realmente no se va a mover a ningún sitio."*
+
+**Consecuencia técnica directa, reutilizando lo ya construido en
+`move_service` (nunca reinventado):** aplicar una clasificación sobre
+un archivo de cuarentena es, mecánicamente, lo mismo que ya hace
+`move_service.move_entries()` -- escribir `parent_path`/`name`
+(ubicación y nombre VIRTUALES) sin tocar jamás `blob_name` (la ruta
+real en GCS, que sigue apuntando dentro de `_CUARENTENA/` para
+siempre). El `name` virtual pasa a ser el nombre normalizado que
+construye `naming_service`, no el nombre con el que se subió
+originalmente.
+
+**Excepción -- la vuelta del buzón de documentación (3.14, todavía sin
+hito asignado) SÍ renombra de verdad, pero en local, nunca en GCS.**
+Verbatim: *"Cuando hagamos la vuelta (...) tendremos que incluir
+también una herramienta de renombrado en el agente (...) todos los
+documentos que tenemos ahora mismo en local, en Microsoft 365. Ahí sí
+tendremos que renombrar realmente los archivos, porque ahí interesa
+que sean renombrados."* El agente de Windows (H28) es quien
+renombraría de verdad los archivos LOCALES; GCS nunca se toca por este
+motivo bajo ninguna circunstancia.
+
+**Pendiente, no resuelto aquí -- para cuando se construya el paso de
+"aplicar clasificación":**
+
+- `OpenDocumentView` hoy redirige a una URL firmada sobre el nombre
+  REAL del objeto (`entry.blob_name`) sin forzar ningún nombre de
+  descarga -- verificado contra el código real, `spare_parts.
+  gcs_service.generate_signed_url()` no acepta todavía ningún
+  parámetro para forzar el nombre de descarga. Para que la descarga
+  llegue "con el nombre ya correcto" hace falta añadir soporte de
+  `response-content-disposition` (parámetro real de las URLs firmadas
+  V4 de GCS) a `generate_signed_url()` -- cambio en `spare_parts`, app
+  compartida, a evaluar con cuidado por afectar a otros llamantes.
+- Falta decidir el mecanismo real de extracción del DNI como fuente
+  del nombre (ya apuntado como pendiente en 3.17) antes de que
+  `ClassifyView` pueda aplicar nada de verdad sobre `DOC. PERSONAL`.
+
+## 4. Consecuencia directa: las tres únicas vías de escritura
+
 De 3.1, 3.2 y 3.8 se sigue que un objeto solo puede aparecer o
 desaparecer en Google Cloud Storage por tres caminos, y ninguno más:
 
