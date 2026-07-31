@@ -22,6 +22,14 @@ scanner-opaque names, etc.).
 
 Read-only. Writes nothing to the database or to GCS.
 
+**Extended S040 (2026-07-31):** files with no recognisable date are no
+longer dropped straight into the "sin fecha" bucket. A second pass
+strips machine-code/plate-like tokens (old and new Spanish plate
+formats, short internal codes like "A-44", leading scan ordinals like
+"01.") and uses whatever text remains as the candidate type -- this
+alone rescued a large share of the corpus for DOC. MAQUINAS, where the
+pattern "CÓDIGO TIPO" with no date in the name is very common.
+
 Uso:
     python -m dotenv run python manage.py audit_document_names --bucket cgs_grupo_alvarez
     python -m dotenv run python manage.py audit_document_names --bucket cgs_grupo_alvarez --root "DOC. PERSONAL"
@@ -52,6 +60,15 @@ ya anticipaban los propios hallazgos de S035 (Hallazgo 5: tipos unidos
 con `+`, nombres opacos de escáner, etc.).
 
 Solo lectura. No escribe nada en la base de datos ni en GCS.
+
+**Ampliado en S040 (2026-07-31):** los archivos sin fecha reconocible
+ya no van directos al cajón "sin fecha". Una segunda pasada quita
+tokens con forma de código de máquina/matrícula (formatos de matrícula
+española antigua y moderna, códigos internos cortos tipo "A-44",
+prefijos ordinales de escaneo tipo "01.") y usa lo que queda como
+candidato de tipo -- por sí solo esto rescató buena parte del corpus
+en DOC. MAQUINAS, donde el patrón "CÓDIGO TIPO" sin fecha en el nombre
+es muy frecuente.
 """
 import re
 
@@ -140,6 +157,35 @@ _OPAQUE_STEM_RE = re.compile(
 )
 _IMAGE_EXTENSIONS = {"jpg", "jpeg", "png", "heic", "heif", "gif", "bmp"}
 
+# Código de máquina / matrícula (S040, ampliación tras auditar el
+# corpus completo): 41% de DOC. MAQUINAS y 35% de DOC. PERSONAL no
+# tienen fecha reconocible en el nombre, y la mayoría de esos SÍ
+# tienen un tipo legible una vez se quita el código -- p. ej.
+# "0069-GXX FICHA TECNICA.pdf", "0168-DZS SEGURO.pdf",
+# "03.CE A-44 E-5250-BDP.pdf". Sin esto, ese 38% largo del corpus
+# quedaba fuera del vocabulario candidato.
+#
+# Tres familias, confirmadas contra las frases candidatas reales de la
+# primera pasada sobre el corpus completo (S040, 2026-07-31):
+_MACHINE_CODE_PATTERNS = [
+    # Matrícula antigua con letra de provincia: MA-00377-R, GI-0877-R,
+    # SE-02681-R.
+    r"[A-Z]{1,2}-\d{4,5}-[A-Z]",
+    # Matrícula moderna, con o sin guion, con o sin prefijo de letra
+    # interna de la empresa (E-/R-/G-...): E-5250-BDP, 8992-FCK,
+    # 8992FCK, R3166BCG, R-7991-BBV, 00964-GTM (4 o 5 dígitos, visto
+    # en el corpus real).
+    r"(?:[A-Z]-)?\d{4,5}[- ]?[A-Z]{3}",
+    # Código corto interno de máquina: A-44, G-03, Z-15, B-27.
+    r"[A-Z]-\d{1,3}",
+    # Prefijo numérico ordinal de archivo escaneado: "01.", "02.".
+    r"\d{1,2}\.",
+]
+_MACHINE_CODE_RE = re.compile(
+    r"(?<![A-Za-z0-9])(?:%s)(?![A-Za-z0-9])" % "|".join(_MACHINE_CODE_PATTERNS),
+    re.IGNORECASE,
+)
+
 
 class Command(BaseCommand):
     help = (
@@ -227,6 +273,7 @@ class Command(BaseCommand):
 
     def _audit_root(self, root, blob_names, top_n):
         phrase_counts = {}
+        rescued_via_code = 0
         undated = []
         junk = []
 
@@ -246,33 +293,48 @@ class Command(BaseCommand):
                 continue
 
             match = _DATE_RE.search(stem)
-            if not match:
-                undated.append(file_name)
+            if match:
+                before = self._clean_candidate(stem[:match.start()])
+                after = self._clean_candidate(stem[match.end():])
+                # Casi siempre el tipo va antes de la fecha
+                # ("Z-15 CERT.MANTENIMIENTO 04-04-26"), pero en DOC.
+                # PERSONAL es frecuente el patrón inverso, típico de
+                # escáner ("04022026_PARTE MEDICO DE CONFIRMACION...")
+                # -- si no hay nada antes, se usa lo que viene después
+                # en vez de descartar el archivo como si no tuviera
+                # fecha.
+                candidate = before or after
+                if candidate:
+                    phrase_counts[candidate] = (
+                        phrase_counts.get(candidate, 0) + 1
+                    )
+                    continue
+
+            # Sin fecha reconocible (o fecha encontrada pero sin nada
+            # legible alrededor) -- S040: en vez de descartar
+            # directamente, se intenta quitar el código de
+            # máquina/matrícula y usar lo que quede como candidato.
+            # Cubre el patrón muy frecuente en DOC. MAQUINAS de
+            # "CÓDIGO TIPO" sin fecha en el nombre.
+            without_code = _MACHINE_CODE_RE.sub(" ", stem)
+            candidate = self._clean_candidate(without_code)
+            if candidate:
+                phrase_counts[candidate] = phrase_counts.get(candidate, 0) + 1
+                rescued_via_code += 1
                 continue
 
-            before = self._clean_candidate(stem[:match.start()])
-            after = self._clean_candidate(stem[match.end():])
-            # Casi siempre el tipo va antes de la fecha
-            # ("Z-15 CERT.MANTENIMIENTO 04-04-26"), pero en DOC.
-            # PERSONAL es frecuente el patrón inverso, típico de
-            # escáner ("04022026_PARTE MEDICO DE CONFIRMACION...") --
-            # si no hay nada antes, se usa lo que viene después en vez
-            # de descartar el archivo como si no tuviera fecha.
-            candidate = before or after
-            if not candidate:
-                undated.append(file_name)
-                continue
-            phrase_counts[candidate] = phrase_counts.get(candidate, 0) + 1
+            undated.append(file_name)
 
         self.stdout.write(self.style.MIGRATE_HEADING(
             "\n--- %s -- %d archivo(s) ---" % (root, len(blob_names))
         ))
         self.stdout.write(
-            "  %d con fecha reconocible, %d sin ella, %d ruido evidente "
-            "(sync/capturas sueltas)."
+            "  %d con fecha reconocible, %d rescatados sin fecha "
+            "(código de máquina/matrícula quitado), %d sin ningún tipo "
+            "legible, %d ruido evidente (sync/capturas sueltas)."
             % (
-                len(blob_names) - len(undated) - len(junk),
-                len(undated), len(junk),
+                len(blob_names) - len(undated) - len(junk) - rescued_via_code,
+                rescued_via_code, len(undated), len(junk),
             )
         )
 
@@ -288,7 +350,7 @@ class Command(BaseCommand):
 
         if undated:
             self.stdout.write(
-                "\n  Sin fecha reconocible (revisión manual, %d):"
+                "\n  Sin ningún tipo legible (revisión manual, %d):"
                 % len(undated)
             )
             for file_name in sorted(undated)[:top_n]:
