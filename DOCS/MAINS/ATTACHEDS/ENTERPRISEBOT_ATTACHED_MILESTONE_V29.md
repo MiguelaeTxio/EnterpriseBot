@@ -538,6 +538,42 @@ catálogo todavía porque el corpus completo aún no se ha auditado.
 `audit_document_names.py` tal cual, ejecutándolo sobre el corpus
 completo en vez de escribir algo redundante.
 
+### 3.16. Auditoría sobre el corpus completo (S040) — resultado real y corrección de Miguel Ángel
+
+Ejecutado `audit_document_names.py --bucket cgs_grupo_alvarez --top
+200` sobre el corpus real: 16.031 archivos en `DOC. MAQUINAS`, 21.519
+en `DOC. PERSONAL` (37.550 en total).
+
+**Hallazgo técnico:** 6.563 archivos de MÁQUINAS (41%) y 7.464 de
+PERSONAL (35%) no tienen fecha reconocible en el nombre, y el
+heurístico actual (parte por la fecha) no cuenta ninguna frase
+candidata para ellos aunque la mayoría sí tiene un tipo legible
+(`0069-GXX FICHA TECNICA.pdf`, `0168-DZS SEGURO.pdf`). Pendiente de
+mejorar antes de cerrar el vocabulario, para no perder ~38% del
+corpus.
+
+**Error del modelo, corregido por Miguel Ángel en la misma sesión:**
+el modelo propuso fusionar `NOMINA`/`NOMINAS` con `PAGO CORRIENTE`
+como el mismo tipo, basándose únicamente en el nombre de archivo.
+Verbatim de Miguel Ángel: *"Pago corriente y nómina no son lo mismo,
+por eso te he dicho que es necesario ver los documentos antes de
+normalizar los nombres."* Quedan como dos tipos distintos,
+`NOMINA` y `PAGO_CORRIENTE`, no fusionados.
+
+**Regla derivada, de obligado cumplimiento para el resto de la
+curación del vocabulario:** el modelo **no fusiona ni asume
+sinónimos por similitud de nombre de archivo**. Para cualquier grupo
+donde la equivalencia no sea evidente sin ambigüedad, el modelo debe
+pedir a Miguel Ángel que suba una muestra real del documento (el
+modelo no tiene acceso de red a GCS desde este entorno, así que no
+puede abrirlos por sí mismo) antes de decidir si dos frases
+candidatas son el mismo tipo documental o no.
+
+**Pendiente de confirmar con muestra real subida por Miguel Ángel,
+sin asumir nada:** `IDC` (237 casos) y `CSS ADOLFO ALVAREZ` (88
+casos) -- abreviaturas no identificables por el modelo solo con el
+nombre de archivo.
+
 ## 4. Consecuencia directa: las tres únicas vías de escritura
 
 De 3.1, 3.2 y 3.8 se sigue que un objeto solo puede aparecer o
