@@ -94,6 +94,11 @@
 {% endif %}
 
 {% if can_move %}
+    <form id="classify-form" method="post"
+          action="{% url 'document_explorer:classify' %}">
+        {% csrf_token %}
+        <input type="hidden" name="path" value="{{ folder_path }}">
+    </form>
     <div class="d-flex align-items-center gap-3 mb-2">
         <label class="form-check-label small text-muted mb-0">
             <input type="checkbox" class="form-check-input me-1"
@@ -108,6 +113,11 @@
                 hx-vals='{"path": ""}'
                 hx-target="#move-modal-body">
             <i class="bi bi-folder-symlink"></i> Mover seleccionados
+        </button>
+        <button type="submit" form="classify-form"
+                class="btn btn-sm btn-outline-secondary"
+                title="Prueba de clasificación con Gemini -- no renombra ni mueve nada, solo muestra la sugerencia">
+            <i class="bi bi-robot"></i> Clasificar seleccionados (prueba)
         </button>
     </div>
 {% endif %}

@@ -51,6 +51,7 @@
             <td>
                 {% if entry.pk and not entry.is_folder and entry.bucket == primary_bucket %}
                     <input type="checkbox" name="entries" value="{{ entry.pk }}"
+                           form="classify-form"
                            class="form-check-input" aria-label="Seleccionar">
                 {% endif %}
             </td>

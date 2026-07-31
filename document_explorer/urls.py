@@ -50,6 +50,11 @@ urlpatterns = [
         views.MoveView.as_view(),
         name="move",
     ),
+    path(
+        "clasificar/",
+        views.ClassifyView.as_view(),
+        name="classify",
+    ),
     path("papelera/", views.TrashView.as_view(), name="trash"),
     path(
         "papelera/restaurar/<int:pk>/",

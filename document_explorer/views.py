@@ -148,6 +148,7 @@ from panel.mixins import CompanyUserRequiredMixin
 from spare_parts.gcs_service import delete_file, generate_signed_url
 
 from document_explorer import friendly_names, index_writer, move_service, permissions
+from document_explorer import classification_service
 from document_explorer.buckets import (
     BUCKET_DISPLAY_NAMES, INDEXED_BUCKETS, PRIMARY_BUCKET,
 )
@@ -1395,6 +1396,91 @@ class MoveView(MoveScopeMixin, View):
             "%s?bucket=%s&path=%s" % (
                 reverse("document_explorer:explorer"),
                 bucket, destination,
+            )
+        )
+
+
+class ClassifyView(MoveScopeMixin, View):
+    """
+    Testing-phase batch classification (H29, S040 -- Miguel Ángel:
+    "generar ya el prompt para empezar a hacer las pruebas de
+    clasificación de la carpeta de cuarentena"). Same scope mixin as
+    `MoveView` (admin-only, live files in `PRIMARY_BUCKET`) since this
+    also fires a real, billable Gemini call per file.
+
+    Deliberately the simplest possible version: no progress display,
+    no AJAX, a normal form POST that redirects back with one Django
+    message per file showing Gemini's raw suggestion. Nothing gets
+    renamed or moved here -- this view exists purely to look at
+    Gemini's answers over real documents before wiring anything
+    automatic. `ClassifyView` never imports anything from
+    `document_ingestion`/`machine_documents`/`personal_documents`, per
+    the H29 annex 3.15 isolation rule.
+
+    ---
+
+    Clasificación por lote en fase de pruebas (H29, S040 -- Miguel
+    Ángel: "generar ya el prompt para empezar a hacer las pruebas de
+    clasificación de la carpeta de cuarentena"). Mismo mixin de
+    alcance que `MoveView` (solo administrador, archivos vivos en
+    `PRIMARY_BUCKET`) porque esto también dispara una llamada real y
+    facturable a Gemini por archivo.
+
+    Deliberadamente la versión más simple posible: sin visualización
+    de progreso, sin AJAX, un envío de formulario normal que redirige
+    de vuelta con un mensaje de Django por archivo mostrando la
+    respuesta en crudo de Gemini. Aquí no se renombra ni se mueve nada
+    -- esta vista existe solo para mirar las respuestas de Gemini
+    sobre documentos reales antes de conectar nada automático.
+    `ClassifyView` nunca importa nada de
+    `document_ingestion`/`machine_documents`/`personal_documents`,
+    según la regla de aislamiento 3.15 del anexo H29.
+    """
+
+    def post(self, request):
+        entries = self._entries_or_404(
+            request, request.POST.getlist("entries"),
+        )
+        bucket = entries[0].bucket
+        path = (request.POST.get("path") or "").strip("/")
+
+        for entry in entries:
+            domain = classification_service.domain_for_entry(entry)
+            result = classification_service.classify_entry(entry, domain)
+            if "error" in result:
+                messages.error(
+                    request,
+                    "«%s» -- fallo al clasificar: %s"
+                    % (entry.name, result["error"]),
+                )
+                continue
+            hints = ", ".join(
+                filter(None, [
+                    result.get("machine_code_hint"),
+                    " ".join(filter(None, [
+                        result.get("first_surname_hint"),
+                        result.get("second_surname_hint"),
+                        result.get("given_name_hint"),
+                    ])),
+                    result.get("date_hint"),
+                ])
+            )
+            messages.info(
+                request,
+                "«%s» -- dominio: %s -- tipo sugerido: %s (%s) -- %s%s"
+                % (
+                    entry.name,
+                    result.get("domain", "?"),
+                    result.get("document_type_code", "?"),
+                    result.get("confidence", "?"),
+                    result.get("reasoning", ""),
+                    " -- pistas: %s" % hints if hints else "",
+                ),
+            )
+
+        return redirect(
+            "%s?bucket=%s&path=%s" % (
+                reverse("document_explorer:explorer"), bucket, path,
             )
         )
 
