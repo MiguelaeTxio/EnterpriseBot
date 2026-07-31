@@ -648,6 +648,19 @@ encuentra?), y qué pasa con personas cuyo DNI no está todavía en el
 corpus o no se puede leer. Se resuelve al diseñar el motor de
 clasificación real, no aquí.
 
+### 3.18. Vocabulario cerrado, primera versión (S040)
+
+Cerrado a partir de las frases candidatas reales de
+`audit_document_names.py` sobre el corpus completo -- 24 tipos
+MÁQUINA + 12 tipos PERSONAL, sumados a los 4 confirmados con
+contenido real de 3.16 y los provisionales de 3.15 que siguen
+vigentes (`DNI`, `SEG_SOCIAL`, `RECONOCIMIENTO_MEDICO`; `CURSO` se
+sustituye por `FORMACION`, más ajustado al vocabulario real).
+Migración `0004_seed_closed_vocabulary.py`, solo datos. Fusionado
+únicamente donde el propio texto no deja ambigüedad (variantes de
+formato de la misma sigla administrativa) -- extensible, no cerrado
+para siempre. Detalle completo en el propio archivo de migración.
+
 De 3.1, 3.2 y 3.8 se sigue que un objeto solo puede aparecer o
 desaparecer en Google Cloud Storage por tres caminos, y ninguno más:
 
