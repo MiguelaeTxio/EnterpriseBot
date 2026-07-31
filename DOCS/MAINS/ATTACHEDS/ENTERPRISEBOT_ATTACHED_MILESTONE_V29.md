@@ -464,11 +464,39 @@ cerrada** — cada `company` aprende sus propios grupos a partir de lo
 que Gemini proponga, sin catálogo fijo (decisión S016: "Gemini puede
 proponer categorías libres, sin lista cerrada"). Es exactamente la
 fuente de inconsistencia que Miguel Ángel quiere evitar para el motor
-de renombrado. **No se decide aquí** si el diccionario nuevo para H29
-sustituye/consolida ese sistema existente o es independiente y
-paralelo (motor de renombrado con catálogo cerrado, clasificación
-`canonical_group` de H23/H25 sin tocar) — pendiente de confirmación
-explícita.
+de renombrado.
+
+**Resuelto por Miguel Ángel (misma sesión, S040) — aislamiento total
+respecto a H17-H25:** Verbatim: *"H23, H25 se empezaron y se pararon
+porque íbamos a cambiar totalmente el sistema. Así que, depender de
+canonical_group... Nos olvidamos de H23 y H25. Estamos construyendo
+sobre lo que tenemos. ¿Qué tenemos? Tenemos ahora mismo dos carpetas
+subidas a Google Cloud Storage que tenemos que clasificar. Tenemos una
+carpeta llamada cuarentena que tenemos que clasificar. Así que lo
+primero que tenemos que hacer es, sin mirar a ningún otro sitio,
+tenemos que ver lo que hay en esas dos grandes carpetas para clasificar
+y hacer un algoritmo que clasifique y envíe lo que hay en la cuarentena
+a esas carpetas. No quiero oír hablar de otra cosa que no sea esto. Es
+decir, ni quiero ver H23, ni quiero ver H25, ni 22, ni 21, ni 20, ni
+19, ni 18, ni 17. Quiero que nos centremos en lo que estamos haciendo y
+nos olvidemos de lo que ya hay hecho en producción, y en ningún sitio.
+Estamos dedicados a hacer una cosa nueva por completo. No podemos
+estar mirando hacia otro lado. Y por supuesto, no podemos basar nada de
+lo que estamos haciendo en unos hitos que están parados porque se ha
+abandonado la forma de hacer de esa forma. Es decir, todo ese método,
+toda esa infraestructura la hemos abandonado y estamos creando una
+cosa nueva. No podemos estar pensando en esos hitos."*
+
+**Regla derivada, de obligado cumplimiento para el resto de H29:** el
+diccionario de tipos documentales, el motor de renombrado y el
+algoritmo de clasificación de cuarentena se construyen **enteramente
+dentro de `document_explorer`**, sin importar ni depender de
+`document_ingestion.LearnedDocumentTypeKeyword`, `entity_matching_service`,
+`machine_documents` ni `personal_documents`. El ámbito de trabajo son
+únicamente los cubos/carpetas ya indexados por H29 dentro de
+`cgs_grupo_alvarez` y la cuarentena (`_CUARENTENA/`). Código de
+H17-H25 no se lee, no se cita ni se reutiliza para esta parte del
+trabajo.
 
 ## 4. Consecuencia directa: las tres únicas vías de escritura
 
