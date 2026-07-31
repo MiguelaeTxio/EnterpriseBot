@@ -69,7 +69,7 @@ from ai_services.gemini_rate_limiter import acquire_gemini_slot
 from spare_parts.gcs_service import download_bytes
 
 from . import naming_service
-from .move_service import _resolve_free_name
+from .move_service import _virtual_location_taken
 
 from .models import DocumentTypeCatalog
 
@@ -77,6 +77,25 @@ logger = logging.getLogger(__name__)
 
 _MAX_GEMINI_ATTEMPTS = 3
 _RETRY_DELAY_SECONDS = 60
+
+# Verificado online el 2026-07-31 contra la documentación real de
+# Document understanding de Gemini (ai.google.dev/gemini-api/docs/
+# document-processing): "You can also pass non-PDF documents in the
+# same way but Gemini will see them as normal text" -- es decir, un
+# .docx con su mimeType real de Office (OpenXML) NO se acepta
+# directamente; requeriría convertirlo a PDF/texto plano antes.
+# Confirmado también con el error real de producción de esta misma
+# sesión (S040): 400 INVALID_ARGUMENT sobre
+# application/vnd.openxmlformats-officedocument.wordprocessingml.document.
+_SUPPORTED_MIME_TYPES = {
+    "application/pdf",
+    "image/png",
+    "image/jpeg",
+    "image/webp",
+    "image/heic",
+    "image/heif",
+    "text/plain",
+}
 
 _RESPONSE_SCHEMA = {
     "type": "object",
@@ -270,6 +289,18 @@ def classify_entry(entry, domain: str | None = None) -> dict:
     """
     import json
 
+    mime_type = entry.content_type or "application/pdf"
+    if mime_type not in _SUPPORTED_MIME_TYPES:
+        return {
+            "error": (
+                "Tipo de archivo no soportado para clasificación con "
+                "Gemini (%s) -- verificado contra la documentación real "
+                "de la API el 2026-07-31, no todos los formatos de "
+                "oficina se aceptan directamente. Requiere conversión "
+                "previa (no construida todavía)." % mime_type
+            ),
+        }
+
     try:
         content_bytes = download_bytes(entry.bucket, entry.blob_name)
         client = get_gemini_client()
@@ -277,9 +308,7 @@ def classify_entry(entry, domain: str | None = None) -> dict:
             client,
             model=DEFAULT_MODEL,
             contents=[
-                Part.from_bytes(
-                    data=content_bytes, mime_type=entry.content_type or "application/pdf",
-                ),
+                Part.from_bytes(data=content_bytes, mime_type=mime_type),
                 _build_prompt(domain),
             ],
             config=GenerateContentConfig(
@@ -324,13 +353,22 @@ def _resolve_date(entry, result) -> datetime.date:
     return datetime.date.today()
 
 
-def build_new_name(entry, domain: str, result: dict) -> str | None:
+def build_new_name(
+    entry, domain: str, result: dict, ordinal: int | None = None,
+) -> str | None:
     """
     Build the virtual filename `naming_service` would produce from a
     Gemini suggestion, or None when there isn't enough to go on
     (unknown type, or missing the field the chosen domain's format
     requires) -- callers must treat None as "leave this one for manual
     review", never invent a placeholder.
+
+    `ordinal` is forwarded to `naming_service` as-is -- Miguel Ángel's
+    own format ("...tipo de documento, y fecha y ordinal por si hay
+    varios documentos que se llamen igual") already has a place for
+    it; a collision must never be resolved by bolting move_service's
+    " (N)" suffix on top of a name this function already built in a
+    different, fixed format.
 
     ---
 
@@ -340,6 +378,13 @@ def build_new_name(entry, domain: str, result: dict) -> str | None:
     falta el campo que exige el formato de ese dominio) -- quien llama
     debe tratar None como "dejar este para revisión manual", nunca
     inventar un valor de relleno.
+
+    `ordinal` se reenvía tal cual a `naming_service` -- el propio
+    formato de Miguel Ángel ("...tipo de documento, y fecha y ordinal
+    por si hay varios documentos que se llamen igual") ya tiene un
+    hueco para esto; una colisión nunca debe resolverse pegando el
+    sufijo " (N)" de move_service encima de un nombre que esta función
+    ya construyó en un formato fijo distinto.
     """
     code = result.get("document_type_code") or ""
     if not code or code == "DESCONOCIDO":
@@ -352,7 +397,7 @@ def build_new_name(entry, domain: str, result: dict) -> str | None:
         if not machine_code:
             return None
         return naming_service.build_filename_machine(
-            machine_code, code, date, extension=extension,
+            machine_code, code, date, ordinal=ordinal, extension=extension,
         )
     if domain == "PERSONAL":
         first_surname = (result.get("first_surname_hint") or "").strip()
@@ -362,7 +407,7 @@ def build_new_name(entry, domain: str, result: dict) -> str | None:
         second_surname = (result.get("second_surname_hint") or "").strip()
         return naming_service.build_filename_personal(
             first_surname, second_surname, given_name, code, date,
-            extension=extension,
+            ordinal=ordinal, extension=extension,
         )
     return None
 
@@ -384,11 +429,14 @@ def apply_classification(entry) -> dict:
     reuse `move_service`'s own virtual-relocation machinery, not this
     function.
 
-    Collision-safe: reuses `move_service._resolve_free_name` (already
-    validated for "mover todos los manuales", S039) so two files that
-    would both resolve to the exact same virtual name in the same
-    virtual folder never overwrite one another -- a numeric suffix is
-    appended to the second one instead.
+    Collision-safe: appends the ordinal `naming_service`'s own format
+    already has a place for -- never `move_service`'s " (N)" suffix,
+    which belongs to a different, unrelated feature (moving files) with
+    its own naming convention. Corrected S040 after the first
+    controlled test: the original version called
+    `move_service._resolve_free_name` directly, which silently produced
+    names like `... (1).pdf` instead of Miguel Ángel's own specified
+    `..._1.pdf` ordinal.
 
     Returns the raw Gemini result dict, plus `new_name` (None if
     nothing could be applied) and `renamed` (bool, whether the name
@@ -411,11 +459,15 @@ def apply_classification(entry) -> dict:
     que reutilizará la maquinaria de reubicación virtual de
     `move_service`, no esta función.
 
-    A salvo de colisiones: reutiliza `move_service._resolve_free_name`
-    (ya validada para "mover todos los manuales", S039) para que dos
-    archivos que resolverían al mismo nombre virtual en la misma
-    carpeta virtual nunca se pisen -- al segundo se le añade un sufijo
-    numérico.
+    A salvo de colisiones: añade el ordinal para el que el propio
+    formato de `naming_service` ya tiene hueco -- nunca el sufijo
+    " (N)" de `move_service`, que pertenece a otra funcionalidad
+    distinta (mover archivos) con su propia convención de nombres.
+    Corregido en S040 tras la primera prueba controlada: la versión
+    original llamaba directamente a
+    `move_service._resolve_free_name`, que generaba en silencio
+    nombres tipo `... (1).pdf` en vez del ordinal `..._1.pdf` que
+    especificó Miguel Ángel.
 
     Devuelve el dict de resultado en crudo de Gemini, más `new_name`
     (None si no se pudo aplicar nada) y `renamed` (bool, si el nombre
@@ -435,9 +487,16 @@ def apply_classification(entry) -> dict:
         result["renamed"] = False
         return result
 
-    final_name = _resolve_free_name(
-        entry.bucket, entry.parent_path, candidate_name, exclude_pk=entry.pk,
-    )
+    final_name = candidate_name
+    ordinal = 1
+    while _virtual_location_taken(
+        entry.bucket, entry.parent_path, final_name, exclude_pk=entry.pk,
+    ):
+        final_name = build_new_name(
+            entry, effective_domain, result, ordinal=ordinal,
+        )
+        ordinal += 1
+
     renamed = final_name != entry.name
     if renamed:
         entry.name = final_name
