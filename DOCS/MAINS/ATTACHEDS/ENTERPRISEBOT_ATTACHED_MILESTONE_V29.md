@@ -813,32 +813,30 @@ herramienta de "carpetas vacías".
 
 ### Hoja de ruta para la siguiente sesión (S040)
 
-1. **Verificar en frío la herramienta de mover** con un lote de
-   trabajo real (no de prueba) — confirmar que el resultado de
-   `move_entries()` en producción es sólido con datos y volúmenes
-   distintos a los usados durante el desarrollo de esta sesión.
-2. **Terminar la consolidación de cubos** (resto de 3.12, aplazado
-   otra sesión más): retirar por completo las apps
-   `machine_documents`/`personal_documents` (modelos, vistas de
-   subida, `purge_orphaned_gcs_blobs.py`, referencias en
+1. **Terminar la consolidación de cubos** (resto de la decisión 3.12):
+   retirar por completo las apps `machine_documents`/
+   `personal_documents` (modelos, vistas de subida,
+   `purge_orphaned_gcs_blobs.py`, referencias en
    `create_gcs_buckets`) y decidir qué pasa con
    `MachineDocument.gcs_blob_name`/`PersonalDocument.gcs_blob_name`.
-3. **Subida tipada desde gestión de documentación** (decisión 3.8):
-   depende del punto 2.
-4. **Herramienta de "carpetas vacías"**, mencionada como candidata
-   varias veces esta sesión — limpiar las filas huérfanas que deja
-   mover archivos fuera de una carpeta sin vaciarla del índice.
-5. **Consumidor de la cuarentena** (Fase 3 de H28, no de H29): sigue
+2. **Subida tipada desde gestión de documentación** (decisión 3.8):
+   depende del punto 1.
+3. **Herramienta de "carpetas vacías"**: limpiar las filas huérfanas
+   que deja mover archivos fuera de una carpeta sin vaciarla del
+   índice.
+4. **Consumidor de la cuarentena** (Fase 3 de H28, no de H29): sigue
    sin construirse.
-6. **Migración de Python 3.10 → 3.12/3.13** antes del 4 de octubre de
-   2026 (sección 4.3.1 del documento maestro).
-7. **Salto de HTMX 1.9.12 a la serie 2.x**, anotado pero no evaluado.
-8. **Frontera con H28** (si la interfaz de limpieza de la Fase 2
-   converge con este explorador) — sigue sin cerrar.
-9. **Comenzar a mover manuales de verdad** a `DOC. MAQUINAS/MANUALES
-   DE USO` usando la herramienta ya operativa, ahora que está
-   verificada y a velocidad aceptable — es el caso de uso original que
-   motivó construirla.
+5. **Migración de Python 3.10 → 3.12/3.13** antes del 4 de octubre de
+   2026.
+6. **Salto de HTMX 1.9.12 a la serie 2.x**: anotado, sin evaluar.
+7. **Frontera con H28** (si la interfaz de limpieza de la Fase 2
+   converge con el explorador): sigue sin cerrar.
+
+**La herramienta de mover no aparece en esta lista porque no hay nada
+pendiente sobre ella** — corregido en esta sesión (retirados de la
+hoja de ruta los antiguos puntos "verificar en frío la herramienta de
+mover" y "comenzar a mover manuales de verdad", cerrados por
+decisión de Miguel Ángel).
 
 **Cabo suelto menor, no bloqueante, arrastrado de S037:** las cuatro
 copias de estáticos desincronizadas de su fuente
