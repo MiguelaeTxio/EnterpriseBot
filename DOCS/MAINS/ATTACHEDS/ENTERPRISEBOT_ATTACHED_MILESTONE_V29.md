@@ -498,6 +498,46 @@ dentro de `document_explorer`**, sin importar ni depender de
 H17-H25 no se lee, no se cita ni se reutiliza para esta parte del
 trabajo.
 
+**Corrección real detectada en la propia sesión (directriz 4.9) — NO
+es H17-H25, es trabajo previo de H28/`document_explorer` que sí
+aplica:** al ir a escribir un comando de inventario heurístico nuevo,
+se encontró que `document_explorer/management/commands/
+audit_document_names.py` y `find_duplicate_documents.py` **ya
+existen**, escritos en S039 como primer y segundo paso concreto de la
+fusión H28 Fase 2/H29. `audit_document_names.py` ya hace exactamente
+el mapeo heurístico pedido ahora (parte cada nombre por el primer
+token con forma de fecha, cuenta frecuencia de la frase candidata a
+tipo), afinado en dos pasadas reales sobre una muestra de 133 archivos
+de las dos carpetas (Hallazgos 1-6 de este mismo anexo, sección 8) —
+incluyendo **dos vocabularios ya disjuntos por dominio**:
+
+- **Máquinas:** FICHA TECNICA, PERM.CIRCULACION, ITV, IPO, OCA, CE,
+  RAE, C.ADECUACION, CERT.NO TARJ.TTES, CERT MANTENIMIENTO, LIBRO
+  HISTORIAL, TABLA DE CARGA, MANUAL USO, POLIZA, REC.SEG, SEGURO, BAJA
+  TEMPORAL.
+- **Personal:** RM, ALTA, APTO DEFINITIVO, AUT USO MAQ, CARNET DE
+  CONDUCIR, TARJETA DEL CONDUCTOR, TARJETA CUALIFICACION CONDUCTOR,
+  RENOVACION CAP, DNI, CONTRATO INDEF, COMUNIC CONTRATO INDEF, Mod
+  145, IDC, ENTREGA INFORMACION, EPIS, FORM (2H, 6H, 60H), ESTIBA DE
+  PLATAFORMAS, PARTE VACACIONES, DOC VARIOS.
+
+**Pero seguía pendiente al cierre de S039** (última "Hoja de ruta"
+del anexo H28, punto 6): cerrar el vocabulario sobre el **corpus
+completo** (16.022 + 21.507 archivos), no solo la muestra de 133 -- la
+propia razón de ser de `audit_document_names.py`, según su docstring.
+
+**Consecuencia sobre lo ya construido en esta sesión (S040):** el
+`DocumentTypeCatalog` sembrado con 7 tipos genéricos (ITV, OCA,
+SEGURO, CURSO, DNI, SEG_SOCIAL, RECONOCIMIENTO_MEDICO) queda **como
+seed provisional, a sustituir por el vocabulario real** en cuanto se
+cierre sobre el corpus completo -- los dos vocabularios de arriba ya
+son más ricos y correctos que el seed provisional. No se reescribe el
+catálogo todavía porque el corpus completo aún no se ha auditado.
+
+**No se escribe ningún comando nuevo de inventario** -- se reutiliza
+`audit_document_names.py` tal cual, ejecutándolo sobre el corpus
+completo en vez de escribir algo redundante.
+
 ## 4. Consecuencia directa: las tres únicas vías de escritura
 
 De 3.1, 3.2 y 3.8 se sigue que un objeto solo puede aparecer o
