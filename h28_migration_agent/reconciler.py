@@ -44,6 +44,7 @@ from config import (
     RECONCILE_RETRY_DELAYS_SECONDS,
 )
 from fs_utils import is_cloud_only, request_hydration, to_long_path
+from server_notify import notify_server_of_upload
 from uploader import (
     build_blob_name,
     build_quarantine_blob_name,
@@ -307,6 +308,7 @@ def _upload_with_retries(bucket, relative_path, blob_name, local_path):
                 "Reconciliacion: subido en el intento %d/%d -> %s",
                 attempt, RECONCILE_MAX_RETRIES, relative_path,
             )
+            notify_server_of_upload(bucket.name, blob_name)
             return True
         except Exception as error:  # noqa: BLE001 -- see docstring
             # Se captura cualquier excepcion porque una subida de

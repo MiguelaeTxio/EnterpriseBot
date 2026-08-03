@@ -71,6 +71,11 @@ urlpatterns = [
         name="duplicates_resolve",
     ),
     path(
+        "agente/registrar/",
+        views.RegisterUploadedObjectView.as_view(),
+        name="register_uploaded_object",
+    ),
+    path(
         "operaciones/",
         views.DataOperationLogListView.as_view(),
         name="operation_log_list",

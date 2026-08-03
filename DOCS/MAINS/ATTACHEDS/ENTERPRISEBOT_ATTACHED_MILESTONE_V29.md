@@ -1166,6 +1166,75 @@ ninguna línea de reinicio tras el push. `deploy.yml` corregido
 worker por sí solo (no está en su propio patrón), así que hizo falta
 un reinicio manual del worker para que el fix quedara activo esa vez.
 
+### 3.30. Corrección de arquitectura: el índice se escribe AL MOMENTO de subir, no por refresco periódico (S040)
+
+Corrige el enfoque de la propia sesión (una tarea Celery Beat que
+refrescaba `_CUARENTENA` cada pocos minutos, construida y luego
+descartada como mecanismo principal antes de comitear nada).
+
+Verbatim: *"la visión del explorador de archivos es a nivel de base
+de datos (...) al margen de que se suba a cuarentena, al margen de que
+luego los va a clasificar Gemini, cuando hacemos la subida (...) ya
+debe marcar que ese archivo está en cuarentena en la base de datos.
+Entonces, cuando (...) renderizamos (...) el contenido de la carpeta
+de cuarentena, ya debemos también renderizar la carpeta que haya
+nueva o el archivo que haya nuevo (...) no debe de ser necesario
+refrescar desde Google Cloud Storage (...) cuando se sube, realmente
+se graba el archivo en GCS (...) y a la misma vez anotamos en base de
+datos dónde se encuentra el archivo (...) cuando nosotros vamos a
+renderizar el explorador, automáticamente nos debe de reflejar ya sin
+necesidad de actualizar GCS."*
+
+**Diseño correcto:** quien crea el objeto en GCS (el agente H28, al
+subir a cuarentena) es quien debe disparar la escritura de la fila del
+índice, en el mismo momento -- no un proceso aparte que vaya a
+comprobar más tarde si hay algo nuevo. El agente no tiene conexión
+directa a la base de datos (solo tiene la clave de la cuenta de
+servicio de GCS) -- necesita un endpoint autenticado en el propio
+servidor Django al que avisar justo después de cada subida con éxito.
+
+**Construido esta sesión, lado servidor:** `RegisterUploadedObjectView`
+(`POST /panel/documentacion/explorador/agente/registrar/`) -- recibe
+`bucket`+`blob_name`, autenticado por token compartido
+(`settings.H28_AGENT_API_TOKEN`, `constant_time_compare`), lee los
+metadatos reales del blob recién subido directamente de GCS (una sola
+llamada dirigida, coherente con el principio ya vigente de "GCS solo
+se toca al abrir contenido", ampliado aquí a "o cuando alguien avisa
+explícitamente de un objeto nuevo") y escribe la fila (más la cadena
+de carpetas ancestras) al momento. `index_writer.refresh_folder()`
+extraída como función reutilizable (antes vivía solo dentro del
+comando `refresh_document_folder`) para no duplicar la lógica de
+persistencia entre el comando, la vista y la tarea de seguridad.
+
+**Construido esta sesión, lado agente
+(`h28_migration_agent/`):** `server_notify.notify_server_of_upload()`
+-- POST de mejor esfuerzo, solo librería estándar (`urllib.request`,
+sin dependencia nueva, sin tocar `requirements.in` del agente),
+llamado justo tras cada subida con éxito a cuarentena en los DOS
+caminos reales que suben a cuarentena (`uploader.
+upload_single_file_to_quarantine`, usado por el vigilante y por la
+puesta al día; y `reconciler._upload_with_retries`, el camino de
+reconciliación -- verificado que no había un tercero). Token leído con
+el mismo patrón que la clave de cuenta de servicio: variable de
+entorno primero, si no, un archivo de texto plano dentro de
+`agent_data/` (nunca commiteado). Nunca fatal -- un aviso fallido no
+bloquea ni revierte la subida a GCS, que sigue siendo siempre directa
+(decisión 4 de S030, sin contradicción: esto es un canal de aviso
+aparte, sin contenido de archivo, no una ruta de subida alternativa).
+
+**Pendiente, fuera del alcance de esta sesión -- workflow distinto al
+de este repositorio:** recompilar y desplegar el ejecutable
+(PyInstaller local, no `git push` al servidor) en la máquina de Miguel
+Ángel, y fijar el mismo token en `.env` del servidor
+(`H28_AGENT_API_TOKEN`) y en `agent_data/server_api_token.txt` del
+agente.
+
+**Tarea Celery Beat de refresco periódico:** reencuadrada como red de
+seguridad de baja frecuencia (cada hora, `refresh-quarantine-index-safety-net`
+en `CELERY_BEAT_SCHEDULE`), no como mecanismo principal -- cubre el
+caso de que el aviso instantáneo falle (agente caído a mitad, sin red
+en ese instante, etc.).
+
 ## 4. Consecuencia directa: las tres únicas vías de escritura
 
 De 3.1, 3.2 y 3.8 se sigue que un objeto solo puede aparecer o

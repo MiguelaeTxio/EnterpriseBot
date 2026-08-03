@@ -27,6 +27,13 @@ DEBUG = os.getenv('DEBUG', 'False') == 'True'
 # Clave de API para Google Gemini 2.0 Flash Live (Estándar de Abril de 2026)
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 
+# Token compartido para el webhook document_explorer.RegisterUploadedObjectView
+# (H29, S040) -- lo usa el agente de migración H28 para avisar al servidor,
+# justo tras cada subida con éxito, de qué objeto acaba de escribir en GCS.
+# Debe fijarse en .env, y el agente debe llevar el mismo valor. Sin valor,
+# la vista rechaza toda petición (ver `if not expected`).
+H28_AGENT_API_TOKEN = os.getenv('H28_AGENT_API_TOKEN')
+
 # ✅ APRIL 2026 SECURITY POLICY: Dynamic Ngrok TLD Resolution
 # Explicitly allowing .app, .dev, and .free.app for Ngrok v3 Agent compatibility.
 # POLÍTICA DE SEGURIDAD ABRIL 2026: Resolución dinámica de TLDs de Ngrok.
@@ -347,5 +354,24 @@ CELERY_BEAT_SCHEDULE = {
     'self-heal-unassigned-personal-documents': {
         'task':     'document_ingestion.tasks.self_heal_unassigned_personal_documents',
         'schedule': crontab(minute='*/15'),
+    },
+
+    # ---------------------------------------------------------------------------
+    # FILE EXPLORER — Hito 29
+    # Explorador de archivos — Hito 29.
+    # ---------------------------------------------------------------------------
+
+    # Red de seguridad de baja frecuencia (H29, S040) -- el mecanismo
+    # PRINCIPAL de consistencia del índice es RegisterUploadedObjectView,
+    # el webhook al que el agente H28 avisa al momento de cada subida
+    # (ver document_explorer/views.py). Esta tarea existe solo para el
+    # caso de que ese aviso falle (agente caído a mitad, sin red en ese
+    # instante, etc.) -- Miguel Ángel fue explícito en que el panel NO
+    # debe depender de un refresco periódico para ver lo que ya está en
+    # GCS, así que la cadencia es deliberadamente baja (una vez a la
+    # hora), nunca el camino que se espera que se use en el día a día.
+    'refresh-quarantine-index-safety-net': {
+        'task':     'document_explorer.tasks.refresh_quarantine_index_task',
+        'schedule': crontab(minute=0),
     },
 }

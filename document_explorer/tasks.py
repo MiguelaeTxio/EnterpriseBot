@@ -191,3 +191,113 @@ def classify_entries_task(self, log_id: int, entry_pks: list) -> None:
         log.status = DataOperationLog.STATUS_FAILED
         log.save(update_fields=["status"])
         raise
+
+
+@app.task(base=DjangoTask, bind=True, max_retries=0)
+def refresh_quarantine_index_task(self) -> None:
+    """
+    **Low-frequency SAFETY NET, not the primary mechanism** (corrected
+    same session, H29 annex 3.30) -- the primary path is
+    `document_explorer.views.RegisterUploadedObjectView`, a webhook
+    the H28 agent calls right after each successful upload, writing
+    the index row at that exact moment. Miguel Ángel was explicit that
+    the panel must never depend on a periodic refresh to see what is
+    already in GCS: "no debe de ser necesario refrescar desde Google
+    Cloud Storage." This task only exists for when that webhook call
+    itself fails (agent down mid-upload, no network at that instant,
+    etc.) -- hence the hourly cadence in `CELERY_BEAT_SCHEDULE`, not
+    every few minutes.
+
+    Real incident that led to building the underlying `index_writer.
+    refresh_folder()` machinery this task reuses, S040: Miguel Ángel
+    dropped a test folder/file straight into a watched folder, the
+    H28 agent uploaded it to quarantine correctly (confirmed in the
+    agent's own history and, later, in the bucket itself), but it
+    stayed invisible in the panel because nothing ever told the index
+    it existed. Verbatim: "no podemos tener (...) un archivo ya
+    subido (...) y que esté totalmente oculto al usuario. Esto puede
+    provocar muchos errores."
+
+    Deliberately scoped to `_CUARENTENA/` only, not the whole bucket
+    -- confirmed against the real code (`h28_migration_agent/
+    uploader.py`, `build_blob_name` vs `build_quarantine_blob_name`)
+    that the agent NEVER writes a new file straight into `DOC.
+    MAQUINAS`/`DOC. PERSONAL`; every new file always lands in
+    quarantine first. So quarantine is the only place new files can
+    ever go "invisible" this way -- refreshing the whole ~37.500-file
+    tree on a timer would be needless cost for a problem that only
+    ever happens in one small corner of it.
+
+    Walks `_CUARENTENA/` breadth-first using `index_writer.
+    refresh_folder()` (same routine logic as the
+    `refresh_document_folder` management command, not duplicated)
+    one level at a time -- quarantine is expected to stay small
+    (pending classification, not the whole historical corpus), so a
+    plain queue-based walk is simple and cheap enough; no need for
+    the single-listing-call optimisation `refresh_document_folder`'s
+    docstring describes for the full bucket.
+
+    ---
+
+    **Red de seguridad de baja frecuencia, no el mecanismo principal**
+    (corregido en la misma sesión, anexo H29 3.30) -- el camino
+    principal es `document_explorer.views.RegisterUploadedObjectView`,
+    un webhook al que el agente H28 avisa justo tras cada subida con
+    éxito, escribiendo la fila del índice en ese mismo momento. Miguel
+    Ángel fue explícito en que el panel nunca debe depender de un
+    refresco periódico para ver lo que ya está en GCS: "no debe de ser
+    necesario refrescar desde Google Cloud Storage." Esta tarea solo
+    existe para cuando ese propio aviso falla (agente caído a mitad de
+    subida, sin red en ese instante, etc.) -- de ahí la cadencia
+    horaria en `CELERY_BEAT_SCHEDULE`, no cada pocos minutos.
+
+    Incidente real que llevó a construir la maquinaria de
+    `index_writer.refresh_folder()` que esta tarea reutiliza, S040:
+    Miguel Ángel soltó una carpeta/archivo de
+    prueba directamente en una carpeta vigilada, el agente H28 lo
+    subió a cuarentena correctamente (confirmado en el propio
+    historial del agente y, después, en el propio cubo), pero se
+    quedó invisible en el panel porque nada le decía nunca al índice
+    que existía. Verbatim: "no podemos tener (...) un archivo ya
+    subido (...) y que esté totalmente oculto al usuario. Esto puede
+    provocar muchos errores."
+
+    Acotada a propósito solo a `_CUARENTENA/`, no al cubo entero --
+    confirmado contra el código real (`h28_migration_agent/
+    uploader.py`, `build_blob_name` frente a
+    `build_quarantine_blob_name`) que el agente NUNCA escribe un
+    archivo nuevo directamente en `DOC. MAQUINAS`/`DOC. PERSONAL`;
+    todo archivo nuevo pasa siempre antes por cuarentena. Así que
+    cuarentena es el único sitio donde un archivo nuevo puede quedar
+    "invisible" de esta forma -- refrescar el árbol entero de
+    ~37.500 archivos con un temporizador sería un coste innecesario
+    para un problema que solo ocurre en un rincón pequeño de él.
+
+    Recorre `_CUARENTENA/` en anchura con `index_writer.
+    refresh_folder()` (misma lógica rutinaria que ya usa el comando
+    de gestión `refresh_document_folder`, no duplicada) un nivel cada
+    vez -- se espera que la cuarentena se mantenga pequeña (pendiente
+    de clasificar, no el corpus histórico entero), así que un
+    recorrido simple por cola es suficientemente barato; no hace
+    falta la optimización de listado único que describe el docstring
+    de `refresh_document_folder` para el cubo completo.
+    """
+    from document_explorer.buckets import PRIMARY_BUCKET, QUARANTINE_PREFIX
+    from document_explorer import index_writer
+
+    root = QUARANTINE_PREFIX.rstrip("/")
+    queue = [root]
+    folders_seen = 0
+
+    while queue:
+        folder_path = queue.pop(0)
+        folders_seen += 1
+        _, _, _, subfolders = index_writer.refresh_folder(
+            PRIMARY_BUCKET, folder_path,
+        )
+        queue.extend(subfolders)
+
+    logger.info(
+        "# [refresh_quarantine_index_task] %d carpeta(s) de cuarentena "
+        "recorrida(s).", folders_seen,
+    )

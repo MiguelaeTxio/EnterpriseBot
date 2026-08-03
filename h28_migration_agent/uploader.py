@@ -17,6 +17,7 @@ import os
 from google.cloud.storage import transfer_manager
 
 from config import QUARANTINE_PREFIX, UPLOAD_MAX_WORKERS
+from server_notify import notify_server_of_upload
 from fs_utils import (
     is_cloud_only,
     is_transient_file,
@@ -329,4 +330,5 @@ def upload_single_file_to_quarantine(
     blob.upload_from_filename(to_long_path(absolute_file_path))
     logger.info("Cuarentena: %s -> gs://%s/%s",
                 absolute_file_path, bucket_name, blob_name)
+    notify_server_of_upload(bucket_name, blob_name)
     return blob_name

@@ -84,6 +84,34 @@ AGENT_DATA_FOLDER_NAME = "agent_data"
 SERVICE_ACCOUNT_KEY_FILE_NAME = "service_account_key.json"
 WATCHED_FOLDERS_STATE_FILE_NAME = "watched_folders.json"
 
+# Aviso instantaneo al servidor tras cada subida a cuarentena (H29,
+# S040 -- decision explicita de Miguel Angel): "cuando el agente sube
+# el archivo a cuarentena, inmediatamente se de una senal (...) para
+# que esa subida quede registrada en base de datos (...) deberia ser
+# instantanea." No sustituye ni contradice la decision 4 de S030
+# (subida directa a GCS, nunca a traves del servidor) -- el archivo en
+# si sigue subiendo directo a GCS con la libreria de Cloud Storage,
+# esto es solo un aviso aparte, sin contenido, de que ya termino.
+#
+# Mismo patron que la clave de cuenta de servicio: variable de entorno
+# tiene prioridad, si no hay, se lee un archivo dentro de agent_data/.
+# ---
+# Instant notification to the server after every quarantine upload
+# (H29, S040 -- Miguel Angel's explicit decision): "when the agent
+# uploads the file to quarantine, immediately a signal should fire
+# (...) so that upload is registered in the database (...) it should
+# be instant." Does not replace or contradict S030 decision 4 (direct
+# upload to GCS, never through the server) -- the file itself still
+# uploads straight to GCS with the Cloud Storage library; this is a
+# separate, contentless notification that it finished.
+#
+# Same pattern as the service account key: environment variable takes
+# priority, otherwise a file inside agent_data/ is read.
+SERVER_BASE_URL = "https://enterprisebot-miguelaetxio.pythonanywhere.com"
+SERVER_API_TOKEN_ENV_VAR = "H28_AGENT_API_TOKEN"
+SERVER_API_TOKEN_FILE_NAME = "server_api_token.txt"
+SERVER_NOTIFY_TIMEOUT_SECONDS = 15
+
 # Visor de historial (S033, decision de Miguel Angel: "el propio
 # agente" da el visor de tareas, no la plataforma web -- agente y
 # plataforma quedan separados). Guarda los ultimos eventos (copias y
@@ -278,6 +306,37 @@ def get_service_account_key_path():
     return os.path.join(
         get_agent_data_dir(), SERVICE_ACCOUNT_KEY_FILE_NAME
     )
+
+
+def get_server_api_token():
+    """Return the shared token for the server upload-notification webhook.
+    ---
+    Devuelve el token compartido para el webhook de aviso de subida
+    al servidor.
+
+    Priority: the environment variable, if set; otherwise a plain
+    text file inside agent_data/ (never committed, same folder as the
+    service account key). Returns None if neither exists -- callers
+    must treat that as "cannot notify this time", never raise and
+    never block the upload itself.
+    ---
+    Prioridad: la variable de entorno, si esta fijada; si no, un
+    archivo de texto plano dentro de agent_data/ (nunca commiteado,
+    misma carpeta que la clave de la cuenta de servicio). Devuelve
+    None si no existe ninguno de los dos -- quien llama debe tratarlo
+    como "no se puede avisar esta vez", nunca lanzar excepcion ni
+    bloquear la propia subida.
+    """
+    env_value = os.environ.get(SERVER_API_TOKEN_ENV_VAR)
+    if env_value:
+        return env_value.strip()
+    token_path = os.path.join(
+        get_agent_data_dir(), SERVER_API_TOKEN_FILE_NAME
+    )
+    if not os.path.isfile(token_path):
+        return None
+    with open(token_path, "r", encoding="utf-8") as f:
+        return f.read().strip() or None
 
 
 def get_watched_folders_state_path():

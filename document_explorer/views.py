@@ -137,7 +137,13 @@ from django.db.models import (
     BigIntegerField, Case, DateTimeField, F, Q, Value, When,
 )
 from django.db.models.functions import Cast, Coalesce
-from django.http import Http404, HttpResponseRedirect
+from django.http import (
+    Http404, HttpResponseBadRequest, HttpResponseForbidden,
+    HttpResponseNotFound, HttpResponseRedirect, JsonResponse,
+)
+from django.utils.crypto import constant_time_compare
+from django.utils.decorators import method_decorator
+from django.views.decorators.csrf import csrf_exempt
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.defaultfilters import filesizeformat
 from django.urls import reverse
@@ -147,7 +153,12 @@ from django.views import View
 from django.views.generic import TemplateView
 
 from panel.mixins import CompanyUserRequiredMixin
-from spare_parts.gcs_service import delete_file, generate_signed_url
+from django.conf import settings
+from django.db import transaction
+
+from spare_parts.gcs_service import (
+    delete_file, generate_signed_url, get_storage_client,
+)
 
 from document_explorer import friendly_names, index_writer, move_service, permissions
 from document_explorer import classification_service, duplicates_service, tasks
@@ -1995,3 +2006,113 @@ class PurgeTrashView(ExplorerAccessMixin, View):
             "conserva como registro de auditoría." % entry.name,
         )
         return redirect(reverse("document_explorer:trash"))
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class RegisterUploadedObjectView(View):
+    """
+    Webhook: `POST /panel/documentacion/explorador/agente/registrar/`.
+    Called by the H28 migration agent right after it finishes
+    uploading one object to GCS -- writes the `DocumentIndexEntry`
+    row (and its ancestor folder chain) at that same moment, so the
+    panel never depends on any refresh/poll to see a just-uploaded
+    file. Miguel Ángel, S040: "cuando se sube, realmente se graba el
+    archivo en GCS (...) y a la misma vez anotamos en base de datos
+    dónde se encuentra el archivo (...) no debe de ser necesario
+    refrescar desde Google Cloud Storage."
+
+    Not a Django session/CompanyUser caller -- the agent only holds a
+    GCS service account key, no platform login -- so this is
+    authenticated by a separate shared bearer token
+    (`settings.H28_AGENT_API_TOKEN`), compared with
+    `constant_time_compare` to avoid a timing side-channel, never a
+    plain `==`. `csrf_exempt` for the same reason every other webhook
+    in this project is (`whatsapp.views.IncomingWhatsAppView`,
+    `vox_bridge.views`): the caller is not a browser with a Django
+    session, so there is no CSRF token to check in the first place.
+
+    Trusts GCS, not the agent's own claims about the file -- reads the
+    blob's real metadata itself (one targeted `get_blob` call, the
+    same kind of one-off GCS touch already allowed for opening a
+    document) rather than accepting client-supplied size/hash in the
+    POST body. The agent only has to say WHICH object it just wrote,
+    never describe it.
+
+    Payload/status codes are between the agent and this view only --
+    never a browser-facing endpoint, so no `messages`, no template.
+
+    ---
+
+    Webhook: `POST /panel/documentacion/explorador/agente/registrar/`.
+    Llamado por el agente de migración H28 justo después de terminar
+    de subir un objeto a GCS -- escribe la fila `DocumentIndexEntry`
+    (y su cadena de carpetas ancestras) en ese mismo momento, así el
+    panel nunca depende de ningún refresco/sondeo para ver un archivo
+    recién subido. Miguel Ángel, S040: "cuando se sube, realmente se
+    graba el archivo en GCS (...) y a la misma vez anotamos en base de
+    datos dónde se encuentra el archivo (...) no debe de ser necesario
+    refrescar desde Google Cloud Storage."
+
+    No es un llamante con sesión Django/CompanyUser -- el agente solo
+    tiene una clave de cuenta de servicio de GCS, sin inicio de sesión
+    en la plataforma -- así que se autentica con un token compartido
+    aparte (`settings.H28_AGENT_API_TOKEN`), comparado con
+    `constant_time_compare` para evitar un canal lateral de tiempo,
+    nunca un `==` plano. `csrf_exempt` por el mismo motivo que
+    cualquier otro webhook de este proyecto
+    (`whatsapp.views.IncomingWhatsAppView`, `vox_bridge.views`): quien
+    llama no es un navegador con sesión Django, así que no hay ningún
+    token CSRF que comprobar en primer lugar.
+
+    Confía en GCS, no en lo que el agente diga del archivo -- lee los
+    metadatos reales del blob por sí misma (una llamada dirigida a
+    `get_blob`, el mismo tipo de toque puntual a GCS ya permitido para
+    abrir un documento) en vez de aceptar tamaño/hash que mande el
+    propio POST. El agente solo tiene que decir QUÉ objeto acaba de
+    escribir, nunca describirlo.
+
+    El payload/códigos de estado son cosa solo entre el agente y esta
+    vista -- nunca un endpoint de cara al navegador, así que sin
+    `messages`, sin plantilla.
+    """
+
+    def post(self, request):
+        token = request.headers.get("Authorization", "")
+        token = token.removeprefix("Bearer ").strip()
+        expected = getattr(settings, "H28_AGENT_API_TOKEN", "") or ""
+        if not expected or not constant_time_compare(token, expected):
+            return HttpResponseForbidden("Token inválido.")
+
+        bucket_name = (request.POST.get("bucket") or "").strip()
+        blob_name = (request.POST.get("blob_name") or "").strip()
+        if bucket_name not in INDEXED_BUCKETS or not blob_name:
+            return HttpResponseBadRequest(
+                "Faltan 'bucket' (indexado) o 'blob_name'."
+            )
+
+        client = get_storage_client()
+        blob = client.bucket(bucket_name).get_blob(blob_name)
+        if blob is None:
+            return HttpResponseNotFound(
+                "El objeto no existe en el cubo -- ¿subida todavía en "
+                "curso, o ya borrado?"
+            )
+
+        parent_path, _ = index_writer.split_path(blob_name)
+        row = index_writer.file_row(blob)
+
+        with transaction.atomic():
+            index_writer.ensure_folder_chain(bucket_name, parent_path)
+            created, updated = index_writer.persist_rows(
+                bucket_name, [row],
+            )
+            index_writer.recount_children(
+                bucket_name,
+                folder_paths=index_writer.ancestors_of(parent_path),
+            )
+
+        return JsonResponse({
+            "status": "ok",
+            "created": bool(created),
+            "updated": bool(updated),
+        })

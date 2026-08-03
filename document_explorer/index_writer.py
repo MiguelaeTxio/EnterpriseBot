@@ -399,3 +399,79 @@ def link_domain_objects(bucket_name):
             batch_size=BATCH_SIZE,
         )
     return len(pending), model.__name__
+
+
+def refresh_folder(bucket_name, folder_path, prelisted=None):
+    """
+    Refresh ONE folder's direct files and direct subfolders against
+    the real bucket -- the same logic already validated in the
+    `refresh_document_folder` management command, extracted here so
+    it can be reused by anything that needs the same routine refresh
+    (that command, and `document_explorer.tasks.
+    refresh_quarantine_index_task`, H29 S040) without duplicating it.
+
+    `prelisted`: optional `(blobs, subfolders)` already fetched by the
+    caller (e.g. because it also needs them to render a report before
+    writing) -- avoids listing the same GCS prefix twice. Pass
+    `None` (the default) to have this function list it itself.
+
+    Returns `(created, updated, touched, subfolders)` -- `subfolders`
+    (the direct subfolder paths found) lets a caller walk deeper
+    without re-listing what this call already saw.
+
+    ---
+
+    Refresca los archivos y subcarpetas directos de UNA carpeta
+    contra el cubo real -- la misma lógica ya validada del comando de
+    gestión `refresh_document_folder`, extraída aquí para que la
+    reutilice cualquier cosa que necesite el mismo refresco rutinario
+    (ese comando, y `document_explorer.tasks.
+    refresh_quarantine_index_task`, H29 S040) sin duplicarla.
+
+    `prelisted`: opcionalmente, `(blobs, subfolders)` ya obtenidos por
+    quien llama (p. ej. porque también los necesita para mostrar un
+    informe antes de escribir) -- evita listar el mismo prefijo de GCS
+    dos veces. Pasar `None` (por defecto) para que esta función lo
+    liste ella misma.
+
+    Devuelve `(created, updated, touched, subfolders)` -- `subfolders`
+    (las rutas de subcarpeta directas encontradas) permite a quien
+    llama bajar más sin volver a listar lo que esta llamada ya vio.
+    """
+    from django.db import transaction
+    from document_explorer.buckets import MARKS_PREFIX
+    from document_explorer.gcs_index_service import list_folder_children
+    from spare_parts.gcs_service import get_storage_client
+
+    if prelisted is not None:
+        blobs, subfolders = prelisted
+    else:
+        client = get_storage_client()
+        blobs, subfolders = list_folder_children(
+            client, bucket_name, folder_path,
+        )
+        blobs = [b for b in blobs if not b.name.startswith(MARKS_PREFIX)]
+        subfolders = [
+            p for p in subfolders
+            if not (p + "/").startswith(MARKS_PREFIX)
+        ]
+
+    file_rows = [file_row(b) for b in blobs]
+    rows = [folder_row(path) for path in subfolders] + file_rows
+    if folder_path:
+        rows.append(folder_row(folder_path))
+
+    scope = {path_digest(row["blob_name"]) for row in rows}
+
+    with transaction.atomic():
+        created, updated = persist_rows(
+            bucket_name, rows, scope_hashes=scope,
+            skip_fields=("total_size_bytes",),
+        )
+        touched = recount_children(
+            bucket_name,
+            folder_paths=subfolders + (
+                [folder_path] if folder_path else []
+            ),
+        )
+    return created, updated, touched, subfolders
