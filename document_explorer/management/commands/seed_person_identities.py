@@ -169,24 +169,51 @@ class Command(BaseCommand):
             dni = _normalize_dni(dni_raw)
             second_surname = (result.get("second_surname_hint") or "").strip()
 
+            # Fallo real detectado en la primera prueba controlada
+            # (S040): un mismo DNI puede aparecer varias veces (el
+            # actual y viejos escaneos guardados en una subcarpeta
+            # "OBSOLETO"/"OBSOLETOS"), y update_or_create sobrescribía
+            # la carpeta cada vez que encontraba otro -- si el último
+            # procesado era el obsoleto, la identidad terminaba
+            # apuntando a la carpeta equivocada. Regla: una carpeta
+            # obsoleta nunca sobrescribe una carpeta ya buena; entre
+            # dos candidatas igual de buenas (o igual de obsoletas), se
+            # conserva la primera encontrada.
+            existing = PersonIdentity.objects.filter(dni=dni).first()
+            new_is_obsolete = "obsoleto" in entry.parent_path.lower()
+            if existing is None:
+                should_update_folder = True
+            elif "obsoleto" in existing.folder_path.lower() and not new_is_obsolete:
+                should_update_folder = True  # mejora: de obsoleta a buena
+            else:
+                should_update_folder = False  # conserva lo que ya había
+
+            defaults = {
+                "first_surname": first_surname,
+                "second_surname": second_surname,
+                "given_name": given_name,
+            }
+            if should_update_folder:
+                defaults["folder_path"] = entry.parent_path
+                defaults["source_entry"] = entry
+
             _, created = PersonIdentity.objects.update_or_create(
-                dni=dni,
-                defaults={
-                    "first_surname": first_surname,
-                    "second_surname": second_surname,
-                    "given_name": given_name,
-                    "folder_path": entry.parent_path,
-                    "source_entry": entry,
-                },
+                dni=dni, defaults=defaults,
             )
             if created:
                 created_count += 1
             else:
                 updated_count += 1
             self.stdout.write(self.style.SUCCESS(
-                "  %s -- %s %s %s -- %s"
-                % (dni, first_surname, second_surname, given_name,
-                   entry.parent_path)
+                "  %s -- %s %s %s -- %s%s"
+                % (
+                    dni, first_surname, second_surname, given_name,
+                    entry.parent_path if should_update_folder
+                    else "(carpeta conservada: %s)" % (
+                        existing.folder_path if existing else "?"
+                    ),
+                    "" if should_update_folder else " -- descartada por obsoleta",
+                )
             ))
 
         self.stdout.write(self.style.MIGRATE_HEADING(

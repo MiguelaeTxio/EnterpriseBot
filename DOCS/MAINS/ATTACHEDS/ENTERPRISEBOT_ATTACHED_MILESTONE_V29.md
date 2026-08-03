@@ -1280,6 +1280,26 @@ construya:** qué hacer con el caso "dos en uno" del Modelo 145 (varias
 personas en un solo archivo) -- mismo punto abierto que 3.24 para
 máquina, sin decisión tomada todavía sobre partición de archivos.
 
+**Corrección real, primera prueba controlada de `seed_person_identities`
+(15 candidatos, S040):** un mismo DNI puede aparecer varias veces en
+el corpus (el escaneo vigente y viejos escaneos guardados en una
+subcarpeta `OBSOLETO`/`OBSOLETOS`), y `update_or_create` sobrescribía
+la carpeta cada vez que encontraba otro -- si el último candidato
+procesado (orden alfabético de `blob_name`) resultaba ser el obsoleto,
+la identidad quedaba apuntando a la carpeta equivocada. Confirmado con
+un caso real: Alberto Álvarez Díaz (`25099061N`) terminó con
+`OBSOLETOS` como carpeta. Corregido: una carpeta obsoleta nunca
+sobrescribe una ya buena; entre dos igual de buenas (o igual de
+obsoletas), se conserva la primera encontrada.
+
+**Hallazgo sin resolver, pendiente de que lo confirme Miguel Ángel:**
+la misma prueba encontró a "ALVAREZ DIAZ ADOLFO" con dos DNI distintos
+(`25902678A` en `FORMACION TRABAJADORES/ANAPAT`, `24902678A` en
+`PERSONAL/ADMINISTRACION/ALVAREZ DIAZ ADOLFO`) -- un solo dígito de
+diferencia, probable error de lectura de Gemini en uno de los dos
+escaneos, pero el modelo no puede comprobar cuál sin abrir el
+documento. Sin resolver por interpretación propia.
+
 ## 4. Consecuencia directa: las tres únicas vías de escritura
 
 De 3.1, 3.2 y 3.8 se sigue que un objeto solo puede aparecer o
