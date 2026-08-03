@@ -1292,13 +1292,30 @@ un caso real: Alberto Álvarez Díaz (`25099061N`) terminó con
 sobrescribe una ya buena; entre dos igual de buenas (o igual de
 obsoletas), se conserva la primera encontrada.
 
-**Hallazgo sin resolver, pendiente de que lo confirme Miguel Ángel:**
-la misma prueba encontró a "ALVAREZ DIAZ ADOLFO" con dos DNI distintos
-(`25902678A` en `FORMACION TRABAJADORES/ANAPAT`, `24902678A` en
-`PERSONAL/ADMINISTRACION/ALVAREZ DIAZ ADOLFO`) -- un solo dígito de
-diferencia, probable error de lectura de Gemini en uno de los dos
-escaneos, pero el modelo no puede comprobar cuál sin abrir el
-documento. Sin resolver por interpretación propia.
+**Hallazgo cerrado con datos reales de Miguel Ángel:** confirmado con
+capturas de 5 documentos distintos de la persona (certificado PEMP,
+el propio DNI escaneado, dos certificados de formación, informe de
+vida laboral) que el DNI real es `24902678A` -- el documento de la
+carpeta `ANAPAT` es perfectamente legible, así que **no** era un
+problema de mala calidad del escaneo: Gemini simplemente leyó mal un
+dígito en un documento claro. Motivó la corrección siguiente.
+
+### 3.32. Validación de la letra de control del DNI/NIE antes de aceptar cualquier `dni_hint` (S040)
+
+`classification_service.is_valid_spanish_dni()`: algoritmo público y
+determinista del DNI/NIE español (8 dígitos, o NIE con la letra
+inicial sustituida por 0/1/2, módulo 23, indexa una tabla de 23
+letras) -- puramente aritmético, sin llamada de red ni a Gemini.
+Verificado contra el caso real: `24902678A` pasa (letra esperada `A`),
+`25902678A` no pasa (letra esperada `D`) -- el propio número delata la
+lectura errónea sin necesidad de abrir el documento.
+
+Conectado en dos sitios: `resolve_person_identity()` rechaza cualquier
+`dni_hint` inválido antes de consultar `PersonIdentity` (nunca deja
+que un DNI matemáticamente imposible reubique un archivo), y
+`seed_person_identities` descarta el candidato antes de guardarlo en
+el índice. Ningún DNI inválido puede llegar a persistirse ni a usarse
+para resolver una carpeta, venga de donde venga.
 
 ## 4. Consecuencia directa: las tres únicas vías de escritura
 

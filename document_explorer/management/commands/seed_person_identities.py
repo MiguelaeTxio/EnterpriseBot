@@ -166,6 +166,20 @@ class Command(BaseCommand):
                 rejected_count += 1
                 continue
 
+            # Hallazgo real S040 (documento "ADOLFO DNI.pdf",
+            # perfectamente legible, confirmado por Miguel Ángel con 5
+            # documentos más de la misma persona): Gemini puede leer
+            # mal un dígito incluso en un documento claro. La letra de
+            # control real del DNI lo detecta gratis, sin abrir nada.
+            if not classification_service.is_valid_spanish_dni(dni_raw):
+                self.stdout.write(self.style.WARNING(
+                    "  Descartado (DNI leído no pasa la letra de "
+                    "control -- probable lectura errónea de Gemini, "
+                    "%s): %s" % (dni_raw, entry.blob_name)
+                ))
+                rejected_count += 1
+                continue
+
             dni = _normalize_dni(dni_raw)
             second_surname = (result.get("second_surname_hint") or "").strip()
 

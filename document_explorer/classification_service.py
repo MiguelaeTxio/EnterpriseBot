@@ -354,9 +354,52 @@ def resolve_machine_asset(entry) -> MachineAsset | None:
 
 _DNI_NORMALIZE_RE = re.compile(r"[^A-Z0-9]")
 
+# Letra de control real del DNI/NIE español -- algoritmo público y
+# determinista (los 8 dígitos, en NIE con la letra inicial sustituida
+# por 0/1/2, módulo 23, indexan esta tabla). Confirmado con datos
+# reales, S040: Gemini leyó "25902678A" para un documento cuyo DNI
+# real (verificado con 5 documentos distintos de la misma persona,
+# más el propio DNI escaneado) es "24902678A" -- "25902678A" no pasa
+# esta comprobación (letra esperada "D", no "A"), así que ni siquiera
+# hacía falta abrir el documento para descartarlo.
+_DNI_CHECK_LETTERS = "TRWAGMYFPDXBNJZSQVHLCKE"
+_NIE_PREFIX_DIGIT = {"X": "0", "Y": "1", "Z": "2"}
+
 
 def _normalize_dni(raw_dni: str) -> str:
     return _DNI_NORMALIZE_RE.sub("", raw_dni.upper())
+
+
+def is_valid_spanish_dni(raw_dni: str) -> bool:
+    """
+    Validates a Spanish DNI/NIE by its real, public check-letter
+    algorithm -- purely arithmetic, no network call, no Gemini,
+    catches a misread digit for free. A `dni_hint` that fails this
+    can never be a real DNI, so it is rejected before ever reaching
+    `PersonIdentity` -- see module-level note above for the real case
+    that motivated this (S040).
+
+    ---
+
+    Valida un DNI/NIE español con su algoritmo real y público de letra
+    de control -- puramente aritmético, sin llamada de red, sin
+    Gemini, detecta gratis un dígito mal leído. Un `dni_hint` que no
+    pasa esto nunca puede ser un DNI real, así que se rechaza antes de
+    llegar siquiera a `PersonIdentity` -- ver la nota a nivel de
+    módulo más arriba para el caso real que motivó esto (S040).
+    """
+    value = _normalize_dni(raw_dni)
+    if len(value) != 9:
+        return False
+    digits_part, letter = value[:8], value[8]
+    if not letter.isalpha():
+        return False
+    first_char = digits_part[0]
+    if first_char in _NIE_PREFIX_DIGIT:
+        digits_part = _NIE_PREFIX_DIGIT[first_char] + digits_part[1:]
+    if not digits_part.isdigit():
+        return False
+    return letter == _DNI_CHECK_LETTERS[int(digits_part) % 23]
 
 
 def resolve_person_identity(dni_hint: str) -> PersonIdentity | None:
@@ -368,11 +411,16 @@ def resolve_person_identity(dni_hint: str) -> PersonIdentity | None:
     one particular document, same principle already applied to
     machine code (`resolve_machine_asset`, H29 3.27).
 
-    Returns None both when `dni_hint` is empty/unreadable and when no
-    `PersonIdentity` has been seeded for it yet (`seed_person_identities`
-    hasn't classified that person's DNI, or never will if their DNI
-    was never uploaded) -- callers must treat both cases the same way:
-    "cannot resolve", never guess a folder from the name alone.
+    Rejects a `dni_hint` that fails `is_valid_spanish_dni()` before
+    ever querying -- a real Gemini misread (S040) is caught for free,
+    arithmetically, without needing the document open.
+
+    Returns None both when `dni_hint` is empty/invalid/unreadable and
+    when no `PersonIdentity` has been seeded for it yet
+    (`seed_person_identities` hasn't classified that person's DNI, or
+    never will if their DNI was never uploaded) -- callers must treat
+    all these cases the same way: "cannot resolve", never guess a
+    folder from the name alone.
 
     ---
 
@@ -384,15 +432,20 @@ def resolve_person_identity(dni_hint: str) -> PersonIdentity | None:
     documento concreto -- mismo principio ya aplicado al código de
     máquina (`resolve_machine_asset`, H29 3.27).
 
-    Devuelve None tanto cuando `dni_hint` está vacío/ilegible como
-    cuando todavía no se ha sembrado ningún `PersonIdentity` para él
-    (`seed_person_identities` no ha clasificado el DNI de esa persona
-    todavía, o nunca lo hará si su DNI nunca se subió) -- quien llama
-    debe tratar los dos casos igual: "no se puede resolver", nunca
-    adivinar una carpeta solo por el nombre.
+    Rechaza un `dni_hint` que no pase `is_valid_spanish_dni()` antes
+    siquiera de consultar -- una lectura errónea real de Gemini (S040)
+    se detecta gratis, aritméticamente, sin necesitar el documento
+    abierto.
+
+    Devuelve None tanto cuando `dni_hint` está vacío/inválido/ilegible
+    como cuando todavía no se ha sembrado ningún `PersonIdentity` para
+    él (`seed_person_identities` no ha clasificado el DNI de esa
+    persona todavía, o nunca lo hará si su DNI nunca se subió) -- quien
+    llama debe tratar todos estos casos igual: "no se puede resolver",
+    nunca adivinar una carpeta solo por el nombre.
     """
     dni_hint = (dni_hint or "").strip()
-    if not dni_hint:
+    if not dni_hint or not is_valid_spanish_dni(dni_hint):
         return None
     return PersonIdentity.objects.filter(dni=_normalize_dni(dni_hint)).first()
 
