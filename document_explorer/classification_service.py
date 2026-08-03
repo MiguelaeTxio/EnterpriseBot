@@ -60,7 +60,10 @@ mismo principio que `move_service` (v2, puntero puro, S039). Ver
 """
 import datetime
 import logging
+import os
 import re
+import subprocess
+import tempfile
 import time
 
 from google.genai.types import GenerateContentConfig, HttpOptions, Part
@@ -98,6 +101,19 @@ _SUPPORTED_MIME_TYPES = {
     "image/heif",
     "text/plain",
 }
+
+# Extensiones que LibreOffice headless sabe convertir a PDF -- S040,
+# tras el hallazgo real de un .docx rechazado por Gemini. Solo Office
+# clásico de documento/hoja/presentación; deliberadamente no incluye
+# nada que ya esté en _SUPPORTED_MIME_TYPES (PDF, imágenes, texto
+# plano ya se aceptan directamente, sin pasar por LibreOffice).
+_LIBREOFFICE_CONVERTIBLE_EXTENSIONS = {
+    "docx", "doc", "odt", "rtf",
+    "xlsx", "xls", "ods",
+    "pptx", "ppt", "odp",
+}
+_SOFFICE_TIMEOUT_SECONDS = 90
+
 
 _RESPONSE_SCHEMA = {
     "type": "object",
@@ -402,6 +418,87 @@ def check_machine_mismatch(entry, result: dict) -> str | None:
     )
 
 
+def _convert_to_pdf(content_bytes: bytes, extension: str) -> bytes | None:
+    """
+    Converts an Office document to PDF using LibreOffice headless
+    (`soffice`), confirmed installed on the server (`/usr/bin/soffice`,
+    6.4.7.2) before writing this function -- never assumed. Purely
+    in-memory from the caller's point of view: writes to a throwaway
+    temp directory, reads the resulting PDF bytes back, and deletes
+    everything before returning. **Never touches GCS** -- the
+    converted PDF exists only long enough to hand to Gemini, per the
+    same "clasificar nunca toca GCS" rule as the rest of this module
+    (H29 annex 3.19); it is not a new document, just a disposable
+    intermediate for reading content Gemini can't read natively.
+
+    Runs with `-env:UserInstallation=file://<tmp>` pointing at its own
+    throwaway LibreOffice profile directory -- avoids the well-known
+    "user installation is locked" failure if two conversions ever ran
+    at once (today's Celery worker has concurrency=1, so this is
+    precautionary, not currently load-bearing).
+
+    Returns None on any failure (timeout, `soffice` missing, corrupt
+    input, unexpected output) -- callers must fall back to the
+    "unsupported" error path, never guess or retry silently.
+
+    ---
+
+    Convierte un documento de Office a PDF con LibreOffice headless
+    (`soffice`), confirmado instalado en el servidor
+    (`/usr/bin/soffice`, 6.4.7.2) antes de escribir esta función --
+    nunca asumido. Puramente en memoria desde el punto de vista de
+    quien llama: escribe en un directorio temporal desechable, lee de
+    vuelta los bytes del PDF resultante, y borra todo antes de
+    devolver. **Nunca toca GCS** -- el PDF convertido existe solo el
+    tiempo necesario para dárselo a Gemini, según la misma regla de
+    "clasificar nunca toca GCS" que el resto de este módulo (anexo H29
+    3.19); no es un documento nuevo, solo un intermedio desechable
+    para leer contenido que Gemini no sabe leer de forma nativa.
+
+    Corre con `-env:UserInstallation=file://<tmp>` apuntando a su
+    propio perfil desechable de LibreOffice -- evita el fallo conocido
+    de "user installation is locked" si alguna vez corrieran dos
+    conversiones a la vez (el worker Celery de hoy tiene
+    concurrency=1, así que esto es precautorio, no necesario todavía).
+
+    Devuelve None ante cualquier fallo (timeout, falta `soffice`,
+    entrada corrupta, salida inesperada) -- quien llama debe caer al
+    camino de "no soportado", nunca adivinar ni reintentar en
+    silencio.
+    """
+    with tempfile.TemporaryDirectory() as workdir:
+        input_path = os.path.join(workdir, "input." + extension)
+        profile_dir = os.path.join(workdir, "profile")
+        with open(input_path, "wb") as f:
+            f.write(content_bytes)
+        try:
+            subprocess.run(
+                [
+                    "soffice", "--headless", "--norestore",
+                    "-env:UserInstallation=file://%s" % profile_dir,
+                    "--convert-to", "pdf", "--outdir", workdir, input_path,
+                ],
+                check=True, timeout=_SOFFICE_TIMEOUT_SECONDS,
+                capture_output=True,
+            )
+        except Exception as exc:
+            logger.warning(
+                "# [_convert_to_pdf] Fallo convirtiendo .%s a PDF: %s",
+                extension, exc, exc_info=True,
+            )
+            return None
+
+        output_path = os.path.join(workdir, "input.pdf")
+        if not os.path.exists(output_path):
+            logger.warning(
+                "# [_convert_to_pdf] soffice terminó sin error pero no "
+                "generó input.pdf para .%s", extension,
+            )
+            return None
+        with open(output_path, "rb") as f:
+            return f.read()
+
+
 def classify_entry(entry, domain: str | None = None) -> dict:
     """
     Downloads the real object content from GCS and asks Gemini to
@@ -413,6 +510,13 @@ def classify_entry(entry, domain: str | None = None) -> dict:
     `domain` is optional -- pass it when already known (narrows the
     catalog, more accurate); leave it out for quarantine files, where
     Gemini determines the domain itself as part of the same call.
+
+    Office documents (`.docx`/`.xlsx`/`.pptx`/...) are converted to
+    PDF first via `_convert_to_pdf()` -- Gemini's own mimeType
+    allow-list doesn't cover Office formats directly (see
+    `_SUPPORTED_MIME_TYPES`'s docstring). Only the converted PDF bytes
+    are sent to Gemini; nothing about the conversion is persisted
+    anywhere.
 
     ---
 
@@ -427,23 +531,43 @@ def classify_entry(entry, domain: str | None = None) -> dict:
     catálogo, más preciso); se omite para archivos de cuarentena,
     donde Gemini determina el propio dominio como parte de la misma
     llamada.
+
+    Los documentos de Office (`.docx`/`.xlsx`/`.pptx`/...) se
+    convierten primero a PDF vía `_convert_to_pdf()` -- la lista de
+    mimeTypes que acepta Gemini no cubre Office directamente (ver el
+    docstring de `_SUPPORTED_MIME_TYPES`). Solo los bytes del PDF
+    convertido se envían a Gemini; nada de la conversión se persiste
+    en ningún sitio.
     """
     import json
 
     mime_type = entry.content_type or "application/pdf"
-    if mime_type not in _SUPPORTED_MIME_TYPES:
-        return {
-            "error": (
-                "Tipo de archivo no soportado para clasificación con "
-                "Gemini (%s) -- verificado contra la documentación real "
-                "de la API el 2026-07-31, no todos los formatos de "
-                "oficina se aceptan directamente. Requiere conversión "
-                "previa (no construida todavía)." % mime_type
-            ),
-        }
+    extension = entry.name.rsplit(".", 1)[-1].lower() if "." in entry.name else ""
 
     try:
         content_bytes = download_bytes(entry.bucket, entry.blob_name)
+
+        if mime_type not in _SUPPORTED_MIME_TYPES:
+            if extension not in _LIBREOFFICE_CONVERTIBLE_EXTENSIONS:
+                return {
+                    "error": (
+                        "Tipo de archivo no soportado para clasificación "
+                        "con Gemini (%s) y sin conversión conocida para "
+                        "la extensión .%s." % (mime_type, extension)
+                    ),
+                }
+            converted = _convert_to_pdf(content_bytes, extension)
+            if converted is None:
+                return {
+                    "error": (
+                        "No se pudo convertir .%s a PDF con LibreOffice "
+                        "para poder clasificarlo (ver logs del servidor "
+                        "para el detalle)." % extension
+                    ),
+                }
+            content_bytes = converted
+            mime_type = "application/pdf"
+
         client = get_gemini_client()
         response = _generate_content_with_retry(
             client,

@@ -1123,6 +1123,38 @@ Historial -- justo la opacidad que 3.23 existe para evitar.
   la tarea corre, y pide recargar la página para ver avance (sin
   progreso en vivo por WebSocket ni similar, deliberadamente simple).
 
+### 3.29. Conversión de Office a PDF (LibreOffice headless) para poder clasificar .docx/.xlsx/.pptx (S040)
+
+Verbatim: *"cuando encontremos un documento como el que tenemos de
+ejemplo, el docx (...) convertirlo a PDF y clasificarlo."* Resuelve
+el fallo real de la primera prueba controlada (`.docx` rechazado por
+Gemini, 400 INVALID_ARGUMENT).
+
+**Verificado antes de escribir nada, nunca asumido:** `soffice`/
+`libreoffice` (6.4.7.2) confirmado instalado en el servidor real
+(`/usr/bin/soffice`) vía Comando S antes de tocar código. No hizo
+falta ninguna dependencia Python nueva -- se invoca por
+`subprocess`, de la librería estándar, así que `requirements.in` no
+se toca. Comprobación de coherencia 7.3 de `com-environment-management`
+ejecutada igualmente antes de empezar (candado limpio, sin
+divergencias).
+
+`classification_service._convert_to_pdf()`: convierte con
+`soffice --headless --convert-to pdf`, en un directorio temporal
+desechable con perfil de usuario propio
+(`-env:UserInstallation=...`, evita el bloqueo conocido de
+LibreOffice ante conversiones concurrentes). **Nunca toca GCS** -- el
+PDF convertido vive solo en memoria/disco temporal el tiempo de
+dárselo a Gemini, coherente con 3.19 (clasificar nunca toca GCS): no
+es un documento nuevo que se guarde en ningún sitio, es un intermedio
+desechable para que Gemini pueda leer contenido que no admite de
+forma nativa.
+
+Cubre `.docx`/`.doc`/`.odt`/`.rtf`/`.xlsx`/`.xls`/`.ods`/`.pptx`/
+`.ppt`/`.odp` -- todo lo que `soffice` sabe convertir a PDF, no solo
+el caso concreto del `.docx` de la prueba. Probado con un `.docx` real
+antes de comitear (conversión correcta, cabecera `%PDF-` verificada).
+
 ## 4. Consecuencia directa: las tres únicas vías de escritura
 
 De 3.1, 3.2 y 3.8 se sigue que un objeto solo puede aparecer o
