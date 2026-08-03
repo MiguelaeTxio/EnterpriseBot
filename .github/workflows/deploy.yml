@@ -122,7 +122,9 @@ jobs:
         #             y (AMPLIADO S025, hallazgo real -- ver más abajo)
         #             machine_documents/**, personal_documents/**,
         #             document_ingestion/**, document_management/**,
-        #             spare_parts/gcs_service.py.
+        #             spare_parts/gcs_service.py, y (AMPLIADO S040,
+        #             mismo patrón de incidente, ver más abajo)
+        #             document_explorer/**.
         #
         # ⛔ INCIDENTE S025: el patrón original solo cubría tasks.py y
         # ai_services/, pero machine_documents.tasks/document_ingestion.
@@ -141,6 +143,23 @@ jobs:
         # ampliado a las carpetas completas de dominio, no solo a
         # tasks.py, para que esto no vuelva a pasar con ningún otro
         # módulo que esas tareas importen.
+        #
+        # ⛔ INCIDENTE S040 (mismo patrón exacto que S025, repetido):
+        # document_explorer.tasks.classify_entries_task (H29, añadida
+        # en este mismo hito) importa
+        # document_explorer/classification_service.py, que no vive en
+        # tasks.py ni en ninguna de las carpetas ya cubiertas. Un fix
+        # real (conversión de Office a PDF con LibreOffice antes de
+        # clasificar) se desplegó al servidor (git pull correcto,
+        # verificado con `git log -1`) pero el worker Celery siguió
+        # con el proceso viejo en memoria -- confirmado con la cola
+        # real del log del worker, sin ninguna línea de arranque nueva
+        # tras el push. Miguel Ángel reprodujo el mismo .docx y siguió
+        # dando el error de mimeType antiguo pese al fix ya
+        # desplegado. `document_explorer/` entero añadido al patrón,
+        # no solo `classification_service.py`, por el mismo motivo que
+        # S025: cualquier módulo de esa app que `tasks.py` importe hoy
+        # o en el futuro debe disparar el reinicio.
         if: success()
         run: |
           set -o pipefail
@@ -160,7 +179,7 @@ jobs:
               echo "Bridge de voz: sin cambios relevantes, no se reinicia."
             fi
 
-            if echo "$CHANGED" | grep -qE '(tasks\.py$|ai_services/|enterprise_core/celery\.py|enterprise_core/settings\.py|start_celery_worker\.sh|machine_documents/|personal_documents/|document_ingestion/|document_management/|spare_parts/gcs_service\.py|spare_parts/services\.py)'; then
+            if echo "$CHANGED" | grep -qE '(tasks\.py$|ai_services/|enterprise_core/celery\.py|enterprise_core/settings\.py|start_celery_worker\.sh|machine_documents/|personal_documents/|document_ingestion/|document_management/|document_explorer/|spare_parts/gcs_service\.py|spare_parts/services\.py)'; then
               echo "--- Worker Celery: cambios relevantes detectados, reiniciando (id 242133) ---"
               curl -sf --max-time 60 -X POST "https://www.pythonanywhere.com/api/v0/user/MiguelAeTxio/always_on/242133/restart/" \
                 -H "Authorization: Token ${{ secrets.PA_API_TOKEN }}"
