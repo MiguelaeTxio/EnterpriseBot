@@ -783,3 +783,82 @@ class DataOperationLogEntry(models.Model):
 
     def __str__(self):
         return f"{self.get_action_display()}: {self.bucket}/{self.blob_name}"
+
+
+class PersonIdentity(models.Model):
+    """
+    DNI -> real DOC. PERSONAL folder mapping (H29, S040) -- the
+    personal-domain equivalent of `fleet.MachineAsset` for machines.
+    Miguel Angel, real evidence checked before designing anything:
+    18 real documents of one employee, all but one carried the
+    person's name and/or DNI inside the content itself -- confirming
+    DNI is a safe, reliable identifier to build this on, unlike the
+    filename (Hallazgo 5 of the H28 annex: the same operator's name
+    spelled eight different ways).
+
+    Seeded by classifying the `DNI`-type documents already sitting
+    inside `DOC. PERSONAL` (a management command, same pattern as
+    `audit_document_names`) -- never guessed, never hand-typed.
+
+    A DNI is treated as a hard identifier, unlike a name: an exact
+    match here is high-confidence enough to relocate a quarantine
+    file automatically. No match (or more than one candidate) means
+    "cannot resolve" -- callers must fall back to flagging for human
+    review, never guess a folder from a fuzzy name match.
+
+    ---
+
+    Mapeo DNI -> carpeta real de DOC. PERSONAL (H29, S040) -- el
+    equivalente de dominio personal a `fleet.MachineAsset` para
+    máquina. Miguel Ángel, evidencia real comprobada antes de diseñar
+    nada: 18 documentos reales de un mismo trabajador, todos menos
+    uno llevaban el nombre y/o DNI de la persona dentro del propio
+    contenido -- confirma que el DNI es un identificador fiable sobre
+    el que construir esto, a diferencia del nombre de archivo
+    (Hallazgo 5 del anexo H28: el nombre del mismo operario escrito de
+    ocho formas distintas).
+
+    Sembrado clasificando los documentos de tipo `DNI` que ya viven
+    dentro de `DOC. PERSONAL` (un comando de gestión, mismo patrón que
+    `audit_document_names`) -- nunca adivinado, nunca escrito a mano.
+
+    Un DNI se trata como identificador duro, a diferencia de un
+    nombre: una coincidencia exacta aquí es suficientemente fiable
+    para reubicar un archivo de cuarentena de forma automática. Sin
+    coincidencia (o más de un candidato) significa "no se puede
+    resolver" -- quien llama debe caer en marcar para revisión humana,
+    nunca adivinar una carpeta por parecido de nombre.
+    """
+
+    dni = models.CharField(
+        max_length=16,
+        unique=True,
+        verbose_name="DNI/NIE",
+        help_text="Normalizado: mayúsculas, sin espacios ni guiones.",
+    )
+    first_surname = models.CharField(max_length=100, verbose_name="Primer apellido")
+    second_surname = models.CharField(
+        max_length=100, blank=True, verbose_name="Segundo apellido",
+    )
+    given_name = models.CharField(max_length=100, verbose_name="Nombre")
+    folder_path = models.TextField(
+        verbose_name="Carpeta real (virtual) dentro de DOC. PERSONAL",
+    )
+    source_entry = models.ForeignKey(
+        DocumentIndexEntry,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+        verbose_name="DNI de origen usado para sembrar esta identidad",
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Fecha de alta")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Última actualización")
+
+    class Meta:
+        verbose_name = "Identidad de personal"
+        verbose_name_plural = "Identidades de personal"
+        ordering = ["first_surname", "second_surname", "given_name"]
+
+    def __str__(self):
+        return f"{self.dni} -- {self.first_surname} {self.second_surname} {self.given_name}"

@@ -76,7 +76,7 @@ from spare_parts.gcs_service import download_bytes
 from . import naming_service
 from .move_service import _virtual_location_taken
 
-from .models import DocumentTypeCatalog
+from .models import DocumentTypeCatalog, PersonIdentity
 
 logger = logging.getLogger(__name__)
 
@@ -127,13 +127,14 @@ _RESPONSE_SCHEMA = {
         "first_surname_hint": {"type": "string"},
         "second_surname_hint": {"type": "string"},
         "given_name_hint": {"type": "string"},
+        "dni_hint": {"type": "string"},
         "date_hint": {"type": "string"},
     },
     "required": [
         "domain", "document_type_code", "confidence", "reasoning",
         "machine_code_hint", "brand_model_hint",
         "first_surname_hint", "second_surname_hint",
-        "given_name_hint", "date_hint",
+        "given_name_hint", "dni_hint", "date_hint",
     ],
 }
 
@@ -168,10 +169,17 @@ documento (solo si el dominio es de máquina) -- p. ej. "LUNA AT-35/32", \
 para machine_code_hint -- sirve para comprobar después, por otra vía, que \
 el documento corresponde de verdad a la máquina de la carpeta donde está \
 archivado.
-- first_surname_hint, second_surname_hint, given_name_hint: primer apellido, \
-segundo apellido y nombre de pila de la persona a la que se refiere el \
-documento (solo si el dominio es de personal). Si el documento es un DNI, \
-estos son exactamente los campos que aparecen impresos en él.
+- first_surname_hint, second_surname_hint, given_name_hint, dni_hint: \
+primer apellido, segundo apellido, nombre de pila y DNI/NIE de la persona a \
+la que se refiere el documento (solo si el dominio es de personal). Si el \
+documento es un DNI o un informe de la Seguridad Social, estos son \
+exactamente los campos que aparecen impresos en él. El DNI es el dato más \
+fiable de los cuatro para identificar a la persona sin ambigüedad -- \
+extráelo siempre que aparezca, aunque también extraigas el nombre. Si el \
+documento menciona a VARIAS personas distintas por igual (un listado, una \
+declaración con varios trabajadores...), extrae los datos de la persona más \
+prominente y dilo explícitamente en "reasoning" -- eso indica que el \
+archivo podría contener a más de una persona.
 - date_hint: la fecha más relevante del documento para decidir cuándo se \
 emitió o cuándo caduca (formato AAAA-MM-DD), si se puede leer con claridad.
 
@@ -342,6 +350,51 @@ def resolve_machine_asset(entry) -> MachineAsset | None:
         if asset:
             return asset
     return None
+
+
+_DNI_NORMALIZE_RE = re.compile(r"[^A-Z0-9]")
+
+
+def _normalize_dni(raw_dni: str) -> str:
+    return _DNI_NORMALIZE_RE.sub("", raw_dni.upper())
+
+
+def resolve_person_identity(dni_hint: str) -> PersonIdentity | None:
+    """
+    Looks up `PersonIdentity` by a normalized `dni_hint`. A DNI is a
+    hard identifier (unlike a name -- H28 annex, Hallazgo 5: the same
+    operator's name spelled eight different ways) so an exact match
+    here is trustworthy enough to override whatever Gemini read off
+    one particular document, same principle already applied to
+    machine code (`resolve_machine_asset`, H29 3.27).
+
+    Returns None both when `dni_hint` is empty/unreadable and when no
+    `PersonIdentity` has been seeded for it yet (`seed_person_identities`
+    hasn't classified that person's DNI, or never will if their DNI
+    was never uploaded) -- callers must treat both cases the same way:
+    "cannot resolve", never guess a folder from the name alone.
+
+    ---
+
+    Busca `PersonIdentity` por un `dni_hint` normalizado. Un DNI es un
+    identificador duro (a diferencia de un nombre -- anexo H28,
+    Hallazgo 5: el nombre del mismo operario escrito de ocho formas
+    distintas), así que una coincidencia exacta aquí es suficientemente
+    fiable para prevalecer sobre lo que Gemini haya leído en un
+    documento concreto -- mismo principio ya aplicado al código de
+    máquina (`resolve_machine_asset`, H29 3.27).
+
+    Devuelve None tanto cuando `dni_hint` está vacío/ilegible como
+    cuando todavía no se ha sembrado ningún `PersonIdentity` para él
+    (`seed_person_identities` no ha clasificado el DNI de esa persona
+    todavía, o nunca lo hará si su DNI nunca se subió) -- quien llama
+    debe tratar los dos casos igual: "no se puede resolver", nunca
+    adivinar una carpeta solo por el nombre.
+    """
+    dni_hint = (dni_hint or "").strip()
+    if not dni_hint:
+        return None
+    return PersonIdentity.objects.filter(dni=_normalize_dni(dni_hint)).first()
 
 
 def check_machine_mismatch(entry, result: dict) -> str | None:
@@ -679,11 +732,24 @@ def build_new_name(
             machine_code, code, date, ordinal=ordinal, extension=extension,
         )
     if domain == "PERSONAL":
-        first_surname = (result.get("first_surname_hint") or "").strip()
-        given_name = (result.get("given_name_hint") or "").strip()
+        # Corrección S040, mismo principio que 3.27 para máquina: si
+        # el DNI leído en este documento concreto resuelve a una
+        # identidad ya sembrada, sus apellidos/nombre canónicos
+        # prevalecen sobre lo que Gemini haya leído aquí -- evita que
+        # una variante de escritura de este documento (Hallazgo 5)
+        # genere un nombre de archivo distinto al resto de documentos
+        # de la misma persona.
+        identity = resolve_person_identity(result.get("dni_hint"))
+        if identity:
+            first_surname = identity.first_surname
+            second_surname = identity.second_surname
+            given_name = identity.given_name
+        else:
+            first_surname = (result.get("first_surname_hint") or "").strip()
+            given_name = (result.get("given_name_hint") or "").strip()
+            second_surname = (result.get("second_surname_hint") or "").strip()
         if not first_surname or not given_name:
             return None
-        second_surname = (result.get("second_surname_hint") or "").strip()
         return naming_service.build_filename_personal(
             first_surname, second_surname, given_name, code, date,
             ordinal=ordinal, extension=extension,

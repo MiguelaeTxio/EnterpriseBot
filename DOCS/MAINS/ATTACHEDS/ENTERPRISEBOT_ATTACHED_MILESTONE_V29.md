@@ -1235,6 +1235,51 @@ en `CELERY_BEAT_SCHEDULE`), no como mecanismo principal -- cubre el
 caso de que el aviso instantáneo falle (agente caído a mitad, sin red
 en ese instante, etc.).
 
+### 3.31. Consumidor de cuarentena: identidad por DNI para personal, revisión humana ante duda (S040)
+
+Verificado con datos reales antes de diseñar nada (18 documentos
+reales de un mismo trabajador, subidos por Miguel Ángel): todos menos
+uno llevan el nombre y/o DNI de la persona dentro del propio
+contenido. La única excepción real (`MOD_145_GRUAS_A_ALVAREZ_2020-
+ADMON.pdf`) confirma un caso "dos en uno" -- un Modelo 145 con varios
+trabajadores en el mismo archivo -- exactamente el mismo patrón que
+3.24 (`CE+RAE.pdf`), ahora confirmado también en personal.
+
+Verbatim: *"eso es fundamental (...) diseñar cómo extraer el nombre
+más el DNI del contenido para poder emparejar con la carpeta del
+personal (...) eso forma parte de la confección de la Always-on Task,
+porque es necesario."* Y, como red de seguridad: *"se clasifican
+todos y los que generen alguna duda, porque no esté claro el nombre,
+se clasifican y se marcan como con duda para revisión por un humano."*
+
+**Diseño:**
+
+1. `classify_entry()` gana un campo nuevo, `dni_hint` -- el DNI leído
+   del propio documento, cuando aparezca con claridad. Más fiable que
+   el nombre para emparejar: un DNI no tiene variantes de escritura
+   (Hallazgo 5), un nombre sí.
+2. Nuevo modelo `PersonIdentity` (DNI → carpeta real de `DOC.
+   PERSONAL`, más apellido1/apellido2/nombre de referencia) --
+   equivalente para personal de lo que `fleet.MachineAsset` ya es para
+   máquina. Se siembra clasificando los documentos de tipo `DNI` ya
+   existentes dentro de `DOC. PERSONAL` (comando de gestión nuevo,
+   mismo patrón que `audit_document_names`).
+3. Al clasificar un archivo de cuarentena de dominio PERSONAL: si
+   `dni_hint` coincide con un `PersonIdentity` ya sembrado, se
+   resuelve la carpeta con certeza -- mismo principio que 3.27 (dato
+   ya conocido por otra vía prevalece sobre lo que lea Gemini caso a
+   caso). Si no hay `dni_hint` legible, o no coincide con ningún
+   `PersonIdentity` conocido, o coincide con más de uno (ambigüedad),
+   **no se relocaliza nada** -- se clasifica igualmente (tipo
+   sugerido, nombre propuesto) y queda marcado en el Historial como
+   pendiente de revisión humana, nunca se fuerza un emparejamiento
+   dudoso.
+
+**No resuelto por interpretación propia, pendiente cuando se
+construya:** qué hacer con el caso "dos en uno" del Modelo 145 (varias
+personas en un solo archivo) -- mismo punto abierto que 3.24 para
+máquina, sin decisión tomada todavía sobre partición de archivos.
+
 ## 4. Consecuencia directa: las tres únicas vías de escritura
 
 De 3.1, 3.2 y 3.8 se sigue que un objeto solo puede aparecer o
