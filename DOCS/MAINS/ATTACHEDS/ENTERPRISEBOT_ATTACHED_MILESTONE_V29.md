@@ -1155,6 +1155,17 @@ Cubre `.docx`/`.doc`/`.odt`/`.rtf`/`.xlsx`/`.xls`/`.ods`/`.pptx`/
 el caso concreto del `.docx` de la prueba. Probado con un `.docx` real
 antes de comitear (conversión correcta, cabecera `%PDF-` verificada).
 
+**Incidente de despliegue real, mismo día:** el fix llegó al servidor
+(`git pull` correcto, verificado) pero el worker Celery no lo recogió
+-- `deploy.yml` reinicia el worker según un patrón de rutas que no
+cubría `document_explorer/` en absoluto (mismo tipo exacto de
+incidente que S025 con `document_management/`). Confirmado con el log
+real del worker: seguía arrancado desde el despliegue anterior, sin
+ninguna línea de reinicio tras el push. `deploy.yml` corregido
+(`document_explorer/` añadido al patrón); ese commit no reinicia el
+worker por sí solo (no está en su propio patrón), así que hizo falta
+un reinicio manual del worker para que el fix quedara activo esa vez.
+
 ## 4. Consecuencia directa: las tres únicas vías de escritura
 
 De 3.1, 3.2 y 3.8 se sigue que un objeto solo puede aparecer o
