@@ -150,7 +150,7 @@ from panel.mixins import CompanyUserRequiredMixin
 from spare_parts.gcs_service import delete_file, generate_signed_url
 
 from document_explorer import friendly_names, index_writer, move_service, permissions
-from document_explorer import classification_service, duplicates_service
+from document_explorer import classification_service, duplicates_service, tasks
 from document_explorer.buckets import (
     BUCKET_DISPLAY_NAMES, INDEXED_BUCKETS, PRIMARY_BUCKET,
 )
@@ -1418,12 +1418,21 @@ class ClassifyView(MoveScopeMixin, View):
     base de datos." `classification_service.apply_classification()`
     only ever writes `DocumentIndexEntry.name`; the real object in GCS
     is never touched, exactly like `MoveView` above never touches
-    `blob_name`. Deliberately the simplest possible version otherwise:
-    no progress display, no AJAX, a normal form POST that redirects
-    back with one Django message per file showing what Gemini
-    suggested and whether it was applied. `ClassifyView` never imports
-    anything from `document_ingestion`/`machine_documents`/
-    `personal_documents`, per the H29 annex 3.15 isolation rule.
+    `blob_name`. `ClassifyView` never imports anything from
+    `document_ingestion`/`machine_documents`/`personal_documents`, per
+    the H29 annex 3.15 isolation rule.
+
+    **Runs in the background now, S040 -- real production incident.**
+    A recursive batch over ~50 files ran one Gemini call after another
+    inside a single synchronous HTTP request and blew past
+    PythonAnywhere's load balancer timeout: 504, "Something went
+    wrong". This view now only creates the `DataOperationLog` header
+    (`status=RUNNING`) and enqueues `tasks.classify_entries_task`,
+    returning immediately -- see that task's docstring for the actual
+    per-file work and why it writes one `DataOperationLogEntry` right
+    after each file instead of buffering to the end (the same
+    incident showed that buffering loses the whole audit trail of
+    already-applied renames when the request dies mid-batch).
 
     ---
 
@@ -1438,33 +1447,23 @@ class ClassifyView(MoveScopeMixin, View):
     de base de datos." `classification_service.apply_classification()`
     únicamente escribe `DocumentIndexEntry.name`; el objeto real en
     GCS nunca se toca, exactamente igual que `MoveView` de arriba
-    nunca toca `blob_name`. Deliberadamente la versión más simple
-    posible en todo lo demás: sin visualización de progreso, sin
-    AJAX, un envío de formulario normal que redirige de vuelta con un
-    mensaje de Django por archivo mostrando lo que sugirió Gemini y si
-    se aplicó. `ClassifyView` nunca importa nada de
+    nunca toca `blob_name`. `ClassifyView` nunca importa nada de
     `document_ingestion`/`machine_documents`/`personal_documents`,
-    **También deja registro de auditoría, igual que
-    `ResolveDuplicatesView`** -- Miguel Ángel, S040: "el registro de
-    auditoría es fundamental." Un `DataOperationLog` por lote
-    clasificado, una `DataOperationLogEntry` por archivo (nombre
-    anterior/nuevo, tipo/dominio/confianza/razonamiento de Gemini en
-    `detail`), agrupadas en el mismo patrón "una tarjeta por archivo"
-    que ya usa el detalle de duplicados -- cada archivo es su propio
-    grupo de tamaño 1, así el historial reutiliza exactamente la misma
-    plantilla sin duplicar diseño.
+    según la regla de aislamiento 3.15 del anexo H29.
 
-    ---
-
-    **También deja registro de auditoría, igual que
-    `ResolveDuplicatesView`** -- Miguel Ángel, S040: "el registro de
-    auditoría es fundamental." Un `DataOperationLog` por lote
-    clasificado, una `DataOperationLogEntry` por archivo (nombre
-    anterior/nuevo, tipo/dominio/confianza/razonamiento de Gemini en
-    `detail`), agrupadas con el mismo patrón "una tarjeta por archivo"
-    que ya usa el detalle de duplicados -- cada archivo es su propio
-    grupo de tamaño 1, así el historial reutiliza exactamente la misma
-    plantilla sin duplicar diseño.
+    **Corre en segundo plano ahora, S040 -- incidente real de
+    producción.** Un lote recursivo sobre ~50 archivos encadenó una
+    llamada a Gemini tras otra dentro de una sola petición HTTP
+    síncrona y superó el tiempo límite del balanceador de
+    PythonAnywhere: 504, "Something went wrong". Esta vista ahora solo
+    crea la cabecera `DataOperationLog` (`status=RUNNING`) y encola
+    `tasks.classify_entries_task`, devolviendo el control al momento
+    -- ver el docstring de esa tarea para el trabajo real por archivo
+    y por qué escribe una `DataOperationLogEntry` justo después de
+    cada archivo en vez de guardarlas hasta el final (el mismo
+    incidente demostró que guardarlas hasta el final pierde todo el
+    rastro de auditoría de los renombrados ya aplicados cuando la
+    petición muere a mitad de lote).
     """
 
     def post(self, request):
@@ -1475,146 +1474,25 @@ class ClassifyView(MoveScopeMixin, View):
         path = (request.POST.get("path") or "").strip("/")
         company_user = request.user.company_user
 
-        log_lines = []  # [(group_number, action, entry, previous_name, detail), ...]
-        applied_count = 0
-        not_applied_count = 0
-
-        for group_number, entry in enumerate(entries, start=1):
-            original_name = entry.name
-            result = classification_service.apply_classification(entry)
-            if "error" in result:
-                messages.error(
-                    request,
-                    "«%s» -- fallo al clasificar: %s"
-                    % (original_name, result["error"]),
-                )
-                not_applied_count += 1
-                log_lines.append((
-                    group_number, DataOperationLogEntry.ACTION_NOT_CLASSIFIED,
-                    entry, original_name, "Error: %s" % result["error"],
-                ))
-                continue
-            hints = ", ".join(
-                filter(None, [
-                    result.get("machine_code_hint"),
-                    " ".join(filter(None, [
-                        result.get("first_surname_hint"),
-                        result.get("second_surname_hint"),
-                        result.get("given_name_hint"),
-                    ])),
-                    result.get("date_hint"),
-                ])
-            )
-            mismatch_warning = result.get("machine_mismatch_warning")
-            detail = (
-                "Dominio: %s -- Tipo: %s (%s) -- %s%s%s"
-                % (
-                    result.get("domain", "?"),
-                    result.get("document_type_code", "?"),
-                    result.get("confidence", "?"),
-                    result.get("reasoning", ""),
-                    " -- Pistas: %s" % hints if hints else "",
-                    " -- %s" % mismatch_warning if mismatch_warning else "",
-                )
-            )
-            if mismatch_warning:
-                messages.warning(request, "«%s» -- %s" % (original_name, mismatch_warning))
-            if result.get("renamed"):
-                applied_count += 1
-                log_lines.append((
-                    group_number, DataOperationLogEntry.ACTION_CLASSIFIED,
-                    entry, original_name, detail,
-                ))
-                messages.success(
-                    request,
-                    "«%s» → «%s» -- dominio: %s -- tipo: %s (%s)"
-                    % (
-                        original_name, result["new_name"],
-                        result.get("domain", "?"),
-                        result.get("document_type_code", "?"),
-                        result.get("confidence", "?"),
-                    ),
-                )
-            elif result.get("classified"):
-                # Corrección real S040: clasificó bien, pero el nombre
-                # ya era el correcto (típico al reclasificar un archivo
-                # ya aplicado antes) -- esto NO es un fallo. Antes se
-                # contaba junto con "no se pudo aplicar" y generaba
-                # avisos falsos en cada reclasificación de un archivo
-                # ya bien nombrado.
-                applied_count += 1
-                log_lines.append((
-                    group_number, DataOperationLogEntry.ACTION_CLASSIFIED,
-                    entry, original_name, detail,
-                ))
-                messages.info(
-                    request,
-                    "«%s» -- ya tenía el nombre correcto (sin cambios) "
-                    "-- dominio: %s -- tipo: %s (%s)"
-                    % (
-                        original_name,
-                        result.get("domain", "?"),
-                        result.get("document_type_code", "?"),
-                        result.get("confidence", "?"),
-                    ),
-                )
-            else:
-                not_applied_count += 1
-                log_lines.append((
-                    group_number, DataOperationLogEntry.ACTION_NOT_CLASSIFIED,
-                    entry, original_name, detail,
-                ))
-                messages.warning(
-                    request,
-                    "«%s» -- no se pudo aplicar (faltan datos para el "
-                    "nombre) -- dominio: %s -- tipo sugerido: %s (%s) -- "
-                    "%s%s"
-                    % (
-                        original_name,
-                        result.get("domain", "?"),
-                        result.get("document_type_code", "?"),
-                        result.get("confidence", "?"),
-                        result.get("reasoning", ""),
-                        " -- pistas: %s" % hints if hints else "",
-                    ),
-                )
-
         log = DataOperationLog.objects.create(
             operation_type=DataOperationLog.OPERATION_BATCH_CLASSIFICATION,
             performed_by=company_user,
             bucket=bucket,
             path_prefix=path,
-            groups_count=len(entries),
-            kept_count=applied_count,
-            trashed_count=not_applied_count,
-            bytes_recovered=0,
+            status=DataOperationLog.STATUS_RUNNING,
         )
-        DataOperationLogEntry.objects.bulk_create([
-            DataOperationLogEntry(
-                log=log,
-                group_number=group_number,
-                action=action,
-                index_entry=entry,
-                bucket=entry.bucket,
-                blob_name=entry.blob_name,
-                name=entry.name,
-                previous_name=previous_name,
-                parent_path=entry.parent_path,
-                size_bytes=entry.size_bytes,
-                crc32c=entry.crc32c,
-                detail=detail,
-            )
-            for group_number, action, entry, previous_name, detail in log_lines
-        ])
+        entry_pks = [entry.pk for entry in entries]
+        tasks.classify_entries_task.delay(log.pk, entry_pks)
+
         messages.info(
             request,
-            "Registrado en el historial: operación #%d." % log.pk,
+            "Clasificando %d archivo(s) en segundo plano -- operación "
+            "#%d. Puedes seguir el progreso en el Historial; la "
+            "página se puede actualizar mientras corre."
+            % (len(entry_pks), log.pk),
         )
-
         return redirect(
-            "%s?bucket=%s&path=%s" % (
-                reverse("document_explorer:explorer"), bucket, path,
-            )
+            reverse("document_explorer:operation_log_detail", args=[log.pk])
         )
 
 
@@ -2040,6 +1918,7 @@ class DataOperationLogDetailView(ExplorerAccessMixin, TemplateView):
         context.update({
             "active_nav": "document_explorer",
             "log": log,
+            "processed_count": len(group_numbers),
             "group_page": group_page,
             "groups": groups,
         })

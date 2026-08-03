@@ -25,10 +25,19 @@
             {{ log.performed_at|date:"d/m/Y H:i" }} -- ejecutada por
             {{ log.performed_by|default:"—" }} -- ámbito:
             {{ log.bucket }}{% if log.path_prefix %}/{{ log.path_prefix }}{% endif %}
-            -- {{ log.groups_count }} grupo(s)/archivo(s),
-            {{ log.kept_count }} {{ log.primary_count_label|lower }},
-            {{ log.trashed_count }} {{ log.secondary_count_label|lower }}
-            {% if log.bytes_recovered %}({{ log.bytes_recovered_display }} recuperables){% endif %}.
+            {% if log.status == "RUNNING" %}
+                -- <span class="badge bg-info text-dark">en curso</span>,
+                {{ processed_count }} procesado(s) hasta ahora (actualiza
+                la página para ver el avance)
+            {% elif log.status == "FAILED" %}
+                -- <span class="badge bg-danger">interrumpida</span>,
+                {{ processed_count }} procesado(s) antes del fallo
+            {% else %}
+                -- {{ log.groups_count }} grupo(s)/archivo(s),
+                {{ log.kept_count }} {{ log.primary_count_label|lower }},
+                {{ log.trashed_count }} {{ log.secondary_count_label|lower }}
+                {% if log.bytes_recovered %}({{ log.bytes_recovered_display }} recuperables){% endif %}
+            {% endif %}.
         </p>
         <a class="btn btn-sm btn-outline-secondary"
            href="{% url 'document_explorer:operation_log_list' %}">

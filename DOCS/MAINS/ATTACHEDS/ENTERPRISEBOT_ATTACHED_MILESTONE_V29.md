@@ -1083,6 +1083,46 @@ principio anotado como recordatorio en 3.14 para el agente de
 Windows y el buzón de documentación: cuando el sistema ya sabe la
 respuesta por otra vía fiable, Gemini deja de tener que adivinarla.
 
+### 3.28. Incidente real: 504 del balanceador en lote recursivo -- clasificación pasa a Celery, auditoría incremental (S040)
+
+Al pedir clasificar `A-29` recursivamente (carpeta + subcarpetas,
+usando el selector de ámbito de búsqueda ya existente, sin código
+nuevo) apareció un 504 real de PythonAnywhere ("Something went
+wrong :-("). Confirmado con capturas reales del dashboard que el
+sitio en sí no estaba caído (todas las Always-on Tasks seguían
+Running) -- solo esa petición larga murió.
+
+**Causa raíz:** `ClassifyView.post()` encadenaba una llamada real a
+Gemini por archivo, una detrás de otra, dentro de la misma petición
+HTTP síncrona -- con suficientes archivos, se supera el tiempo límite
+del balanceador.
+
+**Segundo problema real, expuesto por el mismo incidente:** el
+registro de auditoría (3.23) solo se escribía al final del lote, en
+un `bulk_create`. Si la petición muere a mitad, varios archivos ya se
+habían renombrado de verdad en base de datos (`apply_classification`
+guarda por archivo, al momento) sin dejar ningún rastro en el
+Historial -- justo la opacidad que 3.23 existe para evitar.
+
+**Corregido, los dos a la vez:**
+
+- `document_explorer/tasks.py` (nuevo): `classify_entries_task`,
+  tarea Celery real que reutiliza el worker ya en producción
+  (`spare_parts.tasks.extract_delivery_note_data` es el mismo
+  mecanismo, no uno nuevo). `ClassifyView.post()` ahora solo crea la
+  cabecera `DataOperationLog` (`status=RUNNING`) y encola la tarea
+  con `.delay()`, devolviendo el control al instante -- nada de
+  Gemini ocurre ya dentro de la petición HTTP.
+- La tarea escribe una `DataOperationLogEntry` justo después de cada
+  archivo, nunca al final -- un fallo de Celery, del worker, de
+  cualquier cosa, solo pierde la cola sin procesar, nunca el rastro
+  de lo ya hecho.
+- Nuevo campo `DataOperationLog.status`
+  (`RUNNING`/`COMPLETED`/`FAILED`, migración `0009`) -- el Historial
+  muestra "en curso" con el número de archivos ya procesados mientras
+  la tarea corre, y pide recargar la página para ver avance (sin
+  progreso en vivo por WebSocket ni similar, deliberadamente simple).
+
 ## 4. Consecuencia directa: las tres únicas vías de escritura
 
 De 3.1, 3.2 y 3.8 se sigue que un objeto solo puede aparecer o

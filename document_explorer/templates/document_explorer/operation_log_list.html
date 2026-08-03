@@ -50,7 +50,14 @@
                     {% for log in logs %}
                         <tr>
                             <td class="small text-muted">{{ log.performed_at|date:"d/m/Y H:i" }}</td>
-                            <td>{{ log.get_operation_type_display }}</td>
+                            <td>
+                                {{ log.get_operation_type_display }}
+                                {% if log.status == "RUNNING" %}
+                                    <span class="badge bg-info text-dark ms-1">En curso</span>
+                                {% elif log.status == "FAILED" %}
+                                    <span class="badge bg-danger ms-1">Interrumpida</span>
+                                {% endif %}
+                            </td>
                             <td class="small text-muted">{{ log.performed_by|default:"—" }}</td>
                             <td class="small text-muted text-break">
                                 {{ log.bucket }}{% if log.path_prefix %}/{{ log.path_prefix }}{% endif %}

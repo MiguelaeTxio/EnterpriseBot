@@ -564,6 +564,29 @@ class DataOperationLog(models.Model):
         choices=OPERATION_CHOICES,
         verbose_name="Tipo de operación",
     )
+    STATUS_RUNNING = "RUNNING"
+    STATUS_COMPLETED = "COMPLETED"
+    STATUS_FAILED = "FAILED"
+    STATUS_CHOICES = [
+        (STATUS_RUNNING, "En curso"),
+        (STATUS_COMPLETED, "Completada"),
+        (STATUS_FAILED, "Interrumpida"),
+    ]
+    status = models.CharField(
+        max_length=10,
+        choices=STATUS_CHOICES,
+        default=STATUS_COMPLETED,
+        verbose_name="Estado",
+        help_text=(
+            "RUNNING para operaciones en segundo plano (Celery) "
+            "mientras se procesan -- ver H29 3.28: un lote síncrono "
+            "de clasificación agotó el balanceador de PythonAnywhere "
+            "(504) y el registro solo se escribía al final, dejando "
+            "renombrados reales sin ningún rastro en el historial. "
+            "Las operaciones síncronas (resolución de duplicados) "
+            "siguen creando la fila ya en COMPLETED de una vez."
+        ),
+    )
     performed_by = models.ForeignKey(
         "ivr_config.CompanyUser",
         null=True,
