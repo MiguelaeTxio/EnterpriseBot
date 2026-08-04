@@ -1528,6 +1528,22 @@ decisiones 3.9, 3.10 y 3.11.
    converge con este explorador (punto 9 de la hoja de ruta de S036),
    decidir en qué hito vive.
 
+## 6.1. Nota de desvío — sesión invasora en paralelo (2026-08-04)
+
+Ver directriz 4.11 del documento maestro para el patrón general de
+"sesión invasora". Esta nota es puramente informativa -- **no toca la
+hoja de ruta de la sección 7**, que sigue siendo la que deje escrita
+la sesión principal sobre H29.
+
+Mientras H29 seguía `EN PROGRESO` en otra sesión trabajando en
+paralelo sobre el explorador, esta sesión (desvío tipo Caso A del
+enrutador de anexos) trabajó sobre H10 (Albaranes de Proveedores),
+sin modificar código de H29. Detalle completo del trabajo realizado
+en `ENTERPRISEBOT_ATTACHED_MILESTONE_V10.md`, sección 5: prompt de
+albaranes más permisivo (marca manuscrita, commit `e3c065b`) y
+albarán de abono a proveedor (commit `af2d6b9`), resolviendo además
+un pendiente anotado desde S028.
+
 ## 7. Hoja de ruta para la siguiente sesión
 
 ### COMPLETADAS EN S037

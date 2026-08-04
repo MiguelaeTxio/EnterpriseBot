@@ -724,3 +724,59 @@ practicable en `gcloud` (algún asistente visual sin CLI, o Miguel
 Ángel pide explícitamente ver/usar la consola web para un caso
 puntual), se puede recurrir a ella — pero nunca como modo por defecto.
 
+#### 4.11. DIRECTRIZ CRÍTICA — Sesiones invasoras en paralelo con la sesión principal (añadida S040, 2026-08-04)
+
+**Patrón confirmado explícitamente por Miguel Ángel como recurrente,
+no como excepción puntual:** en ocasiones se abre una sesión de chat
+distinta (clon local propio, mismo repositorio remoto) que trabaja en
+paralelo con otra sesión ya activa sobre EnterpriseBot — típicamente
+para dejar terminado un bloque de código concreto sin esperar a que
+la sesión principal llegue a él, y sin alterar la hoja de ruta que
+esa sesión principal está siguiendo. Miguel Ángel las llama
+verbatim **"sesiones invasoras"**. Volverán a darse en el futuro
+cuando haga falta, y se tratan como flujo de trabajo válido, no como
+incidencia.
+
+**Reglas de obligado cumplimiento para una sesión invasora:**
+
+1. **Nunca cambia el hito `EN PROGRESO`.** El trabajo se registra
+   siempre como desvío (Caso A del enrutador de anexos,
+   `ENTERPRISEBOT_ANNEX_ROUTER.md` sección 5), nunca como
+   `nfs-enterprisebot-pch`, salvo que Miguel Ángel lo pida
+   explícitamente.
+2. **Nunca reescribe la "Hoja de Ruta para la Siguiente Sesión"** de
+   ningún anexo — ni el del hito `EN PROGRESO` (que sigue en manos de
+   la sesión principal) ni el del hito sobre el que trabaja por
+   desvío. Reescribir esa hoja de ruta es responsabilidad exclusiva de
+   quien la sigue sesión a sesión; una sesión invasora que la
+   sobrescribiera podría borrar planificación real de la sesión
+   principal sin saberlo.
+3. **Al cierre (`PCS`), solo anota el trabajo realizado** — commits,
+   archivos, decisiones técnicas confirmadas por Miguel Ángel durante
+   esa sesión — en los anexos de los hitos que tocó, como una entrada
+   más (p. ej. una entrada `COMPLETADO EN S0XX (sesión invasora)`),
+   dejando intacta cualquier lista de próximos pasos ya escrita.
+4. **`git pull` obligatorio antes de cada `git push`**, y de nuevo
+   inmediatamente antes de cualquier commit de cierre — dos sesiones
+   escribiendo en paralelo sobre el mismo `main` es exactamente el
+   escenario para el que existe ese paso de `nfs-enterprisebot-edit`
+   PASO 1. Un `git pull` que resuelva en un commit de merge automático
+   (sin conflictos de archivo) es un resultado normal y esperado de
+   este patrón, no una incidencia — no hace falta alarmar a Miguel
+   Ángel por ello, solo verificar (como con cualquier otro push) que
+   el HEAD final del servidor contiene los commits propios como
+   ancestros y que el despliegue se confirmó con datos reales.
+5. **Bloques de trabajo con commit propio, nunca mezclados entre sí**
+   ni con el trabajo de la sesión principal — mismo criterio ya
+   vigente de "cada bloque de trabajo cerrado se commitea de
+   inmediato" (`nfs-enterprisebot-edit`), aplicado también entre
+   bloques distintos dentro de la propia sesión invasora si Miguel
+   Ángel lo pide así explícitamente (ver origen, S040).
+
+**Origen:** S040 — sesión invasora que trabajó sobre H10 (albaranes de
+proveedor: prompt más permisivo con marca manuscrita, y albarán de
+abono a proveedor) mientras otra sesión seguía activa en paralelo
+sobre H29 (`EN PROGRESO`). Al llegar al `PCS`, Miguel Ángel indicó
+explícitamente dejar intacta la hoja de ruta de ambos anexos
+afectados y anotar únicamente el trabajo realizado, además de dejar
+constancia aquí de que este patrón se repetirá.
