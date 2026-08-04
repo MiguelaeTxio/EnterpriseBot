@@ -1604,6 +1604,25 @@ tipos catalogados *distintos*, no el mismo tipo repetido. Sigue sin
 decisión tomada, ver punto 3 de la hoja de ruta de la siguiente
 sesión.
 
+**Bug real encontrado y corregido de paso, mismo bloque (directriz
+4.9):** archivos MÁQUINA correctamente tipificados por Gemini (p. ej.
+tres manuales de despiece reales, `MANUAL_DESPIECE`) se quedaban
+`Sin aplicar` para siempre, nunca se reubicaban -- reportado por
+Miguel Ángel al ver los grupos 6-8 de una clasificación en curso.
+Causa: `resolve_machine_asset()` probaba el código de flota anclado
+al **segmento de carpeta completo** (`_FOLDER_MACHINE_CODE_RE.match()`
+sobre el segmento entero). Carpetas tipo `P-14 3232-DLM (TR)`
+funcionan (código primero), pero las de carretillas/dumpers escriben
+antes una palabra descriptiva (`CARRETILLA T13 - E-1364-BFL`,
+`DUMPER T27 E-9982-BHD`) -- el regex nunca llegaba a probar `T13`/
+`T27`, y ni la reubicación ni `check_machine_mismatch` (misma función
+compartida) funcionaban para esas máquinas. Corregido: se prueba
+cada palabra de cada segmento, no el segmento completo -- un token
+que solo parece un código (una matrícula) pero no coincide con
+ningún `MachineAsset` real es inofensivo, la búsqueda simplemente
+continúa. Verificado con simulación de las 5 rutas reales de la
+sesión antes de comitear.
+
 ## 4. Consecuencia directa: las tres únicas vías de escritura
 
 De 3.1, 3.2 y 3.8 se sigue que un objeto solo puede aparecer o
