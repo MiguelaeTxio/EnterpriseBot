@@ -1363,6 +1363,37 @@ tarea como fallida y sigue, no arrastra a las demás) ni pérdida de
 datos -- simplemente ninguna pasada llegó a procesar nada hasta la
 corrección. `order_by("created_at")` → `order_by("indexed_at")`.
 
+### 3.34. Catálogo de tipos documentales gestionable desde el panel, sin tocar código (S040)
+
+Hallazgo real de la primera pasada de `consume_quarantine_task`:
+varios manuales de despiece (catálogo de piezas) de carretillas
+quedaban `DESCONOCIDO` -- y por tanto sin aplicar, sin reubicar -- pese
+a que la máquina se conocía con total certeza (ya vivían dentro de la
+carpeta de esa carretilla en cuarentena). No era un fallo del
+emparejamiento de máquina: el tipo documental "manual de despiece"
+simplemente no existía en el vocabulario cerrado.
+
+Miguel Ángel, en vez de pedir que se añadiera ese tipo a mano (lo que
+sí se hizo, vía migración, y se descartó): *"no lo añadas ya, sino que
+añade el sistema para que se pueda añadir el tipo (...) a nuestro
+catálogo (...) con esto quiero evitar tener que tocar código para
+añadir un tipo de documento al catálogo."*
+
+**Construido:** `DocumentTypeCatalogListView`
+(`/panel/documentacion/explorador/catalogo/`) -- listado con alta/baja
+inline, formulario de añadir (código, nombre visible, dominio).
+`code` pasa por `naming_service._sanitize_token()`, el mismo
+normalizador que ya usa el motor de renombrado, así que nunca puede
+entrar un código con acentos/espacios que rompería un nombre de
+archivo generado. Desactivar (nunca borrar) conserva el histórico de
+archivos ya renombrados con ese código, según el propio `help_text`
+del campo `is_active`.
+
+Confirmado que no hace falta ningún paso más: `classify_entry()`'s
+`_build_prompt()` ya lee `DocumentTypeCatalog.objects.filter(
+is_active=True)` en vivo en cada llamada -- una fila añadida aquí está
+disponible para la siguiente clasificación real sin desplegar nada.
+
 ## 4. Consecuencia directa: las tres únicas vías de escritura
 
 De 3.1, 3.2 y 3.8 se sigue que un objeto solo puede aparecer o

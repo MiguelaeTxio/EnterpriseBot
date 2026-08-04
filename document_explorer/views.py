@@ -161,12 +161,15 @@ from spare_parts.gcs_service import (
 )
 
 from document_explorer import friendly_names, index_writer, move_service, permissions
-from document_explorer import classification_service, duplicates_service, tasks
+from document_explorer import (
+    classification_service, duplicates_service, naming_service, tasks,
+)
 from document_explorer.buckets import (
     BUCKET_DISPLAY_NAMES, INDEXED_BUCKETS, PRIMARY_BUCKET, QUARANTINE_PREFIX,
 )
 from document_explorer.models import (
-    DataOperationLog, DataOperationLogEntry, DocumentIndexEntry, path_digest,
+    DataOperationLog, DataOperationLogEntry, DocumentIndexEntry,
+    DocumentTypeCatalog, path_digest,
 )
 
 PAGE_SIZE = 200
@@ -2185,3 +2188,144 @@ class RegisterUploadedObjectView(View):
             "created": bool(created),
             "updated": bool(updated),
         })
+
+
+class DocumentTypeCatalogListView(ExplorerAccessMixin, TemplateView):
+    """
+    Admin screen to manage `DocumentTypeCatalog` from the panel,
+    without touching code (H29, S040) -- Miguel Ángel, verbatim: *"al
+    panel, tenemos que dotar al panel de un sistema para añadir tipo
+    (...) con esto quiero evitar tener que tocar código para añadir un
+    tipo de documento al catálogo."* Real incident that prompted this:
+    several "manual de despiece" (spare-parts catalog) files for
+    forklifts stayed unclassified in quarantine even though the
+    machine was known with certainty, purely because that document
+    type didn't exist yet in the closed vocabulary (3.18: "cerrado
+    pero extensible, no congelado permanentemente").
+
+    `classify_entry()`'s prompt already reads `DocumentTypeCatalog`
+    live from the database on every call (`_build_prompt`) -- adding a
+    row here needs no deploy, no restart, nothing: the very next
+    Gemini call already sees it.
+
+    ---
+
+    Pantalla de administrador para gestionar `DocumentTypeCatalog`
+    desde el panel, sin tocar código (H29, S040) -- Miguel Ángel,
+    verbatim: *"al panel, tenemos que dotar al panel de un sistema
+    para añadir tipo (...) con esto quiero evitar tener que tocar
+    código para añadir un tipo de documento al catálogo."* Incidente
+    real que lo motivó: varios "manual de despiece" (catálogo de
+    piezas) de carretillas se quedaban sin clasificar en cuarentena
+    aunque la máquina se conocía con total certeza, solo porque ese
+    tipo documental todavía no existía en el vocabulario cerrado
+    (3.18: "cerrado pero extensible, no congelado permanentemente").
+
+    El prompt de `classify_entry()` ya lee `DocumentTypeCatalog` en
+    vivo de la base de datos en cada llamada (`_build_prompt`) --
+    añadir una fila aquí no necesita despliegue, ni reinicio, nada: la
+    siguiente llamada a Gemini ya la ve.
+    """
+
+    template_name = "document_explorer/type_catalog.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        company_user = self.request.user.company_user
+        if not permissions.is_unrestricted(company_user):
+            raise Http404("Solo el administrador puede ver el catálogo.")
+        context["active_nav"] = "document_explorer"
+        context["types"] = DocumentTypeCatalog.objects.all()
+        context["domain_choices"] = DocumentTypeCatalog.DOMAIN_CHOICES
+        return context
+
+
+class DocumentTypeCatalogCreateView(ExplorerAccessMixin, View):
+    """
+    Adds one row to `DocumentTypeCatalog` -- see
+    `DocumentTypeCatalogListView` for the full story. `code` is run
+    through `naming_service._sanitize_token()`, the exact same
+    normaliser the renaming engine itself uses, so a code typed here
+    can never contain something the filename builder would reject
+    later (accents, spaces, punctuation).
+
+    ---
+
+    Añade una fila a `DocumentTypeCatalog` -- ver
+    `DocumentTypeCatalogListView` para el contexto completo. El
+    `code` pasa por `naming_service._sanitize_token()`, el mismo
+    normalizador que usa el propio motor de renombrado, así que un
+    código escrito aquí nunca puede contener algo que el constructor
+    de nombres de archivo rechace después (acentos, espacios,
+    puntuación).
+    """
+
+    def post(self, request):
+        company_user = request.user.company_user
+        if not permissions.is_unrestricted(company_user):
+            raise Http404("Solo el administrador puede gestionar el catálogo.")
+
+        raw_code = (request.POST.get("code") or "").strip()
+        label = (request.POST.get("label") or "").strip()
+        domain = (request.POST.get("domain") or "").strip()
+
+        code = naming_service._sanitize_token(raw_code)
+        valid_domains = dict(DocumentTypeCatalog.DOMAIN_CHOICES)
+        if not code or not label or domain not in valid_domains:
+            messages.error(
+                request,
+                "Faltan datos -- código, nombre visible y dominio son "
+                "obligatorios.",
+            )
+            return redirect(reverse("document_explorer:type_catalog"))
+
+        _, created = DocumentTypeCatalog.objects.get_or_create(
+            code=code, defaults={"label": label, "domain": domain},
+        )
+        if created:
+            messages.success(
+                request,
+                "«%s» añadido al catálogo -- ya disponible para la "
+                "próxima clasificación, sin necesidad de desplegar "
+                "nada." % code,
+            )
+        else:
+            messages.warning(
+                request, "«%s» ya existía en el catálogo, no se ha "
+                "duplicado." % code,
+            )
+        return redirect(reverse("document_explorer:type_catalog"))
+
+
+class DocumentTypeCatalogToggleView(ExplorerAccessMixin, View):
+    """
+    Flips `is_active` on one `DocumentTypeCatalog` row -- deactivating
+    (never deleting) keeps the historical record of files already
+    renamed with that code intact, per the field's own `help_text`.
+    An inactive type simply stops appearing in future Gemini prompts
+    (`_build_prompt` filters `is_active=True`).
+
+    ---
+
+    Cambia `is_active` de una fila de `DocumentTypeCatalog` --
+    desactivar (nunca borrar) conserva intacto el histórico de
+    archivos ya renombrados con ese código, según el propio
+    `help_text` del campo. Un tipo inactivo simplemente deja de
+    aparecer en los próximos prompts a Gemini (`_build_prompt` filtra
+    `is_active=True`).
+    """
+
+    def post(self, request, pk):
+        company_user = request.user.company_user
+        if not permissions.is_unrestricted(company_user):
+            raise Http404("Solo el administrador puede gestionar el catálogo.")
+
+        doc_type = get_object_or_404(DocumentTypeCatalog, pk=pk)
+        doc_type.is_active = not doc_type.is_active
+        doc_type.save(update_fields=["is_active"])
+        messages.success(
+            request,
+            "«%s» ahora está %s."
+            % (doc_type.code, "activo" if doc_type.is_active else "inactivo"),
+        )
+        return redirect(reverse("document_explorer:type_catalog"))

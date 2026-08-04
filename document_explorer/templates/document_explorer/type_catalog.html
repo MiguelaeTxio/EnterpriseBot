@@ -1,0 +1,113 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/document_explorer/templates/document_explorer/type_catalog.html #}
+{% extends "panel/base.html" %}
+{% load static %}
+
+{% block extra_head %}
+    <link rel="stylesheet" href="{% static 'document_explorer/css/explorer.css' %}">
+{% endblock extra_head %}
+
+{% comment %}
+    Catálogo de tipos documentales, gestionable desde el panel sin
+    tocar código (H29, S040). Solo administrador -- ver
+    DocumentTypeCatalogListView.
+{% endcomment %}
+
+{% block title %}Catálogo de tipos documentales{% endblock title %}
+{% block page_title %}Catálogo de tipos documentales{% endblock page_title %}
+
+{% block content %}
+<div class="container-fluid px-3 pt-3">
+
+    <div class="d-flex align-items-center justify-content-between mb-3">
+        <p class="text-muted small mb-0">
+            Gemini solo sugiere un código de esta lista -- añadir un
+            tipo aquí no necesita ningún despliegue, la próxima
+            clasificación ya lo ve.
+        </p>
+        <a class="btn btn-sm btn-outline-secondary"
+           href="{% url 'document_explorer:explorer' %}">
+            <i class="bi bi-arrow-left"></i> Volver al explorador
+        </a>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-body">
+            <h6 class="card-title">Añadir tipo nuevo</h6>
+            <form method="post" action="{% url 'document_explorer:type_catalog_create' %}"
+                  class="row g-2 align-items-end">
+                {% csrf_token %}
+                <div class="col-12 col-md-4">
+                    <label class="form-label small mb-1" for="id_code">Código</label>
+                    <input type="text" class="form-control form-control-sm"
+                           id="id_code" name="code" placeholder="p. ej. MANUAL DESPIECE"
+                           required>
+                    <div class="form-text">
+                        Se normaliza solo -- mayúsculas, sin acentos ni
+                        espacios (quedaría "MANUAL_DESPIECE").
+                    </div>
+                </div>
+                <div class="col-12 col-md-4">
+                    <label class="form-label small mb-1" for="id_label">Nombre visible</label>
+                    <input type="text" class="form-control form-control-sm"
+                           id="id_label" name="label"
+                           placeholder="p. ej. Manual de despiece / catálogo de piezas"
+                           required>
+                </div>
+                <div class="col-8 col-md-3">
+                    <label class="form-label small mb-1" for="id_domain">Dominio</label>
+                    <select class="form-select form-select-sm" id="id_domain" name="domain" required>
+                        {% for value, display in domain_choices %}
+                            <option value="{{ value }}">{{ display }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-4 col-md-1">
+                    <button type="submit" class="btn btn-sm btn-primary w-100">Añadir</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle mb-0">
+            <thead>
+                <tr>
+                    <th>Código</th>
+                    <th>Nombre visible</th>
+                    <th>Dominio</th>
+                    <th>Estado</th>
+                    <th>Alta</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for doc_type in types %}
+                    <tr class="{% if not doc_type.is_active %}table-light text-muted{% endif %}">
+                        <td class="font-monospace">{{ doc_type.code }}</td>
+                        <td>{{ doc_type.label }}</td>
+                        <td>{{ doc_type.get_domain_display }}</td>
+                        <td>
+                            {% if doc_type.is_active %}
+                                <span class="badge bg-success">Activo</span>
+                            {% else %}
+                                <span class="badge bg-secondary">Inactivo</span>
+                            {% endif %}
+                        </td>
+                        <td class="small text-muted">{{ doc_type.created_at|date:"d/m/Y" }}</td>
+                        <td class="text-end">
+                            <form method="post"
+                                  action="{% url 'document_explorer:type_catalog_toggle' doc_type.pk %}">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-sm btn-outline-secondary">
+                                    {% if doc_type.is_active %}Desactivar{% else %}Reactivar{% endif %}
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+</div>
+{% endblock content %}

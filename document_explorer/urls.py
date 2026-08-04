@@ -76,6 +76,21 @@ urlpatterns = [
         name="register_uploaded_object",
     ),
     path(
+        "catalogo/",
+        views.DocumentTypeCatalogListView.as_view(),
+        name="type_catalog",
+    ),
+    path(
+        "catalogo/anadir/",
+        views.DocumentTypeCatalogCreateView.as_view(),
+        name="type_catalog_create",
+    ),
+    path(
+        "catalogo/<int:pk>/alternar/",
+        views.DocumentTypeCatalogToggleView.as_view(),
+        name="type_catalog_toggle",
+    ),
+    path(
         "cuarentena/",
         views.QuarantineStatusView.as_view(),
         name="quarantine_status",
