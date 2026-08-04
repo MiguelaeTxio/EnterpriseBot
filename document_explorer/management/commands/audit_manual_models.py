@@ -152,12 +152,21 @@ class Command(BaseCommand):
                 deleted_at__isnull=True,
                 purged_at__isnull=True,
                 parent_path__icontains="MANUAL",
-            ).order_by("parent_path", "name")
+            )
+            # Bug real S041, primera corrida: "MANUAL" sin más también
+            # casaba con DOC. PERSONAL/ENTREGA MANUAL COMBUSTIBLE (120
+            # de 339 archivos, nada que ver con manuales de máquina --
+            # gastó llamadas reales a Gemini y fue la causa de la
+            # mayoría de los fallos de extracción). Un manual es por
+            # definición un concepto de dominio MÁQUINA, nunca de
+            # personal -- exclusión de principio, no un parche puntual.
+            .exclude(parent_path__istartswith="DOC. PERSONAL")
+            .order_by("parent_path", "name")
         )
         if not manuals:
             raise CommandError(
-                "Sin archivos vivos con 'MANUAL' en parent_path en %s."
-                % bucket
+                "Sin archivos vivos con 'MANUAL' en parent_path en %s "
+                "(fuera de DOC. PERSONAL)." % bucket
             )
         if limit:
             manuals = manuals[:limit]
