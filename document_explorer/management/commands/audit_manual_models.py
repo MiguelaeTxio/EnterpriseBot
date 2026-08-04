@@ -202,21 +202,34 @@ class Command(BaseCommand):
         for folder, count in sorted(by_folder.items()):
             self.stdout.write("  %5d  %s" % (count, folder or "(raíz)"))
 
-    def _resolve_code_from_filename(self, name: str) -> str | None:
-        # Mismo principio que resolve_machine_asset (S041, palabra a
-        # palabra) -- pero sobre el NOMBRE del archivo, no sobre la
-        # carpeta: los manuales ya no viven en la carpeta de su
-        # máquina de origen (se consolidaron en una carpeta
-        # compartida), así que el nombre de archivo es la única pista
-        # que queda de qué máquina vino cada uno.
-        for word in name.split():
-            match = _FOLDER_MACHINE_CODE_RE.match(word)
+    def _extract_candidate_code(self, text: str) -> str | None:
+        # Insensible a mayúsculas (bug real S041: nombres de archivo
+        # reales en minúsculas, p. ej. "a29.pdf", no casaban con el
+        # regex compartido que asume mayúsculas como las carpetas).
+        for word in text.strip().split():
+            match = _FOLDER_MACHINE_CODE_RE.match(word.upper())
             if match:
                 return match.group(1).replace("-", "")
         return None
 
+    def _resolve_code(self, entry) -> str | None:
+        # Primero la CARPETA (igual que resolve_machine_asset) -- la
+        # jerarquía antigua "MANUAL DE INSTRUCCIONES/{CODIGO}/..."
+        # todavía conserva la máquina de origen en la ruta. Solo si
+        # la carpeta no aporta nada (caso "MANUALES DE USO", plana,
+        # sin subcarpetas por máquina) se cae al nombre de archivo --
+        # bug real S041: mirar solo el nombre hacía que archivos como
+        # "PARTE14.pdf"/"Binder1.pdf" (que SÍ tienen la máquina en la
+        # carpeta) se quedaran sin código, y una discrepancia real de
+        # marca/modelo (Binder1.pdf, A-44) no llegaba a compararse.
+        for segment in entry.parent_path.split("/"):
+            code = self._extract_candidate_code(segment)
+            if code:
+                return code
+        return self._extract_candidate_code(entry.name)
+
     def _audit_one(self, client, entry) -> dict | None:
-        machine_code = self._resolve_code_from_filename(entry.name)
+        machine_code = self._resolve_code(entry)
         asset = (
             MachineAsset.objects.filter(code__iexact=machine_code).first()
             if machine_code else None
