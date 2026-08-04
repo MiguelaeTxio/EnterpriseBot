@@ -625,6 +625,18 @@ def classify_entry(entry, domain: str | None = None) -> dict:
     are sent to Gemini; nothing about the conversion is persisted
     anywhere.
 
+    For file types Gemini already accepts natively (PDF, images...),
+    this never downloads the object at all -- it hands Gemini a
+    direct `gs://` reference (`Part.from_uri`, confirmed supported on
+    Vertex AI with no inline-payload size ceiling) instead of
+    `Part.from_bytes`. Real incident, S040: several genuine spare-parts
+    catalog PDFs (150-270 MB) failed with a raw 400 INVALID_ARGUMENT
+    from Vertex AI -- verified online against current Gemini docs
+    (2026-08-04) that the inline payload limit is 100 MB, well under
+    these files' real size. Office documents still need a real
+    download (LibreOffice can't convert a `gs://` URI), so that path
+    is unchanged.
+
     ---
 
     Descarga el contenido real del objeto desde GCS y pide a Gemini
@@ -645,6 +657,18 @@ def classify_entry(entry, domain: str | None = None) -> dict:
     docstring de `_SUPPORTED_MIME_TYPES`). Solo los bytes del PDF
     convertido se envían a Gemini; nada de la conversión se persiste
     en ningún sitio.
+
+    Para los tipos que Gemini ya acepta de forma nativa (PDF,
+    imágenes...), esto nunca descarga el objeto -- le pasa a Gemini
+    una referencia `gs://` directa (`Part.from_uri`, confirmado
+    soportado en Vertex AI sin techo de tamaño de payload en línea) en
+    vez de `Part.from_bytes`. Incidente real, S040: varios catálogos
+    de piezas reales (150-270 MB) fallaban con un 400 INVALID_ARGUMENT
+    en crudo de Vertex AI -- verificado online contra la documentación
+    real de Gemini (2026-08-04) que el límite de payload en línea es
+    100 MB, muy por debajo del tamaño real de estos archivos. Los
+    documentos de Office siguen necesitando descarga real (LibreOffice
+    no puede convertir una URI `gs://`), así que ese camino no cambia.
     """
     import json
 
@@ -652,9 +676,12 @@ def classify_entry(entry, domain: str | None = None) -> dict:
     extension = entry.name.rsplit(".", 1)[-1].lower() if "." in entry.name else ""
 
     try:
-        content_bytes = download_bytes(entry.bucket, entry.blob_name)
-
-        if mime_type not in _SUPPORTED_MIME_TYPES:
+        if mime_type in _SUPPORTED_MIME_TYPES:
+            file_part = Part.from_uri(
+                file_uri="gs://%s/%s" % (entry.bucket, entry.blob_name),
+                mime_type=mime_type,
+            )
+        else:
             if extension not in _LIBREOFFICE_CONVERTIBLE_EXTENSIONS:
                 return {
                     "error": (
@@ -663,6 +690,7 @@ def classify_entry(entry, domain: str | None = None) -> dict:
                         "la extensión .%s." % (mime_type, extension)
                     ),
                 }
+            content_bytes = download_bytes(entry.bucket, entry.blob_name)
             converted = _convert_to_pdf(content_bytes, extension)
             if converted is None:
                 return {
@@ -672,17 +700,13 @@ def classify_entry(entry, domain: str | None = None) -> dict:
                         "para el detalle)." % extension
                     ),
                 }
-            content_bytes = converted
-            mime_type = "application/pdf"
+            file_part = Part.from_bytes(data=converted, mime_type="application/pdf")
 
         client = get_gemini_client()
         response = _generate_content_with_retry(
             client,
             model=DEFAULT_MODEL,
-            contents=[
-                Part.from_bytes(data=content_bytes, mime_type=mime_type),
-                _build_prompt(domain),
-            ],
+            contents=[file_part, _build_prompt(domain)],
             config=GenerateContentConfig(
                 http_options=HttpOptions(timeout=90_000),
                 response_mime_type="application/json",

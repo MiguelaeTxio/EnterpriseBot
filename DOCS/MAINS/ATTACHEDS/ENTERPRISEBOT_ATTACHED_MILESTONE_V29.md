@@ -1406,6 +1406,28 @@ mientras `status != COMPLETED`, los tres se calculan contando las
 `DataOperationLogEntry` reales que ya existen, igual que ya hacía
 `DataOperationLogDetailView`.
 
+### 3.35. Archivos grandes (>100 MB) fallaban en Gemini: `Part.from_uri` en vez de descargar y empaquetar (S040)
+
+Hallazgo real de la primera pasada de `consume_quarantine_task`: siete
+catálogos de piezas reales (plataformas Genie/JLG, 150-270 MB) fallaban
+siempre con el mismo `400 INVALID_ARGUMENT` en crudo de Vertex AI.
+
+Verificado online contra la documentación real de Gemini (2026-08-04,
+nunca de memoria): el límite de payload en línea (`Part.from_bytes`,
+lo que usaba `classify_entry()`) es de 100 MB -- muy por debajo del
+tamaño real de estos archivos.
+
+**Corregido:** para los tipos que Gemini ya acepta de forma nativa
+(PDF, imágenes), `classify_entry()` ya no descarga el objeto en
+absoluto -- le pasa a Gemini una referencia `gs://` directa
+(`Part.from_uri`, confirmado soportado en Vertex AI sin techo de
+tamaño de payload en línea, porque el objeto se lee directamente de
+GCS en vez de viajar dentro de la petición). Efecto secundario
+positivo: también deja de descargar bytes al servidor para este
+camino, no solo arregla el límite. Los documentos de Office (que
+necesitan LibreOffice, y por tanto una descarga real para poder
+convertirlos) siguen igual que antes.
+
 ## 4. Consecuencia directa: las tres únicas vías de escritura
 
 De 3.1, 3.2 y 3.8 se sigue que un objeto solo puede aparecer o
