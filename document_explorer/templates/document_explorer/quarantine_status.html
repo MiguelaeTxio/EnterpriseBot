@@ -1,0 +1,87 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/document_explorer/templates/document_explorer/quarantine_status.html #}
+{% extends "panel/base.html" %}
+{% load static %}
+
+{% block extra_head %}
+    <link rel="stylesheet" href="{% static 'document_explorer/css/explorer.css' %}">
+{% endblock extra_head %}
+
+{% comment %}
+    Estado en vivo de la cuarentena y su Always-on Task (H29, S040).
+    Solo administrador -- ver QuarantineStatusView.
+{% endcomment %}
+
+{% block title %}Estado de cuarentena{% endblock title %}
+{% block page_title %}Estado de cuarentena{% endblock page_title %}
+
+{% block content %}
+<div class="container-fluid px-3 pt-3">
+
+    <div class="d-flex align-items-center justify-content-between mb-3">
+        <p class="text-muted small mb-0">
+            Consumo automático en segundo plano cada 10 minutos, hasta
+            {{ batch_size }} archivo(s) por pasada -- máquina se reubica
+            de verdad cuando se resuelve con certeza; personal se
+            clasifica pero queda marcado para revisión humana.
+        </p>
+        <a class="btn btn-sm btn-outline-secondary"
+           href="{% url 'document_explorer:explorer' %}">
+            <i class="bi bi-arrow-left"></i> Volver al explorador
+        </a>
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-12 col-md-4">
+            <div class="card h-100">
+                <div class="card-body">
+                    <div class="text-muted small text-uppercase">En cola</div>
+                    <div class="fs-2 fw-bold">{{ total_pending }}</div>
+                    <div class="small text-muted">
+                        {{ machine_pending }} de máquina, {{ personal_pending }} de personal
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-md-8">
+            <div class="card h-100">
+                <div class="card-body">
+                    <div class="text-muted small text-uppercase">Última pasada automática</div>
+                    {% if not last_run %}
+                        <p class="mb-0 text-muted">
+                            Todavía no ha corrido ninguna -- la primera
+                            pasada llegará con el siguiente disparo del
+                            Beat (cada 10 minutos).
+                        </p>
+                    {% else %}
+                        <div class="d-flex align-items-center gap-2 mb-1">
+                            <span class="fs-5">{{ last_run.performed_at|date:"d/m/Y H:i" }}</span>
+                            {% if last_run.status == "RUNNING" %}
+                                <span class="badge bg-info text-dark">En curso</span>
+                            {% elif last_run.status == "FAILED" %}
+                                <span class="badge bg-danger">Interrumpida</span>
+                            {% else %}
+                                <span class="badge bg-success">Completada</span>
+                            {% endif %}
+                        </div>
+                        <div class="small text-muted">
+                            {{ last_run.groups_count }} archivo(s) procesado(s) --
+                            {{ last_run.kept_count }} {{ last_run.primary_count_label|lower }},
+                            {{ last_run.trashed_count }} {{ last_run.secondary_count_label|lower }}
+                        </div>
+                        <a class="btn btn-sm btn-outline-secondary mt-2"
+                           href="{% url 'document_explorer:operation_log_detail' last_run.pk %}">
+                            Ver detalle de esta pasada
+                        </a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <a class="btn btn-sm btn-outline-secondary"
+       href="{% url 'document_explorer:operation_log_list' %}">
+        <i class="bi bi-clock-history"></i> Ver historial completo de pasadas
+    </a>
+
+</div>
+{% endblock content %}

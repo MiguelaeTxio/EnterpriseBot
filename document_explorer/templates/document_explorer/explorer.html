@@ -34,6 +34,10 @@
         <div class="d-flex align-items-center justify-content-end gap-2 mb-3">
             {% if can_move %}
                 <a class="btn btn-sm btn-outline-secondary"
+                   href="{% url 'document_explorer:quarantine_status' %}">
+                    <i class="bi bi-hourglass-split"></i> Cuarentena
+                </a>
+                <a class="btn btn-sm btn-outline-secondary"
                    href="{% url 'document_explorer:duplicates' %}">
                     <i class="bi bi-files"></i> Duplicados
                 </a>

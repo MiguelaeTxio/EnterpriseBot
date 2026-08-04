@@ -76,6 +76,11 @@ urlpatterns = [
         name="register_uploaded_object",
     ),
     path(
+        "cuarentena/",
+        views.QuarantineStatusView.as_view(),
+        name="quarantine_status",
+    ),
+    path(
         "operaciones/",
         views.DataOperationLogListView.as_view(),
         name="operation_log_list",

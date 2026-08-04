@@ -163,7 +163,7 @@ from spare_parts.gcs_service import (
 from document_explorer import friendly_names, index_writer, move_service, permissions
 from document_explorer import classification_service, duplicates_service, tasks
 from document_explorer.buckets import (
-    BUCKET_DISPLAY_NAMES, INDEXED_BUCKETS, PRIMARY_BUCKET,
+    BUCKET_DISPLAY_NAMES, INDEXED_BUCKETS, PRIMARY_BUCKET, QUARANTINE_PREFIX,
 )
 from document_explorer.models import (
     DataOperationLog, DataOperationLogEntry, DocumentIndexEntry, path_digest,
@@ -1820,6 +1820,75 @@ class ResolveDuplicatesView(ExplorerAccessMixin, View):
         return redirect(
             reverse("document_explorer:operation_log_detail", args=[log.pk])
         )
+
+
+class QuarantineStatusView(ExplorerAccessMixin, TemplateView):
+    """
+    Live status of quarantine and its Always-on Task (H29, S040) --
+    Miguel Ángel: "no tenemos ningún visor del trabajo del worker,
+    sería más que interesante saber qué ocurre." The Historial already
+    records what `consume_quarantine_task` does once it runs (3.33),
+    but nothing showed the backlog itself or when the task last ran
+    without digging through it -- this page is exactly that at-a-glance
+    view: how many files are still waiting, split by domain, plus the
+    most recent `QUARANTINE_CONSUME` run's own summary.
+
+    Read-only, cheap -- one count query per domain plus a `.first()`
+    on `DataOperationLog`, no different in cost from any other
+    explorer page. Admin-only, same as the rest of this module's
+    write-adjacent views.
+
+    ---
+
+    Estado en vivo de la cuarentena y su Always-on Task (H29, S040) --
+    Miguel Ángel: "no tenemos ningún visor del trabajo del worker,
+    sería más que interesante saber qué ocurre." El Historial ya
+    registra lo que hace `consume_quarantine_task` una vez corre
+    (3.33), pero nada mostraba la cola en sí ni cuándo corrió por
+    última vez sin rebuscar -- esta página es justo esa vista de un
+    vistazo: cuántos archivos quedan esperando, repartidos por
+    dominio, más el resumen de la última pasada real de
+    `QUARANTINE_CONSUME`.
+
+    Solo lectura, barata -- una consulta de conteo por dominio más un
+    `.first()` sobre `DataOperationLog`, ningún coste distinto al de
+    cualquier otra página del explorador. Solo administrador, igual
+    que el resto de vistas de este módulo adyacentes a escritura.
+    """
+
+    template_name = "document_explorer/quarantine_status.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        company_user = self.request.user.company_user
+        if not permissions.is_unrestricted(company_user):
+            raise Http404("Solo el administrador puede ver la cuarentena.")
+
+        live_files = DocumentIndexEntry.objects.filter(
+            bucket=PRIMARY_BUCKET,
+            entry_kind=DocumentIndexEntry.KIND_FILE,
+            deleted_at__isnull=True,
+            purged_at__isnull=True,
+            blob_name__startswith=QUARANTINE_PREFIX,
+        )
+        machine_prefix = QUARANTINE_PREFIX + "DOC. MAQUINAS/"
+        personal_prefix = QUARANTINE_PREFIX + "DOC. PERSONAL/"
+
+        context.update({
+            "active_nav": "document_explorer",
+            "total_pending": live_files.count(),
+            "machine_pending": live_files.filter(
+                blob_name__startswith=machine_prefix,
+            ).count(),
+            "personal_pending": live_files.filter(
+                blob_name__startswith=personal_prefix,
+            ).count(),
+            "last_run": DataOperationLog.objects.filter(
+                operation_type=DataOperationLog.OPERATION_QUARANTINE_CONSUME,
+            ).order_by("-performed_at").first(),
+            "batch_size": tasks._QUARANTINE_CONSUME_BATCH_SIZE,
+        })
+        return context
 
 
 class DataOperationLogListView(ExplorerAccessMixin, TemplateView):
