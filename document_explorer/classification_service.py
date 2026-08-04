@@ -334,24 +334,40 @@ def domain_for_entry(entry) -> str | None:
     return None
 
 
-# Un segmento de carpeta empieza por el código de flota si arranca con
-# letra(s) + guion opcional + dígitos, tal como usa fleet.MachineAsset.code
-# (S040: "A54, Z45, B27") y como se ve en las rutas reales del explorador
-# ("A-29 E-0356-BBZ (GR)/A-29").
+# Un TOKEN (palabra) de un segmento de carpeta es un código de flota si
+# empieza por letra(s) + guion opcional + dígitos, tal como usa
+# fleet.MachineAsset.code (S040: "A54, Z45, B27"). Ancla en el propio
+# token, no en el segmento completo -- corrección real S041: algunas
+# carpetas escriben el código primero ("A-29 E-0356-BBZ (GR)"), pero
+# otras (carretillas/dumpers) escriben antes una palabra descriptiva
+# ("CARRETILLA T13 - E-1364-BFL", "DUMPER T27 E-9982-BHD") -- con el
+# ancla en el segmento completo esos casos nunca llegaban a probar el
+# código real, y el archivo se quedaba sin reubicar aunque el tipo
+# documental sí se hubiera identificado con certeza (hallazgo real:
+# manuales de despiece correctamente tipificados MANUAL_DESPIECE que
+# nunca salían de cuarentena).
 _FOLDER_MACHINE_CODE_RE = re.compile(r"^([A-Z]+-?\d+)")
 
 
 def resolve_machine_asset(entry) -> MachineAsset | None:
     """
     Best-effort lookup of the real `fleet.MachineAsset` a MACHINE-domain
-    file's folder belongs to, by scanning `parent_path` segments for
-    something matching a fleet code and querying `MachineAsset.code`
-    (dashes stripped, case-insensitive -- folders write "A-29", the
-    fleet catalogue writes "A29"). Read-only, `fleet` (H12) is live
-    production infrastructure, not H17-H25 -- safe to query per the
-    H29 annex 3.15 isolation rule, which only excludes
-    document_ingestion/entity_matching_service/machine_documents/
-    personal_documents.
+    file's folder belongs to, by scanning every word of every
+    `parent_path` segment for something matching a fleet code and
+    querying `MachineAsset.code` (dashes stripped, case-insensitive --
+    folders write "A-29", the fleet catalogue writes "A29"). Read-only,
+    `fleet` (H12) is live production infrastructure, not H17-H25 --
+    safe to query per the H29 annex 3.15 isolation rule, which only
+    excludes document_ingestion/entity_matching_service/
+    machine_documents/personal_documents.
+
+    Word-by-word, not segment-by-segment (S041 fix) -- a segment can
+    carry a descriptive word before the real code ("CARRETILLA T13 -
+    E-1364-BFL"), and the code is never guaranteed to be the first
+    word. A token that merely looks like a code (e.g. a plate,
+    "E-1364") but matches no real `MachineAsset` is harmless --
+    querying it just returns nothing and scanning continues; only a
+    real match short-circuits the search.
 
     Returns None if nothing in the path matches any real machine --
     callers must treat that as "can't check", never as "no mismatch".
@@ -360,29 +376,39 @@ def resolve_machine_asset(entry) -> MachineAsset | None:
 
     Búsqueda de mejor esfuerzo del `fleet.MachineAsset` real al que
     pertenece la carpeta de un archivo de dominio MÁQUINA, recorriendo
-    los segmentos de `parent_path` en busca de algo con forma de código
-    de flota y consultando `MachineAsset.code` (sin guiones, sin
-    distinguir mayúsculas -- las carpetas escriben "A-29", el catálogo
-    de flota escribe "A29"). Solo lectura, `fleet` (H12) es
+    cada palabra de cada segmento de `parent_path` en busca de algo con
+    forma de código de flota y consultando `MachineAsset.code` (sin
+    guiones, sin distinguir mayúsculas -- las carpetas escriben "A-29",
+    el catálogo de flota escribe "A29"). Solo lectura, `fleet` (H12) es
     infraestructura viva en producción, no H17-H25 -- consultarlo es
     seguro según la regla de aislamiento 3.15 del anexo H29, que solo
     excluye document_ingestion/entity_matching_service/
     machine_documents/personal_documents.
+
+    Palabra a palabra, no segmento a segmento (corrección S041) -- un
+    segmento puede llevar una palabra descriptiva antes del código real
+    ("CARRETILLA T13 - E-1364-BFL"), y el código no siempre es la
+    primera palabra. Un token que simplemente parece un código (p. ej.
+    una matrícula, "E-1364") pero no coincide con ningún
+    `MachineAsset` real es inofensivo -- consultarlo solo devuelve
+    nada y la búsqueda continúa; solo una coincidencia real corta la
+    búsqueda.
 
     Devuelve None si nada en la ruta coincide con ninguna máquina real
     -- quien llama debe tratarlo como "no se puede comprobar", nunca
     como "no hay discrepancia".
     """
     for segment in entry.parent_path.split("/"):
-        match = _FOLDER_MACHINE_CODE_RE.match(segment.strip())
-        if not match:
-            continue
-        candidate_code = match.group(1).replace("-", "")
-        asset = MachineAsset.objects.filter(
-            code__iexact=candidate_code,
-        ).first()
-        if asset:
-            return asset
+        for word in segment.strip().split():
+            match = _FOLDER_MACHINE_CODE_RE.match(word)
+            if not match:
+                continue
+            candidate_code = match.group(1).replace("-", "")
+            asset = MachineAsset.objects.filter(
+                code__iexact=candidate_code,
+            ).first()
+            if asset:
+                return asset
     return None
 
 
