@@ -170,6 +170,32 @@ class DeliveryNoteExtraction(BaseModel):
                      'encuentras un código reconocible en ninguno de '
                      'los dos sitios.',
     )
+    handwritten_machine_code_raw: Optional[str] = Field(
+        default=None,
+        description='(AÑADIDO S040) Código de máquina o centro de '
+                     'gasto anotado A MANO (bolígrafo, lápiz o '
+                     'rotulador) y enmarcado entre dos marcas también '
+                     'manuscritas, iguales o equivalentes -- comillas, '
+                     'paréntesis, llaves o almohadillas dibujadas a '
+                     'mano, o un trazo manuscrito equivalente (círculo, '
+                     'subrayado) que enmarque el código sin lugar a '
+                     'dudas. Tanto las marcas delimitadoras como el '
+                     'propio código están escritos a mano por el '
+                     'operario -- si el código está impreso por el '
+                     'proveedor y solo las marcas son a mano, o al '
+                     'revés, no cuenta aquí (eso sigue siendo '
+                     'general_machine_code_raw, si cumple sus '
+                     'requisitos). Transcribe únicamente el código, '
+                     'sin las marcas delimitadoras. Si aparece, '
+                     'PREVALECE sobre general_machine_code_raw para '
+                     'decidir el destino final del albarán -- reporta '
+                     'ambos campos igualmente si los ves, la '
+                     'prioridad la aplica el sistema después, no tú. '
+                     'Null si no ves ninguna anotación manuscrita '
+                     'correctamente delimitada en el documento -- una '
+                     'marca suelta o ambigua va en '
+                     'handwritten_annotation_raw, no aquí.',
+    )
     document_code_found_as_line_item: bool = Field(
         default=False,
         description='True si ves un fragmento que PARECE un código de '
@@ -190,35 +216,42 @@ class DeliveryNoteExtraction(BaseModel):
     )
     general_warehouse_keyword_found: bool = Field(
         default=False,
-        description='True si, y solo si, general_machine_code_raw ha '
-                     'quedado en null (no hay código de máquina ni en '
-                     'Observaciones ni delimitado en ninguna línea) '
-                     'PERO el propio texto del albarán (cabecera, '
-                     'Observaciones, o la descripción de alguna línea) '
-                     'contiene la palabra "repuesto", "stock" o '
-                     '"almacén" (o variantes con tilde/mayúsculas) '
-                     'indicando que el envío completo va a almacén en '
-                     'vez de a una máquina concreta. False si ya hay '
-                     'general_machine_code_raw, o si no aparece '
+        description='True si, y solo si, TANTO general_machine_code_raw '
+                     'COMO handwritten_machine_code_raw (S040) han '
+                     'quedado en null (no hay ningún código de máquina '
+                     'válido, ni impreso ni manuscrito) PERO el propio '
+                     'texto del albarán (cabecera, Observaciones, o la '
+                     'descripción de alguna línea) contiene la palabra '
+                     '"repuesto", "pieza", "recambio", "stock" o '
+                     '"almacén" (o variantes con tilde/mayúsculas, o un '
+                     'sinónimo claro de estas) indicando que el envío '
+                     'completo va a almacén en vez de a una máquina '
+                     'concreta. False si ya hay general_machine_code_raw '
+                     'o handwritten_machine_code_raw, o si no aparece '
                      'ninguna de esas palabras.',
     )
     handwritten_annotation_raw: Optional[str] = Field(
         default=None,
         description='SOLO informativo, NUNCA usado para asignación '
-                     'automática (S025): cualquier anotación escrita '
-                     'A MANO (bolígrafo, lápiz, rotulador -- nunca '
-                     'texto impreso por el proveedor) que parezca '
-                     'referirse a una máquina, matrícula o '
-                     'departamento, aunque no cumpla ningún requisito '
-                     'de validez (ej. "P14", "P21", "a67" escritos a '
-                     'mano en un margen o círculo). Transcribe tal '
-                     'cual está escrito. Si hay varias anotaciones a '
-                     'mano distintas, sepáralas por coma. Null si no '
-                     'hay ninguna anotación a mano visible en el '
-                     'documento. Este campo existe para que un '
-                     'operario humano pueda resolver la asignación a '
-                     'mano con contexto, nunca para que el sistema '
-                     'decida solo.',
+                     'automática (S025, acotado S040): cualquier '
+                     'anotación escrita A MANO (bolígrafo, lápiz, '
+                     'rotulador -- nunca texto impreso por el '
+                     'proveedor) que parezca referirse a una máquina, '
+                     'matrícula o departamento, pero que NO cumpla el '
+                     'patrón de dos marcas delimitadoras de '
+                     'handwritten_machine_code_raw (ej. un código '
+                     'suelto sin marcar en un margen, dentro de un '
+                     'círculo mal cerrado, o dudoso). Si la anotación '
+                     'SÍ está correctamente delimitada, va en '
+                     'handwritten_machine_code_raw, no aquí -- no '
+                     'dupliques el mismo código en ambos campos. '
+                     'Transcribe tal cual está escrito. Si hay varias '
+                     'anotaciones a mano ambiguas distintas, sepáralas '
+                     'por coma. Null si no hay ninguna anotación a '
+                     'mano ambigua visible en el documento. Este campo '
+                     'existe para que un operario humano pueda '
+                     'resolver la asignación a mano con contexto, '
+                     'nunca para que el sistema decida solo.',
     )
     lines: list[DeliveryNoteLineExtraction] = Field(
         default_factory=list,
@@ -290,8 +323,8 @@ delimitado en una línea como en c). Una anotación a mano \
 (bolígrafo/lápiz/rotulador) sobre la foto, hecha por otra persona \
 tras recibir el albarán, NUNCA es válida para este campo -- \
 ignórala por completo aquí, no la transcribas ni la uses como \
-general_machine_code_raw (ver el punto 7 más abajo para qué hacer \
-con ella). \
+general_machine_code_raw (ver los puntos 6 y 8 más abajo para qué \
+hacer con ella). \
   - Si ves un fragmento que PARECE un código pero NO está ni en \
 Observaciones/Notas, ni en un campo estructurado etiquetado, ni \
 correctamente delimitado (almohadilla, asterisco o comillas antes Y \
@@ -304,30 +337,52 @@ sistema explique el motivo del rechazo. \
 Si no encuentras ningún código reconocible en ninguno de los sitios \
 de arriba, deja general_machine_code_raw en null y \
 document_code_found_as_line_item en false.
-6. SOLO si general_machine_code_raw ha quedado en null (no hay \
-código de máquina en Observaciones ni delimitado en ninguna línea): \
-comprueba si el propio texto del albarán (cabecera, Observaciones, o \
-la descripción de alguna línea) contiene la palabra "repuesto", \
-"stock" o "almacén" (con o sin tilde, en cualquier mayúscula/ \
-minúscula) indicando que el envío completo va a almacén general en \
-vez de a una máquina concreta. Si es así, general_warehouse_keyword_found \
-debe ir en true. Si ya hay general_machine_code_raw, o si no aparece \
-ninguna de esas palabras, general_warehouse_keyword_found debe ir en \
-false.
-7. (AMPLIADO S025) handwritten_annotation_raw: revisa TODO el \
-documento en busca de cualquier anotación escrita A MANO (bolígrafo, \
-lápiz, rotulador -- nunca texto impreso por el proveedor) que \
-parezca referirse a una máquina, matrícula o departamento, aunque no \
-cumpla ningún requisito de validez del punto 5 (ej. un código suelto \
-en un margen, dentro de un círculo, subrayado, etc.). Transcribe tal \
-cual está escrito -- SOLO para que un operario humano la use como \
-pista al asignar la máquina a mano, NUNCA para asignación \
-automática. Si hay varias anotaciones a mano distintas o dudosas, \
-transcribe todas separadas por coma. Null si no ves ninguna \
-anotación a mano en el documento. Esto es independiente e \
-INCLUSO SI general_machine_code_raw ya tiene un valor válido -- \
-repórtalo igualmente si lo ves, para que quede constancia por si el \
-operario lo necesita.
+6. (AÑADIDO S040) handwritten_machine_code_raw: revisa el documento \
+en busca de un código de máquina o centro de gasto escrito A MANO \
+(bolígrafo, lápiz o rotulador) y enmarcado entre dos marcas también \
+manuscritas, iguales o equivalentes -- comillas, paréntesis, llaves \
+o almohadillas dibujadas a mano (ej. "B14" a mano, (B14) a mano, \
+{B14} a mano, #B14# a mano), o un trazo manuscrito equivalente que \
+enmarque el código sin lugar a dudas (ej. un círculo o un subrayado \
+antes y después). Tanto las marcas delimitadoras como el propio \
+código están escritos a mano por el operario -- si el código está \
+impreso por el proveedor y solo las marcas son a mano, o al revés, \
+NO cuenta aquí (sigue siendo general_machine_code_raw del punto 5, \
+si cumple sus requisitos). Transcribe únicamente el código, sin las \
+marcas delimitadoras, en handwritten_machine_code_raw. Si \
+encuentras una anotación así, PREVALECE sobre \
+general_machine_code_raw para decidir el destino final del albarán \
+-- repórtalos los dos igualmente si ambos existen, la prioridad la \
+aplica el sistema después, no tú. Null si no ves ninguna anotación \
+manuscrita correctamente delimitada en el documento -- una marca a \
+mano suelta o ambigua va al punto 8 (handwritten_annotation_raw), \
+no aquí.
+7. SOLO si TANTO general_machine_code_raw COMO \
+handwritten_machine_code_raw han quedado en null (no hay ningún \
+código de máquina válido, ni impreso ni manuscrito): comprueba si \
+el propio texto del albarán (cabecera, Observaciones, o la \
+descripción de alguna línea) contiene la palabra "repuesto", \
+"pieza", "recambio", "stock" o "almacén" (con o sin tilde, en \
+cualquier mayúscula/minúscula, o un sinónimo claro de estas) \
+indicando que el envío completo va a almacén general en vez de a \
+una máquina concreta. Si es así, general_warehouse_keyword_found \
+debe ir en true. Si ya hay general_machine_code_raw o \
+handwritten_machine_code_raw, o si no aparece ninguna palabra de \
+este tipo, general_warehouse_keyword_found debe ir en false.
+8. (AMPLIADO S025, acotado S040) handwritten_annotation_raw: revisa \
+el resto del documento en busca de cualquier otra anotación escrita \
+A MANO (bolígrafo, lápiz, rotulador -- nunca texto impreso por el \
+proveedor) que parezca referirse a una máquina, matrícula o \
+departamento, pero que NO cumpla el patrón de dos marcas \
+delimitadoras del punto 6 (ej. un código suelto en un margen, sin \
+marcas antes y después, dentro de un círculo mal cerrado, o \
+dudoso). Transcribe tal cual está escrito -- SOLO para que un \
+operario humano la use como pista al asignar la máquina a mano si \
+hiciera falta, NUNCA para asignación automática. Si hay varias \
+anotaciones a mano distintas o dudosas, transcribe todas separadas \
+por coma. Null si no ves ninguna anotación a mano ambigua en el \
+documento -- si la única marca a mano que ves ya está correctamente \
+delimitada, va íntegramente en el punto 6, no también aquí.
 
 No inventes datos que no sean legibles en el documento -- usa null \
 en los campos opcionales cuando no puedas leerlos con certeza. Los \
@@ -769,43 +824,64 @@ def resolve_line_assignment(raw_code: Optional[str], company):
     return 'UNASSIGNED', None
 
 
-def resolve_document_assignment(raw_code, warehouse_keyword_found, company):
+def resolve_document_assignment(
+    raw_code, handwritten_code_raw, warehouse_keyword_found, company,
+):
     """
     Resolves the single whole-document destination (S015: always one
-    per document, never one per line) combining, in priority order:
-    (1) an explicit machine/cost-centre code (raw_code, resolved via
+    per document, never one per line -- reconfirmed S040 after a
+    same-session detour into per-line assignment that Miguel Ángel
+    explicitly walked back) combining, in priority order: (1) a
+    handwritten, correctly-delimited machine/cost-centre code
+    (handwritten_code_raw, S040 -- prevails over the printed one when
+    present), (2) the printed code (raw_code, resolved via
     resolve_line_assignment -- from Observaciones or a delimited line
-    per S020), and (2) the S020 keyword fallback: if no code was
+    per S020), and (3) the S020 keyword fallback: if no code was
     found at all, but the delivery note's own wording ("repuesto",
-    "stock", "almacén") signals a warehouse destination, assigns
-    WAREHOUSE undifferentiated -- confirmed by Miguel Ángel
-    (2026-07-15): for now everything the supplier marks this way goes
-    to the single WAREHOUSE bucket, with no distinction by workshop/
-    family (Mecánico/Elevación/Huelva); that differentiation is
-    deliberately deferred to a future session.
+    "stock", "almacén" or a synonym) signals a warehouse destination,
+    assigns WAREHOUSE undifferentiated -- confirmed by Miguel Ángel
+    (2026-07-15, reconfirmed S040): everything the supplier/operator
+    marks this way goes to the single WAREHOUSE bucket, with no
+    distinction by workshop/family (Mecánico/Elevación/Huelva), even
+    though each of those now has its own MachineAsset cost-centre row
+    -- that differentiation is deliberately deferred to a future
+    session.
 
     Returns (assignment_type, machine), same contract as
     resolve_line_assignment.
     ---
     Resuelve el destino único de todo el albarán (S015: siempre uno
-    por documento, nunca uno distinto por línea) combinando, por este
-    orden de prioridad: (1) un código explícito de máquina/centro de
-    gasto (raw_code, resuelto vía resolve_line_assignment -- desde
-    Observaciones o delimitado en línea según S020), y (2) el
-    fallback de palabra clave de S020: si no se encontró ningún
-    código, pero el propio texto del albarán ("repuesto", "stock",
-    "almacén") señala un destino de almacén, asigna WAREHOUSE sin
-    diferenciar -- confirmado por Miguel Ángel (2026-07-15): de
-    momento todo lo que el proveedor marque así va al mismo cajón
+    por documento, nunca uno distinto por línea -- reconfirmado S040
+    tras un desvío dentro de la misma sesión hacia asignación por
+    línea que Miguel Ángel revirtió explícitamente) combinando, por
+    este orden de prioridad: (1) un código manuscrito correctamente
+    delimitado (handwritten_code_raw, S040 -- prevalece sobre el
+    impreso cuando está presente), (2) el código impreso (raw_code,
+    resuelto vía resolve_line_assignment -- desde Observaciones o
+    delimitado en línea según S020), y (3) el fallback de palabra
+    clave de S020: si no se encontró ningún código, pero el propio
+    texto del albarán ("repuesto", "stock", "almacén" o un sinónimo)
+    señala un destino de almacén, asigna WAREHOUSE sin diferenciar --
+    confirmado por Miguel Ángel (2026-07-15, reconfirmado S040): todo
+    lo que el proveedor/operario marque así va al mismo cajón
     WAREHOUSE, sin distinguir por taller/familia (Mecánico/Elevación/
-    Huelva); esa diferenciación queda deliberadamente pospuesta a una
-    sesión futura.
+    Huelva), aunque cada uno ya tiene su propia fila de centro de
+    gasto en MachineAsset -- esa diferenciación queda deliberadamente
+    pospuesta a una sesión futura.
 
     Devuelve (assignment_type, machine), mismo contrato que
     resolve_line_assignment.
     """
-    if raw_code and raw_code.strip():
-        assignment_type, machine = resolve_line_assignment(raw_code, company)
+    effective_code = (
+        handwritten_code_raw
+        if handwritten_code_raw and handwritten_code_raw.strip()
+        else raw_code
+    )
+
+    if effective_code and effective_code.strip():
+        assignment_type, machine = resolve_line_assignment(
+            effective_code, company,
+        )
         if assignment_type != 'UNASSIGNED':
             return assignment_type, machine
 
@@ -853,10 +929,26 @@ def validate_document_assignment(delivery_note, company):
     concreto de rechazo, o None si is_valid es True. assignment_type/
     machine son el destino resuelto cuando is_valid, si no
     ('UNASSIGNED', None).
+
+    S040: se añade handwritten_machine_code_raw (columna propia del
+    modelo, igual que general_machine_code_raw) como fuente
+    PRIORITARIA sobre el código impreso -- ver
+    resolve_document_assignment(). Cuando hay un código manuscrito
+    correctamente delimitado, la ambigüedad de
+    document_code_found_as_line_item (que solo describe el código
+    impreso) deja de bloquear la validación: el manuscrito prevalece
+    y resuelve el albarán igualmente.
     """
     extraction_raw = delivery_note.extraction_raw or {}
 
-    if extraction_raw.get('document_code_found_as_line_item'):
+    handwritten_code = (
+        delivery_note.handwritten_machine_code_raw or ''
+    ).strip()
+    raw_code = (delivery_note.general_machine_code_raw or '').strip()
+
+    if not handwritten_code and extraction_raw.get(
+        'document_code_found_as_line_item'
+    ):
         return (
             False,
             'El código de máquina/departamento aparece como si fuera '
@@ -864,33 +956,39 @@ def validate_document_assignment(delivery_note, company):
             '(almohadilla, asterisco o comillas antes y después) ni '
             'estar en el campo Observaciones. El proveedor debe '
             'anotarlo en Observaciones, o delimitarlo con #, * o " '
-            'en la línea, antes de volver a fotografiarlo.',
+            'en la línea -- o el operario puede anotarlo a mano, '
+            'igualmente delimitado -- antes de volver a '
+            'fotografiarlo.',
             'UNASSIGNED', None,
         )
 
-    raw_code = (delivery_note.general_machine_code_raw or '').strip()
     warehouse_keyword_found = bool(
         extraction_raw.get('general_warehouse_keyword_found')
     )
 
-    if not raw_code and not warehouse_keyword_found:
+    if not handwritten_code and not raw_code and not \
+            warehouse_keyword_found:
         return (
             False,
-            'Falta el código de máquina o departamento (en '
-            'Observaciones o delimitado con #, * o " en una línea) y '
-            'no se detecta ninguna palabra clave de almacén '
-            '(repuesto/stock/almacén) en el albarán. El proveedor '
-            'debe anotarlo antes de volver a fotografiarlo.',
+            'Falta el código de máquina o departamento (impreso en '
+            'Observaciones o delimitado con #, * o " en una línea, o '
+            'anotado a mano y delimitado entre dos marcas) y no se '
+            'detecta ninguna palabra clave de almacén (repuesto/ '
+            'stock/almacén) en el albarán. El proveedor o el '
+            'operario deben anotarlo antes de volver a '
+            'fotografiarlo.',
             'UNASSIGNED', None,
         )
 
     assignment_type, machine = resolve_document_assignment(
-        raw_code or None, warehouse_keyword_found, company,
+        raw_code or None, handwritten_code or None,
+        warehouse_keyword_found, company,
     )
     if assignment_type == 'UNASSIGNED':
+        effective_raw = handwritten_code or raw_code
         return (
             False,
-            f'El código «{raw_code}» leído en el albarán no se '
+            f'El código «{effective_raw}» leído en el albarán no se '
             f'reconoce como ninguna máquina ni departamento de la '
             f'empresa. Revisa que esté escrito correctamente en el '
             f'albarán físico y vuelve a fotografiarlo.',

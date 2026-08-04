@@ -250,6 +250,41 @@ class DeliveryNote(models.Model):
         ),
     )
     # ------------------------------------------------------------------
+    # Código anotado A MANO por el propio operario sobre la foto,
+    # enmarcado entre dos marcas también manuscritas (comillas,
+    # paréntesis, llaves, almohadillas, o un trazo equivalente) --
+    # añadido S040, a petición explícita de Miguel Ángel. Cuando está
+    # presente, PREVALECE sobre general_machine_code_raw (impreso por
+    # el proveedor) para resolver el destino del albarán -- ver
+    # services.resolve_document_assignment(). No sustituye a
+    # general_machine_code_raw como columna: ambos se persisten por
+    # separado para trazabilidad de qué venía impreso y qué se anotó
+    # a mano.
+    # ------------------------------------------------------------------
+    # Code annotated BY HAND by the operator on the photo, framed
+    # between two matching handwritten marks (quotes, parentheses,
+    # braces, hashes, or an equivalent hand-drawn frame) -- added
+    # S040, at Miguel Ángel's explicit request. When present, it
+    # PREVAILS over general_machine_code_raw (printed by the
+    # supplier) when resolving the delivery note's destination -- see
+    # services.resolve_document_assignment(). Does not replace
+    # general_machine_code_raw as a column: both are persisted
+    # separately for traceability of what was printed vs. what was
+    # handwritten.
+    # ------------------------------------------------------------------
+    handwritten_machine_code_raw = models.CharField(
+        max_length=100,
+        blank=True,
+        verbose_name='Código de máquina/centro de gasto (manuscrito)',
+        help_text=(
+            'Código de máquina o centro de gasto anotado a mano por '
+            'el operario, enmarcado entre dos marcas también '
+            'manuscritas (comillas, paréntesis, llaves, almohadillas '
+            'u otro trazo equivalente). Si tiene valor, PREVALECE '
+            'sobre general_machine_code_raw en la asignación final.'
+        ),
+    )
+    # ------------------------------------------------------------------
     # Asignación MANUAL (S025) -- trazabilidad obligatoria de cuándo la
     # asignación de máquina/centro de gasto NO vino de la extracción
     # automática (general_machine_code_raw) sino de que un operario la
@@ -435,6 +470,35 @@ class DeliveryNote(models.Model):
 
     def __str__(self):
         return f'{self.supplier_name} — {self.delivery_number or "s/n"}'
+
+    @property
+    def effective_machine_code_raw(self):
+        """
+        Returns the machine/cost-centre code that actually governs
+        this delivery note's assignment: handwritten_machine_code_raw
+        if present (S040 -- a handwritten, correctly delimited
+        annotation prevails over the printed one), otherwise
+        general_machine_code_raw. Empty string if neither is set.
+        Use this (not general_machine_code_raw directly) anywhere the
+        "real" code is displayed or used to build a name -- e.g.
+        document_explorer.friendly_names.
+
+        ---
+
+        Devuelve el código de máquina/centro de gasto que realmente
+        rige la asignación de este albarán:
+        handwritten_machine_code_raw si tiene valor (S040 -- una
+        anotación manuscrita correctamente delimitada prevalece sobre
+        la impresa), si no, general_machine_code_raw. Cadena vacía si
+        ninguno de los dos tiene valor. Usar este campo (no
+        general_machine_code_raw directamente) en cualquier sitio
+        donde se muestre o se use el código "real" para construir un
+        nombre -- ej. document_explorer.friendly_names.
+        """
+        return (
+            self.handwritten_machine_code_raw
+            or self.general_machine_code_raw
+        )
 
     def assignment_progress(self):
         """

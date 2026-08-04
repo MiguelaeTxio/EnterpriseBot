@@ -159,6 +159,9 @@ def extract_delivery_note_data(self, delivery_note_id: int) -> None:
     delivery_note.general_machine_code_raw = (
         extraction.general_machine_code_raw or ''
     )
+    delivery_note.handwritten_machine_code_raw = (
+        extraction.handwritten_machine_code_raw or ''
+    )
     delivery_note.extraction_raw = extraction.model_dump()
     delivery_note.status = 'PROCESSED'
     delivery_note.save()
@@ -195,8 +198,12 @@ def extract_delivery_note_data(self, delivery_note_id: int) -> None:
     # extracción -- resolve_document_assignment aplica el fallback a
     # WAREHOUSE sin diferenciar (ver docstring, confirmado por Miguel
     # Ángel).
+    # S040: handwritten_machine_code_raw (anotación a mano,
+    # correctamente delimitada) se pasa como fuente PRIORITARIA sobre
+    # el código impreso -- ver resolve_document_assignment().
     assignment_type, machine = resolve_document_assignment(
         delivery_note.general_machine_code_raw or None,
+        delivery_note.handwritten_machine_code_raw or None,
         extraction.general_warehouse_keyword_found,
         company,
     )
