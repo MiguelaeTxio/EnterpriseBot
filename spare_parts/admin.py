@@ -46,6 +46,7 @@ class DeliveryNoteAdmin(admin.ModelAdmin):
     list_display = (
         'id',
         'company',
+        'note_type',
         'supplier_name',
         'delivery_number',
         'delivery_date',
@@ -53,7 +54,7 @@ class DeliveryNoteAdmin(admin.ModelAdmin):
         'source_type',
         'created_at',
     )
-    list_filter = ('company', 'status', 'source_type')
+    list_filter = ('company', 'note_type', 'status', 'source_type')
     search_fields = ('supplier_name', 'supplier_tax_id', 'delivery_number')
     date_hierarchy = 'delivery_date'
     inlines = [DeliveryNoteLineInline]

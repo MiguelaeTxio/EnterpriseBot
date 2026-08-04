@@ -26,7 +26,9 @@ from .forms import SupplierForm
 from .gcs_service import DELIVERY_NOTES_BUCKET, generate_signed_url
 from .models import DeliveryNote, DeliveryNoteLine, Supplier
 from .services import (
+    confirm_credit_note,
     confirm_delivery_note,
+    preview_credit_note_matches,
     validate_document_assignment,
 )
 from .tasks import extract_delivery_note_data, upload_delivery_note_photo_to_drive
@@ -113,6 +115,19 @@ class DeliveryNoteUploadView(CompanyUserRequiredMixin, View):
                 'active_nav': 'spare_parts_upload',
             })
 
+        # S040, a petición explícita de Miguel Ángel: el operario
+        # marca al subir si el documento es un albarán de Compra
+        # (por defecto) o un albarán de Abono a proveedor -- nunca se
+        # detecta automáticamente. Valor inesperado del formulario
+        # (manipulado fuera de la UI normal) cae a PURCHASE, nunca se
+        # confía ciegamente en el POST para un tipo que cambia cómo
+        # se mueve el stock.
+        note_type = request.POST.get(
+            'note_type', DeliveryNote.NOTE_TYPE_PURCHASE,
+        )
+        if note_type not in dict(DeliveryNote.NOTE_TYPE_CHOICES):
+            note_type = DeliveryNote.NOTE_TYPE_PURCHASE
+
         # S014-H10, Bloque B punto 2: se guarda el archivo y se
         # devuelve la respuesta de inmediato -- la extracción Gemini
         # Vision (antes síncrona aquí mismo) se ejecuta en segundo
@@ -121,6 +136,7 @@ class DeliveryNoteUploadView(CompanyUserRequiredMixin, View):
         # campo) hasta que la tarea termine.
         delivery_note = DeliveryNote(
             company=company,
+            note_type=note_type,
             source_type=source_type,
             processed_by=company_user,
         )
@@ -195,10 +211,25 @@ class DeliveryNoteDetailView(CompanyUserRequiredMixin, View):
 
         is_valid, rejection_reason = True, None
         resolved_type, resolved_machine = None, None
+        credit_note_matches = None
         if delivery_note.status == 'PROCESSED':
-            is_valid, rejection_reason, resolved_type, resolved_machine = (
-                validate_document_assignment(delivery_note, company)
-            )
+            if delivery_note.note_type == DeliveryNote.NOTE_TYPE_CREDIT_NOTE:
+                # S040: un albarán de abono no lleva máquina/centro de
+                # gasto -- se valida emparejando cada línea contra el
+                # stock de almacén ya existente, ver
+                # preview_credit_note_matches().
+                credit_note_matches, is_valid = preview_credit_note_matches(
+                    delivery_note, company,
+                )
+                if not is_valid:
+                    rejection_reason = (
+                        'Una o más líneas no se pueden abonar -- '
+                        'revisa el detalle de cada línea abajo.'
+                    )
+            else:
+                is_valid, rejection_reason, resolved_type, resolved_machine = (
+                    validate_document_assignment(delivery_note, company)
+                )
 
         # S025: lista de máquinas/centros de gasto para el desplegable
         # de asignación manual -- solo se necesita cuando la
@@ -208,7 +239,11 @@ class DeliveryNoteDetailView(CompanyUserRequiredMixin, View):
         # formulario, ver plantilla).
         assignable_machines = None
         handwritten_annotation = None
-        if not is_valid and not delivery_note.manually_assigned:
+        if (
+            not is_valid
+            and not delivery_note.manually_assigned
+            and delivery_note.note_type != DeliveryNote.NOTE_TYPE_CREDIT_NOTE
+        ):
             assignable_machines = (
                 MachineAsset.objects
                 .filter(company=company)
@@ -271,6 +306,7 @@ class DeliveryNoteDetailView(CompanyUserRequiredMixin, View):
             'resolved_machine': resolved_machine,
             'download_url': download_url,
             'assignable_machines': assignable_machines,
+            'credit_note_matches': credit_note_matches,
             'handwritten_annotation': handwritten_annotation,
         })
 
@@ -428,12 +464,13 @@ class DeliveryNoteConfirmView(CompanyUserRequiredMixin, View):
             )
 
         # S015-H10, primer punto de la hoja de ruta: no se puede
-        # confirmar un albarán sin el código único de máquina/centro
-        # de gasto obligatorio, o sin el fallback de palabra clave de
-        # almacén (S020) -- resuelto por el prompt de extracción.
-        # Defensa en profundidad -- la plantilla ya oculta el botón
-        # "Confirmar" cuando esto falla, pero un POST directo (fuera
-        # de la UI normal) debe rechazarse igualmente aquí.
+        # confirmar un albarán de COMPRA sin el código único de
+        # máquina/centro de gasto obligatorio, o sin el fallback de
+        # palabra clave de almacén (S020) -- resuelto por el prompt
+        # de extracción. Defensa en profundidad -- la plantilla ya
+        # oculta el botón "Confirmar" cuando esto falla, pero un POST
+        # directo (fuera de la UI normal) debe rechazarse igualmente
+        # aquí.
         #
         # EXCEPCIÓN S025: si delivery_note.manually_assigned es True,
         # un operario ya asignó máquina/centro de gasto a mano
@@ -444,7 +481,27 @@ class DeliveryNoteConfirmView(CompanyUserRequiredMixin, View):
         # reescribe con un valor manual, para no simular una
         # extracción automática que nunca ocurrió), así que se omite
         # ese bloqueo cuando la asignación ya es manual.
-        if not delivery_note.manually_assigned:
+        #
+        # S040: un albarán de ABONO no lleva máquina/centro de gasto
+        # -- se valida en su lugar que todas las líneas emparejen
+        # contra stock real de almacén (preview_credit_note_matches).
+        is_credit_note = (
+            delivery_note.note_type == DeliveryNote.NOTE_TYPE_CREDIT_NOTE
+        )
+        if is_credit_note:
+            _, all_matched = preview_credit_note_matches(
+                delivery_note, company,
+            )
+            if not all_matched:
+                messages.error(
+                    request,
+                    'Una o más líneas del abono no se pueden '
+                    'confirmar -- revisa el detalle de cada línea.',
+                )
+                return redirect(
+                    'spare_parts:delivery_note_detail', pk=delivery_note.pk,
+                )
+        elif not delivery_note.manually_assigned:
             is_valid, rejection_reason, _, _ = validate_document_assignment(
                 delivery_note, company,
             )
@@ -463,7 +520,14 @@ class DeliveryNoteConfirmView(CompanyUserRequiredMixin, View):
                 'asignación se confirmará igualmente.',
             )
 
-        counts = confirm_delivery_note(delivery_note, request.user.company_user)
+        if is_credit_note:
+            counts = confirm_credit_note(
+                delivery_note, request.user.company_user,
+            )
+        else:
+            counts = confirm_delivery_note(
+                delivery_note, request.user.company_user,
+            )
 
         # S014-H10: tras confirmar, el archivo origen (foto/PDF) se sube
         # a Google Drive y se borra del servidor -- los datos extraídos
@@ -471,6 +535,23 @@ class DeliveryNoteConfirmView(CompanyUserRequiredMixin, View):
         # aquí. Asíncrono para no bloquear la respuesta esperando a
         # Google.
         upload_delivery_note_photo_to_drive.delay(delivery_note.pk)
+
+        if is_credit_note:
+            summary = (
+                f'Abono confirmado: {counts["returned"]} línea(s) '
+                f'devuelta(s) a proveedor.'
+            )
+            if counts['unmatched']:
+                summary += (
+                    f' {counts["unmatched"]} línea(s) quedaron sin '
+                    f'emparejar -- revísalas manualmente.'
+                )
+                messages.warning(request, summary)
+            else:
+                messages.success(request, summary)
+            return redirect(
+                'spare_parts:delivery_note_detail', pk=delivery_note.pk,
+            )
 
         summary = (
             f'Asignación confirmada: {counts["warehouse"]} línea(s) a '

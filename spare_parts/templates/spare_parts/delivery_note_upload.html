@@ -41,6 +41,27 @@
                         {% csrf_token %}
 
                         <div class="mb-4">
+                            <label class="form-label fw-semibold d-block">
+                                Tipo de documento
+                            </label>
+                            <div class="btn-group w-100" role="group" aria-label="Tipo de documento">
+                                <input type="radio" class="btn-check" name="note_type" id="note_type_purchase" value="PURCHASE" checked>
+                                <label class="btn btn-outline-primary" for="note_type_purchase">
+                                    <i class="bi bi-box-arrow-in-down me-1"></i>Compra
+                                </label>
+                                <input type="radio" class="btn-check" name="note_type" id="note_type_credit" value="CREDIT_NOTE">
+                                <label class="btn btn-outline-primary" for="note_type_credit">
+                                    <i class="bi bi-arrow-return-left me-1"></i>Abono a proveedor
+                                </label>
+                            </div>
+                            <div class="form-text">
+                                Compra: repuestos que entran en almacén o van
+                                a una máquina. Abono: repuestos que salen de
+                                almacén de vuelta al proveedor.
+                            </div>
+                        </div>
+
+                        <div class="mb-4">
                             <label for="delivery_note_file" class="form-label fw-semibold">
                                 Foto o PDF del albarán <span class="text-danger">*</span>
                             </label>

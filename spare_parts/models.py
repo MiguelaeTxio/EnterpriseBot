@@ -127,6 +127,26 @@ class DeliveryNote(models.Model):
         ('PDF', 'PDF'),
     ]
 
+    # ------------------------------------------------------------------
+    # Tipo de documento (S040, a petición explícita de Miguel Ángel).
+    # PURCHASE (por defecto) es el flujo original: el albarán trae
+    # repuestos QUE ENTRAN en almacén/máquina (confirm_delivery_note()).
+    # CREDIT_NOTE es un "albarán de abono": repuestos que SALEN de
+    # almacén de vuelta al proveedor, con stock/movimiento negativo
+    # (confirm_credit_note()) -- lo marca el propio operario al subir
+    # el archivo (DeliveryNoteUploadView), NO se detecta
+    # automáticamente. El resto del ciclo de extracción Gemini Vision
+    # (proveedor, líneas, cantidades, precios) es idéntico para ambos
+    # tipos; solo cambia qué se hace con las líneas al confirmar -- ver
+    # confirm_credit_note() en services.py para el circuito completo.
+    # ------------------------------------------------------------------
+    NOTE_TYPE_PURCHASE = 'PURCHASE'
+    NOTE_TYPE_CREDIT_NOTE = 'CREDIT_NOTE'
+    NOTE_TYPE_CHOICES = [
+        (NOTE_TYPE_PURCHASE, 'Compra'),
+        (NOTE_TYPE_CREDIT_NOTE, 'Abono a proveedor'),
+    ]
+
     STATUS_CHOICES = [
         ('PENDING', 'Pendiente de procesar'),
         ('PROCESSED', 'Procesado'),
@@ -314,6 +334,20 @@ class DeliveryNote(models.Model):
         null=True,
         blank=True,
         verbose_name='Fecha de asignación manual',
+    )
+    note_type = models.CharField(
+        max_length=15,
+        choices=NOTE_TYPE_CHOICES,
+        default=NOTE_TYPE_PURCHASE,
+        verbose_name='Tipo de documento',
+        help_text=(
+            'Compra (por defecto): el albarán trae repuestos que '
+            'entran en almacén o van a una máquina. Abono a '
+            'proveedor: el albarán documenta repuestos que salen de '
+            'almacén de vuelta al proveedor (stock/coste negativo) -- '
+            'lo marca el operario al subir el archivo, ver '
+            'confirm_credit_note().'
+        ),
     )
     source_type = models.CharField(
         max_length=10,
@@ -565,6 +599,14 @@ class DeliveryNoteLine(models.Model):
         ('MACHINE', 'Máquina'),
         ('WAREHOUSE', 'Almacén'),
         ('UNASSIGNED', 'Sin asignar'),
+        # Añadido S040: solo para líneas de un albarán de abono
+        # (delivery_note.note_type=CREDIT_NOTE) que sí se emparejaron
+        # con un SparePartEntry existente en almacén -- ver
+        # confirm_credit_note(). Una línea de abono sin coincidencia
+        # (o con más cantidad de la que hay en stock) se queda en
+        # 'UNASSIGNED', igual criterio que las líneas de compra sin
+        # código reconocido.
+        ('RETURNED', 'Devuelto a proveedor'),
     ]
 
     delivery_note = models.ForeignKey(
@@ -919,12 +961,22 @@ class StockMovement(models.Model):
     MOVEMENT_ADJUST = 'ADJUST'
     MOVEMENT_RETURN_TO_WAREHOUSE = 'RETURN_TO_WAREHOUSE'
     MOVEMENT_SALVAGE = 'SALVAGE'
+    # Añadido S040, a petición explícita de Miguel Ángel: repuestos
+    # que salen de almacén de vuelta al proveedor (albarán de abono,
+    # DeliveryNote.note_type=CREDIT_NOTE). Se registra con quantity
+    # NEGATIVA (a diferencia de OUT, que usa magnitud positiva) --
+    # confirmado por Miguel Ángel: el movimiento en sí lleva signo
+    # negativo, pero SparePartEntry.stock_quantity nunca baja de cero
+    # (mismo tope que consume_from_warehouse) -- ver
+    # confirm_credit_note() en services.py.
+    MOVEMENT_RETURN_TO_SUPPLIER = 'RETURN_TO_SUPPLIER'
     MOVEMENT_TYPE_CHOICES = [
         (MOVEMENT_IN, 'Entrada'),
         (MOVEMENT_OUT, 'Salida'),
         (MOVEMENT_ADJUST, 'Ajuste'),
         (MOVEMENT_RETURN_TO_WAREHOUSE, 'Devolución a almacén'),
         (MOVEMENT_SALVAGE, 'Entrada por reciclado interno'),
+        (MOVEMENT_RETURN_TO_SUPPLIER, 'Abono a proveedor'),
     ]
 
     spare_part_entry = models.ForeignKey(
