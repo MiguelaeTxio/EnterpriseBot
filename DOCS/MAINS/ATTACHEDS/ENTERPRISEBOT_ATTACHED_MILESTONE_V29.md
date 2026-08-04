@@ -2017,39 +2017,159 @@ vaciada al mover todo su contenido fuera queda como fila huérfana en
 el índice (`child_count=0`, sin borrarse) — candidata a una futura
 herramienta de "carpetas vacías".
 
-### Hoja de ruta para la siguiente sesión (S040)
+### COMPLETADAS EN S040
 
-1. **Terminar la consolidación de cubos** (resto de la decisión 3.12):
-   retirar por completo las apps `machine_documents`/
-   `personal_documents` (modelos, vistas de subida,
-   `purge_orphaned_gcs_blobs.py`, referencias en
-   `create_gcs_buckets`) y decidir qué pasa con
-   `MachineDocument.gcs_blob_name`/`PersonalDocument.gcs_blob_name`.
-2. **Subida tipada desde gestión de documentación** (decisión 3.8):
-   depende del punto 1.
-3. **Herramienta de "carpetas vacías"**: limpiar las filas huérfanas
-   que deja mover archivos fuera de una carpeta sin vaciarla del
-   índice.
-4. **Consumidor de la cuarentena** (Fase 3 de H28, no de H29): sigue
-   sin construirse.
-5. **Migración de Python 3.10 → 3.12/3.13** antes del 4 de octubre de
-   2026.
-6. **Salto de HTMX 1.9.12 a la serie 2.x**: anotado, sin evaluar.
-7. **Frontera con H28** (si la interfaz de limpieza de la Fase 2
+Sesión larguísima -- 46 commits propios en el rango, la mayor parte
+del H29 real: primera versión funcional completa del motor de
+clasificación con Gemini, probada de verdad contra el corpus real en
+varios lotes controlados, con una decena larga de bugs reales
+encontrados y corregidos sobre la marcha (nunca supuestos). Trabajo en
+paralelo, sin choque, de otra sesión sobre H10 (albaranes de
+proveedor) -- solo tocó `spare_parts/`, tres mezclas limpias durante
+la sesión.
+
+**1. Motor de clasificación con Gemini, primera versión real
+funcionando** (`b7207bb`, `6dd5fb2`, `ec71779` y siguientes):
+`DocumentTypeCatalog` (vocabulario cerrado, 24 tipos MÁQUINA + 12
+PERSONAL, extensible), `naming_service` (formato fijo por dominio,
+ordinal propio para colisiones), `classification_service.classify_entry()`
++ `apply_classification()`. `ClassifyView` conectado a la interfaz.
+Primera prueba controlada (21 archivos reales de una máquina) encontró
+y corrigió en el momento: colisión de nombre resuelta con el sufijo
+" (N)" equivocado (de la herramienta de mover) en vez del ordinal
+"_N" propio; `.docx` rechazado por Gemini sin conversión; prompt
+confundiendo el modelo del fabricante con el código de flota interno
+(confirmado con las imágenes reales que subió Miguel Ángel); la
+Tarjeta ITV mal entendida como "dos documentos en uno" cuando en
+realidad es un único documento por diseño (corregido tras explicación
+directa de Miguel Ángel). Decisión de diseño registrada y sin
+resolver todavía: archivos "dos en uno" de verdad (`CE+RAE.pdf`, un
+Modelo 145 con varios trabajadores) deben desdoblarse en documentos
+únicos -- pendiente de decidir cómo partir un PDF sin salirse del
+principio de que clasificar nunca toca GCS.
+
+**2. Aviso de máquina equivocada por marca/modelo** (`ada3ffc`):
+`fleet.MachineAsset` como fuente de verdad para el código de flota
+real (prevalece siempre sobre lo que lea Gemini en el documento,
+`05ab8e3`) y para detectar cuándo un documento de una marca/modelo
+distinta aparece archivado en la carpeta de otra máquina.
+
+**3. Clasificación pasa a Celery -- incidente real de producción**
+(`68c15c3`): un lote recursivo real reventó el balanceador de
+PythonAnywhere (504) al encadenar llamadas a Gemini dentro de una
+petición HTTP síncrona. Movido al mismo mecanismo de tarea en segundo
+plano ya probado en el proyecto. El mismo incidente expuso un segundo
+problema real: el registro de auditoría solo se escribía al final del
+lote -- corregido a registro incremental, una línea por archivo según
+termina, para que un fallo a mitad nunca pierda el rastro de lo ya
+hecho. `deploy.yml` no reiniciaba el worker Celery ante cambios en
+`document_explorer/` (mismo patrón exacto que el incidente S025 con
+`document_management/`) -- corregido y documentado en el propio
+workflow (`3b4b9f2`).
+
+**4. Conversión de Office a PDF con LibreOffice** (`c5666b2`): sin
+dependencia Python nueva (`subprocess`, biblioteca estándar).
+Verificado que `soffice` está instalado en el servidor antes de
+escribir nada.
+
+**5. Corrección de arquitectura: el índice se escribe al momento de
+subir, no por refresco periódico** (`d8f499e`, la más grande de la
+sesión): Miguel Ángel corrigió el enfoque inicial (una tarea Celery
+Beat de refresco periódico) -- el explorador es una vista de base de
+datos, nunca debe depender de sondear GCS. `RegisterUploadedObjectView`
+(webhook autenticado por token compartido) escrito en el servidor;
+`h28_migration_agent/server_notify.py` (solo librería estándar,
+`urllib`) avisa al servidor justo tras cada subida con éxito a
+cuarentena, en los dos caminos reales del agente
+(`uploader.upload_single_file_to_quarantine` y
+`reconciler._upload_with_retries`). No contradice la decisión 4 de
+S030 (subida directa a GCS) -- es un canal de aviso aparte, sin
+contenido de archivo. Probado en producción de principio a fin con la
+ayuda de Miguel Ángel (compilación del agente en su máquina Windows
+incluida, con varios contratiempos reales resueltos sobre la marcha:
+carpeta equivocada para el token, extensión `.txt.txt` oculta).
+Refresco periódico reencuadrado como red de seguridad de baja
+frecuencia, no como mecanismo principal.
+
+**6. Identidad de personal por DNI** (`673a1a9`, `329f84b`):
+`PersonIdentity` (DNI → carpeta real de `DOC. PERSONAL`), sembrado con
+`seed_person_identities` (filtro barato por nombre de archivo +
+confirmación real con Gemini, nunca por el nombre a ciegas -- Hallazgo
+5 del anexo H28: el mismo nombre escrito de ocho formas). Corregido un
+bug real de la primera siembra (una carpeta `OBSOLETO` sobrescribía la
+carpeta buena ya guardada). `is_valid_spanish_dni()`: algoritmo real y
+público de la letra de control del DNI/NIE, puramente aritmético --
+detectó gratis una lectura errónea de Gemini en un documento
+perfectamente legible, confirmado con capturas reales de Miguel Ángel
+de cinco documentos distintos de la misma persona.
+
+**7. Always-on Task real de consumo de cuarentena** (`f5bb21c` y
+siguientes, punto 2 de la hoja de ruta de H29 desde hace varias
+sesiones): MÁQUINA se reubica de verdad cuando se resuelve con
+certeza (vía `resolve_machine_asset` sobre la ruta ya reflejada dentro
+de cuarentena); PERSONAL se clasifica siempre pero nunca se reubica en
+automático todavía -- red de seguridad explícita de Miguel Ángel
+("clasificar todo, marcar con duda para revisión humana"). Mismo
+Historial que el resto de operaciones masivas. Cadena de incidentes
+reales en producción, cada uno diagnosticado con datos del servidor
+antes de corregir, nunca supuesto: campo `created_at` inexistente
+(el real es `indexed_at`); límite real de Vertex AI de 100 MB en línea
+(`Part.from_uri` en vez de descargar y empaquetar) y, más específico
+todavía, 50 MB exactos solo para PDF (confirmado por el propio mensaje
+de error de la API) -- resuelto recortando a las 3 primeras páginas
+con PyMuPDF (ya dependencia del proyecto) cuando hace falta, decisión
+tomada junto con Miguel Ángel tras descartar convertir de formato;
+pasadas huérfanas por reinicios del worker a mitad de tarea (varios
+despliegues seguidos en la misma sesión) que se cierran solas al
+arrancar la siguiente; y, el más caro de corregir, el filtro de "sigue
+en cuarentena" comparaba contra `blob_name` (la ruta real en GCS, que
+nunca cambia por diseño) en vez de `parent_path` (la ubicación
+virtual) -- la propia tarea automática podía reprocesar con Gemini,
+de verdad, archivos ya reubicados, detectado por Miguel Ángel al ver
+que el contador de "en cola" nunca bajaba.
+
+**8. Panel de estado de cuarentena y catálogo de tipos gestionable
+desde el panel** (`595714a`, `fb20efe`): Miguel Ángel -- "no tenemos
+ningún visor del trabajo del worker" -- pantalla con la cola en vivo y
+el resumen de la última pasada. Catálogo de tipos con alta/baja desde
+la interfaz, sin desplegar código -- motivado por un hallazgo real
+(manuales de despiece de carretillas sin clasificar pese a que la
+máquina se conocía con certeza, por faltar el tipo en el vocabulario).
+
+### Hoja de ruta para la siguiente sesión (S041)
+
+1. **Personal: decidir cuándo una identidad resuelta por DNI es
+   suficiente para reubicar también** (hoy solo se clasifica, nunca
+   se mueve -- ver punto 6/7 de esta sesión).
+2. **Archivos "dos en uno" de verdad** (dossiers -- `CE+RAE.pdf`, un
+   Modelo 145 con varios trabajadores): decidir mecanismo de
+   desdoblado sin romper el principio de "clasificar nunca toca GCS".
+3. **Terminar la consolidación de cubos** (resto de la decisión 3.12,
+   arrastrada varias sesiones): retirar por completo las apps
+   `machine_documents`/`personal_documents`.
+4. **Subida tipada desde gestión de documentación** (decisión 3.8):
+   depende del punto 3.
+5. **Herramienta de "carpetas vacías"**: limpiar las filas huérfanas
+   que deja mover/reubicar archivos fuera de una carpeta sin vaciarla
+   del índice.
+6. **Buzón de documentación / "la vuelta"** (decisión 3.14, sin hito
+   asignado todavía): sigue sin construirse, incluida la modificación
+   pendiente del agente H28 para reportar la carpeta de origen local.
+7. **Migración de Python 3.10 → 3.12/3.13** antes del 4 de octubre de
+   2026 -- arrastrada varias sesiones, sin tocar todavía.
+8. **Salto de HTMX 1.9.12 a la serie 2.x**: anotado, sin evaluar.
+9. **Frontera con H28** (si la interfaz de limpieza de la Fase 2
    converge con el explorador): sigue sin cerrar.
 
-**La herramienta de mover no aparece en esta lista porque no hay nada
-pendiente sobre ella** — corregido en esta sesión (retirados de la
-hoja de ruta los antiguos puntos "verificar en frío la herramienta de
-mover" y "comenzar a mover manuales de verdad", cerrados por
-decisión de Miguel Ángel).
-
-**Cabo suelto menor, no bloqueante, arrastrado de S037:** las cuatro
-copias de estáticos desincronizadas de su fuente
+**Cabo suelto menor, arrastrado ya varias sesiones, no bloqueante:**
+las cuatro copias de estáticos desincronizadas de su fuente
 (`panel/css/panel.css`, `panel/js/admin_history.js`,
-`panel/js/form_entry_assets.js`, `panel/js/form_entry_modal.js`) —
-sigue sin verificarse si las fuentes actuales son las versiones
-correctas.
+`panel/js/form_entry_assets.js`, `panel/js/form_entry_modal.js`).
+
+**Verificar al inicio de la próxima sesión:** que la Always-on Task
+de consumo de cuarentena sigue avanzando con normalidad (panel de
+Cuarentena) y que el contador de "en cola" real (682 al cierre de esta
+sesión, 651 de máquina + resto de personal) sigue bajando.
 
 ---
 
