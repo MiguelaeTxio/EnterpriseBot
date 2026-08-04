@@ -8,10 +8,11 @@
 
 {% comment %}
     Detalle grupo a grupo de una operación masiva (H29, S040). Cada
-    tarjeta es UN grupo de duplicados: la fila conservada arriba, sus
-    hermanas enviadas a papelera debajo -- ver DataOperationLogDetailView
-    para el porqué de este diseño (corrige un incidente real de
-    confusión con el listado plano anterior).
+    tarjeta es un grupo/archivo -- el texto introductorio y las
+    etiquetas de contador (primary_count_label/secondary_count_label,
+    intro_note) son contextuales por operation_type -- ver
+    DataOperationLogDetailView para el porqué de este diseño (corrige
+    un incidente real de confusión con el listado plano anterior).
 {% endcomment %}
 
 {% block title %}Operación #{{ log.pk }}{% endblock title %}
@@ -46,10 +47,7 @@
     </div>
 
     <p class="text-muted small">
-        Cada tarjeta es un grupo: arriba la copia que se conservó,
-        debajo las que se enviaron a la papelera -- todas comparten el
-        mismo tamaño y CRC32C, así se puede comprobar que de verdad son
-        el mismo archivo.
+        {{ log.intro_note }}
     </p>
 
     {% for group_number, entries in groups.items %}
