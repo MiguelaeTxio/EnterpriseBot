@@ -130,7 +130,10 @@ _PDF_CLASSIFICATION_MAX_PAGES = 3
 _RESPONSE_SCHEMA = {
     "type": "object",
     "properties": {
-        "domain": {"type": "string", "enum": ["MACHINE", "PERSONAL", "DESCONOCIDO"]},
+        "domain": {
+            "type": "string",
+            "enum": ["MACHINE", "PERSONAL", "DESCONOCIDO"],
+        },
         "document_type_code": {"type": "string"},
         "confidence": {"type": "string", "enum": ["ALTA", "MEDIA", "BAJA"]},
         "reasoning": {"type": "string"},
@@ -150,7 +153,8 @@ _RESPONSE_SCHEMA = {
     ],
 }
 
-_PROMPT_TEMPLATE = """Eres un clasificador de documentación administrativa de una empresa \
+_PROMPT_TEMPLATE = """Eres un clasificador de documentación \
+administrativa de una empresa \
 española de grúas y maquinaria pesada. Se te da UN documento (PDF), y debes \
 identificar su tipo dentro de una lista CERRADA de tipos posibles -- nunca \
 inventes un tipo fuera de esta lista, ni renombres uno existente con tus \
@@ -358,7 +362,9 @@ def resolve_machine_asset(entry) -> MachineAsset | None:
         if not match:
             continue
         candidate_code = match.group(1).replace("-", "")
-        asset = MachineAsset.objects.filter(code__iexact=candidate_code).first()
+        asset = MachineAsset.objects.filter(
+            code__iexact=candidate_code,
+        ).first()
         if asset:
             return asset
     return None
@@ -742,7 +748,10 @@ def classify_entry(entry, domain: str | None = None) -> dict:
     import json
 
     mime_type = entry.content_type or "application/pdf"
-    extension = entry.name.rsplit(".", 1)[-1].lower() if "." in entry.name else ""
+    extension = (
+        entry.name.rsplit(".", 1)[-1].lower()
+        if "." in entry.name else ""
+    )
 
     try:
         if mime_type in _SUPPORTED_MIME_TYPES:
@@ -795,7 +804,9 @@ def classify_entry(entry, domain: str | None = None) -> dict:
                         "para el detalle)." % extension
                     ),
                 }
-            file_part = Part.from_bytes(data=converted, mime_type="application/pdf")
+            file_part = Part.from_bytes(
+                data=converted, mime_type="application/pdf",
+            )
 
         client = get_gemini_client()
         response = _generate_content_with_retry(
@@ -1081,17 +1092,21 @@ def apply_quarantine_classification(entry) -> dict:
     index write, `blob_name` in GCS is never touched, same as every
     other operation in this module).
 
-    PERSONAL domain is classified (the suggested type is recorded)
-    but **never relocated automatically** -- Miguel Ángel, S040,
-    explicit fallback: "se clasifican todos y los que generen alguna
-    duda (...) se marcan como con duda para revisión por un humano."
-    `PersonIdentity`-based matching (3.31/3.32) exists to raise
-    confidence for a future version of this same pipeline, but this
-    function does not yet act on a resolved identity by moving
-    anything -- only `build_new_name`'s naming already uses it when
-    called from `apply_classification` on files already correctly
-    filed. Same caution for MACHINE files whose folder can't be
-    resolved: classified, never relocated.
+    PERSONAL domain follows the same certainty principle, corrected
+    S041 at Miguel Ángel's explicit direction (working copy of the
+    Microsoft 365 reality, DB-only operation, low risk -- "vamos a
+    hacer ya los movimientos de manera real [en base de datos] (...)
+    vamos a ver los resultados y si hay que cambiar algo, se cambia"):
+    when the `dni_hint` read off this document resolves to an already
+    seeded `PersonIdentity` (`resolve_person_identity()` -- exact DNI
+    match, the same hard-identifier principle as `resolve_machine_asset`
+    for MACHINE, H29 3.27), it IS relocated out of quarantine into
+    `PersonIdentity.folder_path`, renamed via the canonical
+    surnames/name on the identity. No identity resolved (DNI unreadable,
+    invalid, or that person never seeded) means the same fallback as
+    before: classified, never relocated, left flagged for human review.
+    Same caution for MACHINE files whose folder can't be resolved:
+    classified, never relocated.
 
     Returns the same shape as `apply_classification()`
     (`new_name`/`classified`/`renamed`), plus `relocated` (bool -- the
@@ -1111,18 +1126,22 @@ def apply_quarantine_classification(entry) -> dict:
     `blob_name` en GCS nunca se toca, igual que cualquier otra
     operación de este módulo).
 
-    El dominio PERSONAL se clasifica (el tipo sugerido queda
-    registrado) pero **nunca se reubica en automático** -- Miguel
-    Ángel, S040, red de seguridad explícita: "se clasifican todos y
-    los que generen alguna duda (...) se marcan como con duda para
-    revisión por un humano." El emparejamiento por `PersonIdentity`
-    (3.31/3.32) existe para dar más confianza a una futura versión de
-    este mismo pipeline, pero esta función todavía no actúa sobre una
-    identidad resuelta moviendo nada -- solo el nombrado de
-    `build_new_name` ya la usa cuando se llama desde
-    `apply_classification` sobre archivos ya bien archivados. Misma
-    cautela para archivos de MÁQUINA cuya carpeta no se pueda
-    resolver: se clasifican, nunca se reubican.
+    El dominio PERSONAL sigue el mismo principio de certeza, corregido
+    en S041 por indicación explícita de Miguel Ángel (estamos sobre
+    una copia de la realidad de Microsoft 365, operación solo de base
+    de datos, riesgo bajo -- "vamos a hacer ya los movimientos de
+    manera real [en base de datos] (...) vamos a ver los resultados y
+    si hay que cambiar algo, se cambia"): cuando el `dni_hint` leído en
+    este documento resuelve a un `PersonIdentity` ya sembrado
+    (`resolve_person_identity()` -- coincidencia exacta de DNI, mismo
+    principio de identificador duro que `resolve_machine_asset` para
+    MÁQUINA, H29 3.27), SÍ se reubica fuera de cuarentena a
+    `PersonIdentity.folder_path`, renombrada con los apellidos/nombre
+    canónicos de la identidad. Sin identidad resuelta (DNI ilegible,
+    inválido, o persona todavía no sembrada) se mantiene el mismo
+    fallback de antes: se clasifica, nunca se reubica, queda marcado
+    para revisión humana. Misma cautela para archivos de MÁQUINA cuya
+    carpeta no se pueda resolver: se clasifican, nunca se reubican.
 
     Devuelve la misma forma que `apply_classification()`
     (`new_name`/`classified`/`renamed`), más `relocated` (bool -- si
@@ -1132,7 +1151,10 @@ def apply_quarantine_classification(entry) -> dict:
     domain = quarantine_domain_for_entry(entry)
     result = classify_entry(entry, domain)
     if "error" in result:
-        result.update(new_name=None, classified=False, renamed=False, relocated=False)
+        result.update(
+            new_name=None, classified=False,
+            renamed=False, relocated=False,
+        )
         return result
 
     effective_domain = domain or result.get("domain")
@@ -1141,18 +1163,66 @@ def apply_quarantine_classification(entry) -> dict:
         if effective_domain == "MACHINE" else None
     )
 
+    if effective_domain == "PERSONAL":
+        identity = resolve_person_identity(result.get("dni_hint"))
+        if not identity:
+            result.update(
+                new_name=None, classified=False,
+                renamed=False, relocated=False,
+            )
+            return result
+
+        candidate_name = build_new_name(entry, "PERSONAL", result)
+        if not candidate_name:
+            result.update(
+                new_name=None, classified=False,
+                renamed=False, relocated=False,
+            )
+            return result
+
+        target_parent_path = identity.folder_path.strip("/")
+
+        final_name = candidate_name
+        ordinal = 1
+        while _virtual_location_taken(
+            entry.bucket, target_parent_path, final_name, exclude_pk=entry.pk,
+        ):
+            final_name = build_new_name(
+                entry, "PERSONAL", result, ordinal=ordinal,
+            )
+            ordinal += 1
+
+        entry.name = final_name
+        move_entry(entry, target_parent_path)
+
+        result["new_name"] = final_name
+        result["classified"] = True
+        result["renamed"] = True
+        result["relocated"] = True
+        result["new_parent_path"] = target_parent_path
+        return result
+
     if effective_domain != "MACHINE":
-        result.update(new_name=None, classified=False, renamed=False, relocated=False)
+        result.update(
+            new_name=None, classified=False,
+            renamed=False, relocated=False,
+        )
         return result
 
     asset = resolve_machine_asset(entry)
     if not asset:
-        result.update(new_name=None, classified=False, renamed=False, relocated=False)
+        result.update(
+            new_name=None, classified=False,
+            renamed=False, relocated=False,
+        )
         return result
 
     candidate_name = build_new_name(entry, "MACHINE", result)
     if not candidate_name:
-        result.update(new_name=None, classified=False, renamed=False, relocated=False)
+        result.update(
+            new_name=None, classified=False,
+            renamed=False, relocated=False,
+        )
         return result
 
     target_parent_path = entry.parent_path
