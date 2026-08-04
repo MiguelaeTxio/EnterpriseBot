@@ -1352,6 +1352,17 @@ llevó `classify_entries_task` a segundo plano):
   auditoría incremental de 3.28, nunca todo junto al final). Migración
   `0011` (solo cambio de `choices`, sin backfill).
 
+**Corrección real, primera ejecución en producción del Beat:**
+`consume_quarantine_task` ordenaba por `created_at`, un campo que no
+existe en `DocumentIndexEntry` -- el campo real de fecha de alta en el
+índice se llama `indexed_at` (`auto_now_add=True`). Detectado gracias
+al panel de estado de cuarentena (3.33) y confirmado con el log real
+del worker: `FieldError` en cada uno de los cinco disparos entre
+05:56 y 06:30, sin efecto en el resto del worker (Celery marca la
+tarea como fallida y sigue, no arrastra a las demás) ni pérdida de
+datos -- simplemente ninguna pasada llegó a procesar nada hasta la
+corrección. `order_by("created_at")` → `order_by("indexed_at")`.
+
 ## 4. Consecuencia directa: las tres únicas vías de escritura
 
 De 3.1, 3.2 y 3.8 se sigue que un objeto solo puede aparecer o

@@ -378,7 +378,7 @@ def consume_quarantine_task(self) -> None:
             purged_at__isnull=True,
             blob_name__startswith=QUARANTINE_PREFIX,
         )
-        .order_by("created_at")[:_QUARANTINE_CONSUME_BATCH_SIZE]
+        .order_by("indexed_at")[:_QUARANTINE_CONSUME_BATCH_SIZE]
     )
     if not entries:
         return
