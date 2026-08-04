@@ -644,7 +644,10 @@ class DataOperationLog(models.Model):
         ordering = ["-performed_at"]
 
     def __str__(self):
-        return f"{self.get_operation_type_display()} -- {self.performed_at:%Y-%m-%d %H:%M}"
+        return (
+            f"{self.get_operation_type_display()} -- "
+            f"{self.performed_at:%Y-%m-%d %H:%M}"
+        )
 
     @property
     def bytes_recovered_display(self) -> str:
@@ -668,6 +671,26 @@ class DataOperationLog(models.Model):
             return "Sin poder aplicar"
         return "Copias enviadas a papelera"
 
+    @property
+    def intro_note(self) -> str:
+        if self.operation_type == self.OPERATION_QUARANTINE_CONSUME:
+            return (
+                "Cada tarjeta es un archivo de cuarentena procesado: "
+                "dominio, tipo y pistas detectadas por Gemini, y si "
+                "se reubicó fuera de cuarentena o quedó pendiente de "
+                "revisión humana."
+            )
+        if self.operation_type == self.OPERATION_BATCH_CLASSIFICATION:
+            return (
+                "Cada tarjeta es un archivo clasificado: dominio, "
+                "tipo y pistas detectadas por Gemini."
+            )
+        return (
+            "Cada tarjeta es un grupo: arriba la copia que se "
+            "conservó, debajo las que se enviaron a la papelera -- "
+            "todas comparten el mismo tamaño y CRC32C, así se puede "
+            "comprobar que de verdad son el mismo archivo."
+        )
 
 
 class DataOperationLogEntry(models.Model):
@@ -844,7 +867,9 @@ class PersonIdentity(models.Model):
         verbose_name="DNI/NIE",
         help_text="Normalizado: mayúsculas, sin espacios ni guiones.",
     )
-    first_surname = models.CharField(max_length=100, verbose_name="Primer apellido")
+    first_surname = models.CharField(
+        max_length=100, verbose_name="Primer apellido",
+    )
     second_surname = models.CharField(
         max_length=100, blank=True, verbose_name="Segundo apellido",
     )
@@ -860,8 +885,12 @@ class PersonIdentity(models.Model):
         related_name="+",
         verbose_name="DNI de origen usado para sembrar esta identidad",
     )
-    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Fecha de alta")
-    updated_at = models.DateTimeField(auto_now=True, verbose_name="Última actualización")
+    created_at = models.DateTimeField(
+        auto_now_add=True, verbose_name="Fecha de alta",
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True, verbose_name="Última actualización",
+    )
 
     class Meta:
         verbose_name = "Identidad de personal"
@@ -869,4 +898,7 @@ class PersonIdentity(models.Model):
         ordering = ["first_surname", "second_surname", "given_name"]
 
     def __str__(self):
-        return f"{self.dni} -- {self.first_surname} {self.second_surname} {self.given_name}"
+        return (
+            f"{self.dni} -- {self.first_surname} "
+            f"{self.second_surname} {self.given_name}"
+        )
