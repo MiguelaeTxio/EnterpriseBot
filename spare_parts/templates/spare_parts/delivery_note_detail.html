@@ -127,7 +127,10 @@
                             Único para todo el albarán — leído del campo
                             Observaciones/Notas, o delimitado con #, * o "
                             en una línea de artículo si el proveedor no usa
-                            Observaciones. Si no hay código pero el albarán
+                            Observaciones. Si el operario ha anotado un
+                            código a mano, delimitado entre dos marcas
+                            manuscritas, ese código prevalece sobre el
+                            impreso. Si no hay código pero el albarán
                             menciona "repuesto", "stock" o "almacén", va a
                             almacén general. Si no se reconoce ninguno de
                             los dos automáticamente, un operario puede
@@ -138,8 +141,13 @@
                     <div class="card-body">
                         {% if delivery_note.status == 'ASSIGNED' %}
                             <div class="mb-0">
-                                {% if delivery_note.general_machine_code_raw %}
-                                Código leído: <strong>{{ delivery_note.general_machine_code_raw }}</strong>
+                                {% if delivery_note.effective_machine_code_raw %}
+                                Código leído: <strong>{{ delivery_note.effective_machine_code_raw }}</strong>
+                                {% if delivery_note.handwritten_machine_code_raw %}
+                                <span class="badge bg-secondary ms-1">
+                                    <i class="bi bi-pencil-fill me-1"></i>Manuscrito
+                                </span>
+                                {% endif %}
                                 {% else %}
                                 <strong>Almacén general</strong> (por palabra clave, sin código)
                                 {% endif %}
@@ -157,8 +165,13 @@
                             <div class="alert alert-success mb-0 d-flex align-items-center gap-2 flex-wrap">
                                 <i class="bi bi-check-circle-fill"></i>
                                 <span>
-                                    {% if delivery_note.general_machine_code_raw %}
-                                    Código leído: <strong>{{ delivery_note.general_machine_code_raw }}</strong>
+                                    {% if delivery_note.effective_machine_code_raw %}
+                                    Código leído: <strong>{{ delivery_note.effective_machine_code_raw }}</strong>
+                                    {% if delivery_note.handwritten_machine_code_raw %}
+                                    <span class="badge bg-secondary">
+                                        <i class="bi bi-pencil-fill me-1"></i>Manuscrito
+                                    </span>
+                                    {% endif %}
                                     {% else %}
                                     <strong>Almacén general</strong> (por palabra clave, sin código)
                                     {% endif %}

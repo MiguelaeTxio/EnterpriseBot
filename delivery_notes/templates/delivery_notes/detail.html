@@ -50,8 +50,12 @@
                 <div class="fw-semibold">{{ note.recipient_tax_id|default:"—" }}</div>
             </div>
             <div class="col-6 col-md-3">
-                <div class="text-muted small">Código general (#CÓDIGO#)</div>
+                <div class="text-muted small">Código impreso (#CÓDIGO#)</div>
                 <div class="fw-semibold">{{ note.general_machine_code_raw|default:"—" }}</div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="text-muted small">Código manuscrito (prevalece)</div>
+                <div class="fw-semibold">{{ note.handwritten_machine_code_raw|default:"—" }}</div>
             </div>
             <div class="col-6 col-md-3">
                 <div class="text-muted small">Revisado por</div>

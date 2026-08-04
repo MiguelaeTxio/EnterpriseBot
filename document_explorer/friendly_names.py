@@ -107,7 +107,8 @@ def _resolve_delivery_notes(entries):
         .select_related("supplier")
         .only(
             "id", "supplier__name", "supplier_name",
-            "general_machine_code_raw", "delivery_date",
+            "general_machine_code_raw", "handwritten_machine_code_raw",
+            "delivery_date",
         )
     )
     by_id = {note.id: note for note in notes}
@@ -117,9 +118,12 @@ def _resolve_delivery_notes(entries):
             continue
         supplier = note.supplier.name if note.supplier_id \
             else note.supplier_name
+        # S040: effective_machine_code_raw antepone el código
+        # manuscrito (prevalece) al impreso -- ver
+        # spare_parts.models.DeliveryNote.effective_machine_code_raw.
         name = _joined(
             supplier,
-            note.general_machine_code_raw,
+            note.effective_machine_code_raw,
             note.delivery_date.strftime("%d-%m-%Y")
             if note.delivery_date else "",
         )
