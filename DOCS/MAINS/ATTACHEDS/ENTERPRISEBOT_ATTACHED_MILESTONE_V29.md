@@ -1317,6 +1317,41 @@ que un DNI matemáticamente imposible reubique un archivo), y
 el índice. Ningún DNI inválido puede llegar a persistirse ni a usarse
 para resolver una carpeta, venga de donde venga.
 
+### 3.33. Always-on Task real de consumo de cuarentena (H29 roadmap punto 2, S040)
+
+Verbatim: *"es necesario empezar ya a clasificar lo que tenemos en
+cuarentena, tener la Always-on Task para que ya se vea y quede
+reflejado. Todo lo que haga el agente de la Always-on Task tiene que
+quedar reflejado en el historial, en el mismo historial que estamos
+viendo los cambios que hacemos, la clasificación, etcétera."*
+
+`document_explorer.tasks.consume_quarantine_task` (Celery Beat, cada
+10 minutos, hasta 40 archivos por pasada -- acotado, mismo motivo que
+llevó `classify_entries_task` a segundo plano):
+
+- **Dominio MÁQUINA:** si `resolve_machine_asset()` resuelve con
+  certeza la máquina real a partir de la ruta reflejada dentro de
+  cuarentena (el agente conserva la ruta relativa original bajo
+  `_CUARENTENA/`, confirmado en `uploader.py`), el archivo se clasifica
+  **y se reubica de verdad** a su carpeta real de `DOC. MAQUINAS`,
+  renombrado -- reutiliza `move_service.move_entry()` tal cual (escritura
+  de índice pura, `blob_name` en GCS nunca se toca). Sin máquina
+  resuelta: se clasifica, nunca se reubica.
+- **Dominio PERSONAL:** se clasifica siempre (tipo sugerido registrado),
+  **nunca se reubica en automático todavía** -- red de seguridad
+  explícita de Miguel Ángel: *"se clasifican todos y los que generen
+  alguna duda (...) se marcan como con duda para revisión por un
+  humano."* El emparejamiento por `PersonIdentity` (3.31/3.32) da
+  nombre canónico al construir el archivo cuando se aplica desde otro
+  sitio, pero esta tarea todavía no mueve nada de personal -- pendiente
+  de decisión futura sobre cuándo la identidad resuelta es suficiente
+  para reubicar también ahí.
+- **Mismo Historial que todo lo demás** -- nuevo
+  `operation_type=QUARANTINE_CONSUME` y `action=RELOCATED`, una
+  `DataOperationLogEntry` por archivo según termina (mismo patrón de
+  auditoría incremental de 3.28, nunca todo junto al final). Migración
+  `0011` (solo cambio de `choices`, sin backfill).
+
 ## 4. Consecuencia directa: las tres únicas vías de escritura
 
 De 3.1, 3.2 y 3.8 se sigue que un objeto solo puede aparecer o

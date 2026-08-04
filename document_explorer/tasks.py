@@ -301,3 +301,166 @@ def refresh_quarantine_index_task(self) -> None:
         "# [refresh_quarantine_index_task] %d carpeta(s) de cuarentena "
         "recorrida(s).", folders_seen,
     )
+
+
+_QUARANTINE_CONSUME_BATCH_SIZE = 40
+
+
+@app.task(base=DjangoTask, bind=True, max_retries=0)
+def consume_quarantine_task(self) -> None:
+    """
+    Periodic (Celery Beat) Always-on Task that classifies the real
+    quarantine backlog -- H29 roadmap point 2, Miguel Ángel: "es
+    necesario empezar ya a clasificar lo que tenemos en cuarentena,
+    tener la Always-on Task (...) todo lo que haga el agente de la
+    Always-on Task tiene que quedar reflejado en el historial, en el
+    mismo historial que estamos viendo los cambios que hacemos."
+
+    Runs `classification_service.apply_quarantine_classification()`
+    over up to `_QUARANTINE_CONSUME_BATCH_SIZE` live files still
+    sitting under `_CUARENTENA/`, oldest first -- capped on purpose,
+    same reasoning as `classify_entries_task`'s move to the background
+    in the first place: a real Gemini call per file, bounded per run
+    so no single run grows unbounded as the backlog grows.
+
+    Writes to the exact same `DataOperationLog`/`DataOperationLogEntry`
+    tables as manual classification (`operation_type=
+    QUARANTINE_CONSUME`), one entry per file as it finishes -- same
+    incremental-audit reasoning as `classify_entries_task` (H29 3.28):
+    a crash mid-run must never lose the trace of what already
+    happened. MACHINE-domain files that got relocated for real are
+    logged as `ACTION_RELOCATED`; everything else (PERSONAL domain,
+    or MACHINE that could not be resolved with certainty) is logged
+    as `ACTION_NOT_CLASSIFIED` even when a type was successfully
+    suggested -- Miguel Ángel's explicit fallback: classify everything,
+    but never move anything the system isn't sure about; leave it
+    flagged for a human instead.
+
+    ---
+
+    Always-on Task periódica (Celery Beat) que clasifica de verdad la
+    cola de cuarentena -- punto 2 de la hoja de ruta H29, Miguel Ángel:
+    "es necesario empezar ya a clasificar lo que tenemos en cuarentena,
+    tener la Always-on Task (...) todo lo que haga el agente de la
+    Always-on Task tiene que quedar reflejado en el historial, en el
+    mismo historial que estamos viendo los cambios que hacemos."
+
+    Ejecuta `classification_service.apply_quarantine_classification()`
+    sobre hasta `_QUARANTINE_CONSUME_BATCH_SIZE` archivos vivos que
+    sigan dentro de `_CUARENTENA/`, los más antiguos primero -- acotado
+    a propósito, mismo motivo que llevó a `classify_entries_task` a
+    segundo plano en primer lugar: una llamada real a Gemini por
+    archivo, limitada por ejecución para que ninguna corrida crezca
+    sin límite según crece la cola.
+
+    Escribe en las mismas tablas `DataOperationLog`/
+    `DataOperationLogEntry` que la clasificación manual
+    (`operation_type=QUARANTINE_CONSUME`), una línea por archivo según
+    termina -- mismo razonamiento de auditoría incremental que
+    `classify_entries_task` (H29 3.28): un fallo a mitad de ejecución
+    nunca debe perder el rastro de lo que ya pasó. Los archivos de
+    dominio MÁQUINA que se reubicaron de verdad quedan como
+    `ACTION_RELOCATED`; todo lo demás (dominio PERSONAL, o MÁQUINA que
+    no se pudo resolver con certeza) queda como `ACTION_NOT_CLASSIFIED`
+    incluso cuando sí se sugirió un tipo -- red de seguridad explícita
+    de Miguel Ángel: clasificar todo, pero no mover nunca nada de lo
+    que el sistema no esté seguro; dejarlo marcado para un humano.
+    """
+    from document_explorer import classification_service
+    from document_explorer.buckets import PRIMARY_BUCKET, QUARANTINE_PREFIX
+    from document_explorer.models import DocumentIndexEntry
+
+    entries = list(
+        DocumentIndexEntry.objects.filter(
+            bucket=PRIMARY_BUCKET,
+            entry_kind=DocumentIndexEntry.KIND_FILE,
+            deleted_at__isnull=True,
+            purged_at__isnull=True,
+            blob_name__startswith=QUARANTINE_PREFIX,
+        )
+        .order_by("created_at")[:_QUARANTINE_CONSUME_BATCH_SIZE]
+    )
+    if not entries:
+        return
+
+    log = DataOperationLog.objects.create(
+        operation_type=DataOperationLog.OPERATION_QUARANTINE_CONSUME,
+        bucket=PRIMARY_BUCKET,
+        path_prefix=QUARANTINE_PREFIX.rstrip("/"),
+        status=DataOperationLog.STATUS_RUNNING,
+    )
+
+    try:
+        relocated_count = 0
+        pending_count = 0
+
+        for group_number, entry in enumerate(entries, start=1):
+            original_name = entry.name
+            result = classification_service.apply_quarantine_classification(entry)
+
+            if "error" in result:
+                pending_count += 1
+                action = DataOperationLogEntry.ACTION_NOT_CLASSIFIED
+                detail = "Error: %s" % result["error"]
+            else:
+                hints = ", ".join(
+                    filter(None, [
+                        result.get("machine_code_hint"),
+                        " ".join(filter(None, [
+                            result.get("first_surname_hint"),
+                            result.get("second_surname_hint"),
+                            result.get("given_name_hint"),
+                        ])),
+                        result.get("dni_hint"),
+                        result.get("date_hint"),
+                    ])
+                )
+                mismatch = result.get("machine_mismatch_warning")
+                detail = (
+                    "Dominio: %s -- Tipo: %s (%s) -- %s%s%s"
+                    % (
+                        result.get("domain", "?"),
+                        result.get("document_type_code", "?"),
+                        result.get("confidence", "?"),
+                        result.get("reasoning", ""),
+                        " -- Pistas: %s" % hints if hints else "",
+                        " -- %s" % mismatch if mismatch else "",
+                    )
+                )
+                if result.get("relocated"):
+                    relocated_count += 1
+                    action = DataOperationLogEntry.ACTION_RELOCATED
+                else:
+                    pending_count += 1
+                    action = DataOperationLogEntry.ACTION_NOT_CLASSIFIED
+
+            DataOperationLogEntry.objects.create(
+                log=log,
+                group_number=group_number,
+                action=action,
+                index_entry=entry,
+                bucket=entry.bucket,
+                blob_name=entry.blob_name,
+                name=entry.name,
+                previous_name=original_name,
+                parent_path=entry.parent_path,
+                size_bytes=entry.size_bytes,
+                crc32c=entry.crc32c,
+                detail=detail,
+            )
+
+        with transaction.atomic():
+            log.groups_count = len(entries)
+            log.kept_count = relocated_count
+            log.trashed_count = pending_count
+            log.status = DataOperationLog.STATUS_COMPLETED
+            log.save(update_fields=[
+                "groups_count", "kept_count", "trashed_count", "status",
+            ])
+    except Exception:
+        logger.exception(
+            "# [consume_quarantine_task] Fallo inesperado, log #%d", log.pk,
+        )
+        log.status = DataOperationLog.STATUS_FAILED
+        log.save(update_fields=["status"])
+        raise

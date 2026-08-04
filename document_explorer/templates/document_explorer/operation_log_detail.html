@@ -71,6 +71,10 @@
                                         <span class="text-warning small">
                                             <i class="bi bi-question-circle"></i> Sin aplicar
                                         </span>
+                                    {% elif line.action == "RELOCATED" %}
+                                        <span class="text-success small fw-bold">
+                                            <i class="bi bi-signpost-split"></i> Reubicada
+                                        </span>
                                     {% elif line.action == "CLASSIFIED" %}
                                         <span class="text-success small fw-bold">
                                             <i class="bi bi-robot"></i> Clasificada

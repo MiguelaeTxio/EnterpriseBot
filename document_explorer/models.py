@@ -554,9 +554,11 @@ class DataOperationLog(models.Model):
 
     OPERATION_DUPLICATE_RESOLUTION = "DUPLICATE_RESOLUTION"
     OPERATION_BATCH_CLASSIFICATION = "BATCH_CLASSIFICATION"
+    OPERATION_QUARANTINE_CONSUME = "QUARANTINE_CONSUME"
     OPERATION_CHOICES = [
         (OPERATION_DUPLICATE_RESOLUTION, "Resolución de duplicados"),
         (OPERATION_BATCH_CLASSIFICATION, "Clasificación por lote"),
+        (OPERATION_QUARANTINE_CONSUME, "Consumo automático de cuarentena"),
     ]
 
     operation_type = models.CharField(
@@ -652,12 +654,16 @@ class DataOperationLog(models.Model):
 
     @property
     def primary_count_label(self) -> str:
+        if self.operation_type == self.OPERATION_QUARANTINE_CONSUME:
+            return "Reubicadas fuera de cuarentena"
         if self.operation_type == self.OPERATION_BATCH_CLASSIFICATION:
             return "Clasificadas con éxito"
         return "Copias conservadas"
 
     @property
     def secondary_count_label(self) -> str:
+        if self.operation_type == self.OPERATION_QUARANTINE_CONSUME:
+            return "Clasificadas, pendientes de revisión humana"
         if self.operation_type == self.OPERATION_BATCH_CLASSIFICATION:
             return "Sin poder aplicar"
         return "Copias enviadas a papelera"
@@ -691,11 +697,13 @@ class DataOperationLogEntry(models.Model):
     ACTION_TRASHED = "TRASHED"
     ACTION_CLASSIFIED = "CLASSIFIED"
     ACTION_NOT_CLASSIFIED = "NOT_CLASSIFIED"
+    ACTION_RELOCATED = "RELOCATED"
     ACTION_CHOICES = [
         (ACTION_KEPT, "Conservada"),
         (ACTION_TRASHED, "Enviada a papelera"),
         (ACTION_CLASSIFIED, "Clasificada y renombrada"),
         (ACTION_NOT_CLASSIFIED, "No se pudo aplicar"),
+        (ACTION_RELOCATED, "Reubicada fuera de cuarentena"),
     ]
 
     log = models.ForeignKey(

@@ -374,4 +374,14 @@ CELERY_BEAT_SCHEDULE = {
         'task':     'document_explorer.tasks.refresh_quarantine_index_task',
         'schedule': crontab(minute=0),
     },
+
+    # Always-on Task real de consumo de cuarentena (H29, S040, punto 2
+    # de la hoja de ruta) -- clasifica hasta 40 archivos por pasada,
+    # cada 10 minutos. MACHINE se reubica de verdad cuando se resuelve
+    # con certeza; PERSONAL y MACHINE sin resolver quedan clasificados
+    # pero marcados para revisión humana, nunca movidos a ciegas.
+    'consume-quarantine': {
+        'task':     'document_explorer.tasks.consume_quarantine_task',
+        'schedule': crontab(minute='*/10'),
+    },
 }

@@ -74,7 +74,8 @@ from fleet.models import MachineAsset
 from spare_parts.gcs_service import download_bytes
 
 from . import naming_service
-from .move_service import _virtual_location_taken
+from .buckets import QUARANTINE_PREFIX
+from .move_service import _virtual_location_taken, move_entry
 
 from .models import DocumentTypeCatalog, PersonIdentity
 
@@ -919,4 +920,142 @@ def apply_classification(entry) -> dict:
     result["new_name"] = final_name
     result["classified"] = True
     result["renamed"] = renamed
+    return result
+
+
+def quarantine_domain_for_entry(entry) -> str | None:
+    """
+    Domain of a file sitting inside `_CUARENTENA/` -- same rule as
+    `domain_for_entry`, but checking the part of `blob_name` AFTER the
+    quarantine prefix, since the agent mirrors the original relative
+    path underneath it (`_CUARENTENA/DOC. MAQUINAS/...`,
+    `h28_migration_agent/uploader.py`'s `build_quarantine_blob_name`).
+
+    ---
+
+    Dominio de un archivo dentro de `_CUARENTENA/` -- misma regla que
+    `domain_for_entry`, pero mirando la parte de `blob_name` DESPUÉS
+    del prefijo de cuarentena, porque el agente refleja la ruta
+    relativa original justo debajo de él
+    (`_CUARENTENA/DOC. MAQUINAS/...`, `build_quarantine_blob_name` de
+    `h28_migration_agent/uploader.py`).
+    """
+    relative = entry.blob_name
+    if relative.startswith(QUARANTINE_PREFIX):
+        relative = relative[len(QUARANTINE_PREFIX):]
+    if relative.startswith("DOC. MAQUINAS/"):
+        return DocumentTypeCatalog.DOMAIN_MACHINE
+    if relative.startswith("DOC. PERSONAL/"):
+        return DocumentTypeCatalog.DOMAIN_PERSONAL
+    return None
+
+
+def apply_quarantine_classification(entry) -> dict:
+    """
+    Full pipeline for ONE quarantine file (H29, S040 -- the "Always-on
+    Task que clasifique la cuarentena" of the H29 roadmap, point 2):
+    classify, and -- only for MACHINE domain, only when the real
+    machine can be resolved with certainty from the mirrored folder
+    path already inside quarantine (`resolve_machine_asset`, same as
+    3.27) -- relocate it out of quarantine into its real `DOC.
+    MAQUINAS` folder, renamed, via `move_service.move_entry()` (pure
+    index write, `blob_name` in GCS is never touched, same as every
+    other operation in this module).
+
+    PERSONAL domain is classified (the suggested type is recorded)
+    but **never relocated automatically** -- Miguel Ángel, S040,
+    explicit fallback: "se clasifican todos y los que generen alguna
+    duda (...) se marcan como con duda para revisión por un humano."
+    `PersonIdentity`-based matching (3.31/3.32) exists to raise
+    confidence for a future version of this same pipeline, but this
+    function does not yet act on a resolved identity by moving
+    anything -- only `build_new_name`'s naming already uses it when
+    called from `apply_classification` on files already correctly
+    filed. Same caution for MACHINE files whose folder can't be
+    resolved: classified, never relocated.
+
+    Returns the same shape as `apply_classification()`
+    (`new_name`/`classified`/`renamed`), plus `relocated` (bool -- the
+    file's `parent_path` actually changed) and, when relocated,
+    `new_parent_path`.
+
+    ---
+
+    Pipeline completo para UN archivo de cuarentena (H29, S040 -- la
+    "Always-on Task que clasifique la cuarentena" del punto 2 de la
+    hoja de ruta H29): clasifica, y -- solo para dominio MÁQUINA, solo
+    cuando la máquina real se puede resolver con certeza a partir de
+    la ruta de carpeta ya reflejada dentro de cuarentena
+    (`resolve_machine_asset`, igual que 3.27) -- la reubica fuera de
+    cuarentena a su carpeta real de `DOC. MAQUINAS`, renombrada, vía
+    `move_service.move_entry()` (escritura de índice pura, el
+    `blob_name` en GCS nunca se toca, igual que cualquier otra
+    operación de este módulo).
+
+    El dominio PERSONAL se clasifica (el tipo sugerido queda
+    registrado) pero **nunca se reubica en automático** -- Miguel
+    Ángel, S040, red de seguridad explícita: "se clasifican todos y
+    los que generen alguna duda (...) se marcan como con duda para
+    revisión por un humano." El emparejamiento por `PersonIdentity`
+    (3.31/3.32) existe para dar más confianza a una futura versión de
+    este mismo pipeline, pero esta función todavía no actúa sobre una
+    identidad resuelta moviendo nada -- solo el nombrado de
+    `build_new_name` ya la usa cuando se llama desde
+    `apply_classification` sobre archivos ya bien archivados. Misma
+    cautela para archivos de MÁQUINA cuya carpeta no se pueda
+    resolver: se clasifican, nunca se reubican.
+
+    Devuelve la misma forma que `apply_classification()`
+    (`new_name`/`classified`/`renamed`), más `relocated` (bool -- si
+    el `parent_path` del archivo cambió de verdad) y, cuando se
+    reubica, `new_parent_path`.
+    """
+    domain = quarantine_domain_for_entry(entry)
+    result = classify_entry(entry, domain)
+    if "error" in result:
+        result.update(new_name=None, classified=False, renamed=False, relocated=False)
+        return result
+
+    effective_domain = domain or result.get("domain")
+    result["machine_mismatch_warning"] = (
+        check_machine_mismatch(entry, result)
+        if effective_domain == "MACHINE" else None
+    )
+
+    if effective_domain != "MACHINE":
+        result.update(new_name=None, classified=False, renamed=False, relocated=False)
+        return result
+
+    asset = resolve_machine_asset(entry)
+    if not asset:
+        result.update(new_name=None, classified=False, renamed=False, relocated=False)
+        return result
+
+    candidate_name = build_new_name(entry, "MACHINE", result)
+    if not candidate_name:
+        result.update(new_name=None, classified=False, renamed=False, relocated=False)
+        return result
+
+    target_parent_path = entry.parent_path
+    if target_parent_path.startswith(QUARANTINE_PREFIX):
+        target_parent_path = target_parent_path[len(QUARANTINE_PREFIX):]
+
+    final_name = candidate_name
+    ordinal = 1
+    while _virtual_location_taken(
+        entry.bucket, target_parent_path, final_name, exclude_pk=entry.pk,
+    ):
+        final_name = build_new_name(
+            entry, "MACHINE", result, ordinal=ordinal,
+        )
+        ordinal += 1
+
+    entry.name = final_name
+    move_entry(entry, target_parent_path)
+
+    result["new_name"] = final_name
+    result["classified"] = True
+    result["renamed"] = True
+    result["relocated"] = True
+    result["new_parent_path"] = target_parent_path
     return result
