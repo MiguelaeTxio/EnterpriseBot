@@ -1267,6 +1267,264 @@ def confirm_delivery_note(delivery_note, company_user):
     return counts
 
 
+# ---------------------------------------------------------------------------
+# Albarán de abono / Credit note (S040, petición explícita de Miguel
+# Ángel): repuestos que SALEN de almacén de vuelta al proveedor,
+# stock/movimiento negativo. El propio operario marca el documento
+# como abono al subirlo (DeliveryNote.note_type=CREDIT_NOTE,
+# DeliveryNoteUploadView) -- la extracción Gemini Vision (proveedor,
+# líneas, cantidades, precios) es la MISMA que para un albarán de
+# compra; lo único que cambia es el circuito de confirmación de
+# abajo, que nunca crea SparePartEntry nuevos, solo descuenta stock
+# ya existente.
+# ---------------------------------------------------------------------------
+
+def _match_credit_note_line(line, company):
+    """
+    Matches a CREDIT_NOTE delivery note line against an existing
+    WAREHOUSE SparePartEntry, using the SAME matching order as the
+    WAREHOUSE branch of confirm_delivery_note(): company + reference
+    first, then normalised description among ad-hoc (reference='',
+    supplier=None) WAREHOUSE entries. Never creates a new entry -- an
+    abono can only affect stock that already exists (S040, confirmed
+    by Miguel Ángel).
+
+    Returns a dict {'entry': SparePartEntry or None, 'error': str or
+    None}. error is a human-readable rejection reason (no match
+    found, entry found but not enough stock to cover the documented
+    quantity, or entry found but uncountable -- not supported here)
+    -- None when the line can be confirmed as-is.
+
+    ---
+
+    Empareja una línea de albarán de abono con un SparePartEntry
+    existente en almacén, con el MISMO orden de emparejamiento que la
+    rama WAREHOUSE de confirm_delivery_note(): empresa + referencia
+    primero, luego descripción normalizada entre entradas ad-hoc
+    (reference='', supplier=None) en almacén. Nunca crea una entrada
+    nueva -- un abono solo puede afectar a stock que ya existe (S040,
+    confirmado por Miguel Ángel).
+
+    Devuelve un diccionario {'entry': SparePartEntry o None, 'error':
+    str o None}. error es un motivo de rechazo legible (sin
+    coincidencia, entrada encontrada pero sin stock suficiente para
+    cubrir la cantidad documentada, o entrada encontrada pero
+    incontable -- no soportado aquí) -- None cuando la línea se puede
+    confirmar tal cual.
+    """
+    from .models import SparePartEntry
+
+    entry = None
+    if line.reference:
+        entry = SparePartEntry.objects.filter(
+            company=company,
+            reference=line.reference,
+            status=SparePartEntry.STATUS_WAREHOUSE,
+        ).first()
+    if entry is None:
+        normalised_desc = _normalise_description(line.description)
+        if normalised_desc:
+            for candidate in SparePartEntry.objects.filter(
+                company=company,
+                status=SparePartEntry.STATUS_WAREHOUSE,
+                reference='',
+                supplier__isnull=True,
+            ):
+                if _normalise_description(
+                    candidate.description
+                ) == normalised_desc:
+                    entry = candidate
+                    break
+
+    if entry is None:
+        return {
+            'entry': None,
+            'error': (
+                'No se encuentra en almacén ningún repuesto con esa '
+                'referencia/descripción -- revisa que no esté ya '
+                'consumido o pre-asignado a una máquina.'
+            ),
+        }
+
+    if entry.is_uncountable:
+        return {
+            'entry': entry,
+            'error': (
+                'Este repuesto se controla por nivel (incontable), '
+                'no por cantidad -- los abonos automáticos no están '
+                'soportados todavía para este caso.'
+            ),
+        }
+
+    quantity = line.quantity or Decimal('0')
+    available = entry.stock_quantity or Decimal('0')
+    if quantity > available:
+        return {
+            'entry': entry,
+            'error': (
+                f'Stock insuficiente para el abono: quedan '
+                f'{available} en almacén, se documentan {quantity}.'
+            ),
+        }
+
+    return {'entry': entry, 'error': None}
+
+
+def preview_credit_note_matches(delivery_note, company):
+    """
+    Read-only preview (no DB writes) of how each line of a
+    CREDIT_NOTE delivery note would resolve against existing
+    warehouse stock -- used by DeliveryNoteDetailView to show the
+    operator the match/error per line before confirming.
+    confirm_credit_note() (below) is the write path that applies
+    these same matches.
+
+    Returns (results, all_matched): results is a list of dicts
+    {'line': DeliveryNoteLine, 'entry': SparePartEntry or None,
+    'error': str or None}, in line order. all_matched is True only if
+    every line resolved without error.
+
+    ---
+
+    Vista previa de solo lectura (sin escritura en BD) de cómo se
+    resolvería cada línea de un albarán de abono contra el stock de
+    almacén existente -- la usa DeliveryNoteDetailView para mostrar
+    al operario el emparejamiento/error por línea antes de confirmar.
+    confirm_credit_note() (abajo) es la vía de escritura que aplica
+    estos mismos emparejamientos.
+
+    Devuelve (results, all_matched): results es una lista de
+    diccionarios {'line': DeliveryNoteLine, 'entry': SparePartEntry o
+    None, 'error': str o None}, en el orden de las líneas.
+    all_matched es True solo si todas las líneas se resolvieron sin
+    error.
+    """
+    results = []
+    all_matched = True
+    for line in delivery_note.lines.all():
+        match = _match_credit_note_line(line, company)
+        if match['error']:
+            all_matched = False
+        results.append({'line': line, **match})
+    return results, all_matched
+
+
+@transaction.atomic
+def confirm_credit_note(delivery_note, company_user):
+    """
+    Executes the credit-note (abono) circuit for every line of
+    delivery_note (delivery_note.note_type must be CREDIT_NOTE, S040,
+    petición explícita de Miguel Ángel): matches each line against an
+    existing WAREHOUSE SparePartEntry (see _match_credit_note_line()
+    -- same matching order as confirm_delivery_note()'s WAREHOUSE
+    branch), decrements its stock_quantity by the documented quantity
+    (never below zero -- lines that don't match, exceed available
+    stock, or hit an uncountable entry are skipped and reported back
+    for manual review, same spirit as UNASSIGNED lines in
+    confirm_delivery_note()), and records a StockMovement of type
+    RETURN_TO_SUPPLIER with NEGATIVE quantity (confirmed by Miguel
+    Ángel: the movement itself carries the negative sign, the entry's
+    stock_quantity floor stays at zero -- interpretation (a) of the
+    two discussed).
+
+    Never creates a new SparePartEntry -- an abono can only affect
+    stock that already exists (unlike confirm_delivery_note(), which
+    creates entries for WAREHOUSE/MACHINE purchase lines).
+
+    Resolves/creates the Supplier record the same way as
+    confirm_delivery_note() (always by tax ID), for consistency
+    between both document types once confirmed. Sets
+    delivery_note.status = 'ASSIGNED' on completion.
+
+    Returns a dict with counts: returned, unmatched.
+
+    ---
+
+    Ejecuta el circuito de abono para cada línea de delivery_note
+    (delivery_note.note_type debe ser CREDIT_NOTE, S040, petición
+    explícita de Miguel Ángel): empareja cada línea con un
+    SparePartEntry existente en almacén (ver
+    _match_credit_note_line() -- mismo orden de emparejamiento que la
+    rama WAREHOUSE de confirm_delivery_note()), descuenta su
+    stock_quantity en la cantidad documentada (nunca por debajo de
+    cero -- las líneas sin coincidencia, que superan el stock
+    disponible, o que caen en una entrada incontable se omiten y se
+    reportan para revisión manual, mismo espíritu que las líneas
+    UNASSIGNED de confirm_delivery_note()), y registra un
+    StockMovement de tipo RETURN_TO_SUPPLIER con cantidad NEGATIVA
+    (confirmado por Miguel Ángel: el movimiento en sí lleva el signo
+    negativo, el suelo de stock_quantity de la entrada se mantiene en
+    cero -- interpretación (a) de las dos que se plantearon).
+
+    Nunca crea un SparePartEntry nuevo -- un abono solo puede afectar
+    a stock que ya existe (a diferencia de confirm_delivery_note(),
+    que crea entradas para líneas de compra WAREHOUSE/MACHINE).
+
+    Resuelve/crea el registro Supplier igual que confirm_delivery_note()
+    (siempre por CIF), para que ambos tipos de documento queden
+    consistentes una vez confirmados. Al finalizar establece
+    delivery_note.status = 'ASSIGNED'.
+
+    Devuelve un diccionario con los contadores: returned, unmatched.
+    """
+    from .models import SparePartEntry, StockMovement
+
+    company = delivery_note.company
+    counts = {'returned': 0, 'unmatched': 0}
+
+    resolved_supplier = resolve_or_create_supplier(
+        company, delivery_note.supplier_tax_id, delivery_note.supplier_name,
+    )
+
+    for line in delivery_note.lines.all():
+        match = _match_credit_note_line(line, company)
+        entry = match['entry']
+        if match['error'] or entry is None:
+            line.assignment_type = 'UNASSIGNED'
+            line.save(update_fields=['assignment_type'])
+            counts['unmatched'] += 1
+            continue
+
+        quantity = line.quantity or Decimal('0')
+        entry.stock_quantity = (
+            entry.stock_quantity or Decimal('0')
+        ) - quantity
+        if entry.stock_quantity == 0:
+            entry.status = SparePartEntry.STATUS_CONSUMED
+            entry.consumed_at = now()
+            entry.save(
+                update_fields=[
+                    'stock_quantity', 'status', 'consumed_at',
+                ],
+            )
+        else:
+            entry.save(update_fields=['stock_quantity'])
+
+        StockMovement.objects.create(
+            spare_part_entry=entry,
+            movement_type=StockMovement.MOVEMENT_RETURN_TO_SUPPLIER,
+            quantity=-quantity,
+            delivery_note_line=line,
+            created_by=company_user,
+            notes=(
+                f'Abono a proveedor por albarán '
+                f'{delivery_note.delivery_number or delivery_note.pk}.'
+            ),
+        )
+
+        line.assignment_type = 'RETURNED'
+        line.spare_part_entry = entry
+        line.save(update_fields=['assignment_type', 'spare_part_entry'])
+        counts['returned'] += 1
+
+    delivery_note.status = 'ASSIGNED'
+    delivery_note.processed_by = company_user
+    delivery_note.supplier = resolved_supplier
+    delivery_note.save(update_fields=['status', 'processed_by', 'supplier'])
+
+    return counts
+
+
 @transaction.atomic
 def register_salvaged_entry(
     company, created_by, description, origin_machine,

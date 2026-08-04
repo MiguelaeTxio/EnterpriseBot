@@ -120,6 +120,51 @@
                         </div>
                     </div>
                 </div>
+                {% if delivery_note.note_type == 'CREDIT_NOTE' %}
+                <div class="card shadow-sm mb-4">
+                    <div class="card-header fw-semibold">
+                        Abono a proveedor — emparejamiento con almacén
+                        <span class="d-block small text-muted fw-normal mt-1">
+                            Cada línea se compara contra el stock de
+                            almacén ya existente (por referencia, o
+                            por descripción si no hay proveedor
+                            conocido). El repuesto vuelve al
+                            proveedor -- el stock y el movimiento
+                            quedan en negativo.
+                        </span>
+                    </div>
+                    <div class="card-body">
+                        {% if delivery_note.status == 'ASSIGNED' %}
+                            <div class="alert alert-success mb-0">
+                                <i class="bi bi-check-circle-fill me-1"></i>
+                                Abono confirmado.
+                            </div>
+                        {% elif credit_note_matches %}
+                            <ul class="list-group list-group-flush">
+                                {% for match in credit_note_matches %}
+                                <li class="list-group-item d-flex justify-content-between align-items-start px-0">
+                                    <div>
+                                        <strong>{{ match.line.description }}</strong>
+                                        <span class="text-muted">({{ match.line.quantity }} ud.)</span>
+                                        {% if match.entry %}
+                                        <div class="small text-muted">
+                                            {{ match.entry.internal_reference|default:match.entry.reference }}
+                                            — quedan {{ match.entry.stock_quantity }} en almacén
+                                        </div>
+                                        {% endif %}
+                                    </div>
+                                    {% if match.error %}
+                                    <span class="badge bg-danger">{{ match.error }}</span>
+                                    {% else %}
+                                    <span class="badge bg-success"><i class="bi bi-check-lg"></i> Emparejado</span>
+                                    {% endif %}
+                                </li>
+                                {% endfor %}
+                            </ul>
+                        {% endif %}
+                    </div>
+                </div>
+                {% else %}
                 <div class="card shadow-sm mb-4">
                     <div class="card-header fw-semibold">
                         Centro de gasto / máquina de destino
@@ -232,6 +277,7 @@
                         {% endif %}
                     </div>
                 </div>
+                {% endif %}
                 <div class="card shadow-sm mb-4">
                     <div class="card-header fw-semibold">Líneas de artículo</div>
                     <div class="table-responsive">
