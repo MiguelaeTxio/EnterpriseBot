@@ -1475,6 +1475,32 @@ archivo, se extraen las 3 primeras páginas a un PDF nuevo en memoria,
 y ese extracto -- nunca el archivo completo -- es lo que se envía a
 Gemini. Probado con un PDF real de prueba antes de comitear.
 
+### 3.38. Bug real, con coste: "en cola" filtraba por la ruta real de GCS, no por la ubicación virtual -- reprocesaba archivos ya reubicados
+
+Miguel Ángel, verbatim: *"esos 707 en cola, qué quiere decir? Porque
+ahí lleva ya un rato con 707 y no baja."* Correcto -- el contador
+nunca bajaba de verdad pese a decenas de pasadas reubicando archivos.
+
+**Causa raíz, doble, en dos sitios distintos:** tanto
+`QuarantineStatusView` (el conteo de "en cola") como
+`consume_quarantine_task` (qué archivos elige procesar cada pasada)
+filtraban por `blob_name__startswith=QUARANTINE_PREFIX` -- la ruta
+REAL en GCS, que por diseño (3.19, virtual filesystem) **nunca
+cambia** al reubicar un archivo, solo cambia `parent_path` (la
+ubicación virtual). Consecuencia real, no solo cosmética: la propia
+tarea automática podía volver a elegir un archivo YA reubicado (su
+`blob_name` seguía empezando por `_CUARENTENA/` aunque su
+`parent_path` ya fuera `DOC. MAQUINAS/...`), lanzar una llamada real a
+Gemini para clasificarlo otra vez, y solo `move_service.move_entry()`
+evitaba el daño real (retorno temprano si el destino ya coincide) --
+pero el gasto de la llamada ya se había hecho.
+
+**Corregido en los dos sitios:** `parent_path__startswith=
+QUARANTINE_PREFIX` en vez de `blob_name__startswith=...` -- "sigue en
+cuarentena" se decide por dónde vive el archivo AHORA (virtual), nunca
+por dónde se subió originalmente en GCS (real, congelado para
+siempre).
+
 ## 4. Consecuencia directa: las tres únicas vías de escritura
 
 De 3.1, 3.2 y 3.8 se sigue que un objeto solo puede aparecer o

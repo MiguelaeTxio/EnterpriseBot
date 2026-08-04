@@ -1872,7 +1872,7 @@ class QuarantineStatusView(ExplorerAccessMixin, TemplateView):
             entry_kind=DocumentIndexEntry.KIND_FILE,
             deleted_at__isnull=True,
             purged_at__isnull=True,
-            blob_name__startswith=QUARANTINE_PREFIX,
+            parent_path__startswith=QUARANTINE_PREFIX,
         )
         machine_prefix = QUARANTINE_PREFIX + "DOC. MAQUINAS/"
         personal_prefix = QUARANTINE_PREFIX + "DOC. PERSONAL/"
@@ -1905,10 +1905,10 @@ class QuarantineStatusView(ExplorerAccessMixin, TemplateView):
             "active_nav": "document_explorer",
             "total_pending": live_files.count(),
             "machine_pending": live_files.filter(
-                blob_name__startswith=machine_prefix,
+                parent_path__startswith=machine_prefix,
             ).count(),
             "personal_pending": live_files.filter(
-                blob_name__startswith=personal_prefix,
+                parent_path__startswith=personal_prefix,
             ).count(),
             "last_run": last_run,
             "last_run_processed": last_run_processed,

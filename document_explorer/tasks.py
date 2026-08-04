@@ -376,7 +376,7 @@ def consume_quarantine_task(self) -> None:
             entry_kind=DocumentIndexEntry.KIND_FILE,
             deleted_at__isnull=True,
             purged_at__isnull=True,
-            blob_name__startswith=QUARANTINE_PREFIX,
+            parent_path__startswith=QUARANTINE_PREFIX,
         )
         .order_by("indexed_at")[:_QUARANTINE_CONSUME_BATCH_SIZE]
     )
