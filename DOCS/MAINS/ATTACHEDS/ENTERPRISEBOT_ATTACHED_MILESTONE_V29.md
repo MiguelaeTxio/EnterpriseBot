@@ -949,6 +949,31 @@ Lectura directa, sin resolver nada por interpretación propia:
    ningún sitio** -- "los componentes unitarios de los dosieres debe
    existir sí o sí" es una condición previa al borrado, no posterior.
 
+**RESUELTO EN S041 -- la condición previa de este punto (punto 3 de
+"no resuelto" más abajo) queda expresamente abandonada por decisión
+de Miguel Ángel, no reinterpretada.** Verbatim: *"Vamos a dar por
+sentado de que cuando hay un dossier, todos los documentos están. Lo
+damos por sentado. Es decir, esa regla la vamos a obviar. Cuando hay
+un dossier, el dossier se borra. Porque presumimos que ambos
+documentos, o todos los documentos que lo conforman, existen."*
+
+Consecuencia directa: el punto 2 de la lectura de abajo ("una vez
+que cada componente unitario existe de verdad") deja de ser una
+condición verificada -- se presume cierta, nunca se comprueba. El
+punto 3 ("nunca se borra... sin existir en ningún sitio") queda sin
+efecto. Los otros dos "no resueltos" quedan así:
+
+- Generar el componente que falte partiendo el PDF (tensión con
+  3.19): **ya no aplica** -- al presumir que los componentes existen,
+  no hay generación que hacer. Sigue sin construirse ninguna
+  herramienta de partición de PDF, y no hace falta.
+- Cómo detecta el motor que un archivo es un dosier: **resuelto en
+  S041** -- campo `is_dossier` en la respuesta de Gemini
+  (`classification_service._RESPONSE_SCHEMA`), solo `true` con
+  certeza real de varios tipos catalogados distintos, nunca por
+  simple `DESCONOCIDO` sin identificar. Ver 3.39 para el detalle
+  completo de la implementación.
+
 **Corrección importante, misma sesión -- la Tarjeta ITV NO es un
 ejemplo de dosier.** El modelo interpretó por error que la Tarjeta ITV
 con Hoja Adicional de Inspecciones (Hallazgo 3 de la primera prueba
@@ -971,25 +996,13 @@ dosier; es un fallo de clasificación normal, a tener en cuenta al
 seguir probando (ver también el ajuste de descripción del tipo `ITV`
 en el catálogo, mismo commit).
 
-**No resuelto por interpretación propia, pendiente antes de
-implementar nada de esto:**
-
-- **Cuando el componente NO existe ya por separado, ¿cómo se genera?**
-  Si hace falta partir un PDF en páginas, eso es escribir un objeto
-  nuevo real en GCS -- **tensiona directamente con 3.19** ("clasificar
-  nunca toca GCS"). 3.19 hablaba de renombrar/reubicar sin tocar el
-  contenido; extraer páginas a un PDF nuevo es otra operación
-  distinta, con otro coste y otro riesgo, y no hay decisión tomada
-  sobre si es una excepción aceptada o si hay que resolverlo de otra
-  forma (¿dejar el dosier marcado para partición manual en vez de
-  automática?).
-- **Cómo detecta el motor de clasificación que un archivo es un
-  dosier** en primer lugar -- hoy Gemini simplemente elige un tipo del
-  catálogo cerrado; no hay ningún mecanismo para que responda "esto es
-  en realidad dos documentos".
-- **Cómo se decide si el componente ya existe por separado** antes de
-  borrar el combinado (¿comparar contenido con hash, con tipo+máquina+
-  fecha, otra cosa?).
+**Estado final tras S041 (ya no "no resuelto", solo un residual
+distinto -- ver 3.38 y punto 3 de la hoja de ruta):** el caso "dos en
+uno" del **mismo tipo repetido para varias personas** (Modelo 145 con
+varios trabajadores, ver 3.31) NO entra en `is_dossier` -- ese campo
+exige tipos catalogados *distintos*, no el mismo tipo repetido. Sigue
+sin decisión tomada sobre ese caso concreto, pendiente como punto 3
+de la hoja de ruta de la siguiente sesión.
 
 ### 3.25. Aviso de máquina equivocada: marca/modelo del documento contra `fleet.MachineAsset` (S040)
 
@@ -1275,10 +1288,16 @@ se clasifican y se marcan como con duda para revisión por un humano."*
    pendiente de revisión humana, nunca se fuerza un emparejamiento
    dudoso.
 
-**No resuelto por interpretación propia, pendiente cuando se
-construya:** qué hacer con el caso "dos en uno" del Modelo 145 (varias
-personas en un solo archivo) -- mismo punto abierto que 3.24 para
-máquina, sin decisión tomada todavía sobre partición de archivos.
+**Parcialmente resuelto en S041, ver 3.39 -- sigue "no resuelto" solo
+para el patrón distinto que describe este punto:** el caso "dos en
+uno" de tipos catalogados *distintos* (equivalente personal de
+`CE+RAE.pdf`, 3.24) queda resuelto -- se detecta con `is_dossier` y
+se borra directamente, sin condición previa (decisión S041, ver
+3.39). El Modelo 145 con varias personas es un patrón *distinto*:
+**mismo tipo catalogado, repetido para varios sujetos** -- no dispara
+`is_dossier`, que exige tipos distintos. Sigue sin decisión tomada
+sobre este patrón concreto, pendiente como punto 3 de la hoja de
+ruta de la siguiente sesión.
 
 **Corrección real, primera prueba controlada de `seed_person_identities`
 (15 candidatos, S040):** un mismo DNI puede aparecer varias veces en
@@ -1500,6 +1519,90 @@ QUARANTINE_PREFIX` en vez de `blob_name__startswith=...` -- "sigue en
 cuarentena" se decide por dónde vive el archivo AHORA (virtual), nunca
 por dónde se subió originalmente en GCS (real, congelado para
 siempre).
+
+### 3.39. Consumidor de cuarentena: reubicación real de PERSONAL por DNI, y borrado directo de dosieres ciertos (S041)
+
+Dos decisiones distintas de la misma sesión, ambas registradas
+literalmente (directriz 4.8), que juntas cierran los dos puntos que
+3.24 y 3.31 dejaban "no resuelto por interpretación propia".
+
+**1. PERSONAL deja de ser "solo clasifica, nunca reubica".** Hasta
+S040, `apply_quarantine_classification()` reubicaba MÁQUINA con
+certeza (3.27) pero para PERSONAL solo clasificaba, nunca escribía
+`parent_path` -- red de seguridad explícita de S040 (3.31). Miguel
+Ángel, S041, tras confirmar que la clasificación viene siendo
+correcta y que se trabaja sobre una copia de la realidad de
+Microsoft 365 (riesgo bajo): *"el sistema clasifica bien (...) vamos
+a hacer ya los movimientos de manera real [en base de datos] (...)
+vamos a ver los resultados y si hay que cambiar algo, se cambia."*
+Implementado con el mismo principio de certeza que ya regía para
+MÁQUINA: `resolve_person_identity(dni_hint)` -- coincidencia exacta
+de DNI contra `PersonIdentity` ya sembrado -- resuelve
+`PersonIdentity.folder_path` como `parent_path` nuevo. Sin identidad
+resuelta, sigue exactamente el fallback de antes: clasificado, sin
+mover, marcado para revisión humana.
+
+**2. Dosieres ciertos: nuevo campo `is_dossier`, borrado directo a
+papelera del administrador.** Resuelve el punto "no resuelto" de 3.24
+(detección de dosier) y sustituye por completo su condición previa de
+borrado (ver el bloque "RESUELTO EN S041" añadido dentro de la propia
+3.24, no repetido aquí). Origen: captura real de Miguel Ángel con 5
+archivos MÁQUINA en curso de clasificación, todos `DESCONOCIDO` por
+ser compilaciones reales (ITV+permiso de circulación+seguro+
+autorización en un mismo PDF) -- "habría que marcarlos para que no
+aparezcan en el listado (...) marcarlos como eliminados."
+
+**Diseño, con el criterio de certeza explícito de Miguel Ángel:**
+*"cuando tenemos la seguridad de que es un dossier (...) cuando
+estamos viendo que tiene una tarjeta de inspección técnica y tiene un
+permiso de circulación, o tiene un DNI más un curso, o tiene un DNI
+más permiso de conducción. Cuando son varios documentos, eso es un
+dossier."* Explícitamente **no** vale la simple imposibilidad de
+identificar un único documento: *"no podemos eliminar documentos que
+sean desconocidos simplemente por el hecho de que sean desconocidos y
+no estén integrados en un tipo de documento."* Ni el número de
+páginas es el criterio (dicho literalmente al hilo de un ejemplo de
+tres vs. cinco páginas).
+
+- `_RESPONSE_SCHEMA`/`_PROMPT_TEMPLATE`: campo booleano `is_dossier`
+  nuevo, con instrucción explícita de solo marcarlo `true` ante
+  certeza real de dos o más tipos catalogados distintos.
+- `trash_dossier_entry()` / `_resolve_dossier_trash_user()`: borrado
+  lógico (`deleted_at`/`deleted_by`) a la papelera de
+  `alvarez_admin` (pk=1, único `CompanyUser` real confirmado por
+  Miguel Ángel con captura de pantalla -- cuenta compartida del
+  departamento de administración, no personal, pero es la que
+  indicó). `blob_name` en GCS nunca se toca. Si esa cuenta no se
+  puede resolver, no se elimina nada -- nunca un `deleted_by` nulo/
+  huérfano e irrecuperable desde ninguna papelera del panel.
+- `apply_quarantine_classification()`: intercepta antes de cualquier
+  ramificación por dominio -- aplica igual a MÁQUINA y PERSONAL.
+- `consume_quarantine_task()`: nueva acción `ACTION_TRASHED` (ya
+  existía en el modelo, sin usar hasta ahora en esta operación), con
+  contador propio `DataOperationLog.dossier_trashed_count` --
+  deliberadamente separado de `trashed_count`, que en esta operación
+  sigue significando "clasificado, pendiente de revisión humana", no
+  "eliminado".
+- **Alcance:** solo `consume_quarantine_task` (Always-on Task). La
+  clasificación manual por lote (`classify_entries_task`,
+  `BATCH_CLASSIFICATION`) usa `apply_classification()`, función
+  distinta, no se ve afectada.
+
+**Bug real encontrado y corregido de paso, mismo bloque:** la cabecera
+de texto de `operation_log_detail.html` ("arriba la copia que se
+conservó... comparten tamaño y CRC32C") estaba fija para las tres
+`operation_type` posibles, describiendo solo resolución de duplicados
+-- se veía también, incorrecta, en una operación `QUARANTINE_CONSUME`
+real (captura de Miguel Ángel). Corregido con `DataOperationLog.
+intro_note`, contextual por tipo de operación, mismo patrón ya
+existente de `primary_count_label`/`secondary_count_label`.
+
+**Residual, no resuelto, distinto del caso ya cerrado:** el "dos en
+uno" del **mismo tipo repetido para varias personas** (Modelo 145 con
+varios trabajadores, 3.31) no dispara `is_dossier` -- ese campo exige
+tipos catalogados *distintos*, no el mismo tipo repetido. Sigue sin
+decisión tomada, ver punto 3 de la hoja de ruta de la siguiente
+sesión.
 
 ## 4. Consecuencia directa: las tres únicas vías de escritura
 
