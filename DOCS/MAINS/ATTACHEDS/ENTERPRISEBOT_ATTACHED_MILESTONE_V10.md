@@ -529,7 +529,68 @@ tarea + tipo_tarea + transición de estado en la misma operación).
 
 ## 5. Hoja de Ruta para la Siguiente Sesión
 
-### PENDIENTE -- petición nueva anotada en S028 (2026-07-22, mención durante sesión de H23, sin investigar todavía)
+### COMPLETADO EN S040 (sesión invasora, en paralelo con la sesión principal en H29, 2026-08-04) — resuelve el PENDIENTE de S028 de abajo
+
+Ver directriz 4.11 del documento maestro para el patrón general de
+"sesión invasora": trabajó aquí, en H10 (pausado), mientras H29
+seguía `EN PROGRESO` en otra sesión en paralelo — sin tocar código de
+H29. Dos bloques de trabajo, cada uno con su propio commit:
+
+**1. Prompt de albaranes más permisivo — marca manuscrita (commit
+`e3c065b`).** Respondiendo a la petición explícita de Miguel Ángel de
+hacer el prompt "más permisivo": el prompt de extracción Gemini
+Vision (`spare_parts/services.py`) ahora acepta un código de
+máquina/centro de gasto anotado a mano por el operario, siempre que
+esté enmarcado entre dos marcas también manuscritas (comillas,
+paréntesis, llaves, almohadillas u otro trazo equivalente) — cuando
+existe, prevalece sobre el código impreso por el proveedor. Se
+planteó explícitamente reabrir la asignación por línea (revirtiendo
+S015) y se descartó tras consultarlo con Miguel Ángel — se mantiene
+la asignación única por documento completo. Nuevo campo
+`DeliveryNote.handwritten_machine_code_raw` + migración `0012` +
+property `effective_machine_code_raw` (usada también por
+`document_explorer/friendly_names.py`, H29). Se verificó contra la
+BBDD real (Comando S) que cada taller (Mecánico/Elevación/Huelva) ya
+tiene su propia fila de centro de gasto en `MachineAsset`, pero se
+mantiene el `WAREHOUSE` genérico sin diferenciar, por decisión
+explícita de Miguel Ángel — esa diferenciación sigue pospuesta.
+
+**2. Albarán de abono a proveedor (commit `af2d6b9`) — resuelve el
+PENDIENTE de S028 de abajo.** Un operario puede marcar un albarán
+como "Abono a proveedor" al subirlo (nuevo `DeliveryNote.note_type`,
+`PURCHASE` por defecto, mismo formulario de subida —archivo o
+cámara— que un albarán de compra). Respuestas explícitas de Miguel
+Ángel a las tres preguntas que quedaron abiertas en S028:
+- "Abono" es un documento distinto, subido por el operario igual que
+  un albarán de compra — no un paso dentro del propio albarán de
+  entrada.
+- No existía flujo de devolución previo en el circuito de repuestos
+  — funcionalidad enteramente nueva.
+- Lo marca el operario al subir el archivo — el tipo de documento no
+  se detecta automáticamente.
+
+Circuito (`confirm_credit_note()`, `spare_parts/services.py`):
+empareja cada línea contra un `SparePartEntry` existente en almacén
+(mismo orden que la rama WAREHOUSE de `confirm_delivery_note()`:
+referencia, luego descripción normalizada — nunca crea repuestos
+nuevos), descuenta `stock_quantity` sin bajar de cero, y registra un
+`StockMovement` de tipo `RETURN_TO_SUPPLIER` con cantidad NEGATIVA
+(interpretación confirmada explícitamente por Miguel Ángel: el
+movimiento lleva el signo negativo, no el stock de la entrada).
+Migraciones `0013`/`0014`/`0015`.
+
+**Sin resolver, anotado para cuando se retome:** emparejamiento
+manual cuando una línea de abono no encuentra coincidencia
+automática — hoy solo se reporta como sin emparejar (`UNASSIGNED`),
+igual criterio que las líneas de compra sin código reconocido.
+
+Ambos bloques desplegados y verificados con datos reales del
+servidor (Comando S, `git log -1` + `showmigrations`), no solo el
+icono verde de GitHub Actions.
+
+---
+
+### PENDIENTE -- petición nueva anotada en S028 (2026-07-22, mención durante sesión de H23, sin investigar todavía) — **RESUELTO EN S040, ver bloque arriba**
 
 Miguel Ángel, al cierre de una sesión de H23: "hay que arreglar
 también una cosa en el tema de los albaranes, que es cuando se
