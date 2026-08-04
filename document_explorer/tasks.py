@@ -328,13 +328,20 @@ def consume_quarantine_task(self) -> None:
     QUARANTINE_CONSUME`), one entry per file as it finishes -- same
     incremental-audit reasoning as `classify_entries_task` (H29 3.28):
     a crash mid-run must never lose the trace of what already
-    happened. MACHINE-domain files that got relocated for real are
-    logged as `ACTION_RELOCATED`; everything else (PERSONAL domain,
-    or MACHINE that could not be resolved with certainty) is logged
-    as `ACTION_NOT_CLASSIFIED` even when a type was successfully
-    suggested -- Miguel Ángel's explicit fallback: classify everything,
-    but never move anything the system isn't sure about; leave it
-    flagged for a human instead.
+    happened. Files relocated for real (MACHINE via folder/code, or
+    PERSONAL via an exact DNI match against `PersonIdentity`, S041)
+    are logged as `ACTION_RELOCATED`. Files Gemini is CERTAIN combine
+    two or more distinct catalogued documents (`is_dossier`, S041 --
+    Miguel Ángel: "cuando tenemos la seguridad de que es un dossier
+    (...) hay que eliminarlo directamente") are soft-deleted to
+    `_DOSSIER_TRASH_USERNAME`'s papelera and logged as `ACTION_TRASHED`
+    -- never a guess, plain unclassifiable `DESCONOCIDO` still falls
+    through to the fallback below. Everything else (identity/machine
+    not resolved with certainty) is logged as `ACTION_NOT_CLASSIFIED`
+    even when a type was successfully suggested -- Miguel Ángel's
+    explicit fallback: classify everything, but never move or delete
+    anything the system isn't sure about; leave it flagged for a
+    human instead.
 
     ---
 
@@ -358,13 +365,21 @@ def consume_quarantine_task(self) -> None:
     (`operation_type=QUARANTINE_CONSUME`), una línea por archivo según
     termina -- mismo razonamiento de auditoría incremental que
     `classify_entries_task` (H29 3.28): un fallo a mitad de ejecución
-    nunca debe perder el rastro de lo que ya pasó. Los archivos de
-    dominio MÁQUINA que se reubicaron de verdad quedan como
-    `ACTION_RELOCATED`; todo lo demás (dominio PERSONAL, o MÁQUINA que
-    no se pudo resolver con certeza) queda como `ACTION_NOT_CLASSIFIED`
-    incluso cuando sí se sugirió un tipo -- red de seguridad explícita
-    de Miguel Ángel: clasificar todo, pero no mover nunca nada de lo
-    que el sistema no esté seguro; dejarlo marcado para un humano.
+    nunca debe perder el rastro de lo que ya pasó. Los archivos que se
+    reubican de verdad (MÁQUINA por carpeta/código, o PERSONAL por
+    coincidencia exacta de DNI contra `PersonIdentity`, S041) quedan
+    como `ACTION_RELOCATED`. Los archivos de los que Gemini tiene
+    CERTEZA de que combinan dos o más documentos catalogados distintos
+    (`is_dossier`, S041 -- Miguel Ángel: "cuando tenemos la seguridad
+    de que es un dossier (...) hay que eliminarlo directamente") se
+    reubican a la papelera de `_DOSSIER_TRASH_USERNAME` y quedan como
+    `ACTION_TRASHED` -- nunca una sospecha, un `DESCONOCIDO` simple sin
+    certeza de dossier sigue cayendo en el mismo fallback de siempre.
+    Todo lo demás (identidad/máquina sin resolver con certeza) queda
+    como `ACTION_NOT_CLASSIFIED` incluso cuando sí se sugirió un tipo
+    -- red de seguridad explícita de Miguel Ángel: clasificar todo,
+    pero no mover ni eliminar nunca nada de lo que el sistema no esté
+    seguro; dejarlo marcado para un humano.
     """
     from document_explorer import classification_service
     from document_explorer.buckets import PRIMARY_BUCKET, QUARANTINE_PREFIX
@@ -416,10 +431,14 @@ def consume_quarantine_task(self) -> None:
     try:
         relocated_count = 0
         pending_count = 0
+        dossier_trashed_count = 0
 
         for group_number, entry in enumerate(entries, start=1):
             original_name = entry.name
-            result = classification_service.apply_quarantine_classification(entry)
+            result = (
+                classification_service
+                .apply_quarantine_classification(entry)
+            )
 
             if "error" in result:
                 pending_count += 1
@@ -453,6 +472,10 @@ def consume_quarantine_task(self) -> None:
                 if result.get("relocated"):
                     relocated_count += 1
                     action = DataOperationLogEntry.ACTION_RELOCATED
+                elif result.get("trashed"):
+                    dossier_trashed_count += 1
+                    action = DataOperationLogEntry.ACTION_TRASHED
+                    detail = "[DOSSIER ELIMINADO] " + detail
                 else:
                     pending_count += 1
                     action = DataOperationLogEntry.ACTION_NOT_CLASSIFIED
@@ -476,9 +499,11 @@ def consume_quarantine_task(self) -> None:
             log.groups_count = len(entries)
             log.kept_count = relocated_count
             log.trashed_count = pending_count
+            log.dossier_trashed_count = dossier_trashed_count
             log.status = DataOperationLog.STATUS_COMPLETED
             log.save(update_fields=[
-                "groups_count", "kept_count", "trashed_count", "status",
+                "groups_count", "kept_count", "trashed_count",
+                "dossier_trashed_count", "status",
             ])
     except Exception:
         logger.exception(

@@ -37,6 +37,7 @@
                 -- {{ log.groups_count }} grupo(s)/archivo(s),
                 {{ log.kept_count }} {{ log.primary_count_label|lower }},
                 {{ log.trashed_count }} {{ log.secondary_count_label|lower }}
+                {% if log.tertiary_count_label %}, {{ log.dossier_trashed_count }} {{ log.tertiary_count_label|lower }}{% endif %}
                 {% if log.bytes_recovered %}({{ log.bytes_recovered_display }} recuperables){% endif %}
             {% endif %}.
         </p>

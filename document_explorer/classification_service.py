@@ -68,6 +68,7 @@ import time
 
 import fitz  # PyMuPDF -- ya en requirements (ver cabecera del módulo)
 
+from django.utils import timezone
 from google.genai.types import GenerateContentConfig, HttpOptions, Part
 
 from ai_services.gemini_client import DEFAULT_MODEL, get_gemini_client
@@ -144,12 +145,13 @@ _RESPONSE_SCHEMA = {
         "given_name_hint": {"type": "string"},
         "dni_hint": {"type": "string"},
         "date_hint": {"type": "string"},
+        "is_dossier": {"type": "boolean"},
     },
     "required": [
         "domain", "document_type_code", "confidence", "reasoning",
         "machine_code_hint", "brand_model_hint",
         "first_surname_hint", "second_surname_hint",
-        "given_name_hint", "dni_hint", "date_hint",
+        "given_name_hint", "dni_hint", "date_hint", "is_dossier",
     ],
 }
 
@@ -167,6 +169,20 @@ TIPOS DE DOCUMENTO POSIBLES (código -- descripción):
 
 Si el documento no encaja claramente en ninguno de los tipos anteriores, \
 usa el código "DESCONOCIDO" y explica por qué en "reasoning".
+
+is_dossier: SOLO true cuando tengas la CERTEZA de que el archivo es la \
+unión de DOS O MÁS documentos catalogados DISTINTOS, cada uno \
+identificable por separado -- por ejemplo: una tarjeta ITV + un permiso \
+de circulación; un DNI + un certificado de un curso; un DNI + un permiso \
+de conducción. El número de páginas no importa (un dossier puede tener \
+tres páginas o quince). NUNCA marques is_dossier=true solo porque el \
+documento no encaje en ningún tipo de la lista y por eso uses \
+"DESCONOCIDO" -- eso es un documento único que no reconoces, no un \
+dossier, y es un caso completamente distinto. Si tienes cualquier duda \
+real sobre si es un único documento o varios, usa is_dossier=false -- \
+la certeza es obligatoria, la sospecha no basta. Cuando is_dossier=true, \
+explica en "reasoning" qué documentos distintos identificaste dentro \
+del archivo.
 
 Además del tipo, extrae estas pistas SI aparecen de forma clara en el propio \
 documento (deja la cadena vacía "" si no aparecen -- nunca inventes un valor):
@@ -466,6 +482,76 @@ def resolve_person_identity(dni_hint: str) -> PersonIdentity | None:
     if not dni_hint or not is_valid_spanish_dni(dni_hint):
         return None
     return PersonIdentity.objects.filter(dni=_normalize_dni(dni_hint)).first()
+
+
+# Cuenta a cuya papelera van los dossiers eliminados automáticamente
+# (H29, S041) -- Miguel Ángel, dato real verificado en base de datos
+# (pk=1, único CompanyUser con ese username): "el que va es al mío,
+# al de administrador total, el superusuario. Yo soy el único que
+# puede recuperar esos archivos." Cuenta compartida del departamento
+# de administración, no una cuenta personal -- decisión explícita de
+# Miguel Ángel de todos modos, se aplica tal cual.
+_DOSSIER_TRASH_USERNAME = "alvarez_admin"
+
+
+def _resolve_dossier_trash_user():
+    """
+    Returns the `CompanyUser` to attribute automatic dossier
+    deletions to, or None if it can't be resolved (account renamed
+    or removed) -- callers must never trash to a null `deleted_by`:
+    an orphaned `deleted_at` with no owner is invisible in every
+    papelera view (`deleted_by=company_user` filter), unrecoverable
+    in practice from the panel -- exactly the "borrado accidental sin
+    poder recuperar" H29 exists to prevent.
+
+    ---
+
+    Devuelve el `CompanyUser` al que se atribuyen los borrados
+    automáticos de dossiers, o None si no se puede resolver (cuenta
+    renombrada o eliminada) -- quien llama nunca debe reubicar a
+    papelera con un `deleted_by` nulo: un `deleted_at` huérfano sin
+    dueño es invisible en cualquier vista de papelera (filtro
+    `deleted_by=company_user`), irrecuperable en la práctica desde el
+    panel -- justo el "borrado accidental sin poder recuperar" que
+    H29 existe para evitar.
+    """
+    from ivr_config.models import CompanyUser
+    return CompanyUser.objects.select_related("user").filter(
+        user__username=_DOSSIER_TRASH_USERNAME,
+    ).first()
+
+
+def trash_dossier_entry(entry) -> bool:
+    """
+    Soft-deletes `entry` to `_DOSSIER_TRASH_USERNAME`'s papelera --
+    pure index write (`deleted_at`/`deleted_by`), `blob_name` in GCS
+    never touched, same principle as every other operation in this
+    module. Returns False (no-op, entry left untouched) when the
+    admin `CompanyUser` can't be resolved -- see
+    `_resolve_dossier_trash_user`.
+
+    ---
+
+    Reubica `entry` a la papelera de `_DOSSIER_TRASH_USERNAME` --
+    escritura de índice pura (`deleted_at`/`deleted_by`), el
+    `blob_name` en GCS nunca se toca, mismo principio que cualquier
+    otra operación de este módulo. Devuelve False (no hace nada,
+    `entry` queda intacto) cuando no se puede resolver el
+    `CompanyUser` administrador -- ver `_resolve_dossier_trash_user`.
+    """
+    admin = _resolve_dossier_trash_user()
+    if admin is None:
+        logger.error(
+            "# [trash_dossier_entry] No se pudo resolver el "
+            "CompanyUser '%s' -- dossier NO eliminado, se deja "
+            "clasificado sin aplicar (pk=%d).",
+            _DOSSIER_TRASH_USERNAME, entry.pk,
+        )
+        return False
+    entry.deleted_at = timezone.now()
+    entry.deleted_by = admin
+    entry.save(update_fields=["deleted_at", "deleted_by"])
+    return True
 
 
 def check_machine_mismatch(entry, result: dict) -> str | None:
@@ -1108,6 +1194,20 @@ def apply_quarantine_classification(entry) -> dict:
     Same caution for MACHINE files whose folder can't be resolved:
     classified, never relocated.
 
+    Before any domain branching -- a file gets ONE more chance to be
+    intercepted regardless of domain: when Gemini is CERTAIN the file
+    is a composition of two or more distinct catalogued documents
+    (`document_type_code == "DESCONOCIDO"` AND `is_dossier` true --
+    H29, S041, Miguel Ángel's explicit decision, real examples: an
+    ITV card + a permiso de circulación; a DNI + a course
+    certificate; a DNI + a driving licence), it is soft-deleted
+    straight to `_DOSSIER_TRASH_USERNAME`'s papelera
+    (`trash_dossier_entry()`) instead of being left flagged for
+    review. `is_dossier` is a certainty signal, never a guess --
+    "DESCONOCIDO" alone (couldn't recognise a single document, e.g.
+    an uncatalogued type) never triggers this, only stays flagged as
+    before.
+
     Returns the same shape as `apply_classification()`
     (`new_name`/`classified`/`renamed`), plus `relocated` (bool -- the
     file's `parent_path` actually changed) and, when relocated,
@@ -1143,6 +1243,21 @@ def apply_quarantine_classification(entry) -> dict:
     para revisión humana. Misma cautela para archivos de MÁQUINA cuya
     carpeta no se pueda resolver: se clasifican, nunca se reubican.
 
+    Antes de cualquier ramificación por dominio -- un archivo tiene
+    UNA oportunidad más de ser interceptado sea cual sea su dominio:
+    cuando Gemini tiene CERTEZA de que el archivo es la composición
+    de dos o más documentos catalogados distintos
+    (`document_type_code == "DESCONOCIDO"` Y `is_dossier` cierto --
+    H29, S041, decisión explícita de Miguel Ángel, ejemplos reales:
+    una tarjeta ITV + un permiso de circulación; un DNI + un
+    certificado de curso; un DNI + un permiso de conducción), se
+    reubica directamente a la papelera de `_DOSSIER_TRASH_USERNAME`
+    (`trash_dossier_entry()`) en vez de quedar marcado para revisión.
+    `is_dossier` es una señal de certeza, nunca una sospecha --
+    "DESCONOCIDO" a secas (no se reconoce un único documento, p. ej.
+    un tipo sin catalogar) nunca dispara esto, sigue quedando
+    marcado como antes.
+
     Devuelve la misma forma que `apply_classification()`
     (`new_name`/`classified`/`renamed`), más `relocated` (bool -- si
     el `parent_path` del archivo cambió de verdad) y, cuando se
@@ -1156,6 +1271,16 @@ def apply_quarantine_classification(entry) -> dict:
             renamed=False, relocated=False,
         )
         return result
+
+    if result.get("document_type_code") == "DESCONOCIDO" \
+            and result.get("is_dossier"):
+        if trash_dossier_entry(entry):
+            result.update(
+                new_name=None, classified=False,
+                renamed=False, relocated=False, trashed=True,
+            )
+            return result
+        result["trashed"] = False
 
     effective_domain = domain or result.get("domain")
     result["machine_mismatch_warning"] = (

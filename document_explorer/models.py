@@ -626,6 +626,23 @@ class DataOperationLog(models.Model):
         default=0,
         verbose_name="A papelera / sin poder aplicar",
     )
+    dossier_trashed_count = models.PositiveIntegerField(
+        default=0,
+        verbose_name="Eliminados por ser dossier (varios documentos)",
+        help_text=(
+            "Solo QUARANTINE_CONSUME -- archivos con "
+            "document_type_code=DESCONOCIDO que Gemini identificó "
+            "con certeza como composición de varios documentos "
+            "catalogados distintos (H29, S041, Miguel Ángel: "
+            "\"cuando tenemos la seguridad de que es un dossier, eso "
+            "hay que eliminarlo directamente\"). Distinto de "
+            "trashed_count (que en esta operación significa "
+            "\"clasificado, pendiente de revisión humana\") -- este "
+            "campo cuenta un borrado real a la papelera del "
+            "administrador, no una duda. Queda en 0 para otros tipos "
+            "de operación."
+        ),
+    )
     bytes_recovered = models.BigIntegerField(
         default=0,
         verbose_name="Bytes recuperables",
@@ -670,6 +687,12 @@ class DataOperationLog(models.Model):
         if self.operation_type == self.OPERATION_BATCH_CLASSIFICATION:
             return "Sin poder aplicar"
         return "Copias enviadas a papelera"
+
+    @property
+    def tertiary_count_label(self) -> str | None:
+        if self.operation_type == self.OPERATION_QUARANTINE_CONSUME:
+            return "Eliminados por ser dossier"
+        return None
 
     @property
     def intro_note(self) -> str:
