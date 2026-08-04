@@ -1394,6 +1394,18 @@ Confirmado que no hace falta ningún paso más: `classify_entry()`'s
 is_active=True)` en vivo en cada llamada -- una fila añadida aquí está
 disponible para la siguiente clasificación real sin desplegar nada.
 
+**Corrección real, primera pasada real observada por Miguel Ángel:**
+el panel de estado de cuarentena (3.33) mostraba "0 archivo(s)
+procesado(s)" para una pasada `en curso` que el propio detalle de esa
+misma operación ya mostraba con 25 procesados -- discrepancia real
+entre dos pantallas del mismo dato. Causa: `QuarantineStatusView` leía
+`groups_count`/`kept_count`/`trashed_count` directamente del
+`DataOperationLog`, campos que solo se cierran al terminar la tarea
+(mismo patrón exacto ya corregido para el detalle en 3.28). Corregido:
+mientras `status != COMPLETED`, los tres se calculan contando las
+`DataOperationLogEntry` reales que ya existen, igual que ya hacía
+`DataOperationLogDetailView`.
+
 ## 4. Consecuencia directa: las tres únicas vías de escritura
 
 De 3.1, 3.2 y 3.8 se sigue que un objeto solo puede aparecer o

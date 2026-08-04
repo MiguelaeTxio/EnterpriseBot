@@ -64,9 +64,9 @@
                             {% endif %}
                         </div>
                         <div class="small text-muted">
-                            {{ last_run.groups_count }} archivo(s) procesado(s) --
-                            {{ last_run.kept_count }} {{ last_run.primary_count_label|lower }},
-                            {{ last_run.trashed_count }} {{ last_run.secondary_count_label|lower }}
+                            {{ last_run_processed }} archivo(s) procesado(s) --
+                            {{ last_run_relocated }} {{ last_run.primary_count_label|lower }},
+                            {{ last_run_pending }} {{ last_run.secondary_count_label|lower }}
                         </div>
                         <a class="btn btn-sm btn-outline-secondary mt-2"
                            href="{% url 'document_explorer:operation_log_detail' last_run.pk %}">

@@ -1877,6 +1877,30 @@ class QuarantineStatusView(ExplorerAccessMixin, TemplateView):
         machine_prefix = QUARANTINE_PREFIX + "DOC. MAQUINAS/"
         personal_prefix = QUARANTINE_PREFIX + "DOC. PERSONAL/"
 
+        last_run = DataOperationLog.objects.filter(
+            operation_type=DataOperationLog.OPERATION_QUARANTINE_CONSUME,
+        ).order_by("-performed_at").first()
+
+        # Bug real detectado por Miguel Ángel (S040): mientras la
+        # tarea está RUNNING, groups_count/kept_count/trashed_count
+        # del propio log siguen a 0 -- solo se cierran al terminar
+        # (mismo patrón ya corregido para el detalle, 3.28). Contar
+        # las líneas reales, nunca fiarse de esos campos si el estado
+        # no es COMPLETED.
+        last_run_processed = last_run_relocated = last_run_pending = 0
+        if last_run:
+            if last_run.status == DataOperationLog.STATUS_COMPLETED:
+                last_run_processed = last_run.groups_count
+                last_run_relocated = last_run.kept_count
+                last_run_pending = last_run.trashed_count
+            else:
+                entries = DataOperationLogEntry.objects.filter(log=last_run)
+                last_run_processed = entries.count()
+                last_run_relocated = entries.filter(
+                    action=DataOperationLogEntry.ACTION_RELOCATED,
+                ).count()
+                last_run_pending = last_run_processed - last_run_relocated
+
         context.update({
             "active_nav": "document_explorer",
             "total_pending": live_files.count(),
@@ -1886,9 +1910,10 @@ class QuarantineStatusView(ExplorerAccessMixin, TemplateView):
             "personal_pending": live_files.filter(
                 blob_name__startswith=personal_prefix,
             ).count(),
-            "last_run": DataOperationLog.objects.filter(
-                operation_type=DataOperationLog.OPERATION_QUARANTINE_CONSUME,
-            ).order_by("-performed_at").first(),
+            "last_run": last_run,
+            "last_run_processed": last_run_processed,
+            "last_run_relocated": last_run_relocated,
+            "last_run_pending": last_run_pending,
             "batch_size": tasks._QUARANTINE_CONSUME_BATCH_SIZE,
         })
         return context
