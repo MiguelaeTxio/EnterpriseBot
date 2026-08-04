@@ -1449,6 +1449,32 @@ cierra como `FAILED` con una nota en el log del servidor -- con
 exactamente eso, huérfana de un reinicio anterior. Nunca se deja
 acumulando confusión en el panel de estado.
 
+### 3.37. Límite real de Vertex AI para PDF (50 MB), incluso por `gs://`: recorte a las primeras páginas (S040)
+
+El arreglo 3.35 (`Part.from_uri`) mejoró el error pero no lo resolvió
+del todo -- Vertex AI devolvió, ya con detalle real (no supuesto),
+el motivo exacto: *"The file size of `gs://...` is 90015260, which
+exceeds max allowed file size of 52428800 for `application/pdf`
+files."* 52428800 bytes = 50 MiB -- un límite específico de PDF,
+distinto del límite genérico de payload en línea, y que aplica
+también por referencia `gs://`, no solo al empaquetar bytes.
+
+Miguel Ángel, ante la propuesta de convertir a otro formato: *"¿sería
+conveniente convertirlos a otro tipo de archivo (...)? O simplemente
+enviamos dos o tres páginas de PDF."* Confirmado que convertir de
+formato no ayuda (el límite es de cómo Vertex AI procesa PDF en
+concreto, no del formato del archivo) -- y clasificar solo necesita
+reconocer el tipo de documento, no transcribirlo entero, así que las
+primeras páginas bastan casi siempre.
+
+**Construido:** `_extract_first_pages_pdf()`, con PyMuPDF (`fitz`, ya
+dependencia del proyecto -- sin paquete nuevo, sin coordinación de
+`pip-compile`/`pip-sync`). Cuando `entry.size_bytes` (ya en el índice,
+sin descargar de más para decidir) supera 45 MB, se descarga el
+archivo, se extraen las 3 primeras páginas a un PDF nuevo en memoria,
+y ese extracto -- nunca el archivo completo -- es lo que se envía a
+Gemini. Probado con un PDF real de prueba antes de comitear.
+
 ## 4. Consecuencia directa: las tres únicas vías de escritura
 
 De 3.1, 3.2 y 3.8 se sigue que un objeto solo puede aparecer o

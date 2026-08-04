@@ -66,6 +66,8 @@ import subprocess
 import tempfile
 import time
 
+import fitz  # PyMuPDF -- ya en requirements (ver cabecera del módulo)
+
 from google.genai.types import GenerateContentConfig, HttpOptions, Part
 
 from ai_services.gemini_client import DEFAULT_MODEL, get_gemini_client
@@ -114,6 +116,15 @@ _LIBREOFFICE_CONVERTIBLE_EXTENSIONS = {
     "pptx", "ppt", "odp",
 }
 _SOFFICE_TIMEOUT_SECONDS = 90
+
+# Límite real confirmado por la propia API de Vertex AI en producción
+# (S040, no documentado con este detalle en la guía general de
+# tamaños en línea): un PDF no puede superar 52428800 bytes (50 MiB)
+# aunque se referencie por gs:// -- distinto del límite genérico de
+# 100 MB de datos en línea. Umbral propio con margen de seguridad
+# (45 MB) para decidir cuándo hace falta recortar antes de llamar.
+_PDF_SIZE_LIMIT_BYTES = 45 * 1024 * 1024
+_PDF_CLASSIFICATION_MAX_PAGES = 3
 
 
 _RESPONSE_SCHEMA = {
@@ -525,6 +536,64 @@ def check_machine_mismatch(entry, result: dict) -> str | None:
     )
 
 
+def _extract_first_pages_pdf(
+    content_bytes: bytes, max_pages: int = _PDF_CLASSIFICATION_MAX_PAGES,
+) -> bytes | None:
+    """
+    Extracts the first `max_pages` of a PDF into a new, small,
+    in-memory PDF -- for classification purposes only, never
+    persisted anywhere. Real incident, S040: several genuine catalogs
+    of spare parts (150-270 MB) hit Vertex AI's real, documented PDF
+    limit (`52428800` bytes, 50 MiB) even referenced by `gs://` URI
+    (`Part.from_uri`) -- confirmed directly by the API's own error
+    message, not assumed. Since classification only needs to
+    recognise WHAT KIND of document this is (cover page, title,
+    header), not transcribe the whole thing, the first few pages are
+    enough -- almost always dramatically smaller than the full file.
+
+    Uses PyMuPDF (`fitz`), already a project dependency -- no new
+    package needed, no `pip-compile`/`pip-sync` coordination required.
+
+    Returns None on any failure (corrupt PDF, etc.) -- callers must
+    fall back to the "unsupported"/error path, never guess.
+
+    ---
+
+    Extrae las primeras `max_pages` de un PDF a un PDF nuevo, pequeño,
+    en memoria -- solo para clasificar, nunca se persiste en ningún
+    sitio. Incidente real, S040: varios catálogos de piezas reales
+    (150-270 MB) chocaban con el límite real y documentado de Vertex
+    AI para PDF (`52428800` bytes, 50 MiB) incluso referenciados por
+    URI `gs://` (`Part.from_uri`) -- confirmado directamente por el
+    propio mensaje de error de la API, no supuesto. Como clasificar
+    solo necesita reconocer DE QUÉ TIPO es el documento (portada,
+    título, cabecera), no transcribirlo entero, las primeras páginas
+    bastan -- casi siempre mucho más pequeñas que el archivo completo.
+
+    Usa PyMuPDF (`fitz`), ya dependencia del proyecto -- ningún
+    paquete nuevo, ninguna coordinación de `pip-compile`/`pip-sync`
+    necesaria.
+
+    Devuelve None ante cualquier fallo (PDF corrupto, etc.) -- quien
+    llama debe caer al camino de "no soportado"/error, nunca adivinar.
+    """
+    try:
+        source = fitz.open(stream=content_bytes, filetype="pdf")
+        try:
+            excerpt = fitz.open()
+            page_count = min(max_pages, source.page_count)
+            excerpt.insert_pdf(source, from_page=0, to_page=page_count - 1)
+            return excerpt.tobytes()
+        finally:
+            source.close()
+    except Exception as exc:
+        logger.warning(
+            "# [_extract_first_pages_pdf] Fallo extrayendo páginas: %s",
+            exc, exc_info=True,
+        )
+        return None
+
+
 def _convert_to_pdf(content_bytes: bytes, extension: str) -> bytes | None:
     """
     Converts an Office document to PDF using LibreOffice headless
@@ -677,10 +746,36 @@ def classify_entry(entry, domain: str | None = None) -> dict:
 
     try:
         if mime_type in _SUPPORTED_MIME_TYPES:
-            file_part = Part.from_uri(
-                file_uri="gs://%s/%s" % (entry.bucket, entry.blob_name),
-                mime_type=mime_type,
-            )
+            if (
+                mime_type == "application/pdf"
+                and entry.size_bytes
+                and entry.size_bytes > _PDF_SIZE_LIMIT_BYTES
+            ):
+                # Incidente real S040: Vertex AI rechaza cualquier PDF
+                # de más de 52428800 bytes (50 MiB) para clasificar,
+                # aunque se referencie por gs:// -- confirmado por el
+                # propio mensaje de error de la API. entry.size_bytes
+                # ya está en el índice, así que se decide sin
+                # descargar nada de más.
+                content_bytes = download_bytes(entry.bucket, entry.blob_name)
+                excerpt = _extract_first_pages_pdf(content_bytes)
+                if excerpt is None:
+                    return {
+                        "error": (
+                            "El PDF supera el límite de 50 MB de "
+                            "Vertex AI y no se pudieron extraer las "
+                            "primeras páginas para clasificarlo "
+                            "igualmente (ver logs del servidor)."
+                        ),
+                    }
+                file_part = Part.from_bytes(
+                    data=excerpt, mime_type="application/pdf",
+                )
+            else:
+                file_part = Part.from_uri(
+                    file_uri="gs://%s/%s" % (entry.bucket, entry.blob_name),
+                    mime_type=mime_type,
+                )
         else:
             if extension not in _LIBREOFFICE_CONVERTIBLE_EXTENSIONS:
                 return {
