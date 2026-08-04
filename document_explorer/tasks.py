@@ -383,6 +383,29 @@ def consume_quarantine_task(self) -> None:
     if not entries:
         return
 
+    # Real incident, S040: si el worker se reinicia a mitad de una
+    # pasada (p. ej. por un despliegue), el proceso muere en seco y la
+    # fila del DataOperationLog anterior se queda en RUNNING para
+    # siempre -- nunca llega al bloque except propio. Las líneas ya
+    # escritas están bien (registro incremental, 3.28) pero la propia
+    # fila queda huérfana. Con concurrency=1 y un solo disparo por
+    # intervalo, cualquier RUNNING de este mismo operation_type que
+    # siga existiendo al arrancar una pasada nueva solo puede ser
+    # exactamente eso -- se cierra como FAILED con una nota, nunca se
+    # deja acumulando confusión en el panel de estado (3.33).
+    orphaned = DataOperationLog.objects.filter(
+        operation_type=DataOperationLog.OPERATION_QUARANTINE_CONSUME,
+        status=DataOperationLog.STATUS_RUNNING,
+    )
+    for stale_log in orphaned:
+        stale_log.status = DataOperationLog.STATUS_FAILED
+        stale_log.save(update_fields=["status"])
+        logger.warning(
+            "# [consume_quarantine_task] Pasada huerfana #%d cerrada "
+            "como FAILED (worker reiniciado a mitad, probable "
+            "despliegue).", stale_log.pk,
+        )
+
     log = DataOperationLog.objects.create(
         operation_type=DataOperationLog.OPERATION_QUARANTINE_CONSUME,
         bucket=PRIMARY_BUCKET,

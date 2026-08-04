@@ -1428,6 +1428,27 @@ camino, no solo arregla el límite. Los documentos de Office (que
 necesitan LibreOffice, y por tanto una descarga real para poder
 convertirlos) siguen igual que antes.
 
+### 3.36. Pasadas de cuarentena huérfanas se cierran solas al arrancar la siguiente (S040)
+
+Hallazgo real: varias pasadas de `consume_quarantine_task` quedaron
+en `RUNNING` para siempre en el panel de estado (3.33), pese a tener
+líneas reales escritas (registro incremental de 3.28 funcionando
+bien). Confirmado con datos reales que **no era un cuelgue de
+verdad**: cada una se paró justo en el momento de un reinicio del
+worker Celery por un despliegue -- con tantos desplegados seguidos en
+esta misma sesión, varias pasadas automáticas coincidieron con un
+reinicio a mitad de trabajo. El proceso muere en seco y nunca llega
+al bloque `except` propio, así que la fila del log se queda huérfana
+sin que nada la cierre.
+
+**Corregido:** al arrancar, `consume_quarantine_task` busca cualquier
+`DataOperationLog` de `QUARANTINE_CONSUME` que siga en `RUNNING` y lo
+cierra como `FAILED` con una nota en el log del servidor -- con
+`concurrency=1` y un solo disparo por intervalo del Beat, cualquier
+`RUNNING` que exista al empezar una pasada nueva solo puede ser
+exactamente eso, huérfana de un reinicio anterior. Nunca se deja
+acumulando confusión en el panel de estado.
+
 ## 4. Consecuencia directa: las tres únicas vías de escritura
 
 De 3.1, 3.2 y 3.8 se sigue que un objeto solo puede aparecer o
