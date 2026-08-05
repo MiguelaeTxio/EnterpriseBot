@@ -47,11 +47,14 @@
     No Conformes (H29, S042, decisión 3.14 ampliada): cuando
     `is_no_conformes_folder` y `show_delete` son ambos ciertos (mismo
     permiso `can_delete_in` que ya gobierna el borrado), cada fila de
-    archivo añade una fila extra debajo con un formulario de
-    anotación -- texto libre que la próxima llamada a Gemini
-    (`classify_entry`/`_build_prompt`) lee como corrección prioritaria
-    al reencolar. Nunca se muestra fuera de esa carpeta ni para
-    carpetas: la anotación solo tiene sentido sobre un archivo
+    archivo añade una fila extra debajo con un casillero de selección
+    (`form="requeue-selected-form"`, nunca dentro del `<form>` del
+    botón "Reencolar todo" -- ver _panel.html, para que marcar
+    casilleros jamás cambie lo que hace ese otro botón) más un
+    formulario de anotación -- texto libre que la próxima llamada a
+    Gemini (`classify_entry`/`_build_prompt`) lee como corrección
+    prioritaria al reencolar. Nunca se muestra fuera de esa carpeta ni
+    para carpetas: ambas cosas solo tienen sentido sobre un archivo
     concreto en proceso de desambiguación.
 {% endcomment %}
 
@@ -127,7 +130,11 @@
     </tr>
     {% if is_no_conformes_folder and show_delete and not entry.is_folder %}
         <tr>
-            <td></td>
+            <td class="align-top pt-2">
+                <input type="checkbox" name="entries" value="{{ entry.pk }}"
+                       form="requeue-selected-form"
+                       class="form-check-input" aria-label="Seleccionar">
+            </td>
             <td colspan="100%" class="pt-0 pb-2">
                 <form method="post" class="d-flex gap-2 align-items-start"
                       action="{% url 'document_explorer:no_conformes_annotate' entry.pk %}">
