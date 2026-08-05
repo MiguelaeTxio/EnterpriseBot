@@ -311,7 +311,7 @@ hemos cambiado el sistema, así que no hay problema."* Sin guardia de
 código añadida — el aviso directo a la usuaria (Yolanda, DOCS_SUPERVISOR)
 cubre el riesgo hasta que se aborde el código de consolidación de 3.12.
 
-### 3.14. Buzón de documentación, "la vuelta" y carpeta de no conformes (S040 — diseño registrado, SIN HITO ASIGNADO, no construir sin confirmación)
+### 3.14. Buzón de documentación, "la vuelta" y carpeta de no conformes (S040 — diseño registrado; ASIGNADO A H29 en S041, pendiente de construir)
 
 Registrada literalmente según se dictó (directriz 4.8). **Ninguna
 parte de esto se ha implementado todavía.** Miguel Ángel señaló él
@@ -360,12 +360,12 @@ archivo exactamente igual, bien, porque no cumpla o porque no sea
 ningún tipo de documento de los que se necesita guardar, etcétera."*
 
 **Valoración de Miguel Ángel sobre el alcance:** verbatim: *"esto en
-sí mismo puede que sea ya un hito por sí solo."* — no decidido, no
-asignado a H28, H29 ni a un hito nuevo. **Pendiente de confirmación
-explícita antes de tocar código o de crear anexo:** a qué hito
-pertenece (H28 por vivir en el agente de migración, H29 por vivir en
-el panel, o hito nuevo, dado que toca ambos: el agente local de H28
-y el panel/BD de H29).
+sí mismo puede que sea ya un hito por sí solo."* **Resuelto en el
+cierre de S041: asignado a H29** (la parte del agente local H28 --
+buzón de documentación y "la vuelta" -- sigue pendiente de revisar
+desde ese lado si hace falta tocar el agente; la parte de "no
+conformes" es puramente panel/BD, H29). Pendiente de construir,
+todavía sin empezar.
 
 **No resueltos por interpretación propia, a confirmar cuando se
 aborde:** el formato exacto de renombrado que debe replicar el
@@ -393,11 +393,11 @@ clasificación real (ver más abajo, corrección sobre `build_new_name`):
 cuando ya se sabe la carpeta/máquina real por otra vía distinta del
 propio documento, esa vía prevalece sobre lo que Gemini lea dentro
 del contenido -- Gemini deja de tener que adivinar lo que el sistema
-ya sabe con certeza. Sigue sin hito asignado, sin construir nada
-todavía.
+ya sabe con certeza. Asignado a H29 en el cierre de S041 (ver
+cabecera de 3.14), sin construir nada todavía.
 
-**Precisión S041, misma carpeta de "no conformes", origen distinto --
-sigue sin hito asignado, sin construir nada todavía.** Registrada a
+**Precisión S041, misma carpeta de "no conformes", origen distinto.**
+Registrada a
 raíz de una pregunta real de Miguel Ángel sobre `consume_quarantine_
 task`: hoy no existe ninguna marca de "esto ya se intentó antes" --
 un archivo que nunca resuelve (ni máquina, ni identidad, ni dossier
@@ -842,7 +842,7 @@ depende de cómo avance la clasificación real:**
    diferencia de renombrar en el sitio, que es lo único que hace hoy
    `apply_classification()` sobre las dos carpetas ya pobladas).
 3. "La vuelta" y la clasificación en local (agente de Windows, H28) --
-   depende de 3.14, todavía sin hito asignado.
+   depende de 3.14, ya asignada a H29, pendiente de construir.
 4. Interfaz de panel para el buzón de documentación (3.14): qué ha
    entrado nuevo, qué se ha clasificado, qué está no conforme.
 5. Carpeta/marca de "no conformidad" también para la cuarentena (no
@@ -2305,40 +2305,163 @@ la interfaz, sin desplegar código -- motivado por un hallazgo real
 (manuales de despiece de carretillas sin clasificar pese a que la
 máquina se conocía con certeza, por faltar el tipo en el vocabulario).
 
-### Hoja de ruta para la siguiente sesión (S041)
+### COMPLETADAS EN S041
 
-1. **Personal: decidir cuándo una identidad resuelta por DNI es
-   suficiente para reubicar también** (hoy solo se clasifica, nunca
-   se mueve -- ver punto 6/7 de esta sesión).
-2. **Archivos "dos en uno" de verdad** (dossiers -- `CE+RAE.pdf`, un
-   Modelo 145 con varios trabajadores): decidir mecanismo de
-   desdoblado sin romper el principio de "clasificar nunca toca GCS".
-3. **Terminar la consolidación de cubos** (resto de la decisión 3.12,
-   arrastrada varias sesiones): retirar por completo las apps
-   `machine_documents`/`personal_documents`.
-4. **Subida tipada desde gestión de documentación** (decisión 3.8):
-   depende del punto 3.
-5. **Herramienta de "carpetas vacías"**: limpiar las filas huérfanas
+Sesión también larguísima -- 15 commits, casi todo H29, sobre el
+consumo real de cuarentena en producción. Patrón que se repite todo
+el día: cada decisión de diseño se registró verbatim antes de tocar
+código (directriz 4.8), y cada hallazgo raro se persiguió con datos
+reales del servidor hasta la causa, nunca supuesto (directriz 4.9) --
+el hallazgo más caro del día (`persist_rows`) solo salió a la luz
+así. Token de GitHub caducado a media sesión, sustituido por uno
+nuevo sin incidencias.
+
+**1. PERSONAL pasa a reubicarse de verdad por DNI** (`e039c8a`):
+hasta ahora solo se clasificaba, nunca se movía (punto 1 de la hoja
+de ruta de S040). Miguel Ángel, con la clasificación ya funcionando
+bien y trabajando sobre copia de la realidad de Microsoft 365 (riesgo
+bajo): "vamos a hacer ya los movimientos de manera real [en base de
+datos]". Mismo mecanismo de certeza que ya regía para MÁQUINA
+(`resolve_person_identity`, coincidencia exacta de DNI).
+
+**2. Dosieres ciertos: detección y borrado directo** (`c5042d1`,
+`1e27d8a`): campo nuevo `is_dossier` en la respuesta de Gemini, con
+instrucción explícita de solo marcarlo `true` ante certeza real de
+varios documentos catalogados distintos combinados en un mismo
+archivo (nunca por simple `DESCONOCIDO` sin identificar). Cuando hay
+certeza, se reubica directamente a la papelera del administrador
+(`alvarez_admin`, pk=1, único `CompanyUser` confirmado por Miguel
+Ángel con captura real). Esto **sustituye por completo** la condición
+previa registrada en S040 (3.24: "nunca se borra un combinado sin que
+cada componente exista ya por separado") -- retirada expresamente por
+Miguel Ángel: "presumimos que todos los documentos que lo conforman
+existen". De paso, corregido un bug real de interfaz: el texto de
+cabecera de `operation_log_detail.html` era fijo de resolución de
+duplicados y se mostraba también, incorrecto, en operaciones de
+clasificación/cuarentena (`d35d72a`).
+
+**3. `resolve_machine_asset` no encontraba el código si no era la
+primera palabra de la carpeta** (`82138fe`, `15d6b18`): bug real
+reportado por Miguel Ángel -- manuales de despiece correctamente
+tipificados se quedaban `Sin aplicar` para siempre. Carpetas tipo
+`P-14 3232-DLM (TR)` funcionan (código primero), pero
+`CARRETILLA T13 - E-1364-BFL` no (palabra descriptiva antes). Se
+prueba cada palabra de cada segmento, no el segmento completo.
+
+**4. Auditoría de manuales por modelo real del fabricante**
+(`80d087d`, `a43db18`, `2cff0e8`): primer paso de "un solo manual por
+modelo real de máquina" -- comando de solo lectura
+`audit_manual_models`, compara el modelo que dice cada manual (Gemini,
+primeras páginas) contra el `brand_model` de la máquina de origen en
+`fleet.MachineAsset` (resuelta por carpeta o, en su defecto, por
+nombre de archivo). Dos corridas reales sobre 219 candidatos: 34
+discrepancias reales encontradas (algunas correcciones de dato claras,
+otras ambigüedad chasis/brazo de grúa, otras sospecha de falso
+positivo del propio comando con denominaciones comerciales tipo
+Snorkel). Descubierta de paso una segunda jerarquía de manuales en
+paralelo a "MANUALES DE USO" (la antigua "MANUAL DE INSTRUCCIONES/
+{CODIGO}/..."), y corregido el ámbito de búsqueda tras encontrar 120
+archivos de `DOC. PERSONAL/ENTREGA MANUAL COMBUSTIBLE` colándose por
+error (nada que ver con manuales de máquina).
+
+**5. Bug CRÍTICO: `persist_rows()` deshacía en silencio cualquier
+reubicación/renombrado virtual al reindexar** (`e27fd6a`, directriz
+4.12 en `c8720f3`): el hallazgo más importante del día. Un archivo de
+cuarentena llevaba 29 `ACTION_RELOCATED` correctos en 26h sin que la
+cola bajara nunca -- `refresh_quarantine_index_task` (cada hora)
+recalculaba `parent_path`/`name` desde `blob_name` (inmutable por
+diseño) también para filas YA EXISTENTES, deshaciendo cualquier
+reubicación hecha después de la última vez que se indexaron. Corregido
+excluyendo esos tres campos de la actualización de una fila existente
+de forma permanente, no solo para este llamador. Elevado a directriz
+vinculante para todo el proyecto (4.12): `blob_name` inmutable, solo
+un borrado real por el administrador termina la existencia de un
+objeto en GCS -- verbatim de Miguel Ángel.
+
+**6. Reparación del backlog dejado por el bug** (`f5f4120` + ejecución
+real): comando `repair_reverted_quarantine_relocations` -- reaplica,
+sin volver a llamar a Gemini, la última decisión (`ACTION_RELOCATED`/
+`ACTION_TRASHED`) ya registrada en el historial de cada archivo que
+seguía en cuarentena. Ejecutado en producción: 48 de 585 pendientes
+reparados de golpe (confirmado con el contador real: 585 → 537).
+
+**7. Creación automática de trabajadores nuevos, con detección de
+posible error de DNI** (`ec8ce3f`): a raíz de un caso real (contrato
+de un trabajador cuyo DNI/NIE no coincidía con nadie sembrado).
+`resolve_or_create_person_identity()`: primero compara el nombre
+completo contra todas las identidades existentes (sospecha de error
+de lectura si coincide con un DNI distinto, nunca crea un duplicado);
+si tampoco coincide con nadie, crea la identidad real, aterriza en
+`DOC. PERSONAL/PERSONAL/PTE CONTRATACION/{apellidos, nombre}`
+(categoría de aterrizaje confirmada por Miguel Ángel -- ninguna de las
+13 categorías reales se puede inferir de forma fiable solo del
+documento).
+
+**8. Precisión del diseño de "no conformes" (3.14), con corrección
+del propio Miguel Ángel sobre su primera aproximación** (`ad8e393`,
+`4fd70d4`): responde a la pregunta real de por qué la cola no bajaba
+como se esperaba -- hoy no hay ninguna marca de "ya intentado antes",
+un archivo sin resolver reentra en el lote para siempre. Diseño: sale
+a "no conformes" (deja de coincidir con el prefijo de cuarentena, dejar
+de reprocesarse), Miguel Ángel lo estudia para decidir si hace falta
+un tipo nuevo, y la vuelta es un botón "Reencolar" sobre la propia
+carpeta, disparado a mano **sin ninguna relación con el estado de la
+cola** -- Miguel Ángel corrigió expresamente su propia primera
+redacción ("cuando cuarentena esté vacía"), el único motivo de que sea
+manual es no gastar Gemini en documentos que van a volver a fallar si
+no se ha creado antes el tipo que les falta. **Asignado a H29** en el
+cierre de esta sesión (antes sin hito), pendiente de construir.
+
+### Hoja de ruta para la siguiente sesión (S042)
+
+1. **Construir "no conformes"** (decisión 3.14, ya asignada a H29,
+   diseño completo tras la corrección de esta sesión): carpeta real
+   en `Directorio Principal`, salida de `consume_quarantine_task` tras
+   N pasadas sin resolver (N sin decidir todavía -- confirmar con
+   Miguel Ángel), botón "Reencolar" en el panel que mueve todo su
+   contenido de vuelta a cuarentena de golpe, a mano, sin relación con
+   el estado de la cola.
+2. **Modelo 145 y "dos en uno" del mismo tipo repetido para varias
+   personas** (3.31): sigue sin decisión tomada -- el mecanismo de
+   `is_dossier` (S041) exige tipos catalogados *distintos*, no cubre
+   este caso.
+3. **Revisar las 34 discrepancias reales de `audit_manual_models`**
+   una a una con Miguel Ángel, y decidir el criterio de deduplicación
+   para los 119 archivos que son candidatos reales a consolidar en un
+   único manual por modelo -- antes de tocar `fleet.MachineAsset` en
+   producción.
+4. **Terminar la consolidación de cubos** (resto de la decisión 3.12,
+   arrastrada varias sesiones -- **arrastrado 2.ª sesión sin avanzar,
+   ver directriz de contador de arrastre**): retirar por completo las
+   apps `machine_documents`/`personal_documents`. Pregunta explícita a
+   Miguel Ángel: ¿qué falta exactamente para poder cerrarlo, o ha
+   dejado de ser prioritario frente al resto de H29?
+5. **Subida tipada desde gestión de documentación** (decisión 3.8):
+   depende del punto 4.
+6. **Herramienta de "carpetas vacías"**: limpiar las filas huérfanas
    que deja mover/reubicar archivos fuera de una carpeta sin vaciarla
    del índice.
-6. **Buzón de documentación / "la vuelta"** (decisión 3.14, sin hito
-   asignado todavía): sigue sin construirse, incluida la modificación
-   pendiente del agente H28 para reportar la carpeta de origen local.
-7. **Migración de Python 3.10 → 3.12/3.13** antes del 4 de octubre de
+7. **Buzón de documentación / "la vuelta"** (resto de la decisión
+   3.14 -- la parte del agente H28, distinta de "no conformes"):
+   modificación pendiente del agente H28 para reportar la carpeta de
+   origen local.
+8. **Migración de Python 3.10 → 3.12/3.13** antes del 4 de octubre de
    2026 -- arrastrada varias sesiones, sin tocar todavía.
-8. **Salto de HTMX 1.9.12 a la serie 2.x**: anotado, sin evaluar.
-9. **Frontera con H28** (si la interfaz de limpieza de la Fase 2
-   converge con el explorador): sigue sin cerrar.
+9. **Salto de HTMX 1.9.12 a la serie 2.x**: anotado, sin evaluar.
+10. **Frontera con H28** (si la interfaz de limpieza de la Fase 2
+    converge con el explorador): sigue sin cerrar.
 
 **Cabo suelto menor, arrastrado ya varias sesiones, no bloqueante:**
 las cuatro copias de estáticos desincronizadas de su fuente
 (`panel/css/panel.css`, `panel/js/admin_history.js`,
 `panel/js/form_entry_assets.js`, `panel/js/form_entry_modal.js`).
 
-**Verificar al inicio de la próxima sesión:** que la Always-on Task
-de consumo de cuarentena sigue avanzando con normalidad (panel de
-Cuarentena) y que el contador de "en cola" real (682 al cierre de esta
-sesión, 651 de máquina + resto de personal) sigue bajando.
+**Verificar al inicio de la próxima sesión:** que la Always-on Task de
+consumo de cuarentena sigue avanzando con normalidad (panel de
+Cuarentena) y que el contador de "en cola" real (537 al cierre de esta
+sesión, tras la reparación del punto 6) sigue bajando sin volver a
+subir -- el bug de `persist_rows` que lo causaba está corregido, así
+que esta vez sí debería bajar de verdad, pasada tras pasada.
 
 ---
 
