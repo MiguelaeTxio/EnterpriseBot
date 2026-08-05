@@ -43,6 +43,16 @@
     administrador y a PRIMARY_BUCKET (ver MoveScopeMixin en views.py),
     así que no hereda el problema de permisos mixtos por carpeta que
     sí tiene el borrado en un listado aplanado.
+
+    No Conformes (H29, S042, decisión 3.14 ampliada): cuando
+    `is_no_conformes_folder` y `show_delete` son ambos ciertos (mismo
+    permiso `can_delete_in` que ya gobierna el borrado), cada fila de
+    archivo añade una fila extra debajo con un formulario de
+    anotación -- texto libre que la próxima llamada a Gemini
+    (`classify_entry`/`_build_prompt`) lee como corrección prioritaria
+    al reencolar. Nunca se muestra fuera de esa carpeta ni para
+    carpetas: la anotación solo tiene sentido sobre un archivo
+    concreto en proceso de desambiguación.
 {% endcomment %}
 
 {% for entry in entries %}
@@ -115,6 +125,30 @@
             </td>
         {% endif %}
     </tr>
+    {% if is_no_conformes_folder and show_delete and not entry.is_folder %}
+        <tr>
+            <td></td>
+            <td colspan="100%" class="pt-0 pb-2">
+                <form method="post" class="d-flex gap-2 align-items-start"
+                      action="{% url 'document_explorer:no_conformes_annotate' entry.pk %}">
+                    {% csrf_token %}
+                    <textarea name="curator_note" rows="1"
+                              class="form-control form-control-sm"
+                              placeholder="Anotación para Gemini en el próximo reencolado (ej. DNI 74633524I -> 74633524L)">{{ entry.curator_note }}</textarea>
+                    <button type="submit"
+                            class="btn btn-sm btn-outline-secondary text-nowrap">
+                        <i class="bi bi-pencil-square"></i> Guardar
+                    </button>
+                </form>
+                {% if entry.curator_note_by %}
+                    <div class="small text-muted mt-1">
+                        Anotado por {{ entry.curator_note_by }}
+                        el {{ entry.curator_note_at|date:"d/m/Y H:i" }}.
+                    </div>
+                {% endif %}
+            </td>
+        </tr>
+    {% endif %}
 {% endfor %}
 
 {% if next_page_url %}

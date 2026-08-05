@@ -165,7 +165,8 @@ from document_explorer import (
     classification_service, duplicates_service, naming_service, tasks,
 )
 from document_explorer.buckets import (
-    BUCKET_DISPLAY_NAMES, INDEXED_BUCKETS, PRIMARY_BUCKET, QUARANTINE_PREFIX,
+    BUCKET_DISPLAY_NAMES, INDEXED_BUCKETS, NO_CONFORMES_PREFIX,
+    PRIMARY_BUCKET, QUARANTINE_PREFIX,
 )
 from document_explorer.models import (
     DataOperationLog, DataOperationLogEntry, DocumentIndexEntry,
@@ -454,6 +455,11 @@ class FolderListingView(ExplorerAccessMixin, TemplateView):
             "sort_columns": self._sort_columns(),
             "can_move": permissions.is_unrestricted(company_user),
             "primary_bucket": PRIMARY_BUCKET,
+            "is_no_conformes_folder": (
+                bucket == PRIMARY_BUCKET
+                and folder_path == NO_CONFORMES_PREFIX.rstrip("/")
+                and not is_search
+            ),
         }
 
         if scope == SCOPE_HERE:
@@ -1510,6 +1516,203 @@ class ClassifyView(MoveScopeMixin, View):
         )
 
 
+class AnnotateNoConformesView(ExplorerAccessMixin, View):
+    """
+    Save (or clear) a supervisor annotation on ONE file living inside
+    the real "NO CONFORMES" folder (H29, S042 -- roadmap decision
+    3.14, extended by Miguel Ángel: an annotation the next Gemini
+    call can read to disambiguate a mismatch it could not resolve on
+    its own -- his own example, "DNI 74633524I -> 74633524L").
+
+    Restricted to whoever holds delete authority over the NO
+    CONFORMES folder itself (`can_delete_in` -- the ADMIN by S037's
+    blanket exemption, plus any supervisor explicitly granted delete
+    there): the same permission tier Miguel Ángel described as "el
+    administrador o un supervisor con permisos suficientes". Scoped
+    to files that actually live in that folder right now -- an
+    annotation elsewhere in the tree has no defined meaning, since
+    only `consume_quarantine_task` reads it, and only for files it is
+    reprocessing out of `_CUARENTENA/`.
+
+    ---
+
+    Guarda (o borra) una anotación de supervisor sobre UN archivo que
+    vive dentro de la carpeta real "NO CONFORMES" (H29, S042 --
+    decisión 3.14 de la hoja de ruta, ampliada por Miguel Ángel: una
+    anotación que la siguiente llamada a Gemini pueda leer para
+    desambiguar un fallo que no pudo resolver por su cuenta -- su
+    propio ejemplo, "DNI 74633524I -> 74633524L").
+
+    Restringido a quien tenga autoridad de borrado sobre la propia
+    carpeta NO CONFORMES (`can_delete_in` -- el ADMIN por la exención
+    general de S037, más cualquier supervisor con borrado concedido
+    ahí): el mismo nivel de permiso que Miguel Ángel describió como
+    "el administrador o un supervisor con permisos suficientes".
+    Acotado a archivos que viven de verdad en esa carpeta ahora mismo
+    -- una anotación en cualquier otro punto del árbol no tiene
+    significado definido, porque solo la lee `consume_quarantine_task`,
+    y solo para archivos que está reprocesando desde `_CUARENTENA/`.
+    """
+
+    def post(self, request, pk):
+        no_conformes_path = NO_CONFORMES_PREFIX.rstrip("/")
+        entry = get_object_or_404(
+            DocumentIndexEntry,
+            pk=pk,
+            entry_kind=DocumentIndexEntry.KIND_FILE,
+            bucket=PRIMARY_BUCKET,
+            parent_path=no_conformes_path,
+            deleted_at__isnull=True, purged_at__isnull=True,
+        )
+        company_user = request.user.company_user
+        if not permissions.can_delete_in(
+            company_user, PRIMARY_BUCKET, no_conformes_path,
+        ):
+            raise Http404(
+                "Sin permiso para anotar archivos de No Conformes."
+            )
+
+        note = (request.POST.get("curator_note") or "").strip()
+        entry.curator_note = note
+        entry.curator_note_by = company_user if note else None
+        entry.curator_note_at = timezone.now() if note else None
+        entry.save(update_fields=[
+            "curator_note", "curator_note_by", "curator_note_at",
+        ])
+
+        if note:
+            messages.success(
+                request, "Anotación guardada en «%s»." % entry.name,
+            )
+        else:
+            messages.info(
+                request, "Anotación eliminada de «%s»." % entry.name,
+            )
+        return redirect(
+            "%s?bucket=%s&path=%s" % (
+                reverse("document_explorer:explorer"),
+                PRIMARY_BUCKET, no_conformes_path,
+            )
+        )
+
+
+class RequeueNoConformesView(ExplorerAccessMixin, View):
+    """
+    Bulk-move every live file inside "NO CONFORMES" back into
+    `_CUARENTENA/` in one shot (H29 roadmap, decision 3.14, corrected
+    S041 -- Miguel Ángel's own correction of his first wording:
+    "cuando cuarentena esté vacía" was wrong; requeuing is manual,
+    triggered on the folder itself, with no relation whatsoever to
+    the state of the queue).
+
+    `blob_name` never changes (4.12), so `quarantine_domain_for_entry`
+    still reads the correct original domain off it regardless of how
+    many times a file has bounced between quarantine and NO
+    CONFORMES. Any `curator_note` a supervisor left travels with the
+    row untouched -- the next `consume_quarantine_task` pass reads it
+    straight off `entry` via `classify_entry`.
+
+    Same permission tier as `AnnotateNoConformesView`
+    (`can_delete_in` over the NO CONFORMES folder) -- reencolar is as
+    much a management action over that folder as deleting from it.
+
+    ---
+
+    Mueve en bloque todos los archivos vivos dentro de "NO CONFORMES"
+    de vuelta a `_CUARENTENA/` de una sola vez (hoja de ruta H29,
+    decisión 3.14, corregida en S041 -- corrección del propio Miguel
+    Ángel sobre su primera redacción: "cuando cuarentena esté vacía"
+    era incorrecto; el reencolado es manual, disparado sobre la
+    propia carpeta, sin ninguna relación con el estado de la cola).
+
+    `blob_name` nunca cambia (4.12), así que `quarantine_domain_for_entry`
+    sigue leyendo el dominio original correcto sobre él, sea cual sea
+    el número de veces que un archivo haya rebotado entre cuarentena
+    y NO CONFORMES. Cualquier `curator_note` que haya dejado un
+    supervisor viaja intacta con la fila -- la siguiente pasada de
+    `consume_quarantine_task` la lee directamente de `entry` vía
+    `classify_entry`.
+
+    Mismo nivel de permiso que `AnnotateNoConformesView`
+    (`can_delete_in` sobre la carpeta NO CONFORMES) -- reencolar es
+    tan una acción de gestión sobre esa carpeta como borrar de ella.
+    """
+
+    def post(self, request):
+        no_conformes_path = NO_CONFORMES_PREFIX.rstrip("/")
+        company_user = request.user.company_user
+        if not permissions.can_delete_in(
+            company_user, PRIMARY_BUCKET, no_conformes_path,
+        ):
+            raise Http404(
+                "Sin permiso para reencolar archivos de No Conformes."
+            )
+
+        entries = list(
+            DocumentIndexEntry.objects.filter(
+                bucket=PRIMARY_BUCKET,
+                entry_kind=DocumentIndexEntry.KIND_FILE,
+                parent_path=no_conformes_path,
+                deleted_at__isnull=True, purged_at__isnull=True,
+            )
+        )
+        if not entries:
+            messages.info(request, "No Conformes está vacía.")
+            return redirect(
+                "%s?bucket=%s&path=%s" % (
+                    reverse("document_explorer:explorer"),
+                    PRIMARY_BUCKET, no_conformes_path,
+                )
+            )
+
+        log = DataOperationLog.objects.create(
+            operation_type=(
+                DataOperationLog.OPERATION_REQUEUE_NO_CONFORMES
+            ),
+            performed_by=company_user,
+            bucket=PRIMARY_BUCKET,
+            path_prefix=no_conformes_path,
+            status=DataOperationLog.STATUS_RUNNING,
+        )
+        quarantine_path = QUARANTINE_PREFIX.rstrip("/")
+        with transaction.atomic():
+            for group_number, entry in enumerate(entries, start=1):
+                move_service.move_entry(entry, quarantine_path)
+                DataOperationLogEntry.objects.create(
+                    log=log,
+                    group_number=group_number,
+                    action=DataOperationLogEntry.ACTION_RELOCATED,
+                    index_entry=entry,
+                    bucket=entry.bucket,
+                    blob_name=entry.blob_name,
+                    name=entry.name,
+                    parent_path=entry.parent_path,
+                    size_bytes=entry.size_bytes,
+                    crc32c=entry.crc32c,
+                    detail=(
+                        "Reencolada a cuarentena a mano%s"
+                        % (
+                            " -- con anotación del supervisor "
+                            "para Gemini" if entry.curator_note else ""
+                        )
+                    ),
+                )
+            log.groups_count = len(entries)
+            log.kept_count = len(entries)
+            log.status = DataOperationLog.STATUS_COMPLETED
+            log.save(update_fields=[
+                "groups_count", "kept_count", "status",
+            ])
+
+        messages.success(
+            request,
+            "%d archivo(s) reencolado(s) a cuarentena." % len(entries),
+        )
+        return redirect(
+            reverse("document_explorer:operation_log_detail", args=[log.pk])
+        )
+
+
 class TrashView(ExplorerAccessMixin, TemplateView):
     """
     The acting user's own trash. Nobody sees anybody else's.
@@ -1901,6 +2104,14 @@ class QuarantineStatusView(ExplorerAccessMixin, TemplateView):
                 ).count()
                 last_run_pending = last_run_processed - last_run_relocated
 
+        no_conformes_pending = DocumentIndexEntry.objects.filter(
+            bucket=PRIMARY_BUCKET,
+            entry_kind=DocumentIndexEntry.KIND_FILE,
+            deleted_at__isnull=True,
+            purged_at__isnull=True,
+            parent_path=NO_CONFORMES_PREFIX.rstrip("/"),
+        ).count()
+
         context.update({
             "active_nav": "document_explorer",
             "total_pending": live_files.count(),
@@ -1910,6 +2121,9 @@ class QuarantineStatusView(ExplorerAccessMixin, TemplateView):
             "personal_pending": live_files.filter(
                 parent_path__startswith=personal_prefix,
             ).count(),
+            "no_conformes_pending": no_conformes_pending,
+            "no_conformes_path": NO_CONFORMES_PREFIX.rstrip("/"),
+            "primary_bucket": PRIMARY_BUCKET,
             "last_run": last_run,
             "last_run_processed": last_run_processed,
             "last_run_relocated": last_run_relocated,

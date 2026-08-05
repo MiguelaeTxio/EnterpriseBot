@@ -161,7 +161,7 @@ española de grúas y maquinaria pesada. Se te da UN documento (PDF), y debes \
 identificar su tipo dentro de una lista CERRADA de tipos posibles -- nunca \
 inventes un tipo fuera de esta lista, ni renombres uno existente con tus \
 propias palabras.
-
+{curator_note_section}
 {domain_instruction}
 
 TIPOS DE DOCUMENTO POSIBLES (código -- descripción):
@@ -223,7 +223,7 @@ _DOMAIN_LABELS = {
 }
 
 
-def _build_prompt(domain: str | None) -> str:
+def _build_prompt(domain: str | None, curator_note: str = "") -> str:
     """
     Builds the classification prompt. If the domain is already known
     (file living under DOC. MAQUINAS or DOC. PERSONAL), the catalog is
@@ -232,6 +232,15 @@ def _build_prompt(domain: str | None) -> str:
     which is exactly the real use case -- nobody has sorted it yet),
     the full active catalog is listed and Gemini is asked to decide
     the domain too.
+
+    `curator_note` (H29, S042, decision 3.14 extended -- Miguel
+    Ángel's own example: "DNI 74633524I -> 74633524L") is optional,
+    free text a supervisor left on the row while it sat in "NO
+    CONFORMES" after a failed first pass -- e.g. correcting a
+    misread DNI so the next attempt resolves the right
+    `PersonIdentity`. When present it is rendered as a short,
+    explicitly prioritised block ahead of the domain instruction, so
+    Gemini reads it before anything else.
 
     ---
 
@@ -242,7 +251,25 @@ def _build_prompt(domain: str | None) -> str:
     cuarentena, que es exactamente el caso de uso real -- todavía
     nadie lo ha clasificado), se lista el catálogo activo completo y
     se le pide a Gemini que decida también el dominio.
+
+    `curator_note` (H29, S042, decisión 3.14 ampliada -- ejemplo del
+    propio Miguel Ángel: "DNI 74633524I -> 74633524L") es texto libre
+    opcional que un supervisor dejó en la fila mientras estaba en "NO
+    CONFORMES" tras fallar una primera pasada -- p. ej. corrigiendo un
+    DNI mal leído para que el siguiente intento resuelva la
+    `PersonIdentity` correcta. Cuando existe se renderiza como un
+    bloque corto y explícitamente prioritario, por delante de la
+    instrucción de dominio, para que Gemini lo lea antes que nada.
     """
+    curator_note = (curator_note or "").strip()
+    curator_note_section = (
+        (
+            "NOTA DEL SUPERVISOR -- PRIORITARIA sobre lo que leas en "
+            "el propio documento, corrige un fallo real de una pasada "
+            "anterior: %s\n" % curator_note
+        )
+        if curator_note else ""
+    )
     if domain:
         catalog_entries = (
             DocumentTypeCatalog.objects
@@ -268,6 +295,7 @@ def _build_prompt(domain: str | None) -> str:
         "- %s -- %s" % (entry.code, entry.label) for entry in catalog_entries
     )
     return _PROMPT_TEMPLATE.format(
+        curator_note_section=curator_note_section,
         domain_instruction=domain_instruction, catalog_lines=catalog_lines,
     )
 
@@ -935,6 +963,10 @@ def classify_entry(entry, domain: str | None = None) -> dict:
     catalog, more accurate); leave it out for quarantine files, where
     Gemini determines the domain itself as part of the same call.
 
+    Also reads `entry.curator_note` (H29, S042) when present and
+    forwards it to `_build_prompt()` as a prioritised correction --
+    see that function's docstring.
+
     Office documents (`.docx`/`.xlsx`/`.pptx`/...) are converted to
     PDF first via `_convert_to_pdf()` -- Gemini's own mimeType
     allow-list doesn't cover Office formats directly (see
@@ -967,6 +999,10 @@ def classify_entry(entry, domain: str | None = None) -> dict:
     catálogo, más preciso); se omite para archivos de cuarentena,
     donde Gemini determina el propio dominio como parte de la misma
     llamada.
+
+    También lee `entry.curator_note` (H29, S042) cuando existe y la
+    reenvía a `_build_prompt()` como una corrección prioritaria -- ver
+    el docstring de esa función.
 
     Los documentos de Office (`.docx`/`.xlsx`/`.pptx`/...) se
     convierten primero a PDF vía `_convert_to_pdf()` -- la lista de
@@ -1054,7 +1090,10 @@ def classify_entry(entry, domain: str | None = None) -> dict:
         response = _generate_content_with_retry(
             client,
             model=DEFAULT_MODEL,
-            contents=[file_part, _build_prompt(domain)],
+            contents=[
+                file_part,
+                _build_prompt(domain, getattr(entry, "curator_note", "")),
+            ],
             config=GenerateContentConfig(
                 http_options=HttpOptions(timeout=90_000),
                 response_mime_type="application/json",

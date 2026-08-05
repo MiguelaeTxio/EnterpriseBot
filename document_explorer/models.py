@@ -276,6 +276,30 @@ class DocumentIndexEntry(models.Model):
         "domain_content_type",
         "domain_object_id",
     )
+    curator_note = models.TextField(
+        blank=True,
+        verbose_name="Anotación del supervisor (No Conformes)",
+        help_text=(
+            "Escrita a mano por un administrador o supervisor con "
+            "permiso sobre la carpeta NO CONFORMES para desambiguar "
+            "el archivo en el próximo reencolado a cuarentena -- p. "
+            "ej. 'DNI 74633524I -> 74633524L'. Gemini la recibe como "
+            "parte del prompt en la siguiente clasificación."
+        ),
+    )
+    curator_note_by = models.ForeignKey(
+        "ivr_config.CompanyUser",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="curator_annotated_index_entries",
+        verbose_name="Anotado por",
+    )
+    curator_note_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Fecha de la anotación",
+    )
     indexed_at = models.DateTimeField(
         auto_now_add=True,
         verbose_name="Fecha de alta en el índice",
@@ -555,10 +579,15 @@ class DataOperationLog(models.Model):
     OPERATION_DUPLICATE_RESOLUTION = "DUPLICATE_RESOLUTION"
     OPERATION_BATCH_CLASSIFICATION = "BATCH_CLASSIFICATION"
     OPERATION_QUARANTINE_CONSUME = "QUARANTINE_CONSUME"
+    OPERATION_REQUEUE_NO_CONFORMES = "REQUEUE_NO_CONFORMES"
     OPERATION_CHOICES = [
         (OPERATION_DUPLICATE_RESOLUTION, "Resolución de duplicados"),
         (OPERATION_BATCH_CLASSIFICATION, "Clasificación por lote"),
         (OPERATION_QUARANTINE_CONSUME, "Consumo automático de cuarentena"),
+        (
+            OPERATION_REQUEUE_NO_CONFORMES,
+            "Reencolado manual de No Conformes",
+        ),
     ]
 
     operation_type = models.CharField(
@@ -678,14 +707,18 @@ class DataOperationLog(models.Model):
             return "Reubicadas fuera de cuarentena"
         if self.operation_type == self.OPERATION_BATCH_CLASSIFICATION:
             return "Clasificadas con éxito"
+        if self.operation_type == self.OPERATION_REQUEUE_NO_CONFORMES:
+            return "Reencoladas a cuarentena"
         return "Copias conservadas"
 
     @property
     def secondary_count_label(self) -> str:
         if self.operation_type == self.OPERATION_QUARANTINE_CONSUME:
-            return "Clasificadas, pendientes de revisión humana"
+            return "Enviadas a No Conformes (sin poder clasificar)"
         if self.operation_type == self.OPERATION_BATCH_CLASSIFICATION:
             return "Sin poder aplicar"
+        if self.operation_type == self.OPERATION_REQUEUE_NO_CONFORMES:
+            return "Sin poder reencolar"
         return "Copias enviadas a papelera"
 
     @property
@@ -700,13 +733,19 @@ class DataOperationLog(models.Model):
             return (
                 "Cada tarjeta es un archivo de cuarentena procesado: "
                 "dominio, tipo y pistas detectadas por Gemini, y si "
-                "se reubicó fuera de cuarentena o quedó pendiente de "
-                "revisión humana."
+                "se reubicó fuera de cuarentena o salió hacia No "
+                "Conformes por no poder clasificarse en esta pasada."
             )
         if self.operation_type == self.OPERATION_BATCH_CLASSIFICATION:
             return (
                 "Cada tarjeta es un archivo clasificado: dominio, "
                 "tipo y pistas detectadas por Gemini."
+            )
+        if self.operation_type == self.OPERATION_REQUEUE_NO_CONFORMES:
+            return (
+                "Cada tarjeta es un archivo de No Conformes reencolado "
+                "a mano de vuelta a cuarentena -- si llevaba una "
+                "anotación del supervisor, queda anotado aquí."
             )
         return (
             "Cada tarjeta es un grupo: arriba la copia que se "
@@ -744,12 +783,14 @@ class DataOperationLogEntry(models.Model):
     ACTION_CLASSIFIED = "CLASSIFIED"
     ACTION_NOT_CLASSIFIED = "NOT_CLASSIFIED"
     ACTION_RELOCATED = "RELOCATED"
+    ACTION_SENT_TO_NO_CONFORMES = "SENT_NO_CONFORMES"
     ACTION_CHOICES = [
         (ACTION_KEPT, "Conservada"),
         (ACTION_TRASHED, "Enviada a papelera"),
         (ACTION_CLASSIFIED, "Clasificada y renombrada"),
         (ACTION_NOT_CLASSIFIED, "No se pudo aplicar"),
         (ACTION_RELOCATED, "Reubicada fuera de cuarentena"),
+        (ACTION_SENT_TO_NO_CONFORMES, "Enviada a No Conformes"),
     ]
 
     log = models.ForeignKey(
@@ -772,7 +813,7 @@ class DataOperationLogEntry(models.Model):
         ),
     )
     action = models.CharField(
-        max_length=14,
+        max_length=18,
         choices=ACTION_CHOICES,
         verbose_name="Acción",
     )
