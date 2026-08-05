@@ -60,7 +60,7 @@
                 <table class="table table-sm table-hover align-middle mb-0">
                     <tbody>
                         {% for line in entries %}
-                            <tr class="{% if line.action == 'TRASHED' or line.action == 'NOT_CLASSIFIED' %}table-light{% endif %}">
+                            <tr class="{% if line.action == 'TRASHED' or line.action == 'NOT_CLASSIFIED' or line.action == 'SENT_NO_CONFORMES' %}table-light{% endif %}">
                                 <td class="text-nowrap">
                                     {% if line.action == "TRASHED" %}
                                         <span class="text-danger small">
@@ -69,6 +69,10 @@
                                     {% elif line.action == "NOT_CLASSIFIED" %}
                                         <span class="text-warning small">
                                             <i class="bi bi-question-circle"></i> Sin aplicar
+                                        </span>
+                                    {% elif line.action == "SENT_NO_CONFORMES" %}
+                                        <span class="text-warning small">
+                                            <i class="bi bi-exclamation-triangle"></i> No Conformes
                                         </span>
                                     {% elif line.action == "RELOCATED" %}
                                         <span class="text-success small fw-bold">

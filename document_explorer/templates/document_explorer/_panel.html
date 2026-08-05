@@ -93,6 +93,25 @@
     </p>
 {% endif %}
 
+{% if is_no_conformes_folder and show_delete and entries %}
+    <div class="alert alert-secondary d-flex justify-content-between align-items-center py-2 mb-2">
+        <span class="small">
+            <i class="bi bi-info-circle"></i>
+            Archivos que no se pudieron clasificar en su única pasada
+            por cuarentena. Anota una corrección si hace falta y
+            reencólalos cuando quieras -- sin relación con el estado
+            de la cola.
+        </span>
+        <form method="post"
+              action="{% url 'document_explorer:no_conformes_requeue' %}">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-sm btn-outline-warning text-nowrap">
+                <i class="bi bi-arrow-repeat"></i> Reencolar todo a cuarentena
+            </button>
+        </form>
+    </div>
+{% endif %}
+
 {% if can_move %}
     <form id="classify-form" method="post"
           action="{% url 'document_explorer:classify' %}">

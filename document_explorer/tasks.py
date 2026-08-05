@@ -335,13 +335,20 @@ def consume_quarantine_task(self) -> None:
     Miguel Ángel: "cuando tenemos la seguridad de que es un dossier
     (...) hay que eliminarlo directamente") are soft-deleted to
     `_DOSSIER_TRASH_USERNAME`'s papelera and logged as `ACTION_TRASHED`
-    -- never a guess, plain unclassifiable `DESCONOCIDO` still falls
-    through to the fallback below. Everything else (identity/machine
-    not resolved with certainty) is logged as `ACTION_NOT_CLASSIFIED`
-    even when a type was successfully suggested -- Miguel Ángel's
-    explicit fallback: classify everything, but never move or delete
-    anything the system isn't sure about; leave it flagged for a
-    human instead.
+    -- never a guess. **Extended S042 (decision 3.14, N=1 -- Miguel
+    Ángel: "con que entre una vez y no se pueda clasificar ya es
+    suficiente")**: everything else (identity/machine not resolved
+    with certainty, a plain `DESCONOCIDO`, or even a technical
+    classification error) gets exactly ONE pass through this task and
+    then leaves `_CUARENTENA/` for real, moved (pure index write,
+    `move_service.move_entry`, `blob_name` untouched) into the real
+    "NO CONFORMES" folder and logged as `ACTION_SENT_TO_NO_CONFORMES`
+    -- it never re-enters this task's query on its own again. A human
+    with delete authority over that folder reviews it there, may leave
+    a `curator_note` for the next Gemini attempt (read by
+    `classify_entry`/`_build_prompt`), and requeues it back to
+    `_CUARENTENA/` by hand via `RequeueNoConformesView` -- "sin
+    ninguna relación con el estado de la cola" (Miguel Ángel).
 
     ---
 
@@ -370,19 +377,29 @@ def consume_quarantine_task(self) -> None:
     coincidencia exacta de DNI contra `PersonIdentity`, S041) quedan
     como `ACTION_RELOCATED`. Los archivos de los que Gemini tiene
     CERTEZA de que combinan dos o más documentos catalogados distintos
-    (`is_dossier`, S041 -- Miguel Ángel: "cuando tenemos la seguridad
+    (`is_dossier`, S041 -- Miguel Ángel: "cuando tenemos la certeza
     de que es un dossier (...) hay que eliminarlo directamente") se
     reubican a la papelera de `_DOSSIER_TRASH_USERNAME` y quedan como
-    `ACTION_TRASHED` -- nunca una sospecha, un `DESCONOCIDO` simple sin
-    certeza de dossier sigue cayendo en el mismo fallback de siempre.
-    Todo lo demás (identidad/máquina sin resolver con certeza) queda
-    como `ACTION_NOT_CLASSIFIED` incluso cuando sí se sugirió un tipo
-    -- red de seguridad explícita de Miguel Ángel: clasificar todo,
-    pero no mover ni eliminar nunca nada de lo que el sistema no esté
-    seguro; dejarlo marcado para un humano.
+    `ACTION_TRASHED` -- nunca una sospecha. **Ampliado en S042
+    (decisión 3.14, N=1 -- Miguel Ángel: "con que entre una vez y no
+    se pueda clasificar ya es suficiente")**: todo lo demás (identidad
+    /máquina sin resolver con certeza, un `DESCONOCIDO` simple, o
+    incluso un error técnico de clasificación) recibe exactamente UNA
+    pasada por esta tarea y a partir de ahí sale de verdad de
+    `_CUARENTENA/`, movido (escritura de índice pura,
+    `move_service.move_entry`, `blob_name` intacto) a la carpeta real
+    "NO CONFORMES" y registrado como `ACTION_SENT_TO_NO_CONFORMES` --
+    nunca vuelve a entrar solo en la consulta de esta tarea. Un humano
+    con autoridad de borrado sobre esa carpeta lo revisa allí, puede
+    dejar una `curator_note` para el siguiente intento de Gemini
+    (leída por `classify_entry`/`_build_prompt`), y lo reencola a mano
+    de vuelta a `_CUARENTENA/` vía `RequeueNoConformesView` -- "sin
+    ninguna relación con el estado de la cola" (Miguel Ángel).
     """
-    from document_explorer import classification_service
-    from document_explorer.buckets import PRIMARY_BUCKET, QUARANTINE_PREFIX
+    from document_explorer import classification_service, move_service
+    from document_explorer.buckets import (
+        NO_CONFORMES_PREFIX, PRIMARY_BUCKET, QUARANTINE_PREFIX,
+    )
     from document_explorer.models import DocumentIndexEntry
 
     entries = list(
@@ -442,7 +459,7 @@ def consume_quarantine_task(self) -> None:
 
             if "error" in result:
                 pending_count += 1
-                action = DataOperationLogEntry.ACTION_NOT_CLASSIFIED
+                action = DataOperationLogEntry.ACTION_SENT_TO_NO_CONFORMES
                 detail = "Error: %s" % result["error"]
             else:
                 hints = ", ".join(
@@ -480,7 +497,20 @@ def consume_quarantine_task(self) -> None:
                     detail = "[DOSSIER ELIMINADO] " + detail
                 else:
                     pending_count += 1
-                    action = DataOperationLogEntry.ACTION_NOT_CLASSIFIED
+                    action = DataOperationLogEntry.ACTION_SENT_TO_NO_CONFORMES
+
+            if action == DataOperationLogEntry.ACTION_SENT_TO_NO_CONFORMES:
+                # Decisión 3.14 (S041, ampliada S042), Miguel Ángel:
+                # "con que entre una vez y no se pueda clasificar ya
+                # es suficiente" -- N=1. `blob_name` no se toca
+                # (move_entry es puntero puro, 4.12); el dominio real
+                # se sigue leyendo de ahí, no de parent_path, así que
+                # un reencolado posterior desde NO CONFORMES no pierde
+                # la pista aunque este movimiento cambie parent_path.
+                move_service.move_entry(
+                    entry, NO_CONFORMES_PREFIX.rstrip("/"),
+                )
+                detail = "[A NO CONFORMES] " + detail
 
             DataOperationLogEntry.objects.create(
                 log=log,

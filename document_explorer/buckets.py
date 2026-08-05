@@ -42,6 +42,16 @@ HISTORICAL_BUCKET = "cgs_grupo_alvarez"
 QUARANTINE_PREFIX = "_CUARENTENA/"
 MARKS_PREFIX = "_CUARENTENA/_MARCAS/"
 
+# Carpeta real (no un cajón técnico) en la raíz de "Directorio
+# Principal", hermana de DOC. MAQUINAS/DOC. PERSONAL -- decisión 3.14
+# del anexo H29, corregida en S041 y construida en S042. Destino de un
+# archivo de cuarentena que Gemini no pudo clasificar/reubicar con
+# certeza en su ÚNICA pasada (N=1, Miguel Ángel: "con que entre una
+# vez y no se pueda clasificar ya es suficiente") -- sale del prefijo
+# de cuarentena, así que `consume_quarantine_task` deja de
+# reprocesarlo para siempre hasta que un humano lo reencole a mano.
+NO_CONFORMES_PREFIX = "NO CONFORMES/"
+
 INDEXED_BUCKETS = (
     TASK_PHOTOS_BUCKET,
     DELIVERY_NOTES_BUCKET,

@@ -56,6 +56,16 @@ urlpatterns = [
         name="classify",
     ),
     path(
+        "no-conformes/anotar/<int:pk>/",
+        views.AnnotateNoConformesView.as_view(),
+        name="no_conformes_annotate",
+    ),
+    path(
+        "no-conformes/reencolar/",
+        views.RequeueNoConformesView.as_view(),
+        name="no_conformes_requeue",
+    ),
+    path(
         "duplicados/",
         views.DuplicatesView.as_view(),
         name="duplicates",

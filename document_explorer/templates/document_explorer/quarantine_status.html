@@ -20,9 +20,10 @@
     <div class="d-flex align-items-center justify-content-between mb-3">
         <p class="text-muted small mb-0">
             Consumo automático en segundo plano cada 10 minutos, hasta
-            {{ batch_size }} archivo(s) por pasada -- máquina se reubica
-            de verdad cuando se resuelve con certeza; personal se
-            clasifica pero queda marcado para revisión humana.
+            {{ batch_size }} archivo(s) por pasada -- se reubica de
+            verdad cuando se resuelve con certeza (máquina o
+            personal); si no, sale de cuarentena en esa misma pasada
+            hacia No Conformes para revisión humana.
         </p>
         <a class="btn btn-sm btn-outline-secondary"
            href="{% url 'document_explorer:explorer' %}">
@@ -42,7 +43,23 @@
                 </div>
             </div>
         </div>
-        <div class="col-12 col-md-8">
+        <div class="col-12 col-md-4">
+            <div class="card h-100">
+                <div class="card-body">
+                    <div class="text-muted small text-uppercase">No Conformes</div>
+                    <div class="fs-2 fw-bold text-warning">{{ no_conformes_pending }}</div>
+                    <div class="small text-muted">
+                        Sin poder clasificar en su única pasada -- a la
+                        espera de anotación y reencolado manual.
+                    </div>
+                    <a class="btn btn-sm btn-outline-warning mt-2"
+                       href="{% url 'document_explorer:explorer' %}?bucket={{ primary_bucket }}&amp;path={{ no_conformes_path }}">
+                        Ir a No Conformes
+                    </a>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-md-4">
             <div class="card h-100">
                 <div class="card-body">
                     <div class="text-muted small text-uppercase">Última pasada automática</div>
