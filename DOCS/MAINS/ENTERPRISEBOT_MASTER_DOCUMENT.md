@@ -780,3 +780,50 @@ sobre H29 (`EN PROGRESO`). Al llegar al `PCS`, Miguel Ángel indicó
 explícitamente dejar intacta la hoja de ruta de ambos anexos
 afectados y anotar únicamente el trabajo realizado, además de dejar
 constancia aquí de que este patrón se repetirá.
+
+#### 4.12. DIRECTRIZ CRÍTICA — El sistema de archivos es virtual; `blob_name` en GCS es inmutable; solo un borrado real por el administrador termina la existencia de un objeto (añadida S041, 2026-08-05)
+
+**Principio absoluto, verbatim de Miguel Ángel:** *"SIEMPRE vamos a
+'mover' los archivos sin moverlos en GCS, renombramos sin renombrar
+en GCS, es decir, todo son cambios y banderas en base de datos, solo
+un borrado final desde mi usuario, puede poner el fin de la
+existencia de un fichero en GCS."*
+
+Aplica a **todo el proyecto, para siempre**, no solo a H29 —
+cualquier funcionalidad presente o futura que toque
+`DocumentIndexEntry` (o cualquier índice equivalente que se
+construya sobre otro cubo) debe respetar esto sin excepción:
+
+1. `blob_name` se escribe una única vez, al indexar. Nunca se vuelve
+   a escribir después, bajo ningún concepto — ni al mover, ni al
+   renombrar, ni al clasificar, ni al reindexar, ni al reparar nada.
+2. "Mover" y "renombrar" son siempre `parent_path`/`name` —
+   escritura de base de datos pura. Nunca una operación real sobre
+   Google Cloud Storage.
+3. El **único** camino que termina la existencia real de un objeto
+   en GCS es un borrado ejecutado por el usuario administrador
+   (papelera → vaciado). Ninguna otra operación del sistema —
+   clasificar, reubicar, reindexar, deduplicar, auditar — puede,
+   directa o indirectamente, provocar la desaparición de un objeto
+   real.
+4. Consecuencia obligatoria para cualquier código que **reindexe o
+   refresque** el índice contra el cubo real (`refresh_folder`,
+   `persist_rows`, comandos de auditoría, tareas Always-on de
+   sincronización): `parent_path`/`parent_path_hash`/`name` de una
+   fila **ya existente** nunca se recalculan ni se resincronizan a
+   partir de `blob_name`. Esos tres campos solo se derivan de
+   `blob_name` en el momento de **crear** una fila nueva — a partir
+   de ahí son responsabilidad exclusiva de las operaciones virtuales
+   (mover, renombrar, clasificar), y un refresco contra el cubo real
+   jamás puede pisarlos.
+
+**Origen real, incidente confirmado con datos de producción (S041):**
+`persist_rows()` (usado por `refresh_quarantine_index_task`, cada
+hora) reescribía `parent_path`/`name` de filas ya existentes a partir
+de `blob_name`, deshaciendo en silencio reubicaciones ya hechas — un
+archivo llegó a tener 29 `ACTION_RELOCATED` correctos en 26h sin que
+la cola de cuarentena bajara nunca, porque cada hora volvía a
+aparecer en `_CUARENTENA/`. Corregido en
+`document_explorer/index_writer.py` (commit `e27fd6a`). Esta
+directriz eleva esa corrección puntual a regla permanente y
+vinculante para todo el proyecto.
