@@ -52,6 +52,17 @@ MARKS_PREFIX = "_CUARENTENA/_MARCAS/"
 # reprocesarlo para siempre hasta que un humano lo reencole a mano.
 NO_CONFORMES_PREFIX = "NO CONFORMES/"
 
+# Carpeta real de nivel superior, hermana de DOC. MAQUINAS/DOC.
+# PERSONAL -- destino fijo para el tipo documental MANUAL_USO
+# (catálogo cerrado, sembrado ya en 0004_seed_closed_vocabulary),
+# decisión de Miguel Ángel en S042: un manual de uso es genérico al
+# modelo, no específico de un activo concreto, así que no tiene
+# sentido enrutarlo por máquina como el resto de DOC. MAQUINAS -- va
+# directo a su propia carpeta, con el nombre que ya traía y un
+# ordinal solo si hay colisión (ver classification_service.
+# apply_quarantine_classification, caso especial MANUAL_USO).
+MANUAL_USO_FOLDER = "MANUALES DE USO"
+
 INDEXED_BUCKETS = (
     TASK_PHOTOS_BUCKET,
     DELIVERY_NOTES_BUCKET,

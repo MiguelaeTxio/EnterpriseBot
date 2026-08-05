@@ -77,7 +77,7 @@ from fleet.models import MachineAsset
 from spare_parts.gcs_service import download_bytes
 
 from . import naming_service
-from .buckets import QUARANTINE_PREFIX
+from .buckets import MANUAL_USO_FOLDER, QUARANTINE_PREFIX
 from .move_service import _virtual_location_taken, move_entry
 
 from .models import DocumentTypeCatalog, PersonIdentity
@@ -1417,6 +1417,23 @@ def apply_quarantine_classification(entry) -> dict:
     an uncatalogued type) never triggers this, only stays flagged as
     before.
 
+    **Second interception, S042 -- `document_type_code == "MANUAL_USO"`
+    (closed-vocabulary type, seeded since 0004_seed_closed_vocabulary,
+    domain MACHINE) always relocates straight to the real
+    `MANUAL_USO_FOLDER` ("MANUALES DE USO"), regardless of domain or
+    machine resolution.** Root cause this fixes, confirmed against a
+    real batch: a generic operator manual almost never sits under a
+    per-machine quarantine subfolder, so `resolve_machine_asset()`
+    (which only scans `parent_path`, never the filename) had nothing
+    to match even when Gemini correctly read a fleet code off the
+    file's own name -- every MANUAL_USO file landed in NO CONFORMES
+    on its one pass, forever, since the type existed but nothing
+    routed it. The file's current `entry.name` is kept as-is (never
+    `naming_service`'s `{CÓDIGO_MÁQUINA}_{TIPO}_{FECHA}` scheme, which
+    doesn't apply to a model-generic manual); a name collision at the
+    destination gets `move_service`'s automatic " (N)" ordinal, same
+    as any other move.
+
     Returns the same shape as `apply_classification()`
     (`new_name`/`classified`/`renamed`), plus `relocated` (bool -- the
     file's `parent_path` actually changed) and, when relocated,
@@ -1483,6 +1500,24 @@ def apply_quarantine_classification(entry) -> dict:
     un tipo sin catalogar) nunca dispara esto, sigue quedando
     marcado como antes.
 
+    **Segunda intercepción, S042 -- `document_type_code == "MANUAL_USO"`
+    (tipo de vocabulario cerrado, sembrado desde 0004_seed_closed_
+    vocabulary, dominio MÁQUINA) se reubica siempre directamente a la
+    carpeta real `MANUAL_USO_FOLDER` ("MANUALES DE USO"), sea cual sea
+    el dominio o si se resuelve la máquina.** Causa raíz que esto
+    corrige, confirmada contra un lote real: un manual de operador
+    genérico casi nunca vive bajo una subcarpeta de cuarentena por
+    máquina, así que `resolve_machine_asset()` (que solo recorre
+    `parent_path`, nunca el nombre de archivo) no tenía nada que
+    encontrar aunque Gemini leyera bien un código de flota en el
+    propio nombre del archivo -- todo archivo MANUAL_USO caía en NO
+    CONFORMES en su única pasada, para siempre, porque el tipo existía
+    pero nada lo enrutaba. El `entry.name` actual se conserva tal cual
+    (nunca el esquema `{CÓDIGO_MÁQUINA}_{TIPO}_{FECHA}` de
+    `naming_service`, que no aplica a un manual genérico al modelo);
+    una colisión de nombre en el destino recibe el ordinal automático
+    " (N)" de `move_service`, igual que cualquier otro movimiento.
+
     Devuelve la misma forma que `apply_classification()`
     (`new_name`/`classified`/`renamed`), más `relocated` (bool -- si
     el `parent_path` del archivo cambió de verdad) y, cuando se
@@ -1506,6 +1541,29 @@ def apply_quarantine_classification(entry) -> dict:
             )
             return result
         result["trashed"] = False
+
+    if result.get("document_type_code") == "MANUAL_USO":
+        # Caso especial, S042 -- Miguel Ángel: un manual de uso es
+        # genérico al modelo, no específico de un activo concreto, no
+        # tiene sentido perseguir un `MachineAsset` real como el resto
+        # de dominio MÁQUINA (`resolve_machine_asset` busca un código
+        # de flota en `parent_path`, y un manual sin carpeta por
+        # máquina nunca lo tendrá -- esto era justo lo que dejaba a
+        # este tipo, ya en el catálogo desde 0004_seed_closed_
+        # vocabulary, sin poder reubicarse nunca y cayendo siempre en
+        # NO CONFORMES). Va directo a su propia carpeta real
+        # (MANUAL_USO_FOLDER), con el nombre que ya traía -- nunca el
+        # esquema {CÓDIGO_MÁQUINA}_{TIPO}_{FECHA} de naming_service,
+        # que no aplica aquí -- y ordinal automático solo si hay
+        # colisión (`move_service.move_entry`, igual que cualquier
+        # otro movimiento de este módulo).
+        move_entry(entry, MANUAL_USO_FOLDER)
+        result.update(
+            new_name=entry.name, classified=True,
+            renamed=False, relocated=True,
+            new_parent_path=MANUAL_USO_FOLDER,
+        )
+        return result
 
     effective_domain = domain or result.get("domain")
     result["machine_mismatch_warning"] = (
