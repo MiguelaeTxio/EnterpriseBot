@@ -458,8 +458,9 @@ def consume_quarantine_task(self) -> None:
                     ])
                 )
                 mismatch = result.get("machine_mismatch_warning")
+                person_note = result.get("person_identity_note")
                 detail = (
-                    "Dominio: %s -- Tipo: %s (%s) -- %s%s%s"
+                    "Dominio: %s -- Tipo: %s (%s) -- %s%s%s%s"
                     % (
                         result.get("domain", "?"),
                         result.get("document_type_code", "?"),
@@ -467,6 +468,7 @@ def consume_quarantine_task(self) -> None:
                         result.get("reasoning", ""),
                         " -- Pistas: %s" % hints if hints else "",
                         " -- %s" % mismatch if mismatch else "",
+                        " -- %s" % person_note if person_note else "",
                     )
                 )
                 if result.get("relocated"):
