@@ -422,10 +422,26 @@ coincidir con `parent_path__startswith=QUARANTINE_PREFIX`, así que
 `consume_quarantine_task` deja de volver a llamarlo, sin gastar más
 Gemini; (2) "no conformes" es el espacio de estudio de Miguel Ángel
 para decidir si hace falta un tipo nuevo en el catálogo cerrado; (3)
-la vuelta de "no conformes" a cuarentena es **siempre manual, nunca
-automática**, y solo tiene sentido cuando cuarentena esté vacía --
-devolver archivos sin haber creado antes el tipo que les faltaba los
-metería otra vez en el mismo bucle sin salida.
+la vuelta de "no conformes" a cuarentena es un botón **"Reencolar"**
+en el panel sobre la propia carpeta de no conformes, disparado a mano
+por Miguel Ángel cuando él decida -- **sin ninguna relación con el
+estado de cuarentena**, ni falta que esté vacía ni que tenga nada
+pendiente. Al pulsarlo, mueve TODO el contenido de no conformes de
+vuelta a cuarentena de golpe; lo que ya tenga un tipo nuevo creado se
+clasifica y reubica bien en la siguiente pasada, lo que siga sin
+tipo vuelve a caer en no conformes, sin más coste que haberlo
+intentado una vez. **Corrección explícita de Miguel Ángel sobre su
+propia primera aproximación** (verbatim): *"lo he pensado bien (...)
+No tengo que esperar a que esté vacía la cuarentena. Eso ha sido un
+error por mi parte (...) el hecho de que sea manual y no sea
+automático es para evitar llamadas inútiles (...) si no tenemos
+tipos nuevos [...] van a volver otra vez, entonces vamos a crear una
+serie de llamadas a la API que nunca van a lograr su objetivo y van
+a ser un gasto de dinero tontamente. Entonces por eso tiene que ser
+manual, independientemente de lo que quede o no quede en
+cuarentena."* El único motivo de que sea manual es no gastar Gemini
+en documentos que van a volver a fallar si no se ha creado antes el
+tipo que les faltaba -- nada que ver con el estado de la cola.
 
 ### 3.15. Enriquecimiento de la interfaz del explorador (S040): clasificación, búsqueda y eliminación de duplicados
 
