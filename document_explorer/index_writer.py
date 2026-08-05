@@ -236,6 +236,25 @@ def persist_rows(bucket_name, rows, scope_hashes=None, skip_fields=()):
     earlier. Bug found in production (S037): refreshing "DOC. MAQUINAS"
     zeroed out its 1.7 TB total and that of its 64 direct subfolders.
 
+    `parent_path`/`parent_path_hash`/`name` are ALWAYS excluded from
+    the UPDATE, regardless of `skip_fields` -- never a caller's
+    choice. Real bug found in production (S041): `file_row()` derives
+    these from `blob_name`, which never changes (H29 3.1/3.19,
+    write-once at indexing); for a brand-new row that is exactly
+    right, but for a row that already existed, blindly re-syncing
+    them silently undoes ANY virtual relocation or rename done since
+    -- `move_entry`, `move_entries`, `apply_quarantine_classification`,
+    `apply_classification`, all of it -- because every one of them is
+    a pure `parent_path`/`name` write that never touches `blob_name`.
+    Confirmed against a real quarantine entry that had been
+    `ACTION_RELOCATED` correctly 29 times across 26h and was still
+    found sitting back in `_CUARENTENA/` every time
+    `refresh_quarantine_index_task` (hourly) ran in between. These
+    three fields are the one thing about a file that this function
+    must never consider "real bucket truth" for an existing row --
+    only at creation time do they mean anything derived from
+    `blob_name`.
+
     ---
 
     Crea o actualiza las filas dadas. Devuelve (creadas, actualizadas).
@@ -255,6 +274,26 @@ def persist_rows(bucket_name, rows, scope_hashes=None, skip_fields=()):
     silencio un total real calculado antes. Fallo hallado en producción
     (S037): refrescar "DOC. MAQUINAS" puso a cero su total de 1,7 TB y
     el de sus 64 subcarpetas directas.
+
+    `parent_path`/`parent_path_hash`/`name` quedan SIEMPRE excluidos
+    de la actualización, sin importar `skip_fields` -- nunca es
+    elección de quien llama. Fallo real hallado en producción (S041):
+    `file_row()` los deriva de `blob_name`, que nunca cambia (H29
+    3.1/3.19, escritura única en la indexación); para una fila nueva
+    eso es exactamente correcto, pero para una fila que ya existía,
+    resincronizarlos a ciegas deshace en silencio cualquier
+    reubicación o renombrado virtual hecho después -- `move_entry`,
+    `move_entries`, `apply_quarantine_classification`,
+    `apply_classification`, todo -- porque cada una de esas
+    operaciones es una escritura pura de `parent_path`/`name` que
+    nunca toca `blob_name`. Confirmado contra una entrada real de
+    cuarentena que había quedado `ACTION_RELOCATED` correctamente 29
+    veces en 26h y que `refresh_quarantine_index_task` (cada hora)
+    seguía encontrando de vuelta en `_CUARENTENA/` cada vez que corría
+    entre medias. Estos tres campos son lo único de un archivo que
+    esta función nunca debe tratar como "verdad del cubo real" para
+    una fila que ya existía -- solo al crearla tiene sentido derivarlos
+    de `blob_name`.
     """
     query = DocumentIndexEntry.objects.filter(
         bucket=bucket_name, purged_at__isnull=True,
@@ -269,8 +308,10 @@ def persist_rows(bucket_name, rows, scope_hashes=None, skip_fields=()):
         )
     }
 
+    never_resynced = ("parent_path", "parent_path_hash", "name")
     fields = [
-        f for f in sorted(row_defaults().keys()) if f not in skip_fields
+        f for f in sorted(row_defaults().keys())
+        if f not in skip_fields and f not in never_resynced
     ]
     to_create = []
     to_update = []
