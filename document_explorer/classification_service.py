@@ -510,6 +510,136 @@ def resolve_person_identity(dni_hint: str) -> PersonIdentity | None:
     return PersonIdentity.objects.filter(dni=_normalize_dni(dni_hint)).first()
 
 
+# Categoría de aterrizaje para toda identidad creada de forma
+# automática (S041, decisión explícita de Miguel Ángel) -- ningún
+# documento dice de forma fiable a cuál de las 13 categorías reales
+# bajo DOC. PERSONAL/PERSONAL/ pertenece un trabajador nuevo
+# (OPERARIOS, TALLER, ADMINISTRACION...), así que aterriza aquí,
+# pendiente de que un humano la mueva a la real con la herramienta de
+# mover ya existente.
+_NEW_WORKER_STAGING_FOLDER = "DOC. PERSONAL/PERSONAL/PTE CONTRATACION"
+
+
+def resolve_or_create_person_identity(
+    result: dict, entry=None,
+) -> PersonIdentity | None:
+    """
+    Same lookup as `resolve_person_identity()`, extended with two
+    more behaviours confirmed explicitly by Miguel Ángel (S041) for
+    when the `dni_hint` is well-formed (passes `is_valid_spanish_
+    dni()`) but matches no existing `PersonIdentity`:
+
+    1. Checks whether the extracted full name (`first_surname_hint`
+       + `second_surname_hint` + `given_name_hint`) matches an
+       existing `PersonIdentity` under a DIFFERENT dni. If so, this
+       is treated as a suspected DNI misreading (same real-world
+       failure mode as `is_valid_spanish_dni`'s own docstring, S040:
+       Gemini can misread a digit even on a clear document) --
+       NEVER creates a duplicate person for this. Sets
+       `result["person_identity_note"]` with both DNIs so a human can
+       decide, and returns None (unresolved, stays flagged).
+    2. If the name doesn't match anyone either, this is a genuinely
+       new worker. Creates a real new `PersonIdentity`, landing under
+       `_NEW_WORKER_STAGING_FOLDER` -- verbatim, Miguel Ángel: "hay
+       que dotar al sistema de la función de crear ese nuevo
+       trabajador, para que tenga su carpeta y su documentación esté
+       en su sitio." Sets `result["person_identity_note"]`
+       announcing the creation. The file this run is processing gets
+       relocated there this same pass, same as any resolved identity.
+
+    Only ever called with a `dni_hint` that already passed
+    `is_valid_spanish_dni()` -- an invalid/unreadable DNI never
+    reaches here, same caution as `resolve_person_identity`: no name
+    or first/given name missing means not enough to safely create
+    anyone, returns None without creating.
+
+    ---
+
+    Misma búsqueda que `resolve_person_identity()`, ampliada con dos
+    comportamientos más confirmados explícitamente por Miguel Ángel
+    (S041) para cuando el `dni_hint` está bien formado (pasa
+    `is_valid_spanish_dni()`) pero no coincide con ningún
+    `PersonIdentity` existente:
+
+    1. Comprueba si el nombre completo extraído (`first_surname_hint`
+       + `second_surname_hint` + `given_name_hint`) coincide con un
+       `PersonIdentity` ya existente bajo un DNI DISTINTO. Si es así,
+       se trata como sospecha de error de lectura del DNI (mismo
+       fallo real ya documentado en el propio docstring de
+       `is_valid_spanish_dni`, S040: Gemini puede leer mal un dígito
+       incluso en un documento claro) -- NUNCA se crea una persona
+       duplicada por esto. Deja `result["person_identity_note"]` con
+       los dos DNI para que lo decida un humano, y devuelve None (sin
+       resolver, se queda marcado).
+    2. Si el nombre tampoco coincide con nadie, es un trabajador
+       nuevo de verdad. Crea un `PersonIdentity` real, que aterriza
+       en `_NEW_WORKER_STAGING_FOLDER` -- verbatim, Miguel Ángel: "hay
+       que dotar al sistema de la función de crear ese nuevo
+       trabajador, para que tenga su carpeta y su documentación esté
+       en su sitio." Deja `result["person_identity_note"]` anunciando
+       la creación. El archivo de esta pasada se reubica ahí mismo,
+       igual que con cualquier identidad ya resuelta.
+
+    Solo se llama nunca con un `dni_hint` que ya pasó
+    `is_valid_spanish_dni()` -- un DNI inválido/ilegible nunca llega
+    aquí, misma cautela que `resolve_person_identity`: sin nombre o
+    sin nombre de pila no hay datos suficientes para crear a nadie
+    con seguridad, devuelve None sin crear nada.
+    """
+    dni_hint = (result.get("dni_hint") or "").strip()
+    identity = resolve_person_identity(dni_hint)
+    if identity:
+        return identity
+    if not dni_hint or not is_valid_spanish_dni(dni_hint):
+        return None
+
+    first_surname = (result.get("first_surname_hint") or "").strip()
+    second_surname = (result.get("second_surname_hint") or "").strip()
+    given_name = (result.get("given_name_hint") or "").strip()
+    if not first_surname or not given_name:
+        return None
+
+    name_match = PersonIdentity.objects.filter(
+        first_surname__iexact=first_surname,
+        given_name__iexact=given_name,
+    )
+    if second_surname:
+        name_match = name_match.filter(second_surname__iexact=second_surname)
+    dni = _normalize_dni(dni_hint)
+    suspect = name_match.exclude(dni=dni).first()
+    if suspect:
+        result["person_identity_note"] = (
+            "Posible error de lectura del DNI: el nombre coincide "
+            "con %s %s, %s (DNI registrado %s), pero este documento "
+            "trae %s -- no se crea a nadie nuevo, revisar a mano."
+            % (
+                suspect.first_surname, suspect.second_surname,
+                suspect.given_name, suspect.dni, dni,
+            )
+        )
+        return None
+
+    folder_name = (
+        "%s %s, %s" % (first_surname, second_surname, given_name)
+        if second_surname
+        else "%s, %s" % (first_surname, given_name)
+    )
+    identity = PersonIdentity.objects.create(
+        dni=dni,
+        first_surname=first_surname,
+        second_surname=second_surname,
+        given_name=given_name,
+        folder_path="%s/%s" % (_NEW_WORKER_STAGING_FOLDER, folder_name),
+        source_entry=entry,
+    )
+    result["person_identity_note"] = (
+        "Trabajador nuevo creado automáticamente (%s, DNI %s) en "
+        "PTE CONTRATACION -- pendiente de que un humano lo mueva a "
+        "su categoría real." % (folder_name, dni)
+    )
+    return identity
+
+
 # Cuenta a cuya papelera van los dossiers eliminados automáticamente
 # (H29, S041) -- Miguel Ángel, dato real verificado en base de datos
 # (pk=1, único CompanyUser con ese username): "el que va es al mío,
@@ -1214,11 +1344,25 @@ def apply_quarantine_classification(entry) -> dict:
     match, the same hard-identifier principle as `resolve_machine_asset`
     for MACHINE, H29 3.27), it IS relocated out of quarantine into
     `PersonIdentity.folder_path`, renamed via the canonical
-    surnames/name on the identity. No identity resolved (DNI unreadable,
-    invalid, or that person never seeded) means the same fallback as
-    before: classified, never relocated, left flagged for human review.
-    Same caution for MACHINE files whose folder can't be resolved:
-    classified, never relocated.
+    surnames/name on the identity.
+
+    Extended further, same session: a well-formed `dni_hint`
+    (`is_valid_spanish_dni()`) matching no existing `PersonIdentity`
+    is no longer an automatic dead end --
+    `resolve_or_create_person_identity()` checks the extracted name
+    against every existing identity first (suspected DNI misreading,
+    never a duplicate created) and, only when the name doesn't match
+    anyone either, creates a real new worker landing in
+    `_NEW_WORKER_STAGING_FOLDER` ("PTE CONTRATACION" -- Miguel Ángel:
+    no document reliably says which of the real categories a brand
+    new worker belongs to). Either way `result["person_identity_note"]`
+    carries the explanation into the audit log detail.
+
+    No identity resolved or created (DNI unreadable, invalid, name
+    missing) means the same fallback as before: classified, never
+    relocated, left flagged for human review. Same caution for
+    MACHINE files whose folder can't be resolved: classified, never
+    relocated.
 
     Before any domain branching -- a file gets ONE more chance to be
     intercepted regardless of domain: when Gemini is CERTAIN the file
@@ -1263,11 +1407,27 @@ def apply_quarantine_classification(entry) -> dict:
     principio de identificador duro que `resolve_machine_asset` para
     MÁQUINA, H29 3.27), SÍ se reubica fuera de cuarentena a
     `PersonIdentity.folder_path`, renombrada con los apellidos/nombre
-    canónicos de la identidad. Sin identidad resuelta (DNI ilegible,
-    inválido, o persona todavía no sembrada) se mantiene el mismo
-    fallback de antes: se clasifica, nunca se reubica, queda marcado
-    para revisión humana. Misma cautela para archivos de MÁQUINA cuya
-    carpeta no se pueda resolver: se clasifican, nunca se reubican.
+    canónicos de la identidad.
+
+    Ampliado más adelante, misma sesión: un `dni_hint` bien formado
+    (`is_valid_spanish_dni()`) que no coincide con ningún
+    `PersonIdentity` ya no es un callejón sin salida automático --
+    `resolve_or_create_person_identity()` primero comprueba el nombre
+    extraído contra todas las identidades existentes (sospecha de
+    error de lectura del DNI, nunca se crea un duplicado) y, solo
+    cuando el nombre tampoco coincide con nadie, crea un trabajador
+    nuevo de verdad que aterriza en `_NEW_WORKER_STAGING_FOLDER`
+    ("PTE CONTRATACION" -- Miguel Ángel: ningún documento dice de
+    forma fiable a cuál de las categorías reales pertenece un
+    trabajador recién llegado). En cualquiera de los dos casos,
+    `result["person_identity_note"]` lleva la explicación hasta el
+    detalle del historial.
+
+    Sin identidad resuelta ni creada (DNI ilegible, inválido, sin
+    nombre) se mantiene el mismo fallback de antes: se clasifica,
+    nunca se reubica, queda marcado para revisión humana. Misma
+    cautela para archivos de MÁQUINA cuya carpeta no se pueda
+    resolver: se clasifican, nunca se reubican.
 
     Antes de cualquier ramificación por dominio -- un archivo tiene
     UNA oportunidad más de ser interceptado sea cual sea su dominio:
@@ -1315,7 +1475,7 @@ def apply_quarantine_classification(entry) -> dict:
     )
 
     if effective_domain == "PERSONAL":
-        identity = resolve_person_identity(result.get("dni_hint"))
+        identity = resolve_or_create_person_identity(result, entry)
         if not identity:
             result.update(
                 new_name=None, classified=False,
