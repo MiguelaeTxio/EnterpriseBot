@@ -396,6 +396,37 @@ del contenido -- Gemini deja de tener que adivinar lo que el sistema
 ya sabe con certeza. Sigue sin hito asignado, sin construir nada
 todavía.
 
+**Precisión S041, misma carpeta de "no conformes", origen distinto --
+sigue sin hito asignado, sin construir nada todavía.** Registrada a
+raíz de una pregunta real de Miguel Ángel sobre `consume_quarantine_
+task`: hoy no existe ninguna marca de "esto ya se intentó antes" --
+un archivo que nunca resuelve (ni máquina, ni identidad, ni dossier
+cierto) vuelve a entrar en el lote de los 40 más antiguos pasada tras
+pasada, para siempre, gastando una llamada real a Gemini cada vez sin
+ningún límite. La carpeta de "no conformes" es la salida a ese bucle,
+verbatim: *"cuando hacemos una pasada [...] no marcamos de alguna
+manera para saber si se han intentado clasificar anteriormente [...]
+Ya se apuntó la idea de una carpeta de no conformes, esa carpeta es
+donde haremos estudio de documentos para añadir más tipos y se tiene
+que mover su contenido cuando cuarentena esté vacía, es decir, un
+documento sin tipificar se echa a no conformes, cuando cuarentena
+esté vacía, no conformes mueve su contenido a cuarentena de forma
+manual, mejor de forma manual, sería una tontería mover los archivos
+si no hemos creado un tipo nuevo, volverían a ver en no conformes en
+bucle."*
+
+Mecanismo descrito, a confirmar junto con el resto de 3.14 antes de
+construir nada: (1) un archivo que no resuelve tras N pasadas (N sin
+decidir) se reubica virtualmente a "no conformes" -- deja de
+coincidir con `parent_path__startswith=QUARANTINE_PREFIX`, así que
+`consume_quarantine_task` deja de volver a llamarlo, sin gastar más
+Gemini; (2) "no conformes" es el espacio de estudio de Miguel Ángel
+para decidir si hace falta un tipo nuevo en el catálogo cerrado; (3)
+la vuelta de "no conformes" a cuarentena es **siempre manual, nunca
+automática**, y solo tiene sentido cuando cuarentena esté vacía --
+devolver archivos sin haber creado antes el tipo que les faltaba los
+metería otra vez en el mismo bucle sin salida.
+
 ### 3.15. Enriquecimiento de la interfaz del explorador (S040): clasificación, búsqueda y eliminación de duplicados
 
 Registrada literalmente según se dictó (directriz 4.8). **Esto sí es
