@@ -1598,12 +1598,34 @@ class AnnotateNoConformesView(ExplorerAccessMixin, View):
 
 class RequeueNoConformesView(ExplorerAccessMixin, View):
     """
-    Bulk-move every live file inside "NO CONFORMES" back into
-    `_CUARENTENA/` in one shot (H29 roadmap, decision 3.14, corrected
-    S041 -- Miguel Ángel's own correction of his first wording:
-    "cuando cuarentena esté vacía" was wrong; requeuing is manual,
-    triggered on the folder itself, with no relation whatsoever to
-    the state of the queue).
+    Move live files inside "NO CONFORMES" back into `_CUARENTENA/` in
+    one shot (H29 roadmap, decision 3.14, corrected S041 -- Miguel
+    Ángel's own correction of his first wording: "cuando cuarentena
+    esté vacía" was wrong; requeuing is manual, triggered on the
+    folder itself, with no relation whatsoever to the state of the
+    queue).
+
+    **Two independent trigger paths, S042 -- Miguel Ángel filtered by
+    "manual" inside NO CONFORMES, ticked every result, and asked
+    whether the single button would requeue everything or only the
+    ticked ones.** It requeued everything, since nothing read a
+    selection -- a real gap once the folder holds a mix of files that
+    deserve different treatment (some belong straight in a real
+    folder via a plain move, never back through Gemini). Fixed by
+    reading an OPTIONAL `entries` POST list:
+
+    - Present and non-empty (`_rows.html`'s per-row checkbox, tied via
+      `form="requeue-selected-form"`, never inside the same `<form>`
+      as the "Reencolar todo" button so ticking boxes can never change
+      what that other button does) -- only those rows, intersected
+      with what is actually still live in NO CONFORMES right now (a
+      stale pk from an already-moved/annotated-elsewhere row is
+      silently dropped, never 404s the whole batch, same principle as
+      `MoveScopeMixin._entries_or_404`).
+    - Absent/empty (the plain "Reencolar todo" button, its own
+      self-contained `<form>` with no checkboxes at all) -- every live
+      file in the folder, exactly the original all-or-nothing
+      behaviour.
 
     `blob_name` never changes (4.12), so `quarantine_domain_for_entry`
     still reads the correct original domain off it regardless of how
@@ -1618,12 +1640,36 @@ class RequeueNoConformesView(ExplorerAccessMixin, View):
 
     ---
 
-    Mueve en bloque todos los archivos vivos dentro de "NO CONFORMES"
-    de vuelta a `_CUARENTENA/` de una sola vez (hoja de ruta H29,
-    decisión 3.14, corregida en S041 -- corrección del propio Miguel
-    Ángel sobre su primera redacción: "cuando cuarentena esté vacía"
-    era incorrecto; el reencolado es manual, disparado sobre la
-    propia carpeta, sin ninguna relación con el estado de la cola).
+    Mueve archivos vivos dentro de "NO CONFORMES" de vuelta a
+    `_CUARENTENA/` (hoja de ruta H29, decisión 3.14, corregida en
+    S041 -- corrección del propio Miguel Ángel sobre su primera
+    redacción: "cuando cuarentena esté vacía" era incorrecto; el
+    reencolado es manual, disparado sobre la propia carpeta, sin
+    ninguna relación con el estado de la cola).
+
+    **Dos caminos de disparo independientes, S042 -- Miguel Ángel
+    filtró por "manual" dentro de NO CONFORMES, marcó todos los
+    resultados, y preguntó si el único botón existente reencolaría
+    todo o solo lo marcado.** Reencolaba todo, porque nada leía
+    ninguna selección -- un hueco real en cuanto la carpeta mezcla
+    archivos que merecen trato distinto (algunos van directos a una
+    carpeta real mediante un simple mover, sin volver a pasar nunca
+    por Gemini). Corregido leyendo una lista `entries` OPCIONAL en el
+    POST:
+
+    - Presente y no vacía (casillero por fila de `_rows.html`, ligado
+      vía `form="requeue-selected-form"`, nunca dentro del mismo
+      `<form>` que el botón "Reencolar todo" para que marcar
+      casilleros nunca pueda cambiar lo que hace ese otro botón) --
+      solo esas filas, cruzadas con lo que sigue vivo de verdad en NO
+      CONFORMES ahora mismo (un pk obsoleto de una fila ya movida/
+      anotada en otro sitio se descarta en silencio, nunca hace
+      fallar el lote entero con un 404, mismo principio que
+      `MoveScopeMixin._entries_or_404`).
+    - Ausente/vacía (el botón simple "Reencolar todo", su propio
+      `<form>` autocontenido sin ningún casillero) -- todos los
+      archivos vivos de la carpeta, exactamente el comportamiento
+      original de todo-o-nada.
 
     `blob_name` nunca cambia (4.12), así que `quarantine_domain_for_entry`
     sigue leyendo el dominio original correcto sobre él, sea cual sea
@@ -1648,16 +1694,24 @@ class RequeueNoConformesView(ExplorerAccessMixin, View):
                 "Sin permiso para reencolar archivos de No Conformes."
             )
 
-        entries = list(
-            DocumentIndexEntry.objects.filter(
-                bucket=PRIMARY_BUCKET,
-                entry_kind=DocumentIndexEntry.KIND_FILE,
-                parent_path=no_conformes_path,
-                deleted_at__isnull=True, purged_at__isnull=True,
-            )
+        query = DocumentIndexEntry.objects.filter(
+            bucket=PRIMARY_BUCKET,
+            entry_kind=DocumentIndexEntry.KIND_FILE,
+            parent_path=no_conformes_path,
+            deleted_at__isnull=True, purged_at__isnull=True,
         )
+        selected_pks = request.POST.getlist("entries")
+        is_partial = bool(selected_pks)
+        if is_partial:
+            query = query.filter(pk__in=selected_pks)
+        entries = list(query)
         if not entries:
-            messages.info(request, "No Conformes está vacía.")
+            messages.info(
+                request,
+                "Ninguno de los archivos marcados sigue en No "
+                "Conformes." if is_partial else "No Conformes está "
+                "vacía.",
+            )
             return redirect(
                 "%s?bucket=%s&path=%s" % (
                     reverse("document_explorer:explorer"),
