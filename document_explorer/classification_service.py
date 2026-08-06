@@ -516,6 +516,165 @@ def resolve_machine_asset(entry) -> MachineAsset | None:
     return None
 
 
+# S042, Miguel Ángel, verbatim tras confirmar que el `company` de
+# MachineAsset apunta a `ivr_config.Company` -- un único inquilino de
+# plataforma ("Grupo Álvarez", nunca ambiguo) y NO la empresa/sección
+# interna real (GRA/TRA/GRH viven en los campos de texto company_code/
+# company_name): "había pensado precisamente directamente a Grúas
+# Adolfo, es GRA". Cajón por defecto para una máquina recién creada
+# hasta que alguien confirme su empresa/sección interna real -- nunca
+# un valor inventado, siempre los datos reales de una máquina GRA ya
+# existente en el catálogo.
+_DEFAULT_MACHINE_COMPANY_CODE = "GRA"
+
+
+def resolve_or_create_machine_asset(
+    entry, result: dict,
+) -> MachineAsset | None:
+    """
+    Same lookup as `resolve_machine_asset()`, extended to create a
+    real new `MachineAsset` when the folder clearly names a fleet
+    code that matches no existing machine -- S042, Miguel Ángel,
+    verbatim: "¿Qué debemos de hacer? [con una máquina nueva] Debemos
+    de juntar toda la documentación que tenemos de esa máquina y
+    sacar su ficha (...) Crear la máquina en fleet.MachineAsset
+    automáticamente, igual que ya hace con trabajadores nuevos" --
+    same real incident that motivated this: `A-69`/`506` (minigrúa)
+    had real, correctly-classified documentation sitting in a
+    correctly-named folder, but no `MachineAsset` row at all, so
+    `resolve_machine_asset()` could never relocate anything for them,
+    however many documents piled up.
+
+    Real constraint `resolve_or_create_person_identity` doesn't share:
+    `MachineAsset.company` is a required FK to `ivr_config.Company` --
+    a genuinely different, cross-app, production-critical field (each
+    machine is a real cost centre, work-order hours and delivery
+    notes get imputed against it). Confirmed with real data before
+    writing this (never guessed): there is exactly ONE `Company` row
+    in the whole platform ("Grupo Álvarez", the platform tenant
+    itself) -- so `company` is never actually ambiguous. The real
+    ambiguity Miguel Ángel flagged (GRA/TRA/GRH -- Grúas, Asistencia,
+    Plataformas... "una sección dentro de la empresa") lives entirely
+    in the free-text `company_code`/`company_name` fields, not in
+    `company` -- his own explicit default for those, verbatim: "Grúas
+    Adolfo, es GRA" (`_DEFAULT_MACHINE_COMPANY_CODE`). Real values
+    copied from an existing GRA-coded `MachineAsset`, never
+    hand-typed -- if the exact `company_name` string in the catalogue
+    ever changes, this keeps matching it instead of drifting stale.
+
+    `result["machine_asset_note"]` announces the creation so it lands
+    in the file's own audit trail (`DataOperationLogEntry.detail`) --
+    the closest equivalent this session's scope can safely build to
+    Miguel Ángel's "alerta visual" ask without touching `fleet`'s own
+    schema (no `pending_review`/nullable-`company` field exists there
+    today; adding one is a `fleet`-focused decision of its own, not a
+    side effect of a `document_explorer` session).
+
+    Returns None when no plausible fleet-code-shaped folder segment
+    exists at all (nothing to create from) or when no reference GRA
+    machine exists to copy real company fields from (never invents
+    one) -- callers must treat this exactly like `resolve_machine_
+    asset()` returning None: "can't resolve," stays flagged, never a
+    guess.
+
+    ---
+
+    Misma búsqueda que `resolve_machine_asset()`, ampliada para crear
+    un `MachineAsset` real cuando la carpeta nombra con claridad un
+    código de flota que no coincide con ninguna máquina existente --
+    S042, Miguel Ángel, verbatim: "¿Qué debemos de hacer? [con una
+    máquina nueva] Debemos de juntar toda la documentación que
+    tenemos de esa máquina y sacar su ficha (...) Crear la máquina en
+    fleet.MachineAsset automáticamente, igual que ya hace con
+    trabajadores nuevos" -- mismo incidente real que lo motivó:
+    `A-69`/`506` (minigrúa) tenían documentación real ya bien
+    clasificada en una carpeta con el nombre correcto, pero ninguna
+    fila `MachineAsset` -- así que `resolve_machine_asset()` nunca
+    podía reubicar nada para ellas, por muchos documentos que se
+    acumularan.
+
+    Restricción real que `resolve_or_create_person_identity` no
+    comparte: `MachineAsset.company` es una FK obligatoria a
+    `ivr_config.Company` -- un campo genuinamente distinto, entre
+    apps, crítico en producción (cada máquina es un centro de coste
+    real, horas de partes de trabajo y albaranes de terceros se
+    imputan contra ella). Confirmado con datos reales antes de
+    escribir esto (nunca supuesto): existe exactamente UNA fila
+    `Company` en toda la plataforma ("Grupo Álvarez", el propio
+    inquilino de la plataforma) -- así que `company` nunca es
+    realmente ambiguo. La ambigüedad real que señaló Miguel Ángel
+    (GRA/TRA/GRH -- Grúas, Asistencia, Plataformas... "una sección
+    dentro de la empresa") vive por completo en los campos de texto
+    `company_code`/`company_name`, no en `company` -- su propio valor
+    por defecto explícito para esos, verbatim: "Grúas Adolfo, es GRA"
+    (`_DEFAULT_MACHINE_COMPANY_CODE`). Valores reales copiados de un
+    `MachineAsset` GRA ya existente, nunca escritos a mano -- si la
+    cadena exacta de `company_name` cambia algún día en el catálogo,
+    esto sigue coincidiendo con ella en vez de quedarse obsoleto.
+
+    `result["machine_asset_note"]` anuncia la creación para que quede
+    en el propio rastro de auditoría del archivo
+    (`DataOperationLogEntry.detail`) -- lo más parecido que el alcance
+    de esta sesión puede construir con seguridad a la "alerta visual"
+    que pidió Miguel Ángel, sin tocar el propio esquema de `fleet`
+    (hoy no existe ningún campo `pending_review`/`company` anulable
+    ahí; añadir uno es una decisión propia centrada en `fleet`, no un
+    efecto secundario de una sesión de `document_explorer`).
+
+    Devuelve None cuando no hay ningún segmento de carpeta con forma
+    de código de flota (nada de lo que partir) o cuando no existe
+    ninguna máquina GRA de referencia de la que copiar los campos
+    reales de empresa (nunca se inventa una) -- quien llama debe
+    tratarlo exactamente igual que un None de `resolve_machine_
+    asset()`: "no se puede resolver", se queda marcado, nunca una
+    suposición.
+    """
+    asset = resolve_machine_asset(entry)
+    if asset:
+        return asset
+
+    candidate_code = None
+    for segment in entry.parent_path.split("/"):
+        for word in segment.strip().split():
+            match = _FOLDER_MACHINE_CODE_RE.match(word)
+            if match:
+                candidate_code = match.group(1).replace("-", "").upper()
+                break
+        if candidate_code:
+            break
+    if not candidate_code:
+        return None
+
+    reference = (
+        MachineAsset.objects
+        .filter(company_code=_DEFAULT_MACHINE_COMPANY_CODE)
+        .select_related("company")
+        .first()
+    )
+    if not reference:
+        return None
+
+    brand_model = (result.get("brand_model_hint") or "").strip()
+    asset = MachineAsset.objects.create(
+        company=reference.company,
+        company_code=reference.company_code,
+        company_name=reference.company_name,
+        code=candidate_code,
+        brand_model=brand_model,
+    )
+    result["machine_asset_note"] = (
+        "Máquina nueva creada automáticamente en la flota: código "
+        "%s%s -- empresa/sección por defecto (%s, %s), pendiente de "
+        "confirmar la real y de completar el resto de su ficha."
+        % (
+            candidate_code,
+            " (%s)" % brand_model if brand_model else "",
+            reference.company_code, reference.company_name,
+        )
+    )
+    return asset
+
+
 _DNI_NORMALIZE_RE = re.compile(r"[^A-Z0-9]")
 
 # Letra de control real del DNI/NIE español -- algoritmo público y
@@ -1983,7 +2142,7 @@ def apply_quarantine_classification(entry) -> dict:
         )
         return result
 
-    asset = resolve_machine_asset(entry)
+    asset = resolve_or_create_machine_asset(entry, result)
     if not asset:
         result.update(
             new_name=None, classified=False,
