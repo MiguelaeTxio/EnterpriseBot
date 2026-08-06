@@ -76,11 +76,14 @@ from ai_services.gemini_rate_limiter import acquire_gemini_slot
 from fleet.models import MachineAsset
 from spare_parts.gcs_service import download_bytes
 
-from . import naming_service
-from .buckets import MANUAL_USO_FOLDER, QUARANTINE_PREFIX
+from . import archive_service, naming_service
+from .buckets import (
+    MANUAL_USO_FOLDER, NO_CONFORMES_PREFIX, QUARANTINE_PREFIX,
+    quarantine_scope_q,
+)
 from .move_service import _virtual_location_taken, move_entry
 
-from .models import DocumentTypeCatalog, PersonIdentity
+from .models import DocumentIndexEntry, DocumentTypeCatalog, PersonIdentity
 
 logger = logging.getLogger(__name__)
 
@@ -673,6 +676,127 @@ def resolve_or_create_machine_asset(
         )
     )
     return asset
+
+
+def resolve_archive_redundancy(entry) -> dict | None:
+    """
+    Checks whether a `.zip`/`.rar` quarantine file is 100% redundant
+    -- every single entry inside it already exists, byte-for-byte
+    (real CRC32C + size match, `archive_service.compute_crc32c()`),
+    as a real, already-filed document somewhere OUTSIDE quarantine/NO
+    CONFORMES. Never checks type or content meaning -- pure "does an
+    identical copy already exist," the same trustworthy signal
+    `duplicates_service.py` already uses for everything else.
+
+    S042, Miguel Ángel, verbatim, after being shown two real archives
+    whose every entry already existed as loose, correctly-filed
+    files: **"no podemos nosotros borrar nada... dotar al sistema de
+    las herramientas pertinentes para que lo haga de forma
+    automática."** Gemini is never called for this -- it can't read
+    archive bytes at all (`_SUPPORTED_MIME_TYPES`/`_LIBREOFFICE_
+    CONVERTIBLE_EXTENSIONS`/`_XPS_EXTENSIONS` all exclude them), so
+    this check runs BEFORE any Gemini call, cheap and deterministic.
+    A fully-redundant match is soft-deleted via the already-existing
+    `trash_dossier_entry()` -- same per-user trash, same
+    `_DOSSIER_TRASH_USERNAME` automated identity, no new deletion
+    mechanism needed.
+
+    Returns a dict `{"fully_redundant": bool, "matched_paths": [...]}`
+    when the archive could be listed and every entry could be
+    extracted -- `fully_redundant=True` only when ALL entries matched
+    a real file. Returns None when the archive can't even be listed/
+    read, or any single entry fails to extract -- callers must treat
+    that exactly like "can't determine," never guess a fallback
+    either way.
+
+    **Deliberately scoped, S042**: only ever DELETES a fully-redundant
+    archive. An archive with SOME genuinely new content inside stays
+    flagged in NO CONFORMES as before -- automatically extracting and
+    uploading new content as fresh GCS objects is a real
+    infrastructure decision (new writes to GCS, not just index moves)
+    that deserves its own explicit design, not a silent extra
+    behaviour bolted onto this check.
+
+    ---
+
+    Comprueba si un archivo `.zip`/`.rar` de cuarentena es 100%
+    redundante -- cada entrada de dentro ya existe, byte a byte
+    (coincidencia real de CRC32C + tamaño,
+    `archive_service.compute_crc32c()`), como un documento real ya
+    archivado en algún sitio FUERA de cuarentena/NO CONFORMES. Nunca
+    comprueba tipo ni significado del contenido -- pura "¿ya existe
+    una copia idéntica?", la misma señal de confianza que ya usa
+    `duplicates_service.py` para todo lo demás.
+
+    S042, Miguel Ángel, verbatim, tras ver dos archivos comprimidos
+    reales cuyo contenido entero ya existía como archivos sueltos bien
+    archivados: **"no podemos nosotros borrar nada... dotar al
+    sistema de las herramientas pertinentes para que lo haga de forma
+    automática."** Nunca se llama a Gemini para esto -- no puede leer
+    bytes de un archivo comprimido en absoluto
+    (`_SUPPORTED_MIME_TYPES`/`_LIBREOFFICE_CONVERTIBLE_EXTENSIONS`/
+    `_XPS_EXTENSIONS` los excluyen todos), así que esta comprobación
+    corre ANTES de cualquier llamada a Gemini, barata y determinista.
+    Una coincidencia 100% redundante se borra lógicamente vía el ya
+    existente `trash_dossier_entry()` -- misma papelera por usuario,
+    misma identidad automática `_DOSSIER_TRASH_USERNAME`, ningún
+    mecanismo de borrado nuevo.
+
+    Devuelve un diccionario `{"fully_redundant": bool,
+    "matched_paths": [...]}` cuando el archivo se pudo listar y cada
+    entrada se pudo extraer -- `fully_redundant=True` solo cuando
+    TODAS las entradas coincidieron con un archivo real. Devuelve
+    None cuando el archivo ni siquiera se puede listar/leer, o
+    cualquier entrada falla al extraerse -- quien llama debe tratarlo
+    exactamente igual que "no se puede determinar", nunca adivinar un
+    resultado por defecto tampoco.
+
+    **Acotado a propósito, S042**: solo BORRA nunca un archivo 100%
+    redundante. Un archivo comprimido con ALGÚN contenido genuinamente
+    nuevo dentro se queda marcado en NO CONFORMES como hasta ahora --
+    extraer y subir contenido nuevo como objetos GCS reales es una
+    decisión de infraestructura real (escrituras nuevas a GCS, no
+    solo movimientos de índice) que merece su propio diseño explícito,
+    no un comportamiento extra añadido en silencio a esta
+    comprobación.
+    """
+    extension = (
+        entry.name.rsplit(".", 1)[-1].lower()
+        if "." in entry.name else ""
+    )
+    if extension not in archive_service.ARCHIVE_EXTENSIONS:
+        return None
+
+    content = download_bytes(entry.bucket, entry.blob_name)
+    raw_items = archive_service.list_entries(content, extension)
+    if not raw_items:
+        return None
+
+    matched_paths = []
+    for item in raw_items:
+        inner_bytes = archive_service.extract_entry(
+            content, extension, item["path"],
+        )
+        if inner_bytes is None:
+            return None
+        crc32c = archive_service.compute_crc32c(inner_bytes)
+        size = len(inner_bytes)
+        real_match = (
+            DocumentIndexEntry.objects.filter(
+                bucket=entry.bucket, crc32c=crc32c, size_bytes=size,
+                deleted_at__isnull=True, purged_at__isnull=True,
+            )
+            .exclude(quarantine_scope_q())
+            .exclude(parent_path=NO_CONFORMES_PREFIX.rstrip("/"))
+            .exists()
+        )
+        if not real_match:
+            return {
+                "fully_redundant": False, "matched_paths": matched_paths,
+            }
+        matched_paths.append(item["path"])
+
+    return {"fully_redundant": True, "matched_paths": matched_paths}
 
 
 _DNI_NORMALIZE_RE = re.compile(r"[^A-Z0-9]")

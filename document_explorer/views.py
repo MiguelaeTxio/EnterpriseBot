@@ -130,11 +130,6 @@ tiene por qué saber que son cubos diferentes". Ver
 """
 from urllib.parse import urlencode
 import datetime
-import io
-import os
-import subprocess
-import tempfile
-import zipfile
 
 from django.contrib import messages
 from django.core.paginator import Paginator
@@ -167,7 +162,8 @@ from spare_parts.gcs_service import (
 
 from document_explorer import friendly_names, index_writer, move_service, permissions
 from document_explorer import (
-    classification_service, duplicates_service, naming_service, tasks,
+    archive_service, classification_service, duplicates_service,
+    naming_service, tasks,
 )
 from document_explorer.buckets import (
     BUCKET_DISPLAY_NAMES, INDEXED_BUCKETS, NO_CONFORMES_PREFIX,
@@ -1119,106 +1115,6 @@ class OpenDocumentView(ExplorerAccessMixin, View):
         )
 
 
-_ARCHIVE_INLINE_EXTENSIONS = {
-    ".pdf": "application/pdf",
-    ".png": "image/png",
-    ".jpg": "image/jpeg",
-    ".jpeg": "image/jpeg",
-    ".gif": "image/gif",
-    ".webp": "image/webp",
-    ".heic": "image/heic",
-    ".heif": "image/heif",
-}
-
-
-_RAR_TIMEOUT_SECONDS = 60
-
-
-def _list_rar_entries(content_bytes: bytes) -> list[str] | None:
-    """
-    Lists the real filenames inside a `.rar` archive via the `unrar`
-    binary (`lb` -- "list, bare": one path per line, no metadata) --
-    confirmed installed on the server (`/usr/bin/unrar` 5.61) with a
-    direct test before writing this, same discipline as `soffice`/
-    `fitz` elsewhere in this project: never assumed. Same throwaway-
-    tempfile pattern as `_convert_to_pdf()` in `classification_
-    service.py` -- `unrar` needs a real file on disk, not bytes in
-    memory.
-
-    Returns None on any failure (corrupt archive, `unrar` missing,
-    timeout) -- callers must fall back to an error message, never
-    guess.
-
-    ---
-
-    Lista los nombres reales de dentro de un archivo `.rar` vía el
-    binario `unrar` (`lb` -- "list, bare": una ruta por línea, sin
-    metadatos) -- confirmado instalado en el servidor (`/usr/bin/
-    unrar` 5.61) con una prueba directa antes de escribir esto, misma
-    disciplina que `soffice`/`fitz` en el resto del proyecto: nunca
-    supuesto. Mismo patrón de directorio temporal desechable que
-    `_convert_to_pdf()` en `classification_service.py` -- `unrar`
-    necesita un archivo real en disco, no bytes en memoria.
-
-    Devuelve None ante cualquier fallo (archivo dañado, falta
-    `unrar`, timeout) -- quien llama debe caer al mensaje de error,
-    nunca adivinar.
-    """
-    with tempfile.TemporaryDirectory() as workdir:
-        input_path = os.path.join(workdir, "input.rar")
-        with open(input_path, "wb") as f:
-            f.write(content_bytes)
-        try:
-            result = subprocess.run(
-                ["unrar", "lb", input_path],
-                check=True, timeout=_RAR_TIMEOUT_SECONDS,
-                capture_output=True, text=True,
-            )
-        except Exception:
-            return None
-        return [line for line in result.stdout.splitlines() if line]
-
-
-def _extract_rar_entry(content_bytes: bytes, inner_path: str) -> bytes | None:
-    """
-    Extracts ONE named entry from a `.rar` archive straight to stdout
-    (`unrar p -inul`) -- never writes the extracted file to disk,
-    same "look at it, don't leave a copy" principle as `ArchiveEntry
-    OpenView` for `.zip`. Confirmed with a real archive before
-    writing this: a 346 280-byte PDF extracted byte-for-byte, correct
-    header, real return code 0.
-
-    Returns None on any failure (entry not found, corrupt archive,
-    timeout) -- callers must respond 404, never guess.
-
-    ---
-
-    Extrae UNA entrada concreta de un archivo `.rar` directamente a
-    stdout (`unrar p -inul`) -- nunca escribe el archivo extraído a
-    disco, mismo principio de "mirarlo, no dejar una copia" que
-    `ArchiveEntryOpenView` para `.zip`. Confirmado con un archivo real
-    antes de escribir esto: un PDF de 346.280 bytes extraído byte a
-    byte, cabecera correcta, código de retorno real 0.
-
-    Devuelve None ante cualquier fallo (entrada no encontrada, archivo
-    dañado, timeout) -- quien llama debe responder 404, nunca
-    adivinar.
-    """
-    with tempfile.TemporaryDirectory() as workdir:
-        input_path = os.path.join(workdir, "input.rar")
-        with open(input_path, "wb") as f:
-            f.write(content_bytes)
-        try:
-            result = subprocess.run(
-                ["unrar", "p", "-inul", input_path, inner_path],
-                check=True, timeout=_RAR_TIMEOUT_SECONDS,
-                capture_output=True,
-            )
-        except Exception:
-            return None
-        return result.stdout
-
-
 class ArchivePreviewView(ExplorerAccessMixin, TemplateView):
     """
     Lists the real contents of a `.zip`/`.rar` file directly in the
@@ -1232,12 +1128,15 @@ class ArchivePreviewView(ExplorerAccessMixin, TemplateView):
     actually contains.
 
     `.zip` via stdlib `zipfile` -- no new package. `.rar` via the
-    `unrar` binary (`_list_rar_entries()`), confirmed already
-    installed on this server BEFORE writing a single line of this --
-    Miguel Ángel explicitly asked for this to be investigated rather
-    than assumed, and it was: `/usr/bin/unrar` 5.61 real, tested
-    against a real archive from quarantine. No new Python package
-    either way, no `pip-compile`/`pip-sync` coordination.
+    `unrar` binary (`archive_service.list_rar_entries()`), confirmed
+    already installed on this server BEFORE writing a single line of
+    this -- Miguel Ángel explicitly asked for this to be investigated
+    rather than assumed, and it was: `/usr/bin/unrar` 5.61 real,
+    tested against a real archive from quarantine. No new Python
+    package either way, no `pip-compile`/`pip-sync` coordination.
+    Both formats' real logic lives in `archive_service.py`, shared
+    with the automatic redundancy check in `classification_service.
+    py` -- never duplicated here.
 
     Same visibility rule as `OpenDocumentView` -- reading INSIDE an
     archive is exactly "seeing the content of a document", nothing
@@ -1256,13 +1155,16 @@ class ArchivePreviewView(ExplorerAccessMixin, TemplateView):
     decidir qué contiene de verdad un archivo comprimido.
 
     `.zip` vía `zipfile` de la librería estándar -- ningún paquete
-    nuevo. `.rar` vía el binario `unrar` (`_list_rar_entries()`),
-    confirmado ya instalado en este servidor ANTES de escribir una
-    sola línea de esto -- Miguel Ángel pidió explícitamente
-    investigarlo en vez de suponerlo, y así se hizo: `/usr/bin/unrar`
-    5.61 real, probado contra un archivo real de cuarentena. Ningún
-    paquete Python nuevo en ninguno de los dos casos, ninguna
-    coordinación de `pip-compile`/`pip-sync`.
+    nuevo. `.rar` vía el binario `unrar`
+    (`archive_service.list_rar_entries()`), confirmado ya instalado en
+    este servidor ANTES de escribir una sola línea de esto -- Miguel
+    Ángel pidió explícitamente investigarlo en vez de suponerlo, y así
+    se hizo: `/usr/bin/unrar` 5.61 real, probado contra un archivo
+    real de cuarentena. Ningún paquete Python nuevo en ninguno de los
+    dos casos, ninguna coordinación de `pip-compile`/`pip-sync`. La
+    lógica real de ambos formatos vive en `archive_service.py`,
+    compartida con la comprobación automática de redundancia de
+    `classification_service.py` -- nunca duplicada aquí.
 
     Misma regla de visibilidad que `OpenDocumentView` -- leer DENTRO
     de un archivo comprimido es exactamente "ver el contenido de un
@@ -1293,53 +1195,32 @@ class ArchivePreviewView(ExplorerAccessMixin, TemplateView):
             entry.name.rsplit(".", 1)[-1].lower()
             if "." in entry.name else ""
         )
-        if extension not in ("zip", "rar"):
+        if extension not in archive_service.ARCHIVE_EXTENSIONS:
             raise Http404(
                 "Solo se puede previsualizar el contenido de "
                 "archivos .zip o .rar."
             )
 
         content = download_bytes(entry.bucket, entry.blob_name)
+        raw_items = archive_service.list_entries(content, extension)
         items = []
         error = None
-        if extension == "zip":
-            try:
-                with zipfile.ZipFile(io.BytesIO(content)) as archive:
-                    for info in archive.infolist():
-                        if info.is_dir():
-                            continue
-                        inner_ext = (
-                            "." + info.filename.rsplit(".", 1)[-1].lower()
-                            if "." in info.filename.rsplit("/", 1)[-1]
-                            else ""
-                        )
-                        items.append({
-                            "path": info.filename,
-                            "size": info.file_size,
-                            "can_view": (
-                                inner_ext in _ARCHIVE_INLINE_EXTENSIONS
-                            ),
-                        })
-            except zipfile.BadZipFile:
-                error = "El archivo está dañado o no es un .zip real."
+        if raw_items is None:
+            error = (
+                "El archivo está dañado o no se pudo leer." if
+                extension == "zip" else
+                "El archivo está dañado o no se pudo leer con unrar."
+            )
         else:
-            names = _list_rar_entries(content)
-            if names is None:
-                error = (
-                    "El archivo está dañado o no se pudo leer con "
-                    "unrar."
-                )
-            else:
-                for name in names:
-                    inner_ext = (
-                        "." + name.rsplit(".", 1)[-1].lower()
-                        if "." in name.rsplit("/", 1)[-1] else ""
-                    )
-                    items.append({
-                        "path": name,
-                        "size": None,
-                        "can_view": inner_ext in _ARCHIVE_INLINE_EXTENSIONS,
-                    })
+            for raw in raw_items:
+                inner_ext = archive_service.inner_extension(raw["path"])
+                items.append({
+                    "path": raw["path"],
+                    "size": raw["size"],
+                    "can_view": (
+                        inner_ext in archive_service.INLINE_EXTENSIONS
+                    ),
+                })
 
         context["entry"] = entry
         context["items"] = sorted(items, key=lambda i: i["path"])
@@ -1383,11 +1264,11 @@ class ArchiveEntryOpenView(ExplorerAccessMixin, View):
     string sin ningún beneficio.
 
     Solo sirve nunca una entrada cuya extensión esté en
-    `_ARCHIVE_INLINE_EXTENSIONS` (imagen o PDF) -- cualquier otra cosa
-    (otro archivo comprimido anidado dentro, un documento de Office,
-    un binario cualquiera) se rechaza con un 404 en vez de servirse
-    como una descarga sin control; esta vista existe para MIRAR algo
-    rápido, no como un servidor de archivos genérico.
+    `archive_service.INLINE_EXTENSIONS` (imagen o PDF) -- cualquier
+    otra cosa (otro archivo comprimido anidado dentro, un documento de
+    Office, un binario cualquiera) se rechaza con un 404 en vez de
+    servirse como una descarga sin control; esta vista existe para
+    MIRAR algo rápido, no como un servidor de archivos genérico.
     """
 
     def get(self, request, pk):
@@ -1408,11 +1289,8 @@ class ArchiveEntryOpenView(ExplorerAccessMixin, View):
             raise Http404("Sin acceso a ese documento.")
 
         inner_path = request.GET.get("path") or ""
-        inner_ext = (
-            "." + inner_path.rsplit(".", 1)[-1].lower()
-            if "." in inner_path.rsplit("/", 1)[-1] else ""
-        )
-        content_type = _ARCHIVE_INLINE_EXTENSIONS.get(inner_ext)
+        inner_ext = archive_service.inner_extension(inner_path)
+        content_type = archive_service.INLINE_EXTENSIONS.get(inner_ext)
         if not content_type:
             raise Http404("Ese tipo de archivo no se puede visualizar.")
 
@@ -1421,20 +1299,14 @@ class ArchiveEntryOpenView(ExplorerAccessMixin, View):
             if "." in entry.name else ""
         )
         content = download_bytes(entry.bucket, entry.blob_name)
-        if archive_extension == "rar":
-            inner_bytes = _extract_rar_entry(content, inner_path)
-            if inner_bytes is None:
-                raise Http404(
-                    "No se encontró ese archivo dentro del .rar."
-                )
-        else:
-            try:
-                with zipfile.ZipFile(io.BytesIO(content)) as archive:
-                    inner_bytes = archive.read(inner_path)
-            except (zipfile.BadZipFile, KeyError):
-                raise Http404(
-                    "No se encontró ese archivo dentro del .zip."
-                )
+        inner_bytes = archive_service.extract_entry(
+            content, archive_extension, inner_path,
+        )
+        if inner_bytes is None:
+            raise Http404(
+                "No se encontró ese archivo dentro del archivo "
+                "comprimido."
+            )
 
         return HttpResponse(inner_bytes, content_type=content_type)
 
