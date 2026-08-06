@@ -531,7 +531,47 @@ _NIE_PREFIX_DIGIT = {"X": "0", "Y": "1", "Z": "2"}
 
 
 def _normalize_dni(raw_dni: str) -> str:
-    return _DNI_NORMALIZE_RE.sub("", raw_dni.upper())
+    """
+    Strips everything but letters/digits and uppercases -- plus one
+    real correction, S042: a DNI is ALWAYS exactly 8 digits + 1 check
+    letter (a NIE is 1 prefix letter + 7 digits + 1 check letter,
+    already exactly 9 characters with no ambiguity). A cleaned value
+    of exactly 10 characters that starts with "0" and is otherwise 8
+    digits + letter can only be a real DNI with a spurious leading
+    zero Gemini added -- never a genuinely different 9-digit number,
+    Spanish DNIs don't have those. Confirmed against real production
+    data (S042): the SAME real person (`PersonIdentity` already
+    seeded, DNI `77773964Q`) had two of three documents read as
+    `077773964Q` -- exact right number, wrong length purely from the
+    leading zero -- which failed `is_valid_spanish_dni()`'s plain
+    length check before ever reaching a lookup, sending both files to
+    NO CONFORMES despite the identity already existing.
+
+    ---
+
+    Quita todo menos letras/dígitos y pasa a mayúsculas -- más una
+    corrección real, S042: un DNI son SIEMPRE exactamente 8 dígitos +
+    1 letra de control (un NIE es 1 letra de prefijo + 7 dígitos + 1
+    letra de control, ya exactamente 9 caracteres sin ambigüedad). Un
+    valor limpio de exactamente 10 caracteres que empieza por "0" y el
+    resto son 8 dígitos + letra solo puede ser un DNI real con un cero
+    espurio que añadió Gemini -- nunca un número de 9 dígitos
+    genuinamente distinto, los DNI españoles no los tienen. Confirmado
+    contra datos reales de producción (S042): la MISMA persona real
+    (`PersonIdentity` ya sembrada, DNI `77773964Q`) tenía dos de tres
+    documentos leídos como `077773964Q` -- el número exacto correcto,
+    con la longitud mal solo por el cero delante -- que fallaba la
+    simple comprobación de longitud de `is_valid_spanish_dni()` antes
+    de llegar siquiera a una búsqueda, enviando los dos archivos a NO
+    CONFORMES pese a que la identidad ya existía.
+    """
+    value = _DNI_NORMALIZE_RE.sub("", raw_dni.upper())
+    if (
+        len(value) == 10 and value[0] == "0"
+        and value[1:9].isdigit() and value[9].isalpha()
+    ):
+        value = value[1:]
+    return value
 
 
 def is_valid_spanish_dni(raw_dni: str) -> bool:
@@ -651,11 +691,22 @@ def resolve_or_create_person_identity(
        announcing the creation. The file this run is processing gets
        relocated there this same pass, same as any resolved identity.
 
-    Only ever called with a `dni_hint` that already passed
-    `is_valid_spanish_dni()` -- an invalid/unreadable DNI never
-    reaches here, same caution as `resolve_person_identity`: no name
-    or first/given name missing means not enough to safely create
-    anyone, returns None without creating.
+    Only creates a new identity when `dni_hint` passes
+    `is_valid_spanish_dni()` -- no name or first/given name missing
+    means not enough to safely create anyone, returns None without
+    creating. **No longer requires the check letter to pass before
+    checking whether the name matches someone already seeded
+    (fixed S042)**: a misread digit almost always breaks the check
+    letter too (that is precisely what it is designed to detect), so
+    requiring it before this check left the "name matches a different
+    DNI" safety net practically unreachable for the real case it was
+    built to catch. Confirmed against real data (S042): the same real
+    person (`GUTIERREZ MATEO, CRISTHIAN`, real DNI `77773964Q`
+    already seeded) had a third document read as `77773969Q` --
+    wrong check letter for that number, so it never reached this
+    check even though the name matched exactly. The check letter is
+    still mandatory to CREATE a new identity, just never to attempt
+    this name check.
 
     ---
 
@@ -684,17 +735,30 @@ def resolve_or_create_person_identity(
        la creación. El archivo de esta pasada se reubica ahí mismo,
        igual que con cualquier identidad ya resuelta.
 
-    Solo se llama nunca con un `dni_hint` que ya pasó
-    `is_valid_spanish_dni()` -- un DNI inválido/ilegible nunca llega
-    aquí, misma cautela que `resolve_person_identity`: sin nombre o
-    sin nombre de pila no hay datos suficientes para crear a nadie
-    con seguridad, devuelve None sin crear nada.
+    Solo crea una identidad nueva cuando el `dni_hint` pasa
+    `is_valid_spanish_dni()` -- sin nombre o sin nombre de pila no hay
+    datos suficientes para crear a nadie con seguridad, devuelve None
+    sin crear nada. **Ya NO exige que el `dni_hint` pase la letra de
+    control antes de comprobar si el nombre coincide con alguien ya
+    sembrado (corregido S042)**: un dígito mal leído casi siempre
+    rompe también la letra de control (es justo lo que la letra de
+    control detecta), así que exigirla antes de esta comprobación
+    dejaba la propia salvaguarda de "nombre coincide con DNI
+    distinto" prácticamente inalcanzable para el caso real que se
+    construyó para detectar. Confirmado con datos reales (S042): a la
+    misma persona real (`GUTIERREZ MATEO, CRISTHIAN`, DNI real
+    `77773964Q` ya sembrado) un tercer documento le leyó
+    `77773969Q` -- letra de control incorrecta para ese número, así
+    que nunca llegaba a esta comprobación pese a que el nombre
+    coincidía exactamente. La letra de control solo sigue siendo
+    obligatoria para CREAR una identidad nueva, nunca para intentar
+    esta comprobación de nombre.
     """
     dni_hint = (result.get("dni_hint") or "").strip()
     identity = resolve_person_identity(dni_hint)
     if identity:
         return identity
-    if not dni_hint or not is_valid_spanish_dni(dni_hint):
+    if not dni_hint:
         return None
 
     first_surname = (result.get("first_surname_hint") or "").strip()
@@ -703,13 +767,13 @@ def resolve_or_create_person_identity(
     if not first_surname or not given_name:
         return None
 
+    dni = _normalize_dni(dni_hint)
     name_match = PersonIdentity.objects.filter(
         first_surname__iexact=first_surname,
         given_name__iexact=given_name,
     )
     if second_surname:
         name_match = name_match.filter(second_surname__iexact=second_surname)
-    dni = _normalize_dni(dni_hint)
     suspect = name_match.exclude(dni=dni).first()
     if suspect:
         result["person_identity_note"] = (
@@ -721,6 +785,9 @@ def resolve_or_create_person_identity(
                 suspect.given_name, suspect.dni, dni,
             )
         )
+        return None
+
+    if not is_valid_spanish_dni(dni_hint):
         return None
 
     folder_name = (
