@@ -130,6 +130,8 @@ tiene por qué saber que son cubos diferentes". Ver
 """
 from urllib.parse import urlencode
 import datetime
+import io
+import zipfile
 
 from django.contrib import messages
 from django.core.paginator import Paginator
@@ -138,7 +140,7 @@ from django.db.models import (
 )
 from django.db.models.functions import Cast, Coalesce
 from django.http import (
-    Http404, HttpResponseBadRequest, HttpResponseForbidden,
+    Http404, HttpResponse, HttpResponseBadRequest, HttpResponseForbidden,
     HttpResponseNotFound, HttpResponseRedirect, JsonResponse,
 )
 from django.utils.crypto import constant_time_compare
@@ -157,7 +159,7 @@ from django.conf import settings
 from django.db import transaction
 
 from spare_parts.gcs_service import (
-    delete_file, generate_signed_url, get_storage_client,
+    delete_file, download_bytes, generate_signed_url, get_storage_client,
 )
 
 from document_explorer import friendly_names, index_writer, move_service, permissions
@@ -1112,6 +1114,220 @@ class OpenDocumentView(ExplorerAccessMixin, View):
         return HttpResponseRedirect(
             generate_signed_url(entry.bucket, entry.blob_name)
         )
+
+
+_ARCHIVE_INLINE_EXTENSIONS = {
+    ".pdf": "application/pdf",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".heic": "image/heic",
+    ".heif": "image/heif",
+}
+
+
+class ArchivePreviewView(ExplorerAccessMixin, TemplateView):
+    """
+    Lists the real contents of a `.zip` file directly in the
+    explorer, without downloading anything to the person's own
+    device -- H29, S042, Miguel Ángel: a real batch of quarantine
+    files with no catalogued type Gemini can even attempt (it never
+    gets handed archive bytes at all, see `_SUPPORTED_MIME_TYPES`/
+    `_LIBREOFFICE_CONVERTIBLE_EXTENSIONS`) needs "la herramienta
+    pertinente en el explorador para poder visualizarlos" before
+    anyone -- human or heuristic -- can decide what a `.zip` actually
+    contains.
+
+    Stdlib `zipfile` only -- no new package, no `pip-compile`/
+    `pip-sync` coordination, same reasoning already applied to `fitz`
+    for XPS (H29, S042). Downloads the archive's bytes once
+    server-side (`download_bytes`, same helper `classify_entry`
+    already uses) and lists entries in memory; never writes anything
+    to disk, never touches GCS beyond that one read.
+
+    `.rar` deliberately NOT supported here -- unlike `.zip`, Python's
+    standard library has no RAR reader at all; a real one needs
+    either the proprietary `unrar` binary or `libarchive` installed
+    at the OS level, neither confirmed available on this server, and
+    installing either is a real infrastructure decision (possibly a
+    PythonAnywhere support request) that deserves Miguel Ángel's own
+    explicit go-ahead, not a silent dependency added mid-session.
+
+    Same visibility rule as `OpenDocumentView` -- reading INSIDE an
+    archive is exactly "seeing the content of a document", nothing
+    less.
+
+    ---
+
+    Lista el contenido real de un archivo `.zip` directamente en el
+    explorador, sin descargar nada al dispositivo de la persona --
+    H29, S042, Miguel Ángel: un lote real de archivos de cuarentena
+    sin ningún tipo catalogado que Gemini pueda siquiera intentar (ni
+    llega a recibir los bytes del archivo comprimido, ver
+    `_SUPPORTED_MIME_TYPES`/`_LIBREOFFICE_CONVERTIBLE_EXTENSIONS`)
+    necesita "la herramienta pertinente en el explorador para poder
+    visualizarlos" antes de que nadie -- humano o heurística -- pueda
+    decidir qué contiene de verdad un `.zip`.
+
+    Solo `zipfile` de la librería estándar -- ningún paquete nuevo,
+    ninguna coordinación de `pip-compile`/`pip-sync`, mismo
+    razonamiento ya aplicado a `fitz` para XPS (H29, S042). Descarga
+    los bytes del archivo una sola vez en el servidor
+    (`download_bytes`, el mismo auxiliar que ya usa `classify_entry`)
+    y lista las entradas en memoria; nunca escribe nada a disco, nunca
+    toca GCS más allá de esa única lectura.
+
+    `.rar` deliberadamente NO soportado aquí -- a diferencia de
+    `.zip`, la librería estándar de Python no trae ningún lector de
+    RAR; uno real necesita el binario propietario `unrar` o
+    `libarchive` instalado a nivel de sistema operativo, ninguno
+    confirmado disponible en este servidor, e instalar cualquiera de
+    los dos es una decisión de infraestructura real (posiblemente una
+    solicitud de soporte a PythonAnywhere) que merece el visto bueno
+    explícito del propio Miguel Ángel, no una dependencia añadida en
+    silencio a media sesión.
+
+    Misma regla de visibilidad que `OpenDocumentView` -- leer DENTRO
+    de un archivo comprimido es exactamente "ver el contenido de un
+    documento", ni más ni menos.
+    """
+
+    template_name = "document_explorer/archive_preview.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        entry = get_object_or_404(
+            DocumentIndexEntry,
+            pk=kwargs["pk"],
+            entry_kind=DocumentIndexEntry.KIND_FILE,
+            deleted_at__isnull=True,
+            purged_at__isnull=True,
+        )
+        company_user = self.request.user.company_user
+        grants = permissions.grants_for(company_user, entry.bucket)
+        mode, _allowed = permissions.visibility(
+            company_user, entry.bucket, entry.parent_path,
+            grants=grants,
+        )
+        if mode != permissions.ALL:
+            raise Http404("Sin acceso a ese documento.")
+
+        extension = (
+            entry.name.rsplit(".", 1)[-1].lower()
+            if "." in entry.name else ""
+        )
+        if extension != "zip":
+            raise Http404(
+                "Solo se puede previsualizar el contenido de "
+                "archivos .zip."
+            )
+
+        content = download_bytes(entry.bucket, entry.blob_name)
+        items = []
+        error = None
+        try:
+            with zipfile.ZipFile(io.BytesIO(content)) as archive:
+                for info in archive.infolist():
+                    if info.is_dir():
+                        continue
+                    inner_ext = (
+                        "." + info.filename.rsplit(".", 1)[-1].lower()
+                        if "." in info.filename.rsplit("/", 1)[-1]
+                        else ""
+                    )
+                    items.append({
+                        "path": info.filename,
+                        "size": info.file_size,
+                        "can_view": inner_ext in _ARCHIVE_INLINE_EXTENSIONS,
+                    })
+        except zipfile.BadZipFile:
+            error = "El archivo está dañado o no es un .zip real."
+
+        context["entry"] = entry
+        context["items"] = sorted(items, key=lambda i: i["path"])
+        context["error"] = error
+        return context
+
+
+class ArchiveEntryOpenView(ExplorerAccessMixin, View):
+    """
+    Streams ONE file from inside a `.zip` archive -- a document
+    picked from `ArchivePreviewView`'s listing, opened inline for a
+    human to actually judge what it is (S042, same real need: seeing
+    an image or a PDF that was only ever known as a byte count and a
+    name inside an archive).
+
+    `inner_path` arrives as a query string, not part of the URL path,
+    since a real path inside a `.zip` can itself contain `/` -- Django
+    URL routing would otherwise need a `path:` converter fighting
+    query-string-unsafe characters for no benefit.
+
+    Only ever serves an entry whose extension is in `_ARCHIVE_INLINE_
+    EXTENSIONS` (image or PDF) -- anything else (another archive
+    nested inside, an Office document, a random binary) is refused
+    with a 404 rather than served as an uncontrolled download; this
+    view exists to LOOK at something quickly, not as a generic file
+    server.
+
+    ---
+
+    Transmite UN archivo de dentro de un `.zip` -- un documento
+    elegido del listado de `ArchivePreviewView`, abierto en línea
+    para que una persona pueda de verdad juzgar qué es (S042, misma
+    necesidad real: ver una imagen o un PDF que hasta ahora solo se
+    conocía como un peso en bytes y un nombre dentro de un archivo
+    comprimido).
+
+    `inner_path` llega como parámetro de consulta, no como parte de
+    la ruta URL, porque una ruta real dentro de un `.zip` puede
+    contener `/` -- el enrutado de Django necesitaría si no un
+    conversor `path:` peleándose con caracteres inseguros en query
+    string sin ningún beneficio.
+
+    Solo sirve nunca una entrada cuya extensión esté en
+    `_ARCHIVE_INLINE_EXTENSIONS` (imagen o PDF) -- cualquier otra cosa
+    (otro archivo comprimido anidado dentro, un documento de Office,
+    un binario cualquiera) se rechaza con un 404 en vez de servirse
+    como una descarga sin control; esta vista existe para MIRAR algo
+    rápido, no como un servidor de archivos genérico.
+    """
+
+    def get(self, request, pk):
+        entry = get_object_or_404(
+            DocumentIndexEntry,
+            pk=pk,
+            entry_kind=DocumentIndexEntry.KIND_FILE,
+            deleted_at__isnull=True,
+            purged_at__isnull=True,
+        )
+        company_user = request.user.company_user
+        grants = permissions.grants_for(company_user, entry.bucket)
+        mode, _allowed = permissions.visibility(
+            company_user, entry.bucket, entry.parent_path,
+            grants=grants,
+        )
+        if mode != permissions.ALL:
+            raise Http404("Sin acceso a ese documento.")
+
+        inner_path = request.GET.get("path") or ""
+        inner_ext = (
+            "." + inner_path.rsplit(".", 1)[-1].lower()
+            if "." in inner_path.rsplit("/", 1)[-1] else ""
+        )
+        content_type = _ARCHIVE_INLINE_EXTENSIONS.get(inner_ext)
+        if not content_type:
+            raise Http404("Ese tipo de archivo no se puede visualizar.")
+
+        content = download_bytes(entry.bucket, entry.blob_name)
+        try:
+            with zipfile.ZipFile(io.BytesIO(content)) as archive:
+                inner_bytes = archive.read(inner_path)
+        except (zipfile.BadZipFile, KeyError):
+            raise Http404("No se encontró ese archivo dentro del .zip.")
+
+        return HttpResponse(inner_bytes, content_type=content_type)
 
 
 class SendToTrashView(ExplorerAccessMixin, View):

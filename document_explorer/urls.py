@@ -31,6 +31,16 @@ urlpatterns = [
         name="open",
     ),
     path(
+        "abrir/<int:pk>/zip/",
+        views.ArchivePreviewView.as_view(),
+        name="archive_preview",
+    ),
+    path(
+        "abrir/<int:pk>/zip/entrada/",
+        views.ArchiveEntryOpenView.as_view(),
+        name="archive_entry_open",
+    ),
+    path(
         "borrar/<int:pk>/",
         views.SendToTrashView.as_view(),
         name="trash_add",
