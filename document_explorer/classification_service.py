@@ -135,13 +135,14 @@ _SOFFICE_TIMEOUT_SECONDS = 90
 # filetype="xps").convert_to_pdf()`. Ver `_convert_xps_to_pdf()`.
 _XPS_EXTENSIONS = {"xps", "oxps"}
 
-# Límite real confirmado por la propia API de Vertex AI en producción
-# (S040, no documentado con este detalle en la guía general de
-# tamaños en línea): un PDF no puede superar 52428800 bytes (50 MiB)
-# aunque se referencie por gs:// -- distinto del límite genérico de
-# 100 MB de datos en línea. Umbral propio con margen de seguridad
-# (45 MB) para decidir cuándo hace falta recortar antes de llamar.
-_PDF_SIZE_LIMIT_BYTES = 45 * 1024 * 1024
+# S042 -- el límite real de 52428800 bytes (50 MiB) de Vertex AI para
+# PDF (S040, confirmado por la propia API en producción) ya no se
+# comprueba por separado: desde que el número de páginas se cuenta
+# SIEMPRE para cualquier PDF (regla general de Miguel Ángel, ver
+# _pdf_page_count()), un archivo de más de 4 páginas se recorta antes
+# de llegar a Gemini sea cual sea su peso -- en la práctica ningún PDF
+# de 4 páginas o menos pesa lo bastante como para chocar con ese
+# límite, así que la comprobación de tamaño quedó redundante.
 
 # S042 -- sustituye a _PDF_CLASSIFICATION_MAX_PAGES=3 (solo primeras
 # páginas). Ver el docstring de _extract_pdf_edges() para los datos
@@ -1287,6 +1288,46 @@ def check_machine_mismatch(entry, result: dict) -> str | None:
     )
 
 
+def _pdf_page_count(content_bytes: bytes) -> int | None:
+    """
+    Real page count of a PDF via `fitz` -- used to decide, for EVERY
+    PDF, whether to send it whole or trimmed to edges
+    (`_extract_pdf_edges()`), per Miguel Ángel's own general rule
+    (S042, repeated twice): "hasta cuatro páginas enviamos íntegro el
+    archivo, a partir de cuatro páginas, las dos primeras y las dos
+    últimas" -- applied to every single PDF, never only as a reaction
+    to a specific API error.
+
+    Returns None when the file can't even be opened as a PDF (corrupt)
+    -- callers must treat that the same as "needs trimming" (there is
+    nothing safe to send whole), never assume it's fine.
+
+    ---
+
+    Número real de páginas de un PDF vía `fitz` -- usado para decidir,
+    para CUALQUIER PDF, si se envía entero o recortado a extremos
+    (`_extract_pdf_edges()`), según la regla general del propio Miguel
+    Ángel (S042, repetida dos veces): "hasta cuatro páginas enviamos
+    íntegro el archivo, a partir de cuatro páginas, las dos primeras y
+    las dos últimas" -- aplicada a todos y cada uno de los PDF, nunca
+    solo como reacción a un error concreto de la API.
+
+    Devuelve None cuando el archivo ni siquiera se puede abrir como
+    PDF (dañado) -- quien llama debe tratarlo igual que "necesita
+    recorte" (no hay nada seguro que enviar entero), nunca suponer que
+    está bien.
+    """
+    try:
+        with fitz.open(stream=content_bytes, filetype="pdf") as doc:
+            return doc.page_count
+    except Exception as exc:
+        logger.warning(
+            "# [_pdf_page_count] Fallo abriendo PDF: %s",
+            exc, exc_info=True,
+        )
+        return None
+
+
 def _extract_pdf_edges(
     content_bytes: bytes,
     first_pages: int = _PDF_EXCERPT_FIRST_PAGES,
@@ -1682,26 +1723,44 @@ def classify_entry(entry, domain: str | None = None) -> dict:
 
     try:
         if mime_type in _SUPPORTED_MIME_TYPES:
-            if (
-                mime_type == "application/pdf"
-                and entry.size_bytes
-                and entry.size_bytes > _PDF_SIZE_LIMIT_BYTES
-            ):
-                # Incidente real S040: Vertex AI rechaza cualquier PDF
-                # de más de 52428800 bytes (50 MiB) para clasificar,
-                # aunque se referencie por gs:// -- confirmado por el
-                # propio mensaje de error de la API. entry.size_bytes
-                # ya está en el índice, así que se decide sin
-                # descargar nada de más.
-                content_bytes = download_bytes(entry.bucket, entry.blob_name)
+            needs_trim = False
+            content_bytes = None
+            if mime_type == "application/pdf":
+                # Miguel Ángel, verbatim, repetido dos veces: "hasta
+                # cuatro páginas enviamos íntegro el archivo, a partir
+                # de cuatro páginas, las dos primeras y las dos
+                # últimas." Regla GENERAL para TODO PDF, siempre --
+                # nunca solo una reacción a un error concreto de la
+                # API. Incidente real que confirma por qué: un manual
+                # de 979 páginas (979 imágenes escaneadas, 0 texto)
+                # pesaba muy por debajo del límite de 45 MB y tenía
+                # muy por debajo de las 1000 páginas de Vertex AI --
+                # nunca disparaba ningún error conocido, y aun así
+                # Gemini fallaba ("no se ha proporcionado el texto o
+                # contenido"), confirmado con fitz que el archivo es
+                # real y legible. Esperar a un error para recortar
+                # dejaba huérfanos justo los casos como este. Por eso
+                # el número de páginas real se cuenta SIEMPRE, para
+                # cualquier PDF, sin excepción por tamaño ni por
+                # ningún otro motivo -- nunca se espera a que falle.
+                content_bytes = download_bytes(
+                    entry.bucket, entry.blob_name,
+                )
+                page_count = _pdf_page_count(content_bytes)
+                needs_trim = (
+                    page_count is None
+                    or page_count > (
+                        _PDF_EXCERPT_FIRST_PAGES + _PDF_EXCERPT_LAST_PAGES
+                    )
+                )
+            if needs_trim:
                 excerpt = _extract_pdf_edges(content_bytes)
                 if excerpt is None:
                     return {
                         "error": (
-                            "El PDF supera el límite de 50 MB de "
-                            "Vertex AI y no se pudieron extraer sus "
-                            "páginas extremas para clasificarlo "
-                            "igualmente (ver logs del servidor)."
+                            "No se pudieron extraer las páginas "
+                            "extremas del PDF para clasificarlo (ver "
+                            "logs del servidor)."
                         ),
                     }
                 file_part = Part.from_bytes(
