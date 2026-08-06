@@ -106,10 +106,10 @@
         <div class="small mb-0">
             <i class="bi bi-info-circle"></i>
             Archivos que no se pudieron clasificar en su única pasada
-            por cuarentena. Anota una corrección si hace falta antes
-            de reencolar -- "Reencolar seleccionados" reencola lo que
-            marques abajo; "Reencolar todo" reencola el contenido
-            completo de la carpeta, sin selección.
+            por cuarentena. Anota una corrección si hace falta,
+            selecciona los que quieras reencolar (o "Seleccionar
+            todo" para el contenido completo) y pulsa "Reencolar
+            seleccionados".
         </div>
     </div>
 {% endif %}
@@ -147,14 +147,6 @@
                     class="btn btn-sm btn-outline-warning">
                 <i class="bi bi-arrow-repeat"></i> Reencolar seleccionados
             </button>
-            <form method="post" class="d-inline"
-                  action="{% url 'document_explorer:no_conformes_requeue' %}">
-                {% csrf_token %}
-                <input type="hidden" name="all" value="1">
-                <button type="submit" class="btn btn-sm btn-outline-warning text-nowrap">
-                    <i class="bi bi-arrow-repeat"></i> Reencolar todo a cuarentena
-                </button>
-            </form>
         {% endif %}
 
         {% if show_delete %}
@@ -181,11 +173,17 @@
     solo "Seleccionar todo" alimentan los cuatro botones posibles
     (Mover, Clasificar, Reencolar seleccionados, Eliminar
     seleccionados) -- cada botón decide su propio destino con
-    `formaction`, todos leen la misma selección. "Reencolar todo"
-    sigue siendo un botón aparte, deliberadamente sin selección (S041,
-    decisión explícita de Miguel Ángel: reencolar el contenido
-    completo de la carpeta "sin ninguna relación con el estado de la
-    cola").
+    `formaction`, todos leen la misma selección.
+
+    **"Reencolar todo" (botón aparte, sin selección) se retiró en
+    esta misma sesión, después de construido** -- Miguel Ángel, tras
+    el arreglo de paginación de más abajo: "Seleccionar todo" ya
+    selecciona de verdad todo, así que "Seleccionar todo" +
+    "Reencolar seleccionados" cubre exactamente lo mismo que el botón
+    aparte -- mantenerlo era ruido y ambigüedad donde ya no hacía
+    falta, decisión que él mismo revocó explícitamente pese a haberla
+    pedido antes: "no nos podemos agarrar a un clavo ardiendo... se
+    cambia si es para mejorar."
 
     "Seleccionar todo" carga TODO antes de marcar (S042, incidente
     real: "MANUALES DE USO" decía 209 elementos, pero "Seleccionar
