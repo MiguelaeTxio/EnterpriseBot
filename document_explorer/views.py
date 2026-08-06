@@ -2212,15 +2212,22 @@ class QuarantineStatusView(ExplorerAccessMixin, TemplateView):
             parent_path=NO_CONFORMES_PREFIX.rstrip("/"),
         ).count()
 
+        total_pending = live_files.count()
+        machine_pending = live_files.filter(
+            parent_path__startswith=machine_prefix,
+        ).count()
+        personal_pending = live_files.filter(
+            parent_path__startswith=personal_prefix,
+        ).count()
+
         context.update({
             "active_nav": "document_explorer",
-            "total_pending": live_files.count(),
-            "machine_pending": live_files.filter(
-                parent_path__startswith=machine_prefix,
-            ).count(),
-            "personal_pending": live_files.filter(
-                parent_path__startswith=personal_prefix,
-            ).count(),
+            "total_pending": total_pending,
+            "machine_pending": machine_pending,
+            "personal_pending": personal_pending,
+            "unknown_domain_pending": (
+                total_pending - machine_pending - personal_pending
+            ),
             "no_conformes_pending": no_conformes_pending,
             "no_conformes_path": NO_CONFORMES_PREFIX.rstrip("/"),
             "primary_bucket": PRIMARY_BUCKET,
