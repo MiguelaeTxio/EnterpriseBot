@@ -2679,9 +2679,27 @@ class DocumentTypeCatalogListView(ExplorerAccessMixin, TemplateView):
         company_user = self.request.user.company_user
         if not permissions.is_unrestricted(company_user):
             raise Http404("Solo el administrador puede ver el catálogo.")
+
+        q = (self.request.GET.get("q") or "").strip()
+        domain = (self.request.GET.get("domain") or "").strip()
+        state = (self.request.GET.get("state") or "").strip()
+
+        types = DocumentTypeCatalog.objects.all()
+        if q:
+            types = types.filter(
+                Q(code__icontains=q) | Q(label__icontains=q)
+            )
+        if domain in dict(DocumentTypeCatalog.DOMAIN_CHOICES):
+            types = types.filter(domain=domain)
+        if state == "active":
+            types = types.filter(is_active=True)
+        elif state == "inactive":
+            types = types.filter(is_active=False)
+
         context["active_nav"] = "document_explorer"
-        context["types"] = DocumentTypeCatalog.objects.all()
+        context["types"] = types
         context["domain_choices"] = DocumentTypeCatalog.DOMAIN_CHOICES
+        context["filters"] = {"q": q, "domain": domain, "state": state}
         return context
 
 
