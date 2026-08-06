@@ -124,7 +124,9 @@ cosmético, no bloqueante, candidato a una futura herramienta de
 from django.db import transaction
 from django.db.models import Case, F, Value, When
 
-from document_explorer.index_writer import ancestors_of, ensure_folder_chain
+from document_explorer.index_writer import (
+    _adjust_total_size, ancestors_of, ensure_folder_chain,
+)
 from document_explorer.models import DocumentIndexEntry, path_digest
 
 
@@ -270,34 +272,6 @@ def move_entry(entry, destination_folder, ensure_folder=True):
         _adjust_total_size(entry.bucket, destination_folder, size)
         _adjust_child_count(entry.bucket, old_parent_path, -1)
         _adjust_child_count(entry.bucket, destination_folder, 1)
-
-
-def _adjust_total_size(bucket, folder_path, delta):
-    """
-    Propagate a size delta up every ancestor folder (including
-    `folder_path` itself) -- `total_size_bytes` is recursive, per
-    `DocumentIndexEntry`'s own docstring, so both the old and the new
-    location's whole chain need correcting, not just the immediate
-    parent.
-
-    ---
-
-    Propaga una diferencia de tamaño por todas las carpetas
-    antecesoras (incluida la propia `folder_path`) -- `total_size_
-    bytes` es recursivo, según el propio docstring de
-    `DocumentIndexEntry`, así que hay que corregir toda la cadena
-    tanto de la ubicación antigua como de la nueva, no solo el padre
-    inmediato.
-    """
-    if not delta:
-        return
-    hashes = [path_digest(path) for path in ancestors_of(folder_path)]
-    if not hashes:
-        return
-    DocumentIndexEntry.objects.filter(
-        bucket=bucket, blob_name_hash__in=hashes,
-        deleted_at__isnull=True, purged_at__isnull=True,
-    ).update(total_size_bytes=F("total_size_bytes") + delta)
 
 
 def _adjust_child_count(bucket, folder_path, delta):
