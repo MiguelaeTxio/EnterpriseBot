@@ -93,10 +93,10 @@
                 <a href="{% url 'document_explorer:open' entry.pk %}"
                    target="_blank" rel="noopener"
                    title="{{ entry.name }}">{{ entry.friendly_name|default:entry.name }}</a>
-                {% if entry.pk and entry.name|lower|slice:"-4:" == ".zip" %}
+                {% if entry.pk and entry.name|lower|slice:"-4:" == ".zip" or entry.pk and entry.name|lower|slice:"-4:" == ".rar" %}
                     <a href="{% url 'document_explorer:archive_preview' entry.pk %}"
                        class="badge bg-secondary text-decoration-none ms-1"
-                       title="Ver contenido del .zip">
+                       title="Ver contenido del archivo comprimido">
                         <i class="bi bi-file-earmark-zip"></i> ver contenido
                     </a>
                 {% endif %}
