@@ -111,7 +111,7 @@
             <label class="form-check-label small text-muted mb-0">
                 <input type="checkbox" class="form-check-input me-1"
                        title="Seleccionar todo para reencolar"
-                       onclick="document.querySelectorAll('#explorer-rows [name=entries][form=requeue-selected-form]').forEach(function(cb){cb.checked=this.checked;}, this); dxUpdateSelectedCount('requeue-selected-form','selected-count-requeue');">
+                       onclick="dxSelectAllForForm('requeue-selected-form','selected-count-requeue', this);">
                 Seleccionar todo <strong>para reencolar</strong>
             </label>
             <span id="selected-count-requeue" class="small text-muted">0 seleccionados</span>
@@ -141,7 +141,7 @@
         <label class="form-check-label small text-muted mb-0">
             <input type="checkbox" class="form-check-input me-1"
                    title="Seleccionar todo para mover/clasificar"
-                   onclick="document.querySelectorAll('#explorer-rows [name=entries][form=classify-form]').forEach(function(cb){cb.checked=this.checked;}, this); dxUpdateSelectedCount('classify-form','selected-count-classify');">
+                   onclick="dxSelectAllForForm('classify-form','selected-count-classify', this);">
             Seleccionar todo <strong>para mover/clasificar</strong>
         </label>
         <span id="selected-count-classify" class="small text-muted">0 seleccionados</span>
@@ -175,6 +175,21 @@
     marcaba también los de reencolar por error -- ahora cada
     "Seleccionar todo" y su `hx-include` quedan acotados al `form` que
     de verdad les corresponde.
+
+    "Seleccionar todo" carga TODO antes de marcar (S042, incidente
+    real de Miguel Ángel: "MANUALES DE USO" decía 209 elementos, pero
+    "Seleccionar todo" solo marcaba 200 -- confirmado con datos reales
+    que la carpeta SÍ tenía 209 de verdad; el hueco era el scroll
+    infinito, `PAGE_SIZE = 200` en `FolderListingView`, no un dato
+    corrupto). `dxLoadAllPages()` encuentra el centinela `<tr
+    hx-trigger="revealed">` de `_rows.html` y le dispara el evento
+    `revealed` con la API pública de HTMX (nunca hace falta que entre
+    de verdad en el viewport), esperando cada `htmx:afterSwap` antes
+    de buscar el siguiente centinela -- repite hasta que no quede
+    ninguno, es decir, hasta que la carpeta entera esté en el DOM.
+    Solo entonces `dxSelectAllForForm()` marca los casilleros y
+    actualiza el contador, así que "Seleccionar todo" ahora significa
+    de verdad todo, sin excepción por paginación.
 {% endcomment %}
 <script>
     if (!window.__dxSelectionCounterAttached) {
@@ -187,6 +202,69 @@
                 el.textContent = n + " seleccionado" + (n === 1 ? "" : "s");
             }
         };
+
+        window.dxLoadAllPages = function () {
+            var guard = 0;
+            return new Promise(function (resolve) {
+                function loadNext() {
+                    guard += 1;
+                    if (guard > 200) {
+                        // Salvaguarda defensiva -- 200 páginas de
+                        // PAGE_SIZE=200 son 40000 filas, muy por
+                        // encima de cualquier carpeta real de hoy.
+                        // Nunca debe hacer falta, pero evita un
+                        // bucle sin fin si el servidor alguna vez
+                        // devolviera el mismo centinela sin avanzar.
+                        resolve();
+                        return;
+                    }
+                    var sentinel = document.querySelector(
+                        "#explorer-rows tr[hx-trigger='revealed']"
+                    );
+                    if (!sentinel || !window.htmx) {
+                        resolve();
+                        return;
+                    }
+                    document.body.addEventListener(
+                        "htmx:afterSwap",
+                        function onSwap(e) {
+                            if (e.detail && e.detail.target === sentinel) {
+                                document.body.removeEventListener(
+                                    "htmx:afterSwap", onSwap,
+                                );
+                                loadNext();
+                            }
+                        },
+                    );
+                    window.htmx.trigger(sentinel, "revealed");
+                }
+                loadNext();
+            });
+        };
+
+        window.dxSelectAllForForm = function (formName, spanId, checkboxEl) {
+            var selector = (
+                "#explorer-rows [name=entries][form=" + formName + "]"
+            );
+            if (!checkboxEl.checked) {
+                document.querySelectorAll(selector).forEach(function (cb) {
+                    cb.checked = false;
+                });
+                dxUpdateSelectedCount(formName, spanId);
+                return;
+            }
+            checkboxEl.disabled = true;
+            var el = document.getElementById(spanId);
+            if (el) { el.textContent = "cargando todo…"; }
+            dxLoadAllPages().then(function () {
+                document.querySelectorAll(selector).forEach(function (cb) {
+                    cb.checked = true;
+                });
+                dxUpdateSelectedCount(formName, spanId);
+                checkboxEl.disabled = false;
+            });
+        };
+
         document.addEventListener("change", function (e) {
             if (!e.target.matches) { return; }
             if (e.target.matches("[name=entries][form=classify-form]")) {
