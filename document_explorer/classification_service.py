@@ -139,7 +139,13 @@ _XPS_EXTENSIONS = {"xps", "oxps"}
 # 100 MB de datos en línea. Umbral propio con margen de seguridad
 # (45 MB) para decidir cuándo hace falta recortar antes de llamar.
 _PDF_SIZE_LIMIT_BYTES = 45 * 1024 * 1024
-_PDF_CLASSIFICATION_MAX_PAGES = 3
+
+# S042 -- sustituye a _PDF_CLASSIFICATION_MAX_PAGES=3 (solo primeras
+# páginas). Ver el docstring de _extract_pdf_edges() para los datos
+# reales que motivaron el cambio a "principio + final" en vez de
+# "más páginas seguidas desde el principio".
+_PDF_EXCERPT_FIRST_PAGES = 2
+_PDF_EXCERPT_LAST_PAGES = 2
 
 
 _RESPONSE_SCHEMA = {
@@ -176,6 +182,7 @@ identificar su tipo dentro de una lista CERRADA de tipos posibles -- nunca \
 inventes un tipo fuera de esta lista, ni renombres uno existente con tus \
 propias palabras.
 {curator_note_section}
+{excerpt_notice}
 {domain_instruction}
 
 TIPOS DE DOCUMENTO POSIBLES (código -- descripción):
@@ -196,7 +203,11 @@ dossier, y es un caso completamente distinto. Si tienes cualquier duda \
 real sobre si es un único documento o varios, usa is_dossier=false -- \
 la certeza es obligatoria, la sospecha no basta. Cuando is_dossier=true, \
 explica en "reasoning" qué documentos distintos identificaste dentro \
-del archivo.
+del archivo. Si el propio extracto que te doy avisa de que le faltan \
+páginas intermedias, un cambio claro de membrete, formato o tipo de \
+documento entre el bloque inicial y el final es motivo suficiente para \
+marcar is_dossier=true con certeza -- no hace falta ver las páginas de \
+en medio para saber que hay dos documentos distintos cosidos juntos.
 
 Además del tipo, extrae estas pistas SI aparecen de forma clara en el propio \
 documento (deja la cadena vacía "" si no aparecen -- nunca inventes un valor):
@@ -237,7 +248,10 @@ _DOMAIN_LABELS = {
 }
 
 
-def _build_prompt(domain: str | None, curator_note: str = "") -> str:
+def _build_prompt(
+    domain: str | None, curator_note: str = "",
+    is_partial_excerpt: bool = False,
+) -> str:
     """
     Builds the classification prompt. If the domain is already known
     (file living under DOC. MAQUINAS or DOC. PERSONAL), the catalog is
@@ -255,6 +269,15 @@ def _build_prompt(domain: str | None, curator_note: str = "") -> str:
     `PersonIdentity`. When present it is rendered as a short,
     explicitly prioritised block ahead of the domain instruction, so
     Gemini reads it before anything else.
+
+    `is_partial_excerpt` (S042, `_extract_pdf_edges()`'s companion --
+    see that function's docstring for the real dossier-detection data
+    behind this) flags that the PDF Part isn't the whole document:
+    only its first and last few pages, with a gap in between. Without
+    this notice Gemini has no way to know the content "jumps" and
+    could read an abrupt change in letterhead/format between the two
+    blocks as odd formatting rather than the dossier signal it
+    actually is.
 
     ---
 
@@ -274,6 +297,15 @@ def _build_prompt(domain: str | None, curator_note: str = "") -> str:
     `PersonIdentity` correcta. Cuando existe se renderiza como un
     bloque corto y explícitamente prioritario, por delante de la
     instrucción de dominio, para que Gemini lo lea antes que nada.
+
+    `is_partial_excerpt` (S042, compañero de `_extract_pdf_edges()` --
+    ver el docstring de esa función para los datos reales de
+    detección de dosieres detrás de esto) avisa de que el Part de PDF
+    no es el documento completo: solo sus primeras y últimas páginas,
+    con un hueco en medio. Sin este aviso Gemini no tiene forma de
+    saber que el contenido "salta", y podría leer un cambio brusco de
+    membrete/formato entre los dos bloques como un formateo raro en
+    vez de la señal de dosier que de verdad es.
     """
     curator_note = (curator_note or "").strip()
     curator_note_section = (
@@ -283,6 +315,15 @@ def _build_prompt(domain: str | None, curator_note: str = "") -> str:
             "anterior: %s\n" % curator_note
         )
         if curator_note else ""
+    )
+    excerpt_notice = (
+        "AVISO: este PDF NO está completo -- son solo las primeras y "
+        "las últimas páginas del documento real, con páginas "
+        "intermedias que no ves. Un cambio claro de membrete, formato "
+        "o tipo de documento entre el bloque inicial y el final es "
+        "una señal fuerte de que hay más de un documento cosido junto "
+        "(ver is_dossier más abajo).\n"
+        if is_partial_excerpt else ""
     )
     if domain:
         catalog_entries = (
@@ -310,6 +351,7 @@ def _build_prompt(domain: str | None, curator_note: str = "") -> str:
     )
     return _PROMPT_TEMPLATE.format(
         curator_note_section=curator_note_section,
+        excerpt_notice=excerpt_notice,
         domain_instruction=domain_instruction, catalog_lines=catalog_lines,
     )
 
@@ -846,20 +888,46 @@ def check_machine_mismatch(entry, result: dict) -> str | None:
     )
 
 
-def _extract_first_pages_pdf(
-    content_bytes: bytes, max_pages: int = _PDF_CLASSIFICATION_MAX_PAGES,
+def _extract_pdf_edges(
+    content_bytes: bytes,
+    first_pages: int = _PDF_EXCERPT_FIRST_PAGES,
+    last_pages: int = _PDF_EXCERPT_LAST_PAGES,
 ) -> bytes | None:
     """
-    Extracts the first `max_pages` of a PDF into a new, small,
-    in-memory PDF -- for classification purposes only, never
-    persisted anywhere. Real incident, S040: several genuine catalogs
-    of spare parts (150-270 MB) hit Vertex AI's real, documented PDF
-    limit (`52428800` bytes, 50 MiB) even referenced by `gs://` URI
-    (`Part.from_uri`) -- confirmed directly by the API's own error
-    message, not assumed. Since classification only needs to
-    recognise WHAT KIND of document this is (cover page, title,
-    header), not transcribe the whole thing, the first few pages are
-    enough -- almost always dramatically smaller than the full file.
+    Extracts the first `first_pages` AND the last `last_pages` of a
+    PDF into a new, small, in-memory PDF -- for classification
+    purposes only, never persisted anywhere. Real incident, S040:
+    several genuine catalogs of spare parts (150-270 MB) hit Vertex
+    AI's real, documented PDF limit (`52428800` bytes, 50 MiB) even
+    referenced by `gs://` URI (`Part.from_uri`) -- confirmed directly
+    by the API's own error message, not assumed. A second real limit
+    surfaced later (S042): a document can also be rejected for
+    exceeding Vertex AI's separate 1000-page ceiling regardless of
+    byte size (a text-heavy manual with few images can run to
+    thousands of pages while staying well under 50 MiB).
+
+    **Replaced first-N-pages-only with first+last, S042 -- Miguel
+    Ángel, on his own proposal after reviewing real data**: a sample
+    of 20 real dossiers Gemini had already correctly caught (multiple
+    distinct catalogued documents scanned together as one PDF, H29
+    3.14/S041) showed only 3 of 20 fit inside 3 pages and only 4 of 20
+    inside 5 -- median far higher, up to 176 pages, because the join
+    between the two documents can land anywhere. Bumping the page
+    count alone barely moved that number; what actually helps is
+    seeing BOTH edges of the file. Most dossiers stack a short
+    document at the very end of a longer one (or vice-versa), so the
+    first and last pages are exactly where the seam between the two
+    documents is most likely to be visible -- a letterhead or cover
+    that clearly doesn't match page 1 is a strong dossier signal even
+    without seeing anything in between. Only ever used as a fallback
+    for the rare oversized/over-page-limit file; the overwhelming
+    majority of files are still classified whole.
+
+    Since classification only needs to recognise WHAT KIND of
+    document this is (cover page, title, header) -- and, when
+    relevant, whether it is secretly more than one document -- a
+    handful of pages from each end are enough, almost always
+    dramatically smaller than the full file.
 
     Uses PyMuPDF (`fitz`), already a project dependency -- no new
     package needed, no `pip-compile`/`pip-sync` coordination required.
@@ -869,16 +937,43 @@ def _extract_first_pages_pdf(
 
     ---
 
-    Extrae las primeras `max_pages` de un PDF a un PDF nuevo, pequeño,
-    en memoria -- solo para clasificar, nunca se persiste en ningún
-    sitio. Incidente real, S040: varios catálogos de piezas reales
-    (150-270 MB) chocaban con el límite real y documentado de Vertex
-    AI para PDF (`52428800` bytes, 50 MiB) incluso referenciados por
-    URI `gs://` (`Part.from_uri`) -- confirmado directamente por el
-    propio mensaje de error de la API, no supuesto. Como clasificar
-    solo necesita reconocer DE QUÉ TIPO es el documento (portada,
-    título, cabecera), no transcribirlo entero, las primeras páginas
-    bastan -- casi siempre mucho más pequeñas que el archivo completo.
+    Extrae las primeras `first_pages` Y las últimas `last_pages` de un
+    PDF a un PDF nuevo, pequeño, en memoria -- solo para clasificar,
+    nunca se persiste en ningún sitio. Incidente real, S040: varios
+    catálogos de piezas reales (150-270 MB) chocaban con el límite
+    real y documentado de Vertex AI para PDF (`52428800` bytes, 50
+    MiB) incluso referenciados por URI `gs://` (`Part.from_uri`) --
+    confirmado directamente por el propio mensaje de error de la API,
+    no supuesto. Un segundo límite real apareció después (S042): un
+    documento también puede rechazarse por superar el techo SEPARADO
+    de 1000 páginas de Vertex AI sea cual sea su peso en bytes (un
+    manual de texto con pocas imágenes puede llegar a miles de páginas
+    y seguir pesando muy poco).
+
+    **Sustituido "solo primeras N páginas" por "primeras + últimas",
+    S042 -- Miguel Ángel, propuesta suya propia tras revisar datos
+    reales**: una muestra de 20 dosieres reales que Gemini ya había
+    detectado bien (varios documentos catalogados distintos
+    escaneados juntos como un único PDF, H29 3.14/S041) mostró que
+    solo 3 de 20 cabían en 3 páginas y solo 4 de 20 en 5 -- la
+    mediana muy por encima, hasta 176 páginas, porque la unión entre
+    los dos documentos puede caer en cualquier sitio. Subir solo el
+    número de páginas apenas movía esa cifra; lo que de verdad ayuda
+    es ver LOS DOS EXTREMOS del archivo. La mayoría de los dosieres
+    apilan un documento corto al final de uno más largo (o al
+    revés), así que el principio y el final son justo donde más
+    probable es que se vea la costura entre los dos documentos -- un
+    membrete o portada que claramente no encaja con la página 1 es una
+    señal fuerte de dosier incluso sin ver nada de en medio. Solo se
+    usa como último recurso para el archivo raro que supera el tamaño
+    o el límite de páginas; la inmensa mayoría de archivos se sigue
+    clasificando entero.
+
+    Como clasificar solo necesita reconocer DE QUÉ TIPO es el
+    documento (portada, título, cabecera) -- y, cuando aplica, si en
+    realidad son varios documentos distintos -- unas pocas páginas de
+    cada extremo bastan, casi siempre mucho más pequeñas que el
+    archivo completo.
 
     Usa PyMuPDF (`fitz`), ya dependencia del proyecto -- ningún
     paquete nuevo, ninguna coordinación de `pip-compile`/`pip-sync`
@@ -890,15 +985,23 @@ def _extract_first_pages_pdf(
     try:
         source = fitz.open(stream=content_bytes, filetype="pdf")
         try:
+            total = source.page_count
             excerpt = fitz.open()
-            page_count = min(max_pages, source.page_count)
-            excerpt.insert_pdf(source, from_page=0, to_page=page_count - 1)
+            if total <= first_pages + last_pages:
+                excerpt.insert_pdf(source, from_page=0, to_page=total - 1)
+            else:
+                excerpt.insert_pdf(
+                    source, from_page=0, to_page=first_pages - 1,
+                )
+                excerpt.insert_pdf(
+                    source, from_page=total - last_pages, to_page=total - 1,
+                )
             return excerpt.tobytes()
         finally:
             source.close()
     except Exception as exc:
         logger.warning(
-            "# [_extract_first_pages_pdf] Fallo extrayendo páginas: %s",
+            "# [_extract_pdf_edges] Fallo extrayendo páginas: %s",
             exc, exc_info=True,
         )
         return None
@@ -993,7 +1096,7 @@ def _convert_xps_to_pdf(content_bytes: bytes, extension: str) -> bytes | None:
     LibreOffice (6.4.7.2) has no XPS import filter at all
     ("Error: source file could not be loaded"). MuPDF -- the engine
     behind `fitz`, already a project dependency used elsewhere in this
-    same module for `_extract_first_pages_pdf()` -- describes itself
+    same module for `_extract_pdf_edges()` -- describes itself
     as "a lightweight PDF **and XPS** viewer" and opens both formats
     natively; `Document.convert_to_pdf()` is a documented, official
     PyMuPDF method, not a workaround. No new package, no
@@ -1018,7 +1121,7 @@ def _convert_xps_to_pdf(content_bytes: bytes, extension: str) -> bytes | None:
     LibreOffice del servidor (6.4.7.2) no trae ningún filtro de
     importación de XPS ("Error: source file could not be loaded").
     MuPDF -- el motor detrás de `fitz`, ya dependencia del proyecto,
-    usado en este mismo módulo para `_extract_first_pages_pdf()` -- se
+    usado en este mismo módulo para `_extract_pdf_edges()` -- se
     describe a sí mismo como "a lightweight PDF **and XPS** viewer" y
     abre ambos formatos de forma nativa; `Document.convert_to_pdf()`
     es un método oficial y documentado de PyMuPDF, no un rodeo. Ningún
@@ -1192,24 +1295,26 @@ def classify_entry(entry, domain: str | None = None) -> dict:
                 # ya está en el índice, así que se decide sin
                 # descargar nada de más.
                 content_bytes = download_bytes(entry.bucket, entry.blob_name)
-                excerpt = _extract_first_pages_pdf(content_bytes)
+                excerpt = _extract_pdf_edges(content_bytes)
                 if excerpt is None:
                     return {
                         "error": (
                             "El PDF supera el límite de 50 MB de "
-                            "Vertex AI y no se pudieron extraer las "
-                            "primeras páginas para clasificarlo "
+                            "Vertex AI y no se pudieron extraer sus "
+                            "páginas extremas para clasificarlo "
                             "igualmente (ver logs del servidor)."
                         ),
                     }
                 file_part = Part.from_bytes(
                     data=excerpt, mime_type="application/pdf",
                 )
+                is_partial_excerpt = True
             else:
                 file_part = Part.from_uri(
                     file_uri="gs://%s/%s" % (entry.bucket, entry.blob_name),
                     mime_type=mime_type,
                 )
+                is_partial_excerpt = False
         else:
             if extension in _XPS_EXTENSIONS:
                 content_bytes = download_bytes(entry.bucket, entry.blob_name)
@@ -1245,10 +1350,11 @@ def classify_entry(entry, domain: str | None = None) -> dict:
             file_part = Part.from_bytes(
                 data=converted, mime_type="application/pdf",
             )
+            is_partial_excerpt = False
 
         client = get_gemini_client()
 
-        def _call_gemini(part):
+        def _call_gemini(part, is_excerpt):
             return _generate_content_with_retry(
                 client,
                 model=DEFAULT_MODEL,
@@ -1256,6 +1362,7 @@ def classify_entry(entry, domain: str | None = None) -> dict:
                     part,
                     _build_prompt(
                         domain, getattr(entry, "curator_note", ""),
+                        is_partial_excerpt=is_excerpt,
                     ),
                 ],
                 config=GenerateContentConfig(
@@ -1267,7 +1374,7 @@ def classify_entry(entry, domain: str | None = None) -> dict:
             )
 
         try:
-            response = _call_gemini(file_part)
+            response = _call_gemini(file_part, is_partial_excerpt)
         except Exception as exc:
             if not _is_page_limit_error(exc):
                 raise
@@ -1279,20 +1386,20 @@ def classify_entry(entry, domain: str | None = None) -> dict:
             # ninguna segunda oportunidad. Mismo criterio que el
             # recorte por tamaño: clasificar solo necesita reconocer
             # el tipo de documento, no transcribirlo entero, así que
-            # las primeras páginas bastan.
+            # unas pocas páginas de cada extremo bastan.
             logger.warning(
                 "# [classify_entry] %s supera el límite de páginas "
                 "de Vertex AI, reintentando con extracto recortado.",
                 entry.blob_name,
             )
             content_bytes = download_bytes(entry.bucket, entry.blob_name)
-            excerpt = _extract_first_pages_pdf(content_bytes)
+            excerpt = _extract_pdf_edges(content_bytes)
             if excerpt is None:
                 raise
             file_part = Part.from_bytes(
                 data=excerpt, mime_type="application/pdf",
             )
-            response = _call_gemini(file_part)
+            response = _call_gemini(file_part, True)
         return json.loads(response.text.strip())
     except Exception as exc:
         logger.warning(
