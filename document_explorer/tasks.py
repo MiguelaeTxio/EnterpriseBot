@@ -480,6 +480,36 @@ def consume_quarantine_task(self) -> None:
                     "trash_reason": "ARCHIVO VACÍO ELIMINADO",
                     "relocated": False,
                 }
+            elif classification_service.resolve_duplicate_of_filed_document(
+                entry,
+            ):
+                # S042, Miguel Ángel, verbatim, tras el incidente real
+                # de A-69 Leasing BBVA.pdf (142 pasadas, dos filas
+                # vivas con el mismo CRC32C y tamaño, una ya archivada,
+                # otra dando vueltas por cuarentena sin fin): "cuando
+                # detecte un duplicado, borrarlo, el que se está
+                # colando, y dejamos el que ya tenemos guardado... se
+                # envía a la papelera." Ni CRC32C ni tamaño necesitan
+                # descargar nada -- ya están en la propia fila. Ver el
+                # docstring de resolve_duplicate_of_filed_document()
+                # para el alcance exacto (nunca toca el panel de
+                # Duplicados ni su propio flujo, solo cuarentena).
+                trashed_ok = classification_service.trash_dossier_entry(
+                    entry,
+                )
+                result = {
+                    "domain": "N/A", "document_type_code": "N/A",
+                    "confidence": "N/A",
+                    "reasoning": (
+                        "Duplicado exacto (mismo CRC32C y tamaño) de "
+                        "un documento ya archivado fuera de cuarentena "
+                        "-- eliminado automáticamente, sin pasar por "
+                        "Gemini."
+                    ),
+                    "trashed": trashed_ok,
+                    "trash_reason": "DUPLICADO YA ARCHIVADO ELIMINADO",
+                    "relocated": False,
+                }
             else:
                 # S042, Miguel Ángel, verbatim, tras ver dos archivos
                 # comprimidos reales cuyo contenido entero ya existía

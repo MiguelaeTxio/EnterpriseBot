@@ -728,6 +728,86 @@ def is_empty_file(entry) -> bool:
     return entry.size_bytes == 0
 
 
+def resolve_duplicate_of_filed_document(entry) -> bool:
+    """
+    True when `entry` is a byte-for-byte duplicate (same real CRC32C
+    + same size, both already indexed on the row -- no download, no
+    extraction, cheaper than `resolve_archive_redundancy()`) of a
+    document that ALREADY lives outside quarantine/NO CONFORMES --
+    i.e. a real, already-filed copy exists, and this one adds
+    nothing.
+
+    S042, Miguel Ángel, verbatim, after discovering the real incident
+    that motivated this: **"cuando detecte un duplicado, borrarlo, el
+    que se está colando, y dejamos el que ya tenemos guardado... se
+    envía a la papelera."** Real case that surfaced it: `A-69 Leasing
+    BBVA.pdf` had TWO live rows, identical CRC32C and size -- one
+    already correctly filed under `DOC. MAQUINAS/GRUAS MOVILES (A)/
+    A-69 SANY SAC700E`, the other endlessly cycling through quarantine
+    (142 classification passes, Gemini confidently resolving domain/
+    type nearly every time, never once relocating -- see
+    `RequeueNoConformesView`'s own docstring for the real root cause
+    of THAT loop, fixed separately). Even with that loop fixed, a
+    quarantine copy that is a pure duplicate of something already
+    filed has nothing left to classify -- Gemini would just confirm
+    what the real copy already proves.
+
+    Never touches the `duplicates_service.py` panel or its own
+    resolution flow (hash-group review, human-facing) -- this is a
+    narrower, automatic, pre-Gemini check specific to quarantine: is
+    there a REAL, already-filed twin RIGHT NOW, yes or no. `entry`
+    itself gets trashed (via the already-existing `trash_dossier_
+    entry()`, same recoverable per-user papelera) when this is True;
+    the kept copy is whichever one was already filed, untouched.
+
+    ---
+
+    Cierto cuando `entry` es un duplicado byte a byte (mismo CRC32C
+    real + mismo tamaño, los dos ya indexados en la propia fila --
+    sin descargar nada, sin extraer nada, más barato que
+    `resolve_archive_redundancy()`) de un documento que YA vive fuera
+    de cuarentena/NO CONFORMES -- es decir, ya existe una copia real,
+    archivada, y esta no aporta nada.
+
+    S042, Miguel Ángel, verbatim, tras descubrir el incidente real que
+    lo motivó: **"cuando detecte un duplicado, borrarlo, el que se
+    está colando, y dejamos el que ya tenemos guardado... se envía a
+    la papelera."** Caso real que lo sacó a la luz: `A-69 Leasing
+    BBVA.pdf` tenía DOS filas vivas, mismo CRC32C y tamaño idénticos --
+    una ya bien archivada bajo `DOC. MAQUINAS/GRUAS MOVILES (A)/A-69
+    SANY SAC700E`, la otra dando vueltas sin fin por cuarentena (142
+    pasadas de clasificación, Gemini resolviendo dominio/tipo con
+    confianza casi siempre, sin reubicar ni una sola vez -- ver el
+    propio docstring de `RequeueNoConformesView` para la causa raíz
+    real de ESE bucle, corregida aparte). Incluso con ese bucle ya
+    arreglado, una copia de cuarentena que es puro duplicado de algo
+    ya archivado no tiene nada que clasificar -- Gemini solo
+    confirmaría lo que la copia real ya demuestra.
+
+    Nunca toca el panel de `duplicates_service.py` ni su propio flujo
+    de resolución (revisión por grupos de hash, de cara al humano) --
+    esta es una comprobación más estrecha, automática, previa a
+    Gemini, específica de cuarentena: ¿existe ahora mismo un gemelo
+    REAL ya archivado, sí o no? La propia `entry` se envía a la
+    papelera (vía el ya existente `trash_dossier_entry()`, misma
+    papelera recuperable por usuario) cuando esto es Cierto; la copia
+    que se conserva es la que ya estaba archivada, intacta.
+    """
+    if not entry.crc32c or not entry.size_bytes:
+        return False
+    return (
+        DocumentIndexEntry.objects.filter(
+            bucket=entry.bucket, crc32c=entry.crc32c,
+            size_bytes=entry.size_bytes,
+            deleted_at__isnull=True, purged_at__isnull=True,
+        )
+        .exclude(pk=entry.pk)
+        .exclude(quarantine_scope_q())
+        .exclude(parent_path=NO_CONFORMES_PREFIX.rstrip("/"))
+        .exists()
+    )
+
+
 def resolve_archive_redundancy(entry) -> dict | None:
     """
     Checks whether a `.zip`/`.rar` quarantine file is 100% redundant
