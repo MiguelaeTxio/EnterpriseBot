@@ -580,6 +580,7 @@ class DataOperationLog(models.Model):
     OPERATION_BATCH_CLASSIFICATION = "BATCH_CLASSIFICATION"
     OPERATION_QUARANTINE_CONSUME = "QUARANTINE_CONSUME"
     OPERATION_REQUEUE_NO_CONFORMES = "REQUEUE_NO_CONFORMES"
+    OPERATION_TRASH = "TRASH"
     OPERATION_CHOICES = [
         (OPERATION_DUPLICATE_RESOLUTION, "Resolución de duplicados"),
         (OPERATION_BATCH_CLASSIFICATION, "Clasificación por lote"),
@@ -588,6 +589,7 @@ class DataOperationLog(models.Model):
             OPERATION_REQUEUE_NO_CONFORMES,
             "Reencolado manual de No Conformes",
         ),
+        (OPERATION_TRASH, "Borrado en bloque a la papelera"),
     ]
 
     operation_type = models.CharField(
@@ -709,6 +711,8 @@ class DataOperationLog(models.Model):
             return "Clasificadas con éxito"
         if self.operation_type == self.OPERATION_REQUEUE_NO_CONFORMES:
             return "Reencoladas a cuarentena"
+        if self.operation_type == self.OPERATION_TRASH:
+            return "Enviadas a la papelera"
         return "Copias conservadas"
 
     @property
@@ -719,6 +723,8 @@ class DataOperationLog(models.Model):
             return "Sin poder aplicar"
         if self.operation_type == self.OPERATION_REQUEUE_NO_CONFORMES:
             return "Sin poder reencolar"
+        if self.operation_type == self.OPERATION_TRASH:
+            return "Omitidas sin permiso de borrado"
         return "Copias enviadas a papelera"
 
     @property
@@ -746,6 +752,12 @@ class DataOperationLog(models.Model):
                 "Cada tarjeta es un archivo de No Conformes reencolado "
                 "a mano de vuelta a cuarentena -- si llevaba una "
                 "anotación del supervisor, queda anotado aquí."
+            )
+        if self.operation_type == self.OPERATION_TRASH:
+            return (
+                "Cada tarjeta es un archivo movido a la papelera del "
+                "propio usuario que actuó -- borrado lógico, nunca "
+                "definitivo, se puede restaurar desde Mi Papelera."
             )
         return (
             "Cada tarjeta es un grupo: arriba la copia que se "
