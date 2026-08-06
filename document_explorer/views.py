@@ -1183,6 +1183,19 @@ class BulkTrashView(ExplorerAccessMixin, View):
     are silently skipped, never fail the whole batch, same principle
     as `MoveScopeMixin._entries_or_404`.
 
+    **Auditable history, S042 -- Miguel Ángel, verbatim: "tener un
+    historial que diga, se han borrado los siguientes archivos: este,
+    este, este y este."** Writes a real `DataOperationLog`
+    (`OPERATION_TRASH`) with one `DataOperationLogEntry`
+    (`ACTION_TRASHED`) per file actually moved to trash -- same
+    pattern already used by `ClassifyView`/`RequeueNoConformesView`,
+    redirects to that operation's own detail page so the trail is the
+    very next thing seen. Deliberately scoped to THIS bulk view only,
+    not the single-file `SendToTrashView`'s quick per-row icon --
+    Miguel Ángel's own example was explicitly a batch ("borrarlos del
+    tirón"), and a full log entry for every routine single click
+    would clutter the operations history for no real benefit.
+
     ---
 
     Borrado lógico a la papelera del propio usuario que actúa, sobre
@@ -1214,6 +1227,20 @@ class BulkTrashView(ExplorerAccessMixin, View):
     que actúa no tenga permiso de borrar se omiten en silencio, nunca
     hacen fallar el lote entero, mismo principio que
     `MoveScopeMixin._entries_or_404`.
+
+    **Historial auditable, S042 -- Miguel Ángel, verbatim: "tener un
+    historial que diga, se han borrado los siguientes archivos: este,
+    este, este y este."** Escribe un `DataOperationLog` real
+    (`OPERATION_TRASH`) con una `DataOperationLogEntry`
+    (`ACTION_TRASHED`) por cada archivo realmente movido a la
+    papelera -- mismo patrón que ya usan `ClassifyView`/
+    `RequeueNoConformesView`, redirige a la propia página de detalle
+    de esa operación para que el rastro sea lo primero que se ve.
+    Acotado a propósito solo a esta vista en bloque, nunca al icono
+    rápido por fila de `SendToTrashView` -- el ejemplo del propio
+    Miguel Ángel era explícitamente en bloque ("borrarlos del tirón"),
+    y una entrada de historial completa por cada clic suelto rutinario
+    llenaría el historial de operaciones sin ningún beneficio real.
     """
 
     def post(self, request):
@@ -1237,6 +1264,15 @@ class BulkTrashView(ExplorerAccessMixin, View):
         redirect_bucket = None
         redirect_path = None
 
+        log = DataOperationLog.objects.create(
+            operation_type=DataOperationLog.OPERATION_TRASH,
+            performed_by=company_user,
+            bucket=entries[0].bucket if entries else PRIMARY_BUCKET,
+            path_prefix="",
+            status=DataOperationLog.STATUS_RUNNING,
+        )
+        group_number = 0
+
         for entry in entries:
             if not permissions.can_delete_in(
                 company_user, entry.bucket, entry.parent_path,
@@ -1250,6 +1286,28 @@ class BulkTrashView(ExplorerAccessMixin, View):
             entry.deleted_by = company_user
             entry.save(update_fields=["deleted_at", "deleted_by"])
             deleted += 1
+            group_number += 1
+            DataOperationLogEntry.objects.create(
+                log=log,
+                group_number=group_number,
+                action=DataOperationLogEntry.ACTION_TRASHED,
+                index_entry=entry,
+                bucket=entry.bucket,
+                blob_name=entry.blob_name,
+                name=entry.name,
+                parent_path=entry.parent_path,
+                size_bytes=entry.size_bytes,
+                crc32c=entry.crc32c,
+                detail="Movida a la papelera de %s." % company_user,
+            )
+
+        log.groups_count = deleted + skipped
+        log.kept_count = deleted
+        log.trashed_count = skipped
+        log.status = DataOperationLog.STATUS_COMPLETED
+        log.save(update_fields=[
+            "groups_count", "kept_count", "trashed_count", "status",
+        ])
 
         if deleted:
             messages.success(
@@ -1269,6 +1327,13 @@ class BulkTrashView(ExplorerAccessMixin, View):
                 "disponible.",
             )
 
+        if deleted:
+            return redirect(
+                reverse(
+                    "document_explorer:operation_log_detail",
+                    args=[log.pk],
+                )
+            )
         return redirect(
             "%s?bucket=%s&path=%s" % (
                 reverse("document_explorer:explorer"),
