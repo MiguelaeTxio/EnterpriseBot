@@ -111,9 +111,10 @@
             <label class="form-check-label small text-muted mb-0">
                 <input type="checkbox" class="form-check-input me-1"
                        title="Seleccionar todo (No Conformes)"
-                       onclick="document.querySelectorAll('#explorer-rows [name=entries][form=requeue-selected-form]').forEach(function(cb){cb.checked=this.checked;}, this)">
+                       onclick="document.querySelectorAll('#explorer-rows [name=entries][form=requeue-selected-form]').forEach(function(cb){cb.checked=this.checked;}, this); dxUpdateSelectedCount('requeue-selected-form','selected-count-requeue');">
                 Seleccionar todo
             </label>
+            <span id="selected-count-requeue" class="small text-muted">0 seleccionados</span>
             <button type="submit" form="requeue-selected-form"
                     class="btn btn-sm btn-outline-warning text-nowrap">
                 <i class="bi bi-arrow-repeat"></i> Reencolar seleccionados
@@ -139,13 +140,14 @@
         <label class="form-check-label small text-muted mb-0">
             <input type="checkbox" class="form-check-input me-1"
                    title="Seleccionar todo"
-                   onclick="document.querySelectorAll('#explorer-rows [name=entries]').forEach(function(cb){cb.checked=this.checked;}, this)">
+                   onclick="document.querySelectorAll('#explorer-rows [name=entries][form=classify-form]').forEach(function(cb){cb.checked=this.checked;}, this); dxUpdateSelectedCount('classify-form','selected-count-classify');">
             Seleccionar todo
         </label>
+        <span id="selected-count-classify" class="small text-muted">0 seleccionados</span>
         <button type="button" class="btn btn-sm btn-outline-primary"
                 data-bs-toggle="modal" data-bs-target="#moveModal"
                 hx-post="{% url 'document_explorer:move_browse' %}"
-                hx-include="#explorer-rows [name='entries']:checked"
+                hx-include="#explorer-rows [name='entries'][form='classify-form']:checked"
                 hx-vals='{"path": ""}'
                 hx-target="#move-modal-body">
             <i class="bi bi-folder-symlink"></i> Mover seleccionados
@@ -157,6 +159,45 @@
         </button>
     </div>
 {% endif %}
+
+{% comment %}
+    Contador de seleccionados (S042, Miguel Ángel: "que salga tantos
+    archivos seleccionados" junto al propio casillero "Seleccionar
+    todo") -- script único, delegación de eventos sobre `document`
+    para sobrevivir a los swaps de HTMX de este mismo fragmento sin
+    acumular listeners duplicados (guarda `window.
+    __dxSelectionCounterAttached`). De paso corrige un cruce real: el
+    "Seleccionar todo" de Mover/Clasificar usaba antes el selector
+    `[name=entries]` sin filtrar por `form`, así que en la propia
+    carpeta "NO CONFORMES" (donde conviven los checkboxes de
+    `classify-form` y `requeue-selected-form`, ambos `name="entries"`)
+    marcaba también los de reencolar por error -- ahora cada
+    "Seleccionar todo" y su `hx-include` quedan acotados al `form` que
+    de verdad les corresponde.
+{% endcomment %}
+<script>
+    if (!window.__dxSelectionCounterAttached) {
+        window.dxUpdateSelectedCount = function (formName, spanId) {
+            var n = document.querySelectorAll(
+                "#explorer-rows [name=entries][form=" + formName + "]:checked"
+            ).length;
+            var el = document.getElementById(spanId);
+            if (el) {
+                el.textContent = n + " seleccionado" + (n === 1 ? "" : "s");
+            }
+        };
+        document.addEventListener("change", function (e) {
+            if (!e.target.matches) { return; }
+            if (e.target.matches("[name=entries][form=classify-form]")) {
+                dxUpdateSelectedCount("classify-form", "selected-count-classify");
+            }
+            if (e.target.matches("[name=entries][form=requeue-selected-form]")) {
+                dxUpdateSelectedCount("requeue-selected-form", "selected-count-requeue");
+            }
+        });
+        window.__dxSelectionCounterAttached = true;
+    }
+</script>
 
 {% if denied %}
     <div class="alert alert-warning mb-0">
