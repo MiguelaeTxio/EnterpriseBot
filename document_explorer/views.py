@@ -1154,6 +1154,130 @@ class SendToTrashView(ExplorerAccessMixin, View):
         )
 
 
+class BulkTrashView(ExplorerAccessMixin, View):
+    """
+    Logical delete into the acting user's own trash, over a LIST of
+    entries -- S042, Miguel Ángel's explicit interface-simplification
+    directive: one checkbox per row, one "select all", and the
+    action buttons (mover, eliminar, reencolar) all work off that
+    SAME selection, never a separate parallel one per action.
+    Companion to the existing single-file `SendToTrashView`, which
+    stays untouched for the quick per-row trash icon -- this is the
+    bulk counterpart driven by the shared `entries` checkboxes,
+    exactly like `ClassifyView`/`RequeueNoConformesView` already work
+    over a list.
+
+    Real incident this avoids repeating (S042, `RequeueNoConformesView`):
+    an empty `entries` list is an explicit no-op, never a fallback to
+    "delete everything in the folder" -- there is no `all=1` marker
+    here at all, on purpose; deleting is destructive enough that a
+    silent "select nothing, delete everything" path must never exist
+    for it, unlike the deliberate "Reencolar todo" button.
+
+    Unlike `MoveScopeMixin` (admin-only, `PRIMARY_BUCKET`-only),
+    delete authority is per-folder (`can_delete_in`) and has no
+    bucket restriction -- a selection spanning several folders/
+    buckets (only realistic from a flattened search, though search
+    already disables `show_delete` entirely) is handled entry by
+    entry: whichever ones the acting user lacks delete permission for
+    are silently skipped, never fail the whole batch, same principle
+    as `MoveScopeMixin._entries_or_404`.
+
+    ---
+
+    Borrado lógico a la papelera del propio usuario que actúa, sobre
+    una LISTA de entradas -- S042, directriz explícita de
+    simplificación de interfaz de Miguel Ángel: un casillero por fila,
+    un "seleccionar todo", y los botones de acción (mover, eliminar,
+    reencolar) funcionan todos sobre esa MISMA selección, nunca una
+    paralela distinta por acción. Compañera del `SendToTrashView` de
+    un solo archivo ya existente, que se queda intacto para el icono
+    rápido de papelera por fila -- esta es la versión en bloque sobre
+    los mismos casilleros `entries` compartidos, igual que
+    `ClassifyView`/`RequeueNoConformesView` ya trabajan sobre una
+    lista.
+
+    Incidente real que esto evita repetir (S042,
+    `RequeueNoConformesView`): una lista `entries` vacía es un no-op
+    explícito, nunca un fallback a "borrar todo lo de la carpeta" --
+    aquí no existe ningún marcador `all=1` a propósito; borrar es
+    suficientemente destructivo como para que nunca exista un camino
+    silencioso de "no selecciones nada, se borra todo", a diferencia
+    del botón deliberado "Reencolar todo".
+
+    A diferencia de `MoveScopeMixin` (solo administrador, solo
+    `PRIMARY_BUCKET`), la autoridad de borrado es por carpeta
+    (`can_delete_in`) y no tiene restricción de cubo -- una selección
+    que abarque varias carpetas/cubos (solo realista desde una
+    búsqueda aplanada, aunque la búsqueda ya desactiva `show_delete`
+    por completo) se resuelve archivo a archivo: los que el usuario
+    que actúa no tenga permiso de borrar se omiten en silencio, nunca
+    hacen fallar el lote entero, mismo principio que
+    `MoveScopeMixin._entries_or_404`.
+    """
+
+    def post(self, request):
+        pks = request.POST.getlist("entries")
+        if not pks:
+            messages.info(
+                request, "No has seleccionado ningún archivo para "
+                "eliminar.",
+            )
+            return redirect(reverse("document_explorer:explorer"))
+
+        entries = list(
+            DocumentIndexEntry.objects.filter(
+                pk__in=pks,
+                deleted_at__isnull=True, purged_at__isnull=True,
+            )
+        )
+        company_user = request.user.company_user
+        deleted = 0
+        skipped = 0
+        redirect_bucket = None
+        redirect_path = None
+
+        for entry in entries:
+            if not permissions.can_delete_in(
+                company_user, entry.bucket, entry.parent_path,
+            ):
+                skipped += 1
+                continue
+            if redirect_bucket is None:
+                redirect_bucket = entry.bucket
+                redirect_path = entry.parent_path
+            entry.deleted_at = timezone.now()
+            entry.deleted_by = company_user
+            entry.save(update_fields=["deleted_at", "deleted_by"])
+            deleted += 1
+
+        if deleted:
+            messages.success(
+                request,
+                "%d archivo(s) movido(s) a tu papelera." % deleted,
+            )
+        if skipped:
+            messages.warning(
+                request,
+                "%d archivo(s) omitido(s) por falta de permiso de "
+                "borrado." % skipped,
+            )
+        if not deleted and not skipped:
+            messages.info(
+                request,
+                "Ninguno de los archivos seleccionados sigue "
+                "disponible.",
+            )
+
+        return redirect(
+            "%s?bucket=%s&path=%s" % (
+                reverse("document_explorer:explorer"),
+                redirect_bucket or PRIMARY_BUCKET,
+                redirect_path or "",
+            )
+        )
+
+
 class MoveScopeMixin(ExplorerAccessMixin):
     """
     Shared entry-resolution for every move-related view (H29, S039).

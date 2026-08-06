@@ -93,30 +93,58 @@
     </p>
 {% endif %}
 
-{% if is_no_conformes_folder and show_delete and entries %}
-    <form id="requeue-selected-form" method="post"
-          action="{% url 'document_explorer:no_conformes_requeue' %}">
+{% if can_move or show_delete %}
+    <form id="bulk-actions-form" method="post"
+          action="{% url 'document_explorer:classify' %}">
         {% csrf_token %}
+        <input type="hidden" name="path" value="{{ folder_path }}">
     </form>
+{% endif %}
+
+{% if is_no_conformes_folder and show_delete and entries %}
     <div class="alert alert-secondary py-2 mb-2">
-        <div class="small mb-2">
+        <div class="small mb-0">
             <i class="bi bi-info-circle"></i>
             Archivos que no se pudieron clasificar en su única pasada
-            por cuarentena. Anota una corrección si hace falta y
-            reencólalos cuando quieras -- sin relación con el estado
-            de la cola. Marca casilleros para reencolar solo algunos,
-            o usa "Reencolar todo" para el contenido completo.
+            por cuarentena. Anota una corrección si hace falta antes
+            de reencolar -- "Reencolar seleccionados" reencola lo que
+            marques abajo; "Reencolar todo" reencola el contenido
+            completo de la carpeta, sin selección.
         </div>
-        <div class="d-flex flex-wrap align-items-center gap-2">
-            <label class="form-check-label small text-muted mb-0">
-                <input type="checkbox" class="form-check-input me-1"
-                       title="Seleccionar todo para reencolar"
-                       onclick="dxSelectAllForForm('requeue-selected-form','selected-count-requeue', this);">
-                Seleccionar todo <strong>para reencolar</strong>
-            </label>
-            <span id="selected-count-requeue" class="small text-muted">0 seleccionados</span>
-            <button type="submit" form="requeue-selected-form"
-                    class="btn btn-sm btn-outline-warning text-nowrap">
+    </div>
+{% endif %}
+
+{% if can_move or show_delete %}
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+        <label class="form-check-label small text-muted mb-0">
+            <input type="checkbox" class="form-check-input me-1"
+                   title="Seleccionar todo"
+                   onclick="dxSelectAll('selected-count', this);">
+            Seleccionar todo
+        </label>
+        <span id="selected-count" class="small text-muted">0 seleccionados</span>
+
+        {% if can_move %}
+            <button type="button" class="btn btn-sm btn-outline-primary"
+                    data-bs-toggle="modal" data-bs-target="#moveModal"
+                    hx-post="{% url 'document_explorer:move_browse' %}"
+                    hx-include="#explorer-rows [name='entries']:checked"
+                    hx-vals='{"path": ""}'
+                    hx-target="#move-modal-body">
+                <i class="bi bi-folder-symlink"></i> Mover seleccionados
+            </button>
+            <button type="submit" form="bulk-actions-form"
+                    formaction="{% url 'document_explorer:classify' %}"
+                    class="btn btn-sm btn-outline-secondary"
+                    title="Clasifica con Gemini y renombra virtualmente (nunca toca el archivo real en la nube)">
+                <i class="bi bi-robot"></i> Clasificar seleccionados
+            </button>
+        {% endif %}
+
+        {% if is_no_conformes_folder and show_delete %}
+            <button type="submit" form="bulk-actions-form"
+                    formaction="{% url 'document_explorer:no_conformes_requeue' %}"
+                    class="btn btn-sm btn-outline-warning">
                 <i class="bi bi-arrow-repeat"></i> Reencolar seleccionados
             </button>
             <form method="post" class="d-inline"
@@ -127,75 +155,58 @@
                     <i class="bi bi-arrow-repeat"></i> Reencolar todo a cuarentena
                 </button>
             </form>
-        </div>
-    </div>
-{% endif %}
+        {% endif %}
 
-{% if can_move %}
-    <form id="classify-form" method="post"
-          action="{% url 'document_explorer:classify' %}">
-        {% csrf_token %}
-        <input type="hidden" name="path" value="{{ folder_path }}">
-    </form>
-    <div class="d-flex align-items-center gap-3 mb-2">
-        <label class="form-check-label small text-muted mb-0">
-            <input type="checkbox" class="form-check-input me-1"
-                   title="Seleccionar todo para mover/clasificar"
-                   onclick="dxSelectAllForForm('classify-form','selected-count-classify', this);">
-            Seleccionar todo <strong>para mover/clasificar</strong>
-        </label>
-        <span id="selected-count-classify" class="small text-muted">0 seleccionados</span>
-        <button type="button" class="btn btn-sm btn-outline-primary"
-                data-bs-toggle="modal" data-bs-target="#moveModal"
-                hx-post="{% url 'document_explorer:move_browse' %}"
-                hx-include="#explorer-rows [name='entries'][form='classify-form']:checked"
-                hx-vals='{"path": ""}'
-                hx-target="#move-modal-body">
-            <i class="bi bi-folder-symlink"></i> Mover seleccionados
-        </button>
-        <button type="submit" form="classify-form"
-                class="btn btn-sm btn-outline-secondary"
-                title="Clasifica con Gemini y renombra virtualmente (nunca toca el archivo real en la nube)">
-            <i class="bi bi-robot"></i> Clasificar seleccionados
-        </button>
+        {% if show_delete %}
+            <button type="submit" form="bulk-actions-form"
+                    formaction="{% url 'document_explorer:trash_bulk_add' %}"
+                    class="btn btn-sm btn-outline-danger"
+                    title="Mover los archivos seleccionados a tu papelera">
+                <i class="bi bi-trash"></i> Eliminar seleccionados
+            </button>
+        {% endif %}
     </div>
 {% endif %}
 
 {% comment %}
-    Contador de seleccionados (S042, Miguel Ángel: "que salga tantos
-    archivos seleccionados" junto al propio casillero "Seleccionar
-    todo") -- script único, delegación de eventos sobre `document`
-    para sobrevivir a los swaps de HTMX de este mismo fragmento sin
-    acumular listeners duplicados (guarda `window.
-    __dxSelectionCounterAttached`). De paso corrige un cruce real: el
-    "Seleccionar todo" de Mover/Clasificar usaba antes el selector
-    `[name=entries]` sin filtrar por `form`, así que en la propia
-    carpeta "NO CONFORMES" (donde conviven los checkboxes de
-    `classify-form` y `requeue-selected-form`, ambos `name="entries"`)
-    marcaba también los de reencolar por error -- ahora cada
-    "Seleccionar todo" y su `hx-include` quedan acotados al `form` que
-    de verdad les corresponde.
+    Selección única (S042, corrección directa de Miguel Ángel: "un
+    casillero por archivo... los botones que eliminen, muevan o
+    reencolen lo que haya seleccionado, punto pelota" -- la versión
+    anterior tenía DOS casilleros/formularios paralelos por archivo
+    en No Conformes, "Seleccionar todo" para mover/clasificar y otro
+    aparte para reencolar, que además coincidía visualmente con la
+    fila de anotación -- confuso de verdad, no solo en apariencia:
+    marcar uno no debía tocar el otro pero nada dejaba eso claro a
+    simple vista). Ahora un solo casillero (`bulk-actions-form`) y un
+    solo "Seleccionar todo" alimentan los cuatro botones posibles
+    (Mover, Clasificar, Reencolar seleccionados, Eliminar
+    seleccionados) -- cada botón decide su propio destino con
+    `formaction`, todos leen la misma selección. "Reencolar todo"
+    sigue siendo un botón aparte, deliberadamente sin selección (S041,
+    decisión explícita de Miguel Ángel: reencolar el contenido
+    completo de la carpeta "sin ninguna relación con el estado de la
+    cola").
 
     "Seleccionar todo" carga TODO antes de marcar (S042, incidente
-    real de Miguel Ángel: "MANUALES DE USO" decía 209 elementos, pero
-    "Seleccionar todo" solo marcaba 200 -- confirmado con datos reales
-    que la carpeta SÍ tenía 209 de verdad; el hueco era el scroll
-    infinito, `PAGE_SIZE = 200` en `FolderListingView`, no un dato
-    corrupto). `dxLoadAllPages()` encuentra el centinela `<tr
-    hx-trigger="revealed">` de `_rows.html` y le dispara el evento
-    `revealed` con la API pública de HTMX (nunca hace falta que entre
-    de verdad en el viewport), esperando cada `htmx:afterSwap` antes
-    de buscar el siguiente centinela -- repite hasta que no quede
-    ninguno, es decir, hasta que la carpeta entera esté en el DOM.
-    Solo entonces `dxSelectAllForForm()` marca los casilleros y
-    actualiza el contador, así que "Seleccionar todo" ahora significa
-    de verdad todo, sin excepción por paginación.
+    real: "MANUALES DE USO" decía 209 elementos, pero "Seleccionar
+    todo" solo marcaba 200 -- confirmado con datos reales que la
+    carpeta SÍ tenía 209 de verdad; el hueco era el scroll infinito,
+    `PAGE_SIZE = 200` en `FolderListingView`, no un dato corrupto).
+    `dxLoadAllPages()` encuentra el centinela `<tr hx-trigger=
+    "revealed">` de `_rows.html` y le dispara el evento `revealed` con
+    la API pública de HTMX (nunca hace falta que entre de verdad en el
+    viewport), esperando cada `htmx:afterSwap` antes de buscar el
+    siguiente centinela -- repite hasta que no quede ninguno, es
+    decir, hasta que la carpeta entera esté en el DOM. Solo entonces
+    `dxSelectAll()` marca los casilleros y actualiza el contador, así
+    que "Seleccionar todo" ahora significa de verdad todo, sin
+    excepción por paginación.
 {% endcomment %}
 <script>
     if (!window.__dxSelectionCounterAttached) {
-        window.dxUpdateSelectedCount = function (formName, spanId) {
+        window.dxUpdateSelectedCount = function (spanId) {
             var n = document.querySelectorAll(
-                "#explorer-rows [name=entries][form=" + formName + "]:checked"
+                "#explorer-rows [name=entries]:checked"
             ).length;
             var el = document.getElementById(spanId);
             if (el) {
@@ -242,15 +253,13 @@
             });
         };
 
-        window.dxSelectAllForForm = function (formName, spanId, checkboxEl) {
-            var selector = (
-                "#explorer-rows [name=entries][form=" + formName + "]"
-            );
+        window.dxSelectAll = function (spanId, checkboxEl) {
+            var selector = "#explorer-rows [name=entries]";
             if (!checkboxEl.checked) {
                 document.querySelectorAll(selector).forEach(function (cb) {
                     cb.checked = false;
                 });
-                dxUpdateSelectedCount(formName, spanId);
+                dxUpdateSelectedCount(spanId);
                 return;
             }
             checkboxEl.disabled = true;
@@ -260,18 +269,15 @@
                 document.querySelectorAll(selector).forEach(function (cb) {
                     cb.checked = true;
                 });
-                dxUpdateSelectedCount(formName, spanId);
+                dxUpdateSelectedCount(spanId);
                 checkboxEl.disabled = false;
             });
         };
 
         document.addEventListener("change", function (e) {
             if (!e.target.matches) { return; }
-            if (e.target.matches("[name=entries][form=classify-form]")) {
-                dxUpdateSelectedCount("classify-form", "selected-count-classify");
-            }
-            if (e.target.matches("[name=entries][form=requeue-selected-form]")) {
-                dxUpdateSelectedCount("requeue-selected-form", "selected-count-requeue");
+            if (e.target.matches("[name=entries]")) {
+                dxUpdateSelectedCount("selected-count");
             }
         });
         window.__dxSelectionCounterAttached = true;
@@ -287,7 +293,7 @@
         <table class="table table-sm table-hover align-middle mb-0 dx-explorer-table">
             <thead>
                 <tr>
-                    {% if can_move %}<th class="dx-col-select"></th>{% endif %}
+                    {% if can_move or show_delete %}<th class="dx-col-select"></th>{% endif %}
                     <th class="dx-col-icon"></th>
                     <th>
                         <a href="#" class="dx-sort-link"

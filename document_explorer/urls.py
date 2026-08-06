@@ -36,6 +36,11 @@ urlpatterns = [
         name="trash_add",
     ),
     path(
+        "borrar-seleccionados/",
+        views.BulkTrashView.as_view(),
+        name="trash_bulk_add",
+    ),
+    path(
         "mover/navegar/",
         views.MoveBrowseView.as_view(),
         name="move_browse",
