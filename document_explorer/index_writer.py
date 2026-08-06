@@ -29,12 +29,48 @@ borrado hecho desde el panel.
 """
 from django.apps import apps
 from django.contrib.contenttypes.models import ContentType
-from django.db.models import Count
+from django.db.models import Count, F
 
 from document_explorer.buckets import DOMAIN_MODEL_BY_BUCKET
 from document_explorer.models import DocumentIndexEntry, path_digest
 
 BATCH_SIZE = 1000
+
+
+def _adjust_total_size(bucket, folder_path, delta):
+    """
+    Propagate a size delta up every ancestor folder (including
+    `folder_path` itself) -- `total_size_bytes` is recursive, per
+    `DocumentIndexEntry`'s own docstring, so both the old and the new
+    location's whole chain need correcting, not just the immediate
+    parent. Lives here (not in `move_service.py`, which imports it)
+    because `persist_rows()` below needs it too, and `move_service.py`
+    already imports `ancestors_of`/`ensure_folder_chain` FROM this
+    module -- defining it there and importing it back here would be a
+    circular import.
+
+    ---
+
+    Propaga una diferencia de tamaño por todas las carpetas
+    antecesoras (incluida la propia `folder_path`) -- `total_size_
+    bytes` es recursivo, según el propio docstring de
+    `DocumentIndexEntry`, así que hay que corregir toda la cadena
+    tanto de la ubicación antigua como de la nueva, no solo el padre
+    inmediato. Vive aquí (no en `move_service.py`, que la importa)
+    porque `persist_rows()` de más abajo también la necesita, y
+    `move_service.py` ya importa `ancestors_of`/`ensure_folder_chain`
+    DESDE este módulo -- definirla allí e importarla de vuelta aquí
+    sería un import circular.
+    """
+    if not delta:
+        return
+    hashes = [path_digest(path) for path in ancestors_of(folder_path)]
+    if not hashes:
+        return
+    DocumentIndexEntry.objects.filter(
+        bucket=bucket, blob_name_hash__in=hashes,
+        deleted_at__isnull=True, purged_at__isnull=True,
+    ).update(total_size_bytes=F("total_size_bytes") + delta)
 
 
 def split_path(blob_name):
@@ -221,6 +257,12 @@ def persist_rows(bucket_name, rows, scope_hashes=None, skip_fields=()):
     """
     Create or update the given rows. Returns (created, updated).
 
+    Also propagates the real `size_bytes` of any brand-new FILE row
+    up its ancestor folders' `total_size_bytes` (S042, real incident
+    -- see `_adjust_total_size()`'s own note) -- never for updated/
+    already-existing rows, only genuinely new ones, so this never
+    double-counts a file this function has already seen before.
+
     `scope_hashes` limits the single read query to a known set of blob
     hashes -- used by the per-folder refresh so it does not have to
     load the whole bucket to update one folder.
@@ -258,6 +300,13 @@ def persist_rows(bucket_name, rows, scope_hashes=None, skip_fields=()):
     ---
 
     Crea o actualiza las filas dadas. Devuelve (creadas, actualizadas).
+
+    También propaga el `size_bytes` real de cualquier fila FILE
+    genuinamente nueva hacia el `total_size_bytes` de sus carpetas
+    antecesoras (S042, incidente real -- ver la propia nota de
+    `_adjust_total_size()`) -- nunca para filas actualizadas/ya
+    existentes, solo las genuinamente nuevas, así que esto nunca
+    cuenta dos veces un archivo que esta función ya había visto antes.
 
     `scope_hashes` acota la única consulta de lectura a un conjunto
     conocido de resúmenes -- lo usa el refresco por carpeta para no
@@ -338,6 +387,35 @@ def persist_rows(bucket_name, rows, scope_hashes=None, skip_fields=()):
         DocumentIndexEntry.objects.bulk_update(
             to_update, fields, batch_size=BATCH_SIZE,
         )
+
+    # Causa raíz real de la deriva negativa de total_size_bytes en
+    # _CUARENTENA (S042, confirmada con datos reales antes de escribir
+    # esto, nunca supuesta): un archivo NUEVO descubierto por este
+    # camino (refresh_quarantine_index_task, la red de seguridad
+    # horaria del webhook fallido) entraba aquí con su propio
+    # size_bytes correcto, pero SIN sumar nunca ese tamaño a sus
+    # carpetas antecesoras -- solo move_entry() sabe propagar tamaño.
+    # Cuando ese mismo archivo se reubicaba de verdad más tarde
+    # (move_entry SÍ resta al salir de donde estaba), el resultado era
+    # una resta sin su suma correspondiente -- el total se iba a
+    # negativo. `skip_fields` sigue protegiendo carpetas EXISTENTES de
+    # que un barrido parcial les ponga a cero un total ya calculado
+    # (S037); esto es un paso aparte, solo para archivos genuinamente
+    # nuevos, que sí propaga su tamaño real hacia arriba en el momento
+    # en que aparecen.
+    new_file_sizes_by_parent = {}
+    for entry in to_create:
+        if (
+            entry.entry_kind == DocumentIndexEntry.KIND_FILE
+            and entry.size_bytes
+        ):
+            new_file_sizes_by_parent[entry.parent_path] = (
+                new_file_sizes_by_parent.get(entry.parent_path, 0)
+                + entry.size_bytes
+            )
+    for parent_path, size_delta in new_file_sizes_by_parent.items():
+        _adjust_total_size(bucket_name, parent_path, size_delta)
+
     return len(to_create), len(to_update)
 
 
