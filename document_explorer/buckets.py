@@ -25,6 +25,8 @@ puede cambiar después de crear el cubo, bajo un comando que nunca
 estuvo pensado para tocarlo. Por eso el conjunto indexado se declara
 aquí.
 """
+from django.db.models import Q
+
 from spare_parts.gcs_service import (
     DELIVERY_NOTES_BUCKET,
     TASK_PHOTOS_BUCKET,
@@ -41,6 +43,78 @@ HISTORICAL_BUCKET = "cgs_grupo_alvarez"
 # indexan ni deben generar ninguna llamada a Gemini.
 QUARANTINE_PREFIX = "_CUARENTENA/"
 MARKS_PREFIX = "_CUARENTENA/_MARCAS/"
+
+
+def quarantine_scope_q(field="parent_path"):
+    """
+    Q filter matching a file's `field` (default `parent_path`) against
+    quarantine -- BOTH nested (`"_CUARENTENA/DOC. MAQUINAS/..."`, the
+    normal case, mirrors an original local folder) AND flat at the
+    bare quarantine root (`"_CUARENTENA"`, no trailing segment at
+    all).
+
+    Real incident, S042: `parent_path__startswith=QUARANTINE_PREFIX`
+    ("_CUARENTENA/", WITH the trailing slash) is a substring check --
+    a `parent_path` of exactly `"_CUARENTENA"` (11 chars) can never
+    start with a 12-char string that has one more character than it
+    does. `RequeueNoConformesView` (and any manual move to the bare
+    root) sets `parent_path` to precisely that value --
+    `move_service.move_entry()` always `.strip("/")`s its destination,
+    so there is no way to land a file's `parent_path` at
+    `"_CUARENTENA/"` with the trailing slash still on it; the root
+    itself is unavoidably the slash-less form. 133 files Miguel Ángel
+    requeued from NO CONFORMES landed there, invisible to `EN COLA`
+    and to `consume_quarantine_task`'s own query alike, silently
+    stuck forever -- confirmed with real data (`EN COLA: 0` while the
+    folder itself showed 196 files) before writing this fix, not
+    guessed.
+
+    Every place that needs "is this file in quarantine" must build
+    its filter through this helper from now on, never repeat the raw
+    `__startswith` -- `tasks.py`, `views.py`
+    (`QuarantineStatusView`) and the `repair_reverted_quarantine_
+    relocations` management command all had the exact same
+    incomplete check independently; fixing one and not the others
+    would just move the same incident somewhere else.
+
+    ---
+
+    Filtro Q que compara el `field` de un archivo (por defecto
+    `parent_path`) contra cuarentena -- TANTO anidado
+    (`"_CUARENTENA/DOC. MAQUINAS/..."`, el caso normal, refleja una
+    carpeta local original) COMO suelto en la raíz pelada de
+    cuarentena (`"_CUARENTENA"`, sin ningún segmento después).
+
+    Incidente real, S042: `parent_path__startswith=QUARANTINE_PREFIX`
+    ("_CUARENTENA/", CON la barra final) es una comprobación de
+    subcadena -- un `parent_path` de exactamente `"_CUARENTENA"` (11
+    caracteres) nunca puede empezar por una cadena de 12 caracteres
+    que tiene uno más que él. `RequeueNoConformesView` (y cualquier
+    movimiento manual a la raíz pelada) deja `parent_path` en
+    precisamente ese valor -- `move_service.move_entry()` siempre le
+    hace `.strip("/")` a su destino, así que no hay forma de que el
+    `parent_path` de un archivo termine siendo `"_CUARENTENA/"` con la
+    barra todavía puesta; la propia raíz es inevitablemente la forma
+    sin barra. 133 archivos que Miguel Ángel reencoló desde NO
+    CONFORMES aterrizaron ahí, invisibles tanto para `EN COLA` como
+    para la propia consulta de `consume_quarantine_task`, atascados en
+    silencio para siempre -- confirmado con datos reales (`EN COLA: 0`
+    mientras la propia carpeta mostraba 196 archivos) antes de escribir
+    este arreglo, nunca supuesto.
+
+    Cualquier sitio que necesite "¿está este archivo en cuarentena?"
+    debe construir su filtro a partir de este helper desde ahora,
+    nunca repetir el `__startswith` en crudo -- `tasks.py`, `views.py`
+    (`QuarantineStatusView`) y el comando de gestión `repair_reverted_
+    quarantine_relocations` tenían todos, cada uno por su cuenta,
+    exactamente la misma comprobación incompleta; arreglar uno y no
+    los demás solo movería el mismo incidente a otro sitio.
+    """
+    root = QUARANTINE_PREFIX.rstrip("/")
+    return (
+        Q(**{field: root})
+        | Q(**{"%s__startswith" % field: QUARANTINE_PREFIX})
+    )
 
 # Carpeta real (no un cajón técnico) en la raíz de "Directorio
 # Principal", hermana de DOC. MAQUINAS/DOC. PERSONAL -- decisión 3.14

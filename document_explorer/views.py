@@ -166,7 +166,7 @@ from document_explorer import (
 )
 from document_explorer.buckets import (
     BUCKET_DISPLAY_NAMES, INDEXED_BUCKETS, NO_CONFORMES_PREFIX,
-    PRIMARY_BUCKET, QUARANTINE_PREFIX,
+    PRIMARY_BUCKET, QUARANTINE_PREFIX, quarantine_scope_q,
 )
 from document_explorer.models import (
     DataOperationLog, DataOperationLogEntry, DocumentIndexEntry,
@@ -2171,11 +2171,11 @@ class QuarantineStatusView(ExplorerAccessMixin, TemplateView):
             raise Http404("Solo el administrador puede ver la cuarentena.")
 
         live_files = DocumentIndexEntry.objects.filter(
+            quarantine_scope_q(),
             bucket=PRIMARY_BUCKET,
             entry_kind=DocumentIndexEntry.KIND_FILE,
             deleted_at__isnull=True,
             purged_at__isnull=True,
-            parent_path__startswith=QUARANTINE_PREFIX,
         )
         machine_prefix = QUARANTINE_PREFIX + "DOC. MAQUINAS/"
         personal_prefix = QUARANTINE_PREFIX + "DOC. PERSONAL/"

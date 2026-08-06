@@ -399,16 +399,17 @@ def consume_quarantine_task(self) -> None:
     from document_explorer import classification_service, move_service
     from document_explorer.buckets import (
         NO_CONFORMES_PREFIX, PRIMARY_BUCKET, QUARANTINE_PREFIX,
+        quarantine_scope_q,
     )
     from document_explorer.models import DocumentIndexEntry
 
     entries = list(
         DocumentIndexEntry.objects.filter(
+            quarantine_scope_q(),
             bucket=PRIMARY_BUCKET,
             entry_kind=DocumentIndexEntry.KIND_FILE,
             deleted_at__isnull=True,
             purged_at__isnull=True,
-            parent_path__startswith=QUARANTINE_PREFIX,
         )
         .order_by("indexed_at")[:_QUARANTINE_CONSUME_BATCH_SIZE]
     )
