@@ -1612,20 +1612,31 @@ class RequeueNoConformesView(ExplorerAccessMixin, View):
     selection -- a real gap once the folder holds a mix of files that
     deserve different treatment (some belong straight in a real
     folder via a plain move, never back through Gemini). Fixed by
-    reading an OPTIONAL `entries` POST list:
+    reading an OPTIONAL `entries` POST list -- **but that first fix
+    had its own real incident, same session**: Miguel Ángel ticked 2
+    files in the *other* checkbox column (`classify-form`, for Mover/
+    Clasificar) by mistake, hit "Reencolar seleccionados" with
+    `requeue-selected-form` genuinely empty, and an empty selection
+    silently fell through to "requeue everything" -- 133 files moved
+    when he wanted 2. An empty selection must never mean "everything"
+    by default; "everything" now requires the explicit `all=1` marker
+    that only the self-contained "Reencolar todo" `<form>` sends:
 
-    - Present and non-empty (`_rows.html`'s per-row checkbox, tied via
-      `form="requeue-selected-form"`, never inside the same `<form>`
-      as the "Reencolar todo" button so ticking boxes can never change
-      what that other button does) -- only those rows, intersected
-      with what is actually still live in NO CONFORMES right now (a
-      stale pk from an already-moved/annotated-elsewhere row is
-      silently dropped, never 404s the whole batch, same principle as
-      `MoveScopeMixin._entries_or_404`).
-    - Absent/empty (the plain "Reencolar todo" button, its own
-      self-contained `<form>` with no checkboxes at all) -- every live
-      file in the folder, exactly the original all-or-nothing
-      behaviour.
+    - `entries` present and non-empty (`_rows.html`'s per-row
+      checkbox, tied via `form="requeue-selected-form"`, never inside
+      the same `<form>` as the "Reencolar todo" button so ticking
+      boxes can never change what that other button does) -- only
+      those rows, intersected with what is actually still live in NO
+      CONFORMES right now (a stale pk from an already-moved/annotated-
+      elsewhere row is silently dropped, never 404s the whole batch,
+      same principle as `MoveScopeMixin._entries_or_404`).
+    - `entries` empty AND `all=1` present (the plain "Reencolar todo"
+      button, its own self-contained `<form>` with the hidden marker
+      and no checkboxes at all) -- every live file in the folder,
+      exactly the original all-or-nothing behaviour.
+    - `entries` empty AND no `all=1` (anything else, including a
+      genuinely empty `requeue-selected-form` submission) -- explicit
+      no-op with a message, never a guess.
 
     `blob_name` never changes (4.12), so `quarantine_domain_for_entry`
     still reads the correct original domain off it regardless of how
@@ -1655,21 +1666,32 @@ class RequeueNoConformesView(ExplorerAccessMixin, View):
     archivos que merecen trato distinto (algunos van directos a una
     carpeta real mediante un simple mover, sin volver a pasar nunca
     por Gemini). Corregido leyendo una lista `entries` OPCIONAL en el
-    POST:
+    POST -- **pero ese primer arreglo tuvo su propio incidente real,
+    misma sesión**: Miguel Ángel marcó 2 archivos en la *otra* columna
+    de casilleros (`classify-form`, la de Mover/Clasificar) por error,
+    pulsó "Reencolar seleccionados" con `requeue-selected-form`
+    genuinamente vacío, y una selección vacía caía en silencio a
+    "reencolar todo" -- 133 archivos movidos cuando quería 2. Una
+    selección vacía nunca debe significar "todo" por defecto; "todo"
+    ahora exige el marcador explícito `all=1` que solo envía el
+    `<form>` autocontenido de "Reencolar todo":
 
-    - Presente y no vacía (casillero por fila de `_rows.html`, ligado
-      vía `form="requeue-selected-form"`, nunca dentro del mismo
-      `<form>` que el botón "Reencolar todo" para que marcar
-      casilleros nunca pueda cambiar lo que hace ese otro botón) --
-      solo esas filas, cruzadas con lo que sigue vivo de verdad en NO
-      CONFORMES ahora mismo (un pk obsoleto de una fila ya movida/
-      anotada en otro sitio se descarta en silencio, nunca hace
-      fallar el lote entero con un 404, mismo principio que
+    - `entries` presente y no vacía (casillero por fila de
+      `_rows.html`, ligado vía `form="requeue-selected-form"`, nunca
+      dentro del mismo `<form>` que el botón "Reencolar todo" para que
+      marcar casilleros nunca pueda cambiar lo que hace ese otro
+      botón) -- solo esas filas, cruzadas con lo que sigue vivo de
+      verdad en NO CONFORMES ahora mismo (un pk obsoleto de una fila
+      ya movida/anotada en otro sitio se descarta en silencio, nunca
+      hace fallar el lote entero con un 404, mismo principio que
       `MoveScopeMixin._entries_or_404`).
-    - Ausente/vacía (el botón simple "Reencolar todo", su propio
-      `<form>` autocontenido sin ningún casillero) -- todos los
-      archivos vivos de la carpeta, exactamente el comportamiento
-      original de todo-o-nada.
+    - `entries` vacía Y `all=1` presente (el botón simple "Reencolar
+      todo", su propio `<form>` autocontenido con el marcador oculto
+      y sin ningún casillero) -- todos los archivos vivos de la
+      carpeta, exactamente el comportamiento original de todo-o-nada.
+    - `entries` vacía Y sin `all=1` (cualquier otro caso, incluido un
+      envío de `requeue-selected-form` genuinamente vacío) -- no-op
+      explícito con un aviso, nunca una suposición.
 
     `blob_name` nunca cambia (4.12), así que `quarantine_domain_for_entry`
     sigue leyendo el dominio original correcto sobre él, sea cual sea
@@ -1701,9 +1723,33 @@ class RequeueNoConformesView(ExplorerAccessMixin, View):
             deleted_at__isnull=True, purged_at__isnull=True,
         )
         selected_pks = request.POST.getlist("entries")
-        is_partial = bool(selected_pks)
-        if is_partial:
+        is_all = request.POST.get("all") == "1"
+        if selected_pks:
             query = query.filter(pk__in=selected_pks)
+        elif not is_all:
+            # Incidente real S042: una selección vacía enviada desde
+            # "Reencolar seleccionados" (form=requeue-selected-form,
+            # sin marcador "all") caía por error en el mismo camino
+            # que "Reencolar todo" -- Miguel Ángel marcó 2 archivos en
+            # el casillero equivocado (mover/clasificar), el de
+            # reencolar llegó vacío, y una selección vacía se trataba
+            # en silencio como "todo" -- 133 archivos reencolados sin
+            # querer. Ahora "todo" SOLO ocurre con el marcador
+            # explícito que únicamente lleva el <form> autocontenido
+            # de "Reencolar todo a cuarentena" -- cualquier envío sin
+            # entries y sin ese marcador es un no-op explícito, nunca
+            # una suposición.
+            messages.info(
+                request, "No has seleccionado ningún archivo para "
+                "reencolar.",
+            )
+            return redirect(
+                "%s?bucket=%s&path=%s" % (
+                    reverse("document_explorer:explorer"),
+                    PRIMARY_BUCKET, no_conformes_path,
+                )
+            )
+        is_partial = bool(selected_pks)
         entries = list(query)
         if not entries:
             messages.info(
