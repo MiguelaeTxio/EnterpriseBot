@@ -2519,3 +2519,46 @@ suyos sacados de la documentación real"*.
   import_machine_catalog.py`, H23) — a revisar si se repite en otros
   activos cuando se aborde la documentación real en H28, sin asumir
   que es un caso aislado.
+
+## 9. Deuda técnica pendiente, explícitamente registrada (S042)
+
+Miguel Ángel, verbatim, tras confirmar el alcance de la primera mitad
+de esta pieza: *"Ok, pero que no caiga en saco roto, esta deuda
+técnica debe ser resuelta."*
+
+**Construido en S042:** `resolve_archive_redundancy()`
+(`classification_service.py`) detecta cuando un `.zip`/`.rar` de
+cuarentena es 100% redundante — cada entrada de dentro coincide, byte
+a byte (CRC32C real + tamaño, `archive_service.compute_crc32c()`),
+con un archivo ya archivado fuera de cuarentena/No Conformes — y lo
+borra solo, sin decisión humana, vía la papelera automática ya
+existente (`trash_dossier_entry()`). Corre antes que Gemini, nunca
+llega a intentar leer bytes comprimidos.
+
+**NO construido, deliberadamente fuera de alcance de S042 — esta es
+la deuda pendiente:** cuando un `.zip`/`.rar` de cuarentena trae
+contenido que **no** existe ya archivado en ningún sitio (el caso
+contrario al redundante), el sistema hoy se limita a dejarlo en No
+Conformes con una nota indicando cuántas entradas coincidieron y
+cuántas son nuevas — nadie extrae ni sube nada todavía.
+
+**Por qué se dejó aparte y no se resolvió en la misma sesión:**
+extraer contenido nuevo de dentro de un archivo comprimido y
+archivarlo de verdad exige **escribir objetos nuevos en GCS** — subir
+bytes reales a la nube, con su propio `blob_name`, su propia entrada
+en el índice, y solo entonces pasar por clasificación normal. Es una
+categoría de operación distinta a todo lo construido hasta ahora en
+H29 (mover, renombrar, borrar lógicamente, crear filas de índice —
+todo son escrituras de base de datos puras, `blob_name` nunca se toca,
+4.12). Escribir en GCS de verdad merece su propio diseño explícito
+(¿qué nombre de blob se le da al extraído? ¿en qué carpeta aterriza
+antes de clasificar — cuarentena, directamente en su destino final si
+se puede inferir? ¿qué pasa con el `.zip`/`.rar` original una vez
+extraído su contenido nuevo, se borra, se conserva?) — no algo que
+deba decidirse sobre la marcha como efecto colateral de otra pieza.
+
+**Pendiente para una sesión dedicada:** diseñar y construir la
+extracción + subida a GCS + indexación + clasificación normal del
+contenido genuinamente nuevo de un archivo comprimido de cuarentena,
+cerrando así el ciclo completo que empezó en S042 con la detección de
+redundancia.
