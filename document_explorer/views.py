@@ -2008,6 +2008,23 @@ class RequeueNoConformesView(ExplorerAccessMixin, View):
     different name was pure ambiguity, "no nos podemos agarrar a un
     clavo ardiendo... se cambia si es para mejorar."
 
+    **Fixed a third time, same session, most consequential of the
+    three: always requeued to the FLAT quarantine root, discarding
+    the file's own mirrored subfolder every single time.** Real
+    incident that surfaced it: `A-69 Leasing BBVA.pdf` had **142**
+    classification passes since 08-04, Gemini confidently resolving
+    domain=MACHINE/type=LEASING nearly every time, never once
+    relocating. Root cause: every requeue moved it to `_CUARENTENA`'s
+    bare root -- with no folder segment shaped like a fleet code left
+    to scan, `resolve_or_create_machine_asset()` never had anything to
+    resolve, so classification correctly identified the document but
+    could never place it, sending it straight back to NO CONFORMES --
+    and the next requeue destroyed the context again, a self-inflicted
+    loop with no natural end. Now restores the file's own real mirror
+    folder from `entry.blob_name` (never changes, 4.12) instead of the
+    flat root -- `_CUARENTENA/DOC. MAQUINAS/GRUAS MOVILES (A)/A-69
+    E-0124-BJL/`, not just `_CUARENTENA/`.
+
     Final shape, one single rule: `entries` is REQUIRED and must be
     non-empty. Empty -- whatever the reason, including a genuine
     "nothing ticked" -- is always an explicit no-op with a message,
@@ -2138,7 +2155,30 @@ class RequeueNoConformesView(ExplorerAccessMixin, View):
         quarantine_path = QUARANTINE_PREFIX.rstrip("/")
         with transaction.atomic():
             for group_number, entry in enumerate(entries, start=1):
-                move_service.move_entry(entry, quarantine_path)
+                # Incidente real S042, 142 pasadas de reclasificación
+                # para el MISMO archivo (`A-69 Leasing BBVA.pdf`):
+                # Gemini identificaba domain=MACHINE, tipo=LEASING,
+                # confianza ALTA prácticamente siempre, y aun así
+                # nunca reubicaba -- reencolar SIEMPRE mandaba a la
+                # raíz plana de `_CUARENTENA` (`quarantine_path`),
+                # nunca a la subcarpeta original del archivo. Sin
+                # ningún segmento de carpeta con forma de código de
+                # flota que escanear, `resolve_or_create_machine_
+                # asset()` nunca tenía de dónde tirar -- así que cada
+                # reencolado destruía por sí mismo el contexto que la
+                # siguiente pasada necesitaba, un ciclo que se repetía
+                # solo, sin fin, cada vez que alguien reencolaba.
+                # `blob_name` nunca cambia (4.12), así que la carpeta
+                # mirror original SIEMPRE sigue disponible ahí mismo
+                # -- se restaura en vez de descartarla.
+                if (
+                    "/" in entry.blob_name
+                    and entry.blob_name.startswith(QUARANTINE_PREFIX)
+                ):
+                    target_path = entry.blob_name.rsplit("/", 1)[0]
+                else:
+                    target_path = quarantine_path
+                move_service.move_entry(entry, target_path)
                 DataOperationLogEntry.objects.create(
                     log=log,
                     group_number=group_number,
