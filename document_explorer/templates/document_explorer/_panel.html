@@ -122,6 +122,7 @@
             <form method="post" class="d-inline"
                   action="{% url 'document_explorer:no_conformes_requeue' %}">
                 {% csrf_token %}
+                <input type="hidden" name="all" value="1">
                 <button type="submit" class="btn btn-sm btn-outline-warning text-nowrap">
                     <i class="bi bi-arrow-repeat"></i> Reencolar todo a cuarentena
                 </button>
