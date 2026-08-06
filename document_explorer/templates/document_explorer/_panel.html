@@ -110,9 +110,9 @@
         <div class="d-flex flex-wrap align-items-center gap-2">
             <label class="form-check-label small text-muted mb-0">
                 <input type="checkbox" class="form-check-input me-1"
-                       title="Seleccionar todo (No Conformes)"
+                       title="Seleccionar todo para reencolar"
                        onclick="document.querySelectorAll('#explorer-rows [name=entries][form=requeue-selected-form]').forEach(function(cb){cb.checked=this.checked;}, this); dxUpdateSelectedCount('requeue-selected-form','selected-count-requeue');">
-                Seleccionar todo
+                Seleccionar todo <strong>para reencolar</strong>
             </label>
             <span id="selected-count-requeue" class="small text-muted">0 seleccionados</span>
             <button type="submit" form="requeue-selected-form"
@@ -139,9 +139,9 @@
     <div class="d-flex align-items-center gap-3 mb-2">
         <label class="form-check-label small text-muted mb-0">
             <input type="checkbox" class="form-check-input me-1"
-                   title="Seleccionar todo"
+                   title="Seleccionar todo para mover/clasificar"
                    onclick="document.querySelectorAll('#explorer-rows [name=entries][form=classify-form]').forEach(function(cb){cb.checked=this.checked;}, this); dxUpdateSelectedCount('classify-form','selected-count-classify');">
-            Seleccionar todo
+            Seleccionar todo <strong>para mover/clasificar</strong>
         </label>
         <span id="selected-count-classify" class="small text-muted">0 seleccionados</span>
         <button type="button" class="btn btn-sm btn-outline-primary"
