@@ -678,6 +678,55 @@ def resolve_or_create_machine_asset(
     return asset
 
 
+def is_empty_file(entry) -> bool:
+    """
+    True when `entry` is a genuine 0-byte file -- real junk, never
+    ambiguous, confirmed against production data (S042): `pru4eba.
+    docx`/`pru4eba (1).docx`, both `size_bytes=0`, both sent to NO
+    CONFORMES with Gemini's own reasoning confirming there was
+    nothing to read ("El documento está completamente en blanco").
+    Zero bytes needs no API call to confirm it is empty -- calling
+    Gemini on it is pure wasted cost for a certain answer this check
+    already has for free.
+
+    S042, Miguel Ángel, same directive as `resolve_archive_
+    redundancy()`: **"no podemos nosotros borrar nada... dotar al
+    sistema de las herramientas pertinentes para que lo haga de forma
+    automática."** Runs before any Gemini call, same reasoning.
+
+    Deliberately narrow -- ONLY `size_bytes == 0`, never "small" or
+    "probably junk" by any fuzzier heuristic. A 1-byte file could
+    still be something real (a lone character someone typed); 0 bytes
+    cannot be anything at all, by definition, regardless of
+    extension.
+
+    ---
+
+    Cierto cuando `entry` es un archivo genuinamente de 0 bytes --
+    basura real, nunca ambigua, confirmado contra datos de producción
+    (S042): `pru4eba.docx`/`pru4eba (1).docx`, ambos `size_bytes=0`,
+    ambos enviados a NO CONFORMES con el propio razonamiento de
+    Gemini confirmando que no había nada que leer ("El documento está
+    completamente en blanco"). Cero bytes no necesita ninguna llamada
+    a la API para confirmar que está vacío -- llamar a Gemini para
+    esto es coste puro tirado por una respuesta segura que esta
+    comprobación ya tiene gratis.
+
+    S042, Miguel Ángel, misma directriz que
+    `resolve_archive_redundancy()`: **"no podemos nosotros borrar
+    nada... dotar al sistema de las herramientas pertinentes para que
+    lo haga de forma automática."** Corre antes de cualquier llamada a
+    Gemini, mismo razonamiento.
+
+    Deliberadamente estrecho -- SOLO `size_bytes == 0`, nunca
+    "pequeño" o "probablemente basura" por ninguna heurística más
+    difusa. Un archivo de 1 byte todavía podría ser algo real (un
+    único carácter que alguien tecleó); 0 bytes no puede ser nada en
+    absoluto, por definición, sea cual sea su extensión.
+    """
+    return entry.size_bytes == 0
+
+
 def resolve_archive_redundancy(entry) -> dict | None:
     """
     Checks whether a `.zip`/`.rar` quarantine file is 100% redundant
