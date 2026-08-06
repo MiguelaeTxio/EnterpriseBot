@@ -322,6 +322,14 @@ def _generate_content_with_retry(client, **kwargs):
     kept local to this app instead of importing that module's private
     helper across app boundaries.
 
+    **Extended S042, real incident**: 504 DEADLINE_EXCEEDED gave zero
+    retries -- confirmed against 24h of real production data, 25 of
+    359 `SENT_NO_CONFORMES` entries were a bare timeout, permanently
+    exiling a file to NO CONFORMES for a purely transient network/API
+    hiccup, exactly as if its content were genuinely unclassifiable.
+    A timeout deserves the same backoff-and-retry treatment as a 429 --
+    it says nothing about the document itself.
+
     ---
 
     Mismo patrón de reintento ya validado en
@@ -329,6 +337,15 @@ def _generate_content_with_retry(client, **kwargs):
     (slot de límite de tasa proactivo + hasta 3 intentos ante un 429 de
     Vertex AI), mantenido local a esta app en vez de importar el
     auxiliar privado de ese módulo cruzando el límite entre apps.
+
+    **Ampliado en S042, incidente real**: 504 DEADLINE_EXCEEDED no
+    tenía ningún reintento -- confirmado contra 24h de datos reales de
+    producción, 25 de 359 entradas `SENT_NO_CONFORMES` eran un simple
+    timeout, desterrando el archivo a NO CONFORMES para siempre por un
+    problema de red/API puramente transitorio, exactamente igual que
+    si su contenido fuera genuinamente inclasificable. Un timeout
+    merece el mismo tratamiento de espera-y-reintento que un 429 -- no
+    dice nada sobre el documento en sí.
     """
     last_exc = None
     for attempt in range(1, _MAX_GEMINI_ATTEMPTS + 1):
@@ -338,15 +355,18 @@ def _generate_content_with_retry(client, **kwargs):
         except Exception as exc:
             last_exc = exc
             exc_str = str(exc)
-            is_quota_error = (
+            is_retryable = (
                 "429" in exc_str or "RESOURCE_EXHAUSTED" in exc_str
+                or "504" in exc_str or "DEADLINE_EXCEEDED" in exc_str
+                or "503" in exc_str or "UNAVAILABLE" in exc_str
             )
-            if not is_quota_error or attempt == _MAX_GEMINI_ATTEMPTS:
+            if not is_retryable or attempt == _MAX_GEMINI_ATTEMPTS:
                 raise
             logger.warning(
-                "# [classification_service] 429 de Vertex AI "
-                "(intento %d/%d). Reintentando en %ds.",
-                attempt, _MAX_GEMINI_ATTEMPTS, _RETRY_DELAY_SECONDS,
+                "# [classification_service] Error transitorio de "
+                "Vertex AI (intento %d/%d): %s. Reintentando en %ds.",
+                attempt, _MAX_GEMINI_ATTEMPTS, exc_str[:200],
+                _RETRY_DELAY_SECONDS,
             )
             time.sleep(_RETRY_DELAY_SECONDS)
     raise last_exc  # pragma: no cover -- inalcanzable
@@ -1031,6 +1051,30 @@ def _convert_xps_to_pdf(content_bytes: bytes, extension: str) -> bytes | None:
         return None
 
 
+def _is_page_limit_error(exc) -> bool:
+    """
+    True when Vertex AI rejected the document for exceeding its
+    hard 1000-page limit -- a SEPARATE limit from the 50 MiB size
+    ceiling already handled above, confirmed real (S042): a genuine
+    1843-page operator manual, well under 45 MB, was rejected with
+    "The document contains 1843 pages which exceeds the supported
+    page limit of 1000." `classify_entry` catches this specifically
+    to retry with a trimmed excerpt instead of exiling the file.
+
+    ---
+
+    Cierto cuando Vertex AI rechazó el documento por superar su
+    límite duro de 1000 páginas -- un límite SEPARADO del techo de 50
+    MiB por tamaño ya tratado más arriba, confirmado real (S042): un
+    manual de operador real de 1843 páginas, muy por debajo de 45 MB,
+    fue rechazado con "The document contains 1843 pages which exceeds
+    the supported page limit of 1000." `classify_entry` lo detecta
+    específicamente para reintentar con un extracto recortado en vez
+    de desterrar el archivo.
+    """
+    return "exceeds the supported page limit" in str(exc)
+
+
 def classify_entry(entry, domain: str | None = None) -> dict:
     """
     Downloads the real object content from GCS and asks Gemini to
@@ -1056,6 +1100,14 @@ def classify_entry(entry, domain: str | None = None) -> dict:
     filter at all, see `_XPS_EXTENSIONS`'s comment for the real error.
     Only the converted PDF bytes are sent to Gemini; nothing about the
     conversion is persisted anywhere.
+
+    A PDF Vertex AI rejects for exceeding its 1000-page limit
+    (`_is_page_limit_error`, S042 -- separate from the 50 MiB size
+    ceiling below, confirmed real against a genuine 1843-page manual)
+    gets ONE retry with a trimmed excerpt instead of an immediate
+    error -- same reasoning as the size-based trim: recognising the
+    document's type only needs the first few pages, not the whole
+    thing.
 
     For file types Gemini already accepts natively (PDF, images...),
     this never downloads the object at all -- it hands Gemini a
@@ -1097,6 +1149,14 @@ def classify_entry(entry, domain: str | None = None) -> dict:
     `_XPS_EXTENSIONS` para el error real. Solo los bytes del PDF
     convertido se envían a Gemini; nada de la conversión se persiste
     en ningún sitio.
+
+    Un PDF que Vertex AI rechaza por superar su límite de 1000
+    páginas (`_is_page_limit_error`, S042 -- separado del techo de 50
+    MiB por tamaño de más abajo, confirmado real contra un manual
+    genuino de 1843 páginas) recibe UN reintento con un extracto
+    recortado en vez de un error inmediato -- mismo razonamiento que
+    el recorte por tamaño: reconocer el tipo de documento solo
+    necesita las primeras páginas, no el documento entero.
 
     Para los tipos que Gemini ya acepta de forma nativa (PDF,
     imágenes...), esto nunca descarga el objeto -- le pasa a Gemini
@@ -1187,20 +1247,52 @@ def classify_entry(entry, domain: str | None = None) -> dict:
             )
 
         client = get_gemini_client()
-        response = _generate_content_with_retry(
-            client,
-            model=DEFAULT_MODEL,
-            contents=[
-                file_part,
-                _build_prompt(domain, getattr(entry, "curator_note", "")),
-            ],
-            config=GenerateContentConfig(
-                http_options=HttpOptions(timeout=90_000),
-                response_mime_type="application/json",
-                response_schema=_RESPONSE_SCHEMA,
-                temperature=0.0,
-            ),
-        )
+
+        def _call_gemini(part):
+            return _generate_content_with_retry(
+                client,
+                model=DEFAULT_MODEL,
+                contents=[
+                    part,
+                    _build_prompt(
+                        domain, getattr(entry, "curator_note", ""),
+                    ),
+                ],
+                config=GenerateContentConfig(
+                    http_options=HttpOptions(timeout=90_000),
+                    response_mime_type="application/json",
+                    response_schema=_RESPONSE_SCHEMA,
+                    temperature=0.0,
+                ),
+            )
+
+        try:
+            response = _call_gemini(file_part)
+        except Exception as exc:
+            if not _is_page_limit_error(exc):
+                raise
+            # Incidente real S042: un manual real de 1843 páginas
+            # (muy por debajo del límite de 50 MB, así que llegó aquí
+            # por Part.from_uri sin pasar por el recorte de tamaño de
+            # más arriba) chocó con el límite SEPARADO de 1000
+            # páginas de Vertex AI y se desterraba a NO CONFORMES sin
+            # ninguna segunda oportunidad. Mismo criterio que el
+            # recorte por tamaño: clasificar solo necesita reconocer
+            # el tipo de documento, no transcribirlo entero, así que
+            # las primeras páginas bastan.
+            logger.warning(
+                "# [classify_entry] %s supera el límite de páginas "
+                "de Vertex AI, reintentando con extracto recortado.",
+                entry.blob_name,
+            )
+            content_bytes = download_bytes(entry.bucket, entry.blob_name)
+            excerpt = _extract_first_pages_pdf(content_bytes)
+            if excerpt is None:
+                raise
+            file_part = Part.from_bytes(
+                data=excerpt, mime_type="application/pdf",
+            )
+            response = _call_gemini(file_part)
         return json.loads(response.text.strip())
     except Exception as exc:
         logger.warning(
