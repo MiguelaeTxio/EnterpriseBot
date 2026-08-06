@@ -453,10 +453,64 @@ def consume_quarantine_task(self) -> None:
 
         for group_number, entry in enumerate(entries, start=1):
             original_name = entry.name
-            result = (
-                classification_service
-                .apply_quarantine_classification(entry)
+
+            # S042, Miguel Ángel, verbatim, tras ver dos archivos
+            # comprimidos reales cuyo contenido entero ya existía
+            # archivado por separado: "no podemos nosotros borrar
+            # nada... dotar al sistema de las herramientas
+            # pertinentes para que lo haga de forma automática." Se
+            # comprueba ANTES de Gemini -- nunca puede leer bytes de
+            # un .zip/.rar (ver classification_service._SUPPORTED_
+            # MIME_TYPES/_LIBREOFFICE_CONVERTIBLE_EXTENSIONS/
+            # _XPS_EXTENSIONS), así que intentarlo sería tiempo y
+            # coste real tirados. Ver el docstring de
+            # resolve_archive_redundancy() para el alcance exacto
+            # (solo BORRA cuando el 100% del contenido ya existe; con
+            # contenido genuinamente nuevo dentro se deja para NO
+            # CONFORMES, extraer y subir eso como objetos GCS nuevos
+            # es una decisión de infraestructura aparte).
+            redundancy = classification_service.resolve_archive_redundancy(
+                entry,
             )
+            if redundancy is not None and redundancy["fully_redundant"]:
+                matched = redundancy["matched_paths"]
+                trashed_ok = classification_service.trash_dossier_entry(
+                    entry,
+                )
+                result = {
+                    "domain": "N/A", "document_type_code": "N/A",
+                    "confidence": "N/A",
+                    "reasoning": (
+                        "Archivo comprimido cuyo contenido entero (%d "
+                        "archivo(s): %s) ya existe archivado por "
+                        "separado -- Gemini no puede leer bytes "
+                        "comprimidos, así que ni se ha intentado."
+                        % (len(matched), ", ".join(matched))
+                    ),
+                    "trashed": trashed_ok,
+                    "trash_reason": "ARCHIVO REDUNDANTE ELIMINADO",
+                    "relocated": False,
+                }
+            elif redundancy is not None:
+                matched = redundancy["matched_paths"]
+                result = {
+                    "error": (
+                        "Archivo comprimido -- %d de sus archivos ya "
+                        "existen archivados por separado (%s), pero "
+                        "el resto es contenido nuevo. Gemini no puede "
+                        "leer archivos comprimidos; extraer y archivar "
+                        "lo nuevo requiere revisión manual."
+                        % (
+                            len(matched),
+                            ", ".join(matched) if matched else "ninguno",
+                        )
+                    ),
+                }
+            else:
+                result = (
+                    classification_service
+                    .apply_quarantine_classification(entry)
+                )
 
             if "error" in result:
                 pending_count += 1
@@ -497,7 +551,11 @@ def consume_quarantine_task(self) -> None:
                 elif result.get("trashed"):
                     dossier_trashed_count += 1
                     action = DataOperationLogEntry.ACTION_TRASHED
-                    detail = "[DOSSIER ELIMINADO] " + detail
+                    detail = (
+                        "[%s] " % result.get(
+                            "trash_reason", "DOSSIER ELIMINADO",
+                        )
+                    ) + detail
                 else:
                     pending_count += 1
                     action = DataOperationLogEntry.ACTION_SENT_TO_NO_CONFORMES
