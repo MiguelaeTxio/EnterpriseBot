@@ -1,0 +1,72 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/document_explorer/templates/document_explorer/archive_preview.html #}
+{% extends "panel/base.html" %}
+{% load static %}
+
+{% block extra_head %}
+    <link rel="stylesheet" href="{% static 'document_explorer/css/explorer.css' %}">
+{% endblock extra_head %}
+
+{% comment %}
+    Visor de contenido de archivos .zip (H29, S042) -- ver
+    ArchivePreviewView. Solo lectura, nunca escribe nada; las imágenes
+    y PDF de dentro se abren en pestaña nueva vía ArchiveEntryOpenView,
+    el resto de tipos solo muestra nombre/peso (sin botón de ver).
+{% endcomment %}
+
+{% block title %}Contenido de {{ entry.name }}{% endblock title %}
+{% block page_title %}Contenido de «{{ entry.name }}»{% endblock page_title %}
+
+{% block content %}
+<div class="container-fluid px-3 pt-3">
+
+    <div class="d-flex align-items-center justify-content-between mb-3">
+        <p class="text-muted small mb-0">
+            <i class="bi bi-info-circle"></i>
+            {{ items|length }} archivo(s) dentro. Imágenes y PDF se pueden
+            ver directamente; el resto solo se lista.
+        </p>
+        <a class="btn btn-sm btn-outline-secondary"
+           href="{% url 'document_explorer:explorer' %}?bucket={{ entry.bucket }}&path={{ entry.parent_path }}">
+            <i class="bi bi-arrow-left"></i> Volver a la carpeta
+        </a>
+    </div>
+
+    {% if error %}
+        <div class="alert alert-danger">{{ error }}</div>
+    {% elif not items %}
+        <p class="text-muted">Este .zip no contiene ningún archivo.</p>
+    {% else %}
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th>Ruta dentro del .zip</th>
+                        <th class="text-end">Tamaño</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in items %}
+                        <tr>
+                            <td class="text-break font-monospace small">{{ item.path }}</td>
+                            <td class="text-end small text-muted">
+                                {{ item.size|filesizeformat }}
+                            </td>
+                            <td class="text-end">
+                                {% if item.can_view %}
+                                    <a class="btn btn-sm btn-outline-primary"
+                                       href="{% url 'document_explorer:archive_entry_open' entry.pk %}?path={{ item.path|urlencode }}"
+                                       target="_blank" rel="noopener">
+                                        <i class="bi bi-eye"></i> Ver
+                                    </a>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% endif %}
+
+</div>
+{% endblock content %}
