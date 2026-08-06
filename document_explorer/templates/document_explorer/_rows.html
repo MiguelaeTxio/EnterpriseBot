@@ -36,35 +36,42 @@
     Ordenar por "Nombre" sigue ordenando por el nombre de blob real,
     no por el amigable -- limitación conocida, sin resolver todavía.
 
-    Mover en bloque (S039, idea de Miguel Ángel: "filtramos con la
-    palabra manual... marcamos el casillero y movemos todo de un
-    golpe"): el casillero `name="entries"` aparece también en modo
-    búsqueda -- a diferencia del borrado, mover está siempre acotado a
-    administrador y a PRIMARY_BUCKET (ver MoveScopeMixin en views.py),
-    así que no hereda el problema de permisos mixtos por carpeta que
-    sí tiene el borrado en un listado aplanado.
+    Selección unificada (S039, ampliada S042 tras corrección directa
+    de Miguel Ángel: "un casillero por archivo... los botones que
+    eliminen, muevan o reencolen lo que haya seleccionado, punto
+    pelota" -- nunca dos casilleros/formularios paralelos para el
+    mismo archivo). UN solo casillero `name="entries"
+    form="bulk-actions-form"` por fila, visible siempre que exista al
+    menos una acción en bloque disponible (`can_move` para mover/
+    clasificar, o `show_delete` para eliminar/reencolar) -- todos los
+    botones de `_panel.html` leen la MISMA selección, cada uno con su
+    propio `formaction`. El casillero aparece también en modo
+    búsqueda para mover (acotado siempre a administrador y
+    `PRIMARY_BUCKET`, ver `MoveScopeMixin` en views.py, así que no
+    hereda el problema de permisos mixtos por carpeta que sí tiene el
+    borrado en un listado aplanado -- por eso `show_delete` ya viene
+    en `False` desde la propia vista en modo búsqueda).
 
     No Conformes (H29, S042, decisión 3.14 ampliada): cuando
     `is_no_conformes_folder` y `show_delete` son ambos ciertos (mismo
     permiso `can_delete_in` que ya gobierna el borrado), cada fila de
-    archivo añade una fila extra debajo con un casillero de selección
-    (`form="requeue-selected-form"`, nunca dentro del `<form>` del
-    botón "Reencolar todo" -- ver _panel.html, para que marcar
-    casilleros jamás cambie lo que hace ese otro botón) más un
-    formulario de anotación -- texto libre que la próxima llamada a
-    Gemini (`classify_entry`/`_build_prompt`) lee como corrección
-    prioritaria al reencolar. Nunca se muestra fuera de esa carpeta ni
-    para carpetas: ambas cosas solo tienen sentido sobre un archivo
-    concreto en proceso de desambiguación.
+    archivo añade una fila extra debajo con un formulario de
+    anotación -- texto libre que la próxima llamada a Gemini
+    (`classify_entry`/`_build_prompt`) lee como corrección prioritaria
+    al reencolar. Ya NO lleva su propio casillero -- reencolar usa el
+    mismo casillero único de la fila principal, no uno aparte. Nunca
+    se muestra fuera de esa carpeta ni para carpetas: la anotación
+    solo tiene sentido sobre un archivo concreto en proceso de
+    desambiguación.
 {% endcomment %}
 
 {% for entry in entries %}
     <tr>
-        {% if can_move %}
+        {% if can_move or show_delete %}
             <td>
-                {% if entry.pk and not entry.is_folder and entry.bucket == primary_bucket %}
+                {% if entry.pk and not entry.is_folder %}
                     <input type="checkbox" name="entries" value="{{ entry.pk }}"
-                           form="classify-form"
+                           form="bulk-actions-form"
                            class="form-check-input" aria-label="Seleccionar">
                 {% endif %}
             </td>
@@ -130,11 +137,6 @@
     </tr>
     {% if is_no_conformes_folder and show_delete and not entry.is_folder %}
         <tr>
-            <td class="align-top pt-2">
-                <input type="checkbox" name="entries" value="{{ entry.pk }}"
-                       form="requeue-selected-form"
-                       class="form-check-input" aria-label="Seleccionar">
-            </td>
             <td colspan="100%" class="pt-0 pb-2">
                 <form method="post" class="d-flex gap-2 align-items-start"
                       action="{% url 'document_explorer:no_conformes_annotate' entry.pk %}">
