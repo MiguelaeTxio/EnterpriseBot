@@ -118,6 +118,20 @@ _LIBREOFFICE_CONVERTIBLE_EXTENSIONS = {
 }
 _SOFFICE_TIMEOUT_SECONDS = 90
 
+# XPS/OpenXPS -- deliberadamente FUERA de
+# _LIBREOFFICE_CONVERTIBLE_EXTENSIONS. S042, Miguel Ángel: un tríptico
+# real de una minigrúa cayó en NO CONFORMES por esto exacto --
+# comprobado empíricamente contra ese mismo archivo antes de escribir
+# una sola línea de este arreglo (método empírico, nunca bola de
+# cristal): `soffice --convert-to pdf` sobre él responde "Error:
+# source file could not be loaded" (LibreOffice 6.4.7.2 del servidor
+# no trae el filtro de importación XPS). `fitz` (PyMuPDF, ya
+# dependencia del proyecto -- MuPDF es literalmente "a lightweight
+# PDF **and XPS** viewer") sí lo abre y convierte sin problema, mismo
+# archivo, mismo comando de verificación: `fitz.open(stream=...,
+# filetype="xps").convert_to_pdf()`. Ver `_convert_xps_to_pdf()`.
+_XPS_EXTENSIONS = {"xps", "oxps"}
+
 # Límite real confirmado por la propia API de Vertex AI en producción
 # (S040, no documentado con este detalle en la guía general de
 # tamaños en línea): un PDF no puede superar 52428800 bytes (50 MiB)
@@ -951,6 +965,72 @@ def _convert_to_pdf(content_bytes: bytes, extension: str) -> bytes | None:
             return f.read()
 
 
+def _convert_xps_to_pdf(content_bytes: bytes, extension: str) -> bytes | None:
+    """
+    Converts an XPS/OpenXPS document to PDF using `fitz` (PyMuPDF) --
+    never `_convert_to_pdf()`/`soffice`, confirmed by direct test
+    against a real production file (S042) that the server's
+    LibreOffice (6.4.7.2) has no XPS import filter at all
+    ("Error: source file could not be loaded"). MuPDF -- the engine
+    behind `fitz`, already a project dependency used elsewhere in this
+    same module for `_extract_first_pages_pdf()` -- describes itself
+    as "a lightweight PDF **and XPS** viewer" and opens both formats
+    natively; `Document.convert_to_pdf()` is a documented, official
+    PyMuPDF method, not a workaround. No new package, no
+    `pip-compile`/`pip-sync` coordination needed.
+
+    The resulting PDF is very likely image-only with no extractable
+    text layer -- confirmed on the real test file, an XPS produced by
+    printing rather than authored directly. That's fine here: Gemini
+    reads the PDF Part visually (multimodal), it never depends on a
+    text layer to classify a document, so an image-only page is a
+    completely normal, fully classifiable input.
+
+    Returns None on any failure (corrupt input, unexpected structure)
+    -- callers must fall back to the "unsupported" error path, same
+    contract as `_convert_to_pdf()`.
+
+    ---
+
+    Convierte un documento XPS/OpenXPS a PDF usando `fitz` (PyMuPDF)
+    -- nunca `_convert_to_pdf()`/`soffice`, confirmado con una prueba
+    directa contra un archivo real de producción (S042): el
+    LibreOffice del servidor (6.4.7.2) no trae ningún filtro de
+    importación de XPS ("Error: source file could not be loaded").
+    MuPDF -- el motor detrás de `fitz`, ya dependencia del proyecto,
+    usado en este mismo módulo para `_extract_first_pages_pdf()` -- se
+    describe a sí mismo como "a lightweight PDF **and XPS** viewer" y
+    abre ambos formatos de forma nativa; `Document.convert_to_pdf()`
+    es un método oficial y documentado de PyMuPDF, no un rodeo. Ningún
+    paquete nuevo, ninguna coordinación de `pip-compile`/`pip-sync`
+    necesaria.
+
+    El PDF resultante muy probablemente queda basado en imagen, sin
+    capa de texto extraíble -- confirmado en el propio archivo real de
+    prueba, un XPS generado por impresión y no redactado
+    directamente. Aquí no importa: Gemini lee el Part del PDF de forma
+    visual (multimodal), nunca depende de una capa de texto para
+    clasificar, así que una página basada en imagen es una entrada
+    perfectamente normal y clasificable.
+
+    Devuelve None ante cualquier fallo (entrada corrupta, estructura
+    inesperada) -- quien llama debe caer al camino de "no soportado",
+    mismo contrato que `_convert_to_pdf()`.
+    """
+    try:
+        source = fitz.open(stream=content_bytes, filetype=extension)
+        try:
+            return source.convert_to_pdf()
+        finally:
+            source.close()
+    except Exception as exc:
+        logger.warning(
+            "# [_convert_xps_to_pdf] Fallo convirtiendo .%s a PDF: %s",
+            extension, exc, exc_info=True,
+        )
+        return None
+
+
 def classify_entry(entry, domain: str | None = None) -> dict:
     """
     Downloads the real object content from GCS and asks Gemini to
@@ -970,9 +1050,12 @@ def classify_entry(entry, domain: str | None = None) -> dict:
     Office documents (`.docx`/`.xlsx`/`.pptx`/...) are converted to
     PDF first via `_convert_to_pdf()` -- Gemini's own mimeType
     allow-list doesn't cover Office formats directly (see
-    `_SUPPORTED_MIME_TYPES`'s docstring). Only the converted PDF bytes
-    are sent to Gemini; nothing about the conversion is persisted
-    anywhere.
+    `_SUPPORTED_MIME_TYPES`'s docstring). XPS/OpenXPS (`.xps`/`.oxps`)
+    go through the separate `_convert_xps_to_pdf()` (`fitz`) instead --
+    S042, `soffice` confirmed by direct test to have no XPS import
+    filter at all, see `_XPS_EXTENSIONS`'s comment for the real error.
+    Only the converted PDF bytes are sent to Gemini; nothing about the
+    conversion is persisted anywhere.
 
     For file types Gemini already accepts natively (PDF, images...),
     this never downloads the object at all -- it hands Gemini a
@@ -1007,7 +1090,11 @@ def classify_entry(entry, domain: str | None = None) -> dict:
     Los documentos de Office (`.docx`/`.xlsx`/`.pptx`/...) se
     convierten primero a PDF vía `_convert_to_pdf()` -- la lista de
     mimeTypes que acepta Gemini no cubre Office directamente (ver el
-    docstring de `_SUPPORTED_MIME_TYPES`). Solo los bytes del PDF
+    docstring de `_SUPPORTED_MIME_TYPES`). XPS/OpenXPS (`.xps`/
+    `.oxps`) pasa en cambio por `_convert_xps_to_pdf()` (`fitz`) --
+    S042, se confirmó con una prueba directa que `soffice` no trae
+    ningún filtro de importación de XPS, ver el comentario de
+    `_XPS_EXTENSIONS` para el error real. Solo los bytes del PDF
     convertido se envían a Gemini; nada de la conversión se persiste
     en ningún sitio.
 
@@ -1064,22 +1151,35 @@ def classify_entry(entry, domain: str | None = None) -> dict:
                     mime_type=mime_type,
                 )
         else:
-            if extension not in _LIBREOFFICE_CONVERTIBLE_EXTENSIONS:
+            if extension in _XPS_EXTENSIONS:
+                content_bytes = download_bytes(entry.bucket, entry.blob_name)
+                converted = _convert_xps_to_pdf(content_bytes, extension)
+                if converted is None:
+                    return {
+                        "error": (
+                            "No se pudo convertir .%s a PDF con fitz/"
+                            "PyMuPDF para poder clasificarlo (ver logs "
+                            "del servidor para el detalle)." % extension
+                        ),
+                    }
+            elif extension in _LIBREOFFICE_CONVERTIBLE_EXTENSIONS:
+                content_bytes = download_bytes(entry.bucket, entry.blob_name)
+                converted = _convert_to_pdf(content_bytes, extension)
+                if converted is None:
+                    return {
+                        "error": (
+                            "No se pudo convertir .%s a PDF con "
+                            "LibreOffice para poder clasificarlo (ver "
+                            "logs del servidor para el detalle)."
+                            % extension
+                        ),
+                    }
+            else:
                 return {
                     "error": (
                         "Tipo de archivo no soportado para clasificación "
                         "con Gemini (%s) y sin conversión conocida para "
                         "la extensión .%s." % (mime_type, extension)
-                    ),
-                }
-            content_bytes = download_bytes(entry.bucket, entry.blob_name)
-            converted = _convert_to_pdf(content_bytes, extension)
-            if converted is None:
-                return {
-                    "error": (
-                        "No se pudo convertir .%s a PDF con LibreOffice "
-                        "para poder clasificarlo (ver logs del servidor "
-                        "para el detalle)." % extension
                     ),
                 }
             file_part = Part.from_bytes(
