@@ -82,7 +82,7 @@ informe sin escribir nada.
 """
 from django.core.management.base import BaseCommand
 
-from document_explorer.buckets import QUARANTINE_PREFIX
+from document_explorer.buckets import quarantine_scope_q
 from document_explorer.classification_service import trash_dossier_entry
 from document_explorer.models import DataOperationLogEntry, DocumentIndexEntry
 from document_explorer.move_service import move_entry
@@ -115,11 +115,11 @@ class Command(BaseCommand):
 
         pending = list(
             DocumentIndexEntry.objects.filter(
+                quarantine_scope_q(),
                 bucket=bucket,
                 entry_kind=DocumentIndexEntry.KIND_FILE,
                 deleted_at__isnull=True,
                 purged_at__isnull=True,
-                parent_path__startswith=QUARANTINE_PREFIX,
             ).order_by("indexed_at")
         )
         self.stdout.write(self.style.MIGRATE_HEADING(
