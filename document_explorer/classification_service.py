@@ -551,7 +551,7 @@ _DEFAULT_MACHINE_COMPANY_CODE = "GRA"
 # como `code` cuando no hay código de flota clásico que asignar
 # (4542KGD, 6788DMV, 3072MDV) -- mismo patrón que este bloque replica,
 # nunca uno nuevo inventado.
-_FOLDER_PLATE_RE = re.compile(r"(\d{4})\s?([A-Z]{3})\b")
+_FOLDER_PLATE_RE = re.compile(r"(\d{4})[\s-]?([A-Z]{3})\b")
 
 
 def resolve_or_create_machine_asset(
