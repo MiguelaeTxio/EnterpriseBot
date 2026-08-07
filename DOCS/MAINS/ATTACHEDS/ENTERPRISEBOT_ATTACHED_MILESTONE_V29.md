@@ -277,6 +277,19 @@ cubos."*
 - **No se decide aquí ni la fecha ni el hito exacto** en que se aborda —
   Miguel Ángel no lo ha fijado todavía.
 
+**Respuesta a la pregunta de arrastre (S043)**, tras tres sesiones
+consecutivas (S040, S041, S042) sin ejecución real: Miguel Ángel
+confirma que la consolidación se refiere a la subida de documentos y
+el CRUD ya construidos (H23/H25/H26), y fija la condición de
+dependencia explícita, verbatim: *"cuando tengamos lista la
+clasificación automática de documentos, ligaremos ambas partes y nos
+dedicaremos a la extracción de datos de los documentos y adición a la
+BBDD."* No ha dejado de ser prioritario — queda **bloqueado por**
+cerrar antes la clasificación automática (S040-S042, consumidor de
+cuarentena), no por falta de decisión. Deja de contar como arrastre
+sin motivo a partir de esta sesión: es una dependencia de orden de
+trabajo declarada, no un ítem abandonado.
+
 ### 3.13. Ejecución del borrado de los dos cubos (S038)
 
 **Ejecutado por Miguel Ángel en su consola local (PowerShell,
