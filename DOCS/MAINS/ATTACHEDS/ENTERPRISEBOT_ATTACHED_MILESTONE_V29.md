@@ -2813,3 +2813,125 @@ extracción + subida a GCS + indexación + clasificación normal del
 contenido genuinamente nuevo de un archivo comprimido de cuarentena,
 cerrando así el ciclo completo que empezó en S042 con la detección de
 redundancia.
+
+### COMPLETADAS EN S043
+
+Sesión larguísima, la más extensa de H29 hasta la fecha, cerrada con
+cambio de hito a H30 (ver enrutador). Bloques reales, no una lista
+exhaustiva de cada commit:
+
+**1. Vehículos de empresa por matrícula, sin código de flota clásico**
+(`2d50946`, `bbe4ea6`, `2804a2b`): `resolve_or_create_machine_asset()`
+ampliada con patrón de matrícula española (con espacio, sin espacio o
+con guion) como respaldo cuando no hay código de flota en la carpeta.
+Corregido de paso un fallo real: `build_new_name()` volvía a resolver
+la máquina desde cero con la función de solo lectura (que no entiende
+matrícula), descartando el asset ya creado/resuelto un paso antes.
+
+**2. Herramienta de fusión de carpetas duplicadas** (`d4bb1a6`):
+resuelve el punto 2 de la hoja de ruta de S042 y el punto 8 (carpetas
+vacías) como efecto colateral -- `merge_folders()` reparenta archivos
+preservando profundidad relativa, renombrado ordinal en colisiones
+(confirmado por Miguel Ángel), borra filas `FOLDER` huérfanas. Nunca
+toca GCS (4.12).
+
+**3. Causa raíz real del retraso de hasta una hora en ver archivos
+subidos por el agente H28** (`a5049cf`): `_NOTIFY_PATH` del agente
+llevaba un segmento `documentacion/` de más desde que se escribió en
+S040 -- cada aviso instantáneo ha fallado siempre con 404 HTTP
+genuino, confirmado contra logs reales de acceso/error, nunca
+supuesto. Todo el tiempo se ha dependido en silencio de la red de
+seguridad horaria. Agente recompilado y redesplegado por Miguel Ángel
+en la propia sesión, verificado con proceso nuevo y petición 200 real.
+
+**4. Fotografías y extensiones basura, borrado automático** (`3380b33`,
+`2e321ea`): campo `is_photo` nuevo en el esquema de Gemini -- toda
+foto detectada se elimina (papelera, recuperable), interpretación a
+confirmar si alguna vez debe tratarse distinto por carpeta. Extensión
+`.log` confirmada basura real (spooler de impresión), nueva salvaguarda
+`is_known_junk_extension()` previa a Gemini.
+
+**5. Reversos de documentos de doble cara** (`e290205`): corrección de
+rumbo explícita de Miguel Ángel tras un parche puntual de etiqueta de
+catálogo -- instrucción general en el prompt, nunca específica de un
+tipo: el reverso de cualquier documento de doble cara es el mismo tipo
+que el anverso, nunca DESCONOCIDO por faltarle la cara principal.
+
+**6. Nota del supervisor como fuente de DNI cuando el documento no lo
+lleva impreso** (`3eeeb34`): `dni_hint` nunca se rellenaba desde una
+anotación de curador si el documento no traía DNI (p. ej. partes de
+vacaciones) -- excepción explícita añadida al prompt.
+
+**7. `is_no_conformes_folder` se apagaba al filtrar dentro de la propia
+carpeta** (`38a75f2`): la anotación por fila y "Reencolar
+seleccionados" desaparecían con cualquier filtro, incluso buscando
+dentro de la propia carpeta de No Conformes. Corregido a
+`scope != SCOPE_GLOBAL`, conservando la protección real (búsqueda
+global mezclando resultados de fuera).
+
+**8. Ordenación por columna en el catálogo de tipos documentales**
+(`09e100d`): las cinco columnas del único CRUD activo de la sesión son
+ahora ordenables, ascendente/descendente, mismo patrón que el
+explorador principal.
+
+**9. Fase 1 de la auditoría de máquinas y personal huérfanos**
+(`dd8b9e9`, comando `audit_new_machines_and_personnel`, Python/SQL
+puro, cero Gemini): encontró 89 códigos de máquina candidatos y ~1.300
+carpetas de personal con contenido sin identidad. Cruzado después
+contra un Excel real de plantilla/maquinaria (dos versiones, la
+segunda más completa) subido por Miguel Ángel: **70/70 personas y
+37/37 máquinas del Excel ya cubiertas** en `PersonIdentity`/
+`MachineAsset` (69 de las 70 ya estaban sembradas, 1 creada con
+carpeta real verificada en la pasada final -- más 4 creadas en una
+primera pasada con una versión anterior y más pequeña del mismo
+Excel, 5 en total). 12 máquinas nuevas dadas de alta por comparación de
+secuencia dentro de su propia familia de código (A68, G17, G18, H10,
+S16, S17, S20, V01, V10, Z135, Z137, Z138), cada una confirmada por
+Miguel Ángel antes de crearse -- incluido el caso real de V-01
+(ventosas para cristales, mal archivado también bajo "grupo
+electrógenos").
+
+**Hallazgos y correcciones fuera de alcance original, corregidas de
+inmediato (directriz 4.9):** bug de auditoría en el detalle de log
+(mostraba el dominio crudo de Gemini en vez del dominio real ya
+forzado por la carpeta, sin afectar nunca al enrutado real).
+
+### Hoja de ruta para cuando se retome H29
+
+Ninguno de estos puntos es nuevo por interpretación propia -- son los
+que quedaron abiertos o parcialmente resueltos al cierre de S043,
+concertados con Miguel Ángel durante la propia sesión:
+
+1. **Catálogo -- tres tipos pendientes de añadir desde el panel**
+   (decisión 3.34, nunca por migración): `JUSTIFICANTE_TRANSFERENCIA`
+   (transferencias SEPA sin factura), `DECLARACION_HOMOLOGACION`
+   (documento acreditativo de homologación/inspección previa a
+   matriculación). `DNI_COMPRADOR` y `RECIBO_SENAL_COMPRA` ya se
+   añadieron en S043.
+2. **Interpretación de `is_photo` a confirmar**: hoy se elimina toda
+   foto detectada, sin excepción de carpeta, incluidas las que viven
+   bajo un código de flota real -- confirmar con Miguel Ángel si es
+   la interpretación deseada o si las "asignadas" deben tratarse
+   distinto una vez exista la vía de subida por CRUD de maquinaria.
+3. **De los 89 candidatos de máquina de la auditoría S043, quedan sin
+   resolver:** 23 con marca real de baja/venta (`BAJA DEFINITIVA`,
+   `VENTA`, `VENDIDO/A`) -- candidatas a `MachineAsset(is_active=False)`
+   con histórico; el resto son vehículos de empresa con matrícula
+   suelta sin marca de baja (activos, pendientes de dar de alta) o
+   falsos positivos ya descartados (modelos de fabricante, matrículas
+   ya documentadas dentro de una máquina existente).
+4. **Auditoría de personal -- filtro por refinar**: la comparación
+   amplia (fuera del Excel de plantilla activa) encontró ~1.300
+   carpetas con contenido sin identidad, mayoritariamente ruido
+   (carpetas organizativas: `REGISTRO DE JORNADA`, `RECONOCIMIENTOS
+   MEDICOS`, `RENOVACION CARNE DEGRUISTA`...). Sin decidir el filtro
+   de categorías reales "por persona" frente a categorías puramente
+   administrativas.
+5. **`BandejaEntradaDocumentacion`** (decisión 3.14 ampliada S043):
+   diseño registrado, construcción bloqueada explícitamente hasta que
+   el camino de ida (`AccesoBuzonDocumentacion` + clasificación real)
+   quede verificado y estable -- sigue sin ese visto bueno.
+6. Puntos ya arrastrados de S042 sin tocar en S043: migración Python
+   3.10 → 3.12/3.13 (antes del 4 de octubre de 2026), salto de HTMX
+   1.9.12 a 2.x, deuda técnica de la sección 9 (extracción de contenido
+   nuevo de comprimidos).
