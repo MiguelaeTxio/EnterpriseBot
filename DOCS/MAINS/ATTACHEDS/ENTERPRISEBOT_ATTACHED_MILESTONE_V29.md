@@ -456,6 +456,55 @@ cuarentena."* El único motivo de que sea manual es no gastar Gemini
 en documentos que van a volver a fallar si no se ha creado antes el
 tipo que les faltaba -- nada que ver con el estado de la cola.
 
+**Aclaración S043 -- dos carpetas separadas, ida y vuelta, todavía sin
+construir.** Miguel Ángel corrigió una lectura del modelo que asumía
+una única carpeta de buzón sirviendo ambas direcciones -- verbatim:
+*"Tenemos una vuelta, cierto, pero esto no es para la vuelta, esto es
+camino de ida aún, es decir, tendremos dos carpetas, una de acceso y
+otra de entrada. La de acceso es esta que estamos hablando, es la
+entrada de documentación. La de entrada es dónde el agente encontrará
+los archivos clasificados para colocar en Microsoft 365."*
+
+Nomenclatura y comportamiento exactos, verbatim:
+- **`AccesoBuzonDocumentacion`** (camino de ida): *"Todo archivo
+  encontrado aquí se sube a cuarentena para clasificación."*
+- **`BandejaEntradaDocumentacion`** (camino de vuelta -- "la vuelta"
+  de más arriba en esta misma sección): *"Todo archivo encontrado aquí
+  viene con su carta de clasificación listo para ser [movido] a su
+  carpeta de destino en Microsoft 365."*
+
+Además, Miguel Ángel fue explícito en que `AccesoBuzonDocumentacion`
+**no debe aparecer como carpeta en el panel** -- solo los archivos que
+pasen por ella deben acabar en cuarentena, la carpeta de acceso en sí
+misma no es una entidad que el explorador deba mostrar. Contrasta con
+el comportamiento hoy vigente para cualquier otra carpeta vigilada por
+el agente, donde el nombre de la carpeta local se convierte siempre en
+un segmento real de `blob_name`
+(`_CUARENTENA/{nombre_carpeta}/{ruta_relativa}`) y por tanto en una
+fila `FOLDER` visible en el panel -- `AccesoBuzonDocumentacion`
+necesita, por tanto, una ruta de subida distinta a la que usa hoy
+cualquier otra carpeta vigilada.
+
+**Preguntas abiertas, sin resolver por interpretación propia (S043),
+a confirmar antes de construir nada:**
+1. Para `AccesoBuzonDocumentacion`: si sus archivos suben directos a
+   la raíz de `_CUARENTENA/` (sin segmento de carpeta), ¿es eso lo que
+   se busca? Y si dos archivos de distinto origen llegan con el mismo
+   nombre, ¿colisión resuelta con ordinal automático, igual que ya
+   hace el resto del sistema?
+2. Para `BandejaEntradaDocumentacion`: ¿cómo descubre el agente qué
+   archivos están "listos"? ¿Sondea un prefijo nuevo de GCS que el
+   servidor puebla tras clasificar, o hay algún otro canal (mismo
+   patrón de aviso instantáneo que `RegisterUploadedObjectView`, pero
+   en sentido servidor→agente)?
+3. ¿Qué información exacta viaja de vuelta -- el propio archivo
+   clasificado (bytes reales) más su nombre/ruta de destino final en
+   Microsoft 365, o solo un aviso con esos dos datos y el agente
+   recupera el contenido real de GCS por su cuenta?
+4. ¿Qué marca a un archivo como "listo para la vuelta" -- el momento
+   en que Gemini lo clasifica con éxito, o una confirmación humana
+   posterior en el panel antes de soltarlo hacia local?
+
 ### 3.15. Enriquecimiento de la interfaz del explorador (S040): clasificación, búsqueda y eliminación de duplicados
 
 Registrada literalmente según se dictó (directriz 4.8). **Esto sí es
