@@ -505,6 +505,39 @@ a confirmar antes de construir nada:**
    en que Gemini lo clasifica con éxito, o una confirmación humana
    posterior en el panel antes de soltarlo hacia local?
 
+**Respuestas de Miguel Ángel (S043), cierran los cuatro puntos:**
+
+1. **`AccesoBuzonDocumentacion` no es mecanismo nuevo.** Verbatim:
+   *"No es nada nuevo, la carpeta acabo de ponerla en observación por
+   el agente, cualquier archivo que se suelte aquí sigue el mismo
+   camino que cualquier otro que se suelte en las carpetas ya
+   vigiladas."* Se añade por el mecanismo ya existente (tray →
+   "Seleccionar carpeta y copiar"), sin ruta de subida especial, sin
+   excepción de "no debe aparecer como carpeta en el panel" -- esa
+   lectura del modelo era incorrecta; queda descartada. La carpeta se
+   comporta exactamente igual que cualquier otra carpeta vigilada,
+   incluida la aparición de su propio segmento en `blob_name` y su
+   fila `FOLDER` visible en el panel.
+2. **`BandejaEntradaDocumentacion` -- diseño registrado, construcción
+   deliberadamente aplazada.** Verbatim: *"El agente vigila la
+   carpeta igual que vigila las de entrada a documentación. Esta es la
+   de salida de documentación. Esto no se implementa aún hasta que
+   terminemos el camino de subida y sea totalmente funcional. Cuando
+   se detecta un archivo tendrá una galletita con su carta de
+   recomendación (ruta final del archivo, puede que sea en el mismo
+   nombre o un fichero de txt anexo). El agente lee la ruta final y lo
+   mueve."* Mecanismo real cuando se aborde: el agente vigila esta
+   carpeta con el mismo watchdog que ya usa para las de entrada: un
+   archivo que aparece ahí lleva consigo su destino final (codificado
+   en el propio nombre, o en un `.txt` anexo -- sin decidir cuál de
+   los dos todavía), el agente lo lee y mueve el archivo a esa ruta
+   dentro de Microsoft 365. **Bloqueante explícito para empezar:**
+   dar antes por completo verificado y estable el camino de ida
+   (`AccesoBuzonDocumentacion` + clasificación real en cuarentena) --
+   nunca antes.
+3. Respondida en el punto 2 (misma decisión, un único mecanismo).
+4. Respondida en el punto 2 (misma decisión, un único mecanismo).
+
 ### 3.15. Enriquecimiento de la interfaz del explorador (S040): clasificación, búsqueda y eliminación de duplicados
 
 Registrada literalmente según se dictó (directriz 4.8). **Esto sí es
