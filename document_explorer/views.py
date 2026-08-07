@@ -456,10 +456,23 @@ class FolderListingView(ExplorerAccessMixin, TemplateView):
             "sort_columns": self._sort_columns(),
             "can_move": permissions.is_unrestricted(company_user),
             "primary_bucket": PRIMARY_BUCKET,
+            # Antes de S043 llevaba "and not is_search", que apagaba
+            # la anotación de No Conformes (_rows.html) y el botón
+            # "Reencolar seleccionados" (_panel.html) en cuanto se
+            # filtraba dentro de la propia carpeta -- incidente real
+            # de Miguel Ángel: buscando un archivo concreto entre
+            # miles de No Conformes, filtrar dentro de la carpeta
+            # (scope=here_recursive) le quitaba la anotación, y volver
+            # atrás para anotar le hacía perder el filtro otra vez.
+            # `scope != SCOPE_GLOBAL` conserva la protección real que
+            # sí hacía falta (una búsqueda global puede mezclar
+            # resultados de fuera de No Conformes, donde anotar no
+            # tiene sentido) sin penalizar filtrar dentro de la propia
+            # carpeta, que es exactamente el caso de uso real.
             "is_no_conformes_folder": (
                 bucket == PRIMARY_BUCKET
                 and folder_path == NO_CONFORMES_PREFIX.rstrip("/")
-                and not is_search
+                and scope != SCOPE_GLOBAL
             ),
         }
 
