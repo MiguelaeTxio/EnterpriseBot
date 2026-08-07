@@ -398,6 +398,33 @@ app de dominio.
   mal nombrados o mal ubicados, canalizando toda la gestión por el
   panel.
 
+#### Hito 30: Vinculación Documental Real — Centros de Gasto y Personal con Referencia Viva a su Documentación
+(Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md`)
+- Hito nuevo, abierto en S043 por decisión explícita de Miguel Ángel:
+  "creo que esto es una tarea de gran calado" -- una vez `fleet.
+  MachineAsset` y `document_explorer.PersonIdentity` quedan al día
+  (auditoría S043, Excel real de plantilla y maquinaria), la base de
+  datos deja de ser solo un catálogo de identidad y pasa a necesitar
+  una referencia real y viva a la documentación de cada máquina y cada
+  persona, que se actualice sola cuando el índice virtual cambie
+  (mover, renombrar, sustituir, borrar).
+- Sustitución automática por tipo de documento (una ITV nueva marca la
+  anterior como obsoleta y deja la nueva como vigente, sin preguntar)
+  -- reconstruye o adapta la lógica ya construida en H26
+  (`document_management.DocumentSubstitutionLog`/`vigencia_service`),
+  hoy enganchada al modelo legado de `machine_documents`, nunca al
+  `DocumentIndexEntry` unificado de H29.
+- Punto de enlace explícito con la decisión 3.12 de H29 (consolidación
+  de cubos, aplazada hasta cerrar la clasificación automática):
+  Miguel Ángel, verbatim, S043: "la interfaz y entrada para gestionar
+  la documentación será la que teníamos... ya hemos llegado al punto
+  de ligar lo anterior con lo nuevo" -- las interfaces de
+  administración de H23/H25/H26 (subida, sustitución, alertas) se
+  ligan ahora al `DocumentIndexEntry` real, no a los modelos legados.
+- Organización de manuales (un manual por modelo de máquina, punto ya
+  registrado en H29 3.21/3.22) como paso previo o paralelo, a decidir
+  en la primera sesión de este hito.
+
 ---
 
 ### 4. Directrices Técnicas Vinculantes

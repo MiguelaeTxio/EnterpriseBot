@@ -52,7 +52,8 @@ Cumple dos funciones inseparables:
 | H26 | Infraestructura Documental Compartida (Alertas, PDF, Email, Sustitución) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V26.md` |
 | H27 | Ingesta de Documentación vía Correo Electrónico | `ENTERPRISEBOT_ATTACHED_MILESTONE_V27.md` |
 | H28 | Migración y Reorganización de Documentación Histórica | `ENTERPRISEBOT_ATTACHED_MILESTONE_V28.md` |
-| H29 | Explorador de Archivos y Gobierno Documental del Panel sobre GCS | `ENTERPRISEBOT_ATTACHED_MILESTONE_V29.md` ← EN PROGRESO |
+| H29 | Explorador de Archivos y Gobierno Documental del Panel sobre GCS | `ENTERPRISEBOT_ATTACHED_MILESTONE_V29.md` |
+| H30 | Vinculación Documental Real — Centros de Gasto y Personal | `ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md` ← EN PROGRESO |
 
 Todos los anexos viven en `DOCS/MAINS/ATTACHEDS/`.
 
@@ -60,9 +61,24 @@ Todos los anexos viven en `DOCS/MAINS/ATTACHEDS/`.
 
 ## 3. Resultado Actual
 
-**Hito EN PROGRESO:** H29 — Explorador de Archivos y Gobierno Documental
-del Panel sobre Google Cloud Storage →
-`ENTERPRISEBOT_ATTACHED_MILESTONE_V29.md`
+**Hito EN PROGRESO:** H30 — Vinculación Documental Real: Centros de
+Gasto y Personal con Referencia Viva a su Documentación →
+`ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md`
+
+**Hito PAUSADO en esta sesión (S043):** H29 — Explorador de Archivos y
+Gobierno Documental del Panel sobre Google Cloud Storage →
+`ENTERPRISEBOT_ATTACHED_MILESTONE_V29.md`. Sesión larguísima (S043):
+vehículos de empresa por matrícula, herramienta de fusión de
+carpetas, arreglo real del aviso instantáneo del agente H28 (404
+desde S040), fotografías/extensiones basura auto-eliminadas,
+reversos de documentos de doble cara, ordenación del catálogo, y la
+Fase 1 completa de la auditoría de máquinas/personal huérfanos
+(`audit_new_machines_and_personnel`), con `MachineAsset`/
+`PersonIdentity` ya al día contra un Excel real de plantilla y
+maquinaria. H30 se abre por decisión explícita de Miguel Ángel: dotar
+a esas dos tablas de una referencia viva a su documentación es tarea
+de gran calado, con enlace directo a la consolidación de cubos (H29
+3.12) que quedó aplazada -- no una tarea más dentro de H29.
 
 **Hito PAUSADO en esta sesión (S036→S037):** H28 — Migración y
 Reorganización de Documentación Histórica →
