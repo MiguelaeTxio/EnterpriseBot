@@ -3018,7 +3018,7 @@ class PurgeTrashView(ExplorerAccessMixin, View):
 @method_decorator(csrf_exempt, name="dispatch")
 class RegisterUploadedObjectView(View):
     """
-    Webhook: `POST /panel/documentacion/explorador/agente/registrar/`.
+    Webhook: `POST /panel/explorador/agente/registrar/`.
     Called by the H28 migration agent right after it finishes
     uploading one object to GCS -- writes the `DocumentIndexEntry`
     row (and its ancestor folder chain) at that same moment, so the
@@ -3050,7 +3050,7 @@ class RegisterUploadedObjectView(View):
 
     ---
 
-    Webhook: `POST /panel/documentacion/explorador/agente/registrar/`.
+    Webhook: `POST /panel/explorador/agente/registrar/`.
     Llamado por el agente de migración H28 justo después de terminar
     de subir un objeto a GCS -- escribe la fila `DocumentIndexEntry`
     (y su cadena de carpetas ancestras) en ese mismo momento, así el

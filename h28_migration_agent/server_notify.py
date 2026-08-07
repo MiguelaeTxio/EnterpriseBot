@@ -28,6 +28,24 @@ dependency for the upload path. The hourly Celery Beat safety net on
 the server side (`document_explorer.tasks.refresh_quarantine_index_task`)
 exists precisely to cover whatever this call fails to deliver.
 
+**Real incident, S043:** `_NOTIFY_PATH` carried an extra `documentacion/`
+segment (`/panel/documentacion/explorador/...`) that never matched the
+real mount point (`enterprise_core/urls.py`: `panel/explorador/`, no
+`documentacion/` anywhere) -- present since this module was first
+written in S040, confirmed by the compiled `.exe`'s own build date
+(2026-08-03, same day as the commit) predating the discovery. Every
+real call this agent ever made failed with a genuine HTTP 404 (route
+never registered, not a token/auth failure) -- confirmed against the
+server's real access/error logs (`Not Found:
+/panel/documentacion/explorador/agente/registrar/`, two real POST
+attempts from this agent on 2026-08-07), not assumed from reading the
+code alone. The instant-notification feature has silently never
+worked since it was built; every upload has always depended entirely
+on the hourly safety net, which is exactly the ~45-minute-plus delay
+Miguel Ángel reported before this was traced. The mismatched path had
+also been copied into `RegisterUploadedObjectView`'s own docstring
+(`document_explorer/views.py`), corrected in the same session.
+
 ---
 
 Miguel Angel, verbatim: "cuando el agente sube el archivo a
@@ -56,6 +74,27 @@ nueva para el camino de subida. La red de seguridad horaria de Celery
 Beat del lado servidor
 (`document_explorer.tasks.refresh_quarantine_index_task`) existe
 justamente para cubrir lo que este aviso no llegue a entregar.
+
+**Incidente real, S043:** `_NOTIFY_PATH` llevaba un segmento
+`documentacion/` de mas (`/panel/documentacion/explorador/...`) que
+nunca coincidio con el punto de montaje real
+(`enterprise_core/urls.py`: `panel/explorador/`, sin `documentacion/`
+en ningun sitio) -- presente desde que este modulo se escribio por
+primera vez en S040, confirmado por la propia fecha de compilacion del
+`.exe` (2026-08-03, el mismo dia del commit), anterior al
+descubrimiento. Cada llamada real que ha hecho este agente fallo
+siempre con un 404 HTTP genuino (ruta nunca registrada, no un fallo de
+token/autenticacion) -- confirmado contra los logs reales de
+acceso/error del servidor (`Not Found:
+/panel/documentacion/explorador/agente/registrar/`, dos intentos POST
+reales de este agente el 2026-08-07), nunca supuesto solo por leer el
+codigo. La funcionalidad de aviso instantaneo nunca ha funcionado en
+silencio desde que se construyo; toda subida ha dependido siempre por
+completo de la red de seguridad horaria, que es exactamente el retraso
+de 45 minutos y pico que reporto Miguel Angel antes de rastrear esto.
+La ruta equivocada tambien se habia copiado al propio docstring de
+`RegisterUploadedObjectView` (`document_explorer/views.py`), corregido
+en la misma sesion.
 """
 import json
 import logging
@@ -69,7 +108,7 @@ from config import (
 
 logger = logging.getLogger(__name__)
 
-_NOTIFY_PATH = "/panel/documentacion/explorador/agente/registrar/"
+_NOTIFY_PATH = "/panel/explorador/agente/registrar/"
 
 
 def notify_server_of_upload(bucket_name, blob_name):
