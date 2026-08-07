@@ -2412,56 +2412,212 @@ manual es no gastar Gemini en documentos que van a volver a fallar si
 no se ha creado antes el tipo que les falta. **Asignado a H29** en el
 cierre de esta sesión (antes sin hito), pendiente de construir.
 
-### Hoja de ruta para la siguiente sesión (S042)
+### COMPLETADAS EN S042
 
-1. **Construir "no conformes"** (decisión 3.14, ya asignada a H29,
-   diseño completo tras la corrección de esta sesión): carpeta real
-   en `Directorio Principal`, salida de `consume_quarantine_task` tras
-   N pasadas sin resolver (N sin decidir todavía -- confirmar con
-   Miguel Ángel), botón "Reencolar" en el panel que mueve todo su
-   contenido de vuelta a cuarentena de golpe, a mano, sin relación con
-   el estado de la cola.
-2. **Modelo 145 y "dos en uno" del mismo tipo repetido para varias
+Sesión larguísima -- 28 commits, la más extensa de H29 hasta la
+fecha. Empezó terminando "No Conformes" (decisión 3.14, punto 1 de la
+hoja de ruta de S041) y acabó reescribiendo capas enteras del
+consumidor de cuarentena tras encontrar, con datos reales y nunca
+supuestos, varias causas raíz que llevaban arrastrándose desde antes
+de esta sesión -- la más grave, un ciclo infinito de 142 pasadas de
+reclasificación sobre un único archivo. Patrón que se repite todo el
+día, más marcado que en sesiones anteriores: Miguel Ángel corrigió
+varias veces el rumbo en caliente ("no podemos nosotros borrar
+nada... dotar al sistema de las herramientas pertinentes para que lo
+haga de forma automática", repetido tras cada intento de resolver algo
+a mano), y cada vez que un dato no encajaba se persiguió hasta el
+código real en vez de darlo por bueno (directriz 4.9) -- incluida una
+autocorrección propia a media sesión al confirmar que una regla que
+Miguel Ángel ya había pedido dos veces ("hasta 4 páginas entero, más
+de 4 recorte a extremos") solo se había aplicado a medias.
+
+**1. No Conformes construido de verdad** (`370b6b3` a `002d6c6`,
+cierra decisión 3.14 / punto 1 de S041): carpeta real con anotación
+del supervisor para Gemini, reencolado (con incidente real de
+selección vacía cayendo en "reencolar todo" corregido dos veces,
+`ffabb93`/`1b3835f`), `MANUAL_USO` enrutado directo sin depender de
+resolución de máquina, XPS convertido con `fitz` (`soffice` confirmado
+sin filtro de importación para XPS), contador de seleccionados.
+
+**2. Simplificación radical de la interfaz de selección** (`a23deac`,
+`0499d39`): a petición explícita de Miguel Ángel, un único casillero
+por archivo y un único "Seleccionar todo" alimentan los cuatro botones
+de acción (Mover, Clasificar, Reencolar, Eliminar) -- sustituye por
+completo al sistema de dos casilleros paralelos que generaba
+ambigüedad real. El propio botón "Reencolar todo" se retiró después,
+por decisión del propio Miguel Ángel revocando su propia petición
+anterior una vez el arreglo de paginación (ver punto 4) lo volvió
+redundante: "no nos podemos agarrar a un clavo ardiendo... se cambia
+si es para mejorar."
+
+**3. "Seleccionar todo" se quedaba corto por el scroll infinito**
+(`123d74a`): incidente real -- una carpeta con más de `PAGE_SIZE=200`
+archivos marcaba solo lo ya cargado en el DOM, nunca el resto. Ahora
+carga todas las páginas restantes antes de marcar.
+
+**4. Recorte de PDF: de "solo primeras páginas" a "principio + final",
+y de "reacción a errores" a "regla general para todo PDF, siempre"**
+(`b7d99a8`, `562f8da`, `2d1662b`): tres pasos reales, no uno solo.
+Primero, reintento en 504/DEADLINE_EXCEEDED (antes solo 429) y recorte
+reactivo al 400 de límite de páginas de Vertex AI. Segundo, a
+propuesta de Miguel Ángel tras revisar una muestra real de 20 dosieres
+(solo 3 de 20 cabían en 3 páginas, 176 el máximo), el recorte pasó de
+"primeras N páginas" a "primeras 2 + últimas 2" -- mejor señal de
+dosier, con aviso explícito a Gemini de que el extracto no es
+contiguo. Tercero, y el más caro: un manual real de 979 páginas (979
+imágenes escaneadas, 0 texto, confirmado con `fitz` antes de suponer
+nada) fallaba igual pese a pesar poco y tener menos de 1000 páginas --
+huérfano de los dos disparadores existentes. Corrección de fondo,
+verbatim de Miguel Ángel repetida con frustración real ante el fallo:
+el número de páginas se cuenta SIEMPRE, para cualquier PDF, antes de
+la primera llamada -- ya no se espera a que falle nada.
+
+**5. Máquinas y personal ya no bloquean la clasificación por falta de
+datos** (`4642de5`, `ffb7919`): `resolve_or_create_machine_asset()`
+crea la máquina en `fleet.MachineAsset` sola cuando la carpeta nombra
+un código de flota real sin match -- confirmado con datos reales que
+`company` (FK a `ivr_config.Company`) nunca es ambiguo (una única fila
+en toda la plataforma), la ambigüedad real vive en `company_code`/
+`company_name`, con "GRA" como cajón por defecto explícito de Miguel
+Ángel. Aparte, dos fallos reales de coincidencia de DNI (cero espurio
+delante, dígito mal leído rompiendo la letra de control antes de
+llegar a la salvaguarda de "nombre coincide con DNI distinto" de
+S041) corregidos en `_normalize_dni()`/
+`resolve_or_create_person_identity()`.
+
+**6. Causa raíz real de la deriva negativa de `total_size_bytes`**
+(`fdbbad4`, `645ff27`, `01bc79b`): tres capas del mismo síntoma.
+Primero, comando `recalculate_folder_counters` como parche puntual
+(946 carpetas desajustadas, 318 en negativo). Segundo,
+`quarantine_scope_q()` -- archivos sueltos en la raíz de `_CUARENTENA`
+invisibles para "en cola" por comparar por `startswith` en vez de
+incluir la igualdad exacta. Tercero, y el real: `persist_rows()` (la
+tarea horaria de red de seguridad) creaba archivos nuevos sin sumar su
+tamaño a las carpetas antecesoras -- corregido de raíz, no solo
+parcheado otra vez.
+
+**7. Catálogo ampliado con datos reales, nunca supuestos**
+(`162d07b`, `c1e1865`): 5 tipos nuevos (`RECIBO_LEASING`, `PRESTAMO`,
+`PROFORMA`, `SOLICITUD_ADMINISTRATIVA`, `EXCEDENCIA`) confirmados uno
+a uno contra el razonamiento real de Gemini ya guardado en el
+historial, más filtros de búsqueda/dominio/estado en el CRUD.
+
+**8. Herramientas de archivos comprimidos, de cero a automáticas**
+(`307170f`, `69b99a4`, `e223c17`): visor de `.zip`/`.rar` en el
+explorador (`unrar` confirmado ya instalado en el servidor antes de
+escribir una sola línea, ningún paquete nuevo), y
+`resolve_archive_redundancy()` -- borrado automático de un archivo
+comprimido cuando el 100% de su contenido ya existe archivado por
+separado (CRC32C real vía `google-crc32c`, ya dependencia transitiva,
+confirmado que coincide exactamente con el de GCS). Deuda técnica
+registrada aparte (sección 9): extraer y subir contenido genuinamente
+nuevo de dentro de un comprimido es una pieza mayor, deliberadamente
+fuera de alcance.
+
+**9. Borrado automático generalizado, sin decisión humana**
+(`e54dcd0`, `04fea9c`): a petición explícita y repetida de Miguel
+Ángel ("no podemos nosotros borrar nada... dotar al sistema"),
+`is_empty_file()` (0 bytes, confirmado con `pru4eba.docx`) y
+`resolve_duplicate_of_filed_document()` (mismo CRC32C+tamaño que un
+archivo ya archivado fuera de cuarentena) se ejecutan siempre ANTES de
+Gemini, coste cero, con `trash_dossier_entry()` reutilizado sin
+mecanismo nuevo.
+
+**10. Causa raíz real de un ciclo de 142 pasadas** (`a64414b`, el
+hallazgo más caro de la sesión): `A-69 Leasing BBVA.pdf` tenía dos
+filas vivas con el mismo CRC32C y tamaño -- una ya archivada, otra
+dando vueltas por cuarentena desde el 4 de agosto sin resolver ni una
+sola vez pese a que Gemini identificaba tipo y dominio con confianza
+ALTA casi siempre. Causa real: `RequeueNoConformesView` movía SIEMPRE
+a la raíz plana de `_CUARENTENA`, nunca a la subcarpeta original --
+sin ningún segmento de carpeta con forma de código de flota que
+escanear, la resolución de máquina nunca tenía de dónde tirar, y el
+propio reencolado siguiente destruía otra vez el contexto que la
+próxima pasada necesitaba. Corregido restaurando la carpeta mirror
+real desde `entry.blob_name` (nunca cambia, 4.12) en vez de la raíz
+plana.
+
+**11. Historial auditable para la papelera en bloque** (`f784393`):
+`BulkTrashView` ahora escribe un `DataOperationLog`/entries reales,
+mismo patrón que el resto de operaciones -- antes marcaba
+`deleted_at` sin dejar ningún rastro.
+
+**Incidente de infraestructura ajeno al proyecto:** avería real de
+GitHub Actions (confirmada contra `githubstatus.com`, "Partial
+Outage" desde las 15:22 UTC) bloqueó un despliegue durante ~45
+minutos: cancelado dos veces, resuelto relanzando el run por API en
+cuanto GitHub mitigó. Ningún commit se perdió; el código nunca dejó
+de estar a salvo en GitHub.
+
+### Hoja de ruta para la siguiente sesión (S043)
+
+**Pregunta explícita a Miguel Ángel** (regla de contador de arrastre
+2.2 -- este ítem lleva sin ejecución real desde S040, tres sesiones
+consecutivas: S040, S041 y esta): la consolidación de cubos (retirar
+`machine_documents`/`personal_documents`, decisión 3.12) sigue sin
+tocarse. ¿Qué falta exactamente para poder abordarlo, o ha dejado de
+ser prioritario frente al resto de H29?
+
+1. **Verificación de arranque obligatoria** (criterio de cierre
+   objetivo, regla 2.1): al empezar la sesión, comprobar con Comando S
+   cuántos archivos quedan en `_CUARENTENA` de los 139 reencolados al
+   cierre de S042 (0 en No Conformes en ese momento) -- con todos los
+   arreglos de hoy (raíz plana, duplicados, DNI, máquinas nuevas,
+   recorte universal de páginas) el número EN COLA debe bajar de
+   forma sostenida pasada tras pasada, nunca estancarse ni volver a
+   subir. Si algún archivo concreto vuelve a No Conformes pese a los
+   arreglos de hoy, diagnosticar con datos reales antes de suponer
+   nada -- puede ser un caso genuinamente nuevo, no necesariamente el
+   mismo patrón.
+2. **Deuda técnica registrada en la sección 9** (extraer y subir a
+   GCS el contenido genuinamente nuevo de dentro de un `.zip`/`.rar`
+   cuando no es 100% redundante): sigue pendiente de diseño propio,
+   explícitamente fuera de alcance de S042.
+3. **Heurística por nombre de archivo para `.zip`/`.rar` cuando el
+   contenido SÍ es nuevo** (petición original de Miguel Ángel, motivo
+   de construir el visor): con la comprobación de redundancia ya
+   automática, este punto queda acotado a los comprimidos que
+   contienen contenido genuinamente nuevo -- decidir si aplica una
+   heurística por nombre (ej. "MANUAL" en el nombre → tipo MANUAL_USO
+   por defecto) o si depende directamente de la deuda técnica del
+   punto 2.
+4. **Documentación de utillaje/equipo de taller compartido** (patrón
+   real confirmado dos veces esta sesión: `Certificado GATOS
+   MANUALES.pdf` y `Manual eslinga cable acero.pdf`, ambos "catálogo
+   general... no un documento específico de una máquina de la
+   flota"): no existe hoy ningún tratamiento para documentación que
+   no pertenece a ninguna máquina concreta. Decidir con Miguel Ángel
+   si necesita su propio dominio/tipo, o una carpeta fija al estilo
+   `MANUAL_USO`.
+5. **Modelo 145 y "dos en uno" del mismo tipo repetido para varias
    personas** (3.31): sigue sin decisión tomada -- el mecanismo de
    `is_dossier` (S041) exige tipos catalogados *distintos*, no cubre
    este caso.
-3. **Revisar las 34 discrepancias reales de `audit_manual_models`**
+6. **Revisar las 34 discrepancias reales de `audit_manual_models`**
    una a una con Miguel Ángel, y decidir el criterio de deduplicación
    para los 119 archivos que son candidatos reales a consolidar en un
    único manual por modelo -- antes de tocar `fleet.MachineAsset` en
    producción.
-4. **Terminar la consolidación de cubos** (resto de la decisión 3.12,
-   arrastrada varias sesiones -- **arrastrado 2.ª sesión sin avanzar,
-   ver directriz de contador de arrastre**): retirar por completo las
-   apps `machine_documents`/`personal_documents`. Pregunta explícita a
-   Miguel Ángel: ¿qué falta exactamente para poder cerrarlo, o ha
-   dejado de ser prioritario frente al resto de H29?
-5. **Subida tipada desde gestión de documentación** (decisión 3.8):
-   depende del punto 4.
-6. **Herramienta de "carpetas vacías"**: limpiar las filas huérfanas
+7. **Subida tipada desde gestión de documentación** (decisión 3.8):
+   depende de la consolidación de cubos (ver pregunta explícita
+   arriba).
+8. **Herramienta de "carpetas vacías"**: limpiar las filas huérfanas
    que deja mover/reubicar archivos fuera de una carpeta sin vaciarla
    del índice.
-7. **Buzón de documentación / "la vuelta"** (resto de la decisión
+9. **Buzón de documentación / "la vuelta"** (resto de la decisión
    3.14 -- la parte del agente H28, distinta de "no conformes"):
    modificación pendiente del agente H28 para reportar la carpeta de
    origen local.
-8. **Migración de Python 3.10 → 3.12/3.13** antes del 4 de octubre de
-   2026 -- arrastrada varias sesiones, sin tocar todavía.
-9. **Salto de HTMX 1.9.12 a la serie 2.x**: anotado, sin evaluar.
-10. **Frontera con H28** (si la interfaz de limpieza de la Fase 2
+10. **Migración de Python 3.10 → 3.12/3.13** antes del 4 de octubre de
+    2026 -- sigue sin tocarse, ya varias sesiones.
+11. **Salto de HTMX 1.9.12 a la serie 2.x**: anotado, sin evaluar.
+12. **Frontera con H28** (si la interfaz de limpieza de la Fase 2
     converge con el explorador): sigue sin cerrar.
 
 **Cabo suelto menor, arrastrado ya varias sesiones, no bloqueante:**
 las cuatro copias de estáticos desincronizadas de su fuente
 (`panel/css/panel.css`, `panel/js/admin_history.js`,
 `panel/js/form_entry_assets.js`, `panel/js/form_entry_modal.js`).
-
-**Verificar al inicio de la próxima sesión:** que la Always-on Task de
-consumo de cuarentena sigue avanzando con normalidad (panel de
-Cuarentena) y que el contador de "en cola" real (537 al cierre de esta
-sesión, tras la reparación del punto 6) sigue bajando sin volver a
-subir -- el bug de `persist_rows` que lo causaba está corregido, así
-que esta vez sí debería bajar de verdad, pasada tras pasada.
 
 ---
 
