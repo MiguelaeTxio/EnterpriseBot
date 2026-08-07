@@ -66,6 +66,11 @@ urlpatterns = [
         name="move",
     ),
     path(
+        "fusionar-carpetas/",
+        views.MergeFoldersView.as_view(),
+        name="merge_folders",
+    ),
+    path(
         "clasificar/",
         views.ClassifyView.as_view(),
         name="classify",

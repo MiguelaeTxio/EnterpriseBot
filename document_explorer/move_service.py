@@ -122,7 +122,7 @@ cosmético, no bloqueante, candidato a una futura herramienta de
 "carpetas vacías", no resuelto aquí.
 """
 from django.db import transaction
-from django.db.models import Case, F, Value, When
+from django.db.models import Case, F, Q, Value, When
 
 from document_explorer.index_writer import (
     _adjust_total_size, ancestors_of, ensure_folder_chain,
@@ -505,3 +505,172 @@ def move_entries(entries, destination_folder):
         _bulk_adjust(bucket, "child_count", count_deltas)
 
     return results
+
+
+def merge_folders(bucket, source_folder, destination_folder):
+    """
+    Merge two duplicate folder trees of the same bucket into one
+    (H29, S043) -- real incident that motivated this: the same
+    subfolder name (`H-11 TANQUETA ELECTRICA AUTO PROPULSADA`) existed
+    twice under two different parent folders (`MINIGRUA` and `MINIGRUA
+    Y MAQUINA ESPECIAL`), each with its own copy of the same real
+    documents, splitting one machine's paperwork across two places the
+    quarantine consumer treated as unrelated. Miguel Ángel, verbatim
+    (S043), confirming the real cause and the fix belongs in the
+    system itself, not a one-off manual cleanup: "eso es un error
+    nuestro... nuestro sistema debe estar preparado para arreglar esa
+    selva."
+
+    A folder merge is never a new primitive: it is `move_entries()`
+    applied to every live FILE under `source_folder`, each landing at
+    the path it would occupy under `destination_folder` if the whole
+    subtree had been renamed in place -- same relative depth
+    preserved, so a file two levels deep inside the source lands two
+    levels deep inside the destination, not flattened. FOLDERS never
+    move (this module's own founding rule, see module docstring) --
+    `destination_folder`'s own subtree gets recreated on demand by
+    `move_entries()`'s `ensure_folder_chain()` call for each distinct
+    target used, and every FOLDER row still sitting under
+    `source_folder` once its files are gone is deleted outright at the
+    end of this call (never a soft delete: an empty virtual-folder row
+    is not content, it has nothing a user could ever want to restore
+    from a papelera). This closes roadmap item 8 (`carpetas vacías`)
+    as a side effect for the folders a merge empties, rather than
+    building a second, separate cleanup pass for the exact same
+    orphan-row problem.
+
+    Name collisions inside a group landing at the same destination
+    path are resolved by `move_entries()`'s own ordinal renaming --
+    Miguel Ángel, verbatim (S043), confirming this explicitly instead
+    of human review per case: "Confirmo el diseño con renombrado
+    ordenado automático."
+
+    Returns `(results, removed_folder_count)`: `results` is a list of
+    dicts (`blob_name`, `original_name`, `final_name`,
+    `destination_parent_path`), one per file actually moved, carrying
+    the real `blob_name` forward from before the move for accurate
+    audit logging -- `move_entries()`'s own tuple return loses it.
+    `removed_folder_count` is how many orphaned FOLDER rows were
+    deleted from the index. Never touches Google Cloud Storage (4.12)
+    -- `blob_name` of every moved file stays exactly what it was at
+    indexing time; only `parent_path`/`name` change, and FOLDER rows
+    removed here were only ever database rows, never real GCS objects
+    this call deletes.
+
+    ---
+
+    Fusiona dos árboles de carpeta duplicados del mismo cubo en uno
+    solo (H29, S043) -- incidente real que lo motivó: el mismo nombre
+    de subcarpeta (`H-11 TANQUETA ELECTRICA AUTO PROPULSADA`) existía
+    dos veces bajo dos carpetas padre distintas (`MINIGRUA` y `MINIGRUA
+    Y MAQUINA ESPECIAL`), cada una con su propia copia de los mismos
+    documentos reales, partiendo la documentación de una sola máquina
+    en dos sitios que el consumidor de cuarentena trataba como si no
+    tuvieran relación. Miguel Ángel, verbatim (S043), confirmando la
+    causa real y que el arreglo pertenece al propio sistema, no a una
+    limpieza manual puntual: "eso es un error nuestro... nuestro
+    sistema debe estar preparado para arreglar esa selva."
+
+    Fusionar carpetas nunca es una primitiva nueva: es `move_entries()`
+    aplicado a cada ARCHIVO vivo bajo `source_folder`, aterrizando cada
+    uno en la ruta que ocuparía bajo `destination_folder` si todo el
+    subárbol se hubiera renombrado en el sitio -- misma profundidad
+    relativa conservada, así que un archivo dos niveles dentro del
+    origen aterriza dos niveles dentro del destino, nunca aplanado. Las
+    CARPETAS nunca se mueven (regla fundacional propia de este módulo,
+    ver docstring del módulo) -- el propio subárbol de
+    `destination_folder` se recrea bajo demanda por la llamada a
+    `ensure_folder_chain()` de `move_entries()` para cada destino
+    distinto usado, y toda fila FOLDER que siga bajo `source_folder`
+    una vez vaciada de archivos se borra sin más al final de esta
+    llamada (nunca un borrado blando: una fila de carpeta virtual
+    vacía no es contenido, no tiene nada que un usuario pudiera querer
+    restaurar de una papelera). Esto cierra el punto 8 de la hoja de
+    ruta (`carpetas vacías`) como efecto colateral para las carpetas
+    que una fusión deja vacías, en vez de construir una segunda pasada
+    de limpieza separada para el mismo problema de filas huérfanas.
+
+    Las colisiones de nombre dentro de un grupo que aterriza en la
+    misma ruta destino se resuelven con el propio renombrado ordinal de
+    `move_entries()` -- Miguel Ángel, verbatim (S043), confirmando esto
+    explícitamente en vez de revisión humana caso a caso: "Confirmo el
+    diseño con renombrado ordenado automático."
+
+    Devuelve `(results, removed_folder_count)`: `results` es una lista
+    de diccionarios (`blob_name`, `original_name`, `final_name`,
+    `destination_parent_path`), uno por archivo realmente movido,
+    conservando el `blob_name` real de antes del movimiento para una
+    auditoría correcta -- la propia tupla que devuelve `move_entries()`
+    lo pierde. `removed_folder_count` es cuántas filas FOLDER huérfanas
+    se borraron del índice. Nunca toca Google Cloud Storage (4.12) --
+    `blob_name` de cada archivo movido sigue siendo exactamente el de
+    su indexación original; solo cambian `parent_path`/`name`, y las
+    filas FOLDER que borra esta llamada solo fueron siempre filas de
+    base de datos, nunca objetos reales de GCS que esta llamada borre.
+    """
+    source_folder = source_folder.strip("/")
+    destination_folder = destination_folder.strip("/")
+    if not source_folder or not destination_folder:
+        return [], 0
+    if source_folder == destination_folder:
+        return [], 0
+    if destination_folder == source_folder or \
+            destination_folder.startswith(source_folder + "/"):
+        # Fusionar una carpeta dentro de su propio subárbol la
+        # dejaría persiguiéndose a sí misma (mover archivos hacia un
+        # destino que un paso después vuelve a quedar "bajo origen").
+        # Nunca supuesto seguro -- se rechaza sin más, quien llama
+        # decide otro destino.
+        return [], 0
+
+    files = list(
+        DocumentIndexEntry.objects.filter(
+            bucket=bucket,
+            entry_kind=DocumentIndexEntry.KIND_FILE,
+            deleted_at__isnull=True, purged_at__isnull=True,
+        ).filter(
+            Q(parent_path=source_folder)
+            | Q(parent_path__startswith=source_folder + "/"),
+        )
+    )
+    if not files:
+        return [], 0
+
+    # Agrupar por destino relativo real: un archivo puede vivir en una
+    # subcarpeta más profunda que la raíz del origen, y debe aterrizar
+    # en la misma subcarpeta relativa bajo destino -- nunca aplanado
+    # a la raíz del destino.
+    by_destination = {}
+    for entry in files:
+        relative = entry.parent_path[len(source_folder):].lstrip("/")
+        target = (
+            "%s/%s" % (destination_folder, relative)
+            if relative else destination_folder
+        )
+        by_destination.setdefault(target, []).append(entry)
+
+    all_results = []
+    for target, group in by_destination.items():
+        blob_names_by_original_name = {
+            entry.name: entry.blob_name for entry in group
+        }
+        for original_name, final_name in move_entries(group, target):
+            all_results.append({
+                "blob_name": blob_names_by_original_name[original_name],
+                "original_name": original_name,
+                "final_name": final_name,
+                "destination_parent_path": target,
+            })
+
+    orphaned_folders = DocumentIndexEntry.objects.filter(
+        bucket=bucket,
+        entry_kind=DocumentIndexEntry.KIND_FOLDER,
+        deleted_at__isnull=True, purged_at__isnull=True,
+    ).filter(
+        Q(blob_name=source_folder)
+        | Q(blob_name__startswith=source_folder + "/"),
+    )
+    removed_folder_count = orphaned_folders.count()
+    orphaned_folders.delete()
+
+    return all_results, removed_folder_count

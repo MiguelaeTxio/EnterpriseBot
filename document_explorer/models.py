@@ -581,6 +581,7 @@ class DataOperationLog(models.Model):
     OPERATION_QUARANTINE_CONSUME = "QUARANTINE_CONSUME"
     OPERATION_REQUEUE_NO_CONFORMES = "REQUEUE_NO_CONFORMES"
     OPERATION_TRASH = "TRASH"
+    OPERATION_MERGE_FOLDERS = "MERGE_FOLDERS"
     OPERATION_CHOICES = [
         (OPERATION_DUPLICATE_RESOLUTION, "Resolución de duplicados"),
         (OPERATION_BATCH_CLASSIFICATION, "Clasificación por lote"),
@@ -590,6 +591,7 @@ class DataOperationLog(models.Model):
             "Reencolado manual de No Conformes",
         ),
         (OPERATION_TRASH, "Borrado en bloque a la papelera"),
+        (OPERATION_MERGE_FOLDERS, "Fusión de carpetas duplicadas"),
     ]
 
     operation_type = models.CharField(
@@ -796,6 +798,8 @@ class DataOperationLogEntry(models.Model):
     ACTION_NOT_CLASSIFIED = "NOT_CLASSIFIED"
     ACTION_RELOCATED = "RELOCATED"
     ACTION_SENT_TO_NO_CONFORMES = "SENT_NO_CONFORMES"
+    ACTION_MERGED = "MERGED"
+    ACTION_FOLDER_REMOVED = "FOLDER_REMOVED"
     ACTION_CHOICES = [
         (ACTION_KEPT, "Conservada"),
         (ACTION_TRASHED, "Enviada a papelera"),
@@ -803,6 +807,8 @@ class DataOperationLogEntry(models.Model):
         (ACTION_NOT_CLASSIFIED, "No se pudo aplicar"),
         (ACTION_RELOCATED, "Reubicada fuera de cuarentena"),
         (ACTION_SENT_TO_NO_CONFORMES, "Enviada a No Conformes"),
+        (ACTION_MERGED, "Fusionada a carpeta destino"),
+        (ACTION_FOLDER_REMOVED, "Fila de carpeta huérfana eliminada del índice"),
     ]
 
     log = models.ForeignKey(

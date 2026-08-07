@@ -1811,6 +1811,194 @@ class MoveView(MoveScopeMixin, View):
         )
 
 
+class MergeFoldersView(View):
+    """
+    Merge two duplicate folder trees into one (H29, S043). Not part of
+    `MoveScopeMixin` (that mixin resolves selected FILE pks; this view
+    takes two whole folder PATHS instead) but the same two permanent
+    rules apply, checked directly here: admin-only, `PRIMARY_BUCKET`
+    only -- same reasoning as `MoveScopeMixin` (see its own docstring):
+    a folder merge reparents an entire subtree of files at once, a
+    strictly larger blast radius than moving a hand-picked selection,
+    so it gets at least the same restriction, never a looser one.
+
+    All the actual logic lives in `move_service.merge_folders()` --
+    this view is thin: resolve the two paths from the form, call it,
+    write the audit trail (`DataOperationLog`/`DataOperationLogEntry`,
+    same pattern as duplicates/classification/trash), and report back
+    with Django messages, same UX as `MoveView` above (a normal form
+    POST + redirect, no AJAX/JSON).
+
+    ---
+
+    Fusiona dos árboles de carpeta duplicados en uno solo (H29, S043).
+    No forma parte de `MoveScopeMixin` (ese mixin resuelve pks de
+    ARCHIVOS seleccionados; esta vista recibe dos RUTAS de carpeta
+    completas) pero aplican las dos mismas reglas permanentes,
+    comprobadas aquí directamente: solo administrador, solo
+    `PRIMARY_BUCKET` -- mismo razonamiento que `MoveScopeMixin` (ver su
+    propio docstring): fusionar reubica un subárbol entero de archivos
+    de una vez, un radio de impacto estrictamente mayor que mover una
+    selección elegida a mano, así que merece al menos la misma
+    restricción, nunca una más laxa.
+
+    Toda la lógica real vive en `move_service.merge_folders()` -- esta
+    vista es fina: resuelve las dos rutas del formulario, la llama,
+    escribe el rastro de auditoría (`DataOperationLog`/
+    `DataOperationLogEntry`, mismo patrón que duplicados/clasificación/
+    papelera), e informa con mensajes de Django, misma UX que
+    `MoveView` de arriba (un POST de formulario normal + redirección,
+    sin AJAX/JSON).
+    """
+
+    def post(self, request):
+        company_user = request.user.company_user
+        if not permissions.is_unrestricted(company_user):
+            raise Http404("Solo el administrador puede fusionar carpetas.")
+
+        source = (request.POST.get("source_folder") or "").strip().strip("/")
+        destination = (
+            request.POST.get("destination_folder") or ""
+        ).strip().strip("/")
+
+        if not source or not destination:
+            messages.error(
+                request,
+                "Faltan la carpeta origen o la carpeta destino.",
+            )
+            return redirect(
+                "%s?bucket=%s" % (
+                    reverse("document_explorer:explorer"), PRIMARY_BUCKET,
+                )
+            )
+
+        source_exists = DocumentIndexEntry.objects.filter(
+            bucket=PRIMARY_BUCKET,
+            entry_kind=DocumentIndexEntry.KIND_FOLDER,
+            blob_name=source,
+            deleted_at__isnull=True, purged_at__isnull=True,
+        ).exists()
+        if not source_exists:
+            messages.error(
+                request,
+                "La carpeta origen «%s» no existe en Directorio "
+                "Principal." % source,
+            )
+            return redirect(
+                "%s?bucket=%s" % (
+                    reverse("document_explorer:explorer"), PRIMARY_BUCKET,
+                )
+            )
+
+        results, removed_folder_count = move_service.merge_folders(
+            PRIMARY_BUCKET, source, destination,
+        )
+
+        if not results and not removed_folder_count:
+            messages.warning(
+                request,
+                "No se ha fusionado nada: la carpeta origen está "
+                "vacía, o el destino es el propio origen o cae dentro "
+                "de él.",
+            )
+            return redirect(
+                "%s?bucket=%s&path=%s" % (
+                    reverse("document_explorer:explorer"),
+                    PRIMARY_BUCKET, source,
+                )
+            )
+
+        moved = [item["final_name"] for item in results]
+        renamed = [
+            "%s → %s" % (item["original_name"], item["final_name"])
+            for item in results
+            if item["final_name"] != item["original_name"]
+        ]
+
+        log = DataOperationLog.objects.create(
+            operation_type=DataOperationLog.OPERATION_MERGE_FOLDERS,
+            status=DataOperationLog.STATUS_COMPLETED,
+            performed_by=company_user,
+            bucket=PRIMARY_BUCKET,
+            path_prefix=source,
+            groups_count=len(moved),
+            kept_count=len(moved),
+            trashed_count=removed_folder_count,
+        )
+        log_entries = [
+            DataOperationLogEntry(
+                log=log,
+                group_number=1,
+                action=DataOperationLogEntry.ACTION_MERGED,
+                bucket=PRIMARY_BUCKET,
+                blob_name=item["blob_name"],
+                name=item["final_name"],
+                previous_name=item["original_name"],
+                parent_path=item["destination_parent_path"],
+                detail=(
+                    "Fusionada de «%s» a «%s»." % (source, destination)
+                ),
+            )
+            for item in results
+        ]
+        if removed_folder_count:
+            log_entries.append(
+                DataOperationLogEntry(
+                    log=log,
+                    group_number=1,
+                    action=DataOperationLogEntry.ACTION_FOLDER_REMOVED,
+                    bucket=PRIMARY_BUCKET,
+                    blob_name=source,
+                    name=(
+                        source.rsplit("/", 1)[-1] if source else source
+                    ),
+                    parent_path=(
+                        source.rsplit("/", 1)[0] if "/" in source else ""
+                    ),
+                    detail=(
+                        "%d fila(s) de carpeta huérfana eliminada(s) del "
+                        "índice tras la fusión (solo filas del índice, "
+                        "nunca objetos reales de GCS -- 4.12)."
+                        % removed_folder_count
+                    ),
+                )
+            )
+        DataOperationLogEntry.objects.bulk_create(log_entries)
+
+        if moved:
+            if len(moved) == 1:
+                messages.success(
+                    request,
+                    "1 archivo fusionado de «%s» a «%s»."
+                    % (source, destination),
+                )
+            else:
+                messages.success(
+                    request,
+                    "%d archivos fusionados de «%s» a «%s»."
+                    % (len(moved), source, destination),
+                )
+        if renamed:
+            messages.warning(
+                request,
+                "Colisión de nombre resuelta con renombrado "
+                "automático: %s" % ", ".join(renamed),
+            )
+        if removed_folder_count:
+            messages.info(
+                request,
+                "%d fila(s) de carpeta huérfana eliminada(s) del "
+                "índice." % removed_folder_count,
+            )
+
+        return redirect(
+            "%s?bucket=%s&path=%s" % (
+                reverse("document_explorer:explorer"),
+                PRIMARY_BUCKET, destination,
+            )
+        )
+
+
 class ClassifyView(MoveScopeMixin, View):
     """
     Batch classification (H29, S040 -- Miguel Ángel: "comenzamos ya la
