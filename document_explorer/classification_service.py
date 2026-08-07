@@ -68,6 +68,7 @@ import time
 
 import fitz  # PyMuPDF -- ya en requirements (ver cabecera del módulo)
 
+from django.db.models import Q
 from django.utils import timezone
 from google.genai.types import GenerateContentConfig, HttpOptions, Part
 
@@ -532,6 +533,27 @@ def resolve_machine_asset(entry) -> MachineAsset | None:
 _DEFAULT_MACHINE_COMPANY_CODE = "GRA"
 
 
+# Vehículos de empresa nuevos sin ningún código de flota clásico
+# (S043): la carpeta los nombra por su matrícula española en formato
+# actual (4 dígitos + 3 consonantes, con o sin espacio -- "2119 NGV",
+# "2119NGV"), nunca con forma letra(s)+dígitos como una máquina de la
+# flota. Caso real que lo motivó: "VEHICULOS DE EMPRESA/DOCUMENT NUEVO
+# ADOLFO BMW 2119 NGV" -- una proforma y un justificante de depósito
+# de compra (ambos con fecha real 2026-07-31, sin MachineAsset todavía)
+# se clasificaban correctamente por Gemini (dominio MACHINE, tipo
+# PROFORMA/confianza ALTA) pero terminaban en NO CONFORMES igual,
+# porque ningún segmento de la carpeta tenía forma de código de flota
+# -- _FOLDER_MACHINE_CODE_RE nunca podía encontrar nada de lo que
+# partir. Miguel Ángel, verbatim (S043), confirmando el diseño antes
+# de tocar código: "Las matrículas, como norma general, están
+# correctamente en BBDD." Confirmado con datos reales de producción:
+# varios MachineAsset ya usan la propia matrícula en formato actual
+# como `code` cuando no hay código de flota clásico que asignar
+# (4542KGD, 6788DMV, 3072MDV) -- mismo patrón que este bloque replica,
+# nunca uno nuevo inventado.
+_FOLDER_PLATE_RE = re.compile(r"(\d{4})\s?([A-Z]{3})\b")
+
+
 def resolve_or_create_machine_asset(
     entry, result: dict,
 ) -> MachineAsset | None:
@@ -646,8 +668,29 @@ def resolve_or_create_machine_asset(
                 break
         if candidate_code:
             break
+
+    candidate_plate = None
     if not candidate_code:
+        # Respaldo por matrícula (S043) -- ver _FOLDER_PLATE_RE. Sobre
+        # el segmento completo, no palabra a palabra: la matrícula
+        # puede llegar partida en dos tokens por el espacio real de la
+        # carpeta ("2119 NGV" -> "2119" y "NGV" por separado).
+        for segment in entry.parent_path.split("/"):
+            match = _FOLDER_PLATE_RE.search(segment.strip().upper())
+            if match:
+                candidate_plate = match.group(1) + match.group(2)
+                break
+
+    if not candidate_code and not candidate_plate:
         return None
+
+    if candidate_plate:
+        asset = MachineAsset.objects.filter(
+            Q(code__iexact=candidate_plate)
+            | Q(plate__iexact=candidate_plate),
+        ).first()
+        if asset:
+            return asset
 
     reference = (
         MachineAsset.objects
@@ -659,6 +702,30 @@ def resolve_or_create_machine_asset(
         return None
 
     brand_model = (result.get("brand_model_hint") or "").strip()
+
+    if candidate_plate:
+        asset = MachineAsset.objects.create(
+            company=reference.company,
+            company_code=reference.company_code,
+            company_name=reference.company_name,
+            code=candidate_plate,
+            plate=candidate_plate,
+            brand_model=brand_model,
+        )
+        result["machine_asset_note"] = (
+            "Vehículo de empresa nuevo creado automáticamente en la "
+            "flota por matrícula (sin código de flota clásico en la "
+            "carpeta): código/matrícula %s%s -- empresa/sección por "
+            "defecto (%s, %s), pendiente de confirmar la real y de "
+            "completar el resto de su ficha."
+            % (
+                candidate_plate,
+                " (%s)" % brand_model if brand_model else "",
+                reference.company_code, reference.company_name,
+            )
+        )
+        return asset
+
     asset = MachineAsset.objects.create(
         company=reference.company,
         company_code=reference.company_code,
