@@ -171,12 +171,14 @@ _RESPONSE_SCHEMA = {
         "dni_hint": {"type": "string"},
         "date_hint": {"type": "string"},
         "is_dossier": {"type": "boolean"},
+        "is_photo": {"type": "boolean"},
     },
     "required": [
         "domain", "document_type_code", "confidence", "reasoning",
         "machine_code_hint", "brand_model_hint",
         "first_surname_hint", "second_surname_hint",
         "given_name_hint", "dni_hint", "date_hint", "is_dossier",
+        "is_photo",
     ],
 }
 
@@ -213,6 +215,17 @@ páginas intermedias, un cambio claro de membrete, formato o tipo de \
 documento entre el bloque inicial y el final es motivo suficiente para \
 marcar is_dossier=true con certeza -- no hace falta ver las páginas de \
 en medio para saber que hay dos documentos distintos cosidos juntos.
+
+is_photo: true SOLO cuando el archivo es, en esencia, una FOTOGRAFÍA (de una \
+máquina, un vehículo, una escena de trabajo, un daño, etc.) y no un \
+documento administrativo o técnico escaneado/generado -- p. ej. una foto \
+tomada con el móvil y guardada como PDF/imagen sigue siendo is_photo=true, \
+aunque el formato del archivo sea PDF. false para cualquier documento con \
+texto administrativo real (facturas, permisos, certificados, DNI...), \
+aunque contenga alguna imagen o logo. Si is_photo=true, usa \
+document_type_code="DESCONOCIDO" y explica en "reasoning" que es una \
+fotografía, no un documento -- nunca inventes un tipo de la lista para \
+encajarla a la fuerza.
 
 Además del tipo, extrae estas pistas SI aparecen de forma clara en el propio \
 documento (deja la cadena vacía "" si no aparecen -- nunca inventes un valor):
@@ -2548,6 +2561,36 @@ def apply_quarantine_classification(entry) -> dict:
             result.update(
                 new_name=None, classified=False,
                 renamed=False, relocated=False, trashed=True,
+            )
+            return result
+        result["trashed"] = False
+
+    if result.get("is_photo"):
+        # S043, Miguel Ángel, verbatim, tras dos fotografías reales de
+        # una grúa (guardadas como PDF, "A-69 E-0124-BJL WhatsApp
+        # Image...") atascadas en NO CONFORMES sin ningún tipo de
+        # catálogo que pudiera encajarlas nunca -- una fotografía no
+        # es un documento administrativo, nunca lo será, y forzarla a
+        # un tipo del vocabulario cerrado sería inventar un tipo que
+        # no le corresponde: "Fotos sin asignar específicamente a una
+        # máquina se eliminan, tenemos que tener una tabla de media
+        # para añadir fotos a las máquinas pero tendrá otra vía de
+        # subida, no por aquí, si no directamente desde el CRUD de
+        # maquinaria." Interpretación explícita, a confirmar con
+        # Miguel Ángel si no es la deseada: mientras esa vía de subida
+        # por CRUD no exista, NINGUNA foto queda "asignada de verdad"
+        # por este flujo -- da igual que la carpeta de cuarentena
+        # nombre una máquina real (como aquí, `A-69`, código de flota
+        # real) -- así que se eliminan todas las detectadas como foto,
+        # sin excepción por carpeta. Borrado blando
+        # (`trash_dossier_entry()`, papelera de
+        # `_DOSSIER_TRASH_USERNAME`, recuperable), nunca un borrado
+        # real de GCS (4.12).
+        if trash_dossier_entry(entry):
+            result.update(
+                new_name=None, classified=False,
+                renamed=False, relocated=False, trashed=True,
+                trash_reason="FOTOGRAFÍA ELIMINADA",
             )
             return result
         result["trashed"] = False
