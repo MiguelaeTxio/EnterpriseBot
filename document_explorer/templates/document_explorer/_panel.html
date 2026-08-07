@@ -280,6 +280,43 @@
         });
         window.__dxSelectionCounterAttached = true;
     }
+
+    {% comment %}
+    Fusión de carpetas (H29, S043) -- deliberadamente sin árbol de
+    navegación propio como el modal de mover. Miguel Ángel pidió la
+    herramienta ya, para arreglar la selva real hoy mismo; un
+    `prompt()` con la ruta completa escrita a mano es la versión
+    mínima que funciona de verdad contra el caso real (H-11 duplicada)
+    sin bloquear la entrega en una UI más elaborada. Candidato a
+    sustituirse por un picker con árbol de carpetas (reutilizando
+    `_move_browse.html`) en una sesión futura si Miguel Ángel lo pide
+    -- anotado, no resuelto aquí.
+    {% endcomment %}
+    if (!window.__dxMergeFoldersAttached) {
+        window.dxPromptMergeDestination = function (form) {
+            var destination = window.prompt(
+                "Ruta COMPLETA de la carpeta destino dentro de " +
+                "Directorio Principal (la carpeta origen se vaciará " +
+                "en ella; las filas de carpeta vacías que queden se " +
+                "eliminan del índice, nunca de Google Cloud Storage):"
+            );
+            if (!destination || !destination.trim()) {
+                return false;
+            }
+            form.querySelector(
+                'input[name="destination_folder"]'
+            ).value = destination.trim();
+            return window.confirm(
+                "¿Fusionar «" +
+                form.querySelector('input[name="source_folder"]').value +
+                "» dentro de «" + destination.trim() + "»? " +
+                "Los archivos se reubican de forma virtual (nunca se " +
+                "tocan en Google Cloud Storage) y no se puede deshacer " +
+                "desde aquí."
+            );
+        };
+        window.__dxMergeFoldersAttached = true;
+    }
 </script>
 
 {% if denied %}

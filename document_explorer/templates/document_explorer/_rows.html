@@ -129,6 +129,19 @@
                         <i class="bi bi-folder-symlink"></i>
                     </button>
                 {% endif %}
+                {% if can_move and entry.is_folder and entry.blob_name and entry.bucket == primary_bucket %}
+                    <form method="post" class="d-inline"
+                          action="{% url 'document_explorer:merge_folders' %}"
+                          onsubmit="return window.dxPromptMergeDestination(this);">
+                        {% csrf_token %}
+                        <input type="hidden" name="source_folder" value="{{ entry.blob_name }}">
+                        <input type="hidden" name="destination_folder" value="">
+                        <button type="submit" class="btn btn-sm btn-link p-0 me-2"
+                                title="Fusionar con otra carpeta (selva de nombres duplicados)">
+                            <i class="bi bi-signpost-split"></i>
+                        </button>
+                    </form>
+                {% endif %}
                 {% if show_delete and entry.pk %}
                     <form method="post" class="d-inline"
                           action="{% url 'document_explorer:trash_add' entry.pk %}">
