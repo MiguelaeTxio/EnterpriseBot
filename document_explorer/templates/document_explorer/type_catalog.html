@@ -105,11 +105,46 @@
         <table class="table table-sm table-hover align-middle mb-0">
             <thead>
                 <tr>
-                    <th>Código</th>
-                    <th>Nombre visible</th>
-                    <th>Dominio</th>
-                    <th>Estado</th>
-                    <th>Alta</th>
+                    <th>
+                        <a href="{{ sort_columns.code.url }}" class="text-decoration-none">
+                            Código
+                            {% if sort_columns.code.active %}
+                                <i class="bi bi-caret-{% if sort_columns.code.dir == "asc" %}up{% else %}down{% endif %}-fill"></i>
+                            {% endif %}
+                        </a>
+                    </th>
+                    <th>
+                        <a href="{{ sort_columns.label.url }}" class="text-decoration-none">
+                            Nombre visible
+                            {% if sort_columns.label.active %}
+                                <i class="bi bi-caret-{% if sort_columns.label.dir == "asc" %}up{% else %}down{% endif %}-fill"></i>
+                            {% endif %}
+                        </a>
+                    </th>
+                    <th>
+                        <a href="{{ sort_columns.domain.url }}" class="text-decoration-none">
+                            Dominio
+                            {% if sort_columns.domain.active %}
+                                <i class="bi bi-caret-{% if sort_columns.domain.dir == "asc" %}up{% else %}down{% endif %}-fill"></i>
+                            {% endif %}
+                        </a>
+                    </th>
+                    <th>
+                        <a href="{{ sort_columns.state.url }}" class="text-decoration-none">
+                            Estado
+                            {% if sort_columns.state.active %}
+                                <i class="bi bi-caret-{% if sort_columns.state.dir == "asc" %}up{% else %}down{% endif %}-fill"></i>
+                            {% endif %}
+                        </a>
+                    </th>
+                    <th>
+                        <a href="{{ sort_columns.created.url }}" class="text-decoration-none">
+                            Alta
+                            {% if sort_columns.created.active %}
+                                <i class="bi bi-caret-{% if sort_columns.created.dir == "asc" %}up{% else %}down{% endif %}-fill"></i>
+                            {% endif %}
+                        </a>
+                    </th>
                     <th></th>
                 </tr>
             </thead>
