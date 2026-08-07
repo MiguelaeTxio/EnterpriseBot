@@ -198,6 +198,17 @@ TIPOS DE DOCUMENTO POSIBLES (código -- descripción):
 Si el documento no encaja claramente en ninguno de los tipos anteriores, \
 usa el código "DESCONOCIDO" y explica por qué en "reasoning".
 
+REVERSOS Y CARAS SUELTAS de un documento de doble cara (DNI, permiso de \
+conducción, tarjeta ITV con reverso, etc.): el reverso es EL MISMO \
+documento que el anverso, nunca un tipo distinto ni "DESCONOCIDO" solo \
+por faltarle la cara con la foto/datos principales. Si reconoces de qué \
+tipo de documento es el reverso (por el formato, los campos que sí se \
+ven, el propio membrete), usa exactamente el mismo código que usarías \
+para el anverso completo -- un reverso sin nombre visible pero \
+identificable por su formato como "reverso de DNI" sigue siendo ese \
+mismo tipo de documento, con confianza más baja si hace falta, nunca \
+DESCONOCIDO por el mero hecho de ser la cara de atrás.
+
 is_dossier: SOLO true cuando tengas la CERTEZA de que el archivo es la \
 unión de DOS O MÁS documentos catalogados DISTINTOS, cada uno \
 identificable por separado -- por ejemplo: una tarjeta ITV + un permiso \
