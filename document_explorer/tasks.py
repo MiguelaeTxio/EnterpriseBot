@@ -465,7 +465,31 @@ def consume_quarantine_task(self) -> None:
             # incidente real que lo confirma. `result` cae al mismo
             # bloque compartido de más abajo (hints/detail/acción),
             # nunca duplicado aquí.
-            if classification_service.is_empty_file(entry):
+            # S043, Miguel Ángel, verbatim, tras un .log real de
+            # spooler de impresión colado en cuarentena: "No debería
+            # de enviarse a Gemini, hay que borrarlo." Ni siquiera
+            # necesita el tamaño del archivo -- solo la extensión, así
+            # que va antes que is_empty_file. Ver el docstring de
+            # classification_service.is_known_junk_extension() para el
+            # incidente real y por qué es deliberadamente más estrecho
+            # que "Gemini no soporta este tipo".
+            if classification_service.is_known_junk_extension(entry):
+                trashed_ok = classification_service.trash_dossier_entry(
+                    entry,
+                )
+                result = {
+                    "domain": "N/A", "document_type_code": "N/A",
+                    "confidence": "N/A",
+                    "reasoning": (
+                        "Extensión de archivo confirmada como basura "
+                        "real (nunca documentación) -- eliminado "
+                        "automáticamente, sin pasar por Gemini."
+                    ),
+                    "trashed": trashed_ok,
+                    "trash_reason": "EXTENSIÓN BASURA ELIMINADA",
+                    "relocated": False,
+                }
+            elif classification_service.is_empty_file(entry):
                 trashed_ok = classification_service.trash_dossier_entry(
                     entry,
                 )

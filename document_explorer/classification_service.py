@@ -752,6 +752,69 @@ def resolve_or_create_machine_asset(
     return asset
 
 
+# Extensiones que nunca son documentación real, confirmadas una a una
+# contra un caso real antes de añadirlas -- nunca una lista genérica
+# de "extensiones raras". `.log` (S043): un archivo real de cuarentena
+# resultó ser un log de spooler de impresión de Windows
+# (`Pipe:\\.\pipe\PMtoDistiller_ID_42:...`, "La operación se completó
+# correctamente"), capturado sin querer junto a la documentación real
+# -- mismo patrón exacto que los temporales de OneDrive ya filtrados
+# en el agente H28 (ver anexo, "Temporales de OneDrive tratados como
+# documentación"), pero del lado servidor: `classify_entry()` ya
+# rechazaba `.log` por tipo MIME no soportado y sin conversión
+# conocida, así que nunca llegaba a gastar una llamada real a Gemini
+# -- pero se quedaba parado en NO CONFORMES para siempre en vez de
+# eliminarse solo, con el mismo coste de revisión humana que un
+# archivo genuinamente ambiguo. Miguel Ángel, verbatim (S043),
+# confirmando que es basura real, no un caso a revisar: "No debería de
+# enviarse a Gemini, hay que borrarlo."
+_JUNK_EXTENSIONS = {"log"}
+
+
+def is_known_junk_extension(entry) -> bool:
+    """
+    True when `entry`'s extension is in `_JUNK_EXTENSIONS` -- real
+    junk confirmed one extension at a time (see that set's own
+    comment for the real `.log` incident, S043), never a generic
+    "looks unsupported" heuristic. Deliberately narrower than "Gemini
+    can't read this type" (`_SUPPORTED_MIME_TYPES`/
+    `_LIBREOFFICE_CONVERTIBLE_EXTENSIONS`/`_XPS_EXTENSIONS`): plenty
+    of unsupported types are real content waiting on a future
+    converter, not junk -- this only ever matches extensions
+    confirmed junk by a real incident, added to the set one at a
+    time, never inferred from "classify_entry() already rejects it."
+
+    Runs before any Gemini call, same reasoning and same directive as
+    `is_empty_file()`/`resolve_archive_redundancy()` -- S042, Miguel
+    Ángel: "no podemos nosotros borrar nada... dotar al sistema de las
+    herramientas pertinentes para que lo haga de forma automática."
+
+    ---
+
+    Cierto cuando la extensión de `entry` está en `_JUNK_EXTENSIONS`
+    -- basura real confirmada extensión a extensión (ver el propio
+    comentario de ese conjunto para el incidente real de `.log`,
+    S043), nunca una heurística genérica de "parece no soportado".
+    Deliberadamente más estrecho que "Gemini no puede leer esto"
+    (`_SUPPORTED_MIME_TYPES`/`_LIBREOFFICE_CONVERTIBLE_EXTENSIONS`/
+    `_XPS_EXTENSIONS`): muchos tipos no soportados son contenido real
+    a la espera de un conversor futuro, no basura -- esto solo casa
+    con extensiones confirmadas basura por un incidente real, añadidas
+    al conjunto una a una, nunca inferidas de "classify_entry() ya lo
+    rechaza."
+
+    Corre antes de cualquier llamada a Gemini, mismo razonamiento y
+    misma directriz que `is_empty_file()`/`resolve_archive_
+    redundancy()` -- S042, Miguel Ángel: "no podemos nosotros borrar
+    nada... dotar al sistema de las herramientas pertinentes para que
+    lo haga de forma automática."
+    """
+    extension = (
+        entry.name.rsplit(".", 1)[-1].lower() if "." in entry.name else ""
+    )
+    return extension in _JUNK_EXTENSIONS
+
+
 def is_empty_file(entry) -> bool:
     """
     True when `entry` is a genuine 0-byte file -- real junk, never
@@ -2513,6 +2576,29 @@ def apply_quarantine_classification(entry) -> dict:
         return result
 
     effective_domain = domain or result.get("domain")
+    if domain and result.get("domain") and result.get("domain") != domain:
+        # Incidente real S043: Gemini devolvió "domain": "PERSONAL"
+        # para un DNI de comprador que vivía bajo una carpeta ya
+        # deterministamente MÁQUINA (`quarantine_domain_for_entry()`,
+        # nunca sobreescrita -- ver el `or` de la línea de arriba, que
+        # ya protegía la clasificación real). El bug real era solo de
+        # AUDITORÍA: el detalle del log seguía mostrando el "Dominio"
+        # crudo que devolvió Gemini, no el que el sistema usó de
+        # verdad para procesar el archivo -- confundía el diagnóstico
+        # (llevó a sospechar un enrutado a PERSONAL que nunca ocurrió).
+        # `result["domain"]` se corrige aquí mismo para que cualquier
+        # consumidor futuro (el propio detalle del log, u otro) vea
+        # siempre el dominio real aplicado, nunca el que Gemini
+        # ignoró la instrucción de "ya conocido, no lo cambies".
+        result["reasoning"] = (
+            "%s -- Gemini devolvió dominio %s pese a estar fijado como "
+            "%s por la propia carpeta; se ha usado %s, el real."
+            % (
+                result.get("reasoning", ""), result.get("domain"),
+                domain, domain,
+            )
+        )
+    result["domain"] = effective_domain
     result["machine_mismatch_warning"] = (
         check_machine_mismatch(entry, result)
         if effective_domain == "MACHINE" else None
