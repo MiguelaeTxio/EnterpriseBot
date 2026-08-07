@@ -3177,6 +3177,67 @@ class DocumentTypeCatalogListView(ExplorerAccessMixin, TemplateView):
 
     template_name = "document_explorer/type_catalog.html"
 
+    # Cinco columnas reales de la tabla (type_catalog.html) -- clave
+    # pública en la URL (?sort=) -> campo real del modelo para
+    # order_by(). "estado" ordena por is_active (False/True ==
+    # Inactivo/Activo alfabéticamente al revés de lo intuitivo, así
+    # que se invierte con el signo "-" ya en el propio mapeo, no en
+    # tiempo de petición, para que "ascendente" siempre signifique
+    # "Inactivo primero" de forma consistente con lo que muestra la
+    # columna).
+    _SORT_FIELDS = {
+        "code": "code",
+        "label": "label",
+        "domain": "domain",
+        "state": "is_active",
+        "created": "created_at",
+    }
+    _SORT_LABELS = {
+        "code": "Código",
+        "label": "Nombre visible",
+        "domain": "Dominio",
+        "state": "Estado",
+        "created": "Alta",
+    }
+    _DEFAULT_SORT = "code"
+
+    def _sort_params(self):
+        """
+        Lee y valida sort/dir de la query string, igual patrón que
+        `FolderListingView._sort_params()` -- cae en code/asc ante
+        cualquier valor no reconocido.
+        """
+        sort = self.request.GET.get("sort") or self._DEFAULT_SORT
+        if sort not in self._SORT_FIELDS:
+            sort = self._DEFAULT_SORT
+        direction = self.request.GET.get("dir") or "asc"
+        if direction not in ("asc", "desc"):
+            direction = "asc"
+        return sort, direction
+
+    def _sort_columns(self, sort_key, sort_dir, base_params):
+        """
+        Estado de cabecera de las cinco columnas ordenables, resuelto
+        aquí por completo (URL incluida) -- mismo patrón que
+        `FolderListingView._sort_columns()`, adaptado a una página
+        normal (enlaces `<a href>`, sin HTMX: esta pantalla no es un
+        fragmento parcial).
+        """
+        columns = {}
+        for key, label in self._SORT_LABELS.items():
+            active = sort_key == key
+            toggle_dir = "desc" if (active and sort_dir == "asc") else "asc"
+            params = dict(base_params, sort=key, dir=toggle_dir)
+            columns[key] = {
+                "label": label,
+                "active": active,
+                "dir": sort_dir if active else None,
+                "url": "?%s" % urlencode(
+                    {k: v for k, v in params.items() if v},
+                ),
+            }
+        return columns
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         company_user = self.request.user.company_user
@@ -3186,6 +3247,7 @@ class DocumentTypeCatalogListView(ExplorerAccessMixin, TemplateView):
         q = (self.request.GET.get("q") or "").strip()
         domain = (self.request.GET.get("domain") or "").strip()
         state = (self.request.GET.get("state") or "").strip()
+        sort_key, sort_dir = self._sort_params()
 
         types = DocumentTypeCatalog.objects.all()
         if q:
@@ -3199,10 +3261,21 @@ class DocumentTypeCatalogListView(ExplorerAccessMixin, TemplateView):
         elif state == "inactive":
             types = types.filter(is_active=False)
 
+        order_field = self._SORT_FIELDS[sort_key]
+        if sort_dir == "desc":
+            order_field = "-%s" % order_field
+        # Desempate estable por pk -- dos filas con el mismo valor en
+        # la columna ordenada (dos tipos "Activo", dos dados de alta
+        # el mismo día) no deben cambiar de orden entre peticiones.
+        types = types.order_by(order_field, "pk")
+
         context["active_nav"] = "document_explorer"
         context["types"] = types
         context["domain_choices"] = DocumentTypeCatalog.DOMAIN_CHOICES
         context["filters"] = {"q": q, "domain": domain, "state": state}
+        context["sort_columns"] = self._sort_columns(
+            sort_key, sort_dir, {"q": q, "domain": domain, "state": state},
+        )
         return context
 
 
