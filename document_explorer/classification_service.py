@@ -237,11 +237,17 @@ la que se refiere el documento (solo si el dominio es de personal). Si el \
 documento es un DNI o un informe de la Seguridad Social, estos son \
 exactamente los campos que aparecen impresos en él. El DNI es el dato más \
 fiable de los cuatro para identificar a la persona sin ambigüedad -- \
-extráelo siempre que aparezca, aunque también extraigas el nombre. Si el \
-documento menciona a VARIAS personas distintas por igual (un listado, una \
-declaración con varios trabajadores...), extrae los datos de la persona más \
-prominente y dilo explícitamente en "reasoning" -- eso indica que el \
-archivo podría contener a más de una persona.
+extráelo siempre que aparezca, aunque también extraigas el nombre. \
+EXCEPCIÓN a "deja la cadena vacía si no aparece": si la NOTA DEL \
+SUPERVISOR de arriba incluye un DNI/NIE explícito, usa ese valor como \
+dni_hint aunque el propio documento no lo mencione en ningún sitio -- la \
+nota es la fuente más fiable de todas, por delante incluso del propio \
+documento, y muchos documentos personales reales (partes de vacaciones, \
+notas internas) nunca llevan DNI impreso. Si el documento menciona a \
+VARIAS personas distintas por igual (un listado, una declaración con \
+varios trabajadores...), extrae los datos de la persona más prominente y \
+dilo explícitamente en "reasoning" -- eso indica que el archivo podría \
+contener a más de una persona.
 - date_hint: la fecha más relevante del documento para decidir cuándo se \
 emitió o cuándo caduca (formato AAAA-MM-DD), si se puede leer con claridad.
 
