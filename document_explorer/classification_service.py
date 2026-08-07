@@ -2042,6 +2042,7 @@ def _resolve_date(entry, result) -> datetime.date:
 
 def build_new_name(
     entry, domain: str, result: dict, ordinal: int | None = None,
+    asset: "MachineAsset | None" = None,
 ) -> str | None:
     """
     Build the virtual filename `naming_service` would produce from a
@@ -2049,6 +2050,24 @@ def build_new_name(
     (unknown type, or missing the field the chosen domain's format
     requires) -- callers must treat None as "leave this one for manual
     review", never invent a placeholder.
+
+    `asset` (S043 addition): the MACHINE-domain caller may already
+    have resolved (or just created) the real `MachineAsset` via
+    `resolve_or_create_machine_asset()` -- real incident this fixes:
+    that resolver already understands company-vehicle folders
+    identified by plate (`_FOLDER_PLATE_RE`), but this function used
+    to call the plain, read-only `resolve_machine_asset()` again from
+    scratch, which only ever understood the classic fleet-code pattern
+    (`_FOLDER_MACHINE_CODE_RE`). A file correctly classified as
+    PROFORMA/RECIBO_SENAL_COMPRA, with its `MachineAsset` already
+    created by matrícula, still fell back to `machine_code_hint` (often
+    empty) and landed in NO CONFORMES anyway -- the asset the pipeline
+    had just resolved was silently discarded one call later. When
+    `asset` is passed, it is trusted directly; only when it is `None`
+    (every other MACHINE-domain caller, e.g. `apply_classification()`
+    reclassifying a file already living under `DOC. MAQUINAS`) does
+    this function fall back to the original `resolve_machine_asset()`
+    lookup, unchanged.
 
     `ordinal` is forwarded to `naming_service` as-is -- Miguel Ángel's
     own format ("...tipo de documento, y fecha y ordinal por si hay
@@ -2065,6 +2084,24 @@ def build_new_name(
     falta el campo que exige el formato de ese dominio) -- quien llama
     debe tratar None como "dejar este para revisión manual", nunca
     inventar un valor de relleno.
+
+    `asset` (añadido S043): quien llama en dominio MÁQUINA puede haber
+    resuelto (o creado) ya el `MachineAsset` real vía
+    `resolve_or_create_machine_asset()` -- incidente real que esto
+    corrige: ese resolutor ya entiende carpetas de vehículo de empresa
+    identificadas por matrícula (`_FOLDER_PLATE_RE`), pero esta función
+    volvía a llamar desde cero a la `resolve_machine_asset()` de solo
+    lectura, que solo entendía el patrón clásico de código de flota
+    (`_FOLDER_MACHINE_CODE_RE`). Un archivo correctamente clasificado
+    como PROFORMA/RECIBO_SENAL_COMPRA, con su `MachineAsset` ya creado
+    por matrícula, seguía cayendo al `machine_code_hint` (a menudo
+    vacío) y aterrizaba en NO CONFORMES igual -- el asset que el propio
+    flujo acababa de resolver se descartaba en silencio una llamada
+    después. Cuando se pasa `asset`, se confía en él directamente; solo
+    cuando es `None` (cualquier otro llamador de dominio MÁQUINA, p.
+    ej. `apply_classification()` reclasificando un archivo que ya vive
+    bajo `DOC. MAQUINAS`) esta función recurre a la búsqueda original
+    de `resolve_machine_asset()`, sin cambios.
 
     `ordinal` se reenvía tal cual a `naming_service` -- el propio
     formato de Miguel Ángel ("...tipo de documento, y fecha y ordinal
@@ -2090,9 +2127,9 @@ def build_new_name(
         # en dos pasadas seguidas. Gemini solo decide el código cuando
         # la carpeta no resuelve a ninguna máquina real -- el caso de
         # cuarentena, que es donde de verdad hace falta que adivine.
-        asset = resolve_machine_asset(entry)
+        resolved_asset = asset if asset is not None else resolve_machine_asset(entry)
         machine_code = (
-            asset.code if asset
+            resolved_asset.code if resolved_asset
             else (result.get("machine_code_hint") or "").strip()
         )
         if not machine_code:
@@ -2529,7 +2566,7 @@ def apply_quarantine_classification(entry) -> dict:
         )
         return result
 
-    candidate_name = build_new_name(entry, "MACHINE", result)
+    candidate_name = build_new_name(entry, "MACHINE", result, asset=asset)
     if not candidate_name:
         result.update(
             new_name=None, classified=False,
@@ -2547,7 +2584,7 @@ def apply_quarantine_classification(entry) -> dict:
         entry.bucket, target_parent_path, final_name, exclude_pk=entry.pk,
     ):
         final_name = build_new_name(
-            entry, "MACHINE", result, ordinal=ordinal,
+            entry, "MACHINE", result, ordinal=ordinal, asset=asset,
         )
         ordinal += 1
 
