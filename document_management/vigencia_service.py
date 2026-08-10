@@ -98,9 +98,14 @@ def is_current(
 class SubstitutionResult:
     """
     Resultado de comparar un documento entrante contra los existentes
-    del mismo tipo, para el dialogo de sustitucion (anexo H26 seccion
-    2.4). Nunca decide por si mismo archivar/revertir -- solo informa;
-    la decision final es siempre del usuario en el dialogo.
+    del mismo tipo. Diseño original del anexo H26 seccion 2.4 (dialogo
+    interactivo que preguntaba al usuario), corregido en S025: la
+    sustitucion se aplica en SILENCIO, sin dialogo -- el llamador
+    (hoy machine_documents/tasks.py) usa este resultado para archivar/
+    registrar directamente, nunca para mostrar una pregunta al
+    usuario. Este modulo sigue sin decidir nada por si mismo ni
+    persistir nada -- solo informa; quien llama decide que hacer con
+    el resultado.
     """
     has_existing_of_same_type: bool
     incoming_should_prevail: bool
@@ -117,10 +122,13 @@ def evaluate_substitution(
     Compara un documento entrante contra los documentos existentes del
     mismo tipo (misma maquina + mismo document_type, ya resuelto por
     el llamador -- este modulo no consulta ninguna BD) y devuelve el
-    resultado de la comparacion para que la interfaz de H23 muestre el
-    dialogo con las dos acciones (archivar el obsoleto / revertir la
-    subida entrante). Flujo tal cual lo describio Miguel Angel, anexo
-    H26 seccion 2.4 -- este modulo NUNCA archiva ni persiste nada.
+    resultado de la comparacion. Diseño original del anexo H26 seccion
+    2.4: la interfaz mostraba un dialogo con dos acciones (archivar el
+    obsoleto / revertir la subida entrante). Corregido en S025 -- el
+    llamador (hoy machine_documents/tasks.py, Step 2bis) usa este
+    resultado para archivar y registrar en DocumentSubstitutionLog
+    directamente, en silencio, sin mostrar ningun dialogo. Este modulo
+    sigue sin archivar ni persistir nada -- solo informa.
     """
     if not existing_same_type:
         return SubstitutionResult(
