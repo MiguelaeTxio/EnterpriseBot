@@ -73,6 +73,7 @@ el resto del proyecto.
 import json
 
 from django.core.management.base import BaseCommand, CommandError
+from django.db import close_old_connections
 from google.genai.types import GenerateContentConfig, HttpOptions, Part
 
 from ai_services.gemini_client import DEFAULT_MODEL, get_gemini_client
@@ -187,7 +188,29 @@ class Command(BaseCommand):
                     (entry.size_bytes or 0) / (1024 * 1024),
                 )
             )
-            row = self._audit_one(client, entry)
+            # Bug real S044: una espera larga de reintentos de Gemini
+            # (504 DEADLINE_EXCEEDED, 60s x 2) deja la conexión MySQL
+            # inactiva más tiempo que `wait_timeout` del servidor --
+            # MySQL la cierra sola, y la siguiente consulta del ORM
+            # revienta con OperationalError 4031, tumbando todo el
+            # comando en el archivo 2 de 291. close_old_connections()
+            # fuerza a Django a abrir una conexión nueva si la que
+            # tenía ya no es válida, sin cambiar nada del resto de la
+            # lógica (mismo patrón que Django recomienda para tareas de
+            # fondo de larga duración).
+            close_old_connections()
+            try:
+                row = self._audit_one(client, entry)
+            except Exception as exc:
+                # Aislado por entrada: un fallo real e inesperado en un
+                # manual (BD, GCS, lo que sea) no debe tirar los otros
+                # 290 ya en cola -- se registra y se sigue, igual
+                # criterio que los `except Exception` ya existentes
+                # dentro de `_audit_one` para Gemini/descarga.
+                self.stdout.write(self.style.ERROR(
+                    "  Fallo inesperado, se omite esta entrada: %s" % exc
+                ))
+                row = None
             if row:
                 rows.append(row)
                 self.stdout.write(
