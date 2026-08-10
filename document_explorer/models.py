@@ -292,7 +292,7 @@ class DocumentIndexEntry(models.Model):
         "domain_object_id",
     )
     document_type = models.ForeignKey(
-        DocumentTypeCatalog,
+        "DocumentTypeCatalog",
         null=True,
         blank=True,
         on_delete=models.SET_NULL,
