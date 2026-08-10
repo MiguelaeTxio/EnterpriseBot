@@ -854,3 +854,51 @@ aparecer en `_CUARENTENA/`. Corregido en
 `document_explorer/index_writer.py` (commit `e27fd6a`). Esta
 directriz eleva esa corrección puntual a regla permanente y
 vinculante para todo el proyecto.
+
+#### 4.13. DIRECTRIZ CRÍTICA — ⚠️ EL SERVIDOR TUVO UN COMMIT HUÉRFANO DESDE S040, RESUELTO EN S045 (2026-08-10) — LEER ANTES DE PREGUNTARSE POR QUÉ `git log` DEL SERVIDOR NO COINCIDE CON GITHUB
+
+**INCIDENTE YA CERRADO — esta sección es memoria permanente, no una
+alerta activa.** Si una sesión futura ve en el servidor un HEAD real
+que no existe en GitHub, o un `git status` que dice "ahead of
+origin/main", **lo primero es comprobar si esto ya se resolvió**
+(ver "Resolución" más abajo) antes de asumir que es un incidente
+nuevo — la causa raíz de este caso concreto ya no existe.
+
+**Qué pasó, con datos reales verificados en S045:** al cierre de la
+sesión S040 (2026-08-04), un commit (`10bc93e`, "docs: cierre de
+sesión S040...") se hizo **directamente en el servidor** y **nunca se
+empujó a GitHub**. A partir de ahí, cada despliegue automático
+posterior (`deploy.yml`, `git pull` en el servidor) encontraba el
+servidor divergido de `origin/main` por ese único commit huérfano, y
+un `git pull` sobre una rama divergida no es un fast-forward: genera
+un **commit de merge nuevo**, cada vez, sin conflictos (por eso nunca
+falló nada visible) pero **sin empujar ese merge de vuelta a GitHub**
+tampoco — porque este flujo nunca hace `git push` desde el servidor,
+solo `git pull`. Resultado acumulado hasta S045: **71 commits**
+existiendo solo en el servidor y no en GitHub (1 commit real + 70
+merges automáticos idénticos en patrón, uno por cada despliegue desde
+S040).
+
+**Por qué no se detectó antes:** cada despliegue individual seguía
+reportando `conclusion: success` en GitHub Actions (el `git pull`
+remoto no falla al mezclar sin conflictos), y el código en producción
+siempre coincidía con lo esperado — la divergencia era invisible
+mirando solo el resultado del Action, solo aparece comparando `git
+log -1` real del servidor contra el HEAD real de `origin/main` en
+GitHub, verificación que hasta ahora solo se hacía tras migraciones
+(ver `com-migrations` sección 1, punto 4), no en cada push.
+
+**Resolución aplicada en S045:** un único `git push origin main`
+ejecutado directamente en el servidor (fast-forward limpio, el
+servidor ya contenía como ancestro todo lo que había en GitHub) —
+sincronizó los 71 commits de una vez. Verificado con `git rev-list
+--count origin/main..HEAD` = 0 tras el push.
+
+**Regla derivada, de obligado cumplimiento en adelante:** si en algún
+momento futuro vuelve a hacer falta un commit directamente en el
+servidor sin pasar por el workspace de Claude (excepción rara, no el
+flujo normal), **ese commit debe empujarse a GitHub en la misma
+sesión que se crea**, nunca dejarse pendiente — es exactamente el
+patrón que causó este incidente.
+
+
