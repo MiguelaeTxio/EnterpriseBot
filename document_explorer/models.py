@@ -984,3 +984,99 @@ class PersonIdentity(models.Model):
             f"{self.dni} -- {self.first_surname} "
             f"{self.second_surname} {self.given_name}"
         )
+
+
+class SubjectDocumentReference(models.Model):
+    """
+    Referencia viva de un sujeto (`MachineAsset` o `PersonIdentity`) al
+    documento vigente de un tipo dado (H30, S045). Genéricamente
+    vinculada al sujeto (mismo patrón `GenericForeignKey` ya usado en
+    `document_management.DocumentAlert`/`DocumentSubstitutionLog`,
+    H26) -- este modelo, igual que aquellos, nunca importa `fleet` ni
+    `document_explorer` importa modelos de dominio de máquina/persona
+    en sentido inverso más allá de lo ya existente.
+
+    `current_entry` es una FK directa a `DocumentIndexEntry` (por PK,
+    no por ruta de texto) -- decisión explícita de H30 (hoja de ruta
+    punto 4): un "mover"/"renombrar" virtual (4.12, solo
+    `parent_path`/`name`) no rompe esta referencia, no hace falta
+    ningún hook en `move_service`. `on_delete=SET_NULL`: un vaciado
+    real de papelera por el administrador dejaría la referencia
+    apuntando a nada de forma detectable (`current_entry=None`), nunca
+    borrando en cascada esta fila -- la ausencia de documento vigente
+    es un estado real que hay que poder consultar, no un motivo para
+    que desaparezca el propio registro del tipo documental del
+    sujeto.
+
+    Sustituciones (ITV nueva reemplaza a la anterior, etc.) se
+    calculan con `document_management.vigencia_service.
+    evaluate_substitution()` (agnóstico, sin cambios) y se registran
+    en `document_management.DocumentSubstitutionLog` (también sin
+    cambios de esquema: ya es genérico, admite apuntar a filas de
+    `DocumentIndexEntry` en vez de `MachineDocument` sin migración
+    propia) -- quien actualiza `current_entry` aquí es el único que
+    cambia con H30.
+
+    ---
+
+    Live reference from a subject (`MachineAsset` or `PersonIdentity`)
+    to its current document of a given type (H30, S045). See Spanish
+    docstring above for full design rationale.
+    """
+
+    subject_content_type = models.ForeignKey(
+        ContentType,
+        on_delete=models.CASCADE,
+        verbose_name="Tipo de sujeto",
+    )
+    subject_object_id = models.PositiveBigIntegerField(
+        verbose_name="ID del sujeto",
+    )
+    subject = GenericForeignKey("subject_content_type", "subject_object_id")
+
+    document_type = models.ForeignKey(
+        DocumentTypeCatalog,
+        on_delete=models.PROTECT,
+        related_name="subject_references",
+        verbose_name="Tipo documental",
+    )
+    current_entry = models.ForeignKey(
+        DocumentIndexEntry,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="subject_references",
+        verbose_name="Documento vigente",
+        help_text=(
+            "FK directa por PK -- un mover/renombrar virtual del "
+            "documento no rompe esta referencia. Nulo cuando el "
+            "documento vigente se vació de papelera por el "
+            "administrador, sin que eso borre esta fila."
+        ),
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name="Última actualización",
+    )
+
+    class Meta:
+        verbose_name = "Referencia documental de sujeto"
+        verbose_name_plural = "Referencias documentales de sujetos"
+        constraints = [
+            models.UniqueConstraint(
+                fields=[
+                    "subject_content_type", "subject_object_id",
+                    "document_type",
+                ],
+                name="unique_current_document_per_subject_and_type",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["subject_content_type", "subject_object_id"],
+                name="sdr_subject_idx",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.subject} -- {self.document_type.code}"
