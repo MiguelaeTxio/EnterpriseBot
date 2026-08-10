@@ -266,6 +266,21 @@ class DocumentIndexEntry(models.Model):
         on_delete=models.SET_NULL,
         related_name="document_index_entries",
         verbose_name="Modelo de dominio vinculado",
+        help_text=(
+            "Uso ampliado desde H30 (S045): además del espejo 1:1 "
+            "original (`TaskPhoto`/`DeliveryNote`, un cubo = un "
+            "modelo, `DOMAIN_MODEL_BY_BUCKET`), este mismo campo "
+            "sirve para vincular un documento del cubo histórico "
+            "(`cgs_grupo_alvarez`) con su sujeto real -- "
+            "`fleet.MachineAsset` o `document_explorer.PersonIdentity` "
+            "-- durante la clasificación H29. Mismo mecanismo, dos "
+            "usos: 1:1 (esta fila ES el objeto) o N:1 (esta fila "
+            "PERTENECE al objeto). Nunca se resuelve para el segundo "
+            "uso vía `link_domain_objects()` (que sigue acotado a "
+            "`DOMAIN_MODEL_BY_BUCKET`) -- lo rellena directamente el "
+            "servicio de clasificación al resolver la máquina/persona "
+            "del documento."
+        ),
     )
     domain_object_id = models.PositiveBigIntegerField(
         null=True,
@@ -275,6 +290,47 @@ class DocumentIndexEntry(models.Model):
     domain_object = GenericForeignKey(
         "domain_content_type",
         "domain_object_id",
+    )
+    document_type = models.ForeignKey(
+        DocumentTypeCatalog,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="entries",
+        verbose_name="Tipo documental",
+        help_text=(
+            "H30 (S045). Copia estructurada y consultable del "
+            "`document_type_code` que hoy solo vive incrustado en el "
+            "nombre de archivo (ver `naming_service`) -- necesaria "
+            "para poder preguntar '¿qué otros documentos de este "
+            "mismo tipo tiene ya este sujeto?' sin tener que parsear "
+            "nombres. Genérico a propósito: un tipo documental nuevo "
+            "(p. ej. DECA) es una fila nueva en `DocumentTypeCatalog`, "
+            "nunca una migración de este modelo."
+        ),
+    )
+    expiry_date = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name="Fecha de caducidad",
+        help_text=(
+            "H30 (S045). Genérico para cualquier tipo documental con "
+            "fecha de caducidad clara (ITV, seguro, OCA...) -- "
+            "extraído por Gemini durante la clasificación, nunca de "
+            "metadatos de archivo. Vacío para tipos sin caducidad "
+            "(usar `issue_date`) o sin fecha aplicable (manuales)."
+        ),
+    )
+    issue_date = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name="Fecha de emisión",
+        help_text=(
+            "H30 (S045). Para tipos sin caducidad propia (ficha "
+            "técnica, declaración CE...) donde el más reciente del "
+            "mismo tipo es el vigente -- mismo criterio ya usado por "
+            "`document_management.vigencia_service`."
+        ),
     )
     curator_note = models.TextField(
         blank=True,
@@ -525,6 +581,21 @@ class DocumentTypeCatalog(models.Model):
         help_text=(
             "Desactivar en vez de borrar conserva el histórico de "
             "archivos ya renombrados con este código."
+        ),
+    )
+    tracks_expiry = models.BooleanField(
+        default=False,
+        verbose_name="Participa en fechas/sustitución",
+        help_text=(
+            "H30 (S045). Qué tipos documentales tienen fecha real "
+            "que extraer (caducidad o emisión) y participan en la "
+            "sustitución automática (`vigencia_service."
+            "evaluate_substitution()`) vive AQUÍ, como dato -- nunca "
+            "como lista fija en código. Decisión explícita de Miguel "
+            "Ángel (S045): un tipo documental nuevo (p. ej. DECA) se "
+            "da de alta con esta casilla activada desde el propio "
+            "catálogo, sin tocar ningún script. Manuales y "
+            "documentos sin fecha real se quedan siempre en False."
         ),
     )
     created_at = models.DateTimeField(
