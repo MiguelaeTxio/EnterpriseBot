@@ -78,7 +78,7 @@ from google.genai.types import GenerateContentConfig, HttpOptions, Part
 from ai_services.gemini_client import DEFAULT_MODEL, get_gemini_client
 from document_explorer.classification_service import (
     _FOLDER_MACHINE_CODE_RE,
-    _extract_first_pages_pdf,
+    _extract_pdf_edges,
     _generate_content_with_retry,
 )
 from document_explorer.models import DocumentIndexEntry
@@ -253,8 +253,10 @@ class Command(BaseCommand):
             ))
             return None
 
-        excerpt = _extract_first_pages_pdf(
-            content_bytes, max_pages=_MANUAL_EXCERPT_PAGES,
+        excerpt = _extract_pdf_edges(
+            content_bytes,
+            first_pages=_MANUAL_EXCERPT_PAGES,
+            last_pages=0,
         )
         if excerpt is None:
             self.stdout.write(self.style.WARNING(
