@@ -770,6 +770,26 @@ entra en la base de datos limpia. Los archivos de personal de baja se
 quedan sin `domain_object` para siempre, por diseño, no por
 limitación técnica pendiente de resolver.
 
+**APLICADO Y VERIFICADO en producción (S48).** `run_fase_a_sweep
+--apply` ejecutado; resultado verificado con consulta real a la base
+de datos, nunca fiándose solo de la salida del propio comando:
+`DocumentIndexEntry.objects.filter(document_type__isnull=False,
+deleted_at__isnull=True).count()` = **9.057**, y de esos, exactamente
+**9.057** también con `domain_object_id` resuelto (sin huecos entre
+tipo y dominio). **10** archivos en papelera con fecha de hoy (los
+dosieres detectados, ni uno más ni uno menos). Ejemplo real verificado:
+`P-07 PRESTAMO.pdf` → `document_type=PRESTAMO`, `domain_object_id=486`.
+Los 3.213 de personal de baja y los 21.609 sin tipo por palabra clave
+quedan exactamente como estaban — no se tocó nada de ellos, confirmado
+por diseño (ver decisión de Miguel Ángel sobre personal de baja,
+arriba).
+
+**Punto 1 de la hoja de ruta de S47 ("Construir el comando de
+recorrido dirigido") — CERRADO.** Criterio de cierre original ("
+`document_type__isnull=False` sobre una proporción alta y medida del
+corpus, línea base 0% de 37.550") cumplido: 9.057 archivos reales
+clasificados y vinculados a su máquina/persona real, partiendo de 0%.
+
 ### Hoja de Ruta para la Siguiente Sesión
 
 **El `.rar` de A56 mal ubicado — RESUELTO en S48.** Arrastrado desde
