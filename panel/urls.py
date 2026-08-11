@@ -15,51 +15,6 @@ from panel.views_task_photos import (
     TaskPhotoUploadView,
     TaskPhotoWidgetView,
 )
-from panel.views_documentation import (
-    AlertsDashboardFragmentView,
-    DocumentAlertCreateView,
-    DocumentAlertDeleteView,
-    DocumentAlertListFragmentView,
-    DocumentAlertResolveView,
-    DocumentAlertSendNowView,
-    DocumentMarkdownConvertView,
-    DocumentAlertUpdateView,
-    DocumentAssignView,
-    DocumentBulkDeleteView,
-    DocumentBulkObsoleteToggleView,
-    DocumentBulkMoveView,
-    DocumentCompareView,
-    DocumentDeleteView,
-    DocumentEditFormFragmentView,
-    DocumentForceCurrentView,
-    DocumentMoveToMachineView,
-    DocumentUpdateView,
-    DocumentationFolderUploadView,
-    DocumentationHubView,
-    DocumentationMachineDetailFragmentView,
-    DocumentationMachineListFragmentView,
-    DocumentationPersonalDetailFragmentView,
-    DocumentationPersonalListFragmentView,
-    DocumentationPreflightDiscardView,
-    DossierDiscardView,
-    DossierDownloadView,
-    DossierGenerateView,
-    EmailTemplateDeleteView,
-    EmailTemplateListFragmentView,
-    EmailTemplateSaveView,
-    LearnedKeywordDeleteView,
-    LearnedKeywordListFragmentView,
-    LearnedKeywordSaveView,
-    LastUploadBatchFragmentView,
-    MachineDocumentTransferView,
-    MachinePageView,
-    ObsoleteCandidateDismissView,
-    RetryUnassignedRoutingView,
-    SubstitutionLogFragmentView,
-    UnassignedMachineFragmentView,
-    UnassignedPersonalFragmentView,
-    UploadBatchStatusFragmentView,
-)
 from panel.views_documentation_h30 import (
     DocumentationHubV2View,
     EpiTabFragmentView,
@@ -413,77 +368,18 @@ urlpatterns = [
     # Fleet analytics — Hito 12 Paso PRIORIDAD 2
     path("fleet/analytics/", MachineAssetAnalyticsView.as_view(), name="fleet_analytics"),
 
-    # --- Documentación H30 (S48) -- pestañas nuevas contra DocumentIndexEntry,
-    # sustituyen a las de documentation_hub (cubos legados MachineDocument/
-    # PersonalDocument, 30/39 filas residuales frente a 11.000+ ya clasificadas
-    # aquí -- ver anexo H30 sección "COMPLETADAS EN S48"). Bajo documentacion2/
-    # mientras se valida, antes de sustituir el enlace de navegación principal. ---
-    path("documentacion2/", DocumentationHubV2View.as_view(), name="documentation_h30_hub"),
-    path("documentacion2/maquinaria/", MachineListFragmentView.as_view(), name="documentation_h30_machine_list"),
-    path("documentacion2/maquinaria/<int:pk>/", MachineDetailView.as_view(), name="documentation_h30_machine_detail"),
-    path("documentacion2/personal/", PersonalListFragmentView.as_view(), name="documentation_h30_personal_list"),
-    path("documentacion2/personal/<int:pk>/", PersonalDetailView.as_view(), name="documentation_h30_personal_detail"),
-    path("documentacion2/epis/", EpiTabFragmentView.as_view(), name="documentation_h30_epi_tab"),
-    path("documentacion2/<str:domain>/<int:subject_pk>/subir/", SubjectDocumentUploadView.as_view(), name="documentation_h30_upload"),
-
-    # --- Documentación (H23/H25) -- vista exclusiva, ADMIN/DOCS_SUPERVISOR únicamente,
-    # sin relación con Historial de Máquina/Centros de gasto (ver panel/views_documentation.py) ---
-    path("documentacion/", DocumentationHubView.as_view(), name="documentation_hub"),
-    path("documentacion/maquinaria/", DocumentationMachineListFragmentView.as_view(), name="documentation_machine_list"),
-    path("documentacion/personal/", DocumentationPersonalListFragmentView.as_view(), name="documentation_personal_list"),
-    path("documentacion/maquinaria/<int:pk>/", DocumentationMachineDetailFragmentView.as_view(), name="documentation_machine_detail"),
-    path("documentacion/maquinaria/<int:pk>/ficha/", MachinePageView.as_view(), name="documentation_machine_page"),
-    path("documentacion/documento/<int:pk>/descartar-obsoleto/", ObsoleteCandidateDismissView.as_view(), name="documentation_document_dismiss_obsolete"),
-    path("documentacion/documento/<int:pk>/forzar-vigente/", DocumentForceCurrentView.as_view(), name="documentation_document_force_current"),
-    path("documentacion/<str:domain>/eliminar-en-bloque/", DocumentBulkDeleteView.as_view(), name="documentation_bulk_delete"),
-    path("documentacion/<str:domain>/obsoleto-en-bloque/", DocumentBulkObsoleteToggleView.as_view(), name="documentation_bulk_obsolete_toggle"),
-    path("documentacion/maquinaria/mover-en-bloque/", DocumentBulkMoveView.as_view(), name="documentation_bulk_move"),
-    path("documentacion/<str:domain>/comparar/", DocumentCompareView.as_view(), name="documentation_compare"),
-    path("documentacion/documento/<int:pk>/markdown/", DocumentMarkdownConvertView.as_view(), name="documentation_document_markdown_convert"),
-    path("documentacion/personal/<int:pk>/", DocumentationPersonalDetailFragmentView.as_view(), name="documentation_personal_detail"),
-    path("documentacion/subir/", DocumentationFolderUploadView.as_view(), name="documentation_folder_upload"),
-    path("documentacion/subir/preflight/", DocumentationPreflightDiscardView.as_view(), name="documentation_preflight_discard"),
-    # ⛔ ORDEN CRÍTICO (bug real S025, ver commit de este mismo bloque):
-    # Django resuelve URLs por orden de aparición -- las rutas
-    # LITERALES específicas (editar/borrar/resolver/enviar-ahora) DEBEN
-    # ir ANTES que el patrón genérico <str:domain>/<int:pk>/ de la
-    # línea siguiente, o ese patrón las "traga" primero interpretando
-    # la palabra literal como si fuera el valor de `domain` (ej.
-    # "alertas/editar/157/" -> domain="editar", pk=157, resuelto por
-    # DocumentAlertListFragmentView en vez de DocumentAlertUpdateView
-    # -- 405 Method Not Allowed en cuanto se intenta POST, porque esa
-    # vista solo tiene GET). Afectaba a editar/borrar/resolver desde
-    # que se escribieron (nunca alcanzables), no solo a enviar-ahora
-    # (S025) -- detectado hoy porque fue el primero en probarse de
-    # verdad con una petición POST real.
-    path("documentacion/alertas/editar/<int:alert_pk>/", DocumentAlertUpdateView.as_view(), name="documentation_alert_update"),
-    path("documentacion/alertas/borrar/<int:alert_pk>/", DocumentAlertDeleteView.as_view(), name="documentation_alert_delete"),
-    path("documentacion/alertas/resolver/<int:alert_pk>/", DocumentAlertResolveView.as_view(), name="documentation_alert_resolve"),
-    path("documentacion/alertas/enviar-ahora/<int:alert_pk>/", DocumentAlertSendNowView.as_view(), name="documentation_alert_send_now"),
-    path("documentacion/alertas/<str:domain>/<int:pk>/", DocumentAlertListFragmentView.as_view(), name="documentation_alerts_fragment"),
-    path("documentacion/alertas/<str:domain>/<int:pk>/crear/", DocumentAlertCreateView.as_view(), name="documentation_alert_create"),
-    path("documentacion/vincular/<str:domain>/", DocumentAssignView.as_view(), name="documentation_assign"),
-    path("documentacion/diccionario-aprendido/", LearnedKeywordListFragmentView.as_view(), name="documentation_learned_keywords"),
-    path("documentacion/diccionario-aprendido/guardar/", LearnedKeywordSaveView.as_view(), name="documentation_learned_keyword_save"),
-    path("documentacion/diccionario-aprendido/<int:keyword_pk>/borrar/", LearnedKeywordDeleteView.as_view(), name="documentation_learned_keyword_delete"),
-    path("documentacion/transferencia/", MachineDocumentTransferView.as_view(), name="documentation_machine_transfer"),
-    path("documentacion/transferencia/<int:pk>/mover/", DocumentMoveToMachineView.as_view(), name="documentation_document_move"),
-    path("documentacion/<str:domain>/<int:pk>/borrar/", DocumentDeleteView.as_view(), name="documentation_document_delete"),
-    path("documentacion/<str:domain>/<int:pk>/editar/", DocumentEditFormFragmentView.as_view(), name="documentation_document_edit_form"),
-    path("documentacion/<str:domain>/<int:pk>/guardar/", DocumentUpdateView.as_view(), name="documentation_document_update"),
-    path("documentacion/panel-alertas/", AlertsDashboardFragmentView.as_view(), name="documentation_alerts_dashboard"),
-    path("documentacion/sustituciones/", SubstitutionLogFragmentView.as_view(), name="documentation_substitution_log"),
-    path("documentacion/plantillas-email/", EmailTemplateListFragmentView.as_view(), name="documentation_email_templates"),
-    path("documentacion/plantillas-email/guardar/", EmailTemplateSaveView.as_view(), name="documentation_email_template_save"),
-    path("documentacion/plantillas-email/<int:template_pk>/borrar/", EmailTemplateDeleteView.as_view(), name="documentation_email_template_delete"),
-    path("documentacion/<str:domain>/dossier/<int:entity_pk>/generar/", DossierGenerateView.as_view(), name="documentation_dossier_generate"),
-    path("documentacion/<str:domain>/dossier/<str:token>/descargar/", DossierDownloadView.as_view(), name="documentation_dossier_download"),
-    path("documentacion/<str:domain>/dossier/<str:token>/descartar/", DossierDiscardView.as_view(), name="documentation_dossier_discard"),
-    path("documentacion/<str:domain>/reenrutar/", RetryUnassignedRoutingView.as_view(), name="documentation_retry_unassigned"),
-    path("documentacion/maquinaria/sin-asignar/", UnassignedMachineFragmentView.as_view(), name="documentation_unassigned_machine"),
-    path("documentacion/personal/sin-asignar/", UnassignedPersonalFragmentView.as_view(), name="documentation_unassigned_personal"),
-    path("documentacion/lote/<str:batch_id>/", UploadBatchStatusFragmentView.as_view(), name="documentation_upload_batch_status"),
-    path("documentacion/ultima-subida/", LastUploadBatchFragmentView.as_view(), name="documentation_last_upload"),
+    # --- Documentación (H30, S48) -- contra DocumentIndexEntry (cubo unificado
+    # cgs_grupo_alvarez). Sustituye por completo al flujo legado sobre
+    # MachineDocument/PersonalDocument (30/39 filas residuales frente a 11.000+
+    # ya clasificadas aquí -- ver anexo H30 sección "COMPLETADAS EN S48",
+    # decisión explícita de Miguel Ángel de retirarlo sin más). ---
+    path("documentacion/", DocumentationHubV2View.as_view(), name="documentation_hub"),
+    path("documentacion/maquinaria/", MachineListFragmentView.as_view(), name="documentation_machine_list"),
+    path("documentacion/maquinaria/<int:pk>/", MachineDetailView.as_view(), name="documentation_machine_detail"),
+    path("documentacion/personal/", PersonalListFragmentView.as_view(), name="documentation_personal_list"),
+    path("documentacion/personal/<int:pk>/", PersonalDetailView.as_view(), name="documentation_personal_detail"),
+    path("documentacion/epis/", EpiTabFragmentView.as_view(), name="documentation_epi_tab"),
+    path("documentacion/<str:domain>/<int:subject_pk>/subir/", SubjectDocumentUploadView.as_view(), name="documentation_upload"),
 
     # Section default role — Endpoint AJAX para pre-rellenar rol al crear usuario (H13).
     path("sections/<int:pk>/default-role/", SectionDefaultRoleView.as_view(), name="section_default_role"),

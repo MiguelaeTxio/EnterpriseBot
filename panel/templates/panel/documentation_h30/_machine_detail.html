@@ -5,7 +5,7 @@
 {% block page_title %}{{ machine.code }} — {{ machine.brand_model }}{% endblock %}
 
 {% block content %}
-<a href="{% url 'panel:documentation_h30_hub' %}" class="btn btn-sm btn-outline-secondary mb-3">
+<a href="{% url 'panel:documentation_hub' %}" class="btn btn-sm btn-outline-secondary mb-3">
     <i class="bi bi-arrow-left"></i> Volver
 </a>
 
@@ -82,7 +82,7 @@ function openUploadForm(code, label, tracksExpiry) {
         ev.preventDefault();
         const formData = new FormData(ev.target);
         formData.append('document_type_code', code);
-        fetch("{% url 'panel:documentation_h30_upload' domain='machine' subject_pk=machine.pk %}", {
+        fetch("{% url 'panel:documentation_upload' domain='machine' subject_pk=machine.pk %}", {
             method: 'POST', body: formData,
             headers: {'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]')?.value || getCookie('csrftoken')},
         }).then(r => r.json()).then(data => {

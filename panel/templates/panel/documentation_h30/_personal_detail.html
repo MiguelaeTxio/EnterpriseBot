@@ -5,7 +5,7 @@
 {% block page_title %}{{ person.first_surname }} {{ person.second_surname }}, {{ person.given_name }} ({{ person.dni }}){% endblock %}
 
 {% block content %}
-<a href="{% url 'panel:documentation_h30_hub' %}" class="btn btn-sm btn-outline-secondary mb-3">
+<a href="{% url 'panel:documentation_hub' %}" class="btn btn-sm btn-outline-secondary mb-3">
     <i class="bi bi-arrow-left"></i> Volver
 </a>
 
@@ -97,7 +97,7 @@ function openUploadForm(code, label, tracksExpiry) {
         ev.preventDefault();
         const formData = new FormData(ev.target);
         formData.append('document_type_code', code);
-        fetch("{% url 'panel:documentation_h30_upload' domain='personal' subject_pk=person.pk %}", {
+        fetch("{% url 'panel:documentation_upload' domain='personal' subject_pk=person.pk %}", {
             method: 'POST', body: formData,
             headers: {'X-CSRFToken': getCookie('csrftoken')},
         }).then(r => r.json()).then(data => {

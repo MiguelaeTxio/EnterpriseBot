@@ -2,7 +2,7 @@
 <div class="row">
     <div class="col-md-9">
         <form method="get" class="mb-3 d-flex gap-2"
-              hx-get="{% url 'panel:documentation_h30_epi_tab' %}" hx-target="#pane-epis"
+              hx-get="{% url 'panel:documentation_epi_tab' %}" hx-target="#pane-epis"
               hx-trigger="input changed delay:300ms from:input[name='q'], submit">
             <input type="text" name="q" class="form-control doc-h30-search" placeholder="Buscar por trabajador o EPI…"
                    value="{{ search }}">
@@ -14,7 +14,7 @@
                     {% for col_key, col_label in sort_columns_epi %}
                     <th>
                         <a href="#"
-                           hx-get="{% url 'panel:documentation_h30_epi_tab' %}?sort={{ col_key }}&dir={% if sort_key == col_key and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&q={{ search }}"
+                           hx-get="{% url 'panel:documentation_epi_tab' %}?sort={{ col_key }}&dir={% if sort_key == col_key and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&q={{ search }}"
                            hx-target="#pane-epis" class="text-decoration-none text-dark">
                             {{ col_label }}
                             {% if sort_key == col_key %}<i class="bi bi-chevron-{% if sort_dir == 'asc' %}up{% else %}down{% endif %}"></i>{% endif %}
@@ -28,7 +28,7 @@
                 {% for delivery in page %}
                 <tr>
                     <td>{{ delivery.delivery_date }}</td>
-                    <td><a href="{% url 'panel:documentation_h30_personal_detail' pk=delivery.person.pk %}">{{ delivery.person.first_surname }}, {{ delivery.person.given_name }}</a></td>
+                    <td><a href="{% url 'panel:documentation_personal_detail' pk=delivery.person.pk %}">{{ delivery.person.first_surname }}, {{ delivery.person.given_name }}</a></td>
                     <td>{{ delivery.epi.label }}</td>
                     <td>{{ delivery.get_extraction_method_display }}</td>
                 </tr>
@@ -44,7 +44,7 @@
                 {% for num in page.paginator.page_range %}
                 <li class="page-item {% if num == page.number %}active{% endif %}">
                     <a class="page-link"
-                       hx-get="{% url 'panel:documentation_h30_epi_tab' %}?page={{ num }}&sort={{ sort_key }}&dir={{ sort_dir }}&q={{ search }}"
+                       hx-get="{% url 'panel:documentation_epi_tab' %}?page={{ num }}&sort={{ sort_key }}&dir={{ sort_dir }}&q={{ search }}"
                        hx-target="#pane-epis">{{ num }}</a>
                 </li>
                 {% endfor %}

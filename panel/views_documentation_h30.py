@@ -123,6 +123,7 @@ class DocumentationHubV2View(CompanyUserRequiredMixin, View):
         return render(request, "panel/documentation_h30/hub.html", {
             "active_tab": "maquinaria",
             "machines_page": machines_page,
+            "active_nav": "documentation_hub",
         })
 
 
@@ -168,7 +169,7 @@ class MachineDetailView(CompanyUserRequiredMixin, View):
         ).order_by("label")
         return render(request, "panel/documentation_h30/_machine_detail.html", {
             "machine": machine, "current": current, "obsolete": obsolete,
-            "doc_types": doc_types,
+            "doc_types": doc_types, "active_nav": "documentation_hub",
         })
 
 
@@ -221,6 +222,7 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
         return render(request, "panel/documentation_h30/_personal_detail.html", {
             "person": person, "current": current, "obsolete": obsolete,
             "doc_types": doc_types, "epi_deliveries": epi_deliveries,
+            "active_nav": "documentation_hub",
         })
 
 
