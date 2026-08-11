@@ -1151,3 +1151,221 @@ class SubjectDocumentReference(models.Model):
 
     def __str__(self):
         return f"{self.subject} -- {self.document_type.code}"
+
+
+# ---------------------------------------------------------------------------
+# EPIs -- Equipos de Proteccion Individual (H30, S047)
+# ---------------------------------------------------------------------------
+
+class EpiItemCatalog(models.Model):
+    """
+    Closed catalog of PPE (Personal Protective Equipment) items,
+    grouped by family, mirroring the `DocumentTypeCatalog` pattern
+    (S046 decision). A "new EPI" option is always reachable from the
+    delivery form's own dropdown -- never requires leaving the form to
+    register a new item.
+
+    ---
+
+    Catálogo cerrado de EPIs (Equipos de Protección Individual),
+    agrupado por familia, replicando el mismo patrón de
+    `DocumentTypeCatalog` (decisión S046). La opción "nuevo EPI"
+    siempre es accesible desde el propio desplegable del formulario de
+    entrega -- nunca hay que salir del formulario para darlo de alta.
+    """
+
+    family = models.CharField(
+        max_length=100,
+        verbose_name="Familia",
+        help_text=(
+            "Familia del EPI (p. ej. 'Protección de cabeza', "
+            "'Guantes', 'Arneses y elementos de amarre')."
+        ),
+    )
+    code = models.CharField(
+        max_length=40,
+        unique=True,
+        verbose_name="Código",
+        help_text="Código corto único del EPI en el catálogo.",
+    )
+    label = models.CharField(
+        max_length=150,
+        verbose_name="Nombre visible",
+        help_text="Nombre legible mostrado en la interfaz.",
+    )
+    requires_periodic_review = models.BooleanField(
+        default=False,
+        verbose_name="Requiere revisión periódica",
+        help_text=(
+            "S046: EPIs con vida útil (arneses, elementos de amarre) "
+            "que necesitan historial de revisiones "
+            "(OPTIMAL/DETERIORATED/EXPIRED), a diferencia de los de "
+            "entrega puntual."
+        ),
+    )
+    is_active = models.BooleanField(
+        default=True,
+        verbose_name="Activo",
+        help_text=(
+            "Desactivar en vez de borrar conserva el histórico de "
+            "entregas ya registradas con este EPI."
+        ),
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Fecha de alta",
+    )
+
+    class Meta:
+        verbose_name = "EPI del catálogo"
+        verbose_name_plural = "Catálogo de EPIs"
+        ordering = ["family", "label"]
+
+    def __str__(self):
+        return f"{self.code} ({self.label})"
+
+
+class EpiDelivery(models.Model):
+    """
+    A single PPE delivery record: which person received which EPI,
+    when, and from what source (a real work-order document, or a
+    direct entry through the documentation panel).
+
+    ---
+
+    Registro de una entrega de EPI: qué persona recibió qué EPI,
+    cuándo, y de qué fuente (un parte de trabajo real, o una entrada
+    directa a través del panel de documentación).
+    """
+
+    METHOD_MANUAL = "MANUAL"
+    METHOD_HEURISTIC = "HEURISTIC"
+    METHOD_OCR = "OCR"
+    METHOD_GEMINI = "GEMINI"
+    METHOD_CHOICES = [
+        (METHOD_MANUAL, "Manual (panel)"),
+        (METHOD_HEURISTIC, "Heurística de nombre"),
+        (METHOD_OCR, "OCR"),
+        (METHOD_GEMINI, "Gemini"),
+    ]
+
+    person = models.ForeignKey(
+        PersonIdentity,
+        on_delete=models.CASCADE,
+        related_name="epi_deliveries",
+        verbose_name="Persona",
+    )
+    epi = models.ForeignKey(
+        EpiItemCatalog,
+        on_delete=models.PROTECT,
+        related_name="deliveries",
+        verbose_name="EPI",
+    )
+    delivery_date = models.DateField(
+        verbose_name="Fecha de entrega",
+    )
+    source_entry = models.ForeignKey(
+        DocumentIndexEntry,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="epi_deliveries",
+        verbose_name="Documento de origen",
+        help_text=(
+            "Nulo cuando la entrega se registra directamente desde el "
+            "panel, sin documento de origen (parte de trabajo)."
+        ),
+    )
+    extraction_method = models.CharField(
+        max_length=10,
+        choices=METHOD_CHOICES,
+        default=METHOD_MANUAL,
+        verbose_name="Método de extracción",
+    )
+    confidence = models.FloatField(
+        null=True,
+        blank=True,
+        verbose_name="Confianza",
+        help_text=(
+            "Nulo salvo cuando el método es OCR/Gemini o una entrada "
+            "manual desde el panel que no requiere confianza."
+        ),
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Fecha de registro",
+    )
+
+    class Meta:
+        verbose_name = "Entrega de EPI"
+        verbose_name_plural = "Entregas de EPIs"
+        ordering = ["-delivery_date"]
+        indexes = [
+            models.Index(
+                fields=["person", "epi"],
+                name="epi_delivery_person_epi_idx",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.person} -- {self.epi.code} ({self.delivery_date})"
+
+
+class EpiReview(models.Model):
+    """
+    A single periodic review of a PPE delivery that requires ongoing
+    tracking of physical condition (harnesses, lanyards). Only
+    meaningful for deliveries whose `epi.requires_periodic_review` is
+    True.
+
+    ---
+
+    Una revisión periódica de una entrega de EPI que requiere
+    seguimiento continuo de su estado físico (arneses, eslingas de
+    amarre). Solo tiene sentido para entregas cuyo
+    `epi.requires_periodic_review` sea True.
+    """
+
+    STATUS_OPTIMAL = "OPTIMAL"
+    STATUS_DETERIORATED = "DETERIORATED"
+    STATUS_EXPIRED = "EXPIRED"
+    STATUS_CHOICES = [
+        (STATUS_OPTIMAL, "Óptimo"),
+        (STATUS_DETERIORATED, "Deteriorado"),
+        (STATUS_EXPIRED, "Caducado"),
+    ]
+
+    delivery = models.ForeignKey(
+        EpiDelivery,
+        on_delete=models.CASCADE,
+        related_name="reviews",
+        verbose_name="Entrega",
+    )
+    review_date = models.DateField(
+        verbose_name="Fecha de revisión",
+    )
+    status = models.CharField(
+        max_length=15,
+        choices=STATUS_CHOICES,
+        verbose_name="Estado",
+    )
+    source_entry = models.ForeignKey(
+        DocumentIndexEntry,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="epi_reviews",
+        verbose_name="Documento de origen",
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Fecha de registro",
+    )
+
+    class Meta:
+        verbose_name = "Revisión de EPI"
+        verbose_name_plural = "Revisiones de EPIs"
+        ordering = ["-review_date"]
+
+    def __str__(self):
+        return f"{self.delivery} -- {self.status} ({self.review_date})"
