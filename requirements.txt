@@ -225,6 +225,7 @@ packaging==26.0
     #   kombu
     #   onnxruntime
     #   plotly
+    #   pytesseract
 pathspec==1.0.4
     # via djlint
 pdf2image==1.17.0
@@ -233,6 +234,7 @@ pillow==12.2.0
     # via
     #   -r requirements.in
     #   pdf2image
+    #   pytesseract
     #   weasyprint
 plotly==6.7.0
     # via -r requirements.in
@@ -284,6 +286,8 @@ pyparsing==3.3.2
     # via httplib2
 pyphen==0.17.2
     # via weasyprint
+pytesseract==0.3.13
+    # via -r requirements.in
 python-dateutil==2.9.0.post0
     # via celery
 python-docx==1.2.0
