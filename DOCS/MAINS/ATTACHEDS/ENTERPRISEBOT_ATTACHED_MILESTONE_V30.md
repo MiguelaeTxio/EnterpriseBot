@@ -788,6 +788,47 @@ arriba).
 recorrido dirigido") — CERRADO.** Criterio de cierre original ("
 `document_type__isnull=False` sobre una proporción alta y medida del
 corpus, línea base 0% de 37.550") cumplido: 9.057 archivos reales
+resueltos en la primera pasada.
+
+**2.ª pasada, punto 2 de la hoja de ruta de S47 ("cerrar los 4 tipos
+sin palabra clave verificada") — CERRADO.** Bug real detectado y
+corregido: `\b` (límite de palabra estándar) trata `_` como carácter
+de palabra, así que nunca detectaba un candidato pegado entre guiones
+bajos (p. ej. `CERT_NO_TARJ_TTES` dentro de
+`A29_CERT_NO_TARJ_TTES_20230314` — verificado con datos reales que
+fallaba). Corregido con un lookaround que solo trata `[A-Z0-9]` como
+carácter de palabra (`_build_pattern` en `calibrate_fase_a_keywords`,
+reutilizado por `run_fase_a_sweep`). Los 3 tipos con código literal en
+el nombre (esquema `{CÓDIGO_MÁQUINA}_{TIPO}_{FECHA}` de una pasada
+Gemini anterior, nunca reflejado en `document_type` hasta ahora) se
+verificaron y aplicaron: `CERT_NO_TARJ_TTES` (2), `JUSTIFICANTE_
+TRANSFERENCIA` (1), `RECIBO_SENAL_COMPRA` (1).
+
+**`PAGO_CORRIENTE` — DECISIÓN DEFINITIVA de Miguel Ángel (S48), mismo
+patrón que DECA: es un tipo de "servicios", no de personal ni de
+máquina, fuera de alcance hasta que exista ese modelo.** La palabra
+clave "PAGO CORRIENTE" sí encontró 832 archivos reales, pero viven
+todos bajo `DECLARACION AL CORRIENTE/DECLARACION POR OBRAS/{empresa}/`
+— una declaración de estar al corriente de pago que la empresa emite
+por OBRA, incluyendo normalmente a varios trabajadores a la vez, nunca
+ligada a una sola persona. Miguel Ángel, verbatim: *"Es un documento
+que la empresa entrega de que está al corriente del pago de los
+trabajadores, y normalmente van incluidos varios en ese documento y va
+por obras. Así que esto tendría que ir también puesto en servicios
+[...] no vamos a meter esos documentos ni en personal ni en
+maquinaria."* Consecuencia: `run_fase_a_sweep` nunca fuerza un
+`domain_object` de `PersonIdentity` para `PAGO_CORRIENTE` (ya era el
+comportamiento real por la propia lógica de "solo escribe
+`document_type` si también resuelve dominio" — sin ningún archivo mal
+asignado que corregir), y el campo se queda vacío por diseño hasta que
+exista el modelo de servicios (mismo horizonte que DECA, ver más
+arriba).
+
+**Resultado real de la 2.ª pasada, verificado con consulta directa a
+producción:** 476 archivos nuevos resueltos (tipo + dominio), 0
+dosieres nuevos. Total acumulado con `document_type` real: **9.533**
+(9.057 + 476, verificado con `DocumentIndexEntry.objects.filter(
+document_type__isnull=False, deleted_at__isnull=True).count()`).
 clasificados y vinculados a su máquina/persona real, partiendo de 0%.
 
 ### Hoja de Ruta para la Siguiente Sesión
