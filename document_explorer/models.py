@@ -332,6 +332,21 @@ class DocumentIndexEntry(models.Model):
             "`document_management.vigencia_service`."
         ),
     )
+    is_obsolete = models.BooleanField(
+        default=False,
+        verbose_name="Obsoleto",
+        help_text=(
+            "H30 (S48). Marcador persistido de trazabilidad: True "
+            "cuando un documento más reciente del mismo tipo y mismo "
+            "sujeto lo ha sustituido "
+            "(vigencia_service.evaluate_substitution()). Nunca se "
+            "mueve ni se borra el archivo real (4.12) -- solo cambia "
+            "este campo, para conservar el histórico completo (libro "
+            "de revisiones/reparaciones). Miguel Ángel, verbatim: "
+            "\"marcandola como obsoleta... para que siempre haya una "
+            "trazabilidad y un registro histórico\"."
+        ),
+    )
     curator_note = models.TextField(
         blank=True,
         verbose_name="Anotación del supervisor (No Conformes)",
@@ -596,6 +611,20 @@ class DocumentTypeCatalog(models.Model):
             "da de alta con esta casilla activada desde el propio "
             "catálogo, sin tocar ningún script. Manuales y "
             "documentos sin fecha real se quedan siempre en False."
+        ),
+    )
+    ocr_unreliable = models.BooleanField(
+        default=False,
+        verbose_name="OCR poco fiable",
+        help_text=(
+            "H30 (S48). Cuando la lectura OCR de este tipo es "
+            "estructuralmente poco fiable (verificado con datos "
+            "reales -- p. ej. tarjetas ITV manuscritas con fondo de "
+            "seguridad que domina la lectura de Tesseract), la "
+            "contrastación de la fecha introducida por el supervisor "
+            "en el panel pasa por Gemini en vez de por OCR local. "
+            "Activar desde aquí, sin tocar código, cuando aparezca "
+            "otro tipo con el mismo problema."
         ),
     )
     created_at = models.DateTimeField(
