@@ -183,17 +183,31 @@ class Command(BaseCommand):
             shown += 1
 
         # Agregacion por PAR de tipos -- volumen real, no archivo a
-        # archivo, para decidir prioridades con datos (S48).
-        from collections import Counter
+        # archivo, para decidir prioridades con datos (S48). Incluye
+        # hasta 3 ejemplos reales por par -- decidir prioridad sin ver
+        # nombres reales seria interpretacion propia, prohibido por
+        # directriz 4.8.
+        from collections import Counter, defaultdict
         pair_counts = Counter()
-        for _eid, codes in overlaps.items():
+        pair_examples = defaultdict(list)
+        for eid, codes in overlaps.items():
             distinct_codes = sorted(set(c for c, _p in codes))
             for i in range(len(distinct_codes)):
                 for j in range(i + 1, len(distinct_codes)):
-                    pair_counts[(distinct_codes[i], distinct_codes[j])] += 1
+                    pair = (distinct_codes[i], distinct_codes[j])
+                    pair_counts[pair] += 1
+                    if len(pair_examples[pair]) < 3:
+                        pair_examples[pair].append(eid)
         self.stdout.write("--- SOLAPES AGREGADOS POR PAR DE TIPOS ---")
         for pair, count in pair_counts.most_common():
-            self.stdout.write("    %s <-> %s : %d archivos" % (pair[0], pair[1], count))
+            self.stdout.write(
+                "    %s <-> %s : %d archivos" % (pair[0], pair[1], count)
+            )
+            for eid in pair_examples[pair]:
+                entry = DocumentIndexEntry.objects.get(pk=eid)
+                self.stdout.write(
+                    "        ej: [%s] %s" % (entry.parent_path, entry.name)
+                )
 
     def handle(self, *args, **options):
         self._run(CANDIDATES_SAFE, "CANDIDATOS SEGUROS")
