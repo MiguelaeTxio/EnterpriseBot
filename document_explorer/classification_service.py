@@ -712,6 +712,60 @@ def resolve_or_create_machine_asset(
                 break
 
     if not candidate_code and not candidate_plate:
+        # Respaldo por machine_code_hint (H30, S046) -- incidente real:
+        # un archivo reencolado desde NO CONFORMES vivía en la RAÍZ del
+        # cubo (sin ninguna subcarpeta de máquina), con curator_note
+        # explícito ("Pertenece al centro de gasto P-26") y con Gemini
+        # extrayendo correctamente machine_code_hint="P-26" del propio
+        # contenido del documento -- pero nunca se resolvía, porque
+        # tanto resolve_machine_asset() como el bloque de arriba solo
+        # miran entry.parent_path, y sin subcarpeta no hay nada que
+        # escanear. machine_code_hint es exactamente la misma pista
+        # que la carpeta le da a la búsqueda de arriba (un código de
+        # flota o una matrícula, según lo que el propio prompt le pide
+        # a Gemini extraer), así que se prueba con el mismo criterio:
+        # primero como código de flota (_FOLDER_MACHINE_CODE_RE),
+        # después como matrícula (_FOLDER_PLATE_RE) -- nunca se crea
+        # una máquina nueva solo a partir de esta pista (podría ser un
+        # error de lectura de Gemini sin la verificación adicional que
+        # sí tiene una carpeta ya nombrada por un humano); si no
+        # resuelve contra un MachineAsset YA EXISTENTE, se sigue
+        # devolviendo None, igual que cualquier otro caso sin resolver.
+        #
+        # Backup via machine_code_hint (H30, S046) -- real incident: a
+        # file requeued from NO CONFORMES lived at the bucket ROOT (no
+        # machine subfolder), with an explicit curator_note ("Pertenece
+        # al centro de gasto P-26") and Gemini correctly extracting
+        # machine_code_hint="P-26" from the document's own content --
+        # yet it never resolved, because both resolve_machine_asset()
+        # and the block above only look at entry.parent_path, and
+        # without a subfolder there is nothing to scan. machine_code_
+        # hint carries the exact same kind of clue the folder gives the
+        # search above, so it is tried with the same criteria: first as
+        # a fleet code, then as a plate -- never creates a new machine
+        # from this hint alone (it could be a Gemini misread without
+        # the extra verification a human-named folder already gives);
+        # if it does not resolve against an EXISTING MachineAsset, this
+        # still returns None, same as any other unresolved case.
+        hint = (result.get("machine_code_hint") or "").strip().upper()
+        if hint:
+            code_match = _FOLDER_MACHINE_CODE_RE.match(hint)
+            if code_match:
+                hint_code = code_match.group(1).replace("-", "")
+                asset = MachineAsset.objects.filter(
+                    code__iexact=hint_code,
+                ).first()
+                if asset:
+                    return asset
+            plate_match = _FOLDER_PLATE_RE.search(hint)
+            if plate_match:
+                hint_plate = plate_match.group(1) + plate_match.group(2)
+                asset = MachineAsset.objects.filter(
+                    Q(code__iexact=hint_plate)
+                    | Q(plate__iexact=hint_plate),
+                ).first()
+                if asset:
+                    return asset
         return None
 
     if candidate_plate:
