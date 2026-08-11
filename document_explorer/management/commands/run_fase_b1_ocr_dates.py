@@ -256,6 +256,11 @@ class Command(BaseCommand):
                 continue
 
             stats["sin_fecha_reconocible"] += 1
+            snippet = " ".join(text.split())[:200]
+            self.stdout.write(
+                "SIN FECHA  [%s] %s | texto OCR (200 char): %r"
+                % (entry.parent_path, entry.name, snippet)
+            )
 
         self.stdout.write("=== RESUMEN (%s, limit=%d) ===" % (
             "APLICADO" if apply_changes else "DRY-RUN, nada escrito", limit,
