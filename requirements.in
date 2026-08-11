@@ -27,6 +27,14 @@ mysqlclient
 # Requerido por el ImageField de Django en ivr_config.Company (campo logo).
 Pillow
 PyMuPDF
+# pytesseract (H30, S48): OCR local con Tesseract para extraer fechas
+# de caducidad de documentos ya clasificados sin fecha detectable por
+# heuristica de nombre (Fase B1) -- Tesseract 4.1.1 ya confirmado
+# instalado en el servidor (S46), sin coste de API. Version verificada
+# en linea el 2026-08-11 (directriz 4.4) contra pypistats.org/packages/
+# pytesseract: 0.3.13, dependencias declaradas packaging + pillow (ya
+# ambas presentes en este archivo).
+pytesseract==0.3.13
 # pymupdf4llm (S025): conversión de PDF a Markdown para manuales de
 # uso pesados -- extensión oficial de PyMuPDF (mismo fabricante),
 # sin GPU ni API externa, verificado en línea (directriz 4.4,
