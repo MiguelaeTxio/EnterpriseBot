@@ -620,12 +620,28 @@ en S46) contra nombres reales:
 
 ### Hoja de Ruta para la Siguiente Sesión
 
-**Pregunta abierta obligatoria (2.ª sesión sin avanzar, regla 2.2) —
-el `.rar` de A56 mal ubicado:** arrastrado ya desde S45 sin ningún
-intento de movimiento real. Miguel Ángel, ¿confirmas que se mueva ya
-(`A-56 MANUAL USO bal_27000-07-10 LTM 1230-5.1 manual.rar` → carpeta
-de A59, vía `move_service`, 4.12) en la próxima sesión sin volver a
-preguntarlo, o hay algo que lo bloquea?
+**El `.rar` de A56 mal ubicado — RESUELTO en S48.** Arrastrado desde
+S45 sin ningún intento de movimiento real hasta esta sesión. Ejecutado
+vía `move_service.move_entry()` (4.12, escritura pura de índice):
+`A-56 MANUAL USO bal_27000-07-10 LTM 1230-5.1 manual.rar` (pk `10298`)
+pasó de `parent_path = MANUALES DE USO` a `parent_path = DOC. MAQUINAS/
+GRUAS MOVILES (A)/A-59  E-5068-BHH` (pk `606`, confirmado por Miguel
+Ángel como la carpeta real de A59 tras revisar cinco candidatas). Su
+`blob_name` (`DOC. MAQUINAS/MANUALES DE USO/A-56 MANUAL USO
+bal_27000-07-10 LTM 1230-5.1 manual.rar`) quedó intacto tras el
+movimiento, verificado con datos reales — el objeto en GCS nunca se
+tocó.
+
+**Anomalía detectada de paso, no resuelta, anotada para no perderla:**
+al buscar candidatas de "A-59" apareció `pk 607`, una fila FOLDER cuya
+ruta virtual es `DOC. MAQUINAS/GRUAS MOVILES (A)/A-59  E-5068-BHH/A-59
+E-5068-BHH` — el mismo nombre de carpeta repetido dos veces anidado
+dentro de sí mismo. No se ha confirmado si es una anomalía real
+(patrón ya visto en H29 3.x con la fusión `H-11 TANQUETA...`) o una
+estructura intencional — sin evidencia suficiente para tratarla como
+error real bajo directriz 4.9, así que no se toca sin confirmación
+explícita. Candidata a revisar en una sesión futura, posiblemente con
+la misma herramienta de fusión de carpetas ya construida en H29.
 
 **DECA — respondida en S48, fuera de alcance activo, anotada como
 horizonte real:** Miguel Ángel confirma que sí sería un tipo
