@@ -691,18 +691,17 @@ mecanismo que `trash_dossier_entry()`):*
 `TACOGRAFO` (2 archivos: "CURSO TACOGRAFO DIGITAL...") son formación
 sobre el tacógrafo, no el propio tacógrafo — gana `CURSO`.
 
-**Pendiente de confirmar por Miguel Ángel, propuesta hecha, aplicada
-por defecto salvo corrección explícita en la próxima sesión:**
-- `ALTA` ↔ `SEG_SOCIAL` (4 archivos: "ALTA SEGURIDAD SOCIAL...") →
-  propuesto que gane `ALTA` (es el acto de alta, no la tarjeta física).
-- `CURSO` ↔ `FORMACION` (14 archivos: "CURSO FORMACION 20 HORAS...")
-  → propuesto que gane `FORMACION` cuando hay patrón de horas
-  (2H/6H/60H/20 HORAS...), si no `CURSO`.
-- `ITV` ↔ `TACOGRAFO` (2 archivos: "ITV REV.TACOGRAFO...") →
-  propuesto DOSIER (dos inspecciones distintas mencionadas juntas).
-- `ENTREGA_INFORMACION` ↔ `FORMACION` (2 archivos) y `DNI` ↔
-  `FORMACION` (1 archivo) — volumen mínimo, sin propuesta cerrada
-  todavía.
+**Los tres puntos pendientes — CONFIRMADOS por Miguel Ángel en S48, ya
+no son propuesta, son regla definitiva:**
+- `ALTA` ↔ `SEG_SOCIAL` → gana `ALTA`.
+- `CURSO` ↔ `FORMACION` → gana `FORMACION` cuando hay patrón de horas,
+  si no `CURSO`.
+- `ITV` ↔ `TACOGRAFO` → DOSIER.
+
+**Restan sin cerrar, volumen mínimo (1-2 archivos), sin propuesta
+todavía:** `ENTREGA_INFORMACION` ↔ `FORMACION`, `DNI` ↔ `FORMACION`.
+No bloquean el resto de la Fase A — se dejan sin `document_type`
+asignado hasta que aparezcan más muestras o Miguel Ángel decida.
 
 **Acrónimos de riesgo (`CE`, `IPO`, `ITC`, `OCA`, `RAE`, `CAP`, `CSS`,
 `IDC`) — verificados contra ejemplos reales, sin falsos positivos
