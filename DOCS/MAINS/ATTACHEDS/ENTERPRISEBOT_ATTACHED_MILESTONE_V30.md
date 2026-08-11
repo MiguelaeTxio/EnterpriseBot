@@ -706,9 +706,33 @@ asignado hasta que aparezcan más muestras o Miguel Ángel decida.
 **Acrónimos de riesgo (`CE`, `IPO`, `ITC`, `OCA`, `RAE`, `CAP`, `CSS`,
 `IDC`) — verificados contra ejemplos reales, sin falsos positivos
 visibles en las muestras (a diferencia de S46, donde `OCA`/`CAP` sí
-los tenían antes del límite de palabra completa). Pendientes de
-confirmación explícita antes de tratarlos como seguros para escritura
-en bulk.
+los tenían antes del límite de palabra completa). Confirmados como
+seguros para escritura en bulk (S48).
+
+**Resolución de `domain_object` en Fase A — diseño cerrado (S48):**
+- **`MACHINE`**: `resolve_or_create_machine_asset()` (ya existe,
+  `document_explorer/classification_service.py`) funciona por carpeta
+  (código de flota o matrícula en `parent_path`), sin depender de
+  Gemini — reutilizable tal cual, sin tocarlo.
+- **`PERSONAL`**: `resolve_or_create_person_identity()` NO sirve aquí
+  — exige `dni_hint`, que solo existe si Gemini ha leído el contenido
+  del documento, y la Fase A por diseño (S46) no abre ningún
+  documento. Se resuelve en su lugar contra `PersonIdentity.folder_path`
+  (ya sembrado por DNI en su momento, dato real verificado): un
+  archivo `PERSONAL` se asigna a la `PersonIdentity` cuyo `folder_path`
+  coincide con `entry.parent_path` o lo contiene. Sin coincidencia →
+  se queda sin resolver, nunca se crea una identidad nueva por esta
+  vía (crear sigue exigiendo DNI real, eso no cambia).
+- **AMPLIACIÓN EXPLÍCITA de Fase B, para que no se vuelva a perder
+  entre sesiones (queja de Miguel Ángel en S48, PCS no lo capturaba
+  bien):** los archivos `PERSONAL` que la Fase A NO resuelva por
+  `folder_path` (sueltos en raíz, mal ubicados) no quedan huérfanos en
+  silencio — pasan a la cola de Fase B para que el OCR local con
+  Tesseract (ya decidido en S46 que va siempre antes que cualquier
+  llamada a Gemini) intente leer el DNI del propio contenido y
+  resolver la identidad por esa vía. Fase B deja de ser solo
+  "fechas de caducidad sin heurística de nombre" — también resuelve
+  identidad de personal sin carpeta reconocible.
 
 ### Hoja de Ruta para la Siguiente Sesión
 
