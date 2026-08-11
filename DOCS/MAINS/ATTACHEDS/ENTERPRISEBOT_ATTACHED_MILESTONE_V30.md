@@ -627,11 +627,47 @@ intento de movimiento real. Miguel Ángel, ¿confirmas que se mueva ya
 de A59, vía `move_service`, 4.12) en la próxima sesión sin volver a
 preguntarlo, o hay algo que lo bloquea?
 
-**Pregunta abierta obligatoria (2.ª sesión sin avanzar, regla 2.2) —
-DECA:** arrastrado ya desde S45 sin alcance definido. Miguel Ángel,
-¿es una ampliación del catálogo de H30 (tipo documental nuevo con
-`tracks_expiry`) o justifica un hito propio? Sin respuesta, este punto
-queda fuera de la lista de tareas activas.
+**DECA — respondida en S48, fuera de alcance activo, anotada como
+horizonte real:** Miguel Ángel confirma que sí sería un tipo
+documental nuevo con `tracks_expiry` dentro del catálogo cerrado, pero
+**no se construye en este hito ni en esta sesión** — su naturaleza es
+distinta a la de un documento de máquina o de persona: va asociado a
+**servicios** de transporte (envío/viaje concretos, cargador
+contractual, transportista efectivo, vehículo, fecha), no a un centro
+de gasto o una persona de forma directa, y su construcción real
+depende de un modelo de "servicios" que la plataforma todavía no
+tiene. Verbatim: *"Este DECA va más bien [...] iría anexionado a
+servicios y es algo que todavía no vamos a introducir. Iría en un
+modelo que lleve el tema de servicios de qué hacer en los
+vehículos."*
+
+**Contexto legal real aportado por Miguel Ángel (Resolución de 5 de
+junio de 2026, BOE núm. 143, de la Dirección General de Transporte por
+Carretera y Ferrocarril, que desarrolla la disposición transitoria
+octava de la Ley 9/2025 de Movilidad Sostenible):** el Documento
+Electrónico de Control Administrativo (DECA), regulado en su contenido
+esencial por el Art. 6 de la Orden FOM/2861/2012, pasa a ser
+obligatoriamente digital y entra en vigor real en **octubre de 2026**
+según indica Miguel Ángel. Requisitos técnicos clave para cuando se
+construya: fichero PDF nativo digital (nunca escaneado) de máx. 5 MB,
+con código QR embebido apuntando a una URL única HTTPS que permita
+descarga directa sin login y no expire antes de finalizar el servicio,
+generado siempre antes del inicio efectivo del servicio, con
+conservación mínima de un año. La modificación de datos durante el
+servicio exige o bien anexar los datos nuevos al mismo PDF conservando
+los antiguos marcados como no válidos (mismo QR/URL), o bien generar
+un PDF nuevo con nueva URL/QR conservando el original por trazabilidad
+— patrón compatible con la sustitución silenciosa por fecha ya
+validada en H26/S025, pero aplicado aquí a nivel de servicio, no de
+vigencia de una máquina o persona.
+
+**Queda fuera de la lista de tareas activas de H30.** Anotado aquí
+como punto de horizonte real con plazo concreto (no un "algún día" sin
+fecha) para que una sesión futura no lo trate como sorpresa: antes de
+octubre de 2026 hará falta decidir si DECA se resuelve dentro de H30
+(tipo documental simple, sin el vínculo a servicios) como solución
+provisional, o si justifica un hito propio una vez exista el modelo de
+servicios. No se toma esa decisión en esta sesión.
 
 1. **Construir el comando de recorrido dirigido (Fase A)** sobre
    `DOC. MAQUINAS`/`DOC. PERSONAL`, con el diccionario heurístico ya
