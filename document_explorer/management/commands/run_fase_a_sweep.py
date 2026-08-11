@@ -133,19 +133,31 @@ def _folder_based_type(entry, domain):
 
 def _match_candidates(entry, domain, candidates_dict, name_upper):
     matched = set()
-    codes = candidates_dict.get(domain, {})
-    for code, phrases in codes.items():
-        for phrase in phrases:
-            pattern = _build_pattern(_strip_accents(phrase).upper())
-            if not pattern.search(name_upper):
-                continue
-            excl_phrases = EXCLUSIONS.get((domain, code, phrase), [])
-            if any(
-                _build_pattern(_strip_accents(p).upper()).search(name_upper)
-                for p in excl_phrases
-            ):
-                continue
-            matched.add(code)
+    # Bug real corregido S48: "SEGURO"/"TACOGRAFO"/"MANDATO" viven bajo
+    # la clave "BOTH" del diccionario (aplican a MACHINE y PERSONAL por
+    # igual) -- el bucle solo recorria domain in ("MACHINE", "PERSONAL"),
+    # asi que nunca se comprobaban, pese a tener coincidencias reales
+    # verificadas en la calibracion (SEGURO: 1347, TACOGRAFO: 199,
+    # MANDATO: 47). Se comprueban ahora las dos claves para cada
+    # dominio real.
+    for lookup_domain in (domain, "BOTH"):
+        codes = candidates_dict.get(lookup_domain, {})
+        for code, phrases in codes.items():
+            for phrase in phrases:
+                pattern = _build_pattern(_strip_accents(phrase).upper())
+                if not pattern.search(name_upper):
+                    continue
+                excl_phrases = EXCLUSIONS.get(
+                    (lookup_domain, code, phrase), [],
+                )
+                if any(
+                    _build_pattern(_strip_accents(p).upper()).search(
+                        name_upper,
+                    )
+                    for p in excl_phrases
+                ):
+                    continue
+                matched.add(code)
     return matched
 
 
