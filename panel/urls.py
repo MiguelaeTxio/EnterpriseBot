@@ -16,6 +16,8 @@ from panel.views_task_photos import (
     TaskPhotoWidgetView,
 )
 from panel.views_documentation_h30 import (
+    DocumentDeleteView,
+    DocumentViewView,
     DocumentationHubV2View,
     EpiTabFragmentView,
     MachineDetailView,
@@ -380,6 +382,8 @@ urlpatterns = [
     path("documentacion/personal/<int:pk>/", PersonalDetailView.as_view(), name="documentation_personal_detail"),
     path("documentacion/epis/", EpiTabFragmentView.as_view(), name="documentation_epi_tab"),
     path("documentacion/<str:domain>/<int:subject_pk>/subir/", SubjectDocumentUploadView.as_view(), name="documentation_upload"),
+    path("documentacion/documento/<int:pk>/ver/", DocumentViewView.as_view(), name="documentation_document_view"),
+    path("documentacion/documento/<int:pk>/eliminar/", DocumentDeleteView.as_view(), name="documentation_document_delete"),
 
     # Section default role — Endpoint AJAX para pre-rellenar rol al crear usuario (H13).
     path("sections/<int:pk>/default-role/", SectionDefaultRoleView.as_view(), name="section_default_role"),

@@ -27,7 +27,8 @@ from django.contrib.contenttypes.models import ContentType
 from django.core.paginator import Paginator
 from django.db.models import Count, Q
 from django.http import JsonResponse
-from django.shortcuts import get_object_or_404, render
+from django.shortcuts import get_object_or_404, redirect, render
+from django.utils import timezone
 from django.views import View
 
 from document_explorer.models import (
@@ -40,6 +41,7 @@ from document_explorer.subject_upload_service import (
 from document_management.vigencia_service import DocumentSnapshot, is_current
 from fleet.models import MachineAsset
 from panel.mixins import CompanyUserRequiredMixin, DocsUploadAccessMixin
+from spare_parts.gcs_service import generate_signed_url
 
 BUCKET = "cgs_grupo_alvarez"
 
@@ -258,21 +260,51 @@ class EpiTabFragmentView(CompanyUserRequiredMixin, View):
         })
 
 
+class DocumentViewView(CompanyUserRequiredMixin, View):
+    """GET: redirige a la URL firmada (GCS) real del documento -- 'Ver'."""
+
+    def get(self, request, pk):
+        entry = get_object_or_404(
+            DocumentIndexEntry, pk=pk, deleted_at__isnull=True,
+        )
+        url = generate_signed_url(entry.bucket, entry.blob_name)
+        return redirect(url)
+
+
+class DocumentDeleteView(DocsUploadAccessMixin, View):
+    """POST: borrado blando (papelera) -- nunca toca GCS (4.12)."""
+
+    def post(self, request, pk):
+        entry = get_object_or_404(
+            DocumentIndexEntry, pk=pk, deleted_at__isnull=True,
+        )
+        entry.deleted_at = timezone.now()
+        company_user = getattr(request.user, "company_user", None)
+        if company_user:
+            entry.deleted_by = company_user
+        entry.save(update_fields=["deleted_at", "deleted_by"])
+        return JsonResponse({"ok": True})
+
+
 class SubjectDocumentUploadView(DocsUploadAccessMixin, View):
     """
-    POST: sube un documento nuevo desde la ficha de un sujeto --
-    domain ('machine'|'personal'), subject_pk, document_type_code,
-    file, expiry_date (YYYY-MM-DD). Ver
-    document_explorer.subject_upload_service para el flujo completo
-    (contraste OCR/Gemini + sustitución con marcado is_obsolete).
+    POST: sube uno o VARIOS documentos nuevos a la vez desde la ficha
+    de un sujeto -- domain ('machine'|'personal'), subject_pk,
+    document_type_code, file[] (uno o varios), expiry_date
+    (YYYY-MM-DD, se aplica igual a todos los archivos del lote --
+    Miguel Ángel, S48: "si queremos meter en una carpeta varias ITVs,
+    darle al botón y subirlo todo de golpe"). Ver
+    document_explorer.subject_upload_service para el flujo por
+    archivo (contraste OCR/Gemini + sustitución con marcado
+    is_obsolete).
     """
 
     def post(self, request, domain, subject_pk):
         document_type_code = request.POST.get("document_type_code", "")
         expiry_date_str = request.POST.get("expiry_date", "")
-        uploaded_file = request.FILES.get("file")
+        uploaded_files = request.FILES.getlist("file")
 
-        if not uploaded_file or not document_type_code:
+        if not uploaded_files or not document_type_code:
             return JsonResponse(
                 {"error": "Falta el archivo o el tipo documental."},
                 status=400,
@@ -305,26 +337,33 @@ class SubjectDocumentUploadView(DocsUploadAccessMixin, View):
                 subject.given_name,
             )
 
-        data = uploaded_file.read()
-        try:
-            result = upload_subject_document(
-                subject=subject, domain_content_type=ct,
-                document_type=document_type, data=data,
-                original_filename=uploaded_file.name,
-                typed_date=typed_date, subject_label=subject_label,
-            )
-        except SubjectUploadError as exc:
-            return JsonResponse({"error": str(exc)}, status=400)
-
-        response = {
-            "ok": True, "entry_id": result["entry"].pk,
-            "entry_name": result["entry"].name,
-            "superseded_count": result["superseded_count"],
-        }
-        if result["warning"]:
-            response["warning"] = {
-                "system_date": result["warning"]["system_date"].isoformat(),
-                "typed_date": result["warning"]["typed_date"].isoformat(),
-                "source": result["warning"]["source"],
+        results = []
+        errors = []
+        for uploaded_file in uploaded_files:
+            data = uploaded_file.read()
+            try:
+                result = upload_subject_document(
+                    subject=subject, domain_content_type=ct,
+                    document_type=document_type, data=data,
+                    original_filename=uploaded_file.name,
+                    typed_date=typed_date, subject_label=subject_label,
+                )
+            except SubjectUploadError as exc:
+                errors.append({"file": uploaded_file.name, "error": str(exc)})
+                continue
+            entry_result = {
+                "entry_id": result["entry"].pk,
+                "entry_name": result["entry"].name,
+                "superseded_count": result["superseded_count"],
             }
-        return JsonResponse(response)
+            if result["warning"]:
+                entry_result["warning"] = {
+                    "system_date": result["warning"]["system_date"].isoformat(),
+                    "typed_date": result["warning"]["typed_date"].isoformat(),
+                    "source": result["warning"]["source"],
+                }
+            results.append(entry_result)
+
+        return JsonResponse({
+            "ok": not errors, "uploaded": results, "errors": errors,
+        })

@@ -9,30 +9,27 @@
     <i class="bi bi-arrow-left"></i> Volver
 </a>
 
-<h5>Actualizar documentación</h5>
-<div class="row g-2 mb-4">
-    {% for dt in doc_types %}
-    <div class="col-md-4">
-        <button type="button" class="btn btn-outline-primary btn-sm w-100"
-                onclick="openUploadForm('{{ dt.code }}', '{{ dt.label|escapejs }}', '{{ dt.tracks_expiry|yesno:'true,false' }}')">
-            <i class="bi bi-upload me-1"></i>Actualizar {{ dt.label }}
-        </button>
-    </div>
-    {% endfor %}
-</div>
-
+<button type="button" class="btn btn-primary btn-sm mb-3" onclick="openUploadForm()">
+    <i class="bi bi-upload me-1"></i>+ Subir documento
+</button>
 <div id="uploadFormContainer" class="mb-4"></div>
 
 <h5>Vigentes</h5>
 <table class="table table-sm table-hover">
-    <thead><tr><th>Tipo</th><th>Nombre</th><th>Caducidad</th><th></th></tr></thead>
+    <thead><tr><th>Tipo</th><th>Nombre</th><th>Caducidad</th><th>Acciones</th></tr></thead>
     <tbody>
         {% for entry in current %}
         <tr>
             <td>{{ entry.document_type.label }}</td>
             <td>{{ entry.name }}</td>
             <td>{{ entry.expiry_date|default:"—" }}</td>
-            <td><a href="#" class="small">Descargar</a></td>
+            <td>
+                <a href="{% url 'panel:documentation_document_view' pk=entry.pk %}" target="_blank" class="btn btn-sm btn-outline-secondary">Ver</a>
+                <button type="button" class="btn btn-sm btn-outline-primary"
+                        onclick="openUploadForm('{{ entry.document_type.code }}')">Actualizar</button>
+                <button type="button" class="btn btn-sm btn-outline-danger"
+                        onclick="deleteDocument({{ entry.pk }}, this)">Eliminar</button>
+            </td>
         </tr>
         {% empty %}
         <tr><td colspan="4" class="text-muted small py-3">Sin documentos vigentes todavía.</td></tr>
@@ -42,66 +39,99 @@
 
 <h5 class="mt-4">Histórico (obsoletos)</h5>
 <table class="table table-sm table-hover text-muted">
-    <thead><tr><th>Tipo</th><th>Nombre</th><th>Caducidad</th></tr></thead>
+    <thead><tr><th>Tipo</th><th>Nombre</th><th>Caducidad</th><th>Acciones</th></tr></thead>
     <tbody>
         {% for entry in obsolete %}
         <tr>
             <td>{{ entry.document_type.label|default:"—" }}</td>
             <td>{{ entry.name }}</td>
             <td>{{ entry.expiry_date|default:"—" }}</td>
+            <td><a href="{% url 'panel:documentation_document_view' pk=entry.pk %}" target="_blank" class="btn btn-sm btn-outline-secondary">Ver</a></td>
         </tr>
         {% empty %}
-        <tr><td colspan="3" class="small py-3">Sin histórico todavía.</td></tr>
+        <tr><td colspan="4" class="small py-3">Sin histórico todavía.</td></tr>
         {% endfor %}
     </tbody>
 </table>
 
 <script>
-function openUploadForm(code, label, tracksExpiry) {
+const DOC_TYPES_MACHINE = [
+    {% for dt in doc_types %}{code: "{{ dt.code }}", label: "{{ dt.label|escapejs }}", tracksExpiry: {{ dt.tracks_expiry|yesno:"true,false" }}},{% endfor %}
+];
+
+function openUploadForm(preselectCode) {
     const container = document.getElementById('uploadFormContainer');
+    const options = DOC_TYPES_MACHINE.map(dt =>
+        `<option value="${dt.code}" data-tracks-expiry="${dt.tracksExpiry}" ${dt.code === preselectCode ? 'selected' : ''}>${dt.label}</option>`,
+    ).join('');
     container.innerHTML = `
         <div class="card">
             <div class="card-body">
-                <h6>Actualizar ${label}</h6>
+                <h6>Subir documento</h6>
                 <form id="subjectUploadForm">
                     <div class="mb-2">
-                        <label class="form-label">Archivo</label>
-                        <input type="file" name="file" class="form-control" required>
+                        <label class="form-label">Tipo documental</label>
+                        <select name="document_type_code" id="uploadTypeSelect" class="form-select" required>${options}</select>
                     </div>
-                    ${tracksExpiry === 'true' ? `
                     <div class="mb-2">
+                        <label class="form-label">Archivo(s) — puedes seleccionar varios a la vez si son del mismo tipo</label>
+                        <input type="file" name="file" class="form-control" multiple required>
+                    </div>
+                    <div class="mb-2" id="expiryDateField">
                         <label class="form-label">Fecha de caducidad</label>
-                        <input type="date" name="expiry_date" class="form-control" required>
-                    </div>` : ''}
+                        <input type="date" name="expiry_date" class="form-control">
+                    </div>
                     <button type="submit" class="btn btn-primary btn-sm">Subir</button>
                     <div id="uploadResult" class="mt-2"></div>
                 </form>
             </div>
         </div>`;
+
+    const select = document.getElementById('uploadTypeSelect');
+    const expiryField = document.getElementById('expiryDateField');
+    function toggleExpiry() {
+        const opt = select.options[select.selectedIndex];
+        expiryField.style.display = opt.dataset.tracksExpiry === 'true' ? '' : 'none';
+    }
+    select.onchange = toggleExpiry;
+    toggleExpiry();
+
     document.getElementById('subjectUploadForm').onsubmit = function(ev) {
         ev.preventDefault();
         const formData = new FormData(ev.target);
-        formData.append('document_type_code', code);
         fetch("{% url 'panel:documentation_upload' domain='machine' subject_pk=machine.pk %}", {
             method: 'POST', body: formData,
-            headers: {'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]')?.value || getCookie('csrftoken')},
+            headers: {'X-CSRFToken': getCookie('csrftoken')},
         }).then(r => r.json()).then(data => {
             const resultDiv = document.getElementById('uploadResult');
-            if (data.error) {
-                resultDiv.innerHTML = `<div class="alert alert-danger py-1 px-2 small">${data.error}</div>`;
-                return;
-            }
-            let html = `<div class="alert alert-success py-1 px-2 small">Subido: ${data.entry_name}`;
-            if (data.superseded_count) html += ` — ${data.superseded_count} documento(s) anterior(es) marcados como obsoletos`;
-            html += `</div>`;
-            if (data.warning) {
-                html += `<div class="alert alert-warning py-1 px-2 small">⚠ Posible error de digitación: escribiste ${data.warning.typed_date}, el sistema (${data.warning.source}) lee ${data.warning.system_date} en el propio documento. Verifica antes de continuar.</div>`;
-            }
+            let html = '';
+            (data.uploaded || []).forEach(u => {
+                html += `<div class="alert alert-success py-1 px-2 small">Subido: ${u.entry_name}`;
+                if (u.superseded_count) html += ` — ${u.superseded_count} anterior(es) marcado(s) obsoleto(s)`;
+                html += `</div>`;
+                if (u.warning) {
+                    html += `<div class="alert alert-warning py-1 px-2 small">⚠ Escribiste ${u.warning.typed_date}, el sistema (${u.warning.source}) lee ${u.warning.system_date}. Verifica.</div>`;
+                }
+            });
+            (data.errors || []).forEach(e => {
+                html += `<div class="alert alert-danger py-1 px-2 small">${e.file}: ${e.error}</div>`;
+            });
             resultDiv.innerHTML = html;
-            setTimeout(() => location.reload(), 2000);
+            if (data.ok) setTimeout(() => location.reload(), 2000);
         });
     };
 }
+
+function deleteDocument(pk, btn) {
+    if (!confirm('¿Eliminar este documento? Pasará a la papelera.')) return;
+    fetch(`/panel/documentacion/documento/${pk}/eliminar/`, {
+        method: 'POST',
+        headers: {'X-CSRFToken': getCookie('csrftoken')},
+    }).then(r => r.json()).then(data => {
+        if (data.ok) btn.closest('tr').remove();
+    });
+}
+
 function getCookie(name) {
     const value = `; ${document.cookie}`;
     const parts = value.split(`; ${name}=`);
