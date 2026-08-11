@@ -1,0 +1,126 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation_h30/_personal_detail.html #}
+{% extends "panel/base.html" %}
+
+{% block title %}{{ person.first_surname }} {{ person.second_surname }} — Documentación{% endblock %}
+{% block page_title %}{{ person.first_surname }} {{ person.second_surname }}, {{ person.given_name }} ({{ person.dni }}){% endblock %}
+
+{% block content %}
+<a href="{% url 'panel:documentation_h30_hub' %}" class="btn btn-sm btn-outline-secondary mb-3">
+    <i class="bi bi-arrow-left"></i> Volver
+</a>
+
+<h5>Actualizar documentación</h5>
+<div class="row g-2 mb-4">
+    {% for dt in doc_types %}
+    <div class="col-md-4">
+        <button type="button" class="btn btn-outline-primary btn-sm w-100"
+                onclick="openUploadForm('{{ dt.code }}', '{{ dt.label|escapejs }}', '{{ dt.tracks_expiry|yesno:'true,false' }}')">
+            <i class="bi bi-upload me-1"></i>Actualizar {{ dt.label }}
+        </button>
+    </div>
+    {% endfor %}
+</div>
+
+<div id="uploadFormContainer" class="mb-4"></div>
+
+<h5>Vigentes</h5>
+<table class="table table-sm table-hover">
+    <thead><tr><th>Tipo</th><th>Nombre</th><th>Caducidad</th></tr></thead>
+    <tbody>
+        {% for entry in current %}
+        <tr>
+            <td>{{ entry.document_type.label }}</td>
+            <td>{{ entry.name }}</td>
+            <td>{{ entry.expiry_date|default:"—" }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="3" class="text-muted small py-3">Sin documentos vigentes todavía.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<h5 class="mt-4">Histórico (obsoletos)</h5>
+<table class="table table-sm table-hover text-muted">
+    <thead><tr><th>Tipo</th><th>Nombre</th><th>Caducidad</th></tr></thead>
+    <tbody>
+        {% for entry in obsolete %}
+        <tr>
+            <td>{{ entry.document_type.label|default:"—" }}</td>
+            <td>{{ entry.name }}</td>
+            <td>{{ entry.expiry_date|default:"—" }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="3" class="small py-3">Sin histórico todavía.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<h5 class="mt-4">EPIs entregados</h5>
+<table class="table table-sm table-hover">
+    <thead><tr><th>EPI</th><th>Fecha de entrega</th><th>Método</th></tr></thead>
+    <tbody>
+        {% for delivery in epi_deliveries %}
+        <tr>
+            <td>{{ delivery.epi.label }}</td>
+            <td>{{ delivery.delivery_date }}</td>
+            <td>{{ delivery.get_extraction_method_display }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="3" class="text-muted small py-3">Sin EPIs entregados todavía.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<script>
+function openUploadForm(code, label, tracksExpiry) {
+    const container = document.getElementById('uploadFormContainer');
+    container.innerHTML = `
+        <div class="card">
+            <div class="card-body">
+                <h6>Actualizar ${label}</h6>
+                <form id="subjectUploadForm">
+                    <div class="mb-2">
+                        <label class="form-label">Archivo</label>
+                        <input type="file" name="file" class="form-control" required>
+                    </div>
+                    ${tracksExpiry === 'true' ? `
+                    <div class="mb-2">
+                        <label class="form-label">Fecha de caducidad</label>
+                        <input type="date" name="expiry_date" class="form-control" required>
+                    </div>` : ''}
+                    <button type="submit" class="btn btn-primary btn-sm">Subir</button>
+                    <div id="uploadResult" class="mt-2"></div>
+                </form>
+            </div>
+        </div>`;
+    document.getElementById('subjectUploadForm').onsubmit = function(ev) {
+        ev.preventDefault();
+        const formData = new FormData(ev.target);
+        formData.append('document_type_code', code);
+        fetch("{% url 'panel:documentation_h30_upload' domain='personal' subject_pk=person.pk %}", {
+            method: 'POST', body: formData,
+            headers: {'X-CSRFToken': getCookie('csrftoken')},
+        }).then(r => r.json()).then(data => {
+            const resultDiv = document.getElementById('uploadResult');
+            if (data.error) {
+                resultDiv.innerHTML = `<div class="alert alert-danger py-1 px-2 small">${data.error}</div>`;
+                return;
+            }
+            let html = `<div class="alert alert-success py-1 px-2 small">Subido: ${data.entry_name}`;
+            if (data.superseded_count) html += ` — ${data.superseded_count} documento(s) anterior(es) marcados como obsoletos`;
+            html += `</div>`;
+            if (data.warning) {
+                html += `<div class="alert alert-warning py-1 px-2 small">⚠ Posible error de digitación: escribiste ${data.warning.typed_date}, el sistema (${data.warning.source}) lee ${data.warning.system_date} en el propio documento. Verifica antes de continuar.</div>`;
+            }
+            resultDiv.innerHTML = html;
+            setTimeout(() => location.reload(), 2000);
+        });
+    };
+}
+function getCookie(name) {
+    const value = `; ${document.cookie}`;
+    const parts = value.split(`; ${name}=`);
+    if (parts.length === 2) return parts.pop().split(';').shift();
+}
+</script>
+{% endblock %}

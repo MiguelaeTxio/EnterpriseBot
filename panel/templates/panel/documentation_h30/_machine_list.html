@@ -1,0 +1,51 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation_h30/_machine_list.html #}
+<form method="get" class="mb-3 d-flex gap-2"
+      hx-get="{% url 'panel:documentation_h30_machine_list' %}" hx-target="#pane-maquinaria"
+      hx-trigger="input changed delay:300ms from:input[name='q'], submit">
+    <input type="text" name="q" class="form-control doc-h30-search" placeholder="Buscar por código, marca/modelo, matrícula…"
+           value="{{ search }}">
+</form>
+
+<table class="table table-hover table-light">
+    <thead class="table-light">
+        <tr>
+            {% for col_key, col_label in sort_columns_machine %}
+            <th>
+                <a href="?sort={{ col_key }}&dir={% if sort_key == col_key and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&q={{ search }}"
+                   class="text-decoration-none text-dark"
+                   hx-get="{% url 'panel:documentation_h30_machine_list' %}?sort={{ col_key }}&dir={% if sort_key == col_key and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&q={{ search }}"
+                   hx-target="#pane-maquinaria">
+                    {{ col_label }}
+                    {% if sort_key == col_key %}<i class="bi bi-chevron-{% if sort_dir == 'asc' %}up{% else %}down{% endif %}"></i>{% endif %}
+                </a>
+            </th>
+            {% endfor %}
+            <th>Documentos</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for machine in page %}
+        <tr>
+            <td><a href="{% url 'panel:documentation_h30_machine_detail' pk=machine.pk %}">{{ machine.code }}</a></td>
+            <td>{{ machine.brand_model }}{% if machine.plate %} — {{ machine.plate }}{% endif %}</td>
+            <td>{{ machine.doc_count }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="3" class="text-muted small py-3">No se encontraron máquinas.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+{% if page.has_other_pages %}
+<nav>
+    <ul class="pagination">
+        {% for num in page.paginator.page_range %}
+        <li class="page-item {% if num == page.number %}active{% endif %}">
+            <a class="page-link"
+               hx-get="{% url 'panel:documentation_h30_machine_list' %}?page={{ num }}&sort={{ sort_key }}&dir={{ sort_dir }}&q={{ search }}"
+               hx-target="#pane-maquinaria">{{ num }}</a>
+        </li>
+        {% endfor %}
+    </ul>
+</nav>
+{% endif %}

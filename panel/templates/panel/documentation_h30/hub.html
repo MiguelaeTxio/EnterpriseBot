@@ -1,0 +1,47 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation_h30/hub.html #}
+{% extends "panel/base.html" %}
+
+{% block title %}Documentación{% endblock %}
+{% block page_title %}Documentación{% endblock %}
+
+{% block extra_head %}
+<style>
+    .doc-h30-search { max-width: 400px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<ul class="nav nav-tabs mb-3" id="docH30Tabs">
+    <li class="nav-item">
+        <a class="nav-link active" id="tab-maquinaria" data-bs-toggle="tab" href="#pane-maquinaria">
+            <i class="bi bi-truck me-1"></i>Centros de Gasto
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" id="tab-personal" data-bs-toggle="tab" href="#pane-personal"
+           hx-get="{% url 'panel:documentation_h30_personal_list' %}" hx-target="#pane-personal"
+           hx-trigger="click once">
+            <i class="bi bi-people me-1"></i>Personal
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" id="tab-epis" data-bs-toggle="tab" href="#pane-epis"
+           hx-get="{% url 'panel:documentation_h30_epi_tab' %}" hx-target="#pane-epis"
+           hx-trigger="click once">
+            <i class="bi bi-shield-check me-1"></i>EPIs
+        </a>
+    </li>
+</ul>
+
+<div class="tab-content">
+    <div class="tab-pane fade show active" id="pane-maquinaria">
+        {% include "panel/documentation_h30/_machine_list.html" with page=machines_page.page sort_key=machines_page.sort_key sort_dir=machines_page.sort_dir search=machines_page.search sort_columns_machine=machines_page.sort_columns_machine %}
+    </div>
+    <div class="tab-pane fade" id="pane-personal">
+        <div class="text-muted small py-3">Cargando…</div>
+    </div>
+    <div class="tab-pane fade" id="pane-epis">
+        <div class="text-muted small py-3">Cargando…</div>
+    </div>
+</div>
+{% endblock %}

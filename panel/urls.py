@@ -60,6 +60,15 @@ from panel.views_documentation import (
     UnassignedPersonalFragmentView,
     UploadBatchStatusFragmentView,
 )
+from panel.views_documentation_h30 import (
+    DocumentationHubV2View,
+    EpiTabFragmentView,
+    MachineDetailView,
+    MachineListFragmentView,
+    PersonalDetailView,
+    PersonalListFragmentView,
+    SubjectDocumentUploadView,
+)
 from panel.views import (
     PanelLoginView,
     PanelLogoutView,
@@ -403,6 +412,19 @@ urlpatterns = [
     path("fleet/<int:pk>/delete/", MachineAssetDeleteView.as_view(), name="fleet_delete"),
     # Fleet analytics — Hito 12 Paso PRIORIDAD 2
     path("fleet/analytics/", MachineAssetAnalyticsView.as_view(), name="fleet_analytics"),
+
+    # --- Documentación H30 (S48) -- pestañas nuevas contra DocumentIndexEntry,
+    # sustituyen a las de documentation_hub (cubos legados MachineDocument/
+    # PersonalDocument, 30/39 filas residuales frente a 11.000+ ya clasificadas
+    # aquí -- ver anexo H30 sección "COMPLETADAS EN S48"). Bajo documentacion2/
+    # mientras se valida, antes de sustituir el enlace de navegación principal. ---
+    path("documentacion2/", DocumentationHubV2View.as_view(), name="documentation_h30_hub"),
+    path("documentacion2/maquinaria/", MachineListFragmentView.as_view(), name="documentation_h30_machine_list"),
+    path("documentacion2/maquinaria/<int:pk>/", MachineDetailView.as_view(), name="documentation_h30_machine_detail"),
+    path("documentacion2/personal/", PersonalListFragmentView.as_view(), name="documentation_h30_personal_list"),
+    path("documentacion2/personal/<int:pk>/", PersonalDetailView.as_view(), name="documentation_h30_personal_detail"),
+    path("documentacion2/epis/", EpiTabFragmentView.as_view(), name="documentation_h30_epi_tab"),
+    path("documentacion2/<str:domain>/<int:subject_pk>/subir/", SubjectDocumentUploadView.as_view(), name="documentation_h30_upload"),
 
     # --- Documentación (H23/H25) -- vista exclusiva, ADMIN/DOCS_SUPERVISOR únicamente,
     # sin relación con Historial de Máquina/Centros de gasto (ver panel/views_documentation.py) ---
