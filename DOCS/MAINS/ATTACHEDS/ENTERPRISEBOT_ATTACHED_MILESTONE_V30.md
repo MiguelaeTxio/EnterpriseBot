@@ -524,39 +524,138 @@ nada y generó una falsa sospecha de entorno equivocado. Corregido en
 la siguiente consulta, sin impacto real más allá de la confusión
 momentánea.
 
+### COMPLETADAS EN S47
+
+**1. Análisis de cobertura de manuales por familia de maquinaria —
+CERRADO.** Llevaba dos sesiones seguidas (S44, S45) sin ejecución
+real y S46 tampoco lo tocó (2.ª sesión sin avanzar, regla 2.2 —
+convertido en pregunta abierta al cierre de S46, respondida hoy).
+Consulta real contra `fleet.MachineAsset`/`SubjectDocumentReference`
+(525 máquinas totales), depurada en varias rondas con Miguel Ángel
+hasta un número limpio y auditado:
+
+- 106 filas de centros de gasto/administrativo confirmadas fuera
+  (TURISMOS, ADM, DEPENDENCIAS, HUELVA, LOGÍSTICA, PERSONAL, BEN,
+  E.M., S/TM, VARIOS).
+- Familia `REMOLQUE` (44) confirmada excluida entera — no necesita
+  manual.
+- Familia `TTE.` (20) confirmada como maquinaria real (cabezas
+  tractoras + 1 góndola, verificado con `type_code`/`plate` reales,
+  no centro de coste) — entra al backlog.
+- Familia `S/F` (11) y 3 filas sueltas de `(SIN FAMILIA)` confirmadas
+  como ruido de catálogo puro (`type_code='S/TM'`, sin marca) —
+  excluidas.
+- 9 altas nuevas de S043 (`A68`, `H10`, `H11`, `S16`, `S17`, `V10`,
+  `Z135`, `Z136`, `Z138`, `G17`, `G18`) excluidas del cálculo hasta
+  que se les rellene `family` real — no clasificables todavía.
+- **Corrección real de datos** (directriz 4.9, detectada en la propia
+  sesión): `A22` y `A41`, confirmadas vendidas en S45 pero seguían
+  `is_active=True` en producción — corregidas a `is_active=False`.
+- `EMPRESA_ALMACEN_MECANICO`/`EMPRESA_TALLER_MECANICO`/
+  `EMPRESA_ALMACEN_ELEVACION`/`EMPRESA_TALLER_ELEVACION` (centros de
+  gasto genéricos colados dentro de MOVILES/PLATAFOR) excluidas.
+- **Total definitivo: 231 huecos reales** de maquinaria activa sin
+  manual vigente (PLATAFOR 108, CARR 32, MOVILES 23, TTE. 20, CADENAS
+  19, AUTOCARG 15, ASISTENC 12, ELEM 1, VENTOSA 1). Confirmado además
+  que el backfill de S45 (78 `SubjectDocumentReference`, incluidos los
+  22 emparejamientos JLG) sigue íntegro y correctamente reflejado —
+  no había trabajo duplicado ni perdido, solo la duda de Miguel Ángel
+  sobre en qué sesión se hizo.
+- Criterio de cierre confirmado por Miguel Ángel: no se persigue
+  máquina a máquina en este hito — los 231 huecos se irán resolviendo
+  según aparezcan a través de la propia interfaz del panel de
+  documentación (punto 4 de la hoja de ruta de abajo).
+- De paso, resuelto definitivamente el punto "D012/MK140/V1" de la
+  hoja de ruta arrastrada desde S45: confirmado con variantes
+  (`D-012`, `UNICARRIERS`, `MK-140`, `URA`) que no existen en
+  `fleet.MachineAsset` bajo ningún código ni modelo — descartados para
+  siempre, no se vuelven a buscar.
+
+**2. Modelo de datos de EPIs desplegado** (commit `03a3f2a`) —
+`EpiItemCatalog` (familia, código, etiqueta,
+`requires_periodic_review`, activo), `EpiDelivery` (persona, EPI,
+fecha de entrega, `source_entry` nullable a `DocumentIndexEntry`,
+`extraction_method` MANUAL/HEURISTIC/OCR/GEMINI, confianza), y
+`EpiReview` (entrega, fecha de revisión, estado
+`OPTIMAL`/`DETERIORATED`/`EXPIRED` — identificadores en inglés con
+etiqueta en español, corrección explícita de Miguel Ángel sobre la
+regla de oro del idioma, mismo patrón que
+`DocumentTypeCatalog.DOMAIN_CHOICES`). Migración 0022 escrita a mano
+en el mismo commit (`com-migrations` sección 1).
+
+**3. Diccionario heurístico (Fase A) — verificado contra corpus real**
+(16.031 archivos en DOC. MAQUINAS + 21.519 en DOC. PERSONAL). De los
+35 tipos sin probar en S46, se generaron candidatos por tipo y se
+verificaron con coincidencia de palabra completa (`\b`, ya validado
+en S46) contra nombres reales:
+
+- 4 solapes reales resueltos con prioridad explícita de Miguel Ángel:
+  `DESGUACE` → gana `DOC_BAJA_DEFINITIVA` sobre `BAJA_DEFINITIVA`;
+  `CUOTA`/`RECIBO` + `LEASING` → gana `RECIBO_LEASING` sobre
+  `LEASING`; `CURSO` se mantiene tipo propio, distinto de
+  `ENTREGA_INFORMACION`; `PROFORMA` gana siempre sobre `DOC_VENTA`
+  (una proforma nunca formaliza una venta, aunque el nombre del
+  archivo mencione "VENTA" — confirmado con contexto de negocio real:
+  las proformas se usan también para subvenciones sin compra
+  posterior).
+- **Falso positivo real detectado y corregido**: "BAJA TENSION"
+  (formación eléctrica) casaba con la palabra clave `BAJA` de
+  `BAJA_PERSONAL` — excluido del patrón.
+- **Hallazgo real que amplía el catálogo**: los 559 candidatos de
+  `BAJA_PERSONAL` mezclaban tres conceptos distintos por carpeta real
+  (`PERSONAL/BAJAS/` = baja en Seguridad Social;
+  `PERSONAL/PARTES BAJA ENF.COMUN Y ACC.NO LABORAL/` = parte médico;
+  `INVESTIGACION ACCIDENTES/CON BAJA|SIN BAJA/` = investigación de
+  accidente laboral). Miguel Ángel confirmó que no pueden ir en el
+  mismo tipo — dos tipos documentales nuevos dados de alta:
+  `PARTE_BAJA_MEDICA` e `INVESTIGACION_ACCIDENTE` (commit `c21fdbd`,
+  migración 0023, mismo patrón que `0021_seed_alta_medica.py`).
+- 4 tipos sin ninguna coincidencia real con las palabras probadas
+  (`CERT_NO_TARJ_TTES`, `JUSTIFICANTE_TRANSFERENCIA`,
+  `PAGO_CORRIENTE`, `RECIBO_SENAL_COMPRA`) — Miguel Ángel aportó
+  contexto de negocio sobre qué son (p. ej. `CERT_NO_TARJ_TTES` aplica
+  a vehículos de asistencia) pero ninguna palabra clave nueva
+  verificable — quedan pendientes de muestra real o palabra clave
+  concreta.
+
 ### Hoja de Ruta para la Siguiente Sesión
 
-**Antes de construir nada del recorrido masivo, confirmar con Miguel
-Ángel el resto del diccionario heurístico** (el de S46 se validó solo
-parcialmente — quedó pendiente resolver qué hacer con "alta médica"
-dentro del propio diccionario ahora que ya es tipo propio, y verificar
-el resto de códigos del catálogo — `IPO`, `ITC`, `LIBRO_HISTORIAL`,
-`C_ADECUACION`, `DECLARACION_HOMOLOGACION`, etc. — que no se probaron
-todavía contra nombres reales).
+**Pregunta abierta obligatoria (2.ª sesión sin avanzar, regla 2.2) —
+el `.rar` de A56 mal ubicado:** arrastrado ya desde S45 sin ningún
+intento de movimiento real. Miguel Ángel, ¿confirmas que se mueva ya
+(`A-56 MANUAL USO bal_27000-07-10 LTM 1230-5.1 manual.rar` → carpeta
+de A59, vía `move_service`, 4.12) en la próxima sesión sin volver a
+preguntarlo, o hay algo que lo bloquea?
 
-1. **Diseñar y escribir el modelo de datos de EPIs** —
-   `EpiItemCatalog` (familia, código, descripción), `EpiDelivery`
-   (trabajador, EPI, fecha, documento de origen, método de extracción/
-   confianza), y tabla de revisiones para EPIs con vida útil (arneses,
-   elementos de amarre — plantilla `OPTIMO`/`DETERIORADO`/`CADUCADO`
-   ya vista con datos reales en S46). Migración + modelo en el mismo
-   commit (`com-migrations`). Criterio de cierre: migración aplicada y
-   confirmada en `showmigrations` real del servidor.
-2. **Diseñar el diccionario heurístico completo** (Fase A) con límite
-   de palabra (`\b`, corregido en S46 tras el hallazgo de falsos
-   positivos), verificado contra muestra real de cada código del
-   catálogo todavía sin probar. Criterio de cierre: diccionario
-   confirmado por Miguel Ángel, con conteo de solapes reales (mismo
-   archivo, más de un código candidato) revisado y resuelto por
-   prioridad explícita.
-3. **Construir el comando de recorrido dirigido (Fase A)** sobre
-   `DOC. MAQUINAS`/`DOC. PERSONAL`: enganchar `domain_object`
-   (creando `MachineAsset`/`PersonIdentity` si no existen, mismo
-   mecanismo que cuarentena) y `document_type` por heurística de
-   nombre — sin ninguna llamada a Gemini ni a OCR en esta fase.
-   Criterio de cierre: `document_type__isnull=False` sobre una
-   proporción alta y medida del corpus (línea base real de S46: 0% de
-   37.550 archivos).
+**Pregunta abierta obligatoria (2.ª sesión sin avanzar, regla 2.2) —
+DECA:** arrastrado ya desde S45 sin alcance definido. Miguel Ángel,
+¿es una ampliación del catálogo de H30 (tipo documental nuevo con
+`tracks_expiry`) o justifica un hito propio? Sin respuesta, este punto
+queda fuera de la lista de tareas activas.
+
+1. **Construir el comando de recorrido dirigido (Fase A)** sobre
+   `DOC. MAQUINAS`/`DOC. PERSONAL`, con el diccionario heurístico ya
+   cerrado esta sesión: enganchar `domain_object` (creando
+   `MachineAsset`/`PersonIdentity` si no existen, mismo mecanismo que
+   cuarentena) y `document_type` por palabra clave + reglas de
+   prioridad de solape + separación por carpeta real para
+   `BAJA_PERSONAL`/`PARTE_BAJA_MEDICA`/`INVESTIGACION_ACCIDENTE` (no
+   solo por palabra "BAJA") — sin ninguna llamada a Gemini ni a OCR en
+   esta fase. Criterio de cierre: `document_type__isnull=False` sobre
+   una proporción alta y medida del corpus (línea base real de S47:
+   0% de 37.550 archivos).
+2. **Cerrar los 4 tipos sin palabra clave verificada**
+   (`CERT_NO_TARJ_TTES`, `JUSTIFICANTE_TRANSFERENCIA`,
+   `PAGO_CORRIENTE`, `RECIBO_SENAL_COMPRA`) antes de dar el diccionario
+   por completo al 100% — pedir a Miguel Ángel una palabra clave
+   concreta o esperar a que aparezca muestra real en el recorrido del
+   punto 1. Mismo criterio que `AUTORIZACION_USO_MAQUINARIA`/
+   `ESTIBA_PLATAFORMAS` (ver punto 3).
+3. **Cerrar `tracks_expiry` para los dos tipos pendientes**
+   (arrastrado 1.ª sesión sin avanzar) en cuanto aparezca un archivo
+   real que auditar: `AUTORIZACION_USO_MAQUINARIA` y
+   `ESTIBA_PLATAFORMAS`. Criterio de cierre: al menos una muestra real
+   localizada en el índice con ese código exacto en el nombre.
 4. **Construir la Fase B** (OCR con Tesseract, Gemini como último
    recurso) solo para documentos ya enganchados a un tipo con
    `tracks_expiry=True` sin fecha resuelta por heurística de nombre.
@@ -568,7 +667,11 @@ todavía contra nombres reales).
    de Gasto, Personal, EPIs) y el modelo de permisos de supervisor
    (lectura cuarentena/NO CONFORMES + escritura de anotación/
    reencolado ahí + escritura completa solo vía las tres pestañas).
-   Todos los CRUD con ordenación asc/desc y filtro por columna.
+   Todos los CRUD con ordenación asc/desc y filtro por columna. La
+   pestaña de EPIs es donde se resuelve la entrega manual desde panel
+   (`EpiDelivery.extraction_method=MANUAL`, ya modelado esta sesión) y
+   donde se irán cerrando, uno a uno, los 231 huecos reales de
+   manuales confirmados hoy.
 6. **Alta de tipo documental nuevo también desde el panel de
    documentación** (hoy solo existe desde el explorador de archivos),
    para cuando el supervisor suba un documento sin tipo en el
@@ -579,33 +682,4 @@ todavía contra nombres reales).
 8. **Vacaciones controladas desde el panel (H24)** — diseño
    explícitamente abierto por Miguel Ángel, sin alcance definido
    todavía. No construir nada hasta que lo concrete.
-9. **Cerrar `tracks_expiry` para los dos tipos pendientes**
-   (arrastrado 1.ª sesión sin avanzar) en cuanto aparezca un archivo
-   real que auditar: `AUTORIZACION_USO_MAQUINARIA` y
-   `ESTIBA_PLATAFORMAS`. Criterio de cierre: al menos una muestra real
-   localizada en el índice con ese código exacto en el nombre.
-10. **Resolver `D012`, `MK140` y `V1`("URA 376 & 506")** (arrastrado
-    1.ª sesión sin avanzar) — no resolvieron ni por código ni por
-    modelo contra `fleet.MachineAsset` ni contra el listado completo
-    de maquinaria aportado en S45. Criterio de cierre: Miguel Ángel
-    identifica de qué máquina son (o confirma que no pertenecen a
-    Grupo Álvarez), o se descartan explícitamente.
-11. **Mover el `.rar` de A56 mal ubicado** (arrastrado 1.ª sesión sin
-    avanzar) — `A-56 MANUAL USO bal_27000-07-10 LTM 1230-5.1
-    manual.rar` pertenece a A59 por el propio contenido del nombre.
-12. **DECA** (arrastrado 1.ª sesión sin avanzar) — documento
-    electrónico de control administrativo, obligatorio en transporte
-    de mercancías por carretera desde el 5 de octubre de 2026. Sin
-    alcance definido — valorar si es ampliación de H30 o hito propio.
-
-**Pregunta abierta obligatoria (2.ª sesión sin avanzar, regla 2.2):**
-el **análisis de cobertura de manuales por familia de maquinaria**
-lleva ya dos sesiones seguidas (S44 y S45) sin ejecución real, y S46
-tampoco lo ha tocado. Antes de seguir arrastrándolo en silencio:
-Miguel Ángel, ¿qué falta realmente para poder ejecutarlo — un dato
-tuyo, una decisión de prioridad frente al resto del backlog, o
-simplemente que dedique una sesión entera a esto en concreto? Sin
-respuesta, este punto (y el punto 6 de la hoja de ruta de S45,
-"revisar el resto de los archivos sin código", que dependía de él)
-quedan fuera de la lista de tareas activas hasta que se aclare.
 
