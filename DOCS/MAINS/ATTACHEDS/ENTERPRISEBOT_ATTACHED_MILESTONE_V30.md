@@ -829,6 +829,18 @@ producción:** 476 archivos nuevos resueltos (tipo + dominio), 0
 dosieres nuevos. Total acumulado con `document_type` real: **9.533**
 (9.057 + 476, verificado con `DocumentIndexEntry.objects.filter(
 document_type__isnull=False, deleted_at__isnull=True).count()`).
+
+**Punto 3 de la hoja de ruta de S47 ("cerrar `tracks_expiry` para
+`AUTORIZACION_USO_MAQUINARIA`/`ESTIBA_PLATAFORMAS`") — CERRADO.**
+Muestra real encontrada: `AUTORIZACION_USO_MAQUINARIA` tiene 6
+documentos del mismo trabajador (Gómez García, José Antonio) con
+fechas distintas a lo largo de varios años (2021-2026) — se renueva
+periódicamente, `tracks_expiry=True` confirmado y aplicado y
+verificado (`ANTES: False` → `DESPUES: True`). `ESTIBA_PLATAFORMAS`
+solo tiene 4 archivos reales en total, uno por persona, sin ninguna
+fecha repetida para la misma persona — sin evidencia de renovación,
+`tracks_expiry=False` confirmado (sin cambio, ya estaba así).
+Revisable si aparece muestra real que lo contradiga en el futuro.
 clasificados y vinculados a su máquina/persona real, partiendo de 0%.
 
 ### Hoja de Ruta para la Siguiente Sesión
