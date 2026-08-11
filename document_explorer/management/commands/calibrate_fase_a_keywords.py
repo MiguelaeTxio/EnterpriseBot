@@ -182,6 +182,19 @@ class Command(BaseCommand):
             )
             shown += 1
 
+        # Agregacion por PAR de tipos -- volumen real, no archivo a
+        # archivo, para decidir prioridades con datos (S48).
+        from collections import Counter
+        pair_counts = Counter()
+        for _eid, codes in overlaps.items():
+            distinct_codes = sorted(set(c for c, _p in codes))
+            for i in range(len(distinct_codes)):
+                for j in range(i + 1, len(distinct_codes)):
+                    pair_counts[(distinct_codes[i], distinct_codes[j])] += 1
+        self.stdout.write("--- SOLAPES AGREGADOS POR PAR DE TIPOS ---")
+        for pair, count in pair_counts.most_common():
+            self.stdout.write("    %s <-> %s : %d archivos" % (pair[0], pair[1], count))
+
     def handle(self, *args, **options):
         self._run(CANDIDATES_SAFE, "CANDIDATOS SEGUROS")
         self._run(CANDIDATES_RISKY, "ACRONIMOS DE RIESGO -- SOLO REVISION")
