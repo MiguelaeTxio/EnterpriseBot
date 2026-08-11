@@ -5,41 +5,26 @@ caducidad/emision de los documentos `tracks_expiry=True` que la Fase
 B0 (heuristica de nombre) no pudo resolver -- ver anexo H30, seccion
 "COMPLETADAS EN S48".
 
-Decision de Miguel Angel (S48): en vez de asumir por defecto que la
-fecha del nombre es siempre caducidad, se lee el propio contenido del
-documento (OCR) y se busca CONTEXTO real alrededor de cada fecha
-encontrada -- "caduca"/"valido hasta"/"vencimiento" indican
-`expiry_date`; "expedicion"/"emitido"/"expedido" indican `issue_date`.
-Solo si no hay contexto reconocible Y hay una unica fecha en el
-documento, se cae al mapeo por defecto ya confirmado en B0 para los
-tipos que lo tienen (ITV/OCA/CARNET_CONDUCIR -> expiry;
-PERMISO_CIRCULACION/FORMACION -> issue). Para SEGURO/TACOGRAFO/
-EXCEDENCIA, sin mapeo por defecto verificado todavia, sin contexto
-reconocible se deja SIN resolver -- nunca se adivina.
+Reutiliza `document_explorer.date_verification_service` (extraido a
+modulo compartido en S48 para no duplicar con el flujo de subida
+desde ficha, que usa la misma logica de OCR/contexto).
 
-Extraccion de texto segun tipo real de archivo:
-- `.pdf`: primeras 2 paginas renderizadas a imagen (fitz/PyMuPDF, ya
-  dependencia del proyecto) -> OCR con pytesseract.
-- `.jpg`/`.jpeg`/`.png`: OCR directo.
-- `.docx`: texto nativo via python-docx (ya dependencia) -- nunca OCR,
-  el texto ya es legible sin escanear.
-- Cualquier otra extension: se omite, queda para revision manual.
+Tipos marcados `document_type.ocr_unreliable=True` (hoy solo ITV,
+verificado con datos reales -- tarjetas manuscritas con fondo de
+seguridad que domina la lectura de Tesseract) se EXCLUYEN de este
+recorrido masivo -- nunca se llama a Gemini en bloque (directriz de
+coste de S46: "nunca otra pasada masiva de clasificacion por
+Gemini"). Quedan contados aparte como cola real para una llamada a
+Gemini deliberada y acotada, no automatica.
 
 DRY-RUN POR DEFECTO. Sin `--apply`, solo informa. `--limit N` limita
-cuantos documentos procesa en esta ejecucion (por defecto 20) --
-descargar + OCR-ar 2000+ documentos en una sola llamada arriesga
-timeout del servidor; se ejecuta en lotes.
+cuantos documentos procesa en esta ejecucion (por defecto 20).
 """
-import io
-import re
-import unicodedata
-from datetime import date
-
-import fitz
-import pytesseract
-from PIL import Image
 from django.core.management.base import BaseCommand
 
+from document_explorer.date_verification_service import (
+    classify_dates_in_text, extract_text,
+)
 from document_explorer.models import DocumentIndexEntry
 from spare_parts.gcs_service import download_bytes
 
@@ -56,113 +41,13 @@ DEFAULT_FIELD_BY_CODE = {
     "FORMACION": "issue",
 }
 
-_EXPIRY_CONTEXT = [
-    "CADUCA", "CADUCIDAD", "VALID", "VENCE", "VENCIMIENTO", "HASTA EL",
-    "PROXIMA REVISION", "PROXIMA INSPECCION", "FECHA LIMITE",
-]
-_ISSUE_CONTEXT = [
-    "EXPEDICION", "EXPEDIDO", "EXPEDIDA", "EMISION", "EMITIDO",
-    "EMITIDA",
-]
-
-_DATE_RE = re.compile(r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})")
-_CONTEXT_WINDOW = 70  # caracteres a cada lado de la fecha a inspeccionar
-
-
-def _strip_accents(value):
-    return "".join(
-        c for c in unicodedata.normalize("NFD", value)
-        if unicodedata.category(c) != "Mn"
-    )
-
-
-def _parse_date(day_s, month_s, year_s):
-    try:
-        day, month, year = int(day_s), int(month_s), int(year_s)
-    except ValueError:
-        return None
-    if year < 100:
-        year += 2000
-    if not (1 <= day <= 31 and 1 <= month <= 12 and 1900 <= year <= 2100):
-        return None
-    try:
-        return date(year, month, day)
-    except ValueError:
-        return None
-
-
-def _classify_dates(text):
-    """
-    Devuelve (expiry_date o None, issue_date o None) a partir del
-    texto OCR -- busca cada fecha y mira los _CONTEXT_WINDOW
-    caracteres anteriores por palabras de contexto. Si dos fechas del
-    mismo tipo de contexto compiten, se queda con la mas tardia
-    (caducidad) o la mas temprana (emision, la primera vez emitido).
-    """
-    norm = _strip_accents(text).upper()
-    expiry_candidates = []
-    issue_candidates = []
-    other_dates = []
-
-    for match in _DATE_RE.finditer(norm):
-        parsed = _parse_date(*match.groups())
-        if not parsed:
-            continue
-        window_start = max(0, match.start() - _CONTEXT_WINDOW)
-        window_end = min(len(norm), match.end() + _CONTEXT_WINDOW)
-        context = norm[window_start:match.start()] + \
-            norm[match.end():window_end]
-        if any(word in context for word in _EXPIRY_CONTEXT):
-            expiry_candidates.append(parsed)
-        elif any(word in context for word in _ISSUE_CONTEXT):
-            issue_candidates.append(parsed)
-        else:
-            other_dates.append(parsed)
-
-    expiry = max(expiry_candidates) if expiry_candidates else None
-    issue = min(issue_candidates) if issue_candidates else None
-    return expiry, issue, other_dates
-
-
-def _ocr_pdf(data):
-    text_parts = []
-    doc = fitz.open(stream=data, filetype="pdf")
-    for page_index in range(min(2, doc.page_count)):
-        page = doc.load_page(page_index)
-        pix = page.get_pixmap(dpi=300)
-        img = Image.open(io.BytesIO(pix.tobytes("png")))
-        text_parts.append(pytesseract.image_to_string(img, lang="spa"))
-    doc.close()
-    return "\n".join(text_parts)
-
-
-def _ocr_image(data):
-    img = Image.open(io.BytesIO(data))
-    return pytesseract.image_to_string(img, lang="spa")
-
-
-def _text_from_docx(data):
-    import docx
-    doc = docx.Document(io.BytesIO(data))
-    return "\n".join(p.text for p in doc.paragraphs)
-
-
-def _extract_text(entry, data):
-    name_lower = entry.name.lower()
-    if name_lower.endswith(".pdf"):
-        return _ocr_pdf(data)
-    if name_lower.endswith((".jpg", ".jpeg", ".png")):
-        return _ocr_image(data)
-    if name_lower.endswith(".docx"):
-        return _text_from_docx(data)
-    return None
-
 
 class Command(BaseCommand):
     help = (
         "H30 (S48) -- Fase B1: OCR real para fecha de caducidad/"
         "emision. Dry-run por defecto, --apply para escribir, "
-        "--limit N para procesar por lotes (defecto 20)."
+        "--limit N para procesar por lotes (defecto 20). Excluye "
+        "tipos ocr_unreliable (cola para Gemini deliberado)."
     )
 
     def add_arguments(self, parser):
@@ -176,13 +61,24 @@ class Command(BaseCommand):
             "expiry_por_contexto": 0, "issue_por_contexto": 0,
             "expiry_por_defecto": 0, "issue_por_defecto": 0,
             "sin_fecha_reconocible": 0, "extension_no_soportada": 0,
-            "error_descarga_u_ocr": 0,
+            "error_descarga_u_ocr": 0, "cola_gemini_ocr_unreliable": 0,
         }
+
+        cola_gemini = DocumentIndexEntry.objects.filter(
+            bucket=BUCKET, entry_kind=DocumentIndexEntry.KIND_FILE,
+            deleted_at__isnull=True, purged_at__isnull=True,
+            document_type__tracks_expiry=True,
+            document_type__ocr_unreliable=True,
+            expiry_date__isnull=True, issue_date__isnull=True,
+            domain_object_id__isnull=False,
+        ).count()
+        stats["cola_gemini_ocr_unreliable"] = cola_gemini
 
         qs = DocumentIndexEntry.objects.filter(
             bucket=BUCKET, entry_kind=DocumentIndexEntry.KIND_FILE,
             deleted_at__isnull=True, purged_at__isnull=True,
             document_type__tracks_expiry=True,
+            document_type__ocr_unreliable=False,
             expiry_date__isnull=True, issue_date__isnull=True,
             domain_object_id__isnull=False,
         ).select_related("document_type").order_by("id")[:limit]
@@ -191,7 +87,7 @@ class Command(BaseCommand):
             code = entry.document_type.code
             try:
                 data = download_bytes(entry.bucket, entry.blob_name)
-                text = _extract_text(entry, data)
+                text = extract_text(entry.name, data)
             except Exception as exc:
                 stats["error_descarga_u_ocr"] += 1
                 self.stdout.write(
@@ -203,7 +99,7 @@ class Command(BaseCommand):
                 stats["extension_no_soportada"] += 1
                 continue
 
-            expiry, issue, other_dates = _classify_dates(text)
+            expiry, issue, other_dates = classify_dates_in_text(text)
 
             if expiry:
                 stats["expiry_por_contexto"] += 1
