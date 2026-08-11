@@ -43,6 +43,7 @@ CANDIDATES_SAFE = {
         "CERT_MANTENIMIENTO": [
             "CERTIF MANTENIMIENTO", "CERTIFICADO MANTENIMIENTO",
         ],
+        "CERT_NO_TARJ_TTES": ["CERT_NO_TARJ_TTES"],
         "CERT_REVISION": ["CERTIFICADO REVISION", "CERTIF REVISION"],
         "CONTRATO_COMPRAVENTA": ["CONTRATO COMPRAVENTA", "COMPRAVENTA"],
         "C_ADECUACION": ["ADECUACION"],
@@ -53,6 +54,7 @@ CANDIDATES_SAFE = {
         "FACTURA_COMPRA": ["FACTURA COMPRA"],
         "FICHA_TECNICA": ["FICHA TECNICA"],
         "ITV": ["ITV"],
+        "JUSTIFICANTE_TRANSFERENCIA": ["JUSTIFICANTE_TRANSFERENCIA"],
         "LEASING": ["LEASING"],
         "LIBRO_HISTORIAL": ["LIBRO HISTORIAL"],
         "MANUAL_DESPIECE": ["DESPIECE"],
@@ -63,6 +65,7 @@ CANDIDATES_SAFE = {
         "RECIBO_LEASING": [
             "CUOTA LEASING", "RECIBO LEASING", "FACTURA LEASING",
         ],
+        "RECIBO_SENAL_COMPRA": ["RECIBO_SENAL_COMPRA"],
         "SOLICITUD_ADMINISTRATIVA": ["SOLICITUD"],
         "TABLA_DE_CARGA": ["TABLA CARGA"],
         "TARJETA_TRANSPORTE": ["TARJETA TRANSPORTE"],
@@ -84,6 +87,7 @@ CANDIDATES_SAFE = {
         "FORMACION": ["FORMACION"],
         "MOD_145": ["MODELO 145"],
         "NOMINA": ["NOMINA"],
+        "PAGO_CORRIENTE": ["PAGO CORRIENTE"],
         "RECONOCIMIENTO_MEDICO": ["RECONOCIMIENTO MEDICO"],
         "SEG_SOCIAL": ["SEGURIDAD SOCIAL"],
         "VACACIONES": ["VACACIONES"],
@@ -124,7 +128,14 @@ def _strip_accents(value):
 
 def _build_pattern(phrase):
     parts = [re.escape(w) for w in phrase.split(" ")]
-    return re.compile(r"\b" + r"[ _\-\.]+".join(parts) + r"\b")
+    body = r"[ _\-\.]+".join(parts)
+    # Corregido S48: \b trata "_" como caracter de palabra, asi que
+    # nunca detectaba un candidato pegado entre guiones bajos (p. ej.
+    # "CERT_NO_TARJ_TTES" dentro de "A29_CERT_NO_TARJ_TTES_20230314"
+    # -- verificado con datos reales que \b fallaba ahi). Un lookaround
+    # que solo trata [A-Z0-9] como caracter de palabra trata "_"/"-"/
+    # "."/espacio como frontera valida por igual.
+    return re.compile(r"(?<![A-Z0-9])" + body + r"(?![A-Z0-9])")
 
 
 def _files_for_domain(domain):
