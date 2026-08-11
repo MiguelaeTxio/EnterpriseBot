@@ -858,7 +858,23 @@ real. Corregido en `_match_candidates()` para comprobar siempre
 `(domain, "BOTH")`. Aplicado y verificado con datos reales:
 `SEGURO`: 1.393, `TACOGRAFO`: 184, `MANDATO`: 39 (suma 1.616, exacta).
 Total acumulado con `document_type` real: **11.149**.
-clasificados y vinculados a su máquina/persona real, partiendo de 0%.
+
+**Fase B1 (OCR) — en curso, hallazgo real importante (S48).** Comando
+`run_fase_b1_ocr_dates` construido y probado contra muestra real.
+Funciona bien contra documentos impresos con texto nativo/legible
+(verificado: `SEGURO`, recibo con período de vigencia, resolvió
+`expiry_date` correcto por contexto real — "VALIDEZ DE RECIBO...
+31/12/2016 - 31/12/2017"). **No funciona, y no es un bug corregible,
+contra tarjetas ITV manuscritas antiguas** (verificado visualmente por
+Miguel Ángel sobre 4 archivos reales, `P-07 2728-BJB`): la marca de
+fondo "ESPAÑA" repetida de la propia tarjeta oficial domina la lectura
+de Tesseract frente a las fechas manuscritas a bolígrafo — ni subir a
+300 dpi ni ningún ajuste de contexto lo arregla, es un límite real del
+motor de OCR contra manuscrito con fondo de seguridad. **Este
+subconjunto queda como cola real para Gemini (último recurso, acotado
+al mínimo, tal como preveía el diseño original de S46)** — nunca se ha
+intentado forzar más OCR sobre ellos, ni se ha llamado a Gemini
+todavía en esta sesión.
 
 ### Hoja de Ruta para la Siguiente Sesión
 
