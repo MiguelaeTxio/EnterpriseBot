@@ -57,17 +57,16 @@ DEFAULT_FIELD_BY_CODE = {
 }
 
 _EXPIRY_CONTEXT = [
-    "CADUCA", "CADUCIDAD", "VALIDO HASTA", "VALIDEZ HASTA", "VENCE",
-    "VENCIMIENTO", "HASTA EL", "PROXIMA REVISION", "PROXIMA INSPECCION",
-    "FECHA LIMITE", "VALIDO",
+    "CADUCA", "CADUCIDAD", "VALID", "VENCE", "VENCIMIENTO", "HASTA EL",
+    "PROXIMA REVISION", "PROXIMA INSPECCION", "FECHA LIMITE",
 ]
 _ISSUE_CONTEXT = [
     "EXPEDICION", "EXPEDIDO", "EXPEDIDA", "EMISION", "EMITIDO",
-    "EMITIDA", "FECHA DE EXPEDICION",
+    "EMITIDA",
 ]
 
 _DATE_RE = re.compile(r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})")
-_CONTEXT_WINDOW = 40  # caracteres antes de la fecha a inspeccionar
+_CONTEXT_WINDOW = 70  # caracteres a cada lado de la fecha a inspeccionar
 
 
 def _strip_accents(value):
@@ -110,7 +109,9 @@ def _classify_dates(text):
         if not parsed:
             continue
         window_start = max(0, match.start() - _CONTEXT_WINDOW)
-        context = norm[window_start:match.start()]
+        window_end = min(len(norm), match.end() + _CONTEXT_WINDOW)
+        context = norm[window_start:match.start()] + \
+            norm[match.end():window_end]
         if any(word in context for word in _EXPIRY_CONTEXT):
             expiry_candidates.append(parsed)
         elif any(word in context for word in _ISSUE_CONTEXT):
@@ -128,7 +129,7 @@ def _ocr_pdf(data):
     doc = fitz.open(stream=data, filetype="pdf")
     for page_index in range(min(2, doc.page_count)):
         page = doc.load_page(page_index)
-        pix = page.get_pixmap(dpi=200)
+        pix = page.get_pixmap(dpi=300)
         img = Image.open(io.BytesIO(pix.tobytes("png")))
         text_parts.append(pytesseract.image_to_string(img, lang="spa"))
     doc.close()
