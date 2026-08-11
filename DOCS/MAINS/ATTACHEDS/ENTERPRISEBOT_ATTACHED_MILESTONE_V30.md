@@ -398,60 +398,214 @@ GitHub caducó/se revocó a mitad de sesión (API y git devolvían `401`)
 con todo el trabajo ya empujado a GitHub — solo bloqueó el propio
 cierre (PCS), resuelto con un token nuevo.
 
+### COMPLETADAS EN S46
+
+**Objetivo de H30 ampliado de forma sustancial (decisión explícita de
+Miguel Ángel, esta sesión).** Deja de ser solo "vincular documentos
+existentes a su máquina/trabajador" y pasa a ser: dejar el **panel de
+documentación funcional y usable de verdad**, con tres pestañas
+propias — **Centros de Gasto**, **Personal**, **EPIs** — desde donde
+se hace toda subida/baja/consulta real. Los supervisores de
+documentación tienen lectura sobre `_CUARENTENA`/`NO CONFORMES` **más
+la escritura específica de anotar (`curator_note`) y reencolar desde
+ahí** (sin eso, todo lo no conforme se queda parado para siempre) —
+pero cualquier otra escritura/cambio pasa exclusivamente por las tres
+pestañas, nunca directamente sobre el explorador de archivos.
+
+**Bug real corregido en la misma sesión (directriz 4.9):**
+`resolve_or_create_machine_asset()`/`resolve_machine_asset()` solo
+miraban `entry.parent_path` (la carpeta) para encontrar el código de
+flota o la matrícula — nunca consultaban `machine_code_hint` (lo que
+Gemini extrae del propio contenido del documento) ni la
+`curator_note`. Un archivo reencolado desde NO CONFORMES que vivía en
+la raíz del cubo (sin subcarpeta) nunca podía resolver, por muchos
+datos reales que Gemini extrajera o que el curador anotara. Corregido
+con un tercer intento vía `machine_code_hint` (commit `dc44408`) —
+verificado en caliente contra un caso real (`P-26KHG CERTIF.
+MANTENIMIENTO`, id 42325): tras el fix, reencolado y resuelto
+correctamente contra el `MachineAsset` real de P-26.
+
+**Caso real de personal, mismo reencolado (id 42340):** una "tarjeta
+del conductor" sin DNI impreso no pudo resolver por identidad hasta
+que Miguel Ángel dejó `curator_note` con el DNI — funcionamiento
+correcto según el diseño ya existente (H29, decisión 3.14 ampliada),
+no un bug. Gemini clasificó el resultado como `TACOGRAFO`, no
+`CARNET_CONDUCIR` como se había asumido inicialmente por el nombre del
+histórico — corregido sobre la marcha con el dato real.
+
+**Diseño cerrado para extracción de fechas (`expiry_date`/
+`issue_date`), tras plantear dos alternativas y que Miguel Ángel
+confirmara la definitiva:** `DocumentTypeCatalog.tracks_expiry=True`
+es la PUERTA para que Gemini intente leer una fecha si el documento la
+muestra — nunca la obligación de que el 100% de los documentos del
+tipo la lleven. Es cada documento, no el tipo, el que decide (vía
+Gemini) si rellena `expiry_date_hint` (caducidad real) o
+`issue_date_hint` (solo emisión/recencia) o ninguno de los dos — mismo
+mecanismo ya usado por `vigencia_service.is_current()` para "sin
+ninguna fecha = vigente por defecto". Confirmado explícitamente
+también para `TACOGRAFO` (tarjeta de tacógrafo, vigencia legal fija de
+5 años, sin DNI impreso) → `tracks_expiry=True` (migración `0020`).
+
+**Nuevo tipo documental `ALTA_MEDICA`** (migración `0021`) — confirmado
+por Miguel Ángel como tipo propio, distinto de `ALTA` (Seguridad
+Social) y sin relación con "EPIS ALTA VISIBILIDAD" (ver hallazgo de
+falsos positivos abajo).
+
+**Hallazgo real crítico para el diseño del recorrido heurístico:**
+`icontains` sin límite de palabra produce falsos positivos serios —
+`RAE` casaba dentro de "ISRAEL", `OCA` dentro de "OCAÑA", `CAP` dentro
+de "INCAPACIDAD"/"CAPACITACION". Corregido con coincidencia de palabra
+completa (`\b`). Verificado contra el corpus real completo: **16.031
+archivos bajo `DOC. MAQUINAS` y 21.519 bajo `DOC. PERSONAL` — 0% con
+`document_type` asignado todavía** (el enganche real, más allá de las
+migraciones de catálogo, sigue sin construirse).
+
+**Decisión estratégica de coste, explícita y central para todo lo que
+sigue:** nunca otra pasada masiva de clasificación por Gemini (la
+anterior costó ≈300€). El recorrido de `DOC. MAQUINAS`/`DOC. PERSONAL`
+se ataca en dos fases: **Fase A, gratis** — enganchar cada documento a
+su máquina/trabajador (creando la ficha si no existe, mismo mecanismo
+ya usado en cuarentena) y adivinar el tipo documental por heurística de
+nombre de archivo, sin abrir ningún documento. **Fase B, barata** —
+solo para los documentos ya enganchados a un tipo con
+`tracks_expiry=True` sin fecha detectable por heurística: **OCR local
+con Tesseract** (confirmado instalado en el servidor, versión 4.1.1,
+sin coste de API) antes que Gemini; Gemini queda como último recurso,
+acotado al mínimo posible.
+
+**EPIs — alcance real mucho mayor de lo esperado, confirmado con
+muestra de contenido real (35 archivos `.doc`/`.docx`, texto nativo
+vía `_convert_to_pdf`/`python-docx`, nunca OCR para esta muestra por
+fiabilidad):** al menos dos plantillas distintas a lo largo de los
+años, vocabulario mucho más amplio que "prendas básicas" (máscara de
+soldar, guantes de acción química, ropa de señalización de alta
+visibilidad, ropa con arco eléctrico, equipos de rescate en carretera),
+y un subconjunto (arneses, elementos de amarre) que **no es una
+entrega puntual sino una revisión periódica** con plantilla propia
+(`OPTIMO`/`DETERIORADO`/`CADUCADO`) — necesita historial de
+revisiones, no solo fecha de entrega. Decisión de arquitectura para
+EPIs, confirmada por Miguel Ángel: catálogo cerrado de EPIs
+(`EpiItemCatalog`) agrupado por familia, con CRUD propio y opción
+"nuevo EPI" accesible desde el propio desplegable de entrega (nunca
+hay que salir del formulario para dar de alta un EPI nuevo); tabla de
+entregas (`EpiDelivery`) y tabla de revisiones aparte para los EPIs
+con vida útil.
+
+**Otras decisiones confirmadas esta sesión, pendientes de construir:**
+- Todos los CRUD del panel de documentación (Personal, Centros de
+  Gasto, EPIs, tipos documentales) llevan ordenación ascendente/
+  descendente y filtro por cada columna — estándar explícito, no
+  opcional.
+- El alta de trabajador/máquina para poder entregarle un EPI se hace
+  siempre desde su propia pestaña (Personal/Centros de Gasto), nunca
+  como atajo dentro del formulario de EPIs.
+- El alta de un tipo documental nuevo (hoy solo disponible desde el
+  Catálogo de tipos del explorador de archivos) tiene que estar
+  también accesible desde el propio flujo de subida del panel de
+  documentación, para cuando el supervisor no encuentre el tipo en el
+  desplegable.
+- **Vacaciones (H24)** se controlará también desde este panel, pero
+  Miguel Ángel deja el diseño explícitamente abierto — no cerrar nada
+  de esto por interpretación propia.
+- Detectado, sin resolver: falta un tipo documental para el
+  "justificante de asistencia a un organismo público" (Hacienda,
+  Seguridad Social...) que un trabajador necesita para trámites
+  personales — llegará vía partes de trabajo (fotos). Confirmado
+  contra el catálogo completo (57 tipos ya existentes): no hay ningún
+  código que lo cubra hoy. No se da de alta todavía — falta decidir
+  código/etiqueta exacta y el punto real de entrada en partes de
+  trabajo.
+
+**Incidencia propia, corregida en la misma sesión:** una consulta
+inicial mía para localizar los dos casos de NO CONFORMES filtraba por
+`NO_CONFORMES_PREFIX` (`"NO CONFORMES/"`, con barra) contra
+`parent_path` (que vale `"NO CONFORMES"`, sin barra) — no encontró
+nada y generó una falsa sospecha de entorno equivocado. Corregido en
+la siguiente consulta, sin impacto real más allá de la confusión
+momentánea.
+
 ### Hoja de Ruta para la Siguiente Sesión
 
-1. **Enganchar `vigencia_service.evaluate_substitution()` a la
-   clasificación H29** — bloque grande, con la base de datos ya lista
-   desde esta sesión (`document_type`/`expiry_date`/`issue_date` en
-   `DocumentIndexEntry`, `tracks_expiry` en `DocumentTypeCatalog`,
-   `SubjectDocumentReference` poblado). Queda por delante:
-   - **Verificación online obligatoria** de la API de Gemini
-     (directriz crítica) antes de tocar el prompt/`response_schema` —
-     no se ha comprobado en meses.
-   - Ampliar el prompt/schema de `classification_service.py` para que
-     extraiga `expiry_date`/`issue_date` **solo** cuando
-     `document_type.tracks_expiry` sea `True` — acotado, por decisión
-     explícita de Miguel Ángel, a un recorrido dirigido solo sobre
-     `DOC. MAQUINAS`/`DOC. PERSONAL` (no todo el corpus), y solo sobre
-     los tipos documentales que ya sabemos que llevan fecha — nunca
-     releer manuales ni el resto de tipos sin fecha.
-   - El hook real: al clasificar un documento de un tipo con
-     `tracks_expiry=True`, llamar a `evaluate_substitution()` contra
-     los `DocumentIndexEntry` del mismo tipo y el mismo sujeto (vía
-     `SubjectDocumentReference`), actualizar `current_entry` y
-     registrar en `DocumentSubstitutionLog` (sin cambios de esquema,
-     ya genérico).
-2. **Cerrar `tracks_expiry` para los dos tipos pendientes** en cuanto
-   aparezca un archivo real que auditar: `AUTORIZACION_USO_MAQUINARIA`
-   y `ESTIBA_PLATAFORMAS`. Criterio de cierre: al menos una muestra
-   real localizada en el índice con ese código exacto en el nombre.
-3. **Resolver `D012`, `MK140` y `V1`("URA 376 & 506")** — no
-   resolvieron ni por código ni por modelo contra `fleet.MachineAsset`
-   ni contra el listado completo de maquinaria aportado en S45.
-   Criterio de cierre: Miguel Ángel identifica de qué máquina son (o
-   confirma que no pertenecen a Grupo Álvarez / son de otra empresa
-   del grupo no cubierta por este `fleet`), o se descartan
-   explícitamente.
-4. **Mover el `.rar` de A56 mal ubicado** (`A-56 MANUAL USO
-   bal_27000-07-10 LTM 1230-5.1 manual.rar`, pertenece a A59 por el
-   propio contenido del nombre — LTM 1230-5.1 es el modelo de A59, no
-   el de A56) — detectado en S45, deliberadamente no tocado en la
-   papelera de hoy porque es un "mover" (4.12), no un "borrar".
-5. **Análisis de cobertura por familia de maquinaria** (arrastrado de
-   S44, sin ejecución real en S45): para cada familia real
-   (`fleet.MachineAsset.family`), determinar huecos reales de manual,
-   incorporando ya los hallazgos de S45 (A22/A41 fuera por venta, A43
-   hueco real activo, U9 ausente del índice). Criterio de cierre:
-   lista final de huecos reales, filtrada por familia.
-6. **Revisar el resto de los archivos sin código** (agrupados por
-   marca) contra la lista de huecos reales del punto 5.
-7. **DECA (nuevo, S45)** — documento electrónico de control
-   administrativo, obligatorio en transporte de mercancías por
-   carretera desde el 5 de octubre de 2026 (Resolución de 5 de junio
-   de 2026, DGTCF). Miguel Ángel plantea generación/modificación
-   programática (PyMuPDF, sin licencia Adobe) con formulario para que
-   el chófer actualice datos en obra. Sin alcance definido todavía —
-   valorar si es ampliación de H30 o hito propio antes de empezar a
-   construir nada. Requiere tipo documental nuevo en
-   `DocumentTypeCatalog` cuando se aborde.
+**Antes de construir nada del recorrido masivo, confirmar con Miguel
+Ángel el resto del diccionario heurístico** (el de S46 se validó solo
+parcialmente — quedó pendiente resolver qué hacer con "alta médica"
+dentro del propio diccionario ahora que ya es tipo propio, y verificar
+el resto de códigos del catálogo — `IPO`, `ITC`, `LIBRO_HISTORIAL`,
+`C_ADECUACION`, `DECLARACION_HOMOLOGACION`, etc. — que no se probaron
+todavía contra nombres reales).
+
+1. **Diseñar y escribir el modelo de datos de EPIs** —
+   `EpiItemCatalog` (familia, código, descripción), `EpiDelivery`
+   (trabajador, EPI, fecha, documento de origen, método de extracción/
+   confianza), y tabla de revisiones para EPIs con vida útil (arneses,
+   elementos de amarre — plantilla `OPTIMO`/`DETERIORADO`/`CADUCADO`
+   ya vista con datos reales en S46). Migración + modelo en el mismo
+   commit (`com-migrations`). Criterio de cierre: migración aplicada y
+   confirmada en `showmigrations` real del servidor.
+2. **Diseñar el diccionario heurístico completo** (Fase A) con límite
+   de palabra (`\b`, corregido en S46 tras el hallazgo de falsos
+   positivos), verificado contra muestra real de cada código del
+   catálogo todavía sin probar. Criterio de cierre: diccionario
+   confirmado por Miguel Ángel, con conteo de solapes reales (mismo
+   archivo, más de un código candidato) revisado y resuelto por
+   prioridad explícita.
+3. **Construir el comando de recorrido dirigido (Fase A)** sobre
+   `DOC. MAQUINAS`/`DOC. PERSONAL`: enganchar `domain_object`
+   (creando `MachineAsset`/`PersonIdentity` si no existen, mismo
+   mecanismo que cuarentena) y `document_type` por heurística de
+   nombre — sin ninguna llamada a Gemini ni a OCR en esta fase.
+   Criterio de cierre: `document_type__isnull=False` sobre una
+   proporción alta y medida del corpus (línea base real de S46: 0% de
+   37.550 archivos).
+4. **Construir la Fase B** (OCR con Tesseract, Gemini como último
+   recurso) solo para documentos ya enganchados a un tipo con
+   `tracks_expiry=True` sin fecha resuelta por heurística de nombre.
+   Incluye el hook real a `evaluate_substitution()`/
+   `SubjectDocumentReference`/`DocumentSubstitutionLog` ya diseñado en
+   S46. Criterio de cierre: muestra real de documentos con fecha
+   extraída y sustitución aplicada, verificada contra datos.
+5. **Diseñar las tres pestañas del panel de documentación** (Centros
+   de Gasto, Personal, EPIs) y el modelo de permisos de supervisor
+   (lectura cuarentena/NO CONFORMES + escritura de anotación/
+   reencolado ahí + escritura completa solo vía las tres pestañas).
+   Todos los CRUD con ordenación asc/desc y filtro por columna.
+6. **Alta de tipo documental nuevo también desde el panel de
+   documentación** (hoy solo existe desde el explorador de archivos),
+   para cuando el supervisor suba un documento sin tipo en el
+   desplegable.
+7. **Decidir código/etiqueta y punto de entrada real** del
+   "justificante de asistencia a organismo público" (detectado en
+   S46, sin resolver) antes de darlo de alta en el catálogo.
+8. **Vacaciones controladas desde el panel (H24)** — diseño
+   explícitamente abierto por Miguel Ángel, sin alcance definido
+   todavía. No construir nada hasta que lo concrete.
+9. **Cerrar `tracks_expiry` para los dos tipos pendientes**
+   (arrastrado 1.ª sesión sin avanzar) en cuanto aparezca un archivo
+   real que auditar: `AUTORIZACION_USO_MAQUINARIA` y
+   `ESTIBA_PLATAFORMAS`. Criterio de cierre: al menos una muestra real
+   localizada en el índice con ese código exacto en el nombre.
+10. **Resolver `D012`, `MK140` y `V1`("URA 376 & 506")** (arrastrado
+    1.ª sesión sin avanzar) — no resolvieron ni por código ni por
+    modelo contra `fleet.MachineAsset` ni contra el listado completo
+    de maquinaria aportado en S45. Criterio de cierre: Miguel Ángel
+    identifica de qué máquina son (o confirma que no pertenecen a
+    Grupo Álvarez), o se descartan explícitamente.
+11. **Mover el `.rar` de A56 mal ubicado** (arrastrado 1.ª sesión sin
+    avanzar) — `A-56 MANUAL USO bal_27000-07-10 LTM 1230-5.1
+    manual.rar` pertenece a A59 por el propio contenido del nombre.
+12. **DECA** (arrastrado 1.ª sesión sin avanzar) — documento
+    electrónico de control administrativo, obligatorio en transporte
+    de mercancías por carretera desde el 5 de octubre de 2026. Sin
+    alcance definido — valorar si es ampliación de H30 o hito propio.
+
+**Pregunta abierta obligatoria (2.ª sesión sin avanzar, regla 2.2):**
+el **análisis de cobertura de manuales por familia de maquinaria**
+lleva ya dos sesiones seguidas (S44 y S45) sin ejecución real, y S46
+tampoco lo ha tocado. Antes de seguir arrastrándolo en silencio:
+Miguel Ángel, ¿qué falta realmente para poder ejecutarlo — un dato
+tuyo, una decisión de prioridad frente al resto del backlog, o
+simplemente que dedique una sesión entera a esto en concreto? Sin
+respuesta, este punto (y el punto 6 de la hoja de ruta de S45,
+"revisar el resto de los archivos sin código", que dependía de él)
+quedan fuera de la lista de tareas activas hasta que se aclare.
 
