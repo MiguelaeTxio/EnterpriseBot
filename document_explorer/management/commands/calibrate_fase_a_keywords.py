@@ -80,7 +80,6 @@ CANDIDATES_SAFE = {
         "CURSO": ["CURSO"],
         "DNI": ["DNI"],
         "ENTREGA_INFORMACION": ["ENTREGA INFORMACION"],
-        "EPIS": ["EPI", "EPIS"],
         "EXCEDENCIA": ["EXCEDENCIA"],
         "FORMACION": ["FORMACION"],
         "MOD_145": ["MODELO 145"],
@@ -88,7 +87,23 @@ CANDIDATES_SAFE = {
         "RECONOCIMIENTO_MEDICO": ["RECONOCIMIENTO MEDICO"],
         "SEG_SOCIAL": ["SEGURIDAD SOCIAL"],
         "VACACIONES": ["VACACIONES"],
+        # EPIS deliberadamente FUERA (S48, correccion de Miguel Angel):
+        # los documentos de EPI se consumen hacia EpiDelivery/
+        # EpiReview (modelo propio de S47), nunca se clasifican como
+        # document_type=EPIS por este recorrido heuristico -- flujo
+        # distinto. Sin esta exclusion, ademas, "EPIS ALTA
+        # VISIBILIDAD" habria colisionado en falso con ALTA (ver
+        # EXCLUSIONS mas abajo).
     },
+}
+
+# Exclusiones por falso positivo real, detectado contra el corpus
+# (mismo patron que "BAJA TENSION" excluido de BAJA_PERSONAL en S46).
+# clave (domain, code, phrase) -> lista de frases que, si aparecen en
+# el nombre, anulan esa coincidencia aunque el patron de palabra
+# suelta hubiera matcheado.
+EXCLUSIONS = {
+    ("PERSONAL", "ALTA", "ALTA"): ["ALTA VISIBILIDAD"],
 }
 
 CANDIDATES_RISKY = {
@@ -145,7 +160,16 @@ class Command(BaseCommand):
             for code, phrases in codes.items():
                 for phrase in phrases:
                     pattern = _build_pattern(_strip_accents(phrase).upper())
-                    hits = [e for e, n in norm_names if pattern.search(n)]
+                    excl_phrases = EXCLUSIONS.get((domain, code, phrase), [])
+                    excl_patterns = [
+                        _build_pattern(_strip_accents(p).upper())
+                        for p in excl_phrases
+                    ]
+                    hits = [
+                        e for e, n in norm_names
+                        if pattern.search(n)
+                        and not any(ep.search(n) for ep in excl_patterns)
+                    ]
                     self.stdout.write(
                         "%s | %-28s | %-30s | %d coincidencias"
                         % (domain, code, phrase, len(hits))
