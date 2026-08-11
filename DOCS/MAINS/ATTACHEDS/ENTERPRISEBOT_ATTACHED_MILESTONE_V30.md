@@ -841,6 +841,23 @@ solo tiene 4 archivos reales en total, uno por persona, sin ninguna
 fecha repetida para la misma persona — sin evidencia de renovación,
 `tracks_expiry=False` confirmado (sin cambio, ya estaba así).
 Revisable si aparece muestra real que lo contradiga en el futuro.
+
+**Bug real detectado y corregido (S48): `run_fase_a_sweep` nunca
+aplicaba `SEGURO`/`TACOGRAFO`/`MANDATO`.** Estos tres tipos viven bajo
+la clave `"BOTH"` del diccionario de candidatos (aplican a `MACHINE` y
+`PERSONAL` por igual), pero el bucle principal del comando solo
+recorría `domain in ("MACHINE", "PERSONAL")` — la clave `"BOTH"`
+nunca se comprobaba, así que estos tres tipos tenían 0 archivos
+asignados pese a que la calibración ya había verificado coincidencias
+reales sólidas (`SEGURO`: 1.347, `TACOGRAFO`: 199, `MANDATO`: 47). El
+propio comando de calibración (`calibrate_fase_a_keywords`) sí
+recorría `BOTH` correctamente (por eso los solapes `ITV↔TACOGRAFO`,
+`CURSO↔TACOGRAFO`, `CARNET_CONDUCIR↔TACOGRAFO` ya estaban cubiertos en
+el framework de prioridades) — el fallo estaba solo en la aplicación
+real. Corregido en `_match_candidates()` para comprobar siempre
+`(domain, "BOTH")`. Aplicado y verificado con datos reales:
+`SEGURO`: 1.393, `TACOGRAFO`: 184, `MANDATO`: 39 (suma 1.616, exacta).
+Total acumulado con `document_type` real: **11.149**.
 clasificados y vinculados a su máquina/persona real, partiendo de 0%.
 
 ### Hoja de Ruta para la Siguiente Sesión
