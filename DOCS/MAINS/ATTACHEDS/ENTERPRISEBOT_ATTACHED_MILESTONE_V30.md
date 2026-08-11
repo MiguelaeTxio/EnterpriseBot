@@ -734,6 +734,42 @@ seguros para escritura en bulk (S48).
   "fechas de caducidad sin heurística de nombre" — también resuelve
   identidad de personal sin carpeta reconocible.
 
+- **AMPLIACIÓN EXPLÍCITA de Fase B, para que no se vuelva a perder
+  entre sesiones (queja de Miguel Ángel en S48, PCS no lo capturaba
+  bien):** los archivos `PERSONAL` que la Fase A NO resuelva por
+  `folder_path` (sueltos en raíz, mal ubicados) no quedan huérfanos en
+  silencio — pasan a la cola de Fase B para que el OCR local con
+  Tesseract (ya decidido en S46 que va siempre antes que cualquier
+  llamada a Gemini) intente leer el DNI del propio contenido y
+  resolver la identidad por esa vía. Fase B deja de ser solo
+  "fechas de caducidad sin heurística de nombre" — también resuelve
+  identidad de personal sin carpeta reconocible.
+
+**Resultado real del dry-run de `run_fase_a_sweep` (S48), sobre 14.469
+candidatos `MACHINE` + candidatos `PERSONAL`:** 9.057 archivos con
+tipo y dominio resueltos sin ambigüedad, 10 dosieres reales detectados
+(papelera), 21.609 sin ningún tipo por palabra clave (línea base de
+partida era 0% en S47, esperado — el diccionario cubre ~50 tipos con
+frases concretas), 3.213 con tipo resuelto pero dominio SIN resolver.
+
+**DECISIÓN DEFINITIVA de Miguel Ángel (S48) — personal de baja, FUERA
+DE ALCANCE PARA SIEMPRE, no solo para esta sesión:** la inmensa
+mayoría de esos 3.213 son archivos bajo carpetas `BAJAS/` (personal ya
+no activo) — `PersonIdentity` solo tiene 70 filas, sembradas contra el
+Excel de plantilla **activa** (S43), así que un trabajador de baja
+nunca tiene fila `PersonIdentity` y nunca podrá resolver por este
+mecanismo. Miguel Ángel confirma, verbatim: *"El personal de baja lo
+vamos a dejar estar. No vamos a contar con él [...] Son datos que no
+vamos a meter en ninguna base de datos [...] para no ensuciar nuestra
+base de datos. Comenzamos con una base de datos limpia, sin incluir al
+personal que ya está dado de baja."* Consecuencia de obligado
+cumplimiento: **nunca** crear `PersonIdentity` para personal de baja,
+ni en Fase A, ni en Fase B (OCR), ni en ninguna fase futura — el
+histórico se queda en los archivos (GCS, nunca tocado, 4.12) pero no
+entra en la base de datos limpia. Los archivos de personal de baja se
+quedan sin `domain_object` para siempre, por diseño, no por
+limitación técnica pendiente de resolver.
+
 ### Hoja de Ruta para la Siguiente Sesión
 
 **El `.rar` de A56 mal ubicado — RESUELTO en S48.** Arrastrado desde
