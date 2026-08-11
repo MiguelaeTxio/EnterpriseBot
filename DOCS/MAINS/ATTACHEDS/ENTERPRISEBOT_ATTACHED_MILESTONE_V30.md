@@ -993,3 +993,62 @@ servicios. No se toma esa decisión en esta sesión.
    explícitamente abierto por Miguel Ángel, sin alcance definido
    todavía. No construir nada hasta que lo concrete.
 
+### Punto 5 (S48, misma sesión) — Panel de documentación H30, en curso real
+
+**Decisión definitiva de Miguel Ángel:** sustituir por completo el
+panel legado (`panel/views_documentation.py`, sobre
+`MachineDocument`/`PersonalDocument`, 30/39 filas residuales) — nunca
+mantener las dos versiones en paralelo. Ejecutado en la misma sesión:
+`panel/documentacion/` es ya la interfaz real, integrada en la barra
+lateral, el archivo legado y sus 30+ endpoints (alertas, dossier,
+plantillas de email, diccionario aprendido, transferencia entre
+máquinas) **eliminados** — sin uso real confirmado antes de borrar.
+
+**Construido y desplegado:**
+- `DocumentTypeCatalog.ocr_unreliable` y `DocumentIndexEntry.
+  is_obsolete` (migración `0024`).
+- `document_explorer.date_verification_service` — extracción de fecha
+  compartida (OCR con contexto expiry/issue, o Gemini acotado a tipos
+  `ocr_unreliable=True`, hoy solo `ITV`).
+- `document_explorer.subject_upload_service` — subida real desde
+  ficha: el supervisor elige tipo + escribe fecha, el sistema
+  contrasta contra el propio documento (aviso visual si no coincide,
+  nunca decide por encima del supervisor) y aplica
+  `evaluate_substitution()` marcando `is_obsolete` en los documentos
+  sustituidos — nunca mueve ni borra el archivo real (4.12).
+- Tres pestañas (Centros de Gasto, Personal, EPIs) contra
+  `DocumentIndexEntry`, con orden asc/desc y filtro de búsqueda.
+- Cada documento con sus propios botones **Ver / Actualizar /
+  Eliminar** en su fila (corrección real tras primera versión
+  rechazada por Miguel Ángel — "un botón por tipo" no es el diseño
+  correcto). Subida de varios archivos a la vez del mismo tipo en un
+  único formulario.
+- Acordeón Vigentes (abierto)/Histórico (cerrado) en cada ficha.
+- **Bug de datos real, corregido:** 1.172 grupos (mismo tipo+sujeto)
+  con más de un documento "vigente" a la vez — los 11.000+ documentos
+  de la Fase A nunca pasaron por `evaluate_substitution()` (solo la
+  subida desde ficha lo aplica). `backfill_obsolete_duplicates`
+  (dry-run confirmado, aplicado y verificado): 8.566 documentos
+  marcados `is_obsolete=True` con el mismo criterio real de
+  `vigencia_service` cuando hay fecha, y "el más reciente indexado"
+  cuando no hay ninguna fecha para desempatar. Quedan 102 grupos con
+  más de un vigente — comportamiento correcto, no un fallo (mismo
+  tipo con fechas de periodos distintos, p. ej. recibos de `SEGURO`
+  trimestrales, ya documentado así en `vigencia_service`).
+
+**Pendiente real, todavía sin cerrar:**
+- Modelo de permisos de supervisor (lectura cuarentena/NO CONFORMES +
+  escritura de anotación/reencolado + escritura completa solo vía las
+  tres pestañas) — no construido todavía.
+- Alta de tipo documental nuevo desde el propio panel de
+  documentación (punto 6 de la hoja de ruta) — no construido.
+- Cierre uno a uno de los 231 huecos reales de manuales — pendiente,
+  ahora sí con interfaz real desde la que hacerlo.
+- Cola de Gemini para `ITV` sin fecha por OCR (491 candidatos B1
+  iniciales, `ocr_unreliable`) — todavía no se ha llamado a Gemini en
+  esta sesión, sigue como cola documentada.
+- Repuntar `document_management.tasks.send_document_expiry_alerts`
+  (cron diario) y el envío de documentos por WhatsApp
+  (`whatsapp/services.py`) a `DocumentIndexEntry` — identificado como
+  dependencia real, no tocado todavía.
+
