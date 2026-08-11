@@ -281,53 +281,177 @@ sobre en qué consola de PythonAnywhere estaba corriendo
 de PythonAnywhere: sin espacio de procesos compartido entre consolas),
 no por suposición.
 
+### COMPLETADAS EN S45
+
+**Punto 1 de la hoja de ruta — los dos casos ambiguos, cerrados con
+respuesta verbatim:**
+- A65: confirmado que **no** está mal archivado — UTM 845 es la
+  denominación alemana de la misma máquina, LTM 1070-4.1 (confirmado
+  con la "Manufacturer confirmation" real de Liebherr, que lista
+  ambos nombres para el mismo modelo).
+- B22: `MANUAL USO+CE.pdf` es la declaración CE + el mismo manual que
+  ya existe por separado en `MANUAL USO.pdf` — contenido redundante,
+  no complementario (a diferencia de B23). Se descarta el `+CE`.
+
+**Criterio de deduplicación corregido dos veces en vivo, con datos
+reales cada vez:**
+1. El documento `H30_plan_dedup_manuales.md` que Miguel Ángel aportó
+   resultó ser la versión **sin recalcular** tras la corrección de
+   criterio de S44 (confirmado explícitamente) — se recalcularon los
+   64 grupos contra tamaños reales de BD, no contra ese documento.
+2. Miguel Ángel decide en esta misma sesión volver al criterio
+   original (**más pesado gana**, con recompresión posterior como
+   trabajo aparte, pendiente), con dos excepciones de contenido fijas
+   verificadas por OCR: **A62** (16,9 MB, no 420,6 MB — mismo
+   contenido, 1.354 páginas) y **A58** (16,9 MB, no 81,7 MB del
+   archivo `PDF-AD.pdf`, que el documento original ya trataba como
+   documento distinto — probable adenda, no variante de compresión).
+3. **A22, A41, A43** no eran casos de deduplicación: A22 y A41 son
+   máquinas **vendidas** sin manual en ningún sitio (solo
+   documentación administrativa); A43 (`TEREX DEMAG AC 35`, activa)
+   tiene un archivo candidato (`A-43 E-7099-BDP.pdf`, 19 páginas,
+   escaneado sin capa de texto) que Miguel Ángel confirmó tras abrirlo
+   personalmente que **es un dossier administrativo, no el manual**
+   (foto real del manual real aportada: `TEREX DEMAG AC35 L`). Los
+   tres quedan fuera de deduplicación, como huecos reales de cobertura
+   para el punto 5 de la hoja de ruta.
+4. **U9** (`EuroCompact`) confirmado ausente de todo el índice, ningún
+   archivo con ese nombre ni con "EuroCompact" como texto libre.
+
+**Papelera virtual ejecutada** (`DataOperationLog` operación **#252**,
+mismo patrón que `ResolveDuplicatesView`, H29 §3.22): 40 grupos con
+más de un candidato real, 95 archivos a papelera, 43 conservados,
+**1.782 MB recuperables**. Ejecutado sin visto bueno final por
+decisión explícita de Miguel Ángel ("vamos mal de tiempo... si alguien
+chilla ya nos enteraremos").
+
+**Punto 4 — los 19 (en realidad 22) emparejamientos JLG aplicados.**
+Verificación cruzada real detectó que **Z137** debía sumarse al grupo
+510AJ (su propia carpeta tenía un manual y una ficha técnica 510AJ ya
+enviados a papelera como duplicados en una operación anterior,
+operación #1 del proyecto) — y que `fleet.MachineAsset` de Z137 tenía
+`brand_model`/`family` vacíos, corregido a `J.L.G 510AJ`/`PLATAFOR`.
+Grupo 510AJ final: Z114/Z115/Z131/Z132/**Z137** (5, no 4).
+
+**Backfill real de `SubjectDocumentReference` (nuevo modelo, ver
+abajo): 78 vínculos máquina→manual vigente**, con verificación uno a
+uno contra `fleet.MachineAsset` real — 7 códigos del plan original no
+resolvieron a la primera (`D012`, `MK140`, `V1`, `V7`, `Z10`, `Z7`,
+`Z1`); con el listado real de maquinaria que aportó Miguel Ángel se
+resolvieron 5 (`Z010`, `Z07`, `Z01` — códigos con cero a la izquierda
+distintos de `Z100`-`Z109`/`Z70`-`Z79`; `V7` no era código, era
+"S3370RT V7" del nombre de modelo → Z110/Z111, comparten manual).
+`D012`, `MK140` y `V1`("URA 376 & 506") quedan sin resolver — no
+existen en `fleet.MachineAsset` ni en el listado completo de
+maquinaria, ni por código ni por modelo.
+
+**Modelo de datos real (puntos 3-4 de la hoja de ruta original de
+H30), diseñado y desplegado:**
+- `document_explorer.SubjectDocumentReference` (migración 0017):
+  referencia viva sujeto (`MachineAsset`/`PersonIdentity`, vía
+  `GenericForeignKey`) → documento vigente de un tipo dado, por **FK
+  directa a `DocumentIndexEntry`** — confirmado en la propia sesión
+  que esto resuelve gratis el punto 4 original de la hoja de ruta (un
+  mover/renombrar virtual, 4.12, no rompe la referencia, cero hooks en
+  `move_service`).
+- `DocumentIndexEntry.document_type/expiry_date/issue_date` y
+  `DocumentTypeCatalog.tracks_expiry` (migraciones 0018-0019):
+  prerequisito real descubierto en la propia sesión para poder
+  enganchar `vigencia_service.evaluate_substitution()` a la
+  clasificación H29 — la clasificación H29 **no extrae fechas en
+  absoluto** hoy (solo lo hacía el sistema legado H23). Decisión de
+  escalabilidad explícita de Miguel Ángel: qué tipos documentales
+  participan en fechas/sustitución vive como dato en el propio
+  catálogo (`tracks_expiry`), nunca como lista fija en código.
+- Catálogo `tracks_expiry` cerrado con auditoría real (muestra por
+  tipo, PyMuPDF + revisión directa de Miguel Ángel sobre capturas de
+  los propios documentos, ya que varios son escaneos sin capa de
+  texto): `ITV`, `OCA`, `SEGURO`, `PERMISO_CIRCULACION`,
+  `CARNET_CONDUCIR`, `EXCEDENCIA`, `FORMACION`, `CONTRATO` en `True`;
+  `RAE` (obligatorio pero sin caducidad, verbatim) y `MANDATO` (dura
+  hasta revocación expresa, no hasta fecha fija) confirmados en
+  `False`. `AUTORIZACION_USO_MAQUINARIA`/`ESTIBA_PLATAFORMAS` quedan
+  pendientes — cero archivos reales en todo el corpus con ese código,
+  nada que auditar todavía.
+
+**Incidente real de producción, diagnosticado y resuelto en la misma
+sesión (directriz 4.13, nueva, ver documento maestro):** 71 commits
+existiendo solo en el servidor y no en GitHub, origen en un commit
+huérfano de S040 (`10bc93e`, nunca empujado) que causó un merge
+automático en cada despliegue desde entonces. Resuelto con un único
+`git push origin main` ejecutado directamente en el servidor
+(fast-forward limpio). Documentado en el documento maestro para que
+ninguna sesión futura tenga que reinvestigarlo.
+
+**Bug real de producción cometido y corregido en la misma sesión**:
+el commit de la migración 0018 rompió la importación de `models.py`
+(`NameError`: `DocumentTypeCatalog` referenciada directamente antes de
+su propia definición, más abajo en el archivo) — tumbaba `manage.py`
+y previsiblemente la web app completa. `py_compile` no lo detectó
+(solo sintaxis, no ejecución). Corregido de inmediato con referencia
+por cadena, mismo patrón ya usado en `deleted_by`/`purged_by` del
+propio modelo, y verificado con `manage.py check` real contra el
+servidor tras el fix.
+
+**Incidencia de sesión, sin impacto en el resultado**: el token de
+GitHub caducó/se revocó a mitad de sesión (API y git devolvían `401`)
+con todo el trabajo ya empujado a GitHub — solo bloqueó el propio
+cierre (PCS), resuelto con un token nuevo.
+
 ### Hoja de Ruta para la Siguiente Sesión
 
-1. **Resolver los dos casos ambiguos pendientes de respuesta** (no se
-   ejecuta la papelera de A65/B22 hasta tener esto):
-   - A65: `A-65 E-0897-BHZ MANUAL INSTRUCCIONES.pdf` habla de una grúa
-     UTM 845 (Liebherr-Werk Ehingen), modelo distinto de la LTM
-     1070-4.1 real de A65 — ¿está mal archivado (pertenece a otra
-     máquina) o hay una razón real para que conviva ahí? Criterio de
-     cierre: respuesta explícita de Miguel Ángel, sí o no.
-   - B22: `B-22 5805-DTL MANUAL USO+CE.pdf` (13,9 MB) — ¿es una
-     declaración de conformidad aparte del manual de uso (como B23), o
-     un extracto/versión reducida del mismo manual? Criterio de
-     cierre: respuesta explícita de Miguel Ángel.
-2. **Verificar página a página los 30 grupos que cambiaron de ganador**
-   con el criterio corregido (más ligero) antes de ejecutar nada.
-   Criterio de cierre objetivo: para cada uno de los 30 grupos, el
-   número de páginas del archivo ligero elegido debe coincidir con el
-   del archivo pesado descartado (verificado con PyMuPDF,
-   `page_count`, sin necesidad de Gemini) — si no coincide, ese grupo
-   concreto queda fuera de la ejecución automática y se revisa a mano.
-3. **Ejecutar la papelera virtual** sobre las 64 máquinas con código ya
-   resueltas (48 claras + 7 ambiguos ya cerrados + 2 pendientes del
-   punto 1, una vez respondidos), solo después de que el punto 2 haya
-   dado luz verde real. Criterio de cierre: `DataOperationLog` con el
-   resultado, mismo patrón ya usado en H29 §3.22
-   (`ResolveDuplicatesView`).
-4. **Aplicar los 19 emparejamientos JLG ya confirmados** (Z101 y
-   compañía → manual combinado 1930ES/2030ES/2630ES/2646ES/3246ES;
-   Z114/Z115/Z131/Z132 → `JLG 510AJ service manual`; Z120/Z44/Z69 →
-   `MANUAL DE SERVICIO Y MANTENIMIENTO AJ1250 JLG`) — sacarlos del
-   grupo de 120 archivos sin código y asignarlos a sus máquinas reales.
-5. **Análisis de cobertura por familia de maquinaria**, criterio
-   explícito de Miguel Ángel (S44): para cada familia real
-   (`fleet.MachineAsset.family` — MOVILES, AUTOCARG, CADENAS,
-   PLATAFOR, CARR, REMOLQUE, TTE., ALQUILER...), determinar si la
-   familia como conjunto ya tiene manuales cubiertos; buscar huecos
-   reales solo dentro de familias que sí los requieren. Ya confirmado
-   por Miguel Ángel: turismos/motos/furgonetas y la familia
-   REMOLQUE/góndolas (G) no requieren manual — excluir de la búsqueda
-   sin más comprobación. Criterio de cierre: lista final de huecos
-   reales, filtrada por familia, mucho más corta que las 312 en bruto
-   de esta sesión.
-6. **Revisar el resto de los 120 archivos sin código** (agrupados por
-   marca en el análisis de esta sesión) contra la lista de huecos
-   reales del punto 5, para asignar los que correspondan.
-7. **Solo cuando la organización de manuales quede cerrada de verdad**
-   (puntos 1-6 completos): retomar el punto 3 de la hoja de ruta
-   original del anexo (diseñar el modelo de datos real —tabla
-   aparte, ya decidido en la pregunta 1— y escribir la migración
-   correspondiente).
+1. **Enganchar `vigencia_service.evaluate_substitution()` a la
+   clasificación H29** — bloque grande, con la base de datos ya lista
+   desde esta sesión (`document_type`/`expiry_date`/`issue_date` en
+   `DocumentIndexEntry`, `tracks_expiry` en `DocumentTypeCatalog`,
+   `SubjectDocumentReference` poblado). Queda por delante:
+   - **Verificación online obligatoria** de la API de Gemini
+     (directriz crítica) antes de tocar el prompt/`response_schema` —
+     no se ha comprobado en meses.
+   - Ampliar el prompt/schema de `classification_service.py` para que
+     extraiga `expiry_date`/`issue_date` **solo** cuando
+     `document_type.tracks_expiry` sea `True` — acotado, por decisión
+     explícita de Miguel Ángel, a un recorrido dirigido solo sobre
+     `DOC. MAQUINAS`/`DOC. PERSONAL` (no todo el corpus), y solo sobre
+     los tipos documentales que ya sabemos que llevan fecha — nunca
+     releer manuales ni el resto de tipos sin fecha.
+   - El hook real: al clasificar un documento de un tipo con
+     `tracks_expiry=True`, llamar a `evaluate_substitution()` contra
+     los `DocumentIndexEntry` del mismo tipo y el mismo sujeto (vía
+     `SubjectDocumentReference`), actualizar `current_entry` y
+     registrar en `DocumentSubstitutionLog` (sin cambios de esquema,
+     ya genérico).
+2. **Cerrar `tracks_expiry` para los dos tipos pendientes** en cuanto
+   aparezca un archivo real que auditar: `AUTORIZACION_USO_MAQUINARIA`
+   y `ESTIBA_PLATAFORMAS`. Criterio de cierre: al menos una muestra
+   real localizada en el índice con ese código exacto en el nombre.
+3. **Resolver `D012`, `MK140` y `V1`("URA 376 & 506")** — no
+   resolvieron ni por código ni por modelo contra `fleet.MachineAsset`
+   ni contra el listado completo de maquinaria aportado en S45.
+   Criterio de cierre: Miguel Ángel identifica de qué máquina son (o
+   confirma que no pertenecen a Grupo Álvarez / son de otra empresa
+   del grupo no cubierta por este `fleet`), o se descartan
+   explícitamente.
+4. **Mover el `.rar` de A56 mal ubicado** (`A-56 MANUAL USO
+   bal_27000-07-10 LTM 1230-5.1 manual.rar`, pertenece a A59 por el
+   propio contenido del nombre — LTM 1230-5.1 es el modelo de A59, no
+   el de A56) — detectado en S45, deliberadamente no tocado en la
+   papelera de hoy porque es un "mover" (4.12), no un "borrar".
+5. **Análisis de cobertura por familia de maquinaria** (arrastrado de
+   S44, sin ejecución real en S45): para cada familia real
+   (`fleet.MachineAsset.family`), determinar huecos reales de manual,
+   incorporando ya los hallazgos de S45 (A22/A41 fuera por venta, A43
+   hueco real activo, U9 ausente del índice). Criterio de cierre:
+   lista final de huecos reales, filtrada por familia.
+6. **Revisar el resto de los archivos sin código** (agrupados por
+   marca) contra la lista de huecos reales del punto 5.
+7. **DECA (nuevo, S45)** — documento electrónico de control
+   administrativo, obligatorio en transporte de mercancías por
+   carretera desde el 5 de octubre de 2026 (Resolución de 5 de junio
+   de 2026, DGTCF). Miguel Ángel plantea generación/modificación
+   programática (PyMuPDF, sin licencia Adobe) con formulario para que
+   el chófer actualice datos en obra. Sin alcance definido todavía —
+   valorar si es ampliación de H30 o hito propio antes de empezar a
+   construir nada. Requiere tipo documental nuevo en
+   `DocumentTypeCatalog` cuando se aborde.
+
