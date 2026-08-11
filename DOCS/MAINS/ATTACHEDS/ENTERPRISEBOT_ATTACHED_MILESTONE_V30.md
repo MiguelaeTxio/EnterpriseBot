@@ -618,6 +618,99 @@ en S46) contra nombres reales:
   verificable — quedan pendientes de muestra real o palabra clave
   concreta.
 
+### COMPLETADAS EN S48 (en curso)
+
+**Gap real detectado al empezar la Fase A:** el "diccionario
+heurístico" narrado en S46/S47 nunca quedó persistido como código —
+vivía solo en consultas puntuales de esas sesiones. Se reconstruyó
+desde cero contra el catálogo real (`DocumentTypeCatalog`, 59 tipos
+activos) y se verificó con datos reales del corpus, nunca de memoria.
+Artefacto real: `document_explorer/management/commands/
+calibrate_fase_a_keywords.py` — comando de solo lectura, no escribe
+nada, reutilizable para recalibrar en el futuro si el catálogo cambia.
+
+**Incidencia real de sesión, reconocida explícitamente:** en la
+primera pasada de resultados se propusieron preguntas de prioridad
+para casos que Miguel Ángel ya había resuelto en sesiones anteriores
+(EPIs) o que ya se explican por un principio general ya vigente en el
+proyecto (dosieres = documentos distintos escaneados juntos, van a
+papelera). Corregido en la misma sesión tras la corrección de Miguel
+Ángel — de ahí que este framework quede registrado aquí con todo el
+detalle, para que no se vuelva a perder entre sesiones.
+
+**EPIS retirado de los candidatos de Fase A.** Los documentos de EPI
+se consumen hacia `EpiDelivery`/`EpiReview` (modelo de S47), nunca se
+clasifican como `document_type=EPIS` por este recorrido — flujo
+distinto. Además, mantenerlo habría escondido un falso positivo real:
+"EPIS ALTA VISIBILIDAD" (ropa de señalización) coincidía con el
+candidato `ALTA` sin ser un alta de Seguridad Social.
+
+**Falso positivo real corregido:** `ALTA` excluye ahora la frase "ALTA
+VISIBILIDAD" (mismo patrón que la exclusión de "BAJA TENSIÓN" de
+`BAJA_PERSONAL` en S46). Verificado que sin esta exclusión, 151
+archivos de EPIs de alta visibilidad habrían quedado mal clasificados
+como `ALTA`.
+
+**Framework de prioridades cerrado con datos reales (S48), aplica a
+la Fase A completa:**
+
+*Reglas de S47, confirmadas de nuevo con datos reales:*
+- `DESGUACE` → gana `DOC_BAJA_DEFINITIVA` sobre `BAJA_DEFINITIVA` (5
+  archivos reales).
+- `PROFORMA` → gana siempre sobre `DOC_VENTA` (3 archivos reales).
+
+*Reglas nuevas, confirmadas por Miguel Ángel en S48:*
+- `CONTRATO_COMPRAVENTA` → gana sobre `DOC_VENTA`.
+- `ITV` → gana sobre `FICHA_TECNICA` cuando es un documento único (el
+  propio catálogo ya dice que ITV incluye la ficha técnica) — 548
+  archivos reales, el solape de mayor volumen de todos.
+- `PERMISO_CIRCULACION` → gana sobre `DOC_VENTA`/`FICHA_TECNICA`
+  cuando es un documento único (no un dosier real).
+- Cualquier tipo específico → gana siempre sobre
+  `SOLICITUD_ADMINISTRATIVA` cuando ambos coinciden en el mismo
+  archivo (aplicado a `BAJA_DEFINITIVA`, `DECLARACION_HOMOLOGACION`,
+  `ITV`, `LEASING`/`RECIBO_LEASING` frente a `SOLICITUD_ADMINISTRATIVA`).
+- `RECIBO_LEASING` → gana sobre `LEASING` (regla de S47, re-confirmada
+  con 9 archivos reales: "ULTIMA CUOTA LEASING", "ULTIMO RECIBO
+  LEASING").
+- `ALTA_MEDICA` → gana sobre `ALTA` (18 archivos reales, mismo patrón
+  de especificidad).
+
+*Regla de DOSIERES, aplicada por primera vez a la Fase A (principio ya
+vigente en el proyecto — documentos distintos escaneados juntos se
+presumen existentes por separado y el combinado va a papelera, mismo
+mecanismo que `trash_dossier_entry()`):*
+- `FICHA_TECNICA` + `PERMISO_CIRCULACION` (4 archivos: "Ficha Técnica,
+  Permiso Circulación y CE...") → DOSIER.
+- `CARNET_CONDUCIR` + `DNI` (12 archivos: "DNI +CARNE CONDUCIR
+  COLOR.pdf") → DOSIER.
+- `CARNET_CONDUCIR` + `TACOGRAFO` (2 archivos: "CARNE CONDUCIR,CAP,
+  TARJ.TACOGRAFO, Y CARNE OP.MAQ.VARIAS...") → DOSIER.
+
+*Falso positivo nuevo, mismo patrón que "alta EPIS":* `CURSO` ↔
+`TACOGRAFO` (2 archivos: "CURSO TACOGRAFO DIGITAL...") son formación
+sobre el tacógrafo, no el propio tacógrafo — gana `CURSO`.
+
+**Pendiente de confirmar por Miguel Ángel, propuesta hecha, aplicada
+por defecto salvo corrección explícita en la próxima sesión:**
+- `ALTA` ↔ `SEG_SOCIAL` (4 archivos: "ALTA SEGURIDAD SOCIAL...") →
+  propuesto que gane `ALTA` (es el acto de alta, no la tarjeta física).
+- `CURSO` ↔ `FORMACION` (14 archivos: "CURSO FORMACION 20 HORAS...")
+  → propuesto que gane `FORMACION` cuando hay patrón de horas
+  (2H/6H/60H/20 HORAS...), si no `CURSO`.
+- `ITV` ↔ `TACOGRAFO` (2 archivos: "ITV REV.TACOGRAFO...") →
+  propuesto DOSIER (dos inspecciones distintas mencionadas juntas).
+- `ENTREGA_INFORMACION` ↔ `FORMACION` (2 archivos) y `DNI` ↔
+  `FORMACION` (1 archivo) — volumen mínimo, sin propuesta cerrada
+  todavía.
+
+**Acrónimos de riesgo (`CE`, `IPO`, `ITC`, `OCA`, `RAE`, `CAP`, `CSS`,
+`IDC`) — verificados contra ejemplos reales, sin falsos positivos
+visibles en las muestras (a diferencia de S46, donde `OCA`/`CAP` sí
+los tenían antes del límite de palabra completa). Pendientes de
+confirmación explícita antes de tratarlos como seguros para escritura
+en bulk.
+
 ### Hoja de Ruta para la Siguiente Sesión
 
 **El `.rar` de A56 mal ubicado — RESUELTO en S48.** Arrastrado desde
