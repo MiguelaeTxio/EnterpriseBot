@@ -14,45 +14,66 @@
 </button>
 <div id="uploadFormContainer" class="mb-4"></div>
 
-<h5>Vigentes</h5>
-<table class="table table-sm table-hover">
-    <thead><tr><th>Tipo</th><th>Nombre</th><th>Caducidad</th><th>Acciones</th></tr></thead>
-    <tbody>
-        {% for entry in current %}
-        <tr>
-            <td>{{ entry.document_type.label }}</td>
-            <td>{{ entry.name }}</td>
-            <td>{{ entry.expiry_date|default:"—" }}</td>
-            <td>
-                <a href="{% url 'panel:documentation_document_view' pk=entry.pk %}" target="_blank" class="btn btn-sm btn-outline-secondary">Ver</a>
-                <button type="button" class="btn btn-sm btn-outline-primary"
-                        onclick="openUploadForm('{{ entry.document_type.code }}')">Actualizar</button>
-                <button type="button" class="btn btn-sm btn-outline-danger"
-                        onclick="deleteDocument({{ entry.pk }}, this)">Eliminar</button>
-            </td>
-        </tr>
-        {% empty %}
-        <tr><td colspan="4" class="text-muted small py-3">Sin documentos vigentes todavía.</td></tr>
-        {% endfor %}
-    </tbody>
-</table>
-
-<h5 class="mt-4">Histórico (obsoletos)</h5>
-<table class="table table-sm table-hover text-muted">
-    <thead><tr><th>Tipo</th><th>Nombre</th><th>Caducidad</th><th>Acciones</th></tr></thead>
-    <tbody>
-        {% for entry in obsolete %}
-        <tr>
-            <td>{{ entry.document_type.label|default:"—" }}</td>
-            <td>{{ entry.name }}</td>
-            <td>{{ entry.expiry_date|default:"—" }}</td>
-            <td><a href="{% url 'panel:documentation_document_view' pk=entry.pk %}" target="_blank" class="btn btn-sm btn-outline-secondary">Ver</a></td>
-        </tr>
-        {% empty %}
-        <tr><td colspan="4" class="small py-3">Sin histórico todavía.</td></tr>
-        {% endfor %}
-    </tbody>
-</table>
+<div class="accordion" id="machineDocsAccordion">
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#collapseVigentesMachine">
+                Vigentes <span class="badge bg-success ms-2">{{ current|length }}</span>
+            </button>
+        </h2>
+        <div id="collapseVigentesMachine" class="accordion-collapse collapse show">
+            <div class="accordion-body p-0">
+                <table class="table table-sm table-hover mb-0">
+                    <thead><tr><th>Tipo</th><th>Nombre</th><th>Caducidad</th><th>Acciones</th></tr></thead>
+                    <tbody>
+                        {% for entry in current %}
+                        <tr>
+                            <td>{{ entry.document_type.label }}</td>
+                            <td>{{ entry.name }}</td>
+                            <td>{{ entry.expiry_date|default:"—" }}</td>
+                            <td>
+                                <a href="{% url 'panel:documentation_document_view' pk=entry.pk %}" target="_blank" class="btn btn-sm btn-outline-secondary">Ver</a>
+                                <button type="button" class="btn btn-sm btn-outline-primary"
+                                        onclick="openUploadForm('{{ entry.document_type.code }}')">Actualizar</button>
+                                <button type="button" class="btn btn-sm btn-outline-danger"
+                                        onclick="deleteDocument({{ entry.pk }}, this)">Eliminar</button>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="4" class="text-muted small py-3">Sin documentos vigentes todavía.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseObsoletosMachine">
+                Histórico (obsoletos) <span class="badge bg-secondary ms-2">{{ obsolete|length }}</span>
+            </button>
+        </h2>
+        <div id="collapseObsoletosMachine" class="accordion-collapse collapse">
+            <div class="accordion-body p-0">
+                <table class="table table-sm table-hover text-muted mb-0">
+                    <thead><tr><th>Tipo</th><th>Nombre</th><th>Caducidad</th><th>Acciones</th></tr></thead>
+                    <tbody>
+                        {% for entry in obsolete %}
+                        <tr>
+                            <td>{{ entry.document_type.label|default:"—" }}</td>
+                            <td>{{ entry.name }}</td>
+                            <td>{{ entry.expiry_date|default:"—" }}</td>
+                            <td><a href="{% url 'panel:documentation_document_view' pk=entry.pk %}" target="_blank" class="btn btn-sm btn-outline-secondary">Ver</a></td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="4" class="small py-3">Sin histórico todavía.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
 
 <script>
 const DOC_TYPES_MACHINE = [
