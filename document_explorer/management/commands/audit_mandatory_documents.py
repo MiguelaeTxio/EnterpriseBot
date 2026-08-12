@@ -53,7 +53,10 @@ MANDATORY_BY_PREFIX = {
     # la unica excepcion real (una carretilla, familia T) es un
     # unico archivo sin clasificar, no evidencia suficiente para
     # extender la obligatoriedad a esa familia.
-    "A": ["PERMISO_CIRCULACION", "FICHA_TECNICA", "ITV", "SEGURO", "OCA", "RAE", "IPO", "ITC"],
+    # Fusionados S50 (migracion 0031) en un solo codigo IPO_ITC: por
+    # contenido real (ver sample_known_type_ocr_text) son el mismo
+    # documento, el acta de inspeccion periodica de la grua movil.
+    "A": ["PERMISO_CIRCULACION", "FICHA_TECNICA", "ITV", "SEGURO", "OCA", "RAE", "IPO_ITC"],
     "B": ["PERMISO_CIRCULACION", "FICHA_TECNICA", "ITV", "SEGURO", "C_ADECUACION"],
     "Z": ["CE", "C_ADECUACION", "SEGURO"],
     "H": ["CE", "SEGURO"],

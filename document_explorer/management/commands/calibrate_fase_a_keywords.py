@@ -297,7 +297,13 @@ EXCLUSIONS = {
 
 CANDIDATES_RISKY = {
     "MACHINE": {
-        "CE": ["CE"], "IPO": ["IPO"], "ITC": ["ITC"],
+        "CE": ["CE"],
+        # Fusionados S50 (migracion 0031): IPO e ITC resultaron ser el
+        # mismo documento real por contenido (acta de inspeccion
+        # periodica de grua movil) -- ver
+        # sample_known_type_ocr_text, ambos arrojaron el mismo texto
+        # de fondo. Un solo codigo, dos palabras candidatas.
+        "IPO_ITC": ["IPO", "ITC"],
         "OCA": ["OCA"], "RAE": ["RAE"],
     },
     "PERSONAL": {"CAP": ["CAP"], "CSS": ["CSS"], "IDC": ["IDC"]},
