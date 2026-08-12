@@ -13,33 +13,42 @@ correccion explicita de alcance frente al Fase B1 original
 (`run_fase_b1_ocr_dates.py`), que solo procesa documentos que YA
 tienen `document_type` asignado y `tracks_expiry=True`.
 
-Reutiliza SIN modificar:
-- `extract_text()` (S48) para el OCR/lectura real del archivo.
-- `_match_candidates()`/`_resolve_document_type()` (S48/S50) para el
-  mismo framework de prioridades/dosier ya usado en la heuristica de
-  nombre -- la unica diferencia real es que el texto que se le pasa
-  es el contenido OCR, no `entry.name`.
-- `resolve_or_create_machine_asset()` para el dominio, exactamente
-  igual que en Fase A.
+CORREGIDO EN LA MISMA SESION (S50): la primera version reutilizaba
+`_match_candidates()`/`_resolve_document_type()` tal cual (el mismo
+framework de palabra suelta que usa la heuristica de NOMBRE) pasandole
+el texto OCR en vez del nombre de archivo. Se detectaron 2 falsos
+positivos reales en el primer lote de prueba: un informe de
+mantenimiento que mencionaba "ITV" de pasada se clasifico como ITV;
+una lista de chequeo que mencionaba "CE" se clasifico como CE. Un
+nombre de archivo es corto y deliberado -- el cuerpo de un documento
+es largo, en lenguaje natural, y puede mencionar un concepto sin SER
+ese tipo de documento.
 
-Alcance: mismo SCOPE de `run_fase_a_sweep_scoped` (las carpetas de
-maquina real confirmadas carpeta por carpeta en S50), documentos SIN
+Corregido construyendo CONTENT_MARKERS a partir de patrones REALES
+descubiertos con `sample_known_type_ocr_text` (S50): frases largas y
+especificas que aparecieron de forma consistente en 3 ejemplos reales
+de cada tipo ya confirmado (nunca palabras sueltas de una sola
+palabra como "CE" o "ITV", que son las que causaban los falsos
+positivos). Si el texto OCR coincide con marcadores de MAS de un tipo
+a la vez, se considera ambiguo y no se resuelve -- mejor dejarlo sin
+tipo que asignar mal.
+
+IPO_ITC (migracion 0031, S50): fusionados porque el contenido real es
+literalmente el mismo documento (acta de inspeccion periodica de
+grua/plataforma) -- no hay marcador de contenido que distinga IPO de
+ITC, por eso ahora es un solo tipo.
+
+Alcance: mismo SCOPE de `run_fase_a_sweep_scoped`, documentos SIN
 tipo, excluyendo fotos (Miguel Angel, S50: "las fotos [...] no las
-vamos a subir [...] no las vamos a meter en las fichas de la
-maquinaria") y nombres de escaner genericos evidentes ya cubiertos
-por este mismo filtro previamente medido.
+vamos a meter en las fichas de la maquinaria").
 
-Si el OCR SI resuelve un tipo, en la misma pasada intenta tambien
-extraer fecha via `classify_dates_in_text()` (mismo texto OCR, sin
-descargar el archivo dos veces) cuando el tipo resuelto tiene
-`tracks_expiry=True` -- evita una segunda pasada de Fase B1 clasica
-sobre el mismo archivo.
+Si el tipo resuelto tiene `tracks_expiry=True`, en la misma pasada
+intenta tambien `classify_dates_in_text()` sobre el mismo texto OCR
+ya extraido -- evita una segunda descarga/OCR del mismo archivo.
 
-DRY-RUN POR DEFECTO. `--limit N` limita cuantos procesa esta
-ejecucion (por defecto 20, mismo criterio de coste que Fase B1
-original -- el OCR es caro en tiempo real de servidor). Con --apply
-escribe document_type/domain_content_type/domain_object_id (y fecha
-si aplica) de verdad.
+DRY-RUN POR DEFECTO. `--limit N` (defecto 20, el OCR es caro en
+tiempo real de servidor). Con --apply escribe document_type/
+domain_content_type/domain_object_id (y fecha si aplica) de verdad.
 """
 import re
 
@@ -51,9 +60,6 @@ from document_explorer.classification_service import (
 )
 from document_explorer.date_verification_service import (
     classify_dates_in_text, extract_text,
-)
-from document_explorer.management.commands.run_fase_a_sweep import (
-    _resolve_document_type,
 )
 from document_explorer.management.commands.calibrate_fase_a_keywords import (
     _strip_accents,
@@ -71,17 +77,68 @@ IMG_NAME = re.compile(
     re.IGNORECASE,
 )
 
+# Descubiertos con sample_known_type_ocr_text (S50), 3 ejemplos reales
+# por tipo -- ver EnterpriseBot_055_GET.txt de la sesion. Frases
+# largas y especificas a proposito, nunca palabras sueltas de una
+# sola palabra (esas ya demostraron dar falsos positivos).
+CONTENT_MARKERS = {
+    "CE": [
+        "DECLARACION DE CONFORMIDAD", "DECLARATION DE CONFORMITE",
+        "DECLARATION OF CONFORMITY",
+    ],
+    "CERT_MANTENIMIENTO": [
+        "REALIZA TODAS SUS REVISIONES DE MANTENIMIENTO",
+        "COMO EMPRESA CONSERVADORA",
+    ],
+    "TARJETA_TRANSPORTE": ["TARJETA DE TRANSPORTE"],
+    "SEGURO": ["DOMICILIACION DE PAGOS", "COMUNICACION OPERACION EN CUENTA"],
+    "POLIZA_SEGURO": [
+        "CONDICIONES PARTICULARES DEL SEGURO", "POLIZA DE SEGURO",
+    ],
+    "DECLARACION_HOMOLOGACION": [
+        "HOMOLOGACION INDIVIDUAL", "CERTIFICADO DE HOMOLOGACION",
+    ],
+    "OCA": ["OCA GLOBAL", "ACREDITADO POR ENAC"],
+    "C_ADECUACION": [
+        "CERTIFICADO DE ADECUACION",
+        "CONDICIONES DE SEGURIDAD Y SALUD EN LAS MAQUINAS",
+    ],
+    "IPO_ITC": [
+        "ACTA DE INSPECCION PERIODICA", "INSPECCION PERIODICA OFICIAL",
+        "INSPECCION PERIODICA DE GRUAS MOVILES",
+    ],
+}
+
 
 def _is_photo(entry):
     return bool(IMG_EXT.search(entry.name) or IMG_NAME.match(entry.name))
 
 
+def _match_content(text_upper):
+    """
+    Devuelve (code, None) si el texto coincide con los marcadores de
+    EXACTAMENTE un tipo, o (None, matched_codes) si coincide con mas
+    de uno a la vez (ambiguo, no se resuelve).
+    """
+    matched = set()
+    for code, phrases in CONTENT_MARKERS.items():
+        for phrase in phrases:
+            if phrase in text_upper:
+                matched.add(code)
+                break
+    if len(matched) == 1:
+        return next(iter(matched)), None
+    if len(matched) > 1:
+        return None, matched
+    return None, None
+
+
 class Command(BaseCommand):
     help = (
-        "H30 (S50) -- Fase B1 extendida: OCR para resolver TIPO "
-        "documental (no solo fecha) de lo que ya agoto la heuristica "
-        "de nombre, dentro del mapa acotado de maquinaria. Dry-run "
-        "por defecto, --apply para escribir, --limit N (defecto 20)."
+        "H30 (S50) -- Fase B1 extendida: OCR con marcadores de "
+        "contenido reales (frase larga, no palabra suelta) para "
+        "resolver TIPO documental. Dry-run por defecto, --apply para "
+        "escribir, --limit N (defecto 20)."
     )
 
     def add_arguments(self, parser):
@@ -102,6 +159,7 @@ class Command(BaseCommand):
             "tipo_y_fecha_resueltos": 0,
             "dominio_sin_resolver": 0,
             "sin_tipo_reconocible_en_ocr": 0,
+            "ambiguo_varios_marcadores": 0,
             "extension_no_soportada": 0,
             "error_descarga_u_ocr": 0,
             "fotos_excluidas": 0,
@@ -119,8 +177,9 @@ class Command(BaseCommand):
                 break
 
         self.stdout.write(
-            "--- Fase B1 extendida (alcance acotado S50): %d candidatos "
-            "en este lote (limit=%d) ---" % (len(candidatos), limit)
+            "--- Fase B1 extendida, marcadores de contenido reales "
+            "(alcance acotado S50): %d candidatos en este lote "
+            "(limit=%d) ---" % (len(candidatos), limit)
         )
 
         for entry in candidatos:
@@ -140,17 +199,18 @@ class Command(BaseCommand):
                 continue
 
             text_upper = _strip_accents(text).upper()
-            code, dossier_pair = _resolve_document_type(
-                entry, "MACHINE", text_upper,
-            )
+            code, ambiguous = _match_content(text_upper)
 
-            if dossier_pair or not code:
-                stats["sin_tipo_reconocible_en_ocr"] += 1
-                snippet = " ".join(text.split())[:200]
+            if ambiguous:
+                stats["ambiguo_varios_marcadores"] += 1
                 self.stdout.write(
-                    "SIN TIPO  [%s] %s | texto OCR (200 char): %r"
-                    % (entry.parent_path, entry.name, snippet)
+                    "AMBIGUO (%s)  [%s] %s"
+                    % (sorted(ambiguous), entry.parent_path, entry.name)
                 )
+                continue
+
+            if not code:
+                stats["sin_tipo_reconocible_en_ocr"] += 1
                 continue
 
             asset = resolve_or_create_machine_asset(entry, {})
