@@ -46,8 +46,26 @@ CANDIDATES_SAFE = {
             # "IF"/"IFICADO" -- archivos que dicen literalmente "CERT
             # MANTENIMIENTO", detectados en la auditoria de blob de B-38.
             "CERT MANTENIMIENTO",
+            # Añadidos S50, medidos con datos reales dentro del mapa
+            # acotado de H30 (ver EnterpriseBot_028_GET.txt de la
+            # sesion): "CERT MANT" (11 coincidencias reales, variante
+            # abreviada) y "REVISION MANTENIMIENTO" (20, mismo concepto
+            # de mantenimiento certificado, sin tipo propio en el
+            # catalogo -- mapeado aqui por ser el existente mas
+            # cercano, mismo criterio ya usado con RECIBO suelto para
+            # SEGURO).
+            "CERT MANT", "REVISION MANTENIMIENTO",
         ],
-        "CERT_NO_TARJ_TTES": ["CERT_NO_TARJ_TTES"],
+        "CERT_NO_TARJ_TTES": [
+            "CERT_NO_TARJ_TTES",
+            # Añadido S50: primera keyword real verificada para este
+            # tipo (llevaba desde su alta sin ninguna confirmada).
+            # "CERT NO TARJ TTES" (espacios) cubre via separador
+            # flexible tanto "CERT.NO TARJ.TTES" como "CERT_NO_TARJ_
+            # TTES" -- 68 coincidencias reales dentro del mapa acotado
+            # de H30 (ver EnterpriseBot_028_GET.txt).
+            "CERT NO TARJ TTES",
+        ],
         "CERT_REVISION": ["CERTIFICADO REVISION", "CERTIF REVISION"],
         # Añadido S49 (hoja de ruta S48, punto 3): CERTIFICADO_PODERES
         # (S48) no tenia candidato en este diccionario todavia. "PODERES"
@@ -72,7 +90,12 @@ CANDIDATES_SAFE = {
         "ITV": ["ITV"],
         "JUSTIFICANTE_TRANSFERENCIA": ["JUSTIFICANTE_TRANSFERENCIA"],
         "LEASING": ["LEASING"],
-        "LIBRO_HISTORIAL": ["LIBRO HISTORIAL"],
+        "LIBRO_HISTORIAL": [
+            "LIBRO HISTORIAL",
+            # Añadido S50: variante real, 2 coincidencias dentro del
+            # mapa acotado de H30 (ver EnterpriseBot_028_GET.txt).
+            "REGISTRO HISTORIAL",
+        ],
         "MANUAL_DESPIECE": ["DESPIECE"],
         "MANUAL_USO": ["MANUAL USO"],
         "PERMISO_CIRCULACION": [
@@ -84,6 +107,18 @@ CANDIDATES_SAFE = {
             # investigar el caso 7245GBM (Peugeot 307) -- 133
             # coincidencias reales confirmadas antes de aplicar.
             "PERMISO DE CIRCULACION",
+            # Añadidos S50, medidos dentro del mapa acotado de H30 (ver
+            # EnterpriseBot_028_GET.txt): "PERM CIRCULACION" (100
+            # coincidencias reales, cubre via separador flexible tanto
+            # "PERM.CIRCULACION" como "PERM CIRCULACION" y "PERM-
+            # CIRCULACION"), "PERMISO CIRCUL" (2, variante truncada),
+            # "AUTORIZACION TEMPORAL CIRCULACION" (1, variante formal
+            # real), y "PERMISOTEMPORALCIRCULACION" (2, sin separador
+            # alguno -- palabra unica pegada, no se puede expresar como
+            # frase de varias palabras con el separador flexible).
+            "PERM CIRCULACION", "PERMISO CIRCUL",
+            "AUTORIZACION TEMPORAL CIRCULACION",
+            "PERMISOTEMPORALCIRCULACION",
         ],
         "PRESTAMO": ["PRESTAMO"],
         "PROFORMA": ["PROFORMA"],
