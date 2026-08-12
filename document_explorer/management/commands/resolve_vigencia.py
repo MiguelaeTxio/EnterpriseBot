@@ -19,6 +19,21 @@ caducidad clara), si no issue_date (tipos sin caducidad propia, el mas
 reciente vale) -- mismo criterio de dos campos que ya usa el propio
 modelo (ver DocumentIndexEntry.issue_date, H30 S045).
 
+Blindaje anverso/reverso (S50, segunda pasada): al revisar los
+empates se encontraron 3 casos reales previos a esta sesion donde un
+archivo "REVERSO"/"ANVERSO" (misma pareja de dos caras de un mismo
+documento fisico -- DNI, ficha tecnica, carnet de conducir) habia
+quedado compitiendo contra su propio anverso como si fueran
+versiones distintas del mismo documento, dejando el anverso marcado
+obsoleto y solo el reverso vigente -- exactamente al reves de lo
+util. Un reverso/anverso NUNCA es una version mas reciente ni mas
+antigua de su pareja, es la otra cara del mismo documento fisico:
+ambos deben poder quedar vigentes a la vez. Esta pasada nunca
+compara ni marca obsoleto un miembro de un grupo si su nombre (o el
+de su pareja) contiene "REVERSO"/"ANVERSO"/"REVERSI" -- los dos
+lados quedan fuera de esta regla de fecha por completo, sea cual sea
+la fecha que tengan o lleguen a tener.
+
 Alcance real de esta primera pasada (medido en S50 antes de escribir
 esto, ver EnterpriseBot_004_GET.txt de la sesion):
 - 52 grupos resolubles sin ambiguedad: todos los miembros tienen fecha
@@ -104,6 +119,19 @@ class Command(BaseCommand):
                 domain_object_id=g["domain_object_id"],
                 document_type_id=g["document_type_id"],
             ))
+
+            # Blindaje anverso/reverso (S50) -- si CUALQUIER miembro
+            # del grupo es la otra cara de un documento fisico, todo
+            # el grupo queda fuera de la regla de fecha. Nunca se
+            # decide "vigente" entre un anverso y su propio reverso.
+            if any(
+                "REVERSO" in e.name.upper() or "ANVERSO" in e.name.upper()
+                or "REVERSI" in e.name.upper()
+                for e in entries
+            ):
+                stats["bloqueados_sin_fecha"] += 1
+                continue
+
             dated = [
                 (e, e.expiry_date or e.issue_date) for e in entries
                 if e.expiry_date or e.issue_date
