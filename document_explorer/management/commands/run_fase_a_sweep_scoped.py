@@ -69,7 +69,8 @@ from django.core.management.base import BaseCommand
 from django.db.models import Q
 
 from document_explorer.classification_service import (
-    resolve_or_create_machine_asset, trash_dossier_entry,
+    _FOLDER_MACHINE_CODE_RE, resolve_or_create_machine_asset,
+    trash_dossier_entry,
 )
 from document_explorer.management.commands.calibrate_fase_a_keywords import (
     BUCKET, _strip_accents,
@@ -123,6 +124,29 @@ SCOPE = [
     ("%s/VEHICULOS DE EMPRESA" % MACHINE_ROOT, "all_except", ["DOCUMENT 1884JB (MUJER ADOLFO)"]),
     ("%s/VENTOSA" % MACHINE_ROOT, "all_except", []),
 ]
+
+
+def _resolve_machine_by_filename(entry):
+    """
+    Respaldo de dominio SOLO para archivos bajo RAE (H30, S50): Miguel
+    Angel confirmo que el codigo de maquina vive en el propio NOMBRE
+    del archivo ("RAE A-01.pdf"), nunca en la carpeta contenedora
+    (compartida por todas las maquinas: "RAE", "RAE/SOLICITUD BAJA
+    INDUSTRIA"). Mismo patron de deteccion palabra a palabra que
+    `resolve_machine_asset()` ya usa sobre `parent_path`, aplicado
+    aqui sobre `entry.name` en su lugar. Nunca crea una MachineAsset
+    nueva -- solo lookup contra lo que ya existe, igual que
+    `resolve_machine_asset()`.
+    """
+    for word in entry.name.upper().replace(".PDF", "").split():
+        match = _FOLDER_MACHINE_CODE_RE.match(word)
+        if not match:
+            continue
+        candidate_code = match.group(1).replace("-", "")
+        asset = MachineAsset.objects.filter(code__iexact=candidate_code).first()
+        if asset:
+            return asset
+    return None
 
 
 def _scoped_files():
@@ -217,6 +241,8 @@ class Command(BaseCommand):
                 continue
 
             asset = resolve_or_create_machine_asset(entry, {})
+            if not asset and "/RAE" in entry.parent_path:
+                asset = _resolve_machine_by_filename(entry)
             if not asset:
                 stats["sin_resolver_dominio"] += 1
                 self.stdout.write(
