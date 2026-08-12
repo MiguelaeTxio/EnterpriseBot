@@ -1052,3 +1052,20 @@ máquinas) **eliminados** — sin uso real confirmado antes de borrar.
   (`whatsapp/services.py`) a `DocumentIndexEntry` — identificado como
   dependencia real, no tocado todavía.
 
+**Fase B1 (OCR) real sobre 100 documentos — hallazgo adicional real,
+Fase B0 ampliada a `SEGURO` en consecuencia.** Solo 6/100 resolvieron
+por contexto OCR — la inmensa mayoría de fallos eran `SEGURO`/
+`TACOGRAFO`, avisos bancarios de domiciliación demasiado variados
+("Fecha de expedición 16 DICIEMBRE 2011" con mes en letra, "ADEUDO POR
+DOMICILIACIONES"...) para una regla de contexto genérica. Mirando el
+propio nombre de archivo, sin embargo, el dato ya estaba ahí en el
+71% de los casos. Tres subpatrones confirmados por Miguel Ángel:
+fecha simple → `issue_date` (nunca caducidad — el único caso real que
+sí resolvió por OCR mostró que la fecha del nombre cae un día después
+de que termine el periodo cubierto); notación de trimestre ("1º TR.
+2013") → `issue_date` = primer día de ese trimestre; rango explícito
+("X a Y") → `expiry_date` = fecha Y. Aplicado y verificado: 988
+`SEGURO` con fecha real escrita. Segunda pasada de
+`backfill_obsolete_duplicates` con las fechas nuevas: 100 duplicados
+adicionales resueltos correctamente (de 102 grupos restantes).
+
