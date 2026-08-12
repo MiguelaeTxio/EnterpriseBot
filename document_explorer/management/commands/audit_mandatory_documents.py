@@ -39,7 +39,21 @@ from fleet.models import MachineAsset
 # (A57, A63, A64, A67...), MK es solo parte del nombre del modelo, no
 # un prefijo de codigo real.
 MANDATORY_BY_PREFIX = {
-    "A": ["PERMISO_CIRCULACION", "FICHA_TECNICA", "ITV", "SEGURO", "OCA", "RAE"],
+    # IPO/ITC anadidos S50 tras confirmar su significado real
+    # (busqueda + datos reales del corpus): IPO = Inspeccion
+    # Periodica Obligatoria, el acta de inspeccion oficial de la
+    # grua (equivalente al ITV pero para aparatos de elevacion,
+    # ITC MIE-AEM-4/RD 837/2003); ITC = la referencia normativa que
+    # acompana esa inspeccion. Ambos ya existian como DocumentType
+    # Catalog (ids 19 y 16) y ya funcionaban en clasificacion
+    # (391/414 IPO y 66/135 ITC ya clasificados antes de esta
+    # sesion) -- solo faltaba incluirlos aqui. Acotado a la familia
+    # A (grúas móviles autopropulsadas): 100% de las coincidencias
+    # reales de IPO y el grueso de ITC viven en "GRUAS MOVILES (A)";
+    # la unica excepcion real (una carretilla, familia T) es un
+    # unico archivo sin clasificar, no evidencia suficiente para
+    # extender la obligatoriedad a esa familia.
+    "A": ["PERMISO_CIRCULACION", "FICHA_TECNICA", "ITV", "SEGURO", "OCA", "RAE", "IPO", "ITC"],
     "B": ["PERMISO_CIRCULACION", "FICHA_TECNICA", "ITV", "SEGURO", "C_ADECUACION"],
     "Z": ["CE", "C_ADECUACION", "SEGURO"],
     "H": ["CE", "SEGURO"],
