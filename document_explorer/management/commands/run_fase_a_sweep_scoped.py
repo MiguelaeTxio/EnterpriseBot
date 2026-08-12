@@ -45,13 +45,13 @@ modelo; CARRETILLA (HL): sin numero de flota; DOCUMENT 1884JB:
 matricula con solo 2 letras en vez de 3). Revision manual pendiente,
 nunca heuristica.
 
-RAE (dentro de Grúas Móviles) queda DENTRO de alcance -- Miguel
-Angel confirmo (S50) que el codigo de maquina vive en el propio
-NOMBRE del archivo ("RAE A-01.pdf", "RAE A-04.pdf"...), nunca en la
-carpeta contenedora (compartida por todas las maquinas). Pendiente
-de una resolucion de dominio por nombre de archivo, no de carpeta --
-no construida todavia en esta sesion, los archivos de RAE seguiran
-saliendo "TIPO OK, DOMINIO SIN RESOLVER" hasta entonces.
+RAE (dentro de Grúas Móviles) y CE PLATAFORMAS (dentro de
+Plataformas Z) quedan DENTRO de alcance -- Miguel Angel confirmo
+(S50) que el codigo de maquina vive en el propio NOMBRE del archivo
+("RAE A-01.pdf", "Z06.pdf"...), nunca en la carpeta contenedora
+(compartida por varias/todas las maquinas). Resuelto por
+`_resolve_machine_by_filename()` como respaldo, solo cuando la
+resolucion normal por carpeta falla.
 
 Reutiliza sin modificar la logica de coincidencia/dosier ya probada
 de `run_fase_a_sweep` (`_match_candidates`, `_resolve_document_type`,
@@ -112,7 +112,27 @@ SCOPE = [
         "%s/GRUPO ELECTROGENOS" % MACHINE_ROOT, "all_except",
         ["PEPE ASISTENCIA"],
     ),
-    ("%s/PLATAFORMAS (Z)" % MACHINE_ROOT, "all_except", ["BAJAS"]),
+    (
+        "%s/PLATAFORMAS (Z)" % MACHINE_ROOT, "all_except",
+        [
+            "BAJAS",
+            # Anadidas S50 tras revisar el contenido real (ver
+            # EnterpriseBot_039_GET.txt): ALTESUR es una empresa de
+            # alquiler de maquinaria, no documentacion propia -- "ni
+            # lo vamos a mirar". ESTIBA PLATAFORMAS son fichas de
+            # procedimiento por CATEGORIA de plataforma (tijera
+            # pequena, articulada mediana...), no de una maquina
+            # concreta -- "de ahi no vamos a sacar nada". POLIZA RC
+            # cubre varias maquinas Z Y T a la vez con una sola
+            # poliza colectiva -- Miguel Angel confirmo que el
+            # tratamiento correcto seria un "puntero" compartido
+            # (mismo patron que MANUALES DE USO, pero por codigo de
+            # empresa en vez de por modelo de maquina), no
+            # reconciliacion por maquina individual -- diseno futuro,
+            # fuera de alcance de esta pasada.
+            "ALTESUR", "ESTIBA PLATAFORMAS", "POLIZA RC",
+        ],
+    ),
     (
         "%s/REMOLQUES Y GONDOLAS (R y G)/GONDOLAS" % MACHINE_ROOT,
         "all_except", ["BAJA DEFINITIVA"],
@@ -241,7 +261,7 @@ class Command(BaseCommand):
                 continue
 
             asset = resolve_or_create_machine_asset(entry, {})
-            if not asset and "/RAE" in entry.parent_path:
+            if not asset and ("/RAE" in entry.parent_path or "/CE PLATAFORMAS" in entry.parent_path):
                 asset = _resolve_machine_by_filename(entry)
             if not asset:
                 stats["sin_resolver_dominio"] += 1
