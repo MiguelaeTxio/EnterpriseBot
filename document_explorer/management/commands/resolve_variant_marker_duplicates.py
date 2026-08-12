@@ -1,44 +1,69 @@
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/document_explorer/management/commands/resolve_variant_marker_duplicates.py
 """
-H30 (S50) -- resuelve empates de fecha entre dos DocumentIndexEntry
-del mismo tipo y sujeto cuando el propio nombre de archivo lleva un
+H30 (S50) -- resuelve duplicados entre dos DocumentIndexEntry del
+mismo tipo y sujeto cuando el propio nombre de archivo lleva un
 marcador tecnico inequivoco de cual es la copia "buena":
 
-- "_unlocked": el PDF original vino con proteccion de contrasena y
-  alguien genero una version sin ella -- la version _unlocked es la
-  realmente utilizable (se puede abrir sin pedir contrasena), se
-  queda vigente. La version bloqueada (sin el sufijo) pasa a
+- "_unlocked" (+ opcional "(1)"/"(2)" de version): el PDF original
+  vino con proteccion de contrasena y alguien genero una version sin
+  ella -- la version _unlocked es la realmente utilizable (se puede
+  abrir sin pedir contrasena), se queda vigente. La bloqueada pasa a
   obsoleta.
-- "- copia" / "-copia" / "copia" como palabra suelta: literalmente
+- "- copia" / "-copia" / " copia" como palabra suelta: literalmente
   marcada como copia por quien la subio -- la version SIN esa
   palabra se queda vigente, la copia pasa a obsoleta.
 
-Alcance deliberadamente estrecho, igual criterio que
-resolve_itv_ficha_tecnica_dossier -- solo grupos de exactamente 2
-entradas, mismo sujeto y tipo, misma fecha efectiva, y exactamente
-una de las dos con el marcador (nunca las dos, nunca ninguna). Casos
-reales fuera de este patron (p.ej. "CERTIFICADO OCA" vs "REV OCA", o
-dos variantes ya "_unlocked" ambas sin marcador que las diferencie)
-quedan fuera a proposito, listados en el informe para revision
-manual -- nunca se adivina.
+CORREGIDO EN LA MISMA SESION (S50): la primera version comparaba
+`expiry_date or issue_date` entre los dos miembros y solo actuaba si
+coincidian -- pero como la inmensa mayoria de estas filas no tienen
+fecha extraida todavia, `None == None` colaba como "misma fecha" y
+emparejaba documentos que NO son el mismo archivo (ej. sujeto=271:
+"B-33 REC SEG GENERALI 31-12-2025.pdf" vs "REC POL C6A960000357 ASADA
+31-12-25_unlocked.pdf" -- aseguradoras distintas, dos recibos reales
+distintos, ninguno de los dos con fecha real, coincidian solo por el
+bug). Corregido exigiendo que el nombre, tras quitar UNICAMENTE el
+marcador tecnico y normalizar espacios/mayusculas, sea EXACTAMENTE
+igual al del otro miembro -- la fecha ya no interviene en absoluto en
+esta decision, el nombre normalizado es la unica prueba valida de que
+es el mismo documento.
+
+Alcance deliberadamente estrecho -- solo grupos de exactamente 2
+entradas, mismo sujeto y tipo, y el nombre base normalizado
+IDENTICO entre ambas tras quitar el marcador. Casos reales fuera de
+este patron (nombres distintos de verdad, aunque compartan tipo y
+sujeto) quedan fuera a proposito, listados para revision manual --
+nunca se adivina.
 
 DRY-RUN POR DEFECTO. Con --apply escribe is_obsolete=True de verdad
 en el perdedor. Nunca borra filas, nunca toca GCS (4.12).
 """
+import re
 from collections import defaultdict
 
 from django.core.management.base import BaseCommand
 
 from document_explorer.models import DocumentIndexEntry
 
-MARKERS = ("_UNLOCKED", " COPIA", "-COPIA")
+_UNLOCKED_RE = re.compile(r"_UNLOCKED(\s*\(\d+\))?", re.IGNORECASE)
+_COPIA_RE = re.compile(r"\s*-?\s*COPIA\b", re.IGNORECASE)
+_WHITESPACE_RE = re.compile(r"\s+")
+
+
+def _normalize(name):
+    stem, dot, ext = name.upper().rpartition(".")
+    stem = stem if dot else name.upper()
+    stem = _UNLOCKED_RE.sub("", stem)
+    stem = _COPIA_RE.sub("", stem)
+    stem = _WHITESPACE_RE.sub(" ", stem).strip()
+    return stem
 
 
 class Command(BaseCommand):
     help = (
-        "H30 (S50) -- resuelve empates de fecha con marcador tecnico "
-        "de duplicado en el nombre (_unlocked / copia). Dry-run por "
-        "defecto, usar --apply."
+        "H30 (S50) -- resuelve duplicados con marcador tecnico en el "
+        "nombre (_unlocked / copia) cuando el nombre base, sin el "
+        "marcador, es identico entre los dos. Dry-run por defecto, "
+        "usar --apply."
     )
 
     def add_arguments(self, parser):
@@ -71,32 +96,35 @@ class Command(BaseCommand):
                 continue
 
             a, b = entries
-            fecha_a = a.expiry_date or a.issue_date
-            fecha_b = b.expiry_date or b.issue_date
-            if fecha_a != fecha_b:
-                continue
-
             name_a, name_b = a.name.upper(), b.name.upper()
 
-            unlocked_a = "_UNLOCKED" in name_a
-            unlocked_b = "_UNLOCKED" in name_b
+            unlocked_a = bool(_UNLOCKED_RE.search(name_a))
+            unlocked_b = bool(_UNLOCKED_RE.search(name_b))
+            copia_a = bool(_COPIA_RE.search(name_a))
+            copia_b = bool(_COPIA_RE.search(name_b))
+
+            tiene_marcador = (unlocked_a != unlocked_b) or (copia_a != copia_b)
+            if not tiene_marcador:
+                continue
+
+            if _normalize(a.name) != _normalize(b.name):
+                # Mismo tipo/sujeto, uno de los dos con marcador, pero
+                # el nombre base NO coincide de verdad -- no es el
+                # mismo documento, es una coincidencia. Nunca se toca.
+                stats["fuera_de_alcance"] += 1
+                fuera_de_alcance_detalle.append(
+                    (key[1], key[2], [(e.pk, e.name) for e in entries])
+                )
+                continue
+
             if unlocked_a != unlocked_b:
                 ganador, perdedor = (a, b) if unlocked_a else (b, a)
                 stats["resueltos_unlocked"] += 1
-                motivo = "_unlocked prevalece sobre version bloqueada"
+                motivo = "_unlocked prevalece sobre version bloqueada (mismo nombre base)"
             else:
-                copia_a = "COPIA" in name_a
-                copia_b = "COPIA" in name_b
-                if copia_a != copia_b:
-                    ganador, perdedor = (b, a) if copia_a else (a, b)
-                    stats["resueltos_copia"] += 1
-                    motivo = "version sin 'copia' prevalece"
-                else:
-                    stats["fuera_de_alcance"] += 1
-                    fuera_de_alcance_detalle.append(
-                        (key[1], key[2], [(e.pk, e.name) for e in entries])
-                    )
-                    continue
+                ganador, perdedor = (b, a) if copia_a else (a, b)
+                stats["resueltos_copia"] += 1
+                motivo = "version sin 'copia' prevalece (mismo nombre base)"
 
             self.stdout.write(
                 "%s  sujeto=%s tipo=%s | perdedor pk=%d (%s) -> obsoleto=True | "
@@ -116,6 +144,6 @@ class Command(BaseCommand):
         ))
         for k, v in stats.items():
             self.stdout.write("    %s: %d" % (k, v))
-        self.stdout.write("    fuera de alcance, sin marcador claro:")
+        self.stdout.write("    fuera de alcance (marcador presente pero nombre base distinto):")
         for obj_id, type_id, detalle in fuera_de_alcance_detalle:
             self.stdout.write("        sujeto=%s tipo=%s %s" % (obj_id, type_id, detalle))
