@@ -23,8 +23,6 @@ Con `--apply`, llama a `resolve_or_create_machine_asset()` de verdad
 (mismo mecanismo, mismos valores por defecto de empresa/seccion GRA,
 pendientes de confirmar caso a caso, igual que ya ocurre en Fase A).
 """
-from collections import defaultdict
-
 from django.core.management.base import BaseCommand
 
 from document_explorer.classification_service import (
@@ -35,6 +33,22 @@ from document_explorer.models import DocumentIndexEntry
 
 BUCKET = "cgs_grupo_alvarez"
 MACHINE_ROOT = "DOC. MAQUINAS"
+
+# Confirmado por Miguel Angel (S49) tras revisar el listado completo
+# de 91 candidatas reales: estas 6 son dudosas (catalogo de
+# referencia, contenedores de obra, EPI, o maquina real sin codigo de
+# flota confirmado todavia) -- se dejan fuera del --apply a proposito,
+# "mejor no contaminar por tres o cuatro maquinas", se añadiran a mano
+# cuando corresponda. Comparacion sobre el candidato derivado
+# (codigo/matricula normalizado), no sobre la ruta de carpeta.
+EXCLUDED_CANDIDATE_CODES = {
+    "AC300",     # MARCA Y MODELO/DEMAG/DEMAG AC300 -- catalogo de referencia
+    "CONT03",    # CONTENEDORES/CONT-03
+    "CONT04",    # CONTENEDORES/CONT-04
+    "E1405",     # GRUAS MOVILES (A)/E1405BBW -- posible maquina real, sin codigo de flota clasico
+    "MIRA10",    # EPIS/ARNES SEG. MIRA-10A -- EPI de persona, no maquina
+    "SE7625",    # CABEZAS TRACTORAS (P)/SE7625CT -- posible maquina real, sin codigo de flota clasico
+}
 
 
 class Command(BaseCommand):
@@ -70,7 +84,7 @@ class Command(BaseCommand):
 
         stats = {
             "ya_resuelta": 0, "candidata_creacion": 0,
-            "sin_forma_de_codigo": 0,
+            "sin_forma_de_codigo": 0, "excluida_confirmada": 0,
         }
         created = []
 
@@ -83,18 +97,33 @@ class Command(BaseCommand):
             # Solo para informar en dry-run, sin duplicar la logica
             # real de creacion -- misma forma exacta que usa
             # resolve_or_create_machine_asset() internamente.
-            has_code_shape = any(
-                _FOLDER_MACHINE_CODE_RE.match(word)
-                for segment in folder.split("/")
-                for word in segment.strip().split()
-            )
-            has_plate_shape = any(
-                _FOLDER_PLATE_RE.search(segment.strip().upper())
-                for segment in folder.split("/")
-            )
+            candidate_code = None
+            for segment in folder.split("/"):
+                for word in segment.strip().split():
+                    match = _FOLDER_MACHINE_CODE_RE.match(word.upper())
+                    if match:
+                        candidate_code = match.group(1).replace("-", "")
+                        break
+                if candidate_code:
+                    break
+            candidate_plate = None
+            if not candidate_code:
+                for segment in folder.split("/"):
+                    match = _FOLDER_PLATE_RE.search(segment.strip().upper())
+                    if match:
+                        candidate_plate = match.group(1) + match.group(2)
+                        break
 
-            if not has_code_shape and not has_plate_shape:
+            derived = candidate_code or candidate_plate
+            if not derived:
                 stats["sin_forma_de_codigo"] += 1
+                continue
+            if derived in EXCLUDED_CANDIDATE_CODES:
+                stats["excluida_confirmada"] += 1
+                self.stdout.write(
+                    "EXCLUIDA (confirmada S49)  [%s] -> %s"
+                    % (folder, derived)
+                )
                 continue
 
             stats["candidata_creacion"] += 1
