@@ -72,7 +72,7 @@ CANDIDATES_SAFE = {
     },
     "BOTH": {
         "MANDATO": ["MANDATO"],
-        "SEGURO": ["SEGURO", "REC SEG"],
+        "SEGURO": ["SEGURO", "REC SEG", "REC POL"],
         "TACOGRAFO": ["TACOGRAFO"],
     },
     "PERSONAL": {
