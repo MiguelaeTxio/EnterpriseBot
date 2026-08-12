@@ -568,6 +568,29 @@ class DocumentTypeCatalog(models.Model):
         (DOMAIN_BOTH, "Ambos"),
     ]
 
+    FAMILY_CIRCULACION = "CIRCULACION"
+    FAMILY_TECNICA_SEGURIDAD = "TECNICA_SEGURIDAD"
+    FAMILY_SEGUROS = "SEGUROS"
+    FAMILY_FINANCIERO = "FINANCIERO"
+    FAMILY_BAJAS_MAQUINA = "BAJAS_MAQUINA"
+    FAMILY_ADMINISTRATIVO = "ADMINISTRATIVO"
+    FAMILY_IDENTIDAD_PERSONAL = "IDENTIDAD_PERSONAL"
+    FAMILY_LABORAL = "LABORAL"
+    FAMILY_SALUD_BAJAS_PERSONA = "SALUD_BAJAS_PERSONA"
+    FAMILY_PRL_FORMACION = "PRL_FORMACION"
+    FAMILY_CHOICES = [
+        (FAMILY_CIRCULACION, "Circulación"),
+        (FAMILY_TECNICA_SEGURIDAD, "Técnica y seguridad"),
+        (FAMILY_SEGUROS, "Seguros"),
+        (FAMILY_FINANCIERO, "Financiero y compraventa"),
+        (FAMILY_BAJAS_MAQUINA, "Bajas de máquina"),
+        (FAMILY_ADMINISTRATIVO, "Administrativo"),
+        (FAMILY_IDENTIDAD_PERSONAL, "Identidad y personal (base)"),
+        (FAMILY_LABORAL, "Laboral"),
+        (FAMILY_SALUD_BAJAS_PERSONA, "Salud y bajas de persona"),
+        (FAMILY_PRL_FORMACION, "PRL y formación"),
+    ]
+
     code = models.CharField(
         max_length=40,
         unique=True,
@@ -596,6 +619,26 @@ class DocumentTypeCatalog(models.Model):
         help_text=(
             "Desactivar en vez de borrar conserva el histórico de "
             "archivos ya renombrados con este código."
+        ),
+    )
+    family = models.CharField(
+        max_length=32,
+        choices=FAMILY_CHOICES,
+        blank=True,
+        verbose_name="Familia de documento",
+        help_text=(
+            "H30 (S49). Agrupación del acordeón de la ficha (en vez "
+            "de solo Vigentes/Histórico) y base de la búsqueda "
+            "granular ('ver el seguro de esta máquina'). Lista fija "
+            "de choices en código (a diferencia de tracks_expiry/"
+            "ocr_unreliable) porque las familias son un puñado "
+            "estable de categorías, no crecen sesión a sesión como "
+            "los tipos documentales -- decisión explícita de Miguel "
+            "Ángel (S49). Distinta de la familia normativa de "
+            "máquina (A/B/Z/H/MK/P/T/V/S de fleet.MachineAsset): "
+            "esta agrupa TIPOS DOCUMENTALES para la interfaz, esa "
+            "otra dice qué documentos son obligatorios por tipo de "
+            "máquina."
         ),
     )
     tracks_expiry = models.BooleanField(
