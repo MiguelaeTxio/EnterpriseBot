@@ -35,6 +35,24 @@ porque "P07" con forma de codigo aparecia en el path; ahora ninguna
 carpeta fuera de SCOPE se toca, tenga o no forma de codigo de
 maquina.
 
+Tres exclusiones anadidas tras el primer dry-run real (S50), a
+peticion explicita de Miguel Angel viendo los "TIPO OK, DOMINIO SIN
+RESOLVER" reales: "el tema de MK100, carretilla HL, Document...
+mujer Adolfo, eso lo dejamos fuera. No lo vamos a meter" -- ninguna
+de las tres tiene forma reconocible de codigo de flota ni de
+matricula completa (MK 100: prefijo ya retirado, es nombre de
+modelo; CARRETILLA (HL): sin numero de flota; DOCUMENT 1884JB:
+matricula con solo 2 letras en vez de 3). Revision manual pendiente,
+nunca heuristica.
+
+RAE (dentro de Grúas Móviles) queda DENTRO de alcance -- Miguel
+Angel confirmo (S50) que el codigo de maquina vive en el propio
+NOMBRE del archivo ("RAE A-01.pdf", "RAE A-04.pdf"...), nunca en la
+carpeta contenedora (compartida por todas las maquinas). Pendiente
+de una resolucion de dominio por nombre de archivo, no de carpeta --
+no construida todavia en esta sesion, los archivos de RAE seguiran
+saliendo "TIPO OK, DOMINIO SIN RESOLVER" hasta entonces.
+
 Reutiliza sin modificar la logica de coincidencia/dosier ya probada
 de `run_fase_a_sweep` (`_match_candidates`, `_resolve_document_type`,
 `_dossier_types_already_filed`, `_folder_based_type`,
@@ -84,10 +102,10 @@ SCOPE = [
         "%s/CAMIONES BRAZO (B)" % MACHINE_ROOT, "all_except",
         ["PROPUESTA SEGURO CAMION BRAZO", "VEHICULOS DE BAJA"],
     ),
-    ("%s/CARRETILLAS (T)" % MACHINE_ROOT, "all_except", []),
+    ("%s/CARRETILLAS (T)" % MACHINE_ROOT, "all_except", ["CARRETILLA (HL)"]),
     (
         "%s/GRUAS MOVILES (A)" % MACHINE_ROOT, "all_except",
-        ["OBSOLETO", "PROPUESTA SEGURO", "VEHICULOS BAJA"],
+        ["OBSOLETO", "PROPUESTA SEGURO", "VEHICULOS BAJA", "MK 100"],
     ),
     (
         "%s/GRUPO ELECTROGENOS" % MACHINE_ROOT, "all_except",
@@ -102,7 +120,7 @@ SCOPE = [
         "%s/REMOLQUES Y GONDOLAS (R y G)/REMOLQUES" % MACHINE_ROOT,
         "all_except", ["BAJA"],
     ),
-    ("%s/VEHICULOS DE EMPRESA" % MACHINE_ROOT, "all_except", []),
+    ("%s/VEHICULOS DE EMPRESA" % MACHINE_ROOT, "all_except", ["DOCUMENT 1884JB (MUJER ADOLFO)"]),
     ("%s/VENTOSA" % MACHINE_ROOT, "all_except", []),
 ]
 
