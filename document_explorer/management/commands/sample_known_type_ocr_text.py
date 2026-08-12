@@ -22,6 +22,7 @@ patrones reales de encabezado antes de decidir el diccionario de
 contenido definitivo para `run_fase_b1_ocr_classify`.
 """
 from django.core.management.base import BaseCommand
+from django.db import close_old_connections
 
 from document_explorer.date_verification_service import extract_text
 from document_explorer.models import DocumentIndexEntry
@@ -57,6 +58,12 @@ class Command(BaseCommand):
         chars = options["chars"]
 
         for code in codes:
+            # Correccion S50: el OCR de un tipo puede tardar varios
+            # minutos (3 documentos), suficiente para que MySQL cierre
+            # la conexion por inactividad (wait_timeout, error 4031)
+            # antes de la siguiente consulta. Se fuerza reconexion al
+            # empezar cada tipo.
+            close_old_connections()
             entries = DocumentIndexEntry.objects.filter(
                 entry_kind=DocumentIndexEntry.KIND_FILE,
                 document_type__code=code,
