@@ -24,6 +24,7 @@ sin confirmar todavia por Miguel Angel) -- ajustar aqui, nunca en
 otro sitio, en cuanto se confirme.
 """
 from collections import defaultdict
+import re
 
 from django.contrib.contenttypes.models import ContentType
 from django.core.management.base import BaseCommand
@@ -32,30 +33,41 @@ from document_explorer.models import DocumentIndexEntry
 from fleet.models import MachineAsset
 
 # prefijo de MachineAsset.code -> lista de DocumentTypeCatalog.code
-# obligatorios (primer corte, ajustable).
+# obligatorios (primer corte, ajustable). "MK" retirado: verificado con
+# datos reales (S49) que las gruas torre sobre camion (p.ej. "GRUA
+# TORRE SOBRE CAMION MK80") estan codificadas dentro de la familia A
+# (A57, A63, A64, A67...), MK es solo parte del nombre del modelo, no
+# un prefijo de codigo real.
 MANDATORY_BY_PREFIX = {
     "A": ["PERMISO_CIRCULACION", "FICHA_TECNICA", "ITV", "SEGURO", "OCA", "RAE"],
     "B": ["PERMISO_CIRCULACION", "FICHA_TECNICA", "ITV", "SEGURO", "C_ADECUACION"],
     "Z": ["CE", "C_ADECUACION", "SEGURO"],
     "H": ["CE", "SEGURO"],
-    "MK": ["OCA", "RAE", "SEGURO", "PERMISO_CIRCULACION", "ITV"],
     "P": ["PERMISO_CIRCULACION", "FICHA_TECNICA", "ITV", "SEGURO", "TARJETA_TRANSPORTE"],
     "T": ["CE", "SEGURO"],
     "V": ["CE", "SEGURO"],
     "S": ["CE"],
 }
-# Orden de comprobacion de prefijos -- MK antes que M/K sueltos si algun
-# dia aparecen (no hay hoy ningun otro prefijo que empiece por M o K),
-# y los de 2 letras siempre antes que los de 1 para no recortar mal.
+# Solo letra(s) + digitos, nunca solo letras -- corregido S49 tras
+# detectar falsos positivos reales (ADMINIST/ADOLFO/BEN/PAOLA/
+# PERSONAL/VARIOS/VENTA: carpetas administrativas o de centros de
+# gasto que empiezan por la misma letra que un prefijo real de
+# familia, ya excluidas del alcance de H30 desde S47 -- nunca son
+# maquinas). Prefijos de mas de una letra primero, para que ninguno de
+# una letra los recorte mal (no hay hoy ninguno de mas de una letra,
+# pero se deja el orden por si aparece en el futuro).
 _PREFIXES_BY_LENGTH = sorted(MANDATORY_BY_PREFIX, key=len, reverse=True)
+_CODE_RE = re.compile(
+    r"^(%s)\d+$" % "|".join(re.escape(p) for p in _PREFIXES_BY_LENGTH)
+)
 
 
 def _family_prefix(code):
     code_upper = (code or "").strip().upper()
-    for prefix in _PREFIXES_BY_LENGTH:
-        if code_upper.startswith(prefix):
-            return prefix
-    return None
+    match = _CODE_RE.match(code_upper)
+    if not match:
+        return None
+    return match.group(1)
 
 
 class Command(BaseCommand):
@@ -106,7 +118,7 @@ class Command(BaseCommand):
         self.stdout.write("=== RESUMEN ===")
         self.stdout.write("    maquinas activas totales: %d" % machines.count())
         self.stdout.write(
-            "    sin prefijo reconocido (fuera de A/B/Z/H/MK/P/T/V/S): %d"
+            "    sin prefijo reconocido (fuera de A/B/Z/H/P/T/V/S): %d"
             % stats["sin_prefijo_reconocido"]
         )
         self.stdout.write("    completas: %d" % stats["completas"])
