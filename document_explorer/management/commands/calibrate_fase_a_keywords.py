@@ -80,6 +80,10 @@ CANDIDATES_SAFE = {
             # Añadido S49 (hoja de ruta S48, punto 2): variante abreviada
             # real detectada en la auditoria de blob de B-38.
             "PERM CIRC",
+            # Añadido S49: variante real con "DE" en medio, detectada al
+            # investigar el caso 7245GBM (Peugeot 307) -- 133
+            # coincidencias reales confirmadas antes de aplicar.
+            "PERMISO DE CIRCULACION",
         ],
         "PRESTAMO": ["PRESTAMO"],
         "PROFORMA": ["PROFORMA"],
@@ -93,7 +97,16 @@ CANDIDATES_SAFE = {
     },
     "BOTH": {
         "MANDATO": ["MANDATO"],
-        "SEGURO": ["SEGURO", "REC SEG", "REC POL"],
+        "SEGURO": [
+            "SEGURO", "REC SEG", "REC POL",
+            # Añadido S49: recibo suelto sin "SEG"/"POL" inmediato
+            # (p.ej. "RECIBO 4417-GHR 151210 A151211.pdf"), detectado
+            # al investigar el caso 7245GBM -- 223 coincidencias reales
+            # confirmadas antes de aplicar. Se solapara con
+            # RECIBO_LEASING/RECIBO_SENAL_COMPRA en archivos que
+            # combinen ambas palabras -- revisar en calibracion.
+            "RECIBO",
+        ],
         # Añadido S49 (hoja de ruta S48, punto 3): POLIZA_SEGURO (S48) ya
         # esta deliberadamente separado de SEGURO (Miguel Angel, S48:
         # "una cosa es la poliza y otra cosa es el recibo del seguro") --
