@@ -55,6 +55,10 @@ DOSSIER_PAIRS = frozenset({
     frozenset({"CARNET_CONDUCIR", "DNI"}),
     frozenset({"CARNET_CONDUCIR", "TACOGRAFO"}),
     frozenset({"ITV", "TACOGRAFO"}),
+    # Añadido S49: poliza + recibo del seguro escaneados juntos en el
+    # mismo PDF (patron real "POLIZA+REC.SEG...."), confirmado por
+    # Miguel Angel como el mismo caso de dosier ya conocido.
+    frozenset({"POLIZA_SEGURO", "SEGURO"}),
 })
 
 # Pares "gana X sobre Y" -- orden (winner, loser). Se aplican en orden;
@@ -71,6 +75,13 @@ SPECIFIC_WINS = [
     ("ALTA_MEDICA", "ALTA"),
     ("ALTA", "SEG_SOCIAL"),
     ("CURSO", "TACOGRAFO"),
+    # Añadida S49, confirmada por Miguel Angel: una factura entre dos
+    # terceros (ninguno es la empresa) sigue siendo, para todos los
+    # efectos, una factura de compra ligada al vehiculo/maquina -- no
+    # tiene sentido un tipo aparte solo porque la empresa no sea parte
+    # directa. FACTURA_TERCEROS queda para casos donde de verdad no
+    # aplique FACTURA_COMPRA, nunca cuando ambas coinciden.
+    ("FACTURA_COMPRA", "FACTURA_TERCEROS"),
 ]
 # Cualquier tipo especifico gana siempre sobre SOLICITUD_ADMINISTRATIVA.
 GENERIC_LOSER = "SOLICITUD_ADMINISTRATIVA"
@@ -167,15 +178,15 @@ def _resolve_document_type(entry, domain, name_upper):
         entry, domain, CANDIDATES_RISKY, name_upper,
     )
     if not matched:
-        return None, None  # (code, is_dossier)
+        return None, None  # (code, dossier_pair)
 
     if len(matched) == 1:
-        return next(iter(matched)), False
+        return next(iter(matched)), None
 
     # Mas de un candidato -- aplicar framework de prioridades.
     for pair in DOSSIER_PAIRS:
         if pair <= matched:
-            return None, True
+            return None, pair
 
     for winner, loser in SPECIFIC_WINS:
         if winner in matched and loser in matched:
@@ -191,14 +202,47 @@ def _resolve_document_type(entry, domain, name_upper):
             matched = matched - {"FORMACION"}
 
     if len(matched) == 1:
-        return next(iter(matched)), False
+        return next(iter(matched)), None
 
     for pair in UNRESOLVED_PAIRS:
         if pair <= matched:
-            return None, False
+            return None, None
 
     # Solape real no cubierto por el framework -- no se adivina.
-    return None, False
+    return None, None
+
+
+def _dossier_types_already_filed(obj, content_type, pair):
+    """
+    True solo cuando CADA tipo del par de dosier ya tiene, para este
+    mismo `obj` (maquina/persona), al menos una fila real archivada
+    fuera de cuarentena (`document_type` asignado, dentro de
+    `DOC. MAQUINAS`/`DOC. PERSONAL`, no borrada ni purgada).
+
+    H30 (S49). Corrige un fallo real: `DOSSIER_PAIRS` mandaba a
+    papelera cualquier archivo con dos tipos candidatos a la vez, sin
+    comprobar si esos dos documentos ya existian por separado en algun
+    otro sitio. Miguel Angel, verbatim (S49), confirmando que la regla
+    de siempre exige esa comprobacion: "Siempre y cuando los
+    documentos separados esten, el dosier se puede eliminar. Pero si
+    no hay documentos separados, ese dosier no se puede eliminar."
+
+    Si `obj` no se pudo resolver, o si algun tipo del par no tiene
+    todavia una fila separada archivada, devuelve False -- nunca se
+    elimina un dosier que podria ser la unica copia real de ese
+    contenido.
+    """
+    if obj is None:
+        return False
+    for code in pair:
+        exists = DocumentIndexEntry.objects.filter(
+            domain_content_type=content_type, domain_object_id=obj.pk,
+            document_type__code=code,
+            deleted_at__isnull=True, purged_at__isnull=True,
+        ).exclude(parent_path__startswith="_CUARENTENA").exists()
+        if not exists:
+            return False
+    return True
 
 
 class Command(BaseCommand):
@@ -224,7 +268,8 @@ class Command(BaseCommand):
         }
 
         stats = {
-            "asignados": 0, "dosier": 0, "sin_resolver_tipo": 0,
+            "asignados": 0, "dosier_eliminado": 0,
+            "dosier_sin_dividir_pendiente": 0, "sin_resolver_tipo": 0,
             "sin_resolver_dominio": 0, "folder_type": 0,
         }
 
@@ -239,20 +284,42 @@ class Command(BaseCommand):
 
                 folder_code = _folder_based_type(entry, domain)
                 if folder_code:
-                    code, is_dossier = folder_code, False
+                    code, dossier_pair = folder_code, None
                     stats["folder_type"] += 1
                 else:
-                    code, is_dossier = _resolve_document_type(
+                    code, dossier_pair = _resolve_document_type(
                         entry, domain, name_upper,
                     )
 
-                if is_dossier:
-                    stats["dosier"] += 1
-                    self.stdout.write(
-                        "DOSIER  [%s] %s" % (entry.parent_path, entry.name)
-                    )
-                    if apply_changes:
-                        trash_dossier_entry(entry)
+                if dossier_pair:
+                    if domain == "MACHINE":
+                        obj = resolve_or_create_machine_asset(entry, {})
+                        ct = machine_ct
+                    else:
+                        obj = _resolve_person_by_folder(entry)
+                        ct = person_ct
+
+                    if _dossier_types_already_filed(obj, ct, dossier_pair):
+                        stats["dosier_eliminado"] += 1
+                        self.stdout.write(
+                            "DOSIER ELIMINADO (ya dividido en %s) [%s] %s"
+                            % (
+                                sorted(dossier_pair), entry.parent_path,
+                                entry.name,
+                            )
+                        )
+                        if apply_changes:
+                            trash_dossier_entry(entry)
+                    else:
+                        stats["dosier_sin_dividir_pendiente"] += 1
+                        self.stdout.write(
+                            "DOSIER SIN DIVIDIR, NO SE ELIMINA (revision "
+                            "manual) [%s] %s -> %s"
+                            % (
+                                entry.parent_path, entry.name,
+                                sorted(dossier_pair),
+                            )
+                        )
                     continue
 
                 if not code:

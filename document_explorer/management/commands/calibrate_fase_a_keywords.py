@@ -134,6 +134,11 @@ CANDIDATES_SAFE = {
 # suelta hubiera matcheado.
 EXCLUSIONS = {
     ("PERSONAL", "ALTA", "ALTA"): ["ALTA VISIBILIDAD"],
+    # Añadido S49: falso positivo real detectado en calibracion --
+    # "PAGINA POLIZA RC - FORMACION OPERADORES PEMP.pdf" menciona la
+    # poliza RC de pasada en un documento de formacion, no es una
+    # poliza real de maquina/vehiculo.
+    ("BOTH", "POLIZA_SEGURO", "POLIZA"): ["POLIZA RC - FORMACION"],
 }
 
 CANDIDATES_RISKY = {
