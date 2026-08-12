@@ -988,32 +988,9 @@ de diccionario encontrados):
   comiteado, **sin relanzar el recorrido todavía** (commit
   `9132ae4`).
 
-**Dos ideas nuevas de Miguel Ángel, explícitamente para la próxima
-sesión, no construir nada sin más contexto todavía:**
-- **Documentos obligatorios por ley** (verbatim: *"documentos
-  obligatorios... el seguro, la ITV, el permiso de circulación, el
-  RAE... no sé exactamente cuáles son todos, tendrás que mirarlo"*) —
-  pidió explícitamente que Claude busque en internet la lista real de
-  documentación obligatoria para camiones/grúas en España antes de
-  construir nada. Ver hoja de ruta.
-- **Familias de documentos** (agrupación temática — obligatorios,
-  técnicos, fotos del vehículo, recibos/facturas...) para
-  personal/máquinas/EPIs, pensadas para dos usos reales en la
-  interfaz: (a) organizar el acordeón de cada ficha por familia en
-  vez de un único bloque "Vigentes"/"Histórico", y (b) permitir
-  búsqueda granular real — verbatim: *"no podemos, por ejemplo,
-  buscar una máquina, quiero ver el seguro de la máquina... tenemos
-  que dotar la interfaz de una granularidad a la hora de la búsqueda
-  de cosas que de momento no tenemos"*. Sin diseño concreto todavía —
-  ¿es un campo nuevo en `DocumentTypeCatalog` (`family`), o una
-  agrupación calculada en la propia vista? Sin decidir.
+**Dos ideas nuevas de Miguel Ángel, planteadas en S48, resueltas en S49** (documentos obligatorios por ley y familias de documentos — ver `COMPLETADAS EN S49` más abajo).
 
-**Incidencia real de UI reportada, sin investigar todavía:** en el
-explorador de archivos (la lista de resultados con casillas de
-selección, no el panel nuevo de documentación — confirmar exactamente
-cuál en la próxima sesión), al escribir en un campo de búsqueda con
-autocompletado, en algún momento deja de recibir las pulsaciones de
-teclado. Sin diagnosticar.
+**Incidencia real de UI reportada, sin investigar todavía (arrastrado 1.ª sesión sin avanzar):** en el explorador de archivos (la lista de resultados con casillas de selección, no el panel nuevo de documentación — confirmar exactamente cuál en la próxima sesión), al escribir en un campo de búsqueda con autocompletado, en algún momento deja de recibir las pulsaciones de teclado. Sin diagnosticar.
 
 **Verificación de sesión completa (S48):** total real de
 `DocumentIndexEntry` con `document_type` asignado: **11.149**.
@@ -1025,131 +1002,295 @@ documentación) construido y desplegado, con hallazgos reales de
 calidad de datos que obligaron a parar y auditar en profundidad antes
 de seguir — decisión correcta de Miguel Ángel, no un desvío.
 
+### COMPLETADAS EN S49
+
+Sesión larga, con desvío explícito y correcto de Miguel Ángel a mitad
+de sesión desde "seguir extrayendo fechas" hacia "primero garantizar
+que toda la documentación (máquinas + documentos) está correctamente
+reflejada en base de datos" — ver el cierre de esta misma sección
+para el razonamiento completo, verbatim, de por qué se paró la
+ingesta de fechas.
+
+**Documentos obligatorios por ley (S48, punto pendiente).** Búsqueda
+web real (RD 837/2003 grúas móviles autopropulsadas, RD 1215/1997 +
+RD 1644/2008 equipos de trabajo/marcado CE, RD 836/2003 grúas torre,
+normativa DGT de circulación) para las familias reales de la flota
+(tabla completa de prefijos A/B/Z/H/MK/P/T/V/S/R-G confirmada por
+Miguel Ángel con foto de spider crane real). Confirmado que los
+camiones grúa autocargantes (familia B) están **excluidos** del RD
+837/2003 (solo grúas móviles autopropulsadas puras, familia A, caen
+bajo ese reglamento reforzado con inspección OCA periódica). Turismos
+y remolques siguen excluidos del alcance de H30 (S47).
+
+**Familias de documentos (S48, punto pendiente) — decidido y
+desplegado.** Miguel Ángel confirmó: campo real `family` en
+`DocumentTypeCatalog` (no agrupación calculada en la vista) con lista
+fija de `choices` en código (no tabla configurable aparte) — 10
+familias (Circulación, Técnica y seguridad, Seguros, Financiero y
+compraventa, Bajas de máquina, Administrativo, Identidad y personal,
+Laboral, Salud y bajas de persona, PRL y formación). Migración
+`0028_add_family_and_backfill.py`: `AddField` + backfill de las 58
+filas del catálogo cerrado a esa fecha, sin huecos (verificado con
+`git rev-list`/`showmigrations`/consulta real tras el despliegue). 5
+tipos dados de alta después de esas migraciones (`DECLARACION_
+HOMOLOGACION`, `DNI_COMPRADOR`, `JUSTIFICANTE_TRANSFERENCIA`,
+`MANUAL_DESPIECE`, `RECIBO_SENAL_COMPRA`) detectados sin familia y
+asignados en el mismo cierre — catálogo completo (64 tipos en ese
+momento) con familia al 100%.
+
+**Caso real HOEFLON (S-19 SEPARADOR) — dos tipos documentales
+nuevos.** Dos archivos subidos por Miguel Ángel para revisión
+(certificado neerlandés "CERTIFICAAT HIJSMIDDELEN" de un balancín/
+separador extensible, fabricante Deij Hijstechniek B.V., suministrado
+vía Hoeflon International BV; y su albarán de entrega) resultaron NO
+ser una minigrúa mal clasificada — corrección explícita de una
+conclusión prematura propia antes de ver los documentos reales.
+Altas: `CERT_ACCESORIO_ELEVACION` (`tracks_expiry=True`, migración
+`0026`) y `ALBARAN_ENTREGA` (`tracks_expiry=False`, migración `0027`).
+Localizadas con datos reales 4 filas del mismo certificado (3 copias
+distintas de blob, no la misma fila) más el albarán — reclasificadas
+una a una tras confirmación de Miguel Ángel: pk 17587 (ubicación
+correcta) → `CERT_ACCESORIO_ELEVACION`; pk 17586 (albarán, misma
+carpeta) → `ALBARAN_ENTREGA`; pk 11042 y 41748 (copias sobrantes,
+una en `_CUARENTENA` sin procesar 9 días) → mismo tipo, marcadas
+`is_obsolete=True`. Ninguna llegó nunca a NO CONFORMES (verificado).
+
+**Ampliación del diccionario de Fase A y corrección real del
+framework de dosier.** Añadidos al diccionario real
+(`calibrate_fase_a_keywords.py`, que alimenta también `run_fase_a_
+sweep.py` al importarlo directamente): `CERT MANTENIMIENTO` (variante
+sin "IF"/"IFICADO", **1.518** coincidencias reales — el hueco más
+grande de la sesión), `PERM CIRC` (50), `PERMISO DE CIRCULACION` con
+"DE" en medio (133, detectado al investigar el caso 7245GBM), `PODERES`
+para `CERTIFICADO_PODERES` (28), `FACTURA` para `FACTURA_TERCEROS`
+(54, solape deliberado con `FACTURA_COMPRA`), `POLIZA` para
+`POLIZA_SEGURO` (750) y `RECIBO` suelto para `SEGURO` (223, detectado
+en el mismo caso 7245GBM). **Fallo real corregido (directriz 4.9):**
+`DOSSIER_PAIRS` mandaba a papelera cualquier archivo con dos tipos
+candidatos a la vez SIN comprobar si esos dos documentos ya existían
+por separado en algún otro sitio — Miguel Ángel confirmó la regla real
+("siempre y cuando los documentos separados estén, el dosier se puede
+eliminar; si no, no se puede eliminar") y se corrigió con
+`_dossier_types_already_filed()`, que resuelve el objeto de dominio
+del candidato a dosier y solo elimina si CADA tipo del par ya tiene
+una fila archivada fuera de cuarentena para esa misma máquina/persona.
+Nueva regla de prioridad `FACTURA_COMPRA` > `FACTURA_TERCEROS`
+(confirmada: una factura entre dos terceros sigue siendo, a todos los
+efectos, una factura de compra ligada al vehículo). `POLIZA_SEGURO`
+↔ `SEGURO` añadido a `DOSSIER_PAIRS` (póliza+recibo escaneados juntos).
+Exclusión del falso positivo real "POLIZA RC - FORMACION". Dos pasadas
+de `run_fase_a_sweep --apply`: primera (2.938 asignados, 8 dosieres
+eliminados por ya estar divididos, 2 dejados intactos para revisión
+manual) y segunda tras añadir `PERMISO DE CIRCULACION`/`RECIBO` (331
+asignados más, 2 dosieres eliminados más). Total verificado con
+consulta real tras ambas pasadas: 14.091 `DocumentIndexEntry` con
+`document_type` asignado (subida desde 11.149 al cierre de S48).
+
+**Fase B0 (fechas por heurística de nombre) — ejecutada y luego
+pausada por decisión de Miguel Ángel.** `run_fase_b0_filename_dates
+--apply`: 572 fechas escritas. `POLIZA_SEGURO` deliberadamente
+excluido de esta fase (Miguel Ángel: mejor esperar a Fase B1/OCR real
+para confirmar si la fecha del nombre es emisión o caducidad, en vez
+de generalizar sin evidencia, mismo criterio que ya se aplicó a
+`EXCEDENCIA` en S48).
+
+**Informe de cobertura de documentación obligatoria (`audit_
+mandatory_documents`, nuevo).** Primer corte de tipos obligatorios
+por familia (A/B/Z/H/P/T/V/S), acotado a tipos ya existentes en el
+catálogo — deliberadamente sin `IPO`/`ITC` hasta confirmar su
+significado real en el archivo de Grupo Álvarez. **Fallo real
+corregido en el propio comando:** el primer informe colaba carpetas
+administrativas (`ADMINIST`, `ADOLFO`, `BEN`, `PAOLA`, `PERSONAL`,
+`PILOTES`, `VARIOS`, `VENTA`) como si fueran máquinas de la familia
+A/B/P/V solo por compartir la letra inicial — corregido exigiendo
+regex letra(s)+dígitos exacto. También retirado `MK` como prefijo
+real (las grúas torre sobre camión, p.ej. "MK80"/"MK100", están
+codificadas dentro de la familia A, MK es solo parte del nombre del
+modelo). Resultado real tras la corrección: 550 máquinas activas
+evaluadas, 316 con algún hueco (698 huecos en total), 17 completas,
+217 fuera del alcance del prefijo (turismos/remolques/administrativo,
+excluidos correctamente).
+
+**Reconciliación de máquinas sin `MachineAsset` (`reconcile_machine_
+folders`, nuevo) — hecha y verificada.** Detectado el caso raíz real:
+`resolve_or_create_machine_asset()` solo se dispara como efecto
+colateral de clasificar un archivo (Fase A) — una carpeta cuyos
+archivos nunca pasaron por clasificación nunca dispara la creación
+automática, aunque el nombre de la carpeta tenga forma válida de
+código de flota o matrícula. Caso real que lo destapó: el Peugeot
+307 que conduce Miguel Ángel (matrícula 7245GBM) — la máquina SÍ
+existía en `MachineAsset` (creada en una sesión anterior porque un
+documento suyo se había clasificado), pero de 6 archivos reales en su
+carpeta solo 1 tenía `document_type`; los otros 5 (incluido el propio
+`PERMISO DE CIRCULACION.pdf`) estaban sin clasificar por el hueco de
+diccionario ya descrito arriba. Comando de reconciliación construido
+reutilizando exactamente `_FOLDER_MACHINE_CODE_RE`/`_FOLDER_PLATE_RE`/
+`resolve_machine_asset`/`resolve_or_create_machine_asset` de
+`classification_service.py`, sin reescribir el patrón de detección.
+Dry-run: 1.461 carpetas de máquina reales bajo `DOC. MAQUINAS`, 1.145
+ya resueltas, 155 candidatas (deduplicadas por código/matrícula real:
+**91 vehículos/máquinas distintos**), 161 sin forma reconocible de
+código (revisión manual, fuera de alcance de este comando). Miguel
+Ángel revisó el listado completo de 91 y confirmó excluir 6 casos
+dudosos (`AC300` catálogo de referencia de modelo, `CONT03`/`CONT04`
+contenedores de obra, `MIRA10` EPI de persona, `E1405`/`SE7625`
+posibles máquinas reales -A y P- sin código de flota clásico
+confirmado todavía) — "mejor no contaminar por tres o cuatro
+máquinas", se añadirán a mano cuando corresponda. `--apply` sobre los
+85 restantes: **149 resoluciones reales** (algunas reutilizan la
+misma `MachineAsset` ya creada momentos antes en el mismo run para
+subcarpetas del mismo vehículo). Verificado con datos reales tras el
+despliegue: `MachineAsset.objects.count()` = 585 (556 activas), las 6
+excluidas confirmadas NO existen, sin duplicados.
+
+**Desvío explícito de Miguel Ángel a mitad de sesión, verbatim:**
+*"¿Para qué vamos a leer las fechas? ¿Para qué vamos a nutrir la base
+de datos de fechas si todavía nos falta documentación? [...] Primero
+que todos los vehículos tengan la documentación que tienen que tener.
+[...] Es lo primero."* — se paró la Fase B0/B1 de fechas a mitad de
+ejecución y se giró el resto de la sesión hacia cobertura de
+documentos y reconciliación de máquinas. Decisión correcta, no un
+desvío que corregir — cambia el orden de la hoja de ruta siguiente,
+ver abajo.
+
+**Instrucción explícita de Miguel Ángel sobre el propio PCS, verbatim
+(a incorporar como principio permanente de esta skill, no solo de
+esta sesión):** *"El PCS es la herramienta de cierre de sesión que
+prepara el inicio de la sesión siguiente y todo el trabajo de la
+siguiente sesión [...] El modelo, cuando comience, no debe tener
+ninguna laguna ni ninguna ambigüedad [...] no puede repetir preguntas
+que ya se han contestado, no puede no saber que ya hemos reconciliado
+maquinaria con la base de datos."* Aplicado en la Hoja de Ruta de
+abajo: el estado de la reconciliación de máquinas se da por CERRADO y
+VERIFICADO (no se vuelve a plantear la pregunta), y el orden de
+trabajo para la próxima sesión queda explícito paso a paso, sin
+redacción abierta.
+
+**Commits reales de la sesión** (10, `7f1671c..86eb79f`): `9ba2909`
+alta `CERT_ACCESORIO_ELEVACION`; `59ae71f` alta `ALBARAN_ENTREGA`;
+`e21dadf` campo `family` + backfill; `7ec93a9` ampliación diccionario
+Fase A (huecos B-38); `ec79dab` corrección framework de dosier + 3
+reglas nuevas; `2ae700c` informe de cobertura `audit_mandatory_
+documents`; `cbdc44a` corrección de falsos positivos de prefijo;
+`84b6229` `PERMISO DE CIRCULACION`/`RECIBO` sueltos; `0dda674`
+`reconcile_machine_folders`; `86eb79f` exclusión de las 6 candidatas
+dudosas confirmadas. 8 archivos tocados, 713 inserciones/18
+eliminaciones.
+
 ### Hoja de Ruta para la Siguiente Sesión
 
-**Documentos obligatorios por ley (camiones/grúas, España) —
-pregunta abierta de Miguel Ángel, requiere búsqueda web antes de
-construir nada.** Verbatim: *"Infórmate en internet, porque yo no sé
-exactamente cuáles son todos los documentos que son obligatorios para
-un camión y una grúa."* Investigar y confirmar con Miguel Ángel la
-lista cerrada antes de marcar ningún tipo como "obligatorio" en el
-catálogo. Criterio de cierre: lista confirmada por Miguel Ángel,
-reflejada como campo o constante donde corresponda (a decidir junto
-con el punto de "familias de documentos", más abajo).
+**PREGUNTAS ABIERTAS — resolver ANTES de construir nada nuevo (nunca
+repetir, ya preguntadas en sesiones anteriores sin respuesta):**
 
-**Familias de documentos — diseño abierto, sin decidir todavía.**
-Dos usos reales pendientes de resolver: agrupar el acordeón de cada
-ficha por familia (en vez de solo Vigentes/Histórico), y permitir
-búsqueda granular ("ver el seguro de esta máquina" sin entrar en la
-ficha). Preguntas concretas para la próxima sesión: ¿campo `family`
-nuevo en `DocumentTypeCatalog` (migración) o agrupación calculada en
-la vista sin tocar el modelo? ¿Las familias son fijas en código o
-configurables desde algún sitio? Sin construir nada hasta resolver
-esto con Miguel Ángel al inicio de la próxima sesión.
+1. **Significado real de `IPO`/`ITC` en el archivo de Grupo Álvarez**
+   (arrastrado desde S49) — necesario para decidir si entran en la
+   tabla de documentos obligatorios de `audit_mandatory_documents.py`
+   (`MANDATORY_BY_PREFIX`). Sin esto, esos dos tipos siguen fuera del
+   informe de cobertura.
+2. **Alta de tipo documental nuevo desde el propio panel de
+   documentación** (arrastrado 2.ª sesión sin avanzar desde S48) —
+   ¿sigue siendo prioridad frente a lo demás, o se pospone sin fecha?
+3. **Cola de Gemini para `ITV` (`ocr_unreliable`)** (arrastrado 2.ª
+   sesión sin avanzar desde S48, ~491 candidatos) — ¿se prioriza en la
+   próxima sesión, dado que ahora hay más volumen real esperando OCR
+   por delante (Fase B1 general, punto 4 de abajo), o se pospone?
+4. **Anomalía `pk 607`** (carpeta anidada en sí misma, arrastrada
+   desde S48 sin confirmar) — sin evidencia suficiente para tratarla
+   como error real bajo directriz 4.9, sigue sin tocarse sin
+   confirmación explícita.
+5. **Código/etiqueta del "justificante de asistencia a organismo
+   público"** (arrastrado varias sesiones sin avanzar) — decisión
+   concreta antes de darlo de alta en el catálogo, o retirarlo de la
+   hoja de ruta si ya no es prioridad.
 
-**Ampliar el diccionario de Fase A con los huecos reales ya
-detectados en la auditoría de B-38, y relanzar el recorrido —
-CONCRETO, listo para ejecutar de inmediato:**
-1. Verificar volumen real de `PODERES` (28 ya contado) y `FACTURA`
-   (54, cuidado con no confundir con `FACTURA_COMPRA` ya existente)
-   como candidatos de `CERTIFICADO_PODERES`/`FACTURA_TERCEROS`.
-2. Añadir `PERM CIRC` a los candidatos de `PERMISO_CIRCULACION`, y
-   `CERT MANTENIMIENTO` (sin "IF"/"IFICADO") a `CERT_MANTENIMIENTO`.
-3. Añadir `POLIZA` como candidato de `POLIZA_SEGURO` (ya separado de
-   `SEGURO`, no repetir el error de mezclarlos).
-4. Relanzar `run_fase_a_sweep` (dry-run primero, luego `--apply`) y
-   `run_fase_b0_filename_dates` para las fechas de los tipos nuevos
-   con `tracks_expiry=True` (`POLIZA_SEGURO`).
-5. Repetir `backfill_obsolete_duplicates --apply` tras lo anterior.
-   Criterio de cierre: verificación real con
-   `DocumentIndexEntry.objects.filter(document_type__isnull=False).count()`
-   mayor que 11.149, y consulta real confirmando que A-29/B-38 (y una
-   tercera máquina de otra familia, para no repetir el mismo sesgo)
-   tienen `SEGURO`+`POLIZA_SEGURO` completos.
+**ESTADO YA CERRADO — no volver a preguntar ni replantear:**
+- Reconciliación de `MachineAsset` contra carpetas reales de
+  `DOC. MAQUINAS`: HECHA y VERIFICADA con datos reales en S49 (585
+  `MachineAsset` totales, 149 resoluciones del `--apply`, 6 exclusiones
+  confirmadas por Miguel Ángel sin crear). Quedan 161 carpetas sin
+  forma reconocible de código/matrícula (revisión manual caso a caso,
+  fuera del alcance de `reconcile_machine_folders`) y las 6 excluidas
+  (`AC300`, `CONT03`, `CONT04`, `E1405`, `MIRA10`, `SE7625`, alta
+  manual pendiente cuando Miguel Ángel lo decida) — esto sí sigue
+  abierto, pero como tarea puntual pequeña, no como pregunta de
+  diseño.
+- Tabla normativa de familias A/B/Z/H/MK/P/T/V/S (documentos
+  obligatorios por tipo de máquina, primer corte): CERRADA e
+  implementada en `audit_mandatory_documents.py`. Ajustable, no
+  redecidir desde cero.
+- Diseño de familias de documentos (`DocumentTypeCatalog.family`):
+  CERRADO, campo real desplegado con backfill al 100%. No
+  redecidir.
 
-**Continuar la auditoría real de blob — Miguel Ángel pidió "tres o
-cuatro máquinas", solo se auditaron dos (A-29, B-38).** Auditar al
-menos 2 máquinas más de familias distintas (p. ej. `Z` plataformas,
-`T` carretillas, o una `R`/`G` remolque) antes de dar el diccionario
-de `MACHINE` por completo. Criterio de cierre: 4 máquinas auditadas
-en total, sin huecos de diccionario nuevos detectados en las últimas
-2, o huecos nuevos añadidos y verificados igual que B-38.
+**ORDEN DE TRABAJO VINCULANTE PARA TODO LO SIGUIENTE, confirmado por
+Miguel Ángel al cierre de S49 — NUNCA saltarse este orden:**
+heurística de nombre (Fase A) primero → OCR (Fase B1) después →
+llamadas a Gemini/IA solo como último recurso, cuando no quede otra
+opción.
 
-**Incidencia de UI del autocompletado — sin investigar, primer paso
-es reproducirla con precisión.** Confirmar con Miguel Ángel en qué
-pantalla exacta ocurre (explorador de archivos legado vs. panel de
-documentación H30) antes de tocar código. Criterio de cierre: pasos
-de reproducción exactos confirmados, o corrección aplicada y
-verificada si se reproduce a la primera.
+**Plan concreto de la próxima sesión, en este orden — verbatim Miguel
+Ángel: "primero que todos los vehículos tengan la documentación que
+tienen que tener":**
 
-**Cola de Gemini para `ITV` (`ocr_unreliable`) — arrastrado 1.ª
-sesión sin avanzar.** ~491 candidatos iniciales de la Fase B1 (más
-los que hayan quedado tras las últimas pasadas). Construir el
-consumidor real de `date_verification_service.extract_expiry_via_gemini`
-para este subconjunto, acotado (nunca pasada masiva). Criterio de
-cierre: muestra real de `ITV` con `expiry_date` extraída por Gemini y
-verificada contra el documento real.
+1. **Confirmar/ampliar la tabla de documentos obligatorios por
+   familia** (`MANDATORY_BY_PREFIX` en `audit_mandatory_documents.py`)
+   con Miguel Ángel, familia por familia, contra casos reales — el
+   primer corte de S49 es un punto de partida, no una lista cerrada.
+   Resolver primero la pregunta 1 de arriba (`IPO`/`ITC`). Criterio de
+   cierre: tabla confirmada explícitamente por Miguel Ángel para las
+   9 familias (A/B/Z/H/P/T/V/S + revisar si procede alguna para R/G).
+2. **Ejecutar `audit_mandatory_documents`** (ya corregido en S49, sin
+   el bug de falsos positivos de prefijo) contra la tabla confirmada
+   del punto 1, y para cada máquina activa con huecos reales, decidir
+   caso a caso cómo cerrarlo: ¿el documento existe en el corpus sin
+   clasificar (ampliar diccionario de Fase A), existe pero mal ubicado
+   (mover), o no existe de verdad (hay que recuperarlo, fuera del
+   alcance de esta plataforma)? Criterio de cierre: `con_huecos` del
+   informe bajando de forma medible sesión a sesión, sin huecos
+   fantasma por fallo de heurística (verificar con casos reales como
+   se hizo con 7245GBM antes de dar un hueco por "falta el documento
+   de verdad").
+3. **Documentos NO obligatorios también deben reflejarse en la
+   ficha** — verbatim Miguel Ángel: *"si tenemos en el directorio una
+   serie de documentos, esa serie de documentos tiene que estar
+   reflejada también en la ficha de la máquina que existen, tanto si
+   son obsoletos como si no."* Esto es continuar bajando
+   `sin_resolver_tipo` (15.278 al cierre de S49) y `sin_resolver_
+   dominio` (4.172) del diccionario de Fase A — mismo método que hoy:
+   buscar casos reales concretos (empezar por muestreo de carpetas de
+   máquinas con huecos del punto 2), confirmar volumen real de cada
+   candidato nuevo con `calibrate_fase_a_keywords` antes de aplicar,
+   nunca generalizar sin evidencia. Criterio de cierre: sin criterio
+   numérico único todavía — decidir con Miguel Ángel al empezar este
+   punto si se fija un objetivo de `sin_resolver_tipo` o se atiende
+   por goteo continuo.
+4. **Solo cuando la documentación (obligatoria y no obligatoria) esté
+   completa y correctamente asignada por máquina:** retomar Fase B0/B1
+   (ingesta de fechas) — explícitamente pausada en S49. Incluye
+   resolver el patrón real de `POLIZA_SEGURO` (issue vs. expiry, ver
+   S49) vía OCR, y continuar la cola de Gemini para `ITV` si la
+   pregunta 3 de arriba se resuelve a favor de priorizarla.
+5. **Auditoría real de blob** (arrastrado 1.ª sesión sin avanzar desde
+   S48-S49, Miguel Ángel pidió "tres o cuatro máquinas", solo
+   auditadas dos -A-29, B-38-) — 2 máquinas más de familias distintas
+   (`Z` plataformas, `T` carretillas, o una nueva familia no auditada
+   todavía), si hay hueco tras los puntos 1-4. Criterio de cierre: 4
+   máquinas auditadas en total, sin huecos de diccionario nuevos en
+   las últimas 2, o huecos nuevos añadidos y verificados igual que
+   B-38.
 
-**Fase B1 (OCR) sobre el resto del corpus real (2.068 candidatos
-iniciales, ahora menos tras SEGURO por nombre) — arrastrado 1.ª
-sesión sin avanzar, solo probado en muestra de 100.** Ejecutar por
-lotes (`--limit`) sobre el resto, revisando periódicamente que el
-contraste de contexto sigue dando resultados sensatos. Criterio de
-cierre: `sin_fecha_reconocible` medido contra el total real restante,
-verificado con consulta a BD, no solo con el resumen del comando.
-
-**Cerrar el modelo de permisos de supervisor del panel** (lectura
-cuarentena/NO CONFORMES + escritura de anotación/reencolado +
-escritura completa solo vía las tres pestañas) — no construido
-todavía. Sin criterio de cierre definido, diseñarlo con Miguel Ángel
-al empezar este punto.
-
-**Alta de tipo documental nuevo desde el propio panel de
-documentación** (hoy solo existe desde el explorador de archivos) —
-arrastrado 2.ª sesión sin avanzar. Miguel Ángel, ¿confirmas que sigue
-siendo prioridad frente a lo demás, o se pospone sin fecha?
-
-**Cierre uno a uno de los 231 huecos reales de manuales** — pendiente,
-ahora sí con interfaz real desde la que hacerlo (ficha de máquina,
-botón Actualizar). Sin criterio de cierre numérico fijado — decidir
-con Miguel Ángel si se cierra por lotes o de verdad uno a uno.
-
-**Repuntar `document_management.tasks.send_document_expiry_alerts`
-(cron diario) y el envío de documentos por WhatsApp
-(`whatsapp/services.py`) a `DocumentIndexEntry`** — identificado como
-dependencia real de la migración de panel, no tocado todavía.
-Criterio de cierre: ambas rutas leyendo `DocumentIndexEntry` en vez de
-`MachineDocument`/`PersonalDocument`, verificado con una alerta/envío
-real de prueba.
-
-**Decidir el destino final de `MachineDocument`/`PersonalDocument`**
-(69 filas legadas) — Miguel Ángel confirmó que se pueden borrar
-("los cubos se pueden borrar y se pueden dejar de usar desde ya"),
-pero no se llegó a ejecutar el borrado en esta sesión (la conversación
-derivó hacia la auditoría de blob). Verificar primero que ningún flujo
-activo (alertas, WhatsApp, ver punto anterior) siga dependiendo de
-ellos antes de borrar.
-
-**Anomalía `pk 607` (arrastrada desde S48, sin confirmar todavía) —
-carpeta anidada dentro de sí misma** (`DOC. MAQUINAS/GRUAS MOVILES
-(A)/A-59  E-5068-BHH/A-59 E-5068-BHH`, mismo nombre repetido dos
-veces). Sin evidencia suficiente para tratarla como error real bajo
-directriz 4.9 — no se toca sin confirmación explícita de Miguel Ángel.
-
-**DECA — horizonte real, plazo octubre 2026, fuera de alcance
-activo.** Recordatorio de que antes de esa fecha hará falta decidir si
-se resuelve dentro de H30 (tipo documental simple, sin vínculo a
-servicios) o si justifica un hito propio una vez exista el modelo de
-"servicios". No es tarea de la próxima sesión salvo que Miguel Ángel
-lo priorice antes de esa fecha.
-
-**Código/etiqueta y punto de entrada real del "justificante de
-asistencia a organismo público"** (detectado en S46, nunca resuelto,
-arrastrado varias sesiones sin avanzar) — pedir a Miguel Ángel una
-decisión concreta antes de darlo de alta en el catálogo, o retirarlo
-de la hoja de ruta si ya no es prioridad.
-
-**Vacaciones controladas desde el panel (H24)** — diseño
-explícitamente abierto por Miguel Ángel, sin alcance definido
-todavía. No construir nada hasta que lo concrete.
-
+**Resto de temas de fondo, sin tocar hasta que se prioricen
+explícitamente (sin cambios respecto a S48, no repetir la pregunta
+salvo que Miguel Ángel la traiga él mismo):**
+- Cierre uno a uno de los 231 huecos reales de manuales.
+- Repuntar `document_management.tasks.send_document_expiry_alerts` y
+  el envío de documentos por WhatsApp a `DocumentIndexEntry`.
+- Decidir el destino final de `MachineDocument`/`PersonalDocument` (69
+  filas legadas) — Miguel Ángel ya confirmó que se pueden borrar, solo
+  falta ejecutar tras verificar que ningún flujo activo depende de
+  ellos.
+- DECA — horizonte octubre 2026, fuera de alcance activo salvo que
+  Miguel Ángel lo priorice antes.
+- Vacaciones controladas desde el panel (H24) — diseño explícitamente
+  abierto por Miguel Ángel, sin alcance definido. No construir nada
+  hasta que lo concrete él mismo.
