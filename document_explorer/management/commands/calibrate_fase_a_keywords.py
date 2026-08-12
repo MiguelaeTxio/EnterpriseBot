@@ -72,12 +72,40 @@ CANDIDATES_SAFE = {
         # 15-02-2021.pdf". "CERT EXENCION" cubre via separador
         # flexible tanto "Cert.exencion" como "Cert exencion".
         "CERT_EXENCION_PERMISO": ["EXENCION PERMISO", "CERT EXENCION"],
+        # Añadido S50 (segunda ronda, alta migracion 0030): garantia
+        # de fabricante/concesionario, casos reales "Z-124 GARANTIA
+        # JLG.pdf", "GARANTIA AUTOCARE.pdf".
+        "GARANTIA_FABRICANTE": ["GARANTIA"],
         # Añadido S49 (hoja de ruta S48, punto 3): CERTIFICADO_PODERES
         # (S48) no tenia candidato en este diccionario todavia. "PODERES"
         # ya contaba 28 coincidencias reales segun la auditoria de B-38 --
         # confirmar volumen exacto en calibracion antes de aplicar.
-        "CERTIFICADO_PODERES": ["PODERES"],
+        "CERTIFICADO_PODERES": [
+            "PODERES",
+            # Añadido S50 (segunda ronda): variante singular real, 7
+            # coincidencias (ver EnterpriseBot_049_GET.txt) -- "PODER
+            # JESUS MALSA, SLU.pdf", "Z-119 poder bast 77715.pdf".
+            "PODER",
+        ],
         "CONTRATO_COMPRAVENTA": ["CONTRATO COMPRAVENTA", "COMPRAVENTA"],
+        # Añadido S50 (segunda ronda, alta migracion 0030): contrato
+        # real de arrendamiento de maquinaria entre empresas del
+        # grupo, confirmado por texto extraido del PDF real. "RENTING"
+        # incluido como variante -- mismo concepto de alquiler bajo
+        # otro nombre comercial, caso real "7038DZX RENTING.pdf".
+        "CONTRATO_ARRENDAMIENTO": [
+            "CONTRATO ARRENDAMIENTO", "ARRENDAMIENTO", "RENTING",
+        ],
+        # Añadido S50 (segunda ronda, alta migracion 0030): solicitud
+        # de cambio de titularidad de vehiculo, confirmado por texto
+        # extraido del PDF real ("JUSTIFICANTE PROFESIONAL DE
+        # SOLICITUD DE CAMBIO DE TITULARIDAD", tramite DGT).
+        "CAMBIO_TITULARIDAD": ["CAMBIO TITULARIDAD"],
+        # Añadido S50 (segunda ronda, alta migracion 0030): carta
+        # verde, certificado internacional de seguro. Confirmado por
+        # Miguel Angel verbatim: "la carta verde es el seguro
+        # internacional".
+        "CARTA_VERDE": ["CARTA VERDE"],
         "C_ADECUACION": ["ADECUACION"],
         # Añadido S50 (alta S50, ver migracion 0029): cuadro de
         # amortizacion de prestamo/leasing, caso real "BBVA 1723376
@@ -87,7 +115,13 @@ CANDIDATES_SAFE = {
         "DNI_COMPRADOR": ["DNI COMPRADOR"],
         "DOC_BAJA_DEFINITIVA": ["DESGUACE"],
         "DOC_VENTA": ["VENTA"],
-        "FACTURA_COMPRA": ["FACTURA COMPRA"],
+        "FACTURA_COMPRA": [
+            "FACTURA COMPRA",
+            # Añadido S50 (segunda ronda): "INVOICE" ingles, caso real
+            # de proveedor extranjero (JLG) -- 6 coincidencias (ver
+            # EnterpriseBot_049_GET.txt).
+            "INVOICE",
+        ],
         # Añadido S49 (hoja de ruta S48, punto 1): FACTURA_TERCEROS (S48)
         # tampoco tenia candidato. "FACTURA" suelta (54 coincidencias
         # segun la auditoria de B-38) se solapara con FACTURA_COMPRA
@@ -96,7 +130,6 @@ CANDIDATES_SAFE = {
         # antes de aplicar con --apply, nunca a ciegas.
         "FACTURA_TERCEROS": ["FACTURA"],
         "FICHA_TECNICA": ["FICHA TECNICA"],
-        # Añadido S50 (alta S50, ver migracion 0029): gastos de
         # tarjeta de combustible, caso real "Z92 gastos tarjeta
         # gasoil SOLRED.pdf". "SOLRED" es marca real de tarjeta de
         # combustible usada en el corpus -- se incluye como candidato
@@ -116,8 +149,15 @@ CANDIDATES_SAFE = {
         # "IVTA" incluida deliberadamente -- es la errata real que ya
         # usa el corpus (caso real "A-69 E-0124-BJL IVTA.pdf"; el
         # contenido del PDF es IVTM, confirmado con Miguel Angel).
-        "IVTM": ["IVTM", "IVTA", "TRACCION MECANICA"],
+        "IVTM": ["IVTM", "IVTA", "TRACCION MECANICA",
+                 # Añadido S50 (segunda ronda): errata real "ITVM"
+                 # (letras invertidas), 3 coincidencias.
+                 "ITVM"],
         "JUSTIFICANTE_TRANSFERENCIA": ["JUSTIFICANTE_TRANSFERENCIA"],
+        # Añadido S50 (segunda ronda, alta migracion 0030): informe de
+        # incidencias de maquina, confirmado por texto real (Z106/Z-42
+        # "INFORME DE INCIDENCIAS.docx").
+        "INFORME_INCIDENCIAS": ["INFORME INCIDENCIAS", "INCIDENCIAS"],
         "LEASING": ["LEASING"],
         "LIBRO_HISTORIAL": [
             "LIBRO HISTORIAL",
@@ -151,12 +191,27 @@ CANDIDATES_SAFE = {
         ],
         "PRESTAMO": ["PRESTAMO"],
         "PROFORMA": ["PROFORMA"],
+        # Añadido S50 (segunda ronda, alta migracion 0030): pedido de
+        # compra, distinto de la factura ya emitida (caso real
+        # confirmado: "MERCEDES Pedido Firmado.pdf").
+        "PEDIDO_COMPRA": ["PEDIDO"],
+        # Añadido S50 (segunda ronda, alta migracion 0030):
+        # autorizacion de provision de fondos para compra/importacion
+        # de maquinaria (caso real confirmado: "Autorizacion provision
+        # fondos [...] firmado.pdf").
+        "PROVISION_FONDOS": ["PROVISION FONDOS"],
         # Añadido S50 (alta S50, ver migracion 0029): sancion de
         # trafico, caso real "Sancion 5462FJP 2022 02 21 pagada.pdf".
         "SANCION_TRAFICO": ["SANCION"],
         "RECIBO_LEASING": [
             "CUOTA LEASING", "RECIBO LEASING", "FACTURA LEASING",
         ],
+        # Añadido S50 (segunda ronda, alta migracion 0030): revision
+        # periodica de eslingas y elementos de izado (patron real
+        # "REV.ESLINGAS Y ELEM.IZADO GC [fecha]", repetido por maquina
+        # -- historico de inspecciones). Miguel Angel confirmo
+        # tracks_expiry=True, mismo criterio que IPO/CERT_MANTENIMIENTO.
+        "REVISION_ESLINGAS": ["REV ESLINGAS", "REVISION ESLINGAS"],
         "RECIBO_SENAL_COMPRA": ["RECIBO_SENAL_COMPRA"],
         "SOLICITUD_ADMINISTRATIVA": ["SOLICITUD"],
         "TABLA_DE_CARGA": ["TABLA CARGA"],
@@ -173,12 +228,31 @@ CANDIDATES_SAFE = {
             # RECIBO_LEASING/RECIBO_SENAL_COMPRA en archivos que
             # combinen ambas palabras -- revisar en calibracion.
             "RECIBO",
+            # Añadidos S50 (segunda ronda), medidos con datos reales
+            # (ver EnterpriseBot_049_GET.txt): "REC BCO"/"REC.BCO"
+            # (127+87, confirmado por texto real: cargos bancarios de
+            # domiciliacion de la prima del seguro), "SEGUROS" (6,
+            # variante en plural -- "SEGURO" no la cubria porque el
+            # lookaround exige que no venga letra/digito justo
+            # despues, y la "S" del plural sí lo es), y "ABONO" (7,
+            # confirmado por texto real: abono/devolucion bancaria
+            # ligada al seguro, ej. "REC.BCO.HELVETIA...ABONO CAMBIO").
+            "REC BCO", "SEGUROS", "ABONO",
         ],
         # Añadido S49 (hoja de ruta S48, punto 3): POLIZA_SEGURO (S48) ya
         # esta deliberadamente separado de SEGURO (Miguel Angel, S48:
         # "una cosa es la poliza y otra cosa es el recibo del seguro") --
         # candidato propio "POLIZA", nunca fusionado con los de SEGURO.
-        "POLIZA_SEGURO": ["POLIZA"],
+        "POLIZA_SEGURO": [
+            "POLIZA",
+            # Añadidos S50 (segunda ronda), medidos con datos reales:
+            # "CONDICIONES GENERALES"/"CONDICIONES PARTICULARES" (4+2,
+            # condiciones de poliza) y "SUPLEMENTO" (5, endoso/
+            # suplemento real de poliza -- "SUPLEMENTO ALTA
+            # 9834JVJ...pdf").
+            "CONDICIONES GENERALES", "CONDICIONES PARTICULARES",
+            "SUPLEMENTO",
+        ],
         "TACOGRAFO": ["TACOGRAFO"],
     },
     "PERSONAL": {
