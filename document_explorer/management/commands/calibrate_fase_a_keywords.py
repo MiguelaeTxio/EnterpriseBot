@@ -67,6 +67,11 @@ CANDIDATES_SAFE = {
             "CERT NO TARJ TTES",
         ],
         "CERT_REVISION": ["CERTIFICADO REVISION", "CERTIF REVISION"],
+        # Añadido S50 (alta S50, ver migracion 0029): certificado de
+        # exencion de permiso, caso real "Z-78 Cert.exencion perm
+        # 15-02-2021.pdf". "CERT EXENCION" cubre via separador
+        # flexible tanto "Cert.exencion" como "Cert exencion".
+        "CERT_EXENCION_PERMISO": ["EXENCION PERMISO", "CERT EXENCION"],
         # Añadido S49 (hoja de ruta S48, punto 3): CERTIFICADO_PODERES
         # (S48) no tenia candidato en este diccionario todavia. "PODERES"
         # ya contaba 28 coincidencias reales segun la auditoria de B-38 --
@@ -74,6 +79,10 @@ CANDIDATES_SAFE = {
         "CERTIFICADO_PODERES": ["PODERES"],
         "CONTRATO_COMPRAVENTA": ["CONTRATO COMPRAVENTA", "COMPRAVENTA"],
         "C_ADECUACION": ["ADECUACION"],
+        # Añadido S50 (alta S50, ver migracion 0029): cuadro de
+        # amortizacion de prestamo/leasing, caso real "BBVA 1723376
+        # CUADRO AMORTIZACIÓN.pdf".
+        "CUADRO_AMORTIZACION": ["CUADRO AMORTIZACION"],
         "DECLARACION_HOMOLOGACION": ["HOMOLOGACION"],
         "DNI_COMPRADOR": ["DNI COMPRADOR"],
         "DOC_BAJA_DEFINITIVA": ["DESGUACE"],
@@ -87,7 +96,27 @@ CANDIDATES_SAFE = {
         # antes de aplicar con --apply, nunca a ciegas.
         "FACTURA_TERCEROS": ["FACTURA"],
         "FICHA_TECNICA": ["FICHA TECNICA"],
+        # Añadido S50 (alta S50, ver migracion 0029): gastos de
+        # tarjeta de combustible, caso real "Z92 gastos tarjeta
+        # gasoil SOLRED.pdf". "SOLRED" es marca real de tarjeta de
+        # combustible usada en el corpus -- se incluye como candidato
+        # propio junto a las frases genericas.
+        "GASTOS_TARJETA_COMBUSTIBLE": [
+            "TARJETA GASOIL", "TARJETA COMBUSTIBLE", "SOLRED",
+        ],
+        # Añadido S50 (alta S50, ver migracion 0029): Impuesto
+        # Especial sobre Determinados Medios de Transporte (Modelo
+        # 06), caso real "A-69 IMPUESTO MEDIOS TRANSPORTES 06.pdf" --
+        # confirmado con Miguel Angel viendo el PDF real, distinto de
+        # IVTM (ver mas abajo).
+        "IEDMT": ["IMPUESTO MEDIOS TRANSPORTE", "IEDMT"],
         "ITV": ["ITV"],
+        # Añadido S50 (alta S50, ver migracion 0029): Impuesto sobre
+        # Vehiculos de Traccion Mecanica, autoliquidacion municipal.
+        # "IVTA" incluida deliberadamente -- es la errata real que ya
+        # usa el corpus (caso real "A-69 E-0124-BJL IVTA.pdf"; el
+        # contenido del PDF es IVTM, confirmado con Miguel Angel).
+        "IVTM": ["IVTM", "IVTA", "TRACCION MECANICA"],
         "JUSTIFICANTE_TRANSFERENCIA": ["JUSTIFICANTE_TRANSFERENCIA"],
         "LEASING": ["LEASING"],
         "LIBRO_HISTORIAL": [
@@ -122,6 +151,9 @@ CANDIDATES_SAFE = {
         ],
         "PRESTAMO": ["PRESTAMO"],
         "PROFORMA": ["PROFORMA"],
+        # Añadido S50 (alta S50, ver migracion 0029): sancion de
+        # trafico, caso real "Sancion 5462FJP 2022 02 21 pagada.pdf".
+        "SANCION_TRAFICO": ["SANCION"],
         "RECIBO_LEASING": [
             "CUOTA LEASING", "RECIBO LEASING", "FACTURA LEASING",
         ],
