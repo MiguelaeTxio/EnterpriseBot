@@ -42,9 +42,18 @@ CANDIDATES_SAFE = {
         "BAJA_TEMPORAL": ["BAJA TEMPORAL"],
         "CERT_MANTENIMIENTO": [
             "CERTIF MANTENIMIENTO", "CERTIFICADO MANTENIMIENTO",
+            # Añadido S49 (hoja de ruta S48, punto 2): variante real sin
+            # "IF"/"IFICADO" -- archivos que dicen literalmente "CERT
+            # MANTENIMIENTO", detectados en la auditoria de blob de B-38.
+            "CERT MANTENIMIENTO",
         ],
         "CERT_NO_TARJ_TTES": ["CERT_NO_TARJ_TTES"],
         "CERT_REVISION": ["CERTIFICADO REVISION", "CERTIF REVISION"],
+        # Añadido S49 (hoja de ruta S48, punto 3): CERTIFICADO_PODERES
+        # (S48) no tenia candidato en este diccionario todavia. "PODERES"
+        # ya contaba 28 coincidencias reales segun la auditoria de B-38 --
+        # confirmar volumen exacto en calibracion antes de aplicar.
+        "CERTIFICADO_PODERES": ["PODERES"],
         "CONTRATO_COMPRAVENTA": ["CONTRATO COMPRAVENTA", "COMPRAVENTA"],
         "C_ADECUACION": ["ADECUACION"],
         "DECLARACION_HOMOLOGACION": ["HOMOLOGACION"],
@@ -52,6 +61,13 @@ CANDIDATES_SAFE = {
         "DOC_BAJA_DEFINITIVA": ["DESGUACE"],
         "DOC_VENTA": ["VENTA"],
         "FACTURA_COMPRA": ["FACTURA COMPRA"],
+        # Añadido S49 (hoja de ruta S48, punto 1): FACTURA_TERCEROS (S48)
+        # tampoco tenia candidato. "FACTURA" suelta (54 coincidencias
+        # segun la auditoria de B-38) se solapara con FACTURA_COMPRA
+        # ("FACTURA COMPRA") y con RECIBO_LEASING ("FACTURA LEASING") --
+        # solape esperado y deliberado, a resolver en calibracion/revision
+        # antes de aplicar con --apply, nunca a ciegas.
+        "FACTURA_TERCEROS": ["FACTURA"],
         "FICHA_TECNICA": ["FICHA TECNICA"],
         "ITV": ["ITV"],
         "JUSTIFICANTE_TRANSFERENCIA": ["JUSTIFICANTE_TRANSFERENCIA"],
@@ -59,7 +75,12 @@ CANDIDATES_SAFE = {
         "LIBRO_HISTORIAL": ["LIBRO HISTORIAL"],
         "MANUAL_DESPIECE": ["DESPIECE"],
         "MANUAL_USO": ["MANUAL USO"],
-        "PERMISO_CIRCULACION": ["PERMISO CIRCULACION"],
+        "PERMISO_CIRCULACION": [
+            "PERMISO CIRCULACION",
+            # Añadido S49 (hoja de ruta S48, punto 2): variante abreviada
+            # real detectada en la auditoria de blob de B-38.
+            "PERM CIRC",
+        ],
         "PRESTAMO": ["PRESTAMO"],
         "PROFORMA": ["PROFORMA"],
         "RECIBO_LEASING": [
@@ -73,6 +94,11 @@ CANDIDATES_SAFE = {
     "BOTH": {
         "MANDATO": ["MANDATO"],
         "SEGURO": ["SEGURO", "REC SEG", "REC POL"],
+        # Añadido S49 (hoja de ruta S48, punto 3): POLIZA_SEGURO (S48) ya
+        # esta deliberadamente separado de SEGURO (Miguel Angel, S48:
+        # "una cosa es la poliza y otra cosa es el recibo del seguro") --
+        # candidato propio "POLIZA", nunca fusionado con los de SEGURO.
+        "POLIZA_SEGURO": ["POLIZA"],
         "TACOGRAFO": ["TACOGRAFO"],
     },
     "PERSONAL": {
