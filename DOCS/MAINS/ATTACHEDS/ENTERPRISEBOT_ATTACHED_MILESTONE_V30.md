@@ -1177,116 +1177,269 @@ documents`; `cbdc44a` corrección de falsos positivos de prefijo;
 dudosas confirmadas. 8 archivos tocados, 713 inserciones/18
 eliminaciones.
 
+### COMPLETADAS EN S50
+
+Sesión larguísima (39 commits) con dos frentes reales: cerrar de
+verdad la vinculación documental de maquinaria (heurística de nombre
+→ OCR → Gemini, orden ya vinculante desde S49), y descubrir y tapar
+un hueco crítico real -- el motor de alertas WhatsApp (H26, completo
+y en producción desde hace meses) nunca estaba conectado al flujo
+nuevo de `DocumentIndexEntry`.
+
+**1. Limpieza de vigencia y duplicados, previa a todo lo demás:**
+`resolve_vigencia` (442 filas obsoletas por fecha efectiva, con
+blindaje explícito anverso/reverso tras encontrar 3 casos reales mal
+marcados -- Antonio Aranda DNI, González Millán DNI, A-31 ficha
+técnica -- corregidos), `resolve_itv_ficha_tecnica_dossier` (9 casos,
+regla confirmada por Miguel Ángel: si ya existe `FICHA_TECNICA`
+suelta, el combinado sobra; si no, se queda el combinado),
+`resolve_obsoleto_folder_flag` (3.804 archivos corregidos por vivir
+en una subcarpeta `OBSOLETO` real de su propia máquina, 111
+excluidos correctamente por ser carpetas de máquina de baja
+completa -- caso B, semántica distinta, nunca tocado),
+`resolve_variant_marker_duplicates` (17 duplicados `_unlocked`/
+`copia` resueltos -- **bug real encontrado y corregido en la misma
+sesión**: la primera versión comparaba fecha y `None == None` colaba
+como "misma fecha", emparejando documentos que no eran el mismo
+archivo; corregido exigiendo nombre base idéntico tras quitar solo
+el marcador).
+
+**2. `IPO`/`ITC` resuelto y luego fusionado:** confirmado por
+búsqueda real (IPO = Inspección Periódica Oficial de grúa móvil, ITC
+= la instrucción técnica que la regula) y añadidos a
+`MANDATORY_BY_PREFIX` familia A. Después, construyendo
+`sample_known_type_ocr_text` (herramienta de análisis, nunca escribe
+nada -- extrae texto OCR de 3 ejemplos reales por tipo ya confirmado
+para descubrir patrones de contenido), se descubrió que **el
+contenido real de IPO e ITC es literalmente el mismo documento** --
+"ACTA DE INSPECCIÓN PERIÓDICA DE GRÚAS MÓVILES AUTOPROPULSADAS" en
+ambos. Miguel Ángel: *"si en documentos conocidos no podemos
+discernir entre IPO e ITC lo suyo es fusionar el tipo."* Migración
+0031: fusionados en `IPO_ITC`, los dos tipos antiguos desactivados
+(no borrados), las 457 filas reales reasignadas.
+
+**3. Mapa de alcance de maquinaria confirmado carpeta por carpeta con
+Miguel Ángel** (`run_fase_a_sweep_scoped.py`, `SCOPE`) -- nunca por
+heurística de código de flota (eso colaba carpetas administrativas
+como "OBSOLETO/OBSOLETO P07", máquinas de baja completa). Familia por
+familia: `CABEZAS TRACTORAS` solo las nombradas explícitamente;
+`CAMIONES BRAZO`/`GRUAS MOVILES`/`PLATAFORMAS` todo menos las
+carpetas administrativas confirmadas (`PROPUESTA SEGURO`,
+`OBSOLETO`/`BAJA`, `ALTESUR` -empresa de alquiler ajena-, `ESTIBA
+PLATAFORMAS` -fichas por categoría, no por máquina-, `POLIZA RC`
+-póliza colectiva, no de una sola máquina-); `MK 100`, `CARRETILLA
+(HL)`, `DOCUMENT 1884JB` excluidos explícitamente tras verlos en el
+primer dry-run real. `RAE` y `CE PLATAFORMAS` dentro de alcance con
+resolución de dominio por NOMBRE de archivo (no por carpeta,
+compartida entre máquinas).
+
+**4. Cobertura de nombre agotada de verdad, dos rondas completas:**
+primera ronda con las 80 palabras más frecuentes del resto sin
+clasificar (238+16 asignados), y una segunda ronda completa tras
+protesta explícita de Miguel Ángel ("no nos podemos dejar
+documentos por el camino, no solo el top 80") repasando las 504
+palabras reales con 3+ apariciones -- 8 tipos documentales nuevos
+(`CONTRATO_ARRENDAMIENTO`, `CAMBIO_TITULARIDAD`, `CARTA_VERDE`,
+`REVISION_ESLINGAS`, `GARANTIA_FABRICANTE`, `INFORME_INCIDENCIAS`,
+`PEDIDO_COMPRA`, `PROVISION_FONDOS`) y otros 6
+(`IEDMT`/`IVTM`/`CERT_EXENCION_PERMISO`/`SANCION_TRAFICO`/
+`CUADRO_AMORTIZACION`/`GASTOS_TARJETA_COMBUSTIBLE`) confirmados con
+texto real descargado de GCS (nunca por nombre de archivo a ciegas),
+más 12 keywords de tipos ya existentes con volumen medido. Total
+**704 documentos reales clasificados** por heurística de nombre en
+la sesión. `run_fase_a_sweep_scoped` queda como comando permanente y
+reutilizable.
+
+**5. Clasificación por CONTENIDO vía OCR** (`run_fase_b1_ocr_classify`)
+-- **bug real detectado y corregido en la misma sesión**: la primera
+versión reutilizaba el mismo matcher de palabra suelta que la
+heurística de nombre, dando falsos positivos reales (un informe de
+mantenimiento que mencionaba "ITV" de pasada se clasificó como ITV).
+Corregido con `CONTENT_MARKERS`: frases largas y específicas
+descubiertas con `sample_known_type_ocr_text` contra 14 tipos
+confirmados, nunca palabra suelta. Verificado que los dos falsos
+positivos ya no aparecen. Aplicado en el servidor hasta que el
+tarpit de CPU de PythonAnywhere lo hizo inviable (6.000/5.000
+segundos consumidos en una sola noche).
+
+**6. Ejecución movida a local** (`h28_migration_agent/
+local_ocr_classify.py`) -- versión standalone sin Django, túnel SSH a
+MySQL + GCS directo con la clave del agente H28, reutilizando
+literalmente el mismo `SCOPE`/`CONTENT_MARKERS` que el comando del
+servidor. Instalación real en el PC de Miguel Ángel con varios
+tropiezos reales, todos corregidos: `paramiko.DSSKey` ausente
+(`sshtunnel` lo referencia incondicionalmente al montar el túnel,
+aunque solo se use contraseña -- se rellena con un valor de
+relleno), contraseña de MySQL distinta de la de la web (dos prompts
+separados), Tesseract sin permisos de administrador para escribir en
+`Program Files` (se usa una carpeta `tessdata\` propia junto al
+script). **Al cierre de sesión sigue corriendo en el PC de Miguel
+Ángel, en primer plano, sin límite** (`python local_ocr_classify.py
+--apply`, sin `--limit`) sobre los ~2.670 candidatos que quedaban --
+ver Hoja de Ruta.
+
+**7. Hueco crítico real descubierto y cerrado: el motor de alertas
+WhatsApp (H26) nunca se llamaba desde `document_explorer`.**
+`document_management.alert_service.create_default_expiry_alerts`
+(Twilio, plantilla `document_expiry_alert` aprobada, tarea diaria
+`send_document_expiry_alerts`) llevaba activo desde H26 pero solo lo
+invocaban `machine_documents`/`personal_documents` (los modelos
+legados, ya sustituidos). **Ni la subida manual desde el panel ni la
+vía del agente/cuarentena creaban ninguna alerta** -- confirmado con
+datos reales: 70 `DocumentAlert` en BD, todas de antes de la
+migración a `DocumentIndexEntry`. Cerrado con:
+- `document_explorer/filename_date_service.py` -- heurística de
+  fecha por nombre (Fase B0), extraída de
+  `run_fase_b0_filename_dates.py` a servicio compartido.
+- `document_explorer/expiry_resolution_service.py` -- encadena
+  heurística → OCR → Gemini, en ese orden exacto, parando en el
+  primer paso que encuentre fecha. Nunca bloquea la clasificación si
+  falla; la ausencia de fecha en un tipo `tracks_expiry=True` es la
+  propia señal de "necesita atención humana".
+- Enganchado en `consume_quarantine_task` (Always-on Task real, vía
+  del agente) justo tras relocar un archivo, y en
+  `subject_upload_service.upload_subject_document` (subida manual
+  desde el panel) -- las dos vías reales de ingesta, ninguna se
+  queda fuera. Ambas crean alertas con
+  `get_docs_supervisor_contacts()` (Yolanda Bandera + Miguel Ángel
+  Muñoz Cara, resueltos por `role=DOCS_SUPERVISOR`, nunca nombre
+  fijo) más quien sube el documento si aplica.
+- Corregido de paso: `PERMISO_CIRCULACION` tenía `tracks_expiry=True`
+  -- confirmado con fuentes reales (DGT, RACE) que este documento NO
+  caduca en España, corregido a `False`.
+- Horario de la tarea diaria movido de las 3:00 a las 8:00 -- un
+  aviso de WhatsApp real a las 3 de la madrugada no tiene sentido.
+
+**8. Aviso visual en el panel** (Centros de Gasto y Personal): fila
+roja + icono de alerta en la ficha de cada sujeto cuando un
+documento vigente de tipo `tracks_expiry=True` no tiene fecha o ya
+caducó; columna de alerta nueva en ambos listados para verlo de un
+vistazo sin entrar máquina por máquina.
+
+**9. Dos bugs reales de interfaz encontrados y corregidos, fuera del
+plan pero bloqueantes para el equipo de documentación:**
+- Autocompletado roto en las 3 pestañas de Documentación: el
+  `<input>` de búsqueda vivía DENTRO del contenedor que HTMX
+  sustituye en cada tecleo (debounce 300ms) -- cada carácter
+  destruía y recreaba el campo, perdiendo el foco a mitad de
+  escritura. Corregido separando formulario (nunca se sustituye) de
+  resultados (sí se sustituye) en las 3 pestañas, con URLs/vistas
+  nuevas para los endpoints de solo-resultados.
+- Comentarios Django `{# ... #}` multilínea rotos (Django no los
+  soporta, se renderizan como texto crudo) en los parciales nuevos
+  de la corrección anterior -- corregido con `{% comment %}
+  ... {% endcomment %}`. Verificado que no hay más casos en todo el
+  proyecto.
+
+**Hallazgos nuevos, todavía sin resolver, para la próxima sesión:**
+- **Los nombres de archivo no se normalizan retroactivamente.** El
+  esquema fijo de `naming_service` solo se aplica en la vía del
+  agente/cuarentena y en la subida manual -- ningún comando de Fase A
+  ni de OCR de esta sesión renombra nada, solo escribe tipo/fecha/
+  máquina. El histórico sigue con el nombre original de siempre.
+- **`FICHA_TECNICA` vs `ITV` -- ambigüedad real, no solo de este
+  sistema.** Confirmado por fuentes reales (DGT, RACE) que "ficha
+  técnica" y "tarjeta ITV" son sinónimos en el uso oficial español la
+  mayoría de las veces -- coincide con lo que se ve en el corpus
+  (documentos "FICHA TECNICA.pdf" cuyo contenido OCR es un
+  certificado oficial de inspección, no un tríptico de fabricante).
+  Miguel Ángel quiere distinguir para el negocio: documento oficial
+  de la administración → `ITV`; tríptico de especificaciones del
+  fabricante → `FICHA_TECNICA`. Sin medir todavía cuántos de los
+  `FICHA_TECNICA` actuales son en realidad uno u otro.
+
 ### Hoja de Ruta para la Siguiente Sesión
 
-**PREGUNTAS ABIERTAS — resolver ANTES de construir nada nuevo (nunca
-repetir, ya preguntadas en sesiones anteriores sin respuesta):**
+**PRIMERA LÍNEA -- preguntas que llevan 2 o más sesiones arrastradas
+sin ejecución real, con la directriz 2.2 de `nfs-enterprisebot-pcs`
+aplicada por primera vez: no se repiten como tarea de lista, son
+decisión bloqueante de Miguel Ángel antes de nada más:**
 
-1. **Significado real de `IPO`/`ITC` en el archivo de Grupo Álvarez**
-   (arrastrado desde S49) — necesario para decidir si entran en la
-   tabla de documentos obligatorios de `audit_mandatory_documents.py`
-   (`MANDATORY_BY_PREFIX`). Sin esto, esos dos tipos siguen fuera del
-   informe de cobertura.
-2. **Alta de tipo documental nuevo desde el propio panel de
-   documentación** (arrastrado 2.ª sesión sin avanzar desde S48) —
-   ¿sigue siendo prioridad frente a lo demás, o se pospone sin fecha?
-3. **Cola de Gemini para `ITV` (`ocr_unreliable`)** (arrastrado 2.ª
-   sesión sin avanzar desde S48, ~491 candidatos) — ¿se prioriza en la
-   próxima sesión, dado que ahora hay más volumen real esperando OCR
-   por delante (Fase B1 general, punto 4 de abajo), o se pospone?
-4. **Anomalía `pk 607`** (carpeta anidada en sí misma, arrastrada
-   desde S48 sin confirmar) — sin evidencia suficiente para tratarla
-   como error real bajo directriz 4.9, sigue sin tocarse sin
-   confirmación explícita.
-5. **Código/etiqueta del "justificante de asistencia a organismo
-   público"** (arrastrado varias sesiones sin avanzar) — decisión
-   concreta antes de darlo de alta en el catálogo, o retirarlo de la
-   hoja de ruta si ya no es prioridad.
+1. **¿Alta de tipo documental nuevo desde el propio panel de
+   documentación sigue siendo prioridad?** (arrastrado desde S48,
+   3.ª sesión sin ninguna ejecución ni intento). Si la respuesta es
+   sí, hace falta que Miguel Ángel confirme el flujo exacto (¿quién
+   puede darlo de alta? ¿con qué campos mínimos?) antes de poder
+   construir nada.
+2. **¿Se prioriza ya la cola de Gemini para tipos `ocr_unreliable`
+   (ITV entre ellos, ~491 candidatos arrastrados)?** (arrastrado
+   desde S48, 3.ª sesión sin ejecución). Nota real de S50: el nuevo
+   `expiry_resolution_service` YA incluye a Gemini como último
+   recurso, pero solo para documentos que lleguen de aquí en
+   adelante (vía real-time) -- el backlog histórico de ITV/tipos
+   `ocr_unreliable` sin fecha sigue sin ningún barrido que los
+   toque.
+3. **Código/etiqueta del "justificante de asistencia a organismo
+   público"** (arrastrado varias sesiones, sin ejecución real en
+   ninguna). Decisión concreta o se retira definitivamente de la
+   hoja de ruta.
 
 **ESTADO YA CERRADO — no volver a preguntar ni replantear:**
-- Reconciliación de `MachineAsset` contra carpetas reales de
-  `DOC. MAQUINAS`: HECHA y VERIFICADA con datos reales en S49 (585
-  `MachineAsset` totales, 149 resoluciones del `--apply`, 6 exclusiones
-  confirmadas por Miguel Ángel sin crear). Quedan 161 carpetas sin
-  forma reconocible de código/matrícula (revisión manual caso a caso,
-  fuera del alcance de `reconcile_machine_folders`) y las 6 excluidas
-  (`AC300`, `CONT03`, `CONT04`, `E1405`, `MIRA10`, `SE7625`, alta
-  manual pendiente cuando Miguel Ángel lo decida) — esto sí sigue
-  abierto, pero como tarea puntual pequeña, no como pregunta de
-  diseño.
-- Tabla normativa de familias A/B/Z/H/MK/P/T/V/S (documentos
-  obligatorios por tipo de máquina, primer corte): CERRADA e
-  implementada en `audit_mandatory_documents.py`. Ajustable, no
-  redecidir desde cero.
+- Reconciliación de `MachineAsset`: CERRADA desde S49 (ver anexo).
+- Tabla normativa `MANDATORY_BY_PREFIX` (documentos obligatorios por
+  familia): CERRADA, incluye ya `IPO_ITC`. Ajustable, no redecidir.
 - Diseño de familias de documentos (`DocumentTypeCatalog.family`):
-  CERRADO, campo real desplegado con backfill al 100%. No
-  redecidir.
+  CERRADO.
+- **`IPO`/`ITC`: CERRADO Y FUSIONADO** (migración 0031, S50) -- un
+  solo tipo `IPO_ITC`, contenido real indistinguible.
+- **Anomalía `pk 607`: RESUELTA en S50** -- carpeta desanidada,
+  fusionada con `merge_folders`, verificada.
+- **Mapa de alcance de maquinaria (`SCOPE` de
+  `run_fase_a_sweep_scoped`): CERRADO, confirmado carpeta por
+  carpeta con Miguel Ángel en S50.** No se vuelve a preguntar por
+  familia -- solo se amplía si Miguel Ángel trae una carpeta nueva
+  explícitamente.
+- **El motor de alertas WhatsApp SÍ está conectado a
+  `DocumentIndexEntry` desde S50** -- vía agente/cuarentena y subida
+  manual, con el pipeline heurística→OCR→Gemini de fecha incluido.
+  No es "trabajo pendiente" de fondo, ya está en producción.
 
-**ORDEN DE TRABAJO VINCULANTE PARA TODO LO SIGUIENTE, confirmado por
-Miguel Ángel al cierre de S49 — NUNCA saltarse este orden:**
-heurística de nombre (Fase A) primero → OCR (Fase B1) después →
-llamadas a Gemini/IA solo como último recurso, cuando no quede otra
-opción.
+**ORDEN DE TRABAJO VINCULANTE, sin cambios desde S49 -- NUNCA
+saltarse:** heurística de nombre → OCR → Gemini/IA solo como último
+recurso.
 
-**Plan concreto de la próxima sesión, en este orden — verbatim Miguel
-Ángel: "primero que todos los vehículos tengan la documentación que
-tienen que tener":**
+**Plan concreto de la próxima sesión, en este orden:**
 
-1. **Confirmar/ampliar la tabla de documentos obligatorios por
-   familia** (`MANDATORY_BY_PREFIX` en `audit_mandatory_documents.py`)
-   con Miguel Ángel, familia por familia, contra casos reales — el
-   primer corte de S49 es un punto de partida, no una lista cerrada.
-   Resolver primero la pregunta 1 de arriba (`IPO`/`ITC`). Criterio de
-   cierre: tabla confirmada explícitamente por Miguel Ángel para las
-   9 familias (A/B/Z/H/P/T/V/S + revisar si procede alguna para R/G).
-2. **Ejecutar `audit_mandatory_documents`** (ya corregido en S49, sin
-   el bug de falsos positivos de prefijo) contra la tabla confirmada
-   del punto 1, y para cada máquina activa con huecos reales, decidir
-   caso a caso cómo cerrarlo: ¿el documento existe en el corpus sin
-   clasificar (ampliar diccionario de Fase A), existe pero mal ubicado
-   (mover), o no existe de verdad (hay que recuperarlo, fuera del
-   alcance de esta plataforma)? Criterio de cierre: `con_huecos` del
-   informe bajando de forma medible sesión a sesión, sin huecos
-   fantasma por fallo de heurística (verificar con casos reales como
-   se hizo con 7245GBM antes de dar un hueco por "falta el documento
-   de verdad").
-3. **Documentos NO obligatorios también deben reflejarse en la
-   ficha** — verbatim Miguel Ángel: *"si tenemos en el directorio una
-   serie de documentos, esa serie de documentos tiene que estar
-   reflejada también en la ficha de la máquina que existen, tanto si
-   son obsoletos como si no."* Esto es continuar bajando
-   `sin_resolver_tipo` (15.278 al cierre de S49) y `sin_resolver_
-   dominio` (4.172) del diccionario de Fase A — mismo método que hoy:
-   buscar casos reales concretos (empezar por muestreo de carpetas de
-   máquinas con huecos del punto 2), confirmar volumen real de cada
-   candidato nuevo con `calibrate_fase_a_keywords` antes de aplicar,
-   nunca generalizar sin evidencia. Criterio de cierre: sin criterio
-   numérico único todavía — decidir con Miguel Ángel al empezar este
-   punto si se fija un objetivo de `sin_resolver_tipo` o se atiende
-   por goteo continuo.
-4. **Solo cuando la documentación (obligatoria y no obligatoria) esté
-   completa y correctamente asignada por máquina:** retomar Fase B0/B1
-   (ingesta de fechas) — explícitamente pausada en S49. Incluye
-   resolver el patrón real de `POLIZA_SEGURO` (issue vs. expiry, ver
-   S49) vía OCR, y continuar la cola de Gemini para `ITV` si la
-   pregunta 3 de arriba se resuelve a favor de priorizarla.
-5. **Auditoría real de blob** (arrastrado 1.ª sesión sin avanzar desde
-   S48-S49, Miguel Ángel pidió "tres o cuatro máquinas", solo
-   auditadas dos -A-29, B-38-) — 2 máquinas más de familias distintas
-   (`Z` plataformas, `T` carretillas, o una nueva familia no auditada
-   todavía), si hay hueco tras los puntos 1-4. Criterio de cierre: 4
-   máquinas auditadas en total, sin huecos de diccionario nuevos en
-   las últimas 2, o huecos nuevos añadidos y verificados igual que
-   B-38.
+1. **Comprobar el resultado de `local_ocr_classify.py --apply`**,
+   corrido en local durante el cierre de S50 sobre ~2.670
+   candidatos. Miguel Ángel estima ~30% de acierto real (~900
+   documentos) -- confirmar la cifra real con el resumen del propio
+   script (`tipo_resuelto_por_ocr`/`tipo_y_fecha_resueltos`/
+   `sin_tipo_reconocible_en_ocr`) antes de decidir el siguiente
+   paso. Criterio de cierre: número real confirmado, no estimado.
+2. **Decidir qué hacer con el resto tras el punto 1** -- Miguel
+   Ángel, verbatim (S50): "habrá que ver cuánta morralla tenemos
+   ahí, y a ver cómo resolvemos para tener toda la documentación al
+   día." Sin criterio de cierre fijado todavía -- decidir con datos
+   reales delante al empezar este punto.
+3. **Medir el alcance real de `FICHA_TECNICA` vs `ITV`** antes de
+   tocar el catálogo -- cuántos de los `FICHA_TECNICA` actuales son
+   por contenido real el documento oficial (deberían ser `ITV`)
+   frente a los que son un tríptico de fabricante genuino. Criterio
+   de cierre: conteo real con muestra de contenido OCR, nunca
+   asumido por nombre de archivo.
+4. **Decidir si se construye el barrido de renombrado retroactivo**
+   (esquema fijo de `naming_service` aplicado al histórico ya
+   clasificado) -- explicado el porqué a Miguel Ángel en S50, sin
+   decisión tomada todavía sobre si merece la pena el riesgo/coste
+   frente al beneficio.
+5. **Backfill de fecha para el backlog histórico** (documentos
+   `tracks_expiry=True` ya clasificados sin fecha, fuera del alcance
+   de `local_ocr_classify.py` que solo resuelve TIPO) -- usar
+   `expiry_resolution_service` (heurística→OCR→Gemini) contra el
+   histórico, no solo contra ingesta nueva. Ligado a la pregunta 2
+   de arriba (Gemini para `ocr_unreliable`).
+6. **5 duplicados de seguro/OCA sin nombre coincidente**
+   (P-22/8099JFK, B-33/9875GBF, A-34/E6460BCS, A-56/E8743BGW,
+   X-15/5215MVF) -- arrastrados desde S50 sin decisión de Miguel
+   Ángel todavía, bajo volumen, revisar cuando haya hueco.
 
 **Resto de temas de fondo, sin tocar hasta que se prioricen
-explícitamente (sin cambios respecto a S48, no repetir la pregunta
-salvo que Miguel Ángel la traiga él mismo):**
+explícitamente (sin cambios respecto a sesiones anteriores, no
+repetir la pregunta salvo que Miguel Ángel la traiga él mismo):**
 - Cierre uno a uno de los 231 huecos reales de manuales.
-- Repuntar `document_management.tasks.send_document_expiry_alerts` y
-  el envío de documentos por WhatsApp a `DocumentIndexEntry`.
-- Decidir el destino final de `MachineDocument`/`PersonalDocument` (69
-  filas legadas) — Miguel Ángel ya confirmó que se pueden borrar, solo
+- Decidir el destino final de `MachineDocument`/`PersonalDocument`
+  (residuales) -- Miguel Ángel ya confirmó que se pueden borrar, solo
   falta ejecutar tras verificar que ningún flujo activo depende de
   ellos.
 - DECA — horizonte octubre 2026, fuera de alcance activo salvo que
