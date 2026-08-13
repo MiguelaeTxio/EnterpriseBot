@@ -1513,8 +1513,43 @@ aplicada, las tres preguntas arrastradas dejan de repetirse):**
    decir: en producción Gemini como último recurso es el diseño
    normal, no una excepción a evitar -- la minimización de llamadas es
    un criterio de esta fase de limpieza del backlog, no una regla
-   permanente. Sin construir todavía -- queda en la hoja de ruta de la
-   próxima sesión.
+   permanente.
+
+   **CONSTRUIDO Y DESPLEGADO en S51 (commits `1b61b13`/`07f2c84`),
+   diseño final real -- distinto del boceto inicial de arriba, tras
+   verificar contra el código real que el buzón YA vigila el mismo
+   agente H28 (no hacía falta pipeline nuevo, solo diferenciar
+   origen) y que la reubicación de PERSONAL depende de un DNI que
+   antes solo daba Gemini:**
+   - `document_explorer/heuristic_type_service.py` (módulo nuevo):
+     heurística de TIPO extraída de `run_fase_a_sweep.py` (S48/S49,
+     validada contra 11.149 documentos), ahora compartida entre el
+     barrido batch y el pipeline en tiempo real. Cero duplicación --
+     `run_fase_a_sweep.py`/`run_fase_a_sweep_scoped.py` actualizados
+     para importar de aquí.
+   - `_try_heuristic_classification()` (`classification_service.py`),
+     enganchada en `apply_quarantine_classification()` antes de
+     `classify_entry()`: MÁQUINA -- tipo por heurística basta, la
+     identidad ya se resuelve por carpeta en el resto del pipeline
+     existente, sin depender de ningún hint de Gemini en el caso
+     normal. PERSONAL -- tipo por heurística + DNI por OCR
+     (`_extract_dni_via_ocr()`, reutiliza `date_verification_service.
+     extract_text()` sin tocarla, valida con el algoritmo real de
+     letra de control ya existente) que resuelva a una
+     `PersonIdentity` YA EXISTENTE. Miguel Ángel, verbatim: *"No
+     podemos dar de alta a un trabajador sin llamar a Gemini."* -- DNI
+     no leído, ambiguo (más de un DNI válido en el texto), o sin
+     coincidencia con nadie conocido cae siempre a Gemini, sin
+     excepción; el alta de trabajador nuevo sigue exigiendo su
+     verificación de nombre tal cual ya funciona hoy.
+   - Buzón (`domain=None` de `quarantine_domain_for_entry()` para esa
+     vía, confirmado con datos reales -- pk 42285) sin cambios,
+     siempre Gemini.
+   - Sin construir todavía: contraste explícito heurística-vs-OCR con
+     Gemini como último recurso "si no coinciden" (el diseño
+     construido es más simple -- si la heurística+identidad resuelven
+     limpio, se acepta; si no, Gemini decide solo, como hoy). Ampliar
+     si Miguel Ángel lo pide tras ver el ahorro real en producción.
 3. **Barrido de `expiry_resolution_service` sobre el backlog histórico
    -- CONFIRMADO en S51, se lanza.** Los ~491 documentos históricos ya
    tipados (`ITV`/otros `ocr_unreliable`) que quedaron sin fecha
