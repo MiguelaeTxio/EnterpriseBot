@@ -442,6 +442,8 @@ def main():
     }
 
     for i, (entry_id, name, parent_path) in enumerate(candidatos, start=1):
+        print("[%d/%d] procesando: %s / %s"
+              % (i, len(candidatos), parent_path, name))
         if i % 20 == 0:
             conn.ping(reconnect=True)  # evita el wait_timeout de MySQL
 
