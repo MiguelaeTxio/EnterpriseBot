@@ -231,6 +231,26 @@ desde el formulario de edición de sección.
 
 ## 8. Hoja de Ruta para la Siguiente Sesion
 
+**Pendiente arrastrado desde H30 (S51) — código/etiqueta del
+"justificante de asistencia a organismo público":** detectado
+originalmente en S46 (anexo H30, sección 8, "Otras decisiones
+confirmadas"): un trabajador necesita este tipo documental para
+trámites personales (Hacienda, Seguridad Social...), llega vía partes
+de trabajo (fotos), y no hay ningún código en el catálogo cerrado (57
+tipos) que lo cubra. Sin código/etiqueta decidida ni punto real de
+entrada. Miguel Ángel, verbatim (S51), al mover la pregunta aquí:
+*"Esto en realidad forma parte del tema de partes de trabajo [...]
+modificaremos el tema de las vacaciones y modificaremos el tema de las
+ausencias de personal [...] ahora mismo lo tenemos puesto de una
+manera que es un poco confusa, tenemos que ponerlo de una manera que
+sea más fácil."* Conecta directamente con el selector de ausencias
+`AbsenceCategory` de la sección 2.3 de este mismo anexo — la revisión
+de vacaciones/ausencias personal (también pendiente, ligada a H24) es
+condición previa antes de poder decidir el código/etiqueta de este
+tipo documental concreto. No resolver por interpretación propia
+(directriz 4.8) hasta que Miguel Ángel retome el rediseño de
+vacaciones/ausencias.
+
 **Nota S_H07_14 (cierre del punto PRIORITARIO de S_H07_13):** el bug de
 pérdida de datos al editar (pausa de comida, dieta, `first_block_hc`/hf,
 y el hallazgo adicional de repuestos sin máquina) quedó corregido y

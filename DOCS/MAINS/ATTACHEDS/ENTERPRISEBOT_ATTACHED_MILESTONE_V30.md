@@ -1363,29 +1363,71 @@ plan pero bloqueantes para el equipo de documentación:**
 
 ### Hoja de Ruta para la Siguiente Sesión
 
-**PRIMERA LÍNEA -- preguntas que llevan 2 o más sesiones arrastradas
-sin ejecución real, con la directriz 2.2 de `nfs-enterprisebot-pcs`
-aplicada por primera vez: no se repiten como tarea de lista, son
-decisión bloqueante de Miguel Ángel antes de nada más:**
+**PRIMERA LÍNEA -- resuelta en S51, decisiones de Miguel Ángel
+registradas verbatim (directriz 2.2 de `nfs-enterprisebot-pcs`
+aplicada, las tres preguntas arrastradas dejan de repetirse):**
 
-1. **¿Alta de tipo documental nuevo desde el propio panel de
-   documentación sigue siendo prioridad?** (arrastrado desde S48,
-   3.ª sesión sin ninguna ejecución ni intento). Si la respuesta es
-   sí, hace falta que Miguel Ángel confirme el flujo exacto (¿quién
-   puede darlo de alta? ¿con qué campos mínimos?) antes de poder
-   construir nada.
-2. **¿Se prioriza ya la cola de Gemini para tipos `ocr_unreliable`
-   (ITV entre ellos, ~491 candidatos arrastrados)?** (arrastrado
-   desde S48, 3.ª sesión sin ejecución). Nota real de S50: el nuevo
-   `expiry_resolution_service` YA incluye a Gemini como último
-   recurso, pero solo para documentos que lleguen de aquí en
-   adelante (vía real-time) -- el backlog histórico de ITV/tipos
-   `ocr_unreliable` sin fecha sigue sin ningún barrido que los
-   toque.
-3. **Código/etiqueta del "justificante de asistencia a organismo
-   público"** (arrastrado varias sesiones, sin ejecución real en
-   ninguna). Decisión concreta o se retira definitivamente de la
-   hoja de ruta.
+1. **Alta de tipo documental nuevo desde el propio flujo de subida
+   del panel — CONFIRMADO, se construye.** Ya existía la vía desde el
+   Catálogo de tipos del explorador (la que usa Miguel Ángel hoy por
+   comodidad, nunca puesta en duda) — lo pendiente y ya confirmado en
+   S51 es el atajo dentro de las tres pestañas de documentación, para
+   cuando el supervisor no encuentre el tipo en el desplegable. Sin
+   diseño abierto por parte de Miguel Ángel para el texto exacto del
+   desplegable -- decisión no bloqueante tomada en S51: última opción
+   del desplegable con el literal "+ Añadir tipo documental nuevo",
+   formulario inline mínimo (nombre, familia, `tracks_expiry`), sin
+   salir de la pantalla de subida. Ajustable si Miguel Ángel lo pide
+   al verlo construido. Sin construir todavía -- queda en la hoja de
+   ruta de la próxima sesión.
+2. **Diseño de clasificación de TIPO por vía de entrada — CONFIRMADO
+   en S51, sin construir todavía.** Extiende a la clasificación de
+   TIPO (hoy `classify_entry()` llama a Gemini directamente, sin paso
+   heurístico previo -- verificado contra el código real en S51,
+   confirmado que solo la resolución de FECHA sigue hoy el orden
+   heurística→OCR→Gemini) el mismo criterio ya validado para fecha,
+   diferenciado por vía real de entrada:
+   - **Panel (supervisor tipa a mano):** sin ambigüedad, el tipo ya
+     es dato confirmado por persona, no aplica este diseño.
+   - **Carpetas vigiladas (agente H28/M365, `DOC MAQUINARIA`/`DOC
+     PERSONAL`):** heurística de nombre + OCR de contenido; si
+     coinciden sin discrepancia, se acepta sin llamar a Gemini; si
+     hay discrepancia, se llama a Gemini con nombre de archivo +
+     resultado heurístico + resultado OCR como contexto.
+   - **Buzón de documentación:** desde S51 exclusivo para correos vía
+     Outlook (ver sección 3, corrección S51) -- nunca se asume
+     disciplina de supervisor, siempre se llama a Gemini, siempre con
+     heurística+OCR como contexto adjunto. Requiere ampliar la
+     extracción de Gemini en esta vía (hoy `classify_entry()` no hace
+     resolución de fecha en la misma llamada).
+   Miguel Ángel, verbatim (S51), sobre el criterio de ahorro de
+   llamadas: *"Una cosa es lo que estamos haciendo ahora mismo, que es
+   intentar ahorrarnos las llamadas a Gemini, y otra cosa es lo que
+   pase en producción. Cuando ya estemos en producción, el camino es
+   heurística, OCR, Gemini [...] ahora, mientras estamos construyendo
+   todo el sistema, es intentar eliminar las llamadas a Gemini."* Es
+   decir: en producción Gemini como último recurso es el diseño
+   normal, no una excepción a evitar -- la minimización de llamadas es
+   un criterio de esta fase de limpieza del backlog, no una regla
+   permanente. Sin construir todavía -- queda en la hoja de ruta de la
+   próxima sesión.
+3. **Barrido de `expiry_resolution_service` sobre el backlog histórico
+   -- CONFIRMADO en S51, se lanza.** Los ~491 documentos históricos ya
+   tipados (`ITV`/otros `ocr_unreliable`) que quedaron sin fecha
+   porque el servicio (S50) solo se disparó para ingesta nueva en
+   tiempo real. El propio servicio ya minimiza el gasto por diseño
+   (para en el primer paso que resuelve fecha) -- no hace falta
+   construir nada nuevo, solo ejecutarlo contra el histórico. Sin
+   ejecutar todavía -- queda en la hoja de ruta de la próxima sesión.
+4. **Código/etiqueta del "justificante de asistencia a organismo
+   público" -- TRASLADADA a H07 en S51, ya no vive en este anexo.**
+   Miguel Ángel, verbatim: *"Esto en realidad forma parte del tema de
+   partes de trabajo [...] modificaremos el tema de las vacaciones y
+   modificaremos el tema de las ausencias de personal [...] ahora
+   mismo lo tenemos puesto de una manera confusa."* Registrada en
+   `ENTERPRISEBOT_ATTACHED_MILESTONE_V07.md`, sección 8, ligada al
+   selector `AbsenceCategory` (H07, 2.3) y al rediseño pendiente de
+   vacaciones/ausencias (H24). No se vuelve a plantear en H30.
 
 **ESTADO YA CERRADO — no volver a preguntar ni replantear:**
 - Reconciliación de `MachineAsset`: CERRADA desde S49 (ver anexo).
