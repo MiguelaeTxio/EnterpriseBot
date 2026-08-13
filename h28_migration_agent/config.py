@@ -126,6 +126,28 @@ SERVER_NOTIFY_TIMEOUT_SECONDS = 15
 HISTORY_STATE_FILE_NAME = "history.json"
 HISTORY_MAX_EVENTS = 200
 
+# S51, Miguel Angel: "Vamos a quitar de en medio estas notificaciones
+# cada minuto, porque es que se vuelve uno loco." -- un archivo
+# solo-en-nube que nunca termina de hidratar (carpeta duplicada con
+# marcadores sincronizados desde otro puesto, S035) generaba un aviso
+# nuevo en CADA barrido (cada minuto) para siempre, sin limite. Se
+# guarda cuando se avisó por ultima vez de cada ruta pendiente, para
+# no repetir el aviso hasta que pase este umbral -- la peticion de
+# hidratacion en si (`request_hydration`) NO cambia, se sigue pidiendo
+# en cada barrido igual que antes, solo se calla el aviso repetido.
+# ---
+# S51, Miguel Angel: "Let's get rid of these notifications every
+# minute, it's driving me crazy." A cloud-only file that never
+# finishes hydrating (duplicate folder with placeholders synced from
+# another workstation, S035) produced a new notification on EVERY
+# sweep (every minute) forever, with no limit. Stores when each
+# pending path was last notified, so the notification does not repeat
+# until this threshold passes -- the hydration request itself
+# (`request_hydration`) is unchanged, still requested every sweep,
+# only the repeated notification is silenced.
+HYDRATION_NOTIFY_STATE_FILE_NAME = "hydration_notify_state.json"
+HYDRATION_NOTIFY_INTERVAL_MINUTES = 30
+
 # Number of parallel upload workers used for the initial bulk copy.
 # ---
 # Numero de workers paralelos para la copia inicial en bruto.
@@ -357,6 +379,16 @@ def get_history_state_path():
     """
     return os.path.join(
         get_agent_data_dir(), HISTORY_STATE_FILE_NAME
+    )
+
+
+def get_hydration_notify_state_path():
+    """Return the path of the hydration-notification throttle file.
+    ---
+    Devuelve la ruta del archivo de control de aviso de hidratación.
+    """
+    return os.path.join(
+        get_agent_data_dir(), HYDRATION_NOTIFY_STATE_FILE_NAME
     )
 
 

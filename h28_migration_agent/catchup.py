@@ -73,10 +73,13 @@ hashing every time a single PDF is hydrated.
 import json
 import logging
 import os
+from datetime import datetime, timedelta, timezone
 
 from config import (
     DIRTY_BUCKET_NAME,
+    HYDRATION_NOTIFY_INTERVAL_MINUTES,
     get_catchup_index_dir,
+    get_hydration_notify_state_path,
 )
 from fs_utils import (
     is_cloud_only,
@@ -108,6 +111,105 @@ def get_index_path(selected_folder):
         get_catchup_index_dir(),
         f"{to_safe_name(selected_folder)}.json",
     )
+
+
+def load_hydration_notify_state():
+    """Load the hydration-notification throttle state.
+    ---
+    Carga el estado de control de aviso de hidratación.
+
+    S51. Un archivo solo-en-nube que nunca hidrata generaba un aviso
+    nuevo en cada barrido, para siempre -- Miguel Angel: "se vuelve
+    uno loco". Este estado guarda, por ruta absoluta, cuándo se avisó
+    por última vez, para no repetir el aviso hasta que pase
+    `HYDRATION_NOTIFY_INTERVAL_MINUTES`.
+
+    Returns
+    -------
+    dict[str, str]
+        `{ruta_absoluta: timestamp_iso_ultimo_aviso}`. Vacío si no
+        hay estado todavía o si está corrupto -- mismo criterio que
+        `load_index`, nunca tumba el agente.
+    """
+    state_path = get_hydration_notify_state_path()
+    if not os.path.isfile(state_path):
+        return {}
+    try:
+        with open(state_path, "r", encoding="utf-8") as state_file:
+            data = json.load(state_file)
+        notified = data.get("notified")
+        if not isinstance(notified, dict):
+            raise ValueError("notified no es un diccionario")
+        return notified
+    except (OSError, ValueError, json.JSONDecodeError) as error:
+        logger.warning(
+            "Estado de aviso de hidratación ilegible (%s): %s. Se "
+            "reconstruye desde cero.", state_path, error,
+        )
+        return {}
+
+
+def save_hydration_notify_state(notified):
+    """Persist the hydration-notification throttle state.
+    ---
+    Persiste el estado de control de aviso de hidratación.
+    """
+    state_path = get_hydration_notify_state_path()
+    try:
+        with open(state_path, "w", encoding="utf-8") as state_file:
+            json.dump(
+                {"notified": notified}, state_file, ensure_ascii=False,
+            )
+    except OSError as error:
+        # Perder este estado no es fatal: en el peor caso se avisa
+        # una vez de mas tras reiniciar el agente. Nunca debe tumbar
+        # el barrido.
+        # ---
+        # Losing this state is not fatal: worst case, one extra
+        # notification after an agent restart. Must never bring the
+        # sweep down.
+        logger.error(
+            "No se pudo guardar el estado de aviso de hidratación: %s",
+            error,
+        )
+
+
+def _paths_due_for_notification(absolute_paths, notified_state):
+    """Return the subset of `absolute_paths` due for a fresh
+    hydration notification, and update `notified_state` in place.
+    ---
+    Devuelve el subconjunto de `absolute_paths` que toca notificar de
+    nuevo, y actualiza `notified_state` in situ.
+
+    Una ruta está "debida" si nunca se avisó antes, o si el último
+    aviso fue hace más de `HYDRATION_NOTIFY_INTERVAL_MINUTES`. Las
+    rutas que YA NO están en `absolute_paths` (se resolvieron, o el
+    archivo desapareció) se eliminan de `notified_state` -- si se
+    quedan atascadas otra vez en el futuro, empiezan a avisar desde
+    cero, no heredan el silencio de un episodio anterior distinto.
+    """
+    now = datetime.now(timezone.utc)
+    threshold = timedelta(minutes=HYDRATION_NOTIFY_INTERVAL_MINUTES)
+    current_paths = set(absolute_paths)
+
+    for stale_path in list(notified_state):
+        if stale_path not in current_paths:
+            del notified_state[stale_path]
+
+    due = []
+    for absolute_path in absolute_paths:
+        last_notified_raw = notified_state.get(absolute_path)
+        last_notified = None
+        if last_notified_raw:
+            try:
+                last_notified = datetime.fromisoformat(last_notified_raw)
+            except ValueError:
+                last_notified = None
+        if last_notified is None or (now - last_notified) >= threshold:
+            due.append(absolute_path)
+            notified_state[absolute_path] = now.isoformat()
+
+    return due
 
 
 def load_index(selected_folder):
@@ -286,11 +388,23 @@ def sweep_folder(client, selected_folder):
     """
     fingerprint, cloud_only_paths = scan_folder(selected_folder)
 
-    hydration_requested = 0
+    requested_absolute_paths = []
     for relative_path in cloud_only_paths:
         absolute_path = os.path.join(selected_folder, relative_path)
         if request_hydration(absolute_path):
-            hydration_requested += 1
+            requested_absolute_paths.append(absolute_path)
+
+    # S51: la peticion de hidratacion de arriba se sigue haciendo en
+    # TODAS las rutas solo-en-nube, cada barrido, sin cambios -- lo
+    # que se filtra aqui es solo cuantas de ellas cuentan para el
+    # AVISO (notificacion + fila de historial), para no repetir el
+    # mismo aviso cada minuto sobre un archivo atascado.
+    notified_state = load_hydration_notify_state()
+    due_paths = _paths_due_for_notification(
+        requested_absolute_paths, notified_state,
+    )
+    save_hydration_notify_state(notified_state)
+    hydration_requested = len(due_paths)
 
     previous_entries = load_index(selected_folder)
     if previous_entries is None:
