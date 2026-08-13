@@ -1459,6 +1459,11 @@ carpetas por similitud de nombre antes de decidir cómo reconciliarlas
 pendiente ya registrado de "alta de trabajador nuevo" (bloque de
 arriba) -- esto es sobre trabajadores que YA EXISTEN pero con su
 documentación repartida en dos carpetas por variación de nombre.
+**Orden confirmado por Miguel Ángel (S51): "Vamos a terminar primero
+con la maquinaria y cuando tengamos la maquinaria, le metemos mano a
+personal."** No abrir este frente hasta que el trabajo de maquinaria
+en curso (barrido `local_ocr_classify.py` + resto de OCR/fecha en
+`DOC. MAQUINAS`) esté cerrado.
 
 
 
