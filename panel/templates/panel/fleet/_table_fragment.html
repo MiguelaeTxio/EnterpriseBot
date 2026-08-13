@@ -247,7 +247,7 @@
                             </li>
                             <li>
                                 <a class="dropdown-item"
-                                   href="{% url 'history:machine_history' %}?machine_code={{ asset.code }}#documentacion">
+                                   href="{% url 'panel:documentation_machine_detail' pk=asset.pk %}">
                                     <i class="bi bi-file-earmark-text me-2"></i>Documentación
                                 </a>
                             </li>

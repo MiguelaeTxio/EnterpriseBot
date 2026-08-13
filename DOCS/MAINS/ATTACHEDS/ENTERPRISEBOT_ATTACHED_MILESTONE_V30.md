@@ -1361,7 +1361,59 @@ plan pero bloqueantes para el equipo de documentación:**
   fabricante → `FICHA_TECNICA`. Sin medir todavía cuántos de los
   `FICHA_TECNICA` actuales son en realidad uno u otro.
 
-### Hoja de Ruta para la Siguiente Sesión
+### COMPLETADAS EN S51
+
+**1. Resolución de la PRIMERA LÍNEA arrastrada (alta de tipo desde
+panel, diseño de clasificación por vía de entrada, barrido de
+backlog, justificante de asistencia trasladado a H07)** -- ver bloque
+"PRIMERA LÍNEA" más abajo en este mismo anexo para el detalle
+íntegro con las citas verbatim de Miguel Ángel.
+
+**2. Atajo de alta de tipo documental desde el flujo de subida del
+panel, construido y desplegado:** migración 0032 (familia catch-all
+`OTROS_DOCUMENTOS`, 11.ª, fija -- S49 no se revierte),
+`DocumentTypeQuickCreateView` (abierta a ADMIN/`DOCS_SUPERVISOR` vía
+`DocsUploadAccessMixin`), opción "+ Añadir tipo documental nuevo" en
+el desplegable de las pestañas Centros de Gasto/Personal. Verificado
+en producción -- Action `2448cb3` con todos los pasos en verde,
+incluido `migrate`.
+
+**3. Anotado, sin construir: alta de sujeto nuevo (centro de
+gasto/trabajador/EPI) ligada a la subida de su primera
+documentación.** Ver bloque dedicado más abajo en este anexo -- las
+tres piezas parten de un estado real muy distinto (CRUD de centro de
+gasto ya existe, trabajador solo tiene alta automática, EPI casi todo
+por construir).
+
+**4. Bug real encontrado y corregido en la misma sesión (directriz
+4.9), fuera del hilo principal de H30:** el listado de flota
+(`panel/templates/panel/fleet/_table_fragment.html`, CRUD de
+`fleet.MachineAsset`) tenía su acción "Documentación" apuntando a
+`history:machine_history?machine_code=...#documentacion` -- una
+sección que lee `selected_machine.documents`, el modelo legado
+`MachineDocument` (~30 filas residuales, dado por sustituido en S48
+por el panel H30 sobre `DocumentIndexEntry`, con 11.000+ documentos
+reales). Un admin que pulsara ahí veía casi vacío en vez de la
+documentación real de la máquina. Corregido: el enlace pasa a
+`panel:documentation_machine_detail` (ficha H30 real, ya construida y
+en producción). Con esto queda resuelto de paso lo pedido en el punto
+1 de la hoja de ruta anterior ("enlazar el CRUD de centro de gasto ya
+existente con la subida de documentación") -- no hacía falta
+construir nada nuevo, solo corregir el enlace roto.
+
+**Deuda identificada, NO corregida esta sesión -- alcance mayor,
+fuera de lo pedido hoy:** la sección `#documentacion` de
+`panel/machine_history.html` (con su propio botón "Subir
+documentación" hacia `machine_documents:upload`, el flujo H23
+antiguo) queda huérfana -- ya no es alcanzable desde el listado de
+flota tras la corrección de arriba, pero sigue siendo alcanzable por
+URL directa o marcador antiguo, y sigue mostrando datos del modelo
+legado. Retirar esa sección por completo (y valorar qué pasa con
+`machine_documents:upload`) es una limpieza mayor que toca
+`history/views.py` y esa plantilla entera -- pendiente, no
+comprometida para la próxima sesión salvo que Miguel Ángel lo pida.
+
+
 
 **PRIMERA LÍNEA -- resuelta en S51, decisiones de Miguel Ángel
 registradas verbatim (directriz 2.2 de `nfs-enterprisebot-pcs`
