@@ -54,6 +54,7 @@ import re
 
 from django.contrib.contenttypes.models import ContentType
 from django.core.management.base import BaseCommand
+from django.db import close_old_connections
 
 from document_explorer.classification_service import (
     resolve_or_create_machine_asset,
@@ -183,6 +184,14 @@ class Command(BaseCommand):
         )
 
         for entry in candidatos:
+            # Correccion S50: el OCR es lento y muchos archivos no dan
+            # coincidencia (sin escritura a BD entre ellos) -- en una
+            # tanda larga esto agota el wait_timeout de MySQL y tira
+            # el comando entero a mitad (visto real: 3h de ejecucion,
+            # sin error en pantalla, pero sin RESUMEN final). Se
+            # fuerza reconexion en cada iteracion -- barato, Django
+            # solo cierra conexiones ya caducadas/inservibles.
+            close_old_connections()
             try:
                 data = download_bytes(entry.bucket, entry.blob_name)
                 text = extract_text(entry.name, data)
