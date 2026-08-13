@@ -46,6 +46,7 @@ texto plano en el script ni en ningun archivo).
 import argparse
 import getpass
 import io
+import os
 import re
 import sys
 import unicodedata
@@ -53,6 +54,14 @@ from datetime import date
 
 import pymysql
 import pytesseract
+
+# Correccion S50: evitar depender de escribir en C:\Program Files\
+# (requiere administrador) para el paquete de idioma "spa" -- se usa
+# una carpeta propia junto al script en su lugar. Coloca ahi
+# spa.traineddata (ver instrucciones de instalacion mas abajo).
+_TESSDATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tessdata")
+os.environ["TESSDATA_PREFIX"] = _TESSDATA_DIR
+
 import sshtunnel
 from google.cloud import storage
 from PIL import Image
