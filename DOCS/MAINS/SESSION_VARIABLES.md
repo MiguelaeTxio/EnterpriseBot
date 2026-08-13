@@ -113,6 +113,73 @@ explícitamente que la ventana usada desde el principio es la del propio
 
 ---
 
+## AGENTE H28 — ENTORNO REAL EN EL PC DE MIGUEL ÁNGEL (registrado S51,
+## 2026-08-13, tras confirmar los datos tirando de tres sesiones
+## anteriores tras un fallo real: se preguntó por esta ruta en vez de
+## buscarla, pese a estar ya documentada en el propio historial de
+## chats desde S031-S038)
+
+**QUEDA CONFIRMADO Y REGISTRADO** para no volver a preguntarlo nunca:
+
+- **Ruta del checkout local:** `C:\EnterpriseBot` (repo completo, el
+  agente vive en `C:\EnterpriseBot\h28_migration_agent`).
+- **Entorno virtual:** `h28_agent_venv`, sobre Python 3.14.6, dentro de
+  `h28_migration_agent\`. **Nunca se activa con `Activate.ps1`** — la
+  política de ejecución de PowerShell de esa máquina lo bloquea sin
+  avisar (S035). Se invoca siempre el intérprete directamente:
+  `.\h28_agent_venv\Scripts\python.exe -m ...`.
+- **Ejecutable:** `AgenteMigracionH28.exe`, compilado con
+  `python -m PyInstaller --onefile --windowed --name AgenteMigracionH28
+  main.py` desde el intérprete del venv (nunca `pyinstaller` a secas
+  invocado fuera de él). Sale en `h28_migration_agent\dist\`.
+- **Tarea programada de arranque:** `EnterpriseBot_H28_MigrationAgent`
+  (Task Scheduler de Windows). Reiniciar tras reconstruir con
+  `Start-ScheduledTask -TaskName "EnterpriseBot_H28_MigrationAgent"`.
+- **Antes de recompilar:** cerrar cualquier instancia en marcha del
+  `.exe` (`Get-Process AgenteMigracionH28 | Stop-Process -Force`) --
+  PyInstaller no puede sobrescribir un `.exe` con el proceso abierto
+  (incidente real, S035).
+- **Clave de cuenta de servicio y estado local:** dentro de
+  `h28_migration_agent\agent_data\` (`service_account_key.json`,
+  `history.json`, `watched_folders.json`, `hydration_notify_state.json`
+  desde S51) -- carpeta puramente local, nunca commiteada, sin
+  cobertura de `.gitignore` explícita pero jamás trackeada en git en la
+  práctica (verificado S51: `git ls-files` sin resultados bajo
+  `agent_data/`).
+- **Dependencias:** `h28_migration_agent/requirements.in`/
+  `requirements.txt` propios, independientes del entorno Django del
+  servidor (`com-environment-management`, un par de archivos por
+  entorno). El candado se compila siempre en esa misma máquina Windows
+  con Python 3.14.6 -- nunca válido un candado generado en otra
+  plataforma (ruedas `pywin32-ctypes`, `pefile`, `watchdog` win_amd64).
+- **Procedimiento estándar de actualización tras un `git push` que
+  toque `h28_migration_agent/`:**
+
+```powershell
+cd C:\EnterpriseBot
+git pull
+
+cd h28_migration_agent
+Get-Process AgenteMigracionH28 -ErrorAction SilentlyContinue | Stop-Process -Force
+Remove-Item -Recurse -Force .\build -ErrorAction SilentlyContinue
+Remove-Item -Force .\AgenteMigracionH28.spec -ErrorAction SilentlyContinue
+
+.\h28_agent_venv\Scripts\python.exe -m PyInstaller --onefile --windowed --name AgenteMigracionH28 main.py
+
+Start-ScheduledTask -TaskName "EnterpriseBot_H28_MigrationAgent"
+```
+
+Si el cambio añadió dependencias nuevas, insertar entre el `git pull`
+y el `PyInstaller` (ver `com-environment-management`):
+
+```powershell
+.\h28_agent_venv\Scripts\python.exe -m piptools compile requirements.in
+.\h28_agent_venv\Scripts\python.exe -m piptools sync requirements.txt
+.\h28_agent_venv\Scripts\python.exe -m pip check
+```
+
+---
+
 **QUEDA TERMINANTEMENTE PROHIBIDO usar estas dos rutas para EnterpriseBot** —
 pertenecen a otro proyecto de la cuenta (Campus Studio Online), no a
 esta plataforma. Anotadas aquí únicamente para que nunca se confundan:
