@@ -59,6 +59,19 @@ gasto y en el modelo del personal."*
   *"O me va a entrar máquina, me va a entrar documentación a través
   del buzón. O directamente van a meter documentación nueva a través
   de la vía normal que utilizan."*
+  **CORREGIDO EN S51:** el buzón deja de ser una vía abierta a
+  cualquiera. Miguel Ángel, verbatim: *"Ya lo tengo muy claro que va a
+  ser la vía de entrada única y exclusivamente para correos. Si el
+  supervisor quiere un hecho y olvido, tendrá que enviar el correo a
+  administración y el documento como adjunto [...] la carpeta que creé
+  no es visible a los demás puestos, por tanto será usada por Outlook
+  para depositar los archivos adjuntos exclusivamente."* Consecuencia
+  real: como esta vía nunca es un supervisor conocido subiendo con
+  disciplina de nombre de archivo, el diseño de clasificación de tipo
+  para esta vía nunca se salta la llamada a Gemini (a diferencia de
+  las carpetas vigiladas por agente H28/M365, donde heurística+OCR sin
+  discrepancia sí evitan la llamada) — ver hoja de ruta de esta
+  sesión.
 - **Sustitución automática, sin diálogo**: *"Voy a subir documentación
   de esta máquina [...] la ITV nueva. Automáticamente tendremos que
   marcar la ITV que teníamos como obsoleta y poner la ITV nueva como
