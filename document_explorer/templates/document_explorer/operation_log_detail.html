@@ -93,9 +93,12 @@
                                         <span class="text-muted text-decoration-line-through">{{ line.previous_name }}</span>
                                         →
                                     {% endif %}
-                                    {% if line.index_entry_id %}
+                                    {% if line.index_entry_id and line.action != "TRASHED" %}
                                         <a href="{% url 'document_explorer:open' line.index_entry_id %}"
                                            target="_blank" rel="noopener">{{ line.name }}</a>
+                                    {% elif line.index_entry_id and line.action == "TRASHED" %}
+                                        {{ line.name }}
+                                        <span class="text-muted small">(en tu papelera -- sin enlace directo, el contenido sigue accesible en la copia "Conservada" de este mismo grupo)</span>
                                     {% else %}
                                         {{ line.name }}
                                         <span class="text-muted small">(fila ya vaciada)</span>

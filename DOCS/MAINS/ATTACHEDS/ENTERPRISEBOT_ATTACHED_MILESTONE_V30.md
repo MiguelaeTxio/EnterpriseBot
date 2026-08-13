@@ -1401,17 +1401,64 @@ en producción). Con esto queda resuelto de paso lo pedido en el punto
 existente con la subida de documentación") -- no hacía falta
 construir nada nuevo, solo corregir el enlace roto.
 
+**5. Bug real encontrado y corregido -- enlaces rotos en el historial
+de operaciones (`document_explorer/operaciones/<pk>/`,
+`DataOperationLogDetailView`).** Origen real: Miguel Ángel reportó un
+404 (`No DocumentIndexEntry matches the given query`) al abrir un
+documento desde la Operación #289. Investigado a fondo con consultas
+reales contra producción -- el pk en cuestión (`FORM. CURSO
+CARRETILLA ELEVADORA.pdf`, trabajador Estevao Veloso Sampaio) SÍ
+existía, con `deleted_at` puesto hoy mismo por `alvarez_admin`
+(`_DOSSIER_TRASH_USERNAME`, la identidad de sistema para borrados
+automáticos). **Mecanismo real confirmado por Miguel Ángel viendo la
+propia pantalla de Operación #289** (no era `is_photo`/`is_dossier`,
+hipótesis inicial descartada): duplicado exacto por CRC32C y tamaño
+de un documento ya archivado fuera de cuarentena, `ACTION_TRASHED`
+(`DataOperationLogEntry`), eliminado automáticamente sin pasar por
+Gemini -- mecanismo ya existente y correcto, no hacía falta tocarlo.
+**El bug real estaba en la plantilla, no en el borrado:** `{% if
+line.index_entry_id %}` pintaba SIEMPRE un enlace a `document_explorer
+:open` sin comprobar `line.action` -- para toda fila `TRASHED`
+(`deleted_at` no nulo), `OpenDocumentView` da 404 sin excepción
+(filtra `deleted_at__isnull=True`), así que cada operación con
+duplicados eliminados mostraba enlaces rotos garantizados. Corregido
+en `operation_log_detail.html`: las filas `TRASHED` ya no enlazan,
+muestran el nombre en texto plano con nota de que el contenido sigue
+accesible en la copia "Conservada" del mismo grupo. Comprobado
+`duplicates.html` (misma familia de tarjeta, mismo mecanismo de
+enlace) -- NO tiene el bug, por diseño solo lista duplicados
+pendientes de decidir, nunca entradas ya borradas (`DuplicatesView`,
+"Deliberadamente NO preselecciona nada para borrar").
+
 **Deuda identificada, NO corregida esta sesión -- alcance mayor,
 fuera de lo pedido hoy:** la sección `#documentacion` de
 `panel/machine_history.html` (con su propio botón "Subir
 documentación" hacia `machine_documents:upload`, el flujo H23
 antiguo) queda huérfana -- ya no es alcanzable desde el listado de
-flota tras la corrección de arriba, pero sigue siendo alcanzable por
-URL directa o marcador antiguo, y sigue mostrando datos del modelo
-legado. Retirar esa sección por completo (y valorar qué pasa con
-`machine_documents:upload`) es una limpieza mayor que toca
+flota tras la corrección del punto 4, pero sigue siendo alcanzable
+por URL directa o marcador antiguo, y sigue mostrando datos del
+modelo legado. Retirar esa sección por completo (y valorar qué pasa
+con `machine_documents:upload`) es una limpieza mayor que toca
 `history/views.py` y esa plantilla entera -- pendiente, no
 comprometida para la próxima sesión salvo que Miguel Ángel lo pida.
+
+**Deuda mayor identificada esta sesión, NO abordada -- carpetas de
+persona duplicadas en Microsoft 365 (`DOC. PERSONAL/PERSONAL/
+TALLER/`).** Miguel Ángel, verbatim: *"Hay un tal Nicolás, Santiago
+Gutiérrez, Omar, que también hay dos carpetas. Madre mía, qué selva,
+qué selva."* Confirmado con datos reales: Estevao Sampaio tiene dos
+carpetas (`SAMPAIO, ESTEVAO` con 4 documentos reales sin clasificar
+todavía, y `VELOSO SAMPAIO, ESTEVAO` con 3 documentos ya en la ficha
+del panel) -- mismo trabajador, mismo problema que la reconciliación
+de `MachineAsset` ya resuelta en S49 (585 casos), pero **nunca hecha
+para personal**. Sin dimensionar todavía cuántas personas están
+afectadas -- pendiente una consulta de solo lectura que agrupe
+carpetas por similitud de nombre antes de decidir cómo reconciliarlas
+(mismo criterio que `reconcile_machine_folders`, pero para
+`PersonIdentity`/carpetas de `DOC. PERSONAL`). No confundir con el
+pendiente ya registrado de "alta de trabajador nuevo" (bloque de
+arriba) -- esto es sobre trabajadores que YA EXISTEN pero con su
+documentación repartida en dos carpetas por variación de nombre.
 
 
 
