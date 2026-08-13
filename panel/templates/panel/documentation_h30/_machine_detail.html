@@ -27,10 +27,13 @@
                     <thead><tr><th>Tipo</th><th>Nombre</th><th>Caducidad</th><th>Acciones</th></tr></thead>
                     <tbody>
                         {% for entry in current %}
-                        <tr>
+                        <tr{% if entry.needs_attention %} class="table-danger"{% endif %}>
                             <td>{{ entry.document_type.label }}</td>
                             <td>{{ entry.name }}</td>
-                            <td>{{ entry.expiry_date|default:"—" }}</td>
+                            <td>
+                                {% if entry.needs_attention %}<i class="bi bi-exclamation-triangle-fill text-danger me-1" title="Sin fecha vigente -- necesita atención"></i>{% endif %}
+                                {{ entry.expiry_date|default:"—" }}
+                            </td>
                             <td>
                                 <a href="{% url 'panel:documentation_document_view' pk=entry.pk %}" target="_blank" class="btn btn-sm btn-outline-secondary">Ver</a>
                                 <button type="button" class="btn btn-sm btn-outline-primary"

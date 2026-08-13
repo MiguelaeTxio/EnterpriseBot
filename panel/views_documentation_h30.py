@@ -68,7 +68,22 @@ def _split_current_obsolete(entries):
     manda directo a obsoletas sin pasar por el cálculo de fechas (ya
     quedó decidido en el momento de la sustitución, no se recalcula
     cada vez que se lista).
+
+    H30 (S50): cada entry vigente lleva ademas `needs_attention`
+    (atributo Python, nunca de BD) -- True cuando su tipo necesita
+    fecha (`tracks_expiry`) y esa fecha esta en blanco o ya paso.
+    Miguel Angel, verbatim: "el seguro obligatorio tiene que estar al
+    corriente del pago [...] la ITV tiene que estar vigente [...] si
+    no hay vigentes [...] ya tenemos que tener un aviso visual ahi."
+    Generalizado a CUALQUIER tipo tracks_expiry=True, no solo SEGURO/
+    ITV -- misma logica que ya decide si hace falta perseguir fecha
+    en el pipeline de ingesta (H30 S50, expiry_resolution_service):
+    la ausencia de fecha en un tipo que la necesita es la señal
+    completa, no hace falta una lista fija de codigos aqui tampoco.
     """
+    from datetime import date
+
+    today = date.today()
     current, obsolete = [], []
     by_type = {}
     for entry in entries:
@@ -89,10 +104,44 @@ def _split_current_obsolete(entries):
             candidate = snapshots[entry.pk]
             siblings = [s for pk, s in snapshots.items() if pk != entry.pk]
             if is_current(candidate, siblings):
+                entry.needs_attention = bool(
+                    entry.document_type_id
+                    and entry.document_type.tracks_expiry
+                    and (not entry.expiry_date or entry.expiry_date < today)
+                )
                 current.append(entry)
             else:
                 obsolete.append(entry)
     return current, obsolete
+
+
+def _attach_alert_flags(objects, content_type):
+    """
+    H30 (S50) -- mismo principio que `_attach_doc_counts` (misma
+    limitacion real de GenericForeignKey sin GenericRelation inversa,
+    se calcula aparte y se adjunta como atributo). Marca `obj.
+    has_alert = True` cuando el sujeto tiene AL MENOS un documento
+    vigente de un tipo `tracks_expiry=True` sin fecha o con fecha ya
+    pasada -- para la columna de alerta del listado (Centros de
+    Gasto/Personal). Solo sobre la pagina visible, nunca sobre el
+    listado completo.
+    """
+    from datetime import date
+
+    today = date.today()
+    pks = [obj.pk for obj in objects]
+    alert_pks = set(
+        DocumentIndexEntry.objects.filter(
+            bucket=BUCKET, domain_content_type=content_type,
+            domain_object_id__in=pks, entry_kind=DocumentIndexEntry.KIND_FILE,
+            deleted_at__isnull=True, purged_at__isnull=True,
+            is_obsolete=False, document_type__tracks_expiry=True,
+        ).filter(Q(expiry_date__isnull=True) | Q(expiry_date__lt=today))
+        .values_list("domain_object_id", flat=True).distinct()
+    )
+    for obj in objects:
+        obj.has_alert = obj.pk in alert_pks
+    return objects
 
 
 def _attach_doc_counts(objects, content_type):
@@ -144,6 +193,9 @@ def _machine_list_page(request):
     page.object_list = _attach_doc_counts(
         list(page.object_list), ContentType.objects.get_for_model(MachineAsset),
     )
+    page.object_list = _attach_alert_flags(
+        page.object_list, ContentType.objects.get_for_model(MachineAsset),
+    )
     return {
         "page": page, "sort_key": sort_key, "sort_dir": sort_dir,
         "search": search, "sort_columns_machine": sort_columns,
@@ -192,6 +244,9 @@ def _person_list_page(request):
     page = paginator.get_page(request.GET.get("page"))
     page.object_list = _attach_doc_counts(
         list(page.object_list), ContentType.objects.get_for_model(PersonIdentity),
+    )
+    page.object_list = _attach_alert_flags(
+        page.object_list, ContentType.objects.get_for_model(PersonIdentity),
     )
     return {
         "page": page, "sort_key": sort_key, "sort_dir": sort_dir,

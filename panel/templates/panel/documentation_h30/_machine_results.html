@@ -8,6 +8,7 @@ hx-target="#machine-results" en toda la pestana de maquinaria
 <table class="table table-hover table-light">
     <thead class="table-light">
         <tr>
+            <th></th>
             {% for col_key, col_label in sort_columns_machine %}
             <th>
                 <a href="?sort={{ col_key }}&dir={% if sort_key == col_key and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&q={{ search }}"
@@ -25,12 +26,13 @@ hx-target="#machine-results" en toda la pestana de maquinaria
     <tbody>
         {% for machine in page %}
         <tr>
+            <td>{% if machine.has_alert %}<i class="bi bi-exclamation-triangle-fill text-danger" title="Tiene documentación sin fecha vigente"></i>{% endif %}</td>
             <td><a href="{% url 'panel:documentation_machine_detail' pk=machine.pk %}">{{ machine.code }}</a></td>
             <td>{{ machine.brand_model }}{% if machine.plate %} — {{ machine.plate }}{% endif %}</td>
             <td>{{ machine.doc_count }}</td>
         </tr>
         {% empty %}
-        <tr><td colspan="3" class="text-muted small py-3">No se encontraron máquinas.</td></tr>
+        <tr><td colspan="4" class="text-muted small py-3">No se encontraron máquinas.</td></tr>
         {% endfor %}
     </tbody>
 </table>
