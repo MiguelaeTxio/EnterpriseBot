@@ -336,7 +336,11 @@ def main():
     args = parser.parse_args()
 
     pa_password = getpass.getpass(
-        "Contrasena de PythonAnywhere (la de la web, no la de MySQL): "
+        "Contrasena de PythonAnywhere (la de la web, para el tunel SSH): "
+    )
+    mysql_password = getpass.getpass(
+        "Contrasena de MySQL (distinta de la anterior -- panel "
+        "PythonAnywhere, pestana 'Databases'): "
     )
 
     print("Abriendo tunel SSH a %s ..." % SSH_HOSTNAME)
@@ -359,7 +363,7 @@ def main():
 
     conn = pymysql.connect(
         host="127.0.0.1", port=tunnel.local_bind_port,
-        user=MYSQL_USERNAME, passwd=pa_password,
+        user=MYSQL_USERNAME, passwd=mysql_password,
         db=MYSQL_DB_NAME, charset="utf8mb4",
     )
 
