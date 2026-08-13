@@ -1429,6 +1429,67 @@ aplicada, las tres preguntas arrastradas dejan de repetirse):**
    selector `AbsenceCategory` (H07, 2.3) y al rediseño pendiente de
    vacaciones/ausencias (H24). No se vuelve a plantear en H30.
 
+**PENDIENTE ANOTADO EN S51, SIN CONSTRUIR -- alta de sujeto nuevo
+(centro de gasto/trabajador/EPI) ligada a la subida de su primera
+documentación.** Miguel Ángel, verbatim: *"Es necesario poder dar de
+alta centros de gasto con documentación [...] los trabajadores luego
+serán extendidos a usuarios, de acuerdo, pero de momento solo van a
+figurar como ítems, digamos, con fichas [...] es necesario poder dar
+de alta EPIs, poder dar de baja EPIs, tener el CRUD de EPIs y ligarlo
+todo con la documentación."* Verificado contra el código real en S51,
+las tres piezas parten de un estado muy distinto:
+
+- **Centro de gasto (`MachineAsset`, app `fleet`):** el CRUD YA
+  EXISTE completo -- `MachineAssetCreateView`/`UpdateView`/
+  `DeactivateView`/`ReactivateView`/`DeleteView` (`fleet/views.py`),
+  restringido a `AdminRoleRequiredMixin` (solo admin, a diferencia de
+  `DocsUploadAccessMixin` que abre a supervisor). `MachineAssetForm`
+  solo exige `code`, todo lo demás es opcional. Lo que falta NO es el
+  alta en sí, sino **enlazar** ese flujo ya existente con la subida
+  de documentación (p. ej., tras crear la máquina, ofrecer subir su
+  primer documento sin salir de la pantalla, mismo patrón que
+  `SubjectDocumentUploadView`). Pieza pequeña relativa a las otras
+  dos.
+- **Trabajador (`PersonIdentity`, app `document_explorer`):** sin
+  CRUD manual todavía -- existe únicamente alta automática cuando
+  Gemini detecta un DNI nuevo en cuarentena (`classification_service.
+  py`, ~línea 1425), con solo 3 campos (DNI, apellidos, nombre),
+  carpeta `PTE CONTRATACION`, `source_entry` de origen. Miguel Ángel
+  confirma que esto basta por ahora: el trabajador vive como "ficha"
+  con su documentación, sin ser todavía un `CompanyUser` (el CRUD de
+  usuarios YA existe y es una cosa distinta -- la extensión
+  ficha→usuario queda para más adelante, sin fecha). Construir: alta
+  manual desde el panel con los mismos 3 campos mínimos ya validados
+  por el flujo automático.
+- **EPI (`EpiItemCatalog` + `EpiDelivery`):** la pieza más grande de
+  las tres, sin construir casi nada todavía. `EpiItemCatalog` (S046)
+  documenta ya la intención de un atajo "+ nuevo EPI" en el propio
+  desplegable del formulario de entrega -- pero **ese formulario de
+  entrega no existe**, solo hay listados de solo lectura
+  (`EpiTabFragmentView`/`EpiResultsFragmentView`). Miguel Ángel pide
+  además: CRUD completo de tipos de EPI (alta/baja), ingesta desde
+  Microsoft 365, ficha de EPI ligada al trabajador con fechas de
+  entrega, y patrones de entrega periódica variables según el tipo
+  (p. ej. dos mudas de ropa al año) -- esto último puede necesitar
+  campo(s) nuevo(s) en `EpiItemCatalog` (periodicidad/cantidad
+  esperada por año), sin decidir todavía.
+
+**Contexto más amplio registrado (S51), para no perderlo:** ingesta
+en curso de Microsoft 365 → cuarentena → `cgs_grupo_alvarez`, con
+algunos documentos quedando en "no conformes"; centros de
+gasto/personal ya dotados de documentación a nivel de BD, EPIs
+todavía pendiente; y una limpieza de datos pendiente y distinta de
+esto -- hay `MachineAsset` en BD que son obsoletos (vendidos/dados de
+baja) generando "ruido"; el mecanismo de `is_active`/
+`MachineAssetDeactivateView` ya existe, así que no es una pieza que
+falte construir, es un repaso/depuración de datos reales pendiente de
+hacer.
+
+Miguel Ángel, verbatim, sobre el volumen de trabajo: *"El volumen de
+trabajo es bastante grande."* Sin orden de prioridad fijado entre las
+tres piezas ni con el resto de la hoja de ruta -- decidir en sesión
+antes de construir cualquiera.
+
 **ESTADO YA CERRADO — no volver a preguntar ni replantear:**
 - Reconciliación de `MachineAsset`: CERRADA desde S49 (ver anexo).
 - Tabla normativa `MANDATORY_BY_PREFIX` (documentos obligatorios por
