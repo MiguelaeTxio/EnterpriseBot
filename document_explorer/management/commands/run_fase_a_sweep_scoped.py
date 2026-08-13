@@ -54,11 +54,12 @@ Plataformas Z) quedan DENTRO de alcance -- Miguel Angel confirmo
 resolucion normal por carpeta falla.
 
 Reutiliza sin modificar la logica de coincidencia/dosier ya probada
-de `run_fase_a_sweep` (`_match_candidates`, `_resolve_document_type`,
-`_dossier_types_already_filed`, `_folder_based_type`,
-`_resolve_person_by_folder` -- este ultimo sin uso aqui, domain=
-MACHINE unicamente, confirmado por Miguel Angel: "Vamos a centrarnos
-en la maquinaria y luego veremos personal").
+de `heuristic_type_service` (S51, extraida de `run_fase_a_sweep`
+donde vivio hasta entonces) -- `resolve_document_type_heuristic`,
+`folder_based_type` -- mas `_dossier_types_already_filed` y
+`_resolve_person_by_folder` de `run_fase_a_sweep` (este ultimo sin
+uso aqui, domain=MACHINE unicamente, confirmado por Miguel Angel:
+"Vamos a centrarnos en la maquinaria y luego veremos personal").
 
 DRY-RUN POR DEFECTO. Con --apply escribe de verdad (document_type,
 domain_content_type, domain_object_id; papelera para dosieres ya
@@ -72,12 +73,14 @@ from document_explorer.classification_service import (
     _FOLDER_MACHINE_CODE_RE, resolve_or_create_machine_asset,
     trash_dossier_entry,
 )
+from document_explorer.heuristic_type_service import (
+    folder_based_type, resolve_document_type_heuristic,
+)
 from document_explorer.management.commands.calibrate_fase_a_keywords import (
     BUCKET, _strip_accents,
 )
 from document_explorer.management.commands.run_fase_a_sweep import (
-    _dossier_types_already_filed, _folder_based_type,
-    _resolve_document_type,
+    _dossier_types_already_filed,
 )
 from document_explorer.models import DocumentIndexEntry, DocumentTypeCatalog
 from fleet.models import MachineAsset
@@ -228,12 +231,12 @@ class Command(BaseCommand):
         for entry in entries:
             name_upper = _strip_accents(entry.name).upper()
 
-            folder_code = _folder_based_type(entry, "MACHINE")
+            folder_code = folder_based_type(entry, "MACHINE")
             if folder_code:
                 code, dossier_pair = folder_code, None
                 stats["folder_type"] += 1
             else:
-                code, dossier_pair = _resolve_document_type(
+                code, dossier_pair = resolve_document_type_heuristic(
                     entry, "MACHINE", name_upper,
                 )
 

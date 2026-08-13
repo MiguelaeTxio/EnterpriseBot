@@ -39,70 +39,15 @@ from django.core.management.base import BaseCommand
 from document_explorer.classification_service import (
     resolve_or_create_machine_asset, trash_dossier_entry,
 )
+from document_explorer.heuristic_type_service import (
+    folder_based_type, resolve_document_type_heuristic,
+)
 from document_explorer.management.commands.calibrate_fase_a_keywords import (
-    CANDIDATES_RISKY, CANDIDATES_SAFE, EXCLUSIONS, BUCKET, MACHINE_ROOT,
-    PERSONAL_ROOT, _build_pattern, _files_for_domain, _strip_accents,
+    BUCKET, MACHINE_ROOT, PERSONAL_ROOT, _files_for_domain, _strip_accents,
 )
 from document_explorer.models import DocumentIndexEntry, DocumentTypeCatalog
 from fleet.models import MachineAsset
 from document_explorer.models import PersonIdentity
-
-# --- Framework de prioridades, confirmado por Miguel Angel S48 ---
-# Pares DOSIER: documentos distintos escaneados juntos -> papelera,
-# nunca se les asigna document_type.
-DOSSIER_PAIRS = frozenset({
-    frozenset({"FICHA_TECNICA", "PERMISO_CIRCULACION"}),
-    frozenset({"CARNET_CONDUCIR", "DNI"}),
-    frozenset({"CARNET_CONDUCIR", "TACOGRAFO"}),
-    frozenset({"ITV", "TACOGRAFO"}),
-    # Añadido S49: poliza + recibo del seguro escaneados juntos en el
-    # mismo PDF (patron real "POLIZA+REC.SEG...."), confirmado por
-    # Miguel Angel como el mismo caso de dosier ya conocido.
-    frozenset({"POLIZA_SEGURO", "SEGURO"}),
-})
-
-# Pares "gana X sobre Y" -- orden (winner, loser). Se aplican en orden;
-# la primera regla cuyo par este presente en las coincidencias del
-# archivo decide.
-SPECIFIC_WINS = [
-    ("DOC_BAJA_DEFINITIVA", "BAJA_DEFINITIVA"),
-    ("PROFORMA", "DOC_VENTA"),
-    ("CONTRATO_COMPRAVENTA", "DOC_VENTA"),
-    ("ITV", "FICHA_TECNICA"),
-    ("PERMISO_CIRCULACION", "DOC_VENTA"),
-    ("PERMISO_CIRCULACION", "FICHA_TECNICA"),
-    ("RECIBO_LEASING", "LEASING"),
-    ("ALTA_MEDICA", "ALTA"),
-    ("ALTA", "SEG_SOCIAL"),
-    ("CURSO", "TACOGRAFO"),
-    # Añadida S49, confirmada por Miguel Angel: una factura entre dos
-    # terceros (ninguno es la empresa) sigue siendo, para todos los
-    # efectos, una factura de compra ligada al vehiculo/maquina -- no
-    # tiene sentido un tipo aparte solo porque la empresa no sea parte
-    # directa. FACTURA_TERCEROS queda para casos donde de verdad no
-    # aplique FACTURA_COMPRA, nunca cuando ambas coinciden.
-    ("FACTURA_COMPRA", "FACTURA_TERCEROS"),
-]
-# Cualquier tipo especifico gana siempre sobre SOLICITUD_ADMINISTRATIVA.
-GENERIC_LOSER = "SOLICITUD_ADMINISTRATIVA"
-
-# CURSO <-> FORMACION: gana FORMACION si hay patron de horas
-# (2H/6H/60H/20 HORAS...), si no gana CURSO (S48).
-_HOUR_PATTERN = re.compile(r"\b\d{1,3}\s*H(?:ORAS?)?\b")
-
-# Pares sin decision todavia (S48) -- se dejan sin document_type.
-UNRESOLVED_PAIRS = frozenset({
-    frozenset({"ENTREGA_INFORMACION", "FORMACION"}),
-    frozenset({"DNI", "FORMACION"}),
-})
-
-# BAJA_PERSONAL / PARTE_BAJA_MEDICA / INVESTIGACION_ACCIDENTE (S47):
-# se resuelven por carpeta real, nunca por palabra "BAJA" sola.
-_FOLDER_TYPE_RULES = [
-    ("PARTES BAJA ENF.COMUN Y ACC.NO LABORAL", "PARTE_BAJA_MEDICA"),
-    ("INVESTIGACION ACCIDENTES", "INVESTIGACION_ACCIDENTE"),
-    ("PERSONAL/BAJAS", "BAJA_PERSONAL"),
-]
 
 
 def _resolve_person_by_folder(entry):
@@ -130,86 +75,6 @@ def _resolve_person_by_folder(entry):
     if len(ids) == 1:
         return contained[0]
     return None
-
-
-def _folder_based_type(entry, domain):
-    if domain != "PERSONAL":
-        return None
-    path_upper = _strip_accents(entry.parent_path).upper()
-    for needle, code in _FOLDER_TYPE_RULES:
-        if needle.upper() in path_upper:
-            return code
-    return None
-
-
-def _match_candidates(entry, domain, candidates_dict, name_upper):
-    matched = set()
-    # Bug real corregido S48: "SEGURO"/"TACOGRAFO"/"MANDATO" viven bajo
-    # la clave "BOTH" del diccionario (aplican a MACHINE y PERSONAL por
-    # igual) -- el bucle solo recorria domain in ("MACHINE", "PERSONAL"),
-    # asi que nunca se comprobaban, pese a tener coincidencias reales
-    # verificadas en la calibracion (SEGURO: 1347, TACOGRAFO: 199,
-    # MANDATO: 47). Se comprueban ahora las dos claves para cada
-    # dominio real.
-    for lookup_domain in (domain, "BOTH"):
-        codes = candidates_dict.get(lookup_domain, {})
-        for code, phrases in codes.items():
-            for phrase in phrases:
-                pattern = _build_pattern(_strip_accents(phrase).upper())
-                if not pattern.search(name_upper):
-                    continue
-                excl_phrases = EXCLUSIONS.get(
-                    (lookup_domain, code, phrase), [],
-                )
-                if any(
-                    _build_pattern(_strip_accents(p).upper()).search(
-                        name_upper,
-                    )
-                    for p in excl_phrases
-                ):
-                    continue
-                matched.add(code)
-    return matched
-
-
-def _resolve_document_type(entry, domain, name_upper):
-    matched = _match_candidates(entry, domain, CANDIDATES_SAFE, name_upper)
-    matched |= _match_candidates(
-        entry, domain, CANDIDATES_RISKY, name_upper,
-    )
-    if not matched:
-        return None, None  # (code, dossier_pair)
-
-    if len(matched) == 1:
-        return next(iter(matched)), None
-
-    # Mas de un candidato -- aplicar framework de prioridades.
-    for pair in DOSSIER_PAIRS:
-        if pair <= matched:
-            return None, pair
-
-    for winner, loser in SPECIFIC_WINS:
-        if winner in matched and loser in matched:
-            matched = {winner} | (matched - {winner, loser})
-
-    if GENERIC_LOSER in matched and len(matched) > 1:
-        matched = matched - {GENERIC_LOSER}
-
-    if "CURSO" in matched and "FORMACION" in matched:
-        if _HOUR_PATTERN.search(name_upper):
-            matched = matched - {"CURSO"}
-        else:
-            matched = matched - {"FORMACION"}
-
-    if len(matched) == 1:
-        return next(iter(matched)), None
-
-    for pair in UNRESOLVED_PAIRS:
-        if pair <= matched:
-            return None, None
-
-    # Solape real no cubierto por el framework -- no se adivina.
-    return None, None
 
 
 def _dossier_types_already_filed(obj, content_type, pair):
@@ -282,12 +147,12 @@ class Command(BaseCommand):
             for entry in entries:
                 name_upper = _strip_accents(entry.name).upper()
 
-                folder_code = _folder_based_type(entry, domain)
+                folder_code = folder_based_type(entry, domain)
                 if folder_code:
                     code, dossier_pair = folder_code, None
                     stats["folder_type"] += 1
                 else:
-                    code, dossier_pair = _resolve_document_type(
+                    code, dossier_pair = resolve_document_type_heuristic(
                         entry, domain, name_upper,
                     )
 
