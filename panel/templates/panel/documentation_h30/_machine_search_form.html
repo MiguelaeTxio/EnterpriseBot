@@ -1,14 +1,16 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation_h30/_machine_search_form.html #}
-{# H30 (S50): separado de _machine_results.html a proposito. Antes el
-   formulario (con el propio <input>) vivia DENTRO del contenedor que
-   HTMX sustituye en cada tecleo -- cada vez que el usuario escribia
-   un caracter, a los 300ms el <input> entero se destruia y se creaba
-   uno nuevo, perdiendo el foco a mitad de escritura y disparando el
-   globo de autocompletado nativo del navegador sobre el campo
-   "nuevo". Sintoma real (Miguel Angel, S50): escribir "7245" solo
-   entraba la primera pulsacion, el resto se perdia. El formulario
-   ahora vive fuera del area que se sustituye -- el <input> es
-   siempre el MISMO nodo del DOM en toda la sesion de busqueda. #}
+{% comment %}
+H30 (S50): separado de _machine_results.html a proposito. Antes el
+formulario (con el propio <input>) vivia DENTRO del contenedor que
+HTMX sustituye en cada tecleo -- cada vez que el usuario escribia
+un caracter, a los 300ms el <input> entero se destruia y se creaba
+uno nuevo, perdiendo el foco a mitad de escritura y disparando el
+globo de autocompletado nativo del navegador sobre el campo
+"nuevo". Sintoma real (Miguel Angel, S50): escribir "7245" solo
+entraba la primera pulsacion, el resto se perdia. El formulario
+ahora vive fuera del area que se sustituye -- el <input> es
+siempre el MISMO nodo del DOM en toda la sesion de busqueda.
+{% endcomment %}
 <form method="get" class="mb-3 d-flex gap-2"
       hx-get="{% url 'panel:documentation_machine_list' %}" hx-target="#machine-results"
       hx-trigger="input changed delay:300ms from:input[name='q'], submit">

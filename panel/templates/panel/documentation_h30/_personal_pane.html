@@ -1,8 +1,10 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation_h30/_personal_pane.html #}
-{# H30 (S50): esto es lo que carga la pestana Personal la PRIMERA vez
-   (hx-trigger="click once" en hub.html) -- formulario + resultados
-   envueltos. A partir de ahi, todas las interacciones (buscar,
-   ordenar, paginar) sustituyen SOLO #personal-results. #}
+{% comment %}
+H30 (S50): esto es lo que carga la pestana Personal la PRIMERA vez
+(hx-trigger="click once" en hub.html) -- formulario + resultados
+envueltos. A partir de ahi, todas las interacciones (buscar,
+ordenar, paginar) sustituyen SOLO el div de resultados.
+{% endcomment %}
 {% include "panel/documentation_h30/_personal_search_form.html" with search=search %}
 <div id="personal-results">
     {% include "panel/documentation_h30/_personal_results.html" with page=page sort_key=sort_key sort_dir=sort_dir search=search %}
