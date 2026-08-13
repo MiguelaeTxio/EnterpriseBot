@@ -31,6 +31,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views import View
 
+from document_explorer import naming_service
 from document_explorer.models import (
     DocumentIndexEntry, DocumentTypeCatalog, EpiDelivery, EpiItemCatalog,
     EpiReview, PersonIdentity,
@@ -224,6 +225,7 @@ class MachineDetailView(CompanyUserRequiredMixin, View):
         return render(request, "panel/documentation_h30/_machine_detail.html", {
             "machine": machine, "current": current, "obsolete": obsolete,
             "doc_types": doc_types, "active_nav": "documentation_hub",
+            "family_choices": DocumentTypeCatalog.FAMILY_CHOICES,
         })
 
 
@@ -293,6 +295,7 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
             "person": person, "current": current, "obsolete": obsolete,
             "doc_types": doc_types, "epi_deliveries": epi_deliveries,
             "active_nav": "documentation_hub",
+            "family_choices": DocumentTypeCatalog.FAMILY_CHOICES,
         })
 
 
@@ -451,4 +454,93 @@ class SubjectDocumentUploadView(DocsUploadAccessMixin, View):
 
         return JsonResponse({
             "ok": not errors, "uploaded": results, "errors": errors,
+        })
+
+
+class DocumentTypeQuickCreateView(DocsUploadAccessMixin, View):
+    """
+    H30 (S51). Atajo de alta de tipo documental nuevo desde el propio
+    flujo de subida del panel -- para cuando el supervisor no
+    encuentra el tipo en el desplegable, sin salir a la pantalla del
+    Catálogo de tipos del explorador (`document_explorer.
+    DocumentTypeCatalogCreateView`, restringida a admin). Abierto a
+    ADMIN y DOCS_SUPERVISOR, decisión explícita de Miguel Ángel (S51):
+    "a todo lo que haya dentro [de documentación] deben de poder
+    acceder tanto administradores como supervisores de documentación."
+
+    `family` es obligatoria y se elige de las choices fijas del
+    modelo (10 familias + la 11.ª "Otros documentos" añadida en esta
+    misma sesión, migración 0032) -- nunca texto libre ni creación de
+    familia nueva, decisión de S49 explícitamente no revertida en S51.
+
+    `code` se deriva automáticamente del `label` con el mismo
+    `naming_service._sanitize_token()` que usa el motor de
+    renombrado, para no pedirle al supervisor un código técnico
+    aparte. `domain` se fija según la pestaña de origen (`machine` /
+    `personal`) -- no `BOTH`; si un tipo aplica a los dos dominios a
+    la vez, es un alta que debe hacerse desde el Catálogo de tipos del
+    explorador (fuera de alcance de este atajo).
+
+    ---
+
+    Shortcut to add a new document type from the panel's own upload
+    flow -- for when the supervisor cannot find the type in the
+    dropdown, without leaving to the explorer's Type Catalog screen
+    (`document_explorer.DocumentTypeCatalogCreateView`, admin-only).
+    Open to ADMIN and DOCS_SUPERVISOR, Miguel Ángel's explicit S51
+    decision.
+    """
+
+    def post(self, request, domain):
+        if domain == "machine":
+            catalog_domain = DocumentTypeCatalog.DOMAIN_MACHINE
+        elif domain == "personal":
+            catalog_domain = DocumentTypeCatalog.DOMAIN_PERSONAL
+        else:
+            return JsonResponse({"error": "Dominio no válido."}, status=400)
+
+        label = (request.POST.get("label") or "").strip()
+        family = (request.POST.get("family") or "").strip()
+        tracks_expiry = request.POST.get("tracks_expiry") in ("true", "on", "1")
+
+        valid_families = dict(DocumentTypeCatalog.FAMILY_CHOICES)
+        if not label:
+            return JsonResponse(
+                {"error": "Falta el nombre visible del tipo documental."},
+                status=400,
+            )
+        if family not in valid_families:
+            return JsonResponse(
+                {"error": "Falta elegir una familia documental válida."},
+                status=400,
+            )
+
+        code = naming_service._sanitize_token(label)
+        if not code:
+            return JsonResponse(
+                {"error": "El nombre visible no genera un código válido."},
+                status=400,
+            )
+
+        if DocumentTypeCatalog.objects.filter(code=code).exists():
+            return JsonResponse(
+                {
+                    "error": (
+                        "Ya existe un tipo documental con código «%s» "
+                        "-- revisa el desplegable, puede que ya esté "
+                        "ahí con otro nombre visible." % code
+                    ),
+                },
+                status=409,
+            )
+
+        document_type = DocumentTypeCatalog.objects.create(
+            code=code, label=label, domain=catalog_domain,
+            family=family, tracks_expiry=tracks_expiry,
+        )
+        return JsonResponse({
+            "ok": True,
+            "code": document_type.code,
+            "label": document_type.label,
+            "tracks_expiry": document_type.tracks_expiry,
         })

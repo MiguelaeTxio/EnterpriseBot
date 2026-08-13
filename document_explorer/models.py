@@ -578,6 +578,7 @@ class DocumentTypeCatalog(models.Model):
     FAMILY_LABORAL = "LABORAL"
     FAMILY_SALUD_BAJAS_PERSONA = "SALUD_BAJAS_PERSONA"
     FAMILY_PRL_FORMACION = "PRL_FORMACION"
+    FAMILY_OTROS_DOCUMENTOS = "OTROS_DOCUMENTOS"
     FAMILY_CHOICES = [
         (FAMILY_CIRCULACION, "Circulación"),
         (FAMILY_TECNICA_SEGURIDAD, "Técnica y seguridad"),
@@ -589,6 +590,7 @@ class DocumentTypeCatalog(models.Model):
         (FAMILY_LABORAL, "Laboral"),
         (FAMILY_SALUD_BAJAS_PERSONA, "Salud y bajas de persona"),
         (FAMILY_PRL_FORMACION, "PRL y formación"),
+        (FAMILY_OTROS_DOCUMENTOS, "Otros documentos"),
     ]
 
     code = models.CharField(
@@ -638,7 +640,16 @@ class DocumentTypeCatalog(models.Model):
             "máquina (A/B/Z/H/MK/P/T/V/S de fleet.MachineAsset): "
             "esta agrupa TIPOS DOCUMENTALES para la interfaz, esa "
             "otra dice qué documentos son obligatorios por tipo de "
-            "máquina."
+            "máquina. S51: se añade 'Otros documentos' como familia "
+            "catch-all fija número 11 -- Miguel Ángel confirmó que la "
+            "lista sigue cerrada por código (no editable en caliente "
+            "desde el panel), pero si aparece un tipo nuevo que no "
+            "encaje en ninguna de las 10 originales, entra aquí en "
+            "vez de bloquear el alta; revisar periódicamente el "
+            "volumen de esta familia -- una acumulación real de un "
+            "mismo tipo dentro de 'Otros documentos' es la señal para "
+            "decidir en sesión, explícitamente, una familia nueva de "
+            "verdad (nunca creación libre por un supervisor)."
         ),
     )
     tracks_expiry = models.BooleanField(

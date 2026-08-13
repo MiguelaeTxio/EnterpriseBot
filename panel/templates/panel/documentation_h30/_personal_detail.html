@@ -98,12 +98,15 @@
 const DOC_TYPES_PERSONAL = [
     {% for dt in doc_types %}{code: "{{ dt.code }}", label: "{{ dt.label|escapejs }}", tracksExpiry: {{ dt.tracks_expiry|yesno:"true,false" }}},{% endfor %}
 ];
+const FAMILY_CHOICES_PERSONAL = [
+    {% for value, display in family_choices %}{value: "{{ value }}", display: "{{ display|escapejs }}"},{% endfor %}
+];
 
 function openUploadForm(preselectCode) {
     const container = document.getElementById('uploadFormContainer');
     const options = DOC_TYPES_PERSONAL.map(dt =>
         `<option value="${dt.code}" data-tracks-expiry="${dt.tracksExpiry}" ${dt.code === preselectCode ? 'selected' : ''}>${dt.label}</option>`,
-    ).join('');
+    ).join('') + '<option value="__NEW__">+ Añadir tipo documental nuevo</option>';
     container.innerHTML = `
         <div class="card">
             <div class="card-body">
@@ -113,6 +116,25 @@ function openUploadForm(preselectCode) {
                         <label class="form-label">Tipo documental</label>
                         <select name="document_type_code" id="uploadTypeSelect" class="form-select" required>${options}</select>
                     </div>
+                    <div id="newTypeFields" class="border rounded p-2 mb-2" style="display:none;">
+                        <div class="mb-2">
+                            <label class="form-label">Nombre visible del tipo nuevo</label>
+                            <input type="text" id="newTypeLabel" class="form-control" placeholder="p. ej. Certificado de manipulador">
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label">Familia documental</label>
+                            <select id="newTypeFamily" class="form-select">
+                                <option value="">-- Elige familia --</option>
+                                ${FAMILY_CHOICES_PERSONAL.map(f => `<option value="${f.value}">${f.display}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div class="form-check mb-2">
+                            <input type="checkbox" id="newTypeTracksExpiry" class="form-check-input">
+                            <label class="form-check-label" for="newTypeTracksExpiry">Este tipo tiene fecha de caducidad/vigencia</label>
+                        </div>
+                        <button type="button" class="btn btn-outline-primary btn-sm" onclick="createNewDocumentType('personal')">Crear tipo documental</button>
+                        <div id="newTypeResult" class="mt-1"></div>
+                    </div>
                     <div class="mb-2">
                         <label class="form-label">Archivo(s) — puedes seleccionar varios a la vez si son del mismo tipo</label>
                         <input type="file" name="file" class="form-control" multiple required>
@@ -121,7 +143,7 @@ function openUploadForm(preselectCode) {
                         <label class="form-label">Fecha de caducidad</label>
                         <input type="date" name="expiry_date" class="form-control">
                     </div>
-                    <button type="submit" class="btn btn-primary btn-sm">Subir</button>
+                    <button type="submit" class="btn btn-primary btn-sm" id="subjectUploadSubmitBtn">Subir</button>
                     <div id="uploadResult" class="mt-2"></div>
                 </form>
             </div>
@@ -129,7 +151,17 @@ function openUploadForm(preselectCode) {
 
     const select = document.getElementById('uploadTypeSelect');
     const expiryField = document.getElementById('expiryDateField');
+    const newTypeFields = document.getElementById('newTypeFields');
+    const submitBtn = document.getElementById('subjectUploadSubmitBtn');
     function toggleExpiry() {
+        if (select.value === '__NEW__') {
+            newTypeFields.style.display = '';
+            expiryField.style.display = 'none';
+            submitBtn.disabled = true;
+            return;
+        }
+        newTypeFields.style.display = 'none';
+        submitBtn.disabled = false;
         const opt = select.options[select.selectedIndex];
         expiryField.style.display = opt.dataset.tracksExpiry === 'true' ? '' : 'none';
     }
@@ -160,6 +192,32 @@ function openUploadForm(preselectCode) {
             if (data.ok) setTimeout(() => location.reload(), 2000);
         });
     };
+}
+
+function createNewDocumentType(domain) {
+    const label = document.getElementById('newTypeLabel').value.trim();
+    const family = document.getElementById('newTypeFamily').value;
+    const tracksExpiry = document.getElementById('newTypeTracksExpiry').checked;
+    const resultDiv = document.getElementById('newTypeResult');
+    if (!label || !family) {
+        resultDiv.innerHTML = '<div class="alert alert-danger py-1 px-2 small">Nombre y familia son obligatorios.</div>';
+        return;
+    }
+    const formData = new FormData();
+    formData.append('label', label);
+    formData.append('family', family);
+    formData.append('tracks_expiry', tracksExpiry ? 'true' : 'false');
+    fetch(`/panel/documentacion/${domain}/tipos/crear/`, {
+        method: 'POST', body: formData,
+        headers: {'X-CSRFToken': getCookie('csrftoken')},
+    }).then(r => r.json()).then(data => {
+        if (data.error) {
+            resultDiv.innerHTML = `<div class="alert alert-danger py-1 px-2 small">${data.error}</div>`;
+            return;
+        }
+        DOC_TYPES_PERSONAL.push({code: data.code, label: data.label, tracksExpiry: data.tracks_expiry});
+        openUploadForm(data.code);
+    });
 }
 
 function deleteDocument(pk, btn) {

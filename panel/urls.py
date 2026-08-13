@@ -17,6 +17,7 @@ from panel.views_task_photos import (
 )
 from panel.views_documentation_h30 import (
     DocumentDeleteView,
+    DocumentTypeQuickCreateView,
     DocumentViewView,
     DocumentationHubV2View,
     EpiResultsFragmentView,
@@ -390,6 +391,9 @@ urlpatterns = [
     # H30 (S50): mismo motivo que documentation_personal_results.
     path("documentacion/epis/resultados/", EpiResultsFragmentView.as_view(), name="documentation_epi_results"),
     path("documentacion/<str:domain>/<int:subject_pk>/subir/", SubjectDocumentUploadView.as_view(), name="documentation_upload"),
+    # H30 (S51): atajo de alta de tipo documental desde el propio flujo de
+    # subida -- ver DocumentTypeQuickCreateView.
+    path("documentacion/<str:domain>/tipos/crear/", DocumentTypeQuickCreateView.as_view(), name="documentation_type_quick_create"),
     path("documentacion/documento/<int:pk>/ver/", DocumentViewView.as_view(), name="documentation_document_view"),
     path("documentacion/documento/<int:pk>/eliminar/", DocumentDeleteView.as_view(), name="documentation_document_delete"),
 
