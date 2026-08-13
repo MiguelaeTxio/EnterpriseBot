@@ -57,6 +57,16 @@ import sshtunnel
 from google.cloud import storage
 from PIL import Image
 
+# Correccion S50: la version de paramiko instalada retiro DSSKey
+# (claves DSA, obsoletas por seguridad), pero sshtunnel todavia
+# construye un diccionario que lo referencia INCONDICIONALMENTE al
+# arrancar, aunque no se use ninguna clave (solo contrasena). Se
+# rellena el hueco con un valor de relleno -- nunca se ejecuta de
+# verdad porque este script no usa autenticacion por clave.
+import paramiko
+if not hasattr(paramiko, "DSSKey"):
+    paramiko.DSSKey = paramiko.RSAKey
+
 try:
     import pymupdf as fitz  # PyMuPDF -- nombre nuevo del paquete
 except ImportError:
