@@ -1,11 +1,8 @@
-{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation_h30/_machine_list.html #}
-<form method="get" class="mb-3 d-flex gap-2"
-      hx-get="{% url 'panel:documentation_machine_list' %}" hx-target="#pane-maquinaria"
-      hx-trigger="input changed delay:300ms from:input[name='q'], submit">
-    <input type="text" name="q" class="form-control doc-h30-search" placeholder="Buscar por código, marca/modelo, matrícula…"
-           value="{{ search }}">
-</form>
-
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation_h30/_machine_results.html #}
+{# H30 (S50): separado de _machine_search_form.html -- ver ese archivo
+   para el porque. Este parcial es el UNICO objetivo real de
+   hx-target="#machine-results" en toda la pestana de maquinaria
+   (busqueda, orden de columna, paginacion). #}
 <table class="table table-hover table-light">
     <thead class="table-light">
         <tr>
@@ -14,7 +11,7 @@
                 <a href="?sort={{ col_key }}&dir={% if sort_key == col_key and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&q={{ search }}"
                    class="text-decoration-none text-dark"
                    hx-get="{% url 'panel:documentation_machine_list' %}?sort={{ col_key }}&dir={% if sort_key == col_key and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&q={{ search }}"
-                   hx-target="#pane-maquinaria">
+                   hx-target="#machine-results">
                     {{ col_label }}
                     {% if sort_key == col_key %}<i class="bi bi-chevron-{% if sort_dir == 'asc' %}up{% else %}down{% endif %}"></i>{% endif %}
                 </a>
@@ -43,7 +40,7 @@
         <li class="page-item {% if num == page.number %}active{% endif %}">
             <a class="page-link"
                hx-get="{% url 'panel:documentation_machine_list' %}?page={{ num }}&sort={{ sort_key }}&dir={{ sort_dir }}&q={{ search }}"
-               hx-target="#pane-maquinaria">{{ num }}</a>
+               hx-target="#machine-results">{{ num }}</a>
         </li>
         {% endfor %}
     </ul>

@@ -19,11 +19,13 @@ from panel.views_documentation_h30 import (
     DocumentDeleteView,
     DocumentViewView,
     DocumentationHubV2View,
+    EpiResultsFragmentView,
     EpiTabFragmentView,
     MachineDetailView,
     MachineListFragmentView,
     PersonalDetailView,
     PersonalListFragmentView,
+    PersonalResultsFragmentView,
     SubjectDocumentUploadView,
 )
 from panel.views import (
@@ -379,8 +381,14 @@ urlpatterns = [
     path("documentacion/maquinaria/", MachineListFragmentView.as_view(), name="documentation_machine_list"),
     path("documentacion/maquinaria/<int:pk>/", MachineDetailView.as_view(), name="documentation_machine_detail"),
     path("documentacion/personal/", PersonalListFragmentView.as_view(), name="documentation_personal_list"),
+    # H30 (S50): endpoint de solo-resultados -- el formulario de busqueda
+    # nunca se vuelve a pintar tras la carga inicial (ver
+    # _personal_search_form.html sobre el bug que esto corrige).
+    path("documentacion/personal/resultados/", PersonalResultsFragmentView.as_view(), name="documentation_personal_results"),
     path("documentacion/personal/<int:pk>/", PersonalDetailView.as_view(), name="documentation_personal_detail"),
     path("documentacion/epis/", EpiTabFragmentView.as_view(), name="documentation_epi_tab"),
+    # H30 (S50): mismo motivo que documentation_personal_results.
+    path("documentacion/epis/resultados/", EpiResultsFragmentView.as_view(), name="documentation_epi_results"),
     path("documentacion/<str:domain>/<int:subject_pk>/subir/", SubjectDocumentUploadView.as_view(), name="documentation_upload"),
     path("documentacion/documento/<int:pk>/ver/", DocumentViewView.as_view(), name="documentation_document_view"),
     path("documentacion/documento/<int:pk>/eliminar/", DocumentDeleteView.as_view(), name="documentation_document_delete"),

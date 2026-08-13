@@ -1,0 +1,44 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation_h30/_epi_results.html #}
+<table class="table table-hover table-light">
+    <thead class="table-light">
+        <tr>
+            {% for col_key, col_label in sort_columns_epi %}
+            <th>
+                <a href="#"
+                   hx-get="{% url 'panel:documentation_epi_results' %}?sort={{ col_key }}&dir={% if sort_key == col_key and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&q={{ search }}"
+                   hx-target="#epi-results" class="text-decoration-none text-dark">
+                    {{ col_label }}
+                    {% if sort_key == col_key %}<i class="bi bi-chevron-{% if sort_dir == 'asc' %}up{% else %}down{% endif %}"></i>{% endif %}
+                </a>
+            </th>
+            {% endfor %}
+            <th>Método</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for delivery in page %}
+        <tr>
+            <td>{{ delivery.delivery_date }}</td>
+            <td><a href="{% url 'panel:documentation_personal_detail' pk=delivery.person.pk %}">{{ delivery.person.first_surname }}, {{ delivery.person.given_name }}</a></td>
+            <td>{{ delivery.epi.label }}</td>
+            <td>{{ delivery.get_extraction_method_display }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="4" class="text-muted small py-3">Sin entregas de EPI todavía.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+{% if page.has_other_pages %}
+<nav>
+    <ul class="pagination">
+        {% for num in page.paginator.page_range %}
+        <li class="page-item {% if num == page.number %}active{% endif %}">
+            <a class="page-link"
+               hx-get="{% url 'panel:documentation_epi_results' %}?page={{ num }}&sort={{ sort_key }}&dir={{ sort_dir }}&q={{ search }}"
+               hx-target="#epi-results">{{ num }}</a>
+        </li>
+        {% endfor %}
+    </ul>
+</nav>
+{% endif %}

@@ -153,7 +153,7 @@ def _machine_list_page(request):
 class MachineListFragmentView(CompanyUserRequiredMixin, View):
     def get(self, request):
         ctx = _machine_list_page(request)
-        return render(request, "panel/documentation_h30/_machine_list.html", ctx)
+        return render(request, "panel/documentation_h30/_machine_results.html", ctx)
 
 
 class MachineDetailView(CompanyUserRequiredMixin, View):
@@ -200,9 +200,22 @@ def _person_list_page(request):
 
 
 class PersonalListFragmentView(CompanyUserRequiredMixin, View):
+    """Carga inicial de la pestana Personal (click once) -- formulario
+    + resultados envueltos, una unica vez."""
+
     def get(self, request):
         ctx = _person_list_page(request)
-        return render(request, "panel/documentation_h30/_personal_list.html", ctx)
+        return render(request, "panel/documentation_h30/_personal_pane.html", ctx)
+
+
+class PersonalResultsFragmentView(CompanyUserRequiredMixin, View):
+    """Busqueda/orden/paginacion dentro de Personal -- solo los
+    resultados, el formulario nunca se vuelve a pintar (H30 S50, ver
+    _personal_search_form.html)."""
+
+    def get(self, request):
+        ctx = _person_list_page(request)
+        return render(request, "panel/documentation_h30/_personal_results.html", ctx)
 
 
 class PersonalDetailView(CompanyUserRequiredMixin, View):
@@ -228,36 +241,53 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
         })
 
 
+def _epi_list_page(request):
+    qs = EpiDelivery.objects.select_related("person", "epi").order_by(
+        "-delivery_date",
+    )
+    search = request.GET.get("q", "").strip()
+    if search:
+        qs = qs.filter(
+            Q(person__first_surname__icontains=search)
+            | Q(person__given_name__icontains=search)
+            | Q(epi__label__icontains=search),
+        )
+    sort_columns = [
+        ("delivery_date", "Fecha de entrega"),
+        ("person__first_surname", "Trabajador"),
+        ("epi__label", "EPI"),
+    ]
+    qs, sort_key, sort_dir = _apply_sort(
+        request, qs, sort_columns, "-delivery_date",
+    )
+    paginator = Paginator(qs, 50)
+    page = paginator.get_page(request.GET.get("page"))
+    return {
+        "page": page, "sort_key": sort_key, "sort_dir": sort_dir,
+        "search": search, "sort_columns_epi": sort_columns,
+    }
+
+
 class EpiTabFragmentView(CompanyUserRequiredMixin, View):
+    """Carga inicial de la pestana EPIs (click once) -- formulario +
+    resultados envueltos + catalogo lateral, una unica vez."""
+
     def get(self, request):
-        qs = EpiDelivery.objects.select_related("person", "epi").order_by(
-            "-delivery_date",
-        )
-        search = request.GET.get("q", "").strip()
-        if search:
-            qs = qs.filter(
-                Q(person__first_surname__icontains=search)
-                | Q(person__given_name__icontains=search)
-                | Q(epi__label__icontains=search),
-            )
-        sort_columns = [
-            ("delivery_date", "Fecha de entrega"),
-            ("person__first_surname", "Trabajador"),
-            ("epi__label", "EPI"),
-        ]
-        qs, sort_key, sort_dir = _apply_sort(
-            request, qs, sort_columns, "-delivery_date",
-        )
-        paginator = Paginator(qs, 50)
-        page = paginator.get_page(request.GET.get("page"))
-        catalog = EpiItemCatalog.objects.filter(is_active=True).order_by(
+        ctx = _epi_list_page(request)
+        ctx["catalog"] = EpiItemCatalog.objects.filter(is_active=True).order_by(
             "family", "label",
         )
-        return render(request, "panel/documentation_h30/_epi_tab.html", {
-            "page": page, "sort_key": sort_key, "sort_dir": sort_dir,
-            "search": search, "catalog": catalog,
-            "sort_columns_epi": sort_columns,
-        })
+        return render(request, "panel/documentation_h30/_epi_pane.html", ctx)
+
+
+class EpiResultsFragmentView(CompanyUserRequiredMixin, View):
+    """Busqueda/orden/paginacion dentro de EPIs -- solo los resultados,
+    el formulario y el catalogo lateral nunca se vuelven a pintar
+    (H30 S50, ver _epi_search_form.html)."""
+
+    def get(self, request):
+        ctx = _epi_list_page(request)
+        return render(request, "panel/documentation_h30/_epi_results.html", ctx)
 
 
 class DocumentViewView(CompanyUserRequiredMixin, View):

@@ -1,0 +1,26 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation_h30/_epi_pane.html #}
+<div class="row">
+    <div class="col-md-9">
+        {% include "panel/documentation_h30/_epi_search_form.html" with search=search %}
+        <div id="epi-results">
+            {% include "panel/documentation_h30/_epi_results.html" with page=page sort_key=sort_key sort_dir=sort_dir search=search sort_columns_epi=sort_columns_epi %}
+        </div>
+    </div>
+
+    <div class="col-md-3">
+        <h6>Catálogo de EPIs</h6>
+        <ul class="list-group list-group-flush small">
+            {% for epi in catalog %}
+            <li class="list-group-item px-0 py-1">
+                <span class="text-muted">{{ epi.family }}</span> — {{ epi.label }}
+                {% if epi.requires_periodic_review %}<span class="badge bg-info text-dark">revisión periódica</span>{% endif %}
+            </li>
+            {% empty %}
+            <li class="list-group-item px-0 py-1 text-muted">Sin EPIs en el catálogo.</li>
+            {% endfor %}
+        </ul>
+        <p class="text-muted small mt-2">
+            Para registrar la entrega de un EPI a un trabajador, hazlo desde su propia ficha (pestaña Personal).
+        </p>
+    </div>
+</div>
