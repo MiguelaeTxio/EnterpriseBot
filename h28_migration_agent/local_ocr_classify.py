@@ -342,6 +342,12 @@ def main():
         "Contrasena de MySQL (distinta de la anterior -- panel "
         "PythonAnywhere, pestana 'Databases'): "
     )
+    # Diagnostico temporal S50: nunca imprime la contrasena en si,
+    # solo su longitud -- para descartar un fallo de pegado en
+    # PowerShell (caracteres perdidos/de mas al pegar en getpass).
+    print("[diagnostico] contrasena de MySQL capturada: %d caracteres "
+          "(compara tu mismo si coincide con lo que esperabas)"
+          % len(mysql_password))
 
     print("Abriendo tunel SSH a %s ..." % SSH_HOSTNAME)
     tunnel = sshtunnel.SSHTunnelForwarder(
