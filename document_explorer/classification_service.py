@@ -82,6 +82,7 @@ from .buckets import (
     MANUAL_USO_FOLDER, NO_CONFORMES_PREFIX, QUARANTINE_PREFIX,
     quarantine_scope_q,
 )
+from .heuristic_type_service import resolve_document_type_heuristic
 from .move_service import _virtual_location_taken, move_entry
 
 from .models import DocumentIndexEntry, DocumentTypeCatalog, PersonIdentity
@@ -2449,6 +2450,130 @@ def quarantine_domain_for_entry(entry) -> str | None:
     return None
 
 
+# DNI/NIE detectado en texto OCR libre -- 8 digitos (DNI) o letra
+# X/Y/Z + 7 digitos (NIE), seguido de la letra de control, tolerando
+# un espacio o guion intermedio que el OCR mete a veces. Candidato
+# amplio a proposito -- la validacion real la hace
+# is_valid_spanish_dni() (algoritmo de letra de control), asi que un
+# falso positivo aqui (un numero de telefono, un codigo de curso) casi
+# nunca pasa esa comprobacion.
+_DNI_OCR_CANDIDATE_RE = re.compile(
+    r"\b([0-9]{8}|[XYZxyz][0-9]{7})[\s\-]?([A-Za-z])\b"
+)
+
+
+def _extract_dni_via_ocr(entry) -> str | None:
+    """
+    H30 (S51). Intenta leer un DNI/NIE válido del contenido real del
+    documento vía OCR (Tesseract, `date_verification_service.
+    extract_text()` -- la misma función ya usada para fecha, sin
+    tocarla), sin llamar a Gemini. Nunca se fía de una coincidencia
+    ambigua: si el texto trae más de un DNI/NIE distinto que pase la
+    letra de control, se considera irresuelto (mejor dejarlo para
+    Gemini que adivinar cuál es el de verdad).
+
+    Devuelve el DNI normalizado (`_normalize_dni()`) si hay
+    exactamente uno válido, o `None` si no hay ninguno, hay más de
+    uno, o el archivo no es un tipo que `extract_text()` sepa leer.
+    Nunca lanza excepción -- cualquier fallo de descarga/OCR se trata
+    como "no se pudo leer", igual que el resto de este módulo.
+    """
+    from document_explorer.date_verification_service import extract_text
+
+    try:
+        data = download_bytes(entry.bucket, entry.blob_name)
+        text = extract_text(entry.name, data)
+    except Exception:
+        logger.exception(
+            "# [_extract_dni_via_ocr] Fallo leyendo/OCR de #%d (%s) -- "
+            "se trata como DNI no encontrado.", entry.pk, entry.name,
+        )
+        return None
+    if not text:
+        return None
+
+    valid_candidates = set()
+    for match in _DNI_OCR_CANDIDATE_RE.finditer(text):
+        raw = match.group(1) + match.group(2)
+        if is_valid_spanish_dni(raw):
+            valid_candidates.add(_normalize_dni(raw))
+
+    if len(valid_candidates) == 1:
+        return next(iter(valid_candidates))
+    return None
+
+
+def _try_heuristic_classification(entry, domain) -> dict | None:
+    """
+    H30 (S51). Camino barato antes de gastar una llamada a Gemini --
+    decisión explícita de Miguel Ángel: heurística de nombre (ya
+    validada en Fase A) + OCR de contenido, y solo si algo falla o es
+    ambiguo se cae a Gemini exactamente como hasta ahora. Aplica solo
+    a archivos de carpeta vigilada (`domain` resuelto por
+    `quarantine_domain_for_entry()`, MACHINE o PERSONAL) -- el buzón
+    de correo (`ACCESO_BUZON_DOCUMENTACION`, donde `domain` sale
+    siempre `None` por no tener carpeta MÁQUINA/PERSONAL debajo)
+    nunca entra aquí, siempre Gemini, sin excepción, tal como decidió
+    Miguel Ángel: no hay carpeta de origen en la que confiar.
+
+    MÁQUINA: si la heurística resuelve un único tipo sin ambigüedad,
+    se acepta directamente -- la identidad de la máquina ya se
+    resuelve por carpeta en el resto del pipeline (`resolve_or_create
+    _machine_asset`, sin depender de ningún hint de Gemini en el caso
+    normal), así que no hace falta comprobarla aquí.
+
+    PERSONAL: además del tipo por heurística, hace falta un DNI válido
+    y que resuelva a una `PersonIdentity` YA EXISTENTE
+    (`resolve_person_identity()`) -- Miguel Ángel, verbatim (S51):
+    "no podemos dar de alta a un trabajador sin llamar a Gemini". Si
+    el DNI no se lee, o se lee pero no coincide con nadie, se cae a
+    Gemini sin excepción -- el alta de trabajador nuevo sigue
+    exigiendo su verificación de nombre.
+
+    Devuelve un `dict` con la misma forma mínima que `classify_entry()`
+    (`document_type_code`, `domain`, y `dni_hint` cuando aplica) listo
+    para que el resto de `apply_quarantine_classification()` lo procese
+    sin ningún cambio, o `None` cuando hay que caer a Gemini.
+    """
+    if domain not in (
+        DocumentTypeCatalog.DOMAIN_MACHINE, DocumentTypeCatalog.DOMAIN_PERSONAL,
+    ):
+        return None
+
+    code, dossier_pair = resolve_document_type_heuristic(entry, domain)
+    if not code or dossier_pair:
+        return None
+
+    if domain == DocumentTypeCatalog.DOMAIN_MACHINE:
+        return {
+            "domain": domain, "document_type_code": code,
+            "confidence": "N/A", "is_dossier": False, "is_photo": False,
+            "reasoning": (
+                "Tipo resuelto por heurística de nombre de archivo, "
+                "sin llamada a Gemini (S51)."
+            ),
+        }
+
+    dni_hint = _extract_dni_via_ocr(entry)
+    if not dni_hint:
+        return None
+    if not resolve_person_identity(dni_hint):
+        # DNI válido pero no coincide con nadie -- alta de trabajador
+        # nuevo exige Gemini, decisión explícita de Miguel Ángel (S51).
+        return None
+
+    return {
+        "domain": domain, "document_type_code": code,
+        "confidence": "N/A", "is_dossier": False, "is_photo": False,
+        "dni_hint": dni_hint,
+        "reasoning": (
+            "Tipo resuelto por heurística de nombre de archivo, DNI "
+            "leído por OCR y coincide con un trabajador ya existente, "
+            "sin llamada a Gemini (S51)."
+        ),
+    }
+
+
 def apply_quarantine_classification(entry) -> dict:
     """
     Full pipeline for ONE quarantine file (H29, S040 -- the "Always-on
@@ -2612,7 +2737,9 @@ def apply_quarantine_classification(entry) -> dict:
     reubica, `new_parent_path`.
     """
     domain = quarantine_domain_for_entry(entry)
-    result = classify_entry(entry, domain)
+    result = _try_heuristic_classification(entry, domain)
+    if result is None:
+        result = classify_entry(entry, domain)
     if "error" in result:
         result.update(
             new_name=None, classified=False,
