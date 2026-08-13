@@ -37,6 +37,9 @@ from document_explorer import naming_service
 from document_explorer.date_verification_service import verify_typed_date
 from document_explorer.index_writer import ensure_folder_chain
 from document_explorer.models import DocumentIndexEntry, path_digest
+from document_management.alert_service import (
+    create_default_expiry_alerts, get_docs_supervisor_contacts,
+)
 from document_management.models import DocumentSubstitutionLog
 from document_management.vigencia_service import (
     DocumentSnapshot, evaluate_substitution,
@@ -116,7 +119,7 @@ def _build_filename(subject, document_type_code, upload_date, extension):
 
 def upload_subject_document(
     *, subject, domain_content_type, document_type, data, original_filename,
-    typed_date, subject_label,
+    typed_date, subject_label, uploaded_by=None,
 ):
     """
     Ejecuta el flujo completo. Devuelve un dict:
@@ -124,9 +127,16 @@ def upload_subject_document(
             "entry": DocumentIndexEntry (la fila creada),
             "warning": dict|None (de verify_typed_date, o None),
             "superseded_count": int,
+            "alerts_created": int,
         }
     Lanza `SubjectUploadError` si no se puede resolver una carpeta
     destino real.
+
+    `uploaded_by`: CompanyUser que hace la subida (H30 S50) -- se
+    añade como contacto de las alertas de caducidad, junto con los
+    DOCS_SUPERVISOR reales (ver get_docs_supervisor_contacts()),
+    aunque quien suba no sea documentación (p. ej. un ADMIN subiendo
+    en su nombre). Nunca bloquea la subida si viene None.
     """
     extension = original_filename.rsplit(".", 1)[-1] if "." in original_filename else "pdf"
     target_folder = _resolve_target_folder(
@@ -162,6 +172,30 @@ def upload_subject_document(
     warning = verify_typed_date(
         document_type, original_filename, data, typed_date,
     )
+
+    alerts_created = 0
+    if document_type.tracks_expiry and entry.expiry_date:
+        # H30 (S50): hueco real detectado -- esta via de subida nunca
+        # habia llamado a create_default_expiry_alerts. Ninguna
+        # subida hecha desde la ficha del sujeto generaba alerta de
+        # caducidad hasta ahora, aunque el motor de envio (Twilio,
+        # tarea diaria) llevaba activo desde H26. Se enganchan aqui
+        # las 3 alertas por defecto (30/15/7 dias) mas los DOCS_
+        # SUPERVISOR reales como contacto, mas quien sube el
+        # documento si no es ya uno de ellos.
+        alerts = create_default_expiry_alerts(
+            document=entry,
+            expiry_date=entry.expiry_date,
+            document_label=document_type.label,
+            subject_label=subject_label,
+            company=_resolve_company(),
+        )
+        contacts = get_docs_supervisor_contacts()
+        if uploaded_by is not None and uploaded_by not in contacts:
+            contacts.append(uploaded_by)
+        for alert in alerts:
+            alert.contacts.add(*contacts)
+        alerts_created = len(alerts)
 
     superseded_count = 0
     if document_type.tracks_expiry:

@@ -306,6 +306,115 @@ def refresh_quarantine_index_task(self) -> None:
 _QUARANTINE_CONSUME_BATCH_SIZE = 40
 
 
+def _resolve_expiry_for_relocated_entry(entry) -> None:
+    """
+    H30 (S50) -- pipeline de fecha EN TIEMPO REAL, enganchado justo
+    despues de que un archivo se reubique de verdad fuera de
+    cuarentena. Miguel Angel, verbatim: "cuando un archivo llegue,
+    conforme llegue y se clasifique, hay que sacar la fecha de
+    caducidad si la tiene [...] antes tenemos que agotar todos los
+    pasos. Heuristica primero, OCR despues, y llamada a Gemini
+    despues."
+
+    Deliberadamente separada de `apply_quarantine_classification()`
+    (nunca se toca esa funcion, ya muy documentada con incidentes
+    reales) -- este paso corre DESPUES, como post-procesado del
+    resultado ya reubicado, mismo principio de responsabilidad unica
+    que el resto de `consume_quarantine_task`.
+
+    Nunca bloquea la reubicacion si falla -- cualquier excepcion
+    (descarga, OCR, Gemini) se registra en el log y se sigue. Si
+    ninguno de los tres pasos encuentra fecha, el documento queda con
+    `expiry_date`/`issue_date` en blanco a proposito -- la propia
+    ausencia de fecha en un tipo `tracks_expiry=True` es la señal de
+    "necesita atencion humana" que se ve en el panel de
+    Documentacion (columna de alerta), sin necesidad de ningun campo
+    booleano nuevo.
+    """
+    from document_explorer import expiry_resolution_service
+    from document_management.alert_service import (
+        create_default_expiry_alerts, get_docs_supervisor_contacts,
+    )
+    from fleet.models import MachineAsset
+    from ivr_config.models import Company
+    from spare_parts.gcs_service import download_bytes
+
+    entry.refresh_from_db()
+    if not entry.document_type_id or not entry.document_type.tracks_expiry:
+        return
+    if entry.expiry_date or entry.issue_date:
+        return
+    if not entry.domain_content_type_id or not entry.domain_object_id:
+        return
+
+    try:
+        data = download_bytes(entry.bucket, entry.blob_name)
+        field, found = expiry_resolution_service.resolve_expiry_date(
+            entry.document_type, entry.name, data,
+        )
+    except Exception:
+        logger.exception(
+            "# [_resolve_expiry_for_relocated_entry] Fallo resolviendo "
+            "fecha de #%d (%s) -- se deja en blanco, atencion humana "
+            "requerida.", entry.pk, entry.name,
+        )
+        return
+
+    if not field:
+        logger.info(
+            "# [_resolve_expiry_for_relocated_entry] #%d (%s): sin "
+            "fecha legible tras agotar heuristica/OCR/Gemini -- "
+            "queda en blanco, atencion humana requerida.",
+            entry.pk, entry.name,
+        )
+        return
+
+    if field == "expiry":
+        entry.expiry_date = found
+        entry.save(update_fields=["expiry_date"])
+    else:
+        entry.issue_date = found
+        entry.save(update_fields=["issue_date"])
+        # H30 (S50): una fecha de EMISION no dispara alerta de
+        # caducidad -- no hay "caducidad" que avisar (create_default_
+        # expiry_alerts es literalmente eso, un aviso ANTES de que
+        # algo caduque). Se guarda la fecha para vigencia_service,
+        # pero no se crea ninguna alerta.
+        logger.info(
+            "# [_resolve_expiry_for_relocated_entry] #%d (%s): "
+            "issue_date=%s resuelto (sin alerta -- no es fecha de "
+            "caducidad).", entry.pk, entry.name, found,
+        )
+        return
+
+    domain_obj = entry.domain_content_type.get_object_for_this_type(
+        pk=entry.domain_object_id,
+    )
+    if isinstance(domain_obj, MachineAsset):
+        subject_label = "%s -- %s" % (domain_obj.code, domain_obj.brand_model)
+    else:
+        subject_label = "%s %s, %s" % (
+            domain_obj.first_surname, domain_obj.second_surname,
+            domain_obj.given_name,
+        )
+
+    alerts = create_default_expiry_alerts(
+        document=entry,
+        expiry_date=entry.expiry_date,
+        document_label=entry.document_type.label,
+        subject_label=subject_label,
+        company=Company.objects.first(),
+    )
+    contacts = get_docs_supervisor_contacts()
+    for alert in alerts:
+        alert.contacts.add(*contacts)
+    logger.info(
+        "# [_resolve_expiry_for_relocated_entry] #%d (%s): %s=%s "
+        "resuelto, %d alerta(s) creada(s).",
+        entry.pk, entry.name, field, found, len(alerts),
+    )
+
+
 @app.task(base=DjangoTask, bind=True, max_retries=0)
 def consume_quarantine_task(self) -> None:
     """
@@ -635,6 +744,7 @@ def consume_quarantine_task(self) -> None:
                 if result.get("relocated"):
                     relocated_count += 1
                     action = DataOperationLogEntry.ACTION_RELOCATED
+                    _resolve_expiry_for_relocated_entry(entry)
                 elif result.get("trashed"):
                     dossier_trashed_count += 1
                     action = DataOperationLogEntry.ACTION_TRASHED

@@ -40,6 +40,17 @@ DEFAULT_EXPIRY_ALERT_OFFSETS_DAYS = [30, 15, 7]
 TEMPLATE_NAME = "document_expiry_alert"
 
 
+def get_docs_supervisor_contacts():
+    """
+    Devuelve todos los CompanyUser con role=DOCS_SUPERVISOR (H30 S50).
+    Confirmado con datos reales: hoy son Yolanda Bandera y Miguel Ángel
+    Muñoz Cara -- se resuelve por rol, nunca por nombre fijo en
+    código, para que siga funcionando si cambia quién ocupa el puesto.
+    """
+    from ivr_config.models import CompanyUser
+    return list(CompanyUser.objects.filter(role="DOCS_SUPERVISOR"))
+
+
 def _build_twilio_client():
     """
     Mismo patrón que whatsapp.tasks._build_twilio_client() -- import
