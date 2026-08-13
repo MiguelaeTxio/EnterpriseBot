@@ -1430,6 +1430,28 @@ enlace) -- NO tiene el bug, por diseño solo lista duplicados
 pendientes de decidir, nunca entradas ya borradas (`DuplicatesView`,
 "Deliberadamente NO preselecciona nada para borrar").
 
+**6. Bug real encontrado y corregido -- aviso repetido cada minuto
+del agente H28 por hidratación atascada.** Miguel Ángel, verbatim:
+*"Vamos a quitar de en medio estas notificaciones cada minuto, porque
+es que se vuelve uno loco."* Diagnosticado con un script PowerShell
+ad-hoc (replica `FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS`,
+`0x00400000`, el mismo criterio que ya usa `is_cloud_only()`) contra
+`DOC. PERSONAL` real: el archivo atascado es el `CARNE CONDUCIR` de
+la carpeta duplicada `SAMPAIO, ESTEVAO` (la misma detectada antes en
+esta sesión) -- mismo patrón que el incidente ya documentado de S035
+(placeholders sincronizados desde otro puesto que nunca hidratan).
+Causa raíz: `sweep_folder()` pedía la hidratación en cada barrido
+(cada minuto) sin ningún seguimiento de si ya se había avisado antes,
+así que un archivo atascado generaba aviso nuevo para siempre, sin
+límite. Corregido: `hydration_notify_state.json` nuevo (`agent_data/`,
+nunca commiteado) guarda cuándo se avisó por última vez de cada ruta;
+el aviso no se repite hasta pasados 30 minutos
+(`HYDRATION_NOTIFY_INTERVAL_MINUTES`). La petición de hidratación en
+sí no cambia, se sigue pidiendo cada barrido. **Pendiente de que
+Miguel Ángel actualice/reinicie su agente local** -- sin despliegue
+automático vía GitHub Actions, `h28_migration_agent` corre en su
+propio PC.
+
 **Deuda identificada, NO corregida esta sesión -- alcance mayor,
 fuera de lo pedido hoy:** la sección `#documentacion` de
 `panel/machine_history.html` (con su propio botón "Subir
