@@ -57,7 +57,10 @@ import sshtunnel
 from google.cloud import storage
 from PIL import Image
 
-import fitz  # PyMuPDF
+try:
+    import pymupdf as fitz  # PyMuPDF -- nombre nuevo del paquete
+except ImportError:
+    import fitz  # PyMuPDF -- nombre antiguo, por compatibilidad
 
 from config import get_service_account_key_path
 
@@ -332,6 +335,14 @@ def main():
         ssh_username=PYTHONANYWHERE_USERNAME,
         ssh_password=pa_password,
         remote_bind_address=(MYSQL_HOSTNAME, 3306),
+        # Correccion S50: version de paramiko instalada ya no tiene
+        # DSSKey (claves DSA, obsoletas y retiradas) -- sshtunnel
+        # intenta enumerar claves del sistema por defecto incluso
+        # usando solo contrasena, y eso revienta con AttributeError.
+        # Como aqui NUNCA usamos autenticacion por clave, se desactiva
+        # la busqueda de claves por completo.
+        host_pkey_directories=[],
+        allow_agent=False,
     )
     tunnel.start()
     print("Tunel abierto, puerto local %d." % tunnel.local_bind_port)
