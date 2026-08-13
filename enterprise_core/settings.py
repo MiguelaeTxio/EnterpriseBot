@@ -332,7 +332,12 @@ CELERY_BEAT_SCHEDULE = {
     # WhatsApp a su(s) contacto(s) asignado(s) vía document_expiry_alert.
     'send-document-expiry-alerts': {
         'task':     'document_management.tasks.send_document_expiry_alerts',
-        'schedule': crontab(hour=3, minute=0),
+        # Cambiado de 3:00 a 8:00 (H30 S50): un aviso de WhatsApp a las
+        # 3 de la madrugada a un contacto real es un disparate, aunque
+        # el resto de tareas nocturnas de ese hueco horario tengan
+        # sentido a esa hora. Miguel Angel: "nos puede partir la
+        # espalda con un palo".
+        'schedule': crontab(hour=8, minute=0),
     },
 
     # ---------------------------------------------------------------------------
