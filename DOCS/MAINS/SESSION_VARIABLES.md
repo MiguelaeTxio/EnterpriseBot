@@ -280,6 +280,33 @@ gcloud auth login --no-launch-browser
 gcloud config set project gen-lang-client-0961484137
 gcloud config set compute/zone europe-west1-b
 ```
+
+---
+
+## Cloud Shell como alternativa a la VM — INVESTIGADO Y DESCARTADO
+## para barridos largos (S53, 2026-08-14)
+
+Miguel Ángel preguntó si se podía lanzar el clasificador desde la app
+de Google Cloud (Cloud Shell) en vez de crear una VM de Compute
+Engine cada vez. Investigado contra la documentación oficial de
+Google -- **descartado para este uso concreto, con motivo claro:**
+
+- Cloud Shell está pensada solo para uso interactivo: **las sesiones
+  no interactivas se cortan automáticamente a los 40 minutos.** Un
+  barrido de horas sin supervisión (como el de hoy, ~5h45) se
+  cortaría mucho antes de terminar.
+- Sesión máxima 12h, cupo semanal gratis de 50h.
+- Lo instalado fuera de `$HOME` (p.ej. Tesseract vía `apt-get`) se
+  pierde al reciclarse la máquina de fondo tras esos 40 min de
+  inactividad -- solo `$HOME` (5GB) persiste de verdad.
+- Máquina de fondo con recursos modestos, más lenta que el
+  `e2-standard-8` usado hasta ahora.
+
+**Sí vale la pena para:** comandos `gcloud` puntuales, comprobar
+coste, administración rápida con alguien delante -- ya está todo
+instalado, sin montar nada. **No vale para:** barridos largos sin
+supervisión -- para eso sigue siendo mejor una VM de Compute Engine
+real (~$0,30/h, sin límite de tiempo por inactividad).
 ## (registrado S53, 2026-08-14) — retomar el lunes
 
 **Síntoma real reportado por Miguel Ángel:** copia un archivo nuevo a
