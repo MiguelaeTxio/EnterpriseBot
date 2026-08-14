@@ -926,6 +926,39 @@ def classify_fault_line(self, entry_line_pk: int) -> None:
             line.fault_subcategory = result["fault_subcategory"]
             update_fields += ["fault_category", "fault_subcategory"]
 
+        # H07/S52 (2026-08-14), decisión explícita de Miguel Ángel: "Formación"
+        # y "Servicio" son gastos de personal, nunca de la máquina que el
+        # operario haya podido introducir (aunque ponga "he estado con la
+        # 62") -- se reasigna machine_asset al activo PERSONAL de la empresa,
+        # sobreescribiendo lo introducido por el operario. La ITV y el resto
+        # de mantenimiento SIGUEN vinculados a la máquina real -- sin cambios.
+        if result["task_category_free"] in ("Formación", "Servicio"):
+            from fleet.models import MachineAsset
+            from work_order_processor.management.commands.seed_personal_asset import (
+                PERSONAL_ASSET_CODE,
+            )
+            try:
+                company = line.entry.work_order.company
+                personal_asset = MachineAsset.objects.get(
+                    company=company, code=PERSONAL_ASSET_CODE,
+                )
+                line.machine_asset = personal_asset
+                update_fields.append("machine_asset")
+                logger.info(
+                    "# [classify_fault_line] pk=%d: reasignada a PERSONAL "
+                    "(task_category_free=%r).",
+                    entry_line_pk, result["task_category_free"],
+                )
+            except MachineAsset.DoesNotExist:
+                logger.warning(
+                    "# [classify_fault_line] pk=%d: task_category_free=%r "
+                    "pero no existe activo PERSONAL para la empresa %s "
+                    "(seed_personal_asset no ejecutado) -- machine_asset "
+                    "no se reasigna, queda tal como lo introdujo el "
+                    "operario.",
+                    entry_line_pk, result["task_category_free"], company,
+                )
+
         line.save(update_fields=update_fields)
 
         if ticket is not None:

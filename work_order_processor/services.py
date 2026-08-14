@@ -2355,7 +2355,7 @@ SI tipo_tarea=AVERIA: clasifica fault_category y fault_subcategory con la
 taxonomía siguiente, y deja task_category_free en cadena vacía ("").
 
 TAXONOMÍA — Categorías principales (fault_category):
-  ENGINE_TRANSMISSION        — Motor, transmisión, PTO, refrigeración, combustible
+  ENGINE_TRANSMISSION        — Motor, transmisión, PTO, refrigeración, combustible, bloque motor
   HYDRAULIC                  — Bomba hidráulica, cilindros, válvulas, aceite, central
   ELECTRICAL_ELECTRONIC      — Cableado, sensores, mandos, iluminación, batería
   BRAKES_STEERING_SUSPENSION — Frenos, dirección, suspensión
@@ -2382,6 +2382,33 @@ categorización breve en español, sin taxonomía rígida (pocas palabras, p.ej.
 "mejora hidráulica", "mantenimiento preventivo motor", "fabricación
 estructura metálica").
 
+CASOS ESPECIALES DE task_category_free — cuando la descripción encaje en uno
+de estos cinco casos, usa tipo_tarea=MANTENIMIENTO y task_category_free debe
+ser EXACTAMENTE uno de estos literales (mayúscula inicial exacta, sin
+sinónimos, sin texto adicional):
+
+  "Vacaciones"               — el trabajador está de vacaciones, no es una
+                                tarea real sobre ninguna máquina.
+  "Formación"                 — el trabajador está recibiendo o impartiendo
+                                formación/curso, aunque el texto mencione de
+                                paso una máquina o código de máquina.
+  "Servicio"                  — servicio prestado con la máquina a un
+                                tercero que NO es reparación ni avería (p.ej.
+                                una grúa prestando un servicio de elevación o
+                                transporte para un cliente). NO uses
+                                "Servicio" para la ITV (ver más abajo).
+  "Limpieza y mantenimiento"  — limpieza, orden o mantenimiento general del
+                                taller, almacén o dependencias, sin ser la
+                                reparación de una avería concreta.
+  "ITV"                       — preparación, revisión previa o traslado a la
+                                Inspección Técnica de Vehículos. A diferencia
+                                de "Servicio", la ITV sigue vinculada a la
+                                máquina real, es un caso distinto.
+
+Para cualquier otro texto de mantenimiento/mejora/fabricación que no encaje
+en los cinco literales de arriba, sigue usando una categorización breve
+libre como hasta ahora (p.ej. "mantenimiento preventivo motor").
+
 REGLAS OBLIGATORIAS:
 1. Responde ÚNICAMENTE con un objeto JSON válido. Sin texto adicional, sin
    bloques de código markdown, sin explicaciones.
@@ -2395,13 +2422,18 @@ REGLAS OBLIGATORIAS:
    sin ninguna mención de fallo, rotura o pieza dañada), usa MANTENIMIENTO
    por defecto, no AVERIA. Reserva AVERIA para cuando el texto mencione
    explícitamente un problema, avería, rotura o pieza a reparar/sustituir.
+5. Menciones de "bloque" o "bloque motor" junto a una acción de avería
+   (sustituir, reparar, fuga, avería del bloque) deben clasificarse como
+   AVERIA / ENGINE_TRANSMISSION / ET_ENGINE, no como mantenimiento genérico.
+   Un simple "desmontar/montar/intercambiar bloque" sin mención de fallo
+   sigue la regla 4 (MANTENIMIENTO por defecto).
 
 Formato de respuesta exacto:
 {{
   "tipo_tarea": "<TIPO_TAREA>",
   "fault_category": "<CODIGO_CATEGORIA o cadena vacia>",
   "fault_subcategory": "<CODIGO_SUBCATEGORIA o cadena vacia>",
-  "task_category_free": "<texto libre o cadena vacia>"
+  "task_category_free": "<texto libre, uno de los literales especiales, o cadena vacia>"
 }}
 
 Descripción de la tarea: {fault_description}
