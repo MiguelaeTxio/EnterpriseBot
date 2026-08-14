@@ -1731,19 +1731,27 @@ de S51 -- sustituye por completo a la de S50, que ya estaba resuelta):**
    Puede volver a ser útil tras ver el resultado de la VM, si sigue
    habiendo un `sin_tipo` alto y hace falta dimensionar dónde.
 4. **`CONTENT_MARKERS` ampliado a 22 tipos, no a los 77** -- de los
-   77 tipos activos, quedan ~55 sin frase de contenido verificada
-   (algunos porque el muestreo no encontró frase limpia sin
-   contaminación cruzada, otros -- 10 tipos -- porque nunca se han
-   usado todavía, sin ningún ejemplo real en BD: `IEDMT`, `CONTRATO`,
-   `PAGO_CORRIENTE`, `AUTORIZACION_USO_MAQUINARIA`, `EPIS`,
-   `ESTIBA_PLATAFORMAS`, `ALTA_MEDICA`, `INVESTIGACION_ACCIDENTE`,
-   `PARTE_BAJA_MEDICA`, `TABLA_DE_CARGA`). Si tras ver el resultado
-   real de la VM sigue mereciendo la pena ampliar más el diccionario,
-   las 185 muestras ya descargadas y analizadas siguen disponibles
-   (`/home/claude/all_types.pkl` de esta sesión no persiste entre
-   sesiones -- habría que rehacer el muestreo con
-   `sample_type_patterns.py`, ya commiteado, o pedir a Miguel Ángel
-   que vuelva a correrlo).
+   77 tipos activos, quedan ~55 sin frase de contenido verificada.
+   ⛔ **CORRECCIÓN REAL S53:** la caracterización anterior de "10
+   tipos sin ningún ejemplo real en BD" es **incorrecta tal como
+   estaba escrita** -- comprobado con datos reales (Comando S,
+   `document_explorer_documentindexentry`): solo para `EPIS` hay
+   **1.518 archivos reales indexados** bajo rutas que contienen
+   "EPIS" (desde el 29/07/2026, migración histórica de H28), de los
+   cuales **1.517 tienen `document_type_id` vacío** -- ni uno solo
+   clasificado nunca. La frase correcta es "sin ningún ejemplo YA
+   CLASIFICADO", no "sin ningún documento real". Es un problema
+   distinto y más importante: `sample_type_patterns.py` solo sabe
+   buscar entre documentos con `document_type_id` ya asignado -- para
+   un tipo que nunca se ha clasificado ni una vez, el script nunca
+   podrá sacar muestra por mucho contenido real que exista (huevo y
+   gallina). **Pendiente para el lunes:** revisar, uno a uno, si los
+   demás "tipos sin ejemplo" son realmente así (BD verdaderamente
+   vacía) o son el mismo caso que EPIS (carpetas llenas, cero
+   clasificados) -- y para estos últimos, escribir una variante del
+   muestreo que busque por `parent_path LIKE` en vez de por
+   `document_type_id`, usando la ruta/carpeta como señal en lugar de
+   exigir clasificación previa.
 5. **Medir el alcance real de `FICHA_TECNICA` vs `ITV`** -- sin
    tocar en S51, sigue arrastrado desde S50. Criterio de cierre:
    conteo real con muestra de contenido OCR, nunca asumido por nombre
