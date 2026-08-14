@@ -43,7 +43,6 @@ DOSSIER_PAIRS = frozenset({
 # la primera regla cuyo par este presente en las coincidencias del
 # archivo decide.
 SPECIFIC_WINS = [
-    ("DOC_BAJA_DEFINITIVA", "BAJA_DEFINITIVA"),
     ("PROFORMA", "DOC_VENTA"),
     ("CONTRATO_COMPRAVENTA", "DOC_VENTA"),
     ("ITV", "FICHA_TECNICA"),

@@ -38,7 +38,16 @@ BUCKET = "cgs_grupo_alvarez"
 # domain -> {code: [candidatos]}
 CANDIDATES_SAFE = {
     "MACHINE": {
-        "BAJA_DEFINITIVA": ["BAJA DEFINITIVA"],
+        "BAJA_DEFINITIVA": [
+            "BAJA DEFINITIVA",
+            # Añadido S51: DOC_BAJA_DEFINITIVA se fusiona en
+            # BAJA_DEFINITIVA (migración 0033) -- mismo formulario
+            # oficial DGT ("BAJA DE VEHÍCULO"/"DATOS BAJA DEFINITIVA"),
+            # confirmado con 6 muestras reales sin ninguna diferencia
+            # de contenido, incluido el propio desguace (CATV)
+            # mencionado indistintamente en ambos casos.
+            "DESGUACE",
+        ],
         "BAJA_TEMPORAL": ["BAJA TEMPORAL"],
         "CERT_MANTENIMIENTO": [
             "CERTIF MANTENIMIENTO", "CERTIFICADO MANTENIMIENTO",
@@ -86,6 +95,11 @@ CANDIDATES_SAFE = {
             # coincidencias (ver EnterpriseBot_049_GET.txt) -- "PODER
             # JESUS MALSA, SLU.pdf", "Z-119 poder bast 77715.pdf".
             "PODER",
+            # Añadido S51: MANDATO se fusiona en CERTIFICADO_PODERES
+            # (migracion 0033) -- mismo documento real ("DOCUMENTO DE
+            # REPRESENTACION DE PERSONAS JURIDICAS"), confirmado con 6
+            # muestras reales sin ninguna diferencia de contenido.
+            "MANDATO",
         ],
         "CONTRATO_COMPRAVENTA": ["CONTRATO COMPRAVENTA", "COMPRAVENTA"],
         # Añadido S50 (segunda ronda, alta migracion 0030): contrato
@@ -113,7 +127,6 @@ CANDIDATES_SAFE = {
         "CUADRO_AMORTIZACION": ["CUADRO AMORTIZACION"],
         "DECLARACION_HOMOLOGACION": ["HOMOLOGACION"],
         "DNI_COMPRADOR": ["DNI COMPRADOR"],
-        "DOC_BAJA_DEFINITIVA": ["DESGUACE"],
         "DOC_VENTA": ["VENTA"],
         "FACTURA_COMPRA": [
             "FACTURA COMPRA",
@@ -218,7 +231,11 @@ CANDIDATES_SAFE = {
         "TARJETA_TRANSPORTE": ["TARJETA TRANSPORTE"],
     },
     "BOTH": {
-        "MANDATO": ["MANDATO"],
+        # S51: MANDATO vivía aquí bajo "BOTH" (aplicaba también a
+        # personal) antes de fusionarse en CERTIFICADO_PODERES
+        # (MACHINE, migración 0033) -- se preserva la coincidencia
+        # para personal aquí, sin duplicar el código en el catálogo.
+        "CERTIFICADO_PODERES": ["MANDATO"],
         "SEGURO": [
             "SEGURO", "REC SEG", "REC POL",
             # Añadido S49: recibo suelto sin "SEG"/"POL" inmediato
