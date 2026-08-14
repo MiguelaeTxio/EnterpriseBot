@@ -165,6 +165,9 @@ CONTENT_MARKERS = {
     ],
     "DECLARACION_HOMOLOGACION": [
         "HOMOLOGACION INDIVIDUAL", "CERTIFICADO DE HOMOLOGACION",
+        # Añadido S51 (muestreo real de 3 ejemplos, sample_type_patterns.py):
+        # verificado 3/3, sin contaminación cruzada con ningún otro tipo.
+        "CONSTE, A LOS EFECTOS",
     ],
     "OCA": ["OCA GLOBAL", "ACREDITADO POR ENAC"],
     "C_ADECUACION": [
@@ -174,7 +177,35 @@ CONTENT_MARKERS = {
     "IPO_ITC": [
         "ACTA DE INSPECCION PERIODICA", "INSPECCION PERIODICA OFICIAL",
         "INSPECCION PERIODICA DE GRUAS MOVILES",
+        # Añadido S51, mismo criterio que DECLARACION_HOMOLOGACION arriba.
+        "INDICADA, SEGUN LAS COMPROBACIONES",
     ],
+    # --- Añadidos S51: muestreo real de 3 ejemplos por cada uno de los
+    # 77 tipos activos (sample_type_patterns.py), tras confirmar que
+    # el barrido de 24h solo cubria 9 tipos de 77 (15,9% de acierto).
+    # Cada frase verificada 2/3 o 3/3 en muestras propias Y sin
+    # contaminacion cruzada con ningun otro tipo activo (las
+    # contaminaciones contra MANDATO/DOC_BAJA_DEFINITIVA no cuentan --
+    # son los tipos fusionados en la migracion 0033, ya inactivos).
+    "CERTIFICADO_PODERES": [
+        "DOCUMENTO DE REPRESENTACION DE PERSONAS JURIDICAS",
+    ],
+    "BAJA_DEFINITIVA": ["DATOS BAJA DEFINITIVA"],
+    "BAJA_TEMPORAL": ["CLASES Y MOTIVOS DE LA BAJA"],
+    "CERT_EXENCION_PERMISO": ["EXENTA DEL PERMISO DE CIRCULACION"],
+    "CERT_NO_TARJ_TTES": ["NO POSEE TARJETA DE TRANSPORTES"],
+    "ALTA": ["CON QUE SE RECONOCE"],
+    "CSS": ["CERTIFICADO DE ESTAR AL CORRIENTE", "DEUDAS YA VENCIDAS"],
+    "IDC": [
+        "INFORME DE DATOS PARA LA COTIZACION", "CONTINGENCIAS PROFESIONALES:",
+    ],
+    "MOD_145": ["QUE, A EFECTOS DEL"],
+    "EXCEDENCIA": ["EXCEDENCIA VOLUNTARIA"],
+    "ENTREGA_INFORMACION": ["INFORMACION EN MATERIA PREVENTIVA"],
+    "RECONOCIMIENTO_MEDICO": ["RECONOCIMIENTO MEDICO"],
+    "CARTA_VERDE": ["CERTIFICADO INTERNACIONAL DE SEGURO", "GREEN CARD"],
+    "RAE": ["DOCUMENTO ELECTRONICO EN LA"],
+    "REVISION_ESLINGAS": ["REVISION DE ESLINGAS"],
 }
 
 _FOLDER_MACHINE_CODE_RE = re.compile(r"^([A-Z]+-?\d+)")
