@@ -242,3 +242,60 @@ no aceptan flags ni variables de entorno).
   ```
   gcloud compute instances delete h28-ocr-batch --project=gen-lang-client-0961484137 --zone=europe-west1-b --quiet
   ```
+  ⛔ **ANTES de borrar, copiar siempre `~/EnterpriseBot/h28_migration_agent/sample*_output.txt`
+  (o cualquier archivo de resultado real generado en la sesión) a
+  local -- el disco se borra con la instancia.**
+  ```
+  gcloud compute scp h28-ocr-batch:~/EnterpriseBot/h28_migration_agent/sample*_output.txt . --project=gen-lang-client-0961484137 --zone=europe-west1-b
+  ```
+  Origen: ya se perdieron una vez 185 muestras reales (S51) por
+  quedar solo en la terminal de una sesión previa sin guardarlas en
+  archivo ni copiarlas fuera de la VM antes de cerrarla.
+
+---
+
+## AGENTE H28 (Windows, `.exe`) — INCIDENTE ABIERTO, SIN RESOLVER
+## (registrado S53, 2026-08-14) — retomar el lunes
+
+**Síntoma real reportado por Miguel Ángel:** copia un archivo nuevo a
+una carpeta vigilada (`DOC. MAQUINAS`) y no sube nunca a cuarentena,
+pese a que el agente está corriendo (proceso único, limpio, `10584`
+arrancado 14:08:14 13:01:12).
+
+**Causa raíz confirmada con datos reales, no adivinada:**
+`get_agent_root_dir()` (`config.py`) usa
+`os.path.dirname(os.path.abspath(sys.argv[0]))` -- para el `.exe`
+empaquetado con PyInstaller, eso es la carpeta `dist\`, **no**
+`C:\EnterpriseBot\h28_migration_agent\`. Mismo patrón exacto que ya
+causó el problema del log (ver más arriba). Consecuencia real,
+verificada:
+
+- `dist\agent_data\watched_folders.json` **no existe** -- de hecho
+  `dist\agent_data\` está **completamente vacía**.
+- `_resume_watched_folders()` (`main.py` línea 583-585) hace
+  `if not persisted_folders: return` -- en silencio, sin aviso, sin
+  notificación de bandeja. El agente arranca vigilando CERO carpetas
+  y no hay ningún síntoma visible de que esto está pasando.
+- Las subidas reales que sí funcionaron esta mañana (06:44-07:22,
+  `DOC. PERSONAL`/`DOC. MAQUINAS`) fueron con carpetas vigiladas **en
+  memoria** de esa ejecución concreta (seleccionadas a mano en algún
+  punto anterior) -- nunca llegaron a persistirse en el sitio correcto,
+  así que se perdieron en el reinicio limpio de las 13:01.
+- La clave de servicio sí sigue autenticando pese a que
+  `dist\agent_data\` está vacía -- indica que `get_service_account_key_path()`
+  la está resolviendo por la variable de entorno (tiene prioridad
+  sobre el archivo, ver `config.py`), no por el archivo. **Sin
+  confirmar todavía cuál es esa variable ni dónde está fijada** --
+  pendiente de mirar el lunes, no bloquea nada mientras siga
+  funcionando.
+
+**Pendiente de decidir el lunes, no resuelto todavía:** cómo corregir
+`get_agent_root_dir()` para que separe correctamente "carpeta del
+ejecutable" (`dist\`, válida para el log y estado real) de cualquier
+otra referencia -- y, más importante, **por qué la carpeta empaquetada
+nunca ha tenido `watched_folders.json`**: si es la primera vez que se
+empaqueta así, o si hubo una versión anterior que sí escribía bien y
+se rompió en algún commit. Antes de arreglar nada, revisar con `git
+log` los cambios reales de `config.py`/`state.py`/`main.py` entre
+la versión que sí funcionaba (si la hubo) y la actual -- directriz
+4.8/4.9, verificar antes de proponer diseño.
