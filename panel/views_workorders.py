@@ -3993,7 +3993,7 @@ class WorkOrderAdminHistoryView (WorkOrderFormAccessMixin ,View ):
         return qs 
 
     def _apply_filters (self ,qs ,operator_pk ,date_from ,date_to ,machine ,company ,
-    fault_category ="",q ="",status ="",is_elevated =True ):
+    fault_category ="",q ="",status ="",is_elevated =True ,dieta ="",origen =""):
         """
         Applies the optional GET filters to a WorkOrder queryset.
         operator_pk filters by uploaded_by (ignored when is_elevated is False
@@ -4004,7 +4004,11 @@ class WorkOrderAdminHistoryView (WorkOrderFormAccessMixin ,View ):
         fault_category filters by WorkOrderEntryLine.fault_category (exact).
         q performs a free-text OR search over fault_description and repair_notes.
         status filters by WorkOrder.status (exact) — folded in from the
-        deleted "Mis partes" Estado filter.
+        deleted "Mis partes" Estado filter. dieta ("si"/"no") filters by
+        WorkOrderEntry.has_diet on any entry of the work order — H07 punto 7
+        (2026-08-14): columna Dieta ya presentada en la tabla sin filtro
+        propio. origen filters by WorkOrder.source (exact) — misma razón,
+        columna Origen (solo Histórico) sin filtro propio.
         ---
         Aplica los filtros GET opcionales a un queryset de WorkOrder.
         operator_pk filtra por uploaded_by (ignorado cuando is_elevated es
@@ -4016,7 +4020,11 @@ class WorkOrderAdminHistoryView (WorkOrderFormAccessMixin ,View ):
         fault_category filtra por WorkOrderEntryLine.fault_category (exacto).
         q realiza una búsqueda libre OR sobre fault_description y repair_notes.
         status filtra por WorkOrder.status (exacto) — traspasado desde el
-        filtro Estado de la antigua "Mis partes".
+        filtro Estado de la antigua "Mis partes". dieta ("si"/"no") filtra
+        por WorkOrderEntry.has_diet de cualquier entry del parte — H07 punto 7
+        (2026-08-14): columna Dieta ya presentada en la tabla sin filtro
+        propio. origen filtra por WorkOrder.source (exacto) — misma razón,
+        columna Origen (solo Histórico) sin filtro propio.
         """
         if operator_pk and is_elevated :
             try :
@@ -4048,6 +4056,12 @@ class WorkOrderAdminHistoryView (WorkOrderFormAccessMixin ,View ):
             _Q (entries__lines__fault_description__icontains =q )
             |_Q (entries__lines__repair_notes__icontains =q )
             )
+        if dieta =="si":
+            qs =qs .filter (entries__has_diet =True )
+        elif dieta =="no":
+            qs =qs .exclude (entries__has_diet =True )
+        if origen :
+            qs =qs .filter (source =origen )
         return qs .distinct ()
 
     def _enrich_work_orders (self ,qs ,active_fault_category =""):
@@ -4237,6 +4251,8 @@ class WorkOrderAdminHistoryView (WorkOrderFormAccessMixin ,View ):
         fault_category =request .GET .get ("fault_category","").strip ()
         q =request .GET .get ("q","").strip ()
         status =request .GET .get ("status","").strip ()
+        dieta =request .GET .get ("dieta","").strip ()
+        origen =request .GET .get ("origen","").strip ()
 
 
 
@@ -4309,6 +4325,7 @@ class WorkOrderAdminHistoryView (WorkOrderFormAccessMixin ,View ):
         qs_pending =self ._apply_filters (
         qs_pending ,operator_pk ,date_from ,date_to ,machine ,company ,
         fault_category =fault_category ,q =q ,status =status ,is_elevated =is_elevated ,
+        dieta =dieta ,origen =origen ,
         )
         pending_list =self ._enrich_work_orders (qs_pending ,active_fault_category =fault_category )
 
@@ -4320,6 +4337,7 @@ class WorkOrderAdminHistoryView (WorkOrderFormAccessMixin ,View ):
         qs_reviewed =self ._apply_filters (
         qs_reviewed ,operator_pk ,date_from ,date_to ,machine ,company ,
         fault_category =fault_category ,q =q ,status =status ,is_elevated =is_elevated ,
+        dieta =dieta ,origen =origen ,
         )
         reviewed_list =self ._enrich_work_orders (qs_reviewed ,active_fault_category =fault_category )
 
@@ -4362,6 +4380,7 @@ class WorkOrderAdminHistoryView (WorkOrderFormAccessMixin ,View ):
         qs_history =self ._apply_filters (
         qs_history ,operator_pk ,date_from ,date_to ,machine ,company ,
         fault_category =fault_category ,q =q ,status =status ,is_elevated =is_elevated ,
+        dieta =dieta ,origen =origen ,
         )
         history_list =self ._enrich_work_orders (qs_history ,active_fault_category =fault_category )
 
@@ -4576,6 +4595,8 @@ class WorkOrderAdminHistoryView (WorkOrderFormAccessMixin ,View ):
             "fault_category": fault_category,
             "q": q,
             "status": status,
+            "dieta": dieta,
+            "origen": origen,
             "sort_stack": sort_stack_str,
         }
         filters_qs = _urlencode_fq({k: v for k, v in _filters_dict.items() if v})
@@ -4621,6 +4642,9 @@ class WorkOrderAdminHistoryView (WorkOrderFormAccessMixin ,View ):
         "q":q ,
         "status":status ,
         "status_choices":WorkOrder .Status .choices ,
+        "dieta":dieta ,
+        "origen":origen ,
+        "source_choices":WorkOrder .Source .choices ,
         # Resumen de horas extra del periodo activo -- solo WORKSHOP.
         # Active-period overtime summary -- WORKSHOP only.
         "overtime_hours":overtime_hours ,

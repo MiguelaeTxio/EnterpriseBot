@@ -589,6 +589,31 @@
                            autocomplete="off">
                 </div>
 
+                {# Dieta — has_diet filter dropdown — H07 punto 7 (2026-08-14), #}
+                {# columna Dieta ya presentada sin filtro propio #}
+                <div class="col-12 col-md-2">
+                    <label class="form-label text-sm fw-semibold mb-1">Dieta</label>
+                    <select name="dieta" class="form-select form-select-sm">
+                        <option value="">Todos</option>
+                        <option value="si" {% if dieta == "si" %}selected{% endif %}>Con dieta</option>
+                        <option value="no" {% if dieta == "no" %}selected{% endif %}>Sin dieta</option>
+                    </select>
+                </div>
+
+                {# Origen — source filter dropdown — H07 punto 7 (2026-08-14), #}
+                {# columna Origen (Histórico) ya presentada sin filtro propio #}
+                <div class="col-12 col-md-2">
+                    <label class="form-label text-sm fw-semibold mb-1">Origen</label>
+                    <select name="origen" class="form-select form-select-sm">
+                        <option value="">Todos</option>
+                        {% for src_value, src_label in source_choices %}
+                        <option value="{{ src_value }}" {% if origen == src_value %}selected{% endif %}>
+                            {{ src_label }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
                 <div class="col-12 col-md-1 d-flex gap-2">
                     <button type="submit" class="btn btn-primary btn-sm px-3 flex-grow-1">
                         <i class="bi bi-funnel me-1"></i>Filtrar
@@ -608,7 +633,7 @@
     <ul class="nav nav-tabs mb-0 border-bottom-0" id="adminHistoryTabs">
         <li class="nav-item">
             <a class="nav-link {% if active_tab == 'pending' %}active{% endif %} fw-semibold"
-               href="?tab=pending&operator_pk={{ operator_pk }}&date_from={{ date_from }}&date_to={{ date_to }}&machine={{ machine }}&status={{ status }}">
+               href="?tab=pending&operator_pk={{ operator_pk }}&date_from={{ date_from }}&date_to={{ date_to }}&machine={{ machine }}&status={{ status }}&dieta={{ dieta }}&origen={{ origen }}">
                 <i class="bi bi-clock-history me-1"></i>Pendientes
                 {% if pending_list %}
                 <span class="badge bg-warning text-dark ms-1">{{ pending_list|length }}</span>
@@ -617,7 +642,7 @@
         </li>
         <li class="nav-item">
             <a class="nav-link {% if active_tab == 'reviewed' %}active{% endif %} fw-semibold"
-               href="?tab=reviewed&operator_pk={{ operator_pk }}&date_from={{ date_from }}&date_to={{ date_to }}&machine={{ machine }}&status={{ status }}">
+               href="?tab=reviewed&operator_pk={{ operator_pk }}&date_from={{ date_from }}&date_to={{ date_to }}&machine={{ machine }}&status={{ status }}&dieta={{ dieta }}&origen={{ origen }}">
                 <i class="bi bi-check2-circle me-1"></i>Revisados
                 {% if reviewed_list %}
                 <span class="badge bg-success ms-1">{{ reviewed_list|length }}</span>
@@ -626,13 +651,13 @@
         </li>
         <li class="nav-item">
             <a class="nav-link {% if active_tab == 'history' %}active{% endif %} fw-semibold"
-               href="?tab=history&operator_pk={{ operator_pk }}&date_from={{ date_from }}&date_to={{ date_to }}&machine={{ machine }}&status={{ status }}">
+               href="?tab=history&operator_pk={{ operator_pk }}&date_from={{ date_from }}&date_to={{ date_to }}&machine={{ machine }}&status={{ status }}&dieta={{ dieta }}&origen={{ origen }}">
                 <i class="bi bi-archive me-1"></i>Histórico
             </a>
         </li>
         <li class="nav-item">
             <a class="nav-link {% if active_tab == 'absences' %}active{% endif %} fw-semibold"
-               href="?tab=absences&operator_pk={{ operator_pk }}&date_from={{ date_from }}&date_to={{ date_to }}&machine={{ machine }}&status={{ status }}">
+               href="?tab=absences&operator_pk={{ operator_pk }}&date_from={{ date_from }}&date_to={{ date_to }}&machine={{ machine }}&status={{ status }}&dieta={{ dieta }}&origen={{ origen }}">
                 <i class="bi bi-calendar-x me-1"></i>Ausencias
                 {% if absences_list %}
                 <span class="badge bg-secondary ms-1">{{ absences_list|length }}</span>
@@ -642,7 +667,7 @@
         {% if is_elevated %}
         <li class="nav-item">
             <a class="nav-link {% if active_tab == 'periods' %}active{% endif %} fw-semibold"
-               href="?tab=periods&operator_pk={{ operator_pk }}&date_from={{ date_from }}&date_to={{ date_to }}&machine={{ machine }}&status={{ status }}">
+               href="?tab=periods&operator_pk={{ operator_pk }}&date_from={{ date_from }}&date_to={{ date_to }}&machine={{ machine }}&status={{ status }}&dieta={{ dieta }}&origen={{ origen }}">
                 <i class="bi bi-calendar-range me-1"></i>Períodos
             </a>
         </li>
