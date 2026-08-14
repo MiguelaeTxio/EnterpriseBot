@@ -96,6 +96,10 @@
                 <div class="d-flex gap-2">
                     <button type="button" class="btn btn-outline-secondary btn-sm px-3"
                             data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" id="btn-confirm-export-template-pdf"
+                            class="btn btn-outline-danger btn-sm px-3">
+                        <i class="bi bi-file-earmark-pdf me-1"></i>PDF
+                    </button>
                     <button type="button" id="btn-confirm-export-template"
                             class="btn btn-success btn-sm px-4">
                         <i class="bi bi-file-earmark-excel me-1"></i>Exportar
@@ -111,6 +115,7 @@
       action="{% url 'panel:work_order_export_by_template' %}">
     {% csrf_token %}
     <input type="hidden" id="hidden-template-pk" name="template_pk" value="">
+    <input type="hidden" id="hidden-export-format" name="format" value="xlsx">
 </form>
 
 <script>
@@ -239,76 +244,84 @@
         }
     }
 
-    /* Confirm export button: build form and submit.
-       Botón confirmar exportación: construir formulario y enviar. */
-    var btnConfirm = document.getElementById("btn-confirm-export-template");
-    if (btnConfirm) {
-        btnConfirm.addEventListener("click", function () {
-            var tpl = _getSelectedTemplate();
-            if (!tpl) {
-                var errEl = document.getElementById("export-template-error");
-                if (errEl) {
-                    errEl.textContent = "Selecciona una plantilla antes de exportar.";
-                    errEl.classList.remove("d-none");
-                }
-                return;
+    /* Confirm export buttons (Excel/PDF): build form and submit.
+       Botones confirmar exportación (Excel/PDF): construir formulario y enviar. */
+    function _submitExport(format) {
+        var tpl = _getSelectedTemplate();
+        if (!tpl) {
+            var errEl = document.getElementById("export-template-error");
+            if (errEl) {
+                errEl.textContent = "Selecciona una plantilla antes de exportar.";
+                errEl.classList.remove("d-none");
             }
+            return;
+        }
 
-            var form = document.getElementById("form-export-by-template");
-            if (!form) { return; }
+        var form = document.getElementById("form-export-by-template");
+        if (!form) { return; }
 
-            /* Set template pk.
-               Establecer pk de plantilla. */
-            document.getElementById("hidden-template-pk").value = tpl.id;
+        /* Set template pk and format.
+           Establecer pk de plantilla y formato. */
+        document.getElementById("hidden-template-pk").value = tpl.id;
+        document.getElementById("hidden-export-format").value = format;
 
-            /* Remove any previously injected pk inputs.
-               Eliminar inputs pk inyectados previamente. */
-            form.querySelectorAll("input[name='pks']").forEach(function (el) {
-                el.remove();
-            });
-            form.querySelectorAll("input[name='operator_pks']").forEach(function (el) {
-                el.remove();
-            });
+        /* Remove any previously injected pk inputs.
+           Eliminar inputs pk inyectados previamente. */
+        form.querySelectorAll("input[name='pks']").forEach(function (el) {
+            el.remove();
+        });
+        form.querySelectorAll("input[name='operator_pks']").forEach(function (el) {
+            el.remove();
+        });
 
-            /* Collect checked PKs from the active tab's table (or all if none checked).
-               Recopilar PKs marcados de la tabla de la pestaña activa (o todos si ninguno). */
-            var checkedItems = document.querySelectorAll(
-                ACTIVE_BULK_FORM_SELECTOR + " .bulk-check-item:checked"
-            );
-            var pkSource = checkedItems.length > 0
-                ? Array.from(checkedItems).map(function (el) { return el.value; })
-                : Array.from(document.querySelectorAll(
-                    ACTIVE_BULK_FORM_SELECTOR + " .bulk-check-item"
-                  )).map(function (el) { return el.value; });
+        /* Collect checked PKs from the active tab's table (or all if none checked).
+           Recopilar PKs marcados de la tabla de la pestaña activa (o todos si ninguno). */
+        var checkedItems = document.querySelectorAll(
+            ACTIVE_BULK_FORM_SELECTOR + " .bulk-check-item:checked"
+        );
+        var pkSource = checkedItems.length > 0
+            ? Array.from(checkedItems).map(function (el) { return el.value; })
+            : Array.from(document.querySelectorAll(
+                ACTIVE_BULK_FORM_SELECTOR + " .bulk-check-item"
+              )).map(function (el) { return el.value; });
 
-            pkSource.forEach(function (pk) {
+        pkSource.forEach(function (pk) {
+            var inp   = document.createElement("input");
+            inp.type  = "hidden";
+            inp.name  = "pks";
+            inp.value = pk;
+            form.appendChild(inp);
+        });
+
+        /* Inject operator_pks if scope == 'selection'.
+           Inyectar operator_pks si scope == 'selection'. */
+        if (tpl.operator_scope === "selection") {
+            document.querySelectorAll(".export-op-check:checked").forEach(function (chk) {
                 var inp   = document.createElement("input");
                 inp.type  = "hidden";
-                inp.name  = "pks";
-                inp.value = pk;
+                inp.name  = "operator_pks";
+                inp.value = chk.value;
                 form.appendChild(inp);
             });
+        }
 
-            /* Inject operator_pks if scope == 'selection'.
-               Inyectar operator_pks si scope == 'selection'. */
-            if (tpl.operator_scope === "selection") {
-                document.querySelectorAll(".export-op-check:checked").forEach(function (chk) {
-                    var inp   = document.createElement("input");
-                    inp.type  = "hidden";
-                    inp.name  = "operator_pks";
-                    inp.value = chk.value;
-                    form.appendChild(inp);
-                });
-            }
+        /* Close modal and submit.
+           Cerrar modal y enviar. */
+        var bsModal = bootstrap.Modal.getInstance(
+            document.getElementById("modalExportTemplate")
+        );
+        if (bsModal) { bsModal.hide(); }
+        form.submit();
+    }
 
-            /* Close modal and submit.
-               Cerrar modal y enviar. */
-            var bsModal = bootstrap.Modal.getInstance(
-                document.getElementById("modalExportTemplate")
-            );
-            if (bsModal) { bsModal.hide(); }
-            form.submit();
-        });
+    var btnConfirm = document.getElementById("btn-confirm-export-template");
+    if (btnConfirm) {
+        btnConfirm.addEventListener("click", function () { _submitExport("xlsx"); });
+    }
+
+    var btnConfirmPdf = document.getElementById("btn-confirm-export-template-pdf");
+    if (btnConfirmPdf) {
+        btnConfirmPdf.addEventListener("click", function () { _submitExport("pdf"); });
     }
 
 }());

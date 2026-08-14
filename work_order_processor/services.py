@@ -2763,18 +2763,22 @@ def find_cached_classification(
 # build_export_from_template — generación de Excel desde ExportTemplate
 # ---------------------------------------------------------------------------
 
-def build_export_from_template(template, work_orders_qs):
+# ---------------------------------------------------------------------------
+# _build_export_columns — column metadata shared by the Excel and PDF
+# exporters (H07 punto 5, 2026-08-14). Extraído de build_export_from_template
+# para no duplicar la definición de columnas entre los dos formatos --
+# mismo criterio DRY ya aplicado en otras partes de este archivo.
+# _build_export_columns — metadatos de columna compartidos entre los
+# exportadores Excel y PDF (H07 punto 5, 2026-08-14). Extraído de
+# build_export_from_template para no duplicar la definición de columnas
+# entre los dos formatos -- mismo criterio DRY ya aplicado en otras partes
+# de este archivo.
+# ---------------------------------------------------------------------------
+
+def _build_export_columns(template):
     """
-    Builds an openpyxl Workbook from a WorkOrder queryset according to the
-    configuration stored in the given ExportTemplate instance.
-
-    Supported template.sheet_format values:
-      single_sheet — all rows on one sheet, grouped by operator then date.
-                     A dark-blue separator row marks each new operator block.
-      multi_sheet  — one sheet per distinct operator.
-
-    The columns rendered in each row are controlled by template.columns,
-    an ordered list of column keys. Valid keys and their sources:
+    Returns (active_cols, NUMERIC_KEYS) for the given ExportTemplate,
+    resolved in template.columns order. Valid keys and their sources:
       fecha       — WorkOrderEntry.work_date
       operario    — WorkOrder.uploaded_by (full name or username)
       maquina     — WorkOrderEntryLine.machine_asset.code or machine_raw
@@ -2784,44 +2788,17 @@ def build_export_from_template(template, work_orders_qs):
       hf          — WorkOrderEntryLine.hf
       delta_horas — WorkOrderEntryLine.delta_hours
       estado      — WorkOrder.reviewed (Revisado / Pendiente)
-      familia     — WorkOrderEntryLine.fault_category
+      familia     — WorkOrderEntryLine.fault_category / task_category_free
       origen      — WorkOrder.source
-      horas_extra — horas sobre jornada estándar de 8h (max(0, sum(delta_hours) - 8) por entry)
+      horas_extra — horas sobre jornada estándar de 8h (por entry)
       dietas      — 1 si el entry (día) tiene has_diet=True, 0 si no (por entry)
-
-    Cada hoja incluye, antes de la cabecera de columnas, dos celdas de
-    entrada para que Administración introduzca manualmente el precio de
-    la hora ordinaria y de la hora extra (mismo patrón que
-    generate_work_order_excel) -- 2026-07-07, solicitado por Miguel Ángel.
-    No se generan fórmulas de salario por fila (fuera de alcance de esta
-    petición); las celdas quedan como referencia de precio junto a las
-    horas/dietas totales de cada hoja.
-
-    Returns an openpyxl.Workbook instance ready for streaming.
     ---
-
-    Construye un Workbook openpyxl desde un queryset de WorkOrder según
-    la configuración almacenada en la instancia ExportTemplate dada.
-
-    Valores de template.sheet_format soportados:
-      single_sheet — todas las filas en una hoja, agrupadas por operario y fecha.
-                     Una fila separadora azul oscuro marca cada nuevo operario.
-      multi_sheet  — una hoja por operario distinto.
-
-    Las columnas renderizadas se controlan por template.columns, una lista
-    ordenada de claves. Claves válidas y sus orígenes: ver docstring en.
-
-    Devuelve una instancia openpyxl.Workbook lista para streaming.
+    Devuelve (active_cols, NUMERIC_KEYS) para la ExportTemplate dada,
+    resueltos en el orden de template.columns. Claves válidas y sus
+    orígenes: ver arriba.
     """
-    import openpyxl
-    from openpyxl.styles import Alignment, Font, PatternFill
     from decimal import Decimal
-    from .models import WorkOrderEntry, WorkOrderEntryLine
 
-    # ------------------------------------------------------------------
-    # Column metadata: label and value extractor per key.
-    # Metadatos de columna: etiqueta y extractor de valor por clave.
-    # ------------------------------------------------------------------
     COLUMN_DEFS = {
         "fecha":       ("Fecha",            lambda wo, entry, line: entry.work_date),
         "operario":    ("Operario",         lambda wo, entry, line: (
@@ -2881,23 +2858,60 @@ def build_export_from_template(template, work_orders_qs):
                                             )),
     }
 
-    # Resolve active column definitions in template order.
-    # Resolver definiciones de columna activas en el orden de la plantilla.
     active_cols = [
         (key, COLUMN_DEFS[key])
         for key in template.columns
         if key in COLUMN_DEFS
     ]
 
-    # ------------------------------------------------------------------
-    # Numeric column keys — eligible for a TOTAL row at the end of each
-    # data block. Only keys present in active_cols are summed.
-    # Claves de columna numéricas — elegibles para la fila TOTAL al final
-    # de cada bloque de datos. Solo se suman las que estén en active_cols.
-    # ------------------------------------------------------------------
     NUMERIC_KEYS = {"delta_horas", "horas_extra", "dietas"}
 
-    # ------------------------------------------------------------------
+    return active_cols, NUMERIC_KEYS
+
+
+def build_export_from_template(template, work_orders_qs):
+    """
+    Builds an openpyxl Workbook from a WorkOrder queryset according to the
+    configuration stored in the given ExportTemplate instance.
+
+    Supported template.sheet_format values:
+      single_sheet — all rows on one sheet, grouped by operator then date.
+                     A dark-blue separator row marks each new operator block.
+      multi_sheet  — one sheet per distinct operator.
+
+    Column metadata (labels/extractors) lives in _build_export_columns(),
+    shared with build_pdf_from_template() (H07 punto 5, 2026-08-14).
+
+    Cada hoja incluye, antes de la cabecera de columnas, dos celdas de
+    entrada para que Administración introduzca manualmente el precio de
+    la hora ordinaria y de la hora extra (mismo patrón que
+    generate_work_order_excel) -- 2026-07-07, solicitado por Miguel Ángel.
+    No se generan fórmulas de salario por fila (fuera de alcance de esta
+    petición); las celdas quedan como referencia de precio junto a las
+    horas/dietas totales de cada hoja.
+
+    Returns an openpyxl.Workbook instance ready for streaming.
+    ---
+
+    Construye un Workbook openpyxl desde un queryset de WorkOrder según
+    la configuración almacenada en la instancia ExportTemplate dada.
+
+    Valores de template.sheet_format soportados:
+      single_sheet — todas las filas en una hoja, agrupadas por operario y fecha.
+                     Una fila separadora azul oscuro marca cada nuevo operario.
+      multi_sheet  — una hoja por operario distinto.
+
+    Los metadatos de columna (etiquetas/extractores) viven en
+    _build_export_columns(), compartida con build_pdf_from_template()
+    (H07 punto 5, 2026-08-14).
+
+    Devuelve una instancia openpyxl.Workbook lista para streaming.
+    """
+    import openpyxl
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from .models import WorkOrderEntry, WorkOrderEntryLine
+
+    active_cols, NUMERIC_KEYS = _build_export_columns(template)
     # Styles / Estilos
     # ------------------------------------------------------------------
     header_fill = PatternFill("solid", fgColor="1F3864")
@@ -2938,31 +2952,12 @@ def build_export_from_template(template, work_orders_qs):
                 val = accumulators[key]
                 cell.value = round(val, 2) if val else 0.0
 
+
     # ------------------------------------------------------------------
     # Build flat line list enriched with wo and entry references.
     # Construir lista plana de líneas enriquecidas con referencias wo y entry.
     # ------------------------------------------------------------------
-    rows = (
-        WorkOrderEntryLine.objects
-        .filter(entry__work_order__in=work_orders_qs)
-        .select_related(
-            "entry__work_order__uploaded_by__user",
-            "entry",
-            "machine_asset",
-        )
-        .order_by(
-            "entry__work_order__uploaded_by__user__last_name",
-            "entry__work_order__uploaded_by__user__first_name",
-            "entry__work_date",
-            "entry__work_order__pk",
-            "line_number",
-        )
-        # Guard against duplicate rows caused by prefetch_related annotations
-        # on the incoming work_orders_qs when used as a subquery.
-        # Protección contra filas duplicadas causadas por anotaciones
-        # prefetch_related en work_orders_qs al usarse como subquery.
-        .distinct()
-    )
+    rows = _build_export_rows(work_orders_qs)
 
     # ------------------------------------------------------------------
     # Row layout — dos filas de celdas de precio antes de la cabecera de
@@ -3223,6 +3218,245 @@ def build_export_from_template(template, work_orders_qs):
     for sheet in wb.worksheets:
         _autofit_columns(sheet)
     return wb
+
+
+def _build_export_rows(work_orders_qs):
+    """
+    Returns the flat, ordered WorkOrderEntryLine queryset shared by the
+    Excel and PDF exporters -- extraído aquí por el mismo motivo que
+    _build_export_columns (H07 punto 5, 2026-08-14).
+    ---
+    Devuelve el queryset plano y ordenado de WorkOrderEntryLine compartido
+    por los exportadores Excel y PDF -- extraído aquí por el mismo motivo
+    que _build_export_columns (H07 punto 5, 2026-08-14).
+    """
+    from .models import WorkOrderEntryLine
+
+    return (
+        WorkOrderEntryLine.objects
+        .filter(entry__work_order__in=work_orders_qs)
+        .select_related(
+            "entry__work_order__uploaded_by__user",
+            "entry",
+            "machine_asset",
+        )
+        .order_by(
+            "entry__work_order__uploaded_by__user__last_name",
+            "entry__work_order__uploaded_by__user__first_name",
+            "entry__work_date",
+            "entry__work_order__pk",
+            "line_number",
+        )
+        # Guard against duplicate rows caused by prefetch_related annotations
+        # on the incoming work_orders_qs when used as a subquery.
+        # Protección contra filas duplicadas causadas por anotaciones
+        # prefetch_related en work_orders_qs al usarse como subquery.
+        .distinct()
+    )
+
+
+# ---------------------------------------------------------------------------
+# build_pdf_from_template — H07 punto 5 (2026-08-14)
+# ---------------------------------------------------------------------------
+
+def build_pdf_from_template(template, work_orders_qs):
+    """
+    Builds a PDF (bytes) from a WorkOrder queryset, mismo criterio de datos
+    y columnas que build_export_from_template (misma ExportTemplate, mismos
+    trabajadores elegidos). Usa PyMuPDF (fitz) -- ya en requirements.txt y
+    ya es el patrón real de generación de PDF de este proyecto
+    (document_explorer/management/commands/export_manual_covers.py), sin
+    introducir una dependencia nueva (reportlab) que requeriría un ciclo
+    manual de pip-tools en el servidor.
+
+    Sin resumen previo -- concesión explícita de Miguel Ángel (S51,
+    verbatim): "Si el resumen es muy difícil de hacer, porque no vamos a
+    gastar una llamada de Gemini para eso, pues simplemente una exportación
+    a PDF". Un resumen real necesitaría una llamada a Gemini sobre el
+    conjunto de partes exportados; esta primera versión es solo el detalle
+    tabular, igual que el Excel pero en un único documento continuo (un PDF
+    no tiene "hojas" -- template.sheet_format se ignora aquí a propósito,
+    ambos formatos de plantilla producen el mismo PDF).
+
+    Returns raw PDF bytes ready for streaming.
+    ---
+
+    Construye un PDF (bytes) desde un queryset de WorkOrder, mismo criterio
+    de datos y columnas que build_export_from_template (misma
+    ExportTemplate, mismos trabajadores elegidos). Usa PyMuPDF (fitz) -- ya
+    en requirements.txt y ya es el patrón real de generación de PDF de este
+    proyecto (document_explorer/management/commands/export_manual_covers.py),
+    sin introducir una dependencia nueva (reportlab) que requeriría un
+    ciclo manual de pip-tools en el servidor.
+
+    Sin resumen previo -- concesión explícita de Miguel Ángel (S51,
+    verbatim): "Si el resumen es muy difícil de hacer, porque no vamos a
+    gastar una llamada de Gemini para eso, pues simplemente una exportación
+    a PDF". Un resumen real necesitaría una llamada a Gemini sobre el
+    conjunto de partes exportados; esta primera versión es solo el detalle
+    tabular, igual que el Excel pero en un único documento continuo (un PDF
+    no tiene "hojas" -- template.sheet_format se ignora aquí a propósito,
+    ambos formatos de plantilla producen el mismo PDF).
+
+    Devuelve los bytes crudos del PDF listos para streaming.
+    """
+    import fitz
+    from decimal import Decimal
+    from django.utils.timezone import now as _tz_now
+
+    active_cols, NUMERIC_KEYS = _build_export_columns(template)
+    rows = _build_export_rows(work_orders_qs)
+
+    # ------------------------------------------------------------------
+    # Layout constants — A4 apaisado, en puntos.
+    # Layout constants — landscape A4, in points.
+    # ------------------------------------------------------------------
+    PAGE_W, PAGE_H = 842, 595
+    MARGIN         = 24
+    ROW_H          = 16
+    TITLE_H        = 34
+    HEADER_H       = 20
+    FONT_SIZE      = 7.5
+    HEADER_FONT_SIZE = 8.5
+    USABLE_W       = PAGE_W - 2 * MARGIN
+
+    # Colores -- mismos que build_export_from_template, en RGB 0-1 (fitz).
+    # Colors -- same as build_export_from_template, in 0-1 RGB (fitz).
+    HEADER_FILL = (0x1F / 255, 0x38 / 255, 0x64 / 255)
+    SEP_FILL    = (0x2F / 255, 0x54 / 255, 0x96 / 255)
+    TOTAL_FILL  = (0xD6 / 255, 0xE4 / 255, 0xF0 / 255)
+    STRIPE_FILL = (0xF2 / 255, 0xF2 / 255, 0xF2 / 255)
+    WHITE       = (1, 1, 1)
+    BLACK       = (0, 0, 0)
+    DARK_BLUE   = HEADER_FILL
+
+    # Columnas con más texto (descripción/notas) reciben doble peso de
+    # ancho frente al resto -- mismo criterio visual que las columnas
+    # anchas del Excel.
+    # Wide-text columns (description/notes) get double width weight vs
+    # the rest -- same visual criterion as the wide Excel columns.
+    _WIDE_KEYS = {"descripcion", "notas"}
+    weights = [2 if key in _WIDE_KEYS else 1 for key, _ in active_cols]
+    total_weight = sum(weights) or 1
+    col_widths = [USABLE_W * w / total_weight for w in weights]
+    col_x = [MARGIN]
+    for w in col_widths:
+        col_x.append(col_x[-1] + w)
+
+    doc = fitz.open()
+
+    def _new_page():
+        page = doc.new_page(width=PAGE_W, height=PAGE_H)
+        y = MARGIN
+        page.insert_text(
+            (MARGIN, y + 14), f"Partes digitales — {template.name}",
+            fontsize=13, fontname="hebo", color=DARK_BLUE,
+        )
+        page.insert_text(
+            (PAGE_W - MARGIN - 160, y + 14),
+            _tz_now().strftime("Generado %d/%m/%Y %H:%M"),
+            fontsize=8, color=(0.4, 0.4, 0.4),
+        )
+        y += TITLE_H
+        _draw_header_row(page, y)
+        return page, y + HEADER_H
+
+    def _draw_header_row(page, y):
+        rect = fitz.Rect(MARGIN, y, MARGIN + USABLE_W, y + HEADER_H)
+        page.draw_rect(rect, color=None, fill=HEADER_FILL)
+        for idx, (key, (label, _extractor)) in enumerate(active_cols):
+            cell = fitz.Rect(col_x[idx] + 2, y + 2, col_x[idx + 1] - 2, y + HEADER_H - 2)
+            page.insert_textbox(
+                cell, label, fontsize=HEADER_FONT_SIZE, fontname="hebo",
+                color=WHITE, align=0,
+            )
+
+    def _draw_row(page, y, values, fill=None, text_color=BLACK, bold=False):
+        if fill is not None:
+            rect = fitz.Rect(MARGIN, y, MARGIN + USABLE_W, y + ROW_H)
+            page.draw_rect(rect, color=None, fill=fill)
+        for idx, val in enumerate(values):
+            cell = fitz.Rect(col_x[idx] + 2, y + 1, col_x[idx + 1] - 2, y + ROW_H - 1)
+            page.insert_textbox(
+                cell, str(val) if val not in (None, "") else "",
+                fontsize=FONT_SIZE, fontname="hebo" if bold else "helv",
+                color=text_color, align=0,
+            )
+
+    page, y = _new_page()
+
+    current_operator = None
+    accumulators = {key: 0.0 for key, _ in active_cols if key in NUMERIC_KEYS}
+    seen_entry_pks: set = set()
+    stripe_on = False
+
+    for line in rows:
+        wo    = line.entry.work_order
+        entry = line.entry
+        op_name = (
+            wo.uploaded_by.user.get_full_name() or wo.uploaded_by.user.username
+            if wo.uploaded_by else ""
+        )
+
+        if y + ROW_H > PAGE_H - MARGIN:
+            page, y = _new_page()
+
+        # Fila separadora de operario -- mismo criterio que el Excel.
+        # Operator separator row -- same criterion as the Excel.
+        if op_name != current_operator:
+            current_operator = op_name
+            if y + ROW_H > PAGE_H - MARGIN:
+                page, y = _new_page()
+            rect = fitz.Rect(MARGIN, y, MARGIN + USABLE_W, y + ROW_H)
+            page.draw_rect(rect, color=None, fill=SEP_FILL)
+            page.insert_textbox(
+                fitz.Rect(MARGIN + 4, y + 1, MARGIN + USABLE_W - 4, y + ROW_H - 1),
+                op_name, fontsize=FONT_SIZE + 0.5, fontname="hebo",
+                color=WHITE, align=0,
+            )
+            y += ROW_H
+
+        is_first_line_of_entry = entry.pk not in seen_entry_pks
+        if is_first_line_of_entry:
+            stripe_on = not stripe_on
+        seen_entry_pks.add(entry.pk)
+
+        row_values = []
+        for key, (_label, extractor) in active_cols:
+            val = extractor(wo, entry, line)
+            if key in NUMERIC_KEYS and not is_first_line_of_entry:
+                val = ""
+            row_values.append(val)
+            if (
+                key in accumulators
+                and isinstance(val, (int, float))
+                and is_first_line_of_entry
+            ):
+                accumulators[key] += val
+
+        _draw_row(page, y, row_values, fill=STRIPE_FILL if stripe_on else None)
+        y += ROW_H
+
+    # Fila TOTAL final -- mismo criterio que el Excel single_sheet.
+    # Final TOTAL row -- same criterion as the Excel single_sheet.
+    if accumulators:
+        if y + ROW_H > PAGE_H - MARGIN:
+            page, y = _new_page()
+        total_values = []
+        for idx, (key, _label_ext) in enumerate(active_cols):
+            if idx == 0:
+                total_values.append("TOTAL")
+            elif key in NUMERIC_KEYS and key in accumulators:
+                val = accumulators[key]
+                total_values.append(round(val, 2) if val else 0.0)
+            else:
+                total_values.append("")
+        _draw_row(page, y, total_values, fill=TOTAL_FILL, text_color=DARK_BLUE, bold=True)
+        y += ROW_H
+
+    output = doc.tobytes()
+    doc.close()
+    return output
 
 
 

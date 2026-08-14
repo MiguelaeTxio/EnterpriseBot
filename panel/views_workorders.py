@@ -6305,6 +6305,28 @@ class WorkOrderAdminExportByTemplateView (SupervisorAccessMixin ,View ):
 
 
 
+        # H07 punto 5 (2026-08-14): format=pdf usa la misma resolución de
+        # plantilla/partes/operator_pks de arriba, solo cambia el generador
+        # y el content_type/extensión de salida.
+        export_format =request .POST .get ("format","xlsx").strip ().lower ()
+        if export_format not in ("xlsx","pdf"):
+            export_format ="xlsx"
+
+        if export_format =="pdf":
+            from work_order_processor .services import build_pdf_from_template 
+            pdf_bytes =build_pdf_from_template (template ,qs )
+
+            filename =(
+            f"partes_digitales_{tz_now().strftime('%Y%m%d_%H%M%S')}.pdf"
+            )
+            response =HttpResponse (pdf_bytes ,content_type ="application/pdf")
+            response ["Content-Disposition"]=f'attachment; filename="{filename}"'
+            logger .info (
+            "# [EXPORT BY TEMPLATE] Exportación PDF '%s' (%d partes) por %s.",
+            template .name ,qs .count (),cu .user .username ,
+            )
+            return response 
+
         wb =build_export_from_template (template ,qs )
         buf =io .BytesIO ()
         wb .save (buf )
