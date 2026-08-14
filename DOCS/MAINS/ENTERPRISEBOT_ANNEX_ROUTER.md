@@ -30,7 +30,7 @@ Cumple dos funciones inseparables:
 | H04 | Canal WhatsApp — Chatbot | `ENTERPRISEBOT_ATTACHED_MILESTONE_V04.md` |
 | H05 | Arquitectura Omnicanal IVR ↔ WhatsApp | `ENTERPRISEBOT_ATTACHED_MILESTONE_V05.md` |
 | H06 | Procesador PDF→Excel + BBDD | `ENTERPRISEBOT_ATTACHED_MILESTONE_V06.md` |
-| H07 | Partes Diarios de Reparación Digital | `ENTERPRISEBOT_ATTACHED_MILESTONE_V07.md` |
+| H07 | Partes Diarios de Reparación Digital | `ENTERPRISEBOT_ATTACHED_MILESTONE_V07.md` ← EN PROGRESO |
 | H08 | Mejoras Procesador PDF→Excel + HTMX | `ENTERPRISEBOT_ATTACHED_MILESTONE_V08.md` |
 | H09 | Informes y Analítica Cruzada | `ENTERPRISEBOT_ATTACHED_MILESTONE_V09.md` |
 | H10 | Albaranes de Proveedores y Almacén de Repuestos | `ENTERPRISEBOT_ATTACHED_MILESTONE_V10.md` |
@@ -53,7 +53,7 @@ Cumple dos funciones inseparables:
 | H27 | Ingesta de Documentación vía Correo Electrónico | `ENTERPRISEBOT_ATTACHED_MILESTONE_V27.md` |
 | H28 | Migración y Reorganización de Documentación Histórica | `ENTERPRISEBOT_ATTACHED_MILESTONE_V28.md` |
 | H29 | Explorador de Archivos y Gobierno Documental del Panel sobre GCS | `ENTERPRISEBOT_ATTACHED_MILESTONE_V29.md` |
-| H30 | Vinculación Documental Real — Centros de Gasto y Personal | `ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md` ← EN PROGRESO |
+| H30 | Vinculación Documental Real — Centros de Gasto y Personal | `ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md` |
 
 Todos los anexos viven en `DOCS/MAINS/ATTACHEDS/`.
 
@@ -61,9 +61,27 @@ Todos los anexos viven en `DOCS/MAINS/ATTACHEDS/`.
 
 ## 3. Resultado Actual
 
-**Hito EN PROGRESO:** H30 — Vinculación Documental Real: Centros de
-Gasto y Personal con Referencia Viva a su Documentación →
-`ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md`
+**Hito EN PROGRESO:** H07 — Partes Diarios de Reparación Digital →
+`ENTERPRISEBOT_ATTACHED_MILESTONE_V07.md`
+
+**Hito PAUSADO en esta sesión (S51):** H30 — Vinculación Documental
+Real: Centros de Gasto y Personal → `ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md`.
+Sesión larguísima (S51): resolución de las tres preguntas bloqueantes
+arrastradas, atajo de alta de tipo documental desde el panel,
+corrección de dos bugs reales (enlace de documentación del listado de
+flota apuntando al modelo legado, enlaces rotos en el historial de
+operaciones para filas ya borradas), fusión de tipos duplicados
+(`MANDATO`→`CERTIFICADO_PODERES`, `DOC_BAJA_DEFINITIVA`→
+`BAJA_DEFINITIVA`), clasificación en tiempo real heurística+OCR antes
+de Gemini, y arreglo del aviso repetido del agente H28. H07 se abre
+por decisión explícita de Miguel Ángel a mitad de sesión: mientras
+una VM en la nube (`h28-ocr-batch`, GCE) sigue corriendo de fondo el
+barrido de OCR de maquinaria sin necesitar supervisión, se atiende un
+bloque grande de mejoras reales sobre Partes Digitales (clasificación
+de avería por Gemini, familias, exportación PDF/Excel, plantillas)
+que Miguel Ángel trajo directamente en esta misma sesión. H30 se
+retoma en cuanto se revisen los resultados de la VM -- ver hoja de
+ruta de su propio anexo.
 
 **Hito PAUSADO en esta sesión (S043):** H29 — Explorador de Archivos y
 Gobierno Documental del Panel sobre Google Cloud Storage →

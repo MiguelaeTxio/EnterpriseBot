@@ -1675,45 +1675,71 @@ antes de construir cualquiera.
 saltarse:** heurística de nombre → OCR → Gemini/IA solo como último
 recurso.
 
-**Plan concreto de la próxima sesión, en este orden:**
+**Hoja de Ruta para la siguiente sesión de H30 (reescrita al cierre
+de S51 -- sustituye por completo a la de S50, que ya estaba resuelta):**
 
-1. **Comprobar el resultado de `local_ocr_classify.py --apply`**,
-   corrido en local durante el cierre de S50 sobre ~2.670
-   candidatos. Miguel Ángel estima ~30% de acierto real (~900
-   documentos) -- confirmar la cifra real con el resumen del propio
-   script (`tipo_resuelto_por_ocr`/`tipo_y_fecha_resueltos`/
-   `sin_tipo_reconocible_en_ocr`) antes de decidir el siguiente
-   paso. Criterio de cierre: número real confirmado, no estimado.
-2. **Decidir qué hacer con el resto tras el punto 1** -- Miguel
-   Ángel, verbatim (S50): "habrá que ver cuánta morralla tenemos
-   ahí, y a ver cómo resolvemos para tener toda la documentación al
-   día." Sin criterio de cierre fijado todavía -- decidir con datos
-   reales delante al empezar este punto.
-3. **Medir el alcance real de `FICHA_TECNICA` vs `ITV`** antes de
-   tocar el catálogo -- cuántos de los `FICHA_TECNICA` actuales son
-   por contenido real el documento oficial (deberían ser `ITV`)
-   frente a los que son un tríptico de fabricante genuino. Criterio
-   de cierre: conteo real con muestra de contenido OCR, nunca
-   asumido por nombre de archivo.
-4. **Decidir si se construye el barrido de renombrado retroactivo**
-   (esquema fijo de `naming_service` aplicado al histórico ya
-   clasificado) -- explicado el porqué a Miguel Ángel en S50, sin
-   decisión tomada todavía sobre si merece la pena el riesgo/coste
-   frente al beneficio.
-5. **Backfill de fecha para el backlog histórico** (documentos
-   `tracks_expiry=True` ya clasificados sin fecha, fuera del alcance
-   de `local_ocr_classify.py` que solo resuelve TIPO) -- usar
-   `expiry_resolution_service` (heurística→OCR→Gemini) contra el
-   histórico, no solo contra ingesta nueva. Ligado a la pregunta 2
-   de arriba (Gemini para `ocr_unreliable`).
-6. **5 duplicados de seguro/OCA sin nombre coincidente**
-   (P-22/8099JFK, B-33/9875GBF, A-34/E6460BCS, A-56/E8743BGW,
-   X-15/5215MVF) -- arrastrados desde S50 sin decisión de Miguel
-   Ángel todavía, bajo volumen, revisar cuando haya hueco.
+1. **VM de OCR en la nube, EN MARCHA, sin supervisar hasta que se
+   retome este hito.** `h28-ocr-batch` (GCE, `gen-lang-client-0961484137`,
+   `europe-west1-b`, `e2-standard-8`), 3 procesos en paralelo dentro
+   de sesiones `tmux` (`shard0`/`shard1`/`shard2`,
+   `--shard-count 3 --shard-index 0/1/2 --apply`), repartiendo sin
+   solape (`entry_id % 3`) los ~2.020 candidatos de maquinaria que
+   quedaron sin tipo tras la primera pasada de S51 en local. Corren
+   con el `CONTENT_MARKERS` ya ampliado a 22 tipos (commit `1d3c703`,
+   ver `COMPLETADAS EN S51` más abajo) -- la primera pasada con solo 9
+   tipos dio `tipo_resuelto=0/661` en el primer shard, error real
+   detectado por Miguel Ángel a mitad de sesión, corregido antes de
+   relanzar. **Criterio de cierre al retomar:** conectar por SSH
+   (`gcloud compute ssh h28-ocr-batch --project=gen-lang-client-0961484137
+   --zone=europe-west1-b`), mirar `~/shard0.log`/`~/shard1.log`/
+   `~/shard2.log` (o `tmux attach -t shardN`), sumar los tres
+   `=== RESUMEN (APLICADO) ===`, y contrastar contra el 15,9% real de
+   la primera pasada -- ¿mejoró de verdad con el diccionario ampliado?
+   **Recordar borrar la VM cuando ya no haga falta**
+   (`gcloud compute instances delete h28-ocr-batch --project=gen-lang-client-0961484137
+   --zone=europe-west1-b`) para dejar de facturar -- coste estimado
+   total de la sesión, con la VM corriendo, inferior a $2.
+2. **Informe por familia (`report_ocr_gaps.py`) sin volver a correr
+   todavía** -- construido y commiteado en S51, pero quedó superado
+   por el hallazgo de que el problema real era cobertura de
+   `CONTENT_MARKERS` (9 de 77 tipos), no concentración por familia.
+   Puede volver a ser útil tras ver el resultado de la VM, si sigue
+   habiendo un `sin_tipo` alto y hace falta dimensionar dónde.
+3. **`CONTENT_MARKERS` ampliado a 22 tipos, no a los 77** -- de los
+   77 tipos activos, quedan ~55 sin frase de contenido verificada
+   (algunos porque el muestreo no encontró frase limpia sin
+   contaminación cruzada, otros -- 10 tipos -- porque nunca se han
+   usado todavía, sin ningún ejemplo real en BD: `IEDMT`, `CONTRATO`,
+   `PAGO_CORRIENTE`, `AUTORIZACION_USO_MAQUINARIA`, `EPIS`,
+   `ESTIBA_PLATAFORMAS`, `ALTA_MEDICA`, `INVESTIGACION_ACCIDENTE`,
+   `PARTE_BAJA_MEDICA`, `TABLA_DE_CARGA`). Si tras ver el resultado
+   real de la VM sigue mereciendo la pena ampliar más el diccionario,
+   las 185 muestras ya descargadas y analizadas siguen disponibles
+   (`/home/claude/all_types.pkl` de esta sesión no persiste entre
+   sesiones -- habría que rehacer el muestreo con
+   `sample_type_patterns.py`, ya commiteado, o pedir a Miguel Ángel
+   que vuelva a correrlo).
+4. **Medir el alcance real de `FICHA_TECNICA` vs `ITV`** -- sin
+   tocar en S51, sigue arrastrado desde S50. Criterio de cierre:
+   conteo real con muestra de contenido OCR, nunca asumido por nombre
+   de archivo. **(arrastrado 2.ª sesión sin avanzar)**
+5. **Decidir si se construye el barrido de renombrado retroactivo**
+   -- sin decisión todavía. **(arrastrado 2.ª sesión sin avanzar)**
+6. **Backfill de fecha para el backlog histórico** vía
+   `expiry_resolution_service` contra documentos ya clasificados sin
+   fecha -- confirmado por Miguel Ángel en S51 que se lanza, pero
+   **no se llegó a ejecutar** por el desvío hacia la VM de OCR.
+   Sigue pendiente.
+7. **5 duplicados de seguro/OCA sin nombre coincidente** -- sin
+   decisión todavía. **(arrastrado 3.ª sesión sin avanzar)**
+
+**Deuda mayor confirmada en S51, explícitamente aplazada por Miguel
+Ángel hasta cerrar maquinaria:** carpetas de personal duplicadas en
+M365 (`DOC. PERSONAL/PERSONAL/TALLER/`) -- ver bloque dedicado más
+arriba en este mismo anexo. **No abrir este frente todavía.**
 
 **Resto de temas de fondo, sin tocar hasta que se prioricen
-explícitamente (sin cambios respecto a sesiones anteriores, no
-repetir la pregunta salvo que Miguel Ángel la traiga él mismo):**
+explícitamente (sin cambios respecto a sesiones anteriores):**
 - Cierre uno a uno de los 231 huecos reales de manuales.
 - Decidir el destino final de `MachineDocument`/`PersonalDocument`
   (residuales) -- Miguel Ángel ya confirmó que se pueden borrar, solo

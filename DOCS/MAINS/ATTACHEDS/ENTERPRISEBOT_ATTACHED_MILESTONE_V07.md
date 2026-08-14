@@ -231,7 +231,103 @@ desde el formulario de edición de sección.
 
 ## 8. Hoja de Ruta para la Siguiente Sesion
 
-**Pendiente arrastrado desde H30 (S51) — código/etiqueta del
+**ARRANQUE H07 vía PCH desde H30 (S51, misma sesión) -- bloque grande
+de mejoras reales sobre Partes Digitales, traído directamente por
+Miguel Ángel mientras la VM de OCR de H30 corre de fondo sin
+supervisión. Los siguientes puntos son la hoja de ruta ejecutable de
+esta sesión, en el orden en que se plantearon -- ninguno construido
+todavía, solo registrado:**
+
+1. **Identificadores de avería exportados en inglés -- deben ir en
+   castellano.** Revisar `COLUMN_DEFS`/exportación Excel y cualquier
+   choices/enum de familia de avería que esté produciendo el texto en
+   inglés en la exportación.
+
+2. **Clasificación de avería por Gemini, huecos reales detectados por
+   Miguel Ángel viendo el visor:**
+   - **"Limpieza y mantenimiento"** no se está nombrando bien ni se le
+     asigna ninguna familia de avería -- mejorar el prompt de Gemini
+     para que reconozca este caso.
+   - **Vacaciones** debe aparecer literalmente como "Vacaciones" (no
+     en blanco/genérico), y además debe asignarse a **Personal**, no
+     a una máquina.
+   - **Mantenimiento y limpieza**, según a qué esté ligado: si es de
+     una máquina, se asigna a esa máquina con familia
+     "Mantenimiento"; si es de un centro de gasto (p. ej. el
+     almacén), se asigna a ese centro de gasto, también con familia
+     "Mantenimiento".
+   - **Vocabulario más específico en el prompt**: caso real detectado
+     -- una avería descrita como "bloque, sustituir bloque" (bloque
+     motor) no se está reconociendo como avería de motor. Ampliar el
+     prompt con más ejemplos/vocabulario para reducir estos huecos.
+   - **Formación**: familia de avería "Formación", asignada al
+     **trabajador/personal**, no a una máquina -- aunque hoy a veces
+     llegue con un código de máquina puesto. Miguel Ángel, verbatim:
+     *"Eso lo vamos a cambiar todo, pero de momento lo vamos a poner
+     así."* -- diseño provisional, ligado al futuro rediseño conjunto
+     de vacaciones/ausencias/formación (mismo bloque que el pendiente
+     ya registrado más abajo sobre el "justificante de asistencia").
+   - **Trabajos no mecánicos ligados a centro de gasto** -- ejemplos
+     reales: llevar una máquina a la ITV, o un servicio prestado con
+     la máquina. Necesitan su propia categoría, distinta de avería
+     mecánica.
+
+3. **Campo de avería editable tras la revisión** -- si Gemini se
+   confunde al clasificar, quien revisa (Carolina et al.) debe poder
+   corregir el valor a mano, no quedar atado a lo que puso Gemini.
+
+4. **Líneas sombreadas alternas** -- tanto en la vista del listado
+   como en la exportación a Excel, para facilitar la lectura.
+
+5. **Exportación a PDF**, mismo criterio que la exportación a Excel
+   ya existente (mismos trabajadores elegidos, mismos datos), con un
+   **resumen previo** antes del detalle. Miguel Ángel, verbatim: *"Si
+   el resumen es muy difícil de hacer, porque no vamos a gastar una
+   llamada de Gemini para eso, pues simplemente una exportación a
+   PDF"* -- es decir, el resumen es deseable pero no obligatorio si
+   implicara gastar una llamada a Gemini; en ese caso, exportación a
+   PDF sin resumen.
+
+6. **Exportación de "pendientes"** -- poder ver y exportar los partes
+   del mes en curso sin necesidad de que estén revisados/visados
+   primero (hoy la exportación exige visado, a confirmar contra el
+   código real antes de construir nada).
+
+7. **Filtros** -- mencionado sin más detalle todavía ("hay que poner
+   filtros también, y ya está"). Pedir a Miguel Ángel qué filtros
+   concretos quiere en cuanto se llegue a este punto, no asumir.
+
+8. **Historial de máquinas -- implantar ahí también el sistema de
+   plantillas de exportación**, para poder confeccionar libros de
+   historial de reparaciones desde esa misma pantalla, con el mismo
+   mecanismo que se construya para Partes Digitales (puntos 4-6 de
+   arriba).
+
+9. **Renombrar la sección "Libro de revisiones — fichas de avería"**
+   de `panel/machine_history.html` (bloque `H7/S016`, historial de
+   tickets de avería de la máquina, sistema de tickets aparte,
+   confirmado en esta sesión que muestra 0 en máquinas sin ningún
+   ticket abierto por esa vía -- no tiene relación con Partes
+   Digitales). Miguel Ángel, verbatim: *"Eso tiene que quedar puesto
+   como ticket de avería, no como libro de revisiones [...] libro de
+   revisiones tiende a confusión [...] el libro de revisiones va a
+   ser la exportación que vamos a hacer [...] cada usuario podrá
+   confeccionar sus plantillas para generar un libro de reparaciones
+   propio."* Es decir: **"Libro de revisiones" pasa a ser el nombre
+   del sistema de exportación por plantillas del punto 8** -- la
+   sección actual de tickets debe renombrarse a algo inequívoco,
+   p. ej. "Historial de tickets de avería", para no chocar con el
+   nuevo significado.
+
+**Nota de proceso:** esta hoja de ruta se registró durante el mismo
+tramo de sesión en que se hizo el PCH desde H30 -- construir en el
+orden de arriba, empezando por lo más rápido/aislado (puntos 1 y 9
+son cambios pequeños y autónomos; el resto requiere tocar el prompt
+de Gemini y el sistema de exportación, más superficie).
+
+---
+
+
 "justificante de asistencia a organismo público":** detectado
 originalmente en S46 (anexo H30, sección 8, "Otras decisiones
 confirmadas"): un trabajador necesita este tipo documental para
