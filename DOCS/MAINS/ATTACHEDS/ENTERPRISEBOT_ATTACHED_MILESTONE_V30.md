@@ -1750,3 +1750,118 @@ explícitamente (sin cambios respecto a sesiones anteriores):**
 - Vacaciones controladas desde el panel (H24) — diseño explícitamente
   abierto por Miguel Ángel, sin alcance definido. No construir nada
   hasta que lo concrete él mismo.
+
+---
+
+## Bitácora narrativa de cierre — S51 (2026-08-14)
+
+**Resumen de lo acometido en la sesión.** Sesión larga, arrancada
+con las tres preguntas bloqueantes de la PRIMERA LÍNEA arrastradas de
+S48/S49: alta de tipo documental desde el panel, diseño de
+clasificación por vía de entrada, y el destino del "justificante de
+asistencia a organismo público". Las tres se resolvieron con
+decisiones explícitas de Miguel Ángel, con la tercera trasladada a
+H07 por ser en realidad un asunto de partes de trabajo, no de
+documentación.
+
+**Commits reales, en orden cronológico:**
+
+1. `17cbad0` — corrección de la sección 3 del anexo: el buzón de
+   documentación pasa a ser exclusivo para correos vía Outlook, ya no
+   una vía abierta a cualquiera.
+2. `34c45c2` — resolución completa de la PRIMERA LÍNEA: alta de tipo
+   desde panel confirmada, diseño de clasificación por vía de
+   entrada, barrido de backlog confirmado; traslado del justificante
+   de asistencia a H07.
+3. `2448cb3` — construcción real del atajo de alta de tipo documental
+   desde el flujo de subida del panel (`DocumentTypeQuickCreateView`,
+   migración 0032 con la familia catch-all "Otros documentos"),
+   abierto a ADMIN y `DOCS_SUPERVISOR`.
+4. `8b63df9` — registro del pendiente de alta de sujeto nuevo (centro
+   de gasto/trabajador/EPI) ligada a subida de documentación, con
+   hallazgos reales verificados contra el código: el CRUD de
+   `MachineAsset` ya existe, `PersonIdentity` solo tiene alta
+   automática, EPI no tiene ni formulario de entrega todavía.
+5. `b97354b` — bug real corregido: el listado de flota enlazaba
+   "Documentación" al modelo legado `MachineDocument` (~30 filas
+   residuales) en vez de la ficha real H30 (11.000+ documentos).
+6. `e21fa28` — segundo bug real: el historial de operaciones pintaba
+   enlaces clicables para archivos ya eliminados como duplicado
+   exacto (acción `TRASHED`), `OpenDocumentView` siempre devolvía 404
+   sobre esas filas. Corregido en `operation_log_detail.html`.
+7. `4cb2b81` — registro del orden de prioridad confirmado por Miguel
+   Ángel: maquinaria primero, personal (carpetas duplicadas
+   detectadas) después.
+8. `1b61b13` — extracción de la heurística de tipo documental (Fase
+   A, validada contra 11.149 documentos) a un módulo compartido
+   nuevo, `heuristic_type_service.py`, reutilizable también desde el
+   pipeline de clasificación en tiempo real.
+9. `07f2c84` — construcción real del diseño de clasificación por vía
+   de entrada: heurística de nombre + identidad por carpeta
+   (maquinaria) o DNI por OCR (personal, solo si coincide con
+   trabajador ya existente) antes de llamar a Gemini, dentro de
+   `apply_quarantine_classification()`.
+10. `7d824c4` — registro en el anexo del diseño final construido y
+    desplegado.
+11. `2c9bfa4` — bug real del agente H28: notificación de hidratación
+    repetida cada minuto, para siempre, sobre archivos solo-en-nube
+    atascados (carpeta de personal duplicada, mismo patrón que el
+    incidente ya documentado de S035). Corregido con throttle de 30
+    minutos, sin cambiar la petición de hidratación en sí.
+12. `1282402` — registro del arreglo anterior en el anexo.
+13. `e4bed4f` — reparación de una laguna real de documentación: el
+    entorno local del agente H28 en Windows (ruta, venv, ejecutable,
+    tarea programada, procedimiento de actualización) llevaba desde
+    S031 documentado solo en historial de chats, nunca escrito en
+    `SESSION_VARIABLES.md` -- causó una discusión evitable sobre dónde
+    estaba el checkout local.
+14. `96e6d8e` — informe de solo lectura (`report_ocr_gaps.py`) para
+    dimensionar dónde se concentraban los documentos sin tipo tras el
+    primer barrido local de `local_ocr_classify.py` (382 de 2.399,
+    15,9% -- muy por debajo del ~30% estimado por Miguel Ángel).
+15. `75f262f` — muestreo real de hasta 3 ejemplos ya clasificados por
+    cada uno de los 77 tipos activos del catálogo
+    (`sample_type_patterns.py`), con texto y fecha extraídos en la
+    misma pasada, para construir patrones de contenido a partir de
+    datos reales en vez de conjeturas.
+16. `c201bfb` — fusión de dos pares de tipos duplicados detectados en
+    el muestreo (`MANDATO`→`CERTIFICADO_PODERES`,
+    `DOC_BAJA_DEFINITIVA`→`BAJA_DEFINITIVA`, migración 0033), mismo
+    patrón que la fusión `IPO_ITC` de S49/S50.
+17. `8916f2f` — reparto `--shard-count`/`--shard-index` en
+    `local_ocr_classify.py` para poder correr varios procesos en
+    paralelo sin solape.
+18. `1d3c703` — ampliación real de `CONTENT_MARKERS` de 9 a 22 tipos,
+    usando las 185 muestras reales analizadas, tras un fallo real
+    detectado por Miguel Ángel a mitad de sesión (el primer shard de
+    la VM de OCR en la nube terminó con `tipo_resuelto=0/661` porque
+    nunca se había actualizado el diccionario, solo se había hecho la
+    fusión de tipos).
+19. `7d52d6d` — PCH de H30 a H07: la VM de OCR (`h28-ocr-batch`, GCE,
+    `europe-west1-b`, `e2-standard-8`, 3 procesos en paralelo sin
+    supervisión) queda corriendo de fondo mientras se atiende un
+    bloque grande de mejoras sobre Partes Digitales que Miguel Ángel
+    trajo directamente en la sesión.
+
+**Infraestructura fuera de GitHub, creada en esta sesión y activa al
+cierre:** VM `h28-ocr-batch` en Google Cloud (proyecto
+`gen-lang-client-0961484137`, zona `europe-west1-b`), corriendo tres
+sesiones `tmux` (`shard0`/`shard1`/`shard2`) con
+`local_ocr_classify.py --apply` particionado. Coste estimado total de
+la sesión inferior a $2 -- **recordar borrarla cuando ya no haga
+falta.**
+
+**Incidencias reales de la sesión, más allá de las ya numeradas
+arriba:** dos fallos de proceso propios, ambos ya corregidos --
+(1) el primer relanzamiento de la VM se hizo con el diccionario de
+contenido todavía sin ampliar, repitiendo el mismo fracaso más
+rápido; (2) el PCH de H30 a H07 se ejecutó sin pasar antes por el
+cierre de sesión formal de H30 (bitácora narrativa + Momento 2 del
+PAH), tratando "cambio de hito" y "cierre de sesión" como si fueran
+el mismo paso -- corregido con este mismo bloque, añadido después de
+que Miguel Ángel lo señalara explícitamente.
+
+**Resultado final:** H30 pausado con la VM corriendo de fondo y
+criterio de cierre exacto anotado en su propia hoja de ruta para
+retomarla. H07 activo, con su hoja de ruta de arranque ya registrada
+(9 puntos, ver sección 8 de su propio anexo).
