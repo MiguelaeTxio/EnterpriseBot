@@ -1678,8 +1678,41 @@ recurso.
 **Hoja de Ruta para la siguiente sesión de H30 (reescrita al cierre
 de S51 -- sustituye por completo a la de S50, que ya estaba resuelta):**
 
-1. **VM de OCR en la nube, EN MARCHA, sin supervisar hasta que se
-   retome este hito.** `h28-ocr-batch` (GCE, `gen-lang-client-0961484137`,
+1. **INCIDENTE ABIERTO, PRIORITARIO — agente H28 y VM de OCR
+   aparentemente caídos (reportado por Miguel Ángel al arrancar S53,
+   sin diagnóstico real todavía).** Dos síntomas reportados, sin
+   confirmar contra datos reales: (a) el agente H28
+   (`h28_migration_agent`, subida de documentación nueva a GCS) parece
+   haberse detenido — dejó de avisar de errores, pero no porque se
+   hayan corregido, sino porque aparentemente ya no está funcionando
+   en absoluto; (b) los tres shards de la VM `h28-ocr-batch` muestran,
+   según captura de pantalla de Miguel Ángel, resultados muy peores de
+   lo esperado (`sin_tipo` en torno al 80% en dos de los tres shards
+   visibles, muy por encima del 15,9% de referencia de S51 y en la
+   dirección contraria a la mejora esperada tras ampliar
+   `CONTENT_MARKERS` a 22 tipos en `1d3c703`). Miguel Ángel apunta
+   como causa probable una sesión previa que trabajó directamente en
+   la terminal de esa VM con fallos reales de comportamiento (bucle
+   repitiendo palabras, no recordar que Ctrl+C no cierra esa consola)
+   — sin confirmar todavía si esa sesión llegó a tocar código.
+   **Criterio de cierre, sin adivinar nada más hasta tener datos
+   reales:** conectar por SSH
+   (`gcloud compute ssh h28-ocr-batch --project=gen-lang-client-0961484137
+   --zone=europe-west1-b --command='...'`, comando de una sola línea,
+   ver `com-gcloud-windows`) y obtener, en este orden: (i) si la
+   instancia y los tres `tmux` siguen vivos o murieron; (ii) el
+   contenido real completo de `~/shard0.log`/`~/shard1.log`/
+   `~/shard2.log`, no solo lo visible en pantalla; (iii) si hay
+   divergencia de código en la VM respecto al último commit real de
+   GitHub (`1d3c703`) que explique el resultado peor de lo esperado;
+   (iv) por separado, estado real del agente H28 en su propio entorno
+   (Windows, `C:\EnterpriseBot\h28_migration_agent`, ver
+   `SESSION_VARIABLES.md`) — proceso vivo o muerto, últimas líneas de
+   su log/consola. **Recordar borrar la VM cuando ya no haga falta**
+   (`gcloud compute instances delete h28-ocr-batch --project=gen-lang-client-0961484137
+   --zone=europe-west1-b`) para dejar de facturar.
+2. **VM de OCR — contexto de la pasada que se está revisando (S51).**
+   `h28-ocr-batch` (GCE, `gen-lang-client-0961484137`,
    `europe-west1-b`, `e2-standard-8`), 3 procesos en paralelo dentro
    de sesiones `tmux` (`shard0`/`shard1`/`shard2`,
    `--shard-count 3 --shard-index 0/1/2 --apply`), repartiendo sin
@@ -1689,23 +1722,15 @@ de S51 -- sustituye por completo a la de S50, que ya estaba resuelta):**
    ver `COMPLETADAS EN S51` más abajo) -- la primera pasada con solo 9
    tipos dio `tipo_resuelto=0/661` en el primer shard, error real
    detectado por Miguel Ángel a mitad de sesión, corregido antes de
-   relanzar. **Criterio de cierre al retomar:** conectar por SSH
-   (`gcloud compute ssh h28-ocr-batch --project=gen-lang-client-0961484137
-   --zone=europe-west1-b`), mirar `~/shard0.log`/`~/shard1.log`/
-   `~/shard2.log` (o `tmux attach -t shardN`), sumar los tres
-   `=== RESUMEN (APLICADO) ===`, y contrastar contra el 15,9% real de
-   la primera pasada -- ¿mejoró de verdad con el diccionario ampliado?
-   **Recordar borrar la VM cuando ya no haga falta**
-   (`gcloud compute instances delete h28-ocr-batch --project=gen-lang-client-0961484137
-   --zone=europe-west1-b`) para dejar de facturar -- coste estimado
-   total de la sesión, con la VM corriendo, inferior a $2.
-2. **Informe por familia (`report_ocr_gaps.py`) sin volver a correr
+   relanzar. Una vez resuelto el punto 1 (incidente), retomar aquí el
+   contraste real contra el 15,9% de la primera pasada.
+3. **Informe por familia (`report_ocr_gaps.py`) sin volver a correr
    todavía** -- construido y commiteado en S51, pero quedó superado
    por el hallazgo de que el problema real era cobertura de
    `CONTENT_MARKERS` (9 de 77 tipos), no concentración por familia.
    Puede volver a ser útil tras ver el resultado de la VM, si sigue
    habiendo un `sin_tipo` alto y hace falta dimensionar dónde.
-3. **`CONTENT_MARKERS` ampliado a 22 tipos, no a los 77** -- de los
+4. **`CONTENT_MARKERS` ampliado a 22 tipos, no a los 77** -- de los
    77 tipos activos, quedan ~55 sin frase de contenido verificada
    (algunos porque el muestreo no encontró frase limpia sin
    contaminación cruzada, otros -- 10 tipos -- porque nunca se han
@@ -1719,19 +1744,19 @@ de S51 -- sustituye por completo a la de S50, que ya estaba resuelta):**
    sesiones -- habría que rehacer el muestreo con
    `sample_type_patterns.py`, ya commiteado, o pedir a Miguel Ángel
    que vuelva a correrlo).
-4. **Medir el alcance real de `FICHA_TECNICA` vs `ITV`** -- sin
+5. **Medir el alcance real de `FICHA_TECNICA` vs `ITV`** -- sin
    tocar en S51, sigue arrastrado desde S50. Criterio de cierre:
    conteo real con muestra de contenido OCR, nunca asumido por nombre
-   de archivo. **(arrastrado 2.ª sesión sin avanzar)**
-5. **Decidir si se construye el barrido de renombrado retroactivo**
-   -- sin decisión todavía. **(arrastrado 2.ª sesión sin avanzar)**
-6. **Backfill de fecha para el backlog histórico** vía
+   de archivo. **(arrastrado 3.ª sesión sin avanzar)**
+6. **Decidir si se construye el barrido de renombrado retroactivo**
+   -- sin decisión todavía. **(arrastrado 3.ª sesión sin avanzar)**
+7. **Backfill de fecha para el backlog histórico** vía
    `expiry_resolution_service` contra documentos ya clasificados sin
    fecha -- confirmado por Miguel Ángel en S51 que se lanza, pero
    **no se llegó a ejecutar** por el desvío hacia la VM de OCR.
    Sigue pendiente.
-7. **5 duplicados de seguro/OCA sin nombre coincidente** -- sin
-   decisión todavía. **(arrastrado 3.ª sesión sin avanzar)**
+8. **5 duplicados de seguro/OCA sin nombre coincidente** -- sin
+   decisión todavía. **(arrastrado 4.ª sesión sin avanzar)**
 
 **Deuda mayor confirmada en S51, explícitamente aplazada por Miguel
 Ángel hasta cerrar maquinaria:** carpetas de personal duplicadas en

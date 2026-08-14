@@ -404,3 +404,19 @@ Archivos modificados: `panel/mixins.py`, `panel/views_operator.py`,
 `panel/views_workorders.py`, `panel/views.py`, `panel/urls.py`,
 `ivr_config/models.py`, `digital_list.html`, `edit.html`, `form_entry.html`,
 `admin_history.html`, `work_period_list.html`.
+
+---
+
+## 10. Nota de pausa — S53 (2026-08-14)
+
+Sesión arrancada en H07 (heredado del enrutador tras S52) sin trabajo
+de código propio: se dedicó íntegramente a un incidente real de H30
+(VM de OCR `h28-ocr-batch` y agente H28 aparentemente caídos,
+reportado por Miguel Ángel) y a la corrección de un fallo real en
+`nfs-enterprisebot-pcs` (el cierre de S52 dejó la hoja de ruta de H07
+vacía sin preguntar si tocaba reactivar H30, pese a la condición de
+retorno ya escrita en el enrutador desde S51 — ver enrutador, sección
+3, para el detalle completo del incidente). H30 queda reactivado como
+`← EN PROGRESO` al cierre de este bloque. Hoja de ruta de H07 sin
+cambios respecto a la que dejó S52 — sigue sin comprometidos
+pendientes.

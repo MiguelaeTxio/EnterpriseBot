@@ -30,7 +30,7 @@ Cumple dos funciones inseparables:
 | H04 | Canal WhatsApp — Chatbot | `ENTERPRISEBOT_ATTACHED_MILESTONE_V04.md` |
 | H05 | Arquitectura Omnicanal IVR ↔ WhatsApp | `ENTERPRISEBOT_ATTACHED_MILESTONE_V05.md` |
 | H06 | Procesador PDF→Excel + BBDD | `ENTERPRISEBOT_ATTACHED_MILESTONE_V06.md` |
-| H07 | Partes Diarios de Reparación Digital | `ENTERPRISEBOT_ATTACHED_MILESTONE_V07.md` ← EN PROGRESO |
+| H07 | Partes Diarios de Reparación Digital | `ENTERPRISEBOT_ATTACHED_MILESTONE_V07.md` |
 | H08 | Mejoras Procesador PDF→Excel + HTMX | `ENTERPRISEBOT_ATTACHED_MILESTONE_V08.md` |
 | H09 | Informes y Analítica Cruzada | `ENTERPRISEBOT_ATTACHED_MILESTONE_V09.md` |
 | H10 | Albaranes de Proveedores y Almacén de Repuestos | `ENTERPRISEBOT_ATTACHED_MILESTONE_V10.md` |
@@ -53,7 +53,7 @@ Cumple dos funciones inseparables:
 | H27 | Ingesta de Documentación vía Correo Electrónico | `ENTERPRISEBOT_ATTACHED_MILESTONE_V27.md` |
 | H28 | Migración y Reorganización de Documentación Histórica | `ENTERPRISEBOT_ATTACHED_MILESTONE_V28.md` |
 | H29 | Explorador de Archivos y Gobierno Documental del Panel sobre GCS | `ENTERPRISEBOT_ATTACHED_MILESTONE_V29.md` |
-| H30 | Vinculación Documental Real — Centros de Gasto y Personal | `ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md` |
+| H30 | Vinculación Documental Real — Centros de Gasto y Personal | `ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md` ← EN PROGRESO |
 
 Todos los anexos viven en `DOCS/MAINS/ATTACHEDS/`.
 
@@ -61,27 +61,44 @@ Todos los anexos viven en `DOCS/MAINS/ATTACHEDS/`.
 
 ## 3. Resultado Actual
 
-**Hito EN PROGRESO:** H07 — Partes Diarios de Reparación Digital →
-`ENTERPRISEBOT_ATTACHED_MILESTONE_V07.md`
+**Hito EN PROGRESO:** H30 — Vinculación Documental Real: Centros de
+Gasto y Personal → `ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md`.
+Reactivado en S53 por decisión explícita de Miguel Ángel: se retoma
+la revisión de los resultados de la VM de OCR (`h28-ocr-batch`) según
+la condición de retorno ya documentada abajo, y se suma el incidente
+real reportado por Miguel Ángel al arrancar S53 — el agente H28
+(`h28_migration_agent`, subida de documentación nueva a GCS) parece
+detenido, y los tres procesos en paralelo (`shard0`/`shard1`/`shard2`
+de `local_ocr_classify.py`) muestran resultados muy por debajo de lo
+esperado (`sin_tipo` muy por encima del 15,9% de referencia de S51).
+Diagnóstico sin cerrar al momento de la reactivación — ver hoja de
+ruta de su propio anexo.
 
-**Hito PAUSADO en esta sesión (S51):** H30 — Vinculación Documental
-Real: Centros de Gasto y Personal → `ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md`.
-Sesión larguísima (S51): resolución de las tres preguntas bloqueantes
+**Hito PAUSADO en esta sesión (S53):** H07 — Partes Diarios de
+Reparación Digital → `ENTERPRISEBOT_ATTACHED_MILESTONE_V07.md`. Sin
+trabajo de código en S53 sobre este hito — la sesión se dedicó
+íntegramente al incidente de H30. Hoja de ruta de H07 queda tal cual
+la dejó S52 (sin comprometidos pendientes).
+
+**Hito PAUSADO desde S51:** H30 se pausó entonces así: sesión
+larguísima (S51): resolución de las tres preguntas bloqueantes
 arrastradas, atajo de alta de tipo documental desde el panel,
 corrección de dos bugs reales (enlace de documentación del listado de
 flota apuntando al modelo legado, enlaces rotos en el historial de
 operaciones para filas ya borradas), fusión de tipos duplicados
 (`MANDATO`→`CERTIFICADO_PODERES`, `DOC_BAJA_DEFINITIVA`→
 `BAJA_DEFINITIVA`), clasificación en tiempo real heurística+OCR antes
-de Gemini, y arreglo del aviso repetido del agente H28. H07 se abre
-por decisión explícita de Miguel Ángel a mitad de sesión: mientras
-una VM en la nube (`h28-ocr-batch`, GCE) sigue corriendo de fondo el
-barrido de OCR de maquinaria sin necesitar supervisión, se atiende un
-bloque grande de mejoras reales sobre Partes Digitales (clasificación
-de avería por Gemini, familias, exportación PDF/Excel, plantillas)
-que Miguel Ángel trajo directamente en esta misma sesión. H30 se
-retoma en cuanto se revisen los resultados de la VM -- ver hoja de
-ruta de su propio anexo.
+de Gemini, y arreglo del aviso repetido del agente H28. H07 se abrió
+entonces por decisión explícita de Miguel Ángel a mitad de sesión:
+mientras una VM en la nube (`h28-ocr-batch`, GCE) seguía corriendo de
+fondo el barrido de OCR de maquinaria sin necesitar supervisión, se
+atendió un bloque grande de mejoras reales sobre Partes Digitales
+(clasificación de avería por Gemini, familias, exportación
+PDF/Excel, plantillas). H07 permaneció EN PROGRESO durante S52
+(cierre completo de esa hoja de ruta) sin que se preguntara si tocaba
+reactivar H30 pese a la condición de retorno ya escrita aquí —
+incidente real corregido en `nfs-enterprisebot-pcs` durante S53 (ver
+anexo H07, registro de sesión S53).
 
 **Hito PAUSADO en esta sesión (S043):** H29 — Explorador de Archivos y
 Gobierno Documental del Panel sobre Google Cloud Storage →
