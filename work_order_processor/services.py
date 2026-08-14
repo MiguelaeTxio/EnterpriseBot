@@ -2907,6 +2907,11 @@ def build_export_from_template(template, work_orders_qs):
     total_fill  = PatternFill("solid", fgColor="D6E4F0")
     total_font  = Font(bold=True, color="1F3864", size=10)
     center_align = Alignment(horizontal="center", vertical="center")
+    # H07 punto 4 (2026-08-14): sombreado alterno de filas de datos, para
+    # facilitar la lectura -- mismo criterio que el listado del panel
+    # (table-striped). Se alterna por entry (día), no por línea suelta, para
+    # que las líneas de un mismo parte se lean como un bloque.
+    stripe_fill = PatternFill("solid", fgColor="F2F2F2")
 
     # ------------------------------------------------------------------
     # Helper: write a totals row on a given worksheet.
@@ -3070,6 +3075,9 @@ def build_export_from_template(template, work_orders_qs):
         # métricas de entry almacenadas de forma redundante en cada línea de
         # la misma entry. Solo deben acumularse una vez por entry, no por línea.
         seen_entry_pks: set = set()
+        # H07 punto 4: alterna en cada entry (día) nuevo, independiente del
+        # separador de operario -- da una lectura clara por bloques.
+        stripe_on = False
 
         for line in rows:
             wo    = line.entry.work_order
@@ -3096,6 +3104,8 @@ def build_export_from_template(template, work_orders_qs):
                 current_row += 1
 
             is_first_line_of_entry = entry.pk not in seen_entry_pks
+            if is_first_line_of_entry:
+                stripe_on = not stripe_on
             seen_entry_pks.add(entry.pk)
 
             for col_idx, (key, (label, extractor)) in enumerate(active_cols, start=1):
@@ -3108,7 +3118,9 @@ def build_export_from_template(template, work_orders_qs):
                 # para que el valor aparezca solo una vez por día (Opción B).
                 if key in NUMERIC_KEYS and not is_first_line_of_entry:
                     val = ""
-                ws.cell(row=current_row, column=col_idx, value=val)
+                cell = ws.cell(row=current_row, column=col_idx, value=val)
+                if stripe_on:
+                    cell.fill = stripe_fill
                 # Accumulate only on the first line of each entry.
                 # Acumular solo en la primera línea de cada entry.
                 if (
@@ -3147,6 +3159,9 @@ def build_export_from_template(template, work_orders_qs):
     # Guarda: los valores NUMERIC_KEYS son métricas de entry — solo acumular
     # una vez por entry por hoja, no por línea.
     seen_entry_pks_sheet: set = set()
+    # H07 punto 4: alterna en cada entry (día) nuevo dentro de la hoja
+    # activa; se reinicia al abrir cada hoja nueva (ver abajo).
+    stripe_on = False
 
     for line in rows:
         wo    = line.entry.work_order
@@ -3170,10 +3185,13 @@ def build_export_from_template(template, work_orders_qs):
                 key: 0.0 for key, _ in active_cols if key in NUMERIC_KEYS
             }
             seen_entry_pks_sheet = set()
+            stripe_on = False
             _write_price_cells(ws)
             _write_header(ws, active_cols)
 
         is_first_line_of_entry = entry.pk not in seen_entry_pks_sheet
+        if is_first_line_of_entry:
+            stripe_on = not stripe_on
         seen_entry_pks_sheet.add(entry.pk)
 
         for col_idx, (key, (label, extractor)) in enumerate(active_cols, start=1):
@@ -3184,7 +3202,9 @@ def build_export_from_template(template, work_orders_qs):
             # de la misma entry se escribe en blanco (Opción B).
             if key in NUMERIC_KEYS and not is_first_line_of_entry:
                 val = ""
-            ws.cell(row=current_row, column=col_idx, value=val)
+            cell = ws.cell(row=current_row, column=col_idx, value=val)
+            if stripe_on:
+                cell.fill = stripe_fill
             # Accumulate only on the first line of each entry.
             # Acumular solo en la primera línea de cada entry.
             if (
