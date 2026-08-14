@@ -342,7 +342,26 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--apply", action="store_true")
+    parser.add_argument(
+        "--shard-count", type=int, default=1,
+        help=(
+            "S51 (VM en la nube, procesos paralelos sin solape): total "
+            "de procesos que se van a lanzar a la vez, p.ej. 3."
+        ),
+    )
+    parser.add_argument(
+        "--shard-index", type=int, default=0,
+        help=(
+            "Indice de este proceso dentro del reparto (0-based, "
+            "0..shard-count-1). Cada entry_id va a exactamente un "
+            "shard (entry_id %% shard_count == shard_index) -- sin "
+            "solape posible entre procesos, cada fila la toca uno "
+            "solo."
+        ),
+    )
     args = parser.parse_args()
+    if not (0 <= args.shard_index < max(args.shard_count, 1)):
+        parser.error("--shard-index debe estar entre 0 y --shard-count - 1")
 
     pa_password = getpass.getpass(
         "Contrasena de PythonAnywhere (la de la web, para el tunel SSH): "
@@ -407,15 +426,25 @@ def main():
         )
         machine_ct_id = cur.fetchone()[0]
 
+        shard_clause = ""
+        shard_params = (BUCKET, MACHINE_ROOT + "/%")
+        if args.shard_count > 1:
+            shard_clause = " AND id %% %s = %s"
+            shard_params = shard_params + (args.shard_count, args.shard_index)
+
         cur.execute(
             "SELECT id, name, parent_path FROM document_explorer_documentindexentry "
             "WHERE entry_kind = 'FILE' AND document_type_id IS NULL "
             "AND deleted_at IS NULL AND purged_at IS NULL "
-            "AND bucket = %s AND parent_path LIKE %s",
-            (BUCKET, MACHINE_ROOT + "/%"),
+            "AND bucket = %s AND parent_path LIKE %s" + shard_clause,
+            shard_params,
         )
         raw_rows = cur.fetchall()
 
+    if args.shard_count > 1:
+        print("Reparto: shard %d de %d (entry_id %% %d == %d)"
+              % (args.shard_index, args.shard_count, args.shard_count,
+                 args.shard_index))
     print("Candidatos brutos (antes de SCOPE/fotos): %d" % len(raw_rows))
 
     candidatos = []
