@@ -186,3 +186,50 @@ esta plataforma. Anotadas aquí únicamente para que nunca se confundan:
 
 - `/var/log/alwayson-log-182748.log` — Campus Studio Online, NO EnterpriseBot.
 - `/var/log/alwayson-log-209547.log` — Campus Studio Online, NO EnterpriseBot.
+
+---
+
+## VM h28-ocr-batch — ENTORNO REAL (registrado S53, 2026-08-14, tras
+## descubrirlo a tientas paso a paso -- no volver a redescubrirlo)
+
+**Conexión (PowerShell, comando suelto, ver `com-gcloud-windows`):**
+```
+gcloud compute ssh h28-ocr-batch --project=gen-lang-client-0961484137 --zone=europe-west1-b
+```
+(sin `--command`, para sesión interactiva -- necesaria porque los
+scripts de este directorio piden contraseñas por teclado, `getpass`,
+no aceptan flags ni variables de entorno).
+
+- **Checkout real:** `~/EnterpriseBot/h28_migration_agent` (usuario
+  `Usuario`, mismo nombre que en el PC Windows -- ojo, no es
+  `MiguelAeTxio` ni ningún otro).
+- **Python:** el binario se llama `python3` en esta VM, **no**
+  `python` (Ubuntu 24.04 no tiene el alias `python-is-python3`
+  instalado). Usar siempre `python3 nombre_script.py`.
+- **Entorno virtual:** `ocr_venv/`, dentro del propio directorio del
+  checkout. **Obligatorio activarlo antes de correr cualquier script
+  de esta carpeta** (`local_ocr_classify.py`, `sample_type_patterns.py`,
+  `report_ocr_gaps.py` -- todos dependen de `pymysql`/`sshtunnel`, que
+  solo están instalados dentro del venv, no en el Python del sistema):
+  ```
+  source ocr_venv/bin/activate
+  ```
+  El prompt cambia a `(ocr_venv) Usuario@h28-ocr-batch:...$` cuando
+  está activo. Sin este paso, `ModuleNotFoundError: No module named
+  'pymysql'` (error real visto en S53).
+- **tmux:** cada script de barrido/muestreo largo se lanza dentro de
+  una sesión `tmux` propia (`tmux new -s NOMBRE`), para poder
+  desconectar (`Ctrl+B` `D`) sin matar el proceso y reconectar después
+  (`tmux attach -t NOMBRE`). Listar sesiones vivas: `tmux ls`. Matar
+  una sesión terminada: `tmux kill-session -t NOMBRE`.
+- **Coste real confirmado (S53):** `e2-standard-8` en `europe-west1-b`,
+  sin descuento por uso sostenido (la familia E2 no lo tiene). Sesión
+  de ~5h45 de uso real costó en torno a $1,70-1,85 -- los datos de
+  Billing tardan hasta 24h en aparecer en la consola, así que para
+  saber el gasto real en caliente hay que calcularlo a mano:
+  `gcloud compute instances describe h28-ocr-batch --project=gen-lang-client-0961484137 --zone=europe-west1-b --format="value(creationTimestamp)"`
+  da la hora de creación real, y de ahí horas transcurridas × ~$0,30/h.
+- **Borrado cuando ya no haga falta:**
+  ```
+  gcloud compute instances delete h28-ocr-batch --project=gen-lang-client-0961484137 --zone=europe-west1-b --quiet
+  ```
