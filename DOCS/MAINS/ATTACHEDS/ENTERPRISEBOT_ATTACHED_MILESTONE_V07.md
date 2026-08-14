@@ -225,105 +225,57 @@ desde el formulario de edición de sección.
 | S_H07_12 | 2026-07-21 | **DESVÍO desde H23 (EN PROGRESO al empezar S027) — 4 incidencias reales reportadas por Miguel Ángel en `WorkOrderAdminHistoryView`/`WorkOrderEntryFormView`, 3 resueltas con código nuevo, 1 verificada sin cambios.** Parte compartida con H17 (unificación S012) — ver también `ENTERPRISEBOT_ATTACHED_MILESTONE_V17.md`, fila `S027`, para el detalle de la mitad correspondiente a `admin_history.html`. Piezas propias de H07 (`form_entry.html`/`views_operator.py`): **[1]** botón "Marcar revisado" para ADMIN/SUPERVISOR/WORKSHOPBOSS al editar/ver un parte digital — nuevo botón visible solo si `edit_mode and is_elevated`, nueva rama `form_action=mark_reviewed` al inicio de `WorkOrderEntryFormView.post()`, independiente y previa a todo el pipeline de parseo/guardado, sin tocar ni validar datos del formulario; JS en `form_entry_modal.js` (`btn-mark-reviewed`, mismo patrón que `btn-save-blocks`). **[2]** propagación de `back_url` (con todos los filtros activos) a `WorkOrderEntryFormView` y `WorkOrderDetailView` y de vuelta en todos sus redirects (guardado/cierre de parte, `mark_reviewed`, "Volver" de `detail.html`) — nuevo `panel/url_utils.py` (`safe_back_url`, previene open-redirect). **Hallazgo real fuera de alcance, corregido de inmediato (directriz 4.9):** `WorkOrderEntryFormView.get()` redirigía a `/panel/operator/history/`, URL eliminada en la unificación H17-S012 — 404 real cada vez que se disparaba esa rama (parte inexistente/ya revisado/ajeno); ahora redirige a `work_order_admin_history`. Verificado: `py_compile` (`views_workorders.py`, `views_operator.py`, `url_utils.py`) OK, `node --check` (`form_entry_modal.js`) OK. Limpieza posterior de los 12 avisos djlint preexistentes en `form_entry.html` (commit `6eb7bbb`, a petición de Miguel Ángel): 1 espacio doble sobrante en `value="SUPPLIER"` + 1 línea en blanco sobrante al final del archivo. **Confirmado por Miguel Ángel en producción: todo funciona correctamente**, ambos commits (`372faae`, `6eb7bbb`) verificados desplegados vía API de GitHub Actions (el primero con fallo real solo en el paso de recarga, corregido por el despliegue exitoso del segundo — ver `com-bash-commands`/`nfs-enterprisebot-edit` para el criterio de verificación). Commits sin migración. Sesión interrumpida por caída de herramientas del modelo antes de volver a H23 — cierre formal de S027 documentado retroactivamente en sesión posterior (S028). |
 | S_H07_13 | 2026-07-22 | **DESVÍO desde H23 (EN PROGRESO, S028) — investigación de un bug real reportado por Miguel Ángel mientras esperaba el reinicio del worker Celery, SIN código tocado, solo diagnóstico.** "Cuando se editan los partes, no se está renderizando exactamente lo que la base de datos tiene... dietas, he parado/no he parado a comer, horario, pausa, si la jornada es intensiva". Confirmado con lectura directa del código (`panel/views_operator.py`, `WorkOrderEntryFormView`): en modo edición, `show_lunch_break` (si se muestran los campos de pausa) se calcula con `_resolve_operator_schedule(cu, company)` — el horario EN VIVO del operario, sin parámetro de fecha, nunca a partir de los datos reales del `first_entry` en edición. Si el horario del operario cambió desde que se guardó el parte, el formulario puede ocultar campos de pausa que sí existen en BD — y al guardar, como esos campos nunca llegan en el POST, `entry.lunch_break_start = None if _no_lunch_break else _lb_start` (líneas ~3560-3561/3579-3580) los sobrescribe con `None`: **riesgo real de pérdida de datos**, no solo de visualización. `no_lunch_break` sí lee bien de `first_entry`. Dietas/horario mencionados por Miguel Ángel como sospechosos pero sin auditar con el mismo detalle por falta de tiempo. Solución identificada (derivar `show_lunch_break` de los datos guardados del `first_entry`, nunca del horario en vivo) pero NO implementada — archivo muy denso, varias decenas de referencias a `lunch_break_start`/`lunch_break_end` en distintas rutas de guardado, Miguel Ángel decidió dejarlo anotado como primer punto de la próxima sesión de H07 en vez de arreglarlo con prisa: "no es cosa de dos minutos... prefiero ir con cuidado en vez de rápido" (dicho por el propio modelo, confirmado por Miguel Ángel: "aunque cuando lo resolvamos pasemos con lo que quede de lo que estamos haciendo ahora si no terminamos en esta sesión"). Ver detalle técnico completo en la Hoja de Ruta (sección 8) de este mismo anexo. Sin cambio de hito EN PROGRESO — H23 permanece `← EN PROGRESO` en el enrutador, este desvío no avanzó ningún paso de H23. |
 | S_H07_14 | 2026-07-23 | **DESVÍO desde H23 (EN PROGRESO, S030) — cierre completo del bug de S_H07_13, con auditoría real de producción.** Corregido en `WorkOrderEntryFormView` (modo edición y modo reanudación de parte en curso): `show_lunch_break` pasa a derivarse de `first_entry`/`_ip_first_entry` (tiene `lunch_break_start`/`end` o `no_lunch_break=True` → fue partida; si no → intensiva), nunca del horario en vivo (commit `fc55e5c`). **Segundo hallazgo real del mismo origen, corregido en el mismo bloque:** `has_diet` no estaba en absoluto en el contexto de `get()` (ni edición ni reanudación) — el checkbox de dieta se veía siempre desmarcado al editar y se borraba al guardar, sin ninguna condición (peor que el de pausa, que solo fallaba si cambiaba el horario). Auditoría sistemática de todo `WorkOrderEntryFormView` aplicando el principio explícito de Miguel Ángel ("editar sin tocar nada debe grabar exactamente igual; la lógica de creación-vs-edición va en la vista, nunca en la plantilla"): encontrado un tercer punto, `first_block_hc`/`first_block_hf` en modo edición seguían calculándose del horario en vivo — sin causar daño real solo porque la plantilla los ocultaba con `{% if not entradas_enriched %}`, pero dependían de ese guard como única protección; fijados explícitamente a `""` en la vista en ambos modos (commit `749b795`). **Cuarto hallazgo, distinto pero mismo patrón, encontrado investigando la pregunta original de Miguel Ángel sobre repuestos sin vincular a máquina:** el selector "Bloque asociado" mostrado para repuestos ya guardados al editar no estaba conectado a nada (ni JS ni backend lo leían) — el contexto enviaba `vehiculo_raw=""` siempre para repuestos existentes, perdiendo su vínculo con la máquina en cada edición y regrabado, sin que el operario tocara nada. Corregido: se rellena con el código real de `spare.vehicle`, y el selector pasa a ser el mismo mecanismo ya probado de los repuestos nuevos (`repuesto_N_vehiculo_raw` + opción "Otro"), con `cdg_options` calculado en la vista (no en la plantilla, mismo commit `749b795`). **Auditoría de producción, a petición explícita de Miguel Ángel — comparación real contra logs, no solo heurística:** consulta ORM sobre 76 `WorkOrderEntry` con posible inconsistencia semanal de horario/pausa entre operarios, 19 avisos brutos; cruzados contra el log `# [PARTE-BACKUP]` (actual + 9 archivos rotados `.log.1`/`.log.2-9.gz`, cobertura real hasta el 21/06) para los 14 casos de `lunch_break_start=None` divergente. Resultado: **13 de 14 coincidían exactamente entre el guardado original en log y la BD actual — falsos positivos de la heurística, días reales sin pausa**; el único con discrepancia real entre log y BD (francisco.carvajal, 06/07, `wo_pk=269`, pausa 07:00–17:30 en el log) fue confirmado por Miguel Ángel como error de tecleo del propio operario corregido después a mano, no el bug. **Ningún parte de los 14 resultó víctima real del bug.** De paso, corregidos con datos reales los 15 `SparePartLine` con `vehicle=NULL` en tareas con máquina real detectados en la auditoría de repuestos (script dedicado, vehículo asignado desde la máquina real de su propia `entry_line`, verificados los 15 antes de tocar cada uno). **Hallazgo adicional del modal global de repuestos (H10, mismo desvío):** aviso real de Miguel Ángel probando en el propio parte — la tabla de resultados del modal "Añadir repuesto" no era usable en móvil (5 columnas, campo de cantidad inalcanzable sin scroll horizontal); rediseñada a lista apilada, mismo patrón que `_warehouse_search_results.html` (commit `6f28113`). Verificado en los cuatro commits: `py_compile`/`node --check` limpios; djlint no disponible en este workspace, balance de etiquetas comprobado a mano. Sin migración en ningún commit. Sesión desviada después a H23 (documentación de maquinaria) — ver ese anexo. |
+| S52 | 2026-08-14 | **Continuación H07 (arrancada por PCH desde H30 en S51) — cierre completo de los 9 puntos de la hoja de ruta de S51, 9 commits, sin migración en ninguno.** **[1]** `familia`/`origen` de `COLUMN_DEFS` (`work_order_processor/services.py`) usan `get_fault_category_display()`/`get_source_display()` en vez del código interno en inglés (commit `4b0f788`). **[9]** sección de `machine_history.html` renombrada de "Libro de revisiones — fichas de avería" a "Historial de tickets de avería" (commit `f2281ec`), liberando el nombre para el punto 8. **[2]** verificado contra datos reales de producción antes de tocar código (Comando S, `EnterpriseBot_001/002_GET.txt`, ~40 líneas reales con "vacacion"/"formaci"/"limpieza"/"bloque"/"itv"/"servicio"): `_CLASSIFY_TASK_PROMPT` amplía vocabulario "bloque motor" (ENGINE_TRANSMISSION/ET_ENGINE) y reconoce cinco literales especiales exactos — "Vacaciones"/"Formación"/"Servicio"/"Limpieza y mantenimiento"/"ITV" — con `tipo_tarea=MANTENIMIENTO`; `classify_fault_line` (`tasks.py`) reasigna `machine_asset` al activo PERSONAL de la empresa únicamente para "Formación"/"Servicio", nunca para ITV ni el resto de mantenimiento, tras aclaración explícita de Miguel Ángel en la propia sesión ("la ITV, aunque sea una tarea de mantenimiento, esa sí se asigna a la máquina [...] las formaciones, formación y servicios los vamos a asignar a personal, porque son gastos de personal [...] aunque ellos pongan que han estado con la 62 [...] los vamos a asignar a personal") (commit `f8f9a89`). **[3]** campo Familia editable tras revisión: nuevo `post()` en `WorkOrderDetailView`, `<select>` por línea en `detail.html` (8 categorías AVERIA + 5 literales especiales + "Sin clasificar"), mismo gate de rol que el "Ver". **Bug real encontrado y corregido de inmediato (directriz 4.9):** esa misma columna Familia solo leía `fault_category` (siempre vacío fuera de AVERIA), nunca `task_category_free` — corregido en `_annotate_line_family` (commit `63de25e`). **[4]** líneas sombreadas alternas: `table-striped` de Bootstrap en `_wo_table.html`; sombreado gris alterno por entry (día) en `build_export_from_template` (`single_sheet`/`multi_sheet`) (commit `4da5108`). **[6]** exportación por plantilla habilitada en Pendientes: el backend ya lo permitía sin cambios, el bloqueo real era de plantilla (`bulk_export` no llegaba al include de Pendientes) y un selector JS fijado a `#form-bulk-reviewed`; `ACTIVE_BULK_FORM_SELECTOR` ahora deriva de `active_tab` (commit `0801b96`). **[7]** filtros "según las columnas que se presenten" (Miguel Ángel): añadidos `dieta` (con/sin) y `origen` (Manual/Generado) a `_apply_filters`, propagados en los 5 enlaces de pestaña y en `filters_qs`/`back_url` (commit `c7a5b92`). **[5]** exportación a PDF: `_build_export_columns`/`_build_export_rows` extraídas como helpers compartidos (DRY) entre Excel y PDF; `build_pdf_from_template()` nueva usando PyMuPDF (`fitz`, ya en `requirements.txt`, mismo patrón real ya usado en `export_manual_covers.py`) — sin meter una dependencia nueva (reportlab) que exigiría un ciclo de pip-tools en el servidor; probada de forma aislada en el workspace del modelo (instalación local de `pymupdf==1.27.2.2`, misma versión pinneada) antes de confiar en la API `insert_textbox`/`draw_rect`/`fontname="hebo"`; sin resumen previo, concesión explícita de Miguel Ángel en S51 para no gastar una llamada a Gemini; botón "PDF" añadido junto al de Excel en el modal de exportación (commit `7f67000`). **Incidente real durante la edición de este punto, detectado y corregido en la misma sesión:** un `str_replace` mal acotado dejó `_build_export_rows` "tragándose" el resto del cuerpo de `build_export_from_template` por indentación (compilaba igual porque el código huérfano quedaba como cuerpo alcanzable de esa función) — detectado con un chequeo AST explícito, no solo `py_compile`, y corregido con cirugía de líneas por script, reverificado con AST que las tres funciones quedan bien delimitadas. **[8]** "Libro de revisiones" implantado en `MachineHistoryView`/`machine_history.html`: nuevo `post()` reutilizando el mismo `ExportTemplate`/`build_export_from_template`/`build_pdf_from_template` de Partes Digitales, sin selección de partes (el alcance es siempre la máquina + rango de fechas ya consultados), restringido a ADMIN/SUPERVISOR/WORKSHOPBOSS (mismo criterio que la exportación de Partes Digitales) aunque la consulta de solo lectura sigue abierta a todos los roles (commit `e53e862`). Todos los commits verificados con `py_compile` (y AST donde hizo falta); inspección visual manual de templates (djlint no disponible en el workspace). Sin incidencias sin resolver al cierre. |
 
 
 ---
 
 ## 8. Hoja de Ruta para la Siguiente Sesion
 
-**ARRANQUE H07 vía PCH desde H30 (S51, misma sesión) -- bloque grande
-de mejoras reales sobre Partes Digitales, traído directamente por
-Miguel Ángel mientras la VM de OCR de H30 corre de fondo sin
-supervisión. Los siguientes puntos son la hoja de ruta ejecutable de
-esta sesión, en el orden en que se plantearon -- ninguno construido
-todavía, solo registrado:**
+**S52 cerró los nueve puntos que S51 dejó abiertos sobre el bloque de
+mejoras de Partes Digitales** (ver Registro de Sesiones, fila `S52`,
+para el detalle completo de los 9 commits). Sin ítems nuevos propios
+de esta sesión pendientes de construir.
 
-1. **Identificadores de avería exportados en inglés -- deben ir en
-   castellano.** Revisar `COLUMN_DEFS`/exportación Excel y cualquier
-   choices/enum de familia de avería que esté produciendo el texto en
-   inglés en la exportación.
+**Cierre S52, punto por punto (para no reabrir ninguno):**
 
-2. **Clasificación de avería por Gemini, huecos reales detectados por
-   Miguel Ángel viendo el visor:**
-   - **"Limpieza y mantenimiento"** no se está nombrando bien ni se le
-     asigna ninguna familia de avería -- mejorar el prompt de Gemini
-     para que reconozca este caso.
-   - **Vacaciones** debe aparecer literalmente como "Vacaciones" (no
-     en blanco/genérico), y además debe asignarse a **Personal**, no
-     a una máquina.
-   - **Mantenimiento y limpieza**, según a qué esté ligado: si es de
-     una máquina, se asigna a esa máquina con familia
-     "Mantenimiento"; si es de un centro de gasto (p. ej. el
-     almacén), se asigna a ese centro de gasto, también con familia
-     "Mantenimiento".
-   - **Vocabulario más específico en el prompt**: caso real detectado
-     -- una avería descrita como "bloque, sustituir bloque" (bloque
-     motor) no se está reconociendo como avería de motor. Ampliar el
-     prompt con más ejemplos/vocabulario para reducir estos huecos.
-   - **Formación**: familia de avería "Formación", asignada al
-     **trabajador/personal**, no a una máquina -- aunque hoy a veces
-     llegue con un código de máquina puesto. Miguel Ángel, verbatim:
-     *"Eso lo vamos a cambiar todo, pero de momento lo vamos a poner
-     así."* -- diseño provisional, ligado al futuro rediseño conjunto
-     de vacaciones/ausencias/formación (mismo bloque que el pendiente
-     ya registrado más abajo sobre el "justificante de asistencia").
-   - **Trabajos no mecánicos ligados a centro de gasto** -- ejemplos
-     reales: llevar una máquina a la ITV, o un servicio prestado con
-     la máquina. Necesitan su propia categoría, distinta de avería
-     mecánica.
-
-3. **Campo de avería editable tras la revisión** -- si Gemini se
-   confunde al clasificar, quien revisa (Carolina et al.) debe poder
-   corregir el valor a mano, no quedar atado a lo que puso Gemini.
-
-4. **Líneas sombreadas alternas** -- tanto en la vista del listado
-   como en la exportación a Excel, para facilitar la lectura.
-
-5. **Exportación a PDF**, mismo criterio que la exportación a Excel
-   ya existente (mismos trabajadores elegidos, mismos datos), con un
-   **resumen previo** antes del detalle. Miguel Ángel, verbatim: *"Si
-   el resumen es muy difícil de hacer, porque no vamos a gastar una
-   llamada de Gemini para eso, pues simplemente una exportación a
-   PDF"* -- es decir, el resumen es deseable pero no obligatorio si
-   implicara gastar una llamada a Gemini; en ese caso, exportación a
-   PDF sin resumen.
-
-6. **Exportación de "pendientes"** -- poder ver y exportar los partes
-   del mes en curso sin necesidad de que estén revisados/visados
-   primero (hoy la exportación exige visado, a confirmar contra el
-   código real antes de construir nada).
-
-7. **Filtros** -- mencionado sin más detalle todavía ("hay que poner
-   filtros también, y ya está"). Pedir a Miguel Ángel qué filtros
-   concretos quiere en cuanto se llegue a este punto, no asumir.
-
-8. **Historial de máquinas -- implantar ahí también el sistema de
-   plantillas de exportación**, para poder confeccionar libros de
-   historial de reparaciones desde esa misma pantalla, con el mismo
-   mecanismo que se construya para Partes Digitales (puntos 4-6 de
-   arriba).
-
-9. **Renombrar la sección "Libro de revisiones — fichas de avería"**
-   de `panel/machine_history.html` (bloque `H7/S016`, historial de
-   tickets de avería de la máquina, sistema de tickets aparte,
-   confirmado en esta sesión que muestra 0 en máquinas sin ningún
-   ticket abierto por esa vía -- no tiene relación con Partes
-   Digitales). Miguel Ángel, verbatim: *"Eso tiene que quedar puesto
-   como ticket de avería, no como libro de revisiones [...] libro de
-   revisiones tiende a confusión [...] el libro de revisiones va a
-   ser la exportación que vamos a hacer [...] cada usuario podrá
-   confeccionar sus plantillas para generar un libro de reparaciones
-   propio."* Es decir: **"Libro de revisiones" pasa a ser el nombre
-   del sistema de exportación por plantillas del punto 8** -- la
-   sección actual de tickets debe renombrarse a algo inequívoco,
-   p. ej. "Historial de tickets de avería", para no chocar con el
-   nuevo significado.
-
-**Nota de proceso:** esta hoja de ruta se registró durante el mismo
-tramo de sesión en que se hizo el PCH desde H30 -- construir en el
-orden de arriba, empezando por lo más rápido/aislado (puntos 1 y 9
-son cambios pequeños y autónomos; el resto requiere tocar el prompt
-de Gemini y el sistema de exportación, más superficie).
+1. **Identificadores en inglés** → `familia`/`origen` de
+   `COLUMN_DEFS` usan `get_fault_category_display()`/
+   `get_source_display()`. Commit `4b0f788`.
+2. **Huecos de clasificación Gemini** → `_CLASSIFY_TASK_PROMPT`
+   amplía vocabulario "bloque motor" y reconoce cinco literales
+   especiales exactos (Vacaciones/Formación/Servicio/Limpieza y
+   mantenimiento/ITV); `classify_fault_line` reasigna `machine_asset`
+   a PERSONAL solo para Formación/Servicio (aclaración explícita de
+   Miguel Ángel: la ITV sigue vinculada a la máquina). Commit
+   `f8f9a89`.
+3. **Familia editable tras revisión** → `post()` nuevo en
+   `WorkOrderDetailView` + `<select>` en `detail.html`. Bug real
+   corregido de paso (directriz 4.9): la columna solo leía
+   `fault_category`, nunca `task_category_free`. Commit `63de25e`.
+4. **Líneas sombreadas alternas** → `table-striped` en el listado;
+   sombreado por entry en el Excel (`single_sheet`/`multi_sheet`).
+   Commit `4da5108`.
+5. **Exportación a PDF** → `build_pdf_from_template()` con PyMuPDF
+   (ya en `requirements.txt`, sin dependencia nueva), sin resumen
+   previo (concesión de Miguel Ángel). Botón "PDF" junto al de Excel
+   en el modal de exportación de Partes Digitales. Commit `7f67000`.
+6. **Exportar Pendientes sin visado** → el backend ya lo permitía; el
+   bloqueo real era de plantilla + un selector JS fijado a
+   `#form-bulk-reviewed`, ahora derivado de `active_tab`. Commit
+   `0801b96`.
+7. **Filtros según las columnas presentadas** → añadidos `dieta` y
+   `origen` a `_apply_filters`, propagados en pestañas y `back_url`.
+   Commit `c7a5b92`.
+8. **Plantillas de exportación en historial de máquinas** → "Libro de
+   revisiones" implantado en `MachineHistoryView`/
+   `machine_history.html`, mismo `ExportTemplate`/
+   `build_export_from_template`/`build_pdf_from_template` de Partes
+   Digitales, alcance máquina + rango de fechas (sin selección de
+   partes), restringido a roles elevados. Commit `e53e862`.
+9. **Renombrar "Libro de revisiones"** → sección de tickets de
+   `machine_history.html` renombrada a "Historial de tickets de
+   avería", liberando el nombre para el punto 8. Commit `f2281ec`.
 
 ---
 
