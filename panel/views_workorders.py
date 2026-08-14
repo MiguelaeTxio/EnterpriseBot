@@ -3597,18 +3597,58 @@ class WorkOrderDetailView (CompanyUserRequiredMixin ,View ):
     """
     template_name = "panel/work_orders/detail.html"
 
+    # Roles con permiso de vista Y de corrección manual de la Familia.
+    # Mismo gate documentado arriba para el "Ver" -- H07 punto 3 (2026-08-14)
+    # añade la corrección con el mismo gate, sin ampliar el acceso.
+    _ELEVATED_ROLES = (
+        CompanyUser.ROLE_ADMIN,
+        CompanyUser.ROLE_SUPERVISOR,
+        CompanyUser.ROLE_WORKSHOPBOSS,
+    )
+
+    # Literales especiales de task_category_free reconocidos por el prompt
+    # de Gemini (work_order_processor/services.py, _CLASSIFY_TASK_PROMPT) --
+    # duplicados aquí a propósito (mismo patrón que el resto del archivo:
+    # sin import cruzado de constantes de prompt entre capas).
+    _SPECIAL_FAMILY_LITERALS = (
+        "Vacaciones", "Formación", "Servicio", "Limpieza y mantenimiento", "ITV",
+    )
+
+    @staticmethod
+    def _annotate_line_family(line):
+        """
+        Calcula, sin guardar nada, el valor y la etiqueta de Familia que debe
+        mostrarse para una línea -- corrige el bug real de que solo se leía
+        fault_category (siempre vacío fuera de AVERIA), ignorando por
+        completo task_category_free. También calcula el valor a preseleccionar
+        en el <select> de corrección manual (H07 punto 3).
+        ---
+        Computes, without saving anything, the Familia value/label to show for
+        a line -- fixes the real bug where only fault_category was read
+        (always empty outside AVERIA), ignoring task_category_free entirely.
+        Also computes the value to preselect in the manual-correction
+        <select> (H07 point 3).
+        """
+        if line.tipo_tarea == "AVERIA" and line.fault_category:
+            line.current_family_value   = line.fault_category
+            line.current_family_display = line.get_fault_category_display()
+        elif line.task_category_free in WorkOrderDetailView._SPECIAL_FAMILY_LITERALS:
+            line.current_family_value   = f"SPECIAL:{line.task_category_free}"
+            line.current_family_display = line.task_category_free
+        else:
+            line.current_family_value   = ""
+            line.current_family_display = line.task_category_free or "—"
+        return line
+
     def get (self ,request ,pk ,*args ,**kwargs ):
         from django .shortcuts import get_object_or_404 as _get_404 
         from django .http import HttpResponseForbidden 
+        from work_order_processor .models import FaultCategory
 
         cu =request .user .company_user 
         company =cu .company 
 
-        if cu .role not in (
-        CompanyUser .ROLE_ADMIN ,
-        CompanyUser .ROLE_SUPERVISOR ,
-        CompanyUser .ROLE_WORKSHOPBOSS ,
-        ):
+        if cu .role not in self ._ELEVATED_ROLES :
             return HttpResponseForbidden (
             "Acción no disponible para tu rol."
             )
@@ -3628,6 +3668,20 @@ class WorkOrderDetailView (CompanyUserRequiredMixin ,View ):
         )
         )
 
+        # H07 punto 3 (2026-08-14): anotar en cada línea el valor/etiqueta de
+        # Familia correctos (fix del bug de fault_category-only) para que el
+        # template los use directamente, sin lógica de plantilla.
+        for entry in entries:
+            for line in entry.lines.all():
+                self._annotate_line_family(line)
+
+        # Opciones del <select> de corrección manual: las 8 categorías fijas
+        # de FaultCategory (AVERIA) + los 5 literales especiales, en ese
+        # orden -- mismo criterio de agrupación que el prompt de Gemini.
+        family_choices = list(FaultCategory.choices) + [
+            (f"SPECIAL:{lit}", lit) for lit in self._SPECIAL_FAMILY_LITERALS
+        ]
+
         # back_url -- preservar los filtros activos de la lista de origen
         # (gap señalado por Miguel Ángel 2026-07-21). Fallback a la
         # pestaña Revisados sin filtros, comportamiento previo.
@@ -3643,7 +3697,83 @@ class WorkOrderDetailView (CompanyUserRequiredMixin ,View ):
         "work_order":work_order ,
         "entries":entries ,
         "back_url":back_url ,
+        "family_choices":family_choices ,
         })
+
+    def post (self ,request ,pk ,*args ,**kwargs ):
+        """
+        H07 punto 3 (2026-08-14), a petición explícita de Miguel Ángel: "si
+        Gemini se confunde al clasificar, quien revisa debe poder corregir el
+        valor a mano, no quedar atado a lo que puso Gemini." Corrige a mano
+        la Familia (fault_category o uno de los 5 literales especiales) de
+        una única línea, sin volver a llamar a Gemini. No reasigna la
+        máquina -- eso solo lo hace classify_fault_line automáticamente al
+        clasificar por primera vez (H07 punto 2); una corrección manual
+        posterior no debe mover de sitio lo que el operario ya registró.
+        """
+        from django .shortcuts import get_object_or_404 as _get_404 
+        from django .http import HttpResponseForbidden 
+
+        cu =request .user .company_user 
+        company =cu .company 
+
+        if cu .role not in self ._ELEVATED_ROLES :
+            return HttpResponseForbidden (
+            "Acción no disponible para tu rol."
+            )
+
+        work_order =_get_404 (WorkOrder ,pk =pk ,company =company )
+
+        entry_line_pk =request .POST .get ("entry_line_pk")
+        new_family =request .POST .get ("new_family","")
+
+        line =_get_404 (
+        WorkOrderEntryLine ,
+        pk =entry_line_pk ,
+        entry__work_order =work_order ,
+        )
+
+        if new_family .startswith ("SPECIAL:"):
+            literal =new_family [len ("SPECIAL:"):]
+            if literal not in self ._SPECIAL_FAMILY_LITERALS :
+                django_messages .error (request ,"Valor de Familia no reconocido.")
+            else :
+                line .tipo_tarea ="MANTENIMIENTO"
+                line .task_category_free =literal 
+                line .fault_category =""
+                line .fault_subcategory =""
+                line .save (update_fields =[
+                "tipo_tarea","task_category_free","fault_category","fault_subcategory",
+                ])
+                django_messages .success (request ,f"Familia corregida a «{literal}».")
+        elif new_family =="":
+            line .tipo_tarea =""
+            line .task_category_free =""
+            line .fault_category =""
+            line .fault_subcategory =""
+            line .save (update_fields =[
+            "tipo_tarea","task_category_free","fault_category","fault_subcategory",
+            ])
+            django_messages .success (request ,"Familia dejada sin clasificar.")
+        else :
+            from work_order_processor .models import FaultCategory
+            valid_codes ={fc [0 ]for fc in FaultCategory .choices }
+            if new_family not in valid_codes :
+                django_messages .error (request ,"Categoría de avería no reconocida.")
+            else :
+                line .tipo_tarea ="AVERIA"
+                line .fault_category =new_family 
+                line .fault_subcategory =""
+                line .task_category_free =""
+                line .save (update_fields =[
+                "tipo_tarea","fault_category","fault_subcategory","task_category_free",
+                ])
+                django_messages .success (request ,"Familia corregida.")
+
+        from django .shortcuts import redirect as _redirect_det
+        _qs =request .GET .urlencode ()
+        _url =request .path +(f"?{_qs}" if _qs else "")
+        return _redirect_det (_url )
 
 
 class WorkOrderAdminHistoryView (WorkOrderFormAccessMixin ,View ):

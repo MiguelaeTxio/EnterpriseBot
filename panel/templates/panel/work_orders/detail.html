@@ -130,7 +130,26 @@
                         <td>{{ line.fault_description|default:"—" }}</td>
                         <td>{{ line.repair_notes|default:"—" }}</td>
                         <td>{{ line.or_val|default:"—" }}</td>
-                        <td>{{ line.get_fault_category_display|default:"—" }}</td>
+                        <td>
+                            <div class="small text-muted mb-1">{{ line.current_family_display }}</div>
+                            <form method="post" class="d-flex align-items-center gap-1 family-edit-form">
+                                {% csrf_token %}
+                                <input type="hidden" name="entry_line_pk" value="{{ line.pk }}">
+                                <select name="new_family" class="form-select form-select-sm" style="min-width: 170px;">
+                                    <option value="" {% if not line.current_family_value %}selected{% endif %}>
+                                        — Sin clasificar —
+                                    </option>
+                                    {% for fam_value, fam_label in family_choices %}
+                                    <option value="{{ fam_value }}" {% if line.current_family_value == fam_value %}selected{% endif %}>
+                                        {{ fam_label }}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                                <button type="submit" class="btn btn-outline-primary btn-sm px-2" title="Guardar corrección de Familia">
+                                    <i class="bi bi-check2"></i>
+                                </button>
+                            </form>
+                        </td>
                     </tr>
                     {% if line.spare_parts.all %}
                     <tr class="table-light">
