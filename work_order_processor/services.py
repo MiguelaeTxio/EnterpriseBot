@@ -2816,8 +2816,13 @@ def build_export_from_template(template, work_orders_qs):
         "estado":      ("Estado",           lambda wo, entry, line: (
                                                 "Revisado" if wo.reviewed else "Pendiente"
                                             )),
-        "familia":     ("Familia avería",   lambda wo, entry, line: line.fault_category or ""),
-        "origen":      ("Origen",           lambda wo, entry, line: wo.source or ""),
+        # Fix H07 (2026-08-14): fault_category/source son códigos internos en
+        # inglés (FaultCategory/WorkOrder.Source, choices=) usados para
+        # analítica y filtrado -- la exportación debe mostrar siempre el
+        # label en castellano ya declarado en el propio choices=, nunca el
+        # código crudo. get_FOO_display() ya existe sin tocar el modelo.
+        "familia":     ("Familia avería",   lambda wo, entry, line: line.get_fault_category_display() or ""),
+        "origen":      ("Origen",           lambda wo, entry, line: wo.get_source_display() or ""),
         "horas_extra": ("H. Extra",          lambda wo, entry, line: (
                                                 # H24 — excluye la hora fantasma de
                                                 # vacaciones (VacationPeriod.
