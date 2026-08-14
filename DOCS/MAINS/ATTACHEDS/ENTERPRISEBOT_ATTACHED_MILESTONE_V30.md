@@ -1676,55 +1676,47 @@ saltarse:** heurística de nombre → OCR → Gemini/IA solo como último
 recurso.
 
 **Hoja de Ruta para la siguiente sesión de H30 (reescrita al cierre
-de S51 -- sustituye por completo a la de S50, que ya estaba resuelta):**
+de S53 -- sustituye por completo a la de S51):**
 
-1. **INCIDENTE ABIERTO, PRIORITARIO — agente H28 y VM de OCR
-   aparentemente caídos (reportado por Miguel Ángel al arrancar S53,
-   sin diagnóstico real todavía).** Dos síntomas reportados, sin
-   confirmar contra datos reales: (a) el agente H28
-   (`h28_migration_agent`, subida de documentación nueva a GCS) parece
-   haberse detenido — dejó de avisar de errores, pero no porque se
-   hayan corregido, sino porque aparentemente ya no está funcionando
-   en absoluto; (b) los tres shards de la VM `h28-ocr-batch` muestran,
-   según captura de pantalla de Miguel Ángel, resultados muy peores de
-   lo esperado (`sin_tipo` en torno al 80% en dos de los tres shards
-   visibles, muy por encima del 15,9% de referencia de S51 y en la
-   dirección contraria a la mejora esperada tras ampliar
-   `CONTENT_MARKERS` a 22 tipos en `1d3c703`). Miguel Ángel apunta
-   como causa probable una sesión previa que trabajó directamente en
-   la terminal de esa VM con fallos reales de comportamiento (bucle
-   repitiendo palabras, no recordar que Ctrl+C no cierra esa consola)
-   — sin confirmar todavía si esa sesión llegó a tocar código.
-   **Criterio de cierre, sin adivinar nada más hasta tener datos
-   reales:** conectar por SSH
-   (`gcloud compute ssh h28-ocr-batch --project=gen-lang-client-0961484137
-   --zone=europe-west1-b --command='...'`, comando de una sola línea,
-   ver `com-gcloud-windows`) y obtener, en este orden: (i) si la
-   instancia y los tres `tmux` siguen vivos o murieron; (ii) el
-   contenido real completo de `~/shard0.log`/`~/shard1.log`/
-   `~/shard2.log`, no solo lo visible en pantalla; (iii) si hay
-   divergencia de código en la VM respecto al último commit real de
-   GitHub (`1d3c703`) que explique el resultado peor de lo esperado;
-   (iv) por separado, estado real del agente H28 en su propio entorno
-   (Windows, `C:\EnterpriseBot\h28_migration_agent`, ver
-   `SESSION_VARIABLES.md`) — proceso vivo o muerto, últimas líneas de
-   su log/consola. **Recordar borrar la VM cuando ya no haga falta**
-   (`gcloud compute instances delete h28-ocr-batch --project=gen-lang-client-0961484137
-   --zone=europe-west1-b`) para dejar de facturar.
-2. **VM de OCR — contexto de la pasada que se está revisando (S51).**
-   `h28-ocr-batch` (GCE, `gen-lang-client-0961484137`,
-   `europe-west1-b`, `e2-standard-8`), 3 procesos en paralelo dentro
-   de sesiones `tmux` (`shard0`/`shard1`/`shard2`,
-   `--shard-count 3 --shard-index 0/1/2 --apply`), repartiendo sin
-   solape (`entry_id % 3`) los ~2.020 candidatos de maquinaria que
-   quedaron sin tipo tras la primera pasada de S51 en local. Corren
-   con el `CONTENT_MARKERS` ya ampliado a 22 tipos (commit `1d3c703`,
-   ver `COMPLETADAS EN S51` más abajo) -- la primera pasada con solo 9
-   tipos dio `tipo_resuelto=0/661` en el primer shard, error real
-   detectado por Miguel Ángel a mitad de sesión, corregido antes de
-   relanzar. Una vez resuelto el punto 1 (incidente), retomar aquí el
-   contraste real contra el 15,9% de la primera pasada.
-3. **Informe por familia (`report_ocr_gaps.py`) sin volver a correr
+1. **INCIDENTE ABIERTO, PRIORITARIO, SIN RESOLVER — el agente H28
+   (Windows, `.exe`) no indexa archivos nuevos.** Causa raíz
+   confirmada con datos reales (ver `SESSION_VARIABLES.md`, sección
+   "AGENTE H28 -- INCIDENTE ABIERTO"): `get_agent_root_dir()` usa
+   `sys.argv[0]`, que para el `.exe` empaquetado apunta a `dist\`, no
+   a la carpeta padre. `dist\agent_data\` está completamente vacía —
+   `watched_folders.json` nunca se ha escrito ahí, así que
+   `_resume_watched_folders()` siempre arranca vigilando CERO
+   carpetas, en silencio, sin ningún aviso visible. **Criterio de
+   cierre:** revisar con `git log` los cambios reales de
+   `config.py`/`state.py`/`main.py` antes de tocar nada (directriz
+   4.8/4.9) -- confirmar si hubo alguna vez una versión que sí
+   persistía bien, o si el bug es de origen. Corregir, recompilar,
+   redesplegar el `.exe`, y volver a seleccionar las carpetas a
+   vigilar a mano una vez corregido (se perderán las que hubiera en
+   memoria del proceso actual). Confirmar también por qué variable de
+   entorno sigue autenticando la clave de servicio pese a que
+   `dist\agent_data\` no tiene el archivo -- no bloquea nada, pero
+   queda sin explicar.
+2. **Completar el muestreo de los tipos "sin ejemplo".** Confirmado
+   en S53 con datos reales que al menos `EPIS` no es un caso de "cero
+   documentos" sino de "cero documentos clasificados" (1.518 archivos
+   reales indexados, 1.517 sin `document_type_id`) -- ver corrección
+   en el punto 4 más abajo. Revisar uno a uno los demás tipos de la
+   lista y, para los que sean el mismo caso, escribir una variante de
+   `sample_type_patterns.py` que muestree por `parent_path LIKE`
+   en vez de exigir `document_type_id` ya asignado.
+3. **Convertir en `CONTENT_MARKERS` reales las muestras ya
+   descargadas.** Los tres bloques del muestreo completo de los 77
+   tipos ya están hechos y a salvo -- `sample0_output.txt`
+   (26 tipos, 202KB), `sample1_output.txt` (26 tipos, 156KB),
+   `sample2_output.txt` (25 tipos, 151KB), subidos a
+   `/home/MiguelAeTxio/PROJECTS/EnterpriseBot/h28_migration_agent/`
+   en PythonAnywhere (no están en git todavía -- decidir si se
+   commitean o se procesan y se descartan). Falta el trabajo real:
+   leerlos y extraer una frase identificativa limpia por tipo, sin
+   contaminación cruzada, para ampliar `CONTENT_MARKERS` más allá de
+   los 22 actuales.
+4. **Informe por familia (`report_ocr_gaps.py`) sin volver a correr
    todavía** -- construido y commiteado en S51, pero quedó superado
    por el hallazgo de que el problema real era cobertura de
    `CONTENT_MARKERS` (9 de 77 tipos), no concentración por familia.
@@ -1898,3 +1890,80 @@ que Miguel Ángel lo señalara explícitamente.
 criterio de cierre exacto anotado en su propia hoja de ruta para
 retomarla. H07 activo, con su hoja de ruta de arranque ya registrada
 (9 puntos, ver sección 8 de su propio anexo).
+
+---
+
+## COMPLETADAS EN S53 (2026-08-14)
+
+Sesión de reactivación de H30 tras el incidente real reportado por
+Miguel Ángel al arrancar (agente H28 y VM aparentemente caídos).
+Sin commits de código sobre `EnterpriseBot` -- toda la sesión fue
+diagnóstico real, corrección de tres skills de cierre, y trabajo
+directo sobre la VM/PC/Termux de Miguel Ángel:
+
+1. **Corregido fallo real en `nfs-enterprisebot-pcs`** (y replicado
+   en `newflow-android-pcs` y `nfs-campustudionline-pcs`): el cierre
+   de sesión nunca comprobaba si la hoja de ruta del hito EN PROGRESO
+   quedaba vacía y si un hito pausado tenía condición de retorno ya
+   cumplida -- exactamente lo que le pasó a S52 con H07/H30. Las tres
+   skills corregidas, empaquetadas con Skill Creator y entregadas por
+   `present_files` para que Miguel Ángel las actualizara desde la
+   tarjeta.
+2. **PCH real H07 → H30**, ejecutado en el enrutador (commit
+   `76042e7`) tras decisión explícita de Miguel Ángel.
+3. **Diagnóstico completo del agente H28 (Windows):** dos instancias
+   duplicadas del mismo `.exe` corriendo a la vez (mismo binario,
+   arrancadas con 9s de diferencia por la tarea programada) --
+   matadas y relanzada una única instancia limpia. Encontrado y
+   confirmado el bug real de origen: `get_agent_root_dir()` usa
+   `sys.argv[0]`, que para el `.exe` apunta a `dist\`, no a la
+   carpeta padre -- ni el log ni `agent_data\` (con
+   `watched_folders.json`) viven donde se pensaba. `dist\agent_data\`
+   está completamente vacía, así que el agente arranca vigilando
+   CERO carpetas, en silencio. Bug real, sin corregir todavía --
+   punto 1 de la hoja de ruta.
+4. **Resultado final de la VM de OCR (S51), con datos reales:** los
+   tres shards terminaron al 100% (661/693/666 = 2.020 total, cuadra
+   exacto). `tipo_resuelto`: 111/2.020 (5,5%), frente al 0% del
+   primer intento con el diccionario viejo -- mejora real pero
+   modesta, coherente con que `CONTENT_MARKERS` solo cubre 22 de 77
+   tipos.
+5. **Muestreo completo de los 77 tipos, esta vez sí guardado.**
+   Relanzado en tres `tmux` paralelos en la VM (`sample0`/`sample1`/
+   `sample2`, split 26/26/25), con salida a archivo (`tee`) desde el
+   principio -- las 185 muestras de S51 se habían perdido por no
+   guardarse en ningún sitio. Esta vez sí: copiadas de la VM al móvil
+   (`gcloud compute scp`) y de ahí subidas a PythonAnywhere por sftp,
+   antes de borrar la VM. Viven en
+   `/home/MiguelAeTxio/PROJECTS/EnterpriseBot/h28_migration_agent/
+   sample{0,1,2}_output.txt` -- pendiente decidir si se commitean.
+6. **Corrección real sobre los "10 tipos sin ejemplo":** falso, al
+   menos para `EPIS` -- 1.518 documentos reales indexados desde el
+   29/07/2026 (migración histórica de H28), 1.517 sin clasificar
+   nunca. No es "sin datos", es "sin clasificar" -- problema de
+   huevo y gallina para el diseño actual de `sample_type_patterns.py`
+   (solo busca entre lo ya clasificado). Miguel Ángel detectó la
+   contradicción y forzó la verificación real con Comando S.
+7. **Termux + gcloud montado y verificado de forma duradera** en el
+   teléfono de Miguel Ángel (cuenta `nummenor@gmail.com`, proyecto y
+   zona ya fijados) -- documentado en `SESSION_VARIABLES.md` el
+   fallo conocido del instalador y su solución real.
+8. **VM `h28-ocr-batch` borrada** al cierre, tras confirmar que los
+   tres archivos de muestreo ya estaban a salvo fuera de su disco.
+   Coste real de la sesión de hoy sobre la VM: ~5h45 de uso,
+   ≈$1,70-1,85 (calculado a mano, Billing tarda hasta 24h en
+   reflejarlo).
+
+**Incidencias reales de la sesión:** Miguel Ángel señaló, con razón,
+que el modelo intentó abrir un PAH nuevo llamándolo "PCH" cuando no
+lo era -- corregido en el momento, sin volver a repetirlo. También
+señaló, con razón, dos afirmaciones hechas sin verificar contra datos
+reales durante la sesión (que "otra sesión trabajaba fuera del
+flujo" en la VM, sin base real; y que los "10 tipos sin ejemplo"
+significaban ausencia de documentos, cuando en realidad significaban
+ausencia de clasificación) -- ambas corregidas en el momento con
+Comando S/datos reales, nunca dejadas sin corregir.
+
+**Resultado final:** H30 sigue EN PROGRESO. Hoja de ruta reescrita
+por completo con el bug real del agente H28 como punto 1, prioritario
+y sin resolver.
