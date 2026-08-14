@@ -359,8 +359,166 @@ class MachineHistoryView(CompanyUserRequiredMixin, View):
             "total_intervenciones": total_intervenciones,
             "total_horas": total_horas,
             "ultima_intervencion": ultima_intervencion,
+            # H07 punto 8 (2026-08-14): exportación por plantilla, mismo
+            # gate de rol que la exportación de Partes Digitales
+            # (WorkOrderAdminExportByTemplateView / SupervisorAccessMixin) --
+            # es una acción de reporting, no la consulta de solo lectura ya
+            # abierta a todos los roles.
+            "can_export": company_user.role in {
+                company_user.ROLE_ADMIN,
+                company_user.ROLE_SUPERVISOR,
+                company_user.ROLE_WORKSHOPBOSS,
+            },
         }
         return render(request, self.template_name, context)
+
+    # ------------------------------------------------------------------
+    # POST — export by template (H07 punto 8, 2026-08-14)
+    # ------------------------------------------------------------------
+
+    def post(self, request, *args, **kwargs):
+        """
+        Exports the machine/date-range history currently being viewed,
+        using the same ExportTemplate system already built for Partes
+        Digitales (build_export_from_template / build_pdf_from_template,
+        work_order_processor/services.py). Reuses the "Libro de
+        revisiones" name freed up in this same session (S52) after
+        renaming the ticket-history section (H07 punto 9).
+
+        POST params: template_pk, format ("xlsx"/"pdf"), machine_code,
+        date_from, date_to -- the last three rebuild exactly the same
+        WorkOrder scope shown by the GET (machine + date range), never a
+        free selection of individual WorkOrder pks like Partes Digitales
+        (this page has no per-line checkboxes).
+
+        Gated to elevated roles (ADMIN/SUPERVISOR/WORKSHOPBOSS), same
+        criterion as WorkOrderAdminExportByTemplateView -- the GET stays
+        open to every role (pure read, no cost data), but generating a
+        downloadable report is treated as a reporting action.
+        ---
+        Exporta el historial de máquina/rango de fechas que se está
+        consultando, usando el mismo sistema de ExportTemplate ya
+        construido para Partes Digitales (build_export_from_template /
+        build_pdf_from_template, work_order_processor/services.py).
+        Reutiliza el nombre "Libro de revisiones" liberado en esta misma
+        sesión (S52) tras renombrar la sección de historial de tickets
+        (H07 punto 9).
+
+        Parámetros POST: template_pk, format ("xlsx"/"pdf"), machine_code,
+        date_from, date_to -- los tres últimos reconstruyen exactamente el
+        mismo alcance de WorkOrder que muestra el GET (máquina + rango de
+        fechas), nunca una selección libre de pks de WorkOrder individuales
+        como Partes Digitales (esta página no tiene checkboxes por línea).
+
+        Restringido a roles elevados (ADMIN/SUPERVISOR/WORKSHOPBOSS), mismo
+        criterio que WorkOrderAdminExportByTemplateView -- el GET sigue
+        abierto a todos los roles (solo lectura, sin datos de coste), pero
+        generar un informe descargable se trata como acción de reporting.
+        """
+        import io
+        from django.http import HttpResponse, HttpResponseBadRequest, HttpResponseForbidden
+        from django.utils.timezone import now as tz_now
+        from work_order_processor.models import ExportTemplate, WorkOrder
+        from work_order_processor.services import (
+            build_export_from_template, build_pdf_from_template,
+        )
+
+        company = self._get_company(request)
+        cu = request.user.company_user
+
+        if cu.role not in (
+            cu.ROLE_ADMIN, cu.ROLE_SUPERVISOR, cu.ROLE_WORKSHOPBOSS,
+        ):
+            return HttpResponseForbidden("Acción no disponible para tu rol.")
+
+        today = date.today()
+        default_from = today - timedelta(days=_DEFAULT_DAYS)
+
+        machine_code_raw = request.POST.get("machine_code", "").strip().upper()
+        date_from = self._parse_date(
+            request.POST.get("date_from", "").strip(), default_from
+        )
+        date_to = self._parse_date(
+            request.POST.get("date_to", "").strip(), today
+        )
+        if date_from > date_to:
+            date_from, date_to = date_to, date_from
+
+        selected_machine = MachineAsset.objects.filter(
+            company=company, is_active=True, code=machine_code_raw,
+        ).first()
+        if selected_machine is None:
+            return HttpResponseBadRequest(
+                "# [MACHINE HISTORY EXPORT] Máquina no encontrada."
+            )
+
+        try:
+            template_pk = int(request.POST.get("template_pk", ""))
+            try:
+                template = ExportTemplate.objects.get(
+                    pk=template_pk, company_user=cu, is_global=False,
+                )
+            except ExportTemplate.DoesNotExist:
+                template = ExportTemplate.objects.get(
+                    pk=template_pk, company=company, is_global=True,
+                )
+        except (ValueError, TypeError, ExportTemplate.DoesNotExist):
+            return HttpResponseBadRequest(
+                "# [MACHINE HISTORY EXPORT] Plantilla no encontrada o no "
+                "pertenece al usuario."
+            )
+
+        # Mismo alcance que el GET (líneas de la máquina en el rango de
+        # fechas), pero a nivel de WorkOrder -- build_export_from_template/
+        # build_pdf_from_template esperan un queryset de WorkOrder, no de
+        # WorkOrderEntryLine.
+        qs = WorkOrder.objects.filter(
+            entries__lines__machine_asset=selected_machine,
+            entries__work_date__range=(date_from, date_to),
+        ).distinct()
+
+        if not qs.exists():
+            return HttpResponseBadRequest(
+                "# [MACHINE HISTORY EXPORT] Sin partes para la máquina y "
+                "el rango de fechas seleccionados."
+            )
+
+        export_format = request.POST.get("format", "xlsx").strip().lower()
+        if export_format not in ("xlsx", "pdf"):
+            export_format = "xlsx"
+
+        if export_format == "pdf":
+            pdf_bytes = build_pdf_from_template(template, qs)
+            filename = (
+                f"historial_{selected_machine.code}_"
+                f"{tz_now().strftime('%Y%m%d_%H%M%S')}.pdf"
+            )
+            response = HttpResponse(pdf_bytes, content_type="application/pdf")
+            response["Content-Disposition"] = f'attachment; filename="{filename}"'
+            logger.info(
+                "# [MACHINE HISTORY EXPORT] PDF '%s' máquina=%s (%d partes) por %s.",
+                template.name, selected_machine.code, qs.count(), cu.user.username,
+            )
+            return response
+
+        wb = build_export_from_template(template, qs)
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        filename = (
+            f"historial_{selected_machine.code}_"
+            f"{tz_now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        )
+        response = HttpResponse(
+            buf.getvalue(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        logger.info(
+            "# [MACHINE HISTORY EXPORT] Excel '%s' máquina=%s (%d partes) por %s.",
+            template.name, selected_machine.code, qs.count(), cu.user.username,
+        )
+        return response
 
     # ------------------------------------------------------------------
     # Presence helper (same pattern as panel views)

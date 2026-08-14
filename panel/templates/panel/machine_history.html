@@ -156,11 +156,19 @@
         {# ============================================================ #}
         {% if lines %}
         <div class="card shadow-sm">
-            <div class="card-header d-flex align-items-center gap-2">
+            <div class="card-header d-flex align-items-center gap-2 flex-wrap">
                 <i class="bi bi-clock-history"></i>
                 <span class="fw-semibold">
                     Intervenciones — {{ date_from }} / {{ date_to }}
                 </span>
+                {% if can_export %}
+                <button type="button" id="btn-open-machine-export"
+                        class="btn btn-success btn-sm py-0 px-3 ms-auto"
+                        data-bs-toggle="modal"
+                        data-bs-target="#modalMachineExportTemplate">
+                    <i class="bi bi-journal-text me-1"></i>Libro de revisiones
+                </button>
+                {% endif %}
             </div>
             <div class="card-body p-0">
                 <div class="table-responsive">
@@ -445,6 +453,65 @@
     {% endif %}
 
 </div>
+
+{% if can_export %}
+{# ------------------------------------------------------------------ #}
+{# Modal — Libro de revisiones (exportación por plantilla, H07/S52)    #}
+{# Mismo sistema de ExportTemplate que Partes Digitales, sin selección  #}
+{# de partes -- el alcance es siempre la máquina + rango de fechas ya  #}
+{# consultados en esta página.                                         #}
+{# ------------------------------------------------------------------ #}
+<div class="modal fade" id="modalMachineExportTemplate" tabindex="-1"
+     aria-labelledby="modalMachineExportTemplateLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header border-bottom">
+                <h6 class="modal-title fw-semibold" id="modalMachineExportTemplateLabel">
+                    <i class="bi bi-journal-text me-1"></i>Libro de revisiones —
+                    {{ selected_machine.code }}
+                </h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small mb-3">
+                    Se exportará el historial de <strong>{{ selected_machine.code }}</strong>
+                    entre <strong>{{ date_from }}</strong> y <strong>{{ date_to }}</strong>,
+                    con la plantilla de columnas elegida abajo.
+                </p>
+                <label class="form-label text-sm fw-semibold mb-1">Plantilla</label>
+                <select id="mh-sel-export-template" class="form-select form-select-sm mb-2"></select>
+                <div id="mh-export-template-summary" class="small text-muted d-none">
+                    Formato: <span id="mh-tpl-sheet-format"></span> ·
+                    Columnas: <span id="mh-tpl-columns"></span>
+                </div>
+                <div id="mh-export-template-error" class="alert alert-danger text-sm py-2 mt-2 d-none"></div>
+            </div>
+            <div class="modal-footer border-top py-3 d-flex justify-content-end gap-2">
+                <button type="button" class="btn btn-outline-secondary btn-sm px-3"
+                        data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" id="mh-btn-confirm-export-pdf"
+                        class="btn btn-outline-danger btn-sm px-3">
+                    <i class="bi bi-file-earmark-pdf me-1"></i>PDF
+                </button>
+                <button type="button" id="mh-btn-confirm-export-xlsx"
+                        class="btn btn-success btn-sm px-4">
+                    <i class="bi bi-file-earmark-excel me-1"></i>Exportar
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<form method="post" id="mh-form-export-by-template">
+    {% csrf_token %}
+    <input type="hidden" name="template_pk" id="mh-hidden-template-pk" value="">
+    <input type="hidden" name="format" id="mh-hidden-export-format" value="xlsx">
+    <input type="hidden" name="machine_code" value="{{ selected_machine.code }}">
+    <input type="hidden" name="date_from" value="{{ date_from }}">
+    <input type="hidden" name="date_to" value="{{ date_to }}">
+</form>
+{% endif %}
+
 {% endblock %}
 
 {% block extra_scripts %}
@@ -560,4 +627,106 @@
 
 }());
 </script>
+
+{% if can_export %}
+{# ------------------------------------------------------------------ #}
+{# Modal de exportación por plantilla — historial de máquina (H07/S52) #}
+{# Carga plantillas via AJAX (misma API que Partes Digitales), guarda  #}
+{# el pk elegido y envia el POST a esta misma vista (sin action        #}
+{# explícito en el form -- MachineHistoryView ya atiende GET y POST).  #}
+{# ------------------------------------------------------------------ #}
+<script>
+(function () {
+    "use strict";
+
+    var TEMPLATE_LIST_URL = "{% url 'panel:export_template_list' %}?format=json";
+    var templates = [];
+
+    var SHEET_FORMAT_LABELS = {
+        "single_sheet": "Una sola hoja",
+        "multi_sheet":  "Una hoja por operario"
+    };
+    var COLUMN_LABELS = {
+        "fecha": "Fecha", "operario": "Operario", "maquina": "Máquina / CdG",
+        "descripcion": "Descripción avería", "notas": "Notas reparación",
+        "hc": "H. inicio", "hf": "H. fin", "delta_horas": "Δ Horas",
+        "estado": "Estado", "familia": "Familia", "origen": "Origen",
+        "horas_extra": "H. Extra", "dietas": "Dietas"
+    };
+
+    var modalEl = document.getElementById("modalMachineExportTemplate");
+    if (modalEl) {
+        modalEl.addEventListener("show.bs.modal", function () {
+            fetch(TEMPLATE_LIST_URL)
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    templates = data.templates || [];
+                    var sel = document.getElementById("mh-sel-export-template");
+                    sel.innerHTML = "";
+                    templates.forEach(function (t) {
+                        var opt = document.createElement("option");
+                        opt.value = t.id;
+                        opt.textContent = t.name + (t.is_global ? " 🌐" : "") + (t.is_default ? " ★" : "");
+                        sel.appendChild(opt);
+                    });
+                    _updateSummary();
+                })
+                .catch(function () {
+                    var sel = document.getElementById("mh-sel-export-template");
+                    sel.innerHTML = "<option value=''>Error al cargar plantillas</option>";
+                });
+        });
+    }
+
+    var selEl = document.getElementById("mh-sel-export-template");
+    if (selEl) { selEl.addEventListener("change", _updateSummary); }
+
+    function _getSelectedTemplate() {
+        var sel = document.getElementById("mh-sel-export-template");
+        if (!sel || !sel.value) { return null; }
+        var id = parseInt(sel.value, 10);
+        return templates.find(function (t) { return t.id === id; }) || null;
+    }
+
+    function _updateSummary() {
+        var tpl = _getSelectedTemplate();
+        var summary = document.getElementById("mh-export-template-summary");
+        if (!tpl || !summary) { return; }
+        summary.classList.remove("d-none");
+        document.getElementById("mh-tpl-sheet-format").textContent =
+            SHEET_FORMAT_LABELS[tpl.sheet_format] || tpl.sheet_format;
+        document.getElementById("mh-tpl-columns").textContent =
+            (tpl.columns || []).map(function (k) { return COLUMN_LABELS[k] || k; }).join(", ");
+    }
+
+    function _submitExport(format) {
+        var tpl = _getSelectedTemplate();
+        if (!tpl) {
+            var errEl = document.getElementById("mh-export-template-error");
+            if (errEl) {
+                errEl.textContent = "Selecciona una plantilla antes de exportar.";
+                errEl.classList.remove("d-none");
+            }
+            return;
+        }
+        var form = document.getElementById("mh-form-export-by-template");
+        if (!form) { return; }
+        document.getElementById("mh-hidden-template-pk").value = tpl.id;
+        document.getElementById("mh-hidden-export-format").value = format;
+
+        var bsModal = bootstrap.Modal.getInstance(modalEl);
+        if (bsModal) { bsModal.hide(); }
+        form.submit();
+    }
+
+    var btnXlsx = document.getElementById("mh-btn-confirm-export-xlsx");
+    if (btnXlsx) { btnXlsx.addEventListener("click", function () { _submitExport("xlsx"); }); }
+
+    var btnPdf = document.getElementById("mh-btn-confirm-export-pdf");
+    if (btnPdf) { btnPdf.addEventListener("click", function () { _submitExport("pdf"); }); }
+
+}());
+</script>
+{% endif %}
+
 {% endblock %}
