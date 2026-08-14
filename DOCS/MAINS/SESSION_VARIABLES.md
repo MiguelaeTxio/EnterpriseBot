@@ -254,7 +254,32 @@ no aceptan flags ni variables de entorno).
 
 ---
 
-## AGENTE H28 (Windows, `.exe`) — INCIDENTE ABIERTO, SIN RESOLVER
+## Termux (Android) + gcloud — YA MONTADO Y VERIFICADO (S53, 2026-08-14)
+
+Cuenta autenticada: `nummenor@gmail.com`. Proyecto y zona fijados:
+`gen-lang-client-0961484137` / `europe-west1-b`. Verificado con
+`gcloud compute instances list` -- funciona.
+
+**Si hay que rehacerlo en un Termux nuevo, el instalador oficial
+(`curl https://sdk.cloud.google.com | bash`) falla al final con
+`ERROR: (gcloud.components.update) The following components are
+unknown [gcloud, gcloud-crc32c]`** -- es un fallo conocido y
+documentado en varias fuentes independientes, no es un problema real:
+el SDK ya quedó instalado en `$PREFIX/google-cloud-sdk/`, solo falta
+terminar de configurarlo. Solución, en orden:
+```bash
+pkg update -y && pkg upgrade -y
+curl https://sdk.cloud.google.com | bash
+# ignorar el ERROR de components.update, es esperado
+$PREFIX/google-cloud-sdk/install.sh --override-components
+# responder Y a "Modify profile to update your $PATH..."
+exec bash
+gcloud version
+gcloud auth login --no-launch-browser
+# abrir la URL en el navegador del telefono, pegar el codigo de vuelta
+gcloud config set project gen-lang-client-0961484137
+gcloud config set compute/zone europe-west1-b
+```
 ## (registrado S53, 2026-08-14) — retomar el lunes
 
 **Síntoma real reportado por Miguel Ángel:** copia un archivo nuevo a
