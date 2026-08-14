@@ -218,10 +218,19 @@ no aceptan flags ni variables de entorno).
   está activo. Sin este paso, `ModuleNotFoundError: No module named
   'pymysql'` (error real visto en S53).
 - **tmux:** cada script de barrido/muestreo largo se lanza dentro de
-  una sesión `tmux` propia (`tmux new -s NOMBRE`), para poder
-  desconectar (`Ctrl+B` `D`) sin matar el proceso y reconectar después
-  (`tmux attach -t NOMBRE`). Listar sesiones vivas: `tmux ls`. Matar
-  una sesión terminada: `tmux kill-session -t NOMBRE`.
+  una sesión `tmux` propia (`tmux new -s NOMBRE`). Listar sesiones
+  vivas: `tmux ls`. Matar una sesión terminada: `tmux kill-session -t
+  NOMBRE`.
+  ⛔ **`Ctrl+B` seguido de `D` para desconectar (detach) SIN matar el
+  proceso NO FUNCIONA en la consola de Miguel Ángel** (PowerShell →
+  `gcloud compute ssh`) -- confirmado real dos veces (sesión anterior
+  y S53). **Nunca volver a proponerlo.** Para tener varios procesos en
+  paralelo, la vía que sí funciona es abrir una ventana de PowerShell
+  nueva por cada proceso y conectar con `gcloud compute ssh` otra vez
+  desde ahí (cada ventana de PowerShell es una sesión SSH
+  independiente) -- dentro de esa sesión nueva, `tmux attach -t
+  NOMBRE` si hace falta reconectar a una ya creada, o `tmux new -s
+  NOMBRE` para una nueva.
 - **Coste real confirmado (S53):** `e2-standard-8` en `europe-west1-b`,
   sin descuento por uso sostenido (la familia E2 no lo tiene). Sesión
   de ~5h45 de uso real costó en torno a $1,70-1,85 -- los datos de
