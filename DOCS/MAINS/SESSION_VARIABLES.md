@@ -351,3 +351,24 @@ se rompió en algún commit. Antes de arreglar nada, revisar con `git
 log` los cambios reales de `config.py`/`state.py`/`main.py` entre
 la versión que sí funcionaba (si la hubo) y la actual -- directriz
 4.8/4.9, verificar antes de proponer diseño.
+
+---
+
+## CRITERIO REAL: paralelo vs. un solo proceso en la VM (S53,
+## 2026-08-14) -- según contexto, NO preguntar, ya está decidido
+
+El coste de la VM es por hora encendida (~$0,30/h), casi
+independiente de cuántos procesos corran dentro -- repartir en varios
+`tmux` en paralelo no ahorra dinero, solo ahorra tiempo de espera.
+Por eso el criterio depende de si Miguel Ángel tiene prisa en ese
+momento, no de ahorrar coste:
+
+- **En la oficina (tiene que esperar delante, sin poder hacer otra
+  cosa mientras corre):** varios procesos en paralelo, para que acabe
+  antes.
+- **Fuera de la oficina, con tiempo para hacer otra cosa mientras
+  corre:** un solo proceso, sin prisa, aunque tarde más -- menos
+  ventanas, menos sitios donde algo puede salir mal.
+
+Preguntar por el contexto (¿tienes prisa ahora o no?) antes de decidir
+cuántos procesos lanzar, en vez de asumir paralelo por defecto.
