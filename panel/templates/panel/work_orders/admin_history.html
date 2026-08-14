@@ -5,7 +5,8 @@
 {# Partes Digitales — vista única de historial de partes (H17 S012, 2026-07-10).                    #}
 {# Sustituye a las antiguas Partes Digitales, Mis partes e Historial de operario, eliminadas.        #}
 {#   Tab 1 — Pendientes : partes sin revisar. Propios para WORKSHOP, todos los operarios en el resto.#}
-{#   Tab 2 — Revisados  : partes revisados, Excel export disponible aquí, solo roles elevados.       #}
+{#                        Exportación por plantilla disponible aquí también (H07/S52, roles elevados)#}
+{#   Tab 2 — Revisados  : partes revisados, exportación por plantilla, solo roles elevados.          #}
 {#   Tab 3 — Histórico  : todos los partes, vista de solo lectura con filtros cruzados.              #}
 {#   Tab 4 — Ausencias  : solo roles elevados ven todas + CRUD; WORKSHOP ve solo las suyas, lectura. #}
 {#   Tab 5 — Períodos   : gestión de WorkPeriod, solo roles elevados.                                #}
@@ -128,6 +129,12 @@
     var TEMPLATE_LIST_URL = "{% url 'panel:export_template_list' %}?format=json";
     var templates         = [];
 
+    // H07 punto 6 (2026-08-14): el formulario bulk activo depende de la
+    // pestaña renderizada (server-side, solo una en el DOM a la vez) --
+    // antes estaba fijado a "form-bulk-reviewed", lo que dejaba la
+    // exportación inservible en cualquier otra pestaña con bulk_export=True.
+    var ACTIVE_BULK_FORM_SELECTOR = "#form-bulk-{{ active_tab }}";
+
     var SHEET_FORMAT_LABELS = {
         "single_sheet": "Una sola hoja",
         "multi_sheet":  "Una hoja por operario"
@@ -219,10 +226,10 @@
     }
 
     function _updatePartsCount() {
-        /* Count checked PKs in the reviewed table.
-           Contar PKs marcados en la tabla de revisados. */
+        /* Count checked PKs in the active tab's table.
+           Contar PKs marcados en la tabla de la pestaña activa. */
         var checked = document.querySelectorAll(
-            "#form-bulk-reviewed .bulk-check-item:checked"
+            ACTIVE_BULK_FORM_SELECTOR + " .bulk-check-item:checked"
         );
         var countEl = document.getElementById("export-parts-count");
         if (countEl) {
@@ -263,15 +270,15 @@
                 el.remove();
             });
 
-            /* Collect checked PKs from reviewed table (or all if none checked).
-               Recopilar PKs marcados de la tabla revisados (o todos si ninguno). */
+            /* Collect checked PKs from the active tab's table (or all if none checked).
+               Recopilar PKs marcados de la tabla de la pestaña activa (o todos si ninguno). */
             var checkedItems = document.querySelectorAll(
-                "#form-bulk-reviewed .bulk-check-item:checked"
+                ACTIVE_BULK_FORM_SELECTOR + " .bulk-check-item:checked"
             );
             var pkSource = checkedItems.length > 0
                 ? Array.from(checkedItems).map(function (el) { return el.value; })
                 : Array.from(document.querySelectorAll(
-                    "#form-bulk-reviewed .bulk-check-item"
+                    ACTIVE_BULK_FORM_SELECTOR + " .bulk-check-item"
                   )).map(function (el) { return el.value; });
 
             pkSource.forEach(function (pk) {
@@ -681,7 +688,7 @@
                 </details>
             </div>
             {% endif %}
-            {% include "panel/work_orders/_wo_table.html" with wo_list=pending_list tab_key="pending" show_pipeline_status=True show_edit=True show_mark_reviewed_row=True bulk_mark_reviewed=True back_url=back_url empty_icon="bi-check2-all text-success" empty_text="No hay partes pendientes de revisión." %}
+            {% include "panel/work_orders/_wo_table.html" with wo_list=pending_list tab_key="pending" show_pipeline_status=True show_edit=True show_mark_reviewed_row=True bulk_mark_reviewed=True bulk_export=True back_url=back_url empty_icon="bi-check2-all text-success" empty_text="No hay partes pendientes de revisión." %}
         </div>
 
         {# ============================================================== #}
