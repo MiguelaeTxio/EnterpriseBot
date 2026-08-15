@@ -1967,3 +1967,90 @@ Comando S/datos reales, nunca dejadas sin corregir.
 **Resultado final:** H30 sigue EN PROGRESO. Hoja de ruta reescrita
 por completo con el bug real del agente H28 como punto 1, prioritario
 y sin resolver.
+
+---
+
+## COMPLETADAS EN S54 (2026-08-15)
+
+Sesión de continuidad de H30. Sin acceso al PC donde vive el agente
+H28 (punto 1 de la hoja de ruta) -- se empezó por el punto 2:
+completar el muestreo de los tipos "sin ejemplo", con verificación
+empírica real contra `DocumentIndexEntry`, nunca contra supuestos.
+
+**Auditoría real de los 9 tipos activos sin ningún ejemplo ya
+clasificado** (dato real, no el "10" aproximado de sesiones
+anteriores -- confirmado con Comando S contra
+`document_explorer_documenttypecatalog`/`documentindexentry`):
+
+1. **Mismo caso que `EPIS`** (carpeta real con archivos, cero
+   clasificados -- confirmado con inspección real de rutas, nunca
+   solo por conteo de palabra suelta, tras detectar que una búsqueda
+   ingenua por palabra única produce falsos positivos masivos en este
+   proyecto -- ver más abajo):
+   - `PAGO_CORRIENTE` → `DOC. PERSONAL/DECLARACION AL CORRIENTE/...`,
+     1.762 archivos. Miguel Ángel confirma el motivo real: es el
+     justificante de estar al corriente de pagos exigido por
+     plataformas tipo Obralia y por los propios clientes.
+   - `AUTORIZACION_USO_MAQUINARIA` →
+     `DOC. PERSONAL/AUTORIZACION USO DE MAQUINARIA/...`, 383 archivos.
+   - `INVESTIGACION_ACCIDENTE` →
+     `DOC. PERSONAL/INVESTIGACION ACCIDENTES/...`, 898 archivos.
+   - `PARTE_BAJA_MEDICA` → localizado por `INCAPACIDAD` (no por
+     "baja", que en este proyecto es una palabra inservible para
+     buscar -- ver incidente más abajo), carpeta real
+     `.../INCAPACIDAD LABORAL/...` con archivos como
+     `BAJA LABORAL ...pdf` dentro.
+2. **Sin evidencia real todavía** (ni carpeta ni archivo tras cruzar
+   palabras distintivas del código y del label, descartando ruido):
+   - `IEDMT` (Impuesto Especial sobre Determinados Medios de
+     Transporte).
+   - `TABLA_DE_CARGA` -- los 124 "aciertos" iniciales con la palabra
+     suelta "carga" eran ruido puro (`ENCARGADO`, `AUTOCARGANTE`,
+     `CARGADORA RUEDAS`); cruzando "Tabla" no aparece ninguna
+     coincidencia real.
+3. **Bug real de catalogación corregido en esta sesión**
+   (migración `0034_correct_estiba_plataformas_domain.py`):
+   `ESTIBA_PLATAFORMAS` tenía `domain=PERSONAL` desde su alta en
+   `0004_seed_closed_vocabulary.py`, pero sus 9 archivos reales viven
+   en `DOC. MAQUINAS/PLATAFORMAS (Z)/ESTIBA PLATAFORMAS` -- carpeta de
+   maquinaria. Miguel Ángel confirmó, tras subir una ficha de estiba
+   real (ANAPAT) como ejemplo, que el documento certifica a la vez la
+   máquina transportada (amarres según su tipo/peso) y al trabajador
+   que firma la conformidad -- dominio correcto: `BOTH`. Corregido con
+   `RunPython` (data migration), sin tocar `models.py` (el valor
+   `BOTH` ya existía como choice).
+
+**Incidente real de método detectado y corregido durante la propia
+auditoría:** buscar tipos "sin ejemplo" cruzando `parent_path` contra
+palabras sueltas del código/label del tipo (`icontains` en OR) produce
+falsos positivos masivos en este proyecto por dos motivos reales
+verificados: (a) subcadenas accidentales dentro de otras palabras
+(`"baja"` coincide con `"TRABAJA"`/`"TRABAJADORES"`/`"AUTOCARGANTE"`);
+(b) la propia ambigüedad real del vocabulario de Miguel Ángel al
+nombrar carpetas -- "baja" se usa indistintamente para baja laboral,
+baja médica/incapacidad temporal y baja de vehículo/desguace, según
+quien archivó ese día, verbatim: *"tenemos ahí una selva de nombres
+que es una barbaridad."* Corregido exigiendo palabras distintivas
+**juntas** (AND, no OR) e inspeccionando las rutas reales resultantes
+antes de dar una coincidencia por buena -- nunca fiarse del conteo
+agregado solo.
+
+**Pendiente, hoja de ruta de la siguiente sesión de H30 (sin cambios
+en el resto, ver más arriba):**
+1. Bug del agente H28 (`get_agent_root_dir`) -- sigue punto 1,
+   prioritario, sin resolver. Retomar cuando haya acceso al PC.
+2. Decidir con Miguel Ángel el enfoque para escribir la variante de
+   `sample_type_patterns.py` por `parent_path` para los tipos
+   confirmados como "mismo caso que EPIS" (`EPIS`, `CONTRATO`,
+   `PAGO_CORRIENTE`, `AUTORIZACION_USO_MAQUINARIA`,
+   `INVESTIGACION_ACCIDENTE`, `PARTE_BAJA_MEDICA`) -- palabras clave
+   curadas a mano por tipo, dado el caos real de nomenclatura
+   confirmado en esta sesión, en vez de derivarlas automáticamente del
+   código/label.
+3. `IEDMT` y `TABLA_DE_CARGA` quedan sin muestra real posible por
+   ahora -- no hay carpeta ni archivo real localizado. No construir
+   sampler para estos dos hasta que exista contenido real.
+4. Resto de la hoja de ruta arrastrada de S51/S53 sin tocar en esta
+   sesión (ver más arriba: `CONTENT_MARKERS` desde las muestras ya
+   descargadas, `FICHA_TECNICA` vs `ITV`, renombrado retroactivo,
+   backfill de fecha, duplicados de seguro/OCA).
