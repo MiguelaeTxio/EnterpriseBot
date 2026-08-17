@@ -325,6 +325,12 @@ no aceptan flags ni variables de entorno).
   quedar solo en la terminal de una sesión previa sin guardarlas en
   archivo ni copiarlas fuera de la VM antes de cerrarla.
 
+  **Ruta real final, confirmada con `ls -la` (S54, 2026-08-17):**
+  `/home/MiguelAeTxio/PROJECTS/EnterpriseBot/h28_migration_agent/sample{0,1,2}_output.txt`
+  (202078/159413/154330 bytes, 14 ago 16:24 -- las 185 muestras
+  reales de los 77 tipos, S51/S53, todavía sin convertir en
+  `CONTENT_MARKERS`). No están en git.
+
 ---
 
 ## Termux (Android) + gcloud — YA MONTADO Y VERIFICADO (S53, 2026-08-14)
