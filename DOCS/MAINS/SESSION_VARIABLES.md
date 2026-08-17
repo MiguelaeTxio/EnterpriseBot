@@ -142,6 +142,35 @@ cambio nace en el clon de Claude, se empuja, y llega a Miguel Ángel
 solo por `git pull`. Sin excepción, sin atajos, aunque parezca más
 rápido en el momento.
 
+**Excepción explícita, la única que existe:** configuración
+puramente local de una máquina concreta, que nunca debe vivir en git
+porque rompería otras máquinas si se subiera activa. Hoy hay dos
+casos reales, ambos deliberados:
+- `agent_data\` (clave de servicio, estado persistido) -- ya fuera de
+  git por diseño desde S031.
+- `TESSERACT_CMD`/`pytesseract.pytesseract.tesseract_cmd` en
+  `local_ocr_classify.py` (líneas 96-97) -- comentadas por defecto en
+  el repo porque en Linux (la VM `h28-ocr-batch` de S51) Tesseract ya
+  está en el `PATH` del sistema y no hacen falta; en el PC Windows de
+  Miguel Ángel sí hace falta descomentarlas y apuntarlas a
+  `C:\Program Files\Tesseract-OCR\tesseract.exe` (instalación real de
+  S50, motivo: sin permisos de administrador para que Tesseract
+  escriba en `Program Files`, por eso también existe
+  `h28_migration_agent\tessdata\`, carpeta local propia junto al
+  script, sin trackear -- ver `_TESSDATA_DIR` en el propio archivo).
+  **Esta descommentado local en Windows es intencional y correcto,
+  nunca debe commitearse activo** -- si Claude necesita tocar algo
+  MÁS de ese archivo, edita alrededor de esas dos líneas sin
+  activarlas ni desactivarlas, y si por error `git status` las marca
+  como conflicto, se resuelven con `git stash`/`git stash pop`
+  exactamente como cualquier configuración local -- nunca hay que
+  "arreglarlas" ni preguntarse de quién son.
+
+Cualquier configuración local nueva de este tipo que aparezca en el
+futuro debe documentarse aquí mismo, con el mismo detalle, en el
+momento en que se descubra -- no dejarla como una sorpresa sin
+explicar en un `git status` de una sesión futura.
+
 **Motivo real, verbatim (Miguel Ángel, S54):** *"si tenemos
 diferentes formas de hacerlo, pasa lo que está pasando. Que tenemos
 copias que no están en GitHub, el GitHub no está sincronizado, ahora
