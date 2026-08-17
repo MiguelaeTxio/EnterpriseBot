@@ -390,7 +390,22 @@ def get_agent_data_dir():
     Tarea Programada. Anclarlo a LOCALAPPDATA elimina el
     acoplamiento del todo: recompilar, mover el .exe, o renombrar
     carpetas ya no puede volver a romper esto.
+
+    Especifico de Windows a proposito (S54, bug real detectado en
+    local_ocr_classify.py corriendo en una VM Linux): en Linux este
+    problema nunca existio -- el script SIEMPRE corre como
+    `python3 local_ocr_classify.py` desde su propia carpeta, nunca
+    empaquetado, asi que get_agent_root_dir() ya resuelve bien y
+    agent_data/ vive relativo al checkout, tal como documenta
+    SESSION_VARIABLES.md para las VMs de OCR. Sin este `if`, el fix
+    de Windows rompia la ruta de la clave de servicio en Linux
+    (buscaba en ~/EnterpriseBot/H28MigrationAgent/, que no existe).
     """
+    if os.name != 'nt':
+        data_dir = os.path.join(get_agent_root_dir(), AGENT_DATA_FOLDER_NAME)
+        os.makedirs(data_dir, exist_ok=True)
+        return data_dir
+
     base = os.environ.get('LOCALAPPDATA') or os.path.expanduser('~')
     data_dir = os.path.join(base, 'EnterpriseBot', 'H28MigrationAgent')
     os.makedirs(data_dir, exist_ok=True)

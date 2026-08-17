@@ -49,8 +49,9 @@ import io
 import os
 import re
 import sys
+import time
 import unicodedata
-from datetime import date
+from datetime import date, datetime
 
 import pymysql
 import pytesseract
@@ -325,6 +326,22 @@ def _is_photo(name):
     return bool(IMG_EXT.search(name) or IMG_NAME.match(name))
 
 
+def _log(msg):
+    """Imprime con hora real y sin buffer -- S54, peticion explicita
+    de Miguel Angel: procesos de horas deben ser verbosos de verdad,
+    para que conectarse en cualquier momento (desde el movil, desde
+    otro PC) muestre actividad reciente real, nunca una pantalla
+    muda sin saber si sigue vivo o se ha quedado colgado.
+    ---
+    Prints with real timestamp and no buffering -- S54, Miguel
+    Angel's explicit request: hours-long processes must be genuinely
+    verbose, so connecting at any point (from the phone, from
+    another PC) shows real recent activity, never a silent screen
+    with no way to tell if it is still alive or stuck.
+    """
+    print("[%s] %s" % (datetime.now().strftime("%H:%M:%S"), msg), flush=True)
+
+
 def _in_scope(parent_path):
     for root, mode, names in SCOPE:
         if mode == "only":
@@ -577,11 +594,35 @@ def main():
         "error": 0,
     }
 
+    _log("EMPEZANDO barrido real: %d candidatos a procesar (modo %s)"
+         % (len(candidatos), "APLICADO" if args.apply else "DRY-RUN"))
+    start_time = time.monotonic()
+    HEARTBEAT_EVERY = 25
+
     for i, (entry_id, name, parent_path) in enumerate(candidatos, start=1):
-        print("[%d/%d] procesando: %s / %s"
-              % (i, len(candidatos), parent_path, name))
+        _log("[%d/%d] procesando: %s / %s"
+             % (i, len(candidatos), parent_path, name))
         if i % 20 == 0:
             conn.ping(reconnect=True)  # evita el wait_timeout de MySQL
+
+        if i % HEARTBEAT_EVERY == 0:
+            elapsed = time.monotonic() - start_time
+            ritmo = i / elapsed if elapsed > 0 else 0
+            restantes = len(candidatos) - i
+            eta_min = (restantes / ritmo / 60) if ritmo > 0 else 0
+            _log(
+                "--- LATIDO: %d/%d hechos (%.1f%%) | %.1f min transcurridos "
+                "| ritmo %.1f docs/min | ETA restante ~%.0f min | "
+                "tipo_resuelto=%d tipo_y_fecha=%d dominio_pendiente=%d "
+                "sin_tipo=%d ambiguo=%d error=%d ---"
+                % (
+                    i, len(candidatos), 100.0 * i / len(candidatos),
+                    elapsed / 60, ritmo * 60, eta_min,
+                    stats["tipo_resuelto"], stats["tipo_y_fecha"],
+                    stats["tipo_ok_dominio_pendiente"], stats["sin_tipo"],
+                    stats["ambiguo"], stats["error"],
+                )
+            )
 
         try:
             with conn.cursor() as cur:
@@ -675,6 +716,9 @@ def main():
                 )
             conn.commit()
 
+    total_min = (time.monotonic() - start_time) / 60
+    _log("TERMINADO -- %d candidatos procesados en %.1f minutos"
+         % (len(candidatos), total_min))
     print("\n=== RESUMEN (%s) ===" % ("APLICADO" if args.apply else "DRY-RUN"))
     for key, value in stats.items():
         print("    %s: %d" % (key, value))
