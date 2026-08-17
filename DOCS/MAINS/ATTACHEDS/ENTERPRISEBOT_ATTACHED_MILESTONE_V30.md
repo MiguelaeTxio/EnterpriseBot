@@ -2200,3 +2200,62 @@ en el resto, ver más arriba):**
    sesión (ver más arriba: `CONTENT_MARKERS` desde las muestras ya
    descargadas, `FICHA_TECNICA` vs `ITV`, renombrado retroactivo,
    backfill de fecha, duplicados de seguro/OCA).
+
+---
+
+## COMPLETADAS EN S54, bloque 4 (2026-08-17, Fase A ampliada --
+## reglas de carpeta + desacoplo tipo/dominio + resolución de persona
+## por nombre)
+
+**`FOLDER_TYPE_RULES` ampliado** con las carpetas reales confirmadas
+en el bloque 1 de hoy: `DECLARACION AL CORRIENTE` → `PAGO_CORRIENTE`,
+`AUTORIZACION USO DE MAQUINARIA` → `AUTORIZACION_USO_MAQUINARIA`,
+`INCAPACIDAD LABORAL` añadido como segundo needle real de
+`PARTE_BAJA_MEDICA` (carpeta distinta, mismo tipo).
+
+**Desacoplo tipo/dominio en `run_fase_a_sweep.py`** (decisión
+explícita de Miguel Ángel): si el tipo se resuelve pero el dominio
+no, el tipo se guarda igualmente -- antes se descartaba la fila
+entera. Nueva métrica `tipo_ok_dominio_pendiente` sustituye a
+`sin_resolver_dominio`.
+
+**`_resolve_person_by_name()` nuevo**, respaldo para
+`INVESTIGACION_ACCIDENTE` cuando la carpeta es compartida por fecha
+de incidente, no la carpeta propia de la persona. SOLO coincidencia
+exacta y única contra `given_name`+`first_surname` (y variantes con
+`second_surname`) -- decisión explícita de Miguel Ángel tras discutir
+el riesgo real de "adivinar por nombre" (mismo principio que ya
+prohibía esto en el docstring de `PersonIdentity`, con el matiz real
+de que un nombre repetido en una carpeta compartida solo aparece
+así de simple cuando es inequívoco dentro de la empresa).
+
+**Resultado real, verificado con datos tras `--apply`** (ejecución
+completa sobre `DOC. MAQUINAS`+`DOC. PERSONAL`, sin errores, 0
+tracebacks):
+- **5.419 documentos con `document_type` asignado** en esta pasada
+  (237 con dominio completo + 5.182 con tipo guardado, dominio
+  pendiente aparte -- directamente gracias al desacoplo).
+- 3.916 de esos vía `folder_type` (las reglas de carpeta, incluidos
+  los 4 tipos nuevos de hoy).
+- 12 dosieres ya divididos, detectados y eliminados; 12 sin dividir,
+  dejados para revisión manual.
+- Sigue habiendo 12.834 sin tipo -- candidatos reales para Fase B
+  (OCR) o para nuevas reglas de carpeta si aparecen patrones claros.
+
+**Desglose real por tipo, confirmado con consulta directa tras
+aplicar:**
+
+| Tipo | Clasificados | Con dominio ya resuelto |
+|---|---|---|
+| `PAGO_CORRIENTE` | 1.762 | 0 -- carpeta compartida, sin resolutor de nombre todavía |
+| `AUTORIZACION_USO_MAQUINARIA` | 383 | 0 -- mismo caso |
+| `PARTE_BAJA_MEDICA` | 316 | 34 |
+| `INVESTIGACION_ACCIDENTE` | 898 | 64 -- vía `_resolve_person_by_name()`, funcionando de verdad |
+| `BAJA_PERSONAL` | 4.336 | 3.787 |
+
+**Pendiente real, anotado para no perderlo:** `PAGO_CORRIENTE` y
+`AUTORIZACION_USO_MAQUINARIA` tienen la misma naturaleza de carpeta
+compartida que tenía `INVESTIGACION_ACCIDENTE` antes de hoy --
+candidatos directos para el mismo resolutor de nombre si Miguel Ángel
+confirma que sus subcarpetas también llevan nombre real de persona
+(sin verificar todavía en esta sesión).
