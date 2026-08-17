@@ -1,33 +1,37 @@
 # C:\EnterpriseBot\h28_migration_agent\report_ocr_gaps.py
 """
-H30 (S51). Informe de SOLO LECTURA sobre dónde se concentran los
-"sin_tipo" (y el resto de categorías que `local_ocr_classify.py` no
-guarda) tras el barrido real de S51 -- 2.399 candidatos procesados,
-382 guardados (15,9%), muy por debajo de la estimación de Miguel
-Ángel (~30%). Origen real de la pregunta: Miguel Ángel, verbatim,
-"Hay que ver dónde se encuentran esos 1794".
+H30 (S51, reescrito S54). Informe de SOLO LECTURA para saber, con
+datos reales y SIN gastar nada en ninguna VM, que porcentaje de los
+candidatos reales resolveria hoy `local_ocr_classify.py` con los 37
+tipos de `CONTENT_MARKERS` actuales -- antes de decidir si merece la
+pena lanzar nada a gran escala.
 
-Reutiliza LITERALMENTE (import, no reimplementación) la conexión,
-SCOPE, CONTENT_MARKERS, `_in_scope`, `_is_photo`, `_match_content` y
-`_resolve_machine_code` de `local_ocr_classify.py` -- para no divergir
-de la lógica real ya corrida. La consulta de candidatos es la MISMA
-(`document_type_id IS NULL`), así que automáticamente excluye los 382
-ya guardados y solo mira lo que de verdad sigue pendiente.
+Origen real de esta reescritura: tras ampliar CONTENT_MARKERS de 24 a
+37 tipos (S54), Miguel Angel se nego explicitamente a lanzar otra VM
+"para obtener el mismo resultado" sin verificarlo antes. Esta version
+corre en CUALQUIER maquina normal (movil via Termux, PC) usando el
+mismo tunel SSH que ya usa `local_ocr_classify.py` -- no crea ninguna
+VM de Compute Engine, coste real: cero.
+
+Reutiliza LITERALMENTE (import, no reimplementacion) la conexion,
+SCOPE, CONTENT_MARKERS, `_in_scope`, `_is_photo`, `_match_content` de
+`local_ocr_classify.py` -- para no divergir de la logica real que
+correria de verdad en una VM.
+
+Toma una MUESTRA ALEATORIA (por defecto 400, `--sample N` para
+cambiarlo) en vez de los ~11.000 candidatos completos -- suficiente
+para un porcentaje fiable, y se puede correr en el movil en pocos
+minutos sin necesitar ninguna maquina en la nube.
 
 NUNCA escribe nada -- ninguna sentencia UPDATE, sin flag --apply
-siquiera. Agrupa por familia de máquina (primer segmento bajo
-`DOC. MAQUINAS/`, tal cual aparece en `SCOPE`) y por categoría
-(sin_tipo / ambiguo / dominio_sin_resolver / extension_no_soportada /
-error), para ver si el problema real es cobertura de
-`CONTENT_MARKERS` (solo 9 tipos reconocidos por contenido, frente a
-57+ tipos reales del catálogo) o algo concentrado en familias
-concretas.
+siquiera.
 
-USO: igual que local_ocr_classify.py, mismas contraseñas, sin --apply
-porque no hace falta -- no escribe nunca.
+USO: igual que local_ocr_classify.py, mismas contraseñas.
 
     python report_ocr_gaps.py
+    python report_ocr_gaps.py --sample 800
 """
+import argparse
 import getpass
 
 import local_ocr_classify as base
@@ -38,6 +42,10 @@ import pymysql
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--sample", type=int, default=400)
+    args = parser.parse_args()
+
     pa_password = getpass.getpass(
         "Contrasena de PythonAnywhere (la de la web, para el tunel SSH): "
     )
@@ -71,17 +79,20 @@ def main():
     bucket = gcs_client.bucket(base.BUCKET)
 
     with conn.cursor() as cur:
-        cur.execute("SELECT code, id FROM fleet_machineasset")
-        machine_codes = {
-            code.upper().replace("-", ""): mid
-            for code, mid in cur.fetchall()
-        }
+        # Muestra aleatoria real de MySQL (RAND(), no la primera N por
+        # id) para que sea representativa de las dos carpetas, no solo
+        # de lo que se subio primero.
         cur.execute(
             "SELECT id, name, parent_path FROM document_explorer_documentindexentry "
             "WHERE entry_kind = 'FILE' AND document_type_id IS NULL "
             "AND deleted_at IS NULL AND purged_at IS NULL "
-            "AND bucket = %s AND parent_path LIKE %s",
-            (base.BUCKET, base.MACHINE_ROOT + "/%"),
+            "AND bucket = %s AND (parent_path LIKE %s OR parent_path LIKE %s) "
+            "AND parent_path NOT LIKE '%%EPIS%%' "
+            "ORDER BY RAND() LIMIT %s",
+            (
+                base.BUCKET, base.MACHINE_ROOT + "/%",
+                base.PERSONAL_ROOT + "/%", args.sample,
+            ),
         )
         raw_rows = cur.fetchall()
 
@@ -93,31 +104,29 @@ def main():
             continue
         candidatos.append((entry_id, name, parent_path))
 
-    print("Candidatos pendientes reales (mismo criterio que "
-          "local_ocr_classify.py): %d\n" % len(candidatos))
+    print("Muestra aleatoria real: %d candidatos (de %d pedidos)\n"
+          % (len(candidatos), args.sample))
 
-    # familia -> {categoria: cuenta}
-    por_familia = {}
+    # raiz ("DOC. MAQUINAS"/"DOC. PERSONAL") -> {categoria: cuenta}
+    por_raiz = {}
     CATEGORIAS = [
-        "sin_tipo", "ambiguo", "dominio_sin_resolver",
+        "tipo_resuelto", "sin_tipo", "ambiguo",
         "extension_no_soportada", "error",
     ]
 
-    def familia_de(parent_path):
-        # Primer segmento bajo DOC. MAQUINAS/, tal cual lo define
-        # SCOPE (p.ej. "GRUAS MOVILES (A)", "CAMIONES BRAZO (B)").
-        resto = parent_path[len(base.MACHINE_ROOT) + 1:]
-        return resto.split("/", 1)[0] if resto else "(raiz)"
+    def raiz_de(parent_path):
+        return (
+            base.MACHINE_ROOT if parent_path.startswith(base.MACHINE_ROOT)
+            else base.PERSONAL_ROOT
+        )
 
     for i, (entry_id, name, parent_path) in enumerate(candidatos, start=1):
-        if i % 50 == 0:
+        if i % 25 == 0:
             print("  ... %d/%d" % (i, len(candidatos)))
             conn.ping(reconnect=True)
 
-        familia = familia_de(parent_path)
-        por_familia.setdefault(
-            familia, {c: 0 for c in CATEGORIAS},
-        )
+        raiz = raiz_de(parent_path)
+        por_raiz.setdefault(raiz, {c: 0 for c in CATEGORIAS})
 
         try:
             with conn.cursor() as cur:
@@ -129,58 +138,53 @@ def main():
             data = bucket.blob(blob_name).download_as_bytes()
             text = base.extract_text(name, data)
         except Exception:
-            por_familia[familia]["error"] += 1
+            por_raiz[raiz]["error"] += 1
             continue
 
         if text is None:
-            por_familia[familia]["extension_no_soportada"] += 1
+            por_raiz[raiz]["extension_no_soportada"] += 1
             continue
 
         text_upper = base._strip_accents(text).upper()
         code, ambiguous = base._match_content(text_upper)
 
         if ambiguous:
-            por_familia[familia]["ambiguo"] += 1
-            continue
-        if not code:
-            por_familia[familia]["sin_tipo"] += 1
-            continue
+            por_raiz[raiz]["ambiguo"] += 1
+        elif code:
+            por_raiz[raiz]["tipo_resuelto"] += 1
+        else:
+            por_raiz[raiz]["sin_tipo"] += 1
 
-        machine_id = base._resolve_machine_code(parent_path, machine_codes)
-        if not machine_id and (
-            "/RAE" in parent_path or "/CE PLATAFORMAS" in parent_path
-        ):
-            machine_id = base._resolve_machine_by_filename(
-                name, machine_codes,
-            )
-        if not machine_id:
-            por_familia[familia]["dominio_sin_resolver"] += 1
-            continue
-        # Si llega aqui, en una pasada CON --apply se habria guardado
-        # -- no deberia pasar mucho, ya que la consulta ya excluye lo
-        # guardado en S51, pero puede pasar si Miguel Angel corre esto
-        # despues de anadir mas CONTENT_MARKERS sin re-aplicar todavia.
-
-    print("\n=== INFORME POR FAMILIA (%d candidatos pendientes) ===\n"
-          % len(candidatos))
-    ancho_familia = max((len(f) for f in por_familia), default=10)
-    cabecera = "%-*s  %8s  %8s  %8s  %8s  %8s  %8s" % (
-        ancho_familia, "Familia", "TOTAL", "sin_tipo", "ambiguo",
-        "dom_sin_res", "ext_no_sop", "error",
-    )
-    print(cabecera)
-    print("-" * len(cabecera))
-    for familia in sorted(
-        por_familia,
-        key=lambda f: sum(por_familia[f].values()), reverse=True,
-    ):
-        conteos = por_familia[familia]
+    print("\n=== INFORME REAL DE COBERTURA (%d candidatos, muestra "
+          "aleatoria) ===\n" % len(candidatos))
+    total_general = {c: 0 for c in CATEGORIAS}
+    for raiz in sorted(por_raiz):
+        conteos = por_raiz[raiz]
         total = sum(conteos.values())
-        print("%-*s  %8d  %8d  %8d  %8d  %8d  %8d" % (
-            ancho_familia, familia, total, conteos["sin_tipo"],
-            conteos["ambiguo"], conteos["dominio_sin_resolver"],
-            conteos["extension_no_soportada"], conteos["error"],
-        ))
+        pct = (100.0 * conteos["tipo_resuelto"] / total) if total else 0.0
+        print("%s -- %d candidatos" % (raiz, total))
+        for c in CATEGORIAS:
+            print("    %-24s %6d" % (c, conteos[c]))
+        print("    %-24s %5.1f%%" % ("% CON TIPO REAL", pct))
+        print()
+        for c in CATEGORIAS:
+            total_general[c] += conteos[c]
+
+    total_gen = sum(total_general.values())
+    pct_gen = (
+        100.0 * total_general["tipo_resuelto"] / total_gen
+        if total_gen else 0.0
+    )
+    print("=== TOTAL GENERAL (%d candidatos) ===" % total_gen)
+    for c in CATEGORIAS:
+        print("    %-24s %6d" % (c, total_general[c]))
+    print("    %-24s %5.1f%%" % ("% CON TIPO REAL", pct_gen))
+    print(
+        "\nEste %.1f%% es una estimacion real, sobre muestra aleatoria, "
+        "de lo que resolveria una pasada completa con los 37 tipos "
+        "actuales de CONTENT_MARKERS -- sin haber gastado nada en "
+        "ninguna VM." % pct_gen
+    )
 
     conn.close()
     tunnel.stop()
@@ -188,3 +192,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
