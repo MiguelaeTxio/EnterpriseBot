@@ -96,6 +96,19 @@ MACHINE_HEADER_ALIASES = {
     "OCA": "oca",
 }
 
+# Correcciones puntuales de erratas reales del propio Excel,
+# confirmadas explicitamente por Miguel Angel una a una -- NUNCA una
+# regla generica de "año de 3 cifras => insertar un 0", que podria
+# adivinar mal en un caso futuro distinto a este. Clave: el texto
+# exacto tal cual aparece en la celda: valor corregido real.
+# ---
+# Confirmado por Miguel Angel (S54): '21/03/230' en el carnet de
+# conducir de ALVAREZ GEA (DNI 44599171D) es '21/03/2030' -- un cero
+# perdido al escribir el año.
+KNOWN_TYPO_CORRECTIONS = {
+    "21/03/230": datetime.date(2030, 3, 21),
+}
+
 
 def _norm_dni(value):
     if not value:
@@ -125,6 +138,8 @@ def _parse_date(value, context_label, errors):
     if isinstance(value, datetime.date):
         return value
     text = str(value).strip()
+    if text in KNOWN_TYPO_CORRECTIONS:
+        return KNOWN_TYPO_CORRECTIONS[text]
     for fmt in ("%d/%m/%Y", "%d-%m-%Y", "%d/%m/%y"):
         try:
             return datetime.datetime.strptime(text, fmt).date()
