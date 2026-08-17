@@ -232,6 +232,26 @@ CONTENT_MARKERS = {
     "CARTA_VERDE": ["CERTIFICADO INTERNACIONAL DE SEGURO", "GREEN CARD"],
     "RAE": ["DOCUMENTO ELECTRONICO EN LA"],
     "REVISION_ESLINGAS": ["REVISION DE ESLINGAS"],
+    # --- Añadidos S54: lectura manual directa de sample0/1/2_output.txt
+    # (185 muestras reales, S51/S53) tras descartar el enfoque de script
+    # de frecuencia de lineas (demasiado ruido: nombres de persona,
+    # fechas concretas, nombre de la propia empresa colandose como
+    # "candidata" por coincidencia entre solo 2-3 muestras). Cada frase
+    # leida y verificada a mano, sin contaminacion cruzada contra los
+    # 24 tipos ya existentes arriba NI entre si. Varios tipos mas
+    # quedan sin cubrir por OCR degradado en las muestras (FICHA_TECNICA,
+    # ITV, CAMBIO_TITULARIDAD, DNI, DNI_COMPRADOR, CAP) -- no se fuerza
+    # una frase de baja confianza solo por rellenar.
+    "TACOGRAFO": ["TARJETA DE CONDUCTOR"],
+    "CONTRATO_ARRENDAMIENTO": ["CONTRATO DE ARRENDAMIENTO DE MAQUINARIA"],
+    "DOC_VENTA": [
+        "LA PARTE COMPRADORA HACE EXPRESA",
+        "ADQUIRIENDO EL VEHICULO A CUERPO CIERTO",
+    ],
+    "RECIBO_LEASING": ["RECIBO-FACTURA POR CUOTA"],
+    "INFORME_INCIDENCIAS": ["INFORME DE INCIDENCIAS MAQUINA"],
+    "SEG_SOCIAL": ["ASIGNACION DE NUMERO DE SEGURIDAD SOCIAL"],
+    "CARNET_CONDUCIR": ["PERMISO DE CONDUCCION REINO DE ESPANA"],
 }
 
 _FOLDER_MACHINE_CODE_RE = re.compile(r"^([A-Z]+-?\d+)")
