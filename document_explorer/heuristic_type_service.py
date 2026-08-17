@@ -75,10 +75,23 @@ UNRESOLVED_PAIRS = frozenset({
 
 # BAJA_PERSONAL / PARTE_BAJA_MEDICA / INVESTIGACION_ACCIDENTE (S47):
 # se resuelven por carpeta real, nunca por palabra "BAJA" sola.
+# PAGO_CORRIENTE / AUTORIZACION_USO_MAQUINARIA anadidos S54, tras
+# confirmar sus carpetas reales con datos reales (Comando S contra
+# DocumentIndexEntry, ver anexo H30 S54): "DOC. PERSONAL/DECLARACION
+# AL CORRIENTE/..." (1.762 archivos) y "DOC. PERSONAL/AUTORIZACION
+# USO DE MAQUINARIA/..." (383 archivos). PARTE_BAJA_MEDICA gana un
+# segundo needle real: "INCAPACIDAD LABORAL" (carpeta real distinta
+# de "PARTES BAJA ENF.COMUN Y ACC.NO LABORAL", mismo tipo, coherente
+# con el caos real de nomenclatura que Miguel Angel describio en S54
+# -- distintas personas archivando el mismo tipo de documento con
+# nombres de carpeta distintos segun el dia.
 FOLDER_TYPE_RULES = [
     ("PARTES BAJA ENF.COMUN Y ACC.NO LABORAL", "PARTE_BAJA_MEDICA"),
+    ("INCAPACIDAD LABORAL", "PARTE_BAJA_MEDICA"),
     ("INVESTIGACION ACCIDENTES", "INVESTIGACION_ACCIDENTE"),
     ("PERSONAL/BAJAS", "BAJA_PERSONAL"),
+    ("DECLARACION AL CORRIENTE", "PAGO_CORRIENTE"),
+    ("AUTORIZACION USO DE MAQUINARIA", "AUTORIZACION_USO_MAQUINARIA"),
 ]
 
 

@@ -25,8 +25,11 @@ Resolucion de domain_object:
 - PERSONAL: `PersonIdentity.folder_path` -- ver docstring de
   `_resolve_person_by_folder()` mas abajo. Nunca crea una identidad
   nueva aqui (eso exige DNI real, fuera de alcance de Fase A).
-  Sin resolver por carpeta -> se deja pendiente para Fase B (OCR,
-  ampliacion de alcance confirmada en S48).
+  Sin resolver por carpeta -> respaldo por nombre real de subcarpeta
+  (`_resolve_person_by_name()`, S54), SOLO con coincidencia exacta y
+  unica -- ver docstring para el criterio completo. Sin ninguna de
+  las dos -> el TIPO se guarda igualmente (S54, desacoplo tipo/
+  dominio), el dominio queda pendiente para revision manual/Fase B.
 
 BAJA_PERSONAL / PARTE_BAJA_MEDICA / INVESTIGACION_ACCIDENTE se
 resuelven por CARPETA real, nunca por la palabra "BAJA" sola (S47).
@@ -48,6 +51,68 @@ from document_explorer.management.commands.calibrate_fase_a_keywords import (
 from document_explorer.models import DocumentIndexEntry, DocumentTypeCatalog
 from fleet.models import MachineAsset
 from document_explorer.models import PersonIdentity
+
+# Fecha al final del nombre de subcarpeta real, formatos vistos:
+# "15-3-17", "8-10-16" -- d(d)-m(m)-aa(aa) opcional al final.
+_TRAILING_DATE_RE = re.compile(r"\s+\d{1,2}-\d{1,2}-\d{2,4}\s*$")
+
+
+def _build_person_name_index():
+    """
+    Indice de nombre normalizado -> conjunto de pks de PersonIdentity,
+    para resolver INVESTIGACION_ACCIDENTE por el nombre real que
+    aparece en la subcarpeta (p.ej. "ALEJO GARCIA 15-3-17"), cuando
+    `_resolve_person_by_folder()` no encuentra nada porque la carpeta
+    es compartida por fecha de incidente, no la carpeta propia de la
+    persona.
+
+    S54, decision explicita de Miguel Angel tras una discusion real
+    sobre el riesgo de "adivinar por nombre" (ver anexo H30, bloque de
+    INVESTIGACION_ACCIDENTE): SOLO coincidencia exacta y UNICA -- si
+    el nombre normalizado no aparece en el indice, o aparece para mas
+    de una persona, se deja pendiente para revision manual, nunca se
+    asigna con ambiguedad. Verbatim: "Si hay dos que se llamen Alejo
+    Garcia, dificilmente nadie va a grabar con ese nombre [...] si ya
+    se han puesto Alejo Garcia es porque hay [uno solo]."
+    """
+    index = {}
+
+    def _add(key, pk):
+        key = key.strip()
+        if not key:
+            return
+        index.setdefault(key, set()).add(pk)
+
+    for person in PersonIdentity.objects.all():
+        given = _strip_accents(person.given_name or "").upper().strip()
+        first = _strip_accents(person.first_surname or "").upper().strip()
+        second = _strip_accents(person.second_surname or "").upper().strip()
+        if not given or not first:
+            continue
+        _add(f"{given} {first}", person.pk)
+        _add(f"{first} {given}", person.pk)
+        if second:
+            _add(f"{given} {first} {second}", person.pk)
+            _add(f"{first} {second} {given}", person.pk)
+    return index
+
+
+def _resolve_person_by_name(entry, person_name_index):
+    """
+    Resuelve `PersonIdentity` a partir del nombre real que aparece en
+    la subcarpeta inmediata de `entry` (p.ej. "ALEJO GARCIA 15-3-17"
+    -> "ALEJO GARCIA"), SOLO si hay exactamente una coincidencia en
+    `person_name_index`. Cualquier otro caso (cero o mas de una
+    coincidencia) devuelve None -- pendiente de revision manual,
+    nunca una decision con ambiguedad.
+    """
+    last_segment = entry.parent_path.rstrip("/").split("/")[-1]
+    candidate = _TRAILING_DATE_RE.sub("", last_segment)
+    candidate = _strip_accents(candidate).upper().strip()
+    pks = person_name_index.get(candidate)
+    if pks and len(pks) == 1:
+        return PersonIdentity.objects.get(pk=next(iter(pks)))
+    return None
 
 
 def _resolve_person_by_folder(entry):
@@ -131,11 +196,12 @@ class Command(BaseCommand):
             t.code: t
             for t in DocumentTypeCatalog.objects.filter(is_active=True)
         }
+        person_name_index = _build_person_name_index()
 
         stats = {
             "asignados": 0, "dosier_eliminado": 0,
             "dosier_sin_dividir_pendiente": 0, "sin_resolver_tipo": 0,
-            "sin_resolver_dominio": 0, "folder_type": 0,
+            "tipo_ok_dominio_pendiente": 0, "folder_type": 0,
         }
 
         for domain in ("MACHINE", "PERSONAL"):
@@ -197,13 +263,21 @@ class Command(BaseCommand):
                 else:
                     obj = _resolve_person_by_folder(entry)
                     ct = person_ct
+                    if not obj:
+                        obj = _resolve_person_by_name(
+                            entry, person_name_index,
+                        )
 
                 if not obj:
-                    stats["sin_resolver_dominio"] += 1
+                    stats["tipo_ok_dominio_pendiente"] += 1
                     self.stdout.write(
-                        "TIPO OK, DOMINIO SIN RESOLVER  [%s] %s -> %s"
+                        "TIPO OK, DOMINIO PENDIENTE -- tipo guardado ya, "
+                        "dominio se resuelve aparte  [%s] %s -> %s"
                         % (entry.parent_path, entry.name, code)
                     )
+                    if apply_changes:
+                        entry.document_type = type_catalog[code]
+                        entry.save(update_fields=["document_type"])
                     continue
 
                 stats["asignados"] += 1
