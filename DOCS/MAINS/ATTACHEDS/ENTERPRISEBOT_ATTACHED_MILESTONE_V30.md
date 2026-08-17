@@ -2311,3 +2311,137 @@ el mismo lote, ahora con los 31 tipos, y medir el resultado real
 antes de decidir si hace falta ampliar más `CONTENT_MARKERS` o pasar
 a Gemini puntual para lo que quede. No se ha vuelto a lanzar ninguna
 VM en este bloque -- decisión pendiente de Miguel Ángel.
+
+---
+
+## COMPLETADAS EN S54, bloque 6 (2026-08-17, tarde -- `CONTENT_MARKERS`
+## ampliado de 31 a 37 tipos)
+
+Continuación de la lectura manual del bloque 5: `SANCION_TRAFICO`
+(dos frases, notificación DGT y justificante de pago),
+`CERT_REVISION` (confianza media, solo 1/3 muestras),
+`CONTRATO_COMPRAVENTA` ("formalizar el presente contrato de
+compraventa", idéntica en las 2 muestras españolas), `VACACIONES`,
+`NOMINA`, `IVTM`, `PROVISION_FONDOS`. Un fallo real detectado y
+corregido en el mismo bloque: `DOC_VENTA` había quedado con un
+marcador ("la parte compradora hace expresa mención...") que
+resultó ser **casi idéntico** al de `CONTRATO_COMPRAVENTA` --
+contaminación cruzada real, corregida quitando el marcador de
+`DOC_VENTA` (directriz 4.9). Sincronizado en las dos copias
+(`local_ocr_classify.py` / `run_fase_b1_ocr_classify.py`).
+
+Balance final honesto de los 77 tipos, revisados uno a uno: **37 con
+`CONTENT_MARKERS` verificado**, 8 sin ningún documento real todavía
+(6 de ellos ya resueltos por regla de carpeta), 7 con OCR demasiado
+degradado, 1 con extensión no soportada (`.msg`), 3 descartados por
+colisión real detectada, y el resto heterogéneos entre muestras
+(cada una de proveedor/banco distinto, sin frase común) -- ninguno
+quedó sin revisar.
+
+---
+
+## COMPLETADAS EN S54, bloque 7 (2026-08-17, noche -- pivote a un
+## modelo de aprendizaje real, propuesto por Miguel Ángel)
+
+**Incidente que motivó el pivote, honesto, sin suavizarlo:** tras
+ampliar `CONTENT_MARKERS` a 37 tipos, Miguel Ángel se negó
+explícitamente a relanzar otra VM "para obtener el mismo resultado"
+sin verificar antes -- con razón: 37 de 77 sigue siendo menos de la
+mitad, y el enfoque de frases fijas sacadas de 2-3 muestras por tipo
+tiene un techo bajo. Miguel Ángel propuso ir por otro camino: un
+modelo de clasificación real (recordando un curso de IA con Python
+sobre detección de fraude con tarjeta), entrenado sobre los
+documentos que YA tenemos clasificados -- verdad conocida real, no
+un puñado de ejemplos leídos a mano.
+
+**Diseño acordado:** TF-IDF (texto OCR + carpeta + nombre de
+archivo) + regresión logística, con `class_weight='balanced')`
+(compensa que unos tipos tengan miles de ejemplos y otros decenas),
+validación honesta train/test estratificada por tipo, y exclusión
+explícita de tipos con menos de N ejemplos (nunca se fuerza el
+entrenamiento sobre base estadística insuficiente).
+
+**Dato real verificado antes de construir nada:** 70 de 77 tipos ya
+tienen al menos 1 documento clasificado; 21 tipos tienen menos de 20
+-- esos seguirán siendo débiles en el modelo pase lo que pase, no es
+cuestión de OCR ni de coste.
+
+**Piezas nuevas construidas y desplegadas:**
+- `extract_training_dataset.py` -- extrae hasta 150 ejemplos por
+  tipo (barajados con semilla fija) de los documentos ya
+  clasificados, con su texto OCR real, en JSONL local. Reparto en
+  shards igual que `local_ocr_classify.py`.
+- `data_imports/web_templates.jsonl` -- 11 plantillas genéricas
+  reales (texto propio, sintetizado a partir de estructura real
+  confirmada por búsqueda, nunca copiado literalmente) para tipos
+  con muy pocos ejemplos reales pero que sí tienen plantilla pública
+  genuina (formularios DGT/Seguridad Social, o documentos
+  comerciales muy estandarizados como albarán/pedido/cuadro de
+  amortización). Excluidos deliberadamente `DNI_COMPRADOR` (dato
+  personal real de un tercero) y `ALTA_MEDICA` (dato médico
+  personal).
+- `train_document_classifier.py` -- entrena y valida el modelo,
+  probado de verdad (no solo compilado) contra un dataset sintético
+  antes de darlo por bueno.
+- `report_ocr_gaps.py` reescrito -- cubre las dos carpetas, muestra
+  aleatoria, corre en cualquier máquina sin crear ninguna VM (nunca
+  llegó a usarse en la sesión, sustituido por el pivote al modelo).
+
+**Ejecución real, vía app móvil de Google Cloud Console (SSH desde
+la app, usuario `nummenor` -- distinto de `Usuario`, usado por
+PowerShell, documentado en `SESSION_VARIABLES.md`):** 3 VMs
+arrancadas, 9 shards de `extract_training_dataset.py` lanzados
+secuencialmente (conectar → `tmux new` → lanzar → desconectar, sin
+`Ctrl+B`+`D`, que sigue sin funcionar en la consola de Miguel Ángel).
+
+**Bug real encontrado al recoger los resultados, corregido en el
+momento (directriz 4.9):** `dataset3.jsonl` y `dataset6.jsonl`
+aparecieron truncados (60/621 y 54/609 candidatos) -- el contenido ya
+escrito era válido, no corrupto, simplemente el proceso murió a
+mitad. Causa real: `conn.ping(reconnect=True)` sin `try/except`
+mataba el shard entero si el túnel SSH se caía de verdad durante una
+ejecución larga sin supervisión. Corregido con reintento de túnel +
+una red de seguridad final envolviendo todo el cuerpo del bucle --
+ningún fallo debería poder volver a matar un shard completo.
+
+**Resultado real de esta pasada:** 4.139 documentos de entrenamiento
+reales extraídos (7 de los 9 shards completos, 2 truncados pero con
+contenido válido) + 11 plantillas web. Los 9 archivos `datasetN.jsonl`
+copiados a `/home/MiguelAeTxio/SWAP/` por `scp` (verificado con `ls
+-la` real) antes de borrar las 3 VMs -- coste real ya en cero, no solo
+mínimo.
+
+**PENDIENTE EXPLÍCITO para la siguiente sesión, decisión de Miguel
+Ángel:** relanzar SOLO los shards 3 y 6 (con el bug ya corregido)
+mañana, desde el PC de la oficina (`PEE=PC`), para recuperar los
+~1.100 documentos que faltan antes de entrenar el modelo.
+
+---
+
+## HOJA DE RUTA PARA LA SIGUIENTE SESIÓN (sustituye por completo a
+## cualquier "pendiente" suelto de bloques anteriores)
+
+1. **Relanzar shards 3 y 6** de `extract_training_dataset.py`
+   (`--shard-count 9 --shard-index 3` y `6`), desde el PC de la
+   oficina (`PEE=PC`), con el bug de `conn.ping()` ya corregido.
+   **Cierre:** `dataset3.jsonl` y `dataset6.jsonl` con más de 500
+   líneas cada uno (coherente con los otros 7 shards ya completos),
+   sin ningún "AVISO: conn.ping fallo" repetido en el log que indique
+   otro corte.
+2. **Juntar los 9 `datasetN.jsonl` + `data_imports/web_templates.jsonl`
+   y ejecutar `train_document_classifier.py`.** **Cierre:** informe
+   `classification_report` generado y revisado con Miguel Ángel,
+   tipo por tipo, no solo el porcentaje global.
+3. **Con el informe real delante, decidir con Miguel Ángel** si el
+   modelo está listo para aplicarse de prueba sobre una muestra
+   pequeña de documentos desconocidos, o si hace falta más trabajo
+   antes (más ejemplos para los tipos débiles, ajustar
+   `--min-examples`, revisar features). **Cierre:** decisión explícita
+   tomada y anotada, no una suposición.
+4. Resto de la hoja de ruta de H30 arrastrada de sesiones anteriores,
+   sin tocar en esta sesión (ver bloques 1-5 más arriba): EPIS
+   (extracción a `EpiDelivery`, fundida con Fase B/Gemini como último
+   recurso), variable de entorno de la clave de servicio del agente
+   H28, resto de `CONTENT_MARKERS` por leer si el modelo no cubre
+   bien esos tipos, `FICHA_TECNICA` vs `ITV`, renombrado retroactivo,
+   backfill de fecha, duplicados de seguro/OCA.
