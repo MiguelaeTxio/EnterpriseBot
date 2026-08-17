@@ -453,6 +453,55 @@ def _show_history(icon, _menu_item):
     window.wait_window()
 
 
+def _show_watched_folders(icon, _menu_item):
+    """Open a read-only window listing the folders currently being
+    watched. Reads directly from the in-memory list kept in sync by
+    save_watched_folders() -- the same source of truth used by
+    reconciliation and the reconciler, not a re-read of the JSON
+    file (avoids showing a stale copy if it hasn't been flushed
+    yet).
+    ---
+    Abre una ventana de solo lectura con las carpetas actualmente
+    vigiladas. Lee directamente de la lista en memoria mantenida por
+    save_watched_folders() -- la misma fuente de verdad que usa la
+    reconciliacion, no una relectura del JSON (evita mostrar una
+    copia obsoleta si aun no se ha volcado a disco).
+
+    S54, peticion explicita de Miguel Angel: antes solo se podia
+    consultar pidiendo un comando de PowerShell -- "un engorro".
+    """
+    root = _get_tk_root()
+
+    window = tk.Toplevel(root)
+    window.title("Agente H28 — Carpetas vigiladas")
+    window.geometry("820x300")
+    window.attributes("-topmost", True)
+    window.protocol("WM_DELETE_WINDOW", window.destroy)
+
+    columns = ("index", "folder")
+    tree = ttk.Treeview(window, columns=columns, show="headings")
+    tree.heading("index", text="#")
+    tree.heading("folder", text="Carpeta vigilada")
+    tree.column("index", width=40, anchor="center")
+    tree.column("folder", width=760, anchor="w")
+
+    if not _watched_folders:
+        tree.insert("", "end", values=(
+            "", "Ninguna carpeta vigilada todavia",
+        ))
+    for position, folder in enumerate(_watched_folders, start=1):
+        tree.insert("", "end", values=(position, folder))
+
+    scrollbar = ttk.Scrollbar(
+        window, orient="vertical", command=tree.yview,
+    )
+    tree.configure(yscrollcommand=scrollbar.set)
+    tree.pack(side="left", fill="both", expand=True)
+    scrollbar.pack(side="right", fill="y")
+
+    window.wait_window()
+
+
 def _select_folder_and_copy(icon, _menu_item):
     """Open the folder picker, then copy and watch it.
     ---
@@ -909,6 +958,7 @@ def main():
         ),
         pystray.MenuItem("Poner al día ahora", _catchup_now),
         pystray.MenuItem("Auditar carpeta (Fase 2)", _audit_folder),
+        pystray.MenuItem("Carpetas vigiladas", _show_watched_folders),
         pystray.MenuItem("Ver historial", _show_history),
         pystray.MenuItem("Salir", _quit_agent),
     )
