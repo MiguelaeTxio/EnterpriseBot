@@ -146,45 +146,71 @@ def main():
         for i, (entry_id, name, parent_path, blob_name, code) in enumerate(
             candidatos, start=1,
         ):
-            if i % 20 == 0:
-                conn.ping(reconnect=True)
-
-            if i % 25 == 0:
-                elapsed = time.monotonic() - start_time
-                ritmo = i / elapsed if elapsed > 0 else 0
-                restantes = len(candidatos) - i
-                eta_min = (restantes / ritmo / 60) if ritmo > 0 else 0
-                _log(
-                    "--- LATIDO: %d/%d (%.1f%%) | %.1f min transcurridos | "
-                    "ritmo %.1f docs/min | ETA ~%.0f min | ok=%d sin_texto=%d "
-                    "error=%d ---"
-                    % (
-                        i, len(candidatos), 100.0 * i / len(candidatos),
-                        elapsed / 60, ritmo * 60, eta_min,
-                        stats["ok"], stats["sin_texto"], stats["error"],
-                    )
-                )
-
             try:
-                data = bucket.blob(blob_name).download_as_bytes()
-                text = base.extract_text(name, data)
+                if i % 20 == 0:
+                    try:
+                        conn.ping(reconnect=True)
+                    except Exception as error:
+                        # S54, bug real: esta linea sin proteger mataba
+                        # el proceso entero si el tunel SSH se caia a
+                        # mitad de una ejecucion larga (confirmado en
+                        # produccion: dataset3.jsonl/dataset6.jsonl se
+                        # cortaron en 54-60 documentos de 621/609
+                        # candidatos). Ahora se reintenta el tunel
+                        # completo en vez de morir.
+                        _log(
+                            "AVISO: conn.ping fallo (%s), reabriendo "
+                            "tunel SSH ..." % error
+                        )
+                        tunnel.restart()
+                        conn.ping(reconnect=True)
+
+                if i % 25 == 0:
+                    elapsed = time.monotonic() - start_time
+                    ritmo = i / elapsed if elapsed > 0 else 0
+                    restantes = len(candidatos) - i
+                    eta_min = (restantes / ritmo / 60) if ritmo > 0 else 0
+                    _log(
+                        "--- LATIDO: %d/%d (%.1f%%) | %.1f min "
+                        "transcurridos | ritmo %.1f docs/min | ETA "
+                        "~%.0f min | ok=%d sin_texto=%d error=%d ---"
+                        % (
+                            i, len(candidatos), 100.0 * i / len(candidatos),
+                            elapsed / 60, ritmo * 60, eta_min,
+                            stats["ok"], stats["sin_texto"], stats["error"],
+                        )
+                    )
+
+                try:
+                    data = bucket.blob(blob_name).download_as_bytes()
+                    text = base.extract_text(name, data)
+                except Exception as error:
+                    stats["error"] += 1
+                    _log("ERROR [%s] %s -- %s" % (parent_path, name, error))
+                    continue
+
+                if not text:
+                    stats["sin_texto"] += 1
+                    continue
+
+                out.write(json.dumps({
+                    "tipo": code,
+                    "parent_path": parent_path,
+                    "name": name,
+                    "texto": text[:4000],
+                }, ensure_ascii=False) + "\n")
+                out.flush()
+                stats["ok"] += 1
             except Exception as error:
+                # Red de seguridad final -- S54. Nada, sea lo que sea,
+                # deberia poder matar el shard entero. Como mucho se
+                # pierde este documento suelto, nunca el resto.
                 stats["error"] += 1
-                _log("ERROR [%s] %s -- %s" % (parent_path, name, error))
+                _log(
+                    "ERROR INESPERADO [%s] %s -- %s (shard sigue vivo)"
+                    % (parent_path, name, error)
+                )
                 continue
-
-            if not text:
-                stats["sin_texto"] += 1
-                continue
-
-            out.write(json.dumps({
-                "tipo": code,
-                "parent_path": parent_path,
-                "name": name,
-                "texto": text[:4000],
-            }, ensure_ascii=False) + "\n")
-            out.flush()
-            stats["ok"] += 1
 
     total_min = (time.monotonic() - start_time) / 60
     _log(
