@@ -60,8 +60,20 @@ import pytesseract
 # (requiere administrador) para el paquete de idioma "spa" -- se usa
 # una carpeta propia junto al script en su lugar. Coloca ahi
 # spa.traineddata (ver instrucciones de instalacion mas abajo).
-_TESSDATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tessdata")
-os.environ["TESSDATA_PREFIX"] = _TESSDATA_DIR
+#
+# S54, bug real detectado en vivo en la VM Linux: este workaround es
+# especifico de Windows (permisos de Program Files). En Linux, `apt-
+# get install tesseract-ocr-spa` ya instala el paquete de idioma en
+# la ruta real del sistema -- forzar TESSDATA_PREFIX aqui tapaba esa
+# ruta con una carpeta local vacia y rompia Tesseract por completo
+# ("Tesseract couldn't load any languages!"). Igual que el bug de
+# get_agent_data_dir() de esta misma sesion: un fix pensado para una
+# plataforma, aplicado sin querer en la otra.
+if os.name == "nt":
+    _TESSDATA_DIR = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "tessdata",
+    )
+    os.environ["TESSDATA_PREFIX"] = _TESSDATA_DIR
 
 import sshtunnel
 from google.cloud import storage
