@@ -2103,6 +2103,67 @@ producción:**
 con el código arreglado.** Punto 1 de la hoja de ruta de H30, cerrado
 del todo.
 
+---
+
+## COMPLETADAS EN S54, bloque 3 (2026-08-17, persistencia real del
+## Excel de trabajadores/maquinaria)
+
+Miguel Ángel subió `EXEL_TRABAJADORES.xlsx` (correo de administración
+de la empresa) para cerrar de verdad el pendiente abierto desde S043
+(aquella sesión cruzó el Excel contra la BD de forma puntual --
+"70/70 personas y 37/37 máquinas" -- pero nunca persistió el
+resultado).
+
+**Modelos ampliados:** `PersonIdentity` (migración `0035`) gana
+`is_active_employee` (nullable -- `None` = todavía sin cruzar, nunca
+se infiere `False` por ausencia, directriz explícita de Miguel Ángel
+de nunca adivinar bajas sin fuente real) más fechas reales de
+cumplimiento (DNI, carnet de conducir, carnet de gruista, tarjeta de
+cualificación de conductor -- CAP --, tacógrafo, reconocimiento
+médico) y datos de contacto. `fleet.MachineAsset` (migración `0006`)
+gana ITV (última + próxima cita), seguro (texto libre, el Excel
+mezcla aseguradora+fecha en la misma celda) y OCA.
+
+**Comando real `import_worker_machine_excel.py`**, dry-run por
+defecto: detecta la fila de cabecera real por contenido (las
+"Tablas" de Excel definidas en el propio libro están rotas --
+columnas genéricas `ColumnaN`, rangos que no cuadran con los datos
+reales -- nunca se usan), resuelve alias de cabecera por variante
+real vista en cada hoja. El `.xlsx` real queda commiteado
+(`document_explorer/data_imports/`) para que el comando sea
+reutilizable sin depender de que Miguel Ángel lo vuelva a subir cada
+vez.
+
+**Validado antes de escribir nada** (nunca a ciegas): 70 DNIs
+distintos sin duplicados entre las 5 hojas de trabajadores (coincide
+exacto con S043), 37 códigos de máquina en `MAQUINARIA` (coincide
+exacto con S043).
+
+**Tres erratas reales del propio Excel, corregidas una a una con
+confirmación explícita de Miguel Ángel** (nunca con una regla
+genérica que pudiera adivinar mal en un caso futuro distinto):
+- `'21/03/230'` (ALVAREZ GEA, DNI `44599171D`) → `21/03/2030`, cero
+  perdido al escribir el año.
+- Columna de caducidad de carnet vacía/con texto ajeno (`'PARASCHI'`)
+  para GUTIÉRREZ MATEO (DNI `25723198K`) → confirmada con foto real
+  del permiso de conducir, casilla 4b: `27/04/2032`.
+- `'24/06/20207'` (máquina `A-49`, `E-6593-BDC`, columna `ITV` --
+  última pasada, no próxima cita) → `24/06/2020`, criterio explícito
+  de Miguel Ángel ("si es la fecha vigente, 2027; si es obsoleta,
+  2020" -- al estar en la columna de la ITV ya pasada, obsoleta).
+
+**Bug real detectado en la propia ejecución, corregido en el mismo
+bloque (directriz 4.9):** `datetime.datetime.now()` en vez de
+`django.utils.timezone.now()` para `excel_imported_at` -- 107
+`RuntimeWarning` reales de "naive datetime" con `USE_TZ` activo en la
+primera pasada de `--apply`. No afectó a ningún dato ya escrito
+(fecha de importación, no dato de negocio), corregido antes de la
+pasada final.
+
+**Resultado final, verificado con la salida real del servidor:**
+**70/70 trabajadores y 37/37 máquinas cruzados y escritos**, cero
+incidencias reales en la pasada final.
+
 **Pendiente, hoja de ruta de la siguiente sesión de H30 (sin cambios
 en el resto, ver más arriba):**
 1. Decidir con Miguel Ángel el enfoque para escribir la variante de
@@ -2121,7 +2182,21 @@ en el resto, ver más arriba):**
    bloque 2 de COMPLETADAS EN S54 más arriba.
 4. Identificar la variable de entorno real de la clave de servicio
    del agente H28 (pendiente de ese mismo bloque).
-5. Resto de la hoja de ruta arrastrada de S51/S53 sin tocar en esta
+5. Resolución de persona por nombre para `INVESTIGACION_ACCIDENTE`
+   (coincidencia exacta given_name+first_surname, decidida S54) --
+   ahora desbloqueada de verdad: `PersonIdentity.is_active_employee`
+   ya es un dato real, no una aproximación por carpeta.
+6. EPIS: clasificar lo que hay en la nube → extraer a
+   `EpiDelivery`/`EpiReview` → papelera de los originales (decisión
+   explícita de Miguel Ángel, S54) -- sin construir todavía.
+7. Lanzar la VM de clasificación por OCR (Fase B1) sobre lo que quede
+   sin resolver tras los puntos 1 y 6 -- criterio explícito de Miguel
+   Ángel: preferir 5-6 instancias/VMs en paralelo a esperar, objetivo
+   5-10 minutos de pared en la oficina (sin límite de tiempo si
+   trabaja desde casa).
+8. Barrido de extracción de fechas, aparte, una vez asentada la
+   clasificación.
+9. Resto de la hoja de ruta arrastrada de S51/S53 sin tocar en esta
    sesión (ver más arriba: `CONTENT_MARKERS` desde las muestras ya
    descargadas, `FICHA_TECNICA` vs `ITV`, renombrado retroactivo,
    backfill de fecha, duplicados de seguro/OCA).
