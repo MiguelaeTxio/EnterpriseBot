@@ -119,6 +119,50 @@ explícitamente que la ventana usada desde el principio es la del propio
 ## buscarla, pese a estar ya documentada en el propio historial de
 ## chats desde S031-S038)
 
+⛔ **DIRECTIVA VINCULANTE, SIN EXCEPCIÓN (fijada S54, 2026-08-17, tras
+incidente real de galimatías de sincronización)** — flujo único y
+obligatorio para CUALQUIER cambio de código del agente H28:
+
+1. Claude clona/actualiza el repo en su propio workspace al empezar
+   la sesión (como ya hace siempre, `nfs-enterprisebot-edit`).
+2. **Todos** los cambios de código (`.py`, `config.py`, lo que sea)
+   se editan **únicamente** en ese clon de Claude -- nunca pidiendo a
+   Miguel Ángel que edite, cree o pegue nada directamente en su
+   `C:\EnterpriseBot` local.
+3. Claude comitea y empuja a GitHub.
+4. A Miguel Ángel se le da **únicamente** `git pull` (más, si aplica,
+   el procedimiento estándar de recompilación ya documentado más
+   abajo) -- nunca un comando que genere o modifique archivos de
+   código en su local por otra vía.
+
+**Terminantemente prohibido:** dar a Miguel Ángel comandos que creen,
+editen o parcheen archivos directamente en su máquina fuera de
+`git pull`. Si algo necesita cambiar en `h28_migration_agent/`, ese
+cambio nace en el clon de Claude, se empuja, y llega a Miguel Ángel
+solo por `git pull`. Sin excepción, sin atajos, aunque parezca más
+rápido en el momento.
+
+**Motivo real, verbatim (Miguel Ángel, S54):** *"si tenemos
+diferentes formas de hacerlo, pasa lo que está pasando. Que tenemos
+copias que no están en GitHub, el GitHub no está sincronizado, ahora
+tenemos un archivo corriendo que no sabemos lo que es... Galimatías."*
+Incidente real que lo disparó: un `git pull` que Claude dio en el
+mismo bloque que la recompilación, sin comprobar que el pull tuviera
+éxito -- el pull falló en silencio (había un cambio local sin
+commitear, `TESSERACT_CMD` en `local_ocr_classify.py`, que bloqueaba
+el merge), y PowerShell siguió ejecutando las líneas siguientes
+igualmente, compilando el `.exe` con el código VIEJO sin que apareciera
+ningún error visible. Consecuencia: casi una hora de diagnóstico en
+círculos (crash fantasma, doble proceso, bloqueo de log...) por una
+causa que era, en realidad, muy simple: el pull nunca se había hecho.
+
+**Corolario obligatorio:** cuando Claude dé una secuencia de comandos
+donde un paso dependa de que el anterior haya tenido éxito real
+(`git pull` antes de compilar, por ejemplo), **cada paso debe
+confirmarse explícitamente con la salida real antes de dar el
+siguiente** -- nunca encadenar en un mismo bloque un paso que pueda
+fallar en silencio con el siguiente que dependa de él.
+
 **QUEDA CONFIRMADO Y REGISTRADO** para no volver a preguntarlo nunca:
 
 - **Ruta del checkout local:** `C:\EnterpriseBot` (repo completo, el
