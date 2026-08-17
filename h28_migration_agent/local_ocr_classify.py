@@ -238,20 +238,27 @@ CONTENT_MARKERS = {
     # fechas concretas, nombre de la propia empresa colandose como
     # "candidata" por coincidencia entre solo 2-3 muestras). Cada frase
     # leida y verificada a mano, sin contaminacion cruzada contra los
-    # 24 tipos ya existentes arriba NI entre si. Varios tipos mas
-    # quedan sin cubrir por OCR degradado en las muestras (FICHA_TECNICA,
-    # ITV, CAMBIO_TITULARIDAD, DNI, DNI_COMPRADOR, CAP) -- no se fuerza
-    # una frase de baja confianza solo por rellenar.
+    # 24 tipos ya existentes arriba NI entre si -- incluida una
+    # contaminacion real detectada y corregida en el momento:
+    # DOC_VENTA/CONTRATO_COMPRAVENTA comparten la misma clausula de
+    # "la parte compradora hace expresa mencion... a cuerpo cierto",
+    # asi que DOC_VENTA se queda sin marcador por ahora, no se fuerza
+    # uno que rompa la deteccion de CONTRATO_COMPRAVENTA. Varios tipos
+    # mas quedan sin cubrir por OCR degradado en las muestras
+    # (FICHA_TECNICA, ITV, CAMBIO_TITULARIDAD, DNI, DNI_COMPRADOR, CAP,
+    # LIBRO_HISTORIAL) o por ser demasiado heterogeneos entre muestras
+    # (CURSO, GARANTIA_FABRICANTE, PRESTAMO) -- no se fuerza una frase
+    # de baja confianza solo por rellenar.
     "TACOGRAFO": ["TARJETA DE CONDUCTOR"],
     "CONTRATO_ARRENDAMIENTO": ["CONTRATO DE ARRENDAMIENTO DE MAQUINARIA"],
-    "DOC_VENTA": [
-        "LA PARTE COMPRADORA HACE EXPRESA",
-        "ADQUIRIENDO EL VEHICULO A CUERPO CIERTO",
-    ],
     "RECIBO_LEASING": ["RECIBO-FACTURA POR CUOTA"],
     "INFORME_INCIDENCIAS": ["INFORME DE INCIDENCIAS MAQUINA"],
     "SEG_SOCIAL": ["ASIGNACION DE NUMERO DE SEGURIDAD SOCIAL"],
     "CARNET_CONDUCIR": ["PERMISO DE CONDUCCION REINO DE ESPANA"],
+    "VACACIONES": ["PARTE DE VACACIONES"],
+    "NOMINA": ["DETERMINACION DE LAS BASES DE COTIZACION A LA SEGURIDAD SOCIAL"],
+    "IVTM": ["IMPUESTO SOBRE VEHICULOS DE TRACCION MECANICA"],
+    "PROVISION_FONDOS": ["AUTORIZACION PROVISION FONDOS"],
 }
 
 _FOLDER_MACHINE_CODE_RE = re.compile(r"^([A-Z]+-?\d+)")

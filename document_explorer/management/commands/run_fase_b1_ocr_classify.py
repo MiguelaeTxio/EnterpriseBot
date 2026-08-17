@@ -131,17 +131,19 @@ CONTENT_MARKERS = {
     "REVISION_ESLINGAS": ["REVISION DE ESLINGAS"],
     # --- Añadidos S54, sincronizado con local_ocr_classify.py (fuente
     # real activa hoy, VMs de OCR) -- ver ese archivo para el detalle
-    # completo de como se extrajeron y verificaron.
+    # completo de como se extrajeron y verificaron, incluida la
+    # contaminacion cruzada real detectada entre DOC_VENTA y
+    # CONTRATO_COMPRAVENTA (por eso DOC_VENTA no tiene marcador).
     "TACOGRAFO": ["TARJETA DE CONDUCTOR"],
     "CONTRATO_ARRENDAMIENTO": ["CONTRATO DE ARRENDAMIENTO DE MAQUINARIA"],
-    "DOC_VENTA": [
-        "LA PARTE COMPRADORA HACE EXPRESA",
-        "ADQUIRIENDO EL VEHICULO A CUERPO CIERTO",
-    ],
     "RECIBO_LEASING": ["RECIBO-FACTURA POR CUOTA"],
     "INFORME_INCIDENCIAS": ["INFORME DE INCIDENCIAS MAQUINA"],
     "SEG_SOCIAL": ["ASIGNACION DE NUMERO DE SEGURIDAD SOCIAL"],
     "CARNET_CONDUCIR": ["PERMISO DE CONDUCCION REINO DE ESPANA"],
+    "VACACIONES": ["PARTE DE VACACIONES"],
+    "NOMINA": ["DETERMINACION DE LAS BASES DE COTIZACION A LA SEGURIDAD SOCIAL"],
+    "IVTM": ["IMPUESTO SOBRE VEHICULOS DE TRACCION MECANICA"],
+    "PROVISION_FONDOS": ["AUTORIZACION PROVISION FONDOS"],
 }
 
 
