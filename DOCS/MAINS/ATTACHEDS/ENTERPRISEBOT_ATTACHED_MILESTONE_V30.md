@@ -2064,13 +2064,44 @@ la variable de entorno que hace que la clave de servicio siga
 autenticando pese a que `dist\agent_data\` estaba vacía -- no
 bloquea nada mientras siga funcionando, pero hay que documentarlo.
 
-**Siguiente paso inmediato (fuera del alcance de esta sesión de
-Claude, acción de Miguel Ángel en su PC):** `git pull`, recompilar
-según el procedimiento estándar de `SESSION_VARIABLES.md`, reiniciar
-la Tarea Programada, y confirmar en caliente que
-`watched_folders.json` aparece por fin en la nueva ubicación
-(`%LOCALAPPDATA%\EnterpriseBot\H28MigrationAgent\`) tras seleccionar
-una carpeta vigilada.
+**Confirmado en producción, mismo día (2026-08-17, tarde):** Miguel
+Ángel recompiló y desplegó siguiendo el flujo correcto (`git pull` +
+recompilar en su máquina, nunca al revés), y verificó en caliente:
+`watched_folders.json`, `history.json`, `service_account_key.json` y
+el resto de `agent_data` aparecen por fin en
+`%LOCALAPPDATA%\EnterpriseBot\H28MigrationAgent\`, con las fechas
+originales de cada archivo preservadas (la migración automática no
+destructiva funcionó tal como se diseñó).
+
+**Hueco funcional real descubierto durante la propia verificación,
+cerrado en el mismo bloque:** no existía ninguna forma de retomar la
+vigilancia continua sobre una carpeta ya migrada por completo sin
+volver a subir todo su contenido sin comprobar (`Seleccionar carpeta
+y copiar`) ni sin dejarla sin vigilancia continua (`Verificar y
+reparar carpeta`, reconciliación puntual sin persistir el estado).
+Construidas dos piezas nuevas, a petición explícita de Miguel Ángel
+("deberíamos tener un CRUD para las carpetas vigiladas, más que
+solamente un visor"):
+- **"Vigilar carpeta ya migrada"**: reconcilia por hash (nunca
+  re-sube ciego) y, en el mismo paso, añade la carpeta a
+  `_watched_folders` y arranca el barrido periódico.
+- **"Carpetas vigiladas" con botón "Quitar de vigiladas"**: CRUD
+  real, no solo visor -- quitar una carpeta solo detiene su barrido
+  periódico, nunca borra nada de lo ya subido al cubo.
+
+**Resultado real verificado con las dos carpetas reales de
+producción:**
+- `DOC. MAQUINAS`: reconciliada (9:14→9:26, ~12 min), **8 archivos
+  reales** con hueco real encontrados y mandados a cuarentena --
+  exactamente el hueco de estos días, ni uno más. Vigilancia continua
+  retomada.
+- `DOC. PERSONAL`: reconciliada (más volumen, más tiempo), vigilancia
+  continua retomada. Confirmado en el visor "Carpetas vigiladas": las
+  dos carpetas reales aparecen listadas.
+
+**H28 queda funcional de extremo a extremo, con datos reales, no solo
+con el código arreglado.** Punto 1 de la hoja de ruta de H30, cerrado
+del todo.
 
 **Pendiente, hoja de ruta de la siguiente sesión de H30 (sin cambios
 en el resto, ver más arriba):**
