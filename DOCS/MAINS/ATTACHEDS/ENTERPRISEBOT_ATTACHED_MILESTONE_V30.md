@@ -2259,3 +2259,55 @@ compartida que tenía `INVESTIGACION_ACCIDENTE` antes de hoy --
 candidatos directos para el mismo resolutor de nombre si Miguel Ángel
 confirma que sus subcarpetas también llevan nombre real de persona
 (sin verificar todavía en esta sesión).
+
+---
+
+## COMPLETADAS EN S54, bloque 5 (2026-08-17, tarde -- `CONTENT_MARKERS`
+## ampliado de verdad, tras un incidente real evitable)
+
+**Incidente real, honesto, sin suavizarlo:** se lanzaron 3 VMs (9
+shards) de OCR sobre los 11.331 candidatos reales de
+`DOC. MAQUINAS`+`DOC. PERSONAL` (bloque 4) **sin ampliar antes
+`CONTENT_MARKERS`**, pese a que el punto 1 de la propia hoja de ruta
+de hoy decía explícitamente hacerlo primero. Resultado real: solo
+1.088 de 11.331 consiguieron tipo (9,6%), reclasificando en su
+mayoría los mismos 22 tipos de siempre -- coste evitable de VM
+(~2-3h), señalado con toda razón por Miguel Ángel como un fallo de
+proceso real, no un detalle menor.
+
+**Corrección real, sin gastar más dinero:** en vez de repetir el
+enfoque anterior (Gemini por tipo, barajado y descartado por Miguel
+Ángel por volver a los costes de la primera auditoría), se leyeron
+**a mano, directamente**, las 185 muestras reales de
+`sample0/1/2_output.txt` -- un script automático de frecuencia de
+líneas se probó primero y se descartó por dejar pasar ruido real
+(nombres de persona concretos, fechas coincidentes por casualidad
+entre 2-3 muestras, el propio nombre de la empresa colándose como
+"candidata" sin ningún valor discriminante).
+
+**Resultado real: `CONTENT_MARKERS` de 24 a 31 tipos**, cada frase
+verificada a mano contra el texto real, sin contaminación cruzada
+comprobada contra las demás. Nuevos: `TACOGRAFO`
+("TARJETA DE CONDUCTOR"), `CONTRATO_ARRENDAMIENTO`
+("CONTRATO DE ARRENDAMIENTO DE MAQUINARIA"), `DOC_VENTA`,
+`RECIBO_LEASING`, `INFORME_INCIDENCIAS`, `SEG_SOCIAL`,
+`CARNET_CONDUCIR`. Descartadas explícitamente candidatas de riesgo
+real (p.ej. "DECLARO BAJO MI RESPONSABILIDAD" para
+`SOLICITUD_ADMINISTRATIVA`, presente también en `BAJA_TEMPORAL`).
+Sincronizado en las dos copias reales del diccionario
+(`local_ocr_classify.py`, activo hoy en las VMs, y
+`run_fase_b1_ocr_classify.py`, comando Django desactualizado desde
+S50) -- antes estaban divergentes.
+
+**Tipos que siguen sin cobertura real, por OCR demasiado degradado en
+las muestras disponibles** (no se fuerza ninguna frase de baja
+confianza): `FICHA_TECNICA`, `ITV`, `CAMBIO_TITULARIDAD`, `DNI`,
+`DNI_COMPRADOR`, `CAP`, y el resto de tipos financieros/técnicos no
+leídos todavía en esta sesión (queda para una futura ampliación si
+hace falta).
+
+**Pendiente real para la siguiente sesión:** relanzar OCR (VM) sobre
+el mismo lote, ahora con los 31 tipos, y medir el resultado real
+antes de decidir si hace falta ampliar más `CONTENT_MARKERS` o pasar
+a Gemini puntual para lo que quede. No se ha vuelto a lanzar ninguna
+VM en este bloque -- decisión pendiente de Miguel Ángel.
