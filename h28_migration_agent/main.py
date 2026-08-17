@@ -454,27 +454,29 @@ def _show_history(icon, _menu_item):
 
 
 def _show_watched_folders(icon, _menu_item):
-    """Open a read-only window listing the folders currently being
-    watched. Reads directly from the in-memory list kept in sync by
-    save_watched_folders() -- the same source of truth used by
-    reconciliation and the reconciler, not a re-read of the JSON
-    file (avoids showing a stale copy if it hasn't been flushed
-    yet).
+    """Open a window listing the folders currently being watched,
+    with the option to remove one from the watch list.
     ---
-    Abre una ventana de solo lectura con las carpetas actualmente
-    vigiladas. Lee directamente de la lista en memoria mantenida por
-    save_watched_folders() -- la misma fuente de verdad que usa la
-    reconciliacion, no una relectura del JSON (evita mostrar una
-    copia obsoleta si aun no se ha volcado a disco).
+    Abre una ventana con las carpetas actualmente vigiladas, con la
+    opcion de quitar una de la lista de vigiladas.
 
     S54, peticion explicita de Miguel Angel: antes solo se podia
-    consultar pidiendo un comando de PowerShell -- "un engorro".
+    consultar pidiendo un comando de PowerShell -- "un engorro". Y,
+    tras verlo en uso, pidio ademas poder quitar una carpeta sin
+    salir del agente ("deberiamos tener un CRUD ... no solamente un
+    visor").
+
+    Quitar una carpeta de aqui SOLO detiene el barrido periodico de
+    puesta al dia sobre ella (deja de aparecer en el siguiente ciclo
+    de _run_catchup_pass) -- nunca borra nada de lo ya subido ni toca
+    el cubo. Se puede retomar mas adelante con "Vigilar carpeta ya
+    migrada".
     """
     root = _get_tk_root()
 
     window = tk.Toplevel(root)
     window.title("Agente H28 — Carpetas vigiladas")
-    window.geometry("820x300")
+    window.geometry("820x340")
     window.attributes("-topmost", True)
     window.protocol("WM_DELETE_WINDOW", window.destroy)
 
@@ -485,21 +487,147 @@ def _show_watched_folders(icon, _menu_item):
     tree.column("index", width=40, anchor="center")
     tree.column("folder", width=760, anchor="w")
 
-    if not _watched_folders:
-        tree.insert("", "end", values=(
-            "", "Ninguna carpeta vigilada todavia",
-        ))
-    for position, folder in enumerate(_watched_folders, start=1):
-        tree.insert("", "end", values=(position, folder))
-
     scrollbar = ttk.Scrollbar(
         window, orient="vertical", command=tree.yview,
     )
     tree.configure(yscrollcommand=scrollbar.set)
+
+    button_bar = tk.Frame(window)
+    button_bar.pack(side="bottom", fill="x", pady=6)
+
+    def _refresh_tree():
+        tree.delete(*tree.get_children())
+        if not _watched_folders:
+            tree.insert("", "end", values=(
+                "", "Ninguna carpeta vigilada todavia",
+            ))
+            return
+        for position, folder in enumerate(_watched_folders, start=1):
+            tree.insert("", "end", values=(position, folder))
+
+    def _remove_selected():
+        selection = tree.selection()
+        if not selection:
+            messagebox.showinfo(
+                "Agente H28",
+                "Selecciona primero una carpeta de la lista.",
+                parent=window,
+            )
+            return
+        values = tree.item(selection[0], "values")
+        folder = values[1] if len(values) > 1 else None
+        if not folder or folder not in _watched_folders:
+            return
+
+        confirmed = messagebox.askyesno(
+            "Agente H28",
+            f"Se va a dejar de vigilar:\n{folder}\n\n"
+            "Esto NO borra nada de lo ya subido al cubo -- solo "
+            "detiene el barrido periodico de puesta al dia sobre "
+            "esta carpeta. Se puede retomar mas adelante.\n\n"
+            "¿Continuar?",
+            parent=window,
+        )
+        if not confirmed:
+            return
+
+        _watched_folders.remove(folder)
+        save_watched_folders(_watched_folders)
+        append_event(
+            "Vigilancia detenida", folder, "Quitada por Miguel Angel",
+        )
+        logger.info("Carpeta quitada de vigiladas: %s", folder)
+        _refresh_tree()
+
+    tk.Button(
+        button_bar, text="Quitar de vigiladas", command=_remove_selected,
+    ).pack(side="left", padx=8)
+    tk.Button(
+        button_bar, text="Cerrar", command=window.destroy,
+    ).pack(side="right", padx=8)
+
+    _refresh_tree()
     tree.pack(side="left", fill="both", expand=True)
     scrollbar.pack(side="right", fill="y")
 
     window.wait_window()
+
+
+def _watch_migrated_folder(icon, _menu_item):
+    """Resume continuous watching over a folder that is already
+    fully migrated, closing any real gap first via reconciliation --
+    never doing the blind full "Copia inicial" (upload_folder_recursive)
+    a second time.
+    ---
+    Retoma la vigilancia continua sobre una carpeta que ya esta
+    migrada por completo, cerrando primero cualquier hueco real via
+    reconciliacion -- sin volver a hacer nunca la "Copia inicial"
+    ciega (upload_folder_recursive) por segunda vez.
+
+    S54, hueco real descubierto y cerrado a peticion explicita de
+    Miguel Angel: hasta ahora solo existian dos caminos para empezar
+    a vigilar una carpeta -- "Seleccionar carpeta y copiar" (sube
+    TODO sin comprobar, pensada para una carpeta nueva jamas migrada)
+    o "Verificar y reparar carpeta" (repara el hueco real por hash,
+    pero no deja vigilancia continua activa). Ninguno de los dos sirve
+    para el caso real de esta sesion: una carpeta ya migrada por
+    completo (DOC. MAQUINAS / DOC. PERSONAL) que necesita cerrar solo
+    los dias reales de hueco y retomar la vigilancia, sin repetir la
+    copia entera.
+    """
+    root = _get_tk_root()
+    selected_folder = filedialog.askdirectory(
+        title="Selecciona la carpeta YA MIGRADA a vigilar (H28)",
+        parent=root,
+    )
+
+    if not selected_folder:
+        return
+    selected_folder = os.path.normpath(selected_folder)
+
+    if selected_folder in _watched_folders:
+        messagebox.showinfo(
+            "Agente H28",
+            f"Esta carpeta ya se esta vigilando:\n{selected_folder}",
+            parent=root,
+        )
+        return
+
+    confirmed = messagebox.askyesno(
+        "Agente H28",
+        f"Se va a reconciliar y retomar la vigilancia continua de:\n"
+        f"{selected_folder}\n\n"
+        "Esto NO vuelve a subir los archivos ya migrados -- solo "
+        "compara por hash contra lo que ya hay en el cubo y manda a "
+        "cuarentena lo que falte de verdad. Puede tardar varios "
+        "minutos en carpetas grandes.\n\n¿Continuar?",
+        parent=root,
+    )
+    if not confirmed:
+        return
+
+    try:
+        client = build_client()
+    except MissingCredentialsError as error:
+        messagebox.showerror("Agente H28", str(error), parent=root)
+        return
+
+    icon.notify(
+        f"Reconciliando {selected_folder}...", title="Agente H28",
+    )
+    _run_reconciliation(icon, client, selected_folder)
+
+    _watched_folders.append(selected_folder)
+    save_watched_folders(_watched_folders)
+    _start_catchup_thread(icon)
+    icon.notify(
+        f"Vigilancia continua retomada sobre:\n{selected_folder}",
+        title="Agente H28",
+    )
+    append_event(
+        "Vigilancia retomada", selected_folder,
+        "Reconciliada y anadida a carpetas vigiladas",
+    )
 
 
 def _select_folder_and_copy(icon, _menu_item):
@@ -955,6 +1083,9 @@ def main():
         ),
         pystray.MenuItem(
             "Verificar y reparar carpeta", _verify_and_repair_folder
+        ),
+        pystray.MenuItem(
+            "Vigilar carpeta ya migrada", _watch_migrated_folder
         ),
         pystray.MenuItem("Poner al día ahora", _catchup_now),
         pystray.MenuItem("Auditar carpeta (Fase 2)", _audit_folder),
