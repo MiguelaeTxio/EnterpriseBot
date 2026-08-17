@@ -255,6 +255,36 @@ class MachineAsset(models.Model):
         help_text=_("Fecha y hora de la última modificación del registro."),
     )
 
+    # ------------------------------------------------------------------
+    # H30 (S54). Datos reales de cumplimiento, importados desde el
+    # Excel de administración (import_worker_machine_excel, hoja
+    # MAQUINARIA). insurance_info se guarda como texto libre porque el
+    # Excel real mezcla aseguradora+fecha en una sola celda (p.ej.
+    # "AXA 31/12/2026") -- no partir en campos separados sin
+    # confirmar con Miguel Angel el formato real de todas las filas.
+    # ------------------------------------------------------------------
+    itv_date = models.DateField(
+        null=True, blank=True, verbose_name=_("Última ITV (Excel)"),
+    )
+    itv_next_appointment = models.DateField(
+        null=True, blank=True, verbose_name=_("Próxima cita ITV (Excel)"),
+    )
+    insurance_info = models.CharField(
+        max_length=100, blank=True,
+        verbose_name=_("Seguro (Excel)"),
+        help_text=_(
+            "Texto libre tal como viene en el Excel real (aseguradora "
+            "+ fecha en la misma celda, p.ej. 'AXA 31/12/2026')."
+        ),
+    )
+    oca_date = models.DateField(
+        null=True, blank=True, verbose_name=_("Inspección OCA (Excel)"),
+    )
+    excel_imported_at = models.DateTimeField(
+        null=True, blank=True,
+        verbose_name=_("Última importación real del Excel"),
+    )
+
     class Meta:
         verbose_name        = _("Centro de gasto")
         verbose_name_plural = _("Centros de gasto")

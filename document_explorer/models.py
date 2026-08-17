@@ -1128,6 +1128,72 @@ class PersonIdentity(models.Model):
         auto_now=True, verbose_name="Última actualización",
     )
 
+    # ------------------------------------------------------------------
+    # H30 (S54). Datos reales de plantilla, importados desde el Excel
+    # de administración (import_worker_machine_excel). is_active_employee
+    # es nullable a proposito: None significa "todavia sin cruzar contra
+    # el Excel", nunca se confunde con un False real. Cierra el
+    # pendiente abierto desde S043 (cruce puntual sin persistir).
+    # ------------------------------------------------------------------
+    is_active_employee = models.BooleanField(
+        null=True,
+        blank=True,
+        default=None,
+        verbose_name="Empleado activo (Excel de plantilla)",
+        help_text=(
+            "None = todavia no cruzado contra el Excel real de "
+            "plantilla. True/False = resultado real del ultimo "
+            "import_worker_machine_excel por DNI."
+        ),
+    )
+    employer_company = models.CharField(
+        max_length=100,
+        blank=True,
+        verbose_name="Empresa (Excel)",
+        help_text=(
+            "Columna EMPRESA del Excel real (p.ej. GRUAS ADOLFO "
+            "ALVAREZ SL, TRANSGRUAL SL) -- que hoja/empresa real lo "
+            "recoge, no una etiqueta calculada."
+        ),
+    )
+    dni_expiry_date = models.DateField(
+        null=True, blank=True, verbose_name="Caducidad DNI/NIE (Excel)",
+    )
+    driving_license_expiry_date = models.DateField(
+        null=True, blank=True,
+        verbose_name="Caducidad carnet de conducir (Excel)",
+    )
+    crane_operator_card_expiry_date = models.DateField(
+        null=True, blank=True,
+        verbose_name="Caducidad carnet de gruista (Excel)",
+    )
+    driver_qualification_card_expiry_date = models.DateField(
+        null=True, blank=True,
+        verbose_name="Caducidad tarjeta cualificación de conductor -- CAP (Excel)",
+    )
+    tachograph_card_expiry_date = models.DateField(
+        null=True, blank=True,
+        verbose_name="Caducidad tarjeta de tacógrafo (Excel)",
+    )
+    medical_exam_date = models.DateField(
+        null=True, blank=True,
+        verbose_name="Reconocimiento médico -- RM (Excel)",
+    )
+    ss_affiliation_number = models.CharField(
+        max_length=30, blank=True,
+        verbose_name="Número de afiliación SS (Excel)",
+    )
+    phone = models.CharField(
+        max_length=30, blank=True, verbose_name="Teléfono (Excel)",
+    )
+    email = models.EmailField(
+        max_length=150, blank=True, verbose_name="Correo electrónico (Excel)",
+    )
+    excel_imported_at = models.DateTimeField(
+        null=True, blank=True,
+        verbose_name="Última importación real del Excel",
+    )
+
     class Meta:
         verbose_name = "Identidad de personal"
         verbose_name_plural = "Identidades de personal"
