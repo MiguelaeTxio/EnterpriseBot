@@ -339,6 +339,20 @@ Cuenta autenticada: `nummenor@gmail.com`. Proyecto y zona fijados:
 `gen-lang-client-0961484137` / `europe-west1-b`. Verificado con
 `gcloud compute instances list` -- funciona.
 
+⛔ **CONFIRMADO S54 (2026-08-17): la app móvil de Google Cloud
+Console (SSH desde la propia app, no Termux) conecta a las VMs con
+usuario `nummenor` -- distinto del usuario `Usuario` que se usa desde
+PowerShell/PC.** Son la misma VM, pero dos carpetas personales
+completamente separadas (`/home/nummenor/` vs `/home/Usuario/`) --
+si el entorno (`git clone`, `venv`, `agent_data/`) se montó desde PC,
+**no existe** para la sesión de la app móvil, hay que montarlo de
+nuevo ahí. La clave de servicio no hace falta volver a copiarla desde
+cero: se puede duplicar localmente en la propia VM con
+`sudo cp /home/Usuario/EnterpriseBot/h28_migration_agent/agent_data/service_account_key.json agent_data/service_account_key.json`
+-- el permiso por defecto (`-rw-r--r--`) ya es legible por cualquier
+usuario del sistema, no hace falta tocar el propietario ni los
+permisos aunque `ls -la` muestre `root` como dueño.
+
 **Si hay que rehacerlo en un Termux nuevo, el instalador oficial
 (`curl https://sdk.cloud.google.com | bash`) falla al final con
 `ERROR: (gcloud.components.update) The following components are
