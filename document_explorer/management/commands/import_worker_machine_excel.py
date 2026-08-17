@@ -109,6 +109,22 @@ KNOWN_TYPO_CORRECTIONS = {
     "21/03/230": datetime.date(2030, 3, 21),
 }
 
+# Correcciones puntuales por persona cuando el propio Excel no trae
+# nada aprovechable en la celda (texto ajeno, vacio) y Miguel Angel
+# confirma el dato real a partir del documento fisico. Clave: DNI
+# normalizado. Nunca una inferencia -- solo lo que Miguel Angel ha
+# confirmado explicitamente viendo el documento real.
+# ---
+# S54: GUTIERREZ MATEO, ALEJANDRO JOSE (DNI 25723198K) -- la columna
+# de caducidad de carnet de conducir traia 'PARASCHI' (texto ajeno,
+# sin fecha real). Confirmado con foto real del permiso de conducir:
+# casilla 4b, caducidad 27-04-2032.
+MANUAL_FIELD_OVERRIDES = {
+    "25723198K": {
+        "driving_license_expiry_date": datetime.date(2032, 4, 27),
+    },
+}
+
 
 def _norm_dni(value):
     if not value:
@@ -262,6 +278,8 @@ class Command(BaseCommand):
                     phone=str(_cell("telefono") or "").strip(),
                     email=str(_cell("email") or "").strip(),
                 )
+                if dni in MANUAL_FIELD_OVERRIDES:
+                    values.update(MANUAL_FIELD_OVERRIDES[dni])
 
                 try:
                     person = PersonIdentity.objects.get(dni=dni)
