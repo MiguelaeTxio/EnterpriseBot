@@ -44,6 +44,7 @@ import re
 
 import openpyxl
 from django.core.management.base import BaseCommand
+from django.utils import timezone
 
 from document_explorer.models import PersonIdentity
 from fleet.models import MachineAsset
@@ -290,7 +291,7 @@ class Command(BaseCommand):
                 workers_matched += 1
                 if apply_changes:
                     person.is_active_employee = True
-                    person.excel_imported_at = datetime.datetime.now()
+                    person.excel_imported_at = timezone.now()
                     for field, value in values.items():
                         if value:
                             setattr(person, field, value)
@@ -361,7 +362,7 @@ class Command(BaseCommand):
                         oca = _parse_date(_mcell("oca"), context, errors)
                         if oca:
                             machine.oca_date = oca
-                        machine.excel_imported_at = datetime.datetime.now()
+                        machine.excel_imported_at = timezone.now()
                         machine.save()
         else:
             errors.append(f"Hoja no encontrada: {MACHINE_SHEET!r}")
