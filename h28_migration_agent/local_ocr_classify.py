@@ -98,6 +98,18 @@ MYSQL_USERNAME = "MiguelAeTxio"  # mismo usuario que PythonAnywhere en la mayori
 
 BUCKET = "cgs_grupo_alvarez"
 MACHINE_ROOT = "DOC. MAQUINAS"
+PERSONAL_ROOT = "DOC. PERSONAL"
+
+# S54: ampliacion real de alcance. El SCOPE original (S50) SOLO cubria
+# DOC. MAQUINAS, curado a mano por familia. DOC. PERSONAL nunca se
+# habia tocado por esta via -- confirmado con datos reales que los
+# "miles de archivos de mas" que parecian una regresion eran, en
+# realidad, la poblacion real de DOC. PERSONAL, nunca medida hasta
+# hoy (ver anexo H30 S54). Anadido como entrada "all_except" propia,
+# sin restringir por familia (a diferencia de DOC. MAQUINAS, que si
+# sigue acotado a las familias ya validadas). EPIS excluido aqui
+# mismo: va por un pipeline de extraccion aparte hacia EpiDelivery,
+# nunca por document_type.
 
 # ---------------------------------------------------------------
 # SCOPE -- copiado literal de run_fase_a_sweep_scoped.py (S50)
@@ -144,6 +156,7 @@ SCOPE = [
         ["DOCUMENT 1884JB (MUJER ADOLFO)"],
     ),
     ("%s/VENTOSA" % MACHINE_ROOT, "all_except", []),
+    (PERSONAL_ROOT, "all_except", []),
 ]
 
 # ---------------------------------------------------------------
@@ -369,6 +382,41 @@ def _resolve_machine_by_filename(name, machine_codes):
     return None
 
 
+# Fecha al final del nombre de subcarpeta real, mismo patron que
+# run_fase_a_sweep.py (S54): "15-3-17", "8-10-16".
+_TRAILING_DATE_RE = re.compile(r"\s+\d{1,2}-\d{1,2}-\d{2,4}\s*$")
+
+
+def _resolve_person_by_folder(parent_path, person_folders):
+    """Mismo criterio que _resolve_person_by_folder() de
+    run_fase_a_sweep.py: folder_path CONTENEDOR de la persona, nunca
+    por parecido de nombre. person_folders: dict folder_path -> pk.
+    """
+    segments = parent_path.split("/")
+    candidates = {
+        person_folders[p]
+        for i in range(1, len(segments) + 1)
+        if (p := "/".join(segments[:i])) in person_folders
+    }
+    if len(candidates) == 1:
+        return next(iter(candidates))
+    return None
+
+
+def _resolve_person_by_name(parent_path, person_name_index):
+    """Mismo criterio que _resolve_person_by_name() de
+    run_fase_a_sweep.py (S54): SOLO coincidencia exacta y UNICA contra
+    el nombre real de la subcarpeta inmediata, nunca ambigua.
+    """
+    last_segment = parent_path.rstrip("/").split("/")[-1]
+    candidate = _TRAILING_DATE_RE.sub("", last_segment)
+    candidate = _strip_accents(candidate).upper().strip()
+    pks = person_name_index.get(candidate)
+    if pks and len(pks) == 1:
+        return next(iter(pks))
+    return None
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--limit", type=int, default=None)
@@ -452,13 +500,40 @@ def main():
         }
 
         cur.execute(
+            "SELECT id, given_name, first_surname, second_surname, "
+            "folder_path FROM document_explorer_personidentity"
+        )
+        person_folders = {}
+        person_name_index = {}
+        for pid, given, first, second, folder_path in cur.fetchall():
+            person_folders[folder_path] = pid
+            given_u = _strip_accents(given or "").upper().strip()
+            first_u = _strip_accents(first or "").upper().strip()
+            second_u = _strip_accents(second or "").upper().strip()
+            if not given_u or not first_u:
+                continue
+            for key in (
+                f"{given_u} {first_u}", f"{first_u} {given_u}",
+                (f"{given_u} {first_u} {second_u}" if second_u else ""),
+                (f"{first_u} {second_u} {given_u}" if second_u else ""),
+            ):
+                if key:
+                    person_name_index.setdefault(key, set()).add(pid)
+
+        cur.execute(
             "SELECT id FROM django_content_type "
             "WHERE app_label = 'fleet' AND model = 'machineasset'"
         )
         machine_ct_id = cur.fetchone()[0]
 
+        cur.execute(
+            "SELECT id FROM django_content_type "
+            "WHERE app_label = 'document_explorer' AND model = 'personidentity'"
+        )
+        person_ct_id = cur.fetchone()[0]
+
         shard_clause = ""
-        shard_params = (BUCKET, MACHINE_ROOT + "/%")
+        shard_params = (BUCKET, MACHINE_ROOT + "/%", PERSONAL_ROOT + "/%")
         if args.shard_count > 1:
             shard_clause = " AND id %% %s = %s"
             shard_params = shard_params + (args.shard_count, args.shard_index)
@@ -467,7 +542,8 @@ def main():
             "SELECT id, name, parent_path FROM document_explorer_documentindexentry "
             "WHERE entry_kind = 'FILE' AND document_type_id IS NULL "
             "AND deleted_at IS NULL AND purged_at IS NULL "
-            "AND bucket = %s AND parent_path LIKE %s" + shard_clause,
+            "AND bucket = %s AND (parent_path LIKE %s OR parent_path LIKE %s) "
+            "AND parent_path NOT LIKE '%%EPIS%%'" + shard_clause,
             shard_params,
         )
         raw_rows = cur.fetchall()
@@ -496,7 +572,7 @@ def main():
     print("Se van a procesar en esta ejecucion: %d\n" % len(candidatos))
 
     stats = {
-        "tipo_resuelto": 0, "tipo_y_fecha": 0, "dominio_sin_resolver": 0,
+        "tipo_resuelto": 0, "tipo_y_fecha": 0, "tipo_ok_dominio_pendiente": 0,
         "sin_tipo": 0, "ambiguo": 0, "extension_no_soportada": 0,
         "error": 0,
     }
@@ -539,11 +615,24 @@ def main():
         machine_id = _resolve_machine_code(parent_path, machine_codes)
         if not machine_id and ("/RAE" in parent_path or "/CE PLATAFORMAS" in parent_path):
             machine_id = _resolve_machine_by_filename(name, machine_codes)
-        if not machine_id:
-            stats["dominio_sin_resolver"] += 1
-            print("TIPO OK, DOMINIO SIN RESOLVER  [%s] %s -> %s"
+
+        domain_ct_id = domain_obj_id = None
+        if parent_path.startswith(MACHINE_ROOT):
+            if machine_id:
+                domain_ct_id, domain_obj_id = machine_ct_id, machine_id
+        else:
+            person_id = _resolve_person_by_folder(parent_path, person_folders)
+            if not person_id:
+                person_id = _resolve_person_by_name(
+                    parent_path, person_name_index,
+                )
+            if person_id:
+                domain_ct_id, domain_obj_id = person_ct_id, person_id
+
+        if not domain_obj_id:
+            stats["tipo_ok_dominio_pendiente"] += 1
+            print("TIPO OK, DOMINIO PENDIENTE -- tipo se guarda igual  [%s] %s -> %s"
                   % (parent_path, name, code))
-            continue
 
         doc_type_id = type_ids.get(code)
         expiry_date = issue_date = None
@@ -567,40 +656,23 @@ def main():
 
         if args.apply:
             with conn.cursor() as cur:
-                if expiry_date and issue_date:
-                    cur.execute(
-                        "UPDATE document_explorer_documentindexentry SET "
-                        "document_type_id=%s, domain_content_type_id=%s, "
-                        "domain_object_id=%s, expiry_date=%s, issue_date=%s "
-                        "WHERE id=%s",
-                        (doc_type_id, machine_ct_id, machine_id,
-                         expiry_date, issue_date, entry_id),
-                    )
-                elif expiry_date:
-                    cur.execute(
-                        "UPDATE document_explorer_documentindexentry SET "
-                        "document_type_id=%s, domain_content_type_id=%s, "
-                        "domain_object_id=%s, expiry_date=%s "
-                        "WHERE id=%s",
-                        (doc_type_id, machine_ct_id, machine_id,
-                         expiry_date, entry_id),
-                    )
-                elif issue_date:
-                    cur.execute(
-                        "UPDATE document_explorer_documentindexentry SET "
-                        "document_type_id=%s, domain_content_type_id=%s, "
-                        "domain_object_id=%s, issue_date=%s "
-                        "WHERE id=%s",
-                        (doc_type_id, machine_ct_id, machine_id,
-                         issue_date, entry_id),
-                    )
-                else:
-                    cur.execute(
-                        "UPDATE document_explorer_documentindexentry SET "
-                        "document_type_id=%s, domain_content_type_id=%s, "
-                        "domain_object_id=%s WHERE id=%s",
-                        (doc_type_id, machine_ct_id, machine_id, entry_id),
-                    )
+                fields = ["document_type_id=%s"]
+                values = [doc_type_id]
+                if domain_obj_id:
+                    fields += ["domain_content_type_id=%s", "domain_object_id=%s"]
+                    values += [domain_ct_id, domain_obj_id]
+                if expiry_date:
+                    fields.append("expiry_date=%s")
+                    values.append(expiry_date)
+                if issue_date:
+                    fields.append("issue_date=%s")
+                    values.append(issue_date)
+                values.append(entry_id)
+                cur.execute(
+                    "UPDATE document_explorer_documentindexentry SET "
+                    + ", ".join(fields) + " WHERE id=%s",
+                    tuple(values),
+                )
             conn.commit()
 
     print("\n=== RESUMEN (%s) ===" % ("APLICADO" if args.apply else "DRY-RUN"))
