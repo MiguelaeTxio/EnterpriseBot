@@ -108,6 +108,7 @@ MACHINE_HEADER_ALIASES = {
 # perdido al escribir el año.
 KNOWN_TYPO_CORRECTIONS = {
     "21/03/230": datetime.date(2030, 3, 21),
+    "24/06/20207": datetime.date(2020, 6, 24),
 }
 
 # Correcciones puntuales por persona cuando el propio Excel no trae
