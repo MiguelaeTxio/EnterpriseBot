@@ -341,16 +341,46 @@ verificada:
   pendiente de mirar el lunes, no bloquea nada mientras siga
   funcionando.
 
-**Pendiente de decidir el lunes, no resuelto todavía:** cómo corregir
-`get_agent_root_dir()` para que separe correctamente "carpeta del
-ejecutable" (`dist\`, válida para el log y estado real) de cualquier
-otra referencia -- y, más importante, **por qué la carpeta empaquetada
-nunca ha tenido `watched_folders.json`**: si es la primera vez que se
-empaqueta así, o si hubo una versión anterior que sí escribía bien y
-se rompió en algún commit. Antes de arreglar nada, revisar con `git
-log` los cambios reales de `config.py`/`state.py`/`main.py` entre
-la versión que sí funcionaba (si la hubo) y la actual -- directriz
-4.8/4.9, verificar antes de proponer diseño.
+**RESUELTO EN S54 (2026-08-17), fix de raíz:** confirmado con
+`git log --follow` que es un bug de origen, no una regresión --
+`get_agent_root_dir()` nació el 24 de julio (`47b4550`) ya con esta
+lógica, nunca hubo una versión anterior que escribiera bien
+`watched_folders.json`. Confirmado también con datos reales de la
+propia máquina (`Get-ScheduledTask ... | Actions`) que la Tarea
+Programada apunta a
+`C:\EnterpriseBot\h28_migration_agent\dist\AgenteMigracionH28.exe`,
+con `WorkingDirectory` también en `dist\` -- por eso `agent_data\`
+siempre se resolvía ahí, vacío, nunca en la raíz real del checkout.
+
+Miguel Ángel pidió explícitamente una solución de raíz, no un parche
+de despliegue: `get_agent_data_dir()` ya **no** depende de dónde esté
+el `.exe` en cada momento. Ahora vive de forma fija en
+`%LOCALAPPDATA%\EnterpriseBot\H28MigrationAgent\` (estándar de
+Windows para datos de aplicación por usuario) -- sobrevive a
+recompilaciones, a mover el `.exe`, y a cualquier cambio futuro de
+estructura de `dist\`. Incluye migración automática y no destructiva
+(nunca borra el origen, nunca sobrescribe el destino) de cualquier
+archivo real que pudiera existir en las ubicaciones antiguas
+(`dist\agent_data\` o la raíz `h28_migration_agent\agent_data\`),
+para no perder nada si algún día hubo estado real ahí.
+
+**NUEVA UBICACIÓN REAL de `agent_data\` desde S54** (clave de
+servicio, `watched_folders.json`, `history.json`,
+`hydration_notify_state.json`):
+`C:\Users\Usuario\AppData\Local\EnterpriseBot\H28MigrationAgent\`
+
+El archivo de log (`h28_migration_agent.log`) **sigue** junto al
+`.exe` en ejecución (`dist\`) -- deliberado, no es parte de este fix,
+ver docstring de `get_agent_root_dir()` en `config.py`.
+
+**Pendiente real, sin resolver todavía:** confirmar cuál es la
+variable de entorno que hace que la clave de servicio siga
+autenticando pese a que `dist\agent_data\` estaba vacía
+(`get_service_account_key_path()` la resuelve por variable de
+entorno con prioridad sobre el archivo) -- y dónde está fijada esa
+variable en esta máquina. No bloquea nada mientras siga funcionando,
+pero hay que documentarlo antes de que alguien la borre sin saber
+para qué era.
 
 ---
 

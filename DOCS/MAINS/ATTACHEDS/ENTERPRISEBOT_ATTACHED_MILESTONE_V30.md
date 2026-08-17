@@ -2035,11 +2035,46 @@ que es una barbaridad."* Corregido exigiendo palabras distintivas
 antes de dar una coincidencia por buena -- nunca fiarse del conteo
 agregado solo.
 
+---
+
+## COMPLETADAS EN S54, bloque 2 (2026-08-17, con acceso real al PC de
+## H28)
+
+**Bug del agente H28 (`get_agent_root_dir`) -- resuelto de raíz, no
+con parche.** Confirmado primero con `git log --follow` que es bug de
+origen (nace en `47b4550`, 24 de julio, junto con `agent_data/`,
+nunca hubo versión anterior que funcionara), y con datos reales de la
+máquina (`Get-ScheduledTask ... | Actions`) que la Tarea Programada
+corre `dist\AgenteMigracionH28.exe` con `WorkingDirectory` también en
+`dist\` -- por eso `agent_data\` se resolvía siempre ahí, vacío.
+
+Miguel Ángel pidió explícitamente una solución de raíz, escalable, no
+un parche de despliegue. Se desacopló `get_agent_data_dir()` de la
+ubicación del ejecutable por completo: ahora vive de forma fija en
+`%LOCALAPPDATA%\EnterpriseBot\H28MigrationAgent\` (estándar de
+Windows para datos de aplicación por usuario), con migración
+automática y no destructiva de cualquier archivo real que pudiera
+existir en las ubicaciones antiguas. Sobrevive a recompilaciones,
+mover el `.exe`, o cambios futuros de estructura de `dist\` -- este
+tipo de bug no puede volver a producirse por esta vía. Detalle
+completo y ruta real nueva en `SESSION_VARIABLES.md`.
+
+**Pendiente real de este bloque, sin resolver todavía:** identificar
+la variable de entorno que hace que la clave de servicio siga
+autenticando pese a que `dist\agent_data\` estaba vacía -- no
+bloquea nada mientras siga funcionando, pero hay que documentarlo.
+
+**Siguiente paso inmediato (fuera del alcance de esta sesión de
+Claude, acción de Miguel Ángel en su PC):** `git pull`, recompilar
+según el procedimiento estándar de `SESSION_VARIABLES.md`, reiniciar
+la Tarea Programada, y confirmar en caliente que
+`watched_folders.json` aparece por fin en la nueva ubicación
+(`%LOCALAPPDATA%\EnterpriseBot\H28MigrationAgent\`) tras seleccionar
+una carpeta vigilada.
+
 **Pendiente, hoja de ruta de la siguiente sesión de H30 (sin cambios
 en el resto, ver más arriba):**
-1. Bug del agente H28 (`get_agent_root_dir`) -- sigue punto 1,
-   prioritario, sin resolver. Retomar cuando haya acceso al PC.
-2. Decidir con Miguel Ángel el enfoque para escribir la variante de
+1. Decidir con Miguel Ángel el enfoque para escribir la variante de
    `sample_type_patterns.py` por `parent_path` para los tipos
    confirmados como "mismo caso que EPIS" (`EPIS`, `CONTRATO`,
    `PAGO_CORRIENTE`, `AUTORIZACION_USO_MAQUINARIA`,
@@ -2047,10 +2082,15 @@ en el resto, ver más arriba):**
    curadas a mano por tipo, dado el caos real de nomenclatura
    confirmado en esta sesión, en vez de derivarlas automáticamente del
    código/label.
-3. `IEDMT` y `TABLA_DE_CARGA` quedan sin muestra real posible por
+2. `IEDMT` y `TABLA_DE_CARGA` quedan sin muestra real posible por
    ahora -- no hay carpeta ni archivo real localizado. No construir
    sampler para estos dos hasta que exista contenido real.
-4. Resto de la hoja de ruta arrastrada de S51/S53 sin tocar en esta
+3. Confirmar en caliente (Miguel Ángel) que el fix del agente H28
+   funciona tras recompilar y reiniciar la Tarea Programada -- ver
+   bloque 2 de COMPLETADAS EN S54 más arriba.
+4. Identificar la variable de entorno real de la clave de servicio
+   del agente H28 (pendiente de ese mismo bloque).
+5. Resto de la hoja de ruta arrastrada de S51/S53 sin tocar en esta
    sesión (ver más arriba: `CONTENT_MARKERS` desde las muestras ya
    descargadas, `FICHA_TECNICA` vs `ITV`, renombrado retroactivo,
    backfill de fecha, duplicados de seguro/OCA).

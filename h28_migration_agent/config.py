@@ -3,8 +3,12 @@
 ---
 Constantes de configuracion del agente de migracion H28."""
 
+import logging
 import os
+import shutil
 import sys
+
+logger = logging.getLogger(__name__)
 
 # Cubo unico de GCS. Confirmado por Miguel Angel en S031; la
 # cuarentena dejo de ser un cubo aparte en S036.
@@ -292,22 +296,105 @@ LOG_FILE_NAME = "h28_migration_agent.log"
 
 def get_agent_root_dir():
     """Return the directory the agent (script or .exe) runs from.
+    Only meaningful for things that SHOULD stay tied to the running
+    binary (currently just the log file, via LOG_FILE_NAME in
+    main.py) -- never use this for persistent state, see
+    get_agent_data_dir() below.
     ---
     Devuelve el directorio desde el que corre el agente (script o
-    .exe).
+    .exe). Solo tiene sentido para lo que SI debe depender del
+    binario en ejecucion (hoy, solo el archivo de log, via
+    LOG_FILE_NAME en main.py) -- nunca usar esto para estado
+    persistente, ver get_agent_data_dir() mas abajo.
     """
     return os.path.dirname(os.path.abspath(sys.argv[0]))
 
 
-def get_agent_data_dir():
-    """Return the local agent_data folder path, creating it if
-    needed.
+def _legacy_agent_data_candidates():
+    """Yield legacy agent_data folder locations that existed before
+    the S54 fix, for one-time best-effort migration into the new
+    fixed location. Never assumes which one (if any) has real data.
     ---
-    Devuelve la ruta de la carpeta local agent_data, creandola si
-    hace falta.
+    Genera las ubicaciones heredadas de agent_data anteriores al fix
+    de S54, para una migracion automatica de mejor esfuerzo hacia la
+    nueva ubicacion fija. Nunca asume cual (si alguna) tiene datos
+    reales.
     """
-    data_dir = os.path.join(get_agent_root_dir(), AGENT_DATA_FOLDER_NAME)
+    exe_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
+    # Junto al ejecutable actual (dist\ para el .exe empaquetado).
+    yield os.path.join(exe_dir, AGENT_DATA_FOLDER_NAME)
+    # Un nivel por encima (la raiz real del checkout, si el .exe
+    # vive dentro de dist\).
+    yield os.path.join(exe_dir, os.pardir, AGENT_DATA_FOLDER_NAME)
+
+
+def _migrate_legacy_agent_data(new_dir):
+    """Best-effort, non-destructive copy of any file found in a
+    legacy agent_data location into the new fixed location. Never
+    overwrites an existing file in new_dir, never deletes anything
+    from the legacy location. Safe to call on every startup --
+    becomes a no-op once migrated.
+    ---
+    Copia de mejor esfuerzo, no destructiva, de cualquier archivo
+    encontrado en una ubicacion heredada de agent_data hacia la
+    nueva ubicacion fija. Nunca sobrescribe un archivo ya existente
+    en new_dir, nunca borra nada de la ubicacion heredada. Seguro de
+    llamar en cada arranque -- se vuelve un no-op en cuanto ya se
+    migro.
+    """
+    for legacy_dir in _legacy_agent_data_candidates():
+        legacy_dir = os.path.abspath(legacy_dir)
+        if legacy_dir == os.path.abspath(new_dir):
+            continue
+        if not os.path.isdir(legacy_dir):
+            continue
+        for name in os.listdir(legacy_dir):
+            src = os.path.join(legacy_dir, name)
+            dst = os.path.join(new_dir, name)
+            if os.path.isfile(src) and not os.path.exists(dst):
+                shutil.copy2(src, dst)
+                logger.info(
+                    '# Migracion S54: %s -> %s', src, dst,
+                )
+
+
+def get_agent_data_dir():
+    """Return the persistent agent_data folder, creating it if
+    needed. Lives under the current Windows user's LOCALAPPDATA,
+    completely decoupled from wherever the executable happens to
+    run from (dist\\, the project root, or any future location).
+
+    This is the root-cause fix for the bug documented in
+    SESSION_VARIABLES.md (S51/S53): the previous implementation
+    joined AGENT_DATA_FOLDER_NAME onto get_agent_root_dir(), which
+    resolves differently between dev-mode script execution and the
+    packaged .exe running from PyInstaller's dist\\ output -- so
+    watched_folders.json (and the rest of the persisted state) was
+    never found by the version that actually runs under the
+    Scheduled Task. Anchoring to LOCALAPPDATA removes the coupling
+    entirely: rebuilding, moving the .exe, or renaming folders can
+    never break this again.
+    ---
+    Devuelve la carpeta persistente agent_data, creandola si hace
+    falta. Vive bajo el LOCALAPPDATA del usuario de Windows actual,
+    completamente desacoplada de donde este corriendo el ejecutable
+    (dist\\, la raiz del proyecto, o cualquier ubicacion futura).
+
+    Este es el fix de raiz del bug documentado en
+    SESSION_VARIABLES.md (S51/S53): la implementacion anterior unia
+    AGENT_DATA_FOLDER_NAME a get_agent_root_dir(), que resuelve
+    distinto entre ejecucion en modo script (desarrollo) y el .exe
+    empaquetado corriendo desde la salida dist\\ de PyInstaller --
+    asi que watched_folders.json (y el resto del estado persistido)
+    nunca lo encontraba la version que de verdad corre bajo la
+    Tarea Programada. Anclarlo a LOCALAPPDATA elimina el
+    acoplamiento del todo: recompilar, mover el .exe, o renombrar
+    carpetas ya no puede volver a romper esto.
+    """
+    base = os.environ.get('LOCALAPPDATA') or os.path.expanduser('~')
+    data_dir = os.path.join(base, 'EnterpriseBot', 'H28MigrationAgent')
     os.makedirs(data_dir, exist_ok=True)
+    _migrate_legacy_agent_data(data_dir)
     return data_dir
 
 
