@@ -110,12 +110,20 @@ FOLDER_TYPE_RULES = [
 
 def folder_based_type(entry, domain):
     """
-    BAJA_PERSONAL / PARTE_BAJA_MEDICA / INVESTIGACION_ACCIDENTE se
-    resuelven por carpeta real, nunca por la palabra "BAJA" sola
-    (S47) -- se comprueba ANTES que la heurística de nombre.
+    BAJA_PERSONAL / PARTE_BAJA_MEDICA / INVESTIGACION_ACCIDENTE (dominio
+    PERSONAL) y CERT_ACCESORIO_ELEVACION (dominio MACHINE, S55) se
+    resuelven por carpeta real, nunca por palabra sola -- se comprueba
+    ANTES que la heuristica de nombre.
+
+    Corregido S55: esta funcion devolvia None sin comprobar nada para
+    cualquier dominio distinto de PERSONAL -- correcto mientras todas
+    las reglas de FOLDER_TYPE_RULES eran de personal, pero un bug real
+    en cuanto se anadieron las 3 reglas de ESLINGAS (dominio MACHINE):
+    nunca llegaban a evaluarse. Las rutas de MACHINE y PERSONAL nunca
+    colisionan (viven bajo raices distintas, DOC. MAQUINAS/DOC.
+    PERSONAL), asi que comprobar todas las reglas sin filtrar por
+    dominio es seguro.
     """
-    if domain != "PERSONAL":
-        return None
     path_upper = _strip_accents(entry.parent_path).upper()
     for needle, code in FOLDER_TYPE_RULES:
         if needle.upper() in path_upper:
