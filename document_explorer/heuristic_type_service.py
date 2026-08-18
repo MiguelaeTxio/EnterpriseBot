@@ -43,23 +43,23 @@ DOSSIER_PAIRS = frozenset({
 # la primera regla cuyo par este presente en las coincidencias del
 # archivo decide.
 SPECIFIC_WINS = [
-    ("PROFORMA", "DOC_VENTA"),
-    ("CONTRATO_COMPRAVENTA", "DOC_VENTA"),
+    ("PROFORMA", "FACTURA_VENTA"),
+    ("CONTRATO_COMPRAVENTA", "FACTURA_VENTA"),
     ("ITV", "FICHA_TECNICA"),
-    ("PERMISO_CIRCULACION", "DOC_VENTA"),
+    ("PERMISO_CIRCULACION", "FACTURA_VENTA"),
     ("PERMISO_CIRCULACION", "FICHA_TECNICA"),
     ("RECIBO_LEASING", "LEASING"),
     ("ALTA_MEDICA", "ALTA"),
     ("ALTA", "SEG_SOCIAL"),
     ("CURSO", "TACOGRAFO"),
-    # Añadida S49, confirmada por Miguel Angel: una factura entre dos
-    # terceros (ninguno es la empresa) sigue siendo, para todos los
-    # efectos, una factura de compra ligada al vehiculo/maquina -- no
-    # tiene sentido un tipo aparte solo porque la empresa no sea parte
-    # directa. FACTURA_TERCEROS queda para casos donde de verdad no
-    # aplique FACTURA_COMPRA, nunca cuando ambas coinciden.
-    ("FACTURA_COMPRA", "FACTURA_TERCEROS"),
+    # Retirada S56 (migracion 0036): FACTURA_TERCEROS se fusiono en
+    # FACTURA_COMPRA -- ya no hay dos codigos que puedan colisionar
+    # aqui, la regla queda obsoleta y se retira en vez de dejarla
+    # muerta (nunca podria hacer match, FACTURA_TERCEROS ya no se
+    # asigna a nada).
 ]
+# DOC_VENTA renombrado a FACTURA_VENTA en S56 (migracion 0036) --
+# mismo objeto de catalogo, ver docstring de la migracion.
 # Cualquier tipo especifico gana siempre sobre SOLICITUD_ADMINISTRATIVA.
 GENERIC_LOSER = "SOLICITUD_ADMINISTRATIVA"
 

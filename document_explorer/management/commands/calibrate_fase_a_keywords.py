@@ -143,21 +143,26 @@ CANDIDATES_SAFE = {
         "CUADRO_AMORTIZACION": ["CUADRO AMORTIZACION"],
         "DECLARACION_HOMOLOGACION": ["HOMOLOGACION"],
         "DNI_COMPRADOR": ["DNI COMPRADOR"],
-        "DOC_VENTA": ["VENTA"],
+        # Renombrado S56 (migracion 0036): DOC_VENTA -> FACTURA_VENTA,
+        # mismo objeto de catalogo, Miguel Angel confirmo que siempre
+        # fue conceptualmente una factura de venta, nunca otra cosa.
+        "FACTURA_VENTA": ["VENTA"],
         "FACTURA_COMPRA": [
             "FACTURA COMPRA",
             # Añadido S50 (segunda ronda): "INVOICE" ingles, caso real
             # de proveedor extranjero (JLG) -- 6 coincidencias (ver
             # EnterpriseBot_049_GET.txt).
             "INVOICE",
+            # Añadido S56: FACTURA_TERCEROS se fusiona en FACTURA_COMPRA
+            # (migracion 0036) -- decision de Miguel Angel de que el
+            # unico criterio real de distincion entre tipos de factura
+            # es quien emite (Grúas Álvarez/empresa del grupo = factura
+            # de venta propia, cualquier otro = factura de compra), no
+            # si el destinatario es la empresa o un socio. La keyword
+            # suelta "FACTURA" (antes de FACTURA_TERCEROS) se hereda
+            # aqui tal cual.
+            "FACTURA",
         ],
-        # Añadido S49 (hoja de ruta S48, punto 1): FACTURA_TERCEROS (S48)
-        # tampoco tenia candidato. "FACTURA" suelta (54 coincidencias
-        # segun la auditoria de B-38) se solapara con FACTURA_COMPRA
-        # ("FACTURA COMPRA") y con RECIBO_LEASING ("FACTURA LEASING") --
-        # solape esperado y deliberado, a resolver en calibracion/revision
-        # antes de aplicar con --apply, nunca a ciegas.
-        "FACTURA_TERCEROS": ["FACTURA"],
         "FICHA_TECNICA": ["FICHA TECNICA"],
         # tarjeta de combustible, caso real "Z92 gastos tarjeta
         # gasoil SOLRED.pdf". "SOLRED" es marca real de tarjeta de
