@@ -105,6 +105,47 @@ FOLDER_TYPE_RULES = [
     ("ESLINGAS CABLE ACERO", "CERT_ACCESORIO_ELEVACION"),
     ("ESLINGAS HUELVA", "CERT_ACCESORIO_ELEVACION"),
     ("ESLINGAS MINIGRUA", "CERT_ACCESORIO_ELEVACION"),
+    # Añadidas S56: calibracion de solo lectura sobre TODO lo ya
+    # clasificado (22.231 documentos vivos), cruzando cada segmento de
+    # carpeta contra el catalogo real -- candidatas con min. 8
+    # documentos y pureza >=97%, filtradas para descartar nombres de
+    # persona (no generalizan) y carpetas ya cubiertas por una regla
+    # existente (para no proponer reglas redundantes). Cada una
+    # verificada contra el documento real antes de confirmarse (ver
+    # anexo H30, registro de sesion S56) -- "CURSO 2022" se descarto
+    # de esta lista (17 documentos reales resultaron ser listas de
+    # examenes de mas de 5 años, sin valor de archivo segun Miguel
+    # Angel, enviados a papelera en la misma sesion en vez de
+    # convertirse en regla).
+    ("ENTREGA INFORMACION", "ENTREGA_INFORMACION"),
+    ("RECONOCIMIENTOS MEDICOS", "RECONOCIMIENTO_MEDICO"),
+    ("CAPACITACION", "CAP"),
+    ("CERT MANTENIMIENTO", "CERT_MANTENIMIENTO"),
+    ("CERT. MANTENIMIENTO", "CERT_MANTENIMIENTO"),
+    ("CERTIF. MANTENIMIENTOS", "CERT_MANTENIMIENTO"),
+    # Confirmada con documento real (Z-04 CERTIFICADO MODELO
+    # MANTENIMIENTO MAQUINARIA.docx) -- nomenclatura interna sin
+    # explicacion clara ("como Z-13"), pero contenido verificado.
+    ("COMO Z-13", "CERT_MANTENIMIENTO"),
+    ("AUTOMOMOS", "CSS"),  # errata real de "AUTONOMOS", consistente
+    ("NOMINAS", "NOMINA"),
+    ("IMPUESTO SOBRE VEHICULOS DE TRACCION MECANICA", "IVTM"),
+    ("PARTE DE VACACIONES", "VACACIONES"),
+    ("SEGURO 2015 (TR)", "SEGURO"),
+    # Confirmada con documento real (2013 02 05 BAJA RAE GRUAS.pdf,
+    # formulario oficial "SE SOLICITA LA BAJA DE LA GRUA MOVIL... EN
+    # EL REGISTRO DE GRUAS MOVILES", RAE4-MA-29/...).
+    ("SOLICITUD BAJA INDUSTRIA", "RAE"),
+    # Confirmada con documento real (Resolucion sobre Reconocimiento
+    # de Alta, Regimen General, Seguridad Social) pese a la fecha en
+    # el nombre de carpeta -- contenido inequivoco.
+    ("PARTES ALTA OPERARIOS 27-12-17", "ALTA"),
+    # Confirmada con documento real (FORMULARIO SOLICITUD CERTIFICADO
+    # NORMA UNE 58161 FORMACION GRUA HIDRAULICA ARTICULADA).
+    ("CARNE CAMION AUTOCARGANTE", "FORMACION"),
+    # Confirmada con documento real (Idc -- Informe de Datos para la
+    # Cotizacion, Tesoreria General de la Seguridad Social).
+    ("SEPT 2014", "IDC"),
 ]
 
 
