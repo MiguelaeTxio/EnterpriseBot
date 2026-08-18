@@ -72,11 +72,10 @@ def main():
     gcs_client = storage.Client.from_service_account_json(
         base.get_service_account_key_path()
     )
-    bucket = gcs_client.bucket(base.BUCKET)
 
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT e.id, e.name, e.parent_path, e.blob_name "
+            "SELECT e.id, e.name, e.parent_path, e.blob_name, e.bucket "
             "FROM document_explorer_documentindexentry e "
             "WHERE e.entry_kind = 'FILE' AND e.deleted_at IS NULL "
             "AND e.purged_at IS NULL "
@@ -89,8 +88,15 @@ def main():
 
     stats = {"ok": 0, "sin_texto": 0, "error": 0}
     with open(args.output, "w", encoding="utf-8") as out:
-        for entry_id, name, parent_path, blob_name in rows:
+        for entry_id, name, parent_path, blob_name, bucket_name in rows:
             try:
+                # Bug real S55: se asumia siempre base.BUCKET
+                # (cgs_grupo_alvarez) -- los albaranes viven en un
+                # cubo distinto (enterprisebot-alvarez-delivery-notes,
+                # ver spare_parts/gcs_service.py DELIVERY_NOTES_BUCKET).
+                # El campo bucket de cada fila ya dice la respuesta
+                # real, sin que haga falta adivinar.
+                bucket = gcs_client.bucket(bucket_name)
                 data = bucket.blob(blob_name).download_as_bytes()
                 text = base.extract_text(name, data)
             except Exception as error:
