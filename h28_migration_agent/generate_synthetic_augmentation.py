@@ -302,6 +302,34 @@ def _tpl_recibo_senal_compra(rng):
     )
 
 
+def _tpl_pedido_compra(rng):
+    variantes = [
+        "PEDIDO DE COMPRA NUMERO {n} FECHA {f} PROVEEDOR {emp} DIRECCION DE ENVIO "
+        "EN {ciudad} LINEAS DE PEDIDO DESCRIPCION CANTIDAD PRECIO UNITARIO IMPORTE "
+        "CONDICIONES DE PAGO TRANSFERENCIA A 30 DIAS FECHA DE ENTREGA PREVISTA {f2} "
+        "FIRMA DEL RESPONSABLE DE COMPRAS",
+        "ORDEN DE COMPRA NUMERO {n} EMITIDA A {emp} REFERENCIA INTERNA {p} "
+        "ARTICULOS SOLICITADOS CANTIDAD PRECIO UNITARIO TOTAL SUBTOTAL IVA IMPORTE "
+        "TOTAL CONDICIONES DE ENVIO EN {ciudad} PLAZO DE ENTREGA {f2}",
+        "SOLICITUD DE PEDIDO A PROVEEDOR {emp} NUMERO DE PEDIDO {n} FECHA {f} "
+        "MATERIAL O SERVICIO SOLICITADO CANTIDAD PRECIO ACORDADO CONDICIONES DE "
+        "PAGO FORMA DE ENTREGA EN {ciudad} AUTORIZADO POR EL RESPONSABLE DE "
+        "COMPRAS",
+        "PEDIDO FIRMADO NUMERO {n} PROVEEDOR {emp} FECHA DE EMISION {f} DETALLE DE "
+        "ARTICULOS CANTIDAD PRECIO UNITARIO IMPORTE TOTAL FORMA DE PAGO "
+        "TRANSFERENCIA BANCARIA ENTREGA PREVISTA EN {ciudad} EL {f2}",
+        "CONFIRMACION DE PEDIDO DE COMPRA REFERENCIA {n} CLIENTE GRUAS ADOLFO "
+        "ALVAREZ PROVEEDOR {emp} LINEAS DE ARTICULO CANTIDAD PRECIO UNITARIO "
+        "IMPORTE CONDICIONES DE ENTREGA PLAZO ESTIMADO {f2} OBSERVACIONES "
+        "ESPECIALES NINGUNA",
+    ]
+    return rng.choice(variantes).format(
+        n=rng.randint(1000, 99999), f=_fake_fecha(rng), f2=_fake_fecha(rng),
+        emp=rng.choice(EMPRESAS), ciudad=rng.choice(PROVINCIAS_CIUDADES),
+        p=rng.randint(1000, 99999),
+    )
+
+
 GENERATORS = {
     "ALBARAN_ENTREGA": _tpl_albaran,
     "CERT_ACCESORIO_ELEVACION": _tpl_cert_accesorio_elevacion,
@@ -311,6 +339,16 @@ GENERATORS = {
     "GASTOS_TARJETA_COMBUSTIBLE": _tpl_gastos_tarjeta_combustible,
     "JUSTIFICANTE_TRANSFERENCIA": _tpl_justificante_transferencia,
     "RECIBO_SENAL_COMPRA": _tpl_recibo_senal_compra,
+    # Añadido S56: PEDIDO_COMPRA -- hueco real confirmado en S56 (11
+    # documentos reales, 0 backlog vivo que la heuristica de nombre
+    # pudiera resolver hoy tras descartar duplicados por hash ya
+    # enviados a papelera). Mismo caso que los 8 tipos originales de
+    # S55: nunca tuvo aumentacion, no colisiona con ningun tipo vecino
+    # confirmado (a diferencia de FACTURA_TERCEROS, que S55 dejo fuera
+    # a proposito por su solape real con FACTURA_COMPRA/RECIBO_LEASING
+    # -- ese criterio sigue vigente, pendiente de confirmacion expresa
+    # de Miguel Angel si se quiere anular para este tipo).
+    "PEDIDO_COMPRA": _tpl_pedido_compra,
     # S55, segunda pasada: CAMBIO_TITULARIDAD, PRESTAMO, OCA, PROFORMA,
     # SEG_SOCIAL, CUADRO_AMORTIZACION, CONTRATO_COMPRAVENTA, DOC_VENTA
     # quedan FUERA deliberadamente -- esos 8 ya tenian documentos reales
