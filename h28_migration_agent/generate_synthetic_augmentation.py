@@ -112,6 +112,12 @@ def _tpl_albaran(rng):
         "ALBARAN DE OBRA {n} OBRA DE DESTINO EN {ciudad} MATERIAL ENTREGADO REFERENCIA "
         "DE PEDIDO {p} FECHA {f} FIRMA DEL ENCARGADO DE OBRA QUE RECIBE CONFORME AL "
         "PEDIDO REALIZADO A {emp}",
+        "ALBARAN DE DEVOLUCION {n} MOTIVO DE LA DEVOLUCION MATERIAL DEVUELTO ESTADO "
+        "DEL MATERIAL ALBARAN ORIGINAL DE REFERENCIA {p} AUTORIZACION DE DEVOLUCION "
+        "ALMACEN RECEPTOR EN {ciudad} FECHA {f} EMPRESA {emp}",
+        "ALBARAN DE SUMINISTRO {n} CODIGO DE CLIENTE {emp2} LISTA DE MATERIALES "
+        "SUMINISTRADOS CANTIDAD SERVIDA UNIDAD DE MEDIDA ESTADO DEL MATERIAL A LA "
+        "ENTREGA FIRMA Y SELLO DEL RECEPTOR FECHA {f}",
     ]
     return rng.choice(variantes).format(
         n=rng.randint(1000, 999999), f=_fake_fecha(rng),
@@ -133,6 +139,12 @@ def _tpl_cert_accesorio_elevacion(rng):
         "FICHA TECNICA Y CERTIFICADO ESLINGA TEXTIL NUMERO DE LOTE {n} LONGITUD "
         "DECLARADA ANGULO DE TRABAJO MAXIMO CARGA MAXIMA DE UTILIZACION {imp} KG "
         "PROXIMA REVISION RECOMENDADA {f} FABRICANTE {emp}",
+        "ETIQUETA IDENTIFICATIVA GRILLETE NUMERO {n} MARCADO CE MATERIAL DE "
+        "FABRICACION CARGA MAXIMA DE UTILIZACION SEGUN FORMA DE TRABAJO {imp} KG "
+        "TRAZABILIDAD MEDIANTE NUMERO DE CERTIFICADO FECHA {f} FABRICANTE {emp}",
+        "CERTIFICADO DE ORIGEN CADENA DE ELEVACION GRADO 80 NUMERO {n} CLASIFICACION "
+        "POR TAMAÑO DE CADENA CAPACIDAD DE CARGA {imp} KG RIESGO DE FALLO SI SE "
+        "EXCEDE LA CAPACIDAD CERTIFICADA FECHA {f}",
     ]
     return rng.choice(variantes).format(
         n=rng.randint(1000, 99999), imp=int(rng.uniform(500, 20000)),
@@ -151,6 +163,12 @@ def _tpl_cert_revision(rng):
         "ACTA DE REVISION Y MANTENIMIENTO PREVENTIVO NUMERO {n} PUNTO DE INSPECCION "
         "ESTADO ENCONTRADO ACCION CORRECTORA APLICADA FECHA {f} FIRMA DEL TECNICO "
         "SELLO DE {emp}",
+        "CERT.REVISION EQUIPO NUMERO {n} FECHA {f} REVISION REGLAMENTARIA SEGUN "
+        "PERIODICIDAD DEL FABRICANTE OBSERVACIONES DEL TECNICO NUMERO DE CERTIFICADO "
+        "EMITIDO POR {emp}",
+        "INFORME DE REVISION TECNICA PERIODICA NUMERO {n} FECHA {f} DEFECTOS "
+        "ENCONTRADOS NINGUNO REPARACIONES RECOMENDADAS NINGUNA VALIDEZ HASTA LA "
+        "PROXIMA REVISION TECNICO {emp}",
     ]
     return rng.choice(variantes).format(
         n=rng.randint(1000, 99999), f=_fake_fecha(rng), emp=rng.choice(EMPRESAS),
@@ -168,6 +186,12 @@ def _tpl_dni_comprador(rng):
         "NIE NUMERO DE IDENTIFICACION DE EXTRANJERO TARJETA DE IDENTIDAD {ap1} {ap2} "
         "{nom} FECHA DE CADUCIDAD {f2} DOCUMENTO APORTADO COMO IDENTIFICACION DEL "
         "COMPRADOR EN LA OPERACION",
+        "FOTOCOPIA DOCUMENTO IDENTIFICATIVO PARA EXPEDIENTE DE COMPRAVENTA {nom} "
+        "{ap1} {ap2} COMPROBACION DE IDENTIDAD PREVIA A LA FIRMA DEL CONTRATO COPIA "
+        "SIMPLE ADJUNTA AL EXPEDIENTE INTERNO NUMERO {n}",
+        "DOCUMENTO DE IDENTIDAD DIGITALIZADO PARA ARCHIVO ESCANEO DEL DOCUMENTO DE "
+        "{nom} {ap1} REFERENCIA INTERNA DEL EXPEDIENTE DE VENTA {n} CUSTODIA "
+        "CONFORME A LA NORMATIVA DE PROTECCION DE DATOS",
     ]
     return rng.choice(variantes).format(
         dni=_fake_dni(rng), ap1=rng.choice(APELLIDOS), ap2=rng.choice(APELLIDOS),
@@ -189,6 +213,12 @@ def _tpl_excedencia(rng):
         "SOLICITUD DE REINGRESO TRAS EXCEDENCIA VOLUNTARIA DE {nom} {ap1} FECHA "
         "PREVISTA DE INCORPORACION {f2} DERECHO PREFERENTE A VACANTE DE IGUAL O "
         "SIMILAR CATEGORIA DEPARTAMENTO DE RECURSOS HUMANOS",
+        "SOLICITUD DE EXCEDENCIA POR CUIDADO DE HIJOS {nom} {ap1} {ap2} FECHA DE "
+        "NACIMIENTO O ADOPCION {f} DURACION MAXIMA TRES AÑOS SITUACION ASIMILADA AL "
+        "ALTA A EFECTOS DE SEGURIDAD SOCIAL REINCORPORACION PREVISTA {f2}",
+        "COMUNICACION DE EXCEDENCIA FORZOSA POR CARGO PUBLICO {nom} {ap1} "
+        "DESIGNACION QUE IMPOSIBILITA LA ASISTENCIA AL TRABAJO CONSERVACION DEL "
+        "PUESTO Y COMPUTO DE ANTIGÜEDAD FECHA {f}",
     ]
     return rng.choice(variantes).format(
         nom=rng.choice(NOMBRES), ap1=rng.choice(APELLIDOS),
@@ -207,6 +237,12 @@ def _tpl_gastos_tarjeta_combustible(rng):
         "AUTORIZACION DE CARGO TARJETA DE FLOTA VEHICULO {mat} LIMITE DE GASTO "
         "MENSUAL {imp} EUROS PRODUCTO AUTORIZADO GASOIL PROFESIONAL FECHA {f} "
         "DEPARTAMENTO DE ADMINISTRACION DE FLOTA",
+        "TICKET DE REPOSTAJE ESTACION DE SERVICIO MATRICULA {mat} LITROS IMPORTE "
+        "TOTAL {imp} EUROS METODO DE PAGO TARJETA DE FLOTA FECHA {f} CODIGO DE "
+        "AUTORIZACION DE LA OPERACION",
+        "FACTURA DE CONSUMO TARJETA DE CARBURANTE FLOTA PERIODO DE FACTURACION "
+        "VEHICULOS INCLUIDOS CONSUMO TOTAL IMPORTE {imp} EUROS EMISORA {emp} "
+        "VEHICULO {mat} FECHA {f}",
     ]
     return rng.choice(variantes).format(
         n=rng.randint(1000, 999999), mat=_fake_matricula(rng),
@@ -226,6 +262,12 @@ def _tpl_justificante_transferencia(rng):
         "JUSTIFICANTE DE PAGO A PROVEEDOR MEDIANTE TRANSFERENCIA PROVEEDOR "
         "BENEFICIARIO {emp} NUMERO DE FACTURA ASOCIADA {n} IMPORTE ABONADO {imp} "
         "EUROS FECHA {f} REFERENCIA BANCARIA",
+        "RESGUARDO DE ORDEN DE PAGO BANCARIO REFERENCIA UNICA SEPA {n} FECHA VALOR "
+        "{f} TITULAR DE LA CUENTA DE CARGO {emp} ENTIDAD DESTINATARIA {emp2} "
+        "IMPORTE {imp} EUROS",
+        "NOTIFICACION DE TRANSFERENCIA REALIZADA CODIGO DE OPERACION {n} FECHA {f} "
+        "CUENTA DE ORIGEN {iban1} CUENTA DE DESTINO {iban2} IMPORTE {imp} EUROS "
+        "ESTADO COMPLETADA",
     ]
     return rng.choice(variantes).format(
         f=_fake_fecha(rng), iban1=_fake_iban(rng), iban2=_fake_iban(rng),
@@ -245,130 +287,18 @@ def _tpl_recibo_senal_compra(rng):
         "RECIBO PROVISIONAL DE ENTREGA A CUENTA NUMERO {n} FECHA {f} FORMA DE PAGO "
         "TRANSFERENCIA SALDO PENDIENTE HASTA LA ENTREGA TOTAL DEL VEHICULO "
         "MATRICULA {mat} COMPRADOR {nom} {ap1}",
+        "RECIBI CANTIDAD EN CONCEPTO DE RESERVA {imp} EUROS VEHICULO OBJETO DE LA "
+        "RESERVA MATRICULA {mat} PLAZO DE RESERVA DESCUENTO DEL PRECIO FINAL "
+        "COMPRADOR {nom} {ap1} {ap2} FECHA {f}",
+        "JUSTIFICANTE DE PAGA Y SEÑAL VEHICULO USADO VENDEDOR {emp} COMPRADOR {nom} "
+        "{ap1} IMPORTE Y FORMA DE ENTREGA {imp} EUROS MATRICULA {mat} FECHA ACORDADA "
+        "PARA LA FIRMA {f}",
     ]
     return rng.choice(variantes).format(
         imp=_fake_importe(rng, 300, 8000), mat=_fake_matricula(rng),
         f=_fake_fecha(rng), nom=rng.choice(NOMBRES), ap1=rng.choice(APELLIDOS),
         ap2=rng.choice(APELLIDOS), n=rng.randint(1000, 99999),
-    )
-
-
-def _tpl_cambio_titularidad(rng):
-    variantes = [
-        "SOLICITUD DE CAMBIO DE TITULARIDAD DIRECCION GENERAL DE TRAFICO VEHICULO "
-        "MATRICULA {mat} TITULAR ANTERIOR {emp} NUEVO TITULAR {emp2} JEFATURA DE "
-        "TRAFICO DE {ciudad} FECHA {f}",
-        "JUSTIFICANTE DE SOLICITUD DE CAMBIO DE TITULARIDAD MATRICULA {mat} "
-        "AUTORIZACION PROVISIONAL DE CIRCULACION SOLICITANTE {nom} {ap1} EN "
-        "REPRESENTACION DE {emp} FECHA {f}",
-    ]
-    return rng.choice(variantes).format(
-        mat=_fake_matricula(rng), emp=rng.choice(EMPRESAS),
-        emp2=rng.choice(EMPRESAS), ciudad=rng.choice(PROVINCIAS_CIUDADES),
-        f=_fake_fecha(rng), nom=rng.choice(NOMBRES), ap1=rng.choice(APELLIDOS),
-    )
-
-
-def _tpl_prestamo(rng):
-    variantes = [
-        "CONTRATO DE PRESTAMO NUMERO {n} ENTIDAD FINANCIERA CAPITAL PRESTADO {imp} "
-        "EUROS TAE PLAZO EN MESES CUOTA MENSUAL GARANTIA BIEN FINANCIADO FECHA DE "
-        "FORMALIZACION {f}",
-        "CUADRO DE CONDICIONES PRESTAMO NUMERO {n} IMPORTE {imp} EUROS INTERES "
-        "NOMINAL PLAZO TOTAL COMISION DE APERTURA FECHA {f} PRESTATARIO {emp}",
-    ]
-    return rng.choice(variantes).format(
-        n=rng.randint(100000, 9999999), imp=_fake_importe(rng, 2000, 90000),
-        f=_fake_fecha(rng), emp=rng.choice(EMPRESAS),
-    )
-
-
-def _tpl_oca(rng):
-    variantes = [
-        "INFORME DE INSPECCION ORGANISMO DE CONTROL AUTORIZADO OCA NUMERO {n} "
-        "INSTALACION INSPECCIONADA RESULTADO FAVORABLE SIN DEFICIENCIAS FECHA {f} "
-        "ENTIDAD ACREDITADA POR ENAC",
-        "ACTA DE INSPECCION REGLAMENTARIA OCA EQUIPO A PRESION NUMERO {n} "
-        "PERIODICIDAD ESTABLECIDA POR REGLAMENTO RESULTADO APTO PROXIMA INSPECCION "
-        "{f2} TECNICO INSPECTOR FECHA {f}",
-    ]
-    return rng.choice(variantes).format(
-        n=rng.randint(1000, 99999), f=_fake_fecha(rng), f2=_fake_fecha(rng),
-    )
-
-
-def _tpl_proforma(rng):
-    variantes = [
-        "FACTURA PROFORMA NUMERO {n} FECHA {f} EMISOR {emp} CLIENTE {emp2} "
-        "DESCRIPCION DEL PRODUCTO O SERVICIO IMPORTE {imp} EUROS DOCUMENTO SIN "
-        "VALOR FISCAL VALIDEZ DE LA OFERTA TREINTA DIAS",
-        "PROFORMA NUMERO {n} PRESUPUESTO PREVIO A LA VENTA CONDICIONES DE PAGO "
-        "PLAZO DE ENTREGA IMPORTE TOTAL {imp} EUROS EMPRESA {emp}",
-    ]
-    return rng.choice(variantes).format(
-        n=rng.randint(1000, 99999), f=_fake_fecha(rng), emp=rng.choice(EMPRESAS),
-        emp2=rng.choice(EMPRESAS), imp=_fake_importe(rng, 100, 60000),
-    )
-
-
-def _tpl_seg_social(rng):
-    variantes = [
-        "MODELO TA1 TESORERIA GENERAL DE LA SEGURIDAD SOCIAL SOLICITUD DE "
-        "AFILIACION NUMERO DE SEGURIDAD SOCIAL TITULAR {nom} {ap1} {ap2} FECHA {f} "
-        "MINISTERIO DE TRABAJO",
-        "COMUNICACION DE VARIACION DE DATOS SEGURIDAD SOCIAL TRABAJADOR {nom} {ap1} "
-        "NUMERO DE AFILIACION FICHERO GENERAL DE AFILIACION FECHA {f}",
-    ]
-    return rng.choice(variantes).format(
-        nom=rng.choice(NOMBRES), ap1=rng.choice(APELLIDOS),
-        ap2=rng.choice(APELLIDOS), f=_fake_fecha(rng),
-    )
-
-
-def _tpl_cuadro_amortizacion(rng):
-    variantes = [
-        "CUADRO DE AMORTIZACION PRESTAMO NUMERO {n} CUOTA NUMERO FECHA DE "
-        "VENCIMIENTO CAPITAL PENDIENTE INTERESES AMORTIZACION DEL CAPITAL CUOTA "
-        "TOTAL TAE PLAZO TOTAL EN MESES CAPITAL INICIAL {imp} EUROS",
-        "TABLA DE AMORTIZACION LEASING NUMERO {n} SISTEMA DE AMORTIZACION FRANCES "
-        "SALDO PENDIENTE POR CUOTA IMPORTE TOTAL FINANCIADO {imp} EUROS FECHA {f}",
-    ]
-    return rng.choice(variantes).format(
-        n=rng.randint(1000, 99999), imp=_fake_importe(rng, 2000, 90000),
-        f=_fake_fecha(rng),
-    )
-
-
-def _tpl_contrato_compraventa(rng):
-    variantes = [
-        "CONTRATO DE COMPRAVENTA DE VEHICULO REUNIDOS DE UNA PARTE {emp} COMO "
-        "VENDEDOR DE OTRA PARTE {nom} {ap1} COMO COMPRADOR PRECIO DE LA "
-        "COMPRAVENTA {imp} EUROS MATRICULA {mat} FECHA {f}",
-        "CONTRATO DE COMPRAVENTA DE MAQUINARIA ENTRE {emp} Y {emp2} PRECIO {imp} "
-        "EUROS ENTREGA DEL BIEN VICIOS OCULTOS ARTICULO 1484 CODIGO CIVIL "
-        "TRANSFERENCIA DE TITULARIDAD FECHA {f}",
-    ]
-    return rng.choice(variantes).format(
-        emp=rng.choice(EMPRESAS), nom=rng.choice(NOMBRES),
-        ap1=rng.choice(APELLIDOS), imp=_fake_importe(rng, 500, 90000),
-        mat=_fake_matricula(rng), f=_fake_fecha(rng),
-        emp2=rng.choice(EMPRESAS),
-    )
-
-
-def _tpl_doc_venta(rng):
-    variantes = [
-        "DOCUMENTO DE VENTA VEHICULO USADO VENDEDOR {emp} COMPRADOR {nom} {ap1} "
-        "PRECIO {imp} EUROS MATRICULA {mat} ESTADO DEL VEHICULO CONOCIDO POR EL "
-        "COMPRADOR VENTA A CUERPO CIERTO FECHA {f}",
-        "DOCUMENTO PRIVADO DE VENTA MAQUINARIA ENTRE {emp} Y {nom} {ap1} {ap2} "
-        "IMPORTE {imp} EUROS FECHA {f} FIRMA DE AMBAS PARTES",
-    ]
-    return rng.choice(variantes).format(
-        emp=rng.choice(EMPRESAS), nom=rng.choice(NOMBRES),
-        ap1=rng.choice(APELLIDOS), ap2=rng.choice(APELLIDOS),
-        imp=_fake_importe(rng, 500, 60000), mat=_fake_matricula(rng),
-        f=_fake_fecha(rng),
+        emp=rng.choice(EMPRESAS),
     )
 
 
@@ -381,20 +311,18 @@ GENERATORS = {
     "GASTOS_TARJETA_COMBUSTIBLE": _tpl_gastos_tarjeta_combustible,
     "JUSTIFICANTE_TRANSFERENCIA": _tpl_justificante_transferencia,
     "RECIBO_SENAL_COMPRA": _tpl_recibo_senal_compra,
-    "CAMBIO_TITULARIDAD": _tpl_cambio_titularidad,
-    "PRESTAMO": _tpl_prestamo,
-    "OCA": _tpl_oca,
-    "PROFORMA": _tpl_proforma,
-    "SEG_SOCIAL": _tpl_seg_social,
-    "CUADRO_AMORTIZACION": _tpl_cuadro_amortizacion,
-    "CONTRATO_COMPRAVENTA": _tpl_contrato_compraventa,
-    "DOC_VENTA": _tpl_doc_venta,
+    # S55, segunda pasada: CAMBIO_TITULARIDAD, PRESTAMO, OCA, PROFORMA,
+    # SEG_SOCIAL, CUADRO_AMORTIZACION, CONTRATO_COMPRAVENTA, DOC_VENTA
+    # quedan FUERA deliberadamente -- esos 8 ya tenian documentos reales
+    # y su debilidad era de confusion/pocos datos de prueba, no ausencia
+    # total; inundarlos de sintetico solo tapaba el problema real y
+    # empeoro tipos que ya iban bien (ver anexo H30, incidente real S55).
 }
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--per-type", type=int, default=300)
+    parser.add_argument("--per-type", type=int, default=60)
     parser.add_argument("--output", default="synthetic_augmented.jsonl")
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
