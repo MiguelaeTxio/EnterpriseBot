@@ -1,0 +1,21 @@
+# h28_migration_agent/requirements-ocr-vm.in
+#
+# Entorno de las VMs Linux efimeras de OCR/extraccion (Compute
+# Engine, Ubuntu 24.04) -- usado por local_ocr_classify.py,
+# extract_training_dataset.py y report_ocr_gaps.py. Distinto del
+# entorno del agente H28 de Windows (main.py, empaquetado con
+# PyInstaller), que tiene su propio par requirements.in/.txt.
+#
+# Origen: S54, tras un incidente real -- las VMs h28-ocr-batch-1/2/3
+# se montaron con pip install sueltos, sin requirements.in/.txt, pese
+# a que com-environment-management ya prohibe esto explicitamente
+# incluso para entornos efimeros. La siguiente sesion no encontro
+# ningun registro del bootstrap exacto y tuvo que reconstruirlo desde
+# las dependencias del propio codigo. Retroactivo -- version fijada a
+# la que realmente se instalo y funciono en produccion en S54.
+pymysql
+sshtunnel
+pytesseract
+PyMuPDF
+python-docx
+google-cloud-storage

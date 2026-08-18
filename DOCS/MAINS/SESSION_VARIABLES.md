@@ -325,6 +325,62 @@ no aceptan flags ni variables de entorno).
   quedar solo en la terminal de una sesión previa sin guardarlas en
   archivo ni copiarlas fuera de la VM antes de cerrarla.
 
+### BOOTSTRAP DE UNA VM NUEVA DESDE CERO (registrado S54, tras un
+### incidente real -- ver más abajo)
+
+**Incidente que originó esto:** en S54 se crearon 3 VMs nuevas
+(`h28-ocr-batch-1/2/3`, mismas specs que `h28-ocr-batch`) y se
+montaron con `pip install pymysql sshtunnel pytesseract PyMuPDF
+python-docx google-cloud-storage` sueltos, sin `requirements.in`/
+`.txt` -- pese a que `com-environment-management` sección 1.1 ya
+prohíbe explícitamente esto **incluso para entornos efímeros**. La
+sesión siguiente no encontró ningún registro del bootstrap exacto (la
+VM que lo usó ya estaba borrada) y tuvo que reconstruirlo adivinando
+desde las dependencias del propio código. Corregido retroactivamente:
+ahora hay dos pares `requirements.in`/`.txt` reales, versionados en
+`h28_migration_agent/`, y el bootstrap los usa en vez de una lista
+escrita a mano.
+
+**Para las VMs Linux de OCR/extracción** (`local_ocr_classify.py`,
+`extract_training_dataset.py`, `report_ocr_gaps.py`) -- candado:
+`h28_migration_agent/requirements-ocr-vm.txt`:
+
+```bash
+sudo apt-get update -y && sudo apt-get install -y tesseract-ocr tesseract-ocr-spa python3-venv git tmux
+git clone https://x-access-token:TOKEN@github.com/MiguelaeTxio/EnterpriseBot.git
+cd EnterpriseBot/h28_migration_agent
+python3 -m venv ocr_venv
+source ocr_venv/bin/activate
+pip install pip-tools
+pip-sync requirements-ocr-vm.txt
+mkdir -p agent_data
+```
+
+Después, la clave de servicio (ver más abajo cómo copiarla) antes de
+lanzar cualquier script.
+
+**Para `train_document_classifier.py`** (corre en el PC de Miguel
+Ángel, sin túnel ni GCS) -- candado:
+`h28_migration_agent/requirements-classifier.txt`:
+
+```bash
+python -m venv classifier_venv
+classifier_venv\Scripts\activate
+pip install pip-tools
+pip-sync requirements-classifier.txt
+```
+
+⛔ **Regla permanente de aquí en adelante (directriz ampliada de
+`com-environment-management`):** ningún entorno Python de este
+proyecto, sea VM efímera, PC o servidor, se monta con `pip install`
+sueltos sin `requirements.in`/`.txt` versionado. Si aparece una
+dependencia nueva que no está en ninguno de los candados existentes,
+se añade al `.in` correspondiente, se recompila y se comitea **antes**
+de usarla en cualquier máquina -- nunca al revés.
+
+
+  archivo ni copiarlas fuera de la VM antes de cerrarla.
+
   **Ruta real final, confirmada con `ls -la` (S54, 2026-08-17):**
   `/home/MiguelAeTxio/PROJECTS/EnterpriseBot/h28_migration_agent/sample{0,1,2}_output.txt`
   (202078/159413/154330 bytes, 14 ago 16:24 -- las 185 muestras

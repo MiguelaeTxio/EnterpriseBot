@@ -1,0 +1,13 @@
+# h28_migration_agent/requirements-classifier.in
+#
+# Entorno para train_document_classifier.py -- corre en el PC de
+# Miguel Angel (o cualquier maquina normal), sin tunel SSH ni GCS,
+# solo lee los .jsonl locales. Distinto de requirements-ocr-vm.in
+# (ese sí necesita conexion real al servidor y a Cloud Storage).
+#
+# Origen: S54, mismo incidente que requirements-ocr-vm.in -- creado
+# retroactivamente para que este entorno tambien quede reproducible
+# desde git, nunca de un pip install suelto sin registrar.
+scikit-learn
+joblib
+numpy
