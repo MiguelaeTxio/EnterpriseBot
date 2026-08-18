@@ -2418,30 +2418,176 @@ mañana, desde el PC de la oficina (`PEE=PC`), para recuperar los
 
 ---
 
+## COMPLETADAS EN S55 (2026-08-18 -- sesión larga, varios bloques
+## reales, un incidente de límites que casi para la sesión)
+
+**Bloque 1 -- shards 3 y 6 recuperados, 9 `datasetN.jsonl` completos.**
+Relanzados desde una VM nueva (`h28-training-vm`, `e2-standard-8`,
+`europe-west1-b`, dos ventanas PowerShell en paralelo por estar en la
+oficina) tras el fix real de `conn.ping()` ya aplicado en S54.
+`dataset3.jsonl` (571 líneas, `ok=571 error=0`) y `dataset6.jsonl`
+(572 líneas, `ok=572 error=0`) terminaron limpios, sin ningún corte.
+Los 7 restantes (0,1,2,4,5,7,8) recuperados de
+`/home/MiguelAeTxio/SWAP/` por sftp -- **incidente real de sesión**:
+el primer intento se hizo sin PVR ni formato de la skill
+`com-file-request`, corregido tras aviso explícito de Miguel Ángel.
+VM verificada y borrada tras copiar los resultados.
+
+**Bloque 2 -- primer entrenamiento real, 5.214 filas, acierto 89.5%.**
+`train_document_classifier.py` (TF-IDF + regresión logística,
+`class_weight='balanced'`) sobre los 9 `dataset*.jsonl` +
+`web_templates.jsonl` (11 plantillas de S54). 8 tipos quedaron
+excluidos por `--min-examples 5`: `ALBARAN_ENTREGA`,
+`CERT_ACCESORIO_ELEVACION`, `CERT_REVISION`, `DNI_COMPRADOR`,
+`EXCEDENCIA`, `GASTOS_TARJETA_COMBUSTIBLE`,
+`JUSTIFICANTE_TRANSFERENCIA`, `RECIBO_SENAL_COMPRA`.
+
+**Bloque 3 -- incidente real de plantillas sin fundamentar, corregido
+dos veces.** Primera ampliación de `web_templates.jsonl` para esos 8
+tipos escrita de memoria, sin búsqueda web -- Miguel Ángel lo señaló
+explícitamente como el mismo error que la directriz de verificación de
+APIs existe para evitar. Corregido con una segunda ronda fundamentada
+en búsqueda real (NTP 861 INSST y normas EN 818-4/EN 1677 para
+eslingas, artículo 46 del Estatuto de los Trabajadores para
+excedencias, Código Civil art. 1454 para arras). `DNI_COMPRADOR`
+incluido tras confirmación explícita de Miguel Ángel de que no aplica
+el mismo criterio de exclusión de `ALTA_MEDICA` (plantilla sintética
+de estructura de campos, sin datos de ninguna persona real).
+
+**Bloque 4 -- comprobación real contra la base de datos: 12.013
+documentos sin clasificar, 705 en cuarentena.** Verificado con
+Comando S antes de seguir inventando plantillas. Un `dry-run` de
+`run_fase_a_sweep` reveló que la heurística real solo resolvía **2**
+de 11.758 candidatos -- confirmó que la Fase A ya había hecho su
+trabajo en sesiones anteriores sobre lo fácil, y que la cola dura
+necesita otra vía.
+
+**Bloque 5 -- generador de aumentación sintética, con un incidente
+real de sobreajuste corregido.** Primera versión
+(`generate_synthetic_augmentation.py`, 16 tipos, 300 ejemplos/tipo)
+mejoró de mentira los 8 tipos débiles (0.98-1.00, examinándose con sus
+propias plantillas) y **empeoró de verdad** tipos que ya iban bien con
+datos reales (`FACTURA_TERCEROS` 0.84→0.53, `ITV` 0.88→0.80,
+`RECIBO_LEASING` 1.00→0.67...). Corregido: reducido a 60/tipo, más
+variantes de estructura por tipo, y limitado a los 8 tipos que de
+verdad no tenían ningún dato real -- los otros 8 (que ya tenían
+documentos reales y cuya debilidad era de confusión, no de ausencia)
+se quitaron del generador.
+
+**Bloque 6 -- datos reales de la propia empresa, dos vías.** (a)
+`extract_local_real_samples.py`: OCR local sobre carpetas reales del
+OneDrive de GRUALDI SL (sin GCS ni BD) -- 8 documentos reales
+extraídos para `CERT_ACCESORIO_ELEVACION` (6) y `CERT_REVISION` (2);
+`GASTOS_TARJETA_COMBUSTIBLE`/`JUSTIFICANTE_TRANSFERENCIA` confirmadas
+vacías de verdad tras comprobar atributos `ReparsePoint` de OneDrive.
+Dos bugs reales de entorno corregidos en el camino: `TESSDATA_PREFIX`
+sin apuntar a la carpeta `tessdata/` del proyecto, y una edición local
+sin commitear que Miguel Ángel señaló como el mismo antipatrón de
+"galimatías de sincronización" ya documentado en S54. (b)
+`extract_real_albaranes.py`: 21 albaranes reales de la carpeta
+`2026-07`, con dos bugs reales encontrados y corregidos -- el script
+asumía el bucket `cgs_grupo_alvarez` cuando los albaranes viven en
+`enterprisebot-alvarez-delivery-notes` (`DELIVERY_NOTES_BUCKET`,
+confirmado leyendo `models.py`/`gcs_service.py` antes de tocar nada
+más), y la cuenta de servicio del agente H28 no tenía permiso de
+lectura sobre ese cubo (concedido `roles/storage.objectViewer`,
+solo lectura, solo ese cubo). Resultado: 10 de 21 con texto real vía
+OCR (11 en blanco por ser fotos con cámara, normal).
+
+**Incidente de límites, sin rodeos:** Miguel Ángel pidió explícitamente
+descargar y usar DNIs reales de terceros encontrados en internet
+(nombre, foto, número). Rechazado con firmeza, incluso ante
+insistencia repetida -- no por una skill, sino como límite propio del
+modelo. La sesión continuó con normalidad después.
+
+**Bloque 7 -- entrenamiento final, 5.731 filas, acierto 89.8%.**
+Con los 9 `dataset*.jsonl` + `web_templates.jsonl` (65 filas) +
+`synthetic_augmented.jsonl` corregido (480 filas) + los 18 documentos
+reales nuevos (`real_local_samples.jsonl` + `real_albaranes.jsonl`).
+Los 8 tipos objetivo con soporte real cuando lo había
+(`ALBARAN_ENTREGA` 1.00, `CERT_ACCESORIO_ELEVACION` 0.97,
+`CERT_REVISION` 1.00, `DNI_COMPRADOR` 0.96, `GASTOS_TARJETA_COMBUSTIBLE`
+0.96, `JUSTIFICANTE_TRANSFERENCIA` 1.00, `RECIBO_SENAL_COMPRA` 1.00);
+los tipos dañados en el bloque 5 recuperados casi del todo (`ITV`
+0.85, `IPO_ITC` 0.77, `RECIBO_LEASING` 1.00). Honestamente sin
+resolver: `EXCEDENCIA` sigue siendo 100% sintético (nunca se encontró
+ni un documento real, ni en BD ni en OneDrive), y `FACTURA_TERCEROS`
+(0.61)/`PEDIDO_COMPRA` (0.57) siguen por debajo de los valores
+originales.
+
+**Bloque 8 -- Fase A real completada para dos tipos, con dos bugs
+encontrados y corregidos en el propio código de producción.**
+`ALBARAN_ENTREGA` y `CERT_ACCESORIO_ELEVACION` nunca tuvieron ninguna
+regla en `calibrate_fase_a_keywords.py` (confirmado, 0 coincidencias).
+Añadida keyword `ALBARAN` para el primero, y regla de carpeta
+(`ESLINGAS CABLE ACERO`/`HUELVA`/`MINIGRUA`) para el segundo, para
+evitar colisión real detectada con `CERT_REVISION`
+(`"Cert.revision eslinga cable acero...pdf"`). Segundo bug real
+encontrado con el propio dry-run: `folder_based_type()` bloqueaba
+CUALQUIER regla de carpeta para dominio distinto de `PERSONAL`, así
+que las 3 reglas nuevas (dominio `MACHINE`) nunca se llegaban a
+evaluar -- corregido quitando el filtro de dominio. `run_fase_a_sweep
+--apply` ejecutado de verdad: **80 documentos reales** resueltos (49
+asignados del todo, 31 con tipo guardado y dominio pendiente),
+verificado que el resumen de `--apply` coincidió exactamente con el
+`dry-run` previo antes de darlo por bueno.
+
+**Decisiones técnicas explícitas de Miguel Ángel esta sesión:**
+- Generar aumentación sintética con datos ficticios (nombres, DNIs,
+  matrículas, fechas de una lista genérica) es aceptable; scraping o
+  reproducción de datos reales de terceros no lo es, bajo ninguna
+  circunstancia.
+- `DNI_COMPRADOR` puede llevar plantilla sintética de estructura de
+  campos (sin datos de nadie real) -- no aplica el mismo criterio de
+  exclusión que `ALTA_MEDICA`.
+- Los 8 tipos que ya tenían documentos reales (`CAMBIO_TITULARIDAD`,
+  `PRESTAMO`, `OCA`, `PROFORMA`, `SEG_SOCIAL`, `CUADRO_AMORTIZACION`,
+  `CONTRATO_COMPRAVENTA`, `DOC_VENTA`) no deben recibir aumentación
+  sintética masiva -- su debilidad es de confusión entre tipos
+  parecidos, no de ausencia de datos, y el sintético solo tapa el
+  síntoma.
+
+---
+
 ## HOJA DE RUTA PARA LA SIGUIENTE SESIÓN (sustituye por completo a
 ## cualquier "pendiente" suelto de bloques anteriores)
 
-1. **Relanzar shards 3 y 6** de `extract_training_dataset.py`
-   (`--shard-count 9 --shard-index 3` y `6`), desde el PC de la
-   oficina (`PEE=PC`), con el bug de `conn.ping()` ya corregido.
-   **Cierre:** `dataset3.jsonl` y `dataset6.jsonl` con más de 500
-   líneas cada uno (coherente con los otros 7 shards ya completos),
-   sin ningún "AVISO: conn.ping fallo" repetido en el log que indique
-   otro corte.
-2. **Juntar los 9 `datasetN.jsonl` + `data_imports/web_templates.jsonl`
-   y ejecutar `train_document_classifier.py`.** **Cierre:** informe
-   `classification_report` generado y revisado con Miguel Ángel,
-   tipo por tipo, no solo el porcentaje global.
-3. **Con el informe real delante, decidir con Miguel Ángel** si el
-   modelo está listo para aplicarse de prueba sobre una muestra
-   pequeña de documentos desconocidos, o si hace falta más trabajo
-   antes (más ejemplos para los tipos débiles, ajustar
-   `--min-examples`, revisar features). **Cierre:** decisión explícita
-   tomada y anotada, no una suposición.
-4. Resto de la hoja de ruta de H30 arrastrada de sesiones anteriores,
-   sin tocar en esta sesión (ver bloques 1-5 más arriba): EPIS
-   (extracción a `EpiDelivery`, fundida con Fase B/Gemini como último
-   recurso), variable de entorno de la clave de servicio del agente
-   H28, resto de `CONTENT_MARKERS` por leer si el modelo no cubre
-   bien esos tipos, `FICHA_TECNICA` vs `ITV`, renombrado retroactivo,
-   backfill de fecha, duplicados de seguro/OCA.
+1. **Completar la Fase A para el resto del catálogo.** El dry-run de
+   S55 confirmó 11.671 documentos reales todavía sin resolver tras
+   las dos reglas nuevas -- la mayoría son la cola dura (fotos, OCR
+   necesario), pero es muy probable que sigan existiendo huecos reales
+   como los de `ALBARAN_ENTREGA`/`CERT_ACCESORIO_ELEVACION` en otros
+   tipos del catálogo de 77. **Cierre:** revisar tipo por tipo (o al
+   menos los que el clasificador TF-IDF sigue marcando débiles) si
+   tienen alguna regla real en `calibrate_fase_a_keywords.py`, y
+   relanzar `run_fase_a_sweep --apply` tras cada ronda de correcciones,
+   verificando el resumen contra un `dry-run` previo como se hizo en
+   S55.
+2. **Revisar los 31 `tipo_ok_dominio_pendiente` del `--apply` de S55**
+   -- tipo ya guardado, pero sin máquina/persona resuelta por carpeta.
+   **Cierre:** cada uno revisado a mano o con una regla de resolución
+   de dominio nueva, sin quedar huérfano indefinidamente.
+3. **Buscar más carpetas reales en el OneDrive de GRUALDI SL** para
+   `FACTURA_TERCEROS`, `PEDIDO_COMPRA`, `PRESTAMO`, `OCA`,
+   `SEG_SOCIAL`, `CAMBIO_TITULARIDAD` -- mismo método que funcionó en
+   S55 (buscar por palabra clave sobre el listado de carpetas, filtrar
+   por atributos `ReparsePoint` antes de asumir que están vacías).
+   **Cierre:** re-entrenar y comparar `classification_report` contra
+   el de S55 (89.8% global) tipo por tipo.
+4. **Resolver la contaminación cruzada real ya detectada entre
+   `DOC_VENTA` (0.69) y `CONTRATO_COMPRAVENTA` (0.73)** -- arrastrada
+   desde S54 (frases casi idénticas en documentos reales, no solo en
+   `CONTENT_MARKERS`). **Cierre:** revisar ejemplos reales mal
+   clasificados por el modelo entre ambos tipos y decidir con Miguel
+   Ángel si son distinguibles por texto o si hace falta otro criterio
+   (carpeta, por ejemplo).
+5. **`EXCEDENCIA` sigue siendo 100% sintético** -- nunca se encontró
+   ni un documento real, ni en la base de datos ni en el OneDrive.
+   Pendiente de decidir con Miguel Ángel si se acepta ese techo (tipo
+   genuinamente raro en la actividad de la empresa) o si hay otra
+   fuente por revisar.
+6. Resto de la hoja de ruta de H30 arrastrada de sesiones anteriores,
+   sin tocar en S55: EPIS (extracción a `EpiDelivery`, fundida con
+   Fase B/Gemini como último recurso), variable de entorno de la clave
+   de servicio del agente H28, `FICHA_TECNICA` vs `ITV`, renombrado
+   retroactivo, backfill de fecha, duplicados de seguro/OCA.
