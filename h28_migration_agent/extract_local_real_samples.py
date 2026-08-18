@@ -35,9 +35,13 @@ import fitz  # PyMuPDF
 import pytesseract
 from PIL import Image
 
-# Si Tesseract no esta en el PATH del sistema, descomenta y ajusta
-# (mismo criterio que local_ocr_classify.py en este PC):
-# pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+# Este script es inherentemente solo-Windows (BASE ya asume rutas
+# C:\Users\Usuario\OneDrive..., nunca corre en una VM Linux como
+# local_ocr_classify.py) -- se fija la ruta de Tesseract directamente,
+# sin la comedia de la linea comentada que sí hace falta en scripts
+# multiplataforma. Confirmada instalacion real en esta ruta desde S50
+# (ver SESSION_VARIABLES.md).
+pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 
 EXTENSIONES_VALIDAS = {".pdf", ".jpg", ".jpeg", ".png", ".docx"}
 
