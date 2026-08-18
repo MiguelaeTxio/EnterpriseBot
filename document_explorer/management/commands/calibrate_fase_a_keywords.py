@@ -38,6 +38,14 @@ BUCKET = "cgs_grupo_alvarez"
 # domain -> {code: [candidatos]}
 CANDIDATES_SAFE = {
     "MACHINE": {
+        # Añadido S55: nunca tuvo ninguna regla real (confirmado 0
+        # coincidencias en el dry-run de run_fase_a_sweep, S55) pese a
+        # que los archivos reales llevan la palabra literal en el
+        # nombre ("2.026-A-7.466_albaran-camara...", "AC A26
+        # 0200005698_...ALBARAN_AC-A26-0200005698..."). Verificado
+        # contra 21 nombres reales de la carpeta 2026-07 antes de
+        # añadirlo.
+        "ALBARAN_ENTREGA": ["ALBARAN"],
         "BAJA_DEFINITIVA": [
             "BAJA DEFINITIVA",
             # Añadido S51: DOC_BAJA_DEFINITIVA se fusiona en

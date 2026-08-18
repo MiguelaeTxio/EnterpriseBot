@@ -92,6 +92,19 @@ FOLDER_TYPE_RULES = [
     ("PERSONAL/BAJAS", "BAJA_PERSONAL"),
     ("DECLARACION AL CORRIENTE", "PAGO_CORRIENTE"),
     ("AUTORIZACION USO DE MAQUINARIA", "AUTORIZACION_USO_MAQUINARIA"),
+    # Añadido S55: CERT_ACCESORIO_ELEVACION resuelto por carpeta, no
+    # por palabra -- caso real detectado "Cert.revision eslinga cable
+    # acero...pdf" dentro de estas carpetas, que colisionaria con la
+    # heuristica de CERT_REVISION si se resolviera por palabra clave
+    # ("REVISION" aparece en el propio nombre). Solo las 3 carpetas
+    # reales sin ambiguedad confirmada (S55, dry-run de
+    # run_fase_a_sweep) -- "CERTIFICADOS"/"CERTIFICADOS DE EQUIPOS DE
+    # TRABAJO" quedan fuera deliberadamente, son mas genericas y
+    # podrian mezclar otros tipos de certificado, pendiente de revision
+    # aparte.
+    ("ESLINGAS CABLE ACERO", "CERT_ACCESORIO_ELEVACION"),
+    ("ESLINGAS HUELVA", "CERT_ACCESORIO_ELEVACION"),
+    ("ESLINGAS MINIGRUA", "CERT_ACCESORIO_ELEVACION"),
 ]
 
 
