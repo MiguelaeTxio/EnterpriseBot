@@ -105,10 +105,21 @@ def _resolve_person_by_name(entry, person_name_index):
     `person_name_index`. Cualquier otro caso (cero o mas de una
     coincidencia) devuelve None -- pendiente de revision manual,
     nunca una decision con ambiguedad.
+
+    Corregido S56: bug real de origen -- la coma real de carpetas con
+    formato "APELLIDOS, NOMBRE" (p.ej. "ALVAREZ DIAZ, ADELAIDA") nunca
+    se quitaba antes de comparar contra `person_name_index`, cuyas
+    claves se construyen siempre sin coma (espacio como unico
+    separador) -- ninguna carpeta con coma podia matchear jamas, sea
+    cual sea el orden. Confirmado contra datos reales en S56: 269
+    documentos RECONOCIMIENTO_MEDICO con dominio pendiente, la mayoria
+    con la coma real en el nombre de carpeta.
     """
     last_segment = entry.parent_path.rstrip("/").split("/")[-1]
+    last_segment = last_segment.replace(",", " ")
     candidate = _TRAILING_DATE_RE.sub("", last_segment)
     candidate = _strip_accents(candidate).upper().strip()
+    candidate = re.sub(r"\s+", " ", candidate)
     pks = person_name_index.get(candidate)
     if pks and len(pks) == 1:
         return PersonIdentity.objects.get(pk=next(iter(pks)))
