@@ -29,11 +29,24 @@ USO:
 import argparse
 import io
 import json
+import os
 from pathlib import Path
 
 import fitz  # PyMuPDF
 import pytesseract
 from PIL import Image
+
+# Mismo mecanismo ya resuelto en local_ocr_classify.py (S50): escribir
+# en C:\Program Files\Tesseract-OCR\tessdata\ requiere administrador,
+# asi que el paquete de idioma "spa" vive en la carpeta tessdata\ ya
+# existente junto a los scripts de este directorio (compartida con
+# local_ocr_classify.py, no se duplica). Este script es solo-Windows,
+# sin necesidad del condicional os.name == "nt" que sí hace falta en
+# local_ocr_classify.py (que tambien corre en las VMs Linux de OCR).
+_TESSDATA_DIR = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "tessdata",
+)
+os.environ["TESSDATA_PREFIX"] = _TESSDATA_DIR
 
 # Este script es inherentemente solo-Windows (BASE ya asume rutas
 # C:\Users\Usuario\OneDrive..., nunca corre en una VM Linux como
