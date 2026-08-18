@@ -75,7 +75,15 @@ CANDIDATES_SAFE = {
             # de H30 (ver EnterpriseBot_028_GET.txt).
             "CERT NO TARJ TTES",
         ],
-        "CERT_REVISION": ["CERTIFICADO REVISION", "CERTIF REVISION"],
+        # Corregido S55: el candidato original solo cubria "CERTIFICADO
+        # REVISION"/"CERTIF REVISION" -- verificado contra el dry-run
+        # real de run_fase_a_sweep (S55) que la abreviatura real "CERT
+        # REVISION"/"Cert.revision" (sin "IFICADO") aparece en archivos
+        # reales sin clasificar y nunca matcheaba. Añadida como
+        # candidato propio.
+        "CERT_REVISION": [
+            "CERTIFICADO REVISION", "CERTIF REVISION", "CERT REVISION",
+        ],
         # Añadido S50 (alta S50, ver migracion 0029): certificado de
         # exencion de permiso, caso real "Z-78 Cert.exencion perm
         # 15-02-2021.pdf". "CERT EXENCION" cubre via separador
