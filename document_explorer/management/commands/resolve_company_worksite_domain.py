@@ -21,14 +21,16 @@ contra datos reales de S58 (EnterpriseBot_004/005_GET.txt):
    (1.660 de 1.762 archivos reales de PAGO_CORRIENTE en S58).
 2. Sin carpeta de obra (102 archivos reales en S58, confirmados por
    Miguel Angel para dejar en su sitio, solo asignarles empresa): la
-   empresa va marcada en el propio nombre de archivo -- "(GR)" o
-   "GRUAS ALVAREZ" para Grúas Álvarez, "(TR)" o "TRANSGRUAL" para
-   Transgrual, mismo marcador que ya usan decenas de archivos reales
-   del propio árbol. Si aparecen los dos marcadores a la vez, o
-   ninguno, la entrada se deja `SIN RESOLVER` -- nunca se adivina,
-   mismo criterio de unicidad estricta que el resto de resolutores de
-   H30 (`_resolve_person_by_name`, `_resolve_person_by_sliding_
-   window`).
+   empresa va marcada en el propio nombre de archivo -- "(GR)", "GR"
+   suelto (palabra completa) o "GRUAS" para Grúas Álvarez; "(TR)",
+   "TR" suelto o "TRANSGRUAL" para Transgrual -- mismo marcador que ya
+   usan decenas de archivos reales del propio árbol (ampliado tras el
+   primer dry-run real de S58: "GR ENERO"/"TR ENERO" sin paréntesis y
+   "GRUAS" sin "ALVAREZ" detrás quedaban fuera con el patrón
+   original). Si aparecen los dos marcadores a la vez, o ninguno, la
+   entrada se deja `SIN RESOLVER` -- nunca se adivina, mismo criterio
+   de unicidad estricta que el resto de resolutores de H30
+   (`_resolve_person_by_name`, `_resolve_person_by_sliding_window`).
 
 DRY-RUN POR DEFECTO. Con `--apply` escribe de verdad
 (`CompanyWorksite.objects.get_or_create()` +
@@ -49,8 +51,8 @@ from document_explorer.models import (
 
 OBRAS_PREFIX = "DOC. PERSONAL/DECLARACION AL CORRIENTE/DECLARACION POR OBRAS/"
 
-_GR_MARKER_RE = re.compile(r"\(GR\)|GRUAS ALVAREZ")
-_TR_MARKER_RE = re.compile(r"\(TR\)|TRANSGRUAL")
+_GR_MARKER_RE = re.compile(r"\(GR\)|\bGR\b|\bGRUAS\b")
+_TR_MARKER_RE = re.compile(r"\(TR\)|\bTR\b|TRANSGRUAL")
 
 DEFAULT_TYPES = ["PAGO_CORRIENTE"]
 
