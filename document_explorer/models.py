@@ -562,10 +562,15 @@ class DocumentTypeCatalog(models.Model):
     DOMAIN_MACHINE = "MACHINE"
     DOMAIN_PERSONAL = "PERSONAL"
     DOMAIN_BOTH = "BOTH"
+    DOMAIN_COMPANY = "COMPANY"
     DOMAIN_CHOICES = [
         (DOMAIN_MACHINE, "Maquinaria"),
         (DOMAIN_PERSONAL, "Personal"),
         (DOMAIN_BOTH, "Ambos"),
+        (
+            DOMAIN_COMPANY,
+            "Empresa y obra (CompanyWorksite, H30 S58)",
+        ),
     ]
 
     FAMILY_CIRCULACION = "CIRCULACION"
@@ -1204,6 +1209,82 @@ class PersonIdentity(models.Model):
             f"{self.dni} -- {self.first_surname} "
             f"{self.second_surname} {self.given_name}"
         )
+
+
+class CompanyWorksite(models.Model):
+    """
+    Tercer tipo de dominio para `DocumentIndexEntry` (H30, S58), junto
+    a `fleet.MachineAsset` y `PersonIdentity`. Nace de PAGO_CORRIENTE
+    (declaraciones de estar al corriente de pago a la Seguridad
+    Social, enviadas a la plataforma/obra) -- Miguel Angel, verbatim
+    (S58): *"estos pagos al corriente van por empresa [...] es muy,
+    muy, muy raro que vengan para un solo trabajador [...] van a ir de
+    varias [personas] [...] esto sera algo habitual tener este tipo de
+    documentacion"* -- de ahi que sea un modelo de dominio nuevo y
+    generico, reutilizable por cualquier tipo documental futuro
+    organizado por empresa+obra, no una tabla exclusiva de
+    PAGO_CORRIENTE.
+
+    `company`/`worksite` se guardan tal cual aparece el segmento real
+    de carpeta (S58, verbatim: *"como vengan organizados, tal y como
+    vengan organizados"") -- nunca normalizados a una lista cerrada de
+    empresas, a diferencia de `PersonIdentity.employer_company` (esa
+    si viene de una columna fija de Excel). `worksite` puede quedar en
+    blanco: el propio arbol real tiene documentos de PAGO_CORRIENTE
+    que viven dentro de una carpeta de empresa pero fuera de cualquier
+    subcarpeta de obra (102 de 1.762 en el recuento real de S58) --
+    Miguel Angel confirmo dejarlos asi, sin forzar una obra que no
+    tienen.
+
+    Un documento se vincula aqui exactamente igual que a
+    `MachineAsset`/`PersonIdentity`: via
+    `DocumentIndexEntry.domain_content_type`/`domain_object_id`
+    (GenericForeignKey generico, sin cambios de esquema). Varios
+    documentos comparten la misma fila `CompanyWorksite` cuando son de
+    la misma empresa+obra -- catalogo de identidad, igual que
+    `PersonIdentity` para una persona o `MachineAsset` para una
+    maquina, nunca una fila por documento.
+    """
+
+    company = models.CharField(
+        max_length=100,
+        verbose_name="Empresa propia",
+        help_text=(
+            "Segmento real de carpeta tal cual aparece hoy (p. ej. "
+            "'GRUAS', 'TRANSGRUAL') -- nunca normalizado a una lista "
+            "cerrada."
+        ),
+    )
+    worksite = models.CharField(
+        max_length=150,
+        blank=True,
+        verbose_name="Obra/cliente",
+        help_text=(
+            "Segmento real de carpeta tal cual aparece hoy (p. ej. "
+            "'OBRALIA', 'DRAGADOS'). En blanco cuando el documento "
+            "real no vive dentro de ninguna subcarpeta de obra."
+        ),
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True, verbose_name="Fecha de alta",
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True, verbose_name="Última actualización",
+    )
+
+    class Meta:
+        verbose_name = "Empresa y obra"
+        verbose_name_plural = "Empresas y obras"
+        ordering = ["company", "worksite"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company", "worksite"],
+                name="unique_company_worksite",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.company} -- {self.worksite}" if self.worksite else self.company
 
 
 class SubjectDocumentReference(models.Model):
