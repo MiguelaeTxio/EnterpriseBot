@@ -2684,84 +2684,191 @@ cero riesgo de repetir el incidente del 9,6%.
 
 ---
 
+### COMPLETADAS EN S57 (2026-08-19 -- cierre del punto 1 completo de
+la hoja de ruta de S56, más resolución parcial del punto 5)
+
+**Bloque 1 -- Marcador `CONTRATO_COMPRAVENTA`.** Aplicado el candidato
+`"CONTRATO DE COMPRAVENTA"` identificado en S56 pero nunca escrito en
+código, sincronizado en los dos archivos reales que mantienen
+`CONTENT_MARKERS` (`run_fase_b1_ocr_classify.py` y
+`local_ocr_classify.py`, éste último la fuente real activa de las VMs
+de OCR). Verificado en producción con datos reales del lote vivo:
+0 casos nuevos de `ambiguo_varios_marcadores` contra ningún otro tipo
+del catálogo. Commit `206d187`.
+
+**Bloque 2 -- Los 11 `NOTIFICACION`/`NOTIF` de `FACTURA_VENTA`.**
+Descargados y leídos los 10 documentos reales localizables (uno,
+"Confirmación notificación de venta...", resultó ser un correo de la
+DGT, no un documento indexado aparte) -- ninguno era una factura de
+venta, confirmando la sospecha de S56. Desglose real: 6 →
+`CAMBIO_TITULARIDAD` (formularios DGT de cambio de titularidad/
+notificación de venta, y una declaración interna de la empresa), 3 →
+tipo nuevo `AUTORIZACION_PROVISIONAL_CIRCULACION` (autorización
+provisional de circulación, distinta del permiso definitivo), 1 →
+tipo nuevo `AVISO_BAJA` (propuesta de baja de oficio RD 2042/94,
+distinta de una baja ya ejecutada). Ambos tipos nuevos confirmados
+verbatim por Miguel Ángel antes de escribir la migración `0037`
+(`document_explorer/migrations/0037_seed_s57_notif_types.py`, patrón
+`RunPython` idéntico a `0029`), desplegada y verificada con
+`showmigrations` + consulta real al catálogo tras el push (commit
+`e6ddc52`).
+
+**Bloque 3 -- Los ~19 `FACTURA_VENTA` solo con "VENTA" en el
+nombre.** Aislado el grupo real (13 tras excluir `FACTURA`/`FRA`/
+`FACT` ya cubierto y el dosier del punto 4), descargado y leído el
+contenido real de cada uno. Desglose confirmado por Miguel Ángel tras
+revisión suya en el propio panel: 6 quedan igual en `FACTURA_VENTA`
+(incluida venta de exportación a Irak sin importe visible en el
+extracto, y dos informes de subasta de Ritchie Bros confirmados como
+facturas de venta reales), 4 → `CAMBIO_TITULARIDAD` (formularios DGT
++ declaración interna), 1 → `CONTRATO_COMPRAVENTA` (estructura
+REUNIDOS/comprador-vendedor, mismo patrón que los 26 de S56), 1 →
+`FACTURA_COMPRA` (Luis Simões, transportista portugués, vendiendo un
+remolque A Grúas Álvarez -- al revés de lo que sugería el nombre de
+archivo), 1 → `ALBARAN_ENTREGA` (albarán de Aerial Platforms con
+Grúas Álvarez como cliente/comprador de un Mercedes ML, no como
+vendedor). `FACTURA_VENTA` pasa de 89 a 46 vivos entre los bloques 2 y
+3, verificado con conteo real tras cada lote.
+
+**Bloque 4 -- Dosier sin dividir (`DOC.VENTA P-12 MA-7366-CT
+27-4-16.pdf`, id 3649).** Descarga y lectura completa de las 3
+páginas reales (Fase B1 solo lee 2 por defecto -- releído con
+`max_pages` real de `ocr_pdf_to_text()` para confirmar que no faltaba
+contenido): página 1 factura real de venta a Mauritania, páginas 2-3
+un único paquete de representación/mandato ante la DGT (documento de
+representación de personas jurídicas + mandato con representación a
+gestor administrativo). Miguel Ángel confirmó dividir. Ejecutado con
+PyMuPDF (`insert_pdf`/`tobytes()`, API verificada por `web_search`
+contra la versión real `1.27.x` antes de escribir el comando): páginas
+2-3 subidas como blob nuevo real vía `upload_bytes()`, reindexadas con
+`index_writer.refresh_folder()` (ya validado en producción, reutilizado
+sin escribir nada a mano), tipo `CERTIFICADO_PODERES` asignado a la
+fila nueva (id 42685), dominio heredado del original. El documento
+original (id 3649, `FACTURA_VENTA`) queda intacto, `blob_name` sin
+tocar (directriz 4.12) -- única excepción real de la sesión a "todas
+las operaciones son virtuales", justificada porque el contenido físico
+sí mezclaba dos documentos distintos en un solo archivo escaneado.
+
+**Bloque 5 -- 146 `RECONOCIMIENTO_MEDICO` sin dominio (resolución
+parcial, pospuesta a mañana el resto).**
+
+- **Corrección de error real cometido en esta misma sesión:** al
+  aplicar el primer lote de resoluciones automáticas se vinculó por
+  error el id 36922 (`RM DELGADO ZURERA, MANUEL...pdf`) a
+  `PersonIdentity` de Jorge Ramírez García, por vivir dentro de su
+  carpeta -- exactamente el caso de documento mal archivado que el
+  propio anexo de S56 ya advertía y que no se comprobó antes de
+  aplicar. Corregido de inmediato (directriz 4.9): vínculo erróneo
+  deshecho, `PersonIdentity` real de Manuel Delgado Zurera localizada
+  por DNI (`80126342T`, ya sembrada bajo `TRABAJADORES INACTIVOS`),
+  vinculada correctamente, y el archivo además MOVIDO de verdad a su
+  ubicación real (`move_service.move_entry()`, operación de índice
+  pura, `blob_name` nunca tocado) por decisión explícita de Miguel
+  Ángel de que dominio y ubicación coincidan en este caso excepcional.
+- **Alta real de Adelaida Álvarez Díaz.** DNI real (`25040739H`)
+  confirmado dentro del propio contenido OCR de sus 2 documentos
+  (`FRANCISCO JAVIER VILLARREAL RIVAS... CERTIFICA... DNI 25040739H`),
+  coincide exactamente con el docx de plantilla histórica que Miguel
+  Ángel adjuntó en sesión. `PersonIdentity` creada directamente con su
+  carpeta real ya existente (`ADMINISTRACION/ALVAREZ DIAZ, ADELAIDA`,
+  no la carpeta de staging `PTE CONTRATACION` que usa el alta
+  automática vía Gemini -- ella es administradora de toda la vida, no
+  una alta nueva en proceso de contratación). Sus 2 documentos
+  vinculados.
+- **Ampliación reutilizable de `_build_person_name_index()`/
+  `_resolve_person_by_name()`** (`run_fase_a_sweep.py`, commit
+  `3fd2c29`): nueva clave de índice "apellido1 apellido2" sin nombre
+  de pila (mucho backlog histórico solo lleva los dos apellidos en la
+  carpeta), y desambiguación por empresa real
+  (`_company_hint_from_path()` contra `PersonIdentity.employer_
+  company`) cuando el nombre solo empata entre dos personas de
+  empresas distintas del grupo. Miguel Ángel confirmó el enfoque y
+  advirtió el riesgo real de hermanos con los mismos dos apellidos
+  (familia Álvarez Díaz, y un segundo par de hermanos no identificado
+  por nombre) -- protegido de raíz por el mismo criterio de unicidad
+  estricta ya existente, sin necesidad de caso especial.
+- **Resolutor de ventana deslizante como función reutilizable**
+  (`_resolve_person_by_sliding_window()`, commit `ec91cb7`) -- hasta
+  ahora el "Bloque 4 de S56" era un script suelto, nunca comiteado.
+  Reconstruido y enganchado como tercera vía en el flujo principal del
+  comando (tras `_resolve_person_by_folder`/`_resolve_person_by_
+  name`), para que sirva también al punto 6 de esta misma hoja de
+  ruta con el resto de `tipo_ok_dominio_pendiente`. Recorre todos los
+  segmentos de `parent_path` MÁS el nombre de archivo (sin extensión),
+  ventana de 2-4 palabras, mismo `person_name_index` compartido, misma
+  exigencia de unicidad total.
+- **Resultado real medido:** de 146 `RECONOCIMIENTO_MEDICO` sin
+  dominio al arrancar el bloque, quedan **77 sin resolver** al cierre
+  (565 con dominio resuelto en total). Motivos reales documentados,
+  no genéricos: ambigüedad real entre hermanos con los mismos dos
+  apellidos (familia Álvarez Díaz y similares, correctamente sin
+  forzar), nombres con grafía distinta a la registrada (typos,
+  segundo nombre de pila ausente en el archivo), y un grupo
+  irreducible sin ningún nombre útil (`TODO.pdf`, `A.pdf`, `E.pdf`,
+  `image001.gif`, `Mensaje_.html`, `DOC008.pdf`, `RRMM 2011-2012(3).
+  xlsx`, `GRUALDI.doc`, `TRANSGRUAL.doc`). Miguel Ángel decidió
+  explícitamente posponer el repaso uno a uno de estos 77 más el
+  grupo irreducible a la próxima sesión, desde la oficina.
+
+**Estado global del índice al cierre (verificado, no de memoria):**
+`FACTURA_VENTA` pasa de 89 a 46 vivos. `RECONOCIMIENTO_MEDICO` con
+dominio resuelto pasa de 496 a 565 (de 146 a 77 sin resolver).
+`CONTENT_MARKERS` (Fase B1) sigue en 37 tipos, ampliado solo con la
+redacción alternativa de `CONTRATO_COMPRAVENTA` -- ningún VM ni batch
+OCR lanzado esta sesión.
+
+---
+
 ## HOJA DE RUTA PARA LA SIGUIENTE SESIÓN (sustituye por completo a
 ## cualquier "pendiente" suelto de bloques anteriores)
 
-1. **Cerrar el marcador de contenido de `CONTRATO_COMPRAVENTA` y
-   `FACTURA_VENTA`.** El candidato `"CONTRATO DE COMPRAVENTA"` para
-   `CONTRATO_COMPRAVENTA` quedó identificado en S56 pero NO se aplicó
-   en código -- aplicarlo primero (bajo riesgo, ya verificado contra 2
-   muestras reales). Para `FACTURA_VENTA`, el marcador sigue sin fijar
-   -- primero limpiar el grupo (puntos 2-4 de abajo), luego bajar 3-4
-   muestras reales del grupo `FACTURA`/`FRA`/`FACT` ya limpio y
-   confirmar que el patrón de cabecera de tabla (`"FECHA ALBARAN
-   DESCRIPCION"` u otro) se repite antes de fijarlo. **Cierre:**
-   marcador añadido a `CONTENT_MARKERS` y verificado con
-   `run_fase_b1_ocr_classify --dry-run` sin generar ambigüedad nueva
-   contra ningún otro tipo.
-2. **Revisar los 11 `NOTIFICACION`/`NOTIF` de `FACTURA_VENTA`.**
-   Sospecha real fundada (1/1 muestreado resultó ser un Permiso
-   Provisional de Circulación de la DGT, no una venta). **Cierre:**
-   los 11 revisados uno a uno con documento real descargado, cada uno
-   reasignado al tipo correcto o confirmado como factura de venta
-   legítima.
-3. **Revisar los ~19 `FACTURA_VENTA` solo con "VENTA" en el nombre,
-   sin más pista.** Sin tocar en S56. **Cierre:** cada uno abierto y
-   clasificado a mano, mismo criterio que los puntos 1-2.
-4. **Decidir qué hacer con el dosier sin dividir detectado** (`DOC.VENTA
-   P-12 MA-7366-CT 27-4-16.pdf`: factura + baja DGT + mandato en un
-   solo PDF). **Cierre:** decisión explícita de Miguel Ángel (dividir
-   vía `DOSSIER_PAIRS` o dejar así) y aplicada si procede.
-5. **146 `RECONOCIMIENTO_MEDICO` sin dominio, con motivos reales
-   distintos (no genérico):**
-   - Al menos 1 identidad real que falta en `PersonIdentity`
-     (Adelaida Álvarez Díaz, confirmada por Miguel Ángel como
-     hermana/trabajadora real) -- necesita alta manual con dato real
-     (DNI) antes de poder vincularse.
-   - Al menos 1 documento mal archivado detectado (`RM DELGADO
-     ZURERA, MANUEL...pdf` viviendo dentro de la carpeta de Ramírez
-     García, Jorge) -- corregir la carpeta/ubicación real antes de
-     vincular.
-   - El resto son mayormente carpetas con solo apellido (sin nombre)
-     o carpetas `TRABAJADORES INACTIVOS`/`EX TRABAJADORES`/`BAJAS` con
-     nombre completo pero sin fila en `PersonIdentity` -- posible
-     backlog de altas de identidad histórica pendiente. **Cierre:**
-     los 146 repasados uno a uno o por lote una vez completado el alta
-     de identidades que falten, verificado contra el mismo conteo de
-     `RECONOCIMIENTO_MEDICO` con `domain_object_id` no nulo (objetivo
-     269/269, o el resto documentado como descartado con motivo).
-6. **Aplicar el mismo resolutor de ventana deslizante (Bloque 4 de
-   S56) al resto de `tipo_ok_dominio_pendiente`.** 5.667 documentos
-   totales con tipo resuelto pero sin dominio -- solo se atacó
-   `RECONOCIMIENTO_MEDICO` (269) esta sesión. Los mayores volúmenes
-   sin tocar: `PAGO_CORRIENTE` (1.762), `INVESTIGACION_ACCIDENTE`
-   (834), `ENTREGA_INFORMACION` (636), `BAJA_PERSONAL` (549),
+Miguel Ángel, instrucción explícita al cierre de S57: empezar la
+próxima sesión directamente por el punto 1 de abajo, sin necesidad de
+preguntar.
+
+1. **Aplicar el resolutor de ventana deslizante (ya reutilizable,
+   `_resolve_person_by_sliding_window()`, commit `ec91cb7`) al resto
+   de `tipo_ok_dominio_pendiente`.** Mayores volúmenes sin tocar:
+   `PAGO_CORRIENTE` (1.762), `INVESTIGACION_ACCIDENTE` (834),
+   `ENTREGA_INFORMACION` (636), `BAJA_PERSONAL` (549),
    `AUTORIZACION_USO_MAQUINARIA` (383), `PARTE_BAJA_MEDICA` (282).
    **Cierre:** por cada tipo atacado, cifra de resolución medida antes
    y después contra consulta real a la base de datos, igual que se
-   hizo con `RECONOCIMIENTO_MEDICO` en S56.
-7. **Completar la Fase A para el resto del catálogo** (arrastrado 1.ª
-   sesión sin avanzar de forma genérica -- S56 sí avanzó con 14 reglas
-   nuevas, pero el barrido sistemático tipo por tipo del catálogo de
-   77 sigue sin completarse). **Cierre:** mismo criterio que S55/S56 --
-   revisar tipo por tipo si tiene regla real, relanzar
-   `run_fase_a_sweep --apply` verificando `dry-run` previo.
-8. **Buscar más carpetas reales en el OneDrive de GRUALDI SL**
-   (arrastrado 1.ª sesión sin avanzar -- no se tocó en S56, la sesión
-   se dedicó a taxonomía/calibración/dominio) para
-   `PEDIDO_COMPRA`/`PRESTAMO`/`SEG_SOCIAL`/`CAMBIO_TITULARIDAD` --
-   `FACTURA_TERCEROS` queda fuera de este punto, ya resuelto de raíz
-   en S56 (fusión con `FACTURA_COMPRA`). **Cierre:** re-entrenar y
-   comparar `classification_report` contra el de S55 (89,8% global)
-   tipo por tipo.
-9. **`EXCEDENCIA` sigue siendo 100% sintético** (arrastrado 1.ª sesión
+   hizo con `RECONOCIMIENTO_MEDICO` en S56/S57.
+2. **Cerrar los 77 `RECONOCIMIENTO_MEDICO` que quedaron sin resolver
+   en S57**, más el grupo irreducible sin nombre útil (`TODO.pdf`,
+   `A.pdf`, `E.pdf`, `image001.gif`, `Mensaje_.html`, `DOC008.pdf`,
+   `RRMM 2011-2012(3).xlsx`, `GRUALDI.doc`, `TRANSGRUAL.doc`).
+   Pospuesto explícitamente por Miguel Ángel a la sesión desde la
+   oficina. Incluye la ambigüedad real de hermanos con los mismos dos
+   apellidos (familia Álvarez Díaz -- Adolfo, Alejandro, Adelaida,
+   Alberto, José Luis, Carlos, Lili -- y un segundo par de hermanos
+   con apellido distinto que Miguel Ángel no identificó por nombre
+   completo en S57, a confirmar con él antes de intentar resolver
+   ese segundo par). **Cierre:** los 77 + el grupo irreducible
+   repasados uno a uno con documento real abierto donde haga falta,
+   verificado contra el mismo conteo de `RECONOCIMIENTO_MEDICO` con
+   `domain_object_id` no nulo (objetivo 146/146 de los que arrancó
+   S57, o el resto documentado como descartado con motivo real).
+3. **Completar la Fase A para el resto del catálogo** (arrastrado 2.ª
+   sesión sin avanzar -- S56 avanzó con 14 reglas nuevas, S57 no tocó
+   este punto, dedicada por completo a marcadores/dominio). **Cierre:**
+   mismo criterio que S55/S56 -- revisar tipo por tipo si tiene regla
+   real, relanzar `run_fase_a_sweep --apply` verificando `dry-run`
+   previo.
+4. **Buscar más carpetas reales en el OneDrive de GRUALDI SL**
+   (arrastrado 2.ª sesión sin avanzar -- no se tocó en S56 ni S57)
+   para `PEDIDO_COMPRA`/`PRESTAMO`/`SEG_SOCIAL`/`CAMBIO_TITULARIDAD`.
+   **Cierre:** re-entrenar y comparar `classification_report` contra
+   el de S55 (89,8% global) tipo por tipo.
+5. **`EXCEDENCIA` sigue siendo 100% sintético** (arrastrado 2.ª sesión
    sin avanzar). Pendiente de decidir con Miguel Ángel si se acepta
    ese techo o si hay otra fuente por revisar.
-10. Resto de la hoja de ruta de H30 arrastrada de sesiones anteriores,
-    sin tocar en S56: EPIS (extracción a `EpiDelivery`, fundida con
-    Fase B/Gemini como último recurso), variable de entorno de la
-    clave de servicio del agente H28, `FICHA_TECNICA` vs `ITV`,
-    backfill de fecha, duplicados de seguro/OCA. El "renombrado
-    retroactivo" genérico sigue sin mecanismo reutilizable -- S56 solo
-    lo resolvió ad-hoc, a mano, dentro de la migración 0036, para el
-    caso puntual de `DOC_VENTA`→`FACTURA_VENTA` (4 archivos).
+6. Resto de la hoja de ruta de H30 arrastrada de sesiones anteriores,
+   sin tocar en S56 ni S57: EPIS (extracción a `EpiDelivery`, fundida
+   con Fase B/Gemini como último recurso), variable de entorno de la
+   clave de servicio del agente H28, `FICHA_TECNICA` vs `ITV`,
+   backfill de fecha, duplicados de seguro/OCA. El "renombrado
+   retroactivo" genérico sigue sin mecanismo reutilizable -- S56 solo
+   lo resolvió ad-hoc, a mano, dentro de la migración 0036, para el
+   caso puntual de `DOC_VENTA`→`FACTURA_VENTA` (4 archivos).
