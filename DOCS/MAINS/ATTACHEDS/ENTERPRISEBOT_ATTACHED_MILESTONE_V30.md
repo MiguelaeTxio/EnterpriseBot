@@ -2549,45 +2549,219 @@ verificado que el resumen de `--apply` coincidió exactamente con el
 
 ---
 
+## COMPLETADAS EN S56 (2026-08-19 -- sesión larga, cuatro bloques:
+## generador sintético PEDIDO_COMPRA, unificación de taxonomía de
+## facturas, calibración carpeta+nombre sobre el catálogo completo, y
+## resolución de dominio de RECONOCIMIENTO_MEDICO)
+
+**Bloque 1 -- Generador sintético de `PEDIDO_COMPRA`.** A partir de
+plantillas en blanco genéricas encontradas por Miguel Ángel (sin datos
+de terceros reales, solo estructura), se añadió `_tpl_pedido_compra`
+a `GENERATORS` en `generate_synthetic_augmentation.py` -- hueco real
+confirmado (11 documentos reales, 0 backlog vivo que la heurística
+pudiera resolver hoy). Verificado con una generación de muestra real
+antes de comitear. `FACTURA_TERCEROS` quedó deliberadamente fuera de
+este bloque por la política de S55 (colisión con `FACTURA_COMPRA`) --
+resuelto de raíz en el Bloque 2, no como sintético.
+
+**Bloque 2 -- Unificación de taxonomía de facturas (migración
+`0036_factura_venta_compra_s56.py`).** Decisión explícita de Miguel
+Ángel: el único criterio real de distinción entre tipos de factura es
+quién emite, no quién paga. `FACTURA_TERCEROS` (53 documentos vivos)
+se fusionó en `FACTURA_COMPRA` (pasa a 112), mismo patrón que
+`0033_merge_duplicate_types_s51.py` -- `FACTURA_TERCEROS` desactivado
+(`is_active=False`), nunca borrado. `DOC_VENTA` se renombró a
+`code=FACTURA_VENTA`, `label="Factura de venta"` (mismo objeto de
+catálogo, 89 documentos) -- incluye renombrado retroactivo de los 4
+archivos que ya llevaban el código antiguo incrustado en el nombre
+(`H05_DOC_VENTA_...` → `H05_FACTURA_VENTA_...`, verificado 0 casos
+residuales tras aplicar). `CONTRATO_COMPRAVENTA` quedó fuera de la
+migración, confirmado como concepto distinto (contrato, no factura).
+Heurística actualizada en el mismo commit: keyword `"FACTURA"` movida
+de `FACTURA_TERCEROS` a `FACTURA_COMPRA`, keyword `"VENTA"` renombrada
+de clave `DOC_VENTA` a `FACTURA_VENTA`, regla `SPECIFIC_WINS`
+`("FACTURA_COMPRA", "FACTURA_TERCEROS")` retirada por obsoleta.
+Migración verificada aplicada en producción (`showmigrations`) y
+contra datos reales (`FACTURA_COMPRA` 112, `FACTURA_TERCEROS` 0
+vivos/inactivo, `FACTURA_VENTA` 89, 4/4 renombrados, 0 residuales de
+`DOC_VENTA` en nombres de archivo).
+
+Trabajo posterior sobre `FACTURA_VENTA` (mismo bloque, ya con el tipo
+renombrado): auditoría por palabra clave del nombre reveló que el
+tipo NO es mayoritariamente factura en la práctica -- desglose real
+de los 89: 26 `CONTRATO` (mal archivados, contratos de venta de
+máquina), ~33 `FACTURA`/`FRA`/`FACT` (facturas reales), 11
+`NOTIFICACION`/`NOTIF` (sospecha real de mal archivado -- la única
+muestreada resultó ser un Permiso Provisional de Circulación de la
+DGT, nada que ver con venta), ~19 solo "VENTA" sin más pista (sin
+revisar). Verificados 3/3 documentos reales del grupo `CONTRATO`
+(estructura real de contrato: REUNIDOS/EXPONEN/ESTIPULACIONES,
+COMPRADOR/VENDEDOR) antes de mover nada en bloque. Los 26 se
+reasignaron a `CONTRATO_COMPRAVENTA` (pasa a 45 vivos) mediante
+reasignación directa de `document_type` (sin migración -- operación de
+datos puntual sobre patrón de nombre verificado, no cambio de
+esquema). Detectado además, sin resolver todavía, un dosier sin
+dividir real (`DOC.VENTA P-12 MA-7366-CT 27-4-16.pdf`: página 1
+factura real + páginas 2-3 baja DGT por exportación + mandato
+notarial, los tres mezclados en un solo PDF) -- mismo patrón
+`DOSSIER_PAIRS` ya conocido del proyecto, pendiente decidir si se
+divide.
+
+Sobre el marcador de contenido (Fase B1): confirmado con 2 muestras
+reales de `CONTRATO_COMPRAVENTA` que el marcador actual
+(`"FORMALIZAR EL PRESENTE CONTRATO DE COMPRAVENTA"`) solo cubre una de
+las dos redacciones reales -- la otra dice "capacidad legal bastante
+para obligarse en los términos del presente contrato de compraventa".
+Candidato identificado para ampliar cobertura (`"CONTRATO DE
+COMPRAVENTA"` sin más, presente en ambas redacciones reales, ausente
+de la factura de venta muestreada) -- **NO llegó a aplicarse en
+código esta sesión**, queda como acción concreta pendiente en la hoja
+de ruta. El marcador de `FACTURA_VENTA` (`CONTENT_MARKERS`) sigue sin
+fijar -- con la contaminación de "CONTRATO"/"NOTIFICACION" ya
+detectada, cualquier marcador fijado antes de limpiar el grupo
+repetiría el incidente del 9,6%.
+
+**Bloque 3 -- Calibración de solo lectura, nombre+carpeta combinados,
+sobre el catálogo completo (77 tipos).** A petición explícita de
+Miguel Ángel de "agotar todas las vías antes de entrenar": se
+construyó una tabla real carpeta→tipo a partir de los 22.231
+documentos ya clasificados, probando cada segmento de ruta como
+substring en cualquier parte del path (igual que `folder_based_type()`
+real), filtrando candidatas ya cubiertas por regla existente y
+nombres de persona (no generalizan). De 256 candidatas brutas
+iniciales, 14 quedaron confirmadas -- 9 aceptadas directamente por
+pureza/volumen, 5 verificadas contra el documento real descargado
+antes de confirmarse (`COMO Z-13`→`CERT_MANTENIMIENTO`,
+`SOLICITUD BAJA INDUSTRIA`→`RAE`,
+`PARTES ALTA OPERARIOS 27-12-17`→`ALTA`,
+`CARNE CAMION AUTOCARGANTE`→`FORMACION`, `SEPT 2014`→`IDC`). Una
+candidata (`CURSO 2022`→`RAE`, 17 documentos) resultó ser basura real
+tras verificación -- listas de admitidos/aprobados a exámenes de
+operador de grúa móvil de más de 5 años, sin valor de archivo según
+Miguel Ángel (existe copia en Microsoft 365) -- enviados a papelera
+con `trash_dossier_entry()` (17/17 OK, `deleted_by` resuelto,
+recuperable). Las 14 reglas añadidas a `FOLDER_TYPE_RULES`
+(`heuristic_type_service.py`), verificadas con `run_fase_a_sweep`
+dry-run antes y después del `--apply`: 357 documentos reales resueltos
+por las reglas nuevas (149 tipo+dominio completos, 213
+tipo-ok-dominio-pendiente en el momento del dry-run). Aplicado con
+`--apply` real: 150 asignados en firme.
+
+**Bloque 4 -- Resolución de dominio de `RECONOCIMIENTO_MEDICO`.**
+Investigando por qué 213 documentos con tipo ya resuelto (Bloque 3)
+seguían sin máquina/persona vinculada, se encontró un **bug real de
+origen** en `_resolve_person_by_name()` (`run_fase_a_sweep.py`): nunca
+quitaba la coma real de carpetas con formato "APELLIDOS, NOMBRE"
+antes de comparar contra `person_name_index` (cuyas claves se
+construyen siempre sin coma) -- ninguna carpeta con coma pudo matchear
+jamás desde que se escribió la función en S54. Corregido (quitar
+comas + colapsar espacios antes de normalizar). Impacto medido
+empíricamente antes y después: el fix por sí solo solo resolvió 13 de
+269 `RECONOCIMIENTO_MEDICO` sin dominio -- el problema de fondo es más
+grave: `PersonIdentity.folder_path` sembrado en muchos casos apunta a
+una ubicación distinta de donde vive hoy el documento real (mismo
+trabajador con carpetas en `OPERARIOS/...` y en
+`BAJAS/OPERARIOS BAJAS/...` simultáneamente, por cambios de situación
+laboral a lo largo de los años). Se construyó un resolutor nuevo
+(ventana deslizante de 2-4 palabras sobre TODOS los segmentos de la
+ruta + el nombre de archivo, reutilizando `_build_person_name_index()`
+existente, exigiendo unicidad exacta -- nunca ambigüedad) que elevó la
+resolución a 123 de 269 (0 de ellos con `is_active_employee=False`,
+así que no hizo falta enviar ninguno a papelera). Aplicado en
+producción con el mismo patrón real de escritura de dominio
+(`domain_content_type`/`domain_object_id`) que usa
+`run_fase_a_sweep.py`. Verificado contra datos reales:
+`RECONOCIMIENTO_MEDICO` con dominio resuelto pasa de 373 a 496 vivos.
+Quedan 146 sin resolver, con motivos reales distintos documentados en
+la hoja de ruta (no genéricos "pendiente de revisar").
+
+**Estado global del índice al cierre (verificado, no de memoria):**
+34.161 documentos vivos, 22.577 clasificados (66,1%), 11.584 sin tipo
+(bajó de 11.672 al arrancar la sesión), 5.667 con tipo pero sin
+dominio resuelto (bajó de 5.790). `CONTENT_MARKERS` (Fase B1) sigue en
+37 tipos, sin tocar esta sesión -- ningún VM ni batch OCR lanzado,
+cero riesgo de repetir el incidente del 9,6%.
+
+---
+
 ## HOJA DE RUTA PARA LA SIGUIENTE SESIÓN (sustituye por completo a
 ## cualquier "pendiente" suelto de bloques anteriores)
 
-1. **Completar la Fase A para el resto del catálogo.** El dry-run de
-   S55 confirmó 11.671 documentos reales todavía sin resolver tras
-   las dos reglas nuevas -- la mayoría son la cola dura (fotos, OCR
-   necesario), pero es muy probable que sigan existiendo huecos reales
-   como los de `ALBARAN_ENTREGA`/`CERT_ACCESORIO_ELEVACION` en otros
-   tipos del catálogo de 77. **Cierre:** revisar tipo por tipo (o al
-   menos los que el clasificador TF-IDF sigue marcando débiles) si
-   tienen alguna regla real en `calibrate_fase_a_keywords.py`, y
-   relanzar `run_fase_a_sweep --apply` tras cada ronda de correcciones,
-   verificando el resumen contra un `dry-run` previo como se hizo en
-   S55.
-2. **Revisar los 31 `tipo_ok_dominio_pendiente` del `--apply` de S55**
-   -- tipo ya guardado, pero sin máquina/persona resuelta por carpeta.
-   **Cierre:** cada uno revisado a mano o con una regla de resolución
-   de dominio nueva, sin quedar huérfano indefinidamente.
-3. **Buscar más carpetas reales en el OneDrive de GRUALDI SL** para
-   `FACTURA_TERCEROS`, `PEDIDO_COMPRA`, `PRESTAMO`, `OCA`,
-   `SEG_SOCIAL`, `CAMBIO_TITULARIDAD` -- mismo método que funcionó en
-   S55 (buscar por palabra clave sobre el listado de carpetas, filtrar
-   por atributos `ReparsePoint` antes de asumir que están vacías).
-   **Cierre:** re-entrenar y comparar `classification_report` contra
-   el de S55 (89.8% global) tipo por tipo.
-4. **Resolver la contaminación cruzada real ya detectada entre
-   `DOC_VENTA` (0.69) y `CONTRATO_COMPRAVENTA` (0.73)** -- arrastrada
-   desde S54 (frases casi idénticas en documentos reales, no solo en
-   `CONTENT_MARKERS`). **Cierre:** revisar ejemplos reales mal
-   clasificados por el modelo entre ambos tipos y decidir con Miguel
-   Ángel si son distinguibles por texto o si hace falta otro criterio
-   (carpeta, por ejemplo).
-5. **`EXCEDENCIA` sigue siendo 100% sintético** -- nunca se encontró
-   ni un documento real, ni en la base de datos ni en el OneDrive.
-   Pendiente de decidir con Miguel Ángel si se acepta ese techo (tipo
-   genuinamente raro en la actividad de la empresa) o si hay otra
-   fuente por revisar.
-6. Resto de la hoja de ruta de H30 arrastrada de sesiones anteriores,
-   sin tocar en S55: EPIS (extracción a `EpiDelivery`, fundida con
-   Fase B/Gemini como último recurso), variable de entorno de la clave
-   de servicio del agente H28, `FICHA_TECNICA` vs `ITV`, renombrado
-   retroactivo, backfill de fecha, duplicados de seguro/OCA.
+1. **Cerrar el marcador de contenido de `CONTRATO_COMPRAVENTA` y
+   `FACTURA_VENTA`.** El candidato `"CONTRATO DE COMPRAVENTA"` para
+   `CONTRATO_COMPRAVENTA` quedó identificado en S56 pero NO se aplicó
+   en código -- aplicarlo primero (bajo riesgo, ya verificado contra 2
+   muestras reales). Para `FACTURA_VENTA`, el marcador sigue sin fijar
+   -- primero limpiar el grupo (puntos 2-4 de abajo), luego bajar 3-4
+   muestras reales del grupo `FACTURA`/`FRA`/`FACT` ya limpio y
+   confirmar que el patrón de cabecera de tabla (`"FECHA ALBARAN
+   DESCRIPCION"` u otro) se repite antes de fijarlo. **Cierre:**
+   marcador añadido a `CONTENT_MARKERS` y verificado con
+   `run_fase_b1_ocr_classify --dry-run` sin generar ambigüedad nueva
+   contra ningún otro tipo.
+2. **Revisar los 11 `NOTIFICACION`/`NOTIF` de `FACTURA_VENTA`.**
+   Sospecha real fundada (1/1 muestreado resultó ser un Permiso
+   Provisional de Circulación de la DGT, no una venta). **Cierre:**
+   los 11 revisados uno a uno con documento real descargado, cada uno
+   reasignado al tipo correcto o confirmado como factura de venta
+   legítima.
+3. **Revisar los ~19 `FACTURA_VENTA` solo con "VENTA" en el nombre,
+   sin más pista.** Sin tocar en S56. **Cierre:** cada uno abierto y
+   clasificado a mano, mismo criterio que los puntos 1-2.
+4. **Decidir qué hacer con el dosier sin dividir detectado** (`DOC.VENTA
+   P-12 MA-7366-CT 27-4-16.pdf`: factura + baja DGT + mandato en un
+   solo PDF). **Cierre:** decisión explícita de Miguel Ángel (dividir
+   vía `DOSSIER_PAIRS` o dejar así) y aplicada si procede.
+5. **146 `RECONOCIMIENTO_MEDICO` sin dominio, con motivos reales
+   distintos (no genérico):**
+   - Al menos 1 identidad real que falta en `PersonIdentity`
+     (Adelaida Álvarez Díaz, confirmada por Miguel Ángel como
+     hermana/trabajadora real) -- necesita alta manual con dato real
+     (DNI) antes de poder vincularse.
+   - Al menos 1 documento mal archivado detectado (`RM DELGADO
+     ZURERA, MANUEL...pdf` viviendo dentro de la carpeta de Ramírez
+     García, Jorge) -- corregir la carpeta/ubicación real antes de
+     vincular.
+   - El resto son mayormente carpetas con solo apellido (sin nombre)
+     o carpetas `TRABAJADORES INACTIVOS`/`EX TRABAJADORES`/`BAJAS` con
+     nombre completo pero sin fila en `PersonIdentity` -- posible
+     backlog de altas de identidad histórica pendiente. **Cierre:**
+     los 146 repasados uno a uno o por lote una vez completado el alta
+     de identidades que falten, verificado contra el mismo conteo de
+     `RECONOCIMIENTO_MEDICO` con `domain_object_id` no nulo (objetivo
+     269/269, o el resto documentado como descartado con motivo).
+6. **Aplicar el mismo resolutor de ventana deslizante (Bloque 4 de
+   S56) al resto de `tipo_ok_dominio_pendiente`.** 5.667 documentos
+   totales con tipo resuelto pero sin dominio -- solo se atacó
+   `RECONOCIMIENTO_MEDICO` (269) esta sesión. Los mayores volúmenes
+   sin tocar: `PAGO_CORRIENTE` (1.762), `INVESTIGACION_ACCIDENTE`
+   (834), `ENTREGA_INFORMACION` (636), `BAJA_PERSONAL` (549),
+   `AUTORIZACION_USO_MAQUINARIA` (383), `PARTE_BAJA_MEDICA` (282).
+   **Cierre:** por cada tipo atacado, cifra de resolución medida antes
+   y después contra consulta real a la base de datos, igual que se
+   hizo con `RECONOCIMIENTO_MEDICO` en S56.
+7. **Completar la Fase A para el resto del catálogo** (arrastrado 1.ª
+   sesión sin avanzar de forma genérica -- S56 sí avanzó con 14 reglas
+   nuevas, pero el barrido sistemático tipo por tipo del catálogo de
+   77 sigue sin completarse). **Cierre:** mismo criterio que S55/S56 --
+   revisar tipo por tipo si tiene regla real, relanzar
+   `run_fase_a_sweep --apply` verificando `dry-run` previo.
+8. **Buscar más carpetas reales en el OneDrive de GRUALDI SL**
+   (arrastrado 1.ª sesión sin avanzar -- no se tocó en S56, la sesión
+   se dedicó a taxonomía/calibración/dominio) para
+   `PEDIDO_COMPRA`/`PRESTAMO`/`SEG_SOCIAL`/`CAMBIO_TITULARIDAD` --
+   `FACTURA_TERCEROS` queda fuera de este punto, ya resuelto de raíz
+   en S56 (fusión con `FACTURA_COMPRA`). **Cierre:** re-entrenar y
+   comparar `classification_report` contra el de S55 (89,8% global)
+   tipo por tipo.
+9. **`EXCEDENCIA` sigue siendo 100% sintético** (arrastrado 1.ª sesión
+   sin avanzar). Pendiente de decidir con Miguel Ángel si se acepta
+   ese techo o si hay otra fuente por revisar.
+10. Resto de la hoja de ruta de H30 arrastrada de sesiones anteriores,
+    sin tocar en S56: EPIS (extracción a `EpiDelivery`, fundida con
+    Fase B/Gemini como último recurso), variable de entorno de la
+    clave de servicio del agente H28, `FICHA_TECNICA` vs `ITV`,
+    backfill de fecha, duplicados de seguro/OCA. El "renombrado
+    retroactivo" genérico sigue sin mecanismo reutilizable -- S56 solo
+    lo resolvió ad-hoc, a mano, dentro de la migración 0036, para el
+    caso puntual de `DOC_VENTA`→`FACTURA_VENTA` (4 archivos).
