@@ -182,6 +182,76 @@ def _resolve_person_by_name(entry, person_name_index):
     return None
 
 
+# Separador de tokens para la ventana deslizante: cualquier cosa que
+# no sea letra/digito rompe palabra (coma, parentesis, guion, punto).
+_TOKEN_SPLIT_RE = re.compile(r"[^A-Z0-9]+")
+
+
+def _tokenize_segment(segment):
+    """
+    Normaliza un segmento de ruta o de nombre de archivo (sin
+    extension) a una lista de palabras en mayusculas sin acentos,
+    para la ventana deslizante de `_resolve_person_by_sliding_
+    window()`.
+    """
+    upper = _strip_accents(segment).upper()
+    return [t for t in _TOKEN_SPLIT_RE.split(upper) if t]
+
+
+def _resolve_person_by_sliding_window(entry, person_name_index):
+    """
+    Bloque 4 de S56 (hoja de ruta punto 6, hasta ahora un script
+    suelto, no reutilizable) -- ultimo recurso cuando ni `_resolve_
+    person_by_folder()` ni `_resolve_person_by_name()` (que solo miran
+    el ultimo segmento de carpeta) encuentran nada.
+
+    Motivo real (S56): mucho backlog historico (RECONOCIMIENTOS
+    MEDICOS 2010-2016) lleva el nombre real de la persona en el
+    NOMBRE DE ARCHIVO, no en la carpeta contenedora -- carpetas
+    genericas como "GRUAS ALVAREZ/BYN GRUAS" o "TRANSGRUAL/COLOR"
+    agrupan por empresa/formato de escaneo, no por trabajador.
+
+    Recorre TODOS los segmentos de `entry.parent_path` MAS el nombre
+    de archivo (sin extension), tokeniza cada uno, y prueba cada
+    ventana contigua de 2, 3 y 4 palabras contra `person_name_index`
+    (mismas claves que ya usa `_resolve_person_by_name()` -- incluida
+    la clave "apellido1 apellido2" sin nombre de pila, S57). Acumula
+    el conjunto de personas distintas encontradas en CUALQUIER ventana
+    de CUALQUIER segmento del documento.
+
+    Mismo criterio de siempre, sin excepcion: si el conjunto final
+    tiene mas de una persona (dos ventanas distintas apuntan a gente
+    distinta, o dos personas comparten el mismo apellido1+apellido2 --
+    el caso real de hermanos que Miguel Angel confirmo en S57, dos
+    hermanos "Alvarez Diaz" ademas de un segundo par de hermanos con
+    apellido distinto no identificado por nombre) devuelve None, nunca
+    elige al azar. Solo un candidato en todo el documento -> se
+    resuelve.
+    """
+    segments = [
+        seg for seg in entry.parent_path.split("/") if seg.strip()
+    ]
+    file_stem = re.sub(r"\.[A-Za-z0-9]{1,5}$", "", entry.name)
+    segments.append(file_stem)
+
+    found_pks = set()
+    for segment in segments:
+        segment = _TRAILING_DATE_RE.sub("", segment)
+        tokens = _tokenize_segment(segment)
+        for size in (2, 3, 4):
+            if size > len(tokens):
+                continue
+            for start in range(0, len(tokens) - size + 1):
+                window = " ".join(tokens[start:start + size])
+                pks = person_name_index.get(window)
+                if pks:
+                    found_pks |= pks
+
+    if len(found_pks) == 1:
+        return PersonIdentity.objects.get(pk=next(iter(found_pks)))
+    return None
+
+
 def _resolve_person_by_folder(entry):
     """
     Resuelve `PersonIdentity` para un archivo PERSONAL de Fase A
@@ -332,6 +402,10 @@ class Command(BaseCommand):
                     ct = person_ct
                     if not obj:
                         obj = _resolve_person_by_name(
+                            entry, person_name_index,
+                        )
+                    if not obj:
+                        obj = _resolve_person_by_sliding_window(
                             entry, person_name_index,
                         )
 
