@@ -2819,56 +2819,178 @@ OCR lanzado esta sesión.
 
 ---
 
+### COMPLETADAS EN S58
+
+**Bloque 1 -- punto 1 de la hoja de ruta de S57, cerrado.** Aplicado
+`_resolve_person_by_sliding_window()` (ya reutilizable desde S57) al
+resto de `tipo_ok_dominio_pendiente`, con un comando nuevo comiteado
+de verdad (`resolve_domain_pending_types`, dry-run por defecto) --
+fija de una vez el patrón que en S56/S57 vivió como script suelto.
+Resultado real medido, verificado contra consulta directa a la BD tras
+el `--apply` (`sin_dominio` de cada tipo coincide exacto con
+`sin_resolver` del comando, sin discrepancias):
+
+| Tipo | Antes | Resueltos | Sin resolver |
+|---|---|---|---|
+| `PAGO_CORRIENTE` | 1.762 | 274 | 1.488 (ver Bloque 2) |
+| `INVESTIGACION_ACCIDENTE` | 834 | 596 | 238 |
+| `ENTREGA_INFORMACION` | 636 | 470 | 166 |
+| `BAJA_PERSONAL` | 549 | 303 | 246 |
+| `AUTORIZACION_USO_MAQUINARIA` | 383 | 271 | 112 |
+| `PARTE_BAJA_MEDICA` | 282 | 215 | 67 |
+| **Total** | **4.446** | **2.129** | **2.317** |
+
+**Bloque 2 -- decisión nueva de Miguel Ángel: tercer dominio
+`CompanyWorksite` (empresa+obra), junto a `MachineAsset`/
+`PersonIdentity`.** Miguel Ángel, verbatim (S58): *"estos pagos al
+corriente van por empresa [...] es muy, muy, muy raro que vengan para
+un solo trabajador [...] esto será algo habitual tener este tipo de
+documentación [...] debe ser posible acceder a ella desde la
+plataforma cuando hagamos su interfaz [...] Podemos crear una nueva
+tabla [...] empresa, obra y el documento donde está [...] igual que
+haríamos personal."* Motivado por los 274 `PAGO_CORRIENTE` del Bloque
+1: en la práctica casi ninguno es de una sola persona, y forzarlos a
+`PersonIdentity` no encajaba con la realidad del documento.
+
+- Modelo `CompanyWorksite` nuevo (`company`/`worksite`, constraint
+  único, migración `0038_company_worksite`) + dominio `COMPANY` nuevo
+  en `DocumentTypeCatalog.DOMAIN_CHOICES` + `PAGO_CORRIENTE`
+  reasignado de `PERSONAL` a `COMPANY` (dato, vía `RunPython` en la
+  misma migración). Desplegado y verificado con datos reales
+  (`git log -1` + `showmigrations` contra el servidor, no solo el
+  verde del Action -- incidente S014).
+- Investigación real del árbol antes de construir nada (directriz
+  4.8): 1.149 archivos bajo `GRUAS`, 511 bajo `TRANSGRUAL`, ~70 obras
+  distintas ya organizadas por carpeta real; 102 archivos sin carpeta
+  de obra, con la empresa marcada en el propio nombre de archivo
+  (`(GR)`/`(TR)`/`GRUAS`/`TRANSGRUAL`).
+- Comando `resolve_company_worksite_domain` (dry-run por defecto),
+  reemplaza CUALQUIER dominio previo de la entrada (incluidos los 274
+  del Bloque 1 ya vinculados a `PersonIdentity` -- decisión explícita
+  de Miguel Ángel de que el vínculo es siempre por empresa/obra, nunca
+  por persona, ni en el caso minoritario de alta suelta).
+- **Corrección real tras el primer dry-run:** patrón de marcador
+  ampliado (`GR`/`TR` sueltos sin paréntesis, `GRUAS` sin `ALVAREZ`
+  detrás) tras detectar 8 casos reales que el patrón original dejaba
+  fuera -- de paso, esta ampliación destapó un archivo
+  (`DECLARACION AL CORRIENTE CON GR (TR).docx`) que el patrón
+  estrecho había asignado (mal) solo a TRANSGRUAL por no ver el "GR"
+  suelto; con el patrón ampliado queda correctamente `SIN RESOLVER`
+  por llevar los dos marcadores a la vez.
+- **Resultado real medido y verificado contra la BD:** 1.743 de 1.762
+  `PAGO_CORRIENTE` vinculados a `CompanyWorksite` (74 filas reales de
+  empresa+obra), 0 quedan en `PersonIdentity`, 19 sin resolver por
+  falta de marcador real -- ver "Pendiente real" abajo.
+
+**Bloque 3 -- alcance real de Fase A, medido por primera vez con
+datos reales (sin construir nada todavía).** A petición de Miguel
+Ángel ("hay que listar las carpetas que no hemos tocado aún, para
+poder determinar el alcance del trabajo previsible"):
+
+- `MAQUINAS`: 14.491 archivos totales, 3.185 sin tipo (22,0%), 355
+  tipo OK/dominio pendiente, 10.951 completos. El `sin_tipo` mezcla
+  carpetas ya excluidas a propósito en S50 (`SCOPE` de
+  `run_fase_a_sweep_scoped`) con carpetas reales nunca miradas -- sin
+  desglosar todavía cuánto es cada cosa.
+- `PERSONAL`: 19.419 archivos totales, 8.147 sin tipo (42,0%), 1.645
+  tipo OK/dominio pendiente, 9.627 completos -- sin ninguna exclusión
+  de alcance como la de `MAQUINAS`. Tres carpetas de primer nivel
+  concentran el 74% de lo pendiente: `PERSONAL` (3.978),
+  `FORMACION TRABAJADORES` (1.510), `ENTREGA EPIS` (1.508).
+- Desglose real de `DOC. PERSONAL/PERSONAL` (3.978 sin tipo):
+  `OPERARIOS` 2.618, `TALLER` 527, `ADMINISTRACION` 524, `GUARDA` 83,
+  `AUTORIZACIÓN MEDIOS DE COMUNICACIÓN` 62,
+  `PERSONAL ASISTENCIA GRANADA` 58, `PENDIENTES` 44,
+  `PTE CONTRATACION` 38, `AUTONOMOS SUBCONTRATAS` 14, `PRACTICAS` 6,
+  `PARTES BAJA PATERNIDAD` 1, 3 sueltos en la raíz (uno de ellos
+  `.ptn`, pinta a basura).
+- **Candidato real sin confirmar todavía** (un solo archivo de
+  muestra, no una regla ya verificada): `OPERARIOS` -- 66% del total
+  de `PERSONAL/PERSONAL` sin tipo -- tiene al menos un archivo
+  (`AUT USO MAQ RODRIGUEZ MORENO, JUAN C 12-5-22.pdf`) que es
+  `AUTORIZACION_USO_MAQUINARIA` en forma abreviada, patrón que la
+  regla heurística actual (`"AUTORIZACION USO DE MAQUINARIA"`
+  completa) no reconoce. Miguel Ángel decidió no muestrear más hoy y
+  entrar directo a clasificar mañana.
+
+**Pendiente real, pospuesto explícitamente por Miguel Ángel a la
+sesión de mañana desde la oficina:**
+- 77 `RECONOCIMIENTO_MEDICO` sin resolver de S57 (sin cambios esta
+  sesión).
+- 19 `PAGO_CORRIENTE` sin resolver del Bloque 2 -- 13 de ellos en
+  `DOC. PERSONAL/DECLARACION AL CORRIENTE/nominas huelva` (Huelva es
+  una sucursal real de Grupo Álvarez, verbatim de Miguel Ángel, pero
+  sin determinar todavía a qué empresa del grupo se asigna); los 6
+  restantes por nombre de archivo sin marcador reconocible
+  (`DECLARACION ESTAR AL CORRIENTE GENERAL.pdf`,
+  `03072025_rmsmm, si.pdf`, `30052025_mmoALsi...pdf`,
+  `DECLARACION AL CORRIENTE CON GR (TR).docx` -- ambiguo a propósito,
+  `DECLARACION representante de trabajadores.docx`).
+
+---
+
 ## HOJA DE RUTA PARA LA SIGUIENTE SESIÓN (sustituye por completo a
 ## cualquier "pendiente" suelto de bloques anteriores)
 
-Miguel Ángel, instrucción explícita al cierre de S57: empezar la
-próxima sesión directamente por el punto 1 de abajo, sin necesidad de
-preguntar.
+Miguel Ángel, instrucción explícita al cierre de S58: empezar la
+próxima sesión directamente por el punto 1 de abajo (clasificación de
+`OPERARIOS`), sin necesidad de preguntar, y continuar con lo pospuesto
+hoy (punto 2).
 
-1. **Aplicar el resolutor de ventana deslizante (ya reutilizable,
-   `_resolve_person_by_sliding_window()`, commit `ec91cb7`) al resto
-   de `tipo_ok_dominio_pendiente`.** Mayores volúmenes sin tocar:
-   `PAGO_CORRIENTE` (1.762), `INVESTIGACION_ACCIDENTE` (834),
-   `ENTREGA_INFORMACION` (636), `BAJA_PERSONAL` (549),
-   `AUTORIZACION_USO_MAQUINARIA` (383), `PARTE_BAJA_MEDICA` (282).
-   **Cierre:** por cada tipo atacado, cifra de resolución medida antes
-   y después contra consulta real a la base de datos, igual que se
-   hizo con `RECONOCIMIENTO_MEDICO` en S56/S57.
-2. **Cerrar los 77 `RECONOCIMIENTO_MEDICO` que quedaron sin resolver
-   en S57**, más el grupo irreducible sin nombre útil (`TODO.pdf`,
-   `A.pdf`, `E.pdf`, `image001.gif`, `Mensaje_.html`, `DOC008.pdf`,
-   `RRMM 2011-2012(3).xlsx`, `GRUALDI.doc`, `TRANSGRUAL.doc`).
-   Pospuesto explícitamente por Miguel Ángel a la sesión desde la
-   oficina. Incluye la ambigüedad real de hermanos con los mismos dos
-   apellidos (familia Álvarez Díaz -- Adolfo, Alejandro, Adelaida,
-   Alberto, José Luis, Carlos, Lili -- y un segundo par de hermanos
-   con apellido distinto que Miguel Ángel no identificó por nombre
-   completo en S57, a confirmar con él antes de intentar resolver
-   ese segundo par). **Cierre:** los 77 + el grupo irreducible
-   repasados uno a uno con documento real abierto donde haga falta,
-   verificado contra el mismo conteo de `RECONOCIMIENTO_MEDICO` con
-   `domain_object_id` no nulo (objetivo 146/146 de los que arrancó
-   S57, o el resto documentado como descartado con motivo real).
-3. **Completar la Fase A para el resto del catálogo** (arrastrado 2.ª
-   sesión sin avanzar -- S56 avanzó con 14 reglas nuevas, S57 no tocó
-   este punto, dedicada por completo a marcadores/dominio). **Cierre:**
-   mismo criterio que S55/S56 -- revisar tipo por tipo si tiene regla
-   real, relanzar `run_fase_a_sweep --apply` verificando `dry-run`
-   previo.
-4. **Buscar más carpetas reales en el OneDrive de GRUALDI SL**
-   (arrastrado 2.ª sesión sin avanzar -- no se tocó en S56 ni S57)
-   para `PEDIDO_COMPRA`/`PRESTAMO`/`SEG_SOCIAL`/`CAMBIO_TITULARIDAD`.
-   **Cierre:** re-entrenar y comparar `classification_report` contra
-   el de S55 (89,8% global) tipo por tipo.
-5. **`EXCEDENCIA` sigue siendo 100% sintético** (arrastrado 2.ª sesión
-   sin avanzar). Pendiente de decidir con Miguel Ángel si se acepta
-   ese techo o si hay otra fuente por revisar.
-6. Resto de la hoja de ruta de H30 arrastrada de sesiones anteriores,
-   sin tocar en S56 ni S57: EPIS (extracción a `EpiDelivery`, fundida
-   con Fase B/Gemini como último recurso), variable de entorno de la
-   clave de servicio del agente H28, `FICHA_TECNICA` vs `ITV`,
-   backfill de fecha, duplicados de seguro/OCA. El "renombrado
-   retroactivo" genérico sigue sin mecanismo reutilizable -- S56 solo
-   lo resolvió ad-hoc, a mano, dentro de la migración 0036, para el
-   caso puntual de `DOC_VENTA`→`FACTURA_VENTA` (4 archivos).
+**Preguntas explícitas antes de seguir con el resto** (arrastradas ya
+3 sesiones sin ejecución real -- S56/S57 las dejó como
+"arrastrado 2.ª sesión sin avanzar", S58 tampoco las tocó; directriz
+2.2 -- dejan de listarse como tarea abierta y pasan a pregunta
+directa):
+
+- **Fase A del resto del catálogo:** con el alcance real ya medido en
+  S58 (3.185 sin tipo en `MAQUINAS`, 8.147 en `PERSONAL`, desglosado
+  por carpeta en el Bloque 3 de arriba), ¿seguimos regla por regla
+  como hasta ahora, o priorizamos por volumen empezando por las
+  carpetas grandes ya identificadas (`OPERARIOS`, `TALLER`,
+  `ADMINISTRACION`, `FORMACION TRABAJADORES`, `ENTREGA EPIS`)?
+- **OneDrive de GRUALDI SL:** ¿tienes ya localizadas carpetas nuevas
+  para `PEDIDO_COMPRA`/`PRESTAMO`/`SEG_SOCIAL`/`CAMBIO_TITULARIDAD`, o
+  sigue pendiente por tu parte?
+- **`EXCEDENCIA` 100% sintético:** ¿aceptamos ese techo o hay otra
+  fuente real que revisar?
+
+1. **Clasificar `DOC. PERSONAL/PERSONAL/OPERARIOS`** (2.618 archivos
+   sin tipo, 66% del total de esa carpeta) -- empezar directamente,
+   sin preguntar (instrucción explícita de Miguel Ángel al cierre de
+   S58). Confirmar primero contra una muestra amplia si el patrón
+   abreviado `"AUT USO MAQ"` → `AUTORIZACION_USO_MAQUINARIA` se
+   repite en el grueso de los 2.618 (un solo archivo visto en S58, no
+   verificado todavía a escala). **Cierre:** regla heurística nueva
+   añadida a `heuristic_type_service.py` si el patrón se confirma,
+   `run_fase_a_sweep --apply` relanzado (dry-run antes), cifra de
+   `OPERARIOS` sin tipo verificada contra consulta real a la BD
+   (objetivo: bajar de 2.618, cifra exacta según lo que el patrón
+   real cubra).
+2. **Continuar con el resto de `DOC. PERSONAL/PERSONAL` sin tipo:**
+   `TALLER` (527), `ADMINISTRACION` (524), `GUARDA` (83),
+   `AUTORIZACIÓN MEDIOS DE COMUNICACIÓN` (62),
+   `PERSONAL ASISTENCIA GRANADA` (58), `PENDIENTES` (44),
+   `PTE CONTRATACION` (38), `AUTONOMOS SUBCONTRATAS` (14),
+   `PRACTICAS` (6), `PARTES BAJA PATERNIDAD` (1). **Cierre:** mismo
+   criterio que el punto 1 -- revisar tipo por tipo si tiene regla
+   real antes de escribirla.
+3. **Retomar lo pospuesto en S58, desde la oficina:** 77
+   `RECONOCIMIENTO_MEDICO` sin resolver de S57 + 19 `PAGO_CORRIENTE`
+   sin resolver de S58 (13 de ellos en `nominas huelva`, empresa real
+   del Grupo Álvarez sin determinar cuál -- confirmar con Miguel
+   Ángel antes de asignar). **Cierre:** `RECONOCIMIENTO_MEDICO` con
+   `domain_object_id` no nulo = 146/146 (o resto documentado con
+   motivo real); `PAGO_CORRIENTE` con `domain_content_type` no nulo =
+   1.762/1.762 (o resto documentado con motivo real), ambos
+   verificados contra consulta directa a la BD.
+4. Resto de la hoja de ruta de H30 arrastrada de sesiones anteriores,
+   sin tocar en S56/S57/S58: EPIS (extracción a `EpiDelivery`, fundida
+   con Fase B/Gemini como último recurso -- conecta directo con
+   `ENTREGA EPIS`, 1.508 archivos sin tipo, visto en el Bloque 3 de
+   S58), variable de entorno de la clave de servicio del agente H28,
+   `FICHA_TECNICA` vs `ITV`, backfill de fecha, duplicados de
+   seguro/OCA. El "renombrado retroactivo" genérico sigue sin
+   mecanismo reutilizable -- S56 solo lo resolvió ad-hoc, a mano,
+   dentro de la migración 0036, para el caso puntual de
+   `DOC_VENTA`→`FACTURA_VENTA` (4 archivos).
