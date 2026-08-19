@@ -94,7 +94,44 @@ def _build_person_name_index():
         if second:
             _add(f"{given} {first} {second}", person.pk)
             _add(f"{first} {second} {given}", person.pk)
+            # S57: las carpetas antiguas de RECONOCIMIENTO_MEDICO
+            # (RM 2010-2016) solo llevan "apellido1 apellido2", sin
+            # nombre de pila -- p.ej. "BURGOS FERNANDEZ",
+            # "HIDALGO ROSAS". Confirmado contra datos reales: 145 de
+            # 146 RECONOCIMIENTO_MEDICO con dominio pendiente no
+            # resolvian por ninguna clave existente porque todas
+            # exigian el nombre de pila. Misma proteccion de siempre:
+            # esta clave entra en el mismo indice de conjuntos, asi
+            # que si dos personas comparten apellido1+apellido2 el
+            # tamano del conjunto sube a 2+ y sigue sin resolver solo.
+            _add(f"{first} {second}", person.pk)
     return index
+
+
+def _company_hint_from_path(parent_path):
+    """
+    Extrae, si existe, una pista de empresa real del Grupo Alvarez a
+    partir del propio `parent_path` -- S57, desambiguacion de
+    RECONOCIMIENTO_MEDICO cuando dos personas comparten apellido1+
+    apellido2 pero pertenecen a empresas distintas del grupo (caso
+    real: "RECONOCIMIENTO MEDICOS 2010/GRUAS ALVAREZ/..." vs
+    ".../TRANSGRUAL/..." bajo el mismo arbol).
+
+    Nunca decide sola: solo se usa para filtrar candidatos ya
+    empatados por nombre en `_resolve_person_by_name()`, comparando
+    contra `PersonIdentity.employer_company` (columna EMPRESA real del
+    Excel de plantilla, ver H30 S54). Devuelve None si no hay pista
+    reconocible en la ruta -- en ese caso el llamador sigue sin poder
+    resolver, nunca inventa una empresa.
+    """
+    upper = _strip_accents(parent_path).upper()
+    if "TRANSGRUAL" in upper:
+        return "TRANSGRUAL"
+    if "GRUALDI" in upper:
+        return "GRUALDI"
+    if "ALVAREZ" in upper:
+        return "ALVAREZ"
+    return None
 
 
 def _resolve_person_by_name(entry, person_name_index):
@@ -114,6 +151,14 @@ def _resolve_person_by_name(entry, person_name_index):
     cual sea el orden. Confirmado contra datos reales en S56: 269
     documentos RECONOCIMIENTO_MEDICO con dominio pendiente, la mayoria
     con la coma real en el nombre de carpeta.
+
+    Ampliado S57: si el nombre solo (via la clave "apellido1
+    apellido2" nueva de `_build_person_name_index()`) empata con MAS
+    de una persona, se intenta desambiguar por empresa real usando
+    `_company_hint_from_path()` contra `employer_company` -- solo si
+    esa segunda pasada deja exactamente UN candidato. Sigue sin
+    tolerar ambiguedad: si la pista de empresa no reduce a 1, se
+    devuelve None igual que siempre.
     """
     last_segment = entry.parent_path.rstrip("/").split("/")[-1]
     last_segment = last_segment.replace(",", " ")
@@ -121,8 +166,19 @@ def _resolve_person_by_name(entry, person_name_index):
     candidate = _strip_accents(candidate).upper().strip()
     candidate = re.sub(r"\s+", " ", candidate)
     pks = person_name_index.get(candidate)
-    if pks and len(pks) == 1:
+    if not pks:
+        return None
+    if len(pks) == 1:
         return PersonIdentity.objects.get(pk=next(iter(pks)))
+
+    hint = _company_hint_from_path(entry.parent_path)
+    if hint:
+        narrowed = [
+            p for p in PersonIdentity.objects.filter(pk__in=pks)
+            if hint in _strip_accents(p.employer_company or "").upper()
+        ]
+        if len(narrowed) == 1:
+            return narrowed[0]
     return None
 
 
