@@ -33,6 +33,20 @@ from document_explorer.models import DocumentIndexEntry
 
 MACHINE_ROOT = "DOC. MAQUINAS"
 PERSONAL_ROOT = "DOC. PERSONAL"
+
+# Carpetas deliberadamente FUERA del alcance de clasificacion (S59,
+# decision explicita de Miguel Angel): nunca se recorren en Fase A/B,
+# nunca cuentan como "sin tipo" pendiente. Ruta completa real, no
+# solo el nombre -- para no excluir por error una subcarpeta
+# homonima en otro sitio.
+OUT_OF_SCOPE_FOLDERS = [
+    # FOTOS CARNET: fotografias de carnet (la foto tipo DNI que se
+    # entrega para tramitarlo), no documentacion administrativa --
+    # nunca van a tener un tipo del catalogo cerrado. Miguel Angel,
+    # verbatim: "esa carpeta no la vamos a clasificar, la vamos a
+    # sacar del scope."
+    "DOC. PERSONAL/FOTOS CARNET",
+]
 BUCKET = "cgs_grupo_alvarez"
 
 # domain -> {code: [candidatos]}
@@ -435,11 +449,19 @@ def _files_for_domain(domain):
     cond = Q()
     for root in roots:
         cond |= Q(parent_path=root) | Q(parent_path__startswith=root + "/")
-    return DocumentIndexEntry.objects.filter(
+    qs = DocumentIndexEntry.objects.filter(
         cond, bucket=BUCKET, entry_kind=DocumentIndexEntry.KIND_FILE,
         deleted_at__isnull=True, purged_at__isnull=True,
         document_type__isnull=True,
-    ).only("id", "name", "parent_path")
+    )
+    exclude_cond = Q()
+    for folder in OUT_OF_SCOPE_FOLDERS:
+        exclude_cond |= (
+            Q(parent_path=folder) | Q(parent_path__startswith=folder + "/")
+        )
+    if exclude_cond:
+        qs = qs.exclude(exclude_cond)
+    return qs.only("id", "name", "parent_path")
 
 
 class Command(BaseCommand):

@@ -608,7 +608,14 @@ def main():
             "WHERE entry_kind = 'FILE' AND document_type_id IS NULL "
             "AND deleted_at IS NULL AND purged_at IS NULL "
             "AND bucket = %s AND (parent_path LIKE %s OR parent_path LIKE %s) "
-            "AND parent_path NOT LIKE '%%EPIS%%'" + shard_clause,
+            "AND parent_path NOT LIKE '%%EPIS%%' "
+            # Anadido S59: "DOC. PERSONAL/FOTOS CARNET" fuera de
+            # alcance de verdad (decision explicita de Miguel Angel)
+            # -- fotos tipo DNI, nunca van a tener un tipo del
+            # catalogo cerrado.
+            "AND parent_path NOT LIKE "
+            "'DOC. PERSONAL/FOTOS CARNET%%'"
+            + shard_clause,
             shard_params,
         )
         raw_rows = cur.fetchall()
