@@ -377,6 +377,19 @@ EXCLUSIONS = {
     # poliza RC de pasada en un documento de formacion, no es una
     # poliza real de maquina/vehiculo.
     ("BOTH", "POLIZA_SEGURO", "POLIZA"): ["POLIZA RC - FORMACION"],
+    # Añadido S59: falso positivo real detectado en el dry-run de
+    # run_fase_a_sweep tras ampliar CONTRATO a la palabra suelta --
+    # "CONTRATO DE ENCOMIENDA"/"CONTRATO ENCOMIENDA" es un acuerdo de
+    # gestion de formacion con un centro externo (FUNDAE, TAGA,
+    # ILURO, EESEA...), nunca un contrato laboral de un trabajador
+    # concreto -- decenas de coincidencias reales bajo "FORMACION
+    # TRABAJADORES", ninguna es CONTRATO. Ambas variantes (con/sin
+    # "DE") porque el separador flexible no salta palabras de por
+    # medio -- "CONTRATO ENCOMIENDA" no cubre "CONTRATO DE
+    # ENCOMIENDA" sin esta segunda entrada explicita.
+    ("PERSONAL", "CONTRATO", "CONTRATO"): [
+        "CONTRATO DE ENCOMIENDA", "CONTRATO ENCOMIENDA",
+    ],
 }
 
 CANDIDATES_RISKY = {
