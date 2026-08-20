@@ -196,22 +196,49 @@ def _parse_spanish_date(raw):
     return None
 
 
+def _detect_rotation(img):
+    """H30 (S60). Detecta con Tesseract OSD (Orientation and Script
+    Detection) el angulo que hay que girar la pagina para que quede en
+    orientacion normal de lectura. Origen real: DOC008.pdf escaneada
+    boca abajo (180 grados), invisible para los RECORD_PATTERNS aunque
+    el contenido fuera correcto -- "selva" real, no un caso raro.
+    Nunca lanza: un scan de mala calidad puede hacer fallar el propio
+    OSD, y en ese caso simplemente no se corrige nada (mismo
+    comportamiento que antes de este fix)."""
+    try:
+        osd = pytesseract.image_to_osd(img)
+        match = re.search(r"Rotate:\s*(\d+)", osd)
+        return int(match.group(1)) if match else 0
+    except Exception:
+        return 0
+
+
 def _ocr_all_pages(data):
     doc = fitz.open(stream=data, filetype="pdf")
     texts = []
+    rotations = []
     for page_index in range(doc.page_count):
         page = doc.load_page(page_index)
         pix = page.get_pixmap(dpi=300)
         img = Image.open(io.BytesIO(pix.tobytes("png")))
+        angle = _detect_rotation(img)
+        if angle:
+            img = img.rotate(-angle, expand=True)
+        rotations.append(angle)
         texts.append(pytesseract.image_to_string(img, lang="spa"))
     doc.close()
-    return texts
+    return texts, rotations
 
 
-def _split_single_page(data, page_index):
+def _split_single_page(data, page_index, rotation=0):
     src = fitz.open(stream=data, filetype="pdf")
     new_doc = fitz.open()
     new_doc.insert_pdf(src, from_page=page_index, to_page=page_index)
+    if rotation:
+        # H30 (S60). El PDF final sube ya bien orientado -- no basta
+        # con leerlo bien, tiene que quedar archivado legible.
+        new_page = new_doc[0]
+        new_page.set_rotation((new_page.rotation + rotation) % 360)
     out = new_doc.tobytes()
     new_doc.close()
     src.close()
@@ -291,7 +318,7 @@ def main():
 
         try:
             data = bucket.blob(blob_name).download_as_bytes()
-            page_texts = _ocr_all_pages(data)
+            page_texts, page_rotations = _ocr_all_pages(data)
         except Exception as exc:
             _log("  ERROR descargando/OCR: %s" % exc)
             manifest.write(json.dumps({
@@ -327,7 +354,9 @@ def main():
                 )
                 person_row = cur.fetchone()
 
-            page_bytes = _split_single_page(data, page_index)
+            page_bytes = _split_single_page(
+                data, page_index, page_rotations[page_index],
+            )
             if person_row:
                 person_id, given, first_s, second_s, folder_path = person_row
                 filename = _build_filename_personal(
