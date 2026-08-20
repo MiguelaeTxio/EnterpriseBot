@@ -305,9 +305,39 @@ CANDIDATES_SAFE = {
         # ("AUTORIZACION USO DE MAQUINARIA" en FOLDER_TYPE_RULES, que
         # cubre una carpeta central de nombre completo, no estos
         # archivos sueltos dentro de la carpeta de cada persona).
-        "AUTORIZACION_USO_MAQUINARIA": ["AUT USO MAQ"],
+        "AUTORIZACION_USO_MAQUINARIA": [
+            "AUT USO MAQ",
+            # Añadido S59: convencion de nombrado nueva detectada en
+            # "PTE CONTRATACION" -- codigo de tipo COMPLETO dentro
+            # del nombre, separado por guion bajo (p.ej.
+            # "GUTIERREZ_MATEO_CRISTHIAN_AUTORIZACION_USO_MAQUINARIA_
+            # 20250410.pdf"). El separador flexible de _build_pattern
+            # ya cubre "_" igual que espacio/guion/punto, asi que la
+            # frase completa sin "DE" basta -- confirmado por Miguel
+            # Angel como regla reutilizable para cualquier tipo que
+            # aparezca con este patron APELLIDO_NOMBRE_TIPO_FECHA.
+            "AUTORIZACION USO MAQUINARIA",
+        ],
         "CARNET_CONDUCIR": ["CARNET CONDUCIR", "CARNE CONDUCIR"],
-        "CONTRATO": ["CONTRATO LABORAL"],
+        "AUTONOMO": [
+            # Añadido S59 (migracion 0039): recibos mensuales de
+            # cuota de autonomo de la familia Alvarez, mayoria real
+            # de "DOC. PERSONAL/PERSONAL/ADMINISTRACION".
+            "AUTONOMO",
+        ],
+        "CONTRATO": [
+            "CONTRATO LABORAL",
+            # Añadido S59, confirmado por Miguel Angel: dentro de
+            # DOC. PERSONAL casi cualquier archivo con "CONTRATO" en
+            # el nombre es un contrato laboral (indefinido o con el
+            # nombre del trabajador) -- a diferencia de MACHINE, donde
+            # "CONTRATO" puede ser CONTRATO_COMPRAVENTA (ese codigo
+            # vive en el diccionario MACHINE, sin colision posible:
+            # el emparejamiento siempre esta acotado por dominio, ver
+            # _match_candidates). Cubre tambien el patron
+            # APELLIDO_NOMBRE_CONTRATO_FECHA de "PTE CONTRATACION".
+            "CONTRATO",
+        ],
         "CURSO": ["CURSO"],
         "DNI": ["DNI"],
         "ENTREGA_INFORMACION": ["ENTREGA INFORMACION"],
@@ -317,7 +347,13 @@ CANDIDATES_SAFE = {
         "NOMINA": ["NOMINA"],
         "PAGO_CORRIENTE": ["PAGO CORRIENTE"],
         "RECONOCIMIENTO_MEDICO": ["RECONOCIMIENTO MEDICO"],
-        "SEG_SOCIAL": ["SEGURIDAD SOCIAL"],
+        "SEG_SOCIAL": [
+            "SEGURIDAD SOCIAL",
+            # Añadido S59: variante abreviada del mismo patron
+            # APELLIDO_NOMBRE_TIPO_FECHA de "PTE CONTRATACION" (p.ej.
+            # "GUTIERREZ_MATEO_CRISTHIAN_SEG_SOCIAL_20260805.pdf").
+            "SEG SOCIAL",
+        ],
         "VACACIONES": ["VACACIONES"],
         # EPIS deliberadamente FUERA (S48, correccion de Miguel Angel):
         # los documentos de EPI se consumen hacia EpiDelivery/
