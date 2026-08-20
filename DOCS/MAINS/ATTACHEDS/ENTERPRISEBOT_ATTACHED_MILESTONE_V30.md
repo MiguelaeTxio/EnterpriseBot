@@ -2929,68 +2929,208 @@ sesión de mañana desde la oficina:**
 
 ---
 
+### COMPLETADAS EN S59 (2026-08-20 -- cierre de los puntos 1/2/3 de
+la hoja de ruta de S58, más una segunda fase real de S59 sobre
+`RECONOCIMIENTO_MEDICO` (partición física de dosieres) no prevista en
+esa hoja de ruta, y dos bugs reales corregidos en producción)
+
+**Punto 1 -- `OPERARIOS` cerrado y verificado.** Confirmado a escala
+contra Comando S real: `"AUT USO MAQ"` solo cubría 168/2.618 (6,4%),
+nunca "el grueso" como se hipotetizaba en S58 con una sola muestra --
+la carpeta es mucho más heterogénea (EPIS, CARNET DE CONDUCIR,
+CONTRATO, CAMBIO IRPF, formación PRL...). Regla heurística añadida de
+todos modos (168 coincidencias limpias, sin falso positivo visible).
+`run_fase_a_sweep --apply` relanzado. `OPERARIOS` sin tipo: 2.618 →
+2.450, verificado contra la BD.
+
+**Punto 2 -- resto de `DOC. PERSONAL/PERSONAL` sin tipo, cerrado.**
+Muestra real de las diez carpetas restantes reveló un patrón nuevo de
+nombrado (`APELLIDO_NOMBRE_TIPO_FECHA`, alta digital reciente) bajo
+`PTE CONTRATACION`. Confirmado por Miguel Ángel como regla reutilizable
+-- añadidas `AUTORIZACION USO MAQUINARIA` (forma completa),
+`SEG SOCIAL`, y `CONTRATO` en bruto (acotado a dominio PERSONAL, nunca
+colisiona con `CONTRATO_COMPRAVENTA` de MÁQUINA). **Bug real detectado
+antes de aplicar** (directriz 4.9): `CONTRATO DE ENCOMIENDA`/
+`CONTRATO ENCOMIENDA` (acuerdos de gestión de formación con FUNDAE/
+TAGA/ILURO/EESEA, nunca contratos laborales) se colaban como
+`CONTRATO` -- corregido con exclusión antes de aplicar nada. Tipo
+nuevo `AUTONOMO` dado de alta (migración `0039_seed_autonomo_s59`,
+domain=PERSONAL, family=LABORAL, tracks_expiry=False) para los recibos
+mensuales de autónomo de la familia Álvarez en `ADMINISTRACION`, a
+petición explícita de Miguel Ángel. Total de las diez carpetas: 1.357
+→ 962 sin tipo (`AUTORIZACION MEDIOS DE COMUNICACION` queda en 0).
+Catálogo real tras aplicar: `CONTRATO` 446, `AUTORIZACION_USO_
+MAQUINARIA` 604, `AUTONOMO` 47, `SEG_SOCIAL` 40.
+
+**Punto 3a -- `PAGO_CORRIENTE`, los 19 de S58, cerrado.** Confirmado
+por Miguel Ángel: la delegación de Huelva pertenece a Grúas Adolfo
+Álvarez SL. Regla de carpeta nueva en `resolve_company_worksite_
+domain.py` (`nominas huelva` → `GRUAS`/`HUELVA`). Resultado real: 1.762
+`PAGO_CORRIENTE` con `document_type`, 1.757/1.762 con dominio resuelto
+(14 de los 19 pendientes resueltos vía Huelva, 5 quedan documentados
+como irresolubles por falta de marcador real).
+
+**Punto 3b -- `RECONOCIMIENTO_MEDICO`, Grupo A (13 archivos de S57),
+cerrado.** De los 13, 9 personas (11 archivos) no tenían ninguna
+`PersonIdentity` real -- confirmado con consulta real antes de
+borrar nada (evitó un error real: dos casos que parecían "ruido" en
+realidad correspondían a personas reales, `GOMEZ GOMEZ, FRANCISCO` y
+`DIAZ QUINTERO` ambiguo entre dos personas). Los 11 confirmados a
+papelera de `alvarez_admin` (`trash_dossier_entry`). Los 2 casos
+reales resueltos a mano: Francisco Gómez Gómez vinculado directamente;
+el archivo de `DIAZ QUINTERO` lo abrió Miguel Ángel y confirmó que
+era Antonio Jesús -- vinculado a su `PersonIdentity` (pk=3).
+
+**Grupo B de `RECONOCIMIENTO_MEDICO` -- pipeline de partición física
+construido, no previsto en la hoja de ruta de S58.** Los ~137 dosieres
+de `RECONOCIMIENTOS MEDICOS` restantes resultaron ser PDFs "lote" (un
+certificado por página, un trabajador por página, confirmado con
+ejemplo real e imagen de Miguel Ángel), nunca documentos de una sola
+persona. Decisión explícita de Miguel Ángel: OCR completo + partición
+física real del PDF por trabajador (única excepción real que permite
+tocar GCS, 4.12) + subida a GCS + indexado nuevo + vínculo por DNI.
+
+Construido un pipeline de dos fases, deliberadamente separado por
+coste de CPU:
+1. `h28_migration_agent/split_rm_dossier_vm.py` (standalone, sin
+   Django, mismo patrón de túnel SSH/shard de `local_ocr_classify.py`)
+   -- hace TODO el OCR y la subida de blobs nuevos a GCS, escribe un
+   manifiesto JSONL por shard. Nunca escribe en MySQL directamente
+   (evita reimplementar a mano el cálculo de `blob_name_hash`/
+   `parent_path_hash`/propagación de `total_size_bytes`, que vive en
+   `index_writer.refresh_folder()`).
+2. `apply_rm_split_manifest` (comando Django en PythonAnywhere) --
+   lee el/los manifiesto(s), indexa cada blob nuevo vía
+   `refresh_folder()`, asigna `document_type`/dominio, manda a
+   papelera el dosier original solo cuando TODAS sus páginas se
+   repartieron con éxito.
+
+Patrón de extracción por regex, calibrado contra ejemplos reales,
+nunca un único patrón universal -- lista `RECORD_PATTERNS`:
+- `MEDIOS_PREVENCION_SUR` (calibrado con `RM 2015 FEB VARIOS.pdf`, 5
+  páginas, 5/5 tras corregir el DNI).
+- `FRATERNIDAD_MUPRESPA` (calibrado con 3 imágenes reales de Miguel
+  Ángel, corregido dos veces tras fallos reales a escala: OCR
+  confunde "N.I.F." con "N.|.F.", y el bloque subrayado "APTO PARA EL
+  DESEMPEÑO..." puede leerse ANTES de "...permite calificarle como,"
+  por el orden de lectura del layout subrayado -- se ancla en el
+  texto final, no en "calificarle como").
+
+`_correct_ocr_dni()`: corrección determinista de la letra de control
+del DNI cuando el OCR la lee como dígito parecido (confirmado real:
+"A"→"4", "Q"→"0"), usando el mismo algoritmo público que
+`is_valid_spanish_dni()`, nunca Gemini para esto.
+
+Ejecutado en VM `h28-ocr-batch` (recreada, bootstrap con
+`requirements-ocr-vm.txt` ya existente, sin dependencias nuevas), 3
+shards en paralelo (petición explícita de Miguel Ángel: "una máquina,
+tres instancias"). Resultado real tras dos rondas de calibración: de
+137 dosieres, 12 completamente resueltos y enviados a papelera, 16
+páginas indexadas como `RECONOCIMIENTO_MEDICO` (14 vinculadas a
+`PersonIdentity` real, 2 en `DOCUMENTACION PENDIENTE DE REVISION` por
+DNI sin sembrar). **Quedan 125 dosieres sin resolver**, casi todos en
+`RM CERT. APTITUD` -- probablemente una tercera mutua o variantes de
+Fraternidad-Muprespa no cubiertas todavía. VM detenida (no borrada) al
+cierre, a petición de Miguel Ángel -- retomar con
+`gcloud compute instances start h28-ocr-batch` y relanzar los 3 shards
+directamente, sin rehacer bootstrap.
+
+**Bonus real -- `DOC. PERSONAL/FOTOS CARNET` (174 archivos) sacada
+del alcance de clasificación**, decisión explícita de Miguel Ángel
+(son fotos tipo DNI, nunca van a tener un tipo del catálogo). Excluida
+tanto en `calibrate_fase_a_keywords._files_for_domain()` (nuevo
+`OUT_OF_SCOPE_FOLDERS`) como en `local_ocr_classify.py` (VM).
+
+**Dos bugs reales corregidos en producción durante la sesión:**
+1. Cambio de scope por defecto del explorador rompió la navegación en
+   árbol completa: cualquier clic de carpeta o "Directorio Principal"
+   se convertía en búsqueda recursiva, porque `_folder_nav_url()`
+   resetea deliberadamente "scope" en cada navegación, y el nuevo
+   default (`SCOPE_RECURSIVE`) se aplicaba también ahí. Corregido:
+   `SCOPE_HERE` sigue siendo el default real del backend; "recursivo
+   por defecto" vive solo como preselección visual del desplegable de
+   búsqueda (`scope_param_given`, nuevo en el contexto), sin afectar a
+   la navegación real. Verificado por Miguel Ángel tras el despliegue.
+2. `resolve_domain_pending_types`/`resolve_company_worksite_domain`
+   no eran el foco de este bug -- fue puramente el default de
+   `_read_filters()` en `views.py`.
+
+**Incidentes de proceso reales (S59), ya corregidos y documentados
+para que no se repitan:**
+- Comando entregado con placeholder (`GITHUB_PAT_AQUI`) para que
+  Miguel Ángel sustituyera contenido -- prohibido explícitamente,
+  reforzado en `com-standards`.
+- Pregunta sobre si existía ya la clave de servicio de GCS, pese a
+  estar ya documentada en `SESSION_VARIABLES.md` -- regla nueva:
+  releer `SESSION_VARIABLES.md` antes de preguntar por cualquier
+  credencial de infraestructura.
+- `git clone` con prompt interactivo de usuario/contraseña falla
+  siempre en consolas SSH remotas (4.ª vez real) -- documentado el
+  método que sí funciona (`read -s` + token inline en la URL).
+- Coste de CPU de OCR sin criterio de dónde ejecutar según volumen --
+  nueva directriz en `com-standards` (consola PythonAnywhere para un
+  puñado de archivos, local para volumen medio, VM para volumen
+  grande).
+
+**Migraciones:** `0039_seed_autonomo_s59` (tipo `AUTONOMO`), aplicada
+y verificada con datos reales (`showmigrations` contra el servidor,
+nunca solo el verde del Action -- incidente S014).
+
+---
+
 ## HOJA DE RUTA PARA LA SIGUIENTE SESIÓN (sustituye por completo a
 ## cualquier "pendiente" suelto de bloques anteriores)
 
-Miguel Ángel, instrucción explícita al cierre de S58: empezar la
-próxima sesión directamente por el punto 1 de abajo (clasificación de
-`OPERARIOS`), sin necesidad de preguntar, y continuar con lo pospuesto
-hoy (punto 2).
+Miguel Ángel, instrucción explícita al cierre de S59: relanzar
+directamente los 3 shards de la VM (punto 1 de abajo), sin necesidad
+de preguntar.
 
 **Preguntas explícitas antes de seguir con el resto** (arrastradas ya
-3 sesiones sin ejecución real -- S56/S57 las dejó como
-"arrastrado 2.ª sesión sin avanzar", S58 tampoco las tocó; directriz
-2.2 -- dejan de listarse como tarea abierta y pasan a pregunta
-directa):
+4 sesiones sin ejecución real -- S56/S57 "arrastrado 2.ª sesión sin
+avanzar", S58 y S59 tampoco las tocaron; directriz 2.2, ya convertidas
+en pregunta directa desde S58, no vuelven a listarse como tarea
+abierta):
 
-- **Fase A del resto del catálogo:** con el alcance real ya medido en
-  S58 (3.185 sin tipo en `MAQUINAS`, 8.147 en `PERSONAL`, desglosado
-  por carpeta en el Bloque 3 de arriba), ¿seguimos regla por regla
-  como hasta ahora, o priorizamos por volumen empezando por las
-  carpetas grandes ya identificadas (`OPERARIOS`, `TALLER`,
-  `ADMINISTRACION`, `FORMACION TRABAJADORES`, `ENTREGA EPIS`)?
+- **Fase A del resto del catálogo:** con el alcance real medido en
+  S58 (3.186 sin tipo en `MAQUINAS`, 7.407 en `PERSONAL` tras S59,
+  desglosado por carpeta real en `EnterpriseBot_032_GET.txt` de la
+  sesión), ¿seguimos regla por regla como hasta ahora, o priorizamos
+  por volumen (`PERSONAL` 3.251, `ENTREGA EPIS` 1.508, `FORMACION
+  TRABAJADORES` 1.497 concentran casi todo lo que queda en
+  `DOC. PERSONAL`)?
 - **OneDrive de GRUALDI SL:** ¿tienes ya localizadas carpetas nuevas
   para `PEDIDO_COMPRA`/`PRESTAMO`/`SEG_SOCIAL`/`CAMBIO_TITULARIDAD`, o
   sigue pendiente por tu parte?
 - **`EXCEDENCIA` 100% sintético:** ¿aceptamos ese techo o hay otra
   fuente real que revisar?
 
-1. **Clasificar `DOC. PERSONAL/PERSONAL/OPERARIOS`** (2.618 archivos
-   sin tipo, 66% del total de esa carpeta) -- empezar directamente,
-   sin preguntar (instrucción explícita de Miguel Ángel al cierre de
-   S58). Confirmar primero contra una muestra amplia si el patrón
-   abreviado `"AUT USO MAQ"` → `AUTORIZACION_USO_MAQUINARIA` se
-   repite en el grueso de los 2.618 (un solo archivo visto en S58, no
-   verificado todavía a escala). **Cierre:** regla heurística nueva
-   añadida a `heuristic_type_service.py` si el patrón se confirma,
-   `run_fase_a_sweep --apply` relanzado (dry-run antes), cifra de
-   `OPERARIOS` sin tipo verificada contra consulta real a la BD
-   (objetivo: bajar de 2.618, cifra exacta según lo que el patrón
-   real cubra).
-2. **Continuar con el resto de `DOC. PERSONAL/PERSONAL` sin tipo:**
-   `TALLER` (527), `ADMINISTRACION` (524), `GUARDA` (83),
-   `AUTORIZACIÓN MEDIOS DE COMUNICACIÓN` (62),
-   `PERSONAL ASISTENCIA GRANADA` (58), `PENDIENTES` (44),
-   `PTE CONTRATACION` (38), `AUTONOMOS SUBCONTRATAS` (14),
-   `PRACTICAS` (6), `PARTES BAJA PATERNIDAD` (1). **Cierre:** mismo
-   criterio que el punto 1 -- revisar tipo por tipo si tiene regla
-   real antes de escribirla.
-3. **Retomar lo pospuesto en S58, desde la oficina:** 77
-   `RECONOCIMIENTO_MEDICO` sin resolver de S57 + 19 `PAGO_CORRIENTE`
-   sin resolver de S58 (13 de ellos en `nominas huelva`, empresa real
-   del Grupo Álvarez sin determinar cuál -- confirmar con Miguel
-   Ángel antes de asignar). **Cierre:** `RECONOCIMIENTO_MEDICO` con
-   `domain_object_id` no nulo = 146/146 (o resto documentado con
-   motivo real); `PAGO_CORRIENTE` con `domain_content_type` no nulo =
-   1.762/1.762 (o resto documentado con motivo real), ambos
-   verificados contra consulta directa a la BD.
-4. Resto de la hoja de ruta de H30 arrastrada de sesiones anteriores,
-   sin tocar en S56/S57/S58: EPIS (extracción a `EpiDelivery`, fundida
-   con Fase B/Gemini como último recurso -- conecta directo con
-   `ENTREGA EPIS`, 1.508 archivos sin tipo, visto en el Bloque 3 de
-   S58), variable de entorno de la clave de servicio del agente H28,
-   `FICHA_TECNICA` vs `ITV`, backfill de fecha, duplicados de
-   seguro/OCA. El "renombrado retroactivo" genérico sigue sin
-   mecanismo reutilizable -- S56 solo lo resolvió ad-hoc, a mano,
-   dentro de la migración 0036, para el caso puntual de
-   `DOC_VENTA`→`FACTURA_VENTA` (4 archivos).
+1. **Relanzar los 3 shards de partición de `RECONOCIMIENTO_MEDICO`**
+   sobre los 125 dosieres restantes (casi todos en `RM CERT.
+   APTITUD`). Arrancar la VM ya montada
+   (`gcloud compute instances start h28-ocr-batch
+   --project=gen-lang-client-0961484137 --zone=europe-west1-b`), `git
+   pull` en las tres ventanas SSH, relanzar `split_rm_dossier_vm.py
+   --shard-count 3 --shard-index {0,1,2}` sin rehacer bootstrap
+   (entorno y clave de servicio ya están). **Antes de relanzar**:
+   abrir 2-3 ejemplos reales más de `RM CERT. APTITUD` (páginas que
+   dieron `SIN_PATRON` en el manifiesto anterior) para identificar si
+   hay una tercera mutua o variantes de Fraternidad-Muprespa no
+   cubiertas -- mismo criterio de calibración que S59 (ver un
+   ejemplo real, extraer regex, verificar contra 3+ casos antes de
+   desplegar). **Cierre:** manifiestos nuevos bajados, subidos a
+   SWAP, `apply_rm_split_manifest --apply` ejecutado, PDFs restantes
+   bajo `RECONOCIMIENTOS MEDICOS` verificados contra consulta directa
+   a la BD (objetivo: bajar de 125, cifra exacta según lo que los
+   patrones nuevos cubran). Al terminar, detener o borrar la VM según
+   si se prevé una tercera ronda cercana.
+2. Resto de la hoja de ruta de H30 arrastrada de sesiones anteriores,
+   sin tocar en S56/S57/S58/S59: EPIS (extracción a `EpiDelivery`,
+   fundida con Fase B/Gemini como último recurso -- conecta directo
+   con `ENTREGA EPIS`, 1.508 archivos sin tipo), variable de entorno
+   de la clave de servicio del agente H28, `FICHA_TECNICA` vs `ITV`,
+   backfill de fecha, duplicados de seguro/OCA. El "renombrado
+   retroactivo" genérico sigue sin mecanismo reutilizable.
+3. Carpetas pequeñas de `DOC. PERSONAL/PERSONAL` sin tocar en S59:
+   `PENDIENTES` (44), `AUTONOMOS SUBCONTRATAS` (14), `PRACTICAS` (6),
+   `PARTES BAJA PATERNIDAD` (1) -- sin patrón dominante claro en la
+   muestra ya vista, revisar tipo por tipo antes de escribir regla.
