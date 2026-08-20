@@ -50,6 +50,13 @@ from document_explorer.models import (
 )
 
 OBRAS_PREFIX = "DOC. PERSONAL/DECLARACION AL CORRIENTE/DECLARACION POR OBRAS/"
+# Añadida S59: confirmado verbatim por Miguel Angel -- "La delegacion
+# de Huelva esta dentro de grúas Adolfo." Carpeta real sin marcador
+# GR/TR en el nombre de archivo (nominas escaneadas antiguas,
+# 2015), asi que necesita su propia regla de carpeta -- no entra por
+# OBRAS_PREFIX (no vive bajo DECLARACION POR OBRAS) ni por el
+# detector de marcador de nombre de archivo.
+NOMINAS_HUELVA_PREFIX = "DOC. PERSONAL/DECLARACION AL CORRIENTE/nominas huelva"
 
 _GR_MARKER_RE = re.compile(r"\(GR\)|\bGR\b|\bGRUAS\b")
 _TR_MARKER_RE = re.compile(r"\(TR\)|\bTR\b|TRANSGRUAL")
@@ -61,6 +68,11 @@ def _detect_company_worksite(entry):
     """Ver docstring del módulo para el criterio completo. Devuelve
     (company, worksite) o (None, None) si no se puede resolver sin
     adivinar."""
+    if entry.parent_path == NOMINAS_HUELVA_PREFIX or (
+        entry.parent_path.startswith(NOMINAS_HUELVA_PREFIX + "/")
+    ):
+        return "GRUAS", "HUELVA"
+
     if entry.parent_path.startswith(OBRAS_PREFIX):
         rest = entry.parent_path[len(OBRAS_PREFIX):]
         parts = [p for p in rest.split("/") if p]
