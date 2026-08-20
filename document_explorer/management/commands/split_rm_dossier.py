@@ -97,13 +97,51 @@ PENDING_REVIEW_FOLDER = "DOC. PERSONAL/DOCUMENTACION PENDIENTE DE REVISION"
 # letra de control con un digito parecido (visto en produccion:
 # "A"->"4", "Q"->"0") -- ver `_correct_ocr_dni()` mas abajo, que
 # corrige eso de forma deterministica, sin adivinar.
-_RECORD_RE = re.compile(
-    r"trabajador\s+(?P<nombre>[A-ZÁÉÍÓÚÑ ,.]+?)\s+y\s+DNI\s+"
-    r"(?P<dni>[0-9A-Za-z]{9})"
-    r".{0,400}?d[ií]a\s+(?P<fecha>\d{1,2}\s+de\s+\w+\s+de\s+\d{4})"
-    r".{0,800}?resulta\s+(?P<aptitud>NO\s+APTO|APTO)",
-    re.IGNORECASE | re.DOTALL,
-)
+# Lista de patrones reales confirmados contra OCR, uno por mutua/
+# plantilla distinta (S59) -- nunca un unico regex universal, cada
+# mutua real redacta su certificado de forma distinta. Se prueban en
+# orden, el primero que matchea gana. El grupo `dni` captura 9
+# caracteres alfanumericos en bruto -- nunca exige letra al final
+# aqui, porque el propio OCR puede confundir la letra de control con
+# un digito parecido (visto en produccion: "A"->"4", "Q"->"0") -- ver
+# `_correct_ocr_dni()` mas abajo, que corrige eso de forma
+# deterministica.
+RECORD_PATTERNS = [
+    # MEDIOS DE PREVENCION EXTERNOS SUR, S.L. -- confirmado con
+    # "RM 2015 FEB VARIOS.pdf" (S59). Fecha "17 de febrero de 2015".
+    ("MEDIOS_PREVENCION_SUR", re.compile(
+        r"trabajador\s+(?P<nombre>[A-ZÁÉÍÓÚÑ ,.]+?)\s+y\s+DNI\s+"
+        r"(?P<dni>[0-9A-Za-z]{9})"
+        r".{0,400}?d[ií]a\s+(?P<fecha>\d{1,2}\s+de\s+\w+\s+de\s+\d{4})"
+        r".{0,800}?resulta\s+(?P<aptitud>NO\s+APTO|APTO)",
+        re.IGNORECASE | re.DOTALL,
+    )),
+    # Fraternidad-Muprespa, S.L.U. -- confirmado con 3 ejemplos reales
+    # de "TODO.pdf" (RM CERT. APTITUD/RECONOCIMIENTO MEDICOS 2010,
+    # S59). Fecha "con fecha 19/03/2010" (DD/MM/AAAA, no "DD de MES
+    # de AAAA" como el patron anterior).
+    ("FRATERNIDAD_MUPRESPA", re.compile(
+        r"con\s+fecha\s+(?P<fecha>\d{1,2}/\d{1,2}/\d{4})"
+        r".{0,60}?examen\s+de\s+salud\s+periodico\s+de\s+D\.\s+"
+        r"(?P<nombre>[A-ZÁÉÍÓÚÑ ,.]+?)\s+con\s+N\.?\s*I\.?\s*F\.?\s+"
+        r"(?P<dni>[0-9A-Za-z]{9})"
+        r".{0,700}?calificarle\s+como\s+(?P<aptitud>NO\s+APTO|APTO)",
+        re.IGNORECASE | re.DOTALL,
+    )),
+]
+
+
+def _match_record(clean_text):
+    """
+    Prueba cada patron de RECORD_PATTERNS en orden, devuelve
+    (nombre_patron, match) del primero que matchea, o (None, None).
+    """
+    for pattern_name, pattern in RECORD_PATTERNS:
+        match = pattern.search(clean_text)
+        if match:
+            return pattern_name, match
+    return None, None
+
 
 _MESES = {
     "enero": 1, "febrero": 2, "marzo": 3, "abril": 4, "mayo": 5,
@@ -121,30 +159,34 @@ def _strip_accents(value):
 
 def _parse_spanish_date(raw):
     """
-    Parses "17 de febrero de 2015" into a `date`, or None if the
-    OCR text doesn't match the expected shape.
-
-    ---
-
-    Convierte "17 de febrero de 2015" en un `date`, o None si el
-    texto OCR no tiene la forma esperada.
+    Convierte una fecha real de cualquiera de los dos formatos vistos
+    -- "17 de febrero de 2015" o "19/03/2010" -- en un `date`, o
+    None si no encaja en ninguno de los dos.
     """
     import datetime
 
-    match = re.match(
-        r"(\d{1,2})\s+de\s+(\w+)\s+de\s+(\d{4})",
-        _strip_accents(raw).lower(),
-    )
-    if not match:
-        return None
-    day, month_name, year = match.groups()
-    month = _MESES.get(month_name)
-    if not month:
-        return None
-    try:
-        return datetime.date(int(year), month, int(day))
-    except ValueError:
-        return None
+    raw = _strip_accents(raw).lower().strip()
+
+    slash_match = re.match(r"(\d{1,2})/(\d{1,2})/(\d{4})", raw)
+    if slash_match:
+        day, month, year = (int(g) for g in slash_match.groups())
+        try:
+            return datetime.date(year, month, day)
+        except ValueError:
+            return None
+
+    text_match = re.match(r"(\d{1,2})\s+de\s+(\w+)\s+de\s+(\d{4})", raw)
+    if text_match:
+        day, month_name, year = text_match.groups()
+        month = _MESES.get(month_name)
+        if not month:
+            return None
+        try:
+            return datetime.date(int(year), month, int(day))
+        except ValueError:
+            return None
+
+    return None
 
 
 def _correct_ocr_dni(raw):
@@ -256,7 +298,7 @@ class Command(BaseCommand):
         resultados = []
         for page_index, text in enumerate(page_texts):
             clean = _strip_accents(text).upper()
-            match = _RECORD_RE.search(clean)
+            pattern_name, match = _match_record(clean)
             if not match:
                 resultados.append((page_index, "SIN_PATRON", None))
                 self.stdout.write(

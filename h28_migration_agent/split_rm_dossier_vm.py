@@ -79,13 +79,32 @@ RM_TYPE_CODE = "RECONOCIMIENTO_MEDICO"
 _DNI_CHECK_LETTERS = "TRWAGMYFPDXBNJZSQVHLCKE"
 _NIE_PREFIX_DIGIT = {"X": "0", "Y": "1", "Z": "2"}
 
-_RECORD_RE = re.compile(
-    r"trabajador\s+(?P<nombre>[A-ZÁÉÍÓÚÑ ,.]+?)\s+y\s+DNI\s+"
-    r"(?P<dni>[0-9A-Za-z]{9})"
-    r".{0,400}?d[ií]a\s+(?P<fecha>\d{1,2}\s+de\s+\w+\s+de\s+\d{4})"
-    r".{0,800}?resulta\s+(?P<aptitud>NO\s+APTO|APTO)",
-    re.IGNORECASE | re.DOTALL,
-)
+RECORD_PATTERNS = [
+    ("MEDIOS_PREVENCION_SUR", re.compile(
+        r"trabajador\s+(?P<nombre>[A-ZÁÉÍÓÚÑ ,.]+?)\s+y\s+DNI\s+"
+        r"(?P<dni>[0-9A-Za-z]{9})"
+        r".{0,400}?d[ií]a\s+(?P<fecha>\d{1,2}\s+de\s+\w+\s+de\s+\d{4})"
+        r".{0,800}?resulta\s+(?P<aptitud>NO\s+APTO|APTO)",
+        re.IGNORECASE | re.DOTALL,
+    )),
+    ("FRATERNIDAD_MUPRESPA", re.compile(
+        r"con\s+fecha\s+(?P<fecha>\d{1,2}/\d{1,2}/\d{4})"
+        r".{0,60}?examen\s+de\s+salud\s+periodico\s+de\s+D\.\s+"
+        r"(?P<nombre>[A-ZÁÉÍÓÚÑ ,.]+?)\s+con\s+N\.?\s*I\.?\s*F\.?\s+"
+        r"(?P<dni>[0-9A-Za-z]{9})"
+        r".{0,700}?calificarle\s+como\s+(?P<aptitud>NO\s+APTO|APTO)",
+        re.IGNORECASE | re.DOTALL,
+    )),
+]
+
+
+def _match_record(clean_text):
+    for pattern_name, pattern in RECORD_PATTERNS:
+        match = pattern.search(clean_text)
+        if match:
+            return pattern_name, match
+    return None, None
+
 
 _MESES = {
     "enero": 1, "febrero": 2, "marzo": 3, "abril": 4, "mayo": 5,
@@ -144,20 +163,28 @@ def _correct_ocr_dni(raw):
 
 
 def _parse_spanish_date(raw):
-    match = re.match(
-        r"(\d{1,2})\s+de\s+(\w+)\s+de\s+(\d{4})",
-        _strip_accents(raw).lower(),
-    )
-    if not match:
-        return None
-    day, month_name, year = match.groups()
-    month = _MESES.get(month_name)
-    if not month:
-        return None
-    try:
-        return date(int(year), month, int(day))
-    except ValueError:
-        return None
+    raw = _strip_accents(raw).lower().strip()
+
+    slash_match = re.match(r"(\d{1,2})/(\d{1,2})/(\d{4})", raw)
+    if slash_match:
+        day, month, year = (int(g) for g in slash_match.groups())
+        try:
+            return date(year, month, day)
+        except ValueError:
+            return None
+
+    text_match = re.match(r"(\d{1,2})\s+de\s+(\w+)\s+de\s+(\d{4})", raw)
+    if text_match:
+        day, month_name, year = text_match.groups()
+        month = _MESES.get(month_name)
+        if not month:
+            return None
+        try:
+            return date(int(year), month, int(day))
+        except ValueError:
+            return None
+
+    return None
 
 
 def _ocr_all_pages(data):
@@ -268,7 +295,7 @@ def main():
         paginas = []
         for page_index, text in enumerate(page_texts):
             clean = _strip_accents(text).upper()
-            match = _RECORD_RE.search(clean)
+            pattern_name, match = _match_record(clean)
             if not match:
                 paginas.append({
                     "page_index": page_index, "status": "SIN_PATRON",
