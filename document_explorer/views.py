@@ -612,9 +612,14 @@ class FolderListingView(ExplorerAccessMixin, TemplateView):
         Lee y valida los filtros de búsqueda de la query string.
         """
         request = self.request
-        scope = request.GET.get("scope") or SCOPE_HERE
+        # Corregido S59: por defecto, "esta carpeta y sus
+        # subcarpetas" (SCOPE_RECURSIVE), no solo "esta carpeta"
+        # (SCOPE_HERE) -- decision explicita de Miguel Angel: es el
+        # ambito que usa casi siempre, y volver a elegirlo en cada
+        # visita al explorador le hacia perder tiempo real.
+        scope = request.GET.get("scope") or SCOPE_RECURSIVE
         if scope not in SCOPE_CHOICES:
-            scope = SCOPE_HERE
+            scope = SCOPE_RECURSIVE
         local = request.GET.get("local") or ""
         if local not in ("", "1", "0"):
             local = ""
