@@ -96,6 +96,14 @@ RECORD_PATTERNS = [
         r"\s+DEL\s+PUESTO\s+DE\s+TRABAJO",
         re.IGNORECASE | re.DOTALL,
     )),
+    ("FRATERNIDAD_NOTIFICACION_PENDIENTE", re.compile(
+        r"se\s+ha\s+realizado\s+con\s+fecha\s+"
+        r"(?P<fecha>\d{1,2}\s+de\s+\w+\s+de\s+\d{4})"
+        r".{0,400}?al\s+trabajador\s+de\s+su\s+empresa\s+D\s*/\s*D.a\s+"
+        r"(?P<nombre>[A-ZÁÉÍÓÚÑ ,.\n]+?)\s+con\s+D\.?\s*N\.?\s*I\.?\s+"
+        r"(?P<dni>[0-9A-Za-z]{9})",
+        re.IGNORECASE | re.DOTALL,
+    )),
 ]
 
 
