@@ -3078,59 +3078,119 @@ nunca solo el verde del Action -- incidente S014).
 
 ---
 
+### COMPLETADAS EN S60 (2026-08-20 -- calibración iterativa de
+`RECONOCIMIENTO_MEDICO` a partir del resto real de S59, 3 patrones
+nuevos, 1 tipo documental nuevo, y un bug real de orientación
+corregido de raíz)
+
+**Punto de partida real:** S59 cerró con 125 dosieres RM sin resolver
+(`RM CERT. APTITUD`, casi todos Fraternidad-Muprespa). Se abrió la
+sesión relanzando directamente los 3 shards de `split_rm_dossier_vm.py`
+con el código ya corregido en S59 (`64b2d7e`) que el manifiesto
+original nunca llegó a usar -- primer bloque, 125 → 89, sin cambio de
+código, solo confirmando que el fix de S59 ya cubría una parte real.
+
+**Ciclo de calibración real, cinco vueltas completas (herramienta
+nueva `inspect_sin_patron_pages.py`, solo lectura, reOCR puntual de
+páginas `SIN_PATRON` de los manifiestos -- no hay texto OCR guardado
+en el manifiesto en sí, solo `page_index`/`status`):**
+
+1. **`examen de salud inicial`** (el patrón solo aceptaba
+   "periodico") + tolerancia a `N.I.F.` con 1-2 caracteres de ruido
+   OCR (`N.!|.F.`) -- verificado contra 2 ejemplos reales
+   (`4f5b446`). 89 → 78.
+2. **Tolerancia ampliada de `N.I.F.`** a la letra `I` confundida por
+   OCR con `1` (dígito) o `L` (mayúscula) -- `N.1.F.`/`N.LF.`/`N.L.F.`,
+   3 ejemplos reales distintos (`07f7fa5`). 78 → 73.
+3. **Patrón nuevo `FRATERNIDAD_NOTIFICACION_PENDIENTE`** -- plantilla
+   SPFM distinta ("NOTIFICACIÓN DE LA REALIZACIÓN DE RECONOCIMIENTO
+   MEDICO"), sin conclusión de aptitud (queda pendiente de pruebas
+   complementarias), fecha en texto y "D.N.I." en vez de "N.I.F.".
+   Verificado contra 3 ejemplos reales limpios (`6f6558c`); el propio
+   `main()` nunca usa el grupo `aptitud`, así que el patrón nuevo no lo
+   necesita. 73 → 53 (bloque más productivo de la sesión, 101 páginas
+   OK en un solo pase).
+4. **Bug real de orientación, corregido de raíz.** `DOC008.pdf`
+   (5 páginas, todas `SIN_PATRON`) resultó estar escaneada boca abajo
+   -- confirmado visualmente por Miguel Ángel. Añadido `_detect_rotation()`
+   (Tesseract OSD) tanto en `_ocr_all_pages()` (para poder leer el
+   texto) como en `_split_single_page()` (`page.set_rotation()`, para
+   que el PDF final suba también bien orientado, no solo se clasifique
+   bien) -- verificado contra la API real de PyMuPDF por búsqueda web
+   antes de escribirlo (`57793ba`). Confirmado con datos reales: las 5
+   páginas de `DOC008.pdf` se resolvieron al 100% en el siguiente pase.
+
+**Alta de tipo documental nuevo, confirmada por Miguel Ángel:**
+`CERT_LIMITACIONES` (migración `0040_seed_cert_limitaciones_s60`,
+`domain=PERSONAL`, `family=SALUD_BAJAS_PERSONA`,
+`tracks_expiry=False`) -- declaración del administrador de que un
+trabajador con limitaciones médicas usará los EPIs recomendados por el
+médico, sin `APTO`/`NO APTO` ni estructura de examen. Detectado al
+calibrar contra `CERT.LIMITACIONES RM Perez Fernandez 2-3-16.pdf`.
+Migración desplegada y verificada con datos reales del servidor
+(`git log -1` + `showmigrations` + consulta directa al catálogo, no
+solo el verde del Action -- incidente S014). Solo 2 ejemplos reales
+vistos hasta ahora (`Perez Fernandez`, `Casilla Nieto`) -- por debajo
+del umbral de 3+ que exige el criterio de calibración de la sesión, así
+que su propio patrón de extracción queda sin escribir todavía.
+
+**Resultado acumulado real, verificado contra la BD tras cada bloque
+(nunca solo contra el resumen del propio comando):** 125 → 89 → 78 →
+73 → 53 dosieres `RM CERT. APTITUD` sin resolver. `apply_rm_split_manifest`
+ejecutado 5 veces, siempre dry-run primero y `--apply` solo si el
+dry-run cuadraba exacto con el resumen del manifiesto -- ninguna
+sorpresa en ningún bloque.
+
+**Incidencia de proceso real:** Miguel Ángel señaló, con razón, que
+las instrucciones de una respuesta intermedia (varias cajas alternativas
+sin dejar claro cuál pegar y dónde) resultaron confusas -- corregido en
+el momento, pasando a un único bloque de comandos en el orden exacto en
+que se pegan.
+
+**Migraciones:** `0040_seed_cert_limitaciones_s60` (tipo
+`CERT_LIMITACIONES`), aplicada y verificada con datos reales.
+
+---
+
 ## HOJA DE RUTA PARA LA SIGUIENTE SESIÓN (sustituye por completo a
 ## cualquier "pendiente" suelto de bloques anteriores)
 
-Miguel Ángel, instrucción explícita al cierre de S59: relanzar
-directamente los 3 shards de la VM (punto 1 de abajo), sin necesidad
-de preguntar.
+VM `h28-ocr-batch` detenida al cierre de S60 (a petición de Miguel
+Ángel, para minimizar coste -- retomar con
+`gcloud compute instances start h28-ocr-batch
+--project=gen-lang-client-0961484137 --zone=europe-west1-b` y
+relanzar los 3 shards directamente, sin rehacer bootstrap, mismo
+patrón ya usado toda la sesión).
 
-**Preguntas explícitas antes de seguir con el resto** (arrastradas ya
-4 sesiones sin ejecución real -- S56/S57 "arrastrado 2.ª sesión sin
-avanzar", S58 y S59 tampoco las tocaron; directriz 2.2, ya convertidas
-en pregunta directa desde S58, no vuelven a listarse como tarea
-abierta):
+1. **Seguir el ciclo de calibración de `RECONOCIMIENTO_MEDICO`** sobre
+   los 53 dosieres restantes -- `inspect_sin_patron_pages.py --limit 8`
+   para ver ejemplos reales nuevos (los que quedan son sobre todo
+   `TODO*.pdf`/`gruas adolfo alvarez(1) N.pdf`/`RM2012`/`JUSTIFICANTES`,
+   nombres genéricos que huelen a dosieres con varias personas
+   mezcladas en un mismo PDF -- confirmar con 2-3 ejemplos reales antes
+   de asumirlo). Criterio de cierre: bajar de 53, verificado contra
+   consulta directa a la BD tras cada `--apply`, igual que en S60.
+2. **Patrón de extracción para `CERT_LIMITACIONES`** -- el tipo
+   documental ya existe (migración `0040`), pero solo hay 2 ejemplos
+   reales vistos (`Perez Fernandez`, `Casilla Nieto`). Buscar un
+   tercero real antes de escribir el regex (criterio de calibración de
+   3+ casos de la sesión).
+3. Resto de la hoja de ruta de H30 arrastrada de sesiones anteriores,
+   sin tocar en S56/S57/S58/S59/S60: EPIS (extracción a `EpiDelivery`,
+   fundida con Fase B/Gemini como último recurso -- conecta directo con
+   `ENTREGA EPIS`, 1.508 archivos sin tipo), variable de entorno de la
+   clave de servicio del agente H28, `FICHA_TECNICA` vs `ITV`, backfill
+   de fecha, duplicados de seguro/OCA. El "renombrado retroactivo"
+   genérico sigue sin mecanismo reutilizable.
+4. Carpetas pequeñas de `DOC. PERSONAL/PERSONAL` (arrastrado 1.ª
+   sesión sin avanzar): `PENDIENTES` (44), `AUTONOMOS SUBCONTRATAS`
+   (14), `PRACTICAS` (6), `PARTES BAJA PATERNIDAD` (1) -- sin patrón
+   dominante claro en la muestra ya vista, revisar tipo por tipo antes
+   de escribir regla.
 
-- **Fase A del resto del catálogo:** con el alcance real medido en
-  S58 (3.186 sin tipo en `MAQUINAS`, 7.407 en `PERSONAL` tras S59,
-  desglosado por carpeta real en `EnterpriseBot_032_GET.txt` de la
-  sesión), ¿seguimos regla por regla como hasta ahora, o priorizamos
-  por volumen (`PERSONAL` 3.251, `ENTREGA EPIS` 1.508, `FORMACION
-  TRABAJADORES` 1.497 concentran casi todo lo que queda en
-  `DOC. PERSONAL`)?
-- **OneDrive de GRUALDI SL:** ¿tienes ya localizadas carpetas nuevas
-  para `PEDIDO_COMPRA`/`PRESTAMO`/`SEG_SOCIAL`/`CAMBIO_TITULARIDAD`, o
-  sigue pendiente por tu parte?
-- **`EXCEDENCIA` 100% sintético:** ¿aceptamos ese techo o hay otra
-  fuente real que revisar?
-
-1. **Relanzar los 3 shards de partición de `RECONOCIMIENTO_MEDICO`**
-   sobre los 125 dosieres restantes (casi todos en `RM CERT.
-   APTITUD`). Arrancar la VM ya montada
-   (`gcloud compute instances start h28-ocr-batch
-   --project=gen-lang-client-0961484137 --zone=europe-west1-b`), `git
-   pull` en las tres ventanas SSH, relanzar `split_rm_dossier_vm.py
-   --shard-count 3 --shard-index {0,1,2}` sin rehacer bootstrap
-   (entorno y clave de servicio ya están). **Antes de relanzar**:
-   abrir 2-3 ejemplos reales más de `RM CERT. APTITUD` (páginas que
-   dieron `SIN_PATRON` en el manifiesto anterior) para identificar si
-   hay una tercera mutua o variantes de Fraternidad-Muprespa no
-   cubiertas -- mismo criterio de calibración que S59 (ver un
-   ejemplo real, extraer regex, verificar contra 3+ casos antes de
-   desplegar). **Cierre:** manifiestos nuevos bajados, subidos a
-   SWAP, `apply_rm_split_manifest --apply` ejecutado, PDFs restantes
-   bajo `RECONOCIMIENTOS MEDICOS` verificados contra consulta directa
-   a la BD (objetivo: bajar de 125, cifra exacta según lo que los
-   patrones nuevos cubran). Al terminar, detener o borrar la VM según
-   si se prevé una tercera ronda cercana.
-2. Resto de la hoja de ruta de H30 arrastrada de sesiones anteriores,
-   sin tocar en S56/S57/S58/S59: EPIS (extracción a `EpiDelivery`,
-   fundida con Fase B/Gemini como último recurso -- conecta directo
-   con `ENTREGA EPIS`, 1.508 archivos sin tipo), variable de entorno
-   de la clave de servicio del agente H28, `FICHA_TECNICA` vs `ITV`,
-   backfill de fecha, duplicados de seguro/OCA. El "renombrado
-   retroactivo" genérico sigue sin mecanismo reutilizable.
-3. Carpetas pequeñas de `DOC. PERSONAL/PERSONAL` sin tocar en S59:
-   `PENDIENTES` (44), `AUTONOMOS SUBCONTRATAS` (14), `PRACTICAS` (6),
-   `PARTES BAJA PATERNIDAD` (1) -- sin patrón dominante claro en la
-   muestra ya vista, revisar tipo por tipo antes de escribir regla.
+**Preguntas explícitas ya resueltas en S60** (no se vuelven a listar):
+`CERT.LIMITACIONES` → tipo documental nuevo, confirmado. El resto de
+preguntas arrastradas de S56-S59 (Fase A del resto del catálogo,
+OneDrive de GRUALDI SL, techo de `EXCEDENCIA` 100% sintético) siguen
+sin tocar -- si S61 no las aborda tampoco, pasan a pregunta directa
+obligatoria por directriz 2.2 (ya van 5 sesiones sin ejecución real).
