@@ -76,7 +76,8 @@ from PIL import Image
 from django.core.management.base import BaseCommand
 
 from document_explorer.classification_service import (
-    is_valid_spanish_dni, resolve_person_identity, trash_dossier_entry,
+    _DNI_CHECK_LETTERS, _NIE_PREFIX_DIGIT, is_valid_spanish_dni,
+    resolve_person_identity, trash_dossier_entry,
 )
 from document_explorer.index_writer import refresh_folder
 from document_explorer.management.commands.calibrate_fase_a_keywords import (
@@ -90,10 +91,15 @@ from spare_parts.gcs_service import download_bytes, upload_bytes
 
 PENDING_REVIEW_FOLDER = "DOC. PERSONAL/DOCUMENTACION PENDIENTE DE REVISION"
 
-# Patron real confirmado contra OCR de un ejemplo real (S59).
+# Patron real confirmado contra OCR de un ejemplo real (S59). El
+# grupo `dni` captura 9 caracteres alfanumericos en bruto -- nunca
+# exige letra al final aqui, porque el propio OCR puede confundir la
+# letra de control con un digito parecido (visto en produccion:
+# "A"->"4", "Q"->"0") -- ver `_correct_ocr_dni()` mas abajo, que
+# corrige eso de forma deterministica, sin adivinar.
 _RECORD_RE = re.compile(
     r"trabajador\s+(?P<nombre>[A-ZÁÉÍÓÚÑ ,.]+?)\s+y\s+DNI\s+"
-    r"(?P<dni>[0-9XYZxyz][0-9]{6,7}[A-Za-z])"
+    r"(?P<dni>[0-9A-Za-z]{9})"
     r".{0,400}?d[ií]a\s+(?P<fecha>\d{1,2}\s+de\s+\w+\s+de\s+\d{4})"
     r".{0,800}?resulta\s+(?P<aptitud>NO\s+APTO|APTO)",
     re.IGNORECASE | re.DOTALL,
@@ -139,6 +145,45 @@ def _parse_spanish_date(raw):
         return datetime.date(int(year), month, int(day))
     except ValueError:
         return None
+
+
+def _correct_ocr_dni(raw):
+    """
+    Corrige de forma deterministica una letra de control de DNI mal
+    leida por el OCR como digito (confusion real detectada en S59:
+    "A"->"4", "Q"->"0"). Nunca adivina: si el noveno caracter ya es
+    letra, se deja igual; si es digito, se calcula la letra real a
+    partir del algoritmo publico de letra de control (mismo que usa
+    `is_valid_spanish_dni`) y se sustituye. Si no se puede calcular
+    (los 8 primeros no son digitos ni un prefijo NIE valido), se
+    devuelve tal cual, sin forzar nada.
+
+    ---
+
+    Deterministically fixes a DNI check letter misread by OCR as a
+    digit (real confusion found in S59: "A"->"4", "Q"->"0"). Never
+    guesses: if the ninth character is already a letter, it's left
+    as-is; if it's a digit, the real letter is computed from the
+    public check-letter algorithm (same one `is_valid_spanish_dni`
+    uses) and substituted. If it can't be computed (the first 8
+    aren't digits or a valid NIE prefix), returns it unchanged.
+    """
+    value = re.sub(r"[^0-9A-Za-z]", "", raw).upper()
+    if len(value) != 9:
+        return value
+    digits_part, last = value[:8], value[8]
+    if last.isalpha():
+        return value
+
+    check_digits = digits_part
+    first_char = check_digits[0]
+    if first_char in _NIE_PREFIX_DIGIT:
+        check_digits = _NIE_PREFIX_DIGIT[first_char] + check_digits[1:]
+    if not check_digits.isdigit():
+        return value
+
+    correct_letter = _DNI_CHECK_LETTERS[int(check_digits) % 23]
+    return digits_part + correct_letter
 
 
 def _ocr_all_pages(data):
@@ -221,7 +266,7 @@ class Command(BaseCommand):
                 continue
 
             nombre = match.group("nombre").strip()
-            dni_raw = match.group("dni").strip()
+            dni_raw = _correct_ocr_dni(match.group("dni"))
             aptitud = match.group("aptitud").strip()
             fecha = _parse_spanish_date(match.group("fecha"))
 
