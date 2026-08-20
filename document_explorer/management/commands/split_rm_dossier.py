@@ -37,13 +37,18 @@ Dos destinos posibles por pagina, decision explicita de Miguel Angel
    confirmados de la identidad, nunca reparseados del OCR).
 2. DNI no resuelve (trabajador de baja, o alta nueva sin sembrar
    todavia) -> la pagina partida se sube a
-   "DOC. PERSONAL/RECONOCIMIENTOS MEDICOS PENDIENTES DE REVISION",
-   con tipo ya asignado pero dominio pendiente -- mismo patron
-   "TIPO OK, DOMINIO PENDIENTE" que el resto de H30. Miguel Angel,
-   verbatim (S59): *"esos si deberian de ir a una carpeta de
-   pendientes de revision y en el pipeline de alta de trabajadores
-   es cuando se mira esa carpeta"* -- ese enganche con el pipeline
-   de alta (`resolve_or_create_person_identity()`,
+   "DOC. PERSONAL/DOCUMENTACION PENDIENTE DE REVISION", con tipo ya
+   asignado pero dominio pendiente -- mismo patron "TIPO OK, DOMINIO
+   PENDIENTE" que el resto de H30. Carpeta generica, deliberadamente
+   NO exclusiva de RECONOCIMIENTO_MEDICO -- Miguel Angel, corregido
+   S59, verbatim: *"cuando estamos haciendo el pipeline de alta de
+   los trabajadores van a ir los documentos que no coincidan [...]
+   un DNI de un trabajador que todavia no esta dado de alta [...] en
+   esta carpeta caera su DNI, su reconocimiento medico, etcetera"* --
+   cualquier tipo documental futuro con el mismo problema (DNI sin
+   sembrar) comparte esta misma carpeta de espera, no una por tipo.
+   Ese enganche con el pipeline de alta
+   (`resolve_or_create_person_identity()`,
    `_NEW_WORKER_STAGING_FOLDER`) queda como dependencia futura
    documentada aqui, NO construida en esta sesion.
 
@@ -83,9 +88,7 @@ from document_explorer.naming_service import (
 )
 from spare_parts.gcs_service import download_bytes, upload_bytes
 
-PENDING_REVIEW_FOLDER = (
-    "DOC. PERSONAL/RECONOCIMIENTOS MEDICOS PENDIENTES DE REVISION"
-)
+PENDING_REVIEW_FOLDER = "DOC. PERSONAL/DOCUMENTACION PENDIENTE DE REVISION"
 
 # Patron real confirmado contra OCR de un ejemplo real (S59).
 _RECORD_RE = re.compile(
