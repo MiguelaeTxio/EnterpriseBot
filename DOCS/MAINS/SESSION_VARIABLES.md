@@ -551,3 +551,38 @@ momento, no de ahorrar coste:
 
 Preguntar por el contexto (¿tienes prisa ahora o no?) antes de decidir
 cuántos procesos lanzar, en vez de asumir paralelo por defecto.
+
+---
+
+## CLONAR EL REPO EN UNA VM/CONSOLA SSH REMOTA -- `git clone` CON
+## PROMPT INTERACTIVO DE USUARIO/CONTRASEÑA **FALLA SIEMPRE**, NUNCA
+## VOLVER A PROPONERLO (confirmado S59, van ya 4 veces reales)
+
+**QUEDA TERMINANTEMENTE PROHIBIDO** proponer `git clone
+https://github.com/...` a secas esperando que Git pida usuario/
+contraseña de forma interactiva en una consola SSH remota (VM de GCE,
+Termux, cualquier sesión abierta vía `gcloud compute ssh`). Ese prompt
+interactivo falla de forma sistemática en este tipo de consola --
+confirmado real la 4ª vez en S59.
+
+**Método que SÍ funciona siempre, verificado S59:** capturar el token
+en una variable de entorno con `read -s` (oculta lo que se pega, nunca
+aparece en pantalla ni en el historial de la propia caja de comando),
+y usarlo inline en la URL de clonado, en la MISMA sesión de terminal
+(la variable no sobrevive a una consola nueva):
+
+```bash
+cd {RUTA_DESTINO} && read -s -p "Pega aqui el token de GitHub (no se vera en pantalla): " GH_TOKEN && echo
+```
+
+Miguel Ángel pega el token cuando se le pide (sin salida visible, es
+lo esperado). Caja siguiente, mismo terminal:
+
+```bash
+git clone https://x-access-token:${GH_TOKEN}@github.com/MiguelaeTxio/EnterpriseBot.git
+```
+
+Nunca combinar ambas cajas en un solo bloque -- el `read -s` necesita
+su propio turno para que Miguel Ángel pegue el valor antes de que siga
+el resto del script.
+
