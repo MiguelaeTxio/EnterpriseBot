@@ -296,6 +296,16 @@ CANDIDATES_SAFE = {
     "PERSONAL": {
         "ALTA_MEDICA": ["ALTA MEDICA"],
         "ALTA": ["ALTA"],
+        # Añadido S59: variante abreviada real dentro de las carpetas
+        # individuales de OPERARIOS -- "AUT USO MAQ ...pdf" /
+        # "Aut.uso maq. ...pdf", 168 coincidencias reales verificadas
+        # contra Comando S (6,4% de los 2.618 sin tipo de esa carpeta,
+        # nunca "el grueso" como se hipotetizaba en S58 con una sola
+        # muestra) -- distinta de la regla de carpeta ya existente
+        # ("AUTORIZACION USO DE MAQUINARIA" en FOLDER_TYPE_RULES, que
+        # cubre una carpeta central de nombre completo, no estos
+        # archivos sueltos dentro de la carpeta de cada persona).
+        "AUTORIZACION_USO_MAQUINARIA": ["AUT USO MAQ"],
         "CARNET_CONDUCIR": ["CARNET CONDUCIR", "CARNE CONDUCIR"],
         "CONTRATO": ["CONTRATO LABORAL"],
         "CURSO": ["CURSO"],
