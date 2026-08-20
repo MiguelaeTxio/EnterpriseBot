@@ -89,8 +89,8 @@ RECORD_PATTERNS = [
     )),
     ("FRATERNIDAD_MUPRESPA", re.compile(
         r"con\s+fecha\s+(?P<fecha>\d{1,2}/\d{1,2}/\d{4})"
-        r".{0,60}?examen\s+de\s+salud\s+periodico\s+de\s+D\.\s+"
-        r"(?P<nombre>[A-ZÁÉÍÓÚÑ ,.]+?)\s+con\s+N\.?\s*[I|]\.?\s*F\.?\s+"
+        r".{0,60}?examen\s+de\s+salud\s+(?:periodico|inicial)\s+de\s+D\.\s+"
+        r"(?P<nombre>[A-ZÁÉÍÓÚÑ ,.]+?)\s+con\s+N[.\s!|I]{1,6}F\.?\s+"
         r"(?P<dni>[0-9A-Za-z]{9})"
         r".{0,900}?(?P<aptitud>NO\s+APTO|APTO)\s+PARA\s+EL\s+DESEMPE.O"
         r"\s+DEL\s+PUESTO\s+DE\s+TRABAJO",
