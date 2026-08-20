@@ -40,11 +40,11 @@
     <div class="col-6 col-md-3">
         <select name="scope" class="form-select form-select-sm">
             <option value="here"
-                    {% if filters.scope == "here" %}selected{% endif %}>
+                    {% if filters.scope == "here" and scope_param_given %}selected{% endif %}>
                 Esta carpeta
             </option>
             <option value="here_recursive"
-                    {% if filters.scope == "here_recursive" %}selected{% endif %}>
+                    {% if filters.scope == "here_recursive" or not scope_param_given %}selected{% endif %}>
                 Esta carpeta y subcarpetas
             </option>
             <option value="global"

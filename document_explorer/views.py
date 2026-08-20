@@ -451,6 +451,15 @@ class FolderListingView(ExplorerAccessMixin, TemplateView):
             "breadcrumbs": breadcrumbs,
             "is_search": is_search,
             "filters": self.filters,
+            # S59: preseleccion visual del desplegable de ambito de
+            # busqueda -- True solo cuando "scope" vino de verdad en
+            # la URL (el usuario ya busco antes con un valor
+            # concreto). En navegacion normal (sin "scope" en la
+            # URL) es False, y _panel.html preselecciona "esta
+            # carpeta y subcarpetas" como conveniencia, SIN que eso
+            # cambie is_search/scope reales de esta vista -- ver
+            # docstring de _read_filters().
+            "scope_param_given": bool(request.GET.get("scope")),
             "sort_key": self.sort_key,
             "sort_dir": self.sort_dir,
             "sort_columns": self._sort_columns(),
@@ -612,14 +621,21 @@ class FolderListingView(ExplorerAccessMixin, TemplateView):
         Lee y valida los filtros de búsqueda de la query string.
         """
         request = self.request
-        # Corregido S59: por defecto, "esta carpeta y sus
-        # subcarpetas" (SCOPE_RECURSIVE), no solo "esta carpeta"
-        # (SCOPE_HERE) -- decision explicita de Miguel Angel: es el
-        # ambito que usa casi siempre, y volver a elegirlo en cada
-        # visita al explorador le hacia perder tiempo real.
-        scope = request.GET.get("scope") or SCOPE_RECURSIVE
+        # Corregido S59 (regresion real detectada por Miguel Angel el
+        # mismo dia): SCOPE_HERE sigue siendo el default real del
+        # backend -- _folder_nav_url() resetea deliberadamente
+        # "scope" en cada clic de navegacion (docstring propio: "una
+        # ubicacion nueva empieza un listado nuevo"), asi que si el
+        # default aqui fuera SCOPE_RECURSIVE, CUALQUIER clic de
+        # carpeta o "Directorio Principal" se convertia en una
+        # busqueda recursiva -- rompia la navegacion en arbol por
+        # completo. El "recursivo por defecto" que si pidio Miguel
+        # Angel vive SOLO en la preseleccion visual del desplegable
+        # de busqueda (_panel.html, via scope_param_given), nunca
+        # aqui.
+        scope = request.GET.get("scope") or SCOPE_HERE
         if scope not in SCOPE_CHOICES:
-            scope = SCOPE_RECURSIVE
+            scope = SCOPE_HERE
         local = request.GET.get("local") or ""
         if local not in ("", "1", "0"):
             local = ""
