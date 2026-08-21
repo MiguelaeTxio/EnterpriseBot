@@ -103,11 +103,30 @@ RECORD_PATTERNS = [
         # la "a" final (visto real: "D/Dfña") -- calibrado S61.
         r".{0,400}?al\s+trabajador\s+de\s+su\s+empresa\s+D\s*/\s*D.{0,2}a\s+"
         # Marcador D.N.I. tolerante a ruido OCR sobre la "I" final --
-        # calibrado S61 contra 6 ejemplos reales ("D.N.l.", "D.N./.",
-        # "D.N.!.", "D.N.1."), mismo criterio ya aplicado al marcador
-        # N.I.F. del patron FRATERNIDAD_MUPRESPA.
-        r"(?P<nombre>[A-ZÁÉÍÓÚÑ ,.\n]+?)\s+con\s+D\.?\s*N\.?\s*[IL1!/]\.?\s+"
+        # calibrado S61 contra 7 ejemplos reales ("D.N.l.", "D.N./.",
+        # "D.N.!.", "D.N.1.", "D.N.]."), mismo criterio ya aplicado al
+        # marcador N.I.F. del patron FRATERNIDAD_MUPRESPA.
+        r"(?P<nombre>[A-ZÁÉÍÓÚÑ ,.\n]+?)\s+con\s+D\.?\s*N\.?\s*[IL1!/\]]\.?\s+"
         r"(?P<dni>[0-9A-Za-z]{9})",
+        re.IGNORECASE | re.DOTALL,
+    )),
+    # Nuevo proveedor de prevencion distinto de Fraternidad-Muprespa,
+    # calibrado S61 contra 4 ejemplos reales ("INFORME DE APTITUD
+    # MEDICA", "SERVICIO DE PREVENCION AJENO", cabecera "GRUPO").
+    # Aptitud captura literal (APTO / NO APTO / APTO EN OBSERVACION /
+    # SIN APTITUD) en vez de limitarse a APTO|NO APTO como los otros
+    # patrones -- visto real que este proveedor usa mas variantes.
+    ("ANP_INFORME_APTITUD", re.compile(
+        r"INFORME\s+DE\s+APTITUD\s+M.DICA"
+        r".{0,50}?Sr\.?\s*"
+        r"(?P<nombre>[A-ZÁÉÍÓÚÑ ,.]+?),\s*NIF:\s*"
+        r"(?P<dni>[0-9]{7,9}\s?[0-9A-Za-z]?)"
+        r".{0,300}?con\s+fecha\s+(?P<fecha>\d{1,2}/\d{1,2}/\d{4})"
+        # Hueco tolerante a ruido OCR de maquetacion (numeros de
+        # columna, simbolos sueltos) entre "considera :" y la
+        # aptitud -- visto real ("considera :\n3\n> APTO...").
+        r".{0,300}?considera\s*:.{0,20}?"
+        r"(?P<aptitud>[A-ZÁÉÍÓÚÑ ]+?)\s+para\s+su\s+trabajo\s+habitual",
         re.IGNORECASE | re.DOTALL,
     )),
 ]
