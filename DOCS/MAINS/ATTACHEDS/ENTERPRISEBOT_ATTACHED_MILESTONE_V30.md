@@ -3152,45 +3152,191 @@ que se pegan.
 
 ---
 
+## COMPLETADAS EN S61 (2026-08-21)
+
+**Sesión con mucho más ruido de proceso que trabajo real — el balance
+neto de código es pequeño pero deja arrancado un patrón productivo
+nuevo, con un fallo de despliegue real sin resolver a mitad de
+camino.**
+
+**1. Fix real de tolerancia OCR, desplegado y verificado
+(`2d81c53`).** Investigando los 6 casos `SIN_PATRON` de
+`RECONOCIMIENTO_MEDICO` con `inspect_sin_patron_pages.py`, se
+confirmó que **no había ninguna tercera mutua** (hipótesis abierta
+desde S59/S60) — eran variantes ya conocidas de
+`FRATERNIDAD_NOTIFICACION_PENDIENTE` con ruido OCR sobre el marcador
+`D.N.I.` (leído como `D.N.l.`/`D.N./.`/`D.N.!.`/`D.N.1.`/`D.N.].`) y
+sobre el prefijo `D/Dña` (`D/Dfña`). Ampliada la tolerancia del
+regex, verificada con test unitario contra los 7 textos OCR reales
+antes de commitear. Relanzados los 3 shards con este fix ya aplicado
+→ **`RM CERT. APTITUD` bajó de 45 a 37 dosieres sin resolver**,
+verificado contra la BD real tras el `--apply` (8 dosieres a
+papelera, 58 páginas indexadas, cifras del `--apply` coincidentes
+exactas con el `dry-run` previo).
+
+**2. Bug real corregido: `CERT_LIMITACIONES` nunca se había aplicado
+a ningún documento desde su alta en S60.** El propio ejemplo de
+calibración de la migración `0040` (`Perez Fernandez`) y el segundo
+ejemplo (`Casilla Nieto`) seguían con `document_type=
+RECONOCIMIENTO_MEDICO`. Corregidos los 3 casos reales encontrados por
+nombre (los 2 de arriba + una plantilla en blanco,
+`CERT.LIMITACIONES RM TRABAJADOR.docx`, sin dominio por ser
+genérica). **Siguen sin patrón de extracción propio** — solo hay 2
+ejemplos reales con persona (por debajo del umbral de 3+ de la
+sesión) — no construir el regex hasta encontrar un tercero real.
+
+**3. Patrón nuevo `ANP_INFORME_APTITUD` calibrado, escrito y
+commiteado (`3ef71a4`), pero NUNCA LLEGÓ A PROBARSE DE VERDAD EN LA
+VM — punto 1 de la hoja de ruta de abajo.** Proveedor de prevención
+distinto a Fraternidad-Muprespa ("SERVICIO DE PREVENCIÓN AJENO",
+cabecera "GRUPO", "INFORME DE APTITUD MÉDICA"), 4 ejemplos reales
+verificados con test unitario contra el texto ya normalizado
+(`strip_accents`+`upper`, tal como lo procesa el pipeline real):
+Carlin Carvajal, Rosado Racero, Lopez Blazquez, Alvarez Diaz. Captura
+`aptitud` literal (`APTO`/`APTO EN OBSERVACION`/`SIN APTITUD`/`NO
+APTO`), más variado que el resto de patrones.
+
+**4. Incidente real sin resolver: el `git pull` de después de este
+commit falló, y los 3 shards relanzados corrieron con el código
+VIEJO.** El segundo dry-run (`45 dosieres`, `58 páginas OK`, `87
+error`) dio números **idénticos** al primero — sospecha confirmada
+con `git log -1`/`grep` directos en la VM: `HEAD` seguía en `2d81c53`
+(el fix de S61 anterior), nunca llegó a `3ef71a4`. Intento de `git
+pull` en caliente falló con `Invalid username or token` — el token
+usado para el clon original de esta VM ya no es válido (probablemente
+revocado al cierre de una sesión anterior) y no hay uno nuevo
+configurado en el remoto de esa VM. **`ANP_INFORME_APTITUD` sigue sin
+probarse contra datos reales de producción** — el commit existe y
+está verificado por test unitario, pero nunca se ha ejecutado dentro
+del pipeline real.
+
+**5. Incidencia de proceso grave, autoinfligida y ya corregida:** el
+modelo confundió dos veces la consola sftp permanente (Git Bash,
+única función: `sdcard/Download/` local ↔ `SWAP` del servidor) con
+las conexiones necesarias para VM↔PythonAnywhere, llegando a cerrar
+la consola permanente real de Miguel Ángel con un `exit` que nunca
+debió generarse. Corregido de raíz, documentado en dos sitios
+distintos para que no se repita:
+- `SESSION_VARIABLES.md`, sección "DOS CONSOLAS DISTINTAS" (con la
+  nota literal de Miguel Ángel sobre el uso exclusivo de cada una).
+- La propia skill `com-file-request`, sección nueva "COMUNICACIÓN VM
+  ↔ PYTHONANYWHERE" — empaquetada y entregada por `present_files` en
+  esta sesión; **confirmar si Miguel Ángel pulsó "Guardar habilidad"
+  antes de asumir que la corrección persiste a la sesión
+  siguiente** (ver `com-standards`, "Modificar o crear una skill").
+  Regla resumen: la consola permanente NUNCA se abre ni se cierra por
+  el modelo y NUNCA se usa para nada que no sea
+  local↔`SWAP`; las conexiones VM↔PythonAnywhere se abren y cierran
+  dentro de la propia consola PowerShell de la VM, sin tocar la
+  permanente, y sin cerrar nunca la propia PowerShell (eso lo
+  controla Miguel Ángel).
+- Además, se documentó y verificó el método real de `gcloud compute
+  scp` en Windows: `pscp` no admite comodines ni varios orígenes
+  remotos a la vez; la solución que sí funciona es agrupar los
+  archivos en una carpeta dentro de la VM y descargarla entera con
+  `--recurse` en un solo comando, con ruta absoluta (nunca `~`).
+
+**Incidencia de seguridad real, reconocida:** en un momento de la
+sesión el modelo llegó a escribir el valor completo del token de
+GitHub en su propia respuesta de texto — prohibición absoluta de
+`nfs-enterprisebot-token`. Miguel Ángel lo señaló de inmediato. **El
+token de esta sesión debe darse por comprometido y revocarse sin
+falta** (ver recordatorio de cierre).
+
+**Commits reales de la sesión** (7, `1fcf13d..fe76437`): `2d81c53`
+fix tolerancia OCR; `d24ce2f`/`abee8d6`/`d7e6f2e` documentación
+iterativa de `gcloud compute scp` hasta dar con el método real;
+`e396a1f`/`4a657fd` documentación de las dos consolas (la primera
+versión, `e396a1f`, quedó incorrecta y quedó corregida por
+`4a657fd`); `3ef71a4` patrón `ANP_INFORME_APTITUD` + ampliación
+D.N.I.; `fe76437` nota final de las dos consolas. 2 archivos tocados
+(`SESSION_VARIABLES.md`, `split_rm_dossier_vm.py`).
+
+---
+
 ## HOJA DE RUTA PARA LA SIGUIENTE SESIÓN (sustituye por completo a
 ## cualquier "pendiente" suelto de bloques anteriores)
 
-VM `h28-ocr-batch` detenida al cierre de S60 (a petición de Miguel
-Ángel, para minimizar coste -- retomar con
-`gcloud compute instances start h28-ocr-batch
---project=gen-lang-client-0961484137 --zone=europe-west1-b` y
-relanzar los 3 shards directamente, sin rehacer bootstrap, mismo
-patrón ya usado toda la sesión).
+**EMPEZAR AQUÍ, SIN PREGUNTAR POR DÓNDE EMPEZAR — instrucción
+explícita: el punto 1 es bloqueante y debe resolverse antes que
+cualquier otra cosa de este hito.**
 
-1. **Seguir el ciclo de calibración de `RECONOCIMIENTO_MEDICO`** sobre
-   los 53 dosieres restantes -- `inspect_sin_patron_pages.py --limit 8`
-   para ver ejemplos reales nuevos (los que quedan son sobre todo
-   `TODO*.pdf`/`gruas adolfo alvarez(1) N.pdf`/`RM2012`/`JUSTIFICANTES`,
-   nombres genéricos que huelen a dosieres con varias personas
-   mezcladas en un mismo PDF -- confirmar con 2-3 ejemplos reales antes
-   de asumirlo). Criterio de cierre: bajar de 53, verificado contra
-   consulta directa a la BD tras cada `--apply`, igual que en S60.
-2. **Patrón de extracción para `CERT_LIMITACIONES`** -- el tipo
-   documental ya existe (migración `0040`), pero solo hay 2 ejemplos
-   reales vistos (`Perez Fernandez`, `Casilla Nieto`). Buscar un
-   tercero real antes de escribir el regex (criterio de calibración de
-   3+ casos de la sesión).
-3. Resto de la hoja de ruta de H30 arrastrada de sesiones anteriores,
-   sin tocar en S56/S57/S58/S59/S60: EPIS (extracción a `EpiDelivery`,
-   fundida con Fase B/Gemini como último recurso -- conecta directo con
-   `ENTREGA EPIS`, 1.508 archivos sin tipo), variable de entorno de la
-   clave de servicio del agente H28, `FICHA_TECNICA` vs `ITV`, backfill
-   de fecha, duplicados de seguro/OCA. El "renombrado retroactivo"
-   genérico sigue sin mecanismo reutilizable.
-4. Carpetas pequeñas de `DOC. PERSONAL/PERSONAL` (arrastrado 1.ª
-   sesión sin avanzar): `PENDIENTES` (44), `AUTONOMOS SUBCONTRATAS`
+1. **BLOQUEANTE — arreglar la autenticación git de la VM
+   `h28-ocr-batch` y verificar de verdad que `ANP_INFORME_APTITUD` se
+   aplica.** El código del patrón nuevo ya está en GitHub
+   (`3ef71a4`), pero la VM sigue en `2d81c53` — el `git pull` normal
+   falla con `Invalid username or token`. Pasos:
+   1. Pedir a Miguel Ángel un token de GitHub nuevo para la sesión
+      (`nfs-enterprisebot-token`).
+   2. En la VM (conexión PowerShell efímera, `gcloud compute ssh
+      h28-ocr-batch --project=gen-lang-client-0961484137
+      --zone=europe-west1-b`): comprobar `git remote -v` primero para
+      ver si la URL remota necesita token embebido o si basta con
+      `git pull` usando el método `read -s` ya documentado en
+      `SESSION_VARIABLES.md` ("CLONAR EL REPO EN UNA VM/CONSOLA SSH
+      REMOTA").
+   3. Confirmar `git log -1 --oneline
+      h28_migration_agent/split_rm_dossier_vm.py` → debe mostrar
+      `3ef71a4` o posterior, y `grep -c "ANP_INFORME_APTITUD"
+      h28_migration_agent/split_rm_dossier_vm.py` → debe dar 1 o más,
+      antes de relanzar ningún shard.
+   4. Relanzar los 3 shards (`split_rm_dossier_vm.py --shard-count 3
+      --shard-index N`), traer los manifiestos (carpeta +
+      `gcloud compute scp --recurse`, método ya verificado en
+      `SESSION_VARIABLES.md`), subir a `SWAP` desde la consola sftp
+      permanente, y `apply_rm_split_manifest` (dry-run primero,
+      `--apply` solo si cuadra). **Criterio de cierre:** bajar de 37
+      dosieres `RM CERT. APTITUD` sin resolver, verificado contra
+      consulta directa a la BD tras el `--apply`.
+2. **Patrón de extracción para `CERT_LIMITACIONES`** — sigue con solo
+   2 ejemplos reales (`Perez Fernandez`, `Casilla Nieto`). Buscar un
+   tercero real antes de escribir el regex (criterio de calibración
+   de 3+ casos de la sesión, sin cambios desde S60/S61).
+3. **Confirmar si la skill `com-file-request` quedó guardada de
+   verdad.** Si Miguel Ángel no pulsó "Guardar habilidad" en la
+   tarjeta entregada en S61, la corrección de la sección "COMUNICACIÓN
+   VM ↔ PYTHONANYWHERE" no persiste — verificar al arrancar la sesión
+   (releer la skill) y, si falta, reempaquetarla y volver a
+   entregarla. La regla en sí (consola permanente = solo
+   local↔`SWAP`; VM↔PythonAnywhere = conexión efímera dentro de la
+   propia PowerShell de la VM, nunca la permanente) sigue vigente
+   pase lo que pase con el estado de la skill — está también en
+   `SESSION_VARIABLES.md`, que sí es fuente de verdad segura.
+4. Resto de la hoja de ruta de H30 arrastrada de sesiones anteriores,
+   sin tocar en S56-S61: EPIS (extracción a `EpiDelivery`, fundida con
+   Fase B/Gemini como último recurso -- conecta directo con `ENTREGA
+   EPIS`, 1.508 archivos sin tipo), `resolve_domain_pending_types`
+   sin relanzar sobre los ~844 de S58 (BAJA_PERSONAL,
+   INVESTIGACION_ACCIDENTE, ENTREGA_INFORMACION,
+   AUTORIZACION_USO_MAQUINARIA, PARTE_BAJA_MEDICA), variable de
+   entorno de la clave de servicio del agente H28, `FICHA_TECNICA` vs
+   `ITV`, backfill de fecha, duplicados de seguro/OCA. El "renombrado
+   retroactivo" genérico sigue sin mecanismo reutilizable.
+5. Carpetas pequeñas de `DOC. PERSONAL/PERSONAL` (arrastrado, sin
+   avanzar desde S60): `PENDIENTES` (44), `AUTONOMOS SUBCONTRATAS`
    (14), `PRACTICAS` (6), `PARTES BAJA PATERNIDAD` (1) -- sin patrón
    dominante claro en la muestra ya vista, revisar tipo por tipo antes
    de escribir regla.
 
-**Preguntas explícitas ya resueltas en S60** (no se vuelven a listar):
-`CERT.LIMITACIONES` → tipo documental nuevo, confirmado. El resto de
-preguntas arrastradas de S56-S59 (Fase A del resto del catálogo,
-OneDrive de GRUALDI SL, techo de `EXCEDENCIA` 100% sintético) siguen
-sin tocar -- si S61 no las aborda tampoco, pasan a pregunta directa
-obligatoria por directriz 2.2 (ya van 5 sesiones sin ejecución real).
+**Preguntas explícitas ya resueltas en S60/S61** (no se vuelven a
+listar): `CERT.LIMITACIONES` → tipo documental nuevo, confirmado (S60);
+"tercera mutua" → descartada, era ruido OCR sobre patrón ya conocido
+(S61). El resto de preguntas arrastradas de S56-S59 (Fase A del resto
+del catálogo, OneDrive de GRUALDI SL, techo de `EXCEDENCIA` 100%
+sintético) siguen sin tocar -- ya van 6 sesiones sin ejecución real,
+**pasan a pregunta directa obligatoria al arrancar la próxima sesión**
+por directriz 2.2, sin esperar más.
+
+**Recordatorio operativo real para la próxima sesión (no repetir los
+errores de S61):**
+- La consola sftp permanente (Git Bash) del usuario NUNCA se abre ni
+  se cierra por el modelo, y se usa única y exclusivamente para
+  `sdcard/Download/` local ↔ `SWAP` del servidor.
+- Las conexiones VM↔PythonAnywhere van dentro de la propia consola
+  PowerShell de la VM, abiertas y cerradas ahí, sin tocar la
+  permanente. La consola PowerShell en sí no la cierra el modelo.
+- `gcloud compute scp` en Windows: agrupar en carpeta + `--recurse`,
+  un comando, ruta absoluta.
+- Nunca imprimir un token en la respuesta de texto, bajo ningún
+  concepto.
+
