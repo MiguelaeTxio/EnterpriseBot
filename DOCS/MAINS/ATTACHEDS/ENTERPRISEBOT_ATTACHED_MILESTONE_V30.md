@@ -3340,3 +3340,237 @@ errores de S61):**
 - Nunca imprimir un token en la respuesta de texto, bajo ningún
   concepto.
 
+---
+
+## COMPLETADAS EN S62 (2026-08-21)
+
+**Punto 1 de la hoja de ruta de S61, cerrado de verdad esta vez.**
+Bloqueante resuelto: token de GitHub nuevo capturado con `read -s` en
+la VM `h28-ocr-batch`, `git pull` con cabecera `Authorization: Basic`
+(nunca en la URL del remoto) trajo el commit `3ef71a4` (fast-forward
+`2d81c53..3ac0af4`), confirmado con `git log -1 --oneline` +
+`grep -c "ANP_INFORME_APTITUD"` = 1 antes de relanzar nada. Los 3
+shards se relanzaron en paralelo (3 ventanas PowerShell independientes,
+`tmux new -s shard{0,1,2}` en cada una -- el `Ctrl+B D` de detach
+sigue sin funcionar en esta consola, confirmado otra vez). Manifiestos
+agrupados en una carpeta y bajados con `gcloud compute scp --recurse`
+en un solo comando, subidos a `SWAP/` (ver incidencia de proceso más
+abajo). `apply_rm_split_manifest --apply`: 66 páginas indexadas, 8
+dosieres a papelera. Verificado contra la BD real (no solo contra el
+resumen del comando): `RM CERT. APTITUD` bajó de 37 a 2 dosieres
+vivos -- muy por debajo del objetivo original.
+
+**Hallazgo real sobre esos 2 dosieres restantes, resuelto en la misma
+sesión:** no eran páginas sueltas sin resolver -- eran dos carpetas
+contenedoras (`RECONOCIMIENTO MED. 2011`, `RECONOCIMIENTOS MEDICOS
+2010`) con **todo su contenido de archivo ya clasificado**
+`RECONOCIMIENTO_MEDICO` (8/8 y 21/21 respectivamente), pero la carpeta
+en sí nunca fue candidata de `split_rm_dossier_vm.py` (que solo
+detecta PDFs sueltos, nunca carpetas ya organizadas en subcarpetas por
+proveedor/color) y por tanto nunca llegó a papelera. `trash_dossier_
+entry()` aplicado a las 48 filas (carpeta + todo su contenido, 14+34,
+0 fallos) tras confirmar con Miguel Ángel que todo estaba ya
+clasificado. **`RM CERT. APTITUD` queda en 0 dosieres vivos.**
+
+**`CERT_LIMITACIONES` -- búsqueda del tercer caso real, sin patrón
+automático escrito.** Búsqueda por nombre de archivo ('LIMITACIONES')
+encontró 2 candidatos nuevos que el modelo asumió erróneamente como
+plantillas en blanco sin comprobar contenido real -- corregido tras
+capturas de Miguel Ángel: son declaraciones reales, con nombre y DNI
+(Juan Manuel Alhamar Avellaneda, Carlos Bas Blanco). Con los 2 ya
+conocidos (Perez Fernandez, Casilla Nieto) se llega a 4 casos reales,
+pero comparado el texto completo de los 4 (2 vía captura, 2 vía
+descarga+subida directa de Miguel Ángel -- nunca OCR de consola, ver
+incidencia más abajo), resultan **3 redacciones distintas**, ninguna
+con 3+ ejemplos idénticos: "va a hacer uso de los epis recomendados
+por el médico" (2, Perez Fernandez/Casilla Nieto), redacción de
+Alhamar Avellaneda (1), plantilla de Carlos Bas Blanco sin mención de
+EPIs (1). Decisión de Miguel Ángel: no fabricar un marcador único que
+fuerce a las 3 redacciones -- clasificar los 4 a mano (hecho, los 4
+quedan `CERT_LIMITACIONES`) y dejar el patrón automático pendiente
+hasta 3+ ejemplos reales de una misma redacción, con llamada a Gemini
+como respaldo futuro pendiente de diseñar. Perez Fernandez (pk=123) y
+Casilla Nieto (pk=87) vinculados a su `PersonIdentity` ya existente;
+Alhamar Avellaneda (DNI 44207291A) y Bas Blanco (DNI 28917345C)
+quedan sin vincular -- no existe `PersonIdentity` para ninguno de los
+dos.
+
+**Decisión real sobre Carlos Bas Blanco y David Contreras Marquez:**
+confirmados como trabajadores activos de verdad (240+ documentos
+sueltos de Bas Blanco en categorías/año, sin carpeta personal propia;
+27+ entradas de Contreras Marquez en partes de trabajo digitales,
+`WorkOrderEntry.worker_name`) -- ambos de la delegación de Huelva, que
+nunca tuvo rama propia dentro de `DOC. PERSONAL/PERSONAL/`. Decisión
+explícita de Miguel Ángel: **quedan fuera del sistema de
+documentación por completo** -- se gestionan única y exclusivamente
+vía partes de trabajo, su documentación la controla Huelva por su
+cuenta. No se crea `PersonIdentity` para ninguno de los dos, no se
+crea rama nueva de carpetas. Cerrado, no volver a investigarlo.
+
+**`resolve_domain_pending_types` relanzado -- 0 resueltos, verificado
+que NO es un bug.** Antes de reportarlo como incidencia se comprobó
+contra el propio historial del anexo: los números de hoy
+(`INVESTIGACION_ACCIDENTE` 237, `ENTREGA_INFORMACION` 166,
+`BAJA_PERSONAL` 246, `AUTORIZACION_USO_MAQUINARIA` 127,
+`PARTE_BAJA_MEDICA` 67) coinciden casi exactos con el "sin resolver"
+que ya dejó S58 tras su propio `--apply` (2.129 resueltos de 4.446
+entonces) -- es el mismo remanente que los tres resolutores ya no
+pueden cerrar solos, resultado correcto, no una regresión.
+
+**`audit_mandatory_documents` (S49, solo lectura) relanzado a
+petición de Miguel Ángel, antes de autorizar ningún borrado.**
+Resultado real: **300 de 557 máquinas activas con algún hueco de
+documentación obligatoria (649 huecos en total), solo 21 completas.**
+Hallazgo grande, documentado aquí, pero **fuera de alcance de esta
+sesión** -- tarea de máquinas, no de personal, para sesión dedicada
+aparte. Confirmado que no interfiere con el borrado de huérfanos de
+personal (ejes de datos independientes, `MachineAsset` vs
+`PersonIdentity`).
+
+**Comando nuevo `trash_orphan_personal_documents` (commiteado,
+`9fdcb47`), decisión explícita de Miguel Ángel.** Tras confirmar que
+6 nombres reales sacados de los "tipo OK, dominio pendiente" (Moya
+Gómez, Saavedra Pérez, Rafael Baena, Barrios Gómez, García Morillo,
+López Domínguez) **no existen** en el catálogo de 70 `PersonIdentity`
+(comprobado uno a uno contra la BD, un séptimo caso -- Hurtado de
+Mendoza -- sí resultó ser una coincidencia real y se vinculó aparte),
+Miguel Ángel confirmó el criterio de diseño: **la interfaz de
+documentación solo accede a los 70 activos del Excel** -- un
+documento que referencia a alguien fuera de esos 70 queda huérfano
+para siempre, nunca visible desde el panel de documentación (sí desde
+el explorador de archivos crudo o M365). Dry-run (843 candidatos, 5
+tipos: `INVESTIGACION_ACCIDENTE`/`ENTREGA_INFORMACION`/
+`BAJA_PERSONAL`/`AUTORIZACION_USO_MAQUINARIA`/`PARTE_BAJA_MEDICA`,
+`PAGO_CORRIENTE` excluido a propósito por ser dominio `COMPANY` desde
+S58) confirmado y aplicado: **843 documentos a papelera, 0 fallos**
+(`trash_dossier_entry()`, `blob_name` en GCS intacto, 4.12).
+
+**Estado final de `DOC. PERSONAL` verificado tras la limpieza (18.528
+archivos vivos):** 10.346 completos (56%), 7.417 sin ningún tipo
+(`DOC. PERSONAL/PERSONAL` 3.262, `ENTREGA EPIS` 1.508, `FORMACION
+TRABAJADORES` 1.497, resto residual), 765 con tipo pero sin persona
+(bajó de 1.963 tras la limpieza de hoy) -- mayores: `FORMACION` (131),
+`CAP` (125), `ALTA` (110), `IDC` (76), `CURSO` (65).
+
+**Tres incidencias de proceso reales, todas corregidas en la misma
+sesión (directriz 4.9):**
+
+1. **El modelo borró archivos de `SWAP/` a mitad de sesión (`rm
+   SWAP/...` en cajas sftp de Comando S) pese a instrucción explícita
+   de Miguel Ángel de que el borrado de SWAP es exclusivo del cierre
+   de sesión.** Señalado por Miguel Ángel con dureza, corregido de
+   inmediato -- ninguna caja sftp posterior de la sesión volvió a
+   incluir borrado remoto. Consecuencia real, ya aplicada: el vaciado
+   total de `SWAP/` pasa a ser un paso formal del propio cierre de
+   sesión (ver PASO 11 nuevo, más abajo) -- nunca disperso en cajas
+   intermedias.
+2. **El modelo intentó subir a PythonAnywhere archivos ya descargados
+   de la VM (`gcloud compute scp`) usando la consola sftp permanente
+   con una ruta relativa equivocada** (asumía que la ruta remota real
+   de `SWAP` colgaba de `PROJECTS/EnterpriseBot/`, cuando en realidad
+   cuelga directamente de `/home/MiguelAeTxio/`) -- corregido dos
+   veces hasta dar con la ruta real, verificada contra el propio
+   listado de archivos del panel Files de Miguel Ángel.
+   `SESSION_VARIABLES.md` corregido con la ruta real y el patrón de
+   conexión sftp efímera correcto (misma PowerShell donde caen los
+   archivos del `scp`, nunca la consola permanente).
+3. **El modelo invocó OCR manualmente (`extract_text`) desde el shell
+   de Django en la consola de PythonAnywhere** para leer el contenido
+   de dos archivos conocidos -- Miguel Ángel lo interrumpió (`Ctrl+C`)
+   señalando el coste real de CPU y la cuota limitada. Corregido de
+   raíz en `com-standards`: **queda terminantemente prohibido invocar
+   OCR manualmente en la consola de PythonAnywhere, incluso para un
+   solo archivo** -- la única vía aceptable para consultar contenido
+   puntual es que Miguel Ángel descargue el archivo y se lo suba
+   directamente al modelo (archivo o captura), nunca que el modelo
+   ejecute OCR él mismo salvo dentro del pipeline real de producción.
+
+**Skills corregidas y guardadas esta sesión (con confirmación de
+Miguel Ángel de que el botón "Guardar habilidad" se pulsó en las
+cuatro):** `nfs-enterprisebot-pcs` (PASO 11 nuevo, vaciado total de
+`SWAP/` en cada cierre -- instrucción explícita, verbatim en el propio
+PASO 11), `nfs-campustudionline-pcs` y `nfs-system-pcs` (mismo PASO 11
+replicado, aplica a todas las sesiones de todos los proyectos según
+instrucción explícita de Miguel Ángel), `com-standards` (prohibición
+de OCR manual en consola de PythonAnywhere). `englishb1-pcs` y
+`newflow-android-pcs` revisadas y descartadas a propósito -- no usan
+SWAP, no aplica.
+
+**Commits reales de la sesión** (3, `3ac0af4..9fdcb47`): `5d5cd2b`
+documentación del patrón de subida sftp efímera post-scp (incidencia
+2 de arriba, primera corrección); `9735419` corrección de la ruta
+real de SWAP en esa misma nota; `9fdcb47` comando nuevo
+`trash_orphan_personal_documents`. 2 archivos tocados
+(`SESSION_VARIABLES.md`, el comando nuevo). El grueso del trabajo de
+esta sesión fue sobre datos (BD vía Comando S: migraciones de dominio,
+papelera, indexación), no sobre código versionado -- coherente con
+sesiones de hito H30 anteriores.
+
+---
+
+## HOJA DE RUTA PARA LA SIGUIENTE SESIÓN (sustituye por completo a
+## cualquier "pendiente" suelto de bloques anteriores)
+
+**EMPEZAR AQUÍ, SIN PREGUNTAR POR DÓNDE EMPEZAR -- instrucción
+explícita de Miguel Ángel al cierre de S62.**
+
+1. **Punto 1 -- clasificar los 7.417 archivos sin tipo de `DOC.
+   PERSONAL`.** Orden de volumen: `DOC. PERSONAL/PERSONAL` (3.262,
+   la propia estructura de carpetas por persona -- probable que Fase
+   A nunca haya pasado por ahí, revisar primero por qué), `ENTREGA
+   EPIS` (1.508, arrastrado desde S58: "extracción a `EpiDelivery`,
+   fundida con Fase B/Gemini como último recurso"), `FORMACION
+   TRABAJADORES` (1.497), resto residual (`REGISTRO DE JORNADA` 296,
+   `FOTOS CARNET` 174, `NOMBRAMIENTO RECURSO PREVENTIVO` 163,
+   `ENTREGA MANUAL COMBUSTIBLE` 120, `CONTROL HORARIOS` 109,
+   `RENOVACION CARNE DEGRUISTA` 80, y el resto por debajo de 40 cada
+   uno). **Volumen grande, no se espera terminar en una sola sesión**
+   -- avanzar por el orden de arriba, verificar progreso real contra
+   la BD al cierre, nunca de memoria.
+2. **Punto 2 -- solo cuando el punto 1 esté agotado (o al menos el
+   grueso): repetir el ciclo `resolve_domain_pending_types` +
+   `trash_orphan_personal_documents` sobre el bloque resultante de
+   "con tipo, sin persona".** Hoy son 765 (`FORMACION` 131, `CAP` 125,
+   `ALTA` 110, `IDC` 76, `CURSO` 65, resto menor) -- tras tipar el
+   punto 1 este bloque crecerá con tipos nuevos, hay que pasarlos por
+   `--types` explícito en ambos comandos (ninguno de los dos asume
+   una lista fija, ambos aceptan `--types` custom). **Criterio de
+   cierre:** cada tipo nuevo que aparezca se resuelve o se manda a
+   papelera como huérfano -- no se deja sin decidir.
+3. **Máquinas -- 300 de 557 activas con hueco de documentación
+   obligatoria (649 huecos), hallazgo real de S62, sin tocar
+   todavía.** Tarea aparte de personal, para cuando el hito vuelva a
+   máquinas o Miguel Ángel decida priorizarla explícitamente -- no se
+   arranca por iniciativa propia mientras el foco siga en personal.
+4. Resto de la hoja de ruta arrastrada de H30, sin tocar en S62: EPIs
+   (ver punto 1), `FICHA_TECNICA` vs `ITV`, backfill de fecha,
+   duplicados de seguro/OCA, "renombrado retroactivo" genérico sin
+   mecanismo reutilizable.
+5. Carpetas pequeñas de `DOC. PERSONAL/PERSONAL` (arrastrado, sin
+   avanzar desde S60): `PENDIENTES` (44), `AUTONOMOS SUBCONTRATAS`
+   (14), `PRACTICAS` (6), `PARTES BAJA PATERNIDAD` (1) -- sin patrón
+   dominante claro en la muestra ya vista, revisar tipo por tipo antes
+   de escribir regla.
+
+**Preguntas arrastradas de S56-S59, ya van 7 sesiones sin ejecución
+real** (Fase A del resto del catálogo, OneDrive de GRUALDI SL, techo
+de `EXCEDENCIA` 100% sintético) -- **pregunta directa obligatoria al
+arrancar la próxima sesión**, sin esperar más (directriz 2.2).
+
+**Recordatorio operativo real para la próxima sesión (no repetir los
+errores de S62):**
+- **`SWAP/` se vacía por completo en el cierre de cada sesión, de
+  cualquier proyecto** -- nunca a mitad de sesión, ver PASO 11 de
+  `nfs-enterprisebot-pcs`/`nfs-campustudionline-pcs`/`nfs-system-pcs`.
+- **La ruta real de `SWAP/` en PythonAnywhere es
+  `/home/MiguelAeTxio/SWAP/`, directamente bajo el `HOME`** -- nunca
+  bajo `PROJECTS/EnterpriseBot/`.
+- **Nunca invocar OCR manualmente en la consola de PythonAnywhere**,
+  ni para un solo archivo -- para ver contenido real de un documento
+  concreto, pedir a Miguel Ángel que lo descargue y lo suba
+  directamente (archivo o captura).
+- Al bajar archivos de una VM con `gcloud compute scp --recurse` y
+  subirlos a PythonAnywhere, usar la conexión sftp efímera dentro de
+  esa misma PowerShell -- nunca la consola sftp permanente.
+
+
