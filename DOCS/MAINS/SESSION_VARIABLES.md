@@ -325,6 +325,26 @@ no aceptan flags ni variables de entorno).
   quedar solo en la terminal de una sesión previa sin guardarlas en
   archivo ni copiarlas fuera de la VM antes de cerrarla.
 
+  ⛔ **DOS INCIDENCIAS REALES DE `gcloud compute scp` (S61, confirmadas
+  las dos veces) -- leer antes de volver a proponerlo:**
+  1. **Debe ejecutarse en el PC local de Miguel Ángel (PowerShell
+     nueva), NUNCA dentro de la propia sesión SSH de la VM.** Ejecutado
+     desde dentro de la VM falla con `insufficient authentication
+     scopes` -- la cuenta de servicio de la VM no tiene alcance para
+     llamar a la API de Compute Engine sobre sí misma; el comando
+     necesita las credenciales de usuario de Miguel Ángel.
+  2. **En Windows, `gcloud compute scp` usa `pscp` (PuTTY) por debajo,
+     que NO expande comodines (`*`) en la ruta remota** como sí hace
+     `scp` de OpenSSH en Linux/Mac -- falla con `unable to identify
+     RUTA: no such file or directory`. Listar siempre los archivos
+     explícitos, nunca `nombre*extension`:
+     ```
+     gcloud compute scp h28-ocr-batch:~/EnterpriseBot/h28_migration_agent/archivo1.ext h28-ocr-batch:~/EnterpriseBot/h28_migration_agent/archivo2.ext . --project=gen-lang-client-0961484137 --zone=europe-west1-b
+     ```
+     (El ejemplo de `sample*_output.txt` de arriba, de S53, funcionó
+     porque en aquella sesión se copió desde una consola con `scp` real
+     -- no se puede asumir que el comodín funcione en Windows/pscp.)
+
 ### BOOTSTRAP DE UNA VM NUEVA DESDE CERO (registrado S54, tras un
 ### incidente real -- ver más abajo)
 
