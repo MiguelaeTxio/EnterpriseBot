@@ -99,8 +99,14 @@ RECORD_PATTERNS = [
     ("FRATERNIDAD_NOTIFICACION_PENDIENTE", re.compile(
         r"se\s+ha\s+realizado\s+con\s+fecha\s+"
         r"(?P<fecha>\d{1,2}\s+de\s+\w+\s+de\s+\d{4})"
-        r".{0,400}?al\s+trabajador\s+de\s+su\s+empresa\s+D\s*/\s*D.a\s+"
-        r"(?P<nombre>[A-ZÁÉÍÓÚÑ ,.\n]+?)\s+con\s+D\.?\s*N\.?\s*I\.?\s+"
+        # "D/Dña" tolerante a 0-2 caracteres de ruido OCR entre la D y
+        # la "a" final (visto real: "D/Dfña") -- calibrado S61.
+        r".{0,400}?al\s+trabajador\s+de\s+su\s+empresa\s+D\s*/\s*D.{0,2}a\s+"
+        # Marcador D.N.I. tolerante a ruido OCR sobre la "I" final --
+        # calibrado S61 contra 6 ejemplos reales ("D.N.l.", "D.N./.",
+        # "D.N.!.", "D.N.1."), mismo criterio ya aplicado al marcador
+        # N.I.F. del patron FRATERNIDAD_MUPRESPA.
+        r"(?P<nombre>[A-ZÁÉÍÓÚÑ ,.\n]+?)\s+con\s+D\.?\s*N\.?\s*[IL1!/]\.?\s+"
         r"(?P<dni>[0-9A-Za-z]{9})",
         re.IGNORECASE | re.DOTALL,
     )),
