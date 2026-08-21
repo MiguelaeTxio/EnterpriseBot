@@ -325,36 +325,48 @@ no aceptan flags ni variables de entorno).
   quedar solo en la terminal de una sesión previa sin guardarlas en
   archivo ni copiarlas fuera de la VM antes de cerrarla.
 
-  ⛔ **TRES INCIDENCIAS REALES DE `gcloud compute scp` EN WINDOWS/PUTTY
-  (S61, las tres confirmadas de verdad, en este orden) -- leer antes de
-  volver a proponerlo:**
-  1. **Debe ejecutarse en el PC local de Miguel Ángel (PowerShell
-     nueva), NUNCA dentro de la propia sesión SSH de la VM.** Ejecutado
-     desde dentro de la VM falla con `insufficient authentication
-     scopes` -- la cuenta de servicio de la VM no tiene alcance para
-     llamar a la API de Compute Engine sobre sí misma; el comando
-     necesita las credenciales de usuario de Miguel Ángel.
-  2. **`pscp` (el backend de `gcloud compute scp` en Windows) NO
-     expande comodines (`*`) en la ruta remota** como sí hace `scp` de
-     OpenSSH en Linux/Mac -- falla con `unable to identify RUTA: no
-     such file or directory`.
-  3. **`pscp` tampoco admite varios orígenes remotos en un mismo
-     comando** -- falla con `Multiple remote sources not supported by
-     PuTTY`, incluso listando los archivos uno a uno en la misma
-     invocación.
+  ⛔ **`gcloud compute scp` EN WINDOWS/PUTTY -- INCIDENCIAS REALES S61,
+  SOLUCIÓN FINAL YA VERIFICADA -- leer esto ANTES de proponer nada,
+  nunca repetir el tanteo:**
 
-  **Consecuencia real: en Windows, `gcloud compute scp` desde una VM
-  solo admite UN archivo remoto por comando.** Para varios archivos,
-  repetir el comando completo una vez por archivo (nunca comodín, nunca
-  varios SRC en la misma línea):
+  **Lo que NO funciona en Windows (pscp), confirmado real:**
+  - Comodines en la ruta remota (`archivo*.ext`) -- `unable to
+    identify RUTA: no such file or directory`.
+  - Varios orígenes remotos en un mismo comando, aunque se listen
+    explícitos uno a uno -- `Multiple remote sources not supported by
+    PuTTY`.
+  - Ruta remota con `~` -- falla igual con `unable to identify`,
+    incluso con UN solo archivo. `pscp` no expande `~`, hace falta la
+    ruta absoluta real (confirmar con `echo "$HOME"` dentro de la VM
+    si no se conoce).
+  - Ejecutar el comando dentro de la propia sesión SSH de la VM --
+    `insufficient authentication scopes` (la cuenta de servicio de la
+    VM no tiene alcance de Compute Engine; hace falta la cuenta de
+    usuario de Miguel Ángel, desde su PC).
+
+  **SOLUCIÓN REAL, un solo comando, verificada de verdad (S61):**
+  agrupar los archivos en una carpeta dentro de la VM y descargar la
+  carpeta entera con `--recurse` -- eso sí admite un único origen
+  remoto sin problema:
+  ```bash
+  # Dentro de la VM:
+  mkdir -p carpeta_salida && cp archivo1.ext archivo2.ext archivo3.ext carpeta_salida/
   ```
-  gcloud compute scp h28-ocr-batch:~/EnterpriseBot/h28_migration_agent/archivo1.ext . --project=gen-lang-client-0961484137 --zone=europe-west1-b
-  gcloud compute scp h28-ocr-batch:~/EnterpriseBot/h28_migration_agent/archivo2.ext . --project=gen-lang-client-0961484137 --zone=europe-west1-b
   ```
-  (El ejemplo de `sample*_output.txt` de arriba, de S53, funcionó
-  porque en aquella sesión se copió desde una consola con `scp` real de
-  Linux/Mac -- nunca asumir que el comodín o varios orígenes funcionan
-  igual en Windows/pscp.)
+  # En el PC de Miguel Ángel (PowerShell, ruta absoluta, nunca ~):
+  gcloud compute scp --recurse h28-ocr-batch:/home/Usuario/RUTA/carpeta_salida . --project=gen-lang-client-0961484137 --zone=europe-west1-b
+  ```
+  **Esta es la forma por defecto a partir de ahora para bajar varios
+  archivos de esta VM desde Windows -- no volver a proponer comandos
+  sueltos por archivo, ni comodines, ni `~`.**
+
+  (El comodín de `sample*_output.txt` de la sección de arriba, S53,
+  funcionó porque aquella sesión se hizo desde el Termux del móvil de
+  Miguel Ángel -- Linux real, `scp` de OpenSSH -- no desde su PC
+  Windows. El entorno real de la consola importa tanto como el PEE del
+  proyecto; confirmar ambos antes de dar el comando, no solo el
+  segundo.)
+
 
 
 ### BOOTSTRAP DE UNA VM NUEVA DESDE CERO (registrado S54, tras un
