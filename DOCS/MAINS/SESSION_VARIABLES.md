@@ -25,61 +25,27 @@
 
 ---
 
-## ⛔ DOS CONSOLAS DISTINTAS, SIN NINGUNA RELACIÓN ENTRE SÍ
-## (S61, 2026-08-21 -- corrección real tras confusión grave del modelo)
+## DOS CONSOLAS DISTINTAS, SIN NINGUNA RELACIÓN ENTRE SÍ
 
-**QUEDA TERMINANTEMENTE PROHIBIDO** tratar estas dos consolas como si
-fueran intercambiables o relacionadas entre sí. No lo son. Cada una
-tiene su propio protocolo de apertura/cierre, distinto y sin
-excepciones cruzadas.
+La consola sftp permanente (Git Bash) que comunica el directorio de
+intercambio local con PythonAnywhere no tiene relación alguna con las
+consolas que se abren para comunicar una VM de GCE con el entorno
+local. Esas son efímeras: se abren, se usan y se cierran cada vez.
 
-### CONSOLA 1 — sftp a PythonAnywhere (Git Bash, permanente)
+- **Consola sftp a PythonAnywhere:** permanente. Se abre una vez al
+  principio de la sesión y no se vuelve a abrir ni a cerrar — solo
+  recibe comandos sueltos (`get`/`put`/`!rm`).
+- **Consolas de VM (`gcloud compute ssh`, PowerShell):** efímeras.
+  Cada uso lleva su propia apertura y su propio `exit` al terminar.
 
-- **Única función:** transferir archivos entre PythonAnywhere y el PC
-  local de Miguel Ángel -- `get` (servidor → local) y `put` (local →
-  servidor). Nada más.
-- Es una instancia de **Git Bash**, no PowerShell.
-- Se abre **una sola vez al principio de la sesión** y se mantiene
-  **abierta durante toda la sesión**, dedicada en exclusiva a este
-  intercambio.
-- El modelo **NUNCA** da comando de apertura (`sftp usuario@host`) ni
-  `exit` para esta consola -- **solo los comandos sueltos**
-  (`get`/`put`/`!rm`) dentro de una caja `sftp`, para pegar
-  directamente en la consola ya abierta. Esto aplica en **cualquier
-  entorno PEE** (PC o Android) -- la única diferencia por entorno es la
-  ya vigente antes de S61: barra inicial en la ruta local sí/no, y
-  `exit` obligatorio solo en Android (nunca en PC). Ver tabla PEE
-  original de `com-bash-commands`/`com-file-request`, que sigue
-  vigente sin cambios para esta consola.
-- **La "regla" añadida por error en S61 (exigir apertura + `exit`
-  siempre) NUNCA aplicó a esta consola y queda revertida por
-  completo.** Fue una confusión real del modelo que le cerró a Miguel
-  Ángel su consola de trabajo permanente en mitad de la sesión --
-  incidente grave, no repetir jamás.
-
-### CONSOLA 2 — VM de GCE / `gcloud` (PowerShell, solo PEE=PC)
-
-- **Única función:** tratar con la máquina virtual `h28-ocr-batch` --
-  `gcloud compute ssh`, `gcloud compute scp`, y cualquier comando
-  ejecutado dentro de esa VM. Nada que ver con PythonAnywhere.
-- Es una instancia de **PowerShell**, sin relación alguna con la
-  Consola 1.
-- Cada uso es una **conexión nueva y efímera** (no una sesión
-  permanente): el modelo **SIEMPRE** entrega el comando de apertura
-  (`gcloud compute ssh h28-ocr-batch --project=... --zone=...`) y
-  **SIEMPRE** cierra con `exit` al final de los comandos que se
-  ejecutan dentro de la VM, sin excepción, en cualquier circunstancia.
-- **Solo aplica en PEE=PC.** En entorno Android no se usa PowerShell ni
-  este mecanismo de `gcloud` -- si en el futuro hiciera falta gestionar
-  esta VM desde Android, el modelo debe preguntar el mecanismo real a
-  Miguel Ángel antes de asumir nada, nunca extrapolar del flujo PC.
-
-**Resumen para no volver a confundirlas:** Consola 1 (Git Bash, sftp,
-permanente, sin apertura/cierre) es para mover archivos entre
-PythonAnywhere y el PC. Consola 2 (PowerShell, `gcloud`, efímera,
-siempre con apertura y `exit`) es para la VM de OCR. No comparten
-protocolo, no comparten propósito, no se mezclan nunca.
-
+**Nota (S61):** la consola sftp permanente, que comunica el
+directorio de intercambio local con PythonAnywhere, no tiene absolutamente
+nada que ver con las solicitudes de archivos en PowerShell que comunican
+las VM con el entorno local del usuario. Para esas comunicaciones hay que
+abrir la conexión sftp con PythonAnywhere in situ (PowerShell), usar los
+comandos sftp, y volverla a cerrar — es efímera dentro de esa consola
+PowerShell, a diferencia de la consola sftp permanente, que jamás debe
+cerrarse.
 
 ---
 
