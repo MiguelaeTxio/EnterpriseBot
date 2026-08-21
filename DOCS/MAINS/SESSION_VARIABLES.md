@@ -25,41 +25,61 @@
 
 ---
 
-## ⛔ REGLA VINCULANTE — CAJAS SFTP SIEMPRE COMPLETAS Y AUTOCONTENIDAS
-## (S61, 2026-08-21, tras incidencia real de fricción repetida)
+## ⛔ DOS CONSOLAS DISTINTAS, SIN NINGUNA RELACIÓN ENTRE SÍ
+## (S61, 2026-08-21 -- corrección real tras confusión grave del modelo)
 
-**Origen real:** en S61, para subir tres archivos a `SWAP` por sftp, el
-modelo entregó los `put` sueltos sin la caja de apertura de la conexión
-(`sftp usuario@host`), obligando a Miguel Ángel a intervenir con un
-prompt adicional solo para preguntar dónde se pegaban. Además, la
-omisión de `exit` en entorno `PC` (ver tabla PEE de
-`com-bash-commands`/`com-file-request`) dejaba la sesión sftp abierta,
-obligando a cerrarla a mano. Ambas cosas, sumadas al incidente ya
-documentado más abajo de `gcloud compute scp`, generaron una fricción
-real y repetida que Miguel Ángel señaló explícitamente como excesiva.
+**QUEDA TERMINANTEMENTE PROHIBIDO** tratar estas dos consolas como si
+fueran intercambiables o relacionadas entre sí. No lo son. Cada una
+tiene su propio protocolo de apertura/cierre, distinto y sin
+excepciones cruzadas.
 
-**Regla, de obligado cumplimiento en este proyecto, PREVALECE sobre la
-tabla PEE genérica de `com-bash-commands`/`com-file-request` en cuanto
-a `exit`:**
+### CONSOLA 1 — sftp a PythonAnywhere (Git Bash, permanente)
 
-1. **Toda operación sftp se entrega en exactamente DOS cajas, nunca
-   una caja sftp "suelta" sin su apertura:**
-   - Caja 1 (comando de consola normal, no caja `sftp`): el comando de
-     apertura de la conexión, tal cual se pega en PowerShell/cmd --
-     `sftp {usuario}@{host}` (ver `SFTP_CONNECTION` arriba para los
-     valores reales de este proyecto).
-   - Caja 2 (caja `sftp`): todas las operaciones (`get`/`put`/`!rm`/lo
-     que corresponda) y, **siempre, en cualquier entorno PEE, incluido
-     PC**, un `exit` final. Dejar la sesión sftp abierta genera más
-     fricción que un `exit` de sobra -- la tabla PEE que omitía `exit`
-     en `PC`/`PCv` queda **sin efecto en este proyecto** a partir de
-     S61; se mantiene el uso de barra inicial sí/no según PEE, pero
-     `exit` se incluye siempre.
-2. Nunca dar una caja de código a medias esperando que Miguel Ángel
-   adivine dónde se pega o con qué se completa -- si una operación
-   necesita más de un paso (abrir conexión + operar + cerrar), los
-   pasos necesarios van TODOS en la misma respuesta, nunca repartidos
-   en turnos sucesivos por descuido.
+- **Única función:** transferir archivos entre PythonAnywhere y el PC
+  local de Miguel Ángel -- `get` (servidor → local) y `put` (local →
+  servidor). Nada más.
+- Es una instancia de **Git Bash**, no PowerShell.
+- Se abre **una sola vez al principio de la sesión** y se mantiene
+  **abierta durante toda la sesión**, dedicada en exclusiva a este
+  intercambio.
+- El modelo **NUNCA** da comando de apertura (`sftp usuario@host`) ni
+  `exit` para esta consola -- **solo los comandos sueltos**
+  (`get`/`put`/`!rm`) dentro de una caja `sftp`, para pegar
+  directamente en la consola ya abierta. Esto aplica en **cualquier
+  entorno PEE** (PC o Android) -- la única diferencia por entorno es la
+  ya vigente antes de S61: barra inicial en la ruta local sí/no, y
+  `exit` obligatorio solo en Android (nunca en PC). Ver tabla PEE
+  original de `com-bash-commands`/`com-file-request`, que sigue
+  vigente sin cambios para esta consola.
+- **La "regla" añadida por error en S61 (exigir apertura + `exit`
+  siempre) NUNCA aplicó a esta consola y queda revertida por
+  completo.** Fue una confusión real del modelo que le cerró a Miguel
+  Ángel su consola de trabajo permanente en mitad de la sesión --
+  incidente grave, no repetir jamás.
+
+### CONSOLA 2 — VM de GCE / `gcloud` (PowerShell, solo PEE=PC)
+
+- **Única función:** tratar con la máquina virtual `h28-ocr-batch` --
+  `gcloud compute ssh`, `gcloud compute scp`, y cualquier comando
+  ejecutado dentro de esa VM. Nada que ver con PythonAnywhere.
+- Es una instancia de **PowerShell**, sin relación alguna con la
+  Consola 1.
+- Cada uso es una **conexión nueva y efímera** (no una sesión
+  permanente): el modelo **SIEMPRE** entrega el comando de apertura
+  (`gcloud compute ssh h28-ocr-batch --project=... --zone=...`) y
+  **SIEMPRE** cierra con `exit` al final de los comandos que se
+  ejecutan dentro de la VM, sin excepción, en cualquier circunstancia.
+- **Solo aplica en PEE=PC.** En entorno Android no se usa PowerShell ni
+  este mecanismo de `gcloud` -- si en el futuro hiciera falta gestionar
+  esta VM desde Android, el modelo debe preguntar el mecanismo real a
+  Miguel Ángel antes de asumir nada, nunca extrapolar del flujo PC.
+
+**Resumen para no volver a confundirlas:** Consola 1 (Git Bash, sftp,
+permanente, sin apertura/cierre) es para mover archivos entre
+PythonAnywhere y el PC. Consola 2 (PowerShell, `gcloud`, efímera,
+siempre con apertura y `exit`) es para la VM de OCR. No comparten
+protocolo, no comparten propósito, no se mezclan nunca.
+
 
 ---
 
