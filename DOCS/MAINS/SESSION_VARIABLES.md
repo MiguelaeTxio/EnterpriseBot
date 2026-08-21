@@ -399,13 +399,18 @@ no aceptan flags ni variables de entorno).
   rutas relativas, cerrar con `exit` -- igual patrón que las
   conexiones VM↔PythonAnywhere ya documentado arriba, nunca la
   consola permanente:
+  **Ruta real de SWAP, confirmada por error real en S62: `SWAP/` cuelga
+  directamente de `/home/MiguelAeTxio/` (el `HOME` de la conexión sftp),
+  NUNCA de `PROJECTS/EnterpriseBot/` -- coherente con la ruta que ya usa
+  el Comando S (`com-bash-commands` sección 4:
+  `/home/MiguelAeTxio/SWAP/{PROJECT_ID}_{NNN}.txt`). Un `cd
+  PROJECTS/EnterpriseBot/SWAP` falla con "No such file or directory".
   ```
   sftp MiguelAeTxio@ssh.pythonanywhere.com
   ```
   ```sftp
-  cd PROJECTS/EnterpriseBot/SWAP
-  put carpeta_local/archivo1.ext
-  put carpeta_local/archivo2.ext
+  put carpeta_local/archivo1.ext SWAP/archivo1.ext
+  put carpeta_local/archivo2.ext SWAP/archivo2.ext
   exit
   ```
 
