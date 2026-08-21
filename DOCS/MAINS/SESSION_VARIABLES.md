@@ -385,6 +385,30 @@ no aceptan flags ni variables de entorno).
   archivos de esta VM desde Windows -- no volver a proponer comandos
   sueltos por archivo, ni comodines, ni `~`.**
 
+  ⛔ **DE AHÍ A PYTHONANYWHERE -- NUNCA por la consola sftp permanente
+  ni por el directorio de intercambio local (`sdcard/Download/`),
+  INCIDENCIA REAL S62.** Los archivos que acaba de bajar `gcloud
+  compute scp --recurse` caen en el directorio actual de esa misma
+  PowerShell -- **no** en `sdcard/Download/` (eso es un directorio
+  distinto, de Git Bash, sin relación). Subirlos a PythonAnywhere
+  usando la consola sftp permanente (que solo conoce
+  `sdcard/Download/`) obliga a mover el archivo de un sitio a otro
+  primero, paso extra innecesario que además generó confusión real en
+  S62. **Método correcto, ya con los archivos ahí mismo:** abrir una
+  conexión sftp efímera en esa misma ventana de PowerShell, subir con
+  rutas relativas, cerrar con `exit` -- igual patrón que las
+  conexiones VM↔PythonAnywhere ya documentado arriba, nunca la
+  consola permanente:
+  ```
+  sftp MiguelAeTxio@ssh.pythonanywhere.com
+  ```
+  ```sftp
+  cd PROJECTS/EnterpriseBot/SWAP
+  put carpeta_local/archivo1.ext
+  put carpeta_local/archivo2.ext
+  exit
+  ```
+
   (El comodín de `sample*_output.txt` de la sección de arriba, S53,
   funcionó porque aquella sesión se hizo desde el Termux del móvil de
   Miguel Ángel -- Linux real, `scp` de OpenSSH -- no desde su PC
