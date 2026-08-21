@@ -25,6 +25,45 @@
 
 ---
 
+## ⛔ REGLA VINCULANTE — CAJAS SFTP SIEMPRE COMPLETAS Y AUTOCONTENIDAS
+## (S61, 2026-08-21, tras incidencia real de fricción repetida)
+
+**Origen real:** en S61, para subir tres archivos a `SWAP` por sftp, el
+modelo entregó los `put` sueltos sin la caja de apertura de la conexión
+(`sftp usuario@host`), obligando a Miguel Ángel a intervenir con un
+prompt adicional solo para preguntar dónde se pegaban. Además, la
+omisión de `exit` en entorno `PC` (ver tabla PEE de
+`com-bash-commands`/`com-file-request`) dejaba la sesión sftp abierta,
+obligando a cerrarla a mano. Ambas cosas, sumadas al incidente ya
+documentado más abajo de `gcloud compute scp`, generaron una fricción
+real y repetida que Miguel Ángel señaló explícitamente como excesiva.
+
+**Regla, de obligado cumplimiento en este proyecto, PREVALECE sobre la
+tabla PEE genérica de `com-bash-commands`/`com-file-request` en cuanto
+a `exit`:**
+
+1. **Toda operación sftp se entrega en exactamente DOS cajas, nunca
+   una caja sftp "suelta" sin su apertura:**
+   - Caja 1 (comando de consola normal, no caja `sftp`): el comando de
+     apertura de la conexión, tal cual se pega en PowerShell/cmd --
+     `sftp {usuario}@{host}` (ver `SFTP_CONNECTION` arriba para los
+     valores reales de este proyecto).
+   - Caja 2 (caja `sftp`): todas las operaciones (`get`/`put`/`!rm`/lo
+     que corresponda) y, **siempre, en cualquier entorno PEE, incluido
+     PC**, un `exit` final. Dejar la sesión sftp abierta genera más
+     fricción que un `exit` de sobra -- la tabla PEE que omitía `exit`
+     en `PC`/`PCv` queda **sin efecto en este proyecto** a partir de
+     S61; se mantiene el uso de barra inicial sí/no según PEE, pero
+     `exit` se incluye siempre.
+2. Nunca dar una caja de código a medias esperando que Miguel Ángel
+   adivine dónde se pega o con qué se completa -- si una operación
+   necesita más de un paso (abrir conexión + operar + cerrar), los
+   pasos necesarios van TODOS en la misma respuesta, nunca repartidos
+   en turnos sucesivos por descuido.
+
+---
+
+
 ## LOGS — ARCHIVOS NO VERSIONADOS DEL SERVIDOR
 
 **No viven en GitHub.** Son artefactos de ejecución en el servidor
