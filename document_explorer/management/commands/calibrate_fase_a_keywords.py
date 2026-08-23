@@ -331,6 +331,10 @@ CANDIDATES_SAFE = {
             # Angel como regla reutilizable para cualquier tipo que
             # aparezca con este patron APELLIDO_NOMBRE_TIPO_FECHA.
             "AUTORIZACION USO MAQUINARIA",
+            # Añadido en esta sesion: variante abreviada real sin
+            # "USO" -- "AUT MAQ GOMEZ GARCIA..." -- 40 coincidencias
+            # reales, ver EnterpriseBot_005_GET.txt.
+            "AUT MAQ",
         ],
         "CARNET_CONDUCIR": [
             "CARNET CONDUCIR", "CARNE CONDUCIR",
@@ -340,6 +344,16 @@ CANDIDATES_SAFE = {
             # (tacografo, no carnet de conducir, pero mismo tipo de
             # catalogo por diseño). Ver EnterpriseBot_002_GET.txt.
             "TARJETA DEL CONDUCTOR", "TARJETA DE CONDUCTOR",
+            # Añadido en esta sesion: "CARNET DE CONDUCIR" (con "DE"
+            # intermedio, patron no cubierto por "CARNET CONDUCIR")
+            # y "PERMISO DE CONDUCIR"/"PERMISO CONDUCIR" -- mismo
+            # documento real en España, nombre administrativo
+            # alternativo, nunca el permiso de circulacion de vehiculo
+            # (ese es PERMISO_CIRCULACION, dominio MACHINE, frase
+            # completa distinta -- sin colision real posible: aqui
+            # solo se busca en dominio PERSONAL). 30+18 coincidencias
+            # reales, ver EnterpriseBot_005_GET.txt.
+            "CARNET DE CONDUCIR", "PERMISO DE CONDUCIR", "PERMISO CONDUCIR",
         ],
         "AUTONOMO": [
             # Añadido S59 (migracion 0039): recibos mensuales de
@@ -384,6 +398,12 @@ CANDIDATES_SAFE = {
         "NOMINA": ["NOMINA"],
         "PAGO_CORRIENTE": ["PAGO CORRIENTE"],
         "RECONOCIMIENTO_MEDICO": ["RECONOCIMIENTO MEDICO"],
+        # Añadido en esta sesion: SOLICITUD_ADMINISTRATIVA ya existia
+        # como comodin generico para MACHINE (GENERIC_LOSER, siempre
+        # pierde contra un tipo especifico -- ver heuristic_type_
+        # service.py) pero nunca se replico en PERSONAL. 21
+        # coincidencias reales, ver EnterpriseBot_005_GET.txt.
+        "SOLICITUD_ADMINISTRATIVA": ["SOLICITUD"],
         "SEG_SOCIAL": [
             "SEGURIDAD SOCIAL",
             # Añadido S59: variante abreviada del mismo patron
@@ -441,7 +461,20 @@ CANDIDATES_RISKY = {
         "OCA": ["OCA"], "RAE": ["RAE"],
     },
     "PERSONAL": {
-        "CAP": ["CAP"], "CSS": ["CSS"], "IDC": ["IDC"],
+        "CAP": [
+            "CAP",
+            # Añadido en esta sesion: "Tarjeta de Cualificacion del
+            # Conductor" es la tarjeta fisica real del CAP -- mismo
+            # documento, nombre alternativo. 85+58 coincidencias
+            # reales dentro de DOC. PERSONAL/PERSONAL (ver
+            # EnterpriseBot_005_GET.txt) sin ninguna colision visible
+            # contra otro codigo del catalogo. Va en RISKY (no SAFE)
+            # por el mismo criterio que el resto de este bloque: nunca
+            # se ha calibrado contra el corpus completo con
+            # calibrate_fase_a_keywords, solo contra el remanente.
+            "TARJETA CUALIFIC", "TARJ CUALIFIC",
+        ],
+        "CSS": ["CSS"], "IDC": ["IDC"],
         # Añadido S63: 117 coincidencias reales de RECONOCIMIENTO_
         # MEDICO abreviado como "RM" dentro de DOC. PERSONAL/PERSONAL
         # (ver EnterpriseBot_002_GET.txt) -- acronimo corto de 2
