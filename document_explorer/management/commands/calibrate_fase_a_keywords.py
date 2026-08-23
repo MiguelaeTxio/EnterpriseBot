@@ -628,7 +628,7 @@ CANDIDATES_RISKY = {
             # "CUALIFICACION" (la letra siguiente, "A", no es limite
             # valido). Sustituido por la palabra real completa. Ver
             # EnterpriseBot_005_GET.txt / EnterpriseBot_006_GET.txt.
-            "TARJETA CUALIFICACION", "TARJ CUALIFIC",
+            "TARJETA CUALIFICACION", "TARJ CUALIFIC", "TARJETA DE CUALIFICACION",
             # Corregido en esta sesion, tercera pasada (barrido de
             # bigramas, EnterpriseBot_016_GET.txt): "TARJ CUALIFIC"
             # tenia el mismo bug de limite de palabra que ya corregi
