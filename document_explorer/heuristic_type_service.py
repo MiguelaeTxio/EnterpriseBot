@@ -103,6 +103,12 @@ FOLDER_TYPE_RULES = [
     # singular ("VEHICULOS DE BAJA", "GONDOLAS/BAJA DEFINITIVA"),
     # nunca "BAJAS" plural. Ver EnterpriseBot_016_GET.txt.
     ("/BAJAS/", "BAJA_PERSONAL"),
+    # Añadido en esta sesion, cuarta pasada: mismo concepto que
+    # "/BAJAS/" (trabajador que ya no esta activo) pero con nombre de
+    # carpeta distinto -- "TRABAJADORES INACTIVOS" -- confirmado real
+    # en el barrido de firmas (EnterpriseBot_024_GET.txt, "CARTA
+    # DESPIDO" dentro de esa carpeta).
+    ("TRABAJADORES INACTIVOS", "BAJA_PERSONAL"),
     # Añadido en esta sesion: carpeta de proposito unico, confirmado
     # por Miguel Angel (codigo nuevo REGISTRO_JORNADA, opcion A). 251
     # archivos reales bajo "DOC. PERSONAL/REGISTRO DE JORNADA/..."
@@ -110,6 +116,11 @@ FOLDER_TYPE_RULES = [
     # por palabra clave, mismo criterio que BAJA_PERSONAL/
     # INVESTIGACION_ACCIDENTE.
     ("PERSONAL/REGISTRO DE JORNADA", "REGISTRO_JORNADA"),
+    # Añadido en esta sesion, cuarta pasada: "DOC. PERSONAL/PARTE
+    # SEMANAL/SEPTIEMBRE 11 AL 18.pdf" -- mismo concepto real de
+    # registro de horas/jornada, carpeta propia distinta. Ver
+    # EnterpriseBot_024_GET.txt.
+    ("PERSONAL/PARTE SEMANAL", "REGISTRO_JORNADA"),
     ("DECLARACION AL CORRIENTE", "PAGO_CORRIENTE"),
     ("AUTORIZACION USO DE MAQUINARIA", "AUTORIZACION_USO_MAQUINARIA"),
     # Añadido S55: CERT_ACCESORIO_ELEVACION resuelto por carpeta, no

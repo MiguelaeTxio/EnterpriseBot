@@ -305,9 +305,22 @@ CANDIDATES_SAFE = {
             "CONDICIONES GENERALES", "CONDICIONES PARTICULARES",
             "SUPLEMENTO",
         ],
-        "TACOGRAFO": ["TACOGRAFO"],
+        "TACOGRAFO": [
+            "TACOGRAFO",
+            # Añadido en esta sesion, cuarta pasada: "TTacografo
+            # 23022030 Jesus Martin Gonzalez.pdf" -- doble T real
+            # (probable "Tarjeta Tacografo" pegado). Ver
+            # EnterpriseBot_024_GET.txt.
+            "TTACOGRAFO",
+        ],
     },
     "PERSONAL": {
+        # Añadido en esta sesion, cuarta pasada: BAJA_PERSONAL se
+        # resuelve principalmente por carpeta (ver FOLDER_TYPE_RULES,
+        # "/BAJAS/" y "TRABAJADORES INACTIVOS") -- esta keyword cubre
+        # el resto real, cuando la carpeta no sigue ese patron. Ver
+        # EnterpriseBot_024_GET.txt.
+        "BAJA_PERSONAL": ["CARTA BAJA VOLUNTARIA"],
         "ALTA_MEDICA": ["ALTA MEDICA"],
         "ALTA": ["ALTA"],
         # Añadido S59: variante abreviada real dentro de las carpetas
@@ -344,6 +357,10 @@ CANDIDATES_SAFE = {
             # "USO" -- "AUT MAQ GOMEZ GARCIA..." -- 40 coincidencias
             # reales, ver EnterpriseBot_005_GET.txt.
             "AUT MAQ",
+            # Añadido en esta sesion, cuarta pasada: "Aut uso utiles"
+            # -- mismo tipo de autorizacion real, "utiles" en vez de
+            # "maquinaria". Ver EnterpriseBot_024_GET.txt.
+            "AUT USO UTILES",
         ],
         "CARNET_CONDUCIR": [
             "CARNET CONDUCIR", "CARNE CONDUCIR",
@@ -379,6 +396,13 @@ CANDIDATES_SAFE = {
             # CONDUCIR" con "DE" -- mismo gap que "CARNET DE CONDUCIR"
             # ya corregido, nunca lo aplique a la variante corta.
             "CARNE DE CONDUCIR",
+            # Añadido en esta sesion, cuarta pasada: "Aut prov
+            # conducir" -- autorizacion provisional para conducir
+            # mientras se tramita el definitivo, mismo documento real
+            # que un carnet de conducir (nunca el permiso de
+            # circulacion de vehiculo, ese es otro codigo, dominio
+            # MACHINE). Ver EnterpriseBot_024_GET.txt.
+            "AUT PROV CONDUCIR", "AUT CONDUCIR PROV",
         ],
         # Añadido en esta sesion: codigo nuevo confirmado por Miguel
         # Angel (opcion A) -- CARNET_GRUISTA ya existia como concepto
@@ -399,6 +423,13 @@ CANDIDATES_SAFE = {
             "CERT OPERADOR GRUA", "CERT OP GRUA", "OPERADOR DE GRUA",
             "OPERADOR GRUA HIDRAULICA", "GRUA HIDRAULICA ARTICULADA",
             "CARNET OP GRUA",
+            # Añadido en esta sesion, cuarta pasada (barrido de firmas,
+            # EnterpriseBot_024_GET.txt): "GrHidraulica CatB..."
+            # (concatenado sin espacio, categoria de grua hidraulica),
+            # "CARNE GRUAS" (variante real sin "GRUISTA"), "CERTIFICADOS
+            # DE GRUISTAS" (plural).
+            "GRHIDRAULICA", "CARNE GRUAS", "CERTIFICADOS DE GRUISTAS",
+            "CERTIFICADOS GRUISTAS",
         ],
         "AUTONOMO": [
             # Añadido S59 (migracion 0039): recibos mensuales de
@@ -443,6 +474,16 @@ CANDIDATES_SAFE = {
             # concepto de formacion, dentro del arbol FORMACION
             # TRABAJADORES en el 100% de los casos vistos.
             "FICHA INSCRIPCION", "LISTADO ALUMNOS",
+            # Añadido en esta sesion, cuarta pasada (barrido de firmas
+            # tras quitar nombre/fecha, EnterpriseBot_024_GET.txt):
+            # variantes reales de formacion que viven FUERA del arbol
+            # FORMACION TRABAJADORES (dentro de carpetas de persona),
+            # por eso el fallback de carpeta no las cubre y necesitan
+            # keyword propia. "CAPACITACION" (sinonimo real de
+            # formacion), "APARATOS ELEVADORES" (formacion de equipo
+            # especifico, sin prefijo FORM), "PRL AUXILIO" (cuestionario/
+            # certificado PRL de auxilio en carretera).
+            "CAPACITACION", "APARATOS ELEVADORES", "PRL AUXILIO",
         ],
         # Añadido en esta sesion: codigo nuevo confirmado por Miguel
         # Angel (opcion A) -- designacion de un trabajador como
@@ -478,7 +519,14 @@ CANDIDATES_SAFE = {
         # horarios.xlsx" en la raiz de DOC. PERSONAL. Ver
         # EnterpriseBot_016_GET.txt.
         "REGISTRO_JORNADA": ["CONTROL HORARIOS"],
-        "RECONOCIMIENTO_MEDICO": ["RECONOCIMIENTO MEDICO"],
+        "RECONOCIMIENTO_MEDICO": [
+            "RECONOCIMIENTO MEDICO",
+            # Añadido en esta sesion, cuarta pasada: 3 abreviaturas
+            # reales distintas del mismo concepto -- "Rec.medico...",
+            # "RECO.MEDICO...", "RMEDICO..." (pegado, sin separador).
+            # Ver EnterpriseBot_024_GET.txt.
+            "REC MEDICO", "RECO MEDICO", "RMEDICO",
+        ],
         # Añadido en esta sesion: SOLICITUD_ADMINISTRATIVA ya existia
         # como comodin generico para MACHINE (GENERIC_LOSER, siempre
         # pierde contra un tipo especifico -- ver heuristic_type_
@@ -495,6 +543,10 @@ CANDIDATES_SAFE = {
             # S.SOCIAL GOMEZ GARCIA.jpg" -- abreviatura real de
             # "Seguridad Social" (ver EnterpriseBot_016_GET.txt).
             "TARJETA S SOCIAL",
+            # Añadido en esta sesion, cuarta pasada: "Vida laboral" --
+            # informe oficial de la Seguridad Social, mismo dominio
+            # conceptual. Ver EnterpriseBot_024_GET.txt.
+            "VIDA LABORAL",
         ],
         "VACACIONES": ["VACACIONES"],
         # EPIS deliberadamente FUERA (S48, correccion de Miguel Angel):
