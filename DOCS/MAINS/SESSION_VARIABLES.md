@@ -473,6 +473,25 @@ mkdir -p agent_data
 Después, la clave de servicio (ver más abajo cómo copiarla) antes de
 lanzar cualquier script.
 
+⛔ **MÉTODO SIN PC, VERIFICADO S63 -- nunca depende de tener acceso al
+PC de Miguel Ángel.** La cuenta de servicio real es
+`enterprisebot-h28-migration-ag@gen-lang-client-0961484137.iam.gserviceaccount.com`.
+Desde la propia app móvil de Cloud Console (la misma usada para SSH):
+IAM y administración → Cuentas de servicio → esa cuenta → pestaña
+Claves → Agregar clave → Crear clave nueva (JSON) -- se descarga al
+teléfono. Copiar el contenido completo y pegarlo directamente en la
+sesión SSH ya abierta con la VM, vía heredoc:
+```bash
+cat > ~/EnterpriseBot/h28_migration_agent/agent_data/service_account_key.json << 'EOF'
+[pegar aqui el JSON completo]
+EOF
+```
+Nunca depende de `gcloud compute scp` desde PowerShell ni de que
+exista ya una copia en `/home/Usuario/` de otra sesión -- crear una
+clave nueva no invalida las anteriores de la misma cuenta de
+servicio, así que es seguro repetir esto en cada VM nueva sin PC de
+por medio.
+
 **Para `train_document_classifier.py`** (corre en el PC de Miguel
 Ángel, sin túnel ni GCS) -- candado:
 `h28_migration_agent/requirements-classifier.txt`:
