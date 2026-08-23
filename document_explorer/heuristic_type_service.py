@@ -90,6 +90,19 @@ FOLDER_TYPE_RULES = [
     ("INCAPACIDAD LABORAL", "PARTE_BAJA_MEDICA"),
     ("INVESTIGACION ACCIDENTES", "INVESTIGACION_ACCIDENTE"),
     ("PERSONAL/BAJAS", "BAJA_PERSONAL"),
+    # Corregido en esta sesion: el needle original solo cazaba una
+    # carpeta "BAJAS" colgando literalmente de un segmento "PERSONAL"
+    # (".../PERSONAL/BAJAS/..."). Deja fuera "TALLER/BAJAS",
+    # "OPERARIOS/.../TRABAJADORES INACTIVOS/.../BAJA", etc. -- mismo
+    # concepto de carpeta real, misma decision de diseno S47 (por
+    # carpeta, nunca por la palabra BAJA sola). Regla generica de
+    # segmento de carpeta completo "BAJAS" (plural, con barras a
+    # ambos lados para exigir que sea el nombre exacto de una
+    # carpeta, nunca una subcadena de otra palabra). Confirmado sin
+    # colision real: en MACHINE el patron real es siempre "BAJA"
+    # singular ("VEHICULOS DE BAJA", "GONDOLAS/BAJA DEFINITIVA"),
+    # nunca "BAJAS" plural. Ver EnterpriseBot_016_GET.txt.
+    ("/BAJAS/", "BAJA_PERSONAL"),
     ("DECLARACION AL CORRIENTE", "PAGO_CORRIENTE"),
     ("AUTORIZACION USO DE MAQUINARIA", "AUTORIZACION_USO_MAQUINARIA"),
     # Añadido S55: CERT_ACCESORIO_ELEVACION resuelto por carpeta, no

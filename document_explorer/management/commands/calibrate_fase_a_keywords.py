@@ -335,6 +335,11 @@ CANDIDATES_SAFE = {
             # con "DE" -- "Autorizacion USO DE MAQUINARIA.pdf" (ver
             # EnterpriseBot_008_GET.txt).
             "AUTORIZACION USO DE MAQUINARIA",
+            # Añadido en esta sesion, tercera pasada: variante real
+            # con "MAQUINA" en singular en vez de "MAQUINARIA" --
+            # "AUT USO MAQUINA BERENGUER GOMEZ...pdf" (ver
+            # EnterpriseBot_016_GET.txt).
+            "AUT USO MAQUINA",
             # Añadido en esta sesion: variante abreviada real sin
             # "USO" -- "AUT MAQ GOMEZ GARCIA..." -- 40 coincidencias
             # reales, ver EnterpriseBot_005_GET.txt.
@@ -369,6 +374,11 @@ CANDIDATES_SAFE = {
             # "CConducir 17022030 Jesus Martin Gonzalez.pdf").
             "TARJ DEL CONDUCTOR", "TARJ DE CONDUCTOR",
             "PERMISO DE CONDUCCION", "PERMISO CONDUCCION", "CCONDUCIR",
+            # Añadido en esta sesion, tercera pasada (barrido de
+            # bigramas completo, EnterpriseBot_016_GET.txt): "CARNE DE
+            # CONDUCIR" con "DE" -- mismo gap que "CARNET DE CONDUCIR"
+            # ya corregido, nunca lo aplique a la variante corta.
+            "CARNE DE CONDUCIR",
         ],
         "AUTONOMO": [
             # Añadido S59 (migracion 0039): recibos mensuales de
@@ -407,6 +417,12 @@ CANDIDATES_SAFE = {
             # patron dominante del bloque. "FORM" cubre via separador
             # flexible "FORM.", "FORM ", "FORM6H", etc.
             "FORM",
+            # Añadido en esta sesion, tercera pasada (barrido de
+            # bigramas, EnterpriseBot_016_GET.txt): formularios de
+            # inscripcion y listados de alumnos de curso -- mismo
+            # concepto de formacion, dentro del arbol FORMACION
+            # TRABAJADORES en el 100% de los casos vistos.
+            "FICHA INSCRIPCION", "LISTADO ALUMNOS",
         ],
         "MOD_145": [
             "MODELO 145",
@@ -435,6 +451,10 @@ CANDIDATES_SAFE = {
             # APELLIDO_NOMBRE_TIPO_FECHA de "PTE CONTRATACION" (p.ej.
             # "GUTIERREZ_MATEO_CRISTHIAN_SEG_SOCIAL_20260805.pdf").
             "SEG SOCIAL",
+            # Añadido en esta sesion, tercera pasada: "TARJETA
+            # S.SOCIAL GOMEZ GARCIA.jpg" -- abreviatura real de
+            # "Seguridad Social" (ver EnterpriseBot_016_GET.txt).
+            "TARJETA S SOCIAL",
         ],
         "VACACIONES": ["VACACIONES"],
         # EPIS deliberadamente FUERA (S48, correccion de Miguel Angel):
@@ -517,6 +537,16 @@ CANDIDATES_RISKY = {
             # valido). Sustituido por la palabra real completa. Ver
             # EnterpriseBot_005_GET.txt / EnterpriseBot_006_GET.txt.
             "TARJETA CUALIFICACION", "TARJ CUALIFIC",
+            # Corregido en esta sesion, tercera pasada (barrido de
+            # bigramas, EnterpriseBot_016_GET.txt): "TARJ CUALIFIC"
+            # tenia el mismo bug de limite de palabra que ya corregi
+            # en "TARJETA CUALIFIC" -- nunca matcheaba "TARJ
+            # CUALIFICACION" (29 casos reales). Añadida la palabra
+            # completa, mas la abreviatura aun mas corta real "CUALIF"
+            # (sin "IC" final -- "TARJ.CUALIF.CONDUCTOR...pdf", 17
+            # casos reales, boundary-safe: "CUALIF" no es prefijo de
+            # ninguna otra palabra candidata del catalogo).
+            "TARJ CUALIFICACION", "TARJ CUALIF",
         ],
         "CSS": ["CSS"], "IDC": ["IDC"],
         # Añadido S63: 117 coincidencias reales de RECONOCIMIENTO_
