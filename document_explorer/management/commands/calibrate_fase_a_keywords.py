@@ -331,6 +331,10 @@ CANDIDATES_SAFE = {
             # Angel como regla reutilizable para cualquier tipo que
             # aparezca con este patron APELLIDO_NOMBRE_TIPO_FECHA.
             "AUTORIZACION USO MAQUINARIA",
+            # Añadido en esta sesion, segunda pasada: variante real
+            # con "DE" -- "Autorizacion USO DE MAQUINARIA.pdf" (ver
+            # EnterpriseBot_008_GET.txt).
+            "AUTORIZACION USO DE MAQUINARIA",
             # Añadido en esta sesion: variante abreviada real sin
             # "USO" -- "AUT MAQ GOMEZ GARCIA..." -- 40 coincidencias
             # reales, ver EnterpriseBot_005_GET.txt.
@@ -354,12 +358,28 @@ CANDIDATES_SAFE = {
             # solo se busca en dominio PERSONAL). 30+18 coincidencias
             # reales, ver EnterpriseBot_005_GET.txt.
             "CARNET DE CONDUCIR", "PERMISO DE CONDUCIR", "PERMISO CONDUCIR",
+            # Añadido en esta sesion, segunda pasada sobre el
+            # remanente (ver EnterpriseBot_008_GET.txt):
+            # "TARJ DEL/DE CONDUCTOR" (abreviatura real de TARJETA,
+            # 84 coincidencias del token "TARJ" en el remanente,
+            # mismo concepto que TARJETA DEL/DE CONDUCTOR ya
+            # existente), "PERMISO DE CONDUCCION"/"PERMISO CONDUCCION"
+            # (variante ortografica real, "conduccion" en vez de
+            # "conducir"), "CCONDUCIR" (abreviatura pegada real,
+            # "CConducir 17022030 Jesus Martin Gonzalez.pdf").
+            "TARJ DEL CONDUCTOR", "TARJ DE CONDUCTOR",
+            "PERMISO DE CONDUCCION", "PERMISO CONDUCCION", "CCONDUCIR",
         ],
         "AUTONOMO": [
             # Añadido S59 (migracion 0039): recibos mensuales de
             # cuota de autonomo de la familia Alvarez, mayoria real
             # de "DOC. PERSONAL/PERSONAL/ADMINISTRACION".
             "AUTONOMO",
+            # Añadido en esta sesion: variante plural real
+            # ("Autonomos julio 2014.pdf") -- no matcheaba por el
+            # mismo motivo que TARJETA CUALIFIC (limite de palabra
+            # completa). Ver EnterpriseBot_008_GET.txt.
+            "AUTONOMOS",
         ],
         "CONTRATO": [
             "CONTRATO LABORAL",
@@ -395,7 +415,12 @@ CANDIDATES_SAFE = {
             # EnterpriseBot_002_GET.txt).
             "MOD 145",
         ],
-        "NOMINA": ["NOMINA"],
+        "NOMINA": [
+            "NOMINA",
+            # Añadido en esta sesion: variante plural real ("Nominas
+            # tres ultimos años-comp.pdf"). Ver EnterpriseBot_008_GET.txt.
+            "NOMINAS",
+        ],
         "PAGO_CORRIENTE": ["PAGO CORRIENTE"],
         "RECONOCIMIENTO_MEDICO": ["RECONOCIMIENTO MEDICO"],
         # Añadido en esta sesion: SOLICITUD_ADMINISTRATIVA ya existia
@@ -473,14 +498,18 @@ CANDIDATES_RISKY = {
             "CAP",
             # Añadido en esta sesion: "Tarjeta de Cualificacion del
             # Conductor" es la tarjeta fisica real del CAP -- mismo
-            # documento, nombre alternativo. 85+58 coincidencias
-            # reales dentro de DOC. PERSONAL/PERSONAL (ver
-            # EnterpriseBot_005_GET.txt) sin ninguna colision visible
-            # contra otro codigo del catalogo. Va en RISKY (no SAFE)
-            # por el mismo criterio que el resto de este bloque: nunca
-            # se ha calibrado contra el corpus completo con
-            # calibrate_fase_a_keywords, solo contra el remanente.
-            "TARJETA CUALIFIC", "TARJ CUALIFIC",
+            # documento, nombre alternativo. Confirmado ademas por
+            # PersonIdentity.driver_qualification_card_expiry_date
+            # ("tarjeta cualificacion de conductor -- CAP", S54,
+            # models.py) que ambos son el mismo concepto de catalogo.
+            # CORREGIDO en esta misma sesion: la primera version de
+            # este phrase ("TARJETA CUALIFIC") dio 0 coincidencias
+            # reales en calibracion -- _build_pattern exige limite de
+            # palabra completa, "CUALIFIC" nunca matchea dentro de
+            # "CUALIFICACION" (la letra siguiente, "A", no es limite
+            # valido). Sustituido por la palabra real completa. Ver
+            # EnterpriseBot_005_GET.txt / EnterpriseBot_006_GET.txt.
+            "TARJETA CUALIFICACION", "TARJ CUALIFIC",
         ],
         "CSS": ["CSS"], "IDC": ["IDC"],
         # Añadido S63: 117 coincidencias reales de RECONOCIMIENTO_
