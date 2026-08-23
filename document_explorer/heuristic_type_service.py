@@ -169,6 +169,20 @@ def folder_based_type(entry, domain):
     resuelven por carpeta real, nunca por palabra sola -- se comprueba
     ANTES que la heuristica de nombre.
 
+    CORREGIDO en esta sesion: la decision de S48 de dejar EPIS
+    deliberadamente fuera de este recorrido (van a EpiDelivery/
+    EpiReview, flujo distinto, confirmado de nuevo por Miguel Angel
+    en esta misma sesion) solo estaba implementada en la via de
+    palabra clave (EPIS ausente de CANDIDATES_SAFE/CANDIDATES_RISKY).
+    Nunca se aplico a esta funcion, que se comprueba ANTES -- efecto
+    real detectado tras ampliar la regla de carpeta BAJA_PERSONAL a
+    "/BAJAS/": archivos "EPIS ... PEREZ VALVERDE...pdf" dentro de una
+    carpeta BAJAS se tipaban como BAJA_PERSONAL por carpeta, saltandose
+    la exclusion. La exclusion de EPI debe ser universal a esta
+    funcion, no solo a una regla de carpeta concreta -- ninguna regla
+    de FOLDER_TYPE_RULES, presente o futura, puede tipar un archivo
+    con "EPI" en el nombre. Ver EnterpriseBot_017_GET.txt.
+
     Corregido S55: esta funcion devolvia None sin comprobar nada para
     cualquier dominio distinto de PERSONAL -- correcto mientras todas
     las reglas de FOLDER_TYPE_RULES eran de personal, pero un bug real
@@ -178,6 +192,8 @@ def folder_based_type(entry, domain):
     PERSONAL), asi que comprobar todas las reglas sin filtrar por
     dominio es seguro.
     """
+    if "EPI" in _strip_accents(entry.name).upper():
+        return None
     path_upper = _strip_accents(entry.parent_path).upper()
     for needle, code in FOLDER_TYPE_RULES:
         if needle.upper() in path_upper:
