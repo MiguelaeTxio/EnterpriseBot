@@ -429,6 +429,14 @@ CANDIDATES_SAFE = {
 # suelta hubiera matcheado.
 EXCLUSIONS = {
     ("PERSONAL", "ALTA", "ALTA"): ["ALTA VISIBILIDAD"],
+    # Añadido en esta sesion: falso positivo real detectado en
+    # calibracion -- "CIRCULAR INFORMATIVA PERMISO CONDUCIR.pdf"/.docx
+    # vive en la raiz de "DOC. PERSONAL" (no en la carpeta de ninguna
+    # persona), es una circular generica sobre el tema, no el carnet
+    # real de nadie. Ver EnterpriseBot_006_GET.txt.
+    ("PERSONAL", "CARNET_CONDUCIR", "PERMISO CONDUCIR"): [
+        "CIRCULAR INFORMATIVA",
+    ],
     # Añadido S49: falso positivo real detectado en calibracion --
     # "PAGINA POLIZA RC - FORMACION OPERADORES PEMP.pdf" menciona la
     # poliza RC de pasada en un documento de formacion, no es una
