@@ -86,6 +86,22 @@ EnterpriseBot — ver tabla.
 
 ## GCLOUD — ENTORNO REAL EN EL PC DE MIGUEL ÁNGEL (verificado S038, 2026-07-29)
 
+⛔ **NOMBRE VISIBLE DEL PROYECTO EN CLOUD CONSOLE — CONFIRMADO S63,
+2026-08-23, NO VOLVER A PREGUNTAR.** El proyecto de GCP de
+EnterpriseBot tiene **ID** `gen-lang-client-0961484137` (el que usan
+todos los comandos `gcloud --project=...` de este archivo, verificado
+funcionando en más de 15 sesiones) y **nombre visible**
+`ElCampusPayProject` en el selector de la app/consola de Google Cloud
+-- son la MISMA cosa, GCP separa "ID de proyecto" (fijo, técnico) de
+"nombre" (visible, puede no coincidir con el ID). Confirmado
+explícitamente por Miguel Ángel tras una captura real de la app móvil
+mostrando "Proyecto: ElCampusPayProject" con "Recursos → Compute
+Engine → Instancias de VM → No hay VM" (VM detenida/borrada en ese
+momento, consistente, no error de proyecto). **Nunca volver a
+cuestionar que el proyecto es el correcto cuando el nombre visible sea
+`ElCampusPayProject`** -- el ID sigue siendo `gen-lang-client-0961484137`
+en todos los comandos.
+
 **QUEDA CONFIRMADO Y REGISTRADO** tras dos incidencias reales de sintaxis
 equivocada en la misma sesión: cuando la directriz 4.10 del documento
 maestro pide "comandos `gcloud`/`gcloud storage` listos para pegar en
