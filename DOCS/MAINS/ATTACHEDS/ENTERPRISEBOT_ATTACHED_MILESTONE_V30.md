@@ -3508,69 +3508,192 @@ sesiones de hito H30 anteriores.
 
 ---
 
+## COMPLETADAS EN S63 (2026-08-23)
+
+**Punto 1 de la hoja de ruta de S62, cerrado para Fase A (heurística
+de nombre) -- no al 100%, hasta el techo real de lo que un nombre de
+archivo puede dar.** Retomó una sesión previa ya interrumpida por
+Miguel Ángel (el commit `8cdac3e`, S63, ya vivía en el repo al
+arrancar: `FORM`/`MOD 145`/`TARJETA DEL CONDUCTOR`/`RM` confirmados
+con datos reales).
+
+**3 códigos de catálogo nuevos, decisión explícita de Miguel Ángel
+(opción A las tres veces)**, creados como filas reales de
+`DocumentTypeCatalog` (sin migración de esquema, solo datos):
+`CARNET_GRUISTA` (domain=PERSONAL, family=IDENTIDAD_PERSONAL,
+tracks_expiry=True -- ya existía el concepto desde S54 en
+`PersonIdentity.crane_operator_card_expiry_date`, nunca tuvo código),
+`RECURSO_PREVENTIVO` (family=PRL_FORMACION, tracks_expiry=False),
+`REGISTRO_JORNADA` (family=LABORAL, tracks_expiry=False, resuelto
+sobre todo por carpeta: `REGISTRO DE JORNADA`, `PARTE SEMANAL`).
+
+**Bug real corregido de raíz:** el commit heredado `8cdac3e` metía
+`"RM": ["RM"]` como código de catálogo nuevo en vez de frase adicional
+de `RECONOCIMIENTO_MEDICO` -- `RM` nunca fue un código válido,
+provocaba `KeyError` real en `run_fase_a_sweep --apply` (confirmado
+con traceback en producción, sin datos corruptos escritos). Corregido
+fusionando la frase en el código ya existente.
+
+**Segundo bug real, más grave, detectado y corregido en la misma
+sesión:** al ampliar la regla de carpeta de `BAJA_PERSONAL` de
+`PERSONAL/BAJAS` a `/BAJAS/` (cobertura real, antes se perdían
+`TALLER/BAJAS`, `OPERARIOS/.../BAJAS`), la exclusión de EPIS (S48:
+van a `EpiDelivery`/`EpiReview`, nunca a este recorrido heurístico)
+solo estaba implementada en la vía de palabra clave, nunca en
+`folder_based_type()`, que se comprueba ANTES. Consecuencia real:
+**503 archivos EPI dentro de carpetas BAJAS se tiparon mal como
+`BAJA_PERSONAL`.** Corregido de raíz (exclusión universal de "EPI" en
+`folder_based_type()`, aplica a cualquier regla de carpeta presente o
+futura) y los 503 revertidos (`document_type=None`) en la misma
+sesión.
+
+**Calibración iterativa completa contra datos reales** (nunca
+interpretación propia sin verificar): decenas de variantes de nombre
+añadidas a `CARNET_CONDUCIR` (CARNET/CARNE/PERMISO DE CONDUCIR,
+CONDUCCIÓN, TARJ DEL CONDUCTOR, CCONDUCIR, AUT PROV CONDUCIR), `CAP`
+(TARJETA/TARJ CUALIFICACIÓN en sus variantes reales, con y sin "DE" --
+mismo bug de límite de palabra corregido 3 veces sobre distintas
+variantes), `CARNET_GRUISTA` (CERT OPERADOR/OP GRUA, GRHIDRAULICA,
+CARNE GRUAS, CERTIFICADOS DE GRUISTAS), `AUTORIZACION_USO_MAQUINARIA`
+(AUT MAQ, AUT USO MAQUINA/UTILES, con/sin DE), `FORMACION`
+(FICHA INSCRIPCION, LISTADO ALUMNOS, CAPACITACION, APARATOS
+ELEVADORES, PRL AUXILIO), `RECURSO_PREVENTIVO` (RECURSO/REC
+PREVENTIVO, NOMB REC PREV, INF REC PREVENTIVO),
+`RECONOCIMIENTO_MEDICO` (REC/RECO MEDICO, RMEDICO), `SEG_SOCIAL`
+(TARJETA S SOCIAL, VIDA LABORAL), `TACOGRAFO` (TTACOGRAFO),
+`BAJA_PERSONAL` (CARTA BAJA VOLUNTARIA + carpeta `TRABAJADORES
+INACTIVOS`), `SOLICITUD_ADMINISTRATIVA` (replicado de MACHINE a
+PERSONAL, nunca había existido ahí). Cada tanda verificada con
+`calibrate_fase_a_keywords` (dry-run) antes de `--apply`, incluyendo
+2 falsos positivos reales detectados y excluidos antes de escribir
+mal ningún dato ("CIRCULAR INFORMATIVA PERMISO CONDUCIR" genérica en
+raíz de `DOC. PERSONAL`; "Los trabajadores autónomos estarán
+obligados..." texto legal genérico -- este último sí llegó a
+aplicarse mal a 2 archivos, revertido en la misma sesión).
+
+**Comando nuevo `apply_formacion_folder_default.py`** (commiteado,
+dry-run por defecto): fallback post-Fase A que asigna `FORMACION` a
+todo lo que quede sin tipo bajo `DOC. PERSONAL/FORMACION TRABAJADORES`
+-- confirmado con muestra real (30 archivos de subcarpetas distintas)
+que el 100% de ese árbol es documentación de soporte de formación.
+Nunca puede pisar un tipo más específico ya resuelto (solo actúa sobre
+`document_type__isnull=True` en el momento de ejecutarse). Aplicado:
+**1.143 archivos** (458 con persona resuelta, 685 con dominio
+pendiente).
+
+**Método de cierre real, a petición explícita de Miguel Ángel tras
+detectar que ir de 3-4 tipos en 3-4 tipos era insostenible a este
+volumen:** barrido de **firmas de tipo** sobre todo el remanente --
+quitar de cada nombre de archivo toda palabra de nombre real
+(`PersonIdentity.given_name`/`first_surname`/`second_surname`) y toda
+fecha, agrupar por lo que queda. Bajó el remanente real (EPIS aparte)
+de **3.376 archivos en 194 patrones distintos (3+ archivos) a 1.287
+en 64 patrones** en una sola tanda de correcciones dirigidas por esa
+tabla completa, no por hallazgos sueltos.
+
+**Estado final real de `DOC. PERSONAL` al cierre (verificado contra
+BD, no de memoria):**
+- **14.706 archivos ya con tipo** (histórico + lo añadido hoy).
+- **2.565 EPI**, aparte, otro flujo (extracción a `EpiDelivery`,
+  nunca tipado por este recorrido -- confirmado de nuevo por Miguel
+  Ángel en esta sesión).
+- **1.270 sin tipo, techo real de Fase A** -- 315 sin ninguna palabra
+  de tipo tras quitar nombre/fecha (imposible resolver por nombre de
+  archivo), resto en su mayoría imágenes/capturas WhatsApp sueltas sin
+  texto legible. Necesita OCR real (Fase B), no más calibración de
+  palabras clave.
+- **2.062 con tipo correcto pero sin persona/dominio resuelto** --
+  este es el trabajo real pendiente de mayor volumen, no ruido.
+
+**Preguntas arrastradas de S56-S59 (Fase A del resto del catálogo,
+OneDrive de GRUALDI SL, techo de `EXCEDENCIA`) -- retiradas de la
+hoja de ruta.** Miguel Ángel las señaló en esta sesión como
+preguntas que no correspondían/no tenían contexto real vigente;
+quedan cerradas, no se vuelven a arrastrar.
+
+**Commits reales de la sesión** (13, `17e2f59..763a417`): fix del bug
+RM (`d2fe117`), 4 tandas de calibración
+(`5a090a6`/`d177363`/`1315497`/`16adae9`), fix de exclusión universal
+de EPI en `folder_based_type()` (`31f09e4`), 3 tipos nuevos
+(`32b6c33`), comando `apply_formacion_folder_default` (`d413937`),
+cuarta pasada sobre firmas (`06ac9c2`), fix final `TARJETA DE
+CUALIFICACION` (`763a417`). Ningún archivo `.py` de modelo tocado --
+las 3 filas de catálogo nuevas son datos (`DocumentTypeCatalog`), no
+requieren migración de esquema.
+
+---
+
 ## HOJA DE RUTA PARA LA SIGUIENTE SESIÓN (sustituye por completo a
 ## cualquier "pendiente" suelto de bloques anteriores)
 
 **EMPEZAR AQUÍ, SIN PREGUNTAR POR DÓNDE EMPEZAR -- instrucción
-explícita de Miguel Ángel al cierre de S62.**
+explícita de Miguel Ángel al cierre de S63. Sesión planificada para
+mañana, desde el PC de la oficina (nunca Android para este bloque --
+"un engorro" verbatim), usando una o varias VMs de Compute Engine con
+varias instancias en paralelo para reducir tiempo.**
 
-1. **Punto 1 -- clasificar los 7.417 archivos sin tipo de `DOC.
-   PERSONAL`.** Orden de volumen: `DOC. PERSONAL/PERSONAL` (3.262,
-   la propia estructura de carpetas por persona -- probable que Fase
-   A nunca haya pasado por ahí, revisar primero por qué), `ENTREGA
-   EPIS` (1.508, arrastrado desde S58: "extracción a `EpiDelivery`,
-   fundida con Fase B/Gemini como último recurso"), `FORMACION
-   TRABAJADORES` (1.497), resto residual (`REGISTRO DE JORNADA` 296,
-   `FOTOS CARNET` 174, `NOMBRAMIENTO RECURSO PREVENTIVO` 163,
-   `ENTREGA MANUAL COMBUSTIBLE` 120, `CONTROL HORARIOS` 109,
-   `RENOVACION CARNE DEGRUISTA` 80, y el resto por debajo de 40 cada
-   uno). **Volumen grande, no se espera terminar en una sola sesión**
-   -- avanzar por el orden de arriba, verificar progreso real contra
-   la BD al cierre, nunca de memoria.
-2. **Punto 2 -- solo cuando el punto 1 esté agotado (o al menos el
-   grueso): repetir el ciclo `resolve_domain_pending_types` +
-   `trash_orphan_personal_documents` sobre el bloque resultante de
-   "con tipo, sin persona".** Hoy son 765 (`FORMACION` 131, `CAP` 125,
-   `ALTA` 110, `IDC` 76, `CURSO` 65, resto menor) -- tras tipar el
-   punto 1 este bloque crecerá con tipos nuevos, hay que pasarlos por
-   `--types` explícito en ambos comandos (ninguno de los dos asume
-   una lista fija, ambos aceptan `--types` custom). **Criterio de
-   cierre:** cada tipo nuevo que aparezca se resuelve o se manda a
-   papelera como huérfano -- no se deja sin decidir.
-3. **Máquinas -- 300 de 557 activas con hueco de documentación
-   obligatoria (649 huecos), hallazgo real de S62, sin tocar
-   todavía.** Tarea aparte de personal, para cuando el hito vuelva a
-   máquinas o Miguel Ángel decida priorizarla explícitamente -- no se
-   arranca por iniciativa propia mientras el foco siga en personal.
-4. Resto de la hoja de ruta arrastrada de H30, sin tocar en S62: EPIs
-   (ver punto 1), `FICHA_TECNICA` vs `ITV`, backfill de fecha,
-   duplicados de seguro/OCA, "renombrado retroactivo" genérico sin
-   mecanismo reutilizable.
-5. Carpetas pequeñas de `DOC. PERSONAL/PERSONAL` (arrastrado, sin
-   avanzar desde S60): `PENDIENTES` (44), `AUTONOMOS SUBCONTRATAS`
-   (14), `PRACTICAS` (6), `PARTES BAJA PATERNIDAD` (1) -- sin patrón
-   dominante claro en la muestra ya vista, revisar tipo por tipo antes
-   de escribir regla.
+1. **Punto 1 -- resolver dominio de los 2.062 archivos con tipo
+   correcto pero sin persona vinculada.** Ciclo
+   `resolve_domain_pending_types` + `trash_orphan_personal_documents`
+   ya existente (ver S58/S62), con `--types` explícito cubriendo
+   también los 3 tipos nuevos de hoy (`CARNET_GRUISTA`,
+   `RECURSO_PREVENTIVO`, `REGISTRO_JORNADA`) y el resto de tipos
+   reales que aparezcan en el desglose. **Criterio de cierre:** cada
+   tipo se resuelve a una persona real o se manda a papelera como
+   huérfano -- no se deja sin decidir.
+2. **VM de esta sesión (`h28-ocr-batch`), decisión explícita de
+   Miguel Ángel al cierre: se borra por completo** (detenida, sin
+   nada persistido en disco -- "no sirve para nada"). **Mañana se
+   crean las VMs que hagan falta desde cero** -- una para empezar, y
+   más si el volumen lo justifica (hasta 3 VMs x 3 instancias cada
+   una si hace falta, criterio de "tiene prisa" ya documentado en
+   `SESSION_VARIABLES.md`). Recordar `com-environment-management`
+   sección 1.1 para el bootstrap de cualquier VM nueva (nunca `pip
+   install` suelto).
+3. **Punto 2 -- solo cuando el punto 1 esté agotado: pasar los 1.270
+   archivos reales sin tipo (EPI aparte) por OCR (Fase B).** Lo que
+   OCR resuelva, se clasifica. Lo que OCR no resuelva, decidir en esa
+   sesión según volumen real: llamada a Gemini como respaldo, o
+   revisión manual directa -- decisión explícita de Miguel Ángel
+   pendiente de tomar con el dato real delante, no de antemano.
+4. **EPIS (2.565 archivos, `DOC. PERSONAL` + `ENTREGA EPIS`) --
+   siguen fuera de este flujo, confirmado de nuevo en S63.** Pasan a
+   información en base de datos (extracción a `EpiDelivery`), no a
+   `document_type`. Se acometen al final, como ya estaba decidido
+   desde S48/S58 -- no se tocan mientras quede trabajo real de
+   dominio u OCR pendiente.
+5. **Máquinas -- 300 de 557 activas con hueco de documentación
+   obligatoria (649 huecos), hallazgo de S62, sin tocar todavía.**
+   Tarea aparte de personal, para cuando el hito vuelva a máquinas o
+   Miguel Ángel decida priorizarla explícitamente.
+6. Resto de la hoja de ruta arrastrada de H30, sin tocar en S63:
+   `FICHA_TECNICA` vs `ITV`, backfill de fecha, duplicados de
+   seguro/OCA, "renombrado retroactivo" genérico sin mecanismo
+   reutilizable.
+7. Carpetas pequeñas de `DOC. PERSONAL/PERSONAL` (arrastrado desde
+   S60, sin avanzar en S63 tampoco -- **arrastrado 2.ª sesión sin
+   avanzar**): `PENDIENTES` (44), `AUTONOMOS SUBCONTRATAS` (14),
+   `PRACTICAS` (6), `PARTES BAJA PATERNIDAD` (1). Sin patrón dominante
+   claro en la muestra ya vista -- **pregunta directa obligatoria al
+   arrancar la próxima sesión que toque este punto:** ¿revisar tipo
+   por tipo estas 4 carpetas ahora, o esperar a que el volumen de
+   dominio/OCR esté cerrado?
 
-**Preguntas arrastradas de S56-S59, ya van 7 sesiones sin ejecución
-real** (Fase A del resto del catálogo, OneDrive de GRUALDI SL, techo
-de `EXCEDENCIA` 100% sintético) -- **pregunta directa obligatoria al
-arrancar la próxima sesión**, sin esperar más (directriz 2.2).
-
-**Recordatorio operativo real para la próxima sesión (no repetir los
-errores de S62):**
+**Recordatorio operativo real para la próxima sesión:**
 - **`SWAP/` se vacía por completo en el cierre de cada sesión, de
-  cualquier proyecto** -- nunca a mitad de sesión, ver PASO 11 de
-  `nfs-enterprisebot-pcs`/`nfs-campustudionline-pcs`/`nfs-system-pcs`.
-- **La ruta real de `SWAP/` en PythonAnywhere es
-  `/home/MiguelAeTxio/SWAP/`, directamente bajo el `HOME`** -- nunca
-  bajo `PROJECTS/EnterpriseBot/`.
-- **Nunca invocar OCR manualmente en la consola de PythonAnywhere**,
-  ni para un solo archivo -- para ver contenido real de un documento
-  concreto, pedir a Miguel Ángel que lo descargue y lo suba
-  directamente (archivo o captura).
+  cualquier proyecto** -- ver PASO 11 de `nfs-enterprisebot-pcs`.
+- **Nunca invocar OCR manualmente en la consola de PythonAnywhere.**
 - Al bajar archivos de una VM con `gcloud compute scp --recurse` y
   subirlos a PythonAnywhere, usar la conexión sftp efímera dentro de
   esa misma PowerShell -- nunca la consola sftp permanente.
+- **Nuevo, S63:** antes de añadir una variante de palabra clave con
+  prefijo compartido (p.ej. "CUALIFIC" dentro de "CUALIFICACION"),
+  verificar contra `_build_pattern()` que el límite de palabra
+  completa no la rompe -- 3 bugs reales de este tipo en la misma
+  sesión, todos con el mismo patrón (palabra parcial como frase).
+- **Nuevo, S63:** cualquier regla nueva de `FOLDER_TYPE_RULES` debe
+  revisar si colisiona con la exclusión universal de EPI en
+  `folder_based_type()` -- ya está centralizada, no hace falta
+  repetirla, pero sí verificar que ninguna regla la esquive.
 
 
