@@ -448,7 +448,15 @@ CANDIDATES_RISKY = {
         # letras, mismo riesgo real ya documentado para CAP/CSS/IDC
         # (colision con acronimos ajenos), por eso va aqui y no en
         # CANDIDATES_SAFE pese a superar el umbral de calibracion.
-        "RM": ["RM"],
+        # CORREGIDO EN ESTA MISMA SESION: la clave debe ser el codigo
+        # real de DocumentTypeCatalog (RECONOCIMIENTO_MEDICO, ya usado
+        # en CANDIDATES_SAFE con la frase completa), nunca un codigo
+        # nuevo "RM" -- ese codigo no existe en el catalogo. La
+        # version anterior de este commit ("RM": ["RM"]) provocaba
+        # KeyError real en run_fase_a_sweep --apply (confirmado con
+        # traceback real en produccion, sin datos corruptos escritos:
+        # el KeyError salta antes del .save()).
+        "RECONOCIMIENTO_MEDICO": ["RM"],
     },
 }
 
