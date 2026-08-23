@@ -462,6 +462,13 @@ EXCLUSIONS = {
     ("PERSONAL", "CARNET_CONDUCIR", "PERMISO CONDUCIR"): [
         "CIRCULAR INFORMATIVA",
     ],
+    # Añadido en esta sesion: falso positivo real detectado tras el
+    # --apply -- "Los trabajadores autónomos estarán obligados
+    # -CIII.docx"/.pdf, dentro de "FORMACION TRABAJADORES/CUROS
+    # METADATA CAE", es texto legal/formativo sobre el tema, no el
+    # recibo de cuota de ningun trabajador concreto. Ver
+    # EnterpriseBot_010_GET.txt.
+    ("PERSONAL", "AUTONOMO", "AUTONOMOS"): ["TRABAJADORES AUTONOMOS"],
     # Añadido S49: falso positivo real detectado en calibracion --
     # "PAGINA POLIZA RC - FORMACION OPERADORES PEMP.pdf" menciona la
     # poliza RC de pasada en un documento de formacion, no es una
