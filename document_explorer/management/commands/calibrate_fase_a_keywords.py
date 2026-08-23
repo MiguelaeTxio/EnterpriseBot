@@ -380,6 +380,26 @@ CANDIDATES_SAFE = {
             # ya corregido, nunca lo aplique a la variante corta.
             "CARNE DE CONDUCIR",
         ],
+        # Añadido en esta sesion: codigo nuevo confirmado por Miguel
+        # Angel (opcion A) -- CARNET_GRUISTA ya existia como concepto
+        # real desde S54 (PersonIdentity.crane_operator_card_expiry_
+        # date, "Caducidad carnet de gruista") pero nunca tuvo codigo
+        # de catalogo propio. Creado en esta sesion
+        # (EnterpriseBot_019_GET.txt) con tracks_expiry=True (tiene
+        # fecha real de caducidad, igual que CARNET_CONDUCIR).
+        # Cluster real de ~100+ archivos en el barrido de bigramas
+        # (CERT OPERADOR GRUA, GRUA HIDRAULICA, GRUISTA, CARNE
+        # GRUISTA -- ver EnterpriseBot_016_GET.txt). Deliberadamente
+        # NUNCA se añade la palabra suelta "CARNE"/"CARNET"/"CERT" a
+        # este codigo -- son ambiguas con CARNET_CONDUCIR y con
+        # cualquier otro CERT_* del catalogo, solo frases completas
+        # sin ambiguedad real.
+        "CARNET_GRUISTA": [
+            "CARNET GRUISTA", "CARNE GRUISTA", "CARNES GRUISTA",
+            "CERT OPERADOR GRUA", "CERT OP GRUA", "OPERADOR DE GRUA",
+            "OPERADOR GRUA HIDRAULICA", "GRUA HIDRAULICA ARTICULADA",
+            "CARNET OP GRUA",
+        ],
         "AUTONOMO": [
             # Añadido S59 (migracion 0039): recibos mensuales de
             # cuota de autonomo de la familia Alvarez, mayoria real
@@ -424,6 +444,20 @@ CANDIDATES_SAFE = {
             # TRABAJADORES en el 100% de los casos vistos.
             "FICHA INSCRIPCION", "LISTADO ALUMNOS",
         ],
+        # Añadido en esta sesion: codigo nuevo confirmado por Miguel
+        # Angel (opcion A) -- designacion de un trabajador como
+        # Recurso Preventivo en obra. Creado en esta sesion
+        # (EnterpriseBot_019_GET.txt), tracks_expiry=False (es una
+        # designacion, no un documento con fecha de caducidad).
+        # Cluster real de ~200 archivos en el barrido de bigramas
+        # (RECURSO PREV, REC PREVENTIVO, INF REC, carpeta dedicada
+        # "DOC. PERSONAL/NOMBRAMIENTO RECURSO PREVENTIVO/ENTREGA
+        # FUNCIONES RECURSO PREVENTIVO" -- ver EnterpriseBot_016_GET.txt).
+        "RECURSO_PREVENTIVO": [
+            "RECURSO PREVENTIVO", "RECURSO PREV", "REC PREVENTIVO",
+            "REC.PREVENTIVO", "NOMB REC PREV", "INF REC PREVENTIVO",
+            "ENTREGA FUNCIONES RECURSO PREVENTIVO",
+        ],
         "MOD_145": [
             "MODELO 145",
             # Añadido S63: variante real sin la palabra "MODELO" --
@@ -438,6 +472,12 @@ CANDIDATES_SAFE = {
             "NOMINAS",
         ],
         "PAGO_CORRIENTE": ["PAGO CORRIENTE"],
+        # Añadido en esta sesion: variante fuera de la carpeta
+        # dedicada "REGISTRO DE JORNADA" (ver regla de carpeta en
+        # heuristic_type_service.py) -- "Cuadrante Entrega control
+        # horarios.xlsx" en la raiz de DOC. PERSONAL. Ver
+        # EnterpriseBot_016_GET.txt.
+        "REGISTRO_JORNADA": ["CONTROL HORARIOS"],
         "RECONOCIMIENTO_MEDICO": ["RECONOCIMIENTO MEDICO"],
         # Añadido en esta sesion: SOLICITUD_ADMINISTRATIVA ya existia
         # como comodin generico para MACHINE (GENERIC_LOSER, siempre

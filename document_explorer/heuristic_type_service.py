@@ -103,6 +103,13 @@ FOLDER_TYPE_RULES = [
     # singular ("VEHICULOS DE BAJA", "GONDOLAS/BAJA DEFINITIVA"),
     # nunca "BAJAS" plural. Ver EnterpriseBot_016_GET.txt.
     ("/BAJAS/", "BAJA_PERSONAL"),
+    # Añadido en esta sesion: carpeta de proposito unico, confirmado
+    # por Miguel Angel (codigo nuevo REGISTRO_JORNADA, opcion A). 251
+    # archivos reales bajo "DOC. PERSONAL/REGISTRO DE JORNADA/..."
+    # (ver EnterpriseBot_016_GET.txt) -- mas fiable por carpeta que
+    # por palabra clave, mismo criterio que BAJA_PERSONAL/
+    # INVESTIGACION_ACCIDENTE.
+    ("PERSONAL/REGISTRO DE JORNADA", "REGISTRO_JORNADA"),
     ("DECLARACION AL CORRIENTE", "PAGO_CORRIENTE"),
     ("AUTORIZACION USO DE MAQUINARIA", "AUTORIZACION_USO_MAQUINARIA"),
     # Añadido S55: CERT_ACCESORIO_ELEVACION resuelto por carpeta, no
