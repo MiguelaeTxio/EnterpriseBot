@@ -332,7 +332,15 @@ CANDIDATES_SAFE = {
             # aparezca con este patron APELLIDO_NOMBRE_TIPO_FECHA.
             "AUTORIZACION USO MAQUINARIA",
         ],
-        "CARNET_CONDUCIR": ["CARNET CONDUCIR", "CARNE CONDUCIR"],
+        "CARNET_CONDUCIR": [
+            "CARNET CONDUCIR", "CARNE CONDUCIR",
+            # Añadido S63: la propia etiqueta del catalogo ya dice
+            # "Carnet / tarjeta de conductor" -- confirmado con 38
+            # coincidencias reales dentro de DOC. PERSONAL/PERSONAL
+            # (tacografo, no carnet de conducir, pero mismo tipo de
+            # catalogo por diseño). Ver EnterpriseBot_002_GET.txt.
+            "TARJETA DEL CONDUCTOR", "TARJETA DE CONDUCTOR",
+        ],
         "AUTONOMO": [
             # Añadido S59 (migracion 0039): recibos mensuales de
             # cuota de autonomo de la familia Alvarez, mayoria real
@@ -356,8 +364,23 @@ CANDIDATES_SAFE = {
         "DNI": ["DNI"],
         "ENTREGA_INFORMACION": ["ENTREGA INFORMACION"],
         "EXCEDENCIA": ["EXCEDENCIA"],
-        "FORMACION": ["FORMACION"],
-        "MOD_145": ["MODELO 145"],
+        "FORMACION": [
+            "FORMACION",
+            # Añadido S63: abreviatura real dentro de las carpetas
+            # individuales de OPERARIOS/TALLER/ADMINISTRACION -- 940
+            # coincidencias reales sobre los 3.275 sin tipo de DOC.
+            # PERSONAL/PERSONAL (ver EnterpriseBot_002_GET.txt),
+            # patron dominante del bloque. "FORM" cubre via separador
+            # flexible "FORM.", "FORM ", "FORM6H", etc.
+            "FORM",
+        ],
+        "MOD_145": [
+            "MODELO 145",
+            # Añadido S63: variante real sin la palabra "MODELO" --
+            # "MOD.145"/"MOD. 145", 55 coincidencias reales (ver
+            # EnterpriseBot_002_GET.txt).
+            "MOD 145",
+        ],
         "NOMINA": ["NOMINA"],
         "PAGO_CORRIENTE": ["PAGO CORRIENTE"],
         "RECONOCIMIENTO_MEDICO": ["RECONOCIMIENTO MEDICO"],
@@ -417,7 +440,16 @@ CANDIDATES_RISKY = {
         "IPO_ITC": ["IPO", "ITC"],
         "OCA": ["OCA"], "RAE": ["RAE"],
     },
-    "PERSONAL": {"CAP": ["CAP"], "CSS": ["CSS"], "IDC": ["IDC"]},
+    "PERSONAL": {
+        "CAP": ["CAP"], "CSS": ["CSS"], "IDC": ["IDC"],
+        # Añadido S63: 117 coincidencias reales de RECONOCIMIENTO_
+        # MEDICO abreviado como "RM" dentro de DOC. PERSONAL/PERSONAL
+        # (ver EnterpriseBot_002_GET.txt) -- acronimo corto de 2
+        # letras, mismo riesgo real ya documentado para CAP/CSS/IDC
+        # (colision con acronimos ajenos), por eso va aqui y no en
+        # CANDIDATES_SAFE pese a superar el umbral de calibracion.
+        "RM": ["RM"],
+    },
 }
 
 
