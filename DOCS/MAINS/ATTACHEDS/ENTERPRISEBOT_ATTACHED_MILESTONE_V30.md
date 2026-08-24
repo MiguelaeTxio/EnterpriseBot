@@ -3848,6 +3848,42 @@ sesión futura de H30 (o de cualquier otro hito que toque
    marcador de datos) -- tarea aparte, no bloqueante para el resto del
    punto 1.
 
+## RESULTADO REAL S64 -- REGISTRO_JORNADA: DE 0 A 171/266 RESUELTOS
+## (dos fixes reales de heurística + dos aplicaciones confirmadas)
+
+Punto de partida real (dry-run S64): 266 archivos `REGISTRO_JORNADA`
+con tipo OK, dominio pendiente, **0 resueltos** por los tres
+resolutores existentes hasta ese momento.
+
+**Fix 1 -- `_resolve_person_by_filename_comma_pattern` (nuevo cuarto
+resolutor):** cubre el patrón "APELLIDO1 APELLIDO2,NOMBRE" en el
+NOMBRE DE ARCHIVO (no en la carpeta). Aplicado: **15 resueltos**
+(`EnterpriseBot_011_GET.txt`).
+
+**Fix 2 -- rediseño de `_resolve_person_by_sliding_window` en dos
+pasadas** (prioriza nombre de archivo aislado; si no resuelve, cae al
+recorrido completo excluyendo segmentos que combinan "GRUAS"+"ALVAREZ"
+-- carpetas de empresa reales, nunca de persona). Causa raíz real: la
+carpeta `GRUAS ADOLFO ALVAREZ` matcheaba de verdad contra `pk=4`
+(Adolfo Alvarez Diaz, administrador), inyectando un candidato falso en
+`found_pks` de CUALQUIER archivo bajo esa carpeta y generando
+ambigüedad artificial permanente. Aplicado sobre los 251 restantes:
+**156 resueltos más** (`EnterpriseBot_021_GET.txt`).
+
+**Total real confirmado: 171/266 resueltos, 95 sin resolver.** De los
+95 restantes, análisis previo (`EnterpriseBot_012_GET.txt`, antes de
+los dos fixes) ya apuntaba a una mezcla real: archivos de personas
+fuera del roster de 70 activos (algunos de Huelva -- ya excluidos por
+regla permanente), plantillas sin persona real (`Control Horarios
+PLANTILLA.xlsx`, `PLANTILLA Control Horarios (GR).pdf`), y posibles
+hermanos reales que comparten ambos apellidos (ambigüedad genuina,
+correctamente sin resolver por diseño, pendiente de resolución vía
+extracción de texto/DNI en fase posterior, no por nombre). **Sin
+recuento actualizado de los 95 tras los dos fixes** -- pendiente para
+la próxima sesión que retome este punto, antes de decidir si merece
+la pena seguir investigando patrones nuevos o pasar a papelera/revisión
+manual.
+
 ---
 
 **Recordatorio operativo real para la próxima sesión:**
