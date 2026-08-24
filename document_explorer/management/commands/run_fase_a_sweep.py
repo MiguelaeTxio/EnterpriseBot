@@ -182,6 +182,64 @@ def _resolve_person_by_name(entry, person_name_index):
     return None
 
 
+# Patron real "APELLIDO1 APELLIDO2,NOMBRE" (coma sin espacio, o con
+# espacio antes/despues) dentro de un NOMBRE DE ARCHIVO, no de una
+# carpeta -- p.ej. "Control Horarios BAENA MARQUEZ,DANIEL (GR).xlsx".
+# Captura los DOS tokens inmediatamente anteriores a la coma (los
+# apellidos reales, ignorando cualquier texto descriptivo delante,
+# tipo "Control Horarios") y el token inmediatamente posterior (el
+# nombre de pila).
+_FILENAME_COMMA_PATTERN_RE = re.compile(
+    r"([A-Za-zÁÉÍÓÚÑÜáéíóúñü]+)\s+([A-Za-zÁÉÍÓÚÑÜáéíóúñü]+)\s*,\s*"
+    r"([A-Za-zÁÉÍÓÚÑÜáéíóúñü]+)"
+)
+
+
+def _resolve_person_by_filename_comma_pattern(entry, person_name_index):
+    """
+    H30 (S64) -- cuarto resolutor, entre `_resolve_person_by_name()` y
+    `_resolve_person_by_sliding_window()`. Cubre el patron real
+    "APELLIDO1 APELLIDO2,NOMBRE" cuando vive en el NOMBRE DE ARCHIVO
+    (no en la carpeta contenedora, que ya cubre `_resolve_person_by_
+    name()`), tipico de REGISTRO_JORNADA ("Control Horarios BAENA
+    MARQUEZ,DANIEL (GR).xlsx").
+
+    Motivo real, confirmado con datos de produccion en S64:
+    `_resolve_person_by_sliding_window()` tokeniza sin respetar la
+    coma, asi que "BAENA MARQUEZ,DANIEL" genera ventanas sueltas de 2
+    palabras ("BAENA MARQUEZ", "MARQUEZ DANIEL") que pueden colisionar
+    con personas reales DISTINTAS cuando el apellido2 de una persona
+    coincide con el apellido1 de otra -- caso real: "BAENA
+    MARQUEZ,DANIEL" genera la ventana "MARQUEZ DANIEL", que matchea
+    contra DANIEL MARQUEZ SANCHEZ (pk real distinto de DANIEL BAENA
+    MARQUEZ). La ambiguedad resultante (dos personas en found_pks)
+    hace que la ventana deslizante devuelva None por diseno -- nunca
+    arriesga --, aunque el nombre completo con coma sea inequivoco.
+
+    Esta funcion reconstruye la clave completa "apellido1 apellido2
+    nombre" respetando la coma (mismo formato de clave de tres
+    palabras que ya genera `_build_person_name_index()`), evitando asi
+    la ambiguedad de ventanas sueltas de 2 palabras. Solo resuelve si
+    hay coincidencia EXACTA y UNICA en el indice -- mismo criterio de
+    siempre, nunca decide con ambiguedad.
+    """
+    file_stem = re.sub(r"\.[A-Za-z0-9]{1,5}$", "", entry.name)
+    match = _FILENAME_COMMA_PATTERN_RE.search(file_stem)
+    if not match:
+        return None
+
+    apellido1, apellido2, nombre = match.groups()
+    candidate = _strip_accents(
+        f"{apellido1} {apellido2} {nombre}"
+    ).upper().strip()
+    candidate = re.sub(r"\s+", " ", candidate)
+
+    pks = person_name_index.get(candidate)
+    if pks and len(pks) == 1:
+        return PersonIdentity.objects.get(pk=next(iter(pks)))
+    return None
+
+
 # Separador de tokens para la ventana deslizante: cualquier cosa que
 # no sea letra/digito rompe palabra (coma, parentesis, guion, punto).
 _TOKEN_SPLIT_RE = re.compile(r"[^A-Z0-9]+")

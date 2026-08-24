@@ -40,8 +40,9 @@ from document_explorer.management.commands.calibrate_fase_a_keywords import (
     BUCKET,
 )
 from document_explorer.management.commands.run_fase_a_sweep import (
-    _build_person_name_index, _resolve_person_by_folder,
-    _resolve_person_by_name, _resolve_person_by_sliding_window,
+    _build_person_name_index, _resolve_person_by_filename_comma_pattern,
+    _resolve_person_by_folder, _resolve_person_by_name,
+    _resolve_person_by_sliding_window,
 )
 from document_explorer.models import DocumentIndexEntry, PersonIdentity
 
@@ -109,6 +110,10 @@ class Command(BaseCommand):
                 obj = _resolve_person_by_folder(entry)
                 if not obj:
                     obj = _resolve_person_by_name(entry, person_name_index)
+                if not obj:
+                    obj = _resolve_person_by_filename_comma_pattern(
+                        entry, person_name_index,
+                    )
                 if not obj:
                     obj = _resolve_person_by_sliding_window(
                         entry, person_name_index,
