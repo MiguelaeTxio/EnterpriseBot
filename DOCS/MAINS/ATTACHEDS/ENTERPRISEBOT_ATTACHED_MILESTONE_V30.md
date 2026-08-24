@@ -3884,6 +3884,33 @@ la próxima sesión que retome este punto, antes de decidir si merece
 la pena seguir investigando patrones nuevos o pasar a papelera/revisión
 manual.
 
+## RESULTADO REAL S64 -- APPLY MASIVO SOBRE 19 TIPOS RESTANTES DEL
+## PUNTO 1 (382 resueltos de golpe)
+
+Tras los dos fixes de heurística (comma pattern + sliding window dos
+pasadas), dry-run + apply inmediato sobre el resto de tipos del
+Grupo A del desglose inicial de S64: `FORMACION`, `CAP`, `ALTA`,
+`IDC`, `CURSO`, `VACACIONES`, `CERTIFICADO_PODERES`, `NOMINA`,
+`POLIZA_SEGURO`, `CARNET_CONDUCIR`, `RECONOCIMIENTO_MEDICO`,
+`MOD_145`, `CONTRATO`, `DNI`, `CARNET_GRUISTA`, `TACOGRAFO`,
+`EXCEDENCIA`, `RECURSO_PREVENTIVO`, `BAJA_PERSONAL`,
+`AUTORIZACION_USO_MAQUINARIA`.
+
+**Resultado confirmado (`EnterpriseBot_023_GET.txt`): antes=1.758,
+resueltos=382, sin_resolver=1.376.**
+
+**Cambio de ritmo explícito, decisión de Miguel Ángel en S64,
+verbatim:** *"Tenemos casi una decena de miles por resolver y nos
+estamos dedicando a resolver con cuentagotas (...) ¿de qué me sirve ir
+paso a paso, paso a paso, paso a paso? Lo que estamos haciendo es
+alargar esto en el tiempo de una manera mega masiva."* A partir de
+aquí, dejar de investigar patrón por patrón/tipo por tipo con muestras
+pequeñas -- aplicar en bloque lo que ya resuelve el heurístico actual,
+y pasar el resto (mayoritariamente sin ningún nombre reconocible ni en
+carpeta ni en archivo) a Fase B (OCR real, VM), que es la vía ya
+prevista en la hoja de ruta original de S63 para este volumen, en vez
+de seguir puliendo el heurístico de nombre archivo a archivo.
+
 ---
 
 **Recordatorio operativo real para la próxima sesión:**
