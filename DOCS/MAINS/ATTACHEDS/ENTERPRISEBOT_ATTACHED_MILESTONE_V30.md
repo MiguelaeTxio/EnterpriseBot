@@ -4029,4 +4029,31 @@ porque "ya hemos tocado varios tipos" -- se cierra cuando el número
 real (verificado con consulta directa a BD, no de memoria) llega a
 cero para lo que esa fase puede resolver.
 
+## DECISIÓN REGISTRADA EN S64 -- DOMINIO `BOTH` ERA UN DESCUIDO, NO UN
+## DISEÑO; CORREGIDO PARA LOS 4 TIPOS REALES QUE LO TENÍAN
+
+Al revisar los 1.834 tipo-OK-dominio-pendiente por dominio real
+(PERSONAL 1.374, MACHINE 292, BOTH 161, COMPANY 7), Miguel Ángel
+cuestionó si `BOTH` tenía sentido real: *"no puede haber documentos
+que liguen a una persona con una determinada máquina (...) un
+documento no puede ser a la vez para una persona y para una
+máquina."* Verificado contra las migraciones reales: `domain=BOTH` es
+el **default del propio campo del modelo**, y los 4 tipos que lo
+tenían (`SEGURO`, `CERTIFICADO_PODERES`, `POLIZA_SEGURO`,
+`TACOGRAFO`) se dieron de alta sin dominio explícito -- cayeron ahí
+por descuido, no por decisión real.
+
+**Muestra real confirmó 100% de consistencia dentro de cada tipo**
+(ningún caso mixto real encontrado): `SEGURO`/`CERTIFICADO_PODERES`/
+`POLIZA_SEGURO` viven siempre bajo `DOC. MAQUINAS` -> `MACHINE`.
+`TACOGRAFO` vive siempre bajo `DOC. PERSONAL` (solicitud de tarjeta
+del conductor) -> `PERSONAL`.
+
+**Migración `0042_corregir_domain_both_s64.py`** (mismo patrón
+`RunPython` reversible que 0038/0041): los 4 tipos reasignados.
+Con esto, `DOMAIN_BOTH` queda sin ningún tipo real activo en el
+catálogo -- si aparece un tipo nuevo que de verdad necesite los dos
+dominios, deberá confirmarse explícitamente con Miguel Ángel, nunca
+asumirse por el default del campo.
+
 
