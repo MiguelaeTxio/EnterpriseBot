@@ -641,21 +641,24 @@ caja, el comando de shard correspondiente (`0`, `1`, `2` según la VM):
 python3 local_ocr_classify.py --apply --shard-count 3 --shard-index 0
 ```
 
-**Pendiente real, sin verificar todavía: el mismo flujo desde Android
-(Termux o la app de consola de Cloud Console).** El Bloque 4 tal como
-está escrito usa `Set-Clipboard`, específico de PowerShell/Windows --
-**no sirve tal cual desde Android.** La alternativa ya documentada más
-abajo en este archivo ("MÉTODO SIN PC, VERIFICADO S63") evita el
-problema por diseño: crea la clave directamente desde la Cloud Console
-del móvil y la pega vía heredoc (`cat > archivo << 'EOF' ... EOF`)
-dentro de la propia sesión SSH del teléfono, sin depender de ningún
-portapapeles de escritorio. Si una sesión futura ejecuta este flujo
-completo desde Android, usar esa vía para el Bloque 4 en vez del
-`Set-Clipboard` de aquí -- confirmar en esa sesión que el resto de
-bloques (creación de VM, SSH, bootstrap, lanzamiento) funcionan igual
-desde Termux, ya verificado en general (ver sección Termux más abajo),
-pero no probado específicamente encadenado con este flujo completo de
-3 VMs paralelas.
+**Pendiente real, sin verificar todavía: el mismo flujo desde la app
+móvil de Google Cloud Console (SSH integrado, usuario `nummenor`).**
+Miguel Ángel prefiere esta vía sobre Termux cuando trabaja desde
+Android -- corregido en S64: "la consola de Android" para él es la
+propia app de Cloud Console, no Termux; son entornos distintos (ver
+más abajo, `/home/nummenor/` vs `/home/Usuario/`). El Bloque 4 tal
+como está escrito usa `Set-Clipboard`, específico de PowerShell/
+Windows -- no sirve tal cual desde la app móvil. La alternativa ya
+documentada más abajo en este archivo ("MÉTODO SIN PC, VERIFICADO
+S63") evita el problema por diseño: crea la clave directamente desde
+la Cloud Console del móvil y la pega vía heredoc (`cat > archivo <<
+'EOF' ... EOF`) dentro de la propia sesión SSH del teléfono, sin
+depender de ningún portapapeles de escritorio. Si una sesión futura
+ejecuta este flujo completo desde la app móvil, usar esa vía para el
+Bloque 4 en vez del `Set-Clipboard` de aquí -- confirmar en esa sesión
+que el resto de bloques (creación de VM, SSH, bootstrap, lanzamiento)
+funcionan igual desde ahí, no probado específicamente encadenado con
+este flujo completo de 3 VMs paralelas.
 
 ---
 

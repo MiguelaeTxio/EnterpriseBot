@@ -3928,6 +3928,47 @@ carpeta ni en archivo) a Fase B (OCR real, VM), que es la vía ya
 prevista en la hoja de ruta original de S63 para este volumen, en vez
 de seguir puliendo el heurístico de nombre archivo a archivo.
 
+## FASE B EN MARCHA -- 3 VMs REALES CORRIENDO EN PARALELO (S64,
+## confirmado, no solo lanzado)
+
+`h28-ocr-batch-1/2/3` (e2-standard-8, europe-west1-b) creadas de
+cero, bootstrapeadas contra los candados reales
+(`requirements-ocr-vm.txt`), con `local_ocr_classify.py --apply
+--shard-count 3` ejecutándose en `tmux` (sesión `fase_b` en cada una)
+con `--shard-index 0/1/2` respectivamente -- reparto sin solape real
+(`entry_id % 3 == shard_index`), sobre el SCOPE completo del script
+(`DOC. MAQUINAS` con familias curadas + `DOC. PERSONAL` completo,
+EPIS/fotos carnet excluidos por diseño del propio script).
+
+**Incidentes reales del arranque, todos documentados con detalle en
+`SESSION_VARIABLES.md` (bloque "FLUJO COMPLETO REAL -- CREAR Y LANZAR
+3 VMs EN PARALELO PARA FASE B"), no repetir en sesiones futuras:**
+límite de 10 claves de servicio activas (`FAILED_PRECONDITION` al
+crear una nueva sin borrar antiguas), `tmux new -s NOMBRE` perdiendo
+el comando siguiente si se pega en el mismo bloque, portapapeles de
+Windows sobrescrito entre VMs. Confusión real de terminología también
+corregida: "consola de Android" para Miguel Ángel es la app móvil de
+Google Cloud Console (SSH integrado, usuario `nummenor`), **no**
+Termux -- son dos entornos distintos, no intercambiables sin montar
+el bootstrap de nuevo en cada uno (`/home/nummenor/` vs
+`/home/Usuario/`, ver sección Termux de `SESSION_VARIABLES.md`).
+
+**Estado al cierre de este bloque:** las 3 en marcha de verdad
+(confirmado tras un primer fallo de las 3 con `Could not open
+connection to gateway` -- túnel SSH a PythonAnywhere, resuelto sin
+intervención real, aparentemente fallo de pegado). Proceso de horas,
+sin supervisión necesaria mientras corre -- cada uno hace `conn.ping`
+cada 20 documentos para evitar el timeout de MySQL, y deja latido
+cada 25 con ritmo/ETA real. Al reconectar en sesión futura:
+`gcloud compute ssh h28-ocr-batch-N ...` + `tmux attach -t fase_b`.
+
+**Pendiente real para cuando termine (sesión futura, no ahora):**
+recoger resultados reales (`sin_tipo`/`tipo_resuelto`/`ambiguo` por
+shard), decidir sobre los `ambiguo` (nunca se aplican solos, según
+diseño del propio script), y continuar con el resto del punto 1
+(los ~1.471 de tipo-OK-dominio-pendiente que no se tocaron en este
+bloque) una vez que la CPU de las VMs quede libre.
+
 ---
 
 **Recordatorio operativo real para la próxima sesión:**
