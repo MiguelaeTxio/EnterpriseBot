@@ -3707,14 +3707,37 @@ archivo) no tenían ninguna oportunidad de resolverlos. **No se excluyen
 del ciclo de vinculación** -- pasan a Fase B (extracción de
 texto/OCR), no a revisión manual ni a exclusión.
 
-**Pendiente de confirmar (pregunta bloqueante lanzada en S64, sin
-respuesta todavía):** al ser `.docx` con texto nativo seleccionable (no
-imagen escaneada), ¿"van para OCR" significa el mismo pipeline Tesseract
-de Fase B usado para PDF escaneados, o extracción de texto nativo del
-propio `.docx` (mecanismo distinto, sin Tesseract) para aplicar después
-el mismo heurístico de nombre sobre el texto extraído? Sin decidir por
-cuenta propia -- confirmar antes de escribir código nuevo para este
-caso.
+**Confirmado por Miguel Ángel en S64:** "van para OCR" en sentido amplio
+de extracción de texto, no el pipeline Tesseract de Fase B -- al ser
+`.docx` con texto ya seleccionable (no imagen escaneada), el mecanismo
+real es **extracción de texto nativo del `.docx`** (sin Tesseract),
+aplicando después el mismo heurístico de nombre (`_resolve_person_by_name`/
+`_resolve_person_by_sliding_window`) sobre el texto extraído. Sin
+construir todavía -- queda como tarea real de la hoja de ruta de H30,
+no urgente frente al resto del punto 1.
+
+## DECISIÓN REGISTRADA EN S64 (2026-08-24) -- `SEG_SOCIAL` ES PERSONAL,
+## `SEGURO` A SECAS ES MÁQUINA (NORMA GENERAL, NO ABSOLUTA)
+
+Confirmado con muestra real (`document_explorer/models.py` visto en
+S64): `SEGURO`/`SEG_SOCIAL` son dos códigos de catálogo distintos, pero
+`resolve_domain_pending_types` los trataba igual (ambos dominio
+PERSONAL en el lote por defecto) sin que nadie hubiera verificado si
+`SEGURO` a secas encajaba ahí. Muestra real de `SEGURO` (8 archivos, dry-run
+S64): 100% bajo `DOC. MAQUINAS` (barca, cabezas tractoras, cargadora de
+ruedas) -- seguro de maquinaria, no de persona.
+
+Miguel Ángel, verbatim: *"si es seguro social, entonces sí son de
+personal. Si pone seguro solamente, probablemente sean de máquinas."*
+**Norma general, no absoluta** -- no excluye revisar casos concretos
+si aparece un `SEGURO` real de persona.
+
+**Consecuencia:** `SEG_SOCIAL` se queda en el ciclo de
+`resolve_domain_pending_types` (dominio PERSONAL) tal cual. `SEGURO` se
+saca de ese lote -- no pertenece a este ciclo de vinculación de
+personal, necesita resolución contra `fleet.MachineAsset`
+(`resolve_or_create_machine_asset()`), tarea distinta, no de este
+punto 1 (que es exclusivamente el ciclo de dominio PERSONAL).
 
 ---
 
