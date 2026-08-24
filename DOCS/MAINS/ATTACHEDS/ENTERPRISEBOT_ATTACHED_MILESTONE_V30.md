@@ -3988,4 +3988,45 @@ bloque) una vez que la CPU de las VMs quede libre.
   `folder_based_type()` -- ya está centralizada, no hace falta
   repetirla, pero sí verificar que ninguna regla la esquive.
 
+## ⛔ FASES OBLIGATORIAS DE H30, REGISTRADAS EN S64 -- SECUENCIALES,
+## SIN SALTOS, NO EMPEZAR UNA HASTA CERRAR LA ANTERIOR
+
+Miguel Ángel, verbatim (S64), tras el incidente real de lanzar Fase B
+(OCR/VM) sin haber cerrado antes la resolución de dominio: *"Cuando
+estén todos tipados, cuando estén todos tipados, todos por
+heurística, pasamos a dominio y lo que quede por OCR y lo que quede
+ya veremos si hacemos ya llamada a Gemini o lo miramos tú o lo miro
+yo, pero deja esto ya anotado. Deja ya anotadas las fases y hasta que
+no completemos una no podemos pasar a otra."*
+
+**FASE 1 -- TIPAR TODO POR HEURÍSTICA (nombre de archivo/carpeta,
+nunca OCR ni Gemini en esta fase).** Cierre: cero archivos reales
+elegibles quedan sin `document_type` que la heurística pudiera haber
+resuelto. Solo entonces se pasa a FASE 2.
+
+**FASE 2 -- RESOLVER DOMINIO de TODO lo que ya tiene tipo
+(`domain_object_id`).** Vía `resolve_domain_pending_types` (dominio
+PERSONAL/BOTH, contra `PersonIdentity`) y el mecanismo equivalente
+para dominio MACHINE (contra `MachineAsset`) y COMPANY (contra
+`CompanyWorksite`). Cierre: cero archivos con tipo asignado y dominio
+pendiente que el mecanismo actual pudiera resolver. Solo entonces se
+pasa a FASE 3.
+
+**FASE 3 -- OCR (Fase B, VM) para lo que la heurística de FASE 1 no
+pudo resolver.** Solo arranca cuando FASE 1 y FASE 2 están cerradas
+del todo -- **incidente real S64: se arrancaron 4 VMs con 12 procesos
+de Fase B mientras todavía quedaban 1.834 archivos reales de FASE 2
+(tipo OK, dominio pendiente) sin tocar, y miles de FASE 1 sin agotar
+del todo.** Corregido: FASE 3 no se toca hasta que las dos anteriores
+estén cerradas.
+
+**FASE 4 -- lo que quede sin resolver tras FASE 3.** Decisión
+explícita de Miguel Ángel en el momento (llamada a Gemini como
+respaldo, o revisión manual directa), nunca decidida de antemano.
+
+**Regla de cierre de fase:** ninguna fase se da por cerrada solo
+porque "ya hemos tocado varios tipos" -- se cierra cuando el número
+real (verificado con consulta directa a BD, no de memoria) llega a
+cero para lo que esa fase puede resolver.
+
 
