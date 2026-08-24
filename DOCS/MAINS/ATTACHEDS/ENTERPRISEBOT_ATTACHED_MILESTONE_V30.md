@@ -3787,6 +3787,33 @@ verificación contra BD real (S014, com-mysql) existe para atrapar --
 nunca dar por buena una reversión de datos solo porque el mensaje de
 commit la menciona.
 
+## DECISIÓN REGISTRADA EN S64 (2026-08-24) -- `CSS` PASA A DOMINIO
+## COMPANY, MISMO CRITERIO QUE `PAGO_CORRIENTE` (MIGRACIÓN 0038)
+
+Muestra real (2 archivos, único contenido de `CSS` sin dominio
+resuelto): `CONTRATO ENCOMIENDA AGG 27-12-17.pdf` y `CONTRATO
+ENCOMIENDA GRUALDI 27-12-17.pdf`, ambos en
+`DOC. PERSONAL/FORMACION TRABAJADORES/FORMACION-MATERIAL EPICENTER`.
+Miguel Ángel revisó el PDF real (adhesión al Contrato de Encomienda de
+EpiCenter/Fundación Estatal, firmado por Jose Luis Álvarez Díaz como
+representante legal de la empresa, con CIF/CNAE/cuenta de cotización
+de la propia empresa) -- documento de empresa, no de un trabajador
+concreto, pese a que la persona que firma en representación aparece
+en el propio documento. Miguel Ángel, verbatim: *"Sí, sí, lo pasamos a
+company sin problemas."*
+
+**Discrepancia real detectada, sin resolver (fuera de lo pedido en
+esta sesión):** el label original de `CSS` (migración `0003`,
+"Certificado de estar al corriente (Seguridad Social)") no describe
+el contenido real de estos 2 archivos -- posible label desactualizado
+o tipo mal definido desde el origen. No se corrige aquí porque no fue
+lo pedido; revisar si aparece más volumen real de este código en
+sesiones futuras.
+
+**Migración `0041_reasignar_css_domain_company_s64.py`** (mismo patrón
+`RunPython` reversible por `code` que la 0038 para `PAGO_CORRIENTE`):
+`CSS` de `PERSONAL` a `COMPANY`.
+
 ---
 
 **Recordatorio operativo real para la próxima sesión:**
