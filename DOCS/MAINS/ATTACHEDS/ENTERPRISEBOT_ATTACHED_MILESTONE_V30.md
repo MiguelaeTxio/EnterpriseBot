@@ -3814,8 +3814,9 @@ sesiones futuras.
 `RunPython` reversible por `code` que la 0038 para `PAGO_CORRIENTE`):
 `CSS` de `PERSONAL` a `COMPANY`.
 
-## ⛔ REGLA PERMANENTE, REGISTRADA EN S64 -- HUELVA QUEDA EXCLUIDA DEL
-## CICLO DE VINCULACIÓN DOCUMENTAL DE H30. NO VOLVER A PREGUNTAR.
+## ⛔ REGLA PERMANENTE, REGISTRADA EN S64 -- HUELVA QUEDA EXCLUIDA DE LA
+## RESOLUCIÓN/VINCULACIÓN DE IDENTIDAD, **NO** DE LA PAPELERA DE
+## HUÉRFANOS. CORREGIDO EN LA MISMA SESIÓN TRAS UN ERROR REAL.
 
 Ya estaba registrado en memoria de proyecto (Carlos Bas Blanco / David
 Contreras Márquez, delegación Huelva, fuera de alcance para
@@ -3831,22 +3832,38 @@ preguntando si lo excluimos. Ya está excluido. Ya no preguntamos más
 por Huelva. Que en un futuro se decide: oye, mira, hay que meter
 Huelva, pues ya lo meteremos. Mientras tanto, Huelva se queda fuera."*
 
-**Consecuencia de obligado cumplimiento, sin excepción, para cualquier
-sesión futura de H30 (o de cualquier otro hito que toque
-`resolve_domain_pending_types`/`trash_orphan_personal_documents`/
-`run_fase_a_sweep` u otro comando de vinculación de personal):**
-1. Ningún archivo real o presunto de personal de Huelva se intenta
-   resolver contra el roster de 70 activos, ni se manda a papelera
-   como huérfano de plataforma -- se queda tal cual (tipo asignado si
-   ya lo tiene, dominio pendiente) fuera de este ciclo, sin tocar.
-2. **No preguntar** si se incluye Huelva al empezar una sesión nueva
-   de este hito -- la respuesta ya es no, de forma permanente, hasta
-   que Miguel Ángel decida explícitamente lo contrario.
-3. Pendiente real, sin mecanismo construido todavía: identificar de
-   forma sistemática qué archivos son de Huelva (hoy solo detectado
-   por coincidencia visual de apellido en muestra, no por ningún
-   marcador de datos) -- tarea aparte, no bloqueante para el resto del
-   punto 1.
+**⛔ ERROR REAL cometido en la misma sesión, corregido de inmediato:**
+el modelo interpretó "Huelva queda excluida" como excluida también de
+`trash_orphan_personal_documents` (papelera), y excluyó manualmente un
+archivo real de Carlos Bas Blanco (`BAJA_PERSONAL`) de un lote de
+papelera masiva. Miguel Ángel corrigió en el acto, verbatim: *"La
+regla es que los que no están en los 70 quedan excluidos, eliminados,
+van todos a la papelera. Los que no estén en los 70 van todos a la
+papelera, independientemente que sean de Huelva, de Cádiz o de
+Berlanga."* El archivo excluido por error se mandó a papelera aparte
+en el mismo bloque de trabajo, en cuanto se detectó -- ver
+`EnterpriseBot_026_GET.txt`.
+
+**Distinción real, de obligado cumplimiento en adelante:**
+1. **Resolución/vinculación** (`resolve_domain_pending_types`,
+   `run_fase_a_sweep`, y cualquier comando que intente asignar un
+   `domain_object_id` real a una `PersonIdentity`): Huelva **sí** queda
+   excluida -- nunca se intenta vincular a un archivo de Huelva con
+   ninguna `PersonIdentity` del roster de 70, se gestiona aparte por
+   Huelva.
+2. **Papelera de huérfanos** (`trash_orphan_personal_documents` y
+   cualquier comando equivalente): Huelva **NO** tiene ningún trato
+   especial -- el criterio es universal, "fuera de los 70 activos va a
+   papelera", sin excepción por delegación ni origen geográfico.
+3. **No preguntar** por Huelva al iniciar sesión (sigue vigente, sin
+   cambios) -- la única corrección es qué comandos concretos la
+   afectan.
+4. Pendiente real, sin mecanismo construido todavía: identificar de
+   forma sistemática qué archivos son de Huelva para el punto 1
+   (hoy solo detectado por coincidencia visual de apellido en muestra,
+   no por ningún marcador de datos) -- tarea aparte, no bloqueante
+   para el resto del punto 1 ni para la papelera masiva del punto 2.
+
 
 ## RESULTADO REAL S64 -- REGISTRO_JORNADA: DE 0 A 171/266 RESUELTOS
 ## (dos fixes reales de heurística + dos aplicaciones confirmadas)
