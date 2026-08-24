@@ -3679,6 +3679,45 @@ varias instancias en paralelo para reducir tiempo.**
    por tipo estas 4 carpetas ahora, o esperar a que el volumen de
    dominio/OCR esté cerrado?
 
+## DECISIÓN REGISTRADA EN S64 (2026-08-24) -- `CERT_LIMITACIONES` NO SON
+## PLANTILLAS, SON DOCUMENTOS REALES; YA SE HABÍA CONFIRMADO ANTES SIN
+## QUEDAR ANOTADO EN NINGÚN SITIO
+
+Durante el dry-run de `resolve_domain_pending_types` en S64 (Grupo B,
+0% de resolución), el modelo asumió por el nombre genérico del archivo
+que los 3 `.docx` de `CERT_LIMITACIONES`
+(`DOC. PERSONAL/CERTIFICADO LIMITACIONES APTOS MEDICOS.docx`,
+`DOC. PERSONAL/INVESTIGACION ACCIDENTES/CERT.TRABAJADOR LIMITACIONES
+REC.MEDICO.docx`, `DOC. PERSONAL/RECONOCIMIENTOS MEDICOS/CERT.LIMITACIONES
+RM TRABAJADOR.docx`) eran plantillas en blanco -- **asunción
+incorrecta**, corregida por Miguel Ángel con una captura real de uno de
+estos documentos (certificado de uso de EPIs de GRUAS ADOLFO ALVAREZ
+SL, firmado por Alejandro Álvarez Díaz como administrador, nombrando a
+D. Juan Manuel Alhamar Avellaneda con DNI real). Miguel Ángel, verbatim:
+*"Antes de dar por sentado a esos que dicen que parece que son
+plantillas, concretamente los DocCX. Voy a mirar antes lo que son. De
+hecho, ya lo vimos el viernes, pero no lo anotaste en ningún sitio. Así
+que no puedes sacarlos. Esos van para OCR."*
+
+**Consecuencia real:** son documentos reales cumplimentados con nombre y
+DNI de un trabajador concreto dentro del cuerpo del `.docx` -- el nombre
+nunca vive en el nombre de archivo, por eso los tres resolutores de
+`resolve_domain_pending_types` (que solo miran carpeta/nombre de
+archivo) no tenían ninguna oportunidad de resolverlos. **No se excluyen
+del ciclo de vinculación** -- pasan a Fase B (extracción de
+texto/OCR), no a revisión manual ni a exclusión.
+
+**Pendiente de confirmar (pregunta bloqueante lanzada en S64, sin
+respuesta todavía):** al ser `.docx` con texto nativo seleccionable (no
+imagen escaneada), ¿"van para OCR" significa el mismo pipeline Tesseract
+de Fase B usado para PDF escaneados, o extracción de texto nativo del
+propio `.docx` (mecanismo distinto, sin Tesseract) para aplicar después
+el mismo heurístico de nombre sobre el texto extraído? Sin decidir por
+cuenta propia -- confirmar antes de escribir código nuevo para este
+caso.
+
+---
+
 **Recordatorio operativo real para la próxima sesión:**
 - **`SWAP/` se vacía por completo en el cierre de cada sesión, de
   cualquier proyecto** -- ver PASO 11 de `nfs-enterprisebot-pcs`.
