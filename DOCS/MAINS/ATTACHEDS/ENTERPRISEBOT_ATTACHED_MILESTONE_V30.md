@@ -4056,4 +4056,72 @@ catálogo -- si aparece un tipo nuevo que de verdad necesite los dos
 dominios, deberá confirmarse explícitamente con Miguel Ángel, nunca
 asumirse por el default del campo.
 
+## HOJA DE RUTA PARA LA SIGUIENTE SESIÓN (S65) -- CIERRE POR LÍMITE DE
+## IMÁGENES DEL CHAT, NO POR PCS FORMAL
+
+**Empezar aquí directamente, sin preguntar por dónde empezar** --
+Miguel Ángel va a subir en el primer prompt de la sesión siguiente una
+muestra de un archivo real de cada una de estas 6 carpetas de
+`DOC. PERSONAL` (auditoría de FASE 1, ver más abajo):
+`ENTREGA MANUAL COMBUSTIBLE`, `AUTORIZACIÓN MEDIOS DE COMUNICACIÓN`,
+`ENTREGA DE EVALUACION DE RIESGO`, `AUTORIZACION FIRMA LIBRO DE
+SUBCONTRATA`, `RENOVACION CARNE DEGRUISTA`, `RETENCIONES`. Revisar
+cada muestra real (nunca asumir el tipo solo por el nombre de
+carpeta) y proponer regla directa carpeta->tipo si el contenido lo
+confirma, mismo patrón que `apply_formacion_folder_default.py`.
+
+**Estado real congelado en este punto (verificado con consulta
+directa a BD, S64, no de memoria):**
+
+- **FASE 1 (tipar por heurística) -- lejos de cerrada.** 5.524
+  archivos reales candidatos (excluyendo EPIS, que van aparte):
+  3.037 `DOC. MAQUINAS` (casi sin tocar en toda la sesión S64),
+  2.316 `DOC. PERSONAL`, 156 `MANUALES DE USO` (Miguel Ángel confirma
+  en S64 que estos YA tienen tipo -- verificar si el desglose de
+  S64 estaba mal o si hay una discrepancia real antes de asumir
+  nada), 15 `NO CONFORMES` (sin revisar).
+
+- **Desglose real de los 2.316 de `DOC. PERSONAL` sin tipo, por
+  subcarpeta** (`EnterpriseBot_036_GET.txt`, S64):
+  `PERSONAL/OPERARIOS` 933, `PERSONAL/BAJAS` 433,
+  `FOTOS CARNET/FOTOS CARNET` 172+2 (**excluir, ya decidido S59:
+  fotos tipo carné nunca tienen tipo del catálogo cerrado**),
+  `PERSONAL/TALLER` 148, `PERSONAL/ADMINISTRACION` 137,
+  `ENTREGA MANUAL COMBUSTIBLE` 120,
+  `AUTORIZACIÓN MEDIOS DE COMUNICACIÓN` 62, resto de carpetas
+  pequeñas (ver tabla completa en `EnterpriseBot_036_GET.txt`).
+
+- **Miguel Ángel, verbatim (S64), sobre `OPERARIOS`/`BAJAS`/`TALLER`/
+  `ADMINISTRACION`:** *"en personal operario lo que tenemos son todos
+  los documentos: contratos, comunicaciones, DNI, etcétera, eso
+  deberíamos de tenerlo ya tipificado (...) hay muchísimos documentos
+  que sí están tipificados, entonces no sé cuáles son los que están
+  sin tipificar."* Es decir, estas 4 carpetas NO son 100% sin tipo --
+  mezclan archivos ya tipados con los 933/433/148/137 que SÍ quedan
+  sin tipo. **Pendiente real:** sacar una muestra real de los
+  archivos concretos sin tipo (no de la carpeta completa) de cada una
+  de las 4, para que Miguel Ángel los revise antes de decidir si hace
+  falta más heurística de nombre, si son casos para OCR, o si son
+  huecos reales (documentos nunca subidos).
+
+- **FASE 2 (dominio pendiente) -- 1.834 confirmados, sin tocar en
+  este bloque** (se pausó para auditar FASE 1 primero, por decisión
+  explícita de Miguel Ángel: no se pasa a otra fase sin cerrar la
+  anterior). Desglose ya corregido: PERSONAL 1.375 (incluye
+  `TACOGRAFO` reclasificado), MACHINE ~451, COMPANY 7.
+
+- **FASE 3 (OCR/VM) -- las 4 VMs (`h28-ocr-batch-1/2/3/4`) quedaron
+  PARADAS (`stop`, no borradas) al cierre de este bloque.** Discos
+  intactos, bootstrap completo ya hecho en las 4 -- se pueden
+  reanudar sin rehacer nada cuando FASE 1 y FASE 2 estén cerradas de
+  verdad. **No arrancar antes de eso** -- incidente real ya
+  registrado más arriba en este mismo anexo (bloque "FASES
+  OBLIGATORIAS DE H30").
+
+**Recordatorio operativo, S64:** el flujo completo de creación/
+lanzamiento de VMs en paralelo, con los incidentes reales y su
+solución, está en `SESSION_VARIABLES.md`, bloque "FLUJO COMPLETO REAL
+-- CREAR Y LANZAR 3 VMs EN PARALELO PARA FASE B". Aplicar tal cual si
+hace falta reanudar o ampliar VMs, sin reinventar el flujo.
+
 
