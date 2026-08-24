@@ -511,8 +511,153 @@ dependencia nueva que no está en ninguno de los candados existentes,
 se añade al `.in` correspondiente, se recompila y se comitea **antes**
 de usarla en cualquier máquina -- nunca al revés.
 
+---
 
-  archivo ni copiarlas fuera de la VM antes de cerrarla.
+### FLUJO COMPLETO REAL -- CREAR Y LANZAR 3 VMs EN PARALELO PARA
+### FASE B (registrado S64, tras varios incidentes reales que
+### costaron una sesión entera -- seguir esto tal cual, sin
+### improvisar variantes)
+
+**Regla de guiado, no negociable (Miguel Ángel, S64, verbatim
+resumido):** dar SIEMPRE el flujo completo de una consola en un único
+mensaje, indicando explícitamente en qué consola va cada bloque
+(nunca "pega esto" sin decir dónde). Nunca ofrecer alternativas
+("puedes hacer esto o esto otro"). Si el mismo comando va en varias
+consolas, decirlo una vez y aplicarlo a las tres, no repetir el bloque
+tres veces sin necesidad. Los pasos que sí requieren esperar
+confirmación real (una VM tiene que existir antes de conectarse por
+SSH, el archivo de clave tiene que existir antes de poder pegarlo) se
+separan en bloques distintos -- pero dentro de una consola, dar todo
+lo que no dependa de una espera real de una vez, sin fraccionar en un
+comando por turno de chat.
+
+**Incidente real 1 -- límite de 10 claves de servicio activas.** Cada
+intento fallido de pegar la clave crea una clave nueva si se repite
+`gcloud iam service-accounts keys create`; sin borrar las anteriores,
+la cuenta llega al límite real de Google (10 claves activas) y
+`keys create` falla con `FAILED_PRECONDITION` sin más explicación.
+Antes de crear una clave nueva, si ya se han hecho varios intentos en
+la sesión, comprobar cuántas hay:
+```powershell
+gcloud iam service-accounts keys list --iam-account=enterprisebot-h28-migration-ag@gen-lang-client-0961484137.iam.gserviceaccount.com
+```
+Si hay más de 5-6, borrar las más antiguas antes de seguir (dejar
+siempre al menos la más reciente y cualquiera que ya esté pegada en
+una VM en uso):
+```powershell
+gcloud iam service-accounts keys delete KEY_ID --iam-account=enterprisebot-h28-migration-ag@gen-lang-client-0961484137.iam.gserviceaccount.com --quiet
+```
+
+**Incidente real 2 -- `tmux new -s NOMBRE` y el comando siguiente NUNCA
+en el mismo bloque.** `tmux new` sustituye toda la pantalla de la
+consola; cualquier comando pegado justo detrás en el mismo bloque
+llega mientras la consola todavía está en transición y se pierde sin
+error visible -- el prompt queda vacío, como si no se hubiera pegado
+nada. **Regla, sin excepción:** `tmux new -s NOMBRE` va SIEMPRE en su
+propia caja de código, nunca combinado con el comando que se vaya a
+ejecutar dentro de esa sesión. Esperar a ver el prompt de tmux (barra
+verde inferior) antes de pegar el siguiente comando.
+
+**Incidente real 3 -- el portapapeles de Windows se sobrescribe con
+cualquier acción intermedia**, incluida la de copiar el propio texto
+de un comando antes de pegarlo en otra consola. Si hace falta reusar
+el mismo contenido del portapapeles varias veces (pegar la misma clave
+en 3 VMs distintas), **regenerarlo justo antes de cada pegado**, nunca
+asumir que sigue teniendo lo mismo de varios pasos atrás.
+
+**Método real, Windows (verificado S64):**
+
+*Bloque 1 -- crear las 3 VMs (PowerShell del PC):*
+```powershell
+$vms = @("h28-ocr-batch-1", "h28-ocr-batch-2", "h28-ocr-batch-3")
+foreach ($vm in $vms) {
+    gcloud compute instances create $vm `
+        --project=gen-lang-client-0961484137 `
+        --zone=europe-west1-b `
+        --machine-type=e2-standard-8 `
+        --image-family=ubuntu-2404-lts-amd64 `
+        --image-project=ubuntu-os-cloud `
+        --boot-disk-size=50GB
+}
+```
+
+*Bloque 2 -- abrir 3 ventanas de PowerShell nuevas, una conexión SSH
+por ventana:*
+```powershell
+gcloud compute ssh h28-ocr-batch-1 --project=gen-lang-client-0961484137 --zone=europe-west1-b
+gcloud compute ssh h28-ocr-batch-2 --project=gen-lang-client-0961484137 --zone=europe-west1-b
+gcloud compute ssh h28-ocr-batch-3 --project=gen-lang-client-0961484137 --zone=europe-west1-b
+```
+(cada línea en su propia ventana, verificar que el prompt muestra el
+nombre correcto de cada VM antes de seguir).
+
+*Bloque 3 -- bootstrap, idéntico en las 3 ventanas SSH (uno detrás de
+otro, mismo texto las 3 veces):*
+```bash
+sudo apt-get update -y && sudo apt-get install -y tesseract-ocr tesseract-ocr-spa python3-venv git tmux
+cd ~ && read -s -p "Pega aqui el token de GitHub (no se vera en pantalla): " GH_TOKEN && echo
+```
+(pegar el token cuando el cursor quede esperando), seguido de:
+```bash
+git clone https://x-access-token:${GH_TOKEN}@github.com/MiguelaeTxio/EnterpriseBot.git
+cd EnterpriseBot/h28_migration_agent
+pwd
+python3 -m venv ocr_venv
+source ocr_venv/bin/activate
+pip install pip-tools
+pip-sync requirements-ocr-vm.txt
+mkdir -p agent_data
+```
+Verificar que `pwd` devuelve `/home/Usuario/EnterpriseBot/h28_migration_agent`
+en las 3 antes de seguir.
+
+*Bloque 4 -- clave de servicio, un `Set-Clipboard` por cada VM
+(regenerar el portapapeles justo antes de cada pegado, incidente real
+2 arriba):*
+```powershell
+gcloud iam service-accounts keys create key.json --iam-account=enterprisebot-h28-migration-ag@gen-lang-client-0961484137.iam.gserviceaccount.com
+$b64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes("key.json"))
+Set-Clipboard $b64
+```
+(en el PC, una sola vez es suficiente si se pega inmediatamente en las
+3 ventanas SSH sin copiar nada más entre medias; si pasa tiempo o se
+copia otra cosa, repetir el `Set-Clipboard` antes de cada pegado). En
+cada una de las 3 ventanas SSH:
+```bash
+read -p "Pega aqui (Ctrl+V): " KEY_B64
+echo "$KEY_B64" | base64 -d > ~/EnterpriseBot/h28_migration_agent/agent_data/service_account_key.json
+```
+
+*Bloque 5 -- lanzar el barrido, SEPARADO en dos comandos por ventana
+(incidente real 2), shard-index distinto en cada una:*
+
+En cada una de las 3 ventanas, primero:
+```bash
+tmux new -s fase_b
+```
+Esperar al prompt de tmux (barra verde), y SOLO ENTONCES, en su propia
+caja, el comando de shard correspondiente (`0`, `1`, `2` según la VM):
+```bash
+python3 local_ocr_classify.py --apply --shard-count 3 --shard-index 0
+```
+
+**Pendiente real, sin verificar todavía: el mismo flujo desde Android
+(Termux o la app de consola de Cloud Console).** El Bloque 4 tal como
+está escrito usa `Set-Clipboard`, específico de PowerShell/Windows --
+**no sirve tal cual desde Android.** La alternativa ya documentada más
+abajo en este archivo ("MÉTODO SIN PC, VERIFICADO S63") evita el
+problema por diseño: crea la clave directamente desde la Cloud Console
+del móvil y la pega vía heredoc (`cat > archivo << 'EOF' ... EOF`)
+dentro de la propia sesión SSH del teléfono, sin depender de ningún
+portapapeles de escritorio. Si una sesión futura ejecuta este flujo
+completo desde Android, usar esa vía para el Bloque 4 en vez del
+`Set-Clipboard` de aquí -- confirmar en esa sesión que el resto de
+bloques (creación de VM, SSH, bootstrap, lanzamiento) funcionan igual
+desde Termux, ya verificado en general (ver sección Termux más abajo),
+pero no probado específicamente encadenado con este flujo completo de
+3 VMs paralelas.
+
+---
 
   **Ruta real final, confirmada con `ls -la` (S54, 2026-08-17):**
   `/home/MiguelAeTxio/PROJECTS/EnterpriseBot/h28_migration_agent/sample{0,1,2}_output.txt`
