@@ -354,7 +354,36 @@ CANDIDATES_SAFE = {
         ],  # 1 coincidencia real
         "CERTIFICADO_BANCARIO": [
             "CERTIFICADO BANCARIO", "CTA BANCO", "EXTRACTOS BANCARIOS",
+            # Añadido S65, segundo lote: variantes reales no cubiertas
+            # por "CTA BANCO" (8 coincidencias reales, ver
+            # EnterpriseBot_027_GET.txt).
+            "CTA BANCARIA", "CTA BCO",
         ],  # 8 coincidencias reales
+        # Añadidos S65, segundo lote: extraidos del listado completo de
+        # los 599 archivos restantes con nombre real (ver
+        # EnterpriseBot_026_GET.txt), medidos contra volumen real antes
+        # de aplicar (EnterpriseBot_027_GET.txt).
+        "ALTA_IDC": ["ALTA+IDC", "ALTA + IDC", "IDC"],  # 10 coincidencias reales
+        "AUTORIZACION_TEMPORAL_CONDUCIR": [
+            "AUTORIZACION TEMPORAL", "AUT TEMPORAL CONDUCIR",
+            "AUT USO TEMP CONDUCIR", "AUTORIZACION PROVISIONAL PARA CONDUCIR",
+        ],  # 9 coincidencias reales
+        "TARJETA_SANITARIA": ["TARJETA SANITARIA"],  # 6 coincidencias reales
+        "DOC_MUTUA": ["DOC MUTUA", "DOC.MUTUA"],  # 7 coincidencias reales
+        "COMUNICACION_CONTRATO": [
+            "COMUNIC CONT", "COMUNIC INDEF", "COMUNIC PRORROGA",
+            "COMUNIC CAMBIO CONT", "COMUNIC INSS",
+        ],  # 7 coincidencias reales
+        "CERTIFICADO_GIBRALTAR": [
+            "AUTHORISATION", "TAX RETURN", "DETACHED PERMIT", "TA300", "TA.300",
+        ],  # 11 coincidencias reales
+        "DECLARACION_EMPRESA": [
+            "DECLARACION PLANTILLA FIJA", "DECLARACION CORRIENTE PAGOS",
+            "DECLARACION ESTAR AL CORRIENTE",
+        ],  # 8 coincidencias reales, domain COMPANY (migracion 0046)
+        "CIRCULAR_INFORMATIVA": [
+            "CIRCULAR INFORMATIVA", "CIRCULAR NOTA TECNICA",
+        ],  # 2 coincidencias reales, domain COMPANY (migracion 0046)
         # Añadido en esta sesion, cuarta pasada: BAJA_PERSONAL se
         # resuelve principalmente por carpeta (ver FOLDER_TYPE_RULES,
         # "/BAJAS/" y "TRABAJADORES INACTIVOS") -- esta keyword cubre
@@ -401,6 +430,11 @@ CANDIDATES_SAFE = {
             # -- mismo tipo de autorizacion real, "utiles" en vez de
             # "maquinaria". Ver EnterpriseBot_024_GET.txt.
             "AUT USO UTILES",
+            # Añadido S65, segundo lote: variante real sin "USO" --
+            # "AUT MAQUINARIA BENALI RACHID..." / "AUTORIZACION
+            # MAQUINARIA ANTONIO J. DIAZ QUINTERO" -- 3 coincidencias
+            # reales, ver EnterpriseBot_027_GET.txt.
+            "AUTORIZACION MAQUINARIA", "AUT MAQUINARIA",
         ],
         "CARNET_CONDUCIR": [
             "CARNET CONDUCIR", "CARNE CONDUCIR",

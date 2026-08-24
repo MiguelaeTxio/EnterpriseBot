@@ -50,6 +50,11 @@ SPECIFIC_WINS = [
     ("PERMISO_CIRCULACION", "FICHA_TECNICA"),
     ("RECIBO_LEASING", "LEASING"),
     ("ALTA_MEDICA", "ALTA"),
+    # Añadido S65: "ALTA+IDC..." matchea tanto ALTA (generico) como
+    # ALTA_IDC (mas especifico, combo real alta+documento identidad).
+    # Mismo criterio que ALTA_MEDICA sobre ALTA -- el mas especifico
+    # gana.
+    ("ALTA_IDC", "ALTA"),
     ("ALTA", "SEG_SOCIAL"),
     ("CURSO", "TACOGRAFO"),
     # Retirada S56 (migracion 0036): FACTURA_TERCEROS se fusiono en
