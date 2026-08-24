@@ -676,7 +676,21 @@ def _build_pattern(phrase):
     # -- verificado con datos reales que \b fallaba ahi). Un lookaround
     # que solo trata [A-Z0-9] como caracter de palabra trata "_"/"-"/
     # "."/espacio como frontera valida por igual.
-    return re.compile(r"(?<![A-Z0-9])" + body + r"(?![A-Z0-9])")
+    #
+    # Corregido S65: el lookahead negativo bloqueaba tambien el plural
+    # regular en "S" de la propia frase candidata (p. ej. "FACTURA"
+    # nunca matcheaba "FACTURAS", "PODER" nunca matcheaba "PODERES" --
+    # el segundo caso ya se habia parcheado a mano anadiendo "PODERES"
+    # como candidato aparte, pero es el mismo bug de raiz repitiendose
+    # frase a frase en vez de corregirse una vez en el patron base).
+    # Confirmado con datos reales (EnterpriseBot_012_GET.txt, S65):
+    # solo 7 archivos afectados en todo el corpus restante en el
+    # momento de escribir esto (FACTURA_COMPRA, POLIZA_SEGURO,
+    # CERTIFICADO_PODERES, TABLA_DE_CARGA, CURSO) -- volumen bajo,
+    # pero el bug es real y de raiz, se corrige aqui de una vez para
+    # todas las frases futuras en vez de seguir parcheando plural a
+    # plural.
+    return re.compile(r"(?<![A-Z0-9])" + body + r"S?(?![A-Z0-9])")
 
 
 def _files_for_domain(domain):
