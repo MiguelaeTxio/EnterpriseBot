@@ -541,9 +541,47 @@ la sesión, comprobar cuántas hay:
 ```powershell
 gcloud iam service-accounts keys list --iam-account=enterprisebot-h28-migration-ag@gen-lang-client-0961484137.iam.gserviceaccount.com
 ```
+
+⛔ **INCIDENTE REAL 1b, CONFIRMADO EN S65 -- ESTA MISMA CUENTA DE
+SERVICIO LA USA TAMBIÉN EL AGENTE H28 DE ESCRITORIO DEL PC DE MIGUEL
+ÁNGEL, NO SOLO LAS VMs.** `enterprisebot-h28-migration-ag@...` es
+compartida entre las VMs efímeras de OCR (Fase B) y el agente
+`AgenteMigracionH28.exe` que corre permanentemente en el PC de Miguel
+Ángel subiendo documentación nueva a cuarentena (`get_service_account_key_path()`,
+`h28_migration_agent/config.py`). El agente de escritorio guarda **una
+sola clave local**, en `%LOCALAPPDATA%\EnterpriseBot\H28MigrationAgent\service_account_key.json`
+(o en la ruta que indique la variable de entorno `H28_AGENT_KEY_PATH`
+si está fijada) -- si esa clave concreta se borra en un barrido de
+limpieza como el de abajo, el agente empieza a fallar TODAS las
+subidas con `google.auth.exceptions.RefreshError: invalid_grant:
+Invalid JWT Signature`, de forma silenciosa (sin aviso visible salvo
+en su propio log e Historial), hasta que alguien lo detecta.
+
+**Origen real:** en una limpieza de claves durante el lanzamiento de
+VMs de Fase B, se borraron 7 claves de golpe con un bucle
+`gcloud iam service-accounts keys delete` sin comprobar antes cuál de
+ellas era la que tenía pegada el agente de escritorio -- la instrucción
+de abajo ("dejar cualquiera que ya esté pegada en una VM en uso") no
+cubre el caso del agente de PC porque no es una VM. Resultado: el
+agente estuvo subiendo 0 documentos nuevos a cuarentena de forma
+invisible durante un tiempo indeterminado, detectado solo al revisar
+su Historial por otro motivo.
+
+**Regla derivada, de obligado cumplimiento en adelante:** antes de
+borrar CUALQUIER clave de esta cuenta de servicio, comprobar primero
+cuál es el `private_key_id` activo en el agente de escritorio (pedir a
+Miguel Ángel que abra el JSON local y mire el campo `private_key_id`,
+o vía PowerShell: `(Get-Content "$env:LOCALAPPDATA\EnterpriseBot\H28MigrationAgent\service_account_key.json" | ConvertFrom-Json).private_key_id`)
+y **excluirla siempre** de cualquier lote de borrado, sin excepción --
+igual de protegida que "cualquiera que ya esté pegada en una VM en
+uso". Si tras un borrado el agente empieza a fallar con
+`invalid_grant: Invalid JWT Signature`, la primera hipótesis a
+comprobar es esta, no un problema de archivo o de red.
+
 Si hay más de 5-6, borrar las más antiguas antes de seguir (dejar
-siempre al menos la más reciente y cualquiera que ya esté pegada en
-una VM en uso):
+siempre al menos la más reciente, cualquiera que ya esté pegada en una
+VM en uso, y **la que use el agente de escritorio**, verificada como se
+indica arriba):
 ```powershell
 gcloud iam service-accounts keys delete KEY_ID --iam-account=enterprisebot-h28-migration-ag@gen-lang-client-0961484137.iam.gserviceaccount.com --quiet
 ```
