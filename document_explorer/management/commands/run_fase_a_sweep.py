@@ -269,41 +269,84 @@ def _resolve_person_by_sliding_window(entry, person_name_index):
     genericas como "GRUAS ALVAREZ/BYN GRUAS" o "TRANSGRUAL/COLOR"
     agrupan por empresa/formato de escaneo, no por trabajador.
 
-    Recorre TODOS los segmentos de `entry.parent_path` MAS el nombre
-    de archivo (sin extension), tokeniza cada uno, y prueba cada
-    ventana contigua de 2, 3 y 4 palabras contra `person_name_index`
-    (mismas claves que ya usa `_resolve_person_by_name()` -- incluida
-    la clave "apellido1 apellido2" sin nombre de pila, S57). Acumula
-    el conjunto de personas distintas encontradas en CUALQUIER ventana
-    de CUALQUIER segmento del documento.
+    REDISEÑADO EN S64 -- dos pasadas, no una sola mezclando todo:
 
-    Mismo criterio de siempre, sin excepcion: si el conjunto final
-    tiene mas de una persona (dos ventanas distintas apuntan a gente
-    distinta, o dos personas comparten el mismo apellido1+apellido2 --
-    el caso real de hermanos que Miguel Angel confirmo en S57, dos
-    hermanos "Alvarez Diaz" ademas de un segundo par de hermanos con
-    apellido distinto no identificado por nombre) devuelve None, nunca
-    elige al azar. Solo un candidato en todo el documento -> se
-    resuelve.
+    PASADA 1 -- SOLO el nombre de archivo (sin extension), tokenizado
+    en aislado. Si resuelve a una unica persona, se devuelve
+    directamente, SIN tocar ningun segmento de carpeta. Motivo real
+    (S64): la carpeta de empresa real "GRUAS ADOLFO ALVAREZ" contiene
+    "ADOLFO ALVAREZ", que matchea de verdad contra `PersonIdentity`
+    pk=4 (Adolfo Alvarez Diaz, el administrador) -- mezclar esa
+    carpeta con el nombre de archivo real de OTRA persona
+    (p.ej. "REGISTRO DE JORNADA MANUEL DELGADO ZURERA FIRMADO.pdf")
+    metia siempre un segundo pk falso en `found_pks`, viendo ambiguedad
+    donde no la habia, y dejando sin resolver CUALQUIER archivo bajo
+    esa carpeta de empresa, aunque el nombre de archivo por si solo
+    fuera inequivoco. Confirmado con datos reales: "MANUEL DELGADO
+    ZURERA", "MONICA CARVAJAL RODRIGUEZ", "CARVAJAL GONZALEZ
+    FRANCISCO", "RUIZ LEIVA ANTONIO" resuelven todos a un unico
+    candidato mirando solo el nombre de archivo.
+
+    PASADA 2 -- si la pasada 1 no resuelve (cero o varias personas
+    solo con el archivo), recorre TODOS los segmentos de
+    `entry.parent_path` ademas del nombre de archivo, igual que antes
+    -- caso original de S56, nombre real que vive SOLO en la carpeta
+    (backlog historico de RECONOCIMIENTOS MEDICOS). Con una excepcion
+    nueva, S64, decision explicita de Miguel Angel: cualquier segmento
+    de carpeta que contenga a la vez "GRUAS" y "ALVAREZ" (palabra
+    completa) se excluye del recorrido -- son carpetas de empresa
+    reales ("GRUAS ADOLFO ALVAREZ", "GRUAS ALVAREZ"), nunca carpetas
+    de persona (ninguna carpeta real de trabajador de la plantilla
+    combina esas dos palabras). Deliberadamente NO se excluye
+    "ALVAREZ" a secas -- es primer apellido real y muy comun en la
+    plantilla (ALVAREZ SERRANO, ALVAREZ GEA, ALVAREZ VIEIRA...),
+    excluirlo sin el marcador "GRUAS" tumbaria carpetas de persona
+    legitimas.
+
+    Mismo criterio de siempre en ambas pasadas, sin excepcion: si el
+    conjunto final tiene mas de una persona (dos ventanas distintas
+    apuntan a gente distinta, o dos personas comparten el mismo
+    apellido1+apellido2 -- el caso real de hermanos que Miguel Angel
+    confirmo en S57) devuelve None, nunca elige al azar. Solo un
+    candidato -> se resuelve.
     """
-    segments = [
-        seg for seg in entry.parent_path.split("/") if seg.strip()
-    ]
     file_stem = re.sub(r"\.[A-Za-z0-9]{1,5}$", "", entry.name)
-    segments.append(file_stem)
 
-    found_pks = set()
-    for segment in segments:
+    def _windows_pks(segment):
         segment = _TRAILING_DATE_RE.sub("", segment)
         tokens = _tokenize_segment(segment)
+        pks = set()
         for size in (2, 3, 4):
             if size > len(tokens):
                 continue
             for start in range(0, len(tokens) - size + 1):
                 window = " ".join(tokens[start:start + size])
-                pks = person_name_index.get(window)
-                if pks:
-                    found_pks |= pks
+                found = person_name_index.get(window)
+                if found:
+                    pks |= found
+        return pks
+
+    # PASADA 1 -- solo el nombre de archivo, aislado.
+    solo_archivo = _windows_pks(file_stem)
+    if len(solo_archivo) == 1:
+        return PersonIdentity.objects.get(pk=next(iter(solo_archivo)))
+
+    # PASADA 2 -- recorrido completo, excluyendo carpetas de empresa
+    # reales que combinan GRUAS + ALVAREZ.
+    segments = [
+        seg for seg in entry.parent_path.split("/") if seg.strip()
+    ]
+    segments.append(file_stem)
+
+    found_pks = set()
+    for segment in segments:
+        upper = _strip_accents(segment).upper()
+        if (
+            re.search(r"\bGRUAS\b", upper)
+            and re.search(r"\bALVAREZ\b", upper)
+        ):
+            continue
+        found_pks |= _windows_pks(segment)
 
     if len(found_pks) == 1:
         return PersonIdentity.objects.get(pk=next(iter(found_pks)))
