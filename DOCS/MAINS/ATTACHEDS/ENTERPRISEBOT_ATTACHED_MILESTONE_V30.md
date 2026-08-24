@@ -3739,6 +3739,48 @@ personal, necesita resolución contra `fleet.MachineAsset`
 (`resolve_or_create_machine_asset()`), tarea distinta, no de este
 punto 1 (que es exclusivamente el ciclo de dominio PERSONAL).
 
+## ⛔ INCIDENTE REAL S64 -- EL REVERT DE S63 DEL FALSO POSITIVO
+## "TRABAJADORES AUTONOMOS" NUNCA SE COMPLETÓ EN BASE DE DATOS
+
+**Hechos, verificados con `git log`/`git show` reales, no de
+memoria.** El anexo registraba (S63, ver bloque "Método de cierre
+real" más abajo en este documento) que el falso positivo real
+detectado tras un `--apply` -- los dos archivos "Los trabajadores
+autónomos estarán obligados -CIII" (`.docx`/`.pdf`, dentro de
+`DOC. PERSONAL/FORMACION TRABAJADORES/CUROS METADATA CAE`, texto legal
+genérico sobre coordinación de actividades empresariales, sin ningún
+trabajador concreto como sujeto) se había *"aplicado mal a 2 archivos,
+revertido en la misma sesión"*.
+
+**Verificado real:** el commit `b7ed3cc` de S63 solo añadió el patrón
+a `EXCLUSIONS` de `calibrate_fase_a_keywords.py` -- protege pasadas
+FUTURAS del heurístico, pero no contiene ninguna escritura de BD. No
+existe ningún commit posterior en S63 que documente una reversión de
+datos (una reversión real de `document_type` habría sido una
+escritura directa vía Comando S, sin rastro en git, pero el propio
+dry-run de `resolve_domain_pending_types` en S64
+(`EnterpriseBot_002_GET.txt`) muestra que estos 2 archivos **siguen**
+con `document_type=AUTONOMO`, `domain_object_id` pendiente, en
+producción ahora mismo). El "revertido en la misma sesión" registrado
+en S63 no se corresponde con el estado real de la base de datos.
+
+**Decisión de Miguel Ángel en S64, verbatim:** *"el documento (...) de
+los trabajadores autónomos estarán obligados, ese directamente lo que
+habría que hacer es marcarlo para delete (...) es un documento que
+realmente es que no nos dice nada (...) parece que está ahí como
+huérfano. No lo vamos a asignar a ningún sitio, ni a company ni a
+nada. Simplemente lo marcamos para la papelera (...) los dos archivos,
+el de extensión de Microsoft Word y el PDF."* Vía `trash_dossier_entry`
+(4.12, escritura pura de índice, `blob_name` intacto), nunca vía
+reasignación de dominio.
+
+**Regla derivada:** este mismo patrón (un commit de código que
+documenta "revertido aparte" sin verificación posterior contra datos
+reales) es exactamente el tipo de afirmación que la regla de
+verificación contra BD real (S014, com-mysql) existe para atrapar --
+nunca dar por buena una reversión de datos solo porque el mensaje de
+commit la menciona.
+
 ---
 
 **Recordatorio operativo real para la próxima sesión:**
