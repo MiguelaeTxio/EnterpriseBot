@@ -3774,6 +3774,12 @@ el de extensión de Microsoft Word y el PDF."* Vía `trash_dossier_entry`
 (4.12, escritura pura de índice, `blob_name` intacto), nunca vía
 reasignación de dominio.
 
+**RESUELTO EN S64, confirmado con datos reales (no de resumen):**
+`trash_dossier_entry` ejecutado sobre `pk=24445`
+(`Los trabajadores autónomos estarán obligados -CIII.docx`) y
+`pk=24446` (mismo nombre, `.pdf`) -- ambos `-> papelera OK`. Verificado
+en `EnterpriseBot_005_GET.txt`. Incidente cerrado de verdad esta vez.
+
 **Regla derivada:** este mismo patrón (un commit de código que
 documenta "revertido aparte" sin verificación posterior contra datos
 reales) es exactamente el tipo de afirmación que la regla de
