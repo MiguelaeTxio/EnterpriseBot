@@ -315,6 +315,46 @@ CANDIDATES_SAFE = {
         ],
     },
     "PERSONAL": {
+        # Añadido S65: EVALUACION_RIESGO, ENTREGA_MANUAL_COMBUSTIBLE y
+        # AUTORIZACION_MEDIOS_COMUNICACION (migracion 0043) solo se
+        # habian aplicado por ruta de carpeta concreta
+        # (apply_s65_folder_type_rules), nunca como frase clave general
+        # -- bug real detectado en S65: archivos del mismo tipo dentro
+        # del dossier individual de cada persona (fuera de la carpeta
+        # especial) se quedaban sin tipo. Verificado con datos reales
+        # (EnterpriseBot_023_GET.txt): "MANUAL COMBUSTIBLE" 4
+        # coincidencias reales fuera de la carpeta especial;
+        # EVALUACION_RIESGO y AUTORIZACION_MEDIOS_COMUNICACION dieron 0
+        # en ese momento (nada mas se quedo fuera), pero se anaden
+        # igual para proteger casos futuros.
+        "ENTREGA_MANUAL_COMBUSTIBLE": [
+            "ENTREGA MANUAL COMBUSTIBLE", "MANUAL COMBUSTIBLE",
+        ],
+        "EVALUACION_RIESGO": ["EVALUACION DE RIESGO", "EVALUACION RIESGO"],
+        "AUTORIZACION_MEDIOS_COMUNICACION": ["AUTORIZACION MEDIOS"],
+        # Añadidos S65: detectados dentro de los dossiers individuales
+        # de OPERARIOS/ADMINISTRACION/TALLER, medidos contra los 822
+        # archivos reales sin tipo de PERSONAL antes de aplicar (ver
+        # EnterpriseBot_023_GET.txt).
+        "CLAUSULA_PROTECCION_DATOS": [
+            "CLAUSULA DATOS", "CLAUSULA PROTEC DATOS",
+            "CLAUSULA PROTECCION DATOS", "CLAUSULA INFORMATIVA",
+        ],  # 11 coincidencias reales
+        "CAMBIO_EMPRESA_SUBROGACION": [
+            "CAMBIO EMPRESA", "SUBROGACION", "CARTA SUBROGACION",
+        ],  # 9 coincidencias reales
+        "CAMBIO_IRPF": ["CAMBIO IRPF"],  # 13 coincidencias reales
+        "TARJETA_CUALIF_CONDUCTOR": ["TARJETA CUALIF"],  # 3 coincidencias reales
+        "HUELLA_CONTRATO": ["HUELLA"],  # 21 coincidencias reales
+        "COMUNICADO_SEPE": [
+            "COMUNICADO AL SEPE", "COMUNICADO SEPE",
+        ],  # 1 coincidencia real
+        "VOLANTE_MUTUA": [
+            "VOLANTE MUPRESPA", "VOLANTE MUTUA",
+        ],  # 1 coincidencia real
+        "CERTIFICADO_BANCARIO": [
+            "CERTIFICADO BANCARIO", "CTA BANCO", "EXTRACTOS BANCARIOS",
+        ],  # 8 coincidencias reales
         # Añadido en esta sesion, cuarta pasada: BAJA_PERSONAL se
         # resuelve principalmente por carpeta (ver FOLDER_TYPE_RULES,
         # "/BAJAS/" y "TRABAJADORES INACTIVOS") -- esta keyword cubre
