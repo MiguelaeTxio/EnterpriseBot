@@ -384,6 +384,20 @@ CANDIDATES_SAFE = {
         "CIRCULAR_INFORMATIVA": [
             "CIRCULAR INFORMATIVA", "CIRCULAR NOTA TECNICA",
         ],  # 2 coincidencias reales, domain COMPANY (migracion 0046)
+        # Añadidos S65, tercer lote (ver EnterpriseBot_029_GET.txt,
+        # migracion 0047).
+        "LISTADO_PERSONAL_MAQUINARIA_OBRA": [
+            "RELACION DE TRABAJADORES", "RELACION DE MAQUINARIA",
+            "RELACION DE PERSONAL", "LISTADO DE TRABAJADORES",
+            "LISTADO DE MAQUINARIA",
+        ],  # 29 coincidencias reales, domain COMPANY
+        "FORMACION_PRL_MAQUINARIA": [
+            "PRL CAMION", "PRL GRUA", "PREVENCION RIESGOS LABORALES",
+            "FORMPRL", "FORMC PRL", "PREVRIESGOSLABORALES",
+        ],  # 18 coincidencias reales
+        "ENTREGA_MOVIL": [
+            "ENTREGA TLF", "ENTREGA MOVILES", "CONTROL ENTREGA MOVILES",
+        ],  # 3 coincidencias reales
         # Añadido en esta sesion, cuarta pasada: BAJA_PERSONAL se
         # resuelve principalmente por carpeta (ver FOLDER_TYPE_RULES,
         # "/BAJAS/" y "TRABAJADORES INACTIVOS") -- esta keyword cubre
@@ -600,6 +614,10 @@ CANDIDATES_SAFE = {
             # "RECO.MEDICO...", "RMEDICO..." (pegado, sin separador).
             # Ver EnterpriseBot_024_GET.txt.
             "REC MEDICO", "RECO MEDICO", "RMEDICO",
+            # Añadido S65, tercer lote: errata real ("RECONOCIMEINTO"
+            # con letras invertidas) y abreviaturas con punto/espacio
+            # -- 3 coincidencias reales, ver EnterpriseBot_029_GET.txt.
+            "RECONOCIMEINTO MEDICO", "R MEDICO", "R.MEDICO",
         ],
         # Añadido en esta sesion: SOLICITUD_ADMINISTRATIVA ya existia
         # como comodin generico para MACHINE (GENERIC_LOSER, siempre
