@@ -398,6 +398,13 @@ CANDIDATES_SAFE = {
         "ENTREGA_MOVIL": [
             "ENTREGA TLF", "ENTREGA MOVILES", "CONTROL ENTREGA MOVILES",
         ],  # 3 coincidencias reales
+        # Añadidos S65, cuarto lote (ver EnterpriseBot_032_GET.txt,
+        # migracion 0048).
+        "TC2": ["TC2", "TC 2"],  # 1 coincidencia real
+        "NOMBRAMIENTO_RECURSO_PREVENTIVO": [
+            "NOMBRAMIENTO RR PP", "NOMBRAMIENTO RECURSO PREVENTIVO",
+            "ENTREGA FUNCIONES RP", "ENTREGA FUNCIONES REC PREV",
+        ],  # 6 coincidencias reales
         # Añadido en esta sesion, cuarta pasada: BAJA_PERSONAL se
         # resuelve principalmente por carpeta (ver FOLDER_TYPE_RULES,
         # "/BAJAS/" y "TRABAJADORES INACTIVOS") -- esta keyword cubre
@@ -518,6 +525,12 @@ CANDIDATES_SAFE = {
             # DE GRUISTAS" (plural).
             "GRHIDRAULICA", "CARNE GRUAS", "CERTIFICADOS DE GRUISTAS",
             "CERTIFICADOS GRUISTAS",
+            # Añadido S65, cuarto lote: variantes reales con
+            # preposicion intermedia que "CARNET GRUISTA"/"CARNE
+            # GRUISTA" no cubren (separador flexible de _build_pattern
+            # no salta palabras intermedias) -- 10 coincidencias
+            # reales, ver EnterpriseBot_032_GET.txt.
+            "CARNET DE GRUISTA", "CARNE A GRUISTA", "CARNE DE GRUISTA",
         ],
         "AUTONOMO": [
             # Añadido S59 (migracion 0039): recibos mensuales de
