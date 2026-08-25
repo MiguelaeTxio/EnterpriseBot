@@ -85,8 +85,8 @@ TIPOS_A_CARPETAS = {
 def ocr_pdf_to_text(data, max_pages=2, dpi=300):
     # H30 (S68) Punto 4 -- mismo fix real que local_ocr_classify.py
     # (caso Delgado Hurtado, 278M pixeles por encima del limite real
-    # de Pillow, 178.956.970, ver docstring alli para el detalle).
-    SAFE_MAX_PIXELS = 150_000_000
+    # de Pillow en produccion, 89.478.485, ver docstring alli para el detalle).
+    SAFE_MAX_PIXELS = 80_000_000
     MIN_DPI = 100
 
     text_parts = []

@@ -165,13 +165,13 @@ def main():
             # H30 (S68) Punto 4: DPI seguro por pagina, mismo fix real
             # que local_ocr_classify.py/split_rm_dossier*.py (caso
             # Delgado Hurtado, 278M pixeles por encima del limite real
-            # de Pillow, 178.956.970).
+            # de Pillow en produccion, 89.478.485 -- ver local_ocr_classify.py).
             rect = page.rect
             dpi_pagina = 300
             if rect.width > 0 and rect.height > 0:
                 pixeles_estimados = (rect.width / 72 * 300) * (rect.height / 72 * 300)
-                if pixeles_estimados > 150_000_000:
-                    dpi_pagina = max(int(72 * (150_000_000 / (rect.width * rect.height)) ** 0.5), 100)
+                if pixeles_estimados > 80_000_000:
+                    dpi_pagina = max(int(72 * (80_000_000 / (rect.width * rect.height)) ** 0.5), 100)
             pix = page.get_pixmap(dpi=dpi_pagina)
             img = Image.open(io.BytesIO(pix.tobytes("png")))
             text = pytesseract.image_to_string(img, lang="spa")

@@ -246,9 +246,10 @@ def _ocr_all_pages(data):
     H30 (S68) Punto 4: DPI seguro por pagina segun su tamano fisico,
     nunca dpi=300 fijo -- mismo fix real que local_ocr_classify.py y
     split_rm_dossier_vm.py (caso Delgado Hurtado, 278M pixeles por
-    encima del limite real de Pillow, 178.956.970).
+    encima del limite real de Pillow en produccion, 89.478.485 --
+    ver local_ocr_classify.py).
     """
-    SAFE_MAX_PIXELS = 150_000_000
+    SAFE_MAX_PIXELS = 80_000_000
     MIN_DPI = 100
     DPI_OBJETIVO = 300
 

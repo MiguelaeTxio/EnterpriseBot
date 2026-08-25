@@ -340,15 +340,17 @@ def ocr_pdf_to_text(data, max_pages=2, dpi=300):
     # H30 (S68) Punto 4 -- fix real de un caso de produccion: Delgado
     # Hurtado, "20250108 Baja al 30 01 2025.pdf", pagina fisica
     # inusualmente grande que a dpi=300 fijo generaba una imagen de
-    # 278M pixeles -- por encima del limite real de Pillow
-    # (178.956.970, verificado S68) y bloqueada por su proteccion de
-    # "decompression bomb". En vez de desactivar esa proteccion
-    # globalmente (quitaria defensa real de DoS para cualquier PDF
-    # que pase por aqui, nunca se hace), se calcula el DPI seguro
-    # para cada pagina segun su tamano fisico real, y solo se baja
-    # cuando hace falta -- el resto de paginas normales nunca se ven
-    # afectadas.
-    SAFE_MAX_PIXELS = 150_000_000  # margen real bajo el limite de Pillow
+    # 278M pixeles. Limite real de Pillow verificado contra
+    # produccion (PythonAnywhere): 89.478.485 pixeles -- distinto del
+    # 178.956.970 que da la documentacion generica de Pillow (version
+    # mas antigua en este venv concreto). Techo de seguridad fijado
+    # por debajo de ese dato real, no del generico. En vez de
+    # desactivar la proteccion globalmente (quitaria defensa real de
+    # DoS para cualquier PDF que pase por aqui, nunca se hace), se
+    # calcula el DPI seguro para cada pagina segun su tamano fisico
+    # real, y solo se baja cuando hace falta -- el resto de paginas
+    # normales nunca se ven afectadas.
+    SAFE_MAX_PIXELS = 80_000_000  # margen real bajo el limite de Pillow en produccion
     MIN_DPI = 100  # por debajo, el texto ya no es fiable para Tesseract
 
     text_parts = []
