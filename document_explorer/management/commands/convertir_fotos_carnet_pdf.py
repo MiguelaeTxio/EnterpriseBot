@@ -48,6 +48,7 @@ ROOT = "DOC. PERSONAL/FOTOS CARNET"
 EXCLUIDOS = {"FRANCISCO GOMEZ GOMEZ.docx", "INDICE.pub", "LISTADO DE FOTOS.pub"}
 
 _PAREN_RE = re.compile(r"\([^)]*\)")
+_RUIDO = {"NUEVO", "FOTO", "FOTOS", "COMPRIMIDO", "RED", "II", "III", "IV"}
 
 
 def _tokens(texto):
@@ -55,7 +56,7 @@ def _tokens(texto):
     t = t.replace(",", " ").replace(".", " ")
     return set(
         w for w in re.split(r"\s+", t.strip().upper())
-        if len(w) > 1 and w != "NUEVO"
+        if len(w) > 1 and w not in _RUIDO
     )
 
 
