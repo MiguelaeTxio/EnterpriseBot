@@ -661,13 +661,21 @@ CANDIDATES_SAFE = {
             "VIDA LABORAL",
         ],
         "VACACIONES": ["VACACIONES"],
-        # EPIS deliberadamente FUERA (S48, correccion de Miguel Angel):
-        # los documentos de EPI se consumen hacia EpiDelivery/
-        # EpiReview (modelo propio de S47), nunca se clasifican como
-        # document_type=EPIS por este recorrido heuristico -- flujo
-        # distinto. Sin esta exclusion, ademas, "EPIS ALTA
-        # VISIBILIDAD" habria colisionado en falso con ALTA (ver
-        # EXCLUSIONS mas abajo).
+        # REVERTIDO EN S66 -- decision verbatim de Miguel Angel:
+        # "Todo lo relacionado con EPIs debe clasificarse como EPIs
+        # [...] no se pasa ningun tipo de dominio [...] hasta que no
+        # hagamos el cambio [...] hay que clasificarlos todos como
+        # EPIs de momento". Revierte la exclusion deliberada de S48
+        # (ver heuristic_type_service.py, folder_based_type(), donde
+        # tambien se revierte el bloqueo universal). Nunca se reparte
+        # en trato manual (entrega/ficha tecnica/papelera) como se hizo
+        # puntualmente en S65 -- se tipa TODO como EPIS sin excepcion,
+        # a la espera del futuro modelo de extraccion a base de datos
+        # (EpiDelivery/EpiReview) que dejara solo las fichas tecnicas
+        # como documento y borrara el resto. "EPI" ya cubre el plural
+        # via el sufijo S? automatico de _build_pattern -- no hace
+        # falta anadir "EPIS" aparte.
+        "EPIS": ["EPI"],
     },
 }
 
