@@ -4272,55 +4272,199 @@ solo la consola sftp permanente) y el directorio de descarga de
 Miguel Ángel señaló correctamente que el modelo perdió de vista el
 propósito real de ese directorio en mitad de la sesión.
 
-## HOJA DE RUTA PARA LA SIGUIENTE SESIÓN (S67)
+### COMPLETADAS EN S67
 
-**Pregunta obligatoria, primera línea (2.ª+ sesión sin avanzar --
-`RETENCIONES`, `MANUALES DE USO`, `NO CONFORMES` ya estaban en
-"arrastrado 2.ª sesión" al cierre de S65, y S66 tampoco los tocó):**
-¿qué hacemos con `RETENCIONES` (dossier multi-persona, mismo problema
-estructural que `RECONOCIMIENTO_MEDICO`, sin diseño de split
+**Corrección real de la cifra arrastrada de S66 (536/330 no
+coincidían con nada).** Verificado empíricamente contra el servidor,
+mismo filtro exacto que `local_ocr_classify.py`: el residuo real de
+`DOC. PERSONAL` sin tipo al abrir S67 era **515**, no 536 ni 330 —
+ninguna de las dos cifras arrastradas se había vuelto a comprobar
+contra datos reales desde que se escribió. Desglose real por carpeta:
+459 bajo `DOC. PERSONAL/PERSONAL/` (subárbol por trabajador), 56
+transversales (`RETENCIONES` 14, `PLAN DE ACTUACION FRENTE AL CALOR`
+11, `NOMBRAMIENTO RECURSO PREVENTIVO`/`JEFE DE MANIOBRAS` 12,
+`LISTADOS MAQUINARIA Y PERSONAL` 7, `MEDIDAS ADICIONALES DE
+PROTECCION` 4, `ENTREGA EPIS` 4, sueltos varios 4).
+
+**Diagnóstico de dosier agotado por nombre.** Ejecutado
+`resolve_document_type_heuristic()` completo sobre los 459 de
+`PERSONAL/`: resultado real, cero dosieres detectables por nombre
+(`DOSSIER_PAIRS`), cero tipos resueltos — confirma que ese residuo ya
+sobrevivió a todas las pasadas de heurística de nombre de sesiones
+anteriores. Los combos `ALTA`+`IDC`/`IDC`+`RECONOCIMIENTO_MEDICO` de
+S66 se resolvieron por contenido (Fase B/OCR), no por nombre, y no
+quedan ya en este residuo.
+
+**Familia `MEDIA` + tipos `IMAGEN`/`VIDEO`/`AUDIO` (migración `0050`,
+commit `35ad507`).** Decisión explícita de Miguel Ángel tras
+identificar a mano que 132 de los 459 eran fotos/vídeos/audios de
+WhatsApp sin ningún tipo documental real aplicable: tres tipos
+separados desde el principio (no un `MEDIA` genérico), `domain=
+PERSONAL`, `tracks_expiry=False`.
+
+**Bug real corregido: `folder_based_type()` nunca matcheaba `/BAJAS/`
+cuando `BAJAS` era el ÚLTIMO segmento de la ruta** (sin barra de
+cierre) — confirmado empíricamente con la carpeta real de Ramos
+Zambrana. Fix: barra de cierre virtual antes de comparar (commit
+`dfdc7a9`) — no rompe ninguna coincidencia previa, solo habilita las
+que estaban rotas. Este único fix rescató decenas de archivos reales
+en todo el residuo (Ramos Jiménez, Díaz Quintero, Zafra Peralta,
+García Luque, Moyano Gutiérrez, Triviño Benítez, Rodríguez Moreno...).
+
+**Comando `assign_media_types.py` (commit `236dd76`), corregido el
+mismo día (`dfdc7a9`) tras incidente real:** la primera versión
+asignaba `IMAGEN`/`VIDEO`/`AUDIO` solo por extensión, sin pasar antes
+por la heurística completa -- Miguel Ángel identificó a mano varios
+casos reales (`TARJETA SS...jpg`, `CUENTA BANCARIA.jpg`, `AUTORIZACION
+CONDUCIÓN...jpg`) que habrían caído al cajón de media pese a ser fotos
+de documentos ya tipificados. Corregido para llamar siempre primero a
+`resolve_document_type_heuristic()`; la extensión real de GCS pasa a
+ser el último recurso, nunca el primer filtro.
+
+**Tres huecos reales de palabra clave, confirmados uno a uno con
+archivos/imágenes reales aportadas por Miguel Ángel (mismo commit
+`dfdc7a9`):**
+- `SEG_SOCIAL`: + `TARJETA SS`, `TARJ S SOCIAL` (abreviaturas reales).
+- `CERTIFICADO_BANCARIO`: + `CUENTA BANCARIA`, `CUENTA BCO` (variante
+  sin abreviar de `CTA`).
+- `AUTORIZACION_TEMPORAL_CONDUCIR`: + `AUTORIZACION CONDUCCION`
+  (confirmado con documento real DGT Granada, Rachid Benali).
+
+**Comando `apply_personal_folder_types.py` (commit `bd5556d`)** --
+cierra el hueco que `assign_media_types.py` dejaba (detectaba "TIPO
+REAL, NO ES MEDIA" pero nunca lo escribía), acotado exclusivamente a
+`DOC. PERSONAL/PERSONAL/`, nunca toca `DOC. MAQUINAS`.
+
+**Aplicación real, verificada persona por persona contra
+`is_active_employee` antes de escribir nada:**
+- 99 archivos → `IMAGEN`/`VIDEO`/`AUDIO` (82 con persona vinculada + 17
+  con tipo asignado y dominio pendiente). 24 de 27 personas activas
+  confirmadas; los 3 restantes (`None`) resultaron ser el propio
+  Adolfo Álvarez (dueño) y dos candidatos `PTE CONTRATACION`, nunca
+  bajas.
+- 39 archivos → tipo real (`BAJA_PERSONAL`/`SEG_SOCIAL`/
+  `CERTIFICADO_BANCARIO`), rescatados por los fixes de arriba.
+- 1 archivo a papelera: `Certif registro civil nacimiento-Castilla
+  Codesal.jpeg` -- Cristian-David Castilla Codesal no tiene ninguna
+  `PersonIdentity`, confirmado por consulta real (no es de los 70
+  activos).
+- 4 archivos a papelera: bajas confirmadas verbatim por Miguel Ángel
+  -- Felipe Martín Portillo (carta de despido real en el propio
+  archivo), Manuel Cruces Gómez (ídem), Laura Castilla de los Santos
+  (CV, nunca llegó a ser trabajadora). La familia Álvarez Díaz
+  (Adolfo, Adelaida, Alberto, Alejandro Sergio, José Luis) y José
+  Manuel Gómez Carvajal quedaron confirmados como activos reales
+  (`is_active_employee` corregido a `True` para Gómez Carvajal --
+  pasó de autónomo a régimen general, hace partes de trabajo de
+  taller).
+
+**Dosier de carnés de Paulo Correa Muñoz, resuelto de extremo a
+extremo.** Miguel Ángel partió a mano la foto combinada (`CARNES
+DELANTERO`/`TRASERA`, 3 documentos distintos en una sola imagen) en 6
+imágenes reales (delantero+trasero × 3), aportadas por el chat.
+Combinadas en 3 PDFs de 2 páginas, indexados vía `upload_bytes()` +
+`refresh_folder()` (mismo mecanismo que S66) bajo su carpeta real,
+vinculados a su `PersonIdentity` (pk=198) con tipo y `expiry_date`
+reales leídos del propio documento: `TARJETA_CUALIF_CONDUCTOR`
+(caduca 27/10/2024), `CARNET_CONDUCIR` (caduca 23/05/2027), `DNI`
+(caducado 18/11/2023). Los dos originales combinados, a papelera
+(dosier ya dividido).
+
+**Análisis de frecuencia de palabras sobre el residuo restante
+(316).** Filtrado ya nombres propios (Álvarez, Díaz, José, Antonio,
+Gómez, Quintero...). Patrones reales candidatos a keyword/tipo nuevo,
+sin decidir todavía: `COLEGIO`+`GUARDERIA` (19), `HORARIO`+`JORNADA`
+(15), `ITC`+`MINAS`+`MINERIA`+`RECICLADO` (16, probable `FORMACION`),
+`DISCAPACIDAD` (4), `NIE` (4), `FALTA` (5), `LIBRO` (3),
+`PLANTILLA` (3). Bolsa genérica sin tipo discernible por nombre solo:
+`CERTIF`/`CERTIFICADO` (28), `DOCUMENTACION`/`DOCUMENTO`/`TODO`/
+`VARIOS` (23).
+
+**HALLAZGO CRÍTICO NUEVO, SIN RESOLVER -- alcance mucho mayor que lo
+trabajado hoy.** Al revisar `COLEGIO` en el propio explorador del
+panel (no en el residuo sin tipo, sino en TODO `DOC. PERSONAL`),
+Miguel Ángel encontró archivos **ya tipificados** viviendo dentro de
+carpetas `DOC. PERSONAL/PERSONAL/BAJAS/...` y `.../ADMINISTRACION/
+BAJAS/...` -- gente que ya no trabaja aquí, con documentación que
+sigue apareciendo en las búsquedas del explorador en vez de estar en
+papelera. Medido con datos reales, sin tocar nada:
+- **5.526 archivos reales** viven bajo cualquier carpeta que contenga
+  `BAJAS` en `DOC. PERSONAL` (con o sin tipo asignado).
+- **131 personas confirmadas NO activas** (`is_active_employee` !=
+  `True`) -- candidatas reales a papelera masiva.
+- **15 trabajadores ACTIVOS reales con documentación mezclada ahí
+  dentro** (Jorge Ramírez García 78 archivos, Paloma Graña Álvarez 38,
+  Jesús Martín González 19, Jacinto Rebollo Manzano 23, Enrique
+  Álvarez Serrano 23, José Ramos Zambrana 15, Manuel Leandro Ramos
+  Jiménez 7, y 8 más con menos volumen) -- mismo patrón que el propio
+  Miguel Ángel detectó a mano con Rodríguez Moreno: hermanos con los
+  mismos dos apellidos, uno activo y otro de baja, resueltos mal por
+  apellido sin comprobar el nombre de pila completo o compartiendo
+  carpeta contenedora.
+- **1.020 archivos sin persona resuelta** por ninguno de los tres
+  resolutores (folder/nombre/ventana deslizante) -- ni de los 70
+  activos, ni reconocidos como no activos tampoco.
+
+Nunca tocado por prisa de cierre de sesión -- vaciar las carpetas
+`BAJAS` sin separar antes a los 15 activos se habría llevado por
+delante documentación real de trabajadores en activo.
+
+## HOJA DE RUTA PARA LA SIGUIENTE SESIÓN (S68)
+
+**Punto 1, prioridad real -- las carpetas `BAJAS` de `DOC. PERSONAL`
+(hallazgo de cierre de S67, ver arriba).** Antes de vaciar nada:
+1. Separar los 15 trabajadores activos detectados (lista completa en
+   el registro de S67 de más arriba) -- para cada uno, revisar sus
+   archivos uno a uno (no asumir por apellido) y moverlos/reindexarlos
+   a su carpeta real fuera de `BAJAS`, o confirmar con Miguel Ángel
+   caso por caso si de verdad es un hermano distinto de baja.
+2. Con los 15 activos ya separados, mandar a papelera real (vía
+   `trash_dossier_entry()`, 4.12) los archivos de las 131 personas
+   confirmadas no activas.
+3. Decidir con Miguel Ángel qué hacer con los 1.020 sin persona
+   resuelta -- ¿papelera directa (nadie de los 70 activos coincide) o
+   revisión antes?
+Criterio de cierre: `DocumentIndexEntry` bajo cualquier ruta `*BAJAS*`
+de `DOC. PERSONAL` sin ningún archivo real de los 15 activos
+detectados, y conteo real de personas no activas en papelera
+coincidiendo con el número confirmado por Miguel Ángel.
+
+**Punto 2 -- continuar el residuo de 316/318 (los que quedan tras
+descontar lo resuelto hoy) de `DOC. PERSONAL/PERSONAL/` con los
+patrones reales ya identificados en el análisis de frecuencia de S67**
+(ver arriba: `COLEGIO`+`GUARDERIA`, `HORARIO`+`JORNADA`, `ITC`+
+`MINAS`+`MINERIA`+`RECICLADO`, `DISCAPACIDAD`, `NIE`, `FALTA`,
+`LIBRO`, `PLANTILLA`), confirmando con Miguel Ángel el tipo real de
+cada grupo antes de dar por buena ninguna keyword nueva -- mismo
+criterio de toda la sesión, nunca adivinar por la palabra sola.
+
+**Punto 3, arrastrado sin decisión (2.ª sesión sin avanzar --
+`RETENCIONES`, `MANUALES DE USO`, `NO CONFORMES` ya arrastrados desde
+S65).** Pregunta obligatoria, primera línea de la sesión: ¿qué
+hacemos con `RETENCIONES` (dossier multi-persona, sin diseño de split
 decidido), los 3 numéricos de `ENTREGA EPIS/2024/EPIS DESGLOSADOS/
-SEMI`, `Entrega botiquines-máquinas.xlsx` (listado agregado sin
-extraer), `MANUALES DE USO` (156) y `NO CONFORMES` (15)? Sin tu
-decisión sobre por dónde empezar cada uno, la próxima sesión no puede
-avanzarlos por sí sola.
+SEMI`, `Entrega botiquines-máquinas.xlsx`, `MANUALES DE USO` (156) y
+`NO CONFORMES` (15)?
 
-1. **Retomar los 536 `DOC. PERSONAL` sin tipo, como pidió Miguel
-   Ángel explícitamente al cierre de S66 ("Comenzamos la siguiente
-   sesión con los 330" -- referido al residuo tras descontar los
-   ~200 que corresponden a los patrones ya identificados en la
-   muestra de hoy).** Criterio de cierre: recorrer el residuo real
-   (consulta directa igual que las de hoy) buscando más casos del
-   mismo patrón de dosier multi-tipo (`ALTA`+`IDC`,
-   `IDC`+`RECONOCIMIENTO_MEDICO`, etc.) vía `_dossier_types_already_
-   filed`, y aplicar el mismo mecanismo de extracción manual (subida
-   por sftp a `SWAP/` + `upload_bytes()`) a los que de verdad falten
-   sueltos. Cerrado cuando no queden más candidatos con ese patrón
-   real identificable.
-2. **El 1 error real de OCR** (`20250108 Baja al 30 01 2025.pdf`,
-   Delgado Hurtado -- imagen de 278M píxeles, bloqueada como
-   decompression bomb). Criterio de cierre: decidir con Miguel Ángel
-   si se redimensiona antes de OCR (y con qué límite real) o se deja
-   fuera de alcance permanentemente.
-3. **Con `DOC. PERSONAL` ya limpio de verdad, volver a `DOC. MAQUINAS`
-   por heurística de Fase A** (nunca OCR directo -- decisión de
-   Miguel Ángel en S66: *"vamos a acotar a personal [...] y cuando
-   hayamos terminado personal, seguimos con la heurística de las
-   máquinas"*). Mismo patrón que hoy con `PERSONAL`: muestra de
-   nombres reales del residuo (3.031), buscar candidatos a tipo/regla
-   de carpeta nuevos antes de plantear ningún OCR sobre `MAQUINAS`.
-   Criterio de cierre: al menos una pasada de calibración real
-   completada, con volumen medido antes de aplicar (nunca a ciegas).
-4. **Confirmar que la VM `h28-ocr-batch-1` fue parada** al cierre de
-   S66 (recordatorio de Comando S entregado, sin confirmación de
-   Miguel Ángel todavía). Criterio de cierre: `gcloud compute
-   instances list` mostrando `h28-ocr-batch-1` en `TERMINATED`, o
-   confirmación explícita de que sigue encendida a propósito.
+**Punto 4 -- el 1 error real de OCR** (`20250108 Baja al 30 01
+2025.pdf`, Delgado Hurtado -- imagen de 278M píxeles, decompression
+bomb), arrastrado de S66. Criterio de cierre: decidir con Miguel
+Ángel si se redimensiona antes de OCR (y con qué límite) o queda
+fuera de alcance permanente.
+
+**Punto 5 -- volver a `DOC. MAQUINAS` por heurística de Fase A**
+(nunca OCR directo, decisión ya tomada en S66), una vez `DOC.
+PERSONAL` esté de verdad limpio (incluidas las `BAJAS`). Criterio de
+cierre: al menos una pasada de calibración real completada, volumen
+medido antes de aplicar.
+
+**Punto 6 -- confirmar que la VM `h28-ocr-batch-1` fue parada**
+(arrastrado desde S66, sin confirmación todavía). Criterio de cierre:
+`gcloud compute instances list` mostrando `TERMINATED`, o
+confirmación explícita de que sigue encendida a propósito.
 
 **Pregunta pendiente sin urgencia, sin criterio de cierre forzado
 (arrastrada desde S65):** ¿mantener la cuenta de servicio compartida
 entre el agente H28 de escritorio y las VMs de OCR, o separarlas en
 dos cuentas distintas?
-
-
 
