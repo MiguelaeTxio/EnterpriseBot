@@ -30,6 +30,7 @@ diseño pendiente:
 DRY-RUN POR DEFECTO. Con --apply escribe de verdad.
 """
 from django.core.management.base import BaseCommand
+from django.db.models import Q
 
 from document_explorer.models import DocumentIndexEntry, DocumentTypeCatalog
 
@@ -96,13 +97,23 @@ class Command(BaseCommand):
             self.stdout.write("CLASIFICAR (MANUAL DE INSTRUCCIONES -> MANUAL_USO): %s / %s" % (entry.parent_path, entry.name))
 
         for subcarpeta, code in SCHEUERLE_SUBCARPETAS.items():
-            prefijo = SCHEUERLE_ROOT + subcarpeta + "/"
-            for entry in DocumentIndexEntry.objects.filter(
+            carpeta_exacta = SCHEUERLE_ROOT + subcarpeta
+            prefijo = carpeta_exacta + "/"
+            # Bug real detectado en dry-run S68: "01 Operation
+            # Instructions" tiene archivos DIRECTAMENTE dentro (sin
+            # subcarpeta), o sea parent_path termina exacto ahi, SIN
+            # barra final -- startswith(prefijo + "/") nunca lo
+            # encontraba. "05 Spare Parts" sí tiene subcarpetas
+            # (5.1, 5.2...) y por eso ese sí funcionaba. Se cubren
+            # ambos casos: la carpeta exacta y cualquier cosa debajo.
+            entries = DocumentIndexEntry.objects.filter(
                 bucket="cgs_grupo_alvarez", entry_kind=DocumentIndexEntry.KIND_FILE,
                 deleted_at__isnull=True, purged_at__isnull=True,
-                parent_path__startswith=prefijo,
                 document_type__isnull=True,
-            ).only("id", "parent_path", "name").iterator():
+            ).filter(
+                Q(parent_path=carpeta_exacta) | Q(parent_path__startswith=prefijo)
+            ).only("id", "parent_path", "name")
+            for entry in entries.iterator():
                 pks_por_tipo.setdefault(code, []).append(entry.pk)
                 self.stdout.write("CLASIFICAR (Scheuerle %s -> %s): %s / %s" % (subcarpeta, code, entry.parent_path, entry.name))
 
