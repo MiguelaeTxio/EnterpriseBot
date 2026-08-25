@@ -51,9 +51,12 @@ import os
 import re
 
 from django.core.management.base import BaseCommand
+from django.utils import timezone
 
-from document_explorer.classification_service import trash_dossier_entry
+from document_explorer.classification_service import _resolve_dossier_trash_user
 from document_explorer.models import DocumentIndexEntry, PersonIdentity
+
+_BATCH_SIZE = 500
 
 ROOT_OPERARIOS_BAJAS = "DOC. PERSONAL/PERSONAL/BAJAS/OPERARIOS BAJAS/"
 ROOT_BAJAS_DIRECTAS = "DOC. PERSONAL/PERSONAL/BAJAS"
@@ -111,6 +114,22 @@ class Command(BaseCommand):
             help="Escribe de verdad. Sin esta flag, solo informa.",
         )
 
+    def _clasificar_qs(self, qs, extraer_nombre, totales, pks_a_papelera, activos_tokens):
+        for entry in qs.iterator():
+            nombre = extraer_nombre(entry)
+            es_activo, quien = _clasificar(nombre, activos_tokens)
+            totales["candidatos"] += 1
+            if es_activo:
+                totales["retenidos"] += 1
+                self.stdout.write(
+                    "RETENIDO (coincide con activo%s): %s / %s"
+                    % (" -- %s" % quien[1] if quien else " -- AMBIGUO, revisar a mano",
+                       entry.parent_path, entry.name)
+                )
+                continue
+            pks_a_papelera.append(entry.pk)
+            self.stdout.write("A PAPELERA: %s / %s" % (entry.parent_path, entry.name))
+
     def handle(self, *args, **options):
         apply_changes = options["apply"]
 
@@ -124,6 +143,7 @@ class Command(BaseCommand):
             activos_tokens.append((pk, full.strip(), _tokens(full)))
 
         totales = {"candidatos": 0, "a_papelera": 0, "fallos": 0, "retenidos": 0}
+        pks_a_papelera = []
 
         # --- 1) OPERARIOS BAJAS/<persona>/... ---
         qs_op = DocumentIndexEntry.objects.filter(
@@ -134,28 +154,11 @@ class Command(BaseCommand):
             parent_path__startswith=ROOT_OPERARIOS_BAJAS,
         ).only("id", "parent_path", "name")
 
-        for entry in qs_op.iterator():
+        def _nombre_op(entry):
             resto = entry.parent_path[len(ROOT_OPERARIOS_BAJAS):]
-            carpeta = resto.split("/")[0] if resto else ""
-            es_activo, quien = _clasificar(carpeta, activos_tokens)
-            totales["candidatos"] += 1
-            if es_activo:
-                totales["retenidos"] += 1
-                self.stdout.write(
-                    "RETENIDO (coincide con activo%s): %s / %s"
-                    % (" -- %s" % quien[1] if quien else " -- AMBIGUO, revisar a mano",
-                       entry.parent_path, entry.name)
-                )
-                continue
-            if apply_changes:
-                ok = trash_dossier_entry(entry)
-                if ok:
-                    totales["a_papelera"] += 1
-                else:
-                    totales["fallos"] += 1
-                    self.stdout.write("FALLO: %s / %s" % (entry.parent_path, entry.name))
-            else:
-                self.stdout.write("IRIA A PAPELERA: %s / %s" % (entry.parent_path, entry.name))
+            return resto.split("/")[0] if resto else ""
+
+        self._clasificar_qs(qs_op, _nombre_op, totales, pks_a_papelera, activos_tokens)
 
         # --- 2) Archivos directos "BAJA <apellidos>.pdf" bajo BAJAS/ (nunca BAJA PERSONAL/) ---
         qs_directos = DocumentIndexEntry.objects.filter(
@@ -166,7 +169,7 @@ class Command(BaseCommand):
             parent_path=ROOT_BAJAS_DIRECTAS,
         ).only("id", "name")
 
-        for entry in qs_directos.iterator():
+        def _nombre_directo(entry):
             # Bug real detectado en dry-run S68: dejar la extension
             # (".pdf") pegada al nombre generaba un token suelto "PDF"
             # que rompia la coincidencia exacta por subconjunto contra
@@ -175,25 +178,41 @@ class Command(BaseCommand):
             nombre_persona, _ext = os.path.splitext(entry.name)
             if nombre_persona.upper().startswith("BAJA "):
                 nombre_persona = nombre_persona[5:]
-            es_activo, quien = _clasificar(nombre_persona, activos_tokens)
-            totales["candidatos"] += 1
-            if es_activo:
-                totales["retenidos"] += 1
+            return nombre_persona
+
+        self._clasificar_qs(qs_directos, _nombre_directo, totales, pks_a_papelera, activos_tokens)
+
+        if apply_changes and pks_a_papelera:
+            # Rendimiento real, incidencia S68: trash_dossier_entry()
+            # resuelve el CompanyUser admin y hace un save() individual
+            # POR ARCHIVO -- miles de idas y vueltas a BBDD para un
+            # lote de ~2800, la consola de PythonAnywhere se corto
+            # antes de terminar. Se resuelve el admin UNA sola vez y
+            # se aplica por lotes con UPDATE masivo (mismo efecto
+            # exacto que trash_dossier_entry: solo deleted_at/
+            # deleted_by, blob_name intacto -- verificado que
+            # DocumentIndexEntry no tiene save() propio ni signals que
+            # dependan de pasar por .save()).
+            admin = _resolve_dossier_trash_user()
+            if admin is None:
                 self.stdout.write(
-                    "RETENIDO (coincide con activo%s): %s / %s"
-                    % (" -- %s" % quien[1] if quien else " -- AMBIGUO, revisar a mano",
-                       entry.parent_path, entry.name)
+                    "FALLO GLOBAL: no se pudo resolver el CompanyUser "
+                    "admin de papelera -- nada aplicado, %d pendientes."
+                    % len(pks_a_papelera)
                 )
-                continue
-            if apply_changes:
-                ok = trash_dossier_entry(entry)
-                if ok:
-                    totales["a_papelera"] += 1
-                else:
-                    totales["fallos"] += 1
-                    self.stdout.write("FALLO: %s / %s" % (entry.parent_path, entry.name))
+                totales["fallos"] = len(pks_a_papelera)
             else:
-                self.stdout.write("IRIA A PAPELERA: %s / %s" % (entry.parent_path, entry.name))
+                ahora = timezone.now()
+                for i in range(0, len(pks_a_papelera), _BATCH_SIZE):
+                    lote = pks_a_papelera[i:i + _BATCH_SIZE]
+                    n = DocumentIndexEntry.objects.filter(pk__in=lote).update(
+                        deleted_at=ahora, deleted_by=admin,
+                    )
+                    totales["a_papelera"] += n
+                    self.stdout.write(
+                        "lote %d-%d aplicado (%d filas)"
+                        % (i, i + len(lote), n)
+                    )
 
         self.stdout.write("=== RESUMEN (%s) ===" % (
             "APLICADO" if apply_changes else "DRY-RUN, nada escrito"
