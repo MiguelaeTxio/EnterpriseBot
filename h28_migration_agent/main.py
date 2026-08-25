@@ -16,6 +16,7 @@ configuration. Every chosen folder is always copied recursively and
 completely (Miguel Angel's verbatim decision, S031).
 """
 
+import ctypes
 import logging
 import os
 import sys
@@ -1102,5 +1103,78 @@ def main():
     icon.run(setup=_resume_watched_folders)
 
 
+# Incidente real S66: 3 procesos AgenteMigracionH28.exe corriendo a la
+# vez en el PC de Miguel Angel (tasklist real: dos con horas de CPU
+# reales distintas -- lanzamientos independientes en momentos
+# distintos -- mas uno recien arrancado), sin que la Tarea Programada
+# ("Durante el inicio de sesion") lo detectara como duplicado desde su
+# propio lado. Causa raiz confirmada leyendo este archivo completo:
+# nunca existio ningun mecanismo de instancia unica -- nada impedia
+# que sucesivos inicios de sesion (o un doble lanzamiento manual)
+# dejaran instancias huerfanas corriendo en paralelo, escribiendo
+# watched_folders.json/history.json a la vez (riesgo real de
+# sobrescritura cruzada) y subiendo la misma documentacion nueva por
+# duplicado a cuarentena.
+#
+# Mutex nombrado de Windows via ctypes (sin dependencia nueva): el
+# primer proceso que llama CreateMutexW se queda con el mutex: los
+# siguientes reciben ERROR_ALREADY_EXISTS (183) y salen de inmediato
+# con aviso visible, en vez de arrancar una segunda copia silenciosa.
+# El handle se libera solo al terminar el proceso (Windows lo hace
+# automaticamente) -- no hace falta cerrarlo a mano.
+# ---
+# Real incident S66: 3 AgenteMigracionH28.exe processes running at
+# once on Miguel Angel's PC (real tasklist: two with distinct real CPU
+# times -- independent launches at different times -- plus one just
+# started), without the Scheduled Task ("At log on") detecting it as
+# a duplicate from its own side. Root cause confirmed by reading this
+# whole file: no single-instance mechanism ever existed -- nothing
+# stopped successive log-ons (or a manual double-launch) from leaving
+# orphaned instances running in parallel, writing watched_folders.json/
+# history.json at the same time (real risk of cross-overwrite) and
+# uploading the same new documentation twice to quarantine.
+#
+# Windows named mutex via ctypes (no new dependency): the first
+# process to call CreateMutexW keeps the mutex; subsequent ones get
+# ERROR_ALREADY_EXISTS (183) and exit immediately with a visible
+# warning, instead of starting a second silent copy. The handle is
+# released automatically by Windows when the process ends -- no
+# manual close needed.
+_SINGLE_INSTANCE_MUTEX_NAME = (
+    "Global\\EnterpriseBot_H28MigrationAgent_SingleInstance"
+)
+_ERROR_ALREADY_EXISTS = 183
+
+
+def _acquire_single_instance_lock():
+    """Return a mutex handle if this is the only running instance,
+    None if another instance already holds it.
+    ---
+    Devuelve un handle de mutex si esta es la unica instancia en
+    marcha, None si ya hay otra instancia con el mutex tomado.
+    """
+    mutex = ctypes.windll.kernel32.CreateMutexW(
+        None, False, _SINGLE_INSTANCE_MUTEX_NAME,
+    )
+    if ctypes.windll.kernel32.GetLastError() == _ERROR_ALREADY_EXISTS:
+        return None
+    return mutex
+
+
 if __name__ == "__main__":
+    _instance_lock = _acquire_single_instance_lock()
+    if _instance_lock is None:
+        logger.warning(
+            "Ya hay una instancia del Agente H28 en ejecucion -- "
+            "esta copia se cierra sin arrancar (S66)."
+        )
+        messagebox.showwarning(
+            "Agente H28 ya en ejecución",
+            "Ya hay una instancia del Agente de Migración H28 en "
+            "ejecución en este PC.\n\n"
+            "Revisa el icono en la bandeja del sistema (junto al "
+            "reloj) -- puede estar oculto en el desplegable de "
+            "iconos ocultos.",
+        )
+        sys.exit(0)
     main()
