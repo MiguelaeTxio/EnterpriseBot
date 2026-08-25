@@ -363,7 +363,7 @@ CANDIDATES_SAFE = {
         # los 599 archivos restantes con nombre real (ver
         # EnterpriseBot_026_GET.txt), medidos contra volumen real antes
         # de aplicar (EnterpriseBot_027_GET.txt).
-        "ALTA_IDC": ["ALTA+IDC", "ALTA + IDC", "IDC"],  # 10 coincidencias reales
+        "ALTA_IDC": ["ALTA+IDC", "ALTA + IDC"],  # combo real ALTA+IDC solamente -- "IDC" suelto retirado S66, tratado como dosier (ver DOSSIER_PAIRS)
         "AUTORIZACION_TEMPORAL_CONDUCIR": [
             "AUTORIZACION TEMPORAL", "AUT TEMPORAL CONDUCIR",
             "AUT USO TEMP CONDUCIR", "AUTORIZACION PROVISIONAL PARA CONDUCIR",
