@@ -55,6 +55,18 @@ SPECIFIC_WINS = [
     # Mismo criterio que ALTA_MEDICA sobre ALTA -- el mas especifico
     # gana.
     ("ALTA_IDC", "ALTA"),
+    # Añadido S66: bug real detectado -- ALTA_IDC incluye "IDC" suelto
+    # como una de sus propias frases candidatas (ver
+    # calibrate_fase_a_keywords.py), asi que CUALQUIER archivo con
+    # "IDC" en el nombre matchea tanto ALTA_IDC como IDC a la vez, por
+    # diseno. La regla ALTA_IDC/ALTA de arriba no cubria este segundo
+    # par -- un archivo con "ALTA"+"IDC" en el nombre quedaba con
+    # {ALTA_IDC, IDC} sin desempate tras aplicar esa regla, y con solo
+    # "IDC" en el nombre (sin "ALTA") tambien queda ambiguo del mismo
+    # modo. Mismo criterio de siempre: el mas especifico gana. Ver
+    # "ALTA 1-11-2008+IDC DIAZ QUINTERO,ANT JESUS.pdf" (id 35054),
+    # hoja de ruta S65->S66 punto 4.
+    ("ALTA_IDC", "IDC"),
     ("ALTA", "SEG_SOCIAL"),
     ("CURSO", "TACOGRAFO"),
     # Retirada S56 (migracion 0036): FACTURA_TERCEROS se fusiono en
