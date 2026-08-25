@@ -4153,59 +4153,174 @@ dispositivo (`PEE: PC → A → PC`), no por agotamiento natural del
 trabajo.** Queda trabajo real abierto a mitad de flujo, ver hoja de
 ruta -- no confundir con un cierre de bloque limpio.
 
-## HOJA DE RUTA PARA LA SIGUIENTE SESIÓN (S66)
+## COMPLETADAS EN S66
 
-**Antes de tocar OCR/VMs, cerrar estos 4 puntos sueltos de S65, en
-este orden:**
+Sesión completa de continuidad de H30, dedicada por entero a cerrar
+los 4 puntos sueltos de S65 y a la primera pasada real de Fase B/OCR
+sobre `DOC. PERSONAL`.
 
-1. **Confirmar (o relanzar) `EnterpriseBot_037_GET.txt`.** La consulta
-   mide cuántos archivos EPI/EPIS quedaron fuera del recuento de 2.544
-   por el bug de límite de palabra con guion bajo (`_EPIS_`). Criterio
-   de cierre: número exacto devuelto por la consulta; si es mayor que
-   0, aplicarlos con `_build_pattern` (no con `\b` suelto) antes de
-   seguir.
-2. **Decidir el hallazgo TARJ.S.SOCIAL vs TARJETA_SANITARIA.**
-   Criterio de cierre: contar cuántos archivos hay ya tipados como
-   `SEG_SOCIAL` vía la palabra clave "TARJETA S SOCIAL"/"TARJ S
-   SOCIAL" (consulta directa a BD) y que Miguel Ángel decida si hace
-   falta re-auditarlos contra el contenido real antes de dar la
-   heurística de `SEG_SOCIAL` por fiable en ese patrón.
-3. **Revisar el archivo que no llegó a subirse en la muestra de 10:**
-   `Gruas Alvarez - Delegación.pdf` (`DOC. PERSONAL/PERSONAL/TALLER/
-   CAÑAMERO NAVARRO, PABLO (GR)/CAÑAMERO NAVARRO, PABLO`). Criterio de
-   cierre: contenido real revisado, tipo decidido o descartado.
-4. **Confirmar si `ALTA 1-11-2008+IDC DIAZ QUINTERO,ANT JESUS.pdf` ya
-   quedó resuelto por las reglas actuales de `ALTA_IDC`.** Apareció
-   todavía sin tipo en la muestra de 10 pese a que el patrón "IDC"
-   solo debería haberlo resuelto ya (ver `SPECIFIC_WINS`,
-   `ALTA_IDC` gana sobre `ALTA`). Criterio de cierre: consulta directa
-   sobre `document_type` de ese archivo concreto; si sigue sin tipo,
-   averiguar por qué antes de asumir que la regla funciona en general.
+**Punto 1 (EPI/EPIS) -- reversión de diseño, no solo bug puntual.**
+Verificado con `_build_pattern` real que el bug de límite de palabra
+con guion bajo afectaba a 35 archivos reales. Al presentarlo, Miguel
+Ángel revirtió explícitamente la decisión de S48: *"Todo lo
+relacionado con EPIs debe clasificarse como EPIs [...] hay que
+clasificarlos todos como EPIs de momento [...] hasta que no hagamos
+el cambio"* (futuro modelo de extracción a base de datos que dejará
+solo las fichas técnicas como documento). Revertida la exclusión en
+`calibrate_fase_a_keywords.py` (`"EPIS": ["EPI"]`) y el bloqueo
+universal en `heuristic_type_service.folder_based_type()` (commit
+`3c7bdc6`). Aplicado con `run_fase_a_sweep --apply`: **2.604 archivos
+reales tipados como `EPIS`**, verificado con consulta directa a BD
+(no solo la salida del propio comando).
 
-**Pregunta pendiente sin urgencia, sin criterio de cierre forzado:**
-¿mantener la cuenta de servicio compartida entre el agente H28 de
-escritorio y las VMs de OCR (con la protección ya documentada en
-`SESSION_VARIABLES.md`), o separarlas en dos cuentas de servicio
-distintas para que este tipo de incidente deje de ser posible del
-todo?
+**Punto 2 (TARJ.S.SOCIAL vs TARJETA_SANITARIA) -- cerrado, riesgo
+real mínimo.** La primera consulta usó una frase inventada
+("TARJ S SOCIAL") que no existe en el diccionario real -- repetida
+con la frase real ("TARJETA S SOCIAL"): solo **1 archivo** en toda la
+BD. Resultó ser una foto con las dos tarjetas (Seguridad Social y
+Tarjeta Sanitaria) juntas -- confirmado por Miguel Ángel que la cara
+de la Tarjeta Sanitaria no lleva datos identificativos, así que no
+merece duplicarse. Se queda como `SEG_SOCIAL`, sin más acción.
 
-**Con los 4 puntos anteriores cerrados, retomar Fase B/OCR sobre lo
-que quede de verdad sin tipo:** decisión ya tomada por Miguel Ángel en
-S65 -- 1 VM, 3 instancias (no 4 VMs x 3 como en el incidente de S64),
-discos ya bootstrapeados y listos para reanudar (`h28-ocr-batch-1/2/3/
-4`, verificar cuál sigue viable). Alcance real a esa altura: ~601
-`DOC. PERSONAL` (menos lo que resuelvan los puntos 1-4) + 3.031
-`DOC. MAQUINAS` (prácticamente sin tocar en S65, la sesión se dedicó
-entera a PERSONAL).
+**Punto 3 (`Gruas Alvarez - Delegación.pdf`) -- tipo nuevo real.**
+Contenido real revisado: Acuerdo de Colaboración Formativa (Anexo IV
+CFP, Junta de Andalucía) para la Formación en Centros de Trabajo de
+un alumno en prácticas (Cañamero Navarro, Pablo). Ningún tipo
+existente lo cubría (no es `CONTRATO` ni `FORMACION`). Alta de
+`CONVENIO_FCT` (migración `0049`, domain=PERSONAL, family=LABORAL) y
+aplicado al archivo real (id 40098).
 
-**Sigue aparcado, sin tocar en S65, tal cual quedó en S64:**
-`RETENCIONES` (dossier multi-persona, mismo problema estructural que
-`RECONOCIMIENTO_MEDICO`, pendiente de diseño de split), los 3
-archivos numéricos de `ENTREGA EPIS/2024/EPIS DESGLOSADOS/SEMI`, y
-`Entrega botiquines-máquinas.xlsx` (listado agregado, pendiente de
-extracción a base de datos persona por persona). `MANUALES DE USO`
-(156) y `NO CONFORMES` (15) -- nunca se llegaron a revisar en S65,
-siguen exactamente como los dejó S64 (arrastrado 2.ª sesión sin
-avanzar).
+**Punto 4 (`ALTA`+`IDC`) -- rediseño real tras corrección de Miguel
+Ángel.** Investigación inicial: `ALTA_IDC` incluía "IDC" suelto como
+frase candidata propia, causando colisión permanente con el tipo
+`IDC` genérico. Primer intento (`SPECIFIC_WINS` `ALTA_IDC`>`IDC`)
+tenía efecto colateral real: habría reclasificado 234 archivos ya
+tipados como `IDC` plano sin combo real. Revertido. Miguel Ángel
+corrigió el diseño de fondo: *"ALTA + IDC es un dosier [...] hay que
+dividirlos"* -- `ALTA` (Resolución de Alta) e `IDC` (Informe de Datos
+para la Cotización) son dos documentos oficiales distintos, nunca un
+tipo fusionado. Añadido `DOSSIER_PAIRS` real (`{ALTA, IDC}`), retirado
+"IDC" suelto de las frases de `ALTA_IDC` (commit `c0ac0da`). Construido
+`split_alta_idc_dossier.py` (sin OCR de contenido -- dominio ya
+resuelto por carpeta, fecha por regex del nombre de origen) y aplicado
+a los **10 archivos reales del dosier** -- 20 archivos nuevos
+(`ALTA`+`IDC` por separado), 10 originales a papelera.
+
+**Incidencia real nueva -- agente H28 duplicado.** 3 procesos
+`AgenteMigracionH28.exe` corriendo a la vez (tasklist real), causa
+raíz confirmada: nunca existió mecanismo de instancia única. Añadido
+mutex nombrado de Windows vía `ctypes` (commit `fec88bd`),
+recompilado, verificado en producción: una sola instancia tras
+reiniciar la Tarea Programada.
+
+**Incidencia real nueva -- Excel de trabajadores desactualizado y
+fallo sistémico de `folder_path`.** El Excel commiteado desde S54
+estaba obsoleto (Miguel Ángel subió la versión real, 63 DNIs frente a
+70 del viejo -- 10 bajas reales no reflejadas, 3 altas nuevas sin
+ficha). Sustituido el archivo (commit `a47f8fe`). Investigando por
+qué Antonio Jesús Díaz Quintero (primo de los dueños, trabajador
+activo real) no tenía `PersonIdentity`, se encontró que **sí la
+tenía**, pero `seed_person_identities` la sembró con `folder_path`
+apuntando a una carpeta de formación compartida por varias personas
+(el archivo "Ficha inscripción+DNI" que usó como semilla no era su
+carpeta personal). Corregido a mano (pk=3). Al comprobar el alcance
+real: **9 `PersonIdentity` más** con el mismo patrón pero distinto
+origen (`folder_path` apuntando a una carpeta de `BAJAS` obsoleta
+pese a `is_active_employee=True` en el Excel real) -- las 9
+verificadas con carpeta activa real (con archivos dentro, nunca
+carpetas vacías) y corregidas. Construido también
+`create_missing_person_identities_from_excel.py` (commit `56e8d8a`),
+que ya detecta este tipo de hueco hacia adelante -- corrige un fallo
+real de `import_worker_machine_excel.py`, que detectaba DNIs sin
+ficha (`workers_unmatched`) pero nunca los creaba.
+
+**Fase B/OCR -- primera pasada real sobre `DOC. PERSONAL`.** VM
+`h28-ocr-batch-1` arrancada, 1 VM/3 instancias (decisión ya tomada en
+S65). Muestra inicial sin acotar por dominio salió 18/20 `MAQUINAS`
+(84% del pool crudo) -- añadido `--domain MACHINE|PERSONAL|BOTH` a
+`local_ocr_classify.py`, y retirada de paso la exclusión `EPIS`
+obsoleta (S48) que ya no era coherente con la reversión del punto 1
+(commit `539f704`). Muestra estratificada de `PERSONAL` (20) y barrido
+completo a 3 shards (553 candidatos, ~123-145 c/u) confirmaron **0%
+de resolución real por `CONTENT_MARKERS`** -- hallazgo real, no ruido:
+el residuo que sobrevive a Fase A no tiene contenido con marcador
+reconocido. De los 17 `AMBIGUO` reales (patrón `ALTA`+`IDC`,
+`IDC`+`RECONOCIMIENTO_MEDICO`, `ALTA`+`RECONOCIMIENTO_MEDICO`,
+`ENTREGA_INFORMACION`+`RECONOCIMIENTO_MEDICO`, y un caso triple
+`IDC`+`RECONOCIMIENTO_MEDICO`+`TACOGRAFO`): 12 resueltos por papelera
+directa (ya tenían los tipos sueltos archivados, mismo mecanismo de
+`_dossier_types_already_filed` ya validado en S49), 2 resueltos
+extrayendo a mano la página real que faltaba (Cruces Heredia -- `ALTA`
+y `RECONOCIMIENTO_MEDICO`; Gómez García -- `TACOGRAFO`), subidos por
+Miguel Ángel vía sftp a `SWAP/` y de ahí a GCS con `upload_bytes()`. 2
+quedan aparcados (`GONZALEZ MAYORGA`, `DOMINGO CAMPOS` -- Miguel Ángel
+confirma que no son trabajadores reales, sin más acción). 1 error real
+sin resolver (imagen de 278 millones de píxeles, bloqueada por
+protección de "decompression bomb" de Pillow).
+
+**Resultado real verificado al cierre:** `DOC. PERSONAL` sin tipo
+536 (era ~601 al abrir S66). `DOC. MAQUINAS` sin tocar, 3.031 (Fase
+B/OCR sin empezar ahí -- decisión de Miguel Ángel de volver primero a
+heurística de Fase A, no a OCR).
+
+**Incidencias reales de sesión distintas de código:** confusión
+repetida de rutas sftp (`sdcard/Download` duplicado por una ruta
+relativa mal resuelta -- corregido con rutas absolutas); confusión
+entre el directorio de intercambio local real (`sdcard/Download/`,
+solo la consola sftp permanente) y el directorio de descarga de
+`gcloud compute scp` (consola PowerShell distinta, sin relación) --
+Miguel Ángel señaló correctamente que el modelo perdió de vista el
+propósito real de ese directorio en mitad de la sesión.
+
+## HOJA DE RUTA PARA LA SIGUIENTE SESIÓN (S67)
+
+**Pregunta obligatoria, primera línea (2.ª+ sesión sin avanzar --
+`RETENCIONES`, `MANUALES DE USO`, `NO CONFORMES` ya estaban en
+"arrastrado 2.ª sesión" al cierre de S65, y S66 tampoco los tocó):**
+¿qué hacemos con `RETENCIONES` (dossier multi-persona, mismo problema
+estructural que `RECONOCIMIENTO_MEDICO`, sin diseño de split
+decidido), los 3 numéricos de `ENTREGA EPIS/2024/EPIS DESGLOSADOS/
+SEMI`, `Entrega botiquines-máquinas.xlsx` (listado agregado sin
+extraer), `MANUALES DE USO` (156) y `NO CONFORMES` (15)? Sin tu
+decisión sobre por dónde empezar cada uno, la próxima sesión no puede
+avanzarlos por sí sola.
+
+1. **Retomar los 536 `DOC. PERSONAL` sin tipo, como pidió Miguel
+   Ángel explícitamente al cierre de S66 ("Comenzamos la siguiente
+   sesión con los 330" -- referido al residuo tras descontar los
+   ~200 que corresponden a los patrones ya identificados en la
+   muestra de hoy).** Criterio de cierre: recorrer el residuo real
+   (consulta directa igual que las de hoy) buscando más casos del
+   mismo patrón de dosier multi-tipo (`ALTA`+`IDC`,
+   `IDC`+`RECONOCIMIENTO_MEDICO`, etc.) vía `_dossier_types_already_
+   filed`, y aplicar el mismo mecanismo de extracción manual (subida
+   por sftp a `SWAP/` + `upload_bytes()`) a los que de verdad falten
+   sueltos. Cerrado cuando no queden más candidatos con ese patrón
+   real identificable.
+2. **El 1 error real de OCR** (`20250108 Baja al 30 01 2025.pdf`,
+   Delgado Hurtado -- imagen de 278M píxeles, bloqueada como
+   decompression bomb). Criterio de cierre: decidir con Miguel Ángel
+   si se redimensiona antes de OCR (y con qué límite real) o se deja
+   fuera de alcance permanentemente.
+3. **Con `DOC. PERSONAL` ya limpio de verdad, volver a `DOC. MAQUINAS`
+   por heurística de Fase A** (nunca OCR directo -- decisión de
+   Miguel Ángel en S66: *"vamos a acotar a personal [...] y cuando
+   hayamos terminado personal, seguimos con la heurística de las
+   máquinas"*). Mismo patrón que hoy con `PERSONAL`: muestra de
+   nombres reales del residuo (3.031), buscar candidatos a tipo/regla
+   de carpeta nuevos antes de plantear ningún OCR sobre `MAQUINAS`.
+   Criterio de cierre: al menos una pasada de calibración real
+   completada, con volumen medido antes de aplicar (nunca a ciegas).
+4. **Confirmar que la VM `h28-ocr-batch-1` fue parada** al cierre de
+   S66 (recordatorio de Comando S entregado, sin confirmación de
+   Miguel Ángel todavía). Criterio de cierre: `gcloud compute
+   instances list` mostrando `h28-ocr-batch-1` en `TERMINATED`, o
+   confirmación explícita de que sigue encendida a propósito.
+
+**Pregunta pendiente sin urgencia, sin criterio de cierre forzado
+(arrastrada desde S65):** ¿mantener la cuenta de servicio compartida
+entre el agente H28 de escritorio y las VMs de OCR, o separarlas en
+dos cuentas distintas?
+
 
 
