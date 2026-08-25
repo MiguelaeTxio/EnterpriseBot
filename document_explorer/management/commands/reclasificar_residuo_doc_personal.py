@@ -57,8 +57,14 @@ def _contiene_palabra(nombre_up, palabra):
     # Bug real detectado en dry-run S68: subcadena simple sin límite
     # de palabra hacía que "NIE" cazara "DANIEL" (D-A-NIE-L), colando
     # como falsos positivos un documento COVID y uno legal
-    # ("IND.ORDINARIO"). \b respeta límites de palabra de verdad.
-    return re.search(r"\b%s\b" % re.escape(palabra), nombre_up) is not None
+    # ("IND.ORDINARIO"). \b respeta límites de palabra de verdad --
+    # pero regex trata "_" como carácter de palabra, así que
+    # "..._DE_JORNADA_1..." no tenía frontera antes de "JORNADA" y
+    # se perdían archivos reales con guion bajo como separador
+    # (segundo bug real, mismo dry-run S68). Se normaliza "_" a
+    # espacio antes de aplicar el límite de palabra.
+    normalizado = nombre_up.replace("_", " ")
+    return re.search(r"\b%s\b" % re.escape(palabra), normalizado) is not None
 
 
 class Command(BaseCommand):
