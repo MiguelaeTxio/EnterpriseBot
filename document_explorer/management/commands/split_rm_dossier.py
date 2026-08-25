@@ -242,12 +242,28 @@ def _ocr_all_pages(data):
     OCR real de TODAS las paginas de un PDF (a diferencia de
     `ocr_pdf_to_text()`, que tiene `max_pages=2` fijo). Devuelve una
     lista de textos, uno por pagina, en orden.
+
+    H30 (S68) Punto 4: DPI seguro por pagina segun su tamano fisico,
+    nunca dpi=300 fijo -- mismo fix real que local_ocr_classify.py y
+    split_rm_dossier_vm.py (caso Delgado Hurtado, 278M pixeles por
+    encima del limite real de Pillow, 178.956.970).
     """
+    SAFE_MAX_PIXELS = 150_000_000
+    MIN_DPI = 100
+    DPI_OBJETIVO = 300
+
     doc = fitz.open(stream=data, filetype="pdf")
     texts = []
     for page_index in range(doc.page_count):
         page = doc.load_page(page_index)
-        pix = page.get_pixmap(dpi=300)
+        rect = page.rect
+        dpi_pagina = DPI_OBJETIVO
+        if rect.width > 0 and rect.height > 0:
+            pixeles_estimados = (rect.width / 72 * DPI_OBJETIVO) * (rect.height / 72 * DPI_OBJETIVO)
+            if pixeles_estimados > SAFE_MAX_PIXELS:
+                dpi_pagina = int(72 * (SAFE_MAX_PIXELS / (rect.width * rect.height)) ** 0.5)
+                dpi_pagina = max(dpi_pagina, MIN_DPI)
+        pix = page.get_pixmap(dpi=dpi_pagina)
         img = Image.open(io.BytesIO(pix.tobytes("png")))
         texts.append(pytesseract.image_to_string(img, lang="spa"))
     doc.close()

@@ -83,11 +83,24 @@ TIPOS_A_CARPETAS = {
 
 
 def ocr_pdf_to_text(data, max_pages=2, dpi=300):
+    # H30 (S68) Punto 4 -- mismo fix real que local_ocr_classify.py
+    # (caso Delgado Hurtado, 278M pixeles por encima del limite real
+    # de Pillow, 178.956.970, ver docstring alli para el detalle).
+    SAFE_MAX_PIXELS = 150_000_000
+    MIN_DPI = 100
+
     text_parts = []
     doc = fitz.open(stream=data, filetype="pdf")
     for page_index in range(min(max_pages, doc.page_count)):
         page = doc.load_page(page_index)
-        pix = page.get_pixmap(dpi=dpi)
+        rect = page.rect
+        dpi_pagina = dpi
+        if rect.width > 0 and rect.height > 0:
+            pixeles_estimados = (rect.width / 72 * dpi) * (rect.height / 72 * dpi)
+            if pixeles_estimados > SAFE_MAX_PIXELS:
+                dpi_pagina = int(72 * (SAFE_MAX_PIXELS / (rect.width * rect.height)) ** 0.5)
+                dpi_pagina = max(dpi_pagina, MIN_DPI)
+        pix = page.get_pixmap(dpi=dpi_pagina)
         img = Image.open(io.BytesIO(pix.tobytes("png")))
         text_parts.append(pytesseract.image_to_string(img, lang="spa"))
     doc.close()

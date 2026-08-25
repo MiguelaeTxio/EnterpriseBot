@@ -337,11 +337,32 @@ def classify_dates_in_text(text):
 
 
 def ocr_pdf_to_text(data, max_pages=2, dpi=300):
+    # H30 (S68) Punto 4 -- fix real de un caso de produccion: Delgado
+    # Hurtado, "20250108 Baja al 30 01 2025.pdf", pagina fisica
+    # inusualmente grande que a dpi=300 fijo generaba una imagen de
+    # 278M pixeles -- por encima del limite real de Pillow
+    # (178.956.970, verificado S68) y bloqueada por su proteccion de
+    # "decompression bomb". En vez de desactivar esa proteccion
+    # globalmente (quitaria defensa real de DoS para cualquier PDF
+    # que pase por aqui, nunca se hace), se calcula el DPI seguro
+    # para cada pagina segun su tamano fisico real, y solo se baja
+    # cuando hace falta -- el resto de paginas normales nunca se ven
+    # afectadas.
+    SAFE_MAX_PIXELS = 150_000_000  # margen real bajo el limite de Pillow
+    MIN_DPI = 100  # por debajo, el texto ya no es fiable para Tesseract
+
     text_parts = []
     doc = fitz.open(stream=data, filetype="pdf")
     for page_index in range(min(max_pages, doc.page_count)):
         page = doc.load_page(page_index)
-        pix = page.get_pixmap(dpi=dpi)
+        rect = page.rect
+        dpi_pagina = dpi
+        if rect.width > 0 and rect.height > 0:
+            pixeles_estimados = (rect.width / 72 * dpi) * (rect.height / 72 * dpi)
+            if pixeles_estimados > SAFE_MAX_PIXELS:
+                dpi_pagina = int(72 * (SAFE_MAX_PIXELS / (rect.width * rect.height)) ** 0.5)
+                dpi_pagina = max(dpi_pagina, MIN_DPI)
+        pix = page.get_pixmap(dpi=dpi_pagina)
         img = Image.open(io.BytesIO(pix.tobytes("png")))
         text_parts.append(pytesseract.image_to_string(img, lang="spa"))
     doc.close()
