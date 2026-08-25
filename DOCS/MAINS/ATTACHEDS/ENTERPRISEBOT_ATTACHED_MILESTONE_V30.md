@@ -4056,72 +4056,156 @@ catálogo -- si aparece un tipo nuevo que de verdad necesite los dos
 dominios, deberá confirmarse explícitamente con Miguel Ángel, nunca
 asumirse por el default del campo.
 
-## HOJA DE RUTA PARA LA SIGUIENTE SESIÓN (S65) -- CIERRE POR LÍMITE DE
-## IMÁGENES DEL CHAT, NO POR PCS FORMAL
+### COMPLETADAS EN S65
 
-**Empezar aquí directamente, sin preguntar por dónde empezar** --
-Miguel Ángel va a subir en el primer prompt de la sesión siguiente una
-muestra de un archivo real de cada una de estas 6 carpetas de
-`DOC. PERSONAL` (auditoría de FASE 1, ver más abajo):
-`ENTREGA MANUAL COMBUSTIBLE`, `AUTORIZACIÓN MEDIOS DE COMUNICACIÓN`,
-`ENTREGA DE EVALUACION DE RIESGO`, `AUTORIZACION FIRMA LIBRO DE
-SUBCONTRATA`, `RENOVACION CARNE DEGRUISTA`, `RETENCIONES`. Revisar
-cada muestra real (nunca asumir el tipo solo por el nombre de
-carpeta) y proponer regla directa carpeta->tipo si el contenido lo
-confirma, mismo patrón que `apply_formacion_folder_default.py`.
+**Incidente real cerrado: agente H28 de escritorio caído por
+compartir cuenta de servicio con las VMs de OCR.** Diagnóstico
+confirmado con la traza real (`google.auth.exceptions.RefreshError:
+invalid_grant: Invalid JWT Signature`): el lanzamiento de VMs de Fase
+B en una sesión anterior borró en un lote de 7 claves la que usaba el
+agente de escritorio del PC de Miguel Ángel
+(`3309552c7eafa004aea366390f04b0f10cd729c6`, confirmado idéntico al
+`private_key_id` local). Clave nueva generada
+(`8d8e8cb1c304d2cd7dd9aa908b891c1894697232`), tarea programada
+reiniciada, confirmado funcionando de nuevo por Miguel Ángel.
+`SESSION_VARIABLES.md` corregido (commit `2fabc57`): la cuenta de
+servicio compartida queda documentada con advertencia explícita de
+nunca borrar la clave del agente de escritorio sin comprobarla antes.
+Sigue **sin decidir** si se mantiene la cuenta compartida (con esta
+protección) o se separa la de las VMs a su propia cuenta -- pregunta
+pendiente para Miguel Ángel, sin urgencia.
 
-**Estado real congelado en este punto (verificado con consulta
-directa a BD, S64, no de memoria):**
+**Auditoría real de las 6 carpetas de `DOC. PERSONAL` de la hoja de
+ruta anterior, con muestra real (nunca por nombre de carpeta):** las
+5 confirmadas (`ENTREGA_MANUAL_COMBUSTIBLE`, `EVALUACION_RIESGO`,
+`AUTORIZACION_MEDIOS_COMUNICACION`, `AUTORIZACION_LIBRO_SUBCONTRATA`
+-- esta última con dominio SIEMPRE pendiente por falso match real de
+nombre de archivo confirmado con 3 muestras, ver anexo más arriba --
+y `CARNET_GRUISTA` ya existente) se dieron de alta (migración `0043`)
+y aplicaron con `apply_s65_folder_type_rules` (comando nuevo,
+`9e5c676`): 260 archivos tipados. `RETENCIONES` confirmada como tipo
+real pero con el mismo problema estructural de dossier multi-persona
+que `RECONOCIMIENTO_MEDICO` -- queda aparcada, pendiente de diseño de
+split, ver hoja de ruta.
 
-- **FASE 1 (tipar por heurística) -- lejos de cerrada.** 5.524
-  archivos reales candidatos (excluyendo EPIS, que van aparte):
-  3.037 `DOC. MAQUINAS` (casi sin tocar en toda la sesión S64),
-  2.316 `DOC. PERSONAL`, 156 `MANUALES DE USO` (Miguel Ángel confirma
-  en S64 que estos YA tienen tipo -- verificar si el desglose de
-  S64 estaba mal o si hay una discrepancia real antes de asumir
-  nada), 15 `NO CONFORMES` (sin revisar).
+**Hallazgo real que cambió el rumbo de la sesión: EPI/EPIS era la
+categoría dominante sin tipar, no `DOC. MAQUINAS`.** Tras aplicar
+`run_fase_a_sweep` completo (sin límite, todo el corpus) y ver que
+resolvía solo 12-13 archivos de 6.447 candidatos, Miguel Ángel exigió
+verificación real en vez de seguir con OCR a ciegas. Se detectó un
+bug real propio en la primera búsqueda de EPI/EPIS (límite de palabra
+`\bEPI\b` sin admitir plural, 21 candidatos) -- corregido a `\bEPIS?\b`
+(2.544 candidatos reales, no 21). Aplicados en bloque con criterio
+manual (nunca ciego): 15 entregas reales a persona (botiquines),
+15 fichas técnicas/certificados de producto y plantillas sin persona,
+4 enviados a papelera (archivo mal ubicado de una ETT, captura de
+pantalla accidental, dos "arneses" con nombre no reconocido
+confirmados como falsos por Miguel Ángel). Migración `0044`
+(`CERT_EXENCION_TACOGRAFO`, "Leave Letter" encontrado mal archivado
+dentro de EPIS, confirmado con contenido real). Revisión posterior
+del árbol completo `ENTREGA EPIS` (folder-based, no solo nombre de
+archivo) resolvió 10 archivos más.
 
-- **Desglose real de los 2.316 de `DOC. PERSONAL` sin tipo, por
-  subcarpeta** (`EnterpriseBot_036_GET.txt`, S64):
-  `PERSONAL/OPERARIOS` 933, `PERSONAL/BAJAS` 433,
-  `FOTOS CARNET/FOTOS CARNET` 172+2 (**excluir, ya decidido S59:
-  fotos tipo carné nunca tienen tipo del catálogo cerrado**),
-  `PERSONAL/TALLER` 148, `PERSONAL/ADMINISTRACION` 137,
-  `ENTREGA MANUAL COMBUSTIBLE` 120,
-  `AUTORIZACIÓN MEDIOS DE COMUNICACIÓN` 62, resto de carpetas
-  pequeñas (ver tabla completa en `EnterpriseBot_036_GET.txt`).
+**Cuatro lotes de calibración real sobre los dossiers de `PERSONAL/
+OPERARIOS`/`ADMINISTRACION`/`TALLER` (migraciones `0045`-`0048`),
+cada uno con volumen medido antes de aplicar, nunca a ciegas:**
+1º lote (`0045`): `CLAUSULA_PROTECCION_DATOS`, `CAMBIO_EMPRESA_
+SUBROGACION`, `CAMBIO_IRPF`, `TARJETA_CUALIF_CONDUCTOR` (con
+caducidad real), `HUELLA_CONTRATO`, `COMUNICADO_SEPE`, `VOLANTE_
+MUTUA`, `CERTIFICADO_BANCARIO` -- 74 archivos. 2º lote (`0046`):
+`ALTA_IDC` (con regla de desambiguación nueva sobre `ALTA` genérico),
+`AUTORIZACION_TEMPORAL_CONDUCIR`, `TARJETA_SANITARIA`, `DOC_MUTUA`,
+`COMUNICACION_CONTRATO`, `CERTIFICADO_GIBRALTAR`, `DECLARACION_
+EMPRESA` y `CIRCULAR_INFORMATIVA` (ambos domain=COMPANY pese a vivir
+bajo el árbol de `DOC. PERSONAL`) -- 64 archivos. 3º lote (`0047`):
+`LISTADO_PERSONAL_MAQUINARIA_OBRA` (domain=COMPANY, listados
+agregados por obra), `FORMACION_PRL_MAQUINARIA`, `ENTREGA_MOVIL` --
+53 archivos. 4º lote (`0048`), tras crítica justa de Miguel Ángel de
+que la heurística NO estaba agotada como se había dicho: `TC2`,
+`NOMBRAMIENTO_RECURSO_PREVENTIVO` y variantes de `CARNET_GRUISTA` con
+preposición intermedia -- 38 archivos (incluye 4 de `AUTONOMO`
+aplicados aparte por carpeta, separando correctamente de
+`AUTONOMOS SUBCONTRATAS`, que es otra cosa). **PERSONAL sin tipo:
+822 → 601** (excluyendo `FOTOS CARNET`, exclusión permanente por
+diseño desde S59).
 
-- **Miguel Ángel, verbatim (S64), sobre `OPERARIOS`/`BAJAS`/`TALLER`/
-  `ADMINISTRACION`:** *"en personal operario lo que tenemos son todos
-  los documentos: contratos, comunicaciones, DNI, etcétera, eso
-  deberíamos de tenerlo ya tipificado (...) hay muchísimos documentos
-  que sí están tipificados, entonces no sé cuáles son los que están
-  sin tipificar."* Es decir, estas 4 carpetas NO son 100% sin tipo --
-  mezclan archivos ya tipados con los 933/433/148/137 que SÍ quedan
-  sin tipo. **Pendiente real:** sacar una muestra real de los
-  archivos concretos sin tipo (no de la carpeta completa) de cada una
-  de las 4, para que Miguel Ángel los revise antes de decidir si hace
-  falta más heurística de nombre, si son casos para OCR, o si son
-  huecos reales (documentos nunca subidos).
+**Preview OCR real de 10 archivos del residuo (601), descargados por
+sftp y revisados por Miguel Ángel directamente (no vía OCR de
+servidor, para no gastar CPU):** confirma que la mayoría del residuo
+es papeleo real de RRHH sin patrón repetible (bajas, altas médicas,
+certificados de matrimonio, actas...) -- valor real de Fase B
+confirmado con casos concretos (archivo "ZAFRA PERALTA.pdf" resultó
+ser un reconocimiento médico "APTO", nombre sin ninguna pista).
+Dos hallazgos reales quedan abiertos, ver hoja de ruta: (1) posible
+bug de límite de palabra en la búsqueda EPI/EPIS con guion bajo
+adyacente (`_EPIS_`, mismo tipo de bug que `_build_pattern` ya
+corrigió en S48 pero que el script ad-hoc de esta sesión no
+reutilizó) -- consulta de medición lanzada
+(`EnterpriseBot_037_GET.txt`) pero su resultado **nunca se confirmó**,
+la sesión se cerró antes; (2) el archivo "TARJ.S.SOCIAL DIAZ
+QUINTERO...pdf" resultó por contenido real ser una Tarjeta Sanitaria,
+no Seguridad Social -- posible riesgo de que archivos ya tipados como
+`SEG_SOCIAL` vía la palabra clave "TARJETA S SOCIAL" estén mal
+clasificados, sin auditar todavía.
 
-- **FASE 2 (dominio pendiente) -- 1.834 confirmados, sin tocar en
-  este bloque** (se pausó para auditar FASE 1 primero, por decisión
-  explícita de Miguel Ángel: no se pasa a otra fase sin cerrar la
-  anterior). Desglose ya corregido: PERSONAL 1.375 (incluye
-  `TACOGRAFO` reclasificado), MACHINE ~451, COMPANY 7.
+**Cierre de sesión por límite real de imágenes del chat y cambio de
+dispositivo (`PEE: PC → A → PC`), no por agotamiento natural del
+trabajo.** Queda trabajo real abierto a mitad de flujo, ver hoja de
+ruta -- no confundir con un cierre de bloque limpio.
 
-- **FASE 3 (OCR/VM) -- las 4 VMs (`h28-ocr-batch-1/2/3/4`) quedaron
-  PARADAS (`stop`, no borradas) al cierre de este bloque.** Discos
-  intactos, bootstrap completo ya hecho en las 4 -- se pueden
-  reanudar sin rehacer nada cuando FASE 1 y FASE 2 estén cerradas de
-  verdad. **No arrancar antes de eso** -- incidente real ya
-  registrado más arriba en este mismo anexo (bloque "FASES
-  OBLIGATORIAS DE H30").
+## HOJA DE RUTA PARA LA SIGUIENTE SESIÓN (S66)
 
-**Recordatorio operativo, S64:** el flujo completo de creación/
-lanzamiento de VMs en paralelo, con los incidentes reales y su
-solución, está en `SESSION_VARIABLES.md`, bloque "FLUJO COMPLETO REAL
--- CREAR Y LANZAR 3 VMs EN PARALELO PARA FASE B". Aplicar tal cual si
-hace falta reanudar o ampliar VMs, sin reinventar el flujo.
+**Antes de tocar OCR/VMs, cerrar estos 4 puntos sueltos de S65, en
+este orden:**
+
+1. **Confirmar (o relanzar) `EnterpriseBot_037_GET.txt`.** La consulta
+   mide cuántos archivos EPI/EPIS quedaron fuera del recuento de 2.544
+   por el bug de límite de palabra con guion bajo (`_EPIS_`). Criterio
+   de cierre: número exacto devuelto por la consulta; si es mayor que
+   0, aplicarlos con `_build_pattern` (no con `\b` suelto) antes de
+   seguir.
+2. **Decidir el hallazgo TARJ.S.SOCIAL vs TARJETA_SANITARIA.**
+   Criterio de cierre: contar cuántos archivos hay ya tipados como
+   `SEG_SOCIAL` vía la palabra clave "TARJETA S SOCIAL"/"TARJ S
+   SOCIAL" (consulta directa a BD) y que Miguel Ángel decida si hace
+   falta re-auditarlos contra el contenido real antes de dar la
+   heurística de `SEG_SOCIAL` por fiable en ese patrón.
+3. **Revisar el archivo que no llegó a subirse en la muestra de 10:**
+   `Gruas Alvarez - Delegación.pdf` (`DOC. PERSONAL/PERSONAL/TALLER/
+   CAÑAMERO NAVARRO, PABLO (GR)/CAÑAMERO NAVARRO, PABLO`). Criterio de
+   cierre: contenido real revisado, tipo decidido o descartado.
+4. **Confirmar si `ALTA 1-11-2008+IDC DIAZ QUINTERO,ANT JESUS.pdf` ya
+   quedó resuelto por las reglas actuales de `ALTA_IDC`.** Apareció
+   todavía sin tipo en la muestra de 10 pese a que el patrón "IDC"
+   solo debería haberlo resuelto ya (ver `SPECIFIC_WINS`,
+   `ALTA_IDC` gana sobre `ALTA`). Criterio de cierre: consulta directa
+   sobre `document_type` de ese archivo concreto; si sigue sin tipo,
+   averiguar por qué antes de asumir que la regla funciona en general.
+
+**Pregunta pendiente sin urgencia, sin criterio de cierre forzado:**
+¿mantener la cuenta de servicio compartida entre el agente H28 de
+escritorio y las VMs de OCR (con la protección ya documentada en
+`SESSION_VARIABLES.md`), o separarlas en dos cuentas de servicio
+distintas para que este tipo de incidente deje de ser posible del
+todo?
+
+**Con los 4 puntos anteriores cerrados, retomar Fase B/OCR sobre lo
+que quede de verdad sin tipo:** decisión ya tomada por Miguel Ángel en
+S65 -- 1 VM, 3 instancias (no 4 VMs x 3 como en el incidente de S64),
+discos ya bootstrapeados y listos para reanudar (`h28-ocr-batch-1/2/3/
+4`, verificar cuál sigue viable). Alcance real a esa altura: ~601
+`DOC. PERSONAL` (menos lo que resuelvan los puntos 1-4) + 3.031
+`DOC. MAQUINAS` (prácticamente sin tocar en S65, la sesión se dedicó
+entera a PERSONAL).
+
+**Sigue aparcado, sin tocar en S65, tal cual quedó en S64:**
+`RETENCIONES` (dossier multi-persona, mismo problema estructural que
+`RECONOCIMIENTO_MEDICO`, pendiente de diseño de split), los 3
+archivos numéricos de `ENTREGA EPIS/2024/EPIS DESGLOSADOS/SEMI`, y
+`Entrega botiquines-máquinas.xlsx` (listado agregado, pendiente de
+extracción a base de datos persona por persona). `MANUALES DE USO`
+(156) y `NO CONFORMES` (15) -- nunca se llegaron a revisar en S65,
+siguen exactamente como los dejó S64 (arrastrado 2.ª sesión sin
+avanzar).
 
 
