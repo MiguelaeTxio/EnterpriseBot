@@ -410,7 +410,14 @@ CANDIDATES_SAFE = {
         # "/BAJAS/" y "TRABAJADORES INACTIVOS") -- esta keyword cubre
         # el resto real, cuando la carpeta no sigue ese patron. Ver
         # EnterpriseBot_024_GET.txt.
-        "BAJA_PERSONAL": ["CARTA BAJA VOLUNTARIA"],
+        "BAJA_PERSONAL": [
+            "CARTA BAJA VOLUNTARIA",
+            # Añadido S65, quinto lote: variante real sin "CARTA" --
+            # confirmado con contenido OCR real (carta manuscrita de
+            # baja voluntaria), ver EnterpriseBot_034/036 (muestra
+            # descargada por sftp).
+            "BAJA VOLUNTARIA",
+        ],
         "ALTA_MEDICA": ["ALTA MEDICA"],
         "ALTA": ["ALTA"],
         # Añadido S59: variante abreviada real dentro de las carpetas
