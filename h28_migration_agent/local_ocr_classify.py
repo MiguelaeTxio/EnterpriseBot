@@ -487,6 +487,16 @@ def main():
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--apply", action="store_true")
     parser.add_argument(
+        "--domain", choices=["MACHINE", "PERSONAL", "BOTH"], default="BOTH",
+        help=(
+            "S66: filtra el pool de candidatos a un solo dominio. "
+            "Sin esto, una muestra --limit pequena sale dominada por "
+            "MACHINE (~84%% del pool crudo), sin representar bien "
+            "PERSONAL. BOTH (por defecto) mantiene el comportamiento "
+            "de siempre."
+        ),
+    )
+    parser.add_argument(
         "--shard-count", type=int, default=1,
         help=(
             "S51 (VM en la nube, procesos paralelos sin solape): total "
@@ -598,25 +608,45 @@ def main():
         person_ct_id = cur.fetchone()[0]
 
         shard_clause = ""
-        shard_params = (BUCKET, MACHINE_ROOT + "/%", PERSONAL_ROOT + "/%")
+        shard_params = ()
         if args.shard_count > 1:
             shard_clause = " AND id %% %s = %s"
-            shard_params = shard_params + (args.shard_count, args.shard_index)
+            shard_params = (args.shard_count, args.shard_index)
+
+        # S66: filtro real de dominio, para poder tomar una muestra
+        # estratificada -- sin esto, MACHINE (~84% del pool crudo)
+        # domina cualquier --limit pequeno, dejando PERSONAL sin
+        # representar. BOTH mantiene el comportamiento de siempre
+        # (los dos dominios en la misma query, via OR).
+        if args.domain == "MACHINE":
+            domain_clause = "parent_path LIKE %s"
+            domain_params = (MACHINE_ROOT + "/%",)
+        elif args.domain == "PERSONAL":
+            domain_clause = "parent_path LIKE %s"
+            domain_params = (PERSONAL_ROOT + "/%",)
+        else:
+            domain_clause = "(parent_path LIKE %s OR parent_path LIKE %s)"
+            domain_params = (MACHINE_ROOT + "/%", PERSONAL_ROOT + "/%")
 
         cur.execute(
             "SELECT id, name, parent_path FROM document_explorer_documentindexentry "
             "WHERE entry_kind = 'FILE' AND document_type_id IS NULL "
             "AND deleted_at IS NULL AND purged_at IS NULL "
-            "AND bucket = %s AND (parent_path LIKE %s OR parent_path LIKE %s) "
-            "AND parent_path NOT LIKE '%%EPIS%%' "
+            "AND bucket = %s AND " + domain_clause + " "
+            # Retirada S66: la exclusion "NOT LIKE '%EPIS%'" (S48)
+            # ya no es coherente con la reversion de esta sesion --
+            # EPI/EPIS ya se clasifica normalmente (document_type=
+            # EPIS) via run_fase_a_sweep, igual que cualquier otro
+            # tipo. La inmensa mayoria ya tiene document_type
+            # asignado (excluidos por el propio "document_type_id IS
+            # NULL" de arriba); el resto ya no debe bloquearse aqui.
             # Anadido S59: "DOC. PERSONAL/FOTOS CARNET" fuera de
             # alcance de verdad (decision explicita de Miguel Angel)
             # -- fotos tipo DNI, nunca van a tener un tipo del
             # catalogo cerrado.
-            "AND parent_path NOT LIKE "
-            "'DOC. PERSONAL/FOTOS CARNET%%'"
+            "AND parent_path NOT LIKE 'DOC. PERSONAL/FOTOS CARNET%%'"
             + shard_clause,
-            shard_params,
+            (BUCKET,) + domain_params + shard_params,
         )
         raw_rows = cur.fetchall()
 
