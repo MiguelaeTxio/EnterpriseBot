@@ -584,6 +584,7 @@ class DocumentTypeCatalog(models.Model):
     FAMILY_SALUD_BAJAS_PERSONA = "SALUD_BAJAS_PERSONA"
     FAMILY_PRL_FORMACION = "PRL_FORMACION"
     FAMILY_OTROS_DOCUMENTOS = "OTROS_DOCUMENTOS"
+    FAMILY_MEDIA = "MEDIA"
     FAMILY_CHOICES = [
         (FAMILY_CIRCULACION, "Circulación"),
         (FAMILY_TECNICA_SEGURIDAD, "Técnica y seguridad"),
@@ -596,6 +597,10 @@ class DocumentTypeCatalog(models.Model):
         (FAMILY_SALUD_BAJAS_PERSONA, "Salud y bajas de persona"),
         (FAMILY_PRL_FORMACION, "PRL y formación"),
         (FAMILY_OTROS_DOCUMENTOS, "Otros documentos"),
+        (
+            FAMILY_MEDIA,
+            "Media (imagen, vídeo, audio) — H30 S67",
+        ),
     ]
 
     code = models.CharField(
