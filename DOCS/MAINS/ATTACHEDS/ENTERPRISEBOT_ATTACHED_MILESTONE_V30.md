@@ -4468,3 +4468,149 @@ confirmación explícita de que sigue encendida a propósito.
 entre el agente H28 de escritorio y las VMs de OCR, o separarlas en
 dos cuentas distintas?
 
+### COMPLETADAS EN S68
+
+Sesión larga, continuidad H30. Puntos 1-4 de la hoja de ruta de S67
+cerrados de verdad, con datos reales verificados en cada paso.
+
+**Punto 1 -- carpetas `BAJAS` de `DOC. PERSONAL`, cerrado.** Hallazgo
+real que corrigió la premisa inicial: "BAJAS" no es un concepto único.
+`OPERARIOS/<persona>/BAJAS` es ILT de un activo (nunca se toca).
+`DOC. PERSONAL/PERSONAL/BAJAS/BAJA PERSONAL/` también es ILT, mal
+archivada fuera de la carpeta del operario -- confirmado verbatim por
+Miguel Ángel tras corrección mía repetida. `DOC. PERSONAL/PERSONAL/
+BAJAS/OPERARIOS BAJAS/` y los archivos directos `BAJA *.pdf` sí son
+baja contractual real.
+
+- `trash_contractual_bajas.py`: 2322 archivos a papelera, 203
+  retenidos (activos mal archivados, identidad completa verificada
+  por subconjunto de tokens, nunca solapamiento parcial -- un primer
+  diseño con umbral 0.66 dio falsos positivos reales, corregido tras
+  aviso de Miguel Ángel). Dos bugs reales de rendimiento corregidos en
+  sesión: resolución de admin repetida por archivo (miles de
+  consultas) sustituida por `UPDATE` masivo por lotes, tras que la
+  consola de PythonAnywhere se cortara a mitad de la primera pasada.
+- `reubicar_baja_personal.py`: 80 archivos reubicados a la carpeta
+  real del operario (creándola si no existía -- caso Cruces Heredia),
+  1056 a papelera con la regla universal. Caso `SANCHEZ GARCIA` (sin
+  nombre de pila) verificado a mano contra el archivo real antes de
+  forzar la clasificación -- no era Ismael García Sánchez como
+  sugería el solapamiento de tokens, era Juan Antonio.
+
+**Punto 2 -- residuo de `DOC. PERSONAL/PERSONAL/` sin tipo,
+cerrado.** 8 tipos documentales nuevos creados y confirmados uno a
+uno contra nombres de archivo reales (nunca adivinados):
+`CERTIF_TRABAJO_COLEGIO`, `COMUNICACION_JORNADA`,
+`FORMACION_ITC_MINERA`, `CERTIF_DISCAPACIDAD`, `NIE`,
+`COMUNICACION_FALTA`, `LIBRO_FAMILIA`, `PLANTILLA`. 51 archivos
+clasificados. Dos bugs reales de coincidencia por palabra corregidos
+en sesión: `\b` sin normalizar guion bajo perdía archivos con
+nomenclatura `_JORNADA_`; subcadena simple sin límite de palabra
+colaba "DANIEL" como falso positivo de "NIE". Caso Petru Iordachi
+(imagen real de la RYMPE aportada por Miguel Ángel) resuelto al tipo
+ya existente `ENTREGA_INFORMACION`, no `PLANTILLA`.
+
+**Punto 3 -- `RETENCIONES`/`MANUALES DE USO`, cerrado parcialmente.**
+Tipo `RETENCIONES` creado (COMPANY/FINANCIERO, por empresa, sin
+split por persona). `MANUAL_USO`/`MANUAL_DESPIECE` -- YA EXISTÍAN en
+el catálogo desde antes de H30, nunca aplicados hasta hoy; confirmado
+contra el anexo V29 que "MANUALES DE USO" es la misma jerarquía que
+la antigua "MANUAL DE INSTRUCCIONES/{CODIGO}/". 37 archivos
+clasificados (14 RETENCIONES + 13 MANUAL_USO + 10 MANUAL_DESPIECE),
+incluida la góndola G-17 Scheuerle (solo `01 Operation Instructions`
+y `05 Spare Parts`, confirmados a mano; el resto del manual del
+fabricante -- 17 archivos -- queda fuera, sin encaje claro). Quedan
+pendientes: extractor real EPIs/Botiquines -> `EpiDelivery` (modelo
+ya existe desde S047, nunca se construyó el extractor -- "huevo y
+gallina" ya diagnosticado en S53), y `NO CONFORMES` (28, cuarentena
+mixta real, revisión documento a documento).
+
+**Punto 4 -- error real de OCR (Delgado Hurtado), cerrado y
+verificado.** Página física de 3468×4624pt que a dpi=300 fijo
+generaba 278M píxeles, por encima del límite real de Pillow
+verificado en producción (89.478.485, no el 178.956.970 genérico de
+la documentación de Pillow -- versión distinta en el venv real).
+Fix: DPI calculado por página según su tamaño físico real, techo de
+seguridad 80.000.000 píxeles, suelo 100 DPI -- aplicado en los 5
+sitios del pipeline que repetían `dpi=300` fijo (`local_ocr_classify.
+py`, `split_rm_dossier_vm.py`, `split_rm_dossier.py`,
+`inspect_sin_patron_pages.py`, `extract_local_real_samples.py`).
+Verificado contra el archivo real: DPI bajado a 160, imagen de
+79.197.132 píxeles, OCR completo en 35s, 0 warnings, texto real
+extraído ("PARTE MÉDICO DE CONFIRMACIÓN DE INCAPACIDAD TEMPORAL").
+
+**Trabajo adicional real de la sesión, fuera de los 4 puntos:**
+
+- `DOC. PERSONAL/FOTOS CARNET` -- 174 archivos, tipados `IMAGEN`.
+  Error real cometido y corregido en la misma sesión (directriz 4.9):
+  primera pasada aplicó `IMAGEN` a los 174 sin comprobar extensión
+  antes, colando 21 PDF, 1 docx y 2 pub -- revertido a 23 archivos,
+  151 quedaron correctamente tipados. Confirmado con Miguel Ángel
+  (captura real de una foto de carnet numerada dentro de un PDF) que
+  los PDF eran fotos reales envueltas en PDF: comando
+  `convertir_fotos_carnet_pdf.py` nuevo -- extrae la imagen embebida
+  del PDF (o renderiza si no hay ninguna), sube el `.jpg` real,
+  refresca el índice, tipa `IMAGEN`, resuelve dominio por identidad
+  completa contra `PersonIdentity`, manda el PDF original a papelera.
+  20 convertidos, 6 con dominio resuelto (los 14 restantes tienen
+  apodos/erratas/iniciales reales -- Manolo/Manuel, Velazquez/Velasco,
+  Arca/Arcas, JM -- no forzados por analogía, quedan para revisión
+  manual). `FRANCISCO GOMEZ GOMEZ.docx`, `INDICE.pub` y `LISTADO DE
+  FOTOS.pub` quedan fuera de este comando, sin decisión tomada.
+- Sistema de plantillas para comunicados/notificaciones (idea nueva
+  de Miguel Ángel durante la sesión): tabla propia (CRUD), roles
+  `DOCS_SUPERVISOR` y `ADMIN`, dos tipos reales (comunicado/circular
+  fusionados en uno solo, y notificación), documento reutilizable,
+  interfaz aparte pendiente de diseño. **Anotado aquí como semilla,
+  sin hito propio asignado todavía** -- a decidir en sesión futura si
+  entra en H30 o se abre hito nuevo.
+
+**Incidencia real de comunicación, no de código (S68).** Discrepancia
+real entre dos cifras del residuo de `DOC. PERSONAL` (265 vs 481)
+presentadas sin dejar claro que medían alcances distintos (árbol por
+trabajador vs. `DOC. PERSONAL` completo, incluidas carpetas
+transversales nunca tocadas) -- generó fricción real y justificada
+con Miguel Ángel. Ninguna cifra era falsa, el fallo fue no explicar
+el filtro exacto de cada consulta en el momento de darla. Corregido:
+a partir de ahora toda cifra se acompaña del filtro real que la
+genera.
+
+**Estado real verificado al cierre:** `DOC. PERSONAL` sin tipo, 330
+(descontados los 151 FOTOS CARNET aplicados hoy) -- de los cuales 265
+son el árbol por trabajador (agotado para heurística de nombre desde
+S67, necesita OCR/Gemini) y 65 son carpetas transversales sin tocar
+todavía (`PLAN DE ACTUACION FRENTE AL CALOR` 11, `LISTADOS MAQUINARIA
+Y PERSONAL` 7, `NOMBRAMIENTO RECURSO PREVENTIVO` 7, `NOMBRAMIENTO
+JEFE DE MANIOBRAS` 5, `ENTREGA EPIS` 4, `MEDIDAS ADICIONALES DE
+PROTECCION` 4, 4 sueltas de 1, más `NO CONFORMES` 28 y `FOTOS CARNET`
+residuales 23). `DOC. MAQUINAS` sin tocar, ~2982 (Punto 5, no
+empezado esta sesión). `h28-ocr-batch-1` -- Punto 6, parada sin
+confirmar todavía.
+
+## Hoja de ruta real para S69
+
+1. **Punto 5** -- volver a `DOC. MAQUINAS` por heurística de Fase A
+   (nunca OCR directo), ~2982 sin tipo, ninguna pasada de calibración
+   real hecha todavía.
+2. **Punto 6** -- confirmar parada real de `h28-ocr-batch-1`.
+3. **Carpetas transversales de `DOC. PERSONAL` sin tocar** (65
+   archivos, ver desglose arriba) -- mismo patrón que `RETENCIONES`:
+   confirmar tipo real carpeta por carpeta con Miguel Ángel antes de
+   aplicar nada.
+4. **Extractor real EPIs/Botiquines -> `EpiDelivery`** -- bloque de
+   trabajo propio, no una sesión de cierre. Modelo ya existe desde
+   S047 (`EpiItemCatalog`, `EpiDelivery`, `EpiReview`), nunca se
+   construyó el extractor real (OCR/heurística sobre los documentos
+   de entrega).
+5. **14 archivos de `FOTOS CARNET` con dominio sin resolver** --
+   apodos (Manolo/Manuel), erratas de apellido (Velazquez/Velasco,
+   Arca/Arcas), iniciales (JM) -- pedir a Miguel Ángel la equivalencia
+   real de cada uno, nunca forzar por analogía.
+6. **`FRANCISCO GOMEZ GOMEZ.docx`, `INDICE.pub`, `LISTADO DE
+   FOTOS.pub`** -- decisión pendiente, fuera del comando de conversión
+   de hoy.
+7. **`NO CONFORMES`** (28, cuarentena mixta real) -- revisión
+   documento a documento, más lento, sesión propia.
+8. **Sistema de plantillas de comunicados/notificaciones** -- decidir
+   si entra en H30 o se abre hito nuevo antes de diseñar el modelo de
+   datos.
