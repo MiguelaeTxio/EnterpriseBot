@@ -224,7 +224,20 @@ def folder_based_type(entry, domain):
     PERSONAL), asi que comprobar todas las reglas sin filtrar por
     dominio es seguro.
     """
-    path_upper = _strip_accents(entry.parent_path).upper()
+    # Corregido S67: se añade una barra de cierre virtual antes de
+    # comparar -- bug real confirmado con datos reales (Ramos
+    # Zambrana, carpeta ".../BAJAS" como ULTIMO segmento de la ruta):
+    # la regla "/BAJAS/" exige barra a ambos lados, pero parent_path
+    # nunca lleva barra final, así que un archivo que vive
+    # directamente dentro de una carpeta "BAJAS" (la carpeta ES el
+    # segmento final) nunca coincidía, pese a que el comentario
+    # original de la regla decía explícitamente que exigía "barra a
+    # ambos lados" -- la barra de apertura sí estaba garantizada por
+    # el separador de carpeta anterior, la de cierre nunca se añadía.
+    # Añadir "/" al final no puede romper ninguna coincidencia previa
+    # (ninguna regla existente depende de que falte esa barra), solo
+    # habilita las que estaban rotas por este motivo.
+    path_upper = _strip_accents(entry.parent_path).upper() + "/"
     for needle, code in FOLDER_TYPE_RULES:
         if needle.upper() in path_upper:
             return code

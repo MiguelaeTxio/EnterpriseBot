@@ -358,6 +358,12 @@ CANDIDATES_SAFE = {
             # por "CTA BANCO" (8 coincidencias reales, ver
             # EnterpriseBot_027_GET.txt).
             "CTA BANCARIA", "CTA BCO",
+            # Añadido S67: "CUENTA" completo (no solo la abreviatura
+            # "CTA") -- gap real confirmado con archivos reales del
+            # residuo de 459 ("CUENTA BANCARIA.jpg", "cuenta bco Ramos
+            # Jimenez.jpg"), mismo concepto, variante de escritura sin
+            # abreviar.
+            "CUENTA BANCARIA", "CUENTA BCO",
         ],  # 8 coincidencias reales
         # Añadidos S65, segundo lote: extraidos del listado completo de
         # los 599 archivos restantes con nombre real (ver
@@ -367,6 +373,12 @@ CANDIDATES_SAFE = {
         "AUTORIZACION_TEMPORAL_CONDUCIR": [
             "AUTORIZACION TEMPORAL", "AUT TEMPORAL CONDUCIR",
             "AUT USO TEMP CONDUCIR", "AUTORIZACION PROVISIONAL PARA CONDUCIR",
+            # Añadido S67: confirmado con documento real (DGT Granada,
+            # "AUTORIZACIÓN TEMPORAL PARA CONDUCIR", Benali Rachid) --
+            # el archivo real se llama "AUTORIZACION CONDUCIÓN
+            # [nombre].jpg", sin la palabra "TEMPORAL" en el propio
+            # nombre de archivo aunque el documento sí lo sea.
+            "AUTORIZACION CONDUCCION",
         ],  # 9 coincidencias reales
         "TARJETA_SANITARIA": ["TARJETA SANITARIA"],  # 6 coincidencias reales
         "DOC_MUTUA": ["DOC MUTUA", "DOC.MUTUA"],  # 7 coincidencias reales
@@ -659,6 +671,13 @@ CANDIDATES_SAFE = {
             # informe oficial de la Seguridad Social, mismo dominio
             # conceptual. Ver EnterpriseBot_024_GET.txt.
             "VIDA LABORAL",
+            # Añadidos S67: dos variantes reales mas del residuo de
+            # 459 -- "TARJETA SS BERENGUER GOMEZ.jpg" (abreviatura
+            # "SS" en vez de "S SOCIAL") y "TARJ.S.SOCIAL MARTINEZ
+            # SEGURA.jpg" (abreviatura "TARJ" en vez de "TARJETA"
+            # completo -- el separador flexible de _build_pattern ya
+            # cubre el punto entre "TARJ"/"S"/"SOCIAL").
+            "TARJETA SS", "TARJ S SOCIAL",
         ],
         "VACACIONES": ["VACACIONES"],
         # REVERTIDO EN S66 -- decision verbatim de Miguel Angel:

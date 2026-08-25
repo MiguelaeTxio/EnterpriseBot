@@ -1,10 +1,19 @@
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/document_explorer/management/commands/assign_media_types.py
 """
-H30 (S67). Asigna IMAGEN/VIDEO/AUDIO (migracion 0050) por extension de
-archivo real, a los archivos sin tipo de DOC. PERSONAL/PERSONAL/ --
-nunca por contenido/OCR, la extension real de GCS ya es dato fiable
-al 100% para esta decision (una foto de WhatsApp no necesita OCR para
-saber que es una imagen).
+H30 (S67). Asigna IMAGEN/VIDEO/AUDIO (migracion 0050) SOLO a los
+archivos que la heuristica completa (resolve_document_type_heuristic,
+todos los tipos del catalogo, incluida folder_based_type ya
+corregida) no consigue resolver a ningun tipo documental real.
+
+CORREGIDO S67, mismo dia -- version anterior miraba solo la
+extension, sin pasar antes por la heuristica completa. Incidente real
+que motivo el fix: Miguel Angel identifico a mano varios archivos
+que la version anterior habria mandado a IMAGEN pese a ser fotos de
+documentos ya tipificados (tarjeta SS, cuenta bancaria, autorizacion
+de conducir) -- verbatim: "otra cosa es hacer el tonto metiendo
+documentacion que ya tenemos tipificada en el cajon desastre de las
+imagenes de WhatsApp". La extension real de GCS solo se usa ahora
+como ULTIMO recurso, nunca como primer filtro.
 
 Reutiliza sin modificar la misma cadena de resolucion de persona ya
 validada en run_fase_a_sweep.py: _resolve_person_by_folder ->
@@ -18,6 +27,12 @@ DRY-RUN POR DEFECTO. Con --apply escribe de verdad.
 from django.contrib.contenttypes.models import ContentType
 from django.core.management.base import BaseCommand
 
+from document_explorer.heuristic_type_service import (
+    resolve_document_type_heuristic,
+)
+from document_explorer.management.commands.calibrate_fase_a_keywords import (
+    _strip_accents,
+)
 from document_explorer.management.commands.run_fase_a_sweep import (
     _build_person_name_index, _resolve_person_by_folder,
     _resolve_person_by_name, _resolve_person_by_sliding_window,
@@ -69,10 +84,29 @@ class Command(BaseCommand):
 
         stats = {
             "asignados": 0, "tipo_ok_dominio_pendiente": 0,
-            "no_es_media": 0,
+            "no_es_media": 0, "tipo_real_no_media": 0,
         }
 
         for entry in qs:
+            name_upper = _strip_accents(entry.name).upper()
+            real_code, dossier_pair = resolve_document_type_heuristic(
+                entry, "PERSONAL", name_upper,
+            )
+            if real_code or dossier_pair:
+                # Ya tiene (o podria tener, si es dosier) un tipo real
+                # del catalogo documental -- nunca se sustituye por
+                # IMAGEN/VIDEO/AUDIO solo por su extension. Se deja
+                # fuera de este comando; lo recoge run_fase_a_sweep.
+                stats["tipo_real_no_media"] += 1
+                self.stdout.write(
+                    "TIPO REAL, NO ES MEDIA [%s] %s -> %s"
+                    % (
+                        entry.parent_path, entry.name,
+                        real_code or ("DOSIER %s" % sorted(dossier_pair)),
+                    )
+                )
+                continue
+
             ext = entry.name.rsplit(".", 1)[-1].lower() if "." in entry.name else ""
             code = EXT_TO_CODE.get(ext)
             if not code:
