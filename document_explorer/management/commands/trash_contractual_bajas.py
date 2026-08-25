@@ -47,6 +47,7 @@ toca.
 
 DRY-RUN POR DEFECTO. Con --apply manda a papelera de verdad.
 """
+import os
 import re
 
 from django.core.management.base import BaseCommand
@@ -166,7 +167,12 @@ class Command(BaseCommand):
         ).only("id", "name")
 
         for entry in qs_directos.iterator():
-            nombre_persona = entry.name
+            # Bug real detectado en dry-run S68: dejar la extension
+            # (".pdf") pegada al nombre generaba un token suelto "PDF"
+            # que rompia la coincidencia exacta por subconjunto contra
+            # la identidad del activo -- ver _clasificar(). Se quita
+            # la extension antes de tokenizar.
+            nombre_persona, _ext = os.path.splitext(entry.name)
             if nombre_persona.upper().startswith("BAJA "):
                 nombre_persona = nombre_persona[5:]
             es_activo, quien = _clasificar(nombre_persona, activos_tokens)
