@@ -19,6 +19,8 @@ no se crea de nuevo), excluido a mano del grupo PLANTILLA.
 
 DRY-RUN POR DEFECTO. Con --apply escribe de verdad.
 """
+import re
+
 from django.core.management.base import BaseCommand
 
 from document_explorer.models import DocumentIndexEntry, DocumentTypeCatalog
@@ -49,6 +51,14 @@ PATRONES = [
 
 # Confirmado a mano en S68 contra el documento real -- ver docstring.
 FORZAR_TIPO = {"Plantilla_RYMP TRANSPORTE V4_897512981 PETRU IORDACHI 1.pdf": "ENTREGA_INFORMACION"}
+
+
+def _contiene_palabra(nombre_up, palabra):
+    # Bug real detectado en dry-run S68: subcadena simple sin límite
+    # de palabra hacía que "NIE" cazara "DANIEL" (D-A-NIE-L), colando
+    # como falsos positivos un documento COVID y uno legal
+    # ("IND.ORDINARIO"). \b respeta límites de palabra de verdad.
+    return re.search(r"\b%s\b" % re.escape(palabra), nombre_up) is not None
 
 
 class Command(BaseCommand):
@@ -102,7 +112,7 @@ class Command(BaseCommand):
                 continue
             nombre_up = entry.name.upper()
             for etiqueta, palabras, code in PATRONES:
-                if any(p in nombre_up for p in palabras):
+                if any(_contiene_palabra(nombre_up, p) for p in palabras):
                     pks_por_tipo.setdefault(code, []).append(entry.pk)
                     self.stdout.write("CLASIFICAR (%s): %s -> %s" % (etiqueta, entry.name, code))
                     break
