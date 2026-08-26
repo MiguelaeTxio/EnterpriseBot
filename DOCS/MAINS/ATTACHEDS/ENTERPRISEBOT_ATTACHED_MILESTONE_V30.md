@@ -4587,474 +4587,177 @@ residuales 23). `DOC. MAQUINAS` sin tocar, ~2982 (Punto 5, no
 empezado esta sesión). `h28-ocr-batch-1` -- Punto 6, parada sin
 confirmar todavía.
 
-## Hoja de ruta real para S69 -- REORDENADA en el propio S69 (ver incidencia abajo)
+### COMPLETADAS EN S69 (sesión larga, continuidad H30 -- cierre completo
+del Punto 1 de la hoja de ruta de S69, más NO CONFORMES y arranque
+real de FOTOS CARNET)
 
-**INCIDENCIA REAL, corregida en esta misma sesión (directriz 4.9).**
-La versión anterior de esta hoja de ruta ponía "Punto 5" (`DOC.
-MAQUINAS`) en primera posición. Ese número no era una prioridad --
-era solo el quinto bloque de trabajo abierto en la numeración
-original de S66/S67 (Punto 1 BAJAS, Punto 2 residuo nombre, Punto 3
-RETENCIONES/MANUALES/NO CONFORMES, Punto 4 error OCR, Punto 5
-MAQUINAS, Punto 6 VM). Al listarlo como primer ítem de una lista 1-8
-en S68, se leyó como orden de ejecución real, e indujo a la sesión
-siguiente (S69) a proponer empezar por `DOC. MAQUINAS` sin que el
-dominio PERSONAL estuviera cerrado -- error que Miguel Ángel ya había
-señalado en sesiones previas y volvió a repetirse. **Regla derivada,
-de obligado cumplimiento en adelante:** nunca se abre trabajo sobre
-`DOC. MAQUINAS` mientras queden archivos reales sin tipificar o sin
-dominio resuelto en `DOC. PERSONAL`, salvo que Miguel Ángel lo pida
-explícitamente.
+**Incidencia real de arranque, corregida en la propia sesión.**
+Sesión abierta con el "Punto 5" (`DOC. MAQUINAS`) puesto en primera
+posición de la hoja de ruta heredada de S68 -- ese número era solo un
+identificador arrastrado de S66/S67, nunca una prioridad, y llevó a
+proponer empezar por máquinas sin que el dominio PERSONAL estuviera
+cerrado (error ya señalado por Miguel Ángel en sesiones previas,
+repetido aquí). Corregido: reescrita la hoja de ruta con las carpetas
+transversales de `DOC. PERSONAL` primero, regla explícita añadida de
+no tocar `DOC. MAQUINAS` mientras quede trabajo real de personal.
 
-**Estado real de `DOC. PERSONAL` sin cerrar, verificado al cierre de
-S68 (nunca recalculado desde entonces -- primer paso de S69 es
-recontar contra el servidor, nunca dar estas cifras por vigentes sin
-verificar de nuevo):**
-- 265 archivos del árbol por trabajador, heurística de nombre agotada
-  desde S67 -- necesitan OCR/Gemini (fuera de alcance de Fase A/heurística).
-- 65 archivos en carpetas transversales sin confirmar tipo.
-- 28 archivos en `NO CONFORMES`, cuarentena mixta real.
-- 23 archivos residuales de `FOTOS CARNET`.
-- 14 de los 20 archivos convertidos de `FOTOS CARNET` con dominio sin
-  resolver (apodos/erratas/iniciales).
+**Las 6 carpetas transversales de `DOC. PERSONAL`, CERRADAS:**
+- `PLAN DE ACTUACION FRENTE AL CALOR` (11) -- tipo nuevo
+  `PLAN_ACTUACION_CALOR`, fechas 2025 reales (no 2015, nada
+  descartado), dominio resuelto para las 8 hojas de firma.
+- `LISTADOS MAQUINARIA Y PERSONAL` -- cifra real 36 (no 7, cifra vieja
+  nunca recontada), tipo ya existente `LISTADO_PERSONAL_MAQUINARIA_
+  OBRA`.
+- `NOMBRAMIENTO RECURSO PREVENTIVO` -- cifra real 165 (no 7). Tres
+  plantillas limpias construidas desde cero (logo/empresa/persona/
+  fecha quitados, validadas con `scripts/office/validate.py` y
+  verificadas visualmente) y subidas al cubo real:
+  `PLANTILLA_RECURSO_PREVENTIVO.docx`, `PLANTILLA_NOMBRAMIENTO_
+  RESPONSABLE_SEGURIDAD.docx` (tipo nuevo `NOMBRAMIENTO_RESPONSABLE_
+  SEGURIDAD`), `PLANTILLA_NOMBRAMIENTO_JEFE_MANIOBRAS.docx` (tipo
+  nuevo `NOMBRAMIENTO_JEFE_MANIOBRAS`, reubicado desde archivo suelto
+  mal archivado). 7 archivos de `/obsoletos/` a papelera. **150
+  archivos (`FIRMADOS`/`ENTREGA FUNCIONES`/raíz) siguen siendo copia
+  individual por persona, ya tipados, pendientes de migrar a
+  `DocumentAcknowledgment`** -- ver hoja de ruta.
+- `NOMBRAMIENTO JEFE DE MANIOBRAS` (5+plantilla) -- 4 tipados, 1
+  reclasificado a `NOMBRAMIENTO_RESPONSABLE_SEGURIDAD`. 3 sin dominio
+  (`ALBERTILLO` x2 apodo, `TECSA` nombre de cliente) pendientes.
+- `ENTREGA EPIS` -- **535 archivos a papelera** (toda carpeta de año
+  2020 o anterior, decisión explícita de Miguel Ángel). Quedan 971
+  reales (2021+), ya tipados `EPIS` desde antes de esta sesión,
+  correctamente fuera del flujo normal.
+- `MEDIDAS ADICIONALES DE PROTECCION` -- foto ilegible a papelera,
+  tipo nuevo `INFORMACION_MEDIDAS_PROTECCION` con plantilla real de
+  marco fijo + hueco de texto libre (el contenido de cada incidencia
+  no es boilerplate, confirmado por Miguel Ángel). 3 archivos reales.
+- **"4 sueltas de 1"** -- cifra real **29**. 8 tipos documentales
+  nuevos creados (`AUTORIZACION_GENERICA`, `ENTREGA_DOCUMENTACION_
+  VARIA`, `ENTREGA_PROTOCOLO_AUXILIO_CARRETERA`, `ACTA_ELECCIONES_
+  SINDICALES`, `JUSTIFICANTE_LABORAL_AUSENCIA`, `CARTA_BAJA_
+  VOLUNTARIA`, `ACUERDO_SALARIAL`, `CERTIFICADO_JUSTIFICACION_
+  DESPLAZAMIENTO`). Dossier `Aut.trabajadores Huelva-comprobacion
+  titulos.pdf` (8 personas) a papelera directa, sin repartir --
+  decisión explícita de Miguel Ángel de descartar Huelva por completo
+  (información insuficiente, mismo criterio que la exclusión
+  permanente ya registrada de Bas Blanco/Contreras Márquez).
+  `PARTES DIETAS NUEVO.pdf` y `CONTROL ENTREGA.xlsx` dejados sin tipo,
+  fuera de alcance (no son documentación de persona).
 
-Dominio PERSONAL: **NO completo.** No se empieza `DOC. MAQUINAS`
-hasta que estas líneas estén a cero (o hasta OCR/Gemini para los 265,
-que es su propia fase posterior) o Miguel Ángel decida explícitamente
-lo contrario.
+**Principio de diseño crítico registrado, verbatim Miguel Ángel:
+plantilla única + anotación, nunca documento duplicado por persona.**
+Aplica a todo el proyecto (EPIs, nombramientos, autorizaciones,
+certificados), no solo a la carpeta que lo destapó. Diseño técnico
+cerrado y en producción, migración `0051` (commit `c888ea6`,
+verificado con `showmigrations` real, no solo icono verde):
+- `DocumentTypeCatalog.current_template` -- FK a la plantilla vigente
+  de cada tipo.
+- `DocumentAcknowledgment` -- modelo nuevo, deliberadamente separado
+  de `EpiDelivery` (EPIs = objetos físicos, posesión actual;
+  documentos = línea temporal con huecos reales). Persona + tipo +
+  fecha + `source_entry` opcional.
+- Decisión definitiva sobre botiquines registrada de forma permanente
+  (persona responsable + centro de gasto de destino vía `MachineAsset`
+  `EMP*`, ya existente -- confirmado con captura real del panel, sin
+  gap de modelo pese a que en esta misma sesión se afirmó lo
+  contrario por error, corregido en el momento).
 
-## PRINCIPIO DE DISEÑO CRÍTICO -- Plantilla única + anotación, nunca
-## documento duplicado por persona (S69, verbatim Miguel Ángel)
+**Incidente real de hardcodeo, corregido con código permanente.**
+Una resolución de persona por nombre se hizo primero con DNIs escritos
+a mano en un Comando S de un solo uso -- señalado por Miguel Ángel
+como el error real que es ("¿qué pasa con los miles de documentos que
+entren detrás?"). Corregido: `resolve_person_by_name_count()`
+(`classification_service.py`, commit `a6dd1ea`) implementa la regla
+real (contar por `given_name`+`first_surname`: 1=resuelto, 0=inactivo,
+2+=ambiguo, nunca forzado) como función reutilizable, validada contra
+los casos reales de la sesión.
 
-**Aplica a TODO el proyecto, no solo a `NOMBRAMIENTO RECURSO
-PREVENTIVO` -- descubierto al auditar esa carpeta, pero es el mismo
-patrón repetido en autorizaciones de uso de maquinaria, delegaciones
-de funciones, poderes, certificados de empresa, formación, y EPIs.**
-No decidir esto por interpretación propia en ninguna carpeta futura
-sin releer este principio primero.
+**`NO CONFORMES` reencolado, entendimiento corregido.** No es
+cuarentena de revisión manual (como estaba mal anotado) -- es destino
+fijo de lo que Gemini no pudo clasificar en su única pasada. 28
+archivos reencolados a su carpeta espejo real dentro de `_CUARENTENA/`
+(replicando `RequeueNoConformesView`), listos para la siguiente pasada
+de `consume_quarantine_task`.
 
-Verbatim: *"Aquí hay lo que es una plantilla, una plantilla del
-recurso preventivo, la misma plantilla hecha para un trabajador y la
-misma plantilla hecha para un trabajador firmada [...] No tenemos por
-qué guardar todos los documentos. Lo hacemos igual que hacemos con
-los EPIs. No guardamos un documento de EPI en la carpeta de la
-persona a la que se le ha entregado; lo que hacemos es anotar en su
-ficha que se le ha entregado un EPI. Toda la información referente al
-EPI está en la ficha del propio EPI; no duplicamos, triplicamos,
-cuadruplicamos esa información [...] El problema es que se están
-guardando documentos [...] cuando eso es una plantilla para usarla. Y
-cuando se asigne a un trabajador se anota que el trabajador ha
-recibido esa información, esa formación, ese EPI, ese certificado, ese
-lo que sea."*
+**`FOTOS CARNET`, dominio arrancado en bloque -- 83 de 160
+resueltos.** Cifra vieja del anexo (14) era solo el subconjunto de
+fotos convertidas en S67, nunca la carpeta completa. Aplicado
+`resolve_person_by_name_count()` en dos pasadas (exacto, luego
+comparación de conjunto de palabras completo). 21 ambiguos y 53 sin
+coincidencia, sin forzar ninguno -- ver hoja de ruta.
 
-**Regla operativa derivada:**
-1. **Un tipo de plantilla = un documento real, deduplicado.** Si hay
-   varias copias de "la misma" plantilla (distintas empresas, GRUAS/
-   TRANSGRUAL, o simple duplicado), quedarse con una por variante
-   real, nunca varias idénticas.
-2. **La entrega/firma a una persona NUNCA es un documento nuevo
-   guardado** -- es una fila de anotación (persona + plantilla/tipo +
-   fecha, mismo patrón ya construido en `EpiDelivery` para EPIs).
-   Extender ese mismo patrón (o uno análogo) a: `NOMBRAMIENTO_
-   RECURSO_PREVENTIVO`, `ENTREGA_INFORMACION`, `AUTORIZACION_USO_
-   MAQUINARIA`, `AUTORIZACION_LIBRO_SUBCONTRATA`, `AUTORIZACION_
-   MEDIOS_COMUNICACION`, y cualquier otro tipo de la familia PRL_
-   FORMACION/ADMINISTRATIVO que hoy se esté guardando duplicado por
-   persona.
-3. **Consecuencia real para lo YA clasificado:** todo lo que en
-   sesiones anteriores se tipó como copia individual por persona de
-   una plantilla (posible caso ya real en `AUTORIZACION_USO_
-   MAQUINARIA` y similares, sin auditar todavía) es candidato a
-   revisión bajo este mismo principio -- pendiente de auditoría
-   propia, no asumir alcance sin verificar caso por caso.
-4. **Diseño técnico pendiente, no trivial:** ¿se generaliza
-   `EpiDelivery` a un modelo más amplio tipo "entrega/reconocimiento
-   de plantilla" válido para cualquier `DocumentTypeCatalog`, o se
-   crea un modelo nuevo específico? No decidir por interpretación
-   propia -- confirmar con Miguel Ángel antes de escribir ninguna
-   migración. Es trabajo de diseño real, no una tarea de tipar
-   carpeta por carpeta como las anteriores.
+**Commits reales de la sesión (23):** `7964893` (orden hoja de ruta),
+`5a1399e` (`--pending` en `audit_document_names`), `88b819f`
+(decisión botiquines), `4e604f9`/`9363d2f`/`cac634f` (centro de gasto,
+corrección de error real), `35f0a6f`/`851a09e` (regla desambiguación),
+`a6dd1ea` (`resolve_person_by_name_count`), `745de03`, `2d638bb`
+(principio plantilla única), `407a7ab` (3 plantillas), `c888ea6`
+(migración `0051`), `aebb0f4`, `443407c`, `25ae442`, `1db77c0`,
+`696e60b` (cierre 6 carpetas transversales), `d5a26a9` (NO CONFORMES +
+FOTOS CARNET).
 
-**Primera aplicación real del principio, S69 -- tres plantillas
-limpias construidas y subidas.** A partir de tres documentos reales de
-la raíz de `NOMBRAMIENTO RECURSO PREVENTIVO` que resultaron NO ser
-plantillas (eran copias ya rellenadas de una persona concreta,
-identificadas mal por el nombre de archivo), se construyeron sus
-versión en blanco reales (empresa/persona/fecha/firma/logo quitados,
-validado con `scripts/office/validate.py` y verificado visualmente) y
-se subieron como plantilla única real vía `spare_parts.gcs_service.
-upload_bytes()` + `document_explorer.index_writer.refresh_folder()`:
+## Hoja de ruta para S70 -- orden exacto dictado por Miguel Ángel al
+## cierre de S69, empezar directamente por el punto 1, sin preguntar
 
-- `PLANTILLA_RECURSO_PREVENTIVO.docx` (desde
-  `DESIGNACIÓN DE RECURSO PREVENTIVO TRANSGRUAL.docx`) -> tipo ya
-  existente `RECURSO_PREVENTIVO`, en
-  `DOC. PERSONAL/NOMBRAMIENTO RECURSO PREVENTIVO/`.
-- `PLANTILLA_NOMBRAMIENTO_RESPONSABLE_SEGURIDAD.docx` (desde
-  `Nomb.resp.seguridad - Transgrual - Alejandro Alvarez.doc`) -> tipo
-  NUEVO `NOMBRAMIENTO_RESPONSABLE_SEGURIDAD` (domain PERSONAL, family
-  PRL_FORMACION) -- concepto real distinto de `RECURSO_PREVENTIVO`:
-  interlocutor/responsable de seguridad de obra, no recurso
-  preventivo. En la misma carpeta.
-- `PLANTILLA_NOMBRAMIENTO_JEFE_MANIOBRAS.docx` (desde
-  `nombramiento responsable de los trabajos.doc`, que vivía mal
-  archivado en la raíz de `NOMBRAMIENTO RECURSO PREVENTIVO`) -> tipo
-  NUEVO `NOMBRAMIENTO_JEFE_MANIOBRAS` (domain PERSONAL, family
-  PRL_FORMACION), reubicado a su carpeta real
-  `DOC. PERSONAL/NOMBRAMIENTO JEFE DE MANIOBRAS/` -- carpeta que
-  sigue pendiente en la hoja de ruta con sus propios 5 archivos por
-  persona, ahora ya con plantilla real identificada de antemano.
+1. **21 archivos ambiguos de `FOTOS CARNET`** (2+ `PersonIdentity`
+   candidatos reales, listado completo en el registro de S69 de más
+   arriba) -- presentar cada nombre de archivo con sus candidatos
+   reales a Miguel Ángel y registrar la equivalencia verbatim.
+   Criterio de cierre: los 21 resueltos a una persona concreta o
+   confirmados como no resolubles, ninguno queda en ambigüedad sin
+   respuesta.
+2. **53 archivos sin ninguna coincidencia de `FOTOS CARNET`** (apodos,
+   erratas de apellido, posibles bajas -- listado completo arriba) --
+   pedir a Miguel Ángel la equivalencia real de cada uno, nunca forzar
+   por analogía. Criterio de cierre: cada uno resuelto a persona real,
+   confirmado como baja, o marcado explícitamente como no resoluble
+   por Miguel Ángel.
+3. **Extractor real EPIs/Botiquines -> `EpiDelivery`/
+   `DocumentAcknowledgment`.** Diseño ya cerrado en S69 (modelo,
+   migración `0051`, decisión botiquines/centro de gasto) -- falta
+   construir el extractor real y ejecutar la migración de datos:
+   (a) los ~2.565+971 archivos ya tipados `EPIS` sin fila de
+   `EpiDelivery` todavía, (b) botiquines (0 registros reales
+   conocidos tras descartar el xlsx -- confirmar con Miguel Ángel si
+   hay otra fuente antes de dar esto por vacío), (c) los 150 archivos
+   de `NOMBRAMIENTO RECURSO PREVENTIVO` (`FIRMADOS`/`ENTREGA
+   FUNCIONES`/raíz) ya tipados como copia individual por persona,
+   candidatos directos a `DocumentAcknowledgment`. Criterio de cierre:
+   extractor construido y al menos un lote real migrado y verificado
+   contra la BD, con los documentos originales correspondientes en
+   papelera.
+4. **Sistema de plantillas de comunicados/notificaciones** -- decidir
+   con Miguel Ángel si entra en H30 o se abre hito nuevo antes de
+   diseñar el modelo de datos (semilla real: tabla propia, roles
+   `DOCS_SUPERVISOR`/`ADMIN`, dos tipos comunicado/circular fusionados
+   y notificación, ver anexo S67 para el registro original de la
+   idea).
 
-**Diseño técnico del punto 4, CERRADO en S69 -- migración `0051`,
-commit `c888ea6`, verificado en producción (HEAD real del servidor
-= `c888ea6`, `showmigrations` confirma `0051_document_acknowledgment_
-s69` aplicada, no solo icono verde de GitHub Actions).** Decisión
-final de Miguel Ángel: **modelo separado**, `EpiDelivery` no se toca
-ni se generaliza (razón real, no solo preferencia: EPIs son catálogo
-de objetos físicos consultado por posesión actual; documentos/
-nombramientos se consultan por línea temporal con huecos reales --
-`requires_periodic_review` no significa nada para un nombramiento).
+**Arrastrados, sin orden de prioridad fijado, después de los 4
+puntos de arriba:**
 
-Dos piezas nuevas:
-1. `DocumentTypeCatalog.current_template` -- FK opcional a
-   `DocumentIndexEntry`, la plantilla vigente de ese tipo. Cambiar de
-   plantilla (nueva ley, cambio de domicilio) es reapuntar este
-   campo, nunca tocar el histórico de entregas ya registradas.
-2. `DocumentAcknowledgment` -- persona + `document_type` (FK a
-   `DocumentTypeCatalog`, sirve para cualquier tipo sin migración
-   nueva cuando aparezca uno) + `delivery_date` + `source_entry`
-   opcional (solo cuando un tipo concreto exige conservar la copia
-   firmada exacta, nunca por defecto) + `extraction_method`. Cero
-   filas todavía -- listo para usarse en cuanto se decida por dónde
-   empezar la migración real de lo ya guardado por persona.
+5. **Punto 6 -- confirmar parada real de `h28-ocr-batch-1`**
+   (arrastrado 4.ª sesión sin avanzar desde S66). Criterio de cierre:
+   `gcloud compute instances list` mostrando `TERMINATED`, o
+   confirmación explícita de que sigue encendida a propósito.
+6. **Gap real anotado en S69, sin resolver:** `current_template` de
+   `DocumentTypeCatalog` solo admite una plantilla por tipo, pero
+   `AUTORIZACION_MEDIOS_COMUNICACION` tiene 3 variantes reales por
+   empresa (AGG/GRA/TR). Decidir con Miguel Ángel si se generaliza a
+   relación M2M o se acepta una sola como canónica antes de que
+   aparezca el mismo caso en otro tipo.
+7. **Punto 5 -- volver a `DOC. MAQUINAS` por heurística de Fase A**
+   (dry-run ya ejecutado en S69, `run_fase_a_sweep_scoped`, resultado
+   nunca leído -- retomar desde ahí). **Sigue bloqueado**: no se
+   empieza hasta que los puntos 1-2 de arriba (FOTOS CARNET) estén
+   cerrados y Miguel Ángel confirme explícitamente que el dominio
+   PERSONAL está completo.
 
-**`NOMBRAMIENTO RECURSO PREVENTIVO`, CERRADA en S69 -- 165/165
-archivos tipados, cero sin tipo.** Desglose real final verificado
-contra el servidor:
-- Raíz (14): 7 `RECURSO_PREVENTIVO` (incluida la plantilla nueva), 6
-  `NOMBRAMIENTO_RESPONSABLE_SEGURIDAD` (tipo nuevo, incluida su
-  plantilla), 1 `NOMBRAMIENTO_JEFE_MANIOBRAS` (el archivo mal
-  archivado, ya reubicado por tipo -- pendiente mover físicamente a su
-  carpeta real cuando se trabaje esa carpeta transversal).
-- `/ENTREGA FUNCIONES RECURSO PREVENTIVO/` (67): `ENTREGA_INFORMACION`.
-- `/FIRMADOS/` (77): `RECURSO_PREVENTIVO` -- **ya estaban tipados
-  desde antes de esta sesión**, cada copia individual por persona
-  como documento propio. Confirma que el problema real que motivó el
-  principio de plantilla única de hoy ya estaba en producción, no era
-  hipotético.
-- `/obsoletos/` (7): mandados a papelera directa (`trash_dossier_
-  entry`), como pidió Miguel Ángel desde el principio -- la propia
-  carpeta ya decía lo que eran.
+EOF
+# 2026-08-26
+# EnterpriseBot
+# ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md
+*  **Session:** Fase A de DOC. MAQUINAS, confirmación de parada de VM y carpetas transversales pendientes de DOC. PERSONAL
+*  **Description:** Sesión de continuidad de H30. Se retomará el Punto 5 (~2982 archivos sin tipo de DOC. MAQUINAS) con una primera pasada de heurística de Fase A calibrada con muestra reducida antes de escalar, nunca OCR directo. Se confirmará el estado real de parada de la VM h28-ocr-batch-1 (Punto 6). Si queda margen, se abordarán las carpetas transversales residuales de DOC. PERSONAL (65 archivos: PLAN DE ACTUACION FRENTE AL CALOR, LISTADOS MAQUINARIA Y PERSONAL, NOMBRAMIENTO RECURSO PREVENTIVO, NOMBRAMIENTO JEFE DE MANIOBRAS, ENTREGA EPIS, MEDIDAS ADICIONALES DE PROTECCION y sueltas), confirmando el tipo real carpeta por carpeta con Miguel Ángel antes de aplicar nada, con el mismo criterio ya usado en RETENCIONES. Cualquier incidencia real detectada fuera de alcance se corregirá de inmediato en la misma sesión, según directriz 4.9.
 
-**Pendiente real para una sesión futura, bloque de trabajo propio:**
-migrar los 150 archivos ya tipados como `RECURSO_PREVENTIVO`/
-`ENTREGA_INFORMACION`/`NOMBRAMIENTO_RESPONSABLE_SEGURIDAD` que siguen
-siendo copia individual por persona (los 77 de `FIRMADOS`, los 67 de
-`ENTREGA FUNCIONES`, los 6 de la raíz con nombre real) a filas de
-`DocumentAcknowledgment` (persona + tipo + fecha extraída del propio
-nombre/documento), y mandar los originales a papelera una vez migrados
--- exactamente el pase a BBDD que Miguel Ángel pidió dejar preparado
-hoy, sin ejecutar todavía. Mismo criterio para los 6 archivos ya
-existentes con `NOMBRAMIENTO_RECURSO_PREVENTIVO` en
-`PERSONAL/OPERARIOS/...` (fuera de esta carpeta transversal,
-detectados en S69 al auditar) -- posible duplicado con lo de
-`FIRMADOS`, sin confirmar todavía, revisar en el mismo bloque.
-
-**`NOMBRAMIENTO JEFE DE MANIOBRAS` (5+plantilla), CERRADA en S69.**
-4 archivos → `NOMBRAMIENTO_JEFE_MANIOBRAS`, 1 (`Encargado de
-seguridad ALBERTILLO DRAGADOS.docx`) → `NOMBRAMIENTO_RESPONSABLE_
-SEGURIDAD` (mismo concepto que el tipo nuevo de la carpeta anterior,
-no jefe de maniobras real). Dominio resuelto para Ramos Zambrana José
-(único real). `RAFAEL BAENA` -> 0 coincidencias reales por
-`resolve_person_by_name_count()` -- dato real, no activo hoy en la
-plantilla, aunque aparezca en listados antiguos (Hoja3 del xlsx de
-botiquines descartado). Quedan sin dominio, sin forzar: `Jefe de
-maniobras ALBERTILLO DRAGADOS.docx` + `Encargado de seguridad
-ALBERTILLO DRAGADOS.docx` (apodo, mismo caso ya fichado en `FOTOS
-CARNET`) y `Jefe de maniobras TECSA.docx` (nombre de cliente/obra, no
-de persona) -- pendientes de confirmación con Miguel Ángel, mismo
-bloque que los otros apodos sin resolver.
-
-**`ENTREGA EPIS`, CERRADA en S69 -- 535 archivos a papelera.**
-Decisión explícita de Miguel Ángel: papelera directa de toda carpeta
-de año 2020 o anterior (`/2012` a `/2020`, incluidas subcarpetas por
-categoría -- `CONDUCTORES`, `EPIS ELECTRICOS`, `MECANICOS`, `RESCATE
-EN CARRETERA`, `ROPA IGNIFUGA`, `EPIS POR ELEMENTOS/2018-2020`,
-`MECANICOS/2018-2020`), quedándose desde 2021 en adelante. Filtro
-real: año máximo entre los segmentos de `parent_path` que sean un
-año de 4 dígitos, `<= 2020` -> papelera (`trash_dossier_entry`, 4.12).
-Quedan 971 archivos reales (2021 en adelante + sueltos de raíz sin
-año + `EPIS VARIAS EMPRESAS`/`EPIS Y MAQUINAS`), todos ya tipados
-`EPIS` desde antes de esta sesión -- correcto tal cual, siguen fuera
-del flujo normal de Fase A hasta que se construya el extractor a
-`EpiDelivery` (ver hoja de ruta, punto EPIs). Dos hallazgos menores
-dentro de esta carpeta, ya tipados de antes correctamente: un archivo
-`CERT_EXENCION_TACOGRAFO` (`Circular Leave Letter.doc`) y uno
-`FORMACION` (`FORMACION.doc`) viven mal archivados dentro de `EPIS
-VARIAS EMPRESAS` pero con tipo ya correcto -- no se han movido de
-carpeta, pendiente de mover físicamente en sesión futura si se decide
-que importa (4.12: mover es solo escritura de `parent_path`, no
-bloquea nada mientras tanto).
-
-**`MEDIDAS ADICIONALES DE PROTECCION`, CERRADA en S69.** La foto sin
-texto legible (`Cabello Sanchez 3-5-16 base alvarez.jpg`) a papelera.
-Tipo nuevo `INFORMACION_MEDIDAS_PROTECCION` (domain PERSONAL, family
-PRL_FORMACION) creado con matiz real distinto a los tipos anteriores:
-el cuerpo del documento (deficiencia detectada + medida preventiva)
-**no es boilerplate fijo, es contenido específico de cada incidencia**
--- confirmado por Miguel Ángel ("marco fijo y hueco"). Plantilla
-construida con el marco institucional fijo (empresa/obra/trabajador/
-DNI/fecha en blanco) y marcadores `[Descripción de la deficiencia...]`
-/`[Medida de protección...]` como texto libre a rellenar cada vez, no
-como campos de un formulario cerrado. Enlazada como
-`current_template` del tipo. 3 archivos reales aplicados. **Nota para
-cuando se migre a `DocumentAcknowledgment`:** este tipo es candidato
-real a llevar `source_entry` relleno (no nulo) porque el contenido
-varía por incidencia y sí interesa conservar cuál se entregó
-exactamente -- distinto del resto de nombramientos, donde el
-documento es intercambiable.
-
-**"4 sueltas de 1", CERRADA en S69 -- cifra vieja otra vez
-equivocada: 29 archivos reales, no 4.** Sueltos directamente bajo
-`DOC. PERSONAL` más algunos en subcarpetas menores nunca auditadas
-(`ENCARGADO DE SEGURIDAD`, `COMPROBACION TITULOS FLC`, `CONTROL
-HORARIOS`, `VACACIONES`, y dos rincones de `ENTREGA EPIS` --
-`EPIS DESGLOSADOS/SEMI` y `BOTIQUINES`). Resultado:
-- 4 aplicados a tipos ya existentes (`MOD_145`, `LISTADO_PERSONAL_
-  MAQUINARIA_OBRA`, `RECURSO_PREVENTIVO` -- `RP.docx`, mal archivado
-  en `VACACIONES`, resultó ser un nombramiento de Recurso Preventivo
-  real de Carlos Bas Blanco en obra de Sacyr --, `COMUNICACION_
-  JORNADA`).
-- 3 de `EPIS DESGLOSADOS/SEMI` → `EPIS`, consistente con el resto de
-  la carpeta.
-- 3 plantillas por empresa (`Comunicaciones electrónicas trabajadores
-  AGG/GRA/TR`) → `AUTORIZACION_MEDIOS_COMUNICACION` (ya existía) --
-  **gap real anotado:** el modelo solo admite una `current_template`
-  por tipo, pero aquí hay 3 variantes reales por empresa: sin
-  resolver todavía, pendiente de decidir si se generaliza
-  `current_template` a `current_templates` (M2M) o se acepta una sola
-  como canónica.
-- 1 → `NOMBRAMIENTO_RESPONSABLE_SEGURIDAD` (Díaz Quintero, Antonio
-  Jesús ute puente de Cádiz), dominio resuelto con
-  `resolve_person_by_name_count()`.
-- 2 a papelera: la segunda copia real de `Entrega botiquines-máquinas.
-  xlsx` (mismo descarte que la primera) y el dossier `Aut.trabajadores
-  Huelva-comprobacion titulos.pdf` -- **decisión explícita de Miguel
-  Ángel: Huelva se deja fuera por completo** ("apenas disponemos de
-  información de ellos... esos dos lo único que hacen son parte de
-  trabajo"), papelera directa sin repartir por persona, sin excepción
-  para Bas Blanco/Baena Marquez pese a tener `PersonIdentity` real --
-  coherente con la exclusión permanente de la delegación de Huelva ya
-  registrada para resolución de identidad (Carlos Bas Blanco, David
-  Contreras Márquez).
-- **8 tipos nuevos creados**, todos domain PERSONAL salvo los dos
-  marcados COMPANY: `AUTORIZACION_GENERICA` (ADMINISTRATIVO, marco
-  fijo + hueco de la acción autorizada -- 4 archivos), `ENTREGA_
-  DOCUMENTACION_VARIA` (ADMINISTRATIVO, marco fijo + hueco de qué se
-  entrega -- 3 archivos), `ENTREGA_PROTOCOLO_AUXILIO_CARRETERA`
-  (PRL_FORMACION, plantilla fija real de la DGT -- 1 archivo),
-  `ACTA_ELECCIONES_SINDICALES` (COMPANY/ADMINISTRATIVO, acta oficial
-  Junta de Andalucía -- 1 archivo), `JUSTIFICANTE_LABORAL_AUSENCIA`
-  (SALUD_BAJAS_PERSONA -- 2 archivos), `CARTA_BAJA_VOLUNTARIA`
-  (LABORAL, candidata real a plantilla -- llega casi en blanco -- 1
-  archivo), `ACUERDO_SALARIAL` (LABORAL -- 1 archivo),
-  `CERTIFICADO_JUSTIFICACION_DESPLAZAMIENTO` (COMPANY/ADMINISTRATIVO,
-  específico COVID/estado de alarma 2020, baja probabilidad de
-  recurrencia futura -- 1 archivo).
-- **Fuera de alcance, sin tipo, decisión explícita de no forzar:**
-  `PARTES DIETAS NUEVO.pdf` (plantilla operativa de parte semanal de
-  trabajo, no es documentación de persona) y `CONTROL ENTREGA.xlsx`
-  (hoja de control interno de `CONTROL HORARIOS`, no un documento
-  tipable). Quedan sin `document_type`, no cuentan como residuo
-  pendiente.
-
-**Con esto, las 6 carpetas transversales de `DOC. PERSONAL` de la
-hoja de ruta de S69 quedan CERRADAS.**
-
-**`NO CONFORMES`, CERRADO en S69 -- corregido el entendimiento
-propio, verbatim Miguel Ángel: no es cuarentena mixta para revisión
-manual documento a documento (como yo lo tenía anotado), es donde
-aterriza lo que Gemini no pudo clasificar en su única pasada (N=1,
-decisión 3.14 H29/S041) para ser reencolado y reintentado.**
-Reencolados los 28 archivos reales (`RequeueNoConformesView` replicado
-por shell: mueve cada uno a su carpeta espejo original dentro de
-`_CUARENTENA/` a partir de `blob_name`, nunca a la raíz plana --
-mismo fix del incidente real S042 de `A-69 Leasing BBVA.pdf`, 142
-pasadas perdidas por mandar siempre a la raíz). Quedan en cola para la
-siguiente pasada de `consume_quarantine_task` -- ninguno tipado a
-mano en esta sesión, correcto tal cual.
-
-**`FOTOS CARNET`, dominio resuelto en bloque -- 83 de 160, CERRADO
-el trabajo automático posible.** La cifra vieja del anexo (14) era
-solo el subconjunto de fotos convertidas desde PDF en S67, nunca la
-carpeta completa -- las 151 `IMAGEN` normales nunca se habían pasado
-por resolución de persona. Aplicado `resolve_person_by_name_count()`
-en bloque (dos pasadas: apellido+nombre exacto, luego comparación por
-conjunto de palabras completo del nombre de archivo contra
-`given_name`+`first_surname`, para cubrir el patrón `APELLIDO1
-APELLIDO2 NOMBRE[ INICIAL]` muy repetido en esta carpeta). Quedan sin
-dominio, sin forzar:
-- **21 ambiguos** (2+ `PersonIdentity` reales coinciden) -- casos
-  reales de apellidos compartidos (`ALVAREZ DIAZ`/`ALVAREZ GEA`,
-  `DIAZ ORTEGA`/`DIAZ QUINTERO`/`DIAZ DIAZ`...), necesitan
-  confirmación humana caso por caso, nunca el primer candidato.
-- **53 sin ninguna coincidencia** -- apodos (`Manolo`, `Juanma`),
-  erratas de apellido, o archivos de personas que ya no están activas
-  en la plantilla actual. Mismo bloque que los 14 casos ya arrastrados
-  de sesiones anteriores (Manolo/Manuel, Velazquez/Velasco,
-  Arca/Arcas, JM), ahora con la lista completa real -- pendiente de
-  pedir a Miguel Ángel la equivalencia real de cada uno.
-
-1. **Carpetas transversales de `DOC. PERSONAL` sin tocar** (65+
-   archivos según la cifra vieja de S67/S68, corregida al cerrar cada
-   una -- ver detalle real bajo cada carpeta: `PLAN DE ACTUACION
-   FRENTE AL CALOR` 11, `LISTADOS MAQUINARIA Y PERSONAL` **36 reales**
-   (no 7, cifra vieja nunca recontada -- ver cierre abajo),
-   `NOMBRAMIENTO RECURSO PREVENTIVO` 7, `NOMBRAMIENTO JEFE DE
-   MANIOBRAS` 5, `ENTREGA EPIS` 4, `MEDIDAS ADICIONALES DE PROTECCION`
-   4, 4 sueltas de 1) -- mismo patrón que `RETENCIONES`: confirmar
-   tipo real carpeta por carpeta con Miguel Ángel antes de aplicar
-   nada.
-
-   **`PLAN DE ACTUACION FRENTE AL CALOR` (11), CERRADA en S69.**
-   Fechas reales verificadas: 2025 (no 2015, nada que descartar). Tipo
-   nuevo `PLAN_ACTUACION_CALOR` (domain PERSONAL, family
-   PRL_FORMACION) creado y aplicado a los 11 archivos -- 3 son el
-   propio plan/anexo sin persona (sin dominio resuelto, correcto tal
-   cual), 8 son hojas de firma individual, las 8 con dominio resuelto
-   a la persona real.
-
-   **Regla real de desambiguación por nombre, de obligado cumplimiento
-   en adelante (S69, corrige redacción propia previa -- Miguel Ángel
-   NO afirmó que nombre+primer apellido sea único en una plantilla de
-   70; el procedimiento real es otro, verbatim):** *"Cuando tengas
-   nombre y apellido, que lo compruebes en la base de datos. ¿Cuántos
-   hay con ese nombre y ese primer apellido? [...] Hay solo uno. Ya
-   está resuelto. No hay ninguno. Ya no trabaja aquí [...] Si hay más
-   de uno, no se puede resolver."* Procedimiento exacto, por cada
-   archivo, antes de aplicar nada:
-   1. Contar `PersonIdentity` reales que coincidan en `given_name` +
-      `first_surname` (segundo apellido del archivo, si lo hay, no
-      hace falta para contar -- pero si el archivo SÍ lo trae, se
-      usa como filtro adicional, no se ignora).
-   2. **Resultado 1** -- resuelto, es esa persona (aunque el archivo
-      no traiga segundo apellido, como `BARBERO CUENCA MANUEL`, único
-      "Manuel Barbero" real en la empresa).
-   3. **Resultado 0** -- la persona ya no está activa en la empresa
-      (no es "sin resolver", es un dato en sí mismo -- tratar según
-      corresponda, no dejarlo en limbo).
-   4. **Resultado 2 o más** -- NO se resuelve. Nunca forzar por
-      analogía ni por el primer candidato de la lista (bug real de la
-      primera pasada: "GOMEZ GOMEZ" coincidía también con "GOMEZ
-      GARCIA" por contener "GOMEZ" dos veces en el nombre de
-      archivo -- ese caso concreto sí quedó bien sin resolver).
-
-   **CORREGIDO EN LA MISMA SESIÓN (S69) -- incidente real de
-   hardcodeo.** La regla de arriba se aplicó primero a mano (dos DNIs
-   sueltos escritos directamente en un Comando S de un solo uso) en
-   vez de como código reutilizable -- señalado por Miguel Ángel como
-   el error real que es: *"Pretendemos hacer un sistema resiliente...
-   si ahora nos entra un documento con el nombre... ya no sabemos
-   clasificarlo."* Corregido: `resolve_person_by_name_count()`
-   (`document_explorer/classification_service.py`, commit `a6dd1ea`)
-   implementa la regla como función permanente -- recibe
-   `given_name`/`first_surname`/`second_surname` opcional, devuelve
-   `(NAME_MATCH_UNIQUE, persona)` / `(NAME_MATCH_INACTIVE, None)` /
-   `(NAME_MATCH_AMBIGUOUS, None)`. Validada contra los dos casos
-   reales de esta sesión (Barbero Cuenca Manuel, Gómez García José
-   Antonio) -- mismo resultado que la resolución manual. **De
-   obligado uso en adelante para cualquier resolución de persona por
-   nombre**, nunca más un DNI escrito a mano en un comando de un solo
-   uso.
-
-   **`LISTADOS MAQUINARIA Y PERSONAL`, CERRADA en S69.** Cifra real
-   verificada: **36 archivos**, no los 7 arrastrados desde S67/S68
-   (esa cifra nunca se recontó contra el servidor -- el filtro real
-   incluye todo el árbol `RELACION DE PERSONAL POR OBRAS`, con
-   subcarpetas por cliente/obra: AISTER, ACRIST. VILLA DUCAL, ADITEL,
-   DRAGADOS, ELECNOR, EMTE, MLR, RUGUE, SANDO, SELWO, THYSSENKRUPP,
-   UTE EDAR NERJA, VIMAC bajo GRUAS, y ACRIST. VILLA DUCAL, ADITEL,
-   EMTE, FERROVIAL, SELWO, UTE ACISA-ACEINSA bajo TRANSGRUAL). Tipo ya
-   existente `LISTADO_PERSONAL_MAQUINARIA_OBRA` (domain COMPANY, sin
-   persona individual) aplicado a los 36, sin ambigüedad -- todos son
-   listados agregados por obra/cliente, ninguno requiere resolución de
-   persona.
-
-2. **14 archivos de `FOTOS CARNET` con dominio sin resolver** --
-   apodos (Manolo/Manuel), erratas de apellido (Velazquez/Velasco,
-   Arca/Arcas), iniciales (JM) -- pedir a Miguel Ángel la equivalencia
-   real de cada uno, nunca forzar por analogía.
-3. **`FRANCISCO GOMEZ GOMEZ.docx`, `INDICE.pub`, `LISTADO DE
-   FOTOS.pub`** -- decisión pendiente, fuera del comando de conversión
-   de hoy.
-4. **`NO CONFORMES`** (28, cuarentena mixta real) -- revisión
-   documento a documento, más lento, sesión propia.
-5. **Extractor real EPIs/Botiquines -> `EpiDelivery`** -- bloque de
-   trabajo propio, no una sesión de cierre. Modelo ya existe desde
-   S047 (`EpiItemCatalog`, `EpiDelivery`, `EpiReview`), nunca se
-   construyó el extractor real (OCR/heurística sobre los documentos
-   de entrega).
-   **Plan ya decidido, no ambiguo (S54, reconfirmado S58/S63/S65) --
-   perderlo de vista fue el error real de S69, corregido aquí:**
-   EPIS está deliberadamente excluido del recorrido heurístico normal
-   desde S48 (nunca se le asigna `document_type` por Fase A). El flujo
-   real es: (1) clasificar/identificar lo que hay en la nube -- 2.565
-   archivos ya identificados como EPI al cierre de S66, aparte de los
-   tipados normales; (2) extraer cada documento a
-   `EpiDelivery`/`EpiReview` (persona, EPI, fecha) -- **sin construir
-   todavía, es el bloque real pendiente**; (3) mandar los originales a
-   papelera (virtual, 4.12) una vez la información vive estructurada.
-   **Prioridad explícita, verbatim S63:** "EPIS... se acometen al
-   final... no se tocan mientras quede trabajo real de dominio u OCR
-   pendiente" -- va detrás de todo lo demás de `DOC. PERSONAL`, a
-   propósito, no por olvido.
-   **DECISIÓN DEFINITIVA sobre botiquines, verbatim de Miguel Ángel
-   (S69) -- registrada aquí de forma permanente, NO volver a
-   preguntar esto en ninguna sesión futura:** *"Los botiquines se
-   decidió que se asignan a la persona a la que se le entrega [...]
-   Siempre van a ser tratados como si fueran EPIs y se entregan a una
-   persona. Esa persona los asignará a una máquina [...] A la persona
-   que se le entrega es a la que se asocia el botiquín junto con la
-   máquina a la que va destinado. Pero sobre todo es la persona,
-   porque es la responsable de ese botiquín."*
-   - Botiquín = un EPI más dentro de `EpiItemCatalog` (familia propia,
-     p. ej. "Botiquín"), nunca un modelo aparte.
-   - `EpiDelivery.person` (responsable real) es y sigue siendo
-     obligatoria -- coincide con el diseño actual, no hace falta
-     tocarlo.
-   - Falta un campo real que hoy no existe: referencia al centro de
-     gasto de destino del botiquín -- no es solo máquina, Miguel Ángel
-     confirmó (S69): *"pueden ir hacia máquina, pueden ir hacia
-     taller, pueden ir hacia almacén, pueden ir hacia plataformas...
-     no solamente a camiones."*
-     **CORREGIDO EN LA MISMA SESIÓN (S69) -- error real mío:** dije
-     aquí mismo que no existía ningún centro de gasto no-vehículo,
-     basado solo en el `SCOPE` acotado de `run_fase_a_sweep_scoped`
-     (subconjunto de carpetas de máquinas), sin comprobarlo contra la
-     tabla real `MachineAsset`. Miguel Ángel lo desmintió con una
-     captura real del panel "Centros de gasto": **`MachineAsset` YA
-     cubre talleres y almacenes**, con código `EMP*` (`EMPRESA_TALLER_
-     HUELVA`, `EMPRESA_ALMACEN_MECANICO`, `EMPRESA_TALLER_ELEVACION`,
-     `EMPRESA_ALMACEN_DEPENDENCIAS`, `EMPRESA_LOGISTICA`...), activos,
-     con familia propia (`HUELVA`, `MOVILES`, `PLATAFOR`, `DEPENDENCIAS`,
-     `LOGISTICA`) y contador de documentos ya vinculados (5, 97, 12,
-     46...). **No hay ningún gap de modelo.** `destination_machine`
-     (FK opcional a `fleet.MachineAsset`) es exactamente el campo
-     correcto -- un centro de gasto tipo taller/almacén es una fila
-     de `MachineAsset` más, con su propio código `EMP*`. Nada que
-     diseñar de nuevo cuando se construya el extractor: se resuelve
-     igual que cualquier otro centro de gasto por código.
-   - `Entrega botiquines-máquinas.xlsx`: **DESCARTADO, decisión
-     explícita de Miguel Ángel (S69) -- a papelera, no se vuelve a usar
-     como fuente de datos.** El archivo solo tenía 3 de 94 filas
-     rellenas y con fechas de 2015 -- sin volumen real aprovechable.
-     Lo único que se conserva de él es el propio criterio de diseño ya
-     registrado arriba (persona responsable + centro de gasto de
-     destino + fecha), no sus datos.
-6. **Sistema de plantillas de comunicados/notificaciones** -- decidir
-   si entra en H30 o se abre hito nuevo antes de diseñar el modelo de
-   datos.
-7. **Punto 6** -- confirmar parada real de `h28-ocr-batch-1`
-   (arrastrado desde S66). Puede hacerse en cualquier momento, no
-   bloquea ni depende de nada de lo anterior.
-8. **Punto 5** -- volver a `DOC. MAQUINAS` por heurística de Fase A,
-   **únicamente** cuando los puntos 1-4 de arriba estén cerrados y
-   Miguel Ángel confirme que el dominio PERSONAL está completo.
+EOF
