@@ -80,6 +80,7 @@ _SOFFICE_TIMEOUT_SECONDS = 60
 # Subcarpetas validadas por muestreo real (S72) -- ver docstring.
 _SCOPED_SUBFOLDERS = {
     "EPIS POR ELEMENTOS", "EPIS INDUSTRIA QUIMICA", "MECANICOS",
+    "EPIS ALTA VISIBILIDAD",
 }
 # Los años sueltos (genérico) se aceptan por regex, ver _in_scope().
 _YEAR_RE = re.compile(r"^\d{4}$")
@@ -99,6 +100,14 @@ _NAME_TABLE_RE = re.compile(
 _DATE_LIKE_RE = re.compile(r"^[0-9./\-]+$")
 _MARK_RE = re.compile(r"^[Xx✓]{1,2}$")
 _FILENAME_DATE_RE = re.compile(r"(\d{1,2})-(\d{1,2})-(\d{2,4})")
+# Respaldo cuando el nombre de archivo no trae fecha (ALTA VISIBILIDAD,
+# ver EPIS_ALTA_VISIBILIDAD_*.docx real, S72): "FECHA: DD/MM/AAAA" en
+# la cabecera, o "A fecha DD/MM/AAAA" en el pie (a veces la fecha va
+# pegada en la misma celda que la propia etiqueta "A fecha").
+_CONTENT_DATE_RE = re.compile(
+    r"(?:A\s+fecha|FECHA)\s*[:.]?\s*(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})",
+    re.IGNORECASE,
+)
 
 # (frase clave normalizada -> codigo EpiItemCatalog). Se compara
 # contra la etiqueta normalizada (mayusculas, sin acentos, espacios
@@ -123,6 +132,15 @@ ITEM_LABEL_MAP = [
     ("GUANTES DE ACCION MECANICA", "GUANTES_MECANICA"),
     ("GUANTES ACCION MECANICA", "GUANTES_MECANICA"),
     ("GUANTES DE PROTECCION", "GUANTES_PROTECCION"),
+    ("TRAJE DE AGUA", "TRAJE_AGUA"),
+    ("POLAR", "POLAR"),
+    ("BUZO DE TRABAJO", "BUZO_ALTA_VISIBILIDAD"),
+    ("PANTALON DE TRABAJO", "PANTALON_ALTA_VISIBILIDAD"),
+    ("PANTALON", "PANTALON_ALTA_VISIBILIDAD"),
+    ("POLO MANGA CORTA", "POLO_ALTA_VISIBILIDAD"),
+    ("POLO", "POLO_ALTA_VISIBILIDAD"),
+    ("MONO DE TRABAJO", "MONO_ALTA_VISIBILIDAD"),
+    ("CHAQUETA", "CHAQUETA_ALTA_VISIBILIDAD"),
     ("CINTURON DE SEG", "CINTURON_DOS_AMARRES"),
     ("ELEMENTO DE AMARRE", "ELEMENTO_AMARRE"),
     ("ARNE", "ARNES_SEGURIDAD"),  # cubre "ARNE" y "ARNES DE SEGURIDAD"
@@ -239,6 +257,26 @@ def _normalize_dni(dni):
 
 def _parse_date_from_filename(name):
     match = _FILENAME_DATE_RE.search(name)
+    if not match:
+        return None
+    day, month, year = match.groups()
+    year = int(year)
+    if year < 100:
+        year += 2000
+    try:
+        return datetime.date(year, int(month), int(day))
+    except ValueError:
+        return None
+
+
+def _parse_date_from_content(text):
+    """Respaldo cuando el nombre de archivo no trae fecha (plantilla
+    ALTA VISIBILIDAD, S72). Usa la PRIMERA fecha real encontrada
+    ('FECHA:' o 'A fecha') -- si el documento tiene varias fechas
+    distintas rellenadas (cabecera y pie), se queda con la primera
+    por simplicidad; no hay evidencia real de que difieran de forma
+    significativa en los documentos muestreados."""
+    match = _CONTENT_DATE_RE.search(text)
     if not match:
         return None
     day, month, year = match.groups()
@@ -386,7 +424,9 @@ class Command(BaseCommand):
 
             totals["procesados"] += 1
             _, dni = _parse_person(text)
-            date = _parse_date_from_filename(entry.name)
+            date = _parse_date_from_filename(entry.name) or (
+                _parse_date_from_content(text)
+            )
 
             if not dni:
                 self.stdout.write(
