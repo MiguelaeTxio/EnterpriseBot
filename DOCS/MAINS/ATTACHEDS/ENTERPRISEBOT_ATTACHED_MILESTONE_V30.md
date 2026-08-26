@@ -4773,6 +4773,45 @@ CARNET`) y `Jefe de maniobras TECSA.docx` (nombre de cliente/obra, no
 de persona) -- pendientes de confirmación con Miguel Ángel, mismo
 bloque que los otros apodos sin resolver.
 
+**`ENTREGA EPIS`, CERRADA en S69 -- 535 archivos a papelera.**
+Decisión explícita de Miguel Ángel: papelera directa de toda carpeta
+de año 2020 o anterior (`/2012` a `/2020`, incluidas subcarpetas por
+categoría -- `CONDUCTORES`, `EPIS ELECTRICOS`, `MECANICOS`, `RESCATE
+EN CARRETERA`, `ROPA IGNIFUGA`, `EPIS POR ELEMENTOS/2018-2020`,
+`MECANICOS/2018-2020`), quedándose desde 2021 en adelante. Filtro
+real: año máximo entre los segmentos de `parent_path` que sean un
+año de 4 dígitos, `<= 2020` -> papelera (`trash_dossier_entry`, 4.12).
+Quedan 971 archivos reales (2021 en adelante + sueltos de raíz sin
+año + `EPIS VARIAS EMPRESAS`/`EPIS Y MAQUINAS`), todos ya tipados
+`EPIS` desde antes de esta sesión -- correcto tal cual, siguen fuera
+del flujo normal de Fase A hasta que se construya el extractor a
+`EpiDelivery` (ver hoja de ruta, punto EPIs). Dos hallazgos menores
+dentro de esta carpeta, ya tipados de antes correctamente: un archivo
+`CERT_EXENCION_TACOGRAFO` (`Circular Leave Letter.doc`) y uno
+`FORMACION` (`FORMACION.doc`) viven mal archivados dentro de `EPIS
+VARIAS EMPRESAS` pero con tipo ya correcto -- no se han movido de
+carpeta, pendiente de mover físicamente en sesión futura si se decide
+que importa (4.12: mover es solo escritura de `parent_path`, no
+bloquea nada mientras tanto).
+
+**`MEDIDAS ADICIONALES DE PROTECCION`, CERRADA en S69.** La foto sin
+texto legible (`Cabello Sanchez 3-5-16 base alvarez.jpg`) a papelera.
+Tipo nuevo `INFORMACION_MEDIDAS_PROTECCION` (domain PERSONAL, family
+PRL_FORMACION) creado con matiz real distinto a los tipos anteriores:
+el cuerpo del documento (deficiencia detectada + medida preventiva)
+**no es boilerplate fijo, es contenido específico de cada incidencia**
+-- confirmado por Miguel Ángel ("marco fijo y hueco"). Plantilla
+construida con el marco institucional fijo (empresa/obra/trabajador/
+DNI/fecha en blanco) y marcadores `[Descripción de la deficiencia...]`
+/`[Medida de protección...]` como texto libre a rellenar cada vez, no
+como campos de un formulario cerrado. Enlazada como
+`current_template` del tipo. 3 archivos reales aplicados. **Nota para
+cuando se migre a `DocumentAcknowledgment`:** este tipo es candidato
+real a llevar `source_entry` relleno (no nulo) porque el contenido
+varía por incidencia y sí interesa conservar cuál se entregó
+exactamente -- distinto del resto de nombramientos, donde el
+documento es intercambiable.
+
 1. **Carpetas transversales de `DOC. PERSONAL` sin tocar** (65+
    archivos según la cifra vieja de S67/S68, corregida al cerrar cada
    una -- ver detalle real bajo cada carpeta: `PLAN DE ACTUACION
