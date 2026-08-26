@@ -253,6 +253,18 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("--apply", action="store_true")
         parser.add_argument("--limit", type=int, default=None)
+        parser.add_argument(
+            "--shard-count", type=int, default=1,
+            help=(
+                "Número total de consolas en paralelo. Cada documento "
+                "se reparte de forma determinista (por pk) entre los "
+                "shards -- ninguno se procesa dos veces."
+            ),
+        )
+        parser.add_argument(
+            "--shard-index", type=int, default=0,
+            help="Índice de este shard (0 a shard-count - 1).",
+        )
 
     def handle(self, *args, **options):
         apply_changes = options["apply"]
@@ -274,6 +286,17 @@ class Command(BaseCommand):
             root_offset = idx + len("ENTREGA EPIS")
             if _in_scope(e, root_offset):
                 entries.append(e)
+
+        shard_count = options["shard_count"]
+        shard_index = options["shard_index"]
+        if shard_count > 1:
+            # Determinista por pk (nunca por posición en la lista, que
+            # puede cambiar entre consolas si algo se procesa/borra
+            # mientras las demás siguen corriendo) -- cada documento
+            # cae en un único shard, sin solapes ni huecos.
+            entries = [
+                e for e in entries if e.id % shard_count == shard_index
+            ]
 
         if limit:
             entries = entries[:limit]
