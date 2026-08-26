@@ -49,10 +49,18 @@ _DNI_RE = re.compile(
     r"D\.?\s*N\.?\s*I\.?\s*[:.]?\s*([0-9]{1,2}[.\s]?[0-9]{3}[.\s]?"
     r"[0-9]{3}\s*-?\s*[A-Za-z]?)"
 )
-_NAME_RE = re.compile(
+# Dos formas reales confirmadas (S72): "Se hace entrega a D. X con
+# D.N.I. Y" (plantilla genérica, en párrafo suelto) y "D. X ... D.N.I.
+# Y" sin "entrega a" (plantilla "desglosados", dentro de celda de
+# tabla -- ver EPIS_01-10-18_desglosados_MORENO_GARCIA.doc real).
+_NAME_ENTREGA_RE = re.compile(
     r"[Ee]ntrega\s+a\s+D\.?[ºa]?\.?\s+([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ\s.]+?)"
     r"\s+con\s+D\.?\s*N\.?\s*I"
 )
+_NAME_TABLE_RE = re.compile(
+    r"D\.?\s+([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ\s]+?)\s+D\.?\s*N\.?\s*I\.?\s*[:.]?"
+)
+_DATE_LIKE_RE = re.compile(r"^[0-9./\-]+$")
 _MARK_RE = re.compile(r"^[Xx✓]{1,2}$")
 
 _SOFFICE_TIMEOUT_SECONDS = 60
@@ -84,33 +92,66 @@ def _convert_doc_to_docx(content_bytes):
 
 
 def _extract_docx(data):
-    """Devuelve (texto_parrafos, filas_tabla) de un .docx real."""
+    """Devuelve (texto_completo, filas_tabla) de un .docx real.
+
+    texto_completo combina parrafos de cuerpo Y texto de celdas de
+    tabla -- python-docx los separa (doc.paragraphs NUNCA incluye
+    contenido de doc.tables), y la plantilla "desglosados" pone el
+    bloque DATOS DEL TRABAJADOR entero dentro de una celda, no en un
+    parrafo suelto (hallazgo real S72, ver
+    EPIS_01-10-18_desglosados_MORENO_GARCIA.doc).
+    """
     import docx
     doc = docx.Document(io.BytesIO(data))
-    text = "\n".join(p.text for p in doc.paragraphs)
+    para_text = "\n".join(p.text for p in doc.paragraphs)
 
     rows = []
+    table_texts = []
     for table in doc.tables:
         for row in table.rows:
             cells = [c.text.strip() for c in row.cells]
             rows.append(cells)
-    return text, rows
+            table_texts.append(" ".join(cells))
+
+    full_text = para_text + "\n" + "\n".join(table_texts)
+    return full_text, rows
 
 
 def _parse_person(text):
     dni_match = _DNI_RE.search(text)
-    name_match = _NAME_RE.search(text)
     dni = dni_match.group(1).strip() if dni_match else None
+
+    name_match = _NAME_ENTREGA_RE.search(text) or _NAME_TABLE_RE.search(text)
     name = name_match.group(1).strip() if name_match else None
     return name, dni
 
 
 def _parse_marked_items(table_rows):
+    """Una celda es "marca" si es X/x/✓. La etiqueta real puede estar
+    en la celda SIGUIENTE (plantilla "desglosados": [X, ARTICULO,
+    FECHA, FIRMA]) o en la ANTERIOR (plantilla generica:
+    [ARTICULO, X]) -- se prueba la siguiente primero, y solo si no
+    parece una etiqueta real (vacia o con pinta de fecha) se prueba la
+    anterior."""
     marked = []
     for row in table_rows:
-        for i in range(1, len(row)):
-            if _MARK_RE.match(row[i]) and row[i - 1]:
-                marked.append(row[i - 1])
+        for i, cell in enumerate(row):
+            if not _MARK_RE.match(cell):
+                continue
+            label = None
+            if (
+                i - 1 >= 0 and row[i - 1]
+                and not _MARK_RE.match(row[i - 1])
+                and not _DATE_LIKE_RE.match(row[i - 1])
+            ):
+                label = row[i - 1]
+            elif (
+                i + 1 < len(row) and row[i + 1]
+                and not _DATE_LIKE_RE.match(row[i + 1])
+            ):
+                label = row[i + 1]
+            if label:
+                marked.append(label)
     return marked
 
 
