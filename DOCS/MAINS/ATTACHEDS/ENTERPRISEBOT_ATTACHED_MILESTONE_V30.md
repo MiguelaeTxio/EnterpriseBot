@@ -4671,30 +4671,34 @@ lo contrario.
    - `EpiDelivery.person` (responsable real) es y sigue siendo
      obligatoria -- coincide con el diseño actual, no hace falta
      tocarlo.
-   - Falta un campo real que hoy no existe: referencia a la
-     `MachineAsset` de destino del botiquín (la persona es la
-     responsable, la máquina es el destino). Al construir el
-     extractor (punto pendiente, ver arriba): añadir
-     `destination_machine` (FK opcional a `fleet.MachineAsset`,
-     `null=True`) a `EpiDelivery` -- opcional porque no todos los EPIs
-     tienen máquina de destino (un casco no la tiene, un botiquín sí).
-   - `Entrega botiquines-máquinas.xlsx` **no es un caso aparte ni una
-     pregunta abierta** -- es la fuente de datos real (relación
-     persona/máquina/fecha de entrega) que alimenta la extracción a
-     `EpiDelivery` cuando se construya el extractor. Se procesa igual
-     que cualquier otro origen de datos de EPIs, con
-     `destination_machine` relleno a partir de esa hoja.
-     **Contenido real verificado (S69, archivo aportado por Miguel
-     Ángel):** 3 hojas -- `MAQUINAS` es la relevante (94 máquinas,
-     columnas código/matrícula/modelo/persona/fecha), pero **solo 3 de
-     94 filas tienen persona y fecha rellenas** (A36→Álvarez Gea
-     30/06/2015, A43→Ramos Zambrana 04/05/2015, P18→Álvarez
-     Gorgoschidse con fecha en texto libre "Cree que tiene..." 30/6/15,
-     no fecha real). `Hoja1` es un volcado de flota sin relación con
-     botiquines. `Hoja3` es un checklist de entregas por persona/
-     empresa con columna `BOTIQUINES` incluida pero completamente
-     vacía. Volumen real a extraer: 3 registros como mucho, no 94 --
-     no dimensionar el extractor pensando en más de lo que hay.
+   - Falta un campo real que hoy no existe: referencia al centro de
+     gasto de destino del botiquín. **Corregido en la misma sesión
+     (S69) tras aclaración de Miguel Ángel:** no es solo máquina --
+     *"pueden ir hacia máquina, pueden ir hacia taller, pueden ir
+     hacia almacén, pueden ir hacia plataformas... no solamente a
+     camiones."* Es decir, el destino es el concepto amplio de
+     **centro de gasto**, no una `MachineAsset` concreta.
+     **Gap real, verificado ahora mismo: hoy NO existe ningún modelo
+     de centro de gasto genérico** -- `fleet.MachineAsset` (docstring:
+     "cada instancia es un centro de gasto") cubre solo maquinaria/
+     vehículos con código de flota real (`SCOPE` de
+     `run_fase_a_sweep_scoped`: cabezas tractoras, camiones brazo,
+     carretillas, grúas móviles, grupo electrógenos, plataformas,
+     remolques/góndolas, vehículos de empresa, ventosa) -- no hay
+     ninguna entidad "TALLER" ni "ALMACÉN" dada de alta como centro de
+     gasto en ningún sitio del proyecto. Pendiente de diseño real
+     cuando se construya el extractor: o se amplía `MachineAsset` para
+     admitir centros de gasto no-vehículo, o se crea un modelo
+     genérico de centro de gasto del que `MachineAsset` pase a ser un
+     caso particular. No decidir esto por interpretación propia --
+     preguntar a Miguel Ángel en el momento de construir el extractor.
+   - `Entrega botiquines-máquinas.xlsx`: **DESCARTADO, decisión
+     explícita de Miguel Ángel (S69) -- a papelera, no se vuelve a usar
+     como fuente de datos.** El archivo solo tenía 3 de 94 filas
+     rellenas y con fechas de 2015 -- sin volumen real aprovechable.
+     Lo único que se conserva de él es el propio criterio de diseño ya
+     registrado arriba (persona responsable + centro de gasto de
+     destino + fecha), no sus datos.
 6. **Sistema de plantillas de comunicados/notificaciones** -- decidir
    si entra en H30 o se abre hito nuevo antes de diseñar el modelo de
    datos.
