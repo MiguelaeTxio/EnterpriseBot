@@ -1282,6 +1282,78 @@ def resolve_person_identity(dni_hint: str) -> PersonIdentity | None:
     return PersonIdentity.objects.filter(dni=_normalize_dni(dni_hint)).first()
 
 
+# Regla de negocio real de resolución de persona por nombre, verbatim
+# de Miguel Ángel (H30, S69) -- NUNCA una lógica inventada de
+# "nombre+primer apellido es único en 70 personas": "Cuando tengas
+# nombre y apellido, que lo compruebes en la base de datos. ¿Cuántos
+# hay con ese nombre y ese primer apellido? Hay solo uno. Ya está
+# resuelto. No hay ninguno. Ya no trabaja aquí. Si hay más de uno, no
+# se puede resuelve." Sustituye cualquier resolución de persona hecha
+# a mano con DNIs sueltos en un comando de un solo uso (incidente real
+# S69: dos archivos de PLAN_ACTUACION_CALOR resueltos con DNIs
+# hardcodeados en vez de con esta regla como código reutilizable,
+# corregido en la misma sesión).
+NAME_MATCH_UNIQUE = "UNIQUE"
+NAME_MATCH_INACTIVE = "INACTIVE"
+NAME_MATCH_AMBIGUOUS = "AMBIGUOUS"
+
+
+def resolve_person_by_name_count(given_name, first_surname, second_surname=None):
+    """
+    Implements Miguel Ángel's exact rule (H30, S69): count real
+    `PersonIdentity` rows matching `given_name` + `first_surname`
+    (case-insensitive). If `second_surname` is provided (the file
+    name actually carries it), it's used as an extra real filter, not
+    ignored -- it only narrows an already-ambiguous count, it is never
+    required when absent.
+
+    Returns a `(status, person_or_none)` tuple:
+    - `(NAME_MATCH_UNIQUE, person)` -- exactly one real match, resolved.
+    - `(NAME_MATCH_INACTIVE, None)` -- zero matches, this is itself a
+      real fact (the person is not/no longer in the roster), not an
+      "unresolved" case -- caller decides what that means (e.g. trash
+      candidate), never leaves it in limbo.
+    - `(NAME_MATCH_AMBIGUOUS, None)` -- two or more real matches, NEVER
+      resolved by guessing the first candidate or by analogy.
+
+    ---
+
+    Implementa la regla exacta de Miguel Ángel (H30, S69): cuenta
+    filas reales de `PersonIdentity` que coincidan en `given_name` +
+    `first_surname` (sin distinguir mayúsculas). Si se aporta
+    `second_surname` (el nombre de archivo lo trae de verdad), se usa
+    como filtro real adicional, nunca se ignora -- pero solo acota un
+    recuento ya ambiguo, nunca es obligatorio cuando no está presente.
+
+    Devuelve una tupla `(estado, persona_o_none)`:
+    - `(NAME_MATCH_UNIQUE, persona)` -- exactamente una coincidencia
+      real, resuelto.
+    - `(NAME_MATCH_INACTIVE, None)` -- cero coincidencias, esto es en
+      sí mismo un dato real (la persona no está/ya no está en la
+      plantilla), no un caso "sin resolver" -- quien llama decide qué
+      hacer con eso (p. ej. candidato a papelera), nunca lo deja en
+      limbo.
+    - `(NAME_MATCH_AMBIGUOUS, None)` -- dos o más coincidencias reales,
+      NUNCA se resuelve adivinando el primer candidato ni por analogía.
+    """
+    qs = PersonIdentity.objects.filter(
+        given_name__iexact=(given_name or "").strip(),
+        first_surname__iexact=(first_surname or "").strip(),
+    )
+    if second_surname:
+        qs = qs.filter(second_surname__iexact=second_surname.strip())
+
+    matches = list(qs)
+    if len(matches) == 1:
+        return NAME_MATCH_UNIQUE, matches[0]
+    if len(matches) == 0:
+        return NAME_MATCH_INACTIVE, None
+    return NAME_MATCH_AMBIGUOUS, None
+
+
+
+
+
 # Categoría de aterrizaje para toda identidad creada de forma
 # automática (S041, decisión explícita de Miguel Ángel) -- ningún
 # documento dice de forma fiable a cuál de las 13 categorías reales
