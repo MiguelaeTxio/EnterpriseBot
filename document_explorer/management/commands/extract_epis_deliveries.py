@@ -515,6 +515,7 @@ class Command(BaseCommand):
                 )
             }
             created_this_doc = 0
+            new_rows_this_doc = 0
             for code in codes:
                 epi_item = catalog_by_code.get(code)
                 if epi_item is None:
@@ -524,7 +525,7 @@ class Command(BaseCommand):
                         % (code, entry.parent_path, entry.name)
                     )
                     continue
-                EpiDelivery.objects.get_or_create(
+                _, was_created = EpiDelivery.objects.get_or_create(
                     person=person, epi=epi_item, delivery_date=date,
                     defaults={
                         "source_entry": entry,
@@ -532,8 +533,18 @@ class Command(BaseCommand):
                     },
                 )
                 created_this_doc += 1
+                if was_created:
+                    new_rows_this_doc += 1
 
-            totals["deliveries_creadas"] += created_this_doc
+            # deliveries_creadas cuenta SOLO filas nuevas de verdad --
+            # bug real detectado en S72: antes contaba cada intento,
+            # inflando la cifra con documentos reales duplicados
+            # (mismo contenido copiado en varias carpetas de mes,
+            # p. ej. EPIS ALTA VISIBILIDAD CLASE 3/2024/{mes}) donde
+            # get_or_create devuelve la fila ya existente sin crear
+            # nada nuevo. El total fiable siempre fue el de la propia
+            # tabla EpiDelivery, verificado por consulta directa.
+            totals["deliveries_creadas"] += new_rows_this_doc
             if created_this_doc == len(codes):
                 totals["documentos_completos"] += 1
                 person_ct = ContentType.objects.get_for_model(PersonIdentity)
