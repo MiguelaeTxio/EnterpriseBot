@@ -4758,6 +4758,21 @@ existentes con `NOMBRAMIENTO_RECURSO_PREVENTIVO` en
 detectados en S69 al auditar) -- posible duplicado con lo de
 `FIRMADOS`, sin confirmar todavía, revisar en el mismo bloque.
 
+**`NOMBRAMIENTO JEFE DE MANIOBRAS` (5+plantilla), CERRADA en S69.**
+4 archivos → `NOMBRAMIENTO_JEFE_MANIOBRAS`, 1 (`Encargado de
+seguridad ALBERTILLO DRAGADOS.docx`) → `NOMBRAMIENTO_RESPONSABLE_
+SEGURIDAD` (mismo concepto que el tipo nuevo de la carpeta anterior,
+no jefe de maniobras real). Dominio resuelto para Ramos Zambrana José
+(único real). `RAFAEL BAENA` -> 0 coincidencias reales por
+`resolve_person_by_name_count()` -- dato real, no activo hoy en la
+plantilla, aunque aparezca en listados antiguos (Hoja3 del xlsx de
+botiquines descartado). Quedan sin dominio, sin forzar: `Jefe de
+maniobras ALBERTILLO DRAGADOS.docx` + `Encargado de seguridad
+ALBERTILLO DRAGADOS.docx` (apodo, mismo caso ya fichado en `FOTOS
+CARNET`) y `Jefe de maniobras TECSA.docx` (nombre de cliente/obra, no
+de persona) -- pendientes de confirmación con Miguel Ángel, mismo
+bloque que los otros apodos sin resolver.
+
 1. **Carpetas transversales de `DOC. PERSONAL` sin tocar** (65+
    archivos según la cifra vieja de S67/S68, corregida al cerrar cada
    una -- ver detalle real bajo cada carpeta: `PLAN DE ACTUACION
