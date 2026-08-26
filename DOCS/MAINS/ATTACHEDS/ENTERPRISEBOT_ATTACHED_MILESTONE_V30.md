@@ -4657,15 +4657,33 @@ lo contrario.
    final... no se tocan mientras quede trabajo real de dominio u OCR
    pendiente" -- va detrás de todo lo demás de `DOC. PERSONAL`, a
    propósito, no por olvido.
-   **Gap real sin resolver, arrastrado desde S68 sin respuesta:**
-   `Entrega botiquines-máquinas.xlsx` es botiquín entregado a
-   **máquina**, no a persona -- `EpiDelivery.person` es FK obligatoria
-   a `PersonIdentity`, sin ningún campo para `MachineAsset`. No encaja
-   en el modelo tal como está diseñado. Pregunta bloqueante para
-   Miguel Ángel antes de tocar este punto: ¿se amplía `EpiDelivery`
-   para admitir también máquina como destinatario (GenericForeignKey,
-   mismo patrón que `DocumentAlert`/`DocumentSubstitutionLog` de H26),
-   o es un caso aparte que no pasa por este modelo?
+   **DECISIÓN DEFINITIVA sobre botiquines, verbatim de Miguel Ángel
+   (S69) -- registrada aquí de forma permanente, NO volver a
+   preguntar esto en ninguna sesión futura:** *"Los botiquines se
+   decidió que se asignan a la persona a la que se le entrega [...]
+   Siempre van a ser tratados como si fueran EPIs y se entregan a una
+   persona. Esa persona los asignará a una máquina [...] A la persona
+   que se le entrega es a la que se asocia el botiquín junto con la
+   máquina a la que va destinado. Pero sobre todo es la persona,
+   porque es la responsable de ese botiquín."*
+   - Botiquín = un EPI más dentro de `EpiItemCatalog` (familia propia,
+     p. ej. "Botiquín"), nunca un modelo aparte.
+   - `EpiDelivery.person` (responsable real) es y sigue siendo
+     obligatoria -- coincide con el diseño actual, no hace falta
+     tocarlo.
+   - Falta un campo real que hoy no existe: referencia a la
+     `MachineAsset` de destino del botiquín (la persona es la
+     responsable, la máquina es el destino). Al construir el
+     extractor (punto pendiente, ver arriba): añadir
+     `destination_machine` (FK opcional a `fleet.MachineAsset`,
+     `null=True`) a `EpiDelivery` -- opcional porque no todos los EPIs
+     tienen máquina de destino (un casco no la tiene, un botiquín sí).
+   - `Entrega botiquines-máquinas.xlsx` **no es un caso aparte ni una
+     pregunta abierta** -- es la fuente de datos real (relación
+     persona/máquina/fecha de entrega) que alimenta la extracción a
+     `EpiDelivery` cuando se construya el extractor. Se procesa igual
+     que cualquier otro origen de datos de EPIs, con
+     `destination_machine` relleno a partir de esa hoja.
 6. **Sistema de plantillas de comunicados/notificaciones** -- decidir
    si entra en H30 o se abre hito nuevo antes de diseñar el modelo de
    datos.
