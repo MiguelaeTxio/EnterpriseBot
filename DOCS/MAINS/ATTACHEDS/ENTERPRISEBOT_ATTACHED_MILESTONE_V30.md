@@ -4674,6 +4674,47 @@ lo que sea."*
    migración. Es trabajo de diseño real, no una tarea de tipar
    carpeta por carpeta como las anteriores.
 
+**Primera aplicación real del principio, S69 -- tres plantillas
+limpias construidas y subidas.** A partir de tres documentos reales de
+la raíz de `NOMBRAMIENTO RECURSO PREVENTIVO` que resultaron NO ser
+plantillas (eran copias ya rellenadas de una persona concreta,
+identificadas mal por el nombre de archivo), se construyeron sus
+versión en blanco reales (empresa/persona/fecha/firma/logo quitados,
+validado con `scripts/office/validate.py` y verificado visualmente) y
+se subieron como plantilla única real vía `spare_parts.gcs_service.
+upload_bytes()` + `document_explorer.index_writer.refresh_folder()`:
+
+- `PLANTILLA_RECURSO_PREVENTIVO.docx` (desde
+  `DESIGNACIÓN DE RECURSO PREVENTIVO TRANSGRUAL.docx`) -> tipo ya
+  existente `RECURSO_PREVENTIVO`, en
+  `DOC. PERSONAL/NOMBRAMIENTO RECURSO PREVENTIVO/`.
+- `PLANTILLA_NOMBRAMIENTO_RESPONSABLE_SEGURIDAD.docx` (desde
+  `Nomb.resp.seguridad - Transgrual - Alejandro Alvarez.doc`) -> tipo
+  NUEVO `NOMBRAMIENTO_RESPONSABLE_SEGURIDAD` (domain PERSONAL, family
+  PRL_FORMACION) -- concepto real distinto de `RECURSO_PREVENTIVO`:
+  interlocutor/responsable de seguridad de obra, no recurso
+  preventivo. En la misma carpeta.
+- `PLANTILLA_NOMBRAMIENTO_JEFE_MANIOBRAS.docx` (desde
+  `nombramiento responsable de los trabajos.doc`, que vivía mal
+  archivado en la raíz de `NOMBRAMIENTO RECURSO PREVENTIVO`) -> tipo
+  NUEVO `NOMBRAMIENTO_JEFE_MANIOBRAS` (domain PERSONAL, family
+  PRL_FORMACION), reubicado a su carpeta real
+  `DOC. PERSONAL/NOMBRAMIENTO JEFE DE MANIOBRAS/` -- carpeta que
+  sigue pendiente en la hoja de ruta con sus propios 5 archivos por
+  persona, ahora ya con plantilla real identificada de antemano.
+
+**Pendiente real de la raíz de `NOMBRAMIENTO RECURSO PREVENTIVO`,
+NO cerrada todavía:** los 8 documentos restantes de la raíz (copias ya
+rellenas de Francisco Gómez Rivero, Pedro Pérez Fernández, y los 3
+`Nomb.resp.seguridad` de Alejandro Álvarez/Daniel Baena sin leer
+todavía) no se han tocado -- son candidatos a anotación diferida bajo
+el principio de arriba, no a papelera inmediata (el diseño técnico del
+punto 4 sigue sin construirse). Los 67 de `/ENTREGA FUNCIONES
+RECURSO PREVENTIVO/` (ya tipados como `ENTREGA_INFORMACION` en el
+bloque anterior) y los archivos de `/FIRMADOS/` y `/obsoletos/` siguen
+sin auditar bajo este principio -- mismo criterio, no tocar hasta que
+el modelo de anotación exista.
+
 1. **Carpetas transversales de `DOC. PERSONAL` sin tocar** (65+
    archivos según la cifra vieja de S67/S68, corregida al cerrar cada
    una -- ver detalle real bajo cada carpeta: `PLAN DE ACTUACION
