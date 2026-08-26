@@ -4629,6 +4629,31 @@ lo contrario.
    ADICIONALES DE PROTECCION` 4, 4 sueltas de 1) -- mismo patrón que
    `RETENCIONES`: confirmar tipo real carpeta por carpeta con Miguel
    Ángel antes de aplicar nada.
+
+   **`PLAN DE ACTUACION FRENTE AL CALOR` (11), CERRADA en S69.**
+   Fechas reales verificadas: 2025 (no 2015, nada que descartar). Tipo
+   nuevo `PLAN_ACTUACION_CALOR` (domain PERSONAL, family
+   PRL_FORMACION) creado y aplicado a los 11 archivos -- 3 son el
+   propio plan/anexo sin persona (sin dominio resuelto, correcto tal
+   cual), 8 son hojas de firma individual, las 8 con dominio resuelto
+   a la persona real.
+
+   **Regla real de desambiguación por nombre, de obligado cumplimiento
+   en adelante (S69, corrige un bug propio de la primera pasada):**
+   en una plantilla de 70 empleados, `given_name` + `first_surname`
+   ya es prácticamente siempre único -- exigir también el segundo
+   apellido es sobre-restrictivo y deja sin resolver casos
+   inequívocos (`BARBERO CUENCA MANUEL`: único "Manuel Barbero" en
+   toda la empresa, sin segundo apellido en el nombre del archivo).
+   El bug real distinto y sí peligroso es el de primer apellido
+   repetido como segundo (`GOMEZ GOMEZ` matcheaba también contra
+   `GOMEZ GARCIA` por contener "GOMEZ" dos veces) -- ese caso sí debe
+   quedar sin resolver hasta desambiguar a mano, nunca forzarlo. Antes
+   de aplicar cualquier resolución por nombre: comprobar cuántos
+   `PersonIdentity` reales comparten `given_name`+`first_surname` --
+   si es 1, resolver directo aunque falte el segundo apellido en el
+   archivo; si es más de 1, pedir el dato que falte, nunca adivinar.
+
 2. **14 archivos de `FOTOS CARNET` con dominio sin resolver** --
    apodos (Manolo/Manuel), erratas de apellido (Velazquez/Velasco,
    Arca/Arcas), iniciales (JM) -- pedir a Miguel Ángel la equivalencia
