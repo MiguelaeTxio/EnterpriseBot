@@ -4639,20 +4639,29 @@ lo contrario.
    a la persona real.
 
    **Regla real de desambiguación por nombre, de obligado cumplimiento
-   en adelante (S69, corrige un bug propio de la primera pasada):**
-   en una plantilla de 70 empleados, `given_name` + `first_surname`
-   ya es prácticamente siempre único -- exigir también el segundo
-   apellido es sobre-restrictivo y deja sin resolver casos
-   inequívocos (`BARBERO CUENCA MANUEL`: único "Manuel Barbero" en
-   toda la empresa, sin segundo apellido en el nombre del archivo).
-   El bug real distinto y sí peligroso es el de primer apellido
-   repetido como segundo (`GOMEZ GOMEZ` matcheaba también contra
-   `GOMEZ GARCIA` por contener "GOMEZ" dos veces) -- ese caso sí debe
-   quedar sin resolver hasta desambiguar a mano, nunca forzarlo. Antes
-   de aplicar cualquier resolución por nombre: comprobar cuántos
-   `PersonIdentity` reales comparten `given_name`+`first_surname` --
-   si es 1, resolver directo aunque falte el segundo apellido en el
-   archivo; si es más de 1, pedir el dato que falte, nunca adivinar.
+   en adelante (S69, corrige redacción propia previa -- Miguel Ángel
+   NO afirmó que nombre+primer apellido sea único en una plantilla de
+   70; el procedimiento real es otro, verbatim):** *"Cuando tengas
+   nombre y apellido, que lo compruebes en la base de datos. ¿Cuántos
+   hay con ese nombre y ese primer apellido? [...] Hay solo uno. Ya
+   está resuelto. No hay ninguno. Ya no trabaja aquí [...] Si hay más
+   de uno, no se puede resolver."* Procedimiento exacto, por cada
+   archivo, antes de aplicar nada:
+   1. Contar `PersonIdentity` reales que coincidan en `given_name` +
+      `first_surname` (segundo apellido del archivo, si lo hay, no
+      hace falta para contar -- pero si el archivo SÍ lo trae, se
+      usa como filtro adicional, no se ignora).
+   2. **Resultado 1** -- resuelto, es esa persona (aunque el archivo
+      no traiga segundo apellido, como `BARBERO CUENCA MANUEL`, único
+      "Manuel Barbero" real en la empresa).
+   3. **Resultado 0** -- la persona ya no está activa en la empresa
+      (no es "sin resolver", es un dato en sí mismo -- tratar según
+      corresponda, no dejarlo en limbo).
+   4. **Resultado 2 o más** -- NO se resuelve. Nunca forzar por
+      analogía ni por el primer candidato de la lista (bug real de la
+      primera pasada: "GOMEZ GOMEZ" coincidía también con "GOMEZ
+      GARCIA" por contener "GOMEZ" dos veces en el nombre de
+      archivo -- ese caso concreto sí quedó bien sin resolver).
 
 2. **14 archivos de `FOTOS CARNET` con dominio sin resolver** --
    apodos (Manolo/Manuel), erratas de apellido (Velazquez/Velasco,
