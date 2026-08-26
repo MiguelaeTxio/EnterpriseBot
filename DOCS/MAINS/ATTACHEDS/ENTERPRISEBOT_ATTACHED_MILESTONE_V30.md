@@ -4726,18 +4726,37 @@ Dos piezas nuevas:
    filas todavía -- listo para usarse en cuanto se decida por dónde
    empezar la migración real de lo ya guardado por persona.
 
-**Pendiente real de la raíz de `NOMBRAMIENTO RECURSO PREVENTIVO`,
-NO cerrada todavía:** los 8 documentos restantes de la raíz (copias ya
-rellenas de Francisco Gómez Rivero, Pedro Pérez Fernández, y los 3
-`Nomb.resp.seguridad` de Alejandro Álvarez/Daniel Baena sin leer
-todavía) no se han tocado -- ahora sí son candidatos reales a
-`DocumentAcknowledgment` (una fila por persona, `source_entry` nulo
-salvo que Miguel Ángel diga lo contrario para alguno), pendiente de
-construir el comando que las migre y las mande a papelera. Los 67 de
-`/ENTREGA FUNCIONES RECURSO PREVENTIVO/` (ya tipados como
-`ENTREGA_INFORMACION`) y los archivos de `/FIRMADOS/` y `/obsoletos/`
-siguen sin auditar bajo este principio -- mismo criterio, bloque de
-trabajo propio, no de esta sesión.
+**`NOMBRAMIENTO RECURSO PREVENTIVO`, CERRADA en S69 -- 165/165
+archivos tipados, cero sin tipo.** Desglose real final verificado
+contra el servidor:
+- Raíz (14): 7 `RECURSO_PREVENTIVO` (incluida la plantilla nueva), 6
+  `NOMBRAMIENTO_RESPONSABLE_SEGURIDAD` (tipo nuevo, incluida su
+  plantilla), 1 `NOMBRAMIENTO_JEFE_MANIOBRAS` (el archivo mal
+  archivado, ya reubicado por tipo -- pendiente mover físicamente a su
+  carpeta real cuando se trabaje esa carpeta transversal).
+- `/ENTREGA FUNCIONES RECURSO PREVENTIVO/` (67): `ENTREGA_INFORMACION`.
+- `/FIRMADOS/` (77): `RECURSO_PREVENTIVO` -- **ya estaban tipados
+  desde antes de esta sesión**, cada copia individual por persona
+  como documento propio. Confirma que el problema real que motivó el
+  principio de plantilla única de hoy ya estaba en producción, no era
+  hipotético.
+- `/obsoletos/` (7): mandados a papelera directa (`trash_dossier_
+  entry`), como pidió Miguel Ángel desde el principio -- la propia
+  carpeta ya decía lo que eran.
+
+**Pendiente real para una sesión futura, bloque de trabajo propio:**
+migrar los 150 archivos ya tipados como `RECURSO_PREVENTIVO`/
+`ENTREGA_INFORMACION`/`NOMBRAMIENTO_RESPONSABLE_SEGURIDAD` que siguen
+siendo copia individual por persona (los 77 de `FIRMADOS`, los 67 de
+`ENTREGA FUNCIONES`, los 6 de la raíz con nombre real) a filas de
+`DocumentAcknowledgment` (persona + tipo + fecha extraída del propio
+nombre/documento), y mandar los originales a papelera una vez migrados
+-- exactamente el pase a BBDD que Miguel Ángel pidió dejar preparado
+hoy, sin ejecutar todavía. Mismo criterio para los 6 archivos ya
+existentes con `NOMBRAMIENTO_RECURSO_PREVENTIVO` en
+`PERSONAL/OPERARIOS/...` (fuera de esta carpeta transversal,
+detectados en S69 al auditar) -- posible duplicado con lo de
+`FIRMADOS`, sin confirmar todavía, revisar en el mismo bloque.
 
 1. **Carpetas transversales de `DOC. PERSONAL` sin tocar** (65+
    archivos según la cifra vieja de S67/S68, corregida al cerrar cada
