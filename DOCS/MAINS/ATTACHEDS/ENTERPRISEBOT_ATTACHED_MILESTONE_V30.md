@@ -4755,23 +4755,22 @@ corrección de error real), `35f0a6f`/`851a09e` (regla desambiguación),
 `696e60b` (cierre 6 carpetas transversales), `d5a26a9` (NO CONFORMES +
 FOTOS CARNET).
 
-## Hoja de ruta para S70 -- orden exacto dictado por Miguel Ángel al
-## cierre de S69, empezar directamente por el punto 1, sin preguntar
+## Hoja de ruta para S71
 
-1. **21 archivos ambiguos de `FOTOS CARNET`** (2+ `PersonIdentity`
-   candidatos reales, listado completo en el registro de S69 de más
-   arriba) -- presentar cada nombre de archivo con sus candidatos
-   reales a Miguel Ángel y registrar la equivalencia verbatim.
-   Criterio de cierre: los 21 resueltos a una persona concreta o
-   confirmados como no resolubles, ninguno queda en ambigüedad sin
-   respuesta.
-2. **53 archivos sin ninguna coincidencia de `FOTOS CARNET`** (apodos,
-   erratas de apellido, posibles bajas -- listado completo arriba) --
-   pedir a Miguel Ángel la equivalencia real de cada uno, nunca forzar
-   por analogía. Criterio de cierre: cada uno resuelto a persona real,
-   confirmado como baja, o marcado explícitamente como no resoluble
-   por Miguel Ángel.
-3. **Extractor real EPIs/Botiquines -> `EpiDelivery`/
+**Pregunta bloqueante primera, antes de tocar código (arrastrada la
+parada de la VM ya 5.ª sesión sin avanzar desde S66 -- deja de
+reescribirse como tarea abierta, ver directriz 2.2 del PCS):**
+¿sigue encendida `h28-ocr-batch-1` a propósito, o se puede confirmar
+ya su parada real (`gcloud compute instances list` -> `TERMINATED`)?
+Sin ese dato no se vuelve a intentar cerrar este punto solo.
+
+**Segunda pregunta bloqueante, condición para desbloquear el punto 4
+de abajo:** los puntos 1-2 de S70 (dominio `FOTOS CARNET`) quedaron
+cerrados al 100% (74/74) -- ¿confirmas que el dominio PERSONAL está
+completo para desbloquear la Fase A de `DOC. MAQUINAS`, o queda algo
+más pendiente en PERSONAL antes de dar ese visto bueno?
+
+1. **Extractor real EPIs/Botiquines -> `EpiDelivery`/
    `DocumentAcknowledgment`.** Diseño ya cerrado en S69 (modelo,
    migración `0051`, decisión botiquines/centro de gasto) -- falta
    construir el extractor real y ejecutar la migración de datos:
@@ -4783,28 +4782,32 @@ FOTOS CARNET).
    FUNCIONES`/raíz) ya tipados como copia individual por persona,
    candidatos directos a `DocumentAcknowledgment`. Criterio de cierre:
    extractor construido y al menos un lote real migrado y verificado
-   contra la BD, con los documentos originales correspondientes en
-   papelera.
-4. **Sistema de plantillas de comunicados/notificaciones** -- decidir
+   contra la BD (conteo real de filas `EpiDelivery`/
+   `DocumentAcknowledgment` creadas), con los documentos originales
+   correspondientes en papelera.
+2. **Sistema de plantillas de comunicados/notificaciones** -- decidir
    con Miguel Ángel si entra en H30 o se abre hito nuevo antes de
    diseñar el modelo de datos (semilla real: tabla propia, roles
    `DOCS_SUPERVISOR`/`ADMIN`, dos tipos comunicado/circular fusionados
    y notificación, ver anexo S67 para el registro original de la
-   idea).
-
-**Arrastrados, sin orden de prioridad fijado, después de los 4
-puntos de arriba:**
-
-5. **Punto 6 -- confirmar parada real de `h28-ocr-batch-1`**
-   (arrastrado 4.ª sesión sin avanzar desde S66). Criterio de cierre:
-   `gcloud compute instances list` mostrando `TERMINATED`, o
-   confirmación explícita de que sigue encendida a propósito.
-6. **Gap real anotado en S69, sin resolver:** `current_template` de
+   idea). Criterio de cierre de este punto en concreto: decisión
+   explícita de Miguel Ángel registrada (entra en H30 / hito nuevo),
+   no hace falta tener el modelo diseñado todavía para cerrarlo.
+3. **Gap real anotado en S69, sin resolver:** `current_template` de
    `DocumentTypeCatalog` solo admite una plantilla por tipo, pero
    `AUTORIZACION_MEDIOS_COMUNICACION` tiene 3 variantes reales por
    empresa (AGG/GRA/TR). Decidir con Miguel Ángel si se generaliza a
    relación M2M o se acepta una sola como canónica antes de que
-   aparezca el mismo caso en otro tipo.
+   aparezca el mismo caso en otro tipo. Criterio de cierre: decisión
+   tomada y, si aplica, migración real aplicada y verificada con
+   `showmigrations`.
+4. **Punto 5 -- volver a `DOC. MAQUINAS` por heurística de Fase A**
+   (dry-run ya ejecutado en S69, `run_fase_a_sweep_scoped`, resultado
+   nunca leído -- retomar desde ahí). **Bloqueado** hasta la respuesta
+   a la segunda pregunta bloqueante de arriba. Criterio de cierre:
+   ~2.982 archivos de `DOC. MAQUINAS` con una primera pasada de
+   heurística de Fase A aplicada y verificada contra la BD real
+   (conteo `sin_tipo` antes/después).
 7. **Punto 5 -- volver a `DOC. MAQUINAS` por heurística de Fase A**
    (dry-run ya ejecutado en S69, `run_fase_a_sweep_scoped`, resultado
    nunca leído -- retomar desde ahí). **Sigue bloqueado**: no se
@@ -4895,7 +4898,7 @@ EOF
 # 2026-08-26
 # EnterpriseBot
 # ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md
-*  **Session:** Fase A de DOC. MAQUINAS, confirmación de parada de VM y carpetas transversales pendientes de DOC. PERSONAL
-*  **Description:** Sesión de continuidad de H30. Se retomará el Punto 5 (~2982 archivos sin tipo de DOC. MAQUINAS) con una primera pasada de heurística de Fase A calibrada con muestra reducida antes de escalar, nunca OCR directo. Se confirmará el estado real de parada de la VM h28-ocr-batch-1 (Punto 6). Si queda margen, se abordarán las carpetas transversales residuales de DOC. PERSONAL (65 archivos: PLAN DE ACTUACION FRENTE AL CALOR, LISTADOS MAQUINARIA Y PERSONAL, NOMBRAMIENTO RECURSO PREVENTIVO, NOMBRAMIENTO JEFE DE MANIOBRAS, ENTREGA EPIS, MEDIDAS ADICIONALES DE PROTECCION y sueltas), confirmando el tipo real carpeta por carpeta con Miguel Ángel antes de aplicar nada, con el mismo criterio ya usado en RETENCIONES. Cualquier incidencia real detectada fuera de alcance se corregirá de inmediato en la misma sesión, según directriz 4.9.
+*  **Session:** Resolución completa de FOTOS CARNET: 21 ambiguos y 53 sin coincidencia
+*  **Description:** Sesión de continuidad de H30 (Vinculación Documental Real — Centros de Gasto y Personal), siguiendo el orden exacto dictado por Miguel Ángel al cierre de S69: se atacó directamente el punto 1 de la hoja de ruta, sin preguntar por dónde empezar. Se presentaron a Miguel Ángel, uno a uno, los 21 archivos ambiguos de FOTOS CARNET (2+ PersonIdentity candidatos reales) junto con sus candidatos reales, registrando verbatim la equivalencia confirmada para cada uno. A continuación se abordaron los 53 archivos sin ninguna coincidencia, resueltos según el criterio explícito de Miguel Ángel. En el proceso se detectó y corrigió un hueco real de diseño entre CompanyUser y PersonIdentity (Carlos Bas Blanco y David Contreras Márquez). Cualquier incidencia real detectada fuera de alcance se corrigió de inmediato en la misma sesión, según directriz 4.9.
 
 EOF
