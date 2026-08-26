@@ -4622,6 +4622,58 @@ hasta que estas líneas estén a cero (o hasta OCR/Gemini para los 265,
 que es su propia fase posterior) o Miguel Ángel decida explícitamente
 lo contrario.
 
+## PRINCIPIO DE DISEÑO CRÍTICO -- Plantilla única + anotación, nunca
+## documento duplicado por persona (S69, verbatim Miguel Ángel)
+
+**Aplica a TODO el proyecto, no solo a `NOMBRAMIENTO RECURSO
+PREVENTIVO` -- descubierto al auditar esa carpeta, pero es el mismo
+patrón repetido en autorizaciones de uso de maquinaria, delegaciones
+de funciones, poderes, certificados de empresa, formación, y EPIs.**
+No decidir esto por interpretación propia en ninguna carpeta futura
+sin releer este principio primero.
+
+Verbatim: *"Aquí hay lo que es una plantilla, una plantilla del
+recurso preventivo, la misma plantilla hecha para un trabajador y la
+misma plantilla hecha para un trabajador firmada [...] No tenemos por
+qué guardar todos los documentos. Lo hacemos igual que hacemos con
+los EPIs. No guardamos un documento de EPI en la carpeta de la
+persona a la que se le ha entregado; lo que hacemos es anotar en su
+ficha que se le ha entregado un EPI. Toda la información referente al
+EPI está en la ficha del propio EPI; no duplicamos, triplicamos,
+cuadruplicamos esa información [...] El problema es que se están
+guardando documentos [...] cuando eso es una plantilla para usarla. Y
+cuando se asigne a un trabajador se anota que el trabajador ha
+recibido esa información, esa formación, ese EPI, ese certificado, ese
+lo que sea."*
+
+**Regla operativa derivada:**
+1. **Un tipo de plantilla = un documento real, deduplicado.** Si hay
+   varias copias de "la misma" plantilla (distintas empresas, GRUAS/
+   TRANSGRUAL, o simple duplicado), quedarse con una por variante
+   real, nunca varias idénticas.
+2. **La entrega/firma a una persona NUNCA es un documento nuevo
+   guardado** -- es una fila de anotación (persona + plantilla/tipo +
+   fecha, mismo patrón ya construido en `EpiDelivery` para EPIs).
+   Extender ese mismo patrón (o uno análogo) a: `NOMBRAMIENTO_
+   RECURSO_PREVENTIVO`, `ENTREGA_INFORMACION`, `AUTORIZACION_USO_
+   MAQUINARIA`, `AUTORIZACION_LIBRO_SUBCONTRATA`, `AUTORIZACION_
+   MEDIOS_COMUNICACION`, y cualquier otro tipo de la familia PRL_
+   FORMACION/ADMINISTRATIVO que hoy se esté guardando duplicado por
+   persona.
+3. **Consecuencia real para lo YA clasificado:** todo lo que en
+   sesiones anteriores se tipó como copia individual por persona de
+   una plantilla (posible caso ya real en `AUTORIZACION_USO_
+   MAQUINARIA` y similares, sin auditar todavía) es candidato a
+   revisión bajo este mismo principio -- pendiente de auditoría
+   propia, no asumir alcance sin verificar caso por caso.
+4. **Diseño técnico pendiente, no trivial:** ¿se generaliza
+   `EpiDelivery` a un modelo más amplio tipo "entrega/reconocimiento
+   de plantilla" válido para cualquier `DocumentTypeCatalog`, o se
+   crea un modelo nuevo específico? No decidir por interpretación
+   propia -- confirmar con Miguel Ángel antes de escribir ninguna
+   migración. Es trabajo de diseño real, no una tarea de tipar
+   carpeta por carpeta como las anteriores.
+
 1. **Carpetas transversales de `DOC. PERSONAL` sin tocar** (65+
    archivos según la cifra vieja de S67/S68, corregida al cerrar cada
    una -- ver detalle real bajo cada carpeta: `PLAN DE ACTUACION
