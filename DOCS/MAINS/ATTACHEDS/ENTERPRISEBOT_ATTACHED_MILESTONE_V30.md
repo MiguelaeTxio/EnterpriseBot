@@ -5077,48 +5077,82 @@ vincular a su `EpiItemCatalog` (mismo mecanismo genérico
 aplicado aquí sobre `EpiItemCatalog`) -- recordatorio de Miguel Ángel,
 sin inventariar todavía cuántos documentos reales hay de este tipo.
 
+### COMPLETADAS EN S73 (parcial -- sesión en curso)
+
+**Pregunta bloqueante de S71/S72 resuelta:** sistema de plantillas de
+comunicados/notificaciones y gap de `AUTORIZACION_MEDIOS_COMUNICACION`
+aparcados explícitamente por Miguel Ángel ("Terminamos EPI's") --
+prioridad esta sesión: cerrar primero todo lo de EPIs (puntos 1-5 de
+la hoja de ruta original de S73, ver más abajo).
+
+**Punto 1 CERRADO: fichas técnicas/manuales de EPIs → vinculación real
+a `EpiItemCatalog`.**
+
+- Inventario real completo bajo `DOC. PERSONAL` (no solo `ENTREGA
+  EPIS` -- primer intento acotado ahí dio 0 candidatos porque el
+  filtro excluía papelera; corregido). **13 documentos reales**
+  identificados (12 activos + 1 en papelera, `T501.pdf` id 23042,
+  borrado 2026-07-31 antes de esta sesión -- confirmado por Miguel
+  Ángel como "cubierto" por el `CERTIFICADO T501(CLASE 2)+T180...`
+  activo, no se restaura).
+- **Tipo documental nuevo `FICHA_TECNICA_EPI`** dado de alta
+  (migración `0056`, family `TECNICA_SEGURIDAD`, domain `PERSONAL`) --
+  decisión explícita de Miguel Ángel, no reutilizar `EPIS`. Aplicado a
+  los 12 documentos activos tras dry-run confirmado, verificado contra
+  BD (12/12).
+- **Ítem nuevo `CAMISETA_ALTA_VISIBILIDAD`** dado de alta en
+  `EpiItemCatalog` (migración `0057`) -- hueco real detectado: existían
+  `POLO_ALTA_VISIBILIDAD` y `PANTALON_ALTA_VISIBILIDAD` (T501) pero
+  ninguna fila para la camiseta (T181), confirmado por Miguel Ángel.
+- **Vinculación real `domain_content_type`/`domain_object_id`** (mismo
+  mecanismo genérico ya usado con `PersonIdentity`, ahora sobre
+  `EpiItemCatalog`): 7 documentos con ítem único inequívoco vinculados
+  y verificados contra BD (`VIDA UTIL ARNESES SEKURALT` →
+  `ARNES_SEGURIDAD`; 2×T181 → `CAMISETA_ALTA_VISIBILIDAD`; 2×T501 →
+  `PANTALON_ALTA_VISIBILIDAD`; 2×T180 → `POLO_ALTA_VISIBILIDAD`). Los
+  5 restantes (documentación transversal o que cubre varios ítems a la
+  vez -- certificado combinado T501+T180+clase 3, consulta INSHT,
+  folleto arnés+absorbedor, guía general de EPIs, guía de uso de
+  mascarillas) quedan deliberadamente **sin** `domain_object_id`,
+  confirmado por Miguel Ángel ("Documentos de información transversal
+  y familia").
+- Ambos pushes (`73313a4`, `67f7d53`) verificados con datos reales tras
+  el despliegue (HEAD real + `showmigrations` + consulta directa a la
+  fila del catálogo), no solo por el verde de GitHub Actions -- vía 1
+  (log real del job) bloqueada por dominio fuera de la allowlist de
+  red (`productionresultssa16.blob.core.windows.net`), resuelto por
+  vía 2 (Comando S contra el servidor real).
+
 ## Hoja de ruta para S73
 
-**Dos ítems llegan a la 2.ª sesión sin ejecución real (S71, S72) --
-pregunta obligatoria antes de seguir, directriz `nfs-enterprisebot-
-pcs` 2.2:** ¿qué falta para que el sistema de plantillas de
-comunicados/notificaciones y el gap de plantilla múltiple de
-`AUTORIZACION_MEDIOS_COMUNICACION` entren en una sesión -- prioridad
-tuya, más contexto que aportar, o se aparcan explícitamente hasta
-cerrar el resto del dominio PERSONAL (EPIs/botiquines/manuales)?
+**Punto 1 (fichas técnicas/manuales de EPIs → `EpiItemCatalog`) CERRADO
+en esta misma sesión** -- ver bloque "COMPLETADAS EN S73" arriba.
+Pendientes reales, EPIs (prioridad de esta sesión, "Terminamos
+EPI's"):
 
-1. **Fichas técnicas/manuales de EPIs → vincular a `EpiItemCatalog`.**
-   Primer paso: inventario real completo (búsqueda de todos los
-   documentos de este tipo bajo `DOC. PERSONAL`, no solo el
-   `CERTIFICADO T501+T180` ya visto en `EPIS ALTA VISIBILIDAD`).
-   Mecanismo: `domain_content_type`/`domain_object_id` genérico de
-   `DocumentIndexEntry`, apuntando a `EpiItemCatalog` en vez de a
-   `PersonIdentity`. Criterio de cierre: inventario completo
-   documentado + al menos un documento real vinculado y verificado
-   contra BD.
-2. **Extractor real de Botiquines (14 archivos, `BOTIQUINES`).**
+1. **Extractor real de Botiquines (14 archivos, `BOTIQUINES`).**
    Modelo de datos ya listo (`EpiDelivery.destination_machine` +
    ítem `BOTIQUIN`). Falta: leer contenido real de una muestra antes
    de diseñar el parser (persona + Centro de Gasto real destino).
    Criterio de cierre: `EpiDelivery(epi=BOTIQUIN)` creadas con
    `destination_machine` relleno, verificado por consulta real a BD.
-3. **`CONTROL EPIS` (76 archivos)** -- sin diseño todavía, requiere
+2. **`CONTROL EPIS` (76 archivos)** -- sin diseño todavía, requiere
    muestreo real de contenido (mismo criterio que se usó para
    desglosados/industria química/alta visibilidad: 2-3 archivos
    reales leídos antes de escribir ningún parser).
-4. **`EPIS ARNES MIRA 12-A` (51 archivos)** -- sin diseño todavía,
+3. **`EPIS ARNES MIRA 12-A` (51 archivos)** -- sin diseño todavía,
    mismo criterio de muestreo previo.
-5. **`DETECTOR TENSION` (2) y `EPIS VARIAS EMPRESAS` (2)** -- volumen
+4. **`DETECTOR TENSION` (2) y `EPIS VARIAS EMPRESAS` (2)** -- volumen
    mínimo, revisar directo archivo por archivo sin necesidad de
    parser genérico.
-6. **150 archivos `NOMBRAMIENTO RECURSO PREVENTIVO`** (arrastrado 1.ª
+5. **150 archivos `NOMBRAMIENTO RECURSO PREVENTIVO`** (arrastrado 1.ª
    sesión sin avanzar) → candidatos a `DocumentAcknowledgment`.
    Criterio de cierre: al menos un lote real migrado y verificado.
 
 **Sigue bloqueado, sin empezar hasta que el dominio PERSONAL esté
-cerrado de verdad (puntos 1-6 arriba):**
+cerrado de verdad (puntos 1-5 arriba):**
 
-7. **Fase A de `DOC. MAQUINAS`** (dry-run ya ejecutado en S69,
+6. **Fase A de `DOC. MAQUINAS`** (dry-run ya ejecutado en S69,
    `run_fase_a_sweep_scoped`, resultado nunca leído). Criterio de
    cierre: al menos una pasada de calibración real completada,
    volumen medido antes de aplicar.
