@@ -1467,6 +1467,28 @@ class EpiItemCatalog(models.Model):
             "entregas ya registradas con este EPI."
         ),
     )
+    replacement_cost = models.DecimalField(
+        max_digits=8,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Coste de reposición",
+        help_text=(
+            "Importe de reposición del EPI, en euros. Nulo hasta tener "
+            "dato real confirmado (S71/S72)."
+        ),
+    )
+    une_en_standard = models.CharField(
+        max_length=100,
+        null=True,
+        blank=True,
+        verbose_name="Norma UNE-EN",
+        help_text=(
+            "Norma UNE-EN aplicable al EPI (p. ej. 'UNE-EN 397'). Nulo "
+            "hasta tener dato real confirmado (S71/S72, motivado por "
+            "ENTREGA_EPIS_GRUISTA_2026.docx)."
+        ),
+    )
     created_at = models.DateTimeField(
         auto_now_add=True,
         verbose_name="Fecha de alta",
