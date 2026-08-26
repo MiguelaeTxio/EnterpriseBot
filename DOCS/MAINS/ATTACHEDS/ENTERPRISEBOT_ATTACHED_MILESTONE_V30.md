@@ -4812,6 +4812,63 @@ varía por incidencia y sí interesa conservar cuál se entregó
 exactamente -- distinto del resto de nombramientos, donde el
 documento es intercambiable.
 
+**"4 sueltas de 1", CERRADA en S69 -- cifra vieja otra vez
+equivocada: 29 archivos reales, no 4.** Sueltos directamente bajo
+`DOC. PERSONAL` más algunos en subcarpetas menores nunca auditadas
+(`ENCARGADO DE SEGURIDAD`, `COMPROBACION TITULOS FLC`, `CONTROL
+HORARIOS`, `VACACIONES`, y dos rincones de `ENTREGA EPIS` --
+`EPIS DESGLOSADOS/SEMI` y `BOTIQUINES`). Resultado:
+- 4 aplicados a tipos ya existentes (`MOD_145`, `LISTADO_PERSONAL_
+  MAQUINARIA_OBRA`, `RECURSO_PREVENTIVO` -- `RP.docx`, mal archivado
+  en `VACACIONES`, resultó ser un nombramiento de Recurso Preventivo
+  real de Carlos Bas Blanco en obra de Sacyr --, `COMUNICACION_
+  JORNADA`).
+- 3 de `EPIS DESGLOSADOS/SEMI` → `EPIS`, consistente con el resto de
+  la carpeta.
+- 3 plantillas por empresa (`Comunicaciones electrónicas trabajadores
+  AGG/GRA/TR`) → `AUTORIZACION_MEDIOS_COMUNICACION` (ya existía) --
+  **gap real anotado:** el modelo solo admite una `current_template`
+  por tipo, pero aquí hay 3 variantes reales por empresa: sin
+  resolver todavía, pendiente de decidir si se generaliza
+  `current_template` a `current_templates` (M2M) o se acepta una sola
+  como canónica.
+- 1 → `NOMBRAMIENTO_RESPONSABLE_SEGURIDAD` (Díaz Quintero, Antonio
+  Jesús ute puente de Cádiz), dominio resuelto con
+  `resolve_person_by_name_count()`.
+- 2 a papelera: la segunda copia real de `Entrega botiquines-máquinas.
+  xlsx` (mismo descarte que la primera) y el dossier `Aut.trabajadores
+  Huelva-comprobacion titulos.pdf` -- **decisión explícita de Miguel
+  Ángel: Huelva se deja fuera por completo** ("apenas disponemos de
+  información de ellos... esos dos lo único que hacen son parte de
+  trabajo"), papelera directa sin repartir por persona, sin excepción
+  para Bas Blanco/Baena Marquez pese a tener `PersonIdentity` real --
+  coherente con la exclusión permanente de la delegación de Huelva ya
+  registrada para resolución de identidad (Carlos Bas Blanco, David
+  Contreras Márquez).
+- **8 tipos nuevos creados**, todos domain PERSONAL salvo los dos
+  marcados COMPANY: `AUTORIZACION_GENERICA` (ADMINISTRATIVO, marco
+  fijo + hueco de la acción autorizada -- 4 archivos), `ENTREGA_
+  DOCUMENTACION_VARIA` (ADMINISTRATIVO, marco fijo + hueco de qué se
+  entrega -- 3 archivos), `ENTREGA_PROTOCOLO_AUXILIO_CARRETERA`
+  (PRL_FORMACION, plantilla fija real de la DGT -- 1 archivo),
+  `ACTA_ELECCIONES_SINDICALES` (COMPANY/ADMINISTRATIVO, acta oficial
+  Junta de Andalucía -- 1 archivo), `JUSTIFICANTE_LABORAL_AUSENCIA`
+  (SALUD_BAJAS_PERSONA -- 2 archivos), `CARTA_BAJA_VOLUNTARIA`
+  (LABORAL, candidata real a plantilla -- llega casi en blanco -- 1
+  archivo), `ACUERDO_SALARIAL` (LABORAL -- 1 archivo),
+  `CERTIFICADO_JUSTIFICACION_DESPLAZAMIENTO` (COMPANY/ADMINISTRATIVO,
+  específico COVID/estado de alarma 2020, baja probabilidad de
+  recurrencia futura -- 1 archivo).
+- **Fuera de alcance, sin tipo, decisión explícita de no forzar:**
+  `PARTES DIETAS NUEVO.pdf` (plantilla operativa de parte semanal de
+  trabajo, no es documentación de persona) y `CONTROL ENTREGA.xlsx`
+  (hoja de control interno de `CONTROL HORARIOS`, no un documento
+  tipable). Quedan sin `document_type`, no cuentan como residuo
+  pendiente.
+
+**Con esto, las 6 carpetas transversales de `DOC. PERSONAL` de la
+hoja de ruta de S69 quedan CERRADAS.**
+
 1. **Carpetas transversales de `DOC. PERSONAL` sin tocar** (65+
    archivos según la cifra vieja de S67/S68, corregida al cerrar cada
    una -- ver detalle real bajo cada carpeta: `PLAN DE ACTUACION
