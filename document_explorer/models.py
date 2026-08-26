@@ -695,6 +695,27 @@ class DocumentTypeCatalog(models.Model):
         auto_now_add=True,
         verbose_name="Fecha de alta",
     )
+    current_template = models.ForeignKey(
+        "DocumentIndexEntry",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="current_template_for_types",
+        verbose_name="Plantilla vigente",
+        help_text=(
+            "H30 (S69). Plantilla en blanco real de este tipo "
+            "documental (un DocumentIndexEntry más, nunca un archivo "
+            "aparte fuera del sistema). Decisión explícita de Miguel "
+            "Ángel: plantilla y anotación separadas -- la entrega a "
+            "una persona nunca es un documento nuevo, es una fila de "
+            "DocumentAcknowledgment que apunta a este tipo. Cambiar "
+            "la plantilla (nueva ley, cambio de domicilio...) es "
+            "reapuntar este campo a un DocumentIndexEntry distinto; "
+            "el histórico de entregas no se toca ni sabe con qué "
+            "versión se hizo cada una salvo que "
+            "DocumentAcknowledgment.source_entry lo guarde explícito."
+        ),
+    )
 
     class Meta:
         verbose_name = "Tipo documental"
@@ -1544,6 +1565,114 @@ class EpiDelivery(models.Model):
 
     def __str__(self):
         return f"{self.person} -- {self.epi.code} ({self.delivery_date})"
+
+
+class DocumentAcknowledgment(models.Model):
+    """
+    A single acknowledgment/delivery record: which person received or
+    signed which document type (a template-based document -- a
+    nomination, an authorization, an informational circular...), when,
+    and from what source. Deliberately separate from `EpiDelivery`
+    (H30 S69, explicit decision by Miguel Ángel): EPIs are a catalog
+    of physical objects queried mostly for current possession; this
+    covers document/nomination types (`DocumentTypeCatalog`) queried
+    mostly by historical timeline with real gaps (delivered in 2026,
+    nothing in 2027-2030, delivered again in 2031 because the person
+    became site manager again) -- different catalog, different
+    question shape, `EpiDelivery.requires_periodic_review` doesn't
+    mean anything for a nomination. Sharing one model would blur both.
+
+    Same underlying principle as EPIs: one canonical template per
+    type (`DocumentTypeCatalog.current_template`), never a duplicated
+    filled copy stored per person -- see that field's help_text.
+
+    ---
+
+    Registro de un reconocimiento/entrega: qué persona recibió o firmó
+    qué tipo documental (un documento basado en plantilla --
+    nombramiento, autorización, circular informativa...), cuándo, y de
+    qué fuente. Deliberadamente separado de `EpiDelivery` (H30 S69,
+    decisión explícita de Miguel Ángel): los EPIs son un catálogo de
+    objetos físicos que se consulta sobre todo por posesión actual;
+    esto cubre tipos documentales/nombramientos (`DocumentTypeCatalog`)
+    que se consultan sobre todo por línea temporal con huecos reales
+    (entregado en 2026, nada en 2027-2030, vuelve a entregarse en 2031
+    porque la persona vuelve a ser jefe de obra) -- catálogo distinto,
+    forma de pregunta distinta, `EpiDelivery.requires_periodic_review`
+    no significa nada para un nombramiento. Meterlos en el mismo
+    modelo difuminaría los dos.
+
+    Mismo principio de fondo que los EPIs: una plantilla única y
+    canónica por tipo (`DocumentTypeCatalog.current_template`), nunca
+    una copia rellenada duplicada guardada por persona -- ver el
+    help_text de ese campo.
+    """
+
+    METHOD_MANUAL = "MANUAL"
+    METHOD_HEURISTIC = "HEURISTIC"
+    METHOD_OCR = "OCR"
+    METHOD_GEMINI = "GEMINI"
+    METHOD_CHOICES = [
+        (METHOD_MANUAL, "Manual (panel)"),
+        (METHOD_HEURISTIC, "Heurística de nombre"),
+        (METHOD_OCR, "OCR"),
+        (METHOD_GEMINI, "Gemini"),
+    ]
+
+    person = models.ForeignKey(
+        PersonIdentity,
+        on_delete=models.CASCADE,
+        related_name="document_acknowledgments",
+        verbose_name="Persona",
+    )
+    document_type = models.ForeignKey(
+        DocumentTypeCatalog,
+        on_delete=models.PROTECT,
+        related_name="acknowledgments",
+        verbose_name="Tipo documental",
+    )
+    delivery_date = models.DateField(
+        verbose_name="Fecha de entrega/firma",
+    )
+    source_entry = models.ForeignKey(
+        DocumentIndexEntry,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="document_acknowledgments",
+        verbose_name="Documento de origen",
+        help_text=(
+            "Nulo por defecto -- el histórico normal no guarda copia "
+            "individual (mismo principio que EPIs). Se rellena solo "
+            "cuando un tipo concreto exige conservar la versión "
+            "firmada exacta (p. ej. prueba legal de firma), decisión "
+            "caso por caso, nunca por defecto para todos los tipos."
+        ),
+    )
+    extraction_method = models.CharField(
+        max_length=10,
+        choices=METHOD_CHOICES,
+        default=METHOD_MANUAL,
+        verbose_name="Método de extracción",
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Fecha de registro",
+    )
+
+    class Meta:
+        verbose_name = "Reconocimiento/entrega de documento"
+        verbose_name_plural = "Reconocimientos/entregas de documentos"
+        ordering = ["-delivery_date"]
+        indexes = [
+            models.Index(
+                fields=["person", "document_type"],
+                name="doc_ack_person_type_idx",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.person} -- {self.document_type.code} ({self.delivery_date})"
 
 
 class EpiReview(models.Model):
