@@ -4672,26 +4672,27 @@ lo contrario.
      obligatoria -- coincide con el diseño actual, no hace falta
      tocarlo.
    - Falta un campo real que hoy no existe: referencia al centro de
-     gasto de destino del botiquín. **Corregido en la misma sesión
-     (S69) tras aclaración de Miguel Ángel:** no es solo máquina --
-     *"pueden ir hacia máquina, pueden ir hacia taller, pueden ir
-     hacia almacén, pueden ir hacia plataformas... no solamente a
-     camiones."* Es decir, el destino es el concepto amplio de
-     **centro de gasto**, no una `MachineAsset` concreta.
-     **Gap real, verificado ahora mismo: hoy NO existe ningún modelo
-     de centro de gasto genérico** -- `fleet.MachineAsset` (docstring:
-     "cada instancia es un centro de gasto") cubre solo maquinaria/
-     vehículos con código de flota real (`SCOPE` de
-     `run_fase_a_sweep_scoped`: cabezas tractoras, camiones brazo,
-     carretillas, grúas móviles, grupo electrógenos, plataformas,
-     remolques/góndolas, vehículos de empresa, ventosa) -- no hay
-     ninguna entidad "TALLER" ni "ALMACÉN" dada de alta como centro de
-     gasto en ningún sitio del proyecto. Pendiente de diseño real
-     cuando se construya el extractor: o se amplía `MachineAsset` para
-     admitir centros de gasto no-vehículo, o se crea un modelo
-     genérico de centro de gasto del que `MachineAsset` pase a ser un
-     caso particular. No decidir esto por interpretación propia --
-     preguntar a Miguel Ángel en el momento de construir el extractor.
+     gasto de destino del botiquín -- no es solo máquina, Miguel Ángel
+     confirmó (S69): *"pueden ir hacia máquina, pueden ir hacia
+     taller, pueden ir hacia almacén, pueden ir hacia plataformas...
+     no solamente a camiones."*
+     **CORREGIDO EN LA MISMA SESIÓN (S69) -- error real mío:** dije
+     aquí mismo que no existía ningún centro de gasto no-vehículo,
+     basado solo en el `SCOPE` acotado de `run_fase_a_sweep_scoped`
+     (subconjunto de carpetas de máquinas), sin comprobarlo contra la
+     tabla real `MachineAsset`. Miguel Ángel lo desmintió con una
+     captura real del panel "Centros de gasto": **`MachineAsset` YA
+     cubre talleres y almacenes**, con código `EMP*` (`EMPRESA_TALLER_
+     HUELVA`, `EMPRESA_ALMACEN_MECANICO`, `EMPRESA_TALLER_ELEVACION`,
+     `EMPRESA_ALMACEN_DEPENDENCIAS`, `EMPRESA_LOGISTICA`...), activos,
+     con familia propia (`HUELVA`, `MOVILES`, `PLATAFOR`, `DEPENDENCIAS`,
+     `LOGISTICA`) y contador de documentos ya vinculados (5, 97, 12,
+     46...). **No hay ningún gap de modelo.** `destination_machine`
+     (FK opcional a `fleet.MachineAsset`) es exactamente el campo
+     correcto -- un centro de gasto tipo taller/almacén es una fila
+     de `MachineAsset` más, con su propio código `EMP*`. Nada que
+     diseñar de nuevo cuando se construya el extractor: se resuelve
+     igual que cualquier otro centro de gasto por código.
    - `Entrega botiquines-máquinas.xlsx`: **DESCARTADO, decisión
      explícita de Miguel Ángel (S69) -- a papelera, no se vuelve a usar
      como fuente de datos.** El archivo solo tenía 3 de 94 filas
