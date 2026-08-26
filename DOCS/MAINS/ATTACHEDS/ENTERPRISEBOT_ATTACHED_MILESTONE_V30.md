@@ -4684,6 +4684,17 @@ lo contrario.
      `EpiDelivery` cuando se construya el extractor. Se procesa igual
      que cualquier otro origen de datos de EPIs, con
      `destination_machine` relleno a partir de esa hoja.
+     **Contenido real verificado (S69, archivo aportado por Miguel
+     Ángel):** 3 hojas -- `MAQUINAS` es la relevante (94 máquinas,
+     columnas código/matrícula/modelo/persona/fecha), pero **solo 3 de
+     94 filas tienen persona y fecha rellenas** (A36→Álvarez Gea
+     30/06/2015, A43→Ramos Zambrana 04/05/2015, P18→Álvarez
+     Gorgoschidse con fecha en texto libre "Cree que tiene..." 30/6/15,
+     no fecha real). `Hoja1` es un volcado de flota sin relación con
+     botiquines. `Hoja3` es un checklist de entregas por persona/
+     empresa con columna `BOTIQUINES` incluida pero completamente
+     vacía. Volumen real a extraer: 3 registros como mucho, no 94 --
+     no dimensionar el extractor pensando en más de lo que hay.
 6. **Sistema de plantillas de comunicados/notificaciones** -- decidir
    si entra en H30 o se abre hito nuevo antes de diseñar el modelo de
    datos.
