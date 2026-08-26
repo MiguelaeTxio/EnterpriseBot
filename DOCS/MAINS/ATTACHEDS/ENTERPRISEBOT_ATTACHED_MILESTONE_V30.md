@@ -4622,13 +4622,16 @@ hasta que estas líneas estén a cero (o hasta OCR/Gemini para los 265,
 que es su propia fase posterior) o Miguel Ángel decida explícitamente
 lo contrario.
 
-1. **Carpetas transversales de `DOC. PERSONAL` sin tocar** (65
-   archivos: `PLAN DE ACTUACION FRENTE AL CALOR` 11, `LISTADOS
-   MAQUINARIA Y PERSONAL` 7, `NOMBRAMIENTO RECURSO PREVENTIVO` 7,
-   `NOMBRAMIENTO JEFE DE MANIOBRAS` 5, `ENTREGA EPIS` 4, `MEDIDAS
-   ADICIONALES DE PROTECCION` 4, 4 sueltas de 1) -- mismo patrón que
-   `RETENCIONES`: confirmar tipo real carpeta por carpeta con Miguel
-   Ángel antes de aplicar nada.
+1. **Carpetas transversales de `DOC. PERSONAL` sin tocar** (65+
+   archivos según la cifra vieja de S67/S68, corregida al cerrar cada
+   una -- ver detalle real bajo cada carpeta: `PLAN DE ACTUACION
+   FRENTE AL CALOR` 11, `LISTADOS MAQUINARIA Y PERSONAL` **36 reales**
+   (no 7, cifra vieja nunca recontada -- ver cierre abajo),
+   `NOMBRAMIENTO RECURSO PREVENTIVO` 7, `NOMBRAMIENTO JEFE DE
+   MANIOBRAS` 5, `ENTREGA EPIS` 4, `MEDIDAS ADICIONALES DE PROTECCION`
+   4, 4 sueltas de 1) -- mismo patrón que `RETENCIONES`: confirmar
+   tipo real carpeta por carpeta con Miguel Ángel antes de aplicar
+   nada.
 
    **`PLAN DE ACTUACION FRENTE AL CALOR` (11), CERRADA en S69.**
    Fechas reales verificadas: 2025 (no 2015, nada que descartar). Tipo
@@ -4662,6 +4665,37 @@ lo contrario.
       primera pasada: "GOMEZ GOMEZ" coincidía también con "GOMEZ
       GARCIA" por contener "GOMEZ" dos veces en el nombre de
       archivo -- ese caso concreto sí quedó bien sin resolver).
+
+   **CORREGIDO EN LA MISMA SESIÓN (S69) -- incidente real de
+   hardcodeo.** La regla de arriba se aplicó primero a mano (dos DNIs
+   sueltos escritos directamente en un Comando S de un solo uso) en
+   vez de como código reutilizable -- señalado por Miguel Ángel como
+   el error real que es: *"Pretendemos hacer un sistema resiliente...
+   si ahora nos entra un documento con el nombre... ya no sabemos
+   clasificarlo."* Corregido: `resolve_person_by_name_count()`
+   (`document_explorer/classification_service.py`, commit `a6dd1ea`)
+   implementa la regla como función permanente -- recibe
+   `given_name`/`first_surname`/`second_surname` opcional, devuelve
+   `(NAME_MATCH_UNIQUE, persona)` / `(NAME_MATCH_INACTIVE, None)` /
+   `(NAME_MATCH_AMBIGUOUS, None)`. Validada contra los dos casos
+   reales de esta sesión (Barbero Cuenca Manuel, Gómez García José
+   Antonio) -- mismo resultado que la resolución manual. **De
+   obligado uso en adelante para cualquier resolución de persona por
+   nombre**, nunca más un DNI escrito a mano en un comando de un solo
+   uso.
+
+   **`LISTADOS MAQUINARIA Y PERSONAL`, CERRADA en S69.** Cifra real
+   verificada: **36 archivos**, no los 7 arrastrados desde S67/S68
+   (esa cifra nunca se recontó contra el servidor -- el filtro real
+   incluye todo el árbol `RELACION DE PERSONAL POR OBRAS`, con
+   subcarpetas por cliente/obra: AISTER, ACRIST. VILLA DUCAL, ADITEL,
+   DRAGADOS, ELECNOR, EMTE, MLR, RUGUE, SANDO, SELWO, THYSSENKRUPP,
+   UTE EDAR NERJA, VIMAC bajo GRUAS, y ACRIST. VILLA DUCAL, ADITEL,
+   EMTE, FERROVIAL, SELWO, UTE ACISA-ACEINSA bajo TRANSGRUAL). Tipo ya
+   existente `LISTADO_PERSONAL_MAQUINARIA_OBRA` (domain COMPANY, sin
+   persona individual) aplicado a los 36, sin ambigüedad -- todos son
+   listados agregados por obra/cliente, ninguno requiere resolución de
+   persona.
 
 2. **14 archivos de `FOTOS CARNET` con dominio sin resolver** --
    apodos (Manolo/Manuel), erratas de apellido (Velazquez/Velasco,
