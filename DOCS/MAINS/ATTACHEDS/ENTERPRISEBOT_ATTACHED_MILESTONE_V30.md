@@ -4587,30 +4587,68 @@ residuales 23). `DOC. MAQUINAS` sin tocar, ~2982 (Punto 5, no
 empezado esta sesión). `h28-ocr-batch-1` -- Punto 6, parada sin
 confirmar todavía.
 
-## Hoja de ruta real para S69
+## Hoja de ruta real para S69 -- REORDENADA en el propio S69 (ver incidencia abajo)
 
-1. **Punto 5** -- volver a `DOC. MAQUINAS` por heurística de Fase A
-   (nunca OCR directo), ~2982 sin tipo, ninguna pasada de calibración
-   real hecha todavía.
-2. **Punto 6** -- confirmar parada real de `h28-ocr-batch-1`.
-3. **Carpetas transversales de `DOC. PERSONAL` sin tocar** (65
-   archivos, ver desglose arriba) -- mismo patrón que `RETENCIONES`:
-   confirmar tipo real carpeta por carpeta con Miguel Ángel antes de
-   aplicar nada.
-4. **Extractor real EPIs/Botiquines -> `EpiDelivery`** -- bloque de
+**INCIDENCIA REAL, corregida en esta misma sesión (directriz 4.9).**
+La versión anterior de esta hoja de ruta ponía "Punto 5" (`DOC.
+MAQUINAS`) en primera posición. Ese número no era una prioridad --
+era solo el quinto bloque de trabajo abierto en la numeración
+original de S66/S67 (Punto 1 BAJAS, Punto 2 residuo nombre, Punto 3
+RETENCIONES/MANUALES/NO CONFORMES, Punto 4 error OCR, Punto 5
+MAQUINAS, Punto 6 VM). Al listarlo como primer ítem de una lista 1-8
+en S68, se leyó como orden de ejecución real, e indujo a la sesión
+siguiente (S69) a proponer empezar por `DOC. MAQUINAS` sin que el
+dominio PERSONAL estuviera cerrado -- error que Miguel Ángel ya había
+señalado en sesiones previas y volvió a repetirse. **Regla derivada,
+de obligado cumplimiento en adelante:** nunca se abre trabajo sobre
+`DOC. MAQUINAS` mientras queden archivos reales sin tipificar o sin
+dominio resuelto en `DOC. PERSONAL`, salvo que Miguel Ángel lo pida
+explícitamente.
+
+**Estado real de `DOC. PERSONAL` sin cerrar, verificado al cierre de
+S68 (nunca recalculado desde entonces -- primer paso de S69 es
+recontar contra el servidor, nunca dar estas cifras por vigentes sin
+verificar de nuevo):**
+- 265 archivos del árbol por trabajador, heurística de nombre agotada
+  desde S67 -- necesitan OCR/Gemini (fuera de alcance de Fase A/heurística).
+- 65 archivos en carpetas transversales sin confirmar tipo.
+- 28 archivos en `NO CONFORMES`, cuarentena mixta real.
+- 23 archivos residuales de `FOTOS CARNET`.
+- 14 de los 20 archivos convertidos de `FOTOS CARNET` con dominio sin
+  resolver (apodos/erratas/iniciales).
+
+Dominio PERSONAL: **NO completo.** No se empieza `DOC. MAQUINAS`
+hasta que estas líneas estén a cero (o hasta OCR/Gemini para los 265,
+que es su propia fase posterior) o Miguel Ángel decida explícitamente
+lo contrario.
+
+1. **Carpetas transversales de `DOC. PERSONAL` sin tocar** (65
+   archivos: `PLAN DE ACTUACION FRENTE AL CALOR` 11, `LISTADOS
+   MAQUINARIA Y PERSONAL` 7, `NOMBRAMIENTO RECURSO PREVENTIVO` 7,
+   `NOMBRAMIENTO JEFE DE MANIOBRAS` 5, `ENTREGA EPIS` 4, `MEDIDAS
+   ADICIONALES DE PROTECCION` 4, 4 sueltas de 1) -- mismo patrón que
+   `RETENCIONES`: confirmar tipo real carpeta por carpeta con Miguel
+   Ángel antes de aplicar nada.
+2. **14 archivos de `FOTOS CARNET` con dominio sin resolver** --
+   apodos (Manolo/Manuel), erratas de apellido (Velazquez/Velasco,
+   Arca/Arcas), iniciales (JM) -- pedir a Miguel Ángel la equivalencia
+   real de cada uno, nunca forzar por analogía.
+3. **`FRANCISCO GOMEZ GOMEZ.docx`, `INDICE.pub`, `LISTADO DE
+   FOTOS.pub`** -- decisión pendiente, fuera del comando de conversión
+   de hoy.
+4. **`NO CONFORMES`** (28, cuarentena mixta real) -- revisión
+   documento a documento, más lento, sesión propia.
+5. **Extractor real EPIs/Botiquines -> `EpiDelivery`** -- bloque de
    trabajo propio, no una sesión de cierre. Modelo ya existe desde
    S047 (`EpiItemCatalog`, `EpiDelivery`, `EpiReview`), nunca se
    construyó el extractor real (OCR/heurística sobre los documentos
    de entrega).
-5. **14 archivos de `FOTOS CARNET` con dominio sin resolver** --
-   apodos (Manolo/Manuel), erratas de apellido (Velazquez/Velasco,
-   Arca/Arcas), iniciales (JM) -- pedir a Miguel Ángel la equivalencia
-   real de cada uno, nunca forzar por analogía.
-6. **`FRANCISCO GOMEZ GOMEZ.docx`, `INDICE.pub`, `LISTADO DE
-   FOTOS.pub`** -- decisión pendiente, fuera del comando de conversión
-   de hoy.
-7. **`NO CONFORMES`** (28, cuarentena mixta real) -- revisión
-   documento a documento, más lento, sesión propia.
-8. **Sistema de plantillas de comunicados/notificaciones** -- decidir
+6. **Sistema de plantillas de comunicados/notificaciones** -- decidir
    si entra en H30 o se abre hito nuevo antes de diseñar el modelo de
    datos.
+7. **Punto 6** -- confirmar parada real de `h28-ocr-batch-1`
+   (arrastrado desde S66). Puede hacerse en cualquier momento, no
+   bloquea ni depende de nada de lo anterior.
+8. **Punto 5** -- volver a `DOC. MAQUINAS` por heurística de Fase A,
+   **únicamente** cuando los puntos 1-4 de arriba estén cerrados y
+   Miguel Ángel confirme que el dominio PERSONAL está completo.
