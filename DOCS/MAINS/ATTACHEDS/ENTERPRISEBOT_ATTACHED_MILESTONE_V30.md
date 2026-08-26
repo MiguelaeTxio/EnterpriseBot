@@ -4683,8 +4683,67 @@ de `consume_quarantine_task`.
 resueltos.** Cifra vieja del anexo (14) era solo el subconjunto de
 fotos convertidas en S67, nunca la carpeta completa. Aplicado
 `resolve_person_by_name_count()` en dos pasadas (exacto, luego
-comparación de conjunto de palabras completo). 21 ambiguos y 53 sin
-coincidencia, sin forzar ninguno -- ver hoja de ruta.
+comparación de conjunto de palabras completo).
+
+**CORREGIDO EN S70 -- incidencia real de cierre incompleto de S69.**
+El PCS de S69 dejó aquí solo las cifras agregadas (21/53), nunca los
+listados reales -- la hoja de ruta decía "listado completo en el
+registro de S69 de más arriba" pero ese registro nunca los tuvo. La
+sesión S70 se paró correctamente al detectarlo (directriz 4.8, nunca
+adivinar el parseo de un documento de identidad) y preguntó en vez de
+regenerar la consulta con una lógica potencialmente distinta.
+Reconstruidos aquí desde la salida real de S69 (nunca de memoria):
+
+**21 archivos ambiguos (2+ `PersonIdentity` reales), sin resolver:**
+```
+ALVAREZ DIAZ ALBERTO .jpg          -> 25099061N ALVAREZ DIAZ ALBERTO JAVIER | 44599171D ALVAREZ GEA ALBERTO ADOLFO
+ALVAREZ DIAZ JOSE .jpg             -> 25687533Y ALVAREZ DIAZ JOSE LUIS | 54305587B ALVAREZ GORGOSCHIDSE JUAN JOSE | 25067131Y DIAZ DIAZ JOSE | 25729496V DIAZ ORTEGA JOSE ANTONIO
+ALVAREZ GEA ALBERTO.jpg            -> 25099061N ALVAREZ DIAZ ALBERTO JAVIER | 44599171D ALVAREZ GEA ALBERTO ADOLFO
+DIAZ ORTEGA, JOSE A -2.jpg         -> 25067131Y DIAZ DIAZ JOSE | 25729496V DIAZ ORTEGA JOSE ANTONIO
+DIAZ ORTEGA, JOSE A.jpg            -> 25067131Y DIAZ DIAZ JOSE | 25729496V DIAZ ORTEGA JOSE ANTONIO
+DIAZ QUINTERO ANTONIO J -2.JPG     -> 25729496V DIAZ ORTEGA JOSE ANTONIO | 33390084H DIAZ QUINTERO ANTONIO JESUS
+DIAZ QUINTERO ANTONIO J red.JPG    -> 25729496V DIAZ ORTEGA JOSE ANTONIO | 33390084H DIAZ QUINTERO ANTONIO JESUS
+DIAZ QUINTERO ANTONIO J-3.JPG      -> 25729496V DIAZ ORTEGA JOSE ANTONIO | 33390084H DIAZ QUINTERO ANTONIO JESUS
+DIAZ QUINTERO ANTONIO J.JPG        -> 25729496V DIAZ ORTEGA JOSE ANTONIO | 33390084H DIAZ QUINTERO ANTONIO JESUS
+DIAZ QUINTERO ANTONIO J_opt.png    -> 25729496V DIAZ ORTEGA JOSE ANTONIO | 33390084H DIAZ QUINTERO ANTONIO JESUS
+GARCIA FERNANDEZ,JOSE REC 2.jpg    -> 25701940S GARCIA FERNANDEZ JOSE | 74836258P GARCIA PRIETO JOSE ANTONIO | 53694070H GARCIA VELA JOSE MARIA
+GOMEZ GARCIA, JOSE A. FOTO.jpg     -> 25701940S GARCIA FERNANDEZ JOSE | 74836258P GARCIA PRIETO JOSE ANTONIO | 53694070H GARCIA VELA JOSE MARIA | 74944961J GOMEZ CARVAJAL JOSE MANUEL | 33356574L GOMEZ GARCIA JOSE ANTONIO
+LOPEZ TORRES,JUAN M.jpg            -> 48921163W LOPEZ GOMEZ JUAN JOSE | 29782153M LOPEZ TORRES JUAN MANUEL
+MARCOS RODRIGUEZ,JOSE A.jpg        -> 44224629E RODRIGUEZ IGNACIO JOSE MANUEL | 29439462Z RODRIGUEZ MIRA JOSE MANUEL
+MORENO GARCIA, ANTONIO.jpg         -> 74852725F GARCIA LUQUE ANTONIO JESUS | 74836258P GARCIA PRIETO JOSE ANTONIO | 26809977G MORENO ROMERO ANTONIO
+MUÑOZ GONZALEZ,ANTONIO.jpg         -> 74942181Q GONZALEZ URBANO ANTONIO JAVIER | 74854473F MUÑOZ GONZALEZ ANTONIO JAVIER
+ZAFRA PERALTA JOSE .jpg            -> 25732901H ZAFRA BALBUENA JOSE ANTONIO | 33377134V ZAFRA PERALTA JOSE ANTONIO
+FRANCISCO GOMEZ GOMEZ.jpg          -> 25692936G GOMEZ GOMEZ FRANCISCO | 33379824Q GOMEZ JIMENEZ FRANCISCO JAVIER | 74822241K GOMEZ RIVERO FRANCISCO
+JOSE DIAZ.jpg                      -> 25067131Y DIAZ DIAZ JOSE | 25729496V DIAZ ORTEGA JOSE ANTONIO
+JOSE JIMENEZ.jpg                   -> 25671722L JIMENEZ DIAZ JOSE MANUEL | 53684122Y JIMENEZ GAMEZ JOSE LUIS
+RUIZ SILVA ANTONIO .jpg            -> 25067109F RUIZ LEIVA ANTONIO | 33384846R RUIZ SILVA ANTONIO RAMON
+```
+
+**53 archivos sin ninguna coincidencia real (0 `PersonIdentity`),
+sin forzar:**
+```
+ALVAREZ SERRANO-3.jpg          ALVAREZ SERRANO.jpeg           ALVAREZ SERRANO.jpg
+CORREA MUNHOZ.jpg              DELGADO ZURERA.jpeg            DELGADO ZURERA.jpg
+ESTEBAN MARIO.jpg              GALVEZ SIBAJAS.jpg             GARCIA GARCIA, RUN¡BEB.jpg
+GARCIA LUQUE,ALE 2.jpg         GARCIA LUQUE,ALE.jpg           GARCIA SANCHEZ.jpg
+GOMEZ RIVERO,FCO-2.jpg         GOMEZ RIVERO,FCO.jpeg          GUERRERO GUTIERREZ,FCO.jpg
+JIMENEZ CARVAJAL.jpg           JUANMA.jpg                     JURADO ESCOBAR.jpeg
+JURADO ESCOBAR.jpg             LARA COLLADO.jpg               LOPEZ DOMINGUEZ,MIGUEL A.jpg
+LOPEZ GOMEZ.jpg                LOPEZ GOMEZ2.jpg               MACIAS GOMEZ.jpg
+MOYANO GUTIERREZ.jpg           OCAÑA MIRANDA-2.jpg            OCAÑA MIRANDA.jpg
+RAFAEL BAENA.jpg               RODRIGUEZ MIRA,JM comprimido.jpg   RODRIGUEZ MIRA,JM.jpg
+SAAVEDRA PEREZ,FCO J red.jpg   SAAVEDRA PEREZ,FCO J.jpg       TORO MIRET, GUILLERMO.jpg
+VALLE PEREZ.jpg                VAZQUEZ ROMAN.jpg              VILLA BASTIAS-2.jpg
+VILLA BASTIAS.jpg              ZAFRA BALBUENA.jpg             ZAVALA MANZANO,FCO.jpg
+ZORRILLA VERDUGO, FCO.jpg      BERMUDEZ BRAOJOS,FCO.jpg       CABELLO SANCHEZ FCO. .jpg
+CABELLO SANCHEZ FCO2. .jpg     CASILLA NIETO-2.jpg            CASILLA NIETO.jpg
+BURGOS FERNANDEZ MANOLO  FOTO  .jpg   CRUZ SANCHEZ MANOLO .jpg   ALHAMAR AVELLANEDA.jpg
+BAS BLANCO,CARLOS FOTO.jpg     BAUTISTA DURAN,FCO J.jpg       BAYON ROMERO.jpg
+CASTILLA CODESAL.jpeg          BAS BLANCO,CARLOS FOTO comprimido.jpg
+```
+(53 nombres, cifra real confirmada. Si al recontar contra la BD en
+S70 aparece alguna discrepancia, verificar contra el servidor antes
+de asumir nada, nunca inventar.)
 
 **Commits reales de la sesión (23):** `7964893` (orden hoja de ruta),
 `5a1399e` (`--pending` en `audit_document_names`), `88b819f`
