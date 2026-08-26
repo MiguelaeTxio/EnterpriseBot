@@ -4974,36 +4974,7 @@ todo el trabajo fue lectura de datos reales (BD, documentos subidos
 por Miguel Ángel) y diseño a confirmar. No hay migración, no hay
 `requirements.in` nuevo, no aplica la verificación 2.4.
 
-### COMPLETADAS EN S72 (sesión de reparación -- sin avance real sobre H30)
-
-**Incidencia real detectada y corregida:** el cierre de una sesión
-anterior se interrumpió a mitad del Momento 2 de `com-pah`, y el
-bloque `EOF` / cabecera / `Session:` / `Description:` que debía ir
-**solo** en el mensaje del commit de cierre (`nfs-enterprisebot-pcs`
-PASO 4) quedó volcado, tres veces, como contenido literal dentro del
-propio `.md` de este anexo (final del archivo, tras la Hoja de Ruta
-para S72). Corregido en esta sesión: los tres bloques contaminados
-eliminados sin sustituir nada (su contenido no aportaba información
-que no viviera ya en el historial de commits real de GitHub).
-
-**Ningún trabajo de código ni de sustancia sobre H30 en esta
-sesión** -- se dedicó íntegramente a dejar el anexo limpio para que
-la sesión siguiente arranque sin anomalías. La Hoja de Ruta que
-sigue es la misma que ya dejó S71, sin cambios de fondo, solo
-renumerada.
-
-## Hoja de ruta para S73
-
-**Preguntas que ya alcanzan la 2.ª sesión sin avanzar (S72 fue una
-sesión de reparación pura, sin ejecución real sobre H30) -- van
-primero, según el criterio de la regla 2.2:**
-
-- **Sistema de plantillas de comunicados/notificaciones**: ¿entra en
-  el alcance de H30 o se abre un hito nuevo? Sin esa decisión no se
-  puede diseñar nada.
-- **Gap `AUTORIZACION_MEDIOS_COMUNICACION`**: 3 plantillas reales por
-  empresa contra `current_template` de plantilla única -- ¿M2M o
-  plantilla canónica única?
+## Hoja de ruta para S72
 
 **Continuar directamente con el punto 1 (extractor EPIs/Botiquines),
 sin preguntar por dónde empezar** -- las tres preguntas reales de
@@ -5015,39 +4986,65 @@ cierre de S71 son el primer bloque de trabajo:
    orgánicos y gases ácidos, retenedor de filtros, bolsa
    portarespirador, prefiltro P3/mascarilla 6200) -- mismo criterio
    que el resto de documentos, un ítem del catálogo por fila de la
-   tabla. Ya no es una pregunta abierta.
-2. **`ENTREGA_EPIS_GRUISTA_2026.docx`** (arrastrado 1.ª sesión sin
-   avanzar): ¿reemplaza a las plantillas actuales o convive con
-   ellas?
+   tabla. Ya no es una pregunta abierta de S72.
+2. **`ENTREGA_EPIS_GRUISTA_2026.docx`**: ¿reemplaza a las plantillas
+   actuales o convive con ellas?
 3. **Catálogo `EpiItemCatalog` con los ~25 ítems propuestos** (ver
-   arriba, arrastrado 1.ª sesión sin avanzar) -- confirmar la lista
-   definitiva con Miguel Ángel, incluida la respuesta a los puntos
-   1-2, antes de escribir la migración.
-4. **Migración real** (arrastrado 1.ª sesión sin avanzar): añadir a
-   `EpiItemCatalog` los dos campos ya confirmados (coste de
-   reposición nulo, norma UNE-EN nula) y poblar el catálogo cerrado
-   según el punto 3. Criterio de cierre: migración aplicada y
-   verificada con `showmigrations`, catálogo poblado con las filas
-   reales confirmadas.
-5. **Extractor real EPIs/Botiquines -> `EpiDelivery`** (arrastrado
-   1.ª sesión sin avanzar) sobre los ~2.565+971 archivos ya tipados
-   `EPIS` (raíz de `ENTREGA EPIS` excluida salvo decisión distinta).
-   Parseo de fecha desde el nombre de archivo (no hay `issue_date` en
-   BD). Criterio de cierre: al menos un lote real migrado y
-   verificado (conteo real de filas `EpiDelivery` creadas),
-   documentos originales correspondientes en papelera.
-6. **Botiquines** (arrastrado 1.ª sesión sin avanzar): 0 registros
-   reales conocidos tras descartar el xlsx -- confirmar con Miguel
-   Ángel si hay otra fuente antes de dar esto por vacío.
-7. **150 archivos `NOMBRAMIENTO RECURSO PREVENTIVO`** (arrastrado
-   1.ª sesión sin avanzar) (`FIRMADOS`/`ENTREGA FUNCIONES`/raíz) ->
-   candidatos a `DocumentAcknowledgment`.
+   arriba) -- confirmar la lista definitiva con Miguel Ángel, incluida
+   la respuesta a los puntos 1-2, antes de escribir la migración.
+
+4. **Migración real**: añadir a `EpiItemCatalog` los dos campos ya
+   confirmados (coste de reposición nulo, norma UNE-EN nula) y poblar
+   el catálogo cerrado según el punto 3. Criterio de cierre: migración
+   aplicada y verificada con `showmigrations`, catálogo poblado con
+   las filas reales confirmadas.
+5. **Extractor real EPIs/Botiquines -> `EpiDelivery`** sobre los
+   ~2.565+971 archivos ya tipados `EPIS` (raíz de `ENTREGA EPIS`
+   excluida salvo decisión distinta). Parseo de fecha desde el nombre
+   de archivo (no hay `issue_date` en BD). Criterio de cierre: al
+   menos un lote real migrado y verificado (conteo real de filas
+   `EpiDelivery` creadas), documentos originales correspondientes en
+   papelera.
+6. **Botiquines**: 0 registros reales conocidos tras descartar el
+   xlsx -- confirmar con Miguel Ángel si hay otra fuente antes de dar
+   esto por vacío.
+7. **150 archivos `NOMBRAMIENTO RECURSO PREVENTIVO`**
+   (`FIRMADOS`/`ENTREGA FUNCIONES`/raíz) -> candidatos a
+   `DocumentAcknowledgment`.
+
+**Puntos arrastrados sin ejecución real en S71 (1.ª sesión sin
+avanzar):**
+
+8. **Sistema de plantillas de comunicados/notificaciones**
+   (arrastrado 1.ª sesión sin avanzar) -- decidir con Miguel Ángel si
+   entra en H30 o se abre hito nuevo. Criterio de cierre: decisión
+   explícita registrada, no hace falta el modelo diseñado.
+9. **Gap `AUTORIZACION_MEDIOS_COMUNICACION`** (arrastrado 1.ª sesión
+   sin avanzar) -- 3 plantillas reales por empresa contra
+   `current_template` de plantilla única. Decidir M2M vs canónica.
+   Criterio de cierre: decisión tomada y, si aplica, migración
+   aplicada y verificada.
 
 **Sigue bloqueado, sin empezar hasta que el dominio PERSONAL esté
-cerrado de verdad (puntos 1-7 arriba, más las dos preguntas de
-arriba):**
+cerrado de verdad (puntos 1-9 arriba):**
 
-8. **Fase A de `DOC. MAQUINAS`** (dry-run ya ejecutado en S69,
-   `run_fase_a_sweep_scoped`, resultado nunca leído). Criterio de
-   cierre: al menos una pasada de calibración real completada,
-   volumen medido antes de aplicar.
+10. **Fase A de `DOC. MAQUINAS`** (dry-run ya ejecutado en S69,
+    `run_fase_a_sweep_scoped`, resultado nunca leído). Criterio de
+    cierre: al menos una pasada de calibración real completada,
+    volumen medido antes de aplicar.
+
+EOF
+# 2026-08-26
+# EnterpriseBot
+# ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md
+*  **Session:** Resolución completa de FOTOS CARNET: 21 ambiguos y 53 sin coincidencia
+*  **Description:** Sesión de continuidad de H30 (Vinculación Documental Real — Centros de Gasto y Personal), siguiendo el orden exacto dictado por Miguel Ángel al cierre de S69: se atacó directamente el punto 1 de la hoja de ruta, sin preguntar por dónde empezar. Se presentaron a Miguel Ángel, uno a uno, los 21 archivos ambiguos de FOTOS CARNET (2+ PersonIdentity candidatos reales) junto con sus candidatos reales, registrando verbatim la equivalencia confirmada para cada uno. A continuación se abordaron los 53 archivos sin ninguna coincidencia, resueltos según el criterio explícito de Miguel Ángel. En el proceso se detectó y corrigió un hueco real de diseño entre CompanyUser y PersonIdentity (Carlos Bas Blanco y David Contreras Márquez). Cualquier incidencia real detectada fuera de alcance se corrigió de inmediato en la misma sesión, según directriz 4.9.
+
+EOF
+# 2026-08-26
+# EnterpriseBot
+# ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md
+*  **Session:** Confirmación de dos bloqueos de S70: estado real de la VM h28-ocr-batch-1 y cierre del dominio PERSONAL
+*  **Description:** Se abrirá la sesión confirmando con Miguel Ángel las dos preguntas bloqueantes dejadas por S70: si la VM h28-ocr-batch-1 sigue encendida a propósito o puede confirmarse su parada real, y si el dominio PERSONAL queda completo tras el cierre al 100% de FOTOS CARNET, para desbloquear la Fase A de heurística sobre DOC. MAQUINAS. Según las respuestas, se avanzará sobre el punto disponible que corresponda: el extractor real de EpiDelivery/DocumentAcknowledgment sobre los archivos ya tipados EPIS y NOMBRAMIENTO RECURSO PREVENTIVO, la decisión sobre el sistema de plantillas de comunicados/notificaciones, el gap de plantilla múltiple de AUTORIZACION_MEDIOS_COMUNICACION, o el reinicio de la Fase A sobre DOC. MAQUINAS si ambos bloqueos quedan resueltos. Cualquier incidencia real fuera de alcance se corregirá de inmediato, según directriz 4.9.
+
+EOF
