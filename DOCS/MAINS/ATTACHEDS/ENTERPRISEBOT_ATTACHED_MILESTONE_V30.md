@@ -4974,64 +4974,155 @@ todo el trabajo fue lectura de datos reales (BD, documentos subidos
 por Miguel Ángel) y diseño a confirmar. No hay migración, no hay
 `requirements.in` nuevo, no aplica la verificación 2.4.
 
-## Hoja de ruta para S72
+### COMPLETADAS EN S72
 
-**Continuar directamente con el punto 1 (extractor EPIs/Botiquines),
-sin preguntar por dónde empezar** -- las tres preguntas reales de
-cierre de S71 son el primer bloque de trabajo:
+Sesión larga, dedicada casi por completo al extractor real
+EPIs/Botiquines (punto 5 de la hoja de ruta de S71), con dos desvíos
+reales resueltos dentro de la misma sesión (directriz 4.9).
 
-1. **`ENTREGA DE EPIS INDUSTRIA 15-4-19 MARCELINO MACIAS.docx`**:
-   **RESUELTO (confirmado por Miguel Ángel tras el cierre de S71):
-   5 `EpiDelivery` independientes** (máscara media, filtros vapores
-   orgánicos y gases ácidos, retenedor de filtros, bolsa
-   portarespirador, prefiltro P3/mascarilla 6200) -- mismo criterio
-   que el resto de documentos, un ítem del catálogo por fila de la
-   tabla. Ya no es una pregunta abierta de S72.
-2. **`ENTREGA_EPIS_GRUISTA_2026.docx`**: ¿reemplaza a las plantillas
-   actuales o convive con ellas?
-3. **Catálogo `EpiItemCatalog` con los ~25 ítems propuestos** (ver
-   arriba) -- confirmar la lista definitiva con Miguel Ángel, incluida
-   la respuesta a los puntos 1-2, antes de escribir la migración.
+**Desvío 1 — carpetas vacías en todo el cubo.** Incidente real
+reportado por Miguel Ángel: carpetas que en el explorador muestran
+"Sin resultados" porque su contenido ya está en papelera, pero la
+fila `FOLDER` nunca se marcó. Nueva herramienta `find_empty_folders`
+(bottom-up, hijos vivos reales, nunca el `child_count` desactualizado)
+-- **1.178 carpetas enviadas a papelera en todo el cubo** (no solo
+`ENTREGA EPIS`), y `recalculate_folder_counters` corrigió los
+contadores de **246 carpetas supervivientes**. Hallazgo real sin
+resolver: `MANUALES DE USO` huérfana en la raíz del cubo, 156 archivos
+reales, pendiente de decisión de organización (no tocada).
 
-4. **Migración real**: añadir a `EpiItemCatalog` los dos campos ya
-   confirmados (coste de reposición nulo, norma UNE-EN nula) y poblar
-   el catálogo cerrado según el punto 3. Criterio de cierre: migración
-   aplicada y verificada con `showmigrations`, catálogo poblado con
-   las filas reales confirmadas.
-5. **Extractor real EPIs/Botiquines -> `EpiDelivery`** sobre los
-   ~2.565+971 archivos ya tipados `EPIS` (raíz de `ENTREGA EPIS`
-   excluida salvo decisión distinta). Parseo de fecha desde el nombre
-   de archivo (no hay `issue_date` en BD). Criterio de cierre: al
-   menos un lote real migrado y verificado (conteo real de filas
-   `EpiDelivery` creadas), documentos originales correspondientes en
-   papelera.
-6. **Botiquines**: 0 registros reales conocidos tras descartar el
-   xlsx -- confirmar con Miguel Ángel si hay otra fuente antes de dar
-   esto por vacío.
-7. **150 archivos `NOMBRAMIENTO RECURSO PREVENTIVO`**
-   (`FIRMADOS`/`ENTREGA FUNCIONES`/raíz) -> candidatos a
-   `DocumentAcknowledgment`.
+**Desvío 2 — 5 documentos EPI mal tipificados**, localizados por
+regex sobre el catálogo completo: `ENTREGA DETECTOR TENSION.doc`
+(`ENTREGA_DOCUMENTACION_VARIA`→`EPIS`), 2 archivos de RAMOS ZAMBRANA
+(`NOMINA`→`EPIS`, mal archivados dentro de su carpeta de nóminas),
+`EPIS 09-08-2024 ALTA VISIBILIDDAD MORENO ROMERO.pdf`
+(`ALTA`→`EPIS`, typo de nombre confundido con Alta S.S.), y
+`CAPACITACION Y EPIS MANOLO BURGOS.pdf` -- una sola página escaneada
+con tres documentos reales mezclados (EPIS + autorización de
+maquinaria + información PRL), dividida físicamente en tres archivos
+(`split_capacitacion_epis_burgos.py`, cortes por coordenadas Y
+verificados visualmente) con hallazgo adicional: la persona
+(Burgos Fernández Manuel, `is_active_employee=True`) estaba mal
+archivada bajo la rama `BAJAS`.
 
-**Puntos arrastrados sin ejecución real en S71 (1.ª sesión sin
-avanzar):**
+**Catálogo `EpiItemCatalog` cerrado.** Migración 0052 (dos campos:
+`replacement_cost`, `une_en_standard`) + 0053 (31 ítems reales
+sembrados a partir de los 30 documentos reales de S71, nunca una
+lista inventada -- confirmado por Miguel Ángel: "Familias sí").
+`ENTREGA_EPIS_GRUISTA_2026.docx` resuelto: convive con las plantillas
+actuales, no las reemplaza (exclusivo del puesto de gruísta).
 
-8. **Sistema de plantillas de comunicados/notificaciones**
-   (arrastrado 1.ª sesión sin avanzar) -- decidir con Miguel Ángel si
-   entra en H30 o se abre hito nuevo. Criterio de cierre: decisión
-   explícita registrada, no hace falta el modelo diseñado.
-9. **Gap `AUTORIZACION_MEDIOS_COMUNICACION`** (arrastrado 1.ª sesión
-   sin avanzar) -- 3 plantillas reales por empresa contra
-   `current_template` de plantilla única. Decidir M2M vs canónica.
-   Criterio de cierre: decisión tomada y, si aplica, migración
-   aplicada y verificada.
+**Extractor real `extract_epis_deliveries`.** Persona resuelta
+SIEMPRE por DNI real del contenido -- nunca por nombre de
+archivo/carpeta (hallazgo real: `EPIS 1-3-22 GOMEZ RIVERO, FCO.docx`
+contenía en realidad a Daniel Serrano Rojas). Corregido dos veces
+más: el DNI se calcula (dígitos del documento + letra de control por
+algoritmo oficial, nunca la letra transcrita a mano -- decisión
+explícita de Miguel Ángel tras detectar que el regex anterior
+enganchaba letras de campos lejanos en plantillas con mucho espacio
+en blanco). Ítems reconocidos por tabla de casillas marcadas (nunca
+un lote fijo asumido por nombre de archivo), con tabla de
+equivalencias etiqueta→código corregida iterativamente contra el
+barrido real completo (variantes de guantes, máscara de soldar,
+mascarilla, careta, y las dos plantillas distintas de alta
+visibilidad). Etiquetas repetidas del mismo ítem en un documento se
+deduplican a una sola entrega (confirmado por Miguel Ángel). Alcance
+final: genérico (años ≥2021), `EPIS POR ELEMENTOS` (desglosados),
+`EPIS INDUSTRIA QUIMICA`, `MECANICOS`, y `EPIS ALTA VISIBILIDAD`
+(fecha parseada del contenido cuando no está en el nombre de
+archivo).
+
+Paralelismo por `--shard-count`/`--shard-index` (varias consolas
+Bash de PythonAnywhere) en vez de VM nueva -- las VMs `h28-ocr-batch`
+usan `pymysql`/`sshtunnel` sobre scripts sueltos, no Django ORM;
+montar Django completo en una VM sin probar habría sido más riesgo
+que beneficio para el volumen real (~700-900 documentos).
+
+Decisión explícita de Miguel Ángel: los documentos sin persona
+resoluble o sin fecha/ítems reconocibles van **directamente a
+papelera**, sin más investigación individual (`--discard-unresolved-
+persona`, `--discard-unresolved-items`).
+
+Bug real de conteo detectado y corregido: `deliveries_creadas`
+contaba cada intento de `get_or_create()`, no si la fila era nueva de
+verdad -- inflaba la cifra con documentos reales duplicados (mismo
+contenido copiado en varias carpetas de mes). Verificado y corregido
+contra el total real de la tabla por consulta directa.
+
+**Balance final real, verificado contra la base de datos:** **3.198
+filas `EpiDelivery`**. Documentos completos y enviados a papelera
+(éxito): genérico/desglosados/industria química/mecánicos 484,
+alta visibilidad 86. Documentos descartados a papelera por decisión
+explícita (sin persona o sin fecha/ítems): 104 + 31 = 135. 0 fallos de
+lectura en todo el proceso.
+
+**Modelo de datos de Botiquines.** Recuperado de una decisión ya
+explicada por Miguel Ángel en S69 (localizada por búsqueda en
+conversaciones pasadas, sin que tuviera que repetirla): los
+botiquines se tratan como cualquier EPI del catálogo, pero además de
+a la persona van asignados a un Centro de Gasto (`fleet.MachineAsset`
+-- máquina, taller, almacén o plataforma). Migración 0054
+(`EpiDelivery.destination_machine`, FK nula) + 0055 (ítem `BOTIQUIN`
+en el catálogo). Extractor real de los 14 documentos, pendiente.
+
+**Incidencia real de infraestructura:** el GitHub Action del push de
+0054/0055 falló sin ejecutar ningún step (`queued` indefinido,
+conclusión `failure`) -- no relacionado con el contenido del commit.
+Migraciones aplicadas manualmente en servidor como salvaguarda,
+verificado con datos reales antes de continuar.
+
+**Pendiente, sin ejecutar:** fichas técnicas/manuales de EPIs por
+vincular a su `EpiItemCatalog` (mismo mecanismo genérico
+`domain_content_type`/`domain_object_id` ya usado para personas,
+aplicado aquí sobre `EpiItemCatalog`) -- recordatorio de Miguel Ángel,
+sin inventariar todavía cuántos documentos reales hay de este tipo.
+
+## Hoja de ruta para S73
+
+**Dos ítems llegan a la 2.ª sesión sin ejecución real (S71, S72) --
+pregunta obligatoria antes de seguir, directriz `nfs-enterprisebot-
+pcs` 2.2:** ¿qué falta para que el sistema de plantillas de
+comunicados/notificaciones y el gap de plantilla múltiple de
+`AUTORIZACION_MEDIOS_COMUNICACION` entren en una sesión -- prioridad
+tuya, más contexto que aportar, o se aparcan explícitamente hasta
+cerrar el resto del dominio PERSONAL (EPIs/botiquines/manuales)?
+
+1. **Fichas técnicas/manuales de EPIs → vincular a `EpiItemCatalog`.**
+   Primer paso: inventario real completo (búsqueda de todos los
+   documentos de este tipo bajo `DOC. PERSONAL`, no solo el
+   `CERTIFICADO T501+T180` ya visto en `EPIS ALTA VISIBILIDAD`).
+   Mecanismo: `domain_content_type`/`domain_object_id` genérico de
+   `DocumentIndexEntry`, apuntando a `EpiItemCatalog` en vez de a
+   `PersonIdentity`. Criterio de cierre: inventario completo
+   documentado + al menos un documento real vinculado y verificado
+   contra BD.
+2. **Extractor real de Botiquines (14 archivos, `BOTIQUINES`).**
+   Modelo de datos ya listo (`EpiDelivery.destination_machine` +
+   ítem `BOTIQUIN`). Falta: leer contenido real de una muestra antes
+   de diseñar el parser (persona + Centro de Gasto real destino).
+   Criterio de cierre: `EpiDelivery(epi=BOTIQUIN)` creadas con
+   `destination_machine` relleno, verificado por consulta real a BD.
+3. **`CONTROL EPIS` (76 archivos)** -- sin diseño todavía, requiere
+   muestreo real de contenido (mismo criterio que se usó para
+   desglosados/industria química/alta visibilidad: 2-3 archivos
+   reales leídos antes de escribir ningún parser).
+4. **`EPIS ARNES MIRA 12-A` (51 archivos)** -- sin diseño todavía,
+   mismo criterio de muestreo previo.
+5. **`DETECTOR TENSION` (2) y `EPIS VARIAS EMPRESAS` (2)** -- volumen
+   mínimo, revisar directo archivo por archivo sin necesidad de
+   parser genérico.
+6. **150 archivos `NOMBRAMIENTO RECURSO PREVENTIVO`** (arrastrado 1.ª
+   sesión sin avanzar) → candidatos a `DocumentAcknowledgment`.
+   Criterio de cierre: al menos un lote real migrado y verificado.
 
 **Sigue bloqueado, sin empezar hasta que el dominio PERSONAL esté
-cerrado de verdad (puntos 1-9 arriba):**
+cerrado de verdad (puntos 1-6 arriba):**
 
-10. **Fase A de `DOC. MAQUINAS`** (dry-run ya ejecutado en S69,
-    `run_fase_a_sweep_scoped`, resultado nunca leído). Criterio de
-    cierre: al menos una pasada de calibración real completada,
-    volumen medido antes de aplicar.
+7. **Fase A de `DOC. MAQUINAS`** (dry-run ya ejecutado en S69,
+   `run_fase_a_sweep_scoped`, resultado nunca leído). Criterio de
+   cierre: al menos una pasada de calibración real completada,
+   volumen medido antes de aplicar.
+
 
 EOF
 # 2026-08-26
