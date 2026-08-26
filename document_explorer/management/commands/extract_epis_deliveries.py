@@ -293,6 +293,15 @@ class Command(BaseCommand):
             ),
         )
         parser.add_argument(
+            "--discard-unresolved-items", action="store_true",
+            dest="discard_unresolved_items",
+            help=(
+                "Manda directamente a papelera los documentos sin "
+                "fecha reconocible o sin ítems reconocidos (persona sí "
+                "resuelta). Decisión explícita de Miguel Ángel (S72)."
+            ),
+        )
+        parser.add_argument(
             "--shard-index", type=int, default=0,
             help="Índice de este shard (0 a shard-count - 1).",
         )
@@ -301,6 +310,7 @@ class Command(BaseCommand):
         apply_changes = options["apply"]
         limit = options["limit"]
         discard_unresolved = options["discard_unresolved"]
+        discard_unresolved_items = options["discard_unresolved_items"]
 
         qs = DocumentIndexEntry.objects.filter(
             bucket="cgs_grupo_alvarez",
@@ -345,8 +355,9 @@ class Command(BaseCommand):
 
         totals = {
             "procesados": 0, "sin_persona": 0, "sin_persona_a_papelera": 0,
-            "sin_items": 0, "items_sin_mapear": 0, "deliveries_creadas": 0,
-            "documentos_completos": 0, "fallos_lectura": 0,
+            "sin_items": 0, "sin_items_a_papelera": 0, "items_sin_mapear": 0,
+            "deliveries_creadas": 0, "documentos_completos": 0,
+            "fallos_lectura": 0,
         }
         unmapped_labels = {}
 
@@ -413,6 +424,12 @@ class Command(BaseCommand):
                     % (entry.parent_path, entry.name)
                 )
                 totals["sin_items"] += 1
+                if apply_changes and discard_unresolved_items:
+                    if trash_dossier_entry(entry):
+                        self.stdout.write(
+                            "  -> a papelera (sin fecha reconocible)"
+                        )
+                        totals["sin_items_a_papelera"] += 1
                 continue
 
             labels = _parse_marked_labels(rows)
@@ -431,6 +448,12 @@ class Command(BaseCommand):
                     % (entry.parent_path, entry.name)
                 )
                 totals["sin_items"] += 1
+                if apply_changes and discard_unresolved_items:
+                    if trash_dossier_entry(entry):
+                        self.stdout.write(
+                            "  -> a papelera (sin ítems reconocidos)"
+                        )
+                        totals["sin_items_a_papelera"] += 1
                 continue
 
             if not apply_changes:
