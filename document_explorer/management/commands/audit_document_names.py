@@ -219,6 +219,19 @@ class Command(BaseCommand):
                 "de más a menos frecuente. Por defecto 40."
             ),
         )
+        parser.add_argument(
+            "--pending",
+            action="store_true",
+            help=(
+                "Acota el análisis solo al residuo real sin tipo "
+                "(document_type__isnull=True, sin borrar/purgar). Sin "
+                "esta flag se cuentan TODOS los archivos de la carpeta "
+                "raíz, tipados y sin tipar mezclados -- añadido S69 "
+                "para no diluir las frecuencias con lo ya resuelto "
+                "antes de decidir si hace falta OCR/VM sobre lo que "
+                "queda de verdad."
+            ),
+        )
 
     def handle(self, *args, **options):
         bucket = options["bucket"]
@@ -228,17 +241,16 @@ class Command(BaseCommand):
                 % (bucket, ", ".join(INDEXED_BUCKETS))
             )
         top_n = options["top"]
+        pending_only = options["pending"]
 
-        names = list(
-            DocumentIndexEntry.objects
-            .filter(
-                bucket=bucket,
-                entry_kind=DocumentIndexEntry.KIND_FILE,
-                purged_at__isnull=True,
-            )
-            .exclude(blob_name__startswith=QUARANTINE_PREFIX)
-            .values_list("blob_name", flat=True)
-        )
+        qs = DocumentIndexEntry.objects.filter(
+            bucket=bucket,
+            entry_kind=DocumentIndexEntry.KIND_FILE,
+            purged_at__isnull=True,
+        ).exclude(blob_name__startswith=QUARANTINE_PREFIX)
+        if pending_only:
+            qs = qs.filter(document_type__isnull=True, deleted_at__isnull=True)
+        names = list(qs.values_list("blob_name", flat=True))
         if not names:
             self.stdout.write(self.style.WARNING(
                 "Sin archivos indexados en %s (¿falta sembrar el "
