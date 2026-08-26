@@ -4703,17 +4703,41 @@ upload_bytes()` + `document_explorer.index_writer.refresh_folder()`:
   sigue pendiente en la hoja de ruta con sus propios 5 archivos por
   persona, ahora ya con plantilla real identificada de antemano.
 
+**Diseño técnico del punto 4, CERRADO en S69 -- migración `0051`,
+commit `c888ea6`, verificado en producción (HEAD real del servidor
+= `c888ea6`, `showmigrations` confirma `0051_document_acknowledgment_
+s69` aplicada, no solo icono verde de GitHub Actions).** Decisión
+final de Miguel Ángel: **modelo separado**, `EpiDelivery` no se toca
+ni se generaliza (razón real, no solo preferencia: EPIs son catálogo
+de objetos físicos consultado por posesión actual; documentos/
+nombramientos se consultan por línea temporal con huecos reales --
+`requires_periodic_review` no significa nada para un nombramiento).
+
+Dos piezas nuevas:
+1. `DocumentTypeCatalog.current_template` -- FK opcional a
+   `DocumentIndexEntry`, la plantilla vigente de ese tipo. Cambiar de
+   plantilla (nueva ley, cambio de domicilio) es reapuntar este
+   campo, nunca tocar el histórico de entregas ya registradas.
+2. `DocumentAcknowledgment` -- persona + `document_type` (FK a
+   `DocumentTypeCatalog`, sirve para cualquier tipo sin migración
+   nueva cuando aparezca uno) + `delivery_date` + `source_entry`
+   opcional (solo cuando un tipo concreto exige conservar la copia
+   firmada exacta, nunca por defecto) + `extraction_method`. Cero
+   filas todavía -- listo para usarse en cuanto se decida por dónde
+   empezar la migración real de lo ya guardado por persona.
+
 **Pendiente real de la raíz de `NOMBRAMIENTO RECURSO PREVENTIVO`,
 NO cerrada todavía:** los 8 documentos restantes de la raíz (copias ya
 rellenas de Francisco Gómez Rivero, Pedro Pérez Fernández, y los 3
 `Nomb.resp.seguridad` de Alejandro Álvarez/Daniel Baena sin leer
-todavía) no se han tocado -- son candidatos a anotación diferida bajo
-el principio de arriba, no a papelera inmediata (el diseño técnico del
-punto 4 sigue sin construirse). Los 67 de `/ENTREGA FUNCIONES
-RECURSO PREVENTIVO/` (ya tipados como `ENTREGA_INFORMACION` en el
-bloque anterior) y los archivos de `/FIRMADOS/` y `/obsoletos/` siguen
-sin auditar bajo este principio -- mismo criterio, no tocar hasta que
-el modelo de anotación exista.
+todavía) no se han tocado -- ahora sí son candidatos reales a
+`DocumentAcknowledgment` (una fila por persona, `source_entry` nulo
+salvo que Miguel Ángel diga lo contrario para alguno), pendiente de
+construir el comando que las migre y las mande a papelera. Los 67 de
+`/ENTREGA FUNCIONES RECURSO PREVENTIVO/` (ya tipados como
+`ENTREGA_INFORMACION`) y los archivos de `/FIRMADOS/` y `/obsoletos/`
+siguen sin auditar bajo este principio -- mismo criterio, bloque de
+trabajo propio, no de esta sesión.
 
 1. **Carpetas transversales de `DOC. PERSONAL` sin tocar** (65+
    archivos según la cifra vieja de S67/S68, corregida al cerrar cada
