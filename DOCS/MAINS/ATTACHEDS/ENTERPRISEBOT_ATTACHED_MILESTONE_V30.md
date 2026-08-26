@@ -4894,11 +4894,153 @@ punto 1 real que se ejecutó en S70 -- detectado al inicio de esta
 sesión, pendiente de que el PCS real de S70 lo sustituya por el
 registro correcto en vez de dejarlo como está.
 
+### COMPLETADAS EN S71 (parcial -- sesión en curso, continúa en S72)
+
+**Las dos preguntas bloqueantes de S71 quedaron resueltas:**
+
+1. **`h28-ocr-batch-1`** -- confirmado por Miguel Ángel: "va bien y
+   haciendo su trabajo". Sin más acción -- punto retirado de la hoja
+   de ruta, ya no arrastra.
+2. **¿PERSONAL completo?** -- **NO**, con datos reales, no por
+   suposición. Incidencia real corregida en la propia sesión
+   (directriz 4.9): el modelo preguntó esto en vez de comprobarlo él
+   mismo contra el propio anexo que acababa de leer -- corregido de
+   inmediato tras el aviso de Miguel Ángel. Los tres puntos 1-3 de la
+   propia hoja de ruta de S71 (extractor EPIs/Botiquines, decisión
+   plantillas comunicados, gap `AUTORIZACION_MEDIOS_COMUNICACION`)
+   siguen abiertos dentro de PERSONAL -- la Fase A de `DOC. MAQUINAS`
+   sigue bloqueada.
+
+**Incidencia real de proceso, corregida en la misma sesión (directriz
+4.9):** el modelo invocó `extract_text`/OCR desde el shell de Django
+en la consola de PythonAnywhere sobre una muestra de 8 archivos
+`EPIS` -- Miguel Ángel lo detuvo antes de ejecutar la caja, señalando
+que esto ya está prohibido desde S62 (`com-standards`, "COSTE DE CPU
+DE OCR"). Corregido: consulta puntual de contenido resuelta pidiendo
+a Miguel Ángel que descargue y suba él mismo los archivos reales,
+nunca ejecutando OCR desde el servidor.
+
+**Trabajo real de la sesión -- arranque del punto 1 (extractor real
+EPIs/Botiquines):**
+
+- **`EpiItemCatalog` está vacío (0 filas)**, verificado con consulta
+  real -- contradice el estado que se daba por asumido ("EPIs
+  terminado"). `EpiDelivery.epi` es FK obligatoria `PROTECT`: sin
+  catálogo poblado no se puede crear ninguna fila.
+- **Ni `issue_date` ni `expiry_date` están rellenos en ningún archivo
+  `EPIS`** (0 de 1676, verificado). La fecha real está en el propio
+  nombre de archivo (`EPIS 12-1-21 ALVAREZ GEA-...`), no en la BD --
+  el extractor tendrá que parsearla del nombre.
+- **La raíz de `DOC. PERSONAL/ENTREGA EPIS` mezcla plantillas/guías
+  con entregas reales** -- solo los archivos dentro de subcarpetas de
+  año, con patrón `EPIS {fecha} {apellido}-{puesto}-{descripción}`,
+  son entregas reales a persona. Sin decisión todavía sobre los ~14
+  archivos genéricos de la raíz (excluirlos del extractor, sin tocar).
+- **Miguel Ángel subió directamente 30 documentos reales de entrega**
+  (`ENTREGA EPIS`, `CONTROL DE EPIS`, dossiers desglosados, arneses
+  con marca/modelo/norma, botiquines, alta visibilidad, detector de
+  tensión, industria química) para construir el catálogo **a partir
+  de lo que dicen los documentos reales**, no de una lista inventada.
+  Catálogo propuesto (sin crear todavía, pendiente de confirmación
+  final): ~25 ítems distintos agrupados en familias (ropa de trabajo,
+  cabeza, alta visibilidad -- 6 subtipos, guantes -- 4 variantes,
+  calzado, auditiva, ocular, facial, respiratoria -- 3 variantes,
+  anticaídas -- 3 variantes con `requires_periodic_review`, térmica
+  eléctrica, detector de tensión).
+- **Dos campos nuevos confirmados por Miguel Ángel para
+  `EpiItemCatalog`** (sin migración escrita todavía -- se hace en
+  S72): coste de reposición (importe, nulo) y norma UNE-EN (texto,
+  nulo) -- este segundo, motivado por el nuevo formulario
+  `ENTREGA_EPIS_GRUISTA_2026.docx`, que ya trae la norma UNE-EN
+  incrustada por ítem.
+- **Pregunta real sin resolver, verificada contra la BD (no
+  bloqueante):** el documento
+  `ENTREGA DE EPIS INDUSTRIA 15-4-19 MARCELINO MACIAS.docx` (real,
+  activo, `DOC. PERSONAL/ENTREGA EPIS/EPIS INDUSTRIA QUIMICA`) agrupa
+  máscara media + filtros + retenedor + bolsa portarespirador +
+  prefiltro en un solo documento -- ¿se modela como 5 `EpiDelivery`
+  independientes (mismo criterio que el resto) o como un ítem
+  compuesto? Hallazgo adicional de la verificación: dos ficheros
+  homónimos de la misma persona (`EPIS 15-4-19...` y
+  `EPIS 15-4-19 desglosados...`) ya están en papelera desde hoy
+  mismo -- no son el documento real a usar.
+- **Sin decisión sobre `ENTREGA_EPIS_GRUISTA_2026.docx`** (formulario
+  nuevo, 2026, con norma UNE-EN por ítem incrustada, sin datos
+  reales rellenos todavía): ¿reemplaza a las plantillas actuales o
+  convive con ellas?
+
+**Ningún archivo del repositorio se ha editado en esta sesión** --
+todo el trabajo fue lectura de datos reales (BD, documentos subidos
+por Miguel Ángel) y diseño a confirmar. No hay migración, no hay
+`requirements.in` nuevo, no aplica la verificación 2.4.
+
+## Hoja de ruta para S72
+
+**Continuar directamente con el punto 1 (extractor EPIs/Botiquines),
+sin preguntar por dónde empezar** -- las tres preguntas reales de
+cierre de S71 son el primer bloque de trabajo:
+
+1. **`ENTREGA DE EPIS INDUSTRIA 15-4-19 MARCELINO MACIAS.docx`**:
+   ¿5 `EpiDelivery` independientes o ítem compuesto? Confirmar antes
+   de tocar el extractor.
+2. **`ENTREGA_EPIS_GRUISTA_2026.docx`**: ¿reemplaza a las plantillas
+   actuales o convive con ellas?
+3. **Catálogo `EpiItemCatalog` con los ~25 ítems propuestos** (ver
+   arriba) -- confirmar la lista definitiva con Miguel Ángel, incluida
+   la respuesta a los puntos 1-2, antes de escribir la migración.
+
+4. **Migración real**: añadir a `EpiItemCatalog` los dos campos ya
+   confirmados (coste de reposición nulo, norma UNE-EN nula) y poblar
+   el catálogo cerrado según el punto 3. Criterio de cierre: migración
+   aplicada y verificada con `showmigrations`, catálogo poblado con
+   las filas reales confirmadas.
+5. **Extractor real EPIs/Botiquines -> `EpiDelivery`** sobre los
+   ~2.565+971 archivos ya tipados `EPIS` (raíz de `ENTREGA EPIS`
+   excluida salvo decisión distinta). Parseo de fecha desde el nombre
+   de archivo (no hay `issue_date` en BD). Criterio de cierre: al
+   menos un lote real migrado y verificado (conteo real de filas
+   `EpiDelivery` creadas), documentos originales correspondientes en
+   papelera.
+6. **Botiquines**: 0 registros reales conocidos tras descartar el
+   xlsx -- confirmar con Miguel Ángel si hay otra fuente antes de dar
+   esto por vacío.
+7. **150 archivos `NOMBRAMIENTO RECURSO PREVENTIVO`**
+   (`FIRMADOS`/`ENTREGA FUNCIONES`/raíz) -> candidatos a
+   `DocumentAcknowledgment`.
+
+**Puntos arrastrados sin ejecución real en S71 (1.ª sesión sin
+avanzar):**
+
+8. **Sistema de plantillas de comunicados/notificaciones**
+   (arrastrado 1.ª sesión sin avanzar) -- decidir con Miguel Ángel si
+   entra en H30 o se abre hito nuevo. Criterio de cierre: decisión
+   explícita registrada, no hace falta el modelo diseñado.
+9. **Gap `AUTORIZACION_MEDIOS_COMUNICACION`** (arrastrado 1.ª sesión
+   sin avanzar) -- 3 plantillas reales por empresa contra
+   `current_template` de plantilla única. Decidir M2M vs canónica.
+   Criterio de cierre: decisión tomada y, si aplica, migración
+   aplicada y verificada.
+
+**Sigue bloqueado, sin empezar hasta que el dominio PERSONAL esté
+cerrado de verdad (puntos 1-9 arriba):**
+
+10. **Fase A de `DOC. MAQUINAS`** (dry-run ya ejecutado en S69,
+    `run_fase_a_sweep_scoped`, resultado nunca leído). Criterio de
+    cierre: al menos una pasada de calibración real completada,
+    volumen medido antes de aplicar.
+
 EOF
 # 2026-08-26
 # EnterpriseBot
 # ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md
 *  **Session:** Resolución completa de FOTOS CARNET: 21 ambiguos y 53 sin coincidencia
 *  **Description:** Sesión de continuidad de H30 (Vinculación Documental Real — Centros de Gasto y Personal), siguiendo el orden exacto dictado por Miguel Ángel al cierre de S69: se atacó directamente el punto 1 de la hoja de ruta, sin preguntar por dónde empezar. Se presentaron a Miguel Ángel, uno a uno, los 21 archivos ambiguos de FOTOS CARNET (2+ PersonIdentity candidatos reales) junto con sus candidatos reales, registrando verbatim la equivalencia confirmada para cada uno. A continuación se abordaron los 53 archivos sin ninguna coincidencia, resueltos según el criterio explícito de Miguel Ángel. En el proceso se detectó y corrigió un hueco real de diseño entre CompanyUser y PersonIdentity (Carlos Bas Blanco y David Contreras Márquez). Cualquier incidencia real detectada fuera de alcance se corrigió de inmediato en la misma sesión, según directriz 4.9.
+
+EOF
+# 2026-08-26
+# EnterpriseBot
+# ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md
+*  **Session:** Confirmación de dos bloqueos de S70: estado real de la VM h28-ocr-batch-1 y cierre del dominio PERSONAL
+*  **Description:** Se abrirá la sesión confirmando con Miguel Ángel las dos preguntas bloqueantes dejadas por S70: si la VM h28-ocr-batch-1 sigue encendida a propósito o puede confirmarse su parada real, y si el dominio PERSONAL queda completo tras el cierre al 100% de FOTOS CARNET, para desbloquear la Fase A de heurística sobre DOC. MAQUINAS. Según las respuestas, se avanzará sobre el punto disponible que corresponda: el extractor real de EpiDelivery/DocumentAcknowledgment sobre los archivos ya tipados EPIS y NOMBRAMIENTO RECURSO PREVENTIVO, la decisión sobre el sistema de plantillas de comunicados/notificaciones, el gap de plantilla múltiple de AUTORIZACION_MEDIOS_COMUNICACION, o el reinicio de la Fase A sobre DOC. MAQUINAS si ambos bloqueos quedan resueltos. Cualquier incidencia real fuera de alcance se corregirá de inmediato, según directriz 4.9.
 
 EOF
