@@ -4981,8 +4981,12 @@ sin preguntar por dónde empezar** -- las tres preguntas reales de
 cierre de S71 son el primer bloque de trabajo:
 
 1. **`ENTREGA DE EPIS INDUSTRIA 15-4-19 MARCELINO MACIAS.docx`**:
-   ¿5 `EpiDelivery` independientes o ítem compuesto? Confirmar antes
-   de tocar el extractor.
+   **RESUELTO (confirmado por Miguel Ángel tras el cierre de S71):
+   5 `EpiDelivery` independientes** (máscara media, filtros vapores
+   orgánicos y gases ácidos, retenedor de filtros, bolsa
+   portarespirador, prefiltro P3/mascarilla 6200) -- mismo criterio
+   que el resto de documentos, un ítem del catálogo por fila de la
+   tabla. Ya no es una pregunta abierta de S72.
 2. **`ENTREGA_EPIS_GRUISTA_2026.docx`**: ¿reemplaza a las plantillas
    actuales o convive con ellas?
 3. **Catálogo `EpiItemCatalog` con los ~25 ítems propuestos** (ver
