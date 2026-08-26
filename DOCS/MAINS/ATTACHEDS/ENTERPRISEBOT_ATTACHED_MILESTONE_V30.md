@@ -4869,6 +4869,40 @@ HORARIOS`, `VACACIONES`, y dos rincones de `ENTREGA EPIS` --
 **Con esto, las 6 carpetas transversales de `DOC. PERSONAL` de la
 hoja de ruta de S69 quedan CERRADAS.**
 
+**`NO CONFORMES`, CERRADO en S69 -- corregido el entendimiento
+propio, verbatim Miguel Ángel: no es cuarentena mixta para revisión
+manual documento a documento (como yo lo tenía anotado), es donde
+aterriza lo que Gemini no pudo clasificar en su única pasada (N=1,
+decisión 3.14 H29/S041) para ser reencolado y reintentado.**
+Reencolados los 28 archivos reales (`RequeueNoConformesView` replicado
+por shell: mueve cada uno a su carpeta espejo original dentro de
+`_CUARENTENA/` a partir de `blob_name`, nunca a la raíz plana --
+mismo fix del incidente real S042 de `A-69 Leasing BBVA.pdf`, 142
+pasadas perdidas por mandar siempre a la raíz). Quedan en cola para la
+siguiente pasada de `consume_quarantine_task` -- ninguno tipado a
+mano en esta sesión, correcto tal cual.
+
+**`FOTOS CARNET`, dominio resuelto en bloque -- 83 de 160, CERRADO
+el trabajo automático posible.** La cifra vieja del anexo (14) era
+solo el subconjunto de fotos convertidas desde PDF en S67, nunca la
+carpeta completa -- las 151 `IMAGEN` normales nunca se habían pasado
+por resolución de persona. Aplicado `resolve_person_by_name_count()`
+en bloque (dos pasadas: apellido+nombre exacto, luego comparación por
+conjunto de palabras completo del nombre de archivo contra
+`given_name`+`first_surname`, para cubrir el patrón `APELLIDO1
+APELLIDO2 NOMBRE[ INICIAL]` muy repetido en esta carpeta). Quedan sin
+dominio, sin forzar:
+- **21 ambiguos** (2+ `PersonIdentity` reales coinciden) -- casos
+  reales de apellidos compartidos (`ALVAREZ DIAZ`/`ALVAREZ GEA`,
+  `DIAZ ORTEGA`/`DIAZ QUINTERO`/`DIAZ DIAZ`...), necesitan
+  confirmación humana caso por caso, nunca el primer candidato.
+- **53 sin ninguna coincidencia** -- apodos (`Manolo`, `Juanma`),
+  erratas de apellido, o archivos de personas que ya no están activas
+  en la plantilla actual. Mismo bloque que los 14 casos ya arrastrados
+  de sesiones anteriores (Manolo/Manuel, Velazquez/Velasco,
+  Arca/Arcas, JM), ahora con la lista completa real -- pendiente de
+  pedir a Miguel Ángel la equivalencia real de cada uno.
+
 1. **Carpetas transversales de `DOC. PERSONAL` sin tocar** (65+
    archivos según la cifra vieja de S67/S68, corregida al cerrar cada
    una -- ver detalle real bajo cada carpeta: `PLAN DE ACTUACION
