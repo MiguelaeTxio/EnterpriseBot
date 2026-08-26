@@ -4643,6 +4643,29 @@ lo contrario.
    S047 (`EpiItemCatalog`, `EpiDelivery`, `EpiReview`), nunca se
    construyó el extractor real (OCR/heurística sobre los documentos
    de entrega).
+   **Plan ya decidido, no ambiguo (S54, reconfirmado S58/S63/S65) --
+   perderlo de vista fue el error real de S69, corregido aquí:**
+   EPIS está deliberadamente excluido del recorrido heurístico normal
+   desde S48 (nunca se le asigna `document_type` por Fase A). El flujo
+   real es: (1) clasificar/identificar lo que hay en la nube -- 2.565
+   archivos ya identificados como EPI al cierre de S66, aparte de los
+   tipados normales; (2) extraer cada documento a
+   `EpiDelivery`/`EpiReview` (persona, EPI, fecha) -- **sin construir
+   todavía, es el bloque real pendiente**; (3) mandar los originales a
+   papelera (virtual, 4.12) una vez la información vive estructurada.
+   **Prioridad explícita, verbatim S63:** "EPIS... se acometen al
+   final... no se tocan mientras quede trabajo real de dominio u OCR
+   pendiente" -- va detrás de todo lo demás de `DOC. PERSONAL`, a
+   propósito, no por olvido.
+   **Gap real sin resolver, arrastrado desde S68 sin respuesta:**
+   `Entrega botiquines-máquinas.xlsx` es botiquín entregado a
+   **máquina**, no a persona -- `EpiDelivery.person` es FK obligatoria
+   a `PersonIdentity`, sin ningún campo para `MachineAsset`. No encaja
+   en el modelo tal como está diseñado. Pregunta bloqueante para
+   Miguel Ángel antes de tocar este punto: ¿se amplía `EpiDelivery`
+   para admitir también máquina como destinatario (GenericForeignKey,
+   mismo patrón que `DocumentAlert`/`DocumentSubstitutionLog` de H26),
+   o es un caso aparte que no pasa por este modelo?
 6. **Sistema de plantillas de comunicados/notificaciones** -- decidir
    si entra en H30 o se abre hito nuevo antes de diseñar el modelo de
    datos.
