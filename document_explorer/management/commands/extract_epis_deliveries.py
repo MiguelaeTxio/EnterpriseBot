@@ -85,10 +85,10 @@ _SCOPED_SUBFOLDERS = {
 _YEAR_RE = re.compile(r"^\d{4}$")
 _MIN_GENERIC_YEAR = 2021
 
-_DNI_RE = re.compile(
-    r"D\.?\s*N\.?\s*I\.?\s*[:.]?\s*([0-9]{1,2}[.\s]?[0-9]{3}[.\s]?"
-    r"[0-9]{3}\s{0,2}-?\s{0,2}[A-Za-z]?)"
+_DNI_DIGITS_RE = re.compile(
+    r"D\.?\s*N\.?\s*I\.?\s*[:.]?\s*([0-9]{1,2}[.\s]?[0-9]{3}[.\s]?[0-9]{3})"
 )
+_DNI_LETTER_TABLE = "TRWAGMYFPDXBNJZSQVHLCKE"
 _NAME_ENTREGA_RE = re.compile(
     r"[Ee]ntrega\s+a\s+D\.?[ºa]?\.?\s+([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ\s.]+?)"
     r"\s+con\s+D\.?\s*N\.?\s*I"
@@ -189,9 +189,22 @@ def _extract_docx(data):
     return full_text, rows
 
 
+def _compute_full_dni(digits):
+    """Dígitos reales del documento (nunca la letra transcrita, que
+    en formularios rellenados a mano viene con errores reales -- ver
+    S72) + letra de control CALCULADA por el algoritmo oficial.
+    Verificado contra el único caso con confirmación real de BD de
+    esta sesión (BURGOS FERNANDEZ MANUEL, 25663148 -> R) y el ejemplo
+    de referencia pública del algoritmo (12345678 -> Z)."""
+    clean = re.sub(r"[.\s]", "", digits)
+    if not clean.isdigit():
+        return None
+    return clean + _DNI_LETTER_TABLE[int(clean) % 23]
+
+
 def _parse_person(text):
-    dni_match = _DNI_RE.search(text)
-    dni = dni_match.group(1).strip() if dni_match else None
+    dni_match = _DNI_DIGITS_RE.search(text)
+    dni = _compute_full_dni(dni_match.group(1)) if dni_match else None
     name_match = _NAME_ENTREGA_RE.search(text) or _NAME_TABLE_RE.search(text)
     name = name_match.group(1).strip() if name_match else None
     return name, dni
@@ -269,6 +282,17 @@ class Command(BaseCommand):
             ),
         )
         parser.add_argument(
+            "--discard-unresolved-persona", action="store_true",
+            dest="discard_unresolved",
+            help=(
+                "Manda directamente a papelera los documentos sin "
+                "persona resoluble (sin DNI o DNI sin PersonIdentity), "
+                "sin crear ninguna EpiDelivery. Decisión explícita de "
+                "Miguel Ángel (S72): estos casos no se investigan más, "
+                "se descartan."
+            ),
+        )
+        parser.add_argument(
             "--shard-index", type=int, default=0,
             help="Índice de este shard (0 a shard-count - 1).",
         )
@@ -276,6 +300,7 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         apply_changes = options["apply"]
         limit = options["limit"]
+        discard_unresolved = options["discard_unresolved"]
 
         qs = DocumentIndexEntry.objects.filter(
             bucket="cgs_grupo_alvarez",
@@ -319,8 +344,8 @@ class Command(BaseCommand):
         )
 
         totals = {
-            "procesados": 0, "sin_persona": 0, "sin_items": 0,
-            "items_sin_mapear": 0, "deliveries_creadas": 0,
+            "procesados": 0, "sin_persona": 0, "sin_persona_a_papelera": 0,
+            "sin_items": 0, "items_sin_mapear": 0, "deliveries_creadas": 0,
             "documentos_completos": 0, "fallos_lectura": 0,
         }
         unmapped_labels = {}
@@ -357,6 +382,12 @@ class Command(BaseCommand):
                     "SIN DNI: %s/%s" % (entry.parent_path, entry.name)
                 )
                 totals["sin_persona"] += 1
+                if apply_changes and discard_unresolved:
+                    if trash_dossier_entry(entry):
+                        self.stdout.write(
+                            "  -> a papelera (sin persona resoluble)"
+                        )
+                        totals["sin_persona_a_papelera"] += 1
                 continue
 
             person = PersonIdentity.objects.filter(
@@ -368,6 +399,12 @@ class Command(BaseCommand):
                     % (dni, entry.parent_path, entry.name)
                 )
                 totals["sin_persona"] += 1
+                if apply_changes and discard_unresolved:
+                    if trash_dossier_entry(entry):
+                        self.stdout.write(
+                            "  -> a papelera (sin persona resoluble)"
+                        )
+                        totals["sin_persona_a_papelera"] += 1
                 continue
 
             if not date:
