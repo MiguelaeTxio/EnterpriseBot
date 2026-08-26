@@ -87,7 +87,7 @@ _MIN_GENERIC_YEAR = 2021
 
 _DNI_RE = re.compile(
     r"D\.?\s*N\.?\s*I\.?\s*[:.]?\s*([0-9]{1,2}[.\s]?[0-9]{3}[.\s]?"
-    r"[0-9]{3}\s*-?\s*[A-Za-z]?)"
+    r"[0-9]{3}\s{0,2}-?\s{0,2}[A-Za-z]?)"
 )
 _NAME_ENTREGA_RE = re.compile(
     r"[Ee]ntrega\s+a\s+D\.?[ºa]?\.?\s+([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ\s.]+?)"
