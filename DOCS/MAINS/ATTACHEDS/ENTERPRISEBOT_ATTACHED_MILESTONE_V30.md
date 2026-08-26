@@ -4812,6 +4812,85 @@ puntos de arriba:**
    cerrados y Miguel Ángel confirme explícitamente que el dominio
    PERSONAL está completo.
 
+### COMPLETADAS EN S70 (parcial -- sesión en curso)
+
+**Puntos 1 y 2 de la hoja de ruta, CERRADOS: `FOTOS CARNET` resuelto
+al 100%.** Los 74 pendientes reales (21 ambiguos + 53 sin
+coincidencia) quedaron a cero, verificado contra la BD real antes y
+después de cada bloque (nunca contra el listado del anexo sin
+recontar):
+
+- **23 vinculados a `PersonIdentity` real** vía el par de apellidos
+  como criterio de desambiguación cuando bastaba (mismo principio ya
+  registrado que "un segundo/tercer nombre ausente no crea
+  ambigüedad real si el par de apellidos es único" -- confirmado por
+  Miguel Ángel en esta sesión con los casos Álvarez Díaz Alberto /
+  Álvarez Gea Alberto y Álvarez Díaz José Luis).
+- **51 a papelera** (`trash_dossier_entry`, mismo mecanismo ya
+  existente, ninguno de estos casos justificaba crear un
+  `PersonIdentity` nuevo): 4 de Huelva (Alhamar Avellaneda, Bautista
+  Durán, Bayón Romero, Castilla Codesal), 4 ambiguos genuinos sin
+  resolución posible con los datos disponibles (Marcos Rodríguez --
+  tercera persona real no dada de alta, sin DNI aportado; Moreno
+  García -- no existe ningún `PersonIdentity` con ese apellido;
+  José Díaz y José Jiménez -- ambos candidatos comparten el único
+  apellido del archivo, sin dato para desambiguar), y 47 sin ninguna
+  coincidencia real, a papelera por decisión explícita de Miguel
+  Ángel ("si no hay coincidencia, a la papelera... se pueden
+  recuperar").
+
+**Hallazgo real, corregido en la misma sesión (directriz 4.9): hueco
+de diseño entre `ivr_config.CompanyUser` y
+`document_explorer.PersonIdentity`.** Al decidir sobre las dos fotos
+de Carlos Bas Blanco (delegación de Huelva, pero con `CompanyUser`
+real y activo -- hace partes de trabajo), Miguel Ángel señaló que
+"la mayoría de los usuarios de la compañía van a tener un
+`PersonIdentity`" -- no hay ningún FK real entre ambos modelos hoy.
+Auditoría real ejecutada (`CompanyUser` activo con rol de trabajador
+real, cruzado por nombre normalizado sin acentos contra
+`PersonIdentity`): de 15 `CompanyUser` reales, 2 sin `PersonIdentity`
+verificados -- **Carlos Bas Blanco** (`28917345C`) y **David
+Contreras Márquez** (`49117967H`), ambos de la delegación de Huelva,
+excluidos hasta ahora de la resolución de identidad por la exclusión
+permanente de Huelva ya registrada, pero con usuario real de
+plataforma. Los otros 5 candidatos iniciales de la auditoría (
+`asistencia`, `Carolina`, `jeronimo`, `juan.vazquez`, `MARIA`) son
+cuentas administrativas sin nombre/apellido real cargado en el login
+-- no confirmados como huecos reales, pendiente de revisar con su
+nombre real si hace falta.
+
+**Corregido:** creados `PersonIdentity` reales para ambos (pk 231 y
+232, categoría OPERARIOS, mismo patrón de `folder_path` que el resto
+de identidades activas -- `employer_company` vacío a propósito, igual
+que los hermanos Álvarez Díaz, porque nunca han pasado por el Excel
+real de plantilla). Las dos fotos de Bas Blanco vinculadas a su
+`PersonIdentity`. David Contreras Márquez queda sembrado sin foto
+propia (no había ninguna en `FOTOS CARNET`), listo para cualquier
+documento futuro suyo. **Decisión explícita de Miguel Ángel: esto no
+es corrección de la regla permanente de exclusión de Huelva de la
+resolución de documentación histórica** (que sigue vigente, sin
+datos suficientes desde aquí) -- es una excepción puntual para estos
+dos trabajadores concretos, con usuario real y partes de trabajo
+reales, no obligatoria en ningún sentido futuro para el resto de la
+delegación.
+
+**Incidencia de cierre de S69, corregida en esta sesión (commit
+`332cc18`, previa a que arrancara S70 -- referenciada aquí para que
+quede completa la traza):** el PCS de S69 dejó en el anexo solo las
+cifras agregadas (21/53) sin los listados reales, pese a que la hoja
+de ruta decía "listado completo... más arriba". S70 se paró
+correctamente al detectarlo (nunca adivinó el parseo de un documento
+de identidad) y preguntó antes de regenerar nada -- el propio hilo
+de esa sesión reconstruyó los listados reales desde sus salidas de
+turno y los insertó.
+
+⚠️ **Nota sin resolver, no bloqueante:** el bloque `EOF` final de
+este archivo (más abajo) sigue registrando un título/descripción de
+sesión ("Fase A de DOC. MAQUINAS...") que no se corresponde con el
+punto 1 real que se ejecutó en S70 -- detectado al inicio de esta
+sesión, pendiente de que el PCS real de S70 lo sustituya por el
+registro correcto en vez de dejarlo como está.
+
 EOF
 # 2026-08-26
 # EnterpriseBot
