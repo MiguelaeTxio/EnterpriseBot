@@ -1554,6 +1554,21 @@ class EpiDelivery(models.Model):
             "panel, sin documento de origen (parte de trabajo)."
         ),
     )
+    destination_machine = models.ForeignKey(
+        "fleet.MachineAsset",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="epi_deliveries",
+        verbose_name="Centro de gasto de destino",
+        help_text=(
+            "Nulo para la mayoría de EPIs (entrega personal sin CdG "
+            "de destino). Relleno cuando el EPI va asignado a un "
+            "Centro de Gasto además de a la persona -- p. ej. "
+            "botiquines, que pueden ir a una máquina, un taller, un "
+            "almacén o una plataforma (Miguel Ángel, S69/S72)."
+        ),
+    )
     extraction_method = models.CharField(
         max_length=10,
         choices=METHOD_CHOICES,
