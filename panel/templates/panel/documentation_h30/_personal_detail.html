@@ -160,6 +160,159 @@ y se habilita "Guardar".
         </div>
     </div>
 
+    {% comment %}
+    H31 (S77). Acordeón Laboral -- sacado de dentro de Documentación
+    (family LABORAL) y ampliado con datos operativos reales:
+    Vacaciones (VacationPeriod real), Dietas (placeholder explícito,
+    sin lógica real todavía -- petición literal de Miguel Ángel) y
+    Partes de trabajo (digitales con vínculo fiable vía uploaded_by +
+    histórico PDF resuelto por nombre normalizado, criterio confirmado
+    S77 tras sondeo real: 504/545 = 92.5%). Decisión de Miguel Ángel:
+    centralizar todo lo laboral de la persona en un solo sitio de
+    primer nivel, en vez de disperso en Administración.
+    {% endcomment %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseLaboralMain">
+                <i class="bi bi-briefcase me-2"></i>Laboral
+            </button>
+        </h2>
+        <div id="collapseLaboralMain" class="accordion-collapse collapse" data-bs-parent="#personalMainAccordion">
+            <div class="accordion-body">
+
+<h6 class="text-muted text-uppercase small mt-2 mb-2">Documentos</h6>
+<table class="table table-sm table-hover mb-4">
+    <thead><tr><th>Tipo</th><th>Caducidad</th><th>Acciones</th></tr></thead>
+    <tbody>
+        {% for entry in laboral_documents %}
+        <tr{% if entry.needs_attention %} class="table-danger"{% endif %}>
+            <td>{{ entry.document_type.label }}</td>
+            <td>
+                {% if entry.needs_attention %}<i class="bi bi-exclamation-triangle-fill text-danger me-1" title="Sin fecha vigente -- necesita atención"></i>{% endif %}
+                {{ entry.expiry_date|default:"—" }}
+            </td>
+            <td>
+                <a href="{% url 'panel:documentation_document_view' pk=entry.pk %}" target="_blank" class="btn btn-sm btn-outline-secondary">Ver</a>
+                <button type="button" class="btn btn-sm btn-outline-primary"
+                        onclick="openUploadForm('{{ entry.document_type.code }}')">Actualizar</button>
+                <button type="button" class="btn btn-sm btn-outline-info"
+                        onclick="openDocumentHistory('{{ entry.document_type.code }}')">Historial</button>
+                <button type="button" class="btn btn-sm btn-outline-danger"
+                        onclick="deleteDocument({{ entry.pk }}, this)">Eliminar</button>
+            </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="3" class="text-muted small">Sin documentos vigentes.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<h6 class="text-muted text-uppercase small mb-2">Vacaciones</h6>
+{% if person.company_user %}
+<table class="table table-sm table-hover mb-4">
+    <thead><tr><th>Inicio</th><th>Fin</th><th>Etiqueta</th></tr></thead>
+    <tbody>
+        {% for period in vacation_periods %}
+        <tr>
+            <td>{{ period.date_start|date:"d/m/Y" }}</td>
+            <td>{{ period.date_end|date:"d/m/Y" }}</td>
+            <td>{{ period.label|default:"—" }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="3" class="text-muted small">Sin periodos de vacaciones registrados.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+<small class="text-muted d-block mb-4">Alta y edición de periodos: próximamente en su propia pestaña del hub de Documentación.</small>
+{% else %}
+<p class="text-muted small mb-4">Esta persona no tiene usuario del panel vinculado -- sin vacaciones que mostrar por esta vía.</p>
+{% endif %}
+
+<h6 class="text-muted text-uppercase small mb-2">Dietas</h6>
+<p class="text-muted small mb-4"><i class="bi bi-cone-striped me-1"></i>En construcción.</p>
+
+<h6 class="text-muted text-uppercase small mb-2">Partes de trabajo</h6>
+{% if person.company_user %}
+<p class="small mb-1"><strong>Digitales</strong> ({{ digital_work_orders|length }})</p>
+<table class="table table-sm table-hover mb-3">
+    <thead><tr><th>Fecha</th><th>Origen</th><th>Estado</th></tr></thead>
+    <tbody>
+        {% for wo in digital_work_orders %}
+        <tr>
+            <td>{{ wo.upload_date|date:"d/m/Y" }}</td>
+            <td>{{ wo.get_source_display }}</td>
+            <td>{{ wo.get_status_display }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="3" class="text-muted small">Sin partes digitales registrados.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p class="text-muted small mb-1">Esta persona no tiene usuario del panel vinculado -- sin partes digitales que mostrar por esta vía.</p>
+{% endif %}
+<p class="small mb-1"><strong>Histórico (PDF)</strong> ({{ historical_pdf_entries|length }})</p>
+<table class="table table-sm table-hover mb-1">
+    <thead><tr><th>Fecha</th></tr></thead>
+    <tbody>
+        {% for entry in historical_pdf_entries %}
+        <tr><td>{{ entry.work_date|date:"d/m/Y"|default:"Sin fecha" }}</td></tr>
+        {% empty %}
+        <tr><td class="text-muted small">Sin partes históricos vinculados.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+            </div>
+        </div>
+    </div>
+
+    {% comment %}
+    H31 (S77). Acordeón Salud -- sacado de dentro de Documentación
+    (family SALUD_BAJAS_PERSONA: reconocimientos médicos, altas/partes
+    de baja médica, investigación de accidente). Esto ES el bloque de
+    "Bajas" que Miguel Ángel pedía -- sin acordeón aparte, mismos
+    documentos de siempre, solo cambia dónde se pintan.
+    {% endcomment %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseSaludMain">
+                <i class="bi bi-heart-pulse me-2"></i>Salud
+            </button>
+        </h2>
+        <div id="collapseSaludMain" class="accordion-collapse collapse" data-bs-parent="#personalMainAccordion">
+            <div class="accordion-body">
+
+<table class="table table-sm table-hover mb-0">
+    <thead><tr><th>Tipo</th><th>Caducidad</th><th>Acciones</th></tr></thead>
+    <tbody>
+        {% for entry in salud_documents %}
+        <tr{% if entry.needs_attention %} class="table-danger"{% endif %}>
+            <td>{{ entry.document_type.label }}</td>
+            <td>
+                {% if entry.needs_attention %}<i class="bi bi-exclamation-triangle-fill text-danger me-1" title="Sin fecha vigente -- necesita atención"></i>{% endif %}
+                {{ entry.expiry_date|default:"—" }}
+            </td>
+            <td>
+                <a href="{% url 'panel:documentation_document_view' pk=entry.pk %}" target="_blank" class="btn btn-sm btn-outline-secondary">Ver</a>
+                <button type="button" class="btn btn-sm btn-outline-primary"
+                        onclick="openUploadForm('{{ entry.document_type.code }}')">Actualizar</button>
+                <button type="button" class="btn btn-sm btn-outline-info"
+                        onclick="openDocumentHistory('{{ entry.document_type.code }}')">Historial</button>
+                <button type="button" class="btn btn-sm btn-outline-danger"
+                        onclick="deleteDocument({{ entry.pk }}, this)">Eliminar</button>
+            </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="3" class="text-muted small">Sin documentos vigentes.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+            </div>
+        </div>
+    </div>
+
     <div class="accordion-item">
         <h2 class="accordion-header">
             <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseDocumentacionMain">

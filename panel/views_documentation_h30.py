@@ -35,6 +35,7 @@ from django.utils import timezone
 from django.views import View
 from email.message import EmailMessage as StdEmailMessage
 from email.utils import make_msgid
+import unicodedata
 
 from document_explorer import naming_service
 from document_explorer.index_writer import ensure_folder_chain
@@ -47,10 +48,12 @@ from document_explorer.subject_upload_service import (
 )
 from document_management.vigencia_service import DocumentSnapshot, is_current
 from fleet.models import MachineAsset
+from hr_calendar.models import VacationPeriod
 from panel.mixins import CompanyUserRequiredMixin, DocsUploadAccessMixin
 from panel.models import PanelNavigationState
 from spare_parts.gcs_service import generate_signed_url, upload_bytes
 from whatsapp.services import send_epi_delivery_whatsapp_confirmation
+from work_order_processor.models import WorkOrder, WorkOrderEntry
 
 BUCKET = "cgs_grupo_alvarez"
 
@@ -461,7 +464,7 @@ class PersonalResultsFragmentView(CompanyUserRequiredMixin, View):
         return render(request, "panel/documentation_h30/_personal_results.html", ctx)
 
 
-def _group_current_by_family(current_entries):
+def _group_current_by_family(current_entries, exclude_family_codes=()):
     """
     H31 (S76). Agrupa los documentos vigentes por la `family` real del
     catálogo -- campo que ya existía exactamente para esto desde H30
@@ -481,14 +484,25 @@ def _group_current_by_family(current_entries):
     (DNI, contratos...) puede haber más de uno si de verdad hay varios
     documentos vigentes simultáneos (p. ej. anverso/reverso) -- no se
     fuerza a uno solo aquí, eso sería perder información real.
+
+    `exclude_family_codes` (H31, S77): families que se muestran en su
+    propio acordeón de primer nivel (Laboral, Salud) en vez de aquí
+    dentro de Documentación -- se omiten del todo en este bucle para
+    no duplicar el documento en dos sitios de la misma ficha. El
+    documento sigue existiendo una sola vez en BD; solo cambia dónde
+    se pinta.
     """
     by_family = {}
     for entry in current_entries:
         family_code = entry.document_type.family if entry.document_type else ""
+        if family_code in exclude_family_codes:
+            continue
         by_family.setdefault(family_code, []).append(entry)
 
     ordered = []
     for code, label in DocumentTypeCatalog.FAMILY_CHOICES:
+        if code in exclude_family_codes:
+            continue
         if code in by_family:
             ordered.append({
                 "code": code, "label": label, "documents": by_family[code],
@@ -499,6 +513,69 @@ def _group_current_by_family(current_entries):
             "documents": by_family[""],
         })
     return ordered
+
+
+def _normalize_person_name(value):
+    """
+    H31 (S77). Mayúsculas + espacios colapsados + acentos eliminados,
+    para comparar `WorkOrderEntry.worker_name` (texto libre del
+    histórico PDF) contra el nombre completo de una `PersonIdentity`.
+    ---
+    H31 (S77). Uppercase + collapsed whitespace + stripped accents, to
+    compare `WorkOrderEntry.worker_name` (free-text historical PDF
+    field) against a `PersonIdentity`'s full name.
+    """
+    value = (value or "").strip().upper()
+    value = unicodedata.normalize("NFKD", value)
+    value = "".join(ch for ch in value if not unicodedata.combining(ch))
+    return " ".join(value.split())
+
+
+def _historical_pdf_entries_for_person(person):
+    """
+    H31 (S77). Vincula entradas del histórico `PDF_UPLOAD` a esta
+    `PersonIdentity` por coincidencia EXACTA de nombre normalizado
+    (mayúsculas, sin acentos, espacios colapsados) -- criterio
+    confirmado por Miguel Ángel tras sondeo real en S77: 504 de 545
+    entradas (92.5%) casan así, sin ambigüedad de apellido parcial.
+    Las que no casan (histórico de alguien fuera de la plantilla
+    activa de hoy) se quedan sin vincular a propósito -- nunca se
+    adivina por parecido de apellido, mismo espíritu que la regla ya
+    existente de histórico (S73).
+
+    Recorre el histórico completo (hoy ~545 filas con worker_name) en
+    Python por cada ficha abierta -- volumen asumible a día de hoy;
+    revisar si el histórico PDF crece mucho más.
+    ---
+    H31 (S77). Links `PDF_UPLOAD` historical entries to this
+    `PersonIdentity` by EXACT normalized-name match (uppercase,
+    accents stripped, whitespace collapsed) -- criterion confirmed by
+    Miguel Ángel after a real survey in S77: 504/545 entries (92.5%)
+    match this way, no partial-surname ambiguity. Entries that don't
+    match (historical record of someone outside today's active
+    roster) are deliberately left unlinked -- never guessed by
+    surname resemblance, same spirit as the existing historical rule
+    (S73).
+
+    Scans the full historical set (today ~545 rows with worker_name)
+    in Python on every ficha load -- acceptable volume today; revisit
+    if the PDF historical set grows much further.
+    """
+    full_name = _normalize_person_name(
+        f"{person.given_name} {person.first_surname} {person.second_surname}",
+    )
+    if not full_name:
+        return WorkOrderEntry.objects.none()
+    candidates = WorkOrderEntry.objects.filter(
+        work_order__source=WorkOrder.Source.PDF_UPLOAD,
+    ).exclude(worker_name="").select_related("work_order")
+    matched_ids = [
+        entry.pk for entry in candidates
+        if _normalize_person_name(entry.worker_name) == full_name
+    ]
+    return WorkOrderEntry.objects.filter(
+        pk__in=matched_ids,
+    ).select_related("work_order").order_by("-work_date")
 
 
 def _group_epi_deliveries_by_family(epi_deliveries):
@@ -567,7 +644,52 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
             deleted_at__isnull=True, purged_at__isnull=True,
         ).select_related("document_type").order_by("-id")
         current, obsolete = _split_current_obsolete(entries)
-        families = _group_current_by_family(current)
+        _laboral_salud_codes = (
+            DocumentTypeCatalog.FAMILY_LABORAL,
+            DocumentTypeCatalog.FAMILY_SALUD_BAJAS_PERSONA,
+        )
+        families = _group_current_by_family(
+            current, exclude_family_codes=_laboral_salud_codes,
+        )
+        # H31 (S77). Documentos de las dos families que se sacan de
+        # Documentación a su propio acordeón de primer nivel -- el
+        # documento es el mismo de siempre (DocumentIndexEntry), solo
+        # cambia dónde se pinta (ver docstring de
+        # _group_current_by_family, parámetro exclude_family_codes).
+        laboral_documents = [
+            entry for entry in current
+            if entry.document_type
+            and entry.document_type.family == DocumentTypeCatalog.FAMILY_LABORAL
+        ]
+        salud_documents = [
+            entry for entry in current
+            if entry.document_type
+            and entry.document_type.family == DocumentTypeCatalog.FAMILY_SALUD_BAJAS_PERSONA
+        ]
+        # H31 (S77). Vacaciones real -- VacationPeriod.operator (FK a
+        # CompanyUser) + PersonIdentity.company_user (OneToOne, S74),
+        # sin nada que resolver por nombre. Vacío para personal de
+        # plantilla sin cuenta de panel vinculada.
+        vacation_periods = (
+            VacationPeriod.objects.filter(
+                operator=person.company_user,
+            ).order_by("-date_start")
+            if person.company_user_id else VacationPeriod.objects.none()
+        )
+        # H31 (S77). Partes de trabajo digitales -- uploaded_by es el
+        # propio operario autenticado (ver panel/views_operator.py y
+        # hr_calendar/services.py), vínculo 100% fiable, sin
+        # resolución por nombre.
+        digital_work_orders = (
+            WorkOrder.objects.filter(
+                uploaded_by=person.company_user,
+                source__in=[WorkOrder.Source.DIGITAL, WorkOrder.Source.GENERATED],
+            ).order_by("-upload_date")
+            if person.company_user_id else WorkOrder.objects.none()
+        )
+        # H31 (S77). Histórico PDF resuelto por nombre normalizado --
+        # ver _historical_pdf_entries_for_person().
+        historical_pdf_entries = _historical_pdf_entries_for_person(person)
         # H31 (S74). Avatar -- reutiliza el mismo mecanismo genérico
         # domain_content_type/domain_object_id que cualquier otro
         # documento vinculado, filtrando por el código de catálogo
@@ -591,6 +713,11 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
         return render(request, "panel/documentation_h30/_personal_detail.html", {
             "person": person, "current": current, "obsolete": obsolete,
             "families": families,
+            "laboral_documents": laboral_documents,
+            "salud_documents": salud_documents,
+            "vacation_periods": vacation_periods,
+            "digital_work_orders": digital_work_orders,
+            "historical_pdf_entries": historical_pdf_entries,
             "avatar": avatar,
             "doc_types": doc_types, "epi_deliveries": epi_deliveries,
             "epi_families": epi_families,
