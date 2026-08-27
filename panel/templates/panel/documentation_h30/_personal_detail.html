@@ -353,15 +353,16 @@ vacaciones).
 
 <h6 class="text-muted text-uppercase small mb-2">Resumen diario</h6>
 <table class="table table-sm table-hover mb-0">
-    <thead><tr><th>Fecha</th><th>Horas</th></tr></thead>
+    <thead><tr><th>Fecha</th><th>Horas</th><th></th></tr></thead>
     <tbody>
         {% for row in partes_by_day %}
-        <tr>
+        <tr role="button" onclick="openWorkdayDetail('{{ row.date|date:'Y-m-d' }}')" style="cursor: pointer;">
             <td>{{ row.date|date:"d/m/Y" }}</td>
             <td>{{ row.hours|floatformat:2 }}</td>
+            <td><button type="button" class="btn btn-sm btn-outline-info" onclick="event.stopPropagation(); openWorkdayDetail('{{ row.date|date:'Y-m-d' }}')">Ver parte</button></td>
         </tr>
         {% empty %}
-        <tr><td colspan="2" class="text-muted small">Sin partes para este filtro.</td></tr>
+        <tr><td colspan="3" class="text-muted small">Sin partes para este filtro.</td></tr>
         {% endfor %}
     </tbody>
 </table>
@@ -874,6 +875,13 @@ function openDocumentHistory(typeCode) {
 
 function openEpiHistory(epiId) {
     openHistoryModal(`/panel/documentacion/personal/{{ person.pk }}/historial-epi/${epiId}/`);
+}
+
+// H31 (S77): detalle real de un día concreto de Partes de trabajo --
+// Miguel Ángel: "debe de poder verse el parte en sí". Mismo modal
+// genérico, nunca uno nuevo.
+function openWorkdayDetail(dateIso) {
+    openHistoryModal(`/panel/documentacion/personal/{{ person.pk }}/parte-dia/${dateIso}/`);
 }
 
 // H31 (S76): subir manual de uso / ficha técnica de un EPI del

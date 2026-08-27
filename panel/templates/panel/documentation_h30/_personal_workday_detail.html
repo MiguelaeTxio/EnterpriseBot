@@ -1,0 +1,38 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation_h30/_personal_workday_detail.html #}
+{% comment %}
+H31 (S77). Fragmento cargado bajo demanda dentro del modal genérico de
+historial (openHistoryModal) -- detalle real de las tareas de un día
+concreto: qué máquinas se tocaron, cuántas horas, en qué consistió
+cada tarea y qué repuestos se gastaron. Ver PersonalWorkdayDetailView.
+{% endcomment %}
+<h6 class="mb-3">Parte del {{ target_date|date:"d/m/Y" }} -- {{ lines|length }} tarea{{ lines|length|pluralize }}</h6>
+<table class="table table-sm table-hover mb-0">
+    <thead>
+        <tr>
+            <th>Máquina</th>
+            <th>Horas</th>
+            <th>Descripción</th>
+            <th>Reparación</th>
+            <th>Repuestos</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for line in lines %}
+        <tr>
+            <td>{{ line.machine_asset.code|default:line.machine_raw|default:"Sin máquina resuelta" }}</td>
+            <td>{{ line.delta_hours|default:"—" }}</td>
+            <td>{{ line.fault_description|default:"—" }}</td>
+            <td>{{ line.repair_notes|default:"—" }}</td>
+            <td>
+                {% for sp in line.spare_parts.all %}
+                {{ sp.material|default:sp.reference|default:"Repuesto sin descripción" }}{% if sp.quantity %} ({{ sp.quantity }}){% endif %}{% if not forloop.last %}<br>{% endif %}
+                {% empty %}
+                —
+                {% endfor %}
+            </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5" class="text-muted small py-3">Sin tareas registradas ese día.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>

@@ -44,6 +44,7 @@ from panel.views_documentation_h30 import (
     PersonalNotificationSendView,
     PersonalResultsFragmentView,
     PersonalUpdateView,
+    PersonalWorkdayDetailView,
     SubjectDocumentUploadView,
 )
 from panel.views import (
@@ -408,6 +409,7 @@ urlpatterns = [
     path("documentacion/personal/<int:pk>/", PersonalDetailView.as_view(), name="documentation_personal_detail"),
     # H31 (S76) punto 5: historial completo de un tipo documental, bajo demanda.
     path("documentacion/personal/<int:pk>/historial/<str:type_code>/", PersonalDocumentTypeHistoryView.as_view(), name="documentation_personal_type_history"),
+    path("documentacion/personal/<int:pk>/parte-dia/<str:date_iso>/", PersonalWorkdayDetailView.as_view(), name="documentation_personal_workday_detail"),
     # H31 (S76) punto EPIs: historial completo de un EPI, bajo demanda.
     path("documentacion/personal/<int:pk>/historial-epi/<int:epi_id>/", PersonalEpiItemHistoryView.as_view(), name="documentation_personal_epi_history"),
     # H31 (S76): manual de uso / ficha técnica de un EPI del catálogo.

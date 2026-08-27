@@ -35,8 +35,10 @@ from django.utils import timezone
 from django.views import View
 from email.message import EmailMessage as StdEmailMessage
 from email.utils import make_msgid
+from datetime import date
 import unicodedata
 
+from analytics.views import _resolve_work_period
 from document_explorer import naming_service
 from document_explorer.index_writer import ensure_folder_chain
 from document_explorer.models import (
@@ -723,6 +725,70 @@ def _parse_date_param(raw):
         return None
 
 
+class PersonalWorkdayDetailView(CompanyUserRequiredMixin, View):
+    """
+    H31 (S77). Detalle real de un día concreto dentro de Partes de
+    trabajo -- el resumen agregado se queda como está (confirmado por
+    Miguel Ángel), pero además "debe de poder verse el parte en sí
+    [...] qué repuestos se gastaron, el tiempo que se echó, cuántas
+    tareas hubo, en qué estuvo cada tarea, qué máquinas se tocaron ese
+    día." Reutiliza el mismo modal genérico de historial
+    (`openHistoryModal`, ya usado por documentos/EPIs) -- nunca un
+    modal nuevo.
+
+    Une los `WorkOrderEntry` digitales (`uploaded_by` fiable) y los
+    del histórico PDF vinculados por nombre normalizado (mismo
+    criterio que el resto de Partes de trabajo), filtrados a la fecha
+    pedida, y expone sus `WorkOrderEntryLine` (máquina, horas,
+    descripción, reparación, repuestos vía `SparePartLine`).
+    ---
+    H31 (S77). Real detail of a specific day within Partes de
+    trabajo. Reuses the same generic history modal already used by
+    documents/EPIs. Unions digital `WorkOrderEntry` rows (reliable
+    `uploaded_by` link) and historical PDF rows matched by normalized
+    name, filtered to the requested date, and exposes their
+    `WorkOrderEntryLine` rows (machine, hours, description, repair
+    notes, spare parts via `SparePartLine`).
+    """
+
+    def get(self, request, pk, date_iso):
+        person = get_object_or_404(
+            PersonIdentity.objects.select_related("company_user"), pk=pk,
+        )
+        try:
+            target_date = date.fromisoformat(date_iso)
+        except ValueError:
+            return HttpResponse("Fecha inválida.", status=400)
+
+        entry_ids = []
+        if person.company_user_id:
+            entry_ids += list(
+                WorkOrderEntry.objects.filter(
+                    work_order__uploaded_by=person.company_user,
+                    work_order__source=WorkOrder.Source.DIGITAL,
+                    work_date=target_date,
+                ).values_list("pk", flat=True),
+            )
+        entry_ids += list(
+            _historical_pdf_entries_for_person(person).filter(
+                work_date=target_date,
+            ).values_list("pk", flat=True),
+        )
+
+        lines = WorkOrderEntryLine.objects.filter(
+            entry_id__in=entry_ids,
+        ).exclude(vacation_period__isnull=False).select_related(
+            "entry", "machine_asset",
+        ).prefetch_related("spare_parts").order_by(
+            "entry__page_number", "line_number",
+        )
+
+        return render(
+            request, "panel/documentation_h30/_personal_workday_detail.html",
+            {"target_date": target_date, "lines": lines},
+        )
+
+
 class PersonalDetailView(CompanyUserRequiredMixin, View):
     def get(self, request, pk):
         person = get_object_or_404(
@@ -808,10 +874,24 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
         if partes_sort not in ("asc", "desc"):
             partes_sort = "desc"
 
+        # H31 (S77). Por defecto, el periodo de cobro ACTIVO (el que
+        # cubre hoy), nunca "Todos" -- petición explícita de Miguel
+        # Ángel: "se deben mostrar por defecto los partes del periodo
+        # activo." Se aplica solo si el usuario no ha tocado ningún
+        # control del filtro todavía (sin partes_period NI partes_from
+        # NI partes_to en la querystring real).
+        partes_explicit_filter = bool(
+            partes_period_id or "partes_from" in request.GET
+            or "partes_to" in request.GET,
+        )
         selected_period = None
         if partes_period_id:
             selected_period = next(
                 (p for p in work_periods if str(p.pk) == partes_period_id), None,
+            )
+        elif not partes_explicit_filter and person.company_user_id:
+            selected_period = _resolve_work_period(
+                person.company_user, timezone.now().date(),
             )
         if selected_period:
             partes_from = selected_period.start_date
