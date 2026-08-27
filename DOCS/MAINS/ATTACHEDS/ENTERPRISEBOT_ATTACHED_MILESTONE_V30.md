@@ -5204,37 +5204,57 @@ a `EpiItemCatalog`.**
   tiempo, confirmado por Miguel Ángel: "el problema lo tendremos
   solucionado cuando ya tengamos la interfaz") enviados directamente
   a papelera con `--discard-unresolved-persona`.
-- **Fuera de alcance, quedan 3 archivos activos deliberadamente sin
-  procesar:** el único PDF escaneado del lote (id 22850, sin texto
-  nativo, prohibido OCR en consola S62 -- Miguel Ángel lo subió como
-  imagen y se leyó a mano, contenido confirma el mismo diseño, pero
-  no se ha volcado a BD porque no pasa por el comando automático) y
-  los 2 `.xlsx` de Huelva ("EPIS ENTREGADOS HUELVA...", estructura
-  tabular multi-persona, diseño propio pendiente).
+- **3 archivos sueltos resueltos**: decisión explícita de Miguel
+  Ángel -- el PDF escaneado (id 22850, contenido ya leído a mano en
+  la sesión, sin volcar a BD) y los 2 `.xlsx` de Huelva (id 22890,
+  22891, diseño propio nunca abordado) van directamente a papelera,
+  sin más procesamiento. `CONTROL EPIS` queda a 0 archivos activos.
+
+**Punto 4 CERRADO: `EPIS ARNES MIRA 12-A` (51 archivos reales, 50
+`.docx` + 1 ficha técnica ya vinculada en el punto 1) →
+`EpiDelivery`.**
+
+- Muestreo real (3/50) confirmó plantilla ÚNICA sin tabla de marcas:
+  cada documento es la entrega CONJUNTA de dos EPIs a la vez -- arnés
+  MIRA-12A (fabricante Miguel Miranda S.L.) y equipo de amarre E15C
+  -- misma fecha para ambos, formato `A fecha (DD/MM/AAAA)` (mismo
+  patrón que Botiquines).
+- Comando nuevo `extract_arnes_mira_deliveries` (dry-run por
+  defecto, `--apply`, `--discard-unresolved-persona`), commit
+  `d1be7b2`, verificado tras despliegue.
+- Hallazgo real de integridad de datos: `ARNES DE SEGUIRIDAD EPIS
+  -BAS BLANCO.docx` resuelve por DNI real del contenido a **Burgos
+  Fernández Manuel**, no a Bas Blanco -- mismo patrón que el caso
+  GOMEZ_RIVERO de S72 (nunca confiar en el nombre de archivo).
+  Resuelto correctamente por diseño: al coincidir con la entrega ya
+  existente de Burgos Fernández (mismo día), no crea duplicado (0
+  filas nuevas de las 2 esperadas).
+- Aplicado: **44/50 documentos completos, 86 `EpiDelivery`** creadas,
+  verificado contra BD (86/86). 4 sin persona resoluble enviados
+  directamente a papelera. Quedan **2 archivos activos sin fecha
+  reconocible** (`GARCIA PRIETO`, `HIDALGO ROSAS`) para revisión
+  manual -- no se ha inventado fecha en ningún caso.
 
 ## Hoja de ruta para S73
 
-**Puntos 1 (fichas técnicas EPIs), 2 (Botiquines) y 3 (CONTROL EPIS)
-CERRADOS en esta misma sesión** -- ver bloque "COMPLETADAS EN S73"
-arriba. Pendientes reales, EPIs (prioridad de esta sesión, "Terminamos
-EPI's"):
+**Puntos 1 (fichas técnicas EPIs), 2 (Botiquines), 3 (CONTROL EPIS) y
+4 (ARNES MIRA 12-A) CERRADOS en esta misma sesión** -- ver bloque
+"COMPLETADAS EN S73" arriba. Pendientes reales, EPIs (prioridad de
+esta sesión, "Terminamos EPI's"):
 
-1. **3 archivos sueltos dejados fuera de `CONTROL EPIS`:** el PDF
-   escaneado (id 22850, contenido ya conocido, decidir si se registra
-   a mano o se deja así) y los 2 `.xlsx` de Huelva (diseño propio).
-2. **`EPIS ARNES MIRA 12-A` (51 archivos)** -- sin diseño todavía,
-   mismo criterio de muestreo previo.
-3. **`DETECTOR TENSION` (2) y `EPIS VARIAS EMPRESAS` (2)** -- volumen
+1. **2 archivos sueltos de ARNES MIRA 12-A sin fecha reconocible**
+   (`GARCIA PRIETO`, `HIDALGO ROSAS`) -- revisión manual pendiente.
+2. **`DETECTOR TENSION` (2) y `EPIS VARIAS EMPRESAS` (2)** -- volumen
    mínimo, revisar directo archivo por archivo sin necesidad de
    parser genérico.
-4. **150 archivos `NOMBRAMIENTO RECURSO PREVENTIVO`** (arrastrado 1.ª
+3. **150 archivos `NOMBRAMIENTO RECURSO PREVENTIVO`** (arrastrado 1.ª
    sesión sin avanzar) → candidatos a `DocumentAcknowledgment`.
    Criterio de cierre: al menos un lote real migrado y verificado.
 
 **Sigue bloqueado, sin empezar hasta que el dominio PERSONAL esté
-cerrado de verdad (puntos 1-4 arriba):**
+cerrado de verdad (puntos 1-3 arriba):**
 
-5. **Fase A de `DOC. MAQUINAS`** (dry-run ya ejecutado en S69,
+4. **Fase A de `DOC. MAQUINAS`** (dry-run ya ejecutado en S69,
    `run_fase_a_sweep_scoped`, resultado nunca leído). Criterio de
    cierre: al menos una pasada de calibración real completada,
    volumen medido antes de aplicar.
