@@ -135,6 +135,25 @@ verificado contra BD, no solo diseñado.
 
 ---
 
+## 3.1. Técnica de envío VALIDADA (S73)
+
+Prueba de concepto real ejecutada y confirmada por Miguel Ángel:
+`.eml` generado con la librería estándar `email`
+(`EmailMessage.add_alternative(..., subtype="html")`), servido como
+descarga desde `PersonalTestEmlView`
+(`panel/views_documentation_h30.py`, commit `ba7f2a9`), abierto en
+Outlook real -- **formato HTML íntegro** (fondo de color, negrita,
+color de texto, lista con viñetas), sin necesidad de adjuntar nada
+ni de `mailto:` (que no soporta HTML). Esta es la técnica real sobre
+la que construir el envío de circulares/notificaciones del punto 4
+de este anexo: generar el `.eml` a partir del campo de texto
+enriquecido (una vez exista) + los datos reales de la persona, nunca
+`mailto:`.
+
+Vista de prueba (`PersonalTestEmlView`) y botón en
+`_personal_detail.html` -- **temporales**, a retirar cuando el CRUD
+real de circulares los sustituya por el flujo definitivo.
+
 ## 4. Pendiente real, posterior a la interfaz (nota de Miguel Ángel, S73)
 
 Una vez cerrada la interfaz de este hito: revisar que todos los tipos
