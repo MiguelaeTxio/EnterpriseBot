@@ -274,7 +274,7 @@ y se habilita "Guardar".
     <div class="accordion-item">
         <h2 class="accordion-header">
             <button class="accordion-button {% if not partes_filtered %}collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#collapseLaboralPartes">
-                Partes de trabajo <span class="badge bg-primary ms-2">{{ digital_work_orders|length|add:historical_pdf_entries|length }}</span>
+                Partes de trabajo <span class="badge bg-primary ms-2">{{ partes_digital_count|add:partes_historical_count }}</span>
             </button>
         </h2>
         <div id="collapseLaboralPartes" class="accordion-collapse collapse {% if partes_filtered %}show{% endif %}" data-bs-parent="#personalLaboralAccordion">
