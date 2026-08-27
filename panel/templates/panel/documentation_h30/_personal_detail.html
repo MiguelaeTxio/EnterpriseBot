@@ -326,7 +326,11 @@ function openEpiDeliveryForm() {
                 const tr = document.createElement('tr');
                 tr.innerHTML = `<td>${data.delivery.epi_label}</td><td>${data.delivery.delivery_date}</td><td>Manual (panel)</td>`;
                 tbody.prepend(tr);
-                resultDiv.innerHTML = '<div class="alert alert-success py-1 px-2 small mb-0">EPI entregado registrado.</div>';
+                if (data.whatsapp_sent) {
+                    resultDiv.innerHTML = '<div class="alert alert-success py-1 px-2 small mb-0">EPI entregado registrado. Confirmación WhatsApp enviada al trabajador.</div>';
+                } else {
+                    resultDiv.innerHTML = '<div class="alert alert-warning py-1 px-2 small mb-0">EPI entregado registrado. No se pudo enviar la confirmación WhatsApp (sin teléfono, sin vínculo de empresa, o plantilla aún no aprobada por Meta).</div>';
+                }
             } else {
                 resultDiv.innerHTML = `<div class="alert alert-danger py-1 px-2 small mb-0">${data.error || 'Error al registrar.'}</div>`;
             }

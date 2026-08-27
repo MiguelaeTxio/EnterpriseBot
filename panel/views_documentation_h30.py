@@ -45,6 +45,7 @@ from document_management.vigencia_service import DocumentSnapshot, is_current
 from fleet.models import MachineAsset
 from panel.mixins import CompanyUserRequiredMixin, DocsUploadAccessMixin
 from spare_parts.gcs_service import generate_signed_url
+from whatsapp.services import send_epi_delivery_whatsapp_confirmation
 
 BUCKET = "cgs_grupo_alvarez"
 
@@ -339,8 +340,16 @@ class EpiIndividualDeliveryView(DocsUploadAccessMixin, View):
             person=person, epi=epi, delivery_date=delivery_date,
             extraction_method=EpiDelivery.METHOD_MANUAL,
         )
+        # H31 (S74), requisito explícito de Miguel Ángel: confirmación
+        # WhatsApp al trabajador para que quede constancia por escrito
+        # de la entrega. No bloqueante -- la entrega ya está en BD;
+        # si el WhatsApp falla (sin teléfono, sin Company vinculada,
+        # plantilla aún no aprobada por Meta...) se loguea y se
+        # informa en la respuesta, pero la entrega NUNCA se revierte.
+        whatsapp_sent = send_epi_delivery_whatsapp_confirmation(delivery)
         return JsonResponse({
             "ok": True,
+            "whatsapp_sent": whatsapp_sent,
             "delivery": {
                 "id": delivery.pk,
                 "epi_label": epi.label,

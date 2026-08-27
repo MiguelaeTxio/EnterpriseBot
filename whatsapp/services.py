@@ -14,6 +14,7 @@ Ambos servicios son sin estado — todo el estado se persiste en la base de dato
 y se reconstruye en cada invocación del webhook.
 """
 
+import json
 import logging
 import os
 from datetime import timedelta
@@ -2226,3 +2227,108 @@ class OnboardingService:
             )
 
 
+def send_epi_delivery_whatsapp_confirmation(delivery) -> bool:
+    """
+    H31 (S74). Sends the 'epi_delivery_confirmation' WhatsApp template
+    to the person who just received a PPE item, so they have written
+    confirmation of the delivery on their own phone -- Miguel Ángel,
+    explicit requirement: this lets the worker claim it in writing if
+    an EPI was registered as delivered but never actually handed over.
+
+    Non-blocking by design: the caller (EpiIndividualDeliveryView)
+    creates the EpiDelivery row BEFORE calling this function. A
+    WhatsApp failure here is only logged, never reverts the delivery
+    already committed to the database.
+
+    Returns True on successful Twilio dispatch, False on any failure
+    (missing phone, missing company link, missing/unapproved template,
+    or a Twilio error) -- the caller decides whether to surface this.
+
+    ---
+
+    H31 (S74). Envía la plantilla WhatsApp 'epi_delivery_confirmation'
+    a la persona que acaba de recibir un EPI, para que tenga
+    constancia por escrito de la entrega en su propio teléfono --
+    requisito explícito de Miguel Ángel: así el trabajador puede
+    reclamar por escrito si un EPI se registró como entregado pero
+    nunca llegó a entregarse de verdad.
+
+    No bloqueante por diseño: el llamador (EpiIndividualDeliveryView)
+    crea la fila EpiDelivery ANTES de llamar a esta función. Un fallo
+    de WhatsApp aquí solo se loguea, nunca revierte la entrega ya
+    comprometida en base de datos.
+
+    Devuelve True en caso de despacho Twilio exitoso, False ante
+    cualquier fallo (sin teléfono, sin Company vinculada, plantilla
+    ausente/no aprobada, o error de Twilio) -- el llamador decide si
+    mostrar esto o no.
+    """
+    from .tasks import _get_whatsapp_sender
+
+    person = delivery.person
+    phone = (person.phone or "").strip()
+    if not phone:
+        logger.warning(
+            "# [EPI WHATSAPP] Persona %s sin teléfono registrado. "
+            "EpiDelivery pk=%s. Abortando.",
+            person, delivery.pk,
+        )
+        return False
+
+    company = person.company
+    if company is None:
+        logger.warning(
+            "# [EPI WHATSAPP] Persona %s sin Company vinculada "
+            "(employer_company='%s'). EpiDelivery pk=%s. Abortando.",
+            person, person.employer_company, delivery.pk,
+        )
+        return False
+
+    try:
+        template = WhatsAppTemplate.objects.get(
+            company=company, name="epi_delivery_confirmation", is_active=True,
+        )
+    except WhatsAppTemplate.DoesNotExist:
+        logger.error(
+            "# [EPI WHATSAPP] Template epi_delivery_confirmation no "
+            "encontrado para empresa %s. Abortando.",
+            company.name,
+        )
+        return False
+
+    whatsapp_sender = _get_whatsapp_sender()
+    if not whatsapp_sender:
+        logger.error(
+            "# [EPI WHATSAPP] TWILIO_WHATSAPP_SENDER no configurado. "
+            "Abortando.",
+        )
+        return False
+
+    person_name = f"{person.given_name} {person.first_surname}".strip()
+    content_variables = {
+        "1": person_name or str(person),
+        "2": delivery.epi.label,
+        "3": delivery.delivery_date.strftime("%d/%m/%Y"),
+    }
+
+    try:
+        twilio_client = _build_twilio_client()
+        message = twilio_client.messages.create(
+            from_=f"whatsapp:{whatsapp_sender}",
+            to=f"whatsapp:{phone}",
+            content_sid=template.content_sid,
+            content_variables=json.dumps(content_variables),
+        )
+        logger.info(
+            "# [EPI WHATSAPP] Confirmación enviada a %s (%s) por "
+            "EpiDelivery pk=%s — SID: %s",
+            person, phone, delivery.pk, message.sid,
+        )
+        return True
+    except Exception as exc:
+        logger.error(
+            "# [EPI WHATSAPP] Error enviando confirmación a %s (EpiDelivery "
+            "pk=%s): %s",
+            phone, delivery.pk, exc,
+        )
+        return False

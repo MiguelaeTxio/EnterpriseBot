@@ -24,6 +24,12 @@ Template inventory (11 total):
 
   NOT SUBMITTED (1 — created previously, pending Meta submission decision):
     - employee_help_menu         UTILITY   HXe8c20c02d4cf4ab340924ed5e2b0ac6f
+
+CREATED VIA DEDICATED COMMAND (H31, S74 — see create_epi_delivery_whatsapp_template.py):
+    - epi_delivery_confirmation  UTILITY   (SID real generado en producción, ver ese
+      comando; NO figura en TEMPLATE_DEFINITIONS de este archivo porque ese comando
+      crea el Content Template vía API y registra el WhatsAppTemplate por su cuenta,
+      en vez de requerir un SID obtenido a mano del Console)
 ---
 Comando de gestion de Django para sembrar las plantillas WhatsApp del Grupo Alvarez.
 Crea registros WhatsAppTemplate usando los valores ContentSid obtenidos del

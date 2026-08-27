@@ -1245,6 +1245,29 @@ class PersonIdentity(models.Model):
         null=True, blank=True,
         verbose_name="Última importación real del Excel",
     )
+    company = models.ForeignKey(
+        "ivr_config.Company",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="personnel",
+        verbose_name="Empresa (mensajería/IVR)",
+        help_text=(
+            "H31 (S74). Vínculo real a ivr_config.Company -- distinto "
+            "de employer_company (texto libre tal cual viene del "
+            "Excel de plantilla, con variantes como 'GRUAS ADOLFO "
+            "ALVAREZ SL' / 'TRANSGRUAL SL' / 'TRANSGRUAL S.L.' para el "
+            "mismo grupo). Este campo es el que usan las funciones de "
+            "envío WhatsApp (whatsapp.services) para resolver "
+            "WhatsAppTemplate/WhatsAppSession, que están indexados "
+            "por Company, no por employer_company. Backfileado por "
+            "normalización de las variantes reales conocidas a fecha "
+            "de la migración 0060 -- ver ese archivo para el mapa "
+            "exacto. Nulo cuando employer_company está vacío (persona "
+            "aún sin cruzar contra el Excel) o cuando aparece una "
+            "variante de texto nueva no cubierta todavía."
+        ),
+    )
 
     class Meta:
         verbose_name = "Identidad de personal"
