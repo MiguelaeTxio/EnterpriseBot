@@ -5235,26 +5235,56 @@ a `EpiItemCatalog`.**
   reconocible** (`GARCIA PRIETO`, `HIDALGO ROSAS`) para revisión
   manual -- no se ha inventado fecha en ningún caso.
 
+**Punto 5 CERRADO: `DETECTOR TENSION` (2) + `EPIS VARIAS EMPRESAS`
+(4) -- volumen mínimo, revisados directamente sin parser.**
+
+- **Regla nueva de sesión, permanente**: cuando un documento
+  histórico de personal no resuelve por DNI EXACTO (número, no la
+  letra -- la letra siempre se calcula, nunca se confía en la
+  transcrita) contra `PersonIdentity`, va DIRECTAMENTE a papelera.
+  Terminantemente prohibido buscar por apellido/nombre parcial o
+  intentar identificar a la persona por otros medios -- decisión
+  explícita de Miguel Ángel: "no nos complicamos con apellidos,
+  hermanos, búsquedas infructuosas [...] esto es histórico [...] lo
+  que quede buenamente es lo que queda."
+- `DETECTOR TENSION`: los 2 archivos reales contienen el MISMO
+  contenido (Fco Saavedra Pérez, DNI 44225443P, pese a que uno se
+  llama "-HIDALGO ROSAS.docx" -- mismo patrón de nombre de archivo
+  no fiable ya visto varias veces esta sesión). DNI sin
+  `PersonIdentity` (ni por número ni por letra) -- ambos a papelera.
+  Ítem `DETECTOR_TENSION` ya existía en catálogo, sin uso real esta
+  vez.
+- `EPIS VARIAS EMPRESAS`: carpeta con contenido heterogéneo real, NO
+  todo EPIs pese al nombre -- `Circular Leave Letter.doc`
+  (`CERT_EXENCION_TACOGRAFO`, plantilla en blanco sin persona) y
+  `FORMACION.doc` (`FORMACION`, ya tipado correctamente) NO son EPIs,
+  dejados intactos sin tocar. `HEAVY EPIS.doc` (Francisco González
+  Vidal, subcontrata Heavy Lift Elevación SL) sin DNI resoluble ->
+  papelera. `BENAJARAFE XXI EPIS.doc` sí resolvió (Enrique Álvarez
+  Serrano, pk=39, empleado real pese a estar en esta carpeta) -- 5
+  `EpiDelivery` reales creadas (ROPA_TRABAJO, CASCO_SEGURIDAD,
+  CHALECO_REFLECTANTE, GUANTES_PROTECCION, ZAPATOS_SEGURIDAD, fecha
+  2011-04-01). El documento también traía autorización de manejo de
+  maquinaria e información de PRL -- ambos DELIBERADAMENTE fuera de
+  alcance (no son EPIs), sin procesar.
+
 ## Hoja de ruta para S73
 
-**Puntos 1 (fichas técnicas EPIs), 2 (Botiquines), 3 (CONTROL EPIS) y
-4 (ARNES MIRA 12-A) CERRADOS en esta misma sesión** -- ver bloque
-"COMPLETADAS EN S73" arriba. Pendientes reales, EPIs (prioridad de
-esta sesión, "Terminamos EPI's"):
+**Puntos 1 (fichas técnicas EPIs), 2 (Botiquines), 3 (CONTROL EPIS),
+4 (ARNES MIRA 12-A) y 5 (DETECTOR TENSION + VARIAS EMPRESAS) CERRADOS
+en esta misma sesión** -- ver bloque "COMPLETADAS EN S73" arriba.
+Pendiente real, EPIs:
 
 1. **2 archivos sueltos de ARNES MIRA 12-A sin fecha reconocible**
    (`GARCIA PRIETO`, `HIDALGO ROSAS`) -- revisión manual pendiente.
-2. **`DETECTOR TENSION` (2) y `EPIS VARIAS EMPRESAS` (2)** -- volumen
-   mínimo, revisar directo archivo por archivo sin necesidad de
-   parser genérico.
-3. **150 archivos `NOMBRAMIENTO RECURSO PREVENTIVO`** (arrastrado 1.ª
+2. **150 archivos `NOMBRAMIENTO RECURSO PREVENTIVO`** (arrastrado 1.ª
    sesión sin avanzar) → candidatos a `DocumentAcknowledgment`.
    Criterio de cierre: al menos un lote real migrado y verificado.
 
 **Sigue bloqueado, sin empezar hasta que el dominio PERSONAL esté
-cerrado de verdad (puntos 1-3 arriba):**
+cerrado de verdad (puntos 1-2 arriba):**
 
-4. **Fase A de `DOC. MAQUINAS`** (dry-run ya ejecutado en S69,
+3. **Fase A de `DOC. MAQUINAS`** (dry-run ya ejecutado en S69,
    `run_fase_a_sweep_scoped`, resultado nunca leído). Criterio de
    cierre: al menos una pasada de calibración real completada,
    volumen medido antes de aplicar.
