@@ -65,9 +65,19 @@
 <button type="button" class="btn btn-primary btn-sm mb-3" onclick="openUploadForm()">
     <i class="bi bi-upload me-1"></i>+ Subir documento
 </button>
-<a href="{% url 'panel:documentation_personal_test_eml' pk=person.pk %}" class="btn btn-outline-warning btn-sm mb-3">
-    <i class="bi bi-envelope me-1"></i>Prueba H31: generar .eml de notificación
-</a>
+<div class="dropdown d-inline-block mb-3">
+    <button class="btn btn-outline-primary btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown" {% if not notification_types or not person.email %}disabled{% endif %}>
+        <i class="bi bi-envelope me-1"></i>Enviar notificación
+    </button>
+    <ul class="dropdown-menu">
+        {% for nt in notification_types %}
+        <li><a class="dropdown-item" href="{% url 'panel:documentation_personal_notify' pk=person.pk %}?tipo={{ nt.code }}">{{ nt.label }}</a></li>
+        {% endfor %}
+    </ul>
+</div>
+{% if not person.email %}
+<small class="text-muted d-block mb-3">Sin correo electrónico registrado -- no se pueden enviar notificaciones.</small>
+{% endif %}
 <div id="uploadFormContainer" class="mb-4"></div>
 
 <div class="accordion" id="personalDocsAccordion">

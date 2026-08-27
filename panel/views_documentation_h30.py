@@ -24,6 +24,7 @@ La vía de buzón de correo queda para más adelante, fuera de alcance
 de esta sesión.
 """
 from django.contrib.contenttypes.models import ContentType
+from django.contrib.staticfiles.finders import find as find_static
 from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
 from django.db.models import Count, Q
@@ -32,11 +33,12 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views import View
 from email.message import EmailMessage as StdEmailMessage
+from email.utils import make_msgid
 
 from document_explorer import naming_service
 from document_explorer.models import (
-    DocumentIndexEntry, DocumentTypeCatalog, EpiDelivery, EpiItemCatalog,
-    EpiReview, PersonIdentity,
+    DocumentAcknowledgment, DocumentIndexEntry, DocumentTypeCatalog,
+    EpiDelivery, EpiItemCatalog, EpiReview, PersonIdentity,
 )
 from document_explorer.subject_upload_service import (
     SubjectUploadError, upload_subject_document,
@@ -303,6 +305,9 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
         doc_types = DocumentTypeCatalog.objects.filter(
             is_active=True, domain__in=["PERSONAL", "BOTH"],
         ).order_by("label")
+        notification_types = DocumentTypeCatalog.objects.filter(
+            is_active=True, domain__in=["PERSONAL", "BOTH"],
+        ).exclude(content_html="").order_by("label")
         epi_deliveries = EpiDelivery.objects.filter(
             person=person,
         ).select_related("epi").order_by("-delivery_date")
@@ -314,6 +319,7 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
             "avatar": avatar,
             "doc_types": doc_types, "epi_deliveries": epi_deliveries,
             "epi_items": epi_items,
+            "notification_types": notification_types,
             "active_nav": "documentation_hub",
             "family_choices": DocumentTypeCatalog.FAMILY_CHOICES,
         })
@@ -406,56 +412,107 @@ class PersonalUpdateView(DocsUploadAccessMixin, View):
         })
 
 
-class PersonalTestEmlView(CompanyUserRequiredMixin, View):
+class PersonalNotificationSendView(DocsUploadAccessMixin, View):
     """
-    H31 (S73). PRUEBA de concepto -- confirmar que un `.eml` con
-    cuerpo HTML real (colores, negrita) se abre en Outlook con el
-    formato intacto, antes de construir el editor de texto
-    enriquecido real del CRUD de circulares. Contenido de prueba fijo,
-    sin plantilla ni BD todavía -- ver anexo H31, punto pendiente de
-    validar la técnica antes de diseñar el resto.
+    H31 (S74), punto 4 de la hoja de ruta. Genera y sirve para
+    descarga un `.eml` real con el contenido enriquecido de un tipo
+    documental de circular/notificación (DocumentTypeCatalog.
+    content_html, punto 1 de esta misma hoja de ruta) -- sustituye a
+    PersonalTestEmlView (S73, prueba de concepto con contenido fijo,
+    retirada aquí junto con su botón en la plantilla, punto 7).
 
-    Genera el `.eml` con la librería estándar `email` (no construido
-    a mano) para que sea válido RFC 822 real en cualquier cliente.
+    Misma técnica ya validada con Outlook real en S73 (email.message.
+    EmailMessage.add_alternative, subtype='html'), con dos añadidos
+    reales de este punto:
+    1. Logo corporativo incrustado como adjunto INLINE con
+       Content-ID (add_related) -- nunca <img src> remoto, porque
+       Outlook y la mayoría de clientes de correo bloquean imágenes
+       remotas por defecto; la incrustación inline es la única forma
+       de que se vea siempre, sin depender de que el destinatario
+       decida descargar imágenes ni de que gruasalvarez.com siga
+       accesible en ese momento.
+    2. Registra un DocumentAcknowledgment real (extraction_method=
+       MANUAL) al generar el .eml -- deja constancia de que la
+       notificación se envió, mismo principio que EpiDelivery para
+       los EPIs (una fila por entrega/envío, nunca un documento
+       nuevo duplicado).
+
+    Sigue sin haber envío SMTP real desde el servidor -- el proyecto
+    no tiene EMAIL_BACKEND configurado (verificado en
+    enterprise_core/settings.py). El .eml se descarga y el supervisor
+    lo abre/reenvía desde su propio Outlook, exactamente el flujo ya
+    confirmado por Miguel Ángel en S73.
     """
 
     def get(self, request, pk):
         person = get_object_or_404(PersonIdentity, pk=pk)
+        type_code = request.GET.get("tipo", "").strip()
+        if not type_code:
+            return HttpResponse(
+                "Falta el parámetro 'tipo' (código del tipo documental "
+                "a notificar).", status=400,
+            )
+        document_type = get_object_or_404(
+            DocumentTypeCatalog, code=type_code, is_active=True,
+        )
+        if not document_type.content_html.strip():
+            return HttpResponse(
+                f"El tipo '{document_type.label}' todavía no tiene "
+                f"contenido enriquecido cargado (content_html vacío).",
+                status=400,
+            )
+
+        recipient = (person.email or "").strip()
+        if not recipient:
+            return HttpResponse(
+                f"{person} no tiene correo electrónico registrado -- "
+                f"no se puede generar la notificación.", status=400,
+            )
 
         msg = StdEmailMessage()
-        msg["Subject"] = f"PRUEBA H31 -- notificación para {person}"
+        msg["Subject"] = f"{document_type.label} -- {person}"
         msg["From"] = "notificaciones@grupoalvarez.local"
-        msg["To"] = person.email or "destinatario@ejemplo.com"
+        msg["To"] = recipient
 
         msg.set_content(
-            f"Prueba de texto enriquecido para {person}.\n"
-            "Este cliente no muestra HTML.",
+            f"Notificación para {person}: {document_type.label}.\n"
+            "Este cliente de correo no muestra HTML -- consulte la "
+            "versión web o abra este mensaje con un cliente compatible."
         )
-        msg.add_alternative(
-            f"""
+
+        logo_cid = make_msgid()
+        html_body = f"""
             <html><body style="font-family: Arial, sans-serif;">
-              <p>Estimado/a <strong>{person}</strong>,</p>
-              <p style="background-color:#fff3cd; padding:8px;">
-                Este es un párrafo de prueba con
-                <span style="color:#c0392b; font-weight:bold;">
-                  texto en rojo y negrita</span>,
-                fondo amarillo, y una lista:
+              <p style="margin-bottom:16px;">
+                <img src="cid:{logo_cid[1:-1]}" alt="Grupo Álvarez" height="40">
               </p>
-              <ul>
-                <li>Elemento uno</li>
-                <li>Elemento dos</li>
-              </ul>
-              <p>Un saludo,<br>Grupo Álvarez</p>
+              <p>Estimado/a <strong>{person}</strong>,</p>
+              {document_type.content_html}
+              <p style="margin-top:24px;">Un saludo,<br>Grupo Álvarez</p>
             </body></html>
-            """,
-            subtype="html",
+        """
+        msg.add_alternative(html_body, subtype="html")
+
+        logo_path = find_static("panel/img/grupo_alvarez_logo.png")
+        if logo_path:
+            with open(logo_path, "rb") as logo_file:
+                msg.get_payload()[1].add_related(
+                    logo_file.read(), "image", "png", cid=logo_cid,
+                )
+
+        DocumentAcknowledgment.objects.create(
+            person=person,
+            document_type=document_type,
+            delivery_date=timezone.localdate(),
+            extraction_method=DocumentAcknowledgment.METHOD_MANUAL,
         )
 
         response = HttpResponse(
             bytes(msg), content_type="message/rfc822",
         )
+        safe_type = type_code.lower()
         response["Content-Disposition"] = (
-            f'attachment; filename="prueba_notificacion_{person.pk}.eml"'
+            f'attachment; filename="notificacion_{safe_type}_{person.pk}.eml"'
         )
         return response
 
