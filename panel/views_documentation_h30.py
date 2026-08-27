@@ -514,6 +514,14 @@ def _group_epi_deliveries_by_family(epi_deliveries):
     mismo EPI (revisiones, sustituciones) vive aparte, bajo demanda
     (`PersonalEpiItemHistoryView`), mismo patrón que el historial de
     documentos.
+
+    Adjunta también `delivery.epi.technical_docs` -- ficha(s)
+    técnica(s)/manual(es) del EPI, vía el mecanismo genérico real ya
+    existente desde H30 S73 (`DocumentIndexEntry.domain_content_type`/
+    `domain_object_id` apuntando a `EpiItemCatalog`, mismo patrón que
+    `PersonIdentity`/`MachineAsset`) -- nunca un campo FK único nuevo
+    (esa vía se probó y se retiró en la misma sesión S76, redundante y
+    no soportaba los casos reales con más de un documento por EPI).
     """
     by_family = {}
     latest_by_epi = {}
@@ -523,7 +531,18 @@ def _group_epi_deliveries_by_family(epi_deliveries):
         if current_latest is None or delivery.delivery_date > current_latest.delivery_date:
             latest_by_epi[epi_id] = delivery
 
+    epi_ct = ContentType.objects.get_for_model(EpiItemCatalog)
+    epi_ids = [delivery.epi_id for delivery in latest_by_epi.values()]
+    technical_docs_by_epi = {}
+    for doc in DocumentIndexEntry.objects.filter(
+        bucket=BUCKET, entry_kind=DocumentIndexEntry.KIND_FILE,
+        domain_content_type=epi_ct, domain_object_id__in=epi_ids,
+        deleted_at__isnull=True, purged_at__isnull=True,
+    ).order_by("name"):
+        technical_docs_by_epi.setdefault(doc.domain_object_id, []).append(doc)
+
     for delivery in latest_by_epi.values():
+        delivery.epi.technical_docs = technical_docs_by_epi.get(delivery.epi_id, [])
         family = delivery.epi.family or "Sin familia asignada"
         by_family.setdefault(family, []).append(delivery)
 
@@ -564,7 +583,7 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
         ).exclude(content_html="").order_by("label")
         epi_deliveries = EpiDelivery.objects.filter(
             person=person,
-        ).select_related("epi", "epi__technical_sheet").order_by("-delivery_date")
+        ).select_related("epi").order_by("-delivery_date")
         epi_families = _group_epi_deliveries_by_family(epi_deliveries)
         epi_items = EpiItemCatalog.objects.filter(
             is_active=True,
@@ -629,15 +648,22 @@ class PersonalEpiItemHistoryView(CompanyUserRequiredMixin, View):
 
 class EpiTechnicalSheetUploadView(DocsUploadAccessMixin, View):
     """
-    H31 (S76). POST: sube/sustituye el manual de uso o ficha técnica
-    de UN EPI del catálogo -- mismo patrón exacto que
-    `CircularTemplateUploadView`/`_upload_circular_template`
-    (circulars_h31.py): archivo real subido a una carpeta propia
-    (`_FICHAS_TECNICAS_EPI/<code>/`), nunca borra ni toca el
-    `DocumentIndexEntry` anterior, solo repunta
-    `EpiItemCatalog.technical_sheet` al nuevo (4.12). Redirige de
-    vuelta a la ficha de la persona desde la que se subió (si se
-    indica) para que el supervisor no pierda el sitio.
+    H31 (S76, corregido en la misma sesión). POST: sube un manual de
+    uso o ficha técnica de UN EPI del catálogo.
+
+    Corrección real: la primera versión de esta vista escribía en un
+    campo `EpiItemCatalog.technical_sheet` (FK única) recién creado --
+    duplicaba sin saberlo un mecanismo YA EXISTENTE desde H30 S73
+    (`DocumentIndexEntry.domain_content_type`/`domain_object_id`
+    apuntando a `EpiItemCatalog`, mismo patrón genérico que ya usan
+    `PersonIdentity`/`MachineAsset`), que además ya tenía 7 documentos
+    reales vinculados (verificado contra BD, S76). El campo nuevo se
+    retiró (migración 0065); esta vista ahora escribe sobre el
+    mecanismo real. A diferencia de una FK única, este SÍ soporta
+    varios documentos por EPI (ficha técnica + declaración de
+    conformidad, caso real ya existente) -- cada subida AÑADE un
+    documento nuevo, nunca sustituye al anterior (4.12: ni siquiera se
+    plantea "sustituir", el archivo real nunca se toca ni se borra).
     """
 
     def post(self, request, epi_id):
@@ -649,13 +675,18 @@ class EpiTechnicalSheetUploadView(DocsUploadAccessMixin, View):
                 status=400,
             )
 
+        document_type = get_object_or_404(
+            DocumentTypeCatalog, code="FICHA_TECNICA_EPI",
+        )
         data = uploaded_file.read()
         extension = (
             uploaded_file.name.rsplit(".", 1)[-1].lower()
             if "." in uploaded_file.name else "bin"
         )
         today = timezone.now().date()
-        filename = "%s_FICHA_TECNICA_%s.%s" % (epi.code, today.isoformat(), extension)
+        filename = "%s_FICHA_TECNICA_%s_%s.%s" % (
+            epi.code, today.isoformat(), DocumentIndexEntry.objects.count(), extension,
+        )
         target_folder = "%s/%s" % (EPI_TECHNICAL_SHEETS_ROOT, epi.code)
         ensure_folder_chain(BUCKET, target_folder)
         blob_name = "%s/%s" % (target_folder, filename)
@@ -664,6 +695,7 @@ class EpiTechnicalSheetUploadView(DocsUploadAccessMixin, View):
         )
         upload_bytes(BUCKET, blob_name, data, content_type=content_type)
 
+        epi_ct = ContentType.objects.get_for_model(EpiItemCatalog)
         entry = DocumentIndexEntry.objects.create(
             bucket=BUCKET,
             entry_kind=DocumentIndexEntry.KIND_FILE,
@@ -674,9 +706,10 @@ class EpiTechnicalSheetUploadView(DocsUploadAccessMixin, View):
             name=filename,
             size_bytes=len(data),
             content_type=content_type,
+            document_type=document_type,
+            domain_content_type=epi_ct,
+            domain_object_id=epi.pk,
         )
-        epi.technical_sheet = entry
-        epi.save(update_fields=["technical_sheet"])
         return JsonResponse({
             "ok": True,
             "technical_sheet": {
