@@ -23,6 +23,7 @@ from panel.views_circulars_h31 import (
     CircularSaveContentView,
     CircularTemplateUploadView,
 )
+from panel.views_navigation_state import NavigationStateSaveView
 from panel.views_documentation_h30 import (
     DocumentDeleteView,
     DocumentTypeQuickCreateView,
@@ -392,6 +393,8 @@ urlpatterns = [
     # ya clasificadas aquí -- ver anexo H30 sección "COMPLETADAS EN S48",
     # decisión explícita de Miguel Ángel de retirarlo sin más). ---
     path("documentacion/", DocumentationHubV2View.as_view(), name="documentation_hub"),
+    # H31 (S75): persistencia de pestaña/filtros -- genérica por screen_key.
+    path("navegacion/estado/<str:screen_key>/", NavigationStateSaveView.as_view(), name="navigation_state_save"),
     path("documentacion/maquinaria/", MachineListFragmentView.as_view(), name="documentation_machine_list"),
     path("documentacion/maquinaria/<int:pk>/", MachineDetailView.as_view(), name="documentation_machine_detail"),
     path("documentacion/personal/", PersonalListFragmentView.as_view(), name="documentation_personal_list"),

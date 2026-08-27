@@ -46,6 +46,7 @@ from document_explorer.subject_upload_service import (
 from document_management.vigencia_service import DocumentSnapshot, is_current
 from fleet.models import MachineAsset
 from panel.mixins import CompanyUserRequiredMixin, DocsUploadAccessMixin
+from panel.models import PanelNavigationState
 from spare_parts.gcs_service import generate_signed_url
 from whatsapp.services import send_epi_delivery_whatsapp_confirmation
 
@@ -173,15 +174,59 @@ def _attach_doc_counts(objects, content_type):
 
 
 class DocumentationHubV2View(CompanyUserRequiredMixin, View):
-    """GET: página completa, tres pestañas, listado inicial de Centros de Gasto."""
+    """GET: página completa, tres pestañas, listado inicial de Centros de Gasto.
+
+    H31 (S75): la pestaña activa y los filtros de cada pestaña se
+    restauran desde `PanelNavigationState` (nunca vuelve a la pestaña
+    por defecto solo porque el usuario recargó o pulsó atrás -- ver
+    panel/views_navigation_state.py). Solo la pestaña de Maquinaria se
+    renderiza en el servidor (siempre lo hizo así); Personal/EPIs
+    siguen cargándose vía htmx, pero ahora con `hx-trigger="load once"`
+    en vez de `"click once"` cuando son la pestaña persistida como
+    activa, y con sus filtros ya guardados inyectados en la propia URL
+    de la petición htmx (ver hub.html)."""
 
     def get(self, request):
+        nav_state = PanelNavigationState.objects.filter(
+            company_user=request.user.company_user, screen_key="documentation_hub",
+        ).first()
+        state = nav_state.state if nav_state and isinstance(nav_state.state, dict) else {}
+        active_tab = state.get("active_tab") or "maquinaria"
+        if active_tab not in ("maquinaria", "personal", "epis"):
+            active_tab = "maquinaria"
+        filters = state.get("filters") if isinstance(state.get("filters"), dict) else {}
+
+        _seed_request_get(request, filters.get("maquinaria"))
         machines_page = _machine_list_page(request)
         return render(request, "panel/documentation_h30/hub.html", {
             "active_tab": "maquinaria",
             "machines_page": machines_page,
             "active_nav": "documentation_hub",
+            "persisted_active_tab": active_tab,
+            "persisted_filters": filters,
         })
+
+
+def _seed_request_get(request, persisted_filters):
+    """
+    H31 (S75). Rellena `request.GET` con los filtros persistidos
+    (`q`/`sort`/`dir`) para las claves que la propia querystring real
+    NO trae -- así una recarga sin parámetros en la URL sigue viendo
+    los últimos filtros aplicados por el usuario, sin que un enlace
+    explícito (que sí trae querystring) pierda nunca la prioridad.
+    `request.GET` es un QueryDict inmutable por defecto; se sustituye
+    por una copia mutable solo si hace falta cambiar algo.
+    """
+    if not persisted_filters:
+        return
+    mutable = None
+    for key, value in persisted_filters.items():
+        if key not in request.GET and value:
+            if mutable is None:
+                mutable = request.GET.copy()
+            mutable[key] = value
+    if mutable is not None:
+        request.GET = mutable
 
 
 def _machine_list_page(request):

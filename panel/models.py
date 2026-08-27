@@ -104,3 +104,71 @@ class AnalyticsProfile(models.Model):
         Devuelve una representación legible combinando el nombre de usuario y el perfil.
         """
         return f"{self.company_user.user.username} — {self.nombre}"
+
+
+class PanelNavigationState(models.Model):
+    """
+    H31 (S75). Persiste, por CompanyUser y por pantalla (`screen_key`),
+    qué pestaña estaba activa y qué filtros/orden tenía cada pestaña --
+    para que recargar la página o volver atrás en el navegador NUNCA
+    cambie de pestaña ni pierda los filtros, tal como pidió Miguel
+    Ángel explícitamente (S75): "el que cambie la pestaña soy yo. No
+    me la cambia el sistema [...] los filtros deben ser persistentes
+    siempre". Decisión explícita de Miguel Ángel: tabla real en BD
+    (no localStorage) -- tiene que sobrevivir incluso a cerrar el
+    navegador o cambiar de dispositivo, no solo a un F5.
+
+    `state` es un único JSONField de forma libre por pantalla (mismo
+    patrón que `AnalyticsProfile.config` arriba) -- para
+    `documentation_hub` tiene la forma:
+
+        {
+            "active_tab": "maquinaria" | "personal" | "epis",
+            "filters": {
+                "maquinaria": {"q": "...", "sort": "...", "dir": "asc"},
+                "personal":   {"q": "...", "sort": "...", "dir": "asc"},
+                "epis":       {"q": "...", "sort": "...", "dir": "asc"}
+            }
+        }
+
+    Una fila por (company_user, screen_key) -- se sobrescribe entera
+    en cada guardado (nunca hace falta un historial, solo el último
+    estado real).
+
+    ---
+
+    H31 (S75). Persists, per CompanyUser and per screen (`screen_key`),
+    which tab was active and each tab's filters/sort -- so reloading
+    the page or navigating back in the browser NEVER changes tabs nor
+    loses filters, per Miguel Ángel's explicit request (S75). Explicit
+    decision: a real DB table (not localStorage) -- must survive even
+    closing the browser or switching devices, not just an F5.
+    """
+
+    company_user = models.ForeignKey(
+        CompanyUser,
+        on_delete=models.CASCADE,
+        related_name="navigation_states",
+        verbose_name="usuario de empresa",
+    )
+    screen_key = models.CharField(
+        max_length=100,
+        verbose_name="pantalla",
+        help_text="Identificador corto de la pantalla (p. ej. 'documentation_hub').",
+    )
+    state = models.JSONField(
+        verbose_name="estado",
+        help_text="Pestaña activa + filtros por pestaña, forma libre según la pantalla.",
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name="última actualización",
+    )
+
+    class Meta:
+        unique_together = [("company_user", "screen_key")]
+        verbose_name = "Estado de navegación"
+        verbose_name_plural = "Estados de navegación"
+
+    def __str__(self):
+        return f"{self.company_user.user.username} — {self.screen_key}"

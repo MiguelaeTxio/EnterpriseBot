@@ -11,40 +11,121 @@
 {% endblock %}
 
 {% block content %}
+{% with pf_personal=persisted_filters.personal pf_epis=persisted_filters.epis %}
 <ul class="nav nav-tabs mb-3" id="docH30Tabs">
     <li class="nav-item">
-        <a class="nav-link active" id="tab-maquinaria" data-bs-toggle="tab" href="#pane-maquinaria">
+        <a class="nav-link {% if persisted_active_tab == 'maquinaria' %}active{% endif %}" id="tab-maquinaria" data-bs-toggle="tab" href="#pane-maquinaria">
             <i class="bi bi-truck me-1"></i>Centros de Gasto
         </a>
     </li>
     <li class="nav-item">
-        <a class="nav-link" id="tab-personal" data-bs-toggle="tab" href="#pane-personal"
-           hx-get="{% url 'panel:documentation_personal_list' %}" hx-target="#pane-personal"
-           hx-trigger="click once">
+        <a class="nav-link {% if persisted_active_tab == 'personal' %}active{% endif %}" id="tab-personal" data-bs-toggle="tab" href="#pane-personal"
+           hx-get="{% url 'panel:documentation_personal_list' %}?q={{ pf_personal.q|default:'' }}&sort={{ pf_personal.sort|default:'' }}&dir={{ pf_personal.dir|default:'asc' }}"
+           hx-target="#pane-personal"
+           hx-trigger="{% if persisted_active_tab == 'personal' %}load once{% else %}click once{% endif %}">
             <i class="bi bi-people me-1"></i>Personal
         </a>
     </li>
     <li class="nav-item">
-        <a class="nav-link" id="tab-epis" data-bs-toggle="tab" href="#pane-epis"
-           hx-get="{% url 'panel:documentation_epi_tab' %}" hx-target="#pane-epis"
-           hx-trigger="click once">
+        <a class="nav-link {% if persisted_active_tab == 'epis' %}active{% endif %}" id="tab-epis" data-bs-toggle="tab" href="#pane-epis"
+           hx-get="{% url 'panel:documentation_epi_tab' %}?q={{ pf_epis.q|default:'' }}&sort={{ pf_epis.sort|default:'' }}&dir={{ pf_epis.dir|default:'asc' }}"
+           hx-target="#pane-epis"
+           hx-trigger="{% if persisted_active_tab == 'epis' %}load once{% else %}click once{% endif %}">
             <i class="bi bi-shield-check me-1"></i>EPIs
         </a>
     </li>
 </ul>
 
 <div class="tab-content">
-    <div class="tab-pane fade show active" id="pane-maquinaria">
+    <div class="tab-pane fade {% if persisted_active_tab == 'maquinaria' %}show active{% endif %}" id="pane-maquinaria">
         {% include "panel/documentation_h30/_machine_search_form.html" with search=machines_page.search %}
         <div id="machine-results">
             {% include "panel/documentation_h30/_machine_results.html" with page=machines_page.page sort_key=machines_page.sort_key sort_dir=machines_page.sort_dir search=machines_page.search sort_columns_machine=machines_page.sort_columns_machine %}
         </div>
     </div>
-    <div class="tab-pane fade" id="pane-personal">
+    <div class="tab-pane fade {% if persisted_active_tab == 'personal' %}show active{% endif %}" id="pane-personal">
         <div class="text-muted small py-3">Cargando…</div>
     </div>
-    <div class="tab-pane fade" id="pane-epis">
+    <div class="tab-pane fade {% if persisted_active_tab == 'epis' %}show active{% endif %}" id="pane-epis">
         <div class="text-muted small py-3">Cargando…</div>
     </div>
 </div>
+{% endwith %}
+
+<script>
+(function () {
+    // H31 (S75). Persistencia de navegación real en BD (nunca
+    // localStorage -- decisión explícita de Miguel Ángel: tiene que
+    // sobrevivir a cerrar el navegador). Guarda pestaña activa +
+    // filtros de cada pestaña vía PanelNavigationState
+    // (panel/views_navigation_state.py). El servidor ya restauró todo
+    // esto al renderizar hub.html (ver DocumentationHubV2View) -- este
+    // script solo se encarga de GUARDAR cada cambio futuro, nunca de
+    // la restauración inicial (esa es 100% server-side, sin FOUC de
+    // "vuelve a Centros de Gasto y luego salta a Personal").
+    const SCREEN_KEY = 'documentation_hub';
+    const csrfMeta = document.querySelector('meta[name="csrf-token"]');
+    const csrfToken = csrfMeta ? csrfMeta.getAttribute('content') : '';
+    let saveTimer = null;
+
+    function saveState(partialUpdate) {
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(function () {
+            fetch('/panel/navegacion/estado/' + SCREEN_KEY + '/', {
+                method: 'POST',
+                headers: {'X-CSRFToken': csrfToken, 'Content-Type': 'application/json'},
+                body: JSON.stringify(partialUpdate),
+            });
+        }, 400);
+    }
+
+    // Cambio de pestaña (click del usuario) -- el usuario es el único
+    // que puede cambiar la pestaña activa, así que esto solo se
+    // dispara con una interacción real, nunca al restaurar el estado.
+    document.querySelectorAll('#docH30Tabs a[data-bs-toggle="tab"]').forEach(function (tabLink) {
+        tabLink.addEventListener('shown.bs.tab', function (ev) {
+            const tabKey = ev.target.id.replace('tab-', '');
+            saveState({active_tab: tabKey});
+        });
+    });
+
+    // Búsqueda/orden/paginación dentro de cualquier pestaña -- se
+    // detecta a partir de la URL real que htmx acabó de pedir
+    // (incluye querystring, a diferencia de pathInfo.requestPath en
+    // htmx 1.9). Solo los endpoints de listado/resultados llevan
+    // q/sort/dir con sentido -- los endpoints de acción (actualizar,
+    // entregar-epi, notificar…) tienen un pk de por medio y no deben
+    // pisar los filtros guardados con valores vacíos.
+    const FILTER_ENDPOINTS = [
+        {match: /\/documentacion\/maquinaria\/?(\?|$)/, tab: 'maquinaria'},
+        {match: /\/documentacion\/personal\/?(\?|$)/, tab: 'personal'},
+        {match: /\/documentacion\/personal\/resultados\/?(\?|$)/, tab: 'personal'},
+        {match: /\/documentacion\/epis\/?(\?|$)/, tab: 'epis'},
+        {match: /\/documentacion\/epis\/resultados\/?(\?|$)/, tab: 'epis'},
+    ];
+
+    document.body.addEventListener('htmx:afterRequest', function (ev) {
+        const verb = (ev.detail.requestConfig && ev.detail.requestConfig.verb) || '';
+        if (verb.toLowerCase() !== 'get') { return; }
+        const responseUrl = ev.detail.xhr && ev.detail.xhr.responseURL;
+        if (!responseUrl) { return; }
+        let parsed;
+        try { parsed = new URL(responseUrl); } catch (e) { return; }
+
+        // El match más específico (resultados) antes que el genérico.
+        const hit = FILTER_ENDPOINTS.slice().reverse().find(function (entry) {
+            return entry.match.test(parsed.pathname);
+        });
+        if (!hit) { return; }
+
+        const filters = {};
+        filters[hit.tab] = {
+            q: parsed.searchParams.get('q') || '',
+            sort: parsed.searchParams.get('sort') || '',
+            dir: parsed.searchParams.get('dir') || 'asc',
+        };
+        saveState({filters: filters});
+    });
+})();
+</script>
 {% endblock %}
