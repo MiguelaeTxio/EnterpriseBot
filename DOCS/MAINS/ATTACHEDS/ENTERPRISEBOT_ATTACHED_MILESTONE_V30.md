@@ -5123,36 +5123,65 @@ a `EpiItemCatalog`.**
   red (`productionresultssa16.blob.core.windows.net`), resuelto por
   vía 2 (Comando S contra el servidor real).
 
+**Punto 2 CERRADO: extractor real de Botiquines (14 archivos,
+`BOTIQUINES`) → `EpiDelivery(epi=BOTIQUIN)`.**
+
+- Muestreo real (3/14) confirmó plantilla única y consistente: tabla
+  con `DATOS DEL TRABAJADOR` (nombre+DNI en una celda), `MÁQUINA:`
+  (uno o VARIOS códigos separados por coma/"y" -- hasta 12 en un
+  documento real, Ramos Zambrana-2) y firma con `A fecha
+  (DD/MM/AAAA)`.
+- Decisión explícita de Miguel Ángel: **una `EpiDelivery` por
+  máquina** cuando el documento lista varias.
+- Dos casos especiales confirmados contra `fleet.MachineAsset` real
+  antes de asumir nada: `FURGONETA 7386-BNH` (dos candidatos por
+  matrícula duplicada -- Miguel Ángel dio de baja el duplicado
+  `X02` en la misma sesión, verificado `is_active=False`) y `TALLER`
+  a secas → siempre `EMPRESA_TALLER_MECANICO` (decisión explícita,
+  nunca Huelva/Elevación salvo que el documento lo diga).
+- Resolución de código de máquina reutiliza `_resolve_machine_asset`
+  real de `work_order_processor.services` (regla D4, zero-padding
+  `B-9`→`B09`) -- nunca reinventado ad-hoc, corrección explícita de
+  Miguel Ángel en la misma sesión.
+- Comando de gestión nuevo `extract_botiquines_deliveries` (dry-run
+  por defecto, `--apply` real), commit `7c3c08b`, verificado tras
+  despliegue.
+- Aplicado: **13/14 documentos completos, 26 `EpiDelivery` creadas**
+  (12 de ellas del caso Ramos Zambrana-2), verificado contra BD
+  (consulta directa, 26/26, 0 archivos activos restantes en
+  `BOTIQUINES`). El 14º (`RAFAEL.docx`, DNI `29773542L`) no resuelve
+  contra `PersonIdentity` -- confirmado por Miguel Ángel: hermano de
+  Daniel Baena Márquez (pk=41), ya no trabaja en la empresa. Ignorado
+  explícitamente y documento enviado a papelera aparte.
+- **Corrección de sesión (S73):** se asumió `last_name_1` como campo
+  de `PersonIdentity` sin mirar el modelo real (campos reales:
+  `given_name`, `first_surname`, `second_surname`) -- `FieldError`,
+  repetido el ciclo Comando S + sftp GET. Corregido de inmediato,
+  anotado en memoria de proyecto para no repetirlo.
+
 ## Hoja de ruta para S73
 
-**Punto 1 (fichas técnicas/manuales de EPIs → `EpiItemCatalog`) CERRADO
-en esta misma sesión** -- ver bloque "COMPLETADAS EN S73" arriba.
-Pendientes reales, EPIs (prioridad de esta sesión, "Terminamos
-EPI's"):
+**Puntos 1 (fichas técnicas EPIs) y 2 (Botiquines) CERRADOS en esta
+misma sesión** -- ver bloque "COMPLETADAS EN S73" arriba. Pendientes
+reales, EPIs (prioridad de esta sesión, "Terminamos EPI's"):
 
-1. **Extractor real de Botiquines (14 archivos, `BOTIQUINES`).**
-   Modelo de datos ya listo (`EpiDelivery.destination_machine` +
-   ítem `BOTIQUIN`). Falta: leer contenido real de una muestra antes
-   de diseñar el parser (persona + Centro de Gasto real destino).
-   Criterio de cierre: `EpiDelivery(epi=BOTIQUIN)` creadas con
-   `destination_machine` relleno, verificado por consulta real a BD.
-2. **`CONTROL EPIS` (76 archivos)** -- sin diseño todavía, requiere
+1. **`CONTROL EPIS` (76 archivos)** -- sin diseño todavía, requiere
    muestreo real de contenido (mismo criterio que se usó para
    desglosados/industria química/alta visibilidad: 2-3 archivos
    reales leídos antes de escribir ningún parser).
-3. **`EPIS ARNES MIRA 12-A` (51 archivos)** -- sin diseño todavía,
+2. **`EPIS ARNES MIRA 12-A` (51 archivos)** -- sin diseño todavía,
    mismo criterio de muestreo previo.
-4. **`DETECTOR TENSION` (2) y `EPIS VARIAS EMPRESAS` (2)** -- volumen
+3. **`DETECTOR TENSION` (2) y `EPIS VARIAS EMPRESAS` (2)** -- volumen
    mínimo, revisar directo archivo por archivo sin necesidad de
    parser genérico.
-5. **150 archivos `NOMBRAMIENTO RECURSO PREVENTIVO`** (arrastrado 1.ª
+4. **150 archivos `NOMBRAMIENTO RECURSO PREVENTIVO`** (arrastrado 1.ª
    sesión sin avanzar) → candidatos a `DocumentAcknowledgment`.
    Criterio de cierre: al menos un lote real migrado y verificado.
 
 **Sigue bloqueado, sin empezar hasta que el dominio PERSONAL esté
-cerrado de verdad (puntos 1-5 arriba):**
+cerrado de verdad (puntos 1-4 arriba):**
 
-6. **Fase A de `DOC. MAQUINAS`** (dry-run ya ejecutado en S69,
+5. **Fase A de `DOC. MAQUINAS`** (dry-run ya ejecutado en S69,
    `run_fase_a_sweep_scoped`, resultado nunca leído). Criterio de
    cierre: al menos una pasada de calibración real completada,
    volumen medido antes de aplicar.
