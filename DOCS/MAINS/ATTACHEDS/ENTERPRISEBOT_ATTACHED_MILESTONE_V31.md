@@ -219,7 +219,7 @@ en la misma sesión.
   y consultas ORM reales sobre las filas afectadas, nunca solo el
   icono verde de GitHub Actions (regla S014).
 
-## 5. Hoja de ruta para S75
+## 5. Hoja de ruta para S75 -- CERRADA, ver COMPLETADAS EN S75 abajo
 
 1. **Selector masivo con casillero** + acción masiva de EPI y de
    circular (mismo backend que los puntos 3-4 ya construidos, en
@@ -247,6 +247,8 @@ en la misma sesión.
    vía Comando S, o revisar directamente en el Console de Twilio.
    Criterio de cierre: estado `approved` confirmado y al menos una
    entrega real de EPI con `whatsapp_sent: true` en la respuesta.
+   **Pospuesto explícitamente** -- Miguel Ángel redirigió la sesión
+   hacia UX/persistencia/integridad de datos antes de llegar aquí.
 4. **Auditoría de integridad de datos ampliada** (nace de la
    incidencia de S74): la auditoría Excel vs BD de esta sesión se
    hizo a mano, sobre un caso concreto que saltó a la vista en el
@@ -255,9 +257,172 @@ en la misma sesión.
    automatice la comparación nombre+DNI completa cada vez que se
    suba un Excel nuevo, en vez de repetirla a mano. No iniciar sin
    que Miguel Ángel lo pida explícitamente -- consultar primero.
+   **No iniciado.**
 
 Criterio de cierre de S75: al menos el punto 1 o el punto 2
-completado y verificado contra BD, no solo diseñado.
+completado y verificado contra BD, no solo diseñado. **CUMPLIDO POR
+PARTIDA DOBLE** -- ver COMPLETADAS EN S75.
+
+## 5.1. COMPLETADAS EN S75
+
+- **Punto 1 -- selector masivo con casillero** (commit `6b2af9e`):
+  casillero en `_personal_results.html` + "seleccionar todos los de
+  esta página", barra de acción masiva persistida en memoria (Set +
+  delegación de eventos sobre `#pane-personal`, sobrevive a
+  búsqueda/paginación). `EpiMassDeliveryView` (POST): N
+  `EpiDelivery(MANUAL)` reales en bucle, WhatsApp de confirmación no
+  bloqueante por persona. `PersonalNotificationMassSendView` (POST):
+  N `.eml` empaquetados en un único `.zip` de descarga (decisión de
+  diseño explícita, no especificada en la hoja de ruta -- un solo
+  zip en vez de N descargas simultáneas), un `DocumentAcknowledgment`
+  real por persona con éxito. Refactor DRY:
+  `_build_notification_eml()` extraído y compartido entre la vista
+  individual y la masiva. Desplegado y verificado, sin migración.
+- **Punto 2 -- CRUD de circulares** (commit `bb131a5`): nuevo módulo
+  `panel/views_circulars_h31.py`, acotado a `DocumentTypeCatalog` de
+  dominio PERSONAL/BOTH -- listar, crear (mismo patrón que
+  `DocumentTypeQuickCreateView`), editar `content_html` con editor de
+  texto básico integrado (`contenteditable` + `document.execCommand`,
+  paleta de color y tipografías deliberadamente reducidas, pegado
+  externo limpiado a texto plano), importar Word/PDF real
+  (`python-docx`/`pymupdf4llm` con fallback a `fitz`, ya en
+  `requirements.txt`) que sustituye `content_html` por el texto
+  extraído como punto de partida a retocar, y sustituir la plantilla
+  vigente (`current_template`) subiendo el archivo real a
+  `_PLANTILLAS_CIRCULARES/<code>/` sin tocar ni borrar la anterior
+  (4.12). Verificado en producción con datos reales vía Comando S:
+  `python-docx` 1.2.0, `pymupdf4llm` y `fitz` disponibles en el venv
+  de producción, 73 tipos PERSONAL/BOTH activos. Desplegado, sin
+  migración.
+- **Incidencia real corregida en la misma sesión -- persistencia de
+  navegación** (commit `ca836c7`): Miguel Ángel reportó que recargar
+  la página o volver atrás en el navegador tras entrar en
+  Documentación reseteaba siempre a la pestaña "Centros de Gasto" (la
+  marcada activa por defecto) y perdía cualquier filtro/orden
+  aplicado -- verbatim: *"el que cambie la pestaña soy yo. No me la
+  cambia el sistema [...] los filtros deben ser persistentes
+  siempre."* Decisión explícita: tabla real en BD, nunca localStorage
+  -- tiene que sobrevivir a cerrar el navegador o cambiar de
+  dispositivo. Nuevo modelo `PanelNavigationState` (migración
+  `0002_panelnavigationstate_s75`): una fila por
+  `(company_user, screen_key)`, JSONField de forma libre
+  (`active_tab` + `filters` por pestaña). `NavigationStateSaveView`
+  (POST genérico por `screen_key`, merge superficial). El servidor
+  restaura la pestaña activa y los filtros de Maquinaria al renderizar
+  `hub.html` (`DocumentationHubV2View` + `_seed_request_get`), sin
+  parpadeo; Personal/EPIs pasan de `hx-trigger="click once"` a
+  `"load once"` cuando son la pestaña persistida, con sus filtros ya
+  inyectados en la propia URL htmx. JS guarda `active_tab` en el
+  evento `shown.bs.tab` (el usuario es el único que cambia de
+  pestaña) y los filtros interceptando `htmx:afterRequest` sobre los
+  endpoints de listado/resultados exclusivamente. Desplegado --
+  **pendiente de verificación con datos reales por parte de Miguel
+  Ángel** (la salida del Comando S de cierre de este bloque no trajo
+  el bloque `git log`/`showmigrations`, se repitió el Comando S).
+- **Incidencia real detectada, EN DIAGNÓSTICO (no corregida
+  todavía)** -- documentos con fecha de caducidad futura marcados
+  `is_obsolete=True` (Miguel Ángel: "he visto ya carnés que cumplen
+  en 2030 y me los marca como obsoletos"). Diagnóstico inicial contra
+  BD real: 11 filas reales con este patrón en `DOC. PERSONAL`/
+  `DOC. MAQUINAS` (`CARNET_CONDUCIR` pk=34187 expira 2029-07-22;
+  10 filas `ITV` de 10 máquinas distintas, expiran entre 2026-12-12 y
+  2028-08-06). Todos los `name` siguen siendo el nombre crudo
+  heredado del disco (`Z-123 6795MTL ITV 06-08-2028.pdf`, etc.), no
+  el esquema de `naming_service` -- confirma también el punto de
+  "selva documental" de más abajo. **Pendiente**: diagnóstico de los
+  "hermanos" (mismo tipo + mismo sujeto) de cada fila para saber si
+  `is_obsolete=True` es correcto (una ITV real más nueva la sustituyó)
+  o un bug real de la lógica de sustitución -- Comando S en curso al
+  cierre de esta sesión, sin analizar todavía. **No tocar el código de
+  vigencia/sustitución hasta tener esa salida real** (nunca a ciegas).
+
+## 5.2. Hoja de ruta para S76 -- REDISEÑO DE LA INTERFAZ DE FICHA DE PERSONA (Miguel Ángel, S75)
+
+Miguel Ángel replanteó una parte sustancial del hito tras ver la
+ficha de persona real en producción -- verbatim: *"tú ya la habías
+dado por construida y nos queda todavía un mundo hasta terminarla."*
+Sustituye/amplía lo que quedaba de la hoja de ruta original de este
+punto. Premisa que gobierna TODO lo siguiente: **UX por encima de
+todo, cero scroll en pantallas normales (ordenador/tablet), cero
+"selva documental"** -- el supervisor tiene que ver de un vistazo qué
+puede hacer, sin explicaciones.
+
+1. **Bug de vigencia (`is_obsolete`)** -- cerrar el diagnóstico
+   iniciado en S75 (ver 5.1) y corregir la causa raíz real una vez
+   confirmada con datos, nunca antes. Prioridad -- bug de integridad
+   de datos, corrección inmediata en cuanto se confirme la causa
+   (directriz de sesión, nunca deuda técnica).
+2. **Modo edición con confirmación explícita en la ficha de persona**
+   (requisito NUEVO, introducido en S75 -- no existía antes).
+   Actualmente `PersonalUpdateView`/el formulario de
+   `_personal_detail.html` son editables directamente sin ninguna
+   barrera. Rediseño: los campos nacen de solo lectura; un botón
+   "Modo edición" dispara un modal de confirmación ("¿Vas a activar
+   el modo edición?" Aceptar/Cancelar); solo tras aceptar se habilitan
+   los campos para editar. Objetivo explícito: que nunca se cambie un
+   dato por error de un clic o un tabulado accidental.
+3. **Reestructuración completa de la ficha de persona -- objetivo
+   "todo visible sin scroll"**: cabecera fija con foto/nombre/
+   domicilio/teléfono/correo (falta domicilio en el formulario actual
+   -- revisar qué campos reales tiene `PersonIdentity` para dirección
+   y si faltan, plantearlo con Miguel Ángel antes de inventar
+   campos). El resto de la información (documentos, EPIs,
+   notificaciones) organizado en bloques de acceso directo -- acordeón
+   como opción por defecto, iconos cuadrangulares si el acordeón se
+   queda corto para caber sin scroll. Responsive (ordenador/tablet)
+   -- toda la información accesible en la misma pantalla sin scroll
+   vertical largo.
+4. **Documentos agrupados por familias de USO real, no por el campo
+   `family` genérico actual del catálogo** -- Miguel Ángel dio
+   ejemplos concretos a definir con él en la próxima sesión antes de
+   tocar código:
+   - "Documentación de circulación/habilitación" -- DNI, carné de
+     conducir, carné de gruísta, permiso de circulación y cualquier
+     otro documento que acredite para manejar máquinas o circular
+     (lo que "se lleva en la cartera").
+   - "Formación" -- formaciones recibidas, distinta de "certificados"
+     (Miguel Ángel: "no es lo mismo un certificado que una formación
+     recibida" -- valorar si son dos familias o una con subtipo).
+   - "Nombramientos y poderes" -- nombramientos, poderes,
+     autorizaciones de la empresa.
+   - Definir el resto de familias reales revisando el catálogo
+     completo de `DOC. PERSONAL` con Miguel Ángel -- no inventar una
+     taxonomía sin su confirmación explícita.
+5. **Dentro de cada familia, mostrar solo el documento VIGENTE por
+   nombre de tipo, nunca el histórico completo de entrada** --
+   ejemplo explícito de Miguel Ángel: un trabajador con 30-40 años en
+   la empresa puede tener 30-40 reconocimientos médicos; la ficha
+   solo debe mostrar "Reconocimiento médico" (el vigente), con un
+   acceso aparte ("ver historial") para desplegar el resto bajo
+   demanda -- nunca de primeras.
+6. **Limpieza de nombres mostrados en la interfaz** -- Miguel Ángel,
+   verbatim: *"estamos presentando los nombres de los archivos tal y
+   como estaban en el disco [...] eso no es lo que dije."* En la
+   ficha de persona, el nombre visible de cada documento debe ser
+   siempre `document_type.label` (p. ej. "Reconocimiento médico",
+   "DNI"), nunca `entry.name` crudo -- ya no hace falta repetir el
+   nombre de la persona (se está en su ficha) ni la fecha de
+   caducidad en el nombre (ya se ve en el propio bloque). El nombre
+   real del archivo (`entry.name`, heredado del disco o del esquema
+   de `naming_service`) queda como metadato interno, nunca como
+   etiqueta visible al supervisor. Confirmado con datos reales (ver
+   5.1) que los archivos siguen mostrando su nombre crudo de
+   Microsoft 365 -- este punto lo corrige de raíz en la UI,
+   independientemente de si el `blob_name`/`name` real se renombra o
+   no (4.12: `blob_name` nunca se reescribe, así que la limpieza es
+   puramente de presentación, vía `document_type.label`).
+7. **Desplegables con autocompletado y, donde la lista de opciones
+   sea larga, desplegables en cascada** (una opción despliega el
+   siguiente nivel de opciones relacionadas, patrón árbol) -- aplicar
+   donde corresponda dentro de todo lo anterior (selección de tipo
+   documental, de EPI, de familia, etc.).
+
+**No iniciar el punto 4 (definición de familias) sin antes acordar
+con Miguel Ángel la lista real de familias y qué tipos documentales
+entra en cada una** -- es una decisión de producto, no una que el
+modelo pueda tomar solo por analogía. El resto de puntos (1, 2, 3, 6,
+7) sí tienen alcance suficientemente claro para empezar sin más
+preguntas bloqueantes.
 
 ---
 
