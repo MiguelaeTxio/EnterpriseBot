@@ -49,6 +49,13 @@
                     </button>
                 </div>
                 <div class="col-12"><small class="text-muted">DNI/NIE {{ person.dni }} -- identificador, no editable. Empresa/fechas de vigencia vienen del Excel de plantilla, se actualizan solo en la próxima importación.</small></div>
+                <div class="col-12">
+                    {% if person.company_user %}
+                    <small class="text-success"><i class="bi bi-person-check-fill me-1"></i>Usuario del panel: <strong>{{ person.company_user.user.username }}</strong> -- rol {{ person.company_user.get_role_display }}{% if not person.company_user.is_active %} (cuenta inactiva){% endif %}</small>
+                    {% else %}
+                    <small class="text-muted"><i class="bi bi-person-x me-1"></i>Sin usuario del panel vinculado todavía.</small>
+                    {% endif %}
+                </div>
                 <div id="personalUpdateResult" class="col-12"></div>
             </form>
         </div>

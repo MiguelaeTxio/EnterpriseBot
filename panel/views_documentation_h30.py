@@ -280,7 +280,12 @@ class PersonalResultsFragmentView(CompanyUserRequiredMixin, View):
 
 class PersonalDetailView(CompanyUserRequiredMixin, View):
     def get(self, request, pk):
-        person = get_object_or_404(PersonIdentity, pk=pk)
+        person = get_object_or_404(
+            PersonIdentity.objects.select_related(
+                "company_user", "company_user__user",
+            ),
+            pk=pk,
+        )
         ct = ContentType.objects.get_for_model(PersonIdentity)
         entries = DocumentIndexEntry.objects.filter(
             bucket=BUCKET, domain_content_type=ct, domain_object_id=person.pk,

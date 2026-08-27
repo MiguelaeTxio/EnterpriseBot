@@ -1268,6 +1268,28 @@ class PersonIdentity(models.Model):
             "variante de texto nueva no cubierta todavía."
         ),
     )
+    company_user = models.OneToOneField(
+        "ivr_config.CompanyUser",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="person_identity",
+        verbose_name="Usuario del panel vinculado",
+        help_text=(
+            "H31 (S74). Vínculo real a ivr_config.CompanyUser -- "
+            "confirma que esta persona de plantilla es TAMBIÉN un "
+            "usuario del panel (supervisor, administrador, operario "
+            "de taller, etc., ver CompanyUser.role), no solo un "
+            "registro de RRHH/documentación. Resuelto por cruce "
+            "exacto de DNI (CompanyUser.dni == PersonIdentity.dni, "
+            "mismo criterio de identificador duro que el resto del "
+            "proyecto -- nunca por nombre). Verificado en producción "
+            "(S74): de 25 CompanyUser reales, 11 tenían DNI relleno y "
+            "los 11 cruzaron limpio, sin ambigüedad. Nulo para "
+            "personal de plantilla sin cuenta de panel, o cuyo "
+            "CompanyUser todavía no tiene el DNI relleno."
+        ),
+    )
 
     class Meta:
         verbose_name = "Identidad de personal"
