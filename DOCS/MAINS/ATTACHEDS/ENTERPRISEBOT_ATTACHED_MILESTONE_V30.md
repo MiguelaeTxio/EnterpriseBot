@@ -5267,24 +5267,77 @@ a `EpiItemCatalog`.**
   2011-04-01). El documento también traía autorización de manejo de
   maquinaria e información de PRL -- ambos DELIBERADAMENTE fuera de
   alcance (no son EPIs), sin procesar.
+- Corrección de tipo real detectada de paso: `Circular Leave
+  Letter.doc` estaba tipado `CERT_EXENCION_TACOGRAFO` (para el
+  certificado ya cumplimentado) pero es la circular explicativa en
+  blanco -- reclasificado a `CIRCULAR_INFORMATIVA` (domain
+  `COMPANY`), corregido de inmediato.
+
+**Punto 6 CERRADO: `NOMBRAMIENTO RECURSO PREVENTIVO` (158 archivos
+reales, no 150) → `DocumentAcknowledgment`. Bloque EPIs de S73
+completo.**
+
+- Raíz (14 archivos): 4 plantillas en blanco por empresa (dejadas
+  intactas, material de referencia) + 10 documentos reales
+  procesados a mano (incluye un tipo nuevo real en uso,
+  `NOMBRAMIENTO_JEFE_MANIOBRAS`, y un duplicado real pdf+docx del
+  mismo nombramiento). Hallazgo real de límite del modelo: dos
+  nombramientos reales distintos (Alejandro Álvarez Díaz, mismo día,
+  designado en Gruas Y en Transgrual) colapsan en una sola fila
+  porque `DocumentAcknowledgment` no distingue por empresa -- anotado,
+  no corregido (fuera de alcance).
+- `ENTREGA FUNCIONES RECURSO PREVENTIVO` (67) y `FIRMADOS` (77):
+  comando nuevo `extract_recurso_preventivo` (dry-run por defecto,
+  `--apply`, `--discard-unresolved-persona`), commits `e2d524a`
+  (extractor) y `a1142c3` (fix real: el regex de DNI no contemplaba
+  la forma real "DNI nº" -- las 77 de FIRMADOS daban SIN DNI hasta
+  corregirlo).
+- **Regla nueva de sesión, aplicada de aquí en adelante**: DNI EXACTO
+  por NÚMERO (nunca por letra -- se calcula siempre), sin excepción.
+  Confirmado explícitamente por Miguel Ángel tras el caso Saavedra
+  Pérez/DNI sin coincidencia ni por número ni por letra.
+- 11 archivos `.pdf` (fuera del alcance del regex `.docx?`, y
+  además escaneados, 0 texto nativo -- prohibido OCR en consola
+  S62): verificado contra BD cuál ya estaba cubierto por su gemelo
+  `.docx`/`.doc` -- 9 sin pérdida real, a papelera directa. Los 2
+  restantes (`LOPEZ TORRES` `RECURSO_PREVENTIVO`, `RODRIGUEZ MIRA`
+  `ENTREGA_INFORMACION`) no tenían ninguna cobertura previa -- Miguel
+  Ángel los subió como imagen, leídos a mano, `DocumentAcknowledgment`
+  creadas con datos reales confirmados.
+- 3 archivos `.docx` con "SIN FECHA reconocible" por errores reales
+  de tipografía en el propio documento original (día en letra "DOS"
+  en vez de "2"; meses mal escritos "DICIEMRE"/"SEPTIEBRE") --
+  resueltos a mano con los datos ya leídos, sin tocar el regex
+  compartido para 3 casos puntuales.
+- Total final: **113 `DocumentAcknowledgment`** en BD, **4 archivos
+  activos restantes** (todas plantillas en blanco, correctamente sin
+  tocar).
 
 ## Hoja de ruta para S73
 
-**Puntos 1 (fichas técnicas EPIs), 2 (Botiquines), 3 (CONTROL EPIS),
-4 (ARNES MIRA 12-A) y 5 (DETECTOR TENSION + VARIAS EMPRESAS) CERRADOS
-en esta misma sesión** -- ver bloque "COMPLETADAS EN S73" arriba.
-Pendiente real, EPIs:
+**Bloque EPIs COMPLETO (puntos 1-6) en esta misma sesión** -- ver
+bloque "COMPLETADAS EN S73" arriba. Único pendiente real de EPIs:
 
 1. **2 archivos sueltos de ARNES MIRA 12-A sin fecha reconocible**
-   (`GARCIA PRIETO`, `HIDALGO ROSAS`) -- revisión manual pendiente.
-2. **150 archivos `NOMBRAMIENTO RECURSO PREVENTIVO`** (arrastrado 1.ª
-   sesión sin avanzar) → candidatos a `DocumentAcknowledgment`.
-   Criterio de cierre: al menos un lote real migrado y verificado.
+   (`GARCIA PRIETO`, `HIDALGO ROSAS`) -- revisión manual pendiente,
+   mismo tipo de problema (fecha no numérica/atípica) que los 3
+   resueltos en `NOMBRAMIENTO RECURSO PREVENTIVO`; probablemente el
+   mismo patrón, sin confirmar todavía.
+
+**Deuda técnica real, aparcada explícitamente esta sesión** (Miguel
+Ángel, "Terminamos EPI's" -- prioridad era cerrar EPIs primero):
+
+- Sistema de plantillas de comunicados/notificaciones y gap de
+  plantilla múltiple de `AUTORIZACION_MEDIOS_COMUNICACION`
+  (arrastrado desde S71/S72).
+- Interfaz del supervisor para entregas de EPIs, donde la fecha de
+  caducidad calculada (`standard_expiry_years`, 5 años) debe poder
+  corregirse a mano por quien entrega el EPI.
 
 **Sigue bloqueado, sin empezar hasta que el dominio PERSONAL esté
-cerrado de verdad (puntos 1-2 arriba):**
+cerrado de verdad (punto 1 arriba):**
 
-3. **Fase A de `DOC. MAQUINAS`** (dry-run ya ejecutado en S69,
+2. **Fase A de `DOC. MAQUINAS`** (dry-run ya ejecutado en S69,
    `run_fase_a_sweep_scoped`, resultado nunca leído). Criterio de
    cierre: al menos una pasada de calibración real completada,
    volumen medido antes de aplicar.
