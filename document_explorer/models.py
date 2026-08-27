@@ -717,6 +717,27 @@ class DocumentTypeCatalog(models.Model):
         ),
     )
 
+    content_html = models.TextField(
+        blank=True,
+        default="",
+        verbose_name="Contenido enriquecido (circular/notificación)",
+        help_text=(
+            "H31 (S74). Cuerpo real de texto enriquecido (HTML básico "
+            "-- color, negrita, listas) para tipos documentales que "
+            "son circulares/notificaciones (p. ej. CIRCULAR_INFORMATIVA, "
+            "NOMBRAMIENTO_RESPONSABLE_SEGURIDAD). Campo NUEVO en BD, "
+            "decisión explícita de Miguel Ángel (S73): mantener "
+            "`current_template` (plantilla legacy en archivo) en "
+            "paralelo, no sustituirlo de golpe. Vacío por defecto -- "
+            "solo se rellena para los tipos que de verdad usan el "
+            "CRUD de circulares de H31; el resto del catálogo (tipos "
+            "físicos/documentales sin cuerpo de texto) lo deja en "
+            "blanco sin más. Mismo patrón que `current_template`: "
+            "campo directo en este modelo, no un modelo aparte -- no "
+            "hay necesidad de versionado histórico por ahora."
+        ),
+    )
+
     class Meta:
         verbose_name = "Tipo documental"
         verbose_name_plural = "Catálogo de tipos documentales"
