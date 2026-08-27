@@ -14,7 +14,20 @@ viajen en cada petición sin cableado adicional. Estado inicial
 calculado en el propio template salvo la comparación directa de
 pertenencia a la lista (DUMB TEMPLATES).
 {% endcomment %}
-<form method="get" class="mb-3"
+{% comment %}
+H31 (S76), incidencia real reportada por Miguel Ángel con captura:
+`autocomplete="off"` en el propio `<form>` -- sin esto, Chrome
+restaura por su cuenta el estado de los checkboxes de una carga
+anterior DESPUÉS de que la página ya pintó, sin pasar por el
+servidor. La petición inicial (`hx-trigger="load once"` de hub.html)
+se dispara con el estado que Django renderizó de verdad (el
+persistido en PanelNavigationState), pero el navegador reescribe
+visualmente los checkboxes justo después -- resultado: los
+checkboxes que ves en pantalla y los resultados de la tabla dejan de
+corresponder entre sí, aunque cada uno por separado sea "correcto"
+para un momento distinto.
+{% endcomment %}
+<form method="get" class="mb-3" autocomplete="off"
       hx-get="{% url 'panel:documentation_personal_results' %}" hx-target="#personal-results"
       hx-trigger="input changed delay:300ms from:input[name='q'], change from:.personal-filter-checkbox, submit">
     <div class="d-flex gap-2 mb-2">
