@@ -2,10 +2,67 @@
 {% comment %}
 H30 (S50): separado de los resultados por el mismo motivo que
 _machine_search_form.html -- ver ese archivo.
+
+H31 (S76): añade los casilleros Activos/Inactivos + Empresa dentro
+del MISMO <form> -- htmx serializa automáticamente todos los campos
+con `name` del formulario al que pertenece el elemento que dispara la
+petición (aquí, el propio `hx-get` está en el `<form>`), así que
+basta con que los checkboxes vivan dentro de este `<form>` para que
+viajen en cada petición sin cableado adicional. Estado inicial
+`checked` resuelto en la vista (`PersonalListFragmentView` ->
+`_person_list_page` -> `active_filter`/`company_filter`), nunca
+calculado en el propio template salvo la comparación directa de
+pertenencia a la lista (DUMB TEMPLATES).
 {% endcomment %}
-<form method="get" class="mb-3 d-flex gap-2"
+<form method="get" class="mb-3"
       hx-get="{% url 'panel:documentation_personal_results' %}" hx-target="#personal-results"
-      hx-trigger="input changed delay:300ms from:input[name='q'], submit">
-    <input type="text" name="q" class="form-control doc-h30-search" placeholder="Buscar por nombre, apellidos, DNI…"
-           value="{{ search }}">
+      hx-trigger="input changed delay:300ms from:input[name='q'], change from:.personal-filter-checkbox, submit">
+    <div class="d-flex gap-2 mb-2">
+        <input type="text" name="q" class="form-control doc-h30-search" placeholder="Buscar por nombre, apellidos, DNI…"
+               value="{{ search }}">
+    </div>
+    <div class="d-flex flex-wrap gap-3 align-items-start small">
+        <div>
+            <div class="fw-semibold mb-1">Estado</div>
+            <div class="form-check">
+                <input class="form-check-input personal-filter-checkbox" type="checkbox" name="active" value="true"
+                       id="filterActiveTrue" {% if "true" in active_filter %}checked{% endif %}>
+                <label class="form-check-label" for="filterActiveTrue">Activos</label>
+            </div>
+            <div class="form-check">
+                <input class="form-check-input personal-filter-checkbox" type="checkbox" name="active" value="false"
+                       id="filterActiveFalse" {% if "false" in active_filter %}checked{% endif %}>
+                <label class="form-check-label" for="filterActiveFalse">Inactivos</label>
+            </div>
+        </div>
+        <div>
+            <div class="fw-semibold mb-1">
+                Empresa
+                <a href="#" class="small ms-1" onclick="togglePersonalCompanyAll(event)">(todas)</a>
+            </div>
+            {% for slug, label, raws in company_filter_choices %}
+            <div class="form-check">
+                <input class="form-check-input personal-filter-checkbox personal-company-checkbox" type="checkbox" name="company" value="{{ slug }}"
+                       id="filterCompany{{ forloop.counter }}" {% if slug in company_filter %}checked{% endif %}>
+                <label class="form-check-label" for="filterCompany{{ forloop.counter }}">{{ label }}</label>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
 </form>
+<script>
+    // H31 (S76). Convenience toggle -- marca/desmarca todas las
+    // empresas de un clic (Miguel Ángel: "te ahorras un montón de
+    // clics"). Puramente client-side, no dispara guardado por sí solo
+    // -- el `change` de cada checkbox real que toca sí lo hace (htmx
+    // change event delegation ya cubre esto).
+    function togglePersonalCompanyAll(ev) {
+        ev.preventDefault();
+        const boxes = document.querySelectorAll('.personal-company-checkbox');
+        const allChecked = Array.from(boxes).every((b) => b.checked);
+        boxes.forEach((b) => {
+            b.checked = !allChecked;
+            b.dispatchEvent(new Event('change', {bubbles: true}));
+        });
+    }
+</script>

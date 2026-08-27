@@ -52,6 +52,75 @@ from whatsapp.services import send_epi_delivery_whatsapp_confirmation
 
 BUCKET = "cgs_grupo_alvarez"
 
+# H31 (S76). Casillero de empresa del listado Personal -- valores
+# reales de PersonIdentity.employer_company (texto libre del Excel de
+# plantilla, confirmados contra BD real, S76) agrupados en las 4
+# empresas reales que confirmó Miguel Ángel. Slug estable (sin
+# acentos/espacios, para el valor del checkbox) -> (etiqueta visible,
+# lista de valores crudos reales que agrupa). "TRANSGRUAL S.L." (con
+# puntos) y "TRANSGRUAL Y ASITENCIA" son variantes de escritura de la
+# misma empresa -- decisión explícita de Miguel Ángel (S76): "ya
+# alguien dice que esto es un error, ya lo cambiamos en ese momento,
+# de momento ponlo así." Los 160 PersonIdentity con employer_company
+# vacío (sin cruzar contra el Excel, dato real S76) quedan en su
+# propia opción "sin_empresa" -- ninguno se oculta en silencio.
+COMPANY_FILTER_CHOICES = [
+    ("adolfo_alvarez", "Grúas Adolfo Álvarez S.L.", ["GRUAS ADOLFO ALVAREZ SL"]),
+    ("transgrual", "Transgrúal S.L.", [
+        "TRANSGRUAL SL", "TRANSGRUAL S.L.", "TRANSGRUAL Y ASITENCIA",
+    ]),
+    ("aldi", "Grúas Aldi S.L.", ["GRUALDI S.L"]),
+    ("asistencia_granada", "Asistencia y Grúas Granada", ["ASIST.GRUAS GRANADA"]),
+    ("sin_empresa", "Sin empresa asignada", [""]),
+]
+
+
+def _apply_personal_filters(qs, request):
+    """
+    H31 (S76). Casillero Activos/Inactivos + casillero de empresa del
+    listado Personal -- lógica literal de checkbox (ninguno marcado =
+    ningún resultado, nunca "sin filtro" por sorpresa).
+
+    Activos = `is_active_employee=True` (está en el Excel real de
+    plantilla). Inactivos = `False` **o** `None` juntos -- decisión
+    explícita de Miguel Ángel (S76), motivo real: en la ingesta de
+    documentos históricos, las personas ya no activas nunca se
+    marcaron `False` a propósito, simplemente no se cruzaron contra
+    el Excel (`None`, "sin cruzar todavía"), así que en la práctica
+    todo el histórico real vive en `None`, no en `False` (confirmado
+    contra BD real S76: `True`=71, `False`=0, `None`=158). Miguel
+    Ángel, verbatim: "los activos son los del Excel y los que no son
+    activos no están en el Excel [...] no los vamos a desechar,
+    los tratamos como históricos e inactivos."
+    """
+    active_filter = request.GET.getlist("active")
+    if active_filter:
+        active_q = Q()
+        if "true" in active_filter:
+            active_q |= Q(is_active_employee=True)
+        if "false" in active_filter:
+            active_q |= Q(is_active_employee=False) | Q(is_active_employee__isnull=True)
+        qs = qs.filter(active_q)
+    else:
+        qs = qs.none()
+
+    company_filter = request.GET.getlist("company")
+    if company_filter:
+        raw_by_slug = {slug: raws for slug, _label, raws in COMPANY_FILTER_CHOICES}
+        company_q = Q()
+        matched_any = False
+        for slug in company_filter:
+            raws = raw_by_slug.get(slug)
+            if raws is None:
+                continue
+            matched_any = True
+            company_q |= Q(employer_company__in=raws)
+        qs = qs.filter(company_q) if matched_any else qs.none()
+    else:
+        qs = qs.none()
+
+    return qs
+
 
 def _apply_sort(request, queryset, sort_columns, default_sort):
     """
@@ -204,7 +273,46 @@ class DocumentationHubV2View(CompanyUserRequiredMixin, View):
             "active_nav": "documentation_hub",
             "persisted_active_tab": active_tab,
             "persisted_filters": filters,
+            "personal_tab_qs": _build_personal_tab_querystring(filters),
         })
+
+
+def _build_personal_tab_querystring(filters):
+    """
+    H31 (S76). Querystring lista para usar en el `hx-get` de la
+    pestaña Personal -- incluye los casilleros Activos/Inactivos y
+    Empresa con sus valores persistidos, o el valor por defecto de la
+    PRIMERA vez que este usuario abre la pantalla (Miguel Ángel, S76:
+    "la vista inicial por defecto [...] debe de ser activos"): solo
+    `active=true` marcado, todas las empresas marcadas. A partir de
+    ahí, lo que el usuario elija ya vive en `PanelNavigationState` y
+    esta función solo lo traduce de vuelta a querystring -- toda la
+    lógica de negocio vive aquí, en la vista, nunca en el template
+    (DUMB TEMPLATES).
+    """
+    from urllib.parse import urlencode
+
+    personal_filters = filters.get("personal") if isinstance(filters, dict) else None
+    personal_filters = personal_filters if isinstance(personal_filters, dict) else {}
+
+    params = [
+        ("q", personal_filters.get("q", "")),
+        ("sort", personal_filters.get("sort", "")),
+        ("dir", personal_filters.get("dir", "asc")),
+    ]
+    active_values = personal_filters.get("active")
+    if not isinstance(active_values, list):
+        active_values = ["true"]
+    for value in active_values:
+        params.append(("active", value))
+
+    company_values = personal_filters.get("company")
+    if not isinstance(company_values, list):
+        company_values = [slug for slug, _label, _raws in COMPANY_FILTER_CHOICES]
+    for value in company_values:
+        params.append(("company", value))
+
+    return urlencode(params)
 
 
 def _seed_request_get(request, persisted_filters):
@@ -281,6 +389,7 @@ class MachineDetailView(CompanyUserRequiredMixin, View):
 
 def _person_list_page(request):
     qs = PersonIdentity.objects.all()
+    qs = _apply_personal_filters(qs, request)
     search = request.GET.get("q", "").strip()
     if search:
         qs = qs.filter(
@@ -303,6 +412,8 @@ def _person_list_page(request):
     return {
         "page": page, "sort_key": sort_key, "sort_dir": sort_dir,
         "search": search, "sort_columns_person": sort_columns,
+        "active_filter": request.GET.getlist("active"),
+        "company_filter": request.GET.getlist("company"),
     }
 
 
@@ -326,6 +437,7 @@ class PersonalListFragmentView(CompanyUserRequiredMixin, View):
         ctx["notification_types"] = DocumentTypeCatalog.objects.filter(
             is_active=True, domain__in=["PERSONAL", "BOTH"],
         ).exclude(content_html="").order_by("label")
+        ctx["company_filter_choices"] = COMPANY_FILTER_CHOICES
         return render(request, "panel/documentation_h30/_personal_pane.html", ctx)
 
 

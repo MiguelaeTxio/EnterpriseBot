@@ -20,7 +20,7 @@
     </li>
     <li class="nav-item">
         <a class="nav-link {% if persisted_active_tab == 'personal' %}active{% endif %}" id="tab-personal" data-bs-toggle="tab" href="#pane-personal"
-           hx-get="{% url 'panel:documentation_personal_list' %}?q={{ pf_personal.q|default:'' }}&sort={{ pf_personal.sort|default:'' }}&dir={{ pf_personal.dir|default:'asc' }}"
+           hx-get="{% url 'panel:documentation_personal_list' %}?{{ personal_tab_qs }}"
            hx-target="#pane-personal"
            hx-trigger="{% if persisted_active_tab == 'personal' %}load once{% else %}click once{% endif %}">
             <i class="bi bi-people me-1"></i>Personal
@@ -124,6 +124,13 @@
             sort: parsed.searchParams.get('sort') || '',
             dir: parsed.searchParams.get('dir') || 'asc',
         };
+        // H31 (S76): casillero Activos/Inactivos + Empresa, solo
+        // tiene sentido en la pestaña Personal -- multi-valor real,
+        // getAll() en vez de get().
+        if (hit.tab === 'personal') {
+            filters[hit.tab].active = parsed.searchParams.getAll('active');
+            filters[hit.tab].company = parsed.searchParams.getAll('company');
+        }
         saveState({filters: filters});
     });
 })();
