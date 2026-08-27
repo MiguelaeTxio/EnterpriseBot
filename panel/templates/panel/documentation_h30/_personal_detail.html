@@ -9,7 +9,15 @@
     <i class="bi bi-arrow-left"></i> Volver
 </a>
 
-{# H31 (S74). Ficha editable: avatar + campos reales de PersonIdentity. #}
+{# H31 (S74). Ficha editable: avatar + campos reales de PersonIdentity.
+   H31 (S76) punto 2: modo edición con confirmación explícita --
+   requisito nuevo de Miguel Ángel (S75): "para cambiar un dato tienes
+   que habilitar el botón de modo edición y luego aceptar el modo
+   edición [...] para que nunca se cambie un dato por error." Los
+   campos nacen `readonly` (nunca `disabled` -- un input disabled no
+   se envía en el FormData del submit); el botón "Modo edición" abre
+   un modal de confirmación; solo al aceptar se quitan los `readonly`
+   y se habilita "Guardar". #}
 <div class="card mb-3">
     <div class="card-body d-flex align-items-start gap-3 flex-wrap">
         <div class="text-center" style="min-width:96px;">
@@ -25,26 +33,29 @@
             <form id="personalUpdateForm" class="row g-2">
                 <div class="col-12 col-md-4">
                     <label class="form-label small mb-0">Nombre</label>
-                    <input type="text" name="given_name" class="form-control form-control-sm" value="{{ person.given_name }}" required>
+                    <input type="text" name="given_name" class="form-control form-control-sm personal-edit-field" value="{{ person.given_name }}" readonly required>
                 </div>
                 <div class="col-12 col-md-4">
                     <label class="form-label small mb-0">Primer apellido</label>
-                    <input type="text" name="first_surname" class="form-control form-control-sm" value="{{ person.first_surname }}" required>
+                    <input type="text" name="first_surname" class="form-control form-control-sm personal-edit-field" value="{{ person.first_surname }}" readonly required>
                 </div>
                 <div class="col-12 col-md-4">
                     <label class="form-label small mb-0">Segundo apellido</label>
-                    <input type="text" name="second_surname" class="form-control form-control-sm" value="{{ person.second_surname }}">
+                    <input type="text" name="second_surname" class="form-control form-control-sm personal-edit-field" value="{{ person.second_surname }}" readonly>
                 </div>
                 <div class="col-12 col-md-4">
                     <label class="form-label small mb-0">Teléfono</label>
-                    <input type="text" name="phone" class="form-control form-control-sm" value="{{ person.phone }}">
+                    <input type="text" name="phone" class="form-control form-control-sm personal-edit-field" value="{{ person.phone }}" readonly>
                 </div>
                 <div class="col-12 col-md-5">
                     <label class="form-label small mb-0">Correo electrónico</label>
-                    <input type="email" name="email" class="form-control form-control-sm" value="{{ person.email }}">
+                    <input type="email" name="email" class="form-control form-control-sm personal-edit-field" value="{{ person.email }}" readonly>
                 </div>
-                <div class="col-12 col-md-3 d-flex align-items-end">
-                    <button type="submit" class="btn btn-sm btn-success w-100">
+                <div class="col-12 col-md-3 d-flex align-items-end gap-2">
+                    <button type="button" id="personalEditModeBtn" class="btn btn-sm btn-outline-primary w-100" onclick="requestEditMode()">
+                        <i class="bi bi-pencil me-1"></i>Modo edición
+                    </button>
+                    <button type="submit" id="personalSaveBtn" class="btn btn-sm btn-success w-100" style="display:none;">
                         <i class="bi bi-check-lg me-1"></i>Guardar
                     </button>
                 </div>
@@ -58,6 +69,40 @@
                 </div>
                 <div id="personalUpdateResult" class="col-12"></div>
             </form>
+        </div>
+    </div>
+</div>
+
+{# H31 (S76) punto 2: modal de confirmación de modo edición. #}
+<div class="modal fade" id="editModeConfirmModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">¿Activar modo edición?</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-0">Vas a poder modificar los datos de esta persona. Confirma para evitar cambios accidentales.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary" onclick="confirmEditMode()">Aceptar, activar edición</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# H31 (S76): modal genérico de historial completo de un tipo documental -- se rellena bajo demanda. #}
+<div class="modal fade" id="documentHistoryModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Historial</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="documentHistoryModalBody">
+                <div class="text-muted small py-3">Cargando…</div>
+            </div>
         </div>
     </div>
 </div>
@@ -80,22 +125,30 @@
 {% endif %}
 <div id="uploadFormContainer" class="mb-4"></div>
 
+{# H31 (S76) punto 3/4/5/6: acordeón por familia real del catálogo (ya
+   diseñada para esto desde H30 S49) -- solo el VIGENTE por tipo,
+   nombre siempre `document_type.label` (nunca el nombre de archivo
+   crudo heredado del disco), acceso a "Ver historial" por tipo bajo
+   demanda. El histórico completo (obsoletos) queda dentro de ese
+   historial por tipo, ya no como sección plana aparte -- "selva
+   documental" (Miguel Ángel, S75) resuelta agrupando por uso real en
+   vez de una lista única sin estructura. #}
 <div class="accordion" id="personalDocsAccordion">
+    {% for fam in families %}
     <div class="accordion-item">
         <h2 class="accordion-header">
-            <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#collapseVigentesPersonal">
-                Vigentes <span class="badge bg-success ms-2">{{ current|length }}</span>
+            <button class="accordion-button {% if not forloop.first %}collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#collapseFam{{ forloop.counter }}">
+                {{ fam.label }} <span class="badge bg-primary ms-2">{{ fam.documents|length }}</span>
             </button>
         </h2>
-        <div id="collapseVigentesPersonal" class="accordion-collapse collapse show">
+        <div id="collapseFam{{ forloop.counter }}" class="accordion-collapse collapse {% if forloop.first %}show{% endif %}">
             <div class="accordion-body p-0">
                 <table class="table table-sm table-hover mb-0">
-                    <thead><tr><th>Tipo</th><th>Nombre</th><th>Caducidad</th><th>Acciones</th></tr></thead>
+                    <thead><tr><th>Tipo</th><th>Caducidad</th><th>Acciones</th></tr></thead>
                     <tbody>
-                        {% for entry in current %}
+                        {% for entry in fam.documents %}
                         <tr{% if entry.needs_attention %} class="table-danger"{% endif %}>
                             <td>{{ entry.document_type.label }}</td>
-                            <td>{{ entry.name }}</td>
                             <td>
                                 {% if entry.needs_attention %}<i class="bi bi-exclamation-triangle-fill text-danger me-1" title="Sin fecha vigente -- necesita atención"></i>{% endif %}
                                 {{ entry.expiry_date|default:"—" }}
@@ -104,44 +157,21 @@
                                 <a href="{% url 'panel:documentation_document_view' pk=entry.pk %}" target="_blank" class="btn btn-sm btn-outline-secondary">Ver</a>
                                 <button type="button" class="btn btn-sm btn-outline-primary"
                                         onclick="openUploadForm('{{ entry.document_type.code }}')">Actualizar</button>
+                                <button type="button" class="btn btn-sm btn-outline-info"
+                                        onclick="openDocumentHistory('{{ entry.document_type.code }}')">Historial</button>
                                 <button type="button" class="btn btn-sm btn-outline-danger"
                                         onclick="deleteDocument({{ entry.pk }}, this)">Eliminar</button>
                             </td>
                         </tr>
-                        {% empty %}
-                        <tr><td colspan="4" class="text-muted small py-3">Sin documentos vigentes todavía.</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>
             </div>
         </div>
     </div>
-    <div class="accordion-item">
-        <h2 class="accordion-header">
-            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseObsoletosPersonal">
-                Histórico (obsoletos) <span class="badge bg-secondary ms-2">{{ obsolete|length }}</span>
-            </button>
-        </h2>
-        <div id="collapseObsoletosPersonal" class="accordion-collapse collapse">
-            <div class="accordion-body p-0">
-                <table class="table table-sm table-hover text-muted mb-0">
-                    <thead><tr><th>Tipo</th><th>Nombre</th><th>Caducidad</th><th>Acciones</th></tr></thead>
-                    <tbody>
-                        {% for entry in obsolete %}
-                        <tr>
-                            <td>{{ entry.document_type.label|default:"—" }}</td>
-                            <td>{{ entry.name }}</td>
-                            <td>{{ entry.expiry_date|default:"—" }}</td>
-                            <td><a href="{% url 'panel:documentation_document_view' pk=entry.pk %}" target="_blank" class="btn btn-sm btn-outline-secondary">Ver</a></td>
-                        </tr>
-                        {% empty %}
-                        <tr><td colspan="4" class="small py-3">Sin histórico todavía.</td></tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
+    {% empty %}
+    <p class="text-muted small py-3">Sin documentos vigentes todavía.</p>
+    {% endfor %}
 </div>
 
 <h5 class="mt-4">EPIs entregados</h5>
@@ -367,6 +397,7 @@ document.getElementById('personalUpdateForm').onsubmit = function(ev) {
     }).then(r => r.json()).then(data => {
         if (data.ok) {
             resultDiv.innerHTML = '<div class="alert alert-success py-1 px-2 small mb-0">Ficha actualizada.</div>';
+            exitEditMode();
         } else {
             resultDiv.innerHTML = `<div class="alert alert-danger py-1 px-2 small mb-0">${data.error || 'Error al guardar.'}</div>`;
         }
@@ -374,6 +405,49 @@ document.getElementById('personalUpdateForm').onsubmit = function(ev) {
         resultDiv.innerHTML = '<div class="alert alert-danger py-1 px-2 small mb-0">Error de red al guardar.</div>';
     });
 };
+
+// H31 (S76) punto 2: modo edición con confirmación explícita -- ver
+// comentario en el <form> más arriba. requestEditMode() solo abre el
+// modal; confirmEditMode() es la única función que de verdad quita
+// los `readonly` -- nunca se editan los campos sin pasar por ahí.
+let editModeConfirmModalInstance = null;
+let documentHistoryModalInstance = null;
+
+function requestEditMode() {
+    if (!editModeConfirmModalInstance) {
+        editModeConfirmModalInstance = new bootstrap.Modal(document.getElementById('editModeConfirmModal'));
+    }
+    editModeConfirmModalInstance.show();
+}
+
+function confirmEditMode() {
+    document.querySelectorAll('.personal-edit-field').forEach((el) => { el.readOnly = false; });
+    document.getElementById('personalEditModeBtn').style.display = 'none';
+    document.getElementById('personalSaveBtn').style.display = '';
+    if (editModeConfirmModalInstance) editModeConfirmModalInstance.hide();
+}
+
+function exitEditMode() {
+    document.querySelectorAll('.personal-edit-field').forEach((el) => { el.readOnly = true; });
+    document.getElementById('personalEditModeBtn').style.display = '';
+    document.getElementById('personalSaveBtn').style.display = 'none';
+}
+
+// H31 (S76) punto 5: historial completo de un tipo, bajo demanda.
+function openDocumentHistory(typeCode) {
+    if (!documentHistoryModalInstance) {
+        documentHistoryModalInstance = new bootstrap.Modal(document.getElementById('documentHistoryModal'));
+    }
+    const body = document.getElementById('documentHistoryModalBody');
+    body.innerHTML = '<div class="text-muted small py-3">Cargando…</div>';
+    documentHistoryModalInstance.show();
+    fetch(`/panel/documentacion/personal/{{ person.pk }}/historial/${typeCode}/`)
+        .then(r => r.text())
+        .then(html => { body.innerHTML = html; })
+        .catch(() => {
+            body.innerHTML = '<div class="alert alert-danger py-1 px-2 small mb-0">Error de red al cargar el historial.</div>';
+        });
+}
 
 function getCookie(name) {
     const value = `; ${document.cookie}`;

@@ -1,0 +1,27 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation_h30/_personal_document_history.html #}
+{% comment %}
+H31 (S76) punto 5. Fragmento cargado bajo demanda dentro de un modal
+Bootstrap -- nunca se pinta de entrada en la ficha. Ver
+PersonalDocumentTypeHistoryView.
+{% endcomment %}
+<h6 class="mb-3">{{ document_type.label }} -- historial completo ({{ entries|length }})</h6>
+<table class="table table-sm table-hover mb-0">
+    <thead><tr><th>Fecha</th><th>Estado</th><th></th></tr></thead>
+    <tbody>
+        {% for entry in entries %}
+        <tr>
+            <td>{{ entry.expiry_date|default:"Sin fecha" }}</td>
+            <td>
+                {% if entry.is_obsolete %}
+                <span class="badge bg-secondary">Obsoleto</span>
+                {% else %}
+                <span class="badge bg-success">Vigente</span>
+                {% endif %}
+            </td>
+            <td><a href="{% url 'panel:documentation_document_view' pk=entry.pk %}" target="_blank" class="btn btn-sm btn-outline-secondary">Ver</a></td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="3" class="text-muted small py-3">Sin documentos de este tipo.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>

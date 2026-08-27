@@ -339,6 +339,46 @@ class PersonalResultsFragmentView(CompanyUserRequiredMixin, View):
         return render(request, "panel/documentation_h30/_personal_results.html", ctx)
 
 
+def _group_current_by_family(current_entries):
+    """
+    H31 (S76). Agrupa los documentos vigentes por la `family` real del
+    catálogo -- campo que ya existía exactamente para esto desde H30
+    (S49, ver docstring de `DocumentTypeCatalog.family`: "Agrupación
+    del acordeón de la ficha"), nunca usado hasta ahora en la ficha de
+    persona real. Orden fijo según `FAMILY_CHOICES` (nunca alfabético)
+    para que el acordeón se vea siempre en el mismo orden sesión a
+    sesión. Los documentos sin `document_type` o sin `family` asignada
+    caen en un grupo "Sin familia asignada" al final -- nunca se
+    descartan en silencio.
+
+    Punto 5 de la hoja de ruta S76 (Miguel Ángel: "no puede ser que
+    veas 50 reconocimientos médicos de primeras, tiene que ver solo el
+    último"): `current_entries` ya viene deduplicado por
+    `_split_current_obsolete()` -- un vigente por tipo cuando el tipo
+    participa en vigencia (`tracks_expiry`); para tipos sin fecha
+    (DNI, contratos...) puede haber más de uno si de verdad hay varios
+    documentos vigentes simultáneos (p. ej. anverso/reverso) -- no se
+    fuerza a uno solo aquí, eso sería perder información real.
+    """
+    by_family = {}
+    for entry in current_entries:
+        family_code = entry.document_type.family if entry.document_type else ""
+        by_family.setdefault(family_code, []).append(entry)
+
+    ordered = []
+    for code, label in DocumentTypeCatalog.FAMILY_CHOICES:
+        if code in by_family:
+            ordered.append({
+                "code": code, "label": label, "documents": by_family[code],
+            })
+    if "" in by_family:
+        ordered.append({
+            "code": "", "label": "Sin familia asignada",
+            "documents": by_family[""],
+        })
+    return ordered
+
+
 class PersonalDetailView(CompanyUserRequiredMixin, View):
     def get(self, request, pk):
         person = get_object_or_404(
@@ -354,6 +394,7 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
             deleted_at__isnull=True, purged_at__isnull=True,
         ).select_related("document_type").order_by("-id")
         current, obsolete = _split_current_obsolete(entries)
+        families = _group_current_by_family(current)
         # H31 (S74). Avatar -- reutiliza el mismo mecanismo genérico
         # domain_content_type/domain_object_id que cualquier otro
         # documento vinculado, filtrando por el código de catálogo
@@ -375,6 +416,7 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
         ).order_by("family", "label")
         return render(request, "panel/documentation_h30/_personal_detail.html", {
             "person": person, "current": current, "obsolete": obsolete,
+            "families": families,
             "avatar": avatar,
             "doc_types": doc_types, "epi_deliveries": epi_deliveries,
             "epi_items": epi_items,
@@ -382,6 +424,32 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
             "active_nav": "documentation_hub",
             "family_choices": DocumentTypeCatalog.FAMILY_CHOICES,
         })
+
+
+class PersonalDocumentTypeHistoryView(CompanyUserRequiredMixin, View):
+    """
+    H31 (S76), punto 5 de la hoja de ruta. GET: historial COMPLETO
+    (vigente + obsoletos) de UN tipo documental para UNA persona --
+    fragmento cargado bajo demanda, nunca mostrado de primeras en la
+    ficha. Miguel Ángel, verbatim (S75): "no puede ser que tenga aquí
+    50 reconocimientos médicos y que tú veas los 50 [...] tiene que
+    ver el último. Y ahora, cuando quieras ver historial [...] ya te
+    metes ahí, que te salgan todos."
+    """
+
+    def get(self, request, pk, type_code):
+        person = get_object_or_404(PersonIdentity, pk=pk)
+        document_type = get_object_or_404(DocumentTypeCatalog, code=type_code)
+        ct = ContentType.objects.get_for_model(PersonIdentity)
+        entries = DocumentIndexEntry.objects.filter(
+            bucket=BUCKET, domain_content_type=ct, domain_object_id=person.pk,
+            document_type=document_type, entry_kind=DocumentIndexEntry.KIND_FILE,
+            deleted_at__isnull=True, purged_at__isnull=True,
+        ).order_by("-expiry_date", "-id")
+        return render(
+            request, "panel/documentation_h30/_personal_document_history.html",
+            {"person": person, "document_type": document_type, "entries": entries},
+        )
 
 
 class EpiIndividualDeliveryView(DocsUploadAccessMixin, View):
