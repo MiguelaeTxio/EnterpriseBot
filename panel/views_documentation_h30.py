@@ -26,10 +26,11 @@ de esta sesión.
 from django.contrib.contenttypes.models import ContentType
 from django.core.paginator import Paginator
 from django.db.models import Count, Q
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views import View
+from email.message import EmailMessage as StdEmailMessage
 
 from document_explorer import naming_service
 from document_explorer.models import (
@@ -297,6 +298,60 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
             "active_nav": "documentation_hub",
             "family_choices": DocumentTypeCatalog.FAMILY_CHOICES,
         })
+
+
+class PersonalTestEmlView(CompanyUserRequiredMixin, View):
+    """
+    H31 (S73). PRUEBA de concepto -- confirmar que un `.eml` con
+    cuerpo HTML real (colores, negrita) se abre en Outlook con el
+    formato intacto, antes de construir el editor de texto
+    enriquecido real del CRUD de circulares. Contenido de prueba fijo,
+    sin plantilla ni BD todavía -- ver anexo H31, punto pendiente de
+    validar la técnica antes de diseñar el resto.
+
+    Genera el `.eml` con la librería estándar `email` (no construido
+    a mano) para que sea válido RFC 822 real en cualquier cliente.
+    """
+
+    def get(self, request, pk):
+        person = get_object_or_404(PersonIdentity, pk=pk)
+
+        msg = StdEmailMessage()
+        msg["Subject"] = f"PRUEBA H31 -- notificación para {person}"
+        msg["From"] = "notificaciones@grupoalvarez.local"
+        msg["To"] = person.email or "destinatario@ejemplo.com"
+
+        msg.set_content(
+            f"Prueba de texto enriquecido para {person}.\n"
+            "Este cliente no muestra HTML.",
+        )
+        msg.add_alternative(
+            f"""
+            <html><body style="font-family: Arial, sans-serif;">
+              <p>Estimado/a <strong>{person}</strong>,</p>
+              <p style="background-color:#fff3cd; padding:8px;">
+                Este es un párrafo de prueba con
+                <span style="color:#c0392b; font-weight:bold;">
+                  texto en rojo y negrita</span>,
+                fondo amarillo, y una lista:
+              </p>
+              <ul>
+                <li>Elemento uno</li>
+                <li>Elemento dos</li>
+              </ul>
+              <p>Un saludo,<br>Grupo Álvarez</p>
+            </body></html>
+            """,
+            subtype="html",
+        )
+
+        response = HttpResponse(
+            bytes(msg), content_type="message/rfc822",
+        )
+        response["Content-Disposition"] = (
+            f'attachment; filename="prueba_notificacion_{person.pk}.eml"'
+        )
+        return response
 
 
 def _epi_list_page(request):

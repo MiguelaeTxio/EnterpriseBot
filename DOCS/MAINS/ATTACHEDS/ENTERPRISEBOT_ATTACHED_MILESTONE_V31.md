@@ -88,17 +88,28 @@ supervisor usará en producción, no solo la consulta.
 
 ## 3. Hoja de ruta para la primera sesión de H31
 
-1. **Preguntas de diseño abiertas** (resolver con Miguel Ángel al
-   arrancar, antes de escribir código):
-   - ¿Dónde vive el cuerpo editable de una circular/notificación
-     (campo de texto enriquecido nuevo, o el archivo de plantilla
-     vigente sin editor propio)?
-   - Envío de notificación/circular: ¿implica un canal real (email,
-     WhatsApp) o es únicamente registrar la entrega/acuse
-     (`DocumentAcknowledgment`) como ya se hace con el histórico?
-   - Foto de carné: confirmar si `PersonIdentity` ya tiene un campo o
-     mecanismo real para ella (Miguel Ángel menciona "fotos de carné
-     que tenemos asignadas") antes de diseñar el campo/subida.
+1. **Preguntas de diseño RESUELTAS (S73):**
+   - **Cuerpo editable de circular/notificación**: campo de texto
+     enriquecido NUEVO en BD -- decisión explícita de Miguel Ángel,
+     con la advertencia real de que hay que mantener el legacy
+     (`current_template`/archivo de plantilla) en paralelo, no
+     sustituirlo de golpe.
+   - **Envío**: NO WhatsApp para este tipo de comunicación con
+     documentos -- correo electrónico vía `mailto:` con asunto+cuerpo
+     precargados, que abre el cliente de correo por defecto del
+     usuario (Outlook). Mismo criterio ya usado en H26
+     (`document_management.EmailTemplate`, "cuerpo copiar/pegar +
+     PDF generado aparte, nunca envía él mismo") -- nunca se manda
+     nada por SMTP/API desde el propio EnterpriseBot, solo se prepara
+     el mensaje y se abre el cliente.
+   - **Foto de carné**: confirmado, YA existen 108 imágenes reales
+     (`document_type=IMAGEN`) vinculadas vía
+     `domain_content_type`/`domain_object_id` a su `PersonIdentity`
+     -- sin campo dedicado en el modelo. La ficha de persona debe
+     BUSCAR ese vínculo ya existente (mismo mecanismo genérico que
+     `EpiDelivery`/fichas técnicas) y mostrarlo como avatar, con un
+     icono de persona genérico como placeholder si no hay ninguna
+     vinculada. No hace falta campo nuevo.
 2. **Ficha de persona editable**: formulario sobre `PersonalDetailView`
    (o vista nueva de edición) para los campos reales de
    `PersonIdentity`, más subida de foto de carné si no existe ya el

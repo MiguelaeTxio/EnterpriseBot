@@ -27,6 +27,7 @@ from panel.views_documentation_h30 import (
     PersonalDetailView,
     PersonalListFragmentView,
     PersonalResultsFragmentView,
+    PersonalTestEmlView,
     SubjectDocumentUploadView,
 )
 from panel.views import (
@@ -387,6 +388,7 @@ urlpatterns = [
     # _personal_search_form.html sobre el bug que esto corrige).
     path("documentacion/personal/resultados/", PersonalResultsFragmentView.as_view(), name="documentation_personal_results"),
     path("documentacion/personal/<int:pk>/", PersonalDetailView.as_view(), name="documentation_personal_detail"),
+    path("documentacion/personal/<int:pk>/probar-eml/", PersonalTestEmlView.as_view(), name="documentation_personal_test_eml"),
     path("documentacion/epis/", EpiTabFragmentView.as_view(), name="documentation_epi_tab"),
     # H30 (S50): mismo motivo que documentation_personal_results.
     path("documentacion/epis/resultados/", EpiResultsFragmentView.as_view(), name="documentation_epi_results"),
