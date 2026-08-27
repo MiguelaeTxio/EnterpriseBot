@@ -987,4 +987,54 @@ la copia de respaldo git-versionada, que se relee sin falta al inicio
 de cada sesión (PASO 2 de `nfs-enterprisebot-pisa`) con independencia
 de qué skills disparen o no disparen en cada turno concreto.
 
+#### 4.15. DIRECTRIZ CRÍTICA — TODA PANTALLA NUEVA DEL PANEL DEBE PERSISTIR SU NAVEGACIÓN POR USUARIO (añadida S76)
+
+**Principio de diseño permanente, confirmado explícitamente por
+Miguel Ángel (S76), respaldado también por feedback real de
+Carolina:** toda vista/pantalla nueva de la interfaz del panel debe
+guardar su estado de navegación por usuario (`CompanyUser`) de forma
+que, al volver a esa pantalla -- incluso tras cerrar el navegador o
+cambiar de dispositivo -- se recupere exactamente por dónde iba
+(pestaña activa, filtros, selecciones, lo que estuviera haciendo),
+nunca reseteando a un estado por defecto salvo la primera vez que ese
+usuario concreto visita esa pantalla. Miguel Ángel, verbatim: *"cada
+vez que toquemos algo y no lo tenga así, tenemos que hacerlo
+extensible [...] si estoy navegando en el panel y cierro, cuando
+vuelva a abrir tengo que ver por dónde iba [...] si Alejandro o
+Sergio está por otro lado, debe recordar su navegación."*
+
+**Mecanismo ya construido y reutilizable -- NUNCA reinventar:**
+`PanelNavigationState` (`panel/models.py`, migración
+`0002_panelnavigationstate_s75`) + `NavigationStateSaveView`
+(`panel/views_navigation_state.py`, endpoint POST genérico
+`/panel/navegacion/estado/<screen_key>/`), ambos genéricos por
+`screen_key` desde el diseño inicial (nacieron así para
+`documentation_hub`, S75, pero nunca quedaron acoplados a esa
+pantalla). Cada usuario tiene su propio estado independiente,
+garantizado por la FK real a `company_user` -- no hace falta ningún
+mecanismo adicional de aislamiento por usuario.
+
+**Para cualquier vista nueva que necesite este comportamiento:**
+
+1. Definir una `screen_key` propia y estable (string corto,
+   descriptivo, único en toda la plataforma).
+2. Definir la forma libre del JSON que va dentro de `state` según lo
+   que esa pantalla necesite recordar (pestaña activa, filtros,
+   selección, lo que sea relevante) -- no hay un esquema fijo, cada
+   pantalla decide el suyo, igual que ya hace `documentation_hub`
+   (`{"active_tab": ..., "filters": {...}}`).
+3. En la vista Django que renderiza la pantalla: leer
+   `PanelNavigationState.objects.filter(company_user=..., screen_key=...)`
+   al principio del `get()`, aplicar el estado guardado al construir
+   el contexto/queryset inicial (mismo patrón que
+   `DocumentationHubV2View`/`_seed_request_get()`).
+4. En el frontend: JS que guarda cada cambio relevante (cambio de
+   pestaña, filtro, selección) vía `fetch POST` a
+   `/panel/navegacion/estado/<screen_key>/` con el mismo formato de
+   merge superficial ya implementado (mismo patrón que `hub.html`).
+
+**Nunca construir un mecanismo de persistencia de navegación distinto
+por pantalla** -- el modelo/vista genéricos ya cubren cualquier forma
+de estado que haga falta guardar, vía el propio JSONField.
+
 
