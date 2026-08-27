@@ -1110,3 +1110,37 @@ table.table #toll-thead ~ tbody tr:nth-child(even):not(.table-secondary) td {
 .user-list-checkbox-col {
     width: 40px;
 }
+
+/* H31 (S76). Regla de diseño permanente, confirmada explícitamente por
+   Miguel Ángel: toda tabla de listado del panel (personal, maquinaria,
+   EPIs, lo que sea) debe alternar gris claro y blanco entre filas --
+   facilita muchísimo la lectura de a quién pertenece cada dato. En vez
+   de añadir la clase `table-striped` de Bootstrap a cada una de las ~55
+   tablas del panel una por una (frágil -- cualquier tabla nueva se
+   quedaría fuera si alguien olvida la clase), se replica aquí la misma
+   regla CSS real de Bootstrap (ver `.table-striped` en
+   vendor/bootstrap.min.css) pero aplicada a CUALQUIER `.table`, siempre
+   que no lleve ya `.table-striped` explícita (evita doble rayado si
+   alguna tabla futura la trae puesta a mano). Usa las mismas variables
+   CSS de Bootstrap (`--bs-table-striped-bg`/`-color`), así que compone
+   bien con `table-hover`/`table-danger`/`table-light`/etc. ya presentes
+   en el propio proyecto, exactamente igual que si cada tabla llevara
+   `table-striped` puesta a mano.
+   ---
+   H31 (S76). Permanent design rule, explicitly confirmed by Miguel
+   Ángel: every panel listing table (personnel, fleet, PPE, anything)
+   must alternate light grey and white rows -- makes reading who each
+   row of data belongs to much easier. Instead of adding Bootstrap's
+   `table-striped` class to each of the panel's ~55 tables one by one
+   (fragile -- any new table would be left out if someone forgets the
+   class), this replicates Bootstrap's own striping rule but applied to
+   ANY `.table` that doesn't already carry `.table-striped` explicitly
+   (avoids double-striping if a future table sets it by hand). Uses the
+   same Bootstrap CSS variables, so it composes correctly with
+   `table-hover`/`table-danger`/`table-light`/etc. already used across
+   the project, exactly as if every table had `table-striped` applied
+   by hand. */
+.table:not(.table-striped) > tbody > tr:nth-of-type(odd) > * {
+    --bs-table-color-type: var(--bs-table-striped-color);
+    --bs-table-bg-type: var(--bs-table-striped-bg);
+}
