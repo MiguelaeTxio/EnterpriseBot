@@ -1,0 +1,174 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/circulars_h31/circular_edit.html #}
+{% extends "panel/base.html" %}
+
+{% comment %}
+H31 (S75) punto 2. Edición de UNA circular -- editor de texto básico
+(negrita, cursiva, color, fuente, lista -- vía document.execCommand,
+alcance deliberadamente reducido, nunca un procesador de textos
+completo), importación de Word/PDF, y sustitución de la plantilla
+vigente en archivo (current_template). Ver CircularEditView/
+CircularSaveContentView/CircularImportDocumentView/
+CircularTemplateUploadView.
+{% endcomment %}
+
+{% block title %}Editar circular -- {{ document_type.label }}{% endblock %}
+{% block page_title %}Editar circular{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-3 pt-3">
+
+    <div class="d-flex align-items-center justify-content-between mb-3">
+        <div>
+            <h5 class="mb-0">{{ document_type.label }}</h5>
+            <span class="text-muted small font-monospace">{{ document_type.code }}</span>
+        </div>
+        <a class="btn btn-sm btn-outline-secondary" href="{% url 'panel:circulars_list' %}">
+            <i class="bi bi-arrow-left"></i> Volver al listado
+        </a>
+    </div>
+
+    <div class="row g-3">
+        <div class="col-12 col-lg-8">
+            <div class="card mb-3">
+                <div class="card-header d-flex align-items-center gap-1 flex-wrap py-2">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" data-cmd="bold" title="Negrita"><i class="bi bi-type-bold"></i></button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" data-cmd="italic" title="Cursiva"><i class="bi bi-type-italic"></i></button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" data-cmd="underline" title="Subrayado"><i class="bi bi-type-underline"></i></button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" data-cmd="insertUnorderedList" title="Lista"><i class="bi bi-list-ul"></i></button>
+                    <span class="vr mx-1"></span>
+                    <select id="circular-font-select" class="form-select form-select-sm" style="width:auto;" title="Fuente">
+                        <option value="Arial, sans-serif">Arial</option>
+                        <option value="Georgia, serif">Georgia</option>
+                        <option value="'Courier New', monospace">Courier New</option>
+                    </select>
+                    <span class="vr mx-1"></span>
+                    {# Paleta de color deliberadamente reducida -- alcance del editor básico. #}
+                    <div id="circular-color-swatches" class="d-flex gap-1">
+                        <button type="button" class="circular-swatch" data-color="#212529" style="background:#212529;" title="Negro"></button>
+                        <button type="button" class="circular-swatch" data-color="#dc3545" style="background:#dc3545;" title="Rojo"></button>
+                        <button type="button" class="circular-swatch" data-color="#0d6efd" style="background:#0d6efd;" title="Azul"></button>
+                        <button type="button" class="circular-swatch" data-color="#198754" style="background:#198754;" title="Verde"></button>
+                        <button type="button" class="circular-swatch" data-color="#fd7e14" style="background:#fd7e14;" title="Naranja"></button>
+                    </div>
+                    <span class="vr mx-1"></span>
+                    <button type="button" class="btn btn-sm btn-outline-danger" id="circular-clear-format" title="Limpiar formato">
+                        <i class="bi bi-eraser"></i>
+                    </button>
+                </div>
+                <div class="card-body">
+                    <div id="circular-editor" class="form-control" style="min-height: 320px; font-family: Arial, sans-serif;" contenteditable="true">{{ document_type.content_html|safe }}</div>
+                </div>
+                <div class="card-footer d-flex justify-content-between align-items-center">
+                    <span class="text-muted small">Se guarda tal cual se ve aquí -- esto es lo que recibirá la persona por email.</span>
+                    <form method="post" action="{% url 'panel:circulars_save_content' pk=document_type.pk %}" id="circular-save-form">
+                        {% csrf_token %}
+                        <input type="hidden" name="content_html" id="circular-content-hidden">
+                        <button type="submit" class="btn btn-sm btn-primary">Guardar contenido</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12 col-lg-4">
+            <div class="card mb-3">
+                <div class="card-header py-2"><strong>Importar desde Word/PDF</strong></div>
+                <div class="card-body">
+                    <p class="text-muted small">
+                        Extrae el texto del archivo y SUSTITUYE el contenido
+                        actual del editor (no perfecto -- revísalo y ajusta
+                        colores/formato después). Solo .docx o .pdf con
+                        texto real, no escaneos de imagen sin OCR.
+                    </p>
+                    <form method="post" action="{% url 'panel:circulars_import' pk=document_type.pk %}"
+                          enctype="multipart/form-data" class="d-flex gap-2">
+                        {% csrf_token %}
+                        <input type="file" name="file" accept=".docx,.pdf" class="form-control form-control-sm" required>
+                        <button type="submit" class="btn btn-sm btn-outline-secondary flex-shrink-0">Importar</button>
+                    </form>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header py-2"><strong>Plantilla vigente (archivo)</strong></div>
+                <div class="card-body">
+                    <p class="text-muted small mb-2">
+                        Mecanismo legacy en paralelo al contenido enriquecido
+                        (S73) -- un archivo real, nunca se sustituye de
+                        golpe, solo se repunta a una versión nueva.
+                    </p>
+                    {% if document_type.current_template %}
+                    <p class="mb-2">
+                        <a href="{% url 'panel:documentation_document_view' pk=document_type.current_template.pk %}" target="_blank">
+                            <i class="bi bi-file-earmark-text"></i> {{ document_type.current_template.name }}
+                        </a>
+                    </p>
+                    {% else %}
+                    <p class="text-muted small mb-2">Sin plantilla vigente todavía.</p>
+                    {% endif %}
+                    <form method="post" action="{% url 'panel:circulars_template_upload' pk=document_type.pk %}"
+                          enctype="multipart/form-data" class="d-flex gap-2">
+                        {% csrf_token %}
+                        <input type="file" name="file" class="form-control form-control-sm" required>
+                        <button type="submit" class="btn btn-sm btn-outline-secondary flex-shrink-0">
+                            {% if document_type.current_template %}Sustituir{% else %}Subir{% endif %}
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<style>
+    .circular-swatch {
+        width: 22px; height: 22px; border-radius: 4px; border: 1px solid #dee2e6;
+        padding: 0; cursor: pointer;
+    }
+    #circular-editor:focus { outline: 2px solid #0d6efd33; }
+</style>
+
+<script>
+(function () {
+    const editor = document.getElementById('circular-editor');
+
+    // Alcance deliberadamente reducido (H31 S75): pegar contenido
+    // externo se limpia a texto plano -- el editor solo produce
+    // negrita/cursiva/subrayado/lista/color/fuente vía los propios
+    // botones, nunca HTML arbitrario pegado desde Word/otra web.
+    editor.addEventListener('paste', function (ev) {
+        ev.preventDefault();
+        const text = (ev.clipboardData || window.clipboardData).getData('text/plain');
+        document.execCommand('insertText', false, text);
+    });
+
+    document.querySelectorAll('[data-cmd]').forEach((btn) => {
+        btn.addEventListener('click', function () {
+            editor.focus();
+            document.execCommand(btn.dataset.cmd, false, null);
+        });
+    });
+
+    document.querySelectorAll('.circular-swatch').forEach((btn) => {
+        btn.addEventListener('click', function () {
+            editor.focus();
+            document.execCommand('foreColor', false, btn.dataset.color);
+        });
+    });
+
+    document.getElementById('circular-font-select').addEventListener('change', function () {
+        editor.focus();
+        document.execCommand('fontName', false, this.value);
+    });
+
+    document.getElementById('circular-clear-format').addEventListener('click', function () {
+        editor.focus();
+        document.execCommand('removeFormat', false, null);
+    });
+
+    document.getElementById('circular-save-form').addEventListener('submit', function () {
+        document.getElementById('circular-content-hidden').value = editor.innerHTML;
+    });
+})();
+</script>
+{% endblock content %}

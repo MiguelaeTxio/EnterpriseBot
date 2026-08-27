@@ -5,6 +5,14 @@ H30 (S50): esto es lo que carga la pestana Personal la PRIMERA vez
 envueltos. A partir de ahi, todas las interacciones (buscar,
 ordenar, paginar) sustituyen SOLO el div de resultados.
 {% endcomment %}
+{# H31 (S75) punto 2: acceso al CRUD de circulares/notificaciones --
+   pantalla completa aparte, no un fragmento htmx de este pane. #}
+<div class="d-flex justify-content-end mb-2">
+    <a class="btn btn-sm btn-outline-secondary" href="{% url 'panel:circulars_list' %}">
+        <i class="bi bi-envelope-paper"></i> Gestionar circulares
+    </a>
+</div>
+
 {% include "panel/documentation_h30/_personal_search_form.html" with search=search %}
 
 {# H31 (S75) punto 1: barra de acción masiva. Vive AQUÍ, fuera de

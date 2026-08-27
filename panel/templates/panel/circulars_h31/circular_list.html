@@ -1,0 +1,109 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/circulars_h31/circular_list.html #}
+{% extends "panel/base.html" %}
+
+{% comment %}
+H31 (S75) punto 2. Listado de tipos documentales de circular/
+notificación (dominio PERSONAL/BOTH) -- estado de content_html y de
+current_template de un vistazo. Ver CircularListView.
+{% endcomment %}
+
+{% block title %}Circulares y notificaciones{% endblock %}
+{% block page_title %}Circulares y notificaciones{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-3 pt-3">
+
+    <div class="d-flex align-items-center justify-content-between mb-3">
+        <p class="text-muted small mb-0">
+            Tipos documentales de circular/notificación (personal). Cada
+            fila puede tener contenido enriquecido (`content_html`, se
+            envía por email desde la ficha de persona) y/o una plantilla
+            en archivo (legacy, `current_template`) -- ambos coexisten,
+            se pueden usar por separado.
+        </p>
+        <a class="btn btn-sm btn-outline-secondary" href="{% url 'panel:documentation_hub' %}">
+            <i class="bi bi-arrow-left"></i> Volver a Documentación
+        </a>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-body">
+            <h6 class="card-title">Nueva circular</h6>
+            <form method="post" action="{% url 'panel:circulars_create' %}" class="row g-2 align-items-end">
+                {% csrf_token %}
+                <div class="col-12 col-md-5">
+                    <label class="form-label small mb-1" for="id_label">Nombre visible</label>
+                    <input type="text" class="form-control form-control-sm"
+                           id="id_label" name="label"
+                           placeholder="p. ej. Circular vacaciones de verano" required>
+                </div>
+                <div class="col-6 col-md-3">
+                    <label class="form-label small mb-1" for="id_family">Familia</label>
+                    <select class="form-select form-select-sm" id="id_family" name="family" required>
+                        <option value="">Elegir…</option>
+                        {% for value, display in family_choices %}
+                        <option value="{{ value }}">{{ display }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-6 col-md-3">
+                    <label class="form-label small mb-1" for="id_domain">Dominio</label>
+                    <select class="form-select form-select-sm" id="id_domain" name="domain">
+                        <option value="PERSONAL">Personal</option>
+                        <option value="BOTH">Ambos</option>
+                    </select>
+                </div>
+                <div class="col-12 col-md-1">
+                    <button type="submit" class="btn btn-sm btn-primary w-100">Crear</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle mb-0">
+            <thead>
+                <tr>
+                    <th>Nombre visible</th>
+                    <th>Código</th>
+                    <th>Dominio</th>
+                    <th>Contenido enriquecido</th>
+                    <th>Plantilla vigente</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for doc_type in types %}
+                <tr>
+                    <td>{{ doc_type.label }}</td>
+                    <td class="font-monospace small">{{ doc_type.code }}</td>
+                    <td>{{ doc_type.get_domain_display }}</td>
+                    <td>
+                        {% if doc_type.content_html %}
+                        <span class="badge bg-success">Sí</span>
+                        {% else %}
+                        <span class="badge bg-secondary">Vacío</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if doc_type.current_template %}
+                        <span class="badge bg-success">{{ doc_type.current_template.name }}</span>
+                        {% else %}
+                        <span class="badge bg-secondary">Sin plantilla</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-end">
+                        <a class="btn btn-sm btn-outline-primary" href="{% url 'panel:circulars_edit' pk=doc_type.pk %}">
+                            Editar
+                        </a>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="6" class="text-muted small py-3">No hay circulares dadas de alta todavía.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+</div>
+{% endblock content %}

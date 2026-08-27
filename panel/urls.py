@@ -15,6 +15,14 @@ from panel.views_task_photos import (
     TaskPhotoUploadView,
     TaskPhotoWidgetView,
 )
+from panel.views_circulars_h31 import (
+    CircularCreateView,
+    CircularEditView,
+    CircularImportDocumentView,
+    CircularListView,
+    CircularSaveContentView,
+    CircularTemplateUploadView,
+)
 from panel.views_documentation_h30 import (
     DocumentDeleteView,
     DocumentTypeQuickCreateView,
@@ -400,6 +408,13 @@ urlpatterns = [
     # H31 (S75) punto 1: acciones masivas sobre la selección con casillero del listado Personal.
     path("documentacion/personal/entregar-epi-masivo/", EpiMassDeliveryView.as_view(), name="documentation_personal_epi_mass_delivery"),
     path("documentacion/personal/notificar-masivo/", PersonalNotificationMassSendView.as_view(), name="documentation_personal_notify_mass"),
+    # H31 (S75) punto 2: CRUD de circulares/notificaciones.
+    path("documentacion/circulares/", CircularListView.as_view(), name="circulars_list"),
+    path("documentacion/circulares/nueva/", CircularCreateView.as_view(), name="circulars_create"),
+    path("documentacion/circulares/<int:pk>/", CircularEditView.as_view(), name="circulars_edit"),
+    path("documentacion/circulares/<int:pk>/guardar-contenido/", CircularSaveContentView.as_view(), name="circulars_save_content"),
+    path("documentacion/circulares/<int:pk>/importar/", CircularImportDocumentView.as_view(), name="circulars_import"),
+    path("documentacion/circulares/<int:pk>/plantilla/", CircularTemplateUploadView.as_view(), name="circulars_template_upload"),
     path("documentacion/epis/", EpiTabFragmentView.as_view(), name="documentation_epi_tab"),
     # H30 (S50): mismo motivo que documentation_personal_results.
     path("documentacion/epis/resultados/", EpiResultsFragmentView.as_view(), name="documentation_epi_results"),
