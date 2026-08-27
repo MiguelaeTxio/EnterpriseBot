@@ -5159,16 +5159,69 @@ a `EpiItemCatalog`.**
   repetido el ciclo Comando S + sftp GET. Corregido de inmediato,
   anotado en memoria de proyecto para no repetirlo.
 
+**Punto 3 CERRADO: `CONTROL EPIS` (79 archivos reales, no 76) →
+`EpiDelivery` + `EpiReview`.**
+
+- Muestreo real (5/79: 2 `.doc` genéricos, 1 `.doc` de una sola
+  prenda, 1 imagen de PDF escaneado subida directamente por Miguel
+  Ángel) reveló que la carpeta no es solo entregas: cada documento
+  trae marca de entrega (`X`/`SI`) MÁS columnas de estado
+  (`NUEVO`/`OPTIMO` -- misma columna, dos redacciones de época --
+  `DETERIORADO`, `CADUCADO`, `REPUESTO`).
+- Diseño confirmado por Miguel Ángel: marca de entrega en CUALQUIER
+  ítem → `EpiDelivery`. Columnas de estado → `EpiReview`, pero SOLO
+  para los 3 ítems con `requires_periodic_review=True` (arnés,
+  cinturón dos amarres, elemento de amarre) -- para el resto de
+  ítems son ruido de plantilla (caso real: "GAFAS...DETERIORADO=X"
+  documentaba el motivo de una reposición, no una revisión formal).
+  `REPUESTO` ignorado por completo ("no tiene sentido").
+- **Campo nuevo `EpiItemCatalog.standard_expiry_years`** (migración
+  `0058`) para poder *backfillear* la `EpiDelivery` cuando toca crear
+  una `EpiReview` y no existe entrega previa conocida. Sin caducidad
+  legal fija (normativa EN 361/EN 365 verificada por búsqueda web en
+  la misma sesión, rango real 5-10 años según fabricante) -- Miguel
+  Ángel fija el criterio único de plataforma en **5 años**, aplicado
+  a los 3 ítems. Explícitamente fuera de alcance de esta sesión:
+  construir la interfaz donde el supervisor pueda corregir a mano la
+  fecha de caducidad real en la entrega.
+- Reutiliza `ITEM_LABEL_MAP`/`_map_label`/`_convert_doc_to_docx` ya
+  confirmados en `extract_epis_deliveries.py` -- nunca reinventados.
+  Dos etiquetas nuevas confirmadas y añadidas a la tabla compartida:
+  `GUANTES` (genérico, sin calificar) → `GUANTES_PROTECCION`, y
+  `ROPA DE SEÑALIZACION DE ALTA VISIVILIDAD (1 mono buzo)` →
+  `BUZO_ALTA_VISIBILIDAD` (explícito por el propio texto del
+  documento).
+- Comando nuevo `extract_control_epis` (dry-run por defecto,
+  `--apply`, `--discard-unresolved-persona`), commits `8a8500c`
+  (extractor) y `3c52ae1` (correcciones de mapeo + flag de papelera
+  directa) -- el segundo push con fallo real en el paso "recargar web
+  app" del deploy (API PythonAnywhere), `git pull`+migrate en el
+  servidor sí completado con éxito; no bloqueó el uso por consola.
+- Aplicado: **68/76 documentos `.doc`/`.docx` completos, 78
+  `EpiDelivery` + 2 `EpiReview`** creadas, verificado contra BD
+  (78/78, 2/2, 0 archivos `.doc`/`.docx` activos restantes). Los 8
+  restantes sin persona resoluble (empleados dados de baja hace
+  tiempo, confirmado por Miguel Ángel: "el problema lo tendremos
+  solucionado cuando ya tengamos la interfaz") enviados directamente
+  a papelera con `--discard-unresolved-persona`.
+- **Fuera de alcance, quedan 3 archivos activos deliberadamente sin
+  procesar:** el único PDF escaneado del lote (id 22850, sin texto
+  nativo, prohibido OCR en consola S62 -- Miguel Ángel lo subió como
+  imagen y se leyó a mano, contenido confirma el mismo diseño, pero
+  no se ha volcado a BD porque no pasa por el comando automático) y
+  los 2 `.xlsx` de Huelva ("EPIS ENTREGADOS HUELVA...", estructura
+  tabular multi-persona, diseño propio pendiente).
+
 ## Hoja de ruta para S73
 
-**Puntos 1 (fichas técnicas EPIs) y 2 (Botiquines) CERRADOS en esta
-misma sesión** -- ver bloque "COMPLETADAS EN S73" arriba. Pendientes
-reales, EPIs (prioridad de esta sesión, "Terminamos EPI's"):
+**Puntos 1 (fichas técnicas EPIs), 2 (Botiquines) y 3 (CONTROL EPIS)
+CERRADOS en esta misma sesión** -- ver bloque "COMPLETADAS EN S73"
+arriba. Pendientes reales, EPIs (prioridad de esta sesión, "Terminamos
+EPI's"):
 
-1. **`CONTROL EPIS` (76 archivos)** -- sin diseño todavía, requiere
-   muestreo real de contenido (mismo criterio que se usó para
-   desglosados/industria química/alta visibilidad: 2-3 archivos
-   reales leídos antes de escribir ningún parser).
+1. **3 archivos sueltos dejados fuera de `CONTROL EPIS`:** el PDF
+   escaneado (id 22850, contenido ya conocido, decidir si se registra
+   a mano o se deja así) y los 2 `.xlsx` de Huelva (diseño propio).
 2. **`EPIS ARNES MIRA 12-A` (51 archivos)** -- sin diseño todavía,
    mismo criterio de muestreo previo.
 3. **`DETECTOR TENSION` (2) y `EPIS VARIAS EMPRESAS` (2)** -- volumen
