@@ -939,4 +939,52 @@ flujo normal), **ese commit debe empujarse a GitHub en la misma
 sesión que se crea**, nunca dejarse pendiente — es exactamente el
 patrón que causó este incidente.
 
+#### 4.14. DIRECTRIZ CRÍTICA — ⛔⛔⛔ VERIFICACIÓN DE CAMPOS DE MODELO ANTES QUE CUALQUIER OTRA COSA, DE OBLIGADO CUMPLIMIENTO ESTRICTO (añadida S75, tras incidente REPETIDO)
+
+**ESTA DIRECTRIZ TIENE PRIORIDAD SOBRE CUALQUIER OTRA COSA DE ESTA
+SESIÓN. SE APLICA ANTES QUE NADA MÁS -- ninguna otra tarea, ninguna
+urgencia, la desplaza.**
+
+**QUEDA TERMINANTEMENTE PROHIBIDO** escribir ninguna línea de código
+Python, consulta ORM (`filter`/`values`/`annotate`/`get`/
+`values_list`/`select_related`/etc.), Comando S, migración, o
+cualquier fragmento que referencie el nombre de un campo de un
+modelo Django, **sin haber abierto (`view`) el `models.py` real de
+ese modelo en el turno actual** y haber citado explícitamente los
+campos confirmados, formato obligatorio:
+
+```
+[modelo: NombreModelo, campos confirmados: campo1, campo2, campo3]
+```
+
+**Nunca es válido:** citar memoria de un turno anterior de la misma
+sesión si ha pasado trabajo intermedio, citar memoria de sesiones
+anteriores, ni asumir un nombre "obvio" por convención o analogía con
+otro modelo similar. **Si no se puede citar la lista de campos
+confirmados, queda prohibido generar la caja de código** -- hay que
+releer el modelo primero, sin excepción, sin importar la prisa.
+
+**Origen, incidentes reales REPETIDOS pese a directriz ya existente:**
+- S73: campo `last_name_1` inventado en `PersonIdentity` (campos
+  reales: `given_name`, `first_surname`, `second_surname`) -- el
+  comando falló con `FieldError`, hubo que repetir el ciclo Comando S
+  + sftp GET completo.
+- S75: campo `extraction_method` inventado en `DocumentIndexEntry`
+  (ese campo solo existe en `EpiDelivery`/`DocumentAcknowledgment`,
+  modelos distintos) -- pese a que la directriz de S73 ya estaba
+  documentada y en memoria del modelo. Miguel Ángel, verbatim: *"me
+  parece bochornoso [...] la regla tiene que ser de obligado
+  cumplimiento estricto [...] obligatoria antes que cualquier otra
+  cosa. No podemos estar perdiendo el tiempo haciendo scripts que van
+  a fallar porque no nos conocemos los nombres del campo del
+  modelo."*
+
+**Reforzada también, mismo texto, en `com-mysql` sección 0,
+`com-bash-commands` sección 0 y `com-standards` sección 0** (skills
+del usuario, empaquetadas y presentadas para instalación explícita en
+S75 -- ver registro de sesión). Esta sección del documento maestro es
+la copia de respaldo git-versionada, que se relee sin falta al inicio
+de cada sesión (PASO 2 de `nfs-enterprisebot-pisa`) con independencia
+de qué skills disparen o no disparen en cada turno concreto.
+
 
