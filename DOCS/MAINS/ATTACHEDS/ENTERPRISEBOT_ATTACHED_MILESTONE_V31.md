@@ -63,98 +63,94 @@ supervisor usará en producción, no solo la consulta.
 
 ### No existe (por construir)
 
-- Cualquier vista/acción de ESCRITURA: entregar EPI, enviar
-  notificación, editar ficha de persona, subir foto de carné.
+- Cualquier vista/acción de ESCRITURA real: entregar EPI, enviar
+  notificación, editar ficha de persona, subir foto de carné, CRUD de
+  circulares. Solo existe la prueba de concepto de envío (ver
+  "COMPLETADAS EN S73" más abajo).
 - Selector de personal con casillero para acciones masivas.
-- Modelo de contenido de circular/notificación (título, cuerpo con
-  formato básico -- colores de fondo/carácter, selección de fuente
-  entre pocas opciones) más allá del propio `DocumentIndexEntry` de
-  plantilla vigente. Decidir en la primera sesión si el cuerpo vive
-  en un campo de texto enriquecido nuevo o si la plantilla vigente
-  sigue siendo un archivo real (docx/pdf) sin editor propio -- Miguel
-  Ángel pide explícitamente un editor básico integrado, así que
-  probablemente hace falta un campo de contenido editable, no solo
-  el archivo.
-- Importación de Word/PDF para crear o sustituir una circular
-  (convertir a la representación interna que se decida en el punto
-  anterior).
-- Cualquier flujo de envío/notificación real (¿email vía
-  `document_management.EmailTemplate` de H26, WhatsApp vía la app
-  `whatsapp` ya existente, o simple registro de
-  `DocumentAcknowledgment` sin canal de envío real? -- decidir con
-  Miguel Ángel en la primera sesión, no asumir).
+- El campo de texto enriquecido real para el contenido de
+  circulares/notificaciones (decisión de S73: campo NUEVO en BD,
+  manteniendo `current_template`/archivo legacy en paralelo -- falta
+  decidir el modelo de datos exacto en la próxima sesión).
+- Importación de Word/PDF para crear o sustituir una circular.
 
 ---
 
-## 3. Hoja de ruta para la primera sesión de H31
+## 3. COMPLETADAS EN S73
 
-1. **Preguntas de diseño RESUELTAS (S73):**
-   - **Cuerpo editable de circular/notificación**: campo de texto
-     enriquecido NUEVO en BD -- decisión explícita de Miguel Ángel,
-     con la advertencia real de que hay que mantener el legacy
-     (`current_template`/archivo de plantilla) en paralelo, no
-     sustituirlo de golpe.
-   - **Envío**: NO WhatsApp para este tipo de comunicación con
-     documentos -- correo electrónico vía `mailto:` con asunto+cuerpo
-     precargados, que abre el cliente de correo por defecto del
-     usuario (Outlook). Mismo criterio ya usado en H26
-     (`document_management.EmailTemplate`, "cuerpo copiar/pegar +
-     PDF generado aparte, nunca envía él mismo") -- nunca se manda
-     nada por SMTP/API desde el propio EnterpriseBot, solo se prepara
-     el mensaje y se abre el cliente.
-   - **Foto de carné**: confirmado, YA existen 108 imágenes reales
-     (`document_type=IMAGEN`) vinculadas vía
+- **Hito abierto** (PCH CASO C): H31 dado de alta inmediatamente
+  después de cerrar el bloque EPIs de H30, decisión explícita de
+  Miguel Ángel. PCH a `EN PROGRESO` en la misma sesión (CASO B),
+  H30 pausado.
+- **Diagnóstico real de lo existente**: `PersonalDetailView`/
+  `EpiTabFragmentView` y sus templates confirmados como solo lectura
+  (sin foto, sin acción de entrega/envío) -- ver sección 2 arriba.
+- **Tres preguntas de diseño RESUELTAS** por Miguel Ángel:
+  1. Cuerpo de circular/notificación: campo de texto enriquecido
+     NUEVO en BD, manteniendo el legacy (`current_template`) en
+     paralelo, no sustituyéndolo de golpe.
+  2. Envío: por correo electrónico, nunca WhatsApp para este tipo de
+     comunicación con documentos. Primer intento (`mailto:`)
+     descartado por Miguel Ángel al aclarar que el cuerpo debe salir
+     con el HTML real (colores, negrita), no como adjunto -- `mailto:`
+     no soporta HTML. Sustituido por generación de `.eml` real.
+  3. Foto de carné: confirmado, 108 imágenes reales
+     (`document_type=IMAGEN`) ya vinculadas vía
      `domain_content_type`/`domain_object_id` a su `PersonIdentity`
-     -- sin campo dedicado en el modelo. La ficha de persona debe
-     BUSCAR ese vínculo ya existente (mismo mecanismo genérico que
-     `EpiDelivery`/fichas técnicas) y mostrarlo como avatar, con un
-     icono de persona genérico como placeholder si no hay ninguna
-     vinculada. No hace falta campo nuevo.
-2. **Ficha de persona editable**: formulario sobre `PersonalDetailView`
-   (o vista nueva de edición) para los campos reales de
-   `PersonIdentity`, más subida de foto de carné si no existe ya el
-   mecanismo.
-3. **Entrega individual de EPI** desde la ficha: desplegable de
-   `EpiItemCatalog` + fecha, crea `EpiDelivery(extraction_method=MANUAL)`.
-4. **Envío individual de notificación** desde la ficha: desplegable
-   de `DocumentTypeCatalog` (los tipos tipo circular/nombramiento),
-   crea `DocumentAcknowledgment(extraction_method=MANUAL)`.
-5. **Selector masivo con casillero** + acción masiva de EPI y de
-   circular (mismo backend que los puntos 3-4, en bucle sobre las
-   personas seleccionadas).
-6. **CRUD de circulares**: crear/editar/importar, actualizando
-   `DocumentTypeCatalog.current_template` de forma consistente con el
-   mecanismo ya en uso.
-7. **Editor de texto básico** integrado en el CRUD (colores, pocas
-   fuentes) -- alcance deliberadamente reducido, sin funcionalidades
-   de procesador de textos avanzado.
+     -- sin campo dedicado, se reutiliza el mismo mecanismo genérico
+     ya usado en toda la plataforma.
+- **Prueba de concepto de envío VALIDADA con Outlook real**:
+  `PersonalTestEmlView` (`panel/views_documentation_h30.py`) genera
+  un `.eml` con `email.message.EmailMessage.add_alternative(...,
+  subtype="html")` (contenido de prueba fijo: fondo de color,
+  negrita, color de texto, lista), servido como descarga desde un
+  botón nuevo en `_personal_detail.html`. Miguel Ángel confirmó con
+  captura real de Outlook: el formato HTML llega íntegro. Commits
+  `ba7f2a9` (vista + botón) y `6028e28` (documentación). **Vista y
+  botón son temporales** -- a retirar cuando el CRUD real de
+  circulares los sustituya.
+- Sin migraciones esta sesión (H31 no tocó `models.py` todavía).
 
-Criterio de cierre de la primera sesión: al menos el punto 1
-(preguntas resueltas) y un punto de acción real (2 o 3) completado y
+## 4. Hoja de ruta para S74
+
+1. **Modelo de datos del contenido enriquecido**: decidir y crear la
+   migración real (¿campo nuevo en `DocumentTypeCatalog`, o modelo
+   aparte tipo `CircularContent` con FK a `DocumentTypeCatalog`? --
+   valorar contra el patrón ya usado por `current_template`).
+   Criterio de cierre: migración aplicada y verificada en producción
+   (`showmigrations` + consulta real a la fila).
+2. **Ficha de persona editable** sobre `PersonalDetailView` (o vista
+   nueva): formulario con los campos reales de `PersonIdentity`, más
+   avatar (buscar `DocumentIndexEntry` vinculado vía
+   `domain_content_type`/`domain_object_id`, tipo `IMAGEN`, con
+   placeholder de icono de persona si no hay ninguno). Criterio de
+   cierre: al menos una ficha real mostrando la foto ya vinculada, sin
+   inventar campo nuevo para ella.
+3. **Entrega individual de EPI** desde la ficha: desplegable de
+   `EpiItemCatalog` + fecha, crea
+   `EpiDelivery(extraction_method=MANUAL)`. Criterio de cierre: una
+   entrega real creada desde el panel y verificada contra BD.
+4. **Envío individual de notificación** desde la ficha, reutilizando
+   la técnica `.eml` ya validada (punto 3.1 de "COMPLETADAS EN S73")
+   sobre el contenido real del punto 1 -- no la prueba fija de S73.
+5. **Selector masivo con casillero** + acción masiva de EPI y de
+   circular (mismo backend que los puntos 3-4, en bucle).
+6. **CRUD de circulares**: crear/editar/importar (Word/PDF) y
+   sustituir la plantilla vigente (`current_template`) de forma
+   consistente con el mecanismo ya en uso. Editor de texto básico
+   integrado (colores, pocas fuentes) -- alcance deliberadamente
+   reducido, nunca un procesador de textos completo.
+7. **Retirar `PersonalTestEmlView` y su botón** de
+   `_personal_detail.html` una vez el CRUD real (puntos 4/6) los
+   sustituya.
+
+Criterio de cierre de S74: al menos el punto 1 (modelo de datos
+migrado y verificado) y un punto de acción real (2 o 3) completado y
 verificado contra BD, no solo diseñado.
 
 ---
 
-## 3.1. Técnica de envío VALIDADA (S73)
-
-Prueba de concepto real ejecutada y confirmada por Miguel Ángel:
-`.eml` generado con la librería estándar `email`
-(`EmailMessage.add_alternative(..., subtype="html")`), servido como
-descarga desde `PersonalTestEmlView`
-(`panel/views_documentation_h30.py`, commit `ba7f2a9`), abierto en
-Outlook real -- **formato HTML íntegro** (fondo de color, negrita,
-color de texto, lista con viñetas), sin necesidad de adjuntar nada
-ni de `mailto:` (que no soporta HTML). Esta es la técnica real sobre
-la que construir el envío de circulares/notificaciones del punto 4
-de este anexo: generar el `.eml` a partir del campo de texto
-enriquecido (una vez exista) + los datos reales de la persona, nunca
-`mailto:`.
-
-Vista de prueba (`PersonalTestEmlView`) y botón en
-`_personal_detail.html` -- **temporales**, a retirar cuando el CRUD
-real de circulares los sustituya por el flujo definitivo.
-
-## 4. Pendiente real, posterior a la interfaz (nota de Miguel Ángel, S73)
+## 4.1. Pendiente real, posterior a la interfaz (nota de Miguel Ángel, S73)
 
 Una vez cerrada la interfaz de este hito: revisar que todos los tipos
 documentales de `DOC. PERSONAL` tienen el campo `domain` correcto en
