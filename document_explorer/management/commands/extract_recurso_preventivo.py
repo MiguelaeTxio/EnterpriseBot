@@ -36,7 +36,7 @@ from document_explorer.models import (
 from spare_parts.gcs_service import download_bytes
 
 _DNI_DIGITS_RE = re.compile(
-    r"DNI\.?\s*[:.º]?\s*[:.]?\s*([0-9]{1,2}[.\s]?[0-9]{3}[.\s]?[0-9]{3})"
+    r"DNI\.?\s*(?:n[ºo°]\.?)?\s*[:.]?\s*([0-9]{1,2}[.\s]?[0-9]{3}[.\s]?[0-9]{3})"
 )
 _DNI_LETTER_TABLE = "TRWAGMYFPDXBNJZSQVHLCKE"
 
