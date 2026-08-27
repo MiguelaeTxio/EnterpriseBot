@@ -425,6 +425,44 @@ app de dominio.
   registrado en H29 3.21/3.22) como paso previo o paralelo, a decidir
   en la primera sesión de este hito.
 
+#### Hito 31: Interfaz de Ficha de Personal — EPIs y Notificaciones/Circulares
+(Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md`)
+- Hito nuevo, abierto en S73 por decisión explícita de Miguel Ángel:
+  una vez cerrado el bloque EPIs de H30 (vinculación documental real),
+  hace falta la interfaz que permita ENTREGAR EPIs y ENVIAR
+  notificaciones/circulares de verdad desde el panel, no solo
+  consultar el histórico ya migrado.
+- Tres bloques funcionales, verbatim de Miguel Ángel (S73):
+  1. **Ficha de persona editable**: datos personales con formulario,
+     foto de carné (subir si no existe -- hay fotos de carné ya
+     asignadas de sesiones anteriores, reutilizables).
+  2. **EPIs y notificaciones desde la ficha de persona**: dos
+     desplegables (uno para elegir el EPI a entregar, otro para la
+     notificación a enviar), entrega/envío individual desde la propia
+     ficha.
+  3. **Entrega/envío masivo**: selector de personal con casillero
+     (checkboxes), mismo criterio para EPIs (p. ej. entregar ropa a
+     varios trabajadores a la vez) y para circulares (un envío a
+     varios trabajadores deja de ser "notificación" individual y pasa
+     a ser "circular").
+- CRUD de circulares/notificaciones: crear, editar, importar (Word,
+  PDF a convertir) y sustituir la plantilla vigente de un tipo. Editor
+  de texto básico integrado (colores de fondo/carácter, selección
+  entre pocas fuentes) -- explícitamente NO un editor avanzado tipo
+  WordPerfect, la vía principal esperada es la importación de un
+  documento ya existente.
+- Reutiliza el mecanismo `DocumentTypeCatalog.current_template` (H30
+  S69) ya en uso real para EPIs/nombramientos -- la circular editable
+  encaja en el mismo patrón (plantilla vigente = un `DocumentIndexEntry`
+  más).
+- Diagnóstico de partida (S73): `PersonalDetailView`/`_personal_detail.html`
+  y `EpiTabFragmentView`/`EpiResultsFragmentView` (`panel/
+  views_documentation_h30.py`) ya existen pero son de SOLO LECTURA
+  (listan persona/documentos/EPIs ya migrados, sin foto, sin acción de
+  entrega). Base de lectura reutilizable; el resto (acciones de
+  entrega/envío, CRUD de circulares, editor, importación, selector
+  masivo) está por construir desde cero.
+
 ---
 
 ### 4. Directrices Técnicas Vinculantes
