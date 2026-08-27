@@ -203,7 +203,7 @@ vez de una lista única sin estructura.
                 {{ fam.label }} <span class="badge bg-primary ms-2">{{ fam.documents|length }}</span>
             </button>
         </h2>
-        <div id="collapseFam{{ forloop.counter }}" class="accordion-collapse collapse {% if forloop.first %}show{% endif %}">
+        <div id="collapseFam{{ forloop.counter }}" class="accordion-collapse collapse {% if forloop.first %}show{% endif %}" data-bs-parent="#personalDocsAccordion">
             <div class="accordion-body p-0">
                 <table class="table table-sm table-hover mb-0">
                     <thead><tr><th>Tipo</th><th>Caducidad</th><th>Acciones</th></tr></thead>
@@ -236,25 +236,52 @@ vez de una lista única sin estructura.
     {% endfor %}
 </div>
 
+{% comment %}
+H31 (S76): EPIs entregados, agrupados por familia real del catálogo
+(mismo criterio que los documentos -- Miguel Ángel: "los EPIs ahora
+mismo es una lista a lo bruto"). Solo la entrega MÁS RECIENTE de cada
+EPI de entrada; el historial completo (revisiones, sustituciones)
+vive aparte, bajo demanda, mismo modal genérico de historial que ya
+usan los documentos.
+{% endcomment %}
 <h5 class="mt-4">EPIs entregados</h5>
 <button type="button" class="btn btn-outline-success btn-sm mb-2" onclick="openEpiDeliveryForm()">
     <i class="bi bi-plus-lg me-1"></i>Entregar EPI
 </button>
 <div id="epiDeliveryFormContainer" class="mb-3"></div>
-<table class="table table-sm table-hover">
-    <thead><tr><th>EPI</th><th>Fecha de entrega</th><th>Método</th></tr></thead>
-    <tbody id="epiDeliveriesTbody">
-        {% for delivery in epi_deliveries %}
-        <tr>
-            <td>{{ delivery.epi.label }}</td>
-            <td>{{ delivery.delivery_date }}</td>
-            <td>{{ delivery.get_extraction_method_display }}</td>
-        </tr>
-        {% empty %}
-        <tr><td colspan="3" class="text-muted small py-3">Sin EPIs entregados todavía.</td></tr>
-        {% endfor %}
-    </tbody>
-</table>
+<div class="accordion" id="personalEpiAccordion">
+    {% for fam in epi_families %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button {% if not forloop.first %}collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#collapseEpiFam{{ forloop.counter }}">
+                {{ fam.label }} <span class="badge bg-primary ms-2">{{ fam.deliveries|length }}</span>
+            </button>
+        </h2>
+        <div id="collapseEpiFam{{ forloop.counter }}" class="accordion-collapse collapse {% if forloop.first %}show{% endif %}" data-bs-parent="#personalEpiAccordion">
+            <div class="accordion-body p-0">
+                <table class="table table-sm table-hover mb-0">
+                    <thead><tr><th>EPI</th><th>Última entrega</th><th>Método</th><th></th></tr></thead>
+                    <tbody>
+                        {% for delivery in fam.deliveries %}
+                        <tr>
+                            <td>{{ delivery.epi.label }}</td>
+                            <td>{{ delivery.delivery_date }}</td>
+                            <td>{{ delivery.get_extraction_method_display }}</td>
+                            <td>
+                                <button type="button" class="btn btn-sm btn-outline-info"
+                                        onclick="openEpiHistory({{ delivery.epi.pk }})">Historial</button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% empty %}
+    <p class="text-muted small py-3">Sin EPIs entregados todavía.</p>
+    {% endfor %}
+</div>
 
 <script>
 const DOC_TYPES_PERSONAL = [
@@ -429,17 +456,18 @@ function openEpiDeliveryForm() {
             headers: {'X-CSRFToken': getCookie('csrftoken')},
         }).then(r => r.json()).then(data => {
             if (data.ok) {
-                const tbody = document.getElementById('epiDeliveriesTbody');
-                const emptyRow = tbody.querySelector('td[colspan]');
-                if (emptyRow) emptyRow.closest('tr').remove();
-                const tr = document.createElement('tr');
-                tr.innerHTML = `<td>${data.delivery.epi_label}</td><td>${data.delivery.delivery_date}</td><td>Manual (panel)</td>`;
-                tbody.prepend(tr);
+                // H31 (S76): el listado de EPIs ahora se agrupa por
+                // familia (solo la última entrega por EPI) --
+                // reconstruir esa agrupación en JS duplicaría la
+                // lógica de _group_epi_deliveries_by_family(); más
+                // simple y fiable recargar, mismo patrón que ya usa
+                // subjectUploadForm más arriba.
                 if (data.whatsapp_sent) {
-                    resultDiv.innerHTML = '<div class="alert alert-success py-1 px-2 small mb-0">EPI entregado registrado. Confirmación WhatsApp enviada al trabajador.</div>';
+                    resultDiv.innerHTML = '<div class="alert alert-success py-1 px-2 small mb-0">EPI entregado registrado. Confirmación WhatsApp enviada al trabajador. Actualizando…</div>';
                 } else {
-                    resultDiv.innerHTML = '<div class="alert alert-warning py-1 px-2 small mb-0">EPI entregado registrado. No se pudo enviar la confirmación WhatsApp (sin teléfono, sin vínculo de empresa, o plantilla aún no aprobada por Meta).</div>';
+                    resultDiv.innerHTML = '<div class="alert alert-warning py-1 px-2 small mb-0">EPI entregado registrado. No se pudo enviar la confirmación WhatsApp (sin teléfono, sin vínculo de empresa, o plantilla aún no aprobada por Meta). Actualizando…</div>';
                 }
+                setTimeout(() => location.reload(), 1500);
             } else {
                 resultDiv.innerHTML = `<div class="alert alert-danger py-1 px-2 small mb-0">${data.error || 'Error al registrar.'}</div>`;
             }
@@ -495,20 +523,30 @@ function exitEditMode() {
     document.getElementById('personalSaveBtn').style.display = 'none';
 }
 
-// H31 (S76) punto 5: historial completo de un tipo, bajo demanda.
-function openDocumentHistory(typeCode) {
+// H31 (S76) punto 5: historial completo de un tipo/EPI, bajo demanda
+// -- una función genérica (openHistoryModal) + dos envoltorios finos,
+// mismo modal para documentos y EPIs (nunca duplicar el modal).
+function openHistoryModal(url) {
     if (!documentHistoryModalInstance) {
         documentHistoryModalInstance = new bootstrap.Modal(document.getElementById('documentHistoryModal'));
     }
     const body = document.getElementById('documentHistoryModalBody');
     body.innerHTML = '<div class="text-muted small py-3">Cargando…</div>';
     documentHistoryModalInstance.show();
-    fetch(`/panel/documentacion/personal/{{ person.pk }}/historial/${typeCode}/`)
+    fetch(url)
         .then(r => r.text())
         .then(html => { body.innerHTML = html; })
         .catch(() => {
             body.innerHTML = '<div class="alert alert-danger py-1 px-2 small mb-0">Error de red al cargar el historial.</div>';
         });
+}
+
+function openDocumentHistory(typeCode) {
+    openHistoryModal(`/panel/documentacion/personal/{{ person.pk }}/historial/${typeCode}/`);
+}
+
+function openEpiHistory(epiId) {
+    openHistoryModal(`/panel/documentacion/personal/{{ person.pk }}/historial-epi/${epiId}/`);
 }
 
 function getCookie(name) {

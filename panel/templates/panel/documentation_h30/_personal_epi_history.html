@@ -1,0 +1,19 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation_h30/_personal_epi_history.html #}
+{% comment %}
+H31 (S76). Fragmento cargado bajo demanda dentro del modal genérico
+de historial -- ver PersonalEpiItemHistoryView.
+{% endcomment %}
+<h6 class="mb-3">{{ epi.label }} -- historial completo ({{ deliveries|length }})</h6>
+<table class="table table-sm table-hover mb-0">
+    <thead><tr><th>Fecha de entrega</th><th>Método</th></tr></thead>
+    <tbody>
+        {% for delivery in deliveries %}
+        <tr>
+            <td>{{ delivery.delivery_date }}</td>
+            <td>{{ delivery.get_extraction_method_display }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="2" class="text-muted small py-3">Sin entregas de este EPI.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>

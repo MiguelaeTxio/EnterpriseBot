@@ -491,6 +491,38 @@ def _group_current_by_family(current_entries):
     return ordered
 
 
+def _group_epi_deliveries_by_family(epi_deliveries):
+    """
+    H31 (S76). Mismo criterio que `_group_current_by_family()` para
+    documentos, aplicado a EPIs -- Miguel Ángel: "tenemos otra selva
+    en la propia ficha [...] los EPIs ahora mismo es una lista a lo
+    bruto." Agrupa por `EpiItemCatalog.family` (texto libre, sin
+    choices fijas a diferencia de `DocumentTypeCatalog.family` --
+    orden alfabético estable, no hay una lista cerrada que respetar).
+    Dentro de cada familia, una fila por EPI (código), mostrando solo
+    la entrega MÁS RECIENTE -- el historial completo de entregas del
+    mismo EPI (revisiones, sustituciones) vive aparte, bajo demanda
+    (`PersonalEpiItemHistoryView`), mismo patrón que el historial de
+    documentos.
+    """
+    by_family = {}
+    latest_by_epi = {}
+    for delivery in epi_deliveries:
+        epi_id = delivery.epi_id
+        current_latest = latest_by_epi.get(epi_id)
+        if current_latest is None or delivery.delivery_date > current_latest.delivery_date:
+            latest_by_epi[epi_id] = delivery
+
+    for delivery in latest_by_epi.values():
+        family = delivery.epi.family or "Sin familia asignada"
+        by_family.setdefault(family, []).append(delivery)
+
+    return [
+        {"label": family, "deliveries": sorted(items, key=lambda d: d.epi.label)}
+        for family, items in sorted(by_family.items())
+    ]
+
+
 class PersonalDetailView(CompanyUserRequiredMixin, View):
     def get(self, request, pk):
         person = get_object_or_404(
@@ -523,6 +555,7 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
         epi_deliveries = EpiDelivery.objects.filter(
             person=person,
         ).select_related("epi").order_by("-delivery_date")
+        epi_families = _group_epi_deliveries_by_family(epi_deliveries)
         epi_items = EpiItemCatalog.objects.filter(
             is_active=True,
         ).order_by("family", "label")
@@ -531,6 +564,7 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
             "families": families,
             "avatar": avatar,
             "doc_types": doc_types, "epi_deliveries": epi_deliveries,
+            "epi_families": epi_families,
             "epi_items": epi_items,
             "notification_types": notification_types,
             "active_nav": "documentation_hub",
@@ -561,6 +595,25 @@ class PersonalDocumentTypeHistoryView(CompanyUserRequiredMixin, View):
         return render(
             request, "panel/documentation_h30/_personal_document_history.html",
             {"person": person, "document_type": document_type, "entries": entries},
+        )
+
+
+class PersonalEpiItemHistoryView(CompanyUserRequiredMixin, View):
+    """
+    H31 (S76). GET: historial COMPLETO de entregas de UN EPI para UNA
+    persona -- mismo patrón que `PersonalDocumentTypeHistoryView`,
+    cargado bajo demanda en el mismo modal genérico del frontend.
+    """
+
+    def get(self, request, pk, epi_id):
+        person = get_object_or_404(PersonIdentity, pk=pk)
+        epi = get_object_or_404(EpiItemCatalog, pk=epi_id)
+        deliveries = EpiDelivery.objects.filter(
+            person=person, epi=epi,
+        ).order_by("-delivery_date")
+        return render(
+            request, "panel/documentation_h30/_personal_epi_history.html",
+            {"person": person, "epi": epi, "deliveries": deliveries},
         )
 
 
