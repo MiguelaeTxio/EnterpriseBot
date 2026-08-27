@@ -20,6 +20,7 @@ from panel.views_documentation_h30 import (
     DocumentTypeQuickCreateView,
     DocumentViewView,
     DocumentationHubV2View,
+    EpiIndividualDeliveryView,
     EpiResultsFragmentView,
     EpiTabFragmentView,
     MachineDetailView,
@@ -391,6 +392,8 @@ urlpatterns = [
     path("documentacion/personal/<int:pk>/", PersonalDetailView.as_view(), name="documentation_personal_detail"),
     # H31 (S74): edición de ficha de persona (given_name/first_surname/second_surname/phone/email).
     path("documentacion/personal/<int:pk>/actualizar/", PersonalUpdateView.as_view(), name="documentation_personal_update"),
+    # H31 (S74) punto 3: entrega individual de EPI desde la ficha.
+    path("documentacion/personal/<int:pk>/entregar-epi/", EpiIndividualDeliveryView.as_view(), name="documentation_personal_epi_delivery"),
     path("documentacion/personal/<int:pk>/probar-eml/", PersonalTestEmlView.as_view(), name="documentation_personal_test_eml"),
     path("documentacion/epis/", EpiTabFragmentView.as_view(), name="documentation_epi_tab"),
     # H30 (S50): mismo motivo que documentation_personal_results.

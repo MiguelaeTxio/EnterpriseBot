@@ -128,9 +128,13 @@
 </div>
 
 <h5 class="mt-4">EPIs entregados</h5>
+<button type="button" class="btn btn-outline-success btn-sm mb-2" onclick="openEpiDeliveryForm()">
+    <i class="bi bi-plus-lg me-1"></i>Entregar EPI
+</button>
+<div id="epiDeliveryFormContainer" class="mb-3"></div>
 <table class="table table-sm table-hover">
     <thead><tr><th>EPI</th><th>Fecha de entrega</th><th>Método</th></tr></thead>
-    <tbody>
+    <tbody id="epiDeliveriesTbody">
         {% for delivery in epi_deliveries %}
         <tr>
             <td>{{ delivery.epi.label }}</td>
@@ -149,6 +153,9 @@ const DOC_TYPES_PERSONAL = [
 ];
 const FAMILY_CHOICES_PERSONAL = [
     {% for value, display in family_choices %}{value: "{{ value }}", display: "{{ display|escapejs }}"},{% endfor %}
+];
+const EPI_ITEMS = [
+    {% for epi in epi_items %}{id: {{ epi.pk }}, label: "{{ epi.label|escapejs }}", family: "{{ epi.family|escapejs }}"},{% endfor %}
 ];
 
 function openUploadForm(preselectCode) {
@@ -277,6 +284,56 @@ function deleteDocument(pk, btn) {
     }).then(r => r.json()).then(data => {
         if (data.ok) btn.closest('tr').remove();
     });
+}
+
+function openEpiDeliveryForm() {
+    const container = document.getElementById('epiDeliveryFormContainer');
+    const options = EPI_ITEMS.map(e =>
+        `<option value="${e.id}">${e.family} -- ${e.label}</option>`,
+    ).join('');
+    const today = new Date().toISOString().slice(0, 10);
+    container.innerHTML = `
+        <div class="card">
+            <div class="card-body">
+                <form id="epiDeliveryForm" class="row g-2">
+                    <div class="col-12 col-md-6">
+                        <label class="form-label small mb-0">EPI</label>
+                        <select name="epi_id" class="form-select form-select-sm" required>${options}</select>
+                    </div>
+                    <div class="col-8 col-md-3">
+                        <label class="form-label small mb-0">Fecha de entrega</label>
+                        <input type="date" name="delivery_date" class="form-control form-control-sm" value="${today}" required>
+                    </div>
+                    <div class="col-4 col-md-3 d-flex align-items-end">
+                        <button type="submit" class="btn btn-sm btn-success w-100">Registrar</button>
+                    </div>
+                    <div id="epiDeliveryResult" class="col-12"></div>
+                </form>
+            </div>
+        </div>`;
+    document.getElementById('epiDeliveryForm').onsubmit = function(ev) {
+        ev.preventDefault();
+        const formData = new FormData(ev.target);
+        const resultDiv = document.getElementById('epiDeliveryResult');
+        fetch("{% url 'panel:documentation_personal_epi_delivery' pk=person.pk %}", {
+            method: 'POST', body: formData,
+            headers: {'X-CSRFToken': getCookie('csrftoken')},
+        }).then(r => r.json()).then(data => {
+            if (data.ok) {
+                const tbody = document.getElementById('epiDeliveriesTbody');
+                const emptyRow = tbody.querySelector('td[colspan]');
+                if (emptyRow) emptyRow.closest('tr').remove();
+                const tr = document.createElement('tr');
+                tr.innerHTML = `<td>${data.delivery.epi_label}</td><td>${data.delivery.delivery_date}</td><td>Manual (panel)</td>`;
+                tbody.prepend(tr);
+                resultDiv.innerHTML = '<div class="alert alert-success py-1 px-2 small mb-0">EPI entregado registrado.</div>';
+            } else {
+                resultDiv.innerHTML = `<div class="alert alert-danger py-1 px-2 small mb-0">${data.error || 'Error al registrar.'}</div>`;
+            }
+        }).catch(() => {
+            resultDiv.innerHTML = '<div class="alert alert-danger py-1 px-2 small mb-0">Error de red al registrar.</div>';
+        });
+    };
 }
 
 document.getElementById('personalUpdateForm').onsubmit = function(ev) {

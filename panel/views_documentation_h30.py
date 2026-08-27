@@ -300,12 +300,52 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
         epi_deliveries = EpiDelivery.objects.filter(
             person=person,
         ).select_related("epi").order_by("-delivery_date")
+        epi_items = EpiItemCatalog.objects.filter(
+            is_active=True,
+        ).order_by("family", "label")
         return render(request, "panel/documentation_h30/_personal_detail.html", {
             "person": person, "current": current, "obsolete": obsolete,
             "avatar": avatar,
             "doc_types": doc_types, "epi_deliveries": epi_deliveries,
+            "epi_items": epi_items,
             "active_nav": "documentation_hub",
             "family_choices": DocumentTypeCatalog.FAMILY_CHOICES,
+        })
+
+
+class EpiIndividualDeliveryView(DocsUploadAccessMixin, View):
+    """
+    H31 (S74), punto 3 de la hoja de ruta. POST: registra una entrega
+    individual de EPI desde la ficha de persona -- desplegable de
+    EpiItemCatalog + fecha, crea un EpiDelivery real con
+    extraction_method=MANUAL (panel), igual criterio que el resto de
+    entregas manuales del sistema. Sin destination_machine aquí --
+    ese campo es para EPIs con Centro de Gasto de destino (botiquines
+    y similares), fuera de alcance de la entrega individual estándar
+    de este punto.
+    """
+
+    def post(self, request, pk):
+        person = get_object_or_404(PersonIdentity, pk=pk)
+        epi_id = request.POST.get("epi_id", "")
+        delivery_date = request.POST.get("delivery_date", "")
+        if not epi_id or not delivery_date:
+            return JsonResponse(
+                {"ok": False, "error": "EPI y fecha de entrega son obligatorios."},
+                status=400,
+            )
+        epi = get_object_or_404(EpiItemCatalog, pk=epi_id, is_active=True)
+        delivery = EpiDelivery.objects.create(
+            person=person, epi=epi, delivery_date=delivery_date,
+            extraction_method=EpiDelivery.METHOD_MANUAL,
+        )
+        return JsonResponse({
+            "ok": True,
+            "delivery": {
+                "id": delivery.pk,
+                "epi_label": epi.label,
+                "delivery_date": delivery.delivery_date.isoformat(),
+            },
         })
 
 
