@@ -263,10 +263,24 @@ def _person_list_page(request):
 
 class PersonalListFragmentView(CompanyUserRequiredMixin, View):
     """Carga inicial de la pestana Personal (click once) -- formulario
-    + resultados envueltos, una unica vez."""
+    + resultados envueltos, una unica vez.
+
+    H31 (S75): añade también el catálogo de EPIs y los tipos de
+    notificación/circular con content_html real -- los necesita la
+    barra de acción masiva de `_personal_pane.html` (punto 1 de la
+    hoja de ruta). Se cargan una única vez aquí (carga inicial de la
+    pestaña), nunca en `_person_list_page`/`PersonalResultsFragmentView`
+    -- esas solo repintan la tabla de resultados en cada búsqueda o
+    paginación, la barra de acción masiva no se vuelve a pintar."""
 
     def get(self, request):
         ctx = _person_list_page(request)
+        ctx["epi_items"] = EpiItemCatalog.objects.filter(
+            is_active=True,
+        ).order_by("family", "label")
+        ctx["notification_types"] = DocumentTypeCatalog.objects.filter(
+            is_active=True, domain__in=["PERSONAL", "BOTH"],
+        ).exclude(content_html="").order_by("label")
         return render(request, "panel/documentation_h30/_personal_pane.html", ctx)
 
 
@@ -412,6 +426,77 @@ class PersonalUpdateView(DocsUploadAccessMixin, View):
         })
 
 
+class NotificationEmlError(Exception):
+    """Fallo esperado (no técnico) al construir el .eml de una notificación
+    -- tipo sin content_html, o persona sin email. Se distingue de una
+    excepción real para poder recolectar fallos por persona en la vista
+    masiva sin abortar el resto del lote."""
+
+
+def _build_notification_eml(person, document_type):
+    """
+    H31 (S74/S75). Construye el `.eml` real de una notificación/circular
+    para UNA persona -- extraído de `PersonalNotificationSendView` (S74)
+    para que la vista individual (GET, descarga directa) y la vista
+    masiva (S75, POST, bucle + zip) compartan exactamente la misma
+    lógica de construcción (principio DRY, mismo criterio que
+    `ai_services`). Devuelve los bytes del mensaje MIME completo; nunca
+    toca BD (el registro de `DocumentAcknowledgment` sigue siendo
+    responsabilidad de cada vista que llama a esto, igual que antes).
+
+    Lanza `NotificationEmlError` -- nunca HttpResponse -- para que
+    ambas vistas decidan cómo comunicar el fallo (una respuesta 400
+    directa en la individual, una entrada más en la lista de errores
+    del lote en la masiva).
+    """
+    if not document_type.content_html.strip():
+        raise NotificationEmlError(
+            f"El tipo '{document_type.label}' todavía no tiene "
+            f"contenido enriquecido cargado (content_html vacío).",
+        )
+
+    recipient = (person.email or "").strip()
+    if not recipient:
+        raise NotificationEmlError(
+            f"{person} no tiene correo electrónico registrado -- no se "
+            f"puede generar la notificación.",
+        )
+
+    msg = StdEmailMessage()
+    msg["Subject"] = f"{document_type.label} -- {person}"
+    msg["From"] = "notificaciones@grupoalvarez.local"
+    msg["To"] = recipient
+
+    msg.set_content(
+        f"Notificación para {person}: {document_type.label}.\n"
+        "Este cliente de correo no muestra HTML -- consulte la "
+        "versión web o abra este mensaje con un cliente compatible."
+    )
+
+    logo_cid = make_msgid()
+    html_body = f"""
+        <html><body style="font-family: Arial, sans-serif;">
+          <p style="margin-bottom:16px;">
+            <img src="cid:{logo_cid[1:-1]}" alt="Grupo Álvarez" height="40">
+          </p>
+          <p>Estimado/a <strong>{person}</strong>,</p>
+          {document_type.content_html}
+          <p style="margin-top:24px;">Un saludo,<br>Grupo Álvarez</p>
+        </body></html>
+    """
+    msg.add_alternative(html_body, subtype="html")
+
+    logo_path = find_static("panel/img/grupo_alvarez_logo.png")
+    if logo_path:
+        with open(logo_path, "rb") as logo_file:
+            msg.get_payload()[1].add_related(
+                logo_file.read(), "image", "png", cid=logo_cid,
+            )
+
+    filename = f"notificacion_{document_type.code.lower()}_{person.pk}.eml"
+    return bytes(msg), filename
+
+
 class PersonalNotificationSendView(DocsUploadAccessMixin, View):
     """
     H31 (S74), punto 4 de la hoja de ruta. Genera y sirve para
@@ -442,6 +527,12 @@ class PersonalNotificationSendView(DocsUploadAccessMixin, View):
     enterprise_core/settings.py). El .eml se descarga y el supervisor
     lo abre/reenvía desde su propio Outlook, exactamente el flujo ya
     confirmado por Miguel Ángel en S73.
+
+    S75: la construcción del .eml en sí vive ahora en
+    `_build_notification_eml` (ver arriba), compartida con
+    `PersonalNotificationMassSendView`. Esta vista solo resuelve el
+    tipo documental, llama al helper, registra el DocumentAcknowledgment
+    y sirve la descarga -- sin cambio de comportamiento observable.
     """
 
     def get(self, request, pk):
@@ -455,50 +546,11 @@ class PersonalNotificationSendView(DocsUploadAccessMixin, View):
         document_type = get_object_or_404(
             DocumentTypeCatalog, code=type_code, is_active=True,
         )
-        if not document_type.content_html.strip():
-            return HttpResponse(
-                f"El tipo '{document_type.label}' todavía no tiene "
-                f"contenido enriquecido cargado (content_html vacío).",
-                status=400,
-            )
 
-        recipient = (person.email or "").strip()
-        if not recipient:
-            return HttpResponse(
-                f"{person} no tiene correo electrónico registrado -- "
-                f"no se puede generar la notificación.", status=400,
-            )
-
-        msg = StdEmailMessage()
-        msg["Subject"] = f"{document_type.label} -- {person}"
-        msg["From"] = "notificaciones@grupoalvarez.local"
-        msg["To"] = recipient
-
-        msg.set_content(
-            f"Notificación para {person}: {document_type.label}.\n"
-            "Este cliente de correo no muestra HTML -- consulte la "
-            "versión web o abra este mensaje con un cliente compatible."
-        )
-
-        logo_cid = make_msgid()
-        html_body = f"""
-            <html><body style="font-family: Arial, sans-serif;">
-              <p style="margin-bottom:16px;">
-                <img src="cid:{logo_cid[1:-1]}" alt="Grupo Álvarez" height="40">
-              </p>
-              <p>Estimado/a <strong>{person}</strong>,</p>
-              {document_type.content_html}
-              <p style="margin-top:24px;">Un saludo,<br>Grupo Álvarez</p>
-            </body></html>
-        """
-        msg.add_alternative(html_body, subtype="html")
-
-        logo_path = find_static("panel/img/grupo_alvarez_logo.png")
-        if logo_path:
-            with open(logo_path, "rb") as logo_file:
-                msg.get_payload()[1].add_related(
-                    logo_file.read(), "image", "png", cid=logo_cid,
-                )
+        try:
+            eml_bytes, filename = _build_notification_eml(person, document_type)
+        except NotificationEmlError as exc:
+            return HttpResponse(str(exc), status=400)
 
         DocumentAcknowledgment.objects.create(
             person=person,
@@ -507,13 +559,153 @@ class PersonalNotificationSendView(DocsUploadAccessMixin, View):
             extraction_method=DocumentAcknowledgment.METHOD_MANUAL,
         )
 
-        response = HttpResponse(
-            bytes(msg), content_type="message/rfc822",
+        response = HttpResponse(eml_bytes, content_type="message/rfc822")
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
+
+
+class EpiMassDeliveryView(DocsUploadAccessMixin, View):
+    """
+    H31 (S75), punto 1 de la hoja de ruta. POST: entrega masiva de UN
+    EPI a un conjunto de personas seleccionadas (casillero del listado
+    Personal) -- mismo backend que `EpiIndividualDeliveryView` (S74),
+    en bucle sobre `person_ids`, un `EpiDelivery(extraction_method=
+    MANUAL)` real por persona, sin destination_machine (mismo alcance
+    que la entrega individual estándar). WhatsApp de confirmación
+    igual de no bloqueante que en la entrega individual -- un fallo de
+    WhatsApp de una persona nunca revierte su entrega ya comprometida
+    en BD, ni afecta al resto del lote.
+
+    `person_ids` llega como lista de pks (checkboxes marcados en el
+    listado). Personas repetidas o inexistentes se ignoran sin abortar
+    el resto -- se informan en `errors` de la respuesta.
+    """
+
+    def post(self, request):
+        person_ids = request.POST.getlist("person_ids")
+        epi_id = request.POST.get("epi_id", "")
+        delivery_date = request.POST.get("delivery_date", "")
+
+        if not person_ids:
+            return JsonResponse(
+                {"ok": False, "error": "No hay ninguna persona seleccionada."},
+                status=400,
+            )
+        if not epi_id or not delivery_date:
+            return JsonResponse(
+                {"ok": False, "error": "EPI y fecha de entrega son obligatorios."},
+                status=400,
+            )
+        epi = get_object_or_404(EpiItemCatalog, pk=epi_id, is_active=True)
+
+        created = []
+        errors = []
+        whatsapp_sent_count = 0
+        for person_id in person_ids:
+            try:
+                person = PersonIdentity.objects.get(pk=person_id)
+            except (PersonIdentity.DoesNotExist, ValueError):
+                errors.append({"person_id": person_id, "error": "Persona no encontrada."})
+                continue
+            delivery = EpiDelivery.objects.create(
+                person=person, epi=epi, delivery_date=delivery_date,
+                extraction_method=EpiDelivery.METHOD_MANUAL,
+            )
+            if send_epi_delivery_whatsapp_confirmation(delivery):
+                whatsapp_sent_count += 1
+            created.append({"person_id": person.pk, "delivery_id": delivery.pk})
+
+        return JsonResponse({
+            "ok": True,
+            "created_count": len(created),
+            "whatsapp_sent_count": whatsapp_sent_count,
+            "created": created,
+            "errors": errors,
+        })
+
+
+class PersonalNotificationMassSendView(DocsUploadAccessMixin, View):
+    """
+    H31 (S75), punto 1 de la hoja de ruta. POST: envío masivo de UNA
+    circular/notificación a un conjunto de personas seleccionadas --
+    mismo backend que `PersonalNotificationSendView` (S74) vía
+    `_build_notification_eml`, en bucle sobre `person_ids`. A
+    diferencia de la vista individual (un único `.eml` servido
+    directo), aquí se generan varios `.eml` a la vez -- se empaquetan
+    en un único `.zip` de descarga (un archivo por persona, nombrado
+    igual que en la individual) para que el navegador no tenga que
+    manejar N descargas simultáneas.
+
+    Cada persona con éxito registra su propio `DocumentAcknowledgment`
+    real (mismo criterio que la individual -- una fila por envío).
+    Las personas sin email registrado o sin content_html en el tipo
+    (situación ya cubierta por la individual) se omiten del zip y se
+    listan en `X-Mass-Errors` (cabecera JSON) -- nunca abortan el
+    resto del lote. Si NINGUNA persona resulta válida, se devuelve
+    JSON de error puro (sin zip) para que el frontend lo muestre igual
+    que cualquier otro fallo, sin intentar descargar un zip vacío.
+    """
+
+    def post(self, request):
+        import io
+        import json
+        import zipfile
+
+        person_ids = request.POST.getlist("person_ids")
+        type_code = request.POST.get("tipo", "").strip()
+
+        if not person_ids:
+            return JsonResponse(
+                {"ok": False, "error": "No hay ninguna persona seleccionada."},
+                status=400,
+            )
+        if not type_code:
+            return JsonResponse(
+                {"ok": False, "error": "Falta el tipo de circular/notificación."},
+                status=400,
+            )
+        document_type = get_object_or_404(
+            DocumentTypeCatalog, code=type_code, is_active=True,
         )
+
+        errors = []
+        zip_buffer = io.BytesIO()
+        created_count = 0
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+            for person_id in person_ids:
+                try:
+                    person = PersonIdentity.objects.get(pk=person_id)
+                except (PersonIdentity.DoesNotExist, ValueError):
+                    errors.append({"person_id": person_id, "error": "Persona no encontrada."})
+                    continue
+                try:
+                    eml_bytes, filename = _build_notification_eml(person, document_type)
+                except NotificationEmlError as exc:
+                    errors.append({"person_id": person.pk, "error": str(exc)})
+                    continue
+                zf.writestr(filename, eml_bytes)
+                DocumentAcknowledgment.objects.create(
+                    person=person,
+                    document_type=document_type,
+                    delivery_date=timezone.localdate(),
+                    extraction_method=DocumentAcknowledgment.METHOD_MANUAL,
+                )
+                created_count += 1
+
+        if created_count == 0:
+            return JsonResponse(
+                {"ok": False, "error": "Ninguna persona válida para el envío.", "errors": errors},
+                status=400,
+            )
+
+        response = HttpResponse(zip_buffer.getvalue(), content_type="application/zip")
         safe_type = type_code.lower()
+        today = timezone.localdate().isoformat()
         response["Content-Disposition"] = (
-            f'attachment; filename="notificacion_{safe_type}_{person.pk}.eml"'
+            f'attachment; filename="notificaciones_masivas_{safe_type}_{today}.zip"'
         )
+        response["X-Mass-Created-Count"] = str(created_count)
+        response["X-Mass-Errors"] = json.dumps(errors)
         return response
 
 

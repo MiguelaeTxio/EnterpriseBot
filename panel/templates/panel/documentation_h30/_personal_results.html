@@ -1,7 +1,13 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation_h30/_personal_results.html #}
+{# H31 (S75) punto 1: columna de casillero -- selección para acciones masivas
+   (entrega de EPI / envío de circular). El estado marcado/desmarcado lo
+   gestiona el JS delegado de _personal_pane.html (nunca se repinta al
+   paginar/buscar), así que aquí solo se marca `checked` si el pk ya está
+   en la selección recordada por ese JS al reconstruir la tabla. #}
 <table class="table table-hover table-light">
     <thead class="table-light">
         <tr>
+            <th><input type="checkbox" class="form-check-input" id="person-select-all-page" title="Seleccionar todos los de esta página"></th>
             <th></th>
             <th>
                 <a href="#"
@@ -26,6 +32,7 @@
     <tbody>
         {% for person in page %}
         <tr>
+            <td><input type="checkbox" class="form-check-input person-select-checkbox" value="{{ person.pk }}"></td>
             <td>{% if person.has_alert %}<i class="bi bi-exclamation-triangle-fill text-danger" title="Tiene documentación sin fecha vigente"></i>{% endif %}</td>
             <td><a href="{% url 'panel:documentation_personal_detail' pk=person.pk %}">{{ person.first_surname }} {{ person.second_surname }}</a></td>
             <td>{{ person.given_name }}</td>
@@ -33,7 +40,7 @@
             <td>{{ person.doc_count }}</td>
         </tr>
         {% empty %}
-        <tr><td colspan="5" class="text-muted small py-3">No se encontró personal.</td></tr>
+        <tr><td colspan="6" class="text-muted small py-3">No se encontró personal.</td></tr>
         {% endfor %}
     </tbody>
 </table>

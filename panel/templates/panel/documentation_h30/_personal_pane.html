@@ -6,6 +6,226 @@ envueltos. A partir de ahi, todas las interacciones (buscar,
 ordenar, paginar) sustituyen SOLO el div de resultados.
 {% endcomment %}
 {% include "panel/documentation_h30/_personal_search_form.html" with search=search %}
+
+{# H31 (S75) punto 1: barra de acción masiva. Vive AQUÍ, fuera de
+   #personal-results, porque este bloque nunca se repinta al buscar/
+   paginar (a diferencia de la tabla) -- la selección debe sobrevivir
+   a esos repintados, no reiniciarse con cada uno. Oculta hasta que
+   haya al menos una persona seleccionada. #}
+<div id="person-mass-bar" class="alert alert-secondary py-2 px-3 mb-3 d-none">
+    <div class="d-flex align-items-center gap-2 flex-wrap">
+        <strong><span id="person-mass-count">0</span> seleccionados</strong>
+        <button type="button" class="btn btn-sm btn-outline-secondary" id="person-mass-clear">Limpiar selección</button>
+
+        <span class="vr mx-2"></span>
+
+        <select id="person-mass-epi" class="form-select form-select-sm" style="width:auto;">
+            <option value="">EPI a entregar…</option>
+            {% for epi in epi_items %}
+            <option value="{{ epi.pk }}">{{ epi.family }} -- {{ epi.label }}</option>
+            {% endfor %}
+        </select>
+        <input type="date" id="person-mass-epi-date" class="form-control form-control-sm" style="width:auto;">
+        <button type="button" class="btn btn-sm btn-primary" id="person-mass-epi-submit">Entregar EPI masivo</button>
+
+        <span class="vr mx-2"></span>
+
+        <select id="person-mass-notify" class="form-select form-select-sm" style="width:auto;">
+            <option value="">Circular/notificación a enviar…</option>
+            {% for ntype in notification_types %}
+            <option value="{{ ntype.code }}">{{ ntype.label }}</option>
+            {% endfor %}
+        </select>
+        <button type="button" class="btn btn-sm btn-primary" id="person-mass-notify-submit">Enviar notificación masiva</button>
+    </div>
+    <div id="person-mass-result" class="small mt-2"></div>
+</div>
+
 <div id="personal-results">
     {% include "panel/documentation_h30/_personal_results.html" with page=page sort_key=sort_key sort_dir=sort_dir search=search %}
 </div>
+
+<script>
+(function () {
+    // H31 (S75). Selección persistida en memoria de la sesión de chat
+    // del navegador (JS puro, nunca localStorage -- este panel es
+    // código de producción real, no un artifact de Claude, así que
+    // localStorage sería válido, pero un Set en closure basta y no
+    // sobrevive a un F5 -- comportamiento correcto, la selección es
+    // de una tarea puntual, no algo que deba persistir tras recargar).
+    // Vive en este scope porque #pane-personal (el contenedor htmx
+    // que envuelve todo esto) nunca se vuelve a repintar tras la
+    // carga inicial "click once" -- solo #personal-results se
+    // repinta en cada búsqueda/paginación.
+    if (window.__personMassSelection === undefined) {
+        window.__personMassSelection = new Set();
+    }
+    const selection = window.__personMassSelection;
+
+    function getCookie(name) {
+        const value = `; ${document.cookie}`;
+        const parts = value.split(`; ${name}=`);
+        if (parts.length === 2) return parts.pop().split(';').shift();
+    }
+
+    const bar = document.getElementById('person-mass-bar');
+    const countEl = document.getElementById('person-mass-count');
+    const resultEl = document.getElementById('person-mass-result');
+
+    function refreshBar() {
+        countEl.textContent = selection.size;
+        bar.classList.toggle('d-none', selection.size === 0);
+    }
+
+    function syncCheckboxesToSelection() {
+        // Tras cada repintado de #personal-results (búsqueda/paginación),
+        // las casillas vuelven a nacer sin `checked` -- se reaplica aquí
+        // el estado recordado en `selection` para esta página visible.
+        document.querySelectorAll('.person-select-checkbox').forEach((cb) => {
+            cb.checked = selection.has(cb.value);
+        });
+        const selectAll = document.getElementById('person-select-all-page');
+        if (selectAll) {
+            const boxes = document.querySelectorAll('.person-select-checkbox');
+            selectAll.checked = boxes.length > 0 && Array.from(boxes).every((cb) => cb.checked);
+        }
+    }
+    syncCheckboxesToSelection();
+    refreshBar();
+
+    // Delegación de eventos sobre #pane-personal (contenedor estable,
+    // nunca reemplazado) -- cubre las casillas de cualquier repintado
+    // futuro de #personal-results sin tener que reengancharse cada vez.
+    const paneRoot = document.getElementById('pane-personal');
+    paneRoot.addEventListener('change', function (ev) {
+        if (ev.target.classList.contains('person-select-checkbox')) {
+            if (ev.target.checked) {
+                selection.add(ev.target.value);
+            } else {
+                selection.delete(ev.target.value);
+            }
+            const boxes = document.querySelectorAll('.person-select-checkbox');
+            const selectAll = document.getElementById('person-select-all-page');
+            if (selectAll) {
+                selectAll.checked = boxes.length > 0 && Array.from(boxes).every((cb) => cb.checked);
+            }
+            refreshBar();
+        } else if (ev.target.id === 'person-select-all-page') {
+            document.querySelectorAll('.person-select-checkbox').forEach((cb) => {
+                cb.checked = ev.target.checked;
+                if (ev.target.checked) {
+                    selection.add(cb.value);
+                } else {
+                    selection.delete(cb.value);
+                }
+            });
+            refreshBar();
+        }
+    });
+
+    // htmx reemplaza el contenido de #personal-results en cada
+    // búsqueda/paginación -- tras cada reemplazo, reaplicar el estado
+    // `checked` recordado sobre las casillas nuevas.
+    paneRoot.addEventListener('htmx:afterSwap', function (ev) {
+        if (ev.target && ev.target.id === 'personal-results') {
+            syncCheckboxesToSelection();
+        }
+    });
+
+    document.getElementById('person-mass-clear').addEventListener('click', function () {
+        selection.clear();
+        syncCheckboxesToSelection();
+        refreshBar();
+        resultEl.innerHTML = '';
+    });
+
+    document.getElementById('person-mass-epi-submit').addEventListener('click', function () {
+        const epiId = document.getElementById('person-mass-epi').value;
+        const deliveryDate = document.getElementById('person-mass-epi-date').value;
+        if (selection.size === 0) {
+            resultEl.innerHTML = '<div class="alert alert-warning py-1 px-2 mb-0">No hay personas seleccionadas.</div>';
+            return;
+        }
+        if (!epiId || !deliveryDate) {
+            resultEl.innerHTML = '<div class="alert alert-warning py-1 px-2 mb-0">Falta elegir el EPI o la fecha de entrega.</div>';
+            return;
+        }
+        const formData = new FormData();
+        selection.forEach((pk) => formData.append('person_ids', pk));
+        formData.append('epi_id', epiId);
+        formData.append('delivery_date', deliveryDate);
+        resultEl.innerHTML = '<div class="text-muted">Entregando…</div>';
+        fetch("{% url 'panel:documentation_personal_epi_mass_delivery' %}", {
+            method: 'POST',
+            headers: {'X-CSRFToken': getCookie('csrftoken')},
+            body: formData,
+        }).then((r) => r.json()).then((data) => {
+            if (data.ok) {
+                let msg = `<div class="alert alert-success py-1 px-2 mb-0">${data.created_count} entregas registradas` +
+                    ` (${data.whatsapp_sent_count} confirmaciones WhatsApp enviadas).</div>`;
+                if (data.errors && data.errors.length) {
+                    msg += `<div class="alert alert-warning py-1 px-2 mb-0 mt-1">${data.errors.length} personas omitidas: ` +
+                        data.errors.map((e) => e.error).join('; ') + '</div>';
+                }
+                resultEl.innerHTML = msg;
+            } else {
+                resultEl.innerHTML = `<div class="alert alert-danger py-1 px-2 mb-0">${data.error || 'Error al entregar.'}</div>`;
+            }
+        }).catch(() => {
+            resultEl.innerHTML = '<div class="alert alert-danger py-1 px-2 mb-0">Error de red al entregar.</div>';
+        });
+    });
+
+    document.getElementById('person-mass-notify-submit').addEventListener('click', function () {
+        const typeCode = document.getElementById('person-mass-notify').value;
+        if (selection.size === 0) {
+            resultEl.innerHTML = '<div class="alert alert-warning py-1 px-2 mb-0">No hay personas seleccionadas.</div>';
+            return;
+        }
+        if (!typeCode) {
+            resultEl.innerHTML = '<div class="alert alert-warning py-1 px-2 mb-0">Falta elegir la circular/notificación.</div>';
+            return;
+        }
+        const formData = new FormData();
+        selection.forEach((pk) => formData.append('person_ids', pk));
+        formData.append('tipo', typeCode);
+        resultEl.innerHTML = '<div class="text-muted">Generando notificaciones…</div>';
+        fetch("{% url 'panel:documentation_personal_notify_mass' %}", {
+            method: 'POST',
+            headers: {'X-CSRFToken': getCookie('csrftoken')},
+            body: formData,
+        }).then((r) => {
+            const contentType = r.headers.get('Content-Type') || '';
+            if (contentType.includes('application/zip')) {
+                const createdCount = r.headers.get('X-Mass-Created-Count') || '0';
+                const errorsRaw = r.headers.get('X-Mass-Errors') || '[]';
+                r.blob().then((blob) => {
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `notificaciones_masivas_${typeCode.toLowerCase()}.zip`;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    window.URL.revokeObjectURL(url);
+                    let msg = `<div class="alert alert-success py-1 px-2 mb-0">${createdCount} notificaciones generadas (descargadas en .zip).</div>`;
+                    try {
+                        const errors = JSON.parse(errorsRaw);
+                        if (errors.length) {
+                            msg += `<div class="alert alert-warning py-1 px-2 mb-0 mt-1">${errors.length} personas omitidas: ` +
+                                errors.map((e) => e.error).join('; ') + '</div>';
+                        }
+                    } catch (e) { /* sin errores que parsear */ }
+                    resultEl.innerHTML = msg;
+                });
+            } else {
+                r.json().then((data) => {
+                    resultEl.innerHTML = `<div class="alert alert-danger py-1 px-2 mb-0">${data.error || 'Error al generar notificaciones.'}</div>`;
+                });
+            }
+        }).catch(() => {
+            resultEl.innerHTML = '<div class="alert alert-danger py-1 px-2 mb-0">Error de red al generar notificaciones.</div>';
+        });
+    });
+})();
+</script>

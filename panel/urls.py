@@ -21,12 +21,14 @@ from panel.views_documentation_h30 import (
     DocumentViewView,
     DocumentationHubV2View,
     EpiIndividualDeliveryView,
+    EpiMassDeliveryView,
     EpiResultsFragmentView,
     EpiTabFragmentView,
     MachineDetailView,
     MachineListFragmentView,
     PersonalDetailView,
     PersonalListFragmentView,
+    PersonalNotificationMassSendView,
     PersonalNotificationSendView,
     PersonalResultsFragmentView,
     PersonalUpdateView,
@@ -395,6 +397,9 @@ urlpatterns = [
     # H31 (S74) punto 3: entrega individual de EPI desde la ficha.
     path("documentacion/personal/<int:pk>/entregar-epi/", EpiIndividualDeliveryView.as_view(), name="documentation_personal_epi_delivery"),
     path("documentacion/personal/<int:pk>/notificar/", PersonalNotificationSendView.as_view(), name="documentation_personal_notify"),
+    # H31 (S75) punto 1: acciones masivas sobre la selección con casillero del listado Personal.
+    path("documentacion/personal/entregar-epi-masivo/", EpiMassDeliveryView.as_view(), name="documentation_personal_epi_mass_delivery"),
+    path("documentacion/personal/notificar-masivo/", PersonalNotificationMassSendView.as_view(), name="documentation_personal_notify_mass"),
     path("documentacion/epis/", EpiTabFragmentView.as_view(), name="documentation_epi_tab"),
     # H30 (S50): mismo motivo que documentation_personal_results.
     path("documentacion/epis/resultados/", EpiResultsFragmentView.as_view(), name="documentation_epi_results"),
