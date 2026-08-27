@@ -1241,6 +1241,38 @@ class PersonIdentity(models.Model):
     email = models.EmailField(
         max_length=150, blank=True, verbose_name="Correo electrónico (Excel)",
     )
+    # ------------------------------------------------------------------
+    # H31 (S76). Dirección postal y fechas de alta/baja en la empresa --
+    # Miguel Ángel, verbatim: "echo en falta la dirección [...] no
+    # tenemos dirección, población, código postal, provincia [...] fecha
+    # de alta, fecha de baja." A diferencia de los campos "(Excel)" de
+    # arriba, estos NO vienen del Excel de plantilla (no existe esa
+    # columna hoy) -- son editables directamente desde el panel, mismo
+    # mecanismo que given_name/first_surname/second_surname/phone/email
+    # (ver PersonalUpdateView.EDITABLE_FIELDS). `hire_date`/
+    # `termination_date` quedan en blanco para el histórico ya
+    # existente -- nunca se inventa una fecha retroactiva; se rellenan
+    # a partir de ahora, tanto para altas nuevas como para bajas
+    # reales que ocurran desde este punto en adelante.
+    # ------------------------------------------------------------------
+    address_street = models.CharField(
+        max_length=200, blank=True, verbose_name="Dirección",
+    )
+    postal_code = models.CharField(
+        max_length=10, blank=True, verbose_name="Código postal",
+    )
+    city = models.CharField(
+        max_length=100, blank=True, verbose_name="Población",
+    )
+    province = models.CharField(
+        max_length=100, blank=True, verbose_name="Provincia",
+    )
+    hire_date = models.DateField(
+        null=True, blank=True, verbose_name="Fecha de alta en la empresa",
+    )
+    termination_date = models.DateField(
+        null=True, blank=True, verbose_name="Fecha de baja en la empresa",
+    )
     excel_imported_at = models.DateTimeField(
         null=True, blank=True,
         verbose_name="Última importación real del Excel",

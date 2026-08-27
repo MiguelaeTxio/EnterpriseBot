@@ -610,9 +610,11 @@ class EpiIndividualDeliveryView(DocsUploadAccessMixin, View):
 
 class PersonalUpdateView(DocsUploadAccessMixin, View):
     """
-    H31 (S74). POST: edita los campos reales de PersonIdentity que
-    tiene sentido de negocio corregir a mano desde el panel --
-    given_name/first_surname/second_surname/phone/email. El resto de
+    H31 (S74, ampliado S76). POST: edita los campos reales de
+    PersonIdentity que tiene sentido de negocio corregir a mano desde
+    el panel -- datos personales/contacto/dirección + fecha de alta/
+    baja en la empresa (S76, Miguel Ángel: "echo en falta la
+    dirección [...] fecha de alta, fecha de baja"). El resto de
     campos del modelo (dni, is_active_employee, employer_company,
     fechas de caducidad, ss_affiliation_number) son datos de
     `import_worker_machine_excel` -- editarlos a mano aquí quedaría
@@ -623,16 +625,39 @@ class PersonalUpdateView(DocsUploadAccessMixin, View):
     escritura, no de simple consulta.
     """
 
-    EDITABLE_FIELDS = (
+    TEXT_EDITABLE_FIELDS = (
         "given_name", "first_surname", "second_surname", "phone", "email",
+        "address_street", "postal_code", "city", "province",
     )
+    DATE_EDITABLE_FIELDS = ("hire_date", "termination_date")
+    EDITABLE_FIELDS = TEXT_EDITABLE_FIELDS + DATE_EDITABLE_FIELDS
 
     def post(self, request, pk):
+        from datetime import date
+
         person = get_object_or_404(PersonIdentity, pk=pk)
         updated_fields = []
-        for field in self.EDITABLE_FIELDS:
+        for field in self.TEXT_EDITABLE_FIELDS:
             if field in request.POST:
                 setattr(person, field, request.POST.get(field, "").strip())
+                updated_fields.append(field)
+        for field in self.DATE_EDITABLE_FIELDS:
+            if field in request.POST:
+                raw_value = request.POST.get(field, "").strip()
+                if raw_value:
+                    try:
+                        year, month, day = (int(x) for x in raw_value.split("-"))
+                        setattr(person, field, date(year, month, day))
+                    except ValueError:
+                        return JsonResponse(
+                            {
+                                "ok": False,
+                                "error": "Fecha con formato inválido en %s." % field,
+                            },
+                            status=400,
+                        )
+                else:
+                    setattr(person, field, None)
                 updated_fields.append(field)
         if not updated_fields:
             return JsonResponse(
