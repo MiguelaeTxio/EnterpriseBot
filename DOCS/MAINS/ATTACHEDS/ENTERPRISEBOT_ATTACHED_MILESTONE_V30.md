@@ -5309,9 +5309,26 @@ completo.**
   en vez de "2"; meses mal escritos "DICIEMRE"/"SEPTIEBRE") --
   resueltos a mano con los datos ya leídos, sin tocar el regex
   compartido para 3 casos puntuales.
-- Total final: **113 `DocumentAcknowledgment`** en BD, **4 archivos
-  activos restantes** (todas plantillas en blanco, correctamente sin
-  tocar).
+- **Corrección real detectada por Miguel Ángel tras el primer cierre**:
+  las 4 plantillas en blanco dejadas activas nunca se vincularon al
+  mecanismo ya existente `DocumentTypeCatalog.current_template`
+  (H30 S69, "plantilla vigente" -- FK a `DocumentIndexEntry`, para
+  la futura interfaz de notificaciones). Corregido: `PLANTILLA_
+  RECURSO_PREVENTIVO.docx` (id 42920) y `PLANTILLA_NOMBRAMIENTO_
+  RESPONSABLE_SEGURIDAD.docx` (id 42919) fijadas como vigentes de
+  `RECURSO_PREVENTIVO`/`NOMBRAMIENTO_RESPONSABLE_SEGURIDAD`
+  respectivamente -- confirmado contra un precedente real ya en uso
+  (`INFORMACION_MEDIDAS_PROTECCION` → `PLANTILLA_MEDIDAS_
+  ADICIONALES_PROTECCION.docx`, mismo criterio de nomenclatura). De
+  paso, `Circular Leave Letter.doc` (reclasificada antes a
+  `CIRCULAR_INFORMATIVA` en esta misma sesión) fijada también como
+  su plantilla vigente. Las 2 plantillas `RECURSO_PREVENTIVO` no
+  vigentes (versión Transgrual y "modelo" antiguo, año "200__") ->
+  papelera, confirmado por Miguel Ángel.
+- Total final: **113 `DocumentAcknowledgment`** en BD, **2 archivos
+  activos restantes** (las plantillas vigentes de `RECURSO_
+  PREVENTIVO` y `NOMBRAMIENTO_RESPONSABLE_SEGURIDAD`, correctamente
+  vinculadas vía `current_template`).
 
 ## Hoja de ruta para S73
 
