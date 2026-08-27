@@ -319,22 +319,55 @@ PARTIDA DOBLE** -- ver COMPLETADAS EN S75.
   **pendiente de verificación con datos reales por parte de Miguel
   Ángel** (la salida del Comando S de cierre de este bloque no trajo
   el bloque `git log`/`showmigrations`, se repitió el Comando S).
-- **Incidencia real detectada, EN DIAGNÓSTICO (no corregida
-  todavía)** -- documentos con fecha de caducidad futura marcados
-  `is_obsolete=True` (Miguel Ángel: "he visto ya carnés que cumplen
-  en 2030 y me los marca como obsoletos"). Diagnóstico inicial contra
-  BD real: 11 filas reales con este patrón en `DOC. PERSONAL`/
-  `DOC. MAQUINAS` (`CARNET_CONDUCIR` pk=34187 expira 2029-07-22;
-  10 filas `ITV` de 10 máquinas distintas, expiran entre 2026-12-12 y
-  2028-08-06). Todos los `name` siguen siendo el nombre crudo
-  heredado del disco (`Z-123 6795MTL ITV 06-08-2028.pdf`, etc.), no
-  el esquema de `naming_service` -- confirma también el punto de
-  "selva documental" de más abajo. **Pendiente**: diagnóstico de los
-  "hermanos" (mismo tipo + mismo sujeto) de cada fila para saber si
-  `is_obsolete=True` es correcto (una ITV real más nueva la sustituyó)
-  o un bug real de la lógica de sustitución -- Comando S en curso al
-  cierre de esta sesión, sin analizar todavía. **No tocar el código de
-  vigencia/sustitución hasta tener esa salida real** (nunca a ciegas).
+- **Incidencia real diagnosticada y CERRADA -- documentos con fecha de
+  caducidad futura marcados `is_obsolete=True`** (Miguel Ángel: "he
+  visto ya carnés que cumplen en 2030 y me los marca como
+  obsoletos"). Diagnóstico completo contra BD real (hermanos: mismo
+  tipo + mismo sujeto de cada una de las 11 filas): **no es un bug de
+  código.** `is_current()`/`evaluate_substitution()` se comportan tal
+  como están escritas. 10 de las 11 filas son duplicados reales del
+  mismo ITV (dos escaneos del mismo documento, misma fecha exacta de
+  caducidad, un hermano vigente y otro archivado -- el sistema no
+  perdió ningún dato). La fila de `CARNET_CONDUCIR` sí es un hueco de
+  calidad de dato real y distinto: el hermano que queda vigente tiene
+  `expiry_date` vacío en BD pese a que el nombre del archivo dice
+  2030 -- candidato a que Fase C le extraiga la fecha real algún día,
+  no urgente, no bloquea nada. **`vigencia_service.py` NO se toca --
+  el problema real es de presentación (ver punto 5 de la hoja de ruta
+  S76: agrupar por familia, mostrar solo el vigente, historial aparte
+  bajo demanda), ya cubierto por el rediseño planificado.**
+- **Auditoría de dominio de `DOC. PERSONAL` -- CERRADA.** Catálogo
+  completo confirmado: 73 tipos activos de dominio PERSONAL/BOTH (ver
+  desglose completo por familia en el registro de sesión S75).
+  Corregidos 3 tipos con dominio incorrecto, verificados con muestra
+  real de nombres de archivo antes de tocar nada (nunca a ciegas):
+  `CSS` (COMPANY -> PERSONAL, cuota de autónomo -- hermano de
+  `AUTONOMO`), `SOLICITUD_ADMINISTRATIVA` (MACHINE -> PERSONAL,
+  solicitudes de examen individuales), `CERTIFICADO_PODERES` (MACHINE
+  -> COMPANY, mandatos/poderes de empresa, ni de máquina ni de
+  persona concreta). `CE`/`POLIZA_SEGURO`/`SEGURO` confirmados
+  correctos ya en `MACHINE`, sin cambio.
+- **Deuda técnica de personas huérfanas -- CERRADA (Miguel Ángel,
+  S75: "influye en la presentación de datos en la interfaz").** 1676
+  documentos tipados como PERSONAL/BOTH sin ninguna persona vinculada
+  (58 tipos distintos, `FORMACION` con 944 el mayor volumen).
+  Reutilizadas las herramientas ya existentes (S58/S62, sin
+  reinventar nada): `resolve_domain_pending_types --apply` resolvió
+  229 por carpeta/nombre/ventana deslizante; `trash_orphan_
+  personal_documents --apply` (mismo criterio S62/S73: no está entre
+  los 70 activos -> papelera) mandó los 1447 restantes a papelera.
+  0 fallos en ambos pasos. Verificación final contra BD: 0 huérfanos
+  restantes en tipos PERSONAL/BOTH. Ningún archivo real se toca
+  (4.12) -- papelera es escritura pura de índice, los 1447 siguen en
+  GCS.
+- **Directriz permanente confirmada por Miguel Ángel (S75):**
+  extracción de datos (fechas/campos) siempre con OCR, nunca con
+  Gemini (coste) -- Gemini queda como último recurso real (Fase C).
+  El OCR nunca corre en la consola de PythonAnywhere -- corre en
+  local o en VMs de nube programáticas (mismo patrón que
+  `h28-ocr-batch`). Antes de tocar código de Google Cloud/Vertex
+  AI/SDK, `web_search` obligatorio primero. Aplicará quien retome la
+  Fase C de H30.
 
 ## 5.2. Hoja de ruta para S76 -- REDISEÑO DE LA INTERFAZ DE FICHA DE PERSONA (Miguel Ángel, S75)
 
