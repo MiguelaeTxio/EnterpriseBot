@@ -280,11 +280,10 @@ y se habilita "Guardar".
         <div id="collapseLaboralPartes" class="accordion-collapse collapse {% if partes_filtered %}show{% endif %}" data-bs-parent="#personalLaboralAccordion">
             <div class="accordion-body">
 
-{% if person.company_user %}
 <form method="get" class="row row-cols-lg-auto g-2 align-items-end mb-3" id="partesFilterForm">
     <div class="col-12">
         <label class="form-label small mb-0">Periodo de cobro</label>
-        <select name="partes_period" class="form-select form-select-sm" onchange="document.getElementById('partesFilterForm').submit()">
+        <select name="partes_period" class="form-select form-select-sm" onchange="document.getElementById('partesFilterForm').submit()" {% if not work_periods %}disabled{% endif %}>
             <option value="">Todos</option>
             {% for wp in work_periods %}
             <option value="{{ wp.pk }}" {% if selected_period.pk == wp.pk %}selected{% endif %}>
@@ -315,35 +314,54 @@ y se habilita "Guardar".
         {% endif %}
     </div>
 </form>
+{% if not person.company_user %}
+<small class="text-muted d-block mb-3">Esta persona no tiene usuario del panel vinculado -- solo se muestra el histórico PDF vinculado por nombre, sin partes digitales ni periodos de cobro.</small>
 {% endif %}
 
-<p class="small mb-1"><strong>Digitales</strong> ({{ digital_work_orders|length }})</p>
-{% if person.company_user %}
-<table class="table table-sm table-hover mb-3">
-    <thead><tr><th>Fecha</th><th>Origen</th><th>Estado</th></tr></thead>
+{% comment %}
+H31 (S77). Resumen agregado -- NUNCA listado plano parte a parte
+(Miguel Ángel, verbatim: "no sirve de nada ver un listado [...] parte
+día uno, parte día dos [...] qué sentido tiene eso para un
+supervisor [...] quiero saber las horas que ha echado, en qué máquina
+ha estado trabajando, el parte del día resumen con toda la hora del
+periodo"). Mismo dato que ya usa el Laboratorio de Análisis
+(WorkOrderEntryLine.delta_hours, excluyendo la hora fantasma de
+vacaciones).
+{% endcomment %}
+<div class="d-flex align-items-baseline gap-2 mb-3">
+    <span class="text-muted small text-uppercase">Horas totales del periodo</span>
+    <span class="fs-4 fw-bold">{{ partes_total_hours|floatformat:2 }}</span>
+    <span class="text-muted small">
+        ({{ partes_digital_count }} partes digitales{% if partes_historical_count %} + {{ partes_historical_count }} históricos{% endif %} considerados)
+    </span>
+</div>
+
+<h6 class="text-muted text-uppercase small mb-2">Horas por máquina</h6>
+<table class="table table-sm table-hover mb-4">
+    <thead><tr><th>Máquina</th><th>Horas</th></tr></thead>
     <tbody>
-        {% for wo in digital_work_orders %}
+        {% for row in partes_by_machine %}
         <tr>
-            <td>{{ wo.upload_date|date:"d/m/Y" }}</td>
-            <td>{{ wo.get_source_display }}</td>
-            <td>{{ wo.get_status_display }}</td>
+            <td>{{ row.label }}</td>
+            <td>{{ row.hours|floatformat:2 }}</td>
         </tr>
         {% empty %}
-        <tr><td colspan="3" class="text-muted small">Sin partes digitales para este filtro.</td></tr>
+        <tr><td colspan="2" class="text-muted small">Sin horas registradas para este filtro.</td></tr>
         {% endfor %}
     </tbody>
 </table>
-{% else %}
-<p class="text-muted small mb-1">Esta persona no tiene usuario del panel vinculado -- sin partes digitales que mostrar por esta vía.</p>
-{% endif %}
-<p class="small mb-1"><strong>Histórico (PDF)</strong> ({{ historical_pdf_entries|length }})</p>
+
+<h6 class="text-muted text-uppercase small mb-2">Resumen diario</h6>
 <table class="table table-sm table-hover mb-0">
-    <thead><tr><th>Fecha</th></tr></thead>
+    <thead><tr><th>Fecha</th><th>Horas</th></tr></thead>
     <tbody>
-        {% for entry in historical_pdf_entries %}
-        <tr><td>{{ entry.work_date|date:"d/m/Y"|default:"Sin fecha" }}</td></tr>
+        {% for row in partes_by_day %}
+        <tr>
+            <td>{{ row.date|date:"d/m/Y" }}</td>
+            <td>{{ row.hours|floatformat:2 }}</td>
+        </tr>
         {% empty %}
-        <tr><td class="text-muted small">Sin partes históricos para este filtro.</td></tr>
+        <tr><td colspan="2" class="text-muted small">Sin partes para este filtro.</td></tr>
         {% endfor %}
     </tbody>
 </table>

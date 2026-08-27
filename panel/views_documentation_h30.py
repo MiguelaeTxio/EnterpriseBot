@@ -27,7 +27,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.contrib.staticfiles.finders import find as find_static
 from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
-from django.db.models import Count, Q
+from django.db.models import Count, Q, Sum
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -54,7 +54,7 @@ from panel.mixins import CompanyUserRequiredMixin, DocsUploadAccessMixin
 from panel.models import PanelNavigationState
 from spare_parts.gcs_service import generate_signed_url, upload_bytes
 from whatsapp.services import send_epi_delivery_whatsapp_confirmation
-from work_order_processor.models import WorkOrder, WorkOrderEntry
+from work_order_processor.models import WorkOrder, WorkOrderEntry, WorkOrderEntryLine
 
 BUCKET = "cgs_grupo_alvarez"
 
@@ -579,6 +579,80 @@ def _historical_pdf_entries_for_person(person):
     ).select_related("work_order").order_by("-work_date")
 
 
+def _partes_summary(entry_ids):
+    """
+    H31 (S77). Resumen agregado de Partes de trabajo -- NUNCA un
+    listado plano parte a parte (Miguel Ángel, verbatim: "no sirve de
+    nada ver un listado [...] parte día uno, parte día dos [...] qué
+    sentido tiene eso para un supervisor"). Reutiliza exactamente el
+    mismo dato que ya usa el Laboratorio de Análisis (H20,
+    `analytics/views.py`) -- `WorkOrderEntryLine.delta_hours`, mismo
+    criterio de exclusión de la hora fantasma de vacaciones
+    (`exclude(vacation_period__isnull=False)`, ver
+    AnalyticsLabDataView._line_cost) -- para no inflar las horas
+    reales con el bloque administrativo de vacaciones.
+
+    Devuelve: horas totales del periodo, desglose por máquina (horas
+    por máquina, orden descendente) y resumen diario (fecha + horas
+    ese día) -- exactamente lo que Miguel Ángel pidió: "las horas que
+    ha echado [...] en qué máquina ha estado trabajando [...] el
+    parte del día, resumen, con toda la hora del periodo."
+    ---
+    H31 (S77). Aggregated Partes de trabajo summary -- NEVER a flat
+    part-by-part listing. Reuses the exact same data the Analytics Lab
+    (H20) already computes -- `WorkOrderEntryLine.delta_hours`, same
+    vacation-ghost-line exclusion criterion as
+    `AnalyticsLabDataView._line_cost` -- so real worked hours aren't
+    inflated by the administrative vacation block.
+
+    Returns: total hours for the period, breakdown by machine (hours
+    per machine, descending), and a daily summary (date + hours that
+    day).
+    """
+    from collections import defaultdict
+
+    lines = WorkOrderEntryLine.objects.filter(
+        entry_id__in=entry_ids, delta_hours__isnull=False,
+    ).exclude(vacation_period__isnull=False).select_related(
+        "entry", "machine_asset",
+    )
+
+    hours_by_machine = defaultdict(float)
+    machine_labels = {}
+    hours_by_day = defaultdict(float)
+
+    for line in lines:
+        hours = float(line.delta_hours)
+        if line.machine_asset:
+            key = line.machine_asset.pk
+            machine_labels[key] = (
+                f"{line.machine_asset.code} — {line.machine_asset.brand_model}"
+            )
+        else:
+            key = None
+            machine_labels[None] = "Sin máquina resuelta"
+        hours_by_machine[key] += hours
+        if line.entry.work_date:
+            hours_by_day[line.entry.work_date] += hours
+
+    total_hours = sum(hours_by_machine.values())
+    by_machine = sorted(
+        (
+            {"label": machine_labels[key], "hours": hours}
+            for key, hours in hours_by_machine.items()
+        ),
+        key=lambda row: row["hours"], reverse=True,
+    )
+    by_day = sorted(
+        (
+            {"date": day, "hours": hours}
+            for day, hours in hours_by_day.items()
+        ),
+        key=lambda row: row["date"],
+    )
+    return total_hours, by_machine, by_day
+
+
 def _group_epi_deliveries_by_family(epi_deliveries):
     """
     H31 (S76). Mismo criterio que `_group_current_by_family()` para
@@ -697,14 +771,17 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
             if person.company_user_id else VacationPeriod.objects.none()
         )
         # H31 (S77). Partes de trabajo digitales -- uploaded_by es el
-        # propio operario autenticado (ver panel/views_operator.py y
-        # hr_calendar/services.py), vínculo 100% fiable, sin
-        # resolución por nombre.
+        # propio operario autenticado (ver panel/views_operator.py),
+        # vínculo 100% fiable, sin resolución por nombre. Solo
+        # source=DIGITAL -- GENERATED es la tarea fantasma
+        # administrativa de vacaciones (hr_calendar/services.py), ya
+        # visible en el bloque Vacaciones de este mismo acordeón; no
+        # es "trabajo real" y no debe contar aquí.
         digital_work_orders = (
             WorkOrder.objects.filter(
                 uploaded_by=person.company_user,
-                source__in=[WorkOrder.Source.DIGITAL, WorkOrder.Source.GENERATED],
-            ).order_by("-upload_date")
+                source=WorkOrder.Source.DIGITAL,
+            )
             if person.company_user_id else WorkOrder.objects.none()
         )
         # H31 (S77). Histórico PDF resuelto por nombre normalizado --
@@ -715,9 +792,9 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
         # REAL (ivr_config.WorkPeriod, ver Key Learning H20/S010: no
         # es el mes natural, es el periodo de liquidación real -- p.
         # ej. 21 a 20 del mes siguiente para horas extra, aunque el
-        # periodo ordinario sea 1 a 31), más rango manual de fechas y
-        # orden. El periodo, si se elige, tiene prioridad sobre el
-        # rango manual (mismo dato, más preciso).
+        # periodo ordinario sea 1 a 31), más rango manual de fechas.
+        # El periodo, si se elige, tiene prioridad sobre el rango
+        # manual (mismo dato, más preciso).
         work_periods = (
             WorkPeriod.objects.filter(
                 company_user=person.company_user,
@@ -742,25 +819,35 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
 
         if partes_from:
             digital_work_orders = digital_work_orders.filter(
-                upload_date__date__gte=partes_from,
+                entries__work_date__gte=partes_from,
             )
             historical_pdf_entries = historical_pdf_entries.filter(
                 work_date__gte=partes_from,
             )
         if partes_to:
             digital_work_orders = digital_work_orders.filter(
-                upload_date__date__lte=partes_to,
+                entries__work_date__lte=partes_to,
             )
             historical_pdf_entries = historical_pdf_entries.filter(
                 work_date__lte=partes_to,
             )
+        digital_work_orders = digital_work_orders.distinct()
 
-        digital_work_orders = digital_work_orders.order_by(
-            "upload_date" if partes_sort == "asc" else "-upload_date",
+        # H31 (S77). Resumen agregado -- NUNCA listado plano parte a
+        # parte (Miguel Ángel: "no sirve de nada ver un listado [...]
+        # qué sentido tiene eso para un supervisor"). Ver docstring de
+        # _partes_summary().
+        _digital_entry_ids = list(WorkOrderEntry.objects.filter(
+            work_order__in=digital_work_orders,
+        ).values_list("pk", flat=True))
+        _historical_entry_ids = list(historical_pdf_entries.values_list(
+            "pk", flat=True,
+        ))
+        partes_total_hours, partes_by_machine, partes_by_day = _partes_summary(
+            _digital_entry_ids + _historical_entry_ids,
         )
-        historical_pdf_entries = historical_pdf_entries.order_by(
-            "work_date" if partes_sort == "asc" else "-work_date",
-        )
+        if partes_sort == "desc":
+            partes_by_day = list(reversed(partes_by_day))
 
         # H31 (S74). Avatar -- reutiliza el mismo mecanismo genérico
         # domain_content_type/domain_object_id que cualquier otro
@@ -788,8 +875,11 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
             "laboral_documents": laboral_documents,
             "salud_documents": salud_documents,
             "vacation_periods": vacation_periods,
-            "digital_work_orders": digital_work_orders,
-            "historical_pdf_entries": historical_pdf_entries,
+            "partes_total_hours": partes_total_hours,
+            "partes_by_machine": partes_by_machine,
+            "partes_by_day": partes_by_day,
+            "partes_digital_count": len(_digital_entry_ids),
+            "partes_historical_count": len(_historical_entry_ids),
             "work_periods": work_periods,
             "selected_period": selected_period,
             "partes_from": partes_from,
