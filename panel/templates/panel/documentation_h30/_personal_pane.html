@@ -5,8 +5,10 @@ H30 (S50): esto es lo que carga la pestana Personal la PRIMERA vez
 envueltos. A partir de ahi, todas las interacciones (buscar,
 ordenar, paginar) sustituyen SOLO el div de resultados.
 {% endcomment %}
-{# H31 (S75) punto 2: acceso al CRUD de circulares/notificaciones --
-   pantalla completa aparte, no un fragmento htmx de este pane. #}
+{% comment %}
+H31 (S75) punto 2: acceso al CRUD de circulares/notificaciones --
+pantalla completa aparte, no un fragmento htmx de este pane.
+{% endcomment %}
 <div class="d-flex justify-content-end mb-2">
     <a class="btn btn-sm btn-outline-secondary" href="{% url 'panel:circulars_list' %}">
         <i class="bi bi-envelope-paper"></i> Gestionar circulares
@@ -15,11 +17,13 @@ ordenar, paginar) sustituyen SOLO el div de resultados.
 
 {% include "panel/documentation_h30/_personal_search_form.html" with search=search %}
 
-{# H31 (S75) punto 1: barra de acción masiva. Vive AQUÍ, fuera de
-   #personal-results, porque este bloque nunca se repinta al buscar/
-   paginar (a diferencia de la tabla) -- la selección debe sobrevivir
-   a esos repintados, no reiniciarse con cada uno. Oculta hasta que
-   haya al menos una persona seleccionada. #}
+{% comment %}
+H31 (S75) punto 1: barra de acción masiva. Vive AQUÍ, fuera de
+#personal-results, porque este bloque nunca se repinta al buscar/
+paginar (a diferencia de la tabla) -- la selección debe sobrevivir
+a esos repintados, no reiniciarse con cada uno. Oculta hasta que
+haya al menos una persona seleccionada.
+{% endcomment %}
 <div id="person-mass-bar" class="alert alert-secondary py-2 px-3 mb-3 d-none">
     <div class="d-flex align-items-center gap-2 flex-wrap">
         <strong><span id="person-mass-count">0</span> seleccionados</strong>

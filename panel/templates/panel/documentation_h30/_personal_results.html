@@ -1,9 +1,11 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation_h30/_personal_results.html #}
-{# H31 (S75) punto 1: columna de casillero -- selección para acciones masivas
-   (entrega de EPI / envío de circular). El estado marcado/desmarcado lo
-   gestiona el JS delegado de _personal_pane.html (nunca se repinta al
-   paginar/buscar), así que aquí solo se marca `checked` si el pk ya está
-   en la selección recordada por ese JS al reconstruir la tabla. #}
+{% comment %}
+H31 (S75) punto 1: columna de casillero -- selección para acciones masivas
+(entrega de EPI / envío de circular). El estado marcado/desmarcado lo
+gestiona el JS delegado de _personal_pane.html (nunca se repinta al
+paginar/buscar), así que aquí solo se marca `checked` si el pk ya está
+en la selección recordada por ese JS al reconstruir la tabla.
+{% endcomment %}
 <table class="table table-hover table-light">
     <thead class="table-light">
         <tr>
