@@ -1489,6 +1489,18 @@ class EpiItemCatalog(models.Model):
             "ENTREGA_EPIS_GRUISTA_2026.docx)."
         ),
     )
+    standard_expiry_years = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        verbose_name="Vida útil estándar (años)",
+        help_text=(
+            "Años desde la entrega tras los cuales el EPI se "
+            "considera caducado por defecto (norma EN 361/EN 365, "
+            "sin fecha legal fija -- criterio de plataforma fijado "
+            "por Miguel Ángel en 5 años, S73). Nulo para EPIs sin "
+            "revisión periódica."
+        ),
+    )
     created_at = models.DateTimeField(
         auto_now_add=True,
         verbose_name="Fecha de alta",
