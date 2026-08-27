@@ -164,10 +164,22 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("--apply", action="store_true")
         parser.add_argument("--limit", type=int, default=None)
+        parser.add_argument(
+            "--discard-unresolved-persona", action="store_true",
+            dest="discard_unresolved",
+            help=(
+                "Manda directamente a papelera los documentos sin "
+                "persona resoluble (sin DNI o DNI sin PersonIdentity), "
+                "sin crear ningún EpiDelivery/EpiReview. Decisión "
+                "explícita de Miguel Ángel (S73): se resolverá de "
+                "verdad con la futura interfaz del supervisor."
+            ),
+        )
 
     def handle(self, *args, **options):
         apply_changes = options["apply"]
         limit = options["limit"]
+        discard_unresolved = options["discard_unresolved"]
 
         qs = DocumentIndexEntry.objects.filter(
             bucket="cgs_grupo_alvarez",
@@ -224,6 +236,9 @@ class Command(BaseCommand):
             if not dni:
                 self.stdout.write("SIN DNI: %s" % entry.name)
                 totals["sin_persona"] += 1
+                if apply_changes and discard_unresolved:
+                    if trash_dossier_entry(entry):
+                        self.stdout.write("  -> a papelera (sin persona resoluble)")
                 continue
 
             person = PersonIdentity.objects.filter(
@@ -234,6 +249,9 @@ class Command(BaseCommand):
                     "DNI SIN PersonIdentity: %s -- %s" % (dni, entry.name)
                 )
                 totals["sin_persona"] += 1
+                if apply_changes and discard_unresolved:
+                    if trash_dossier_entry(entry):
+                        self.stdout.write("  -> a papelera (sin persona resoluble)")
                 continue
 
             fecha = _parse_fecha(tables)

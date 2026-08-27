@@ -151,8 +151,17 @@ ITEM_LABEL_MAP = [
     ("CHALECO REFLECTANTE", "CHALECO_REFLECTANTE"),
     ("ZAPATOS DE SEGURIDAD", "ZAPATOS_SEGURIDAD"),
     ("PROTECCION AUDITIVA", "PROTECCION_AUDITIVA"),
+    (
+        "ROPA DE SENALIZACION",  # confirmado S73: "(1 mono buzo)" real
+        "BUZO_ALTA_VISIBILIDAD",
+    ),
     ("GAFAS", "GAFAS_ANTIPARTICULAS"),
 ]
+# "GUANTES" genérico SIEMPRE al final -- es substring de todas las
+# variantes específicas de arriba (GUANTES DE ACCION QUIMICA, etc.),
+# así que solo debe capturar el caso real sin calificar (confirmado
+# S73, 2 documentos reales de CONTROL EPIS).
+ITEM_LABEL_MAP.append(("GUANTES", "GUANTES_PROTECCION"))
 
 
 def _normalize(label):
