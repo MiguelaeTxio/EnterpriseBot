@@ -459,6 +459,190 @@ preguntas bloqueantes.
 
 ---
 
+## 5.3. COMPLETADAS EN S76
+
+Sesión larga, misma continuación de S75 -- Miguel Ángel confirmó la
+familia genérica actual del catálogo como base del acordeón ("está
+bien, voy a echarle un vistazo") y pidió avanzar directamente sobre
+puntos 1/2/3/5/6 de la hoja de ruta de arriba, dejando el punto 4
+(definición fina de familias de uso real) explícitamente pendiente de
+acuerdo, y el punto 7 (cascada de desplegables) sin empezar todavía.
+
+- **Punto 1 (bug de vigencia) -- CERRADO sin tocar código.**
+  Diagnóstico completo con datos reales (hermanos de las 11 filas
+  candidatas): no es un bug de `vigencia_service.py` -- 10/11 son
+  duplicados reales de ingesta (mismo ITV, misma fecha, un vigente y
+  un archivado correctamente), 1/11 es un hueco de dato real
+  (`expiry_date` vacío pese a fecha en el nombre del archivo).
+  Resuelto por diseño con el punto 5 (agrupación + historial aparte).
+- **Punto 2 (modo edición con confirmación) -- CERRADO** (commit
+  `3282b1e`): campos `readonly` por defecto, botón "Modo edición" →
+  modal de confirmación → solo al aceptar se habilita la edición.
+- **Punto 3 (reestructuración sin scroll) -- CERRADO en dos pasadas**:
+  acordeón por familia real del catálogo primero (`3282b1e`), y
+  reestructuración completa en TRES acordeones principales -- Datos
+  personales, Documentación, EPIs -- con acordeones internos anidados
+  dentro (`b0e4bc5`), a petición explícita de Miguel Ángel tras ver
+  los EPIs sueltos fuera de cualquier acordeón. `data-bs-parent` en
+  todos los niveles para que abrir un panel cierre los demás (petición
+  explícita, "cuando se abre un acordeón se cierran los demás").
+  Corrección posterior (`1035c83`): quitados los badges numéricos de
+  "Documentación"/"EPIs" en el acordeón principal -- Miguel Ángel
+  detectó que no coincidían con lo que se ve al abrir (contaban el
+  histórico completo, no la lista ya deduplicada).
+- **Punto 5 (solo el vigente, historial aparte) -- CERRADO** para
+  documentos (`3282b1e`, `PersonalDocumentTypeHistoryView`) y para
+  EPIs (`f5097cf`, `_group_epi_deliveries_by_family()` +
+  `PersonalEpiItemHistoryView`) -- mismo modal genérico de historial
+  reutilizado para ambos (`openHistoryModal()`).
+- **Punto 6 (nombres limpios) -- CERRADO**: `document_type.label` en
+  vez de `entry.name` crudo en toda la ficha (`3282b1e`).
+- **Casillero Activos/Inactivos + Empresa en el listado Personal**
+  (`41c5fbe`), no estaba en la hoja de ruta original pero surgió de
+  una petición real de Miguel Ángel sobre el volumen de personal
+  inactivo visible. Semántica literal de checkbox, empresas reales
+  confirmadas contra BD (`GRUAS ADOLFO ALVAREZ SL`, `TRANSGRUAL SL` +
+  variantes, `GRUALDI S.L`, `ASIST.GRUAS GRANADA`), Inactivos =
+  `is_active_employee=False` **o** `None` juntos (decisión explícita:
+  el histórico real nunca se marcó `False` a propósito). Vista inicial
+  por defecto Activos + todas las empresas, luego persistido por
+  usuario (`PanelNavigationState`, ya extensible desde S75).
+- **Deuda técnica de 1676 documentos sin persona asignada -- resuelta
+  de verdad**, reutilizando `resolve_domain_pending_types`/
+  `trash_orphan_personal_documents` (S58/S62, sin reinventar nada):
+  229 resueltos, 1447 a papelera, 0 huérfanos restantes verificado
+  contra BD.
+- **Auditoría de dominio `DOC. PERSONAL` -- cerrada**: 73 tipos
+  PERSONAL/BOTH confirmados, 3 corregidos con evidencia real de
+  nombre de archivo (`CSS`, `SOLICITUD_ADMINISTRATIVA` → PERSONAL;
+  `CERTIFICADO_PODERES` → COMPANY).
+- **Dirección postal + fecha de alta/baja + icono de edición de
+  avatar** (`3df55c9`, migración `0063`): `address_street`/
+  `postal_code`/`city`/`province`/`hire_date`/`termination_date`
+  nuevos en `PersonIdentity`, editables desde el panel (no vienen del
+  Excel). Icono de cámara sobre el avatar, reutiliza `openUploadForm`.
+- **Incidencia real -- comentarios Django `{# #}` multilínea se
+  mostraban como texto literal en producción** (`f253414`): bug propio
+  introducido en S75/S76, corregido convirtiendo a
+  `{% comment %}...{% endcomment %}` en los 5 sitios afectados,
+  verificado que no había ningún otro caso en todo el repositorio.
+- **Regla de diseño permanente: filas alternas gris/blanco en TODAS
+  las tablas del panel** (`c8ab3b7`): CSS global en `panel.css`
+  (`.table:not(.table-striped)`), no tocar tabla por tabla.
+- **Incidencia real -- checkboxes de Activos/Empresa desincronizados
+  de los resultados tras recargar** (`0e88e4a`): Chrome restauraba el
+  estado de checkboxes de una carga anterior después de que Django ya
+  había pintado el HTML real, dejando pantalla y datos
+  desincronizados. Corregido con `autocomplete="off"` en el
+  formulario.
+- **Directriz permanente confirmada por Miguel Ángel: toda pantalla
+  nueva del panel debe persistir su navegación por usuario**
+  (`72ec21c`, documento maestro §4.15) -- `PanelNavigationState`/
+  `NavigationStateSaveView` ya son genéricos por `screen_key` desde
+  S75, reutilizables sin construir nada nuevo por pantalla.
+- **Columna "Método" de EPIs sustituida por ficha técnica/manual real,
+  con corrección de duplicación en la misma sesión**:
+  - Primer intento (`8aee11e`, migración `0064`): campo
+    `EpiItemCatalog.technical_sheet` (FK única) -- **error real, sin
+    comprobar antes si ya existía un mecanismo.**
+  - Corregido en el mismo bloque de trabajo (`51ee669`, migración
+    `0065`): ya existía desde H30 S73 un mecanismo real y con 7
+    documentos reales ya vinculados
+    (`DocumentIndexEntry.domain_content_type`/`domain_object_id`
+    apuntando a `EpiItemCatalog`, mismo patrón que
+    `PersonIdentity`/`MachineAsset`), que además soporta varios
+    documentos por EPI (caso real: ficha técnica + declaración de
+    conformidad) frente a la FK única que se había creado. Campo
+    nuevo retirado sin pérdida de datos (nunca llegó a rellenarse),
+    vista de subida reescrita sobre el mecanismo real. **Lección:
+    antes de añadir un campo/mecanismo nuevo, buscar primero en el
+    propio anexo si ya existe uno -- mismo principio que la
+    verificación de campos de modelo (directriz 4.14), aplicado ahora
+    también a nivel de arquitectura, no solo de nombres de campo.**
+
+---
+
+## 5.4. Hoja de ruta para S77 -- ACORDEÓN LABORAL (Miguel Ángel, S76, cierre de sesión)
+
+Petición para la próxima sesión, verbatim: *"vamos a incluir también
+en la ficha de personal los partes de trabajo y vacaciones [...] un
+acordeón que se llame Laboral [...] dentro de Laboral: dietas, partes
+de trabajo, vacaciones, bajas [...] incapacidad laboral transitoria y
+enfermedad común, accidente laboral, enfermedad laboral."*
+
+**Investigación real hecha en el cierre de S76, antes de escribir
+esta hoja de ruta (para no repetir el error de `technical_sheet` --
+comprobar primero qué ya existe):**
+
+1. **Vacaciones -- YA EXISTE modelo real, no construir nada nuevo.**
+   `hr_calendar.VacationPeriod` (H24): `operator` es FK a
+   `ivr_config.CompanyUser` (no a `PersonIdentity` directamente) --
+   pero `PersonIdentity.company_user` (OneToOne, S74) ya tiende el
+   puente. El acordeón Laboral > Vacaciones debe **consultar y
+   mostrar** `VacationPeriod` filtrado por
+   `operator=person.company_user`, nunca duplicar el modelo. Personas
+   sin `company_user` vinculado no tendrán vacaciones que mostrar por
+   esta vía -- confirmar con Miguel Ángel si eso es aceptable o si
+   hace falta otro puente para el personal sin cuenta de panel.
+2. **Partes de trabajo -- YA EXISTE el pipeline real
+   (`work_order_processor.WorkOrder`/`WorkOrderEntry`), pero el
+   vínculo al trabajador NO es una FK.** `WorkOrderEntry.worker_name`
+   es texto libre derivado del nombre de archivo del PDF ("para evitar
+   variantes ortográficas" según su propio docstring) -- **no hay hoy
+   una forma fiable de filtrar partes de un `PersonIdentity` concreto
+   sin resolver por nombre, el mismo problema de fondo que ya se ha
+   dado en otros puntos del proyecto.** Antes de construir el
+   acordeón Laboral > Partes de trabajo hay que decidir con Miguel
+   Ángel: (a) resolver por nombre con el mismo criterio ya usado en
+   `run_fase_a_sweep`/`resolve_domain_pending_types` (folder/nombre/
+   ventana deslizante), aceptando que no será 100% fiable, o (b)
+   quedarse solo con un enlace al explorador filtrado por nombre,
+   sin intentar una vinculación exacta. **No decidir esto sin
+   Miguel Ángel -- es una decisión de producto, no técnica.**
+3. **Dietas -- YA EXISTE el dato real (`WorkOrderEntry.has_diet`,
+   booleano por parte/jornada), pero Miguel Ángel pidió
+   explícitamente un PLACEHOLDER por ahora** ("Alejandro me lo acaba
+   de decir hoy [...] ahora mismo es un placeholder hasta que le
+   metamos mano, pero bueno, que ya esté ahí"). Criterio de cierre
+   del placeholder: una entrada "Dietas" visible dentro del acordeón
+   Laboral, con un mensaje claro de "en construcción" -- sin lógica
+   real todavía, sin prometer un cálculo o listado que no existe.
+4. **Bajas médicas (incapacidad temporal) -- NO existe hoy ningún
+   modelo estructurado**, solo tipos documentales sueltos
+   (`PARTE_BAJA_MEDICA`, 250 documentos reales; `BAJA_PERSONAL`, 684,
+   que es baja de Seguridad Social, no médica). Investigado en la web
+   antes de escribir esto (petición explícita de Miguel Ángel):
+   categorías reales españolas según el Ministerio de Trabajo/LGSS --
+   **contingencias comunes** (enfermedad común, accidente no laboral)
+   y **contingencias profesionales** (accidente de trabajo, enfermedad
+   profesional), más maternidad/paternidad, riesgo en
+   embarazo/lactancia y (desde 2023) situaciones de salud
+   menstrual/reproductiva. Miguel Ángel mencionó explícitamente
+   "incapacidad laboral transitoria y enfermedad común, accidente
+   laboral, enfermedad laboral" -- encaja con las categorías reales de
+   contingencia común/profesional. **Decisión pendiente con Miguel
+   Ángel**: ¿construir un modelo real nuevo (fecha inicio/fin,
+   categoría de contingencia, documento de origen) o empezar mostrando
+   solo los documentos ya tipados (`PARTE_BAJA_MEDICA`) agrupados,
+   sin modelo estructurado todavía?
+
+**Criterio de cierre de S77 (a proponer, confirmar con Miguel Ángel al
+arrancar):** al menos el acordeón Laboral construido con sus
+secciones (Dietas como placeholder explícito, Vacaciones conectado a
+`VacationPeriod` real, Bajas mostrando al menos los documentos ya
+tipados) verificado contra BD real de al menos una persona con datos
+reales en cada sección. Partes de trabajo queda condicionado a la
+decisión del punto 2 -- no bloquea el resto si Miguel Ángel necesita
+tiempo para decidirlo.
+
+**Si al valorarlo mañana el volumen de trabajo del acordeón Laboral
+parece demasiado grande para seguir dentro de H31, Miguel Ángel dejó
+dicho explícitamente que se puede abrir como hito aparte (PCH) -- su
+impresión inicial es que cabe bien dentro de H31, pero la decisión
+final se toma al arrancar S77, no ahora.**
+
+---
+
 ## 4.1. Pendiente real, posterior a la interfaz (nota de Miguel Ángel, S73)
 
 Una vez cerrada la interfaz de este hito: revisar que todos los tipos
