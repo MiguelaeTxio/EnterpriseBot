@@ -170,6 +170,15 @@ y se habilita "Guardar".
     S77 tras sondeo real: 504/545 = 92.5%). Decisión de Miguel Ángel:
     centralizar todo lo laboral de la persona en un solo sitio de
     primer nivel, en vez de disperso en Administración.
+
+    Acordeón interno propio (personalLaboralAccordion), mismo patrón
+    que personalDocsAccordion/personalEpiAccordion -- corrección S77:
+    la primera versión mostraba las 4 secciones todas a la vez
+    ("un galimatías", Miguel Ángel), con Partes de trabajo
+    especialmente largo. Ahora cada sección es un panel propio, solo
+    uno abierto a la vez (data-bs-parent). Partes de trabajo se abre
+    por defecto cuando el filtro trae algún valor (partes_filtered),
+    para que aplicar un filtro no cierre visualmente el resultado.
     {% endcomment %}
     <div class="accordion-item">
         <h2 class="accordion-header">
@@ -178,10 +187,18 @@ y se habilita "Guardar".
             </button>
         </h2>
         <div id="collapseLaboralMain" class="accordion-collapse collapse" data-bs-parent="#personalMainAccordion">
-            <div class="accordion-body">
+            <div class="accordion-body p-0">
+<div class="accordion" id="personalLaboralAccordion">
 
-<h6 class="text-muted text-uppercase small mt-2 mb-2">Documentos</h6>
-<table class="table table-sm table-hover mb-4">
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button {% if partes_filtered %}collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#collapseLaboralDocs">
+                Documentos <span class="badge bg-primary ms-2">{{ laboral_documents|length }}</span>
+            </button>
+        </h2>
+        <div id="collapseLaboralDocs" class="accordion-collapse collapse {% if not partes_filtered %}show{% endif %}" data-bs-parent="#personalLaboralAccordion">
+            <div class="accordion-body">
+<table class="table table-sm table-hover mb-0">
     <thead><tr><th>Tipo</th><th>Caducidad</th><th>Acciones</th></tr></thead>
     <tbody>
         {% for entry in laboral_documents %}
@@ -206,10 +223,20 @@ y se habilita "Guardar".
         {% endfor %}
     </tbody>
 </table>
+            </div>
+        </div>
+    </div>
 
-<h6 class="text-muted text-uppercase small mb-2">Vacaciones</h6>
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseLaboralVacaciones">
+                Vacaciones <span class="badge bg-primary ms-2">{{ vacation_periods|length }}</span>
+            </button>
+        </h2>
+        <div id="collapseLaboralVacaciones" class="accordion-collapse collapse" data-bs-parent="#personalLaboralAccordion">
+            <div class="accordion-body">
 {% if person.company_user %}
-<table class="table table-sm table-hover mb-4">
+<table class="table table-sm table-hover mb-0">
     <thead><tr><th>Inicio</th><th>Fin</th><th>Etiqueta</th></tr></thead>
     <tbody>
         {% for period in vacation_periods %}
@@ -223,17 +250,75 @@ y se habilita "Guardar".
         {% endfor %}
     </tbody>
 </table>
-<small class="text-muted d-block mb-4">Alta y edición de periodos: próximamente en su propia pestaña del hub de Documentación.</small>
+<small class="text-muted d-block mt-2">Alta y edición de periodos: próximamente en su propia pestaña del hub de Documentación.</small>
 {% else %}
-<p class="text-muted small mb-4">Esta persona no tiene usuario del panel vinculado -- sin vacaciones que mostrar por esta vía.</p>
+<p class="text-muted small mb-0">Esta persona no tiene usuario del panel vinculado -- sin vacaciones que mostrar por esta vía.</p>
+{% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseLaboralDietas">
+                Dietas
+            </button>
+        </h2>
+        <div id="collapseLaboralDietas" class="accordion-collapse collapse" data-bs-parent="#personalLaboralAccordion">
+            <div class="accordion-body">
+<p class="text-muted small mb-0"><i class="bi bi-cone-striped me-1"></i>En construcción.</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button {% if not partes_filtered %}collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#collapseLaboralPartes">
+                Partes de trabajo <span class="badge bg-primary ms-2">{{ digital_work_orders|length|add:historical_pdf_entries|length }}</span>
+            </button>
+        </h2>
+        <div id="collapseLaboralPartes" class="accordion-collapse collapse {% if partes_filtered %}show{% endif %}" data-bs-parent="#personalLaboralAccordion">
+            <div class="accordion-body">
+
+{% if person.company_user %}
+<form method="get" class="row row-cols-lg-auto g-2 align-items-end mb-3" id="partesFilterForm">
+    <div class="col-12">
+        <label class="form-label small mb-0">Periodo de cobro</label>
+        <select name="partes_period" class="form-select form-select-sm" onchange="document.getElementById('partesFilterForm').submit()">
+            <option value="">Todos</option>
+            {% for wp in work_periods %}
+            <option value="{{ wp.pk }}" {% if selected_period.pk == wp.pk %}selected{% endif %}>
+                {{ wp.start_date|date:"d/m/Y" }} — {{ wp.end_date|date:"d/m/Y"|default:"abierto" }}{% if wp.label %} ({{ wp.label }}){% endif %}{% if wp.is_closed %} [liquidado]{% endif %}
+            </option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-12">
+        <label class="form-label small mb-0">Desde</label>
+        <input type="date" name="partes_from" class="form-control form-control-sm" value="{{ partes_from|date:'Y-m-d' }}">
+    </div>
+    <div class="col-12">
+        <label class="form-label small mb-0">Hasta</label>
+        <input type="date" name="partes_to" class="form-control form-control-sm" value="{{ partes_to|date:'Y-m-d' }}">
+    </div>
+    <div class="col-12">
+        <label class="form-label small mb-0">Orden</label>
+        <select name="partes_sort" class="form-select form-select-sm">
+            <option value="desc" {% if partes_sort == "desc" %}selected{% endif %}>Más reciente primero</option>
+            <option value="asc" {% if partes_sort == "asc" %}selected{% endif %}>Más antiguo primero</option>
+        </select>
+    </div>
+    <div class="col-12">
+        <button type="submit" class="btn btn-sm btn-primary">Filtrar</button>
+        {% if partes_filtered %}
+        <a href="{% url 'panel:documentation_personal_detail' pk=person.pk %}" class="btn btn-sm btn-outline-secondary">Quitar filtro</a>
+        {% endif %}
+    </div>
+</form>
 {% endif %}
 
-<h6 class="text-muted text-uppercase small mb-2">Dietas</h6>
-<p class="text-muted small mb-4"><i class="bi bi-cone-striped me-1"></i>En construcción.</p>
-
-<h6 class="text-muted text-uppercase small mb-2">Partes de trabajo</h6>
-{% if person.company_user %}
 <p class="small mb-1"><strong>Digitales</strong> ({{ digital_work_orders|length }})</p>
+{% if person.company_user %}
 <table class="table table-sm table-hover mb-3">
     <thead><tr><th>Fecha</th><th>Origen</th><th>Estado</th></tr></thead>
     <tbody>
@@ -244,7 +329,7 @@ y se habilita "Guardar".
             <td>{{ wo.get_status_display }}</td>
         </tr>
         {% empty %}
-        <tr><td colspan="3" class="text-muted small">Sin partes digitales registrados.</td></tr>
+        <tr><td colspan="3" class="text-muted small">Sin partes digitales para este filtro.</td></tr>
         {% endfor %}
     </tbody>
 </table>
@@ -252,17 +337,22 @@ y se habilita "Guardar".
 <p class="text-muted small mb-1">Esta persona no tiene usuario del panel vinculado -- sin partes digitales que mostrar por esta vía.</p>
 {% endif %}
 <p class="small mb-1"><strong>Histórico (PDF)</strong> ({{ historical_pdf_entries|length }})</p>
-<table class="table table-sm table-hover mb-1">
+<table class="table table-sm table-hover mb-0">
     <thead><tr><th>Fecha</th></tr></thead>
     <tbody>
         {% for entry in historical_pdf_entries %}
         <tr><td>{{ entry.work_date|date:"d/m/Y"|default:"Sin fecha" }}</td></tr>
         {% empty %}
-        <tr><td class="text-muted small">Sin partes históricos vinculados.</td></tr>
+        <tr><td class="text-muted small">Sin partes históricos para este filtro.</td></tr>
         {% endfor %}
     </tbody>
 </table>
 
+            </div>
+        </div>
+    </div>
+
+</div>
             </div>
         </div>
     </div>

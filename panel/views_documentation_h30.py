@@ -49,6 +49,7 @@ from document_explorer.subject_upload_service import (
 from document_management.vigencia_service import DocumentSnapshot, is_current
 from fleet.models import MachineAsset
 from hr_calendar.models import VacationPeriod
+from ivr_config.models import WorkPeriod
 from panel.mixins import CompanyUserRequiredMixin, DocsUploadAccessMixin
 from panel.models import PanelNavigationState
 from spare_parts.gcs_service import generate_signed_url, upload_bytes
@@ -629,6 +630,25 @@ def _group_epi_deliveries_by_family(epi_deliveries):
     ]
 
 
+def _parse_date_param(raw):
+    """
+    H31 (S77). Parsea un parámetro GET de fecha YYYY-MM-DD (input
+    HTML type="date"); devuelve None ante cualquier valor vacío o
+    inválido, nunca lanza excepción.
+    ---
+    H31 (S77). Parses a YYYY-MM-DD GET date parameter (HTML
+    type="date" input); returns None on any empty or invalid value,
+    never raises.
+    """
+    from datetime import date as _date
+    if not raw:
+        return None
+    try:
+        return _date.fromisoformat(raw)
+    except ValueError:
+        return None
+
+
 class PersonalDetailView(CompanyUserRequiredMixin, View):
     def get(self, request, pk):
         person = get_object_or_404(
@@ -690,6 +710,58 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
         # H31 (S77). Histórico PDF resuelto por nombre normalizado --
         # ver _historical_pdf_entries_for_person().
         historical_pdf_entries = _historical_pdf_entries_for_person(person)
+
+        # H31 (S77). Filtro de Partes de trabajo -- periodo de cobro
+        # REAL (ivr_config.WorkPeriod, ver Key Learning H20/S010: no
+        # es el mes natural, es el periodo de liquidación real -- p.
+        # ej. 21 a 20 del mes siguiente para horas extra, aunque el
+        # periodo ordinario sea 1 a 31), más rango manual de fechas y
+        # orden. El periodo, si se elige, tiene prioridad sobre el
+        # rango manual (mismo dato, más preciso).
+        work_periods = (
+            WorkPeriod.objects.filter(
+                company_user=person.company_user,
+            ).order_by("-start_date")
+            if person.company_user_id else WorkPeriod.objects.none()
+        )
+        partes_period_id = request.GET.get("partes_period", "").strip()
+        partes_from = _parse_date_param(request.GET.get("partes_from"))
+        partes_to = _parse_date_param(request.GET.get("partes_to"))
+        partes_sort = request.GET.get("partes_sort", "desc")
+        if partes_sort not in ("asc", "desc"):
+            partes_sort = "desc"
+
+        selected_period = None
+        if partes_period_id:
+            selected_period = next(
+                (p for p in work_periods if str(p.pk) == partes_period_id), None,
+            )
+        if selected_period:
+            partes_from = selected_period.start_date
+            partes_to = selected_period.end_date
+
+        if partes_from:
+            digital_work_orders = digital_work_orders.filter(
+                upload_date__date__gte=partes_from,
+            )
+            historical_pdf_entries = historical_pdf_entries.filter(
+                work_date__gte=partes_from,
+            )
+        if partes_to:
+            digital_work_orders = digital_work_orders.filter(
+                upload_date__date__lte=partes_to,
+            )
+            historical_pdf_entries = historical_pdf_entries.filter(
+                work_date__lte=partes_to,
+            )
+
+        digital_work_orders = digital_work_orders.order_by(
+            "upload_date" if partes_sort == "asc" else "-upload_date",
+        )
+        historical_pdf_entries = historical_pdf_entries.order_by(
+            "work_date" if partes_sort == "asc" else "-work_date",
+        )
+
         # H31 (S74). Avatar -- reutiliza el mismo mecanismo genérico
         # domain_content_type/domain_object_id que cualquier otro
         # documento vinculado, filtrando por el código de catálogo
@@ -718,6 +790,15 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
             "vacation_periods": vacation_periods,
             "digital_work_orders": digital_work_orders,
             "historical_pdf_entries": historical_pdf_entries,
+            "work_periods": work_periods,
+            "selected_period": selected_period,
+            "partes_from": partes_from,
+            "partes_to": partes_to,
+            "partes_sort": partes_sort,
+            "partes_filtered": bool(
+                partes_period_id or partes_from or partes_to
+                or partes_sort != "desc",
+            ),
             "avatar": avatar,
             "doc_types": doc_types, "epi_deliveries": epi_deliveries,
             "epi_families": epi_families,
