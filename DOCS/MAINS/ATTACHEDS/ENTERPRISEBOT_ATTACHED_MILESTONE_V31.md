@@ -121,3 +121,17 @@ supervisor usará en producción, no solo la consulta.
 Criterio de cierre de la primera sesión: al menos el punto 1
 (preguntas resueltas) y un punto de acción real (2 o 3) completado y
 verificado contra BD, no solo diseñado.
+
+---
+
+## 4. Pendiente real, posterior a la interfaz (nota de Miguel Ángel, S73)
+
+Una vez cerrada la interfaz de este hito: revisar que todos los tipos
+documentales de `DOC. PERSONAL` tienen el campo `domain` correcto en
+`DocumentTypeCatalog` -- verbatim, Miguel Ángel: "creo que ya lo
+tenemos todo tipificado, pero no sé si lo tenemos todo en los
+dominios correctos [...] habrá que mirar todo lo que hay en personal
+y ver si está perfectamente dominado." No confundir con volver a
+tipificar (eso ya está cerrado) -- es una auditoría del campo
+`domain` (`PERSONAL`/`MACHINE`/`BOTH`/`COMPANY`) sobre el catálogo ya
+existente, corrigiendo caso por caso lo que esté mal asignado.

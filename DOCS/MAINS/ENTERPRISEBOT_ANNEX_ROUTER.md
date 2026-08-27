@@ -53,8 +53,8 @@ Cumple dos funciones inseparables:
 | H27 | Ingesta de Documentación vía Correo Electrónico | `ENTERPRISEBOT_ATTACHED_MILESTONE_V27.md` |
 | H28 | Migración y Reorganización de Documentación Histórica | `ENTERPRISEBOT_ATTACHED_MILESTONE_V28.md` |
 | H29 | Explorador de Archivos y Gobierno Documental del Panel sobre GCS | `ENTERPRISEBOT_ATTACHED_MILESTONE_V29.md` |
-| H30 | Vinculación Documental Real — Centros de Gasto y Personal | `ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md` ← EN PROGRESO |
-| H31 | Interfaz de Ficha de Personal — EPIs y Notificaciones/Circulares | `ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md` |
+| H30 | Vinculación Documental Real — Centros de Gasto y Personal | `ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md` |
+| H31 | Interfaz de Ficha de Personal — EPIs y Notificaciones/Circulares | `ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md` ← EN PROGRESO |
 
 Todos los anexos viven en `DOCS/MAINS/ATTACHEDS/`.
 
@@ -62,18 +62,26 @@ Todos los anexos viven en `DOCS/MAINS/ATTACHEDS/`.
 
 ## 3. Resultado Actual
 
-**Hito EN PROGRESO:** H30 — Vinculación Documental Real: Centros de
-Gasto y Personal → `ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md`.
-Reactivado en S53 por decisión explícita de Miguel Ángel: se retoma
-la revisión de los resultados de la VM de OCR (`h28-ocr-batch`) según
-la condición de retorno ya documentada abajo, y se suma el incidente
-real reportado por Miguel Ángel al arrancar S53 — el agente H28
-(`h28_migration_agent`, subida de documentación nueva a GCS) parece
-detenido, y los tres procesos en paralelo (`shard0`/`shard1`/`shard2`
-de `local_ocr_classify.py`) muestran resultados muy por debajo de lo
-esperado (`sin_tipo` muy por encima del 15,9% de referencia de S51).
-Diagnóstico sin cerrar al momento de la reactivación — ver hoja de
-ruta de su propio anexo.
+**Hito EN PROGRESO:** H31 — Interfaz de Ficha de Personal: EPIs y
+Notificaciones/Circulares → `ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md`.
+Abierto y activado en la misma sesión (S73) por decisión explícita de
+Miguel Ángel, inmediatamente después de cerrar el bloque EPIs de H30:
+hace falta la interfaz real de entrega/envío (ficha de persona
+editable, EPIs y notificaciones individuales y masivas, CRUD de
+circulares), no solo la consulta del histórico ya migrado. Ver hoja
+de ruta de su propio anexo.
+
+**Hito PAUSADO en esta sesión (S73):** H30 — Vinculación Documental
+Real: Centros de Gasto y Personal →
+`ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md`. El bloque EPIs de su hoja
+de ruta S73 quedó completo (113 `DocumentAcknowledgment`, extractores
+de Botiquines/CONTROL EPIS/ARNES MIRA 12-A/RECURSO PREVENTIVO,
+mecanismo `current_template` aplicado). Pendiente real al pausar:
+Fase A de `DOC. MAQUINAS` (bloqueada hasta ahora por EPIs, ya
+desbloqueada) y la deuda técnica aparcada (plantillas de
+comunicados/notificaciones de S71/S72, interfaz del supervisor --
+esta última absorbida por el propio H31). Se retoma cuando H31 cierre
+su primera fase de interfaz.
 
 **Hito PAUSADO en esta sesión (S53):** H07 — Partes Diarios de
 Reparación Digital → `ENTERPRISEBOT_ATTACHED_MILESTONE_V07.md`. Sin

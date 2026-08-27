@@ -5332,6 +5332,11 @@ completo.**
 
 ## Hoja de ruta para S73
 
+**HITO PAUSADO al cierre de esta sesión** -- decisión explícita de
+Miguel Ángel, PCH a H31 (Interfaz de Ficha de Personal) inmediatamente
+después de cerrar el bloque EPIs. La hoja de ruta de abajo queda tal
+cual para cuando se retome.
+
 **Bloque EPIs COMPLETO (puntos 1-6) en esta misma sesión** -- ver
 bloque "COMPLETADAS EN S73" arriba. Único pendiente real de EPIs:
 
