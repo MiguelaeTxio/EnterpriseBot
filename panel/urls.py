@@ -28,6 +28,7 @@ from panel.views_documentation_h30 import (
     PersonalListFragmentView,
     PersonalResultsFragmentView,
     PersonalTestEmlView,
+    PersonalUpdateView,
     SubjectDocumentUploadView,
 )
 from panel.views import (
@@ -388,6 +389,8 @@ urlpatterns = [
     # _personal_search_form.html sobre el bug que esto corrige).
     path("documentacion/personal/resultados/", PersonalResultsFragmentView.as_view(), name="documentation_personal_results"),
     path("documentacion/personal/<int:pk>/", PersonalDetailView.as_view(), name="documentation_personal_detail"),
+    # H31 (S74): edición de ficha de persona (given_name/first_surname/second_surname/phone/email).
+    path("documentacion/personal/<int:pk>/actualizar/", PersonalUpdateView.as_view(), name="documentation_personal_update"),
     path("documentacion/personal/<int:pk>/probar-eml/", PersonalTestEmlView.as_view(), name="documentation_personal_test_eml"),
     path("documentacion/epis/", EpiTabFragmentView.as_view(), name="documentation_epi_tab"),
     # H30 (S50): mismo motivo que documentation_personal_results.

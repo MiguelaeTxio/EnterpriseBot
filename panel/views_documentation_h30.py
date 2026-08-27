@@ -24,6 +24,7 @@ La vía de buzón de correo queda para más adelante, fuera de alcance
 de esta sesión.
 """
 from django.contrib.contenttypes.models import ContentType
+from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
 from django.db.models import Count, Q
 from django.http import HttpResponse, JsonResponse
@@ -286,6 +287,13 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
             deleted_at__isnull=True, purged_at__isnull=True,
         ).select_related("document_type").order_by("-id")
         current, obsolete = _split_current_obsolete(entries)
+        # H31 (S74). Avatar -- reutiliza el mismo mecanismo genérico
+        # domain_content_type/domain_object_id que cualquier otro
+        # documento vinculado, filtrando por el código de catálogo
+        # IMAGEN ya sembrado (H30 S67). Sin campo dedicado nuevo en
+        # PersonIdentity -- decisión confirmada por Miguel Ángel en
+        # S73. El más reciente gana si hay más de una imagen vigente.
+        avatar = entries.filter(document_type__code="IMAGEN").first()
         doc_types = DocumentTypeCatalog.objects.filter(
             is_active=True, domain__in=["PERSONAL", "BOTH"],
         ).order_by("label")
@@ -294,9 +302,53 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
         ).select_related("epi").order_by("-delivery_date")
         return render(request, "panel/documentation_h30/_personal_detail.html", {
             "person": person, "current": current, "obsolete": obsolete,
+            "avatar": avatar,
             "doc_types": doc_types, "epi_deliveries": epi_deliveries,
             "active_nav": "documentation_hub",
             "family_choices": DocumentTypeCatalog.FAMILY_CHOICES,
+        })
+
+
+class PersonalUpdateView(DocsUploadAccessMixin, View):
+    """
+    H31 (S74). POST: edita los campos reales de PersonIdentity que
+    tiene sentido de negocio corregir a mano desde el panel --
+    given_name/first_surname/second_surname/phone/email. El resto de
+    campos del modelo (dni, is_active_employee, employer_company,
+    fechas de caducidad, ss_affiliation_number) son datos de
+    `import_worker_machine_excel` -- editarlos a mano aquí quedaría
+    sobrescrito por la siguiente importación real del Excel, así que
+    se muestran de solo lectura en la ficha, nunca en este formulario.
+    Mismo control de acceso que subir/eliminar documentos
+    (DocsUploadAccessMixin) -- editar la ficha es una acción de
+    escritura, no de simple consulta.
+    """
+
+    EDITABLE_FIELDS = (
+        "given_name", "first_surname", "second_surname", "phone", "email",
+    )
+
+    def post(self, request, pk):
+        person = get_object_or_404(PersonIdentity, pk=pk)
+        updated_fields = []
+        for field in self.EDITABLE_FIELDS:
+            if field in request.POST:
+                setattr(person, field, request.POST.get(field, "").strip())
+                updated_fields.append(field)
+        if not updated_fields:
+            return JsonResponse(
+                {"ok": False, "error": "Sin campos que actualizar."}, status=400,
+            )
+        try:
+            person.full_clean(validate_unique=False)
+        except ValidationError as exc:
+            return JsonResponse(
+                {"ok": False, "error": "; ".join(exc.messages)}, status=400,
+            )
+        person.save(update_fields=updated_fields)
+        return JsonResponse({
+            "ok": True,
+            "person": {f: getattr(person, f) for f in self.EDITABLE_FIELDS},
         })
 
 
