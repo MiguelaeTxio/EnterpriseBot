@@ -1603,6 +1603,26 @@ class EpiItemCatalog(models.Model):
         auto_now_add=True,
         verbose_name="Fecha de alta",
     )
+    technical_sheet = models.ForeignKey(
+        "DocumentIndexEntry",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="technical_sheet_for_epis",
+        verbose_name="Manual de uso / ficha técnica",
+        help_text=(
+            "H31 (S76). Un DocumentIndexEntry más (nunca un archivo "
+            "fuera del sistema) -- mismo patrón exacto que "
+            "DocumentTypeCatalog.current_template (H30 S69). Miguel "
+            "Ángel, verbatim: la columna de método de extracción "
+            "('heurística de nombre', etc.) en la ficha de persona "
+            "'es superflua, el supervisor no la necesita [...] en vez "
+            "de eso, si hay un manual de uso o una ficha técnica, "
+            "deberíamos presentar ahí un enlace al documento.' Nulo "
+            "hasta que se suba el manual/ficha técnica de ese EPI del "
+            "catálogo -- no hay uno todavía para ningún EPI."
+        ),
+    )
 
     class Meta:
         verbose_name = "EPI del catálogo"

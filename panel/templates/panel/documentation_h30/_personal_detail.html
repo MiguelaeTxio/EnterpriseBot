@@ -274,13 +274,22 @@ usan los documentos.
         <div id="collapseEpiFam{{ forloop.counter }}" class="accordion-collapse collapse {% if forloop.first %}show{% endif %}" data-bs-parent="#personalEpiAccordion">
             <div class="accordion-body p-0">
                 <table class="table table-sm table-hover mb-0">
-                    <thead><tr><th>EPI</th><th>Última entrega</th><th>Método</th><th></th></tr></thead>
+                    <thead><tr><th>EPI</th><th>Última entrega</th><th>Ficha técnica</th><th></th></tr></thead>
                     <tbody>
                         {% for delivery in fam.deliveries %}
                         <tr>
                             <td>{{ delivery.epi.label }}</td>
                             <td>{{ delivery.delivery_date }}</td>
-                            <td>{{ delivery.get_extraction_method_display }}</td>
+                            <td>
+                                {% if delivery.epi.technical_sheet %}
+                                <a href="{% url 'panel:documentation_document_view' pk=delivery.epi.technical_sheet.pk %}" target="_blank" class="btn btn-sm btn-outline-secondary">
+                                    <i class="bi bi-file-earmark-text"></i> Ver
+                                </a>
+                                {% else %}
+                                <button type="button" class="btn btn-sm btn-outline-primary"
+                                        onclick="uploadEpiTechnicalSheet({{ delivery.epi.pk }})">Subir</button>
+                                {% endif %}
+                            </td>
                             <td>
                                 <button type="button" class="btn btn-sm btn-outline-info"
                                         onclick="openEpiHistory({{ delivery.epi.pk }})">Historial</button>
@@ -603,6 +612,37 @@ function openDocumentHistory(typeCode) {
 
 function openEpiHistory(epiId) {
     openHistoryModal(`/panel/documentacion/personal/{{ person.pk }}/historial-epi/${epiId}/`);
+}
+
+// H31 (S76): subir manual de uso / ficha técnica de un EPI del
+// catálogo -- input de archivo oculto creado al vuelo, sin formulario
+// visible aparte (Miguel Ángel: en vez de la columna de método,
+// "deberíamos presentar ahí un enlace al documento").
+function uploadEpiTechnicalSheet(epiId) {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.style.display = 'none';
+    input.onchange = function () {
+        if (!input.files.length) { input.remove(); return; }
+        const formData = new FormData();
+        formData.append('file', input.files[0]);
+        fetch(`/panel/documentacion/epis/${epiId}/ficha-tecnica/`, {
+            method: 'POST', body: formData,
+            headers: {'X-CSRFToken': getCookie('csrftoken')},
+        }).then(r => r.json()).then(data => {
+            input.remove();
+            if (data.ok) {
+                location.reload();
+            } else {
+                alert(data.error || 'Error al subir la ficha técnica.');
+            }
+        }).catch(() => {
+            input.remove();
+            alert('Error de red al subir la ficha técnica.');
+        });
+    };
+    document.body.appendChild(input);
+    input.click();
 }
 
 function getCookie(name) {

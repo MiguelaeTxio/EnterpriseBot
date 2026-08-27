@@ -30,15 +30,17 @@ from django.core.paginator import Paginator
 from django.db.models import Count, Q
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.views import View
 from email.message import EmailMessage as StdEmailMessage
 from email.utils import make_msgid
 
 from document_explorer import naming_service
+from document_explorer.index_writer import ensure_folder_chain
 from document_explorer.models import (
     DocumentAcknowledgment, DocumentIndexEntry, DocumentTypeCatalog,
-    EpiDelivery, EpiItemCatalog, EpiReview, PersonIdentity,
+    EpiDelivery, EpiItemCatalog, EpiReview, PersonIdentity, path_digest,
 )
 from document_explorer.subject_upload_service import (
     SubjectUploadError, upload_subject_document,
@@ -47,10 +49,18 @@ from document_management.vigencia_service import DocumentSnapshot, is_current
 from fleet.models import MachineAsset
 from panel.mixins import CompanyUserRequiredMixin, DocsUploadAccessMixin
 from panel.models import PanelNavigationState
-from spare_parts.gcs_service import generate_signed_url
+from spare_parts.gcs_service import generate_signed_url, upload_bytes
 from whatsapp.services import send_epi_delivery_whatsapp_confirmation
 
 BUCKET = "cgs_grupo_alvarez"
+
+# H31 (S76). Carpeta virtual dedicada a manuales/fichas técnicas de
+# EPI del catálogo -- mismo criterio de nomenclatura que
+# `_PLANTILLAS_CIRCULARES` (circulars_h31) y `_CUARENTENA`
+# (document_explorer.buckets): prefijo `_` para distinguirla de las
+# carpetas reales de DOC. PERSONAL/DOC. MAQUINAS. No pertenece a
+# ningún sujeto -- domain_content_type/domain_object_id quedan nulos.
+EPI_TECHNICAL_SHEETS_ROOT = "_FICHAS_TECNICAS_EPI"
 
 # H31 (S76). Casillero de empresa del listado Personal -- valores
 # reales de PersonIdentity.employer_company (texto libre del Excel de
@@ -554,7 +564,7 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
         ).exclude(content_html="").order_by("label")
         epi_deliveries = EpiDelivery.objects.filter(
             person=person,
-        ).select_related("epi").order_by("-delivery_date")
+        ).select_related("epi", "epi__technical_sheet").order_by("-delivery_date")
         epi_families = _group_epi_deliveries_by_family(epi_deliveries)
         epi_items = EpiItemCatalog.objects.filter(
             is_active=True,
@@ -615,6 +625,65 @@ class PersonalEpiItemHistoryView(CompanyUserRequiredMixin, View):
             request, "panel/documentation_h30/_personal_epi_history.html",
             {"person": person, "epi": epi, "deliveries": deliveries},
         )
+
+
+class EpiTechnicalSheetUploadView(DocsUploadAccessMixin, View):
+    """
+    H31 (S76). POST: sube/sustituye el manual de uso o ficha técnica
+    de UN EPI del catálogo -- mismo patrón exacto que
+    `CircularTemplateUploadView`/`_upload_circular_template`
+    (circulars_h31.py): archivo real subido a una carpeta propia
+    (`_FICHAS_TECNICAS_EPI/<code>/`), nunca borra ni toca el
+    `DocumentIndexEntry` anterior, solo repunta
+    `EpiItemCatalog.technical_sheet` al nuevo (4.12). Redirige de
+    vuelta a la ficha de la persona desde la que se subió (si se
+    indica) para que el supervisor no pierda el sitio.
+    """
+
+    def post(self, request, epi_id):
+        epi = get_object_or_404(EpiItemCatalog, pk=epi_id)
+        uploaded_file = request.FILES.get("file")
+        if not uploaded_file:
+            return JsonResponse(
+                {"ok": False, "error": "Falta el archivo de la ficha técnica."},
+                status=400,
+            )
+
+        data = uploaded_file.read()
+        extension = (
+            uploaded_file.name.rsplit(".", 1)[-1].lower()
+            if "." in uploaded_file.name else "bin"
+        )
+        today = timezone.now().date()
+        filename = "%s_FICHA_TECNICA_%s.%s" % (epi.code, today.isoformat(), extension)
+        target_folder = "%s/%s" % (EPI_TECHNICAL_SHEETS_ROOT, epi.code)
+        ensure_folder_chain(BUCKET, target_folder)
+        blob_name = "%s/%s" % (target_folder, filename)
+        content_type = (
+            "application/pdf" if extension == "pdf" else "application/octet-stream"
+        )
+        upload_bytes(BUCKET, blob_name, data, content_type=content_type)
+
+        entry = DocumentIndexEntry.objects.create(
+            bucket=BUCKET,
+            entry_kind=DocumentIndexEntry.KIND_FILE,
+            blob_name=blob_name,
+            blob_name_hash=path_digest(blob_name),
+            parent_path=target_folder,
+            parent_path_hash=path_digest(target_folder),
+            name=filename,
+            size_bytes=len(data),
+            content_type=content_type,
+        )
+        epi.technical_sheet = entry
+        epi.save(update_fields=["technical_sheet"])
+        return JsonResponse({
+            "ok": True,
+            "technical_sheet": {
+                "id": entry.pk,
+                "url": reverse("panel:documentation_document_view", args=[entry.pk]),
+            },
+        })
 
 
 class EpiIndividualDeliveryView(DocsUploadAccessMixin, View):

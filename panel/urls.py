@@ -33,6 +33,7 @@ from panel.views_documentation_h30 import (
     EpiMassDeliveryView,
     EpiResultsFragmentView,
     EpiTabFragmentView,
+    EpiTechnicalSheetUploadView,
     MachineDetailView,
     MachineListFragmentView,
     PersonalDetailView,
@@ -409,6 +410,8 @@ urlpatterns = [
     path("documentacion/personal/<int:pk>/historial/<str:type_code>/", PersonalDocumentTypeHistoryView.as_view(), name="documentation_personal_type_history"),
     # H31 (S76) punto EPIs: historial completo de un EPI, bajo demanda.
     path("documentacion/personal/<int:pk>/historial-epi/<int:epi_id>/", PersonalEpiItemHistoryView.as_view(), name="documentation_personal_epi_history"),
+    # H31 (S76): manual de uso / ficha técnica de un EPI del catálogo.
+    path("documentacion/epis/<int:epi_id>/ficha-tecnica/", EpiTechnicalSheetUploadView.as_view(), name="documentation_epi_technical_sheet_upload"),
     # H31 (S74): edición de ficha de persona (given_name/first_surname/second_surname/phone/email).
     path("documentacion/personal/<int:pk>/actualizar/", PersonalUpdateView.as_view(), name="documentation_personal_update"),
     # H31 (S74) punto 3: entrega individual de EPI desde la ficha.
