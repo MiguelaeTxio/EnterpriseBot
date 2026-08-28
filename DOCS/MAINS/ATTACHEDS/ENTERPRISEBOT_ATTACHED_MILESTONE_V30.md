@@ -5364,6 +5364,95 @@ cerrado de verdad (punto 1 arriba):**
    cierre: al menos una pasada de calibración real completada,
    volumen medido antes de aplicar.
 
+---
+
+## Hito REACTIVADO en S77 (PCH: H31 → H30)
+
+**HITO EN PROGRESO desde el cierre de esta sesión** -- decisión
+explícita de Miguel Ángel durante S77 (trabajando en H31, acordeón
+Laboral/Salud de la ficha de personal): antes de seguir puliendo la
+interfaz de Documentación hace falta ingesta real de datos. Sondeo
+real S77 contra producción (familias `LABORAL` + `SALUD_BAJAS_PERSONA`,
+`DocumentIndexEntry` activos, no borrados): **6.085 documentos, 0%
+con `issue_date`/`expiry_date` extraído.** Sin esa fecha,
+`document_management.vigencia_service.is_current()` no tiene con qué
+archivar nada -- su propia regla ("sin fecha, no hay base para
+archivar, nunca se archiva a ciegas") los da todos por vigentes a la
+vez, que es exactamente el "galimatías" que Miguel Ángel vio en la
+ficha de Alejandro García Luque (pk=158): "Informe de Datos para la
+Cotización" x3, "Alta (Seguridad Social)" x3, "Nómina" x3...
+
+Miguel Ángel, verbatim: "ya lo tenemos todo tipificado, ya lo tenemos
+todo con su dominio [...] lo que nos falta es meter todos esos datos
+en base de datos [...] como lo hemos venido haciendo: máquina
+virtual, con dos, tres, cuatro instancias [...] el OCR no lo podemos
+hacer desde el servidor PythonAnywhere, porque [...] nos comemos el
+tiempo de uso de CPU. Por tanto, es tarea para realizar desde la
+Google Cloud Console."
+
+**Reparto real por tipo (sondeo S77, ver también anexo H31 sección
+5.5):**
+
+| Tipo | Documentos |
+|---|---|
+| Declaración de estar al corriente en el pago de salarios (por obra) | 1.762 |
+| Baja (Seguridad Social) | 683 |
+| Reconocimiento médico | 672 |
+| Investigación de accidente laboral | 661 |
+| Contrato laboral | 430 |
+| Registro de jornada / control horario | 335 |
+| Alta (Seguridad Social) | 330 |
+| Informe de Datos para la Cotización | 250 |
+| Parte de baja médica (incapacidad temporal) | 250 |
+| Certificado de estar al corriente (Seguridad Social) | 220 |
+| Modelo 145 | 160 |
+| Nómina | 83 |
+| Parte de vacaciones | 74 |
+| Resto (19 tipos, 1 a 63 documentos cada uno) | ~140 |
+| **TOTAL** | **6.085** |
+
+## Hoja de ruta para S77 (reactivación) -- ingesta de `issue_date`
+
+1. **Piloto de Nómina primero (83 documentos)** -- elegido por ser el
+   ejemplo que dio pie a la incidencia y por tener la fecha más fácil
+   de leer (mes/año explícitos en el propio documento). Sondeo con
+   `--limit 10-20` antes de nada, mismo orden estricto que siempre ha
+   seguido H30: heurística de nombre de archivo -> OCR -> Gemini como
+   último recurso -- nunca saltar fases ni lanzar la VM en serio sin
+   medir antes la tasa de acierto real. Vuelca el resultado en
+   `DocumentIndexEntry.issue_date`.
+2. Si el piloto de Nómina da una tasa de acierto razonable, escalar
+   al resto de tipos de la tabla de arriba -- empezando por los de
+   mayor volumen (Declaración de salarios 1.762, Baja SS 683,
+   Reconocimiento médico 672, Investigación de accidente 661), que
+   son los que más "galimatías" están causando en la ficha.
+3. Ejecución en VMs de Google Compute Engine -- **nunca en la consola
+   de PythonAnywhere** (cuota de CPU, regla ya existente desde H28).
+   Hasta 3-4 máquinas ya creadas, hasta 3 instancias paralelas por
+   máquina, mismo patrón que `h28-ocr-batch`.
+4. Una vez extraído `issue_date`/`expiry_date` de un tipo, verificar
+   contra la ficha real de una persona con volumen (Alejandro García
+   Luque, pk=158, es un buen caso real) que
+   `_split_current_obsolete()`/`is_current()` archivan correctamente
+   los documentos antiguos y dejan solo el más reciente vigente --
+   antes de darlo por cerrado y pasar al siguiente tipo.
+5. Cuando la ingesta esté lo bastante avanzada para que la interfaz
+   de H31 tenga sentido pleno contra datos reales, PCH de vuelta a
+   H31 -- ver su anexo, sección 5.5, "Pendiente real para cuando H31
+   se retome".
+
+**Pendiente heredado de S73, sigue vivo, sin tocar mientras no se
+retome explícitamente:**
+
+1. 2 archivos sueltos de ARNES MIRA 12-A sin fecha reconocible
+   (`GARCIA PRIETO`, `HIDALGO ROSAS`).
+2. Deuda técnica: sistema de plantillas de comunicados/notificaciones,
+   gap de plantilla múltiple de `AUTORIZACION_MEDIOS_COMUNICACION`;
+   interfaz del supervisor para corregir a mano la fecha de caducidad
+   calculada de EPIs.
+3. Fase A de `DOC. MAQUINAS` (dry-run ya ejecutado en S69, resultado
+   nunca leído).
+
 
 EOF
 # 2026-08-26

@@ -53,8 +53,8 @@ Cumple dos funciones inseparables:
 | H27 | Ingesta de Documentación vía Correo Electrónico | `ENTERPRISEBOT_ATTACHED_MILESTONE_V27.md` |
 | H28 | Migración y Reorganización de Documentación Histórica | `ENTERPRISEBOT_ATTACHED_MILESTONE_V28.md` |
 | H29 | Explorador de Archivos y Gobierno Documental del Panel sobre GCS | `ENTERPRISEBOT_ATTACHED_MILESTONE_V29.md` |
-| H30 | Vinculación Documental Real — Centros de Gasto y Personal | `ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md` |
-| H31 | Interfaz de Ficha de Personal — EPIs y Notificaciones/Circulares | `ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md` ← EN PROGRESO |
+| H30 | Vinculación Documental Real — Centros de Gasto y Personal | `ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md` ← EN PROGRESO |
+| H31 | Interfaz de Ficha de Personal — EPIs y Notificaciones/Circulares | `ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md` |
 
 Todos los anexos viven en `DOCS/MAINS/ATTACHEDS/`.
 
@@ -62,14 +62,24 @@ Todos los anexos viven en `DOCS/MAINS/ATTACHEDS/`.
 
 ## 3. Resultado Actual
 
-**Hito EN PROGRESO:** H31 — Interfaz de Ficha de Personal: EPIs y
-Notificaciones/Circulares → `ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md`.
-Abierto y activado en la misma sesión (S73) por decisión explícita de
-Miguel Ángel, inmediatamente después de cerrar el bloque EPIs de H30:
-hace falta la interfaz real de entrega/envío (ficha de persona
-editable, EPIs y notificaciones individuales y masivas, CRUD de
-circulares), no solo la consulta del histórico ya migrado. Ver hoja
-de ruta de su propio anexo.
+**Hito EN PROGRESO:** H30 — Vinculación Documental Real: Centros de
+Gasto y Personal → `ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md`.
+Reactivado en S77 por decisión explícita de Miguel Ángel, trabajando
+en H31: sondeo real reveló 6.085 documentos de las families `LABORAL`
++ `SALUD_BAJAS_PERSONA` con 0% de `issue_date`/`expiry_date`
+extraído, por lo que `vigencia_service.is_current()` no puede archivar
+nada y la interfaz de H31 no se puede verificar contra datos reales.
+Ver hoja de ruta de su propio anexo, sección "Hito REACTIVADO en S77".
+
+**Hito PAUSADO en esta sesión (S77):** H31 — Interfaz de Ficha de
+Personal: EPIs y Notificaciones/Circulares →
+`ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md`. Acordeón Laboral/Salud de
+la ficha de personal completo (documentos, Vacaciones real, Dietas
+placeholder, Partes de trabajo con resumen agregado y filtro por
+periodo de cobro real, detalle del parte del día en formato
+documento). Se retoma cuando H30 tenga la ingesta de `issue_date`
+lo bastante avanzada -- ver anexo H31 sección 5.5, "Pendiente real
+para cuando H31 se retome".
 
 **Hito PAUSADO en esta sesión (S73):** H30 — Vinculación Documental
 Real: Centros de Gasto y Personal →
@@ -80,8 +90,7 @@ mecanismo `current_template` aplicado). Pendiente real al pausar:
 Fase A de `DOC. MAQUINAS` (bloqueada hasta ahora por EPIs, ya
 desbloqueada) y la deuda técnica aparcada (plantillas de
 comunicados/notificaciones de S71/S72, interfaz del supervisor --
-esta última absorbida por el propio H31). Se retoma cuando H31 cierre
-su primera fase de interfaz.
+esta última absorbida por el propio H31).
 
 **Hito PAUSADO en esta sesión (S53):** H07 — Partes Diarios de
 Reparación Digital → `ENTERPRISEBOT_ATTACHED_MILESTONE_V07.md`. Sin

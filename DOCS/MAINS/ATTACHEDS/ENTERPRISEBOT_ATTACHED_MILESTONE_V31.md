@@ -643,6 +643,126 @@ final se toma al arrancar S77, no ahora.**
 
 ---
 
+## 5.5. COMPLETADAS EN S77 y PAUSA DEL HITO
+
+**Acordeón Laboral + Salud construido y verificado contra ficha real
+(Alejandro García Luque, pk=158):**
+
+- `LABORAL` y `SALUD_BAJAS_PERSONA` sacadas de dentro de "Documentación"
+  a dos acordeones propios de primer nivel (mismo documento, sin
+  duplicar -- `_group_current_by_family(exclude_family_codes=...)`).
+  `SALUD_BAJAS_PERSONA` ES el bloque de Bajas -- sin acordeón aparte
+  (decisión de Miguel Ángel S77, para no duplicar ni chocar de nombre
+  con la family documental "Laboral" ya existente).
+- Vacaciones: `VacationPeriod` real, filtrado por
+  `operator=person.company_user`, solo lectura por ahora.
+- Dietas: placeholder ("En construcción"), tal cual pedido en S76.
+- Partes de trabajo -- decisión de vinculación tomada (punto 2 de
+  arriba, ya resuelto, retirado de pendiente): `DIGITAL`
+  (`uploaded_by` fiable, el propio operario autenticado) +
+  histórico `PDF_UPLOAD` resuelto por nombre normalizado (mayúsculas,
+  sin acentos, espacios colapsados) -- sondeo real S77: 504/545
+  entradas (92.5%) casan exacto; el resto (41, "Juan Antonio Galván
+  Ramos", sin `PersonIdentity` en la plantilla activa) queda sin
+  vincular a propósito, nunca por parecido de apellido.
+  `GENERATED` (tarea fantasma de vacaciones) explícitamente excluida
+  -- ya se ve en el bloque Vacaciones, no es trabajo real.
+- Miguel Ángel, verbatim, tras ver el primer listado plano: "no sirve
+  de nada ver un listado [...] qué sentido tiene eso para un
+  supervisor [...] quiero saber las horas que ha echado, en qué
+  máquina ha estado trabajando, el parte del día resumen con toda la
+  hora del periodo." Sustituido por resumen agregado
+  (`_partes_summary()`): horas totales del periodo, horas por
+  máquina, resumen diario -- reutiliza `WorkOrderEntryLine.delta_hours`
+  con el mismo criterio de exclusión de la hora fantasma de vacaciones
+  que ya usa el Laboratorio de Análisis
+  (`AnalyticsLabDataView._line_cost`).
+- Filtro real de Partes de trabajo: periodo de cobro REAL
+  (`ivr_config.WorkPeriod`, no el mes natural -- 21 a 20 del mes
+  siguiente para horas extra), rango manual de fechas, orden.
+  **Periodo ACTIVO por defecto** (el que cubre hoy), nunca "Todos" --
+  reutiliza `_resolve_work_period()` del Laboratorio de Análisis tal
+  cual, sin reinventar el criterio.
+- Detalle real de un día concreto (`PersonalWorkdayDetailView`),
+  formato documento en modo solo lectura -- mismas secciones que
+  `form_entry.html` (fecha, dieta, pausa de comida; por tarea:
+  máquina, H.C./H.F., horas, O.R., avería, reparación, in situ,
+  ticket, repuestos, fotos) pero sin `<input>`, sin ayudas, sin modo
+  edición. Fotos reutilizan `_build_photo_entries()`
+  (`panel/views_task_photos.py`) tal cual para la URL firmada de GCS.
+- **Incidencia real en producción, corregida en la misma sesión**: al
+  sustituir el listado plano por el resumen agregado se dejó un badge
+  del template referenciando variables retiradas del contexto
+  (`VariableDoesNotExist`, `/panel/documentacion/personal/158/`) --
+  corregido, y desde entonces se aplica una comprobación cruzada
+  automática (variables del template vs. claves reales del contexto)
+  antes de cada commit sobre este archivo.
+
+**Bloqueo real que PAUSA el hito, descubierto en S77 verificando el
+"galimatías" de Documentos que Miguel Ángel señaló** (ver captura de
+la ficha de Alejandro García Luque: "Informe de Datos para la
+Cotización" x3, "Alta (Seguridad Social)" x3, "Nómina" x3...):
+
+`vigencia_service.is_current()` YA sabe archivar por `issue_date`
+("el más reciente de su tipo es el vigente") -- pero si `issue_date`
+está vacío, la propia función lo da por vigente por defecto ("sin
+fecha, no hay base para archivar, nunca se archiva a ciegas"). Sondeo
+real S77 contra producción: familias `LABORAL` + `SALUD_BAJAS_PERSONA`,
+**6.085 documentos, 0% con `issue_date`/`expiry_date` extraído.**
+Reparto real:
+
+| Tipo | Documentos |
+|---|---|
+| Declaración de estar al corriente en el pago de salarios (por obra) | 1.762 |
+| Baja (Seguridad Social) | 683 |
+| Reconocimiento médico | 672 |
+| Investigación de accidente laboral | 661 |
+| Contrato laboral | 430 |
+| Registro de jornada / control horario | 335 |
+| Alta (Seguridad Social) | 330 |
+| Informe de Datos para la Cotización | 250 |
+| Parte de baja médica (incapacidad temporal) | 250 |
+| Certificado de estar al corriente (Seguridad Social) | 220 |
+| Modelo 145 | 160 |
+| Nómina | 83 |
+| Parte de vacaciones | 74 |
+| Resto (19 tipos, 1 a 63 documentos cada uno) | ~140 |
+
+Miguel Ángel, verbatim: "tenemos que detener y volver a H30 [...]
+para ingesta de datos [...] ya lo tenemos todo tipificado, ya lo
+tenemos todo con su dominio [...] lo que nos falta es meter todos
+esos datos en base de datos." Sin esto, la interfaz de Documentación
+no se puede verificar de verdad -- no hay forma de saber si
+`_split_current_obsolete()` está funcionando bien o simplemente no
+tiene con qué trabajar. **HITO PAUSADO al cierre de esta sesión,
+PCH a H30** -- ver `ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md` para la
+hoja de ruta de la ingesta.
+
+**Pendiente real para cuando H31 se retome** (nada se pierde, solo
+espera a que H30 cierre la ingesta):
+
+1. Pestaña "Vacaciones" real en el hub de Documentación (CRUD
+   completo reescrito a htmx, adaptando
+   `VacationPeriodListView`/`Create`/`Update`/`Delete` de
+   `hr_calendar/views.py`, hoy páginas completas con redirect) --
+   concertado en S77, no construido todavía. Una vez exista, retirar
+   el enlace "Vacaciones" del sidebar de Administración (gate
+   ADMIN/SUPERVISOR) -- "Calendario" (`hr_calendar:calendar`) se
+   queda donde está, no se toca.
+2. Bajas médicas (incapacidad temporal) -- decisión pendiente sin
+   resolver todavía (punto 4 de la sección 5.4 de arriba): ¿modelo
+   estructurado nuevo o solo los documentos ya tipados agrupados?
+3. Una vez H30 extraiga `issue_date`/`expiry_date` de estos tipos,
+   volver a verificar la ficha de Alejandro García Luque (u otra con
+   volumen real) para confirmar que el acordeón Laboral/Salud/
+   Documentación ya solo muestra el documento vigente de cada tipo,
+   con el resto accesible vía "Historial" -- este es el verdadero
+   criterio de cierre de la interfaz, no solo que el código compile.
+4. Verbatim S73 (fase de auditoría de `domain`, sección 4.1 de abajo)
+   sigue pendiente, sin relación con lo de arriba.
+
+---
+
 ## 4.1. Pendiente real, posterior a la interfaz (nota de Miguel Ángel, S73)
 
 Una vez cerrada la interfaz de este hito: revisar que todos los tipos
