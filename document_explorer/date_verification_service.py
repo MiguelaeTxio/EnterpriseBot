@@ -39,16 +39,33 @@ from ai_services.gemini_client import DEFAULT_MODEL, get_gemini_client
 from ai_services.gemini_rate_limiter import acquire_gemini_slot
 
 _EXPIRY_CONTEXT = [
-    "CADUCA", "CADUCIDAD", "VALID", "VENCE", "VENCIMIENTO", "HASTA EL",
-    "PROXIMA REVISION", "PROXIMA INSPECCION", "FECHA LIMITE",
+    "CADUCA", "CADUCIDAD", "VALIDO HASTA", "VALIDA HASTA", "VENCE",
+    "VENCIMIENTO", "HASTA EL", "PROXIMA REVISION", "PROXIMA INSPECCION",
+    "FECHA LIMITE",
 ]
 _ISSUE_CONTEXT = [
     "EXPEDICION", "EXPEDIDO", "EXPEDIDA", "EMISION", "EMITIDO",
-    "EMITIDA",
+    "EMITIDA", "CON FECHA", "SOMETIDO EL DIA", "MALAGA A",
 ]
 
 _DATE_RE = re.compile(r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})")
 _CONTEXT_WINDOW = 70
+
+# H30 (S78). Fecha en formato largo espanol -- "7 de marzo de 2018",
+# "12 de noviembre de 2022", "6 de septiembre del 2014". Miguel Angel,
+# hallazgo real de sesion: la mayoria de certificados/comunicaciones
+# oficiales (reconocimiento medico, contrato, formacion, carnet de
+# gruista...) escriben la fecha asi en el cuerpo del texto, nunca en
+# formato numerico -- el patron numerico de arriba nunca las
+# reconocia, aunque el documento SI trajera fecha real y legible.
+_MESES_LARGO = {
+    "ENERO": 1, "FEBRERO": 2, "MARZO": 3, "ABRIL": 4, "MAYO": 5,
+    "JUNIO": 6, "JULIO": 7, "AGOSTO": 8, "SEPTIEMBRE": 9, "OCTUBRE": 10,
+    "NOVIEMBRE": 11, "DICIEMBRE": 12,
+}
+_DATE_LARGO_RE = re.compile(
+    r"(\d{1,2})\s+DE\s+(" + "|".join(_MESES_LARGO.keys()) + r")\s+DEL?\s+(\d{4})",
+)
 
 _GEMINI_DATE_SCHEMA = {
     "type": "object",
@@ -95,7 +112,8 @@ def _parse_date(day_s, month_s, year_s):
 def classify_dates_in_text(text):
     """
     Devuelve (expiry_date o None, issue_date o None, [otras fechas])
-    a partir de texto plano -- busca cada fecha y mira el contexto a
+    a partir de texto plano -- busca cada fecha (numerica DD/MM/AAAA
+    y en formato largo "DD de MES de AAAA") y mira el contexto a
     ambos lados (_CONTEXT_WINDOW caracteres) por palabras de
     caducidad/emision.
     """
@@ -104,8 +122,26 @@ def classify_dates_in_text(text):
     issue_candidates = []
     other_dates = []
 
-    for match in _DATE_RE.finditer(norm):
+    matches = list(_DATE_RE.finditer(norm))
+    for match in matches:
         parsed = _parse_date(*match.groups())
+        if not parsed:
+            continue
+        window_start = max(0, match.start() - _CONTEXT_WINDOW)
+        window_end = min(len(norm), match.end() + _CONTEXT_WINDOW)
+        context = norm[window_start:match.start()] + \
+            norm[match.end():window_end]
+        if any(word in context for word in _EXPIRY_CONTEXT):
+            expiry_candidates.append(parsed)
+        elif any(word in context for word in _ISSUE_CONTEXT):
+            issue_candidates.append(parsed)
+        else:
+            other_dates.append(parsed)
+
+    for match in _DATE_LARGO_RE.finditer(norm):
+        day_s, mes_s, year_s = match.groups()
+        month = _MESES_LARGO.get(mes_s)
+        parsed = _parse_date(day_s, month, year_s) if month else None
         if not parsed:
             continue
         window_start = max(0, match.start() - _CONTEXT_WINDOW)
