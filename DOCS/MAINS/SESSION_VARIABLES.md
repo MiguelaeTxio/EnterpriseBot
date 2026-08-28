@@ -850,6 +850,27 @@ servicio, `watched_folders.json`, `history.json`,
 `hydration_notify_state.json`):
 `C:\Users\Usuario\AppData\Local\EnterpriseBot\H28MigrationAgent\`
 
+---
+
+## CORRECCIÓN REAL — NOMBRES DE LAS 4 VMs DE OCR (S78, 2026-08-28)
+
+**Error detectado en sesión, corregido contra captura real de Cloud
+Console (VM instances, proyecto `gen-lang-client-0961484137`).** El
+anexo de H30 y este archivo venían citando de memoria las 4 VMs como
+`h28-ocr-batch`, `h28-ocr-batch-1`, `h28-ocr-batch-2`,
+`h28-ocr-batch-3` — **incorrecto**. Los nombres reales, confirmados
+por consola, son:
+
+- `h28-ocr-batch-1`
+- `h28-ocr-batch-2`
+- `h28-ocr-batch-3`
+- `h28-ocr-batch-4`
+
+No existe ninguna VM llamada `h28-ocr-batch` a secas. Todas en zona
+`europe-west1-b`. Usar siempre estos 4 nombres exactos en cualquier
+comando `gcloud compute instances` de este proyecto — no volver a citar
+la nomenclatura anterior.
+
 El archivo de log (`h28_migration_agent.log`) **sigue** junto al
 `.exe` en ejecución (`dist\`) -- deliberado, no es parte de este fix,
 ver docstring de `get_agent_root_dir()` en `config.py`.
