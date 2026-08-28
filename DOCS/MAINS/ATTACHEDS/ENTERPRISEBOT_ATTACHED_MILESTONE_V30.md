@@ -5570,6 +5570,53 @@ preguntar por dónde empezar.** Todo lo necesario está aquí.
 
 ### Los 316 documentos críticos (caducidad real), personal activo (72), por tipo:
 
+**AUDITORÍA PREVIA OBLIGATORIA, antes de gastar OCR en ninguno de los
+316 — instrucción explícita de Miguel Ángel, S78 (segundo cierre):**
+si esa misma persona ya tiene **otro** documento del mismo tipo con
+fecha real puesta (`issue_date`/`expiry_date` no nulo), el documento
+sin fecha de la tabla de abajo es histórico — queda accesible vía
+"Historial" sin necesidad de tener fecha persistida en BD, **no hace
+falta extraerle la fecha**. Solo hay que perseguir el documento sin
+fecha cuando es el **único** de ese tipo que tiene esa persona (ahí sí
+puede ser el vigente real, sin fecha porque nunca se extrajo).
+
+Consulta real para hacer esta auditoría antes de tocar nada (adaptar
+`document_type__code` a cada tipo de la tabla):
+
+```python
+from django.contrib.contenttypes.models import ContentType
+from document_explorer.models import DocumentIndexEntry, PersonIdentity
+
+person_ct = ContentType.objects.get_for_model(PersonIdentity)
+activos_ids = set(PersonIdentity.objects.filter(is_active_employee=True).values_list('id', flat=True))
+
+sin_fecha = DocumentIndexEntry.objects.filter(
+    domain_content_type=person_ct, domain_object_id__in=activos_ids,
+    document_type__code='DNI',
+    expiry_date__isnull=True, issue_date__isnull=True,
+    deleted_at__isnull=True, purged_at__isnull=True,
+)
+
+realmente_pendientes = []
+for e in sin_fecha:
+    tiene_otro_con_fecha = DocumentIndexEntry.objects.filter(
+        domain_content_type=person_ct, domain_object_id=e.domain_object_id,
+        document_type=e.document_type,
+        deleted_at__isnull=True, purged_at__isnull=True,
+    ).exclude(pk=e.pk).filter(
+        models.Q(issue_date__isnull=False) | models.Q(expiry_date__isnull=False)
+    ).exists()
+    if not tiene_otro_con_fecha:
+        realmente_pendientes.append(e)
+
+print(f'{sin_fecha.count()} sin fecha -> {len(realmente_pendientes)} realmente pendientes (unico de su tipo sin fecha)')
+```
+
+**El número real de la tabla de abajo (316) es el punto de partida
+antes de esta auditoría — el número real a perseguir puede ser mucho
+menor.** Correr esta auditoría PRIMERO, tipo por tipo, y trabajar
+solo sobre `realmente_pendientes`.
+
 | Código | Total sin fecha |
 |---|---|
 | `DNI` | 117 |
@@ -5583,11 +5630,17 @@ preguntar por dónde empezar.** Todo lo necesario está aquí.
 | `AUTORIZACION_TEMPORAL_CONDUCIR` | 1 |
 | `TARJETA_CUALIF_CONDUCTOR` | 1 |
 
-### Punto 1 — Empezar por `DNI` (el más grande, 117)
+### Punto 1 — Empezar por `DNI` (el más grande, 117 antes de auditoría)
+
+**Primer paso real: correr la auditoría previa de arriba sobre `DNI`
+para saber cuántos quedan de verdad en `realmente_pendientes`.** El
+resto del punto 1 trabaja solo sobre esa lista filtrada, nunca sobre
+el bruto de 117.
 
 Comando real ya usado toda la sesión, sin VM (texto ya cacheado en
 `ocr_text` para los que ya se procesaron; para los que no, hace falta
-VM/OCR primero):
+VM/OCR primero) — muestra sobre `realmente_pendientes`, no sobre `qs`
+bruto:
 
 ```python
 from django.contrib.contenttypes.models import ContentType
