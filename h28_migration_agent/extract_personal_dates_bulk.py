@@ -254,6 +254,44 @@ def extract_date_by_filename(code, name):
 
 
 # ---------------------------------------------------------------
+# FASE 1bis -- MRZ de DNI/NIE (H30 S79, hallazgo real de sesion,
+# copiado de date_verification_service.py). Nunca usa el nombre de
+# archivo -- el MRZ es contenido real impreso en el documento, la
+# misma via de "OCR/contenido real" que exige el comentario de mas
+# abajo tras la retirada de la heuristica de nombre en S78.
+# ---------------------------------------------------------------
+MRZ_CODES = {"DNI", "NIE"}
+_MRZ_LINE2_RE = re.compile(r"(\d{6})(\d)([MF])(\d{6})(\d)([A-Z]{3})")
+_MRZ_WEIGHTS = (7, 3, 1)
+
+
+def _mrz_check_digit(digits):
+    total = 0
+    for i, ch in enumerate(digits):
+        total += int(ch) * _MRZ_WEIGHTS[i % 3]
+    return total % 10
+
+
+def extract_dni_mrz_expiry(text):
+    """Fecha de caducidad del MRZ, validada por su propio digito de
+    control ICAO 9303 -- None si no valida o no hay MRZ."""
+    norm = _strip_accents(text).upper()
+    for match in _MRZ_LINE2_RE.finditer(norm):
+        _, _, _, expiry_digits, expiry_check, _ = match.groups()
+        if _mrz_check_digit(expiry_digits) != int(expiry_check):
+            continue
+        year, month, day = (
+            int(expiry_digits[0:2]), int(expiry_digits[2:4]),
+            int(expiry_digits[4:6]),
+        )
+        try:
+            return date(2000 + year, month, day)
+        except ValueError:
+            continue
+    return None
+
+
+# ---------------------------------------------------------------
 # FASE 2 -- OCR + deteccion por contexto (copiado de
 # date_verification_service.py, sin la parte de Gemini)
 # ---------------------------------------------------------------
@@ -409,8 +447,9 @@ def main():
     print("Se van a procesar en esta ejecucion: %d\n" % len(rows))
 
     stats = {
-        "heuristica_nombre": 0, "ocr_contexto": 0, "ocr_unica_fecha": 0,
-        "sin_fecha": 0, "sin_extractor": 0, "error": 0,
+        "heuristica_nombre": 0, "mrz": 0, "ocr_contexto": 0,
+        "ocr_unica_fecha": 0, "sin_fecha": 0, "sin_extractor": 0,
+        "error": 0,
     }
     start_time = datetime.now()
 
@@ -438,6 +477,25 @@ def main():
             stats["sin_extractor"] += 1
             print("  SIN EXTRACTOR (extension no soportada)")
             continue
+
+        # FASE 1bis -- MRZ de DNI/NIE (S79). Contenido real impreso
+        # en el documento, nunca el nombre de archivo. Se prueba
+        # antes del OCR de contexto porque el MRZ es mas fiable que
+        # el patron generico cuando la cara frontal esta degradada.
+        if code in MRZ_CODES:
+            mrz_expiry = extract_dni_mrz_expiry(text)
+            if mrz_expiry:
+                stats["mrz"] = stats.get("mrz", 0) + 1
+                print("  MRZ %s -> expiry=%s" % (code, mrz_expiry.isoformat()))
+                if args.apply:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "UPDATE document_explorer_documentindexentry "
+                            "SET ocr_text=%s, expiry_date=%s WHERE id=%s",
+                            (text, mrz_expiry, entry_id),
+                        )
+                    conn.commit()
+                continue
 
         # H30 (S78): cachear el texto OCR ya extraido, para que
         # cualquier pasada futura de campos nuevos (numero de DNI,

@@ -110,6 +110,73 @@ _LABELED_DATE_PATTERNS = [
 # importe directamente (VM scripts standalone que copian esta logica).
 _PERIODO_DESDE_RE = _LABELED_DATE_PATTERNS[0]
 
+# H30 (S79). MRZ (zona de lectura por maquina) de DNI/NIE espanol --
+# hallazgo real de sesion: cuando la cara frontal es ilegible para
+# Tesseract (fondo de seguridad que domina la lectura, mismo problema
+# ya documentado arriba para ITV), el MRZ del reverso SI se lee
+# limpio casi siempre, y trae la caducidad codificada. Verificado
+# contra 4 documentos reales de S79: la fecha de caducidad extraida
+# del MRZ coincidio exactamente con la fecha visible en el propio
+# nombre de archivo original (evidencia historica, nunca usada como
+# fuente de extraccion) en 3 casos, y con la fecha impresa en la cara
+# frontal ("EMISION VALIDEZ") en el 4o. Formato TD1, linea 2:
+# NACIMIENTO(6)+control(1)+SEXO(1)+CADUCIDAD(6)+control(1)+
+# NACIONALIDAD(3). Nunca usa el nombre de archivo -- el MRZ es
+# contenido real impreso en el propio documento.
+# ---
+# MRZ (machine readable zone) of the Spanish DNI/NIE -- real session
+# finding: when the front face is unreadable for Tesseract (security
+# background dominating the read, same issue already documented above
+# for ITV), the MRZ on the back almost always reads cleanly and
+# carries the expiry date. Verified against 4 real S79 documents.
+# TD1 format, line 2: BIRTH(6)+check(1)+SEX(1)+EXPIRY(6)+check(1)+
+# NATIONALITY(3). Never uses the filename -- the MRZ is real content
+# printed on the document itself.
+_MRZ_LINE2_RE = re.compile(r"(\d{6})(\d)([MF])(\d{6})(\d)([A-Z]{3})")
+_MRZ_WEIGHTS = (7, 3, 1)
+
+
+def _mrz_check_digit(digits):
+    """
+    Digito de control ICAO 9303 (pesos 7-3-1 ciclicos) sobre una
+    cadena de digitos.
+    ---
+    ICAO 9303 check digit (cyclic 7-3-1 weights) over a digit string.
+    """
+    total = 0
+    for i, ch in enumerate(digits):
+        total += int(ch) * _MRZ_WEIGHTS[i % 3]
+    return total % 10
+
+
+def extract_dni_mrz_expiry(text):
+    """
+    Busca la linea 2 del MRZ del DNI/NIE espanol y devuelve la fecha
+    de caducidad SOLO si su propio digito de control ICAO es
+    correcto -- evita falsos positivos de OCR. Devuelve None si no
+    hay MRZ reconocible o si el digito de control no valida.
+    ---
+    Looks for MRZ line 2 of the Spanish DNI/NIE and returns the
+    expiry date ONLY if its own ICAO check digit is correct -- avoids
+    OCR false positives. Returns None if no recognizable MRZ is found
+    or the check digit doesn't validate.
+    """
+    norm = _strip_accents(text).upper()
+    for match in _MRZ_LINE2_RE.finditer(norm):
+        _, _, _, expiry_digits, expiry_check, _ = match.groups()
+        if _mrz_check_digit(expiry_digits) != int(expiry_check):
+            continue
+        year, month, day = (
+            int(expiry_digits[0:2]), int(expiry_digits[2:4]),
+            int(expiry_digits[4:6]),
+        )
+        try:
+            return date(2000 + year, month, day)
+        except ValueError:
+            continue
+    return None
+
+
 _GEMINI_DATE_SCHEMA = {
     "type": "object",
     "properties": {
