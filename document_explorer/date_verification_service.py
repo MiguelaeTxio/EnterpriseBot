@@ -67,6 +67,16 @@ _DATE_LARGO_RE = re.compile(
     r"(\d{1,2})\s+DE\s+(" + "|".join(_MESES_LARGO.keys()) + r")\s+DEL?\s+(\d{4})",
 )
 
+# H30 (S78). Impresos oficiales estructurados (IDC, similares) traen
+# VARIAS fechas numericas a la vez (periodo, alta, nacimiento...) --
+# la regla de "unica fecha del documento" se rompe ahi siempre.
+# Miguel Angel, hallazgo real de sesion, ejemplo real (IDC de
+# Seguridad Social): "PERIODO: DESDE 24-10-2018." Con etiqueta
+# explicita al lado, se coge esa por encima de cualquier otra regla.
+_PERIODO_DESDE_RE = re.compile(
+    r"PERIODO\s*:?\s*DESDE\s+(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})",
+)
+
 _GEMINI_DATE_SCHEMA = {
     "type": "object",
     "properties": {
@@ -121,6 +131,14 @@ def classify_dates_in_text(text):
     expiry_candidates = []
     issue_candidates = []
     other_dates = []
+
+    # Maxima prioridad: etiqueta explicita "PERIODO: DESDE" (impresos
+    # oficiales estructurados con varias fechas a la vez).
+    periodo_match = _PERIODO_DESDE_RE.search(norm)
+    if periodo_match:
+        parsed = _parse_date(*periodo_match.groups())
+        if parsed:
+            return None, parsed, []
 
     matches = list(_DATE_RE.finditer(norm))
     for match in matches:
