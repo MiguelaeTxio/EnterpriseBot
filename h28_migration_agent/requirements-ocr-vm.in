@@ -19,3 +19,10 @@ pytesseract
 PyMuPDF
 python-docx
 google-cloud-storage
+# H30 (S78). Lectura de .xlsx (listados de asistencia a curso, etc.)
+# -- extract_personal_dates_bulk.py.
+openpyxl
+# NOTA: .doc antiguo (Word 97-2003) se lee con `antiword`, que es un
+# paquete de SISTEMA (apt-get install antiword), no de pip -- no va
+# en este archivo. Documentado en SESSION_VARIABLES.md, seccion "VM
+# h28-ocr-batch".

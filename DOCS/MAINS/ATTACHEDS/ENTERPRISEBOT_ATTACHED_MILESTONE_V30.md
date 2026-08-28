@@ -5456,96 +5456,214 @@ retome explícitamente:**
 ---
 
 ## Hoja de Ruta para la Siguiente Sesión (S78) -- REESCRITA al cierre
-## de S77, sustituye por completo a la de arriba
+## COMPLETADAS EN S78
 
-Ampliación de alcance decidida por Miguel Ángel al cierre de S77,
-verbatim: *"vamos a hacer la ingesta de datos del personal [...] a
-meter nóminas, a meter reconocimientos médicos, DNIs, carné, para
-meterlo todo [...] con los centros de gasto no hemos terminado.
-Hemos terminado con el personal y vamos a hacer la ingesta de datos
-del personal."* Es decir: **todo el dominio `PERSONAL` de
-`DocumentTypeCatalog`, no solo las families `LABORAL` +
-`SALUD_BAJAS_PERSONA`** del sondeo de S77 -- Centro de Gasto queda
-fuera, sigue sin terminar de tipificar/vincular.
+**Los 6 puntos de la hoja de ruta S78 se completaron todos, más
+varios hallazgos reales no previstos que se corrigieron sobre la
+marcha (directriz 4.9):**
 
-1. **Levantar las 4 VMs de OCR, ya creadas, todas detenidas hoy** --
-   `h28-ocr-batch`, `h28-ocr-batch-1`, `h28-ocr-batch-2`,
-   `h28-ocr-batch-3`, proyecto `gen-lang-client-0961484137`, zona
-   `europe-west1-b`. Comando real (PowerShell, `com-gcloud-windows`
-   Patrón 1) documentado en `SESSION_VARIABLES.md`, sección "VM
-   h28-ocr-batch". **Criterio de cierre**: `gcloud compute instances
-   list --project=gen-lang-client-0961484137` muestra las 4 en
-   `STATUS=RUNNING`.
-2. **Sondeo real de alcance sobre TODO el dominio PERSONAL** (mismo
-   patrón que el sondeo de S77, ampliado de `family__in=[LABORAL,
-   SALUD_BAJAS_PERSONA]` a `domain=PERSONAL` completo) -- para saber
-   qué tipos ya tienen fecha y cuáles no, **nunca asumir**. DNI y
-   carné de conducir probablemente YA tienen fecha real
-   (`PersonIdentity.dni_expiry_date`/`driving_license_expiry_date`,
-   campos denormalizados, poblados desde H30 anterior a S73) a
-   diferencia de `LABORAL`/`SALUD_BAJAS_PERSONA` (0% confirmado en
-   S77) -- confirmar con consulta real, no dar por hecho. **Criterio
-   de cierre**: tabla tipo-por-tipo (igual formato que la de S77) con
-   total y % de `issue_date`/`expiry_date` poblado, para cada
-   `DocumentTypeCatalog` con `domain=PERSONAL`.
-3. **Piloto de Nómina** (83 documentos, confirmado sin fecha en S77)
-   -- primer tipo a extraer. Sondeo `--limit 10-20` antes de escalar,
-   heurística de nombre de archivo -> OCR -> Gemini como último
-   recurso, nunca saltar fases. **Criterio de cierre**: tasa de
-   acierto medida sobre el sondeo + decisión explícita (con Miguel
-   Ángel) de escalar o no antes de lanzar el barrido completo de las
-   83.
-4. Si el piloto sale bien, escalar por volumen a los tipos de mayor
-   tamaño confirmados sin fecha por el sondeo del punto 2 (de
-   `LABORAL`/`SALUD_BAJAS_PERSONA`: Declaración de salarios 1.762,
-   Baja SS 683, Reconocimiento médico 672, Investigación de accidente
-   661...; más cualquier otro tipo de `domain=PERSONAL` que el
-   sondeo del punto 2 confirme sin fecha).
-5. Ejecución en las 4 VMs en paralelo, hasta 3 instancias por
-   máquina -- nunca en la consola de PythonAnywhere (cuota de CPU).
-6. Tras cada tipo extraído, verificar contra la ficha real de
-   Alejandro García Luque (pk=158) que `is_current()` archiva
-   correctamente. **Criterio de cierre**: la ficha de esa persona
-   muestra una sola fila vigente de ese tipo documental (la más
-   reciente), con "Historial" dando acceso al resto -- no N filas
-   idénticas sin fecha.
+1. **4 VMs levantadas** — confirmado `STATUS=RUNNING` las 4. Se
+   pararon y volvieron a arrancar varias veces a lo largo de la
+   sesión según hacía falta OCR o no (una vez con
+   `ZONE_RESOURCE_POOL_EXHAUSTED` real, resuelto con reintento en
+   bucle).
+2. **Sondeo completo del dominio PERSONAL** — tabla tipo-por-tipo
+   real generada. **La propia hipótesis de la hoja de ruta anterior
+   era falsa**: DNI y carné de conducir NO tenían fecha real en
+   `DocumentIndexEntry` (0,5% y 25,8% respectivamente), contra lo que
+   se asumía.
+3. **Piloto de Nómina cerrado al 100%**: 59/59 documentos de personal
+   activo con `issue_date` real. Limpieza de ruido real por el
+   camino: 11 "cabeceras" de nómina (usadas como justificante para
+   cursos, no nóminas reales) + 2 certificados de retenciones IRPF +
+   2 dossiers "tres últimos años" + 2 nóminas de Gibraltar sin fecha
+   reconocible → papelera. 2 documentos reclasificados con evidencia
+   real (`FORM.4H PRIMEROS AUXILIOS` → `FORMACION`, `Cambio irpf` →
+   `CAMBIO_IRPF`).
+4. **Corrección real de catálogo, `CARNET_CONDUCIR`**: etiqueta
+   `"Carnet / tarjeta de conductor"` → `"Permiso de Conducción"`
+   (nombre oficial DGT). **37 documentos mal clasificados** con
+   "TARJETA DEL CONDUCTOR" en el nombre, corregidos primero a
+   `TARJETA_CUALIF_CONDUCTOR` (error propio, sin verificar con
+   evidencia suficiente) y **corregidos otra vez** a `TACOGRAFO`
+   (correcto de verdad — confirmado con fuente externa + el propio
+   `content_markers` de `local_ocr_classify.py`, ya sabía la
+   respuesta). `DECLARACION_HOMOLOGACION` (texto truncado en BD,
+   corregido).
+5. **Hallazgo real no previsto: `TACOGRAFO` mezclaba dos cosas
+   distintas** — tarjeta de conductor (personal) y revisión periódica
+   del aparato instalado en máquina (centro de gasto). Tipo nuevo
+   `REV_TACOGRAFO` creado (`domain=MACHINE`, `family=CIRCULACION`,
+   `tracks_expiry=True`), **179 documentos reales** reclasificados
+   desde `TACOGRAFO`.
+6. **`tracks_expiry` activado para 48 tipos más** del dominio
+   PERSONAL (antes solo 8 lo tenían) — decisión propia motivada,
+   documentada en el propio commit.
+7. **Migración real `0066_documentindexentry_ocr_text_s78`**:
+   `DocumentIndexEntry.ocr_text` — cachea el texto OCR/extraído la
+   primera vez que se procesa un documento, para que cualquier
+   extracción futura de campos adicionales (número de DNI,
+   categorías de permiso...) se haga contra el texto ya guardado, sin
+   repetir descarga+OCR. Aplicada y verificada en producción
+   (`showmigrations` con `[X]`).
+8. **`date_verification_service.py` (servicio compartido) extendido
+   con varios patrones reales**, cada uno verificado con documento
+   real antes de aplicarlo en bloque: fecha en formato largo español
+   ("7 de marzo de 2018"), `PERIODO: DESDE` (impresos con varias
+   fechas a la vez, ej. IDC), 5 patrones de `CONTRATO` (Fecha de
+   Inicio del Contrato, Fecha de Transformación, se extenderá desde,
+   relación laboral en fecha, prórroga desde/hasta), tolerancia a
+   guion de relleno entre etiqueta y fecha. Corregido también un
+   falso positivo real (`VALID` capturaba `VALIDACIÓN`).
+9. **Extractor masivo nuevo, `h28_migration_agent/
+   extract_personal_dates_bulk.py`** (standalone, sharding
+   `--shard-count 12`) — sustituye el enfoque de "un tipo, un
+   barrido, mirar resultado, repetir" por un único script para todo
+   el dominio PERSONAL. Corregido dos veces en la sesión: (a) **la
+   heurística de nombre de archivo se retiró por completo**, decisión
+   explícita de Miguel Ángel tras dos incidentes reales de identidad
+   falsa/tipo cruzado por confiar en nombre de carpeta/archivo; (b)
+   **bug real de SQL corregido** — el `JOIN` cruzaba `domain_object_id`
+   contra `PersonIdentity.id` sin comprobar `domain_content_type`
+   (sin daño real, el filtro `t.domain='PERSONAL'` ya lo evitaba en
+   la práctica, pero corregido de todas formas). DPI de OCR subido de
+   300 a 400 (rendimiento marginal sobre el resto pendiente — señal
+   de que ya no es "falta un patrón", es degradación real caso a
+   caso). Soporte añadido para `.doc` (`antiword`, paquete de
+   sistema) y `.xlsx` (`openpyxl`, añadido al candado real
+   `requirements-ocr-vm.in`/`.txt` con `pip-compile`, nunca instalado
+   suelto).
+10. **Lista cerrada de personas activas confirmada: 72**
+    (`PersonIdentity.is_active_employee=True` — 71 del Excel + José
+    Luis Álvarez Díaz, dueño, confirmado a mano). Es el alcance real
+    de todo el trabajo de la sesión, nunca carpeta ni nombre de
+    archivo.
+11. **Resultado final numérico**: de 4.657 documentos con
+    `tracks_expiry=True` de las 72 personas activas, **3.279 ya
+    tienen fecha real** (2.973 al cierre del sondeo inicial +
+    corrección de fórmulas/DPI después). Quedan 1.378 sin fecha,
+    divididos en dos bloques por decisión explícita de Miguel Ángel
+    (ver Hoja de Ruta S79).
 
-**Decisión de alcance del hito -- a criterio del modelo, Miguel Ángel
-lo dejó abierto explícitamente ("si quieres podemos abrir un hito
-nuevo, ya como quieras, me da igual")**: esta ingesta se queda dentro
-de **H30**, sin abrir hito nuevo -- ya lleva el nombre exacto
-("Vinculación Documental Real") y es la continuación natural de la
-misma tarea (H30 ya tipificó y vinculó; esto es extraer la fecha de
-lo ya vinculado). Si al avanzar el volumen resulta demasiado grande
-para caber cómodo aquí, se puede reconsiderar con un PCH nuevo más
-adelante, mismo criterio que se usó con el acordeón Laboral de H31.
+**Total NOMINA + PERSONAL combinado del día: 3.279 documentos con
+`issue_date`/`expiry_date` real escrito, 0 errores de escritura.**
 
-**Pendiente heredado de S73** (primera sesión con H30 activo de
-nuevo desde su pausa -- no arrastrado, se retoma cuando haya hueco,
-sin prioridad sobre lo de arriba):
+---
+
+## Hoja de Ruta para la Siguiente Sesión (S79) -- REESCRITA al cierre
+## de S78, sustituye por completo a la de arriba
+
+**Decisión de alcance de Miguel Ángel (S78), verbatim:** *"Nos
+centramos en esos 316 documentos [...] hay documentos que, aunque sea
+interesante tener esa fecha, hay otros que lo son muchísimo más. No
+por interés, sino por necesidad [...] permisos de circulación, ITV,
+CAP, tarjetas... eso sí es necesario tenerlo al día [...] un contrato,
+pues a lo mejor da igual [...] un curso de formación que no caduca,
+pues también da igual."* Los 789 documentos "no críticos"
+(`CONTRATO`, `FORMACION`, `ENTREGA_INFORMACION`, `MOD_145`,
+`BAJA_PERSONAL`... — sin caducidad real, solo "más reciente cuenta")
+**quedan aparcados sin fecha, sin tocar, sin prioridad ninguna** salvo
+que Miguel Ángel pida explícitamente retomarlos.
+
+**REGLA DE ARRANQUE DIRECTO — empezar la sesión ya por el punto 1, sin
+preguntar por dónde empezar.** Todo lo necesario está aquí.
+
+### Los 316 documentos críticos (caducidad real), personal activo (72), por tipo:
+
+| Código | Total sin fecha |
+|---|---|
+| `DNI` | 117 |
+| `CAP` | 50 |
+| `CARNET_GRUISTA` | 50 |
+| `TACOGRAFO` | 39 |
+| `CARNET_CONDUCIR` | 26 |
+| `RECONOCIMIENTO_MEDICO` | 26 |
+| `CERTIF_DISCAPACIDAD` | 3 |
+| `NIE` | 3 |
+| `AUTORIZACION_TEMPORAL_CONDUCIR` | 1 |
+| `TARJETA_CUALIF_CONDUCTOR` | 1 |
+
+### Punto 1 — Empezar por `DNI` (el más grande, 117)
+
+Comando real ya usado toda la sesión, sin VM (texto ya cacheado en
+`ocr_text` para los que ya se procesaron; para los que no, hace falta
+VM/OCR primero):
+
+```python
+from django.contrib.contenttypes.models import ContentType
+from document_explorer.models import DocumentIndexEntry, PersonIdentity
+person_ct = ContentType.objects.get_for_model(PersonIdentity)
+activos_ids = set(PersonIdentity.objects.filter(is_active_employee=True).values_list('id', flat=True))
+qs = DocumentIndexEntry.objects.filter(
+    domain_content_type=person_ct, domain_object_id__in=activos_ids,
+    document_type__code='DNI',
+    expiry_date__isnull=True, issue_date__isnull=True,
+    deleted_at__isnull=True, purged_at__isnull=True,
+).order_by('?')[:5]
+```
+
+1. Sacar muestra real de 5 (`ocr_text` si ya existe; si no, primero
+   arrancar VMs y correr `extract_personal_dates_bulk.py
+   --shard-count 12 --shard-index N --apply` sobre `DNI` -- el script
+   ya cubre este tipo, `DEFAULT_FIELD_BY_CODE['DNI']='expiry'`).
+2. Mirar el texto real de cada uno. Si hay patrón de etiqueta
+   corregible (como `PERIODO: DESDE`, `Fecha de Inicio del
+   Contrato`...) -- extender `date_verification_service.py`,
+   commitear, reprocesar el texto YA cacheado sin gastar VM (mismo
+   patrón que todo el día: bucle sobre `ocr_text` no vacío,
+   `classify_dates_in_text()`, escribir).
+3. Si es degradación real de OCR (como la tarjeta de cualificación,
+   `ocr_text` ilegible/con huecos aunque el documento sea legible a
+   simple vista) -- **NO decidir Gemini unilateralmente** (incidente
+   real S78: Miguel Ángel corrigió esto explícitamente, "yo dije que
+   cuando agotáramos de forma programática, según lo que quedara, o
+   lo vería Géminis, o lo verías tú, o lo vería yo"). Reportar el
+   caso real y preguntar a Miguel Ángel qué destino prefiere para ese
+   tipo concreto.
+4. **Criterio de cierre del punto 1**: `DNI` sin fecha reconocible
+   baja de 117 a un número estable (ya no baja más con ajustes de
+   patrón) -- entonces pasar a `CAP`.
+
+### Puntos 2-10 — mismo ciclo, en el orden de la tabla de arriba
+
+`CAP` (50) → `CARNET_GRUISTA` (50) → `TACOGRAFO` (39, el nuevo,
+verificar que la reclasificación de hoy no dejó ninguno mal) →
+`CARNET_CONDUCIR` (26) → `RECONOCIMIENTO_MEDICO` (26) →
+`CERTIF_DISCAPACIDAD`/`NIE`/`AUTORIZACION_TEMPORAL_CONDUCIR`/
+`TARJETA_CUALIF_CONDUCTOR` (volumen bajo, revisar los 8 juntos).
+
+**Criterio de cierre del bloque completo**: los 316 críticos bajan a
+un número estable que ya no mejora con ajustes de patrón -- en ese
+punto, listar los que queden como degradación real de OCR y preguntar
+a Miguel Ángel el destino de cada tipo (Gemini/manual/aparcar), nunca
+decidir por defecto.
+
+### Después del bloque crítico
+
+Preguntar a Miguel Ángel si se retoma el renombrado canónico del
+resto del catálogo (131 tipos pendientes, criterio "a demanda con
+evidencia real" acordado en S78), si se revisan también los 789 no
+críticos, o si se pasa a otra cosa -- **esta pregunta sí es legítima**,
+no es "por dónde empezar" (eso ya está resuelto arriba), es una
+decisión real de alcance que solo puede tomar Miguel Ángel.
+
+---
+
+## PENDIENTE HEREDADO -- 2.ª SESIÓN SIN AVANZAR (S77, S78), pasa a
+## pregunta explícita, no se sigue arrastrando en silencio
+
+**Miguel Ángel, ¿qué prioridad tienen estos 3 puntos frente al
+bloque crítico de arriba? Llevan sin tocarse desde S73:**
 
 1. 2 archivos sueltos de ARNES MIRA 12-A sin fecha reconocible
    (`GARCIA PRIETO`, `HIDALGO ROSAS`).
-2. Deuda técnica: plantillas de comunicados/notificaciones, gap de
-   `AUTORIZACION_MEDIOS_COMUNICACION`; interfaz de EPI para corregir
-   a mano la fecha de caducidad calculada.
+2. Deuda técnica: sistema de plantillas de comunicados/notificaciones,
+   gap de plantilla múltiple de `AUTORIZACION_MEDIOS_COMUNICACION`;
+   interfaz del supervisor para corregir a mano la fecha de caducidad
+   calculada de EPIs.
 3. Fase A de `DOC. MAQUINAS` (dry-run ya ejecutado en S69, resultado
    nunca leído).
 
-
-EOF
-# 2026-08-26
-# EnterpriseBot
-# ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md
-*  **Session:** Resolución completa de FOTOS CARNET: 21 ambiguos y 53 sin coincidencia
-*  **Description:** Sesión de continuidad de H30 (Vinculación Documental Real — Centros de Gasto y Personal), siguiendo el orden exacto dictado por Miguel Ángel al cierre de S69: se atacó directamente el punto 1 de la hoja de ruta, sin preguntar por dónde empezar. Se presentaron a Miguel Ángel, uno a uno, los 21 archivos ambiguos de FOTOS CARNET (2+ PersonIdentity candidatos reales) junto con sus candidatos reales, registrando verbatim la equivalencia confirmada para cada uno. A continuación se abordaron los 53 archivos sin ninguna coincidencia, resueltos según el criterio explícito de Miguel Ángel. En el proceso se detectó y corrigió un hueco real de diseño entre CompanyUser y PersonIdentity (Carlos Bas Blanco y David Contreras Márquez). Cualquier incidencia real detectada fuera de alcance se corrigió de inmediato en la misma sesión, según directriz 4.9.
-
-EOF
-# 2026-08-26
-# EnterpriseBot
-# ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md
-*  **Session:** Confirmación de dos bloqueos de S70: estado real de la VM h28-ocr-batch-1 y cierre del dominio PERSONAL
-*  **Description:** Se abrirá la sesión confirmando con Miguel Ángel las dos preguntas bloqueantes dejadas por S70: si la VM h28-ocr-batch-1 sigue encendida a propósito o puede confirmarse su parada real, y si el dominio PERSONAL queda completo tras el cierre al 100% de FOTOS CARNET, para desbloquear la Fase A de heurística sobre DOC. MAQUINAS. Según las respuestas, se avanzará sobre el punto disponible que corresponda: el extractor real de EpiDelivery/DocumentAcknowledgment sobre los archivos ya tipados EPIS y NOMBRAMIENTO RECURSO PREVENTIVO, la decisión sobre el sistema de plantillas de comunicados/notificaciones, el gap de plantilla múltiple de AUTORIZACION_MEDIOS_COMUNICACION, o el reinicio de la Fase A sobre DOC. MAQUINAS si ambos bloqueos quedan resueltos. Cualquier incidencia real fuera de alcance se corregirá de inmediato, según directriz 4.9.
 
 EOF
 # 2026-08-28

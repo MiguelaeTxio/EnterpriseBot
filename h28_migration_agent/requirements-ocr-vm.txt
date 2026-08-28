@@ -18,6 +18,8 @@ cryptography==50.0.0
     # via
     #   google-auth
     #   paramiko
+et-xmlfile==2.0.0
+    # via openpyxl
 google-api-core==2.34.0
     # via
     #   google-cloud-core
@@ -45,6 +47,8 @@ invoke==3.0.3
     # via paramiko
 lxml==6.1.1
     # via python-docx
+openpyxl==3.1.5
+    # via -r requirements-ocr-vm.in
 packaging==26.3
     # via pytesseract
 paramiko==5.0.0

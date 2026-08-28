@@ -871,6 +871,21 @@ No existe ninguna VM llamada `h28-ocr-batch` a secas. Todas en zona
 comando `gcloud compute instances` de este proyecto — no volver a citar
 la nomenclatura anterior.
 
+**PAQUETE DE SISTEMA -- `antiword` (H30 S78).** Para leer `.doc`
+antiguo (Word 97-2003, formato binario -- `python-docx` solo lee
+`.docx`), el venv `ocr_venv` de estas 4 VMs necesita `antiword`
+instalado como paquete de **sistema** (nunca vía pip, no existe como
+paquete Python real -- es un binario aparte):
+```bash
+sudo apt-get update && sudo apt-get install -y antiword
+```
+Instalarlo una vez por VM (no vive dentro del venv, sobrevive a
+`source ocr_venv/bin/activate`/`deactivate`, pero no a que la VM se
+borre y se recree desde cero). `openpyxl` (lectura de `.xlsx`), en
+cambio, sí es un paquete Python real -- va en
+`requirements-ocr-vm.in`/`.txt` (candado real, `pip-sync
+requirements-ocr-vm.txt`), nunca instalado suelto.
+
 El archivo de log (`h28_migration_agent.log`) **sigue** junto al
 `.exe` en ejecución (`dist\`) -- deliberado, no es parte de este fix,
 ver docstring de `get_agent_root_dir()` en `config.py`.
