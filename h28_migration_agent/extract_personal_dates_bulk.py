@@ -99,6 +99,43 @@ def docx_to_text(data):
     return "\n".join(p.text for p in doc.paragraphs)
 
 
+def doc_to_text(data):
+    """
+    .doc antiguo (Word 97-2003, formato binario) -- python-docx NO lo
+    lee (solo .docx). Usa `antiword` como subproceso (instalar en la
+    VM: `sudo apt-get install -y antiword`), via archivo temporal
+    porque antiword no acepta stdin de forma fiable para todos los
+    .doc reales vistos en el corpus.
+    """
+    import subprocess
+    import tempfile
+    with tempfile.NamedTemporaryFile(suffix=".doc", delete=False) as tmp:
+        tmp.write(data)
+        tmp_path = tmp.name
+    try:
+        result = subprocess.run(
+            ["antiword", tmp_path],
+            capture_output=True, timeout=30,
+        )
+        return result.stdout.decode("utf-8", errors="ignore")
+    finally:
+        import os
+        os.unlink(tmp_path)
+
+
+def xlsx_to_text(data):
+    """Concatena el texto de todas las celdas de todas las hojas."""
+    import openpyxl
+    wb = openpyxl.load_workbook(io.BytesIO(data), data_only=True)
+    parts = []
+    for ws in wb.worksheets:
+        for row in ws.iter_rows():
+            for cell in row:
+                if cell.value is not None:
+                    parts.append(str(cell.value))
+    return "\n".join(parts)
+
+
 def extract_text(filename, data):
     name_lower = filename.lower()
     if name_lower.endswith(".pdf"):
@@ -107,6 +144,10 @@ def extract_text(filename, data):
         return ocr_image_to_text(data)
     if name_lower.endswith(".docx"):
         return docx_to_text(data)
+    if name_lower.endswith(".doc"):
+        return doc_to_text(data)
+    if name_lower.endswith((".xlsx", ".xls")):
+        return xlsx_to_text(data)
     return None
 
 
