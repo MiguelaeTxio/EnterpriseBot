@@ -412,24 +412,12 @@ def main():
             conn.ping(reconnect=True)
         _log("[%d/%d] [%s] %s" % (i, len(rows), code, name))
 
-        # FASE 1 -- heuristica de nombre (gratis)
-        result = extract_date_by_filename(code, name)
-        if result:
-            field, found = result
-            stats["heuristica_nombre"] += 1
-            print("  HEURISTICA %s -> %s=%s" % (code, field, found.isoformat()))
-            if args.apply:
-                with conn.cursor() as cur:
-                    col = "expiry_date" if field == "expiry" else "issue_date"
-                    cur.execute(
-                        "UPDATE document_explorer_documentindexentry "
-                        "SET %s=%%s WHERE id=%%s" % col,
-                        (found, entry_id),
-                    )
-                conn.commit()
-            continue
+        # H30 (S78): heuristica de nombre de archivo RETIRADA por
+        # decision explicita de Miguel Angel -- ya causo dos errores
+        # reales (identidad falsa por nombre de carpeta, tipo
+        # documental cruzado). Todo pasa por OCR/contenido real.
 
-        # FASE 2 -- OCR
+        # OCR
         try:
             bucket = gcs_client.bucket(bucket_name)
             data = bucket.blob(blob_name).download_as_bytes()
