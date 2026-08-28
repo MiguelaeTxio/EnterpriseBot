@@ -54,6 +54,7 @@ from hr_calendar.models import VacationPeriod
 from ivr_config.models import WorkPeriod
 from panel.mixins import CompanyUserRequiredMixin, DocsUploadAccessMixin
 from panel.models import PanelNavigationState
+from panel.views_task_photos import _build_photo_entries
 from spare_parts.gcs_service import generate_signed_url, upload_bytes
 from whatsapp.services import send_epi_delivery_whatsapp_confirmation
 from work_order_processor.models import WorkOrder, WorkOrderEntry, WorkOrderEntryLine
@@ -775,17 +776,46 @@ class PersonalWorkdayDetailView(CompanyUserRequiredMixin, View):
             ).values_list("pk", flat=True),
         )
 
+        entries = WorkOrderEntry.objects.filter(
+            pk__in=entry_ids,
+        ).order_by("pk")
+
         lines = WorkOrderEntryLine.objects.filter(
             entry_id__in=entry_ids,
         ).exclude(vacation_period__isnull=False).select_related(
-            "entry", "machine_asset",
-        ).prefetch_related("spare_parts").order_by(
+            "entry", "machine_asset", "breakdown_ticket",
+        ).prefetch_related("spare_parts", "photos").order_by(
             "entry__page_number", "line_number",
         )
+        lines_by_entry = {}
+        for line in lines:
+            # H31 (S77). photo_entries -- misma resolución de URL
+            # firmada de GCS que ya usa el widget de fotos real
+            # (_build_photo_entries, panel/views_task_photos.py),
+            # nunca calculada en la plantilla (directriz "plantillas
+            # tontas").
+            line.photo_entries = _build_photo_entries(line.photos.all())
+            lines_by_entry.setdefault(line.entry_id, []).append(line)
+
+        # H31 (S77). Presentación tipo documento -- Miguel Ángel:
+        # "quiero este formato [el del formulario real del operario,
+        # panel/operator/form_entry.html] pero ya solo que se vea
+        # únicamente, sin el modo de edición, sin las indicaciones
+        # para realizar el parte [...] como si fuera el documento del
+        # parte digital." Un bloque por WorkOrderEntry (normalmente
+        # uno por día, pero se soporta más de uno sin asumir nada),
+        # cada uno con sus tareas -- mismos campos reales del
+        # formulario (fecha, dieta, pausa de comida; por tarea:
+        # máquina, H.C./H.F., O.R., avería, reparación, in situ,
+        # ticket, fotos, repuestos), nunca los widgets de edición.
+        parte_blocks = [
+            {"entry": entry, "lines": lines_by_entry.get(entry.pk, [])}
+            for entry in entries
+        ]
 
         return render(
             request, "panel/documentation_h30/_personal_workday_detail.html",
-            {"target_date": target_date, "lines": lines},
+            {"target_date": target_date, "parte_blocks": parte_blocks},
         )
 
 

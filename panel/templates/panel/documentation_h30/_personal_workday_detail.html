@@ -1,38 +1,122 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation_h30/_personal_workday_detail.html #}
 {% comment %}
 H31 (S77). Fragmento cargado bajo demanda dentro del modal genérico de
-historial (openHistoryModal) -- detalle real de las tareas de un día
-concreto: qué máquinas se tocaron, cuántas horas, en qué consistió
-cada tarea y qué repuestos se gastaron. Ver PersonalWorkdayDetailView.
+historial (openHistoryModal). Miguel Ángel, verbatim: "quiero este
+formato [el del formulario real del operario, form_entry.html] pero
+ya solo que se vea únicamente, sin el modo de edición, sin las
+indicaciones para realizar el parte [...] como si fuera el documento
+del parte digital." Mismas secciones que form_entry.html
+(Fecha/Dieta/Pausa/Tareas), pero texto plano -- sin <input>, sin
+ayudas, sin botones de acción. Ver PersonalWorkdayDetailView.
 {% endcomment %}
-<h6 class="mb-3">Parte del {{ target_date|date:"d/m/Y" }} -- {{ lines|length }} tarea{{ lines|length|pluralize }}</h6>
-<table class="table table-sm table-hover mb-0">
-    <thead>
-        <tr>
-            <th>Máquina</th>
-            <th>Horas</th>
-            <th>Descripción</th>
-            <th>Reparación</th>
-            <th>Repuestos</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for line in lines %}
-        <tr>
-            <td>{{ line.machine_asset.code|default:line.machine_raw|default:"Sin máquina resuelta" }}</td>
-            <td>{{ line.delta_hours|default:"—" }}</td>
-            <td>{{ line.fault_description|default:"—" }}</td>
-            <td>{{ line.repair_notes|default:"—" }}</td>
-            <td>
+
+{% for block in parte_blocks %}
+<div class="mb-4 pb-4 {% if not forloop.last %}border-bottom{% endif %}">
+
+    <div class="d-flex flex-wrap gap-4 mb-3">
+        <div>
+            <div class="text-muted text-uppercase small">Fecha del parte</div>
+            <div class="fw-semibold">{{ block.entry.work_date|date:"d/m/Y"|default:"Sin fecha" }}</div>
+        </div>
+        <div>
+            <div class="text-muted text-uppercase small">Dieta</div>
+            <div class="fw-semibold">{% if block.entry.has_diet %}Sí{% else %}No{% endif %}</div>
+        </div>
+        <div>
+            <div class="text-muted text-uppercase small">Pausa de comida</div>
+            <div class="fw-semibold">
+                {% if block.entry.no_lunch_break %}
+                No paró a comer
+                {% elif block.entry.lunch_break_start and block.entry.lunch_break_end %}
+                {{ block.entry.lunch_break_start|time:"H:i" }} — {{ block.entry.lunch_break_end|time:"H:i" }}
+                {% else %}
+                Sin registrar
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    {% for line in block.lines %}
+    <div class="border rounded p-3 mb-3">
+        <div class="d-flex align-items-center gap-2 mb-3">
+            <span class="badge bg-dark">Tarea {{ line.line_number }}</span>
+            {% if line.is_on_site %}<span class="badge bg-secondary"><i class="bi bi-geo-alt me-1"></i>In situ</span>{% endif %}
+            {% if line.breakdown_ticket_id %}
+                {% if line.ticket_closed %}
+                <span class="badge bg-success">Ticket cerrado</span>
+                {% else %}
+                <span class="badge bg-warning text-dark">Ticket abierto</span>
+                {% endif %}
+            {% endif %}
+        </div>
+        <div class="row g-3 mb-2">
+            <div class="col-12 col-md-4">
+                <div class="text-muted small">Máquina o Sección</div>
+                <div>{% if line.machine_asset %}{{ line.machine_asset.code }} — {{ line.machine_asset.brand_model }}{% else %}{{ line.machine_raw|default:"—" }}{% endif %}</div>
+            </div>
+            <div class="col-6 col-md-2">
+                <div class="text-muted small">H.C.</div>
+                <div>{{ line.hc|time:"H:i"|default:"—" }}</div>
+            </div>
+            <div class="col-6 col-md-2">
+                <div class="text-muted small">H.F.</div>
+                <div>{{ line.hf|time:"H:i"|default:"—" }}</div>
+            </div>
+            <div class="col-6 col-md-2">
+                <div class="text-muted small">Horas</div>
+                <div>{{ line.delta_hours|default:"—" }}</div>
+            </div>
+            <div class="col-6 col-md-2">
+                <div class="text-muted small">O.R.</div>
+                <div>{{ line.or_val|default:"—" }}</div>
+            </div>
+        </div>
+        <div class="row g-3 mb-2">
+            <div class="col-12 col-md-6">
+                <div class="text-muted small">Descripción avería</div>
+                <div>{{ line.fault_description|default:"—"|linebreaksbr }}</div>
+            </div>
+            <div class="col-12 col-md-6">
+                <div class="text-muted small">Reparación realizada</div>
+                <div>{{ line.repair_notes|default:"—"|linebreaksbr }}</div>
+            </div>
+        </div>
+        {% if line.spare_parts.all %}
+        <div class="mb-2">
+            <div class="text-muted small mb-1">Repuestos</div>
+            <ul class="mb-0 ps-3 small">
                 {% for sp in line.spare_parts.all %}
-                {{ sp.material|default:sp.reference|default:"Repuesto sin descripción" }}{% if sp.quantity %} ({{ sp.quantity }}){% endif %}{% if not forloop.last %}<br>{% endif %}
-                {% empty %}
-                —
+                <li>{{ sp.material|default:sp.reference|default:"Repuesto sin descripción" }}{% if sp.quantity %} ({{ sp.quantity }}){% endif %}</li>
                 {% endfor %}
-            </td>
-        </tr>
-        {% empty %}
-        <tr><td colspan="5" class="text-muted small py-3">Sin tareas registradas ese día.</td></tr>
-        {% endfor %}
-    </tbody>
-</table>
+            </ul>
+        </div>
+        {% endif %}
+        {% if line.photo_entries %}
+        <div>
+            <div class="text-muted small mb-1">Fotos</div>
+            <div class="d-flex flex-wrap gap-2">
+                {% for entry in line.photo_entries %}
+                {% with photo=entry.photo signed_url=entry.signed_url %}
+                {% if signed_url %}
+                <a href="{{ signed_url }}" target="_blank" rel="noopener">
+                    <img src="{{ signed_url }}" class="rounded border" style="width:72px;height:72px;object-fit:cover;" alt="{{ photo.caption|default:'Foto de tarea' }}">
+                </a>
+                {% elif photo.drive_web_link %}
+                <a href="{{ photo.drive_web_link }}" target="_blank" rel="noopener">
+                    <img src="https://drive.google.com/thumbnail?id={{ photo.drive_file_id }}" class="rounded border" style="width:72px;height:72px;object-fit:cover;" alt="{{ photo.caption|default:'Foto de tarea (legado Drive)' }}">
+                </a>
+                {% endif %}
+                {% endwith %}
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+    {% empty %}
+    <p class="text-muted small mb-0">Sin tareas registradas ese día.</p>
+    {% endfor %}
+
+</div>
+{% empty %}
+<p class="text-muted small py-3 mb-0">Sin partes registrados ese día.</p>
+{% endfor %}
