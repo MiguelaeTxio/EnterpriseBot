@@ -74,19 +74,37 @@ _DATE_LARGO_RE = re.compile(
 # Seguridad Social): "PERIODO: DESDE 24-10-2018." Con etiqueta
 # explicita al lado, se coge esa por encima de cualquier otra regla.
 #
-# Extendido con los patrones reales de CONTRATO (dos formatos
-# oficiales distintos, ambos verificados con documentos reales
+# Extendido con los patrones reales de CONTRATO (varios formatos
+# oficiales distintos, todos verificados con documentos reales
 # legibles, S78): "Fecha de Inicio del Contrato: 01/03/2016",
 # "Fecha de Transformacion: 24/10/2018" (comunicacion SEPE); "se
 # extendera desde 01/03/2016... hasta FIN DE OBRA", "iniciandose la
-# relacion laboral en fecha 21/11/2023" (contrato largo, clausulas).
+# relacion laboral en fecha 21/11/2023" (contrato largo, clausulas);
+# "desde 11/12/2019, hasta 31/08/2020" (prorroga, sin la palabra
+# "extendera"). El separador entre etiqueta y fecha NO siempre es solo
+# espacio/dos puntos -- caso real detectado: "Fecha de Inicio del
+# Contrato : — 11/09/2019" (guion largo de relleno del propio
+# impreso), por eso el hueco se acepta como cualquier caracter que no
+# sea digito (`[^\d]{0,15}`), nunca solo `\s*:?\s*`.
 # Todos con maxima prioridad -- etiqueta explicita nunca es ambigua.
+_GAP = r"[^\d]{0,15}"
 _LABELED_DATE_PATTERNS = [
-    re.compile(r"PERIODO\s*:?\s*DESDE\s+(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})"),
-    re.compile(r"FECHA\s+DE\s+INICIO\s+DEL\s+CONTRATO\s*:?\s*(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})"),
-    re.compile(r"FECHA\s+DE\s+TRANSFORMACION\s*:?\s*(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})"),
-    re.compile(r"(?:SE\s+)?EXTENDER[AÁ]\s+DESDE\s+(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})"),
-    re.compile(r"RELACION\s+LABORAL\s+EN\s+FECHA\s*(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})"),
+    re.compile(r"PERIODO" + _GAP + r"DESDE" + _GAP + r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})"),
+    re.compile(r"FECHA\s+DE\s+INICIO\s+DEL\s+CONTRATO" + _GAP + r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})"),
+    re.compile(r"FECHA\s+DE\s+TRANSFORMACION" + _GAP + r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})"),
+    re.compile(r"(?:SE\s+)?EXTENDER[AÁ]\s+DESDE" + _GAP + r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})"),
+    re.compile(r"RELACION\s+LABORAL\s+EN\s+FECHA" + _GAP + r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})"),
+    # Prorroga (formato real distinto, sin la palabra "extendera"):
+    # "...PRORROGA... DESDE 11/12/2019 ... HASTA 31/08/2020" -- se usa
+    # la fecha de inicio de la prorroga (DESDE), mismo criterio que el
+    # resto de patrones de este tipo documental. El hueco entre
+    # PRORROGA y DESDE SI contiene digitos reales ("8 MESES Y 21
+    # DIAS"), a diferencia del resto de patrones -- por eso aqui es
+    # "cualquier caracter" (re.DOTALL), no "no digito".
+    re.compile(
+        r"PRORROGA[\s\S]{0,120}?DESDE" + _GAP + r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})",
+        re.DOTALL,
+    ),
 ]
 # Mantiene el nombre antiguo por compatibilidad con codigo que lo
 # importe directamente (VM scripts standalone que copian esta logica).
