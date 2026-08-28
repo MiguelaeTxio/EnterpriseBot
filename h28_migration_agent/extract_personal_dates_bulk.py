@@ -67,7 +67,7 @@ SAFE_MAX_PIXELS = 80_000_000
 MIN_DPI = 100
 
 
-def ocr_pdf_to_text(data, max_pages=2, dpi=300):
+def ocr_pdf_to_text(data, max_pages=2, dpi=400):
     text_parts = []
     doc = fitz.open(stream=data, filetype="pdf")
     for page_index in range(min(max_pages, doc.page_count)):
