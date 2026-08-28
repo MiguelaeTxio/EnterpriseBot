@@ -306,6 +306,19 @@ esta plataforma. Anotadas aquí únicamente para que nunca se confundan:
 ## VM h28-ocr-batch — ENTORNO REAL (registrado S53, 2026-08-14, tras
 ## descubrirlo a tientas paso a paso -- no volver a redescubrirlo)
 
+**Arrancar las 4 VMs (registrado S77, 2026-08-28 -- todas quedaron
+detenidas al cierre de S54, nunca antes se había documentado el
+comando de arranque, solo el de conexión/borrado):**
+```powershell
+$vms = @("h28-ocr-batch", "h28-ocr-batch-1", "h28-ocr-batch-2", "h28-ocr-batch-3")
+foreach ($vm in $vms) {
+    gcloud compute instances start $vm --project=gen-lang-client-0961484137 --zone=europe-west1-b
+}
+gcloud compute instances list --project=gen-lang-client-0961484137
+```
+La última línea debe mostrar las 4 en `STATUS=RUNNING` antes de
+conectar con `gcloud compute ssh` a ninguna.
+
 **Conexión (PowerShell, comando suelto, ver `com-gcloud-windows`):**
 ```
 gcloud compute ssh h28-ocr-batch --project=gen-lang-client-0961484137 --zone=europe-west1-b

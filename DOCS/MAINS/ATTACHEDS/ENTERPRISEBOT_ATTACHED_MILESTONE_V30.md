@@ -5453,6 +5453,85 @@ retome explícitamente:**
 3. Fase A de `DOC. MAQUINAS` (dry-run ya ejecutado en S69, resultado
    nunca leído).
 
+---
+
+## Hoja de Ruta para la Siguiente Sesión (S78) -- REESCRITA al cierre
+## de S77, sustituye por completo a la de arriba
+
+Ampliación de alcance decidida por Miguel Ángel al cierre de S77,
+verbatim: *"vamos a hacer la ingesta de datos del personal [...] a
+meter nóminas, a meter reconocimientos médicos, DNIs, carné, para
+meterlo todo [...] con los centros de gasto no hemos terminado.
+Hemos terminado con el personal y vamos a hacer la ingesta de datos
+del personal."* Es decir: **todo el dominio `PERSONAL` de
+`DocumentTypeCatalog`, no solo las families `LABORAL` +
+`SALUD_BAJAS_PERSONA`** del sondeo de S77 -- Centro de Gasto queda
+fuera, sigue sin terminar de tipificar/vincular.
+
+1. **Levantar las 4 VMs de OCR, ya creadas, todas detenidas hoy** --
+   `h28-ocr-batch`, `h28-ocr-batch-1`, `h28-ocr-batch-2`,
+   `h28-ocr-batch-3`, proyecto `gen-lang-client-0961484137`, zona
+   `europe-west1-b`. Comando real (PowerShell, `com-gcloud-windows`
+   Patrón 1) documentado en `SESSION_VARIABLES.md`, sección "VM
+   h28-ocr-batch". **Criterio de cierre**: `gcloud compute instances
+   list --project=gen-lang-client-0961484137` muestra las 4 en
+   `STATUS=RUNNING`.
+2. **Sondeo real de alcance sobre TODO el dominio PERSONAL** (mismo
+   patrón que el sondeo de S77, ampliado de `family__in=[LABORAL,
+   SALUD_BAJAS_PERSONA]` a `domain=PERSONAL` completo) -- para saber
+   qué tipos ya tienen fecha y cuáles no, **nunca asumir**. DNI y
+   carné de conducir probablemente YA tienen fecha real
+   (`PersonIdentity.dni_expiry_date`/`driving_license_expiry_date`,
+   campos denormalizados, poblados desde H30 anterior a S73) a
+   diferencia de `LABORAL`/`SALUD_BAJAS_PERSONA` (0% confirmado en
+   S77) -- confirmar con consulta real, no dar por hecho. **Criterio
+   de cierre**: tabla tipo-por-tipo (igual formato que la de S77) con
+   total y % de `issue_date`/`expiry_date` poblado, para cada
+   `DocumentTypeCatalog` con `domain=PERSONAL`.
+3. **Piloto de Nómina** (83 documentos, confirmado sin fecha en S77)
+   -- primer tipo a extraer. Sondeo `--limit 10-20` antes de escalar,
+   heurística de nombre de archivo -> OCR -> Gemini como último
+   recurso, nunca saltar fases. **Criterio de cierre**: tasa de
+   acierto medida sobre el sondeo + decisión explícita (con Miguel
+   Ángel) de escalar o no antes de lanzar el barrido completo de las
+   83.
+4. Si el piloto sale bien, escalar por volumen a los tipos de mayor
+   tamaño confirmados sin fecha por el sondeo del punto 2 (de
+   `LABORAL`/`SALUD_BAJAS_PERSONA`: Declaración de salarios 1.762,
+   Baja SS 683, Reconocimiento médico 672, Investigación de accidente
+   661...; más cualquier otro tipo de `domain=PERSONAL` que el
+   sondeo del punto 2 confirme sin fecha).
+5. Ejecución en las 4 VMs en paralelo, hasta 3 instancias por
+   máquina -- nunca en la consola de PythonAnywhere (cuota de CPU).
+6. Tras cada tipo extraído, verificar contra la ficha real de
+   Alejandro García Luque (pk=158) que `is_current()` archiva
+   correctamente. **Criterio de cierre**: la ficha de esa persona
+   muestra una sola fila vigente de ese tipo documental (la más
+   reciente), con "Historial" dando acceso al resto -- no N filas
+   idénticas sin fecha.
+
+**Decisión de alcance del hito -- a criterio del modelo, Miguel Ángel
+lo dejó abierto explícitamente ("si quieres podemos abrir un hito
+nuevo, ya como quieras, me da igual")**: esta ingesta se queda dentro
+de **H30**, sin abrir hito nuevo -- ya lleva el nombre exacto
+("Vinculación Documental Real") y es la continuación natural de la
+misma tarea (H30 ya tipificó y vinculó; esto es extraer la fecha de
+lo ya vinculado). Si al avanzar el volumen resulta demasiado grande
+para caber cómodo aquí, se puede reconsiderar con un PCH nuevo más
+adelante, mismo criterio que se usó con el acordeón Laboral de H31.
+
+**Pendiente heredado de S73** (primera sesión con H30 activo de
+nuevo desde su pausa -- no arrastrado, se retoma cuando haya hueco,
+sin prioridad sobre lo de arriba):
+
+1. 2 archivos sueltos de ARNES MIRA 12-A sin fecha reconocible
+   (`GARCIA PRIETO`, `HIDALGO ROSAS`).
+2. Deuda técnica: plantillas de comunicados/notificaciones, gap de
+   `AUTORIZACION_MEDIOS_COMUNICACION`; interfaz de EPI para corregir
+   a mano la fecha de caducidad calculada.
+3. Fase A de `DOC. MAQUINAS` (dry-run ya ejecutado en S69, resultado
+   nunca leído).
+
 
 EOF
 # 2026-08-26
@@ -5469,3 +5548,11 @@ EOF
 *  **Description:** Se abrirá la sesión confirmando con Miguel Ángel las dos preguntas bloqueantes dejadas por S70: si la VM h28-ocr-batch-1 sigue encendida a propósito o puede confirmarse su parada real, y si el dominio PERSONAL queda completo tras el cierre al 100% de FOTOS CARNET, para desbloquear la Fase A de heurística sobre DOC. MAQUINAS. Según las respuestas, se avanzará sobre el punto disponible que corresponda: el extractor real de EpiDelivery/DocumentAcknowledgment sobre los archivos ya tipados EPIS y NOMBRAMIENTO RECURSO PREVENTIVO, la decisión sobre el sistema de plantillas de comunicados/notificaciones, el gap de plantilla múltiple de AUTORIZACION_MEDIOS_COMUNICACION, o el reinicio de la Fase A sobre DOC. MAQUINAS si ambos bloqueos quedan resueltos. Cualquier incidencia real fuera de alcance se corregirá de inmediato, según directriz 4.9.
 
 EOF
+# 2026-08-28
+# EnterpriseBot
+# ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md
+*  **Session:** Acordeón Laboral en ficha de personal: Dietas, Vacaciones y Bajas médicas
+*  **Description:** Sesión de continuidad de H31 (Interfaz de Ficha de Personal: EPIs y Notificaciones/Circulares), sobre la petición de Miguel Ángel en el cierre de S76: incluir en la ficha de persona un nuevo acordeón "Laboral" con Dietas, partes de trabajo, vacaciones y bajas (incapacidad temporal por contingencia común y profesional). Se construirá el acordeón con al menos: Dietas como placeholder explícito ("en construcción", sin lógica real todavía, según petición literal de Miguel Ángel); Vacaciones conectado a hr_calendar.VacationPeriod real vía PersonIdentity.company_user, sin duplicar el modelo; Bajas mostrando al menos los documentos ya tipados (PARTE_BAJA_MEDICA) agrupados. Antes de tocar el punto de Partes de trabajo se decidirá con Miguel Ángel el criterio de vinculación (resolución por nombre vs. enlace al explorador filtrado), dado que WorkOrderEntry.worker_name es texto libre sin FK fiable a PersonIdentity. Se confirmará también si el volumen del bloque completo aconseja abrirlo como hito aparte (PCH) o seguir dentro de H31. Criterio de cierre: acordeón Laboral verificado contra BD real de al menos una persona con datos reales en cada sección construida esta sesión.
+
+EOF
+
