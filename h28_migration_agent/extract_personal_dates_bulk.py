@@ -375,20 +375,27 @@ def main():
 
     with conn.cursor() as cur:
         cur.execute(
+            "SELECT id FROM django_content_type "
+            "WHERE app_label = 'document_explorer' AND model = 'personidentity'"
+        )
+        person_ct_id = cur.fetchone()[0]
+
+        cur.execute(
             "SELECT e.id, e.name, e.bucket, e.blob_name, t.code "
             "FROM document_explorer_documentindexentry e "
             "JOIN document_explorer_documenttypecatalog t "
             "  ON e.document_type_id = t.id "
             "JOIN document_explorer_personidentity p "
             "  ON e.domain_object_id = p.id "
-            "WHERE t.domain = 'PERSONAL' AND t.tracks_expiry = 1 "
+            "WHERE e.domain_content_type_id = %s "
+            "AND t.domain = 'PERSONAL' AND t.tracks_expiry = 1 "
             "AND t.ocr_unreliable = 0 "
             "AND e.expiry_date IS NULL AND e.issue_date IS NULL "
             "AND e.deleted_at IS NULL AND e.purged_at IS NULL "
             "AND p.is_active_employee = 1"
             + shard_clause +
             " ORDER BY e.id",
-            shard_params,
+            (person_ct_id,) + shard_params,
         )
         rows = cur.fetchall()
 
