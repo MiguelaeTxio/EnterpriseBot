@@ -774,3 +774,17 @@ y ver si está perfectamente dominado." No confundir con volver a
 tipificar (eso ya está cerrado) -- es una auditoría del campo
 `domain` (`PERSONAL`/`MACHINE`/`BOTH`/`COMPANY`) sobre el catálogo ya
 existente, corrigiendo caso por caso lo que esté mal asignado.
+
+---
+
+## Registro de sesión (reubicado desde V30, S78 -- estaba mal pegado
+## en el anexo de H30 por error, corregido según directriz 4.9)
+
+EOF
+# 2026-08-28
+# EnterpriseBot
+# ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md
+*  **Session:** Acordeón Laboral en ficha de personal: Dietas, Vacaciones y Bajas médicas
+*  **Description:** Sesión de continuidad de H31 (Interfaz de Ficha de Personal: EPIs y Notificaciones/Circulares), sobre la petición de Miguel Ángel en el cierre de S76: incluir en la ficha de persona un nuevo acordeón "Laboral" con Dietas, partes de trabajo, vacaciones y bajas (incapacidad temporal por contingencia común y profesional). Se construirá el acordeón con al menos: Dietas como placeholder explícito ("en construcción", sin lógica real todavía, según petición literal de Miguel Ángel); Vacaciones conectado a hr_calendar.VacationPeriod real vía PersonIdentity.company_user, sin duplicar el modelo; Bajas mostrando al menos los documentos ya tipados (PARTE_BAJA_MEDICA) agrupados. Antes de tocar el punto de Partes de trabajo se decidirá con Miguel Ángel el criterio de vinculación (resolución por nombre vs. enlace al explorador filtrado), dado que WorkOrderEntry.worker_name es texto libre sin FK fiable a PersonIdentity. Se confirmará también si el volumen del bloque completo aconseja abrirlo como hito aparte (PCH) o seguir dentro de H31. Criterio de cierre: acordeón Laboral verificado contra BD real de al menos una persona con datos reales en cada sección construida esta sesión.
+
+EOF
