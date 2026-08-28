@@ -332,6 +332,21 @@ class DocumentIndexEntry(models.Model):
             "`document_management.vigencia_service`."
         ),
     )
+    ocr_text = models.TextField(
+        blank=True,
+        verbose_name="Texto OCR cacheado",
+        help_text=(
+            "H30 (S78). Texto plano ya extraído por OCR/lectura "
+            "nativa (Tesseract para PDF/imagen, python-docx para "
+            "docx), guardado la primera vez que se procesa el "
+            "documento -- para que cualquier extracción futura de "
+            "campos nuevos (número de DNI, categorías de permiso, "
+            "número de tarjeta...) se haga contra este texto ya "
+            "guardado, sin volver a descargar de GCS ni repetir OCR. "
+            "Vacío para documentos todavía no procesados por ningún "
+            "barrido OCR."
+        ),
+    )
     is_obsolete = models.BooleanField(
         default=False,
         verbose_name="Obsoleto",

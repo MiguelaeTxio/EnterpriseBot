@@ -403,6 +403,18 @@ def main():
             print("  SIN EXTRACTOR (extension no soportada)")
             continue
 
+        # H30 (S78): cachear el texto OCR ya extraido, para que
+        # cualquier pasada futura de campos nuevos (numero de DNI,
+        # categorias, etc.) no tenga que repetir descarga+OCR.
+        if args.apply:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE document_explorer_documentindexentry "
+                    "SET ocr_text=%s WHERE id=%s",
+                    (text, entry_id),
+                )
+            conn.commit()
+
         expiry, issue, other = classify_dates_in_text(text)
 
         if expiry:
