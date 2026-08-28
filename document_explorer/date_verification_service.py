@@ -73,9 +73,24 @@ _DATE_LARGO_RE = re.compile(
 # Miguel Angel, hallazgo real de sesion, ejemplo real (IDC de
 # Seguridad Social): "PERIODO: DESDE 24-10-2018." Con etiqueta
 # explicita al lado, se coge esa por encima de cualquier otra regla.
-_PERIODO_DESDE_RE = re.compile(
-    r"PERIODO\s*:?\s*DESDE\s+(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})",
-)
+#
+# Extendido con los patrones reales de CONTRATO (dos formatos
+# oficiales distintos, ambos verificados con documentos reales
+# legibles, S78): "Fecha de Inicio del Contrato: 01/03/2016",
+# "Fecha de Transformacion: 24/10/2018" (comunicacion SEPE); "se
+# extendera desde 01/03/2016... hasta FIN DE OBRA", "iniciandose la
+# relacion laboral en fecha 21/11/2023" (contrato largo, clausulas).
+# Todos con maxima prioridad -- etiqueta explicita nunca es ambigua.
+_LABELED_DATE_PATTERNS = [
+    re.compile(r"PERIODO\s*:?\s*DESDE\s+(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})"),
+    re.compile(r"FECHA\s+DE\s+INICIO\s+DEL\s+CONTRATO\s*:?\s*(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})"),
+    re.compile(r"FECHA\s+DE\s+TRANSFORMACION\s*:?\s*(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})"),
+    re.compile(r"(?:SE\s+)?EXTENDER[AÁ]\s+DESDE\s+(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})"),
+    re.compile(r"RELACION\s+LABORAL\s+EN\s+FECHA\s*(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})"),
+]
+# Mantiene el nombre antiguo por compatibilidad con codigo que lo
+# importe directamente (VM scripts standalone que copian esta logica).
+_PERIODO_DESDE_RE = _LABELED_DATE_PATTERNS[0]
 
 _GEMINI_DATE_SCHEMA = {
     "type": "object",
@@ -132,13 +147,14 @@ def classify_dates_in_text(text):
     issue_candidates = []
     other_dates = []
 
-    # Maxima prioridad: etiqueta explicita "PERIODO: DESDE" (impresos
-    # oficiales estructurados con varias fechas a la vez).
-    periodo_match = _PERIODO_DESDE_RE.search(norm)
-    if periodo_match:
-        parsed = _parse_date(*periodo_match.groups())
-        if parsed:
-            return None, parsed, []
+    # Maxima prioridad: etiqueta explicita (PERIODO/FECHA DE INICIO/
+    # SE EXTENDERA DESDE/etc.) -- nunca ambigua, se prueba primero.
+    for pattern in _LABELED_DATE_PATTERNS:
+        match = pattern.search(norm)
+        if match:
+            parsed = _parse_date(*match.groups())
+            if parsed:
+                return None, parsed, []
 
     matches = list(_DATE_RE.finditer(norm))
     for match in matches:
