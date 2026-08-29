@@ -184,29 +184,52 @@ def extract_dni_mrz_expiry(text):
 # confirmada visualmente por Miguel Angel). Se usa cuando no hay MRZ
 # en el texto cacheado (solo se escaneo la cara frontal).
 _DNI_FRONT_LABEL_RE = re.compile(r"(EMISION|VALIDEZ)")
-_SPACED_DATE_RE = re.compile(r"(\d{1,2})[\s./]+(\d{1,2})[\s./]+(\d{4})")
+_SPACED_DATE_RE = re.compile(
+    r"(\d{1,2})[\s./,;\"'\u2019\u201c\u201d]+"
+    r"(\d{1,2})[\s./,;\"'\u2019\u201c\u201d]+(\d{4})"
+)
+_DNI_FRONT_PLAUSIBLE_YEARS = range(2015, 2046)
 
 
 def extract_dni_front_expiry(text):
     """
-    Tras la etiqueta EMISION o VALIDEZ, toma la ULTIMA fecha con
-    formato "DD MM AAAA" en una ventana de 80 caracteres -- si hay
-    EMISION+VALIDEZ con dos fechas, la ultima es la caducidad; si
-    solo hay una etiqueta con una fecha, esa es la caducidad.
+    Caducidad real del DNI/NIE espanol tras EMISION/VALIDEZ. Nunca
+    decide cual fecha es la caducidad por posicion/orden de texto --
+    si aparecen las dos etiquetas pero el ruido de OCR solo deja leer
+    UNA fecha limpia, no se adivina cual es (podria ser la de
+    EMISION): se devuelve None. Solo se confia en una unica fecha
+    cuando solo aparece la etiqueta VALIDEZ. Entre varias fechas
+    validas, se coge la MAS TARDIA -- la caducidad es siempre
+    posterior a la emision, nunca al reves.
+    ---
+    Real expiry of the Spanish DNI/NIE after EMISION/VALIDEZ. Never
+    decides which date is the expiry by text position/order -- if
+    both labels appear but OCR noise only lets one clean date through,
+    it is not guessed (could be the EMISION date): returns None.
+    A single date is only trusted when just the VALIDEZ label is
+    present. Among several valid dates, the LATEST one is taken --
+    expiry is always after issuance, never the reverse.
     """
     norm = _strip_accents(text).upper()
-    best = None
-    for label_match in _DNI_FRONT_LABEL_RE.finditer(norm):
-        window = norm[label_match.end():label_match.end() + 80]
-        dates = list(_SPACED_DATE_RE.finditer(window))
-        if not dates:
+    label_matches = list(_DNI_FRONT_LABEL_RE.finditer(norm))
+    if not label_matches:
+        return None
+    labels_found = {m.group(1) for m in label_matches}
+    window = norm[label_matches[0].end():label_matches[0].end() + 100]
+    candidatas = []
+    for d, m, y in _SPACED_DATE_RE.findall(window):
+        year = int(y)
+        if year not in _DNI_FRONT_PLAUSIBLE_YEARS:
             continue
-        d, m, y = dates[-1].groups()
         try:
-            best = date(int(y), int(m), int(d))
+            candidatas.append(date(year, int(m), int(d)))
         except ValueError:
             continue
-    return best
+    if not candidatas:
+        return None
+    if "EMISION" in labels_found and "VALIDEZ" in labels_found and len(candidatas) < 2:
+        return None
+    return max(candidatas)
 
 
 _GEMINI_DATE_SCHEMA = {

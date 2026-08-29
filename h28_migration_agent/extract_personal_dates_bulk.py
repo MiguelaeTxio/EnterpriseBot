@@ -295,25 +295,38 @@ def extract_dni_mrz_expiry(text):
 # fecha "DD MM AAAA" separada por espacios (copiado de
 # date_verification_service.py).
 _DNI_FRONT_LABEL_RE = re.compile(r"(EMISION|VALIDEZ)")
-_SPACED_DATE_RE = re.compile(r"(\d{1,2})[\s./]+(\d{1,2})[\s./]+(\d{4})")
+_SPACED_DATE_RE = re.compile(
+    r"(\d{1,2})[\s./,;\"'\u2019\u201c\u201d]+"
+    r"(\d{1,2})[\s./,;\"'\u2019\u201c\u201d]+(\d{4})"
+)
+_DNI_FRONT_PLAUSIBLE_YEARS = range(2015, 2046)
 
 
 def extract_dni_front_expiry(text):
-    """Ultima fecha DD MM AAAA tras EMISION/VALIDEZ en una ventana
-    de 80 caracteres -- None si no hay etiqueta o fecha."""
+    """Caducidad tras EMISION/VALIDEZ. Si aparecen ambas etiquetas
+    pero solo se lee una fecha limpia, no se adivina -- None. Entre
+    varias fechas validas, la mas tardia (copiado de
+    date_verification_service.py)."""
     norm = _strip_accents(text).upper()
-    best = None
-    for label_match in _DNI_FRONT_LABEL_RE.finditer(norm):
-        window = norm[label_match.end():label_match.end() + 80]
-        dates = list(_SPACED_DATE_RE.finditer(window))
-        if not dates:
+    label_matches = list(_DNI_FRONT_LABEL_RE.finditer(norm))
+    if not label_matches:
+        return None
+    labels_found = {m.group(1) for m in label_matches}
+    window = norm[label_matches[0].end():label_matches[0].end() + 100]
+    candidatas = []
+    for d, m, y in _SPACED_DATE_RE.findall(window):
+        year = int(y)
+        if year not in _DNI_FRONT_PLAUSIBLE_YEARS:
             continue
-        d, m, y = dates[-1].groups()
         try:
-            best = date(int(y), int(m), int(d))
+            candidatas.append(date(year, int(m), int(d)))
         except ValueError:
             continue
-    return best
+    if not candidatas:
+        return None
+    if "EMISION" in labels_found and "VALIDEZ" in labels_found and len(candidatas) < 2:
+        return None
+    return max(candidatas)
 
 
 # ---------------------------------------------------------------
