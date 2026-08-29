@@ -177,6 +177,38 @@ def extract_dni_mrz_expiry(text):
     return None
 
 
+# H30 (S79). Cara frontal del DNI/NIE espanol -- etiquetas reales
+# EMISION y VALIDEZ, fecha en formato "DD MM AAAA" separada por
+# espacios (nunca guion/punto). Verificado contra imagen real del
+# documento (28466: "VALIDEZ ... 23 02 2028" == caducidad real
+# confirmada visualmente por Miguel Angel). Se usa cuando no hay MRZ
+# en el texto cacheado (solo se escaneo la cara frontal).
+_DNI_FRONT_LABEL_RE = re.compile(r"(EMISION|VALIDEZ)")
+_SPACED_DATE_RE = re.compile(r"(\d{1,2})[\s./]+(\d{1,2})[\s./]+(\d{4})")
+
+
+def extract_dni_front_expiry(text):
+    """
+    Tras la etiqueta EMISION o VALIDEZ, toma la ULTIMA fecha con
+    formato "DD MM AAAA" en una ventana de 80 caracteres -- si hay
+    EMISION+VALIDEZ con dos fechas, la ultima es la caducidad; si
+    solo hay una etiqueta con una fecha, esa es la caducidad.
+    """
+    norm = _strip_accents(text).upper()
+    best = None
+    for label_match in _DNI_FRONT_LABEL_RE.finditer(norm):
+        window = norm[label_match.end():label_match.end() + 80]
+        dates = list(_SPACED_DATE_RE.finditer(window))
+        if not dates:
+            continue
+        d, m, y = dates[-1].groups()
+        try:
+            best = date(int(y), int(m), int(d))
+        except ValueError:
+            continue
+    return best
+
+
 _GEMINI_DATE_SCHEMA = {
     "type": "object",
     "properties": {

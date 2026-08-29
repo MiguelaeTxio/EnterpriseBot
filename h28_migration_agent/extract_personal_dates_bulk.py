@@ -291,6 +291,31 @@ def extract_dni_mrz_expiry(text):
     return None
 
 
+# S79 -- cara frontal del DNI/NIE, etiquetas EMISION/VALIDEZ con
+# fecha "DD MM AAAA" separada por espacios (copiado de
+# date_verification_service.py).
+_DNI_FRONT_LABEL_RE = re.compile(r"(EMISION|VALIDEZ)")
+_SPACED_DATE_RE = re.compile(r"(\d{1,2})[\s./]+(\d{1,2})[\s./]+(\d{4})")
+
+
+def extract_dni_front_expiry(text):
+    """Ultima fecha DD MM AAAA tras EMISION/VALIDEZ en una ventana
+    de 80 caracteres -- None si no hay etiqueta o fecha."""
+    norm = _strip_accents(text).upper()
+    best = None
+    for label_match in _DNI_FRONT_LABEL_RE.finditer(norm):
+        window = norm[label_match.end():label_match.end() + 80]
+        dates = list(_SPACED_DATE_RE.finditer(window))
+        if not dates:
+            continue
+        d, m, y = dates[-1].groups()
+        try:
+            best = date(int(y), int(m), int(d))
+        except ValueError:
+            continue
+    return best
+
+
 # ---------------------------------------------------------------
 # FASE 2 -- OCR + deteccion por contexto (copiado de
 # date_verification_service.py, sin la parte de Gemini)
@@ -447,7 +472,7 @@ def main():
     print("Se van a procesar en esta ejecucion: %d\n" % len(rows))
 
     stats = {
-        "heuristica_nombre": 0, "mrz": 0, "ocr_contexto": 0,
+        "heuristica_nombre": 0, "mrz": 0, "frente": 0, "ocr_contexto": 0,
         "ocr_unica_fecha": 0, "sin_fecha": 0, "sin_extractor": 0,
         "error": 0,
     }
@@ -493,6 +518,19 @@ def main():
                             "UPDATE document_explorer_documentindexentry "
                             "SET ocr_text=%s, expiry_date=%s WHERE id=%s",
                             (text, mrz_expiry, entry_id),
+                        )
+                    conn.commit()
+                continue
+            front_expiry = extract_dni_front_expiry(text)
+            if front_expiry:
+                stats["frente"] = stats.get("frente", 0) + 1
+                print("  FRENTE %s -> expiry=%s" % (code, front_expiry.isoformat()))
+                if args.apply:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "UPDATE document_explorer_documentindexentry "
+                            "SET ocr_text=%s, expiry_date=%s WHERE id=%s",
+                            (text, front_expiry, entry_id),
                         )
                     conn.commit()
                 continue
