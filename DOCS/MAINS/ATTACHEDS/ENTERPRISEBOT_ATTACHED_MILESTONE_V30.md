@@ -5717,3 +5717,40 @@ bloque crítico de arriba? Llevan sin tocarse desde S73:**
 3. Fase A de `DOC. MAQUINAS` (dry-run ya ejecutado en S69, resultado
    nunca leído).
 
+
+## DECISIÓN DE DISEÑO (S79) -- LOS 4 ESTADOS DOCUMENTALES,
+## PARA ALERTAS Y PARA LA INTERFAZ
+
+Concepto establecido por Miguel Ángel en S79, sobre la evidencia real
+del cierre de `DNI` (116 documentos de los 69 activos): un documento
+con fecha de caducidad, para una persona activa, y por tipo
+documental, solo puede estar en uno de 4 estados. Se evalúa por
+persona + tipo, no por documento individual:
+
+1. **VIGENTE** -- el documento más reciente de ese tipo para esa
+   persona, y su `expiry_date` no ha pasado.
+2. **CADUCADO** -- el documento más reciente de ese tipo para esa
+   persona, pero su `expiry_date` ya pasó (no hay ningún documento
+   posterior que lo sustituya).
+3. **HISTÓRICO** -- cualquier documento de ese tipo que NO sea el
+   más reciente para esa persona (esté caducado o no), porque ya
+   existe uno posterior que lo sustituye. Nunca necesita alerta ni
+   `expiry_date` obligatorio en BD (regla ya establecida: "el
+   histórico no necesita fecha").
+4. **NINGUNO** -- la persona activa no tiene ni un solo documento de
+   ese tipo en el índice.
+
+Ejemplo real de S79 (bloque `DNI`, 69 activos, 116 documentos):
+- Caso VIGENTE: `35564` José Antonio Gómez García, `VALIDEZ
+  2035-03-15`.
+- Caso CADUCADO: José Carlos Martínez Segura -- su único/más
+  reciente DNI en el índice es de 2018 (`36373`/`36374`/`36376`,
+  mismo documento en 3 copias).
+- Caso HISTÓRICO: `27810` Adolfo Álvarez Díaz (`VALIDO HASTA
+  2021-09-07`), superado por `27723` (`VALIDEZ 2031-09-07`, VIGENTE).
+- Caso NINGUNO: no se ha dado en este bloque -- los 10 "sin vigente"
+  detectados en S79 son todos CADUCADO (tenían al menos un documento
+  real, aunque caducado), ninguno es NINGUNO.
+
+Pendiente de aplicar cuando se retome la interfaz/alertas (no
+implementado aún en S79, solo el concepto queda fijado aquí).
