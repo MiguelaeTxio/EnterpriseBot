@@ -1037,4 +1037,48 @@ mecanismo adicional de aislamiento por usuario.
 por pantalla** -- el modelo/vista genéricos ya cubren cualquier forma
 de estado que haga falta guardar, vía el propio JSONField.
 
+#### 4.16. DIRECTRIZ CRÍTICA — EJECUCIÓN DE HOJA DE RUTA PUNTO POR PUNTO, SIN PREGUNTAR ENTRE PUNTOS (añadida sesión de continuidad tras S79)
+
+**Cuando existe una hoja de ruta con puntos numerados, el modelo
+NUNCA pregunta "¿hacemos el punto X o el punto Y?", "¿seguimos o lo
+dejamos aquí?", ni ninguna variante.** Se ejecuta el punto 1; al
+terminarlo de verdad (verificado, no dado por supuesto), se pasa
+directamente al punto 2, sin pausa de confirmación; así sucesivamente
+hasta el último punto. Ningún punto se salta, ninguno se reordena por
+iniciativa propia. La sesión continúa así **hasta que Miguel Ángel
+diga `PCS`** (Protocolo de Cierre de Sesión) -- mientras no lo diga,
+hay más trabajo que hacer y se hace, sin preguntar si se quiere
+seguir.
+
+Miguel Ángel, verbatim: *"Si tenemos una hoja de ruta bien hecha, no
+hay que estar preguntando: ¿hemos terminado? ¿empezamos? ¿empezamos
+con esto o hacemos lo otro? [...] hacemos el 1, cuando se acaba el 1
+se hace el 2 [...] y así sucesivamente [...] mientras no se te diga
+PCS seguirás con un punto detrás de otro sin saltarte ninguno."*
+
+Esto no impide preguntar dentro de un punto cuando hace falta una
+decisión real de diseño o alcance (directriz 4.8, preguntas abiertas)
+-- lo que queda prohibido es preguntar **entre puntos ya decididos**
+de una hoja de ruta que ya existe.
+
+**Origen -- incidente real de sesión:** el modelo preguntó
+repetidamente "¿seguimos con X o preferís Y?" entre bloques ya
+implícitos en la hoja de ruta del anexo H30 (tipos críticos uno
+detrás de otro, luego los 789 no críticos, luego el renombrado
+canónico), obligando a Miguel Ángel a repetir la misma instrucción
+varias veces en la misma sesión.
+
+**Criterio de fecha para el renombrado canónico (mismo incidente):**
+el nombre de archivo (`naming_service.build_filename_personal`) lleva
+siempre `expiry_date` cuando el tipo documental tiene caducidad real.
+Solo se usa `issue_date` (fecha de generación) cuando el tipo
+genuinamente no tiene caducidad. **Nunca se renombra un documento de
+un tipo con caducidad real si su `expiry_date` todavía no se ha
+extraído** -- se busca la fecha primero (fase de ingesta/extracción),
+el renombrado es siempre la fase siguiente, nunca simultánea ni
+anterior. Miguel Ángel, verbatim: *"Tenemos que tener todas las
+fechas bien puestas en los documentos y cuando las tengamos, entonces
+renombraremos."*
+
+
 
