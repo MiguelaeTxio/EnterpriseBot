@@ -722,7 +722,7 @@ def main():
         db=MYSQL_DB_NAME, charset="utf8mb4",
     )
     with conn.cursor() as cur:
-        ext_pattern = r"\\.pdf$" if args.pdf_only else r"\\.(pdf|docx?)$"
+        ext_pattern = r"\.pdf$" if args.pdf_only else r"\.(pdf|docx?)$"
         cur.execute(
             "SELECT e.id, e.blob_name, e.name, e.parent_path "
             "FROM document_explorer_documentindexentry e "
