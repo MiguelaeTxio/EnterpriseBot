@@ -507,6 +507,15 @@ def _process_one(
 
     bump("procesados")
 
+    if apply_changes:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE document_explorer_documentindexentry "
+                "SET ocr_text=%s WHERE id=%s",
+                (text, entry_id),
+            )
+        conn.commit()
+
     no_delivery = _detect_non_delivery(text)
     if no_delivery:
         _log(log_lock, "NO ES ENTREGA (%s): %s/%s" % (no_delivery, parent_path, name))
