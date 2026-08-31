@@ -5883,6 +5883,13 @@ quedaban sin fecha).
 ## Hoja de Ruta para la Siguiente Sesión (sustituye por completo a
 ## la anterior)
 
+⛔ **LEER PRIMERO `ENTERPRISEBOT_MASTER_DOCUMENT.md` DIRECTRIZ 4.17
+ANTES DE TOCAR NADA.** Queja formal de Miguel Ángel registrada en
+S81, verbatim, sobre incumplimiento sistemático de instrucciones,
+documentación y skills, y sobre el reprocesamiento repetido de
+archivos ya procesados por no verificar el estado real antes de
+actuar. No es un incidente cerrado -- es el estándar mínimo exigido.
+
 **REGLA DE ARRANQUE DIRECTO -- empezar ya por el punto 1, sin
 preguntar por dónde empezar.**
 

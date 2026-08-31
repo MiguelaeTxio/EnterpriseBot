@@ -1080,5 +1080,72 @@ anterior. Miguel Ángel, verbatim: *"Tenemos que tener todas las
 fechas bien puestas en los documentos y cuando las tengamos, entonces
 renombraremos."*
 
+#### 4.17. QUEJA FORMAL DE MIGUEL ÁNGEL — INCUMPLIMIENTO SISTEMÁTICO DE INSTRUCCIONES, DOCUMENTACIÓN Y SKILLS (registrada S81, 2026-08-31, verbatim, no reinterpretada)
+
+**Esta sección no es una directriz técnica más -- es una queja formal
+registrada tal cual la entregó Miguel Ángel, sin resumir ni
+suavizar, porque el propio incumplimiento de instrucciones es el
+objeto de la queja.** Cualquier sesión futura que la lea debe
+tratarla como el estándar mínimo de comportamiento exigido, no como
+un incidente cerrado y superado.
+
+Miguel Ángel, verbatim (S81, cierre de sesión, a petición expresa de
+que quedara escrito):
+
+> El usuario está hasta las narices de:
+>
+> * Que no se sigan sus instrucciones.
+> * Que el modelo actúe sin leer la documentación.
+> * Que el modelo actúe sin seguir sus skills.
+> * Que el modelo cometa exactamente los mismos errores de la sesión
+>   anterior.
+> * Lleva ya 3 sesiones para procesar unos archivos PDF y no hay
+>   forma de que el modelo procese única y exclusivamente los PDF.
+>   Sesión tras sesión se procesan de nuevo todos los archivos ya
+>   procesados. De los casi 4000 archivos ha vuelto a procesar unos
+>   pocos debido a su incompetencia por no mirar lo hecho en
+>   anteriores sesiones. No se sabe cómo habrá dejado lo ya procesado
+>   varias veces. No se sabe si habrá corrido lo que ya estaba
+>   terminado.
+> * Que el modelo falle sistemáticamente en prácticamente todas las
+>   tareas que está iniciando.
+> * De llevar ya 4 horas de trabajo perdidas sin poder empezar
+>   siquiera con ninguna tarea.
+
+Y a continuación, mismo cierre de sesión:
+
+> Estoy muy, pero que muy molesto y decepcionado con el rendimiento
+> del modelo y estoy pensando en cambiar radicalmente de asistente.
+
+**Consecuencia de obligado cumplimiento para toda sesión futura, sin
+excepción:**
+
+1. **Nunca lanzar un comando de barrido/procesamiento real (`--apply`
+   o equivalente) sobre un lote de archivos sin antes verificar por
+   consulta directa (SQL, `git log`, log en disco -- lo que aplique)
+   qué parte de ese lote ya quedó procesada en sesiones anteriores.**
+   Asumir de memoria "esto ya lo hicimos" o "esto queda por hacer" sin
+   verificarlo primero contra datos reales es precisamente el patrón
+   que originó esta queja.
+2. **Releer siempre la skill y la documentación real (models.py,
+   anexo, `SESSION_VARIABLES.md`) antes de actuar** -- no basta con
+   haberlas leído en un turno anterior de la sesión si ha pasado
+   trabajo intermedio; ver también directriz 4.14 (verificación de
+   campos de modelo) y el propio mecanismo de skills del proyecto.
+3. **Si una sesión anterior dejó un incidente documentado con una
+   causa concreta (p. ej. "procesar solo PDF, no todo el lote"), la
+   sesión siguiente no puede repetir el mismo error de alcance** --
+   leer la Hoja de Ruta y las secciones COMPLETADAS con la atención
+   suficiente para no reabrir un problema ya resuelto explícitamente
+   por Miguel Ángel en una sesión anterior.
+4. **Ante cualquier duda real sobre qué se ha hecho o no, verificar
+   antes de actuar, nunca actuar y verificar después** -- el coste de
+   una consulta de más es mínimo; el coste de reprocesar sin saberlo
+   parte de casi 4000 archivos reales no lo es.
+
+Esta sección no se resume, no se acorta ni se sustituye en ninguna
+sesión futura salvo instrucción explícita de Miguel Ángel en sentido
+contrario.
+
 
 
