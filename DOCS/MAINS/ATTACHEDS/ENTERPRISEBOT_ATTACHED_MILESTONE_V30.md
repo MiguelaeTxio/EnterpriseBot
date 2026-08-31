@@ -5886,45 +5886,123 @@ quedaban sin fecha).
 **REGLA DE ARRANQUE DIRECTO -- empezar ya por el punto 1, sin
 preguntar por dónde empezar.**
 
-1. **Terminar `extract_epis_deliveries_vm.py` en `h28-ocr-batch-1`
-   (parada por Miguel Ángel a mitad de la sesión, `--apply` lanzado
-   pero interrumpido).** Bug real pendiente de arreglar antes de
-   relanzar: `_trash_entry()` referencia `ivr_config_companyuser` con
-   columna `username` sin verificar contra el modelo real
-   (`ivr_config/models.py`, clase `CompanyUser`) -- confirmar el
-   nombre de campo real (no es `username` según el error
-   `(1054, "Unknown column 'username' in 'where clause'")` visto en
-   producción) antes de volver a lanzar `--apply`. Cierre: `--apply`
-   completo sobre los 767 documentos EPIS vivos, `RESUMEN` final sin
-   `FALLO INESPERADO`, y verificación de que `ocr_text` quedó
-   cacheado en los procesados (evita repetir OCR si hace falta
-   reintentar).
-2. **Confirmar con Miguel Ángel el alcance de la plantilla COVID**
+1. **Determinar el estado REAL de los 767 documentos EPIS antes de
+   lanzar nada.** El `--trash_entry()` bug de S80 quedó cerrado
+   (`e728fd6`, verificado). En S81 se relanzó `--apply` (barrido
+   completo, sin `--pdf-only`) en `h28-ocr-batch-1` vía consola SSH
+   de la app móvil de Cloud Console (usuario `nummenor` reconectando
+   como `Usuario`); a mitad de ejecución Miguel Ángel decidió
+   acotarlo a `--pdf-only`, pero la consola se desconectó dos veces
+   seguidas durante el proceso. El script **no dejaba log en disco en
+   ese momento** (corregido esta misma sesión, ver más abajo) y al
+   reconectar la sesión `tmux epis_apply` apareció `[exited]` -- el
+   proceso había terminado (por sí solo, o por el `Ctrl+C`, no se
+   pudo determinar cuál) sin que quedara ningún rastro de qué
+   documentos llegó a tocar. **Criterio de cierre objetivo:** antes
+   de relanzar ningún `--apply`, contar cuántos `DocumentIndexEntry`
+   con `document_type__code='EPIS'` siguen con `deleted_at IS NULL`
+   (`SELECT COUNT(*) FROM document_explorer_documentindexentry e JOIN
+   document_explorer_documenttypecatalog t ON e.document_type_id=t.id
+   WHERE t.code='EPIS' AND e.deleted_at IS NULL AND e.purged_at IS
+   NULL;`) y compararlo contra los 767 de partida -- ese número real
+   dice cuántos quedaron procesados de la tanda de S81, si alguno.
+2. **Relanzar `extract_epis_deliveries_vm.py --apply --pdf-only`**
+   (decisión explícita de Miguel Ángel en S81: acotar a `.pdf`,
+   dejar los `.doc`/`.docx` de `EPIS COVID 19` -- que fallan con
+   "SIN FECHA reconocible"/"SIN DNI" en su formato real -- fuera de
+   esta tanda) sobre los documentos que el punto 1 confirme que
+   siguen sin procesar. **Usar el log persistido a fichero añadido
+   en S81** (`extract_epis_deliveries_vm_YYYYMMDD_HHMMSS.log`, mismo
+   directorio, sobrevive a una desconexión de la consola) -- si la
+   consola se desconecta, reconectar, `tmux attach -t epis_apply` si
+   la sesión sigue viva, y si no, releer el `.log` más reciente antes
+   de decidir si hace falta relanzar. Cierre: `RESUMEN` final sin
+   `FALLO INESPERADO` en el log, y verificación de que `ocr_text`
+   quedó cacheado en los procesados.
+3. **Confirmar con Miguel Ángel el alcance de la plantilla COVID**
    (formato aparte, ítems `Mascarillas FFP2/KN95`/`Guantes
-   latex`/`Gel desinfectante` sin código en `EpiItemCatalog`) --
+   latex`/`Gel desinfectante` sin código en `EpiItemCatalog`, y los
+   `.doc`/`.docx` que el punto 2 dejó fuera por decisión de S81) --
    ¿se crean códigos nuevos y se procesan como entrega real, o se
-   excluyen del extractor? Pendiente desde esta sesión, sin decidir.
-3. **VM `h28-ocr-batch-1` queda DETENIDA (`stop`, no borrada)** al
+   excluyen del extractor? Pendiente desde S80, sin decidir.
+4. **VM `h28-ocr-batch-1` queda DETENIDA (`stop`, no borrada)** al
    cierre de esta sesión -- repo/venv/clave de servicio ya
    preparados, arrancar con `gcloud compute instances start
    h28-ocr-batch-1` y seguir directamente por el punto 1, sin
-   rehacer bootstrap.
-4. **Revisar visualmente los "NO ES ENTREGA" que reporte el
+   rehacer bootstrap. El checkout de la VM ya está sincronizado con
+   `origin/main` en `a6be28c` (incluye el fix de logging), no hace
+   falta `git pull` al reconectar salvo que la siguiente sesión toque
+   de nuevo el repo antes.
+5. **Revisar visualmente los "NO ES ENTREGA" que reporte el
    `--apply` completo** (formación, entrega de información PRL,
    facturas/albarán mal tipados como `EPIS`) -- reclasificar a mano
    cada uno al tipo real.
-5. Después de cerrar EPIs: retomar la pregunta de fondo que abrió
+6. Después de cerrar EPIs: retomar la pregunta de fondo que abrió
    este bloque -- ¿se revisan también los 789 documentos "no
    críticos" (`CONTRATO`, `FORMACION`, `ENTREGA_INFORMACION`,
    `MOD_145`, `BAJA_PERSONAL`...) para extraerles fecha también? Ya
    confirmado por Miguel Ángel en S80 que sí toca, sigue el orden de
    la hoja de ruta sin volver a preguntar (directriz 4.16).
-6. Después: renombrado canónico del resto del catálogo (131 tipos) --
+7. Después: renombrado canónico del resto del catálogo (131 tipos) --
    Miguel Ángel revocó en S80 la decisión anterior de "a demanda"; el
    criterio real es el fijado en directriz 4.16 (fecha de
    `expiry_date` cuando el tipo la tenga, `issue_date` solo si
    genuinamente no la tiene, nunca renombrar sin la fecha correcta ya
    extraída).
+
+### COMPLETADAS EN S81 (sesión corta, cierre pedido explícitamente
+### por Miguel Ángel tras dos desconexiones seguidas de la consola)
+
+**Bug de S80 (`_trash_entry()`, columna `username`) verificado
+cerrado en el commit de arranque de la sesión (`e728fd6`)** --
+`[modelo: CompanyUser, campos confirmados: user (OneToOneField a
+django.contrib.auth.models.User)]`, releído en el turno antes de dar
+el bug por resuelto. La query ya corregida hace
+`JOIN auth_user u ON u.id = cu.user_id WHERE u.username = %s`. No
+hizo falta ningún cambio adicional.
+
+**Intento real de relanzar `--apply` sobre los 767 EPIS, resultado NO
+confirmado.** Conexión vía app móvil de Cloud Console (usuario
+`nummenor`, sin relación con el checkout preparado bajo `Usuario` --
+cambio de usuario dentro de la misma sesión SSH con `sudo -i -u
+Usuario`, sin rehacer bootstrap). Lanzado dentro de `tmux new -s
+epis_apply` para sobrevivir a la pérdida de foco de la consola móvil.
+Se lanzó primero el barrido completo (sin `--pdf-only`) por descuido
+-- Miguel Ángel lo detectó al ver en el log en vivo que se estaban
+tocando también los `.doc`/`.docx` de `EPIS COVID 19` (formato
+distinto, sin DNI/fecha reconocible, con avisos "SIN DNI"/"SIN FECHA
+reconocible" repetidos) y pidió acotar a `--pdf-only`, coherente con
+que los `.doc`/`.docx` que sí funcionan bien (los 15 de S80) no son
+estos. Al intentar interrumpir con `Ctrl+C` y relanzar ya acotado, la
+consola SSH se desconectó dos veces seguidas (confirmado real:
+pierde la sesión sin proceso en foreground con foco constante -- ver
+nota nueva en `SESSION_VARIABLES.md`). Al reconectar y hacer `tmux
+attach -t epis_apply`, la sesión apareció `[exited]` -- el proceso ya
+había terminado, pero **sin ningún registro en disco de qué hizo**,
+porque el script no persistía log a fichero (solo `print()` al
+stdout de la propia terminal, perdido con la sesión). Miguel Ángel
+pidió cerrar la sesión en ese punto, explícitamente frustrado por la
+repetición de incidencias entre S80 y S81 -- ver Hoja de Ruta punto 1
+para el criterio objetivo de verificación real antes de continuar.
+
+**Corrección real aplicada esta misma sesión, sin esperar a la
+siguiente (directriz de corrección inmediata):**
+`extract_epis_deliveries_vm.py` ahora persiste todo su log (incluido
+el `RESUMEN` final) a un fichero
+`extract_epis_deliveries_vm_YYYYMMDD_HHMMSS.log` en el propio
+directorio, además de stdout -- sobrevive a cualquier desconexión de
+consola futura. Commit `a6be28c`, verificado con
+`python3 -m py_compile` antes de commitear.
+
+**Incidencia real de sesión, para no repetir:** el modelo lanzó el
+barrido completo sin `--pdf-only` en la primera pasada, pese a que la
+decisión de acotar a PDF (`.doc`/`.docx` de `EPIS COVID 19` aparte)
+ya estaba implícita en el propio hallazgo de S80 (los `.doc`/`.docx`
+que "ya se sabe que funcionan bien" son un lote distinto, 15
+documentos, no los de `EPIS COVID 19`) -- debió proponerse
+`--pdf-only` desde el primer lanzamiento de esta sesión, no esperar a
+que Miguel Ángel lo detectara viendo pasar los avisos "SIN DNI" en
+vivo.
 
 ## PENDIENTE HEREDADO -- 4.ª SESIÓN SIN AVANZAR (S77, S78, S79, S80),
 ## sigue como pregunta explícita, Miguel Ángel no ha respondido aún

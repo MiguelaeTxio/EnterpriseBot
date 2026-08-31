@@ -741,6 +741,21 @@ cero: se puede duplicar localmente en la propia VM con
 usuario del sistema, no hace falta tocar el propietario ni los
 permisos aunque `ls -la` muestre `root` como dueño.
 
+⛔ **CONFIRMADO S81, 2026-08-31: la consola SSH integrada de la app
+móvil de Cloud Console se desconecta con un proceso largo en
+foreground, aunque el teléfono esté encendido -- confirmado real dos
+veces seguidas en la misma sesión.** Consecuencia: cualquier script
+de esta VM que tarde más de un par de minutos (cualquier `--apply`
+real de este directorio) **debe lanzarse siempre dentro de `tmux`**
+desde el primer intento, nunca directo en la sesión SSH -- así
+sobrevive a la desconexión y se puede recuperar con `tmux attach -t
+NOMBRE` al reconectar. Además, desde S81 los scripts de barrido real
+de este directorio persisten su propio log a fichero (ver
+`extract_epis_deliveries_vm.py`, commit `a6be28c`) precisamente para
+que una desconexión no deje al usuario sin ningún rastro de qué pasó
+-- si se escribe un script nuevo de este tipo, aplicar el mismo
+patrón desde el principio, no esperar a que falle primero.
+
 **Si hay que rehacerlo en un Termux nuevo, el instalador oficial
 (`curl https://sdk.cloud.google.com | bash`) falla al final con
 `ERROR: (gcloud.components.update) The following components are
