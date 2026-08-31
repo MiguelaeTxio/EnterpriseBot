@@ -432,9 +432,21 @@ def _parse_date_from_content(text):
         return None
 
 
+# Log persistido a fichero, ademas de stdout -- S81: la consola SSH
+# movil se desconecto dos veces durante un --apply real, y al no
+# quedar nada en disco, la sesion se cerro sin poder saber si el
+# barrido habia terminado, se habia interrumpido a medias, o habia
+# fallado. Ver ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md, incidente S81.
+_LOG_FH = None
+
+
 def _log(lock, msg):
+    line = "[%s] %s" % (datetime.datetime.now().strftime("%H:%M:%S"), msg)
     with lock:
-        print("[%s] %s" % (datetime.datetime.now().strftime("%H:%M:%S"), msg), flush=True)
+        print(line, flush=True)
+        if _LOG_FH is not None:
+            _LOG_FH.write(line + "\n")
+            _LOG_FH.flush()
 
 
 def _worker(
@@ -707,6 +719,13 @@ def main():
     )
     args = parser.parse_args()
 
+    global _LOG_FH
+    log_path = "extract_epis_deliveries_vm_%s.log" % datetime.datetime.now().strftime(
+        "%Y%m%d_%H%M%S"
+    )
+    _LOG_FH = open(log_path, "a", encoding="utf-8")
+    print("Log persistido en: %s (sobrevive a una desconexion de la consola)" % log_path)
+
     pa_password = getpass.getpass(
         "Contrasena de PythonAnywhere (la de la web, para el tunel SSH): "
     )
@@ -792,14 +811,18 @@ def main():
 
     tunnel.stop()
 
-    print()
-    print("=== RESUMEN ===")
+    summary_lines = ["", "=== RESUMEN ==="]
     for key, value in sorted(totals.items()):
-        print("    %s: %d" % (key, value))
+        summary_lines.append("    %s: %d" % (key, value))
     if unmapped_labels:
-        print("    Etiquetas sin mapear (frecuencia):")
+        summary_lines.append("    Etiquetas sin mapear (frecuencia):")
         for label, n in sorted(unmapped_labels.items(), key=lambda x: -x[1]):
-            print("      %4d  %r" % (n, label))
+            summary_lines.append("      %4d  %r" % (n, label))
+    for line in summary_lines:
+        print(line)
+        _LOG_FH.write(line + "\n")
+    _LOG_FH.flush()
+    _LOG_FH.close()
 
 
 if __name__ == "__main__":
