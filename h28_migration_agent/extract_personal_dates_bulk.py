@@ -413,21 +413,26 @@ def main():
     if not (0 <= args.shard_index < max(args.shard_count, 1)):
         parser.error("--shard-index debe estar entre 0 y --shard-count - 1")
 
-    pa_password = getpass.getpass(
-        "Contrasena de PythonAnywhere (la de la web, para el tunel SSH): "
-    )
     mysql_password = getpass.getpass(
         "Contrasena de MySQL (panel PythonAnywhere, pestana 'Databases'): "
     )
 
-    print("Abriendo tunel SSH a %s ..." % SSH_HOSTNAME)
+    # Sesion de continuidad tras S79. Version anterior forzaba
+    # host_pkey_directories=[] / allow_agent=False (solo contraseña),
+    # y ese camino fallaba en el gateway de PythonAnywhere
+    # (sshtunnel.BaseSSHTunnelForwarderError: "Could not establish
+    # session to SSH gateway"). Diagnostico real con paramiko.SSHClient
+    # directo (descubrimiento de clave por defecto) autentico al
+    # instante por clave publica -- la clave de Miguel Angel
+    # (C:\Users\Usuario\.ssh\id_rsa) ya esta registrada en
+    # PythonAnywhere y funciona. Se deja que sshtunnel la descubra
+    # igual que hace `ssh` normal -- ya no hace falta pedir la
+    # contraseña de PythonAnywhere en absoluto.
+    print("Abriendo tunel SSH a %s (autenticando por clave ya registrada) ..." % SSH_HOSTNAME)
     tunnel = sshtunnel.SSHTunnelForwarder(
         SSH_HOSTNAME,
         ssh_username=PYTHONANYWHERE_USERNAME,
-        ssh_password=pa_password,
         remote_bind_address=(MYSQL_HOSTNAME, 3306),
-        host_pkey_directories=[],
-        allow_agent=False,
     )
     tunnel.start()
     print("Tunel abierto, puerto local %d." % tunnel.local_bind_port)
