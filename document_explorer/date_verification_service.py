@@ -232,6 +232,64 @@ def extract_dni_front_expiry(text):
     return max(candidatas)
 
 
+# H30 (sesion de continuidad tras S79). Tarjeta de conductor de
+# tacografo digital -- campos armonizados UE 4a (comienzo de validez)
+# / 4b (caducidad administrativa), igual que el DNI/NIE frontal, pero
+# el OCR de Tesseract destroza casi siempre la etiqueta "4b" (fondo
+# de seguridad de la tarjeta) aunque SI deja pasar limpias las dos
+# fechas numericas en si. Confirmado contra fuente oficial (Reglamento
+# CEE 3821/85 y normativa posterior): la validez de la tarjeta de
+# conductor es SIEMPRE de 5 anos exactos, nunca variable -- por eso,
+# entre las fechas ya extraidas sin contexto por classify_dates_in_text
+# (other_dates), dos que compartan dia y mes y difieran en exactamente
+# 5 anos identifican la pareja comienzo/caducidad de la propia tarjeta
+# sin depender de leer la etiqueta. Nunca se basa en el nombre de
+# archivo -- solo en fechas ya OCR'd del contenido real.
+#
+# ---
+#
+# Digital tachograph driver card -- harmonised EU fields 4a (validity
+# start) / 4b (administrative expiry), same layout as the Spanish
+# DNI/NIE front. Tesseract OCR almost always mangles the "4b" label
+# itself (the card's security background) while still reading the two
+# raw dates cleanly. Confirmed against an official source (EEC
+# Regulation 3821/85 and later rules): driver card validity is ALWAYS
+# exactly 5 years, never variable -- so among dates already extracted
+# without context by classify_dates_in_text (other_dates), two that
+# share day and month and differ by exactly 5 years identify the
+# card's own start/expiry pair without needing to read the label.
+# Never based on the filename -- only on dates already OCR'd from the
+# real content.
+def extract_five_year_card_expiry(dates, min_year=2010, max_year=2040):
+    """
+    Busca, entre `dates` (fechas ya parseadas sin contexto asignado),
+    una pareja que comparta dia y mes y difiera en exactamente 5 anos
+    -- devuelve la mas tardia (la caducidad) si hay una unica pareja
+    asi. Si hay cero o mas de una pareja candidata (ambiguo), devuelve
+    None -- nunca adivina entre varias.
+
+    ---
+
+    Looks among `dates` (already-parsed dates with no assigned
+    context) for a pair sharing day and month and differing by
+    exactly 5 years -- returns the later one (the expiry) if there is
+    exactly one such pair. Returns None if there are zero or more than
+    one candidate pair (ambiguous) -- never guesses between several.
+    """
+    candidatas = [d for d in dates if min_year <= d.year <= max_year]
+    pares_encontrados = set()
+    for i, d1 in enumerate(candidatas):
+        for d2 in candidatas[i + 1:]:
+            if (
+                d1.month == d2.month and d1.day == d2.day
+                and abs(d1.year - d2.year) == 5
+            ):
+                pares_encontrados.add(max(d1, d2))
+    if len(pares_encontrados) == 1:
+        return pares_encontrados.pop()
+    return None
+
+
 _GEMINI_DATE_SCHEMA = {
     "type": "object",
     "properties": {
