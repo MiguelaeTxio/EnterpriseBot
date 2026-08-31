@@ -689,15 +689,21 @@ def main():
     )
     args = parser.parse_args()
 
+    pa_password = getpass.getpass(
+        "Contrasena de PythonAnywhere (la de la web, para el tunel SSH): "
+    )
     mysql_password = getpass.getpass(
         "Contrasena de MySQL (panel PythonAnywhere, pestana 'Databases'): "
     )
 
-    print("Abriendo tunel SSH a %s (autenticando por clave ya registrada) ..." % SSH_HOSTNAME)
+    print("Abriendo tunel SSH a %s ..." % SSH_HOSTNAME)
     tunnel = sshtunnel.SSHTunnelForwarder(
         SSH_HOSTNAME,
         ssh_username=PYTHONANYWHERE_USERNAME,
+        ssh_password=pa_password,
         remote_bind_address=(MYSQL_HOSTNAME, 3306),
+        host_pkey_directories=[],
+        allow_agent=False,
     )
     tunnel.start()
     print("Tunel abierto, puerto local %d." % tunnel.local_bind_port)
