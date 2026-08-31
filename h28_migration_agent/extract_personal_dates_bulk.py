@@ -438,6 +438,12 @@ def main():
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--shard-count", type=int, default=1)
     parser.add_argument("--shard-index", type=int, default=0)
+    parser.add_argument(
+        "--document-type", type=str, default=None,
+        help="Acota el barrido a un unico codigo de DocumentTypeCatalog "
+             "(p.ej. RECONOCIMIENTO_MEDICO). Sin este flag, barre todos "
+             "los tipos con tracks_expiry=True.",
+    )
     args = parser.parse_args()
     if not (0 <= args.shard_index < max(args.shard_count, 1)):
         parser.error("--shard-index debe estar entre 0 y --shard-count - 1")
@@ -483,6 +489,12 @@ def main():
         shard_clause = " AND e.id %% %s = %s"
         shard_params = (args.shard_count, args.shard_index)
 
+    type_clause = ""
+    type_params = ()
+    if args.document_type:
+        type_clause = " AND t.code = %s"
+        type_params = (args.document_type,)
+
     with conn.cursor() as cur:
         cur.execute(
             "SELECT id FROM django_content_type "
@@ -503,9 +515,9 @@ def main():
             "AND e.expiry_date IS NULL AND e.issue_date IS NULL "
             "AND e.deleted_at IS NULL AND e.purged_at IS NULL "
             "AND p.is_active_employee = 1"
-            + shard_clause +
+            + type_clause + shard_clause +
             " ORDER BY e.id",
-            (person_ct_id,) + shard_params,
+            (person_ct_id,) + type_params + shard_params,
         )
         rows = cur.fetchall()
 
