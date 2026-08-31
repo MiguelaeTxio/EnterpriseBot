@@ -687,6 +687,14 @@ def main():
         "--discard-unresolved-items", action="store_true",
         dest="discard_unresolved_items",
     )
+    parser.add_argument(
+        "--pdf-only", action="store_true",
+        help=(
+            "Acota a solo .pdf -- util para probar especificamente el "
+            "camino OCR (los .doc/.docx nativos, minoria real de 15 "
+            "sobre 767, ya se sabe que funcionan bien)."
+        ),
+    )
     args = parser.parse_args()
 
     pa_password = getpass.getpass(
@@ -714,6 +722,7 @@ def main():
         db=MYSQL_DB_NAME, charset="utf8mb4",
     )
     with conn.cursor() as cur:
+        ext_pattern = r"\\.pdf$" if args.pdf_only else r"\\.(pdf|docx?)$"
         cur.execute(
             "SELECT e.id, e.blob_name, e.name, e.parent_path "
             "FROM document_explorer_documentindexentry e "
@@ -722,9 +731,9 @@ def main():
             "WHERE e.bucket = %s AND t.code = 'EPIS' "
             "AND e.entry_kind = 'FILE' "
             "AND e.deleted_at IS NULL AND e.purged_at IS NULL "
-            "AND e.name REGEXP '\\\\.(pdf|docx?)$' "
+            "AND e.name REGEXP %s "
             "ORDER BY e.id",
-            (BUCKET,),
+            (BUCKET, ext_pattern),
         )
         tasks = cur.fetchall()
     conn.close()
