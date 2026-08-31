@@ -32,6 +32,7 @@ USO (un proceso, ejemplo shard 0 de 12):
 import argparse
 import getpass
 import io
+import os
 import re
 import unicodedata
 from datetime import date, datetime
@@ -47,12 +48,30 @@ import paramiko
 if not hasattr(paramiko, "DSSKey"):
     paramiko.DSSKey = paramiko.RSAKey
 
+# Mismo patron que local_ocr_classify.py (correccion S50): en Windows,
+# Tesseract no puede escribir en C:\Program Files\ sin permisos de
+# administrador, asi que el paquete de idioma vive en una carpeta
+# local propia junto al script (tessdata\) en vez de la ruta real de
+# instalacion. En Linux (VM de OCR) esto no hace falta -- el paquete
+# tesseract-ocr-spa ya instala el idioma en su sitio real.
+if os.name == "nt":
+    _TESSDATA_DIR = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "tessdata",
+    )
+    os.environ["TESSDATA_PREFIX"] = _TESSDATA_DIR
+
 import pytesseract
 import sshtunnel
 from google.cloud import storage
 from PIL import Image
 
 from config import get_service_account_key_path
+
+# Si Tesseract no esta en el PATH del sistema (Windows), descomenta y
+# ajusta -- nunca se commitea activo, es configuracion local por
+# maquina (ver SESSION_VARIABLES.md):
+# TESSERACT_CMD = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+# pytesseract.pytesseract.tesseract_cmd = TESSERACT_CMD
 
 PYTHONANYWHERE_USERNAME = "MiguelAeTxio"
 SSH_HOSTNAME = "ssh.pythonanywhere.com"
