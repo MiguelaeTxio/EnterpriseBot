@@ -34,6 +34,7 @@ import getpass
 import io
 import os
 import re
+import shutil
 import unicodedata
 from datetime import date, datetime
 
@@ -67,11 +68,20 @@ from PIL import Image
 
 from config import get_service_account_key_path
 
-# Si Tesseract no esta en el PATH del sistema (Windows), descomenta y
-# ajusta -- nunca se commitea activo, es configuracion local por
-# maquina (ver SESSION_VARIABLES.md):
-# TESSERACT_CMD = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
-# pytesseract.pytesseract.tesseract_cmd = TESSERACT_CMD
+# Sesion de continuidad tras S79, a peticion explicita de Miguel
+# Angel: elimina el comentar/descomentar manual de TESSERACT_CMD por
+# maquina. Si Tesseract ya esta en el PATH del sistema (caso normal
+# en las VMs de Linux), shutil.which() lo encuentra y no hace falta
+# nada mas. Si no esta en el PATH (caso real del PC de Windows de
+# Miguel Angel, instalado sin permisos de administrador), prueba la
+# ruta tipica de instalacion por defecto -- solo si el archivo existe
+# de verdad ahi, nunca fuerza una ruta que no existe.
+if not shutil.which("tesseract"):
+    _WINDOWS_TESSERACT_DEFAULT = (
+        r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+    )
+    if os.path.isfile(_WINDOWS_TESSERACT_DEFAULT):
+        pytesseract.pytesseract.tesseract_cmd = _WINDOWS_TESSERACT_DEFAULT
 
 PYTHONANYWHERE_USERNAME = "MiguelAeTxio"
 SSH_HOSTNAME = "ssh.pythonanywhere.com"
