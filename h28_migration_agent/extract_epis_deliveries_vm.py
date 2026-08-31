@@ -668,7 +668,8 @@ def _trash_entry(cur, entry_id):
     produccion (alvarez_admin) -- confirmar que sigue siendo la
     cuenta real antes de un --apply grande."""
     cur.execute(
-        "SELECT id FROM ivr_config_companyuser WHERE username = %s",
+        "SELECT cu.id FROM ivr_config_companyuser cu "
+        "JOIN auth_user u ON u.id = cu.user_id WHERE u.username = %s",
         ("alvarez_admin",),
     )
     row = cur.fetchone()
