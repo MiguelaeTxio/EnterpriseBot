@@ -66,6 +66,8 @@ import tempfile
 import unicodedata
 from pathlib import Path
 
+import fitz
+
 from django.contrib.contenttypes.models import ContentType
 from django.core.management.base import BaseCommand
 
@@ -216,6 +218,28 @@ def _extract_docx(data):
     return full_text, rows
 
 
+# Sesion de continuidad tras S79, a peticion explicita de Miguel Angel:
+# 752 de los 767 documentos EPIS reales pendientes son PDF nativo (no
+# escaneado), verificado con 4 muestras reales antes de escribir esto
+# -- mismo formato de impreso que el .docx ya soportado (ver docstring
+# del modulo), asi que se reusa _parse_person()/_parse_marked_labels()
+# sin tocarlas: esta funcion solo adapta la lectura a (texto, filas)
+# con pymupdf, ya en requirements.txt, sin dependencia nueva.
+def _extract_pdf(data):
+    doc = fitz.open(stream=data, filetype="pdf")
+    text_parts = []
+    rows = []
+    for page in doc:
+        text_parts.append(page.get_text())
+        for tabla in page.find_tables():
+            for row in tabla.extract():
+                rows.append([
+                    (cell or "").strip() for cell in row
+                ])
+    doc.close()
+    return "\n".join(text_parts), rows
+
+
 def _compute_full_dni(digits):
     """Dígitos reales del documento (nunca la letra transcrita, que
     en formularios rellenados a mano viene con errores reales -- ver
@@ -359,22 +383,26 @@ class Command(BaseCommand):
         discard_unresolved = options["discard_unresolved"]
         discard_unresolved_items = options["discard_unresolved_items"]
 
+        # Sesion de continuidad tras S79, decision explicita de Miguel
+        # Angel: "procesar todos esos PDF que estan en cuarentena,
+        # procesarlos todos, todos" -- se retira la restriccion de
+        # carpeta ENTREGA EPIS y el _in_scope() por subcarpetas de S72
+        # (aquel alcance era el subconjunto ya validado por muestreo;
+        # ahora el alcance es TODO documento vivo tipado EPIS, este
+        # donde este -- persona/carpeta/cuarentena). _in_scope() queda
+        # sin usar, no se borra por si hace falta acotar en el futuro.
         qs = DocumentIndexEntry.objects.filter(
             bucket="cgs_grupo_alvarez",
-            parent_path__icontains="ENTREGA EPIS",
             document_type__code="EPIS",
             entry_kind=DocumentIndexEntry.KIND_FILE,
             deleted_at__isnull=True,
             purged_at__isnull=True,
-            name__iregex=r"\.(docx?)$",
+            name__iregex=r"\.(pdf|docx?)$",
         )
 
-        entries = []
-        for e in qs.only("id", "bucket", "blob_name", "parent_path", "name"):
-            idx = e.parent_path.upper().find("ENTREGA EPIS")
-            root_offset = idx + len("ENTREGA EPIS")
-            if _in_scope(e, root_offset):
-                entries.append(e)
+        entries = list(
+            qs.only("id", "bucket", "blob_name", "parent_path", "name")
+        )
 
         shard_count = options["shard_count"]
         shard_index = options["shard_index"]
@@ -410,7 +438,8 @@ class Command(BaseCommand):
 
         for entry in entries:
             data = download_bytes(entry.bucket, entry.blob_name)
-            if entry.name.lower().endswith(".doc"):
+            is_pdf = entry.name.lower().endswith(".pdf")
+            if not is_pdf and entry.name.lower().endswith(".doc"):
                 docx_bytes, err = _convert_doc_to_docx(data)
                 if docx_bytes is None:
                     self.stdout.write(
@@ -422,7 +451,9 @@ class Command(BaseCommand):
                 data = docx_bytes
 
             try:
-                text, rows = _extract_docx(data)
+                text, rows = (
+                    _extract_pdf(data) if is_pdf else _extract_docx(data)
+                )
             except Exception as exc:
                 self.stdout.write(
                     "FALLO lectura: %s/%s -- %s"

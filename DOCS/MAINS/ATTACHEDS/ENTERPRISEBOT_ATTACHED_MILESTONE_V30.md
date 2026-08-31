@@ -5886,28 +5886,47 @@ quedaban sin fecha).
 **REGLA DE ARRANQUE DIRECTO -- empezar ya por el punto 1, sin
 preguntar por dónde empezar.**
 
-1. **Familia Álvarez Díaz, `CARNET_GRUISTA` (8 documentos, 3
-   personas: Adolfo, Alberto Javier, Alejandro Sergio)** -- descargar
-   y visualizar directamente (método de imagen real usado toda S79
-   con DNI/CAP), NO enviar a VM -- decisión explícita de Miguel
-   Ángel en S79. Cierre: los 3 activos tienen su estado real
-   (VIGENTE/CADUCADO/NINGUNO) determinado y, si aplica,
-   `expiry_date`/`issue_date` escrito.
-2. **Jorge Milheiro (`36463`/`36473`)** -- decidir con Miguel Ángel
-   si se persigue el carnet renovado real (VM/solicitud directa) o
-   se deja como NINGUNO. Cierre: decisión tomada y aplicada, o
-   pregunta concreta trasladada a Miguel Ángel.
-3. **`36473`** -- confirmar con Miguel Ángel si reclasificar (no es
-   un carnet, es un justificante de pago Modelo 046) y a qué tipo.
-   Cierre: reclasificado o descartado explícitamente.
-4. **Continuar la tabla de tipos críticos tras `CARNET_GRUISTA`:**
-   `TACOGRAFO` (39 sin fecha antes de auditoría) -- correr la
-   auditoría previa primero, igual que con los tipos ya cerrados.
-5. Después: `CARNET_CONDUCIR` (26), `RECONOCIMIENTO_MEDICO` (26),
-   `CERTIF_DISCAPACIDAD` (3), `NIE` (3),
-   `AUTORIZACION_TEMPORAL_CONDUCIR` (1).
+1. **Terminar `extract_epis_deliveries_vm.py` en `h28-ocr-batch-1`
+   (parada por Miguel Ángel a mitad de la sesión, `--apply` lanzado
+   pero interrumpido).** Bug real pendiente de arreglar antes de
+   relanzar: `_trash_entry()` referencia `ivr_config_companyuser` con
+   columna `username` sin verificar contra el modelo real
+   (`ivr_config/models.py`, clase `CompanyUser`) -- confirmar el
+   nombre de campo real (no es `username` según el error
+   `(1054, "Unknown column 'username' in 'where clause'")` visto en
+   producción) antes de volver a lanzar `--apply`. Cierre: `--apply`
+   completo sobre los 767 documentos EPIS vivos, `RESUMEN` final sin
+   `FALLO INESPERADO`, y verificación de que `ocr_text` quedó
+   cacheado en los procesados (evita repetir OCR si hace falta
+   reintentar).
+2. **Confirmar con Miguel Ángel el alcance de la plantilla COVID**
+   (formato aparte, ítems `Mascarillas FFP2/KN95`/`Guantes
+   latex`/`Gel desinfectante` sin código en `EpiItemCatalog`) --
+   ¿se crean códigos nuevos y se procesan como entrega real, o se
+   excluyen del extractor? Pendiente desde esta sesión, sin decidir.
+3. **VM `h28-ocr-batch-1` queda DETENIDA (`stop`, no borrada)** al
+   cierre de esta sesión -- repo/venv/clave de servicio ya
+   preparados, arrancar con `gcloud compute instances start
+   h28-ocr-batch-1` y seguir directamente por el punto 1, sin
+   rehacer bootstrap.
+4. **Revisar visualmente los "NO ES ENTREGA" que reporte el
+   `--apply` completo** (formación, entrega de información PRL,
+   facturas/albarán mal tipados como `EPIS`) -- reclasificar a mano
+   cada uno al tipo real.
+5. Después de cerrar EPIs: retomar la pregunta de fondo que abrió
+   este bloque -- ¿se revisan también los 789 documentos "no
+   críticos" (`CONTRATO`, `FORMACION`, `ENTREGA_INFORMACION`,
+   `MOD_145`, `BAJA_PERSONAL`...) para extraerles fecha también? Ya
+   confirmado por Miguel Ángel en S80 que sí toca, sigue el orden de
+   la hoja de ruta sin volver a preguntar (directriz 4.16).
+6. Después: renombrado canónico del resto del catálogo (131 tipos) --
+   Miguel Ángel revocó en S80 la decisión anterior de "a demanda"; el
+   criterio real es el fijado en directriz 4.16 (fecha de
+   `expiry_date` cuando el tipo la tenga, `issue_date` solo si
+   genuinamente no la tiene, nunca renombrar sin la fecha correcta ya
+   extraída).
 
-## PENDIENTE HEREDADO -- 3.ª SESIÓN SIN AVANZAR (S77, S78, S79),
+## PENDIENTE HEREDADO -- 4.ª SESIÓN SIN AVANZAR (S77, S78, S79, S80),
 ## sigue como pregunta explícita, Miguel Ángel no ha respondido aún
 
 **Miguel Ángel, ¿qué prioridad tienen estos 3 puntos frente al
@@ -5921,3 +5940,97 @@ bloque crítico de arriba? Llevan sin tocarse desde S73:**
    calculada de EPIs.
 3. Fase A de `DOC. MAQUINAS` (dry-run ya ejecutado en S69, resultado
    nunca leído).
+
+---
+
+### COMPLETADAS EN S80 (sesión larga, continuidad de S79 -- cierre
+### real, PCS pedido explícitamente por Miguel Ángel a media tarde)
+
+**Bloque crítico de fechas -- CERRADO POR COMPLETO, verificado uno a
+uno:** `DNI`, `CAP`, `TARJETA_CUALIF_CONDUCTOR`, `CARNET_GRUISTA`,
+`TACOGRAFO`, `CARNET_CONDUCIR`, `RECONOCIMIENTO_MEDICO`,
+`CERTIFICADO_EXAMEN`, `JUSTIFICANTE_PAGO_TASA`,
+`CERTIF_DISCAPACIDAD`, `NIE`, `AUTORIZACION_TEMPORAL_CONDUCIR` --
+ningún activo se queda sin fecha real en ninguno de estos 12 tipos.
+
+**Incidente crítico real, ya corregido: `EXCEL_TRABAJADORES.xlsx`
+del repositorio era una copia incompleta.** 63 DNIs frente a los 70
+reales -- 10 trabajadores completos ausentes (Daniel Anaya Romero
+entre ellos), marcados inactivos por un error de réplica del
+archivo, no por fallo del comando de importación. Archivo
+reemplazado byte a byte por el real de Miguel Ángel, verificado con
+hash idéntico, commiteado. `import_worker_machine_excel --apply`
+reejecutado: 70/70 cruzados. Total de activos: 69 → 79. Los 10
+reactivados auditados contra los 12 tipos críticos ya cerrados (3
+documentos reales sin fecha encontrados y resueltos; 6 correcciones
+de `is_obsolete` mal calculado por haber quedado fuera de las
+pasadas anteriores).
+
+**`date_verification_service.py` extendido con dos hallazgos reales
+de sesión:** formato de fecha larga sin la palabra "de" ("10 Enero
+2022", antes exigía "10 DE Enero DE 2022" siempre), y exclusión de
+fechas de nacimiento (`_BIRTHDATE_CONTEXT`) -- incidente real: 3 de 5
+`RECONOCIMIENTO_MEDICO` devolvían la fecha de nacimiento como si
+fuera la del examen antes de esta corrección. Sincronizada la copia
+standalone de `extract_personal_dates_bulk.py` con el servicio
+Django, que se había desincronizado sin que nadie lo notara.
+
+**`extract_personal_dates_bulk.py` corregido dos veces en sesión:**
+autenticación SSH por clave ya registrada en vez de contraseña (el
+camino de contraseña fallaba en el gateway de PythonAnywhere), y
+autodetección de Tesseract (`shutil.which()`) en vez de
+comentar/descomentar `TESSERACT_CMD` a mano por máquina -- a
+petición explícita de Miguel Ángel, cero pasos manuales de aquí en
+adelante. Añadido `--document-type` para acotar el barrido a un solo
+tipo (incidente real: el script barría los 1.432 candidatos de todo
+el dominio PERSONAL sin filtro).
+
+**Hallazgo real, EPIS: 767 documentos vivos tipados `EPIS` nunca
+procesados**, atrapados en `_CUARENTENA` o dispersos sin llegar
+nunca a `EpiDelivery` -- la Fase A excluye `EPIS` de su recorrido por
+diseño de S48 (para evitar falsos positivos con `ALTA`), y el único
+extractor real (`extract_epis_deliveries.py`) solo procesaba
+`.doc`/`.docx` ya archivados en `ENTREGA EPIS`, nunca `.pdf` (752 de
+767, el 90% real verificado con muestra de 40). Construido
+`extract_epis_deliveries_vm.py` (script standalone para VM, PDF
+nativo vía `find_tables()` + OCR de respaldo con reconstrucción
+espacial de filas para PDF escaneado + detección de documentos que
+NO son entrega real -- formación, entrega de información PRL,
+facturas -- que comparten `EPIS` por error de origen). Probado contra
+10 muestras reales antes de desplegar. **Sesión interrumpida a media
+ejecución del `--apply` real** por un bug de última hora
+(`_trash_entry()` con columna de BD sin verificar, error MySQL 1054)
+-- ver Hoja de Ruta punto 1.
+
+**Directriz 4.16 añadida al documento maestro**, a petición explícita
+de Miguel Ángel: ejecución de hoja de ruta punto por punto sin
+preguntar entre puntos ya decididos (solo se pregunta dentro de un
+punto cuando hace falta una decisión real), y criterio de fecha para
+el renombrado canónico futuro (`expiry_date` siempre que el tipo
+tenga caducidad real).
+
+**Corrección de panel:** `extraction_method` (OCR/HEURISTIC/MANUAL)
+retirado de `_epi_results.html` y `_personal_epi_history.html` --
+campo interno para auditoría propia, nunca visible al supervisor.
+
+**VM reutilizada, no creada de cero:** `h28-ocr-batch-1` (de las 4
+existentes de S64, todas `TERMINATED`) arrancada, sincronizada contra
+un commit huérfano real que resultó ya estar incorporado en
+`origin/main` por otra vía (verificado antes de descartarlo con
+`reset --hard`, no se perdió nada). Queda **detenida** (no borrada) al
+cierre de esta sesión.
+
+**Incidencias reales de sesión, para no repetir:** el modelo preguntó
+reiteradamente entre bloques ya decididos de la hoja de ruta (motivo
+real de la directriz 4.16); copió sin adaptar el arreglo de
+autenticación SSH por clave del script del PC de Miguel Ángel al
+script de VM, que nunca tuvo esa clave registrada (corregido);
+generalizó conclusiones de muestras demasiado pequeñas más de una vez
+durante el diseño del extractor de EPIs (corregido cada vez con
+muestra real más grande antes de aplicar); olvidó inicialmente
+persistir `ocr_text` en el nuevo script (corregido antes de la
+ejecución real). Miguel Ángel, verbatim, sobre el patrón de fondo:
+*"parece ser que pasamos de un documento a otro sin tener terminado
+el anterior"* -- origen real de la disciplina de cierre por tipo que
+se mantuvo el resto de la sesión.
+
