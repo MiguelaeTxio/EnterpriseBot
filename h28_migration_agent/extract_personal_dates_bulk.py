@@ -361,16 +361,52 @@ def extract_dni_front_expiry(text):
 # ---------------------------------------------------------------
 # FASE 2 -- OCR + deteccion por contexto (copiado de
 # date_verification_service.py, sin la parte de Gemini)
+#
+# Sesion de continuidad tras S79: esta copia se habia quedado
+# desincronizada de la version real del servicio Django -- le
+# faltaban _DATE_LARGO_RE (fecha en letra, "10 de Enero de 2022" /
+# "10 Enero 2022"), _LABELED_DATE_PATTERNS (etiquetas explicitas tipo
+# PERIODO/FECHA DE INICIO) y varias palabras de _ISSUE_CONTEXT. Con
+# solo el patron numerico, nunca reconocia fechas escritas en letra
+# -- que es como escriben la fecha la mayoria de los reconocimientos
+# medicos, formacion y comunicados oficiales. Sincronizada completa.
 # ---------------------------------------------------------------
 _EXPIRY_CONTEXT = [
-    "CADUCA", "CADUCIDAD", "VALID", "VENCE", "VENCIMIENTO", "HASTA EL",
-    "PROXIMA REVISION", "PROXIMA INSPECCION", "FECHA LIMITE",
+    "CADUCA", "CADUCIDAD", "VALIDO HASTA", "VALIDA HASTA", "VENCE",
+    "VENCIMIENTO", "HASTA EL", "PROXIMA REVISION", "PROXIMA INSPECCION",
+    "FECHA LIMITE",
 ]
 _ISSUE_CONTEXT = [
-    "EXPEDICION", "EXPEDIDO", "EXPEDIDA", "EMISION", "EMITIDO", "EMITIDA",
+    "EXPEDICION", "EXPEDIDO", "EXPEDIDA", "EMISION", "EMITIDO",
+    "EMITIDA", "CON FECHA", "SOMETIDO EL DIA", "MALAGA A",
 ]
 _DATE_RE = re.compile(r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})")
 _CONTEXT_WINDOW = 70
+
+_MESES_LARGO = {
+    "ENERO": 1, "FEBRERO": 2, "MARZO": 3, "ABRIL": 4, "MAYO": 5,
+    "JUNIO": 6, "JULIO": 7, "AGOSTO": 8, "SEPTIEMBRE": 9, "OCTUBRE": 10,
+    "NOVIEMBRE": 11, "DICIEMBRE": 12,
+}
+# "DE"/"DEL" opcional en los dos huecos -- cubre "10 de Enero de 2022"
+# y "10 Enero 2022" con la misma expresion (documento real confirmado
+# por Miguel Angel, certificado CENTRO MEDICO ALAMEDA).
+_DATE_LARGO_RE = re.compile(
+    r"(\d{1,2})\s+(?:DE\s+)?(" + "|".join(_MESES_LARGO.keys()) + r")\s+(?:DEL?\s+)?(\d{4})",
+)
+
+_GAP = r"[^\d]{0,15}"
+_LABELED_DATE_PATTERNS = [
+    re.compile(r"PERIODO" + _GAP + r"DESDE" + _GAP + r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})"),
+    re.compile(r"FECHA\s+DE\s+INICIO\s+DEL\s+CONTRATO" + _GAP + r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})"),
+    re.compile(r"FECHA\s+DE\s+TRANSFORMACION" + _GAP + r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})"),
+    re.compile(r"(?:SE\s+)?EXTENDER[AÁ]\s+DESDE" + _GAP + r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})"),
+    re.compile(r"RELACION\s+LABORAL\s+EN\s+FECHA" + _GAP + r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})"),
+    re.compile(
+        r"PRORROGA[\s\S]{0,120}?DESDE" + _GAP + r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})",
+        re.DOTALL,
+    ),
+]
 
 DEFAULT_FIELD_BY_CODE = {
     # EXPIRY -- documentos con caducidad real
@@ -410,6 +446,15 @@ DEFAULT_FIELD_BY_CODE = {
 def classify_dates_in_text(text):
     norm = _strip_accents(text).upper()
     expiry_candidates, issue_candidates, other_dates = [], [], []
+
+    # Maxima prioridad: etiqueta explicita -- nunca ambigua.
+    for pattern in _LABELED_DATE_PATTERNS:
+        match = pattern.search(norm)
+        if match:
+            parsed = _parse_date_dmY(*match.groups())
+            if parsed:
+                return None, parsed, []
+
     for match in _DATE_RE.finditer(norm):
         parsed = _parse_date_dmY(*match.groups())
         if not parsed:
@@ -423,6 +468,23 @@ def classify_dates_in_text(text):
             issue_candidates.append(parsed)
         else:
             other_dates.append(parsed)
+
+    for match in _DATE_LARGO_RE.finditer(norm):
+        day_s, mes_s, year_s = match.groups()
+        month = _MESES_LARGO.get(mes_s)
+        parsed = _parse_date_dmY(day_s, month, year_s) if month else None
+        if not parsed:
+            continue
+        window_start = max(0, match.start() - _CONTEXT_WINDOW)
+        window_end = min(len(norm), match.end() + _CONTEXT_WINDOW)
+        context = norm[window_start:match.start()] + norm[match.end():window_end]
+        if any(word in context for word in _EXPIRY_CONTEXT):
+            expiry_candidates.append(parsed)
+        elif any(word in context for word in _ISSUE_CONTEXT):
+            issue_candidates.append(parsed)
+        else:
+            other_dates.append(parsed)
+
     expiry = max(expiry_candidates) if expiry_candidates else None
     issue = min(issue_candidates) if issue_candidates else None
     return expiry, issue, other_dates

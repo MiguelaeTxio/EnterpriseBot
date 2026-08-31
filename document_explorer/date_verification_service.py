@@ -63,8 +63,15 @@ _MESES_LARGO = {
     "JUNIO": 6, "JULIO": 7, "AGOSTO": 8, "SEPTIEMBRE": 9, "OCTUBRE": 10,
     "NOVIEMBRE": 11, "DICIEMBRE": 12,
 }
+# H30 (sesion de continuidad tras S79). Miguel Angel confirmo con
+# documento real (certificado CENTRO MEDICO ALAMEDA) un segundo
+# formato real: "10 Enero 2022", SIN la palabra "de" entre dia/mes ni
+# entre mes/anio -- el patron anterior exigia "DE"/"DEL" siempre y no
+# reconocia esta fecha en absoluto (ni siquiera como fecha suelta sin
+# contexto). "DE"/"DEL" pasa a opcional en los dos huecos, cubriendo
+# ambos formatos con la misma expresion.
 _DATE_LARGO_RE = re.compile(
-    r"(\d{1,2})\s+DE\s+(" + "|".join(_MESES_LARGO.keys()) + r")\s+DEL?\s+(\d{4})",
+    r"(\d{1,2})\s+(?:DE\s+)?(" + "|".join(_MESES_LARGO.keys()) + r")\s+(?:DEL?\s+)?(\d{4})",
 )
 
 # H30 (S78). Impresos oficiales estructurados (IDC, similares) traen
