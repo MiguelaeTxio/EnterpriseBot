@@ -654,7 +654,10 @@ def main():
             continue
 
         stats["sin_fecha"] += 1
-        print("  SIN FECHA reconocible")
+        print(
+            "  SIN FECHA reconocible (ocr_text_len=%d, fechas_sueltas=%s)"
+            % (len(text or ""), other)
+        )
 
     total_min = (datetime.now() - start_time).total_seconds() / 60
     print("\n=== RESUMEN (%s, shard %d/%d) -- %.1f min ===" % (
