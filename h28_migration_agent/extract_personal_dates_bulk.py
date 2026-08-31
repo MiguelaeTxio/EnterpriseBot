@@ -380,6 +380,14 @@ _ISSUE_CONTEXT = [
     "EXPEDICION", "EXPEDIDO", "EXPEDIDA", "EMISION", "EMITIDO",
     "EMITIDA", "CON FECHA", "SOMETIDO EL DIA", "MALAGA A",
 ]
+# Sesion de continuidad tras S79 -- incidente real: fechas de
+# nacimiento coladas como "unica fecha, por defecto" en
+# RECONOCIMIENTO_MEDICO. Ver date_verification_service.py para el
+# detalle completo. Se descartan por completo, nunca entran ni
+# siquiera en "otras fechas".
+_BIRTHDATE_CONTEXT = [
+    "NACIDO", "NACIDA", "NACIO", "FECHA DE NACIMIENTO", "NACIMIENTO",
+]
 _DATE_RE = re.compile(r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})")
 _CONTEXT_WINDOW = 70
 
@@ -462,6 +470,8 @@ def classify_dates_in_text(text):
         window_start = max(0, match.start() - _CONTEXT_WINDOW)
         window_end = min(len(norm), match.end() + _CONTEXT_WINDOW)
         context = norm[window_start:match.start()] + norm[match.end():window_end]
+        if any(word in context for word in _BIRTHDATE_CONTEXT):
+            continue
         if any(word in context for word in _EXPIRY_CONTEXT):
             expiry_candidates.append(parsed)
         elif any(word in context for word in _ISSUE_CONTEXT):
@@ -478,6 +488,8 @@ def classify_dates_in_text(text):
         window_start = max(0, match.start() - _CONTEXT_WINDOW)
         window_end = min(len(norm), match.end() + _CONTEXT_WINDOW)
         context = norm[window_start:match.start()] + norm[match.end():window_end]
+        if any(word in context for word in _BIRTHDATE_CONTEXT):
+            continue
         if any(word in context for word in _EXPIRY_CONTEXT):
             expiry_candidates.append(parsed)
         elif any(word in context for word in _ISSUE_CONTEXT):
@@ -701,8 +713,8 @@ def main():
             found = other[0]
             stats["ocr_unica_fecha"] += 1
             print(
-                "  OCR %s -> %s=%s (unica fecha, defecto)"
-                % (code, default_field, found.isoformat())
+                "  OCR %s -> %s=%s (unica fecha, defecto, ocr_text_len=%d)"
+                % (code, default_field, found.isoformat(), len(text or ""))
             )
             if args.apply:
                 with conn.cursor() as cur:

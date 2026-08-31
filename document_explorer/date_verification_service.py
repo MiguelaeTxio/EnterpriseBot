@@ -47,6 +47,21 @@ _ISSUE_CONTEXT = [
     "EXPEDICION", "EXPEDIDO", "EXPEDIDA", "EMISION", "EMITIDO",
     "EMITIDA", "CON FECHA", "SOMETIDO EL DIA", "MALAGA A",
 ]
+# H30 (sesion de continuidad tras S79). Incidente real: 3 de 5
+# RECONOCIMIENTO_MEDICO reales devolvieron la fecha de NACIMIENTO
+# como si fuera la fecha del examen -- cuando la fecha real de
+# emision no se reconoce (contexto roto por huecos de formulario,
+# OCR degradado), la unica fecha "suelta" que queda es la de
+# nacimiento (siempre presente en la cabecera de estos certificados,
+# "nacido el..."), y el criterio de "unica fecha, por defecto" la
+# acepta sin saber que es una fecha de nacimiento, no de emision.
+# Estas fechas se descartan por completo (nunca entran ni siquiera en
+# el cubo "otras fechas") en vez de solo evitarlas como contexto de
+# emision/caducidad -- una fecha de nacimiento nunca es la fecha
+# buscada, sea cual sea el tipo documental.
+_BIRTHDATE_CONTEXT = [
+    "NACIDO", "NACIDA", "NACIO", "FECHA DE NACIMIENTO", "NACIMIENTO",
+]
 
 _DATE_RE = re.compile(r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})")
 _CONTEXT_WINDOW = 70
@@ -370,6 +385,8 @@ def classify_dates_in_text(text):
         window_end = min(len(norm), match.end() + _CONTEXT_WINDOW)
         context = norm[window_start:match.start()] + \
             norm[match.end():window_end]
+        if any(word in context for word in _BIRTHDATE_CONTEXT):
+            continue
         if any(word in context for word in _EXPIRY_CONTEXT):
             expiry_candidates.append(parsed)
         elif any(word in context for word in _ISSUE_CONTEXT):
@@ -387,6 +404,8 @@ def classify_dates_in_text(text):
         window_end = min(len(norm), match.end() + _CONTEXT_WINDOW)
         context = norm[window_start:match.start()] + \
             norm[match.end():window_end]
+        if any(word in context for word in _BIRTHDATE_CONTEXT):
+            continue
         if any(word in context for word in _EXPIRY_CONTEXT):
             expiry_candidates.append(parsed)
         elif any(word in context for word in _ISSUE_CONTEXT):
