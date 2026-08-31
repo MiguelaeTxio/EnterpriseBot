@@ -5754,3 +5754,170 @@ Ejemplo real de S79 (bloque `DNI`, 69 activos, 116 documentos):
 
 Pendiente de aplicar cuando se retome la interfaz/alertas (no
 implementado aún en S79, solo el concepto queda fijado aquí).
+
+## COMPLETADAS EN S79
+
+Sesión larga centrada en el bloque crítico de H30, arrancando por
+`DNI` (punto 1 de la hoja de ruta de S78) y avanzando hasta `CAP`,
+`TARJETA_CUALIF_CONDUCTOR` y `CARNET_GRUISTA`.
+
+**`DNI` -- cerrado por completo:**
+- Auditoría previa: 117 sin fecha -> 106 realmente pendientes.
+- Hallazgo real y nuevo: el MRZ (zona legible por máquina) del
+  DNI/NIE español, cuando la cara frontal es ilegible para Tesseract,
+  casi siempre se lee limpio y trae la caducidad codificada.
+  Implementado `extract_dni_mrz_expiry()` con validación de dígito de
+  control ICAO 9303 (commit `1ca6eb5`), 63 DNI resueltos sin VM.
+- Segundo hallazgo: cara frontal con etiquetas `EMISION`/`VALIDEZ`,
+  fecha `DD MM AAAA` separada por espacios. Primera versión
+  (`c0ff1db`) tenía un bug real -- confundía la fecha de EMISION con
+  la de VALIDEZ cuando el OCR solo dejaba leer una limpia (error de
+  10 años, detectado por cruce contra el propio nombre de archivo).
+  Corregido en `8a2aed2`: se abstiene (`None`) en vez de adivinar
+  cuando hay ambigüedad real. 7 DNI más resueltos con la versión
+  corregida.
+- Errores reales de clasificación encontrados y corregidos:
+  `28583` (contrato bancario BBVA, no un DNI) -> papelera.
+  `25536`/`25537`/`25539` (fichas de inscripción a curso 2016,
+  enganchadas por carpeta a la persona equivocada en 2 de los 3
+  casos) -> reclasificadas a `FORMACION_PRL_MAQUINARIA`.
+  `35979` (cita de renovación de la Policía Nacional, no el DNI en
+  sí) -> papelera.
+- **Corrección de la regla `is_active_employee` (S79, sustituye a la
+  de S54):** Miguel Ángel confirmó explícitamente que el Excel
+  (`EXCEL_TRABAJADORES.xlsx`) es la ÚNICA fuente de verdad de quién
+  trabaja en la empresa -- se retira la regla de S54 ("nunca poner
+  `False` por ausencia"). Ejecutado `import_worker_machine_excel
+  --apply` (63 activos reales por Excel) + resincronización manual
+  completa: 164 `PersonIdentity` puestos a `False` por ausencia del
+  Excel, y recuperados a mano los 6 que sí trabajan pero no
+  aparecen como "trabajador" en el Excel por ser familia
+  propietaria (Adolfo, Adelaida, Alberto Javier, Alejandro Sergio,
+  José Luis Álvarez Díaz) o autónomo de la empresa (José Manuel
+  Gómez Carvajal). Total activos reales: 69.
+- **Decisión de diseño (S79): los 4 estados documentales** --
+  VIGENTE / CADUCADO / HISTÓRICO / NINGUNO, por persona + tipo, no
+  por documento individual. Documentado en detalle más abajo.
+  Corrección real derivada: los 10 casos "sin vigente" detectados no
+  tenían su `expiry_date` real escrito (solo se habían identificado
+  como caducados) -- por la lógica de `vigencia_service`, sin
+  ninguna fecha el sistema los trataba como vigentes por defecto.
+  Corregido escribiendo la fecha real caducada en los 10.
+- Revisión visual real (no OCR) de 29+18 documentos vía descarga e
+  inspección directa de imagen -- confirmó/corrigió MRZ y frente en
+  varios casos, encontró 2 alertas nuevas de "sin vigente" (Miguel
+  Ángel Pérez Sánchez, Carlos Manuel Carlín Carvajal) que el OCR
+  nunca había podido leer.
+- Estado final: 87 de 116 documentos DNI de activos con
+  `expiry_date` resuelto. 29 sin fecha, los 29 justificados: 4
+  reclasificados/papelera, ~15 históricos correctos (documento
+  superado por uno posterior de la misma persona), 10 CADUCADO reales
+  (sin DNI vigente en el índice -- lista completa en el cuerpo de la
+  sesión, disponible si se necesita).
+
+**`CAP` -- auditado y reclasificado:**
+- Auditoría previa: 50 sin fecha -> 12 realmente pendientes.
+- Hallazgo real (verificado con búsqueda web): desde el RD
+  284/2021, ya no se emiten certificados CAP como documento
+  independiente -- lo que existe y se cataloga es la Tarjeta de
+  Cualificación del Conductor. De los 12, 10 eran en realidad
+  `TARJETA_CUALIF_CONDUCTOR` mal clasificados como `CAP`
+  (confirmado por contenido real, formato armonizado UE, campos
+  "4a./4b." y código "95"), reclasificados. 1 era una carta interna
+  de capacitación de la empresa (no CAP ni tarjeta) ->
+  `FORMACION_PRL_MAQUINARIA`. Solo 1 (`34072`) es CAP real
+  (certificado de asistencia a curso, sin caducidad propia --
+  `issue_date` puesto con la fecha de finalización de curso a
+  petición de Miguel Ángel).
+- 8 fechas reales aplicadas a los reclasificados (vigentes y
+  caducados con evidencia visual directa, incluida verificación por
+  imagen de 2 casos donde el OCR era ilegible).
+
+**`TARJETA_CUALIF_CONDUCTOR` -- cerrado sin pendientes reales**
+(la reclasificación de `CAP` resolvió de paso los únicos 3 que
+quedaban sin fecha).
+
+**`CARNET_GRUISTA` -- en progreso:**
+- Auditoría previa: 63 sin fecha -> 33 realmente pendientes.
+- Hallazgo real (verificado con búsqueda web, doble comprobación
+  pedida por Miguel Ángel): los certificados ANAGRUAL (operador de
+  grúa hidráulica articulada, norma UNE 58161:2021) SÍ caducan a los
+  5 años exactos desde la expedición -- confirmado por fuente oficial
+  del sector. El patrón "+5 años" que aparecía en varios nombres de
+  archivo (`GrHidraulica CatB 30112027 ...`) era correcto, no un
+  error de nomenclatura. ANAGRUAL es una patronal sectorial
+  independiente (fundada 1979/1983, 316 empresas asociadas), no una
+  empresa propia de Grupo Álvarez.
+- 10 documentos resueltos (expedición + caducidad = expedición + 5
+  años) sobre 8 personas reales, extraídos con un patrón regex sobre
+  "En Madrid, DD de MES de AAAA" del propio texto cacheado.
+- Quedan 8 documentos de la familia Álvarez Díaz (Adolfo, Alberto
+  Javier, Alejandro Sergio -- 3 personas) sin ningún `ocr_text`
+  cacheado, requieren VM real. **Decisión de Miguel Ángel (S79):
+  se hace en la siguiente sesión mediante descarga y visualización
+  real (mismo método que DNI/CAP), no VM.**
+- 1 caso abierto sin resolver: Jorge Milheiro (`36463` carnet de
+  2005 ya superado por una renovación de la que solo hay el
+  justificante de pago `36473`, sin el carnet resultante en el
+  índice).
+- `36473` (Modelo 046, justificante de pago de tasa) detectado como
+  mal clasificado como `CARNET_GRUISTA` -- pendiente de reclasificar,
+  aún no confirmado con Miguel Ángel.
+
+**Sesión también incluyó:**
+- 2 expiraciones reales de token de GitHub durante la sesión
+  (verificado con llamada directa a la API, no solo con el fallo de
+  git) -- resueltas con tokens de repuesto ya entregados por Miguel
+  Ángel, nunca bloqueó el trabajo más de un par de turnos.
+- Primera vez que hizo falta configurar identidad de git en el clon
+  de la sesión (`git config user.name/user.email`) -- resuelta
+  tomando la identidad ya usada en el propio historial del repo
+  (`git log`), sin preguntar a Miguel Ángel una segunda vez tras su
+  primera reacción.
+- 1 fallo real de despliegue (timeout del reload de la API de
+  PythonAnywhere, ya documentado como conocido en `deploy.yml`) --
+  el `git pull`/`migrate`/`collectstatic` sí había terminado en
+  éxito antes del timeout, no afectó al trabajo de la sesión.
+- Cambio de entorno PEE de `A` (Android) a `PC` a media sesión.
+
+## Hoja de Ruta para la Siguiente Sesión (sustituye por completo a
+## la anterior)
+
+**REGLA DE ARRANQUE DIRECTO -- empezar ya por el punto 1, sin
+preguntar por dónde empezar.**
+
+1. **Familia Álvarez Díaz, `CARNET_GRUISTA` (8 documentos, 3
+   personas: Adolfo, Alberto Javier, Alejandro Sergio)** -- descargar
+   y visualizar directamente (método de imagen real usado toda S79
+   con DNI/CAP), NO enviar a VM -- decisión explícita de Miguel
+   Ángel en S79. Cierre: los 3 activos tienen su estado real
+   (VIGENTE/CADUCADO/NINGUNO) determinado y, si aplica,
+   `expiry_date`/`issue_date` escrito.
+2. **Jorge Milheiro (`36463`/`36473`)** -- decidir con Miguel Ángel
+   si se persigue el carnet renovado real (VM/solicitud directa) o
+   se deja como NINGUNO. Cierre: decisión tomada y aplicada, o
+   pregunta concreta trasladada a Miguel Ángel.
+3. **`36473`** -- confirmar con Miguel Ángel si reclasificar (no es
+   un carnet, es un justificante de pago Modelo 046) y a qué tipo.
+   Cierre: reclasificado o descartado explícitamente.
+4. **Continuar la tabla de tipos críticos tras `CARNET_GRUISTA`:**
+   `TACOGRAFO` (39 sin fecha antes de auditoría) -- correr la
+   auditoría previa primero, igual que con los tipos ya cerrados.
+5. Después: `CARNET_CONDUCIR` (26), `RECONOCIMIENTO_MEDICO` (26),
+   `CERTIF_DISCAPACIDAD` (3), `NIE` (3),
+   `AUTORIZACION_TEMPORAL_CONDUCIR` (1).
+
+## PENDIENTE HEREDADO -- 3.ª SESIÓN SIN AVANZAR (S77, S78, S79),
+## sigue como pregunta explícita, Miguel Ángel no ha respondido aún
+
+**Miguel Ángel, ¿qué prioridad tienen estos 3 puntos frente al
+bloque crítico de arriba? Llevan sin tocarse desde S73:**
+
+1. 2 archivos sueltos de ARNES MIRA 12-A sin fecha reconocible
+   (`GARCIA PRIETO`, `HIDALGO ROSAS`).
+2. Deuda técnica: sistema de plantillas de comunicados/notificaciones,
+   gap de plantilla múltiple de `AUTORIZACION_MEDIOS_COMUNICACION`;
+   interfaz del supervisor para corregir a mano la fecha de caducidad
+   calculada de EPIs.
+3. Fase A de `DOC. MAQUINAS` (dry-run ya ejecutado en S69, resultado
+   nunca leído).
