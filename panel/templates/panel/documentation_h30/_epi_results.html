@@ -12,7 +12,6 @@
                 </a>
             </th>
             {% endfor %}
-            <th>Método</th>
         </tr>
     </thead>
     <tbody>
@@ -21,10 +20,9 @@
             <td>{{ delivery.delivery_date }}</td>
             <td><a href="{% url 'panel:documentation_personal_detail' pk=delivery.person.pk %}">{{ delivery.person.first_surname }}, {{ delivery.person.given_name }}</a></td>
             <td>{{ delivery.epi.label }}</td>
-            <td>{{ delivery.get_extraction_method_display }}</td>
         </tr>
         {% empty %}
-        <tr><td colspan="4" class="text-muted small py-3">Sin entregas de EPI todavía.</td></tr>
+        <tr><td colspan="3" class="text-muted small py-3">Sin entregas de EPI todavía.</td></tr>
         {% endfor %}
     </tbody>
 </table>
