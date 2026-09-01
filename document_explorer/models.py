@@ -1177,6 +1177,20 @@ class PersonIdentity(models.Model):
         max_length=100, blank=True, verbose_name="Segundo apellido",
     )
     given_name = models.CharField(max_length=100, verbose_name="Nombre")
+    # ------------------------------------------------------------------
+    # H30 (S82). Fecha de nacimiento -- Miguel Angel, verbatim, al dar
+    # de alta a un trabajador nuevo (Estevao Veloso Sampaio): "habra
+    # que anadir fecha de nacimiento en los datos, y extraerla de los
+    # DNIs para el resto". Nullable a proposito: los ~79 activos ya
+    # existentes no la tienen todavia -- se rellena de forma
+    # incremental (alta nueva directa, o extraccion futura contra el
+    # ocr_text ya cacheado de los documentos DNI, mismo patron que el
+    # resto de fechas de H30) nunca retroactiva de golpe sin datos
+    # reales que la respalden.
+    # ------------------------------------------------------------------
+    birth_date = models.DateField(
+        null=True, blank=True, verbose_name="Fecha de nacimiento",
+    )
     folder_path = models.TextField(
         verbose_name="Carpeta real (virtual) dentro de DOC. PERSONAL",
     )
