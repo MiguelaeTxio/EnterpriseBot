@@ -828,6 +828,7 @@ def main():
             "AND e.entry_kind = 'FILE' "
             "AND e.deleted_at IS NULL AND e.purged_at IS NULL "
             "AND e.name REGEXP %s "
+            "AND (e.ocr_text IS NULL OR e.ocr_text = '') "
             "ORDER BY e.id",
             (BUCKET, ext_pattern),
         )
