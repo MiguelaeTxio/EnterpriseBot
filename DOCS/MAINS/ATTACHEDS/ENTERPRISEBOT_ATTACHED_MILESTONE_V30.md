@@ -5880,125 +5880,233 @@ quedaban sin fecha).
   éxito antes del timeout, no afectó al trabajo de la sesión.
 - Cambio de entorno PEE de `A` (Android) a `PC` a media sesión.
 
-## Hoja de Ruta para la Siguiente Sesión (sustituye por completo a
-## la anterior)
+### COMPLETADAS EN S83 (sesión muy larga, con cambio de entorno PEE
+### de PC a Android a mitad de sesión, y varios hallazgos reales de
+### datos que obligaron a desviarse del plan original varias veces)
 
-**REGLA DE ARRANQUE DIRECTO -- empezar ya por el punto 1, sin
-preguntar por dónde empezar**, salvo las dos preguntas bloqueantes de
-abajo, que sí son obligatorias antes de tocar nada (arrastradas ya
-dos sesiones sin ejecución real, S81 y S82).
+**Preguntas bloqueantes de S82 respondidas por Miguel Ángel al
+arranque:** prioridad confirmada -- terminar primero los 116 EPIS
+pendientes, luego el renombrado canónico del catálogo, luego los ~789
+documentos "no críticos" sin fecha. Estos dos últimos siguen sin
+tocar, quedan en la Hoja de Ruta de abajo.
 
-**Preguntas bloqueantes (2.ª sesión sin avanzar, ver directriz de
-cierre) -- responder antes de seguir con cualquier otra cosa:**
+**Punto 1 (EPIS) -- CERRADO.** Arreglo real: cuando el paso de OCR
+por defecto (`--psm 3`) no detecta ninguna marca en la tabla de items
+EPIs (hallazgo de S82, confirmado ahora en 2 formatos de documento
+conocidos), `extract_epis_deliveries_vm.py._extract_pdf_ocr()`
+reintenta la misma página con `--psm 11` (texto disperso) antes de
+rendirse -- nunca sustituye un resultado que ya funcionaba (commit
+`10bc3d2`). Verificado primero contra una muestra real de 22
+documentos ya conocidos (localizados por búsqueda de apellido en el
+`ocr_text` cacheado, ya que el filtro habitual de "ocr_text vacío"
+los excluía por estar ya procesados) usando el nuevo flag
+`--entry-ids` (commit `cc3c74a`), pensado justo para verificación
+dirigida sin tocar la cola real.
 
-1. **Renombrado canónico del resto del catálogo (131 tipos).** Miguel
-   Ángel fijó el criterio en S80 (directriz 4.16: `expiry_date` cuando
-   el tipo la tenga, `issue_date` si genuinamente no la tiene, nunca
-   sin la fecha ya extraída) pero nunca se ha ejecutado ni una
-   primera pasada. ¿Se empieza esta sesión, o sigue sin ser
-   prioridad?
-2. **Los 789 documentos "no críticos"** (`CONTRATO`, `FORMACION`,
-   `ENTREGA_INFORMACION`, `MOD_145`, `BAJA_PERSONAL`...) sin fecha
-   extraída. Confirmado por Miguel Ángel en S80 que sí toca -- pero
-   dos sesiones después (S81, S82) ha quedado siempre detrás de
-   EPIS. ¿Se empieza ahora que EPIS está en el ~85% de la cola
-   resuelta o archivada?
+Esa primera prueba sacó 2 items reales sin mapear en el catálogo:
+"CHALECO" (genérico, ropa de abrigo, distinto de
+`CHALECO_REFLECTANTE`) y "CHAQUETON ALTA VISIBILIDAD" (distinto de
+`CHAQUETA_ALTA_VISIBILIDAD`) -- y de paso se confirmó verbatim con
+Miguel Ángel que el mapeo existente de "CHAQUETA" a
+`CHAQUETA_ALTA_VISIBILIDAD` (desde S71/S72) estaba mal: es una
+chaqueta de trabajo distinta, tejido reforzado para mecánica/
+soldadura. Migración `0068` siembra `CHALECO_ABRIGO`,
+`CHAQUETON_ALTA_VISIBILIDAD` y `CHAQUETA_TRABAJO`, y las 3 copias
+reales del `ITEM_LABEL_MAP` (`extract_epis_deliveries.py`,
+`extract_epis_deliveries_vm.py`, `reprocess_epis_from_cache.py`) se
+corrigieron igual (commit `046a424`).
+
+**Regresión real detectada en producción, corregida en la misma
+sesión (directriz 4.9):** el propio arreglo de `--psm 11` duplica el
+coste de OCR por página cuando hace falta reintento. Con
+`--threads 6` sobre el lote completo real de los 116 EPIS pendientes,
+87 de 116 fallaron con `RuntimeError: Tesseract process timeout` --
+no documentos realmente colgados (causa original del timeout en
+S82), sino contención de CPU agravada por el propio reintento. Subido
+el timeout de 60s a 90s en las 3 llamadas de `pytesseract` (commit
+`2c843f4`), y documentada en `SESSION_VARIABLES.md` la recomendación
+real de `--threads 3` como máximo para esta versión del script
+(commit `32e3335`). Relanzado con éxito, sin fallos: **25 documentos
+completos, 91 entregas estimadas (40 nuevas tras dedupe real), 49
+archivados a papelera** (`--discard-unresolved-items`, a petición
+explícita de Miguel Ángel) sobre los 116 reales, aplicado en
+producción.
+
+**Punto 2 (documento EPIS nunca leído en S82) -- CERRADO.** Causa
+real: faltaba `libreoffice-writer` (binario `soffice`) como paquete
+de sistema en `h28-ocr-batch-1` para convertir `.doc` a `.docx` --
+documentado junto a la nota ya existente de `antiword` (S78) en
+`SESSION_VARIABLES.md`. Una vez instalado, el documento resultó ser
+una notificación real de falta muy grave mal clasificada como `EPIS`
+-- Miguel Ángel decidió crear un tipo documental propio en vez de
+dejarlo sin tipificar. Migración `0069` siembra
+`EXPEDIENTE_DISCIPLINARIO` (domain=PERSONAL, family=LABORAL,
+tracks_expiry=False, commit `f12c9f1`), y el documento (`id=36552`)
+quedó reclasificado en producción.
+
+**Punto 3 (`birth_date` para el resto de activos) -- CERRADO al
+77/79 real, máximo alcanzable hoy.** Hallazgo de arranque: el mismo
+match MRZ que ya valida la caducidad del DNI/NIE
+(`extract_dni_mrz_expiry`) trae también, en los 2 primeros grupos, la
+fecha de nacimiento con su propio dígito de control ICAO 9303 --
+descartada hasta ahora con `_, _, _, ...`. Nueva función
+`extract_dni_mrz_birthdate()` en `date_verification_service.py` (y su
+copia sincronizada en `extract_personal_dates_bulk.py`), con ventana
+de siglo real (año de 2 dígitos AA -> 20AA si AA <= año actual de 2
+dígitos, si no 19AA -- nunca fija de por vida, revisar el corte según
+el año real). Nuevo comando `extract_birth_dates_from_dni`: recorre
+`PersonIdentity` activos con `birth_date` nulo, localiza su DNI/NIE
+por `folder_path` (nunca por nombre), aplica la extracción sobre
+`ocr_text` ya cacheado -- sin OCR nuevo. Dry-run con muestra de 10
+antes de escalar; aplicado sobre los 79 candidatos reales: **44
+resueltos automáticamente** (commit `3873d9e`).
+
+De los 35 restantes, un patrón repetido de fallos reales de
+diagnóstico corregidos en la misma sesión:
+- **6 documentos reales con MRZ que Tesseract simplemente no lee
+  bien** (calidad de imagen, no formato) -- descargados en ZIP
+  (`com-gcs-download`) y leídos a mano visualmente: Adolfo Álvarez
+  Díaz, Alberto Javier Álvarez Díaz, Alejandro Sergio Álvarez Díaz,
+  Felipe Martín Portillo, Tomás Morón Galacho, Abraham Zafra Balbuena.
+- **18 personas con "MRZ que no valida" real** (verificado con
+  `extract_dni_mrz_birthdate` contra el `ocr_text` cacheado, no de
+  memoria) -- descargados y leídos a mano: la mayoría eran problemas
+  de OCR sobre buena imagen (15 resueltos), pero también aparecieron
+  2 casos reales de **formato distinto sin MRZ español**: Petru
+  Iordachi (documento de identidad rumano, CNP decodificado a mano) y
+  Alejandro José Gutiérrez Mateo (DNI español antiguo sin zona MRZ).
+  Antonio Aranda Reyes quedó con la fecha calculada pero **sin
+  aplicar**, a petición explícita de Miguel Ángel -- ver más abajo.
+- **Fallo real de proceso, no de OCR: "sin documento DNI" no
+  significaba "no existe".** Al cruzar contra el Excel real
+  (`EXCEL_TRABAJADORES.xlsx`, verificado tras petición explícita de
+  Miguel Ángel de no fiarse solo del flag `is_active_employee`) se
+  encontraron 3 casos reales de documentos DNI existentes en la
+  carpeta de la persona con `ocr_text` vacío (nunca leídos, no
+  ausentes) -- Adolfo/Alberto Javier/Alejandro Sergio Álvarez Díaz,
+  ya cubiertos arriba. Además, **2 documentos reales estaban
+  simplemente sin tipificar** (`document_type=None` pese a existir en
+  el sistema, con "DNI"/"NIE" en el propio nombre de archivo):
+  Adelaida Álvarez Díaz (`id=42992`, subido 27/08/2026, confirmado
+  por Miguel Ángel con foto real del DNI, nacimiento 17/01/1960) y
+  Jorge Milheiro Felício (`id=42526`, resolución oficial de
+  residencia, nacimiento 16/03/1963) -- ambos reclasificados a
+  DNI/NIE y con `birth_date` aplicado. Y **1 documento real estaba mal
+  tipificado** (clasificado `BAJA_PERSONAL` en vez de `DNI` pese a
+  llevar "DNI" en el nombre): Jacinto Rebollo Manzano (`id=30079`,
+  resuelto directamente sobre su `ocr_text` ya cacheado, sin
+  descargar nada).
+- **Búsqueda en papelera:** Antonio Javier Muñoz González tenía un
+  DNI real trashed (`id=36638`, no purgado) -- descargado y leído,
+  nacimiento 19/05/1979.
+- **2 imágenes aportadas directamente por Miguel Ángel desde fuera
+  del sistema** (Cristhian Gutiérrez Mateo, Domingo Campos Román) --
+  aplicadas, quedan pendientes de indexar como documento real en el
+  proyecto si se decide en otra sesión.
+- **Corrección real de `is_obsolete`:** los 2 documentos de José
+  Antonio Gómez García y José Antonio Zafra Peralta que aparecían
+  como "ambos obsoletos, ninguno activo" resultaron tener validez
+  hasta 2035 -- no estaban caducados de verdad. Miguel Ángel fijó el
+  criterio verbatim: *"obsoleto [es] cuando tengamos el vigente"*, no
+  por caducidad sola. Corregido `is_obsolete=False` en ambos
+  (`id=35564`, `id=38037`) tras leer y aplicar sus `birth_date`
+  (1968-03-18 y 1971-08-02).
+
+**Quedan genuinamente sin resolver, agotadas todas las vías
+(activo/obsoleto/papelera/Excel/fuera del sistema):** Santiago
+Nicolás Gutiérrez y Jerónimo Delgado Hurtado (sin documento de
+identidad en ningún sitio) -- y aparte, Antonio Aranda Reyes
+(`74829098R`, fecha ya calculada por MRZ real -- 25/05/1979 -- pero
+**sin aplicar**, porque su `is_active_employee=True` no encuentra
+respaldo en ninguna hoja del Excel real, a diferencia del resto de
+excepciones ya documentadas -- José Manuel Gómez Carvajal y la
+familia Álvarez Díaz sí están justificados como socios/familia
+restaurados a mano en S82).
+
+**Punto 5 -- sin tocar.** Sigue en la Hoja de Ruta.
+
+**Incidencias reales de sesión, para no repetir:** el modelo dio por
+"no existe en el sistema" el DNI de Adelaida Álvarez Díaz sin haber
+comprobado antes si existía sin tipificar -- corregido de inmediato
+en cuanto Miguel Ángel mostró una captura real del panel
+demostrándolo, y aplicado el mismo criterio de revisión (buscar por
+`document_type=None` con "DNI"/"NIE" en el nombre) al resto de casos
+"sin documento" antes de darlos por buenos. El modelo también generó
+un error de sintaxis real (`_log(...) if False else None`, línea de
+depuración sin sentido) en el primer intento del arreglo `--psm 11`,
+detectado y corregido en el mismo turno antes de commitear.
 
 ---
 
-### Estado real de EPIS al cerrar S82 (verificado por consulta directa, no de memoria)
+## Hoja de Ruta para la Siguiente Sesión (S84) -- REESCRITA al cierre
+## de S83, sustituye por completo a la anterior
 
-- **761** documentos EPIS reales de partida (los 767 originales menos
-  6 filas huérfanas de un cubo ya borrado en S038, purgadas esta
-  sesión -- ver COMPLETADAS).
-- **117 activos, pendientes reales.** De esos, **1 nunca llegó a
-  leerse** (`ocr_text` vacío -- candidato a un quinto lanzamiento
-  puntual de la VM, o revisión manual si vuelve a fallar).
-- **878 `EpiDelivery` reales creadas hoy**, **198 documentos con
-  entrega vinculada directamente**, el resto de los que salieron de
-  la cola (~407) o son duplicados de una entrega ya capturada por
-  otro documento del mismo trabajador/fecha (consolidación correcta,
-  no pérdida de datos), o fueron archivados sin extraer por decisión
-  explícita de Miguel Ángel (antigüedad 5+ años, plantilla COVID,
-  trabajadores de baja -- ver COMPLETADAS).
+**Pregunta bloqueante nueva (dato real que falta de Miguel Ángel,
+nunca arrastrada en silencio) -- responder antes de aplicar el
+`birth_date` ya calculado de Antonio Aranda Reyes:**
 
-### Punto 1 (bloqueante, criterio de cierre objetivo) -- Causa real de la mayoría de los 116 restantes: Tesseract no lee la tabla de ítems en ciertos formatos
+1. **Antonio Aranda Reyes (`74829098R`), `is_active_employee=True`
+   pero sin respaldo en ninguna hoja del Excel real
+   (`EXCEL_TRABAJADORES.xlsx`)**, a diferencia de las excepciones ya
+   documentadas (familia Álvarez Díaz, José Manuel Gómez Carvajal).
+   Su `birth_date` ya está calculado (25/05/1979, MRZ real validado)
+   pero deliberadamente sin aplicar. ¿Es un activo real que falta en
+   el Excel (aplicamos la fecha y dejamos anotada la excepción, igual
+   que las otras), o su marca de activo está mal y hay que
+   corregirla (no aplicamos nada de `birth_date`, se revisa aparte)?
 
-Confirmado contra **8 documentos reales descargados y verificados
-visualmente** en S82 (Petru Iordachi, Estevao Sampaio, Gómez García,
-Alejandro Ponce Rodríguez, Juan Carlos Moyano Gutiérrez, Francisco
-Gómez Rivero, Juan Vázquez Román, Manuel Cruces Gómez): el documento
-es perfectamente legible a simple vista, DNI y persona coinciden
-exactos con `PersonIdentity` real, pero la tabla de EPIs con las
-marcas X **no aparece en absoluto** en las palabras que devuelve
-`pytesseract.image_to_data()` -- no es una marca mal leída, es que
-Tesseract no detecta esa región de la página como texto en el modo de
-segmentación actual. Afecta a los dos formatos de tabla en uso
-("Equipos de Protección Individual" de dos columnas, y "CONTROL DE
-EQUIPOS EPIS ENTREGADO" con REVISIÓN/CADUCIDAD añadidas).
+**Punto 5 (arrastrado 2.ª sesión sin avanzar -- convertido a
+pregunta explícita, directriz de cierre 2.2):** ¿Cuándo quieres que
+se haga la revisión visual real de los documentos "NO ES ENTREGA" de
+EPIS? Sigue sin tocarse desde que se propuso en S82. Si no hay
+prioridad real para esto todavía, dilo explícitamente y se retira de
+la hoja de ruta en vez de seguir arrastrándose.
 
-**No es un arreglo de una línea** -- necesita probar otro modo de
-segmentación de página de Tesseract (`--psm`), o recortar la región
-de la tabla como imagen aparte antes de pasarla a OCR, y verificar
-contra muestra real (mínimo 5 documentos de los ya identificados
-arriba) antes de aplicar a los 116.
+### Punto 1 -- Cierre real de `birth_date` (Punto 3 de S83)
 
-**Triaje ya hecho en S82, no repetir:** de 123 documentos activos con
-`ocr_text`, **74 pertenecen a 36 trabajadores activos reales**
-(merece la pena arreglarlo), 7 eran de trabajadores de baja (ya
-purgados en S82), y 42 quedaban "sin identificar" por el propio
-script -- pero la muestra de 4 mostró que **son igual de
-identificables que los 74**, mismo problema de tabla, no personas
-desconocidas. **Criterio de cierre de este punto:** tras el arreglo
-de OCR, relanzar `reprocess_epis_from_cache` (no hace falta VM, el
-`ocr_text` ya está cacheado) y comprobar que `documentos_completos`
-sube de forma significativa sobre los 116 restantes.
+Quedan exactamente 3 personas activas sin `birth_date`, agotadas
+todas las vías de este proyecto (activo/obsoleto/papelera/Excel/fuera
+del sistema):
+- Santiago Nicolás Gutiérrez (`Z4304829Q`)
+- Jerónimo Delgado Hurtado (`25084463L`)
+- Antonio Aranda Reyes (`74829098R`) -- ver pregunta bloqueante arriba
 
-### Punto 2 -- El documento nunca leído (1)
+**Criterio de cierre objetivo:** para los 2 primeros, no hay más
+acción posible desde el proyecto -- hace falta que Miguel Ángel
+aporte el documento (foto/escaneo del DNI/NIE) como hizo esta sesión
+con Cristhian Gutiérrez y Domingo Campos. No relanzar ninguna
+búsqueda automática sobre ellos sin un documento nuevo real.
 
-Localizar con `DocumentIndexEntry.objects.filter(document_type__code='EPIS',
-entry_kind='FILE', deleted_at__isnull=True, purged_at__isnull=True,
-ocr_text__in=['', None])` y revisar por qué falló (timeout, error de
-descarga u otro). Volumen mínimo, no necesita VM completa si se
-puede aislar y probar suelto.
+### Punto 2 -- Renombrado canónico del resto del catálogo (131 tipos)
 
-### Punto 3 -- `birth_date` para el resto de activos
+Sigue sin una primera pasada, arrastrado desde S80/S81/S82 pese a
+confirmarse como 2.ª prioridad real por Miguel Ángel al arranque de
+S83 (después de EPIS). Criterio ya fijado (directriz 4.16:
+`expiry_date` cuando el tipo la tenga, `issue_date` si genuinamente
+no la tiene, nunca sin la fecha ya extraída). **Criterio de cierre
+objetivo de la primera sesión que lo aborde:** una muestra real de al
+menos 10 documentos de 3 tipos distintos, renombrados y verificados
+visualmente antes de escalar al resto de los 131.
 
-Campo añadido en S82 (`PersonIdentity.birth_date`, migración 0067) y
-conectado al Excel (columna `FECHA NACIMIENTO` en las 5 hojas,
-`import_worker_machine_excel.py`). Solo tiene valor real para
-Estevao Veloso Sampaio por ahora. Pendiente: extraer la fecha de
-nacimiento del resto de los ~78 activos desde sus documentos DNI ya
-indexados (mismo patrón que el resto de fechas de H30 -- verificar
-con muestra real antes de escalar).
+### Punto 3 -- Los ~789 documentos "no críticos" sin fecha
+
+3.ª prioridad confirmada por Miguel Ángel (`CONTRATO`, `FORMACION`,
+`ENTREGA_INFORMACION`, `MOD_145`, `BAJA_PERSONAL`, etc.). Sin tocar
+todavía.
 
 ### Punto 4 -- Estado de infraestructura para retomar
 
-- **VM `h28-ocr-batch-1`: SUSPENDIDA** (no detenida) al cierre de
-  S82 -- reanudar con `gcloud compute instances resume
+- **VM `h28-ocr-batch-1`: en ejecución** al cierre de S83 (se
+  reanudó al inicio de la sesión). Checkout sincronizado hasta
+  `32e3335` (no incluye los 2 últimos commits de la sesión,
+  `f12c9f1`/`3873d9e`, que no tocan el script de la VM). **Recordar a
+  Miguel Ángel detenerla** (`gcloud compute instances stop
   h28-ocr-batch-1 --project=gen-lang-client-0961484137
-  --zone=europe-west1-b` (nunca `start`, falla con "cannot start a
-  suspended instance" -- usar siempre `resume` para una instancia
-  suspendida). Checkout ya sincronizado en `a93f0e1`, no hace falta
-  `git pull` salvo que la siguiente sesión toque de nuevo el
-  script. **No hace falta la VM para nada de lo pendiente arriba
-  salvo el Punto 2** -- el trabajo real de S82 tras las primeras
-  horas se hizo entero desde PythonAnywhere contra `ocr_text` ya
-  cacheado.
-- Si al arrancar la sesión la VM sigue sin usarse, recordar a Miguel
-  Ángel su propia intención de detenerla del todo (`gcloud compute
-  instances stop`, no solo suspender) para no dejarla facturando de
-  fondo sin necesidad real.
-
-### Punto 5 (arrastrado 1.ª sesión sin avanzar) -- Revisar visualmente los "NO ES ENTREGA"
-
-Con el bug de falso positivo ya corregido en S82 (ver COMPLETADAS),
-los "NO ES ENTREGA" que reporte cualquier barrido futuro deberían ser
-mucho más fiables -- pero sigue sin hacerse una revisión visual real
-de los que ya salieron con esa etiqueta, para confirmar que ninguno
-es en realidad una entrega perdida.
-
----
+  --zone=europe-west1-b`) si no se va a usar de inmediato en S84 --
+  no hace falta la VM para los Puntos 1/2/3 de arriba, todos se
+  pueden trabajar desde la consola Bash de PythonAnywhere.
+- Migraciones `0068` y `0069` desplegadas y verificadas en producción
+  durante la propia sesión (no queda nada pendiente de confirmar).
 
 ### COMPLETADAS EN S82 (sesión muy larga, con varias interrupciones
 ### reales por fallos del propio modelo -- registradas tal cual,
