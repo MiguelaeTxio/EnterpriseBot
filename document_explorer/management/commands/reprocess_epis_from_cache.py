@@ -189,6 +189,15 @@ def _build_date(day, month, year):
         year = int(year)
         if year < 100:
             year += 2000
+        # S82: sanity real -- 2 fechas imposibles (2041, 0201) en la
+        # muestra de hoy, ambas con toda pinta de digito transpuesto
+        # por OCR (14->41) o año mal formado. Los documentos de este
+        # lote son historicos, nunca antes de 2005 ni posteriores a
+        # hoy -- fuera de ese rango, se descarta en vez de crear un
+        # registro con fecha imposible.
+        hoy = datetime.date.today()
+        if not (2005 <= year <= hoy.year):
+            return None
         return datetime.date(year, month, day)
     except ValueError:
         return None

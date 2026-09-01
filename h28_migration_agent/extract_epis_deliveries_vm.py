@@ -497,18 +497,29 @@ def _normalize_dni(dni):
     return re.sub(r"[.\s\-]", "", dni).upper()
 
 
+def _build_date(day, month, year):
+    year = int(year)
+    if year < 100:
+        year += 2000
+    # S82: sanity real -- fechas imposibles (2041, 0201) confirmadas
+    # en la muestra de hoy, con toda pinta de digito transpuesto por
+    # OCR (14->41) o ano mal formado. Documentos historicos de este
+    # lote, nunca antes de 2005 ni posteriores a hoy.
+    hoy = datetime.date.today()
+    if not (2005 <= year <= hoy.year):
+        return None
+    try:
+        return datetime.date(year, int(month), int(day))
+    except ValueError:
+        return None
+
+
 def _parse_date_from_filename(name):
     match = _FILENAME_DATE_RE.search(name)
     if not match:
         return None
     day, month, year = match.groups()
-    year = int(year)
-    if year < 100:
-        year += 2000
-    try:
-        return datetime.date(year, int(month), int(day))
-    except ValueError:
-        return None
+    return _build_date(day, month, year)
 
 
 def _parse_date_from_content(text):
@@ -516,13 +527,7 @@ def _parse_date_from_content(text):
     if not match:
         return None
     day, month, year = match.groups()
-    year = int(year)
-    if year < 100:
-        year += 2000
-    try:
-        return datetime.date(year, int(month), int(day))
-    except ValueError:
-        return None
+    return _build_date(day, month, year)
 
 
 # Log persistido a fichero, ademas de stdout -- S81: la consola SSH
