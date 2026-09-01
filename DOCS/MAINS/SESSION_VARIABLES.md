@@ -901,6 +901,18 @@ cambio, sí es un paquete Python real -- va en
 `requirements-ocr-vm.in`/`.txt` (candado real, `pip-sync
 requirements-ocr-vm.txt`), nunca instalado suelto.
 
+**PAQUETE DE SISTEMA -- `libreoffice-writer` (H30 S83).**
+`extract_epis_deliveries_vm.py._convert_doc_to_docx()` invoca el
+binario `soffice` (LibreOffice headless) para convertir `.doc` a
+`.docx` antes de leerlo -- confirmado real en `h28-ocr-batch-1`: el
+unico documento EPIS que nunca llego a leerse en S82 fallaba con
+`[Errno 2] No such file or directory: 'soffice'`, no por un problema
+del documento en si. Igual que `antiword`, es un paquete de sistema
+(nunca vive en el venv, no sobrevive a recrear la VM desde cero):
+```bash
+sudo apt-get update && sudo apt-get install -y --no-install-recommends libreoffice-writer
+```
+
 El archivo de log (`h28_migration_agent.log`) **sigue** junto al
 `.exe` en ejecución (`dist\`) -- deliberado, no es parte de este fix,
 ver docstring de `get_agent_root_dir()` en `config.py`.
