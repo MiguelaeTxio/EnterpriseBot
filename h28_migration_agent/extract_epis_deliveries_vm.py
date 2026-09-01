@@ -144,7 +144,11 @@ ITEM_LABEL_MAP = [
     ("POLO MANGA CORTA", "POLO_ALTA_VISIBILIDAD"),
     ("POLO", "POLO_ALTA_VISIBILIDAD"),
     ("MONO DE TRABAJO", "MONO_ALTA_VISIBILIDAD"),
-    ("CHAQUETA", "CHAQUETA_ALTA_VISIBILIDAD"),
+    # S83: "CHAQUETA" (sin "alta visibilidad") NO es la misma prenda
+    # que CHAQUETA_ALTA_VISIBILIDAD -- corregido a peticion explicita
+    # de Miguel Angel, ver migracion 0068 para el detalle verbatim.
+    ("CHAQUETON ALTA VISIBILIDAD", "CHAQUETON_ALTA_VISIBILIDAD"),
+    ("CHAQUETA", "CHAQUETA_TRABAJO"),
     ("CINTURON DE SEG", "CINTURON_DOS_AMARRES"),
     ("ELEMENTO DE AMARRE", "ELEMENTO_AMARRE"),
     ("ARNE", "ARNES_SEGURIDAD"),
@@ -153,6 +157,10 @@ ITEM_LABEL_MAP = [
     ("ROPA DE TRABAJO", "ROPA_TRABAJO"),
     ("CASCO", "CASCO_SEGURIDAD"),
     ("CHALECO REFLECTANTE", "CHALECO_REFLECTANTE"),
+    # S83: generico DESPUES del reflectante a proposito -- _map_label
+    # usa "primer match en orden de lista", si fuera antes cualquier
+    # "CHALECO REFLECTANTE" real se clasificaria mal como el generico.
+    ("CHALECO", "CHALECO_ABRIGO"),
     ("ZAPATOS DE SEGURIDAD", "ZAPATOS_SEGURIDAD"),
     ("PROTECCION AUDITIVA", "PROTECCION_AUDITIVA"),
     ("ROPA DE SENALIZACION", "BUZO_ALTA_VISIBILIDAD"),
