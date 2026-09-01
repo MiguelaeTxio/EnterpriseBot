@@ -452,7 +452,8 @@ def _log(lock, msg):
 def _worker(
     tunnel_port, mysql_password, gcs_client, task_queue, results_lock,
     totals, unmapped_labels, log_lock, apply_changes,
-    discard_unresolved, discard_unresolved_items,
+    discard_unresolved, discard_unresolved_items, total_tasks,
+    heartbeat_state,
 ):
     def _connect():
         return pymysql.connect(
@@ -467,6 +468,37 @@ def _worker(
     def bump(key, n=1):
         with results_lock:
             totals[key] = totals.get(key, 0) + n
+
+    # Heartbeat periodico obligatorio para barridos largos (com-standards,
+    # "VISIBILIDAD DE PROGRESO EN SCRIPTS DE BARRIDO LARGO", anadida S82
+    # tras esta misma incidencia real: "como has hecho un script mudo,
+    # ni puta idea de cuando va a acabar ni de por donde va"). Cada 25
+    # documentos o el 5% del total (lo que sea menor), lo que primero se
+    # cumpla. Guardado bajo results_lock para que solo un hilo lo escriba
+    # aunque varios crucen el umbral casi a la vez.
+    # ---
+    # Mandatory periodic heartbeat for long sweeps -- added after this
+    # exact real incident. Every 25 documents or 5% of the total,
+    # whichever is smaller.
+    heartbeat_every = max(1, min(25, total_tasks // 20 or 1))
+
+    def _maybe_heartbeat():
+        with results_lock:
+            procesados = totals.get("procesados", 0)
+            if procesados - heartbeat_state["last"] < heartbeat_every:
+                if procesados < total_tasks:
+                    return
+            heartbeat_state["last"] = procesados
+            pct = (procesados / total_tasks * 100) if total_tasks else 0
+            resumen = ", ".join(
+                "%s=%d" % (k, v) for k, v in sorted(totals.items())
+                if k != "procesados"
+            )
+        _log(
+            log_lock,
+            "Progreso: %d/%d (%.0f%%) -- %s"
+            % (procesados, total_tasks, pct, resumen or "sin incidencias"),
+        )
 
     while True:
         task = task_queue.get()
@@ -515,6 +547,7 @@ def _worker(
             )
             bump("fallos_lectura")
         finally:
+            _maybe_heartbeat()
             task_queue.task_done()
 
     conn.close()
@@ -826,6 +859,8 @@ def main():
     unmapped_labels = {}
 
     threads = []
+    heartbeat_state = {"last": 0}
+    total_tasks = len(tasks)
     for _ in range(args.threads):
         th = threading.Thread(
             target=_worker,
@@ -833,7 +868,7 @@ def main():
                 tunnel.local_bind_port, mysql_password, gcs_client,
                 task_queue, results_lock, totals, unmapped_labels,
                 log_lock, args.apply, args.discard_unresolved,
-                args.discard_unresolved_items,
+                args.discard_unresolved_items, total_tasks, heartbeat_state,
             ),
         )
         th.start()
@@ -842,6 +877,7 @@ def main():
     task_queue.join()
     for th in threads:
         th.join()
+
 
     tunnel.stop()
 
