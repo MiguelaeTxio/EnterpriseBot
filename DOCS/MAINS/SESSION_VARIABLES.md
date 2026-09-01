@@ -916,6 +916,32 @@ para qué era.
 
 ---
 
+## TIMEOUT OCR REAL DE `extract_epis_deliveries_vm.py` -- 90s desde
+## S83 (2026-09-01), NUNCA volver a 60s para esta version del script
+
+**Incidente real confirmado:** el arreglo de S82/S83 (reintento
+`--psm 11` cuando el paso por defecto no detecta la tabla de items
+EPIs, commit `10bc3d2`) anade una segunda pasada de OCR por pagina
+para los documentos que la necesitan. Con el timeout original de 60s
+y `--threads 6` sobre el lote completo de 116 EPIS pendientes reales,
+**87 de 116 fallaron** con `RuntimeError: Tesseract process timeout`
+-- no eran documentos realmente colgados (esa era la causa real de S82,
+que motivo el timeout original), sino contencion real de CPU bajo
+carga concurrente en la VM, agravada por el propio reintento. Subido a
+90s (commit `2c843f4`) en las 3 llamadas de `pytesseract` de
+`_extract_pdf_ocr`.
+
+**Recomendacion real de hilos para esta version del script (S83):**
+con el reintento activo, cada hilo puede hacer hasta 3 llamadas
+Tesseract por documento (texto plano + tabla por defecto + reintento
+`--psm 11`) en vez de 2 -- usar `--threads 3` como maximo en
+`h28-ocr-batch-1` (e2-standard-8) hasta que haya evidencia real de que
+un numero mayor no vuelve a saturar. No es un limite fijo de por vida,
+es el dato real mas reciente -- confirmar contra el resultado real de
+la proxima pasada antes de subirlo.
+
+---
+
 ## CRITERIO REAL: paralelo vs. un solo proceso en la VM (S53,
 ## 2026-08-14) -- según contexto, NO preguntar, ya está decidido
 
