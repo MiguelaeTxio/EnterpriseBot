@@ -5883,79 +5883,310 @@ quedaban sin fecha).
 ## Hoja de Ruta para la Siguiente Sesión (sustituye por completo a
 ## la anterior)
 
-⛔ **LEER PRIMERO `ENTERPRISEBOT_MASTER_DOCUMENT.md` DIRECTRIZ 4.17
-ANTES DE TOCAR NADA.** Queja formal de Miguel Ángel registrada en
-S81, verbatim, sobre incumplimiento sistemático de instrucciones,
-documentación y skills, y sobre el reprocesamiento repetido de
-archivos ya procesados por no verificar el estado real antes de
-actuar. No es un incidente cerrado -- es el estándar mínimo exigido.
-
 **REGLA DE ARRANQUE DIRECTO -- empezar ya por el punto 1, sin
-preguntar por dónde empezar.**
+preguntar por dónde empezar**, salvo las dos preguntas bloqueantes de
+abajo, que sí son obligatorias antes de tocar nada (arrastradas ya
+dos sesiones sin ejecución real, S81 y S82).
 
-1. **Determinar el estado REAL de los 767 documentos EPIS antes de
-   lanzar nada.** El `--trash_entry()` bug de S80 quedó cerrado
-   (`e728fd6`, verificado). En S81 se relanzó `--apply` (barrido
-   completo, sin `--pdf-only`) en `h28-ocr-batch-1` vía consola SSH
-   de la app móvil de Cloud Console (usuario `nummenor` reconectando
-   como `Usuario`); a mitad de ejecución Miguel Ángel decidió
-   acotarlo a `--pdf-only`, pero la consola se desconectó dos veces
-   seguidas durante el proceso. El script **no dejaba log en disco en
-   ese momento** (corregido esta misma sesión, ver más abajo) y al
-   reconectar la sesión `tmux epis_apply` apareció `[exited]` -- el
-   proceso había terminado (por sí solo, o por el `Ctrl+C`, no se
-   pudo determinar cuál) sin que quedara ningún rastro de qué
-   documentos llegó a tocar. **Criterio de cierre objetivo:** antes
-   de relanzar ningún `--apply`, contar cuántos `DocumentIndexEntry`
-   con `document_type__code='EPIS'` siguen con `deleted_at IS NULL`
-   (`SELECT COUNT(*) FROM document_explorer_documentindexentry e JOIN
-   document_explorer_documenttypecatalog t ON e.document_type_id=t.id
-   WHERE t.code='EPIS' AND e.deleted_at IS NULL AND e.purged_at IS
-   NULL;`) y compararlo contra los 767 de partida -- ese número real
-   dice cuántos quedaron procesados de la tanda de S81, si alguno.
-2. **Relanzar `extract_epis_deliveries_vm.py --apply --pdf-only`**
-   (decisión explícita de Miguel Ángel en S81: acotar a `.pdf`,
-   dejar los `.doc`/`.docx` de `EPIS COVID 19` -- que fallan con
-   "SIN FECHA reconocible"/"SIN DNI" en su formato real -- fuera de
-   esta tanda) sobre los documentos que el punto 1 confirme que
-   siguen sin procesar. **Usar el log persistido a fichero añadido
-   en S81** (`extract_epis_deliveries_vm_YYYYMMDD_HHMMSS.log`, mismo
-   directorio, sobrevive a una desconexión de la consola) -- si la
-   consola se desconecta, reconectar, `tmux attach -t epis_apply` si
-   la sesión sigue viva, y si no, releer el `.log` más reciente antes
-   de decidir si hace falta relanzar. Cierre: `RESUMEN` final sin
-   `FALLO INESPERADO` en el log, y verificación de que `ocr_text`
-   quedó cacheado en los procesados.
-3. **Confirmar con Miguel Ángel el alcance de la plantilla COVID**
-   (formato aparte, ítems `Mascarillas FFP2/KN95`/`Guantes
-   latex`/`Gel desinfectante` sin código en `EpiItemCatalog`, y los
-   `.doc`/`.docx` que el punto 2 dejó fuera por decisión de S81) --
-   ¿se crean códigos nuevos y se procesan como entrega real, o se
-   excluyen del extractor? Pendiente desde S80, sin decidir.
-4. **VM `h28-ocr-batch-1` queda DETENIDA (`stop`, no borrada)** al
-   cierre de esta sesión -- repo/venv/clave de servicio ya
-   preparados, arrancar con `gcloud compute instances start
-   h28-ocr-batch-1` y seguir directamente por el punto 1, sin
-   rehacer bootstrap. El checkout de la VM ya está sincronizado con
-   `origin/main` en `a6be28c` (incluye el fix de logging), no hace
-   falta `git pull` al reconectar salvo que la siguiente sesión toque
-   de nuevo el repo antes.
-5. **Revisar visualmente los "NO ES ENTREGA" que reporte el
-   `--apply` completo** (formación, entrega de información PRL,
-   facturas/albarán mal tipados como `EPIS`) -- reclasificar a mano
-   cada uno al tipo real.
-6. Después de cerrar EPIs: retomar la pregunta de fondo que abrió
-   este bloque -- ¿se revisan también los 789 documentos "no
-   críticos" (`CONTRATO`, `FORMACION`, `ENTREGA_INFORMACION`,
-   `MOD_145`, `BAJA_PERSONAL`...) para extraerles fecha también? Ya
-   confirmado por Miguel Ángel en S80 que sí toca, sigue el orden de
-   la hoja de ruta sin volver a preguntar (directriz 4.16).
-7. Después: renombrado canónico del resto del catálogo (131 tipos) --
-   Miguel Ángel revocó en S80 la decisión anterior de "a demanda"; el
-   criterio real es el fijado en directriz 4.16 (fecha de
-   `expiry_date` cuando el tipo la tenga, `issue_date` solo si
-   genuinamente no la tiene, nunca renombrar sin la fecha correcta ya
-   extraída).
+**Preguntas bloqueantes (2.ª sesión sin avanzar, ver directriz de
+cierre) -- responder antes de seguir con cualquier otra cosa:**
+
+1. **Renombrado canónico del resto del catálogo (131 tipos).** Miguel
+   Ángel fijó el criterio en S80 (directriz 4.16: `expiry_date` cuando
+   el tipo la tenga, `issue_date` si genuinamente no la tiene, nunca
+   sin la fecha ya extraída) pero nunca se ha ejecutado ni una
+   primera pasada. ¿Se empieza esta sesión, o sigue sin ser
+   prioridad?
+2. **Los 789 documentos "no críticos"** (`CONTRATO`, `FORMACION`,
+   `ENTREGA_INFORMACION`, `MOD_145`, `BAJA_PERSONAL`...) sin fecha
+   extraída. Confirmado por Miguel Ángel en S80 que sí toca -- pero
+   dos sesiones después (S81, S82) ha quedado siempre detrás de
+   EPIS. ¿Se empieza ahora que EPIS está en el ~85% de la cola
+   resuelta o archivada?
+
+---
+
+### Estado real de EPIS al cerrar S82 (verificado por consulta directa, no de memoria)
+
+- **761** documentos EPIS reales de partida (los 767 originales menos
+  6 filas huérfanas de un cubo ya borrado en S038, purgadas esta
+  sesión -- ver COMPLETADAS).
+- **117 activos, pendientes reales.** De esos, **1 nunca llegó a
+  leerse** (`ocr_text` vacío -- candidato a un quinto lanzamiento
+  puntual de la VM, o revisión manual si vuelve a fallar).
+- **878 `EpiDelivery` reales creadas hoy**, **198 documentos con
+  entrega vinculada directamente**, el resto de los que salieron de
+  la cola (~407) o son duplicados de una entrega ya capturada por
+  otro documento del mismo trabajador/fecha (consolidación correcta,
+  no pérdida de datos), o fueron archivados sin extraer por decisión
+  explícita de Miguel Ángel (antigüedad 5+ años, plantilla COVID,
+  trabajadores de baja -- ver COMPLETADAS).
+
+### Punto 1 (bloqueante, criterio de cierre objetivo) -- Causa real de la mayoría de los 116 restantes: Tesseract no lee la tabla de ítems en ciertos formatos
+
+Confirmado contra **8 documentos reales descargados y verificados
+visualmente** en S82 (Petru Iordachi, Estevao Sampaio, Gómez García,
+Alejandro Ponce Rodríguez, Juan Carlos Moyano Gutiérrez, Francisco
+Gómez Rivero, Juan Vázquez Román, Manuel Cruces Gómez): el documento
+es perfectamente legible a simple vista, DNI y persona coinciden
+exactos con `PersonIdentity` real, pero la tabla de EPIs con las
+marcas X **no aparece en absoluto** en las palabras que devuelve
+`pytesseract.image_to_data()` -- no es una marca mal leída, es que
+Tesseract no detecta esa región de la página como texto en el modo de
+segmentación actual. Afecta a los dos formatos de tabla en uso
+("Equipos de Protección Individual" de dos columnas, y "CONTROL DE
+EQUIPOS EPIS ENTREGADO" con REVISIÓN/CADUCIDAD añadidas).
+
+**No es un arreglo de una línea** -- necesita probar otro modo de
+segmentación de página de Tesseract (`--psm`), o recortar la región
+de la tabla como imagen aparte antes de pasarla a OCR, y verificar
+contra muestra real (mínimo 5 documentos de los ya identificados
+arriba) antes de aplicar a los 116.
+
+**Triaje ya hecho en S82, no repetir:** de 123 documentos activos con
+`ocr_text`, **74 pertenecen a 36 trabajadores activos reales**
+(merece la pena arreglarlo), 7 eran de trabajadores de baja (ya
+purgados en S82), y 42 quedaban "sin identificar" por el propio
+script -- pero la muestra de 4 mostró que **son igual de
+identificables que los 74**, mismo problema de tabla, no personas
+desconocidas. **Criterio de cierre de este punto:** tras el arreglo
+de OCR, relanzar `reprocess_epis_from_cache` (no hace falta VM, el
+`ocr_text` ya está cacheado) y comprobar que `documentos_completos`
+sube de forma significativa sobre los 116 restantes.
+
+### Punto 2 -- El documento nunca leído (1)
+
+Localizar con `DocumentIndexEntry.objects.filter(document_type__code='EPIS',
+entry_kind='FILE', deleted_at__isnull=True, purged_at__isnull=True,
+ocr_text__in=['', None])` y revisar por qué falló (timeout, error de
+descarga u otro). Volumen mínimo, no necesita VM completa si se
+puede aislar y probar suelto.
+
+### Punto 3 -- `birth_date` para el resto de activos
+
+Campo añadido en S82 (`PersonIdentity.birth_date`, migración 0067) y
+conectado al Excel (columna `FECHA NACIMIENTO` en las 5 hojas,
+`import_worker_machine_excel.py`). Solo tiene valor real para
+Estevao Veloso Sampaio por ahora. Pendiente: extraer la fecha de
+nacimiento del resto de los ~78 activos desde sus documentos DNI ya
+indexados (mismo patrón que el resto de fechas de H30 -- verificar
+con muestra real antes de escalar).
+
+### Punto 4 -- Estado de infraestructura para retomar
+
+- **VM `h28-ocr-batch-1`: SUSPENDIDA** (no detenida) al cierre de
+  S82 -- reanudar con `gcloud compute instances resume
+  h28-ocr-batch-1 --project=gen-lang-client-0961484137
+  --zone=europe-west1-b` (nunca `start`, falla con "cannot start a
+  suspended instance" -- usar siempre `resume` para una instancia
+  suspendida). Checkout ya sincronizado en `a93f0e1`, no hace falta
+  `git pull` salvo que la siguiente sesión toque de nuevo el
+  script. **No hace falta la VM para nada de lo pendiente arriba
+  salvo el Punto 2** -- el trabajo real de S82 tras las primeras
+  horas se hizo entero desde PythonAnywhere contra `ocr_text` ya
+  cacheado.
+- Si al arrancar la sesión la VM sigue sin usarse, recordar a Miguel
+  Ángel su propia intención de detenerla del todo (`gcloud compute
+  instances stop`, no solo suspender) para no dejarla facturando de
+  fondo sin necesidad real.
+
+### Punto 5 (arrastrado 1.ª sesión sin avanzar) -- Revisar visualmente los "NO ES ENTREGA"
+
+Con el bug de falso positivo ya corregido en S82 (ver COMPLETADAS),
+los "NO ES ENTREGA" que reporte cualquier barrido futuro deberían ser
+mucho más fiables -- pero sigue sin hacerse una revisión visual real
+de los que ya salieron con esa etiqueta, para confirmar que ninguno
+es en realidad una entrega perdida.
+
+---
+
+### COMPLETADAS EN S82 (sesión muy larga, con varias interrupciones
+### reales por fallos del propio modelo -- registradas tal cual,
+### sin suavizar)
+
+**Arranque y verificación de estado real.** La sesión empezó
+verificando contra la BD (nunca de memoria) que los 767 EPIS de
+partida de S80 seguían intactos tras S81 -- confirmado, S81 no había
+tocado nada real pese al intento fallido. A mitad de sesión se
+detectó que 6 de esos 767 eran filas huérfanas de
+`enterprisebot-alvarez-personnel-documents`, un cubo borrado
+deliberadamente por Miguel Ángel en S038 (commit `109603c`,
+verbatim: *"Los borras ahora mismo [...] si se pierde la información
+es por mi culpa"*) sobre la premisa de que todo ya estaba migrado a
+`cgs_grupo_alvarez`. Se comprobó contra datos reales que los
+documentos de Manuel Alonso Pedrosa mencionados en esas 6 filas SÍ
+tenían equivalente ya migrado con otro nombre -- no hubo pérdida real
+de información, solo índice suelto. Las 6 filas quedaron purgadas
+(`purged_at`, nunca borradas de la tabla), dejando **761** como
+partida real de la sesión.
+
+**Bloque 1 -- Estevao Veloso Sampaio, alta completa.** Se dio de alta
+como trabajador activo: `PersonIdentity` ya existía (creado por
+clasificación automática) pero `is_active_employee=False` y sin
+empresa. Se añadió su fila a `EXCEL_TRABAJADORES.xlsx` (hoja `TRABAJADORES
+GRUAS ALVAREZ MALA`) y se creó una **columna nueva, `FECHA
+NACIMIENTO`, en las 5 hojas de trabajadores** -- petición explícita de
+Miguel Ángel, con el campo `PersonIdentity.birth_date` nuevo
+(migración `0067`) y el alias correspondiente en
+`import_worker_machine_excel.py`. `import_worker_machine_excel --apply`
+confirmó 71/71 cruzados. Localizados sus 12 documentos reales (2 en
+una carpeta `TALLER` distinta a la registrada en `folder_path`) --
+fusionados con `move_service.merge_folders()`, `folder_path`
+actualizado, y un documento `NIE` sin tipo asignado corregido a mano.
+El alta de acceso al panel se completó sola vía el flujo real de
+onboarding por WhatsApp (`whatsapp.services.OnboardingService`) sin
+intervención del modelo -- confirmado con captura real del panel,
+usuario `estevao.veloso`, rol Operario de taller, Activo.
+
+**Bloque 2 -- Cuatro fallos reales del script de EPIS, cada uno
+encontrado en producción y corregido de inmediato (directriz 4.9):**
+
+1. **Conexión MySQL/túnel muerta sin reconexión** (`a4f595c`) --
+   causa real confirmada de "FALLO INESPERADO -- (0, '')" en
+   cascada silenciosa: un solo hilo zombie procesaba cientos de
+   documentos sin avisar durante el resto del barrido. Corregido con
+   reconexión automática por hilo y traza completa (`traceback.format_exc()`)
+   en vez de `str(exc)` vacío.
+2. **Timeout de OCR ausente** (`12ed2c9`) -- confirmado que un
+   documento concreto podía colgar un hilo para siempre sin ningún
+   aviso. `timeout=60` real en `pytesseract.image_to_string`/
+   `image_to_data`.
+3. **Filtro de resumibilidad** (`98fee91`) -- parar y relanzar
+   repetía descarga+OCR completos de documentos ya intentados.
+   Corregido excluyendo por `ocr_text` ya escrito.
+4. **Sobrecarga de CPU por mala cuenta del modelo, no del script** --
+   3 shards × 3 hilos en una VM de 8 vCPU (9 > 8) hizo saltar el
+   timeout de OCR por contención, no por documentos problemáticos.
+   Corregido bajando a `--threads 2` por shard.
+
+Sobre esto último, verificado contra el propio ejemplo que disparó la
+sospecha de Miguel Ángel (`AUT USO MAQ BURGOS FERNANDEZ, MANUEL
+7-4-17.pdf`, 0,05 MB): documento perfectamente normal, ni grande ni
+corrupto -- el timeout saltaba solo por la sobrecarga.
+
+Sobre la marcha se añadieron también, a petición explícita: traza
+"Procesando" por documento antes de procesarlo (`d7b2cc1`), ETA real
+basado en ritmo medido (`c3a4bb4`), formato final de una sola línea
+"Procesando archivo X de Y -- transcurrido -- estimado" (`5c71c6c`,
+tras dos intentos previos que no cumplían lo pedido), y soporte de
+`--shard-count`/`--shard-index` para varios procesos en paralelo
+(mismo patrón que `split_rm_dossier_vm.py`).
+
+**Bloque 3 -- Cinco causas reales más de documentos sin resolver,
+todas confirmadas contra documentos reales descargados y verificados
+visualmente antes de escribir ningún arreglo (nunca contra un solo
+caso):**
+
+1. **NIE nunca soportado** (`2a2d826`) -- el regex de DNI solo
+   aceptaba dígitos; un NIE (letra X/Y/Z inicial) nunca se
+   reconocía. Verificado con Petru Iordachi (X6854905P) y Estevao
+   (Z4448871D).
+2. **Plantilla sin ninguna marca de casilla** (`2a2d826`) -- una
+   plantilla real ("La Empresa ha hecho entrega...") lista los EPIs
+   con guion, sin X, dando por hecho que todo lo listado se entregó.
+   Fallback nuevo, activo solo cuando el camino de marcas no
+   encuentra nada. Verificado 7/7 contra dos documentos reales
+   (Zafra Peralta, Ruiz Leiva).
+3. **Falso positivo "no es entrega"** (`5a3d4bf`) -- una plantilla
+   combina EPIS + AUTORIZACIÓN DE MANEJO DE MAQUINARIA +
+   INFORMACIÓN en un mismo documento; la sección 2 contiene la frase
+   de autorización y hacía descartar el documento entero, perdiendo
+   la entrega real de la sección 1. Corregido con una cabecera real
+   de entrega que nunca se descarta, venga lo que venga después.
+4. **I/1 confundidos por OCR en "D.N.I."** y **fechas entre
+   paréntesis "A fecha (DD/MM/YYYY)"** (`65f643b`) -- dos causas
+   reales confirmadas 2/2 contra una muestra homogénea de 6
+   documentos de los 394 que quedaban tras el bloque 2.
+5. **Rango de sanidad de fechas 2005-hoy** (`317bcc8`) -- dos fechas
+   imposibles reales detectadas al revisar un dry-run antes de
+   aplicar (2041, típico de `14`→`41` transpuesto; `0201`, año mal
+   formado). Nunca se crea un `EpiDelivery` con fecha imposible.
+
+Se escribió además `reprocess_epis_from_cache` (`8e805ee`), comando
+nuevo que reaplica estos arreglos contra el `ocr_text` ya cacheado
+**sin volver a tocar GCS ni Tesseract** -- coste de CPU mínimo,
+ejecutable en PythonAnywhere. Dos pasadas reales aplicadas: 3+53
+documentos completados, 298 `EpiDelivery` nuevas.
+
+**Bloque 4 -- Limpieza consciente de la cola, decisión explícita de
+Miguel Ángel.** Escrito `trash_old_unresolved_epis` (`a93f0e1`):
+manda a la papelera (nunca purga, fila conservada) los EPIS
+pendientes con 5+ años de antigüedad (fecha real del contenido, o año
+suelto del propio nombre de archivo cuando no hay fecha completa).
+**187 archivados** en la primera pasada. Después, revisando los 33
+casos sin ningún año localizable, Miguel Ángel identificó que 9 eran
+la plantilla `EPIS COVID 19` conocida y ~21 vivían en carpetas
+`OBSOLETO`/`BAJAS`/`TRABAJADORES INACTIVOS` -- **30 más archivados**
+a mano, con la misma función de papelera. Cierra también la pregunta
+abierta desde S80 sobre el alcance de la plantilla COVID: se excluye
+del extractor por decisión explícita, no se crean códigos nuevos.
+
+**Bloque 5 -- Diagnóstico final de los 124 (ahora 117) restantes.**
+Muestra homogénea de 6 documentos repartidos entre las categorías
+reales (`sin_dni`, `sin_fecha`, `otros`) descargados y verificados
+visualmente uno a uno -- confirmó que la causa dominante restante
+(78 de 82 en la muestra más amplia) es que **Tesseract no lee en
+absoluto la tabla de ítems** en dos formatos de plantilla concretos,
+no un problema de identidad de las personas. Triaje real: de 123
+documentos, 74 pertenecen a 36 trabajadores **activos** (mismo
+problema, merece arreglo futuro), 7 eran de trabajadores de baja
+(archivados esta sesión), y una muestra de 4 de los 42 restantes
+"sin identificar" confirmó que también son perfectamente
+identificables (mismo problema de tabla, no de identidad) -- se
+dejan también para el arreglo futuro del OCR de tabla, no se
+archivan.
+
+**Bloque 6 -- UI.** Ventana emergente (modal Bootstrap con `<iframe>`)
+para "Ver documento" desde el Historial de la ficha de personal, en
+vez de pestaña nueva (`fa1883e`), a petición explícita.
+
+**Bloque 7 -- Hallazgo de vigencia real, fuera de EPIS, atendido por
+desvío (Caso A).** Miguel Ángel detectó en el panel un DNI con fecha
+de caducidad en 2035 marcado `Obsoleto` mientras uno "Sin fecha"
+quedaba `Vigente`. Diagnóstico confirmado contra el código real:
+`resolve_obsoleto_folder_flag.py` (S50) marca `is_obsolete=True` solo
+por vivir en una carpeta `OBSOLETO`, sin mirar fecha; `resolve_vigencia.py`
+(S50) nunca puede corregirlo porque parte de `is_obsolete=False`,
+dejando fuera para siempre cualquier fila ya mal marcada `True`.
+Comando nuevo `resolve_vigencia_bidireccional` (`85c7957`, corregido
+en `8d81558` tras el ejemplo concreto de Miguel Ángel: cuando hay un
+ganador con fecha real, cualquier otro miembro Vigente del grupo --
+con fecha o sin ella -- pasa a Obsoleto). Aplicado de verdad: **1.369
+filas corregidas** (800 a obsoleto, 569 rescatadas a vigente) en toda
+la plataforma, máquinas y personal, no solo EPIS.
+
+**Incidentes reales de sesión, para no repetir:**
+- **El token de GitHub se imprimió en texto plano dos veces** (una
+  vez al pedir `git remote -v` sin anticipar que el remoto de la VM
+  embebe el token en la URL por patrón legado, y una vez generando
+  directamente el comando con el valor visible). Las dos veces se
+  avisó de inmediato sin repetir el valor, y se pidió revocación y
+  token nuevo. **Confirmado además que el patrón de la VM
+  (`git clone https://x-access-token:TOKEN@...`) deja el token grabado
+  en `.git/config` de forma permanente** -- corregido a
+  `http.extraheader` por comando, igual que el resto del proyecto.
+- Se propuso una vez añadir `pymupdf_layout` (paquete real pero de
+  licencia propia, pensado para otro problema) a mitad de un
+  `--apply` en curso -- rechazado correctamente tras razonarlo, nunca
+  se tocó el entorno con un proceso real corriendo.
+- El modelo repitió tres veces el formato de progreso pedido antes de
+  acertarlo a la primera ("archivo X de Y -- transcurrido --
+  estimado", sin nada más) -- quedó documentado en `com-standards`
+  ("VISIBILIDAD DE PROGRESO EN SCRIPTS DE BARRIDO LARGO") para que no
+  vuelva a pasar en ningún proyecto de la plataforma.
+- Confirmado con Miguel Ángel un fallo de conteo propio de sesión: al
+  citar "37" documentos para archivar cuando la cuenta real daba 30 --
+  se corrigió mostrando el desglose real antes de aplicar, nunca se
+  aplicó sobre un número no verificado.
+
+**Resultado final medido, verificado por consulta directa (no de
+memoria):** de 767 documentos EPIS de partida, quedan **117
+activos** (761 reales tras purgar 6 huérfanos) -- **878 `EpiDelivery`
+reales creadas**, 217 archivados por decisión consciente
+(antigüedad/COVID/bajas), y el resto de la cola resuelta o
+consolidada. De un 3,3% completado al arrancar la sesión (medido tras
+el primer intento fallido) a la cola prácticamente resuelta o
+archivada con criterio explícito.
 
 ### COMPLETADAS EN S81 (sesión corta, cierre pedido explícitamente
 ### por Miguel Ángel tras dos desconexiones seguidas de la consola)
