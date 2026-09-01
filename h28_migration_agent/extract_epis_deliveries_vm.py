@@ -470,44 +470,31 @@ def _worker(
         with results_lock:
             totals[key] = totals.get(key, 0) + n
 
-    # Heartbeat periodico obligatorio para barridos largos (com-standards,
-    # "VISIBILIDAD DE PROGRESO EN SCRIPTS DE BARRIDO LARGO", anadida S82
-    # tras esta misma incidencia real: "como has hecho un script mudo,
-    # ni puta idea de cuando va a acabar ni de por donde va"). Cada 25
-    # documentos o el 5% del total (lo que sea menor), lo que primero se
-    # cumpla. Guardado bajo results_lock para que solo un hilo lo escriba
-    # aunque varios crucen el umbral casi a la vez.
+    # Una sola linea por documento, todo junto -- formato exacto pedido
+    # por Miguel Angel (S82) tras dos intentos previos que no le
+    # sirvieron (heartbeat separado de la traza, cadencia demasiado
+    # espaciada): "procesando archivo x de y transcurrido hh:mm:ss
+    # estimado hh:mm:ss". El contador de posicion (x) se incrementa al
+    # COGER la tarea, bajo el mismo results_lock que ya protege totals
+    # -- nunca una condicion de carrera entre hilos.
     # ---
-    # Mandatory periodic heartbeat for long sweeps -- added after this
-    # exact real incident. Every 25 documents or 5% of the total,
-    # whichever is smaller.
-    heartbeat_every = max(1, min(25, total_tasks // 20 or 1))
-
-    def _maybe_heartbeat():
+    # One single line per document, everything together -- exact
+    # format requested by Miguel Angel after two previous attempts
+    # that didn't work for him.
+    def _next_position():
         with results_lock:
-            procesados = totals.get("procesados", 0)
-            if procesados - heartbeat_state["last"] < heartbeat_every:
-                if procesados < total_tasks:
-                    return
-            heartbeat_state["last"] = procesados
-            pct = (procesados / total_tasks * 100) if total_tasks else 0
-            elapsed = time.time() - heartbeat_state["start"]
-            restantes = total_tasks - procesados
-            if procesados > 0 and restantes > 0:
-                ritmo = elapsed / procesados  # segundos por documento
-                eta_seg = int(ritmo * restantes)
-                eta_txt = str(datetime.timedelta(seconds=eta_seg))
-            else:
-                eta_txt = "calculando..."
-            resumen = ", ".join(
-                "%s=%d" % (k, v) for k, v in sorted(totals.items())
-                if k != "procesados"
-            )
-        _log(
-            log_lock,
-            "Progreso: %d/%d (%.0f%%) -- ETA %s -- %s"
-            % (procesados, total_tasks, pct, eta_txt, resumen or "sin incidencias"),
-        )
+            heartbeat_state["iniciados"] += 1
+            posicion = heartbeat_state["iniciados"]
+            completados = totals.get("procesados", 0)
+        elapsed = time.time() - heartbeat_state["start"]
+        elapsed_txt = str(datetime.timedelta(seconds=int(elapsed)))
+        if completados > 0:
+            ritmo = elapsed / completados  # segundos por documento
+            restantes = max(total_tasks - completados, 0)
+            eta_txt = str(datetime.timedelta(seconds=int(ritmo * restantes)))
+        else:
+            eta_txt = "calculando..."
+        return posicion, elapsed_txt, eta_txt
 
     while True:
         task = task_queue.get()
@@ -515,15 +502,16 @@ def _worker(
             task_queue.task_done()
             break
         entry_id, blob_name, name, parent_path = task
-        # Traza previa al procesamiento (S82, a peticion explicita de
-        # Miguel Angel: "quiero saber lo que va a hacer, documento por
-        # documento", no solo el resultado despues -- el heartbeat
-        # periodico no basta cuando quiere ver cada documento en vivo).
-        # ---
-        # Pre-processing trace, one line per document, before the
-        # actual work -- explicit request, not just the periodic
-        # heartbeat.
-        _log(log_lock, "Procesando: %s/%s" % (parent_path, name))
+        posicion, elapsed_txt, eta_txt = _next_position()
+        _log(
+            log_lock,
+            "Procesando archivo %d de %d: %s/%s -- transcurrido %s -- "
+            "estimado %s"
+            % (
+                posicion, total_tasks, parent_path, name,
+                elapsed_txt, eta_txt,
+            ),
+        )
         try:
             _process_one(
                 conn, bucket_obj, entry_id, blob_name, name, parent_path,
@@ -565,7 +553,6 @@ def _worker(
             )
             bump("fallos_lectura")
         finally:
-            _maybe_heartbeat()
             task_queue.task_done()
 
     conn.close()
@@ -901,7 +888,7 @@ def main():
     unmapped_labels = {}
 
     threads = []
-    heartbeat_state = {"last": 0, "start": time.time()}
+    heartbeat_state = {"iniciados": 0, "start": time.time()}
     total_tasks = len(tasks)
     for _ in range(args.threads):
         th = threading.Thread(
