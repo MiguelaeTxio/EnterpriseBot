@@ -351,7 +351,39 @@ def _extract_pdf_ocr(data):
             raise RuntimeError(
                 "Timeout OCR (60s) en una pagina: %s" % exc
             ) from exc
-        row_lines.extend(_group_words_into_rows(data_dict))
+        page_rows = _group_words_into_rows(data_dict)
+        # S83: hallazgo real de S82, confirmado contra 8 documentos
+        # reales (Petru Iordachi, Estevao Sampaio, Gomez Garcia,
+        # Alejandro Ponce Rodriguez, Juan Carlos Moyano Gutierrez,
+        # Francisco Gomez Rivero, Juan Vazquez Roman, Manuel Cruces
+        # Gomez): con el modo de segmentacion por defecto (--psm 3,
+        # automatico) Tesseract no detecta EN ABSOLUTO la region de la
+        # tabla de items en dos formatos conocidos ("Equipos de
+        # Proteccion Individual" a dos columnas, y "CONTROL DE EQUIPOS
+        # EPIS ENTREGADO" con REVISION/CADUCIDAD) -- no es una lectura
+        # erronea, es cero palabras devueltas en esa zona. Reintento
+        # con --psm 11 (texto disperso: "find as much text as possible
+        # in no particular order", documentacion oficial de Tesseract,
+        # https://tesseract-ocr.github.io/tessdoc/ImproveQuality.html)
+        # SOLO si el paso por defecto no produjo ninguna marca -- nunca
+        # sustituye un resultado que ya funciona. Pendiente de
+        # verificar contra los 8 documentos reales de arriba antes de
+        # aplicar al resto de los 116 (ver hoja de ruta H30).
+        if not _parse_marked_labels_spatial(page_rows):
+            try:
+                retry_dict = pytesseract.image_to_data(
+                    img, lang="spa", output_type=pytesseract.Output.DICT,
+                    timeout=60, config="--psm 11",
+                )
+            except RuntimeError as exc:
+                raise RuntimeError(
+                    "Timeout OCR (60s, reintento --psm 11) en una pagina: %s"
+                    % exc
+                ) from exc
+            retry_rows = _group_words_into_rows(retry_dict)
+            if _parse_marked_labels_spatial(retry_rows):
+                page_rows = retry_rows
+        row_lines.extend(page_rows)
     doc.close()
     return "\n".join(text_parts), row_lines
 
