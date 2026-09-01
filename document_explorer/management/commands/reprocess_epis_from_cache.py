@@ -46,13 +46,13 @@ from document_explorer.models import DocumentIndexEntry, EpiDelivery, EpiItemCat
 
 _DNI_LETTER_TABLE = "TRWAGMYFPDXBNJZSQVHLCKE"
 _DNI_DIGITS_RE = re.compile(
-    r"D\.?\s*N\.?\s*I\.?\s*[:.]?\s*([XYZxyz]?[0-9]{1,2}[.\s]?[0-9]{3}[.\s]?[0-9]{3})"
+    r"D\.?\s*N\.?\s*[I1]\.?\s*[:.]?\s*([XYZxyz]?[0-9]{1,2}[.\s]?[0-9]{3}[.\s]?[0-9]{3})"
 )
 _NIE_PREFIX_MAP = {"X": "0", "Y": "1", "Z": "2"}
 
 _FILENAME_DATE_RE = re.compile(r"(\d{1,2})-(\d{1,2})-(\d{2,4})")
 _CONTENT_DATE_RE = re.compile(
-    r"(?:A\s+fecha|FECHA)\s*[:.]?\s*(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})",
+    r"(?:A\s+fecha|FECHA)\s*[:.(]?\s*(\d{1,2})\s*[/-]\s*(\d{1,2})\s*[/-]\s*(\d{2,4})",
     re.IGNORECASE,
 )
 

@@ -97,7 +97,7 @@ _DNI_LETTER_TABLE = "TRWAGMYFPDXBNJZSQVHLCKE"
 # confirmado con un caso vivo (Petru Iordachi, NIE X6854905P) que
 # nunca se resolvia porque el regex solo aceptaba digitos.
 _DNI_DIGITS_RE = re.compile(
-    r"D\.?\s*N\.?\s*I\.?\s*[:.]?\s*([XYZxyz]?[0-9]{1,2}[.\s]?[0-9]{3}[.\s]?[0-9]{3})"
+    r"D\.?\s*N\.?\s*[I1]\.?\s*[:.]?\s*([XYZxyz]?[0-9]{1,2}[.\s]?[0-9]{3}[.\s]?[0-9]{3})"
 )
 _NAME_ENTREGA_RE = re.compile(
     r"[Ee]ntrega\s+a\s+D\.?[ºa]?\.?\s+([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ\s.]+?)"
@@ -110,7 +110,7 @@ _DATE_LIKE_RE = re.compile(r"^[0-9./\-]+$")
 _MARK_RE = re.compile(r"^[Xx✓]{1,2}$")
 _FILENAME_DATE_RE = re.compile(r"(\d{1,2})-(\d{1,2})-(\d{2,4})")
 _CONTENT_DATE_RE = re.compile(
-    r"(?:A\s+fecha|FECHA)\s*[:.]?\s*(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})",
+    r"(?:A\s+fecha|FECHA)\s*[:.(]?\s*(\d{1,2})\s*[/-]\s*(\d{1,2})\s*[/-]\s*(\d{2,4})",
     re.IGNORECASE,
 )
 
