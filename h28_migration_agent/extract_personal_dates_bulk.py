@@ -320,6 +320,34 @@ def extract_dni_mrz_expiry(text):
     return None
 
 
+# H30 (S83), copiado de date_verification_service.py -- ver ese
+# archivo para la explicacion completa de la ventana de siglo.
+def _mrz_century_cutoff():
+    return date.today().year % 100
+
+
+def extract_dni_mrz_birthdate(text):
+    """Fecha de nacimiento del MRZ (mismo match que la caducidad),
+    validada por su propio digito de control ICAO 9303 -- None si no
+    valida o no hay MRZ."""
+    norm = _strip_accents(text).upper()
+    cutoff = _mrz_century_cutoff()
+    for match in _MRZ_LINE2_RE.finditer(norm):
+        birth_digits, birth_check, _, _, _, _ = match.groups()
+        if _mrz_check_digit(birth_digits) != int(birth_check):
+            continue
+        year_2d, month, day = (
+            int(birth_digits[0:2]), int(birth_digits[2:4]),
+            int(birth_digits[4:6]),
+        )
+        century = 2000 if year_2d <= cutoff else 1900
+        try:
+            return date(century + year_2d, month, day)
+        except ValueError:
+            continue
+    return None
+
+
 # S79 -- cara frontal del DNI/NIE, etiquetas EMISION/VALIDEZ con
 # fecha "DD MM AAAA" separada por espacios (copiado de
 # date_verification_service.py).

@@ -199,6 +199,52 @@ def extract_dni_mrz_expiry(text):
     return None
 
 
+# H30 (S83). El mismo match MRZ que valida la caducidad ya trae, en
+# los 2 primeros grupos, la fecha de nacimiento con su propio digito
+# de control ICAO -- hasta ahora se descartaba con "_, _, _, ...".
+# Punto 3 de la hoja de ruta H30 (birth_date para el resto de
+# activos): ninguna lectura nueva, el mismo contenido MRZ ya validado.
+#
+# Ventana de siglo (2 digitos -> 4): nadie de la plantilla puede haber
+# nacido despues de hoy, asi que un año AA se resuelve como 20AA si
+# AA <= año actual (2 digitos), y como 19AA en caso contrario. Con hoy
+# en 2026 (AA=26): 00-26 -> 2000-2026, 27-99 -> 1927-1999. No es una
+# ventana fija de por vida -- revisar el corte segun el año real de
+# ejecucion (ver `_MRZ_CENTURY_CUTOFF`).
+def _mrz_century_cutoff():
+    return date.today().year % 100
+
+
+def extract_dni_mrz_birthdate(text):
+    """
+    Busca la linea 2 del MRZ del DNI/NIE espanol y devuelve la fecha
+    de nacimiento SOLO si su propio digito de control ICAO es
+    correcto -- evita falsos positivos de OCR. Devuelve None si no
+    hay MRZ reconocible o si el digito de control no valida.
+    ---
+    Looks for MRZ line 2 of the Spanish DNI/NIE and returns the
+    birth date ONLY if its own ICAO check digit is correct -- avoids
+    OCR false positives. Returns None if no recognizable MRZ is found
+    or the check digit doesn't validate.
+    """
+    norm = _strip_accents(text).upper()
+    cutoff = _mrz_century_cutoff()
+    for match in _MRZ_LINE2_RE.finditer(norm):
+        birth_digits, birth_check, _, _, _, _ = match.groups()
+        if _mrz_check_digit(birth_digits) != int(birth_check):
+            continue
+        year_2d, month, day = (
+            int(birth_digits[0:2]), int(birth_digits[2:4]),
+            int(birth_digits[4:6]),
+        )
+        century = 2000 if year_2d <= cutoff else 1900
+        try:
+            return date(century + year_2d, month, day)
+        except ValueError:
+            continue
+    return None
+
+
 # H30 (S79). Cara frontal del DNI/NIE espanol -- etiquetas reales
 # EMISION y VALIDEZ, fecha en formato "DD MM AAAA" separada por
 # espacios (nunca guion/punto). Verificado contra imagen real del
