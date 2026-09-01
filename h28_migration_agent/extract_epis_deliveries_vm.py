@@ -506,6 +506,15 @@ def _worker(
             task_queue.task_done()
             break
         entry_id, blob_name, name, parent_path = task
+        # Traza previa al procesamiento (S82, a peticion explicita de
+        # Miguel Angel: "quiero saber lo que va a hacer, documento por
+        # documento", no solo el resultado despues -- el heartbeat
+        # periodico no basta cuando quiere ver cada documento en vivo).
+        # ---
+        # Pre-processing trace, one line per document, before the
+        # actual work -- explicit request, not just the periodic
+        # heartbeat.
+        _log(log_lock, "Procesando: %s/%s" % (parent_path, name))
         try:
             _process_one(
                 conn, bucket_obj, entry_id, blob_name, name, parent_path,
@@ -784,11 +793,24 @@ def main():
             "sobre 767, ya se sabe que funcionan bien)."
         ),
     )
+    parser.add_argument(
+        "--shard-count", type=int, default=1,
+        help=(
+            "Numero total de procesos en paralelo (S82, mismo patron "
+            "que split_rm_dossier_vm.py) -- una ventana de PowerShell/"
+            "gcloud compute ssh por shard, cada una con su propio "
+            "--shard-index."
+        ),
+    )
+    parser.add_argument("--shard-index", type=int, default=0)
     args = parser.parse_args()
 
+    if not (0 <= args.shard_index < max(args.shard_count, 1)):
+        parser.error("--shard-index debe estar entre 0 y --shard-count - 1")
+
     global _LOG_FH
-    log_path = "extract_epis_deliveries_vm_%s.log" % datetime.datetime.now().strftime(
-        "%Y%m%d_%H%M%S"
+    log_path = "extract_epis_deliveries_vm_%s_shard%d.log" % (
+        datetime.datetime.now().strftime("%Y%m%d_%H%M%S"), args.shard_index,
     )
     _LOG_FH = open(log_path, "a", encoding="utf-8")
     print("Log persistido en: %s (sobrevive a una desconexion de la consola)" % log_path)
@@ -819,6 +841,11 @@ def main():
     )
     with conn.cursor() as cur:
         ext_pattern = r"\.pdf$" if args.pdf_only else r"\.(pdf|docx?)$"
+        shard_clause = ""
+        params = (BUCKET, ext_pattern)
+        if args.shard_count > 1:
+            shard_clause = " AND e.id %% %s = %s"
+            params = params + (args.shard_count, args.shard_index)
         cur.execute(
             "SELECT e.id, e.blob_name, e.name, e.parent_path "
             "FROM document_explorer_documentindexentry e "
@@ -829,8 +856,9 @@ def main():
             "AND e.deleted_at IS NULL AND e.purged_at IS NULL "
             "AND e.name REGEXP %s "
             "AND (e.ocr_text IS NULL OR e.ocr_text = '') "
-            "ORDER BY e.id",
-            (BUCKET, ext_pattern),
+            + shard_clause +
+            " ORDER BY e.id",
+            params,
         )
         tasks = cur.fetchall()
     conn.close()
@@ -843,9 +871,13 @@ def main():
         get_service_account_key_path()
     )
 
+    shard_info = (
+        " shard %d/%d" % (args.shard_index, args.shard_count)
+        if args.shard_count > 1 else ""
+    )
     print(
-        "=== %d documento(s) en alcance (%s, %d hilo(s)) ==="
-        % (len(tasks), "APLICANDO" if args.apply else "DRY-RUN", args.threads)
+        "=== %d documento(s) en alcance (%s, %d hilo(s)%s) ==="
+        % (len(tasks), "APLICANDO" if args.apply else "DRY-RUN", args.threads, shard_info)
     )
 
     task_queue = Queue()
