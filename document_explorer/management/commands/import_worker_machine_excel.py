@@ -86,6 +86,7 @@ WORKER_HEADER_ALIASES = {
     "CORREO ELECTRONICO": "email",
     "CORREO ELECT.": "email",
     "CORREO ELECTRON.": "email",
+    "FECHA NACIMIENTO": "birth_date",
 }
 
 MACHINE_HEADER_ALIASES = {
@@ -273,6 +274,7 @@ class Command(BaseCommand):
                         _cell("tachograph_card_expiry"), context, errors,
                     ),
                     medical_exam_date=_parse_date(_cell("rm"), context, errors),
+                    birth_date=_parse_date(_cell("birth_date"), context, errors),
                     ss_affiliation_number=str(
                         _cell("ss_affiliation_number") or ""
                     ).strip(),
