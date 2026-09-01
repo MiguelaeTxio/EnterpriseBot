@@ -93,8 +93,11 @@ BUCKET = "cgs_grupo_alvarez"
 _SOFFICE_TIMEOUT_SECONDS = 60
 
 _DNI_LETTER_TABLE = "TRWAGMYFPDXBNJZSQVHLCKE"
+# S82: acepta tambien NIE (letra X/Y/Z inicial) -- bug real
+# confirmado con un caso vivo (Petru Iordachi, NIE X6854905P) que
+# nunca se resolvia porque el regex solo aceptaba digitos.
 _DNI_DIGITS_RE = re.compile(
-    r"D\.?\s*N\.?\s*I\.?\s*[:.]?\s*([0-9]{1,2}[.\s]?[0-9]{3}[.\s]?[0-9]{3})"
+    r"D\.?\s*N\.?\s*I\.?\s*[:.]?\s*([XYZxyz]?[0-9]{1,2}[.\s]?[0-9]{3}[.\s]?[0-9]{3})"
 )
 _NAME_ENTREGA_RE = re.compile(
     r"[Ee]ntrega\s+a\s+D\.?[ºa]?\.?\s+([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ\s.]+?)"
@@ -183,6 +186,42 @@ def _map_label(label):
         if phrase in norm:
             return code
     return None
+
+
+def _parse_plain_list_items(text):
+    """Fallback (S82): plantilla real sin ninguna marca de casilla --
+    confirmado con dos casos reales (Zafra Balbuena, Ruiz Leiva) --
+    bajo el titulo del apartado EPIS lista los items entregados con
+    guiones, sin X ni checkbox alguno; el propio texto del documento
+    ("La Empresa ha hecho entrega... de los Equipos de Proteccion
+    Individual especificados a continuacion") confirma que TODO lo
+    listado ahi se considera entregado, sin necesidad de marca
+    individual. Solo se usa cuando el camino de marcas (tabla nativa u
+    OCR espacial) no encontro ningun item, para no interferir nunca
+    con el formato de tabla ya funcionando."""
+    match = re.search(
+        r"EQUIPO.{0,80}PROTECCI[OÓ]N INDIVIDUAL.{0,400}?ENTREGAD[OA]S?"
+        r".{0,60}TRABAJADOR",
+        text, re.IGNORECASE | re.DOTALL,
+    )
+    if not match:
+        return set()
+    start = match.end()
+    next_section = re.search(r"\n\s*\d+[oº°]?[-.]", text[start:])
+    end = start + next_section.start() if next_section else len(text)
+    block = text[start:end]
+    codes = set()
+    # El guion real a veces lo lee Tesseract como comilla tipografica
+    # (confirmado real: "\u201cCASCOS" en vez de "-CASCOS") -- se
+    # acepta como separador de item igual que el guion.
+    for fragment in re.split(r"[-\u2010-\u2015\u2018-\u201F]", block):
+        fragment = fragment.strip()
+        if not fragment:
+            continue
+        code = _map_label(fragment)
+        if code:
+            codes.add(code)
+    return codes
 
 
 def _detect_non_delivery(text):
@@ -349,11 +388,27 @@ def _parse_person(text):
     return name, dni
 
 
+_NIE_PREFIX_MAP = {"X": "0", "Y": "1", "Z": "2"}
+
+
 def _compute_full_dni(digits):
-    clean = re.sub(r"[.\s]", "", digits)
-    if not clean.isdigit():
+    """Calcula DNI/NIE completo con letra de control real. Para NIE
+    (S82: bug real, Petru Iordachi X6854905P nunca se resolvia), la
+    letra inicial X/Y/Z se sustituye por 0/1/2 SOLO para el calculo
+    modulo-23 -- el valor devuelto conserva la letra real (X6854905),
+    nunca el digito sustituto, para que coincida con como esta
+    guardado en PersonIdentity.dni."""
+    clean = re.sub(r"[.\s]", "", digits).upper()
+    if not clean:
         return None
-    return clean + _DNI_LETTER_TABLE[int(clean) % 23]
+    prefix = clean[0] if clean[0] in _NIE_PREFIX_MAP else ""
+    numeric_str = (
+        _NIE_PREFIX_MAP[prefix] + clean[1:] if prefix else clean
+    )
+    if not numeric_str.isdigit():
+        return None
+    control = _DNI_LETTER_TABLE[int(numeric_str) % 23]
+    return clean + control
 
 
 def _parse_marked_labels(table_rows):
@@ -687,6 +742,21 @@ def _process_one(
                     with results_lock:
                         unmapped_labels[label] = unmapped_labels.get(label, 0) + 1
             extraction_method = "OCR"
+
+        if not codes:
+            # Fallback (S82): plantilla sin marcas de casilla -- solo
+            # se intenta cuando el camino normal (tabla/OCR espacial)
+            # no encontro nada, nunca sustituye a las marcas cuando
+            # si las hay.
+            fallback_codes = _parse_plain_list_items(text)
+            if fallback_codes:
+                codes = fallback_codes
+                extraction_method = "HEURISTIC" if not is_ocr else "OCR"
+                _log(
+                    log_lock,
+                    "Items via lista plana (sin marcas): %s/%s -- %s"
+                    % (parent_path, name, sorted(codes)),
+                )
 
         if not codes:
             _log(log_lock, "SIN ITEMS reconocidos: %s/%s" % (parent_path, name))
