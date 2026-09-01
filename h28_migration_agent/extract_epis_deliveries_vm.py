@@ -271,10 +271,29 @@ def _extract_pdf_ocr(data):
     for page in doc:
         pix = page.get_pixmap(dpi=300)
         img = Image.open(io.BytesIO(pix.tobytes("png")))
-        text_parts.append(pytesseract.image_to_string(img, lang="spa"))
-        data_dict = pytesseract.image_to_data(
-            img, lang="spa", output_type=pytesseract.Output.DICT,
-        )
+        # Timeout real (S82, causa confirmada de hilos colgados
+        # indefinidamente: un documento concreto sin limite de tiempo
+        # bloqueaba el hilo entero para siempre, sin avisar, sin pasar
+        # al siguiente documento). pytesseract.image_to_string()/
+        # image_to_data() aceptan timeout=segundos -- lanzan
+        # RuntimeError si se excede, que el except generico de
+        # _worker ya captura, registra con traza completa, y cuenta
+        # como fallo real -- el hilo sigue vivo para el siguiente.
+        # ---
+        # Real timeout (S82, confirmed cause of threads hanging
+        # forever on a single problematic document, with no warning).
+        try:
+            text_parts.append(
+                pytesseract.image_to_string(img, lang="spa", timeout=60)
+            )
+            data_dict = pytesseract.image_to_data(
+                img, lang="spa", output_type=pytesseract.Output.DICT,
+                timeout=60,
+            )
+        except RuntimeError as exc:
+            raise RuntimeError(
+                "Timeout OCR (60s) en una pagina: %s" % exc
+            ) from exc
         row_lines.extend(_group_words_into_rows(data_dict))
     doc.close()
     return "\n".join(text_parts), row_lines
