@@ -119,7 +119,29 @@ class Command(BaseCommand):
                 continue
 
             grupo_cambio = False
-            for entry in losers:
+            winner_pks = {e.pk for e in winners}
+            for entry in entries:
+                if entry.pk in winner_pks:
+                    # Es el ganador real -- si estaba mal marcado
+                    # obsoleto solo por la carpeta, se rescata.
+                    if entry.is_obsolete:
+                        stats["filas_rescatadas_a_vigente"] += 1
+                        cambios.append((
+                            "-> VIGENTE (rescatado)", entry.pk, entry.name,
+                            entry.expiry_date or entry.issue_date, max_date,
+                        ))
+                        grupo_cambio = True
+                        if apply_changes:
+                            entry.is_obsolete = False
+                            entry.save(update_fields=["is_obsolete"])
+                    continue
+                # Cualquier otro miembro del grupo (con fecha real
+                # anterior, o sin fecha) no puede seguir siendo
+                # Vigente a la vez que el ganador real -- Miguel
+                # Angel, verbatim (S82): "no puede haber varios
+                # documentos vigentes del mismo tipo, tenga o no
+                # fecha el resto". Nunca se inventa SU fecha, solo se
+                # usa que ya sabemos que no puede ser el vigente.
                 if not entry.is_obsolete:
                     stats["filas_pasadas_a_obsoleto"] += 1
                     cambios.append((
@@ -129,17 +151,6 @@ class Command(BaseCommand):
                     grupo_cambio = True
                     if apply_changes:
                         entry.is_obsolete = True
-                        entry.save(update_fields=["is_obsolete"])
-            for entry in winners:
-                if entry.is_obsolete:
-                    stats["filas_rescatadas_a_vigente"] += 1
-                    cambios.append((
-                        "-> VIGENTE (rescatado)", entry.pk, entry.name,
-                        entry.expiry_date or entry.issue_date, max_date,
-                    ))
-                    grupo_cambio = True
-                    if apply_changes:
-                        entry.is_obsolete = False
                         entry.save(update_fields=["is_obsolete"])
             if grupo_cambio:
                 stats["grupos_corregidos"] += 1
