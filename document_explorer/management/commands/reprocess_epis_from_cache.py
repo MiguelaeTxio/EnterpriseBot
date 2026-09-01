@@ -125,7 +125,17 @@ def _map_label(label):
     return None
 
 
+_REAL_EPIS_HEADER_RE = re.compile(
+    r"ENTREGA DE EPI|SE HACE ENTREGA A|LA EMPRESA HA HECHO ENTREGA"
+    r"|EQUIPO.{0,80}PROTECCI[OÓ]N INDIVIDUAL.{0,400}?ENTREGAD[OA]S?"
+    r".{0,60}TRABAJADOR",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
 def _detect_non_delivery(text):
+    if _REAL_EPIS_HEADER_RE.search(text):
+        return None
     norm = _normalize(text)
     for signal, suggested_code in _NON_DELIVERY_SIGNALS:
         if signal in norm:

@@ -224,7 +224,25 @@ def _parse_plain_list_items(text):
     return codes
 
 
+_REAL_EPIS_HEADER_RE = re.compile(
+    r"ENTREGA DE EPI|SE HACE ENTREGA A|LA EMPRESA HA HECHO ENTREGA"
+    r"|EQUIPO.{0,80}PROTECCI[OÓ]N INDIVIDUAL.{0,400}?ENTREGAD[OA]S?"
+    r".{0,60}TRABAJADOR",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
 def _detect_non_delivery(text):
+    # S82: falso positivo real confirmado -- una plantilla combina
+    # EPIS + AUTORIZACION DE MANEJO DE MAQUINARIA + INFORMACION en un
+    # mismo documento; la seccion 2 contiene la frase de autorizacion
+    # y hacia que TODO el documento se descartara como "no es
+    # entrega" pese a que la seccion 1 es una entrega real. Si hay
+    # cabecera real de entrega de EPIs en cualquier parte del texto,
+    # nunca se descarta por estas senales, sea lo que sea lo que
+    # venga despues.
+    if _REAL_EPIS_HEADER_RE.search(text):
+        return None
     norm = _normalize(text)
     for signal, suggested_code in _NON_DELIVERY_SIGNALS:
         if signal in norm:
