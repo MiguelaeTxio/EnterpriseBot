@@ -611,6 +611,42 @@ completo aunque Bootstrap le añada la clase "show" vía JS.
     </div>
 </div>
 
+<div class="modal fade" id="documentViewerModal" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header py-2">
+                <h6 class="modal-title mb-0">Documento</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-0" style="height: 80vh;">
+                <iframe id="documentViewerFrame" src="" style="width: 100%; height: 100%; border: 0;"></iframe>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Ventana emergente para "Ver documento" (S82), en vez de pestaña
+// nueva -- Miguel Angel, verbatim: "una ventana emergente". Cierra
+// primero el modal de Historial (si estaba abierto) para no apilar
+// dos modales de Bootstrap a la vez.
+function openDocumentViewer(url) {
+    const historyModalEl = document.getElementById('documentHistoryModal');
+    const historyModal = bootstrap.Modal.getInstance(historyModalEl);
+    if (historyModal) {
+        historyModal.hide();
+    }
+    document.getElementById('documentViewerFrame').src = url;
+    const viewerModal = new bootstrap.Modal(document.getElementById('documentViewerModal'));
+    viewerModal.show();
+}
+// Limpia el iframe al cerrar, para no dejar el documento cargado en
+// memoria ni que reaparezca el anterior un instante la proxima vez.
+document.getElementById('documentViewerModal').addEventListener('hidden.bs.modal', function () {
+    document.getElementById('documentViewerFrame').src = '';
+});
+</script>
+
 <script>
 const DOC_TYPES_PERSONAL = [
     {% for dt in doc_types %}{code: "{{ dt.code }}", label: "{{ dt.label|escapejs }}", tracksExpiry: {{ dt.tracks_expiry|yesno:"true,false" }}},{% endfor %}
