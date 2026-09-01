@@ -454,11 +454,14 @@ def _worker(
     totals, unmapped_labels, log_lock, apply_changes,
     discard_unresolved, discard_unresolved_items,
 ):
-    conn = pymysql.connect(
-        host="127.0.0.1", port=tunnel_port,
-        user=MYSQL_USERNAME, passwd=mysql_password,
-        db=MYSQL_DB_NAME, charset="utf8mb4", autocommit=False,
-    )
+    def _connect():
+        return pymysql.connect(
+            host="127.0.0.1", port=tunnel_port,
+            user=MYSQL_USERNAME, passwd=mysql_password,
+            db=MYSQL_DB_NAME, charset="utf8mb4", autocommit=False,
+        )
+
+    conn = _connect()
     bucket_obj = gcs_client.bucket(BUCKET)
 
     def bump(key, n=1):
@@ -477,8 +480,39 @@ def _worker(
                 bump, unmapped_labels, results_lock, log_lock,
                 apply_changes, discard_unresolved, discard_unresolved_items,
             )
-        except Exception as exc:
-            _log(log_lock, "FALLO INESPERADO: %s/%s -- %s" % (parent_path, name, exc))
+        except (pymysql.err.Error, OSError) as exc:
+            # Conexion MySQL/tunel muerta (S82: causa real confirmada
+            # de "FALLO INESPERADO -- (0, '')" en cascada silenciosa,
+            # un solo hilo zombie procesando cientos de documentos sin
+            # avisar). Reconectar en vez de dejar el hilo muerto para
+            # el resto del barrido -- este documento concreto se
+            # cuenta como fallo real, pero los siguientes de este
+            # mismo hilo vuelven a tener conexion valida.
+            # ---
+            # Dead MySQL/tunnel connection (S82: confirmed real cause
+            # of cascading silent "FALLO INESPERADO -- (0, '')", a
+            # single zombie thread processing hundreds of documents
+            # without warning). Reconnect instead of leaving the
+            # thread dead for the rest of the sweep.
+            _log(
+                log_lock,
+                "CONEXION MYSQL PERDIDA, RECONECTANDO: %s/%s -- %s"
+                % (parent_path, name, exc),
+            )
+            try:
+                conn.close()
+            except Exception:
+                pass
+            conn = _connect()
+            bump("fallos_lectura")
+            bump("reconexiones_mysql")
+        except Exception:
+            import traceback
+            _log(
+                log_lock,
+                "FALLO INESPERADO: %s/%s -- %s"
+                % (parent_path, name, traceback.format_exc()),
+            )
             bump("fallos_lectura")
         finally:
             task_queue.task_done()
