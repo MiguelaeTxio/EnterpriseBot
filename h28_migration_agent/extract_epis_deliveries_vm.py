@@ -943,10 +943,31 @@ def main():
         ),
     )
     parser.add_argument("--shard-index", type=int, default=0)
+    parser.add_argument(
+        "--entry-ids", type=str, default=None,
+        help=(
+            "S83: lista de IDs separados por coma (e.g. 36128,35543). "
+            "Cuando se usa, IGNORA el filtro habitual de ocr_text vacio "
+            "-- reprocesa esos IDs concretos aunque ya tengan ocr_text "
+            "cacheado de un barrido anterior. Pensado para verificar un "
+            "arreglo de OCR contra una muestra real ya conocida (ver "
+            "hoja de ruta H30) sin relanzar sobre el resto de la cola. "
+            "Ignora --shard-count/--shard-index/--pdf-only/--limit."
+        ),
+    )
     args = parser.parse_args()
 
     if not (0 <= args.shard_index < max(args.shard_count, 1)):
         parser.error("--shard-index debe estar entre 0 y --shard-count - 1")
+
+    entry_ids = None
+    if args.entry_ids:
+        try:
+            entry_ids = [int(x) for x in args.entry_ids.split(",") if x.strip()]
+        except ValueError:
+            parser.error("--entry-ids debe ser una lista de enteros separados por coma")
+        if not entry_ids:
+            parser.error("--entry-ids no puede estar vacio si se especifica")
 
     global _LOG_FH
     log_path = "extract_epis_deliveries_vm_%s_shard%d.log" % (
@@ -980,26 +1001,44 @@ def main():
         db=MYSQL_DB_NAME, charset="utf8mb4",
     )
     with conn.cursor() as cur:
-        ext_pattern = r"\.pdf$" if args.pdf_only else r"\.(pdf|docx?)$"
-        shard_clause = ""
-        params = (BUCKET, ext_pattern)
-        if args.shard_count > 1:
-            shard_clause = " AND e.id %% %s = %s"
-            params = params + (args.shard_count, args.shard_index)
-        cur.execute(
-            "SELECT e.id, e.blob_name, e.name, e.parent_path "
-            "FROM document_explorer_documentindexentry e "
-            "JOIN document_explorer_documenttypecatalog t "
-            "  ON e.document_type_id = t.id "
-            "WHERE e.bucket = %s AND t.code = 'EPIS' "
-            "AND e.entry_kind = 'FILE' "
-            "AND e.deleted_at IS NULL AND e.purged_at IS NULL "
-            "AND e.name REGEXP %s "
-            "AND (e.ocr_text IS NULL OR e.ocr_text = '') "
-            + shard_clause +
-            " ORDER BY e.id",
-            params,
-        )
+        if entry_ids is not None:
+            # S83: verificacion dirigida contra IDs conocidos -- ignora
+            # el filtro de ocr_text vacio a proposito (ver help de
+            # --entry-ids arriba).
+            placeholders = ",".join(["%s"] * len(entry_ids))
+            cur.execute(
+                "SELECT e.id, e.blob_name, e.name, e.parent_path "
+                "FROM document_explorer_documentindexentry e "
+                "JOIN document_explorer_documenttypecatalog t "
+                "  ON e.document_type_id = t.id "
+                "WHERE e.bucket = %s AND t.code = 'EPIS' "
+                "AND e.entry_kind = 'FILE' "
+                "AND e.deleted_at IS NULL AND e.purged_at IS NULL "
+                "AND e.id IN (" + placeholders + ") "
+                "ORDER BY e.id",
+                (BUCKET,) + tuple(entry_ids),
+            )
+        else:
+            ext_pattern = r"\.pdf$" if args.pdf_only else r"\.(pdf|docx?)$"
+            shard_clause = ""
+            params = (BUCKET, ext_pattern)
+            if args.shard_count > 1:
+                shard_clause = " AND e.id %% %s = %s"
+                params = params + (args.shard_count, args.shard_index)
+            cur.execute(
+                "SELECT e.id, e.blob_name, e.name, e.parent_path "
+                "FROM document_explorer_documentindexentry e "
+                "JOIN document_explorer_documenttypecatalog t "
+                "  ON e.document_type_id = t.id "
+                "WHERE e.bucket = %s AND t.code = 'EPIS' "
+                "AND e.entry_kind = 'FILE' "
+                "AND e.deleted_at IS NULL AND e.purged_at IS NULL "
+                "AND e.name REGEXP %s "
+                "AND (e.ocr_text IS NULL OR e.ocr_text = '') "
+                + shard_clause +
+                " ORDER BY e.id",
+                params,
+            )
         tasks = cur.fetchall()
     conn.close()
 
