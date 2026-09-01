@@ -347,45 +347,54 @@ def _extract_pdf_ocr(data):
         # ---
         # Real timeout (S82, confirmed cause of threads hanging
         # forever on a single problematic document, with no warning).
+        # ---
+        # S83: subido de 60s a 90s -- incidente real confirmado en VM:
+        # con el reintento --psm 11 (ver abajo) algunas paginas hacen
+        # dos pasadas de OCR completas en el mismo hilo; bajo carga
+        # real de varios hilos concurrentes en la misma VM, el tiempo
+        # extra hacia saltar el timeout de 60s por contencion de CPU
+        # (documentos que SI terminan, solo que mas despacio), no por
+        # un documento realmente colgado. 87 de 116 fallaron asi en la
+        # primera pasada real tras el arreglo de S82. Ver tambien nota
+        # en la hoja de ruta H30 sobre --threads recomendado para esta
+        # version del script.
         try:
             text_parts.append(
-                pytesseract.image_to_string(img, lang="spa", timeout=60)
+                pytesseract.image_to_string(img, lang="spa", timeout=90)
             )
             data_dict = pytesseract.image_to_data(
                 img, lang="spa", output_type=pytesseract.Output.DICT,
-                timeout=60,
+                timeout=90,
             )
         except RuntimeError as exc:
             raise RuntimeError(
-                "Timeout OCR (60s) en una pagina: %s" % exc
+                "Timeout OCR (90s) en una pagina: %s" % exc
             ) from exc
         page_rows = _group_words_into_rows(data_dict)
-        # S83: hallazgo real de S82, confirmado contra 8 documentos
-        # reales (Petru Iordachi, Estevao Sampaio, Gomez Garcia,
-        # Alejandro Ponce Rodriguez, Juan Carlos Moyano Gutierrez,
-        # Francisco Gomez Rivero, Juan Vazquez Roman, Manuel Cruces
-        # Gomez): con el modo de segmentacion por defecto (--psm 3,
-        # automatico) Tesseract no detecta EN ABSOLUTO la region de la
-        # tabla de items en dos formatos conocidos ("Equipos de
-        # Proteccion Individual" a dos columnas, y "CONTROL DE EQUIPOS
-        # EPIS ENTREGADO" con REVISION/CADUCIDAD) -- no es una lectura
-        # erronea, es cero palabras devueltas en esa zona. Reintento
-        # con --psm 11 (texto disperso: "find as much text as possible
-        # in no particular order", documentacion oficial de Tesseract,
+        # S83: hallazgo real de S82, verificado en S83 contra 22
+        # documentos reales de la cola pendiente (deliveries_creadas
+        # 45->51, items_sin_mapear 10->4 tras corregir tambien el
+        # catalogo -- ver migracion 0068): con el modo de segmentacion
+        # por defecto (--psm 3, automatico) Tesseract no detecta EN
+        # ABSOLUTO la region de la tabla de items en dos formatos
+        # conocidos ("Equipos de Proteccion Individual" a dos
+        # columnas, y "CONTROL DE EQUIPOS EPIS ENTREGADO" con
+        # REVISION/CADUCIDAD) -- no es una lectura erronea, es cero
+        # palabras devueltas en esa zona. Reintento con --psm 11
+        # (texto disperso: "find as much text as possible in no
+        # particular order", documentacion oficial de Tesseract,
         # https://tesseract-ocr.github.io/tessdoc/ImproveQuality.html)
         # SOLO si el paso por defecto no produjo ninguna marca -- nunca
-        # sustituye un resultado que ya funciona. Pendiente de
-        # verificar contra los 8 documentos reales de arriba antes de
-        # aplicar al resto de los 116 (ver hoja de ruta H30).
+        # sustituye un resultado que ya funciona.
         if not _parse_marked_labels_spatial(page_rows):
             try:
                 retry_dict = pytesseract.image_to_data(
                     img, lang="spa", output_type=pytesseract.Output.DICT,
-                    timeout=60, config="--psm 11",
+                    timeout=90, config="--psm 11",
                 )
             except RuntimeError as exc:
                 raise RuntimeError(
-                    "Timeout OCR (60s, reintento --psm 11) en una pagina: %s"
+                    "Timeout OCR (90s, reintento --psm 11) en una pagina: %s"
                     % exc
                 ) from exc
             retry_rows = _group_words_into_rows(retry_dict)
