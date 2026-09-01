@@ -60,6 +60,7 @@ import re
 import subprocess
 import tempfile
 import threading
+import time
 import unicodedata
 from pathlib import Path
 from queue import Queue
@@ -490,14 +491,22 @@ def _worker(
                     return
             heartbeat_state["last"] = procesados
             pct = (procesados / total_tasks * 100) if total_tasks else 0
+            elapsed = time.time() - heartbeat_state["start"]
+            restantes = total_tasks - procesados
+            if procesados > 0 and restantes > 0:
+                ritmo = elapsed / procesados  # segundos por documento
+                eta_seg = int(ritmo * restantes)
+                eta_txt = str(datetime.timedelta(seconds=eta_seg))
+            else:
+                eta_txt = "calculando..."
             resumen = ", ".join(
                 "%s=%d" % (k, v) for k, v in sorted(totals.items())
                 if k != "procesados"
             )
         _log(
             log_lock,
-            "Progreso: %d/%d (%.0f%%) -- %s"
-            % (procesados, total_tasks, pct, resumen or "sin incidencias"),
+            "Progreso: %d/%d (%.0f%%) -- ETA %s -- %s"
+            % (procesados, total_tasks, pct, eta_txt, resumen or "sin incidencias"),
         )
 
     while True:
@@ -892,7 +901,7 @@ def main():
     unmapped_labels = {}
 
     threads = []
-    heartbeat_state = {"last": 0}
+    heartbeat_state = {"last": 0, "start": time.time()}
     total_tasks = len(tasks)
     for _ in range(args.threads):
         th = threading.Thread(
