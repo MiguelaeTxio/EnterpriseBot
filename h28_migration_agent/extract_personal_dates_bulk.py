@@ -96,7 +96,7 @@ SAFE_MAX_PIXELS = 80_000_000
 MIN_DPI = 100
 
 
-def ocr_pdf_to_text(data, max_pages=2, dpi=400, psm=None):
+def ocr_pdf_to_text(data, max_pages=2, dpi=400, psm=None, debug_save_prefix=None):
     config = ("--psm %d" % psm) if psm else ""
     text_parts = []
     doc = fitz.open(stream=data, filetype="pdf")
@@ -113,6 +113,12 @@ def ocr_pdf_to_text(data, max_pages=2, dpi=400, psm=None):
                 dpi_pagina = max(dpi_pagina, MIN_DPI)
         pix = page.get_pixmap(dpi=dpi_pagina)
         img = Image.open(io.BytesIO(pix.tobytes("png")))
+        # H30 (sesion tras S85): guardar la imagen real, tal cual la
+        # recibe Tesseract, para inspeccion visual directa -- nunca
+        # mas teorizar sobre por que una linea legible no se lee sin
+        # verla primero con los mismos ojos que Miguel Angel.
+        if debug_save_prefix:
+            img.save("%s_p%d.png" % (debug_save_prefix, page_index))
         text_parts.append(pytesseract.image_to_string(img, lang="spa", config=config))
     doc.close()
     return "\n".join(text_parts)
@@ -167,10 +173,10 @@ def xlsx_to_text(data):
     return "\n".join(parts)
 
 
-def extract_text(filename, data, psm=None):
+def extract_text(filename, data, psm=None, debug_save_prefix=None):
     name_lower = filename.lower()
     if name_lower.endswith(".pdf"):
-        return ocr_pdf_to_text(data, psm=psm)
+        return ocr_pdf_to_text(data, psm=psm, debug_save_prefix=debug_save_prefix)
     if name_lower.endswith((".jpg", ".jpeg", ".png")):
         return ocr_image_to_text(data, psm=psm)
     if name_lower.endswith(".docx"):
@@ -809,13 +815,15 @@ def main():
             "  SIN FECHA reconocible (ocr_text_len=%d, fechas_sueltas=%s)"
             % (len(text or ""), other)
         )
-        # H30 (sesion de continuidad tras S84) -- incidente real: dos
-        # documentos con fecha claramente legible a simple vista
-        # devolvieron fechas_sueltas=[] (ni siquiera capturaron la
-        # fecha de nacimiento, que deberia entrar como candidata antes
-        # de descartarse por contexto). Nunca asumir el motivo --
-        # volcar el texto real para diagnosticar con datos reales,
-        # nunca de memoria ni por analogia con otro documento.
+        # H30 (sesion tras S85): guardar la imagen real que recibio
+        # Tesseract, en el directorio de trabajo actual, para que
+        # Miguel Angel la abra directamente y la compare con el PDF --
+        # nunca mas asumir que es visible/tapado/lo-que-sea sin verla.
+        if name.lower().endswith(".pdf"):
+            debug_prefix = "debug_entry_%d" % entry_id
+            extract_text(name, data, debug_save_prefix=debug_prefix)
+            print("    Imagen real guardada en: %s\\%s_p0.png (y siguientes paginas si las hay)"
+                  % (os.getcwd(), debug_prefix))
         preview = (text or "").replace("\n", " | ")
         print("    TEXTO REAL COMPLETO (%d caracteres): %r" % (len(preview), preview))
 
