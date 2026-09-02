@@ -767,8 +767,8 @@ def main():
         # de descartarse por contexto). Nunca asumir el motivo --
         # volcar el texto real para diagnosticar con datos reales,
         # nunca de memoria ni por analogia con otro documento.
-        preview = (text or "").replace("\n", " | ")[:500]
-        print("    TEXTO REAL (primeros 500 caracteres): %r" % preview)
+        preview = (text or "").replace("\n", " | ")
+        print("    TEXTO REAL COMPLETO (%d caracteres): %r" % (len(preview), preview))
 
     total_min = (datetime.now() - start_time).total_seconds() / 60
     print("\n=== RESUMEN (%s, shard %d/%d) -- %.1f min ===" % (
