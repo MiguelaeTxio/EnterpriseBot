@@ -11,11 +11,33 @@ que Tesseract nunca lee, ni con PSM automatico ni con PSM 6).
 USO:
     python test_easyocr_vs_tesseract.py debug_entry_24871_p0.png
 """
+import os
+import shutil
 import sys
 import time
 
 import pytesseract
 from PIL import Image
+
+# Mismo patron que extract_personal_dates_bulk.py: el paquete de
+# idioma espanol vive en tessdata\ junto al script, no en la ruta de
+# instalacion real (Tesseract no puede escribir ahi sin permisos de
+# administrador).
+if os.name == "nt":
+    _TESSDATA_DIR = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "tessdata",
+    )
+    os.environ["TESSDATA_PREFIX"] = _TESSDATA_DIR
+
+# Misma deteccion que extract_personal_dates_bulk.py -- Tesseract no
+# esta en el PATH de esta maquina (instalado sin permisos de
+# administrador).
+if not shutil.which("tesseract"):
+    _WINDOWS_TESSERACT_DEFAULT = (
+        r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+    )
+    if os.path.isfile(_WINDOWS_TESSERACT_DEFAULT):
+        pytesseract.pytesseract.tesseract_cmd = _WINDOWS_TESSERACT_DEFAULT
 
 if len(sys.argv) != 2:
     print("Uso: python test_easyocr_vs_tesseract.py <ruta_imagen.png>")
