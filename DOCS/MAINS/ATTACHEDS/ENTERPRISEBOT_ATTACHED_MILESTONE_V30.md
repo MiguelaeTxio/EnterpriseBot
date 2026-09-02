@@ -6038,77 +6038,64 @@ detectado y corregido en el mismo turno antes de commitear.
 
 ---
 
-## Hoja de Ruta para la Siguiente Sesión (S84) -- REESCRITA al cierre
-## de S83, con correcciones en caliente al arranque de S84
-## (2026-09-02)
+### COMPLETADAS EN S84 (sesión corta, arrancada directamente sobre un
+### bug real reportado por Miguel Ángel al llegar a la oficina --
+### PAH Momento 1 NO se ejecutó esta sesión, ver nota más abajo)
 
-**HALLAZGO REAL S84, YA CORREGIDO -- reclasificar `document_type` NO
-basta para que un documento aparezca como VIGENTE en el panel.**
-Miguel Ángel detectó al arrancar S84 que Adelaida Álvarez Díaz seguía
-mostrando "Sin documentos vigentes todavía" pese al DNI reclasificado
-ayer (`id=42992`). Causa real: `vigencia_service.is_current()` exige
-`expiry_date` o `issue_date` poblados -- reclasificar el tipo documental
-(S83) nunca tocó esos campos, quedaron en `None` en los 4 documentos
-que se reclasificaron ayer sin pasar por el pipeline de fechas.
-Corregido en caliente:
-- Adelaida Álvarez Díaz (`id=42992`): `expiry_date=2028-02-23`
-  (leído visualmente ayer, ya lo teníamos).
-- Rachid Benali (`id=39389`): `expiry_date=2026-09-15` (idem, y
-  coincide con el propio nombre del archivo).
-- Jacinto Rebollo Manzano (`id=30079`): `expiry_date=2030-09-16`,
-  extraído directamente por MRZ real sobre su `ocr_text` ya cacheado
-  (`extract_dni_mrz_expiry`).
-- Jorge Milheiro Felício (`id=42526`): **deliberadamente sin tocar**
-  -- es una resolución de recuperación de residencia de larga
-  duración concedida "indefinidamente", no una tarjeta con fecha de
-  caducidad. Forzar un `expiry_date` falso sería peor que dejarlo sin
-  vigencia calculada. Pendiente de decidir con Miguel Ángel si este
-  tipo de resolución necesita un tratamiento distinto en
-  `vigencia_service` (p. ej. tratarla como vigente permanente) o si
-  se deja así.
-- **Estévão Veloso Sampaio (`id=42551`, NIE) -- mismo patrón que
-  Milheiro, hallazgo ampliado (ver más abajo).** Resolución real de
-  autorización de residencia y trabajo por cuenta ajena "por un año"
-  desde el inicio de su periodo de vigencia -- pero esa fecha de
-  inicio no consta como dato calendario en el propio documento (solo
-  "a partir de esa fecha cuando la autorización comience su periodo
-  de vigencia", ligada a la notificación/emisión real de la tarjeta,
-  que no tenemos). **Sin `expiry_date` forzado a propósito** -- mismo
-  criterio que Milheiro. Nacimiento confirmado en el documento
-  (01/08/1997) coincide con el ya registrado, sin cambios. **Miguel
-  Ángel confirmó verbatim tras ver el panel real (aviso rojo
-  esperado, confirma el enlace ya corregido): "no disponemos de su
-  tarjeta NIE real [...] lo que figura con el nombre NIE es ese
-  documento, única y exclusivamente"** -- no es que falte extraer la
-  fecha, es que el documento físico con fecha simplemente no existe
-  en el proyecto. Estado previsiblemente igual para Milheiro.
+Miguel Ángel llegó a la oficina reportando que la ficha de Adelaida
+Álvarez Díaz seguía mostrando "Sin documentos vigentes todavía" pese
+al DNI reclasificado el día anterior (S83, `id=42992`). Diagnóstico
+en dos capas, ambas reales:
 
-**HALLAZGO AMPLIADO, tras petición explícita de Miguel Ángel de
-revisar TODOS los documentos, no solo los 5 tocados ayer:** de los
-127 documentos DNI/NIE reales de los 79 activos, **4 (no 3) estaban
-sin enlazar** (`domain_content_type`/`domain_object_id` en blanco --
-el campo real que decide si un documento aparece en la ficha de
-persona, ver `PersonalDetailView`). El cuarto, Estévão Veloso Sampaio,
-nunca se había tocado en S83 -- no es exclusivo de los documentos
-reclasificados ayer, es un problema más amplio de documentos huérfanos
-del enlace real. **Cero documentos mal enlazados a otra persona**
-(dato tranquilizador). Los 4 quedaron enlazados correctamente en
-caliente. Pendiente evaluar en otra sesión si hay más documentos
-huérfanos fuera del universo DNI/NIE de los 79 activos -- este barrido
-de S84 solo cubrió DNI/NIE.
+1. **Capa 1 (insuficiente por sí sola):** `vigencia_service.
+   is_current()` exige `expiry_date` o `issue_date` -- la
+   reclasificación de tipo de S83 nunca los tocó. Corregido
+   `expiry_date` para Adelaida (2028-02-23), Rachid Benali
+   (2026-09-15) y Jacinto Rebollo Manzano (2030-09-16, por MRZ real
+   sobre `ocr_text` ya cacheado) -- commit `320b14f`.
 
-**DIRECTRIZ NUEVA para toda sesión futura que reclasifique
-`document_type` de un documento existente:** la reclasificación NUNCA
-se da por completa sin comprobar en el mismo turno si el documento
-necesita `expiry_date`/`issue_date` para aparecer como vigente
-(`tracks_expiry` del nuevo tipo) -- si los necesita y no los tiene,
-extraerlos en el mismo momento (visualmente si hace falta, como se
-hizo aquí) antes de pasar al siguiente punto. Nunca dejar un
-documento "tipificado pero invisible" para el supervisor.
+2. **Capa 2 (causa real completa, encontrada porque Miguel Ángel
+   insistió explícitamente en revisar TODOS los documentos, no solo
+   los 5 de S83):** `PersonalDetailView` filtra los documentos de la
+   ficha por `domain_content_type`/`domain_object_id` (GenericForeignKey
+   real al sujeto) -- un campo completamente independiente de
+   `expiry_date`. Barrido de los 127 documentos DNI/NIE reales de los
+   79 activos: **4 sin enlazar** (Adelaida Álvarez Díaz, Jorge
+   Milheiro Felício, Rachid Benali, y un hallazgo nuevo no tocado en
+   S83 -- Estévão Veloso Sampaio), **0 mal enlazados a otra persona**.
+   Los 4 enlazados correctamente en producción -- commit `6e8e3d2`.
 
-**Pregunta bloqueante nueva (dato real que falta de Miguel Ángel,
-nunca arrastrada en silencio) -- responder antes de aplicar el
-`birth_date` ya calculado de Antonio Aranda Reyes:**
+Confirmado con Miguel Ángel vía captura real del panel tras el
+arreglo: el NIE de Sampaio (mismo patrón que Milheiro) es una
+resolución real de autorización de residencia, no una tarjeta física
+-- no existe documento con fecha impresa en el proyecto para ninguno
+de los dos, así que `expiry_date` se deja sin forzar a propósito en
+ambos casos, ya documentado.
+
+**Incidencia real de proceso, no de código:** el modelo, al empezar a
+investigar el bug, sólo revisó los 5 documentos tocados en S83 en vez
+de barrer los 79 activos completos -- Miguel Ángel tuvo que corregir
+explícitamente ("no hay que mirar los cinco de ayer, hay que mirar
+todos") antes de que apareciera el hallazgo real de Sampaio. Lección
+para sesiones futuras: cuando se investiga un fallo de visibilidad de
+un documento, el barrido de verificación tiene que cubrir el universo
+completo relevante desde el principio, no solo los documentos tocados
+en la sesión que originó el bug.
+
+**PAH Momento 1 no se ejecutó esta sesión** -- se arrancó directamente
+sobre el bug reportado por Miguel Ángel sin pasar por el arranque
+formal de V00-PISA (no hubo caja de título/descripción de sesión).
+Registrado aquí para que quede constancia real, sin inventar el
+Momento 2 correspondiente.
+
+---
+
+## Hoja de Ruta para la Siguiente Sesión (S85) -- REESCRITA al cierre
+## de S84, sustituye por completo a la anterior
+
+**Pregunta bloqueante (arrastrada de S84, sin respuesta todavía) --
+responder antes de aplicar el `birth_date` ya calculado de Antonio
+Aranda Reyes:**
 
 1. **Antonio Aranda Reyes (`74829098R`), `is_active_employee=True`
    pero sin respaldo en ninguna hoja del Excel real
@@ -6120,59 +6107,61 @@ nunca arrastrada en silencio) -- responder antes de aplicar el
    que las otras), o su marca de activo está mal y hay que
    corregirla (no aplicamos nada de `birth_date`, se revisa aparte)?
 
-**Punto 5 (arrastrado 2.ª sesión sin avanzar -- convertido a
-pregunta explícita, directriz de cierre 2.2):** ¿Cuándo quieres que
-se haga la revisión visual real de los documentos "NO ES ENTREGA" de
-EPIS? Sigue sin tocarse desde que se propuso en S82. Si no hay
-prioridad real para esto todavía, dilo explícitamente y se retira de
-la hoja de ruta en vez de seguir arrastrándose.
+**Punto 5 (arrastrado 3.ª sesión sin avanzar -- sigue como pregunta
+explícita, directriz de cierre 2.2):** ¿Cuándo quieres que se haga la
+revisión visual real de los documentos "NO ES ENTREGA" de EPIS? Sigue
+sin tocarse desde que se propuso en S82. Si no hay prioridad real
+para esto todavía, dilo explícitamente y se retira de la hoja de ruta
+en vez de seguir arrastrándose.
 
-### Punto 1 -- Cierre real de `birth_date` (Punto 3 de S83)
+### Punto 1 -- Cierre real de `birth_date`
 
-Quedan exactamente 3 personas activas sin `birth_date`, agotadas
-todas las vías de este proyecto (activo/obsoleto/papelera/Excel/fuera
-del sistema):
-- Santiago Nicolás Gutiérrez (`Z4304829Q`)
-- Jerónimo Delgado Hurtado (`25084463L`)
-- Antonio Aranda Reyes (`74829098R`) -- ver pregunta bloqueante arriba
+Quedan exactamente 3 personas activas sin `birth_date` (sin cambios
+desde S83): Santiago Nicolás Gutiérrez (`Z4304829Q`), Jerónimo
+Delgado Hurtado (`25084463L`), Antonio Aranda Reyes (`74829098R` --
+ver pregunta bloqueante arriba). **Criterio de cierre objetivo:** para
+los 2 primeros, no hay más acción posible desde el proyecto -- hace
+falta que Miguel Ángel aporte el documento real (foto/escaneo del
+DNI/NIE). No relanzar ninguna búsqueda automática sobre ellos sin un
+documento nuevo real.
 
-**Criterio de cierre objetivo:** para los 2 primeros, no hay más
-acción posible desde el proyecto -- hace falta que Miguel Ángel
-aporte el documento (foto/escaneo del DNI/NIE) como hizo esta sesión
-con Cristhian Gutiérrez y Domingo Campos. No relanzar ninguna
-búsqueda automática sobre ellos sin un documento nuevo real.
+### Punto 2 -- Barrido de enlaces huérfanos fuera del universo DNI/NIE
 
-### Punto 2 -- Renombrado canónico del resto del catálogo (131 tipos)
+El barrido de S84 (`domain_content_type`/`domain_object_id` en
+blanco) solo cubrió los documentos DNI/NIE de los 79 activos.
+**Criterio de cierre objetivo:** repetir el mismo barrido sobre el
+resto de tipos documentales de `PersonIdentity` (o, mejor, sobre
+`DocumentIndexEntry` completo con `domain_content_type` en blanco y
+`document_type` no nulo, sin restringir a DNI/NIE) para descartar que
+haya más documentos huérfanos como el de Sampaio en otras familias
+(Laboral, Salud, etc.). Reportar cifra real antes de decidir si hace
+falta corregir algo.
 
-Sigue sin una primera pasada, arrastrado desde S80/S81/S82 pese a
-confirmarse como 2.ª prioridad real por Miguel Ángel al arranque de
-S83 (después de EPIS). Criterio ya fijado (directriz 4.16:
-`expiry_date` cuando el tipo la tenga, `issue_date` si genuinamente
-no la tiene, nunca sin la fecha ya extraída). **Criterio de cierre
-objetivo de la primera sesión que lo aborde:** una muestra real de al
-menos 10 documentos de 3 tipos distintos, renombrados y verificados
-visualmente antes de escalar al resto de los 131.
+### Punto 3 -- Renombrado canónico del resto del catálogo (131 tipos)
 
-### Punto 3 -- Los ~789 documentos "no críticos" sin fecha
+Sigue sin una primera pasada, arrastrado desde S80/S81/S82/S83.
+Criterio ya fijado (directriz 4.16: `expiry_date` cuando el tipo la
+tenga, `issue_date` si genuinamente no la tiene, nunca sin la fecha
+ya extraída). **Criterio de cierre objetivo de la primera sesión que
+lo aborde:** una muestra real de al menos 10 documentos de 3 tipos
+distintos, renombrados y verificados visualmente antes de escalar al
+resto de los 131.
 
-3.ª prioridad confirmada por Miguel Ángel (`CONTRATO`, `FORMACION`,
-`ENTREGA_INFORMACION`, `MOD_145`, `BAJA_PERSONAL`, etc.). Sin tocar
-todavía.
+### Punto 4 -- Los ~789 documentos "no críticos" sin fecha
 
-### Punto 4 -- Estado de infraestructura para retomar
+3.ª prioridad confirmada por Miguel Ángel en S83 (`CONTRATO`,
+`FORMACION`, `ENTREGA_INFORMACION`, `MOD_145`, `BAJA_PERSONAL`, etc.).
+Sin tocar todavía.
 
-- **VM `h28-ocr-batch-1`: en ejecución** al cierre de S83 (se
-  reanudó al inicio de la sesión). Checkout sincronizado hasta
-  `32e3335` (no incluye los 2 últimos commits de la sesión,
-  `f12c9f1`/`3873d9e`, que no tocan el script de la VM). **Recordar a
-  Miguel Ángel detenerla** (`gcloud compute instances stop
-  h28-ocr-batch-1 --project=gen-lang-client-0961484137
-  --zone=europe-west1-b`) si no se va a usar de inmediato en S84 --
-  no hace falta la VM para los Puntos 1/2/3 de arriba, todos se
-  pueden trabajar desde la consola Bash de PythonAnywhere.
-- Migraciones `0068` y `0069` desplegadas y verificadas en producción
-  durante la propia sesión (no queda nada pendiente de confirmar).
+### Punto 5 -- Estado de infraestructura para retomar
 
+- **VM `h28-ocr-batch-1`:** estado real desconocido al cierre de
+  S84 -- S84 no la tocó ni la consultó. Verificar estado real
+  (`gcloud compute instances describe h28-ocr-batch-1
+  --project=gen-lang-client-0961484137 --zone=europe-west1-b
+  --format='value(status)'`) antes de asumir que sigue en ejecución
+  desde S83.
+- Sin migraciones pendientes de confirmar -- S84 no generó ninguna.
 ### COMPLETADAS EN S82 (sesión muy larga, con varias interrupciones
 ### reales por fallos del propio modelo -- registradas tal cual,
 ### sin suavizar)
