@@ -760,6 +760,15 @@ def main():
             "  SIN FECHA reconocible (ocr_text_len=%d, fechas_sueltas=%s)"
             % (len(text or ""), other)
         )
+        # H30 (sesion de continuidad tras S84) -- incidente real: dos
+        # documentos con fecha claramente legible a simple vista
+        # devolvieron fechas_sueltas=[] (ni siquiera capturaron la
+        # fecha de nacimiento, que deberia entrar como candidata antes
+        # de descartarse por contexto). Nunca asumir el motivo --
+        # volcar el texto real para diagnosticar con datos reales,
+        # nunca de memoria ni por analogia con otro documento.
+        preview = (text or "").replace("\n", " | ")[:500]
+        print("    TEXTO REAL (primeros 500 caracteres): %r" % preview)
 
     total_min = (datetime.now() - start_time).total_seconds() / 60
     print("\n=== RESUMEN (%s, shard %d/%d) -- %.1f min ===" % (
