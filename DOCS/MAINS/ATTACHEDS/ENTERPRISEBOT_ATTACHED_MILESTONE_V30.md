@@ -6090,197 +6090,145 @@ S84**, no S85.
 
 ---
 
-## Hoja de Ruta para la Siguiente Sesión (S85) -- REESCRITA al cierre
-## de S84, sustituye por completo a la anterior
+### COMPLETADAS EN S85 (sesión de continuidad tras S84, muy larga,
+### con cambio de entorno PEE A→PC→A y trabajo repartido entre PC,
+### PythonAnywhere y las 4 VMs de OCR vía Termux)
 
-**DIRECTRIZ DE ALCANCE (registrada explícitamente en sesión de
-continuidad tras S84, confirmada por Miguel Ángel como decisión ya
-vigente desde sesiones anteriores, no nueva -- no debe depender de
-memoria de sesión):** el barrido de fechas de H30 se hace dominio
-PERSONAL completo primero (todos los tipos con `tracks_expiry=True`
-de las familias IDENTIDAD_PERSONAL, LABORAL, SALUD_BAJAS_PERSONA,
-PRL_FORMACION, ADMINISTRATIVO -- cualquier tipo cuyo `domain` sea
-PERSONAL o BOTH), y solo cuando ese dominio esté cerrado por completo
-se empieza con el dominio MÁQUINAS (CIRCULACION, SEGUROS, FINANCIERO,
-TECNICA_SEGURIDAD, BAJAS_MAQUINA -- tipos con `domain`=MACHINE).
-Dentro de PERSONAL, el criterio de orden es por volumen real (mayor
-cantidad de documentos sin fecha primero), salvo indicación puntual
-en contra.
+**Cierre real de `birth_date` (3 de 5 personas):** Santiago Nicolás
+Gutiérrez (`Z4304829Q`) y Jerónimo Delgado Hurtado (`25084463L`)
+siguen bloqueados -- confirmado con el vínculo real de BD que no
+tienen ningún documento DNI/NIE vinculado, no hay más acción posible
+desde el proyecto hasta que Miguel Ángel aporte el documento real.
 
-**Punto de partida real de esta directriz, auditoría completa por
-tipo (ver Comando S de la sesión, `EnterpriseBot_003_GET.txt`):** 67
-tipos activos con `tracks_expiry=True`, 6.024 documentos vivos sin
-ninguna fecha en total. Empezando por `RECONOCIMIENTO_MEDICO`
-(SALUD_BAJAS_PERSONA, 125 sin fecha) a petición explícita de Miguel
-Ángel, primero de la lista de tipos del dominio PERSONAL a atacar.
+**Barrido de enlaces huérfanos fuera del universo DNI/NIE -- CERRADO,
+0 casos.** Auditoría completa de los 67 tipos con `tracks_expiry=True`
+del catálogo: 6.024 documentos vivos sin ninguna fecha en total
+(`EnterpriseBot_003_GET.txt`).
 
-**Punto EPIS "NO ES ENTREGA" -- RETIRADO (sesión de continuidad tras
-S84):** este punto llevaba arrastrándose en la hoja de ruta desde S82
-pese a que la cola completa de EPIS quedó cerrada en el commit de
-cierre de S84 ("cola EPIS cerrada por completo", commit `c93ad5f`).
-Confirmado con datos reales en esta sesión: 0 documentos `EPIS` vivos,
-los 2.599 del histórico tienen `deleted_at` (marcador de completado/
-archivado de esa cola, no solo papelera). Nunca hubo que hacer la
-revisión visual pendiente -- el texto sobrevivió en el anexo por
-error, sin retirarse cuando el trabajo real ya se había cerrado.
-
----
-
-## ACTUALIZACIÓN REAL EN CURSO (misma sesión S85, sin cerrar todavía)
-
-**RECONOCIMIENTO_MEDICO (dominio PERSONAL) -- CERRADO:** 566/566
-activos con `issue_date`. 4 documentos que estaban mal tipados como
-`RECONOCIMIENTO_MEDICO` (en realidad partes médicos de baja/confirmación
-de incapacidad temporal, Junta de Andalucía P.9/P.9-1) retipificados a
+**`RECONOCIMIENTO_MEDICO` (dominio PERSONAL) -- CERRADO DEL TODO,
+fechas Y caducidades:** 566/566 activos con `issue_date`, 513/513 con
+`expiry_date` calculada (501 a un año, 12 a tres meses, según si el
+documento lleva impreso "Caduca a los tres meses" -- regla de negocio
+nueva, `RECONOCIMIENTO_MEDICO` nunca lleva la caducidad impresa, a
+diferencia de TACOGRAFO/CARNET_GRUISTA). 4 documentos que estaban mal
+tipados (en realidad partes médicos de baja/confirmación de
+incapacidad temporal, Junta de Andalucía P.9/P.9-1) retipificados a
 `PARTE_BAJA_MEDICA` (ids 27962, 27963, 34269, 36101) -- casi 1 de cada
 3 "sin fecha" originales de este tipo eran en realidad un problema de
-catalogación de origen, no de OCR. **Sospecha real, no confirmada:**
-podría haber más casos así en otros tipos documentales de
-SALUD_BAJAS_PERSONA/LABORAL -- pendiente de revisar cuando toque, no
-asumir que es exclusivo de RECONOCIMIENTO_MEDICO.
+catalogación de origen, no de OCR.
 
-**Cascada de OCR ampliada (`extract_personal_dates_bulk.py`, tanto
-`h28_agent_venv` de Miguel Ángel como `ocr_venv` de las 4 VMs):**
-Tesseract PSM automático -> reintento PSM 6 -> EasyOCR (`easyocr`,
-lector es, carga perezosa del modelo). EasyOCR es ~6-7x más lento
-(benchmark real en h28-ocr-batch-1, 8 vCPU: 3.0s Tesseract vs 19.2s
-EasyOCR) pero rescata fechas reales que Tesseract nunca ve (sello
-gráfico compartiendo línea con texto -- confirmado con evidencia
-visual real, certificado CENTRO MEDICO ALAMEDA). Decisión explícita
-de Miguel Ángel: EasyOCR SOLO como último recurso, nunca por defecto.
+**Cascada de OCR ampliada y adoptada como oficial**
+(`extract_personal_dates_bulk.py`): Tesseract PSM automático ->
+reintento PSM 6 -> EasyOCR (último recurso, decisión explícita de
+Miguel Ángel, nunca por defecto -- ~6-7x más lento pero rescata fechas
+reales que Tesseract nunca ve, confirmado con evidencia visual real
+contra el certificado CENTRO MEDICO ALAMEDA). Incidente real de
+coherencia de dependencias corregido de paso: `requirements.in` del
+agente llevaba años sin declarar `pymupdf`, `pymysql`, `paramiko`,
+`pytesseract`, `sshtunnel`, `python-docx`, `openpyxl` ni
+`python-dateutil` -- un `pip-sync` a ciegas los habría desinstalado.
 
-**Infraestructura de las 4 VMs de OCR -- lista:** imagen personalizada
-`h28-ocr-batch-image-v1` (Tesseract+EasyOCR+antiword+libreoffice-writer
-ya instalados, 50GB) + `startup-script-ocr-vm.sh` (solo `pip-sync`,
-NUNCA git pull, decisión explícita de no guardar tokens en metadatos
-de instancia) instalado en las 4. Clave SSH de `h28-ocr-batch-1`
-registrada en PythonAnywhere (`~/.ssh/authorized_keys`) -- primera vez
-que una VM de OCR accede a MySQL en directo, no solo a GCS. **Las 4
-VMs quedaron paradas (`stop`) al cierre de esta sesión**, no
-suspendidas -- comprobar `describe --format="value(status)"` antes de
-asumir su estado en la próxima sesión, nunca dar por hecho.
+**Infraestructura de las 4 VMs de OCR reconstruida:** imagen
+personalizada `h28-ocr-batch-image-v1` (Tesseract+EasyOCR
+CPU-only+antiword+libreoffice-writer, 50GB) + `startup-script-ocr-vm.sh`
+(solo `pip-sync`, nunca `git pull`, decisión explícita de no guardar
+tokens en metadatos de instancia) en las 4. Clave SSH nueva de
+`h28-ocr-batch-1` registrada en PythonAnywhere -- primera vez que una
+VM de OCR accede a MySQL en directo, no solo a GCS. **Las 4 quedaron
+paradas (`stop`) al cierre**, no suspendidas.
 
-**REGLA DE NEGOCIO NUEVA -- caducidad de RECONOCIMIENTO_MEDICO
-(confirmada por Miguel Ángel, no estaba en ningún sitio antes):**
-`RECONOCIMIENTO_MEDICO` no lleva su fecha de caducidad impresa en el
-documento (a diferencia de TACOGRAFO/CARNET_GRUISTA, que sí) --
-`expiry_date` se CALCULA a partir de `issue_date` y se persiste en BD
-(nunca al vuelo, para no tocar `vigencia_service.is_current()` ni el
-resto de consumidores genéricos que ya leen `expiry_date` como campo
-guardado). Dos validez distintas según el tipo real de certificado,
-detectado por el texto real del documento (regex
-`caduca\s+a\s+los\s+tres\s+meses` sobre `ocr_text` cacheado):
-- Revisión médica anual general: **emisión + 1 año** (regla por
-  defecto).
-- Certificado específico de renovación de carnet ANAGRUAL (lleva
-  literalmente "Caduca a los tres meses" impreso): **emisión + 3
-  meses**.
+**Backfill de `expiry_date` para los 60 `RECONOCIMIENTO_MEDICO` sin
+`ocr_text` cacheado -- CERRADO:** script nuevo
+`backfill_reconocimiento_medico_ocr_text.py`, ejecutado desde
+`h28-ocr-batch-1` vía Termux (tablet, con `gcloud` instalado desde
+cero en la sesión). Los 60, clasificados como "un año", 0 sin texto, 0
+errores.
 
-Aplicado sobre los 453 documentos que tenían `issue_date` Y `ocr_text`
-cacheado en el primer barrido (441 a un año, 12 a tres meses). Los 60
-restantes (`issue_date` puesta en sesiones anteriores a que se
-empezara a cachear `ocr_text`) se reprocesaron después con el script
-nuevo `backfill_reconocimiento_medico_ocr_text.py` (descarga de nuevo
-de GCS, misma cascada Tesseract->PSM6->EasyOCR, solo para sacar texto
-y clasificar -- nunca toca `issue_date`, ya correcta): los 60
-clasificados como "un año", 0 sin texto, 0 errores.
+**Incidentes reales de sesión, para no repetir:**
+- Trabajo perdido a mitad de un `--apply` por cierre accidental de la
+  ventana SSH (dos veces) -- mitigado porque el script hace `commit()`
+  por documento, nunca hay que repetir desde cero, solo relanzar.
+- Token de GitHub pegado por error con el comando anterior en vez del
+  token real (clipboard del móvil) -- diagnosticado imprimiendo la
+  variable completa entre delimitadores en vez de asumir.
+- `pip-compile`/`pip-sync` en la VM de Linux resolvía por defecto el
+  stack CUDA completo de PyTorch (VM sin GPU) -- corregido fijando
+  `--extra-index-url https://download.pytorch.org/whl/cpu` +
+  `torch`/`torchvision` explícitos en `requirements-ocr-vm.in`.
+- Conexión SSH inicial a la VM entrando como usuario `u0_a304`
+  (usuario por defecto de Termux) en vez de `Usuario` (donde vive todo
+  el checkout) -- corregido especificando `Usuario@` explícito en
+  `gcloud compute ssh`.
+- **Incidente real de documentación (el más importante de anotar):**
+  el punto "EPIS NO ES ENTREGA" siguió arrastrándose en la hoja de
+  ruta pese a que la cola EPIS quedó cerrada por completo en el propio
+  commit de cierre de S84 (`c93ad5f`) -- confirmado con `git log -S` y
+  datos reales (0 EPIS vivos, 2.599 con `deleted_at`). El texto
+  sobrevivió por error sin retirarse. Un fragmento de frase quedó
+  huérfano en el propio anexo por una edición mal acotada del modelo
+  durante esta misma sesión -- reparado con `git log -S`/`git show`
+  contra el commit original, no adivinando.
+- Las cifras de "sin fecha" de los próximos tipos documentales
+  (`AUTORIZACION_USO_MAQUINARIA`, `ALTA`, `CAP`, `IDC`, `DNI`) que se
+  iban a dejar en la hoja de ruta eran las de la auditoría SIN
+  filtrar por activos del principio de la sesión, muy por encima de la
+  cifra real filtrada por `is_active_employee=True` -- corregido con
+  consulta real antes de escribir el anexo.
 
-**`RECONOCIMIENTO_MEDICO` -- CERRADO DEL TODO, fechas Y caducidades:**
-513/513 documentos activos con `issue_date` tienen ya `expiry_date`
-calculada (501 a un año, 12 a tres meses). Verificado en BD real
-(`EnterpriseBot_017_GET.txt`), no solo en el resumen del script.
+**DOS DIRECTRICES PERMANENTES NUEVAS, instrucción explícita y verbatim
+de Miguel Ángel, registradas en `nfs-enterprisebot-pcs` (secciones 2.5
+y 2.6), no solo en este anexo:**
+1. Nunca preguntar por qué punto de la hoja de ruta empezar -- siempre
+   estrictamente secuencial, 1, 2, 3, 4, 5...
+2. Todo punto cerrado se retira por completo de la hoja de ruta al
+   reescribirla -- nunca sobrevive a la sesión siguiente ni como
+   completado ni de ninguna otra forma.
 
-**Continuar dominio PERSONAL, por volumen -- NÚMEROS REALES
-verificados en esta sesión, filtrados por `is_active_employee=True`
-(nunca los totales sin filtrar de la auditoría inicial de S85,
-`EnterpriseBot_003_GET.txt` -- esos son de TODAS las personas,
-activas e inactivas, llevan a cifras más grandes de lo real; ver
-`EnterpriseBot_020_GET.txt` para el detalle):**
-1. `AUTORIZACION_USO_MAQUINARIA` (PRL_FORMACION) -- 360 activos, **55
-   sin fecha**.
-2. `CAP` (IDENTIDAD_PERSONAL) -- 125 activos, **40 sin fecha**.
-3. `ALTA` (LABORAL) -- 237 activos, **24 sin fecha**.
-4. `DNI` (IDENTIDAD_PERSONAL) -- 127 activos, **17 sin fecha**.
-5. `IDC` (LABORAL) -- 178 activos, **10 sin fecha**.
+## Hoja de Ruta para la Siguiente Sesión (S86) -- REESCRITA al cierre
+## de S85, sustituye por completo a la anterior
 
-**DIRECTRIZ NUEVA (incidente real S85, evitar repetirlo):** antes de
-escribir cualquier cifra de "sin fecha" en la hoja de ruta, o de
-usarla para decidir por dónde empezar, repetir SIEMPRE la consulta
-real filtrando por `is_active_employee=True` en el momento de escribir
-el anexo -- nunca reutilizar una cifra de una auditoría anterior de la
-misma sesión sin volver a filtrar, y nunca asumir que un punto sigue
-abierto solo porque apareció así al principio de la sesión (mismo
-patrón que el incidente de EPIS de más arriba: texto que sobrevive
-aunque la realidad ya cambió).
+**Ejecución estrictamente secuencial, sin preguntar por dónde empezar
+(nfs-enterprisebot-pcs 2.5):**
 
-**Punto renombrado canónico (arrastrado 5.ª sesión sin avanzar, S80→S84
--- pasa a pregunta explícita, directriz de cierre 2.2):** el renombrado
-canónico del resto del catálogo (131 tipos, ver Punto 3 heredado más
-abajo) lleva cinco sesiones seguidas sin una primera pasada real.
-¿Sigue siendo prioridad para H30, o se aparca formalmente (y se retira
-de la hoja de ruta) hasta que el resto del dominio PERSONAL esté más
-avanzado?
+1. `AUTORIZACION_USO_MAQUINARIA` (PRL_FORMACION, dominio PERSONAL) --
+   360 activos, 55 sin fecha. **Criterio de cierre:** 0 activos sin
+   `issue_date`/`expiry_date` según corresponda, verificado con
+   consulta real filtrada por `is_active_employee=True` (nunca
+   confiar en la cifra de este mismo punto sin repetir la consulta).
+2. `CAP` (IDENTIDAD_PERSONAL) -- 125 activos, 40 sin fecha. Mismo
+   criterio de cierre.
+3. `ALTA` (LABORAL) -- 237 activos, 24 sin fecha. Mismo criterio.
+4. `DNI` (IDENTIDAD_PERSONAL) -- 127 activos, 17 sin fecha. Mismo
+   criterio.
+5. `IDC` (LABORAL) -- 178 activos, 10 sin fecha. Mismo criterio.
+6. Los ~789 documentos "no críticos" sin fecha (`CONTRATO`,
+   `FORMACION`, `ENTREGA_INFORMACION`, `MOD_145`, `BAJA_PERSONAL`,
+   etc.) -- 3.ª prioridad ya confirmada por Miguel Ángel en S83, se
+   ataca después de cerrar los puntos 1-5.
 
-### Punto 1 -- Cierre real de `birth_date` (2 personas, sin más acción
-### posible desde el proyecto)
+**Al empezar cada punto:** antes de asumir que todo "sin fecha" es
+problema de OCR, revisar si hay documentos mal tipados (mismo patrón
+real de `RECONOCIMIENTO_MEDICO` -- 4 de 13 originales eran en
+realidad partes de baja). Usar siempre la cascada Tesseract->PSM
+6->EasyOCR ya integrada, lector oficial del dominio Personal.
 
-Quedan exactamente 2 personas activas sin `birth_date`: Santiago
-Nicolás Gutiérrez (`Z4304829Q`), Jerónimo Delgado Hurtado
-(`25084463L`) -- Antonio Aranda Reyes y los 2 casos nuevos descubiertos
-en S84 (Jacinto Rebollo Manzano, Julio Alberto Rueda Escudero) ya
-quedaron cerrados esta sesión. **Criterio de cierre objetivo:** para
-estos 2, confirmado con el vínculo real de BD
-(`domain_content_type`/`domain_object_id`, no por carpeta) que no
-tienen ningún documento DNI/NIE vinculado -- no hay más acción posible
-desde el proyecto, hace falta que Miguel Ángel aporte el documento real
-(foto/escaneo del DNI/NIE). No relanzar ninguna búsqueda automática
-sobre ellos sin un documento nuevo real.
+**Pregunta explícita pendiente, no bloquea el orden de arriba:** el
+renombrado canónico del resto del catálogo (131 tipos) lleva seis
+sesiones sin una primera pasada real (S80-S85). ¿Sigue siendo
+prioridad para H30, o se aparca formalmente hasta que el dominio
+PERSONAL esté más avanzado?
 
-### Punto 2 -- Barrido de enlaces huérfanos fuera del universo DNI/NIE
-### (arrastrado 1.ª sesión sin avanzar)
+**Bloqueado, sin acción posible desde el proyecto (no reintentar sin
+documento nuevo):** Santiago Nicolás Gutiérrez y Jerónimo Delgado
+Hurtado siguen sin `birth_date`, sin documento DNI/NIE vinculado en
+BD.
 
-El barrido de S83 (`domain_content_type`/`domain_object_id` en blanco)
-solo cubrió los documentos DNI/NIE de los activos. **Criterio de cierre
-objetivo:** repetir el mismo barrido sobre el resto de tipos
-documentales de `PersonIdentity` (o, mejor, sobre `DocumentIndexEntry`
-completo con `domain_content_type` en blanco y `document_type` no
-nulo, sin restringir a DNI/NIE) para descartar que haya más documentos
-huérfanos como el de Sampaio en otras familias (Laboral, Salud, etc.).
-Reportar cifra real antes de decidir si hace falta corregir algo.
-
-### Punto 3 -- Renombrado canónico del resto del catálogo (131 tipos)
-### -- ver pregunta explícita arriba antes de retomar
-
-Sigue sin una primera pasada, arrastrado desde S80/S81/S82/S83/S84.
-Criterio ya fijado (directriz 4.16: `expiry_date` cuando el tipo la
-tenga, `issue_date` si genuinamente no la tiene, nunca sin la fecha ya
-extraída). **Criterio de cierre objetivo de la primera sesión que lo
-aborde:** una muestra real de al menos 10 documentos de 3 tipos
-distintos, renombrados y verificados visualmente antes de escalar al
-resto de los 131.
-
-### Punto 4 -- Los ~789 documentos "no críticos" sin fecha (arrastrado
-### 1.ª sesión sin avanzar)
-
-3.ª prioridad confirmada por Miguel Ángel en S83 (`CONTRATO`,
-`FORMACION`, `ENTREGA_INFORMACION`, `MOD_145`, `BAJA_PERSONAL`, etc.).
-Sin tocar todavía.
-
-### Punto 5 -- Estado de infraestructura
-
-- **VM `h28-ocr-batch-1`:** confirmado `SUSPENDED` al cierre de S84
-  (`gcloud compute instances suspend` ejecutado explícitamente al no
-  quedar más trabajo real de OCR pendiente). Verificar estado real con
-  `gcloud compute instances describe h28-ocr-batch-1
-  --project=gen-lang-client-0961484137 --zone=europe-west1-b
-  --format='value(status)'` antes de asumir que sigue así -- usar
-  `gcloud compute instances resume` (nunca `start`, ver S84) para
-  reactivarla.
-- **Cola EPIS: CERRADA POR COMPLETO** (ver COMPLETADAS EN S84) -- 0
-  documentos vivos pendientes. No relanzar ningún barrido de EPIS sin
-  un hallazgo nuevo real (documentos nuevos que entren por buzón/H28).
-- Sin migraciones pendientes de confirmar -- S84 no tocó ningún
-  `models.py`.
+**Infraestructura:** las 4 VMs de OCR (`h28-ocr-batch-1/2/3/4`)
+quedaron `stop` al cierre de S85 -- comprobar estado real con
+`describe --format="value(status)"` antes de asumir, nunca dar por
+hecho. Imagen `h28-ocr-batch-image-v1` + `startup-script-ocr-vm.sh`
+ya listos, no hace falta instalar nada de nuevo salvo que cambie una
+dependencia real.
 
 ### COMPLETADAS EN S84 (cierre real de `birth_date` para 3 de 5
 ### personas, dos bugs de origen corregidos -- identificación de
