@@ -130,6 +130,66 @@ def ocr_image_to_text(data, psm=None):
     return pytesseract.image_to_string(img, lang="spa", config=config)
 
 
+# ---------------------------------------------------------------
+# H30 (sesion tras S85). EasyOCR -- lector de respaldo, no el
+# principal (ver TERCER NIVEL en el bucle principal). Carga perezosa
+# del modelo: solo se importa/carga la primera vez que un documento
+# real lo necesita, para no pagar el coste (varios segundos) en
+# ejecuciones donde Tesseract resuelve todo y nunca hace falta.
+# ---------------------------------------------------------------
+_EASYOCR_READER = None
+
+
+def _get_easyocr_reader():
+    global _EASYOCR_READER
+    if _EASYOCR_READER is None:
+        import easyocr
+        print("  (cargando modelo EasyOCR, una sola vez por ejecucion...)")
+        _EASYOCR_READER = easyocr.Reader(["es"])
+    return _EASYOCR_READER
+
+
+def easyocr_pdf_to_text(data, max_pages=2, dpi=400):
+    import numpy as np
+    reader = _get_easyocr_reader()
+    text_parts = []
+    doc = fitz.open(stream=data, filetype="pdf")
+    for page_index in range(min(max_pages, doc.page_count)):
+        page = doc.load_page(page_index)
+        rect = page.rect
+        dpi_pagina = dpi
+        if rect.width > 0 and rect.height > 0:
+            pixeles_estimados = (rect.width / 72 * dpi) * (rect.height / 72 * dpi)
+            if pixeles_estimados > SAFE_MAX_PIXELS:
+                dpi_pagina = int(
+                    72 * (SAFE_MAX_PIXELS / (rect.width * rect.height)) ** 0.5
+                )
+                dpi_pagina = max(dpi_pagina, MIN_DPI)
+        pix = page.get_pixmap(dpi=dpi_pagina)
+        img = Image.open(io.BytesIO(pix.tobytes("png")))
+        resultados = reader.readtext(np.array(img), detail=0)
+        text_parts.append(" ".join(resultados))
+    doc.close()
+    return "\n".join(text_parts)
+
+
+def easyocr_image_to_text(data):
+    import numpy as np
+    reader = _get_easyocr_reader()
+    img = Image.open(io.BytesIO(data))
+    resultados = reader.readtext(np.array(img), detail=0)
+    return " ".join(resultados)
+
+
+def easyocr_extract_text(filename, data):
+    name_lower = filename.lower()
+    if name_lower.endswith(".pdf"):
+        return easyocr_pdf_to_text(data)
+    if name_lower.endswith((".jpg", ".jpeg", ".png")):
+        return easyocr_image_to_text(data)
+    return None
+
+
 def docx_to_text(data):
     import docx
     doc = docx.Document(io.BytesIO(data))
@@ -764,6 +824,47 @@ def main():
                         "(%d caracteres): %r"
                         % (len(retry_preview), retry_preview)
                     )
+
+                    # H30 (sesion tras S85). TERCER NIVEL -- EasyOCR
+                    # como red de seguridad final, decision explicita
+                    # de Miguel Angel: Tesseract primero (rapido),
+                    # EasyOCR solo cuando Tesseract falla del todo (ni
+                    # PSM automatico ni PSM 6). Calidad ya validada dos
+                    # veces con el documento real que motivo todo esto
+                    # (certificado CENTRO MEDICO ALAMEDA, lee "10 Enero
+                    # 2022" donde Tesseract nunca lo encontro) -- pero
+                    # es ~6-7x mas lento (benchmark real en
+                    # h28-ocr-batch-1, 8 vCPU: 3.0s Tesseract vs 19.2s
+                    # EasyOCR), por eso es el ultimo recurso, nunca el
+                    # metodo por defecto.
+                    print("    Probando EASYOCR (ultimo recurso, mas lento)...")
+                    easy_text = easyocr_extract_text(name, data)
+                    if easy_text:
+                        e_expiry, e_issue, e_other = classify_dates_in_text(
+                            easy_text
+                        )
+                        if e_expiry or e_issue or e_other:
+                            print(
+                                "  EASYOCR -- encontro fecha que Tesseract "
+                                "no vio (ni PSM automatico ni PSM 6)"
+                            )
+                            text = easy_text
+                            expiry, issue, other = e_expiry, e_issue, e_other
+                            if args.apply:
+                                with conn.cursor() as cur:
+                                    cur.execute(
+                                        "UPDATE document_explorer_documentindexentry "
+                                        "SET ocr_text=%s WHERE id=%s",
+                                        (text, entry_id),
+                                    )
+                                conn.commit()
+                        else:
+                            easy_preview = easy_text.replace("\n", " | ")
+                            print(
+                                "    EASYOCR tampoco encontro fecha "
+                                "(%d caracteres): %r"
+                                % (len(easy_preview), easy_preview)
+                            )
 
         if expiry:
             stats["ocr_contexto"] += 1
