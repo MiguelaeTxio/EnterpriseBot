@@ -350,6 +350,23 @@ no aceptan flags ni variables de entorno).
   Sustituye `NOMBRE_VM` por la VM real (`h28-ocr-batch-1/2/3/4`). Si
   aun así `whoami` no devuelve `Usuario`, verificar con `pwd`/`ls
   /home/` antes de asumir ninguna otra ruta -- nunca adivinar.
+
+  ⛔ **CAUSA REAL CONFIRMADA (S86) DE LAS DESCONEXIONES REPETIDAS
+  DURANTE UN BARRIDO LARGO: inactividad de la sesión SSH desde
+  Termux, no un fallo de red.** Miguel Ángel lo confirmó explícitamente
+  tras tres cortes seguidos durante `extract_personal_dates_bulk.py`.
+  Consecuencia de obligado cumplimiento: **cualquier barrido que pueda
+  tardar más de un par de minutos (cualquier `--apply` sin `--limit`
+  pequeño) se lanza siempre dentro de una sesión `tmux`**, nunca
+  directo en la sesión SSH -- el proceso sigue vivo en el servidor
+  aunque la sesión se corte por inactividad, y solo hace falta
+  `tmux attach -t NOMBRE` al reconectar. Patrón real:
+  ```bash
+  tmux new -s NOMBRE -d "cd ~/EnterpriseBot/h28_migration_agent && source ocr_venv/bin/activate && python3 SCRIPT.py --apply > NOMBRE.log 2>&1; echo DONE >> NOMBRE.log"
+  tmux attach -t NOMBRE
+  ```
+  El `attach` es necesario aparte porque `getpass` (contraseña de
+  MySQL) no puede pedirse por teclado en un `tmux new -d` desatendido.
 - **Python:** el binario se llama `python3` en esta VM, **no**
   `python` (Ubuntu 24.04 no tiene el alias `python-is-python3`
   instalado). Usar siempre `python3 nombre_script.py`.
