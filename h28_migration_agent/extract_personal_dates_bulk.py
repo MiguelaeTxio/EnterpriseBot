@@ -96,7 +96,8 @@ SAFE_MAX_PIXELS = 80_000_000
 MIN_DPI = 100
 
 
-def ocr_pdf_to_text(data, max_pages=2, dpi=400):
+def ocr_pdf_to_text(data, max_pages=2, dpi=400, psm=None):
+    config = ("--psm %d" % psm) if psm else ""
     text_parts = []
     doc = fitz.open(stream=data, filetype="pdf")
     for page_index in range(min(max_pages, doc.page_count)):
@@ -112,14 +113,15 @@ def ocr_pdf_to_text(data, max_pages=2, dpi=400):
                 dpi_pagina = max(dpi_pagina, MIN_DPI)
         pix = page.get_pixmap(dpi=dpi_pagina)
         img = Image.open(io.BytesIO(pix.tobytes("png")))
-        text_parts.append(pytesseract.image_to_string(img, lang="spa"))
+        text_parts.append(pytesseract.image_to_string(img, lang="spa", config=config))
     doc.close()
     return "\n".join(text_parts)
 
 
-def ocr_image_to_text(data):
+def ocr_image_to_text(data, psm=None):
+    config = ("--psm %d" % psm) if psm else ""
     img = Image.open(io.BytesIO(data))
-    return pytesseract.image_to_string(img, lang="spa")
+    return pytesseract.image_to_string(img, lang="spa", config=config)
 
 
 def docx_to_text(data):
@@ -165,12 +167,12 @@ def xlsx_to_text(data):
     return "\n".join(parts)
 
 
-def extract_text(filename, data):
+def extract_text(filename, data, psm=None):
     name_lower = filename.lower()
     if name_lower.endswith(".pdf"):
-        return ocr_pdf_to_text(data)
+        return ocr_pdf_to_text(data, psm=psm)
     if name_lower.endswith((".jpg", ".jpeg", ".png")):
-        return ocr_image_to_text(data)
+        return ocr_image_to_text(data, psm=psm)
     if name_lower.endswith(".docx"):
         return docx_to_text(data)
     if name_lower.endswith(".doc"):
@@ -709,6 +711,41 @@ def main():
             conn.commit()
 
         expiry, issue, other = classify_dates_in_text(text)
+
+        # H30 (sesion de continuidad tras S84/S85). Incidente real,
+        # confirmado con evidencia visual por Miguel Angel: el PSM
+        # automatico por defecto de Tesseract (PSM 3) se salta por
+        # completo una linea de texto perfectamente legible a simple
+        # vista cuando un sello/grafico la corta visualmente (caso
+        # real: certificado CENTRO MEDICO ALAMEDA, linea "expido el
+        # presente CERTIFICADO en... a 10 Enero 2022" ausente del OCR
+        # pese a no estar tapada por el sello). Mismo patron ya
+        # resuelto para EPIS en S82/S83 (reintento con otro PSM) --
+        # portado aqui. Solo se reintenta cuando la primera pasada no
+        # encontro NINGUNA fecha (ni siquiera "otras"), y solo para
+        # PDF/imagen (el OCR es lo unico que puede fallar asi -- docx/
+        # xlsx no pasan por Tesseract).
+        if not (expiry or issue or other) and name.lower().endswith(
+            (".pdf", ".jpg", ".jpeg", ".png")
+        ):
+            retry_text = extract_text(name, data, psm=6)
+            if retry_text:
+                r_expiry, r_issue, r_other = classify_dates_in_text(retry_text)
+                if r_expiry or r_issue or r_other:
+                    print(
+                        "  REINTENTO PSM 6 -- encontro fecha que el PSM por "
+                        "defecto no vio"
+                    )
+                    text = retry_text
+                    expiry, issue, other = r_expiry, r_issue, r_other
+                    if args.apply:
+                        with conn.cursor() as cur:
+                            cur.execute(
+                                "UPDATE document_explorer_documentindexentry "
+                                "SET ocr_text=%s WHERE id=%s",
+                                (text, entry_id),
+                            )
+                        conn.commit()
 
         if expiry:
             stats["ocr_contexto"] += 1
