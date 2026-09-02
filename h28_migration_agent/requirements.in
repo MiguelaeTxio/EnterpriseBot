@@ -41,6 +41,28 @@ Pillow>=10.0.0
 # BSD-3-Clause y Python puro (rueda py3-none-any).
 pypdf>=6.14.2
 
+# H30 (S78/sesion tras S85). Dependencias reales de
+# extract_personal_dates_bulk.py, ausentes de este archivo desde su
+# creacion -- incidente real de coherencia (com-environment-
+# management, seccion 7): un pip-sync directo las habria desinstalado.
+# ⚠️ pymupdf contradice la decision AGPL de arriba (S034, solo para
+# conteo de paginas) -- el script de OCR SI usa pymupdf para renderizar
+# paginas a imagen antes de Tesseract. Decision pendiente de
+# confirmar con Miguel Angel, no resuelta aqui.
+pymupdf>=1.24.0
+pymysql>=1.1.0
+paramiko>=3.4.0
+sshtunnel>=0.4.0
+pytesseract>=0.3.10
+
+# H30 (sesion tras S85). Lector OCR alternativo a evaluar frente a
+# Tesseract -- incidente real confirmado por Miguel Angel: Tesseract
+# no lee una linea perfectamente legible (certificado CENTRO MEDICO
+# ALAMEDA, "10 Enero 2022") cuando comparte franja con un sello
+# grafico, ni con PSM automatico ni con PSM 6. En fase de prueba, no
+# sustituye a pytesseract todavia -- ver extract_personal_dates_bulk.py.
+easyocr>=1.7.2
+
 # Packaging / Empaquetado
 # Build tooling lives in this same file, following the convention of the
 # project root requirements.in (djlint, esprima) — no separate dev file
