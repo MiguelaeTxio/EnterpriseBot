@@ -233,6 +233,33 @@ def _parse_plain_list_items(text):
     return codes
 
 
+# ----------------------------------------------------------------------
+# S84 -- formato real "CONTROL DE EQUIPOS EPIS ENTREGADO", plantilla de
+# tabla ARTICULO/FECHA/REVISION/CADUCIDAD/FIRMA con marca "X" delante de
+# cada articulo entregado, sin guiones (confirmado real contra el
+# ocr_text de los 41 EPIS que quedaban "sin_items" tras el fix de
+# domain_object -- ALVAREZ GEA, MARTINEZ SEGURA, etc.). El nombre del
+# articulo puede partirse en dos lineas de OCR ("CASCO DE \nSEGURIDAD")
+# antes de la siguiente columna de fecha -- se captura todo hasta la
+# primera fecha DD/MM/AAAA que sigue a la "X".
+# ----------------------------------------------------------------------
+_MARKED_ITEM_RE = re.compile(
+    r"^[ \t]*X[ \t]+((?:(?!\d{1,2}[/-]\d{1,2}[/-]\d{2,4}).)+?)"
+    r"(?=\d{1,2}[/-]\d{1,2}[/-]\d{2,4})",
+    re.MULTILINE | re.DOTALL,
+)
+
+
+def _parse_marked_table_items(text):
+    codes = set()
+    for match in _MARKED_ITEM_RE.finditer(text):
+        label = match.group(1)
+        code = _map_label(label)
+        if code:
+            codes.add(code)
+    return codes
+
+
 class Command(BaseCommand):
     help = (
         "H30 (S82) -- reprocesa EPIS con ocr_text ya cacheado contra "
@@ -265,6 +292,7 @@ class Command(BaseCommand):
             "sin_items": 0,
             "resueltos_nie": 0,
             "resueltos_lista_plana": 0,
+            "resueltos_tabla_marcada": 0,
             "documentos_completos": 0,
             "deliveries_creadas": 0,
         }
@@ -314,12 +342,18 @@ class Command(BaseCommand):
                 continue
 
             codes = _parse_plain_list_items(text)
+            metodo_items = "lista_plana"
+            if not codes:
+                codes = _parse_marked_table_items(text)
+                metodo_items = "tabla_marcada"
             if not codes:
                 stats["sin_items"] += 1
                 continue
 
             if es_nie:
                 stats["resueltos_nie"] += 1
+            elif metodo_items == "tabla_marcada":
+                stats["resueltos_tabla_marcada"] += 1
             else:
                 stats["resueltos_lista_plana"] += 1
 
