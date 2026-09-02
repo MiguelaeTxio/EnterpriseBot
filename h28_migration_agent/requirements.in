@@ -54,6 +54,8 @@ pymysql>=1.1.0
 paramiko>=3.4.0
 sshtunnel>=0.4.0
 pytesseract>=0.3.10
+python-docx>=1.1.0
+openpyxl>=3.1.0
 
 # H30 (sesion tras S85). Lector OCR alternativo a evaluar frente a
 # Tesseract -- incidente real confirmado por Miguel Angel: Tesseract
