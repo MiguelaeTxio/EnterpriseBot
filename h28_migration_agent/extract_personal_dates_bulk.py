@@ -746,6 +746,18 @@ def main():
                                 (text, entry_id),
                             )
                         conn.commit()
+                else:
+                    # H30 (sesion tras S85): el reintento tambien
+                    # fallo -- nunca descartar el PSM alternativo sin
+                    # ver que leyo de verdad, podria ser un problema
+                    # distinto (linea realmente ausente del OCR, no
+                    # solo mal clasificada).
+                    retry_preview = retry_text.replace("\n", " | ")
+                    print(
+                        "    REINTENTO PSM 6 tampoco encontro fecha "
+                        "(%d caracteres): %r"
+                        % (len(retry_preview), retry_preview)
+                    )
 
         if expiry:
             stats["ocr_contexto"] += 1
