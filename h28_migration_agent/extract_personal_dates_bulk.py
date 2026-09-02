@@ -510,6 +510,16 @@ _LABELED_DATE_PATTERNS = [
         r"PRORROGA[\s\S]{0,120}?DESDE" + _GAP + r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})",
         re.DOTALL,
     ),
+    # "A FECHA (DD/MM/AAAA)" -- sello real junto a la firma del
+    # administrador (Grupo Alvarez), visto en AUTORIZACION_USO_MAQUINARIA
+    # y otros tipos con el mismo pie de firma. Maxima prioridad porque
+    # desambigua documentos que llevan otras fechas de ruido (fecha de
+    # firma electronica, fechas de un curso de formacion adjunto,
+    # numero de carne con fechas de vigencia de categorias) -- incidente
+    # real S86, 4 de 8 fallos de un barrido tenian esta etiqueta
+    # presente y el documento se marcaba SIN FECHA por ambiguedad pese
+    # a que la etiqueta ya la resolvia sin dudas.
+    re.compile(r"A\s+FECHA" + _GAP + r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})"),
 ]
 
 DEFAULT_FIELD_BY_CODE = {
