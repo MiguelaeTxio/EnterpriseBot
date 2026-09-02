@@ -41,6 +41,9 @@ openpyxl
 torch
 torchvision
 easyocr
+# H30 (sesion tras S85). Calculo de expiry_date = issue_date + N meses/años
+# -- backfill_reconocimiento_medico_ocr_text.py.
+python-dateutil
 # NOTA: .doc antiguo (Word 97-2003) se lee con `antiword`, que es un
 # paquete de SISTEMA (apt-get install antiword), no de pip -- no va
 # en este archivo. Documentado en SESSION_VARIABLES.md, seccion "VM

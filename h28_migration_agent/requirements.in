@@ -69,6 +69,10 @@ easyocr>=1.7.2
 # Build tooling lives in this same file, following the convention of the
 # project root requirements.in (djlint, esprima) — no separate dev file
 # (com-environment-management, section 2.2).
+# H30 (sesion tras S85). Calculo de expiry_date = issue_date + N meses/años
+# -- backfill_reconocimiento_medico_ocr_text.py.
+python-dateutil
+
 # La herramienta de compilación vive en este mismo archivo, siguiendo la
 # convención del requirements.in raíz del proyecto (djlint, esprima) —
 # sin archivo de desarrollo aparte (com-environment-management, sección
