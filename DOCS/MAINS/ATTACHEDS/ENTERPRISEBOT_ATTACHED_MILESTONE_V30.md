@@ -6190,8 +6190,28 @@ clasificados como "un año", 0 sin texto, 0 errores.
 calculada (501 a un año, 12 a tres meses). Verificado en BD real
 (`EnterpriseBot_017_GET.txt`), no solo en el resumen del script.
 
-hay prioridad real para esto todavía, dilo explícitamente y se retira
-de la hoja de ruta en vez de seguir arrastrándose.
+**Continuar dominio PERSONAL, por volumen -- NÚMEROS REALES
+verificados en esta sesión, filtrados por `is_active_employee=True`
+(nunca los totales sin filtrar de la auditoría inicial de S85,
+`EnterpriseBot_003_GET.txt` -- esos son de TODAS las personas,
+activas e inactivas, llevan a cifras más grandes de lo real; ver
+`EnterpriseBot_020_GET.txt` para el detalle):**
+1. `AUTORIZACION_USO_MAQUINARIA` (PRL_FORMACION) -- 360 activos, **55
+   sin fecha**.
+2. `CAP` (IDENTIDAD_PERSONAL) -- 125 activos, **40 sin fecha**.
+3. `ALTA` (LABORAL) -- 237 activos, **24 sin fecha**.
+4. `DNI` (IDENTIDAD_PERSONAL) -- 127 activos, **17 sin fecha**.
+5. `IDC` (LABORAL) -- 178 activos, **10 sin fecha**.
+
+**DIRECTRIZ NUEVA (incidente real S85, evitar repetirlo):** antes de
+escribir cualquier cifra de "sin fecha" en la hoja de ruta, o de
+usarla para decidir por dónde empezar, repetir SIEMPRE la consulta
+real filtrando por `is_active_employee=True` en el momento de escribir
+el anexo -- nunca reutilizar una cifra de una auditoría anterior de la
+misma sesión sin volver a filtrar, y nunca asumir que un punto sigue
+abierto solo porque apareció así al principio de la sesión (mismo
+patrón que el incidente de EPIS de más arriba: texto que sobrevive
+aunque la realidad ya cambió).
 
 **Punto renombrado canónico (arrastrado 5.ª sesión sin avanzar, S80→S84
 -- pasa a pregunta explícita, directriz de cierre 2.2):** el renombrado
