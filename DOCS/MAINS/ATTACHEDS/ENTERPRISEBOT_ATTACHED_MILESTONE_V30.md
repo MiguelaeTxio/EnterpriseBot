@@ -6090,78 +6090,196 @@ S84**, no S85.
 
 ---
 
-## Hoja de Ruta para la Siguiente Sesión (S84) -- REESCRITA al cierre
-## de S83, sustituye por completo a la anterior
+## Hoja de Ruta para la Siguiente Sesión (S85) -- REESCRITA al cierre
+## de S84, sustituye por completo a la anterior
 
-**Pregunta bloqueante (sin respuesta todavía) -- responder antes de
-aplicar el `birth_date` ya calculado de Antonio Aranda Reyes:**
+**Punto EPIS "NO ES ENTREGA" (arrastrado 3.ª sesión sin avanzar --
+sigue como pregunta explícita, directriz de cierre 2.2):** ¿Cuándo
+quieres que se haga la revisión visual real de los documentos "NO ES
+ENTREGA" de EPIS? Sigue sin tocarse desde que se propuso en S82. Si no
+hay prioridad real para esto todavía, dilo explícitamente y se retira
+de la hoja de ruta en vez de seguir arrastrándose.
 
-1. **Antonio Aranda Reyes (`74829098R`), `is_active_employee=True`
-   pero sin respaldo en ninguna hoja del Excel real
-   (`EXCEL_TRABAJADORES.xlsx`)**, a diferencia de las excepciones ya
-   documentadas (familia Álvarez Díaz, José Manuel Gómez Carvajal).
-   Su `birth_date` ya está calculado (25/05/1979, MRZ real validado)
-   pero deliberadamente sin aplicar. ¿Es un activo real que falta en
-   el Excel (aplicamos la fecha y dejamos anotada la excepción, igual
-   que las otras), o su marca de activo está mal y hay que
-   corregirla (no aplicamos nada de `birth_date`, se revisa aparte)?
+**Punto renombrado canónico (arrastrado 5.ª sesión sin avanzar, S80→S84
+-- pasa a pregunta explícita, directriz de cierre 2.2):** el renombrado
+canónico del resto del catálogo (131 tipos, ver Punto 3 heredado más
+abajo) lleva cinco sesiones seguidas sin una primera pasada real.
+¿Sigue siendo prioridad para H30, o se aparca formalmente (y se retira
+de la hoja de ruta) hasta que el resto del dominio PERSONAL esté más
+avanzado?
 
-**Punto 5 (arrastrado 2.ª sesión sin avanzar -- sigue como pregunta
-explícita, directriz de cierre 2.2):** ¿Cuándo quieres que se haga la
-revisión visual real de los documentos "NO ES ENTREGA" de EPIS? Sigue
-sin tocarse desde que se propuso en S82. Si no hay prioridad real
-para esto todavía, dilo explícitamente y se retira de la hoja de ruta
-en vez de seguir arrastrándose.
+### Punto 1 -- Cierre real de `birth_date` (2 personas, sin más acción
+### posible desde el proyecto)
 
-### Punto 1 -- Cierre real de `birth_date`
-
-Quedan exactamente 3 personas activas sin `birth_date`: Santiago
+Quedan exactamente 2 personas activas sin `birth_date`: Santiago
 Nicolás Gutiérrez (`Z4304829Q`), Jerónimo Delgado Hurtado
-(`25084463L`), Antonio Aranda Reyes (`74829098R` -- ver pregunta
-bloqueante arriba). **Criterio de cierre objetivo:** para los 2
-primeros, no hay más acción posible desde el proyecto -- hace falta
-que Miguel Ángel aporte el documento real (foto/escaneo del DNI/NIE).
-No relanzar ninguna búsqueda automática sobre ellos sin un documento
-nuevo real.
+(`25084463L`) -- Antonio Aranda Reyes y los 2 casos nuevos descubiertos
+en S84 (Jacinto Rebollo Manzano, Julio Alberto Rueda Escudero) ya
+quedaron cerrados esta sesión. **Criterio de cierre objetivo:** para
+estos 2, confirmado con el vínculo real de BD
+(`domain_content_type`/`domain_object_id`, no por carpeta) que no
+tienen ningún documento DNI/NIE vinculado -- no hay más acción posible
+desde el proyecto, hace falta que Miguel Ángel aporte el documento real
+(foto/escaneo del DNI/NIE). No relanzar ninguna búsqueda automática
+sobre ellos sin un documento nuevo real.
 
 ### Punto 2 -- Barrido de enlaces huérfanos fuera del universo DNI/NIE
+### (arrastrado 1.ª sesión sin avanzar)
 
-El barrido de esta sesión (`domain_content_type`/`domain_object_id`
-en blanco) solo cubrió los documentos DNI/NIE de los 79 activos.
-**Criterio de cierre objetivo:** repetir el mismo barrido sobre el
-resto de tipos documentales de `PersonIdentity` (o, mejor, sobre
-`DocumentIndexEntry` completo con `domain_content_type` en blanco y
-`document_type` no nulo, sin restringir a DNI/NIE) para descartar que
-haya más documentos huérfanos como el de Sampaio en otras familias
-(Laboral, Salud, etc.). Reportar cifra real antes de decidir si hace
-falta corregir algo.
+El barrido de S83 (`domain_content_type`/`domain_object_id` en blanco)
+solo cubrió los documentos DNI/NIE de los activos. **Criterio de cierre
+objetivo:** repetir el mismo barrido sobre el resto de tipos
+documentales de `PersonIdentity` (o, mejor, sobre `DocumentIndexEntry`
+completo con `domain_content_type` en blanco y `document_type` no
+nulo, sin restringir a DNI/NIE) para descartar que haya más documentos
+huérfanos como el de Sampaio en otras familias (Laboral, Salud, etc.).
+Reportar cifra real antes de decidir si hace falta corregir algo.
 
 ### Punto 3 -- Renombrado canónico del resto del catálogo (131 tipos)
+### -- ver pregunta explícita arriba antes de retomar
 
-Sigue sin una primera pasada, arrastrado desde S80/S81/S82/S83.
+Sigue sin una primera pasada, arrastrado desde S80/S81/S82/S83/S84.
 Criterio ya fijado (directriz 4.16: `expiry_date` cuando el tipo la
-tenga, `issue_date` si genuinamente no la tiene, nunca sin la fecha
-ya extraída). **Criterio de cierre objetivo de la primera sesión que
-lo aborde:** una muestra real de al menos 10 documentos de 3 tipos
+tenga, `issue_date` si genuinamente no la tiene, nunca sin la fecha ya
+extraída). **Criterio de cierre objetivo de la primera sesión que lo
+aborde:** una muestra real de al menos 10 documentos de 3 tipos
 distintos, renombrados y verificados visualmente antes de escalar al
 resto de los 131.
 
-### Punto 4 -- Los ~789 documentos "no críticos" sin fecha
+### Punto 4 -- Los ~789 documentos "no críticos" sin fecha (arrastrado
+### 1.ª sesión sin avanzar)
 
 3.ª prioridad confirmada por Miguel Ángel en S83 (`CONTRATO`,
 `FORMACION`, `ENTREGA_INFORMACION`, `MOD_145`, `BAJA_PERSONAL`, etc.).
 Sin tocar todavía.
 
-### Punto 5 -- Estado de infraestructura para retomar
+### Punto 5 -- Estado de infraestructura
 
-- **VM `h28-ocr-batch-1`:** estado real desconocido al cierre de
-  S83 -- la reapertura de la sesión no la tocó ni la consultó.
-  Verificar estado real (`gcloud compute instances describe
-  h28-ocr-batch-1 --project=gen-lang-client-0961484137
-  --zone=europe-west1-b --format='value(status)'`) antes de asumir
-  que sigue en ejecución.
-- Sin migraciones pendientes de confirmar -- esta reapertura no
-  generó ninguna.
+- **VM `h28-ocr-batch-1`:** confirmado `SUSPENDED` al cierre de S84
+  (`gcloud compute instances suspend` ejecutado explícitamente al no
+  quedar más trabajo real de OCR pendiente). Verificar estado real con
+  `gcloud compute instances describe h28-ocr-batch-1
+  --project=gen-lang-client-0961484137 --zone=europe-west1-b
+  --format='value(status)'` antes de asumir que sigue así -- usar
+  `gcloud compute instances resume` (nunca `start`, ver S84) para
+  reactivarla.
+- **Cola EPIS: CERRADA POR COMPLETO** (ver COMPLETADAS EN S84) -- 0
+  documentos vivos pendientes. No relanzar ningún barrido de EPIS sin
+  un hallazgo nuevo real (documentos nuevos que entren por buzón/H28).
+- Sin migraciones pendientes de confirmar -- S84 no tocó ningún
+  `models.py`.
+
+### COMPLETADAS EN S84 (cierre real de `birth_date` para 3 de 5
+### personas, dos bugs de origen corregidos -- identificación de
+### persona por vínculo real de BD en vez de OCR/carpeta -- y cola de
+### EPIS cerrada por completo: de 42 pendientes reales a 0)
+
+**Antonio Aranda Reyes, confirmado por Miguel Ángel como trabajador
+real de Grúas Álvarez.** Hallazgo real: ya estaba presente en
+`EXCEL_TRABAJADORES.xlsx` (hoja `TRABAJADORES GRUAS ALVAREZ MALA`, fila
+5, con todos sus datos reales de RM/carnets/email) -- el pendiente real
+era solo la columna `FECHA NACIMIENTO`, vacía. Se cometió y corrigió en
+la misma sesión un error propio: se añadió primero una fila 97
+duplicada por no haber comprobado que ya existía; detectado por el
+propio `import_worker_machine_excel` (`DNI ... repetido en el propio
+Excel`), corregido borrando la fila 97 y rellenando la fecha en la fila
+real. `import_worker_machine_excel --apply` confirmó 71/71 cruzados,
+`birth_date=1979-05-25` aplicado.
+
+**Bug real de origen descubierto y corregido, mismo patrón en tres
+scripts distintos:** localizaban el documento DNI/NIE (o EPIS) de cada
+persona por comparación de texto de carpeta (`parent_path`/
+`folder_path`) o por parseo de DNI del propio OCR, en vez de usar el
+vínculo real ya resuelto en BD (`DocumentIndexEntry.domain_content_type`/
+`domain_object_id`) desde la clasificación de ingesta. Miguel Ángel,
+verbatim, al detectarlo: *"si se trata de que todo viva en la base de
+datos, que coño me estás contando de carpeta [...] mientras la base de
+datos sepa dónde está el documento, el documento tiene que estar
+asignado a su persona en base de datos."* Corregido en:
+- `extract_birth_dates_from_dni.py` (commit `02a15dd`) -- caso real:
+  Julio Alberto Rueda Escudero, documento vinculado en BD pero
+  `parent_path` desalineado con `folder_path`.
+- `reprocess_epis_from_cache.py` (commit `cbd411b`) -- caso real: los
+  42 EPIS pendientes ya tenían persona vinculada en BD, pero el campo
+  `D.N.I.` del PDF venía en blanco en el OCR.
+- `extract_epis_deliveries_vm.py` (commit `99df504`) -- mismo criterio,
+  confirmado documento a documento por Miguel Ángel contra los 30 EPIS
+  reprocesados en la VM (solo 2 de 30, "ALVAREZ DIAZ, A." sin
+  distinguir Adolfo/Alberto por texto, necesitaban de verdad el
+  vínculo de BD para no confundirse).
+
+**`birth_date` cerrado para 3 de las 5 personas activas pendientes**
+(Jacinto Rebollo Manzano, Julio Alberto Rueda Escudero, Antonio Aranda
+Reyes) vía `extract_birth_dates_from_dni --apply` tras el fix de
+dominio. Quedan 2 (Santiago Nicolás Gutiérrez, Jerónimo Delgado
+Hurtado) sin ningún documento DNI/NIE vinculado en BD -- confirmado con
+el vínculo real, no por carpeta -- ver Punto 1 de la hoja de ruta.
+
+**`reprocess_epis_from_cache.py` ampliado con un parser nuevo** (commit
+`cd706cb`) para el formato de tabla marcada (`X ARTICULO/FECHA/
+REVISION/CADUCIDAD/FIRMA`, sin guiones), verificado con regex contra el
+`ocr_text` real de los documentos antes de subir el fix. Resolvió 10 de
+30 EPIS solo con lo ya cacheado, sin tocar GCS/OCR.
+
+**VM `h28-ocr-batch-1` resumida** (`gcloud compute instances resume`,
+nunca `start` -- estaba `SUSPENDED`, no `TERMINATED`) y usada para
+reprocesar los 30 EPIS restantes con `--entry-ids` (mismo mecanismo de
+S83). Corregido en el mismo commit el `--threads` por defecto (6 → 3,
+nota S83 ya documentada de contención de CPU con el reintento `--psm
+11`) y añadido soporte real de `domain_content_type_id`/
+`domain_object_id` en el SELECT y en `_process_one`. Resultado real de
+la pasada en VM: 30/30 leídos (0 fallos de lectura, antes 21 con 6
+hilos), 19 documentos completos, 20 `EpiDelivery` nuevas reales
+aplicadas.
+
+**Corrección adicional real, encontrada al inspeccionar visualmente el
+documento de Gómez García:** `_extract_pdf_native` daba por bueno
+cualquier PDF con `t.strip()` no vacío como "tiene texto nativo",
+saltándose el OCR -- un residuo de firma electrónica (67 caracteres,
+solo fechas repetidas) hacía que el contenido real, que solo vivía en
+la imagen escaneada, nunca se leyera. Corregido exigiendo un mínimo de
+150 caracteres (`_MIN_NATIVE_TEXT_CHARS`, commit `64550b2`) antes de
+descartar el OCR de respaldo.
+
+**Limpieza de 25 filas duplicadas históricas en `EpiDelivery`**
+(preexistentes, de S82/antes -- ninguna generada en esta sesión,
+verificado por `created_at`), detectadas al auditar el resultado real
+tras la pasada de VM. Criterio: se conserva la fila más antigua de cada
+combinación persona+EPI+fecha, se borran las demás. Total tras la
+limpieza: 4.306 `EpiDelivery` reales, 0 duplicados.
+
+**Cierre manual de los 11 EPIS que ni siquiera con los fixes de arriba
+resultaron legibles por el pipeline automático** (2 formatos de
+plantilla: uno de dos columnas, otro con residuo de firma que igual
+necesitaba revisión aparte). Miguel Ángel pidió verlos -- se
+descargaron con `com-gcs-download` (2 ZIPs, `spare_parts.gcs_service.
+download_bytes`) y se leyeron directamente (renderizado a imagen +
+lectura visual), confirmando que los documentos SÍ eran legibles a
+simple vista, el fallo era del pipeline automático, no del documento.
+Los 11 se archivaron en papelera (`trash_dossier_entry`, `deleted_at`
+únicamente, el blob de GCS nunca se toca) y, de los 10 con contenido
+real de entrega, se extrajeron a mano sus datos (persona, fecha,
+artículos) y se insertaron directamente como `EpiDelivery`
+(`extraction_method=MANUAL`) -- 8 filas nuevas reales (la mayoría de
+las 70 combinaciones ya existían de otros documentos del mismo lote
+histórico). El documento de Berenguer Gómez Alejandro (formato
+"ENTREGA DE ROPA", no EPIS con casilla) solo tenía relleno el chaleco
+reflectante -- el resto de la tabla de ropa iba sin unidades, no se
+entregó de verdad.
+
+**Resultado final medido de la cola EPIS, verificado por consulta
+directa:** de 42 documentos pendientes reales al arrancar la sesión, **0
+pendientes al cierre**. Total `EpiDelivery` en BD tras toda la sesión:
+**4.314**.
+
+**Incidencia real de sesión, para no repetir:** el modelo propuso una
+vez `git pull origin main` a secas para actualizar el clon de la VM,
+mismo fallo de prompt interactivo ya documentado para `git clone` desde
+S59 pero nunca extendido explícitamente a `pull` -- corregido de
+inmediato (directriz 4.9) ampliando la directriz en `SESSION_VARIABLES.md`
+(commit `9ea8be5`) para cubrir cualquier operación git contra el remoto,
+no solo `clone`.
+
 
 ### COMPLETADAS EN S82 (sesión muy larga, con varias interrupciones
 ### reales por fallos del propio modelo -- registradas tal cual,
