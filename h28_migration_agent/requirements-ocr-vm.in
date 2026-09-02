@@ -29,6 +29,17 @@ openpyxl
 # con PSM 6). Pendiente de validar RENDIMIENTO en esta VM antes de
 # convertirse en el lector oficial -- en el PC de Miguel Angel tardo
 # varios minutos por documento, inviable para el volumen real.
+#
+# CPU-ONLY OBLIGATORIO: esta VM (e2-standard-8) no tiene GPU. Sin
+# fijar esto, pip resuelve por defecto la variante CUDA de torch en
+# Linux (a diferencia de Windows, que ya cae en CPU-only sola) y
+# arrastra ~10 paquetes nvidia-*/cuda-toolkit/triton, varios GB
+# inutiles que nunca se van a usar. Torch/torchvision se declaran
+# explicitos aqui, apuntando al indice CPU oficial, para que
+# pip-compile los resuelva desde ahi antes que desde PyPI.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch
+torchvision
 easyocr
 # NOTA: .doc antiguo (Word 97-2003) se lee con `antiword`, que es un
 # paquete de SISTEMA (apt-get install antiword), no de pip -- no va
