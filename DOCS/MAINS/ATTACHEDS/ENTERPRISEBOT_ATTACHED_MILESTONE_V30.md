@@ -6118,6 +6118,68 @@ ninguna fecha en total. Empezando por `RECONOCIMIENTO_MEDICO`
 sigue como pregunta explícita, directriz de cierre 2.2):** ¿Cuándo
 quieres que se haga la revisión visual real de los documentos "NO ES
 ENTREGA" de EPIS? Sigue sin tocarse desde que se propuso en S82. Si no
+
+---
+
+## ACTUALIZACIÓN REAL EN CURSO (misma sesión S85, sin cerrar todavía)
+
+**RECONOCIMIENTO_MEDICO (dominio PERSONAL) -- CERRADO:** 566/566
+activos con `issue_date`. 4 documentos que estaban mal tipados como
+`RECONOCIMIENTO_MEDICO` (en realidad partes médicos de baja/confirmación
+de incapacidad temporal, Junta de Andalucía P.9/P.9-1) retipificados a
+`PARTE_BAJA_MEDICA` (ids 27962, 27963, 34269, 36101) -- casi 1 de cada
+3 "sin fecha" originales de este tipo eran en realidad un problema de
+catalogación de origen, no de OCR. **Sospecha real, no confirmada:**
+podría haber más casos así en otros tipos documentales de
+SALUD_BAJAS_PERSONA/LABORAL -- pendiente de revisar cuando toque, no
+asumir que es exclusivo de RECONOCIMIENTO_MEDICO.
+
+**Cascada de OCR ampliada (`extract_personal_dates_bulk.py`, tanto
+`h28_agent_venv` de Miguel Ángel como `ocr_venv` de las 4 VMs):**
+Tesseract PSM automático -> reintento PSM 6 -> EasyOCR (`easyocr`,
+lector es, carga perezosa del modelo). EasyOCR es ~6-7x más lento
+(benchmark real en h28-ocr-batch-1, 8 vCPU: 3.0s Tesseract vs 19.2s
+EasyOCR) pero rescata fechas reales que Tesseract nunca ve (sello
+gráfico compartiendo línea con texto -- confirmado con evidencia
+visual real, certificado CENTRO MEDICO ALAMEDA). Decisión explícita
+de Miguel Ángel: EasyOCR SOLO como último recurso, nunca por defecto.
+
+**Infraestructura de las 4 VMs de OCR -- lista:** imagen personalizada
+`h28-ocr-batch-image-v1` (Tesseract+EasyOCR+antiword+libreoffice-writer
+ya instalados, 50GB) + `startup-script-ocr-vm.sh` (solo `pip-sync`,
+NUNCA git pull, decisión explícita de no guardar tokens en metadatos
+de instancia) instalado en las 4. Clave SSH de `h28-ocr-batch-1`
+registrada en PythonAnywhere (`~/.ssh/authorized_keys`) -- primera vez
+que una VM de OCR accede a MySQL en directo, no solo a GCS. **Las 4
+VMs quedaron paradas (`stop`) al cierre de esta sesión**, no
+suspendidas -- comprobar `describe --format="value(status)"` antes de
+asumir su estado en la próxima sesión, nunca dar por hecho.
+
+**REGLA DE NEGOCIO NUEVA -- caducidad de RECONOCIMIENTO_MEDICO
+(confirmada por Miguel Ángel, no estaba en ningún sitio antes):**
+`RECONOCIMIENTO_MEDICO` no lleva su fecha de caducidad impresa en el
+documento (a diferencia de TACOGRAFO/CARNET_GRUISTA, que sí) --
+`expiry_date` se CALCULA a partir de `issue_date` y se persiste en BD
+(nunca al vuelo, para no tocar `vigencia_service.is_current()` ni el
+resto de consumidores genéricos que ya leen `expiry_date` como campo
+guardado). Dos validez distintas según el tipo real de certificado,
+detectado por el texto real del documento (regex
+`caduca\s+a\s+los\s+tres\s+meses` sobre `ocr_text` cacheado):
+- Revisión médica anual general: **emisión + 1 año** (regla por
+  defecto).
+- Certificado específico de renovación de carnet ANAGRUAL (lleva
+  literalmente "Caduca a los tres meses" impreso): **emisión + 3
+  meses**.
+
+Aplicado ya sobre los 453 documentos que tenían `issue_date` Y
+`ocr_text` cacheado (441 a un año, 12 a tres meses). **Pendiente
+real, sin resolver:** 60 documentos con `issue_date` pero SIN
+`ocr_text` cacheado (fecha puesta a mano en sesiones anteriores a que
+se empezara a cachear el texto) -- no clasificables hasta que se
+re-procesen o se decida asumir "un año" por defecto para ellos y
+revisar aparte si alguna vez da problema. Decisión pendiente de
+Miguel Ángel, no tomada todavía.
+
 hay prioridad real para esto todavía, dilo explícitamente y se retira
 de la hoja de ruta en vez de seguir arrastrándose.
 
