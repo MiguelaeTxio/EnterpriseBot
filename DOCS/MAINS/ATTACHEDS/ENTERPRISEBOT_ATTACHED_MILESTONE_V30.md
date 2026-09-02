@@ -6036,34 +6036,32 @@ un error de sintaxis real (`_log(...) if False else None`, línea de
 depuración sin sentido) en el primer intento del arreglo `--psm 11`,
 detectado y corregido en el mismo turno antes de commitear.
 
----
-
-### COMPLETADAS EN S84 (sesión corta, arrancada directamente sobre un
-### bug real reportado por Miguel Ángel al llegar a la oficina --
-### PAH Momento 1 NO se ejecutó esta sesión, ver nota más abajo)
-
-Miguel Ángel llegó a la oficina reportando que la ficha de Adelaida
-Álvarez Díaz seguía mostrando "Sin documentos vigentes todavía" pese
-al DNI reclasificado el día anterior (S83, `id=42992`). Diagnóstico
-en dos capas, ambas reales:
+**Corrección real en caliente, misma sesión S83 reabierta más tarde
+(Miguel Ángel: "esta sesión no es la S84, es la S83 [...] no estaba
+bien terminada, puesto que estos documentos no estaban bien"):**
+Miguel Ángel volvió reportando que la ficha de Adelaida Álvarez Díaz
+seguía mostrando "Sin documentos vigentes todavía" pese al DNI
+reclasificado antes en esta misma sesión (`id=42992`). Diagnóstico en
+dos capas, ambas reales:
 
 1. **Capa 1 (insuficiente por sí sola):** `vigencia_service.
    is_current()` exige `expiry_date` o `issue_date` -- la
-   reclasificación de tipo de S83 nunca los tocó. Corregido
-   `expiry_date` para Adelaida (2028-02-23), Rachid Benali
+   reclasificación de tipo hecha antes en la sesión nunca los tocó.
+   Corregido `expiry_date` para Adelaida (2028-02-23), Rachid Benali
    (2026-09-15) y Jacinto Rebollo Manzano (2030-09-16, por MRZ real
    sobre `ocr_text` ya cacheado) -- commit `320b14f`.
 
 2. **Capa 2 (causa real completa, encontrada porque Miguel Ángel
    insistió explícitamente en revisar TODOS los documentos, no solo
-   los 5 de S83):** `PersonalDetailView` filtra los documentos de la
-   ficha por `domain_content_type`/`domain_object_id` (GenericForeignKey
-   real al sujeto) -- un campo completamente independiente de
-   `expiry_date`. Barrido de los 127 documentos DNI/NIE reales de los
-   79 activos: **4 sin enlazar** (Adelaida Álvarez Díaz, Jorge
-   Milheiro Felício, Rachid Benali, y un hallazgo nuevo no tocado en
-   S83 -- Estévão Veloso Sampaio), **0 mal enlazados a otra persona**.
-   Los 4 enlazados correctamente en producción -- commit `6e8e3d2`.
+   los 5 tocados antes):** `PersonalDetailView` filtra los documentos
+   de la ficha por `domain_content_type`/`domain_object_id`
+   (GenericForeignKey real al sujeto) -- un campo completamente
+   independiente de `expiry_date`. Barrido de los 127 documentos
+   DNI/NIE reales de los 79 activos: **4 sin enlazar** (Adelaida
+   Álvarez Díaz, Jorge Milheiro Felício, Rachid Benali, y un hallazgo
+   nuevo no tocado antes en la sesión -- Estévão Veloso Sampaio),
+   **0 mal enlazados a otra persona**. Los 4 enlazados correctamente
+   en producción -- commit `6e8e3d2`.
 
 Confirmado con Miguel Ángel vía captura real del panel tras el
 arreglo: el NIE de Sampaio (mismo patrón que Milheiro) es una
@@ -6073,29 +6071,30 @@ de los dos, así que `expiry_date` se deja sin forzar a propósito en
 ambos casos, ya documentado.
 
 **Incidencia real de proceso, no de código:** el modelo, al empezar a
-investigar el bug, sólo revisó los 5 documentos tocados en S83 en vez
+investigar el bug, sólo revisó los 5 documentos tocados antes en vez
 de barrer los 79 activos completos -- Miguel Ángel tuvo que corregir
 explícitamente ("no hay que mirar los cinco de ayer, hay que mirar
 todos") antes de que apareciera el hallazgo real de Sampaio. Lección
 para sesiones futuras: cuando se investiga un fallo de visibilidad de
 un documento, el barrido de verificación tiene que cubrir el universo
 completo relevante desde el principio, no solo los documentos tocados
-en la sesión que originó el bug.
+justo antes.
 
-**PAH Momento 1 no se ejecutó esta sesión** -- se arrancó directamente
-sobre el bug reportado por Miguel Ángel sin pasar por el arranque
-formal de V00-PISA (no hubo caja de título/descripción de sesión).
-Registrado aquí para que quede constancia real, sin inventar el
-Momento 2 correspondiente.
+**Segunda incidencia real de proceso:** el modelo dio por cerrada la
+sesión S83 con un PCS completo, y al reabrirse más tarde para
+resolver este bug, la volvió a numerar como una sesión nueva (S84)
+con su propio PCS -- Miguel Ángel corrigió explícitamente: sigue
+siendo S83 (la sesión no quedó bien terminada la primera vez), y la
+numeración se ha corregido en el propio anexo. **La próxima sesión es
+S84**, no S85.
 
 ---
 
-## Hoja de Ruta para la Siguiente Sesión (S85) -- REESCRITA al cierre
-## de S84, sustituye por completo a la anterior
+## Hoja de Ruta para la Siguiente Sesión (S84) -- REESCRITA al cierre
+## de S83, sustituye por completo a la anterior
 
-**Pregunta bloqueante (arrastrada de S84, sin respuesta todavía) --
-responder antes de aplicar el `birth_date` ya calculado de Antonio
-Aranda Reyes:**
+**Pregunta bloqueante (sin respuesta todavía) -- responder antes de
+aplicar el `birth_date` ya calculado de Antonio Aranda Reyes:**
 
 1. **Antonio Aranda Reyes (`74829098R`), `is_active_employee=True`
    pero sin respaldo en ninguna hoja del Excel real
@@ -6107,7 +6106,7 @@ Aranda Reyes:**
    que las otras), o su marca de activo está mal y hay que
    corregirla (no aplicamos nada de `birth_date`, se revisa aparte)?
 
-**Punto 5 (arrastrado 3.ª sesión sin avanzar -- sigue como pregunta
+**Punto 5 (arrastrado 2.ª sesión sin avanzar -- sigue como pregunta
 explícita, directriz de cierre 2.2):** ¿Cuándo quieres que se haga la
 revisión visual real de los documentos "NO ES ENTREGA" de EPIS? Sigue
 sin tocarse desde que se propuso en S82. Si no hay prioridad real
@@ -6116,19 +6115,19 @@ en vez de seguir arrastrándose.
 
 ### Punto 1 -- Cierre real de `birth_date`
 
-Quedan exactamente 3 personas activas sin `birth_date` (sin cambios
-desde S83): Santiago Nicolás Gutiérrez (`Z4304829Q`), Jerónimo
-Delgado Hurtado (`25084463L`), Antonio Aranda Reyes (`74829098R` --
-ver pregunta bloqueante arriba). **Criterio de cierre objetivo:** para
-los 2 primeros, no hay más acción posible desde el proyecto -- hace
-falta que Miguel Ángel aporte el documento real (foto/escaneo del
-DNI/NIE). No relanzar ninguna búsqueda automática sobre ellos sin un
-documento nuevo real.
+Quedan exactamente 3 personas activas sin `birth_date`: Santiago
+Nicolás Gutiérrez (`Z4304829Q`), Jerónimo Delgado Hurtado
+(`25084463L`), Antonio Aranda Reyes (`74829098R` -- ver pregunta
+bloqueante arriba). **Criterio de cierre objetivo:** para los 2
+primeros, no hay más acción posible desde el proyecto -- hace falta
+que Miguel Ángel aporte el documento real (foto/escaneo del DNI/NIE).
+No relanzar ninguna búsqueda automática sobre ellos sin un documento
+nuevo real.
 
 ### Punto 2 -- Barrido de enlaces huérfanos fuera del universo DNI/NIE
 
-El barrido de S84 (`domain_content_type`/`domain_object_id` en
-blanco) solo cubrió los documentos DNI/NIE de los 79 activos.
+El barrido de esta sesión (`domain_content_type`/`domain_object_id`
+en blanco) solo cubrió los documentos DNI/NIE de los 79 activos.
 **Criterio de cierre objetivo:** repetir el mismo barrido sobre el
 resto de tipos documentales de `PersonIdentity` (o, mejor, sobre
 `DocumentIndexEntry` completo con `domain_content_type` en blanco y
@@ -6156,12 +6155,14 @@ Sin tocar todavía.
 ### Punto 5 -- Estado de infraestructura para retomar
 
 - **VM `h28-ocr-batch-1`:** estado real desconocido al cierre de
-  S84 -- S84 no la tocó ni la consultó. Verificar estado real
-  (`gcloud compute instances describe h28-ocr-batch-1
-  --project=gen-lang-client-0961484137 --zone=europe-west1-b
-  --format='value(status)'`) antes de asumir que sigue en ejecución
-  desde S83.
-- Sin migraciones pendientes de confirmar -- S84 no generó ninguna.
+  S83 -- la reapertura de la sesión no la tocó ni la consultó.
+  Verificar estado real (`gcloud compute instances describe
+  h28-ocr-batch-1 --project=gen-lang-client-0961484137
+  --zone=europe-west1-b --format='value(status)'`) antes de asumir
+  que sigue en ejecución.
+- Sin migraciones pendientes de confirmar -- esta reapertura no
+  generó ninguna.
+
 ### COMPLETADAS EN S82 (sesión muy larga, con varias interrupciones
 ### reales por fallos del propio modelo -- registradas tal cual,
 ### sin suavizar)
