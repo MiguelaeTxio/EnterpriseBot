@@ -6093,6 +6093,27 @@ S84**, no S85.
 ## Hoja de Ruta para la Siguiente Sesión (S85) -- REESCRITA al cierre
 ## de S84, sustituye por completo a la anterior
 
+**DIRECTRIZ DE ALCANCE (registrada explícitamente en sesión de
+continuidad tras S84, confirmada por Miguel Ángel como decisión ya
+vigente desde sesiones anteriores, no nueva -- no debe depender de
+memoria de sesión):** el barrido de fechas de H30 se hace dominio
+PERSONAL completo primero (todos los tipos con `tracks_expiry=True`
+de las familias IDENTIDAD_PERSONAL, LABORAL, SALUD_BAJAS_PERSONA,
+PRL_FORMACION, ADMINISTRATIVO -- cualquier tipo cuyo `domain` sea
+PERSONAL o BOTH), y solo cuando ese dominio esté cerrado por completo
+se empieza con el dominio MÁQUINAS (CIRCULACION, SEGUROS, FINANCIERO,
+TECNICA_SEGURIDAD, BAJAS_MAQUINA -- tipos con `domain`=MACHINE).
+Dentro de PERSONAL, el criterio de orden es por volumen real (mayor
+cantidad de documentos sin fecha primero), salvo indicación puntual
+en contra.
+
+**Punto de partida real de esta directriz, auditoría completa por
+tipo (ver Comando S de la sesión, `EnterpriseBot_003_GET.txt`):** 67
+tipos activos con `tracks_expiry=True`, 6.024 documentos vivos sin
+ninguna fecha en total. Empezando por `RECONOCIMIENTO_MEDICO`
+(SALUD_BAJAS_PERSONA, 125 sin fecha) a petición explícita de Miguel
+Ángel, primero de la lista de tipos del dominio PERSONAL a atacar.
+
 **Punto EPIS "NO ES ENTREGA" (arrastrado 3.ª sesión sin avanzar --
 sigue como pregunta explícita, directriz de cierre 2.2):** ¿Cuándo
 quieres que se haga la revisión visual real de los documentos "NO ES
