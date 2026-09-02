@@ -91,6 +91,12 @@ MYSQL_USERNAME = "MiguelAeTxio"
 BUCKET = "cgs_grupo_alvarez"
 
 _SOFFICE_TIMEOUT_SECONDS = 60
+# S84: umbral minimo de caracteres para considerar que un PDF tiene
+# texto nativo real (no un residuo de firma electronica). Verificado
+# real: 67 caracteres (solo fechas repetidas) NO es contenido real;
+# un documento EPIS real con cabecera+tabla+pie ronda varios cientos
+# de caracteres como minimo.
+_MIN_NATIVE_TEXT_CHARS = 150
 
 _DNI_LETTER_TABLE = "TRWAGMYFPDXBNJZSQVHLCKE"
 # S82: acepta tambien NIE (letra X/Y/Z inicial) -- bug real
@@ -300,14 +306,25 @@ def _extract_pdf_native(data):
     """Lee un PDF con capa de texto real -- tabla via find_tables()
     (pymupdf), mismo formato de retorno que _extract_docx. Devuelve
     ademas has_text para que quien llama decida si hace falta OCR de
-    respaldo."""
+    respaldo.
+
+    CORREGIDO S84: un PDF puede llevar un residuo de texto nativo
+    minusculo (confirmado real: 67 caracteres, solo fechas repetidas
+    "10/07/2024" dejadas por el proceso de firma electronica en un
+    "-signed.pdf") mientras el contenido real de la tabla vive
+    UNICAMENTE en la imagen escaneada. `t.strip()` no vacio no basta
+    para decidir "hay texto real" -- se exige un minimo de longitud
+    (`_MIN_NATIVE_TEXT_CHARS`) antes de descartar el OCR de respaldo.
+    Verificado visualmente descargando el PDF real: el documento SI es
+    legible a simple vista, el bug estaba en saltarse el OCR, no en el
+    documento."""
     doc = fitz.open(stream=data, filetype="pdf")
     text_parts = []
     rows = []
     has_text = False
     for page in doc:
         t = page.get_text()
-        if t.strip():
+        if len(t.strip()) >= _MIN_NATIVE_TEXT_CHARS:
             has_text = True
         text_parts.append(t)
         for tabla in page.find_tables():
