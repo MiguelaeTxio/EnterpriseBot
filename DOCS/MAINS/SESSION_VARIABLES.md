@@ -867,6 +867,45 @@ servicio, `watched_folders.json`, `history.json`,
 
 ---
 
+## IMAGEN PERSONALIZADA DE LAS VMs DE OCR -- `h28-ocr-batch-image-v1`
+## (sesion tras S85, 2026-09-02)
+
+**Decision explicita de Miguel Angel:** en vez de instalar dependencias
+maquina a maquina (Tesseract, EasyOCR/PyTorch CPU, `antiword`,
+`libreoffice-writer`, venv `ocr_venv` con `pip-sync` ya aplicado),
+`h28-ocr-batch-1` se congela como imagen de disco reutilizable para
+las 4 VMs. Nunca Puppet/Chef/Ansible -- decision explicita de no anadir
+una herramienta nueva al proyecto, todo con `gcloud` nativo.
+
+- **Nombre real:** `h28-ocr-batch-image-v1` (proyecto
+  `gen-lang-client-0961484137`, sin family todavia -- imagen suelta).
+- **Creada:** 2026-09-02, desde el disco de `h28-ocr-batch-1` ya
+  parado (`TERMINATED`, nunca `SUSPENDED` -- crear la imagen con el
+  disco en uso o en pausa da una copia inconsistente).
+- **Contenido real:** `ocr_venv/` ya sincronizado contra
+  `requirements-ocr-vm.txt` (incluye EasyOCR + torch/torchvision
+  `+cpu`, nunca CUDA -- estas VMs no tienen GPU), mas los paquetes de
+  sistema `antiword`/`libreoffice-writer`/`tesseract-ocr-spa` ya
+  instalados. 50 GB.
+- **Comando real usado:**
+  ```
+  gcloud compute images create h28-ocr-batch-image-v1 --source-disk=h28-ocr-batch-1 --source-disk-zone=europe-west1-b --project=gen-lang-client-0961484137
+  ```
+- **Para levantar una VM nueva desde esta imagen** (en vez de la
+  imagen base de Ubuntu 24.04 + bootstrap manual):
+  ```
+  gcloud compute instances create NOMBRE_VM --image=h28-ocr-batch-image-v1 --zone=europe-west1-b --machine-type=e2-standard-8 --project=gen-lang-client-0961484137
+  ```
+- **Cuando cambie una dependencia real** (nuevo paquete en
+  `requirements-ocr-vm.in`, nuevo paquete de sistema): actualizar
+  `h28-ocr-batch-1` a mano una vez, pararla, y regenerar la imagen con
+  un nombre nuevo (`h28-ocr-batch-image-v2`...) -- las imagenes de GCE
+  son inmutables, no se sobreescriben. Las VMs ya creadas desde la
+  version anterior no se actualizan solas; se recrean desde la imagen
+  nueva si hace falta.
+
+---
+
 ## CORRECCIÓN REAL — NOMBRES DE LAS 4 VMs DE OCR (S78, 2026-08-28)
 
 **Error detectado en sesión, corregido contra captura real de Cloud
