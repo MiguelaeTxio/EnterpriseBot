@@ -6171,14 +6171,19 @@ detectado por el texto real del documento (regex
   literalmente "Caduca a los tres meses" impreso): **emisión + 3
   meses**.
 
-Aplicado ya sobre los 453 documentos que tenían `issue_date` Y
-`ocr_text` cacheado (441 a un año, 12 a tres meses). **Pendiente
-real, sin resolver:** 60 documentos con `issue_date` pero SIN
-`ocr_text` cacheado (fecha puesta a mano en sesiones anteriores a que
-se empezara a cachear el texto) -- no clasificables hasta que se
-re-procesen o se decida asumir "un año" por defecto para ellos y
-revisar aparte si alguna vez da problema. Decisión pendiente de
-Miguel Ángel, no tomada todavía.
+Aplicado sobre los 453 documentos que tenían `issue_date` Y `ocr_text`
+cacheado en el primer barrido (441 a un año, 12 a tres meses). Los 60
+restantes (`issue_date` puesta en sesiones anteriores a que se
+empezara a cachear `ocr_text`) se reprocesaron después con el script
+nuevo `backfill_reconocimiento_medico_ocr_text.py` (descarga de nuevo
+de GCS, misma cascada Tesseract->PSM6->EasyOCR, solo para sacar texto
+y clasificar -- nunca toca `issue_date`, ya correcta): los 60
+clasificados como "un año", 0 sin texto, 0 errores.
+
+**`RECONOCIMIENTO_MEDICO` -- CERRADO DEL TODO, fechas Y caducidades:**
+513/513 documentos activos con `issue_date` tienen ya `expiry_date`
+calculada (501 a un año, 12 a tres meses). Verificado en BD real
+(`EnterpriseBot_017_GET.txt`), no solo en el resumen del script.
 
 hay prioridad real para esto todavía, dilo explícitamente y se retira
 de la hoja de ruta en vez de seguir arrastrándose.
