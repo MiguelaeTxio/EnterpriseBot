@@ -6066,6 +6066,36 @@ Corregido en caliente:
   tipo de resolución necesita un tratamiento distinto en
   `vigencia_service` (p. ej. tratarla como vigente permanente) o si
   se deja así.
+- **Estévão Veloso Sampaio (`id=42551`, NIE) -- mismo patrón que
+  Milheiro, hallazgo ampliado (ver más abajo).** Resolución real de
+  autorización de residencia y trabajo por cuenta ajena "por un año"
+  desde el inicio de su periodo de vigencia -- pero esa fecha de
+  inicio no consta como dato calendario en el propio documento (solo
+  "a partir de esa fecha cuando la autorización comience su periodo
+  de vigencia", ligada a la notificación/emisión real de la tarjeta,
+  que no tenemos). **Sin `expiry_date` forzado a propósito** -- mismo
+  criterio que Milheiro. Nacimiento confirmado en el documento
+  (01/08/1997) coincide con el ya registrado, sin cambios. **Miguel
+  Ángel confirmó verbatim tras ver el panel real (aviso rojo
+  esperado, confirma el enlace ya corregido): "no disponemos de su
+  tarjeta NIE real [...] lo que figura con el nombre NIE es ese
+  documento, única y exclusivamente"** -- no es que falte extraer la
+  fecha, es que el documento físico con fecha simplemente no existe
+  en el proyecto. Estado previsiblemente igual para Milheiro.
+
+**HALLAZGO AMPLIADO, tras petición explícita de Miguel Ángel de
+revisar TODOS los documentos, no solo los 5 tocados ayer:** de los
+127 documentos DNI/NIE reales de los 79 activos, **4 (no 3) estaban
+sin enlazar** (`domain_content_type`/`domain_object_id` en blanco --
+el campo real que decide si un documento aparece en la ficha de
+persona, ver `PersonalDetailView`). El cuarto, Estévão Veloso Sampaio,
+nunca se había tocado en S83 -- no es exclusivo de los documentos
+reclasificados ayer, es un problema más amplio de documentos huérfanos
+del enlace real. **Cero documentos mal enlazados a otra persona**
+(dato tranquilizador). Los 4 quedaron enlazados correctamente en
+caliente. Pendiente evaluar en otra sesión si hay más documentos
+huérfanos fuera del universo DNI/NIE de los 79 activos -- este barrido
+de S84 solo cubrió DNI/NIE.
 
 **DIRECTRIZ NUEVA para toda sesión futura que reclasifique
 `document_type` de un documento existente:** la reclasificación NUNCA
