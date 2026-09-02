@@ -277,18 +277,33 @@ class Command(BaseCommand):
                 stats["no_es_entrega"] += 1
                 continue
 
-            dni = _parse_dni(text)
-            if not dni:
-                stats["sin_dni"] += 1
-                continue
-            es_nie = dni[0] in _NIE_PREFIX_MAP
-
-            person = PersonIdentity.objects.filter(
-                dni=_normalize_dni(dni),
-            ).first()
-            if person is None:
-                stats["dni_sin_person_identity"] += 1
-                continue
+            # CORREGIDO S84: la persona ya puede estar vinculada en BD
+            # desde la propia clasificacion de ingesta
+            # (domain_content_type/domain_object_id) -- ese vinculo
+            # real tiene prioridad absoluta sobre volver a extraer el
+            # DNI del texto OCR. Miguel Angel, verbatim (mismo
+            # incidente real detectado en el cierre de birth_date):
+            # "mientras la base de datos sepa donde esta el documento,
+            # el documento tiene que estar asignado a su persona en
+            # base de datos [...] que coño me estas contando de
+            # carpeta/OCR". Solo se cae al parseo de DNI del OCR
+            # cuando el documento NO tiene persona vinculada todavia.
+            domain_person = entry.domain_object
+            if isinstance(domain_person, PersonIdentity):
+                person = domain_person
+                dni = person.dni
+            else:
+                dni = _parse_dni(text)
+                if not dni:
+                    stats["sin_dni"] += 1
+                    continue
+                person = PersonIdentity.objects.filter(
+                    dni=_normalize_dni(dni),
+                ).first()
+                if person is None:
+                    stats["dni_sin_person_identity"] += 1
+                    continue
+            es_nie = bool(dni) and dni[0] in _NIE_PREFIX_MAP
 
             date_ = (
                 _parse_date_from_filename(entry.name)
