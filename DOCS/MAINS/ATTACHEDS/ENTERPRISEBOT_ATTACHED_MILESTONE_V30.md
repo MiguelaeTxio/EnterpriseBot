@@ -6114,10 +6114,15 @@ ninguna fecha en total. Empezando por `RECONOCIMIENTO_MEDICO`
 (SALUD_BAJAS_PERSONA, 125 sin fecha) a petición explícita de Miguel
 Ángel, primero de la lista de tipos del dominio PERSONAL a atacar.
 
-**Punto EPIS "NO ES ENTREGA" (arrastrado 3.ª sesión sin avanzar --
-sigue como pregunta explícita, directriz de cierre 2.2):** ¿Cuándo
-quieres que se haga la revisión visual real de los documentos "NO ES
-ENTREGA" de EPIS? Sigue sin tocarse desde que se propuso en S82. Si no
+**Punto EPIS "NO ES ENTREGA" -- RETIRADO (sesión de continuidad tras
+S84):** este punto llevaba arrastrándose en la hoja de ruta desde S82
+pese a que la cola completa de EPIS quedó cerrada en el commit de
+cierre de S84 ("cola EPIS cerrada por completo", commit `c93ad5f`).
+Confirmado con datos reales en esta sesión: 0 documentos `EPIS` vivos,
+los 2.599 del histórico tienen `deleted_at` (marcador de completado/
+archivado de esa cola, no solo papelera). Nunca hubo que hacer la
+revisión visual pendiente -- el texto sobrevivió en el anexo por
+error, sin retirarse cuando el trabajo real ya se había cerrado.
 
 ---
 
