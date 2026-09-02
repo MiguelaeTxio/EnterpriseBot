@@ -22,6 +22,14 @@ google-cloud-storage
 # H30 (S78). Lectura de .xlsx (listados de asistencia a curso, etc.)
 # -- extract_personal_dates_bulk.py.
 openpyxl
+# H30 (sesion tras S85). Lector OCR candidato a sustituir a Tesseract
+# -- calidad ya validada en el PC de Miguel Angel contra el documento
+# real que confirmo el fallo (certificado CENTRO MEDICO ALAMEDA: si
+# lee "10 Enero 2022" donde Tesseract fallaba, con PSM automatico y
+# con PSM 6). Pendiente de validar RENDIMIENTO en esta VM antes de
+# convertirse en el lector oficial -- en el PC de Miguel Angel tardo
+# varios minutos por documento, inviable para el volumen real.
+easyocr
 # NOTA: .doc antiguo (Word 97-2003) se lee con `antiword`, que es un
 # paquete de SISTEMA (apt-get install antiword), no de pip -- no va
 # en este archivo. Documentado en SESSION_VARIABLES.md, seccion "VM
