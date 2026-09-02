@@ -975,22 +975,28 @@ cuántos procesos lanzar, en vez de asumir paralelo por defecto.
 
 ---
 
-## CLONAR EL REPO EN UNA VM/CONSOLA SSH REMOTA -- `git clone` CON
+## OPERACIONES GIT (CLONE Y PULL) EN UNA VM/CONSOLA SSH REMOTA -- CON
 ## PROMPT INTERACTIVO DE USUARIO/CONTRASEÑA **FALLA SIEMPRE**, NUNCA
-## VOLVER A PROPONERLO (confirmado S59, van ya 4 veces reales)
+## VOLVER A PROPONERLO (confirmado S59 para `clone`, REPETIDO en S84
+## para `pull` -- ver incidente abajo)
 
 **QUEDA TERMINANTEMENTE PROHIBIDO** proponer `git clone
-https://github.com/...` a secas esperando que Git pida usuario/
-contraseña de forma interactiva en una consola SSH remota (VM de GCE,
-Termux, cualquier sesión abierta vía `gcloud compute ssh`). Ese prompt
-interactivo falla de forma sistemática en este tipo de consola --
-confirmado real la 4ª vez en S59.
+https://github.com/...` NI `git pull origin main` (ni ningún otro
+comando git que toque el remoto) a secas, esperando que Git pida
+usuario/contraseña de forma interactiva en una consola SSH remota (VM
+de GCE, Termux, cualquier sesión abierta vía `gcloud compute ssh`).
+Ese prompt interactivo falla de forma sistemática en este tipo de
+consola -- confirmado real la 4ª vez en S59 (con `clone`) y de nuevo
+en S84 (con `pull`, mismo síntoma exacto, Miguel Ángel señaló
+explícitamente el patrón recursivo del error).
 
-**Método que SÍ funciona siempre, verificado S59:** capturar el token
-en una variable de entorno con `read -s` (oculta lo que se pega, nunca
-aparece en pantalla ni en el historial de la propia caja de comando),
-y usarlo inline en la URL de clonado, en la MISMA sesión de terminal
-(la variable no sobrevive a una consola nueva):
+**Método que SÍ funciona siempre, verificado S59/S84:** capturar el
+token en una variable de entorno con `read -s` (oculta lo que se
+pega, nunca aparece en pantalla ni en el historial de la propia caja
+de comando), y usarlo inline en la URL, en la MISMA sesión de
+terminal (la variable no sobrevive a una consola nueva -- hay que
+repetir el `read -s` cada vez que se abre una sesión SSH nueva a la
+VM, incluida una reconexión tras `resume`/`start`):
 
 ```bash
 cd {RUTA_DESTINO} && read -s -p "Pega aqui el token de GitHub (no se vera en pantalla): " GH_TOKEN && echo
@@ -999,11 +1005,18 @@ cd {RUTA_DESTINO} && read -s -p "Pega aqui el token de GitHub (no se vera en pan
 Miguel Ángel pega el token cuando se le pide (sin salida visible, es
 lo esperado). Caja siguiente, mismo terminal:
 
+**Para clonar por primera vez:**
 ```bash
 git clone https://x-access-token:${GH_TOKEN}@github.com/MiguelaeTxio/EnterpriseBot.git
 ```
 
-Nunca combinar ambas cajas en un solo bloque -- el `read -s` necesita
-su propio turno para que Miguel Ángel pegue el valor antes de que siga
-el resto del script.
+**Para actualizar un clon ya existente (S84):**
+```bash
+git -C {RUTA_DESTINO} pull https://x-access-token:${GH_TOKEN}@github.com/MiguelaeTxio/EnterpriseBot.git main
+```
+
+Nunca combinar el `read -s` con el `clone`/`pull` en un solo bloque
+-- el `read -s` necesita su propio turno para que Miguel Ángel pegue
+el valor antes de que siga el resto del script.
+
 
