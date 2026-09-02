@@ -6039,7 +6039,42 @@ detectado y corregido en el mismo turno antes de commitear.
 ---
 
 ## Hoja de Ruta para la Siguiente Sesión (S84) -- REESCRITA al cierre
-## de S83, sustituye por completo a la anterior
+## de S83, con correcciones en caliente al arranque de S84
+## (2026-09-02)
+
+**HALLAZGO REAL S84, YA CORREGIDO -- reclasificar `document_type` NO
+basta para que un documento aparezca como VIGENTE en el panel.**
+Miguel Ángel detectó al arrancar S84 que Adelaida Álvarez Díaz seguía
+mostrando "Sin documentos vigentes todavía" pese al DNI reclasificado
+ayer (`id=42992`). Causa real: `vigencia_service.is_current()` exige
+`expiry_date` o `issue_date` poblados -- reclasificar el tipo documental
+(S83) nunca tocó esos campos, quedaron en `None` en los 4 documentos
+que se reclasificaron ayer sin pasar por el pipeline de fechas.
+Corregido en caliente:
+- Adelaida Álvarez Díaz (`id=42992`): `expiry_date=2028-02-23`
+  (leído visualmente ayer, ya lo teníamos).
+- Rachid Benali (`id=39389`): `expiry_date=2026-09-15` (idem, y
+  coincide con el propio nombre del archivo).
+- Jacinto Rebollo Manzano (`id=30079`): `expiry_date=2030-09-16`,
+  extraído directamente por MRZ real sobre su `ocr_text` ya cacheado
+  (`extract_dni_mrz_expiry`).
+- Jorge Milheiro Felício (`id=42526`): **deliberadamente sin tocar**
+  -- es una resolución de recuperación de residencia de larga
+  duración concedida "indefinidamente", no una tarjeta con fecha de
+  caducidad. Forzar un `expiry_date` falso sería peor que dejarlo sin
+  vigencia calculada. Pendiente de decidir con Miguel Ángel si este
+  tipo de resolución necesita un tratamiento distinto en
+  `vigencia_service` (p. ej. tratarla como vigente permanente) o si
+  se deja así.
+
+**DIRECTRIZ NUEVA para toda sesión futura que reclasifique
+`document_type` de un documento existente:** la reclasificación NUNCA
+se da por completa sin comprobar en el mismo turno si el documento
+necesita `expiry_date`/`issue_date` para aparecer como vigente
+(`tracks_expiry` del nuevo tipo) -- si los necesita y no los tiene,
+extraerlos en el mismo momento (visualmente si hace falta, como se
+hizo aquí) antes de pasar al siguiente punto. Nunca dejar un
+documento "tipificado pero invisible" para el supervisor.
 
 **Pregunta bloqueante nueva (dato real que falta de Miguel Ángel,
 nunca arrastrada en silencio) -- responder antes de aplicar el
