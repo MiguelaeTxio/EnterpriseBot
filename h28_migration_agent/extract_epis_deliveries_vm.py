@@ -600,7 +600,7 @@ def _worker(
     tunnel_port, mysql_password, gcs_client, task_queue, results_lock,
     totals, unmapped_labels, log_lock, apply_changes,
     discard_unresolved, discard_unresolved_items, total_tasks,
-    heartbeat_state,
+    heartbeat_state, person_ct_id,
 ):
     def _connect():
         return pymysql.connect(
@@ -647,7 +647,7 @@ def _worker(
         if task is None:
             task_queue.task_done()
             break
-        entry_id, blob_name, name, parent_path = task
+        entry_id, blob_name, name, parent_path, domain_content_type_id, domain_object_id = task
         posicion, elapsed_txt, eta_txt = _next_position()
         _log(
             log_lock,
@@ -661,6 +661,7 @@ def _worker(
         try:
             _process_one(
                 conn, bucket_obj, entry_id, blob_name, name, parent_path,
+                domain_content_type_id, domain_object_id, person_ct_id,
                 bump, unmapped_labels, results_lock, log_lock,
                 apply_changes, discard_unresolved, discard_unresolved_items,
             )
@@ -706,6 +707,7 @@ def _worker(
 
 def _process_one(
     conn, bucket_obj, entry_id, blob_name, name, parent_path,
+    domain_content_type_id, domain_object_id, person_ct_id,
     bump, unmapped_labels, results_lock, log_lock,
     apply_changes, discard_unresolved, discard_unresolved_items,
 ):
@@ -753,34 +755,53 @@ def _process_one(
         bump("no_es_entrega_%s" % no_delivery)
         return
 
-    _, dni = _parse_person(text)
+    # CORREGIDO S84: la persona ya puede estar vinculada en BD desde
+    # la propia clasificacion de ingesta (domain_content_type_id/
+    # domain_object_id) -- ese vinculo real tiene prioridad absoluta
+    # sobre volver a extraer el DNI del texto OCR. Miguel Angel,
+    # verbatim, revisando uno a uno los 30 documentos de esta cola:
+    # todos menos 2 (los "ALVAREZ DIAZ, A." ambiguos entre Adolfo y
+    # Alberto, sin daño porque la BD ya los distingue por su vinculo
+    # real, no por texto) estaban perfectamente identificados via este
+    # vinculo, pese a que el DNI del OCR fallaba por columnas
+    # mezcladas en la tabla. Mismo criterio ya corregido en
+    # reprocess_epis_from_cache.py -- NUNCA volver a la version
+    # "siempre por DNI del contenido" documentada en el docstring
+    # original de este archivo, esa decision quedo obsoleta.
+    dni = None
+    if domain_content_type_id and person_ct_id and domain_content_type_id == person_ct_id and domain_object_id:
+        person_id = domain_object_id
+    else:
+        _, dni = _parse_person(text)
+
+        with conn.cursor() as cur:
+            if not dni:
+                _log(log_lock, "SIN DNI: %s/%s" % (parent_path, name))
+                bump("sin_persona")
+                if apply_changes and discard_unresolved:
+                    _trash_entry(cur, entry_id)
+                    conn.commit()
+                    bump("sin_persona_a_papelera")
+                return
+
+            cur.execute(
+                "SELECT id FROM document_explorer_personidentity WHERE dni = %s",
+                (_normalize_dni(dni),),
+            )
+            row = cur.fetchone()
+            if row is None:
+                _log(log_lock, "DNI SIN PersonIdentity: %s -- %s/%s" % (dni, parent_path, name))
+                bump("sin_persona")
+                if apply_changes and discard_unresolved:
+                    _trash_entry(cur, entry_id)
+                    conn.commit()
+                    bump("sin_persona_a_papelera")
+                return
+            person_id = row[0]
+
     date_ = _parse_date_from_filename(name) or _parse_date_from_content(text)
 
     with conn.cursor() as cur:
-        if not dni:
-            _log(log_lock, "SIN DNI: %s/%s" % (parent_path, name))
-            bump("sin_persona")
-            if apply_changes and discard_unresolved:
-                _trash_entry(cur, entry_id)
-                conn.commit()
-                bump("sin_persona_a_papelera")
-            return
-
-        cur.execute(
-            "SELECT id FROM document_explorer_personidentity WHERE dni = %s",
-            (_normalize_dni(dni),),
-        )
-        row = cur.fetchone()
-        if row is None:
-            _log(log_lock, "DNI SIN PersonIdentity: %s -- %s/%s" % (dni, parent_path, name))
-            bump("sin_persona")
-            if apply_changes and discard_unresolved:
-                _trash_entry(cur, entry_id)
-                conn.commit()
-                bump("sin_persona_a_papelera")
-            return
-        person_id = row[0]
-
         if not date_:
             _log(log_lock, "SIN FECHA reconocible: %s/%s" % (parent_path, name))
             bump("sin_items")
@@ -883,11 +904,6 @@ def _process_one(
         bump("deliveries_creadas", new_rows_this_doc)
         if created_this_doc == len(codes):
             cur.execute(
-                "SELECT id FROM django_content_type "
-                "WHERE app_label='document_explorer' AND model='personidentity'"
-            )
-            person_ct_id = cur.fetchone()[0]
-            cur.execute(
                 "UPDATE document_explorer_documentindexentry "
                 "SET domain_content_type_id=%s, domain_object_id=%s "
                 "WHERE id=%s",
@@ -933,7 +949,15 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--limit", type=int, default=None)
-    parser.add_argument("--threads", type=int, default=6)
+    parser.add_argument(
+        "--threads", type=int, default=3,
+        help=(
+            "S83/S84: 3 por defecto para h28-ocr-batch-1 (e2-standard-8) "
+            "-- con el reintento --psm 11 activo, mas hilos satura por "
+            "contencion de CPU real (87 de 116 fallaron por timeout con "
+            "--threads 6 en S83), no porque los documentos esten colgados."
+        ),
+    )
     parser.add_argument(
         "--discard-unresolved-persona", action="store_true",
         dest="discard_unresolved",
@@ -1018,13 +1042,21 @@ def main():
         db=MYSQL_DB_NAME, charset="utf8mb4",
     )
     with conn.cursor() as cur:
+        cur.execute(
+            "SELECT id FROM django_content_type "
+            "WHERE app_label='document_explorer' AND model='personidentity'"
+        )
+        row = cur.fetchone()
+        person_ct_id = row[0] if row else None
+
         if entry_ids is not None:
             # S83: verificacion dirigida contra IDs conocidos -- ignora
             # el filtro de ocr_text vacio a proposito (ver help de
             # --entry-ids arriba).
             placeholders = ",".join(["%s"] * len(entry_ids))
             cur.execute(
-                "SELECT e.id, e.blob_name, e.name, e.parent_path "
+                "SELECT e.id, e.blob_name, e.name, e.parent_path, "
+                "e.domain_content_type_id, e.domain_object_id "
                 "FROM document_explorer_documentindexentry e "
                 "JOIN document_explorer_documenttypecatalog t "
                 "  ON e.document_type_id = t.id "
@@ -1043,7 +1075,8 @@ def main():
                 shard_clause = " AND e.id %% %s = %s"
                 params = params + (args.shard_count, args.shard_index)
             cur.execute(
-                "SELECT e.id, e.blob_name, e.name, e.parent_path "
+                "SELECT e.id, e.blob_name, e.name, e.parent_path, "
+                "e.domain_content_type_id, e.domain_object_id "
                 "FROM document_explorer_documentindexentry e "
                 "JOIN document_explorer_documenttypecatalog t "
                 "  ON e.document_type_id = t.id "
@@ -1098,6 +1131,7 @@ def main():
                 task_queue, results_lock, totals, unmapped_labels,
                 log_lock, args.apply, args.discard_unresolved,
                 args.discard_unresolved_items, total_tasks, heartbeat_state,
+                person_ct_id,
             ),
         )
         th.start()
