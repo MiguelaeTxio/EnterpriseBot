@@ -330,6 +330,26 @@ no aceptan flags ni variables de entorno).
 - **Checkout real:** `~/EnterpriseBot/h28_migration_agent` (usuario
   `Usuario`, mismo nombre que en el PC Windows -- ojo, no es
   `MiguelAeTxio` ni ningún otro).
+
+  ⛔ **INCIDENCIA REAL, 2ª VEZ (S86, 2026-09-02) -- CONECTAR SIEMPRE
+  CON `gcloud compute ssh Usuario@NOMBRE_VM`, NUNCA `gcloud compute
+  ssh NOMBRE_VM` A SECAS.** Un `gcloud compute ssh` sin especificar
+  usuario deja que Google resuelva la cuenta Linux por su cuenta
+  (identidad derivada de la sesión/OS Login), que no tiene por qué
+  coincidir con `Usuario` -- el checkout de `~/EnterpriseBot` solo
+  existe en el home de esa cuenta concreta. Confirmado real dos veces
+  ya (esta sesión y una anterior sin dejar registro escrito, que es
+  precisamente por lo que se repitió): `whoami` devuelve un usuario
+  distinto de `Usuario` y `cd ~/EnterpriseBot` falla con "No such file
+  or directory" pese a que la VM sí tiene el checkout real.
+
+  **Comando correcto, de aquí en adelante siempre así:**
+  ```
+  gcloud compute ssh Usuario@NOMBRE_VM --project=gen-lang-client-0961484137 --zone=europe-west1-b
+  ```
+  Sustituye `NOMBRE_VM` por la VM real (`h28-ocr-batch-1/2/3/4`). Si
+  aun así `whoami` no devuelve `Usuario`, verificar con `pwd`/`ls
+  /home/` antes de asumir ninguna otra ruta -- nunca adivinar.
 - **Python:** el binario se llama `python3` en esta VM, **no**
   `python` (Ubuntu 24.04 no tiene el alias `python-is-python3`
   instalado). Usar siempre `python3 nombre_script.py`.
