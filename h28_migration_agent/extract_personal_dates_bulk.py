@@ -586,6 +586,12 @@ DEFAULT_FIELD_BY_CODE = {
     # ISSUE -- el mas reciente es el vigente, sin caducidad propia
     "CAP": "issue", "ACUERDO_SALARIAL": "issue", "ALTA": "issue",
     "AUTONOMO": "issue", "BAJA_PERSONAL": "issue",
+    # H30 (S87): activado tracks_expiry en el catalogo para este tipo
+    # (estaba en False, motivo real de que el barrido devolviera 0
+    # candidatos pese a 133 documentos reales sin fecha). "El mas
+    # reciente cuenta" -- mismo criterio que BAJA_PERSONAL, sin
+    # caducidad propia.
+    "PARTE_BAJA_MEDICA": "issue",
     "CAMBIO_EMPRESA_SUBROGACION": "issue", "CAMBIO_IRPF": "issue",
     "CARTA_BAJA_VOLUNTARIA": "issue", "CERTIFICADO_GIBRALTAR": "issue",
     "CERTIF_TRABAJO_COLEGIO": "issue", "COMUNICACION_CONTRATO": "issue",
