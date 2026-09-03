@@ -6316,10 +6316,11 @@ estado real es desconocido. Imagen `h28-ocr-batch-image-v1` +
 de nuevo salvo que cambie una dependencia real. **Conectar siempre
 con `gcloud compute ssh Usuario@NOMBRE_VM`, nunca sin usuario
 explícito** (incidencia real repetida dos veces, ver
-`SESSION_VARIABLES.md`). **Los barridos largos se lanzan normales,
-sin `tmux`** -- instrucción explícita de Miguel Ángel en S86, ver
-`SESSION_VARIABLES.md` (el `tmux` fue propuesto por el modelo y
-vetado expresamente).
+`SESSION_VARIABLES.md`). **`tmux` para barridos largos: no en
+`PEE=A`/Android (sin visibilidad real, instrucción explícita de
+Miguel Ángel en S86), sí con normalidad en `PEE=PC` cuando haga falta
+paralelizar varias instancias** -- ver criterio completo por entorno
+en `SESSION_VARIABLES.md`.
 
 ### COMPLETADAS EN S84 (cierre real de `birth_date` para 3 de 5
 ### personas, dos bugs de origen corregidos -- identificación de

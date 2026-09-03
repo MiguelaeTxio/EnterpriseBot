@@ -359,19 +359,23 @@ no aceptan flags ni variables de entorno).
   ⛔ **CORRECCIÓN EXPLÍCITA DE MIGUEL ÁNGEL, MISMA SESIÓN (S86),
   VERBATIM: "que ejecutes el puto script de forma normal, exactamente
   igual como lo hacíamos antes. Te metes el tmux por donde te
-  quepa."** El modelo propuso lanzar los barridos largos dentro de
-  `tmux` como mitigación de las desconexiones -- Miguel Ángel lo
-  rechazó de forma explícita y repetida. **Instrucción vigente: los
-  barridos se lanzan siempre de forma normal, directo en la sesión
-  SSH, exactamente como cualquier otro comando.** Si la sesión se
-  corta a mitad de un barrido (`--apply`), no pasa nada grave: los
-  documentos ya procesados antes del corte quedan aplicados en BD
-  (cada documento se comitea individualmente dentro del script), solo
-  hay que reconectar y relanzar el mismo comando -- el filtro
-  `issue_date IS NULL AND expiry_date IS NULL` de la consulta hace que
-  el propio script solo recoja los que de verdad faltan, sin
-  reprocesar lo ya hecho. **No usar `tmux` salvo que Miguel Ángel lo
-  pida explícitamente él mismo.**
+  quepa."** El motivo real, aclarado por Miguel Ángel después: en
+  Android (Termux, tanto tablet como móvil) `tmux` es un coñazo real
+  porque no hay visibilidad de lo que pasa dentro de la sesión -- se
+  va a ciegas. **Esto NO es una prohibición general de `tmux`, es
+  específico del entorno Android/Termux (`PEE=A`).** En PC (Git
+  Bash/PowerShell con terminal real) `tmux` es perfectamente
+  utilizable y **se vuelve inevitable en cuanto haga falta correr
+  varias instancias del extractor a la vez** (paralelizar un barrido
+  grande en varios procesos/VMs). Regla real, por entorno:
+  - `PEE=A` (Android): barridos siempre normales, sin `tmux`, un
+    proceso cada vez, directo en la sesión SSH. Si se corta por
+    inactividad, reconectar y relanzar el mismo comando (sin pérdida
+    real, ver más abajo).
+  - `PEE=PC` (Git Bash/PowerShell): usar `tmux` con normalidad cuando
+    haga falta, sobre todo para correr varios procesos/instancias en
+    paralelo -- ahí sí hay visibilidad real del terminal para
+    seguirlo.
 - **Python:** el binario se llama `python3` en esta VM, **no**
   `python` (Ubuntu 24.04 no tiene el alias `python-is-python3`
   instalado). Usar siempre `python3 nombre_script.py`.
