@@ -6184,148 +6184,154 @@ y 2.6), no solo en este anexo:**
    reescribirla -- nunca sobrevive a la sesión siguiente ni como
    completado ni de ninguna otra forma.
 
-## Hoja de Ruta para la Siguiente Sesión (S87) -- REESCRITA al cierre
-## de S86, sustituye por completo a la anterior
+### COMPLETADAS EN S87 (cierre real de `ALTA`/`DNI`/`IDC`/`BAJA_PERSONAL`/
+### `PARTE_BAJA_MEDICA`, 6 bugs reales corregidos en el extractor de
+### fechas, `tracks_expiry` activado para `PARTE_BAJA_MEDICA`)
 
-**Ejecución estrictamente secuencial, sin preguntar por dónde empezar
-(nfs-enterprisebot-pcs 2.5), salvo la pregunta bloqueante del punto 0,
-que sí va primero y sí requiere respuesta de Miguel Ángel antes de
-continuar.**
+**Punto 1 -- `ALTA`: CERRADO, 20/20 activos con fecha real, verificado
+por consulta directa (`ALTA activos sin fecha: 0`).** 16 resueltos por
+el extractor (13 directos + 3 tras corregir bugs reales), 4 leídos a
+mano de fotos reales aportadas por Miguel Ángel (OCR y EasyOCR
+fallaron los dos en esos 4). 3 documentos reclasificados por estar mal
+tipados (`ALTA GR 290208.pdf` id=34164 era en realidad `BAJA_PERSONAL`;
+`ALTA GARCIA LUQUE...` id=35389 y `ALTA RAMOS JIMENEZ...` id=36948 eran
+`PARTE_BAJA_MEDICA` -- partes médicos de incapacidad, no altas de
+empresa).
 
-### 0. `BAJA_PERSONAL` / `FORMACION` / `PARTE_BAJA_MEDICA` -- EN ALCANCE, decidido (ver directriz 4.18)
+**Seis bugs/mejoras reales en `classify_dates_in_text()`, sincronizados
+en las dos copias (`document_explorer/date_verification_service.py` +
+`h28_migration_agent/extract_personal_dates_bulk.py`), commits
+`c5313c6`..`2d2bf0b`:**
+1. `norm` no normalizaba saltos de línea reales del OCR antes de
+   comprobar contexto -- una etiqueta de dos palabras partida por un
+   `\n` (p.ej. "CON" al final de línea, "FECHA" al principio de la
+   siguiente) nunca coincidía con `"CON FECHA" in context`. Fix:
+   `re.sub(r"\s+", " ", norm)`.
+2. `"CONFECHA"` (fusionado sin espacio, artefacto real de OCR de baja
+   calidad) añadido a `_ISSUE_CONTEXT`.
+3. Patrón nuevo `INDICA A CONTINUACION` (boilerplate real de las
+   resoluciones de Alta/Baja de la Seguridad Social) en
+   `_LABELED_DATE_PATTERNS`.
+4. Año con separador de miles español ("1.996") causaba
+   `ValueError` silencioso -- `_parse_date`/`_parse_date_dmY` ahora
+   hacen `year_s.replace(".", "")` antes de `int()`.
+5. Ventana de siglo real para año de 2 dígitos -- antes sumaba siempre
+   2000 sin comprobar plausibilidad ("6-11-96" se leía 2096 en vez de
+   1996); ahora reutiliza el mismo criterio que `_mrz_century_cutoff()`.
+6. Etiquetas nuevas: `FECHA DE ALTA` (impreso antiguo REA), `ALTA:`/
+   `ATA` (impreso "Informe de Datos para la Cotización", IDC --
+   patrón `AL?TA` + gap + fecha), `FECHA DE LA BAJA` (parte P.9).
 
-Entran en el trabajo de H30, sin necesidad de confirmarlo de nuevo:
-el propio hito se reactivó en S77 explícitamente porque "6.085
-documentos de las families `LABORAL` + `SALUD_BAJAS_PERSONA` con 0%
-de `issue_date`/`expiry_date` extraído" bloqueaban H31
-(`ENTERPRISEBOT_ANNEX_ROUTER.md`, sección 3) -- `BAJA_PERSONAL` es
-`family=LABORAL` y `PARTE_BAJA_MEDICA` es `family=SALUD_BAJAS_PERSONA`,
-las dos families nombradas literalmente. `FORMACION` entra igual por
-el objetivo genérico del propio anexo ("dónde está cada documento de
-cada... persona"). Volumen real, para procesar cuando toque en el
-orden de abajo:
+**Mejora real de infraestructura, commit `c144b39`:** flag nuevo
+`--entry-ids` en `extract_personal_dates_bulk.py` -- acota el barrido
+a una lista concreta de ids, para usar siempre después de la
+auditoría de "realmente pendientes" (ver abajo) y no malgastar VM
+reprocesando documentos que ya son históricos.
 
-| Tipo | Activos | Sin fecha |
-|---|---|---|
-| `BAJA_PERSONAL` | 354 | 125 |
-| `FORMACION` | 1255 | 269 |
-| `PARTE_BAJA_MEDICA` | 132 | 131 |
+**Punto 2 -- `DNI`: ya estaba cerrado.** Miguel Ángel tenía razón al
+dudar del barrido automático -- los 17 "sin fecha" del anexo eran
+todos históricos (auditoría real: cada persona ya tenía otro `DNI` con
+fecha puesta). **0 pendientes reales**, confirmado por consulta.
+Metodología de auditoría reutilizada el resto de la sesión: antes de
+lanzar OCR sobre cualquier tipo, comprobar por consulta real si la
+persona ya tiene OTRO documento del mismo tipo con fecha -- si sí, el
+"sin fecha" es histórico y no hace falta tocarlo.
 
-`FORMACION` es el mayor volumen tratado hasta ahora en H30 (1255
-activos) -- conviene reservarle una sesión propia o buena parte de
-una, no intentarlo al final de una sesión ya larga.
+**Punto 3 -- `IDC`: CERRADO, 9/9 con la etiqueta `ALTA:`/`ATA` nueva.**
+Verificado por consulta (`IDC activos sin fecha: 0`).
 
-### 1. `ALTA` (LABORAL) -- cierre real pendiente, 20 activos sin fecha
+**`BAJA_PERSONAL`: CERRADO.** 125 sin fecha bruto -> solo 7 realmente
+pendientes tras auditoría (118 históricos). De los 7, 4 resueltos por
+OCR y **hallazgo real**: 5 archivos `WhatsApp Image...`
+(ids 39962-39966) estaban mal tipados como `BAJA_PERSONAL` -- por
+contenido real son 4 fotos del DNI (frente/reverso) y 1 de la tarjeta
+sanitaria de Abraham Zafra Balbuena (persona 216), que ya tiene DNI
+real con fecha (`dni_expiry_date=2026-10-13`, doc 39956). Reclasificados
+a `DNI` (4) y `TARJETA_SANITARIA` (1, tipo ya existente en catálogo);
+las 2 fechas mal aplicadas por el barrido automático (`39965`, `39966`,
+lecturas erróneas del MRZ/par 4a-4b que no correspondían a ninguna
+baja real) se anularon. **0 pendientes reales**, verificado.
 
-Verificado y reclasificado en S86 (ya no hace falta repetir la
-revisión de mal tipados: se hizo completa). Quedan exactamente estos
-20 documentos, **listos para procesar directo, sin repetir la
-consulta de localización**:
+**`PARTE_BAJA_MEDICA`: CERRADO -- con hallazgo real de catálogo.**
+Primer barrido: **0 candidatos** pese a 133 documentos reales sin
+fecha -- el tipo tenía `tracks_expiry=False` en
+`DocumentTypeCatalog`, bloqueando por completo que el script lo viera,
+pese a que la propia reactivación de H30 en S77 nombra literalmente la
+family `SALUD_BAJAS_PERSONA` de este tipo como motivo de apertura.
+Corregido (cambio de dato del catálogo, no de esquema, sin migración):
+`tracks_expiry=True`. Barrido relanzado en 3 shards en paralelo
+(3 ventanas SSH contra `h28-ocr-batch-1`, misma VM, sin `tmux`) tras
+aviso explícito de Miguel Ángel sobre cuidado con hilos/CPU -- 80/133
+resueltos directamente. Auditoría real sobre los 53 restantes: solo
+**2 realmente pendientes** (`Parte alta/baja Carvajal Gonzalez`,
+ids 38453/38454) -- resto históricos. Esos 2 se leyeron directamente
+del texto OCR ya cacheado (etiquetas `FECHA DE LA BAJA`/`FECHA DEL
+ALTA` del parte P.9, la segunda con ruido de OCR -- aplicadas a mano
+vía Comando S en vez de gastar otro barrido de VM para 2 documentos).
+**0 pendientes reales**, verificado.
 
-```
-id=27483 name=ALTA AUTONOMO 14-12-1995.pdf
-id=27484 name=ALTA RETA AUTONOMO 1-12-1995.pdf
-id=27561 name=Alta+Autonomo Adolfo Mayo  2017.pdf
-id=27891 name=ALTA AUTONOMO.pdf
-id=27948 name=alta autonomo II  .pdf
-id=27950 name=ALTA 1-6-21 ALEJANDRO ALVAREZ TR.pdf
-id=28280 name=parte alta Burgos Fernandez 27-12-21.jpeg
-id=34164 name=ALTA GR 290208.pdf
-id=34165 name=ALTA TR 010308 .pdf
-id=34190 name=CONTRATO Y ALTA ALVAREZ GEA, ALBERTO (GR).pdf
-id=35157 name=ALTA GRUALDI ANTONIO JESUS  (GR) 3.pdf
-id=35389 name=ALTA GARCIA LUQUE, ALEJANDRO 19-12-23.jpg
-id=35687 name=GOMEZ GARCIA, J. ANTº 2.pdf
-id=35789 name=ALTA.jpg
-id=35940 name=ALTA GUTIERREZ MATEO, CRISTHIAN.pdf
-id=36948 name=ALTA RAMOS JIMENEZ, MANUEL LEANDRO.jpg
-id=37082 name=ALTA GL.pdf
-id=37085 name=ALTA,CONTRATO, SUBROGACION GR.pdf
-id=39958 name=INFORME DE ALTA ABRAHAM ZAFRA.pdf
-id=42178 name=GUTIERREZ_MATEO_CRISTHIAN_ALTA_20250416.pdf
-```
+**Infraestructura al cierre de S87:** `h28-ocr-batch-1` queda
+**arrancada** (no se paró al cierre -- se prevé reutilizar pronto en
+la sesión de `FORMACION`). Comprobar estado real antes de asumir nada
+la próxima vez (`gcloud compute instances describe h28-ocr-batch-1
+--zone=europe-west1-b --project=gen-lang-client-0961484137
+--format="value(status)"`), nunca dar por hecho ni el estado parado ni
+el arrancado.
 
-**Criterio de cierre:** lanzar
-`extract_personal_dates_bulk.py --document-type ALTA --apply` (ya
-no hace falta `--limit` de muestra, el patrón del extractor ya está
-validado en 3 tipos reales) y verificar después por consulta real
-que `ALTA` activos con `issue_date IS NULL AND expiry_date IS NULL`
-= 0, filtrado por `is_active_employee=True`, nunca fiarse del resumen
-del propio script (cuenta por shard, no contra la tabla). Como en
-S86, lo que quede `SIN FECHA` tras Tesseract+PSM6+EasyOCR: revisar si
-el texto trae alguna fecha suelta útil por evidencia cruzada con el
-nombre de archivo antes de pedir foto; solo pedir foto si de verdad
-no hay ninguna pista textual.
+**Directriz reforzada de sesión, aplicable a todo tipo documental
+futuro:** nunca lanzar un barrido de OCR/VM sobre un `document_type`
+completo sin antes (1) confirmar por consulta real cuántos "sin fecha"
+hay de verdad, y (2) aplicar la auditoría "¿la persona ya tiene otro
+documento del mismo tipo con fecha?" para separar pendientes reales de
+históricos -- en `BAJA_PERSONAL` y `PARTE_BAJA_MEDICA` esto redujo el
+volumen real a procesar en más de un 90% frente a la cifra bruta.
 
-### 2. `DNI` (IDENTIDAD_PERSONAL) -- reverificar contra BD real primero
+## Hoja de Ruta para la Siguiente Sesión (S88) -- REESCRITA al cierre
+## de S87, sustituye por completo a la anterior
 
-El anexo decía "127 activos, 17 sin fecha" antes de S86 -- cifra sin
-tocar en toda la sesión, **no fiarse sin repetir la consulta real**
-(mismo patrón que ya demostró discrepancias reales en `CAP` y
-`AUTORIZACION_USO_MAQUINARIA`). Antes de lanzar nada, revisar también
-si hay documentos mal tipados por nombre (mismo patrón que en S86).
+**Ejecución estrictamente secuencial, sin preguntar por dónde
+empezar.**
 
-### 3. `IDC` (LABORAL) -- reverificar contra BD real primero
+### 1. `FORMACION` (LABORAL) -- mayor volumen de H30 hasta ahora
 
-El anexo decía "178 activos, 10 sin fecha" antes de S86 -- misma
-reserva que el punto 2, verificar antes de asumir.
+**Antes de lanzar nada:** repetir la auditoría real de S87 (nunca
+fiarse de la cifra del anexo, "269 sin fecha" es la cifra de antes de
+S86/S87, sin tocar desde entonces) -- consulta directa de "sin fecha"
+bruto + auditoría de "¿la persona ya tiene otro `FORMACION` con
+fecha?" para aislar los pendientes reales antes de decidir cuántos
+shards/VMs hacen falta. Dado el volumen bruto (1255 activos), esta
+sesión se dedica en gran parte o por completo a este punto.
 
-### 4. Los ~789 documentos "no críticos" sin fecha
+**Criterio de cierre:** consulta real
+`FORMACION activos sin fecha (filtrado por is_active_employee=True,
+domain_content_type=PersonIdentity, deleted_at/purged_at IS NULL) = 0`
+tras aplicar la misma auditoría de históricos que en los tipos ya
+cerrados.
 
-3.ª prioridad ya confirmada por Miguel Ángel en S83, se ataca después
-de cerrar los puntos 0-3 de arriba (el punto 0 ya está en alcance,
-no condicional -- ver directriz 4.18).
+**Antes de gastar OCR en ningún candidato:** revisar si hay documentos
+mal tipados por nombre de archivo -- patrón real repetido en
+`RECONOCIMIENTO_MEDICO`, `CAP`, `ALTA` y `BAJA_PERSONAL` en sesiones
+anteriores (decenas de documentos mal tipados encontrados cada vez que
+se ha mirado, incluido el hallazgo real de S87 de fotos de DNI mal
+tipadas como `BAJA_PERSONAL`).
 
-**En todos los puntos:** antes de asumir que todo "sin fecha" es
-problema de OCR, revisar si hay documentos mal tipados por nombre de
-archivo (patrón real repetido en `RECONOCIMIENTO_MEDICO`, `CAP` y
-`ALTA` en sesiones anteriores/S86 -- decenas de documentos mal
-tipados encontrados cada vez que se ha mirado). Usar siempre la
-cascada Tesseract->PSM 6->EasyOCR ya integrada, con los dos patrones
-etiquetados nuevos de S86 ya incorporados (`A FECHA (...)` y el par
-`4a.`/`4b.` del formato comunitario -- ver COMPLETADAS EN S86).
+**Si aparecen bugs reales de extractor** (etiquetas nuevas de
+contexto, formatos de fecha no reconocidos): corregir en las dos
+copias sincronizadas (`document_explorer/date_verification_service.py`
++ `h28_migration_agent/extract_personal_dates_bulk.py`), mismo patrón
+que S87.
 
-**Precedente real de S86 a tener en cuenta al trabajar cualquier tipo
-con "única fecha, defecto" ya aplicada de sesiones anteriores a la
-existencia de estos dos patrones etiquetados:** varios documentos de
-`TARJETA_CUALIF_CONDUCTOR` tenían el campo equivocado (`issue_date`
-metido en `expiry_date` o viceversa) porque el extractor, antes de
-S86, solo sabía escribir un campo por "única fecha" sin distinguir
-cuál de las dos fechas reales del par había capturado. Si un tipo
-tiene fechas aplicadas de antes de S86 y su `DEFAULT_FIELD_BY_CODE`
-es de un tipo con caducidad real, vale la pena una comprobación
-rápida cruzada (nombre de archivo / texto OCR) antes de darlo por
-bueno sin mirar.
+**Si el volumen real tras la auditoría lo justifica:** usar
+`--shard-count`/`--shard-index` en varias ventanas SSH contra
+`h28-ocr-batch-1` (ya arrancada, ver Infraestructura arriba) -- nunca
+`tmux`, preguntar a Miguel Ángel por el número de shards si el volumen
+real es grande, igual que en S87.
 
-**Renombrado canónico del resto del catálogo: POSPUESTO, no se
-pregunta más.** Directriz ya fijada -- no se retoma hasta que todos
-los documentos que requieren fecha real la tengan extraída. Dejar de
-arrastrar esta pregunta en la hoja de ruta de sesión en sesión (error
-real de S86: se copió la pregunta sin comprobar si seguía teniendo
-sentido preguntarla, pese a que la directriz de fondo ya estaba
-fijada desde antes).
+### 2. Los ~789 documentos "no críticos" sin fecha
 
-**Bloqueado, sin acción posible desde el proyecto (no reintentar sin
-documento nuevo):** Santiago Nicolás Gutiérrez y Jerónimo Delgado
-Hurtado siguen sin `birth_date`, sin documento DNI/NIE vinculado en
-BD.
-
-**Infraestructura:** `h28-ocr-batch-1` quedó parándose al cierre de
-S86 (comando de `stop` lanzado, pero sin confirmar la salida final en
-el chat -- **comprobar estado real con
-`describe --format="value(status)"` antes de asumir que ya está
-`TERMINATED`**, nunca dar por hecho). Las otras tres VMs
-(`h28-ocr-batch-2/3/4`) no se han tocado en toda la sesión S86, su
-estado real es desconocido. Imagen `h28-ocr-batch-image-v1` +
-`startup-script-ocr-vm.sh` siguen listos, no hace falta instalar nada
-de nuevo salvo que cambie una dependencia real. **Conectar siempre
-con `gcloud compute ssh Usuario@NOMBRE_VM`, nunca sin usuario
-explícito** (incidencia real repetida dos veces, ver
-`SESSION_VARIABLES.md`). **`tmux` para barridos largos: no en
-`PEE=A`/Android (sin visibilidad real, instrucción explícita de
-Miguel Ángel en S86), sí con normalidad en `PEE=PC` cuando haga falta
-paralelizar varias instancias** -- ver criterio completo por entorno
-en `SESSION_VARIABLES.md`.
+Reservados para la sesión siguiente a esta (decisión explícita de
+Miguel Ángel en S87) -- no se ataca en S88 salvo que `FORMACION` se
+cierre con mucho margen de sesión libre.
 
 ### COMPLETADAS EN S84 (cierre real de `birth_date` para 3 de 5
 ### personas, dos bugs de origen corregidos -- identificación de
