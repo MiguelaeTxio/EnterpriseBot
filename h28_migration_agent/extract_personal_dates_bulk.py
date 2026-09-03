@@ -695,6 +695,15 @@ def main():
              "(p.ej. RECONOCIMIENTO_MEDICO). Sin este flag, barre todos "
              "los tipos con tracks_expiry=True.",
     )
+    parser.add_argument(
+        "--entry-ids", type=str, default=None,
+        help="H30 (S87). Lista de ids de DocumentIndexEntry separados "
+             "por coma (p.ej. 35390,39463) -- acota el barrido a "
+             "exactamente esos ids, ignorando shard/limit. Pensado para "
+             "usar tras la auditoria de 'realmente pendientes' (persona "
+             "sin OTRO documento del mismo tipo ya fechado), evitando "
+             "reprocesar en VM el resto del lote que ya es historico.",
+    )
     args = parser.parse_args()
     if not (0 <= args.shard_index < max(args.shard_count, 1)):
         parser.error("--shard-index debe estar entre 0 y --shard-count - 1")
@@ -746,6 +755,19 @@ def main():
         type_clause = " AND t.code = %s"
         type_params = (args.document_type,)
 
+    entry_ids_clause = ""
+    entry_ids_params = ()
+    if args.entry_ids:
+        try:
+            ids = [int(x.strip()) for x in args.entry_ids.split(",") if x.strip()]
+        except ValueError:
+            parser.error("--entry-ids debe ser una lista de ids separados por coma")
+        if not ids:
+            parser.error("--entry-ids no puede quedar vacio")
+        placeholders = ", ".join(["%s"] * len(ids))
+        entry_ids_clause = " AND e.id IN (%s)" % placeholders
+        entry_ids_params = tuple(ids)
+
     with conn.cursor() as cur:
         cur.execute(
             "SELECT id FROM django_content_type "
@@ -766,9 +788,9 @@ def main():
             "AND e.expiry_date IS NULL AND e.issue_date IS NULL "
             "AND e.deleted_at IS NULL AND e.purged_at IS NULL "
             "AND p.is_active_employee = 1"
-            + type_clause + shard_clause +
+            + type_clause + shard_clause + entry_ids_clause +
             " ORDER BY e.id",
-            (person_ct_id,) + type_params + shard_params,
+            (person_ct_id,) + type_params + shard_params + entry_ids_params,
         )
         rows = cur.fetchall()
 
