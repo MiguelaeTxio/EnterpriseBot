@@ -577,7 +577,12 @@ DEFAULT_FIELD_BY_CODE = {
 
 
 def classify_dates_in_text(text):
+    # H30 (S87): normalizar espacios en blanco (incluidos saltos de
+    # linea reales del OCR) a un unico espacio ANTES de la comprobacion
+    # de contexto -- ver comentario completo en
+    # document_explorer/date_verification_service.py (copia sincronizada).
     norm = _strip_accents(text).upper()
+    norm = re.sub(r"\s+", " ", norm)
     expiry_candidates, issue_candidates, other_dates = [], [], []
 
     # Maxima prioridad absoluta: par "4a."/"4b." del formato

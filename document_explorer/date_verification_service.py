@@ -408,7 +408,18 @@ def classify_dates_in_text(text):
     ambos lados (_CONTEXT_WINDOW caracteres) por palabras de
     caducidad/emision.
     """
+    # H30 (S87): normalizar espacios en blanco (incluidos saltos de
+    # linea reales del OCR) a un unico espacio ANTES de la comprobacion
+    # de contexto -- si no, una etiqueta de dos palabras como "CON
+    # FECHA" que el OCR parte justo en el salto de linea ("CON" al
+    # final de una linea, "FECHA" al principio de la siguiente) nunca
+    # coincide con el "in context" literal, porque el hueco real es un
+    # "\n", no un espacio. Incidente real (ALTA, S87): "con | fecha
+    # 21/04/2025" (el "|" es solo el separador de impresion de depuracion,
+    # el texto real lleva "\n") se marcaba SIN FECHA pese a tener la
+    # etiqueta de emision justo al lado.
     norm = _strip_accents(text).upper()
+    norm = re.sub(r"\s+", " ", norm)
     expiry_candidates = []
     issue_candidates = []
     other_dates = []
