@@ -52,6 +52,10 @@ _ISSUE_CONTEXT = [
     # H30 (S87): etiqueta real de impreso antiguo REA -- ver
     # comentario completo en la copia standalone.
     "FECHA DE ALTA",
+    # H30 (S87): etiqueta real del "PARTE MEDICO DE BAJA/ALTA DE
+    # INCAPACIDAD TEMPORAL (P.9)" -- "PARTE DE BAJA [X] Fecha de la
+    # baja 19/10/2020".
+    "FECHA DE LA BAJA",
 ]
 # H30 (sesion de continuidad tras S79). Incidente real: 3 de 5
 # RECONOCIMIENTO_MEDICO reales devolvieron la fecha de NACIMIENTO

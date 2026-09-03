@@ -497,6 +497,10 @@ _ISSUE_CONTEXT = [
     # autonomos, "ALTA AUTONOMO.pdf") -- "Fecha de alta Núm.
     # identificación | | Ye : ese 6 NOVIEMBRE 1.996".
     "FECHA DE ALTA",
+    # H30 (S87): etiqueta real del "PARTE MEDICO DE BAJA/ALTA DE
+    # INCAPACIDAD TEMPORAL (P.9)" -- "PARTE DE BAJA [X] Fecha de la
+    # baja 19/10/2020".
+    "FECHA DE LA BAJA",
 ]
 # Sesion de continuidad tras S79 -- incidente real: fechas de
 # nacimiento coladas como "unica fecha, por defecto" en
