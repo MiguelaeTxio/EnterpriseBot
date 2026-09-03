@@ -93,6 +93,14 @@ _BIRTHDATE_CONTEXT = [
 _RECEIPT_NOISE_CONTEXT = [
     "PERIODO", "DEVOLUCION", "INSCRITA", "INSCRIPC",
 ]
+# H30 (S89). "FECHA MAXIMA DEVOLUCION PARA RECIBOS NO AUTORIZADOS O
+# CON DISCONFORMIDAD PROBADA EN IMPORTE: DD/MM/AAAA" -- el tramo legal
+# entre la etiqueta y la fecha real supera los 70 caracteres de
+# _CONTEXT_WINDOW (verificado real: la fecha seguia colandose tras el
+# primer intento de exclusion). Ventana mas ancha, solo para esta
+# comprobacion de ruido -- la clasificacion issue/expiry normal sigue
+# usando _CONTEXT_WINDOW sin cambios.
+_NOISE_CONTEXT_WINDOW = 140
 
 _DATE_RE = re.compile(r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})")
 _CONTEXT_WINDOW = 70
@@ -495,7 +503,11 @@ def classify_dates_in_text(text):
             norm[match.end():window_end]
         if any(word in context for word in _BIRTHDATE_CONTEXT):
             continue
-        if any(word in context for word in _RECEIPT_NOISE_CONTEXT):
+        noise_start = max(0, match.start() - _NOISE_CONTEXT_WINDOW)
+        noise_end = min(len(norm), match.end() + _NOISE_CONTEXT_WINDOW)
+        noise_context = norm[noise_start:match.start()] + \
+            norm[match.end():noise_end]
+        if any(word in noise_context for word in _RECEIPT_NOISE_CONTEXT):
             continue
         if any(word in context for word in _EXPIRY_CONTEXT):
             expiry_candidates.append(parsed)
@@ -516,7 +528,11 @@ def classify_dates_in_text(text):
             norm[match.end():window_end]
         if any(word in context for word in _BIRTHDATE_CONTEXT):
             continue
-        if any(word in context for word in _RECEIPT_NOISE_CONTEXT):
+        noise_start = max(0, match.start() - _NOISE_CONTEXT_WINDOW)
+        noise_end = min(len(norm), match.end() + _NOISE_CONTEXT_WINDOW)
+        noise_context = norm[noise_start:match.start()] + \
+            norm[match.end():noise_end]
+        if any(word in noise_context for word in _RECEIPT_NOISE_CONTEXT):
             continue
         if any(word in context for word in _EXPIRY_CONTEXT):
             expiry_candidates.append(parsed)
