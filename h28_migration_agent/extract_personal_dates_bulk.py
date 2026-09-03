@@ -500,6 +500,25 @@ _DATE_LARGO_RE = re.compile(
 )
 
 _GAP = r"[^\d]{0,15}"
+# Par "4a."/"4b." del formato comunitario (permiso de conduccion UE,
+# reutilizado tal cual por la Tarjeta de Cualificacion del Conductor
+# -- misma disposicion de campos). Confirmado con Miguel Angel (S86)
+# y verificado contra fuentes independientes (DGT, Comunidad de
+# Madrid, Generalitat Valenciana, gestorias): 4a = fecha de expedicion
+# (issue), 4b = fecha de caducidad (expiry), 4c = autoridad emisora.
+# Maxima prioridad -- por delante incluso de _LABELED_DATE_PATTERNS,
+# porque un documento con el par completo es evidencia mas fuerte que
+# una unica fecha etiquetada, y evita que el escaneo generico de
+# fechas sueltas descarte por ambiguedad (nacimiento, numero de
+# carne, codigo comunitario) lo que el propio documento ya resuelve
+# sin dudas.
+_FIELD_4A_4B_RE = re.compile(
+    r"4A\.?\s*(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})"
+    r".{0,40}?"
+    r"4B\.?\s*(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})",
+    re.DOTALL,
+)
+
 _LABELED_DATE_PATTERNS = [
     re.compile(r"PERIODO" + _GAP + r"DESDE" + _GAP + r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})"),
     re.compile(r"FECHA\s+DE\s+INICIO\s+DEL\s+CONTRATO" + _GAP + r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})"),
@@ -560,6 +579,18 @@ DEFAULT_FIELD_BY_CODE = {
 def classify_dates_in_text(text):
     norm = _strip_accents(text).upper()
     expiry_candidates, issue_candidates, other_dates = [], [], []
+
+    # Maxima prioridad absoluta: par "4a."/"4b." del formato
+    # comunitario -- ver comentario junto a _FIELD_4A_4B_RE. Devuelve
+    # los DOS campos a la vez (unico caso de todo el extractor que lo
+    # hace), porque el propio documento ya distingue expedicion de
+    # caducidad sin ninguna ambiguedad.
+    match_4a4b = _FIELD_4A_4B_RE.search(norm)
+    if match_4a4b:
+        issue_4a = _parse_date_dmY(*match_4a4b.groups()[0:3])
+        expiry_4b = _parse_date_dmY(*match_4a4b.groups()[3:6])
+        if issue_4a and expiry_4b:
+            return expiry_4b, issue_4a, []
 
     # Maxima prioridad: etiqueta explicita -- nunca ambigua.
     for pattern in _LABELED_DATE_PATTERNS:
@@ -712,8 +743,8 @@ def main():
 
     stats = {
         "heuristica_nombre": 0, "mrz": 0, "frente": 0, "ocr_contexto": 0,
-        "ocr_unica_fecha": 0, "sin_fecha": 0, "sin_extractor": 0,
-        "error": 0,
+        "ocr_unica_fecha": 0, "par_4a_4b": 0, "sin_fecha": 0,
+        "sin_extractor": 0, "error": 0,
     }
     start_time = datetime.now()
 
@@ -875,6 +906,25 @@ def main():
                                 "(%d caracteres): %r"
                                 % (len(easy_preview), easy_preview)
                             )
+
+        if expiry and issue:
+            # Par 4a/4b -- unico caso en que llegan los dos campos a
+            # la vez desde classify_dates_in_text. Escribir ambos en
+            # la misma actualizacion.
+            stats["par_4a_4b"] += 1
+            print(
+                "  OCR %s -> issue=%s / expiry=%s (par 4a/4b)"
+                % (code, issue.isoformat(), expiry.isoformat())
+            )
+            if args.apply:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "UPDATE document_explorer_documentindexentry "
+                        "SET issue_date=%s, expiry_date=%s WHERE id=%s",
+                        (issue, expiry, entry_id),
+                    )
+                conn.commit()
+            continue
 
         if expiry:
             stats["ocr_contexto"] += 1
