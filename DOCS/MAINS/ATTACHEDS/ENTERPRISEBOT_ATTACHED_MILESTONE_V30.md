@@ -6286,52 +6286,187 @@ documento del mismo tipo con fecha?" para separar pendientes reales de
 históricos -- en `BAJA_PERSONAL` y `PARTE_BAJA_MEDICA` esto redujo el
 volumen real a procesar en más de un 90% frente a la cifra bruta.
 
-## Hoja de Ruta para la Siguiente Sesión (S88) -- REESCRITA al cierre
-## de S87, sustituye por completo a la anterior
+### COMPLETADAS EN S88 (`FORMACION` cerrado por completo -- 269 sin
+### fecha inicial, hallazgo real de mal tipado masivo, dos tipos
+### nuevos de catálogo, 3 VMs en paralelo, y auditoría de cobertura
+### aplicada al bloque crítico de S80)
+
+**Punto 1 -- `FORMACION`: CERRADO.** Partida real: 269 sin fecha
+(cifra ya afinada desde S87). Todo el trabajo de esta sesión fue
+escritura directa contra BD vía Comando S (Django shell) -- **0
+commits de código**, ningún archivo del repositorio tocado.
+
+**Hallazgo real mayor, antes de tocar ningún OCR:** 89 de los 269
+(33%) vivían en `person_id=4` (Adolfo Álvarez Díaz, el propietario) y
+la mayoría **no eran certificados personales de formación** sino
+papeleo administrativo de gestión de bonificación FUNDAE a nivel de
+empresa (informes finales, información/informe RLT, facturas,
+convenios de encomienda) -- vinculados por error a su ficha personal
+porque el nombre de la empresa contiene su propio nombre
+("GRUAS ADOLFO ALVAREZ"). Confirmado y reclasificado con Miguel Ángel:
+**52 documentos → `CONVENIO_FORMACION_BONIFICADA`** (dominio COMPANY,
+`CompanyWorksite` GRUAS/TRANSGRUAL según el CIF real del documento,
+nunca por defecto). El mismo patrón se repitió, en menor escala, en
+otras 3 rondas de la sesión (`25512`, `25673`), siempre confirmado por
+contenido real antes de mover, nunca por nombre de archivo solo.
+
+**Reclasificaciones adicionales por mal tipado real, todas a tipos ya
+existentes del catálogo:** 13 → `JUSTIFICANTE_PAGO_TASA` (justificantes
+de pago de tasa de examen de grúas, domain PERSONAL sin cambio de
+persona); 2 → `SOLICITUD_ADMINISTRATIVA` (autorización de presentación
+telemática del examen); 3 → `PARTE_BAJA_MEDICA` (volantes de
+solicitud de asistencia por accidente, vivían literalmente en la
+carpeta `PARTES DE BAJA`/`BAJA` de su persona).
+
+**2 tipos nuevos creados en el catálogo** (justificados por Miguel
+Ángel explícitamente -- diplomas/CV no encajaban en ningún tipo
+existente): `TITULACION_ACADEMICA` (id 144, domain PERSONAL, family
+IDENTIDAD_PERSONAL, `tracks_expiry=False` -- títulos oficiales del
+Estado, Graduado Escolar/Bachiller/Técnico Auxiliar, nunca caducan) y
+`CURRICULUM_VITAE` (id 145, domain PERSONAL, family ADMINISTRATIVO,
+`tracks_expiry=False`). Catálogo real: 132 → 134 tipos. 13 documentos
+reclasificados a `TITULACION_ACADEMICA`, 2 a `CURRICULUM_VITAE`. 4
+cuestionarios COVID enviados a papelera (`trash_dossier_entry`, nunca
+`deleted_at` a pelo), decisión explícita de Miguel Ángel.
+
+**Fechado real aplicado, en capas sucesivas:**
+1. 42 por contexto/fecha única sobre `ocr_text` ya cacheado (168
+   documentos, sin tocar VM).
+2. 29 por par de fechas con hueco ≤40 días (criterio "más tardía",
+   confirmado por Miguel Ángel con evidencia cruzada de nombre de
+   archivo).
+3. 7 + 31 por contenido real verificado a mano (hueco grande o 3+
+   candidatas) -- incluyó una corrección real de 5 documentos
+   (`42829/42830/42831/42832/42833`, serie `ARANDA_REYES`/
+   `ROSAS_SANCHEZ`) donde el "más tardía" automático había cogido la
+   hora de firma digital de Docuten en vez de la "Fecha de fin" real
+   del curso (corrompida por el OCR: `14/08/2026` leído como
+   `14/08/2088` o `14/08/2428`) -- detectado porque el propio nombre
+   de archivo llevaba la fecha correcta embebida (`_20260814_`).
+4. Barrido en 3 VMs en paralelo (`h28-ocr-batch-1/2/3`, comandos ya en
+   las ventanas SSH abiertas, sin reanudar nada) con `--document-type
+   FORMACION --shard-count 3`: reparto desigual por aritmética de
+   módulo sobre IDs no consecutivos (34/15/18 documentos), sin relación
+   con ningún fallo. Un shard falló una vez por ruta incorrecta
+   (`~/h28_migration_agent` en vez de `~/EnterpriseBot/h28_migration_agent`)
+   y por token vacío en una ventana -- ambos corregidos sobre la
+   marcha. Después, `--entry-ids` (S87) sobre los 38 documentos que el
+   barrido de 3 shards había dejado sin tocar (todos de `person_id=4`,
+   sin `ocr_text` previo).
+5. **Revisión visual directa de los 34 documentos que seguían sin
+   fecha tras todo lo anterior** (descarga real vía
+   `spare_parts.gcs_service.download_bytes` + ZIP,
+   `pdftotext`/`pdftoppm`/`pytesseract` locales) -- a petición expresa
+   de Miguel Ángel tras detectar que el primer documento revisado
+   (`24361`) tenía fecha clarísima que el OCR de la VM nunca
+   encontró. 24 fechas reales más aplicadas por esta vía; 2 casos de
+   fecha inválida en el propio documento resueltos con criterio
+   explícito (`27775`/`27878`: "29 de febrero de 2011" no existe, 2011
+   no fue bisiesto -- se usó la fecha válida de 2012); 1 caso
+   descartado por ser fecha de nacimiento, no de emisión (`25552`,
+   confirmado por Miguel Ángel); 1 error tipográfico real del propio
+   documento corregido con confirmación de Miguel Ángel (`25625`,
+   "29/05/20105" -> 2015).
+
+**Resultado final verificado contra BD:** `FORMACION` 1.167 activos,
+**9 sin fecha, estado terminal** -- confirmados uno a uno por
+inspección visual como genuinamente sin fecha real (formularios en
+blanco, fotos que cortan el campo fecha, XFA de Adobe ilegible por
+herramientas estándar, o solo fecha de nacimiento disponible). Ningún
+pendiente real. No se vuelve a auditar este tipo salvo que entren
+documentos nuevos.
+
+**Punto 2 -- auditoría de cobertura del bloque crítico de S80,
+iniciada a petición de Miguel Ángel al cierre:** verificado con datos
+reales que `DNI` (21 sin fecha bruto) tiene **0 huecos reales** -- las
+14 personas afectadas ya tienen otro `DNI` con fecha vigente; los 21
+son duplicados (reverso sin fecha propia, imágenes de WhatsApp
+repetidas, un `.docx` extra). El bloque crítico de S80 sigue siendo
+válido en lo que importa (nadie sin identificación vigente), pero el
+conteo bruto crece porque entra documentación nueva sin fechar
+continuamente (altas de trabajadores, Rocío/Yolanda subiendo
+documentación). Quedan sin auditar de la misma forma: `NIE` (2),
+`CARNET_GRUISTA` (42), `CARNET_CONDUCIR` (27), `TACOGRAFO` (6),
+`CERTIF_DISCAPACIDAD` (2) -- 79 documentos brutos, primer punto de la
+hoja de ruta de abajo.
+
+**Decisión de prioridad explícita de Miguel Ángel, verbatim
+(resumida), para las próximas sesiones, en este orden:** 1) cerrar por
+completo todo el fechado de documentación de personal que quede
+abierto (bloque crítico residual + los ~1.067 "no críticos"); 2)
+terminar la interfaz de ficha de personal (H31); 3) revisar la carpeta
+NO CONFORMES; 4) sustituir la vigilancia de Gemini por los
+clasificadores ya construidos para todo lo que vaya entrando nuevo;
+5) investigar viabilidad de abrir/usar/cerrar una VM de OCR de forma
+programática desde PythonAnywhere; 6) migración de versión de Python
+en PythonAnywhere -- **urgente, aviso real de Google/PythonAnywhere:
+`google.api_core` deja de dar soporte a esta versión de Python a
+partir de 2026-10-04**, hay correo ya recibido con el detalle. Ninguno
+de estos puntos 2-6 se ataca todavía -- son contexto de prioridad para
+cuando el fechado de personal esté cerrado, no trabajo de la próxima
+sesión.
+
+**Nota aparte, sin acción todavía:** Miguel Ángel compartió un correo
+de Google (recibido 2026-09-01) avisando que, a partir de 2026-09-30,
+las apps Android distribuidas en tiendas participantes deben registrar
+nombre de paquete y firma con identidad de desarrollador verificada
+para poder instalarse en dispositivos certificados -- relevante de
+cara a futuras apps Android para las tablets de los operarios de
+asistencia (todavía sin hito propio, no confundir con H30/H31).
+
+## Hoja de Ruta para la Siguiente Sesión (S89) -- REESCRITA al cierre
+## de S88, sustituye por completo a la anterior
 
 **Ejecución estrictamente secuencial, sin preguntar por dónde
-empezar.**
+empezar. Ambos puntos son domino PERSONAL, misma metodología que
+S88: auditoría de cobertura real antes de cualquier OCR, revisión
+visual de lo que el OCR automático no resuelva, nunca dar un tipo por
+cerrado sin consulta directa a BD.**
 
-### 1. `FORMACION` (LABORAL) -- mayor volumen de H30 hasta ahora
+### 1. Auditoría de cobertura del resto del bloque crítico de S80
 
-**Antes de lanzar nada:** repetir la auditoría real de S87 (nunca
-fiarse de la cifra del anexo, "269 sin fecha" es la cifra de antes de
-S86/S87, sin tocar desde entonces) -- consulta directa de "sin fecha"
-bruto + auditoría de "¿la persona ya tiene otro `FORMACION` con
-fecha?" para aislar los pendientes reales antes de decidir cuántos
-shards/VMs hacen falta. Dado el volumen bruto (1255 activos), esta
-sesión se dedica en gran parte o por completo a este punto.
+Para cada uno de estos 5 tipos, por este orden, aplicar la misma
+consulta de cobertura ya usada en `DNI` esta sesión (persona activa +
+vivo + sin fecha propia, cruzado con "¿la persona ya tiene otro
+documento del mismo tipo con fecha?"):
 
-**Criterio de cierre:** consulta real
-`FORMACION activos sin fecha (filtrado por is_active_employee=True,
-domain_content_type=PersonIdentity, deleted_at/purged_at IS NULL) = 0`
-tras aplicar la misma auditoría de históricos que en los tipos ya
-cerrados.
+- `NIE` (2 sin fecha bruto)
+- `CARNET_GRUISTA` (42 sin fecha bruto)
+- `CARNET_CONDUCIR` (27 sin fecha bruto)
+- `TACOGRAFO` (6 sin fecha bruto)
+- `CERTIF_DISCAPACIDAD` (2 sin fecha bruto)
 
-**Antes de gastar OCR en ningún candidato:** revisar si hay documentos
-mal tipados por nombre de archivo -- patrón real repetido en
-`RECONOCIMIENTO_MEDICO`, `CAP`, `ALTA` y `BAJA_PERSONAL` en sesiones
-anteriores (decenas de documentos mal tipados encontrados cada vez que
-se ha mirado, incluido el hallazgo real de S87 de fotos de DNI mal
-tipadas como `BAJA_PERSONAL`).
+**Criterio de cierre de este punto:** para cada tipo, o bien 0 huecos
+reales (documentado y cerrado sin más acción, igual que `DNI`), o bien
+los huecos reales identificados quedan fechados (mismo pipeline de
+S88: contexto/fecha única sobre `ocr_text` cacheado -> contenido real
+verificado a mano -> OCR real en VM solo si hace falta).
 
-**Si aparecen bugs reales de extractor** (etiquetas nuevas de
-contexto, formatos de fecha no reconocidos): corregir en las dos
-copias sincronizadas (`document_explorer/date_verification_service.py`
-+ `h28_migration_agent/extract_personal_dates_bulk.py`), mismo patrón
-que S87.
+### 2. Los ~1.067 documentos "no críticos" sin fecha (familia LABORAL
+### mayoritariamente, no PRL_FORMACION)
 
-**Si el volumen real tras la auditoría lo justifica:** usar
-`--shard-count`/`--shard-index` en varias ventanas SSH contra
-`h28-ocr-batch-1` (ya arrancada, ver Infraestructura arriba) -- nunca
-`tmux`, preguntar a Miguel Ángel por el número de shards si el volumen
-real es grande, igual que en S87.
+Cifra real verificada al cierre de S88 (no la cifra antigua de "789"
+del anexo de S87, desactualizada). Desglose real por tipo, mayor a
+menor: `CSS` (220), `ENTREGA_INFORMACION` (162), `BAJA_PERSONAL`
+(118), `MOD_145` (115), `AUTONOMO` (60), `CONTRATO` (57),
+`PARTE_BAJA_MEDICA` (34, cifra ya reducida en S88), `VACACIONES` (32),
+`ENTREGA_MANUAL_COMBUSTIBLE` (26), `CURSO` (23), `REGISTRO_JORNADA`
+(22), `FORMACION_PRL_MAQUINARIA` (17), `CERTIFICADO_BANCARIO` (15), y
+una veintena de tipos más con menos de 10 cada uno (ver Comando S de
+cierre de S88 para el desglose completo si hace falta).
 
-### 2. Los ~789 documentos "no críticos" sin fecha
+**Antes de lanzar nada:** repetir para el tipo de mayor volumen (`CSS`)
+la misma auditoría de mal tipados por nombre de archivo que en S88 --
+patrón real repetido en cada tipo tocado hasta ahora (decenas de
+documentos mal tipados encontrados siempre que se ha mirado con
+cuidado).
 
-Reservados para la sesión siguiente a esta (decisión explícita de
-Miguel Ángel en S87) -- no se ataca en S88 salvo que `FORMACION` se
-cierre con mucho margen de sesión libre.
+**Criterio de cierre de este punto:** cada tipo de esta lista, uno a
+uno, a `sin fecha = 0` (tras auditoría de cobertura real, igual
+criterio que el punto 1), empezando por `CSS` y bajando por volumen.
+No hace falta terminar los ~1.067 en una sola sesión -- cerrar los que
+dé tiempo, documentando en el cierre exactamente cuáles quedaron a 0 y
+cuáles no.
 
 ### COMPLETADAS EN S84 (cierre real de `birth_date` para 3 de 5
 ### personas, dos bugs de origen corregidos -- identificación de
