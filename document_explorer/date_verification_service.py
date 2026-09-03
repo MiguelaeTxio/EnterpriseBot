@@ -142,6 +142,10 @@ _LABELED_DATE_PATTERNS = [
     # -- boilerplate real de las resoluciones de Alta/Baja de la
     # Seguridad Social.
     re.compile(r"INDICA\s+A\s+CONTINUACION" + _GAP + r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})"),
+    # H30 (S87): etiqueta "ALTA:" pegada a la fecha real, formato fijo
+    # del impreso "Informe de Datos para la Cotizacion" (IDC) -- ver
+    # comentario completo en la copia standalone.
+    re.compile(r"AL?TA" + _GAP + r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})"),
 ]
 # Mantiene el nombre antiguo por compatibilidad con codigo que lo
 # importe directamente (VM scripts standalone que copian esta logica).

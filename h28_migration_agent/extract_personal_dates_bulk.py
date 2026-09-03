@@ -569,6 +569,11 @@ _LABELED_DATE_PATTERNS = [
     # frase de cierre siempre aparece pegada a la fecha real de
     # efectos.
     re.compile(r"INDICA\s+A\s+CONTINUACION" + _GAP + r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})"),
+    # H30 (S87): etiqueta "ALTA:" pegada a la fecha real, formato fijo
+    # del impreso "Informe de Datos para la Cotizacion" (IDC) --
+    # "TIPO CONTRATO: ... ALTA: 27-01-2004 BAJA:". "L" opcional porque
+    # el OCR de baja calidad a veces la funde ("ATA 21-04-2025").
+    re.compile(r"AL?TA" + _GAP + r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})"),
 ]
 
 DEFAULT_FIELD_BY_CODE = {
