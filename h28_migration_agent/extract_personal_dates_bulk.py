@@ -617,6 +617,10 @@ DEFAULT_FIELD_BY_CODE = {
     "CERTIF_TRABAJO_COLEGIO": "issue", "COMUNICACION_CONTRATO": "issue",
     "COMUNICACION_JORNADA": "issue", "COMUNICADO_SEPE": "issue",
     "CONVENIO_FCT": "issue", "CSS": "issue", "IDC": "issue",
+    # H30 (S89): tipo nuevo creado esta sesion (documentos "Vida
+    # laboral autonomo..." mal tipados como CSS). Sin caducidad
+    # propia, "el mas reciente cuenta" -- mismo criterio que CSS.
+    "INFORME_VIDA_LABORAL": "issue",
     "MOD_145": "issue", "TC2": "issue", "VACACIONES": "issue",
     "REGISTRO_JORNADA": "issue", "CURSO": "issue",
     "ENTREGA_INFORMACION": "issue", "ENTREGA_MANUAL_COMBUSTIBLE": "issue",
