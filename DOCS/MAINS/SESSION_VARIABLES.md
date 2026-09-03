@@ -355,18 +355,23 @@ no aceptan flags ni variables de entorno).
   DURANTE UN BARRIDO LARGO: inactividad de la sesión SSH desde
   Termux, no un fallo de red.** Miguel Ángel lo confirmó explícitamente
   tras tres cortes seguidos durante `extract_personal_dates_bulk.py`.
-  Consecuencia de obligado cumplimiento: **cualquier barrido que pueda
-  tardar más de un par de minutos (cualquier `--apply` sin `--limit`
-  pequeño) se lanza siempre dentro de una sesión `tmux`**, nunca
-  directo en la sesión SSH -- el proceso sigue vivo en el servidor
-  aunque la sesión se corte por inactividad, y solo hace falta
-  `tmux attach -t NOMBRE` al reconectar. Patrón real:
-  ```bash
-  tmux new -s NOMBRE -d "cd ~/EnterpriseBot/h28_migration_agent && source ocr_venv/bin/activate && python3 SCRIPT.py --apply > NOMBRE.log 2>&1; echo DONE >> NOMBRE.log"
-  tmux attach -t NOMBRE
-  ```
-  El `attach` es necesario aparte porque `getpass` (contraseña de
-  MySQL) no puede pedirse por teclado en un `tmux new -d` desatendido.
+
+  ⛔ **CORRECCIÓN EXPLÍCITA DE MIGUEL ÁNGEL, MISMA SESIÓN (S86),
+  VERBATIM: "que ejecutes el puto script de forma normal, exactamente
+  igual como lo hacíamos antes. Te metes el tmux por donde te
+  quepa."** El modelo propuso lanzar los barridos largos dentro de
+  `tmux` como mitigación de las desconexiones -- Miguel Ángel lo
+  rechazó de forma explícita y repetida. **Instrucción vigente: los
+  barridos se lanzan siempre de forma normal, directo en la sesión
+  SSH, exactamente como cualquier otro comando.** Si la sesión se
+  corta a mitad de un barrido (`--apply`), no pasa nada grave: los
+  documentos ya procesados antes del corte quedan aplicados en BD
+  (cada documento se comitea individualmente dentro del script), solo
+  hay que reconectar y relanzar el mismo comando -- el filtro
+  `issue_date IS NULL AND expiry_date IS NULL` de la consulta hace que
+  el propio script solo recoja los que de verdad faltan, sin
+  reprocesar lo ya hecho. **No usar `tmux` salvo que Miguel Ángel lo
+  pida explícitamente él mismo.**
 - **Python:** el binario se llama `python3` en esta VM, **no**
   `python` (Ubuntu 24.04 no tiene el alias `python-is-python3`
   instalado). Usar siempre `python3 nombre_script.py`.

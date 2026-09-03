@@ -6184,38 +6184,119 @@ y 2.6), no solo en este anexo:**
    reescribirla -- nunca sobrevive a la sesión siguiente ni como
    completado ni de ninguna otra forma.
 
-## Hoja de Ruta para la Siguiente Sesión (S86) -- REESCRITA al cierre
-## de S85, sustituye por completo a la anterior
+## Hoja de Ruta para la Siguiente Sesión (S87) -- REESCRITA al cierre
+## de S86, sustituye por completo a la anterior
 
 **Ejecución estrictamente secuencial, sin preguntar por dónde empezar
-(nfs-enterprisebot-pcs 2.5):**
+(nfs-enterprisebot-pcs 2.5), salvo la pregunta bloqueante del punto 0,
+que sí va primero y sí requiere respuesta de Miguel Ángel antes de
+continuar.**
 
-1. `AUTORIZACION_USO_MAQUINARIA` (PRL_FORMACION, dominio PERSONAL) --
-   360 activos, 55 sin fecha. **Criterio de cierre:** 0 activos sin
-   `issue_date`/`expiry_date` según corresponda, verificado con
-   consulta real filtrada por `is_active_employee=True` (nunca
-   confiar en la cifra de este mismo punto sin repetir la consulta).
-2. `CAP` (IDENTIDAD_PERSONAL) -- 125 activos, 40 sin fecha. Mismo
-   criterio de cierre.
-3. `ALTA` (LABORAL) -- 237 activos, 24 sin fecha. Mismo criterio.
-4. `DNI` (IDENTIDAD_PERSONAL) -- 127 activos, 17 sin fecha. Mismo
-   criterio.
-5. `IDC` (LABORAL) -- 178 activos, 10 sin fecha. Mismo criterio.
-6. Los ~789 documentos "no críticos" sin fecha (`CONTRATO`,
-   `FORMACION`, `ENTREGA_INFORMACION`, `MOD_145`, `BAJA_PERSONAL`,
-   etc.) -- 3.ª prioridad ya confirmada por Miguel Ángel en S83, se
-   ataca después de cerrar los puntos 1-5.
+### 0. PREGUNTA BLOQUEANTE (real, surgida como efecto colateral de S86)
 
-**Al empezar cada punto:** antes de asumir que todo "sin fecha" es
-problema de OCR, revisar si hay documentos mal tipados (mismo patrón
-real de `RECONOCIMIENTO_MEDICO` -- 4 de 13 originales eran en
-realidad partes de baja). Usar siempre la cascada Tesseract->PSM
-6->EasyOCR ya integrada, lector oficial del dominio Personal.
+Al reclasificar `ALTA` en S86 se movieron documentos mal tipados a
+tres tipos ya existentes y mucho más voluminosos de lo esperado, que
+**no estaban en el alcance de H30 hasta ahora**:
 
-**Pregunta explícita pendiente, no bloquea el orden de arriba:** el
-renombrado canónico del resto del catálogo (132 tipos, tras crear
-CONVENIO_FORMACION_BONIFICADA en S86) lleva seis
-sesiones sin una primera pasada real (S80-S85). ¿Sigue siendo
+| Tipo | Activos | Sin fecha |
+|---|---|---|
+| `BAJA_PERSONAL` | 354 | 125 |
+| `FORMACION` | 1255 | 269 |
+| `PARTE_BAJA_MEDICA` | 132 | 131 (prácticamente el tipo entero) |
+
+**¿Entran estos tres tipos en el alcance actual de H30 (dominio
+PERSONAL completo antes de pasar a Máquinas), o se aparcan
+explícitamente para una sesión/hito propio?** Sobre todo `FORMACION`
+(1255 activos) es un salto de escala real frente a los tipos tratados
+hasta ahora. No se toca ninguno de los tres sin esta respuesta.
+
+### 1. `ALTA` (LABORAL) -- cierre real pendiente, 20 activos sin fecha
+
+Verificado y reclasificado en S86 (ya no hace falta repetir la
+revisión de mal tipados: se hizo completa). Quedan exactamente estos
+20 documentos, **listos para procesar directo, sin repetir la
+consulta de localización**:
+
+```
+id=27483 name=ALTA AUTONOMO 14-12-1995.pdf
+id=27484 name=ALTA RETA AUTONOMO 1-12-1995.pdf
+id=27561 name=Alta+Autonomo Adolfo Mayo  2017.pdf
+id=27891 name=ALTA AUTONOMO.pdf
+id=27948 name=alta autonomo II  .pdf
+id=27950 name=ALTA 1-6-21 ALEJANDRO ALVAREZ TR.pdf
+id=28280 name=parte alta Burgos Fernandez 27-12-21.jpeg
+id=34164 name=ALTA GR 290208.pdf
+id=34165 name=ALTA TR 010308 .pdf
+id=34190 name=CONTRATO Y ALTA ALVAREZ GEA, ALBERTO (GR).pdf
+id=35157 name=ALTA GRUALDI ANTONIO JESUS  (GR) 3.pdf
+id=35389 name=ALTA GARCIA LUQUE, ALEJANDRO 19-12-23.jpg
+id=35687 name=GOMEZ GARCIA, J. ANTº 2.pdf
+id=35789 name=ALTA.jpg
+id=35940 name=ALTA GUTIERREZ MATEO, CRISTHIAN.pdf
+id=36948 name=ALTA RAMOS JIMENEZ, MANUEL LEANDRO.jpg
+id=37082 name=ALTA GL.pdf
+id=37085 name=ALTA,CONTRATO, SUBROGACION GR.pdf
+id=39958 name=INFORME DE ALTA ABRAHAM ZAFRA.pdf
+id=42178 name=GUTIERREZ_MATEO_CRISTHIAN_ALTA_20250416.pdf
+```
+
+**Criterio de cierre:** lanzar
+`extract_personal_dates_bulk.py --document-type ALTA --apply` (ya
+no hace falta `--limit` de muestra, el patrón del extractor ya está
+validado en 3 tipos reales) y verificar después por consulta real
+que `ALTA` activos con `issue_date IS NULL AND expiry_date IS NULL`
+= 0, filtrado por `is_active_employee=True`, nunca fiarse del resumen
+del propio script (cuenta por shard, no contra la tabla). Como en
+S86, lo que quede `SIN FECHA` tras Tesseract+PSM6+EasyOCR: revisar si
+el texto trae alguna fecha suelta útil por evidencia cruzada con el
+nombre de archivo antes de pedir foto; solo pedir foto si de verdad
+no hay ninguna pista textual.
+
+### 2. `DNI` (IDENTIDAD_PERSONAL) -- reverificar contra BD real primero
+
+El anexo decía "127 activos, 17 sin fecha" antes de S86 -- cifra sin
+tocar en toda la sesión, **no fiarse sin repetir la consulta real**
+(mismo patrón que ya demostró discrepancias reales en `CAP` y
+`AUTORIZACION_USO_MAQUINARIA`). Antes de lanzar nada, revisar también
+si hay documentos mal tipados por nombre (mismo patrón que en S86).
+
+### 3. `IDC` (LABORAL) -- reverificar contra BD real primero
+
+El anexo decía "178 activos, 10 sin fecha" antes de S86 -- misma
+reserva que el punto 2, verificar antes de asumir.
+
+### 4. Los ~789 documentos "no críticos" sin fecha
+
+3.ª prioridad ya confirmada por Miguel Ángel en S83, se ataca después
+de cerrar los puntos 1-3 de arriba (y el punto 0 si se confirma que
+entra en esta sesión).
+
+**En todos los puntos:** antes de asumir que todo "sin fecha" es
+problema de OCR, revisar si hay documentos mal tipados por nombre de
+archivo (patrón real repetido en `RECONOCIMIENTO_MEDICO`, `CAP` y
+`ALTA` en sesiones anteriores/S86 -- decenas de documentos mal
+tipados encontrados cada vez que se ha mirado). Usar siempre la
+cascada Tesseract->PSM 6->EasyOCR ya integrada, con los dos patrones
+etiquetados nuevos de S86 ya incorporados (`A FECHA (...)` y el par
+`4a.`/`4b.` del formato comunitario -- ver COMPLETADAS EN S86).
+
+**Precedente real de S86 a tener en cuenta al trabajar cualquier tipo
+con "única fecha, defecto" ya aplicada de sesiones anteriores a la
+existencia de estos dos patrones etiquetados:** varios documentos de
+`TARJETA_CUALIF_CONDUCTOR` tenían el campo equivocado (`issue_date`
+metido en `expiry_date` o viceversa) porque el extractor, antes de
+S86, solo sabía escribir un campo por "única fecha" sin distinguir
+cuál de las dos fechas reales del par había capturado. Si un tipo
+tiene fechas aplicadas de antes de S86 y su `DEFAULT_FIELD_BY_CODE`
+es de un tipo con caducidad real, vale la pena una comprobación
+rápida cruzada (nombre de archivo / texto OCR) antes de darlo por
+bueno sin mirar.
+
+**Pregunta explícita pendiente, arrastrada (2.ª sesión sin avanzar --
+S85 y S86 -- pasa a pregunta explícita de apertura junto al punto 0,
+ver `com-pah` 2.2):** el renombrado canónico del resto del catálogo
+(132 tipos, tras crear `CONVENIO_FORMACION_BONIFICADA` en S86) lleva
+siete sesiones sin una primera pasada real (S80-S86). ¿Sigue siendo
 prioridad para H30, o se aparca formalmente hasta que el dominio
 PERSONAL esté más avanzado?
 
@@ -6224,12 +6305,21 @@ documento nuevo):** Santiago Nicolás Gutiérrez y Jerónimo Delgado
 Hurtado siguen sin `birth_date`, sin documento DNI/NIE vinculado en
 BD.
 
-**Infraestructura:** las 4 VMs de OCR (`h28-ocr-batch-1/2/3/4`)
-quedaron `stop` al cierre de S85 -- comprobar estado real con
-`describe --format="value(status)"` antes de asumir, nunca dar por
-hecho. Imagen `h28-ocr-batch-image-v1` + `startup-script-ocr-vm.sh`
-ya listos, no hace falta instalar nada de nuevo salvo que cambie una
-dependencia real.
+**Infraestructura:** `h28-ocr-batch-1` quedó parándose al cierre de
+S86 (comando de `stop` lanzado, pero sin confirmar la salida final en
+el chat -- **comprobar estado real con
+`describe --format="value(status)"` antes de asumir que ya está
+`TERMINATED`**, nunca dar por hecho). Las otras tres VMs
+(`h28-ocr-batch-2/3/4`) no se han tocado en toda la sesión S86, su
+estado real es desconocido. Imagen `h28-ocr-batch-image-v1` +
+`startup-script-ocr-vm.sh` siguen listos, no hace falta instalar nada
+de nuevo salvo que cambie una dependencia real. **Conectar siempre
+con `gcloud compute ssh Usuario@NOMBRE_VM`, nunca sin usuario
+explícito** (incidencia real repetida dos veces, ver
+`SESSION_VARIABLES.md`). **Los barridos largos se lanzan normales,
+sin `tmux`** -- instrucción explícita de Miguel Ángel en S86, ver
+`SESSION_VARIABLES.md` (el `tmux` fue propuesto por el modelo y
+vetado expresamente).
 
 ### COMPLETADAS EN S84 (cierre real de `birth_date` para 3 de 5
 ### personas, dos bugs de origen corregidos -- identificación de
@@ -6692,4 +6782,169 @@ ejecución real). Miguel Ángel, verbatim, sobre el patrón de fondo:
 *"parece ser que pasamos de un documento a otro sin tener terminado
 el anterior"* -- origen real de la disciplina de cierre por tipo que
 se mantuvo el resto de la sesión.
+
+### COMPLETADAS EN S86 (sesión larga, PEE cambió de A a PC a mitad de
+### sesión, cierre de los puntos 1-2 de la hoja de ruta de S86,
+### punto 3 dejado a medias por hallazgos reales de mayor alcance)
+
+**Punto 1 -- `AUTORIZACION_USO_MAQUINARIA`: CERRADO.** 360 activos
+verificados por consulta real (no la cifra "55 sin fecha" del anexo,
+que resultó incluir 51 documentos ya marcados obsoletos por
+heurística de carpeta). **Decisión explícita de Miguel Ángel, verbatim
+(resumida): el vigente es siempre el documento más reciente por fecha
+real -- caducado o no -- y la bandera `is_obsolete` heredada de la
+organización original en Microsoft 365 no es fiable (carpetas con
+nombres de personas que no existen, contenido cruzado entre
+archivos). Se abandonó la confianza en `is_obsolete` para decidir qué
+reprocesar; el barrido reprocesó los 55 sin fecha sin filtrar por esa
+bandera.** Tras el barrido en VM (`h28-ocr-batch-1`, arrancada,
+usada, parada), 4 casos quedaron sin fecha automática; resueltos a
+mano por evidencia cruzada (nombre de archivo + texto OCR dañado
+coincidente, sin necesidad de reconectar a la VM): 3 documentos de
+Francisco Gómez (`19775`, `35785`, `42172`, `issue_date=2022-03-01`)
+y 1 de Carlos Manuel Carlín (`34922`, `issue_date=2021-04-30`).
+**Resultado final verificado: 360 activos, 0 sin fecha.**
+
+**Fix real de extractor (`e43a013`):** patrón etiquetado `"A FECHA
+(DD/MM/AAAA)"` (sello de firma del administrador, Grupo Álvarez) --
+máxima prioridad, resuelve documentos con varias fechas de ruido
+(firma electrónica, formación adjunta) desambiguando por la etiqueta
+real. Verificado localmente contra los 4 textos OCR reales antes de
+commitear.
+
+**Punto 2 -- `CAP`: CERRADO, con reclasificación mucho más profunda
+de lo previsto.** El anexo decía "125 activos, 40 sin fecha"; la
+cifra real de partida era 125 activos, pero **51% de ellos (64
+documentos) eran en realidad `TARJETA_CUALIF_CONDUCTOR`** (tarjeta
+física con caducidad real, no certificado de curso) mal tipados desde
+el origen -- confirmado por contenido, no por nombre de archivo
+(muchos no llevaban "TARJETA" en el nombre). Reclasificación completa
+ejecutada:
+
+- **65 documentos → `TARJETA_CUALIF_CONDUCTOR`** (64 + 1 encontrado
+  después, `42322`, tarjeta multilingüe confirmada por contenido).
+- **2 documentos → `AUTORIZACION_USO_MAQUINARIA`** (`20016`, `38077`
+  -- cartas de "capacitación por parte de la empresa" para manejo de
+  maquinaria/grúa, mismo patrón de contenido que ese tipo, no
+  `AUTORIZACION_GENERICA`).
+- **4 documentos a papelera** (`24291`, `24310`, `26005` -- facturas
+  de cursos, no el certificado en sí; `24302` -- justificante de
+  transferencia bancaria). Vía `trash_dossier_entry()` real del
+  proyecto (`document_explorer/classification_service.py`), nunca
+  `deleted_at` a pelo.
+
+Tras la reclasificación, `CAP` real quedó en 48 activos (issue_date,
+"el más reciente es el vigente") y `TARJETA_CUALIF_CONDUCTOR` en 81
+activos (expiry_date real vía campos `4a`/`4b`, mismo formato que el
+permiso de conducción comunitario -- confirmado con fuentes
+independientes: DGT, Comunidad de Madrid, Generalitat Valenciana,
+gestorías especializadas). Barrido de `CAP` (12 sin fecha): 3 más
+mal tipados encontrados en el propio barrido (`24302` transferencia
+ya contada arriba realmente venía de aquí; además 6 tarjetas de
+cualificación más sin "TARJETA" en el nombre: `36209`, `37523`,
+`38150`, `38173`, `38174`, `39334`) y 4 certificados de formación
+continua real con fecha aplicada por evidencia cruzada de firma
+(`36703`, `38044`, `38045`, `39299`). **`CAP` final: 48 activos, 0
+sin fecha.**
+
+**Fix real de extractor (`91c5147`), a petición explícita de Miguel
+Ángel de verificar primero en fuentes externas cómo es realmente la
+tarjeta antes de tocar código:** reconocimiento del par etiquetado
+`4a.`/`4b.` (fecha de expedición / fecha de caducidad, formato
+comunitario, mismo diseño que el permiso de conducción UE, confirmado
+por búsqueda web contra varias fuentes oficiales/gestorías
+independientes). Único patrón de todo el extractor que devuelve
+`issue_date` **y** `expiry_date` a la vez -- se ajustó también el
+despacho de `main()` para escribir ambos campos en una sola
+actualización. Deliberadamente no cubre los casos donde el OCR
+confunde "4" con "d" minúscula, para no arriesgar falsos positivos
+con palabras españolas comunes.
+
+Barrido de `TARJETA_CUALIF_CONDUCTOR` con el fix ya aplicado (24
+candidatos): 5 resueltos por el patrón nuevo, 18 seguían `SIN FECHA`
+(mayoría con `4a`/`4b` legibles pero mal formateados para el regex
+por ruido de OCR) y 1 `.log` sin extractor. **Hallazgo real
+importante, verificado con fotos reales aportadas por Miguel Ángel:**
+varios documentos que ya tenían fecha aplicada de sesiones/barridos
+anteriores a este fix tenían el campo **equivocado** (`issue_date`
+guardado como si fuera `expiry_date`, por el mecanismo antiguo de
+"única fecha, defecto" que no distinguía cuál de las dos fechas del
+par había capturado). Corregidos con evidencia real: `35727` (foto
+real de la tarjeta), `38173`/`38174`/`38150`/`38193` (confusión
+adicional real: `38173`/`38174` resultaron ser la tarjeta **antigua**
+de Zavala Manzano -- 2016→2021 -- no la misma que `38150`/`38193`,
+la renovada 2021→2026; corregido tras dos fotos reales de las dos
+tarjetas físicas). Resto de los 18 aplicados por lectura directa del
+par `4a`/`4b` en el texto OCR ya cacheado (sin reconectar a la VM),
+salvo 3 casos sin ninguna fecha legible en texto (`35033`, `35714`,
+`36426`), resueltos también con fotos reales aportadas por Miguel
+Ángel. `.log` duplicado (`37485`) a papelera. **`TARJETA_CUALIF_CONDUCTOR`
+final: 86 activos, 0 sin fecha.**
+
+**Punto 3 -- `ALTA`: dejado a medias, con hallazgo real que amplía el
+alcance.** Verificación por nombre encontró 52 documentos con nombre
+sospechoso de otro tipo dentro de `ALTA` (237 activos). Reclasificados:
+
+- **27 → `BAJA_PERSONAL`** (bajas de empresa/Seguridad Social, tipo
+  ya existente).
+- **11 → `FORMACION`** (documentos "FORM 6H ALTA Y BAJA TENSION..." --
+  formación de seguridad eléctrica, "alta/baja tensión" en sentido
+  eléctrico, nada que ver con alta/baja laboral).
+- **2 → `PARTE_BAJA_MEDICA`** (partes médicos de incapacidad
+  temporal, tipo ya existente, confirmado con Miguel Ángel el dominio
+  `COMPANY` antes de decidir dónde encajaban otros 4 huérfanos).
+- **4 → tipo nuevo creado, `CONVENIO_FORMACION_BONIFICADA`** (id=143,
+  domain=`COMPANY`, family=`ADMINISTRATIVO`, tracks_expiry=True) --
+  documentos de encomienda de gestión FUNDAE, sin encaje real en
+  ningún tipo existente del dominio `COMPANY`. **Instrucción explícita
+  de Miguel Ángel: crear tipo nuevo sin dudar cuando no hay encaje
+  real, nunca forzar un documento a un tipo que no le corresponde por
+  evitar una migración** (no hizo falta migración real -- el catálogo
+  es una tabla de datos, no de esquema). Catálogo real actualizado de
+  131 a 132 tipos (`af55eea`).
+
+Los que combinan alta+contrato+subrogación en un solo PDF
+(`33947`, `33980`, `34190`, `37085`, `40322`) se dejaron como `ALTA`
+sin partir -- el alta sigue siendo un evento real documentado ahí.
+
+**`ALTA` real tras la reclasificación: 193 activos, 20 sin fecha --
+sin procesar todavía, no se llegó a lanzar el barrido de OCR.**
+Efecto colateral real descubierto al verificar los tres tipos
+destino: son mucho más grandes de lo esperado y quedan fuera del
+alcance original de H30 hasta que Miguel Ángel decida si entran en
+esta sesión o se aparcan (ver Hoja de Ruta punto 0, pregunta
+bloqueante). `BAJA_PERSONAL`: 354 activos, 125 sin fecha.
+`FORMACION`: 1255 activos, 269 sin fecha. `PARTE_BAJA_MEDICA`: 132
+activos, 131 sin fecha (prácticamente el tipo entero).
+
+**Incidencias técnicas reales documentadas en `SESSION_VARIABLES.md`
+(no repetir):**
+
+1. `gcloud compute ssh` sin usuario explícito resuelve una cuenta
+   Linux distinta de `Usuario` (2.ª vez que ocurre, la 1.ª no quedó
+   documentada, por eso se repitió) -- conectar siempre con
+   `gcloud compute ssh Usuario@NOMBRE_VM`.
+2. Las desconexiones repetidas de la sesión SSH durante barridos
+   largos son por inactividad de Termux, no por red -- confirmado por
+   Miguel Ángel. El modelo propuso `tmux` como mitigación; **Miguel
+   Ángel lo rechazó explícitamente y de forma repetida ("te metes el
+   tmux por donde te quepa")** -- los barridos se lanzan siempre
+   normales, sin `tmux`, y si la sesión se corta a mitad, se
+   reconecta y se relanza el mismo comando sin pérdida real (cada
+   documento se comitea individualmente).
+
+**Otras notas de sesión:** el token de GitHub cambió a mitad de
+sesión (entregado de nuevo por la mañana, PEE pasó de `A` a `PC`);
+Miguel Ángel aclaró que el cambio a PowerShell era solo para la
+consola de la VM (`gcloud`), que ya venía en ese formato desde el
+inicio -- la consola sftp/Comando S sigue en Git Bash sin cambios. El
+modelo cometió varios errores reales de sesión, todos corregidos en
+el momento: dar por buena una lectura de OCR como "ilegible" sin
+comprobar visualmente el documento real (corregido con foto real de
+Miguel Ángel), confundir dos tarjetas físicas distintas de la misma
+persona por asumir que compartían fechas, entregar por error una caja
+de verificación de su propio clon de trabajo como si fuera un comando
+para la consola de Miguel Ángel, y varias llamadas sueltas a su
+propia herramienta de bash sin ningún efecto real (ruido de sesión,
+sin impacto en datos).
 
