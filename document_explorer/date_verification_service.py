@@ -49,6 +49,9 @@ _ISSUE_CONTEXT = [
     # H30 (S87): "CONFECHA" fusionado sin espacio -- ver comentario
     # completo en la copia standalone.
     "CONFECHA",
+    # H30 (S87): etiqueta real de impreso antiguo REA -- ver
+    # comentario completo en la copia standalone.
+    "FECHA DE ALTA",
 ]
 # H30 (sesion de continuidad tras S79). Incidente real: 3 de 5
 # RECONOCIMIENTO_MEDICO reales devolvieron la fecha de NACIMIENTO
@@ -406,8 +409,11 @@ def _parse_date(day_s, month_s, year_s):
         day, month, year = int(day_s), int(month_s), int(year_s)
     except ValueError:
         return None
+    # H30 (S87): ventana de siglo real para anno de 2 digitos -- ver
+    # comentario completo en la copia standalone. Reutiliza el mismo
+    # criterio que _mrz_century_cutoff().
     if year < 100:
-        year += 2000
+        year += 2000 if year <= _mrz_century_cutoff() else 1900
     if not (1 <= day <= 31 and 1 <= month <= 12 and 1900 <= year <= 2100):
         return None
     try:

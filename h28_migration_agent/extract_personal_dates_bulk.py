@@ -294,8 +294,15 @@ def _parse_date_dmY(day_s, month_s, year_s):
         day, month, year = int(day_s), int(month_s), int(year_s)
     except ValueError:
         return None
+    # H30 (S87): ventana de siglo real para anno de 2 digitos --
+    # incidente real (mismo documento de arriba): "6-11-96" (fecha de
+    # iniciacion de actividad, campo distinto) se leia como 2096
+    # porque el codigo sumaba siempre 2000 sin comprobar plausibilidad.
+    # Mismo criterio que ya usa _mrz_century_cutoff(): ningun documento
+    # de la plantilla es del futuro, asi que AA se resuelve como 20AA
+    # si AA <= año actual (2 digitos), y como 19AA en caso contrario.
     if year < 100:
-        year += 2000
+        year += 2000 if year <= _mrz_century_cutoff() else 1900
     if not (1 <= day <= 31 and 1 <= month <= 12 and 1900 <= year <= 2100):
         return None
     try:
@@ -486,6 +493,10 @@ _ISSUE_CONTEXT = [
     # "CON FECHA" (con espacio) ya estaba en la lista; esto cubre el
     # caso en que Tesseract funde las dos palabras en una.
     "CONFECHA",
+    # H30 (S87): etiqueta real de impreso antiguo REA (regimen
+    # autonomos, "ALTA AUTONOMO.pdf") -- "Fecha de alta Núm.
+    # identificación | | Ye : ese 6 NOVIEMBRE 1.996".
+    "FECHA DE ALTA",
 ]
 # Sesion de continuidad tras S79 -- incidente real: fechas de
 # nacimiento coladas como "unica fecha, por defecto" en
