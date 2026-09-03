@@ -512,13 +512,20 @@ _BIRTHDATE_CONTEXT = [
 ]
 # H30 (S89). Recibos domiciliados (AUTONOMO, CSS) traen fechas ruido
 # ademas de la fecha real -- ver comentario completo en la copia
-# Django (document_explorer/date_verification_service.py).
+# Django (document_explorer/date_verification_service.py). PERIODO/
+# INSCRIPC por palabra cercana; DEVOLUCION/URL de pie por POSICION
+# EXACTA (un intento anterior con ventana ancha por palabra provoco
+# una regresion real, ver comentario completo en la copia Django).
 _RECEIPT_NOISE_CONTEXT = [
-    "PERIODO", "DEVOLUCION", "INSCRITA", "INSCRIPC",
+    "PERIODO", "INSCRITA", "INSCRIPC",
 ]
-# H30 (S89). Ventana ampliada solo para ruido -- ver comentario
-# completo en la copia Django.
-_NOISE_CONTEXT_WINDOW = 140
+_NOISE_SPAN_PATTERNS = [
+    re.compile(
+        r"DEVOLUCION[\s\S]{0,180}?IMPORTE:?\s*"
+        r"(\d{1,2}[-./]\d{1,2}[-./]\d{2,4})"
+    ),
+    re.compile(r"SERVLETOPERATION\s+(\d{1,2}[-./]\d{1,2}[-./]\d{2,4})"),
+]
 _DATE_RE = re.compile(r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})")
 _CONTEXT_WINDOW = 70
 
@@ -639,6 +646,20 @@ def classify_dates_in_text(text):
     norm = re.sub(r"\s+", " ", norm)
     expiry_candidates, issue_candidates, other_dates = [], [], []
 
+    # H30 (S89): fechas de ruido por posicion exacta -- ver comentario
+    # completo en la copia Django (document_explorer/date_verification_service.py).
+    _noise_spans = [
+        m.span(1)
+        for pattern in _NOISE_SPAN_PATTERNS
+        for m in pattern.finditer(norm)
+    ]
+
+    def _en_fecha_ruido(match):
+        for s, e in _noise_spans:
+            if match.start() >= s - 1 and match.end() <= e + 1:
+                return True
+        return False
+
     # Maxima prioridad absoluta: par "4a."/"4b." del formato
     # comunitario -- ver comentario junto a _FIELD_4A_4B_RE. Devuelve
     # los DOS campos a la vez (unico caso de todo el extractor que lo
@@ -668,10 +689,9 @@ def classify_dates_in_text(text):
         context = norm[window_start:match.start()] + norm[match.end():window_end]
         if any(word in context for word in _BIRTHDATE_CONTEXT):
             continue
-        noise_start = max(0, match.start() - _NOISE_CONTEXT_WINDOW)
-        noise_end = min(len(norm), match.end() + _NOISE_CONTEXT_WINDOW)
-        noise_context = norm[noise_start:match.start()] + norm[match.end():noise_end]
-        if any(word in noise_context for word in _RECEIPT_NOISE_CONTEXT):
+        if any(word in context for word in _RECEIPT_NOISE_CONTEXT):
+            continue
+        if _en_fecha_ruido(match):
             continue
         if any(word in context for word in _EXPIRY_CONTEXT):
             expiry_candidates.append(parsed)
@@ -691,10 +711,9 @@ def classify_dates_in_text(text):
         context = norm[window_start:match.start()] + norm[match.end():window_end]
         if any(word in context for word in _BIRTHDATE_CONTEXT):
             continue
-        noise_start = max(0, match.start() - _NOISE_CONTEXT_WINDOW)
-        noise_end = min(len(norm), match.end() + _NOISE_CONTEXT_WINDOW)
-        noise_context = norm[noise_start:match.start()] + norm[match.end():noise_end]
-        if any(word in noise_context for word in _RECEIPT_NOISE_CONTEXT):
+        if any(word in context for word in _RECEIPT_NOISE_CONTEXT):
+            continue
+        if _en_fecha_ruido(match):
             continue
         if any(word in context for word in _EXPIRY_CONTEXT):
             expiry_candidates.append(parsed)

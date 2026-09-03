@@ -77,30 +77,41 @@ _BIRTHDATE_CONTEXT = [
 # SIEMPRE 2-3 fechas ruido ademas de la fecha real del recibo (campo
 # "FECHA" arriba, repetido como "FECHA VALOR" abajo), impidiendo
 # resolver por "unica fecha, por defecto" -- verificado contra OCR
-# real (id=27493) y foto real aportada por Miguel Angel (id=27494):
+# real (id=27493, 27503, 27525) y foto real aportada por Miguel Angel
+# (id=27494):
 # 1. "PERIODO 12/12-2012" -- notacion de periodo, NO una fecha; el
 #    regex general de fecha (separadores "/" y "-" mezclados) la
-#    parsea igualmente como si fuera dia/mes/anio.
-# 2. "FECHA MAXIMA DEVOLUCION PARA RECIBOS NO AUTORIZADOS...: DD/MM/AAAA"
-#    -- plazo legal de devolucion del banco, nunca la fecha del
-#    documento.
-# 3. "Inscrita Reg. Mercantil ... Inscripc.1a DD/MM/AAAA" -- fecha de
+#    parsea igualmente como si fuera dia/mes/anio. Exclusion por
+#    palabra cercana (ventana estandar _CONTEXT_WINDOW) -- funciona
+#    bien, la etiqueta esta pegada a su propia fecha.
+# 2. "Inscrita Reg. Mercantil ... Inscripc.1a DD/MM/AAAA" -- fecha de
 #    inscripcion registral de la entidad bancaria, constante en TODOS
-#    los recibos de la misma entidad, sin relacion con el recibo
-#    concreto.
+#    los recibos. Misma exclusion por palabra cercana.
+# 3. "FECHA MAXIMA DEVOLUCION PARA RECIBOS NO AUTORIZADOS...: DD/MM/AAAA"
+#    -- plazo legal de devolucion del banco. El tramo legal entre la
+#    etiqueta y la fecha supera cualquier ventana de contexto por
+#    palabra razonable; un primer intento con ventana ampliada (140)
+#    provoco una REGRESION REAL (id=27525): tambien excluia la fecha
+#    buena cuando caia cerca. Corregido con exclusion por POSICION
+#    EXACTA: se captura la fecha concreta dentro de la frase completa
+#    de principio a fin (ver _NOISE_SPAN_PATTERNS), nunca por cercania
+#    de palabra.
+# 4. "https://www.cajamar.es/BE/ServletOperation DD/MM/AAAA" -- fecha
+#    de generacion del documento en el pie de pagina de la web del
+#    banco, sin relacion con el recibo (id=27503). Misma exclusion por
+#    posicion exacta.
 # Estas fechas se descartan por completo (igual que _BIRTHDATE_CONTEXT),
 # nunca solo se evitan como contexto de emision/caducidad.
 _RECEIPT_NOISE_CONTEXT = [
-    "PERIODO", "DEVOLUCION", "INSCRITA", "INSCRIPC",
+    "PERIODO", "INSCRITA", "INSCRIPC",
 ]
-# H30 (S89). "FECHA MAXIMA DEVOLUCION PARA RECIBOS NO AUTORIZADOS O
-# CON DISCONFORMIDAD PROBADA EN IMPORTE: DD/MM/AAAA" -- el tramo legal
-# entre la etiqueta y la fecha real supera los 70 caracteres de
-# _CONTEXT_WINDOW (verificado real: la fecha seguia colandose tras el
-# primer intento de exclusion). Ventana mas ancha, solo para esta
-# comprobacion de ruido -- la clasificacion issue/expiry normal sigue
-# usando _CONTEXT_WINDOW sin cambios.
-_NOISE_CONTEXT_WINDOW = 140
+_NOISE_SPAN_PATTERNS = [
+    re.compile(
+        r"DEVOLUCION[\s\S]{0,180}?IMPORTE:?\s*"
+        r"(\d{1,2}[-./]\d{1,2}[-./]\d{2,4})"
+    ),
+    re.compile(r"SERVLETOPERATION\s+(\d{1,2}[-./]\d{1,2}[-./]\d{2,4})"),
+]
 
 _DATE_RE = re.compile(r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})")
 _CONTEXT_WINDOW = 70
@@ -483,6 +494,22 @@ def classify_dates_in_text(text):
     issue_candidates = []
     other_dates = []
 
+    # H30 (S89): fechas de ruido detectadas por POSICION EXACTA dentro
+    # de una frase completa (nunca por cercania de palabra -- ver
+    # comentario junto a _NOISE_SPAN_PATTERNS mas arriba, incluye el
+    # historial de la regresion real que motivo este enfoque).
+    _noise_spans = [
+        m.span(1)
+        for pattern in _NOISE_SPAN_PATTERNS
+        for m in pattern.finditer(norm)
+    ]
+
+    def _en_fecha_ruido(match):
+        for s, e in _noise_spans:
+            if match.start() >= s - 1 and match.end() <= e + 1:
+                return True
+        return False
+
     # Maxima prioridad: etiqueta explicita (PERIODO/FECHA DE INICIO/
     # SE EXTENDERA DESDE/etc.) -- nunca ambigua, se prueba primero.
     for pattern in _LABELED_DATE_PATTERNS:
@@ -503,11 +530,9 @@ def classify_dates_in_text(text):
             norm[match.end():window_end]
         if any(word in context for word in _BIRTHDATE_CONTEXT):
             continue
-        noise_start = max(0, match.start() - _NOISE_CONTEXT_WINDOW)
-        noise_end = min(len(norm), match.end() + _NOISE_CONTEXT_WINDOW)
-        noise_context = norm[noise_start:match.start()] + \
-            norm[match.end():noise_end]
-        if any(word in noise_context for word in _RECEIPT_NOISE_CONTEXT):
+        if any(word in context for word in _RECEIPT_NOISE_CONTEXT):
+            continue
+        if _en_fecha_ruido(match):
             continue
         if any(word in context for word in _EXPIRY_CONTEXT):
             expiry_candidates.append(parsed)
@@ -528,11 +553,9 @@ def classify_dates_in_text(text):
             norm[match.end():window_end]
         if any(word in context for word in _BIRTHDATE_CONTEXT):
             continue
-        noise_start = max(0, match.start() - _NOISE_CONTEXT_WINDOW)
-        noise_end = min(len(norm), match.end() + _NOISE_CONTEXT_WINDOW)
-        noise_context = norm[noise_start:match.start()] + \
-            norm[match.end():noise_end]
-        if any(word in noise_context for word in _RECEIPT_NOISE_CONTEXT):
+        if any(word in context for word in _RECEIPT_NOISE_CONTEXT):
+            continue
+        if _en_fecha_ruido(match):
             continue
         if any(word in context for word in _EXPIRY_CONTEXT):
             expiry_candidates.append(parsed)
