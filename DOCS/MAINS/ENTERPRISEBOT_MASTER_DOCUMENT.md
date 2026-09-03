@@ -1147,5 +1147,50 @@ Esta sección no se resume, no se acorta ni se sustituye en ninguna
 sesión futura salvo instrucción explícita de Miguel Ángel en sentido
 contrario.
 
+#### 4.18. DIRECTRIZ CRÍTICA — PROHIBIDO PREGUNTAR ALCANCE YA RESUELTO POR LA PROPIA DEFINICIÓN DEL HITO (añadida S86, tras incidente real)
+
+**Incidente real:** en S86, al reclasificar documentos de `ALTA`, el
+modelo encontró que varios pertenecían en realidad a `BAJA_PERSONAL`
+(`family=LABORAL`) y `PARTE_BAJA_MEDICA` (`family=SALUD_BAJAS_PERSONA`)
+y preguntó a Miguel Ángel si esos tipos "entraban en el alcance de
+H30" — pese a que el propio hito H30 documenta en
+`ENTERPRISEBOT_ANNEX_ROUTER.md`, sección "3. Resultado Actual", que
+se **reactivó explícitamente en S77 porque "6.085 documentos de las
+families `LABORAL` + `SALUD_BAJAS_PERSONA` con 0% de
+`issue_date`/`expiry_date` extraído" bloqueaban H31**. La respuesta
+ya estaba escrita en la propia razón de ser del hito; la pregunta no
+aportó nada y solo generó fricción real.
+
+**Regla de obligado cumplimiento, para cualquier duda de alcance
+("¿esto entra en el hito EN PROGRESO?"):**
+
+1. **Antes de formular la pregunta**, releer en el turno actual:
+   - La cabecera del hito EN PROGRESO en `ENTERPRISEBOT_ANNEX_ROUTER.md`
+     (nombre del hito, sección "3. Resultado Actual" con el motivo
+     real de apertura/reactivación).
+   - La cabecera del propio anexo del hito
+     (`DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V0X.md`,
+     las primeras secciones que describen el objetivo real).
+2. **Si el dominio, `family` o tipo documental en cuestión ya está
+   nombrado explícitamente, o cubierto de forma genérica** (p. ej.
+   "todos los tipos documentales del dominio PERSONAL con
+   `tracks_expiry=True`"), **la pregunta queda terminantemente
+   prohibida** — se procede directo, sin preguntar, documentando en
+   la bitácora de qué frase exacta del hito se dedujo que entraba en
+   alcance.
+3. Solo es legítimo preguntar cuando el hallazgo real **no** encaja
+   en ninguna descripción existente del hito (tipo, dominio o family
+   genuinamente nuevo y no mencionado en ningún sitio) — ese es el
+   único caso real de ambigüedad de alcance, y ahí sí se pregunta una
+   vez, se documenta la respuesta en el propio anexo del hito (para
+   que quede como parte de su definición futura), y no se vuelve a
+   preguntar por variantes del mismo tipo en sesiones siguientes.
+4. Esta regla se suma a la 4.16 (no preguntar entre puntos ya
+   decididos) y a la 2.5 de `nfs-enterprisebot-pcs` (prohibición de
+   cerrar sesión con preguntas abiertas) — las tres persiguen lo
+   mismo: cualquier pregunta cuya respuesta ya esté escrita en algún
+   sitio real del proyecto es un fallo de lectura del modelo, nunca
+   una decisión legítima pendiente de Miguel Ángel.
+
 
 

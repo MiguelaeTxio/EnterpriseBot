@@ -6192,23 +6192,28 @@ y 2.6), no solo en este anexo:**
 que sí va primero y sí requiere respuesta de Miguel Ángel antes de
 continuar.**
 
-### 0. PREGUNTA BLOQUEANTE (real, surgida como efecto colateral de S86)
+### 0. `BAJA_PERSONAL` / `FORMACION` / `PARTE_BAJA_MEDICA` -- EN ALCANCE, decidido (ver directriz 4.18)
 
-Al reclasificar `ALTA` en S86 se movieron documentos mal tipados a
-tres tipos ya existentes y mucho más voluminosos de lo esperado, que
-**no estaban en el alcance de H30 hasta ahora**:
+Entran en el trabajo de H30, sin necesidad de confirmarlo de nuevo:
+el propio hito se reactivó en S77 explícitamente porque "6.085
+documentos de las families `LABORAL` + `SALUD_BAJAS_PERSONA` con 0%
+de `issue_date`/`expiry_date` extraído" bloqueaban H31
+(`ENTERPRISEBOT_ANNEX_ROUTER.md`, sección 3) -- `BAJA_PERSONAL` es
+`family=LABORAL` y `PARTE_BAJA_MEDICA` es `family=SALUD_BAJAS_PERSONA`,
+las dos families nombradas literalmente. `FORMACION` entra igual por
+el objetivo genérico del propio anexo ("dónde está cada documento de
+cada... persona"). Volumen real, para procesar cuando toque en el
+orden de abajo:
 
 | Tipo | Activos | Sin fecha |
 |---|---|---|
 | `BAJA_PERSONAL` | 354 | 125 |
 | `FORMACION` | 1255 | 269 |
-| `PARTE_BAJA_MEDICA` | 132 | 131 (prácticamente el tipo entero) |
+| `PARTE_BAJA_MEDICA` | 132 | 131 |
 
-**¿Entran estos tres tipos en el alcance actual de H30 (dominio
-PERSONAL completo antes de pasar a Máquinas), o se aparcan
-explícitamente para una sesión/hito propio?** Sobre todo `FORMACION`
-(1255 activos) es un salto de escala real frente a los tipos tratados
-hasta ahora. No se toca ninguno de los tres sin esta respuesta.
+`FORMACION` es el mayor volumen tratado hasta ahora en H30 (1255
+activos) -- conviene reservarle una sesión propia o buena parte de
+una, no intentarlo al final de una sesión ya larga.
 
 ### 1. `ALTA` (LABORAL) -- cierre real pendiente, 20 activos sin fecha
 
@@ -6268,8 +6273,8 @@ reserva que el punto 2, verificar antes de asumir.
 ### 4. Los ~789 documentos "no críticos" sin fecha
 
 3.ª prioridad ya confirmada por Miguel Ángel en S83, se ataca después
-de cerrar los puntos 1-3 de arriba (y el punto 0 si se confirma que
-entra en esta sesión).
+de cerrar los puntos 0-3 de arriba (el punto 0 ya está en alcance,
+no condicional -- ver directriz 4.18).
 
 **En todos los puntos:** antes de asumir que todo "sin fecha" es
 problema de OCR, revisar si hay documentos mal tipados por nombre de
@@ -6292,13 +6297,13 @@ es de un tipo con caducidad real, vale la pena una comprobación
 rápida cruzada (nombre de archivo / texto OCR) antes de darlo por
 bueno sin mirar.
 
-**Pregunta explícita pendiente, arrastrada (2.ª sesión sin avanzar --
-S85 y S86 -- pasa a pregunta explícita de apertura junto al punto 0,
-ver `com-pah` 2.2):** el renombrado canónico del resto del catálogo
-(132 tipos, tras crear `CONVENIO_FORMACION_BONIFICADA` en S86) lleva
-siete sesiones sin una primera pasada real (S80-S86). ¿Sigue siendo
-prioridad para H30, o se aparca formalmente hasta que el dominio
-PERSONAL esté más avanzado?
+**Renombrado canónico del resto del catálogo: POSPUESTO, no se
+pregunta más.** Directriz ya fijada -- no se retoma hasta que todos
+los documentos que requieren fecha real la tengan extraída. Dejar de
+arrastrar esta pregunta en la hoja de ruta de sesión en sesión (error
+real de S86: se copió la pregunta sin comprobar si seguía teniendo
+sentido preguntarla, pese a que la directriz de fondo ya estaba
+fijada desde antes).
 
 **Bloqueado, sin acción posible desde el proyecto (no reintentar sin
 documento nuevo):** Santiago Nicolás Gutiérrez y Jerónimo Delgado
