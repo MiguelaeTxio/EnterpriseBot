@@ -46,6 +46,9 @@ _EXPIRY_CONTEXT = [
 _ISSUE_CONTEXT = [
     "EXPEDICION", "EXPEDIDO", "EXPEDIDA", "EMISION", "EMITIDO",
     "EMITIDA", "CON FECHA", "SOMETIDO EL DIA", "MALAGA A",
+    # H30 (S87): "CONFECHA" fusionado sin espacio -- ver comentario
+    # completo en la copia standalone.
+    "CONFECHA",
 ]
 # H30 (sesion de continuidad tras S79). Incidente real: 3 de 5
 # RECONOCIMIENTO_MEDICO reales devolvieron la fecha de NACIMIENTO
@@ -86,7 +89,7 @@ _MESES_LARGO = {
 # contexto). "DE"/"DEL" pasa a opcional en los dos huecos, cubriendo
 # ambos formatos con la misma expresion.
 _DATE_LARGO_RE = re.compile(
-    r"(\d{1,2})\s+(?:DE\s+)?(" + "|".join(_MESES_LARGO.keys()) + r")\s+(?:DEL?\s+)?(\d{4})",
+    r"(\d{1,2})\s+(?:DE\s+)?(" + "|".join(_MESES_LARGO.keys()) + r")\s+(?:DEL?\s+)?(\d\.?\d{3})",
 )
 
 # H30 (S78). Impresos oficiales estructurados (IDC, similares) traen
@@ -127,6 +130,15 @@ _LABELED_DATE_PATTERNS = [
         r"PRORROGA[\s\S]{0,120}?DESDE" + _GAP + r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})",
         re.DOTALL,
     ),
+    # H30 (S86, sincronizado aqui en S87 -- esta copia se habia
+    # desincronizado de la standalone sin que nadie lo notara, mismo
+    # patron de incidente que motivo esta nota en S80). "A FECHA
+    # (DD/MM/AAAA)" -- sello real junto a la firma del administrador.
+    re.compile(r"A\s+FECHA" + _GAP + r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})"),
+    # H30 (S87): "...es la que se indica a continuacion: DD-MM-AAAA"
+    # -- boilerplate real de las resoluciones de Alta/Baja de la
+    # Seguridad Social.
+    re.compile(r"INDICA\s+A\s+CONTINUACION" + _GAP + r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})"),
 ]
 # Mantiene el nombre antiguo por compatibilidad con codigo que lo
 # importe directamente (VM scripts standalone que copian esta logica).
@@ -386,6 +398,10 @@ def _strip_accents(value):
 
 
 def _parse_date(day_s, month_s, year_s):
+    # H30 (S87): anno impreso con separador de miles espanol ("1.996")
+    # -- ver comentario completo en la copia standalone
+    # (h28_migration_agent/extract_personal_dates_bulk.py).
+    year_s = year_s.replace(".", "") if year_s else year_s
     try:
         day, month, year = int(day_s), int(month_s), int(year_s)
     except ValueError:

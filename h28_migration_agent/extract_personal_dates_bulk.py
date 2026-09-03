@@ -285,6 +285,11 @@ _PERIODO_CONTEXT = [
 
 
 def _parse_date_dmY(day_s, month_s, year_s):
+    # H30 (S87): anno impreso con separador de miles espanol ("1.996")
+    # -- incidente real (ALTA AUTONOMO.pdf, "6 NOVIEMBRE 1.996"): sin
+    # este strip, int("1.996") lanza ValueError y la fecha se pierde
+    # por completo en vez de leerse como 1996.
+    year_s = year_s.replace(".", "") if year_s else year_s
     try:
         day, month, year = int(day_s), int(month_s), int(year_s)
     except ValueError:
@@ -475,6 +480,12 @@ _EXPIRY_CONTEXT = [
 _ISSUE_CONTEXT = [
     "EXPEDICION", "EXPEDIDO", "EXPEDIDA", "EMISION", "EMITIDO",
     "EMITIDA", "CON FECHA", "SOMETIDO EL DIA", "MALAGA A",
+    # H30 (S87): "CONFECHA" fusionado sin espacio -- artefacto real
+    # de OCR de baja calidad, visto repetido en resoluciones de la
+    # Seguridad Social ("...D.N.I. 033356574L ,confecha 06-07-2012").
+    # "CON FECHA" (con espacio) ya estaba en la lista; esto cubre el
+    # caso en que Tesseract funde las dos palabras en una.
+    "CONFECHA",
 ]
 # Sesion de continuidad tras S79 -- incidente real: fechas de
 # nacimiento coladas como "unica fecha, por defecto" en
@@ -496,7 +507,7 @@ _MESES_LARGO = {
 # y "10 Enero 2022" con la misma expresion (documento real confirmado
 # por Miguel Angel, certificado CENTRO MEDICO ALAMEDA).
 _DATE_LARGO_RE = re.compile(
-    r"(\d{1,2})\s+(?:DE\s+)?(" + "|".join(_MESES_LARGO.keys()) + r")\s+(?:DEL?\s+)?(\d{4})",
+    r"(\d{1,2})\s+(?:DE\s+)?(" + "|".join(_MESES_LARGO.keys()) + r")\s+(?:DEL?\s+)?(\d\.?\d{3})",
 )
 
 _GAP = r"[^\d]{0,15}"
@@ -539,6 +550,14 @@ _LABELED_DATE_PATTERNS = [
     # presente y el documento se marcaba SIN FECHA por ambiguedad pese
     # a que la etiqueta ya la resolvia sin dudas.
     re.compile(r"A\s+FECHA" + _GAP + r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})"),
+    # H30 (S87): "...es la que se indica a continuacion: DD-MM-AAAA"
+    # -- boilerplate real de las resoluciones de Alta/Baja de la
+    # Seguridad Social (RECONOCIMIENTO DE ALTA/BAJA). Maxima prioridad
+    # porque en varios documentos reales la etiqueta "CON FECHA"/
+    # "CONFECHA" queda lejos (OCR reordena celdas de tabla) pero esta
+    # frase de cierre siempre aparece pegada a la fecha real de
+    # efectos.
+    re.compile(r"INDICA\s+A\s+CONTINUACION" + _GAP + r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})"),
 ]
 
 DEFAULT_FIELD_BY_CODE = {
