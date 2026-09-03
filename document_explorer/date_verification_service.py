@@ -73,6 +73,27 @@ _BIRTHDATE_CONTEXT = [
     "NACIDO", "NACIDA", "NACIO", "FECHA DE NACIMIENTO", "NACIMIENTO",
 ]
 
+# H30 (S89). Recibos domiciliados de cuotas (AUTONOMO, CSS) traen
+# SIEMPRE 2-3 fechas ruido ademas de la fecha real del recibo (campo
+# "FECHA" arriba, repetido como "FECHA VALOR" abajo), impidiendo
+# resolver por "unica fecha, por defecto" -- verificado contra OCR
+# real (id=27493) y foto real aportada por Miguel Angel (id=27494):
+# 1. "PERIODO 12/12-2012" -- notacion de periodo, NO una fecha; el
+#    regex general de fecha (separadores "/" y "-" mezclados) la
+#    parsea igualmente como si fuera dia/mes/anio.
+# 2. "FECHA MAXIMA DEVOLUCION PARA RECIBOS NO AUTORIZADOS...: DD/MM/AAAA"
+#    -- plazo legal de devolucion del banco, nunca la fecha del
+#    documento.
+# 3. "Inscrita Reg. Mercantil ... Inscripc.1a DD/MM/AAAA" -- fecha de
+#    inscripcion registral de la entidad bancaria, constante en TODOS
+#    los recibos de la misma entidad, sin relacion con el recibo
+#    concreto.
+# Estas fechas se descartan por completo (igual que _BIRTHDATE_CONTEXT),
+# nunca solo se evitan como contexto de emision/caducidad.
+_RECEIPT_NOISE_CONTEXT = [
+    "PERIODO", "DEVOLUCION", "INSCRITA", "INSCRIPC",
+]
+
 _DATE_RE = re.compile(r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})")
 _CONTEXT_WINDOW = 70
 
@@ -474,6 +495,8 @@ def classify_dates_in_text(text):
             norm[match.end():window_end]
         if any(word in context for word in _BIRTHDATE_CONTEXT):
             continue
+        if any(word in context for word in _RECEIPT_NOISE_CONTEXT):
+            continue
         if any(word in context for word in _EXPIRY_CONTEXT):
             expiry_candidates.append(parsed)
         elif any(word in context for word in _ISSUE_CONTEXT):
@@ -492,6 +515,8 @@ def classify_dates_in_text(text):
         context = norm[window_start:match.start()] + \
             norm[match.end():window_end]
         if any(word in context for word in _BIRTHDATE_CONTEXT):
+            continue
+        if any(word in context for word in _RECEIPT_NOISE_CONTEXT):
             continue
         if any(word in context for word in _EXPIRY_CONTEXT):
             expiry_candidates.append(parsed)

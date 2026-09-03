@@ -510,6 +510,12 @@ _ISSUE_CONTEXT = [
 _BIRTHDATE_CONTEXT = [
     "NACIDO", "NACIDA", "NACIO", "FECHA DE NACIMIENTO", "NACIMIENTO",
 ]
+# H30 (S89). Recibos domiciliados (AUTONOMO, CSS) traen fechas ruido
+# ademas de la fecha real -- ver comentario completo en la copia
+# Django (document_explorer/date_verification_service.py).
+_RECEIPT_NOISE_CONTEXT = [
+    "PERIODO", "DEVOLUCION", "INSCRITA", "INSCRIPC",
+]
 _DATE_RE = re.compile(r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})")
 _CONTEXT_WINDOW = 70
 
@@ -659,6 +665,8 @@ def classify_dates_in_text(text):
         context = norm[window_start:match.start()] + norm[match.end():window_end]
         if any(word in context for word in _BIRTHDATE_CONTEXT):
             continue
+        if any(word in context for word in _RECEIPT_NOISE_CONTEXT):
+            continue
         if any(word in context for word in _EXPIRY_CONTEXT):
             expiry_candidates.append(parsed)
         elif any(word in context for word in _ISSUE_CONTEXT):
@@ -676,6 +684,8 @@ def classify_dates_in_text(text):
         window_end = min(len(norm), match.end() + _CONTEXT_WINDOW)
         context = norm[window_start:match.start()] + norm[match.end():window_end]
         if any(word in context for word in _BIRTHDATE_CONTEXT):
+            continue
+        if any(word in context for word in _RECEIPT_NOISE_CONTEXT):
             continue
         if any(word in context for word in _EXPIRY_CONTEXT):
             expiry_candidates.append(parsed)
