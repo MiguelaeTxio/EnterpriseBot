@@ -5694,7 +5694,7 @@ decidir por defecto.
 ### Después del bloque crítico
 
 Preguntar a Miguel Ángel si se retoma el renombrado canónico del
-resto del catálogo (131 tipos pendientes, criterio "a demanda con
+resto del catálogo (132 tipos pendientes -- 131 + CONVENIO_FORMACION_BONIFICADA creado en S86 -- criterio "a demanda con
 evidencia real" acordado en S78), si se revisan también los 789 no
 críticos, o si se pasa a otra cosa -- **esta pregunta sí es legítima**,
 no es "por dónde empezar" (eso ya está resuelto arriba), es una
@@ -6213,7 +6213,8 @@ realidad partes de baja). Usar siempre la cascada Tesseract->PSM
 6->EasyOCR ya integrada, lector oficial del dominio Personal.
 
 **Pregunta explícita pendiente, no bloquea el orden de arriba:** el
-renombrado canónico del resto del catálogo (131 tipos) lleva seis
+renombrado canónico del resto del catálogo (132 tipos, tras crear
+CONVENIO_FORMACION_BONIFICADA en S86) lleva seis
 sesiones sin una primera pasada real (S80-S85). ¿Sigue siendo
 prioridad para H30, o se aparca formalmente hasta que el dominio
 PERSONAL esté más avanzado?
