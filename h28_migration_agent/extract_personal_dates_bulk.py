@@ -588,6 +588,14 @@ _ISSUE_CONTEXT = [
     # firmado, no solo en este. Sincronizado con la copia Django
     # (document_explorer/date_verification_service.py).
     "A FECHA",
+    # H30 (S91). Cierre real de "CLAUSULA_PROTECCION_DATOS" (LOPD,
+    # plantilla de 2014) -- "...mediante la presente y firma de
+    # conformidad, en Santa Rosalía a 30 de septiembre de 2014."
+    # Verificado en 8 documentos reales. Mismo cierre "en <Ciudad> a
+    # <fecha>" que "MALAGA A", pero con ciudad variable. "FIRMA DE
+    # CONFORMIDAD" es la frase fija que precede a la fecha, sin
+    # depender de la ciudad. Sincronizado con la copia Django.
+    "FIRMA DE CONFORMIDAD",
 ]
 # Sesion de continuidad tras S79 -- incidente real: fechas de
 # nacimiento coladas como "unica fecha, por defecto" en

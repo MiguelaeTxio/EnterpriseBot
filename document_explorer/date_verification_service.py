@@ -63,6 +63,17 @@ _ISSUE_CONTEXT = [
     # nunca lo estuvo -- template usado en varios tipos con recibi
     # firmado, no solo en este.
     "A FECHA",
+    # H30 (S91). Cierre real de "CLAUSULA_PROTECCION_DATOS" (LOPD,
+    # plantilla de 2014) -- "...mediante la presente y firma de
+    # conformidad, en Santa Rosalía a 30 de septiembre de 2014."
+    # Verificado en 8 documentos reales (Delgado Hurtado, Alvarez Gea,
+    # Carlin Carvajal, Diaz Quintero, Garcia Luque, Ramos Zambrana,
+    # Zafra Peralta, Fontalba Seron) -- mismo cierre "en <Ciudad> a
+    # <fecha>" que "MALAGA A", pero con ciudad variable
+    # (Santa Rosalía, no Málaga). "FIRMA DE CONFORMIDAD" es la frase
+    # fija que precede a la fecha en todos los casos, sin depender de
+    # la ciudad.
+    "FIRMA DE CONFORMIDAD",
 ]
 # H30 (sesion de continuidad tras S79). Incidente real: 3 de 5
 # RECONOCIMIENTO_MEDICO reales devolvieron la fecha de NACIMIENTO
