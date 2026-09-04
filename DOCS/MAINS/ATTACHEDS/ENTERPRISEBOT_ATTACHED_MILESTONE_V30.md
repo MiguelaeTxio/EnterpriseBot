@@ -6661,52 +6661,199 @@ Aplicada de forma consistente en la segunda mitad de esta sesión, con
 resultado real: evitó al menos dos preguntas ya contestadas en el
 propio anexo.
 
-## Hoja de Ruta para la Siguiente Sesión (S91) -- REESCRITA al cierre
-## de S90, sustituye por completo a la anterior
+### COMPLETADAS EN S91 (sesión muy larga, PEE=PC; cierre pedido
+### explícitamente por Miguel Ángel tras una queja formal por
+### afirmaciones de estado no verificadas -- ver incidencias reales
+### al final de este bloque)
+
+**Metodología aplicada, heredada de S87-S90 y confirmada de nuevo:**
+para cada tipo, recuento real contra BD restringido a
+`domain_object_id` de empleados activos (`is_active_employee=True`),
+entradas vivas (`deleted_at`/`purged_at` nulos), dry-run con
+`classify_dates_in_text()` sobre `ocr_text` ya cacheado, verificación
+visual real (descarga GCS + inspección directa) para los residuos, y
+consulta final a BD antes de dar cualquier tipo por cerrado.
+
+**Tipos cerrados a 0 pendientes reales esta sesión (verificado por
+consulta directa, no de memoria):**
+- `CERTIFICADO_BANCARIO`: 15 activos, 7 fechados + 8 excepciones
+  legítimas documentadas (sin fecha real en el contenido, mismo
+  criterio que `40287`). 2 documentos reclasificados: `35383`
+  (extracto bancario completo, no un certificado, en subcarpeta
+  ABOGADOS) y `38007` (fecha cortada por el borde de la foto,
+  ilegible) enviados a papelera por decisión explícita de Miguel
+  Ángel ("no nos hace falta para nada").
+- `EVALUACION_RIESGO`: 4 activos, 0 sin fecha.
+- `TACOGRAFO`: 42 activos, 0 sin fecha. `id=34563` reclasificado a
+  `TARJETA_CUALIF_CONDUCTOR` (era una tarjeta de cualificación, no un
+  tacógrafo, pese al nombre de carpeta).
+- `TARJETA_CUALIF_CONDUCTOR`: 87 activos, 0 sin fecha (incluye el
+  reclasificado de arriba).
+- `PLAN_ACTUACION_CALOR`: **rediseñado al patrón EPIs/nombramientos**
+  por indicación explícita de Miguel Ángel -- eran 8 copias completas
+  (PDF de 50+ páginas, boletín nacional idéntico) del mismo documento,
+  una por empleado, cuando solo hacía falta un registro de entrega.
+  Fijada 1 plantilla vigente (`DocumentTypeCatalog.current_template`,
+  `id=40356`) + 8 `DocumentAcknowledgment` reales con la fecha de
+  firma individual (extraída de la última página del PDF, bloque de
+  firma Docuten -- ver fix de código más abajo); las 7 copias
+  restantes, a papelera.
+- `CLAUSULA_PROTECCION_DATOS`: 11 activos, 0 sin fecha.
+- `CERTIFICADO_GIBRALTAR`: 11 activos, 2 excepciones legítimas
+  documentadas (formularios "Tax Return" en blanco, sin fecha
+  personal real), 0 pendientes reales.
+- `FORMACION_ITC_MINERA`: 5 activos, 0 sin fecha. 3 documentos
+  reclasificados a `ENTREGA_INFORMACION` (`33932`, `33933`, `33941`
+  -- eran cartas de instrucciones a guardas sobre residuos orgánicos,
+  nada que ver con formación minera, mal tipadas desde origen).
+- `ENTREGA_INFORMACION`: 473 activos, 1 excepción legítima ya
+  documentada de sesiones anteriores (`40287`), 0 pendientes reales.
+  **122 pendientes reales resueltos mediante barrido en 3 shards
+  paralelos sobre `h28-ocr-batch-1`** (114 automáticos vía contexto
+  OCR + 8 revisados a mano, incluidos 3 pares `.doc`/`.pdf`
+  duplicados con el mismo defecto real de OCR -- separador o dígito
+  perdido en "A fecha (...)").
+- `DOC_MUTUA`: 6 activos, 0 sin fecha (familia Álvarez, mismo día de
+  adhesión a la mutua, 22/03/2016, verificado visualmente en 2 de los
+  5 documentos antes de aplicar al resto).
+- `AUTORIZACION_MEDIOS_COMUNICACION`: 52 activos, 0 sin fecha (los 5
+  pendientes se resolvieron solos tras el fix de la coma, sin
+  intervención manual).
+- `AUTORIZACION_LIBRO_SUBCONTRATA`: 3 activos, 0 sin fecha.
+- `EXCEDENCIA`: 2 activos, 0 sin fecha (mismo documento duplicado en
+  dos rutas -- personal activo y `_CUARENTENA/.../TRABAJADORES
+  INACTIVOS` -- confirmado que `is_active_employee` sigue en `True`
+  para esta persona pese a estar en excedencia, dato correcto: la
+  excedencia no da de baja al trabajador).
+- `COMUNICACION_CONTRATO`: 7 activos, 0 sin fecha (impreso oficial
+  SEPE/Seguridad Social de prórroga de contrato).
+- `FICHA_TECNICA_EPI`, `CERT_LIMITACIONES`,
+  `INFORMACION_MEDIDAS_PROTECCION`: 0 documentos activos cada uno --
+  cerrados por definición, sin trabajo real que hacer.
+
+**6 bugs reales del extractor corregidos y comiteados esta sesión
+(sincronizados en `document_explorer/date_verification_service.py` +
+`h28_migration_agent/extract_personal_dates_bulk.py`):**
+1. `extract_text()` no reconocía `.txt` -- añadida `txt_to_text()`.
+2. `_ISSUE_CONTEXT` no reconocía `"A FECHA"` suelta (solo `"CON
+   FECHA"`) -- plantilla real de "Firma/recibí del trabajador".
+3. `extract_docuten_signature_date()` -- nueva función que OCRea solo
+   la última página de un PDF firmado vía Docuten para leer la fecha
+   real de firma individual, fuera del alcance de
+   `ocr_pdf_to_text(max_pages=2)`.
+4. `_ISSUE_CONTEXT` no reconocía `"FIRMA DE CONFORMIDAD"` (cierre real
+   de `CLAUSULA_PROTECCION_DATOS`, plantilla LOPD 2014).
+5. Una coma real en el texto (`"MALAGA, A"`) rompía la coincidencia
+   exacta del patrón ya existente `"MALAGA A"` -- normalizada a
+   espacio antes de la comprobación de contexto, mismo principio que
+   la normalización de saltos de línea de S87.
+6. `_ISSUE_CONTEXT`/`_EXPIRY_CONTEXT` no reconocían el impreso oficial
+   de prórroga de contrato (SEPE) -- añadidos `"FECHA DE INICIO"` /
+   `"FECHA DE TERMINO"`.
+
+**Reclasificaciones reales de documentos mal tipados, no solo
+correcciones de fecha:** `34563` (TACOGRAFO→TARJETA_CUALIF_CONDUCTOR),
+`33932`/`33933`/`33941` (FORMACION_ITC_MINERA→ENTREGA_INFORMACION).
+
+**Incidencias reales de sesión, registradas tal cual, sin suavizar:**
+
+1. **Confusión de VMs durante el barrido paralelo de
+   `ENTREGA_INFORMACION`.** Al necesitar 2 procesos más en paralelo
+   sobre la misma `h28-ocr-batch-1` (ya en marcha con el shard 0), el
+   modelo intentó repetidamente `resume`/`start` y conectar a
+   `h28-ocr-batch-2`/`h28-ocr-batch-3` (máquinas distintas, apagadas)
+   en vez de abrir simplemente dos sesiones SSH nuevas sobre la
+   máquina que ya estaba corriendo -- corregido tras varias
+   correcciones directas de Miguel Ángel, con enfado explícito y
+   justificado ("¿cómo vas a reiniciar ni a hacer nada con la máquina
+   si está andando y está ejecutando uno de los shards?").
+2. **Llamadas sueltas repetidas a la propia herramienta bash del
+   modelo sin ningún efecto real** (ecos/placeholders vacíos antes de
+   entregar cajas de texto) -- señalado explícitamente por Miguel
+   Ángel más de una vez en la misma sesión como ruido inaceptable.
+3. **Queja formal real, motivo explícito del cierre anticipado:** al
+   preguntar qué quedaba del catálogo tras cerrar `CERT_LIMITACIONES`
+   (0 documentos), el modelo citó de memoria una lista de "13 tipos
+   sin tocar" tomada literalmente de la hoja de ruta de S88 sin
+   verificarla contra BD: parte de esa lista (`RECONOCIMIENTO_MEDICO`,
+   `AUTORIZACION_USO_MAQUINARIA`, `CAP`, `DNI`, `IDC` entre otros) ya
+   estaba cerrada desde sesiones muy anteriores. Al ser corregido, el
+   modelo afirmó de nuevo sin verificar que `RECONOCIMIENTO_MEDICO` se
+   había cerrado "en S88" -- **falso**: el propio anexo confirma que
+   se cerró del todo en **S85** (línea "`RECONOCIMIENTO_MEDICO`
+   (dominio PERSONAL) -- CERRADO DEL TODO"). Miguel Ángel, verbatim:
+   *"¿Queda alguna credibilidad? [...] ya no sé siquiera si estamos
+   trabajando en condiciones."* Decisión explícita: cerrar la sesión
+   ya, sin ejecutar la consulta de recuento completo preparada
+   (`EnterpriseBot_063`, sobre todo el catálogo `domain=PERSONAL
+   tracks_expiry=True`, nunca ejecutada), y empezar S92 directamente
+   con una auditoría real desde cero -- ver Punto 1 de la hoja de
+   ruta.
+4. **Sospecha real sin verificar, planteada por Miguel Ángel al
+   cierre, pendiente de auditar en S92 antes de asumir nada:**
+   posibles documentos de empleados inactivos, o documentos ya
+   trasladados a papelera (`deleted_at` no nulo, p. ej. DNIs
+   sustituidos por uno más reciente vigente), apareciendo todavía en
+   consultas o en el panel cuando no deberían. No se ha confirmado ni
+   descartado con datos reales en esta sesión -- primer punto de la
+   auditoría de S92.
+
+## Hoja de Ruta para la Siguiente Sesión (S92) -- REESCRITA al cierre
+## de S91, sustituye por completo a la anterior
 
 **Ejecución estrictamente secuencial, sin preguntar por dónde
-empezar. Dominio PERSONAL, misma metodología consolidada en S87-S90 --
-ver bloque de arriba. Ningún tipo se da por cerrado con pendientes
-reales sueltos.**
+empezar.**
 
-**Punto 1 -- Terminar de fechar todo el dominio PERSONAL.** Recontar
-contra BD (nunca de memoria de esta bitácora, las cifras cambian
-sesión a sesión) los tipos `tracks_expiry=True` de dominio PERSONAL
-que sigan con pendientes reales. A fecha de cierre de S90, quedan
-sin tocar por volumen: `CERTIFICADO_BANCARIO` (15 sin fecha bruto al
-cierre de S88, sin recontar tras S90) y una veintena de tipos con
-menos de 10 documentos cada uno (`EVALUACION_RIESGO`, `TACOGRAFO`,
-`PLAN_ACTUACION_CALOR`, `CLAUSULA_PROTECCION_DATOS`,
-`CERTIFICADO_GIBRALTAR`, `FORMACION_ITC_MINERA`, `FICHA_TECNICA_EPI`,
-`DOC_MUTUA`, `AUTORIZACION_MEDIOS_COMUNICACION`,
-`AUTORIZACION_LIBRO_SUBCONTRATA`, `EXCEDENCIA`,
-`INFORMACION_MEDIDAS_PROTECCION`, `COMUNICACION_CONTRATO`,
-`CERT_LIMITACIONES`, `CERTIF_TRABAJO_COLEGIO`, `CERTIF_DISCAPACIDAD`,
-`ALTA_MEDICA`, `TC2`, `TARJETA_CUALIF_CONDUCTOR`, `NIE`,
-`COMUNICACION_JORNADA`, `CARNET_CONDUCIR`, `AUTORIZACION_USO_MAQUINARIA`,
-`AUTORIZACION_MEDIOS_COMUNICACION`, `CAP`, `CARNET_GRUISTA`, `DNI`,
-`IDC`, `RECONOCIMIENTO_MEDICO` -- lista real de S88, sin recontar
-individualmente tras los movimientos de S89/S90, recontar cada uno
-antes de tocarlo). **Criterio de cierre del Punto 1 completo:** los
-~30 tipos `tracks_expiry=True` de dominio PERSONAL, uno a uno, a 0
-pendientes reales (verificado por consulta directa a BD, mismo
-criterio que S90), documentando en el cierre exactamente cuáles se
-tocaron.
+**Punto 1 -- Auditoría real obligatoria, bloqueante, ANTES de tocar
+ningún documento.** Ninguna cifra de esta sesión ni de ninguna
+anterior se da por buena sin comprobarla en el turno actual. Pasos
+concretos, en este orden:
 
-**Punto 2 -- Auditoría retroactiva de tipos `.docx` ya cerrados
+1. Ejecutar contra BD, para **todo** el catálogo `domain=PERSONAL,
+   tracks_expiry=True, is_active=True` (consulta ya escrita al cierre
+   de S91, `EnterpriseBot_063`, nunca ejecutada -- releer y adaptar,
+   no repetir de memoria): por cada tipo, `activos` (restringido a
+   `domain_object_id` de personas con `is_active_employee=True`,
+   entradas vivas) y `sin_fecha` real. **Criterio de cierre de este
+   paso:** tabla completa con los ~30 tipos y sus dos cifras reales,
+   pegada en la bitácora de S92 antes de decidir nada más.
+2. Verificar la sospecha de Miguel Ángel (incidencia 4 de arriba): con
+   2-3 casos reales concretos (buscar un DNI u otro tipo con varias
+   versiones de la misma persona, alguna marcada `deleted_at`),
+   comprobar por consulta directa si esa fila sigue apareciendo en
+   algún listado o consulta cuando no debería. **Criterio de cierre:**
+   confirmar con datos reales si el filtro `deleted_at__isnull=True`
+   ya excluye correctamente esos casos, o si hay un bug real que
+   corregir -- nunca asumir ninguna de las dos cosas sin comprobarlo.
+3. **Nunca fechar documentos de personas con `is_active_employee`
+   distinto de `True`** -- quedan fuera de alcance de H30 por completo,
+   da igual que estén sin fecha. Esto ya era la metodología aplicada
+   en S91 (filtro `active_ids` en toda consulta), se deja explícito
+   aquí porque Miguel Ángel lo remarcó al cierre.
+
+**Punto 2 -- Con el recuento real ya en mano (Punto 1 completo),
+continuar cerrando tipo a tipo los que sigan con pendientes reales,
+misma metodología consolidada en S87-S91 (ver bloque "COMPLETADAS EN
+S91" arriba). Ningún tipo se da por cerrado con pendientes reales
+sueltos, ni se cita ningún estado de ningún tipo sin haberlo
+verificado en el turno actual.**
+
+**Punto 3 -- Auditoría retroactiva de tipos `.docx` ya cerrados
 (recomendado, no bloqueante).** El bug de `docx_to_text()` corregido
 en S90 (`ebb1e85`) pudo haber afectado a tipos ya cerrados en
 sesiones anteriores a S90 que usaran `.docx` con tabla -- si aparece
 algo raro (fecha ausente, mal tipado no detectado) en un tipo ya
-cerrado durante el Punto 1, revisar si es `.docx` antes de asumir
+cerrado durante el Punto 2, revisar si es `.docx` antes de asumir
 otra causa.
 
-**Punto 3 -- una vez el dominio PERSONAL esté fechado al 100%
-(Punto 1 completo), dos tareas nuevas, decisión explícita de Miguel
-Ángel al cierre de S90, en este orden:**
+**Punto 4 -- una vez el dominio PERSONAL esté fechado al 100% (Punto
+2 completo), dos tareas ya decididas por Miguel Ángel en S90, en este
+orden (arrastradas sin ejecución real en S91, 2.ª sesión sin avanzar
+-- siguen aparcadas por el propio orden de esta hoja de ruta, no por
+falta de dato):**
 
 1. **Registro de las apps Android en Google Play Console.** Miguel
-   Ángel ya envió el correo con los datos -- **localizarlo primero**
+   Ángel ya envió el correo con los datos -- localizarlo primero
    (buscar en el propio historial de chats/otro proyecto de la
    plataforma si no aparece en este repositorio) antes de preguntar
    nada; si de verdad no aparece en ningún sitio, pedírselo de nuevo
@@ -6720,13 +6867,22 @@ otra causa.
    `com-standards`) qué versiones de Python soporta realmente
    PythonAnywhere hoy y el procedimiento real de cambio de versión
    del virtualenv (`EnterpriseBot_venv`) sin romper las dependencias
-   ya anancladas en `requirements.txt`.
+   ya ancladas en `requirements.txt`.
 
 **Los 3 puntos heredados de S73-S80 (ARNES MIRA 12-A, deuda técnica
 de plantillas/interfaz de supervisor, Fase A de DOC. MAQUINAS) siguen
-aparcados sin condición de retorno hasta que el Punto 1 de arriba
+aparcados sin condición de retorno hasta que el Punto 2 de arriba
 (todo el dominio PERSONAL fechado) esté completo -- decisión cerrada
 en S89, reconfirmada en S90, no volver a preguntar.**
+
+**VM `h28-ocr-batch-1`: queda suspendida al cierre de S91.** Si S92
+necesita OCR real (Punto 2), reactivar con `gcloud compute instances
+resume` (o `start` si el `resume` devuelve el error real ya
+documentado de "solo se puede resumir una instancia previamente
+suspendida") -- verificar el estado real antes de asumir cuál de los
+dos comandos aplica, nunca abrir una VM distinta para procesos en
+paralelo sobre el mismo barrido: son sesiones SSH nuevas sobre la
+misma máquina, no máquinas nuevas.
 
 
 
