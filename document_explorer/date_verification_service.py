@@ -102,15 +102,22 @@ _BIRTHDATE_CONTEXT = [
 #    posicion exacta.
 # Estas fechas se descartan por completo (igual que _BIRTHDATE_CONTEXT),
 # nunca solo se evitan como contexto de emision/caducidad.
+# H30 (S89). "https://www.cajamar.es/BE/ServletOperation DD/MM/AAAA"
+# (o "DD/MM/AAAA https://www.cajamar.es/BE/ServletOperation" -- el
+# sello de impresion del navegador puede ir en cualquier orden segun
+# el documento, verificado real id=27503 (fecha despues) vs id=27510
+# (fecha antes)) -- fecha de generacion/impresion, no del recibo.
+# Por contexto bidireccional (like PERIODO/INSCRIPC), no por posicion
+# exacta direccional -- un primer intento solo cubria un sentido y no
+# excluia la duplicidad del mismo valor en el otro sentido (id=27510).
 _RECEIPT_NOISE_CONTEXT = [
-    "PERIODO", "INSCRITA", "INSCRIPC",
+    "PERIODO", "INSCRITA", "INSCRIPC", "SERVLETOPERATION",
 ]
 _NOISE_SPAN_PATTERNS = [
     re.compile(
         r"DEVOLUCION[\s\S]{0,180}?IMPORTE:?\s*"
         r"(\d{1,2}[-./]\d{1,2}[-./]\d{2,4})"
     ),
-    re.compile(r"SERVLETOPERATION\s+(\d{1,2}[-./]\d{1,2}[-./]\d{2,4})"),
 ]
 
 _DATE_RE = re.compile(r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})")

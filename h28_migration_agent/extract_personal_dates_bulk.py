@@ -513,18 +513,16 @@ _BIRTHDATE_CONTEXT = [
 # H30 (S89). Recibos domiciliados (AUTONOMO, CSS) traen fechas ruido
 # ademas de la fecha real -- ver comentario completo en la copia
 # Django (document_explorer/date_verification_service.py). PERIODO/
-# INSCRIPC por palabra cercana; DEVOLUCION/URL de pie por POSICION
-# EXACTA (un intento anterior con ventana ancha por palabra provoco
-# una regresion real, ver comentario completo en la copia Django).
+# INSCRIPC/SERVLETOPERATION por palabra cercana (bidireccional);
+# DEVOLUCION por POSICION EXACTA.
 _RECEIPT_NOISE_CONTEXT = [
-    "PERIODO", "INSCRITA", "INSCRIPC",
+    "PERIODO", "INSCRITA", "INSCRIPC", "SERVLETOPERATION",
 ]
 _NOISE_SPAN_PATTERNS = [
     re.compile(
         r"DEVOLUCION[\s\S]{0,180}?IMPORTE:?\s*"
         r"(\d{1,2}[-./]\d{1,2}[-./]\d{2,4})"
     ),
-    re.compile(r"SERVLETOPERATION\s+(\d{1,2}[-./]\d{1,2}[-./]\d{2,4})"),
 ]
 _DATE_RE = re.compile(r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})")
 _CONTEXT_WINDOW = 70
