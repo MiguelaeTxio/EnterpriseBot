@@ -6541,54 +6541,192 @@ cierre, no de memoria.**
 
 ---
 
-## Hoja de Ruta para la Siguiente Sesión (S90) -- REESCRITA al cierre
-## de S89, sustituye por completo a la anterior
+### COMPLETADAS EN S90 (8 tipos documentales de PERSONAL cerrados a
+### 0 pendientes reales, 2 bugs de código reales corregidos y
+### comiteados, varios mal tipados/relinkados reales corregidos)
+
+**Metodología aplicada a cada tipo, sin excepción (heredada de
+S87/S88/S89, confirmada de nuevo esta sesión):** auditoría de
+"realmente pendientes" primero (persona activa, sin ningún documento
+del mismo tipo ya fechado -- descarta históricos), dry-run sobre
+`ocr_text` ya cacheado con `classify_dates_in_text`, verificación
+visual real (descarga GCS + inspección directa, nunca fiarse del
+nombre de archivo a ciegas) para los residuos, y **nunca se da un
+tipo por cerrado sin la consulta final a BD que confirme 0
+pendientes reales** -- incidente real de esta misma sesión: se dio
+un tipo por cerrado con residuos reales sin resolver
+(`MOD_145`/`CONTRATO`/`ENTREGA_INFORMACION`), corregido tras aviso
+explícito de Miguel Ángel, que exigió terminar cada tipo al 100% antes
+de pasar al siguiente. Regla de obligado cumplimiento para toda
+sesión futura: **ningún tipo se da por cerrado con pendientes reales
+sueltos, ni uno.**
+
+**Tipos cerrados a 0 pendientes reales esta sesión:**
+- `ENTREGA_INFORMACION` (activos): 41/41, más `28677` (fecha del
+  nombre de archivo) y `34898`/`42182` corregidos en revisión
+  posterior. `40287` queda como única excepción legítima -- el propio
+  sello del documento tiene día/mes en blanco, no hay dato que
+  extraer.
+- `MOD_145`: 105/105 (100 por VM en 3 shards paralelos + 5 residuos
+  resueltos a mano con verificación visual).
+- `CONTRATO`: 21/21 reales (9 por VM + 12 verificados visualmente,
+  incluido `34898`, cuyo nombre de archivo -- prefijo `13042026` --
+  **no coincidía con la fecha real del contrato**, `02/03/2026`. `2`
+  de los 21 (`26010`, `26011`) resultaron ser contratos de formación
+  a nivel de empresa mal vinculados a la ficha de Alejandro/Adolfo
+  Álvarez Díaz -- reclasificados a `CONVENIO_FORMACION_BONIFICADA`,
+  mismo patrón que S88.
+- `VACACIONES`: 29/29 (2 aplicadas mal en un primer intento por
+  ambigüedad de "otras fechas" sin criterio de contexto -- corregido
+  con verificación visual real, ver incidencia de sesión abajo).
+- `ENTREGA_MANUAL_COMBUSTIBLE`: 23/23. **2 documentos con el nombre
+  de trabajador equivocado** (`24140`: archivo "Alonso Pedrosa,
+  Manuel" pero contenido real de José María García Vela; `24223`:
+  archivo "Muñoz González, Antonio J." pero contenido real de
+  Alejandro Ponce Rodríguez) -- relinkados a la persona real
+  (verificada por DNI en la tabla del propio documento). **Hallazgo
+  real que requiere acción física, no de software:** al corregir el
+  relinkado, Manuel Alonso Pedrosa y Antonio Javier Muñoz González se
+  quedan sin ningún `ENTREGA_MANUAL_COMBUSTIBLE` real -- hace falta
+  entregárselo y archivarlo, no es un problema de fecha.
+- `CURSO`: 12/12. `25247` resultó ser un presupuesto de formación
+  PRL a nivel de empresa (Fundación Laboral de la Construcción, 4
+  alumnos) mal vinculado a una persona -- reclasificado a
+  `CONVENIO_FORMACION_BONIFICADA`, sin fecha de aceptación visible.
+- `REGISTRO_JORNADA`: 20/20 reales, más `40783` (listado general de
+  toda la plantilla, no de una persona) y `40815`
+  (`registro_jornada_ejemplo.docx`, plantilla en blanco sin rellenar)
+  enviados a papelera -- ninguno de los dos era un registro de
+  jornada real de un trabajador.
+- `FORMACION_PRL_MAQUINARIA`: 17/17.
+
+**Confirmado por consulta directa, sin necesidad de tocar nada:**
+`BAJA_PERSONAL` y `PARTE_BAJA_MEDICA` siguen en 0 pendientes reales
+(ya cerrados en S87, `PARTE_BAJA_MEDICA` reabierto brevemente en S88
+con 3 documentos reclasificados, también ya resueltos).
+
+**Bug real corregido y comiteado (`ebb1e85`, sincronizado en las dos
+copias: `document_explorer/date_verification_service.py` +
+`h28_migration_agent/extract_personal_dates_bulk.py`):**
+`docx_to_text()` solo leía `doc.paragraphs`, nunca `doc.tables` --
+en documentos `.docx` con el nombre/DNI/fecha dentro de una tabla
+(descubierto en `ENTREGA_MANUAL_COMBUSTIBLE`: 23/23 documentos
+devolvían el mismo texto genérico, 0 fechas encontradas pese a que
+los 23 SÍ tenían "A fecha (DD/MM/AAAA)" real dentro de una tabla),
+el contenido real era completamente invisible para
+`classify_dates_in_text()`. **Corregido leyendo también las celdas
+de cada tabla.** Efecto colateral real a tener en cuenta: cualquier
+tipo `.docx` procesado en sesiones anteriores a este fix pudo haber
+quedado mal diagnosticado como "sin fecha reconocible" o mal
+reclasificado por el mismo motivo -- no se ha auditado
+retroactivamente, queda como punto de atención si aparece algo raro
+en tipos `.docx` ya cerrados.
+
+**Incidencia real de sesión, ya resuelta -- editar código no es
+tocar `getpass`/túnel SSH.** Se añadió porcentaje/ETA al heartbeat de
+`extract_personal_dates_bulk.py` (commit `186f7c2`), Miguel Ángel
+detectó un cuelgue real en VM tras el cambio y lo atribuyó al commit;
+revertido (`ea252a3`) para descartar la duda con datos reales -- el
+cuelgue **persistió igual con el código revertido**, confirmando que
+el origen era ajeno al cambio (conexión SSH puntual desde la VM hacia
+`ssh.pythonanywhere.com`, no reproducible después). El ETA/porcentaje
+**no volvió a aplicarse** -- si se quiere recuperar en una sesión
+futura, es la misma lógica que llevaba el commit `186f7c2` (revertido
+en `ea252a3`), sin riesgo conocido.
+
+**Aclarado con Miguel Ángel, de obligado cumplimiento en adelante
+para cualquier barrido en VM:** la salida de un barrido en VM se
+manda **siempre con `tee`** (pantalla + archivo a la vez,
+`comando 2>&1 | tee archivo.log`), nunca solo redirigida a archivo
+(`> archivo.log 2>&1`) -- precedente real ya en el propio anexo (S51,
+punto 5, muestreo de tipos en `tmux`). La regla de
+`com-gcloud-windows` ("nunca pegar salida de consola de VM en el
+chat") se cumple igual con `tee`: la fuente real sigue siendo el
+archivo descargado por `scp`, `tee` solo añade visibilidad en vivo.
+
+**Otras incidencias reales de sesión:** dos descargas de ZIP desde
+GCS llegaron corruptas la primera vez (log vacío o incompleto) --
+resuelto simplemente repitiendo la descarga sftp del mismo archivo ya
+generado en el servidor, sin relanzar el Comando S. Un mal tipado
+adicional corregido fuera de las auditorías de tipo: `6476`
+(`ENTREGA_INFORMACION`) vivía vinculado a la máquina B43 en vez de a
+Jorge Ramírez García (persona real, identificada por DNI en el
+contenido) -- relinkado.
+
+**Directriz de sesión reforzada, a raíz de una queja real de Miguel
+Ángel a mitad de sesión:** antes de responder o preguntar cualquier
+cosa, barrer (`grep`) el anexo completo por el término relevante --
+no basta con la hoja de ruta ni con la memoria de turnos anteriores.
+Aplicada de forma consistente en la segunda mitad de esta sesión, con
+resultado real: evitó al menos dos preguntas ya contestadas en el
+propio anexo.
+
+## Hoja de Ruta para la Siguiente Sesión (S91) -- REESCRITA al cierre
+## de S90, sustituye por completo a la anterior
 
 **Ejecución estrictamente secuencial, sin preguntar por dónde
-empezar. Dominio PERSONAL, misma metodología consolidada en S88/S89:
-auditoría de mal tipados por nombre de archivo antes que nada,
-auditoría de cobertura real antes de cualquier OCR, verificación
-contra texto OCR real antes de tocar cualquier regex (nunca a ciegas
--- el propio bloque de `AUTONOMO` de S89 tuvo una regresión real por
-saltarse este paso), nunca dar un tipo por cerrado sin consulta
-directa a BD.**
+empezar. Dominio PERSONAL, misma metodología consolidada en S87-S90 --
+ver bloque de arriba. Ningún tipo se da por cerrado con pendientes
+reales sueltos.**
 
-### Los ~941 documentos "no críticos" restantes sin fecha (cifra real
-### tras cerrar `CSS`+`AUTONOMO` esta sesión: 1.067 - 220 - 186 + 126
-### recontados en `AUTONOMO` = pendiente de recuento exacto al
-### arranque de S90, no asumir la resta de cabeza)
+**Punto 1 -- Terminar de fechar todo el dominio PERSONAL.** Recontar
+contra BD (nunca de memoria de esta bitácora, las cifras cambian
+sesión a sesión) los tipos `tracks_expiry=True` de dominio PERSONAL
+que sigan con pendientes reales. A fecha de cierre de S90, quedan
+sin tocar por volumen: `CERTIFICADO_BANCARIO` (15 sin fecha bruto al
+cierre de S88, sin recontar tras S90) y una veintena de tipos con
+menos de 10 documentos cada uno (`EVALUACION_RIESGO`, `TACOGRAFO`,
+`PLAN_ACTUACION_CALOR`, `CLAUSULA_PROTECCION_DATOS`,
+`CERTIFICADO_GIBRALTAR`, `FORMACION_ITC_MINERA`, `FICHA_TECNICA_EPI`,
+`DOC_MUTUA`, `AUTORIZACION_MEDIOS_COMUNICACION`,
+`AUTORIZACION_LIBRO_SUBCONTRATA`, `EXCEDENCIA`,
+`INFORMACION_MEDIDAS_PROTECCION`, `COMUNICACION_CONTRATO`,
+`CERT_LIMITACIONES`, `CERTIF_TRABAJO_COLEGIO`, `CERTIF_DISCAPACIDAD`,
+`ALTA_MEDICA`, `TC2`, `TARJETA_CUALIF_CONDUCTOR`, `NIE`,
+`COMUNICACION_JORNADA`, `CARNET_CONDUCIR`, `AUTORIZACION_USO_MAQUINARIA`,
+`AUTORIZACION_MEDIOS_COMUNICACION`, `CAP`, `CARNET_GRUISTA`, `DNI`,
+`IDC`, `RECONOCIMIENTO_MEDICO` -- lista real de S88, sin recontar
+individualmente tras los movimientos de S89/S90, recontar cada uno
+antes de tocarlo). **Criterio de cierre del Punto 1 completo:** los
+~30 tipos `tracks_expiry=True` de dominio PERSONAL, uno a uno, a 0
+pendientes reales (verificado por consulta directa a BD, mismo
+criterio que S90), documentando en el cierre exactamente cuáles se
+tocaron.
 
-Desglose real conocido al cierre de S88 (pendiente de recuento tras
-los movimientos de S89), mayor a menor: `ENTREGA_INFORMACION` (162),
-`BAJA_PERSONAL` (118), `MOD_145` (115), `CONTRATO` (57),
-`PARTE_BAJA_MEDICA` (34), `VACACIONES` (32),
-`ENTREGA_MANUAL_COMBUSTIBLE` (26), `CURSO` (23), `REGISTRO_JORNADA`
-(22), `FORMACION_PRL_MAQUINARIA` (17), `CERTIFICADO_BANCARIO` (15), y
-una veintena de tipos más con menos de 10 cada uno.
+**Punto 2 -- Auditoría retroactiva de tipos `.docx` ya cerrados
+(recomendado, no bloqueante).** El bug de `docx_to_text()` corregido
+en S90 (`ebb1e85`) pudo haber afectado a tipos ya cerrados en
+sesiones anteriores a S90 que usaran `.docx` con tabla -- si aparece
+algo raro (fecha ausente, mal tipado no detectado) en un tipo ya
+cerrado durante el Punto 1, revisar si es `.docx` antes de asumir
+otra causa.
 
-**Antes de lanzar nada:** recontar `sin fecha` real de cada tipo
-contra BD (los movimientos de `CSS`→`AUTONOMO`/`INFORME_VIDA_LABORAL`
-de S89 pueden haber cambiado cifras de tipos vecinos si hubo más mal
-tipados cruzados sin detectar). Empezar por `ENTREGA_INFORMACION`
-(162), repitiendo la auditoría de mal tipados por nombre de archivo
-ANTES de cualquier OCR -- patrón real confirmado en `FORMACION` (S88)
-y `CSS` (S89): siempre ha aparecido un porcentaje real de mal
-tipados cuando se ha mirado con cuidado.
+**Punto 3 -- una vez el dominio PERSONAL esté fechado al 100%
+(Punto 1 completo), dos tareas nuevas, decisión explícita de Miguel
+Ángel al cierre de S90, en este orden:**
 
-**Criterio de cierre de este punto:** cada tipo de esta lista, uno a
-uno, a `sin fecha = 0` (auditoría de mal tipados → auditoría de
-cobertura real → contexto/fecha única sobre `ocr_text` cacheado →
-verificación manual contra texto OCR real antes de tocar cualquier
-regex → OCR real en VM solo si hace falta), empezando por
-`ENTREGA_INFORMACION` y bajando por volumen. No hace falta terminar
-los ~941 en una sola sesión -- cerrar los que dé tiempo, documentando
-en el cierre exactamente cuáles quedaron a 0 y cuáles no.
+1. **Registro de las apps Android en Google Play Console.** Miguel
+   Ángel ya envió el correo con los datos -- **localizarlo primero**
+   (buscar en el propio historial de chats/otro proyecto de la
+   plataforma si no aparece en este repositorio) antes de preguntar
+   nada; si de verdad no aparece en ningún sitio, pedírselo de nuevo
+   como paso bloqueante, nunca inventar datos de la cuenta de Google
+   Play.
+2. **Migración de PythonAnywhere de Python 3.10 a 3.11/3.12.**
+   Objetivo explícito: que dejen de aparecer los avisos de
+   `FutureWarning` del SDK de Google (`google.api_core`) sobre fin de
+   soporte de Python 3.10 (2026-10-04) en cada Comando S. Antes de
+   tocar nada, verificar en línea (`REQUISITO SINE QUA NON` de
+   `com-standards`) qué versiones de Python soporta realmente
+   PythonAnywhere hoy y el procedimiento real de cambio de versión
+   del virtualenv (`EnterpriseBot_venv`) sin romper las dependencias
+   ya anancladas en `requirements.txt`.
 
 **Los 3 puntos heredados de S73-S80 (ARNES MIRA 12-A, deuda técnica
 de plantillas/interfaz de supervisor, Fase A de DOC. MAQUINAS) siguen
-aparcados sin condición de retorno hasta que este punto (todo el
-dominio PERSONAL fechado) esté completo -- decisión cerrada en S89,
-no volver a preguntar.**
+aparcados sin condición de retorno hasta que el Punto 1 de arriba
+(todo el dominio PERSONAL fechado) esté completo -- decisión cerrada
+en S89, reconfirmada en S90, no volver a preguntar.**
 
 
 
