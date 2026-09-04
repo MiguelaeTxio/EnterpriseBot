@@ -6414,59 +6414,183 @@ para poder instalarse en dispositivos certificados -- relevante de
 cara a futuras apps Android para las tablets de los operarios de
 asistencia (todavía sin hito propio, no confundir con H30/H31).
 
-## Hoja de Ruta para la Siguiente Sesión (S89) -- REESCRITA al cierre
-## de S88, sustituye por completo a la anterior
+## COMPLETADAS EN S89 (sesión larga, continuidad directa de S88 --
+## reanudada dos veces en el mismo día real: token nuevo por la
+## mañana tras "ya voy a dormir" de la noche, sin PCS intermedio, así
+## que sigue siendo S89, no se abrió S90 hasta este cierre)
+
+**Punto 1 de la hoja de ruta de S88 -- CERRADO POR COMPLETO.** Los 5
+tipos del bloque crítico residual verificados uno a uno contra BD
+real, mismo método que `DNI` en S88: `NIE` (1 pendiente real
+resuelto vía OCR en VM), `CARNET_GRUISTA` (0), `CARNET_CONDUCIR` (1
+pendiente real resuelto vía OCR), `TACOGRAFO` (0),
+`CERTIF_DISCAPACIDAD` (0). VM `h28-ocr-batch-1` usada puntualmente
+para los 2 documentos reales de un único trabajador nuevo (Estevao
+Veloso Sampaio, alta S82).
+
+**Punto 2 -- `CSS`: 220 → 0 sin fecha, cerrado por completo.**
+Auditoría de mal tipados por nombre de archivo (mismo método que
+`FUNDAE`/`CONVENIO_FORMACION` en S88) encontró que 131 de los 220
+"CSS sin fecha" no eran `CSS` en absoluto: 126 recibos domiciliados
+de cuotas de autónomo mal tipados (reclasificados a `AUTONOMO`,
+verificado por contenido real de muestra antes de mover en bloque) y
+5 informes de vida laboral sin tipo propio en el catálogo (creado
+tipo nuevo `INFORME_VIDA_LABORAL`, domain PERSONAL, family LABORAL,
+`tracks_expiry=True`, sin encaje en ningún tipo existente -- decisión
+autónoma según instrucción ya vigente de crear tipo nuevo sin dudar
+cuando no hay encaje real). Los 89 `CSS` genuinos restantes
+resueltos al 100% en un único barrido de 3 shards en VM, todos vía
+`ocr_contexto` (la propia etiqueta "FECHA" del certificado, sin
+ambigüedad).
+
+**Punto 2 -- `AUTONOMO`: 186 → 0 sin fecha, cerrado por completo**
+(cifra real muy superior a los "60" estimados en el anexo de S88 --
+la reclasificación de CSS mal tipados sumó otros 126 al total real).
+Trabajo más largo de la sesión: `classify_dates_in_text()` corregido
+en **8 iteraciones reales**, cada una verificada contra texto OCR
+real antes de aplicarse, con una regresión real detectada y revertida
+en el propio proceso (ver detalle de commits abajo). Hallazgos reales
+del recibo domiciliado de Cajamar/Caja Rural, ninguno adivinado:
+
+1. `PERIODO DD/MM-AAAA` se parseaba como fecha real (separadores `/`
+   y `-` mezclados coinciden con el regex general).
+2. `FECHA MÁXIMA DEVOLUCIÓN...IMPORTE: DD/MM/AAAA` -- la palabra
+   ancla fiable es solo `DEVOLUCION`; `IMPORTE` no lo es (variantes
+   reales: `"...DEVOLUCION RECIBO: fecha"` en documentos 2010-2013,
+   caracteres sueltos de OCR entre `IMPORTE:` y la fecha en
+   2018-2019).
+3. Inscripción registral bancaria constante en el pie
+   (`31/10/2012`) -- la palabra `INSCRIPCION` se rompe por OCR de
+   formas demasiado dispares (`INSURPUON` verificado real); resuelto
+   por exclusión de valor literal en vez de perseguir más variantes.
+4. Sello de impresión del navegador (`ServletOperation` /
+   `Grupo Cooperativo Cajamar`) con la fecha indistintamente antes o
+   después de la etiqueta según el documento, y con la propia palabra
+   rota por OCR (`Serv elOperation`) en algún caso -- exclusión
+   bidireccional por contexto, dos variantes de palabra conviviendo
+   (sustituir una por otra causó la regresión real ya mencionada).
+5. **Intento de "ventana ancha por palabra cercana" para el punto 2
+   provocó una regresión real** (`id=27525`): también excluía la
+   fecha buena cuando caía cerca de "DEVOLUCION". Corregido con
+   exclusión por posición exacta del span capturado, nunca por
+   cercanía de palabra para esta fuente de ruido concreta.
+6. Un dígito mal leído por OCR (`3`↔`8`, `id=27501`: `28/06/2013` →
+   `28/06/2018`) corregido a mano, documentado, sin intentar
+   generalizar un fix de código para esto.
+7. **26 documentos con dos fechas reales legítimas** (campo `FECHA`
+   de cabecera vs `FECHA VALOR` de la tabla de cliente, 1-9 días de
+   diferencia por procesamiento bancario) -- resueltos aplicando la
+   regla "la fecha inmediatamente precedida por `FECHA VALOR` o el
+   nombre del titular es la real", verificada caso a caso contra
+   texto OCR completo, con 1 corrección manual sobre el resultado
+   automático de la regla (`id=27542`: la regla eligió por error un
+   valor con año mal leído por OCR, `2016`→`2018`, contradicho por
+   `PERIODO`/fecha de cabecera/devolución, las 3 coincidiendo en
+   2016).
+
+Los 7 commits reales de la sesión (`2d1936e`..`ccfe7c2`), todos sobre
+`document_explorer/date_verification_service.py` +
+`h28_migration_agent/extract_personal_dates_bulk.py` sincronizados en
+el mismo commit cada vez:
+
+- `2d1936e` -- exclusión inicial de `PERIODO`/`DEVOLUCION`/inscripción
+  registral (primer intento, con `IMPORTE` como ancla obligatoria).
+- `ed46a9c` -- ventana ampliada para `DEVOLUCION` (**regresión real**,
+  ver `8db793d`).
+- `8db793d` -- corrección de la regresión: posición exacta en vez de
+  ventana ancha.
+- `8b4c753` -- entrada `DEFAULT_FIELD_BY_CODE["INFORME_VIDA_LABORAL"]`
+  para el tipo nuevo.
+- `6a32369` -- sello `ServletOperation` bidireccional (hallazgo
+  `id=27510`).
+- `c036e10` -- variante `ELOPERATION` cuando el OCR rompe la palabra
+  (**regresión real** al sustituir en vez de añadir, corregida en el
+  mismo commit tras verificación).
+- `ccfe7c2` -- `DEVOLUCION` sin exigir `IMPORTE`, sello
+  `COOPERATIVO CAJAMAR`, exclusión literal de fecha de inscripción.
+
+**Punto 2 -- `INFORME_VIDA_LABORAL` (tipo nuevo): 5 → 0 sin fecha.**
+Patrón verificado: la fecha del informe es siempre la más reciente de
+las candidatas y coincide exactamente con la fecha embebida en el
+nombre de archivo en los 5 casos -- añadido a
+`DEFAULT_FIELD_BY_CODE` como `issue`.
+
+**Incidencia de sesión, corregida en el propio chat (no en código):**
+al pedir parar la VM tras un bloque de trabajo, la instrucción "ya no
+hace falta la sesión SSH" se entendió como "ya no hace falta la VM en
+absoluto" y Miguel Ángel la detuvo (`TERMINATED`) mientras aún
+quedaba trabajo pendiente. Sin impacto real -- la imagen personalizada
+(`h28-ocr-batch-image-v1`) permite recrearla sin pérdida, y se
+relanzó con `start` (no `resume`, por venir de `TERMINATED`) sin
+incidencia.
+
+**Skill `com-gcloud-windows` actualizada esta sesión** (a petición
+explícita de Miguel Ángel): regla dura consolidando precedentes ya
+dispersos en `SESSION_VARIABLES.md` (S53/S61/S81) -- nunca pedir
+copiar/pegar salida larga de consola de VM, siempre redirigir a
+fichero + `gcloud compute scp` desde una ventana nueva del PC.
+Empaquetada y presentada correctamente vía `skill-creator` (el primer
+intento de edición directa no habría persistido sin este paso, según
+la propia `com-standards`, releída explícitamente esta sesión tras
+aviso de Miguel Ángel).
+
+**Bloque crítico residual + `CSS` + `AUTONOMO` + `INFORME_VIDA_LABORAL`:
+dominio PERSONAL, familia LABORAL, todos los tipos tocados esta
+sesión cerrados a 0 sin fecha, verificado contra BD real en cada
+cierre, no de memoria.**
+
+---
+
+## Hoja de Ruta para la Siguiente Sesión (S90) -- REESCRITA al cierre
+## de S89, sustituye por completo a la anterior
 
 **Ejecución estrictamente secuencial, sin preguntar por dónde
-empezar. Ambos puntos son domino PERSONAL, misma metodología que
-S88: auditoría de cobertura real antes de cualquier OCR, revisión
-visual de lo que el OCR automático no resuelva, nunca dar un tipo por
-cerrado sin consulta directa a BD.**
+empezar. Dominio PERSONAL, misma metodología consolidada en S88/S89:
+auditoría de mal tipados por nombre de archivo antes que nada,
+auditoría de cobertura real antes de cualquier OCR, verificación
+contra texto OCR real antes de tocar cualquier regex (nunca a ciegas
+-- el propio bloque de `AUTONOMO` de S89 tuvo una regresión real por
+saltarse este paso), nunca dar un tipo por cerrado sin consulta
+directa a BD.**
 
-### 1. Auditoría de cobertura del resto del bloque crítico de S80
+### Los ~941 documentos "no críticos" restantes sin fecha (cifra real
+### tras cerrar `CSS`+`AUTONOMO` esta sesión: 1.067 - 220 - 186 + 126
+### recontados en `AUTONOMO` = pendiente de recuento exacto al
+### arranque de S90, no asumir la resta de cabeza)
 
-Para cada uno de estos 5 tipos, por este orden, aplicar la misma
-consulta de cobertura ya usada en `DNI` esta sesión (persona activa +
-vivo + sin fecha propia, cruzado con "¿la persona ya tiene otro
-documento del mismo tipo con fecha?"):
-
-- `NIE` (2 sin fecha bruto)
-- `CARNET_GRUISTA` (42 sin fecha bruto)
-- `CARNET_CONDUCIR` (27 sin fecha bruto)
-- `TACOGRAFO` (6 sin fecha bruto)
-- `CERTIF_DISCAPACIDAD` (2 sin fecha bruto)
-
-**Criterio de cierre de este punto:** para cada tipo, o bien 0 huecos
-reales (documentado y cerrado sin más acción, igual que `DNI`), o bien
-los huecos reales identificados quedan fechados (mismo pipeline de
-S88: contexto/fecha única sobre `ocr_text` cacheado -> contenido real
-verificado a mano -> OCR real en VM solo si hace falta).
-
-### 2. Los ~1.067 documentos "no críticos" sin fecha (familia LABORAL
-### mayoritariamente, no PRL_FORMACION)
-
-Cifra real verificada al cierre de S88 (no la cifra antigua de "789"
-del anexo de S87, desactualizada). Desglose real por tipo, mayor a
-menor: `CSS` (220), `ENTREGA_INFORMACION` (162), `BAJA_PERSONAL`
-(118), `MOD_145` (115), `AUTONOMO` (60), `CONTRATO` (57),
-`PARTE_BAJA_MEDICA` (34, cifra ya reducida en S88), `VACACIONES` (32),
+Desglose real conocido al cierre de S88 (pendiente de recuento tras
+los movimientos de S89), mayor a menor: `ENTREGA_INFORMACION` (162),
+`BAJA_PERSONAL` (118), `MOD_145` (115), `CONTRATO` (57),
+`PARTE_BAJA_MEDICA` (34), `VACACIONES` (32),
 `ENTREGA_MANUAL_COMBUSTIBLE` (26), `CURSO` (23), `REGISTRO_JORNADA`
 (22), `FORMACION_PRL_MAQUINARIA` (17), `CERTIFICADO_BANCARIO` (15), y
-una veintena de tipos más con menos de 10 cada uno (ver Comando S de
-cierre de S88 para el desglose completo si hace falta).
+una veintena de tipos más con menos de 10 cada uno.
 
-**Antes de lanzar nada:** repetir para el tipo de mayor volumen (`CSS`)
-la misma auditoría de mal tipados por nombre de archivo que en S88 --
-patrón real repetido en cada tipo tocado hasta ahora (decenas de
-documentos mal tipados encontrados siempre que se ha mirado con
-cuidado).
+**Antes de lanzar nada:** recontar `sin fecha` real de cada tipo
+contra BD (los movimientos de `CSS`→`AUTONOMO`/`INFORME_VIDA_LABORAL`
+de S89 pueden haber cambiado cifras de tipos vecinos si hubo más mal
+tipados cruzados sin detectar). Empezar por `ENTREGA_INFORMACION`
+(162), repitiendo la auditoría de mal tipados por nombre de archivo
+ANTES de cualquier OCR -- patrón real confirmado en `FORMACION` (S88)
+y `CSS` (S89): siempre ha aparecido un porcentaje real de mal
+tipados cuando se ha mirado con cuidado.
 
 **Criterio de cierre de este punto:** cada tipo de esta lista, uno a
-uno, a `sin fecha = 0` (tras auditoría de cobertura real, igual
-criterio que el punto 1), empezando por `CSS` y bajando por volumen.
-No hace falta terminar los ~1.067 en una sola sesión -- cerrar los que
-dé tiempo, documentando en el cierre exactamente cuáles quedaron a 0 y
-cuáles no.
+uno, a `sin fecha = 0` (auditoría de mal tipados → auditoría de
+cobertura real → contexto/fecha única sobre `ocr_text` cacheado →
+verificación manual contra texto OCR real antes de tocar cualquier
+regex → OCR real en VM solo si hace falta), empezando por
+`ENTREGA_INFORMACION` y bajando por volumen. No hace falta terminar
+los ~941 en una sola sesión -- cerrar los que dé tiempo, documentando
+en el cierre exactamente cuáles quedaron a 0 y cuáles no.
+
+**Los 3 puntos heredados de S73-S80 (ARNES MIRA 12-A, deuda técnica
+de plantillas/interfaz de supervisor, Fase A de DOC. MAQUINAS) siguen
+aparcados sin condición de retorno hasta que este punto (todo el
+dominio PERSONAL fechado) esté completo -- decisión cerrada en S89,
+no volver a preguntar.**
+
+
 
 ### COMPLETADAS EN S84 (cierre real de `birth_date` para 3 de 5
 ### personas, dos bugs de origen corregidos -- identificación de
@@ -6822,11 +6946,13 @@ documentos, no los de `EPIS COVID 19`) -- debió proponerse
 que Miguel Ángel lo detectara viendo pasar los avisos "SIN DNI" en
 vivo.
 
-## PENDIENTE HEREDADO -- 4.ª SESIÓN SIN AVANZAR (S77, S78, S79, S80),
-## sigue como pregunta explícita, Miguel Ángel no ha respondido aún
+## DECISIÓN CERRADA EN S89 -- puntos heredados desde S73 aparcados
 
-**Miguel Ángel, ¿qué prioridad tienen estos 3 puntos frente al
-bloque crítico de arriba? Llevan sin tocarse desde S73:**
+Miguel Ángel, en sesión S89: prioridad total es terminar de fechar
+todo lo referente al dominio PERSONAL para poder completar la
+interfaz (H31). Los 3 puntos heredados quedan aparcados **sin
+condición de retorno explícita** hasta que el fechado de PERSONAL
+esté completo -- no se retoman antes:
 
 1. 2 archivos sueltos de ARNES MIRA 12-A sin fecha reconocible
    (`GARCIA PRIETO`, `HIDALGO ROSAS`).
