@@ -516,7 +516,9 @@ _BIRTHDATE_CONTEXT = [
 # INSCRIPC/SERVLETOPERATION por palabra cercana (bidireccional);
 # DEVOLUCION por POSICION EXACTA.
 _RECEIPT_NOISE_CONTEXT = [
-    "PERIODO", "INSCRITA", "INSCRIPC", "SERVLETOPERATION",
+    # H30 (S89): ver comentario completo en la copia Django -- ambas
+    # variantes conviven, sustituir una por otra es regresion real.
+    "PERIODO", "INSCRITA", "INSCRIPC", "SERVLETOPERATION", "ELOPERATION",
 ]
 _NOISE_SPAN_PATTERNS = [
     re.compile(

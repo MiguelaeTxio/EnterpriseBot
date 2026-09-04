@@ -111,7 +111,15 @@ _BIRTHDATE_CONTEXT = [
 # exacta direccional -- un primer intento solo cubria un sentido y no
 # excluia la duplicidad del mismo valor en el otro sentido (id=27510).
 _RECEIPT_NOISE_CONTEXT = [
-    "PERIODO", "INSCRITA", "INSCRIPC", "SERVLETOPERATION",
+    # H30 (S89): ambas variantes conviven -- SERVLETOPERATION para el
+    # caso normal (palabra intacta), ELOPERATION para cuando el OCR
+    # rompe la palabra con un espacio insertado ("Serv elOperation",
+    # verificado real id=27516). La palabra completa NO contiene el
+    # fragmento como substring (hay una T donde ELOPERATION lleva L),
+    # asi que sustituir una por otra en vez de anadir es una
+    # regresion real -- verificado (id=27510/27503 volvieron a fallar
+    # tras el primer intento de sustitucion).
+    "PERIODO", "INSCRITA", "INSCRIPC", "SERVLETOPERATION", "ELOPERATION",
 ]
 _NOISE_SPAN_PATTERNS = [
     re.compile(
