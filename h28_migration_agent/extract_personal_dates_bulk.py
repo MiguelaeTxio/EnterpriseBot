@@ -533,6 +533,14 @@ _ISSUE_CONTEXT = [
     # INCAPACIDAD TEMPORAL (P.9)" -- "PARTE DE BAJA [X] Fecha de la
     # baja 19/10/2020".
     "FECHA DE LA BAJA",
+    # H30 (S91). Plantilla real de "Firma/recibi del trabajador... A
+    # fecha(DD/MM/AAAA)" -- verificada en EVALUACION_RIESGO (id=22002,
+    # id=22018, mismo impreso "ENTREGA DE EVALUACION DE RIESGO" de
+    # GRUPO ALVAREZ). "CON FECHA" ya estaba cubierto, "A FECHA" suelta
+    # nunca lo estuvo -- template usado en varios tipos con recibi
+    # firmado, no solo en este. Sincronizado con la copia Django
+    # (document_explorer/date_verification_service.py).
+    "A FECHA",
 ]
 # Sesion de continuidad tras S79 -- incidente real: fechas de
 # nacimiento coladas como "unica fecha, por defecto" en
