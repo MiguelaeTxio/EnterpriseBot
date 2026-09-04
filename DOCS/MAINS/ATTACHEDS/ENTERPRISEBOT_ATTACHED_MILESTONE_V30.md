@@ -7515,3 +7515,83 @@ para la consola de Miguel Ángel, y varias llamadas sueltas a su
 propia herramienta de bash sin ningún efecto real (ruido de sesión,
 sin impacto en datos).
 
+### COMPLETADAS EN S92 (parcial -- auditoría real bloqueante completa,
+### punto 1 de la hoja de ruta cerrado; sesión en curso)
+
+**Corrección de proceso real, al arranque de la sesión:** el Punto 1
+se atacó primero con una consulta agregada de conteo (`activos`/
+`sin_fecha` por tipo), tal como decía la hoja de ruta -- pero Miguel
+Ángel corrigió explícitamente que una cuenta bruta miente sola: hay
+documentos `sin_fecha` que nunca se van a fechar por decisión ya
+tomada en commits anteriores (históricos, excepciones legítimas,
+fuera de alcance), y que "el primer punto del orden del día" real es
+releer los commits desde el origen del fechado (`6481272`, S045) para
+saber interpretar cualquier cifra antes de confiar en ella. Se hizo
+así: 331 commits de código + 90 commits `docs: cierre de sesión`
+recorridos desde `6481272` hasta `HEAD` (`47c621d`, cierre de S91).
+
+**Aclarado sobre DECA, a petición de Miguel Ángel:** Documento
+Electrónico de Control Administrativo (Orden FOM/2861/2012,
+digitalización obligatoria por Resolución de 5 de junio de 2026, BOE
+143, entra en vigor octubre 2026). Confirmado explícitamente por
+Miguel Ángel en esta sesión: no existe ningún documento de este tipo
+hoy, ni en Microsoft 365 ni en base de datos, en ningún sitio --
+sigue siendo puro horizonte futuro (ya registrado en S48), no hay
+nada que auditar ni vigilar mientras tanto.
+
+**Auditoría real ejecutada (`EnterpriseBot_002_GET.txt`, Comando S
+`EnterpriseBot_002.txt`), sobre el catálogo completo `domain=PERSONAL,
+tracks_expiry=True, is_active=True` (58 tipos, 80 empleados activos),
+restringida a `is_active_employee=True` y entradas vivas
+(`deleted_at`/`purged_at` nulos), con listado real de cada documento
+`sin_fecha` (id/persona/nombre), no solo el conteo. Resultado
+clasificado en 4 bloques reales:**
+
+**Bloque A -- coincide exacto con excepciones legítimas ya cerradas en
+sesiones anteriores, confirmadas, no son pendientes:**
+- `CERTIFICADO_BANCARIO`: 8 sin fecha = los 8 de S91.
+- `CERTIFICADO_GIBRALTAR`: 2 sin fecha = los 2 de S91.
+- `ENTREGA_INFORMACION`: 1 sin fecha (`id=40287`) = la excepción de S91.
+- `FORMACION`: 9 sin fecha = el "estado terminal" de S88.
+- `NIE`: 1 sin fecha (`id=42526`, Jorge Milheiro Felício) = ya
+  documentado en S83 (resolución de residencia, sin fecha impresa en
+  ningún documento del proyecto, decisión de no forzarla).
+
+**Bloque B -- volumen alto de `sin_fecha`, muy probablemente histórico
+por el mismo patrón ya validado en S87/S90 (persona con OTRO
+documento del mismo tipo ya fechado = histórico, no pendiente), PERO
+sin confirmar todavía con la auditoría real -- pendiente de ejecutar,
+nunca dar por bueno sin comprobar:**
+- `BAJA_PERSONAL`: 118 sin fecha (coincide EXACTO con los "118
+  históricos" ya calculados en S87 sobre 125 sin_fecha bruto --
+  fuerte indicio de que son los mismos, a confirmar).
+- `DNI`: 21 sin fecha. `CARNET_CONDUCIR`: 26. `CARNET_GRUISTA`: 42.
+  `PARTE_BAJA_MEDICA`: 34. `CONTRATO`: 36.
+
+**Bloque C -- la pecata minuta real: tipos que NINGÚN commit ha
+auditado nunca, primera vez que aparecen en cualquier hoja de ruta de
+H30 (10 documentos en total, 7 tipos):**
+- `ALTA_MEDICA` (2, `id=35391`/`35797`, partes .msg).
+- `CERTIF_TRABAJO_COLEGIO` (2, `id=36111`/`38200`).
+- `COMUNICACION_JORNADA` (1, `id=28131`).
+- `TC2` (1, `id=27857`).
+- `NOMBRAMIENTO_JEFE_MANIOBRAS` (1, `id=27289`, Ramos Zambrana) --
+  patrón `current_template` de S69, S69 ya dejó "3 pendientes de
+  confirmar (apodos/cliente)" sin cerrar del todo.
+- `NOMBRAMIENTO_RESPONSABLE_SEGURIDAD` (1, `id=22001`, Díaz Quintero)
+  -- mismo patrón `current_template`, nunca auditado.
+- `CERTIF_DISCAPACIDAD` (2, `id=37459`/`37481`, Ruiz Portillo) --
+  bloque crítico de S89 lo cerró a 0; estos 2 son documentación nueva
+  entrada después de S89.
+
+**Bloque D -- crecimiento real desde el último cierre (documentación
+nueva de Rocío/Yolanda, sin auditar todavía):** `MOD_145` (105→125
+activos, 10 sin fecha nuevos), `ENTREGA_MANUAL_COMBUSTIBLE` (23→28, 3
+nuevos), `VACACIONES` (29→36, 4 nuevos).
+
+**Decisión de Miguel Ángel para continuar la sesión:** atacar primero
+el Bloque C (los 7 tipos nunca auditados, posible ubicación de
+plantillas `current_template` que hacen falta) antes que el Bloque
+B/D. PEE cambia de PC a A a mitad de sesión (continúa desde
+móvil/tablet).
+
