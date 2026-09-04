@@ -191,9 +191,19 @@ def easyocr_extract_text(filename, data):
 
 
 def docx_to_text(data):
+    # H30 (sesion tras S89). Bug real corregido -- ver comentario
+    # completo en la copia Django (document_explorer/
+    # date_verification_service.py): no leia doc.tables, solo
+    # doc.paragraphs. Descubierto en ENTREGA_MANUAL_COMBUSTIBLE,
+    # 23/23 documentos con texto identico y 0 fechas encontradas.
     import docx
     doc = docx.Document(io.BytesIO(data))
-    return "\n".join(p.text for p in doc.paragraphs)
+    parts = [p.text for p in doc.paragraphs]
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                parts.append(cell.text)
+    return "\n".join(parts)
 
 
 def doc_to_text(data):

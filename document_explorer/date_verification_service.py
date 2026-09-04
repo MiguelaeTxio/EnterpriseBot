@@ -624,9 +624,34 @@ def ocr_image_to_text(data):
 
 
 def docx_to_text(data):
+    """
+    H30 (sesion tras S89). Bug real corregido: la version anterior
+    solo leia doc.paragraphs, nunca doc.tables -- en documentos con
+    formato de tabla (nombre del trabajador, DNI, "A fecha (...)"
+    dentro de celdas), el texto real quedaba invisible por completo
+    para classify_dates_in_text(). Descubierto en ENTREGA_MANUAL_
+    COMBUSTIBLE: 23/23 documentos devolvian el mismo texto generico
+    (solo el boilerplate de parrafos, identico en todos), 0 fechas
+    encontradas pese a que las 23 SI tenian "A fecha (DD/MM/AAAA)"
+    real dentro de una tabla.
+    ---
+    H30 (session after S89). Real bug fixed: the previous version
+    only read doc.paragraphs, never doc.tables -- in table-formatted
+    documents (worker name, DNI, "A fecha (...)" inside cells), the
+    real text was completely invisible to classify_dates_in_text().
+    Discovered in ENTREGA_MANUAL_COMBUSTIBLE: 23/23 documents
+    returned the same generic text (only paragraph boilerplate,
+    identical across all), 0 dates found despite all 23 having a
+    real "A fecha (DD/MM/AAAA)" inside a table.
+    """
     import docx
     doc = docx.Document(io.BytesIO(data))
-    return "\n".join(p.text for p in doc.paragraphs)
+    parts = [p.text for p in doc.paragraphs]
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                parts.append(cell.text)
+    return "\n".join(parts)
 
 
 def extract_text(filename, data):
