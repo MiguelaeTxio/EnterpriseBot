@@ -738,6 +738,12 @@ def classify_dates_in_text(text):
     # document_explorer/date_verification_service.py (copia sincronizada).
     norm = _strip_accents(text).upper()
     norm = re.sub(r"\s+", " ", norm)
+    # H30 (S91). Mismo principio que arriba, para comas: "En MALAGA, a
+    # 16 de JUNIO de 2026" no coincidia con "MALAGA A" ya existente por
+    # la coma real de en medio -- ver comentario completo en la copia
+    # Django (document_explorer/date_verification_service.py).
+    norm = re.sub(r",", " ", norm)
+    norm = re.sub(r"\s+", " ", norm)
     expiry_candidates, issue_candidates, other_dates = [], [], []
 
     # H30 (S89): fechas de ruido por posicion exacta -- ver comentario

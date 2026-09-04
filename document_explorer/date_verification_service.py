@@ -543,6 +543,18 @@ def classify_dates_in_text(text):
     # etiqueta de emision justo al lado.
     norm = _strip_accents(text).upper()
     norm = re.sub(r"\s+", " ", norm)
+    # H30 (S91). Misma logica que el fix de saltos de linea de arriba,
+    # pero para comas: "En MALAGA, a 16 de JUNIO de 2026" (plantilla
+    # real de AUTORIZACION_MEDIOS_COMUNICACION, GRUALDI S.L.) nunca
+    # coincidia con el patron ya existente "MALAGA A" porque el texto
+    # real lleva una coma entre medias ("MALAGA, A"). Se quita la coma
+    # (sustituida por espacio, nunca eliminada sin mas, para no pegar
+    # dos palabras) ANTES de la comprobacion de contexto -- igual
+    # principio que la normalizacion de saltos de linea: el separador
+    # real de impresion no debe romper una coincidencia de dos
+    # palabras que en el documento van pegadas por sentido.
+    norm = re.sub(r",", " ", norm)
+    norm = re.sub(r"\s+", " ", norm)
     expiry_candidates = []
     issue_candidates = []
     other_dates = []
