@@ -859,10 +859,22 @@ def main():
     }
     start_time = datetime.now()
 
+    total_rows = len(rows)
     for i, (entry_id, name, bucket_name, blob_name, code) in enumerate(rows, start=1):
         if i % 20 == 0:
             conn.ping(reconnect=True)
-        _log("[%d/%d] [%s] %s" % (i, len(rows), code, name))
+        pct = (i / total_rows * 100) if total_rows else 0
+        elapsed = (datetime.now() - start_time).total_seconds()
+        if i > 1:
+            avg_per_doc = elapsed / (i - 1)
+            eta_seconds = avg_per_doc * (total_rows - i + 1)
+            eta_str = "%dm%02ds" % (eta_seconds // 60, eta_seconds % 60)
+        else:
+            eta_str = "calculando..."
+        _log(
+            "[%d/%d] (%.1f%%, ETA %s) [%s] %s"
+            % (i, total_rows, pct, eta_str, code, name)
+        )
 
         # H30 (S78): heuristica de nombre de archivo RETIRADA por
         # decision explicita de Miguel Angel -- ya causo dos errores
