@@ -42,6 +42,12 @@ _EXPIRY_CONTEXT = [
     "CADUCA", "CADUCIDAD", "VALIDO HASTA", "VALIDA HASTA", "VENCE",
     "VENCIMIENTO", "HASTA EL", "PROXIMA REVISION", "PROXIMA INSPECCION",
     "FECHA LIMITE",
+    # H30 (S91). Impreso oficial "COMUNICACION DE LA PRORROGA DEL
+    # CONTRATO DE TRABAJO" (SEPE/Seguridad Social) -- campo
+    # estructurado "Fecha de Termino: DD/MM/AAAA", verificado en
+    # COMUNICACION_CONTRATO (id=34826, id=36361). Plantilla oficial
+    # fija, probable que se repita en mas comunicaciones de prorroga.
+    "FECHA DE TERMINO",
 ]
 _ISSUE_CONTEXT = [
     "EXPEDICION", "EXPEDIDO", "EXPEDIDA", "EMISION", "EMITIDO",
@@ -74,6 +80,10 @@ _ISSUE_CONTEXT = [
     # fija que precede a la fecha en todos los casos, sin depender de
     # la ciudad.
     "FIRMA DE CONFORMIDAD",
+    # H30 (S91). Mismo impreso oficial que "FECHA DE TERMINO" arriba
+    # -- campo estructurado "Fecha de Inicio: DD/MM/AAAA" del mismo
+    # formulario de prorroga de contrato.
+    "FECHA DE INICIO",
 ]
 # H30 (sesion de continuidad tras S79). Incidente real: 3 de 5
 # RECONOCIMIENTO_MEDICO reales devolvieron la fecha de NACIMIENTO
