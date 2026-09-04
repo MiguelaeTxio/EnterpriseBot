@@ -120,13 +120,33 @@ _RECEIPT_NOISE_CONTEXT = [
     # regresion real -- verificado (id=27510/27503 volvieron a fallar
     # tras el primer intento de sustitucion).
     "PERIODO", "INSCRITA", "INSCRIPC", "SERVLETOPERATION", "ELOPERATION",
+    # H30 (S89): sello de cabecera "DD/MM/AAAA Grupo Cooperativo
+    # Cajamar" en el formato SEPA 2018-2019 -- fecha de
+    # impresion/generacion duplicada, sin relacion con el recibo
+    # (verificado real id=27599, id=27612).
+    "COOPERATIVO CAJAMAR",
 ]
 _NOISE_SPAN_PATTERNS = [
-    re.compile(
-        r"DEVOLUCION[\s\S]{0,180}?IMPORTE:?\s*"
-        r"(\d{1,2}[-./]\d{1,2}[-./]\d{2,4})"
-    ),
+    # H30 (S89): la palabra "IMPORTE" NO es fiable como ancla -- hay
+    # variantes reales distintas para la misma frase de plazo legal
+    # de devolucion: "...DEVOLUCION RECIBO: DD/MM/AAAA" (documentos
+    # 2010-2013, verificado id=27791/27794/27923/27952/28041/28059) y
+    # caracteres sueltos de OCR entre "IMPORTE:" y la fecha en
+    # documentos 2018-2019 (verificado id=27596/27599). "DEVOLUCION"
+    # es la unica ancla que aparece limpia en todos los casos vistos;
+    # se toma la primera fecha que aparezca despues, sin exigir
+    # ninguna palabra intermedia concreta.
+    re.compile(r"DEVOLUCION[\s\S]{0,200}?(\d{1,2}[-./]\d{1,2}[-./]\d{2,4})"),
 ]
+# H30 (S89): fecha de inscripcion registral de Cajamar en el pie de
+# pagina, constante en TODOS los recibos ("Inscripc.1a 31/10/2012").
+# La palabra "INSCRIPCION" se rompe por OCR de formas demasiado
+# dispares para cubrir por lista de palabras clave (verificado real:
+# "INSURPUON" en id=27893/27953, sin relacion reconocible con
+# "INSCRIPC"). Como es un valor CONOCIDO y CONSTANTE verificado en
+# decenas de recibos distintos esta sesion, se excluye por valor
+# literal en vez de perseguir mas variantes de rotura de OCR.
+_NOISE_LITERAL_DATES = {date(2012, 10, 31)}
 
 _DATE_RE = re.compile(r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})")
 _CONTEXT_WINDOW = 70
@@ -519,10 +539,12 @@ def classify_dates_in_text(text):
         for m in pattern.finditer(norm)
     ]
 
-    def _en_fecha_ruido(match):
+    def _en_fecha_ruido(match, parsed=None):
         for s, e in _noise_spans:
             if match.start() >= s - 1 and match.end() <= e + 1:
                 return True
+        if parsed is not None and parsed in _NOISE_LITERAL_DATES:
+            return True
         return False
 
     # Maxima prioridad: etiqueta explicita (PERIODO/FECHA DE INICIO/
@@ -547,7 +569,7 @@ def classify_dates_in_text(text):
             continue
         if any(word in context for word in _RECEIPT_NOISE_CONTEXT):
             continue
-        if _en_fecha_ruido(match):
+        if _en_fecha_ruido(match, parsed):
             continue
         if any(word in context for word in _EXPIRY_CONTEXT):
             expiry_candidates.append(parsed)
@@ -570,7 +592,7 @@ def classify_dates_in_text(text):
             continue
         if any(word in context for word in _RECEIPT_NOISE_CONTEXT):
             continue
-        if _en_fecha_ruido(match):
+        if _en_fecha_ruido(match, parsed):
             continue
         if any(word in context for word in _EXPIRY_CONTEXT):
             expiry_candidates.append(parsed)

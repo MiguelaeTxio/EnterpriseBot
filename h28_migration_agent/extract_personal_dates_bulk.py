@@ -512,20 +512,15 @@ _BIRTHDATE_CONTEXT = [
 ]
 # H30 (S89). Recibos domiciliados (AUTONOMO, CSS) traen fechas ruido
 # ademas de la fecha real -- ver comentario completo en la copia
-# Django (document_explorer/date_verification_service.py). PERIODO/
-# INSCRIPC/SERVLETOPERATION por palabra cercana (bidireccional);
-# DEVOLUCION por POSICION EXACTA.
+# Django (document_explorer/date_verification_service.py).
 _RECEIPT_NOISE_CONTEXT = [
-    # H30 (S89): ver comentario completo en la copia Django -- ambas
-    # variantes conviven, sustituir una por otra es regresion real.
     "PERIODO", "INSCRITA", "INSCRIPC", "SERVLETOPERATION", "ELOPERATION",
+    "COOPERATIVO CAJAMAR",
 ]
 _NOISE_SPAN_PATTERNS = [
-    re.compile(
-        r"DEVOLUCION[\s\S]{0,180}?IMPORTE:?\s*"
-        r"(\d{1,2}[-./]\d{1,2}[-./]\d{2,4})"
-    ),
+    re.compile(r"DEVOLUCION[\s\S]{0,200}?(\d{1,2}[-./]\d{1,2}[-./]\d{2,4})"),
 ]
+_NOISE_LITERAL_DATES = {date(2012, 10, 31)}
 _DATE_RE = re.compile(r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})")
 _CONTEXT_WINDOW = 70
 
@@ -658,10 +653,12 @@ def classify_dates_in_text(text):
         for m in pattern.finditer(norm)
     ]
 
-    def _en_fecha_ruido(match):
+    def _en_fecha_ruido(match, parsed=None):
         for s, e in _noise_spans:
             if match.start() >= s - 1 and match.end() <= e + 1:
                 return True
+        if parsed is not None and parsed in _NOISE_LITERAL_DATES:
+            return True
         return False
 
     # Maxima prioridad absoluta: par "4a."/"4b." del formato
@@ -695,7 +692,7 @@ def classify_dates_in_text(text):
             continue
         if any(word in context for word in _RECEIPT_NOISE_CONTEXT):
             continue
-        if _en_fecha_ruido(match):
+        if _en_fecha_ruido(match, parsed):
             continue
         if any(word in context for word in _EXPIRY_CONTEXT):
             expiry_candidates.append(parsed)
@@ -717,7 +714,7 @@ def classify_dates_in_text(text):
             continue
         if any(word in context for word in _RECEIPT_NOISE_CONTEXT):
             continue
-        if _en_fecha_ruido(match):
+        if _en_fecha_ruido(match, parsed):
             continue
         if any(word in context for word in _EXPIRY_CONTEXT):
             expiry_candidates.append(parsed)
