@@ -625,6 +625,52 @@ def ocr_pdf_to_text(data, max_pages=2, dpi=300):
     return "\n".join(text_parts)
 
 
+_DOCUTEN_SIGNATURE_RE = re.compile(
+    r"Fecha y hora:\s*(\d{1,2})-(\d{1,2})-(\d{4})"
+)
+
+
+# H30 (sesion S91). Documentos multi-pagina firmados via Docuten (visto
+# en PLAN_ACTUACION_CALOR, boletin nacional de varias decenas de
+# paginas de boilerplate identico para todos los empleados) llevan la
+# fecha real -- la firma individual de ESE empleado concreto, no la
+# fecha de aprobacion del plan nacional que aparece en las primeras
+# paginas -- en la ULTIMA pagina del PDF ("Firmado por: NOMBRE...
+# Fecha y hora: DD-MM-AAAA HH:MM UTC+N"), fuera del alcance de
+# ocr_pdf_to_text(max_pages=2). Verificado real: id=40356 (gomez
+# gomez), pagina 54, "Fecha y hora: 25-06-2025 17:30 UTC+2". Se OCRea
+# solo la ultima pagina (nunca el documento completo -- estos PDFs
+# rondan 10MB/50+ paginas de imagenes, OCRearlo entero es coste real
+# innecesario) y se busca el patron literal de la cabecera de firma de
+# Docuten, nunca el regex generico de fecha (evita capturar cualquiera
+# de las decenas de fechas de boilerplate que pueda arrastrar la
+# ultima pagina).
+def extract_docuten_signature_date(data):
+    """
+    Devuelve la fecha de la firma electronica individual (bloque
+    "Firmado por... Fecha y hora: DD-MM-AAAA") de la ULTIMA pagina de
+    un PDF firmado via Docuten, o None si no aparece ese patron
+    exacto.
+    """
+    doc = fitz.open(stream=data, filetype="pdf")
+    if doc.page_count == 0:
+        doc.close()
+        return None
+    page = doc.load_page(doc.page_count - 1)
+    pix = page.get_pixmap(dpi=300)
+    img = Image.open(io.BytesIO(pix.tobytes("png")))
+    text = pytesseract.image_to_string(img, lang="spa")
+    doc.close()
+    match = _DOCUTEN_SIGNATURE_RE.search(text)
+    if not match:
+        return None
+    day, month, year = match.groups()
+    try:
+        return date(int(year), int(month), int(day))
+    except ValueError:
+        return None
+
+
 def ocr_image_to_text(data):
     img = Image.open(io.BytesIO(data))
     return pytesseract.image_to_string(img, lang="spa")
