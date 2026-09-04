@@ -654,6 +654,25 @@ def docx_to_text(data):
     return "\n".join(parts)
 
 
+def txt_to_text(data):
+    """
+    H30 (sesion S91). Bug real corregido: extract_text() no
+    reconocia .txt en absoluto -- descubierto en CERTIFICADO_BANCARIO,
+    donde 4 de 15 documentos pendientes son notas de texto plano
+    ("cta bco Apellido.txt") nunca leidas por ningun barrido anterior
+    (ocr_text_cacheado=0 para los cuatro). No requiere OCR: se
+    decodifica directamente. utf-8 primero (mayoria real de estos
+    ficheros); latin-1 como red de seguridad para el resto sin fallar
+    nunca por encoding.
+    """
+    for encoding in ("utf-8", "latin-1"):
+        try:
+            return data.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return data.decode("utf-8", errors="replace")
+
+
 def extract_text(filename, data):
     """
     Devuelve el texto legible de `data` segun la extension de
@@ -667,6 +686,8 @@ def extract_text(filename, data):
         return ocr_image_to_text(data)
     if name_lower.endswith(".docx"):
         return docx_to_text(data)
+    if name_lower.endswith(".txt"):
+        return txt_to_text(data)
     return None
 
 
