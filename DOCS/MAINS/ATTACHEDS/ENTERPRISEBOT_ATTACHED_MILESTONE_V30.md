@@ -7698,3 +7698,23 @@ Milheiro (S83).
 Solo queda pendiente `TC2` (`id=27857`) para cerrar el Bloque C al
 100%.
 
+**`TC2` cerrado (7/7 Bloque C -- BLOQUE C COMPLETO):** bien
+clasificado (`Relación Nominal de Trabajadores` es el nombre oficial
+del TC2 de la Seguridad Social). La carpeta `OBSOLETO/` en la que
+vive es solo ubicación de archivo, no decide si necesita fecha. El
+"Periodo de liquidación 09-2012" del documento es el mes que cubre la
+cotización, no la fecha del documento -- la fecha real es el sello de
+validación de la TGSS impreso al pie, sin ambigüedad: "Referencia:
+1280007072 Fecha: 06/11/2012". `id=27857`: `issue_date=2012-11-06`.
+
+**BLOQUE C DEL BLOQUE C COMPLETO: 7/7 tipos nunca auditados antes de
+S92, ahora todos con 0 pendientes reales** (`ALTA_MEDICA`,
+`CERTIF_TRABAJO_COLEGIO`, `COMUNICACION_JORNADA`, `TC2`,
+`NOMBRAMIENTO_JEFE_MANIOBRAS`, `NOMBRAMIENTO_RESPONSABLE_SEGURIDAD`,
+`CERTIF_DISCAPACIDAD`). Queda por delante el Bloque B (históricos de
+volumen alto, sin confirmar todavía con auditoría real: `BAJA_PERSONAL`
+118, `DNI` 21, `CARNET_CONDUCIR` 26, `CARNET_GRUISTA` 42,
+`PARTE_BAJA_MEDICA` 34, `CONTRATO` 36) y el Bloque D (crecimiento
+nuevo sin auditar: `MOD_145` 10, `ENTREGA_MANUAL_COMBUSTIBLE` 3,
+`VACACIONES` 4).
+
