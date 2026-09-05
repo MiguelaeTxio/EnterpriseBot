@@ -7679,3 +7679,22 @@ Pendientes del Bloque C: `CERTIF_TRABAJO_COLEGIO` (2),
   que Miguel Ángel elija cuál usar como `issue_date`, o confirme si
   hay una versión más reciente con Rocío/Yolanda.
 
+**`CERTIF_DISCAPACIDAD` resuelto (6/7 Bloque C):** descargado el PDF
+completo (3 páginas) para inspección visual real, vía `com-gcs-download`
+(un solo archivo, sin ZIP). No eran dos actos administrativos
+distintos como parecía por el texto OCR-cacheado -- las 3 páginas
+(certificado + resolución de revisión de oficio + dictamen técnico
+facultativo) están fechadas el mismo día, 28/07/2021 (el OCR había
+leído mal "23" en vez de "28" en la firma de la página 1, lo que
+sugería una fecha distinta). El "26/07/2021" del texto es la fecha de
+la sesión de valoración interna citada dentro de la resolución, no
+una fecha de documento distinta; el "04/09/2021" es la fecha de
+efecto del grado reconocido, no la del papel. Confirmado por Miguel
+Ángel: Manuel Ruiz Portillo es empleado activo. `id=37459`:
+`issue_date=2021-07-28`. `id=37481` (tarjeta, sin fecha impresa,
+"Válida hasta INDEFINIDO"): excepción legítima, igual que el NIE de
+Milheiro (S83).
+
+Solo queda pendiente `TC2` (`id=27857`) para cerrar el Bloque C al
+100%.
+
