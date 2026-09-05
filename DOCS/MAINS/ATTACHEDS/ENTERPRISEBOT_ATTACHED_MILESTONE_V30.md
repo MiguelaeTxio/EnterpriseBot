@@ -7614,3 +7614,40 @@ móvil/tablet).
   (2), `COMUNICACION_JORNADA` (1), `TC2` (1), `CERTIF_DISCAPACIDAD`
   (2).
 
+**Bloque C -- 3 de 7 tipos CERRADOS (continuación):**
+- `ALTA_MEDICA` (`id=35391` Alejandro García Luque, `id=35797`
+  Francisco Gómez Rivero): `issue_date=2023-12-05` y
+  `issue_date=2023-10-30`. Primer tipo `.msg` del catálogo -- se
+  añadió `msg_to_text()` a `date_verification_service.py` (libreria
+  `extract-msg`, verificada por web_search como vigente y mantenida;
+  añadida a `requirements.in`/`.txt`, coherencia confirmada 31/145,
+  ninguna falta). El clasificador compartido acertó las dos fechas de
+  "Alta Médica" sin tocar el regex, distinguiéndolas correctamente de
+  "Fecha de Baja Médica" en el mismo correo (patrón `FECHA DE ALTA` ya
+  existente desde S87).
+
+**Incidencia real de despliegue durante este bloque (S92), ya
+resuelta:** al compilar `extract-msg` directamente en la consola de
+PythonAnywhere (`pip-compile requirements.in`) sin comitear el
+resultado ahí, y comitear en paralelo una reconstrucción propia del
+mismo `requirements.txt` desde el clon de trabajo del modelo, el
+`git pull` automático de `deploy.yml` encontró cambios locales sin
+comitear en un archivo trackeado y falló dos despliegues seguidos
+(`445ed43`, `e914397`) -- mismo patrón exacto que el incidente de S014
+ya documentado en el propio `deploy.yml`, con un archivo trackeado en
+vez de uno suelto. Diagnosticado por verificación real a nivel de
+paso vía API de GitHub Actions (nunca solo el `conclusion` de alto
+nivel), confirmado por Miguel Ángel con `git status --short` real
+desde el móvil. Resuelto con `git checkout -- requirements.txt` en el
+servidor + relanzamiento del run fallido vía API
+(`POST .../actions/runs/{id}/rerun`), sin necesidad de otro push.
+Los tres commits pendientes llegaron a producción correctamente,
+incluido el reinicio condicional real del worker Celery (patrón
+`document_explorer/` disparado). Quedan sueltos sin trackear en el
+servidor, sin tocar todavía: `deleted_at__isnull=True,` y
+`h28_migration_agent/sample0/1/2_output.txt` -- revisar su origen
+antes de borrarlos.
+
+Pendientes del Bloque C: `CERTIF_TRABAJO_COLEGIO` (2),
+`COMUNICACION_JORNADA` (1), `TC2` (1), `CERTIF_DISCAPACIDAD` (2).
+
