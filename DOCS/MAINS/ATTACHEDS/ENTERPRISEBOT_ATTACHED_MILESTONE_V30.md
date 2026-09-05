@@ -7595,3 +7595,22 @@ plantillas `current_template` que hacen falta) antes que el Bloque
 B/D. PEE cambia de PC a A a mitad de sesión (continúa desde
 móvil/tablet).
 
+**Bloque C -- 2 de 7 tipos CERRADOS:**
+- `NOMBRAMIENTO_JEFE_MANIOBRAS` (`id=27289`, Ramos Zambrana):
+  `issue_date=2019-07-17`. Fecha real "Málaga, 17 de julio de 2019"
+  sin la palabra "a" que exige el patrón `MALAGA A` ya existente --
+  resuelta a mano, sin tocar el clasificador compartido por un caso
+  único. De paso, vinculada la plantilla en blanco que quedó suelta
+  desde S73 (`PLANTILLA_NOMBRAMIENTO_JEFE_MANIOBRAS.docx`, `id=42921`)
+  a `DocumentTypeCatalog.current_template` de este tipo.
+- `NOMBRAMIENTO_RESPONSABLE_SEGURIDAD` (`id=22001`, Díaz Quintero,
+  UTE Puente de Cádiz): `issue_date=2015-01-22`, detectada por el
+  clasificador compartido (patrón `MALAGA A` ya existente) tras
+  extraer y cachear `ocr_text` con la función compartida
+  `docx_to_text()` (arreglada tras S89 para leer también tablas --
+  no hizo falta ningún fix nuevo). `current_template` de este tipo ya
+  estaba correctamente vinculado desde S73 (`id=42919`).
+- Pendientes del Bloque C: `ALTA_MEDICA` (2), `CERTIF_TRABAJO_COLEGIO`
+  (2), `COMUNICACION_JORNADA` (1), `TC2` (1), `CERTIF_DISCAPACIDAD`
+  (2).
+
