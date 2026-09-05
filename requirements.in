@@ -128,3 +128,10 @@ python-docx
 plotly
 pdf2image
 cssutils
+
+# H30 (S92). Lectura de correos Outlook .msg -- necesario para
+# ALTA_MEDICA (partes de baja/alta médica recibidos por email, nunca
+# auditados antes de esta sesión). extract-msg es la librería vigente
+# y mantenida (verificado por web_search en S92, no de memoria):
+# https://github.com/mentax/msg-extractor, Python 3.8+.
+extract-msg
