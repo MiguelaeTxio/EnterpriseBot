@@ -7651,3 +7651,31 @@ antes de borrarlos.
 Pendientes del Bloque C: `CERTIF_TRABAJO_COLEGIO` (2),
 `COMUNICACION_JORNADA` (1), `TC2` (1), `CERTIF_DISCAPACIDAD` (2).
 
+**Bloque C -- 5 de 7 tipos CERRADOS (continuación):**
+- `CERTIF_TRABAJO_COLEGIO` (`id=36111` Hidalgo Rosas,
+  `issue_date=2021-05-31`; `id=38200` Zavala Manzano,
+  `issue_date=2021-05-26`): detectados por el clasificador compartido
+  (patrón `MALAGA A`), sin fix nuevo.
+- `COMUNICACION_JORNADA` (`id=28131` Anaya Romero,
+  `issue_date=2024-09-20`): el documento contiene 3 fechas (dos de
+  2022 del contrato original que se modifica, una de 2024 de esta
+  comunicación en sí); el clasificador acertó la real (fecha de la
+  comunicación, no la del contrato modificado) vía `MALAGA A`.
+
+**2 casos del Bloque C pendientes de decisión explícita de Miguel
+Ángel (no resueltos a la fuerza):**
+- `TC2` (`id=27857`, Adolfo Álvarez, periodo 09/2012) -- vive dentro
+  de una carpeta `OBSOLETO/` ya decidida por alguien en su momento.
+  Pendiente: ¿fechar con el periodo de liquidación (09/2012), o
+  tratarlo como excepción legítima sin fecha (y revisar si
+  `tracks_expiry` debería ser `False` para este tipo)?
+- `CERTIF_DISCAPACIDAD` -- `id=37481` (tarjeta, "Válida hasta
+  INDEFINIDO", sin ninguna fecha impresa) propuesto como excepción
+  legítima clara, mismo patrón que el NIE de Milheiro (S83).
+  `id=37459` (certificado, mezcla certificación original + revisión
+  de oficio en el mismo PDF) tiene 3 fechas candidatas reales
+  (04/09/2021 reconocimiento, 26/07/2021 resolución, 23/07/2021 firma
+  "Málaga, 23 de Julio de 2021" sin la palabra "a") -- pendiente de
+  que Miguel Ángel elija cuál usar como `issue_date`, o confirme si
+  hay una versión más reciente con Rocío/Yolanda.
+
