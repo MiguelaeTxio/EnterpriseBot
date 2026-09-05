@@ -759,6 +759,32 @@ def txt_to_text(data):
     return data.decode("utf-8", errors="replace")
 
 
+def msg_to_text(data):
+    """
+    H30 (S92). Lectura de correos Outlook .msg -- primer tipo del
+    catalogo que los usa (ALTA_MEDICA, partes de baja/alta medica
+    recibidos por email, nunca auditado hasta esta sesion). Usa
+    extract-msg (verificado por web_search en S92 como libreria
+    vigente, https://github.com/TeamMsgExtractor/msg-extractor).
+    Incluye asunto y cuerpo -- la fecha real de estos partes suele
+    estar en el asunto o en las primeras lineas del cuerpo, nunca en
+    metadatos de envio del correo (esos son la fecha de reenvio, no
+    la fecha real del parte).
+    """
+    import extract_msg
+    import io as _io
+    msg = extract_msg.openMsg(_io.BytesIO(data))
+    try:
+        parts = []
+        if msg.subject:
+            parts.append(msg.subject)
+        if msg.body:
+            parts.append(msg.body)
+        return "\n".join(parts)
+    finally:
+        msg.close()
+
+
 def extract_text(filename, data):
     """
     Devuelve el texto legible de `data` segun la extension de
@@ -774,6 +800,8 @@ def extract_text(filename, data):
         return docx_to_text(data)
     if name_lower.endswith(".txt"):
         return txt_to_text(data)
+    if name_lower.endswith(".msg"):
+        return msg_to_text(data)
     return None
 
 
