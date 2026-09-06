@@ -7711,10 +7711,41 @@ validación de la TGSS impreso al pie, sin ambigüedad: "Referencia:
 S92, ahora todos con 0 pendientes reales** (`ALTA_MEDICA`,
 `CERTIF_TRABAJO_COLEGIO`, `COMUNICACION_JORNADA`, `TC2`,
 `NOMBRAMIENTO_JEFE_MANIOBRAS`, `NOMBRAMIENTO_RESPONSABLE_SEGURIDAD`,
-`CERTIF_DISCAPACIDAD`). Queda por delante el Bloque B (históricos de
-volumen alto, sin confirmar todavía con auditoría real: `BAJA_PERSONAL`
-118, `DNI` 21, `CARNET_CONDUCIR` 26, `CARNET_GRUISTA` 42,
-`PARTE_BAJA_MEDICA` 34, `CONTRATO` 36) y el Bloque D (crecimiento
-nuevo sin auditar: `MOD_145` 10, `ENTREGA_MANUAL_COMBUSTIBLE` 3,
-`VACACIONES` 4).
+`CERTIF_DISCAPACIDAD`).
+
+**Bloques B y D, y el huérfano sin dominio: TODOS resueltos en la
+misma sesión (S92), con evidencia real:** aplicada la auditoría de
+históricos exacta ya escrita en S78 (persona con otro documento del
+mismo tipo ya fechado = histórico, no pendiente) sobre `BAJA_PERSONAL`
+(118), `DNI` (21), `CARNET_CONDUCIR` (26), `CARNET_GRUISTA` (42),
+`PARTE_BAJA_MEDICA` (34), `CONTRATO` (36), `MOD_145` (10),
+`ENTREGA_MANUAL_COMBUSTIBLE` (3) y `VACACIONES` (4): **los 294 son
+históricos reales, 0 pendientes reales.** El único documento
+`PERSONAL/BOTH` vivo sin dominio resuelto en absoluto (`id=24138`,
+"Procedimiento de acceso a recinto") se confirmó, por contenido real,
+que no es de ninguna persona concreta -- normativa genérica de
+empresa, no necesita dominio ni fecha.
+
+**DOMINIO PERSONAL DE H30: FECHADO Y ASIGNADO AL 100% PARA LOS 72
+TRABAJADORES ACTIVOS, verificado con consultas reales, no supuesto.**
+
+**Hallazgo real de paso, sin resolver, anotado para cuando se retome
+este hito:** el tipo de catálogo `PLANTILLA` (creado S68, dominio
+COMPANY) y el propio documento huérfano de arriba demuestran que no
+hay identificación sistemática de qué documentos son plantillas
+genéricas frente a documentos reales de una persona -- solo existe el
+mecanismo correcto (`DocumentTypeCatalog.current_template` +
+`DocumentAcknowledgment`, S69) aplicado en 5 tipos de todo el
+catálogo. Los 2 documentos que sí tiene el tipo `PLANTILLA` hoy
+(`id=35242`, `id=35718`) resultaron ser, por contenido real, nombramientos
+reales de `RECURSO_PREVENTIVO` mal tipados, con fecha real
+(2025-01-10) y persona real -- pendiente de reclasificar cuando se
+retome este hito, no bloquea el cierre de PERSONAL.
+
+**PCH (S92):** hito pausado. Dominio MÁQUINAS sigue pendiente, hoja de
+ruta intacta (ver "Fase A de `DOC. MAQUINAS`" en secciones anteriores
+de este mismo anexo, sin tocar en esta sesión). Se retoma cuando
+H32 -- Migraciones de Infraestructura (modelo IA, Python, registro
+Android) esté cerrado.
+
 

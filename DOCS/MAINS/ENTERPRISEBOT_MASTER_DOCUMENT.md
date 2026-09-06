@@ -463,6 +463,34 @@ app de dominio.
   entrega/envío, CRUD de circulares, editor, importación, selector
   masivo) está por construir desde cero.
 
+#### Hito 32: Migraciones de Infraestructura (Modelo IA, Python, Registro Android)
+(Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V32.md`)
+- Hito nuevo, abierto en S92 por decisión explícita de Miguel Ángel:
+  con el dominio PERSONAL de H30 fechado y asignado al 100%, tres
+  plazos externos reales convergen en el mismo mes y merecen hito
+  propio en vez de colarse como desvíos sueltos dentro de H30/H31.
+- **Migración `gemini-2.5-flash` → `gemini-3.5-flash`** (deuda técnica
+  ya registrada en la sección 4.1.1 de este documento): bloqueo de
+  acceso a inferencia online nueva ~16 de septiembre de 2026, apagado
+  total 16 de octubre de 2026. Requiere auditoría completa del
+  proyecto primero (la lista de la sección 4.1.1 está marcada
+  explícitamente como parcial), después migración de cada constante
+  de modelo, y validación de que el formato de respuesta no cambia de
+  forma incompatible antes de desplegar.
+- **Migración de versión de Python en PythonAnywhere**: `google.api_core`
+  deja de dar soporte a la versión actual (3.10) a partir del 4 de
+  octubre de 2026 (correo real de Google/PythonAnywhere ya recibido).
+- **Registro de apps Android en Google Play Console**: correo real de
+  Google (recibido 2026-09-01) exige, desde el 30 de septiembre de
+  2026, registrar nombre de paquete y firma con identidad de
+  desarrollador verificada para instalarse en dispositivos
+  certificados. Sin acción posible todavía -- aplica cuando exista una
+  app real que publicar (la app nativa de albaranes para tablets de
+  operarios sigue sin empezar); se deja como punto informativo del
+  hito hasta que haya algo que registrar.
+- Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V32.md` para la hoja de
+  ruta ejecutable.
+
 ---
 
 ### 4. Directrices Técnicas Vinculantes

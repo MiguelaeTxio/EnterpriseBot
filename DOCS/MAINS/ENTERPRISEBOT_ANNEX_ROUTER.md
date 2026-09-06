@@ -53,8 +53,9 @@ Cumple dos funciones inseparables:
 | H27 | Ingesta de Documentación vía Correo Electrónico | `ENTERPRISEBOT_ATTACHED_MILESTONE_V27.md` |
 | H28 | Migración y Reorganización de Documentación Histórica | `ENTERPRISEBOT_ATTACHED_MILESTONE_V28.md` |
 | H29 | Explorador de Archivos y Gobierno Documental del Panel sobre GCS | `ENTERPRISEBOT_ATTACHED_MILESTONE_V29.md` |
-| H30 | Vinculación Documental Real — Centros de Gasto y Personal | `ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md` ← EN PROGRESO |
+| H30 | Vinculación Documental Real — Centros de Gasto y Personal | `ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md` |
 | H31 | Interfaz de Ficha de Personal — EPIs y Notificaciones/Circulares | `ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md` |
+| H32 | Migraciones de Infraestructura (Modelo IA, Python, Registro Android) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V32.md` ← EN PROGRESO |
 
 Todos los anexos viven en `DOCS/MAINS/ATTACHEDS/`.
 
@@ -62,14 +63,21 @@ Todos los anexos viven en `DOCS/MAINS/ATTACHEDS/`.
 
 ## 3. Resultado Actual
 
-**Hito EN PROGRESO:** H30 — Vinculación Documental Real: Centros de
-Gasto y Personal → `ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md`.
-Reactivado en S77 por decisión explícita de Miguel Ángel, trabajando
-en H31: sondeo real reveló 6.085 documentos de las families `LABORAL`
-+ `SALUD_BAJAS_PERSONA` con 0% de `issue_date`/`expiry_date`
-extraído, por lo que `vigencia_service.is_current()` no puede archivar
-nada y la interfaz de H31 no se puede verificar contra datos reales.
-Ver hoja de ruta de su propio anexo, sección "Hito REACTIVADO en S77".
+**Hito EN PROGRESO:** H32 — Migraciones de Infraestructura (Modelo IA,
+Python, Registro Android) → `ENTERPRISEBOT_ATTACHED_MILESTONE_V32.md`.
+Abierto en S92 por decisión explícita de Miguel Ángel al cerrar el
+dominio PERSONAL de H30 al 100%: tres plazos externos reales
+convergen en septiembre-octubre de 2026 (bloqueo de acceso a
+`gemini-2.5-flash` ~16/09, fin de soporte de Python 3.10 en
+`google.api_core` 04/10, registro de apps Android en Play Console
+30/09) y merecen hito propio. Ver hoja de ruta de su propio anexo.
+
+**Hito PAUSADO en esta sesión (S92):** H30 — Vinculación Documental
+Real: Centros de Gasto y Personal → `ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md`.
+El dominio PERSONAL queda fechado y con dominio asignado al 100% para
+los trabajadores activos (auditoría real completa S92, ver anexo).
+Queda pendiente el dominio MÁQUINAS -- hoja de ruta intacta, sin
+tocar en esta sesión. Se retoma cuando H32 esté cerrado.
 
 **Hito PAUSADO en esta sesión (S77):** H31 — Interfaz de Ficha de
 Personal: EPIs y Notificaciones/Circulares →
