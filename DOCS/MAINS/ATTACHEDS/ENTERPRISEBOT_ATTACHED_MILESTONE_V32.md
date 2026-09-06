@@ -75,7 +75,19 @@ haya algo real que registrar.
 
 ---
 
-## 3. Hoja de Ruta para la Sesión Siguiente (S93)
+## 3. COMPLETADAS EN S92
+
+Hito abierto en esta misma sesión (PCH desde H30, tras cerrar el
+dominio PERSONAL al 100%). Sin trabajo de código todavía sobre las
+migraciones en sí -- el bloque de trabajo de S92 fue íntegramente el
+cierre de H30/PERSONAL (ver `ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md`)
+y la creación de este hito (documento maestro, enrutador, este mismo
+anexo). Punto de partida real para S93: sección 3 de arriba, "Hoja de
+Ruta para la Sesión Siguiente (S93)".
+
+---
+
+## 4. Hoja de Ruta para la Sesión Siguiente (S93)
 
 Ejecución estrictamente secuencial, sin preguntar por dónde empezar.
 
