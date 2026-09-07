@@ -518,6 +518,15 @@ de desarrollo del proyecto sin excepción.
 
 #### 4.1.1. DEUDA TÉCNICA — Migración gemini-2.5-flash → gemini-3.5-flash
 
+⛔ **CERRADA en H32/S93 (2026-09-07).** Auditoría completa del
+proyecto y migración de las 5 líneas de código real encontradas,
+verificado que ninguna usa segmentación de imagen ni `candidate_count`
+(incompatibles con Gemini 3.x). Detalle completo, comandos y commits
+en `ENTERPRISEBOT_ATTACHED_MILESTONE_V32.md`, sección "COMPLETADAS EN
+S93". Sección conservada aquí como registro histórico de la deuda y
+su origen -- el texto original de abajo describe el estado en el
+momento en que se detectó (S001-H10), no el estado actual.
+
 **Origen:** detectado en S001-H10 (2026-06-30) al construir
 `GeminiVisionExtractionService`. Verificado en línea: los plazos de
 retirada de Gemini 2.5 Pro, Gemini 2.5 Flash-Lite y Gemini 2.5 Flash
@@ -545,17 +554,65 @@ considerarse exhaustiva):
 native-audio` (Live API, voz/IVR) tiene su propio ciclo de vida y
 requiere verificación específica de Live API antes de decidir
 sustituto — no se asume equivalencia automática con
-`gemini-3.5-flash`.
+`gemini-3.5-flash`. Ver sección 4.1.2 para el seguimiento de ese
+modelo, abierto en H32/S93.
 
-**Acción pendiente:** sesión dedicada (o bloque de sesión) antes de
+**Acción pendiente:** ~~sesión dedicada (o bloque de sesión) antes de
 mediados de septiembre 2026 para: (1) auditar todo el proyecto en
 busca de referencias a `gemini-2.5-flash` y `gemini-2.5-pro` no
 detectadas todavía, (2) migrar cada constante de modelo a
 `gemini-3.5-flash`, (3) validar que el formato de respuesta y
 comportamiento no cambian de forma incompatible entre versiones de
-modelo antes de desplegar a producción.
+modelo antes de desplegar a producción.~~ Completado en H32/S93, ver
+nota de cierre arriba.
 
-#### 4.2. Telefonía
+#### 4.1.2. SEGUIMIENTO -- Ciclo de vida de `gemini-live-2.5-flash-native-audio` (Live API, voz)
+
+**Abierto en H32/S93 (2026-09-07), a petición explícita de Miguel
+Ángel: "adelantarnos a la situación... que no nos pille confesados."**
+Verificado en línea (`ai.google.dev/gemini-api/docs/deprecations`,
+changelog de Gemini API): **el modelo GA en uso,
+`gemini-live-2.5-flash-native-audio`, todavía no tiene fecha de
+apagado anunciada** -- esto no es una deuda técnica todavía, es un
+punto de vigilancia.
+
+**Señal real de hacia dónde va esto (no es una fecha, es una
+tendencia):**
+- Los modelos Live anteriores ya siguieron este patrón y ya se
+  apagaron: `gemini-2.0-flash-live-001` y `gemini-live-2.5-flash-
+  preview` (el preview de la misma generación 2.5), ambos apagados el
+  **9 de diciembre de 2025**.
+- Google ya publicó el sucesor en preview: `gemini-3.1-flash-live-
+  preview` (11 de marzo de 2026), marcado como reemplazo recomendado
+  de la línea Live 2.5 en la tabla oficial de deprecaciones.
+- El patrón observado en otros modelos de la familia (`gemini-2.5-
+  flash`, `gemini-2.5-pro`, ver 4.1.1) es: preview del sucesor
+  publicado con meses de antelación, luego anuncio formal de apagado
+  del GA anterior, luego ventana de ~1 mes de bloqueo de inferencia
+  nueva antes del apagado total. Si ese patrón se repite, cabe esperar
+  un anuncio formal de apagado de `gemini-live-2.5-flash-native-audio`
+  en algún momento tras marzo de 2026, pero **no hay fecha real
+  todavía -- no inventar una**.
+
+**Acción de seguimiento, sin urgencia todavía:** en cada sesión que
+toque `vox_bridge/` o el bloque 4.1 de este documento, re-verificar en
+línea (`ai.google.dev/gemini-api/docs/deprecations`, filtrar por
+"Live API models") si ya hay fecha de apagado anunciada para
+`gemini-live-2.5-flash-native-audio`. En cuanto aparezca una fecha
+real, abrir hito o bloque de trabajo dedicado (mismo patrón que
+H32/S93 para el modelo de texto/visión) -- no esperar a que falte un
+mes, dado que una migración de Live API requiere validación de audio
+en producción con llamadas reales, más lenta que una migración de
+texto/visión.
+
+**Migración NO trivial cuando llegue:** a diferencia de
+`gemini-2.5-flash` → `gemini-3.5-flash` (mismo formato de respuesta
+para texto/Vision, verificado en H32/S93), la Live API tiene su propio
+protocolo de sesión (`session.send_realtime_input`, formato de audio,
+configuración de voz `Aoede`, VAD del servidor) -- no asumir
+compatibilidad automática con `gemini-3.1-flash-live-preview` ni con
+ningún sucesor sin verificar explícitamente el protocolo de la nueva
+versión contra `vox_bridge/services.py`.
 
 - **Twilio SDK Python:** `twilio 9.10.4`
 - **Autenticación Twilio:** API Key (TWILIO_API_KEY_SID + TWILIO_API_KEY_SECRET)
