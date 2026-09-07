@@ -937,3 +937,48 @@ con el registro por WhatsApp en sí (nombre + 4 últimos dígitos del
 DNI), que ya existe y funciona -- esto es específicamente sobre
 persistir y reutilizar el número de origen.
 
+---
+
+## Puntos añadidos a la hoja de ruta en S94 (sesión de planificación general)
+
+Confirmados como parte de H31 (no hitos aparte -- son la ficha de
+persona, el objetivo original del hito). Los bloques de subida en
+tiempo real y modelo propio de clasificación, mencionados en la misma
+conversación, abren cada uno su propio hito (`ENTERPRISEBOT_ATTACHED_MILESTONE_V33.md`
+y `ENTERPRISEBOT_ATTACHED_MILESTONE_V34.md`), no entran aquí.
+
+**Punto 5 -- Completar entregas de EPIs, CRUD de circulares/
+notificaciones, y acuse de recibo reforzado (firma electrónica).**
+Investigación legal real hecha en S94: España se rige por eIDAS (UE
+910/2014) + Ley 6/2020. Tres niveles de firma electrónica (simple/
+avanzada/cualificada) -- para acuses de recibo de EPIs/circulares NO
+hace falta un certificado cualificado externo (nivel excesivo, pensado
+para trámites con la Administración); basta con firma simple/avanzada
+construida dentro de la propia app, siempre que el sistema registre
+correctamente: identidad real (usuario autenticado, nunca nombre
+escrito a mano), documento exacto (versión/hash), marca de tiempo del
+**servidor** (nunca del cliente), y persistencia inmutable del
+registro. Reforzar `document_explorer.DocumentAcknowledgment` (H30) en
+esa dirección -- ya guarda persona + tipo de documento + fecha de
+entrega, falta el resto de campos de trazabilidad y una acción real de
+"aceptar" por parte del trabajador (no solo un registro creado por un
+supervisor en su nombre). Sin hoja de ruta detallada todavía -- el
+objetivo del hito (sección 1 de este anexo) ya describe qué hay que
+construir (entrega/envío individual y masivo, CRUD de circulares); lo
+nuevo de S94 es el refuerzo del acuse de recibo como firma electrónica
+real, con base legal ya investigada.
+
+**Punto 6 -- Alta y baja de trabajadores (ciclo de vida completo).**
+Hoy `PersonIdentity`/`CompanyUser` se editan (`PersonalUpdateView`,
+H31 S74) pero no existe un flujo real de alta de un trabajador
+completamente nuevo (sin `PersonIdentity` previa) ni de baja (marcar
+`is_active_employee=False`, gestionar qué pasa con su `CompanyUser`
+vinculado si lo tiene, sus vacaciones/documentación pendientes, etc.).
+Sin hoja de ruta detallada todavía -- pendiente de sesión de diseño
+dedicada: qué campos son obligatorios en el alta, si el alta desde el
+panel debe cruzar automáticamente contra el Excel de plantilla (mismo
+mecanismo que `import_worker_machine_excel`) o es puramente manual, y
+qué ocurre exactamente con los datos históricos de un trabajador dado
+de baja (se conservan siempre, nunca se borran -- coherente con el
+resto del proyecto, pero falta decidir la interfaz).
+

@@ -493,6 +493,52 @@ app de dominio.
 - Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V32.md` para la hoja de
   ruta ejecutable.
 
+#### Hito 33: Subida de Documentación en Tiempo Real desde el Panel
+(Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V33.md`)
+- Hito nuevo, abierto en S94 por decisión explícita de Miguel Ángel:
+  la vía de ingesta actual (agente local H28 + Always-on Task de
+  cuarentena) no es inmediata -- un supervisor que deja documentación
+  real en la carpeta vigilada (alta de un trabajador nuevo, o
+  actualización de uno o más documentos de un trabajador ya existente)
+  tiene que esperar al siguiente barrido de la tarea, inviable en una
+  situación de producción real donde se necesita la documentación
+  clasificada y en base de datos de inmediato.
+- Objetivo: una vía de subida directa desde el propio panel (no la
+  carpeta vigilada), con la MISMA clasificación real ya construida en
+  H29/H30 (heurística + OCR + Gemini como último recurso), pero
+  disparada al momento por el supervisor, sin esperar a ningún barrido
+  periódico.
+- Sin hoja de ruta ejecutable todavía -- pendiente de sesión de diseño
+  dedicada (alcance exacto: solo personal, o también máquinas desde el
+  principio; interfaz de subida por carpeta completa vs. archivo a
+  archivo; qué pasa si la clasificación automática falla en el momento,
+  no en un barrido posterior donde hay más margen).
+
+#### Hito 34: Modelo Propio de Clasificación de Documentos (entrenamiento)
+(Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V34.md`)
+- Hito nuevo, abierto en S94 por decisión explícita de Miguel Ángel,
+  con máxima prioridad de atención propia -- verbatim: "vamos a sentar
+  la base de la clasificación de documentos a raíz del entrenamiento
+  de este modelo [...] no un punto de hoja de ruta dentro de otro
+  hito."
+- Objetivo: entrenar un modelo propio que sustituya a Gemini como
+  clasificador principal de documentos -- empezando por el dominio
+  PERSONAL (donde ya existe volumen suficiente tras el cierre de H30),
+  con MAQUINARIA como extensión futura del mismo mecanismo. Gemini
+  pasa a ser el último recurso (fallback), no la vía por defecto.
+- Contexto real: un primer intento de entrenamiento anterior no
+  disponía de datos suficientes para ser efectivo. Tras el cierre de
+  H30 (dominio PERSONAL fechado y clasificado al 100%), sí existe ya
+  un dataset real de volumen considerable, sobre todo en los tipos
+  documentales de gran volumen (los de poco volumen, plantillas y
+  documentos ya reducidos, siguen siendo discriminables por heurística
+  sin necesidad de modelo).
+- Sin hoja de ruta ejecutable todavía -- pendiente de sesión de diseño
+  dedicada (arquitectura del modelo, formato/tamaño real del dataset
+  de entrenamiento extraíble de la BD ya clasificada, criterio de
+  validación antes de sustituir a Gemini en producción, mecanismo de
+  fallback cuando el modelo propio no tenga confianza suficiente).
+
 ---
 
 ### 4. Directrices Técnicas Vinculantes

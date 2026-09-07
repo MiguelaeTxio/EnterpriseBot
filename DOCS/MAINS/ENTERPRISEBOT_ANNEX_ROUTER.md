@@ -56,12 +56,25 @@ Cumple dos funciones inseparables:
 | H30 | Vinculación Documental Real — Centros de Gasto y Personal | `ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md` |
 | H31 | Interfaz de Ficha de Personal — EPIs y Notificaciones/Circulares | `ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md` ← EN PROGRESO |
 | H32 | Migraciones de Infraestructura (Modelo IA, Python, Registro Android) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V32.md` |
+| H33 | Subida de Documentación en Tiempo Real desde el Panel | `ENTERPRISEBOT_ATTACHED_MILESTONE_V33.md` |
+| H34 | Modelo Propio de Clasificación de Documentos (entrenamiento) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V34.md` |
 
 Todos los anexos viven en `DOCS/MAINS/ATTACHEDS/`.
 
 ---
 
 ## 3. Resultado Actual
+
+**Hitos nuevos abiertos en S94 (PAUSADOS, sin tocar todavía):** H33 —
+Subida de Documentación en Tiempo Real desde el Panel, y H34 — Modelo
+Propio de Clasificación de Documentos (entrenamiento), este último
+con prioridad de atención propia máxima, verbatim de Miguel Ángel:
+"vamos a sentar la base de la clasificación de documentos a raíz del
+entrenamiento de este modelo [...] no un punto de hoja de ruta dentro
+de otro hito." Ninguno de los dos tiene hoja de ruta ejecutable
+todavía -- pendientes de sesión de diseño dedicada cada uno. El
+marcador `← EN PROGRESO` no se mueve -- apertura de hito nuevo (Caso C
+de la sección 5), no cambio de hito.
 
 **Hito EN PROGRESO:** H31 — Interfaz de Ficha de Personal: EPIs y
 Notificaciones/Circulares → `ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md`.
