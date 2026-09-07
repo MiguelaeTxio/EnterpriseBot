@@ -92,6 +92,7 @@ periodo.
 """
 from django.db import models
 
+from document_explorer.models import DocumentIndexEntry, PersonIdentity
 from ivr_config.models import Company, CompanyUser
 
 
@@ -223,3 +224,142 @@ class VacationPeriod(models.Model):
             if is_new and self.generated_entry_line_id is None:
                 from hr_calendar.services import generate_vacation_task
                 generate_vacation_task(self)
+
+
+class MedicalLeavePeriod(models.Model):
+    """
+    A structured record of a worker's medical leave (baja médica),
+    sibling in spirit to VacationPeriod (period with start/end dates
+    feeding the "Laboral" accordion of the personnel file), but linked
+    to PersonIdentity (document_explorer) rather than CompanyUser --
+    decision of Miguel Ángel in S093: "modelo estructurado, es mejor
+    para esto [...] son documentos prácticamente iguales y van a variar
+    poco con el tiempo, todos tendrán datos parecidos y fácil de captar
+    y trasladar a la BBDD." Built from H31 roadmap point 1 (S94).
+
+    date_end is nullable: a leave still in progress has no end date
+    yet, unlike VacationPeriod where both dates are always known at
+    creation time.
+
+    source_document is a nullable pointer to the DocumentIndexEntry
+    (PARTE_BAJA_MEDICA) this record was created from, when one exists
+    -- same traceability pattern as
+    VacationPeriod.generated_entry_line, but pointing the opposite
+    direction (from the structured record back to its originating
+    document, not to a task it generates).
+
+    ---
+
+    Registro estructurado de una baja médica de un trabajador, hermano
+    en espíritu de VacationPeriod (periodo con fecha de inicio/fin que
+    alimenta el acordeón "Laboral" de la ficha de personal), pero
+    enlazado a PersonIdentity (document_explorer) en vez de a
+    CompanyUser -- decisión de Miguel Ángel en S093: "modelo
+    estructurado, es mejor para esto [...] son documentos prácticamente
+    iguales y van a variar poco con el tiempo, todos tendrán datos
+    parecidos y fácil de captar y trasladar a la BBDD." Construido
+    desde el punto 1 de la hoja de ruta de H31 (S94).
+
+    date_end es nullable: una baja en curso todavía no tiene fecha de
+    fin, a diferencia de VacationPeriod donde ambas fechas se conocen
+    siempre en el momento de creación.
+
+    source_document es un puntero opcional al DocumentIndexEntry
+    (PARTE_BAJA_MEDICA) del que se creó este registro, cuando existe
+    -- mismo patrón de trazabilidad que
+    VacationPeriod.generated_entry_line, pero en sentido inverso (del
+    registro estructurado hacia el documento de origen, no hacia una
+    tarea que genera).
+    """
+
+    class ContingencyType(models.TextChoices):
+        """
+        Categorías reales de contingencia según LGSS/Ministerio de
+        Trabajo, investigadas en S76 (ver anexo H31 sección 5.4,
+        punto 4) -- no inventadas, citadas tal cual en la hoja de
+        ruta de S94.
+        """
+        COMUN = "COMUN", "Contingencia común"
+        PROFESIONAL = "PROFESIONAL", "Contingencia profesional"
+        MATERNIDAD_PATERNIDAD = (
+            "MATERNIDAD_PATERNIDAD", "Maternidad/Paternidad"
+        )
+        RIESGO_EMBARAZO_LACTANCIA = (
+            "RIESGO_EMBARAZO_LACTANCIA",
+            "Riesgo durante el embarazo/lactancia",
+        )
+        SALUD_MENSTRUAL_REPRODUCTIVA = (
+            "SALUD_MENSTRUAL_REPRODUCTIVA",
+            "Salud menstrual/reproductiva",
+        )
+
+    # ------------------------------------------------------------------
+    # Relations / Relaciones
+    # ------------------------------------------------------------------
+    person = models.ForeignKey(
+        PersonIdentity,
+        on_delete=models.CASCADE,
+        related_name="medical_leave_periods",
+        verbose_name="Persona",
+        help_text="Trabajador al que pertenece esta baja médica, "
+                  "identificado por PersonIdentity (dominio personal "
+                  "de H30), no por CompanyUser.",
+    )
+    source_document = models.ForeignKey(
+        DocumentIndexEntry,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name="Documento de origen (PARTE_BAJA_MEDICA)",
+        help_text="DocumentIndexEntry del que se extrajo este registro, "
+                  "cuando existe uno real ya clasificado como "
+                  "PARTE_BAJA_MEDICA. Nulo si el registro se crea por "
+                  "otra vía (alta manual desde el panel).",
+    )
+
+    # ------------------------------------------------------------------
+    # Dates / Fechas
+    # ------------------------------------------------------------------
+    date_start = models.DateField(
+        verbose_name="Fecha de inicio",
+        help_text="Primer día de la baja médica.",
+    )
+    date_end = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name="Fecha de alta/fin",
+        help_text="Fecha de alta médica. Nulo cuando la baja sigue en "
+                  "curso -- a diferencia de VacationPeriod, aquí ambas "
+                  "fechas no se conocen siempre en el momento de "
+                  "creación.",
+    )
+
+    contingency_type = models.CharField(
+        max_length=32,
+        choices=ContingencyType.choices,
+        verbose_name="Tipo de contingencia",
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Fecha de creación",
+    )
+
+    class Meta:
+        verbose_name = "Periodo de baja médica"
+        verbose_name_plural = "Periodos de baja médica"
+        ordering = ["-date_start"]
+        constraints = [
+            models.CheckConstraint(
+                check=(
+                    models.Q(date_end__isnull=True)
+                    | models.Q(date_end__gte=models.F("date_start"))
+                ),
+                name="medicalleaveperiod_date_end_gte_date_start_or_null",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        fin = f"{self.date_end:%d/%m/%Y}" if self.date_end else "en curso"
+        return f"{self.person} — {self.date_start:%d/%m/%Y} a {fin}"
