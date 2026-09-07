@@ -25,11 +25,11 @@ de fuera.
 <div class="accordion mb-3" id="personalMainAccordion">
     <div class="accordion-item">
         <h2 class="accordion-header">
-            <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#collapseDatosPersonales">
+            <button class="accordion-button{% if main_accordion_open != 'collapseDatosPersonales' %} collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#collapseDatosPersonales">
                 <i class="bi bi-person-badge me-2"></i>Datos personales
             </button>
         </h2>
-        <div id="collapseDatosPersonales" class="accordion-collapse collapse show" data-bs-parent="#personalMainAccordion">
+        <div id="collapseDatosPersonales" class="accordion-collapse collapse{% if main_accordion_open == 'collapseDatosPersonales' %} show{% endif %}" data-bs-parent="#personalMainAccordion">
             <div class="accordion-body">
 
 {% comment %}
@@ -182,11 +182,11 @@ y se habilita "Guardar".
     {% endcomment %}
     <div class="accordion-item">
         <h2 class="accordion-header">
-            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseLaboralMain">
+            <button class="accordion-button{% if main_accordion_open != 'collapseLaboralMain' %} collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#collapseLaboralMain">
                 <i class="bi bi-briefcase me-2"></i>Laboral
             </button>
         </h2>
-        <div id="collapseLaboralMain" class="accordion-collapse collapse" data-bs-parent="#personalMainAccordion">
+        <div id="collapseLaboralMain" class="accordion-collapse collapse{% if main_accordion_open == 'collapseLaboralMain' %} show{% endif %}" data-bs-parent="#personalMainAccordion">
             <div class="accordion-body p-0">
 <div class="accordion" id="personalLaboralAccordion">
 
@@ -385,11 +385,11 @@ vacaciones).
     {% endcomment %}
     <div class="accordion-item">
         <h2 class="accordion-header">
-            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseSaludMain">
+            <button class="accordion-button{% if main_accordion_open != 'collapseSaludMain' %} collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#collapseSaludMain">
                 <i class="bi bi-heart-pulse me-2"></i>Salud
             </button>
         </h2>
-        <div id="collapseSaludMain" class="accordion-collapse collapse" data-bs-parent="#personalMainAccordion">
+        <div id="collapseSaludMain" class="accordion-collapse collapse{% if main_accordion_open == 'collapseSaludMain' %} show{% endif %}" data-bs-parent="#personalMainAccordion">
             <div class="accordion-body">
 
 <table class="table table-sm table-hover mb-0">
@@ -424,11 +424,11 @@ vacaciones).
 
     <div class="accordion-item">
         <h2 class="accordion-header">
-            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseDocumentacionMain">
+            <button class="accordion-button{% if main_accordion_open != 'collapseDocumentacionMain' %} collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#collapseDocumentacionMain">
                 <i class="bi bi-folder2-open me-2"></i>Documentación
             </button>
         </h2>
-        <div id="collapseDocumentacionMain" class="accordion-collapse collapse" data-bs-parent="#personalMainAccordion">
+        <div id="collapseDocumentacionMain" class="accordion-collapse collapse{% if main_accordion_open == 'collapseDocumentacionMain' %} show{% endif %}" data-bs-parent="#personalMainAccordion">
             <div class="accordion-body">
 
 <button type="button" class="btn btn-primary btn-sm mb-3" onclick="openUploadForm()">
@@ -506,11 +506,11 @@ vez de una lista única sin estructura.
 
     <div class="accordion-item">
         <h2 class="accordion-header">
-            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseEpisMain">
+            <button class="accordion-button{% if main_accordion_open != 'collapseEpisMain' %} collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#collapseEpisMain">
                 <i class="bi bi-shield-check me-2"></i>EPIs
             </button>
         </h2>
-        <div id="collapseEpisMain" class="accordion-collapse collapse" data-bs-parent="#personalMainAccordion">
+        <div id="collapseEpisMain" class="accordion-collapse collapse{% if main_accordion_open == 'collapseEpisMain' %} show{% endif %}" data-bs-parent="#personalMainAccordion">
             <div class="accordion-body">
 
 {% comment %}
@@ -956,5 +956,29 @@ function getCookie(name) {
     const parts = value.split(`; ${name}=`);
     if (parts.length === 2) return parts.pop().split(';').shift();
 }
+</script>
+
+<script>
+(function () {
+    // H31 (S94). Persistencia real en BD del acordeón principal de la
+    // ficha (Datos personales/Laboral/Salud/Documentación/EPIs) --
+    // mismo mecanismo que el sidebar y el hub de Documentación
+    // (PanelNavigationState, screen_key='personal_ficha'), nunca
+    // sessionStorage/localStorage. Preferencia global (la misma
+    // sección se abre por defecto para la siguiente persona que se
+    // visite) -- ver docstring de PersonalDetailView.
+    const csrfMetaPersonal = document.querySelector('meta[name="csrf-token"]');
+    const csrfTokenPersonal = csrfMetaPersonal ? csrfMetaPersonal.getAttribute('content') : '';
+
+    document.querySelectorAll('#personalMainAccordion > .accordion-item > .accordion-collapse').forEach(function (el) {
+        el.addEventListener('shown.bs.collapse', function () {
+            fetch('/panel/navegacion/estado/personal_ficha/', {
+                method: 'POST',
+                headers: {'X-CSRFToken': csrfTokenPersonal, 'Content-Type': 'application/json'},
+                body: JSON.stringify({main_accordion: el.id}),
+            });
+        });
+    });
+})();
 </script>
 {% endblock %}

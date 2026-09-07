@@ -825,7 +825,41 @@ class PersonalWorkdayDetailView(CompanyUserRequiredMixin, View):
 
 
 class PersonalDetailView(CompanyUserRequiredMixin, View):
+    """
+    H31 (S94). main_accordion_open: sección del acordeón principal de
+    la ficha (Datos personales/Laboral/Salud/Documentación/EPIs)
+    persistida en PanelNavigationState (screen_key='personal_ficha'),
+    a petición explícita de Miguel Ángel de cubrir toda la navegación
+    del panel -- misma mecánica que el sidebar y el hub de
+    Documentación (S94), nunca sessionStorage/localStorage. Es una
+    preferencia global (la misma sección se abre por defecto sea cual
+    sea la persona que se visite después), no por persona -- decisión
+    tomada para no complicar el estado con una clave por persona sin
+    que Miguel Ángel lo haya pedido explícitamente así. Los
+    sub-acordeones anidados (Laboral→Docs/Vacaciones/Dietas/Partes,
+    familias dinámicas de documentos/EPIs) quedan fuera de esta
+    primera capa -- ver nota pendiente en el anexo H31.
+    """
+
     def get(self, request, pk):
+        nav_state = PanelNavigationState.objects.filter(
+            company_user=request.user.company_user,
+            screen_key="personal_ficha",
+        ).first()
+        _state = (
+            nav_state.state
+            if nav_state and isinstance(nav_state.state, dict) else {}
+        )
+        main_accordion_open = _state.get(
+            "main_accordion", "collapseDatosPersonales",
+        )
+        if main_accordion_open not in (
+            "collapseDatosPersonales", "collapseLaboralMain",
+            "collapseSaludMain", "collapseDocumentacionMain",
+            "collapseEpisMain",
+        ):
+            main_accordion_open = "collapseDatosPersonales"
+
         person = get_object_or_404(
             PersonIdentity.objects.select_related(
                 "company_user", "company_user__user",
@@ -1011,6 +1045,7 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
             "notification_types": notification_types,
             "active_nav": "documentation_hub",
             "family_choices": DocumentTypeCatalog.FAMILY_CHOICES,
+            "main_accordion_open": main_accordion_open,
         })
 
 
