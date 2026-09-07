@@ -820,6 +820,11 @@ Miguel Ángel).
 
 ## COMPLETADAS EN S94
 
+Sesión larga (17 commits reales), con dos bugs reales de
+infraestructura heredados de H32/S93 encontrados y corregidos de
+paso, y un rediseño real de modelo de datos tras un incidente
+reportado por Miguel Ángel con evidencia de captura de pantalla.
+
 **Punto 1 -- CERRADO con criterio de cierre cumplido.** Modelo
 `hr_calendar.MedicalLeavePeriod` creado: `person` (FK
 `document_explorer.PersonIdentity`), `source_document` (FK opcional
@@ -829,87 +834,123 @@ MATERNIDAD_PATERNIDAD/RIESGO_EMBARAZO_LACTANCIA/
 SALUD_MENSTRUAL_REPRODUCTIVA), `created_at`. Colocado en `hr_calendar`
 (no en `personal_documents`) por cercanía real de dominio -- es un
 periodo de ausencia hermano de `VacationPeriod`, no un documento
-clasificado.
+clasificado. Commit `6b84492`: `models.py` + migración
+`0002_medicalleaveperiod` (`CreateModel` + `CheckConstraint` date_end
+nulo o ≥ date_start) + migración de datos
+`0003_seed_first_medical_leave_period` (crea el primer registro real a
+partir de un `PARTE_BAJA_MEDICA` existente).
 
-Commit `6b84492`: `models.py` + migración `0002_medicalleaveperiod`
-(`CreateModel` + `CheckConstraint` date_end nulo o ≥ date_start) +
-migración de datos `0003_seed_first_medical_leave_period` (crea el
-primer registro real a partir de un `PARTE_BAJA_MEDICA` existente).
-
-**Incidencia real detectada y corregida en la misma sesión (directriz
-4.9):** el primer despliegue de este commit falló
-(`conclusion: failure` en Actions) con `ModuleNotFoundError: celery`.
-Diagnóstico con Comando S real: `deploy.yml` seguía apuntando a
+**Bug real de infraestructura #1 -- `deploy.yml` con venv antiguo
+(directriz 4.9).** El primer despliegue de la sesión falló
+(`ModuleNotFoundError: celery`): `deploy.yml` seguía apuntando a
 `~/.virtualenvs/EnterpriseBot_venv/` (ruta que ya no existe tras la
 migración de venv de H32/S93 a `EnterpriseBot_venv_py312`) --
 `start_celery_worker.sh` se corrigió en su día (commit `7ae950f`) pero
 `deploy.yml` se quedó sin tocar, rompiendo **todo** despliegue
 automático desde entonces, no solo el de esta sesión. Corregido en
-commit `83dccf4` (`deploy.yml`, `SESSION_VARIABLES.md`,
-`ENTERPRISEBOT_MASTER_DOCUMENT.md`). Redeploy verificado en `success`
-con los 8 pasos completados.
+commit `83dccf4`.
 
-**Verificación final con datos reales (Comando S,
-`EnterpriseBot_004_GET.txt`):** `showmigrations hr_calendar` ->
-`0002`/`0003` en `[X]`. Consulta directa:
-`MedicalLeavePeriod.objects.count() == 1`, registro real de Alejandro
+**Verificación de Punto 1 con datos reales:** `showmigrations
+hr_calendar` -> `0002`/`0003` en `[X]`. Registro real de Alejandro
 García Luque (PersonIdentity pk=158, dni=74852724Y): `date_start=
 2021-07-26`, `date_end=None`, `contingency_type=COMUN`,
 `source_document_id=38341`.
 
-## Hoja de Ruta para la Sesión Siguiente (S94, continuación)
+**Punto 2 -- CERRADO con criterio de cierre cumplido.** Pestaña
+"Vacaciones" real en htmx dentro del hub de Documentación (commit
+`e135902`): formulario de alta, tabla editable en línea (`hx-include`
+en vez de `<form>` anidado en tabla, HTML inválido), búsqueda/orden/
+paginación -- mismo patrón que EPIs/Personal. Bug real corregido en la
+misma sesión: comentarios Django `{# #}` multilínea se filtraban como
+texto crudo (commit `8697dd3`) -- Django exige `{# #}` en una sola
+línea, corregido a `{% comment %}`.
 
-Ejecución estrictamente secuencial, sin preguntar por dónde empezar.
-Cada punto lleva su criterio de cierre objetivo.
+**Incidente real con captura de pantalla -- `VacationPeriod` confundía
+`PersonIdentity` (trabajador) con `CompanyUser` (cuenta de panel),
+corregido con rediseño de modelo (commit `5159f94`, migración
+`0004_vacationperiod_person_redesign`).** Miguel Ángel detectó que un
+trabajador activo real sin cuenta de panel (Antonio Jesús Díaz
+Quintero) no podía recibir vacaciones, mientras una cuenta puramente
+administrativa (`alvarez_admin`) sí era seleccionable por error.
+`VacationPeriod.person` (FK obligatoria a `PersonIdentity`) pasa a ser
+el "quién" real; `operator` (FK a `CompanyUser`) pasa a ser opcional,
+resuelto automáticamente desde `person.company_user`, usado solo para
+la tarea fantasma. Nueva directriz 4.19 en el documento maestro
+(PersonIdentity vs CompanyUser, nunca confundirlos). Autocompletado
+real por nombre/DNI añadido al formulario de alta (acotado a
+`is_active_employee=True`) -- bug real corregido de paso: el campo de
+autocompletado colisionaba con `name="q"` del otro buscador de la
+pestaña (commit `02877c2`), diagnosticado con la pestaña Network del
+navegador (traza de pila real).
 
-**Punto 1 -- CERRADO EN S94, ver sección "COMPLETADAS EN S94" arriba.**
-~~Modelo estructurado de Bajas médicas (decisión ya
-tomada, ver COMPLETADAS EN S93).~~ Diseñar y migrar un modelo nuevo
-(app `hr_calendar` o `personal_documents`, a decidir por cercanía de
-dominio -- **verificar `models.py` real de ambas apps en el turno
-actual antes de decidir dónde vive**, directriz 4.14) con al menos:
-fecha de inicio, fecha de alta/fin (nullable, baja en curso), tipo de
-contingencia (`COMUN`, `PROFESIONAL`, `MATERNIDAD_PATERNIDAD`,
-`RIESGO_EMBARAZO_LACTANCIA`, `SALUD_MENSTRUAL_REPRODUCTIVA` -- ver
-investigación real de S76 en sección 5.4, punto 4, categorías LGSS/
-Ministerio de Trabajo), y FK al `PersonIdentity` y al `DocumentIndexEntry`
-de origen (`PARTE_BAJA_MEDICA`) cuando exista. **Criterio de cierre:**
-migración aplicada en producción, `py_compile`/`makemigrations` limpio,
-y al menos un registro real creado a partir de un `PARTE_BAJA_MEDICA`
-existente de una persona con baja real en BD (ver Alejandro García
-Luque u otra ficha con volumen, pk=158 según S77).
+**Bug real de infraestructura #2 -- candado de dependencias
+desincronizado tras H32/S93 (commit `01cdb93`), a petición explícita
+de Miguel Ángel de comprobar que no hubiera ocurrido lo mismo que en
+CampuStudiOnline.** `requirements.txt` versionado seguía marcado
+"Python 3.10" pese a que el venv real de producción es
+`EnterpriseBot_venv_py312` desde H32 -- el `pip-compile` real
+ejecutado en S93 nunca se comiteó. Regenerado y aplicado el diff real
+(carácter por carácter idéntico al del servidor), sin sorpresas
+(coherencia `.in`/`.txt`: 31 declaradas / 142 fijadas, ninguna
+faltante). Barrido final de flequillos (commit `eddbdb0`): sección
+4.3.1 del documento maestro corregida de "deuda técnica pendiente" a
+"CERRADA", comentarios sueltos con el venv antiguo corregidos.
+Efecto colateral real detectado y resuelto sin consecuencias: un
+commit cosmético en `vox_bridge/management/commands/` estuvo a punto
+de disparar un reinicio innecesario del puente de voz (patrón
+`deploy.yml` demasiado amplio) -- verificado con el log real del
+Always-on Task que el reinicio no llegó a ejecutarse; sin cambios en
+el patrón por decisión explícita de Miguel Ángel ("si se corta una
+llamada, más se perdió en la guerra").
 
-**Punto 2 -- Pestaña "Vacaciones" real en el hub de Documentación.**
-CRUD completo reescrito a htmx, adaptando
-`VacationPeriodListView`/`Create`/`Update`/`Delete` de
-`hr_calendar/views.py` (hoy páginas completas con redirect, no htmx).
-Tras construirla, retirar el enlace "Vacaciones" del sidebar de
-Administración (gate ADMIN/SUPERVISOR) -- "Calendario"
-(`hr_calendar:calendar`) se queda donde está, no se toca. **Criterio
-de cierre:** crear/editar/borrar un `VacationPeriod` real desde la
-nueva pestaña htmx sin recargar página completa, verificado contra al
-menos un registro real, y enlace del sidebar retirado.
+**Persistencia de navegación en todo el panel, a petición explícita de
+Miguel Ángel ("cubrir todo el panel con esta forma de gestionar la
+navegación").** Incidente real de partida: la pestaña activa del hub
+de Documentación nunca se guardaba de verdad -- `shown.bs.tab`
+(evento de Bootstrap) no llegaba a dispararse por interferencia con
+htmx sobre el mismo enlace (commit `165ac76`, diagnosticado con
+Network + traza de pila real), sustituido por un listener de `click`
+nativo. A partir de ahí, tres bloques nuevos, todos sobre
+`PanelNavigationState` (nunca sessionStorage/localStorage):
+1. **Sidebar** (commit `ef378dc`): los 5 acordeones principales
+   (Mi perfil/Telefonía/Administración/Taller Mecánico/Asistencia)
+   persisten en BD -- `NavigationStateSaveView` generalizado (merge
+   superficial genérico, ya no solo `active_tab`/`filters` a mano).
+2. **Ficha de Personal** (commits `616778c` + `0839a64`, este segundo
+   una corrección real de diseño tras aclaración de Miguel Ángel): el
+   acordeón principal (Datos/Laboral/Salud/Documentación/EPIs)
+   persiste **por persona** (`person_accordion`, clave por pk), no
+   como preferencia global -- corregido tras que Miguel Ángel
+   explicara que cada ficha debe recordar su propia sección, y que
+   volver a "Documentación" desde el sidebar debe llevar DIRECTAMENTE
+   a la última ficha de persona concreta (`last_person_pk` en
+   `documentation_hub`, limpiado al volver al listado), no al hub.
+3. **Pestaña Calendario nueva en el hub** (commit `ad182d4`, con
+   corrección de persistencia del operario seleccionado en
+   `f5caf08`): centraliza el calendario para quien lleva
+   documentación/vacaciones, sin salir del hub. `is_elevated`
+   ampliado a `DOCS_SUPERVISOR`. Reparto de acceso sin regresiones: el
+   enlace "Calendario" de Administración se retira solo para `ADMIN`
+   (ya centralizado en el hub), se mantiene para `SUPERVISOR`/
+   `WORKSHOPBOSS` (sin acceso al hub).
 
-**Punto 3 -- Verificación real del acordeón Laboral/Salud/Documentación
-contra BD con fechas ya extraídas.** Con el dominio PERSONAL de H30
-cerrado al 100% (S92), volver a abrir la ficha de Alejandro García
-Luque (pk=158) u otra con volumen real y confirmar que el acordeón ya
-solo muestra el documento vigente de cada tipo, con el resto accesible
-vía "Historial" -- no repetir el "galimatías" que pausó el hito en S77
-(3 "Informe de Datos para la Cotización", 3 "Alta (Seguridad
-Social)"...). **Criterio de cierre:** captura o verificación en
-consola confirmando 1 documento vigente por tipo en esa ficha, no 3.
+**Verificación funcional real, confirmada por Miguel Ángel en el
+navegador:** alta de un periodo de vacaciones propio desde el
+autocompletado, reflejo correcto en el Calendario del hub, y
+persistencia de pestaña/ficha/acordeón/operario confirmada tras
+navegar fuera y volver a Documentación ("canela, funciona como un
+reloj").
 
-**Punto 4 -- Auditoría del campo `domain` en `DocumentTypeCatalog`**
-(verbatim S73, sección 4.1 de este anexo) -- revisar que todos los
-tipos documentales de `DOC. PERSONAL` tienen `domain` correcto
-(`PERSONAL`/`MACHINE`/`BOTH`/`COMPANY`), corrigiendo caso por caso.
-**Criterio de cierre:** consulta real contra `DocumentTypeCatalog`
-filtrando tipos con `domain` potencialmente incorrecto, devolviendo 0
-tras la corrección, o lista documentada de excepciones aceptadas
-explícitamente por Miguel Ángel.
-
----
+**Planificación general de trabajo pendiente de personal (sesión de
+diseño, sin código):** encuadre acordado con Miguel Ángel de cinco
+bloques de trabajo (clasificación de documentos, ciclo de vida de
+trabajadores, entregas de EPIs/circulares con firma electrónica,
+subida de documentación en tiempo real, modelo propio de
+clasificación) en H31 (Puntos 5 y 6, ver más abajo) y dos hitos nuevos
+-- H33 (Subida en Tiempo Real) y H34 (Modelo Propio de Clasificación,
+prioridad máxima), commit `16d584a`. Diseño técnico completo cerrado
+para el Punto 5, Fase 1 (acuse de recibo real vía WhatsApp), commit
+`91ef568` -- ver hoja de ruta abajo.
 
 ## Notas pendientes reales, registradas S94 (sin código todavía, para que no se pierdan)
 
@@ -983,6 +1024,45 @@ de baja (se conservan siempre, nunca se borran -- coherente con el
 resto del proyecto, pero falta decidir la interfaz).
 
 ---
+
+## Hoja de Ruta para la Sesión Siguiente
+
+Ejecución estrictamente secuencial, sin preguntar por dónde empezar
+(directriz 4.16). Cada punto lleva su criterio de cierre objetivo.
+Los Puntos 1 y 2 de S94 quedaron CERRADOS en S94 (ver "COMPLETADAS EN
+S94" arriba) -- no se repiten aquí.
+
+**Punto 3 (arrastrado 1.ª sesión sin avanzar) -- Verificación real del
+acordeón Laboral/Salud/Documentación contra BD con fechas ya
+extraídas.** Con el dominio PERSONAL de H30 cerrado al 100% (S92),
+abrir la ficha de Alejandro García Luque (pk=158) u otra con volumen
+real y confirmar que el acordeón ya solo muestra el documento vigente
+de cada tipo, con el resto accesible vía "Historial" -- no repetir el
+"galimatías" que pausó el hito en S77 (3 "Informe de Datos para la
+Cotización", 3 "Alta (Seguridad Social)"...). **Criterio de cierre:**
+captura o verificación en consola confirmando 1 documento vigente por
+tipo en esa ficha, no 3.
+
+**Punto 4 (arrastrado 1.ª sesión sin avanzar) -- Auditoría del campo
+`domain` en `DocumentTypeCatalog`** (verbatim S73, sección 4.1 de
+este anexo) -- revisar que todos los tipos documentales de
+`DOC. PERSONAL` tienen `domain` correcto (`PERSONAL`/`MACHINE`/
+`BOTH`/`COMPANY`), corrigiendo caso por caso. **Criterio de cierre:**
+consulta real contra `DocumentTypeCatalog` filtrando tipos con
+`domain` potencialmente incorrecto, devolviendo 0 tras la corrección,
+o lista documentada de excepciones aceptadas explícitamente por
+Miguel Ángel.
+
+**Punto 5, Fase 1 -- acuse de recibo real vía WhatsApp.** Diseño
+completo cerrado en S94 -- ver sección "Diseño cerrado en S94 para el
+Punto 5" inmediatamente debajo para el contexto técnico completo
+(plantilla, formato real de Twilio, decisión de modelo de datos) y su
+propia hoja de ruta ejecutable de 4 puntos con criterio de cierre cada
+uno.
+
+**Punto 6 -- Alta y baja de trabajadores.** Sigue sin hoja de ruta
+ejecutable -- pendiente de sesión de diseño dedicada, ver "Puntos
+añadidos a la hoja de ruta en S94" más abajo para el contexto.
 
 ## Diseño cerrado en S94 para el Punto 5 -- acuse de recibo real (firma electrónica), Fase 1 WhatsApp
 
