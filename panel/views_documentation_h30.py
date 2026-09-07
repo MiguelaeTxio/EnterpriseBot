@@ -2053,10 +2053,33 @@ class CalendarTabFragmentView(CompanyUserRequiredMixin, View):
     hr_calendar.views.build_calendar_context (misma lógica real que
     la página completa de Calendario, extraída a función compartida
     en esta misma sesión) -- nunca una copia paralela.
+
+    CORREGIDO en la misma sesión (incidente real reportado por Miguel
+    Ángel con captura de pantalla): el operario/periodo seleccionado
+    no se recordaba entre visitas -- siempre volvía a alvarez_admin
+    pese a haber seleccionado otro operario antes de salir del hub.
+    Igual que las demás pestañas (mismo mecanismo, `_seed_request_get`
+    + `filters.calendario` en PanelNavigationState), rellena
+    `operator_pk`/`group_pk` desde el último valor guardado cuando la
+    querystring real no los trae (carga inicial "load once").
     """
 
     def get(self, request):
         from hr_calendar.views import build_calendar_context
+
+        nav_state = PanelNavigationState.objects.filter(
+            company_user=request.user.company_user,
+            screen_key="documentation_hub",
+        ).first()
+        _state = (
+            nav_state.state
+            if nav_state and isinstance(nav_state.state, dict) else {}
+        )
+        _persisted = (
+            _state.get("filters", {}).get("calendario")
+            if isinstance(_state.get("filters"), dict) else None
+        )
+        _seed_request_get(request, _persisted)
 
         ctx = build_calendar_context(request)
         return render(

@@ -159,6 +159,8 @@
         {match: /\/documentacion\/epis\/resultados\/?(\?|$)/, tab: 'epis'},
         {match: /\/documentacion\/vacaciones\/?(\?|$)/, tab: 'vacaciones'},
         {match: /\/documentacion\/vacaciones\/resultados\/?(\?|$)/, tab: 'vacaciones'},
+        {match: /\/documentacion\/calendario\/?(\?|$)/, tab: 'calendario'},
+        {match: /\/documentacion\/calendario\/resultados\/?(\?|$)/, tab: 'calendario'},
     ];
 
     document.body.addEventListener('htmx:afterRequest', function (ev) {
@@ -174,6 +176,21 @@
             return entry.match.test(parsed.pathname);
         });
         if (!hit) { return; }
+
+        // H31 (S94, incidente real): Calendario no usa q/sort/dir --
+        // usa operator_pk/group_pk (selector de operario + navegación
+        // de periodo). Sin esto, el operario seleccionado nunca se
+        // guardaba y la pestaña siempre volvía a abrir con el
+        // operario por defecto (alvarez_admin), reportado con
+        // captura de pantalla por Miguel Ángel.
+        if (hit.tab === 'calendario') {
+            const filters = {calendario: {
+                operator_pk: parsed.searchParams.get('operator_pk') || '',
+                group_pk: parsed.searchParams.get('group_pk') || '',
+            }};
+            saveState({filters: filters});
+            return;
+        }
 
         const filters = {};
         filters[hit.tab] = {
