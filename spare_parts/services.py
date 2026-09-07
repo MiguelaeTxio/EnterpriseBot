@@ -395,18 +395,19 @@ class GeminiVisionExtractionService:
     """
     Extracts structured data from a supplier delivery note (photo or
     PDF) using Gemini Vision via the shared ai_services.gemini_client
-    helper. Uses gemini-3.5-flash (Directriz 4.1, mandatory for new
-    code as of S001-H10 — see doc-master-enterprisebot section 4.1.1
-    for the gemini-2.5-flash migration debt this avoids incurring).
+    helper. Uses gemini-3.5-flash (Directriz 4.1, mandatory since
+    S001-H10 — see doc-master-enterprisebot section 4.1.1; the
+    gemini-2.5-flash migration debt tracked there was closed in
+    S93/H32).
 
     ---
 
     Extrae datos estructurados de un albarán de proveedor (foto o
     PDF) usando Gemini Vision a través del helper compartido
     ai_services.gemini_client. Usa gemini-3.5-flash (Directriz 4.1,
-    obligatorio para código nuevo desde S001-H10 — ver
-    doc-master-enterprisebot sección 4.1.1 para la deuda de
-    migración de gemini-2.5-flash que esto evita incurrir).
+    obligatorio desde S001-H10 — ver doc-master-enterprisebot sección
+    4.1.1; la deuda de migración de gemini-2.5-flash registrada ahí
+    se cerró en S93/H32).
     """
 
     # MIME types accepted for delivery note ingestion.

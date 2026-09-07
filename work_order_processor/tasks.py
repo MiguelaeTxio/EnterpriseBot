@@ -592,10 +592,10 @@ def process_work_order_pdf(self, work_order_id: int) -> None:
                 len(entradas),
             )
 
-            # Rate-limit guard: Vertex AI gemini-2.5-flash enforces a per-minute
+            # Rate-limit guard: Vertex AI gemini-3.5-flash enforces a per-minute
             # request quota. A fixed pause between pages prevents RESOURCE_EXHAUSTED
             # (HTTP 429) errors when processing multi-page PDFs.
-            # Guardia de rate limit: Vertex AI gemini-2.5-flash aplica una cuota
+            # Guardia de rate limit: Vertex AI gemini-3.5-flash aplica una cuota
             # de peticiones por minuto. Una pausa fija entre páginas evita errores
             # RESOURCE_EXHAUSTED (HTTP 429) al procesar PDFs de múltiples páginas.
             time.sleep(15)

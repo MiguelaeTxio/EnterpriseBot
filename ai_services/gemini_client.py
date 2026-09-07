@@ -8,9 +8,9 @@ imports from here instead of duplicating the logic (DRY principle,
 see doc-master-enterprisebot section 4.1.1).
 
 Default model is gemini-3.5-flash (mandatory for new code as of
-S001-H10, 2026-06-30 — see DEUDA TÉCNICA note in
-doc-master-enterprisebot section 4.1.1 for the gemini-2.5-flash
-migration still pending in existing code).
+S001-H10, 2026-06-30). The gemini-2.5-flash migration debt tracked in
+doc-master-enterprisebot section 4.1.1 was closed in S93/H32 — every
+consumer in the codebase now uses gemini-3.5-flash.
 
 ---
 
@@ -23,9 +23,10 @@ API) importe desde aquí en vez de duplicar la lógica (principio DRY,
 ver doc-master-enterprisebot sección 4.1.1).
 
 El modelo por defecto es gemini-3.5-flash (obligatorio para código
-nuevo desde S001-H10, 2026-06-30 — ver nota DEUDA TÉCNICA en
-doc-master-enterprisebot sección 4.1.1 para la migración de
-gemini-2.5-flash todavía pendiente en código existente).
+nuevo desde S001-H10, 2026-06-30). La deuda de migración de
+gemini-2.5-flash registrada en doc-master-enterprisebot sección 4.1.1
+se cerró en S93/H32 — todo consumidor del código usa ya
+gemini-3.5-flash.
 """
 import logging
 import os

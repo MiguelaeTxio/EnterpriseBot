@@ -31,7 +31,7 @@ from google.genai import types
 GCP_CREDENTIALS_PATH = os.environ.get("GCP_CREDENTIALS_PATH")
 GOOGLE_CLOUD_PROJECT  = os.environ.get("GOOGLE_CLOUD_PROJECT")
 GOOGLE_CLOUD_LOCATION = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
-MODEL                 = "gemini-2.5-flash"
+MODEL                 = "gemini-3.5-flash"
 ZIP_PATH              = os.environ.get("ORGANIZER_ZIP_PATH", "")
 OUTPUT_PATH           = os.environ.get("ORGANIZER_OUTPUT_PATH", "/home/MiguelAeTxio/SWAP/informe_organizacion.txt")
 

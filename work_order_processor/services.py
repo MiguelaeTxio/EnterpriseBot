@@ -100,11 +100,14 @@ logger = logging.getLogger(__name__)
 # wrapper is gone; the name is kept as an alias via the import above so
 # every call site below (3 occurrences) needs no further change.
 #
-# _GEMINI_MODEL stays pinned to gemini-2.5-flash here intentionally —
-# this is the documented technical debt (doc-master-enterprisebot
-# 4.1.1) pending migration to gemini-3.5-flash before 2026-09-16. New
-# code (e.g. spare_parts.services) uses ai_services.gemini_client's
-# DEFAULT_MODEL (gemini-3.5-flash) instead.
+# _GEMINI_MODEL migrated to gemini-3.5-flash in S93/H32 — closes the
+# technical debt documented in doc-master-enterprisebot 4.1.1 (deadline
+# 2026-09-16). Verified compatible for this module's two use cases
+# (Vision field extraction in extract_work_order_page/_full, text
+# classification in classify_task/classify_fault) — neither uses image
+# segmentation (unsupported in Gemini 3.x) nor candidate_count (removed
+# in Gemini 3.x); thinking_budget=0 remains supported for backward
+# compatibility.
 #
 # Inicialización del cliente Gemini — Hito S001/H10: migrado al helper
 # compartido ai_services.gemini_client (principio DRY, ver
@@ -113,14 +116,16 @@ logger = logging.getLogger(__name__)
 # el import de arriba para que cada punto de llamada de abajo (3
 # ocurrencias) no requiera más cambios.
 #
-# _GEMINI_MODEL permanece fijado a gemini-2.5-flash aquí
-# intencionadamente — es la deuda técnica documentada
-# (doc-master-enterprisebot 4.1.1) pendiente de migrar a
-# gemini-3.5-flash antes del 2026-09-16. El código nuevo (p.ej.
-# spare_parts.services) usa el DEFAULT_MODEL de
-# ai_services.gemini_client (gemini-3.5-flash) en su lugar.
+# _GEMINI_MODEL migrado a gemini-3.5-flash en S93/H32 — cierra la deuda
+# técnica documentada en doc-master-enterprisebot 4.1.1 (plazo
+# 2026-09-16). Verificado compatible para los dos usos de este módulo
+# (extracción de campos por Visión en extract_work_order_page/_full,
+# clasificación de texto en classify_task/classify_fault) — ninguno usa
+# segmentación de imagen (no soportada en Gemini 3.x) ni candidate_count
+# (retirado en Gemini 3.x); thinking_budget=0 sigue soportado por
+# compatibilidad hacia atrás.
 # ---------------------------------------------------------------------------
-_GEMINI_MODEL = "gemini-2.5-flash"
+_GEMINI_MODEL = "gemini-3.5-flash"
 
 # Per-request timeout in milliseconds passed via GenerateContentConfig.http_options.
 # With vertexai=True the client-level HttpOptions.timeout is not reliably forwarded

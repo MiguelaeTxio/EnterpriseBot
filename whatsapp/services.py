@@ -154,20 +154,20 @@ class WhatsAppChatService:
     WhatsApp message. On each invocation it:
       1. Builds a dynamic system prompt from the company's live configuration.
       2. Reconstructs the Gemini chat history from persisted WhatsAppMessage records.
-      3. Sends the user message to Gemini 2.5 Flash and obtains a reply.
+      3. Sends the user message to Gemini 3.5 Flash and obtains a reply.
       4. Dispatches the reply to the user via the Twilio Messaging API.
     ---
     Servicio sin estado que gestiona el pipeline completo del chatbot para un
     mensaje entrante de WhatsApp. En cada invocación:
       1. Construye un system prompt dinámico desde la configuración viva de la empresa.
       2. Reconstruye el historial de chat de Gemini desde los registros WhatsAppMessage persistidos.
-      3. Envía el mensaje del usuario a Gemini 2.5 Flash y obtiene una respuesta.
+      3. Envía el mensaje del usuario a Gemini 3.5 Flash y obtiene una respuesta.
       4. Despacha la respuesta al usuario vía la API de Mensajería de Twilio.
     """
 
     # Gemini model for text-based WhatsApp chatbot.
     # Modelo Gemini para el chatbot de texto de WhatsApp.
-    GEMINI_MODEL = "gemini-2.5-flash"
+    GEMINI_MODEL = "gemini-3.5-flash"
 
     @classmethod
     def build_system_prompt(
@@ -1295,7 +1295,7 @@ class BreakdownAgentService:
     de averia para un Contact interno que escribe por WhatsApp.
     """
 
-    GEMINI_MODEL = "gemini-2.5-flash"
+    GEMINI_MODEL = "gemini-3.5-flash"
 
     # Fault categories aligned with WorkOrderEntryLine.fault_category codes.
     # Categorias de averia alineadas con los codigos de WorkOrderEntryLine.
@@ -1741,7 +1741,7 @@ class OnboardingService:
     crea el usuario y envia la confirmacion.
     """
 
-    GEMINI_MODEL = "gemini-2.5-flash"
+    GEMINI_MODEL = "gemini-3.5-flash"
 
     # Regex to detect the ONBOARDING_DATA marker in Gemini replies.
     # Regex para detectar el marcador ONBOARDING_DATA en respuestas de Gemini.
