@@ -218,103 +218,142 @@ class VacationCalendarView(CompanyUserRequiredMixin, View):
     template_name = "hr_calendar/calendar.html"
 
     def get(self, request, *args, **kwargs):
-        from hr_calendar.services import (
-            compute_calendar_days,
-            resolve_period_group_for_calendar,
-        )
+        context = build_calendar_context(request)
+        return render(request, self.template_name, context)
 
-        cu = request.user.company_user
-        company = cu.company
-        is_elevated = cu.role in (
-            CompanyUser.ROLE_ADMIN, CompanyUser.ROLE_SUPERVISOR,
-        )
 
-        operators = None
-        if is_elevated:
-            operators = list(
-                CompanyUser.objects
-                .filter(company=company, is_active=True)
-                .select_related("user")
-                .order_by("user__first_name", "user__last_name", "user__username")
+def build_calendar_context(request):
+    """
+    H31 (S94). Lógica real de VacationCalendarView.get() extraída a
+    función compartida -- a petición de Miguel Ángel de centralizar el
+    Calendario también como pestaña del hub de Documentación (para
+    quien lleva documentación/vacaciones, sin tener que salir a la
+    sidebar y volver). Usada por VacationCalendarView (página completa,
+    Mi perfil/Administración para SUPERVISOR/WORKSHOPBOSS) y por
+    panel.views_documentation_h30.CalendarTabFragmentView (fragmento
+    htmx del hub, para ADMIN/DOCS_SUPERVISOR).
+
+    is_elevated incluye DOCS_SUPERVISOR además de ADMIN/SUPERVISOR
+    (ampliado en S94) -- quien lleva documentación necesita el
+    selector de operario igual que un ADMIN/SUPERVISOR, y hasta ahora
+    DOCS_SUPERVISOR no tenía ninguna vía real para llegar a esta vista
+    (no está en el gate de Administración ni en el de Mi perfil), así
+    que ampliar este chequeo no cambia nada para quien ya tenía acceso.
+    ---
+    Real logic of VacationCalendarView.get() extracted to a shared
+    function -- per Miguel Ángel's request to also centralize the
+    Calendar as a tab of the Documentation hub (for whoever manages
+    documentation/vacations, without having to leave to the sidebar
+    and back). Used by VacationCalendarView (full page, Mi
+    perfil/Administración for SUPERVISOR/WORKSHOPBOSS) and by
+    panel.views_documentation_h30.CalendarTabFragmentView (htmx
+    fragment of the hub, for ADMIN/DOCS_SUPERVISOR).
+
+    is_elevated now includes DOCS_SUPERVISOR alongside ADMIN/SUPERVISOR
+    (widened in S94) -- whoever manages documentation needs the
+    operator selector just like an ADMIN/SUPERVISOR, and until now
+    DOCS_SUPERVISOR had no real route into this view at all (not in
+    Administración's gate nor in Mi perfil's), so widening this check
+    changes nothing for anyone who already had access.
+    """
+    from hr_calendar.services import (
+        compute_calendar_days,
+        resolve_period_group_for_calendar,
+    )
+
+    cu = request.user.company_user
+    company = cu.company
+    is_elevated = cu.role in (
+        CompanyUser.ROLE_ADMIN, CompanyUser.ROLE_SUPERVISOR,
+        CompanyUser.ROLE_DOCS_SUPERVISOR,
+    )
+
+    operators = None
+    if is_elevated:
+        operators = list(
+            CompanyUser.objects
+            .filter(company=company, is_active=True)
+            .select_related("user")
+            .order_by("user__first_name", "user__last_name", "user__username")
+        )
+        _op_pk_raw = request.GET.get("operator_pk", "").strip()
+        target_operator = None
+        if _op_pk_raw.isdigit():
+            target_operator = next(
+                (o for o in operators if o.pk == int(_op_pk_raw)), None,
             )
-            _op_pk_raw = request.GET.get("operator_pk", "").strip()
-            target_operator = None
-            if _op_pk_raw.isdigit():
-                target_operator = next(
-                    (o for o in operators if o.pk == int(_op_pk_raw)), None,
-                )
-            if target_operator is None and operators:
-                target_operator = operators[0]
-        else:
-            target_operator = cu
+        if target_operator is None and operators:
+            target_operator = operators[0]
+    else:
+        target_operator = cu
 
-        if target_operator is None:
-            # Empresa sin ningún CompanyUser activo -- caso límite, nada
-            # que pintar.
-            return render(request, self.template_name, {
-                "company": company,
-                "company_user": cu,
-                "active_nav": "vacation_calendar",
-                "is_elevated": is_elevated,
-                "operators": operators,
-                "target_operator": None,
-            })
-
-        _group_pk_raw = request.GET.get("group_pk", "").strip()
-        group_pk = int(_group_pk_raw) if _group_pk_raw.isdigit() else None
-        resolved = resolve_period_group_for_calendar(company, group_pk)
-
-        if resolved is not None:
-            group = resolved["group"]
-            date_from = group.start_date
-            date_to = group.end_date or date.today()
-            period_kind = group.status_label
-            _start_m = _MESES_ES[date_from.month]
-            _end_m = _MESES_ES[date_to.month]
-            if date_from.month == date_to.month and date_from.year == date_to.year:
-                period_label = f"{period_kind}: {_start_m} {date_from.year}"
-            elif date_from.year == date_to.year:
-                period_label = (
-                    f"{period_kind}: {_start_m} y {_end_m} {date_to.year}"
-                )
-            else:
-                period_label = (
-                    f"{period_kind}: {_start_m} {date_from.year} y "
-                    f"{_end_m} {date_to.year}"
-                )
-            prev_group_pk = resolved["prev_group_pk"]
-            next_group_pk = resolved["next_group_pk"]
-            group_pk_current = group.pk
-        else:
-            today = date.today()
-            date_from = today.replace(day=1)
-            date_to = _last_day_of_month(today.year, today.month)
-            period_label = f"{_MESES_ES[today.month]} {today.year}"
-            prev_group_pk = None
-            next_group_pk = None
-            group_pk_current = None
-
-        days_map = compute_calendar_days(
-            target_operator, company, date_from, date_to,
-        )
-        months = [
-            _build_month_grid(y, m, days_map)
-            for (y, m) in _months_between(date_from, date_to)
-        ]
-
-        return render(request, self.template_name, {
+    if target_operator is None:
+        # Empresa sin ningún CompanyUser activo -- caso límite, nada
+        # que pintar.
+        return {
             "company": company,
             "company_user": cu,
             "active_nav": "vacation_calendar",
             "is_elevated": is_elevated,
             "operators": operators,
-            "target_operator": target_operator,
-            "period_label": period_label,
-            "prev_group_pk": prev_group_pk,
-            "next_group_pk": next_group_pk,
-            "group_pk_current": group_pk_current,
-            "months": months,
-        })
+            "target_operator": None,
+        }
+
+    _group_pk_raw = request.GET.get("group_pk", "").strip()
+    group_pk = int(_group_pk_raw) if _group_pk_raw.isdigit() else None
+    resolved = resolve_period_group_for_calendar(company, group_pk)
+
+    if resolved is not None:
+        group = resolved["group"]
+        date_from = group.start_date
+        date_to = group.end_date or date.today()
+        period_kind = group.status_label
+        _start_m = _MESES_ES[date_from.month]
+        _end_m = _MESES_ES[date_to.month]
+        if date_from.month == date_to.month and date_from.year == date_to.year:
+            period_label = f"{period_kind}: {_start_m} {date_from.year}"
+        elif date_from.year == date_to.year:
+            period_label = (
+                f"{period_kind}: {_start_m} y {_end_m} {date_to.year}"
+            )
+        else:
+            period_label = (
+                f"{period_kind}: {_start_m} {date_from.year} y "
+                f"{_end_m} {date_to.year}"
+            )
+        prev_group_pk = resolved["prev_group_pk"]
+        next_group_pk = resolved["next_group_pk"]
+        group_pk_current = group.pk
+    else:
+        today = date.today()
+        date_from = today.replace(day=1)
+        date_to = _last_day_of_month(today.year, today.month)
+        period_label = f"{_MESES_ES[today.month]} {today.year}"
+        prev_group_pk = None
+        next_group_pk = None
+        group_pk_current = None
+
+    days_map = compute_calendar_days(
+        target_operator, company, date_from, date_to,
+    )
+    months = [
+        _build_month_grid(y, m, days_map)
+        for (y, m) in _months_between(date_from, date_to)
+    ]
+
+    return {
+        "company": company,
+        "company_user": cu,
+        "active_nav": "vacation_calendar",
+        "is_elevated": is_elevated,
+        "operators": operators,
+        "target_operator": target_operator,
+        "period_label": period_label,
+        "prev_group_pk": prev_group_pk,
+        "next_group_pk": next_group_pk,
+        "group_pk_current": group_pk_current,
+        "months": months,
+    }
 
 
 def _parse_iso(value):

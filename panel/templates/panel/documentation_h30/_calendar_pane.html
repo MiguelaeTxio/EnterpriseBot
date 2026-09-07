@@ -1,0 +1,35 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation_h30/_calendar_pane.html #}
+{% comment %}
+H31 (S94). Pestana Calendario del hub de Documentacion -- centraliza
+la visualizacion del calendario (vacaciones, jornadas, ausencias) para
+quien lleva documentacion, sin salir del hub para comprobar el efecto
+de un alta/edicion/baja de VacationPeriod hecha en la pestana
+Vacaciones de al lado. Reutiliza hr_calendar.views.build_calendar_context
+(misma logica real que la pagina completa de Calendario) via
+panel/views_documentation_h30.py -- nunca una copia paralela.
+{% endcomment %}
+{% if is_elevated and operators %}
+<div class="card shadow-sm mb-3">
+    <div class="card-body py-2">
+        <div class="row g-2 align-items-end">
+            <div class="col-auto">
+                <label class="form-label small mb-0">Operario/chófer</label>
+                <select name="operator_pk" class="form-select form-select-sm"
+                        hx-get="{% url 'panel:documentation_calendar_results' %}"
+                        hx-target="#calendar-results"
+                        hx-trigger="change">
+                    {% for op in operators %}
+                        <option value="{{ op.pk }}" {% if op.pk == target_operator.pk %}selected{% endif %}>
+                            {{ op.user.get_full_name|default:op.user.username }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<div id="calendar-results">
+    {% include "panel/documentation_h30/_calendar_results.html" %}
+</div>

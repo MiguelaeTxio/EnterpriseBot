@@ -270,18 +270,24 @@
                     {# Orden alfabético dentro de la sección (a petición de #}
                     {# Miguel Ángel, 2026-07-15). Los gates de cada ítem no #}
                     {# han cambiado, solo el orden.                         #}
-                    {# Calendario -- H24. Aquí para ADMIN/SUPERVISOR/       #}
-                    {# WORKSHOPBOSS (mismo gate que el resto de esta        #}
-                    {# sección, sin guardia propia adicional); para         #}
-                    {# WORKSHOP/DRIVER vive en Mi perfil (mismo enlace,     #}
-                    {# mismo active_nav) -- a petición explícita de Miguel  #}
-                    {# Ángel, 2026-07-15.                                   #}
+                    {# Calendario -- H24. RETIRADO PARA ADMIN EN S94:      #}
+                    {# ahora centralizado como pestaña del hub de          #}
+                    {# Documentación (quien lleva documentación también    #}
+                    {# lleva vacaciones, a petición explícita de Miguel    #}
+                    {# Ángel). Sigue aquí SOLO para SUPERVISOR/            #}
+                    {# WORKSHOPBOSS -- no tienen acceso al hub de          #}
+                    {# Documentación (gate ADMIN/DOCS_SUPERVISOR), así que #}
+                    {# perderían toda vía de acceso si se retirase para    #}
+                    {# ellos también. Para WORKSHOP/DRIVER sigue viviendo  #}
+                    {# en Mi perfil (mismo enlace, mismo active_nav).      #}
+                    {% if company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
                     <li class="nav-item">
                         <a class="nav-link {% if active_nav == 'vacation_calendar' %}active{% endif %}"
                            href="{% url 'hr_calendar:calendar' %}">
                             <i class="bi bi-calendar3"></i>Calendario
                         </a>
                     </li>
+                    {% endif %}
                     <li class="nav-item">
                         <a class="nav-link {% if active_nav == 'absence_categories' %}active{% endif %}"
                            href="{% url 'panel:absence_category_list' %}">

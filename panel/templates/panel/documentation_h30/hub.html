@@ -7,6 +7,23 @@
 {% block extra_head %}
 <style>
     .doc-h30-search { max-width: 400px; }
+
+    /* H31 (S94). Estilos del calendario -- migrados desde
+       hr_calendar/templates/hr_calendar/calendar.html para la
+       pestaña Calendario del hub (los fragmentos htmx no tienen su
+       propio bloque extra_head). */
+    .eb-cal-table { border-collapse: collapse; width: 100%; table-layout: fixed; }
+    .eb-cal-table th { text-align: center; font-size: .75rem; font-weight: 600; color: #6c757d; padding: .25rem; }
+    .eb-cal-table td { text-align: center; vertical-align: middle; height: 2.5rem; border: 1px solid #e9ecef; font-size: .85rem; }
+    .eb-cal-day { position: relative; }
+    .eb-cal-day.eb-today { outline: 2px solid #0d6efd; outline-offset: -2px; }
+    .eb-cal-blue       { background-color: #cfe2ff; }
+    .eb-cal-light_blue { background-color: #e7f1ff; }
+    .eb-cal-green      { background-color: #d1e7dd; }
+    .eb-cal-orange     { background-color: #ffe5d0; }
+    .eb-cal-red        { background-color: #f8d7da; }
+    .eb-cal-yellow     { background-color: #fff3cd; }
+    .eb-cal-legend-swatch { display: inline-block; width: .9rem; height: .9rem; border-radius: 3px; vertical-align: middle; margin-right: .3rem; }
 </style>
 {% endblock %}
 
@@ -42,6 +59,14 @@
             <i class="bi bi-calendar-check me-1"></i>Vacaciones
         </a>
     </li>
+    <li class="nav-item">
+        <a class="nav-link {% if persisted_active_tab == 'calendario' %}active{% endif %}" id="tab-calendario" data-bs-toggle="tab" href="#pane-calendario"
+           hx-get="{% url 'panel:documentation_calendar_tab' %}"
+           hx-target="#pane-calendario"
+           hx-trigger="{% if persisted_active_tab == 'calendario' %}load once{% else %}click once{% endif %}">
+            <i class="bi bi-calendar3 me-1"></i>Calendario
+        </a>
+    </li>
 </ul>
 
 <div class="tab-content">
@@ -58,6 +83,9 @@
         <div class="text-muted small py-3">Cargando…</div>
     </div>
     <div class="tab-pane fade {% if persisted_active_tab == 'vacaciones' %}show active{% endif %}" id="pane-vacaciones">
+        <div class="text-muted small py-3">Cargando…</div>
+    </div>
+    <div class="tab-pane fade {% if persisted_active_tab == 'calendario' %}show active{% endif %}" id="pane-calendario">
         <div class="text-muted small py-3">Cargando…</div>
     </div>
 </div>

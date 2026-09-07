@@ -283,7 +283,7 @@ class DocumentationHubV2View(CompanyUserRequiredMixin, View):
         ).first()
         state = nav_state.state if nav_state and isinstance(nav_state.state, dict) else {}
         active_tab = state.get("active_tab") or "maquinaria"
-        if active_tab not in ("maquinaria", "personal", "epis", "vacaciones"):
+        if active_tab not in ("maquinaria", "personal", "epis", "vacaciones", "calendario"):
             active_tab = "maquinaria"
         filters = state.get("filters") if isinstance(state.get("filters"), dict) else {}
 
@@ -2041,6 +2041,44 @@ class VacationPeriodDeleteFragmentView(SupervisorAccessMixin, View):
         ctx["message_kind"] = message_kind
         return render(
             request, "panel/documentation_h30/_vacation_results.html", ctx,
+        )
+
+
+class CalendarTabFragmentView(CompanyUserRequiredMixin, View):
+    """
+    H31 (S94). Pestaña Calendario del hub de Documentación -- a
+    petición de Miguel Ángel: quien lleva documentación/vacaciones
+    necesita comprobar visualmente el efecto de un alta/edición/baja
+    de VacationPeriod sin salir del hub. Reutiliza
+    hr_calendar.views.build_calendar_context (misma lógica real que
+    la página completa de Calendario, extraída a función compartida
+    en esta misma sesión) -- nunca una copia paralela.
+    """
+
+    def get(self, request):
+        from hr_calendar.views import build_calendar_context
+
+        ctx = build_calendar_context(request)
+        return render(
+            request, "panel/documentation_h30/_calendar_pane.html", ctx,
+        )
+
+
+class CalendarResultsFragmentView(CompanyUserRequiredMixin, View):
+    """
+    H31 (S94). Cambio de operario o navegación de periodo dentro de la
+    pestaña Calendario -- solo repinta el bloque de resultados
+    (selector de navegación de periodo + meses + leyenda), el
+    selector de operario nunca se vuelve a pintar (mismo patrón que el
+    resto de pestañas del hub).
+    """
+
+    def get(self, request):
+        from hr_calendar.views import build_calendar_context
+
+        ctx = build_calendar_context(request)
+        return render(
+            request, "panel/documentation_h30/_calendar_results.html", ctx,
         )
 
 

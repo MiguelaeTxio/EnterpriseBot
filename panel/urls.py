@@ -25,6 +25,8 @@ from panel.views_circulars_h31 import (
 )
 from panel.views_navigation_state import NavigationStateSaveView
 from panel.views_documentation_h30 import (
+    CalendarResultsFragmentView,
+    CalendarTabFragmentView,
     DocumentDeleteView,
     DocumentTypeQuickCreateView,
     DocumentViewView,
@@ -445,6 +447,9 @@ urlpatterns = [
     path("documentacion/vacaciones/crear/", VacationPeriodCreateFragmentView.as_view(), name="documentation_vacation_create"),
     path("documentacion/vacaciones/<int:pk>/editar/", VacationPeriodUpdateFragmentView.as_view(), name="documentation_vacation_update"),
     path("documentacion/vacaciones/<int:pk>/eliminar/", VacationPeriodDeleteFragmentView.as_view(), name="documentation_vacation_delete"),
+    # H31 (S94). Pestaña Calendario htmx del hub -- ver panel/views_documentation_h30.py.
+    path("documentacion/calendario/", CalendarTabFragmentView.as_view(), name="documentation_calendar_tab"),
+    path("documentacion/calendario/resultados/", CalendarResultsFragmentView.as_view(), name="documentation_calendar_results"),
     path("documentacion/<str:domain>/<int:subject_pk>/subir/", SubjectDocumentUploadView.as_view(), name="documentation_upload"),
     # H30 (S51): atajo de alta de tipo documental desde el propio flujo de
     # subida -- ver DocumentTypeQuickCreateView.
