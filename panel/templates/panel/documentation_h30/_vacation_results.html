@@ -1,10 +1,12 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation_h30/_vacation_results.html #}
-{# H31 (S94). Edicion/borrado en linea sin <form> anidado dentro de la
-   tabla (HTML invalido -- un <form> no puede envolver <td>s como hijo
-   directo de <tr>, el navegador reestructura la tabla y rompe el
-   layout). En su lugar, cada boton dispara su propio hx-post con
-   hx-include="closest tr" para recoger los <input> con name= de esa
-   misma fila, sin necesidad de un <form> real. #}
+{% comment %}
+H31 (S94). Edicion/borrado en linea sin <form> anidado dentro de la
+tabla (HTML invalido -- un <form> no puede envolver <td>s como hijo
+directo de <tr>, el navegador reestructura la tabla y rompe el
+layout). En su lugar, cada boton dispara su propio hx-post con
+hx-include="closest tr" para recoger los <input> con name= de esa
+misma fila, sin necesidad de un <form> real.
+{% endcomment %}
 {% if message %}
 <div class="alert alert-{% if message_kind == 'error' %}danger{% else %}success{% endif %} py-2 small" role="alert">
     {{ message }}
