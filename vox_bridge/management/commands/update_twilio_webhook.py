@@ -6,7 +6,7 @@ to point to the currently active ngrok tunnel URL.
 Reads all required credentials from the Django settings environment and the
 active ngrok URL from DOCS/SESSION/NGROK_URL.txt.
 
-Usage (from project root, inside EnterpriseBot_venv):
+Usage (from project root, inside EnterpriseBot_venv_py312):
     python -m dotenv run python manage.py update_twilio_webhook
 ---
 Comando de gestión Django para actualizar el webhook del número de teléfono
@@ -15,7 +15,7 @@ entrante de Twilio para que apunte a la URL activa del túnel ngrok.
 Lee todas las credenciales necesarias del entorno de settings de Django y la
 URL activa de ngrok desde DOCS/SESSION/NGROK_URL.txt.
 
-Uso (desde la raíz del proyecto, dentro de EnterpriseBot_venv):
+Uso (desde la raíz del proyecto, dentro de EnterpriseBot_venv_py312):
     python -m dotenv run python manage.py update_twilio_webhook
 """
 

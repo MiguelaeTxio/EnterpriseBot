@@ -17,8 +17,10 @@
 # ####################################################################
 #
 # El requirements.txt hermano se compila en el workspace del modelo
-# (Linux, Python 3.12), no en PythonAnywhere (Python 3.10.5), así que
-# por la sección 3.4 de com-environment-management no es válido para
+# (Linux, Python 3.12), no en PythonAnywhere (Python 3.12.8, venv
+# EnterpriseBot_venv_py312 -- corregido S94, decía 3.10.5 de memoria
+# de antes de la migración de H32/S93), así que por la sección 3.4 de
+# com-environment-management no es válido para
 # el servidor y viceversa. Son dos entornos distintos, con dos pares
 # de archivos distintos, exactamente como manda la sección 2.1.
 #

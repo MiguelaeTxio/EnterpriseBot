@@ -636,7 +636,15 @@ versión contra `vox_bridge/services.py`.
 - **Log de errores:** `/var/log/enterprisebot-miguelaetxio.pythonanywhere.com.error.log`
 - **Log de servidor:** `/var/log/enterprisebot-miguelaetxio.pythonanywhere.com.server.log`
 
-#### 4.3.1. DEUDA TÉCNICA CON FECHA — Migración de Python 3.10 antes del 4 de octubre de 2026
+#### 4.3.1. MIGRACIÓN DE PYTHON — CERRADA en H32/S93 (antes deuda técnica con fecha)
+
+**CERRADA.** Migrado a Python 3.12.8 (venv `EnterpriseBot_venv_py312`,
+imagen de sistema `innit`) antes del plazo. Ver
+`ENTERPRISEBOT_ATTACHED_MILESTONE_V32.md` sección 3.1 para el detalle
+completo de la ejecución (incidencia real de las tareas Always On,
+comandos usados). Sección conservada aquí solo como referencia
+histórica del origen y los plazos reales -- no queda ninguna acción
+pendiente de este bloque.
 
 **Origen:** el cliente `google-api-core` emite un `FutureWarning` en
 cada invocación avisando de que Google dejará de dar soporte a Python
@@ -661,15 +669,19 @@ concretas:
 **Detalle operativo completo en `com-environment-management` sección
 4.2**, incluida la obligación de **recompilar el candado en el
 intérprete nuevo** (un `requirements.txt` compilado bajo 3.10 no es
-válido para 3.13, sección 3.4 de esa misma skill) y el punto que queda
-pendiente de verificar antes de ejecutar nada: si el comando de
-arranque de las tareas *always-on* (worker de Celery `242133` y puente
-de voz `234987`) referencia el entorno virtual, en cuyo caso hay que
-actualizarlo también. Migrar solo la webapp dejaría los procesos de
-fondo sobre el intérprete antiguo.
+válido para 3.13, sección 3.4 de esa misma skill) -- **incidencia real
+detectada en S94**: el candado regenerado en el servidor durante S93
+nunca se comiteó (`requirements.txt` versionado siguió marcado "Python
+3.10" hasta S94, mismo patrón de defecto encontrado en paralelo en
+CampusStudiOnline), corregido en S94 (commit `01cdb93`).
 
-**Acción pendiente:** ejecutar la migración con margen suficiente antes
-del 4 de octubre de 2026, no en la semana previa.
+El punto que quedaba pendiente de verificar antes de ejecutar la
+migración -- si el comando de arranque de las tareas *always-on*
+(worker de Celery `242133` y puente de voz `234987`) referenciaba el
+entorno virtual -- se confirmó que sí, y ambos se actualizaron y
+verificaron en producción durante S93 (ver anexo H32 sección 3.1,
+incidencia real de contenedores Always On "pegados" al sistema de
+archivos antiguo, resuelta borrando y recreando cada tarea).
 
 #### 4.4. Requisito SINE QUA NON
 
