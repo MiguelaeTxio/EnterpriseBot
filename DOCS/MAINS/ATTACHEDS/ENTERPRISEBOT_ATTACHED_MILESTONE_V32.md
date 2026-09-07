@@ -114,6 +114,46 @@ pocas tablets internas de la empresa, muy por debajo del límite de 20
 dispositivos. Anotado aquí para no tener que reinvestigar esto cuando
 se arranque esa app.
 
+**Si en el futuro esa app SÍ necesitara pasar por Google Play Store**
+(pregunta real de Miguel Ángel en S93, sin necesidad todavía, solo
+dejar la investigación hecha) -- dos rutas reales a evaluar cuando
+llegue el momento, no antes:
+
+1. **Play Store pública (o "en ambos", Play + fuera de Play):**
+   - Cambia el mecanismo de verificación de desarrollador: ya no
+     Android Developer Console/Distribución Limitada, sino el carril
+     de Play Console (mismo que miMoo).
+   - Requeriría verificación de identidad **como organización**
+     (Grupo Álvarez), no como particular -- incluye verificar un
+     sitio web de la organización vía Google Search Console. Trámite
+     bastante más pesado que el de una cuenta personal.
+   - Requeriría una **keystore de release real**, nunca la de debug
+     -- Google Play **rechaza de plano** cualquier APK/AAB firmado
+     con la keystore de debug ("You uploaded an APK or Android App
+     Bundle that was signed in debug mode"), y activar Play App
+     Signing (clave de subida + clave de firma gestionada por
+     Google).
+   - Cuota de 25$ de cuenta de desarrollador, aparte si se publica
+     bajo una cuenta propia de Grupo Álvarez en vez de la personal de
+     Miguel Ángel (ya pagada, ver miMoo).
+
+2. **Managed Google Play / app privada (alternativa probablemente
+   mejor encaje para este caso):** si las tablets están bajo gestión
+   (MDM / Android Enterprise, habitual en flotas corporativas), existe
+   un circuito de catálogo privado visible solo para los dispositivos
+   gestionados de Grupo Álvarez, sin pasar por el Play Store público,
+   sin exposición fuera de la empresa y sin el mismo nivel de
+   escrutinio de una app pública. Evitaría tanto la verificación de
+   identidad de organización como la exposición pública -- y seguiría
+   contando como distribución "fuera de Play público" a efectos de
+   developer verification, con lo que Distribución Limitada seguiría
+   siendo válida para el registro de package name/huella.
+
+**Sin decisión tomada, sin necesidad de tomarla ahora** -- la app
+sigue sin empezar. Cuando arranque el proyecto Kotlin de albaranes,
+esta sección ya tiene el mapa de las dos rutas para no reinvestigar
+desde cero.
+
 **Plazo real, sin presión inmediata:** la aplicación de la
 verificación arranca el 30 de septiembre de 2026 solo para usuarios
 en Brasil, Indonesia, Singapur y Tailandia -- **la Unión Europea
