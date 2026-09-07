@@ -748,8 +748,9 @@ tiene con qué trabajar. **HITO PAUSADO al cierre de esta sesión,
 PCH a H30** -- ver `ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md` para la
 hoja de ruta de la ingesta.
 
-**Pendiente real para cuando H31 se retome** (nada se pierde, solo
-espera a que H30 cierre la ingesta):
+**Pendiente real para cuando H31 se retome, histórico de S77** (nada
+se pierde -- ver la Hoja de Ruta para la Sesión Siguiente al final de
+este anexo para la versión vigente, con criterio de cierre objetivo):
 
 1. Pestaña "Vacaciones" real en el hub de Documentación (CRUD
    completo reescrito a htmx, adaptando
@@ -759,9 +760,13 @@ espera a que H30 cierre la ingesta):
    el enlace "Vacaciones" del sidebar de Administración (gate
    ADMIN/SUPERVISOR) -- "Calendario" (`hr_calendar:calendar`) se
    queda donde está, no se toca.
-2. Bajas médicas (incapacidad temporal) -- decisión pendiente sin
-   resolver todavía (punto 4 de la sección 5.4 de arriba): ¿modelo
-   estructurado nuevo o solo los documentos ya tipados agrupados?
+2. **DECISIÓN TOMADA EN S93** (verbatim Miguel Ángel: *"modelo
+   estructurado, es mejor para esto [...] son documentos prácticamente
+   iguales y van a variar poco con el tiempo, todos tendrán datos
+   parecidos y fácil de captar y trasladar a la BBDD."*): Bajas
+   médicas (incapacidad temporal) se modelan con un modelo
+   estructurado nuevo, no solo agrupando documentos ya tipados. Ver
+   Hoja de Ruta al final del anexo para el punto de trabajo concreto.
 3. Una vez H30 extraiga `issue_date`/`expiry_date` de estos tipos,
    volver a verificar la ficha de Alejandro García Luque (u otra con
    volumen real) para confirmar que el acordeón Laboral/Salud/
@@ -798,3 +803,68 @@ EOF
 *  **Description:** Sesión de continuidad de H31 (Interfaz de Ficha de Personal: EPIs y Notificaciones/Circulares), sobre la petición de Miguel Ángel en el cierre de S76: incluir en la ficha de persona un nuevo acordeón "Laboral" con Dietas, partes de trabajo, vacaciones y bajas (incapacidad temporal por contingencia común y profesional). Se construirá el acordeón con al menos: Dietas como placeholder explícito ("en construcción", sin lógica real todavía, según petición literal de Miguel Ángel); Vacaciones conectado a hr_calendar.VacationPeriod real vía PersonIdentity.company_user, sin duplicar el modelo; Bajas mostrando al menos los documentos ya tipados (PARTE_BAJA_MEDICA) agrupados. Antes de tocar el punto de Partes de trabajo se decidirá con Miguel Ángel el criterio de vinculación (resolución por nombre vs. enlace al explorador filtrado), dado que WorkOrderEntry.worker_name es texto libre sin FK fiable a PersonIdentity. Se confirmará también si el volumen del bloque completo aconseja abrirlo como hito aparte (PCH) o seguir dentro de H31. Criterio de cierre: acordeón Laboral verificado contra BD real de al menos una persona con datos reales en cada sección construida esta sesión.
 
 EOF
+
+---
+
+## COMPLETADAS EN S93
+
+Hito reactivado en esta sesión (PCH desde H32, cerrado en la misma
+sesión -- ver `ENTERPRISEBOT_ANNEX_ROUTER.md`). Sin trabajo de código
+sobre H31 en sí -- el bloque de trabajo de S93 fue íntegramente H32
+(migración Gemini + Python, ver `ENTERPRISEBOT_ATTACHED_MILESTONE_V32.md`)
+más el registro de Android Developer Verification para AperturasAjedrez
+(fuera de este repositorio). Único avance real sobre H31: **decisión de
+producto resuelta** -- Bajas médicas se modelan con un modelo
+estructurado nuevo (ver sección 5.5 arriba, punto 2, cita verbatim de
+Miguel Ángel).
+
+## Hoja de Ruta para la Sesión Siguiente (S94)
+
+Ejecución estrictamente secuencial, sin preguntar por dónde empezar.
+Cada punto lleva su criterio de cierre objetivo.
+
+**Punto 1 -- Modelo estructurado de Bajas médicas (decisión ya
+tomada, ver COMPLETADAS EN S93).** Diseñar y migrar un modelo nuevo
+(app `hr_calendar` o `personal_documents`, a decidir por cercanía de
+dominio -- **verificar `models.py` real de ambas apps en el turno
+actual antes de decidir dónde vive**, directriz 4.14) con al menos:
+fecha de inicio, fecha de alta/fin (nullable, baja en curso), tipo de
+contingencia (`COMUN`, `PROFESIONAL`, `MATERNIDAD_PATERNIDAD`,
+`RIESGO_EMBARAZO_LACTANCIA`, `SALUD_MENSTRUAL_REPRODUCTIVA` -- ver
+investigación real de S76 en sección 5.4, punto 4, categorías LGSS/
+Ministerio de Trabajo), y FK al `PersonIdentity` y al `DocumentIndexEntry`
+de origen (`PARTE_BAJA_MEDICA`) cuando exista. **Criterio de cierre:**
+migración aplicada en producción, `py_compile`/`makemigrations` limpio,
+y al menos un registro real creado a partir de un `PARTE_BAJA_MEDICA`
+existente de una persona con baja real en BD (ver Alejandro García
+Luque u otra ficha con volumen, pk=158 según S77).
+
+**Punto 2 -- Pestaña "Vacaciones" real en el hub de Documentación.**
+CRUD completo reescrito a htmx, adaptando
+`VacationPeriodListView`/`Create`/`Update`/`Delete` de
+`hr_calendar/views.py` (hoy páginas completas con redirect, no htmx).
+Tras construirla, retirar el enlace "Vacaciones" del sidebar de
+Administración (gate ADMIN/SUPERVISOR) -- "Calendario"
+(`hr_calendar:calendar`) se queda donde está, no se toca. **Criterio
+de cierre:** crear/editar/borrar un `VacationPeriod` real desde la
+nueva pestaña htmx sin recargar página completa, verificado contra al
+menos un registro real, y enlace del sidebar retirado.
+
+**Punto 3 -- Verificación real del acordeón Laboral/Salud/Documentación
+contra BD con fechas ya extraídas.** Con el dominio PERSONAL de H30
+cerrado al 100% (S92), volver a abrir la ficha de Alejandro García
+Luque (pk=158) u otra con volumen real y confirmar que el acordeón ya
+solo muestra el documento vigente de cada tipo, con el resto accesible
+vía "Historial" -- no repetir el "galimatías" que pausó el hito en S77
+(3 "Informe de Datos para la Cotización", 3 "Alta (Seguridad
+Social)"...). **Criterio de cierre:** captura o verificación en
+consola confirmando 1 documento vigente por tipo en esa ficha, no 3.
+
+**Punto 4 -- Auditoría del campo `domain` en `DocumentTypeCatalog`**
+(verbatim S73, sección 4.1 de este anexo) -- revisar que todos los
+tipos documentales de `DOC. PERSONAL` tienen `domain` correcto
+(`PERSONAL`/`MACHINE`/`BOTH`/`COMPANY`), corrigiendo caso por caso.
+**Criterio de cierre:** consulta real contra `DocumentTypeCatalog`
+filtrando tipos con `domain` potencialmente incorrecto, devolviendo 0
+tras la corrección, o lista documentada de excepciones aceptadas
+explícitamente por Miguel Ángel.
