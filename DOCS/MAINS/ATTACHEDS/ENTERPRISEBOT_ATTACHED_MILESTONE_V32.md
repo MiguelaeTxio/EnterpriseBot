@@ -72,15 +72,43 @@ red de seguridad no cuesta nada.
 
 ### 2.3. Registro de apps Android en Google Play Console
 
-Correo real de Google (recibido 2026-09-01): desde el 30 de
-septiembre de 2026, las apps Android distribuidas en tiendas
-participantes deben registrar nombre de paquete y firma con identidad
-de desarrollador verificada para poder instalarse en dispositivos
-certificados. **Sin acción posible todavía** -- no existe ninguna app
-Android nativa construida en este proyecto (la app de albaranes para
+⛔ **CORREGIDO EN S93 -- alcance mal acotado en S92.** La redacción
+original de esta sección evaluaba solo si **EnterpriseBot** tenía una
+app Android nativa propia (no la tiene, sigue sin empezar) y concluía
+"sin acción posible" -- pero el correo real de Google
+(`android-developer-console-noreply@google.com`, recibido
+2026-09-01, confirmado por Miguel Ángel en S93 con el texto íntegro)
+no habla de un proyecto concreto: exige registrar **nombre de
+paquete y clave de firma de todas las apps que Miguel Ángel
+distribuye como desarrollador**, verificando su identidad, antes del
+**30 de septiembre de 2026** ("Starting September 30, 2026, Android
+apps from participating stores in select countries must be
+registered to a developer with a verified identity in order to be
+installed on certified Android devices").
+
+**Acción real pendiente, sin relación con el código de EnterpriseBot:**
+Miguel Ángel tiene dos apps Android reales fuera de este proyecto --
+**miMoo** y **AperturasAjedrez** -- que si están distribuidas en
+tiendas participantes necesitan su nombre de paquete y clave de firma
+registrados en el Android Developer Console antes de esa fecha, o
+identidad de desarrollador verificada si no lo está ya.
+
+**Esto no se gestiona desde este repositorio ni desde ninguna skill
+de código** -- es un trámite manual en el navegador, en la cuenta de
+Google de Miguel Ángel (Play Console / Android Developer Console),
+con datos (claves de firma) que solo existen en sus propios keystores
+locales, fuera del alcance de cualquier `git`/Comando S. Seguimiento:
+Miguel Ángel confirma en una próxima sesión si ya completó el
+registro de las dos apps, o si necesita ayuda puntual con algún paso
+concreto (p. ej. extraer la huella SHA de una keystore local para
+pegarla en el formulario del Developer Console, que sí es una tarea
+técnica que se puede ayudar a resolver).
+
+Independientemente de esto, para EnterpriseBot en sí sigue sin haber
+ninguna app Android nativa construida (la app de albaranes para
 tablets de operarios, en Kotlin, offline, sigue solo anotada como
-alcance futuro, sin empezar). Punto informativo del hito hasta que
-haya algo real que registrar.
+alcance futuro, sin empezar) -- ese punto del hito, tal como estaba
+descrito originalmente, sigue siendo correcto y sin acción posible.
 
 ---
 
@@ -208,10 +236,13 @@ la migración del modelo por completamente cerrada. Si todavía no hay
 casos reales disponibles, dejarlo abierto y no bloquear el resto de
 la sesión por ello.
 
-**Punto 2 -- Sin acción sobre Google Play Console** hasta que exista
-una app Android real que registrar (ver sección 2.3) -- no revisar
-este punto en próximas sesiones salvo que Miguel Ángel abra la app de
-albaranes.
+**Punto 2 -- Google Play Console: seguimiento, no acción de código.**
+Ver sección 2.3, corregida en S93 -- preguntar a Miguel Ángel si ya
+registró **miMoo** y **AperturasAjedrez** en el Android Developer
+Console antes del 30 de septiembre de 2026. Solo intervenir si pide
+ayuda con un paso técnico puntual (p. ej. extraer una huella SHA de
+una keystore local); el registro en sí es un trámite manual suyo, no
+un punto de la hoja de ruta de EnterpriseBot.
 
 **Con Puntos 1 y 2 resueltos o parqueados, H32 queda íntegramente
 cerrado** (los tres plazos del objetivo del hito atendidos: Gemini
