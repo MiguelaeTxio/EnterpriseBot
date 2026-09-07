@@ -397,7 +397,7 @@
     {% if company_user.role == 'ADMIN' or company_user.role == 'DOCS_SUPERVISOR' %}
         <li class="nav-item">
             <a class="nav-link {% if active_nav == 'documentation_hub' %}active{% endif %}"
-               href="{% url 'panel:documentation_hub' %}">
+               href="{{ documentation_hub_href }}">
                 <i class="bi bi-folder2-open"></i>Documentación
             </a>
         </li>

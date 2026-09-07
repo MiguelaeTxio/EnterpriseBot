@@ -439,6 +439,30 @@ def _person_list_page(request):
     }
 
 
+def _clear_last_person_pointer(request):
+    """
+    H31 (S94). Limpia last_person_pk de 'documentation_hub' -- se
+    llama al visitar el LISTADO de Personal (PersonalListFragmentView/
+    PersonalResultsFragmentView), nunca la ficha de una persona
+    concreta (PersonalDetailView es quien lo fija). Así el enlace
+    "Documentación" del sidebar deja de apuntar a una ficha concreta
+    en cuanto el usuario vuelve al listado desde dentro de
+    Documentación -- Miguel Ángel, verbatim: "al principio volveré yo
+    cuando desde la propia documentación yo cambie [...] ahí es cuando
+    debe de cambiar."
+    """
+    cu = request.user.company_user
+    nav_state, _created = PanelNavigationState.objects.get_or_create(
+        company_user=cu, screen_key="documentation_hub",
+        defaults={"state": {}},
+    )
+    state = nav_state.state if isinstance(nav_state.state, dict) else {}
+    if state.get("last_person_pk") is not None:
+        state["last_person_pk"] = None
+        nav_state.state = state
+        nav_state.save(update_fields=["state", "updated_at"])
+
+
 class PersonalListFragmentView(CompanyUserRequiredMixin, View):
     """Carga inicial de la pestana Personal (click once) -- formulario
     + resultados envueltos, una unica vez.
@@ -452,6 +476,7 @@ class PersonalListFragmentView(CompanyUserRequiredMixin, View):
     paginación, la barra de acción masiva no se vuelve a pintar."""
 
     def get(self, request):
+        _clear_last_person_pointer(request)
         ctx = _person_list_page(request)
         ctx["epi_items"] = EpiItemCatalog.objects.filter(
             is_active=True,
@@ -469,6 +494,7 @@ class PersonalResultsFragmentView(CompanyUserRequiredMixin, View):
     _personal_search_form.html)."""
 
     def get(self, request):
+        _clear_last_person_pointer(request)
         ctx = _person_list_page(request)
         return render(request, "panel/documentation_h30/_personal_results.html", ctx)
 
@@ -826,32 +852,56 @@ class PersonalWorkdayDetailView(CompanyUserRequiredMixin, View):
 
 class PersonalDetailView(CompanyUserRequiredMixin, View):
     """
-    H31 (S94). main_accordion_open: sección del acordeón principal de
-    la ficha (Datos personales/Laboral/Salud/Documentación/EPIs)
-    persistida en PanelNavigationState (screen_key='personal_ficha'),
-    a petición explícita de Miguel Ángel de cubrir toda la navegación
-    del panel -- misma mecánica que el sidebar y el hub de
-    Documentación (S94), nunca sessionStorage/localStorage. Es una
-    preferencia global (la misma sección se abre por defecto sea cual
-    sea la persona que se visite después), no por persona -- decisión
-    tomada para no complicar el estado con una clave por persona sin
-    que Miguel Ángel lo haya pedido explícitamente así. Los
-    sub-acordeones anidados (Laboral→Docs/Vacaciones/Dietas/Partes,
-    familias dinámicas de documentos/EPIs) quedan fuera de esta
-    primera capa -- ver nota pendiente en el anexo H31.
+    H31 (S94, corregido en la misma sesión tras aclaración explícita
+    de Miguel Ángel). main_accordion_open: sección del acordeón
+    principal de la ficha (Datos personales/Laboral/Salud/
+    Documentación/EPIs) persistida en PanelNavigationState
+    (screen_key='personal_ficha'), por PERSONA (no global) -- cada
+    ficha recuerda su propia última sección abierta, independiente de
+    las demás. Miguel Ángel, verbatim: "si yo busco otra persona,
+    cuando salga a esa persona me tendría que presentar lo primero de
+    esa persona" -- es decir, cada pk tiene su propio puntero.
+
+    Además, visitar esta vista marca 'documentation_hub' (active_tab=
+    'personal', last_person_pk=pk) -- así el enlace "Documentación"
+    del sidebar (ver panel/context_processors.
+    documentation_sidebar_link_context) sabe que hay que volver
+    DIRECTAMENTE a esta ficha concreta, no al listado, hasta que el
+    usuario vuelva al listado de Personal desde dentro de
+    Documentación (PersonalTabFragmentView/PersonalResultsFragmentView
+    limpian last_person_pk al visitarse). Miguel Ángel, verbatim:
+    "cuando yo vuelva a documentación, debe de ponerme por donde
+    estaba [...] al principio volveré yo cuando desde la propia
+    documentación yo cambie [...] me meta en otra pestaña, ahí es
+    cuando debe de cambiar."
     """
 
     def get(self, request, pk):
-        nav_state = PanelNavigationState.objects.filter(
-            company_user=request.user.company_user,
-            screen_key="personal_ficha",
-        ).first()
-        _state = (
-            nav_state.state
-            if nav_state and isinstance(nav_state.state, dict) else {}
+        cu = request.user.company_user
+
+        nav_state, _created = PanelNavigationState.objects.get_or_create(
+            company_user=cu, screen_key="documentation_hub",
+            defaults={"state": {}},
         )
-        main_accordion_open = _state.get(
-            "main_accordion", "collapseDatosPersonales",
+        _hub_state = nav_state.state if isinstance(nav_state.state, dict) else {}
+        _hub_state["active_tab"] = "personal"
+        _hub_state["last_person_pk"] = pk
+        nav_state.state = _hub_state
+        nav_state.save(update_fields=["state", "updated_at"])
+
+        ficha_nav_state = PanelNavigationState.objects.filter(
+            company_user=cu, screen_key="personal_ficha",
+        ).first()
+        _ficha_state = (
+            ficha_nav_state.state
+            if ficha_nav_state and isinstance(ficha_nav_state.state, dict) else {}
+        )
+        _person_accordion = (
+            _ficha_state.get("person_accordion")
+            if isinstance(_ficha_state.get("person_accordion"), dict) else {}
+        )
+        main_accordion_open = _person_accordion.get(
+            str(pk), "collapseDatosPersonales",
         )
         if main_accordion_open not in (
             "collapseDatosPersonales", "collapseLaboralMain",

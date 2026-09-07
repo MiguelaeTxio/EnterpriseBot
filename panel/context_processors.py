@@ -132,3 +132,58 @@ def sidebar_navigation_context(request):
         value = state.get(acc_id, "")
         context[var_name] = value if value in ("open", "closed") else ""
     return context
+
+
+def documentation_sidebar_link_context(request):
+    """
+    H31 (S94). Resuelve a dónde debe llevar el enlace "Documentación"
+    del sidebar -- no siempre al hub. Miguel Ángel, verbatim, tras
+    aclarar el diseño: "cuando yo vuelva a documentación, debe de
+    ponerme por donde estaba [...] al principio volveré yo cuando
+    desde la propia documentación yo cambie [...] me meta en otra
+    pestaña, ahí es cuando debe de cambiar."
+
+    Si el estado guardado de 'documentation_hub' indica que la última
+    pestaña activa era 'personal' Y hay una persona concreta abierta
+    (`last_person_pk`, fijado por PersonalDetailView y limpiado por
+    PersonalListFragmentView/PersonalResultsFragmentView al volver al
+    listado), el enlace apunta DIRECTAMENTE a la ficha de esa persona.
+    En cualquier otro caso (pestaña distinta, o sin persona abierta),
+    apunta al hub de siempre -- que ya restaura la pestaña activa por
+    su cuenta (ver DocumentationHubV2View).
+    """
+    user = getattr(request, "user", None)
+    if user is None or not user.is_authenticated:
+        return {}
+    company_user = getattr(user, "company_user", None)
+    if company_user is None:
+        return {}
+
+    from django.urls import reverse
+
+    from panel.models import PanelNavigationState
+
+    default_href = reverse("panel:documentation_hub")
+
+    nav_state = PanelNavigationState.objects.filter(
+        company_user=company_user, screen_key="documentation_hub",
+    ).first()
+    state = (
+        nav_state.state
+        if nav_state and isinstance(nav_state.state, dict) else {}
+    )
+
+    last_person_pk = state.get("last_person_pk")
+    if state.get("active_tab") == "personal" and last_person_pk:
+        try:
+            return {
+                "documentation_hub_href": reverse(
+                    "panel:documentation_personal_detail", kwargs={"pk": last_person_pk},
+                ),
+            }
+        except Exception:
+            # Persona borrada/pk inválido desde que se guardó -- caer
+            # al hub en vez de reventar el sidebar con un 404.
+            return {"documentation_hub_href": default_href}
+
+    return {"documentation_hub_href": default_href}

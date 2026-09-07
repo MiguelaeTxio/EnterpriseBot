@@ -960,22 +960,27 @@ function getCookie(name) {
 
 <script>
 (function () {
-    // H31 (S94). Persistencia real en BD del acordeón principal de la
-    // ficha (Datos personales/Laboral/Salud/Documentación/EPIs) --
-    // mismo mecanismo que el sidebar y el hub de Documentación
-    // (PanelNavigationState, screen_key='personal_ficha'), nunca
-    // sessionStorage/localStorage. Preferencia global (la misma
-    // sección se abre por defecto para la siguiente persona que se
-    // visite) -- ver docstring de PersonalDetailView.
+    // H31 (S94, corregido en la misma sesión). Persistencia real en
+    // BD del acordeón principal de la ficha (Datos personales/
+    // Laboral/Salud/Documentación/EPIs) -- mismo mecanismo que el
+    // sidebar y el hub de Documentación (PanelNavigationState,
+    // screen_key='personal_ficha'), nunca sessionStorage/localStorage.
+    // POR PERSONA (person_accordion, clave por pk) -- cada ficha
+    // recuerda su propia última sección abierta, independiente de las
+    // demás (corregido tras aclaración explícita de Miguel Ángel:
+    // "si yo busco otra persona, cuando salga a esa persona me
+    // tendría que presentar lo primero de esa persona").
     const csrfMetaPersonal = document.querySelector('meta[name="csrf-token"]');
     const csrfTokenPersonal = csrfMetaPersonal ? csrfMetaPersonal.getAttribute('content') : '';
 
     document.querySelectorAll('#personalMainAccordion > .accordion-item > .accordion-collapse').forEach(function (el) {
         el.addEventListener('shown.bs.collapse', function () {
+            var update = {person_accordion: {}};
+            update.person_accordion['{{ person.pk }}'] = el.id;
             fetch('/panel/navegacion/estado/personal_ficha/', {
                 method: 'POST',
                 headers: {'X-CSRFToken': csrfTokenPersonal, 'Content-Type': 'application/json'},
-                body: JSON.stringify({main_accordion: el.id}),
+                body: JSON.stringify(update),
             });
         });
     });

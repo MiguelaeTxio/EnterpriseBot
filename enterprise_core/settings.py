@@ -158,6 +158,11 @@ TEMPLATES = [
                 # sidebar, sustituye sessionStorage. Ver
                 # panel/context_processors.sidebar_navigation_context.
                 'panel.context_processors.sidebar_navigation_context',
+                # H31 (S94): a dónde lleva el enlace "Documentación"
+                # del sidebar -- al hub o directo a la última ficha de
+                # persona abierta. Ver
+                # panel/context_processors.documentation_sidebar_link_context.
+                'panel.context_processors.documentation_sidebar_link_context',
             ],
         },
     },
