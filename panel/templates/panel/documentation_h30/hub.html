@@ -93,9 +93,25 @@
     // Cambio de pestaña (click del usuario) -- el usuario es el único
     // que puede cambiar la pestaña activa, así que esto solo se
     // dispara con una interacción real, nunca al restaurar el estado.
+    //
+    // CORREGIDO S94 (incidente real reportado por Miguel Ángel):
+    // originalmente escuchaba 'shown.bs.tab' (evento propio del
+    // componente Tab de Bootstrap, disparado tras completar la
+    // transición de panel) -- confirmado con la pestaña Network del
+    // navegador que ese evento NUNCA llegaba a dispararse en este
+    // enlace concreto (interferencia real entre el manejador de clic
+    // de htmx y el de Bootstrap sobre el mismo <a>, ambos con
+    // preventDefault() sobre el mismo evento). Consecuencia real: el
+    // filtro de cada pestaña sí se guardaba (vía htmx:afterRequest,
+    // más abajo), pero active_tab se quedaba congelado en el último
+    // valor guardado con éxito -- documentación siempre reabría en
+    // esa pestaña, nunca en la que el usuario había dejado activa de
+    // verdad. Sustituido por un listener de 'click' nativo -- se
+    // dispara siempre, sin depender de que la maquinaria interna de
+    // Bootstrap complete su propio ciclo de eventos.
     document.querySelectorAll('#docH30Tabs a[data-bs-toggle="tab"]').forEach(function (tabLink) {
-        tabLink.addEventListener('shown.bs.tab', function (ev) {
-            const tabKey = ev.target.id.replace('tab-', '');
+        tabLink.addEventListener('click', function (ev) {
+            const tabKey = ev.currentTarget.id.replace('tab-', '');
             saveState({active_tab: tabKey});
         });
     });
