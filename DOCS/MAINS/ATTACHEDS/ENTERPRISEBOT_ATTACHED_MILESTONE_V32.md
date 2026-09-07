@@ -43,6 +43,13 @@ de avería real por WhatsApp).
 
 ### 2.2. Migración de versión de Python en PythonAnywhere
 
+**CERRADA en S93, ejecutada de principio a fin en la misma sesión** en
+la que se investigó (no quedó para S94 como estaba previsto -- hubo
+tiempo real de sobra tras cerrar el bloque Gemini). Ver sección
+"COMPLETADAS EN S93" para el detalle completo, la incidencia real de
+las tareas Always On, y los comandos ejecutados. Sección conservada
+aquí solo como referencia de los plazos y la decisión de versión:
+
 `google.api_core` deja de dar soporte a Python 3.10 a partir del **4
 de octubre de 2026** (correo real de Google/PythonAnywhere ya
 recibido por Miguel Ángel, con el detalle) -- confirmado también en
@@ -50,49 +57,18 @@ línea en S93 (issue real de `googleapis/google-cloud-python`, aviso
 `FutureWarning` de `google.api_core._python_version_support` citando
 la misma fecha 2026-10-04 y recomendando mínimo Python 3.11).
 
-**Investigación S93 (Punto 4 de la hoja de ruta, verificada en línea,
-no de memoria):**
-- **PythonAnywhere:** desde 2025-03-25, las cuentas nuevas tienen
-  disponibles Python 3.11, 3.12 y 3.13 sobre la imagen de sistema
-  nueva ("innit", Ubuntu 22.04). Las cuentas anteriores a esa fecha
-  siguen en la imagen antigua salvo que se pida el cambio manual
-  (`help.pythonanywhere.com/pages/ChangingSystemImage`) -- **sin
-  confirmar todavía si la cuenta de Miguel Ángel ya está en "innit"**,
-  pendiente del Comando S entregado en S93.
-- **`google-genai`:** soporta Python 3.10 a 3.14 sin restricción
-  (verificado en PyPI, release 2.22.0, 2026-09-02).
-- **`google-cloud-aiplatform`** (dependencia transitiva de Vertex AI):
-  requiere Python >= 3.10, sin límite superior confirmado.
-- **Django 5.2:** compatible con 3.10-3.13 (conocido, sin necesidad de
-  reverificar).
+**Versión objetivo elegida y ya en producción: Python 3.12.8**, sobre
+la imagen de sistema `innit` (Ubuntu 22.04). Cuenta migrada desde la
+imagen `haggis` (Ubuntu 20.04, máximo 3.10) -- ver incidencia real de
+S93 sobre la disponibilidad de versiones según imagen de sistema,
+documentada en `com-environment-management` sección 4.2.
 
-**Objetivo recomendado: Python 3.12.** Dentro del rango soportado por
-PythonAnywhere/innit, por `google-genai`/`google-cloud-aiplatform`, y
-por Django 5.2 -- con un margen de una versión completa sobre el
-mínimo 3.11 que exige `google.api_core`, sin ser la más reciente
-(3.13), que podría tener fricción de compatibilidad más nueva y menos
-probada en el ecosistema de dependencias del proyecto.
-
-**Plan concreto (no ejecutado todavía, pendiente de confirmar imagen
-de sistema real de la cuenta):**
-1. Confirmar con Miguel Ángel (Comando S de S93) si la cuenta ya está
-   en la imagen "innit" o si hace falta pedir el cambio de imagen
-   desde el dashboard de PythonAnywhere primero.
-2. Crear un virtualenv nuevo (`EnterpriseBot_venv_py312` o
-   equivalente) con Python 3.12, en paralelo al venv actual -- nunca
-   sobrescribir el venv en producción directamente.
-3. `pip-sync` del `requirements.txt` real del proyecto sobre el venv
-   nuevo, y revisar uno a uno los paquetes que fallen (candidatos de
-   riesgo: dependencias con extensiones C compiladas, si las hubiera --
-   pendiente de verificar contra el `requirements.txt` real, no
-   asumido de memoria).
-4. Cambiar el intérprete del virtualenv en la configuración de la web
-   app de PythonAnywhere (pestaña "Web" → "Virtualenv") solo cuando el
-   punto 3 esté verde, y con una ventana de reload controlada, no en
-   caliente sin aviso.
-5. Verificar en producción con datos reales tras el cambio -- misma
-   filosofía que Punto 3 del bloque Gemini: no dar por cerrada la
-   migración solo por ausencia de errores en el reload.
+**Pendiente real, menor, sin fecha límite:** el venv antiguo
+`EnterpriseBot_venv` (Python 3.10.5) sigue existiendo en el servidor,
+ya sin ningún proceso apuntándolo (webapp, bridge de voz y worker
+Celery migrados). Se puede borrar con `rmvirtualenv EnterpriseBot_venv`
+en cualquier momento futuro sin urgencia -- conservarlo unos días como
+red de seguridad no cuesta nada.
 
 ### 2.3. Registro de apps Android en Google Play Console
 
@@ -149,11 +125,69 @@ deuda como pendiente, actualizados en el mismo bloque
 "Deploy EnterpriseBot to PythonAnywhere" en `success` (sin migración
 de modelo Django en este bloque, conclusion suficiente).
 
-**Punto 4 -- Investigación de versión de Python completada, plan
-dejado en sección 2.2** (no ejecutado). Objetivo recomendado: Python
-3.12. Pendiente de un dato real de la cuenta de Miguel Ángel (imagen
-de sistema activa) antes de ejecutar nada -- Comando S entregado en
-S93, resultado todavía no recibido al cierre de esta sesión.
+**Punto 4 -- CERRADO en la misma sesión, ejecución completa.**
+Investigación (versión objetivo 3.12) más ejecución real de principio
+a fin, sin quedar para S94:
+
+1. Confirmado con Comando S que la cuenta estaba en imagen `haggis`
+   (Ubuntu 20.04, Python 3.6-3.10) -- descartó de raíz el atajo que
+   sugería la skill `com-environment-management` (mkvirtualenv directo
+   sin cambiar de imagen), verificado como falso para esta cuenta con
+   una prueba real (`RuntimeError: failed to find interpreter for
+   python3.12`). Skill corregida en el propio turno.
+2. Miguel Ángel cambió la imagen de sistema a `innit` (Ubuntu 22.04)
+   desde el dashboard -- acción de navegador, autoservicio. Confirmado
+   con Comando S: `/usr/bin/python3.12` disponible tras el cambio.
+3. `pip freeze` de referencia del venv antiguo guardado como red de
+   seguridad antes del cambio (`EnterpriseBot_003_GET.txt`).
+4. `mkvirtualenv EnterpriseBot_venv_py312 --python=python3.12`,
+   `pip-tools` instalado, `pip-compile requirements.in` regenerado en
+   el intérprete nuevo. Comprobación de coherencia `.in`/`.txt`
+   (`com-environment-management` sección 7.3) limpia antes de
+   `pip-sync` -- 31 declaradas, 142 fijadas, ninguna faltante.
+5. `pip-sync requirements.txt` limpio. Verificado explícitamente que
+   los paquetes con extensión C compilada (`mysqlclient`, `PyMuPDF`,
+   `pymupdf4llm`, `onnxruntime`, `weasyprint`) importan sin error en
+   3.12 -- no solo que `pip-sync` terminara sin fallos.
+6. Webapp: cambiado el campo "Virtualenv" y la versión de Python de la
+   pestaña "Web" (dos ajustes independientes, hay que igualar los
+   dos). Verificado con datos reales, no con ausencia de errores:
+   `server.log` mostró `Python version: 3.12.8` y `PEP 405 virtualenv
+   detected: EnterpriseBot_venv_py312` en el arranque de los 3 workers
+   uWSGI tras el reload.
+7. **Incidencia real -- tareas Always On con contenedor "pegado" al
+   sistema de archivos antiguo tras el cambio de imagen.** Tanto el
+   bridge de voz como el worker Celery, tras editar su comando/script
+   para apuntar al venv nuevo y pararlos/arrancarlos desde el
+   dashboard, siguieron fallando en bucle real (`bash: .../bin/python:
+   No such file or directory` / `exec: python: not found`) durante más
+   de 15 minutos, **pese a que el mismo binario, en la misma ruta,
+   funcionaba sin problema desde una consola Bash nueva y desde la
+   propia webapp** (confirmado en paralelo). La solución real, no
+   documentada en ningún sitio oficial de PythonAnywhere que se haya
+   encontrado, fue **borrar la tarea Always On por completo y
+   recrearla desde cero** con el mismo comando -- parar/arrancar o
+   solo editar el comando no basta, el contenedor de la tarea necesita
+   reaprovisionarse. Regla derivada para cualquier migración futura de
+   imagen de sistema: si una tarea Always On sigue fallando con un
+   binario que se ha verificado real y funcional, borrar y recrear la
+   tarea antes de escalar a soporte.
+8. `start_celery_worker.sh` corregido (línea `source .../activate`
+   apuntando al venv nuevo), commit `7ae950f`. Bridge de voz: comando
+   de la tarea editado directamente en el dashboard (no hay archivo de
+   código que lo referencie). Script de inicio de consola
+   (`SYSTEM_DOCS/CONSOLE_INIT_COMMAND_ENTERPRISEBOT.md`, fuera del
+   repositorio Git) también corregido con `sed`, mismo criterio.
+9. Verificación final con datos reales, no con silencio del log: el
+   `bridge.log` mostró `[READY] Puente HÍBRIDO (aiohttp) activo en
+   puerto 8081` sin error tras el reinicio, y el log del worker Celery
+   mostró el árbol de 18 tareas registradas, Beat disparando el
+   schedule, y la ruta `EnterpriseBot_venv_py312` en el único warning
+   real (`DuplicateNodenameWarning`, de un worker de otro proyecto
+   compartiendo el mismo broker Redis, no relevante aquí).
+
+**Pendiente real, menor, sin fecha límite:** borrar el venv antiguo
+`EnterpriseBot_venv` cuando Miguel Ángel lo considere oportuno.
 
 **Punto 3 -- Sin cerrar, requiere acción de Miguel Ángel** fuera del
 alcance de esta sesión de chat: generar un caso real de Vision (parte
@@ -167,27 +201,22 @@ activo tras el despliegue del Punto 2.
 
 Ejecución estrictamente secuencial, sin preguntar por dónde empezar.
 
-**Punto 1 -- Cerrar el Comando S de Python pendiente de S93.** Leer
-el resultado real de `EnterpriseBot_001_GET.txt` (intérpretes
-disponibles, versión del venv actual, imagen de sistema) antes de
-decidir nada del plan de migración de la sección 2.2 -- no asumir que
-la cuenta ya está en "innit" sin la confirmación real.
-
-**Punto 2 -- Validar el Punto 3 del bloque Gemini** (sección 2.1) si
+**Punto 1 -- Validar el Punto 3 del bloque Gemini** (sección 2.1) si
 Miguel Ángel ya generó los casos reales de Vision/texto -- confirmar
 formato de respuesta de `gemini-3.5-flash` en producción antes de dar
 la migración del modelo por completamente cerrada. Si todavía no hay
 casos reales disponibles, dejarlo abierto y no bloquear el resto de
 la sesión por ello.
 
-**Punto 3 -- Ejecutar el plan de migración de Python** (sección 2.2,
-pasos 2-5) si el Punto 1 de esta hoja de ruta confirma que la cuenta
-está en imagen "innit" (o una vez completado el cambio de imagen si
-no lo estaba). Crear venv nuevo con Python 3.12, `pip-sync` del
-`requirements.txt` real, y no cambiar el intérprete de la web app en
-producción hasta que ese venv esté verde.
-
-**Punto 4 -- Sin acción sobre Google Play Console** hasta que exista
+**Punto 2 -- Sin acción sobre Google Play Console** hasta que exista
 una app Android real que registrar (ver sección 2.3) -- no revisar
 este punto en próximas sesiones salvo que Miguel Ángel abra la app de
 albaranes.
+
+**Con Puntos 1 y 2 resueltos o parqueados, H32 queda íntegramente
+cerrado** (los tres plazos del objetivo del hito atendidos: Gemini
+migrado y desplegado, Python migrado y verificado en los tres procesos
+de producción, Google Play sin acción posible todavía). Momento de
+proponer a Miguel Ángel retomar H30 (dominio MÁQUINAS, pausado desde
+S92) o H31 (Interfaz de Ficha de Personal, pausado desde S77) como
+siguiente hito EN PROGRESO -- ver PCH.
