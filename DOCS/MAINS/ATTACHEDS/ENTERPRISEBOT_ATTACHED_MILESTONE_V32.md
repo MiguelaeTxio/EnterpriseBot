@@ -72,43 +72,62 @@ red de seguridad no cuesta nada.
 
 ### 2.3. Registro de apps Android en Google Play Console
 
-⛔ **CORREGIDO EN S93 -- alcance mal acotado en S92.** La redacción
-original de esta sección evaluaba solo si **EnterpriseBot** tenía una
-app Android nativa propia (no la tiene, sigue sin empezar) y concluía
+⛔ **CORREGIDO EN S93 (dos veces) -- alcance y mecanismo mal
+identificados en S92 y en la primera corrección de S93.**
+
+**Primer error (S92):** la sección original evaluaba solo si
+EnterpriseBot tenía una app Android propia (no la tiene) y concluía
 "sin acción posible" -- pero el correo real de Google
 (`android-developer-console-noreply@google.com`, recibido
-2026-09-01, confirmado por Miguel Ángel en S93 con el texto íntegro)
-no habla de un proyecto concreto: exige registrar **nombre de
-paquete y clave de firma de todas las apps que Miguel Ángel
-distribuye como desarrollador**, verificando su identidad, antes del
-**30 de septiembre de 2026** ("Starting September 30, 2026, Android
-apps from participating stores in select countries must be
-registered to a developer with a verified identity in order to be
-installed on certified Android devices").
+2026-09-01) no habla de un proyecto concreto, sino de **todas las
+apps que Miguel Ángel distribuye como desarrollador**. Corregido para
+señalar dos apps reales de Miguel Ángel fuera de este repositorio:
+**miMoo** y **AperturasAjedrez**.
 
-**Acción real pendiente, sin relación con el código de EnterpriseBot:**
-Miguel Ángel tiene dos apps Android reales fuera de este proyecto --
-**miMoo** y **AperturasAjedrez** -- que si están distribuidas en
-tiendas participantes necesitan su nombre de paquete y clave de firma
-registrados en el Android Developer Console antes de esa fecha, o
-identidad de desarrollador verificada si no lo está ya.
+**Segundo error (misma sesión, corregido tras confirmación explícita
+de Miguel Ángel):** ni miMoo ni AperturasAjedrez se distribuyen por
+Google Play Store, y la futura app de EnterpriseBot (albaranes,
+tablets de Grupo Álvarez) tampoco se distribuirá por ahí. Esto
+descarta por completo la auto-registración vía Play Console (que solo
+aplica a apps publicadas en Play) -- el mecanismo real es la
+**Android Developer Console independiente**
+(`android.google.com/developerconsole`, no Play Console), verificado
+contra `developer.android.com/developer-verification/guides` en
+línea en S93.
 
-**Esto no se gestiona desde este repositorio ni desde ninguna skill
-de código** -- es un trámite manual en el navegador, en la cuenta de
-Google de Miguel Ángel (Play Console / Android Developer Console),
-con datos (claves de firma) que solo existen en sus propios keystores
-locales, fuera del alcance de cualquier `git`/Comando S. Seguimiento:
-Miguel Ángel confirma en una próxima sesión si ya completó el
-registro de las dos apps, o si necesita ayuda puntual con algún paso
-concreto (p. ej. extraer la huella SHA de una keystore local para
-pegarla en el formulario del Developer Console, que sí es una tarea
-técnica que se puede ayudar a resolver).
+**Tabla de decisión real (verificada en línea, no de memoria):**
 
-Independientemente de esto, para EnterpriseBot en sí sigue sin haber
-ninguna app Android nativa construida (la app de albaranes para
-tablets de operarios, en Kotlin, offline, sigue solo anotada como
-alcance futuro, sin empezar) -- ese punto del hito, tal como estaba
-descrito originalmente, sigue siendo correcto y sin acción posible.
+| | Distribución completa | Distribución limitada | Sideload sin registrar |
+|---|---|---|---|
+| Verificación de identidad | Sí | **No** | No |
+| Alcance | Cualquier canal | **Hasta 20 dispositivos** | Cualquier canal, con avisos extra |
+| Para quién | Organizaciones/profesionales con distribución amplia | **Estudiantes, hobbistas, uso personal** | Desarrolladores no verificados |
+
+**Decisión para las apps personales de Miguel Ángel (miMoo,
+AperturasAjedrez):** encajan en **Distribución Limitada** -- gratis,
+sin verificación de identidad, hasta 20 dispositivos.
+
+**Decisión para la futura app de EnterpriseBot** (albaranes, tablets
+de Grupo Álvarez, todavía sin empezar): **Distribución Limitada
+también es la opción correcta** cuando llegue el momento -- unas
+pocas tablets internas de la empresa, muy por debajo del límite de 20
+dispositivos. Anotado aquí para no tener que reinvestigar esto cuando
+se arranque esa app.
+
+**Plazo real, sin presión inmediata:** la aplicación de la
+verificación arranca el 30 de septiembre de 2026 solo para usuarios
+en Brasil, Indonesia, Singapur y Tailandia -- **la Unión Europea
+queda excluida de esta oleada** (confirmado en la propia guía
+oficial). El rollout global llega en 2027 y sucesivos, sin fecha
+concreta todavía. Sin urgencia real salvo que alguna de las dos apps
+personales tenga usuarios en esos cuatro países.
+
+**Fuera del alcance de este repositorio y de cualquier skill de
+código** -- es un trámite manual de Miguel Ángel en el navegador
+(Android Developer Console), con datos (huellas SHA-256 de sus
+propias claves de firma) que solo existen en sus keystores locales.
+Seguimiento en sesión futura si pide ayuda con un paso técnico
+puntual.
 
 ---
 
