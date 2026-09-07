@@ -12,7 +12,10 @@
 - **SERVER_ROOT**: {GEN_SERVER_ROOT}{APP_SERVER_ROOT}
 - **LOCAL_SWAP**: SWAP/
 - **LOCAL_VENV**: "N/A - Remote Server Development"
-- **SERVER_VENV**: EnterpriseBot_venv
+- **SERVER_VENV**: EnterpriseBot_venv_py312 (corregido S94 -- migrado
+  desde `EnterpriseBot_venv` en H32/S93, ruta antigua ya no existe en
+  el servidor, ver `ENTERPRISEBOT_ATTACHED_MILESTONE_V32.md` sección
+  3.1)
 - **SFTP_CONNECTION**: MiguelAeTxio@ssh.pythonanywhere.com:PROJECTS/EnterpriseBot
 - **DB_NAME**: MiguelAeTxio$enterprisebot
 - **PROJECT_MASTER_DOC_PATH**: /home/MiguelAeTxio/PROJECTS/EnterpriseBot/DOCS/MAINS/ENTERPRISEBOT_MASTER_DOCUMENT.md

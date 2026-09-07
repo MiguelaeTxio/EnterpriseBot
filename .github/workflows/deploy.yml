@@ -47,6 +47,18 @@ jobs:
         # vuelca la lista de archivos cambiados entre marcadores
         # (CHANGED_FILES_START/END) -- el step siguiente la usa para
         # decidir si reiniciar el bridge de voz y/o el worker Celery.
+        # BUGFIX S94 (2026-09-07): la migración de venv de H32/S93
+        # (Python 3.10 -> 3.12, EnterpriseBot_venv ->
+        # EnterpriseBot_venv_py312) actualizó start_celery_worker.sh
+        # (commit 7ae950f) pero dejó este workflow apuntando al venv
+        # antiguo -- desde entonces TODO despliegue automático fallaba
+        # en este mismo paso con ModuleNotFoundError (celery y
+        # cualquier otra dependencia instalada solo en el venv nuevo),
+        # detectado al desplegar hr_calendar.MedicalLeavePeriod (H31,
+        # S94) y confirmado con Comando S real
+        # (EnterpriseBot_002_GET.txt / EnterpriseBot_003_GET.txt: la
+        # ruta antigua ya no existe, `ls .virtualenvs` solo lista
+        # EnterpriseBot_venv_py312).
         run: |
           set -o pipefail
           ssh -i ~/.ssh/pa_deploy_key MiguelAeTxio@ssh.pythonanywhere.com '
@@ -56,7 +68,7 @@ jobs:
             echo "--- git pull ---"
             git pull origin main
             NEW_HEAD=$(git rev-parse HEAD)
-            source /home/MiguelAeTxio/.virtualenvs/EnterpriseBot_venv/bin/activate
+            source /home/MiguelAeTxio/.virtualenvs/EnterpriseBot_venv_py312/bin/activate
             echo "--- migrate ---"
             python -m dotenv run python manage.py migrate --noinput
             echo "--- collectstatic ---"

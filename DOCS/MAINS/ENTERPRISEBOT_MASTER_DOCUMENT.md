@@ -58,7 +58,9 @@ app de dominio.
 
 ### 2. Arquitectura Técnica (Pivotaje Estratégico a Multimodal Live API)
 
-- **Entorno Virtual:** EnterpriseBot_venv (Python 3.10)
+- **Entorno Virtual:** EnterpriseBot_venv_py312 (Python 3.12.8 --
+  migrado desde EnterpriseBot_venv/Python 3.10 en H32/S93, corregido
+  aquí en S94)
 - **Framework Base:** Django (Configurado para gestión de WebSockets y tareas asíncronas)
 - **Motor de IA (ESTÁNDAR OBLIGATORIO):** `gemini-live-2.5-flash-native-audio`
   vía Vertex AI (Live API). Migrado desde `gemini-3.1-flash-live-preview`
@@ -624,8 +626,10 @@ versión contra `vox_bridge/services.py`.
 - **Framework:** Django `5.2.12`
 - **Servidor async:** aiohttp `3.13.5` — puerto `8081`
 - **Túnel:** ngrok v3 — API local en puerto `4041`
-- **Entorno:** PythonAnywhere WSGI — Python `3.10.5`
-- **Entorno virtual:** `EnterpriseBot_venv`
+- **Entorno:** PythonAnywhere WSGI — Python `3.12.8` (imagen `innit`,
+  migrado desde `3.10.5`/imagen `haggis` en H32/S93)
+- **Entorno virtual:** `EnterpriseBot_venv_py312` (corregido S94 --
+  ver `SESSION_VARIABLES.md`)
 - **Base de datos:** MySQL — `MiguelAeTxio$enterprisebot`
 - **Gestión de dependencias:** `pip-tools` (requirements.in → requirements.txt)
 - **Log de acceso:** `/var/log/enterprisebot-miguelaetxio.pythonanywhere.com.access.log`
