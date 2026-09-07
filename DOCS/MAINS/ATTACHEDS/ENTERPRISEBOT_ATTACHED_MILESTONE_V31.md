@@ -982,3 +982,110 @@ qué ocurre exactamente con los datos históricos de un trabajador dado
 de baja (se conservan siempre, nunca se borran -- coherente con el
 resto del proyecto, pero falta decidir la interfaz).
 
+---
+
+## Diseño cerrado en S94 para el Punto 5 -- acuse de recibo real (firma electrónica), Fase 1 WhatsApp
+
+Sesión de diseño completa con Miguel Ángel, S94 (conversación de
+planificación general). Investigación legal ya hecha (eIDAS + Ley
+6/2020, ver Punto 5 más arriba) y diseño técnico verificado contra la
+documentación real de Twilio (`web_search`, directriz 4.4) antes de
+escribir esto -- no de memoria.
+
+**Decisión de fondo:** `DocumentAcknowledgment` no se duplica en una
+tabla nueva -- se extiende con dos campos nuevos (`confirmed_at`
+nulo, `confirmation_channel`). El registro ya existente en el
+momento del envío (creado por el supervisor) sigue siendo la prueba
+de "se envió"; los dos campos nuevos, rellenados solo cuando el
+trabajador confirma de verdad, son la prueba de "lo recibió y lo
+aceptó" -- dos hechos legales distintos, cada uno con su propia marca
+de tiempo, nunca mezclados en un único campo.
+
+**Organización de la UI, para no perderse (bloqueo real de Miguel
+Ángel en la conversación de diseño):** nunca una sección nueva de
+"Documentación" dentro de Taller. Fase 1 (esta) es pura WhatsApp, sin
+UI de panel. Fase 2 (futura, no bloqueante) será un widget "Documentos
+pendientes de confirmar" dentro de **Mi perfil** (donde ya viven
+Calendario/Mi estado para WORKSHOP/DRIVER) -- nunca un hub nuevo.
+
+### Plantilla WhatsApp nueva -- `document_confirmation`
+
+Mismo patrón exacto que `whatsapp/management/commands/
+create_epi_delivery_whatsapp_template.py` (S74) -- Content API de
+Twilio vía `requests` crudo (issue real y confirmado del SDK,
+`twilio-python#881`, ver ese comando para el detalle), nunca
+`client.content.v1.contents.create()`.
+
+- **Tipo de contenido:** `twilio/quick-reply` (no `twilio/text` --
+  verificado en S94 contra la documentación real de Twilio: hasta 5
+  botones `QUICK_REPLY`, cada uno con `title` visible (máx. 20
+  caracteres) e `id` no visible (máx. 200 caracteres, admite
+  variable, vuelve como `ButtonPayload` en el webhook de entrada
+  cuando se pulsa).
+- **Restricción real de Meta a respetar en el cuerpo** (verificada en
+  S94): el cuerpo no puede empezar ni terminar en variable, ni tener
+  dos variables seguidas -- si no, Meta rechaza la plantilla.
+- **Cuerpo propuesto** (ajustar longitud/tono al redactar el comando
+  real): "Hola {{1}}. Se le ha enviado la comunicación: {{2}}, con
+  fecha {{3}}. Por favor, confirme que la ha recibido y leído."
+- **Botón único:** `title="He recibido"`, `id="confirm_doc_ack_{{4}}"`
+  -- `{{4}}` lleva el pk real del `DocumentAcknowledgment` a confirmar,
+  distinto en cada envío real (nunca un id fijo).
+- **Categoría:** UTILITY, misma coletilla de opt-out ya aprobada
+  reutilizada literalmente (mismo criterio que S74).
+
+### Hoja de ruta para la sesión siguiente
+
+Ejecución estrictamente secuencial, sin preguntar por dónde empezar
+(directriz 4.16). Cada punto lleva su criterio de cierre objetivo.
+
+**Punto 1 -- Migración de `DocumentAcknowledgment`.** Añadir
+`confirmed_at` (DateTimeField, null=True, blank=True, "Fecha de
+confirmación real por el trabajador") y `confirmation_channel`
+(CharField, choices `WHATSAPP`/`PANEL`, blank=True) --
+**verificar `models.py` real en el turno de esa sesión antes de
+escribir la migración**, directriz 4.14, sin excepción aunque ya se
+conozcan los campos actuales por esta sesión de diseño (pudo cambiar
+algo entre medias). **Criterio de cierre:** migración aplicada en
+producción, `py_compile` limpio, verificado con `showmigrations`.
+
+**Punto 2 -- Comando de gestión `create_document_confirmation_
+whatsapp_template.py`.** Mismo patrón exacto que
+`create_epi_delivery_whatsapp_template.py` (copiar su estructura, no
+reinventarla), con el cuerpo/botón de la sección de arriba. **Este
+comando lo ejecuta Miguel Ángel en su propia consola** -- el modelo no
+tiene las claves reales de Twilio. **Criterio de cierre:** plantilla
+creada en Twilio (content_sid real), sometida a aprobación de Meta,
+`WhatsAppTemplate` registrado en BD.
+
+**Punto 3 -- Disparo del WhatsApp al enviar notificación/circular.**
+Extender `PersonalNotificationSendView`/`PersonalNotificationMassSendView`
+(y su función compartida `_build_notification_eml`, o donde
+corresponda tras verificar el código real de esa sesión) para, además
+de generar el `.eml` ya existente, enviar el WhatsApp
+`document_confirmation` con el pk real del `DocumentAcknowledgment`
+recién creado en `{{4}}`. No bloqueante -- un fallo de WhatsApp nunca
+revierte el envío del `.eml` ya comprometido (mismo criterio que la
+confirmación de entrega de EPI, S74). **Criterio de cierre:** envío
+real de prueba verificado (mensaje real recibido con botón, o
+constancia de que Meta todavía no ha aprobado la plantilla si ese es
+el estado en ese momento).
+
+**Punto 4 -- Intercepción de `ButtonPayload` en el webhook.** En
+`whatsapp/views.py`, mismo patrón exacto que el intercept ya real de
+`opt_in`/`opt_out` (Hito 13, Paso 10, línea ~272 a fecha de S94 --
+verificar línea real en la sesión) -- interceptar
+`ButtonPayload` con prefijo `confirm_doc_ack_`, extraer el pk,
+`DocumentAcknowledgment.objects.filter(pk=...).update(confirmed_at=
+timezone.now(), confirmation_channel='WHATSAPP')`, devolver HTTP 200
+de inmediato, antes de que llegue al resto del pipeline (dispatcher
+IRC, chatbot). **Criterio de cierre:** confirmación real de un
+`DocumentAcknowledgment` de prueba verificada contra BD tras pulsar el
+botón real desde un teléfono real.
+
+**Fuera de alcance de esta hoja de ruta, documentado para más
+adelante:** Fase 2 (widget "Documentos pendientes de confirmar" en Mi
+perfil, para quien tiene cuenta de panel) -- no bloqueante, mismo
+campo `confirmed_at`/`confirmation_channel` ya construido en la Fase 1,
+solo cambia el canal de origen.
+
