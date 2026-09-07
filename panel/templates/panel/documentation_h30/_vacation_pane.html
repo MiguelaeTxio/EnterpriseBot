@@ -13,11 +13,12 @@ dominio compartida (hr_calendar.services.create/update/delete_vacation_period).
               class="mb-4">
             <div class="mb-2 position-relative">
                 <label class="form-label small">Trabajador (nombre o DNI)</label>
-                <input type="text" id="vacation-person-input" name="q" class="form-control form-control-sm"
+                <input type="text" id="vacation-person-input" name="vacation_person_query" class="form-control form-control-sm"
                        placeholder="Escribe para buscar…" autocomplete="off" required
                        hx-get="{% url 'panel:documentation_vacation_person_autocomplete' %}"
                        hx-trigger="keyup changed delay:300ms"
                        hx-target="#vacation-person-options"
+                       hx-vals='js:{"q": document.getElementById("vacation-person-input").value}'
                        hx-on:keyup="document.getElementById('vacation-person-pk').value=''">
                 <input type="hidden" name="person_pk" id="vacation-person-pk">
                 <div id="vacation-person-options"></div>
