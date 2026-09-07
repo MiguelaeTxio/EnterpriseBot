@@ -10,7 +10,9 @@
 set -e
 
 # Activar entorno virtual / Activate virtual environment
-source /home/MiguelAeTxio/.virtualenvs/EnterpriseBot_venv/bin/activate
+# Migrado a Python 3.12 en S93/H32 (imagen de sistema "innit") -- ver
+# com-environment-management sección 4.2 para el detalle completo.
+source /home/MiguelAeTxio/.virtualenvs/EnterpriseBot_venv_py312/bin/activate
 
 # Cargar variables de entorno / Load environment variables
 cd /home/MiguelAeTxio/PROJECTS/EnterpriseBot
