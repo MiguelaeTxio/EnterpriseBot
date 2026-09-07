@@ -908,3 +908,32 @@ tipos documentales de `DOC. PERSONAL` tienen `domain` correcto
 filtrando tipos con `domain` potencialmente incorrecto, devolviendo 0
 tras la corrección, o lista documentada de excepciones aceptadas
 explícitamente por Miguel Ángel.
+
+---
+
+## Notas pendientes reales, registradas S94 (sin código todavía, para que no se pierdan)
+
+**1. Gómez Carvajal Francisco -- situación laboral cambiada.** Ya no
+es autónomo. Pendiente: localizar/confirmar su contrato real y la
+empresa del grupo a la que queda asignado (`PersonIdentity.company`/
+`employer_company`). Sin relación con el incidente de Vacaciones de
+esta sesión -- nota suelta de Miguel Ángel, verbatim: "buscaremos que
+tiene que tener su contrato y la empresa en la que está."
+
+**2. Vinculación del número de WhatsApp al registrarse -- pendiente de
+diseño e implementación.** Miguel Ángel, verbatim (S94): "como el
+registro se hace a través de WhatsApp, el número a través del cual se
+registran quedará registrado en la base de datos como un número
+asignado a ellos, a menos de que se asignen otros. Ese ya quedará
+asignado." Es decir: cuando un trabajador se registra por primera vez
+vía WhatsApp (flujo ya probado con éxito real en S94 -- Veloso
+Sampaio, registrado sin problema y ya presentando partes de trabajo
+reales), el número de WhatsApp desde el que se registró debe quedar
+persistido como el número asignado a esa persona por defecto, salvo
+reasignación explícita posterior. Sin campo ni lógica todavía --
+requiere decidir en qué modelo vive (`PersonIdentity`? `CompanyUser`?
+ambos con distinta semántica?) antes de tocar código. No confundir
+con el registro por WhatsApp en sí (nombre + 4 últimos dígitos del
+DNI), que ya existe y funciona -- esto es específicamente sobre
+persistir y reutilizar el número de origen.
+

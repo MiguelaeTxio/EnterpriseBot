@@ -49,6 +49,7 @@ from panel.views_documentation_h30 import (
     VacationPeriodCreateFragmentView,
     VacationPeriodDeleteFragmentView,
     VacationPeriodUpdateFragmentView,
+    VacationPersonAutocompleteFragmentView,
     VacationResultsFragmentView,
     VacationTabFragmentView,
 )
@@ -440,6 +441,7 @@ urlpatterns = [
     # H31 (S94). Pestaña Vacaciones htmx del hub -- ver panel/views_documentation_h30.py.
     path("documentacion/vacaciones/", VacationTabFragmentView.as_view(), name="documentation_vacation_tab"),
     path("documentacion/vacaciones/resultados/", VacationResultsFragmentView.as_view(), name="documentation_vacation_results"),
+    path("documentacion/vacaciones/autocompletar/", VacationPersonAutocompleteFragmentView.as_view(), name="documentation_vacation_person_autocomplete"),
     path("documentacion/vacaciones/crear/", VacationPeriodCreateFragmentView.as_view(), name="documentation_vacation_create"),
     path("documentacion/vacaciones/<int:pk>/editar/", VacationPeriodUpdateFragmentView.as_view(), name="documentation_vacation_update"),
     path("documentacion/vacaciones/<int:pk>/eliminar/", VacationPeriodDeleteFragmentView.as_view(), name="documentation_vacation_delete"),

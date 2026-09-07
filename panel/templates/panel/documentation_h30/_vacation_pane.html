@@ -11,14 +11,20 @@ dominio compartida (hr_calendar.services.create/update/delete_vacation_period).
         <form hx-post="{% url 'panel:documentation_vacation_create' %}" hx-target="#vacation-results"
               hx-on::after-request="if(event.detail.successful) this.reset()"
               class="mb-4">
-            <div class="mb-2">
-                <label class="form-label small">Operario/chófer</label>
-                <select name="operator_pk" class="form-select form-select-sm" required>
-                    <option value="">-- Selecciona --</option>
-                    {% for op in operators %}
-                    <option value="{{ op.pk }}">{{ op.user.get_full_name|default:op.user.username }}</option>
-                    {% endfor %}
-                </select>
+            <div class="mb-2 position-relative">
+                <label class="form-label small">Trabajador (nombre o DNI)</label>
+                <input type="text" id="vacation-person-input" name="q" class="form-control form-control-sm"
+                       placeholder="Escribe para buscar…" autocomplete="off" required
+                       hx-get="{% url 'panel:documentation_vacation_person_autocomplete' %}"
+                       hx-trigger="keyup changed delay:300ms"
+                       hx-target="#vacation-person-options"
+                       hx-on:keyup="document.getElementById('vacation-person-pk').value=''">
+                <input type="hidden" name="person_pk" id="vacation-person-pk">
+                <div id="vacation-person-options"></div>
+                <div class="form-text">
+                    Solo trabajadores activos. Selecciona uno de la lista de sugerencias --
+                    escribir el nombre no basta si no se elige de la lista.
+                </div>
             </div>
             <div class="mb-2">
                 <label class="form-label small">Fecha de inicio</label>
@@ -32,7 +38,9 @@ dominio compartida (hr_calendar.services.create/update/delete_vacation_period).
         </form>
         <p class="text-muted small">
             Al registrar un periodo se genera automáticamente la tarea de vacaciones
-            en la última jornada laboral anterior al inicio.
+            en la última jornada laboral anterior al inicio -- solo si el trabajador
+            tiene cuenta de panel. Si no la tiene, el periodo se registra igual, sin
+            tarea automática.
         </p>
     </div>
 

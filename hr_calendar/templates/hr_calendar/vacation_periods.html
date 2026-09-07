@@ -75,7 +75,7 @@
             <tbody>
                 {% for period in periods %}
                 <tr>
-                    <td>{{ period.operator.user.get_full_name|default:period.operator.user.username }}</td>
+                    <td>{{ period.person.given_name }} {{ period.person.first_surname }} {{ period.person.second_surname }}</td>
                     <td>{{ period.date_start|date:"d/m/Y" }}</td>
                     <td>{{ period.date_end|date:"d/m/Y" }}</td>
                     <td>

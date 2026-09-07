@@ -1293,5 +1293,74 @@ aportó nada y solo generó fricción real.
    sitio real del proyecto es un fallo de lectura del modelo, nunca
    una decisión legítima pendiente de Miguel Ángel.
 
+#### 4.19. DIRECTRIZ CRÍTICA — `PersonIdentity` (trabajador) NUNCA SE CONFUNDE CON `CompanyUser` (cuenta de panel) (añadida S94, incidente real con captura de pantalla)
+
+**QUEDA TERMINANTEMENTE PROHIBIDO** modelar o construir cualquier
+pantalla/funcionalidad del dominio de personal (vacaciones, bajas,
+documentación, EPIs, notificaciones...) sobre `ivr_config.CompanyUser`
+cuando lo que se necesita representar es "un trabajador de la
+empresa". Son dos conjuntos genuinamente distintos, y confundirlos es
+un error de diseño real, no un matiz:
+
+- **`document_explorer.PersonIdentity`** (H29/H30) = un trabajador
+  real de Grupo Álvarez o sus filiales. Sembrado desde el DNI real
+  (nunca por nombre), con ~72 activos confirmados
+  (`is_active_employee=True`) más histórico de bajas. **Esta es la
+  fuente de verdad de "quién es empleado".** No requiere ni presupone
+  acceso al panel.
+- **`ivr_config.CompanyUser`** (H3/H24) = una cuenta de LOGIN al panel
+  (rol ADMIN/SUPERVISOR/WORKSHOP/DRIVER/...). Un subconjunto de
+  trabajadores tiene una de estas cuentas; otros no la tienen nunca
+  (por ejemplo, un trabajador recién registrado por WhatsApp, o
+  cualquiera de plantilla que nunca necesitó acceso). También puede
+  incluir cuentas que **no son trabajadores en absoluto** (p. ej.
+  `alvarez_admin`, la cuenta administrativa de Miguel Ángel para
+  gestión de la plataforma).
+- **El puente real entre ambos ya existe** desde S74:
+  `PersonIdentity.company_user` (OneToOne, nullable, resuelto por
+  cruce exacto de DNI). Cualquier funcionalidad que necesite resolver
+  "¿esta persona tiene también cuenta de panel?" pasa por este campo,
+  nunca por comparación de nombre.
+
+**Regla de obligado cumplimiento:** cualquier modelo o vista nueva (o
+existente que se toque) que represente "acciones sobre un trabajador"
+(dar de alta un periodo, entregar un documento, enviar una
+notificación, generar una tarea...) debe enlazar con `PersonIdentity`
+como el "quién" principal. `CompanyUser` puede seguir usándose como
+enlace SECUNDARIO/OPCIONAL únicamente cuando la funcionalidad concreta
+dependa genuinamente de tener cuenta de panel (p. ej. calendario
+laboral vía `CompanyUser.base`, partes digitales) -- nunca como
+sustituto de la identidad real del trabajador.
+
+**Origen real -- incidente H31/S94, `hr_calendar.VacationPeriod`:**
+este modelo (H24, anterior a la existencia de `PersonIdentity`)
+enlazaba únicamente con `CompanyUser.operator`. Síntoma real reportado
+por Miguel Ángel con captura de pantalla: el desplegable de la pestaña
+Vacaciones solo ofrecía cuentas de panel, así que un trabajador activo
+real sin cuenta (Antonio Jesús Díaz Quintero) nunca podía recibir un
+periodo de vacaciones, mientras que una cuenta puramente
+administrativa sin identidad de trabajador (`alvarez_admin`) sí era
+seleccionable por error (y lo fue, fila de prueba real creada y
+borrada en la misma sesión). Corregido rediseñando el modelo:
+`VacationPeriod.person` (FK obligatoria a `PersonIdentity`) pasa a ser
+el "quién" real; `VacationPeriod.operator` (FK a `CompanyUser`) pasa a
+ser opcional, resuelto automáticamente desde
+`person.company_user` -- usado solo para la generación de la tarea
+fantasma (que sí necesita genuinamente un `CompanyUser.base` para el
+calendario laboral). Cuando el trabajador no tiene cuenta de panel, el
+periodo de vacaciones se registra igual, simplemente sin tarea
+fantasma. Ver `hr_calendar/models.py` (docstring completo de
+`VacationPeriod`) y migración `0004_vacationperiod_person_redesign.py`
+para el detalle técnico completo.
+
+**Aplicación futura, sin excepción:** antes de diseñar cualquier
+modelo o pantalla nueva que involucre trabajadores, comprobar primero
+si la información que se necesita es "identidad de trabajador"
+(→ `PersonIdentity`) o "acceso de login" (→ `CompanyUser`) -- nunca
+asumir que son lo mismo, y nunca construir el desplegable/selector de
+una pantalla de personal sobre `CompanyUser` cuando el objetivo real
+es representar a cualquier trabajador de la plantilla.
+
+
 
 

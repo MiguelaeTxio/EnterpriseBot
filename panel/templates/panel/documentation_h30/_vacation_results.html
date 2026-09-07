@@ -33,11 +33,16 @@ misma fila, sin necesidad de un <form> real.
         {% for period in page %}
         <tr>
             <td><input type="date" name="date_start" value="{{ period.date_start|date:'Y-m-d' }}" class="form-control form-control-sm"></td>
-            <td>{{ period.operator.user.get_full_name|default:period.operator.user.username }}</td>
+            <td>
+                {{ period.person.given_name }} {{ period.person.first_surname }} {{ period.person.second_surname }}
+                <span class="text-muted small d-block">{{ period.person.dni }}</span>
+            </td>
             <td><input type="date" name="date_end" value="{{ period.date_end|date:'Y-m-d' }}" class="form-control form-control-sm"></td>
             <td>
                 {% if period.generated_entry_line_id %}
                 <span class="badge bg-success">Generada</span>
+                {% elif not period.operator_id %}
+                <span class="badge bg-info text-dark">Sin cuenta de panel</span>
                 {% else %}
                 <span class="badge bg-secondary">Sin generar</span>
                 {% endif %}
@@ -48,7 +53,7 @@ misma fila, sin necesidad de un <form> real.
                         hx-include="closest tr" hx-target="#vacation-results">Guardar</button>
                 <button type="button" class="btn btn-sm btn-outline-danger"
                         hx-post="{% url 'panel:documentation_vacation_delete' pk=period.pk %}"
-                        hx-confirm="¿Eliminar el periodo de vacaciones de {{ period.operator.user.get_full_name|default:period.operator.user.username }}?"
+                        hx-confirm="¿Eliminar el periodo de vacaciones de {{ period.person.given_name }} {{ period.person.first_surname }}?"
                         hx-target="#vacation-results">Eliminar</button>
             </td>
         </tr>

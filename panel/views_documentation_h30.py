@@ -1598,24 +1598,27 @@ def _parse_iso_date(value):
 
 def _vacation_list_page(request, company):
     """
-    H31 (S94). Pestaña Vacaciones del hub de Documentación -- mismo
-    patrón que _epi_list_page. Reutiliza hr_calendar.models.
-    VacationPeriod (H24), acotado a la empresa del usuario autenticado
-    -- mismo scoping que hr_calendar.views.VacationPeriodListView.get.
+    H31 (S94, rediseñado el mismo día tras incidente real reportado
+    por Miguel Ángel). Pestaña Vacaciones del hub de Documentación --
+    busca sobre VacationPeriod.person (PersonIdentity), no sobre
+    operator (CompanyUser) -- ver docstring de VacationPeriod para el
+    porqué completo. Mismo patrón de paginación/orden que
+    _epi_list_page.
     """
     qs = VacationPeriod.objects.filter(company=company).select_related(
-        "operator__user", "generated_entry_line",
+        "person", "operator__user", "generated_entry_line",
     )
     search = request.GET.get("q", "").strip()
     if search:
         qs = qs.filter(
-            Q(operator__user__first_name__icontains=search)
-            | Q(operator__user__last_name__icontains=search)
-            | Q(operator__user__username__icontains=search),
+            Q(person__first_surname__icontains=search)
+            | Q(person__second_surname__icontains=search)
+            | Q(person__given_name__icontains=search)
+            | Q(person__dni__icontains=search),
         )
     sort_columns = [
         ("date_start", "Fecha de inicio"),
-        ("operator__user__last_name", "Operario/chófer"),
+        ("person__first_surname", "Persona"),
     ]
     qs, sort_key, sort_dir = _apply_sort(
         request, qs, sort_columns, "-date_start",
@@ -1626,6 +1629,46 @@ def _vacation_list_page(request, company):
         "page": page, "sort_key": sort_key, "sort_dir": sort_dir,
         "search": search, "sort_columns_vacation": sort_columns,
     }
+
+
+def _vacation_person_autocomplete_page(request):
+    """
+    H31 (S94). Búsqueda de PersonIdentity para el autocompletado del
+    formulario de alta de Vacaciones -- mismo criterio de búsqueda que
+    _person_list_page (nombre/apellidos/DNI icontains), pero acotado
+    SIEMPRE a is_active_employee=True (solo tiene sentido dar de alta
+    vacaciones a un trabajador activo) y sin paginación real -- lista
+    corta (máx. 15) para un desplegable de sugerencias, no un listado
+    completo. Con menos de 2 caracteres no busca nada -- evita listar
+    72 personas en cuanto se hace foco en el campo.
+    """
+    search = request.GET.get("q", "").strip()
+    if len(search) < 2:
+        return []
+    qs = PersonIdentity.objects.filter(is_active_employee=True).filter(
+        Q(first_surname__icontains=search)
+        | Q(second_surname__icontains=search)
+        | Q(given_name__icontains=search)
+        | Q(dni__icontains=search),
+    ).order_by("first_surname", "second_surname", "given_name")[:15]
+    return list(qs)
+
+
+class VacationPersonAutocompleteFragmentView(CompanyUserRequiredMixin, View):
+    """
+    H31 (S94). Endpoint htmx del autocompletado de persona en el
+    formulario de alta de Vacaciones -- ver
+    _vacation_person_autocomplete_page para el criterio de búsqueda.
+    """
+
+    def get(self, request):
+        results = _vacation_person_autocomplete_page(request)
+        search_performed = len(request.GET.get("q", "").strip()) >= 2
+        return render(
+            request,
+            "panel/documentation_h30/_vacation_person_options.html",
+            {"results": results, "search_performed": search_performed},
+        )
 
 
 class VacationTabFragmentView(CompanyUserRequiredMixin, View):
@@ -1643,13 +1686,6 @@ class VacationTabFragmentView(CompanyUserRequiredMixin, View):
         cu = request.user.company_user
         company = cu.company
         ctx = _vacation_list_page(request, company)
-        ctx["operators"] = (
-            CompanyUser.objects.filter(company=company, is_active=True)
-            .select_related("user")
-            .order_by(
-                "user__first_name", "user__last_name", "user__username",
-            )
-        )
         return render(
             request, "panel/documentation_h30/_vacation_pane.html", ctx,
         )
@@ -1679,11 +1715,17 @@ class VacationPeriodCreateFragmentView(SupervisorAccessMixin, View):
     fragmento. La lógica de dominio (incluida la generación de la tarea
     fantasma) vive en hr_calendar.services.create_vacation_period,
     compartida con la vista de página completa -- ver docstring de esa
-    función (extraída en esta misma sesión, S94, para que ambos flujos
-    nunca diverjan en la sincronización delicada de la tarea fantasma).
+    función.
+
+    REDISEÑADO H31 (S94), incidente real: recibe person_pk
+    (PersonIdentity, resuelto por el autocompletado del formulario) en
+    vez de operator_pk (CompanyUser) -- ver docstring de
+    VacationPeriod para el porqué completo. Acotado a
+    is_active_employee=True, mismo criterio que el propio
+    autocompletado.
 
     POST /panel/documentacion/vacaciones/crear/
-        operator_pk (int), date_start (str YYYY-MM-DD), date_end (str YYYY-MM-DD).
+        person_pk (int), date_start (str YYYY-MM-DD), date_end (str YYYY-MM-DD).
     Responde con el fragmento de resultados (_vacation_results.html),
     con un banner de éxito/error inline -- nunca redirect ni JSON, para
     que htmx pueda hacer swap directo de #vacation-results.
@@ -1696,42 +1738,50 @@ class VacationPeriodCreateFragmentView(SupervisorAccessMixin, View):
         company = cu.company
         message = None
         message_kind = "success"
-        operator = None
+        person = None
 
         try:
-            operator_pk = int(request.POST.get("operator_pk", ""))
-            operator = CompanyUser.objects.get(pk=operator_pk, company=company)
-        except (ValueError, TypeError, CompanyUser.DoesNotExist):
-            operator_pk = request.POST.get("operator_pk", "")
+            person_pk = int(request.POST.get("person_pk", ""))
+            person = PersonIdentity.objects.get(
+                pk=person_pk, is_active_employee=True,
+            )
+        except (ValueError, TypeError, PersonIdentity.DoesNotExist):
             message = (
-                "Operario/chófer no encontrado o no pertenece a esta empresa."
+                "Selecciona una persona real de la lista de sugerencias "
+                "(trabajador activo) antes de registrar el periodo."
             )
             message_kind = "error"
 
         date_start = _parse_iso_date(request.POST.get("date_start", ""))
         date_end = _parse_iso_date(request.POST.get("date_end", ""))
-        if operator is not None and (not date_start or not date_end):
+        if person is not None and (not date_start or not date_end):
             message = (
                 "Las fechas de inicio y fin son obligatorias y deben "
                 "tener formato YYYY-MM-DD."
             )
             message_kind = "error"
 
-        if operator is not None and date_start and date_end and message is None:
-            operator_name = (
-                operator.user.get_full_name() or operator.user.username
-            )
+        if person is not None and date_start and date_end and message is None:
+            person_name = f"{person.given_name} {person.first_surname}".strip()
             try:
                 create_vacation_period(
-                    company=company, operator=operator, created_by=cu,
+                    person=person, company=company, created_by=cu,
                     date_start=date_start, date_end=date_end,
                 )
-                message = (
-                    f"Periodo de vacaciones de {operator_name} registrado "
-                    f"correctamente ({date_start:%d/%m/%Y} – "
-                    f"{date_end:%d/%m/%Y}). Tarea automática generada en "
-                    "la última jornada laboral anterior al inicio."
-                )
+                if person.company_user_id:
+                    message = (
+                        f"Periodo de vacaciones de {person_name} registrado "
+                        f"correctamente ({date_start:%d/%m/%Y} – "
+                        f"{date_end:%d/%m/%Y}). Tarea automática generada "
+                        "en la última jornada laboral anterior al inicio."
+                    )
+                else:
+                    message = (
+                        f"Periodo de vacaciones de {person_name} registrado "
+                        f"correctamente ({date_start:%d/%m/%Y} – "
+                        f"{date_end:%d/%m/%Y}). Sin tarea automática -- "
+                        "esta persona no tiene cuenta de panel."
+                    )
             except ValueError:
                 message = (
                     "La fecha de inicio no puede ser posterior a la "
@@ -1747,9 +1797,9 @@ class VacationPeriodCreateFragmentView(SupervisorAccessMixin, View):
                 # mensaje visible (incidente 2026-07-15).
                 logger.error(
                     "# [panel/views_documentation_h30] Error creando "
-                    "VacationPeriod (htmx). operator_pk=%r date_start=%r "
+                    "VacationPeriod (htmx). person_pk=%r date_start=%r "
                     "date_end=%r: %s",
-                    operator_pk, date_start, date_end, exc, exc_info=True,
+                    person_pk, date_start, date_end, exc, exc_info=True,
                 )
                 if isinstance(
                     exc, (_MachineAsset.DoesNotExist, AbsenceCategory.DoesNotExist),
@@ -1800,7 +1850,7 @@ class VacationPeriodUpdateFragmentView(SupervisorAccessMixin, View):
 
         try:
             period = VacationPeriod.objects.select_related(
-                "operator__user",
+                "person",
                 "generated_entry_line__entry__work_order",
             ).get(pk=pk, company=company)
         except VacationPeriod.DoesNotExist:
@@ -1821,14 +1871,13 @@ class VacationPeriodUpdateFragmentView(SupervisorAccessMixin, View):
             message_kind = "error"
 
         if period is not None and date_start and date_end and message is None:
-            operator_name = (
-                period.operator.user.get_full_name()
-                or period.operator.user.username
-            )
+            person_name = (
+                f"{period.person.given_name} {period.person.first_surname}"
+            ).strip()
             try:
                 update_vacation_period(period, date_start, date_end)
                 message = (
-                    f"Periodo de vacaciones de {operator_name} "
+                    f"Periodo de vacaciones de {person_name} "
                     f"actualizado correctamente ({date_start:%d/%m/%Y} – "
                     f"{date_end:%d/%m/%Y})."
                 )
@@ -1881,7 +1930,7 @@ class VacationPeriodDeleteFragmentView(SupervisorAccessMixin, View):
 
         try:
             period = VacationPeriod.objects.select_related(
-                "operator__user",
+                "person",
                 "generated_entry_line__entry__work_order",
             ).get(pk=pk, company=company)
         except VacationPeriod.DoesNotExist:
@@ -1893,13 +1942,12 @@ class VacationPeriodDeleteFragmentView(SupervisorAccessMixin, View):
             message_kind = "error"
 
         if period is not None:
-            operator_name = (
-                period.operator.user.get_full_name()
-                or period.operator.user.username
-            )
+            person_name = (
+                f"{period.person.given_name} {period.person.first_surname}"
+            ).strip()
             delete_vacation_period(period)
             message = (
-                f"Periodo de vacaciones de {operator_name} eliminado "
+                f"Periodo de vacaciones de {person_name} eliminado "
                 "correctamente."
             )
 

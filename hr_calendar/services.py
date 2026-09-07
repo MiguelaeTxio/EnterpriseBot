@@ -189,7 +189,18 @@ def register_vacation_period_from_line(
     el VacationPeriod existente en su sitio (refrescando date_end y
     reapuntando generated_entry_line a la línea más reciente) en vez de
     crear un duplicado.
+
+    REDISEÑADO EN H31 (S94): VacationPeriod.person es ahora obligatorio
+    (ver docstring del modelo) -- se resuelve aquí desde
+    PersonIdentity.company_user=operator (el puente ya construido en
+    S74). Si el operario real todavía no tiene una PersonIdentity
+    vinculada (DNI sin cruzar todavía), se lanza ValueError explícito
+    en vez de dejar que el INSERT falle contra la restricción NOT NULL
+    de la BD con un error opaco -- caso raro (la mayoría de operarios
+    activos ya están cruzados por DNI, H30), pero debe salir a la luz
+    con un mensaje accionable si ocurre.
     """
+    from document_explorer.models import PersonIdentity
     from hr_calendar.models import VacationPeriod
 
     work_date = entry_line.entry.work_date
@@ -199,6 +210,16 @@ def register_vacation_period_from_line(
             f"La fecha de fin de vacaciones ({vacation_end_date}) no puede "
             f"ser anterior al día siguiente a la última jornada laboral "
             f"({date_start})."
+        )
+
+    person = PersonIdentity.objects.filter(company_user=operator).first()
+    if person is None:
+        raise ValueError(
+            f"El operario {operator} (pk={operator.pk}) no tiene una "
+            f"PersonIdentity vinculada (DNI sin cruzar contra "
+            f"CompanyUser todavía) -- no se puede registrar el periodo "
+            f"de vacaciones sin una identidad de personal real. Revisar "
+            f"PersonIdentity.company_user para este operario."
         )
 
     existing = VacationPeriod.objects.filter(
@@ -212,6 +233,9 @@ def register_vacation_period_from_line(
         if existing.generated_entry_line_id != entry_line.pk:
             existing.generated_entry_line = entry_line
             _update_fields.append("generated_entry_line")
+        if existing.person_id != person.pk:
+            existing.person = person
+            _update_fields.append("person")
         if _update_fields:
             existing.save(update_fields=_update_fields)
             logger.info(
@@ -223,6 +247,7 @@ def register_vacation_period_from_line(
         return existing
 
     period = VacationPeriod.objects.create(
+        person=person,
         company=company,
         operator=operator,
         created_by=created_by,
@@ -232,9 +257,10 @@ def register_vacation_period_from_line(
     )
     logger.info(
         "# [hr_calendar/services] VacationPeriod registrado desde tarea "
-        "real del operario. line_pk=%r operator=%r date_start=%r "
-        "date_end=%r vacation_period_pk=%r",
-        entry_line.pk, operator.pk, date_start, vacation_end_date, period.pk,
+        "real del operario. line_pk=%r operator=%r person=%r "
+        "date_start=%r date_end=%r vacation_period_pk=%r",
+        entry_line.pk, operator.pk, person.pk, date_start, vacation_end_date,
+        period.pk,
     )
     return period
 
@@ -351,36 +377,62 @@ def generate_vacation_task(vacation_period):
     return line
 
 
-def create_vacation_period(company, operator, created_by, date_start, date_end):
+def create_vacation_period(person, company, created_by, date_start, date_end):
     """
     Shared creation logic for VacationPeriod, extracted in H31 (S94) so
     the panel CRUD (hr_calendar/views.py, full-page redirect) and the
-    new htmx tab in the Documentation hub
+    htmx tab in the Documentation hub
     (panel/views_documentation_h30.py) never diverge on the delicate
     part: triggering VacationPeriod.save()'s ghost-task generation
     (generate_vacation_task above) inside one atomic transaction.
+
+    REDESIGNED H31 (S94), same session as the extraction itself --
+    real incident reported by Miguel Ángel: takes `person`
+    (PersonIdentity, the real worker) instead of `operator`
+    (CompanyUser, panel account) as the primary "who". `operator` is
+    now resolved internally from `person.company_user` (nullable --
+    resolves to None when the worker has no panel account, in which
+    case VacationPeriod.save() simply skips the ghost-task step, see
+    its docstring). This is what makes it possible to register
+    vacations for any of the ~72 active workers, not only the subset
+    with panel login.
 
     Validates date_start <= date_end (ValueError otherwise -- callers
     translate this into their own user-facing message format, full
     page vs htmx fragment). Does NOT catch MachineAsset.DoesNotExist /
     AbsenceCategory.DoesNotExist -- same as before this extraction,
     those propagate to the caller so each UI can show its own
-    actionable message.
+    actionable message (only relevant when operator is not None, i.e.
+    the ghost-task step actually runs).
     ---
     Lógica de creación compartida de VacationPeriod, extraída en H31
     (S94) para que el CRUD de panel (hr_calendar/views.py, redirect de
-    página completa) y la nueva pestaña htmx del hub de Documentación
+    página completa) y la pestaña htmx del hub de Documentación
     (panel/views_documentation_h30.py) nunca diverjan en la parte
     delicada: disparar la generación de la tarea fantasma de
     VacationPeriod.save() (generate_vacation_task arriba) dentro de una
     única transacción atómica.
+
+    REDISEÑADO EN H31 (S94), misma sesión que la propia extracción --
+    incidente real reportado por Miguel Ángel: recibe `person`
+    (PersonIdentity, el trabajador real) en vez de `operator`
+    (CompanyUser, cuenta de panel) como el "quién" principal.
+    `operator` se resuelve ahora internamente desde
+    `person.company_user` (nulo -- resuelve a None cuando el
+    trabajador no tiene cuenta de panel, en cuyo caso
+    VacationPeriod.save() simplemente omite el paso de la tarea
+    fantasma, ver su docstring). Esto es lo que permite registrar
+    vacaciones para cualquiera de los ~72 trabajadores activos, no
+    solo el subconjunto con acceso de panel.
 
     Valida date_start <= date_end (ValueError en caso contrario -- cada
     llamador traduce esto a su propio formato de mensaje, página
     completa vs fragmento htmx). NO captura
     MachineAsset.DoesNotExist / AbsenceCategory.DoesNotExist -- igual
     que antes de esta extracción, se propagan al llamador para que cada
-    interfaz muestre su propio mensaje accionable.
+    interfaz muestre su propio mensaje accionable (solo relevante
+    cuando operator no es None, es decir cuando el paso de la tarea
+    fantasma llega a ejecutarse).
     """
     from hr_calendar.models import VacationPeriod
 
@@ -390,8 +442,9 @@ def create_vacation_period(company, operator, created_by, date_start, date_end):
         )
 
     return VacationPeriod.objects.create(
+        person=person,
         company=company,
-        operator=operator,
+        operator=person.company_user,
         created_by=created_by,
         date_start=date_start,
         date_end=date_end,

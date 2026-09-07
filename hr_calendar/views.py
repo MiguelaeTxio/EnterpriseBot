@@ -334,6 +334,16 @@ class VacationPeriodListView(SupervisorAccessMixin, View):
     Lists registered VacationPeriods for the company (most recent
     date_start first) and renders the create form (operator dropdown
     scoped to active CompanyUsers of the company).
+
+    NOTA H31 (S94): página legada, ya sin enlace en el sidebar (ver
+    panel/templates/panel/_nav_items.html) -- sustituida por la
+    pestaña htmx "Vacaciones" del hub de Documentación
+    (panel/views_documentation_h30.py), que sí busca sobre
+    PersonIdentity con autocompletado. Se mantiene funcional (parcheada
+    tras el rediseño de VacationPeriod.person) por si queda algún
+    enlace directo o marcador antiguo, pero no se invierte más esfuerzo
+    aquí -- ver el anexo H31 para la recomendación de retirarla del
+    todo en una sesión futura.
     ---
     Lista los VacationPeriod registrados de la empresa (date_start más
     reciente primero) y renderiza el formulario de alta (desplegable de
@@ -348,7 +358,7 @@ class VacationPeriodListView(SupervisorAccessMixin, View):
         periods = (
             VacationPeriod.objects
             .filter(company=company)
-            .select_related("operator__user", "generated_entry_line")
+            .select_related("person", "operator__user", "generated_entry_line")
             .order_by("-date_start")
         )
         operators = (
@@ -408,6 +418,23 @@ class VacationPeriodCreateView(SupervisorAccessMixin, View):
             )
             return redirect(LIST_URL)
 
+        # H31 (S94): VacationPeriod.person es ahora obligatorio -- esta
+        # página legada solo ofrece un desplegable de CompanyUser
+        # (ver docstring de la clase), así que resuelve la
+        # PersonIdentity correspondiente por el mismo puente
+        # (company_user) que ya usa register_vacation_period_from_line.
+        from document_explorer.models import PersonIdentity
+        person = PersonIdentity.objects.filter(company_user=operator).first()
+        if person is None:
+            django_messages.error(
+                request,
+                "Este operario no tiene una identidad de personal "
+                "vinculada (DNI sin cruzar) -- no se puede registrar "
+                "el periodo desde aquí. Usa la pestaña Vacaciones del "
+                "hub de Documentación, que busca por persona.",
+            )
+            return redirect(LIST_URL)
+
         date_start = _parse_iso(request.POST.get("date_start", ""))
         date_end = _parse_iso(request.POST.get("date_end", ""))
 
@@ -431,8 +458,8 @@ class VacationPeriodCreateView(SupervisorAccessMixin, View):
         try:
             from hr_calendar.services import create_vacation_period
             create_vacation_period(
+                person=person,
                 company=company,
-                operator=operator,
                 created_by=cu,
                 date_start=date_start,
                 date_end=date_end,
@@ -532,7 +559,7 @@ class VacationPeriodUpdateView(SupervisorAccessMixin, View):
 
         try:
             period = VacationPeriod.objects.select_related(
-                "operator__user", "generated_entry_line__entry__work_order",
+                "person", "generated_entry_line__entry__work_order",
             ).get(pk=pk, company=company)
         except VacationPeriod.DoesNotExist:
             django_messages.error(
@@ -559,10 +586,7 @@ class VacationPeriodUpdateView(SupervisorAccessMixin, View):
             )
             return redirect(LIST_URL)
 
-        operator_name = (
-            period.operator.user.get_full_name()
-            or period.operator.user.username
-        )
+        person_name = f"{period.person.given_name} {period.person.first_surname}".strip()
 
         try:
             from hr_calendar.services import update_vacation_period
@@ -588,7 +612,7 @@ class VacationPeriodUpdateView(SupervisorAccessMixin, View):
 
         django_messages.success(
             request,
-            f"Periodo de vacaciones de {operator_name} actualizado "
+            f"Periodo de vacaciones de {person_name} actualizado "
             f"correctamente ({date_start:%d/%m/%Y} – {date_end:%d/%m/%Y}).",
         )
         return redirect(LIST_URL)
@@ -614,7 +638,7 @@ class VacationPeriodDeleteView(SupervisorAccessMixin, View):
 
         try:
             period = VacationPeriod.objects.select_related(
-                "operator__user", "generated_entry_line__entry__work_order",
+                "person", "generated_entry_line__entry__work_order",
             ).get(pk=pk, company=company)
         except VacationPeriod.DoesNotExist:
             django_messages.error(
@@ -623,10 +647,7 @@ class VacationPeriodDeleteView(SupervisorAccessMixin, View):
             )
             return redirect(LIST_URL)
 
-        operator_name = (
-            period.operator.user.get_full_name()
-            or period.operator.user.username
-        )
+        person_name = f"{period.person.given_name} {period.person.first_surname}".strip()
 
         # Borra primero el WorkOrder fantasma completo (cascada Entry/
         # Line) -- si se dejara huérfano, dejaría de excluirse de los
@@ -637,6 +658,6 @@ class VacationPeriodDeleteView(SupervisorAccessMixin, View):
 
         django_messages.success(
             request,
-            f"Periodo de vacaciones de {operator_name} eliminado correctamente.",
+            f"Periodo de vacaciones de {person_name} eliminado correctamente.",
         )
         return redirect(LIST_URL)

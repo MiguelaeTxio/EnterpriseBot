@@ -98,38 +98,101 @@ from ivr_config.models import Company, CompanyUser
 
 class VacationPeriod(models.Model):
     """
-    A registered vacation period for a CompanyUser. Source of truth for
-    the HR calendar's green days and for the automatic PERSONAL/
-    VACATION task generated on the last working day before date_start.
+    A registered vacation period for a worker. Source of truth for the
+    HR calendar's green days and for the automatic PERSONAL/VACATION
+    task generated on the last working day before date_start.
+
+    REDESIGNED H31 (S94), real incident reported by Miguel Ángel with
+    screenshot evidence: this model originally (H24) linked only to
+    CompanyUser (panel account), conflating "is a company worker"
+    with "has panel login access" -- two genuinely different sets.
+    Real symptom: the panel dropdown only ever offered CompanyUser
+    accounts, so a worker without panel access (e.g. Antonio Jesús
+    Díaz Quintero, a real active employee) could never be given a
+    vacation period, while an admin-only account with no worker
+    identity (alvarez_admin) could be selected by mistake (and was,
+    S94, test row later deleted -- see migration 0003).
+
+    `person` (PersonIdentity, document_explorer/H30) is now the real
+    "who" -- every one of the ~72 active workers, panel access or not.
+    `operator` (CompanyUser) is now OPTIONAL, resolved automatically
+    from `person.company_user` (the bridge already built in S74) --
+    used exclusively to attempt the automatic ghost-task generation
+    below, which genuinely requires a CompanyUser (CompanyUser.base
+    for the working-day calendar, CompanyUser.user for a display
+    name). When a worker has no panel account, the VacationPeriod is
+    still created normally -- simply without a ghost task, since there
+    is no digital work-order/calendar concept for someone who never
+    submits digital partes in the first place.
     ---
-    Un periodo de vacaciones registrado para un CompanyUser. Fuente de
+    Un periodo de vacaciones registrado para un trabajador. Fuente de
     verdad de los días verdes del calendario de RRHH y de la tarea
     automática PERSONAL/VACACIONES generada en la última jornada
     laboral antes de date_start.
+
+    REDISEÑADO EN H31 (S94), incidente real reportado por Miguel Ángel
+    con evidencia de captura de pantalla: este modelo originalmente
+    (H24) solo enlazaba con CompanyUser (cuenta de panel), confundiendo
+    "es trabajador de la empresa" con "tiene acceso de login al panel"
+    -- dos conjuntos genuinamente distintos. Síntoma real: el
+    desplegable del panel solo ofrecía cuentas CompanyUser, así que un
+    trabajador sin acceso al panel (p. ej. Antonio Jesús Díaz Quintero,
+    empleado activo real) nunca podía recibir un periodo vacacional,
+    mientras que una cuenta solo-administrativa sin identidad de
+    trabajador (alvarez_admin) podía seleccionarse por error (y así
+    fue, S94, fila de prueba borrada después -- ver migración 0003).
+
+    `person` (PersonIdentity, document_explorer/H30) es ahora el
+    "quién" real -- cualquiera de los ~72 trabajadores activos, tenga o
+    no acceso al panel. `operator` (CompanyUser) es ahora OPCIONAL,
+    resuelto automáticamente desde `person.company_user` (el puente ya
+    construido en S74) -- usado exclusivamente para intentar la
+    generación automática de la tarea fantasma de abajo, que sí
+    necesita genuinamente un CompanyUser (CompanyUser.base para el
+    calendario laboral, CompanyUser.user para un nombre de
+    visualización). Cuando un trabajador no tiene cuenta de panel, el
+    VacationPeriod se crea igualmente -- simplemente sin tarea
+    fantasma, porque no existe ningún concepto de parte digital/
+    calendario para alguien que nunca presenta partes digitales.
     """
 
     # ------------------------------------------------------------------
     # Relations / Relaciones
     # ------------------------------------------------------------------
+    person = models.ForeignKey(
+        PersonIdentity,
+        on_delete=models.CASCADE,
+        related_name="vacation_periods",
+        verbose_name="Persona",
+        help_text="Trabajador real al que pertenecen estas vacaciones "
+                  "-- identidad de personal (document_explorer, H30), "
+                  "no cuenta de panel. Obligatorio: cualquier "
+                  "trabajador activo puede tener vacaciones, tenga o "
+                  "no acceso al panel.",
+    )
     company = models.ForeignKey(
         Company,
         on_delete=models.CASCADE,
         related_name="vacation_periods",
         verbose_name="Empresa",
         help_text="Empresa a la que pertenece este periodo, "
-                  "denormalizada desde operator.company en el momento "
-                  "de creación (mismo patrón que MachineDocument/"
-                  "TaskPhoto).",
+                  "denormalizada desde la empresa del usuario del "
+                  "panel que lo registra en el momento de creación "
+                  "(mismo patrón que MachineDocument/TaskPhoto).",
     )
     operator = models.ForeignKey(
         CompanyUser,
-        on_delete=models.CASCADE,
-        related_name="vacation_periods",
-        verbose_name="Operario/chófer",
-        help_text="CompanyUser al que pertenecen estas vacaciones. "
-                  "Abierto a cualquier rol -- hoy en la práctica solo "
-                  "WORKSHOP/DRIVER lo usan, sin restricción a nivel de "
-                  "modelo (decisión explícita de Miguel Ángel, S018).",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="vacation_periods_as_operator",
+        verbose_name="Cuenta de panel vinculada",
+        help_text="CompanyUser correspondiente a person.company_user, "
+                  "cuando existe -- resuelto automáticamente, nunca "
+                  "elegido a mano. Nulo cuando la persona no tiene "
+                  "cuenta de panel: en ese caso no se genera tarea "
+                  "fantasma (ver generated_entry_line), pero el "
+                  "periodo de vacaciones se registra igual.",
     )
     generated_entry_line = models.ForeignKey(
         "work_order_processor.WorkOrderEntryLine",
@@ -191,7 +254,7 @@ class VacationPeriod(models.Model):
         ]
 
     def __str__(self) -> str:
-        return f"{self.operator} — {self.date_start:%d/%m/%Y} a {self.date_end:%d/%m/%Y}"
+        return f"{self.person} — {self.date_start:%d/%m/%Y} a {self.date_end:%d/%m/%Y}"
 
     def save(self, *args, **kwargs):
         """
@@ -204,6 +267,14 @@ class VacationPeriod(models.Model):
         never exist without its ghost task once this save() returns
         successfully. Skipped on subsequent saves (edits) -- generation is
         create-only, see hoja de ruta H24 paso 1.
+
+        REDESIGNED H31 (S94): also skipped whenever operator_id is None
+        -- a worker with no panel account (person.company_user is null)
+        has no CompanyUser.base to compute a working-day calendar
+        against, and never submits digital partes to begin with, so
+        there is nothing for a ghost task to exclude. The VacationPeriod
+        itself is still created normally; only the ghost task step is
+        skipped, silently and by design, not as an error path.
         ---
         En la primera creación, dispara la generación automática de la
         tarea fantasma PERSONAL/VACACIONES (hr_calendar/services.py::
@@ -215,13 +286,26 @@ class VacationPeriod(models.Model):
         puede existir sin su tarea fantasma una vez este save() retorna
         con éxito. Se omite en saves posteriores (ediciones) -- la
         generación es solo-al-crear, ver hoja de ruta H24 paso 1.
+
+        REDISEÑADO EN H31 (S94): también se omite siempre que
+        operator_id sea nulo -- un trabajador sin cuenta de panel
+        (person.company_user es nulo) no tiene CompanyUser.base contra
+        el que calcular un calendario laboral, y tampoco presenta
+        partes digitales, así que no hay nada que una tarea fantasma
+        pueda excluir. El propio VacationPeriod se crea igualmente;
+        solo se omite el paso de la tarea fantasma, en silencio y por
+        diseño, no como camino de error.
         """
         from django.db import transaction
 
         is_new = self._state.adding
         with transaction.atomic():
             super().save(*args, **kwargs)
-            if is_new and self.generated_entry_line_id is None:
+            if (
+                is_new
+                and self.generated_entry_line_id is None
+                and self.operator_id is not None
+            ):
                 from hr_calendar.services import generate_vacation_task
                 generate_vacation_task(self)
 
