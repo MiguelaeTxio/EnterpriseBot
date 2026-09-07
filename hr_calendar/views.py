@@ -429,13 +429,20 @@ class VacationPeriodCreateView(SupervisorAccessMixin, View):
         operator_name = operator.user.get_full_name() or operator.user.username
 
         try:
-            VacationPeriod.objects.create(
+            from hr_calendar.services import create_vacation_period
+            create_vacation_period(
                 company=company,
                 operator=operator,
                 created_by=cu,
                 date_start=date_start,
                 date_end=date_end,
             )
+        except ValueError:
+            django_messages.error(
+                request,
+                "La fecha de inicio no puede ser posterior a la fecha de fin.",
+            )
+            return redirect(LIST_URL)
         except Exception as exc:
             from fleet.models import MachineAsset
             from ivr_config.models import AbsenceCategory
@@ -519,8 +526,6 @@ class VacationPeriodUpdateView(SupervisorAccessMixin, View):
     """
 
     def post(self, request, pk, *args, **kwargs):
-        from django.db import transaction
-
         cu = request.user.company_user
         company = cu.company
         LIST_URL = reverse("hr_calendar:vacation_period_list")
@@ -558,33 +563,16 @@ class VacationPeriodUpdateView(SupervisorAccessMixin, View):
             period.operator.user.get_full_name()
             or period.operator.user.username
         )
-        start_changed = date_start != period.date_start
-        end_changed = date_end != period.date_end
 
         try:
-            with transaction.atomic():
-                if start_changed and period.generated_entry_line_id:
-                    # Borra el WorkOrder sintético completo (cascada
-                    # Entry/Line) -- la nueva última jornada laboral puede
-                    # no coincidir con la anterior.
-                    old_work_order = period.generated_entry_line.entry.work_order
-                    period.generated_entry_line = None
-                    period.save(update_fields=["generated_entry_line"])
-                    old_work_order.delete()
-
-                period.date_start = date_start
-                period.date_end = date_end
-                period.save(update_fields=["date_start", "date_end"])
-
-                if start_changed and period.generated_entry_line_id is None:
-                    from hr_calendar.services import generate_vacation_task
-                    generate_vacation_task(period)
-                elif end_changed and period.generated_entry_line_id:
-                    ghost_line = period.generated_entry_line
-                    ghost_line.repair_notes = (
-                        f"Vacaciones hasta el {date_end:%d/%m/%Y}."
-                    )
-                    ghost_line.save(update_fields=["repair_notes"])
+            from hr_calendar.services import update_vacation_period
+            update_vacation_period(period, date_start, date_end)
+        except ValueError:
+            django_messages.error(
+                request,
+                "La fecha de inicio no puede ser posterior a la fecha de fin.",
+            )
+            return redirect(LIST_URL)
         except Exception as exc:
             logger.error(
                 "# [hr_calendar/views] Error actualizando VacationPeriod "
@@ -644,10 +632,8 @@ class VacationPeriodDeleteView(SupervisorAccessMixin, View):
         # Line) -- si se dejara huérfano, dejaría de excluirse de los
         # cómputos de horas en cuanto desaparezca este VacationPeriod
         # (la exclusión está referenciada a esta misma relación inversa).
-        if period.generated_entry_line_id:
-            period.generated_entry_line.entry.work_order.delete()
-
-        period.delete()
+        from hr_calendar.services import delete_vacation_period
+        delete_vacation_period(period)
 
         django_messages.success(
             request,

@@ -1,0 +1,71 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation_h30/_vacation_results.html #}
+{# H31 (S94). Edicion/borrado en linea sin <form> anidado dentro de la
+   tabla (HTML invalido -- un <form> no puede envolver <td>s como hijo
+   directo de <tr>, el navegador reestructura la tabla y rompe el
+   layout). En su lugar, cada boton dispara su propio hx-post con
+   hx-include="closest tr" para recoger los <input> con name= de esa
+   misma fila, sin necesidad de un <form> real. #}
+{% if message %}
+<div class="alert alert-{% if message_kind == 'error' %}danger{% else %}success{% endif %} py-2 small" role="alert">
+    {{ message }}
+</div>
+{% endif %}
+<table class="table table-hover table-light align-middle">
+    <thead class="table-light">
+        <tr>
+            {% for col_key, col_label in sort_columns_vacation %}
+            <th>
+                <a href="#"
+                   hx-get="{% url 'panel:documentation_vacation_results' %}?sort={{ col_key }}&dir={% if sort_key == col_key and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&q={{ search }}"
+                   hx-target="#vacation-results" class="text-decoration-none text-dark">
+                    {{ col_label }}
+                    {% if sort_key == col_key %}<i class="bi bi-chevron-{% if sort_dir == 'asc' %}up{% else %}down{% endif %}"></i>{% endif %}
+                </a>
+            </th>
+            {% endfor %}
+            <th>Tarea automática</th>
+            <th class="text-end">Acciones</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for period in page %}
+        <tr>
+            <td><input type="date" name="date_start" value="{{ period.date_start|date:'Y-m-d' }}" class="form-control form-control-sm"></td>
+            <td>{{ period.operator.user.get_full_name|default:period.operator.user.username }}</td>
+            <td><input type="date" name="date_end" value="{{ period.date_end|date:'Y-m-d' }}" class="form-control form-control-sm"></td>
+            <td>
+                {% if period.generated_entry_line_id %}
+                <span class="badge bg-success">Generada</span>
+                {% else %}
+                <span class="badge bg-secondary">Sin generar</span>
+                {% endif %}
+            </td>
+            <td class="text-end">
+                <button type="button" class="btn btn-sm btn-outline-primary"
+                        hx-post="{% url 'panel:documentation_vacation_update' pk=period.pk %}"
+                        hx-include="closest tr" hx-target="#vacation-results">Guardar</button>
+                <button type="button" class="btn btn-sm btn-outline-danger"
+                        hx-post="{% url 'panel:documentation_vacation_delete' pk=period.pk %}"
+                        hx-confirm="¿Eliminar el periodo de vacaciones de {{ period.operator.user.get_full_name|default:period.operator.user.username }}?"
+                        hx-target="#vacation-results">Eliminar</button>
+            </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5" class="text-muted small py-3">Sin periodos de vacaciones registrados todavía.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+{% if page.has_other_pages %}
+<nav>
+    <ul class="pagination">
+        {% for num in page.paginator.page_range %}
+        <li class="page-item {% if num == page.number %}active{% endif %}">
+            <a class="page-link"
+               hx-get="{% url 'panel:documentation_vacation_results' %}?page={{ num }}&sort={{ sort_key }}&dir={{ sort_dir }}&q={{ search }}"
+               hx-target="#vacation-results">{{ num }}</a>
+        </li>
+        {% endfor %}
+    </ul>
+</nav>
+{% endif %}

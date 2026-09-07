@@ -342,26 +342,14 @@
                             <i class="bi bi-people"></i>Usuarios
                         </a>
                     </li>
-                    {# Vacaciones -- H24. Gate propio ADMIN/SUPERVISOR         #}
-                    {# (coincide exactamente con SupervisorAccessMixin, el     #}
-                    {# mixin real de las vistas hr_calendar -- WORKSHOPBOSS    #}
-                    {# no tiene acceso a estas vistas, así que tampoco ve el   #}
-                    {# enlace, a diferencia del resto de este acordeón que sí  #}
-                    {# incluye WORKSHOPBOSS en su gate exterior).              #}
-                    {# Vacaciones -- H24. Own gate ADMIN/SUPERVISOR (exactly   #}
-                    {# matches SupervisorAccessMixin, the real mixin on the    #}
-                    {# hr_calendar views -- WORKSHOPBOSS has no access to      #}
-                    {# those views, so it doesn't see the link either, unlike  #}
-                    {# the rest of this accordion whose outer gate does        #}
-                    {# include WORKSHOPBOSS).                                  #}
-                    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' %}
-                        <li class="nav-item">
-                            <a class="nav-link {% if active_nav == 'vacation_periods' %}active{% endif %}"
-                               href="{% url 'hr_calendar:vacation_period_list' %}">
-                                <i class="bi bi-airplane"></i>Vacaciones
-                            </a>
-                        </li>
-                    {% endif %}
+                    {# Vacaciones -- H24, retirado H31/S94. El CRUD de pagina  #}
+                    {# completa (hr_calendar:vacation_period_list) sigue        #}
+                    {# existiendo por compatibilidad, pero ya no se enlaza      #}
+                    {# desde aqui -- sustituido por la pestana "Vacaciones"     #}
+                    {# htmx del hub de Documentacion (ver hub.html), mismo      #}
+                    {# criterio de acceso (SupervisorAccessMixin en las         #}
+                    {# vistas de accion). "Calendario" no se toca (sigue        #}
+                    {# mas abajo, visible a todos los roles).                  #}
                     {# Configuración empresa — ELIMINADA 2026-07-08. Redundante        #}
                     {# (bases/horarios que mostraba ya viven en Asistencia/Horarios    #}
                     {# de jornada, solo lectura ahí). Su único campo editable real     #}

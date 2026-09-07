@@ -46,6 +46,11 @@ from panel.views_documentation_h30 import (
     PersonalUpdateView,
     PersonalWorkdayDetailView,
     SubjectDocumentUploadView,
+    VacationPeriodCreateFragmentView,
+    VacationPeriodDeleteFragmentView,
+    VacationPeriodUpdateFragmentView,
+    VacationResultsFragmentView,
+    VacationTabFragmentView,
 )
 from panel.views import (
     PanelLoginView,
@@ -432,6 +437,12 @@ urlpatterns = [
     path("documentacion/epis/", EpiTabFragmentView.as_view(), name="documentation_epi_tab"),
     # H30 (S50): mismo motivo que documentation_personal_results.
     path("documentacion/epis/resultados/", EpiResultsFragmentView.as_view(), name="documentation_epi_results"),
+    # H31 (S94). Pestaña Vacaciones htmx del hub -- ver panel/views_documentation_h30.py.
+    path("documentacion/vacaciones/", VacationTabFragmentView.as_view(), name="documentation_vacation_tab"),
+    path("documentacion/vacaciones/resultados/", VacationResultsFragmentView.as_view(), name="documentation_vacation_results"),
+    path("documentacion/vacaciones/crear/", VacationPeriodCreateFragmentView.as_view(), name="documentation_vacation_create"),
+    path("documentacion/vacaciones/<int:pk>/editar/", VacationPeriodUpdateFragmentView.as_view(), name="documentation_vacation_update"),
+    path("documentacion/vacaciones/<int:pk>/eliminar/", VacationPeriodDeleteFragmentView.as_view(), name="documentation_vacation_delete"),
     path("documentacion/<str:domain>/<int:subject_pk>/subir/", SubjectDocumentUploadView.as_view(), name="documentation_upload"),
     # H30 (S51): atajo de alta de tipo documental desde el propio flujo de
     # subida -- ver DocumentTypeQuickCreateView.

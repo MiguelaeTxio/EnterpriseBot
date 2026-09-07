@@ -1,0 +1,43 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation_h30/_vacation_pane.html #}
+{# H31 (S94). Pestana Vacaciones del hub de Documentacion -- CRUD real en
+   htmx, adaptado de hr_calendar/views.py (antes paginas completas con
+   redirect). Ver panel/views_documentation_h30.py para la logica de
+   dominio compartida (hr_calendar.services.create/update/delete_vacation_period). #}
+<div class="row">
+    <div class="col-md-4">
+        <h6>Nuevo periodo de vacaciones</h6>
+        <form hx-post="{% url 'panel:documentation_vacation_create' %}" hx-target="#vacation-results"
+              hx-on::after-request="if(event.detail.successful) this.reset()"
+              class="mb-4">
+            <div class="mb-2">
+                <label class="form-label small">Operario/chófer</label>
+                <select name="operator_pk" class="form-select form-select-sm" required>
+                    <option value="">-- Selecciona --</option>
+                    {% for op in operators %}
+                    <option value="{{ op.pk }}">{{ op.user.get_full_name|default:op.user.username }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="mb-2">
+                <label class="form-label small">Fecha de inicio</label>
+                <input type="date" name="date_start" class="form-control form-control-sm" required>
+            </div>
+            <div class="mb-2">
+                <label class="form-label small">Fecha de fin</label>
+                <input type="date" name="date_end" class="form-control form-control-sm" required>
+            </div>
+            <button type="submit" class="btn btn-sm btn-primary">Registrar periodo</button>
+        </form>
+        <p class="text-muted small">
+            Al registrar un periodo se genera automáticamente la tarea de vacaciones
+            en la última jornada laboral anterior al inicio.
+        </p>
+    </div>
+
+    <div class="col-md-8">
+        {% include "panel/documentation_h30/_vacation_search_form.html" with search=search %}
+        <div id="vacation-results">
+            {% include "panel/documentation_h30/_vacation_results.html" with page=page sort_key=sort_key sort_dir=sort_dir search=search sort_columns_vacation=sort_columns_vacation %}
+        </div>
+    </div>
+</div>

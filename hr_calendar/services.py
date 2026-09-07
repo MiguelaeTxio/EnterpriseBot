@@ -351,6 +351,136 @@ def generate_vacation_task(vacation_period):
     return line
 
 
+def create_vacation_period(company, operator, created_by, date_start, date_end):
+    """
+    Shared creation logic for VacationPeriod, extracted in H31 (S94) so
+    the panel CRUD (hr_calendar/views.py, full-page redirect) and the
+    new htmx tab in the Documentation hub
+    (panel/views_documentation_h30.py) never diverge on the delicate
+    part: triggering VacationPeriod.save()'s ghost-task generation
+    (generate_vacation_task above) inside one atomic transaction.
+
+    Validates date_start <= date_end (ValueError otherwise -- callers
+    translate this into their own user-facing message format, full
+    page vs htmx fragment). Does NOT catch MachineAsset.DoesNotExist /
+    AbsenceCategory.DoesNotExist -- same as before this extraction,
+    those propagate to the caller so each UI can show its own
+    actionable message.
+    ---
+    Lógica de creación compartida de VacationPeriod, extraída en H31
+    (S94) para que el CRUD de panel (hr_calendar/views.py, redirect de
+    página completa) y la nueva pestaña htmx del hub de Documentación
+    (panel/views_documentation_h30.py) nunca diverjan en la parte
+    delicada: disparar la generación de la tarea fantasma de
+    VacationPeriod.save() (generate_vacation_task arriba) dentro de una
+    única transacción atómica.
+
+    Valida date_start <= date_end (ValueError en caso contrario -- cada
+    llamador traduce esto a su propio formato de mensaje, página
+    completa vs fragmento htmx). NO captura
+    MachineAsset.DoesNotExist / AbsenceCategory.DoesNotExist -- igual
+    que antes de esta extracción, se propagan al llamador para que cada
+    interfaz muestre su propio mensaje accionable.
+    """
+    from hr_calendar.models import VacationPeriod
+
+    if date_start > date_end:
+        raise ValueError(
+            "La fecha de inicio no puede ser posterior a la fecha de fin."
+        )
+
+    return VacationPeriod.objects.create(
+        company=company,
+        operator=operator,
+        created_by=created_by,
+        date_start=date_start,
+        date_end=date_end,
+    )
+
+
+def update_vacation_period(period, date_start, date_end):
+    """
+    Shared update logic for VacationPeriod (see create_vacation_period
+    docstring for why this was extracted in S94). Mirrors exactly the
+    ghost-task sync previously inlined in
+    hr_calendar/views.py::VacationPeriodUpdateView.post:
+
+      - date_start changed -> delete the old ghost WorkOrder (cascades
+        its Entry/Line) and generate a new one for the new last
+        working day.
+      - only date_end changed -> refresh the existing ghost line's
+        human-readable repair_notes (nothing parses it).
+
+    Validates date_start <= date_end (ValueError otherwise). Returns
+    the same period instance, refreshed.
+    ---
+    Lógica de actualización compartida de VacationPeriod (ver docstring
+    de create_vacation_period para el motivo de esta extracción en
+    S94). Replica exactamente la sincronización de la tarea fantasma
+    que antes vivía en línea en
+    hr_calendar/views.py::VacationPeriodUpdateView.post:
+
+      - date_start cambia -> se borra el WorkOrder fantasma anterior
+        (arrastra en cascada su Entry/Line) y se genera uno nuevo para
+        la nueva última jornada laboral.
+      - solo cambia date_end -> se refresca el repair_notes legible de
+        la línea fantasma existente (nada la parsea).
+
+    Valida date_start <= date_end (ValueError en caso contrario).
+    Devuelve la misma instancia de periodo, refrescada.
+    """
+    if date_start > date_end:
+        raise ValueError(
+            "La fecha de inicio no puede ser posterior a la fecha de fin."
+        )
+
+    start_changed = date_start != period.date_start
+    end_changed = date_end != period.date_end
+
+    with transaction.atomic():
+        if start_changed and period.generated_entry_line_id:
+            old_work_order = period.generated_entry_line.entry.work_order
+            period.generated_entry_line = None
+            period.save(update_fields=["generated_entry_line"])
+            old_work_order.delete()
+
+        period.date_start = date_start
+        period.date_end = date_end
+        period.save(update_fields=["date_start", "date_end"])
+
+        if start_changed and period.generated_entry_line_id is None:
+            generate_vacation_task(period)
+        elif end_changed and period.generated_entry_line_id:
+            ghost_line = period.generated_entry_line
+            ghost_line.repair_notes = (
+                f"Vacaciones hasta el {date_end:%d/%m/%Y}."
+            )
+            ghost_line.save(update_fields=["repair_notes"])
+
+    return period
+
+
+def delete_vacation_period(period):
+    """
+    Shared delete logic for VacationPeriod (see create_vacation_period
+    docstring). Deletes the ghost WorkOrder first (cascades its
+    Entry/Line) -- a dangling GENERATED WorkOrder would otherwise stop
+    being excluded from hour totals the moment its VacationPeriod
+    disappears (see module docstring, exclusion at the three
+    aggregation points) -- then the period itself.
+    ---
+    Lógica de borrado compartida de VacationPeriod (ver docstring de
+    create_vacation_period). Borra primero el WorkOrder fantasma
+    (arrastra en cascada su Entry/Line) -- un WorkOrder GENERATED
+    huérfano dejaría de excluirse de los cómputos de horas en cuanto
+    desaparezca su VacationPeriod (ver docstring del módulo, exclusión
+    en los tres puntos de agregación) -- y después el propio periodo.
+    """
+    if period.generated_entry_line_id:
+        period.generated_entry_line.entry.work_order.delete()
+    period.delete()
+
+
 def compute_calendar_days(operator, company, date_from, date_to):
     """
     Returns a dict {date: {"color": ..., "label": ...}} for every calendar

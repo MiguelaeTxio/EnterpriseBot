@@ -35,7 +35,8 @@ from django.utils import timezone
 from django.views import View
 from email.message import EmailMessage as StdEmailMessage
 from email.utils import make_msgid
-from datetime import date
+from datetime import date, datetime
+import logging
 import unicodedata
 
 from analytics.views import _resolve_work_period
@@ -51,13 +52,17 @@ from document_explorer.subject_upload_service import (
 from document_management.vigencia_service import DocumentSnapshot, is_current
 from fleet.models import MachineAsset
 from hr_calendar.models import VacationPeriod
-from ivr_config.models import WorkPeriod
-from panel.mixins import CompanyUserRequiredMixin, DocsUploadAccessMixin
+from ivr_config.models import CompanyUser, WorkPeriod
+from panel.mixins import (
+    CompanyUserRequiredMixin, DocsUploadAccessMixin, SupervisorAccessMixin,
+)
 from panel.models import PanelNavigationState
 from panel.views_task_photos import _build_photo_entries
 from spare_parts.gcs_service import generate_signed_url, upload_bytes
 from whatsapp.services import send_epi_delivery_whatsapp_confirmation
 from work_order_processor.models import WorkOrder, WorkOrderEntry, WorkOrderEntryLine
+
+logger = logging.getLogger(__name__)
 
 BUCKET = "cgs_grupo_alvarez"
 
@@ -278,7 +283,7 @@ class DocumentationHubV2View(CompanyUserRequiredMixin, View):
         ).first()
         state = nav_state.state if nav_state and isinstance(nav_state.state, dict) else {}
         active_tab = state.get("active_tab") or "maquinaria"
-        if active_tab not in ("maquinaria", "personal", "epis"):
+        if active_tab not in ("maquinaria", "personal", "epis", "vacaciones"):
             active_tab = "maquinaria"
         filters = state.get("filters") if isinstance(state.get("filters"), dict) else {}
 
@@ -1569,6 +1574,341 @@ class EpiResultsFragmentView(CompanyUserRequiredMixin, View):
     def get(self, request):
         ctx = _epi_list_page(request)
         return render(request, "panel/documentation_h30/_epi_results.html", ctx)
+
+
+def _parse_iso_date(value):
+    """
+    H31 (S94). Parsea una cadena YYYY-MM-DD a un objeto date, devuelve
+    None si falla -- mismo comportamiento que hr_calendar.views._parse_iso,
+    duplicado aquí (función pura de 4 líneas) en vez de importado, para
+    no acoplar este módulo al de hr_calendar.views por una utilidad
+    trivial.
+    ---
+    Parses a YYYY-MM-DD string into a date object, returns None on
+    failure -- same behaviour as hr_calendar.views._parse_iso,
+    duplicated here (a trivial 4-line pure function) rather than
+    imported, to avoid coupling this module to hr_calendar.views for a
+    trivial utility.
+    """
+    try:
+        return datetime.strptime(value.strip(), "%Y-%m-%d").date()
+    except (ValueError, AttributeError):
+        return None
+
+
+def _vacation_list_page(request, company):
+    """
+    H31 (S94). Pestaña Vacaciones del hub de Documentación -- mismo
+    patrón que _epi_list_page. Reutiliza hr_calendar.models.
+    VacationPeriod (H24), acotado a la empresa del usuario autenticado
+    -- mismo scoping que hr_calendar.views.VacationPeriodListView.get.
+    """
+    qs = VacationPeriod.objects.filter(company=company).select_related(
+        "operator__user", "generated_entry_line",
+    )
+    search = request.GET.get("q", "").strip()
+    if search:
+        qs = qs.filter(
+            Q(operator__user__first_name__icontains=search)
+            | Q(operator__user__last_name__icontains=search)
+            | Q(operator__user__username__icontains=search),
+        )
+    sort_columns = [
+        ("date_start", "Fecha de inicio"),
+        ("operator__user__last_name", "Operario/chófer"),
+    ]
+    qs, sort_key, sort_dir = _apply_sort(
+        request, qs, sort_columns, "-date_start",
+    )
+    paginator = Paginator(qs, 50)
+    page = paginator.get_page(request.GET.get("page"))
+    return {
+        "page": page, "sort_key": sort_key, "sort_dir": sort_dir,
+        "search": search, "sort_columns_vacation": sort_columns,
+    }
+
+
+class VacationTabFragmentView(CompanyUserRequiredMixin, View):
+    """
+    H31 (S94). Carga inicial de la pestaña Vacaciones (click/load once)
+    -- formulario de alta + resultados, mismo patrón que
+    EpiTabFragmentView. Visible a cualquier usuario autenticado del
+    panel (igual que las otras pestañas del hub); el alta/edición/baja
+    en sí queda restringida a SUPERVISOR/ADMIN en las vistas de acción
+    de abajo, igual que en el CRUD de página completa
+    (hr_calendar/views.py).
+    """
+
+    def get(self, request):
+        cu = request.user.company_user
+        company = cu.company
+        ctx = _vacation_list_page(request, company)
+        ctx["operators"] = (
+            CompanyUser.objects.filter(company=company, is_active=True)
+            .select_related("user")
+            .order_by(
+                "user__first_name", "user__last_name", "user__username",
+            )
+        )
+        return render(
+            request, "panel/documentation_h30/_vacation_pane.html", ctx,
+        )
+
+
+class VacationResultsFragmentView(CompanyUserRequiredMixin, View):
+    """
+    H31 (S94). Búsqueda/orden/paginación dentro de Vacaciones -- solo
+    los resultados, el formulario de alta nunca se vuelve a pintar
+    (mismo patrón que EpiResultsFragmentView).
+    """
+
+    def get(self, request):
+        cu = request.user.company_user
+        ctx = _vacation_list_page(request, cu.company)
+        return render(
+            request, "panel/documentation_h30/_vacation_results.html", ctx,
+        )
+
+
+class VacationPeriodCreateFragmentView(SupervisorAccessMixin, View):
+    """
+    H31 (S94). Alta htmx de VacationPeriod. Restringido a SUPERVISOR/
+    ADMIN -- mismo rol que hr_calendar.views.VacationPeriodCreateView
+    (SupervisorAccessMixin), replicado aquí en vez de heredado porque
+    esa vista responde con `redirect`, incompatible con un swap htmx de
+    fragmento. La lógica de dominio (incluida la generación de la tarea
+    fantasma) vive en hr_calendar.services.create_vacation_period,
+    compartida con la vista de página completa -- ver docstring de esa
+    función (extraída en esta misma sesión, S94, para que ambos flujos
+    nunca diverjan en la sincronización delicada de la tarea fantasma).
+
+    POST /panel/documentacion/vacaciones/crear/
+        operator_pk (int), date_start (str YYYY-MM-DD), date_end (str YYYY-MM-DD).
+    Responde con el fragmento de resultados (_vacation_results.html),
+    con un banner de éxito/error inline -- nunca redirect ni JSON, para
+    que htmx pueda hacer swap directo de #vacation-results.
+    """
+
+    def post(self, request):
+        from hr_calendar.services import create_vacation_period
+
+        cu = request.user.company_user
+        company = cu.company
+        message = None
+        message_kind = "success"
+        operator = None
+
+        try:
+            operator_pk = int(request.POST.get("operator_pk", ""))
+            operator = CompanyUser.objects.get(pk=operator_pk, company=company)
+        except (ValueError, TypeError, CompanyUser.DoesNotExist):
+            operator_pk = request.POST.get("operator_pk", "")
+            message = (
+                "Operario/chófer no encontrado o no pertenece a esta empresa."
+            )
+            message_kind = "error"
+
+        date_start = _parse_iso_date(request.POST.get("date_start", ""))
+        date_end = _parse_iso_date(request.POST.get("date_end", ""))
+        if operator is not None and (not date_start or not date_end):
+            message = (
+                "Las fechas de inicio y fin son obligatorias y deben "
+                "tener formato YYYY-MM-DD."
+            )
+            message_kind = "error"
+
+        if operator is not None and date_start and date_end and message is None:
+            operator_name = (
+                operator.user.get_full_name() or operator.user.username
+            )
+            try:
+                create_vacation_period(
+                    company=company, operator=operator, created_by=cu,
+                    date_start=date_start, date_end=date_end,
+                )
+                message = (
+                    f"Periodo de vacaciones de {operator_name} registrado "
+                    f"correctamente ({date_start:%d/%m/%Y} – "
+                    f"{date_end:%d/%m/%Y}). Tarea automática generada en "
+                    "la última jornada laboral anterior al inicio."
+                )
+            except ValueError:
+                message = (
+                    "La fecha de inicio no puede ser posterior a la "
+                    "fecha de fin."
+                )
+                message_kind = "error"
+            except Exception as exc:
+                from fleet.models import MachineAsset as _MachineAsset
+                from ivr_config.models import AbsenceCategory
+
+                # Mismo criterio que hr_calendar/views.py: el detalle
+                # técnico completo va SOLO al log del servidor, nunca al
+                # mensaje visible (incidente 2026-07-15).
+                logger.error(
+                    "# [panel/views_documentation_h30] Error creando "
+                    "VacationPeriod (htmx). operator_pk=%r date_start=%r "
+                    "date_end=%r: %s",
+                    operator_pk, date_start, date_end, exc, exc_info=True,
+                )
+                if isinstance(
+                    exc, (_MachineAsset.DoesNotExist, AbsenceCategory.DoesNotExist),
+                ):
+                    message = (
+                        "No se ha podido registrar el periodo: faltan "
+                        "datos base de configuración para esta empresa "
+                        "(centro de gasto PERSONAL o categoría de "
+                        "ausencia Vacaciones). Contacta con el "
+                        "administrador de la plataforma."
+                    )
+                else:
+                    message = (
+                        "Error al registrar el periodo de vacaciones. "
+                        "Por favor, inténtalo de nuevo o contacta con el "
+                        "administrador de la plataforma si el problema "
+                        "persiste."
+                    )
+                message_kind = "error"
+
+        ctx = _vacation_list_page(request, company)
+        ctx["message"] = message
+        ctx["message_kind"] = message_kind
+        return render(
+            request, "panel/documentation_h30/_vacation_results.html", ctx,
+        )
+
+
+class VacationPeriodUpdateFragmentView(SupervisorAccessMixin, View):
+    """
+    H31 (S94). Edición htmx de VacationPeriod -- mismo criterio que
+    VacationPeriodCreateFragmentView (ver su docstring): réplica de
+    hr_calendar.views.VacationPeriodUpdateView respondiendo con
+    fragmento en vez de redirect, vía
+    hr_calendar.services.update_vacation_period (compartida).
+
+    POST /panel/documentacion/vacaciones/<pk>/editar/
+        date_start (str YYYY-MM-DD), date_end (str YYYY-MM-DD).
+    """
+
+    def post(self, request, pk):
+        from hr_calendar.services import update_vacation_period
+
+        cu = request.user.company_user
+        company = cu.company
+        message = None
+        message_kind = "success"
+
+        try:
+            period = VacationPeriod.objects.select_related(
+                "operator__user",
+                "generated_entry_line__entry__work_order",
+            ).get(pk=pk, company=company)
+        except VacationPeriod.DoesNotExist:
+            period = None
+            message = (
+                "Periodo de vacaciones no encontrado o no pertenece a "
+                "esta empresa."
+            )
+            message_kind = "error"
+
+        date_start = _parse_iso_date(request.POST.get("date_start", ""))
+        date_end = _parse_iso_date(request.POST.get("date_end", ""))
+        if period is not None and (not date_start or not date_end):
+            message = (
+                "Las fechas de inicio y fin son obligatorias y deben "
+                "tener formato YYYY-MM-DD."
+            )
+            message_kind = "error"
+
+        if period is not None and date_start and date_end and message is None:
+            operator_name = (
+                period.operator.user.get_full_name()
+                or period.operator.user.username
+            )
+            try:
+                update_vacation_period(period, date_start, date_end)
+                message = (
+                    f"Periodo de vacaciones de {operator_name} "
+                    f"actualizado correctamente ({date_start:%d/%m/%Y} – "
+                    f"{date_end:%d/%m/%Y})."
+                )
+            except ValueError:
+                message = (
+                    "La fecha de inicio no puede ser posterior a la "
+                    "fecha de fin."
+                )
+                message_kind = "error"
+            except Exception as exc:
+                logger.error(
+                    "# [panel/views_documentation_h30] Error "
+                    "actualizando VacationPeriod (htmx) pk=%r: %s",
+                    pk, exc, exc_info=True,
+                )
+                message = (
+                    "Error al actualizar el periodo de vacaciones. Por "
+                    "favor, inténtalo de nuevo o contacta con el "
+                    "administrador de la plataforma si el problema "
+                    "persiste."
+                )
+                message_kind = "error"
+
+        ctx = _vacation_list_page(request, company)
+        ctx["message"] = message
+        ctx["message_kind"] = message_kind
+        return render(
+            request, "panel/documentation_h30/_vacation_results.html", ctx,
+        )
+
+
+class VacationPeriodDeleteFragmentView(SupervisorAccessMixin, View):
+    """
+    H31 (S94). Baja htmx de VacationPeriod -- mismo criterio que
+    VacationPeriodCreateFragmentView (ver su docstring): réplica de
+    hr_calendar.views.VacationPeriodDeleteView respondiendo con
+    fragmento en vez de redirect, vía
+    hr_calendar.services.delete_vacation_period (compartida).
+
+    POST /panel/documentacion/vacaciones/<pk>/eliminar/
+    """
+
+    def post(self, request, pk):
+        from hr_calendar.services import delete_vacation_period
+
+        cu = request.user.company_user
+        company = cu.company
+        message = None
+        message_kind = "success"
+
+        try:
+            period = VacationPeriod.objects.select_related(
+                "operator__user",
+                "generated_entry_line__entry__work_order",
+            ).get(pk=pk, company=company)
+        except VacationPeriod.DoesNotExist:
+            period = None
+            message = (
+                "Periodo de vacaciones no encontrado o no pertenece a "
+                "esta empresa."
+            )
+            message_kind = "error"
+
+        if period is not None:
+            operator_name = (
+                period.operator.user.get_full_name()
+                or period.operator.user.username
+            )
+            delete_vacation_period(period)
+            message = (
+                f"Periodo de vacaciones de {operator_name} eliminado "
+                "correctamente."
+            )
+
+        ctx = _vacation_list_page(request, company)
+        ctx["message"] = message
+        ctx["message_kind"] = message_kind
+        return render(
+            request, "panel/documentation_h30/_vacation_results.html", ctx,
+        )
 
 
 class DocumentViewView(CompanyUserRequiredMixin, View):
