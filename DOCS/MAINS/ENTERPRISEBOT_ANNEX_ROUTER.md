@@ -54,8 +54,8 @@ Cumple dos funciones inseparables:
 | H28 | Migración y Reorganización de Documentación Histórica | `ENTERPRISEBOT_ATTACHED_MILESTONE_V28.md` |
 | H29 | Explorador de Archivos y Gobierno Documental del Panel sobre GCS | `ENTERPRISEBOT_ATTACHED_MILESTONE_V29.md` |
 | H30 | Vinculación Documental Real — Centros de Gasto y Personal | `ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md` |
-| H31 | Interfaz de Ficha de Personal — EPIs y Notificaciones/Circulares | `ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md` |
-| H32 | Migraciones de Infraestructura (Modelo IA, Python, Registro Android) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V32.md` ← EN PROGRESO |
+| H31 | Interfaz de Ficha de Personal — EPIs y Notificaciones/Circulares | `ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md` ← EN PROGRESO |
+| H32 | Migraciones de Infraestructura (Modelo IA, Python, Registro Android) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V32.md` |
 
 Todos los anexos viven en `DOCS/MAINS/ATTACHEDS/`.
 
@@ -63,14 +63,28 @@ Todos los anexos viven en `DOCS/MAINS/ATTACHEDS/`.
 
 ## 3. Resultado Actual
 
-**Hito EN PROGRESO:** H32 — Migraciones de Infraestructura (Modelo IA,
-Python, Registro Android) → `ENTERPRISEBOT_ATTACHED_MILESTONE_V32.md`.
-Abierto en S92 por decisión explícita de Miguel Ángel al cerrar el
-dominio PERSONAL de H30 al 100%: tres plazos externos reales
-convergen en septiembre-octubre de 2026 (bloqueo de acceso a
-`gemini-2.5-flash` ~16/09, fin de soporte de Python 3.10 en
-`google.api_core` 04/10, registro de apps Android en Play Console
-30/09) y merecen hito propio. Ver hoja de ruta de su propio anexo.
+**Hito EN PROGRESO:** H31 — Interfaz de Ficha de Personal: EPIs y
+Notificaciones/Circulares → `ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md`.
+Reactivado en S93 tras confirmar que se cumple la condición real de
+reactivación registrada en su propio anexo (sección 5.5): las
+familias `LABORAL` + `SALUD_BAJAS_PERSONA` (6.085 documentos, 0% con
+`issue_date`/`expiry_date` en el momento de la pausa, S77) quedaron
+cubiertas al 100% con el cierre del dominio PERSONAL de H30 en S92.
+Hoja de ruta de arranque: los tres puntos de "Pendiente real para
+cuando H31 se retome" de su propio anexo (sección 5.5), intactos
+desde S77.
+
+**Hito CERRADO en S93:** H32 — Migraciones de Infraestructura (Modelo
+IA, Python, Registro Android) → `ENTERPRISEBOT_ATTACHED_MILESTONE_V32.md`.
+Los tres plazos que motivaron el hito quedaron atendidos: migración
+`gemini-2.5-flash` → `gemini-3.5-flash` completa y desplegada, venv de
+Python migrado a 3.12 sobre imagen `innit` y verificado en producción
+(webapp + 2 tareas Always On + consola), y registro de Google Play
+Console reconducido a Android Developer Console (fuera del alcance de
+código de este repositorio, seguimiento manual de Miguel Ángel). Sin
+hoja de ruta pendiente propia -- si `google.api_core`/PythonAnywhere
+o Gemini generan una incidencia real futura, se atenderá como desvío
+puntual (Caso A de `com-pch`), no reabriendo el hito completo.
 
 **Hito PAUSADO en esta sesión (S92):** H30 — Vinculación Documental
 Real: Centros de Gasto y Personal → `ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md`.

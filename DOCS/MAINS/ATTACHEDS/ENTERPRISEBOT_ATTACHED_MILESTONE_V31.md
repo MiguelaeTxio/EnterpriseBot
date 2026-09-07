@@ -3,6 +3,16 @@
 
 ---
 
+**REACTIVADO EN S93** (PCH desde H32, cerrado en la misma sesión).
+Condición real de reactivación (registrada en la sección 5.5 de este
+mismo anexo) confirmada: las familias `LABORAL` + `SALUD_BAJAS_PERSONA`
+quedaron con `issue_date`/`expiry_date` extraído al 100% al cerrar el
+dominio PERSONAL de H30 en S92. Hoja de ruta de arranque para S94: los
+tres puntos de la sección 5.5, "Pendiente real para cuando H31 se
+retome" -- intactos desde S77, sin reescribir.
+
+---
+
 ## 1. Objetivo del hito
 
 Construir la interfaz real que permita, desde el panel:

@@ -284,29 +284,31 @@ activo tras el despliegue del Punto 2.
 
 ---
 
-## 4. Hoja de Ruta para la Sesión Siguiente (S94)
+## 4. CIERRE DEL HITO (S93)
 
-Ejecución estrictamente secuencial, sin preguntar por dónde empezar.
+**H32 queda CERRADO en la propia S93** -- PCH ejecutado en la misma
+sesión a H31 (ver `ENTERPRISEBOT_ANNEX_ROUTER.md`, sección 3), no en
+S94 como se había previsto al escribir esta hoja de ruta. Los tres
+plazos del objetivo del hito quedan atendidos: Gemini migrado y
+desplegado, Python migrado y verificado en los tres procesos de
+producción (webapp, bridge de voz, worker Celery), Google Play
+reconducido a Android Developer Console (fuera de alcance de código).
 
-**Punto 1 -- Validar el Punto 3 del bloque Gemini** (sección 2.1) si
-Miguel Ángel ya generó los casos reales de Vision/texto -- confirmar
-formato de respuesta de `gemini-3.5-flash` en producción antes de dar
-la migración del modelo por completamente cerrada. Si todavía no hay
-casos reales disponibles, dejarlo abierto y no bloquear el resto de
-la sesión por ello.
+**Dos puntos de seguimiento reales, sin hoja de ruta propia -- no
+reabren el hito, se atienden como desvío puntual (Caso A de
+`com-pch`) si Miguel Ángel los trae en una sesión futura:**
 
-**Punto 2 -- Google Play Console: seguimiento, no acción de código.**
-Ver sección 2.3, corregida en S93 -- preguntar a Miguel Ángel si ya
-registró **miMoo** y **AperturasAjedrez** en el Android Developer
-Console antes del 30 de septiembre de 2026. Solo intervenir si pide
-ayuda con un paso técnico puntual (p. ej. extraer una huella SHA de
-una keystore local); el registro en sí es un trámite manual suyo, no
-un punto de la hoja de ruta de EnterpriseBot.
+1. **Validación en producción del bloque Gemini** (sección 2.1,
+   Punto 3): confirmar formato de respuesta de `gemini-3.5-flash` con
+   un caso real de Vision y uno de clasificación de texto, cuando
+   Miguel Ángel los genere.
+2. **Google Play Console / Android Developer Console** (sección 2.3):
+   confirmar si **miMoo** y **AperturasAjedrez** quedaron registrados
+   antes del 30 de septiembre de 2026. Trámite manual de Miguel Ángel,
+   no de código.
 
-**Con Puntos 1 y 2 resueltos o parqueados, H32 queda íntegramente
-cerrado** (los tres plazos del objetivo del hito atendidos: Gemini
-migrado y desplegado, Python migrado y verificado en los tres procesos
-de producción, Google Play sin acción posible todavía). Momento de
-proponer a Miguel Ángel retomar H30 (dominio MÁQUINAS, pausado desde
-S92) o H31 (Interfaz de Ficha de Personal, pausado desde S77) como
-siguiente hito EN PROGRESO -- ver PCH.
+Y un tercero, de vigilancia permanente, que **no vive en este anexo**
+sino en el documento maestro (sección 4.1.2, abierta en esta misma
+sesión): seguimiento del ciclo de vida de `gemini-live-2.5-flash-
+native-audio` (Live API, voz) -- sin fecha de apagado anunciada
+todavía, re-verificar en cada sesión que toque `vox_bridge/`.
