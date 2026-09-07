@@ -578,6 +578,7 @@ class DocumentTypeCatalog(models.Model):
     DOMAIN_PERSONAL = "PERSONAL"
     DOMAIN_BOTH = "BOTH"
     DOMAIN_COMPANY = "COMPANY"
+    DOMAIN_EPI = "EPI"
     DOMAIN_CHOICES = [
         (DOMAIN_MACHINE, "Maquinaria"),
         (DOMAIN_PERSONAL, "Personal"),
@@ -585,6 +586,10 @@ class DocumentTypeCatalog(models.Model):
         (
             DOMAIN_COMPANY,
             "Empresa y obra (CompanyWorksite, H30 S58)",
+        ),
+        (
+            DOMAIN_EPI,
+            "EPI (EpiItemCatalog, H31 S95)",
         ),
     ]
 
