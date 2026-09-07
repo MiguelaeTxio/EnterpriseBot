@@ -818,13 +818,53 @@ producto resuelta** -- Bajas médicas se modelan con un modelo
 estructurado nuevo (ver sección 5.5 arriba, punto 2, cita verbatim de
 Miguel Ángel).
 
-## Hoja de Ruta para la Sesión Siguiente (S94)
+## COMPLETADAS EN S94
+
+**Punto 1 -- CERRADO con criterio de cierre cumplido.** Modelo
+`hr_calendar.MedicalLeavePeriod` creado: `person` (FK
+`document_explorer.PersonIdentity`), `source_document` (FK opcional
+`document_explorer.DocumentIndexEntry`), `date_start`, `date_end`
+(nullable, baja en curso), `contingency_type` (COMUN/PROFESIONAL/
+MATERNIDAD_PATERNIDAD/RIESGO_EMBARAZO_LACTANCIA/
+SALUD_MENSTRUAL_REPRODUCTIVA), `created_at`. Colocado en `hr_calendar`
+(no en `personal_documents`) por cercanía real de dominio -- es un
+periodo de ausencia hermano de `VacationPeriod`, no un documento
+clasificado.
+
+Commit `6b84492`: `models.py` + migración `0002_medicalleaveperiod`
+(`CreateModel` + `CheckConstraint` date_end nulo o ≥ date_start) +
+migración de datos `0003_seed_first_medical_leave_period` (crea el
+primer registro real a partir de un `PARTE_BAJA_MEDICA` existente).
+
+**Incidencia real detectada y corregida en la misma sesión (directriz
+4.9):** el primer despliegue de este commit falló
+(`conclusion: failure` en Actions) con `ModuleNotFoundError: celery`.
+Diagnóstico con Comando S real: `deploy.yml` seguía apuntando a
+`~/.virtualenvs/EnterpriseBot_venv/` (ruta que ya no existe tras la
+migración de venv de H32/S93 a `EnterpriseBot_venv_py312`) --
+`start_celery_worker.sh` se corrigió en su día (commit `7ae950f`) pero
+`deploy.yml` se quedó sin tocar, rompiendo **todo** despliegue
+automático desde entonces, no solo el de esta sesión. Corregido en
+commit `83dccf4` (`deploy.yml`, `SESSION_VARIABLES.md`,
+`ENTERPRISEBOT_MASTER_DOCUMENT.md`). Redeploy verificado en `success`
+con los 8 pasos completados.
+
+**Verificación final con datos reales (Comando S,
+`EnterpriseBot_004_GET.txt`):** `showmigrations hr_calendar` ->
+`0002`/`0003` en `[X]`. Consulta directa:
+`MedicalLeavePeriod.objects.count() == 1`, registro real de Alejandro
+García Luque (PersonIdentity pk=158, dni=74852724Y): `date_start=
+2021-07-26`, `date_end=None`, `contingency_type=COMUN`,
+`source_document_id=38341`.
+
+## Hoja de Ruta para la Sesión Siguiente (S94, continuación)
 
 Ejecución estrictamente secuencial, sin preguntar por dónde empezar.
 Cada punto lleva su criterio de cierre objetivo.
 
-**Punto 1 -- Modelo estructurado de Bajas médicas (decisión ya
-tomada, ver COMPLETADAS EN S93).** Diseñar y migrar un modelo nuevo
+**Punto 1 -- CERRADO EN S94, ver sección "COMPLETADAS EN S94" arriba.**
+~~Modelo estructurado de Bajas médicas (decisión ya
+tomada, ver COMPLETADAS EN S93).~~ Diseñar y migrar un modelo nuevo
 (app `hr_calendar` o `personal_documents`, a decidir por cercanía de
 dominio -- **verificar `models.py` real de ambas apps en el turno
 actual antes de decidir dónde vive**, directriz 4.14) con al menos:
