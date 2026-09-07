@@ -154,6 +154,10 @@ TEMPLATES = [
                 # vista tenia que inyectarlos a mano, perdiendo medio
                 # menu la que se olvidara. Ver panel/context_processors.
                 'panel.context_processors.company_context',
+                # H31 (S94): estado real (BD) de los acordeones del
+                # sidebar, sustituye sessionStorage. Ver
+                # panel/context_processors.sidebar_navigation_context.
+                'panel.context_processors.sidebar_navigation_context',
             ],
         },
     },

@@ -112,14 +112,14 @@
                     type="button"
                     data-bs-toggle="collapse"
                     data-bs-target="#acc-mi-perfil"
-                    aria-expanded="false"
+                    aria-expanded="{% if sidebar_mi_perfil == 'open' %}true{% else %}false{% endif %}"
                     aria-controls="acc-mi-perfil"
                     data-acc-id="acc-mi-perfil">
                 <i class="bi bi-person-circle"></i>
                 <span>Mi perfil</span>
                 <i class="bi bi-chevron-down sidebar-chevron ms-auto"></i>
             </button>
-            <div class="collapse sidebar-accordion-body" id="acc-mi-perfil">
+            <div class="collapse sidebar-accordion-body{% if sidebar_mi_perfil == 'open' %} show{% endif %}" id="acc-mi-perfil" data-nav-persisted="{{ sidebar_mi_perfil }}">
                 <ul class="nav flex-column ps-3">
                     {# Orden alfabético dentro de la sección (a petición de #}
                     {# Miguel Ángel, 2026-07-15): Calendario, Mi estado,    #}
@@ -167,14 +167,14 @@
                     type="button"
                     data-bs-toggle="collapse"
                     data-bs-target="#acc-telefonia"
-                    aria-expanded="false"
+                    aria-expanded="{% if sidebar_telefonia == 'open' %}true{% else %}false{% endif %}"
                     aria-controls="acc-telefonia"
                     data-acc-id="acc-telefonia">
                 <i class="bi bi-telephone"></i>
                 <span>Telefónía</span>
                 <i class="bi bi-chevron-down sidebar-chevron ms-auto"></i>
             </button>
-            <div class="collapse sidebar-accordion-body" id="acc-telefonia">
+            <div class="collapse sidebar-accordion-body{% if sidebar_telefonia == 'open' %} show{% endif %}" id="acc-telefonia" data-nav-persisted="{{ sidebar_telefonia }}">
                 <ul class="nav flex-column ps-3">
                     {# Orden alfabético dentro de la sección (a petición de #}
                     {# Miguel Ángel, 2026-07-15).                           #}
@@ -258,14 +258,14 @@
                     type="button"
                     data-bs-toggle="collapse"
                     data-bs-target="#acc-administracion"
-                    aria-expanded="false"
+                    aria-expanded="{% if sidebar_administracion == 'open' %}true{% else %}false{% endif %}"
                     aria-controls="acc-administracion"
                     data-acc-id="acc-administracion">
                 <i class="bi bi-grid"></i>
                 <span>Administración</span>
                 <i class="bi bi-chevron-down sidebar-chevron ms-auto"></i>
             </button>
-            <div class="collapse sidebar-accordion-body" id="acc-administracion">
+            <div class="collapse sidebar-accordion-body{% if sidebar_administracion == 'open' %} show{% endif %}" id="acc-administracion" data-nav-persisted="{{ sidebar_administracion }}">
                 <ul class="nav flex-column ps-3">
                     {# Orden alfabético dentro de la sección (a petición de #}
                     {# Miguel Ángel, 2026-07-15). Los gates de cada ítem no #}
@@ -440,14 +440,14 @@
                     type="button"
                     data-bs-toggle="collapse"
                     data-bs-target="#acc-taller-mecanico"
-                    aria-expanded="false"
+                    aria-expanded="{% if sidebar_taller_mecanico == 'open' %}true{% else %}false{% endif %}"
                     aria-controls="acc-taller-mecanico"
                     data-acc-id="acc-taller-mecanico">
                 <i class="bi bi-wrench-adjustable"></i>
                 <span>Taller Mecánico</span>
                 <i class="bi bi-chevron-down sidebar-chevron ms-auto"></i>
             </button>
-            <div class="collapse sidebar-accordion-body" id="acc-taller-mecanico">
+            <div class="collapse sidebar-accordion-body{% if sidebar_taller_mecanico == 'open' %} show{% endif %}" id="acc-taller-mecanico" data-nav-persisted="{{ sidebar_taller_mecanico }}">
                 <ul class="nav flex-column ps-3">
 
                     {# --- Subgrupo Taller (PDFs + Tickets de avería) eliminado 2026-07-10   #}
@@ -613,14 +613,14 @@
                     type="button"
                     data-bs-toggle="collapse"
                     data-bs-target="#acc-asistencia"
-                    aria-expanded="false"
+                    aria-expanded="{% if sidebar_asistencia == 'open' %}true{% else %}false{% endif %}"
                     aria-controls="acc-asistencia"
                     data-acc-id="acc-asistencia">
                 <i class="bi bi-truck-flatbed"></i>
                 <span>Asistencia</span>
                 <i class="bi bi-chevron-down sidebar-chevron ms-auto"></i>
             </button>
-            <div class="collapse sidebar-accordion-body" id="acc-asistencia">
+            <div class="collapse sidebar-accordion-body{% if sidebar_asistencia == 'open' %} show{% endif %}" id="acc-asistencia" data-nav-persisted="{{ sidebar_asistencia }}">
                 <ul class="nav flex-column ps-3">
                     {# Orden alfabético dentro de la sección (a petición de #}
                     {# Miguel Ángel, 2026-07-15). Los gates de cada ítem no #}
@@ -734,12 +734,16 @@
 </ul>
 
 {# ================================================================== #}
-{# JS: Acordeón sidebar — persistencia via sessionStorage              #}
-{# Abre automáticamente la sección activa al cargar la página.            #}
-{# Guarda el estado de cada sección en sessionStorage al colapsar/abrir. #}
-{# JS: Sidebar accordion — sessionStorage persistence                  #}
-{# Auto-opens the active section on page load.                        #}
-{# Saves each section state in sessionStorage on collapse/expand.     #}
+{# JS: Acordeón sidebar — persistencia real en BD (H31, S94)          #}
+{# Abre automáticamente la sección activa solo la primera vez que el     #}
+{# usuario la visita (sin estado persistido todavía).                    #}
+{# Guarda el estado de cada sección en PanelNavigationState al           #}
+{# colapsar/abrir -- ver panel/context_processors.py para la lectura.    #}
+{# JS: Sidebar accordion — real DB persistence (H31, S94)             #}
+{# Auto-opens the active section only the first time the user visits    #}
+{# it (no persisted state yet).                                         #}
+{# Saves each section's state to PanelNavigationState on collapse/      #}
+{# expand -- see panel/context_processors.py for the read side.         #}
 {# ================================================================== #}
 <script>
 (function () {
@@ -798,41 +802,46 @@
         'night_schedules':          'acc-asistencia'
     };
 
-    var STORAGE_PREFIX = 'sidebar_acc_';
+    // H31 (S94). Persistencia real en BD (PanelNavigationState,
+    // screen_key='sidebar') -- sustituye sessionStorage, que se
+    // perdía al cerrar el navegador o cambiar de dispositivo. El
+    // estado inicial de cada sección YA llega renderizado desde el
+    // servidor (ver panel/context_processors.sidebar_navigation_context
+    // y las clases/atributos condicionales de cada bloque de arriba)
+    // -- este script solo GUARDA cada cambio futuro, igual criterio
+    // que el hub de Documentación (hub.html).
+    var csrfMetaSidebar = document.querySelector('meta[name="csrf-token"]');
+    var csrfTokenSidebar = csrfMetaSidebar ? csrfMetaSidebar.getAttribute('content') : '';
+    var sidebarSaveTimer = null;
 
-    // Restore saved states from sessionStorage
-    // Restaurar estados guardados desde sessionStorage
-    document.querySelectorAll('.sidebar-accordion-body').forEach(function (el) {
-        var key = STORAGE_PREFIX + el.id;
-        if (sessionStorage.getItem(key) === 'open') {
-            el.classList.add('show');
+    function saveSidebarState(partialUpdate) {
+        clearTimeout(sidebarSaveTimer);
+        sidebarSaveTimer = setTimeout(function () {
+            fetch('/panel/navegacion/estado/sidebar/', {
+                method: 'POST',
+                headers: {'X-CSRFToken': csrfTokenSidebar, 'Content-Type': 'application/json'},
+                body: JSON.stringify(partialUpdate),
+            });
+        }, 400);
+    }
+
+    // Detectar sección activa y abrirla SOLO si esta sesión nunca la
+    // tocó todavía (data-nav-persisted="" -- ver contexto server-side
+    // de arriba). Si el usuario ya la abrió o cerró alguna vez,
+    // data-nav-persisted trae 'open'/'closed' y el servidor ya la
+    // renderizó correctamente -- no hay nada que decidir aquí.
+    var activeNav = '{{ active_nav|default:"" }}';
+    var activeAccId = NAV_TO_ACC[activeNav];
+    if (activeAccId) {
+        var accEl = document.getElementById(activeAccId);
+        if (accEl && accEl.dataset.navPersisted === '' && !accEl.classList.contains('show')) {
+            accEl.classList.add('show');
             var btn = document.querySelector(
-                '[data-bs-target="#' + el.id + '"]'
+                '[data-bs-target="#' + activeAccId + '"]'
             );
             if (btn) {
                 btn.setAttribute('aria-expanded', 'true');
                 btn.classList.remove('collapsed');
-            }
-        }
-    });
-
-    // Detect active section and open it if no sessionStorage state saved
-    // Detectar seccion activa y abrirla si no hay estado en sessionStorage
-    var activeNav = '{{ active_nav|default:"" }}';
-    var activeAccId = NAV_TO_ACC[activeNav];
-    if (activeAccId) {
-        var key = STORAGE_PREFIX + activeAccId;
-        if (!sessionStorage.getItem(key)) {
-            var accEl = document.getElementById(activeAccId);
-            if (accEl && !accEl.classList.contains('show')) {
-                accEl.classList.add('show');
-                var btn = document.querySelector(
-                    '[data-bs-target="#' + activeAccId + '"]'
-                );
-                if (btn) {
-                    btn.setAttribute('aria-expanded', 'true');
-                    btn.classList.remove('collapsed');
-                }
             }
         }
     }
@@ -841,7 +850,9 @@
     // Persistir estado en eventos Bootstrap collapse/expand
     document.querySelectorAll('.sidebar-accordion-body').forEach(function (el) {
         el.addEventListener('shown.bs.collapse', function () {
-            sessionStorage.setItem(STORAGE_PREFIX + el.id, 'open');
+            var update = {};
+            update[el.id] = 'open';
+            saveSidebarState(update);
             // Rotate chevron
             // Girar chevron
             var btn = document.querySelector(
@@ -853,7 +864,9 @@
             }
         });
         el.addEventListener('hidden.bs.collapse', function () {
-            sessionStorage.setItem(STORAGE_PREFIX + el.id, 'closed');
+            var update = {};
+            update[el.id] = 'closed';
+            saveSidebarState(update);
             // Reset chevron
             // Resetear chevron
             var btn = document.querySelector(

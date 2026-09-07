@@ -68,3 +68,67 @@ def company_context(request):
         "company_user": company_user,
         "company": company_user.company,
     }
+
+
+# H31 (S94). IDs reales de las 5 secciones del acordeón principal del
+# sidebar -- ver panel/templates/panel/_nav_items.html. Lista única
+# aquí para que sidebar_navigation_context() y cualquier vista que
+# necesite tocarlas a mano compartan la misma fuente de verdad.
+SIDEBAR_ACCORDION_IDS = (
+    "acc-mi-perfil", "acc-telefonia", "acc-administracion",
+    "acc-taller-mecanico", "acc-asistencia",
+)
+
+
+def sidebar_navigation_context(request):
+    """
+    H31 (S94). Estado real (BD) de los acordeones del sidebar --
+    sustituye el mecanismo anterior basado en sessionStorage, que se
+    perdía al cerrar el navegador o cambiar de dispositivo -- lo
+    contrario de lo que Miguel Ángel pidió explícitamente desde el
+    principio para cualquier persistencia de navegación (S75: "el que
+    cambie la pestaña soy yo [...] tiene que sobrevivir a cerrar el
+    navegador"), y el motivo real por el que pidió en S94 "cubrir todo
+    el panel con esta forma de gestionar la navegación". Reutiliza
+    PanelNavigationState (screen_key='sidebar'), el mismo modelo ya
+    usado por el hub de Documentación -- nunca un mecanismo nuevo.
+
+    Expone una variable de contexto por sección (`sidebar_mi_perfil`,
+    `sidebar_telefonia`, `sidebar_administracion`,
+    `sidebar_taller_mecanico`, `sidebar_asistencia`), cada una con
+    valor `'open'`, `'closed'`, o `''` (todavía sin tocar nunca por
+    este usuario). El valor `''` deja que el JS de _nav_items.html
+    decida el comportamiento de primera visita (abrir la sección que
+    contiene la página activa, mismo criterio de siempre) -- en cuanto
+    el usuario toca esa sección una vez, queda `'open'`/`'closed'`
+    para siempre, ya sin ambigüedad ni dependencia de JS.
+
+    Variables con nombre plano (sin diccionario ni claves con guion)
+    a propósito -- Django no permite `{{ dict.acc-mi-perfil }}` como
+    lookup directo (el guion rompe el parseo del token de variable),
+    y con solo 5 secciones fijas no compensa añadir un filtro de
+    plantilla nuevo solo para esto.
+    """
+    user = getattr(request, "user", None)
+    if user is None or not user.is_authenticated:
+        return {}
+    company_user = getattr(user, "company_user", None)
+    if company_user is None:
+        return {}
+
+    from panel.models import PanelNavigationState
+
+    nav_state = PanelNavigationState.objects.filter(
+        company_user=company_user, screen_key="sidebar",
+    ).first()
+    state = (
+        nav_state.state
+        if nav_state and isinstance(nav_state.state, dict) else {}
+    )
+
+    context = {}
+    for acc_id in SIDEBAR_ACCORDION_IDS:
+        var_name = "sidebar_" + acc_id.replace("acc-", "").replace("-", "_")
+        value = state.get(acc_id, "")
+        context[var_name] = value if value in ("open", "closed") else ""
+    return context

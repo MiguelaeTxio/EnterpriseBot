@@ -53,13 +53,25 @@ class NavigationStateSaveView(CompanyUserRequiredMixin, View):
         )
         state = obj.state if isinstance(obj.state, dict) else {}
 
-        if "active_tab" in payload:
-            state["active_tab"] = payload["active_tab"]
-        if "filters" in payload and isinstance(payload["filters"], dict):
-            existing_filters = state.get("filters") if isinstance(state.get("filters"), dict) else {}
-            for tab_key, tab_filters in payload["filters"].items():
-                existing_filters[tab_key] = tab_filters
-            state["filters"] = existing_filters
+        # GENERALIZADO EN S94 (a petición de Miguel Ángel: "cubrir todo
+        # el panel con esta forma de gestionar la navegación") -- antes
+        # solo entendía las claves "active_tab" y "filters" a mano.
+        # Ahora cualquier clave del payload se fusiona superficialmente
+        # (nivel 1) sobre el estado ya guardado -- así una pantalla
+        # nueva (sidebar, acordeón de una ficha, pestañas de partes de
+        # trabajo...) puede guardar sus propias claves sin tener que
+        # tocar esta vista cada vez. "filters" conserva su propio
+        # sub-merge de nivel 2 (por pestaña) como caso especial,
+        # porque así lo pedía ya el diseño original (S75) y cambiarlo
+        # rompería el hub de Documentación.
+        for key, value in payload.items():
+            if key == "filters" and isinstance(value, dict):
+                existing_filters = state.get("filters") if isinstance(state.get("filters"), dict) else {}
+                for tab_key, tab_filters in value.items():
+                    existing_filters[tab_key] = tab_filters
+                state["filters"] = existing_filters
+            else:
+                state[key] = value
 
         obj.state = state
         obj.save(update_fields=["state", "updated_at"])
