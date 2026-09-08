@@ -44,6 +44,7 @@ USO (ejemplo, shard 0 de 3):
     python3 verify_domain_mismatch_ocr_179_s95_vm.py --shard-count 3 --shard-index 0
 """
 import argparse
+import datetime
 import getpass
 
 import pymysql
@@ -52,6 +53,24 @@ from google.cloud import storage
 
 from config import get_service_account_key_path
 from extract_personal_dates_bulk import extract_text
+
+# Patron obligatorio desde S81 (ver extract_epis_deliveries_vm.py,
+# commit a6be28c): la sesion SSH desde Termux se desconecta por
+# inactividad en barridos largos (S86), y sin log propio a fichero
+# con flush() explicito, Python deja el stdout redirigido con buffer
+# de bloque -- una desconexion a medias puede dejar el archivo vacio,
+# sin ningun rastro de por donde iba el barrido. Corregido en la
+# propia sesion S95 tras usar la version anterior (solo print() +
+# redireccion de shell) para el shard 0 real.
+_LOG_FH = None
+
+
+def _log(msg):
+    line = "[%s] %s" % (datetime.datetime.now().strftime("%H:%M:%S"), msg)
+    print(line, flush=True)
+    if _LOG_FH is not None:
+        _LOG_FH.write(line + "\n")
+        _LOG_FH.flush()
 
 PYTHONANYWHERE_USERNAME = "MiguelAeTxio"
 SSH_HOSTNAME = "ssh.pythonanywhere.com"
@@ -100,6 +119,10 @@ def main():
     if not (0 <= args.shard_index < max(args.shard_count, 1)):
         parser.error("--shard-index debe estar entre 0 y --shard-count - 1")
 
+    global _LOG_FH
+    log_path = "verify_domain_mismatch_shard%d.log" % args.shard_index
+    _LOG_FH = open(log_path, "a", encoding="utf-8")
+
     if args.shard_count > 1:
         ids_this_shard = [
             entry_id for entry_id in ALL_IDS
@@ -111,14 +134,14 @@ def main():
     mysql_password = getpass.getpass(
         "Contrasena de MySQL (panel PythonAnywhere, pestana 'Databases'): "
     )
-    print("Abriendo tunel SSH a %s (autenticando por clave ya registrada) ..." % SSH_HOSTNAME)
+    _log("Abriendo tunel SSH a %s (autenticando por clave ya registrada) ..." % SSH_HOSTNAME)
     tunnel = sshtunnel.SSHTunnelForwarder(
         SSH_HOSTNAME,
         ssh_username=PYTHONANYWHERE_USERNAME,
         remote_bind_address=(MYSQL_HOSTNAME, 3306),
     )
     tunnel.start()
-    print("Tunel abierto, puerto local %d." % tunnel.local_bind_port)
+    _log("Tunel abierto, puerto local %d." % tunnel.local_bind_port)
 
     conn = pymysql.connect(
         host="127.0.0.1", port=tunnel.local_bind_port,
@@ -126,7 +149,7 @@ def main():
         db=MYSQL_DB_NAME, charset="utf8mb4",
     )
 
-    print("Autenticando con GCS (clave del agente H28) ...")
+    _log("Autenticando con GCS (clave del agente H28) ...")
     gcs_client = storage.Client.from_service_account_json(
         get_service_account_key_path()
     )
@@ -144,20 +167,21 @@ def main():
         rows = cur.fetchall()
 
     if args.shard_count > 1:
-        print("Reparto: shard %d de %d (entry_id %% %d == %d)"
-              % (args.shard_index, args.shard_count,
-                 args.shard_count, args.shard_index))
-    print("Documentos a procesar en este shard: %d\n" % len(rows))
+        _log("Reparto: shard %d de %d (entry_id %% %d == %d)"
+             % (args.shard_index, args.shard_count,
+                args.shard_count, args.shard_index))
+    _log("Documentos a procesar en este shard: %d" % len(rows))
 
     ok = 0
     sin_extractor = 0
     error = 0
+    total = len(rows)
 
     for i, (entry_id, name, parent_path, bucket_name, blob_name, code) in enumerate(rows, start=1):
         if i % 20 == 0:
             conn.ping(reconnect=True)
-        print("[%d/%d] id=%d (tipo actual=%s) %s/%s"
-              % (i, len(rows), entry_id, code, parent_path, name))
+        _log("[%d/%d] id=%d (tipo actual=%s) %s/%s"
+             % (i, total, entry_id, code, parent_path, name))
 
         try:
             bucket = gcs_client.bucket(bucket_name)
@@ -165,12 +189,12 @@ def main():
             text = extract_text(name, data)
         except Exception as exc:
             error += 1
-            print("  ERROR -- %s" % exc)
+            _log("  ERROR -- %s" % exc)
             continue
 
         if text is None:
             sin_extractor += 1
-            print("  SIN EXTRACTOR (extension no soportada)")
+            _log("  SIN EXTRACTOR (extension no soportada)")
             continue
 
         with conn.cursor() as cur:
@@ -182,14 +206,25 @@ def main():
         conn.commit()
         ok += 1
         preview = " ".join(text.split())[:200]
-        print("  OCR CACHEADO (%d caracteres). Preview: %s" % (len(text), preview))
+        _log("  OCR CACHEADO (%d caracteres). Preview: %s" % (len(text), preview))
 
-    print("\n=== RESUMEN shard %d/%d ===" % (args.shard_index, args.shard_count))
-    print("ocr_text cacheado correctamente: %d" % ok)
-    print("Sin extractor (extension no soportada): %d" % sin_extractor)
-    print("Error de descarga/OCR: %d" % error)
+        # Heartbeat de progreso (com-standards, seccion "Heartbeat
+        # periodico obligatorio"): cada 20 elementos o el 5% del
+        # total, lo que sea menor, ademas de la linea por documento
+        # de arriba -- redundante a proposito para lotes grandes.
+        heartbeat_every = min(20, max(1, total // 20))
+        if i % heartbeat_every == 0 or i == total:
+            pct = round(100 * i / total, 1) if total else 100
+            _log("  Progreso: %d/%d (%s%%) -- ok=%d sin_extractor=%d "
+                 "error=%d" % (i, total, pct, ok, sin_extractor, error))
+
+    _log("=== RESUMEN shard %d/%d ===" % (args.shard_index, args.shard_count))
+    _log("ocr_text cacheado correctamente: %d" % ok)
+    _log("Sin extractor (extension no soportada): %d" % sin_extractor)
+    _log("Error de descarga/OCR: %d" % error)
 
     tunnel.close()
+    _LOG_FH.close()
 
 
 if __name__ == "__main__":
