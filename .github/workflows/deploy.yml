@@ -195,31 +195,61 @@ jobs:
         run: |
           set -o pipefail
           CHANGED=$(sed -n '/--- CHANGED_FILES_START ---/,/--- CHANGED_FILES_END ---/p' /tmp/deploy_output.txt | sed '1d;$d')
+          FAILED=0
           {
             echo "Archivos cambiados en este despliegue:"
             echo "$CHANGED"
             echo ""
 
+            # H31 (S97, corregido tras incidente real). Antes: `curl -sf`
+            # silenciaba el cuerpo de la respuesta en cuanto la API
+            # devolvia un error -- el 404 real de "Task does not exist"
+            # (IDs obsoletos, ver comentario de mas arriba) solo se veia
+            # como un opaco "exit code 22", sin decir NUNCA cual era el
+            # error real ni que endpoint habia fallado. Sin `-f`: se
+            # captura siempre el codigo HTTP y el cuerpo por separado, se
+            # imprimen los dos SIEMPRE (exito o fallo), y solo se marca
+            # FAILED (que hace fallar el step al final, tras haber
+            # intentado las dos tareas) si el codigo no es 2xx -- el
+            # resumen del Action vuelve a contar la verdad completa por
+            # si sola, sin depender de que alguien relance un curl manual
+            # para averiguar que paso.
             if echo "$CHANGED" | grep -qE '^(vox_bridge/|voice_orchestrator\.py|voice_sidecar_bridge\.py|ivr_config/services\.py|whatsapp/services\.py|whatsapp/models\.py)'; then
               echo "--- Bridge de voz: cambios relevantes detectados, reiniciando (id 270439) ---"
-              curl -sf --max-time 60 -X POST "https://www.pythonanywhere.com/api/v0/user/MiguelAeTxio/always_on/270439/restart/" \
-                -H "Authorization: Token ${{ secrets.PA_API_TOKEN }}"
-              echo ""
-              echo "Bridge de voz: reinicio solicitado OK."
+              RESP=$(curl -s --max-time 60 -w "\nHTTP_STATUS:%{http_code}" -X POST "https://www.pythonanywhere.com/api/v0/user/MiguelAeTxio/always_on/270439/restart/" \
+                -H "Authorization: Token ${{ secrets.PA_API_TOKEN }}")
+              echo "$RESP"
+              STATUS=$(echo "$RESP" | grep -oE "HTTP_STATUS:[0-9]+" | cut -d: -f2)
+              if [ "${STATUS:0:1}" = "2" ]; then
+                echo "Bridge de voz: reinicio solicitado OK."
+              else
+                echo "⛔ Bridge de voz: FALLO real (HTTP $STATUS) -- ver cuerpo de la respuesta arriba."
+                FAILED=1
+              fi
             else
               echo "Bridge de voz: sin cambios relevantes, no se reinicia."
             fi
 
             if echo "$CHANGED" | grep -qE '(tasks\.py$|ai_services/|enterprise_core/celery\.py|enterprise_core/settings\.py|start_celery_worker\.sh|machine_documents/|personal_documents/|document_ingestion/|document_management/|document_explorer/|spare_parts/gcs_service\.py|spare_parts/services\.py)'; then
               echo "--- Worker Celery: cambios relevantes detectados, reiniciando (id 270440) ---"
-              curl -sf --max-time 60 -X POST "https://www.pythonanywhere.com/api/v0/user/MiguelAeTxio/always_on/270440/restart/" \
-                -H "Authorization: Token ${{ secrets.PA_API_TOKEN }}"
-              echo ""
-              echo "Worker Celery: reinicio solicitado OK."
+              RESP=$(curl -s --max-time 60 -w "\nHTTP_STATUS:%{http_code}" -X POST "https://www.pythonanywhere.com/api/v0/user/MiguelAeTxio/always_on/270440/restart/" \
+                -H "Authorization: Token ${{ secrets.PA_API_TOKEN }}")
+              echo "$RESP"
+              STATUS=$(echo "$RESP" | grep -oE "HTTP_STATUS:[0-9]+" | cut -d: -f2)
+              if [ "${STATUS:0:1}" = "2" ]; then
+                echo "Worker Celery: reinicio solicitado OK."
+              else
+                echo "⛔ Worker Celery: FALLO real (HTTP $STATUS) -- ver cuerpo de la respuesta arriba."
+                FAILED=1
+              fi
             else
               echo "Worker Celery: sin cambios relevantes, no se reinicia."
             fi
           } | tee /tmp/restart_output.txt
+          if [ "$FAILED" = "1" ]; then
+            echo "⛔ Al menos un reinicio de Always-on Task fallo de verdad -- ver 'Resumen del despliegue' para el cuerpo real de la respuesta." >&2
+            exit 1
+          fi
 
       - name: Resumen del despliegue (mantener informado a Miguel Angel)
         # BUGFIX S014 (2026-07-13, segunda parte): interpolar
