@@ -982,7 +982,7 @@ def main():
 
     if args.shard_count > 1:
         print("Reparto: shard %d de %d (entry_id %% %d == %d)"
-              % (args.shard_index, args.shard_count,
+              % (args.shard_index + 1, args.shard_count,
                  args.shard_count, args.shard_index))
     print("Candidatos en este shard: %d" % len(rows))
     if args.limit:
@@ -1288,7 +1288,7 @@ def main():
     total_min = (datetime.now() - start_time).total_seconds() / 60
     _log("=== RESUMEN (%s, shard %d/%d) -- %.1f min ===" % (
         "APLICADO" if args.apply else "DRY-RUN",
-        args.shard_index, args.shard_count, total_min,
+        args.shard_index + 1, args.shard_count, total_min,
     ))
     for key, value in stats.items():
         _log("    %s: %d" % (key, value))
