@@ -723,7 +723,7 @@ CampusStudiOnline), corregido en S94 (commit `01cdb93`).
 
 El punto que quedaba pendiente de verificar antes de ejecutar la
 migración -- si el comando de arranque de las tareas *always-on*
-(worker de Celery `242133` y puente de voz `234987`) referenciaba el
+(worker de Celery `270440` y puente de voz `270439`) referenciaba el
 entorno virtual -- se confirmó que sí, y ambos se actualizaron y
 verificaron en producción durante S93 (ver anexo H32 sección 3.1,
 incidencia real de contenedores Always On "pegados" al sistema de

@@ -4,8 +4,8 @@ name: Deploy EnterpriseBot to PythonAnywhere
 # en cada push a main. Hace, en este orden: git pull en el servidor
 # via SSH, migrate --noinput, collectstatic --noinput --clear, reload
 # de la web app via API de PythonAnywhere, y reinicio CONDICIONAL de
-# las Always-on Tasks de EnterpriseBot (bridge de voz id 234987,
-# worker Celery id 242133) solo cuando el diff del push toca archivos
+# las Always-on Tasks de EnterpriseBot (bridge de voz id 270439,
+# worker Celery id 270440) solo cuando el diff del push toca archivos
 # relevantes para cada una -- ver el paso "Detectar archivos
 # cambiados" para el patron exacto. Nunca corre makemigrations (los
 # archivos de migracion se generan y revisan siempre en el workspace
@@ -112,8 +112,27 @@ jobs:
         # (confirmados vía API en S014 -- las otras dos tareas de la
         # cuenta, 182748 y 209547, son de Campus Studio Online, nunca
         # tocarlas desde aquí):
-        #   234987 -- Bridge de Voz Conversacional (voice_orchestrator.py)
-        #   242133 -- Worker Celery (procesamiento de partes de trabajo PDF)
+        #   270439 -- Bridge de Voz Conversacional (voice_orchestrator.py)
+        #   270440 -- Worker Celery (procesamiento de partes de trabajo PDF)
+        #
+        # ⛔ CORREGIDO S97, INCIDENTE REAL: los IDs de esta sección
+        # llevaban desde S014 apuntando a 234987/242133. En algún
+        # momento esas dos Always-on Tasks se borraron y recrearon
+        # (motivo no determinado -- no quedó registro escrito de
+        # cuándo ni por qué), y PythonAnywhere les asignó IDs nuevos.
+        # Nadie actualizó este workflow. Consecuencia real: todo
+        # despliegue que tocara `document_explorer/` (o cualquier otro
+        # patrón de Celery) desde entonces fallaba en este mismo paso
+        # con "Task does not exist" (404) -- el `curl -sf` lo
+        # reportaba como fallo del job (exit 22), pero sin cuerpo de
+        # respuesta visible en el resumen, así que pasó desapercibido
+        # varias sesiones. Diagnosticado en S97 con una llamada real
+        # a `GET /always_on/` (no adivinando): devolvió 270439/270440
+        # como los IDs reales y en estado `Running`. IDs corregidos
+        # aquí y en `SESSION_VARIABLES.md`/`ENTERPRISEBOT_MASTER_DOCUMENT.md`.
+        # Pendiente sin resolver: no hay ninguna alerta que avise si
+        # esto vuelve a pasar -- un 404 aquí sigue siendo silencioso
+        # salvo que alguien mire el resumen del Action a propósito.
         #
         # Patrones de disparo, decididos con Miguel Ángel en S014:
         #   Bridge -- vox_bridge/**, voice_orchestrator.py,
@@ -182,8 +201,8 @@ jobs:
             echo ""
 
             if echo "$CHANGED" | grep -qE '^(vox_bridge/|voice_orchestrator\.py|voice_sidecar_bridge\.py|ivr_config/services\.py|whatsapp/services\.py|whatsapp/models\.py)'; then
-              echo "--- Bridge de voz: cambios relevantes detectados, reiniciando (id 234987) ---"
-              curl -sf --max-time 60 -X POST "https://www.pythonanywhere.com/api/v0/user/MiguelAeTxio/always_on/234987/restart/" \
+              echo "--- Bridge de voz: cambios relevantes detectados, reiniciando (id 270439) ---"
+              curl -sf --max-time 60 -X POST "https://www.pythonanywhere.com/api/v0/user/MiguelAeTxio/always_on/270439/restart/" \
                 -H "Authorization: Token ${{ secrets.PA_API_TOKEN }}"
               echo ""
               echo "Bridge de voz: reinicio solicitado OK."
@@ -192,8 +211,8 @@ jobs:
             fi
 
             if echo "$CHANGED" | grep -qE '(tasks\.py$|ai_services/|enterprise_core/celery\.py|enterprise_core/settings\.py|start_celery_worker\.sh|machine_documents/|personal_documents/|document_ingestion/|document_management/|document_explorer/|spare_parts/gcs_service\.py|spare_parts/services\.py)'; then
-              echo "--- Worker Celery: cambios relevantes detectados, reiniciando (id 242133) ---"
-              curl -sf --max-time 60 -X POST "https://www.pythonanywhere.com/api/v0/user/MiguelAeTxio/always_on/242133/restart/" \
+              echo "--- Worker Celery: cambios relevantes detectados, reiniciando (id 270440) ---"
+              curl -sf --max-time 60 -X POST "https://www.pythonanywhere.com/api/v0/user/MiguelAeTxio/always_on/270440/restart/" \
                 -H "Authorization: Token ${{ secrets.PA_API_TOKEN }}"
               echo ""
               echo "Worker Celery: reinicio solicitado OK."
