@@ -927,6 +927,20 @@ def main():
         entry_ids_clause = " AND e.id IN (%s)" % placeholders
         entry_ids_params = tuple(ids)
 
+    # H31 (S96): con --entry-ids el filtro de domain='PERSONAL' del
+    # catalogo se relaja -- la auditoria de esa sesion encontro tipos
+    # con domain mal etiquetado en DocumentTypeCatalog (SEGURO,
+    # POLIZA_SEGURO: domain=MACHINE; CONVENIO_FORMACION_BONIFICADA:
+    # domain=COMPANY) que tienen documentos reales vinculados a
+    # PersonIdentity, confirmados personales por auditoria uno a uno
+    # (nunca por heuristica). El join contra personidentity ya
+    # garantiza que el documento cuelga de una persona; exigir ademas
+    # domain='PERSONAL' del tipo excluiria exactamente estos casos ya
+    # verificados. Sin --entry-ids (barrido abierto) el filtro se
+    # mantiene tal cual, para no arrastrar sin querer documentos de
+    # tipos mal etiquetados que no se han auditado.
+    domain_clause = "" if args.entry_ids else " AND t.domain = 'PERSONAL'"
+
     with conn.cursor() as cur:
         cur.execute(
             "SELECT id FROM django_content_type "
@@ -941,8 +955,9 @@ def main():
             "  ON e.document_type_id = t.id "
             "JOIN document_explorer_personidentity p "
             "  ON e.domain_object_id = p.id "
-            "WHERE e.domain_content_type_id = %s "
-            "AND t.domain = 'PERSONAL' AND t.tracks_expiry = 1 "
+            "WHERE e.domain_content_type_id = %s"
+            + domain_clause +
+            " AND t.tracks_expiry = 1 "
             "AND t.ocr_unreliable = 0 "
             "AND e.expiry_date IS NULL AND e.issue_date IS NULL "
             "AND e.deleted_at IS NULL AND e.purged_at IS NULL "
