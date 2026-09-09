@@ -397,16 +397,24 @@ no aceptan flags ni variables de entorno).
   una sesión `tmux` propia (`tmux new -s NOMBRE`). Listar sesiones
   vivas: `tmux ls`. Matar una sesión terminada: `tmux kill-session -t
   NOMBRE`.
-  ⛔ **`Ctrl+B` seguido de `D` para desconectar (detach) SIN matar el
-  proceso NO FUNCIONA en la consola de Miguel Ángel** (PowerShell →
-  `gcloud compute ssh`) -- confirmado real dos veces (sesión anterior
-  y S53). **Nunca volver a proponerlo.** Para tener varios procesos en
-  paralelo, la vía que sí funciona es abrir una ventana de PowerShell
-  nueva por cada proceso y conectar con `gcloud compute ssh` otra vez
-  desde ahí (cada ventana de PowerShell es una sesión SSH
-  independiente) -- dentro de esa sesión nueva, `tmux attach -t
-  NOMBRE` si hace falta reconectar a una ya creada, o `tmux new -s
-  NOMBRE` para una nueva.
+  ⛔ **AMPLIADO EN S97, CONFIRMADO REAL: NINGÚN atajo con el prefijo
+  `Ctrl+B` llega a `tmux` en la consola de Miguel Ángel (PowerShell →
+  `gcloud compute ssh`), no solo `Ctrl+B D`.** La redacción anterior
+  (`Ctrl+B` seguido de `D` para desconectar) quedaba corta: en S97,
+  Miguel Ángel confirmó explícitamente y de forma repetida que
+  `Ctrl+B` no funciona en absoluto, para ningún propósito (cambiar de
+  ventana dentro de una sesión `tmux`, tampoco). **Regla de aquí en
+  adelante, sin excepción: nunca proponer NINGUNA combinación de
+  teclas con `Ctrl+B` para esta consola, ni para detach ni para nada
+  más.** Para varios procesos en paralelo, la única vía real es abrir
+  una ventana de PowerShell nueva por cada proceso y conectar con
+  `gcloud compute ssh` otra vez desde ahí (cada ventana de PowerShell
+  es una sesión SSH independiente sobre la MISMA VM cuando el
+  paralelismo es varios shards del mismo barrido -- nunca varias VMs
+  distintas para eso, ver incidencia real de S91 más abajo en este
+  archivo) -- sin usar `tmux` en absoluto si el único motivo era tener
+  varias ventanas, ya que abrir varias sesiones SSH ya resuelve eso
+  sin necesidad de gestionar ventanas dentro de una sola consola.
 - **Coste real confirmado (S53):** `e2-standard-8` en `europe-west1-b`,
   sin descuento por uso sostenido (la familia E2 no lo tiene). Sesión
   de ~5h45 de uso real costó en torno a $1,70-1,85 -- los datos de
