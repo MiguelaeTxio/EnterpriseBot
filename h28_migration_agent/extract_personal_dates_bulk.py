@@ -36,7 +36,7 @@ import os
 import re
 import shutil
 import unicodedata
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import pymysql
 
@@ -1002,10 +1002,11 @@ def main():
             elapsed = (datetime.now() - start_time).total_seconds()
             eta_seg = (elapsed / i) * (len(rows) - i) if i else 0
             eta_str = "%dm%02ds" % (int(eta_seg // 60), int(eta_seg % 60))
+            hora_fin = (datetime.now() + timedelta(seconds=eta_seg)).strftime("%H:%M:%S")
             resumen = ", ".join("%s=%d" % (k, v) for k, v in stats.items() if v)
             _log(
-                "Progreso: %d/%d (%.0f%%) -- ETA %s -- %s"
-                % (i, len(rows), pct, eta_str, resumen or "sin resultados todavia")
+                "Progreso: %d/%d (%.0f%%) -- ETA %s (fin aprox. %s) -- %s"
+                % (i, len(rows), pct, eta_str, hora_fin, resumen or "sin resultados todavia")
             )
         if i % 20 == 0:
             conn.ping(reconnect=True)
@@ -1023,12 +1024,12 @@ def main():
             text = extract_text(name, data)
         except Exception as exc:
             stats["error"] += 1
-            print("  ERROR -- %s" % exc)
+            _log("  ERROR -- %s" % exc)
             continue
 
         if text is None:
             stats["sin_extractor"] += 1
-            print("  SIN EXTRACTOR (extension no soportada)")
+            _log("  SIN EXTRACTOR (extension no soportada)")
             continue
 
         # FASE 1bis -- MRZ de DNI/NIE (S79). Contenido real impreso
@@ -1039,7 +1040,7 @@ def main():
             mrz_expiry = extract_dni_mrz_expiry(text)
             if mrz_expiry:
                 stats["mrz"] = stats.get("mrz", 0) + 1
-                print("  MRZ %s -> expiry=%s" % (code, mrz_expiry.isoformat()))
+                _log("  MRZ %s -> expiry=%s" % (code, mrz_expiry.isoformat()))
                 if args.apply:
                     with conn.cursor() as cur:
                         cur.execute(
@@ -1052,7 +1053,7 @@ def main():
             front_expiry = extract_dni_front_expiry(text)
             if front_expiry:
                 stats["frente"] = stats.get("frente", 0) + 1
-                print("  FRENTE %s -> expiry=%s" % (code, front_expiry.isoformat()))
+                _log("  FRENTE %s -> expiry=%s" % (code, front_expiry.isoformat()))
                 if args.apply:
                     with conn.cursor() as cur:
                         cur.execute(
@@ -1108,7 +1109,7 @@ def main():
             if retry_text:
                 r_expiry, r_issue, r_other = classify_dates_in_text(retry_text)
                 if r_expiry or r_issue or r_other:
-                    print(
+                    _log(
                         "  REINTENTO PSM 6 -- encontro fecha que el PSM por "
                         "defecto no vio"
                     )
@@ -1129,14 +1130,14 @@ def main():
                     # distinto (linea realmente ausente del OCR, no
                     # solo mal clasificada).
                     retry_preview = retry_text.replace("\n", " | ")
-                    print(
+                    _log(
                         "    REINTENTO PSM 6 tampoco encontro fecha "
                         "(%d caracteres): %r"
                         % (len(retry_preview), retry_preview)
                     )
                     text = retry_text
             else:
-                print("    REINTENTO PSM 6 no devolvio texto")
+                _log("    REINTENTO PSM 6 no devolvio texto")
 
             if not (expiry or issue or other):
                 # H30 (sesion tras S85). TERCER NIVEL -- EasyOCR como
@@ -1151,18 +1152,18 @@ def main():
                 # en h28-ocr-batch-1, 8 vCPU: 3.0s Tesseract vs 19.2s
                 # EasyOCR), por eso es el ultimo recurso, nunca el
                 # metodo por defecto.
-                print("    Probando EASYOCR (ultimo recurso, mas lento)...")
+                _log("    Probando EASYOCR (ultimo recurso, mas lento)...")
                 try:
                     easy_text = easyocr_extract_text(name, data)
                 except Exception as exc:
                     easy_text = None
-                    print("  EASYOCR ERROR -- %s" % exc)
+                    _log("  EASYOCR ERROR -- %s" % exc)
                 if easy_text:
                     e_expiry, e_issue, e_other = classify_dates_in_text(
                         easy_text
                     )
                     if e_expiry or e_issue or e_other:
-                        print(
+                        _log(
                             "  EASYOCR -- encontro fecha que Tesseract "
                             "no vio (ni PSM automatico ni PSM 6)"
                         )
@@ -1178,7 +1179,7 @@ def main():
                             conn.commit()
                     else:
                         easy_preview = easy_text.replace("\n", " | ")
-                        print(
+                        _log(
                             "    EASYOCR tampoco encontro fecha "
                             "(%d caracteres): %r"
                             % (len(easy_preview), easy_preview)
@@ -1202,14 +1203,14 @@ def main():
                                     )
                                 conn.commit()
                 else:
-                    print("    EASYOCR no devolvio texto")
+                    _log("    EASYOCR no devolvio texto")
 
         if expiry and issue:
             # Par 4a/4b -- unico caso en que llegan los dos campos a
             # la vez desde classify_dates_in_text. Escribir ambos en
             # la misma actualizacion.
             stats["par_4a_4b"] += 1
-            print(
+            _log(
                 "  OCR %s -> issue=%s / expiry=%s (par 4a/4b)"
                 % (code, issue.isoformat(), expiry.isoformat())
             )
@@ -1225,7 +1226,7 @@ def main():
 
         if expiry:
             stats["ocr_contexto"] += 1
-            print("  OCR %s -> expiry=%s (contexto)" % (code, expiry.isoformat()))
+            _log("  OCR %s -> expiry=%s (contexto)" % (code, expiry.isoformat()))
             if args.apply:
                 with conn.cursor() as cur:
                     cur.execute(
@@ -1238,7 +1239,7 @@ def main():
 
         if issue:
             stats["ocr_contexto"] += 1
-            print("  OCR %s -> issue=%s (contexto)" % (code, issue.isoformat()))
+            _log("  OCR %s -> issue=%s (contexto)" % (code, issue.isoformat()))
             if args.apply:
                 with conn.cursor() as cur:
                     cur.execute(
@@ -1253,7 +1254,7 @@ def main():
         if default_field and len(set(other)) == 1:
             found = other[0]
             stats["ocr_unica_fecha"] += 1
-            print(
+            _log(
                 "  OCR %s -> %s=%s (unica fecha, defecto, ocr_text_len=%d)"
                 % (code, default_field, found.isoformat(), len(text or ""))
             )
@@ -1269,7 +1270,7 @@ def main():
             continue
 
         stats["sin_fecha"] += 1
-        print(
+        _log(
             "  SIN FECHA reconocible (ocr_text_len=%d, fechas_sueltas=%s)"
             % (len(text or ""), other)
         )
@@ -1280,15 +1281,14 @@ def main():
         if name.lower().endswith(".pdf"):
             debug_prefix = "debug_entry_%d" % entry_id
             extract_text(name, data, debug_save_prefix=debug_prefix)
-            print("    Imagen real guardada en: %s\\%s_p0.png (y siguientes paginas si las hay)"
+            _log("    Imagen real guardada en: %s\\%s_p0.png (y siguientes paginas si las hay)"
                   % (os.getcwd(), debug_prefix))
         preview = (text or "").replace("\n", " | ")
-        print("    TEXTO REAL COMPLETO (%d caracteres): %r" % (len(preview), preview))
+        _log("    TEXTO REAL COMPLETO (%d caracteres): %r" % (len(preview), preview))
 
-    total_min = (datetime.now() - start_time).total_seconds() / 60
-    _log("=== RESUMEN (%s, shard %d/%d) -- %.1f min ===" % (
+    _log("=== RESUMEN (%s, shard %d/%d) ===" % (
         "APLICADO" if args.apply else "DRY-RUN",
-        args.shard_index + 1, args.shard_count, total_min,
+        args.shard_index + 1, args.shard_count,
     ))
     for key, value in stats.items():
         _log("    %s: %d" % (key, value))
