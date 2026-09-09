@@ -1207,6 +1207,83 @@ def main():
                 conn.commit()
             continue
 
+        # H31 (S96, incidente real). ANTES de rendirse: reintentar con
+        # EasyOCR antes de marcar sin_fecha. Las funciones
+        # easyocr_extract_text()/easyocr_pdf_to_text()/
+        # easyocr_image_to_text() ya estaban escritas en este mismo
+        # archivo desde antes, pero nunca se llamaban desde main() --
+        # el barrido corría solo con Tesseract pese a que la
+        # convención documentada del proyecto es la cadena Tesseract
+        # -> EasyOCR -> Gemini (última instancia). Miguel Ángel,
+        # verbatim, al descubrirlo: "¿que has hecho una pasada de
+        # mierda de tesseract solo sin pm6 y sin easy?". Corregido
+        # aquí: se prueba EasyOCR sobre el mismo documento antes de
+        # dar el sin_fecha por definitivo. Gemini sigue sin llamarse
+        # en bloque (directriz de coste de S46), queda para una
+        # pasada deliberada y acotada sobre lo que ni Tesseract ni
+        # EasyOCR resuelvan.
+        try:
+            easyocr_text = easyocr_extract_text(name, data)
+        except Exception as exc:
+            easyocr_text = None
+            print("  EASYOCR ERROR -- %s" % exc)
+
+        if easyocr_text:
+            e_expiry, e_issue, e_other = classify_dates_in_text(easyocr_text)
+            if e_expiry:
+                stats["easyocr_contexto"] = stats.get("easyocr_contexto", 0) + 1
+                print("  EASYOCR %s -> expiry=%s (contexto)" % (code, e_expiry.isoformat()))
+                if args.apply:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "UPDATE document_explorer_documentindexentry "
+                            "SET ocr_text=%s, expiry_date=%s WHERE id=%s",
+                            (easyocr_text, e_expiry, entry_id),
+                        )
+                    conn.commit()
+                continue
+            if e_issue:
+                stats["easyocr_contexto"] = stats.get("easyocr_contexto", 0) + 1
+                print("  EASYOCR %s -> issue=%s (contexto)" % (code, e_issue.isoformat()))
+                if args.apply:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "UPDATE document_explorer_documentindexentry "
+                            "SET ocr_text=%s, issue_date=%s WHERE id=%s",
+                            (easyocr_text, e_issue, entry_id),
+                        )
+                    conn.commit()
+                continue
+            if default_field and len(set(e_other)) == 1:
+                found = e_other[0]
+                stats["easyocr_unica_fecha"] = stats.get("easyocr_unica_fecha", 0) + 1
+                col = "expiry_date" if default_field == "expiry" else "issue_date"
+                print(
+                    "  EASYOCR %s -> %s=%s (unica fecha, defecto)"
+                    % (code, default_field, found.isoformat())
+                )
+                if args.apply:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "UPDATE document_explorer_documentindexentry "
+                            "SET ocr_text=%%s, %s=%%s WHERE id=%%s" % col,
+                            (easyocr_text, found, entry_id),
+                        )
+                    conn.commit()
+                continue
+            # EasyOCR dio texto pero tampoco fecha reconocible: se
+            # cachea igualmente (puede tener mas texto util que
+            # Tesseract para una revision manual posterior), pero
+            # sigue contando como sin_fecha.
+            if args.apply and easyocr_text != text:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "UPDATE document_explorer_documentindexentry "
+                        "SET ocr_text=%s WHERE id=%s",
+                        (easyocr_text, entry_id),
+                    )
+                conn.commit()
+
         stats["sin_fecha"] += 1
         print(
             "  SIN FECHA reconocible (ocr_text_len=%d, fechas_sueltas=%s)"
