@@ -849,6 +849,15 @@ def _log(msg):
         _LOG_FILE.flush()
 
 
+def _log_plain(msg):
+    # H31 (S97). Sin marca de hora -- exclusiva para el bloque RESUMEN
+    # final, donde un timestamp no aporta nada (el proceso ya termino).
+    print(msg, flush=True)
+    if _LOG_FILE is not None:
+        _LOG_FILE.write(msg + "\n")
+        _LOG_FILE.flush()
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--limit", type=int, default=None)
@@ -1286,12 +1295,12 @@ def main():
         preview = (text or "").replace("\n", " | ")
         _log("    TEXTO REAL COMPLETO (%d caracteres): %r" % (len(preview), preview))
 
-    _log("=== RESUMEN (%s, shard %d/%d) ===" % (
+    _log_plain("=== RESUMEN (%s, shard %d/%d) ===" % (
         "APLICADO" if args.apply else "DRY-RUN",
         args.shard_index + 1, args.shard_count,
     ))
     for key, value in stats.items():
-        _log("    %s: %d" % (key, value))
+        _log_plain("    %s: %d" % (key, value))
 
     conn.close()
     tunnel.stop()
