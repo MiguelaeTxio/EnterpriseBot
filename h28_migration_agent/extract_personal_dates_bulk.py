@@ -999,10 +999,13 @@ def main():
     for i, (entry_id, name, bucket_name, blob_name, code) in enumerate(rows, start=1):
         if i % 25 == 0 or i == len(rows):
             pct = (i / len(rows) * 100) if rows else 100
+            elapsed = (datetime.now() - start_time).total_seconds()
+            eta_seg = (elapsed / i) * (len(rows) - i) if i else 0
+            eta_str = "%dm%02ds" % (int(eta_seg // 60), int(eta_seg % 60))
             resumen = ", ".join("%s=%d" % (k, v) for k, v in stats.items() if v)
             _log(
-                "Progreso: %d/%d (%.0f%%) -- %s"
-                % (i, len(rows), pct, resumen or "sin resultados todavia")
+                "Progreso: %d/%d (%.0f%%) -- ETA %s -- %s"
+                % (i, len(rows), pct, eta_str, resumen or "sin resultados todavia")
             )
         if i % 20 == 0:
             conn.ping(reconnect=True)
