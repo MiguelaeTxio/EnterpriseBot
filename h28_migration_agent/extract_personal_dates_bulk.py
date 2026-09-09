@@ -838,8 +838,15 @@ def classify_dates_in_text(text):
     return expiry, issue, other_dates
 
 
+_LOG_FILE = None
+
+
 def _log(msg):
-    print("[%s] %s" % (datetime.now().strftime("%H:%M:%S"), msg), flush=True)
+    line = "[%s] %s" % (datetime.now().strftime("%H:%M:%S"), msg)
+    print(line, flush=True)
+    if _LOG_FILE is not None:
+        _LOG_FILE.write(line + "\n")
+        _LOG_FILE.flush()
 
 
 def main():
@@ -866,6 +873,11 @@ def main():
     args = parser.parse_args()
     if not (0 <= args.shard_index < max(args.shard_count, 1)):
         parser.error("--shard-index debe estar entre 0 y --shard-count - 1")
+
+    global _LOG_FILE
+    log_path = "extract_personal_dates_shard%d.log" % args.shard_index
+    _LOG_FILE = open(log_path, "a", encoding="utf-8")
+    _log("=== INICIO (log propio: %s) ===" % log_path)
 
     mysql_password = getpass.getpass(
         "Contrasena de MySQL (panel PythonAnywhere, pestana 'Databases'): "
@@ -985,6 +997,13 @@ def main():
     start_time = datetime.now()
 
     for i, (entry_id, name, bucket_name, blob_name, code) in enumerate(rows, start=1):
+        if i % 25 == 0 or i == len(rows):
+            pct = (i / len(rows) * 100) if rows else 100
+            resumen = ", ".join("%s=%d" % (k, v) for k, v in stats.items() if v)
+            _log(
+                "Progreso: %d/%d (%.0f%%) -- %s"
+                % (i, len(rows), pct, resumen or "sin resultados todavia")
+            )
         if i % 20 == 0:
             conn.ping(reconnect=True)
         _log("[%d/%d] [%s] %s" % (i, len(rows), code, name))
@@ -1264,15 +1283,17 @@ def main():
         print("    TEXTO REAL COMPLETO (%d caracteres): %r" % (len(preview), preview))
 
     total_min = (datetime.now() - start_time).total_seconds() / 60
-    print("\n=== RESUMEN (%s, shard %d/%d) -- %.1f min ===" % (
+    _log("=== RESUMEN (%s, shard %d/%d) -- %.1f min ===" % (
         "APLICADO" if args.apply else "DRY-RUN",
         args.shard_index, args.shard_count, total_min,
     ))
     for key, value in stats.items():
-        print("    %s: %d" % (key, value))
+        _log("    %s: %d" % (key, value))
 
     conn.close()
     tunnel.stop()
+    if _LOG_FILE is not None:
+        _LOG_FILE.close()
 
 
 if __name__ == "__main__":
