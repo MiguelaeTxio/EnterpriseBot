@@ -1198,16 +1198,164 @@ resuelve.**
 
 ---
 
+### COMPLETADAS EN S97 -- sesión agria, objetivo técnico logrado con
+### malgasto de tiempo enorme por errores de bulto ya documentados
+
+**Balance de fondo, sin suavizar:** el fix técnico real de esta sesión
+se hizo en la primera hora. El resto del día se fue en repetir errores
+que ya estaban por escrito en el propio proyecto (confusión VMs/
+ventanas SSH -- ya documentada como incidente real de S91 --, uso de
+`tmux`/`Ctrl+B` en una consola donde ya constaba que no funciona,
+`git pull` sin token en VM pese a estar prohibido por escrito, pedir
+copiar/pegar salida de consola en vez de Comando S, preguntar por un
+`CompanyUser` de papelera que ya estaba resuelto en
+`classification_service.py`). Ninguno de estos fue un fallo de
+criterio nuevo. Miguel Ángel, verbatim, al cierre: *"Sesión agria,
+objetivo logrado pero con un malgasto de tiempo enorme, no podemos
+repetir estos errores de bulto, máxime cuando la documentación es
+quasi perfecta."*
+
+**Trabajo técnico real, verificado con datos, no de memoria:**
+
+1. **Cadena OCR corregida y verificada funcionando de verdad**
+   (`h28_migration_agent/extract_personal_dates_bulk.py`, commits
+   `23a41e7`/`2a3bb53`/`f33a539`/`041b953`/`2dd59a7`/`a2b7354`): la
+   llamada duplicada a EasyOCR de S96 (`ecb7bd7`) queda retirada; una
+   única cadena Tesseract PSM automático → PSM 6 → EasyOCR, que
+   ahora sí se prueba siempre que tras los dos intentos de Tesseract
+   siga sin haber fecha (antes solo se probaba si el PSM 6 devolvía
+   texto, aunque fuera sin fecha). Verificado con datos reales de
+   producción: 66 llamadas reales a EasyOCR entre los 3 shards del
+   dry-run, 0 errores. Cumple `com-standards` 0bis (verbosidad +
+   fichero propio con `.flush()` -- el primer intento de este mismo
+   día fue incompleto, dejaba decenas de `print()` sueltos sin pasar
+   por el fichero, corregido tras comprobarlo con un dry-run real que
+   no dejó rastro) y la nueva 0ter/0quater (ETA con hora de fin
+   estimada solo durante la ejecución, nunca en el resumen; shards
+   mostrados 1-based). Skill `com-standards` actualizada y entregada
+   para guardar (secciones 0ter/0quater nuevas).
+2. **`--apply` real ejecutado contra los 125 documentos** (Termux,
+   3 shards en la misma VM `h28-ocr-batch-1`, sin sharding en VMs
+   distintas): `ocr_text` real cacheado en los 125; 0 fechas nuevas en
+   esta primera pasada (motivo real, no fallo del script -- ver punto
+   3).
+3. **Bug de clasificación real encontrado y corregido**
+   (`_ISSUE_CONTEXT`, commits `41a9d60`/`e900ad6`, sincronizado en las
+   dos copias -- script standalone y `document_explorer/date_verification_service.py`):
+   la etiqueta `"FECHA DE LA BAJA"` ya estaba contemplada desde S87
+   pero el OCR de baja calidad la funde sin espacios
+   (`"FECHADELA BAJA"`); verificado en local contra el texto real de
+   `38420`/`38476` antes de tocar producción, y aplicado después vía
+   reclasificación del `ocr_text` ya cacheado (sin VM): 2 fechas reales
+   rescatadas (`38420`→issue 2021-09-21, `38476`→issue 2022-08-23).
+4. **Muestreo manual del OCR de los 122 restantes** -- reveló que la
+   mayoría de los etiquetados `BAJA_PERSONAL` eran en realidad DNIs/
+   carnés con MRZ o "VALIDO HASTA" legible, nunca procesados por
+   `extract_dni_mrz_expiry()` porque ese código solo se dispara cuando
+   `document_type.code` está en `MRZ_CODES = {"DNI","NIE"}` -- estaban
+   mal tipados, no sin fecha. Verificado uno a uno contra `PersonIdentity.is_active_employee`
+   antes de tocar nada (instrucción explícita: activo → arreglar,
+   inactivo → papelera): 6 documentos de trabajadores activos
+   retipados a `DNI`, 4 de ellos con fecha MRZ real extraída y
+   grabada (`28927`→2016-05-12, `31991`→2019-09-23, `32742`→2026-11-26,
+   `32802`→2016-10-16); 1 (`28932`) retipado sin fecha MRZ legible,
+   queda para revisión aparte; 1 caso (`31988`, carné de conducir)
+   confirmado sin arreglo posible -- el valor de caducidad
+   sencillamente no llegó a leerse por OCR, sin inventar ninguna
+   fecha. 12 documentos genuinamente ilegibles enviados a papelera
+   real (`trash_dossier_entry()`, dueño `alvarez_admin` -- convención
+   ya existente en `classification_service.py`, encontrada tras
+   preguntar de más), verificado contra BD real (`deleted_at`/
+   `deleted_by`) tras detectar que el propio log de la operación tenía
+   un bug de `print()` que ocultaba el resultado real.
+5. **Incidente de despliegue real, diagnosticado y corregido**:
+   `deploy.yml` llevaba desde S014 con los IDs de Always-on Tasks
+   hardcodeados (`234987`/`242133`); en algún momento esas tareas se
+   borraron y recrearon con IDs nuevos (`270439`/`270440`, sin registro
+   de cuándo) y nadie actualizó el workflow -- todo despliegue que
+   tocara Celery desde entonces fallaba con 404 silencioso (`exit
+   code 22` sin cuerpo visible). Corregido (commits `03a19b1`/
+   `7295e25`): IDs actualizados en `deploy.yml`/`SESSION_VARIABLES.md`/
+   `ENTERPRISEBOT_MASTER_DOCUMENT.md`, y el paso de reinicio ahora
+   imprime siempre código HTTP + cuerpo real de la respuesta en el
+   resumen del Action, y falla explícitamente (nunca en silencio) si
+   el reinicio no fue 2xx.
+6. **Alcance real de "qué queda por fechar" verificado con la
+   consulta original del propio script, no con un criterio inventado
+   sobre la marcha**: de los 236 documentos de personal activo sin
+   fecha en `domain='PERSONAL'` (+4 de tipos mal etiquetados), la
+   inmensa mayoría (~124) son tipos que Miguel Ángel ya despriorizó
+   explícitamente en S78 (`CONTRATO`, `FORMACION`,
+   `CONVENIO_FORMACION_BONIFICADA`, `BAJA_PERSONAL`... -- los 789 "no
+   críticos"). Aplicando la auditoría de deduplicación que la propia
+   S78 dejó escrita (si la misma persona ya tiene otro documento del
+   mismo tipo con fecha real, el sin-fecha es histórico y no hace
+   falta perseguirlo) sobre los 316 tipos críticos reales (`DNI`,
+   `CAP`, `CARNET_GRUISTA`, `TACOGRAFO`, `CARNET_CONDUCIR`,
+   `RECONOCIMIENTO_MEDICO`, `CERTIF_DISCAPACIDAD`, `NIE`,
+   `AUTORIZACION_TEMPORAL_CONDUCIR`, `TARJETA_CUALIF_CONDUCTOR`): **0
+   realmente pendientes**, verificado con datos reales, no supuesto.
+7. **Punto 2 heredado de S96 (9 fechas por texto nativo de PDF,
+   pendientes de aplicar) retirado de la hoja de ruta, no arrastrado**:
+   el comando de aquella sesión vivía solo en el chat, nunca se
+   guardó en ningún archivo del repositorio, y `SWAP` se vacía en cada
+   cierre -- la lista concreta es irrecuperable. Miguel Ángel,
+   consultado en el propio chat antes de cerrar (nunca dejado como
+   pregunta en este documento): "no sé qué es, o se arregla o
+   papelera ya" -- sin lista que identificar, no hay nada que arreglar
+   ni a qué papelera mandar, se retira sin más.
+
+**Fechas reales rescatadas hoy en total: 6** (2 vía fix de
+clasificación + 4 vía retipado/MRZ). **12 documentos depurados a
+papelera.** **6 documentos retipados correctamente.** El resto del
+lote de 125 de S96 corresponde a tipos ya despriorizados por decisión
+explícita de Miguel Ángel en S78 -- no es trabajo pendiente real.
+
+---
+
 ## Hoja de Ruta para la Sesión Siguiente
 
-**La hoja de ruta es exactamente la misma que tenía esta sesión (S96) al empezar -- tras 3 horas de trabajo no se completó ninguno de sus puntos.** No se reescribe con contenido nuevo. Los puntos reales pendientes, tal cual seguían al cierre:
+**Instrucción explícita de Miguel Ángel al cierre de S97: la sesión
+siguiente versa sobre el renombrado canónico del resto del catálogo**
+(132 tipos pendientes -- 131 + `CONVENIO_FORMACION_BONIFICADA` creado
+en S86 -- criterio "a demanda con evidencia real" acordado en S78, ver
+`ENTERPRISEBOT_MASTER_DOCUMENT.md`). Empezar directamente por ahí, sin
+preguntar por dónde arrancar.
 
-1. **125 documentos de la auditoría de fechado siguen sin fecha reconocible** (lista completa en el Comando S de la sesión, ZIP `EnterpriseBot_012_GET.zip` con manifest). De esos: 8 `CERTIFICADO_BANCARIO` ya confirmados como correctamente sin fecha (solo IBAN, sin ajuste posible). Quedan **108 sin ninguna inspección visual real** (imágenes/escaneados: DNI, tarjetas sanitarias, partes manuscritos, capturas de WhatsApp). Criterio de cierre: cada uno de los 108 revisado a ojo, con fecha aplicada donde exista o descartado explícitamente donde no la lleve.
-2. **9 fechas ya identificadas por texto nativo de PDF, pendientes de aplicar en BD** -- comando ya escrito en el chat de S96, nunca ejecutado. Verificar primero si sigue sin aplicar antes de repetirlo.
-3. **`h28_migration_agent/extract_personal_dates_bulk.py` fue modificado en S96 (fallback EasyOCR) y nunca se probó.** Releer entero y probarlo contra 1-2 documentos reales antes de usarlo contra cualquier lote.
-4. Punto 5 Fase 1 (acuse de recibo WhatsApp) y Punto 6 (alta/baja de trabajadores) de H31: sin tocar, igual que en S95.
+**Punto 1 -- Confirmar alcance real de "renombrado canónico" antes de
+tocar código.** Releer en `ENTERPRISEBOT_MASTER_DOCUMENT.md` la
+sección donde se describe el motor de renombrado de H29
+(`naming_service`, `DocumentTypeCatalog.code`) y el criterio "a
+demanda con evidencia real" de S78 -- verificar contra el propio
+código real de `naming_service.py` en el turno de esa sesión, nunca
+de memoria. **Criterio de cierre:** el modelo puede explicar, con cita
+de línea real de código, cómo se construye hoy el nombre canónico de
+un archivo a partir de `DocumentTypeCatalog.code`, y qué de los 132
+tipos pendientes no tiene todavía ese `code` asignado.
 
-**No autodirigirse tampoco en esta sesión siguiente sin instrucción explícita de Miguel Ángel**, mismo criterio que ya regía para S96.
+**Punto 2 -- A partir de ahí, trabajar los tipos con evidencia real ya
+disponible.** Sin lista cerrada de antemano -- el criterio "a demanda"
+significa que se abordan los tipos para los que ya exista un caso real
+verificado (documentos reales del cubo `cgs_grupo_alvarez` sin
+clasificar todavía), nunca una lista inventada sin comprobar contra
+datos reales primero.
+
+**Pendiente técnico menor, no bloqueante, para cuando surja hueco:**
+`28932` (`ENRIQUE SERRANO ALVAREZ (NUEVO).pdf`, ya retipado a `DNI` en
+S97) sigue sin fecha MRZ legible -- revisar su `ocr_text` real si en
+algún momento se retoma trabajo de fechado.
+
+**No autodirigirse en la sesión siguiente sin instrucción explícita
+de Miguel Ángel más allá de lo ya escrito arriba.**
+
+EOF
+# 2026-09-09
+# EnterpriseBot
+# ANNEX_V31.md
+*  **Session:** EnterpriseBot-S97H31 --- Continuación H31 tras cierre S96: fechado pendiente, aplicación de fechas y arranque de acuse de recibo
+*  **Description:** Sesión de continuidad de H31, arrancando desde el cierre de S96, en el que no se completó ninguno de los puntos de su hoja de ruta. Se retomó, según indicó Miguel Ángel, la inspección visual/OCR de los 108 documentos de la auditoría de fechado, la revisión y prueba real del fallback EasyOCR añadido en S96 a extract_personal_dates_bulk.py, y se aplicaron fechas reales donde el resultado técnico lo permitió. Conforme a lo registrado al cierre de S96, no se autodirigió el trabajo sin instrucción explícita de Miguel Ángel.
+
+EOF
 
 
 
