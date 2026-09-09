@@ -1068,6 +1068,17 @@ def main():
         # encontro NINGUNA fecha (ni siquiera "otras"), y solo para
         # PDF/imagen (el OCR es lo unico que puede fallar asi -- docx/
         # xlsx no pasan por Tesseract).
+        #
+        # H31 (S97, corregido tras incidente real S96). Cadena unica
+        # de tres pasos -- Tesseract PSM automatico -> Tesseract PSM 6
+        # -> EasyOCR (ultimo recurso) -- que se ejecuta siempre, en
+        # ese orden, mientras no aparezca ninguna fecha. La version
+        # anterior a esta correccion solo probaba EasyOCR cuando el
+        # PSM 6 SI devolvia texto (aunque sin fecha): si el PSM 6 no
+        # devolvia nada en absoluto, EasyOCR nunca llegaba a probarse
+        # -- hueco real que S96 intento tapar añadiendo una SEGUNDA
+        # llamada a EasyOCR mas abajo (duplicada con esta) en vez de
+        # corregir esta condicion. Esa segunda llamada queda retirada.
         if not (expiry or issue or other) and name.lower().endswith(
             (".pdf", ".jpg", ".jpeg", ".png")
         ):
@@ -1101,32 +1112,65 @@ def main():
                         "(%d caracteres): %r"
                         % (len(retry_preview), retry_preview)
                     )
+                    text = retry_text
+            else:
+                print("    REINTENTO PSM 6 no devolvio texto")
 
-                    # H30 (sesion tras S85). TERCER NIVEL -- EasyOCR
-                    # como red de seguridad final, decision explicita
-                    # de Miguel Angel: Tesseract primero (rapido),
-                    # EasyOCR solo cuando Tesseract falla del todo (ni
-                    # PSM automatico ni PSM 6). Calidad ya validada dos
-                    # veces con el documento real que motivo todo esto
-                    # (certificado CENTRO MEDICO ALAMEDA, lee "10 Enero
-                    # 2022" donde Tesseract nunca lo encontro) -- pero
-                    # es ~6-7x mas lento (benchmark real en
-                    # h28-ocr-batch-1, 8 vCPU: 3.0s Tesseract vs 19.2s
-                    # EasyOCR), por eso es el ultimo recurso, nunca el
-                    # metodo por defecto.
-                    print("    Probando EASYOCR (ultimo recurso, mas lento)...")
+            if not (expiry or issue or other):
+                # H30 (sesion tras S85). TERCER NIVEL -- EasyOCR como
+                # red de seguridad final, decision explicita de Miguel
+                # Angel: Tesseract primero (rapido), EasyOCR solo
+                # cuando Tesseract falla del todo (ni PSM automatico
+                # ni PSM 6, tenga o no tenga texto ese PSM 6). Calidad
+                # ya validada dos veces con el documento real que
+                # motivo todo esto (certificado CENTRO MEDICO ALAMEDA,
+                # lee "10 Enero 2022" donde Tesseract nunca lo
+                # encontro) -- pero es ~6-7x mas lento (benchmark real
+                # en h28-ocr-batch-1, 8 vCPU: 3.0s Tesseract vs 19.2s
+                # EasyOCR), por eso es el ultimo recurso, nunca el
+                # metodo por defecto.
+                print("    Probando EASYOCR (ultimo recurso, mas lento)...")
+                try:
                     easy_text = easyocr_extract_text(name, data)
-                    if easy_text:
-                        e_expiry, e_issue, e_other = classify_dates_in_text(
-                            easy_text
+                except Exception as exc:
+                    easy_text = None
+                    print("  EASYOCR ERROR -- %s" % exc)
+                if easy_text:
+                    e_expiry, e_issue, e_other = classify_dates_in_text(
+                        easy_text
+                    )
+                    if e_expiry or e_issue or e_other:
+                        print(
+                            "  EASYOCR -- encontro fecha que Tesseract "
+                            "no vio (ni PSM automatico ni PSM 6)"
                         )
-                        if e_expiry or e_issue or e_other:
-                            print(
-                                "  EASYOCR -- encontro fecha que Tesseract "
-                                "no vio (ni PSM automatico ni PSM 6)"
-                            )
+                        text = easy_text
+                        expiry, issue, other = e_expiry, e_issue, e_other
+                        if args.apply:
+                            with conn.cursor() as cur:
+                                cur.execute(
+                                    "UPDATE document_explorer_documentindexentry "
+                                    "SET ocr_text=%s WHERE id=%s",
+                                    (text, entry_id),
+                                )
+                            conn.commit()
+                    else:
+                        easy_preview = easy_text.replace("\n", " | ")
+                        print(
+                            "    EASYOCR tampoco encontro fecha "
+                            "(%d caracteres): %r"
+                            % (len(easy_preview), easy_preview)
+                        )
+                        # H31 (S97). Aunque EasyOCR no encuentre
+                        # fecha, se cachea su texto si aporta mas
+                        # contenido que el ya guardado -- objetivo
+                        # explicito de Miguel Angel: tener el OCR real
+                        # de TODOS los documentos, encuentren fecha o
+                        # no, para que la revision visual posterior de
+                        # los que sigan sin fecha parta ya del mejor
+                        # texto disponible.
+                        if easy_text != text:
                             text = easy_text
-                            expiry, issue, other = e_expiry, e_issue, e_other
                             if args.apply:
                                 with conn.cursor() as cur:
                                     cur.execute(
@@ -1135,13 +1179,8 @@ def main():
                                         (text, entry_id),
                                     )
                                 conn.commit()
-                        else:
-                            easy_preview = easy_text.replace("\n", " | ")
-                            print(
-                                "    EASYOCR tampoco encontro fecha "
-                                "(%d caracteres): %r"
-                                % (len(easy_preview), easy_preview)
-                            )
+                else:
+                    print("    EASYOCR no devolvio texto")
 
         if expiry and issue:
             # Par 4a/4b -- unico caso en que llegan los dos campos a
@@ -1206,83 +1245,6 @@ def main():
                     )
                 conn.commit()
             continue
-
-        # H31 (S96, incidente real). ANTES de rendirse: reintentar con
-        # EasyOCR antes de marcar sin_fecha. Las funciones
-        # easyocr_extract_text()/easyocr_pdf_to_text()/
-        # easyocr_image_to_text() ya estaban escritas en este mismo
-        # archivo desde antes, pero nunca se llamaban desde main() --
-        # el barrido corría solo con Tesseract pese a que la
-        # convención documentada del proyecto es la cadena Tesseract
-        # -> EasyOCR -> Gemini (última instancia). Miguel Ángel,
-        # verbatim, al descubrirlo: "¿que has hecho una pasada de
-        # mierda de tesseract solo sin pm6 y sin easy?". Corregido
-        # aquí: se prueba EasyOCR sobre el mismo documento antes de
-        # dar el sin_fecha por definitivo. Gemini sigue sin llamarse
-        # en bloque (directriz de coste de S46), queda para una
-        # pasada deliberada y acotada sobre lo que ni Tesseract ni
-        # EasyOCR resuelvan.
-        try:
-            easyocr_text = easyocr_extract_text(name, data)
-        except Exception as exc:
-            easyocr_text = None
-            print("  EASYOCR ERROR -- %s" % exc)
-
-        if easyocr_text:
-            e_expiry, e_issue, e_other = classify_dates_in_text(easyocr_text)
-            if e_expiry:
-                stats["easyocr_contexto"] = stats.get("easyocr_contexto", 0) + 1
-                print("  EASYOCR %s -> expiry=%s (contexto)" % (code, e_expiry.isoformat()))
-                if args.apply:
-                    with conn.cursor() as cur:
-                        cur.execute(
-                            "UPDATE document_explorer_documentindexentry "
-                            "SET ocr_text=%s, expiry_date=%s WHERE id=%s",
-                            (easyocr_text, e_expiry, entry_id),
-                        )
-                    conn.commit()
-                continue
-            if e_issue:
-                stats["easyocr_contexto"] = stats.get("easyocr_contexto", 0) + 1
-                print("  EASYOCR %s -> issue=%s (contexto)" % (code, e_issue.isoformat()))
-                if args.apply:
-                    with conn.cursor() as cur:
-                        cur.execute(
-                            "UPDATE document_explorer_documentindexentry "
-                            "SET ocr_text=%s, issue_date=%s WHERE id=%s",
-                            (easyocr_text, e_issue, entry_id),
-                        )
-                    conn.commit()
-                continue
-            if default_field and len(set(e_other)) == 1:
-                found = e_other[0]
-                stats["easyocr_unica_fecha"] = stats.get("easyocr_unica_fecha", 0) + 1
-                col = "expiry_date" if default_field == "expiry" else "issue_date"
-                print(
-                    "  EASYOCR %s -> %s=%s (unica fecha, defecto)"
-                    % (code, default_field, found.isoformat())
-                )
-                if args.apply:
-                    with conn.cursor() as cur:
-                        cur.execute(
-                            "UPDATE document_explorer_documentindexentry "
-                            "SET ocr_text=%%s, %s=%%s WHERE id=%%s" % col,
-                            (easyocr_text, found, entry_id),
-                        )
-                    conn.commit()
-                continue
-            # EasyOCR dio texto pero tampoco fecha reconocible: se
-            # cachea igualmente (puede tener mas texto util que
-            # Tesseract para una revision manual posterior), pero
-            # sigue contando como sin_fecha.
-            if args.apply and easyocr_text != text:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        "UPDATE document_explorer_documentindexentry "
-                        "SET ocr_text=%s WHERE id=%s",
-                        (easyocr_text, entry_id),
-                    )
-                conn.commit()
 
         stats["sin_fecha"] += 1
         print(
