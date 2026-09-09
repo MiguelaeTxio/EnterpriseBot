@@ -586,6 +586,11 @@ _ISSUE_CONTEXT = [
     # INCAPACIDAD TEMPORAL (P.9)" -- "PARTE DE BAJA [X] Fecha de la
     # baja 19/10/2020".
     "FECHA DE LA BAJA",
+    # H31 (S97): mismo campo, fusionado sin espacios por OCR de baja
+    # calidad -- "FECHADELA BAJA 21/09/2021", verificado en documento
+    # real (entry_id=38420, PARTE_BAJA_MEDICA) que quedaba sin_fecha
+    # pese a tener la fecha perfectamente legible en el propio texto.
+    "FECHADELA BAJA",
     # H30 (S91). Plantilla real de "Firma/recibi del trabajador... A
     # fecha(DD/MM/AAAA)" -- verificada en EVALUACION_RIESGO (id=22002,
     # id=22018, mismo impreso "ENTREGA DE EVALUACION DE RIESGO" de
