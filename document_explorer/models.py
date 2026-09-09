@@ -711,6 +711,44 @@ class DocumentTypeCatalog(models.Model):
             "otro tipo con el mismo problema."
         ),
     )
+    DATING_SCOPE_CURRENT_ONLY = "SOLO_VIGENTE"
+    DATING_SCOPE_ALL_INSTANCES = "TODAS"
+    DATING_SCOPE_CHOICES = [
+        (
+            DATING_SCOPE_CURRENT_ONLY,
+            "Solo el vigente (el resto queda histórico, su fecha no importa)",
+        ),
+        (
+            DATING_SCOPE_ALL_INSTANCES,
+            "Todas las instancias (cada una es un hecho legal propio)",
+        ),
+    ]
+    dating_scope = models.CharField(
+        max_length=16,
+        choices=DATING_SCOPE_CHOICES,
+        default=DATING_SCOPE_ALL_INSTANCES,
+        verbose_name="Alcance de fechado",
+        help_text=(
+            "H31 (S96). Solo relevante cuando tracks_expiry=True. "
+            "Decide si, de varios documentos del mismo tipo de una "
+            "misma persona, solo hace falta extraer fecha del vigente "
+            "-- el resto queda histórico sin más, p. ej. DNI -- o si "
+            "cada instancia es un hecho legal propio que necesita su "
+            "propia fecha, p. ej. reconocimiento médico o TC2. "
+            "Decisión explícita de Miguel Ángel (S96), contrastada "
+            "contra normativa real donde aplicaba (LPRL art. 22 para "
+            "RECONOCIMIENTO_MEDICO; RD 284/2021 para CAP/"
+            "TARJETA_CUALIF_CONDUCTOR) y contra el propio código "
+            "(mapeo heurístico real para CSS = Certificado de estar "
+            "al corriente con la Seguridad Social, no una hoja de "
+            "estilos). Antes de esta sesión esta distinción no vivía "
+            "en ningún sitio del código, solo en la cabeza de Miguel "
+            "Ángel -- origen de confusiones repetidas entre sesiones "
+            "sobre el alcance real del fechado (ver anexo H31, "
+            "registro de sesión S96, para la clasificación completa "
+            "tipo a tipo)."
+        ),
+    )
     created_at = models.DateTimeField(
         auto_now_add=True,
         verbose_name="Fecha de alta",
