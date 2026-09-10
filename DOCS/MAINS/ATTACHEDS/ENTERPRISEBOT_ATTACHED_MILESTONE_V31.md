@@ -1674,34 +1674,47 @@ por el orden entre tareas ya numeradas es un error de lectura, no una
 decisión pendiente: se ejecutan en el orden ya fijado en la hoja de
 ruta de arriba (bloques 1-5), sin volver a preguntar.
 
-**Pregunta 3 -- fallos de clasificación en el momento de la subida,
-RESUELTA por aplazamiento explícito, verbatim:** *"¿nos merece la pena
-entrenar ya el modelo [...] o podemos dejarlo ahora mismo solamente
-tal y como lo tenemos, echando a no conformes lo que no entre y
-introduciendo el supervisor [...] esto quizás merece más atención que
-incluirlo dentro del hito."* Decisión: el pipeline de clasificación
-automática (OCR asíncrono en VM de GCE, entrenamiento de modelo
-propio) **no se aborda dentro de H31** -- ya tiene hito propio y
-dedicado, **H34 (Modelo Propio de Clasificación de Documentos)**, con
-prioridad máxima ya registrada en el enrutador. H31 sigue usando el
-mecanismo real ya existente (H28/H29): lo que no se clasifica
-automáticamente cae en NO CONFORMES/cuarentena, y el supervisor lo
-resuelve a mano desde la interfaz. Ningún trabajo de OCR/clasificación
-nuevo se construye en H31.
+**Pregunta 3 y 4 -- CORREGIDAS EN S100, MISMA SESIÓN (la resolución
+inicial de más abajo era errónea, sustituida íntegramente por esta).**
+Miguel Ángel corrigió explícitamente la primera lectura porque
+mezclaba este pipeline con el de H28/H29: **esto es un pipeline
+totalmente nuevo, sin ninguna relación con H28, con el explorador de
+archivos, ni con la carpeta NO CONFORMES/cuarentena.** No hay tarea
+periódica, no hay always-on, no hay barrido cada N minutos, no hay
+carpeta de cuarentena de ningún tipo en este flujo. Verbatim: *"No
+estamos hablando de H28 [...] no está en el tema del H28 ni en el
+sistema de H28 ni en explorador de archivos ni en la carpeta no
+conformes. Una cosa es la carpeta no conformes y otra cosa es que un
+documento esté no conforme."*
 
-**Pregunta 4 -- relación con la cuarentena de H28/NO CONFORMES,
-RESUELTA -- conviven, no se sustituyen.** Flujo real para la vía de
-entrada de H31 (alta de trabajador, sustitución de un documento):
-se sube la documentación completa del trabajador, se clasifica con el
-mecanismo ya existente, y ahí es donde entra el supervisor: se le
-presenta el documento real subido junto a la ingesta de datos que se
-pretende hacer (p. ej. una fecha mal leída), con mecanismo para
-rectificarla antes de confirmar. Si el supervisor confirma, el dato va
-a BD. Si el supervisor lo marca como no conforme, sigue el mismo
-circuito de cuarentena ya existente (H28/H29) -- H31 no crea una
-segunda cuarentena paralela, añade el punto de revisión humana en el
-momento de la subida guiada por el supervisor, distinto del barrido
-periódico ya existente.
+**Flujo real, síncrono, todo en el mismo instante de subida (interfaz
+de documentación de la ficha de personal):** el supervisor pulsa un
+botón (alta de trabajador o sustitución de un documento), se abre un
+modal, selecciona un archivo o una carpeta, lo sube. El sistema
+intenta clasificarlo y presenta al supervisor, en el momento: el
+documento real subido, qué tipo de documento cree que es, y qué datos
+pretende ingestar (p. ej. una fecha). Si algo no cuadra -- no se lee
+bien, el nombre no coincide con el contenido, es un archivo que no
+tiene nada que ver (verbatim: "es un archivo de audio") -- el sistema
+lo marca como no conforme **en la propia interfaz, no en ninguna
+carpeta**, y el supervisor lo resuelve ahí mismo: corrige el dato a
+mano, o vuelve a subir el documento correcto. Si todo es correcto, el
+supervisor confirma y el dato va directo a BD. Verbatim, resumen del
+propio Miguel Ángel: *"un supervisor va a dar de alta a un trabajador.
+Botón dar de alta trabajador [...] sube la documentación [...] ¿son
+correctos todos los datos? Sí, perfecto, pues todo a base de datos. Ya
+está. Aquí no hay cuarentena, no hay carpetas de no conformes [...]
+Aquí es supervisor sube la documentación y se resuelve todo en el
+instante. Y si no se resuelve se tiene que volver a subir."*
+
+**Consecuencia de diseño de obligado cumplimiento:** ninguna vista o
+servicio de este bloque puede escribir en el circuito de H28/H29
+(cuarentena, `IngestedFile` de staging, barrido periódico) ni
+depender de él. Es un mecanismo de ida y vuelta inmediata
+supervisor↔interfaz, sin persistencia intermedia de "pendiente de
+revisión" fuera de la propia sesión del modal -- si el supervisor no
+resuelve un documento no conforme, simplemente no se guarda nada y
+tiene que volver a subirlo, no queda una cola de pendientes en BD.
 
 **Redefinición del objetivo del hito, verbatim de Miguel Ángel (no
 sustituye a la sección 1, la amplía con el marco real que la
@@ -1721,6 +1734,24 @@ ya introducido por la directriz 4.19 (`PersonIdentity` como el "quién"
 real, independiente de `CompanyUser`): existe una ficha de personal,
 una ficha de maquinaria y una ficha de centro de gasto, cada una
 gobernada por su documentación.
+
+**Alcance real -- SOLO personal ACTIVO, añadido en la misma corrección
+de S100.** Esta interfaz nueva gestiona exclusivamente trabajadores
+activos. Cuando un trabajador causa baja, se envía a su carpeta de
+inactivos (mecanismo ya real de H29/explorador de archivos) y **deja
+de gestionarse desde esta interfaz** -- a partir de ese momento, su
+documentación histórica se consulta desde el explorador de archivos
+(H29), nunca desde el hub de gestión de personal activo. Verbatim:
+*"Y el explorador de archivos se queda para lo que tenemos todo
+inactivo. Esto es solamente para personal activo [...] cuando un
+trabajador cause baja se enviará a su carpeta de inactivos y se
+quedará allí y ya no accederemos a él desde esta interfaz. Porque ya
+accederemos desde la carpeta, desde la vista del explorador de
+archivos, que para eso va a estar."* Consecuencia de diseño: cualquier
+listado/selector de personal de esta interfaz filtra por
+`is_active_employee=True` de `PersonIdentity`; la baja de un
+trabajador es el punto de corte que lo saca de este hub y lo entrega
+al explorador de archivos como archivo histórico.
 
 **Importante -- esto no parte de cero.** Buena parte de esta visión ya
 tiene fundación real construida en sesiones anteriores de este mismo
