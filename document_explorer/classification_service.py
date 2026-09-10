@@ -2495,6 +2495,137 @@ def apply_classification(entry) -> dict:
     return result
 
 
+def apply_personal_canonical_rename(
+    entry, fictitious_date=None, apply_changes=False,
+) -> dict:
+    """
+    No-Gemini counterpart of `apply_classification()`, PERSONAL domain
+    only, for documents that are already fully classified in the
+    database -- `document_type`, `domain_object` (a `PersonIdentity`)
+    and, real or not, a date. Never calls Gemini: every input comes
+    from already-resolved DB fields. H31 (S98), Miguel Angel's own
+    forward-looking reason for building this as a separate, named,
+    reusable function rather than inline script code: the predictive
+    classifier he plans to train will also classify from pure Python,
+    without Gemini in the loop -- this is meant to be the renaming
+    half of that future pipeline too, not a one-off.
+
+    Same "virtual-only" contract as `apply_classification()`: only
+    `DocumentIndexEntry.name` changes, never `blob_name`/GCS (S040).
+    Same collision-safe ordinal loop against `_virtual_location_taken`
+    (never `move_service`'s " (N)" suffix).
+
+    `fictitious_date` (S98): when neither `expiry_date` nor
+    `issue_date` is set, callers may pass a fixed placeholder date --
+    Miguel Angel's own convention, 2021-01-01, deliberately a national
+    holiday no real document will ever carry -- so the fixed-format
+    name can still be built for a document that was never dated. The
+    real `expiry_date`/`issue_date` columns are never touched by this
+    function; the placeholder only ever appears inside the filename
+    string. `None` (default) means: leave undated entries alone,
+    reason `"sin_fecha"`.
+
+    `apply_changes` (default `False`, safe): when `False`, computes
+    and returns the candidate name without writing anything -- dry-run
+    reporting, same convention as every other bulk command of this
+    project. Note for dry-run: within the same batch, an ordinal
+    computed against another not-yet-applied candidate of this same
+    run may not match the ordinal a real `--apply` run would produce,
+    because `_virtual_location_taken` only sees what is already
+    committed in the database -- for an exact count, apply directly.
+
+    Returns `{"new_name": str | None, "renamed": bool, "reason":
+    str | None}`. `reason` is only set when nothing could be built
+    (`"sin_persona_resuelta"`, `"sin_tipo"`, `"sin_fecha"`) -- callers
+    must treat that as "leave this one for manual review", never
+    invent a value, same rule as `build_new_name()`.
+
+    ---
+
+    Homólogo sin Gemini de `apply_classification()`, solo dominio
+    PERSONAL, para documentos ya totalmente clasificados en la base de
+    datos -- `document_type`, `domain_object` (una `PersonIdentity`) y,
+    real o no, una fecha. Nunca llama a Gemini: toda la entrada sale de
+    campos ya resueltos en BD. H31 (S98), motivo explícito de Miguel
+    Ángel para construir esto como función propia, nombrada y
+    reutilizable, en vez de código suelto dentro del script: el
+    clasificador predictivo que planea entrenar también clasificará en
+    Python puro, sin Gemini de por medio -- esto está pensado para ser
+    también la mitad de renombrado de ese futuro pipeline, no un
+    apaño de una sola vez.
+
+    Mismo contrato "solo virtual" que `apply_classification()`: solo
+    cambia `DocumentIndexEntry.name`, nunca `blob_name`/GCS (S040).
+    Mismo bucle de ordinal a salvo de colisiones contra
+    `_virtual_location_taken` (nunca el sufijo " (N)" de
+    `move_service`).
+
+    `fictitious_date` (S98): cuando ni `expiry_date` ni `issue_date`
+    están rellenos, quien llama puede pasar una fecha fija de relleno
+    -- convención propia de Miguel Ángel, 2021-01-01, festivo nacional
+    a propósito para que ningún documento real la lleve nunca -- para
+    poder construir igualmente el nombre de formato fijo de un
+    documento que nunca se fechó. Las columnas reales `expiry_date`/
+    `issue_date` nunca se tocan desde esta función; el relleno solo
+    aparece dentro de la cadena del nombre de archivo. `None`
+    (por defecto) significa: dejar tal cual las entradas sin fecha,
+    motivo `"sin_fecha"`.
+
+    `apply_changes` (por defecto `False`, seguro): con `False`,
+    calcula y devuelve el nombre candidato sin escribir nada --
+    informe en seco, misma convención que cualquier otro comando
+    masivo de este proyecto. Nota para el modo seco: dentro del mismo
+    lote, un ordinal calculado contra otro candidato de este mismo
+    lote que todavía no se ha aplicado puede no coincidir con el que
+    produciría una ejecución real con `--apply`, porque
+    `_virtual_location_taken` solo ve lo que ya está comiteado en
+    base de datos -- para un recuento exacto, aplicar directamente.
+
+    Devuelve `{"new_name": str | None, "renamed": bool, "reason":
+    str | None}`. `reason` solo se rellena cuando no se pudo construir
+    nada (`"sin_persona_resuelta"`, `"sin_tipo"`, `"sin_fecha"`) --
+    quien llama debe tratarlo como "dejar este para revisión manual",
+    nunca inventar un valor, misma regla que `build_new_name()`.
+    """
+    identity = entry.domain_object
+    if not isinstance(identity, PersonIdentity):
+        return {
+            "new_name": None, "renamed": False,
+            "reason": "sin_persona_resuelta",
+        }
+    if not entry.document_type or not entry.document_type.code:
+        return {"new_name": None, "renamed": False, "reason": "sin_tipo"}
+    date = entry.expiry_date or entry.issue_date or fictitious_date
+    if date is None:
+        return {"new_name": None, "renamed": False, "reason": "sin_fecha"}
+
+    extension = entry.name.rsplit(".", 1)[-1] if "." in entry.name else "pdf"
+    code = entry.document_type.code
+
+    candidate_name = naming_service.build_filename_personal(
+        identity.first_surname, identity.second_surname,
+        identity.given_name, code, date, extension=extension,
+    )
+    final_name = candidate_name
+    ordinal = 1
+    while _virtual_location_taken(
+        entry.bucket, entry.parent_path, final_name, exclude_pk=entry.pk,
+    ):
+        final_name = naming_service.build_filename_personal(
+            identity.first_surname, identity.second_surname,
+            identity.given_name, code, date, ordinal=ordinal,
+            extension=extension,
+        )
+        ordinal += 1
+
+    renamed = final_name != entry.name
+    if renamed and apply_changes:
+        entry.name = final_name
+        entry.save(update_fields=["name", "updated_at"])
+
+    return {"new_name": final_name, "renamed": renamed, "reason": None}
+
+
 def quarantine_domain_for_entry(entry) -> str | None:
     """
     Domain of a file sitting inside `_CUARENTENA/` -- same rule as
