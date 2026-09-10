@@ -26,6 +26,7 @@ mismo request, se extraen los datos, se devuelven al momento -- nunca
 se persiste nada a medio resolver, nunca hay cola ni barrido
 posterior.
 """
+import difflib
 import json
 import logging
 import time
@@ -138,6 +139,46 @@ def normalize_dni(raw_dni: str) -> str:
     duplicados nada más leer los documentos) como por
     `PersonalCreateView` (S100, movida aquí para no duplicarla)."""
     return (raw_dni or "").strip().upper().replace(" ", "").replace("-", "")
+
+
+# H31 (S100), corrección explícita de Miguel Ángel tras el incidente
+# real del filtro de Personal (una ficha nueva quedaba invisible
+# porque el contrato traía "ASISTENCIA Y GRUAS GRANADA S.L." y el
+# Excel real usa "ASIST.GRUAS GRANADA"): *"hay que normalizar [...]
+# el nombre de la empresa tiene que ser ya como lo que tenemos en el
+# Excel [...] no puedo ir a otras empresas [...] a cuál se parece
+# más, pues va a esa."* Mismas variantes reales conocidas por
+# `panel.views_documentation_h30.COMPANY_FILTER_CHOICES` -- mantener
+# sincronizadas si se añade o cambia una empresa real. El texto libre
+# que Gemini lee del contrato NUNCA se guarda tal cual en
+# `PersonIdentity.employer_company`; el propio documento del contrato,
+# ya indexado, sigue siendo la trazabilidad real de lo que decía el
+# papel si hiciera falta consultarlo.
+_KNOWN_EMPLOYER_COMPANIES = (
+    "GRUAS ADOLFO ALVAREZ SL",
+    "TRANSGRUAL SL",
+    "GRUALDI S.L",
+    "ASIST.GRUAS GRANADA",
+)
+
+
+def normalize_employer_company(raw_text: str) -> str:
+    """
+    Normaliza el texto de empresa leído de un contrato a la variante
+    real más parecida de `_KNOWN_EMPLOYER_COMPANIES` -- nunca se deja
+    el texto libre tal cual. Cadena vacía si `raw_text` está vacío
+    (ninguna empresa legible en el contrato, no se inventa una).
+    """
+    text = (raw_text or "").strip()
+    if not text:
+        return ""
+    normalized = text.upper()
+    return max(
+        _KNOWN_EMPLOYER_COMPANIES,
+        key=lambda known: difflib.SequenceMatcher(
+            None, normalized, known,
+        ).ratio(),
+    )
 
 
 _TEXT_PROMPT_TEMPLATE = """Eres un asistente de RRHH de una empresa \
@@ -354,7 +395,9 @@ def merge_person_draft(extractions: list) -> dict:
         if not draft["birth_date"] and result.get("birth_date_hint"):
             draft["birth_date"] = result["birth_date_hint"]
         if not draft["employer_company"] and result.get("employer_company_hint"):
-            draft["employer_company"] = result["employer_company_hint"]
+            draft["employer_company"] = normalize_employer_company(
+                result["employer_company_hint"],
+            )
         if not draft["hire_date"] and result.get("hire_date_hint"):
             draft["hire_date"] = result["hire_date_hint"]
     return {"draft": draft, "warnings": warnings}
