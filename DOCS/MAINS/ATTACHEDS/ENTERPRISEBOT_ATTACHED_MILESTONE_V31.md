@@ -1911,3 +1911,42 @@ en ningún proyecto futuro que declare una dependencia nueva.
 push que declaró `google-cloud-vision` en `requirements.in` ya había
 ocurrido antes de crear este workflow -- las siguientes veces se
 disparará solo.
+
+---
+
+## INCIDENTE REAL -- COLISIÓN DE NOMBRES SOBRESCRIBÍA BLOBS EN EL ALTA (S100, misma sesión)
+
+Prueba real de Miguel Ángel con sus propios 15 documentos (2 DNI, 2
+reconocimientos médicos, 1 contrato, 10 sin tipo reconocido):
+`_store_documents()` llamaba a `build_filename_personal()` sin
+`ordinal` -- dos documentos del MISMO tipo subidos el MISMO día
+generaban el mismo nombre de archivo, y por tanto el mismo
+`blob_name`. El segundo sobrescribía en GCS el contenido del primero
+en silencio, mientras se seguían creando filas `DocumentIndexEntry`
+distintas apuntando a ese mismo blob ya sobrescrito. Confirmado
+consultando la BD real (`PersonIdentity id=233`, ficha de prueba):
+ids `43609`/`43610` con blob_name idéntico, mismo patrón en los DNI
+(`43615`/`43616`) y los RM (`43622`/`43623`).
+
+**Corregido:** se cuenta cuántos documentos con el mismo prefijo real
+(persona+tipo+fecha) ya existen -- tanto ya indexados en BD para esa
+persona como los ya procesados en el mismo lote -- y se añade `_2`,
+`_3`... a partir del segundo. El primero de cada tipo conserva el
+nombre limpio de siempre.
+
+**Nota aparte, NO es un bug:** de los 15 documentos de la prueba, 10
+salieron `DESCONOCIDO` (ALTA, foto de carné, certificado bancario,
+formación, IDC, modelo 145, autorización de medios). Es el
+comportamiento esperado -- el vocabulario cerrado de esta extracción
+(`_DOCUMENT_TYPE_CHOICES` en `personal_intake_service.py`) reconoce
+hoy solo DNI/CONTRATO/RECONOCIMIENTO_MEDICO, verbatim de Miguel Ángel
+al definir el alcance: *"dame el DNI, dame el contrato en principio
+[...] pero sobre todo DNI y contrato [...] dame el reconocimiento
+médico."* Ampliar ese vocabulario a más tipos es una decisión de
+alcance pendiente, no una corrección de este incidente.
+
+**Pendiente de la sesión:** limpiar la ficha de prueba `id=233`
+(documentos duplicados/con blobs ya sobrescritos entre sí) y volver a
+probar el alta completa con el mismo lote de 15 documentos ya
+corregido el bug, antes de restaurar la ficha real de Miguel Ángel
+desde el backup `EnterpriseBot_002_backup.json`.
