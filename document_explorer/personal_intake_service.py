@@ -140,11 +140,60 @@ def _generate_content_with_retry(client, **kwargs):
 
 
 def normalize_dni(raw_dni: str) -> str:
-    """Normalización compartida de DNI/NIE -- mayúsculas, sin espacios
-    ni guiones. Usada tanto por la extracción (para poder comprobar
+    """
+    Normalización compartida de DNI/NIE -- mayúsculas, sin espacios ni
+    guiones. Usada tanto por la extracción (para poder comprobar
     duplicados nada más leer los documentos) como por
-    `PersonalCreateView` (S100, movida aquí para no duplicarla)."""
-    return (raw_dni or "").strip().upper().replace(" ", "").replace("-", "")
+    `PersonalCreateView` (S100, movida aquí para no duplicarla).
+
+    CORREGIDO EN S100 (misma sesión), incidente real de Miguel Ángel
+    con su propio DNI: probó el alta y el DNI leído salió
+    "074633524L" en vez de "74633524L" -- exactamente el mismo fallo
+    ya documentado y corregido en H29 (S042,
+    `classification_service._normalize_dni`): un DNI son SIEMPRE
+    exactamente 8 dígitos + 1 letra de control (un NIE ya son 9
+    caracteres sin ambigüedad); un valor de 10 caracteres que empieza
+    por "0" y el resto son 8 dígitos + letra solo puede ser un DNI
+    real con un cero espurio añadido por Gemini al leer el MRZ, nunca
+    un número genuinamente distinto -- los DNI españoles no los
+    tienen. Misma corrección, replicada aquí a propósito (no
+    importada de `classification_service`/H29, para no acoplar este
+    pipeline nuevo al de H28/H29 -- ver anexo H31, preguntas 3/4).
+    """
+    value = (raw_dni or "").strip().upper().replace(" ", "").replace("-", "")
+    if (
+        len(value) == 10 and value[0] == "0"
+        and value[1:9].isdigit() and value[9].isalpha()
+    ):
+        value = value[1:]
+    return value
+
+
+# H31 (S100), mismo motivo que la corrección del cero espurio de
+# arriba: algoritmo real y público de la letra de control del DNI/NIE
+# español -- ya usado en `classification_service.is_valid_spanish_dni`
+# (H29), replicado aquí (no importado, mismo criterio de
+# desacoplamiento de H28/H29) para poder detectar gratis, sin ninguna
+# llamada de red, un dígito mal leído por el OCR/Gemini antes de que
+# llegue a crear una ficha con un DNI real pero incorrecto.
+_DNI_CHECK_LETTERS = "TRWAGMYFPDXBNJZSQVHLCKE"
+_NIE_PREFIX_DIGIT = {"X": "0", "Y": "1", "Z": "2"}
+
+
+def is_valid_spanish_dni(raw_dni: str) -> bool:
+    """Valida un DNI/NIE español por su letra de control real."""
+    value = normalize_dni(raw_dni)
+    if len(value) != 9:
+        return False
+    digits_part, letter = value[:8], value[8]
+    if not letter.isalpha():
+        return False
+    first_char = digits_part[0]
+    if first_char in _NIE_PREFIX_DIGIT:
+        digits_part = _NIE_PREFIX_DIGIT[first_char] + digits_part[1:]
+    if not digits_part.isdigit():
+        return False
+    return letter == _DNI_CHECK_LETTERS[int(digits_part) % 23]
 
 
 # H31 (S100), corrección explícita de Miguel Ángel tras el incidente
@@ -408,7 +457,14 @@ def merge_person_draft(extractions: list) -> dict:
             )
             continue
         if not draft["dni"] and result.get("dni_hint"):
-            draft["dni"] = result["dni_hint"]
+            candidate_dni = normalize_dni(result["dni_hint"])
+            if candidate_dni and not is_valid_spanish_dni(candidate_dni):
+                warnings.append(
+                    "Documento %d: el DNI leído (%s) no pasa la letra de "
+                    "control real -- revísalo a mano antes de confirmar."
+                    % (idx + 1, candidate_dni),
+                )
+            draft["dni"] = candidate_dni
         if not draft["first_surname"] and result.get("first_surname_hint"):
             draft["first_surname"] = result["first_surname_hint"]
         if not draft["second_surname"] and result.get("second_surname_hint"):
