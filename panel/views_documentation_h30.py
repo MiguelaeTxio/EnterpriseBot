@@ -27,7 +27,8 @@ from django.contrib.contenttypes.models import ContentType
 from django.contrib.staticfiles.finders import find as find_static
 from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
-from django.db.models import Count, Q, Sum
+from django.db.models import Count, OuterRef, Q, Subquery, Sum
+from django.db.models.functions import Coalesce
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -419,17 +420,36 @@ def _person_list_page(request):
             | Q(second_surname__icontains=search)
             | Q(given_name__icontains=search) | Q(dni__icontains=search),
         )
-    sort_columns = [("first_surname", "Primer apellido"), ("dni", "DNI")]
+    # H31 (S100): Miguel Ángel pidió ordenar también por Nombre, Alta y
+    # Documentos (todas menos DNI). `domain_object` es una
+    # GenericForeignKey sin `GenericRelation` inversa (ver docstring de
+    # `_attach_doc_counts`) -- no admite `.annotate(Count(...))`
+    # directo, así que el conteo se anota vía Subquery correlacionada
+    # por `domain_object_id`, sobre el queryset COMPLETO (antes de
+    # paginar), para que el `order_by` de `_apply_sort` pueda usarlo.
+    # Sustituye aquí a `_attach_doc_counts` (que solo opera sobre la
+    # página ya paginada) -- mismo dato, ahora también ordenable.
+    person_ct = ContentType.objects.get_for_model(PersonIdentity)
+    doc_count_subquery = (
+        DocumentIndexEntry.objects.filter(
+            bucket=BUCKET, domain_content_type=person_ct,
+            domain_object_id=OuterRef("pk"),
+            entry_kind=DocumentIndexEntry.KIND_FILE,
+            deleted_at__isnull=True, purged_at__isnull=True,
+        ).order_by().values("domain_object_id").annotate(n=Count("id")).values("n")
+    )
+    qs = qs.annotate(doc_count=Coalesce(Subquery(doc_count_subquery), 0))
+    sort_columns = [
+        ("first_surname", "Primer apellido"), ("given_name", "Nombre"),
+        ("hire_date", "Alta"), ("doc_count", "Documentos"),
+    ]
     qs, sort_key, sort_dir = _apply_sort(
         request, qs, sort_columns, "first_surname",
     )
     paginator = Paginator(qs, 50)
     page = paginator.get_page(request.GET.get("page"))
-    page.object_list = _attach_doc_counts(
-        list(page.object_list), ContentType.objects.get_for_model(PersonIdentity),
-    )
     page.object_list = _attach_alert_flags(
-        page.object_list, ContentType.objects.get_for_model(PersonIdentity),
+        list(page.object_list), person_ct,
     )
     return {
         "page": page, "sort_key": sort_key, "sort_dir": sort_dir,

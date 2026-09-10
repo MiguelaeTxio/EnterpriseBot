@@ -19,16 +19,31 @@ en la selección recordada por ese JS al reconstruir la tabla.
                     {% if sort_key == 'first_surname' %}<i class="bi bi-chevron-{% if sort_dir == 'asc' %}up{% else %}down{% endif %}"></i>{% endif %}
                 </a>
             </th>
-            <th>Nombre</th>
             <th>
                 <a href="#"
-                   hx-get="{% url 'panel:documentation_personal_results' %}?sort=dni&dir={% if sort_key == 'dni' and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&q={{ search }}"
+                   hx-get="{% url 'panel:documentation_personal_results' %}?sort=given_name&dir={% if sort_key == 'given_name' and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&q={{ search }}"
                    hx-target="#personal-results" class="text-decoration-none text-dark">
-                    DNI
-                    {% if sort_key == 'dni' %}<i class="bi bi-chevron-{% if sort_dir == 'asc' %}up{% else %}down{% endif %}"></i>{% endif %}
+                    Nombre
+                    {% if sort_key == 'given_name' %}<i class="bi bi-chevron-{% if sort_dir == 'asc' %}up{% else %}down{% endif %}"></i>{% endif %}
                 </a>
             </th>
-            <th>Documentos</th>
+            <th>DNI</th>
+            <th>
+                <a href="#"
+                   hx-get="{% url 'panel:documentation_personal_results' %}?sort=hire_date&dir={% if sort_key == 'hire_date' and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&q={{ search }}"
+                   hx-target="#personal-results" class="text-decoration-none text-dark">
+                    Alta
+                    {% if sort_key == 'hire_date' %}<i class="bi bi-chevron-{% if sort_dir == 'asc' %}up{% else %}down{% endif %}"></i>{% endif %}
+                </a>
+            </th>
+            <th>
+                <a href="#"
+                   hx-get="{% url 'panel:documentation_personal_results' %}?sort=doc_count&dir={% if sort_key == 'doc_count' and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&q={{ search }}"
+                   hx-target="#personal-results" class="text-decoration-none text-dark">
+                    Documentos
+                    {% if sort_key == 'doc_count' %}<i class="bi bi-chevron-{% if sort_dir == 'asc' %}up{% else %}down{% endif %}"></i>{% endif %}
+                </a>
+            </th>
         </tr>
     </thead>
     <tbody>
@@ -39,10 +54,11 @@ en la selección recordada por ese JS al reconstruir la tabla.
             <td><a href="{% url 'panel:documentation_personal_detail' pk=person.pk %}">{{ person.first_surname }} {{ person.second_surname }}</a></td>
             <td>{{ person.given_name }}</td>
             <td>{{ person.dni }}</td>
+            <td>{{ person.hire_date|default_if_none:"" }}</td>
             <td>{{ person.doc_count }}</td>
         </tr>
         {% empty %}
-        <tr><td colspan="6" class="text-muted small py-3">No se encontró personal.</td></tr>
+        <tr><td colspan="7" class="text-muted small py-3">No se encontró personal.</td></tr>
         {% endfor %}
     </tbody>
 </table>
