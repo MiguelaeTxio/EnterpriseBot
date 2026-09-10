@@ -2896,7 +2896,88 @@ inmediato (directriz 4.9):** bug de auditoría en el detalle de log
 (mostraba el dominio crudo de Gemini en vez del dominio real ya
 forzado por la carpeta, sin afectar nunca al enrutado real).
 
-### Hoja de ruta para cuando se retome H29
+### COMPLETADAS EN S99 (desvío desde H31, Caso A de `com-pch`, 2026-09-10)
+
+Sesión que arrancó con H31 `EN PROGRESO` ejecutando el Punto 1 de su
+hoja de ruta de S98 -- reorganización de la estructura de carpetas
+VIRTUALES de PERSONAL, tarea que Miguel Ángel identificó al cierre de
+la propia sesión como trabajo real de H29 (explorador de archivos),
+no de H31 (documentación/interfaz). Ver
+`ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md`, "NOTA DE DESVÍO -- S99",
+para el detalle completo de la reclasificación. El marcador
+`← EN PROGRESO` del enrutador permaneció en H31 durante toda la
+sesión -- este registro documenta el trabajo real hecho aquí, no un
+cambio de hito.
+
+**1. Nueva estructura de carpetas virtuales de PERSONAL** (comando
+`restructure_personal_folders`, dry-run por defecto): `DOC.
+PERSONAL/PERSONAL/ACTIVOS/{EMPRESA}/{PERSONA}/` y `DOC.
+PERSONAL/PERSONAL/INACTIVOS/{PERSONA}/`, sustituyendo la organización
+heredada del cubo (`OPERARIOS`/`ADMINISTRACION`/`BAJAS`/`TALLER`...).
+Movimiento real por `domain_object` (vínculo autoritativo
+`DocumentIndexEntry.domain_content_type`/`domain_object_id` →
+`PersonIdentity`), nunca por `PersonIdentity.folder_path` -- corregido
+en la propia sesión tras un primer dry-run que reveló que ese campo
+solo refleja el destino de archivos nuevos de cuarentena, nunca la
+ubicación real de los ya existentes (solo 5.284 de 8.358 documentos
+vivían bajo `folder_path`). **8.358 documentos movidos, 0 colisiones,
+0 fallos, verificado con consulta real: 0 documentos de
+`PersonIdentity` fuera de la nueva estructura.**
+
+**2. Subdivisión de ACTIVOS por empresa real** (instrucción explícita
+de Miguel Ángel, corrección sobre el primer diseño): `PersonIdentity.
+employer_company`, refrescado directamente desde
+`EXCEL_TRABAJADORES.xlsx` real (versionado en el repo) vía
+`import_worker_machine_excel --apply`, sin fusionar variantes de
+texto ("TRANSGRUAL SL" y "TRANSGRUAL S.L." quedan como carpetas
+distintas a propósito -- la normalización real vive en el Excel, no
+se inventa en código). Caso especial `GERENCIA` para la familia
+propietaria (ALVAREZ DIAZ, 5 personas, sin `employer_company` por no
+ser plantilla) -- función `naming_service.build_company_folder_name()`
+nueva, misma normalización que el resto del módulo.
+
+**3. Corrección real de estado laboral de tres personas**, confirmada
+explícitamente por Miguel Ángel tras consultar con uno de los dueños:
+Zafra Balbuena Abraham y Gómez Carvajal José Manuel pasan a
+`is_active_employee=False` (bajas reales); Delgado Hurtado Jerónimo
+se mantuvo `True` (confirmado que trabaja para Gruas Adolfo Alvarez
+SL pese a no tener columna EMPRESA rellena en el Excel) con
+`employer_company` fijado a mano a `GRUAS ADOLFO ALVAREZ SL`. Sin
+`termination_date` inventada -- no hay fecha real de baja conocida.
+
+**4. Limpieza de carpetas vacías** (`find_empty_folders --apply`,
+comando ya existente de H30/S72): **1.015 carpetas del índice
+enviadas a papelera** (borrado blando, `DocumentIndexEntry` puro,
+`blob_name`/GCS nunca tocado), ruido acumulado tanto por el
+movimiento masivo de esta sesión como por deriva histórica anterior.
+0 fallos.
+
+**5. Recálculo de contadores** (`recalculate_folder_counters --bucket
+cgs_grupo_alvarez`, comando ya existente de H29/S042): **195 de 2.117
+carpetas corregidas** (`child_count`/`total_size_bytes` desajustados),
+incluida una deriva histórica grande sin relación con el trabajo de
+hoy (p. ej. `DOC. PERSONAL` pasó de 63 a 8 hijos directos reales).
+
+**Alcance no tocado, explícitamente aparcado por Miguel Ángel al
+cierre:** la auditoría de ubicación virtual sobre el resto del árbol
+(MACHINE/COMPANY, Punto 2 de la hoja de ruta de S98 -- ver más abajo)
+depende de terminar primero la clasificación y fechado real de la
+maquinaria, todavía pendiente en H30.
+
+### Hoja de ruta para cuando se retome H29 -- vigente, con una adición real de S99
+
+**Punto nuevo (S99), aparcado hasta que se cierre la clasificación de
+maquinaria (condición explícita de Miguel Ángel):** repetir la
+auditoría de ubicación virtual (documentos sueltos en una carpeta cuyo
+`document_type.domain` no encaja con esa carpeta, mismo método que
+S98) sobre el resto del árbol -- MACHINE y COMPANY, no solo PERSONAL
+(ya resuelto en S99). **Criterio de cierre:** número real de casos
+encontrados fuera de la estructura MACHINE/COMPANY vigente, cada uno
+movido o con destino explícitamente decidido por Miguel Ángel.
+
+Los puntos siguientes son los que quedaron abiertos al cierre de S043
+-- sin verificación real en esta sesión de si siguen vigentes tal
+cual (varios probablemente ya resueltos por trabajo posterior de H30):
 
 Ninguno de estos puntos es nuevo por interpretación propia -- son los
 que quedaron abiertos o parcialmente resueltos al cierre de S043,

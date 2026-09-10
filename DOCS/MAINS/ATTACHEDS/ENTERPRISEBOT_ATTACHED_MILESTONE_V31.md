@@ -1,5 +1,15 @@
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md
-# Anexo H31 — Interfaz de Ficha de Personal: EPIs y Notificaciones/Circulares
+# Anexo H31 — Interfaz de Gestión Documental de Personal: Altas, Bajas, Sustituciones, EPIs y Circulares
+
+---
+
+**RENOMBRADO Y AMPLIADO EN S99 (2026-09-10).** Título anterior:
+"Interfaz de Ficha de Personal: EPIs y Notificaciones/Circulares".
+H33 (Subida de Documentación en Tiempo Real desde el Panel) se
+fusiona en este hito el mismo día -- ver "NOTA DE FUSIÓN" más abajo
+para el detalle completo y la cita textual de Miguel Ángel que lo
+autoriza. El trabajo de S99 sobre estructura de carpetas virtuales de
+PERSONAL se reclasificó a H29 -- ver "NOTA DE DESVÍO" más abajo.
 
 ---
 
@@ -1427,73 +1437,123 @@ EPI).
 
 ---
 
-## Hoja de Ruta para la Sesión Siguiente
+## NOTA DE DESVÍO -- S99 (2026-09-10)
 
-**Instrucción explícita de Miguel Ángel al cierre de S98: reorganizar
-la estructura de carpetas virtuales de PERSONAL para que refleje la
-clasificación real de BD** (persona real vía `domain_object`, estado
-laboral vía `PersonIdentity.is_active_employee`), no la organización
-histórica heredada del cubo. Empezar directamente por ahí, sin
-preguntar por dónde arrancar.
+**Caso A de `com-pch`.** La sesión S99 arrancó con H31 `EN PROGRESO`
+(Punto 1 de la hoja de ruta de S98, más abajo archivada) y ejecutó
+ese Punto 1 completo -- pero, a petición explícita de Miguel Ángel al
+cierre de la propia S99, el trabajo real (reorganizar la estructura
+de carpetas VIRTUALES del dominio PERSONAL, corregir el estado
+laboral real de tres personas, refrescar `employer_company` desde el
+Excel, limpiar 1.015 carpetas vacías del índice y recalcular
+contadores) se ha **reclasificado como trabajo de H29 (Explorador de
+Archivos y Gobierno Documental)**, no de H31. Miguel Ángel, verbatim:
+*"lo que hemos hecho es tema de exploración de archivos [...] el 31
+está dedicado a documentación [...] realmente es exploración de
+archivos, aunque esté ligado a documentación."* El registro completo
+de lo hecho vive ahora en
+`ENTERPRISEBOT_ATTACHED_MILESTONE_V29.md`, sección "COMPLETADAS EN
+S99 (desvío desde H31)". El marcador `← EN PROGRESO` del enrutador
+**no se movió** a H29 -- sigue en H31, tal como exige el Caso A.
 
-**Punto 1 -- Diseñar y aplicar la nueva estructura de PERSONAL,
-verbatim de Miguel Ángel (S98):**
-- `PERSONAL/ACTIVOS/{PRIMER_APELLIDO}_{SEGUNDO_APELLIDO}_{NOMBRE}/`
-  -- un `PersonIdentity` real por carpeta, `is_active_employee=True`,
-  con toda su documentación dentro.
-- `PERSONAL/INACTIVOS/{...}/` -- mismo criterio, para el resto
-  (`is_active_employee=False`). **Regla por defecto para
-  `is_active_employee=None` (todavía sin cruzar contra el Excel real,
-  ver `PersonIdentity`): va a `INACTIVOS`, salvo que Miguel Ángel
-  diga lo contrario al arrancar esa sesión** -- antes de mover nada,
-  contar con una consulta real cuántos `PersonIdentity` están en
-  `None`, para saber el tamaño real de ese caso por defecto y
-  decidir si compensa cruzarlos contra el Excel primero.
-- `PERSONAL/EPIS/` -- las 7 fichas técnicas de EPI reales (ver punto
-  5 de S98 arriba; ya confirmado que la parte de entregas está
-  resuelta en BD, esto es solo el documento real).
-- `DOC. EMPRESA` (creada en S98) es la carpeta real y única para
-  circulares/documentación de empresa -- **confirmado por Miguel
-  Ángel al cierre de S98, no hay `PERSONAL/CIRCULARES` aparte.**
+El Punto 2 de la hoja de ruta de S98 (auditoría de ubicación virtual
+sobre MACHINE/COMPANY) queda igualmente reclasificado como trabajo de
+H29, no de H31 -- ver la hoja de ruta de H29 para su seguimiento
+futuro, aparcado hasta que se cierre la clasificación/fechado de
+maquinaria (condición real señalada por Miguel Ángel en el propio
+cierre de S99).
 
-**Criterio de cierre del Punto 1:** consulta real que confirme 0
-documentos con `domain_object` de tipo `PersonIdentity` fuera de
-`PERSONAL/ACTIVOS/...`, `PERSONAL/INACTIVOS/...` o `PERSONAL/EPIS`
-(mismo tipo de verificación que ya se hizo en S98 para la raíz de
-`DOC. PERSONAL`).
+## NOTA DE FUSIÓN -- H33 se funde en H31 (S99, 2026-09-10)
 
-**Punto 2 -- Repetir la auditoría de ubicación virtual para el resto
-del árbol**, mismo método que S98 (contar documentos sueltos en una
-carpeta cuyo `document_type.domain` no encaja con esa carpeta,
-comparar contra precedentes reales antes de mover, preguntar a
-Miguel Ángel en el propio chat cuando no haya precedente claro,
-nunca inventar carpeta sin decírselo primero) -- esta vez sobre todo
-el árbol, no solo la raíz de `DOC. PERSONAL`. **Criterio de cierre:**
-número real de casos encontrados fuera de la nueva estructura de
-PERSONAL/MACHINE/COMPANY, con cada uno movido o con destino
-explícitamente decidido por Miguel Ángel.
+Miguel Ángel, al cierre de S99, describió el trabajo pendiente real
+como "dar vida" a la documentación de personal desde el panel: alta y
+baja de trabajadores, subir documentación, **sustituir** documentación
+existente (ejemplo suyo: renovación de permiso de conducción --
+diálogo de subida del documento nuevo, archivo del anterior en
+históricos, colocación del nuevo como vigente, con comprobaciones de
+subida/lectura correctas y confirmación del supervisor), entrega de
+EPIs, envío de información/circulares, gestión de poderes y
+certificados -- todo ello operando sobre plantillas ya existentes, no
+generando documentos desde cero cada vez. Verbatim, delegando
+explícitamente la organización de hitos: *"si es necesario crear un
+hito nuevo, lo creas. Si es necesario fusionar hitos anteriores, los
+fusionas [...] que quede documentado, que quede una trazabilidad."*
 
-**No autodirigirse en la sesión siguiente sin instrucción explícita
-de Miguel Ángel más allá de lo ya escrito arriba.**
+Ese objetivo es, literalmente, el mismo que el de **H33 -- Subida de
+Documentación en Tiempo Real desde el Panel** (abierto en S94, nunca
+tocado, sin una sola línea de código ni hoja de ruta ejecutable
+propia -- ver `ENTERPRISEBOT_ATTACHED_MILESTONE_V33.md`, íntegro,
+conservado como archivo histórico). Mantenerlos como dos hitos
+separados habría significado construir la misma interfaz de subida
+dos veces bajo dos números distintos. Decisión: **H33 se funde en H31
+en S99**, sin pérdida de contenido -- las 4 preguntas abiertas de la
+sección 3 de `V33.md` (alcance de dominio, interfaz de subida,
+manejo de fallos de clasificación en el momento, relación con la
+cuarentena de H28) pasan a ser las primeras preguntas a resolver de
+la nueva hoja de ruta de H31, más abajo. `ENTERPRISEBOT_ANNEX_ROUTER.md`
+y `ENTERPRISEBOT_MASTER_DOCUMENT.md` quedan actualizados en el mismo
+commit con esta fusión y su fecha/hora real.
 
-EOF
-# 2026-09-10
-# EnterpriseBot
-# ANNEX_V31.md
-*  **Session:** EnterpriseBot-S98H31 --- Confirmación del alcance real del renombrado canónico de los 132 tipos documentales pendientes
-*  **Description:** Se releerá en el propio código de naming_service.py (nunca de memoria) cómo se construye hoy el nombre canónico de un archivo a partir de DocumentTypeCatalog.code, y se confirmará contra ENTERPRISEBOT_MASTER_DOCUMENT.md el criterio "a demanda con evidencia real" acordado en S78. Se determinará cuáles de los 132 tipos pendientes (131 más CONVENIO_FORMACION_BONIFICADA) no tienen todavía code asignado, citando la línea real de código que lo confirme. A partir de ahí, y sin lista cerrada de antemano, se abordarán los tipos para los que ya exista un caso real verificado contra documentos reales del cubo cgs_grupo_alvarez sin clasificar todavía, nunca una lista inventada sin comprobar contra datos reales primero. Si el tiempo lo permite, se revisará también el pendiente técnico menor del documento 28932, sin fecha MRZ legible.
+El título de H31 pasa de "Interfaz de Ficha de Personal: EPIs y
+Notificaciones/Circulares" a **"Interfaz de Gestión Documental de
+Personal -- Altas, Bajas, Sustituciones, EPIs y Circulares"**, para
+reflejar el alcance ampliado real, en el enrutador y en el documento
+maestro.
 
-EOF
+## Hoja de Ruta para la Sesión Siguiente (S99, reescrita por completo -- sustituye a la de S98)
 
+**Primer bloque, antes de escribir código:** resolver en el propio
+chat, con Miguel Ángel, las 4 preguntas heredadas de la fusión de H33
+(sección 3 de `ENTERPRISEBOT_ATTACHED_MILESTONE_V33.md`, conservada
+íntegra como referencia):
+1. Alcance de dominio de la subida/sustitución -- ¿solo PERSONAL de
+   entrada, o también MÁQUINAS desde el principio?
+2. Interfaz de subida -- ¿carpeta completa (alta de trabajador nuevo)
+   y/o archivo a archivo (sustitución puntual)? ¿cuál primero?
+3. Manejo de fallos de clasificación automática en el momento de la
+   subida (a diferencia del barrido periódico, aquí hace falta
+   respuesta inmediata al supervisor).
+4. Relación con la cuarentena de H28/NO CONFORMES -- ¿esta vía nueva
+   la sustituye para el caso de subida directa con sujeto ya
+   identificado por el supervisor, o conviven?
 
+**Segundo bloque, una vez resueltas las 4 preguntas -- construir, en
+este orden, los bloques funcionales verbatim de Miguel Ángel (S99):**
+1. Alta de trabajador nuevo desde el panel (documentación inicial
+   completa).
+2. Baja de trabajador desde el panel.
+3. Subida/sustitución de un documento existente con el flujo real
+   descrito por Miguel Ángel: diálogo de subida del documento nuevo →
+   archivar el documento anterior en históricos → colocar el nuevo
+   como vigente → comprobación real de que la subida y la lectura
+   (OCR/clasificación) fueron correctas → confirmación explícita del
+   supervisor antes de dar el cambio por definitivo. Reutiliza el
+   mecanismo `DocumentTypeCatalog.current_template` (H30, ya en uso
+   real) y la clasificación heurística/OCR/Gemini de H29/H30, nunca
+   reinventada.
+4. Entrega de EPIs y envío de notificaciones/circulares (individual y
+   masivo con selector, ver bloques 2 y 3 del objetivo original de
+   H31 más abajo) -- construidos sobre plantillas ya existentes, no
+   generando el documento desde cero cada vez.
+5. Gestión de poderes y certificados desde la misma interfaz, mismo
+   criterio de plantillas.
+
+**Criterio de cierre de cada bloque:** verificado en producción con
+un caso real (una persona real, un documento real, un supervisor real
+confirmando), no solo con `py_compile` limpio.
+
+**Diseño ya cerrado y reutilizable, no perdido por la fusión:** el
+acuse de recibo real por WhatsApp (Fase 1, S94) sigue vigente como
+mejora futura del bloque 3/4 -- ver sección siguiente, íntegra. No es
+el punto de arranque de la sesión siguiente salvo que Miguel Ángel lo
+indique explícitamente.
 
 ## Diseño cerrado en S94 para el Punto 5 -- acuse de recibo real (firma electrónica), Fase 1 WhatsApp
 
-**Nota S95:** esta sección de diseño sigue vigente tal cual (Punto 5
-Fase 1 no se tocó en S95). Su propia "Hoja de ruta para la sesión
-siguiente" (más abajo, de 4 puntos) solo se ejecuta cuando Miguel
-Ángel lo indique explícitamente -- ver la prohibición de
-autodirección al principio de este documento.
+**Nota S99:** esta sección de diseño sigue vigente tal cual, conservada
+como referencia futura para el bloque 3/4 de la nueva hoja de ruta de
+arriba -- no es el punto de arranque de la sesión siguiente salvo
+instrucción explícita de Miguel Ángel.
 
 Sesión de diseño completa con Miguel Ángel, S94 (conversación de
 planificación general). Investigación legal ya hecha (eIDAS + Ley

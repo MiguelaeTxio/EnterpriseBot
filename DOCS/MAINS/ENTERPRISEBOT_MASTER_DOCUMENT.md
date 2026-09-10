@@ -427,8 +427,24 @@ app de dominio.
   registrado en H29 3.21/3.22) como paso previo o paralelo, a decidir
   en la primera sesión de este hito.
 
-#### Hito 31: Interfaz de Ficha de Personal — EPIs y Notificaciones/Circulares
+#### Hito 31: Interfaz de Gestión Documental de Personal — Altas, Bajas, Sustituciones, EPIs y Circulares
 (Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md`)
+- **Renombrado y ampliado en S99 (2026-09-10)** -- título anterior:
+  "Interfaz de Ficha de Personal — EPIs y Notificaciones/Circulares".
+  H33 (Subida de Documentación en Tiempo Real desde el Panel) se
+  fusiona en este hito el mismo día, por decisión explícita de Miguel
+  Ángel -- ver `ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md` ("NOTA DE
+  FUSIÓN") y `ENTERPRISEBOT_ANNEX_ROUTER.md` sección 6 para el
+  detalle completo y la cita textual que lo autoriza. El alcance se
+  amplía para incluir, además de EPIs/notificaciones/circulares: alta
+  y baja de trabajadores desde el panel, y subida/sustitución real de
+  documentos (diálogo de subida → archivo del documento anterior en
+  históricos → documento nuevo como vigente → comprobaciones de
+  subida/lectura → confirmación del supervisor), disparada al momento
+  con la misma clasificación real de H29/H30 -- el objetivo original
+  de H33, absorbido aquí sin pérdida de contenido (su anexo,
+  `ENTERPRISEBOT_ATTACHED_MILESTONE_V33.md`, se conserva íntegro como
+  archivo histórico).
 - Hito nuevo, abierto en S73 por decisión explícita de Miguel Ángel:
   una vez cerrado el bloque EPIs de H30 (vinculación documental real),
   hace falta la interfaz que permita ENTREGAR EPIs y ENVIAR
@@ -493,8 +509,12 @@ app de dominio.
 - Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V32.md` para la hoja de
   ruta ejecutable.
 
-#### Hito 33: Subida de Documentación en Tiempo Real desde el Panel
-(Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V33.md`)
+#### Hito 33 (FUSIONADO EN H31 el 2026-09-10, S99): Subida de Documentación en Tiempo Real desde el Panel
+(Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V33.md`, conservado
+íntegro como archivo histórico -- la hoja de ruta y las preguntas
+abiertas de este hito viven ahora dentro de H31. Ver
+`ENTERPRISEBOT_ANNEX_ROUTER.md` sección 6 para el detalle completo de
+la fusión.)
 - Hito nuevo, abierto en S94 por decisión explícita de Miguel Ángel:
   la vía de ingesta actual (agente local H28 + Always-on Task de
   cuarentena) no es inmediata -- un supervisor que deja documentación

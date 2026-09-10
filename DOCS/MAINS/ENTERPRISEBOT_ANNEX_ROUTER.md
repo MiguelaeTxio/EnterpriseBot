@@ -54,9 +54,9 @@ Cumple dos funciones inseparables:
 | H28 | Migración y Reorganización de Documentación Histórica | `ENTERPRISEBOT_ATTACHED_MILESTONE_V28.md` |
 | H29 | Explorador de Archivos y Gobierno Documental del Panel sobre GCS | `ENTERPRISEBOT_ATTACHED_MILESTONE_V29.md` |
 | H30 | Vinculación Documental Real — Centros de Gasto y Personal | `ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md` |
-| H31 | Interfaz de Ficha de Personal — EPIs y Notificaciones/Circulares | `ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md` ← EN PROGRESO |
+| H31 | Interfaz de Gestión Documental de Personal — Altas, Bajas, Sustituciones, EPIs y Circulares (título anterior: "Interfaz de Ficha de Personal — EPIs y Notificaciones/Circulares"; ampliado en S99 al fusionar H33) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md` ← EN PROGRESO |
 | H32 | Migraciones de Infraestructura (Modelo IA, Python, Registro Android) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V32.md` |
-| H33 | Subida de Documentación en Tiempo Real desde el Panel | `ENTERPRISEBOT_ATTACHED_MILESTONE_V33.md` |
+| ~~H33~~ | ~~Subida de Documentación en Tiempo Real desde el Panel~~ — **FUSIONADO EN H31 el 2026-09-10 (S99)**, ver sección 6 | `ENTERPRISEBOT_ATTACHED_MILESTONE_V33.md` (conservado íntegro como archivo histórico) |
 | H34 | Modelo Propio de Clasificación de Documentos (entrenamiento) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V34.md` |
 
 Todos los anexos viven en `DOCS/MAINS/ATTACHEDS/`.
@@ -64,6 +64,13 @@ Todos los anexos viven en `DOCS/MAINS/ATTACHEDS/`.
 ---
 
 ## 3. Resultado Actual
+
+**Reorganización de hitos en S99 (2026-09-10)** — ver sección 6 para
+el detalle completo y la cita textual de Miguel Ángel que la autoriza:
+H33 se fusiona en H31, que se renombra y amplía en consecuencia. El
+trabajo real de S99 sobre estructura de carpetas de PERSONAL se
+reclasifica como H29, sin mover el marcador `← EN PROGRESO` (Caso A,
+desvío de sesión).
 
 **Hitos nuevos abiertos en S94 (PAUSADOS, sin tocar todavía):** H33 —
 Subida de Documentación en Tiempo Real desde el Panel, y H34 — Modelo
@@ -273,7 +280,62 @@ Actualizar tantos anexos como hitos tocados, en este orden:
 
 ---
 
-## 6. Reglas de Obligado Cumplimiento
+## 6. Registro de Fusiones y Reorganizaciones de Hitos
+
+Historial permanente de cualquier fusión, renombrado o eliminación de
+hito -- **nunca se borra una entrada de aquí**, aunque el hito
+afectado deje de existir como tal. Este es el mecanismo de
+trazabilidad que exige Miguel Ángel: quién decidió qué, cuándo, y por
+qué, para que cualquier persona que retome el proyecto sepa "por
+dónde van los tiros" sin tener que reconstruirlo de memoria.
+
+### 2026-09-10 (S99) — H33 fusionado en H31; trabajo de S99 reclasificado a H29
+
+**Contexto real:** la sesión S99 arrancó con H31 `EN PROGRESO`
+ejecutando el Punto 1 de su hoja de ruta de S98 (reorganización de
+carpetas virtuales de PERSONAL). Al cierre de la sesión, Miguel Ángel
+señaló que ese trabajo no correspondía a H31 sino a H29, y que el
+verdadero trabajo pendiente de H31 ("dar vida" a la documentación de
+personal desde el panel: altas, bajas, subida/sustitución de
+documentos, EPIs, notificaciones, poderes, certificados) coincide
+exactamente con el objetivo, nunca ejecutado, de H33.
+
+**Cita textual de Miguel Ángel, autorizando explícitamente la
+reorganización:** *"la organización de los hitos te la dejo a ti. Tú
+verás dónde lo vas a englobar y cómo lo vas a hacer [...] si es
+necesario crear un hito nuevo, lo creas. Si es necesario fusionar
+hitos anteriores, los fusionas [...] que quede documentado, que quede
+una trazabilidad, que se sepa de dónde han venido los hitos [...] si
+no, estamos totalmente perdidos."*
+
+**Decisiones tomadas:**
+1. El trabajo real de S99 (estructura de carpetas ACTIVOS/INACTIVOS/
+   EPIS, subdivisión por empresa, limpieza de carpetas vacías,
+   recálculo de contadores) se registra en
+   `ENTERPRISEBOT_ATTACHED_MILESTONE_V29.md` ("COMPLETADAS EN S99"),
+   no en el de H31. El marcador `← EN PROGRESO` no se movió a H29
+   durante la sesión (Caso A de `com-pch`, desvío).
+2. **H33 se funde en H31.** H33 no tenía trabajo completado ni hoja de
+   ruta ejecutable -- solo un objetivo y cuatro preguntas de diseño
+   abiertas, idénticas en espíritu al objetivo real de H31. Su anexo
+   (`ENTERPRISEBOT_ATTACHED_MILESTONE_V33.md`) se conserva íntegro,
+   sin borrar ni una línea, como archivo histórico; sus preguntas
+   abiertas pasan a la hoja de ruta de H31.
+3. **H31 se renombra**: de "Interfaz de Ficha de Personal — EPIs y
+   Notificaciones/Circulares" a "Interfaz de Gestión Documental de
+   Personal — Altas, Bajas, Sustituciones, EPIs y Circulares", en este
+   archivo y en `ENTERPRISEBOT_MASTER_DOCUMENT.md`.
+4. H30 y H29 no se fusionan ni se tocan más allá de lo del punto 1 --
+   H30 conserva su propio trabajo pendiente real (dominio MÁQUINAS),
+   genuinamente distinto del objetivo de H31/H33.
+
+**Qué NO cambió:** el número de hito H33 no se reutiliza para nada
+nuevo (queda marcado como fusionado, no libre); H29 sigue `PAUSADO`;
+no hubo ninguna otra fusión ni eliminación de hito en esta sesión.
+
+---
+
+## 7. Reglas de Obligado Cumplimiento
 
 - Los estados de hito son responsabilidad **exclusiva** de este
   archivo. Ningún anexo ni `ENTERPRISEBOT_MASTER_DOCUMENT.md` puede
