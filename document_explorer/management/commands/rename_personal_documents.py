@@ -138,6 +138,15 @@ class Command(BaseCommand):
 
         for entry in queryset:
             used_real_date = bool(entry.expiry_date or entry.issue_date)
+            # H31 (S98), incidente real: apply_personal_canonical_rename
+            # muta entry.name EN EL MISMO OBJETO cuando apply_changes=
+            # True -- capturar el nombre original ANTES de la llamada,
+            # nunca leerlo después, o el log muestra "X -> X" en vez
+            # del cambio real (detectado en el --apply de 8.358 sobre
+            # producción: los 8.283 renombrados quedaron bien escritos
+            # en BD, pero el log entero mostraba el nombre ya mutado
+            # a ambos lados de la flecha).
+            original_name = entry.name
             result = apply_personal_canonical_rename(
                 entry, fictitious_date=fictitious_date,
                 apply_changes=apply_changes,
@@ -155,7 +164,7 @@ class Command(BaseCommand):
                     "%s  id=%d  %s -> %s"
                     % (
                         "RENOMBRADO" if apply_changes else "CANDIDATO",
-                        entry.pk, entry.name, result["new_name"],
+                        entry.pk, original_name, result["new_name"],
                     )
                 )
             else:
