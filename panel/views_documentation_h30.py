@@ -40,7 +40,7 @@ import logging
 import unicodedata
 
 from analytics.views import _resolve_work_period
-from document_explorer import naming_service
+from document_explorer import naming_service, personal_intake_service
 from document_explorer.index_writer import ensure_folder_chain
 from document_explorer.models import (
     DocumentAcknowledgment, DocumentIndexEntry, DocumentTypeCatalog,
@@ -1261,27 +1261,81 @@ class EpiIndividualDeliveryView(DocsUploadAccessMixin, View):
         })
 
 
+class PersonalIntakeExtractView(DocsUploadAccessMixin, View):
+    """
+    H31 (S100), Bloque 1 -- PASO 1 del alta guiada por documentación.
+    Recibe 1-N documentos subidos (DNI/contrato/reconocimiento médico,
+    campo `documents`, multipart), extrae sus datos con
+    `personal_intake_service` y devuelve un borrador ya combinado --
+    NUNCA crea nada todavía. El supervisor confirma o corrige ese
+    borrador en el paso 2 (`PersonalCreateView`), que es quien de
+    verdad escribe en BD y sube los archivos a GCS.
+
+    Puramente síncrono, sin persistencia intermedia -- si el
+    supervisor cierra el modal sin confirmar, no queda ningún rastro
+    en BD (ver anexo H31, corrección de preguntas 3/4: nada de cola de
+    pendientes).
+    """
+
+    def post(self, request):
+        files = request.FILES.getlist("documents")
+        if not files:
+            return JsonResponse(
+                {"ok": False, "error": "No se ha subido ningún documento."},
+                status=400,
+            )
+
+        extractions = []
+        per_file = []
+        for f in files:
+            content_type = f.content_type or "application/octet-stream"
+            result = personal_intake_service.extract_one_document(
+                f.read(), content_type,
+            )
+            extractions.append(result)
+            per_file.append({
+                "filename": f.name,
+                "document_type_code": result.get("document_type_code", "DESCONOCIDO"),
+                "confidence": result.get("confidence", ""),
+                "error": result.get("error"),
+            })
+
+        merged = personal_intake_service.merge_person_draft(extractions)
+        return JsonResponse({
+            "ok": True,
+            "draft": merged["draft"],
+            "warnings": merged["warnings"],
+            "per_file": per_file,
+        })
+
+
 class PersonalCreateView(DocsUploadAccessMixin, View):
     """
-    H31 (S100), Bloque 1 de la hoja de ruta reescrita en S99 -- alta
-    de un trabajador nuevo desde el panel, primer bloque funcional
-    tras resolver las 4 preguntas heredadas de H33 (ver anexo H31,
-    sección "RESOLUCIÓN DE LAS 4 PREGUNTAS..."). Crea el
-    `PersonIdentity` real que hasta ahora no existía -- confirmado
-    contra el código real (`import_worker_machine_excel.py`, línea
+    H31 (S100), Bloque 1 -- PASO 2 (confirmación/creación) del alta
+    guiada por documentación. Crea el `PersonIdentity` real que hasta
+    ahora no existía -- confirmado contra el código real
+    (`import_worker_machine_excel.py`, línea
     `person = PersonIdentity.objects.get(dni=dni)`) que la importación
     del Excel NUNCA crea filas nuevas, solo actualiza las que ya
     existen por DNI: el hueco de "cómo nace un PersonIdentity que
     todavía no está en el Excel" es exactamente el que cubre esta
     vista.
 
-    Esta vista SOLO crea la ficha (datos + carpeta virtual). La subida
-    síncrona de la documentación inicial (ver corrección de Miguel
-    Ángel en el anexo, preguntas 3/4: sin H28, sin cuarentena, revisión
-    del supervisor en el propio instante de la subida) es un bloque de
-    trabajo aparte, todavía por construir -- esta vista deja a la
-    persona ya creada, con su carpeta real lista, para que esa subida
-    tenga dónde aterrizar.
+    CORREGIDO EN LA MISMA SESIÓN (S100): la primera versión de esta
+    vista era un formulario manual puro -- Miguel Ángel corrigió que
+    el alta real es guiada por documentación (ver anexo H31, sección
+    "CORRECCIÓN CRÍTICA..."): el supervisor sube DNI/contrato,
+    `PersonalIntakeExtractView` (paso 1) extrae los datos y precarga
+    este formulario, y el supervisor solo confirma o corrige un campo
+    puntual -- nunca teclea desde cero. Esta vista sigue aceptando los
+    mismos campos de texto (siguen siendo necesarios como respaldo
+    manual cuando la extracción falla del todo o el supervisor
+    corrige), pero además recibe los MISMOS archivos ya extraídos en
+    el paso 1 (campo `documents`, reenviados por el propio navegador)
+    junto con el tipo documental ya detectado por archivo
+    (`document_type_codes`, alineado por índice) para indexarlos de
+    verdad en la carpeta de la persona recién creada -- sin repetir la
+    llamada a Gemini, que ya se hizo en el paso 1.
 
     `is_active_employee=True` siempre -- esta vía de alta es,
     por definición, para personal activo (ver anexo H31, alcance
@@ -1305,6 +1359,74 @@ class PersonalCreateView(DocsUploadAccessMixin, View):
             (raw_dni or "").strip().upper()
             .replace(" ", "").replace("-", "")
         )
+
+    def _store_documents(self, request, person, folder_path):
+        """
+        H31 (S100). Sube de verdad a GCS e indexa (`DocumentIndexEntry`)
+        cada archivo ya confirmado por el supervisor -- mismo mecanismo
+        de subida (`spare_parts.gcs_service.upload_bytes`) y de
+        nombrado (`naming_service.build_filename_personal`) que el
+        resto de la plataforma, nunca inventado aquí. Un fallo al
+        indexar un archivo concreto no revierte el alta ya confirmada
+        del trabajador -- se informa como aviso, el supervisor puede
+        subir ese documento después por la vía normal de la ficha.
+        """
+        from document_explorer.models import DocumentIndexEntry
+        from spare_parts.gcs_service import upload_bytes
+
+        files = request.FILES.getlist("documents")
+        type_codes = request.POST.getlist("document_type_codes")
+        ct = ContentType.objects.get_for_model(PersonIdentity)
+        today = timezone.now().date()
+        warnings = []
+        stored = 0
+        for idx, f in enumerate(files):
+            code = type_codes[idx] if idx < len(type_codes) else "DESCONOCIDO"
+            document_type = DocumentTypeCatalog.objects.filter(
+                code=code,
+            ).first()
+            extension = (
+                f.name.rsplit(".", 1)[-1] if "." in f.name else "pdf"
+            )
+            filename = naming_service.build_filename_personal(
+                person.first_surname, person.second_surname,
+                person.given_name,
+                document_type.code if document_type else "DESCONOCIDO",
+                today, extension=extension,
+            )
+            blob_name = "%s/%s" % (folder_path, filename)
+            data = f.read()
+            try:
+                upload_bytes(
+                    BUCKET, blob_name, data,
+                    content_type=f.content_type or "application/octet-stream",
+                )
+                DocumentIndexEntry.objects.create(
+                    bucket=BUCKET,
+                    entry_kind=DocumentIndexEntry.KIND_FILE,
+                    blob_name=blob_name,
+                    blob_name_hash=path_digest(blob_name),
+                    parent_path=folder_path,
+                    parent_path_hash=path_digest(folder_path),
+                    name=filename,
+                    size_bytes=len(data),
+                    content_type=f.content_type or "application/octet-stream",
+                    document_type=document_type,
+                    domain_content_type=ct,
+                    domain_object_id=person.pk,
+                )
+                stored += 1
+            except Exception as exc:
+                logger.warning(
+                    "# [PersonalCreateView] Fallo indexando %s para "
+                    "PersonIdentity %s: %s", f.name, person.pk, exc,
+                    exc_info=True,
+                )
+                warnings.append(
+                    "No se pudo indexar %s -- súbelo de nuevo desde la "
+                    "ficha ya creada." % f.name,
+                )
+        return stored, warnings
 
     def post(self, request):
         data = {
@@ -1387,9 +1509,15 @@ class PersonalCreateView(DocsUploadAccessMixin, View):
         person.save()
         ensure_folder_chain(BUCKET, folder_path)
 
+        stored_count, doc_warnings = self._store_documents(
+            request, person, folder_path,
+        )
+
         return JsonResponse({
             "ok": True,
             "person_id": person.pk,
+            "documents_stored": stored_count,
+            "warnings": doc_warnings,
             "redirect_url": reverse(
                 "panel:documentation_personal_detail", kwargs={"pk": person.pk},
             ),

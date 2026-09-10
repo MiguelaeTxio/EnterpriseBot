@@ -246,23 +246,41 @@ haya al menos una persona seleccionada.
 </script>
 
 {% comment %}
-H31 (S100), Bloque 1 -- alta de trabajador nuevo. Modal aparte, fuera
-del <script> IIFE de arriba (mismo motivo que editModeConfirmModal en
-_personal_detail.html: nada que ver con esa lógica, y así queda
-autocontenido). Solo los 3 campos obligatorios reales del modelo
-(dni, first_surname, given_name) llevan required -- el resto es
-opcional en PersonIdentity y se puede completar después desde
-PersonalUpdateView.
+H31 (S100), Bloque 1 -- alta de trabajador nuevo, GUIADA POR
+DOCUMENTACIÓN (corregido en la propia sesión S100, ver anexo H31,
+sección "CORRECCIÓN CRÍTICA..."). Dos pasos dentro del mismo modal:
+Paso 1 (personalIntakeStep1) -- el supervisor sube DNI/contrato/
+reconocimiento médico, el sistema los lee (PersonalIntakeExtractView)
+y precarga el Paso 2 con lo extraído. Paso 2 (personalIntakeStep2) --
+los mismos campos de antes, ahora precargados y editables solo para
+confirmar o corregir un fallo puntual -- nunca el punto de entrada.
+El mismo <input type="file"> se reenvía tal cual al confirmar
+(PersonalCreateView), sin duplicar la llamada a Gemini.
+Modal aparte, fuera del <script> IIFE de arriba (mismo motivo que
+editModeConfirmModal en _personal_detail.html: nada que ver con esa
+lógica, y así queda autocontenido).
 {% endcomment %}
 <div class="modal fade" id="personalCreateModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
-            <form id="personalCreateForm">
-                <div class="modal-header">
-                    <h5 class="modal-title">Dar de alta trabajador</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            <div class="modal-header">
+                <h5 class="modal-title">Dar de alta trabajador</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+
+            <div id="personalIntakeStep1" class="modal-body">
+                <p class="small text-muted mb-2">Sube el DNI y el contrato del trabajador (y el reconocimiento médico si lo tienes) -- el sistema leerá los datos por ti.</p>
+                <input type="file" id="personalIntakeFiles" class="form-control form-control-sm" multiple accept="application/pdf,image/*">
+                <div id="personalIntakeStep1Result" class="mt-2"></div>
+                <div class="mt-3 text-end">
+                    <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" id="personalIntakeExtractBtn" class="btn btn-primary btn-sm">Leer documentos</button>
                 </div>
-                <div class="modal-body">
+            </div>
+
+            <form id="personalCreateForm" class="d-none">
+                <div class="modal-body" id="personalIntakeStep2">
+                    <div id="personalIntakeWarnings" class="mb-2"></div>
                     <div class="row g-2">
                         <div class="col-6">
                             <label class="form-label small mb-0">DNI/NIE *</label>
@@ -321,7 +339,7 @@ PersonalUpdateView.
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="submit" class="btn btn-primary">Crear ficha</button>
+                    <button type="submit" class="btn btn-primary">Confirmar y crear ficha</button>
                 </div>
             </form>
         </div>
@@ -335,11 +353,71 @@ PersonalUpdateView.
         if (parts.length === 2) return parts.pop().split(';').shift();
     }
 
+    const fileInput = document.getElementById('personalIntakeFiles');
+    const step1 = document.getElementById('personalIntakeStep1');
+    const step1Result = document.getElementById('personalIntakeStep1Result');
+    const extractBtn = document.getElementById('personalIntakeExtractBtn');
     const form = document.getElementById('personalCreateForm');
+    const warningsEl = document.getElementById('personalIntakeWarnings');
     const resultEl = document.getElementById('personalCreateResult');
+    let perFileTypes = [];
+
+    // H31 (S100): al reabrir el modal para un alta distinta, siempre
+    // se vuelve a empezar por el paso 1 -- nunca se arrastra el
+    // borrador ni los archivos de un alta anterior sin confirmar.
+    document.getElementById('personalCreateModal').addEventListener('show.bs.modal', function() {
+        step1.classList.remove('d-none');
+        form.classList.add('d-none');
+        fileInput.value = '';
+        step1Result.innerHTML = '';
+        warningsEl.innerHTML = '';
+        resultEl.innerHTML = '';
+        form.reset();
+        perFileTypes = [];
+    });
+
+    extractBtn.onclick = function() {
+        if (!fileInput.files.length) {
+            step1Result.innerHTML = '<div class="alert alert-warning py-1 px-2 small mb-0">Selecciona al menos un documento.</div>';
+            return;
+        }
+        const formData = new FormData();
+        for (const f of fileInput.files) { formData.append('documents', f); }
+        extractBtn.disabled = true;
+        step1Result.innerHTML = '<div class="text-muted small">Leyendo documentos…</div>';
+        fetch("{% url 'panel:documentation_personal_intake_extract' %}", {
+            method: 'POST', body: formData,
+            headers: {'X-CSRFToken': getCookie('csrftoken')},
+        }).then((r) => r.json()).then((data) => {
+            extractBtn.disabled = false;
+            if (!data.ok) {
+                step1Result.innerHTML = `<div class="alert alert-danger py-1 px-2 small mb-0">${data.error || 'Error al leer los documentos.'}</div>`;
+                return;
+            }
+            perFileTypes = data.per_file.map((pf) => pf.document_type_code);
+            const draft = data.draft;
+            for (const field of ['dni', 'first_surname', 'second_surname', 'given_name', 'employer_company', 'hire_date']) {
+                if (draft[field]) { form.elements[field].value = draft[field]; }
+            }
+            if (data.warnings && data.warnings.length) {
+                warningsEl.innerHTML = '<div class="alert alert-warning py-1 px-2 small mb-0">' +
+                    'Revisa antes de confirmar: ' + data.warnings.join(' ') + '</div>';
+            } else {
+                warningsEl.innerHTML = '<div class="alert alert-success py-1 px-2 small mb-0">Datos leídos correctamente. Revisa y confirma.</div>';
+            }
+            step1.classList.add('d-none');
+            form.classList.remove('d-none');
+        }).catch(() => {
+            extractBtn.disabled = false;
+            step1Result.innerHTML = '<div class="alert alert-danger py-1 px-2 small mb-0">Error de red al leer los documentos.</div>';
+        });
+    };
+
     form.onsubmit = function(ev) {
         ev.preventDefault();
         const formData = new FormData(form);
+        for (const f of fileInput.files) { formData.append('documents', f); }
+        for (const code of perFileTypes) { formData.append('document_type_codes', code); }
         const submitBtn = form.querySelector('button[type="submit"]');
         submitBtn.disabled = true;
         resultEl.innerHTML = '';
