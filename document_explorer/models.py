@@ -796,6 +796,25 @@ class DocumentTypeCatalog(models.Model):
         ),
     )
 
+    tags = models.ManyToManyField(
+        "DocumentTag",
+        blank=True,
+        related_name="document_types",
+        verbose_name="Etiquetas de búsqueda",
+        help_text=(
+            "H31 (S98). Vocabulario de búsqueda amplio y curado para "
+            "este tipo -- pensado para la futura pestaña de "
+            "documentación del explorador, donde un supervisor busca "
+            "por concepto ('carné', 'permiso') en vez de por nombre "
+            "de archivo original (que desaparece con el renombrado "
+            "canónico) ni por el nombre exacto del tipo. Un mismo "
+            "tipo puede llevar varias etiquetas a la vez. Vacío por "
+            "defecto -- se puebla en un paso aparte, revisado por "
+            "Miguel Ángel antes de aplicar, nunca en esta misma "
+            "migración (ver DocumentTag para el detalle)."
+        ),
+    )
+
     class Meta:
         verbose_name = "Tipo documental"
         verbose_name_plural = "Catálogo de tipos documentales"
@@ -803,6 +822,80 @@ class DocumentTypeCatalog(models.Model):
 
     def __str__(self):
         return f"{self.code} ({self.label})"
+
+
+class DocumentTag(models.Model):
+    """
+    Curated search tag for document types (H31, S98) -- deliberately
+    NOT the same thing as `document_ingestion.LearnedDocumentTypeKeyword`
+    (per-company vocabulary learned automatically from whatever Gemini
+    proposes during classification). This is a small, hand-curated,
+    project-wide taxonomy attached directly to `DocumentTypeCatalog`
+    via the `tags` M2M above -- meant for the future documentation
+    tab of the file explorer, where a supervisor searches by broad
+    concept ("carné", "permiso") rather than by exact type name or by
+    a filename that is about to disappear under the canonical rename.
+
+    Miguel Angel's own example (S98): the same real DNI document has
+    been named "DNI", "documento nacional de identidad" and "carné"
+    by different people on different days -- searching by exact type
+    name only ever returns one of those mental models. A tag search
+    is meant to widen the net on purpose: one tag can span several
+    `DocumentTypeCatalog` codes (e.g. a "PERMISO" tag covering
+    `CARNET_CONDUCIR`, `PERMISO_CIRCULACION` and
+    `TARJETA_CUALIF_CONDUCTOR` at once) -- the exact opposite of
+    searching by type, which only ever returns that one type.
+
+    ---
+
+    Etiqueta de búsqueda curada para tipos documentales (H31, S98) --
+    deliberadamente NO es lo mismo que
+    `document_ingestion.LearnedDocumentTypeKeyword` (vocabulario por
+    empresa aprendido automáticamente de lo que proponga Gemini
+    durante la clasificación). Esta es una taxonomía pequeña, curada
+    a mano, de todo el proyecto, colgada directamente de
+    `DocumentTypeCatalog` vía el M2M `tags` de arriba -- pensada para
+    la futura pestaña de documentación del explorador de archivos,
+    donde un supervisor busca por concepto amplio ("carné", "permiso")
+    en vez de por el nombre exacto del tipo o por un nombre de archivo
+    que está a punto de desaparecer bajo el renombrado canónico.
+
+    Ejemplo propio de Miguel Ángel (S98): un mismo DNI real ha sido
+    nombrado "DNI", "documento nacional de identidad" y "carné" por
+    distintas personas en distintos días -- buscar por el nombre
+    exacto del tipo solo devuelve uno de esos modelos mentales. Una
+    búsqueda por etiqueta está pensada para ampliar la red a
+    propósito: una etiqueta puede abarcar varios códigos de
+    `DocumentTypeCatalog` a la vez (p. ej. una etiqueta "PERMISO" que
+    cubra `CARNET_CONDUCIR`, `PERMISO_CIRCULACION` y
+    `TARJETA_CUALIF_CONDUCTOR` a la vez) -- justo lo contrario de
+    buscar por tipo, que solo devuelve ese tipo concreto.
+    """
+
+    code = models.CharField(
+        max_length=40,
+        unique=True,
+        verbose_name="Código",
+        help_text=(
+            "Identificador corto en mayúsculas, sin espacios ni "
+            "acentos (p. ej. 'PERMISO', 'CARNET') -- mismo estilo que "
+            "DocumentTypeCatalog.code, pero en un espacio de nombres "
+            "propio: una etiqueta nunca coincide con un code de tipo."
+        ),
+    )
+    label = models.CharField(
+        max_length=100,
+        verbose_name="Nombre visible",
+        help_text="Nombre legible mostrado en el buscador del panel.",
+    )
+
+    class Meta:
+        verbose_name = "Etiqueta de búsqueda"
+        verbose_name_plural = "Etiquetas de búsqueda"
+        ordering = ["label"]
+
+    def __str__(self):
+        return self.label
 
 
 class DataOperationLog(models.Model):
