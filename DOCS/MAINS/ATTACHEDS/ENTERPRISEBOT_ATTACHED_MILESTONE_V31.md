@@ -1765,3 +1765,66 @@ de vida laboral en sí -- es la interfaz real que centralice todo eso
 subida/sustitución guiada, entrega de EPI, envío de circular) que
 todavía no existen (ver sección 2, "No existe (por construir)").
 
+---
+
+## CORRECCIÓN CRÍTICA -- EL ALTA ES GUIADA POR DOCUMENTACIÓN, NUNCA POR FORMULARIO MANUAL (S100, misma sesión)
+
+**Incidente real de la propia sesión S100, corregido antes de llegar a
+producción con datos reales:** la primera implementación del Bloque 1
+(`PersonalCreateView`, commit `b2d9606`) construyó un formulario manual
+-- el supervisor tecleando DNI, apellidos, nombre, empresa, fecha de
+alta, etc. Miguel Ángel corrigió que esto invierte el sentido real del
+alta, verbatim: *"Dar de alta no es hincharse una persona a meter
+todos los datos de un trabajador. Dar de alta es subir la
+documentación a la plataforma y que la plataforma lo dé de alta [...]
+soltar en una carpeta los documentos [...] que el sistema coja la
+documentación y dé de alta al trabajador. No que el supervisor dé de
+alta, sino que lo haga el sistema. El supervisor lo único que tiene
+que decir es cuando el sistema falla y no encuentra algo."*
+
+**Flujo real correcto:** el supervisor sube documentación (en
+principio DNI y contrato -- verbatim: *"dame el DNI, dame el contrato
+en principio [...] pero sobre todo DNI y contrato"*; el reconocimiento
+médico se menciona como tercer documento típico, no obligatorio). El
+sistema lee esos documentos (extracción real de datos, no solo
+clasificación de tipo) y presenta el resultado: "el trabajador es
+Fulano de Tal, DNI tal, según el DNI subido -- ¿es correcto?". El
+supervisor solo interviene para confirmar, o para corregir cuando la
+lectura falla o es incorrecta -- nunca para teclear los datos desde
+cero.
+
+**Consecuencia de diseño de obligado cumplimiento:** el formulario
+manual ya construido (`PersonalCreateView`, modal "Dar de alta
+trabajador") **no se descarta** -- se reutiliza como el PASO DE
+CONFIRMACIÓN/CORRECCIÓN (sus campos, precargados con lo que el sistema
+haya extraído, editables solo para corregir un fallo puntual), nunca
+como el punto de entrada del alta. El punto de entrada real es un paso
+NUEVO, previo, todavía sin construir: subir DNI/contrato →
+extracción real de datos (nombre/apellidos/DNI del DNI, empresa/fecha
+de alta del contrato) → precarga del formulario ya existente → el
+supervisor confirma o corrige → se crea el `PersonIdentity` (mismo
+código ya construido) y los documentos subidos quedan indexados de
+verdad en la carpeta real de la persona ya creada.
+
+**Vínculo explícito con la Pregunta 3 (aplazamiento a H34), matizado
+por Miguel Ángel en esta misma corrección:** verbatim, *"por eso te
+estoy diciendo que el capítulo importante es ver cómo vamos a hacer lo
+del OCR [...] igual teníamos que dedicarle a esto primero el tema de
+la clasificación."* La extracción real de datos (no solo la
+clasificación de tipo documental) es un prerrequisito genuino de este
+bloque, no una mejora futura aplazable sin más a H34 -- aunque Miguel
+Ángel deja la organización concreta a criterio del modelo (*"organízalo
+como tú quieras"*). Decisión de diseño consecuente: se construye una
+extracción síncrona propia para este flujo (reutilizando el cliente
+Gemini ya compartido de `ai_services`, mismo patrón de llamada y
+`response_schema` JSON que `document_explorer.classification_service`
+ya usa para H29 -- pero como función NUEVA e independiente, sin
+importar nada de `classification_service`/H29 ni depender de
+`DocumentIndexEntry` ya indexado, para no mezclar este pipeline nuevo
+con el de H28/H29 -- ver preguntas 3/4 más arriba, siguen vigentes: sin
+cuarentena, sin barrido periódico, todo síncrono). El entrenamiento de
+un modelo propio (H34) sigue siendo un hito aparte y de más largo
+plazo; esta extracción síncrona es la pieza mínima real que el Bloque
+1 necesita para funcionar como Miguel Ángel lo describe, no una
+sustitución de H34.
+
