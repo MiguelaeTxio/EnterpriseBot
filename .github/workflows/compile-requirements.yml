@@ -1,0 +1,129 @@
+name: Compilar requirements.txt en PythonAnywhere
+
+# H31 (S100). Origen: incidente real documentado en el anexo H23
+# (S023) -- ejecutar `pip-compile requirements.in` a mano en la
+# consola de PythonAnywhere reescribe `requirements.txt` en el árbol
+# de trabajo del SERVIDOR sin comitear, y esa modificación local
+# bloquea el siguiente `git pull` automático de deploy.yml (dos
+# despliegues reales quedaron en rojo por esto). Miguel Ángel, S100,
+# verbatim: "ojo con las compilaciones a mano [...] lo suyo es que lo
+# hagamos por el método normal que hacemos siempre, que es usando
+# GitHub Actions."
+#
+# Este workflow resuelve el problema de raíz sin dejar de cumplir
+# com-environment-management sección 3.4 ("el candado se compila
+# SIEMPRE en la plataforma de destino, nunca en el workspace de
+# Claude"): compila de verdad en PythonAnywhere vía SSH (mismo
+# mecanismo ya usado por deploy.yml), captura el resultado, resetea el
+# árbol de trabajo del servidor a su estado comiteado en la MISMA
+# sesión SSH (nunca queda una modificación local suelta), y es este
+# job -- no el servidor -- quien comitea y pushea el candado
+# recompilado de vuelta a GitHub. El push resultante dispara
+# deploy.yml de forma normal, que instala de verdad con `pip-sync`.
+#
+# Se dispara solo cuando `requirements.in` cambia (nunca en cada push
+# trivial), o manualmente si hiciera falta recompilar sin haber
+# tocado el .in.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'requirements.in'
+  workflow_dispatch:
+
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Preparar clave SSH dedicada
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.PA_SSH_PRIVATE_KEY }}" > ~/.ssh/pa_deploy_key
+          chmod 600 ~/.ssh/pa_deploy_key
+          ssh-keyscan -H ssh.pythonanywhere.com >> ~/.ssh/known_hosts
+
+      - name: Compilar en PythonAnywhere y capturar el resultado
+        # `git pull` primero (asegura que requirements.in está al día
+        # en el servidor), `pip-compile` real contra el intérprete y
+        # el pip.conf reales de PythonAnywhere (respeta `--find-links
+        # /usr/share/pip-wheels` u otra configuración local que un
+        # candado compilado fuera de esta plataforma perdería en
+        # silencio -- incidente real de esta misma sesión, ver
+        # historial de commits), y `git checkout -- requirements.txt`
+        # al final para dejar el árbol de trabajo del servidor
+        # exactamente como estaba -- el compilado vive solo en la
+        # salida capturada aquí, nunca como modificación local en el
+        # servidor.
+        run: |
+          set -o pipefail
+          ssh -i ~/.ssh/pa_deploy_key MiguelAeTxio@ssh.pythonanywhere.com '
+            set -e
+            cd /home/MiguelAeTxio/PROJECTS/EnterpriseBot
+            git pull origin main
+            source /home/MiguelAeTxio/.virtualenvs/EnterpriseBot_venv_py312/bin/activate
+            python -m dotenv run pip-compile requirements.in 1>&2
+            echo "===REQTXT_START==="
+            cat requirements.txt
+            echo "===REQTXT_END==="
+            git checkout -- requirements.txt
+          ' | tee /tmp/compile_output.txt
+          sed -n '/===REQTXT_START===/,/===REQTXT_END===/p' /tmp/compile_output.txt \
+            | sed '1d;$d' > requirements.txt
+
+      - name: Comprobación de coherencia (.in vs .txt)
+        # com-environment-management sección 7.3 -- obligatoria antes
+        # de que un pip-sync futuro pueda desinstalar algo por error.
+        run: |
+          python3 - << 'PYEOF'
+          import re
+          import sys
+
+          def normalise(name):
+              return name.strip().lower().replace("_", "-")
+
+          declared = set()
+          for raw in open("requirements.in", encoding="utf-8"):
+              line = raw.split("#")[0].strip()
+              if not line or line.startswith("-"):
+                  continue
+              declared.add(normalise(re.split(r"[=<>!~\[;]", line)[0]))
+
+          locked = {
+              normalise(m.group(1))
+              for m in re.finditer(
+                  r"^([A-Za-z0-9._-]+)\s*(\[[^\]]*\])?\s*==",
+                  open("requirements.txt", encoding="utf-8").read(),
+                  re.M,
+              )
+          }
+
+          missing = sorted(declared - locked)
+          print("Declaradas en .in:", len(declared), "| fijadas en .txt:", len(locked))
+          print("FALTAN EN EL CANDADO:", ", ".join(missing) if missing else "ninguna")
+          if missing:
+              sys.exit(1)
+          PYEOF
+
+      - name: Comitear el candado recompilado, si cambió
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet -- requirements.txt; then
+            echo "requirements.txt sin cambios reales -- nada que comitear."
+            exit 0
+          fi
+          git add requirements.txt
+          git commit -m "chore: recompilar requirements.txt en PythonAnywhere (pip-compile automático)"
+          git push origin main
+
+      - name: Limpiar clave SSH
+        if: always()
+        run: rm -f ~/.ssh/pa_deploy_key

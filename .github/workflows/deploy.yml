@@ -59,6 +59,26 @@ jobs:
         # (EnterpriseBot_002_GET.txt / EnterpriseBot_003_GET.txt: la
         # ruta antigua ya no existe, `ls .virtualenvs` solo lista
         # EnterpriseBot_venv_py312).
+        #
+        # PASO "pip-sync" AÑADIDO EN S100 (H31, google-cloud-vision):
+        # antes de este cambio, una dependencia nueva declarada en
+        # requirements.in/.txt requería que Miguel Ángel ejecutara
+        # `pip-compile`/`pip-sync` a mano en la consola de
+        # PythonAnywhere -- y eso mismo ya causó un incidente real
+        # documentado (anexo H23, S023): `pip-compile` ejecutado en el
+        # servidor reescribe `requirements.txt` en el árbol de trabajo
+        # SIN comitear, dejando una modificación local que bloquea el
+        # siguiente `git pull` de este mismo Action (dos despliegues
+        # reales en rojo por esto). Corregido de raíz: el candado
+        # (`requirements.txt`) se compila SIEMPRE fuera del servidor
+        # (workspace de Claude o local de Miguel Ángel, nunca en
+        # PythonAnywhere) y se comitea normal; este Action es el único
+        # que instala de verdad en el servidor, vía `pip-sync`
+        # (entorno idéntico al candado, nunca deja paquetes sueltos
+        # sin declarar) -- sin tocar el árbol de trabajo del servidor
+        # en ningún momento, así que nunca puede bloquear el pull
+        # siguiente. Idempotente: si no hay dependencias nuevas, no
+        # cambia nada.
         run: |
           set -o pipefail
           ssh -i ~/.ssh/pa_deploy_key MiguelAeTxio@ssh.pythonanywhere.com '
@@ -69,6 +89,8 @@ jobs:
             git pull origin main
             NEW_HEAD=$(git rev-parse HEAD)
             source /home/MiguelAeTxio/.virtualenvs/EnterpriseBot_venv_py312/bin/activate
+            echo "--- pip-sync (dependencias) ---"
+            python -m dotenv run pip-sync requirements.txt
             echo "--- migrate ---"
             python -m dotenv run python manage.py migrate --noinput
             echo "--- collectstatic ---"
