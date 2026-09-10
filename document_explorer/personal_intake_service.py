@@ -212,14 +212,25 @@ Devuelve el resultado como el JSON estructurado indicado, sin texto \
 adicional."""
 
 
-def _call_gemini_json(contents) -> dict:
+def _call_gemini_json(contents, timeout_ms: int = 30_000) -> dict:
+    """
+    H31 (S100), incidente real: 90s por intento (heredado de
+    `classification_service`, donde tiene sentido para analizar una
+    imagen/PDF entero) hacía que un documento con mala suerte pudiera
+    acaparar varios minutos él solo (hasta 3 intentos x 90s). La
+    llamada de solo TEXTO (el camino normal, tras OCR) es una tarea
+    mucho más ligera -- 30s de margen real es generoso para ella.
+    `timeout_ms` es explícito para que el camino de Vision directo
+    (imagen/PDF completo, último recurso) pueda seguir pidiendo más
+    tiempo sin heredarlo por accidente al camino rápido.
+    """
     client = get_gemini_client()
     response = _generate_content_with_retry(
         client,
         model=DEFAULT_MODEL,
         contents=contents,
         config=GenerateContentConfig(
-            http_options=HttpOptions(timeout=90_000),
+            http_options=HttpOptions(timeout=timeout_ms),
             response_mime_type="application/json",
             response_schema=_RESPONSE_SCHEMA,
             temperature=0.0,
@@ -323,10 +334,13 @@ def extract_one_document(data: bytes, mime_type: str, filename: str = "") -> dic
         if not text:
             # Cloud Vision no encontró texto (o extensión no
             # soportada) -- último recurso, Vision directo con Gemini
-            # sobre el archivo, mismo camino que la v1.
-            result = _call_gemini_json([
-                Part.from_bytes(data=data, mime_type=mime_type), _PROMPT,
-            ])
+            # sobre el archivo, mismo camino que la v1. Analizar una
+            # imagen/PDF entero es más pesado que interpretar texto,
+            # por eso conserva el timeout largo (90s) explícitamente.
+            result = _call_gemini_json(
+                [Part.from_bytes(data=data, mime_type=mime_type), _PROMPT],
+                timeout_ms=90_000,
+            )
         elif not text.strip():
             result = {
                 "error": "El OCR no encontró texto legible en el documento.",
