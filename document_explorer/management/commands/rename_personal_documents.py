@@ -127,12 +127,21 @@ class Command(BaseCommand):
         }
         start_time = datetime.datetime.now()
         procesados = 0
+        # H31 (S98): compartido a lo largo de TODO el lote (dry-run
+        # incluido) para que dos documentos que colisionan entre si
+        # dentro de esta misma pasada -- p. ej. varios DNI antiguos
+        # sin fecha de la misma persona, agrupados por la fecha
+        # ficticia -- reciban ya el ordinal correcto en la vista
+        # previa, sin depender de que _virtual_location_taken vea
+        # algo que todavia no se ha escrito en BD.
+        reserved_names = set()
 
         for entry in queryset:
             used_real_date = bool(entry.expiry_date or entry.issue_date)
             result = apply_personal_canonical_rename(
                 entry, fictitious_date=fictitious_date,
                 apply_changes=apply_changes,
+                reserved_names=reserved_names,
             )
             procesados += 1
 

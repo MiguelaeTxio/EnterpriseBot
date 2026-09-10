@@ -2496,7 +2496,7 @@ def apply_classification(entry) -> dict:
 
 
 def apply_personal_canonical_rename(
-    entry, fictitious_date=None, apply_changes=False,
+    entry, fictitious_date=None, apply_changes=False, reserved_names=None,
 ) -> dict:
     """
     No-Gemini counterpart of `apply_classification()`, PERSONAL domain
@@ -2528,11 +2528,25 @@ def apply_personal_canonical_rename(
     `apply_changes` (default `False`, safe): when `False`, computes
     and returns the candidate name without writing anything -- dry-run
     reporting, same convention as every other bulk command of this
-    project. Note for dry-run: within the same batch, an ordinal
-    computed against another not-yet-applied candidate of this same
-    run may not match the ordinal a real `--apply` run would produce,
-    because `_virtual_location_taken` only sees what is already
-    committed in the database -- for an exact count, apply directly.
+    project.
+
+    `reserved_names` (S98, real incident on the first dry-run of this
+    very function): an optional `set` the caller owns and passes
+    across every call of the same batch. `_virtual_location_taken`
+    only sees what is already committed in the database, so two
+    entries that collide with EACH OTHER inside the same batch (same
+    surnames/name/type/date -- the exact case the fictitious date is
+    designed to group together, e.g. several undated old DNIs of one
+    person) would both compute the identical bare name in a dry-run,
+    since neither has been written yet. Passing a shared `set` fixes
+    this without touching the database: every final name this
+    function settles on gets added to it (`(bucket, parent_path,
+    name)`), regardless of `apply_changes`, and every collision check
+    consults it in addition to `_virtual_location_taken` -- so a
+    dry-run preview shows the exact same ordinals a real `--apply` run
+    would produce. `None` (default) keeps the old behaviour (checks
+    only the database) for callers that process entries one at a time
+    with no batch of their own.
 
     Returns `{"new_name": str | None, "renamed": bool, "reason":
     str | None}`. `reason` is only set when nothing could be built
@@ -2574,12 +2588,26 @@ def apply_personal_canonical_rename(
     `apply_changes` (por defecto `False`, seguro): con `False`,
     calcula y devuelve el nombre candidato sin escribir nada --
     informe en seco, misma convención que cualquier otro comando
-    masivo de este proyecto. Nota para el modo seco: dentro del mismo
-    lote, un ordinal calculado contra otro candidato de este mismo
-    lote que todavía no se ha aplicado puede no coincidir con el que
-    produciría una ejecución real con `--apply`, porque
-    `_virtual_location_taken` solo ve lo que ya está comiteado en
-    base de datos -- para un recuento exacto, aplicar directamente.
+    masivo de este proyecto.
+
+    `reserved_names` (S98, incidente real en la primera prueba en seco
+    de esta misma función): un `set` opcional que quien llama posee y
+    pasa a través de todas las llamadas del mismo lote.
+    `_virtual_location_taken` solo ve lo que ya está comiteado en base
+    de datos, así que dos entradas que colisionan ENTRE SÍ dentro del
+    mismo lote (mismos apellidos/nombre/tipo/fecha -- justo el caso
+    que la fecha ficticia está pensada para agrupar, p. ej. varios DNI
+    antiguos sin fecha de la misma persona) calculaban en seco el
+    mismo nombre sin ordinal, porque ninguna de las dos se había
+    escrito todavía. Pasar un `set` compartido lo corrige sin tocar la
+    base de datos: cada nombre final en el que se asienta esta función
+    se añade a él (`(bucket, parent_path, name)`), sea cual sea
+    `apply_changes`, y cada comprobación de colisión lo consulta
+    además de `_virtual_location_taken` -- así una vista previa en
+    seco muestra exactamente los mismos ordinales que produciría una
+    ejecución real con `--apply`. `None` (por defecto) mantiene el
+    comportamiento anterior (solo comprueba la base de datos) para
+    quien llame procesando entradas de una en una sin lote propio.
 
     Devuelve `{"new_name": str | None, "renamed": bool, "reason":
     str | None}`. `reason` solo se rellena cuando no se pudo construir
@@ -2602,21 +2630,31 @@ def apply_personal_canonical_rename(
     extension = entry.name.rsplit(".", 1)[-1] if "." in entry.name else "pdf"
     code = entry.document_type.code
 
+    def _taken(name):
+        if _virtual_location_taken(
+            entry.bucket, entry.parent_path, name, exclude_pk=entry.pk,
+        ):
+            return True
+        if reserved_names is not None:
+            return (entry.bucket, entry.parent_path, name) in reserved_names
+        return False
+
     candidate_name = naming_service.build_filename_personal(
         identity.first_surname, identity.second_surname,
         identity.given_name, code, date, extension=extension,
     )
     final_name = candidate_name
     ordinal = 1
-    while _virtual_location_taken(
-        entry.bucket, entry.parent_path, final_name, exclude_pk=entry.pk,
-    ):
+    while _taken(final_name):
         final_name = naming_service.build_filename_personal(
             identity.first_surname, identity.second_surname,
             identity.given_name, code, date, ordinal=ordinal,
             extension=extension,
         )
         ordinal += 1
+
+    if reserved_names is not None:
+        reserved_names.add((entry.bucket, entry.parent_path, final_name))
 
     renamed = final_name != entry.name
     if renamed and apply_changes:
