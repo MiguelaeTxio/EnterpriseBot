@@ -106,6 +106,20 @@ google-cloud-storage==3.13.0
 # el 3.10.5 del servidor. Arrastra grpcio, que es rueda compilada.
 google-cloud-storage-control==1.12.0
 
+# Cloud Vision API (H31, S100) / API de Visión en la Nube.
+# OCR gestionado en la nube de Google -- sustituye a Tesseract local
+# (pytesseract) para el alta de trabajador guiada por documentación:
+# Miguel Ángel señaló que el OCR local consume CPU compartida real de
+# PythonAnywhere (cuota diaria por cuenta), con riesgo real de
+# agotarla con varias altas de 15-20 documentos el mismo día. Cloud
+# Vision corre en la nube de Google (mismo proyecto/credenciales ya
+# usadas para Vertex AI), sin gasto de CPU local, y responde en menos
+# de un segundo por imagen -- sin necesidad de mantener una VM propia
+# encendida solo para esto (coste fijo por hora, frente al coste por
+# imagen real de la API gestionada). Versión verificada en línea el
+# 2026-09-10: 3.13.0.
+google-cloud-vision==3.13.0
+
 # Task Queue / Cola de Tareas Asíncronas
 # Required for background task processing and scheduled jobs (presence reminders, etc.).
 # La versión 5.6.3 incluye correcciones críticas de memory leaks en Python 3.10+ y
