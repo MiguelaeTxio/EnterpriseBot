@@ -1407,6 +1407,42 @@ asumir que son lo mismo, y nunca construir el desplegable/selector de
 una pantalla de personal sobre `CompanyUser` cuando el objetivo real
 es representar a cualquier trabajador de la plantilla.
 
+#### 4.20. DIRECTRIZ CRÍTICA — `{# ... #}` DE DJANGO NUNCA ADMITE VARIAS LÍNEAS; PARA UN COMENTARIO DE PÁRRAFO, SIEMPRE `{% comment %}...{% endcomment %}` (añadida S98, incidente real con captura de pantalla)
+
+**Incidente real (S98):** al añadir el toggle de nombre original/
+canónico al explorador (`_panel.html`), el modelo escribió un
+comentario explicativo de varias líneas usando `{# ... #}` --
+sintaxis que Django reserva explícitamente para comentarios de **una
+sola línea**; el motor de plantillas no lo reconoció como comentario
+al extenderse a varias, y el texto crudo del comentario (con el
+propio código Python citado dentro, `document_explorer_extras.
+basename`, `_build_base_url`...) quedó volcado tal cual en el HTML
+servido, visible para Miguel Ángel en producción real (captura de
+pantalla del panel).
+
+**Regla de obligado cumplimiento, sin excepción, en cualquier
+plantilla Django de la plataforma:**
+- Comentario de **una sola línea**: `{# texto #}` -- válido.
+- Comentario de **más de una línea** (cualquier explicación de
+  contexto, motivo de una decisión, referencia a otro archivo):
+  **siempre** `{% comment %}` ... `{% endcomment %}`, cada uno en su
+  propia línea, nunca `{# #}` estirado a varias líneas por comodidad
+  visual.
+- Antes de escribir cualquier comentario de plantilla que vaya a
+  ocupar más de una línea, decidir el tag correcto **primero** -- no
+  escribir el texto y decidir el envoltorio después, que es como se
+  coló este incidente.
+
+**Por qué importa más que un fallo cosmético:** el error no dio
+ningún fallo de sintaxis ni de despliegue -- el Action se reportó en
+verde, el HTML se sirvió sin excepción de Python. Solo se detectó
+porque Miguel Ángel miró la pantalla real. Ningún `py_compile` ni
+verificación de sintaxis Python de `com-bash-commands`/`com-standards`
+cubre plantillas HTML -- la única defensa real contra este error
+concreto es conocer la regla de antemano, no una herramienta que lo
+detecte después.
+
+
 
 
 
