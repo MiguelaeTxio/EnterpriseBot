@@ -176,6 +176,11 @@ from document_explorer.models import (
 
 PAGE_SIZE = 200
 
+# H31 (S98). Clave de sesión del toggle "nombre original / nombre
+# canónico" -- ver FolderListingView.get_context_data y
+# document_explorer_extras.basename.
+SHOW_ORIGINAL_NAMES_SESSION_KEY = "document_explorer_show_original_names"
+
 # Alcances de búsqueda (S039). `here` es el listado de siempre; los
 # otros dos activan el barrido recursivo -- ver el docstring del
 # módulo.
@@ -445,6 +450,26 @@ class FolderListingView(ExplorerAccessMixin, TemplateView):
                 crumb["bucket"], crumb["path"],
             )
 
+        # H31 (S98). Toggle "nombre original / nombre canónico" --
+        # decisión explícita de Miguel Ángel tras el renombrado
+        # canónico masivo de PERSONAL: el renombrado es solo virtual
+        # (nunca toca `blob_name`), así que el nombre original sigue
+        # recuperable (ver `document_explorer_extras.basename`).
+        # Estado persistido en sesión (no en la URL, que nunca se
+        # actualiza en el navegador -- navegación HTMX sin
+        # hx-push-url) -- `toggle_original` en la query string es una
+        # acción de un solo uso, nunca un valor que otras URLs deban
+        # arrastrar.
+        if request.GET.get("toggle_original"):
+            request.session[SHOW_ORIGINAL_NAMES_SESSION_KEY] = (
+                not request.session.get(
+                    SHOW_ORIGINAL_NAMES_SESSION_KEY, False,
+                )
+            )
+        show_original_names = request.session.get(
+            SHOW_ORIGINAL_NAMES_SESSION_KEY, False,
+        )
+
         common = {
             "bucket": bucket,
             "folder_path": folder_path,
@@ -482,6 +507,10 @@ class FolderListingView(ExplorerAccessMixin, TemplateView):
                 bucket == PRIMARY_BUCKET
                 and folder_path == NO_CONFORMES_PREFIX.rstrip("/")
                 and scope != SCOPE_GLOBAL
+            ),
+            "show_original_names": show_original_names,
+            "toggle_original_url": self._build_base_url(
+                toggle_original="1",
             ),
         }
 

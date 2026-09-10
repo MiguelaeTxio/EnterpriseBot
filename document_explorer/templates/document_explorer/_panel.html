@@ -79,6 +79,28 @@
     </div>
 </form>
 
+{# H31 (S98). Toggle nombre original / nombre canónico -- pedido por
+   Miguel Ángel tras el renombrado canónico masivo de PERSONAL. El
+   nombre original nunca se perdió (vive en blob_name, ver
+   document_explorer_extras.basename); esto solo alterna cuál se
+   muestra. Estado en sesión, no en la URL (sin hx-push-url en este
+   explorador) -- toggle_original_url ya lleva bucket/path/filtros/
+   orden actuales, construido en el servidor (_build_base_url), para
+   no perder el sitio donde se estaba navegando al alternar. #}
+<div class="mb-2">
+    <a href="#"
+       hx-get="{{ toggle_original_url }}"
+       hx-target="#explorer-panel"
+       hx-swap="innerHTML"
+       class="small text-decoration-none">
+        {% if show_original_names %}
+            <i class="bi bi-toggle-on"></i> Mostrando nombres originales — pulsa para ver los nombres canónicos
+        {% else %}
+            <i class="bi bi-toggle-off"></i> Mostrando nombres canónicos — pulsa para ver los nombres originales
+        {% endif %}
+    </a>
+</div>
+
 {% if is_search %}
     <p class="text-muted small mb-2">
         <i class="bi bi-info-circle"></i>

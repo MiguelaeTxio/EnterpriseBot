@@ -1,4 +1,5 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/document_explorer/templates/document_explorer/_rows.html #}
+{% load document_explorer_extras %}
 {% comment %}
     Solo filas. Se usa dos veces: incluida por _panel.html en la
     primera página, y devuelta suelta por el scroll infinito para
@@ -92,7 +93,7 @@
             {% else %}
                 <a href="{% url 'document_explorer:open' entry.pk %}"
                    target="_blank" rel="noopener"
-                   title="{{ entry.name }}">{{ entry.friendly_name|default:entry.name }}</a>
+                   title="{% if show_original_names %}Nombre canónico: {{ entry.friendly_name|default:entry.name }}{% else %}Nombre original: {{ entry.blob_name|basename|default:entry.name }}{% endif %}">{% if show_original_names %}{{ entry.blob_name|basename|default:entry.name }}{% else %}{{ entry.friendly_name|default:entry.name }}{% endif %}</a>
                 {% if entry.pk and entry.name|lower|slice:"-4:" == ".zip" or entry.pk and entry.name|lower|slice:"-4:" == ".rar" %}
                     <a href="{% url 'document_explorer:archive_preview' entry.pk %}"
                        class="badge bg-secondary text-decoration-none ms-1"
