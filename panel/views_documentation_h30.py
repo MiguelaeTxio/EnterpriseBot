@@ -1290,7 +1290,7 @@ class PersonalIntakeExtractView(DocsUploadAccessMixin, View):
         for f in files:
             content_type = f.content_type or "application/octet-stream"
             result = personal_intake_service.extract_one_document(
-                f.read(), content_type,
+                f.read(), content_type, filename=f.name,
             )
             extractions.append(result)
             per_file.append({
@@ -1301,9 +1301,41 @@ class PersonalIntakeExtractView(DocsUploadAccessMixin, View):
             })
 
         merged = personal_intake_service.merge_person_draft(extractions)
+        draft = merged["draft"]
+
+        # H31 (S100), incidente real de la propia sesión: Miguel Ángel
+        # probó el alta con su propio DNI (ya dado de alta antes) y el
+        # sistema no avisó -- dejó seguir hasta el paso de confirmación
+        # sin decir nada, pese a haber leído el DNI correctamente.
+        # Corregido: la comprobación de duplicado se hace aquí, nada
+        # más leer los documentos, ANTES de mostrar el formulario de
+        # confirmación -- nunca al final. Se devuelven igualmente los
+        # datos ya leídos (draft/per_file), para que el supervisor vea
+        # qué ha leído el sistema antes de cerrar el aviso.
+        normalized_dni = personal_intake_service.normalize_dni(draft["dni"])
+        existing_person = (
+            PersonIdentity.objects.filter(dni=normalized_dni).first()
+            if normalized_dni else None
+        )
+        if existing_person:
+            return JsonResponse({
+                "ok": True,
+                "duplicate": True,
+                "draft": draft,
+                "warnings": merged["warnings"],
+                "per_file": per_file,
+                "existing_person_id": existing_person.pk,
+                "existing_person_label": "%s %s, %s" % (
+                    existing_person.first_surname,
+                    existing_person.second_surname,
+                    existing_person.given_name,
+                ),
+            })
+
         return JsonResponse({
             "ok": True,
-            "draft": merged["draft"],
+            "duplicate": False,
+            "draft": draft,
             "warnings": merged["warnings"],
             "per_file": per_file,
         })
@@ -1355,10 +1387,7 @@ class PersonalCreateView(DocsUploadAccessMixin, View):
 
     @staticmethod
     def _normalize_dni(raw_dni):
-        return (
-            (raw_dni or "").strip().upper()
-            .replace(" ", "").replace("-", "")
-        )
+        return personal_intake_service.normalize_dni(raw_dni)
 
     def _store_documents(self, request, person, folder_path):
         """

@@ -345,6 +345,32 @@ lógica, y así queda autocontenido).
         </div>
     </div>
 </div>
+
+{% comment %}
+H31 (S100), incidente real: al probar el alta con un DNI ya existente,
+el sistema leyó bien el DNI pero no avisó y dejó seguir hasta el
+formulario de confirmación. Corregido con este modal de bloqueo
+propio -- se muestra ANTES del formulario de confirmación, con todo
+lo leído, y al cerrar vuelve a la pantalla anterior (cierra también el
+modal de alta por completo, nunca dando pie a seguir con esta persona).
+{% endcomment %}
+<div class="modal fade" id="personalIntakeDuplicateModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog">
+        <div class="modal-content border-danger">
+            <div class="modal-header bg-danger-subtle">
+                <h5 class="modal-title">Este trabajador ya está dado de alta</h5>
+            </div>
+            <div class="modal-body">
+                <p class="mb-2">No se puede volver a dar de alta a un mismo trabajador. Esto es lo que se ha leído de los documentos subidos:</p>
+                <p class="mb-1"><strong id="personalIntakeDuplicateExisting"></strong></p>
+                <ul class="small mb-0" id="personalIntakeDuplicateReadData"></ul>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-danger" id="personalIntakeDuplicateCloseBtn">Cerrar</button>
+            </div>
+        </div>
+    </div>
+</div>
 <script>
 (function() {
     function getCookie(name) {
@@ -360,12 +386,23 @@ lógica, y así queda autocontenido).
     const form = document.getElementById('personalCreateForm');
     const warningsEl = document.getElementById('personalIntakeWarnings');
     const resultEl = document.getElementById('personalCreateResult');
+    const createModalEl = document.getElementById('personalCreateModal');
+    const duplicateModalEl = document.getElementById('personalIntakeDuplicateModal');
+    let duplicateModalInstance = null;
+    let createModalInstance = null;
     let perFileTypes = [];
+
+    const FIELD_LABELS = {
+        dni: 'DNI/NIE', first_surname: 'Primer apellido',
+        second_surname: 'Segundo apellido', given_name: 'Nombre',
+        birth_date: 'Fecha de nacimiento', employer_company: 'Empresa',
+        hire_date: 'Fecha de alta',
+    };
 
     // H31 (S100): al reabrir el modal para un alta distinta, siempre
     // se vuelve a empezar por el paso 1 -- nunca se arrastra el
     // borrador ni los archivos de un alta anterior sin confirmar.
-    document.getElementById('personalCreateModal').addEventListener('show.bs.modal', function() {
+    createModalEl.addEventListener('show.bs.modal', function() {
         step1.classList.remove('d-none');
         form.classList.add('d-none');
         fileInput.value = '';
@@ -394,9 +431,34 @@ lógica, y así queda autocontenido).
                 step1Result.innerHTML = `<div class="alert alert-danger py-1 px-2 small mb-0">${data.error || 'Error al leer los documentos.'}</div>`;
                 return;
             }
-            perFileTypes = data.per_file.map((pf) => pf.document_type_code);
             const draft = data.draft;
-            for (const field of ['dni', 'first_surname', 'second_surname', 'given_name', 'employer_company', 'hire_date']) {
+            if (data.duplicate) {
+                // H31 (S100), incidente real: mostrar TODO lo leído,
+                // en grande, antes de cerrar -- nunca dejar avanzar
+                // al formulario de confirmación con un DNI que ya
+                // existe.
+                document.getElementById('personalIntakeDuplicateExisting').textContent =
+                    'Ya existe la ficha de: ' + data.existing_person_label;
+                const list = document.getElementById('personalIntakeDuplicateReadData');
+                list.innerHTML = '';
+                for (const field of Object.keys(FIELD_LABELS)) {
+                    if (draft[field]) {
+                        const li = document.createElement('li');
+                        li.textContent = FIELD_LABELS[field] + ': ' + draft[field];
+                        list.appendChild(li);
+                    }
+                }
+                if (!duplicateModalInstance) {
+                    duplicateModalInstance = new bootstrap.Modal(duplicateModalEl);
+                }
+                if (!createModalInstance) {
+                    createModalInstance = bootstrap.Modal.getInstance(createModalEl) || new bootstrap.Modal(createModalEl);
+                }
+                duplicateModalInstance.show();
+                return;
+            }
+            perFileTypes = data.per_file.map((pf) => pf.document_type_code);
+            for (const field of ['dni', 'first_surname', 'second_surname', 'given_name', 'birth_date', 'employer_company', 'hire_date']) {
                 if (draft[field]) { form.elements[field].value = draft[field]; }
             }
             if (data.warnings && data.warnings.length) {
@@ -411,6 +473,16 @@ lógica, y así queda autocontenido).
             extractBtn.disabled = false;
             step1Result.innerHTML = '<div class="alert alert-danger py-1 px-2 small mb-0">Error de red al leer los documentos.</div>';
         });
+    };
+
+    // H31 (S100): al cerrar el aviso de duplicado, se vuelve a la
+    // pantalla anterior -- verbatim Miguel Ángel, "cerrar. Y cuando
+    // cierre pasa otra vez a la pantalla anterior" -- se cierra
+    // también el propio modal de alta, nunca dejando la opción de
+    // seguir con esa persona.
+    document.getElementById('personalIntakeDuplicateCloseBtn').onclick = function() {
+        duplicateModalInstance.hide();
+        if (createModalInstance) { createModalInstance.hide(); }
     };
 
     form.onsubmit = function(ev) {

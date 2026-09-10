@@ -1828,3 +1828,42 @@ plazo; esta extracción síncrona es la pieza mínima real que el Bloque
 1 necesita para funcionar como Miguel Ángel lo describe, no una
 sustitución de H34.
 
+---
+
+## VELOCIDAD Y BUGS REALES DE LA PRIMERA PRUEBA (S100, misma sesión)
+
+Miguel Ángel probó el flujo ya construido con documentos reales y
+reportó tres problemas, los tres corregidos en la misma sesión:
+
+1. **"Eso tarda muchísimo"** -- la primera versión mandaba la imagen/
+PDF entero a Gemini Vision por cada documento, en serie. Corregido
+reutilizando el mismo patrón YA VALIDADO en producción por
+`date_verification_service` (H30, S48): OCR local con Tesseract
+PRIMERO (`extract_text()`, gratis, rápido, corre en PythonAnywhere sin
+VM -- la necesidad de VM de GCE es solo para el BARRIDO MASIVO de H28,
+nunca para leer un documento suelto), y Gemini solo como intérprete
+del TEXTO ya extraído (mucho más rápido que analizar la imagen/PDF
+entero). La fecha de nacimiento, cuando hay un MRZ real de DNI/NIE
+español, se resuelve además con `extract_dni_mrz_birthdate()`
+(validación por dígito de control ICAO, ya construida y probada en
+H30) -- sin coste de API. Si el OCR local no encuentra texto legible,
+cae como último recurso al camino anterior (Vision directo).
+
+2. **Fecha de nacimiento no se leía.** El esquema de extracción no
+pedía ese campo. Corregido: `birth_date_hint` añadido al esquema y al
+prompt, y reforzado por `extract_dni_mrz_birthdate()` cuando hay MRZ.
+
+3. **DNI duplicado no se avisaba a tiempo.** Miguel Ángel probó el
+alta con su propio DNI (ya registrado) y el sistema leyó el DNI
+correctamente pero dejó avanzar hasta el formulario de confirmación
+sin avisar -- verbatim: *"El DNI sí lo ha leído bien y, sin embargo,
+ha tirado para adelante [...] esto tenemos que pulirlo [...] te
+presento todos los datos de lo que he leído, tal y cual, y te saco un
+modal en grande diciendo: este trabajador ya está dado de alta. No se
+puede volver a dar de alta a un mismo trabajador. Cerrar. Y cuando
+cierre pasa otra vez a la pantalla anterior."* Corregido: la
+comprobación de duplicado se hace justo tras la extracción (antes de
+mostrar el formulario de confirmación), y si el DNI ya existe se
+muestra un modal de bloqueo con todos los datos leídos y el nombre de
+la ficha ya existente -- al cerrarlo, se cierra también el modal de
+alta por completo, nunca dejando avanzar con esa persona.

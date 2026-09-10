@@ -26,6 +26,7 @@ mismo request, se extraen los datos, se devuelven al momento -- nunca
 se persiste nada a medio resolver, nunca hay cola ni barrido
 posterior.
 """
+import json
 import logging
 import time
 
@@ -59,13 +60,14 @@ _RESPONSE_SCHEMA = {
         "second_surname_hint": {"type": "string"},
         "given_name_hint": {"type": "string"},
         "dni_hint": {"type": "string"},
+        "birth_date_hint": {"type": "string"},
         "employer_company_hint": {"type": "string"},
         "hire_date_hint": {"type": "string"},
     },
     "required": [
         "document_type_code", "confidence", "reasoning",
         "first_surname_hint", "second_surname_hint", "given_name_hint",
-        "dni_hint", "employer_company_hint", "hire_date_hint",
+        "dni_hint", "birth_date_hint", "employer_company_hint", "hire_date_hint",
     ],
 }
 
@@ -79,8 +81,9 @@ reverso), CONTRATO (contrato laboral), RECONOCIMIENTO_MEDICO \
 (reconocimiento médico), o DESCONOCIDO si no encaja en ninguno.
 
 2. Extrae, cuando el documento los contenga de forma legible:
-   - Si es un DNI: primer apellido, segundo apellido, nombre, y el \
-número de DNI/NIE tal cual aparece (incluida la letra final).
+   - Si es un DNI: primer apellido, segundo apellido, nombre, el \
+número de DNI/NIE tal cual aparece (incluida la letra final), y la \
+fecha de nacimiento (formato AAAA-MM-DD).
    - Si es un CONTRATO laboral: el nombre de la empresa empleadora \
 real (tal cual aparece, sin normalizar), y la fecha de inicio/alta \
 en la empresa (formato AAAA-MM-DD).
@@ -119,32 +122,110 @@ def _generate_content_with_retry(client, **kwargs):
     raise last_exc  # pragma: no cover -- inalcanzable
 
 
-def extract_one_document(data: bytes, mime_type: str) -> dict:
+def normalize_dni(raw_dni: str) -> str:
+    """Normalización compartida de DNI/NIE -- mayúsculas, sin espacios
+    ni guiones. Usada tanto por la extracción (para poder comprobar
+    duplicados nada más leer los documentos) como por
+    `PersonalCreateView` (S100, movida aquí para no duplicarla)."""
+    return (raw_dni or "").strip().upper().replace(" ", "").replace("-", "")
+
+
+_TEXT_PROMPT_TEMPLATE = """Eres un asistente de RRHH de una empresa \
+española de grúas y maquinaria pesada. Se te da el TEXTO ya extraído \
+por OCR de un documento entregado para dar de alta a un trabajador \
+nuevo (el propio texto puede tener errores de OCR -- ruido, letras \
+mal leídas -- interprétalo con criterio).
+
+TEXTO DEL DOCUMENTO:
+---
+{ocr_text}
+---
+
+1. Identifica de qué tipo de documento se trata, SOLO entre estos \
+códigos: DNI (documento nacional de identidad o NIE, anverso o \
+reverso), CONTRATO (contrato laboral), RECONOCIMIENTO_MEDICO \
+(reconocimiento médico), o DESCONOCIDO si no encaja en ninguno.
+
+2. Extrae, cuando el texto los contenga de forma reconocible:
+   - Si es un DNI: primer apellido, segundo apellido, nombre, el \
+número de DNI/NIE tal cual aparece (incluida la letra final), y la \
+fecha de nacimiento (formato AAAA-MM-DD).
+   - Si es un CONTRATO laboral: el nombre de la empresa empleadora \
+real (tal cual aparece, sin normalizar), y la fecha de inicio/alta \
+en la empresa (formato AAAA-MM-DD).
+   - Cualquier campo que no aparezca o no se pueda leer con \
+confianza, déjalo como cadena vacía -- nunca inventes un valor.
+
+Devuelve el resultado como el JSON estructurado indicado, sin texto \
+adicional."""
+
+
+def _call_gemini_json(contents) -> dict:
+    client = get_gemini_client()
+    response = _generate_content_with_retry(
+        client,
+        model=DEFAULT_MODEL,
+        contents=contents,
+        config=GenerateContentConfig(
+            http_options=HttpOptions(timeout=90_000),
+            response_mime_type="application/json",
+            response_schema=_RESPONSE_SCHEMA,
+            temperature=0.0,
+        ),
+    )
+    return json.loads(response.text.strip())
+
+
+def extract_one_document(data: bytes, mime_type: str, filename: str = "") -> dict:
     """
     Extrae datos de UN documento subido (bytes en memoria, nunca
     todavía indexado en GCS -- este flujo sube de verdad solo tras la
     confirmación del supervisor). Devuelve el JSON ya parseado, o
-    {"error": ...} si Gemini falla -- nunca lanza, el llamador decide
-    cómo mostrarlo al supervisor.
+    {"error": ...} si falla -- nunca lanza, el llamador decide cómo
+    mostrarlo al supervisor.
+
+    REESCRITO EN S100 (misma sesión), tras queja real de Miguel Ángel
+    de que la primera versión (Gemini Vision directo sobre la imagen/
+    PDF entero) tarda demasiado para un modal síncrono. Mismo patrón
+    ya validado en producción por `date_verification_service` (H30,
+    S48): OCR local con Tesseract PRIMERO (gratis, rápido, ya corre en
+    PythonAnywhere sin VM -- `extract_text()`), Gemini solo como
+    intérprete del TEXTO ya extraído (mucho más rápido que analizar la
+    imagen/PDF entero, sin volver a mandar el archivo). La fecha de
+    nacimiento, cuando el documento trae un MRZ real de DNI/NIE
+    español, se resuelve además con `extract_dni_mrz_birthdate()` --
+    validación por dígito de control ICAO, más fiable que pedírsela a
+    Gemini, y sin coste de API en absoluto.
+
+    Si el OCR local no logra extraer ningún texto (imagen ilegible, \
+extensión no soportada), cae al camino anterior -- Gemini Vision \
+directo sobre el archivo -- como último recurso, nunca se deja sin \
+leer.
     """
+    from document_explorer.date_verification_service import (
+        extract_dni_mrz_birthdate, extract_text,
+    )
     try:
-        client = get_gemini_client()
-        response = _generate_content_with_retry(
-            client,
-            model=DEFAULT_MODEL,
-            contents=[
-                Part.from_bytes(data=data, mime_type=mime_type),
-                _PROMPT,
-            ],
-            config=GenerateContentConfig(
-                http_options=HttpOptions(timeout=90_000),
-                response_mime_type="application/json",
-                response_schema=_RESPONSE_SCHEMA,
-                temperature=0.0,
-            ),
-        )
-        import json
-        return json.loads(response.text.strip())
+        text = extract_text(filename or "documento.pdf", data) if filename else None
+        if not text:
+            # Sin nombre de archivo reconocible (o extensión no
+            # soportada por extract_text) -- último recurso, Vision
+            # directo sobre el archivo, mismo camino que la v1.
+            result = _call_gemini_json([
+                Part.from_bytes(data=data, mime_type=mime_type), _PROMPT,
+            ])
+        elif not text.strip():
+            result = {
+                "error": "El OCR no encontró texto legible en el documento.",
+            }
+        else:
+            result = _call_gemini_json(
+                _TEXT_PROMPT_TEMPLATE.format(ocr_text=text[:8000]),
+            )
+            mrz_birthdate = extract_dni_mrz_birthdate(text)
+            if mrz_birthdate:
+                result["birth_date_hint"] = mrz_birthdate.isoformat()
+        return result
     except Exception as exc:
         logger.warning(
             "# [personal_intake_service] Fallo extrayendo documento: %s",
@@ -169,7 +250,8 @@ def merge_person_draft(extractions: list) -> dict:
     """
     draft = {
         "dni": "", "first_surname": "", "second_surname": "",
-        "given_name": "", "employer_company": "", "hire_date": "",
+        "given_name": "", "birth_date": "",
+        "employer_company": "", "hire_date": "",
     }
     warnings = []
     for idx, result in enumerate(extractions):
@@ -194,6 +276,8 @@ def merge_person_draft(extractions: list) -> dict:
             draft["second_surname"] = result["second_surname_hint"]
         if not draft["given_name"] and result.get("given_name_hint"):
             draft["given_name"] = result["given_name_hint"]
+        if not draft["birth_date"] and result.get("birth_date_hint"):
+            draft["birth_date"] = result["birth_date_hint"]
         if not draft["employer_company"] and result.get("employer_company_hint"):
             draft["employer_company"] = result["employer_company_hint"]
         if not draft["hire_date"] and result.get("hire_date_hint"):
