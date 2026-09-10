@@ -1658,3 +1658,79 @@ perfil, para quien tiene cuenta de panel) -- no bloqueante, mismo
 campo `confirmed_at`/`confirmation_channel` ya construido en la Fase 1,
 solo cambia el canal de origen.
 
+---
+
+## RESOLUCIÓN DE LAS 4 PREGUNTAS HEREDADAS DE H33 Y REDEFINICIÓN DEL OBJETIVO DEL HITO (S100, 2026-09-10)
+
+**Pregunta 1 -- alcance de dominio, RESUELTA.** Solo PERSONAL por
+ahora. MÁQUINAS y centros de gasto se abordarán en su propia interfaz
+cuando PERSONAL esté cerrado -- motivo explícito de Miguel Ángel:
+"quedan miríadas de archivos de máquinas sin fechar", condición ya
+señalada como pendiente real de H30 (dominio MÁQUINAS).
+
+**Pregunta 2 -- orden de construcción, RESUELTA (reafirma directriz
+4.16, sin cambio de criterio).** Miguel Ángel reafirma que preguntar
+por el orden entre tareas ya numeradas es un error de lectura, no una
+decisión pendiente: se ejecutan en el orden ya fijado en la hoja de
+ruta de arriba (bloques 1-5), sin volver a preguntar.
+
+**Pregunta 3 -- fallos de clasificación en el momento de la subida,
+RESUELTA por aplazamiento explícito, verbatim:** *"¿nos merece la pena
+entrenar ya el modelo [...] o podemos dejarlo ahora mismo solamente
+tal y como lo tenemos, echando a no conformes lo que no entre y
+introduciendo el supervisor [...] esto quizás merece más atención que
+incluirlo dentro del hito."* Decisión: el pipeline de clasificación
+automática (OCR asíncrono en VM de GCE, entrenamiento de modelo
+propio) **no se aborda dentro de H31** -- ya tiene hito propio y
+dedicado, **H34 (Modelo Propio de Clasificación de Documentos)**, con
+prioridad máxima ya registrada en el enrutador. H31 sigue usando el
+mecanismo real ya existente (H28/H29): lo que no se clasifica
+automáticamente cae en NO CONFORMES/cuarentena, y el supervisor lo
+resuelve a mano desde la interfaz. Ningún trabajo de OCR/clasificación
+nuevo se construye en H31.
+
+**Pregunta 4 -- relación con la cuarentena de H28/NO CONFORMES,
+RESUELTA -- conviven, no se sustituyen.** Flujo real para la vía de
+entrada de H31 (alta de trabajador, sustitución de un documento):
+se sube la documentación completa del trabajador, se clasifica con el
+mecanismo ya existente, y ahí es donde entra el supervisor: se le
+presenta el documento real subido junto a la ingesta de datos que se
+pretende hacer (p. ej. una fecha mal leída), con mecanismo para
+rectificarla antes de confirmar. Si el supervisor confirma, el dato va
+a BD. Si el supervisor lo marca como no conforme, sigue el mismo
+circuito de cuarentena ya existente (H28/H29) -- H31 no crea una
+segunda cuarentena paralela, añade el punto de revisión humana en el
+momento de la subida guiada por el supervisor, distinto del barrido
+periódico ya existente.
+
+**Redefinición del objetivo del hito, verbatim de Miguel Ángel (no
+sustituye a la sección 1, la amplía con el marco real que la
+gobierna):** *"no estamos haciendo subida de documentación [...]
+estamos haciendo la interfaz para gestionar toda la documentación de
+un trabajador y su alta en la empresa y su baja en la empresa y todas
+las cosas que pueden suceder [...] ya no estamos hablando de subida de
+documentación; ya estamos hablando de gestión integral de personal,
+vida laboral del personal dentro de la empresa, con su documentación."*
+La ficha de personal (ejemplo real usado por Miguel Ángel: Alejandro
+Luque García) pasa a ser el hub central de la vida laboral completa de
+un trabajador -- alta, baja, vacaciones, bajas médicas/ITL, partes de
+trabajo, cursos, permisos (carné de gruista, CAP), reconocimientos
+médicos -- con la documentación como "alma mater" que sustenta todo lo
+demás, no como un fin en sí mismo. Confirma y generaliza el concepto
+ya introducido por la directriz 4.19 (`PersonIdentity` como el "quién"
+real, independiente de `CompanyUser`): existe una ficha de personal,
+una ficha de maquinaria y una ficha de centro de gasto, cada una
+gobernada por su documentación.
+
+**Importante -- esto no parte de cero.** Buena parte de esta visión ya
+tiene fundación real construida en sesiones anteriores de este mismo
+hito (S94): `hr_calendar.VacationPeriod` y
+`hr_calendar.MedicalLeavePeriod` ya enlazan con `PersonIdentity` (no
+con `CompanyUser`), ya cubren vacaciones y bajas médicas/ITL como
+periodos estructurados. El bloque que falta no es el modelo de datos
+de vida laboral en sí -- es la interfaz real que centralice todo eso
+(vacaciones, bajas, partes, documentación, EPIs, notificaciones) en un
+único hub por trabajador, más las ACCIONES de escritura (alta/baja,
+subida/sustitución guiada, entrega de EPI, envío de circular) que
+todavía no existen (ver sección 2, "No existe (por construir)").
+
