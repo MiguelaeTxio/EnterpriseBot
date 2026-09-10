@@ -1313,47 +1313,175 @@ explícita de Miguel Ángel en S78 -- no es trabajo pendiente real.
 
 ---
 
+### COMPLETADAS EN S98
+
+Sesión larga, varios bloques de trabajo real encadenados por
+decisión explícita de Miguel Ángel al ir cerrando cada uno.
+
+**1. Renombrado canónico masivo de PERSONAL, sin Gemini.** Nueva
+función reutilizable `apply_personal_canonical_rename()`
+(`classification_service.py`) -- homóloga sin IA de
+`apply_classification()`, pensada explícitamente por Miguel Ángel
+como base del futuro pipeline de clasificación predictiva ("el
+renombrado debería ser desde Python, no llamadas a Gemini"). Usa
+`expiry_date`/`issue_date` si existen, o una fecha ficticia fija
+`2021-01-01` (festivo nacional, decisión explícita de Miguel Ángel
+para que ningún documento real la lleve nunca) solo dentro del
+nombre de archivo -- nunca escrita en las columnas reales de fecha.
+Comando de gestión `rename_personal_documents` (dry-run por
+defecto). Incidente real corregido en la propia sesión: el primer
+dry-run mostraba colisiones mal resueltas entre documentos del mismo
+lote (mismos apellidos/nombre/tipo/fecha, típicamente varios DNI
+antiguos sin fecha de una misma persona) -- corregido con un `set`
+`reserved_names` compartido durante todo el lote. Alcance final,
+decidido en la propia sesión: **todo** el dominio PERSONAL (8.358
+documentos vivos, activos e inactivos), no solo activos -- Miguel
+Ángel reconsideró explícitamente a mitad de sesión. **Aplicado de
+verdad en producción:** 8.283 renombrados, 75 ya correctos, 3.402
+con fecha ficticia, 0 incidencias de persona/tipo/fecha sin
+resolver -- verificado contra BD real con varios `pk` conocidos, no
+solo contra el resumen del propio comando. Incidente real menor
+detectado tras el `--apply`: el log de detalle mostraba `X -> X` en
+vez del cambio real (la función muta `entry.name` en el mismo objeto
+antes de que el comando lo imprima) -- la escritura en BD era
+correcta, solo el log estaba mal; corregido capturando el nombre
+original antes de llamar a la función.
+
+**2. Sistema de etiquetas de búsqueda (`DocumentTag`).** Modelo
+nuevo + M2M `DocumentTypeCatalog.tags` (migración `0076`, solo
+esquema). Propuesta de etiquetas construida en dos pasadas -- la
+primera, demasiado escueta, fue rechazada explícitamente por Miguel
+Ángel ("puede haber treinta etiquetas para un tipo, que sean todas
+las plausibles"); la segunda exprimió el vocabulario COMPLETO real
+de los nombres de archivo originales (no solo las 12 palabras más
+frecuentes) más investigación en línea de acrónimos técnicos (`OCA`
+= Organismo de Control Autorizado, `IPO` = Inspección Periódica
+Obligatoria, `RAE` = Registro de Aparatos Elevadores). Sin
+`ANVERSO`/`REVERSO`/`FOTO_DOCUMENTO` -- decisión explícita de Miguel
+Ángel, dejando esa granularidad fina para la futura pantalla de
+gestión de etiquetas por el supervisor (el M2M ya es abierto por
+diseño). Aplicado en tres migraciones de datos revisadas y aprobadas
+por Miguel Ángel antes de cada una (`0077` PERSONAL, `0078` corrige
+dos tipos olvidados en `0077` -- `ALTA_IDC`/`HUELLA_CONTRATO`,
+detectados por la propia consulta de verificación pedida por Miguel
+Ángel --, `0079` MACHINE/COMPANY/EPI). **301 etiquetas reales, 140
+tipos activos cubiertos al 100% (77 PERSONAL + 53 MACHINE + 9
+COMPANY + 1 EPI), verificado contra BD, no solo que la migración no
+diera error.**
+
+**3. Toggle nombre original/canónico en el explorador.** Pedido por
+Miguel Ángel tras ver el renombrado real en producción. El nombre
+original nunca se perdió (`blob_name` nunca lo toca el renombrado
+virtual, S040) -- nuevo filtro `document_explorer_extras.basename`
+lo recupera. Estado en sesión (`show_original_names`), URL de
+alternancia construida en servidor con `_build_base_url` para
+conservar bucket/carpeta/filtros/orden. **Incidente real con
+captura de pantalla de Miguel Ángel:** el comentario explicativo de
+varias líneas en `_panel.html` se escribió con `{# ... #}` -- sintaxis
+de Django que **no admite varias líneas** -- y el texto crudo del
+comentario, con nombres de función y todo, se sirvió tal cual dentro
+del HTML de producción. Corregido a `{% comment %}`/`{% endcomment %}`
+y documentado como directriz **4.20** de este documento maestro, para
+que no se repita en ninguna plantilla futura del proyecto.
+
+**4. Primera auditoría real de reclasificación virtual.** A raíz del
+propio toggle, Miguel Ángel detectó a simple vista archivos con
+nombre antiguo sueltos en la raíz de `DOC. PERSONAL` y dedujo
+correctamente que eran documentos mal ubicados, no un fallo del
+toggle. Verificado con consulta real: **12 archivos sueltos, los 12
+ya tipados correctamente como dominio COMPANY** (nunca fue un
+problema de clasificación, solo de ubicación virtual). Resueltos
+todos: 1 con precedente claro y sólido (`LISTADO_PERSONAL_
+MAQUINARIA_OBRA` → `DOC. PERSONAL/LISTADOS MAQUINARIA Y PERSONAL`,
+36 instancias reales ya ahí), 6 (`DECLARACION_EMPRESA`) al único
+precedente real existente (`DOC. PERSONAL/PERSONAL/OPERARIOS`), y 5
+sin ningún precedente real (`CIRCULAR_INFORMATIVA` x3,
+`ACTA_ELECCIONES_SINDICALES`, `CERTIFICADO_JUSTIFICACION_
+DESPLAZAMIENTO`) a una carpeta nueva `DOC. EMPRESA`, decidida
+explícitamente por Miguel Ángel -- **confirmado en el mismo cierre de
+sesión que `DOC. EMPRESA` es la carpeta real para todas las
+circulares/documentación de empresa, sin carpeta `CIRCULARES`
+separada dentro de `PERSONAL`.** Resultado verificado: 0 archivos
+sueltos en la raíz de `DOC. PERSONAL`.
+
+**5. Verificación real del estado de la ingesta de EPIs**, a
+petición de Miguel Ángel ("ya no recuerdo si llegamos a hacerlo").
+Confirmado con datos reales: la conversión de entregas de EPI a
+registro de base de datos **ya está completa** -- 4.314 filas en
+`EpiDelivery`, 0 archivos de tipo `EPIS` (entregas) sueltos sin
+tratar. Solo quedan 7 documentos reales de tipo `FICHA_TECNICA_EPI`
+(fichas técnicas, no entregas) -- correcto que sigan siendo archivo,
+es documentación real, no un registro transaccional.
+
+**6. Corrección de política de sesión (`SESSION_VARIABLES.md`):**
+decisión explícita de Miguel Ángel de no usar `tmux` en ningún
+entorno a partir de ahora (revoca la excepción anterior que lo
+permitía en PC) -- motivada por reducir superficie de error tras
+S97, no por un incidente técnico nuevo de `tmux` en sí.
+
+**Migraciones de esta sesión, todas confirmadas aplicadas en
+producción con `showmigrations` tras cada push:** `0076`
+(`DocumentTag` + M2M, solo esquema), `0077` (datos PERSONAL), `0078`
+(corrección de 2 tipos olvidados), `0079` (datos MACHINE/COMPANY/
+EPI).
+
+---
+
 ## Hoja de Ruta para la Sesión Siguiente
 
-**Instrucción explícita de Miguel Ángel al cierre de S97: la sesión
-siguiente versa sobre el renombrado canónico del resto del catálogo**
-(132 tipos pendientes -- 131 + `CONVENIO_FORMACION_BONIFICADA` creado
-en S86 -- criterio "a demanda con evidencia real" acordado en S78, ver
-`ENTERPRISEBOT_MASTER_DOCUMENT.md`). Empezar directamente por ahí, sin
+**Instrucción explícita de Miguel Ángel al cierre de S98: reorganizar
+la estructura de carpetas virtuales de PERSONAL para que refleje la
+clasificación real de BD** (persona real vía `domain_object`, estado
+laboral vía `PersonIdentity.is_active_employee`), no la organización
+histórica heredada del cubo. Empezar directamente por ahí, sin
 preguntar por dónde arrancar.
 
-**Punto 1 -- Confirmar alcance real de "renombrado canónico" antes de
-tocar código.** Releer en `ENTERPRISEBOT_MASTER_DOCUMENT.md` la
-sección donde se describe el motor de renombrado de H29
-(`naming_service`, `DocumentTypeCatalog.code`) y el criterio "a
-demanda con evidencia real" de S78 -- verificar contra el propio
-código real de `naming_service.py` en el turno de esa sesión, nunca
-de memoria. **Criterio de cierre:** el modelo puede explicar, con cita
-de línea real de código, cómo se construye hoy el nombre canónico de
-un archivo a partir de `DocumentTypeCatalog.code`, y qué de los 132
-tipos pendientes no tiene todavía ese `code` asignado.
+**Punto 1 -- Diseñar y aplicar la nueva estructura de PERSONAL,
+verbatim de Miguel Ángel (S98):**
+- `PERSONAL/ACTIVOS/{PRIMER_APELLIDO}_{SEGUNDO_APELLIDO}_{NOMBRE}/`
+  -- un `PersonIdentity` real por carpeta, `is_active_employee=True`,
+  con toda su documentación dentro.
+- `PERSONAL/INACTIVOS/{...}/` -- mismo criterio, para el resto
+  (`is_active_employee=False`). **Regla por defecto para
+  `is_active_employee=None` (todavía sin cruzar contra el Excel real,
+  ver `PersonIdentity`): va a `INACTIVOS`, salvo que Miguel Ángel
+  diga lo contrario al arrancar esa sesión** -- antes de mover nada,
+  contar con una consulta real cuántos `PersonIdentity` están en
+  `None`, para saber el tamaño real de ese caso por defecto y
+  decidir si compensa cruzarlos contra el Excel primero.
+- `PERSONAL/EPIS/` -- las 7 fichas técnicas de EPI reales (ver punto
+  5 de S98 arriba; ya confirmado que la parte de entregas está
+  resuelta en BD, esto es solo el documento real).
+- `DOC. EMPRESA` (creada en S98) es la carpeta real y única para
+  circulares/documentación de empresa -- **confirmado por Miguel
+  Ángel al cierre de S98, no hay `PERSONAL/CIRCULARES` aparte.**
 
-**Punto 2 -- A partir de ahí, trabajar los tipos con evidencia real ya
-disponible.** Sin lista cerrada de antemano -- el criterio "a demanda"
-significa que se abordan los tipos para los que ya exista un caso real
-verificado (documentos reales del cubo `cgs_grupo_alvarez` sin
-clasificar todavía), nunca una lista inventada sin comprobar contra
-datos reales primero.
+**Criterio de cierre del Punto 1:** consulta real que confirme 0
+documentos con `domain_object` de tipo `PersonIdentity` fuera de
+`PERSONAL/ACTIVOS/...`, `PERSONAL/INACTIVOS/...` o `PERSONAL/EPIS`
+(mismo tipo de verificación que ya se hizo en S98 para la raíz de
+`DOC. PERSONAL`).
 
-**Pendiente técnico menor, no bloqueante, para cuando surja hueco:**
-`28932` (`ENRIQUE SERRANO ALVAREZ (NUEVO).pdf`, ya retipado a `DNI` en
-S97) sigue sin fecha MRZ legible -- revisar su `ocr_text` real si en
-algún momento se retoma trabajo de fechado.
+**Punto 2 -- Repetir la auditoría de ubicación virtual para el resto
+del árbol**, mismo método que S98 (contar documentos sueltos en una
+carpeta cuyo `document_type.domain` no encaja con esa carpeta,
+comparar contra precedentes reales antes de mover, preguntar a
+Miguel Ángel en el propio chat cuando no haya precedente claro,
+nunca inventar carpeta sin decírselo primero) -- esta vez sobre todo
+el árbol, no solo la raíz de `DOC. PERSONAL`. **Criterio de cierre:**
+número real de casos encontrados fuera de la nueva estructura de
+PERSONAL/MACHINE/COMPANY, con cada uno movido o con destino
+explícitamente decidido por Miguel Ángel.
 
 **No autodirigirse en la sesión siguiente sin instrucción explícita
 de Miguel Ángel más allá de lo ya escrito arriba.**
 
 EOF
-# 2026-09-09
+# 2026-09-10
 # EnterpriseBot
 # ANNEX_V31.md
-*  **Session:** EnterpriseBot-S97H31 --- Continuación H31 tras cierre S96: fechado pendiente, aplicación de fechas y arranque de acuse de recibo
-*  **Description:** Sesión de continuidad de H31, arrancando desde el cierre de S96, en el que no se completó ninguno de los puntos de su hoja de ruta. Se retomó, según indicó Miguel Ángel, la inspección visual/OCR de los 108 documentos de la auditoría de fechado, la revisión y prueba real del fallback EasyOCR añadido en S96 a extract_personal_dates_bulk.py, y se aplicaron fechas reales donde el resultado técnico lo permitió. Conforme a lo registrado al cierre de S96, no se autodirigió el trabajo sin instrucción explícita de Miguel Ángel.
+*  **Session:** EnterpriseBot-S98H31 --- Confirmación del alcance real del renombrado canónico de los 132 tipos documentales pendientes
+*  **Description:** Se releerá en el propio código de naming_service.py (nunca de memoria) cómo se construye hoy el nombre canónico de un archivo a partir de DocumentTypeCatalog.code, y se confirmará contra ENTERPRISEBOT_MASTER_DOCUMENT.md el criterio "a demanda con evidencia real" acordado en S78. Se determinará cuáles de los 132 tipos pendientes (131 más CONVENIO_FORMACION_BONIFICADA) no tienen todavía code asignado, citando la línea real de código que lo confirme. A partir de ahí, y sin lista cerrada de antemano, se abordarán los tipos para los que ya exista un caso real verificado contra documentos reales del cubo cgs_grupo_alvarez sin clasificar todavía, nunca una lista inventada sin comprobar contra datos reales primero. Si el tiempo lo permite, se revisará también el pendiente técnico menor del documento 28932, sin fecha MRZ legible.
 
 EOF
 
