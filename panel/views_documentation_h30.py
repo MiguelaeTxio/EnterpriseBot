@@ -1429,19 +1429,55 @@ class PersonalCreateView(DocsUploadAccessMixin, View):
         today = timezone.now().date()
         warnings = []
         stored = 0
+        # H31 (S100), incidente real reportado por Miguel Ángel: al
+        # subir 2 DNI + 2 reconocimientos médicos en la misma alta,
+        # `build_filename_personal` sin ordinal generaba el MISMO
+        # nombre de archivo para los dos documentos del mismo tipo del
+        # mismo día -- el segundo sobrescribía en GCS el blob del
+        # primero en silencio, mientras se seguían creando filas
+        # `DocumentIndexEntry` distintas apuntando a ese mismo blob ya
+        # sobrescrito ("galimatías": 15 archivos subidos, varias
+        # entradas duplicadas señalando al mismo objeto real).
+        # Corregido: se cuenta cuántos nombres con el mismo prefijo
+        # (persona+tipo+fecha) ya existen -- tanto ya indexados en BD
+        # para esta persona (por si este mismo mecanismo se reutiliza
+        # en el futuro para añadir documentos a alguien ya existente)
+        # como los ya procesados en ESTE mismo lote -- y solo a partir
+        # del segundo se añade el sufijo `_2`, `_3`... (`ordinal=None`
+        # en el primero, igual que antes, para no cambiar el nombre en
+        # el caso normal sin colisión).
+        prefix_counts = {}
         for idx, f in enumerate(files):
             code = type_codes[idx] if idx < len(type_codes) else "DESCONOCIDO"
             document_type = DocumentTypeCatalog.objects.filter(
                 code=code,
             ).first()
+            type_code_for_name = document_type.code if document_type else "DESCONOCIDO"
             extension = (
                 f.name.rsplit(".", 1)[-1] if "." in f.name else "pdf"
             )
+            base_prefix = naming_service.build_filename_personal(
+                person.first_surname, person.second_surname,
+                person.given_name, type_code_for_name,
+                today, extension=extension,
+            ).rsplit(".", 1)[0]
+            if base_prefix not in prefix_counts:
+                prefix_counts[base_prefix] = DocumentIndexEntry.objects.filter(
+                    bucket=BUCKET, domain_content_type=ct,
+                    domain_object_id=person.pk,
+                    entry_kind=DocumentIndexEntry.KIND_FILE,
+                    deleted_at__isnull=True, purged_at__isnull=True,
+                    name__startswith=base_prefix,
+                ).count()
+            prefix_counts[base_prefix] += 1
+            ordinal = (
+                prefix_counts[base_prefix]
+                if prefix_counts[base_prefix] > 1 else None
+            )
             filename = naming_service.build_filename_personal(
                 person.first_surname, person.second_surname,
-                person.given_name,
-                document_type.code if document_type else "DESCONOCIDO",
-                today, extension=extension,
+                person.given_name, type_code_for_name,
+                today, ordinal=ordinal, extension=extension,
             )
             blob_name = "%s/%s" % (folder_path, filename)
             data = f.read()
