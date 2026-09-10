@@ -1867,3 +1867,47 @@ mostrar el formulario de confirmación), y si el DNI ya existe se
 muestra un modal de bloqueo con todos los datos leídos y el nombre de
 la ficha ya existente -- al cerrarlo, se cierra también el modal de
 alta por completo, nunca dejando avanzar con esa persona.
+
+---
+
+## CANDADO DE DEPENDENCIAS -- NUEVO CANAL 100% GITHUB ACTIONS (S100, misma sesión)
+
+Al añadir `google-cloud-vision`, Miguel Ángel frenó explícitamente la
+vía que se estaba siguiendo (compilar `pip-compile` a mano en la
+consola de PythonAnywhere), citando el incidente real ya documentado
+en el anexo H23 (S023): esa compilación deja `requirements.txt`
+modificado sin comitear en el árbol de trabajo del servidor, lo que
+bloquea el siguiente `git pull` automático de `deploy.yml`. Verbatim:
+*"ojo con las compilaciones a mano [...] lo suyo es que lo hagamos por
+el método normal que hacemos siempre, que es usando GitHub Actions."*
+
+Primer intento (descartado): compilar el candado en el workspace del
+modelo. Detectado en la propia sesión como incorrecto -- perdió en
+silencio la directiva `--find-links /usr/share/pip-wheels`, específica
+del `pip.conf` real de PythonAnywhere, confirmando exactamente lo que
+ya decía `com-environment-management` sección 3.4 ("el candado se
+compila SIEMPRE en la plataforma de destino, nunca en el workspace de
+Claude").
+
+**Solución real, construida en esta sesión:** workflow nuevo,
+`.github/workflows/compile-requirements.yml`. Se dispara solo cuando
+`requirements.in` cambia (o manualmente, `workflow_dispatch`).
+Compila de verdad en PythonAnywhere vía SSH (mismo mecanismo que ya
+usa `deploy.yml`), pero **resetea el árbol de trabajo del servidor a
+su estado comiteado en la misma sesión SSH** (`git checkout --
+requirements.txt` tras capturar el resultado) -- nunca deja una
+modificación local suelta. El propio job de GitHub Actions (no el
+servidor) comitea y pushea el `requirements.txt` recompilado de
+vuelta al repositorio. Ese push dispara `deploy.yml` con normalidad.
+
+`deploy.yml` gana un paso nuevo, `pip-sync requirements.txt`, justo
+tras el `git pull` y antes de `migrate`/`collectstatic` -- así
+cualquier dependencia nueva declarada se instala sola en cada
+despliegue, sin ningún comando suelto en la consola de Miguel Ángel,
+en ningún proyecto futuro que declare una dependencia nueva.
+
+**Pendiente de la sesión: disparar el workflow una vez a mano**
+(`workflow_dispatch` desde la pestaña Actions de GitHub) porque el
+push que declaró `google-cloud-vision` en `requirements.in` ya había
+ocurrido antes de crear este workflow -- las siguientes veces se
+disparará solo.
