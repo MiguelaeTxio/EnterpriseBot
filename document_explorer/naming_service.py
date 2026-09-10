@@ -164,6 +164,42 @@ def build_filename_machine(
     )
 
 
+def build_person_folder_name(
+    first_surname: str,
+    second_surname: str,
+    given_name: str,
+) -> str:
+    """
+    Build the canonical VIRTUAL FOLDER name for a `PersonIdentity`
+    (H31, S99 -- new PERSONAL/ACTIVOS|INACTIVOS structure). Reuses the
+    same `_sanitize_token` normalisation as the filename builders below
+    (accents stripped, uppercase, non-alphanumeric collapsed to a
+    single underscore) so a person's folder name and their document
+    filenames are built from the exact same rule -- never two
+    divergent normalisations of the same three fields. An empty
+    `second_surname` is omitted, same convention as
+    `build_filename_personal`.
+
+    ---
+
+    Construye el nombre de CARPETA VIRTUAL canónico de una
+    `PersonIdentity` (H31, S99 -- nueva estructura
+    PERSONAL/ACTIVOS|INACTIVOS). Reutiliza la misma normalización
+    `_sanitize_token` que los constructores de nombre de archivo de
+    abajo (acentos fuera, mayúsculas, todo lo que no sea alfanumérico
+    colapsado a un único guion bajo) para que el nombre de carpeta de
+    una persona y sus nombres de archivo salgan siempre de la misma
+    regla -- nunca dos normalizaciones distintas de los mismos tres
+    campos. Un `second_surname` vacío se omite, misma convención que
+    `build_filename_personal`.
+    """
+    tokens = [
+        _sanitize_token(part)
+        for part in (first_surname, second_surname, given_name)
+    ]
+    return "_".join(token for token in tokens if token)
+
+
 def build_filename_personal(
     first_surname: str,
     second_surname: str,
