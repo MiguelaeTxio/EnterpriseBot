@@ -38,7 +38,14 @@ from ai_services.gemini_rate_limiter import acquire_gemini_slot
 logger = logging.getLogger(__name__)
 
 _MAX_GEMINI_ATTEMPTS = 3
-_RETRY_DELAY_SECONDS = 60
+# H31 (S100), incidente real: 60s (heredado de classification_service,
+# donde no importa porque corre en segundo plano/lote) generaba
+# esperas de varios minutos en un modal SÍNCRONO -- el supervisor
+# espera en vivo, y con 15 documentos procesados uno a uno, dos o tres
+# reintentos de 60s se acumulan sin que nada lo explique en pantalla.
+# 5s basta para que Vertex AI se recupere de un 429/504 transitorio
+# sin convertir la espera en minutos.
+_RETRY_DELAY_SECONDS = 5
 
 # Vocabulario cerrado real para el paquete típico de alta -- verbatim
 # Miguel Ángel: "dame el DNI, dame el contrato en principio [...] pero

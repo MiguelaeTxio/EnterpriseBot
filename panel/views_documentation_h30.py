@@ -1301,6 +1301,8 @@ class PersonalIntakeExtractView(DocsUploadAccessMixin, View):
     """
 
     def post(self, request):
+        import concurrent.futures
+
         files = request.FILES.getlist("documents")
         if not files:
             return JsonResponse(
@@ -1308,16 +1310,39 @@ class PersonalIntakeExtractView(DocsUploadAccessMixin, View):
                 status=400,
             )
 
+        # H31 (S100), incidente real: procesar los documentos uno a
+        # uno convertía el tiempo total en la SUMA de los tiempos de
+        # cada uno -- con 15 documentos y algún 429/504 transitorio de
+        # Vertex AI en el camino (reintento real, ver
+        # personal_intake_service._RETRY_DELAY_SECONDS), la espera en
+        # el modal llegó a acercarse a los 3 minutos. Las llamadas son
+        # de red (Cloud Vision + Gemini), no de CPU, así que
+        # paralelizarlas con hilos es seguro (el GIL no bloquea E/S) y
+        # el limitador de tasa compartido (`acquire_gemini_slot`, con
+        # su propio `threading.Lock`) ya está pensado para que varias
+        # llamadas concurrentes lo respeten sin pisarse. El tiempo
+        # total pasa a ser el del documento más lento, no la suma de
+        # todos.
+        file_bytes = [(f.name, f.content_type, f.read()) for f in files]
+        results_by_index = [None] * len(file_bytes)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
+            futures = {
+                pool.submit(
+                    personal_intake_service.extract_one_document,
+                    data, content_type or "application/octet-stream",
+                    filename=name,
+                ): idx
+                for idx, (name, content_type, data) in enumerate(file_bytes)
+            }
+            for future in concurrent.futures.as_completed(futures):
+                results_by_index[futures[future]] = future.result()
+
         extractions = []
         per_file = []
-        for f in files:
-            content_type = f.content_type or "application/octet-stream"
-            result = personal_intake_service.extract_one_document(
-                f.read(), content_type, filename=f.name,
-            )
+        for (name, _content_type, _data), result in zip(file_bytes, results_by_index):
             extractions.append(result)
             per_file.append({
-                "filename": f.name,
+                "filename": name,
                 "document_type_code": result.get("document_type_code", "DESCONOCIDO"),
                 "confidence": result.get("confidence", ""),
                 "expiry_hint": result.get("dni_expiry_hint", ""),
