@@ -375,10 +375,23 @@ no aceptan flags ni variables de entorno).
     proceso cada vez, directo en la sesión SSH. Si se corta por
     inactividad, reconectar y relanzar el mismo comando (sin pérdida
     real, ver más abajo).
-  - `PEE=PC` (Git Bash/PowerShell): usar `tmux` con normalidad cuando
-    haga falta, sobre todo para correr varios procesos/instancias en
-    paralelo -- ahí sí hay visibilidad real del terminal para
-    seguirlo.
+  - `PEE=PC` (Git Bash/PowerShell): **REVOCADO EN S98.** Este párrafo
+    autorizaba `tmux` con normalidad en PC. Miguel Ángel pidió
+    explícitamente dejar de usarlo también aquí, tras una sesión
+    (S97) con fallos encadenados por no seguir la documentación al
+    pie de la letra -- decisión de reducir superficie de error, no un
+    incidente técnico nuevo de `tmux` en sí. **Regla vigente desde
+    S98, sin excepción por entorno:** para varios procesos en
+    paralelo (varios shards/VMs), abrir una ventana de
+    PowerShell/consola nueva por proceso y conectar con
+    `gcloud compute ssh` otra vez desde ahí -- exactamente el mismo
+    mecanismo que ya resolvía "varias ventanas" para Android más
+    abajo en este archivo (sección "Incidente real 2"), aplicado
+    ahora también a PC. Ningún script propio necesita lanzarse dentro
+    de una sesión `tmux` para sobrevivir a un corte -- si hace falta
+    resistir una desconexión, la persistencia real la da el propio
+    patrón de log a fichero con `.flush()` (`com-standards` sección
+    0bis), no `tmux attach`.
 - **Python:** el binario se llama `python3` en esta VM, **no**
   `python` (Ubuntu 24.04 no tiene el alias `python-is-python3`
   instalado). Usar siempre `python3 nombre_script.py`.
