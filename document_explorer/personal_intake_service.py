@@ -70,6 +70,9 @@ _RESPONSE_SCHEMA = {
         "dni_hint": {"type": "string"},
         "birth_date_hint": {"type": "string"},
         "dni_expiry_hint": {"type": "string"},
+        "address_hint": {"type": "string"},
+        "city_hint": {"type": "string"},
+        "province_hint": {"type": "string"},
         "employer_company_hint": {"type": "string"},
         "hire_date_hint": {"type": "string"},
     },
@@ -77,6 +80,7 @@ _RESPONSE_SCHEMA = {
         "document_type_code", "confidence", "reasoning",
         "first_surname_hint", "second_surname_hint", "given_name_hint",
         "dni_hint", "birth_date_hint", "dni_expiry_hint",
+        "address_hint", "city_hint", "province_hint",
         "employer_company_hint", "hire_date_hint",
     ],
 }
@@ -93,8 +97,10 @@ reverso), CONTRATO (contrato laboral), RECONOCIMIENTO_MEDICO \
 2. Extrae, cuando el documento los contenga de forma legible:
    - Si es un DNI: primer apellido, segundo apellido, nombre, el \
 número de DNI/NIE tal cual aparece (incluida la letra final), la \
-fecha de nacimiento, y la fecha de caducidad/validez del propio \
-documento (formato AAAA-MM-DD en ambos casos).
+fecha de nacimiento, la fecha de caducidad/validez del propio \
+documento (formato AAAA-MM-DD en ambos casos), y -- si el reverso \
+trae el domicilio -- la dirección (calle y número), la población y \
+la provincia, cada una en su propio campo, tal cual aparecen.
    - Si es un CONTRATO laboral: el nombre de la empresa empleadora \
 real (tal cual aparece, sin normalizar), y la fecha de inicio/alta \
 en la empresa (formato AAAA-MM-DD).
@@ -200,8 +206,10 @@ reverso), CONTRATO (contrato laboral), RECONOCIMIENTO_MEDICO \
 2. Extrae, cuando el texto los contenga de forma reconocible:
    - Si es un DNI: primer apellido, segundo apellido, nombre, el \
 número de DNI/NIE tal cual aparece (incluida la letra final), la \
-fecha de nacimiento, y la fecha de caducidad/validez del propio \
-documento (formato AAAA-MM-DD en ambos casos).
+fecha de nacimiento, la fecha de caducidad/validez del propio \
+documento (formato AAAA-MM-DD en ambos casos), y -- si el reverso \
+trae el domicilio -- la dirección (calle y número), la población y \
+la provincia, cada una en su propio campo, tal cual aparecen.
    - Si es un CONTRATO laboral: el nombre de la empresa empleadora \
 real (tal cual aparece, sin normalizar), y la fecha de inicio/alta \
 en la empresa (formato AAAA-MM-DD).
@@ -381,6 +389,7 @@ def merge_person_draft(extractions: list) -> dict:
     draft = {
         "dni": "", "first_surname": "", "second_surname": "",
         "given_name": "", "birth_date": "",
+        "address_street": "", "city": "", "province": "",
         "employer_company": "", "hire_date": "",
     }
     warnings = []
@@ -408,6 +417,12 @@ def merge_person_draft(extractions: list) -> dict:
             draft["given_name"] = result["given_name_hint"]
         if not draft["birth_date"] and result.get("birth_date_hint"):
             draft["birth_date"] = result["birth_date_hint"]
+        if not draft["address_street"] and result.get("address_hint"):
+            draft["address_street"] = result["address_hint"]
+        if not draft["city"] and result.get("city_hint"):
+            draft["city"] = result["city_hint"]
+        if not draft["province"] and result.get("province_hint"):
+            draft["province"] = result["province_hint"]
         if not draft["employer_company"] and result.get("employer_company_hint"):
             draft["employer_company"] = normalize_employer_company(
                 result["employer_company_hint"],

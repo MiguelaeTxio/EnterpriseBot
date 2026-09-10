@@ -461,7 +461,7 @@ modal de alta por completo, nunca dando pie a seguir con esta persona).
             }
             perFileTypes = data.per_file.map((pf) => pf.document_type_code);
             perFileExpiryHints = data.per_file.map((pf) => pf.expiry_hint || '');
-            for (const field of ['dni', 'first_surname', 'second_surname', 'given_name', 'birth_date', 'employer_company', 'hire_date']) {
+            for (const field of ['dni', 'first_surname', 'second_surname', 'given_name', 'birth_date', 'address_street', 'city', 'province', 'employer_company', 'hire_date']) {
                 if (draft[field]) { form.elements[field].value = draft[field]; }
             }
             if (data.warnings && data.warnings.length) {
