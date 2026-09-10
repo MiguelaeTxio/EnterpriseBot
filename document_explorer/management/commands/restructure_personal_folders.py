@@ -5,15 +5,25 @@ dominio PERSONAL para que refleje la clasificacion real de BD en vez
 de la organizacion historica heredada del cubo. Instruccion explicita
 de Miguel Angel al cierre de S98.
 
-Estructura nueva, verbatim del anexo H31:
-- DOC. PERSONAL/PERSONAL/ACTIVOS/{PRIMER_APELLIDO}_{SEGUNDO_APELLIDO}_
-  {NOMBRE}/ -- un PersonIdentity real por carpeta, is_active_employee
-  =True, con toda su documentacion dentro.
+Estructura nueva, verbatim del anexo H31, corregida en la misma
+sesion (S99) tras feedback explicito de Miguel Angel sobre ACTIVOS:
+- DOC. PERSONAL/PERSONAL/ACTIVOS/{EMPRESA}/{PRIMER_APELLIDO}_
+  {SEGUNDO_APELLIDO}_{NOMBRE}/ -- is_active_employee=True, subdividido
+  por empresa real (`PersonIdentity.employer_company`, refrescado
+  desde el Excel real via `import_worker_machine_excel`, NUNCA
+  fusionando variantes de texto -- "TRANSGRUAL SL" y "TRANSGRUAL
+  S.L." son carpetas distintas a proposito, decision explicita de
+  Miguel Angel: la normalizacion real vive en el Excel, no se inventa
+  aqui). Caso especial confirmado por Miguel Angel: la familia
+  ALVAREZ DIAZ (5 personas, dueños de la empresa, sin
+  employer_company en el Excel porque no son plantilla) va a
+  `GERENCIA` en vez de a una carpeta de empresa.
 - DOC. PERSONAL/PERSONAL/INACTIVOS/{...}/ -- mismo criterio para
-  is_active_employee=False. Confirmado con datos reales (Comando S,
-  S99): 0 PersonIdentity en is_active_employee=None sobre 229 totales
-  (80 activos, 149 inactivos) -- la regla por defecto de la hoja de
-  ruta para el caso None no aplica, no hay ningun caso real.
+  is_active_employee=False, SIN subdivision por empresa -- decision
+  explicita de Miguel Angel ("Sólo a ACTIVOS"). Confirmado con datos
+  reales (Comando S, S99): 0 PersonIdentity en is_active_employee=
+  None sobre 229 totales -- la regla por defecto de la hoja de ruta
+  para el caso None no aplica, no hay ningun caso real.
 - DOC. PERSONAL/PERSONAL/EPIS/ -- carpeta unica y compartida (no una
   por persona) para las fichas tecnicas de EPI reales
   (DocumentTypeCatalog.code == "FICHA_TECNICA_EPI"), confirmadas por
@@ -21,7 +31,8 @@ Estructura nueva, verbatim del anexo H31:
   transaccional (eso ya vive en EpiDelivery).
 
 El nombre de carpeta de cada persona se construye con
-`naming_service.build_person_folder_name()` (misma normalizacion --
+`naming_service.build_person_folder_name()`, y el de cada empresa con
+`naming_service.build_company_folder_name()` (misma normalizacion --
 acentos fuera, mayusculas, guion bajo -- que los nombres de archivo
 PERSONAL, para que carpeta y archivo salgan siempre de la misma
 regla).
@@ -52,11 +63,11 @@ datos, con renombrado ordinal automatico si dos documentos de la
 misma persona colisionan de nombre en el destino.
 
 Colisiones ENTRE PERSONAS (dos PersonIdentity distintas cuyo nombre
-canonico de carpeta coincidiria en la misma categoria) se resuelven
-con un ordinal propio de este comando (`_2`, `_3`... anadido al
-nombre de carpeta, orden estable por DNI) -- nunca visto todavia
-sobre datos reales a fecha de escribir esto, pero el codigo no asume
-que no pueda pasar.
+canonico de carpeta coincidiria en la misma categoria/empresa) se
+resuelven con un ordinal propio de este comando (`_2`, `_3`...
+anadido al nombre de carpeta, orden estable por DNI) -- nunca visto
+todavia sobre datos reales a fecha de escribir esto, pero el codigo
+no asume que no pueda pasar.
 
 DRY-RUN POR DEFECTO. Con --apply escribe y mueve de verdad. En
 dry-run nunca se llama a `move_entries()` (esa funcion siempre
@@ -84,6 +95,23 @@ INACTIVOS_ROOT = "%s/INACTIVOS" % PERSONAL_ROOT
 EPIS_FOLDER = "%s/EPIS" % PERSONAL_ROOT
 FICHA_TECNICA_EPI_CODE = "FICHA_TECNICA_EPI"
 
+# H31 (S99). Familia propietaria confirmada por Miguel Angel --
+# ACTIVOS/GERENCIA en vez de una carpeta de empresa, precisamente
+# porque no son plantilla y por eso el Excel nunca les rellena
+# employer_company. Match por apellidos exactos (normalizados),
+# nunca por lista fija de DNI -- cualquier PersonIdentity futura con
+# estos mismos dos apellidos entra en la misma regla, sin tocar este
+# comando.
+GERENCIA_FOLDER_NAME = "GERENCIA"
+GERENCIA_FIRST_SURNAME = "ALVAREZ"
+GERENCIA_SECOND_SURNAME = "DIAZ"
+
+# H31 (S99). Fallback defensivo -- no deberia ocurrir tras resolver
+# los 5 de GERENCIA y refrescar employer_company desde el Excel real,
+# pero el comando nunca debe fallar ni inventar una empresa si algun
+# activo futuro llega sin ninguna de las dos condiciones resueltas.
+SIN_EMPRESA_FOLDER_NAME = "SIN_EMPRESA"
+
 # com-standards, seccion 0bis: N=25 o el 5% del total, lo que sea
 # menor. Con 229 personas, el 5% real es el valor menor.
 HEARTBEAT_EVERY = 10
@@ -92,9 +120,9 @@ HEARTBEAT_EVERY = 10
 class Command(BaseCommand):
     help = (
         "H31 (S99) -- reorganiza las carpetas virtuales de PERSONAL "
-        "a ACTIVOS/INACTIVOS/EPIS segun clasificacion real de BD. "
-        "Dry-run por defecto, --apply para escribir y mover de "
-        "verdad."
+        "a ACTIVOS/{EMPRESA|GERENCIA}, INACTIVOS y EPIS segun "
+        "clasificacion real de BD. Dry-run por defecto, --apply para "
+        "escribir y mover de verdad."
     )
 
     def add_arguments(self, parser):
@@ -108,6 +136,31 @@ class Command(BaseCommand):
             identity.first_surname, identity.second_surname,
             identity.given_name,
         )
+
+    def _category_root_for(self, identity):
+        if not identity.is_active_employee:
+            return INACTIVOS_ROOT
+
+        is_gerencia = (
+            identity.first_surname.strip().upper() == GERENCIA_FIRST_SURNAME
+            and identity.second_surname.strip().upper()
+            == GERENCIA_SECOND_SURNAME
+        )
+        if is_gerencia:
+            return "%s/%s" % (ACTIVOS_ROOT, GERENCIA_FOLDER_NAME)
+
+        if identity.employer_company:
+            empresa_folder = naming_service.build_company_folder_name(
+                identity.employer_company,
+            )
+            return "%s/%s" % (ACTIVOS_ROOT, empresa_folder)
+
+        self.stdout.write(
+            "AVISO: dni=%s activo sin employer_company y sin coincidir "
+            "con GERENCIA -- asignado a %s/%s, revisar dato real."
+            % (identity.dni, ACTIVOS_ROOT, SIN_EMPRESA_FOLDER_NAME)
+        )
+        return "%s/%s" % (ACTIVOS_ROOT, SIN_EMPRESA_FOLDER_NAME)
 
     def handle(self, *args, **options):
         apply_changes = options["apply"]
@@ -142,10 +195,7 @@ class Command(BaseCommand):
                 )
                 continue
 
-            category_root = (
-                ACTIVOS_ROOT if identity.is_active_employee
-                else INACTIVOS_ROOT
-            )
+            category_root = self._category_root_for(identity)
             base_name = self._folder_name_for(identity)
             final_name = base_name
             ordinal = 2

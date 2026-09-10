@@ -200,6 +200,38 @@ def build_person_folder_name(
     return "_".join(token for token in tokens if token)
 
 
+def build_company_folder_name(employer_company: str) -> str:
+    """
+    Build the canonical VIRTUAL FOLDER name for an employer company
+    text (H31, S99 -- ACTIVOS subdivided by real employer, per Miguel
+    Angel: "no hemos normalizado las empresas [...] la normalizacion
+    de los nombres de empresa esta en el Excel"). Reuses the same
+    `_sanitize_token` normalisation as every other folder/filename
+    builder here -- deliberately does NOT merge known text variants of
+    the same real company ("TRANSGRUAL SL" vs "TRANSGRUAL S.L.");
+    Miguel Angel's own correction is to trust `PersonIdentity.
+    employer_company` verbatim, refreshed straight from the Excel's
+    own EMPRESA column per worker (`import_worker_machine_excel`),
+    never a merge invented here.
+
+    ---
+
+    Construye el nombre de CARPETA VIRTUAL canónico para el texto de
+    empresa empleadora (H31, S99 -- ACTIVOS subdividido por empresa
+    real, según Miguel Ángel: "no hemos normalizado las empresas [...]
+    la normalización de los nombres de empresa está en el Excel").
+    Reutiliza la misma normalización `_sanitize_token` que el resto de
+    constructores de carpeta/archivo de este módulo -- deliberadamente
+    NO fusiona variantes de texto conocidas de la misma empresa real
+    ("TRANSGRUAL SL" vs "TRANSGRUAL S.L."); la corrección explícita de
+    Miguel Ángel es confiar en `PersonIdentity.employer_company` tal
+    cual, refrescado directamente desde la columna EMPRESA del Excel
+    por trabajador (`import_worker_machine_excel`), nunca una fusión
+    inventada aquí.
+    """
+    return _sanitize_token(employer_company)
+
+
 def build_filename_personal(
     first_surname: str,
     second_surname: str,
