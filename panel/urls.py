@@ -41,6 +41,7 @@ from panel.views_documentation_h30 import (
     PersonalDetailView,
     PersonalDocumentTypeHistoryView,
     PersonalEpiItemHistoryView,
+    PersonalCreateView,
     PersonalListFragmentView,
     PersonalNotificationMassSendView,
     PersonalNotificationSendView,
@@ -410,6 +411,8 @@ urlpatterns = [
     path("documentacion/maquinaria/", MachineListFragmentView.as_view(), name="documentation_machine_list"),
     path("documentacion/maquinaria/<int:pk>/", MachineDetailView.as_view(), name="documentation_machine_detail"),
     path("documentacion/personal/", PersonalListFragmentView.as_view(), name="documentation_personal_list"),
+    # H31 (S100) Bloque 1: alta de trabajador nuevo desde el panel.
+    path("documentacion/personal/alta/", PersonalCreateView.as_view(), name="documentation_personal_create"),
     # H30 (S50): endpoint de solo-resultados -- el formulario de busqueda
     # nunca se vuelve a pintar tras la carga inicial (ver
     # _personal_search_form.html sobre el bug que esto corrige).

@@ -1261,8 +1261,144 @@ class EpiIndividualDeliveryView(DocsUploadAccessMixin, View):
         })
 
 
+class PersonalCreateView(DocsUploadAccessMixin, View):
+    """
+    H31 (S100), Bloque 1 de la hoja de ruta reescrita en S99 -- alta
+    de un trabajador nuevo desde el panel, primer bloque funcional
+    tras resolver las 4 preguntas heredadas de H33 (ver anexo H31,
+    sección "RESOLUCIÓN DE LAS 4 PREGUNTAS..."). Crea el
+    `PersonIdentity` real que hasta ahora no existía -- confirmado
+    contra el código real (`import_worker_machine_excel.py`, línea
+    `person = PersonIdentity.objects.get(dni=dni)`) que la importación
+    del Excel NUNCA crea filas nuevas, solo actualiza las que ya
+    existen por DNI: el hueco de "cómo nace un PersonIdentity que
+    todavía no está en el Excel" es exactamente el que cubre esta
+    vista.
+
+    Esta vista SOLO crea la ficha (datos + carpeta virtual). La subida
+    síncrona de la documentación inicial (ver corrección de Miguel
+    Ángel en el anexo, preguntas 3/4: sin H28, sin cuarentena, revisión
+    del supervisor en el propio instante de la subida) es un bloque de
+    trabajo aparte, todavía por construir -- esta vista deja a la
+    persona ya creada, con su carpeta real lista, para que esa subida
+    tenga dónde aterrizar.
+
+    `is_active_employee=True` siempre -- esta vía de alta es,
+    por definición, para personal activo (ver anexo H31, alcance
+    "SOLO personal ACTIVO"). `folder_path` se calcula con la misma
+    regla real ACTIVOS/{EMPRESA|GERENCIA|SIN_EMPRESA} que usa
+    `restructure_personal_folders` (S99), compartida ahora vía
+    `naming_service.build_person_category_root()` para no duplicarla
+    (S100).
+    """
+
+    REQUIRED_FIELDS = ("dni", "first_surname", "given_name")
+    OPTIONAL_TEXT_FIELDS = (
+        "second_surname", "employer_company", "phone", "email",
+        "address_street", "postal_code", "city", "province",
+    )
+    OPTIONAL_DATE_FIELDS = ("birth_date", "hire_date")
+
+    @staticmethod
+    def _normalize_dni(raw_dni):
+        return (
+            (raw_dni or "").strip().upper()
+            .replace(" ", "").replace("-", "")
+        )
+
+    def post(self, request):
+        data = {
+            field: request.POST.get(field, "").strip()
+            for field in self.REQUIRED_FIELDS + self.OPTIONAL_TEXT_FIELDS
+        }
+        data["dni"] = self._normalize_dni(data["dni"])
+
+        missing = [f for f in self.REQUIRED_FIELDS if not data[f]]
+        if missing:
+            return JsonResponse(
+                {
+                    "ok": False,
+                    "error": "Faltan campos obligatorios: %s." % ", ".join(missing),
+                },
+                status=400,
+            )
+
+        if PersonIdentity.objects.filter(dni=data["dni"]).exists():
+            return JsonResponse(
+                {
+                    "ok": False,
+                    "error": "Ya existe una persona con el DNI/NIE %s." % data["dni"],
+                },
+                status=400,
+            )
+
+        date_values = {}
+        for field in self.OPTIONAL_DATE_FIELDS:
+            raw_value = request.POST.get(field, "").strip()
+            if not raw_value:
+                date_values[field] = None
+                continue
+            try:
+                year, month, day = (int(x) for x in raw_value.split("-"))
+                date_values[field] = date(year, month, day)
+            except ValueError:
+                return JsonResponse(
+                    {"ok": False, "error": "Fecha con formato inválido en %s." % field},
+                    status=400,
+                )
+        # H31 (S100): fecha de alta por defecto = hoy si el supervisor
+        # no la escribe -- un alta de trabajador siempre tiene una
+        # fecha real de entrada, nunca queda en blanco por omisión.
+        if date_values["hire_date"] is None:
+            date_values["hire_date"] = timezone.now().date()
+
+        folder_root = naming_service.build_person_category_root(
+            data["first_surname"], data["second_surname"],
+            data["employer_company"], True,
+        )
+        folder_name = naming_service.build_person_folder_name(
+            data["first_surname"], data["second_surname"], data["given_name"],
+        )
+        folder_path = "%s/%s" % (folder_root, folder_name)
+
+        person = PersonIdentity(
+            dni=data["dni"],
+            first_surname=data["first_surname"],
+            second_surname=data["second_surname"],
+            given_name=data["given_name"],
+            is_active_employee=True,
+            employer_company=data["employer_company"],
+            phone=data["phone"],
+            email=data["email"],
+            address_street=data["address_street"],
+            postal_code=data["postal_code"],
+            city=data["city"],
+            province=data["province"],
+            birth_date=date_values["birth_date"],
+            hire_date=date_values["hire_date"],
+            folder_path=folder_path,
+        )
+        try:
+            person.full_clean()
+        except ValidationError as exc:
+            return JsonResponse(
+                {"ok": False, "error": "; ".join(exc.messages)}, status=400,
+            )
+        person.save()
+        ensure_folder_chain(BUCKET, folder_path)
+
+        return JsonResponse({
+            "ok": True,
+            "person_id": person.pk,
+            "redirect_url": reverse(
+                "panel:documentation_personal_detail", kwargs={"pk": person.pk},
+            ),
+        })
+
+
 class PersonalUpdateView(DocsUploadAccessMixin, View):
     """
+
     H31 (S74, ampliado S76). POST: edita los campos reales de
     PersonIdentity que tiene sentido de negocio corregir a mano desde
     el panel -- datos personales/contacto/dirección + fecha de alta/

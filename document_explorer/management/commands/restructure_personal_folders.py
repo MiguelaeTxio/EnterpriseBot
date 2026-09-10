@@ -88,29 +88,13 @@ from document_explorer.buckets import PRIMARY_BUCKET
 from document_explorer.models import DocumentIndexEntry, PersonIdentity
 from document_explorer.move_service import move_entries, move_entry
 from document_explorer import naming_service
+from document_explorer.naming_service import (
+    ACTIVOS_ROOT, EPIS_FOLDER, GERENCIA_FIRST_SURNAME, GERENCIA_FOLDER_NAME,
+    GERENCIA_SECOND_SURNAME, INACTIVOS_ROOT, PERSONAL_ROOT,
+    SIN_EMPRESA_FOLDER_NAME, build_person_category_root,
+)
 
-PERSONAL_ROOT = "DOC. PERSONAL/PERSONAL"
-ACTIVOS_ROOT = "%s/ACTIVOS" % PERSONAL_ROOT
-INACTIVOS_ROOT = "%s/INACTIVOS" % PERSONAL_ROOT
-EPIS_FOLDER = "%s/EPIS" % PERSONAL_ROOT
 FICHA_TECNICA_EPI_CODE = "FICHA_TECNICA_EPI"
-
-# H31 (S99). Familia propietaria confirmada por Miguel Angel --
-# ACTIVOS/GERENCIA en vez de una carpeta de empresa, precisamente
-# porque no son plantilla y por eso el Excel nunca les rellena
-# employer_company. Match por apellidos exactos (normalizados),
-# nunca por lista fija de DNI -- cualquier PersonIdentity futura con
-# estos mismos dos apellidos entra en la misma regla, sin tocar este
-# comando.
-GERENCIA_FOLDER_NAME = "GERENCIA"
-GERENCIA_FIRST_SURNAME = "ALVAREZ"
-GERENCIA_SECOND_SURNAME = "DIAZ"
-
-# H31 (S99). Fallback defensivo -- no deberia ocurrir tras resolver
-# los 5 de GERENCIA y refrescar employer_company desde el Excel real,
-# pero el comando nunca debe fallar ni inventar una empresa si algun
-# activo futuro llega sin ninguna de las dos condiciones resueltas.
-SIN_EMPRESA_FOLDER_NAME = "SIN_EMPRESA"
 
 # com-standards, seccion 0bis: N=25 o el 5% del total, lo que sea
 # menor. Con 229 personas, el 5% real es el valor menor.
@@ -138,29 +122,26 @@ class Command(BaseCommand):
         )
 
     def _category_root_for(self, identity):
-        if not identity.is_active_employee:
-            return INACTIVOS_ROOT
-
-        is_gerencia = (
-            identity.first_surname.strip().upper() == GERENCIA_FIRST_SURNAME
-            and identity.second_surname.strip().upper()
-            == GERENCIA_SECOND_SURNAME
+        root = build_person_category_root(
+            identity.first_surname, identity.second_surname,
+            identity.employer_company, identity.is_active_employee,
         )
-        if is_gerencia:
-            return "%s/%s" % (ACTIVOS_ROOT, GERENCIA_FOLDER_NAME)
-
-        if identity.employer_company:
-            empresa_folder = naming_service.build_company_folder_name(
-                identity.employer_company,
+        if (
+            identity.is_active_employee
+            and not identity.employer_company
+            and root == "%s/%s" % (ACTIVOS_ROOT, SIN_EMPRESA_FOLDER_NAME)
+            and not (
+                identity.first_surname.strip().upper() == GERENCIA_FIRST_SURNAME
+                and identity.second_surname.strip().upper()
+                == GERENCIA_SECOND_SURNAME
             )
-            return "%s/%s" % (ACTIVOS_ROOT, empresa_folder)
-
-        self.stdout.write(
-            "AVISO: dni=%s activo sin employer_company y sin coincidir "
-            "con GERENCIA -- asignado a %s/%s, revisar dato real."
-            % (identity.dni, ACTIVOS_ROOT, SIN_EMPRESA_FOLDER_NAME)
-        )
-        return "%s/%s" % (ACTIVOS_ROOT, SIN_EMPRESA_FOLDER_NAME)
+        ):
+            self.stdout.write(
+                "AVISO: dni=%s activo sin employer_company y sin coincidir "
+                "con GERENCIA -- asignado a %s, revisar dato real."
+                % (identity.dni, root)
+            )
+        return root
 
     def handle(self, *args, **options):
         apply_changes = options["apply"]

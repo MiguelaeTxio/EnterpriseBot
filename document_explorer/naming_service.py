@@ -232,6 +232,69 @@ def build_company_folder_name(employer_company: str) -> str:
     return _sanitize_token(employer_company)
 
 
+# ----------------------------------------------------------------------
+# H31 (S99). Estructura real de carpetas virtuales de PERSONAL --
+# ACTIVOS/{EMPRESA|GERENCIA|SIN_EMPRESA}, INACTIVOS, EPIS. Extraído a
+# este módulo en S100 desde `restructure_personal_folders.py` (donde
+# vivían como constantes/método de la Command) porque una segunda vía
+# de escritura -- el alta de trabajador nuevo desde el panel (H31,
+# S100) -- necesita la misma regla exacta de "en qué carpeta cae un
+# PersonIdentity activo" sin duplicarla (principio DRY, doc-master
+# sección 4.1.1). El comando de reorganización pasa a importar estas
+# mismas constantes/función en vez de definirlas por su cuenta.
+# ----------------------------------------------------------------------
+PERSONAL_ROOT = "DOC. PERSONAL/PERSONAL"
+ACTIVOS_ROOT = "%s/ACTIVOS" % PERSONAL_ROOT
+INACTIVOS_ROOT = "%s/INACTIVOS" % PERSONAL_ROOT
+EPIS_FOLDER = "%s/EPIS" % PERSONAL_ROOT
+
+# Familia propietaria confirmada por Miguel Angel -- ACTIVOS/GERENCIA
+# en vez de una carpeta de empresa, precisamente porque no son
+# plantilla y por eso el Excel nunca les rellena employer_company.
+# Match por apellidos exactos (normalizados), nunca por lista fija de
+# DNI -- cualquier PersonIdentity futura con estos mismos dos
+# apellidos entra en la misma regla.
+GERENCIA_FOLDER_NAME = "GERENCIA"
+GERENCIA_FIRST_SURNAME = "ALVAREZ"
+GERENCIA_SECOND_SURNAME = "DIAZ"
+
+# Fallback defensivo -- no debería ocurrir tras resolver los 5 de
+# GERENCIA y refrescar employer_company desde el Excel real, pero la
+# regla nunca debe fallar ni inventar una empresa si algún activo
+# llega sin ninguna de las dos condiciones resuelta.
+SIN_EMPRESA_FOLDER_NAME = "SIN_EMPRESA"
+
+
+def build_person_category_root(
+    first_surname: str,
+    second_surname: str,
+    employer_company: str,
+    is_active_employee,
+) -> str:
+    """
+    Resuelve la carpeta virtual raíz (sin el nombre de la persona
+    todavía) donde debe vivir un `PersonIdentity` según la estructura
+    ACTIVOS/{EMPRESA|GERENCIA|SIN_EMPRESA} o INACTIVOS (H31, S99).
+    Misma regla exacta que usaba `restructure_personal_folders.
+    Command._category_root_for`, ahora compartida desde aquí.
+    """
+    if not is_active_employee:
+        return INACTIVOS_ROOT
+
+    is_gerencia = (
+        (first_surname or "").strip().upper() == GERENCIA_FIRST_SURNAME
+        and (second_surname or "").strip().upper() == GERENCIA_SECOND_SURNAME
+    )
+    if is_gerencia:
+        return "%s/%s" % (ACTIVOS_ROOT, GERENCIA_FOLDER_NAME)
+
+    if employer_company:
+        empresa_folder = build_company_folder_name(employer_company)
+        return "%s/%s" % (ACTIVOS_ROOT, empresa_folder)
+
+    return "%s/%s" % (ACTIVOS_ROOT, SIN_EMPRESA_FOLDER_NAME)
+
+
 def build_filename_personal(
     first_surname: str,
     second_surname: str,

@@ -9,7 +9,10 @@ ordenar, paginar) sustituyen SOLO el div de resultados.
 H31 (S75) punto 2: acceso al CRUD de circulares/notificaciones --
 pantalla completa aparte, no un fragmento htmx de este pane.
 {% endcomment %}
-<div class="d-flex justify-content-end mb-2">
+<div class="d-flex justify-content-end gap-2 mb-2">
+    <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#personalCreateModal">
+        <i class="bi bi-person-plus"></i> Dar de alta trabajador
+    </button>
     <a class="btn btn-sm btn-outline-secondary" href="{% url 'panel:circulars_list' %}">
         <i class="bi bi-envelope-paper"></i> Gestionar circulares
     </a>
@@ -239,5 +242,121 @@ haya al menos una persona seleccionada.
             resultEl.innerHTML = '<div class="alert alert-danger py-1 px-2 mb-0">Error de red al generar notificaciones.</div>';
         });
     });
+})();
+</script>
+
+{% comment %}
+H31 (S100), Bloque 1 -- alta de trabajador nuevo. Modal aparte, fuera
+del <script> IIFE de arriba (mismo motivo que editModeConfirmModal en
+_personal_detail.html: nada que ver con esa lógica, y así queda
+autocontenido). Solo los 3 campos obligatorios reales del modelo
+(dni, first_surname, given_name) llevan required -- el resto es
+opcional en PersonIdentity y se puede completar después desde
+PersonalUpdateView.
+{% endcomment %}
+<div class="modal fade" id="personalCreateModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form id="personalCreateForm">
+                <div class="modal-header">
+                    <h5 class="modal-title">Dar de alta trabajador</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-2">
+                        <div class="col-6">
+                            <label class="form-label small mb-0">DNI/NIE *</label>
+                            <input type="text" name="dni" class="form-control form-control-sm" required>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small mb-0">Fecha de nacimiento</label>
+                            <input type="date" name="birth_date" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-4">
+                            <label class="form-label small mb-0">Primer apellido *</label>
+                            <input type="text" name="first_surname" class="form-control form-control-sm" required>
+                        </div>
+                        <div class="col-4">
+                            <label class="form-label small mb-0">Segundo apellido</label>
+                            <input type="text" name="second_surname" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-4">
+                            <label class="form-label small mb-0">Nombre *</label>
+                            <input type="text" name="given_name" class="form-control form-control-sm" required>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small mb-0">Empresa</label>
+                            <input type="text" name="employer_company" class="form-control form-control-sm" placeholder="p.ej. GRUAS ADOLFO ALVAREZ SL">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small mb-0">Fecha de alta en la empresa</label>
+                            <input type="date" name="hire_date" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small mb-0">Teléfono</label>
+                            <input type="text" name="phone" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small mb-0">Correo electrónico</label>
+                            <input type="email" name="email" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small mb-0">Dirección</label>
+                            <input type="text" name="address_street" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-2">
+                            <label class="form-label small mb-0">C.P.</label>
+                            <input type="text" name="postal_code" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-2">
+                            <label class="form-label small mb-0">Población</label>
+                            <input type="text" name="city" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-2">
+                            <label class="form-label small mb-0">Provincia</label>
+                            <input type="text" name="province" class="form-control form-control-sm">
+                        </div>
+                    </div>
+                    <div id="personalCreateResult" class="mt-2"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Crear ficha</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<script>
+(function() {
+    function getCookie(name) {
+        const value = `; ${document.cookie}`;
+        const parts = value.split(`; ${name}=`);
+        if (parts.length === 2) return parts.pop().split(';').shift();
+    }
+
+    const form = document.getElementById('personalCreateForm');
+    const resultEl = document.getElementById('personalCreateResult');
+    form.onsubmit = function(ev) {
+        ev.preventDefault();
+        const formData = new FormData(form);
+        const submitBtn = form.querySelector('button[type="submit"]');
+        submitBtn.disabled = true;
+        resultEl.innerHTML = '';
+        fetch("{% url 'panel:documentation_personal_create' %}", {
+            method: 'POST', body: formData,
+            headers: {'X-CSRFToken': getCookie('csrftoken')},
+        }).then((r) => r.json()).then((data) => {
+            submitBtn.disabled = false;
+            if (data.ok) {
+                window.location.href = data.redirect_url;
+            } else {
+                resultEl.innerHTML = `<div class="alert alert-danger py-1 px-2 small mb-0">${data.error || 'Error al crear la ficha.'}</div>`;
+            }
+        }).catch(() => {
+            submitBtn.disabled = false;
+            resultEl.innerHTML = '<div class="alert alert-danger py-1 px-2 small mb-0">Error de red al crear la ficha.</div>';
+        });
+    };
 })();
 </script>
