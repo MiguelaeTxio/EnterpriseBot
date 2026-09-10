@@ -1352,6 +1352,21 @@ class PersonalIntakeExtractView(DocsUploadAccessMixin, View):
         merged = personal_intake_service.merge_person_draft(extractions)
         draft = merged["draft"]
 
+        # H31 (S100), incidente real: el procesamiento en paralelo de
+        # arriba puede tardar bastantes segundos sin tocar la BD para
+        # nada (todo el tiempo es red hacia Gemini/Cloud Vision). La
+        # conexión de BD que Django abrió al entrar en la vista
+        # (autenticación) se queda inactiva mientras tanto, y MySQL
+        # (con su propio `wait_timeout` real de PythonAnywhere) puede
+        # cerrarla por su cuenta antes de que se vuelva a usar aquí --
+        # error real visto en producción: `MySQLdb.OperationalError:
+        # (4031, 'The client was disconnected by the server because
+        # of inactivity...')`. `close_old_connections()` descarta esa
+        # conexión ya inválida y fuerza una reconexión limpia en la
+        # siguiente consulta, sin que el supervisor vea nada raro.
+        from django.db import close_old_connections
+        close_old_connections()
+
         # H31 (S100), incidente real de la propia sesión: Miguel Ángel
         # probó el alta con su propio DNI (ya dado de alta antes) y el
         # sistema no avisó -- dejó seguir hasta el paso de confirmación
