@@ -79,6 +79,22 @@ jobs:
         # en ningún momento, así que nunca puede bloquear el pull
         # siguiente. Idempotente: si no hay dependencias nuevas, no
         # cambia nada.
+        # ⛔ CORREGIDO EN S100, INCIDENTE REAL (mismo día): un fallo de
+        # `pip-sync` (red, resolución, lo que sea) abortaba con `set
+        # -e` TODO el resto del bloque -- incluido el `git pull` que
+        # ya se había ejecutado con éxito -- y como el siguiente paso
+        # ("Recargar la web app") solo corre `if: success()`, la
+        # recarga NUNCA se disparaba. Resultado real: el código
+        # corregido llegó al disco del servidor (confirmado con
+        # Comando S, `git log`/`grep` sobre el archivo real), pero el
+        # proceso web en memoria siguió sirviendo la versión vieja
+        # indefinidamente -- Miguel Ángel probando el mismo fix una y
+        # otra vez sin que cambiara nada, con razón. `|| { ...; }`
+        # aquí: un fallo de pip-sync se registra fuerte en el resumen
+        # pero NUNCA impide que migrate/collectstatic/reload
+        # continúen -- código nuevo sin una dependencia nueva
+        # instalada es un fallo visible (ImportError, logueado) y
+        # mucho mejor que todo el despliegue congelado en silencio.
         run: |
           set -o pipefail
           ssh -i ~/.ssh/pa_deploy_key MiguelAeTxio@ssh.pythonanywhere.com '
@@ -90,7 +106,9 @@ jobs:
             NEW_HEAD=$(git rev-parse HEAD)
             source /home/MiguelAeTxio/.virtualenvs/EnterpriseBot_venv_py312/bin/activate
             echo "--- pip-sync (dependencias) ---"
-            python -m dotenv run pip-sync requirements.txt
+            python -m dotenv run pip-sync requirements.txt || {
+              echo "⛔ pip-sync FALLO -- revisar manualmente, pero migrate/collectstatic/reload SIGUEN adelante.";
+            }
             echo "--- migrate ---"
             python -m dotenv run python manage.py migrate --noinput
             echo "--- collectstatic ---"
