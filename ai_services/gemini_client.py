@@ -68,6 +68,22 @@ DEFAULT_LOCATION = 'global'
 DEFAULT_API_VERSION = 'v1'
 
 
+def ensure_gcp_credentials() -> None:
+    """
+    Configura `GOOGLE_APPLICATION_CREDENTIALS` (Application Default
+    Credentials) a partir de `GCP_CREDENTIALS_PATH` si todavía no está
+    definida -- mismo mecanismo que ya usaba `get_gemini_client()`,
+    extraído aquí en H31/S100 para que cualquier otro cliente GCP de
+    la plataforma (Cloud Vision, Cloud Storage, etc.) lo reutilice sin
+    duplicar la línea. Idempotente -- `setdefault` no pisa un valor ya
+    presente en el proceso.
+    """
+    os.environ.setdefault(
+        'GOOGLE_APPLICATION_CREDENTIALS',
+        os.environ.get('GCP_CREDENTIALS_PATH', ''),
+    )
+
+
 def get_gemini_client(
     location: str = DEFAULT_LOCATION,
     api_version: str = DEFAULT_API_VERSION,
@@ -101,10 +117,7 @@ def get_gemini_client(
             regional específico en vez de enrutado dinámico global.
         api_version: Versión de la API REST. Por defecto 'v1' (estable).
     """
-    os.environ.setdefault(
-        'GOOGLE_APPLICATION_CREDENTIALS',
-        os.environ.get('GCP_CREDENTIALS_PATH', ''),
-    )
+    ensure_gcp_credentials()
     client = genai.Client(
         http_options=HttpOptions(api_version=api_version),
         vertexai=True,

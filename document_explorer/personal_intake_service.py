@@ -176,6 +176,66 @@ def _call_gemini_json(contents) -> dict:
     return json.loads(response.text.strip())
 
 
+def _cloud_vision_text(data: bytes, mime_type: str, filename: str) -> str:
+    """
+    OCR real vía Cloud Vision API (H31, S100) -- sustituye a Tesseract
+    local tras el aviso de Miguel Ángel: el OCR local consume CPU
+    compartida real de PythonAnywhere, con cuota diaria por cuenta, y
+    varias altas de 15-20 documentos el mismo día podrían agotarla y
+    bloquear el resto del trabajo. Cloud Vision corre en la nube de
+    Google (mismo proyecto/credenciales ya usadas para Vertex AI, vía
+    `ai_services.gemini_client.ensure_gcp_credentials()`), responde en
+    menos de un segundo por imagen, y no gasta ni un ciclo de CPU en
+    el servidor.
+
+    Imagen (jpg/jpeg/png): `text_detection()`, sincrono estándar.
+    PDF: `batch_annotate_files()` con `DOCUMENT_TEXT_DETECTION`,
+    acotado a las 2 primeras páginas -- mismo límite que ya usaba
+    `date_verification_service.ocr_pdf_to_text(max_pages=2)`, un DNI o
+    la primera página de un contrato nunca necesitan más.
+    Devuelve cadena vacía (nunca None) si no hay texto reconocible, o
+    si la extensión no está soportada -- el llamador decide el
+    fallback.
+    """
+    from google.cloud import vision
+
+    from ai_services.gemini_client import ensure_gcp_credentials
+
+    ensure_gcp_credentials()
+    client = vision.ImageAnnotatorClient()
+    name_lower = (filename or "").lower()
+
+    if name_lower.endswith((".jpg", ".jpeg", ".png")):
+        image = vision.Image(content=data)
+        response = client.text_detection(image=image)
+        if response.error.message:
+            raise RuntimeError(response.error.message)
+        return response.full_text_annotation.text or ""
+
+    if name_lower.endswith(".pdf"):
+        input_config = vision.InputConfig(
+            content=data, mime_type="application/pdf",
+        )
+        feature = vision.Feature(
+            type_=vision.Feature.Type.DOCUMENT_TEXT_DETECTION,
+        )
+        # H31 (S100): páginas 1-based en la API -- 1 y 2, mismo límite
+        # de 2 páginas que el OCR local que sustituye.
+        request = vision.AnnotateFileRequest(
+            input_config=input_config, features=[feature], pages=[1, 2],
+        )
+        response = client.batch_annotate_files(requests=[request])
+        texts = []
+        for file_response in response.responses:
+            for page_response in file_response.responses:
+                if page_response.error.message:
+                    continue
+                texts.append(page_response.full_text_annotation.text or "")
+        return "\n".join(texts)
+
+    return ""
+
+
 def extract_one_document(data: bytes, mime_type: str, filename: str = "") -> dict:
     """
     Extrae datos de UN documento subido (bytes en memoria, nunca
@@ -184,33 +244,34 @@ def extract_one_document(data: bytes, mime_type: str, filename: str = "") -> dic
     {"error": ...} si falla -- nunca lanza, el llamador decide cómo
     mostrarlo al supervisor.
 
-    REESCRITO EN S100 (misma sesión), tras queja real de Miguel Ángel
-    de que la primera versión (Gemini Vision directo sobre la imagen/
-    PDF entero) tarda demasiado para un modal síncrono. Mismo patrón
-    ya validado en producción por `date_verification_service` (H30,
-    S48): OCR local con Tesseract PRIMERO (gratis, rápido, ya corre en
-    PythonAnywhere sin VM -- `extract_text()`), Gemini solo como
-    intérprete del TEXTO ya extraído (mucho más rápido que analizar la
-    imagen/PDF entero, sin volver a mandar el archivo). La fecha de
-    nacimiento, cuando el documento trae un MRZ real de DNI/NIE
-    español, se resuelve además con `extract_dni_mrz_birthdate()` --
-    validación por dígito de control ICAO, más fiable que pedírsela a
-    Gemini, y sin coste de API en absoluto.
+    REESCRITO EN S100 (misma sesión) dos veces: primero de Gemini
+    Vision directo a OCR local (Tesseract) + Gemini de texto (Miguel
+    Ángel: "eso tarda muchísimo"); después de Tesseract local a Cloud
+    Vision API (Miguel Ángel: el OCR local consume CPU compartida real
+    de PythonAnywhere, con riesgo de agotar la cuota diaria si varios
+    trabajadores se dan de alta el mismo día con 15-20 documentos cada
+    uno). Cloud Vision (`_cloud_vision_text()`) corre en la nube de
+    Google, sin CPU local, rápido, y Gemini sigue interpretando solo
+    el TEXTO ya extraído (nunca la imagen/PDF entero -- eso es lo que
+    lo hacía lento). La fecha de nacimiento, cuando el documento trae
+    un MRZ real de DNI/NIE español, se resuelve además con
+    `extract_dni_mrz_birthdate()` (H30) sobre el propio texto --
+    validación por dígito de control ICAO, sin coste de API, funciona
+    igual sea cual sea el motor de OCR que produjo el texto.
 
-    Si el OCR local no logra extraer ningún texto (imagen ilegible, \
-extensión no soportada), cae al camino anterior -- Gemini Vision \
-directo sobre el archivo -- como último recurso, nunca se deja sin \
-leer.
+    Si Cloud Vision no logra extraer ningún texto (imagen ilegible,
+    extensión no soportada), cae al último recurso -- Gemini Vision
+    directo sobre el archivo -- nunca se deja sin leer.
     """
     from document_explorer.date_verification_service import (
-        extract_dni_mrz_birthdate, extract_text,
+        extract_dni_mrz_birthdate,
     )
     try:
-        text = extract_text(filename or "documento.pdf", data) if filename else None
+        text = _cloud_vision_text(data, mime_type, filename) if filename else ""
         if not text:
-            # Sin nombre de archivo reconocible (o extensión no
-            # soportada por extract_text) -- último recurso, Vision
-            # directo sobre el archivo, mismo camino que la v1.
+            # Cloud Vision no encontró texto (o extensión no
+            # soportada) -- último recurso, Vision directo con Gemini
+            # sobre el archivo, mismo camino que la v1.
             result = _call_gemini_json([
                 Part.from_bytes(data=data, mime_type=mime_type), _PROMPT,
             ])
