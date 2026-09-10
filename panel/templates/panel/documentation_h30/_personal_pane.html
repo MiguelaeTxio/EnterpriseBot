@@ -391,6 +391,7 @@ modal de alta por completo, nunca dando pie a seguir con esta persona).
     let duplicateModalInstance = null;
     let createModalInstance = null;
     let perFileTypes = [];
+    let perFileExpiryHints = [];
 
     const FIELD_LABELS = {
         dni: 'DNI/NIE', first_surname: 'Primer apellido',
@@ -411,7 +412,7 @@ modal de alta por completo, nunca dando pie a seguir con esta persona).
         resultEl.innerHTML = '';
         form.reset();
         perFileTypes = [];
-    });
+        perFileExpiryHints = [];
 
     extractBtn.onclick = function() {
         if (!fileInput.files.length) {
@@ -458,6 +459,7 @@ modal de alta por completo, nunca dando pie a seguir con esta persona).
                 return;
             }
             perFileTypes = data.per_file.map((pf) => pf.document_type_code);
+            perFileExpiryHints = data.per_file.map((pf) => pf.expiry_hint || '');
             for (const field of ['dni', 'first_surname', 'second_surname', 'given_name', 'birth_date', 'employer_company', 'hire_date']) {
                 if (draft[field]) { form.elements[field].value = draft[field]; }
             }
@@ -490,6 +492,7 @@ modal de alta por completo, nunca dando pie a seguir con esta persona).
         const formData = new FormData(form);
         for (const f of fileInput.files) { formData.append('documents', f); }
         for (const code of perFileTypes) { formData.append('document_type_codes', code); }
+        for (const hint of perFileExpiryHints) { formData.append('document_expiry_hints', hint); }
         const submitBtn = form.querySelector('button[type="submit"]');
         submitBtn.disabled = true;
         resultEl.innerHTML = '';
@@ -499,6 +502,9 @@ modal de alta por completo, nunca dando pie a seguir con esta persona).
         }).then((r) => r.json()).then((data) => {
             submitBtn.disabled = false;
             if (data.ok) {
+                if (data.warnings && data.warnings.length) {
+                    alert('Ficha creada. Aviso:\n' + data.warnings.join('\n'));
+                }
                 window.location.href = data.redirect_url;
             } else {
                 resultEl.innerHTML = `<div class="alert alert-danger py-1 px-2 small mb-0">${data.error || 'Error al crear la ficha.'}</div>`;

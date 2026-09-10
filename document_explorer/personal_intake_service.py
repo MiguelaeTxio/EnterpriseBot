@@ -61,13 +61,15 @@ _RESPONSE_SCHEMA = {
         "given_name_hint": {"type": "string"},
         "dni_hint": {"type": "string"},
         "birth_date_hint": {"type": "string"},
+        "dni_expiry_hint": {"type": "string"},
         "employer_company_hint": {"type": "string"},
         "hire_date_hint": {"type": "string"},
     },
     "required": [
         "document_type_code", "confidence", "reasoning",
         "first_surname_hint", "second_surname_hint", "given_name_hint",
-        "dni_hint", "birth_date_hint", "employer_company_hint", "hire_date_hint",
+        "dni_hint", "birth_date_hint", "dni_expiry_hint",
+        "employer_company_hint", "hire_date_hint",
     ],
 }
 
@@ -82,8 +84,9 @@ reverso), CONTRATO (contrato laboral), RECONOCIMIENTO_MEDICO \
 
 2. Extrae, cuando el documento los contenga de forma legible:
    - Si es un DNI: primer apellido, segundo apellido, nombre, el \
-número de DNI/NIE tal cual aparece (incluida la letra final), y la \
-fecha de nacimiento (formato AAAA-MM-DD).
+número de DNI/NIE tal cual aparece (incluida la letra final), la \
+fecha de nacimiento, y la fecha de caducidad/validez del propio \
+documento (formato AAAA-MM-DD en ambos casos).
    - Si es un CONTRATO laboral: el nombre de la empresa empleadora \
 real (tal cual aparece, sin normalizar), y la fecha de inicio/alta \
 en la empresa (formato AAAA-MM-DD).
@@ -148,8 +151,9 @@ reverso), CONTRATO (contrato laboral), RECONOCIMIENTO_MEDICO \
 
 2. Extrae, cuando el texto los contenga de forma reconocible:
    - Si es un DNI: primer apellido, segundo apellido, nombre, el \
-número de DNI/NIE tal cual aparece (incluida la letra final), y la \
-fecha de nacimiento (formato AAAA-MM-DD).
+número de DNI/NIE tal cual aparece (incluida la letra final), la \
+fecha de nacimiento, y la fecha de caducidad/validez del propio \
+documento (formato AAAA-MM-DD en ambos casos).
    - Si es un CONTRATO laboral: el nombre de la empresa empleadora \
 real (tal cual aparece, sin normalizar), y la fecha de inicio/alta \
 en la empresa (formato AAAA-MM-DD).
@@ -264,7 +268,7 @@ def extract_one_document(data: bytes, mime_type: str, filename: str = "") -> dic
     directo sobre el archivo -- nunca se deja sin leer.
     """
     from document_explorer.date_verification_service import (
-        extract_dni_mrz_birthdate,
+        extract_dni_mrz_birthdate, extract_dni_mrz_expiry,
     )
     try:
         text = _cloud_vision_text(data, mime_type, filename) if filename else ""
@@ -286,6 +290,9 @@ def extract_one_document(data: bytes, mime_type: str, filename: str = "") -> dic
             mrz_birthdate = extract_dni_mrz_birthdate(text)
             if mrz_birthdate:
                 result["birth_date_hint"] = mrz_birthdate.isoformat()
+            mrz_expiry = extract_dni_mrz_expiry(text)
+            if mrz_expiry:
+                result["dni_expiry_hint"] = mrz_expiry.isoformat()
         return result
     except Exception as exc:
         logger.warning(

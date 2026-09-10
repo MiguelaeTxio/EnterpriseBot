@@ -50,10 +50,13 @@ from document_explorer.models import (
 from document_explorer.subject_upload_service import (
     SubjectUploadError, upload_subject_document,
 )
-from document_management.vigencia_service import DocumentSnapshot, is_current
+from document_management.models import DocumentSubstitutionLog
+from document_management.vigencia_service import (
+    DocumentSnapshot, evaluate_substitution, is_current,
+)
 from fleet.models import MachineAsset
 from hr_calendar.models import VacationPeriod
-from ivr_config.models import CompanyUser, WorkPeriod
+from ivr_config.models import Company, CompanyUser, WorkPeriod
 from panel.mixins import (
     CompanyUserRequiredMixin, DocsUploadAccessMixin, SupervisorAccessMixin,
 )
@@ -1317,6 +1320,7 @@ class PersonalIntakeExtractView(DocsUploadAccessMixin, View):
                 "filename": f.name,
                 "document_type_code": result.get("document_type_code", "DESCONOCIDO"),
                 "confidence": result.get("confidence", ""),
+                "expiry_hint": result.get("dni_expiry_hint", ""),
                 "error": result.get("error"),
             })
 
@@ -1409,6 +1413,15 @@ class PersonalCreateView(DocsUploadAccessMixin, View):
     def _normalize_dni(raw_dni):
         return personal_intake_service.normalize_dni(raw_dni)
 
+    # H31 (S100), verbatim Miguel Ángel tras la prueba con sus 2 DNI
+    # reales: "en la vía de alta inicial creo que está bien que
+    # tengamos únicamente que reconozca reconocimiento médico, DNI y
+    # contrato y el resto se suban aparte, una vez que está creada la
+    # ficha." Cualquier documento fuera de este vocabulario NUNCA se
+    # sube en este flujo -- se descarta explícitamente, el supervisor
+    # lo sube después por la vía normal de la ficha ya creada.
+    ALLOWED_INTAKE_TYPES = ("DNI", "CONTRATO", "RECONOCIMIENTO_MEDICO")
+
     def _store_documents(self, request, person, folder_path):
         """
         H31 (S100). Sube de verdad a GCS e indexa (`DocumentIndexEntry`)
@@ -1419,16 +1432,33 @@ class PersonalCreateView(DocsUploadAccessMixin, View):
         indexar un archivo concreto no revierte el alta ya confirmada
         del trabajador -- se informa como aviso, el supervisor puede
         subir ese documento después por la vía normal de la ficha.
+
+        CORREGIDO EN LA MISMA SESIÓN (S100), incidente real con los 2
+        DNI reales de Miguel Ángel: solo se suben documentos de
+        `ALLOWED_INTAKE_TYPES` -- cualquier `DESCONOCIDO` (o cualquier
+        tipo fuera de ese vocabulario) se descarta sin subir, nunca
+        entra a la ficha por esta vía. Además, cuando llegan varios
+        documentos del mismo tipo con `tracks_expiry=True` (2 DNI, uno
+        caducado y otro vigente), se aplica la sustitución real
+        (`document_management.vigencia_service.evaluate_substitution`,
+        mismo mecanismo ya usado por `subject_upload_service` para la
+        subida desde ficha) -- el de fecha de caducidad más reciente
+        queda vigente, el otro se marca `is_obsolete=True` y queda
+        registrado en `DocumentSubstitutionLog`, en vez de dejar los
+        dos "vigentes" a la vez sin ningún criterio, que es lo que
+        pasó antes de esta corrección.
         """
         from document_explorer.models import DocumentIndexEntry
         from spare_parts.gcs_service import upload_bytes
 
         files = request.FILES.getlist("documents")
         type_codes = request.POST.getlist("document_type_codes")
+        expiry_hints = request.POST.getlist("document_expiry_hints")
         ct = ContentType.objects.get_for_model(PersonIdentity)
         today = timezone.now().date()
         warnings = []
         stored = 0
+        skipped = []
         # H31 (S100), incidente real reportado por Miguel Ángel: al
         # subir 2 DNI + 2 reconocimientos médicos en la misma alta,
         # `build_filename_personal` sin ordinal generaba el MISMO
@@ -1447,12 +1477,25 @@ class PersonalCreateView(DocsUploadAccessMixin, View):
         # en el primero, igual que antes, para no cambiar el nombre en
         # el caso normal sin colisión).
         prefix_counts = {}
+        # H31 (S100): snapshots "vigentes hasta ahora" de esta misma
+        # sesión de alta, por código de tipo -- se van acumulando a
+        # medida que se crean entries, para poder comparar cada
+        # documento nuevo contra los ya creados en este mismo lote
+        # (nunca hay preexistentes reales en un alta, pero el mismo
+        # bucle sirve igual si en el futuro se reutiliza para añadir
+        # documentos a una persona ya existente).
+        current_by_type = {}
+        company = Company.objects.first()
+
         for idx, f in enumerate(files):
             code = type_codes[idx] if idx < len(type_codes) else "DESCONOCIDO"
+            if code not in self.ALLOWED_INTAKE_TYPES:
+                skipped.append(f.name)
+                continue
             document_type = DocumentTypeCatalog.objects.filter(
                 code=code,
             ).first()
-            type_code_for_name = document_type.code if document_type else "DESCONOCIDO"
+            type_code_for_name = document_type.code if document_type else code
             extension = (
                 f.name.rsplit(".", 1)[-1] if "." in f.name else "pdf"
             )
@@ -1481,12 +1524,22 @@ class PersonalCreateView(DocsUploadAccessMixin, View):
             )
             blob_name = "%s/%s" % (folder_path, filename)
             data = f.read()
+
+            expiry_date = None
+            raw_expiry = expiry_hints[idx] if idx < len(expiry_hints) else ""
+            if document_type and document_type.tracks_expiry and raw_expiry:
+                try:
+                    year, month, day = (int(x) for x in raw_expiry.split("-"))
+                    expiry_date = date(year, month, day)
+                except ValueError:
+                    expiry_date = None
+
             try:
                 upload_bytes(
                     BUCKET, blob_name, data,
                     content_type=f.content_type or "application/octet-stream",
                 )
-                DocumentIndexEntry.objects.create(
+                entry = DocumentIndexEntry.objects.create(
                     bucket=BUCKET,
                     entry_kind=DocumentIndexEntry.KIND_FILE,
                     blob_name=blob_name,
@@ -1499,8 +1552,53 @@ class PersonalCreateView(DocsUploadAccessMixin, View):
                     document_type=document_type,
                     domain_content_type=ct,
                     domain_object_id=person.pk,
+                    expiry_date=expiry_date,
                 )
                 stored += 1
+
+                if document_type and document_type.tracks_expiry:
+                    existing_snapshots = current_by_type.get(code, [])
+                    incoming_snapshot = DocumentSnapshot(
+                        identifier=entry.pk, expiry_date=entry.expiry_date,
+                        issue_date=None,
+                    )
+                    result = evaluate_substitution(
+                        incoming_snapshot, existing_snapshots,
+                    )
+                    if result.incoming_should_prevail:
+                        for old_id, _old_expiry in [
+                            (s.identifier, s.expiry_date)
+                            for s in existing_snapshots
+                            if s.identifier in result.existing_to_archive
+                        ]:
+                            old_entry = DocumentIndexEntry.objects.get(pk=old_id)
+                            old_entry.is_obsolete = True
+                            old_entry.save(update_fields=["is_obsolete"])
+                            if company:
+                                DocumentSubstitutionLog.objects.create(
+                                    company=company,
+                                    superseding_content_type=ContentType.objects.get_for_model(
+                                        DocumentIndexEntry,
+                                    ),
+                                    superseding_object_id=entry.pk,
+                                    superseding_label=entry.name,
+                                    superseded_content_type=ContentType.objects.get_for_model(
+                                        DocumentIndexEntry,
+                                    ),
+                                    superseded_object_id=old_entry.pk,
+                                    superseded_label=old_entry.name,
+                                    subject_label=str(person),
+                                    document_type=code,
+                                    reasoning=result.reasoning,
+                                )
+                        current_by_type[code] = [
+                            s for s in existing_snapshots
+                            if s.identifier not in result.existing_to_archive
+                        ] + [incoming_snapshot]
+                    else:
+                        entry.is_obsolete = True
+                        entry.save(update_fields=["is_obsolete"])
+                        current_by_type[code] = existing_snapshots
             except Exception as exc:
                 logger.warning(
                     "# [PersonalCreateView] Fallo indexando %s para "
@@ -1511,6 +1609,13 @@ class PersonalCreateView(DocsUploadAccessMixin, View):
                     "No se pudo indexar %s -- súbelo de nuevo desde la "
                     "ficha ya creada." % f.name,
                 )
+
+        if skipped:
+            warnings.append(
+                "%d documento(s) no reconocido(s) (%s) no se han subido -- "
+                "súbelos desde la ficha ya creada una vez confirmada."
+                % (len(skipped), ", ".join(skipped)),
+            )
         return stored, warnings
 
     def post(self, request):
