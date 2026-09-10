@@ -98,6 +98,18 @@ COMPANY_FILTER_CHOICES = [
     ("aldi", "Grúas Aldi S.L.", ["GRUALDI S.L"]),
     ("asistencia_granada", "Asistencia y Grúas Granada", ["ASIST.GRUAS GRANADA"]),
     ("sin_empresa", "Sin empresa asignada", [""]),
+    # H31 (S100), incidente real: el alta guiada por documentación
+    # (Gemini leyendo el contrato) escribe `employer_company` con el
+    # texto tal cual aparece en el documento -- p. ej. "ASISTENCIA Y
+    # GRUAS GRANADA S.L." -- que no coincide con ninguna de las
+    # variantes ya conocidas del Excel ("ASIST.GRUAS GRANADA"). Sin
+    # este cubo, esa persona no aparecía en NINGÚN filtro de empresa
+    # aunque estuvieran todos marcados -- desaparecía en silencio del
+    # listado. "otras" recoge dinámicamente (ver
+    # `_apply_personal_filters`) cualquier texto no vacío que no
+    # encaje en ninguna variante ya conocida, para que nadie vuelva a
+    # quedar invisible por una redacción nueva de la empresa.
+    ("otras", "Otras empresas", []),
 ]
 
 
@@ -133,9 +145,25 @@ def _apply_personal_filters(qs, request):
     company_filter = request.GET.getlist("company")
     if company_filter:
         raw_by_slug = {slug: raws for slug, _label, raws in COMPANY_FILTER_CHOICES}
+        # H31 (S100): variantes conocidas de TODOS los cubos reales
+        # (excluye "sin_empresa", que usa [""] a propósito, y "otras",
+        # que es precisamente lo que no está en esta lista) -- sirve
+        # para resolver el cubo dinámico "otras" más abajo.
+        known_raws = [
+            raw for slug, _label, raws in COMPANY_FILTER_CHOICES
+            if slug not in ("sin_empresa", "otras")
+            for raw in raws
+        ]
         company_q = Q()
         matched_any = False
         for slug in company_filter:
+            if slug == "otras":
+                matched_any = True
+                company_q |= (
+                    ~Q(employer_company="")
+                    & ~Q(employer_company__in=known_raws)
+                )
+                continue
             raws = raw_by_slug.get(slug)
             if raws is None:
                 continue
