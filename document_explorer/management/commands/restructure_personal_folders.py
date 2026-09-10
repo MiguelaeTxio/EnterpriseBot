@@ -24,15 +24,32 @@ El nombre de carpeta de cada persona se construye con
 `naming_service.build_person_folder_name()` (misma normalizacion --
 acentos fuera, mayusculas, guion bajo -- que los nombres de archivo
 PERSONAL, para que carpeta y archivo salgan siempre de la misma
-regla). El movimiento real de documentos reutiliza
-`move_service.merge_folders()` (H29, S043): mueve todo archivo vivo
-bajo la carpeta ANTIGUA de la persona a la carpeta NUEVA, preservando
-la profundidad relativa (una foto de carnet en una subcarpeta anidada
-de la persona aterriza en la misma subcarpeta relativa dentro de
-ACTIVOS/INACTIVOS, nunca aplanada), con renombrado ordinal automatico
-si dos archivos colisionan en el mismo destino -- igual contrato
-"solo virtual" que el resto del modulo: `blob_name`/GCS nunca se
-tocan, solo `parent_path`/`name` en base de datos.
+regla).
+
+**Correccion real S99, tras el primer dry-run:** el movimiento NO se
+hace por `PersonIdentity.folder_path` (ese campo solo refleja donde
+aterriza un archivo NUEVO resuelto por `apply_quarantine_classification`,
+nunca se usa para relocar documentos ya existentes -- el renombrado
+canonico de S98, `apply_personal_canonical_rename()`, cambia
+unicamente `entry.name`, jamas `parent_path`). Dry-run real (S99):
+solo 5.284 de los 8.358 documentos con `domain_object` de tipo
+`PersonIdentity` vivian bajo el `folder_path` de su persona -- el
+resto (3.074) vive disperso en sus ubicaciones historicas originales
+del cubo. El propio anexo ya fija el criterio real de pertenencia:
+"documentos con `domain_object` de tipo `PersonIdentity`" -- no
+`folder_path`. Por eso este comando mueve, por cada persona, TODOS
+los `DocumentIndexEntry` vivos cuyo `domain_content_type`/
+`domain_object_id` apunten a su `PersonIdentity`, sea cual sea su
+`parent_path` actual, via `move_service.move_entries()` (lote
+eficiente a un unico destino, pensado exactamente para esto -- a
+diferencia de `merge_folders()`, que asume un unico subarbol origen
+con profundidad relativa a conservar, aqui los documentos de una
+persona estan dispersos en carpetas sin relacion entre si, así que
+aterrizan todos DIRECTAMENTE en la carpeta de la persona, sin
+subcarpetas). Mismo contrato "solo virtual" que el resto del modulo:
+`blob_name`/GCS nunca se tocan, solo `parent_path`/`name` en base de
+datos, con renombrado ordinal automatico si dos documentos de la
+misma persona colisionan de nombre en el destino.
 
 Colisiones ENTRE PERSONAS (dos PersonIdentity distintas cuyo nombre
 canonico de carpeta coincidiria en la misma categoria) se resuelven
@@ -42,10 +59,10 @@ sobre datos reales a fecha de escribir esto, pero el codigo no asume
 que no pueda pasar.
 
 DRY-RUN POR DEFECTO. Con --apply escribe y mueve de verdad. En
-dry-run nunca se llama a `merge_folders()` (esa funcion siempre
+dry-run nunca se llama a `move_entries()` (esa funcion siempre
 escribe de verdad, no tiene modo de simulacion propio) -- se cuenta
-por separado cuantos archivos viven hoy bajo la carpeta antigua de
-cada persona, via el mismo filtro que `merge_folders()` usaria.
+por separado cuantos documentos tiene cada persona por `domain_object`
+real.
 
 Verboso por diseno (`com-standards` 0bis/0ter): heartbeat con ETA
 cada 10 elementos procesados (229 personas, ~5% del total).
@@ -58,7 +75,7 @@ from django.db.models import Q
 
 from document_explorer.buckets import PRIMARY_BUCKET
 from document_explorer.models import DocumentIndexEntry, PersonIdentity
-from document_explorer.move_service import merge_folders, move_entry
+from document_explorer.move_service import move_entries, move_entry
 from document_explorer import naming_service
 
 PERSONAL_ROOT = "DOC. PERSONAL/PERSONAL"
@@ -92,19 +109,10 @@ class Command(BaseCommand):
             identity.given_name,
         )
 
-    def _count_files_under(self, bucket, folder_path):
-        return DocumentIndexEntry.objects.filter(
-            bucket=bucket,
-            entry_kind=DocumentIndexEntry.KIND_FILE,
-            deleted_at__isnull=True, purged_at__isnull=True,
-        ).filter(
-            Q(parent_path=folder_path)
-            | Q(parent_path__startswith=folder_path + "/"),
-        ).count()
-
     def handle(self, *args, **options):
         apply_changes = options["apply"]
         bucket = PRIMARY_BUCKET
+        person_ct = ContentType.objects.get_for_model(PersonIdentity)
 
         identities = list(PersonIdentity.objects.order_by("dni"))
         total_personas = len(identities)
@@ -158,40 +166,48 @@ class Command(BaseCommand):
                 )
 
             new_folder_path = "%s/%s" % (category_root, final_name)
-            old_folder_path = identity.folder_path.strip("/")
-            plan.append((identity, old_folder_path, new_folder_path))
+            plan.append((identity, new_folder_path))
 
-        # --- Paso 2: ejecutar (o simular) el movimiento por persona. ---
-        stats = {"movidas": 0, "sin_cambio": 0, "archivos_movidos": 0}
+        # --- Paso 2: ejecutar (o simular) el movimiento por persona,
+        # SIEMPRE por domain_object real (nunca por folder_path -- ver
+        # docstring del modulo, correccion S99). ---
+        stats = {
+            "personas_con_documentos": 0, "personas_sin_documentos": 0,
+            "documentos_movidos": 0,
+        }
         start_time = datetime.datetime.now()
         procesados = 0
 
-        for identity, old_folder_path, new_folder_path in plan:
+        for identity, new_folder_path in plan:
             procesados += 1
-            if old_folder_path == new_folder_path:
-                stats["sin_cambio"] += 1
+            person_entries = list(
+                DocumentIndexEntry.objects.filter(
+                    bucket=bucket,
+                    domain_content_type=person_ct,
+                    domain_object_id=identity.pk,
+                    entry_kind=DocumentIndexEntry.KIND_FILE,
+                    deleted_at__isnull=True, purged_at__isnull=True,
+                )
+            )
+            if not person_entries:
+                stats["personas_sin_documentos"] += 1
             else:
+                stats["personas_con_documentos"] += 1
                 if apply_changes:
-                    results, _removed = merge_folders(
-                        bucket, old_folder_path, new_folder_path,
-                    )
+                    results = move_entries(person_entries, new_folder_path)
                     moved_count = len(results)
                     identity.folder_path = new_folder_path
                     identity.save(
                         update_fields=["folder_path", "updated_at"],
                     )
                 else:
-                    moved_count = self._count_files_under(
-                        bucket, old_folder_path,
-                    )
-                stats["movidas"] += 1
-                stats["archivos_movidos"] += moved_count
+                    moved_count = len(person_entries)
+                stats["documentos_movidos"] += moved_count
                 self.stdout.write(
-                    "%s  dni=%s  %s -> %s  (%d archivo(s))"
+                    "%s  dni=%s  -> %s  (%d documento(s) por domain_object)"
                     % (
                         "MOVIDA" if apply_changes else "CANDIDATA",
-                        identity.dni, old_folder_path, new_folder_path,
-                        moved_count,
+                        identity.dni, new_folder_path, moved_count,
                     )
                 )
 
@@ -210,12 +226,14 @@ class Command(BaseCommand):
                 pct = int(procesados * 100 / total_personas) if total_personas else 100
                 self.stdout.write(
                     "[%s] Progreso: %d/%d (%d%%) -- ETA %dm%02ds "
-                    "(fin aprox. %s) -- movidas=%d archivos_movidos=%d"
+                    "(fin aprox. %s) -- personas_con_documentos=%d "
+                    "documentos_movidos=%d"
                     % (
                         datetime.datetime.now().strftime("%H:%M:%S"),
                         procesados, total_personas, pct,
                         int(eta_seg // 60), int(eta_seg % 60), hora_fin,
-                        stats["movidas"], stats["archivos_movidos"],
+                        stats["personas_con_documentos"],
+                        stats["documentos_movidos"],
                     )
                 )
 
@@ -248,7 +266,6 @@ class Command(BaseCommand):
             epis_movidas += 1
 
         # --- Paso 4: verificacion de cierre del Punto 1. ---
-        person_ct = ContentType.objects.get_for_model(PersonIdentity)
         fuera_de_estructura = DocumentIndexEntry.objects.filter(
             domain_content_type=person_ct,
             entry_kind=DocumentIndexEntry.KIND_FILE,
