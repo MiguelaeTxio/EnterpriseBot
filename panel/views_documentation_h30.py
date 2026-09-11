@@ -1607,14 +1607,27 @@ class PersonalCreateView(DocsUploadAccessMixin, View):
             # no se repite Cloud Vision, sería una llamada de red
             # más).
             engine_expiry_date, engine_issue_date = None, None
+            logger.warning(
+                "# [DIAG-FECHAS] archivo=%s extension=%r len(data)=%d",
+                f.name, extension, len(data),
+            )
             if extension.lower() == "pdf":
                 embedded_text = personal_intake_service._pdf_embedded_text(data)
+                logger.warning(
+                    "# [DIAG-FECHAS] archivo=%s len(embedded_text)=%d "
+                    "primeros_200=%r",
+                    f.name, len(embedded_text), embedded_text[:200],
+                )
                 if embedded_text:
                     from document_explorer.date_verification_service import (
                         classify_dates_in_text,
                     )
                     engine_expiry_date, engine_issue_date, _others = (
                         classify_dates_in_text(embedded_text)
+                    )
+                    logger.warning(
+                        "# [DIAG-FECHAS] archivo=%s expiry=%r issue=%r",
+                        f.name, engine_expiry_date, engine_issue_date,
                     )
 
             expiry_date = (
