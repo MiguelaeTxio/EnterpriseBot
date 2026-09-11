@@ -48,59 +48,83 @@ _MAX_GEMINI_ATTEMPTS = 3
 # sin convertir la espera en minutos.
 _RETRY_DELAY_SECONDS = 5
 
-# Vocabulario cerrado real para el paquete típico de alta -- verbatim
-# Miguel Ángel: "dame el DNI, dame el contrato en principio [...] pero
-# sobre todo DNI y contrato [...] dame el reconocimiento médico."
-# Códigos confirmados contra el catálogo real (document_explorer/
-# migrations/0002_documenttypecatalog.py, 0004_seed_closed_
-# vocabulary.py) -- nunca inventados aquí.
-_DOCUMENT_TYPE_CHOICES = ("DNI", "CONTRATO", "RECONOCIMIENTO_MEDICO", "DESCONOCIDO")
+# H31 (S100), ampliación pedida por Miguel Ángel: "mejoramos para
+# incluir el resto de documentos. Supuestamente ya disponemos de lo
+# necesario para clasificar todo lo referente a personal." El
+# vocabulario cerrado inicial (DNI/CONTRATO/RECONOCIMIENTO_MEDICO) se
+# sustituye por el catálogo REAL completo de PERSONAL
+# (`DocumentTypeCatalog`, domain="PERSONAL", is_active=True) --
+# confirmado con Comando S real contra la BD de producción, 79 tipos
+# activos a fecha de esta sesión (ALTA, CONTRATO, DNI, NOMINA, CAP,
+# CARNET_CONDUCIR, FORMACION... la lista completa vive en la propia
+# tabla, nunca hardcodeada aquí). Se consulta en cada llamada -- un
+# tipo nuevo que Miguel Ángel añada al catálogo se reconoce solo, sin
+# tocar este archivo.
+def _personal_type_catalog():
+    from document_explorer.models import DocumentTypeCatalog
+    return list(
+        DocumentTypeCatalog.objects.filter(
+            domain="PERSONAL", is_active=True,
+        ).order_by("code").values_list("code", "label"),
+    )
 
-_RESPONSE_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "document_type_code": {
-            "type": "string", "enum": list(_DOCUMENT_TYPE_CHOICES),
+
+def _build_response_schema():
+    codes = [code for code, _label in _personal_type_catalog()] + ["DESCONOCIDO"]
+    return {
+        "type": "object",
+        "properties": {
+            "document_type_code": {"type": "string", "enum": codes},
+            "confidence": {"type": "string", "enum": ["ALTA", "MEDIA", "BAJA"]},
+            "reasoning": {"type": "string"},
+            "first_surname_hint": {"type": "string"},
+            "second_surname_hint": {"type": "string"},
+            "given_name_hint": {"type": "string"},
+            "dni_hint": {"type": "string"},
+            "birth_date_hint": {"type": "string"},
+            "expiry_hint": {"type": "string"},
+            "address_hint": {"type": "string"},
+            "city_hint": {"type": "string"},
+            "province_hint": {"type": "string"},
+            "employer_company_hint": {"type": "string"},
+            "hire_date_hint": {"type": "string"},
         },
-        "confidence": {"type": "string", "enum": ["ALTA", "MEDIA", "BAJA"]},
-        "reasoning": {"type": "string"},
-        "first_surname_hint": {"type": "string"},
-        "second_surname_hint": {"type": "string"},
-        "given_name_hint": {"type": "string"},
-        "dni_hint": {"type": "string"},
-        "birth_date_hint": {"type": "string"},
-        "dni_expiry_hint": {"type": "string"},
-        "address_hint": {"type": "string"},
-        "city_hint": {"type": "string"},
-        "province_hint": {"type": "string"},
-        "employer_company_hint": {"type": "string"},
-        "hire_date_hint": {"type": "string"},
-    },
-    "required": [
-        "document_type_code", "confidence", "reasoning",
-        "first_surname_hint", "second_surname_hint", "given_name_hint",
-        "dni_hint", "birth_date_hint", "dni_expiry_hint",
-        "address_hint", "city_hint", "province_hint",
-        "employer_company_hint", "hire_date_hint",
-    ],
-}
+        "required": [
+            "document_type_code", "confidence", "reasoning",
+            "first_surname_hint", "second_surname_hint", "given_name_hint",
+            "dni_hint", "birth_date_hint", "expiry_hint",
+            "address_hint", "city_hint", "province_hint",
+            "employer_company_hint", "hire_date_hint",
+        ],
+    }
 
-_PROMPT = """Eres un asistente de RRHH de una empresa española de \
-grúas y maquinaria pesada. Se te da UN documento (imagen o PDF) \
-entregado para dar de alta a un trabajador nuevo.
 
-1. Identifica de qué tipo de documento se trata, SOLO entre estos \
-códigos: DNI (documento nacional de identidad o NIE, anverso o \
-reverso), CONTRATO (contrato laboral), RECONOCIMIENTO_MEDICO \
-(reconocimiento médico), o DESCONOCIDO si no encaja en ninguno.
+def _type_list_text():
+    return "\n".join(
+        "%s -- %s" % (code, label) for code, label in _personal_type_catalog()
+    )
+
+
+def _build_prompt(intro: str) -> str:
+    return """Eres un asistente de RRHH de una empresa española de \
+grúas y maquinaria pesada. %s
+
+1. Identifica de qué tipo de documento se trata -- elige el código \
+que mejor encaje entre estos (los mismos que ya usa la plataforma \
+para clasificar documentación de personal):
+%s
+Si no encaja en ninguno, usa DESCONOCIDO.
 
 2. Extrae, cuando el documento los contenga de forma legible:
-   - Si es un DNI: primer apellido, segundo apellido, nombre, el \
-número de DNI/NIE tal cual aparece (incluida la letra final), la \
-fecha de nacimiento, la fecha de caducidad/validez del propio \
-documento (formato AAAA-MM-DD en ambos casos), y -- si el reverso \
-trae el domicilio -- la dirección (calle y número), la población y \
-la provincia, cada una en su propio campo, tal cual aparecen.
+   - Apellidos y nombre de la persona a la que pertenece el \
+documento, si aparecen (primer apellido, segundo apellido, nombre).
+   - Si es un DNI o NIE: el número tal cual aparece (incluida la \
+letra final), la fecha de nacimiento, y -- si el reverso trae el \
+domicilio -- la dirección (calle y número), la población y la \
+provincia, cada una en su propio campo, tal cual aparecen.
+   - La fecha de caducidad/validez del propio documento, si la \
+tiene (formato AAAA-MM-DD) -- no todos los tipos la tienen, \
+déjala vacía si no aplica o no se puede leer.
    - Si es un CONTRATO laboral: el nombre de la empresa empleadora \
 real (tal cual aparece, sin normalizar), y la fecha de inicio/alta \
 en la empresa (formato AAAA-MM-DD).
@@ -108,7 +132,7 @@ en la empresa (formato AAAA-MM-DD).
 confianza, déjalo como cadena vacía -- nunca inventes un valor.
 
 Devuelve el resultado como el JSON estructurado indicado, sin texto \
-adicional."""
+adicional.""" % (intro, _type_list_text())
 
 
 def _generate_content_with_retry(client, **kwargs):
@@ -236,37 +260,15 @@ def normalize_employer_company(raw_text: str) -> str:
     )
 
 
-_TEXT_PROMPT_TEMPLATE = """Eres un asistente de RRHH de una empresa \
-española de grúas y maquinaria pesada. Se te da el TEXTO ya extraído \
-por OCR de un documento entregado para dar de alta a un trabajador \
-nuevo (el propio texto puede tener errores de OCR -- ruido, letras \
-mal leídas -- interprétalo con criterio).
-
-TEXTO DEL DOCUMENTO:
----
-{ocr_text}
----
-
-1. Identifica de qué tipo de documento se trata, SOLO entre estos \
-códigos: DNI (documento nacional de identidad o NIE, anverso o \
-reverso), CONTRATO (contrato laboral), RECONOCIMIENTO_MEDICO \
-(reconocimiento médico), o DESCONOCIDO si no encaja en ninguno.
-
-2. Extrae, cuando el texto los contenga de forma reconocible:
-   - Si es un DNI: primer apellido, segundo apellido, nombre, el \
-número de DNI/NIE tal cual aparece (incluida la letra final), la \
-fecha de nacimiento, la fecha de caducidad/validez del propio \
-documento (formato AAAA-MM-DD en ambos casos), y -- si el reverso \
-trae el domicilio -- la dirección (calle y número), la población y \
-la provincia, cada una en su propio campo, tal cual aparecen.
-   - Si es un CONTRATO laboral: el nombre de la empresa empleadora \
-real (tal cual aparece, sin normalizar), y la fecha de inicio/alta \
-en la empresa (formato AAAA-MM-DD).
-   - Cualquier campo que no aparezca o no se pueda leer con \
-confianza, déjalo como cadena vacía -- nunca inventes un valor.
-
-Devuelve el resultado como el JSON estructurado indicado, sin texto \
-adicional."""
+def _build_text_prompt(ocr_text: str) -> str:
+    intro = (
+        "Se te da el TEXTO ya extraído por OCR de un documento "
+        "entregado para dar de alta a un trabajador nuevo (el "
+        "propio texto puede tener errores de OCR -- ruido, letras "
+        "mal leídas -- interprétalo con criterio).\n\n"
+        "TEXTO DEL DOCUMENTO:\n---\n%s\n---" % ocr_text
+    )
+    return _build_prompt(intro)
 
 
 def _call_gemini_json(contents, timeout_ms: int = 30_000) -> dict:
@@ -289,7 +291,7 @@ def _call_gemini_json(contents, timeout_ms: int = 30_000) -> dict:
         config=GenerateContentConfig(
             http_options=HttpOptions(timeout=timeout_ms),
             response_mime_type="application/json",
-            response_schema=_RESPONSE_SCHEMA,
+            response_schema=_build_response_schema(),
             temperature=0.0,
         ),
     )
@@ -395,7 +397,12 @@ def extract_one_document(data: bytes, mime_type: str, filename: str = "") -> dic
             # imagen/PDF entero es más pesado que interpretar texto,
             # por eso conserva el timeout largo (90s) explícitamente.
             result = _call_gemini_json(
-                [Part.from_bytes(data=data, mime_type=mime_type), _PROMPT],
+                [
+                    Part.from_bytes(data=data, mime_type=mime_type),
+                    _build_prompt("Se te da UN documento (imagen o PDF) "
+                                  "entregado para dar de alta a un "
+                                  "trabajador nuevo."),
+                ],
                 timeout_ms=90_000,
             )
         elif not text.strip():
@@ -403,15 +410,13 @@ def extract_one_document(data: bytes, mime_type: str, filename: str = "") -> dic
                 "error": "El OCR no encontró texto legible en el documento.",
             }
         else:
-            result = _call_gemini_json(
-                _TEXT_PROMPT_TEMPLATE.format(ocr_text=text[:8000]),
-            )
+            result = _call_gemini_json(_build_text_prompt(text[:8000]))
             mrz_birthdate = extract_dni_mrz_birthdate(text)
             if mrz_birthdate:
                 result["birth_date_hint"] = mrz_birthdate.isoformat()
             mrz_expiry = extract_dni_mrz_expiry(text)
             if mrz_expiry:
-                result["dni_expiry_hint"] = mrz_expiry.isoformat()
+                result["expiry_hint"] = mrz_expiry.isoformat()
         return result
     except Exception as exc:
         logger.warning(

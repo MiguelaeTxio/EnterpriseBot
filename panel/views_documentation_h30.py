@@ -1345,7 +1345,7 @@ class PersonalIntakeExtractView(DocsUploadAccessMixin, View):
                 "filename": name,
                 "document_type_code": result.get("document_type_code", "DESCONOCIDO"),
                 "confidence": result.get("confidence", ""),
-                "expiry_hint": result.get("dni_expiry_hint", ""),
+                "expiry_hint": result.get("expiry_hint", ""),
                 "error": result.get("error"),
             })
 
@@ -1453,14 +1453,19 @@ class PersonalCreateView(DocsUploadAccessMixin, View):
     def _normalize_dni(raw_dni):
         return personal_intake_service.normalize_dni(raw_dni)
 
-    # H31 (S100), verbatim Miguel Ángel tras la prueba con sus 2 DNI
-    # reales: "en la vía de alta inicial creo que está bien que
-    # tengamos únicamente que reconozca reconocimiento médico, DNI y
-    # contrato y el resto se suban aparte, una vez que está creada la
-    # ficha." Cualquier documento fuera de este vocabulario NUNCA se
-    # sube en este flujo -- se descarta explícitamente, el supervisor
-    # lo sube después por la vía normal de la ficha ya creada.
-    ALLOWED_INTAKE_TYPES = ("DNI", "CONTRATO", "RECONOCIMIENTO_MEDICO")
+    # H31 (S100), ampliado tras petición de Miguel Ángel: "mejoramos
+    # para incluir el resto de documentos. Supuestamente ya
+    # disponemos de lo necesario para clasificar todo lo referente a
+    # personal." Ya no hay una lista fija de 3 tipos -- se sube
+    # cualquier documento cuyo `document_type_code` resuelva contra un
+    # `DocumentTypeCatalog` real, activo, del dominio PERSONAL (ver
+    # `_store_documents`, misma consulta que ya hace
+    # `personal_intake_service` para construir el vocabulario de
+    # extracción -- un tipo nuevo que se dé de alta en el catálogo se
+    # permite solo, sin tocar este archivo). Solo `DESCONOCIDO` (o
+    # cualquier código que no exista de verdad en el catálogo) se
+    # sigue descartando sin subir -- el supervisor lo sube después por
+    # la vía normal de la ficha ya creada.
 
     def _store_documents(self, request, person, folder_path):
         """
@@ -1474,12 +1479,15 @@ class PersonalCreateView(DocsUploadAccessMixin, View):
         subir ese documento después por la vía normal de la ficha.
 
         CORREGIDO EN LA MISMA SESIÓN (S100), incidente real con los 2
-        DNI reales de Miguel Ángel: solo se suben documentos de
-        `ALLOWED_INTAKE_TYPES` -- cualquier `DESCONOCIDO` (o cualquier
-        tipo fuera de ese vocabulario) se descarta sin subir, nunca
-        entra a la ficha por esta vía. Además, cuando llegan varios
-        documentos del mismo tipo con `tracks_expiry=True` (2 DNI, uno
-        caducado y otro vigente), se aplica la sustitución real
+        DNI reales de Miguel Ángel: al principio solo se subían
+        DNI/CONTRATO/RECONOCIMIENTO_MEDICO; ampliado después (mismo
+        día, petición explícita) a TODO el catálogo real de PERSONAL
+        -- cualquier `DESCONOCIDO` (código que no resuelve contra
+        `DocumentTypeCatalog`, domain="PERSONAL", is_active=True) se
+        sigue descartando sin subir, nunca entra a la ficha por esta
+        vía. Además, cuando llegan varios documentos del mismo tipo
+        con `tracks_expiry=True` (2 DNI, uno caducado y otro vigente),
+        se aplica la sustitución real
         (`document_management.vigencia_service.evaluate_substitution`,
         mismo mecanismo ya usado por `subject_upload_service` para la
         subida desde ficha) -- el de fecha de caducidad más reciente
@@ -1529,13 +1537,13 @@ class PersonalCreateView(DocsUploadAccessMixin, View):
 
         for idx, f in enumerate(files):
             code = type_codes[idx] if idx < len(type_codes) else "DESCONOCIDO"
-            if code not in self.ALLOWED_INTAKE_TYPES:
+            document_type = DocumentTypeCatalog.objects.filter(
+                code=code, domain="PERSONAL", is_active=True,
+            ).first()
+            if document_type is None:
                 skipped.append(f.name)
                 continue
-            document_type = DocumentTypeCatalog.objects.filter(
-                code=code,
-            ).first()
-            type_code_for_name = document_type.code if document_type else code
+            type_code_for_name = document_type.code
             extension = (
                 f.name.rsplit(".", 1)[-1] if "." in f.name else "pdf"
             )
