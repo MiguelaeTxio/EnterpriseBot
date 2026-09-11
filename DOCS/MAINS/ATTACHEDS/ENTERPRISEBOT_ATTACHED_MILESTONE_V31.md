@@ -2275,3 +2275,33 @@ gestión sí detectan "este DNI no existe". Trabajo:
      pública accesible y que la validación real disponible ya es la
      que se tiene), sin dejarlo como pregunta abierta para una tercera
      sesión.
+
+---
+
+## TABLA VIVA -- EJEMPLOS REALES DE CLASIFICACIÓN CONFIRMADOS (añadida
+## S101, para no perder el trabajo de reconocer un tipo cada vez que
+## aparece en una sesión nueva)
+
+**Por qué existe esta tabla:** Miguel Ángel, verbatim (S101): *"si has
+clasificado un documento, eso tienes que documentarlo y no
+encontrarnos ahora con que nos llega un contrato de trabajo y lo
+echamos fuera porque nos creemos que es la tarjeta sanitaria [...] el
+PCS era para eso, para guardar toda la información."* Cada vez que en
+una sesión se confirme con evidencia real (el propio documento visto,
+no una suposición) qué tipo de `DocumentTypeCatalog` le corresponde a
+un documento característico, se añade una fila aquí -- **nunca se deja
+solo en la narrativa de la sesión**, que es donde se pierde.
+
+| Ejemplo real de documento | Tipo confirmado | Nota |
+|---|---|---|
+| "RESOLUCIÓN SOBRE RECONOCIMIENTO DE ALTA: REGIMEN GENERAL" (Tesorería General de la Seguridad Social) | `ALTA` | Confirmado S101 contra PDF real de Miguel Ángel. Texto embebido real, se extrae bien con PyMuPDF -- si falla la lectura no es el PDF, es la llamada a Gemini (transitorio o real, revisar log del servidor). |
+| Contrato de trabajo que además incluye el número de afiliación a la Seguridad Social del trabajador | `CONTRATO` | El aviso "trae el número de afiliación... pero no se ha reconocido como la Tarjeta" es **informativo, no un error de clasificación** -- salta siempre que `doc_type != "SEG_SOCIAL"`, exactamente cuando el documento SÍ se clasificó como otra cosa (aquí, CONTRATO). No afecta a si el documento se guarda -- eso lo decide `_store_documents` de forma independiente. |
+| Certificado bancario con IBAN | `CERTIFICADO_BANCARIO` | Confianza BAJA en la lectura de este tipo de documento no impide que se guarde -- solo excluye sus datos de la fusión de identidad (`merge_person_draft`). El borrador (`draft`) no tiene ningún campo de cuenta bancaria de todos modos, así que a efectos prácticos no se pierde nada al descartarlo de la fusión. |
+
+**Aclaración permanente sobre "confianza BAJA" (para no repetir la
+pregunta):** confianza y tipo documental son dos campos independientes
+que Gemini devuelve siempre juntos. Confianza BAJA nunca cambia ni
+descarta el `document_type_code` -- solo hace que ese documento no
+aporte ningún dato (DNI, nombre, dirección...) al borrador de la
+persona en el paso de extracción. El archivo se sube y se indexa igual
+con el tipo que se le asignó.
