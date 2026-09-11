@@ -416,6 +416,40 @@ modal de alta por completo, nunca dando pie a seguir con esta persona).
         if (parts.length === 2) return parts.pop().split(';').shift();
     }
 
+    // H31 (S101), Miguel Ángel: "cuando acabemos, aparte del spinner
+    // [...] notificación sonora o notificación visual del sistema,
+    // una push [...] eso hay que hacerlo." Una notificación push real
+    // (Notification API) exige permiso explícito del usuario en el
+    // navegador y no se puede forzar -- esto da lo mismo que pedía
+    // (visual y sonora) sin depender de ningún permiso: un tono corto
+    // generado con Web Audio API (sin archivo de sonido externo) más
+    // un toast de Bootstrap, en los dos momentos pedidos: al terminar
+    // de leer los documentos y al terminar de crear la ficha.
+    function personalIntakeNotify(message) {
+        try {
+            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.frequency.value = 880;
+            gain.gain.setValueAtTime(0.15, ctx.currentTime);
+            osc.start();
+            osc.stop(ctx.currentTime + 0.15);
+        } catch (e) { /* audio no disponible -- seguimos solo con el toast visual */ }
+
+        const toastEl = document.createElement('div');
+        toastEl.className = 'toast align-items-center text-bg-primary border-0 position-fixed bottom-0 end-0 m-3';
+        toastEl.style.zIndex = 2000;
+        toastEl.setAttribute('role', 'alert');
+        toastEl.innerHTML = '<div class="d-flex"><div class="toast-body">' + message + '</div>' +
+            '<button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button></div>';
+        document.body.appendChild(toastEl);
+        const toastInstance = new bootstrap.Toast(toastEl, {delay: 4000});
+        toastInstance.show();
+        toastEl.addEventListener('hidden.bs.toast', function() { toastEl.remove(); });
+    }
+
     const fileInput = document.getElementById('personalIntakeFiles');
     const step1 = document.getElementById('personalIntakeStep1');
     const step1Result = document.getElementById('personalIntakeStep1Result');
@@ -437,6 +471,7 @@ modal de alta por completo, nunca dando pie a seguir con esta persona).
         birth_date: 'Fecha de nacimiento', employer_company: 'Empresa',
         hire_date: 'Fecha de alta',
     };
+
 
     // H31 (S100): al reabrir el modal para un alta distinta, siempre
     // se vuelve a empezar por el paso 1 -- nunca se arrastra el
@@ -519,6 +554,7 @@ modal de alta por completo, nunca dando pie a seguir con esta persona).
             } else {
                 warningsEl.innerHTML = '<div class="alert alert-success py-1 px-2 small mb-0">Datos leídos correctamente. Revisa y confirma.</div>';
             }
+            personalIntakeNotify('Documentos leídos -- revisa y confirma.');
             step1.classList.add('d-none');
             form.classList.remove('d-none');
         }).catch(() => {
@@ -559,10 +595,14 @@ modal de alta por completo, nunca dando pie a seguir con esta persona).
             createSpinner.classList.add('d-none');
             createBtnLabel.textContent = 'Confirmar y crear ficha';
             if (data.ok) {
+                personalIntakeNotify('Ficha creada correctamente.');
                 if (data.warnings && data.warnings.length) {
                     alert('Ficha creada. Aviso:\n' + data.warnings.join('\n'));
                 }
-                window.location.href = data.redirect_url;
+                // H31 (S101): pequeño margen antes de redirigir -- si
+                // se navega en el mismo instante, el sonido/toast de
+                // personalIntakeNotify no llega a reproducirse.
+                setTimeout(function() { window.location.href = data.redirect_url; }, 400);
             } else {
                 resultEl.innerHTML = `<div class="alert alert-danger py-1 px-2 small mb-0">${data.error || 'Error al crear la ficha.'}</div>`;
             }
