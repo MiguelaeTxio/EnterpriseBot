@@ -578,6 +578,7 @@ def merge_person_draft(extractions: list, filenames: list = None) -> dict:
     }
     IDENTITY_TYPES = ("DNI", "NIE")
     warnings = []
+    found_seg_social = False
     for idx, result in enumerate(extractions):
         doc_label = (
             filenames[idx] if filenames and idx < len(filenames)
@@ -597,6 +598,8 @@ def merge_person_draft(extractions: list, filenames: list = None) -> dict:
             )
             continue
         doc_type = result.get("document_type_code", "")
+        if doc_type == "SEG_SOCIAL":
+            found_seg_social = True
         if doc_type in IDENTITY_TYPES:
             if not draft["dni"] and result.get("dni_hint"):
                 candidate_dni = normalize_dni(result["dni_hint"])
@@ -631,29 +634,43 @@ def merge_person_draft(extractions: list, filenames: list = None) -> dict:
         # solo de ALTA/IDC/SEG_SOCIAL -- para no perderlo por una
         # clasificación de tipo que ni siquiera pretendía ser
         # determinante aquí.
-        #
-        # Distinción real pedida por Miguel Ángel: extraer el DATO de
-        # un documento no significa que ese documento OCUPE la casilla
-        # de "Tarjeta de la Seguridad Social" en la ficha -- si lo
-        # hiciera, el supervisor nunca sabría que le falta pedir la
-        # tarjeta real ("no sé cómo podríamos diferenciar la
-        # extracción de texto de una tarjeta real [...] eso cuando se
-        # va a crear la ficha dejarlo claro"). Sin heurística de "esto
-        # parece/no parece la tarjeta real" (el propio Miguel Ángel
-        # reconoce que no hay forma fiable) -- en su lugar, siempre
-        # que el número salga de un documento que NO se clasificó como
-        # SEG_SOCIAL, se avisa explícitamente de que la tarjeta real
-        # sigue sin estar subida.
         if not draft["ss_affiliation_number"] and result.get("ss_number_hint"):
             draft["ss_affiliation_number"] = result["ss_number_hint"]
-            if doc_type != "SEG_SOCIAL":
-                warnings.append(
-                    "%s: trae el número de afiliación a la "
-                    "Seguridad Social, pero no se ha reconocido como la "
-                    "Tarjeta de la Seguridad Social en sí -- si la tienes, "
-                    "súbela también para dejarla documentada."
-                    % doc_label,
-                )
+        # H31 (S101), REESCRITO -- incidente real, Miguel Ángel: el
+        # aviso anterior nombraba el documento SIEMPRE que traía el
+        # número y no era la propia tarjeta, incluso cuando el
+        # documento estaba bien clasificado como otra cosa (un
+        # CONTRATO trae el número de afiliación de forma perfectamente
+        # normal) -- eso es ruido, no información, y llevó a pensar
+        # que el CONTRATO se había confundido con la tarjeta cuando en
+        # realidad su clasificación era correcta y el aviso no decía
+        # nada nuevo. Regla nueva, sin ambigüedad, evaluada para CADA
+        # documento que traiga el número (no solo el primero que
+        # rellena el borrador -- ver bug real de la primera versión de
+        # esta corrección, un `elif` dejaba sin comprobar justo al
+        # primer documento que rellenaba `draft["ss_affiliation_number"]`):
+        # 1. Documento de tipo CONOCIDO (no DESCONOCIDO) que no es
+        #    SEG_SOCIAL y trae el número -- normal, no se avisa nada
+        #    aquí (es justo lo esperable de un CONTRATO, una nómina...).
+        # 2. Documento SIN clasificar (DESCONOCIDO) que trae el número
+        #    y no es la tarjeta -- se avisa NOMBRANDO el documento,
+        #    porque además de faltar la tarjeta, ESE archivo concreto
+        #    no se admite/guarda (`_store_documents` descarta todo
+        #    DESCONOCIDO) y el supervisor necesita saber cuál es para
+        #    decidir si hace falta subirlo de otra forma.
+        # 3. Si, tras ver TODOS los documentos, ninguno se clasificó
+        #    como SEG_SOCIAL mientras sí se obtuvo el número de algún
+        #    sitio -- un único aviso agregado al final (ver más abajo),
+        #    nunca repetido por cada documento que traiga el número.
+        if result.get("ss_number_hint") and doc_type in ("", "DESCONOCIDO"):
+            warnings.append(
+                "%s: trae el número de afiliación a la Seguridad "
+                "Social, pero no es la Tarjeta y no corresponde a "
+                "ningún tipo documental conocido -- no se admite, "
+                "tendrá que subirse después por la vía normal si "
+                "hace falta documentarlo."
+                % doc_label,
+            )
         if doc_type == "CONTRATO":
             if not draft["employer_company"] and result.get("employer_company_hint"):
                 draft["employer_company"] = normalize_employer_company(
@@ -661,4 +678,14 @@ def merge_person_draft(extractions: list, filenames: list = None) -> dict:
                 )
             if not draft["hire_date"] and result.get("hire_date_hint"):
                 draft["hire_date"] = result["hire_date_hint"]
+    # H31 (S101): aviso único y agregado, nunca uno por documento --
+    # si se conoce el número de afiliación (de cualquier documento)
+    # pero ninguno de los subidos es de verdad la Tarjeta, hace falta
+    # decirlo UNA vez, sin repetirlo por cada archivo que traiga el
+    # mismo número.
+    if draft["ss_affiliation_number"] and not found_seg_social:
+        warnings.append(
+            "No se ha encontrado la Tarjeta de la Seguridad Social "
+            "entre los documentos subidos -- súbela cuando la tengas.",
+        )
     return {"draft": draft, "warnings": warnings}
