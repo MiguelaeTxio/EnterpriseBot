@@ -2040,6 +2040,38 @@ reportado.
 
 ---
 
+---
+
+## ⚠️ DATO CRÍTICO DE CONTINUIDAD -- LEER ANTES DE CUALQUIER OTRA COSA EN LA SIGUIENTE SESIÓN
+
+**DNI/ficha usados como sujeto de pruebas durante TODA la sesión
+S100: `74633524L` -- la ficha REAL de Miguel Ángel (MUÑOZ CARA, MIGUEL
+ANGEL).** Se borró al principio de la sesión para poder probar el
+alta con este mismo DNI real (backup completo hecho antes de borrar:
+`serializers.serialize`, incluye `PersonIdentity` + sus 15
+`DocumentIndexEntry` reales originales). Después, ese mismo DNI se
+usó en más de diez ciclos de "crear ficha de prueba -> probar ->
+borrar" (ids reales de `PersonIdentity` usados y ya borrados en esta
+sesión: 233, 234, 235, 236, 237, 238, 239, 240, 241, 242, 243, 244,
+245 -- ninguno de estos existe ya en BD).
+
+**PENDIENTE REAL, SIN HACER TODAVÍA: la ficha real de Miguel Ángel
+(la original, con sus 15 documentos reales) NO se ha restaurado.**
+El backup vive en `/home/MiguelAeTxio/SWAP/EnterpriseBot_002_backup.json`
+-- **si esa ruta ya no existe (p. ej. por el vaciado obligatorio de
+SWAP del cierre de sesión, PASO 11 de `nfs-enterprisebot-pcs`), el
+backup se ha perdido** y habrá que reconstruir la ficha a mano con lo
+que se pueda recuperar (los blobs de GCS de sus 15 documentos
+originales SIGUEN intactos -- nunca se tocaron, solo se borró el
+índice -- ver rutas reales más abajo en este mismo anexo, sección del
+Comando S 001/EnterpriseBot_001_GET.txt, con cada `blob_name`
+original).
+
+**Restaurar esta ficha real es la PRIMERA tarea de la sesión
+siguiente, antes de cualquier otro punto de la Hoja de Ruta.**
+
+---
+
 ### COMPLETADAS EN S100 -- sesión larga (44 commits), Bloque 1 de H31 construido de cero y llevado a producción real
 
 **Resumen:** sesión dedicada íntegramente al Bloque 1 de la hoja de ruta
@@ -2160,6 +2192,17 @@ S101 (ver Hoja de Ruta).
 ---
 
 ## Hoja de Ruta para la Sesión Siguiente (S101, reescrita por completo -- sustituye a la de S99)
+
+**0. PRIMERA TAREA, ANTES DE CUALQUIER OTRA COSA: restaurar la ficha
+real de Miguel Ángel (DNI `74633524L`, MUÑOZ CARA MIGUEL ANGEL),
+borrada durante toda la sesión S100 para usarla como sujeto de
+pruebas del alta.** Ver el aviso crítico al principio de este anexo
+para el backup real y el estado de sus 15 documentos originales
+(blobs de GCS intactos, solo el índice se borró). Cierre objetivo:
+consulta real a BD confirmando que `PersonIdentity.objects.get(dni=
+"74633524L")` existe con sus datos reales originales y sus 15
+`DocumentIndexEntry` reales, `is_obsolete=False` los que ya lo eran
+antes de la sesión S100.
 
 **1. Deduplicación real de documentos -- caso de prueba concreto ya
 identificado.** Yolanda reporta duplicados reales acumulándose de
