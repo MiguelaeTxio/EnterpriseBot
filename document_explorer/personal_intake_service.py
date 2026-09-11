@@ -316,6 +316,40 @@ def _call_gemini_json(contents, timeout_ms: int = 30_000) -> dict:
     return json.loads(response.text.strip())
 
 
+def _pdf_embedded_text(data: bytes) -> str:
+    """
+    H31 (S100), corrección real: muchos PDF del alta NO son un
+    escaneo/foto -- son documentos generados digitalmente por un
+    ordenador (Resoluciones de la Seguridad Social, contratos
+    generados desde una plantilla...) que ya llevan el texto real
+    incrustado dentro del propio archivo. Mandarlos a OCR (leer los
+    píxeles renderizados) introduce ruido -- saltos de línea y
+    espaciados distintos a los del texto real -- que puede romper
+    justo la coincidencia de contexto que `classify_dates_in_text()`
+    necesita ver pegada (verificado con un caso real: el motor
+    clasifica bien "con fecha 19/06/2024" leyendo el texto real
+    incrustado del PDF, verbatim exacto). Extraer este texto ya
+    incrustado es gratis, instantáneo, y más fiable que cualquier OCR
+    -- es el texto real del documento, no una lectura visual.
+
+    Devuelve cadena vacía (nunca lanza) si el PDF no trae texto real
+    -- es un escaneo/foto -- para que el llamador caiga a Cloud Vision
+    en ese caso.
+    """
+    import fitz
+
+    try:
+        doc = fitz.open(stream=data, filetype="pdf")
+        parts = [page.get_text() for page in doc[:2]]
+        return "\n".join(parts).strip()
+    except Exception as exc:
+        logger.warning(
+            "# [personal_intake_service] Fallo leyendo texto incrustado "
+            "del PDF: %s", exc,
+        )
+        return ""
+
+
 def _cloud_vision_text(data: bytes, mime_type: str, filename: str) -> str:
     """
     OCR real vía Cloud Vision API (H31, S100) -- sustituye a Tesseract
@@ -427,7 +461,11 @@ def extract_one_document(data: bytes, mime_type: str, filename: str = "") -> dic
         extract_dni_mrz_expiry,
     )
     try:
-        text = _cloud_vision_text(data, mime_type, filename) if filename else ""
+        text = ""
+        if filename and filename.lower().endswith(".pdf"):
+            text = _pdf_embedded_text(data)
+        if not text and filename:
+            text = _cloud_vision_text(data, mime_type, filename)
         if not text:
             # Cloud Vision no encontró texto (o extensión no
             # soportada) -- último recurso, Vision directo con Gemini
