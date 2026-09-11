@@ -137,6 +137,16 @@ para clasificar documentación de personal):
 %s
 Si no encaja en ninguno, usa DESCONOCIDO.
 
+REGLA IMPORTANTE sobre SEG_SOCIAL (Tarjeta de la Seguridad Social): \
+es un documento físico con formato de tarjeta, con dos rótulos \
+oficiales obligatorios impresos por ley: "SISTEMA NACIONAL DE SALUD \
+DE ESPAÑA" y "TARJETA SANITARIA". Un simple listado, tabla o ficha \
+de datos que solo menciona el número de afiliación (aunque diga \
+"Nº SEGURIDAD SOCIAL" o similar) NUNCA es la tarjeta en sí, aunque \
+contenga ese dato -- si no ves esos dos rótulos exactos, NO uses \
+SEG_SOCIAL, usa DESCONOCIDO en su lugar (el número, si aparece, se \
+extrae igual más abajo, en el punto 2).
+
 2. Extrae, cuando el documento los contenga de forma legible:
    - Apellidos y nombre de la persona a la que pertenece el \
 documento, si aparecen (primer apellido, segundo apellido, nombre).
