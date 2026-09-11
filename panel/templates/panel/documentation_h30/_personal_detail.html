@@ -206,7 +206,7 @@ y se habilita "Guardar".
             <td>{{ entry.document_type.label }}</td>
             <td>
                 {% if entry.needs_attention %}<i class="bi bi-exclamation-triangle-fill text-danger me-1" title="Sin fecha vigente -- necesita atención"></i>{% endif %}
-                {{ entry.expiry_date|default:"—" }}
+                {% if entry.expiry_date %}{{ entry.expiry_date }}{% elif entry.issue_date %}<span class="text-muted small">Emisión:</span> {{ entry.issue_date }}{% else %}—{% endif %}
             </td>
             <td>
                 <a href="{% url 'panel:documentation_document_view' pk=entry.pk %}" target="_blank" class="btn btn-sm btn-outline-secondary">Ver</a>
@@ -400,7 +400,7 @@ vacaciones).
             <td>{{ entry.document_type.label }}</td>
             <td>
                 {% if entry.needs_attention %}<i class="bi bi-exclamation-triangle-fill text-danger me-1" title="Sin fecha vigente -- necesita atención"></i>{% endif %}
-                {{ entry.expiry_date|default:"—" }}
+                {% if entry.expiry_date %}{{ entry.expiry_date }}{% elif entry.issue_date %}<span class="text-muted small">Emisión:</span> {{ entry.issue_date }}{% else %}—{% endif %}
             </td>
             <td>
                 <a href="{% url 'panel:documentation_document_view' pk=entry.pk %}" target="_blank" class="btn btn-sm btn-outline-secondary">Ver</a>
@@ -479,7 +479,7 @@ vez de una lista única sin estructura.
                             <td>{{ entry.document_type.label }}</td>
                             <td>
                                 {% if entry.needs_attention %}<i class="bi bi-exclamation-triangle-fill text-danger me-1" title="Sin fecha vigente -- necesita atención"></i>{% endif %}
-                                {{ entry.expiry_date|default:"—" }}
+                                {% if entry.expiry_date %}{{ entry.expiry_date }}{% elif entry.issue_date %}<span class="text-muted small">Emisión:</span> {{ entry.issue_date }}{% else %}—{% endif %}
                             </td>
                             <td>
                                 <a href="{% url 'panel:documentation_document_view' pk=entry.pk %}" target="_blank" class="btn btn-sm btn-outline-secondary">Ver</a>

@@ -10,7 +10,11 @@ PersonalDocumentTypeHistoryView.
     <tbody>
         {% for entry in entries %}
         <tr>
-            <td>{{ entry.expiry_date|default:"Sin fecha" }}</td>
+            <td>
+                {% if entry.expiry_date %}{{ entry.expiry_date }}
+                {% elif entry.issue_date %}<span class="text-muted small">Emisión:</span> {{ entry.issue_date }}
+                {% else %}Sin fecha{% endif %}
+            </td>
             <td>
                 {% if entry.is_obsolete %}
                 <span class="badge bg-secondary">Obsoleto</span>
