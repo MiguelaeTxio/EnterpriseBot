@@ -173,15 +173,17 @@ def _split_current_obsolete(entries):
 
     H30 (S50): cada entry vigente lleva ademas `needs_attention`
     (atributo Python, nunca de BD) -- True cuando su tipo necesita
-    fecha (`tracks_expiry`) y esa fecha esta en blanco o ya paso.
-    Miguel Angel, verbatim: "el seguro obligatorio tiene que estar al
-    corriente del pago [...] la ITV tiene que estar vigente [...] si
-    no hay vigentes [...] ya tenemos que tener un aviso visual ahi."
-    Generalizado a CUALQUIER tipo tracks_expiry=True, no solo SEGURO/
-    ITV -- misma logica que ya decide si hace falta perseguir fecha
-    en el pipeline de ingesta (H30 S50, expiry_resolution_service):
-    la ausencia de fecha en un tipo que la necesita es la señal
-    completa, no hace falta una lista fija de codigos aqui tampoco.
+    fecha (`tracks_expiry`) y esa fecha ya pasó de verdad.
+
+    CORREGIDO EN H31 (S100), confirmado explícitamente por Miguel
+    Ángel: antes también se marcaba cuando la fecha estaba en blanco
+    (mismo criterio que `_attach_alert_flags`, mismo incidente real:
+    muchos tipos de PERSONAL con `tracks_expiry=True` -- ALTA,
+    MOD_145, IDC, CONTRATO... -- no tienen ninguna fecha de caducidad
+    que imprimir, su vigencia se decide por `issue_date`, nunca por
+    caducidad. Con la regla vieja salían siempre en rojo, estuvieran
+    bien o mal. Ahora solo una caducidad real ya pasada dispara el
+    aviso -- un tipo sin fecha nunca alerta por sí solo.
     """
     from datetime import date
 
@@ -209,7 +211,8 @@ def _split_current_obsolete(entries):
                 entry.needs_attention = bool(
                     entry.document_type_id
                     and entry.document_type.tracks_expiry
-                    and (not entry.expiry_date or entry.expiry_date < today)
+                    and entry.expiry_date
+                    and entry.expiry_date < today
                 )
                 current.append(entry)
             else:
