@@ -1997,3 +1997,23 @@ verificando el código, no en producción.
 **C.P. (código postal) sigue vacío -- no es un bug.** El DNI español
 no lo imprime (solo calle, población, provincia); ya documentado
 antes en esta misma sesión.
+
+---
+
+## CAUSA REAL DEL FALLO EN ALTA (SEGURIDAD SOCIAL) -- OCR EN VEZ DE TEXTO REAL (S100)
+
+Diagnóstico verificado con el propio texto real del documento (no
+suposición): los PDF de "Alta (Seguridad Social)" son generados
+digitalmente por la Tesorería, con texto real incrustado en el propio
+archivo -- nunca un escaneo. `classify_dates_in_text()` funciona
+perfectamente contra ese texto real (probado en vivo:
+`(None, date(2024,6,19), [...])`, exactamente la fecha de efectos
+correcta). El fallo estaba en que el flujo mandaba TODO PDF a Cloud
+Vision (OCR sobre los píxeles renderizados), introduciendo ruido que
+rompía la coincidencia de contexto que el motor necesita ver pegada.
+
+**Corregido:** nueva función `_pdf_embedded_text()` (pymupdf/fitz, ya
+dependencia real de la plataforma) -- para cualquier PDF, se prueba
+primero a extraer el texto YA incrustado (gratis, instantáneo, más
+fiable que OCR). Solo si el PDF no trae texto real (es un escaneo/
+foto genuino) cae a Cloud Vision como antes.
