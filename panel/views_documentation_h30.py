@@ -223,10 +223,23 @@ def _attach_alert_flags(objects, content_type):
     limitacion real de GenericForeignKey sin GenericRelation inversa,
     se calcula aparte y se adjunta como atributo). Marca `obj.
     has_alert = True` cuando el sujeto tiene AL MENOS un documento
-    vigente de un tipo `tracks_expiry=True` sin fecha o con fecha ya
-    pasada -- para la columna de alerta del listado (Centros de
-    Gasto/Personal). Solo sobre la pagina visible, nunca sobre el
+    vigente de un tipo `tracks_expiry=True` con una fecha de caducidad
+    real ya pasada -- para la columna de alerta del listado (Centros
+    de Gasto/Personal). Solo sobre la pagina visible, nunca sobre el
     listado completo.
+
+    CORREGIDO EN H31 (S100), confirmado explícitamente por Miguel
+    Ángel: antes también alertaba cuando `expiry_date` estaba VACÍO,
+    pensado para maquinaria (ITV, seguro -- si falta la fecha,
+    probablemente no se ha leído bien y hay que revisarlo). Pero
+    muchos tipos reales de PERSONAL con `tracks_expiry=True` (ALTA,
+    MOD_145, IDC...) no tienen ninguna fecha de caducidad que imprimir
+    -- son documentos administrativos de un solo uso, su vigencia se
+    decide por `issue_date` (ver `document_management.
+    vigencia_service`), nunca por caducidad. Con la regla vieja,
+    salían en rojo SIEMPRE, estuvieran bien o mal. Ahora solo alerta
+    una caducidad real ya pasada -- un tipo sin fecha nunca alerta por
+    sí solo, sea PERSONAL o maquinaria.
     """
     from datetime import date
 
@@ -238,8 +251,8 @@ def _attach_alert_flags(objects, content_type):
             domain_object_id__in=pks, entry_kind=DocumentIndexEntry.KIND_FILE,
             deleted_at__isnull=True, purged_at__isnull=True,
             is_obsolete=False, document_type__tracks_expiry=True,
-        ).filter(Q(expiry_date__isnull=True) | Q(expiry_date__lt=today))
-        .values_list("domain_object_id", flat=True).distinct()
+            expiry_date__isnull=False, expiry_date__lt=today,
+        ).values_list("domain_object_id", flat=True).distinct()
     )
     for obj in objects:
         obj.has_alert = obj.pk in alert_pks
