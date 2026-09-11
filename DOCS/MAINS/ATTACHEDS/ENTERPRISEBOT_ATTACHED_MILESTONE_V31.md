@@ -1950,3 +1950,50 @@ alcance pendiente, no una corrección de este incidente.
 probar el alta completa con el mismo lote de 15 documentos ya
 corregido el bug, antes de restaurar la ficha real de Miguel Ángel
 desde el backup `EnterpriseBot_002_backup.json`.
+
+---
+
+## INCIDENTE GRAVE -- EL ALTA IGNORABA EL MOTOR REAL DE FECHADO DE H30 (S100, misma sesión)
+
+Miguel Ángel, tras probar con documentos reales, vio muchos documentos
+marcados en rojo sin motivo y dos ALTA (empresas distintas) sin forma
+de saber cuál era la vigente. Verbatim: *"¿qué ha pasado con todos
+estos motores que llevamos dos semanas creando? [...] la extracción
+de fecha [...] lo estamos ignorando."*
+
+**Diagnóstico real, confirmado leyendo el código:**
+1. `_store_documents` pedía la fecha a Gemini de forma genérica, en
+vez de usar `date_verification_service.classify_dates_in_text()` --
+el motor real, calibrado durante semanas contra casos concretos (S87
+saltos de línea, S89 fechas de ruido, S91 comas).
+2. La sustitución (`evaluate_substitution`) solo se ejecutaba para
+tipos con `tracks_expiry=True`, y siempre con `issue_date=None`
+hardcodeado -- nunca se le daba a `vigencia_service` la fecha de
+emisión que necesita para decidir cuál es más reciente en tipos SIN
+caducidad propia (ALTA es exactamente ese caso: `tracks_expiry=True`
+en el catálogo, pero un ALTA no caduca, lo que importa es cuál se
+expidió después).
+
+**Corregido:**
+- El texto ya extraído por Cloud Vision se pasa por
+`classify_dates_in_text()` -- devuelve caducidad Y emisión, motor
+real de H30, no Gemini. Miguel Ángel, corrección adicional en la
+misma sesión: *"el fechado lo estábamos haciendo ya sin Gemini [...]
+ya no es necesario llamar a Gemini para obtener las fechas."*
+Consecuencia: el prompt de texto YA NO pide fechas a Gemini en
+absoluto -- solo el camino de Vision directo (sin texto OCR posible)
+sigue pidiéndoselas, por no tener otra fuente.
+- `issue_date` se extrae y se persiste de verdad en
+`DocumentIndexEntry` (campo ya existente, nunca usado hasta ahora por
+este flujo).
+- La sustitución ya no se limita a `tracks_expiry=True` -- se ejecuta
+para cualquier tipo con `document_type` resuelto; `is_current()` ya
+sabe decidir por `issue_date` cuando no hay `expiry_date`.
+- Corregido además un bug de indentación real (el `else` de "el
+entrante no prevalece" emparejaba por error con el `for` en vez de
+con el `if`, tras quitar el filtro de `tracks_expiry`) -- detectado
+verificando el código, no en producción.
+
+**C.P. (código postal) sigue vacío -- no es un bug.** El DNI español
+no lo imprime (solo calle, población, provincia); ya documentado
+antes en esta misma sesión.
