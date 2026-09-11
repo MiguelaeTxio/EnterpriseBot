@@ -297,6 +297,20 @@ lógica, y así queda autocontenido).
             <form id="personalCreateForm" class="d-none">
                 <div class="modal-body" id="personalIntakeStep2">
                     <div id="personalIntakeWarnings" class="mb-2"></div>
+                    {% comment %}
+                    H31 (S100), Miguel Ángel: "deberíamos de indicar
+                    que el DNI es muy importante revisarlo porque
+                    luego ya no se puede modificar y habría que borrar
+                    la ficha completa de estar mal." DNI/NIE es
+                    `unique=True` y de identificador -- no forma parte
+                    de `PersonalUpdateView.EDITABLE_FIELDS`, por eso es
+                    real que corregirlo después implica borrar y
+                    rehacer la ficha entera.
+                    {% endcomment %}
+                    <div class="alert alert-warning py-2 px-2 small mb-2">
+                        <i class="bi bi-exclamation-triangle-fill me-1"></i>
+                        Revisa bien el <strong>DNI/NIE</strong> antes de confirmar -- una vez creada la ficha no se puede modificar; si está mal, habría que borrar la ficha entera y volver a darla de alta.
+                    </div>
                     <div class="row g-2">
                         <div class="col-6">
                             <label class="form-label small mb-0">DNI/NIE *</label>

@@ -545,10 +545,6 @@ def merge_person_draft(extractions: list) -> dict:
         "employer_company": "", "hire_date": "", "ss_affiliation_number": "",
     }
     IDENTITY_TYPES = ("DNI", "NIE")
-    # H31 (S100): el número de afiliación a la Seguridad Social no
-    # aparece en el DNI -- aparece impreso en el ALTA, el IDC y la
-    # tarjeta de la Seguridad Social, nunca en otros tipos.
-    SS_NUMBER_TYPES = ("ALTA", "IDC", "SEG_SOCIAL")
     warnings = []
     for idx, result in enumerate(extractions):
         if "error" in result:
@@ -589,9 +585,18 @@ def merge_person_draft(extractions: list) -> dict:
                 draft["city"] = result["city_hint"]
             if not draft["province"] and result.get("province_hint"):
                 draft["province"] = result["province_hint"]
-        if doc_type in SS_NUMBER_TYPES:
-            if not draft["ss_affiliation_number"] and result.get("ss_number_hint"):
-                draft["ss_affiliation_number"] = result["ss_number_hint"]
+        # H31 (S100), corrección real de Miguel Ángel: la imagen que
+        # trae el número de afiliación "unas veces la coge como
+        # tarjeta de la Seguridad Social y otras veces la pone como
+        # que no la reconoce [...] realmente no es la tarjeta de la
+        # Seguridad Social" -- la clasificación del documento que trae
+        # este dato es inconsistente, pero el propio número es
+        # bastante inequívoco. Se acepta de CUALQUIER documento, no
+        # solo de ALTA/IDC/SEG_SOCIAL -- para no perderlo por una
+        # clasificación de tipo que ni siquiera pretendía ser
+        # determinante aquí.
+        if not draft["ss_affiliation_number"] and result.get("ss_number_hint"):
+            draft["ss_affiliation_number"] = result["ss_number_hint"]
         if doc_type == "CONTRATO":
             if not draft["employer_company"] and result.get("employer_company_hint"):
                 draft["employer_company"] = normalize_employer_company(
