@@ -519,7 +519,18 @@ def extract_one_document(data: bytes, mime_type: str, filename: str = "") -> dic
             "# [personal_intake_service] Fallo extrayendo documento: %s",
             exc, exc_info=True,
         )
-        return {"error": str(exc)}
+        # H31 (S101), incidente real: el mensaje crudo de la excepción
+        # (a veces en inglés, del propio SDK de Vertex AI/Gemini --
+        # límites de tamaño, cuota, etc.) se estaba devolviendo tal
+        # cual en `{"error": ...}`, y `merge_person_draft` lo insertaba
+        # sin traducir en el aviso mostrado al supervisor en el modal
+        # de alta -- ver `str(exc)` de antes. Miguel Ángel lo detectó
+        # como texto "crudo" mezclado con el aviso normal de Seguridad
+        # Social cuando otro documento del mismo lote fallaba a la vez.
+        # El detalle completo sigue en el log de arriba para
+        # diagnóstico; el supervisor solo ve un mensaje en castellano.
+        return {"error": "no se pudo procesar el documento (fallo técnico "
+                          "del servicio de lectura)."}
 
 
 def merge_person_draft(extractions: list) -> dict:
@@ -595,16 +606,6 @@ def merge_person_draft(extractions: list) -> dict:
                 draft["city"] = result["city_hint"]
             if not draft["province"] and result.get("province_hint"):
                 draft["province"] = result["province_hint"]
-        # H31 (S100), corrección real de Miguel Ángel: la imagen que
-        # trae el número de afiliación "unas veces la coge como
-        # tarjeta de la Seguridad Social y otras veces la pone como
-        # que no la reconoce [...] realmente no es la tarjeta de la
-        # Seguridad Social" -- la clasificación del documento que trae
-        # este dato es inconsistente, pero el propio número es
-        # bastante inequívoco. Se acepta de CUALQUIER documento, no
-        # solo de ALTA/IDC/SEG_SOCIAL -- para no perderlo por una
-        # clasificación de tipo que ni siquiera pretendía ser
-        # determinante aquí.
         # H31 (S100), corrección real de Miguel Ángel: la imagen que
         # trae el número de afiliación "unas veces la coge como
         # tarjeta de la Seguridad Social y otras veces la pone como
