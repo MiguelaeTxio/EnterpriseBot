@@ -1591,34 +1591,63 @@ class PersonalCreateView(DocsUploadAccessMixin, View):
             blob_name = "%s/%s" % (folder_path, filename)
             data = f.read()
 
-            expiry_date = None
-            raw_expiry = expiry_hints[idx] if idx < len(expiry_hints) else ""
-            if document_type and document_type.tracks_expiry and raw_expiry:
-                try:
-                    year, month, day = (int(x) for x in raw_expiry.split("-"))
-                    expiry_date = date(year, month, day)
-                except ValueError:
-                    expiry_date = None
+            # H31 (S100), incidente real: los hints de fecha (expiry_
+            # hint/issue_hint) viajan desde la extracción hasta aquí
+            # por tres capas (JSON -> JS -> formulario) -- el motor
+            # real (`classify_dates_in_text`) demostró leer bien los
+            # dos ALTA reales de Miguel Ángel en pruebas directas
+            # contra el archivo, pero la ficha creada seguía guardando
+            # `issue_date=None`; nunca se localizó en qué capa exacta
+            # se perdía. En vez de seguir persiguiéndolo, se recalcula
+            # aquí mismo, contra los bytes reales que se están
+            # indexando -- para PDF, sobre su texto ya incrustado
+            # (gratis, sin red) -- así el resultado nunca depende de
+            # que el hint haya sobrevivido el viaje completo. Para
+            # imágenes se sigue confiando en el hint ya extraído (aquí
+            # no se repite Cloud Vision, sería una llamada de red
+            # más).
+            engine_expiry_date, engine_issue_date = None, None
+            if extension.lower() == "pdf":
+                embedded_text = personal_intake_service._pdf_embedded_text(data)
+                if embedded_text:
+                    from document_explorer.date_verification_service import (
+                        classify_dates_in_text,
+                    )
+                    engine_expiry_date, engine_issue_date, _others = (
+                        classify_dates_in_text(embedded_text)
+                    )
 
-            # H31 (S100), incidente real: "tengo dos altas, una con
-            # grúas Adolfo y otra con asistencia y grúa, y no es capaz
-            # de decir cuál es la vigente" -- ALTA (y muchos otros
-            # tipos del catálogo) no tienen fecha de caducidad propia;
-            # `document_management.vigencia_service` ya sabe resolver
-            # ese caso comparando por `issue_date` (el más reciente
-            # gana), pero antes de esta corrección nunca se le pasaba
-            # nada -- siempre `issue_date=None`. Se parsea aquí sin
-            # exigir `tracks_expiry`, precisamente porque el caso real
-            # que hay que resolver es el de los tipos que NO tienen
-            # caducidad.
-            issue_date = None
-            raw_issue = issue_hints[idx] if idx < len(issue_hints) else ""
-            if raw_issue:
-                try:
-                    year, month, day = (int(x) for x in raw_issue.split("-"))
-                    issue_date = date(year, month, day)
-                except ValueError:
-                    issue_date = None
+            expiry_date = (
+                engine_expiry_date
+                if document_type and document_type.tracks_expiry else None
+            )
+            if expiry_date is None:
+                raw_expiry = expiry_hints[idx] if idx < len(expiry_hints) else ""
+                if document_type and document_type.tracks_expiry and raw_expiry:
+                    try:
+                        year, month, day = (int(x) for x in raw_expiry.split("-"))
+                        expiry_date = date(year, month, day)
+                    except ValueError:
+                        expiry_date = None
+
+            # H31 (S100), verbatim Miguel Ángel: "tengo dos altas, una
+            # con grúas Adolfo y otra con asistencia y grúa, y no es
+            # capaz de decir cuál es la vigente" -- ALTA (y muchos
+            # otros tipos del catálogo) no tienen fecha de caducidad
+            # propia; `document_management.vigencia_service` ya sabe
+            # resolver ese caso comparando por `issue_date` (el más
+            # reciente gana). Sin exigir `tracks_expiry` aquí a
+            # propósito -- el caso real es justo el de los tipos que
+            # NO tienen caducidad.
+            issue_date = engine_issue_date
+            if issue_date is None:
+                raw_issue = issue_hints[idx] if idx < len(issue_hints) else ""
+                if raw_issue:
+                    try:
+                        year, month, day = (int(x) for x in raw_issue.split("-"))
+                        issue_date = date(year, month, day)
+                    except ValueError:
+                        issue_date = None
 
             try:
                 upload_bytes(
