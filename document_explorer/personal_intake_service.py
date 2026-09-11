@@ -150,14 +150,21 @@ extrae igual más abajo, en el punto 2).
 2. Extrae, cuando el documento los contenga de forma legible:
    - Apellidos y nombre de la persona a la que pertenece el \
 documento, si aparecen (primer apellido, segundo apellido, nombre).
+   - El número de DNI o NIE de la persona, tal cual aparece \
+(incluida la letra final), si el documento lo menciona en \
+cualquier parte del texto -- NO hace falta que el documento SEA el \
+DNI/NIE en sí: muchos documentos oficiales distintos lo imprimen \
+igual (el ALTA de la Seguridad Social, el IDC, el propio CONTRATO, \
+un reconocimiento médico...).
    - El número de afiliación a la Seguridad Social (NSS), tal cual \
 aparece (puede llevar espacios o guiones), si el documento lo trae -- \
 suele aparecer en el ALTA de la Seguridad Social o en el IDC \
 (Informe de Datos para la Cotización).
-   - Si es un DNI o NIE: el número tal cual aparece (incluida la \
-letra final), la fecha de nacimiento, y -- si el reverso trae el \
-domicilio -- la dirección (calle y número), la población y la \
-provincia, cada una en su propio campo, tal cual aparecen.%s
+   - Si el documento ES el propio DNI o NIE (el carnet físico en \
+sí, no un documento que solo lo menciona): además de lo anterior, \
+la fecha de nacimiento, y -- si el reverso trae el domicilio -- la \
+dirección (calle y número), la población y la provincia, cada una \
+en su propio campo, tal cual aparecen.%s
    - Si es un CONTRATO laboral: el nombre de la empresa empleadora \
 real (tal cual aparece, sin normalizar), y la fecha de inicio/alta \
 en la empresa (formato AAAA-MM-DD).
@@ -600,22 +607,42 @@ def merge_person_draft(extractions: list, filenames: list = None) -> dict:
         doc_type = result.get("document_type_code", "")
         if doc_type == "SEG_SOCIAL":
             found_seg_social = True
+        # H31 (S101), incidente real, Miguel Ángel: "tenemos un montón
+        # de documentos que van con mi nombre y DNI [...] y sin
+        # embargo no tenemos ni idea de quién son los documentos" --
+        # el prompt YA le pedía a Gemini el nombre y apellidos de
+        # CUALQUIER documento (nunca estuvo restringido al DNI/NIE en
+        # sí), pero esta fusión los tiraba a la basura salvo que el
+        # propio documento fuera de tipo DNI/NIE. Con un CONTRATO, una
+        # ALTA de la Seguridad Social o un reconocimiento médico
+        # trayendo el nombre completo (y a menudo el DNI, ver más
+        # abajo), no hacía falta ningún documento de identidad en el
+        # lote para saber de quién eran -- el dato ya estaba, solo se
+        # descartaba. Se acepta ahora de CUALQUIER documento, el
+        # primero que lo traiga con confianza suficiente gana (mismo
+        # criterio que ya se aplicaba al número de afiliación a la
+        # Seguridad Social, unas líneas más abajo).
+        if not draft["dni"] and result.get("dni_hint"):
+            candidate_dni = normalize_dni(result["dni_hint"])
+            if candidate_dni and not is_valid_spanish_dni(candidate_dni):
+                warnings.append(
+                    "%s: el DNI leído (%s) no pasa la letra "
+                    "de control real -- revísalo a mano antes de "
+                    "confirmar." % (doc_label, candidate_dni),
+                )
+            draft["dni"] = candidate_dni
+        if not draft["first_surname"] and result.get("first_surname_hint"):
+            draft["first_surname"] = result["first_surname_hint"]
+        if not draft["second_surname"] and result.get("second_surname_hint"):
+            draft["second_surname"] = result["second_surname_hint"]
+        if not draft["given_name"] and result.get("given_name_hint"):
+            draft["given_name"] = result["given_name_hint"]
+        # Fecha de nacimiento y domicilio: el prompt solo se los pide
+        # a Gemini cuando el documento ES el propio DNI/NIE físico (el
+        # carnet en sí, no algo que solo lo menciona) -- se mantienen
+        # aquí igual de restringidos a IDENTITY_TYPES, a diferencia
+        # del DNI y el nombre de arriba.
         if doc_type in IDENTITY_TYPES:
-            if not draft["dni"] and result.get("dni_hint"):
-                candidate_dni = normalize_dni(result["dni_hint"])
-                if candidate_dni and not is_valid_spanish_dni(candidate_dni):
-                    warnings.append(
-                        "%s: el DNI leído (%s) no pasa la letra "
-                        "de control real -- revísalo a mano antes de "
-                        "confirmar." % (doc_label, candidate_dni),
-                    )
-                draft["dni"] = candidate_dni
-            if not draft["first_surname"] and result.get("first_surname_hint"):
-                draft["first_surname"] = result["first_surname_hint"]
-            if not draft["second_surname"] and result.get("second_surname_hint"):
-                draft["second_surname"] = result["second_surname_hint"]
-            if not draft["given_name"] and result.get("given_name_hint"):
-                draft["given_name"] = result["given_name_hint"]
             if not draft["birth_date"] and result.get("birth_date_hint"):
                 draft["birth_date"] = result["birth_date_hint"]
             if not draft["address_street"] and result.get("address_hint"):
