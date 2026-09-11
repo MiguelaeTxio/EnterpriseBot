@@ -540,7 +540,21 @@ modal de alta por completo, nunca dando pie a seguir con esta persona).
         const formData = new FormData();
         for (const f of fileInput.files) { formData.append('documents', f); }
         extractBtn.disabled = true;
-        step1Result.innerHTML = '<div class="text-primary small d-flex align-items-center gap-2"><span class="spinner-border spinner-border-sm" role="status"></span><span class="personal-intake-shimmer">Leyendo documentos…</span></div>';
+        // H31 (S101), diagnóstico real pedido tras reportar que nunca
+        // se ve el diálogo del navegador pidiendo permiso -- se
+        // muestra el estado real de `Notification.permission` en
+        // pantalla (nunca solo en consola, Miguel Ángel no tiene por
+        // qué abrir devtools) para saber si está en 'default'
+        // (debería pedirlo y no lo hace -- fallo real a corregir),
+        // 'denied' (el navegador ya lo bloqueó antes, hay que
+        // cambiarlo a mano en ajustes del sitio, ningún código puede
+        // forzarlo) o 'granted' (el permiso está bien, el fallo está
+        // en otro sitio).
+        const notifStatus = window.Notification
+            ? Notification.permission
+            : 'API no disponible en este navegador';
+        step1Result.innerHTML = '<div class="text-primary small d-flex align-items-center gap-2"><span class="spinner-border spinner-border-sm" role="status"></span><span class="personal-intake-shimmer">Leyendo documentos…</span></div>' +
+            '<div class="small text-muted mt-1">Permiso de notificaciones: <strong>' + notifStatus + '</strong></div>';
         fetch("{% url 'panel:documentation_personal_intake_extract' %}", {
             method: 'POST', body: formData,
             headers: {'X-CSRFToken': getCookie('csrftoken')},
