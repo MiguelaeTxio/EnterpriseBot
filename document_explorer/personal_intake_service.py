@@ -595,8 +595,39 @@ def merge_person_draft(extractions: list) -> dict:
         # solo de ALTA/IDC/SEG_SOCIAL -- para no perderlo por una
         # clasificación de tipo que ni siquiera pretendía ser
         # determinante aquí.
+        # H31 (S100), corrección real de Miguel Ángel: la imagen que
+        # trae el número de afiliación "unas veces la coge como
+        # tarjeta de la Seguridad Social y otras veces la pone como
+        # que no la reconoce [...] realmente no es la tarjeta de la
+        # Seguridad Social" -- la clasificación del documento que trae
+        # este dato es inconsistente, pero el propio número es
+        # bastante inequívoco. Se acepta de CUALQUIER documento, no
+        # solo de ALTA/IDC/SEG_SOCIAL -- para no perderlo por una
+        # clasificación de tipo que ni siquiera pretendía ser
+        # determinante aquí.
+        #
+        # Distinción real pedida por Miguel Ángel: extraer el DATO de
+        # un documento no significa que ese documento OCUPE la casilla
+        # de "Tarjeta de la Seguridad Social" en la ficha -- si lo
+        # hiciera, el supervisor nunca sabría que le falta pedir la
+        # tarjeta real ("no sé cómo podríamos diferenciar la
+        # extracción de texto de una tarjeta real [...] eso cuando se
+        # va a crear la ficha dejarlo claro"). Sin heurística de "esto
+        # parece/no parece la tarjeta real" (el propio Miguel Ángel
+        # reconoce que no hay forma fiable) -- en su lugar, siempre
+        # que el número salga de un documento que NO se clasificó como
+        # SEG_SOCIAL, se avisa explícitamente de que la tarjeta real
+        # sigue sin estar subida.
         if not draft["ss_affiliation_number"] and result.get("ss_number_hint"):
             draft["ss_affiliation_number"] = result["ss_number_hint"]
+            if doc_type != "SEG_SOCIAL":
+                warnings.append(
+                    "Documento %d: trae el número de afiliación a la "
+                    "Seguridad Social, pero no se ha reconocido como la "
+                    "Tarjeta de la Seguridad Social en sí -- si la tienes, "
+                    "súbela también para dejarla documentada."
+                    % (idx + 1),
+                )
         if doc_type == "CONTRATO":
             if not draft["employer_company"] and result.get("employer_company_hint"):
                 draft["employer_company"] = normalize_employer_company(
