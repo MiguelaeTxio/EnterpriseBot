@@ -2017,3 +2017,23 @@ dependencia real de la plataforma) -- para cualquier PDF, se prueba
 primero a extraer el texto YA incrustado (gratis, instantáneo, más
 fiable que OCR). Solo si el PDF no trae texto real (es un escaneo/
 foto genuino) cae a Cloud Vision como antes.
+
+---
+
+## RESUELTO -- LA SUSTITUCIÓN POR FECHA SÍ FUNCIONABA, FALTABA MOSTRARLA (S100)
+
+Confirmado con trazas de diagnóstico reales (`DIAG-FECHAS`) y consulta
+directa a BD: la extracción de fecha de emisión y la sustitución por
+tipo YA FUNCIONABAN correctamente -- ALTA con emisión 2024-06-19
+archivada, la de 2025-05-05 vigente; mismo patrón en IDC. El problema
+real era de visualización: la columna "Caducidad" y el modal de
+Historial solo mostraban `expiry_date`, nunca `issue_date` -- para
+tipos sin caducidad propia (ALTA, IDC...) siempre salía "Sin fecha"
+aunque la fecha de emisión sí se hubiera extraído y usado
+correctamente por dentro. Corregido: ambas plantillas muestran ahora
+la fecha de emisión, etiquetada, cuando no hay caducidad.
+
+Trazas `DIAG-FECHAS` (commit `d41c68e`) dejadas en el código a
+propósito -- práctica a partir de ahora: instrumentar con logging
+desde el principio en código nuevo, no solo al perseguir un fallo ya
+reportado.
