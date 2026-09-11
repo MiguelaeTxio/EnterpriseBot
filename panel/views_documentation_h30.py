@@ -1367,8 +1367,10 @@ class PersonalIntakeExtractView(DocsUploadAccessMixin, View):
 
         extractions = []
         per_file = []
+        filenames = []
         for (name, _content_type, _data), result in zip(file_bytes, results_by_index):
             extractions.append(result)
+            filenames.append(name)
             per_file.append({
                 "filename": name,
                 "document_type_code": result.get("document_type_code", "DESCONOCIDO"),
@@ -1378,7 +1380,14 @@ class PersonalIntakeExtractView(DocsUploadAccessMixin, View):
                 "error": result.get("error"),
             })
 
-        merged = personal_intake_service.merge_person_draft(extractions)
+        # H31 (S101), Miguel Ángel, verbatim: "estamos indicando números
+        # de documentos y no nombres de documentos [...] eso no sirve
+        # absolutamente para nada" -- con 10-15 documentos en el mismo
+        # lote, "Documento 7" no le dice al supervisor cuál de sus
+        # archivos hay que revisar; el nombre real sí.
+        merged = personal_intake_service.merge_person_draft(
+            extractions, filenames=filenames,
+        )
         draft = merged["draft"]
 
         # H31 (S100), incidente real: el procesamiento en paralelo de

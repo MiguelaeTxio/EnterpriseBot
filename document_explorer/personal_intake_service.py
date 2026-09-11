@@ -533,7 +533,7 @@ def extract_one_document(data: bytes, mime_type: str, filename: str = "") -> dic
                           "del servicio de lectura)."}
 
 
-def merge_person_draft(extractions: list) -> dict:
+def merge_person_draft(extractions: list, filenames: list = None) -> dict:
     """
     Combina los resultados de `extract_one_document` de varios
     documentos (p. ej. DNI + contrato) en un único borrador de
@@ -558,6 +558,17 @@ def merge_person_draft(extractions: list) -> dict:
     que el DNI sí traía la fecha correcta (validada por MRZ). El
     docstring de esta función ya decía "el DNI manda en identidad" --
     nunca se implementó de verdad hasta ahora.
+
+    CORREGIDO EN S101, incidente real: los avisos identificaban cada
+    documento por su posición en el lote ("Documento 7"), inútil para
+    el supervisor en cuanto sube más de 3-4 archivos a la vez -- no
+    hay forma de saber a qué archivo real se refiere sin contarlos a
+    mano. `filenames` (mismo orden que `extractions`, uno a uno) se usa
+    ahora para identificar cada documento por su nombre real de
+    archivo en vez de por número de orden. Parámetro opcional (con
+    fallback a "Documento N") solo por compatibilidad hacia atrás con
+    cualquier llamador que no lo pase todavía -- todo llamador real de
+    la plataforma debe pasarlo siempre.
     """
     draft = {
         "dni": "", "first_surname": "", "second_surname": "",
@@ -568,17 +579,21 @@ def merge_person_draft(extractions: list) -> dict:
     IDENTITY_TYPES = ("DNI", "NIE")
     warnings = []
     for idx, result in enumerate(extractions):
+        doc_label = (
+            filenames[idx] if filenames and idx < len(filenames)
+            else "Documento %d" % (idx + 1)
+        )
         if "error" in result:
             warnings.append(
-                "Documento %d: no se pudo leer (%s)."
-                % (idx + 1, result["error"]),
+                "%s: no se pudo leer (%s)."
+                % (doc_label, result["error"]),
             )
             continue
         confidence_ok = result.get("confidence") in ("ALTA", "MEDIA")
         if not confidence_ok:
             warnings.append(
-                "Documento %d: lectura de baja confianza, revisar a mano."
-                % (idx + 1),
+                "%s: lectura de baja confianza, revisar a mano."
+                % doc_label,
             )
             continue
         doc_type = result.get("document_type_code", "")
@@ -587,9 +602,9 @@ def merge_person_draft(extractions: list) -> dict:
                 candidate_dni = normalize_dni(result["dni_hint"])
                 if candidate_dni and not is_valid_spanish_dni(candidate_dni):
                     warnings.append(
-                        "Documento %d: el DNI leído (%s) no pasa la letra "
+                        "%s: el DNI leído (%s) no pasa la letra "
                         "de control real -- revísalo a mano antes de "
-                        "confirmar." % (idx + 1, candidate_dni),
+                        "confirmar." % (doc_label, candidate_dni),
                     )
                 draft["dni"] = candidate_dni
             if not draft["first_surname"] and result.get("first_surname_hint"):
@@ -633,11 +648,11 @@ def merge_person_draft(extractions: list) -> dict:
             draft["ss_affiliation_number"] = result["ss_number_hint"]
             if doc_type != "SEG_SOCIAL":
                 warnings.append(
-                    "Documento %d: trae el número de afiliación a la "
+                    "%s: trae el número de afiliación a la "
                     "Seguridad Social, pero no se ha reconocido como la "
                     "Tarjeta de la Seguridad Social en sí -- si la tienes, "
                     "súbela también para dejarla documentada."
-                    % (idx + 1),
+                    % doc_label,
                 )
         if doc_type == "CONTRATO":
             if not draft["employer_company"] and result.get("employer_company_hint"):
