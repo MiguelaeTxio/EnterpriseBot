@@ -64,7 +64,7 @@ y se habilita "Guardar".
             <button type="button" class="btn btn-sm btn-primary rounded-circle position-absolute"
                     style="width:32px;height:32px;padding:0;bottom:0;right:0;"
                     title="{% if avatar %}Cambiar foto{% else %}Añadir foto{% endif %}"
-                    onclick="openUploadForm('IMAGEN')">
+                    onclick="openUploadForm('IMAGEN', true)">
                 <i class="bi bi-camera-fill"></i>
             </button>
         </div>
@@ -683,20 +683,32 @@ const EPI_ITEMS = [
     {% for epi in epi_items %}{id: {{ epi.pk }}, label: "{{ epi.label|escapejs }}", family: "{{ epi.family|escapejs }}"},{% endfor %}
 ];
 
-function openUploadForm(preselectCode) {
+function openUploadForm(preselectCode, avatarMode) {
+    // H31 (S100), Miguel Ángel: "salga un tipo documentales [...] a
+    // la hora de subir una foto de perfil [...] eso tiende a
+    // confundir." La cámara del avatar reutilizaba el formulario
+    // genérico completo (selector de 79 tipos, multi-archivo) para
+    // una acción que es, por definición, "sube UNA foto de perfil" --
+    // sin selector de tipo (fijo a IMAGEN) y sin permitir varios
+    // archivos a la vez.
     const container = document.getElementById('uploadFormContainer');
-    const options = DOC_TYPES_PERSONAL.map(dt =>
-        `<option value="${dt.code}" data-tracks-expiry="${dt.tracksExpiry}" ${dt.code === preselectCode ? 'selected' : ''}>${dt.label}</option>`,
-    ).join('') + '<option value="__NEW__">+ Añadir tipo documental nuevo</option>';
+    const typeFieldHtml = avatarMode
+        ? `<input type="hidden" name="document_type_code" value="IMAGEN">`
+        : (() => {
+            const options = DOC_TYPES_PERSONAL.map(dt =>
+                `<option value="${dt.code}" data-tracks-expiry="${dt.tracksExpiry}" ${dt.code === preselectCode ? 'selected' : ''}>${dt.label}</option>`,
+            ).join('') + '<option value="__NEW__">+ Añadir tipo documental nuevo</option>';
+            return `<div class="mb-2">
+                        <label class="form-label">Tipo documental</label>
+                        <select name="document_type_code" id="uploadTypeSelect" class="form-select" required>${options}</select>
+                    </div>`;
+        })();
     container.innerHTML = `
         <div class="card">
             <div class="card-body">
-                <h6>Subir documento</h6>
+                <h6>${avatarMode ? 'Subir foto de perfil' : 'Subir documento'}</h6>
                 <form id="subjectUploadForm">
-                    <div class="mb-2">
-                        <label class="form-label">Tipo documental</label>
-                        <select name="document_type_code" id="uploadTypeSelect" class="form-select" required>${options}</select>
-                    </div>
+                    ${typeFieldHtml}
                     <div id="newTypeFields" class="border rounded p-2 mb-2" style="display:none;">
                         <div class="mb-2">
                             <label class="form-label">Nombre visible del tipo nuevo</label>
@@ -717,14 +729,14 @@ function openUploadForm(preselectCode) {
                         <div id="newTypeResult" class="mt-1"></div>
                     </div>
                     <div class="mb-2">
-                        <label class="form-label">Archivo(s) — puedes seleccionar varios a la vez si son del mismo tipo</label>
-                        <input type="file" name="file" class="form-control" multiple required>
+                        <label class="form-label">${avatarMode ? 'Foto' : 'Archivo(s) — puedes seleccionar varios a la vez si son del mismo tipo'}</label>
+                        <input type="file" name="file" class="form-control" ${avatarMode ? 'accept="image/*"' : 'multiple'} required>
                     </div>
-                    <div class="mb-2" id="expiryDateField">
+                    <div class="mb-2" id="expiryDateField" ${avatarMode ? 'style="display:none;"' : ''}>
                         <label class="form-label">Fecha de caducidad</label>
                         <input type="date" name="expiry_date" class="form-control">
                     </div>
-                    <button type="submit" class="btn btn-primary btn-sm" id="subjectUploadSubmitBtn">Subir</button>
+                    <button type="submit" class="btn btn-primary btn-sm" id="subjectUploadSubmitBtn">${avatarMode ? 'Subir foto' : 'Subir'}</button>
                     <div id="uploadResult" class="mt-2"></div>
                 </form>
             </div>
@@ -735,6 +747,7 @@ function openUploadForm(preselectCode) {
     const newTypeFields = document.getElementById('newTypeFields');
     const submitBtn = document.getElementById('subjectUploadSubmitBtn');
     function toggleExpiry() {
+        if (!select) { return; }
         if (select.value === '__NEW__') {
             newTypeFields.style.display = '';
             expiryField.style.display = 'none';
@@ -746,8 +759,10 @@ function openUploadForm(preselectCode) {
         const opt = select.options[select.selectedIndex];
         expiryField.style.display = opt.dataset.tracksExpiry === 'true' ? '' : 'none';
     }
-    select.onchange = toggleExpiry;
-    toggleExpiry();
+    if (select) {
+        select.onchange = toggleExpiry;
+        toggleExpiry();
+    }
 
     bootstrap.Modal.getOrCreateInstance(
         document.getElementById('uploadDocumentModal'),
