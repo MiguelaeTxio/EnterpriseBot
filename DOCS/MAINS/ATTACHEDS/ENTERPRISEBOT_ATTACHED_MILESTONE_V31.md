@@ -2037,3 +2037,198 @@ Trazas `DIAG-FECHAS` (commit `d41c68e`) dejadas en el código a
 propósito -- práctica a partir de ahora: instrumentar con logging
 desde el principio en código nuevo, no solo al perseguir un fallo ya
 reportado.
+
+---
+
+### COMPLETADAS EN S100 -- sesión larga (44 commits), Bloque 1 de H31 construido de cero y llevado a producción real
+
+**Resumen:** sesión dedicada íntegramente al Bloque 1 de la hoja de ruta
+de H31 (alta de trabajador guiada por documentación). Se resolvieron
+primero las 4 preguntas heredadas de H33 (ver secciones más arriba en
+este mismo anexo, con las correcciones reales que sufrieron sobre la
+marcha), y a partir de ahí se construyó, probó y depuró en producción
+real un flujo completo: el supervisor sube 1-20 documentos de un
+trabajador nuevo, el sistema los clasifica contra el catálogo REAL de
+PERSONAL (79 tipos, consultado dinámicamente contra
+`DocumentTypeCatalog`, nunca hardcodeado), extrae identidad/fechas/
+empresa/número de afiliación a la Seguridad Social, presenta un
+borrador para que el supervisor confirme o corrija, y crea la ficha
+con sus documentos ya indexados y con la sustitución/vigencia real
+aplicada (el más reciente de cada tipo queda vigente, el resto
+archivado como histórico).
+
+**Arquitectura final del pipeline de lectura** (evolucionó varias
+veces en la propia sesión, cada cambio motivado por un problema real,
+no especulativo -- ver el detalle completo en las secciones de este
+mismo anexo tituladas "VELOCIDAD Y BUGS...", "CAUSA REAL DEL FALLO EN
+ALTA...", "RESUELTO -- LA SUSTITUCIÓN..."):
+1. **Texto real incrustado del PDF primero** (`_pdf_embedded_text()`,
+   pymupdf/fitz) -- la mayoría de los documentos del alta son
+   generados digitalmente (Resoluciones de la Seguridad Social,
+   contratos), no escaneos; usar OCR sobre ellos introducía ruido que
+   rompía el fechado. Solo si el PDF no trae texto real (escaneo/foto
+   genuina) se cae a Cloud Vision.
+2. **Cloud Vision API** para OCR real cuando hace falta -- sustituye a
+   Tesseract local tras el aviso de Miguel Ángel de que el OCR local
+   agota la cuota de CPU compartida de PythonAnywhere con volumen real.
+3. **Gemini de solo TEXTO** (nunca la imagen/PDF entero) para
+   clasificar tipo e identidad -- mucho más rápido que Vision directo.
+   Vision directo sobre el archivo completo queda como último recurso
+   si no hay texto disponible por ningún camino.
+4. **`classify_dates_in_text()`** (motor real de H30, calibrado
+   durante semanas) para fechas -- nunca se le pide la fecha a Gemini
+   cuando hay texto real disponible, redundante y menos fiable.
+   `extract_dni_mrz_birthdate`/`extract_dni_mrz_expiry` (H30, MRZ con
+   validación por dígito de control) refuerzan por encima incluso de
+   `classify_dates_in_text` para el caso específico DNI/NIE.
+5. **Fechas recalculadas de nuevo, directamente contra los bytes
+   reales, en el momento de guardar** (`PersonalCreateView.
+   _store_documents`) -- capa de robustez añadida tras un incidente
+   real donde el hint viajaba correctamente por la extracción pero se
+   perdía en algún punto entre JSON→JS→formulario nunca aislado del
+   todo; recalcular en el punto de verdad hace el resultado
+   independiente de dónde estuviera el problema de transporte.
+
+**Correcciones de datos reales, todas confirmadas con pruebas contra
+documentos reales de Miguel Ángel (no simulados):**
+- DNI: corrección del cero espurio de Gemini (mismo hallazgo ya
+  documentado en H29 S042) + validación real por letra de control
+  (`is_valid_spanish_dni`).
+- Identidad (nombre/apellidos/DNI/nacimiento/domicilio) restringida a
+  fusionarse SOLO desde documentos DNI/NIE -- antes se mezclaba con
+  cualquier tipo, causando pérdida real de `birth_date`.
+- `employer_company` normalizado contra las 4 empresas reales
+  conocidas (fuzzy match), nunca texto libre ni un cubo "otras
+  empresas" (revertido tras corrección explícita de Miguel Ángel).
+- Código postal completado automáticamente por población, contra el
+  dataset real y libre del INE (`document_explorer/data/
+  codigos_postales_municipios.csv`, `postal_code_service.py`) --
+  verificado con Loja (18300) antes de integrarlo.
+- Número de afiliación a la Seguridad Social: campo nuevo
+  (`ss_affiliation_number`, migración 0080 -- **incidente real:
+  quedó desplegada en código pero sin aplicar en BD durante varias
+  horas; el `AddField` había corrido una vez sin registrarse en
+  `django_migrations`, columna duplicada; resuelto con `--fake`,
+  nunca reejecutando el SQL**), extraído de CUALQUIER documento que lo
+  traiga (no solo ALTA/IDC/SEG_SOCIAL) tras confirmar que la
+  clasificación del documento que lo trae es real y consistentemente
+  ambigua. Regla nueva y verificada (Real Decreto 183/2004): un
+  documento solo se admite como SEG_SOCIAL si trae los rótulos
+  oficiales reales "SISTEMA NACIONAL DE SALUD DE ESPAÑA" y "TARJETA
+  SANITARIA" -- un simple listado con el número NUNCA ocupa esa
+  casilla, aunque el dato sí se extraiga y se avise al supervisor de
+  que la tarjeta real sigue sin subir.
+- Colisión de nombres de archivo corregida (dos documentos del mismo
+  tipo el mismo día ya no se sobrescriben en GCS).
+- Vocabulario de extracción ampliado de 3 tipos fijos a los 79 tipos
+  reales y activos de PERSONAL, consultados dinámicamente.
+
+**Infraestructura de despliegue, ambas correcciones de fondo, no solo
+parches puntuales:**
+- `deploy.yml`: un fallo de `pip-sync` ya no bloquea `migrate`/
+  `collectstatic`/reload -- incidente real donde el código quedaba en
+  disco (git pull correcto) pero el proceso web nunca se recargaba,
+  causando que Miguel Ángel probara el mismo fix "sin efecto" varias
+  veces seguidas sin ser cierto.
+- Candado de dependencias (`requirements.txt`) ya nunca se compila a
+  mano en la consola de PythonAnywhere (incidente real ya documentado
+  en H23 S023) ni en el workspace de Claude (perdía configuración real
+  de PythonAnywhere, como `--find-links`) -- nuevo workflow
+  `compile-requirements.yml` compila de verdad en PythonAnywhere vía
+  SSH y comitea el resultado de vuelta a GitHub, sin dejar nunca una
+  modificación local suelta en el servidor.
+
+**UX de la ficha y del propio alta**, todas confirmadas con Miguel
+Ángel viéndolas en producción: spinners reales en los dos momentos de
+espera (lectura de documentos, creación de la ficha); modal Bootstrap
+real para "Subir documento" (antes se inyectaba en un contenedor que
+podía quedar oculto dentro de un acordeón colapsado -- mismo patrón de
+incidente que ya forzó sacar `editModeConfirmModal` del acordeón en
+S76); modo simplificado (sin selector de tipo, un solo archivo) para
+la foto de perfil desde la cámara del avatar; tope de 20 documentos en
+el alta; leyenda confusa del Excel eliminada de Datos personales; DNI
+en su propio campo con fondo distinto, marcado como inmutable; cabecera
+de la ficha con la empresa siempre visible, independientemente de qué
+acordeón esté abierto; aviso destacado de que el DNI no se puede
+corregir después de crear la ficha.
+
+**Sesión validada en producción real por Miguel Ángel junto con
+Yolanda** (quien lleva la documentación en el día a día) -- valoración
+positiva del flujo completo, con dos hallazgos reales que quedan para
+S101 (ver Hoja de Ruta).
+
+---
+
+## Hoja de Ruta para la Sesión Siguiente (S101, reescrita por completo -- sustituye a la de S99)
+
+**1. Deduplicación real de documentos -- caso de prueba concreto ya
+identificado.** Yolanda reporta duplicados reales acumulándose de
+nuevo en el explorador de archivos pese a una limpieza ya hecha antes
+con un management command. Caso real para verificar: el trabajador
+**Alonso Pedrosa** tiene dos `RECONOCIMIENTO_MEDICO` que son el mismo
+documento con nombres de archivo distintos (uno "apto definitivo",
+otro "RM"). Trabajo:
+   - Localizar el management command de deduplicación ya construido
+     (explorador de archivos, ejecutado desde ahí) y confirmar si
+     sigue existiendo en el repo y si sigue siendo compatible con el
+     estado actual del bucket/BD.
+   - Ejecutarlo (o reconstruirlo si ya no es viable) contra la ficha
+     real de Alonso Pedrosa como primer caso de prueba.
+   - Cierre objetivo: consulta real a BD confirmando que Alonso
+     Pedrosa tiene un único `DocumentIndexEntry` vigente de tipo
+     `RECONOCIMIENTO_MEDICO` (el duplicado, si el hash coincide,
+     eliminado o archivado con criterio claro -- decidir cuál de las
+     dos acciones en la propia sesión, con Miguel Ángel, antes de
+     ejecutar contra más trabajadores).
+   - Una vez validado con ese caso, evaluar relanzarlo contra el resto
+     del bucket de PERSONAL.
+
+**2. Restringir la actualización de documentación de personas ya
+existentes al botón "Actualizar" de su propia ficha -- nunca desde el
+alta guiada por documentación.** Miguel Ángel, verbatim: "para subir
+documentación y actualizar deberíamos usar el botón actualizar dentro
+de la ficha de cada persona [...] solamente damos de alta
+documentación cuando solamente tengamos el DNI." Trabajo:
+   - Confirmar (con una prueba real, subiendo un lote de documentos de
+     un DNI ya existente) que el aviso de duplicado ya construido esta
+     sesión (`PersonalIntakeExtractView`) bloquea de verdad seguir
+     adelante -- hoy solo se ha probado que el modal aparece, nunca
+     que sea imposible continuar por otra vía (p. ej. cerrando el
+     aviso y confirmando igualmente con el formulario ya precargado).
+   - Si el bloqueo no es real (el formulario de confirmación sigue
+     accesible tras cerrar el aviso), corregirlo para que sea
+     imposible crear una ficha nueva o adjuntar documentos a través
+     del flujo de alta cuando el DNI ya existe -- la única vía debe
+     quedar cortada por completo, no solo avisada.
+   - Cierre objetivo: prueba real con un DNI ya existente confirmando
+     que no hay ningún camino dentro del modal de alta que termine
+     subiendo un documento a esa persona.
+
+**3. Confirmar el comportamiento real cuando ningún documento subido
+trae un DNI legible.** Trabajo:
+   - Probar el alta con un lote de documentos que no incluya ningún
+     DNI/NIE reconocible (p. ej. solo contrato + reconocimiento
+     médico) y confirmar qué pasa hoy en el paso de confirmación --
+     `dni` es campo obligatorio real (`REQUIRED_FIELDS`), así que en
+     teoría no se puede confirmar sin rellenarlo a mano, pero no se ha
+     verificado con una prueba real en esta sesión.
+   - Cierre objetivo: captura real del modal de confirmación con el
+     campo DNI vacío, confirmando que el botón "Confirmar y crear
+     ficha" rechaza el envío (validación `required` del propio
+     `<input>`, más la comprobación server-side ya existente) hasta
+     que el supervisor lo rellene a mano.
+
+**4. Investigar si existe alguna fuente real para validar la
+EXISTENCIA de un DNI** (no solo su letra de control, que ya se hace
+con `is_valid_spanish_dni`). Yolanda reporta que otros programas de
+gestión sí detectan "este DNI no existe". Trabajo:
+   - Buscar si existe alguna API/base de datos pública española real
+     que permita esa validación, o si esos programas en realidad solo
+     hacen la misma validación de letra de control que ya tenemos
+     aquí (hipótesis más probable, a confirmar con evidencia buscada
+     en la propia sesión, no supuesta).
+   - Cierre objetivo: respuesta documentada con la fuente real
+     encontrada (o la confirmación de que no existe ninguna fuente
+     pública accesible y que la validación real disponible ya es la
+     que se tiene), sin dejarlo como pregunta abierta para una tercera
+     sesión.
