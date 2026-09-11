@@ -260,6 +260,22 @@ Modal aparte, fuera del <script> IIFE de arriba (mismo motivo que
 editModeConfirmModal en _personal_detail.html: nada que ver con esa
 lógica, y así queda autocontenido).
 {% endcomment %}
+<style>
+/* H31 (S100) -- pequeña animación de brillo para "Leyendo documentos…",
+   pedida por Miguel Ángel: "una pequeña animación de brillo, de color". */
+.personal-intake-shimmer {
+    background: linear-gradient(90deg, #6c757d 0%, #0d6efd 50%, #6c757d 100%);
+    background-size: 200% auto;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: personalIntakeShimmer 1.6s linear infinite;
+}
+@keyframes personalIntakeShimmer {
+    0% { background-position: 200% center; }
+    100% { background-position: -200% center; }
+}
+</style>
 <div class="modal fade" id="personalCreateModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -339,7 +355,10 @@ lógica, y así queda autocontenido).
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="submit" class="btn btn-primary">Confirmar y crear ficha</button>
+                    <button type="submit" class="btn btn-primary">
+                        <span class="spinner-border spinner-border-sm d-none" role="status" id="personalCreateSpinner"></span>
+                        <span id="personalCreateBtnLabel">Confirmar y crear ficha</span>
+                    </button>
                 </div>
             </form>
         </div>
@@ -425,7 +444,7 @@ modal de alta por completo, nunca dando pie a seguir con esta persona).
         const formData = new FormData();
         for (const f of fileInput.files) { formData.append('documents', f); }
         extractBtn.disabled = true;
-        step1Result.innerHTML = '<div class="text-muted small">Leyendo documentos…</div>';
+        step1Result.innerHTML = '<div class="text-primary small d-flex align-items-center gap-2"><span class="spinner-border spinner-border-sm" role="status"></span><span class="personal-intake-shimmer">Leyendo documentos…</span></div>';
         fetch("{% url 'panel:documentation_personal_intake_extract' %}", {
             method: 'POST', body: formData,
             headers: {'X-CSRFToken': getCookie('csrftoken')},
@@ -499,13 +518,19 @@ modal de alta por completo, nunca dando pie a seguir con esta persona).
         for (const hint of perFileExpiryHints) { formData.append('document_expiry_hints', hint); }
         for (const hint of perFileIssueHints) { formData.append('document_issue_hints', hint); }
         const submitBtn = form.querySelector('button[type="submit"]');
+        const createSpinner = document.getElementById('personalCreateSpinner');
+        const createBtnLabel = document.getElementById('personalCreateBtnLabel');
         submitBtn.disabled = true;
+        createSpinner.classList.remove('d-none');
+        createBtnLabel.textContent = 'Creando ficha…';
         resultEl.innerHTML = '';
         fetch("{% url 'panel:documentation_personal_create' %}", {
             method: 'POST', body: formData,
             headers: {'X-CSRFToken': getCookie('csrftoken')},
         }).then((r) => r.json()).then((data) => {
             submitBtn.disabled = false;
+            createSpinner.classList.add('d-none');
+            createBtnLabel.textContent = 'Confirmar y crear ficha';
             if (data.ok) {
                 if (data.warnings && data.warnings.length) {
                     alert('Ficha creada. Aviso:\n' + data.warnings.join('\n'));
@@ -516,6 +541,8 @@ modal de alta por completo, nunca dando pie a seguir con esta persona).
             }
         }).catch(() => {
             submitBtn.disabled = false;
+            createSpinner.classList.add('d-none');
+            createBtnLabel.textContent = 'Confirmar y crear ficha';
             resultEl.innerHTML = '<div class="alert alert-danger py-1 px-2 small mb-0">Error de red al crear la ficha.</div>';
         });
     };
