@@ -81,6 +81,7 @@ def _build_response_schema():
             "second_surname_hint": {"type": "string"},
             "given_name_hint": {"type": "string"},
             "dni_hint": {"type": "string"},
+            "ss_number_hint": {"type": "string"},
             "birth_date_hint": {"type": "string"},
             "expiry_hint": {"type": "string"},
             "issue_hint": {"type": "string"},
@@ -93,7 +94,7 @@ def _build_response_schema():
         "required": [
             "document_type_code", "confidence", "reasoning",
             "first_surname_hint", "second_surname_hint", "given_name_hint",
-            "dni_hint", "birth_date_hint", "expiry_hint", "issue_hint",
+            "dni_hint", "ss_number_hint", "birth_date_hint", "expiry_hint", "issue_hint",
             "address_hint", "city_hint", "province_hint",
             "employer_company_hint", "hire_date_hint",
         ],
@@ -139,6 +140,10 @@ Si no encaja en ninguno, usa DESCONOCIDO.
 2. Extrae, cuando el documento los contenga de forma legible:
    - Apellidos y nombre de la persona a la que pertenece el \
 documento, si aparecen (primer apellido, segundo apellido, nombre).
+   - El número de afiliación a la Seguridad Social (NSS), tal cual \
+aparece (puede llevar espacios o guiones), si el documento lo trae -- \
+suele aparecer en el ALTA de la Seguridad Social o en el IDC \
+(Informe de Datos para la Cotización).
    - Si es un DNI o NIE: el número tal cual aparece (incluida la \
 letra final), la fecha de nacimiento, y -- si el reverso trae el \
 domicilio -- la dirección (calle y número), la población y la \
@@ -537,9 +542,13 @@ def merge_person_draft(extractions: list) -> dict:
         "dni": "", "first_surname": "", "second_surname": "",
         "given_name": "", "birth_date": "",
         "address_street": "", "city": "", "province": "",
-        "employer_company": "", "hire_date": "",
+        "employer_company": "", "hire_date": "", "ss_affiliation_number": "",
     }
     IDENTITY_TYPES = ("DNI", "NIE")
+    # H31 (S100): el número de afiliación a la Seguridad Social no
+    # aparece en el DNI -- aparece impreso en el ALTA, el IDC y la
+    # tarjeta de la Seguridad Social, nunca en otros tipos.
+    SS_NUMBER_TYPES = ("ALTA", "IDC", "SEG_SOCIAL")
     warnings = []
     for idx, result in enumerate(extractions):
         if "error" in result:
@@ -580,6 +589,9 @@ def merge_person_draft(extractions: list) -> dict:
                 draft["city"] = result["city_hint"]
             if not draft["province"] and result.get("province_hint"):
                 draft["province"] = result["province_hint"]
+        if doc_type in SS_NUMBER_TYPES:
+            if not draft["ss_affiliation_number"] and result.get("ss_number_hint"):
+                draft["ss_affiliation_number"] = result["ss_number_hint"]
         if doc_type == "CONTRATO":
             if not draft["employer_company"] and result.get("employer_company_hint"):
                 draft["employer_company"] = normalize_employer_company(

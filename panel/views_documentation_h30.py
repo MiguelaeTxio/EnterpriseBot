@@ -1325,6 +1325,18 @@ class PersonalIntakeExtractView(DocsUploadAccessMixin, View):
                 {"ok": False, "error": "No se ha subido ningún documento."},
                 status=400,
             )
+        # H31 (S100), confirmado por Miguel Ángel: 20 documentos cubren
+        # prácticamente todo un alta real -- el resto se sube después
+        # desde la ficha ya creada, por la vía normal (sin este tope).
+        if len(files) > 20:
+            return JsonResponse(
+                {
+                    "ok": False,
+                    "error": "Máximo 20 documentos en el alta -- el resto "
+                             "súbelos después desde la ficha ya creada.",
+                },
+                status=400,
+            )
 
         # H31 (S100), incidente real: procesar los documentos uno a
         # uno convertía el tiempo total en la SUMA de los tiempos de
@@ -1463,6 +1475,7 @@ class PersonalCreateView(DocsUploadAccessMixin, View):
     OPTIONAL_TEXT_FIELDS = (
         "second_surname", "employer_company", "phone", "email",
         "address_street", "postal_code", "city", "province",
+        "ss_affiliation_number",
     )
     OPTIONAL_DATE_FIELDS = ("birth_date", "hire_date")
 
@@ -1833,6 +1846,7 @@ class PersonalCreateView(DocsUploadAccessMixin, View):
             postal_code=postal_code,
             city=data["city"],
             province=data["province"],
+            ss_affiliation_number=data["ss_affiliation_number"],
             birth_date=date_values["birth_date"],
             hire_date=date_values["hire_date"],
             folder_path=folder_path,
@@ -1882,6 +1896,7 @@ class PersonalUpdateView(DocsUploadAccessMixin, View):
     TEXT_EDITABLE_FIELDS = (
         "given_name", "first_surname", "second_surname", "phone", "email",
         "address_street", "postal_code", "city", "province",
+        "ss_affiliation_number",
     )
     DATE_EDITABLE_FIELDS = ("hire_date", "termination_date")
     EDITABLE_FIELDS = TEXT_EDITABLE_FIELDS + DATE_EDITABLE_FIELDS

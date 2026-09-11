@@ -2,7 +2,7 @@
 {% extends "panel/base.html" %}
 
 {% block title %}{{ person.first_surname }} {{ person.second_surname }} — Documentación{% endblock %}
-{% block page_title %}{{ person.first_surname }} {{ person.second_surname }}, {{ person.given_name }} ({{ person.dni }}){% endblock %}
+{% block page_title %}{{ person.first_surname }} {{ person.second_surname }}, {{ person.given_name }} ({{ person.dni }})<br><small class="text-muted">{{ person.employer_company|default:"Sin empresa asignada" }}</small>{% endblock %}
 
 {% block content %}
 <a href="{% url 'panel:documentation_hub' %}" class="btn btn-sm btn-outline-secondary mb-3">
@@ -82,9 +82,32 @@ y se habilita "Guardar".
                     <label class="form-label small mb-0">Segundo apellido</label>
                     <input type="text" name="second_surname" class="form-control form-control-sm personal-edit-field" value="{{ person.second_surname }}" readonly>
                 </div>
+                {% comment %}
+                H31 (S100), Miguel Ángel: "el DNI, que venga en un
+                campo con un fondo diferente, dejando claro que es
+                inmutable." Campo propio, SIN la clase
+                `personal-edit-field` a propósito -- nunca debe
+                quitársele el `readonly`, ni siquiera en modo edición
+                (a diferencia del resto de campos de este formulario).
+                {% endcomment %}
+                <div class="col-12 col-md-4">
+                    <label class="form-label small mb-0">DNI/NIE</label>
+                    <input type="text" class="form-control form-control-sm bg-secondary-subtle" value="{{ person.dni }}" readonly title="Identificador, no editable">
+                </div>
                 <div class="col-12 col-md-4">
                     <label class="form-label small mb-0">Teléfono</label>
                     <input type="text" name="phone" class="form-control form-control-sm personal-edit-field" value="{{ person.phone }}" readonly>
+                </div>
+                {% comment %}
+                H31 (S100), Miguel Ángel: "hay datos que sí son
+                necesarios para la empresa, para el supervisor y sin
+                embargo no los ponemos ahí [...] el número de
+                afiliación a la Seguridad Social [...] siendo, como
+                es, un dato bastante importante."
+                {% endcomment %}
+                <div class="col-12 col-md-4">
+                    <label class="form-label small mb-0">Nº afiliación Seg. Social</label>
+                    <input type="text" name="ss_affiliation_number" class="form-control form-control-sm personal-edit-field" value="{{ person.ss_affiliation_number }}" readonly>
                 </div>
                 <div class="col-12 col-md-5">
                     <label class="form-label small mb-0">Correo electrónico</label>
@@ -134,14 +157,6 @@ y se habilita "Guardar".
                     <button type="submit" id="personalSaveBtn" class="btn btn-sm btn-success w-100" style="display:none;">
                         <i class="bi bi-check-lg me-1"></i>Guardar
                     </button>
-                </div>
-                <div class="col-12">
-                    <small class="text-muted">
-                        DNI/NIE {{ person.dni }} -- identificador, no editable.
-                        {% if person.employer_company %}Empresa: <strong>{{ person.employer_company }}</strong>{% else %}Sin empresa asignada{% endif %}
-                        {% if person.is_active_employee %}<span class="badge bg-success ms-1">Activo</span>{% else %}<span class="badge bg-secondary ms-1">Inactivo</span>{% endif %}
-                        -- empresa/fechas de vigencia vienen del Excel de plantilla, se actualizan solo en la próxima importación.
-                    </small>
                 </div>
                 <div class="col-12">
                     {% if person.company_user %}

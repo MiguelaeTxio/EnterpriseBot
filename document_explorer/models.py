@@ -1306,6 +1306,26 @@ class PersonIdentity(models.Model):
         verbose_name="DNI/NIE",
         help_text="Normalizado: mayúsculas, sin espacios ni guiones.",
     )
+    # ------------------------------------------------------------------
+    # H31 (S100). Numero de afiliacion a la Seguridad Social -- Miguel
+    # Angel, verbatim: "hay datos que si son necesarios para la
+    # empresa, para el supervisor y sin embargo no los ponemos ahi
+    # [...] el numero de afiliacion a la Seguridad Social [...] lo
+    # extraemos al principio". Ya aparece impreso en el ALTA y en el
+    # IDC ("numero de afiliacion"/"NSS") -- se guarda tal cual
+    # aparece (con o sin espacios/guion segun el documento real, sin
+    # normalizar un formato que Miguel Angel no ha pedido). Nullable a
+    # proposito, mismo criterio que `birth_date`: los activos ya
+    # existentes no lo tienen todavia, se rellena de forma incremental.
+    # ------------------------------------------------------------------
+    ss_affiliation_number = models.CharField(
+        max_length=32, blank=True,
+        verbose_name="Número de afiliación a la Seguridad Social",
+        help_text=(
+            "H31 (S100). Tal cual aparece en el documento real (ALTA, "
+            "IDC) -- nunca normalizado a un formato inventado aquí."
+        ),
+    )
     first_surname = models.CharField(
         max_length=100, verbose_name="Primer apellido",
     )

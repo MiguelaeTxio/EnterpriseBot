@@ -327,6 +327,10 @@ lógica, y así queda autocontenido).
                             <input type="date" name="hire_date" class="form-control form-control-sm">
                         </div>
                         <div class="col-6">
+                            <label class="form-label small mb-0">Nº afiliación Seg. Social</label>
+                            <input type="text" name="ss_affiliation_number" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-6">
                             <label class="form-label small mb-0">Teléfono</label>
                             <input type="text" name="phone" class="form-control form-control-sm">
                         </div>
@@ -441,6 +445,15 @@ modal de alta por completo, nunca dando pie a seguir con esta persona).
             step1Result.innerHTML = '<div class="alert alert-warning py-1 px-2 small mb-0">Selecciona al menos un documento.</div>';
             return;
         }
+        // H31 (S100), Miguel Ángel: "podríamos poner un tope [...] 20
+        // archivos [...] ya tenemos prácticamente todos los
+        // documentos de un alta [...] lo dejamos para luego para la
+        // edición." El resto de documentación se sube después, ya
+        // con la ficha creada, por la vía normal (sin este tope).
+        if (fileInput.files.length > 20) {
+            step1Result.innerHTML = '<div class="alert alert-warning py-1 px-2 small mb-0">Máximo 20 documentos en el alta -- el resto súbelos después desde la ficha ya creada.</div>';
+            return;
+        }
         const formData = new FormData();
         for (const f of fileInput.files) { formData.append('documents', f); }
         extractBtn.disabled = true;
@@ -483,7 +496,7 @@ modal de alta por completo, nunca dando pie a seguir con esta persona).
             perFileTypes = data.per_file.map((pf) => pf.document_type_code);
             perFileExpiryHints = data.per_file.map((pf) => pf.expiry_hint || '');
             perFileIssueHints = data.per_file.map((pf) => pf.issue_hint || '');
-            for (const field of ['dni', 'first_surname', 'second_surname', 'given_name', 'birth_date', 'address_street', 'city', 'province', 'employer_company', 'hire_date']) {
+            for (const field of ['dni', 'first_surname', 'second_surname', 'given_name', 'birth_date', 'address_street', 'city', 'province', 'employer_company', 'hire_date', 'ss_affiliation_number']) {
                 if (draft[field]) { form.elements[field].value = draft[field]; }
             }
             if (data.warnings && data.warnings.length) {
