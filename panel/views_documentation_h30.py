@@ -41,7 +41,7 @@ import logging
 import unicodedata
 
 from analytics.views import _resolve_work_period
-from document_explorer import naming_service, personal_intake_service
+from document_explorer import naming_service, personal_intake_service, postal_code_service
 from document_explorer.index_writer import ensure_folder_chain
 from document_explorer.models import (
     DocumentAcknowledgment, DocumentIndexEntry, DocumentTypeCatalog,
@@ -1742,6 +1742,17 @@ class PersonalCreateView(DocsUploadAccessMixin, View):
         if date_values["hire_date"] is None:
             date_values["hire_date"] = timezone.now().date()
 
+        # H31 (S100), Miguel Ángel: "lo que sí sabemos es la población
+        # donde vive [...] debe de haber una tabla [...] donde
+        # podamos descargarnos los códigos postales de las
+        # poblaciones." Si el supervisor (o la extracción) no trae
+        # C.P. pero sí población, se rellena solo contra el dataset
+        # real del INE -- nunca inventado, nunca sobrescribe un C.P.
+        # ya indicado a mano.
+        postal_code = data["postal_code"]
+        if not postal_code and data["city"]:
+            postal_code = postal_code_service.lookup_postal_code(data["city"])
+
         folder_root = naming_service.build_person_category_root(
             data["first_surname"], data["second_surname"],
             data["employer_company"], True,
@@ -1761,7 +1772,7 @@ class PersonalCreateView(DocsUploadAccessMixin, View):
             phone=data["phone"],
             email=data["email"],
             address_street=data["address_street"],
-            postal_code=data["postal_code"],
+            postal_code=postal_code,
             city=data["city"],
             province=data["province"],
             birth_date=date_values["birth_date"],
