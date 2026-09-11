@@ -449,7 +449,6 @@ vacaciones).
 {% if not person.email %}
 <small class="text-muted d-block mb-3">Sin correo electrónico registrado -- no se pueden enviar notificaciones.</small>
 {% endif %}
-<div id="uploadFormContainer" class="mb-4"></div>
 
 {% comment %}
 H31 (S76) punto 3/4/5/6: acordeón por familia real del catálogo (ya
@@ -627,6 +626,30 @@ completo aunque Bootstrap le añada la clase "show" vía JS.
     </div>
 </div>
 
+{% comment %}
+H31 (S100), incidente real: el formulario de subida (openUploadForm)
+se inyectaba en un contenedor DENTRO del acordeón "Documentación" --
+si esa sección estaba colapsada (p. ej. llamando desde la cámara del
+avatar, en "Datos personales"), el formulario se creaba pero quedaba
+oculto sin ningún aviso visual. Miguel Ángel: "cuando pulsas la
+fotito [...] no pasa absolutamente nada [...] por eso hay que crear
+modales [...] que salga ya un modal, oscureciendo el resto." Mismo
+motivo exacto que ya llevó a sacar `editModeConfirmModal` del
+acordeón (ver comentario de arriba) -- un modal Bootstrap fuera de
+cualquier acordeón nunca depende de qué sección esté abierta.
+{% endcomment %}
+<div class="modal fade" id="uploadDocumentModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Subir documento</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="uploadFormContainer"></div>
+        </div>
+    </div>
+</div>
+
 <script>
 // Ventana emergente para "Ver documento" (S82), en vez de pestaña
 // nueva -- Miguel Angel, verbatim: "una ventana emergente". Cierra
@@ -725,6 +748,10 @@ function openUploadForm(preselectCode) {
     }
     select.onchange = toggleExpiry;
     toggleExpiry();
+
+    bootstrap.Modal.getOrCreateInstance(
+        document.getElementById('uploadDocumentModal'),
+    ).show();
 
     document.getElementById('subjectUploadForm').onsubmit = function(ev) {
         ev.preventDefault();
