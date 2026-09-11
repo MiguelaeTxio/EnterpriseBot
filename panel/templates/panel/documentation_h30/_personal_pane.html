@@ -418,25 +418,58 @@ modal de alta por completo, nunca dando pie a seguir con esta persona).
 
     // H31 (S101), Miguel Ángel: "cuando acabemos, aparte del spinner
     // [...] notificación sonora o notificación visual del sistema,
-    // una push [...] eso hay que hacerlo." Una notificación push real
-    // (Notification API) exige permiso explícito del usuario en el
-    // navegador y no se puede forzar -- esto da lo mismo que pedía
-    // (visual y sonora) sin depender de ningún permiso: un tono corto
-    // generado con Web Audio API (sin archivo de sonido externo) más
-    // un toast de Bootstrap, en los dos momentos pedidos: al terminar
-    // de leer los documentos y al terminar de crear la ficha.
+    // una push [...] eso hay que hacerlo [...] es necesario llamar la
+    // atención [...] por si el usuario ha cambiado de pantalla, ha
+    // cambiado de aplicación." Con lotes de 15 documentos la lectura
+    // puede acercarse a los 2 minutos -- una notificación de sistema
+    // real (Notification API) es la única que llega si el supervisor
+    // ha cambiado de pestaña o de aplicación mientras espera; el toast
+    // y el sonido de aquí abajo solo se ven/oyen con esta pestaña
+    // visible.
+    //
+    // El permiso del navegador para Notification NUNCA se puede pedir
+    // fuera de un gesto directo del usuario (click) -- por eso se pide
+    // aquí, en el propio click de "Leer documentos"/"Confirmar y crear
+    // ficha", nunca al cargar la página. Mismo motivo por el que el
+    // AudioContext se crea/reanuda en ese mismo gesto: varios
+    // navegadores bloquean el audio si el contexto se crea ya dentro
+    // de un `.then()` asíncrono, aunque el gesto que originó la
+    // cadena fuera un click real.
+    let _personalIntakeAudioCtx = null;
+
+    function personalIntakeArmNotifications() {
+        if (!_personalIntakeAudioCtx) {
+            try {
+                _personalIntakeAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            } catch (e) { /* Web Audio no disponible en este navegador */ }
+        }
+        if (_personalIntakeAudioCtx && _personalIntakeAudioCtx.state === 'suspended') {
+            _personalIntakeAudioCtx.resume().catch(function() {});
+        }
+        if (window.Notification && Notification.permission === 'default') {
+            Notification.requestPermission();
+        }
+    }
+
     function personalIntakeNotify(message) {
-        try {
-            const ctx = new (window.AudioContext || window.webkitAudioContext)();
-            const osc = ctx.createOscillator();
-            const gain = ctx.createGain();
-            osc.connect(gain);
-            gain.connect(ctx.destination);
-            osc.frequency.value = 880;
-            gain.gain.setValueAtTime(0.15, ctx.currentTime);
-            osc.start();
-            osc.stop(ctx.currentTime + 0.15);
-        } catch (e) { /* audio no disponible -- seguimos solo con el toast visual */ }
+        if (_personalIntakeAudioCtx) {
+            try {
+                const osc = _personalIntakeAudioCtx.createOscillator();
+                const gain = _personalIntakeAudioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(_personalIntakeAudioCtx.destination);
+                osc.frequency.value = 880;
+                gain.gain.setValueAtTime(0.15, _personalIntakeAudioCtx.currentTime);
+                osc.start();
+                osc.stop(_personalIntakeAudioCtx.currentTime + 0.15);
+            } catch (e) { /* seguimos solo con el toast/Notification */ }
+        }
+
+        if (window.Notification && Notification.permission === 'granted') {
+            try {
+                new Notification('EnterpriseBot -- Dar de alta trabajador', {body: message});
+            } catch (e) { /* algunos navegadores en móvil no soportan new Notification() directo -- el toast cubre igual */ }
+        }
 
         const toastEl = document.createElement('div');
         toastEl.className = 'toast align-items-center text-bg-primary border-0 position-fixed bottom-0 end-0 m-3';
@@ -490,6 +523,7 @@ modal de alta por completo, nunca dando pie a seguir con esta persona).
     });
 
     extractBtn.onclick = function() {
+        personalIntakeArmNotifications();
         if (!fileInput.files.length) {
             step1Result.innerHTML = '<div class="alert alert-warning py-1 px-2 small mb-0">Selecciona al menos un documento.</div>';
             return;
@@ -575,6 +609,7 @@ modal de alta por completo, nunca dando pie a seguir con esta persona).
 
     form.onsubmit = function(ev) {
         ev.preventDefault();
+        personalIntakeArmNotifications();
         const formData = new FormData(form);
         for (const f of fileInput.files) { formData.append('documents', f); }
         for (const code of perFileTypes) { formData.append('document_type_codes', code); }
