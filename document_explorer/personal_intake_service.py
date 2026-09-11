@@ -473,15 +473,27 @@ def merge_person_draft(extractions: list) -> dict:
     """
     Combina los resultados de `extract_one_document` de varios
     documentos (p. ej. DNI + contrato) en un único borrador de
-    PersonIdentity. Regla de combinación: el DNI manda en identidad
-    (apellidos/nombre/dni), el CONTRATO manda en
-    empresa/fecha de alta -- cada campo se rellena desde el primer
-    documento que lo trae con confianza ALTA o MEDIA, nunca se
-    sobrescribe un valor ya bueno por uno de confianza BAJA de otro
+    PersonIdentity. Regla de combinación: el DNI/NIE manda en
+    identidad (apellidos/nombre/dni/nacimiento/domicilio), el CONTRATO
+    manda en empresa/fecha de alta -- cada campo se rellena desde el
+    primer documento de SU TIPO que lo trae con confianza ALTA o
+    MEDIA, nunca se sobrescribe un valor ya bueno por uno de otro
     documento. Campos que ningún documento resuelve quedan vacíos,
     para que el supervisor los rellene a mano en el paso de
     confirmación -- nunca se bloquea el alta por un campo que no se
     pudo leer.
+
+    CORREGIDO EN S100 (misma sesión), incidente real: con el
+    vocabulario ampliado a 79 tipos, el código NUNCA comprobaba de qué
+    tipo era cada documento antes de fusionar identidad -- con solo
+    2-3 tipos apenas se notaba, pero con 15 documentos de tipos
+    distintos en el mismo lote, cualquiera con una fecha parecida
+    (una nómina, un parte, una autorización) podía "ganar" el campo
+    `birth_date` antes de que se procesara el DNI real, con el
+    resultado real observado: `PersonIdentity.birth_date=None` pese a
+    que el DNI sí traía la fecha correcta (validada por MRZ). El
+    docstring de esta función ya decía "el DNI manda en identidad" --
+    nunca se implementó de verdad hasta ahora.
     """
     draft = {
         "dni": "", "first_surname": "", "second_surname": "",
@@ -489,6 +501,7 @@ def merge_person_draft(extractions: list) -> dict:
         "address_street": "", "city": "", "province": "",
         "employer_company": "", "hire_date": "",
     }
+    IDENTITY_TYPES = ("DNI", "NIE")
     warnings = []
     for idx, result in enumerate(extractions):
         if "error" in result:
@@ -504,33 +517,36 @@ def merge_person_draft(extractions: list) -> dict:
                 % (idx + 1),
             )
             continue
-        if not draft["dni"] and result.get("dni_hint"):
-            candidate_dni = normalize_dni(result["dni_hint"])
-            if candidate_dni and not is_valid_spanish_dni(candidate_dni):
-                warnings.append(
-                    "Documento %d: el DNI leído (%s) no pasa la letra de "
-                    "control real -- revísalo a mano antes de confirmar."
-                    % (idx + 1, candidate_dni),
+        doc_type = result.get("document_type_code", "")
+        if doc_type in IDENTITY_TYPES:
+            if not draft["dni"] and result.get("dni_hint"):
+                candidate_dni = normalize_dni(result["dni_hint"])
+                if candidate_dni and not is_valid_spanish_dni(candidate_dni):
+                    warnings.append(
+                        "Documento %d: el DNI leído (%s) no pasa la letra "
+                        "de control real -- revísalo a mano antes de "
+                        "confirmar." % (idx + 1, candidate_dni),
+                    )
+                draft["dni"] = candidate_dni
+            if not draft["first_surname"] and result.get("first_surname_hint"):
+                draft["first_surname"] = result["first_surname_hint"]
+            if not draft["second_surname"] and result.get("second_surname_hint"):
+                draft["second_surname"] = result["second_surname_hint"]
+            if not draft["given_name"] and result.get("given_name_hint"):
+                draft["given_name"] = result["given_name_hint"]
+            if not draft["birth_date"] and result.get("birth_date_hint"):
+                draft["birth_date"] = result["birth_date_hint"]
+            if not draft["address_street"] and result.get("address_hint"):
+                draft["address_street"] = result["address_hint"]
+            if not draft["city"] and result.get("city_hint"):
+                draft["city"] = result["city_hint"]
+            if not draft["province"] and result.get("province_hint"):
+                draft["province"] = result["province_hint"]
+        if doc_type == "CONTRATO":
+            if not draft["employer_company"] and result.get("employer_company_hint"):
+                draft["employer_company"] = normalize_employer_company(
+                    result["employer_company_hint"],
                 )
-            draft["dni"] = candidate_dni
-        if not draft["first_surname"] and result.get("first_surname_hint"):
-            draft["first_surname"] = result["first_surname_hint"]
-        if not draft["second_surname"] and result.get("second_surname_hint"):
-            draft["second_surname"] = result["second_surname_hint"]
-        if not draft["given_name"] and result.get("given_name_hint"):
-            draft["given_name"] = result["given_name_hint"]
-        if not draft["birth_date"] and result.get("birth_date_hint"):
-            draft["birth_date"] = result["birth_date_hint"]
-        if not draft["address_street"] and result.get("address_hint"):
-            draft["address_street"] = result["address_hint"]
-        if not draft["city"] and result.get("city_hint"):
-            draft["city"] = result["city_hint"]
-        if not draft["province"] and result.get("province_hint"):
-            draft["province"] = result["province_hint"]
-        if not draft["employer_company"] and result.get("employer_company_hint"):
-            draft["employer_company"] = normalize_employer_company(
-                result["employer_company_hint"],
-            )
-        if not draft["hire_date"] and result.get("hire_date_hint"):
-            draft["hire_date"] = result["hire_date_hint"]
+            if not draft["hire_date"] and result.get("hire_date_hint"):
+                draft["hire_date"] = result["hire_date_hint"]
     return {"draft": draft, "warnings": warnings}
