@@ -1346,6 +1346,7 @@ class PersonalIntakeExtractView(DocsUploadAccessMixin, View):
                 "document_type_code": result.get("document_type_code", "DESCONOCIDO"),
                 "confidence": result.get("confidence", ""),
                 "expiry_hint": result.get("expiry_hint", ""),
+                "issue_hint": result.get("issue_hint", ""),
                 "error": result.get("error"),
             })
 
@@ -1502,6 +1503,7 @@ class PersonalCreateView(DocsUploadAccessMixin, View):
         files = request.FILES.getlist("documents")
         type_codes = request.POST.getlist("document_type_codes")
         expiry_hints = request.POST.getlist("document_expiry_hints")
+        issue_hints = request.POST.getlist("document_issue_hints")
         ct = ContentType.objects.get_for_model(PersonIdentity)
         today = timezone.now().date()
         warnings = []
@@ -1582,6 +1584,26 @@ class PersonalCreateView(DocsUploadAccessMixin, View):
                 except ValueError:
                     expiry_date = None
 
+            # H31 (S100), incidente real: "tengo dos altas, una con
+            # grúas Adolfo y otra con asistencia y grúa, y no es capaz
+            # de decir cuál es la vigente" -- ALTA (y muchos otros
+            # tipos del catálogo) no tienen fecha de caducidad propia;
+            # `document_management.vigencia_service` ya sabe resolver
+            # ese caso comparando por `issue_date` (el más reciente
+            # gana), pero antes de esta corrección nunca se le pasaba
+            # nada -- siempre `issue_date=None`. Se parsea aquí sin
+            # exigir `tracks_expiry`, precisamente porque el caso real
+            # que hay que resolver es el de los tipos que NO tienen
+            # caducidad.
+            issue_date = None
+            raw_issue = issue_hints[idx] if idx < len(issue_hints) else ""
+            if raw_issue:
+                try:
+                    year, month, day = (int(x) for x in raw_issue.split("-"))
+                    issue_date = date(year, month, day)
+                except ValueError:
+                    issue_date = None
+
             try:
                 upload_bytes(
                     BUCKET, blob_name, data,
@@ -1601,52 +1623,60 @@ class PersonalCreateView(DocsUploadAccessMixin, View):
                     domain_content_type=ct,
                     domain_object_id=person.pk,
                     expiry_date=expiry_date,
+                    issue_date=issue_date,
                 )
                 stored += 1
 
-                if document_type and document_type.tracks_expiry:
-                    existing_snapshots = current_by_type.get(code, [])
-                    incoming_snapshot = DocumentSnapshot(
-                        identifier=entry.pk, expiry_date=entry.expiry_date,
-                        issue_date=None,
-                    )
-                    result = evaluate_substitution(
-                        incoming_snapshot, existing_snapshots,
-                    )
-                    if result.incoming_should_prevail:
-                        for old_id, _old_expiry in [
-                            (s.identifier, s.expiry_date)
-                            for s in existing_snapshots
-                            if s.identifier in result.existing_to_archive
-                        ]:
-                            old_entry = DocumentIndexEntry.objects.get(pk=old_id)
-                            old_entry.is_obsolete = True
-                            old_entry.save(update_fields=["is_obsolete"])
-                            if company:
-                                DocumentSubstitutionLog.objects.create(
-                                    company=company,
-                                    superseding_content_type=ContentType.objects.get_for_model(
-                                        DocumentIndexEntry,
-                                    ),
-                                    superseding_object_id=entry.pk,
-                                    superseding_label=entry.name,
-                                    superseded_content_type=ContentType.objects.get_for_model(
-                                        DocumentIndexEntry,
-                                    ),
-                                    superseded_object_id=old_entry.pk,
-                                    superseded_label=old_entry.name,
-                                    subject_label=str(person),
-                                    document_type=code,
-                                    reasoning=result.reasoning,
-                                )
-                        current_by_type[code] = [
-                            s for s in existing_snapshots
-                            if s.identifier not in result.existing_to_archive
-                        ] + [incoming_snapshot]
-                    else:
-                        entry.is_obsolete = True
-                        entry.save(update_fields=["is_obsolete"])
-                        current_by_type[code] = existing_snapshots
+                # H31 (S100): la sustitución ya NO se limita a
+                # `tracks_expiry=True` -- `evaluate_substitution()`
+                # sabe decidir igual de bien por `issue_date` cuando
+                # no hay `expiry_date` (ver docstring de
+                # `vigencia_service`), que es precisamente el caso de
+                # ALTA y de la mayoría de tipos sin caducidad propia.
+                # Limitarlo a `tracks_expiry` era justo lo que dejaba
+                # dos ALTA "vigentes" a la vez sin ningún criterio.
+                existing_snapshots = current_by_type.get(code, [])
+                incoming_snapshot = DocumentSnapshot(
+                    identifier=entry.pk, expiry_date=entry.expiry_date,
+                    issue_date=entry.issue_date,
+                )
+                result = evaluate_substitution(
+                    incoming_snapshot, existing_snapshots,
+                )
+                if result.incoming_should_prevail:
+                    for old_id, _old_expiry in [
+                        (s.identifier, s.expiry_date)
+                        for s in existing_snapshots
+                        if s.identifier in result.existing_to_archive
+                    ]:
+                        old_entry = DocumentIndexEntry.objects.get(pk=old_id)
+                        old_entry.is_obsolete = True
+                        old_entry.save(update_fields=["is_obsolete"])
+                        if company:
+                            DocumentSubstitutionLog.objects.create(
+                                company=company,
+                                superseding_content_type=ContentType.objects.get_for_model(
+                                    DocumentIndexEntry,
+                                ),
+                                superseding_object_id=entry.pk,
+                                superseding_label=entry.name,
+                                superseded_content_type=ContentType.objects.get_for_model(
+                                    DocumentIndexEntry,
+                                ),
+                                superseded_object_id=old_entry.pk,
+                                superseded_label=old_entry.name,
+                                subject_label=str(person),
+                                document_type=code,
+                                reasoning=result.reasoning,
+                            )
+                    current_by_type[code] = [
+                        s for s in existing_snapshots
+                        if s.identifier not in result.existing_to_archive
+                    ] + [incoming_snapshot]
+                else:
+                    entry.is_obsolete = True
+                    entry.save(update_fields=["is_obsolete"])
+                    current_by_type[code] = existing_snapshots
             except Exception as exc:
                 logger.warning(
                     "# [PersonalCreateView] Fallo indexando %s para "

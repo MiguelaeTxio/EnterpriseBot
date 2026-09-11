@@ -83,6 +83,7 @@ def _build_response_schema():
             "dni_hint": {"type": "string"},
             "birth_date_hint": {"type": "string"},
             "expiry_hint": {"type": "string"},
+            "issue_hint": {"type": "string"},
             "address_hint": {"type": "string"},
             "city_hint": {"type": "string"},
             "province_hint": {"type": "string"},
@@ -92,7 +93,7 @@ def _build_response_schema():
         "required": [
             "document_type_code", "confidence", "reasoning",
             "first_surname_hint", "second_surname_hint", "given_name_hint",
-            "dni_hint", "birth_date_hint", "expiry_hint",
+            "dni_hint", "birth_date_hint", "expiry_hint", "issue_hint",
             "address_hint", "city_hint", "province_hint",
             "employer_company_hint", "hire_date_hint",
         ],
@@ -105,7 +106,27 @@ def _type_list_text():
     )
 
 
-def _build_prompt(intro: str) -> str:
+def _build_prompt(intro: str, include_dates: bool = True) -> str:
+    # H31 (S100), corrección de Miguel Ángel en la propia sesión: "el
+    # fechado lo estábamos haciendo ya sin Gemini [...] a través de la
+    # lectura de OCR [...] ya no es necesario llamar a Gemini para
+    # obtener las fechas." Pedirle la fecha a Gemini es redundante (y
+    # menos fiable) en cuanto hay texto OCR real que pasar por
+    # `classify_dates_in_text()` -- el motor determinista de H30,
+    # calibrado durante semanas. `include_dates=False` (camino normal,
+    # con texto OCR) omite el punto de fechas del prompt por completo;
+    # solo el camino de Vision directo (sin texto OCR posible) sigue
+    # pidiéndosela a Gemini, porque ahí no hay otra fuente.
+    date_instructions = ""
+    if include_dates:
+        date_instructions = """
+   - La fecha de caducidad/validez del propio documento, si la \
+tiene (formato AAAA-MM-DD) -- no todos los tipos la tienen, \
+déjala vacía si no aplica o no se puede leer.
+   - Si el documento NO tiene fecha de caducidad propia (una nómina, \
+un parte, una autorización sin plazo...), la fecha de emisión/firma \
+del propio documento (formato AAAA-MM-DD) -- sirve para saber cuál \
+es el más reciente cuando hay varios del mismo tipo."""
     return """Eres un asistente de RRHH de una empresa española de \
 grúas y maquinaria pesada. %s
 
@@ -121,10 +142,7 @@ documento, si aparecen (primer apellido, segundo apellido, nombre).
    - Si es un DNI o NIE: el número tal cual aparece (incluida la \
 letra final), la fecha de nacimiento, y -- si el reverso trae el \
 domicilio -- la dirección (calle y número), la población y la \
-provincia, cada una en su propio campo, tal cual aparecen.
-   - La fecha de caducidad/validez del propio documento, si la \
-tiene (formato AAAA-MM-DD) -- no todos los tipos la tienen, \
-déjala vacía si no aplica o no se puede leer.
+provincia, cada una en su propio campo, tal cual aparecen.%s
    - Si es un CONTRATO laboral: el nombre de la empresa empleadora \
 real (tal cual aparece, sin normalizar), y la fecha de inicio/alta \
 en la empresa (formato AAAA-MM-DD).
@@ -132,7 +150,7 @@ en la empresa (formato AAAA-MM-DD).
 confianza, déjalo como cadena vacía -- nunca inventes un valor.
 
 Devuelve el resultado como el JSON estructurado indicado, sin texto \
-adicional.""" % (intro, _type_list_text())
+adicional.""" % (intro, _type_list_text(), date_instructions)
 
 
 def _generate_content_with_retry(client, **kwargs):
@@ -268,7 +286,7 @@ def _build_text_prompt(ocr_text: str) -> str:
         "mal leídas -- interprétalo con criterio).\n\n"
         "TEXTO DEL DOCUMENTO:\n---\n%s\n---" % ocr_text
     )
-    return _build_prompt(intro)
+    return _build_prompt(intro, include_dates=False)
 
 
 def _call_gemini_json(contents, timeout_ms: int = 30_000) -> dict:
@@ -384,9 +402,29 @@ def extract_one_document(data: bytes, mime_type: str, filename: str = "") -> dic
     Si Cloud Vision no logra extraer ningún texto (imagen ilegible,
     extensión no soportada), cae al último recurso -- Gemini Vision
     directo sobre el archivo -- nunca se deja sin leer.
+
+    CORREGIDO EN LA MISMA SESIÓN (S100): la primera versión de este
+    bloque pedía la fecha directamente a Gemini de forma genérica,
+    ignorando por completo el motor real de fechado ya calibrado en
+    H30 (`classify_dates_in_text()` -- contexto de emisión/caducidad,
+    dos semanas de correcciones reales sobre casos concretos: saltos
+    de línea del OCR, comas, fechas de ruido...). Miguel Ángel,
+    verbatim, al ver documentos marcados en rojo sin motivo y dos
+    ALTA sin poder decidir cuál es la vigente: *"¿qué ha pasado con
+    todos estos motores que llevamos dos semanas creando? [...] la
+    extracción de fecha [...] lo estamos ignorando."* Corregido: el
+    texto OCR se pasa por `classify_dates_in_text()` -- que devuelve
+    caducidad Y emisión, exactamente lo que
+    `document_management.vigencia_service` necesita para decidir cuál
+    es el más reciente en tipos sin caducidad propia (ALTA, nóminas...)
+    -- y ese resultado manda sobre lo que haya dicho Gemini. El MRZ
+    (`extract_dni_mrz_expiry`) sigue reforzando el caso DNI/NIE
+    específico por encima incluso de `classify_dates_in_text`, por ser
+    el más fiable de los tres (validación por dígito de control).
     """
     from document_explorer.date_verification_service import (
-        extract_dni_mrz_birthdate, extract_dni_mrz_expiry,
+        classify_dates_in_text, extract_dni_mrz_birthdate,
+        extract_dni_mrz_expiry,
     )
     try:
         text = _cloud_vision_text(data, mime_type, filename) if filename else ""
@@ -411,6 +449,11 @@ def extract_one_document(data: bytes, mime_type: str, filename: str = "") -> dic
             }
         else:
             result = _call_gemini_json(_build_text_prompt(text[:8000]))
+            engine_expiry, engine_issue, _others = classify_dates_in_text(text)
+            if engine_expiry:
+                result["expiry_hint"] = engine_expiry.isoformat()
+            if engine_issue:
+                result["issue_hint"] = engine_issue.isoformat()
             mrz_birthdate = extract_dni_mrz_birthdate(text)
             if mrz_birthdate:
                 result["birth_date_hint"] = mrz_birthdate.isoformat()
