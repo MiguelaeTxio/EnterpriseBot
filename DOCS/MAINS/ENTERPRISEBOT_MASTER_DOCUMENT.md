@@ -1462,6 +1462,38 @@ cubre plantillas HTML -- la única defensa real contra este error
 concreto es conocer la regla de antemano, no una herramienta que lo
 detecte después.
 
+**REINCIDENCIA REPORTADA EN S101 -- YA NO BASTA CONOCER LA REGLA,
+AHORA ES OBLIGATORIA UNA COMPROBACIÓN AUTOMÁTICA.** Miguel Ángel
+reportó verbatim en S101 que el patrón sigue colándose ("es que
+prácticamente en todas las sesiones se nos cuela texto crudo en el
+HTML"), esta vez en un modal del alta guiada de personal (H31). La
+regla de la sección anterior, aun sabida, no impide el error a mano
+de forma fiable -- por eso pasa a ser **obligatorio** ejecutar esta
+comprobación (u otra equivalente) sobre CUALQUIER archivo `.html`
+tocado, como parte del PASO 4 de verificación de `nfs-enterprisebot-
+edit`, antes de darlo por bueno:
+
+```bash
+python3 -c "
+import re, sys
+path = sys.argv[1]
+content = open(path, encoding='utf-8').read()
+for m in re.finditer(r'\{#', content):
+    tail = content[m.start():m.start()+600]
+    close = tail.find('#}')
+    if close == -1 or '\n' in tail[:close]:
+        line = content[:m.start()].count(chr(10)) + 1
+        print('POSIBLE COMENTARIO {# #} MULTILÍNEA -- línea', line, '-- revisar y convertir a {% comment %}')
+" {ruta_del_html_editado}
+```
+
+Si el script imprime cualquier línea, **queda prohibido** dar la
+edición por cerrada sin revisar y corregir ese punto concreto antes
+de continuar. Un archivo `.html` editado en esta sesión sin haber
+pasado por esta comprobación (o su inspección visual equivalente
+línea por línea de cada `{# ... #}` añadido) no está verificado según
+el PASO 4.
+
 
 
 
