@@ -2276,6 +2276,28 @@ gestión sí detectan "este DNI no existe". Trabajo:
      que se tiene), sin dejarlo como pregunta abierta para una tercera
      sesión.
 
+**CERRADO EN S101, con búsqueda web real (no supuesto):** no existe
+ninguna fuente pública ni gratuita del Estado español para consultar
+si un DNI/NIE existe de verdad. El Ministerio del Interior/Dirección
+General de la Policía no expone esa consulta a terceros. Las
+"Autoridades de Validación" del DNI electrónico (FNMT, Hacienda)
+validan certificados digitales cuando el propio ciudadano usa su
+DNIe con PIN -- no sirven para que un tercero consulte "¿existe este
+número?" sobre un documento en papel o una foto. Sí existen servicios
+comerciales de terceros (Didit, Verifik y similares) que dicen
+verificar el DNI/NIE "contra el registro oficial", cobrando por
+consulta (uno de ellos, ~0,20 $ por resultado concluyente) -- esa
+afirmación de acceso al registro oficial es publicidad del propio
+proveedor, no verificable de forma independiente sin contratarlo.
+Confirmada también la hipótesis de partida: las herramientas
+"validadoras de DNI" gratuitas que se encuentran buscando
+(validardni.es, herramient.as y similares) solo comprueban la letra
+de control con el mismo algoritmo módulo 23 que ya está implementado
+aquí -- ninguna consulta existencia real. Conclusión: no hay upgrade
+gratuito posible hoy; la única mejora real pasaría por contratar un
+servicio de pago de terceros -- decisión de negocio pendiente de
+Miguel Ángel, no un trabajo técnico más para ninguna sesión.
+
 ---
 
 ## TABLA VIVA -- EJEMPLOS REALES DE CLASIFICACIÓN CONFIRMADOS (añadida
