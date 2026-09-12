@@ -2288,6 +2288,77 @@ producción real:**
 sesión (ciclo de prueba de la validación cruzada de DNI) y no se ha
 vuelto a crear -- ver primer punto de la hoja de ruta siguiente.
 
+### COMPLETADAS EN S102 (en curso) -- ficha real de Miguel Ángel creada definitivamente, auditoría de las cinco acciones en marcha
+
+**Punto 0 -- CERRADO con evidencia real.** Miguel Ángel subió su lote
+completo de documentos reales por el flujo normal de "Dar de alta
+trabajador", sin ciclo de prueba. Confirmado por consulta real a BD:
+`PersonIdentity.objects.get(dni="74633524L")` existe (MIGUEL ANGEL
+MUÑOZ CARA, `pk` de la ficha `249`), con **15** `DocumentIndexEntry`
+vinculados vía `domain_content_type`/`domain_object_id` (ALTA x2,
+AUTORIZACION_MEDIOS_COMUNICACION, CERTIFICADO_BANCARIO, CONTRATO,
+DNI x2, DOC_MUTUA, FORMACION, IDC x2, IMAGEN, MOD_145,
+RECONOCIMIENTO_MEDICO x2).
+
+**Modo edición -- probado, correcto, sin fricción.** Desde la ficha
+real (`/panel/documentacion/personal/249/`), se editaron Teléfono
+(`643330165`) y Correo electrónico (`nummenor@proton.me`) y se
+guardó. El panel confirmó con el aviso verde "Ficha actualizada."
+Sin ningún problema real observado.
+
+**Actualizar (documento) -- INCIDENTE REAL DETECTADO, con evidencia
+completa (captura + log de servidor + consulta a BD).**
+
+- **Lo que vio Miguel Ángel:** al pulsar "Subir" en el modal de
+  actualización del `CONTRATO` (tipo "Contrato laboral", sin rellenar
+  "Fecha de caducidad"), verbatim: *"No pasó nada (el modal se quedó
+  igual)"*. Pulsó "Subir" dos veces más pensando que no había
+  funcionado.
+- **Causa de la falta de feedback (confirmada por lectura de
+  `_personal_detail.html`):** el `fetch()` del formulario de subida
+  (`openUploadForm()`) no tiene ningún `.catch()` -- si la petición
+  falla o tarda, o si el usuario no ve el `resultDiv` actualizarse
+  (scroll, layout del modal), no hay ninguna señal de éxito que haga
+  evidente que ya se subió. El campo `expiry_date` NO es obligatorio
+  en ningún punto (ni HTML, ni JS, ni `SubjectDocumentUploadView`) --
+  descartado como causa del bloqueo percibido.
+- **Lo que pasó en realidad (confirmado por `LOG_WEB_ERROR`, sin
+  ningún traceback):** las tres pulsaciones SÍ se procesaron, las
+  tres con éxito, subiendo el mismo archivo
+  (`MUNOZ_CARA_MIGUEL_ANGEL_CONTRATO_20260912.pdf`, 12.545 bytes) a
+  GCS a las 17:11:19, 17:11:32 y 17:11:42 (2026-09-12).
+- **Efecto real en BD, confirmado por consulta ORM directa
+  (`document_explorer.DocumentIndexEntry`):** existen **4** filas
+  vivas de tipo `CONTRATO` para esta persona, **ninguna marcada
+  `is_obsolete=True`**:
+  - `pk 43865` -- 1.119.446 bytes -- alta original (16:27:13)
+  - `pk 43877` -- 12.545 bytes -- 1ª pulsación (17:11:19)
+  - `pk 43878` -- 12.545 bytes -- 2ª pulsación (17:11:32)
+  - `pk 43879` -- 12.545 bytes -- 3ª pulsación (17:11:42)
+- **Causa raíz identificada, con lectura real del código
+  (`document_management/vigencia_service.py`,
+  `document_explorer/subject_upload_service.py`):** la sustitución
+  automática (`evaluate_substitution()`) sólo compara documentos por
+  fecha. Cuando un documento no tiene `expiry_date` NI `issue_date`
+  (este es el caso: "Fecha de caducidad" se dejó vacía, y ninguno de
+  los 4 PDFs de `CONTRATO` llevó fecha extraída por OCR/Gemini),
+  `is_current()` los trata como **"vigente por defecto, nunca se
+  archiva a ciegas sin datos"** -- diseñado para el caso de un único
+  documento sin fecha, pero que en la práctica hace que **ningún
+  documento del mismo tipo sin fecha se marque nunca obsoleto frente
+  a otro**, por muchas veces que se resuba. El mecanismo de
+  sustitución (H26/vigencia_service) funciona correctamente cuando
+  hay fechas (ver "RESUELTO -- LA SUSTITUCIÓN POR FECHA SÍ
+  FUNCIONABA" de S100) pero tiene este hueco real no detectado hasta
+  ahora para documentos sin ninguna fecha en absoluto.
+- **Estado:** documentado con evidencia completa, sin corregir
+  todavía -- pendiente de decisión de Miguel Ángel sobre (a) qué
+  hacer con las 3 filas duplicadas ya en BD/GCS de este `CONTRATO`
+  concreto, y (b) si se corrige `is_current()` para este hito o se
+  deja para otra sesión (afecta a cualquier tipo documental con
+  `tracks_expiry=True` pero sin fecha real extraíble, no solo a
+  `CONTRATO`).
+
 ## Hoja de Ruta para la Sesión Siguiente (S102, reescrita por completo -- sustituye a la de S101)
 
 **0. PRIMERA TAREA, ANTES DE CUALQUIER OTRA COSA: crear la ficha real
