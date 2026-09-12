@@ -24,6 +24,15 @@ modernos"), interpretado y confirmado con Miguel Angel en S023:
   propio documento (sellos, firmas, fechas de revision reales -- ver
   machine_documents.document_classification_service), nunca de
   metadatos de archivo.
+- Documentos SIN NINGUNA fecha (ni expiry_date ni issue_date): el mas
+  recientemente indexado (`DocumentSnapshot.indexed_at`, si el
+  llamador lo rellena) es el vigente, los anteriores quedan
+  archivados -- mismo criterio "el mas reciente gana" que el caso de
+  arriba, aplicado por fecha de subida en vez de por fecha del propio
+  documento. Anadido S102 tras incidente real: sin este criterio,
+  cualquier tipo con `tracks_expiry=True` pero sin fecha real
+  extraible se quedaba "vigente por defecto" sin limite, sin importar
+  cuantas veces se resubiera.
 
 Este modulo trabaja sobre datos genericos (fechas + identificador
 opaco) -- NUNCA importa MachineDocument ni el futuro modelo de H25,
@@ -38,7 +47,7 @@ section 2.4). Consumed today only by H23/machine_documents -- personnel
 explicit decision, S023).
 """
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 
 
 @dataclass(frozen=True)
@@ -48,6 +57,12 @@ class DocumentSnapshot:
     para evaluar vigencia/sustitucion. `identifier` es opaco para este
     modulo -- el llamador lo usa para saber a cual de sus propios
     registros de dominio corresponde cada resultado.
+
+    `indexed_at` (H31, S102) es opcional -- solo lo usa el desempate de
+    documentos SIN NINGUNA fecha (ver `is_current()`). Un llamador que
+    no lo rellene mantiene exactamente el comportamiento anterior
+    (nunca se archiva a ciegas sin datos), sin ningun efecto sobre
+    quien no lo pase -- ver incidente real S102 que motivo este campo.
     ---
     Minimal document data (existing or incoming) needed to evaluate
     currency/substitution. `identifier` is opaque to this module -- the
@@ -57,6 +72,7 @@ class DocumentSnapshot:
     identifier: object
     expiry_date: date | None = None
     issue_date: date | None = None
+    indexed_at: datetime | None = None
 
 
 def is_current(
@@ -80,18 +96,40 @@ def is_current(
     if candidate.expiry_date is not None:
         return candidate.expiry_date >= reference_today
 
-    if candidate.issue_date is None:
-        # Sin ninguna fecha -- no hay base para archivar; se considera
-        # vigente por defecto (nunca se archiva a ciegas sin datos).
-        return True
+    if candidate.issue_date is not None:
+        sibling_issue_dates = [
+            s.issue_date for s in siblings
+            if s.expiry_date is None and s.issue_date is not None
+        ]
+        if not sibling_issue_dates:
+            return True
+        return candidate.issue_date >= max(sibling_issue_dates)
 
-    sibling_issue_dates = [
-        s.issue_date for s in siblings
-        if s.expiry_date is None and s.issue_date is not None
+    # Ningun dato real (ni caducidad ni emision) en el candidato.
+    # INCIDENTE REAL S102: esta rama devolvia True sin mas ("no hay
+    # base para archivar"), lo que dejaba vigentes a la vez tantos
+    # documentos del mismo tipo como se subieran (4 subidas seguidas
+    # de un mismo CONTRATO sin fecha, ninguna marcada obsoleta nunca).
+    # Miguel Angel, verbatim: "los documentos deben quedar siempre
+    # como historicos cuando dejan de ser los vigentes". Corregido:
+    # entre varios documentos igualmente ciegos (sin ninguna fecha),
+    # el mas recientemente indexado prevalece; los demas se archivan.
+    # Si el propio llamador no rellena `indexed_at` (comportamiento
+    # por defecto de siempre, ver `DocumentSnapshot`), esta rama no
+    # cambia de comportamiento -- se sigue considerando vigente por
+    # defecto, nunca se archiva a ciegas sin ningun dato temporal.
+    dateless_siblings = [
+        s for s in siblings
+        if s.expiry_date is None and s.issue_date is None
     ]
-    if not sibling_issue_dates:
+    if not dateless_siblings or candidate.indexed_at is None:
         return True
-    return candidate.issue_date >= max(sibling_issue_dates)
+    sibling_indexed_ats = [
+        s.indexed_at for s in dateless_siblings if s.indexed_at is not None
+    ]
+    if not sibling_indexed_ats:
+        return True
+    return candidate.indexed_at >= max(sibling_indexed_ats)
 
 
 @dataclass(frozen=True)

@@ -13,7 +13,19 @@ Flujo:
    supervisor pulsó "Actualizar ITV" en la ficha de A-45, p. ej.) --
    nunca se le pide escribir nada de eso.
 2. Construye el nombre con `naming_service` (mismo esquema fijo que
-   ya usa el resto de la plataforma).
+   ya usa el resto de la plataforma) -- A SALVO DE COLISIONES (S102):
+   si ya existe una entrada viva con ese mismo nombre virtual
+   (`move_service._virtual_location_taken`, mismo mecanismo que usa
+   `classification_service` para renombrados), se añade el ordinal
+   `_1`/`_2`/... hasta encontrar uno libre, EXACTAMENTE igual que
+   cuando la clasificación automática detecta un duplicado real.
+   INCIDENTE REAL S102: antes se subía siempre al mismo nombre/blob
+   sin comprobar nada -- 4 subidas seguidas del mismo tipo de
+   documento en el mismo día sobrescribieron 4 veces el mismo objeto
+   real en GCS, perdiendo sin aviso el contenido anterior cada vez.
+   Miguel Ángel, verbatim: "jamás sobreescribir el blob real, ya que
+   los documentos deben quedar siempre como históricos cuando dejan
+   de ser los vigentes."
 3. Sube el archivo real a GCS (`gcs_service.upload_bytes`) y crea la
    fila de `DocumentIndexEntry` -- misma carpeta que los documentos
    ya existentes de ese sujeto (mismo criterio que
@@ -23,7 +35,12 @@ Flujo:
    documento (`date_verification_service.verify_typed_date`) --
    nunca decide, solo avisa si no coincide.
 5. Aplica sustitución (`vigencia_service.evaluate_substitution`)
-   contra los documentos ya existentes del mismo tipo y sujeto:
+   contra los documentos ya existentes del mismo tipo y sujeto,
+   SIEMPRE -- ya no solo cuando `document_type.tracks_expiry=True`
+   (S102, mismo criterio que ya llevaba corregido desde S100 el flujo
+   de alta -- `evaluate_substitution()` ya sabe decidir por
+   `issue_date` cuando no hay `expiry_date`, e incluso por
+   `indexed_at` cuando no hay ninguna fecha, ver `vigencia_service`):
    el más reciente queda vigente, los demás se marcan
    `is_obsolete=True` -- NUNCA se mueven ni se borran (4.12), y queda
    registro en `DocumentSubstitutionLog` para trazabilidad real.
@@ -37,6 +54,7 @@ from document_explorer import naming_service
 from document_explorer.date_verification_service import verify_typed_date
 from document_explorer.index_writer import ensure_folder_chain
 from document_explorer.models import DocumentIndexEntry, path_digest
+from document_explorer.move_service import _virtual_location_taken
 from document_management.alert_service import (
     create_default_expiry_alerts, get_docs_supervisor_contacts,
 )
@@ -104,17 +122,40 @@ def _resolve_target_folder(domain_content_type, domain_object_id, subject):
     )
 
 
-def _build_filename(subject, document_type_code, upload_date, extension):
+def _build_filename(subject, document_type_code, upload_date, extension, ordinal=None):
     if isinstance(subject, MachineAsset):
         return naming_service.build_filename_machine(
             subject.code, document_type_code, upload_date,
-            extension=extension,
+            ordinal=ordinal, extension=extension,
         )
     return naming_service.build_filename_personal(
         subject.first_surname, subject.second_surname,
         subject.given_name, document_type_code, upload_date,
-        extension=extension,
+        ordinal=ordinal, extension=extension,
     )
+
+
+def _resolve_free_filename(subject, document_type_code, upload_date, extension, target_folder):
+    """
+    Igual que `_build_filename`, pero a salvo de colisiones (S102):
+    si el nombre "base" (sin ordinal) ya está en uso por una entrada
+    viva en esa misma carpeta virtual, añade `_1`, `_2`... hasta
+    encontrar uno libre -- mismo mecanismo
+    (`move_service._virtual_location_taken`) y misma convención de
+    ordinal que ya usa `classification_service` para renombrados con
+    colisión real. Nunca sube al mismo nombre/blob que un documento ya
+    existente -- ver incidente real S102 (subida silenciosa
+    sobrescribiendo el blob real 4 veces seguidas).
+    """
+    filename = _build_filename(subject, document_type_code, upload_date, extension)
+    ordinal = 1
+    while _virtual_location_taken(BUCKET, target_folder, filename):
+        filename = _build_filename(
+            subject, document_type_code, upload_date, extension,
+            ordinal=ordinal,
+        )
+        ordinal += 1
+    return filename
 
 
 def upload_subject_document(
@@ -143,9 +184,10 @@ def upload_subject_document(
         domain_content_type, subject.pk, subject,
     )
     today = timezone.now().date()
-    filename = _build_filename(subject, document_type.code, today, extension)
-
     ensure_folder_chain(BUCKET, target_folder)
+    filename = _resolve_free_filename(
+        subject, document_type.code, today, extension, target_folder,
+    )
     blob_name = "%s/%s" % (target_folder, filename)
     content_type = (
         "application/pdf" if extension.lower() == "pdf"
@@ -197,53 +239,60 @@ def upload_subject_document(
             alert.contacts.add(*contacts)
         alerts_created = len(alerts)
 
+    # S102: la sustitución YA NO se limita a `tracks_expiry=True` --
+    # `evaluate_substitution()` sabe decidir igual de bien por
+    # `issue_date`, e incluso por `indexed_at` cuando no hay ninguna
+    # fecha (ver `vigencia_service`), mismo criterio que ya llevaba
+    # corregido desde S100 el flujo de alta (`views_documentation_h30.
+    # _process_alta_documents`). Limitarlo a `tracks_expiry` era
+    # justo lo que dejaba varios documentos "vigentes" a la vez sin
+    # ningún criterio real (incidente real S102, `CONTRATO`).
     superseded_count = 0
-    if document_type.tracks_expiry:
-        company = _resolve_company()
-        siblings_qs = DocumentIndexEntry.objects.filter(
-            bucket=BUCKET, document_type=document_type,
-            domain_content_type=domain_content_type,
-            domain_object_id=subject.pk,
-            entry_kind=DocumentIndexEntry.KIND_FILE,
-            deleted_at__isnull=True, purged_at__isnull=True,
-            is_obsolete=False,
-        ).exclude(pk=entry.pk)
-        existing_snapshots = [
-            DocumentSnapshot(
-                identifier=sibling.pk, expiry_date=sibling.expiry_date,
-                issue_date=sibling.issue_date,
-            )
-            for sibling in siblings_qs
-        ]
-        incoming_snapshot = DocumentSnapshot(
-            identifier=entry.pk, expiry_date=entry.expiry_date,
-            issue_date=entry.issue_date,
+    company = _resolve_company()
+    siblings_qs = DocumentIndexEntry.objects.filter(
+        bucket=BUCKET, document_type=document_type,
+        domain_content_type=domain_content_type,
+        domain_object_id=subject.pk,
+        entry_kind=DocumentIndexEntry.KIND_FILE,
+        deleted_at__isnull=True, purged_at__isnull=True,
+        is_obsolete=False,
+    ).exclude(pk=entry.pk)
+    existing_snapshots = [
+        DocumentSnapshot(
+            identifier=sibling.pk, expiry_date=sibling.expiry_date,
+            issue_date=sibling.issue_date, indexed_at=sibling.indexed_at,
         )
-        result = evaluate_substitution(incoming_snapshot, existing_snapshots)
-        if result.incoming_should_prevail and result.existing_to_archive:
-            to_obsolete = siblings_qs.filter(
-                pk__in=result.existing_to_archive,
+        for sibling in siblings_qs
+    ]
+    incoming_snapshot = DocumentSnapshot(
+        identifier=entry.pk, expiry_date=entry.expiry_date,
+        issue_date=entry.issue_date, indexed_at=entry.indexed_at,
+    )
+    result = evaluate_substitution(incoming_snapshot, existing_snapshots)
+    if result.incoming_should_prevail and result.existing_to_archive:
+        to_obsolete = siblings_qs.filter(
+            pk__in=result.existing_to_archive,
+        )
+        for old_entry in to_obsolete:
+            old_entry.is_obsolete = True
+            old_entry.save(update_fields=["is_obsolete"])
+            DocumentSubstitutionLog.objects.create(
+                company=company,
+                superseding_content_type=ContentType.objects.get_for_model(
+                    DocumentIndexEntry,
+                ),
+                superseding_object_id=entry.pk,
+                superseding_label=entry.name,
+                superseded_content_type=ContentType.objects.get_for_model(
+                    DocumentIndexEntry,
+                ),
+                superseded_object_id=old_entry.pk,
+                superseded_label=old_entry.name,
+                subject_label=subject_label,
+                document_type=document_type.code,
+                reasoning=result.reasoning,
             )
-            for old_entry in to_obsolete:
-                old_entry.is_obsolete = True
-                old_entry.save(update_fields=["is_obsolete"])
-                DocumentSubstitutionLog.objects.create(
-                    company=company,
-                    superseding_content_type=ContentType.objects.get_for_model(
-                        DocumentIndexEntry,
-                    ),
-                    superseding_object_id=entry.pk,
-                    superseding_label=entry.name,
-                    superseded_content_type=ContentType.objects.get_for_model(
-                        DocumentIndexEntry,
-                    ),
-                    superseded_object_id=old_entry.pk,
-                    superseded_label=old_entry.name,
-                    subject_label=subject_label,
-                    document_type=document_type.code,
-                    reasoning=result.reasoning,
-                )
-                superseded_count += 1
+            superseded_count += 1
 
     return {
         "entry": entry, "warning": warning,

@@ -200,7 +200,7 @@ def _split_current_obsolete(entries):
         snapshots = {
             e.pk: DocumentSnapshot(
                 identifier=e.pk, expiry_date=e.expiry_date,
-                issue_date=e.issue_date,
+                issue_date=e.issue_date, indexed_at=e.indexed_at,
             )
             for e in group
         }
@@ -1757,7 +1757,7 @@ class PersonalCreateView(DocsUploadAccessMixin, View):
                 existing_snapshots = current_by_type.get(code, [])
                 incoming_snapshot = DocumentSnapshot(
                     identifier=entry.pk, expiry_date=entry.expiry_date,
-                    issue_date=entry.issue_date,
+                    issue_date=entry.issue_date, indexed_at=entry.indexed_at,
                 )
                 result = evaluate_substitution(
                     incoming_snapshot, existing_snapshots,
