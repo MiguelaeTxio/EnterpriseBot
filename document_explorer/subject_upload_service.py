@@ -31,9 +31,13 @@ Flujo:
    ya existentes de ese sujeto (mismo criterio que
    `resolve_or_create_machine_asset`: si ya hay un lugar real,
    usarlo, nunca inventar uno nuevo).
-4. Contrasta la fecha escrita por el supervisor contra el propio
-   documento (`date_verification_service.verify_typed_date`) --
-   nunca decide, solo avisa si no coincide.
+4. Extrae el texto real del documento y resuelve su fecha con
+   `_resolve_date_and_text` -- heurística de nombre, texto embebido
+   del PDF, Cloud Vision API, y Gemini como último recurso -- NUNCA
+   OCR local (Tesseract/PythonAnywhere), decisión explícita de Miguel
+   Ángel (S102). El texto se cachea siempre en `ocr_text`; la fecha
+   resuelta solo si el supervisor no escribió una a mano (esa manda).
+   Si ambas existen y no coinciden, se avisa sin bloquear la subida.
 5. Aplica sustitución (`vigencia_service.evaluate_substitution`)
    contra los documentos ya existentes del mismo tipo y sujeto,
    SIEMPRE -- ya no solo cuando `document_type.tracks_expiry=True`
@@ -51,10 +55,16 @@ from django.contrib.contenttypes.models import ContentType
 from django.utils import timezone
 
 from document_explorer import naming_service
-from document_explorer.date_verification_service import verify_typed_date
+from document_explorer.date_verification_service import (
+    classify_dates_in_text, extract_expiry_via_gemini,
+)
+from document_explorer.filename_date_service import extract_date_by_filename
 from document_explorer.index_writer import ensure_folder_chain
 from document_explorer.models import DocumentIndexEntry, path_digest
 from document_explorer.move_service import _virtual_location_taken
+from document_explorer.personal_intake_service import (
+    _cloud_vision_text, _pdf_embedded_text,
+)
 from document_management.alert_service import (
     create_default_expiry_alerts, get_docs_supervisor_contacts,
 )
@@ -158,6 +168,69 @@ def _resolve_free_filename(subject, document_type_code, upload_date, extension, 
     return filename
 
 
+def _resolve_date_and_text(document_type, filename, data, content_type):
+    """
+    Motor de resolución de fecha + texto para la subida desde la
+    ficha del sujeto (H31, S102). Decisión explícita de Miguel Ángel,
+    verbatim: "el texto lo tenemos que extraer con llamadas a...
+    Cloud Vision, nunca jamás con OCR de PythonAnywhere" -- NUNCA usa
+    Tesseract local (`date_verification_service.extract_text`/
+    `ocr_pdf_to_text`), aunque sea la vía más barata; el coste de CPU
+    compartida real de PythonAnywhere y su cuota diaria por cuenta ya
+    causó la migración a Cloud Vision en el alta (H31, S100, ver
+    `personal_intake_service.extract_one_document`) -- este flujo
+    reutiliza exactamente ese mismo motor, nunca uno propio nuevo:
+
+    1. Heurística de nombre de archivo
+       (`filename_date_service.extract_date_by_filename`) -- gratis,
+       sin abrir el archivo.
+    2. Texto real incrustado del PDF (`personal_intake_service.
+       _pdf_embedded_text`) -- gratis, instantáneo, más fiable que
+       cualquier OCR cuando el documento no es un escaneo/foto.
+    3. Cloud Vision API (`personal_intake_service._cloud_vision_text`)
+       -- nube de Google, sin CPU local, responde en menos de un
+       segundo.
+    4. Gemini Vision directo sobre el archivo -- último recurso, solo
+       si nada de lo anterior encontró ninguna fecha.
+
+    Devuelve (field, date, text, source): `field` es "expiry"/"issue"
+    o None si nada encontró fecha; `text` es el texto real extraído
+    (embebido o Cloud Vision), cadena vacía si no se pudo leer nada
+    -- quien llama lo cachea en `DocumentIndexEntry.ocr_text` para no
+    repetir la extracción; `source` identifica el paso que resolvió
+    la fecha, para el aviso de discrepancia al supervisor.
+    """
+    by_name = extract_date_by_filename(document_type.code, filename)
+    if by_name:
+        field, date_value = by_name
+        return field, date_value, "", "nombre_archivo"
+
+    text = ""
+    if filename.lower().endswith(".pdf"):
+        text = _pdf_embedded_text(data)
+    if not text:
+        text = _cloud_vision_text(data, content_type, filename)
+
+    if text:
+        expiry, issue, other = classify_dates_in_text(text)
+        if expiry:
+            return "expiry", expiry, text, "Cloud Vision"
+        if issue:
+            return "issue", issue, text, "Cloud Vision"
+        if len(other) == 1:
+            # Fecha encontrada, sin contexto claro de caducidad ni
+            # emisión -- mismo criterio ya usado en el resto de la
+            # plataforma: una única fecha ambigua se trata como la
+            # relevante, mejor que ninguna.
+            return "issue", other[0], text, "Cloud Vision"
+
+    gemini_expiry = extract_expiry_via_gemini(data, filename)
+    if gemini_expiry:
+        return "expiry", gemini_expiry, text, "Gemini"
+
+    return None, None, text, None
+
+
 def upload_subject_document(
     *, subject, domain_content_type, document_type, data, original_filename,
     typed_date, subject_label, uploaded_by=None,
@@ -211,9 +284,50 @@ def upload_subject_document(
         expiry_date=typed_date if document_type.tracks_expiry else None,
     )
 
-    warning = verify_typed_date(
-        document_type, original_filename, data, typed_date,
+    # H31 (S102): antes se usaba `verify_typed_date()` (Tesseract
+    # local) solo para comparar y avisar -- el texto y la fecha que sí
+    # llegaba a leer se tiraban siempre. Miguel Ángel, verbatim: "la
+    # extracción de texto debe persistir en BBDD [...] el texto lo
+    # tenemos que extraer con llamadas a... Cloud Vision, nunca jamás
+    # con OCR de PythonAnywhere." Se usa ahora `_resolve_date_and_text`
+    # (heurística de nombre -> texto embebido -> Cloud Vision ->
+    # Gemini, NUNCA Tesseract) y se cachea todo lo que devuelva: el
+    # texto en `ocr_text` (nunca se repetirá la extracción sobre este
+    # documento, sea cual sea `tracks_expiry`), y la fecha resuelta en
+    # `expiry_date` (solo si el tipo la admite) o `issue_date` -- solo
+    # cuando el supervisor no escribió una a mano, que sigue mandando
+    # si la hay.
+    engine_field, engine_date, ocr_text, engine_source = (
+        _resolve_date_and_text(
+            document_type, original_filename, data, content_type,
+        )
     )
+    warning = None
+    if (
+        engine_date is not None and typed_date is not None
+        and engine_date != typed_date
+    ):
+        warning = {
+            "system_date": engine_date, "typed_date": typed_date,
+            "source": engine_source,
+        }
+
+    update_fields = []
+    if ocr_text:
+        entry.ocr_text = ocr_text
+        update_fields.append("ocr_text")
+    if engine_date is not None:
+        if (
+            engine_field == "expiry" and document_type.tracks_expiry
+            and not entry.expiry_date
+        ):
+            entry.expiry_date = engine_date
+            update_fields.append("expiry_date")
+        elif engine_field == "issue" and not entry.issue_date:
+            entry.issue_date = engine_date
+            update_fields.append("issue_date")
+    if update_fields:
+        entry.save(update_fields=update_fields)
 
     alerts_created = 0
     if document_type.tracks_expiry and entry.expiry_date:
