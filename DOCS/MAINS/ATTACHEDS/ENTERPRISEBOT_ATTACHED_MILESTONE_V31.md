@@ -2191,114 +2191,140 @@ S101 (ver Hoja de Ruta).
 
 ---
 
-## Hoja de Ruta para la Sesión Siguiente (S101, reescrita por completo -- sustituye a la de S99)
+### COMPLETADAS EN S101 -- los 4 puntos de la hoja de ruta cerrados con evidencia real, más varias correcciones de UX que salieron por el camino
 
-**0. PRIMERA TAREA, ANTES DE CUALQUIER OTRA COSA: restaurar la ficha
-real de Miguel Ángel (DNI `74633524L`, MUÑOZ CARA MIGUEL ANGEL),
-borrada durante toda la sesión S100 para usarla como sujeto de
-pruebas del alta.** Ver el aviso crítico al principio de este anexo
-para el backup real y el estado de sus 15 documentos originales
-(blobs de GCS intactos, solo el índice se borró). Cierre objetivo:
-consulta real a BD confirmando que `PersonIdentity.objects.get(dni=
-"74633524L")` existe con sus datos reales originales y sus 15
-`DocumentIndexEntry` reales, `is_obsolete=False` los que ya lo eran
-antes de la sesión S100.
+**Resumen:** sesión dedicada a cerrar, con pruebas reales (no revisión
+de código sola), los 4 puntos heredados de S100 sobre el alta de
+trabajador guiada por documentación, además de una tanda larga de
+correcciones de UX y de un fallo real de continuidad entre sesiones
+que se descubrió a mitad de sesión.
 
-**1. Deduplicación real de documentos -- caso de prueba concreto ya
-identificado.** Yolanda reporta duplicados reales acumulándose de
-nuevo en el explorador de archivos pese a una limpieza ya hecha antes
-con un management command. Caso real para verificar: el trabajador
-**Alonso Pedrosa** tiene dos `RECONOCIMIENTO_MEDICO` que son el mismo
-documento con nombres de archivo distintos (uno "apto definitivo",
-otro "RM"). Trabajo:
-   - Localizar el management command de deduplicación ya construido
-     (explorador de archivos, ejecutado desde ahí) y confirmar si
-     sigue existiendo en el repo y si sigue siendo compatible con el
-     estado actual del bucket/BD.
-   - Ejecutarlo (o reconstruirlo si ya no es viable) contra la ficha
-     real de Alonso Pedrosa como primer caso de prueba.
-   - Cierre objetivo: consulta real a BD confirmando que Alonso
-     Pedrosa tiene un único `DocumentIndexEntry` vigente de tipo
-     `RECONOCIMIENTO_MEDICO` (el duplicado, si el hash coincide,
-     eliminado o archivado con criterio claro -- decidir cuál de las
-     dos acciones en la propia sesión, con Miguel Ángel, antes de
-     ejecutar contra más trabajadores).
-   - Una vez validado con ese caso, evaluar relanzarlo contra el resto
-     del bucket de PERSONAL.
+**Incidente de continuidad, descubierto y corregido en la propia
+sesión:** el DNI usado como "ficha de prueba" durante toda S100 no era
+ficticio -- era el DNI real de Miguel Ángel (`74633524L`), borrado al
+principio de esa sesión y nunca restaurado, con un backup JSON que
+dependía solo de `SWAP/` (vaciado sin condición en cada cierre, ver
+`nfs-enterprisebot-pcs` PASO 11). El hecho no quedó documentado con
+ninguna prominencia real en el cierre de S100 -- una sesión en
+paralelo lo corrigió a mitad de esta sesión (commit `43fdad0`, no es
+trabajo de esta sesión). Se reforzó `nfs-enterprisebot-pcs` con un
+**PASO 10.5** nuevo: barrera bloqueante antes de vaciar SWAP cuando la
+sesión dejó un registro real de producción sin restaurar y su backup
+depende solo de esa carpeta.
 
-**2. Restringir la actualización de documentación de personas ya
-existentes al botón "Actualizar" de su propia ficha -- nunca desde el
-alta guiada por documentación.** Miguel Ángel, verbatim: "para subir
-documentación y actualizar deberíamos usar el botón actualizar dentro
-de la ficha de cada persona [...] solamente damos de alta
-documentación cuando solamente tengamos el DNI." Trabajo:
-   - Confirmar (con una prueba real, subiendo un lote de documentos de
-     un DNI ya existente) que el aviso de duplicado ya construido esta
-     sesión (`PersonalIntakeExtractView`) bloquea de verdad seguir
-     adelante -- hoy solo se ha probado que el modal aparece, nunca
-     que sea imposible continuar por otra vía (p. ej. cerrando el
-     aviso y confirmando igualmente con el formulario ya precargado).
-   - Si el bloqueo no es real (el formulario de confirmación sigue
-     accesible tras cerrar el aviso), corregirlo para que sea
-     imposible crear una ficha nueva o adjuntar documentos a través
-     del flujo de alta cuando el DNI ya existe -- la única vía debe
-     quedar cortada por completo, no solo avisada.
-   - Cierre objetivo: prueba real con un DNI ya existente confirmando
-     que no hay ningún camino dentro del modal de alta que termine
-     subiendo un documento a esa persona.
+**1. Deduplicación (caso Alonso Pedrosa) -- CERRADO.** Confirmado con
+consulta real a BD: el duplicado detectado (mismo tamaño, CRC32C
+distinto -- por eso el desduplicador exacto del explorador no lo
+había cogido) se eliminó a mano desde la ficha, y tras el borrado no
+queda ningún tamaño repetido entre los `RECONOCIMIENTO_MEDICO` vivos
+de esa persona. Aparte, Miguel Ángel relanzó el desduplicador general
+del explorador desde el propio panel: 342 grupos resueltos, 416
+copias enviadas a papelera, 2,0 GB recuperados.
 
-**3. Confirmar el comportamiento real cuando ningún documento subido
-trae un DNI legible.** Trabajo:
-   - Probar el alta con un lote de documentos que no incluya ningún
-     DNI/NIE reconocible (p. ej. solo contrato + reconocimiento
-     médico) y confirmar qué pasa hoy en el paso de confirmación --
-     `dni` es campo obligatorio real (`REQUIRED_FIELDS`), así que en
-     teoría no se puede confirmar sin rellenarlo a mano, pero no se ha
-     verificado con una prueba real en esta sesión.
-   - Cierre objetivo: captura real del modal de confirmación con el
-     campo DNI vacío, confirmando que el botón "Confirmar y crear
-     ficha" rechaza el envío (validación `required` del propio
-     `<input>`, más la comprobación server-side ya existente) hasta
-     que el supervisor lo rellene a mano.
+**2. Bloqueo real de re-alta con DNI existente -- CERRADO**, con
+prueba real repetida varias veces a lo largo de la sesión (modal de
+bloqueo, sin ningún camino que deje continuar).
 
-**4. Investigar si existe alguna fuente real para validar la
-EXISTENCIA de un DNI** (no solo su letra de control, que ya se hace
-con `is_valid_spanish_dni`). Yolanda reporta que otros programas de
-gestión sí detectan "este DNI no existe". Trabajo:
-   - Buscar si existe alguna API/base de datos pública española real
-     que permita esa validación, o si esos programas en realidad solo
-     hacen la misma validación de letra de control que ya tenemos
-     aquí (hipótesis más probable, a confirmar con evidencia buscada
-     en la propia sesión, no supuesta).
-   - Cierre objetivo: respuesta documentada con la fuente real
-     encontrada (o la confirmación de que no existe ninguna fuente
-     pública accesible y que la validación real disponible ya es la
-     que se tiene), sin dejarlo como pregunta abierta para una tercera
-     sesión.
+**3. Comportamiento con DNI no legible -- CERRADO**, con prueba real:
+sin ningún documento de identidad en el lote, el sistema bloquea
+antes de mostrar el formulario de confirmación (ver punto de UX más
+abajo, "bloqueo por ausencia de DNI" -- terminó siendo más estricto
+que lo previsto originalmente en S100, que solo contemplaba el
+`required` del propio campo).
 
-**CERRADO EN S101, con búsqueda web real (no supuesto):** no existe
-ninguna fuente pública ni gratuita del Estado español para consultar
-si un DNI/NIE existe de verdad. El Ministerio del Interior/Dirección
-General de la Policía no expone esa consulta a terceros. Las
-"Autoridades de Validación" del DNI electrónico (FNMT, Hacienda)
-validan certificados digitales cuando el propio ciudadano usa su
-DNIe con PIN -- no sirven para que un tercero consulte "¿existe este
-número?" sobre un documento en papel o una foto. Sí existen servicios
-comerciales de terceros (Didit, Verifik y similares) que dicen
-verificar el DNI/NIE "contra el registro oficial", cobrando por
-consulta (uno de ellos, ~0,20 $ por resultado concluyente) -- esa
-afirmación de acceso al registro oficial es publicidad del propio
-proveedor, no verificable de forma independiente sin contratarlo.
-Confirmada también la hipótesis de partida: las herramientas
-"validadoras de DNI" gratuitas que se encuentran buscando
-(validardni.es, herramient.as y similares) solo comprueban la letra
-de control con el mismo algoritmo módulo 23 que ya está implementado
-aquí -- ninguna consulta existencia real. Conclusión: no hay upgrade
-gratuito posible hoy; la única mejora real pasaría por contratar un
-servicio de pago de terceros -- decisión de negocio pendiente de
-Miguel Ángel, no un trabajo técnico más para ninguna sesión.
+**4. Fuente pública para validar existencia de DNI -- CERRADO**, con
+búsqueda web real: no existe ninguna gratuita del Estado español; solo
+servicios de pago de terceros no verificables de forma independiente.
+Decisión de negocio pendiente de Miguel Ángel si algún día se quiere
+contratar uno -- no es trabajo técnico de ninguna sesión.
+
+**Correcciones de UX y robustez que salieron por el camino, todas en
+producción real:**
+- Excepción cruda del servicio de lectura ya no se muestra al
+  supervisor (se sigue registrando completa en el log del servidor).
+- Cada aviso identifica el documento por su **nombre real de
+  archivo**, nunca por número de orden.
+- Avisos de la Seguridad Social rediseñados: silencio total en
+  documentos bien tipificados que traen el número (un CONTRATO, por
+  ejemplo -- antes generaba un aviso confuso que parecía un error de
+  clasificación), un único aviso agregado si falta la Tarjeta física,
+  y aviso nombrado solo para documentos sin tipificar.
+- Notificación sonora (Web Audio, con el `AudioContext` creado/
+  reanudado dentro del propio gesto de clic para evitar el bloqueo de
+  autoplay) + toast visual + `Notification` real del navegador (con
+  petición de permiso en el propio clic), al terminar de leer los
+  documentos y al terminar de crear la ficha.
+- Modal principal del alta con backdrop estático (no se cierra solo
+  por clic fuera ni por Escape) -- iguala el comportamiento que ya
+  tenía el modal de duplicado.
+- **Identidad (DNI y nombre) extraída de CUALQUIER documento del
+  lote**, no solo del propio carnet DNI/NIE -- un CONTRATO o un ALTA
+  de la Seguridad Social ya bastan para identificar a la persona sin
+  necesidad de que el DNI físico esté en el lote.
+- **Bloqueo por ausencia total de identidad**: si ningún documento del
+  lote trae DNI/NIE identificable, se corta antes del formulario de
+  confirmación, con aviso explícito de que actualizar documentación
+  de alguien ya existente se hace desde su propia ficha, nunca desde
+  el alta. Mismo aviso añadido también al modal de duplicado.
+- **Validación cruzada de DNI entre todos los documentos del lote**:
+  se decide por mayoría entre los DNI que pasan la letra de control, y
+  los documentos con un DNI válido pero distinto de la mayoría se
+  excluyen del alta (forzados a `DESCONOCIDO`), con aviso nombrando el
+  archivo. Probado con un documento de prueba real generado para la
+  ocasión (`TEST_CONTRATO_DNI_ERRONEO.pdf`, DNI válido pero distinto)
+  más un caso real no buscado (un Modelo 145 con letra manuscrita
+  ambigua, leído con un dígito equivocado por Gemini, descartado
+  igual por no pasar la letra de control) -- ambos casos resueltos sin
+  contaminar el DNI final del borrador.
+- Directriz 4.20 del documento maestro reforzada con una comprobación
+  automática obligatoria (script) contra comentarios `{# #}`
+  multilínea, tras una reincidencia real detectada en esta sesión.
+- Tabla viva de ejemplos de clasificación confirmados añadida al
+  anexo (ALTA, CONTRATO, CERTIFICADO_BANCARIO), para no perder este
+  conocimiento en la narrativa de la sesión.
+
+**Pendiente real, sin resolver:** la ficha real de Miguel Ángel
+(`74633524L`) volvió a borrarse durante las pruebas de esta misma
+sesión (ciclo de prueba de la validación cruzada de DNI) y no se ha
+vuelto a crear -- ver primer punto de la hoja de ruta siguiente.
+
+## Hoja de Ruta para la Sesión Siguiente (S102, reescrita por completo -- sustituye a la de S101)
+
+**0. PRIMERA TAREA, ANTES DE CUALQUIER OTRA COSA: crear la ficha real
+definitiva de Miguel Ángel (DNI `74633524L`) y NO volver a borrarla.**
+El pipeline de alta quedó validado a fondo en S101 (identidad desde
+cualquier documento, validación cruzada de DNI, bloqueos reales) --
+basta con que Miguel Ángel suba su lote completo de documentos reales
+por el flujo normal de "Dar de alta trabajador" y confirme la
+creación, sin que sea otro ciclo de prueba. Cierre objetivo: consulta
+real a BD confirmando que `PersonIdentity.objects.get(dni=
+"74633524L")` existe con sus datos reales y sus `DocumentIndexEntry`
+correspondientes.
+
+**1. Pulir el flujo de modificación de datos y añadido de
+documentación sobre una ficha de trabajador ya existente**, con el
+mismo estándar de UX y robustez aplicado al alta guiada en S100-S101.
+Decisión explícita de Miguel Ángel sobre el alcance: es el orden
+natural del ciclo de vida de una ficha (tras el alta), y gran parte ya
+existe (Modo edición de datos personales, botones "Actualizar"/"Ver"/
+"Historial"/"Eliminar" por documento) -- falta dejarlo fino. Trabajo:
+   - Primera tarea de la sesión: auditar en producción real, usando la
+     ficha real de Miguel Ángel ya creada en el punto 0, cada una de
+     las cuatro acciones disponibles sobre un documento (Actualizar,
+     Ver, Historial, Eliminar) más el Modo edición de datos
+     personales, probando cada una al menos una vez.
+   - Documentar cada fricción o bug real encontrado en esta misma
+     sección del anexo, con el mismo nivel de detalle que los
+     incidentes de S100/S101 (qué se probó, qué pasó, captura o dato
+     real).
+   - Cierre objetivo: lista de hallazgos reales con las cinco acciones
+     (Actualizar, Ver, Historial, Eliminar, Modo edición) probadas al
+     menos una vez cada una -- no cerrar la sesión sin haber probado
+     las cinco, aunque no dé tiempo a corregir todo lo que se
+     encuentre.
 
 ---
+
 
 ## TABLA VIVA -- EJEMPLOS REALES DE CLASIFICACIÓN CONFIRMADOS (añadida
 ## S101, para no perder el trabajo de reconocer un tipo cada vez que
