@@ -1390,6 +1390,18 @@ class PersonalIntakeExtractView(DocsUploadAccessMixin, View):
         )
         draft = merged["draft"]
 
+        # H31 (S101), Miguel Ángel, verbatim: "el hecho de que los
+        # documentos que dispongan de número de DNI, ese número sea
+        # coincidente para todos y rechazar el documento en minoría."
+        # `merge_person_draft` ya decidió cuáles son -- aquí se
+        # materializa el rechazo forzando su `document_type_code` a
+        # DESCONOCIDO, que es justo lo que `_store_documents` ya
+        # descarta por la vía normal (ver comentario de esa función).
+        # El aviso de por qué se descarta cada uno ya viene en
+        # merged["warnings"], con el nombre del archivo.
+        for rejected_idx in merged.get("rejected_indices", []):
+            per_file[rejected_idx]["document_type_code"] = "DESCONOCIDO"
+
         # H31 (S100), incidente real: el procesamiento en paralelo de
         # arriba puede tardar bastantes segundos sin tocar la BD para
         # nada (todo el tiempo es red hacia Gemini/Cloud Vision). La

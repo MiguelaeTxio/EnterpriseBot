@@ -576,6 +576,16 @@ def merge_person_draft(extractions: list, filenames: list = None) -> dict:
     fallback a "Documento N") solo por compatibilidad hacia atrás con
     cualquier llamador que no lo pase todavía -- todo llamador real de
     la plataforma debe pasarlo siempre.
+
+    AÑADIDO EN S101, Miguel Ángel: el DNI ya no lo fija el primer
+    documento que lo trae -- se recogen los candidatos de TODOS los
+    documentos del lote (de cualquier tipo, no solo DNI/NIE) y se
+    decide por mayoría entre los que pasan la letra de control. Los
+    documentos cuyo DNI válido no coincide con la mayoría se devuelven
+    en `rejected_indices` (índices sobre `extractions`/`filenames`) --
+    el llamador decide qué hacer con ellos (ver `PersonalIntakeExtractView`,
+    que fuerza su `document_type_code` a DESCONOCIDO para excluirlos
+    del alta por la vía ya existente).
     """
     draft = {
         "dni": "", "first_surname": "", "second_surname": "",
@@ -586,6 +596,7 @@ def merge_person_draft(extractions: list, filenames: list = None) -> dict:
     IDENTITY_TYPES = ("DNI", "NIE")
     warnings = []
     found_seg_social = False
+    dni_candidates = []
     for idx, result in enumerate(extractions):
         doc_label = (
             filenames[idx] if filenames and idx < len(filenames)
@@ -622,15 +633,27 @@ def merge_person_draft(extractions: list, filenames: list = None) -> dict:
         # primero que lo traiga con confianza suficiente gana (mismo
         # criterio que ya se aplicaba al número de afiliación a la
         # Seguridad Social, unas líneas más abajo).
-        if not draft["dni"] and result.get("dni_hint"):
+        # H31 (S101): ya no se fija `draft["dni"]` aquí mismo con el
+        # primer candidato -- se recogen TODOS los candidatos válidos
+        # del lote y se decide por mayoría después del bucle (ver
+        # bloque de cruce de DNI más abajo, tras el `for`). Miguel
+        # Ángel, verbatim: "el hecho de que los documentos que
+        # dispongan de número de DNI, ese número sea coincidente para
+        # todos y rechazar el documento en minoría."
+        if result.get("dni_hint"):
             candidate_dni = normalize_dni(result["dni_hint"])
-            if candidate_dni and not is_valid_spanish_dni(candidate_dni):
+            candidate_valid = bool(candidate_dni) and is_valid_spanish_dni(candidate_dni)
+            if candidate_dni and not candidate_valid:
                 warnings.append(
                     "%s: el DNI leído (%s) no pasa la letra "
                     "de control real -- revísalo a mano antes de "
                     "confirmar." % (doc_label, candidate_dni),
                 )
-            draft["dni"] = candidate_dni
+            if candidate_dni:
+                dni_candidates.append({
+                    "idx": idx, "label": doc_label,
+                    "value": candidate_dni, "valid": candidate_valid,
+                })
         if not draft["first_surname"] and result.get("first_surname_hint"):
             draft["first_surname"] = result["first_surname_hint"]
         if not draft["second_surname"] and result.get("second_surname_hint"):
@@ -715,4 +738,44 @@ def merge_person_draft(extractions: list, filenames: list = None) -> dict:
             "No se ha encontrado la Tarjeta de la Seguridad Social "
             "entre los documentos subidos -- súbela cuando la tengas.",
         )
-    return {"draft": draft, "warnings": warnings}
+
+    # H31 (S101), Miguel Ángel, verbatim: "el hecho de que los
+    # documentos que dispongan de número de DNI, ese número sea
+    # coincidente para todos y rechazar el documento en minoría." Con
+    # 10-15 documentos reales de la misma persona es normal que varios
+    # traigan el DNI (contrato, ALTA, IDC, reconocimiento médico...) --
+    # si alguno se cuela de OTRA persona (o la lectura de uno se
+    # confunde), el número no va a coincidir con el resto. Se cuenta
+    # cuántas veces aparece cada valor VÁLIDO (letra de control
+    # correcta -- un valor inválido nunca compite por la mayoría, ya
+    # tiene su propio aviso más arriba) y gana el más repetido; el
+    # resto de documentos con un valor válido pero distinto del
+    # ganador se marca para excluir del alta (`rejected_indices`) --
+    # el llamador (la vista) es quien decide qué hacer con esa lista
+    # (forzar su `document_type_code` a DESCONOCIDO para que
+    # `_store_documents` los descarte igual que cualquier documento
+    # sin tipificar, con la razón real ya en el aviso).
+    rejected_indices = []
+    if dni_candidates:
+        valid_candidates = [c for c in dni_candidates if c["valid"]]
+        if valid_candidates:
+            tally = {}
+            for c in valid_candidates:
+                tally[c["value"]] = tally.get(c["value"], 0) + 1
+            majority_value = max(tally, key=lambda v: tally[v])
+            draft["dni"] = majority_value
+            for c in valid_candidates:
+                if c["value"] != majority_value:
+                    warnings.append(
+                        "%s: el DNI leído (%s) no coincide con el del "
+                        "resto de documentos del lote (%s) -- se "
+                        "descarta este documento del alta, puede "
+                        "pertenecer a otra persona; revísalo a mano."
+                        % (c["label"], c["value"], majority_value),
+                    )
+                    rejected_indices.append(c["idx"])
+
+    return {
+        "draft": draft, "warnings": warnings,
+        "rejected_indices": sorted(rejected_indices),
+    }
