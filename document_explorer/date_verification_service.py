@@ -1,28 +1,31 @@
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/document_explorer/date_verification_service.py
 """
 H30 (S48). Servicio compartido de extraccion/contraste de fecha para
-dos consumidores reales:
+consumidores reales:
 
 1. `run_fase_b1_ocr_dates` (comando de gestion, recorrido masivo por
    lotes sobre el histórico ya indexado).
-2. El flujo de subida desde ficha (panel, S48 en adelante): el
-   supervisor escribe la fecha a mano al subir un documento nuevo, y
-   este servicio la CONTRASTA contra lo que dice el propio documento
-   -- nunca decide por su cuenta, solo avisa si no coinciden. Miguel
-   Ángel, verbatim (S48): "Contraste nunca va a estar por encima del
-   supervisor, pero contrasta la información y avisa."
+2. `expiry_resolution_service.resolve_expiry_date()` -- resolucion de
+   fecha en tiempo real tras la reubicacion de un archivo (H30 S50).
+3. `classification_service._extract_dni_via_ocr()` -- lectura de
+   DNI/NIE del contenido real de un documento.
 
-Dos vias de lectura, decididas por dato de catalogo (nunca lista fija
-en codigo -- mismo principio que tracks_expiry):
+CENTRALIZADO EN S102: `extract_text()` ya NO usa Tesseract local para
+PDF/imagen -- delega en `cloud_vision_service.extract_text()` (texto
+embebido del PDF primero, Cloud Vision API despues). Decision
+explicita de Miguel Angel, verbatim: "el texto lo tenemos que extraer
+con llamadas a... Cloud Vision, nunca jamas con OCR de PythonAnywhere"
+-- origen real: un Comando S tardo "lo mas grande" ejecutando OCR
+local sobre un unico documento desde la ficha (S102), mismo sintoma ya
+resuelto para el alta en H31/S100 (cuota diaria de CPU compartida de
+PythonAnywhere).
 
-- `DocumentTypeCatalog.ocr_unreliable=False` (la mayoria de tipos):
-  OCR local con Tesseract, gratis.
-- `DocumentTypeCatalog.ocr_unreliable=True` (verificado con datos
-  reales -- hoy solo ITV, tarjetas manuscritas con fondo de seguridad
-  que domina la lectura de Tesseract, ver anexo H30 "COMPLETADAS EN
-  S48"): Gemini como ultimo recurso, acotado a este subconjunto
-  concreto -- nunca se usa Gemini para tipos que ya resuelve OCR o
-  que el propio supervisor ya introduce a mano.
+`extract_expiry_via_gemini()` sigue siendo el ultimo recurso, acotado
+a `DocumentTypeCatalog.ocr_unreliable=True` (verificado con datos
+reales -- hoy solo ITV, tarjetas manuscritas con fondo de seguridad
+que domina cualquier lectura visual, ver anexo H30 "COMPLETADAS EN
+S48"): nunca se usa Gemini para tipos que ya resuelve el texto
+extraido, o que el propio supervisor ya introduce a mano.
 """
 import io
 import json
@@ -31,9 +34,7 @@ import unicodedata
 from datetime import date
 
 import fitz
-import pytesseract
 from google.genai.types import GenerateContentConfig, HttpOptions, Part
-from PIL import Image
 
 from ai_services.gemini_client import DEFAULT_MODEL, get_gemini_client
 from ai_services.gemini_rate_limiter import acquire_gemini_slot
@@ -649,18 +650,6 @@ def classify_dates_in_text(text):
     return expiry, issue, other_dates
 
 
-def ocr_pdf_to_text(data, max_pages=2, dpi=300):
-    text_parts = []
-    doc = fitz.open(stream=data, filetype="pdf")
-    for page_index in range(min(max_pages, doc.page_count)):
-        page = doc.load_page(page_index)
-        pix = page.get_pixmap(dpi=dpi)
-        img = Image.open(io.BytesIO(pix.tobytes("png")))
-        text_parts.append(pytesseract.image_to_string(img, lang="spa"))
-    doc.close()
-    return "\n".join(text_parts)
-
-
 _DOCUTEN_SIGNATURE_RE = re.compile(
     r"Fecha y hora:\s*(\d{1,2})-(\d{1,2})-(\d{4})"
 )
@@ -672,31 +661,40 @@ _DOCUTEN_SIGNATURE_RE = re.compile(
 # fecha real -- la firma individual de ESE empleado concreto, no la
 # fecha de aprobacion del plan nacional que aparece en las primeras
 # paginas -- en la ULTIMA pagina del PDF ("Firmado por: NOMBRE...
-# Fecha y hora: DD-MM-AAAA HH:MM UTC+N"), fuera del alcance de
-# ocr_pdf_to_text(max_pages=2). Verificado real: id=40356 (gomez
-# gomez), pagina 54, "Fecha y hora: 25-06-2025 17:30 UTC+2". Se OCRea
-# solo la ultima pagina (nunca el documento completo -- estos PDFs
-# rondan 10MB/50+ paginas de imagenes, OCRearlo entero es coste real
-# innecesario) y se busca el patron literal de la cabecera de firma de
-# Docuten, nunca el regex generico de fecha (evita capturar cualquiera
-# de las decenas de fechas de boilerplate que pueda arrastrar la
-# ultima pagina).
+# Fecha y hora: DD-MM-AAAA HH:MM UTC+N"), fuera del alcance del texto
+# embebido/Cloud Vision de las 2 primeras paginas que usa el resto del
+# motor. Verificado real: id=40356 (gomez gomez), pagina 54, "Fecha y
+# hora: 25-06-2025 17:30 UTC+2". Se OCRea solo la ultima pagina (nunca
+# el documento completo -- estos PDFs rondan 10MB/50+ paginas de
+# imagenes, procesarlo entero es coste real innecesario) y se busca el
+# patron literal de la cabecera de firma de Docuten, nunca el regex
+# generico de fecha (evita capturar cualquiera de las decenas de
+# fechas de boilerplate que pueda arrastrar la ultima pagina).
 def extract_docuten_signature_date(data):
     """
     Devuelve la fecha de la firma electronica individual (bloque
     "Firmado por... Fecha y hora: DD-MM-AAAA") de la ULTIMA pagina de
     un PDF firmado via Docuten, o None si no aparece ese patron
     exacto.
+
+    CENTRALIZADO EN S102 -- NUNCA Tesseract local: la ultima pagina se
+    renderiza a PNG y se lee con
+    `cloud_vision_service.cloud_vision_image_text()`.
     """
+    from document_explorer.cloud_vision_service import (
+        cloud_vision_image_text,
+    )
+
     doc = fitz.open(stream=data, filetype="pdf")
     if doc.page_count == 0:
         doc.close()
         return None
     page = doc.load_page(doc.page_count - 1)
     pix = page.get_pixmap(dpi=300)
-    img = Image.open(io.BytesIO(pix.tobytes("png")))
-    text = pytesseract.image_to_string(img, lang="spa")
+    png_bytes = pix.tobytes("png")
     doc.close()
+
+    text = cloud_vision_image_text(png_bytes)
     match = _DOCUTEN_SIGNATURE_RE.search(text)
     if not match:
         return None
@@ -705,11 +703,6 @@ def extract_docuten_signature_date(data):
         return date(int(year), int(month), int(day))
     except ValueError:
         return None
-
-
-def ocr_image_to_text(data):
-    img = Image.open(io.BytesIO(data))
-    return pytesseract.image_to_string(img, lang="spa")
 
 
 def docx_to_text(data):
@@ -793,12 +786,19 @@ def extract_text(filename, data):
     Devuelve el texto legible de `data` segun la extension de
     `filename`, o None si la extension no esta soportada (nunca se
     fuerza OCR sobre un tipo de archivo que no se sabe leer).
+
+    CENTRALIZADO EN S102 -- pdf/imagen ya NO usan Tesseract local:
+    delegan en `cloud_vision_service.extract_text()` (texto embebido
+    del PDF primero, Cloud Vision despues). Decision explicita de
+    Miguel Angel, verbatim: "el texto lo tenemos que extraer con
+    llamadas a... Cloud Vision, nunca jamas con OCR de PythonAnywhere."
     """
     name_lower = filename.lower()
-    if name_lower.endswith(".pdf"):
-        return ocr_pdf_to_text(data)
-    if name_lower.endswith((".jpg", ".jpeg", ".png")):
-        return ocr_image_to_text(data)
+    if name_lower.endswith((".pdf", ".jpg", ".jpeg", ".png")):
+        from document_explorer.cloud_vision_service import (
+            extract_text as _cloud_vision_extract_text,
+        )
+        return _cloud_vision_extract_text(filename, data)
     if name_lower.endswith(".docx"):
         return docx_to_text(data)
     if name_lower.endswith(".txt"):
@@ -845,39 +845,3 @@ def extract_expiry_via_gemini(data, filename):
         return date(year, month, day)
     except (ValueError, KeyError, AttributeError):
         return None
-
-
-def verify_typed_date(document_type, filename, data, typed_date):
-    """
-    Contrasta `typed_date` (lo que el supervisor escribió a mano)
-    contra lo que el propio documento dice de verdad -- nunca decide,
-    solo avisa. Devuelve None si coincide o si no se pudo leer nada
-    (silencio, no bloquea la subida); devuelve un dict de aviso si hay
-    discrepancia real:
-        {"system_date": date, "typed_date": date, "source": "OCR"|"Gemini"}
-
-    Via de lectura decidida por `document_type.ocr_unreliable` (dato
-    de catalogo, nunca lista fija en codigo).
-    """
-    if document_type.ocr_unreliable:
-        system_date = extract_expiry_via_gemini(data, filename)
-        source = "Gemini"
-    else:
-        text = extract_text(filename, data)
-        if text is None:
-            return None
-        expiry, issue, other = classify_dates_in_text(text)
-        system_date = expiry or issue or (
-            other[0] if len(other) == 1 else None
-        )
-        source = "OCR"
-
-    if system_date is None:
-        return None
-    if system_date == typed_date:
-        return None
-    return {
-        "system_date": system_date,
-        "typed_date": typed_date,
-        "source": source,
-    }

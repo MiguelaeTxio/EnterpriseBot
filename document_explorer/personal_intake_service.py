@@ -357,19 +357,15 @@ def _pdf_embedded_text(data: bytes) -> str:
     Devuelve cadena vacía (nunca lanza) si el PDF no trae texto real
     -- es un escaneo/foto -- para que el llamador caiga a Cloud Vision
     en ese caso.
-    """
-    import fitz
 
-    try:
-        doc = fitz.open(stream=data, filetype="pdf")
-        parts = [page.get_text() for page in doc[:2]]
-        return "\n".join(parts).strip()
-    except Exception as exc:
-        logger.warning(
-            "# [personal_intake_service] Fallo leyendo texto incrustado "
-            "del PDF: %s", exc,
-        )
-        return ""
+    CENTRALIZADO EN S102 -- delega en
+    `cloud_vision_service.pdf_embedded_text()` (mismo código, ahora en
+    un único sitio) para que ningún otro punto de la plataforma
+    duplique esta lógica.
+    """
+    from document_explorer.cloud_vision_service import pdf_embedded_text
+
+    return pdf_embedded_text(data)
 
 
 def _cloud_vision_text(data: bytes, mime_type: str, filename: str) -> str:
@@ -392,44 +388,20 @@ def _cloud_vision_text(data: bytes, mime_type: str, filename: str) -> str:
     Devuelve cadena vacía (nunca None) si no hay texto reconocible, o
     si la extensión no está soportada -- el llamador decide el
     fallback.
+
+    CENTRALIZADO EN S102 -- delega en
+    `cloud_vision_service.cloud_vision_text()` (mismo código, ahora en
+    un único sitio, mismo mecanismo que ya reutilizan
+    `date_verification_service` y `subject_upload_service`). El
+    parámetro `mime_type` nunca se usó dentro de esta función (el
+    despacho real es por extensión de `filename`) -- se conserva solo
+    por compatibilidad con quien ya llama a esta función con esa
+    firma.
     """
-    from google.cloud import vision
+    from document_explorer.cloud_vision_service import cloud_vision_text
 
-    from ai_services.gemini_client import ensure_gcp_credentials
+    return cloud_vision_text(data, filename)
 
-    ensure_gcp_credentials()
-    client = vision.ImageAnnotatorClient()
-    name_lower = (filename or "").lower()
-
-    if name_lower.endswith((".jpg", ".jpeg", ".png")):
-        image = vision.Image(content=data)
-        response = client.text_detection(image=image)
-        if response.error.message:
-            raise RuntimeError(response.error.message)
-        return response.full_text_annotation.text or ""
-
-    if name_lower.endswith(".pdf"):
-        input_config = vision.InputConfig(
-            content=data, mime_type="application/pdf",
-        )
-        feature = vision.Feature(
-            type_=vision.Feature.Type.DOCUMENT_TEXT_DETECTION,
-        )
-        # H31 (S100): páginas 1-based en la API -- 1 y 2, mismo límite
-        # de 2 páginas que el OCR local que sustituye.
-        request = vision.AnnotateFileRequest(
-            input_config=input_config, features=[feature], pages=[1, 2],
-        )
-        response = client.batch_annotate_files(requests=[request])
-        texts = []
-        for file_response in response.responses:
-            for page_response in file_response.responses:
-                if page_response.error.message:
-                    continue
-                texts.append(page_response.full_text_annotation.text or "")
-        return "\n".join(texts)
-
-    return ""
 
 
 def extract_one_document(data: bytes, mime_type: str, filename: str = "") -> dict:

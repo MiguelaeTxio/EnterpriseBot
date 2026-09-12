@@ -22,10 +22,12 @@ con la misma forma:
     empresa {EMPRESA} , ha sido sometido el dia {FECHA} , a
     reconocimiento medico ... resulta {APTO|NO APTO}
 
-`ocr_pdf_to_text()` (date_verification_service) no sirve tal cual --
-tiene `max_pages=2` fijo, pensado para verificacion de fecha de un
-documento de una sola pagina. Este comando hace su propio OCR
-pagina a pagina, sobre `doc.page_count` real completo.
+El motor compartido de fechas (`date_verification_service`/
+`cloud_vision_service`) no sirve tal cual -- se acota a las 2
+primeras paginas, pensado para verificacion de fecha de un documento
+de una sola pagina. Este comando hace su propio OCR pagina a pagina,
+sobre `doc.page_count` real completo (`_ocr_all_pages()`, Cloud
+Vision, nunca Tesseract).
 
 Dos destinos posibles por pagina, decision explicita de Miguel Angel
 (S59):
@@ -65,13 +67,10 @@ document_type/domain en las filas nuevas, manda el original a
 papelera cuando aplica. Nunca toca `blob_name` de una fila ya
 existente (4.12).
 """
-import io
 import re
 import unicodedata
 
 import fitz
-import pytesseract
-from PIL import Image
 
 from django.core.management.base import BaseCommand
 
@@ -239,16 +238,30 @@ def _correct_ocr_dni(raw):
 
 def _ocr_all_pages(data):
     """
-    OCR real de TODAS las paginas de un PDF (a diferencia de
-    `ocr_pdf_to_text()`, que tiene `max_pages=2` fijo). Devuelve una
+    OCR real de TODAS las paginas de un PDF (a diferencia del motor
+    compartido de fechas, que se acota a las 2 primeras). Devuelve una
     lista de textos, uno por pagina, en orden.
+
+    CENTRALIZADO EN S102 -- NUNCA Tesseract local: cada pagina se
+    renderiza a PNG y se lee con
+    `cloud_vision_service.cloud_vision_image_text()`. Decision
+    explicita de Miguel Angel: "el texto lo tenemos que extraer con
+    llamadas a... Cloud Vision, nunca jamas con OCR de PythonAnywhere."
 
     H30 (S68) Punto 4: DPI seguro por pagina segun su tamano fisico,
     nunca dpi=300 fijo -- mismo fix real que local_ocr_classify.py y
     split_rm_dossier_vm.py (caso Delgado Hurtado, 278M pixeles por
     encima del limite real de Pillow en produccion, 89.478.485 --
-    ver local_ocr_classify.py).
+    ver local_ocr_classify.py). Este limite de pixeles seguro ya no
+    protege contra Pillow (Cloud Vision no pasa por Pillow), pero se
+    conserva igual -- una pagina renderizada a mas de 80 megapixeles
+    no aporta nada a la lectura real y sube el tamano del payload sin
+    necesidad.
     """
+    from document_explorer.cloud_vision_service import (
+        cloud_vision_image_text,
+    )
+
     SAFE_MAX_PIXELS = 80_000_000
     MIN_DPI = 100
     DPI_OBJETIVO = 300
@@ -265,8 +278,8 @@ def _ocr_all_pages(data):
                 dpi_pagina = int(72 * (SAFE_MAX_PIXELS / (rect.width * rect.height)) ** 0.5)
                 dpi_pagina = max(dpi_pagina, MIN_DPI)
         pix = page.get_pixmap(dpi=dpi_pagina)
-        img = Image.open(io.BytesIO(pix.tobytes("png")))
-        texts.append(pytesseract.image_to_string(img, lang="spa"))
+        png_bytes = pix.tobytes("png")
+        texts.append(cloud_vision_image_text(png_bytes))
     doc.close()
     return texts
 
