@@ -24,6 +24,20 @@ name: Compilar requirements.txt en PythonAnywhere
 # Se dispara solo cuando `requirements.in` cambia (nunca en cada push
 # trivial), o manualmente si hiciera falta recompilar sin haber
 # tocado el .in.
+#
+# ⛔ INCIDENTE REAL S102: un push que toca `requirements.in` dispara
+# ESTE workflow Y `deploy.yml` a la vez (deploy.yml corre en todo
+# push a main, sin filtro de rutas) -- las dos sesiones SSH hacían
+# `git pull origin main` contra el MISMO checkout del servidor casi
+# al mismo tiempo, y una de las dos (aquí) chocó con un estado a
+# medio actualizar: "fatal: Need to specify how to reconcile
+# divergent branches" -- transitorio, nunca dejó el repositorio
+# realmente corrupto (confirmado con `git log` real: HEAD local y
+# origin/main coincidian exactamente en cuanto `deploy.yml` terminaba
+# su propio pull), pero hacía fallar este workflow en rojo sin
+# motivo real de fondo. Corregido con el `concurrency:` de abajo,
+# compartido con `deploy.yml` -- mismo grupo, así que GitHub encola
+# las dos sesiones SSH en vez de dejarlas pisarse.
 
 on:
   push:
@@ -31,6 +45,10 @@ on:
     paths:
       - 'requirements.in'
   workflow_dispatch:
+
+concurrency:
+  group: enterprisebot-pythonanywhere-ssh
+  cancel-in-progress: false
 
 jobs:
   compile:

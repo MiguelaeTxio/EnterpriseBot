@@ -11,10 +11,28 @@ name: Deploy EnterpriseBot to PythonAnywhere
 # archivos de migracion se generan y revisan siempre en el workspace
 # de Claude antes de pushear, nunca en el servidor -- ver
 # com-migrations seccion 1).
+#
+# ⛔ INCIDENTE REAL S102: un push que toca `requirements.in` dispara
+# este workflow Y `compile-requirements.yml` a la vez (ese otro no
+# tiene filtro de rama compartido, solo de ruta) -- las dos sesiones
+# SSH hacían `git pull origin main` contra el MISMO checkout del
+# servidor casi al mismo tiempo, y `compile-requirements.yml` chocó
+# con un estado a medio actualizar ("fatal: Need to specify how to
+# reconcile divergent branches"). Nunca dejó el repositorio realmente
+# corrupto (confirmado con `git log` real tras el incidente: HEAD
+# local y origin/main coincidian exactamente), pero es una condicion
+# de carrera real entre dos workflows tocando el mismo servidor a la
+# vez. Corregido con el `concurrency:` de abajo, mismo grupo que
+# `compile-requirements.yml` -- GitHub encola las sesiones SSH en vez
+# de dejarlas pisarse.
 
 on:
   push:
     branches: [main]
+
+concurrency:
+  group: enterprisebot-pythonanywhere-ssh
+  cancel-in-progress: false
 
 jobs:
   deploy:
