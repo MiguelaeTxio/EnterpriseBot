@@ -1419,6 +1419,33 @@ class PersonalIntakeExtractView(DocsUploadAccessMixin, View):
             PersonIdentity.objects.filter(dni=normalized_dni).first()
             if normalized_dni else None
         )
+        # H31 (S101), Miguel Ángel, verbatim: "si no hay ningún DNI, ni
+        # se puede extraer ningún número de identificación, debemos
+        # avisar del error y no contaminar la base de datos con datos
+        # potencialmente erróneos." Sin ningún documento del lote que
+        # traiga el DNI/NIE (de cualquier tipo, ver
+        # `merge_person_draft` -- ya no hace falta que sea el propio
+        # carnet), el supervisor tendría que escribirlo entero a mano
+        # sin nada que lo verifique -- justo el escenario real que
+        # detectó Miguel Ángel: toda su documentación real yendo a
+        # parar a una identidad inventada. Se corta aquí, antes de
+        # mostrar el formulario de confirmación, nunca después.
+        if not normalized_dni:
+            return JsonResponse({
+                "ok": False,
+                "error": "No se ha podido identificar el DNI/NIE de "
+                         "ningún documento del lote -- no se crea la "
+                         "ficha para no guardar datos de identidad sin "
+                         "verificar. Si es un trabajador nuevo, incluye "
+                         "al menos un documento que traiga su DNI (el "
+                         "propio DNI/NIE, un contrato, un ALTA de la "
+                         "Seguridad Social...). Si es para añadir o "
+                         "actualizar documentación de alguien que ya "
+                         "está dado de alta, hazlo desde su propia "
+                         "ficha -- este botón es solo para altas "
+                         "nuevas.",
+            }, status=400)
+
         if existing_person:
             return JsonResponse({
                 "ok": True,
