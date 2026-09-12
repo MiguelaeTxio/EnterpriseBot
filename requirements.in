@@ -27,14 +27,21 @@ mysqlclient
 # Requerido por el ImageField de Django en ivr_config.Company (campo logo).
 Pillow
 PyMuPDF
-# pytesseract (H30, S48): OCR local con Tesseract para extraer fechas
-# de caducidad de documentos ya clasificados sin fecha detectable por
-# heuristica de nombre (Fase B1) -- Tesseract 4.1.1 ya confirmado
-# instalado en el servidor (S46), sin coste de API. Version verificada
-# en linea el 2026-08-11 (directriz 4.4) contra pypistats.org/packages/
-# pytesseract: 0.3.13, dependencias declaradas packaging + pillow (ya
-# ambas presentes en este archivo).
-pytesseract==0.3.13
+# pytesseract -- RETIRADO EN S102. Declarado desde H30/S48 para OCR
+# local con Tesseract (extracción de fechas de caducidad sin fecha
+# detectable por heurística de nombre). Sustituido por completo por
+# Cloud Vision API (bloque más abajo, ya declarado desde H31/S100):
+# `date_verification_service.py`, `personal_intake_service.py` y
+# `document_explorer/management/commands/split_rm_dossier.py` ya no
+# importan `pytesseract` en ningún punto del código -- verificado con
+# `grep -rn pytesseract` sobre todo el árbol del webapp antes de
+# quitar la línea (S102). Miguel Ángel, verbatim: "el texto lo
+# tenemos que extraer con llamadas a... Cloud Vision, nunca jamás con
+# OCR de PythonAnywhere." Tesseract sigue en uso en los scripts
+# independientes de `h28_migration_agent/` (VMs de GCE, propio
+# requirements-ocr-vm.in/.txt aparte, fuera del alcance de este
+# archivo) -- no se ha tocado esa dependencia, decisión explícita de
+# no unificarla en la misma sesión.
 # pymupdf4llm (S025): conversión de PDF a Markdown para manuales de
 # uso pesados -- extensión oficial de PyMuPDF (mismo fabricante),
 # sin GPU ni API externa, verificado en línea (directriz 4.4,
@@ -106,10 +113,16 @@ google-cloud-storage==3.13.0
 # el 3.10.5 del servidor. Arrastra grpcio, que es rueda compilada.
 google-cloud-storage-control==1.12.0
 
-# Cloud Vision API (H31, S100) / API de Visión en la Nube.
-# OCR gestionado en la nube de Google -- sustituye a Tesseract local
-# (pytesseract) para el alta de trabajador guiada por documentación:
-# Miguel Ángel señaló que el OCR local consume CPU compartida real de
+# Cloud Vision API (H31, S100; AMPLIADO S102) / API de Visión en la
+# Nube. OCR gestionado en la nube de Google -- sustituye por completo
+# a Tesseract local (pytesseract, retirado más arriba en esta misma
+# sesión S102) en TODA la plataforma, no solo en el alta guiada de
+# personal: `date_verification_service.py` (motor compartido de
+# fechas, usado por `expiry_resolution_service` y
+# `classification_service._extract_dni_via_ocr`), `personal_intake_
+# service.py` y `split_rm_dossier.py`. Centralizado en un único
+# módulo, `document_explorer/cloud_vision_service.py`. Miguel Ángel
+# señaló que el OCR local consume CPU compartida real de
 # PythonAnywhere (cuota diaria por cuenta), con riesgo real de
 # agotarla con varias altas de 15-20 documentos el mismo día. Cloud
 # Vision corre en la nube de Google (mismo proyecto/credenciales ya
