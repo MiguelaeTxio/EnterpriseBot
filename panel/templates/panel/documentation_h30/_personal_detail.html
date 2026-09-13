@@ -8,6 +8,15 @@
 <a href="{% url 'panel:documentation_hub' %}" class="btn btn-sm btn-outline-secondary mb-3">
     <i class="bi bi-arrow-left"></i> Volver
 </a>
+{% comment %}
+H31 (S103). Botón fijo, fuera de cualquier acordeón, para que la
+vista previa de la selección de documentos sea accesible sin
+importar qué sección esté abierta -- los documentos marcados pueden
+venir de Laboral, Salud y/o Documentación a la vez.
+{% endcomment %}
+<button type="button" class="btn btn-sm btn-outline-primary mb-3 ms-2" onclick="openSelectionPreview()">
+    <i class="bi bi-collection me-1"></i>Selección de documentos <span class="badge bg-primary" id="documentSelectionBadge">{{ selected_document_ids|length }}</span>
+</button>
 
 {% comment %}
 H31 (S76): reestructuración en tres acordeones grandes -- Datos
@@ -219,10 +228,15 @@ y se habilita "Guardar".
     <i class="bi bi-upload me-1"></i>+ Subir
 </button>
 <table class="table table-sm table-hover mb-0">
-    <thead><tr><th>Tipo</th><th>Caducidad</th><th>Acciones</th></tr></thead>
+    <thead><tr><th style="width:2rem;"></th><th>Tipo</th><th>Caducidad</th><th>Acciones</th></tr></thead>
     <tbody>
         {% for entry in laboral_documents %}
         <tr{% if entry.needs_attention %} class="table-danger"{% endif %}>
+            <td>
+                <input type="checkbox" class="form-check-input" data-doc-pk="{{ entry.pk }}"
+                       {% if entry.pk in selected_document_ids %}checked{% endif %}
+                       onchange="toggleDocumentSelection(this)">
+            </td>
             <td>{{ entry.document_type.label }}</td>
             <td>
                 {% if entry.needs_attention %}<i class="bi bi-exclamation-triangle-fill text-danger me-1" title="Sin fecha vigente -- necesita atención"></i>{% endif %}
@@ -239,7 +253,7 @@ y se habilita "Guardar".
             </td>
         </tr>
         {% empty %}
-        <tr><td colspan="3" class="text-muted small">Sin documentos vigentes.</td></tr>
+        <tr><td colspan="4" class="text-muted small">Sin documentos vigentes.</td></tr>
         {% endfor %}
     </tbody>
 </table>
@@ -418,10 +432,15 @@ vacaciones).
     <i class="bi bi-upload me-1"></i>+ Subir
 </button>
 <table class="table table-sm table-hover mb-0">
-    <thead><tr><th>Tipo</th><th>Caducidad</th><th>Acciones</th></tr></thead>
+    <thead><tr><th style="width:2rem;"></th><th>Tipo</th><th>Caducidad</th><th>Acciones</th></tr></thead>
     <tbody>
         {% for entry in salud_documents %}
         <tr{% if entry.needs_attention %} class="table-danger"{% endif %}>
+            <td>
+                <input type="checkbox" class="form-check-input" data-doc-pk="{{ entry.pk }}"
+                       {% if entry.pk in selected_document_ids %}checked{% endif %}
+                       onchange="toggleDocumentSelection(this)">
+            </td>
             <td>{{ entry.document_type.label }}</td>
             <td>
                 {% if entry.needs_attention %}<i class="bi bi-exclamation-triangle-fill text-danger me-1" title="Sin fecha vigente -- necesita atención"></i>{% endif %}
@@ -438,7 +457,7 @@ vacaciones).
             </td>
         </tr>
         {% empty %}
-        <tr><td colspan="3" class="text-muted small">Sin documentos vigentes.</td></tr>
+        <tr><td colspan="4" class="text-muted small">Sin documentos vigentes.</td></tr>
         {% endfor %}
     </tbody>
 </table>
@@ -497,10 +516,15 @@ vez de una lista única sin estructura.
                     <i class="bi bi-upload me-1"></i>+ Subir
                 </button>
                 <table class="table table-sm table-hover mb-0">
-                    <thead><tr><th>Tipo</th><th>Caducidad</th><th>Acciones</th></tr></thead>
+                    <thead><tr><th style="width:2rem;"></th><th>Tipo</th><th>Caducidad</th><th>Acciones</th></tr></thead>
                     <tbody>
                         {% for entry in fam.documents %}
                         <tr{% if entry.needs_attention %} class="table-danger"{% endif %}>
+                            <td>
+                                <input type="checkbox" class="form-check-input" data-doc-pk="{{ entry.pk }}"
+                                       {% if entry.pk in selected_document_ids %}checked{% endif %}
+                                       onchange="toggleDocumentSelection(this)">
+                            </td>
                             <td>{{ entry.document_type.label }}</td>
                             <td>
                                 {% if entry.needs_attention %}<i class="bi bi-exclamation-triangle-fill text-danger me-1" title="Sin fecha vigente -- necesita atención"></i>{% endif %}
@@ -517,7 +541,7 @@ vez de una lista única sin estructura.
                             </td>
                         </tr>
                         {% empty %}
-                        <tr><td colspan="3" class="text-muted small">Sin documentos vigentes todavía.</td></tr>
+                        <tr><td colspan="4" class="text-muted small">Sin documentos vigentes todavía.</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>
@@ -649,6 +673,20 @@ completo aunque Bootstrap le añada la clase "show" vía JS.
             </div>
             <div class="modal-body p-0" style="height: 80vh;">
                 <iframe id="documentViewerFrame" src="" style="width: 100%; height: 100%; border: 0;"></iframe>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="documentSelectionPreviewModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Selección de documentos</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="documentSelectionPreviewModalBody">
+                <div class="text-muted small py-3">Cargando…</div>
             </div>
         </div>
     </div>
@@ -964,6 +1002,77 @@ function openDocumentHistory(typeCode) {
 function openEpiHistory(epiId) {
     openHistoryModal(`/panel/documentacion/personal/{{ person.pk }}/historial-epi/${epiId}/`);
 }
+
+// H31 (S103). Selección de documentos para dossieres/adjuntos --
+// Set en memoria, inicializado desde selected_document_ids (server-
+// side, PanelNavigationState), sincronizado en cada cambio contra la
+// misma URL de persistencia que ya usa el acordeón principal
+// (/panel/navegacion/estado/personal_ficha/, ver bloque IIFE más
+// abajo) -- nunca sessionStorage/localStorage, mismo criterio de
+// Miguel Ángel que el resto de la ficha.
+let selectedDocumentIds = new Set([
+    {% for doc_pk in selected_document_ids %}{{ doc_pk }},{% endfor %}
+]);
+let documentSelectionPreviewModalInstance = null;
+
+function persistDocumentSelection() {
+    document.getElementById('documentSelectionBadge').textContent = selectedDocumentIds.size;
+    const update = {document_selection: {}};
+    update.document_selection['{{ person.pk }}'] = Array.from(selectedDocumentIds);
+    fetch('/panel/navegacion/estado/personal_ficha/', {
+        method: 'POST',
+        headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
+        body: JSON.stringify(update),
+    });
+}
+
+function toggleDocumentSelection(checkbox) {
+    const pk = parseInt(checkbox.dataset.docPk, 10);
+    if (checkbox.checked) {
+        selectedDocumentIds.add(pk);
+    } else {
+        selectedDocumentIds.delete(pk);
+    }
+    persistDocumentSelection();
+}
+
+function loadSelectionPreview() {
+    const body = document.getElementById('documentSelectionPreviewModalBody');
+    fetch(`/panel/documentacion/personal/{{ person.pk }}/seleccion/`)
+        .then(r => r.text())
+        .then(html => { body.innerHTML = html; })
+        .catch(() => {
+            body.innerHTML = '<div class="alert alert-danger py-1 px-2 small mb-0">Error de red al cargar la selección.</div>';
+        });
+}
+
+function openSelectionPreview() {
+    if (!documentSelectionPreviewModalInstance) {
+        documentSelectionPreviewModalInstance = new bootstrap.Modal(document.getElementById('documentSelectionPreviewModal'));
+    }
+    document.getElementById('documentSelectionPreviewModalBody').innerHTML = '<div class="text-muted small py-3">Cargando…</div>';
+    documentSelectionPreviewModalInstance.show();
+    loadSelectionPreview();
+}
+
+// Quitar UN documento desde la propia lista de vista previa --
+// requisito explícito de Miguel Ángel (S103): "posibilidad de
+// descartarlos desde la propia lista preview de selección".
+function removeFromSelection(pk) {
+    selectedDocumentIds.delete(pk);
+    const checkbox = document.querySelector(`input[data-doc-pk="${pk}"]`);
+    if (checkbox) checkbox.checked = false;
+    persistDocumentSelection();
+    loadSelectionPreview();
+}
+
+function clearDocumentSelection() {
+    selectedDocumentIds.clear();
+    document.querySelectorAll('input[data-doc-pk]').forEach(function (cb) { cb.checked = false; });
+    persistDocumentSelection();
+    loadSelectionPreview();
+}
+
 
 // H31 (S77): detalle real de un día concreto de Partes de trabajo --
 // Miguel Ángel: "debe de poder verse el parte en sí". Mismo modal

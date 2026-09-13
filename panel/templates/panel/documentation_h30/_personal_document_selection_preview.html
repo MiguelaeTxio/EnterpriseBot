@@ -1,0 +1,43 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation_h30/_personal_document_selection_preview.html #}
+{% comment %}
+H31 (S103). Fragmento de vista previa de la selección de documentos
+de una ficha de personal, cargado bajo demanda dentro del modal
+genérico (mismo patrón que documentHistoryModal/openHistoryModal --
+ver _personal_detail.html). Lee siempre de PanelNavigationState
+(PersonalDocumentSelectionPreviewView), nunca de lo que el
+navegador crea tener marcado, para que la vista previa nunca pueda
+divergir de lo realmente persistido.
+
+Primer paso de la usabilidad documental de H31 (checkboxes -> preview
+-> dossier/adjunto real) -- la generación real del dossier/adjunto
+todavía no existe, queda para el siguiente punto de la hoja de ruta
+de S103.
+{% endcomment %}
+{% if entries %}
+<div class="d-flex justify-content-between align-items-center mb-2">
+    <span class="text-muted small">{{ entries|length }} documento{{ entries|length|pluralize }} seleccionado{{ entries|length|pluralize }}</span>
+    <button type="button" class="btn btn-sm btn-outline-danger" onclick="clearDocumentSelection()">
+        <i class="bi bi-x-circle me-1"></i>Vaciar selección
+    </button>
+</div>
+<table class="table table-sm table-hover mb-0">
+    <thead><tr><th>Tipo</th><th>Familia</th><th>Caducidad</th><th></th></tr></thead>
+    <tbody>
+        {% for entry in entries %}
+        <tr>
+            <td>{{ entry.document_type.label|default:"Sin tipo" }}</td>
+            <td>{{ entry.document_type.get_family_display|default:"—" }}</td>
+            <td>
+                {% if entry.expiry_date %}{{ entry.expiry_date }}{% elif entry.issue_date %}<span class="text-muted small">Emisión:</span> {{ entry.issue_date }}{% else %}—{% endif %}
+            </td>
+            <td class="text-end">
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="openDocumentViewer('{% url 'panel:documentation_document_view' pk=entry.pk %}')">Ver</button>
+                <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeFromSelection({{ entry.pk }})">Quitar</button>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<div class="text-muted small py-3">Sin documentos seleccionados todavía. Marca casilleros en las tablas de Laboral, Salud o Documentación para añadirlos aquí.</div>
+{% endif %}

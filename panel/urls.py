@@ -39,6 +39,7 @@ from panel.views_documentation_h30 import (
     MachineDetailView,
     MachineListFragmentView,
     PersonalDetailView,
+    PersonalDocumentSelectionPreviewView,
     PersonalDocumentTypeHistoryView,
     PersonalEpiItemHistoryView,
     PersonalCreateView,
@@ -423,6 +424,8 @@ urlpatterns = [
     path("documentacion/personal/<int:pk>/", PersonalDetailView.as_view(), name="documentation_personal_detail"),
     # H31 (S76) punto 5: historial completo de un tipo documental, bajo demanda.
     path("documentacion/personal/<int:pk>/historial/<str:type_code>/", PersonalDocumentTypeHistoryView.as_view(), name="documentation_personal_type_history"),
+    # H31 (S103): vista previa de la selección de documentos (checkboxes) para dossieres/adjuntos.
+    path("documentacion/personal/<int:pk>/seleccion/", PersonalDocumentSelectionPreviewView.as_view(), name="documentation_personal_document_selection_preview"),
     path("documentacion/personal/<int:pk>/parte-dia/<str:date_iso>/", PersonalWorkdayDetailView.as_view(), name="documentation_personal_workday_detail"),
     # H31 (S76) punto EPIs: historial completo de un EPI, bajo demanda.
     path("documentacion/personal/<int:pk>/historial-epi/<int:epi_id>/", PersonalEpiItemHistoryView.as_view(), name="documentation_personal_epi_history"),

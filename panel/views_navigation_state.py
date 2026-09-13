@@ -60,12 +60,14 @@ class NavigationStateSaveView(CompanyUserRequiredMixin, View):
         # (nivel 1) sobre el estado ya guardado -- así una pantalla
         # nueva (sidebar, acordeón de una ficha, pestañas de partes de
         # trabajo...) puede guardar sus propias claves sin tener que
-        # tocar esta vista cada vez. "filters" y "person_accordion"
-        # conservan su propio sub-merge de nivel 2 (por pestaña / por
-        # persona respectivamente) como caso especial, porque
-        # reemplazar el diccionario completo borraría el estado
-        # guardado de las demás pestañas/personas.
-        NESTED_MERGE_KEYS = ("filters", "person_accordion")
+        # tocar esta vista cada vez. "filters", "person_accordion" y
+        # "document_selection" (H31 S103, selección de documentos para
+        # dossieres/adjuntos -- lista de IDs de DocumentIndexEntry por
+        # persona) conservan su propio sub-merge de nivel 2 (por
+        # pestaña / por persona / por persona respectivamente) como
+        # caso especial, porque reemplazar el diccionario completo
+        # borraría el estado guardado de las demás pestañas/personas.
+        NESTED_MERGE_KEYS = ("filters", "person_accordion", "document_selection")
         for key, value in payload.items():
             if key in NESTED_MERGE_KEYS and isinstance(value, dict):
                 existing_nested = state.get(key) if isinstance(state.get(key), dict) else {}

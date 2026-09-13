@@ -967,6 +967,21 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
         ):
             main_accordion_open = "collapseDatosPersonales"
 
+        # H31 (S103). Selección de documentos para dossieres/adjuntos
+        # -- misma fila de PanelNavigationState que el acordeón
+        # (person_accordion), clave nueva "document_selection" por
+        # persona (ver panel/views_navigation_state.py,
+        # NESTED_MERGE_KEYS). Lista de IDs de DocumentIndexEntry
+        # marcados por el usuario en esta ficha; persiste entre
+        # cambios de pestaña/acordeón porque vive en BD, no en el DOM.
+        _document_selection = (
+            _ficha_state.get("document_selection")
+            if isinstance(_ficha_state.get("document_selection"), dict) else {}
+        )
+        selected_document_ids = _document_selection.get(str(pk)) or []
+        if not isinstance(selected_document_ids, list):
+            selected_document_ids = []
+
         person = get_object_or_404(
             PersonIdentity.objects.select_related(
                 "company_user", "company_user__user",
@@ -1187,7 +1202,56 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
             "notification_types": notification_types,
             "active_nav": "documentation_hub",
             "main_accordion_open": main_accordion_open,
+            "selected_document_ids": selected_document_ids,
         })
+
+
+class PersonalDocumentSelectionPreviewView(CompanyUserRequiredMixin, View):
+    """
+    H31 (S103). GET: fragmento de vista previa de la selección de
+    documentos de una persona, primer paso de la usabilidad
+    documental (checkboxes -> preview -> dossier/adjunto). Lee
+    siempre de PanelNavigationState (screen_key='personal_ficha',
+    clave anidada 'document_selection' por persona -- ver
+    PersonalDetailView y panel/views_navigation_state.py), nunca de
+    parámetros de query: es la misma fuente de verdad que pinta los
+    checkboxes en la ficha, para que la vista previa nunca pueda
+    divergir de lo marcado (p. ej. entre dos pestañas del navegador
+    sobre la misma ficha).
+    """
+
+    def get(self, request, pk):
+        person = get_object_or_404(PersonIdentity, pk=pk)
+        cu = request.user.company_user
+        nav_state = PanelNavigationState.objects.filter(
+            company_user=cu, screen_key="personal_ficha",
+        ).first()
+        state = (
+            nav_state.state
+            if nav_state and isinstance(nav_state.state, dict) else {}
+        )
+        document_selection = (
+            state.get("document_selection")
+            if isinstance(state.get("document_selection"), dict) else {}
+        )
+        selected_ids = document_selection.get(str(pk)) or []
+        if not isinstance(selected_ids, list):
+            selected_ids = []
+
+        ct = ContentType.objects.get_for_model(PersonIdentity)
+        entries = DocumentIndexEntry.objects.filter(
+            pk__in=selected_ids, bucket=BUCKET,
+            domain_content_type=ct, domain_object_id=person.pk,
+            entry_kind=DocumentIndexEntry.KIND_FILE,
+            deleted_at__isnull=True, purged_at__isnull=True,
+        ).select_related("document_type").order_by(
+            "document_type__family", "document_type__label",
+        )
+        return render(
+            request,
+            "panel/documentation_h30/_personal_document_selection_preview.html",
+            {"person": person, "entries": entries},
+        )
 
 
 class PersonalDocumentTypeHistoryView(CompanyUserRequiredMixin, View):
