@@ -8,17 +8,29 @@ ver _personal_detail.html). Lee siempre de PanelNavigationState
 navegador crea tener marcado, para que la vista previa nunca pueda
 divergir de lo realmente persistido.
 
-Primer paso de la usabilidad documental de H31 (checkboxes -> preview
--> dossier/adjunto real) -- la generación real del dossier/adjunto
-todavía no existe, queda para el siguiente punto de la hoja de ruta
-de S103.
+Dos vías de descarga, investigadas online en la sesión anterior
+contra las plataformas CAE del sector (Nalanda, Klear/Kizeo) y la
+tradición del "dossier de calidad": ZIP con los archivos originales
+por familia (PersonalDocumentSelectionZipView, para "enviar a
+plataformas" externas) y PDF único con portada/índice
+(PersonalDocumentSelectionPdfView, para adjuntar a un correo) --
+ambas correctamente implementadas y funcionales, ninguna es un
+sustituto de la otra.
 {% endcomment %}
 {% if entries %}
-<div class="d-flex justify-content-between align-items-center mb-2">
+<div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
     <span class="text-muted small">{{ entries|length }} documento{{ entries|length|pluralize }} seleccionado{{ entries|length|pluralize }}</span>
-    <button type="button" class="btn btn-sm btn-outline-danger" onclick="clearDocumentSelection()">
-        <i class="bi bi-x-circle me-1"></i>Vaciar selección
-    </button>
+    <div class="d-flex gap-2">
+        <a class="btn btn-sm btn-outline-primary" href="{% url 'panel:documentation_personal_document_selection_pdf' pk=person.pk %}">
+            <i class="bi bi-file-earmark-pdf me-1"></i>PDF único
+        </a>
+        <a class="btn btn-sm btn-outline-primary" href="{% url 'panel:documentation_personal_document_selection_zip' pk=person.pk %}">
+            <i class="bi bi-file-earmark-zip me-1"></i>ZIP
+        </a>
+        <button type="button" class="btn btn-sm btn-outline-danger" onclick="clearDocumentSelection()">
+            <i class="bi bi-x-circle me-1"></i>Vaciar selección
+        </button>
+    </div>
 </div>
 <table class="table table-sm table-hover mb-0">
     <thead><tr><th>Tipo</th><th>Familia</th><th>Caducidad</th><th></th></tr></thead>

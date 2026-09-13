@@ -30,9 +30,139 @@ import io
 
 import pymupdf
 
+# H31 (S103). Extensiones de imagen rasterizada que PyMuPDF sabe
+# convertir a PDF de una pagina via Document.convert_to_pdf() --
+# verificado en frio (sandbox de desarrollo, pymupdf 1.28.2, misma
+# API que la version fijada 1.27.2.2 del proyecto): abrir los bytes
+# con `filetype=<extension>` y llamar a convert_to_pdf() basta, sin
+# libreria nueva. "jpeg" se normaliza a "jpg" -- PyMuPDF no reconoce
+# el nombre largo como filetype. Los formatos de oficina (.doc/.docx/
+# .xlsx) quedan FUERA a proposito: la conversion real de esos
+# formatos en este proyecto vive en VMs de GCE dedicadas (libreoffice-
+# writer, ver H30 S83), nunca confirmada como instalada en el propio
+# servidor de PythonAnywhere -- intentarlo aqui seria una suposicion,
+# no un hecho verificado. Un documento con una extension fuera de
+# esta lista (y que no sea "pdf") se reporta como "no incluido" en el
+# indice, nunca se descarta en silencio.
+SUPPORTED_IMAGE_EXTENSIONS = (
+    "jpg", "jpeg", "png", "gif", "bmp", "tif", "tiff", "webp",
+)
+
 
 class EmptyDocumentListError(ValueError):
     """Se lanza si se pide fusionar una lista vacia de documentos."""
+
+
+def convert_to_pdf_bytes(data: bytes, extension: str) -> bytes | None:
+    """
+    H31 (S103). Convierte los bytes de un documento a PDF de cara al
+    dossier unico: si `extension` ya es "pdf" devuelve `data` tal
+    cual; si es una imagen rasterizada soportada (SUPPORTED_IMAGE_
+    EXTENSIONS) la convierte a un PDF de una pagina; en cualquier otro
+    caso (Word, Excel, o cualquier extension no reconocida) devuelve
+    None -- el llamador debe entonces excluir ese documento del PDF
+    fusionado y anotarlo como "no incluido" en el indice, nunca
+    fusionarlo a ciegas ni lanzar un error que tumbe todo el dossier
+    por un solo archivo no soportado.
+
+    ---
+
+    Converts a document's bytes to PDF for the single-file dossier:
+    if `extension` is already "pdf", returns `data` unchanged; if
+    it's a supported raster image, converts it to a one-page PDF;
+    otherwise (Word, Excel, or any unrecognised extension) returns
+    None -- the caller must then exclude that document from the
+    merged PDF and note it as "not included" in the index, never
+    silently merge it nor raise an error that would bring down the
+    whole dossier over a single unsupported file.
+    """
+    ext = (extension or "").lower().lstrip(".")
+    if ext == "pdf":
+        return data
+    if ext == "jpeg":
+        ext = "jpg"
+    if ext not in SUPPORTED_IMAGE_EXTENSIONS:
+        return None
+    try:
+        with pymupdf.open(stream=data, filetype=ext) as image_doc:
+            return image_doc.convert_to_pdf()
+    except Exception:
+        return None
+
+
+def build_index_page(
+    header_lines: list[tuple],
+    item_lines: list[str],
+    footer_note: str = None,
+) -> bytes:
+    """
+    H31 (S103). Construye la portada/indice del dossier (una o mas
+    paginas A4) con PyMuPDF puro -- sin reportlab ni ninguna
+    dependencia nueva. Paginacion manual linea a linea (nunca
+    insert_textbox con ajuste automatico): con un indice de decenas
+    de documentos seleccionados, el desbordamiento silencioso de
+    insert_textbox perderia lineas del indice sin que nadie se diera
+    cuenta -- verificado en frio (sandbox) que este bucle salta de
+    pagina correctamente con 45 lineas de item.
+
+    `header_lines`: lista de tuplas (texto, tamano_fuente, negrita).
+    `item_lines`: una linea de texto por documento incluido en el PDF
+    fusionado, ya formateada por el llamador (tipo, familia,
+    caducidad).
+    `footer_note`: nota final opcional (p. ej. documentos NO incluidos
+    por formato no soportado) -- nunca se omite si el llamador la
+    pasa, aunque obligue a abrir una pagina mas.
+
+    ---
+
+    Builds the dossier's cover/index (one or more A4 pages) with pure
+    PyMuPDF -- no reportlab, no new dependency. Manual line-by-line
+    pagination (never auto-wrapping insert_textbox): with an index of
+    dozens of selected documents, insert_textbox's silent overflow
+    would drop index lines without anyone noticing -- verified cold
+    (sandbox) that this loop breaks pages correctly with 45 item
+    lines.
+    """
+    doc = pymupdf.open()
+    page_width, page_height = 595, 842  # A4 en puntos (72 dpi)
+    margin_top = 72
+    margin_bottom = 56
+    margin_left = 56
+    line_height = 16
+
+    def new_page():
+        return doc.new_page(width=page_width, height=page_height)
+
+    page = new_page()
+    y = margin_top
+    for text, fontsize, bold in header_lines:
+        page.insert_text(
+            (margin_left, y), text, fontsize=fontsize,
+            fontname="hebo" if bold else "helv",
+        )
+        y += line_height * (1.6 if fontsize > 12 else 1.2)
+
+    y += line_height * 0.5
+    for text in item_lines:
+        if y > page_height - margin_bottom:
+            page = new_page()
+            y = margin_top
+        page.insert_text((margin_left, y), text, fontsize=10, fontname="helv")
+        y += line_height
+
+    if footer_note:
+        if y > page_height - margin_bottom - line_height * 2:
+            page = new_page()
+            y = margin_top
+        y += line_height
+        page.insert_text(
+            (margin_left, y), footer_note, fontsize=9, fontname="helv",
+        )
+
+    output = io.BytesIO()
+    doc.save(output)
+    doc.close()
+    return output.getvalue()
 
 
 def merge_pdfs(pdf_bytes_list: list[bytes]) -> bytes:

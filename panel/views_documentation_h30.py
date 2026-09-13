@@ -33,6 +33,7 @@ from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.text import slugify
 from django.views import View
 from email.message import EmailMessage as StdEmailMessage
 from email.utils import make_msgid
@@ -51,6 +52,9 @@ from document_explorer.subject_upload_service import (
     SubjectUploadError, upload_subject_document,
 )
 from document_management.models import DocumentSubstitutionLog
+from document_management.pdf_merge_service import (
+    EmptyDocumentListError, build_index_page, convert_to_pdf_bytes, merge_pdfs,
+)
 from document_management.vigencia_service import (
     DocumentSnapshot, evaluate_substitution, is_current,
 )
@@ -62,7 +66,7 @@ from panel.mixins import (
 )
 from panel.models import PanelNavigationState
 from panel.views_task_photos import _build_photo_entries
-from spare_parts.gcs_service import generate_signed_url, upload_bytes
+from spare_parts.gcs_service import download_bytes, generate_signed_url, upload_bytes
 from whatsapp.services import send_epi_delivery_whatsapp_confirmation
 from work_order_processor.models import WorkOrder, WorkOrderEntry, WorkOrderEntryLine
 
@@ -1206,6 +1210,48 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
         })
 
 
+def _resolve_document_selection(request, pk):
+    """
+    H31 (S103). Resuelve la selección de documentos de UNA persona,
+    compartido por las tres vistas de "usabilidad documental"
+    (preview, PDF único, ZIP) -- una sola fuente de verdad para
+    evitar que una de las tres divergiera de las otras dos si algún
+    día cambia de dónde se lee la selección. Lee siempre de
+    PanelNavigationState (screen_key='personal_ficha', clave anidada
+    'document_selection' por persona), nunca de parámetros de query.
+
+    Devuelve (person, entries) -- entries ya en el orden de
+    presentación estándar (familia, tipo).
+    """
+    person = get_object_or_404(PersonIdentity, pk=pk)
+    cu = request.user.company_user
+    nav_state = PanelNavigationState.objects.filter(
+        company_user=cu, screen_key="personal_ficha",
+    ).first()
+    state = (
+        nav_state.state
+        if nav_state and isinstance(nav_state.state, dict) else {}
+    )
+    document_selection = (
+        state.get("document_selection")
+        if isinstance(state.get("document_selection"), dict) else {}
+    )
+    selected_ids = document_selection.get(str(pk)) or []
+    if not isinstance(selected_ids, list):
+        selected_ids = []
+
+    ct = ContentType.objects.get_for_model(PersonIdentity)
+    entries = DocumentIndexEntry.objects.filter(
+        pk__in=selected_ids, bucket=BUCKET,
+        domain_content_type=ct, domain_object_id=person.pk,
+        entry_kind=DocumentIndexEntry.KIND_FILE,
+        deleted_at__isnull=True, purged_at__isnull=True,
+    ).select_related("document_type").order_by(
+        "document_type__family", "document_type__label",
+    )
+    return person, entries
+
+
 class PersonalDocumentSelectionPreviewView(CompanyUserRequiredMixin, View):
     """
     H31 (S103). GET: fragmento de vista previa de la selección de
@@ -1221,37 +1267,159 @@ class PersonalDocumentSelectionPreviewView(CompanyUserRequiredMixin, View):
     """
 
     def get(self, request, pk):
-        person = get_object_or_404(PersonIdentity, pk=pk)
-        cu = request.user.company_user
-        nav_state = PanelNavigationState.objects.filter(
-            company_user=cu, screen_key="personal_ficha",
-        ).first()
-        state = (
-            nav_state.state
-            if nav_state and isinstance(nav_state.state, dict) else {}
-        )
-        document_selection = (
-            state.get("document_selection")
-            if isinstance(state.get("document_selection"), dict) else {}
-        )
-        selected_ids = document_selection.get(str(pk)) or []
-        if not isinstance(selected_ids, list):
-            selected_ids = []
-
-        ct = ContentType.objects.get_for_model(PersonIdentity)
-        entries = DocumentIndexEntry.objects.filter(
-            pk__in=selected_ids, bucket=BUCKET,
-            domain_content_type=ct, domain_object_id=person.pk,
-            entry_kind=DocumentIndexEntry.KIND_FILE,
-            deleted_at__isnull=True, purged_at__isnull=True,
-        ).select_related("document_type").order_by(
-            "document_type__family", "document_type__label",
-        )
+        person, entries = _resolve_document_selection(request, pk)
         return render(
             request,
             "panel/documentation_h30/_personal_document_selection_preview.html",
             {"person": person, "entries": entries},
         )
+
+
+class PersonalDocumentSelectionPdfView(CompanyUserRequiredMixin, View):
+    """
+    H31 (S103). GET: genera el dossier de la selección como UN ÚNICO
+    PDF (portada/índice + documentos), pensado para adjuntar a un
+    correo -- palabras de Miguel Ángel al abrir H26: "la documentación
+    normalmente se aglutina en un solo PDF para enviarla por correo".
+    Cablea por fin `document_management.pdf_merge_service`
+    (construido en H26 S022/S023, nunca llamado desde ninguna vista
+    hasta ahora).
+
+    Cada documento no-PDF se convierte a PDF si es una imagen
+    rasterizada soportada (`convert_to_pdf_bytes`); un documento con
+    un formato no soportado (Word, Excel...) se EXCLUYE del PDF
+    fusionado y se anota expresamente en el índice bajo "No
+    incluidos" -- nunca se descarta en silencio, nunca se aborta todo
+    el dossier por un solo archivo no soportado.
+    """
+
+    def get(self, request, pk):
+        person, entries = _resolve_document_selection(request, pk)
+        if not entries:
+            return HttpResponse(
+                "No hay ningún documento seleccionado para esta persona.",
+                status=400,
+            )
+
+        included_pdfs = []
+        included_lines = []
+        skipped_lines = []
+        for entry in entries:
+            extension = entry.name.rsplit(".", 1)[-1] if "." in entry.name else ""
+            label = entry.document_type.label if entry.document_type_id else entry.name
+            family = (
+                entry.document_type.get_family_display()
+                if entry.document_type_id else "—"
+            )
+            data = download_bytes(entry.bucket, entry.blob_name)
+            pdf_bytes = convert_to_pdf_bytes(data, extension)
+            if pdf_bytes is None:
+                skipped_lines.append(
+                    f"{label} ({family}) -- formato .{extension or '?'} no soportado",
+                )
+                continue
+            included_pdfs.append(pdf_bytes)
+            caducidad = (
+                f"vigente {entry.expiry_date}" if entry.expiry_date
+                else (f"emisión {entry.issue_date}" if entry.issue_date else "sin fecha")
+            )
+            included_lines.append(f"{label} -- {family} -- {caducidad}")
+
+        if not included_pdfs:
+            return HttpResponse(
+                "Ningún documento seleccionado tiene un formato "
+                "soportado para el PDF único (usa la descarga en ZIP "
+                "para estos archivos).",
+                status=400,
+            )
+
+        person_line = (
+            f"{person.first_surname} {person.second_surname}, "
+            f"{person.given_name} ({person.dni})"
+        )
+        header_lines = [
+            ("DOSSIER DE DOCUMENTACIÓN", 18, True),
+            (person_line, 13, False),
+            (person.employer_company or "Sin empresa asignada", 11, False),
+            (f"Generado: {timezone.localdate().isoformat()}", 10, False),
+            (f"Documentos incluidos: {len(included_lines)}", 11, True),
+        ]
+        footer_note = (
+            "No incluidos en este PDF (formato no soportado -- "
+            "descárgalos en ZIP): " + "; ".join(skipped_lines)
+            if skipped_lines else None
+        )
+        cover_bytes = build_index_page(header_lines, included_lines, footer_note)
+
+        try:
+            merged_bytes = merge_pdfs([cover_bytes] + included_pdfs)
+        except EmptyDocumentListError as exc:
+            return HttpResponse(str(exc), status=400)
+
+        person_token = naming_service.build_person_folder_name(
+            person.first_surname, person.second_surname, person.given_name,
+        )
+        filename = f"Dossier_{person_token}_{timezone.localdate().isoformat()}.pdf"
+        response = HttpResponse(merged_bytes, content_type="application/pdf")
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
+
+
+class PersonalDocumentSelectionZipView(CompanyUserRequiredMixin, View):
+    """
+    H31 (S103). GET: genera el dossier de la selección como un ZIP con
+    los archivos ORIGINALES (sin convertir nada), organizados en una
+    carpeta por familia documental -- mismo patrón que las principales
+    plataformas CAE del sector (Nalanda: seleccionas uno o varios
+    trabajadores y descargas un ZIP con una carpeta por trabajador;
+    Klear/Kizeo: descarga de una carpeta completa en ZIP conservando
+    la estructura de categorías, investigado online en la sesión
+    anterior). Pensado para "enviar a plataformas" externas que
+    esperan los archivos tal cual, nunca un PDF fusionado.
+    """
+
+    def get(self, request, pk):
+        import io
+        import zipfile
+
+        person, entries = _resolve_document_selection(request, pk)
+        if not entries:
+            return HttpResponse(
+                "No hay ningún documento seleccionado para esta persona.",
+                status=400,
+            )
+
+        zip_buffer = io.BytesIO()
+        used_names = set()
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+            for entry in entries:
+                family_folder = (
+                    slugify(entry.document_type.get_family_display())
+                    if entry.document_type_id else "sin-familia"
+                )
+                base_name = slugify(
+                    entry.document_type.label if entry.document_type_id
+                    else entry.name,
+                )
+                extension = (
+                    entry.name.rsplit(".", 1)[-1] if "." in entry.name else "bin"
+                )
+                arcname = f"{family_folder}/{base_name}.{extension}"
+                suffix = 2
+                while arcname in used_names:
+                    arcname = f"{family_folder}/{base_name}_{suffix}.{extension}"
+                    suffix += 1
+                used_names.add(arcname)
+                data = download_bytes(entry.bucket, entry.blob_name)
+                zf.writestr(arcname, data)
+
+        person_token = naming_service.build_person_folder_name(
+            person.first_surname, person.second_surname, person.given_name,
+        )
+        filename = f"Dossier_{person_token}_{timezone.localdate().isoformat()}.zip"
+        response = HttpResponse(zip_buffer.getvalue(), content_type="application/zip")
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
 
 
 class PersonalDocumentTypeHistoryView(CompanyUserRequiredMixin, View):
