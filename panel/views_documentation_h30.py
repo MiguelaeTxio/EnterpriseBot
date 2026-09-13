@@ -1369,17 +1369,26 @@ def _build_dossier_zip_response(person, entries):
                 slugify(entry.document_type.get_family_display())
                 if entry.document_type_id else "sin-familia"
             )
-            base_name = slugify(
-                entry.document_type.label if entry.document_type_id
-                else entry.name,
-            )
-            extension = (
-                entry.name.rsplit(".", 1)[-1] if "." in entry.name else "bin"
-            )
-            arcname = f"{family_folder}/{base_name}.{extension}"
+            # H31 (S103), corregido tras revisión de Miguel Ángel sobre
+            # el ZIP real descargado: el nombre del archivo dentro del
+            # ZIP es el nombre CANÓNICO real del documento
+            # (entry.name -- ya construido por
+            # naming_service.build_filename_personal en el momento de
+            # la subida, ver subject_upload_service.py), NUNCA uno
+            # inventado a partir de la etiqueta del tipo documental
+            # (versión anterior: "dni.pdf" en vez del nombre canónico
+            # real con apellidos/tipo/fecha).
+            arcname = f"{family_folder}/{entry.name}"
+            if "." in entry.name:
+                base_name, extension = entry.name.rsplit(".", 1)
+            else:
+                base_name, extension = entry.name, ""
             suffix = 2
             while arcname in used_names:
-                arcname = f"{family_folder}/{base_name}_{suffix}.{extension}"
+                arcname = (
+                    f"{family_folder}/{base_name}_{suffix}.{extension}"
+                    if extension else f"{family_folder}/{base_name}_{suffix}"
+                )
                 suffix += 1
             used_names.add(arcname)
             data = download_bytes(entry.bucket, entry.blob_name)
