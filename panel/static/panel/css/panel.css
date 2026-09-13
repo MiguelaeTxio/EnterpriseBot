@@ -1144,3 +1144,51 @@ table.table #toll-thead ~ tbody tr:nth-child(even):not(.table-secondary) td {
     --bs-table-color-type: var(--bs-table-striped-color);
     --bs-table-bg-type: var(--bs-table-striped-bg);
 }
+
+/* -----------------------------------------------------------------------
+   Ficha de personal — jerarquía visual de acordeones (H31, S102).
+   Personal record — accordion visual hierarchy (H31, S102).
+
+   Miguel Ángel: el titular del acordeón PRINCIPAL activo (Datos
+   personales / Laboral / Salud / Documentación / EPIs) se queda en azul
+   tal cual (el activo de Bootstrap por defecto, sin tocar) -- pero su
+   interior pasa a usar el mismo verde menta que ya llevan los campos de
+   formulario del panel (#f0fdf4, ver ".form-control, .form-select" más
+   arriba), para que se note de un vistazo qué sección de primer nivel
+   está abierta. Dentro de ese verde, los acordeones HIJOS (familias
+   documentales dentro de "Documentación", el propio "Documentos" de
+   Laboral, y EPIs) pasan de azul a AMARILLO tanto en su titular activo
+   como en su interior -- mismas variables "warning" que ya trae
+   Bootstrap (nunca un tono inventado), para diferenciar claramente el
+   nivel jerárquico sin añadir un tercer color a la paleta. Solo afecta
+   a la ficha de personal (`#personalMainAccordion` y sus tres
+   acordeones hijos reales) -- la ficha de máquina no se toca.
+
+   Miguel Ángel: the ACTIVE TOP-LEVEL accordion's title (Personal data /
+   Laboral / Salud / Documentation / EPIs) stays blue as-is (Bootstrap's
+   default active state, untouched) -- but its interior switches to the
+   same mint green already used by the panel's form fields (#f0fdf4, see
+   ".form-control, .form-select" above), so it's obvious at a glance
+   which top-level section is open. Inside that green, the CHILD
+   accordions (document families inside "Documentación", Laboral's own
+   "Documentos", and EPIs) switch from blue to YELLOW for both their
+   active title and interior -- reusing Bootstrap's own "warning"
+   variables (never an invented shade), to tell the hierarchy level apart
+   without adding a third colour to the palette. Only affects the
+   personal record (`#personalMainAccordion` and its three real child
+   accordions) -- the machine record is untouched. */
+#personalMainAccordion > .accordion-item > .accordion-collapse.show {
+    background-color: #f0fdf4;
+}
+
+#personalLaboralAccordion,
+#personalDocsAccordion,
+#personalEpiAccordion {
+    --bs-accordion-active-bg: var(--bs-warning-bg-subtle);
+    --bs-accordion-active-color: var(--bs-warning-text-emphasis);
+}
+#personalLaboralAccordion .accordion-collapse.show,
+#personalDocsAccordion .accordion-collapse.show,
+#personalEpiAccordion .accordion-collapse.show {
+    background-color: var(--bs-warning-bg-subtle);
+}
