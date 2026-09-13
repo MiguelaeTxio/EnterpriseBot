@@ -2288,7 +2288,7 @@ producción real:**
 sesión (ciclo de prueba de la validación cruzada de DNI) y no se ha
 vuelto a crear -- ver primer punto de la hoja de ruta siguiente.
 
-### COMPLETADAS EN S102 (en curso) -- ficha real de Miguel Ángel creada definitivamente, auditoría de las cinco acciones en marcha
+### COMPLETADAS EN S102 -- ficha real de Miguel Ángel creada definitivamente, auditoría completa de las cinco acciones, migración de toda la plataforma a Cloud Vision, pipeline de subida por familia
 
 **Punto 0 -- CERRADO con evidencia real.** Miguel Ángel subió su lote
 completo de documentos reales por el flujo normal de "Dar de alta
@@ -2398,6 +2398,60 @@ completa -- decisión explícita de Miguel Ángel para pasar a usabilidad
 documental (selección múltiple, dossieres/adjuntos) en la sesión
 siguiente.
 
+**Resto del trabajo técnico real de la sesión (fuera de la narrativa
+de la auditoría, cada uno con commit real propio):**
+- **Eliminación completa de Tesseract de todo el webapp** (nunca solo
+  del flujo de Actualizar): nuevo módulo compartido
+  `document_explorer/cloud_vision_service.py` (texto embebido de PDF
+  -> Cloud Vision, nunca OCR local), del que ahora dependen
+  `date_verification_service.extract_text()` (usado por
+  `classification_service._extract_dni_via_ocr` y
+  `expiry_resolution_service.resolve_expiry_date`),
+  `personal_intake_service` y
+  `management/commands/split_rm_dossier.py`. Retirada `verify_typed_date()`
+  (código muerto). `pytesseract` retirado de
+  `requirements.in`/`.txt` (candado recompilado y verificado, 0
+  diferencias inesperadas). Las VMs de `h28_migration_agent` NO se
+  tocaron -- decisión explícita de dejarlas para cuando se retomen.
+- **Incidente real de CI descubierto y corregido:** `deploy.yml` y
+  `compile-requirements.yml` corrían SSH concurrente contra el mismo
+  servidor cuando un push tocaba `requirements.in`, causando
+  "divergent branches" real -- `concurrency:` group compartido
+  (`enterprisebot-pythonanywhere-ssh`) añadido a ambos workflows,
+  verificado con un `workflow_dispatch` manual tras el fix.
+- **Incidente real de estáticos descubierto y corregido:**
+  `STATICFILES_STORAGE` (ajuste heredado) llevaba años ignorado por
+  Django 5.2 -- el versionado por hash de CSS/JS nunca había estado
+  activo de verdad en todo el proyecto. Migrado a `STORAGES` real, con
+  una subclase tolerante (`enterprise_core.storage.
+  LenientManifestStaticFilesStorage`) para el `.js.map` ausente de
+  `bootstrap.bundle.min.js` que habría tumbado `collectstatic` por
+  completo -- verificado con una recreación real del comando (150
+  archivos, incluye `django.contrib.admin`) antes de desplegar, y
+  confirmado en producción con datos reales del manifest generado.
+- **Pipeline de subida por familia ("sin muestra"):** cada familia
+  documental de la ficha de personal (incluidas las que hoy están a
+  0 documentos) tiene su propio botón "+ Subir", con el desplegable
+  filtrado a los tipos que a esa persona le faltan en esa familia --
+  nunca a ciegas los 79 tipos completos. Corregido en el propio
+  desarrollo: la primera versión metía también familias de dominio
+  MACHINE/COMPANY (Circulación, Financiero...) sin ningún tipo
+  aplicable a personal. Botón genérico "+ Subir documento" retirado
+  por redundante. Creación de tipo documental nuevo retirada del modal
+  de subida por completo -- limitada al administrador (Django Admin),
+  decisión explícita de Miguel Ángel para no repetir "la creación de
+  tipos en plan selvático que ocurría antes"; un tipo no catalogado se
+  sube ahora por el Explorador de archivos.
+- **Jerarquía visual de acordeones** en la ficha de personal (esquema
+  final, tras una reconsideración en la propia sesión): nivel 1 (Datos
+  personales/Laboral/Salud/Documentación/EPIs) azul claro/oscuro
+  activo; nivel 2 (Documentos/Vacaciones/Partes de trabajo dentro de
+  Laboral; cada familia dentro de Documentación; cada ítem de EPIs)
+  verde claro/oscuro activo; el contenido final (la tabla de
+  documentos, o directamente bajo Salud, que no tiene nivel 2) siempre
+  en amarillo. Todos los tonos son variables "subtle" de Bootstrap
+  (primary/success/warning), nunca hex inventado.
+
 ## Hoja de Ruta para la Sesión Siguiente (S103, reescrita por completo -- sustituye a la de S102)
 
 **1. Usabilidad documental -- vistas de selección múltiple para
@@ -2409,7 +2463,12 @@ por documento, vista de lista seleccionable) con vista a generar
 dossieres y/o adjuntos para enviar a plataformas o por correo. Esto es
 diseño nuevo desde cero -- no hay nada parecido hoy en el catálogo ni
 en el modelo (`DocumentIndexEntry` no tiene ningún concepto de
-"selección" o "dossier" todavía).
+"selección" o "dossier" todavía). Cierre objetivo de la sesión: al
+menos una ficha real de personal con una selección múltiple de
+documentos reales generando un dossier/adjunto de verdad (PDF unido, o
+el formato que se decida en la propia sesión), probado end-to-end
+contra datos reales -- nunca solo el diseño de la interfaz sin probar
+la generación real del archivo final.
 
 ---
 
