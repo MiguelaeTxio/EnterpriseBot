@@ -2069,12 +2069,28 @@ class EpiReview(models.Model):
 
 class PersonalDossierTemplate(models.Model):
     """
-    H31 (S103). "Plantilla" de dossier guardada por un supervisor
-    sobre UNA persona -- Miguel Ángel, verbatim: "selecciono 3
-    documentos y la plantilla guarda que documentos se han enviado y
-    si ha sido en zip o en pdf [...] cuando se selecciona desde el
-    gestor de plantillas se mandan dichos documentos con el formato
-    que se seleccionó".
+    H31 (S103). "Plantilla" de dossier reutilizable por CUALQUIER
+    supervisor o administrador de la empresa -- Miguel Ángel,
+    verbatim: "selecciono 3 documentos y la plantilla guarda que
+    documentos se han enviado y si ha sido en zip o en pdf [...]
+    cuando se selecciona desde el gestor de plantillas se mandan
+    dichos documentos con el formato que se seleccionó [...] mi
+    intención era que documentos como el DNI o la tarjeta de
+    conducción estén en plantillas y luego se añadan los documentos
+    que son específicos de cada trabajador [...] las plantillas deben
+    servir tb para cualquier supervisor y administrador".
+
+    CORREGIDO tras el diseño inicial (que ataba la plantilla a UNA
+    persona -- error real, detectado por Miguel Ángel al ir a un
+    segundo trabajador y no encontrar ninguna plantilla ahí): la
+    plantilla vive a nivel de EMPRESA (`company`), nunca de persona --
+    "DNI + tarjeta de conducción" es la misma plantilla base para
+    cualquier trabajador de la empresa. Al aplicarla sobre una persona
+    concreta (`PersonalDossierTemplateApplyView`), se combina con lo
+    que esa persona tenga seleccionado en ese momento en sus
+    casilleros -- así "documentos específicos de cada trabajador,
+    como formación determinada en un área" se añaden sin tener que
+    duplicar la plantilla por persona.
 
     DECISIÓN DE DISEÑO explícita (asunción declarada en sesión, no
     bloqueante): la plantilla guarda TIPOS documentales
@@ -2086,19 +2102,20 @@ class PersonalDossierTemplate(models.Model):
     toda la plataforma resuelve siempre "el vigente de este tipo" en
     vez de fijar una fila concreta (mismo criterio que
     `PersonalDetailView`/`_split_current_obsolete`). Aplicar una
-    plantilla vuelve a resolver, en el momento de aplicarla, el
-    documento VIGENTE de cada tipo guardado -- nunca reenvía un PDF/
-    ZIP con documentos ya caducados desde que se creó la plantilla.
+    plantilla vuelve a resolver, en el momento de aplicarla y PARA LA
+    PERSONA CONCRETA elegida, el documento VIGENTE de cada tipo
+    guardado -- nunca reenvía un PDF/ZIP con documentos ya caducados
+    desde que se creó la plantilla.
 
     Vive en `document_explorer` (no en `document_management`, que
     nunca importa modelos de dominio -- ver cabecera de ese módulo)
-    porque referencia `PersonIdentity`/`DocumentTypeCatalog`
-    directamente, igual que `EpiDelivery`/`DocumentAcknowledgment`.
+    porque referencia `DocumentTypeCatalog` directamente, igual que
+    `EpiDelivery`/`DocumentAcknowledgment`.
 
     `name` nunca queda vacío: si el supervisor no escribe nombre al
     guardar, la vista le asigna "Dossier N" (N = correlativo por
-    persona, ver PersonalDossierTemplateCreateView) -- editable después
-    en cualquier momento ("pudiendo editar la plantilla [...]
+    EMPRESA, ver PersonalDossierTemplateCreateView) -- editable
+    después en cualquier momento ("pudiendo editar la plantilla [...]
     nombrarla").
     """
 
@@ -2109,11 +2126,15 @@ class PersonalDossierTemplate(models.Model):
         (FORMAT_ZIP, "ZIP"),
     ]
 
-    person = models.ForeignKey(
-        PersonIdentity,
+    company = models.ForeignKey(
+        "ivr_config.Company",
         on_delete=models.CASCADE,
         related_name="dossier_templates",
-        verbose_name="Persona",
+        verbose_name="Empresa",
+        help_text=(
+            "Compartida por todos los supervisores/administradores de "
+            "esta empresa -- nunca atada a una persona concreta."
+        ),
     )
     name = models.CharField(
         max_length=150,
@@ -2128,9 +2149,9 @@ class PersonalDossierTemplate(models.Model):
         related_name="dossier_templates",
         verbose_name="Tipos documentales incluidos",
         help_text=(
-            "El \"vigente\" de cada tipo se resuelve de nuevo cada "
-            "vez que se aplica la plantilla -- nunca fila fija de "
-            "DocumentIndexEntry."
+            "El \"vigente\" de cada tipo se resuelve de nuevo, para la "
+            "persona concreta elegida, cada vez que se aplica la "
+            "plantilla -- nunca fila fija de DocumentIndexEntry."
         ),
     )
     output_format = models.CharField(
@@ -2158,7 +2179,7 @@ class PersonalDossierTemplate(models.Model):
     class Meta:
         verbose_name = "Plantilla de dossier"
         verbose_name_plural = "Plantillas de dossier"
-        ordering = ["person_id", "created_at"]
+        ordering = ["company_id", "created_at"]
 
     def __str__(self):
-        return f"{self.name} ({self.person} -- {self.get_output_format_display()})"
+        return f"{self.name} ({self.company} -- {self.get_output_format_display()})"

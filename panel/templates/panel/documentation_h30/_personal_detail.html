@@ -1191,12 +1191,15 @@ function saveTemplateEdit(pk) {
 
 // H31 (S103). "Editar" qué documentos incluye una plantilla: en vez
 // de un selector nuevo, reutiliza la selección de casilleros ya
-// activa en la ficha -- marca los documentos que quieras que
-// contenga la plantilla y pulsa este botón.
-function refreshTemplateTypes(pk) {
+// activa en la ficha de la persona indicada -- marca los documentos
+// que quieras que contenga la plantilla y pulsa este botón. La
+// plantilla es de empresa (no de persona), así que hay que decir
+// explícitamente de qué persona tomar la selección actual.
+function refreshTemplateTypes(pk, personPk) {
     const resultDiv = document.getElementById('templateEditResult' + pk);
     const formData = new FormData();
     formData.append('refresh_types', '1');
+    formData.append('person_pk', personPk);
     fetch(`/panel/documentacion/personal/plantillas/${pk}/editar/`, {
         method: 'POST', body: formData,
         headers: {'X-CSRFToken': getCookie('csrftoken')},

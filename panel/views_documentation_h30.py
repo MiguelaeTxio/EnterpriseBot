@@ -1491,7 +1491,7 @@ class PersonalDossierTemplateCreateView(CompanyUserRequiredMixin, View):
     """
 
     def post(self, request, pk):
-        person, entries = _resolve_document_selection(request, pk)
+        _person, entries = _resolve_document_selection(request, pk)
         if not entries:
             return JsonResponse(
                 {"ok": False, "error": "No hay ningún documento seleccionado."},
@@ -1529,16 +1529,16 @@ class PersonalDossierTemplateCreateView(CompanyUserRequiredMixin, View):
             )
 
         name = request.POST.get("name", "").strip()
+        company = request.user.company_user.company
         if not name:
             existing_count = PersonalDossierTemplate.objects.filter(
-                person=person,
+                company=company,
             ).count()
             name = f"Dossier {existing_count + 1}"
 
-        company_user = getattr(request.user, "company_user", None)
         template = PersonalDossierTemplate.objects.create(
-            person=person, name=name, output_format=output_format,
-            created_by=company_user,
+            company=company, name=name, output_format=output_format,
+            created_by=request.user.company_user,
         )
         template.document_types.set(type_ids)
 
@@ -1550,14 +1550,19 @@ class PersonalDossierTemplateCreateView(CompanyUserRequiredMixin, View):
 
 class PersonalDossierTemplateListView(CompanyUserRequiredMixin, View):
     """
-    H31 (S103). GET: fragmento del "gestor de plantillas" de una
-    persona -- lista sus plantillas guardadas (nombre, formato, tipos
-    incluidos) con acciones de descarga/renombrado/edición/borrado.
+    H31 (S103). GET: fragmento del "gestor de plantillas" -- lista las
+    plantillas de TODA LA EMPRESA (compartidas por cualquier
+    supervisor/administrador, corregido tras el diseño inicial que las
+    ataba a una sola persona), con acciones de descarga/duplicado/
+    edición/borrado. Se pide siempre desde la ficha de una persona
+    concreta (`pk`) para que "Descargar" sepa sobre quién aplicar cada
+    plantilla.
     """
 
     def get(self, request, pk):
         person = get_object_or_404(PersonIdentity, pk=pk)
-        templates = person.dossier_templates.prefetch_related(
+        company = request.user.company_user.company
+        templates = company.dossier_templates.prefetch_related(
             "document_types",
         ).order_by("created_at")
         return render(
@@ -1569,29 +1574,46 @@ class PersonalDossierTemplateListView(CompanyUserRequiredMixin, View):
 
 class PersonalDossierTemplateApplyView(CompanyUserRequiredMixin, View):
     """
-    H31 (S103). GET: aplica una plantilla guardada -- resuelve el
-    documento vigente de cada tipo de la plantilla EN ESTE INSTANTE
-    (`_resolve_template_entries`) y genera el dossier en el formato
-    guardado en la propia plantilla (PDF único o ZIP), reutilizando
-    exactamente el mismo generador que la descarga desde la selección
-    de casilleros -- nunca una copia de la lógica.
+    H31 (S103). GET: aplica una plantilla de empresa SOBRE UNA
+    PERSONA concreta (`pk`) -- resuelve el documento vigente de cada
+    tipo de la plantilla EN ESTE INSTANTE para esa persona
+    (`_resolve_template_entries`) y lo COMBINA con lo que esa misma
+    persona tenga ahora mismo en su selección de casilleros -- Miguel
+    Ángel: "documentos como el DNI o la tarjeta de conducción estén en
+    plantillas y luego se añadan los documentos que son específicos de
+    cada trabajador, como por ejemplo formación determinada en un
+    área". Sin selección activa, se aplica solo la plantilla; sin
+    plantilla resuelta pero con selección, se aplica solo la
+    selección -- nunca un dossier vacío si hay algo que ofrecer por
+    cualquiera de las dos vías. Genera en el formato guardado en la
+    propia plantilla (PDF único o ZIP), reutilizando exactamente el
+    mismo generador que la descarga directa desde la selección.
     """
 
-    def get(self, request, template_pk):
-        template = get_object_or_404(
-            PersonalDossierTemplate.objects.select_related("person"),
-            pk=template_pk,
-        )
-        entries = _resolve_template_entries(template.person, template)
-        if not entries:
+    def get(self, request, pk, template_pk):
+        person = get_object_or_404(PersonIdentity, pk=pk)
+        template = get_object_or_404(PersonalDossierTemplate, pk=template_pk)
+
+        template_entries = _resolve_template_entries(person, template)
+        _person, selection_entries = _resolve_document_selection(request, pk)
+
+        combined = list(template_entries)
+        combined_pks = {e.pk for e in combined}
+        for entry in selection_entries:
+            if entry.pk not in combined_pks:
+                combined.append(entry)
+                combined_pks.add(entry.pk)
+
+        if not combined:
             return HttpResponse(
                 "Ninguno de los tipos documentales de esta plantilla "
-                "tiene hoy un documento vigente para esta persona.",
+                "tiene hoy un documento vigente para esta persona, y "
+                "no hay ningún documento adicional seleccionado.",
                 status=400,
             )
         if template.output_format == PersonalDossierTemplate.FORMAT_ZIP:
-            return _build_dossier_zip_response(template.person, entries)
-        return _build_dossier_pdf_response(template.person, entries)
+            return _build_dossier_zip_response(person, combined)
+        return _build_dossier_pdf_response(person, combined)
 
 
 class PersonalDossierTemplateUpdateView(CompanyUserRequiredMixin, View):
@@ -1603,17 +1625,17 @@ class PersonalDossierTemplateUpdateView(CompanyUserRequiredMixin, View):
     - `name`: renombrar (nunca se deja vacío -- si llega vacío, se
       ignora y se conserva el nombre actual).
     - `output_format`: cambiar PDF<->ZIP.
-    - `refresh_types=1`: sustituye los tipos documentales de la
-      plantilla por los de la SELECCIÓN ACTUAL de casilleros de esa
-      misma persona -- así se "edita" qué documentos incluye sin
-      tener que borrar y crear una plantilla nueva.
+    - `refresh_types=1` + `person_pk`: sustituye los tipos documentales
+      de la plantilla por los de la SELECCIÓN ACTUAL de casilleros de
+      la persona indicada (la ficha desde la que se abrió el gestor)
+      -- así se "edita" qué documentos incluye sin tener que borrar y
+      crear una plantilla nueva. La plantilla ya no pertenece a una
+      persona (es de empresa), así que quién resuelve la selección se
+      indica explícitamente en cada petición.
     """
 
     def post(self, request, template_pk):
-        template = get_object_or_404(
-            PersonalDossierTemplate.objects.select_related("person"),
-            pk=template_pk,
-        )
+        template = get_object_or_404(PersonalDossierTemplate, pk=template_pk)
 
         name = request.POST.get("name", "").strip()
         if name:
@@ -1627,9 +1649,20 @@ class PersonalDossierTemplateUpdateView(CompanyUserRequiredMixin, View):
 
         skipped = []
         if request.POST.get("refresh_types") == "1":
-            _person, entries = _resolve_document_selection(
-                request, template.person_id,
-            )
+            person_pk = request.POST.get("person_pk")
+            if not person_pk:
+                return JsonResponse(
+                    {
+                        "ok": False,
+                        "error": (
+                            "Falta indicar de qué persona tomar la "
+                            "selección actual -- la plantilla no se "
+                            "ha tocado."
+                        ),
+                    },
+                    status=400,
+                )
+            _person, entries = _resolve_document_selection(request, person_pk)
             type_ids = []
             for entry in entries:
                 if entry.document_type_id:
@@ -1661,7 +1694,7 @@ class PersonalDossierTemplateUpdateView(CompanyUserRequiredMixin, View):
 class PersonalDossierTemplateDuplicateView(CompanyUserRequiredMixin, View):
     """
     H31 (S103). POST: duplica una plantilla EXISTENTE -- mismos tipos
-    documentales, mismo `person` -- pero con el formato contrario
+    documentales, misma `company` -- pero con el formato contrario
     (PDF -> ZIP o ZIP -> PDF). Miguel Ángel: "¿cómo puedo duplicar una
     plantilla pero cambiando de zip a pdf y viceversa?" -- "Editar"
     sustituye el formato de la MISMA plantilla; esta vista crea una
@@ -1671,7 +1704,7 @@ class PersonalDossierTemplateDuplicateView(CompanyUserRequiredMixin, View):
 
     def post(self, request, template_pk):
         original = get_object_or_404(
-            PersonalDossierTemplate.objects.select_related("person"),
+            PersonalDossierTemplate.objects.select_related("company"),
             pk=template_pk,
         )
         flipped_format = (
@@ -1680,12 +1713,11 @@ class PersonalDossierTemplateDuplicateView(CompanyUserRequiredMixin, View):
             else PersonalDossierTemplate.FORMAT_PDF
         )
         flipped_label = dict(PersonalDossierTemplate.FORMAT_CHOICES)[flipped_format]
-        company_user = getattr(request.user, "company_user", None)
         duplicate = PersonalDossierTemplate.objects.create(
-            person=original.person,
+            company=original.company,
             name=f"{original.name} ({flipped_label})",
             output_format=flipped_format,
-            created_by=company_user,
+            created_by=request.user.company_user,
         )
         duplicate.document_types.set(
             original.document_types.values_list("pk", flat=True),

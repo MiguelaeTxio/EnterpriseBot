@@ -440,10 +440,10 @@ urlpatterns = [
     path("documentacion/personal/<int:pk>/seleccion/zip/", PersonalDocumentSelectionZipView.as_view(), name="documentation_personal_document_selection_zip"),
     # H31 (S103): guardar la selección actual como plantilla de dossier nueva.
     path("documentacion/personal/<int:pk>/plantillas/guardar/", PersonalDossierTemplateCreateView.as_view(), name="documentation_personal_dossier_template_create"),
-    # H31 (S103): gestor de plantillas de dossier de una persona (fragmento del modal).
+    # H31 (S103): gestor de plantillas de dossier de la empresa (fragmento del modal, abierto desde una ficha de persona concreta).
     path("documentacion/personal/<int:pk>/plantillas/", PersonalDossierTemplateListView.as_view(), name="documentation_personal_dossier_template_list"),
-    # H31 (S103): aplicar una plantilla -- resuelve el vigente de cada tipo y descarga en el formato guardado.
-    path("documentacion/personal/plantillas/<int:template_pk>/aplicar/", PersonalDossierTemplateApplyView.as_view(), name="documentation_personal_dossier_template_apply"),
+    # H31 (S103): aplicar una plantilla de empresa sobre esta persona -- resuelve el vigente de cada tipo + la selección actual, descarga en el formato guardado.
+    path("documentacion/personal/<int:pk>/plantillas/<int:template_pk>/aplicar/", PersonalDossierTemplateApplyView.as_view(), name="documentation_personal_dossier_template_apply"),
     # H31 (S103): editar una plantilla (nombre, formato, o refrescar tipos desde la selección actual).
     path("documentacion/personal/plantillas/<int:template_pk>/editar/", PersonalDossierTemplateUpdateView.as_view(), name="documentation_personal_dossier_template_update"),
     # H31 (S103): duplicar una plantilla con el formato contrario (PDF<->ZIP).

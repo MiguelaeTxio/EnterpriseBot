@@ -1,12 +1,16 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation_h30/_personal_dossier_template_list.html #}
 {% comment %}
-H31 (S103). Fragmento del "gestor de plantillas" de dossier de una
-persona, cargado bajo demanda dentro de dossierTemplateModal (mismo
-patrón que documentSelectionPreviewModal -- ver _personal_detail.html).
-Cada plantilla guarda TIPOS documentales y un formato (PDF/ZIP) --
-"Descargar" resuelve el vigente de cada tipo EN ESTE INSTANTE
-(PersonalDossierTemplateApplyView), nunca reenvía documentos ya
-caducados desde que se creó la plantilla.
+H31 (S103). Fragmento del "gestor de plantillas" de dossier -- las
+plantillas son de EMPRESA (compartidas por cualquier supervisor/
+administrador, corregido tras el diseño inicial que las ataba a una
+sola persona), cargado bajo demanda dentro de dossierTemplateModal
+(mismo patrón que documentSelectionPreviewModal -- ver
+_personal_detail.html). Cada plantilla guarda TIPOS documentales y un
+formato (PDF/ZIP) -- "Descargar" resuelve el vigente de cada tipo EN
+ESTE INSTANTE para la persona cuya ficha está abierta
+(PersonalDossierTemplateApplyView), combinándolo con lo que esa
+persona tenga ahora mismo seleccionado en sus casilleros -- nunca
+reenvía documentos ya caducados desde que se creó la plantilla.
 {% endcomment %}
 {% if templates %}
 <table class="table table-sm table-hover mb-0">
@@ -24,7 +28,7 @@ caducados desde que se creó la plantilla.
                 {% for dt in template.document_types.all %}{{ dt.label }}{% if not forloop.last %}, {% endif %}{% endfor %}
             </td>
             <td class="text-end">
-                <a class="btn btn-sm btn-outline-primary" href="{% url 'panel:documentation_personal_dossier_template_apply' template_pk=template.pk %}">
+                <a class="btn btn-sm btn-outline-primary" href="{% url 'panel:documentation_personal_dossier_template_apply' pk=person.pk template_pk=template.pk %}" title="Aplica la plantilla a esta persona, combinada con su selección actual">
                     <i class="bi bi-download me-1"></i>Descargar
                 </a>
                 <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleTemplateEdit({{ template.pk }})">Editar</button>
@@ -48,7 +52,7 @@ caducados desde que se creó la plantilla.
                     </div>
                     <div class="col-12 col-md-4 d-flex gap-2 flex-wrap">
                         <button type="button" class="btn btn-sm btn-success" onclick="saveTemplateEdit({{ template.pk }})">Guardar cambios</button>
-                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="refreshTemplateTypes({{ template.pk }})" title="Sustituye los tipos incluidos por los de la selección actual de casilleros">Actualizar tipos con la selección actual</button>
+                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="refreshTemplateTypes({{ template.pk }}, {{ person.pk }})" title="Sustituye los tipos incluidos por los de la selección actual de casilleros de esta persona">Actualizar tipos con la selección actual</button>
                         <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleTemplateEdit({{ template.pk }})">Cancelar</button>
                     </div>
                     <div id="templateEditResult{{ template.pk }}" class="small"></div>
@@ -59,5 +63,5 @@ caducados desde que se creó la plantilla.
     </tbody>
 </table>
 {% else %}
-<div class="text-muted small py-3">Sin plantillas guardadas todavía. Marca una selección de documentos y usa "Guardar como plantilla" para crear la primera.</div>
+<div class="text-muted small py-3">Sin plantillas guardadas todavía en la empresa. Marca una selección de documentos y usa "Guardar como plantilla" para crear la primera.</div>
 {% endif %}
