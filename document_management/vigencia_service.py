@@ -118,6 +118,31 @@ def is_current(
     # por defecto de siempre, ver `DocumentSnapshot`), esta rama no
     # cambia de comportamiento -- se sigue considerando vigente por
     # defecto, nunca se archiva a ciegas sin ningun dato temporal.
+    #
+    # SEGUNDO INCIDENTE REAL (H31 S103), distinto del de arriba: el
+    # desempate de mas arriba solo comparaba el candidato ciego contra
+    # OTROS hermanos igual de ciegos -- si el unico hermano SI tenia
+    # fecha real, no habia "hermano ciego" contra el que comparar, y
+    # el candidato se colaba como vigente igualmente, en paralelo al
+    # que si tenia fecha (ficha real: tipo NIE de una persona con dos
+    # documentos vigentes a la vez, uno con expiry_date=2030-12-04 y
+    # otro sin ninguna fecha). Confirmado por Miguel Angel: un
+    # documento sin ninguna fecha NUNCA debe contar como vigente si
+    # existe un hermano del mismo tipo con fecha real y todavia
+    # valida -- se comprueba esto ANTES del desempate entre ciegos.
+    # Un hermano con expiry_date cuenta solo si esa fecha no ha
+    # pasado; un hermano con issue_date (sin expiry_date) cuenta
+    # siempre, porque ese tipo de documento no caduca por si solo
+    # (ver rama de arriba: el vigente es el de issue_date mas
+    # reciente, nunca "ninguno" por el simple paso del tiempo).
+    dated_valid_siblings = [
+        s for s in siblings
+        if (s.expiry_date is not None and s.expiry_date >= reference_today)
+        or (s.expiry_date is None and s.issue_date is not None)
+    ]
+    if dated_valid_siblings:
+        return False
+
     dateless_siblings = [
         s for s in siblings
         if s.expiry_date is None and s.issue_date is None
