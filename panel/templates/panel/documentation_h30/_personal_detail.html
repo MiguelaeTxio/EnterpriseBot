@@ -213,6 +213,11 @@ y se habilita "Guardar".
         </h2>
         <div id="collapseLaboralDocs" class="accordion-collapse collapse {% if not partes_filtered %}show{% endif %}" data-bs-parent="#personalLaboralAccordion">
             <div class="accordion-body">
+<button type="button" class="btn btn-sm btn-outline-primary mb-2"
+        {% if not missing_types_by_family.LABORAL %}disabled title="Ya tienes todos los tipos de esta familia"{% endif %}
+        onclick="openUploadForm(null, false, MISSING_TYPES_BY_FAMILY['LABORAL'])">
+    <i class="bi bi-upload me-1"></i>+ Subir
+</button>
 <table class="table table-sm table-hover mb-0">
     <thead><tr><th>Tipo</th><th>Caducidad</th><th>Acciones</th></tr></thead>
     <tbody>
@@ -407,6 +412,11 @@ vacaciones).
         <div id="collapseSaludMain" class="accordion-collapse collapse{% if main_accordion_open == 'collapseSaludMain' %} show{% endif %}" data-bs-parent="#personalMainAccordion">
             <div class="accordion-body">
 
+<button type="button" class="btn btn-sm btn-outline-primary mb-2"
+        {% if not missing_types_by_family.SALUD_BAJAS_PERSONA %}disabled title="Ya tienes todos los tipos de esta familia"{% endif %}
+        onclick="openUploadForm(null, false, MISSING_TYPES_BY_FAMILY['SALUD_BAJAS_PERSONA'])">
+    <i class="bi bi-upload me-1"></i>+ Subir
+</button>
 <table class="table table-sm table-hover mb-0">
     <thead><tr><th>Tipo</th><th>Caducidad</th><th>Acciones</th></tr></thead>
     <tbody>
@@ -484,7 +494,11 @@ vez de una lista única sin estructura.
             </button>
         </h2>
         <div id="collapseFam{{ forloop.counter }}" class="accordion-collapse collapse {% if forloop.first %}show{% endif %}" data-bs-parent="#personalDocsAccordion">
-            <div class="accordion-body p-0">
+            <div class="accordion-body">
+                <button type="button" class="btn btn-sm btn-outline-primary mb-2 family-upload-btn" data-family="{{ fam.code }}"
+                        onclick="openUploadForm(null, false, MISSING_TYPES_BY_FAMILY['{{ fam.code }}'])">
+                    <i class="bi bi-upload me-1"></i>+ Subir
+                </button>
                 <table class="table table-sm table-hover mb-0">
                     <thead><tr><th>Tipo</th><th>Caducidad</th><th>Acciones</th></tr></thead>
                     <tbody>
@@ -505,6 +519,8 @@ vez de una lista única sin estructura.
                                         onclick="deleteDocument({{ entry.pk }}, this)">Eliminar</button>
                             </td>
                         </tr>
+                        {% empty %}
+                        <tr><td colspan="3" class="text-muted small">Sin documentos vigentes todavía.</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>
@@ -691,14 +707,36 @@ document.getElementById('documentViewerModal').addEventListener('hidden.bs.modal
 const DOC_TYPES_PERSONAL = [
     {% for dt in doc_types %}{code: "{{ dt.code }}", label: "{{ dt.label|escapejs }}", tracksExpiry: {{ dt.tracks_expiry|yesno:"true,false" }}},{% endfor %}
 ];
-const FAMILY_CHOICES_PERSONAL = [
-    {% for value, display in family_choices %}{value: "{{ value }}", display: "{{ display|escapejs }}"},{% endfor %}
-];
+// H31 (S102). Pipeline de subida "sin muestra" por familia -- Miguel
+// Ángel: "cada grupo documental [tenga] su propio pipeline de subida,
+// que se encarga de ver qué tipos tienen muestra y desplegar
+// únicamente los que no la tienen." Un array por código de familia,
+// ya filtrado en el servidor a los tipos que esta persona no tiene
+// todavía (ver `missing_types_by_family`, panel/views_documentation_
+// h30.py). Vacío para una familia completa == esta persona ya tiene
+// todos los tipos de esa familia.
+const MISSING_TYPES_BY_FAMILY = {
+    {% for fam_code, types in missing_types_by_family.items %}"{{ fam_code }}": [{% for dt in types %}{code: "{{ dt.code }}", label: "{{ dt.label|escapejs }}", tracksExpiry: {{ dt.tracks_expiry|yesno:"true,false" }}},{% endfor %}],{% endfor %}
+};
+// H31 (S102): deshabilita el botón "+ Subir" de una familia cuando ya
+// no le queda ningún tipo por subir a esta persona -- los de
+// Laboral/Salud (hardcoded) ya se resuelven en el propio template con
+// `{% if not missing_types_by_family.LABORAL %}`; estos son los del
+// bucle genérico de familias, con clave dinámica (`fam.code`), que el
+// motor de plantillas de Django no puede indexar así sin un filtro
+// nuevo -- más simple resolverlo aquí, una vez cargado el DOM.
+document.querySelectorAll('.family-upload-btn').forEach(function (btn) {
+    const family = btn.dataset.family;
+    if (!(MISSING_TYPES_BY_FAMILY[family] || []).length) {
+        btn.disabled = true;
+        btn.title = 'Ya tienes todos los tipos de esta familia';
+    }
+});
 const EPI_ITEMS = [
     {% for epi in epi_items %}{id: {{ epi.pk }}, label: "{{ epi.label|escapejs }}", family: "{{ epi.family|escapejs }}"},{% endfor %}
 ];
 
-function openUploadForm(preselectCode, avatarMode) {
+function openUploadForm(preselectCode, avatarMode, restrictedTypes) {
     // H31 (S100), Miguel Ángel: "salga un tipo documentales [...] a
     // la hora de subir una foto de perfil [...] eso tiende a
     // confundir." La cámara del avatar reutilizaba el formulario
@@ -706,13 +744,25 @@ function openUploadForm(preselectCode, avatarMode) {
     // una acción que es, por definición, "sube UNA foto de perfil" --
     // sin selector de tipo (fijo a IMAGEN) y sin permitir varios
     // archivos a la vez.
+    //
+    // `restrictedTypes` (H31, S102): pipeline de subida por familia
+    // -- si se pasa, el desplegable muestra SOLO esos tipos (los que
+    // le faltan a esta persona en esa familia) en vez de los 79
+    // completos. Sin ninguna opción de "tipo nuevo" en ningún caso --
+    // retirada en S102, Miguel Ángel: "limitamos la creación de tipos
+    // nuevos al administrador [...] de esa forma se mantienen los
+    // tipos de forma más coherente, impidiendo la creación de tipos
+    // en plan selvático que era lo que ocurría antes." Un tipo que no
+    // existe en el catálogo se sube por el Explorador de archivos,
+    // nunca desde este modal.
     const container = document.getElementById('uploadFormContainer');
+    const typesToShow = restrictedTypes || DOC_TYPES_PERSONAL;
     const typeFieldHtml = avatarMode
         ? `<input type="hidden" name="document_type_code" value="IMAGEN">`
         : (() => {
-            const options = DOC_TYPES_PERSONAL.map(dt =>
+            const options = typesToShow.map(dt =>
                 `<option value="${dt.code}" data-tracks-expiry="${dt.tracksExpiry}" ${dt.code === preselectCode ? 'selected' : ''}>${dt.label}</option>`,
-            ).join('') + '<option value="__NEW__">+ Añadir tipo documental nuevo</option>';
+            ).join('');
             return `<div class="mb-2">
                         <label class="form-label">Tipo documental</label>
                         <select name="document_type_code" id="uploadTypeSelect" class="form-select" required>${options}</select>
@@ -724,25 +774,6 @@ function openUploadForm(preselectCode, avatarMode) {
                 <h6>${avatarMode ? 'Subir foto de perfil' : 'Subir documento'}</h6>
                 <form id="subjectUploadForm">
                     ${typeFieldHtml}
-                    <div id="newTypeFields" class="border rounded p-2 mb-2" style="display:none;">
-                        <div class="mb-2">
-                            <label class="form-label">Nombre visible del tipo nuevo</label>
-                            <input type="text" id="newTypeLabel" class="form-control" placeholder="p. ej. Certificado de manipulador">
-                        </div>
-                        <div class="mb-2">
-                            <label class="form-label">Familia documental</label>
-                            <select id="newTypeFamily" class="form-select">
-                                <option value="">-- Elige familia --</option>
-                                ${FAMILY_CHOICES_PERSONAL.map(f => `<option value="${f.value}">${f.display}</option>`).join('')}
-                            </select>
-                        </div>
-                        <div class="form-check mb-2">
-                            <input type="checkbox" id="newTypeTracksExpiry" class="form-check-input">
-                            <label class="form-check-label" for="newTypeTracksExpiry">Este tipo tiene fecha de caducidad/vigencia</label>
-                        </div>
-                        <button type="button" class="btn btn-outline-primary btn-sm" onclick="createNewDocumentType('personal')">Crear tipo documental</button>
-                        <div id="newTypeResult" class="mt-1"></div>
-                    </div>
                     <div class="mb-2">
                         <label class="form-label">${avatarMode ? 'Foto' : 'Archivo(s) — puedes seleccionar varios a la vez si son del mismo tipo'}</label>
                         <input type="file" name="file" class="form-control" ${avatarMode ? 'accept="image/*"' : 'multiple'} required>
@@ -759,18 +790,8 @@ function openUploadForm(preselectCode, avatarMode) {
 
     const select = document.getElementById('uploadTypeSelect');
     const expiryField = document.getElementById('expiryDateField');
-    const newTypeFields = document.getElementById('newTypeFields');
-    const submitBtn = document.getElementById('subjectUploadSubmitBtn');
     function toggleExpiry() {
         if (!select) { return; }
-        if (select.value === '__NEW__') {
-            newTypeFields.style.display = '';
-            expiryField.style.display = 'none';
-            submitBtn.disabled = true;
-            return;
-        }
-        newTypeFields.style.display = 'none';
-        submitBtn.disabled = false;
         const opt = select.options[select.selectedIndex];
         expiryField.style.display = opt.dataset.tracksExpiry === 'true' ? '' : 'none';
     }
@@ -807,32 +828,6 @@ function openUploadForm(preselectCode, avatarMode) {
             if (data.ok) setTimeout(() => location.reload(), 2000);
         });
     };
-}
-
-function createNewDocumentType(domain) {
-    const label = document.getElementById('newTypeLabel').value.trim();
-    const family = document.getElementById('newTypeFamily').value;
-    const tracksExpiry = document.getElementById('newTypeTracksExpiry').checked;
-    const resultDiv = document.getElementById('newTypeResult');
-    if (!label || !family) {
-        resultDiv.innerHTML = '<div class="alert alert-danger py-1 px-2 small">Nombre y familia son obligatorios.</div>';
-        return;
-    }
-    const formData = new FormData();
-    formData.append('label', label);
-    formData.append('family', family);
-    formData.append('tracks_expiry', tracksExpiry ? 'true' : 'false');
-    fetch(`/panel/documentacion/${domain}/tipos/crear/`, {
-        method: 'POST', body: formData,
-        headers: {'X-CSRFToken': getCookie('csrftoken')},
-    }).then(r => r.json()).then(data => {
-        if (data.error) {
-            resultDiv.innerHTML = `<div class="alert alert-danger py-1 px-2 small">${data.error}</div>`;
-            return;
-        }
-        DOC_TYPES_PERSONAL.push({code: data.code, label: data.label, tracksExpiry: data.tracks_expiry});
-        openUploadForm(data.code);
-    });
 }
 
 function deleteDocument(pk, btn) {

@@ -538,7 +538,7 @@ class PersonalResultsFragmentView(CompanyUserRequiredMixin, View):
         return render(request, "panel/documentation_h30/_personal_results.html", ctx)
 
 
-def _group_current_by_family(current_entries, exclude_family_codes=()):
+def _group_current_by_family(current_entries, exclude_family_codes=(), include_empty=False):
     """
     H31 (S76). Agrupa los documentos vigentes por la `family` real del
     catálogo -- campo que ya existía exactamente para esto desde H30
@@ -565,6 +565,15 @@ def _group_current_by_family(current_entries, exclude_family_codes=()):
     no duplicar el documento en dos sitios de la misma ficha. El
     documento sigue existiendo una sola vez en BD; solo cambia dónde
     se pinta.
+
+    `include_empty` (H31, S102): cuando es True, una familia sin
+    ningún documento vigente aparece igual en el resultado
+    (`documents: []`), en vez de desaparecer del todo del acordeón --
+    necesario para que exista un sitio real donde colgar el botón de
+    subida por familia (pipeline de subida sin muestra, Miguel Ángel
+    S102) incluso cuando la persona no tiene NINGÚN documento de esa
+    familia todavía. Por defecto False -- no cambia el comportamiento
+    de ningún otro llamador existente.
     """
     by_family = {}
     for entry in current_entries:
@@ -581,6 +590,8 @@ def _group_current_by_family(current_entries, exclude_family_codes=()):
             ordered.append({
                 "code": code, "label": label, "documents": by_family[code],
             })
+        elif include_empty:
+            ordered.append({"code": code, "label": label, "documents": []})
     if "" in by_family:
         ordered.append({
             "code": "", "label": "Sin familia asignada",
@@ -968,7 +979,35 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
         )
         families = _group_current_by_family(
             current, exclude_family_codes=_laboral_salud_codes,
+            include_empty=True,
         )
+        # H31 (S102). Pipeline de subida "sin muestra" -- Miguel
+        # Ángel: "cada grupo documental [tenga] su propio pipeline de
+        # subida, que se encarga de ver qué tipos tienen muestra y
+        # desplegar únicamente los que no la tienen." Un único cálculo
+        # aquí (sin una query por familia): todos los tipos activos de
+        # personal, menos los que esta persona ya tiene vigentes o
+        # históricos (cualquier entrada viva, aunque esté marcada
+        # obsoleta -- si ya existe una, se actualiza con el botón
+        # "Actualizar" de su fila, no con el pipeline por familia).
+        # Sin opción de crear tipo nuevo aquí (retirada en la misma
+        # sesión, ver `_personal_detail.html`) -- la creación de
+        # `DocumentTypeCatalog` queda limitada al administrador; un
+        # tipo que no existe en el catálogo se sube por el Explorador
+        # de archivos, nunca desde este modal.
+        present_type_codes = {
+            entry.document_type.code for entry in entries
+            if entry.document_type_id
+        }
+        missing_types_by_family = {}
+        for dt in DocumentTypeCatalog.objects.filter(
+            domain__in=[
+                DocumentTypeCatalog.DOMAIN_PERSONAL,
+                DocumentTypeCatalog.DOMAIN_BOTH,
+            ],
+            is_active=True,
+        ).exclude(code__in=present_type_codes).order_by("label"):
+            missing_types_by_family.setdefault(dt.family, []).append(dt)
         # H31 (S77). Documentos de las dos families que se sacan de
         # Documentación a su propio acordeón de primer nivel -- el
         # documento es el mismo de siempre (DocumentIndexEntry), solo
@@ -1112,6 +1151,7 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
             "families": families,
             "laboral_documents": laboral_documents,
             "salud_documents": salud_documents,
+            "missing_types_by_family": missing_types_by_family,
             "vacation_periods": vacation_periods,
             "partes_total_hours": partes_total_hours,
             "partes_by_machine": partes_by_machine,
@@ -1133,7 +1173,6 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
             "epi_items": epi_items,
             "notification_types": notification_types,
             "active_nav": "documentation_hub",
-            "family_choices": DocumentTypeCatalog.FAMILY_CHOICES,
             "main_accordion_open": main_accordion_open,
         })
 
