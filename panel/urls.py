@@ -43,6 +43,11 @@ from panel.views_documentation_h30 import (
     PersonalDocumentSelectionPreviewView,
     PersonalDocumentSelectionZipView,
     PersonalDocumentTypeHistoryView,
+    PersonalDossierTemplateApplyView,
+    PersonalDossierTemplateCreateView,
+    PersonalDossierTemplateDeleteView,
+    PersonalDossierTemplateListView,
+    PersonalDossierTemplateUpdateView,
     PersonalEpiItemHistoryView,
     PersonalCreateView,
     PersonalIntakeExtractView,
@@ -432,6 +437,16 @@ urlpatterns = [
     path("documentacion/personal/<int:pk>/seleccion/pdf/", PersonalDocumentSelectionPdfView.as_view(), name="documentation_personal_document_selection_pdf"),
     # H31 (S103): descarga del dossier de la selección como ZIP (archivos originales, una carpeta por familia).
     path("documentacion/personal/<int:pk>/seleccion/zip/", PersonalDocumentSelectionZipView.as_view(), name="documentation_personal_document_selection_zip"),
+    # H31 (S103): guardar la selección actual como plantilla de dossier nueva.
+    path("documentacion/personal/<int:pk>/plantillas/guardar/", PersonalDossierTemplateCreateView.as_view(), name="documentation_personal_dossier_template_create"),
+    # H31 (S103): gestor de plantillas de dossier de una persona (fragmento del modal).
+    path("documentacion/personal/<int:pk>/plantillas/", PersonalDossierTemplateListView.as_view(), name="documentation_personal_dossier_template_list"),
+    # H31 (S103): aplicar una plantilla -- resuelve el vigente de cada tipo y descarga en el formato guardado.
+    path("documentacion/personal/plantillas/<int:template_pk>/aplicar/", PersonalDossierTemplateApplyView.as_view(), name="documentation_personal_dossier_template_apply"),
+    # H31 (S103): editar una plantilla (nombre, formato, o refrescar tipos desde la selección actual).
+    path("documentacion/personal/plantillas/<int:template_pk>/editar/", PersonalDossierTemplateUpdateView.as_view(), name="documentation_personal_dossier_template_update"),
+    # H31 (S103): borrar una plantilla de dossier.
+    path("documentacion/personal/plantillas/<int:template_pk>/eliminar/", PersonalDossierTemplateDeleteView.as_view(), name="documentation_personal_dossier_template_delete"),
     path("documentacion/personal/<int:pk>/parte-dia/<str:date_iso>/", PersonalWorkdayDetailView.as_view(), name="documentation_personal_workday_detail"),
     # H31 (S76) punto EPIs: historial completo de un EPI, bajo demanda.
     path("documentacion/personal/<int:pk>/historial-epi/<int:epi_id>/", PersonalEpiItemHistoryView.as_view(), name="documentation_personal_epi_history"),

@@ -1,0 +1,62 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation_h30/_personal_dossier_template_list.html #}
+{% comment %}
+H31 (S103). Fragmento del "gestor de plantillas" de dossier de una
+persona, cargado bajo demanda dentro de dossierTemplateModal (mismo
+patrón que documentSelectionPreviewModal -- ver _personal_detail.html).
+Cada plantilla guarda TIPOS documentales y un formato (PDF/ZIP) --
+"Descargar" resuelve el vigente de cada tipo EN ESTE INSTANTE
+(PersonalDossierTemplateApplyView), nunca reenvía documentos ya
+caducados desde que se creó la plantilla.
+{% endcomment %}
+{% if templates %}
+<table class="table table-sm table-hover mb-0">
+    <thead><tr><th>Nombre</th><th>Formato</th><th>Tipos incluidos</th><th></th></tr></thead>
+    <tbody>
+        {% for template in templates %}
+        <tr id="templateRow{{ template.pk }}">
+            <td>
+                <span id="templateName{{ template.pk }}">{{ template.name }}</span>
+            </td>
+            <td>
+                <span class="badge bg-secondary" id="templateFormatBadge{{ template.pk }}">{{ template.get_output_format_display }}</span>
+            </td>
+            <td class="small text-muted">
+                {% for dt in template.document_types.all %}{{ dt.label }}{% if not forloop.last %}, {% endif %}{% endfor %}
+            </td>
+            <td class="text-end">
+                <a class="btn btn-sm btn-outline-primary" href="{% url 'panel:documentation_personal_dossier_template_apply' template_pk=template.pk %}">
+                    <i class="bi bi-download me-1"></i>Descargar
+                </a>
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleTemplateEdit({{ template.pk }})">Editar</button>
+                <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteTemplate({{ template.pk }})">Eliminar</button>
+            </td>
+        </tr>
+        <tr id="templateEditRow{{ template.pk }}" style="display:none;">
+            <td colspan="4">
+                <div class="row g-2 align-items-end bg-light p-2 rounded">
+                    <div class="col-12 col-md-5">
+                        <label class="form-label small mb-0">Nombre</label>
+                        <input type="text" id="templateEditName{{ template.pk }}" class="form-control form-control-sm" value="{{ template.name }}">
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <label class="form-label small mb-0">Formato</label>
+                        <select id="templateEditFormat{{ template.pk }}" class="form-select form-select-sm">
+                            <option value="PDF" {% if template.output_format == "PDF" %}selected{% endif %}>PDF único</option>
+                            <option value="ZIP" {% if template.output_format == "ZIP" %}selected{% endif %}>ZIP</option>
+                        </select>
+                    </div>
+                    <div class="col-12 col-md-4 d-flex gap-2 flex-wrap">
+                        <button type="button" class="btn btn-sm btn-success" onclick="saveTemplateEdit({{ template.pk }})">Guardar cambios</button>
+                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="refreshTemplateTypes({{ template.pk }})" title="Sustituye los tipos incluidos por los de la selección actual de casilleros">Actualizar tipos con la selección actual</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleTemplateEdit({{ template.pk }})">Cancelar</button>
+                    </div>
+                    <div id="templateEditResult{{ template.pk }}" class="small"></div>
+                </div>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<div class="text-muted small py-3">Sin plantillas guardadas todavía. Marca una selección de documentos y usa "Guardar como plantilla" para crear la primera.</div>
+{% endif %}

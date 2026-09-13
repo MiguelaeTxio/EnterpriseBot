@@ -2065,3 +2065,100 @@ class EpiReview(models.Model):
 
     def __str__(self):
         return f"{self.delivery} -- {self.status} ({self.review_date})"
+
+
+class PersonalDossierTemplate(models.Model):
+    """
+    H31 (S103). "Plantilla" de dossier guardada por un supervisor
+    sobre UNA persona -- Miguel Ángel, verbatim: "selecciono 3
+    documentos y la plantilla guarda que documentos se han enviado y
+    si ha sido en zip o en pdf [...] cuando se selecciona desde el
+    gestor de plantillas se mandan dichos documentos con el formato
+    que se seleccionó".
+
+    DECISIÓN DE DISEÑO explícita (asunción declarada en sesión, no
+    bloqueante): la plantilla guarda TIPOS documentales
+    (`document_types`, M2M a DocumentTypeCatalog), nunca los IDs
+    concretos de `DocumentIndexEntry` seleccionados en el momento de
+    guardarla. Motivo: los documentos de una persona se renuevan
+    (formación cada 3-4 años, reconocimiento médico anual, ITV...) y
+    la entrada concreta seleccionada hoy quedará obsoleta mañana --
+    toda la plataforma resuelve siempre "el vigente de este tipo" en
+    vez de fijar una fila concreta (mismo criterio que
+    `PersonalDetailView`/`_split_current_obsolete`). Aplicar una
+    plantilla vuelve a resolver, en el momento de aplicarla, el
+    documento VIGENTE de cada tipo guardado -- nunca reenvía un PDF/
+    ZIP con documentos ya caducados desde que se creó la plantilla.
+
+    Vive en `document_explorer` (no en `document_management`, que
+    nunca importa modelos de dominio -- ver cabecera de ese módulo)
+    porque referencia `PersonIdentity`/`DocumentTypeCatalog`
+    directamente, igual que `EpiDelivery`/`DocumentAcknowledgment`.
+
+    `name` nunca queda vacío: si el supervisor no escribe nombre al
+    guardar, la vista le asigna "Dossier N" (N = correlativo por
+    persona, ver PersonalDossierTemplateCreateView) -- editable después
+    en cualquier momento ("pudiendo editar la plantilla [...]
+    nombrarla").
+    """
+
+    FORMAT_PDF = "PDF"
+    FORMAT_ZIP = "ZIP"
+    FORMAT_CHOICES = [
+        (FORMAT_PDF, "PDF único"),
+        (FORMAT_ZIP, "ZIP"),
+    ]
+
+    person = models.ForeignKey(
+        PersonIdentity,
+        on_delete=models.CASCADE,
+        related_name="dossier_templates",
+        verbose_name="Persona",
+    )
+    name = models.CharField(
+        max_length=150,
+        verbose_name="Nombre de la plantilla",
+        help_text=(
+            "Nunca vacío -- \"Dossier N\" autonumerado si el "
+            "supervisor no escribe uno propio al guardar."
+        ),
+    )
+    document_types = models.ManyToManyField(
+        DocumentTypeCatalog,
+        related_name="dossier_templates",
+        verbose_name="Tipos documentales incluidos",
+        help_text=(
+            "El \"vigente\" de cada tipo se resuelve de nuevo cada "
+            "vez que se aplica la plantilla -- nunca fila fija de "
+            "DocumentIndexEntry."
+        ),
+    )
+    output_format = models.CharField(
+        max_length=3,
+        choices=FORMAT_CHOICES,
+        verbose_name="Formato de salida",
+    )
+    created_by = models.ForeignKey(
+        "ivr_config.CompanyUser",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="created_dossier_templates",
+        verbose_name="Creada por",
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Fecha de creación",
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name="Última edición",
+    )
+
+    class Meta:
+        verbose_name = "Plantilla de dossier"
+        verbose_name_plural = "Plantillas de dossier"
+        ordering = ["person_id", "created_at"]
+
+    def __str__(self):
+        return f"{self.name} ({self.person} -- {self.get_output_format_display()})"

@@ -20,17 +20,48 @@ sustituto de la otra.
 {% if entries %}
 <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
     <span class="text-muted small">{{ entries|length }} documento{{ entries|length|pluralize }} seleccionado{{ entries|length|pluralize }}</span>
-    <div class="d-flex gap-2">
+    <div class="d-flex gap-2 flex-wrap">
         <a class="btn btn-sm btn-outline-primary" href="{% url 'panel:documentation_personal_document_selection_pdf' pk=person.pk %}">
             <i class="bi bi-file-earmark-pdf me-1"></i>PDF único
         </a>
         <a class="btn btn-sm btn-outline-primary" href="{% url 'panel:documentation_personal_document_selection_zip' pk=person.pk %}">
             <i class="bi bi-file-earmark-zip me-1"></i>ZIP
         </a>
+        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleSaveTemplateForm()">
+            <i class="bi bi-bookmark-plus me-1"></i>Guardar como plantilla
+        </button>
         <button type="button" class="btn btn-sm btn-outline-danger" onclick="clearDocumentSelection()">
             <i class="bi bi-x-circle me-1"></i>Vaciar selección
         </button>
     </div>
+</div>
+{% comment %}
+H31 (S103). Formulario oculto por defecto (toggleSaveTemplateForm,
+en _personal_detail.html) -- Miguel Ángel: "la plantilla guarda qué
+documentos se han enviado y si ha sido en zip o en pdf [...]
+numerados hasta que el supervisor les de nombre". El nombre es
+opcional a propósito -- si se deja en blanco, la vista asigna
+"Dossier N" automáticamente.
+{% endcomment %}
+<div id="saveTemplateForm" class="card card-body mb-2 py-2" style="display:none;">
+    <div class="row g-2 align-items-end">
+        <div class="col-12 col-md-5">
+            <label class="form-label small mb-0">Nombre (opcional)</label>
+            <input type="text" id="saveTemplateName" class="form-control form-control-sm" placeholder="Dossier N (automático si se deja en blanco)">
+        </div>
+        <div class="col-6 col-md-3">
+            <label class="form-label small mb-0">Formato</label>
+            <select id="saveTemplateFormat" class="form-select form-select-sm">
+                <option value="PDF">PDF único</option>
+                <option value="ZIP">ZIP</option>
+            </select>
+        </div>
+        <div class="col-6 col-md-4 d-flex gap-2">
+            <button type="button" class="btn btn-sm btn-success" onclick="saveSelectionAsTemplate()">Guardar</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleSaveTemplateForm()">Cancelar</button>
+        </div>
+    </div>
+    <div id="saveTemplateResult" class="small mt-1"></div>
 </div>
 <table class="table table-sm table-hover mb-0">
     <thead><tr><th>Tipo</th><th>Familia</th><th>Caducidad</th><th></th></tr></thead>

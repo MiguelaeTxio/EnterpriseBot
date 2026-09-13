@@ -24,6 +24,15 @@ venir de Laboral, Salud y/o Documentación a la vez.
 <button type="button" class="btn btn-sm btn-outline-primary mb-0 ms-2" onclick="openSelectionPreview()">
     <i class="bi bi-collection me-1"></i>Selección de documentos <span class="badge bg-primary" id="documentSelectionBadge">{{ selected_document_ids|length }}</span>
 </button>
+{% comment %}
+H31 (S103). Gestor de plantillas de dossier -- Miguel Ángel: "dotar
+al pipeline de un sistema de guardado de dossieres, a modo de
+plantillas [...] cuando se selecciona desde el gestor de plantillas
+se mandan dichos documentos con el formato que se seleccionó".
+{% endcomment %}
+<button type="button" class="btn btn-sm btn-outline-secondary mb-0 ms-2" onclick="openDossierTemplateManager()">
+    <i class="bi bi-bookmark-star me-1"></i>Plantillas de dossier
+</button>
 </div>
 
 {% comment %}
@@ -700,6 +709,20 @@ completo aunque Bootstrap le añada la clase "show" vía JS.
     </div>
 </div>
 
+<div class="modal fade" id="dossierTemplateModal" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Plantillas de dossier</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="dossierTemplateModalBody">
+                <div class="text-muted small py-3">Cargando…</div>
+            </div>
+        </div>
+    </div>
+</div>
+
 {% comment %}
 H31 (S100), incidente real: el formulario de subida (openUploadForm)
 se inyectaba en un contenedor DENTRO del acordeón "Documentación" --
@@ -1079,6 +1102,123 @@ function clearDocumentSelection() {
     document.querySelectorAll('input[data-doc-pk]').forEach(function (cb) { cb.checked = false; });
     persistDocumentSelection();
     loadSelectionPreview();
+}
+
+// H31 (S103). Guardar la selección actual como plantilla -- formulario
+// oculto dentro del propio fragmento de vista previa (ver
+// _personal_document_selection_preview.html). No se cierra el modal
+// de selección al guardar: Miguel Ángel puede seguir ajustando la
+// selección o guardar varias plantillas seguidas sin reabrir nada.
+function toggleSaveTemplateForm() {
+    const form = document.getElementById('saveTemplateForm');
+    if (form) form.style.display = form.style.display === 'none' ? '' : 'none';
+}
+
+function saveSelectionAsTemplate() {
+    const name = document.getElementById('saveTemplateName').value.trim();
+    const outputFormat = document.getElementById('saveTemplateFormat').value;
+    const resultDiv = document.getElementById('saveTemplateResult');
+    const formData = new FormData();
+    formData.append('name', name);
+    formData.append('output_format', outputFormat);
+    fetch("{% url 'panel:documentation_personal_dossier_template_create' pk=person.pk %}", {
+        method: 'POST', body: formData,
+        headers: {'X-CSRFToken': getCookie('csrftoken')},
+    }).then(r => r.json()).then(data => {
+        if (data.ok) {
+            let msg = `<div class="alert alert-success py-1 px-2 small mb-0">Plantilla "${data.name}" guardada.</div>`;
+            if (data.skipped && data.skipped.length) {
+                msg += `<div class="alert alert-warning py-1 px-2 small mb-0 mt-1">Sin tipo catalogado, no incluidos: ${data.skipped.join(', ')}</div>`;
+            }
+            resultDiv.innerHTML = msg;
+            document.getElementById('saveTemplateName').value = '';
+        } else {
+            resultDiv.innerHTML = `<div class="alert alert-danger py-1 px-2 small mb-0">${data.error || 'Error al guardar la plantilla.'}</div>`;
+        }
+    }).catch(() => {
+        resultDiv.innerHTML = '<div class="alert alert-danger py-1 px-2 small mb-0">Error de red al guardar la plantilla.</div>';
+    });
+}
+
+// H31 (S103). Gestor de plantillas -- mismo patrón de modal genérico
+// + fragmento cargado bajo demanda que documentSelectionPreviewModal.
+let dossierTemplateModalInstance = null;
+
+function loadDossierTemplateList() {
+    const body = document.getElementById('dossierTemplateModalBody');
+    fetch("{% url 'panel:documentation_personal_dossier_template_list' pk=person.pk %}")
+        .then(r => r.text())
+        .then(html => { body.innerHTML = html; })
+        .catch(() => {
+            body.innerHTML = '<div class="alert alert-danger py-1 px-2 small mb-0">Error de red al cargar las plantillas.</div>';
+        });
+}
+
+function openDossierTemplateManager() {
+    if (!dossierTemplateModalInstance) {
+        dossierTemplateModalInstance = new bootstrap.Modal(document.getElementById('dossierTemplateModal'));
+    }
+    document.getElementById('dossierTemplateModalBody').innerHTML = '<div class="text-muted small py-3">Cargando…</div>';
+    dossierTemplateModalInstance.show();
+    loadDossierTemplateList();
+}
+
+function toggleTemplateEdit(pk) {
+    const row = document.getElementById('templateEditRow' + pk);
+    if (row) row.style.display = row.style.display === 'none' ? '' : 'none';
+}
+
+function saveTemplateEdit(pk) {
+    const name = document.getElementById('templateEditName' + pk).value.trim();
+    const outputFormat = document.getElementById('templateEditFormat' + pk).value;
+    const resultDiv = document.getElementById('templateEditResult' + pk);
+    const formData = new FormData();
+    formData.append('name', name);
+    formData.append('output_format', outputFormat);
+    fetch(`/panel/documentacion/personal/plantillas/${pk}/editar/`, {
+        method: 'POST', body: formData,
+        headers: {'X-CSRFToken': getCookie('csrftoken')},
+    }).then(r => r.json()).then(data => {
+        if (data.ok) {
+            loadDossierTemplateList();
+        } else {
+            resultDiv.innerHTML = `<div class="alert alert-danger py-1 px-2 small mb-0">${data.error || 'Error al guardar.'}</div>`;
+        }
+    }).catch(() => {
+        resultDiv.innerHTML = '<div class="alert alert-danger py-1 px-2 small mb-0">Error de red al guardar.</div>';
+    });
+}
+
+// H31 (S103). "Editar" qué documentos incluye una plantilla: en vez
+// de un selector nuevo, reutiliza la selección de casilleros ya
+// activa en la ficha -- marca los documentos que quieras que
+// contenga la plantilla y pulsa este botón.
+function refreshTemplateTypes(pk) {
+    const resultDiv = document.getElementById('templateEditResult' + pk);
+    const formData = new FormData();
+    formData.append('refresh_types', '1');
+    fetch(`/panel/documentacion/personal/plantillas/${pk}/editar/`, {
+        method: 'POST', body: formData,
+        headers: {'X-CSRFToken': getCookie('csrftoken')},
+    }).then(r => r.json()).then(data => {
+        if (data.ok) {
+            loadDossierTemplateList();
+        } else {
+            resultDiv.innerHTML = `<div class="alert alert-danger py-1 px-2 small mb-0">${data.error || 'Error al actualizar los tipos.'}</div>`;
+        }
+    }).catch(() => {
+        resultDiv.innerHTML = '<div class="alert alert-danger py-1 px-2 small mb-0">Error de red al actualizar los tipos.</div>';
+    });
+}
+
+function deleteTemplate(pk) {
+    if (!confirm('¿Eliminar esta plantilla de dossier?')) return;
+    fetch(`/panel/documentacion/personal/plantillas/${pk}/eliminar/`, {
+        method: 'POST',
+        headers: {'X-CSRFToken': getCookie('csrftoken')},
+    }).then(r => r.json()).then(data => {
+        if (data.ok) loadDossierTemplateList();
+    });
 }
 
 

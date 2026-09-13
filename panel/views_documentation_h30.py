@@ -46,7 +46,8 @@ from document_explorer import naming_service, personal_intake_service, postal_co
 from document_explorer.index_writer import ensure_folder_chain
 from document_explorer.models import (
     DocumentAcknowledgment, DocumentIndexEntry, DocumentTypeCatalog,
-    EpiDelivery, EpiItemCatalog, EpiReview, PersonIdentity, path_digest,
+    EpiDelivery, EpiItemCatalog, EpiReview, PersonalDossierTemplate,
+    PersonIdentity, path_digest,
 )
 from document_explorer.subject_upload_service import (
     SubjectUploadError, upload_subject_document,
@@ -1275,6 +1276,124 @@ class PersonalDocumentSelectionPreviewView(CompanyUserRequiredMixin, View):
         )
 
 
+def _build_dossier_pdf_response(person, entries):
+    """
+    H31 (S103). Genera la respuesta HTTP del dossier en PDF único a
+    partir de un `person` y un queryset/lista de `entries` ya
+    resueltos -- compartido por PersonalDocumentSelectionPdfView (a
+    partir de la selección de casilleros) y
+    PersonalDossierTemplateApplyView (a partir de una plantilla
+    guardada, resolviendo el vigente de cada tipo en este mismo
+    instante). Nunca se llama con `entries` ya vacío -- el llamador
+    decide qué mensaje de error mostrar si no hay nada que ofrecer.
+    """
+    included_pdfs = []
+    included_lines = []
+    skipped_lines = []
+    for entry in entries:
+        extension = entry.name.rsplit(".", 1)[-1] if "." in entry.name else ""
+        label = entry.document_type.label if entry.document_type_id else entry.name
+        family = (
+            entry.document_type.get_family_display()
+            if entry.document_type_id else "—"
+        )
+        data = download_bytes(entry.bucket, entry.blob_name)
+        pdf_bytes = convert_to_pdf_bytes(data, extension)
+        if pdf_bytes is None:
+            skipped_lines.append(
+                f"{label} ({family}) -- formato .{extension or '?'} no soportado",
+            )
+            continue
+        included_pdfs.append(pdf_bytes)
+        caducidad = (
+            f"vigente {entry.expiry_date}" if entry.expiry_date
+            else (f"emisión {entry.issue_date}" if entry.issue_date else "sin fecha")
+        )
+        included_lines.append(f"{label} -- {family} -- {caducidad}")
+
+    if not included_pdfs:
+        return HttpResponse(
+            "Ningún documento tiene un formato soportado para el PDF "
+            "único (usa la descarga en ZIP para estos archivos).",
+            status=400,
+        )
+
+    person_line = (
+        f"{person.first_surname} {person.second_surname}, "
+        f"{person.given_name} ({person.dni})"
+    )
+    header_lines = [
+        ("DOSSIER DE DOCUMENTACIÓN", 18, True),
+        (person_line, 13, False),
+        (person.employer_company or "Sin empresa asignada", 11, False),
+        (f"Generado: {timezone.localdate().isoformat()}", 10, False),
+        (f"Documentos incluidos: {len(included_lines)}", 11, True),
+    ]
+    footer_note = (
+        "No incluidos en este PDF (formato no soportado -- "
+        "descárgalos en ZIP): " + "; ".join(skipped_lines)
+        if skipped_lines else None
+    )
+    cover_bytes = build_index_page(header_lines, included_lines, footer_note)
+
+    try:
+        merged_bytes = merge_pdfs([cover_bytes] + included_pdfs)
+    except EmptyDocumentListError as exc:
+        return HttpResponse(str(exc), status=400)
+
+    person_token = naming_service.build_person_folder_name(
+        person.first_surname, person.second_surname, person.given_name,
+    )
+    filename = f"Dossier_{person_token}_{timezone.localdate().isoformat()}.pdf"
+    response = HttpResponse(merged_bytes, content_type="application/pdf")
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
+
+
+def _build_dossier_zip_response(person, entries):
+    """
+    H31 (S103). Genera la respuesta HTTP del dossier en ZIP a partir
+    de un `person` y un queryset/lista de `entries` ya resueltos --
+    compartido por PersonalDocumentSelectionZipView y
+    PersonalDossierTemplateApplyView, mismo criterio que
+    `_build_dossier_pdf_response`.
+    """
+    import io
+    import zipfile
+
+    zip_buffer = io.BytesIO()
+    used_names = set()
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        for entry in entries:
+            family_folder = (
+                slugify(entry.document_type.get_family_display())
+                if entry.document_type_id else "sin-familia"
+            )
+            base_name = slugify(
+                entry.document_type.label if entry.document_type_id
+                else entry.name,
+            )
+            extension = (
+                entry.name.rsplit(".", 1)[-1] if "." in entry.name else "bin"
+            )
+            arcname = f"{family_folder}/{base_name}.{extension}"
+            suffix = 2
+            while arcname in used_names:
+                arcname = f"{family_folder}/{base_name}_{suffix}.{extension}"
+                suffix += 1
+            used_names.add(arcname)
+            data = download_bytes(entry.bucket, entry.blob_name)
+            zf.writestr(arcname, data)
+
+    person_token = naming_service.build_person_folder_name(
+        person.first_surname, person.second_surname, person.given_name,
+    )
+    filename = f"Dossier_{person_token}_{timezone.localdate().isoformat()}.zip"
+    response = HttpResponse(zip_buffer.getvalue(), content_type="application/zip")
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
+
+
 class PersonalDocumentSelectionPdfView(CompanyUserRequiredMixin, View):
     """
     H31 (S103). GET: genera el dossier de la selección como UN ÚNICO
@@ -1300,69 +1419,7 @@ class PersonalDocumentSelectionPdfView(CompanyUserRequiredMixin, View):
                 "No hay ningún documento seleccionado para esta persona.",
                 status=400,
             )
-
-        included_pdfs = []
-        included_lines = []
-        skipped_lines = []
-        for entry in entries:
-            extension = entry.name.rsplit(".", 1)[-1] if "." in entry.name else ""
-            label = entry.document_type.label if entry.document_type_id else entry.name
-            family = (
-                entry.document_type.get_family_display()
-                if entry.document_type_id else "—"
-            )
-            data = download_bytes(entry.bucket, entry.blob_name)
-            pdf_bytes = convert_to_pdf_bytes(data, extension)
-            if pdf_bytes is None:
-                skipped_lines.append(
-                    f"{label} ({family}) -- formato .{extension or '?'} no soportado",
-                )
-                continue
-            included_pdfs.append(pdf_bytes)
-            caducidad = (
-                f"vigente {entry.expiry_date}" if entry.expiry_date
-                else (f"emisión {entry.issue_date}" if entry.issue_date else "sin fecha")
-            )
-            included_lines.append(f"{label} -- {family} -- {caducidad}")
-
-        if not included_pdfs:
-            return HttpResponse(
-                "Ningún documento seleccionado tiene un formato "
-                "soportado para el PDF único (usa la descarga en ZIP "
-                "para estos archivos).",
-                status=400,
-            )
-
-        person_line = (
-            f"{person.first_surname} {person.second_surname}, "
-            f"{person.given_name} ({person.dni})"
-        )
-        header_lines = [
-            ("DOSSIER DE DOCUMENTACIÓN", 18, True),
-            (person_line, 13, False),
-            (person.employer_company or "Sin empresa asignada", 11, False),
-            (f"Generado: {timezone.localdate().isoformat()}", 10, False),
-            (f"Documentos incluidos: {len(included_lines)}", 11, True),
-        ]
-        footer_note = (
-            "No incluidos en este PDF (formato no soportado -- "
-            "descárgalos en ZIP): " + "; ".join(skipped_lines)
-            if skipped_lines else None
-        )
-        cover_bytes = build_index_page(header_lines, included_lines, footer_note)
-
-        try:
-            merged_bytes = merge_pdfs([cover_bytes] + included_pdfs)
-        except EmptyDocumentListError as exc:
-            return HttpResponse(str(exc), status=400)
-
-        person_token = naming_service.build_person_folder_name(
-            person.first_surname, person.second_surname, person.given_name,
-        )
-        filename = f"Dossier_{person_token}_{timezone.localdate().isoformat()}.pdf"
-        response = HttpResponse(merged_bytes, content_type="application/pdf")
-        response["Content-Disposition"] = f'attachment; filename="{filename}"'
-        return response
+        return _build_dossier_pdf_response(person, entries)
 
 
 class PersonalDocumentSelectionZipView(CompanyUserRequiredMixin, View):
@@ -1379,47 +1436,226 @@ class PersonalDocumentSelectionZipView(CompanyUserRequiredMixin, View):
     """
 
     def get(self, request, pk):
-        import io
-        import zipfile
-
         person, entries = _resolve_document_selection(request, pk)
         if not entries:
             return HttpResponse(
                 "No hay ningún documento seleccionado para esta persona.",
                 status=400,
             )
+        return _build_dossier_zip_response(person, entries)
 
-        zip_buffer = io.BytesIO()
-        used_names = set()
-        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-            for entry in entries:
-                family_folder = (
-                    slugify(entry.document_type.get_family_display())
-                    if entry.document_type_id else "sin-familia"
-                )
-                base_name = slugify(
-                    entry.document_type.label if entry.document_type_id
-                    else entry.name,
-                )
-                extension = (
-                    entry.name.rsplit(".", 1)[-1] if "." in entry.name else "bin"
-                )
-                arcname = f"{family_folder}/{base_name}.{extension}"
-                suffix = 2
-                while arcname in used_names:
-                    arcname = f"{family_folder}/{base_name}_{suffix}.{extension}"
-                    suffix += 1
-                used_names.add(arcname)
-                data = download_bytes(entry.bucket, entry.blob_name)
-                zf.writestr(arcname, data)
 
-        person_token = naming_service.build_person_folder_name(
-            person.first_surname, person.second_surname, person.given_name,
+def _resolve_template_entries(person, template):
+    """
+    H31 (S103). Resuelve, EN EL MOMENTO de aplicar una plantilla, el
+    documento VIGENTE de cada tipo guardado en ella -- nunca una fila
+    fija de DocumentIndexEntry congelada desde que se creó la
+    plantilla. Reutiliza `_split_current_obsolete()`, la misma fuente
+    de verdad que ya usa `PersonalDetailView` para pintar la ficha.
+    Un tipo cuyo documento ya no existe (borrado) simplemente no
+    aparece -- el llamador decide qué hacer si la lista sale vacía.
+    """
+    ct = ContentType.objects.get_for_model(PersonIdentity)
+    type_ids = list(template.document_types.values_list("pk", flat=True))
+    all_entries = DocumentIndexEntry.objects.filter(
+        bucket=BUCKET, domain_content_type=ct, domain_object_id=person.pk,
+        entry_kind=DocumentIndexEntry.KIND_FILE,
+        deleted_at__isnull=True, purged_at__isnull=True,
+        document_type_id__in=type_ids,
+    ).select_related("document_type")
+    current, _obsolete = _split_current_obsolete(list(all_entries))
+    current.sort(key=lambda e: (e.document_type.family, e.document_type.label))
+    return current
+
+
+class PersonalDossierTemplateCreateView(CompanyUserRequiredMixin, View):
+    """
+    H31 (S103). POST: guarda la selección ACTUAL de casilleros de una
+    persona como una plantilla de dossier nueva -- Miguel Ángel:
+    "selecciono 3 documentos y la plantilla guarda qué documentos se
+    han enviado y si ha sido en zip o en pdf". Guarda los TIPOS
+    documentales de los documentos seleccionados (nunca sus IDs fijos
+    -- ver `PersonalDossierTemplate`). Un documento seleccionado sin
+    `document_type` catalogado (posible en el cubo histórico) no
+    puede formar parte de una plantilla -- se excluye y se reporta en
+    `skipped`, nunca aborta el guardado si al menos un tipo es válido.
+    """
+
+    def post(self, request, pk):
+        person, entries = _resolve_document_selection(request, pk)
+        if not entries:
+            return JsonResponse(
+                {"ok": False, "error": "No hay ningún documento seleccionado."},
+                status=400,
+            )
+
+        output_format = request.POST.get("output_format", "").strip().upper()
+        if output_format not in (
+            PersonalDossierTemplate.FORMAT_PDF, PersonalDossierTemplate.FORMAT_ZIP,
+        ):
+            return JsonResponse(
+                {"ok": False, "error": "Formato no válido (PDF o ZIP)."},
+                status=400,
+            )
+
+        type_ids = []
+        skipped = []
+        for entry in entries:
+            if entry.document_type_id:
+                if entry.document_type_id not in type_ids:
+                    type_ids.append(entry.document_type_id)
+            else:
+                skipped.append(entry.name)
+        if not type_ids:
+            return JsonResponse(
+                {
+                    "ok": False,
+                    "error": (
+                        "Ningún documento seleccionado tiene un tipo "
+                        "documental catalogado -- no se puede guardar "
+                        "como plantilla."
+                    ),
+                },
+                status=400,
+            )
+
+        name = request.POST.get("name", "").strip()
+        if not name:
+            existing_count = PersonalDossierTemplate.objects.filter(
+                person=person,
+            ).count()
+            name = f"Dossier {existing_count + 1}"
+
+        company_user = getattr(request.user, "company_user", None)
+        template = PersonalDossierTemplate.objects.create(
+            person=person, name=name, output_format=output_format,
+            created_by=company_user,
         )
-        filename = f"Dossier_{person_token}_{timezone.localdate().isoformat()}.zip"
-        response = HttpResponse(zip_buffer.getvalue(), content_type="application/zip")
-        response["Content-Disposition"] = f'attachment; filename="{filename}"'
-        return response
+        template.document_types.set(type_ids)
+
+        return JsonResponse({
+            "ok": True, "template_id": template.pk, "name": template.name,
+            "skipped": skipped,
+        })
+
+
+class PersonalDossierTemplateListView(CompanyUserRequiredMixin, View):
+    """
+    H31 (S103). GET: fragmento del "gestor de plantillas" de una
+    persona -- lista sus plantillas guardadas (nombre, formato, tipos
+    incluidos) con acciones de descarga/renombrado/edición/borrado.
+    """
+
+    def get(self, request, pk):
+        person = get_object_or_404(PersonIdentity, pk=pk)
+        templates = person.dossier_templates.prefetch_related(
+            "document_types",
+        ).order_by("created_at")
+        return render(
+            request,
+            "panel/documentation_h30/_personal_dossier_template_list.html",
+            {"person": person, "templates": templates},
+        )
+
+
+class PersonalDossierTemplateApplyView(CompanyUserRequiredMixin, View):
+    """
+    H31 (S103). GET: aplica una plantilla guardada -- resuelve el
+    documento vigente de cada tipo de la plantilla EN ESTE INSTANTE
+    (`_resolve_template_entries`) y genera el dossier en el formato
+    guardado en la propia plantilla (PDF único o ZIP), reutilizando
+    exactamente el mismo generador que la descarga desde la selección
+    de casilleros -- nunca una copia de la lógica.
+    """
+
+    def get(self, request, template_pk):
+        template = get_object_or_404(
+            PersonalDossierTemplate.objects.select_related("person"),
+            pk=template_pk,
+        )
+        entries = _resolve_template_entries(template.person, template)
+        if not entries:
+            return HttpResponse(
+                "Ninguno de los tipos documentales de esta plantilla "
+                "tiene hoy un documento vigente para esta persona.",
+                status=400,
+            )
+        if template.output_format == PersonalDossierTemplate.FORMAT_ZIP:
+            return _build_dossier_zip_response(template.person, entries)
+        return _build_dossier_pdf_response(template.person, entries)
+
+
+class PersonalDossierTemplateUpdateView(CompanyUserRequiredMixin, View):
+    """
+    H31 (S103). POST: edita una plantilla ya guardada -- Miguel
+    Ángel: "pudiendo editar la plantilla de dossier, nombrarla etc.".
+    Tres ediciones independientes, cada una opcional en el mismo
+    POST:
+    - `name`: renombrar (nunca se deja vacío -- si llega vacío, se
+      ignora y se conserva el nombre actual).
+    - `output_format`: cambiar PDF<->ZIP.
+    - `refresh_types=1`: sustituye los tipos documentales de la
+      plantilla por los de la SELECCIÓN ACTUAL de casilleros de esa
+      misma persona -- así se "edita" qué documentos incluye sin
+      tener que borrar y crear una plantilla nueva.
+    """
+
+    def post(self, request, template_pk):
+        template = get_object_or_404(
+            PersonalDossierTemplate.objects.select_related("person"),
+            pk=template_pk,
+        )
+
+        name = request.POST.get("name", "").strip()
+        if name:
+            template.name = name
+
+        output_format = request.POST.get("output_format", "").strip().upper()
+        if output_format in (
+            PersonalDossierTemplate.FORMAT_PDF, PersonalDossierTemplate.FORMAT_ZIP,
+        ):
+            template.output_format = output_format
+
+        skipped = []
+        if request.POST.get("refresh_types") == "1":
+            _person, entries = _resolve_document_selection(
+                request, template.person_id,
+            )
+            type_ids = []
+            for entry in entries:
+                if entry.document_type_id:
+                    if entry.document_type_id not in type_ids:
+                        type_ids.append(entry.document_type_id)
+                else:
+                    skipped.append(entry.name)
+            if not type_ids:
+                return JsonResponse(
+                    {
+                        "ok": False,
+                        "error": (
+                            "La selección actual no tiene ningún "
+                            "documento con tipo catalogado -- la "
+                            "plantilla no se ha tocado."
+                        ),
+                    },
+                    status=400,
+                )
+            template.document_types.set(type_ids)
+
+        template.save(update_fields=["name", "output_format", "updated_at"])
+        return JsonResponse({
+            "ok": True, "name": template.name,
+            "output_format": template.output_format, "skipped": skipped,
+        })
+
+
+class PersonalDossierTemplateDeleteView(CompanyUserRequiredMixin, View):
+    """H31 (S103). POST: borra una plantilla de dossier (sin papelera -- es solo metadato de configuración, no un documento real)."""
+
+    def post(self, request, template_pk):
+        template = get_object_or_404(PersonalDossierTemplate, pk=template_pk)
+        template.delete()
+        return JsonResponse({"ok": True})
 
 
 class PersonalDocumentTypeHistoryView(CompanyUserRequiredMixin, View):
