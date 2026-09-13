@@ -1221,6 +1221,19 @@ function deleteTemplate(pk) {
     });
 }
 
+// H31 (S103). "Duplicar" crea una copia nueva con el formato
+// contrario (PDF<->ZIP) -- nunca toca la plantilla original. Miguel
+// Ángel: "¿cómo puedo duplicar una plantilla pero cambiando de zip a
+// pdf y viceversa?".
+function duplicateTemplateFlipFormat(pk) {
+    fetch(`/panel/documentacion/personal/plantillas/${pk}/duplicar/`, {
+        method: 'POST',
+        headers: {'X-CSRFToken': getCookie('csrftoken')},
+    }).then(r => r.json()).then(data => {
+        if (data.ok) loadDossierTemplateList();
+    });
+}
+
 
 // H31 (S77): detalle real de un día concreto de Partes de trabajo --
 // Miguel Ángel: "debe de poder verse el parte en sí". Mismo modal

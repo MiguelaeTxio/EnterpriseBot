@@ -1658,6 +1658,43 @@ class PersonalDossierTemplateUpdateView(CompanyUserRequiredMixin, View):
         })
 
 
+class PersonalDossierTemplateDuplicateView(CompanyUserRequiredMixin, View):
+    """
+    H31 (S103). POST: duplica una plantilla EXISTENTE -- mismos tipos
+    documentales, mismo `person` -- pero con el formato contrario
+    (PDF -> ZIP o ZIP -> PDF). Miguel Ángel: "¿cómo puedo duplicar una
+    plantilla pero cambiando de zip a pdf y viceversa?" -- "Editar"
+    sustituye el formato de la MISMA plantilla; esta vista crea una
+    copia nueva para tener las dos versiones en paralelo, nunca toca
+    la original.
+    """
+
+    def post(self, request, template_pk):
+        original = get_object_or_404(
+            PersonalDossierTemplate.objects.select_related("person"),
+            pk=template_pk,
+        )
+        flipped_format = (
+            PersonalDossierTemplate.FORMAT_ZIP
+            if original.output_format == PersonalDossierTemplate.FORMAT_PDF
+            else PersonalDossierTemplate.FORMAT_PDF
+        )
+        flipped_label = dict(PersonalDossierTemplate.FORMAT_CHOICES)[flipped_format]
+        company_user = getattr(request.user, "company_user", None)
+        duplicate = PersonalDossierTemplate.objects.create(
+            person=original.person,
+            name=f"{original.name} ({flipped_label})",
+            output_format=flipped_format,
+            created_by=company_user,
+        )
+        duplicate.document_types.set(
+            original.document_types.values_list("pk", flat=True),
+        )
+        return JsonResponse({
+            "ok": True, "template_id": duplicate.pk, "name": duplicate.name,
+        })
+
+
 class PersonalDossierTemplateDeleteView(CompanyUserRequiredMixin, View):
     """H31 (S103). POST: borra una plantilla de dossier (sin papelera -- es solo metadato de configuración, no un documento real)."""
 

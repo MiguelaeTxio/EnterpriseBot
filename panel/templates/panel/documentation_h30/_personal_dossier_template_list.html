@@ -28,6 +28,7 @@ caducados desde que se creó la plantilla.
                     <i class="bi bi-download me-1"></i>Descargar
                 </a>
                 <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleTemplateEdit({{ template.pk }})">Editar</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="duplicateTemplateFlipFormat({{ template.pk }})" title="Crea una copia con el formato contrario (PDF<->ZIP)">Duplicar</button>
                 <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteTemplate({{ template.pk }})">Eliminar</button>
             </td>
         </tr>
