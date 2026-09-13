@@ -2359,40 +2359,51 @@ completa (captura + log de servidor + consulta a BD).**
   `tracks_expiry=True` pero sin fecha real extraíble, no solo a
   `CONTRATO`).
 
-## Hoja de Ruta para la Sesión Siguiente (S102, reescrita por completo -- sustituye a la de S101)
+**Ver -- probado, correcto.** Misma función (`openDocumentViewer`,
+iframe dentro de un modal Bootstrap) tanto en la fila del vigente como
+dentro del modal de Historial. En PC renderiza el PDF de verdad dentro
+del modal; en tablet (Android Chrome), el iframe con el PDF cae a un
+placeholder con botón "Abrir" que lo abre en pestaña nueva -- no es un
+comportamiento distinto programado a propósito, es el propio navegador
+decidiendo cómo mostrar un PDF embebido según la plataforma. Miguel
+Ángel, verbatim: "interesante el modal, en todos sitios, ya que si nos
+proporciona una preview en PC, creo que es lo adecuado, aunque aquí en
+la tablet introduzca un click de más" -- decisión explícita de dejarlo
+tal cual, sin tocar nada.
 
-**0. PRIMERA TAREA, ANTES DE CUALQUIER OTRA COSA: crear la ficha real
-definitiva de Miguel Ángel (DNI `74633524L`) y NO volver a borrarla.**
-El pipeline de alta quedó validado a fondo en S101 (identidad desde
-cualquier documento, validación cruzada de DNI, bloqueos reales) --
-basta con que Miguel Ángel suba su lote completo de documentos reales
-por el flujo normal de "Dar de alta trabajador" y confirme la
-creación, sin que sea otro ciclo de prueba. Cierre objetivo: consulta
-real a BD confirmando que `PersonIdentity.objects.get(dni=
-"74633524L")` existe con sus datos reales y sus `DocumentIndexEntry`
-correspondientes.
+**Historial -- probado, correcto.** Modal genérico
+(`openHistoryModal`), fragmento cargado bajo demanda
+(`PersonalDocumentTypeHistoryView`), lista completa vigente+obsoletos
+de un tipo con su "Ver" propio por fila (mismo `openDocumentViewer` de
+arriba). Sin fricciones reales encontradas.
 
-**1. Pulir el flujo de modificación de datos y añadido de
-documentación sobre una ficha de trabajador ya existente**, con el
-mismo estándar de UX y robustez aplicado al alta guiada en S100-S101.
-Decisión explícita de Miguel Ángel sobre el alcance: es el orden
-natural del ciclo de vida de una ficha (tras el alta), y gran parte ya
-existe (Modo edición de datos personales, botones "Actualizar"/"Ver"/
-"Historial"/"Eliminar" por documento) -- falta dejarlo fino. Trabajo:
-   - Primera tarea de la sesión: auditar en producción real, usando la
-     ficha real de Miguel Ángel ya creada en el punto 0, cada una de
-     las cuatro acciones disponibles sobre un documento (Actualizar,
-     Ver, Historial, Eliminar) más el Modo edición de datos
-     personales, probando cada una al menos una vez.
-   - Documentar cada fricción o bug real encontrado en esta misma
-     sección del anexo, con el mismo nivel de detalle que los
-     incidentes de S100/S101 (qué se probó, qué pasó, captura o dato
-     real).
-   - Cierre objetivo: lista de hallazgos reales con las cinco acciones
-     (Actualizar, Ver, Historial, Eliminar, Modo edición) probadas al
-     menos una vez cada una -- no cerrar la sesión sin haber probado
-     las cinco, aunque no dé tiempo a corregir todo lo que se
-     encuentre.
+**CIERRE OBJETIVO DE LA AUDITORÍA (punto 1 de la hoja de ruta S102):**
+las cinco acciones (Actualizar, Ver, Historial, Eliminar, Modo
+edición) quedan probadas al menos una vez cada una, con evidencia
+real. Bugs reales encontrados y corregidos en la propia sesión:
+sobrescritura silenciosa del blob real al Actualizar (nombre a salvo
+de colisión), vigencia nunca marcaba obsoleto sin fecha (desempate por
+`indexed_at`), texto/fecha extraídos se descartaban en vez de
+persistir (motor Cloud Vision centralizado, Tesseract eliminado de
+toda la plataforma), y el hueco de "no hay forma de subir el primer
+documento de un tipo sin muestra previa" (pipeline de subida por
+familia, con su jerarquía visual azul/verde/amarillo). Fase de gestión
+documental básica (añadir, actualizar, borrar) dada por completa --
+decisión explícita de Miguel Ángel para pasar a usabilidad documental
+(selección múltiple, dossieres/adjuntos) en la sesión siguiente.
+
+## Hoja de Ruta para la Sesión Siguiente (S103, reescrita por completo -- sustituye a la de S102)
+
+**1. Usabilidad documental -- vistas de selección múltiple para
+generar dossieres/adjuntos.** Decisión explícita de Miguel Ángel al
+cerrar S102: con la gestión documental básica (añadir, actualizar,
+borrar) ya completa y auditada, el grueso de esta sesión es distinto
+-- vistas para SELECCIONAR varios documentos ya existentes (checkbox
+por documento, vista de lista seleccionable) con vista a generar
+dossieres y/o adjuntos para enviar a plataformas o por correo. Esto es
+diseño nuevo desde cero -- no hay nada parecido hoy en el catálogo ni
+en el modelo (`DocumentIndexEntry` no tiene ningún concepto de
+"selección" o "dossier" todavía).
 
 ---
 
