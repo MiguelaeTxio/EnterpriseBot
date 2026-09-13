@@ -2359,23 +2359,27 @@ completa (captura + log de servidor + consulta a BD).**
   `tracks_expiry=True` pero sin fecha real extraíble, no solo a
   `CONTRATO`).
 
-**Ver -- probado, correcto.** Misma función (`openDocumentViewer`,
-iframe dentro de un modal Bootstrap) tanto en la fila del vigente como
-dentro del modal de Historial. En PC renderiza el PDF de verdad dentro
-del modal; en tablet (Android Chrome), el iframe con el PDF cae a un
-placeholder con botón "Abrir" que lo abre en pestaña nueva -- no es un
-comportamiento distinto programado a propósito, es el propio navegador
-decidiendo cómo mostrar un PDF embebido según la plataforma. Miguel
-Ángel, verbatim: "interesante el modal, en todos sitios, ya que si nos
-proporciona una preview en PC, creo que es lo adecuado, aunque aquí en
-la tablet introduzca un click de más" -- decisión explícita de dejarlo
-tal cual, sin tocar nada.
+**Ver -- probado, con un hallazgo real corregido en la propia
+sesión.** El botón "Ver" del documento vigente (fila de Laboral,
+Salud, cada familia de Documentación, y ficha técnica de EPI) era en
+realidad un enlace directo (`<a target="_blank">`), sin ningún modal
+-- SOLO el "Ver" dentro del modal de Historial usaba
+`openDocumentViewer()` (modal con iframe, con preview real en PC).
+Miguel Ángel, verbatim, corrigiendo la primera lectura de esta misma
+sesión: "prefiero dar un click más en la tablet pero que se preview en
+todos los casos y no solo cuando vas a ver un documento en historial
+[...] extender el preview a los documentos vigentes." Unificado: los
+cuatro "Ver" de documento vigente pasan a usar `openDocumentViewer()`
+igual que Historial -- preview real en PC en todos los casos, un clic
+extra en tablet cuando el iframe no puede renderizar el PDF (mismo
+comportamiento ya aceptado para Historial).
 
 **Historial -- probado, correcto.** Modal genérico
 (`openHistoryModal`), fragmento cargado bajo demanda
 (`PersonalDocumentTypeHistoryView`), lista completa vigente+obsoletos
 de un tipo con su "Ver" propio por fila (mismo `openDocumentViewer` de
-arriba). Sin fricciones reales encontradas.
+arriba, ahora unificado con el resto). Sin fricciones reales
+encontradas.
 
 **CIERRE OBJETIVO DE LA AUDITORÍA (punto 1 de la hoja de ruta S102):**
 las cinco acciones (Actualizar, Ver, Historial, Eliminar, Modo
@@ -2387,10 +2391,12 @@ de colisión), vigencia nunca marcaba obsoleto sin fecha (desempate por
 persistir (motor Cloud Vision centralizado, Tesseract eliminado de
 toda la plataforma), y el hueco de "no hay forma de subir el primer
 documento de un tipo sin muestra previa" (pipeline de subida por
-familia, con su jerarquía visual azul/verde/amarillo). Fase de gestión
-documental básica (añadir, actualizar, borrar) dada por completa --
-decisión explícita de Miguel Ángel para pasar a usabilidad documental
-(selección múltiple, dossieres/adjuntos) en la sesión siguiente.
+familia, con su jerarquía visual azul/verde/amarillo), y "Ver" del
+vigente sin preview real (unificado con el modal de Historial). Fase
+de gestión documental básica (añadir, actualizar, borrar) dada por
+completa -- decisión explícita de Miguel Ángel para pasar a usabilidad
+documental (selección múltiple, dossieres/adjuntos) en la sesión
+siguiente.
 
 ## Hoja de Ruta para la Sesión Siguiente (S103, reescrita por completo -- sustituye a la de S102)
 

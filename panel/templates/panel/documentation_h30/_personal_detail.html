@@ -229,7 +229,7 @@ y se habilita "Guardar".
                 {% if entry.expiry_date %}{{ entry.expiry_date }}{% elif entry.issue_date %}<span class="text-muted small">Emisión:</span> {{ entry.issue_date }}{% else %}—{% endif %}
             </td>
             <td>
-                <a href="{% url 'panel:documentation_document_view' pk=entry.pk %}" target="_blank" class="btn btn-sm btn-outline-secondary">Ver</a>
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="openDocumentViewer('{% url 'panel:documentation_document_view' pk=entry.pk %}')">Ver</button>
                 <button type="button" class="btn btn-sm btn-outline-primary"
                         onclick="openUploadForm('{{ entry.document_type.code }}')">Actualizar</button>
                 <button type="button" class="btn btn-sm btn-outline-info"
@@ -428,7 +428,7 @@ vacaciones).
                 {% if entry.expiry_date %}{{ entry.expiry_date }}{% elif entry.issue_date %}<span class="text-muted small">Emisión:</span> {{ entry.issue_date }}{% else %}—{% endif %}
             </td>
             <td>
-                <a href="{% url 'panel:documentation_document_view' pk=entry.pk %}" target="_blank" class="btn btn-sm btn-outline-secondary">Ver</a>
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="openDocumentViewer('{% url 'panel:documentation_document_view' pk=entry.pk %}')">Ver</button>
                 <button type="button" class="btn btn-sm btn-outline-primary"
                         onclick="openUploadForm('{{ entry.document_type.code }}')">Actualizar</button>
                 <button type="button" class="btn btn-sm btn-outline-info"
@@ -507,7 +507,7 @@ vez de una lista única sin estructura.
                                 {% if entry.expiry_date %}{{ entry.expiry_date }}{% elif entry.issue_date %}<span class="text-muted small">Emisión:</span> {{ entry.issue_date }}{% else %}—{% endif %}
                             </td>
                             <td>
-                                <a href="{% url 'panel:documentation_document_view' pk=entry.pk %}" target="_blank" class="btn btn-sm btn-outline-secondary">Ver</a>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="openDocumentViewer('{% url 'panel:documentation_document_view' pk=entry.pk %}')">Ver</button>
                                 <button type="button" class="btn btn-sm btn-outline-primary"
                                         onclick="openUploadForm('{{ entry.document_type.code }}')">Actualizar</button>
                                 <button type="button" class="btn btn-sm btn-outline-info"
@@ -573,9 +573,9 @@ usan los documentos.
                             <td>{{ delivery.delivery_date }}</td>
                             <td>
                                 {% for doc in delivery.epi.technical_docs %}
-                                <a href="{% url 'panel:documentation_document_view' pk=doc.pk %}" target="_blank" class="btn btn-sm btn-outline-secondary mb-1">
+                                <button type="button" class="btn btn-sm btn-outline-secondary mb-1" onclick="openDocumentViewer('{% url 'panel:documentation_document_view' pk=doc.pk %}')">
                                     <i class="bi bi-file-earmark-text"></i> {{ doc.document_type.label|default:"Ver" }}
-                                </a>
+                                </button>
                                 {% endfor %}
                                 <button type="button" class="btn btn-sm btn-outline-primary mb-1"
                                         onclick="uploadEpiTechnicalSheet({{ delivery.epi.pk }})">
