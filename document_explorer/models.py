@@ -619,7 +619,7 @@ class DocumentTypeCatalog(models.Model):
         (FAMILY_OTROS_DOCUMENTOS, "Otros documentos"),
         (
             FAMILY_MEDIA,
-            "Media (imagen, vídeo, audio) — H30 S67",
+            "Media (imagen, vídeo, audio)",
         ),
     ]
 
