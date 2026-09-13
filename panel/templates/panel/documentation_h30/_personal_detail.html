@@ -721,10 +721,11 @@ const MISSING_TYPES_BY_FAMILY = {
 // H31 (S102): deshabilita el botón "+ Subir" de una familia cuando ya
 // no le queda ningún tipo por subir a esta persona -- los de
 // Laboral/Salud (hardcoded) ya se resuelven en el propio template con
-// `{% if not missing_types_by_family.LABORAL %}`; estos son los del
-// bucle genérico de familias, con clave dinámica (`fam.code`), que el
-// motor de plantillas de Django no puede indexar así sin un filtro
-// nuevo -- más simple resolverlo aquí, una vez cargado el DOM.
+// un "if" condicional sobre missing_types_by_family.LABORAL; estos
+// son los del bucle genérico de familias, con clave dinámica
+// (fam.code), que el motor de plantillas de Django no puede indexar
+// así sin un filtro nuevo -- más simple resolverlo aquí, una vez
+// cargado el DOM.
 document.querySelectorAll('.family-upload-btn').forEach(function (btn) {
     const family = btn.dataset.family;
     if (!(MISSING_TYPES_BY_FAMILY[family] || []).length) {
