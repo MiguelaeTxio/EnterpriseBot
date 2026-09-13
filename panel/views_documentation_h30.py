@@ -538,7 +538,7 @@ class PersonalResultsFragmentView(CompanyUserRequiredMixin, View):
         return render(request, "panel/documentation_h30/_personal_results.html", ctx)
 
 
-def _group_current_by_family(current_entries, exclude_family_codes=(), include_empty=False):
+def _group_current_by_family(current_entries, exclude_family_codes=(), include_empty_families=()):
     """
     H31 (S76). Agrupa los documentos vigentes por la `family` real del
     catálogo -- campo que ya existía exactamente para esto desde H30
@@ -566,14 +566,21 @@ def _group_current_by_family(current_entries, exclude_family_codes=(), include_e
     documento sigue existiendo una sola vez en BD; solo cambia dónde
     se pinta.
 
-    `include_empty` (H31, S102): cuando es True, una familia sin
-    ningún documento vigente aparece igual en el resultado
-    (`documents: []`), en vez de desaparecer del todo del acordeón --
-    necesario para que exista un sitio real donde colgar el botón de
-    subida por familia (pipeline de subida sin muestra, Miguel Ángel
-    S102) incluso cuando la persona no tiene NINGÚN documento de esa
-    familia todavía. Por defecto False -- no cambia el comportamiento
-    de ningún otro llamador existente.
+    `include_empty_families` (H31, S102): conjunto de códigos de
+    familia que deben aparecer igual aunque no tengan ningún documento
+    vigente (`documents: []`), en vez de desaparecer del todo del
+    acordeón -- necesario para que exista un sitio real donde colgar
+    el botón de subida por familia (pipeline de subida sin muestra).
+    INCIDENTE REAL S102: la primera versión metía TODAS las familias
+    de `FAMILY_CHOICES` sin distinción -- en la ficha de una PERSONA
+    aparecían "Circulación", "Financiero" o "Bajas de máquina" (0),
+    familias que son puramente de dominio MACHINE/COMPANY y no tienen
+    ningún tipo documental de personal en el catálogo. El llamador
+    debe pasar aquí solo las familias que de verdad tienen al menos un
+    tipo activo del dominio relevante (ver `missing_types_by_family`,
+    calculado ya con ese mismo filtro de dominio) -- nunca la lista
+    completa de `FAMILY_CHOICES` a ciegas. Vacío por defecto -- no
+    cambia el comportamiento de ningún otro llamador existente.
     """
     by_family = {}
     for entry in current_entries:
@@ -590,7 +597,7 @@ def _group_current_by_family(current_entries, exclude_family_codes=(), include_e
             ordered.append({
                 "code": code, "label": label, "documents": by_family[code],
             })
-        elif include_empty:
+        elif code in include_empty_families:
             ordered.append({"code": code, "label": label, "documents": []})
     if "" in by_family:
         ordered.append({
@@ -977,10 +984,6 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
             DocumentTypeCatalog.FAMILY_LABORAL,
             DocumentTypeCatalog.FAMILY_SALUD_BAJAS_PERSONA,
         )
-        families = _group_current_by_family(
-            current, exclude_family_codes=_laboral_salud_codes,
-            include_empty=True,
-        )
         # H31 (S102). Pipeline de subida "sin muestra" -- Miguel
         # Ángel: "cada grupo documental [tenga] su propio pipeline de
         # subida, que se encarga de ver qué tipos tienen muestra y
@@ -1008,6 +1011,16 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
             is_active=True,
         ).exclude(code__in=present_type_codes).order_by("label"):
             missing_types_by_family.setdefault(dt.family, []).append(dt)
+        # INCIDENTE REAL S102: `include_empty_families` recibe SOLO
+        # las familias con algún tipo de dominio PERSONAL/BOTH
+        # pendiente (`missing_types_by_family`) -- nunca el
+        # `FAMILY_CHOICES` completo, o aparecen en la ficha de una
+        # persona familias puramente de MACHINE/COMPANY (Circulación,
+        # Financiero, Bajas de máquina...) sin ningún tipo aplicable.
+        families = _group_current_by_family(
+            current, exclude_family_codes=_laboral_salud_codes,
+            include_empty_families=missing_types_by_family.keys(),
+        )
         # H31 (S77). Documentos de las dos families que se sacan de
         # Documentación a su propio acordeón de primer nivel -- el
         # documento es el mismo de siempre (DocumentIndexEntry), solo
