@@ -225,7 +225,35 @@ USE_THOUSAND_SEPARATOR = False
 # Definición de rutas para la gestión de activos estáticos.
 STATIC_URL = 'static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'static')
-STATICFILES_STORAGE = 'django.contrib.staticfiles.storage.ManifestStaticFilesStorage'
+# INCIDENTE REAL S102: `STATICFILES_STORAGE` (ajuste heredado,
+# pre-Django 4.2) declaraba `ManifestStaticFilesStorage`, pero Django
+# 5.2 en runtime solo mira `STORAGES` (verificado con datos reales:
+# `settings.STORAGES['staticfiles']['BACKEND']` devolvía el
+# `StaticFilesStorage` por defecto, SIN hash, pese a este ajuste) --
+# como `STORAGES` nunca se había declarado explícitamente aquí, el
+# versionado por hash de los estáticos NUNCA ha estado activo de
+# verdad en todo el proyecto. Efecto real: cualquier cambio de CSS/JS
+# se sirve siempre con la misma URL exacta (`/static/panel/css/
+# panel.css`), así que el navegador no tiene ninguna señal para dejar
+# de servir su copia en caché -- un cambio real podía quedar invisible
+# hasta que el usuario limpiara caché a mano. `STATICFILES_STORAGE` se
+# retira (ignorado silenciosamente por Django, dejarlo era una gotera
+# de configuración muerta) -- `STORAGES['default']` reproduce el
+# `FileSystemStorage` implícito que ya se usaba (no había
+# `DEFAULT_FILE_STORAGE` declarado tampoco). `staticfiles` usa
+# `LenientManifestStaticFilesStorage` (ver enterprise_core/storage.py)
+# en vez de la `ManifestStaticFilesStorage` vanilla -- activarla tal
+# cual tumbaba `collectstatic` por completo (bootstrap.bundle.min.js
+# referencia un .map que nunca se vendorizó), verificado con una
+# recreación real del comando antes de desplegar.
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "enterprise_core.storage.LenientManifestStaticFilesStorage",
+    },
+}
 
 MEDIA_URL  = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
