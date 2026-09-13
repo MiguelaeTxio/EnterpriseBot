@@ -130,6 +130,29 @@ body {
     z-index: 99;
 }
 
+/* H31 (S103). Utilidad genérica para una barra de acciones que debe
+   quedar fija justo debajo del membrete (.top-navbar), en vez de
+   desplazarse con el resto del contenido -- Miguel Ángel, verbatim:
+   "los botones no deben desaparecer con el scroll, deben ser una
+   parte fija debajo del membrete de ficha de la persona". La altura
+   real del membrete varía según la página (título de una o dos
+   líneas) -- --top-navbar-height la calcula en JS un pequeño script
+   en base.html (ver bloque final de ese archivo), nunca un valor
+   fijo que se desajustaría en cuanto el título ocupe otra altura. El
+   valor de refuerzo (56px) solo cubre el instante antes de que ese
+   script corra por primera vez. Reutilizable por cualquier ficha, no
+   solo la de Personal. */
+.sticky-below-navbar {
+    position: sticky;
+    top: var(--top-navbar-height, 56px);
+    z-index: 98;
+    background-color: #ffffff;
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+    margin-bottom: 0.75rem;
+    border-bottom: 1px solid #e9ecef;
+}
+
 /* --- PAGE CONTENT PADDING — Padding adaptativo --- */
 .page-content {
     padding: 1rem;

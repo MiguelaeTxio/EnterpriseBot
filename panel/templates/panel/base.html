@@ -217,6 +217,28 @@
     {% if request.user.company_user.role == 'WORKSHOP' or request.user.company_user.role == 'ADMIN' %}
     {% include "panel/_tour_workshop.html" %}
     {% endif %}
+    <!-- H31 (S103). Calcula --top-navbar-height a partir de la altura -->
+    <!-- real del membrete (.top-navbar) para que cualquier barra con   -->
+    <!-- .sticky-below-navbar (p. ej. los botones de la ficha de        -->
+    <!-- Personal) quede fija justo debajo, nunca solapada -- la altura -->
+    <!-- del membrete varía según si el título ocupa una o dos líneas,  -->
+    <!-- por eso un valor CSS fijo no serviría en todas las páginas.    -->
+    <script>
+    (function () {
+        "use strict";
+        function updateTopNavbarHeightVar() {
+            var navbar = document.querySelector(".top-navbar");
+            if (navbar) {
+                document.documentElement.style.setProperty(
+                    "--top-navbar-height", navbar.offsetHeight + "px",
+                );
+            }
+        }
+        window.addEventListener("load", updateTopNavbarHeightVar);
+        window.addEventListener("resize", updateTopNavbarHeightVar);
+        document.addEventListener("DOMContentLoaded", updateTopNavbarHeightVar);
+    }());
+    </script>
     {% block extra_scripts %}{% endblock %}
 </body>
 </html>

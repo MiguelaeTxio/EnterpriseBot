@@ -5,7 +5,14 @@
 {% block page_title %}{{ person.first_surname }} {{ person.second_surname }}, {{ person.given_name }} ({{ person.dni }})<br><small class="text-muted">{{ person.employer_company|default:"Sin empresa asignada" }}</small>{% endblock %}
 
 {% block content %}
-<a href="{% url 'panel:documentation_hub' %}" class="btn btn-sm btn-outline-secondary mb-3">
+{% comment %}
+H31 (S103). Barra de acciones fija justo debajo del membrete -- ver
+.sticky-below-navbar en panel.css. Requisito explícito de Miguel
+Ángel: "los botones no deben desaparecer con el scroll, deben ser
+una parte fija debajo del membrete de ficha de la persona".
+{% endcomment %}
+<div class="sticky-below-navbar">
+<a href="{% url 'panel:documentation_hub' %}" class="btn btn-sm btn-outline-secondary mb-0">
     <i class="bi bi-arrow-left"></i> Volver
 </a>
 {% comment %}
@@ -14,9 +21,10 @@ vista previa de la selección de documentos sea accesible sin
 importar qué sección esté abierta -- los documentos marcados pueden
 venir de Laboral, Salud y/o Documentación a la vez.
 {% endcomment %}
-<button type="button" class="btn btn-sm btn-outline-primary mb-3 ms-2" onclick="openSelectionPreview()">
+<button type="button" class="btn btn-sm btn-outline-primary mb-0 ms-2" onclick="openSelectionPreview()">
     <i class="bi bi-collection me-1"></i>Selección de documentos <span class="badge bg-primary" id="documentSelectionBadge">{{ selected_document_ids|length }}</span>
 </button>
+</div>
 
 {% comment %}
 H31 (S76): reestructuración en tres acordeones grandes -- Datos
