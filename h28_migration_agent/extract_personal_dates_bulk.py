@@ -1277,11 +1277,21 @@ def main():
                         )
                         expiry, issue, other = r_expiry, r_issue, r_other
                         engine_used = "TESSERACT PSM 6"
-                    elif len(retry_text) > len(text or ""):
-                        # H31 (S97): aunque no resuelva nada, se cachea
-                        # el texto mas largo/rico visto hasta ahora --
-                        # util para la revision manual de lo que quede
-                        # sin resolver.
+                    else:
+                        _log(
+                            "    TESSERACT PSM 6 tampoco resolvio nada "
+                            "(%d caracteres)%s" % (
+                                len(retry_text),
+                                (" -- tipo ambiguo %s" % sorted(r_matched))
+                                if r_ambiguous else "",
+                            )
+                        )
+                        # H31 (S97): `text` ya quedo actualizado a
+                        # retry_text arriba (PSM6 es una relectura
+                        # completa, no aditiva) -- se cachea tambien
+                        # el resultado crudo (aunque no usable) para
+                        # que la revision manual, si hace falta, parta
+                        # del ultimo intento real.
                         resolved_code, is_ambiguous, matched = (
                             r_code, r_ambiguous, r_matched,
                         )
@@ -1307,12 +1317,21 @@ def main():
                             )
                             expiry, issue, other = e_expiry, e_issue, e_other
                             engine_used = "EASYOCR"
-                        elif len(easy_text) > len(text or ""):
-                            text = easy_text
-                            resolved_code, is_ambiguous, matched = (
-                                e_code, e_ambiguous, e_matched,
+                        else:
+                            _log(
+                                "    EASYOCR tampoco resolvio nada "
+                                "(%d caracteres)%s" % (
+                                    len(easy_text),
+                                    (" -- tipo ambiguo %s" % sorted(e_matched))
+                                    if e_ambiguous else "",
+                                )
                             )
-                            expiry, issue, other = e_expiry, e_issue, e_other
+                            if len(easy_text) > len(text or ""):
+                                text = easy_text
+                                resolved_code, is_ambiguous, matched = (
+                                    e_code, e_ambiguous, e_matched,
+                                )
+                                expiry, issue, other = e_expiry, e_issue, e_other
                     else:
                         _log("    EASYOCR no devolvio texto")
 
@@ -1334,12 +1353,21 @@ def main():
                                 )
                                 expiry, issue, other = v_expiry, v_issue, v_other
                                 engine_used = "CLOUD VISION"
-                            elif len(vision_text) > len(text or ""):
-                                text = vision_text
-                                resolved_code, is_ambiguous, matched = (
-                                    v_code, v_ambiguous, v_matched,
+                            else:
+                                _log(
+                                    "    CLOUD VISION tampoco resolvio nada "
+                                    "(%d caracteres)%s" % (
+                                        len(vision_text),
+                                        (" -- tipo ambiguo %s" % sorted(v_matched))
+                                        if v_ambiguous else "",
+                                    )
                                 )
-                                expiry, issue, other = v_expiry, v_issue, v_other
+                                if len(vision_text) > len(text or ""):
+                                    text = vision_text
+                                    resolved_code, is_ambiguous, matched = (
+                                        v_code, v_ambiguous, v_matched,
+                                    )
+                                    expiry, issue, other = v_expiry, v_issue, v_other
                         else:
                             _log("    CLOUD VISION no devolvio texto")
 
