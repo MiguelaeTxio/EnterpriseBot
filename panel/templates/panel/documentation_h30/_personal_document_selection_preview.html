@@ -27,6 +27,9 @@ sustituto de la otra.
         <a class="btn btn-sm btn-outline-primary" href="{% url 'panel:documentation_personal_document_selection_zip' pk=person.pk %}">
             <i class="bi bi-file-earmark-zip me-1"></i>ZIP
         </a>
+        <button type="button" class="btn btn-sm btn-outline-primary" onclick="toggleSendEmailForm()">
+            <i class="bi bi-envelope me-1"></i>Enviar por email
+        </button>
         <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleSaveTemplateForm()">
             <i class="bi bi-bookmark-plus me-1"></i>Guardar como plantilla
         </button>
@@ -34,6 +37,32 @@ sustituto de la otra.
             <i class="bi bi-x-circle me-1"></i>Vaciar selección
         </button>
     </div>
+</div>
+{% comment %}
+H31 (S104). Formulario oculto por defecto (toggleSendEmailForm, en
+_personal_detail.html) -- editor básico (mismo alcance reducido que
+el de circulares H31 S75) para el cuerpo del mensaje que acompaña al
+dossier. El envío genera y descarga un .eml real
+(PersonalDossierEmailSendView) con el dossier adjunto (PDF, o ZIP si
+el PDF no es viable), el cuerpo escrito aquí y la firma del
+supervisor que envía (configurable en Mi perfil). Sin envío SMTP real
+desde el servidor -- se abre/reenvía desde Outlook, igual que las
+notificaciones de circulares.
+{% endcomment %}
+<div id="sendDossierEmailForm" class="card card-body mb-2 py-2" style="display:none;">
+    <div class="d-flex align-items-center gap-1 mb-2">
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-cmd="bold" title="Negrita" onclick="document.getElementById('dossierEmailEditor').focus();document.execCommand('bold')"><i class="bi bi-type-bold"></i></button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-cmd="italic" title="Cursiva" onclick="document.getElementById('dossierEmailEditor').focus();document.execCommand('italic')"><i class="bi bi-type-italic"></i></button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-cmd="insertUnorderedList" title="Lista" onclick="document.getElementById('dossierEmailEditor').focus();document.execCommand('insertUnorderedList')"><i class="bi bi-list-ul"></i></button>
+    </div>
+    <div id="dossierEmailEditor" class="form-control mb-2" style="min-height: 100px; font-family: Arial, sans-serif;" contenteditable="true"></div>
+    <div class="d-flex gap-2">
+        <button type="button" class="btn btn-sm btn-primary" onclick="sendDossierByEmail()">
+            <i class="bi bi-envelope me-1"></i>Generar .eml y descargar
+        </button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleSendEmailForm()">Cancelar</button>
+    </div>
+    <div class="form-text">Se adjunta el dossier de la selección actual ({{ entries|length }} documento{{ entries|length|pluralize }}) y tu firma de Mi perfil.</div>
 </div>
 {% comment %}
 H31 (S103). Formulario oculto por defecto (toggleSaveTemplateForm,

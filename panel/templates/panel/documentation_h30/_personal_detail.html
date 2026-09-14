@@ -1114,6 +1114,44 @@ function toggleSaveTemplateForm() {
     if (form) form.style.display = form.style.display === 'none' ? '' : 'none';
 }
 
+// H31 (S104). Envío del dossier por email -- genera y descarga un .eml
+// real con el dossier adjunto, el cuerpo escrito en el editor básico
+// de aquí y la firma del supervisor (Mi perfil). Envío real de
+// formulario (nunca fetch) para que el navegador trate la respuesta
+// como descarga de archivo -- mismo criterio que los enlaces PDF/ZIP
+// de arriba, adaptado a POST porque el cuerpo del mensaje no cabe en
+// una URL GET.
+function toggleSendEmailForm() {
+    const form = document.getElementById('sendDossierEmailForm');
+    if (form) form.style.display = form.style.display === 'none' ? '' : 'none';
+}
+
+function sendDossierByEmail() {
+    const editor = document.getElementById('dossierEmailEditor');
+    const bodyHtml = editor.innerHTML.trim();
+    if (!bodyHtml) {
+        alert('Escribe el cuerpo del mensaje antes de generar el .eml.');
+        return;
+    }
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = "{% url 'panel:documentation_personal_dossier_email_send' pk=person.pk %}";
+    form.target = '_blank';
+    const csrfInput = document.createElement('input');
+    csrfInput.type = 'hidden';
+    csrfInput.name = 'csrfmiddlewaretoken';
+    csrfInput.value = getCookie('csrftoken');
+    form.appendChild(csrfInput);
+    const bodyInput = document.createElement('input');
+    bodyInput.type = 'hidden';
+    bodyInput.name = 'body_html';
+    bodyInput.value = bodyHtml;
+    form.appendChild(bodyInput);
+    document.body.appendChild(form);
+    form.submit();
+    form.remove();
+}
+
 function saveSelectionAsTemplate() {
     const name = document.getElementById('saveTemplateName').value.trim();
     const outputFormat = document.getElementById('saveTemplateFormat').value;
