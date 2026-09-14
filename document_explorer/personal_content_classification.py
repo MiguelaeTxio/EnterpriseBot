@@ -78,14 +78,14 @@ CONTENT_SIGNALS = {
     ],
     "CERTIFICADO_BANCARIO": ["CERTIFICADO DE TITULARIDAD"],
     # ------------------------------------------------------------
-    # H35 (S105). Confirmados con muestra real (20 ficheros
-    # BAJA_PERSONAL de Jorge Ramirez Garcia, texto embebido + OCR
-    # Tesseract espanol) -- ver migracion 0084 para el alta de
-    # catalogo de los 2 codigos que no existian todavia
-    # (AUTORIZACION_GENERICA, CAPACITACION). CAMBIO_IRPF,
-    # COMUNICACION_CONTRATO y AUTORIZACION_USO_MAQUINARIA YA
-    # existian en el catalogo (migraciones 0004/0045/0046) pero
-    # sin entrada aqui todavia.
+    # H35 (S105). Confirmados con muestra real (2 lotes de 20
+    # ficheros BAJA_PERSONAL de Jorge Ramirez Garcia, texto embebido
+    # + OCR Tesseract espanol) -- ver migraciones 0084/0085 para el
+    # alta de catalogo de los 3 codigos que no existian todavia
+    # (AUTORIZACION_GENERICA, CAPACITACION, FORMACION_PRL_GENERICA).
+    # CAMBIO_IRPF, COMUNICACION_CONTRATO y AUTORIZACION_USO_
+    # MAQUINARIA YA existian en el catalogo (migraciones 0004/0045/
+    # 0046) pero sin entrada aqui todavia.
     # ------------------------------------------------------------
     "CAPACITACION": [
         "CAPACITACION POR PARTE DE LA EMPRESA DE LAS ACTIVIDADES "
@@ -99,6 +99,10 @@ CONTENT_SIGNALS = {
     "AUTORIZACION_USO_MAQUINARIA": ["AUTORIZACION DE MANEJO DE MAQUINARIA"],
     "AUTORIZACION_GENERICA": [
         "PARA EL USO DE LOS SIGUIENTES VEHICULOS Y/O MAQUINARIA",
+    ],
+    "FORMACION_PRL_GENERICA": [
+        "HA RECIBIDO FORMACION E INFORMACION, EN CUMPLIMIENTO DE LOS "
+        "ARTICULOS 18 Y 19",
     ],
 }
 
