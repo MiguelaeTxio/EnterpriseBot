@@ -962,6 +962,16 @@ aquí. Resultado: dos VMs de las cuatro totalmente inservibles para
 este script en el momento de usarlas por primera vez, descubierto a
 mitad de una campaña de 12 procesos ya lanzada.
 
+**CONFIRMADO EN S105:** el archivo real es `~/.ssh/id_rsa` (3389
+bytes, sin passphrase). Fecha real en `h28-ocr-batch-1`: 2026-09-02
+11:19 -- pocos minutos después de la creación de la imagen
+(`h28-ocr-batch-image-v1`, misma fecha, ver más abajo), lo que explica
+por qué la imagen no la incluye: probablemente se generó/copió justo
+después del snapshot. **`h28-ocr-batch-3/4` la recibieron por el
+procedimiento de copia de esta misma sección al arreglarlas en
+S105.** Si aparece una VM quinta o se regenera la imagen sin volver a
+verificar esto, repetir el mismo procedimiento.
+
 **REGLA DE OBLIGADO CUMPLIMIENTO, SIN EXCEPCIÓN, ANTES DE EJECUTAR
 `extract_personal_dates_bulk.py` (O CUALQUIER SCRIPT DE ESTE AGENTE
 QUE ABRA TÚNEL SSH) EN UNA VM QUE NO SE HAYA USADO YA EN LA SESIÓN
@@ -980,14 +990,14 @@ ACTUAL:**
    requiere acceso al panel que el modelo no tiene):
    ```bash
    # En la VM que SI funciona (origen), imprimir la clave privada:
-   cat ~/.ssh/NOMBRE_CLAVE_REAL
+   cat ~/.ssh/id_rsa
    ```
    Pegar el contenido en la VM de destino:
    ```bash
-   mkdir -p ~/.ssh && chmod 700 ~/.ssh && cat > ~/.ssh/NOMBRE_CLAVE_REAL << 'SSHKEYEOF'
+   mkdir -p ~/.ssh && chmod 700 ~/.ssh && cat > ~/.ssh/id_rsa << 'SSHKEYEOF'
    [pegar aqui el contenido exacto]
    SSHKEYEOF
-   chmod 600 ~/.ssh/NOMBRE_CLAVE_REAL
+   chmod 600 ~/.ssh/id_rsa
    ```
 4. **Después de arreglar una VM, actualizar esta misma sección con el
    nombre real del archivo de clave usado** -- la próxima sesión no
