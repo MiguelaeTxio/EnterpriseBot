@@ -301,6 +301,7 @@ class Command(BaseCommand):
             "solo_tipo_resuelto": 0,
             "tipo_ambiguo": 0,
             "sin_nada_resoluble": 0,
+            "posible_persona_equivocada": 0,
             "extension_no_soportada": 0,
             "error_descarga_u_ocr": 0,
         }
@@ -344,6 +345,29 @@ class Command(BaseCommand):
             current_code = (
                 entry.document_type.code if entry.document_type_id else None
             )
+
+            # H31 (S104), corregido tras incidente real en el propio
+            # dry-run (pk=25140): el aviso de persona equivocada debe
+            # BLOQUEAR cualquier retipado/fechado de esta entrada, no
+            # solo mencionarlo de pasada -- de lo contrario un
+            # documento ya sospechoso de estar archivado bajo la
+            # persona equivocada se retipa igual en la misma pasada.
+            # Se comprueba ANTES de resolver tipo/fecha, nunca despues.
+            if person and _person_name_missing(text_upper, person):
+                stats["posible_persona_equivocada"] += 1
+                self.stdout.write(
+                    "PERSONA EQUIVOCADA -- SIN TOCAR [pk=%s] %s -- ni "
+                    "%r ni %r aparecen en el texto extraido"
+                    % (
+                        entry.pk, entry.name, person.first_surname,
+                        person.second_surname,
+                    )
+                )
+                if apply_changes and text:
+                    entry.ocr_text = text
+                    entry.save(update_fields=["ocr_text"])
+                continue
+
             new_code, is_ambiguous, matched = _resolve_type_from_content(
                 text_upper, current_code,
             )
@@ -391,16 +415,6 @@ class Command(BaseCommand):
                     "SIN TIPO NI SEÑAL [pk=%s] %s" % (entry.pk, entry.name)
                 )
                 continue
-
-            if person and _person_name_missing(text_upper, person):
-                self.stdout.write(
-                    "AVISO POSIBLE PERSONA EQUIVOCADA [pk=%s] %s -- ni "
-                    "%r ni %r aparecen en el texto extraido"
-                    % (
-                        entry.pk, entry.name, person.first_surname,
-                        person.second_surname,
-                    )
-                )
 
             if type_changed and date_value:
                 stats["tipo_y_fecha_resueltos"] += 1
