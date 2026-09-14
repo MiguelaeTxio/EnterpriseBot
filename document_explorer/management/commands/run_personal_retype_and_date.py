@@ -109,6 +109,7 @@ Angel's 2021-01-01 placeholder if the type resolves but the date is
 still unclear).
 """
 from datetime import date
+import re
 
 from django.contrib.contenttypes.models import ContentType
 from django.core.management.base import BaseCommand
@@ -119,7 +120,8 @@ from document_explorer.classification_service import (
     apply_personal_canonical_rename,
 )
 from document_explorer.date_verification_service import (
-    _strip_accents, classify_dates_in_text, extract_text,
+    _strip_accents, classify_dates_in_text, extract_expiry_via_gemini,
+    extract_text,
 )
 from document_explorer.models import (
     DocumentIndexEntry, DocumentTypeCatalog, PersonIdentity,
@@ -128,9 +130,22 @@ from spare_parts.gcs_service import download_bytes
 
 FICTITIOUS_DATE = date(2021, 1, 1)
 
+# H31 (S104), corregido tras revisar muestras reales con Miguel Angel:
+# "FICHA DE INSCRIPCION" con el numero de horas en el propio titulo del
+# curso ("20H PRL...", "6H PRL...") es la senal real y fiable de
+# FORMACION (coincide letra a letra con la definicion del propio
+# catalogo, "Formacion (2H/6H/60H)") -- nunca "ACCION FORMATIVA"/
+# "DIPLOMA" sueltos, que salian igual de bien en documentos de CURSO
+# real y producian el ambiguo CURSO/FORMACION visto en el primer lote.
+_FORMACION_HOURS_RE = re.compile(r"\b\d{1,3}\s*H\b")
+
 # Frases largas y especificas, confirmadas contra documentos reales de
 # esta sesion (nunca palabras sueltas -- ver incidentes "IDESP" y
-# "RECONOCIMIENTO MEDICO" en el docstring de arriba).
+# "RECONOCIMIENTO MEDICO" en el docstring de arriba). "IBAN" se retira
+# como senal de CERTIFICADO_BANCARIO (S104, muestra real): aparecia
+# como falso positivo en fichas de formacion que solo citan un IBAN de
+# pago, nunca en un certificado bancario real -- sin sustituto todavia,
+# queda pendiente de una frase mas especifica.
 CONTENT_SIGNALS = {
     "TARJETA_SANITARIA": [
         "TARJETA SANITARIA INDIVIDUAL", "NUMERO DE HISTORIA UNICA DE SALUD",
@@ -149,7 +164,7 @@ CONTENT_SIGNALS = {
     "TC2": ["RELACION NOMINAL DE TRABAJADORES", "BOLETIN DE COTIZACION"],
     "VACACIONES": ["PARTE DE VACACIONES", "SOLICITUD DE VACACIONES"],
     "CURSO": ["CERTIFICADO DE APROVECHAMIENTO", "DIPLOMA"],
-    "FORMACION": ["ACCION FORMATIVA", "HORAS DE FORMACION"],
+    "FORMACION": ["FICHA DE INSCRIPCION"],
     "CARNET_CONDUCIR": ["PERMISO DE CONDUCCION", "DRIVING LICENCE"],
     "CARNET_GRUISTA": [
         "OPERADOR DE GRUAS MOVILES", "HABILITACION PROFESIONAL",
@@ -160,7 +175,7 @@ CONTENT_SIGNALS = {
         "PARTE MEDICO DE CONFIRMACION DE INCAPACIDAD",
         "PARTE DE BAJA", "INCAPACIDAD TEMPORAL",
     ],
-    "CERTIFICADO_BANCARIO": ["CERTIFICADO DE TITULARIDAD", "IBAN"],
+    "CERTIFICADO_BANCARIO": ["CERTIFICADO DE TITULARIDAD"],
 }
 
 # Pares "gana X sobre Y" -- mismo principio que SPECIFIC_WINS de
@@ -183,6 +198,12 @@ def _resolve_type_from_content(text_upper, current_code):
     lo encontrado, para que el dry-run lo muestre y un humano decida.
     Si el unico codigo encontrado coincide con el actual, se devuelve
     igualmente (permite confirmar sin retipar).
+
+    FORMACION (S104): ademas de la senal de frase normal, "FICHA DE
+    INSCRIPCION" solo cuenta como FORMACION si el propio texto trae
+    tambien un patron de horas en el titulo del curso (r"\\d+H") --
+    confirmado contra muestras reales que esa combinacion es la que
+    de verdad distingue FORMACION de CURSO, nunca la frase sola.
     """
     matched = set()
     for code, phrases in CONTENT_SIGNALS.items():
@@ -190,6 +211,8 @@ def _resolve_type_from_content(text_upper, current_code):
             if phrase in text_upper:
                 matched.add(code)
                 break
+    if "FORMACION" in matched and not _FORMACION_HOURS_RE.search(text_upper):
+        matched.discard("FORMACION")
     for winner, loser in CONTENT_WINS:
         if winner in matched and loser in matched:
             matched.discard(loser)
@@ -198,6 +221,24 @@ def _resolve_type_from_content(text_upper, current_code):
     if len(matched) > 1:
         return None, True, matched
     return None, False, matched
+
+
+def _person_name_missing(text_upper, person):
+    """
+    H31 (S104), hallazgo real de esta sesion (pk=25140 -- un contrato
+    de prestacion de servicios con una academia externa, archivado
+    bajo una persona cuyo nombre no aparecia en ninguna parte del
+    documento). Senal de aviso, nunca de retipado automatico: si ni el
+    primer apellido ni el segundo (cuando existe) aparecen en el texto
+    extraido, es posible que el documento este archivado bajo la
+    persona equivocada -- se marca para revision manual, nunca se
+    reasigna solo.
+    """
+    surnames = [s for s in (person.first_surname, person.second_surname) if s]
+    if not surnames:
+        return False
+    norm_surnames = [_strip_accents(s).upper() for s in surnames]
+    return not any(s in text_upper for s in norm_surnames if s)
 
 
 class Command(BaseCommand):
@@ -318,7 +359,22 @@ class Command(BaseCommand):
             if date_value and date_value in bad_dates:
                 date_field, date_value = None, None
 
+            # H31 (S104), hallazgo real de esta sesion: los tipos con
+            # ocr_unreliable=True (DNI, NIE, CARNET_CONDUCIR,
+            # TARJETA_CUALIF_CONDUCTOR, TACOGRAFO -- tarjetas fisicas
+            # con fondo de seguridad) nunca se fian del motor de
+            # reglas para la fecha, aunque haya devuelto algo -- se
+            # sustituye siempre por extract_expiry_via_gemini(), unico
+            # camino ya validado en la plataforma para este tipo de
+            # documento (ver date_verification_service.py).
             resolved_type_code = new_code or current_code
+            effective_type = type_catalog.get(resolved_type_code)
+            if effective_type and effective_type.ocr_unreliable:
+                gemini_expiry = extract_expiry_via_gemini(data, entry.name)
+                date_field, date_value = (
+                    ("expiry_date", gemini_expiry) if gemini_expiry else (None, None)
+                )
+
             type_changed = bool(new_code and new_code != current_code)
 
             if is_ambiguous:
@@ -335,6 +391,16 @@ class Command(BaseCommand):
                     "SIN TIPO NI SEÑAL [pk=%s] %s" % (entry.pk, entry.name)
                 )
                 continue
+
+            if person and _person_name_missing(text_upper, person):
+                self.stdout.write(
+                    "AVISO POSIBLE PERSONA EQUIVOCADA [pk=%s] %s -- ni "
+                    "%r ni %r aparecen en el texto extraido"
+                    % (
+                        entry.pk, entry.name, person.first_surname,
+                        person.second_surname,
+                    )
+                )
 
             if type_changed and date_value:
                 stats["tipo_y_fecha_resueltos"] += 1
