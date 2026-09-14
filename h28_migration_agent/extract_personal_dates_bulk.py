@@ -1092,29 +1092,38 @@ def main():
     # tipos mal etiquetados que no se han auditado.
     domain_clause = "" if args.entry_ids else " AND t.domain = 'PERSONAL'"
 
-    # H35 (S105). En modo --retype no se exige tracks_expiry/
-    # ocr_unreliable=0 (el objetivo es corregir el TIPO, no solo la
-    # fecha -- un tipo mal asignado puede tener cualquier combinacion
-    # de esos flags una vez resuelto el tipo real) y el filtro de
-    # fecha se amplia: ademas de "sin fecha en absoluto", entra
-    # cualquier documento cuya fecha coincida con la de nacimiento de
-    # la persona (con o sin el error de siglo +100 anios) -- mismo
-    # criterio exacto que usa run_personal_retype_and_date.py.
+    # H35 (S105), corregido tras confirmar con Miguel Angel el
+    # alcance real del hito: en modo --retype no se exige tracks_
+    # expiry/ocr_unreliable=0 (el objetivo es corregir el TIPO, no
+    # solo la fecha) NI se filtra por fecha ya resuelta -- un
+    # documento mal tipado (el problema real de "cajon de sastre" que
+    # motiva H35) puede llevar ya una fecha perfectamente valida y
+    # seguir necesitando retipado. El filtro de fecha de la version
+    # anterior (solo "sin fecha o fecha de nacimiento colada") queda
+    # exclusivo del modo normal, pensado para tipos YA correctos.
     date_scope_clause = (
         " AND e.expiry_date IS NULL AND e.issue_date IS NULL"
-        if not args.retype else
-        " AND ("
-        "  (e.expiry_date IS NULL AND e.issue_date IS NULL)"
-        "  OR (p.birth_date IS NOT NULL AND e.issue_date IN"
-        "      (p.birth_date, DATE_ADD(p.birth_date, INTERVAL 100 YEAR)))"
-        "  OR (p.birth_date IS NOT NULL AND e.expiry_date IN"
-        "      (p.birth_date, DATE_ADD(p.birth_date, INTERVAL 100 YEAR)))"
-        " )"
+        if not args.retype else ""
     )
     tracks_ocr_clause = (
         " AND t.tracks_expiry = 1 AND t.ocr_unreliable = 0"
         if not args.retype else ""
     )
+    # H35 (S105): el barrido de retipado real (536 BAJA_PERSONAL "de
+    # toda la plataforma", segun el propio anexo) no se acota a
+    # personal activo -- el problema de tipo mal asignado es igual de
+    # real en trabajadores de baja. --include-inactive lo permite; sin
+    # el flag, se mantiene el filtro de activos por defecto (mismo
+    # comportamiento que antes, para no sorprender a --document-type
+    # usados sobre otros tipos donde si se quiera acotar a activos).
+    # H35 (S105), norma fija de Miguel Angel, sin excepcion ni flag
+    # que la relaje: el retipado SOLO se aplica a personal ACTIVO.
+    # Los documentos de trabajadores inactivos se quedan tal cual --
+    # se buscan y corrigen a mano por el explorador de archivos si
+    # hace falta, nunca por este barrido. No crear ningun flag tipo
+    # --include-inactive en el futuro sin que Miguel Angel lo pida
+    # explicitamente.
+    active_clause = " AND p.is_active_employee = 1"
 
     with conn.cursor() as cur:
         cur.execute(
@@ -1133,8 +1142,8 @@ def main():
             "  ON e.domain_object_id = p.id "
             "WHERE e.domain_content_type_id = %s"
             + domain_clause + tracks_ocr_clause + date_scope_clause +
-            " AND e.deleted_at IS NULL AND e.purged_at IS NULL "
-            "AND p.is_active_employee = 1"
+            " AND e.deleted_at IS NULL AND e.purged_at IS NULL"
+            + active_clause
             + type_clause + shard_clause + entry_ids_clause +
             " ORDER BY e.id",
             (person_ct_id,) + type_params + shard_params + entry_ids_params,

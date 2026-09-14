@@ -35,6 +35,17 @@ Cloud Vision") -- aquí se prioriza el coste (las VMs de OCR ya están
 pagadas y dimensionadas para lotes grandes) sobre la calidad de
 extracción, precisamente porque el volumen esperado es alto.
 
+**⛔ ALCANCE FIJO, SIN EXCEPCIÓN NI FLAG QUE LO RELAJE (S105, verbatim
+Miguel Ángel): "única y exclusivamente trabajadores activos".** El
+retipado de este hito nunca toca documentos de trabajadores
+**inactivos** -- esos se quedan tal cual, se buscan y corrigen a mano
+por el explorador de archivos si hace falta, nunca por un barrido
+automático. `extract_personal_dates_bulk.py --retype` filtra siempre
+por `PersonIdentity.is_active_employee=True`, sin ningún flag tipo
+`--include-inactive` que lo desactive -- no crear uno sin que Miguel
+Ángel lo pida explícitamente. Motivo, verbatim: no perder tiempo
+ordenando documentación de gente que ya no está en la empresa.
+
 ---
 
 ## 2. Contexto técnico de partida (S104)
