@@ -54,16 +54,41 @@ Cumple dos funciones inseparables:
 | H28 | Migración y Reorganización de Documentación Histórica | `ENTERPRISEBOT_ATTACHED_MILESTONE_V28.md` |
 | H29 | Explorador de Archivos y Gobierno Documental del Panel sobre GCS | `ENTERPRISEBOT_ATTACHED_MILESTONE_V29.md` |
 | H30 | Vinculación Documental Real — Centros de Gasto y Personal | `ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md` |
-| H31 | Interfaz de Gestión Documental de Personal — Altas, Bajas, Sustituciones, EPIs y Circulares (título anterior: "Interfaz de Ficha de Personal — EPIs y Notificaciones/Circulares"; ampliado en S99 al fusionar H33) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md` ← EN PROGRESO |
+| H31 | Interfaz de Gestión Documental de Personal — Altas, Bajas, Sustituciones, EPIs y Circulares (título anterior: "Interfaz de Ficha de Personal — EPIs y Notificaciones/Circulares"; ampliado en S99 al fusionar H33) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md` |
 | H32 | Migraciones de Infraestructura (Modelo IA, Python, Registro Android) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V32.md` |
 | ~~H33~~ | ~~Subida de Documentación en Tiempo Real desde el Panel~~ — **FUSIONADO EN H31 el 2026-09-10 (S99)**, ver sección 6 | `ENTERPRISEBOT_ATTACHED_MILESTONE_V33.md` (conservado íntegro como archivo histórico) |
 | H34 | Modelo Propio de Clasificación de Documentos (entrenamiento) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V34.md` |
+| H35 | Retipado y Refechado Masivo de Documentación Histórica de Personal | `ENTERPRISEBOT_ATTACHED_MILESTONE_V35.md` ← EN PROGRESO |
 
 Todos los anexos viven en `DOCS/MAINS/ATTACHEDS/`.
 
 ---
 
 ## 3. Resultado Actual
+
+**Hito EN PROGRESO:** H35 — Retipado y Refechado Masivo de
+Documentación Histórica de Personal →
+`ENTERPRISEBOT_ATTACHED_MILESTONE_V35.md`. Abierto en S104 (Caso C)
+tras un hallazgo real durante una sesión de H31: investigando por qué
+77 activos no tenían `hire_date`, se descubrió primero una fecha de
+nacimiento colada como `issue_date` en 135 ficheros (9 tipos
+documentales, bug histórico anterior a la protección actual), y
+después algo bastante más grave -- `BAJA_PERSONAL` usado como "cajón
+de sastre" en la migración histórica: de 536 documentos con ese tipo
+en toda la plataforma, apenas ~3% de los que ya se pueden juzgar por
+contenido son una baja real. Decisión explícita de Miguel Ángel:
+esto es su propio hito, no un punto de H31 -- primero VMs de OCR con
+Tesseract, Cloud Vision solo si Tesseract no resuelve.
+
+**Hito PAUSADO en esta sesión (S104):** H31 — Interfaz de Gestión
+Documental de Personal → `ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md`.
+Los 3 puntos de la hoja de ruta de S104 quedaron cerrados (formato de
+operario en export H20, backend completo de envío de dossieres por
+email, verificación real de la corrección `is_current()`) -- ver
+"COMPLETADAS EN S104" en su propio anexo para el detalle. Pendiente
+real al pausar: confirmación visual en Outlook real de un envío de
+dossier (único punto heredado, sin hoja de ruta nueva definida más
+allá de eso). Se retoma cuando H35 esté cerrado.
 
 **Reorganización de hitos en S99 (2026-09-10)** — ver sección 6 para
 el detalle completo y la cita textual de Miguel Ángel que la autoriza:
@@ -83,16 +108,13 @@ todavía -- pendientes de sesión de diseño dedicada cada uno. El
 marcador `← EN PROGRESO` no se mueve -- apertura de hito nuevo (Caso C
 de la sección 5), no cambio de hito.
 
-**Hito EN PROGRESO:** H31 — Interfaz de Ficha de Personal: EPIs y
-Notificaciones/Circulares → `ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md`.
-Reactivado en S93 tras confirmar que se cumple la condición real de
+**Hito reactivado en S93:** H31 — Interfaz de Ficha de Personal: EPIs
+y Notificaciones/Circulares → `ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md`.
+Reactivado tras confirmar que se cumple la condición real de
 reactivación registrada en su propio anexo (sección 5.5): las
 familias `LABORAL` + `SALUD_BAJAS_PERSONA` (6.085 documentos, 0% con
 `issue_date`/`expiry_date` en el momento de la pausa, S77) quedaron
 cubiertas al 100% con el cierre del dominio PERSONAL de H30 en S92.
-Hoja de ruta de arranque: los tres puntos de "Pendiente real para
-cuando H31 se retome" de su propio anexo (sección 5.5), intactos
-desde S77.
 
 **Hito CERRADO en S93:** H32 — Migraciones de Infraestructura (Modelo
 IA, Python, Registro Android) → `ENTERPRISEBOT_ATTACHED_MILESTONE_V32.md`.

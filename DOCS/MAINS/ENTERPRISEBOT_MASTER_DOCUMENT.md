@@ -559,6 +559,33 @@ la fusión.)
   validación antes de sustituir a Gemini en producción, mecanismo de
   fallback cuando el modelo propio no tenga confianza suficiente).
 
+#### Hito 35: Retipado y Refechado Masivo de Documentación Histórica de Personal
+(Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V35.md`)
+- Hito nuevo, abierto en S104 tras un hallazgo real durante una sesión
+  de H31: `BAJA_PERSONAL` (y probablemente otros tipos) se usó como
+  "cajón de sastre" en la migración histórica -- de 536 documentos
+  `BAJA_PERSONAL` en toda la plataforma, apenas ~3% de los que ya se
+  pueden juzgar por contenido son una baja real; el resto son
+  certificados de formación, reconocimientos médicos, permisos de
+  conducir, nóminas, tarjetas sanitarias, y hasta documentos de otras
+  personas, todos archivados bajo un tipo que no les corresponde.
+- Objetivo: releer el contenido real (nunca nombre de archivo ni
+  carpeta -- decisión explícita de Miguel Ángel tras confirmar que
+  ambos son indignos de confianza) de toda la documentación histórica
+  de Personal afectada por este patrón, resolver su tipo y fecha
+  reales, y corregir en BD -- mismo mecanismo ya construido en H31-S104
+  (`run_personal_retype_and_date`, `date_verification_service`), pero
+  con el diccionario de señales ampliado a los tipos reales
+  descubiertos (certificados PRL genéricos, autorizaciones,
+  capacitaciones, designación de recurso preventivo, entrega de EPIs,
+  comunicación de contrato, solicitud IRPF...).
+- Decisión explícita de Miguel Ángel sobre el orden de lectura para
+  este hito: primero relanzar las VMs de OCR (`h28-ocr-batch-1..4`,
+  suspendidas) con Tesseract; solo si Tesseract no resuelve, recurrir
+  a Google Cloud Vision.
+- Sin hoja de ruta más allá del arranque -- ver anexo para el punto de
+  partida real dejado en S104.
+
 ---
 
 ### 4. Directrices Técnicas Vinculantes

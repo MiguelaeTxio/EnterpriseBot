@@ -2615,6 +2615,59 @@ sin fecha para esa persona y ese tipo.
 
 ---
 
+## COMPLETADAS EN S104 -- los 3 puntos de la hoja de ruta cerrados; sesión pausada por PCH tras un hallazgo mayor (ver H35)
+
+**Punto 0 (desvío a H20).** Corregido el formato del nombre de
+operario en la exportación del Laboratorio de Análisis Unificado:
+`analytics.views._format_worker_display_name()` ahora resuelve contra
+`PersonIdentity` (campos reales `given_name`/`first_surname`/
+`second_surname`) en vez de partir el string bruto del PDF -- corrige
+el caso real de nombre compuesto señalado por Miguel Ángel
+("Alejandro Sergio Álvarez Díaz"). Commits `15d820d`/`773e0a5`.
+
+**Punto 1 (envío de dossieres por email).** Backend completo:
+`CompanyUser.email_signature_html` (migración `0044`), refactor de
+`_build_dossier_pdf_response`/`_build_dossier_zip_response` en
+núcleos de bytes reutilizables, `_build_dossier_notification_eml()`
+(dossier adjunto + firma + cuerpo editable), `PersonalDossierEmailSendView`,
+editor de firma en `own_profile.html`, botón real "Enviar por email"
+en la ficha de personal. Commits `44bf5f7`/`4534cd6`. **Pendiente
+real, sin cerrar todavía:** confirmación visual en Outlook real de un
+envío real (criterio de cierre original de este punto) -- no se ha
+podido hacer en esta sesión.
+
+**Punto 2 (verificación `is_current()`).** Confirmado con Comando S
+real: el NIE de Jorge Milheiro Felicio con `expiry_date=2030-12-04`
+sale VIGENTE y el que no tiene fecha sale NO VIGENTE con el cálculo
+real de `_split_current_obsolete()`/`is_current()` -- corrección de
+S103 verificada. **Cerrado.**
+
+**Hallazgo mayor, no previsto en la hoja de ruta:** al investigar por
+qué 77 activos no tenían `hire_date` en ficha (petición de Miguel
+Ángel), se descubrió una fecha de nacimiento colada como `issue_date`
+en 135 ficheros de 9 tipos documentales distintos (bug histórico,
+pipeline anterior a la protección `_BIRTHDATE_CONTEXT` que ya existe
+en el motor actual), y después un problema bastante más grave: cientos
+de documentos (`BAJA_PERSONAL` confirmado como el peor caso, 536 en
+toda la plataforma, apenas ~3% de los que ya se pueden juzgar son una
+baja real) usados como "cajón de sastre" en la migración histórica --
+certificados de formación, reconocimientos médicos, permisos de
+conducir, nóminas, tarjetas sanitarias y hasta documentos de OTRAS
+personas, todo archivado bajo un tipo que no les corresponde. Decisión
+explícita de Miguel Ángel: esto no es un desvío puntual, es su propio
+hito -- ver **H35** (nuevo, `ENTERPRISEBOT_ATTACHED_MILESTONE_V35.md`).
+Con esto se cierra esta sesión de H31 y se PCH a H35, EN PROGRESO.
+
+## Hoja de ruta al reactivar H31
+
+Un único punto pendiente real, heredado sin cambios del punto 1 de
+arriba: enviar un dossier real desde el panel con firma y cuerpo
+editado, y confirmarlo visualmente en Outlook real. Más allá de eso,
+sin hoja de ruta nueva definida todavía -- decidir con Miguel Ángel al
+reactivar este hito.
+
+---
+
 
 ## TABLA VIVA -- EJEMPLOS REALES DE CLASIFICACIÓN CONFIRMADOS (añadida
 ## S101, para no perder el trabajo de reconocer un tipo cada vez que
@@ -2635,6 +2688,12 @@ solo en la narrativa de la sesión**, que es donde se pierde.
 | "RESOLUCIÓN SOBRE RECONOCIMIENTO DE ALTA: REGIMEN GENERAL" (Tesorería General de la Seguridad Social) | `ALTA` | Confirmado S101 contra PDF real de Miguel Ángel. Texto embebido real, se extrae bien con PyMuPDF -- si falla la lectura no es el PDF, es la llamada a Gemini (transitorio o real, revisar log del servidor). |
 | Contrato de trabajo que además incluye el número de afiliación a la Seguridad Social del trabajador | `CONTRATO` | El aviso "trae el número de afiliación... pero no se ha reconocido como la Tarjeta" es **informativo, no un error de clasificación** -- salta siempre que `doc_type != "SEG_SOCIAL"`, exactamente cuando el documento SÍ se clasificó como otra cosa (aquí, CONTRATO). No afecta a si el documento se guarda -- eso lo decide `_store_documents` de forma independiente. |
 | Certificado bancario con IBAN | `CERTIFICADO_BANCARIO` | Confianza BAJA en la lectura de este tipo de documento no impide que se guarde -- solo excluye sus datos de la fusión de identidad (`merge_person_draft`). El borrador (`draft`) no tiene ningún campo de cuenta bancaria de todos modos, así que a efectos prácticos no se pierde nada al descartarlo de la fusión. |
+| "FICHA DE INSCRIPCIÓN" con el título del curso en formato "20H PRL..."/"6H PRL..." (horas en el propio título) | `FORMACION` | Confirmado S104 contra muestra real. Distingue de `CURSO` (certificado de finalización tipo diploma, sin horas en el título) -- la combinación "ficha de inscripción" + patrón de horas es la señal fiable, la frase sola no (falso positivo real con "DIPLOMA"/"CERTIFICADO DE APROVECHAMIENTO" de un cuestionario/examen suelto del mismo lote escaneado). |
+| Carta de la Junta de Andalucía "CERTIFICA: Que el titular del presente Carnet figura inscrito en el Registro de Operadores de Grúas Móviles..." | `CARNET_GRUISTA` | Confirmado S104. Formato narrativo (resolución/certificación), no un formulario con etiquetas -- el motor de reglas actual sí la resuelve bien si el texto está limpio; texto degradado por OCR de mala calidad necesita Gemini (`ocr_unreliable`, ver fila DNI/carné de conducir). |
+| DNI, NIE, permiso de conducir, CAP, tarjeta de tacógrafo (tarjetas físicas con fondo de seguridad) | Cada uno el suyo (`DNI`/`NIE`/`CARNET_CONDUCIR`/`TARJETA_CUALIF_CONDUCTOR`/`TACOGRAFO`) | `ocr_unreliable=True` activado en el catálogo para los 5 (S104) -- el fondo de seguridad de la tarjeta confunde sistemáticamente al motor de reglas aunque el dato (p. ej. la fecha de VALIDEZ del DNI) sea perfectamente legible a simple vista; la fecha de estos 5 tipos se resuelve siempre vía `extract_expiry_via_gemini()`, nunca por regex. |
+| "PARTE MÉDICO DE BAJA/ALTA DE INCAPACIDAD TEMPORAL" / "PARTE MÉDICO DE CONFIRMACIÓN DE INCAPACIDAD TEMPORAL" (formulario oficial INSS/Junta de Andalucía) | `PARTE_BAJA_MEDICA` | Confirmado S104. La etiqueta de campo interna del propio formulario, "RESULTADO DEL RECONOCIMIENTO MÉDICO (en parte alta)", NUNCA debe hacer que esto se clasifique como `RECONOCIMIENTO_MEDICO` -- es solo un campo del formulario, no el tipo del documento. |
+| Documento cuyo contenido real (IBAN corto, número de DNI suelto) mide menos de ~80 caracteres | (el que corresponda por contexto, no reasignar por ausencia de nombre) | Confirmado S104, tras falso positivo real: un documento genuinamente corto (certificado bancario que es solo el IBAN, verbatim de Miguel Ángel "en mi propia ficha el certificado bancario que tengo es así") nunca va a llevar el nombre de la persona -- no es señal de persona equivocada, es que no cabe. Ver H35 para el criterio completo. |
+| `BAJA_PERSONAL` usado como tipo por defecto en la migración histórica para documentos sin clasificar (certificados de formación, reconocimientos médicos, permisos de conducir, nóminas, tarjetas sanitarias...) | **NINGUNO fiable** -- releer el contenido real siempre | Hallazgo mayor S104: de 536 `BAJA_PERSONAL` en toda la plataforma, de los que ya se pueden juzgar por contenido apenas ~3% son una baja real. Nunca asumir `BAJA_PERSONAL` correcto por el mero hecho de que sea el tipo ya asignado -- ver H35, hito dedicado a resolver esto. |
 
 **Aclaración permanente sobre "confianza BAJA" (para no repetir la
 pregunta):** confianza y tipo documental son dos campos independientes
