@@ -34,6 +34,7 @@ from django.views.generic import View
 
 from budgets.models import Budget
 from chat.models import BreakdownTicket
+from document_explorer.models import PersonIdentity
 from fleet.models import MachineAsset
 from ivr_config.models import (
     CompanyUser,
@@ -211,42 +212,90 @@ def _fuzzy_match_worker(raw_name, candidates):
 _NO_OPERATOR_PLACEHOLDER = "Sin operario"
 
 
-def _format_worker_display_name(raw_name):
+def _build_person_name_lookup(company):
     """
-    Reformats a raw worker_name value (stored as "NOMBRE APELLIDO1
-    APELLIDO2" in uppercase -- see WorkOrderEntry.worker_name
-    docstring) into the platform's canonical personnel display order
-    "APELLIDO1 APELLIDO2, NOMBRE" -- the same order already used for
-    real personal folder names (see
-    document_ingestion.entity_matching_service.
-    _parse_worker_name_from_folder). Assumes a single first-name
-    token, matching how worker_name is actually populated (decision
-    taken here, H31-S104 roadmap point 0, PDF filename convention has
-    no comma to split on unlike the folder-name case). Returns the
-    value unchanged for empty strings, the "Sin operario" placeholder,
-    or single-token values (nothing to reorder).
+    Builds a dict mapping a normalized "GIVEN_NAME SURNAME1 SURNAME2"
+    string (uppercase, matching WorkOrderEntry.worker_name's own raw
+    order/case) to the PersonIdentity that resolves it, for the given
+    company. PersonIdentity is used as the resolution source instead
+    of splitting the worker_name string itself, because a naive split
+    into a single first-name token breaks for compound first names
+    (Miguel Angel, H31-S104, verbatim: "en el PDF si los nombres
+    vienen con un nombre y dos apellidos, perfecto, pero si por
+    ejemplo viene un nombre compuesto como Alejandro Sergio Alvarez
+    Diaz, ahi a lo mejor ya tenemos problemas, mientras que en la base
+    de datos ya lo tenemos separado"). PersonIdentity already carries
+    given_name/first_surname/second_surname as separate real fields
+    (H29/H30), so it is the reliable source, not a guess from a single
+    raw string.
     ---
-    Reformatea un valor worker_name en bruto (almacenado como "NOMBRE
-    APELLIDO1 APELLIDO2" en mayusculas -- ver docstring de
-    WorkOrderEntry.worker_name) al orden canonico de la plataforma
-    para personal "APELLIDO1 APELLIDO2, NOMBRE" -- mismo orden ya
+    Construye un diccionario que mapea una cadena normalizada "NOMBRE
+    APELLIDO1 APELLIDO2" (en mayusculas, mismo orden/caja que
+    WorkOrderEntry.worker_name en bruto) a la PersonIdentity que la
+    resuelve, para la empresa dada. Se usa PersonIdentity como fuente
+    de resolucion en vez de partir la propia cadena worker_name,
+    porque partir en un unico token de nombre de pila falla con
+    nombres compuestos (Miguel Angel, H31-S104, verbatim: "en el PDF
+    si los nombres vienen con un nombre y dos apellidos, perfecto,
+    pero si por ejemplo viene un nombre compuesto como Alejandro
+    Sergio Alvarez Diaz, ahi a lo mejor ya tenemos problemas, mientras
+    que en la base de datos ya lo tenemos separado"). PersonIdentity
+    ya lleva given_name/first_surname/second_surname como campos
+    reales separados (H29/H30), asi que es la fuente fiable, no una
+    suposicion desde una unica cadena en bruto.
+    """
+    lookup = {}
+    for person in PersonIdentity.objects.filter(company=company):
+        raw_order = " ".join(
+            part for part in (
+                person.given_name, person.first_surname,
+                person.second_surname,
+            ) if part
+        ).strip().upper()
+        if raw_order:
+            lookup[raw_order] = person
+    return lookup
+
+
+def _format_worker_display_name(raw_name, person_lookup=None):
+    """
+    Formats a worker's display name in the platform's canonical
+    personnel display order "APELLIDO1 APELLIDO2, NOMBRE" -- the same
+    order already used for real personal folder names (see
+    document_ingestion.entity_matching_service.
+    _parse_worker_name_from_folder). Resolves against person_lookup
+    (see _build_person_name_lookup) first, since PersonIdentity holds
+    surnames/given name as separate real fields and is reliable even
+    for compound first names. Falls back to returning raw_name
+    UNCHANGED (never reordered by guessing a split point) when no
+    match is found -- a wrong guess is worse than leaving the
+    historical/unmatched value as-is.
+    ---
+    Formatea el nombre de un operario en el orden canonico de personal
+    de la plataforma "APELLIDO1 APELLIDO2, NOMBRE" -- mismo orden ya
     usado para nombres reales de carpetas de personal (ver
     document_ingestion.entity_matching_service.
-    _parse_worker_name_from_folder). Asume un unico token de nombre de
-    pila, coherente con como se rellena realmente worker_name
-    (decision tomada aqui, punto 0 de la hoja de ruta H31-S104; el
-    nombre de fichero PDF de origen no trae coma que permita separar
-    como en el caso de la carpeta). Devuelve el valor sin cambios para
-    cadenas vacias, el marcador "Sin operario", o valores de un solo
-    token (nada que reordenar).
+    _parse_worker_name_from_folder). Resuelve primero contra
+    person_lookup (ver _build_person_name_lookup), ya que
+    PersonIdentity lleva apellidos/nombre como campos reales separados
+    y es fiable incluso con nombres de pila compuestos. Si no hay
+    coincidencia, devuelve raw_name SIN CAMBIOS (nunca se reordena
+    adivinando un punto de corte) -- una suposicion equivocada es peor
+    que dejar el valor historico/no resuelto tal cual.
     """
     if not raw_name or raw_name == _NO_OPERATOR_PLACEHOLDER:
         return raw_name
-    parts = raw_name.split()
-    if len(parts) < 2:
+    person = (person_lookup or {}).get(raw_name.strip().upper())
+    if person is None:
         return raw_name
-    first_name, surnames = parts[0], " ".join(parts[1:])
-    return f"{surnames}, {first_name}"
+    surnames = " ".join(
+        part for part in (
+            person.first_surname, person.second_surname,
+        ) if part
+    ).strip()
+    if not surnames:
+        return person.given_name or raw_name
+    return f"{surnames}, {person.given_name}"
 
 
 def _resolve_work_period(company_user, target_date):
@@ -872,6 +921,7 @@ class AnalyticsLabDataView(SupervisorAccessMixin, View):
         familias de averia dominantes, evolucion temporal.
         """
         worker_name = str(entity_pk) if entity_pk else None
+        person_lookup = _build_person_name_lookup(company)
 
         qs = WorkOrderEntry.objects.filter(
             work_order__company=company,
@@ -966,7 +1016,10 @@ class AnalyticsLabDataView(SupervisorAccessMixin, View):
             )
             total_parts = qs.count()
             table_rows = [
-                [_format_worker_display_name(op), fc, heat_data[(op, fc)]]
+                [
+                    _format_worker_display_name(op, person_lookup),
+                    fc, heat_data[(op, fc)],
+                ]
                 for (op, fc) in sorted(heat_data.keys())
                 if heat_data[(op, fc)] > 0
             ]
@@ -1070,7 +1123,7 @@ class AnalyticsLabDataView(SupervisorAccessMixin, View):
             table_cols = ["Operario", "Periodo", "Horas trabajadas"]
             table_rows = [
                 [
-                    _format_worker_display_name(op), b,
+                    _format_worker_display_name(op, person_lookup), b,
                     round(op_bucket_hours[op].get(b, 0.0), 2),
                 ]
                 for op in all_operators
@@ -1596,6 +1649,7 @@ class AnalyticsLabDataView(SupervisorAccessMixin, View):
             work_date__lte=date_to,
             work_date__isnull=False,
         )
+        person_lookup = _build_person_name_lookup(company)
         lines_qs = (
             WorkOrderEntryLine.objects
             .filter(
@@ -1637,7 +1691,7 @@ class AnalyticsLabDataView(SupervisorAccessMixin, View):
         )
         total_parts = entries_qs.count()
         table_rows = [
-            [_format_worker_display_name(op)] + [
+            [_format_worker_display_name(op, person_lookup)] + [
                 round(op_bucket_hours[op].get(b, 0.0), 2)
                 for b in all_buckets
             ]
