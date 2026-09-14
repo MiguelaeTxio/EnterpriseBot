@@ -206,6 +206,45 @@ CONTENT_WINS = [
 # retipado/fechado automatico, nunca se cuenta como "sin señal".
 _ADOBE_DYNAMIC_PLACEHOLDER = "PLEASE WAIT"
 
+# H31 (S104), hallazgo real (pk=40287, VELOSO_SAMPAIO_ESTEVAO): algunos
+# PDF tienen la capa de texto interna con el mapa de codificacion roto
+# (fuente incrustada sin ToUnicode real) -- el texto extraido sale
+# integramente en simbolos/digitos/letras de otros alfabetos sin
+# sentido ("5<03(75$163257(9" en vez de "RYMPE TRANSPORTE"), aunque el
+# PDF se vea perfectamente legible al abrirlo. Ni Tesseract ni Cloud
+# Vision sobre el render arreglan esto si lo que se lee es la capa de
+# texto rota -- se detecta aparte y se deja para revision manual,
+# nunca se data/retipa sobre un texto que no es el real.
+#
+# Deteccion por AUSENCIA de palabras españolas comunisimas, no por
+# ratio de letras (probado en frio y descartado: el texto garbled real
+# de pk=40287 es sobre todo digitos/simbolos, muy pocas letras en
+# sentido Unicode -- un filtro por ratio de letras nunca llega a
+# acumular suficientes para juzgar). Un texto real en español de mas
+# de 200 caracteres SIEMPRE trae alguna de estas -- su ausencia total
+# es la señal fiable.
+_SPANISH_COMMON_WORDS = re.compile(
+    r"\b(DE|LA|EL|EN|QUE|LOS|LAS|PARA|CON|POR|UNA?|SE)\b"
+)
+_MIN_LENGTH_FOR_ENCODING_CHECK = 200
+
+
+def _text_encoding_is_broken(text_upper):
+    if len(text_upper) < _MIN_LENGTH_FOR_ENCODING_CHECK:
+        return False
+    return not _SPANISH_COMMON_WORDS.search(text_upper)
+
+
+# H31 (S104), corregido tras revisar muestra real (los 4 CERTIFICADO_
+# BANCARIO en .txt, pk=34079/35853/35867/39380): un documento cuyo
+# CONTENIDO REAL es solo un IBAN (practica real y normal, confirmada
+# por Miguel Angel -- "en mi propia ficha el certificado bancario que
+# tengo es asi") nunca va a llevar el nombre de la persona -- no es un
+# fallo de archivo, es que el documento entero mide 28-30 caracteres.
+# El chequeo de persona solo tiene sentido a partir de un texto con
+# longitud minima razonable para que quepa un nombre en alguna parte.
+_MIN_LENGTH_FOR_PERSON_CHECK = 80
+
 
 def _resolve_type_from_content(text_upper, current_code):
     """
@@ -350,6 +389,7 @@ class Command(BaseCommand):
             "sin_nada_resoluble": 0,
             "posible_persona_equivocada": 0,
             "pdf_dinamico_sin_texto": 0,
+            "texto_codificacion_rota": 0,
             "texto_vacio_o_ilegible": 0,
             "extension_no_soportada": 0,
             "error_descarga_u_ocr": 0,
@@ -428,6 +468,23 @@ class Command(BaseCommand):
                 entry.document_type.code if entry.document_type_id else None
             )
 
+            # H31 (S104), hallazgo real (pk=40287): capa de texto
+            # interna con el mapa de codificacion roto -- se ve
+            # legible al abrir el PDF, pero el texto extraido no tiene
+            # nada que ver. Se detecta DESPUES de cachear ocr_text
+            # (asi queda registrado para cuando se decida como releer
+            # este caso) pero ANTES de cualquier resolucion de tipo/
+            # fecha o chequeo de persona -- ninguno de los tres tiene
+            # sentido sobre un texto que no es el real.
+            if _text_encoding_is_broken(text_upper):
+                stats["texto_codificacion_rota"] += 1
+                self._log(
+                    "TEXTO CON CODIFICACION ROTA -- SIN TOCAR [pk=%s] "
+                    "%s (el PDF es legible al abrirlo, pero la capa de "
+                    "texto interna no corresponde)" % (entry.pk, entry.name)
+                )
+                continue
+
             # H31 (S104), corregido tras incidente real en el propio
             # dry-run (pk=25140): el aviso de persona equivocada debe
             # BLOQUEAR cualquier retipado/fechado de esta entrada, no
@@ -435,7 +492,17 @@ class Command(BaseCommand):
             # documento ya sospechoso de estar archivado bajo la
             # persona equivocada se retipa igual en la misma pasada.
             # Se comprueba ANTES de resolver tipo/fecha, nunca despues.
-            if person and _person_name_missing(text_upper, person):
+            #
+            # CORREGIDO EN LA MISMA SESION (S104): documentos cuyo
+            # contenido real es solo un dato corto (un IBAN, un numero
+            # de DNI suelto) nunca van a llevar el nombre de la persona
+            # -- no es un fallo de archivo, no hay sitio donde quepa el
+            # nombre. El chequeo de persona se salta por completo bajo
+            # _MIN_LENGTH_FOR_PERSON_CHECK.
+            if (
+                person and len(text_upper) >= _MIN_LENGTH_FOR_PERSON_CHECK
+                and _person_name_missing(text_upper, person)
+            ):
                 stats["posible_persona_equivocada"] += 1
                 self._log(
                     "PERSONA EQUIVOCADA -- SIN TOCAR [pk=%s] %s -- ni "
