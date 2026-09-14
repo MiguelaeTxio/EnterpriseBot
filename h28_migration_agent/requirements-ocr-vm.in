@@ -19,6 +19,11 @@ pytesseract
 PyMuPDF
 python-docx
 google-cloud-storage
+# H35 (S105). Cloud Vision como ultimo nivel de OCR del modo --retype
+# de extract_personal_dates_bulk.py (Tesseract -> EasyOCR -> Cloud
+# Vision) -- misma cuenta de servicio ya usada para google-cloud-
+# storage, sin credenciales nuevas.
+google-cloud-vision
 # H30 (S78). Lectura de .xlsx (listados de asistencia a curso, etc.)
 # -- extract_personal_dates_bulk.py.
 openpyxl
