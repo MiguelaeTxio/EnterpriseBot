@@ -1,0 +1,236 @@
+# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/document_explorer/personal_content_classification.py
+"""
+H35 (S105). Extraido de `run_personal_retype_and_date.py` (H31-S104)
+para que el mismo diccionario CONTENT_SIGNALS/CONTENT_WINS y la misma
+logica de resolucion de tipo por contenido las use tambien el agente
+H28 standalone (`h28_migration_agent/extract_personal_dates_bulk.py`,
+sin Django, corre en las VMs de OCR) -- decision explicita de Miguel
+Angel en el anexo H35: "mismo diccionario, evitar mantener dos copias
+divergentes".
+
+Modulo deliberadamente SIN dependencias de Django (solo `re` y
+`unicodedata` de la libreria estandar) para que sea importable tal
+cual desde un script standalone anadiendo la raiz del repo a
+`sys.path` -- verificado que `document_explorer/__init__.py` esta
+vacio, asi que importar este submodulo nunca dispara el registro de
+apps de Django ni requiere `DJANGO_SETTINGS_MODULE`.
+
+El comando Django (`run_personal_retype_and_date.py`) importa de aqui
+sin cambio de comportamiento -- este modulo es una extraccion literal,
+no una reescritura.
+"""
+import re
+import unicodedata
+
+
+def _strip_accents(value):
+    return "".join(
+        c for c in unicodedata.normalize("NFD", value)
+        if unicodedata.category(c) != "Mn"
+    )
+
+
+# H31 (S104), corregido tras revisar muestras reales con Miguel Angel:
+# "FICHA DE INSCRIPCION" con el numero de horas en el propio titulo del
+# curso ("20H PRL...", "6H PRL...") es la senal real y fiable de
+# FORMACION (coincide letra a letra con la definicion del propio
+# catalogo, "Formacion (2H/6H/60H)") -- nunca "ACCION FORMATIVA"/
+# "DIPLOMA" sueltos, que salian igual de bien en documentos de CURSO
+# real y producian el ambiguo CURSO/FORMACION visto en el primer lote.
+_FORMACION_HOURS_RE = re.compile(r"\b\d{1,3}\s*H\b")
+
+# Frases largas y especificas, confirmadas contra documentos reales
+# (nunca palabras sueltas -- ver incidentes "IDESP" y "RECONOCIMIENTO
+# MEDICO" en el docstring de run_personal_retype_and_date.py, y el
+# hallazgo COMUNICACION_CONTRATO/CONTRATO de H35-S105 mas abajo).
+# "IBAN" se retira como senal de CERTIFICADO_BANCARIO (S104, muestra
+# real): aparecia como falso positivo en fichas de formacion que solo
+# citan un IBAN de pago, nunca en un certificado bancario real -- sin
+# sustituto todavia, queda pendiente de una frase mas especifica.
+CONTENT_SIGNALS = {
+    "TARJETA_SANITARIA": [
+        "TARJETA SANITARIA INDIVIDUAL", "NUMERO DE HISTORIA UNICA DE SALUD",
+    ],
+    "DNI": ["DOCUMENTO NACIONAL DE IDENTIDAD"],
+    "NIE": ["NUMERO DE IDENTIDAD DE EXTRANJERO", "CERTIFICADO DE REGISTRO DE CIUDADANO"],
+    "RECONOCIMIENTO_MEDICO": [
+        "EXAMEN MEDICO ESPECIFICO", "APTO PARA EL PUESTO", "VIGILANCIA DE LA SALUD",
+    ],
+    "NOMINA": ["RECIBO DE SALARIOS", "LIQUIDO A PERCIBIR", "PERIODO DE LIQUIDACION"],
+    "CONTRATO": ["CONTRATO DE TRABAJO", "DECLARAN QUE REUNEN LOS REQUISITOS"],
+    "ALTA": ["RESOLUCION SOBRE RECONOCIMIENTO DE ALTA", "ALTA NORMAL PREVIA"],
+    "BAJA_PERSONAL": ["RESOLUCION SOBRE RECONOCIMIENTO DE BAJA"],
+    "MOD_145": ["MODELO 145", "COMUNICACION DE DATOS AL PAGADOR"],
+    "IDC": ["INFORME DE DATOS PARA LA COTIZACION"],
+    "TC2": ["RELACION NOMINAL DE TRABAJADORES", "BOLETIN DE COTIZACION"],
+    "VACACIONES": ["PARTE DE VACACIONES", "SOLICITUD DE VACACIONES"],
+    "CURSO": ["CERTIFICADO DE APROVECHAMIENTO", "DIPLOMA"],
+    "FORMACION": ["FICHA DE INSCRIPCION"],
+    "CARNET_CONDUCIR": ["PERMISO DE CONDUCCION", "DRIVING LICENCE"],
+    "CARNET_GRUISTA": [
+        "OPERADOR DE GRUAS MOVILES", "HABILITACION PROFESIONAL",
+        "CARNE DE OPERADOR DE GRUAS",
+    ],
+    "PARTE_BAJA_MEDICA": [
+        "PARTE MEDICO DE BAJA", "PARTE MEDICO DE ALTA",
+        "PARTE MEDICO DE CONFIRMACION DE INCAPACIDAD",
+        "PARTE DE BAJA", "INCAPACIDAD TEMPORAL",
+    ],
+    "CERTIFICADO_BANCARIO": ["CERTIFICADO DE TITULARIDAD"],
+    # ------------------------------------------------------------
+    # H35 (S105). Confirmados con muestra real (20 ficheros
+    # BAJA_PERSONAL de Jorge Ramirez Garcia, texto embebido + OCR
+    # Tesseract espanol) -- ver migracion 0084 para el alta de
+    # catalogo de los 2 codigos que no existian todavia
+    # (AUTORIZACION_GENERICA, CAPACITACION). CAMBIO_IRPF,
+    # COMUNICACION_CONTRATO y AUTORIZACION_USO_MAQUINARIA YA
+    # existian en el catalogo (migraciones 0004/0045/0046) pero
+    # sin entrada aqui todavia.
+    # ------------------------------------------------------------
+    "CAPACITACION": [
+        "CAPACITACION POR PARTE DE LA EMPRESA DE LAS ACTIVIDADES "
+        "QUE PUEDE REALIZAR EL TRABAJADOR",
+    ],
+    "CAMBIO_IRPF": [
+        "SOLICITUD DE TIPO DE RETENCION IRPF SUPERIOR AL CALCULADO "
+        "REGLAMENTARIAMENTE",
+    ],
+    "COMUNICACION_CONTRATO": ["COMUNICACION DEL CONTRATO DE TRABAJO"],
+    "AUTORIZACION_USO_MAQUINARIA": ["AUTORIZACION DE MANEJO DE MAQUINARIA"],
+    "AUTORIZACION_GENERICA": [
+        "PARA EL USO DE LOS SIGUIENTES VEHICULOS Y/O MAQUINARIA",
+    ],
+}
+
+# Pares "gana X sobre Y" -- mismo principio que SPECIFIC_WINS de
+# heuristic_type_service.py, pero para senales de CONTENIDO. Se aplica
+# antes de declarar ambiguo un archivo con mas de una senal.
+CONTENT_WINS = [
+    ("PARTE_BAJA_MEDICA", "RECONOCIMIENTO_MEDICO"),
+    ("PARTE_BAJA_MEDICA", "DNI"),
+    ("CARNET_GRUISTA", "DNI"),
+    ("CARNET_CONDUCIR", "DNI"),
+    ("CONTRATO", "ALTA"),
+    # S104, corregido tras revisar muestras: FORMACION (senal
+    # estructural, "ficha de inscripcion" + horas en el titulo) gana
+    # siempre sobre CURSO (senal generica, "diploma"/"certificado de
+    # aprovechamiento") -- un mismo PDF de varias paginas puede traer
+    # tambien un cuestionario/examen suelto que dispara CURSO por
+    # error, pero la ficha de inscripcion real manda.
+    ("FORMACION", "CURSO"),
+    # H35 (S105), hallazgo real (pk=32740): la cabecera "COMUNICACION
+    # DEL CONTRATO DE TRABAJO..." contiene literalmente la frase
+    # "CONTRATO DE TRABAJO", que tambien es senal de CONTRATO --
+    # cuando aparece la cabecera de comunicacion, es siempre el
+    # documento de comunicacion (mucho mas corto, sin firma de las
+    # partes), nunca el contrato en si.
+    ("COMUNICACION_CONTRATO", "CONTRATO"),
+]
+
+# H31 (S104), hallazgo real: algunos PDF de la migracion historica son
+# formularios dinamicos de Adobe (XFA) -- el texto que devuelve
+# cualquier extractor (embebido o Cloud Vision sobre el render
+# estatico) es solo el aviso generico de "tu lector no soporta este
+# documento", nunca el contenido real. Ninguna regla de contenido
+# puede resolver esto -- se detecta aparte y se deja fuera del
+# retipado/fechado automatico, nunca se cuenta como "sin señal".
+ADOBE_DYNAMIC_PLACEHOLDER = "PLEASE WAIT"
+
+# H31 (S104), hallazgo real (pk=40287, VELOSO_SAMPAIO_ESTEVAO): algunos
+# PDF tienen la capa de texto interna con el mapa de codificacion roto
+# (fuente incrustada sin ToUnicode real) -- el texto extraido sale
+# integramente en simbolos/digitos/letras de otros alfabetos sin
+# sentido, aunque el PDF se vea perfectamente legible al abrirlo. Se
+# detecta por AUSENCIA de palabras españolas comunisimas, no por ratio
+# de letras.
+_SPANISH_COMMON_WORDS = re.compile(
+    r"\b(DE|LA|EL|EN|QUE|LOS|LAS|PARA|CON|POR|UNA?|SE)\b"
+)
+MIN_LENGTH_FOR_ENCODING_CHECK = 200
+
+
+def text_encoding_is_broken(text_upper):
+    if len(text_upper) < MIN_LENGTH_FOR_ENCODING_CHECK:
+        return False
+    return not _SPANISH_COMMON_WORDS.search(text_upper)
+
+
+# H31 (S104), corregido tras revisar muestra real (los 4 CERTIFICADO_
+# BANCARIO en .txt): un documento cuyo CONTENIDO REAL es solo un IBAN
+# nunca va a llevar el nombre de la persona -- no es un fallo de
+# archivo, es que el documento entero mide 28-30 caracteres. El
+# chequeo de persona solo tiene sentido a partir de un texto con
+# longitud minima razonable para que quepa un nombre en alguna parte.
+MIN_LENGTH_FOR_PERSON_CHECK = 80
+
+
+def resolve_type_from_content(text_upper, current_code):
+    """
+    Devuelve (code, is_ambiguous, matched_codes). `code` es None si no
+    hay ninguna senal o si sigue habiendo mas de una tras aplicar
+    CONTENT_WINS -- en ese caso is_ambiguous=True y matched_codes trae
+    lo encontrado, para que el dry-run lo muestre y un humano decida.
+    Si el unico codigo encontrado coincide con el actual, se devuelve
+    igualmente (permite confirmar sin retipar).
+
+    FORMACION (S104): ademas de la senal de frase normal, "FICHA DE
+    INSCRIPCION" solo cuenta como FORMACION si el propio texto trae
+    tambien un patron de horas en el titulo del curso (r"\\d+H") --
+    confirmado contra muestras reales que esa combinacion es la que
+    de verdad distingue FORMACION de CURSO, nunca la frase sola.
+    """
+    matched = set()
+    for code, phrases in CONTENT_SIGNALS.items():
+        for phrase in phrases:
+            if phrase in text_upper:
+                matched.add(code)
+                break
+    if "FORMACION" in matched and not _FORMACION_HOURS_RE.search(text_upper):
+        matched.discard("FORMACION")
+    for winner, loser in CONTENT_WINS:
+        if winner in matched and loser in matched:
+            matched.discard(loser)
+    if len(matched) == 1:
+        return next(iter(matched)), False, matched
+    if len(matched) > 1:
+        return None, True, matched
+    return None, False, matched
+
+
+def person_name_missing(text_upper, person):
+    """
+    H31 (S104), hallazgo real de esta sesion (pk=25140 -- un contrato
+    de prestacion de servicios con una academia externa, archivado
+    bajo una persona cuyo nombre no aparecia en ninguna parte del
+    documento). Senal de aviso, nunca de retipado automatico: si ni el
+    primer apellido ni el segundo (cuando existe) aparecen en el texto
+    extraido, es posible que el documento este archivado bajo la
+    persona equivocada -- se marca para revision manual, nunca se
+    reasigna solo.
+
+    CORREGIDO EN LA MISMA SESION: coincidencia exacta de substring
+    daba demasiados falsos positivos reales (el apellido SI estaba en
+    el documento, pero el OCR lo devolvio tan degradado -- "ADQLFO
+    PlvAREZ DI=" en vez de "ADOLFO ALVAREZ DIAZ" -- que ninguna
+    comparacion exacta lo reconocia). Ahora se acepta tambien una
+    coincidencia aproximada (SequenceMatcher, ratio>=0.72) contra
+    cualquier palabra suficientemente larga (>=4 caracteres) del
+    texto, mismo umbral de tolerancia a ruido de OCR.
+
+    `person` debe exponer `.first_surname` y `.second_surname`
+    (cadenas, `second_surname` puede ser vacia).
+    """
+    import difflib
+
+    surnames = [s for s in (person.first_surname, person.second_surname) if s]
+    if not surnames:
+        return False
+    norm_surnames = [_strip_accents(s).upper() for s in surnames]
+    if any(s in text_upper for s in norm_surnames if s):
+        return False
+    words = [w for w in re.split(r"[^A-Z]+", text_upper) if len(w) >= 4]
+    for surname in norm_surnames:
+        for word in words:
+            if difflib.SequenceMatcher(None, surname, word).ratio() >= 0.72:
+                return False
+    return True
