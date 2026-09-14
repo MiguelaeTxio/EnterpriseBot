@@ -68,6 +68,25 @@ from PIL import Image
 
 from config import get_service_account_key_path
 
+# H35 (S105). El checkout completo del repo vive en ~/EnterpriseBot en
+# las 4 VMs de OCR (confirmado en SESSION_VARIABLES.md) -- este script
+# corre desde el subdirectorio h28_migration_agent/, asi que la raiz
+# del repo (donde vive el paquete document_explorer/) es el directorio
+# padre. Se anade a sys.path para poder importar el modulo de
+# clasificacion de contenido SIN Django -- verificado que
+# document_explorer/__init__.py esta vacio, no dispara el registro de
+# apps ni pide DJANGO_SETTINGS_MODULE. Mismo diccionario CONTENT_
+# SIGNALS/CONTENT_WINS que usa run_personal_retype_and_date.py -- ver
+# ese modulo para el porque (decision explicita de Miguel Angel,
+# anexo H35, evitar mantener dos copias divergentes).
+import sys
+sys.path.insert(
+    0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")),
+)
+from document_explorer.personal_content_classification import (
+    resolve_type_from_content,
+)
+
 # Sesion de continuidad tras S79, a peticion explicita de Miguel
 # Angel: elimina el comentar/descomentar manual de TESSERACT_CMD por
 # maquina. Si Tesseract ya esta en el PATH del sistema (caso normal
@@ -235,6 +254,78 @@ def easyocr_extract_text(filename, data):
     if name_lower.endswith((".jpg", ".jpeg", ".png")):
         return easyocr_image_to_text(data)
     return None
+
+
+# ---------------------------------------------------------------
+# H35 (S105). Cloud Vision -- ULTIMO recurso del retipado (--retype),
+# solo cuando Tesseract (PSM automatico + reintento PSM 6) y EasyOCR
+# no han resuelto ni tipo ni fecha. Decision explicita de Miguel
+# Angel para este hito: "siempre primero Tesseract y si no, pasamos
+# a EasyOCR y si no, pasamos a Google Cloud Vision" -- orden inverso
+# al que usa run_personal_retype_and_date.py (Cloud Vision unico
+# motor, decision S102 para ESE comando en concreto), pero aqui el
+# objetivo es aprovechar las VMs de OCR ya pagadas y dimensionadas
+# para el volumen alto de este hito (ver anexo H35, seccion 1),
+# reservando Cloud Vision (coste por llamada de red) solo para lo que
+# de verdad lo necesite.
+#
+# Autenticacion: misma clave de cuenta de servicio que ya usa GCS en
+# este mismo script (`get_service_account_key_path()`) -- nunca
+# credenciales nuevas ni variables de entorno adicionales.
+# ---------------------------------------------------------------
+_VISION_CLIENT = None
+
+
+def _get_vision_client():
+    global _VISION_CLIENT
+    if _VISION_CLIENT is None:
+        from google.cloud import vision
+        _VISION_CLIENT = vision.ImageAnnotatorClient.from_service_account_json(
+            get_service_account_key_path()
+        )
+    return _VISION_CLIENT
+
+
+def cloud_vision_extract_text(filename, data):
+    """
+    OCR real vía Cloud Vision API, acotado a las 2 primeras páginas
+    (mismo límite que el resto del motor de fechas de este script).
+    Devuelve cadena vacía (nunca None) si no hay texto reconocible o
+    la extensión no está soportada por Cloud Vision -- el llamador
+    decide qué hacer con una cadena vacía.
+    """
+    from google.cloud import vision
+
+    name_lower = filename.lower()
+    client = _get_vision_client()
+
+    if name_lower.endswith((".jpg", ".jpeg", ".png")):
+        image = vision.Image(content=data)
+        response = client.text_detection(image=image)
+        if response.error.message:
+            raise RuntimeError(response.error.message)
+        return response.full_text_annotation.text or ""
+
+    if name_lower.endswith(".pdf"):
+        input_config = vision.InputConfig(
+            content=data, mime_type="application/pdf",
+        )
+        feature = vision.Feature(
+            type_=vision.Feature.Type.DOCUMENT_TEXT_DETECTION,
+        )
+        request = vision.AnnotateFileRequest(
+            input_config=input_config, features=[feature], pages=[1, 2],
+        )
+        response = client.batch_annotate_files(requests=[request])
+        texts = []
+        for file_response in response.responses:
+            for page_response in file_response.responses:
+                if page_response.error.message:
+                    continue
+                texts.append(page_response.full_text_annotation.text or "")
+        return "\n".join(texts)
+
+    return ""
 
 
 def docx_to_text(data):
@@ -884,9 +975,43 @@ def main():
              "sin OTRO documento del mismo tipo ya fechado), evitando "
              "reprocesar en VM el resto del lote que ya es historico.",
     )
+    parser.add_argument(
+        "--retype", action="store_true",
+        help="H35 (S105). Cambia el barrido y la logica de resolucion: "
+             "en vez de 'solo fecha para tipos ya correctos con "
+             "tracks_expiry=True y sin fecha', selecciona documentos "
+             "de PersonIdentity activa donde ademas se sospecha el "
+             "TIPO -- por defecto, via --document-type (p.ej. "
+             "BAJA_PERSONAL) -- y sin fecha o con fecha de nacimiento "
+             "colada (mismo criterio que run_personal_retype_and_"
+             "date.py). Anade la resolucion de tipo por contenido "
+             "(CONTENT_SIGNALS compartido) sobre el mismo texto que "
+             "ya extrae este script, con Cloud Vision como ultimo "
+             "nivel de OCR cuando Tesseract y EasyOCR no bastan. "
+             "Requiere --document-type (nunca barre todos los tipos "
+             "a la vez en modo retipado -- riesgo real de mezclar "
+             "campañas de contenido distintas en el mismo lote).",
+    )
     args = parser.parse_args()
     if not (0 <= args.shard_index < max(args.shard_count, 1)):
         parser.error("--shard-index debe estar entre 0 y --shard-count - 1")
+    # H35 (S105), decision explicita de Miguel Angel: maximo 12
+    # procesos en paralelo en total (3 por VM x 4 VMs), nunca mas --
+    # ver com-gcloud-windows/SESSION_VARIABLES.md para el criterio de
+    # cuantos procesos por VM. Este limite es sobre el TOTAL de shards
+    # de la campaña (--shard-count), no sobre cuantos se lanzan en
+    # esta ventana de terminal concreta.
+    if args.shard_count > 12:
+        parser.error(
+            "--shard-count no puede superar 12 (3 procesos x 4 VMs "
+            "h28-ocr-batch-1..4 -- decision explicita de Miguel "
+            "Angel, S105)"
+        )
+    if args.retype and not args.document_type:
+        parser.error(
+            "--retype requiere --document-type (nunca se barren todos "
+            "los tipos a la vez en modo retipado)"
+        )
 
     global _LOG_FILE
     log_path = "extract_personal_dates_shard%d.log" % args.shard_index
@@ -967,6 +1092,30 @@ def main():
     # tipos mal etiquetados que no se han auditado.
     domain_clause = "" if args.entry_ids else " AND t.domain = 'PERSONAL'"
 
+    # H35 (S105). En modo --retype no se exige tracks_expiry/
+    # ocr_unreliable=0 (el objetivo es corregir el TIPO, no solo la
+    # fecha -- un tipo mal asignado puede tener cualquier combinacion
+    # de esos flags una vez resuelto el tipo real) y el filtro de
+    # fecha se amplia: ademas de "sin fecha en absoluto", entra
+    # cualquier documento cuya fecha coincida con la de nacimiento de
+    # la persona (con o sin el error de siglo +100 anios) -- mismo
+    # criterio exacto que usa run_personal_retype_and_date.py.
+    date_scope_clause = (
+        " AND e.expiry_date IS NULL AND e.issue_date IS NULL"
+        if not args.retype else
+        " AND ("
+        "  (e.expiry_date IS NULL AND e.issue_date IS NULL)"
+        "  OR (p.birth_date IS NOT NULL AND e.issue_date IN"
+        "      (p.birth_date, DATE_ADD(p.birth_date, INTERVAL 100 YEAR)))"
+        "  OR (p.birth_date IS NOT NULL AND e.expiry_date IN"
+        "      (p.birth_date, DATE_ADD(p.birth_date, INTERVAL 100 YEAR)))"
+        " )"
+    )
+    tracks_ocr_clause = (
+        " AND t.tracks_expiry = 1 AND t.ocr_unreliable = 0"
+        if not args.retype else ""
+    )
+
     with conn.cursor() as cur:
         cur.execute(
             "SELECT id FROM django_content_type "
@@ -975,24 +1124,33 @@ def main():
         person_ct_id = cur.fetchone()[0]
 
         cur.execute(
-            "SELECT e.id, e.name, e.bucket, e.blob_name, t.code "
+            "SELECT e.id, e.name, e.bucket, e.blob_name, t.code, "
+            "       t.ocr_unreliable, p.birth_date "
             "FROM document_explorer_documentindexentry e "
             "JOIN document_explorer_documenttypecatalog t "
             "  ON e.document_type_id = t.id "
             "JOIN document_explorer_personidentity p "
             "  ON e.domain_object_id = p.id "
             "WHERE e.domain_content_type_id = %s"
-            + domain_clause +
-            " AND t.tracks_expiry = 1 "
-            "AND t.ocr_unreliable = 0 "
-            "AND e.expiry_date IS NULL AND e.issue_date IS NULL "
-            "AND e.deleted_at IS NULL AND e.purged_at IS NULL "
+            + domain_clause + tracks_ocr_clause + date_scope_clause +
+            " AND e.deleted_at IS NULL AND e.purged_at IS NULL "
             "AND p.is_active_employee = 1"
             + type_clause + shard_clause + entry_ids_clause +
             " ORDER BY e.id",
             (person_ct_id,) + type_params + shard_params + entry_ids_params,
         )
         rows = cur.fetchall()
+
+        # H35 (S105). Catalogo de codigo -> id, solo hace falta en
+        # modo --retype (para escribir document_type_id cuando el
+        # contenido resuelve un tipo distinto del actual).
+        type_id_by_code = {}
+        if args.retype:
+            cur.execute(
+                "SELECT code, id FROM document_explorer_documenttypecatalog "
+                "WHERE is_active = 1"
+            )
+            type_id_by_code = dict(cur.fetchall())
 
     if args.shard_count > 1:
         print("Reparto: shard %d de %d (entry_id %% %d == %d)"
@@ -1007,10 +1165,13 @@ def main():
         "heuristica_nombre": 0, "mrz": 0, "frente": 0, "ocr_contexto": 0,
         "ocr_unica_fecha": 0, "par_4a_4b": 0, "sin_fecha": 0,
         "sin_extractor": 0, "error": 0,
+        # H35 (S105) -- solo se incrementan en modo --retype.
+        "tipo_ambiguo": 0, "solo_tipo_resuelto": 0, "sin_nada_resoluble": 0,
     }
     start_time = datetime.now()
 
-    for i, (entry_id, name, bucket_name, blob_name, code) in enumerate(rows, start=1):
+    for i, (entry_id, name, bucket_name, blob_name, code, ocr_unreliable,
+            birth_date) in enumerate(rows, start=1):
         if i % 25 == 0 or i == len(rows):
             pct = (i / len(rows) * 100) if rows else 100
             elapsed = (datetime.now() - start_time).total_seconds()
@@ -1024,7 +1185,7 @@ def main():
             )
         if i % 20 == 0:
             conn.ping(reconnect=True)
-        _log("[%d/%d] [%s] %s" % (i, len(rows), code, name))
+        _log("[%d/%d] [%s] %s -- quedan %d" % (i, len(rows), code, name, len(rows) - i))
 
         # H30 (S78): heuristica de nombre de archivo RETIRADA por
         # decision explicita de Miguel Angel -- ya causo dos errores
@@ -1035,6 +1196,7 @@ def main():
         try:
             bucket = gcs_client.bucket(bucket_name)
             data = bucket.blob(blob_name).download_as_bytes()
+            _log("  Probando TESSERACT (PSM automatico)...")
             text = extract_text(name, data)
         except Exception as exc:
             stats["error"] += 1
@@ -1044,6 +1206,194 @@ def main():
         if text is None:
             stats["sin_extractor"] += 1
             _log("  SIN EXTRACTOR (extension no soportada)")
+            continue
+
+        # ---------------------------------------------------------
+        # H35 (S105). MODO RETIPADO -- rama independiente, nunca se
+        # mezcla con la cascada de fecha de abajo (pensada para tipos
+        # YA correctos). Aqui el tipo mismo esta bajo sospecha, asi
+        # que se reintenta OCR (Tesseract PSM6 -> EasyOCR -> Cloud
+        # Vision, en ese orden, decision explicita de Miguel Angel)
+        # mientras no haya ni tipo ni fecha resueltos -- no solo
+        # fecha, como en el modo normal.
+        # ---------------------------------------------------------
+        if args.retype:
+            def _try_resolve(candidate_text, current_code=code):
+                text_upper = _strip_accents(candidate_text or "").upper()
+                new_code, is_ambiguous, matched = resolve_type_from_content(
+                    text_upper, current_code,
+                )
+                c_expiry, c_issue, c_other = classify_dates_in_text(
+                    candidate_text or "",
+                )
+                return new_code, is_ambiguous, matched, c_expiry, c_issue, c_other
+
+            resolved_code, is_ambiguous, matched, expiry, issue, other = (
+                _try_resolve(text)
+            )
+            engine_used = "TESSERACT (PSM automatico)"
+
+            if not resolved_code and not (expiry or issue or other) and (
+                name.lower().endswith((".pdf", ".jpg", ".jpeg", ".png"))
+            ):
+                _log("  TESSERACT (PSM automatico) sin tipo ni fecha -- "
+                     "probando TESSERACT PSM 6...")
+                retry_text = extract_text(name, data, psm=6)
+                if retry_text:
+                    (r_code, r_ambiguous, r_matched, r_expiry, r_issue,
+                     r_other) = _try_resolve(retry_text)
+                    if r_code or r_ambiguous or r_expiry or r_issue or r_other:
+                        text = retry_text
+                        resolved_code, is_ambiguous, matched = (
+                            r_code, r_ambiguous, r_matched,
+                        )
+                        expiry, issue, other = r_expiry, r_issue, r_other
+                        engine_used = "TESSERACT PSM 6"
+                    else:
+                        text = retry_text
+
+                if not resolved_code and not (expiry or issue or other):
+                    _log("  TESSERACT PSM 6 tampoco resolvio nada -- "
+                         "probando EASYOCR...")
+                    try:
+                        easy_text = easyocr_extract_text(name, data)
+                    except Exception as exc:
+                        easy_text = None
+                        _log("  EASYOCR ERROR -- %s" % exc)
+                    if easy_text:
+                        (e_code, e_ambiguous, e_matched, e_expiry, e_issue,
+                         e_other) = _try_resolve(easy_text)
+                        if (e_code or e_ambiguous or e_expiry or e_issue
+                                or e_other or easy_text != text):
+                            text = easy_text
+                        if e_code or e_ambiguous or e_expiry or e_issue or e_other:
+                            resolved_code, is_ambiguous, matched = (
+                                e_code, e_ambiguous, e_matched,
+                            )
+                            expiry, issue, other = e_expiry, e_issue, e_other
+                            engine_used = "EASYOCR"
+
+                    if not resolved_code and not (expiry or issue or other):
+                        _log("  EASYOCR tampoco resolvio nada -- probando "
+                             "CLOUD VISION (ultimo recurso)...")
+                        try:
+                            vision_text = cloud_vision_extract_text(name, data)
+                        except Exception as exc:
+                            vision_text = None
+                            _log("  CLOUD VISION ERROR -- %s" % exc)
+                        if vision_text:
+                            (v_code, v_ambiguous, v_matched, v_expiry,
+                             v_issue, v_other) = _try_resolve(vision_text)
+                            if (v_code or v_ambiguous or v_expiry or v_issue
+                                    or v_other or vision_text != text):
+                                text = vision_text
+                            if v_code or v_ambiguous or v_expiry or v_issue or v_other:
+                                resolved_code, is_ambiguous, matched = (
+                                    v_code, v_ambiguous, v_matched,
+                                )
+                                expiry, issue, other = v_expiry, v_issue, v_other
+                                engine_used = "CLOUD VISION"
+
+            # Cachear siempre el mejor texto encontrado, gane lo que
+            # gane -- mismo principio que el modo normal (S97).
+            if args.apply:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "UPDATE document_explorer_documentindexentry "
+                        "SET ocr_text=%s WHERE id=%s",
+                        (text, entry_id),
+                    )
+                conn.commit()
+
+            if is_ambiguous:
+                stats["tipo_ambiguo"] = stats.get("tipo_ambiguo", 0) + 1
+                _log("  TIPO AMBIGUO (%s) -- motor: %s -- sin escribir, "
+                     "queda para revision manual"
+                     % (sorted(matched), engine_used))
+                continue
+
+            # Descartar como fecha la fecha de nacimiento colada (con o
+            # sin el error de siglo +100 anios) -- mismo criterio que
+            # run_personal_retype_and_date.py.
+            bad_dates = set()
+            if birth_date:
+                bad_dates = {
+                    birth_date, birth_date.replace(year=birth_date.year + 100),
+                }
+            if expiry in bad_dates:
+                expiry = None
+            if issue in bad_dates:
+                issue = None
+            if other:
+                other = [d for d in other if d not in bad_dates]
+            date_field, date_value = None, None
+            if expiry:
+                date_field, date_value = "expiry_date", expiry
+            elif issue:
+                date_field, date_value = "issue_date", issue
+            elif len(set(other)) == 1:
+                date_field, date_value = "issue_date", other[0]
+
+            type_changed = bool(resolved_code and resolved_code != code)
+            # Un tipo resuelto como ocr_unreliable (DNI/NIE/CARNET_
+            # CONDUCIR/TACOGRAFO/TARJETA_CUALIF_CONDUCTOR) nunca fija
+            # fecha aqui -- ese tipo de documento exige Gemini Vision
+            # (run_personal_retype_and_date.py), que este script
+            # standalone no tiene disponible. Se deja sin fecha para
+            # que el comando Django lo resuelva despues.
+            resolved_is_unreliable = ocr_unreliable
+            if type_changed:
+                # H35 (S105): el ocr_unreliable del tipo NUEVO puede
+                # no coincidir con el del tipo actual -- se comprueba
+                # aparte con una consulta minima, solo si hizo falta.
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT ocr_unreliable FROM "
+                        "document_explorer_documenttypecatalog WHERE code=%s",
+                        (resolved_code,),
+                    )
+                    row = cur.fetchone()
+                    resolved_is_unreliable = bool(row[0]) if row else False
+            if resolved_is_unreliable:
+                date_field, date_value = None, None
+
+            if not type_changed and not date_value:
+                stats["sin_nada_resoluble"] = stats.get("sin_nada_resoluble", 0) + 1
+                _log("  SIN TIPO NI FECHA resolubles -- motor: %s "
+                     "(ocr_text_len=%d)" % (engine_used, len(text or "")))
+                continue
+
+            _log(
+                "  RESUELTO -- motor: %s -- tipo: %s%s -- fecha: %s%s"
+                % (
+                    engine_used, code,
+                    (" -> %s" % resolved_code) if type_changed else " (confirmado)",
+                    date_field or "sin resolver",
+                    (" = %s" % date_value) if date_value else "",
+                )
+            )
+            if type_changed:
+                stats["solo_tipo_resuelto"] = stats.get("solo_tipo_resuelto", 0) + 1
+            if date_value:
+                stats["ocr_contexto"] += 1
+
+            if args.apply:
+                with conn.cursor() as cur:
+                    if type_changed:
+                        new_type_id = type_id_by_code.get(resolved_code)
+                        if new_type_id:
+                            cur.execute(
+                                "UPDATE document_explorer_documentindexentry "
+                                "SET document_type_id=%s WHERE id=%s",
+                                (new_type_id, entry_id),
+                            )
+                    if date_value:
+                        cur.execute(
+                            "UPDATE document_explorer_documentindexentry "
+                            "SET %s=%%s WHERE id=%%s" % date_field,
+                            (date_value, entry_id),
+                        )
+                conn.commit()
             continue
 
         # FASE 1bis -- MRZ de DNI/NIE (S79). Contenido real impreso
