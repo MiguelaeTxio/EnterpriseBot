@@ -104,6 +104,22 @@ CONTENT_SIGNALS = {
         "HA RECIBIDO FORMACION E INFORMACION, EN CUMPLIMIENTO DE LOS "
         "ARTICULOS 18 Y 19",
     ],
+    "RECURSO_PREVENTIVO": ["DESIGNACION DE RECURSO PREVENTIVO"],
+    # H35 (S105). TACOGRAFO y TARJETA_CUALIF_CONDUCTOR ya existian en
+    # el catalogo (migraciones 0004/0045) pero sin signal todavia --
+    # confirmados y diferenciados con muestra real: "TARJETA DE
+    # CONDUCTOR" (pk=32835/42316, sin "CUALIFICACION DEL" en medio)
+    # es TACOGRAFO; "TARJETA DE CUALIFICACION DEL CONDUCTOR"
+    # (pk=32833) es TARJETA_CUALIF_CONDUCTOR -- frases sin solape
+    # entre si (la de TACOGRAFO no es substring de la otra).
+    "TACOGRAFO": ["TARJETA DE CONDUCTOR"],
+    "TARJETA_CUALIF_CONDUCTOR": ["TARJETA DE CUALIFICACION"],
+    # H35 (S105). Confirmado con pk=42128/41145 (dos personas
+    # distintas, mismo formato Grupo Alvarez) -- "ENTREGA DE EPI'S.
+    # FECHA: ...". Sin el apostrofo en la frase de busqueda (su
+    # codificacion varia entre recto/tipografico segun el documento
+    # y no siempre sobrevive la extraccion de texto).
+    "EPIS": ["ENTREGA DE EPI"],
 }
 
 # Pares "gana X sobre Y" -- mismo principio que SPECIFIC_WINS de
