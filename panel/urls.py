@@ -43,6 +43,7 @@ from panel.views_documentation_h30 import (
     PersonalDocumentSelectionPreviewView,
     PersonalDocumentSelectionZipView,
     PersonalDocumentTypeHistoryView,
+    PersonalDossierEmailSendView,
     PersonalDossierTemplateApplyView,
     PersonalDossierTemplateCreateView,
     PersonalDossierTemplateDeleteView,
@@ -155,6 +156,7 @@ from panel.views import (
     CompanyUserBulkDeleteView,
     WorkerScheduleUpdateView,
     OwnProfileView,
+    OwnProfileSignatureSaveView,
     TrustDeviceView,
     TrustDeviceToggleView,
     TrustDeviceQuickLoginView,
@@ -438,6 +440,8 @@ urlpatterns = [
     path("documentacion/personal/<int:pk>/seleccion/pdf/", PersonalDocumentSelectionPdfView.as_view(), name="documentation_personal_document_selection_pdf"),
     # H31 (S103): descarga del dossier de la selección como ZIP (archivos originales, una carpeta por familia).
     path("documentacion/personal/<int:pk>/seleccion/zip/", PersonalDocumentSelectionZipView.as_view(), name="documentation_personal_document_selection_zip"),
+    # H31 (S104): envío del dossier (selección o plantilla) como adjunto de un .eml, con cuerpo editable y firma del supervisor.
+    path("documentacion/personal/<int:pk>/seleccion/email/", PersonalDossierEmailSendView.as_view(), name="documentation_personal_dossier_email_send"),
     # H31 (S103): guardar la selección actual como plantilla de dossier nueva.
     path("documentacion/personal/<int:pk>/plantillas/guardar/", PersonalDossierTemplateCreateView.as_view(), name="documentation_personal_dossier_template_create"),
     # H31 (S103): gestor de plantillas de dossier de la empresa (fragmento del modal, abierto desde una ficha de persona concreta).
@@ -502,6 +506,8 @@ urlpatterns = [
 
     # Own profile — Perfil propio del operario: edición de alias de chat (Hito 14 Paso 6).
     path("profile/", OwnProfileView.as_view(), name="own_profile"),
+    # H31 (S104): guardado de la firma de correo del propio CompanyUser.
+    path("profile/signature/", OwnProfileSignatureSaveView.as_view(), name="own_profile_signature_save"),
 
     # Trust device — Pregunta de confianza de dispositivo tras login (S039).
     path("trust-device/", TrustDeviceView.as_view(), name="trust_device"),

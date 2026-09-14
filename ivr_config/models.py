@@ -470,6 +470,44 @@ class CompanyUser(models.Model):
         ),
     )
 
+    # ------------------------------------------------------------------
+    # Firma de correo -- H31 (S104). Investigado en S103 contra
+    # documentacion oficial de Microsoft: abrir un .eml externo NO
+    # dispara la insercion automatica de la firma por defecto de
+    # Outlook (solo lo hace un "Nuevo correo" creado desde el propio
+    # Outlook). Por eso se guarda aqui la firma de cada supervisor y se
+    # incrusta directamente en el cuerpo HTML de cada .eml generado
+    # desde el panel (dossieres, notificaciones), en vez de depender
+    # del mecanismo de Outlook. Campo HTML directo (no modelo
+    # dedicado) -- decision tomada en esta sesion: una firma no tiene
+    # historial propio ni se comparte entre usuarios, no justifica un
+    # modelo aparte.
+    # ---
+    # Email signature -- H31 (S104). Investigated in S103 against
+    # official Microsoft documentation: opening an external .eml does
+    # NOT trigger Outlook's default signature insertion (only a "New
+    # email" created from within Outlook itself does). So each
+    # supervisor's signature is stored here and embedded directly in
+    # the HTML body of every .eml generated from the panel (dossiers,
+    # notifications), instead of relying on Outlook's own mechanism.
+    # Plain HTML field (no dedicated model) -- decision taken this
+    # session: a signature has no history of its own and is never
+    # shared between users, doesn't justify a separate model.
+    # ------------------------------------------------------------------
+    email_signature_html = models.TextField(
+        blank=True,
+        default="",
+        verbose_name="Firma de correo (HTML)",
+        help_text=(
+            "Firma HTML de este usuario, incrustada directamente en el "
+            "cuerpo de los .eml generados desde el panel (dossieres de "
+            "personal, notificaciones/circulares) -- ver nota H31 "
+            "(S104) arriba sobre por qué no se depende de la firma "
+            "por defecto de Outlook. Vacía por defecto: el .eml se "
+            "genera igual sin firma, simplemente sin ese bloque."
+        ),
+    )
+
     created_at = models.DateTimeField(
         auto_now_add=True,
         verbose_name="Fecha de creación",

@@ -110,6 +110,7 @@ from panel.views_auth import (
     WhatsAppTemplateListView,
     WhatsAppActiveSessionListView,
     OwnProfileView,
+    OwnProfileSignatureSaveView,
     CompanySettingsView,
 )
 

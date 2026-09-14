@@ -1276,16 +1276,39 @@ class PersonalDocumentSelectionPreviewView(CompanyUserRequiredMixin, View):
         )
 
 
-def _build_dossier_pdf_response(person, entries):
+class DossierBuildError(Exception):
     """
-    H31 (S103). Genera la respuesta HTTP del dossier en PDF único a
-    partir de un `person` y un queryset/lista de `entries` ya
-    resueltos -- compartido por PersonalDocumentSelectionPdfView (a
-    partir de la selección de casilleros) y
-    PersonalDossierTemplateApplyView (a partir de una plantilla
-    guardada, resolviendo el vigente de cada tipo en este mismo
-    instante). Nunca se llama con `entries` ya vacío -- el llamador
-    decide qué mensaje de error mostrar si no hay nada que ofrecer.
+    H31 (S104). Raised by the dossier byte-building cores
+    (_build_dossier_pdf_bytes/_build_dossier_zip_bytes) when no
+    document can be included -- never an HttpResponse, so both the
+    direct-download views and the new email-sending flow decide for
+    themselves how to surface the failure (a 400 response for direct
+    download, one more entry in a batch error list when sending by
+    email), same pattern as NotificationEmlError below.
+    ---
+    H31 (S104). Lanzada por los nucleos de construccion de bytes del
+    dossier (_build_dossier_pdf_bytes/_build_dossier_zip_bytes) cuando
+    no se puede incluir ningun documento -- nunca un HttpResponse, asi
+    ambos flujos (descarga directa, envio por correo nuevo) deciden
+    por si mismos como mostrar el fallo (una respuesta 400 para
+    descarga directa, una entrada mas en la lista de errores del lote
+    al enviar por correo), mismo patron que NotificationEmlError mas
+    abajo.
+    """
+
+
+def _build_dossier_pdf_bytes(person, entries):
+    """
+    H31 (S104). Extracted from _build_dossier_pdf_response (S103) so
+    the raw PDF bytes can also be attached to an .eml, not only served
+    as a direct HttpResponse download. Returns (pdf_bytes, filename).
+    Raises DossierBuildError when no entry has a supported format.
+    ---
+    H31 (S104). Extraido de _build_dossier_pdf_response (S103) para
+    que los bytes del PDF tambien puedan adjuntarse a un .eml, no solo
+    servirse como descarga HttpResponse directa. Devuelve
+    (pdf_bytes, filename). Lanza DossierBuildError cuando ningun
+    documento tiene un formato soportado.
     """
     included_pdfs = []
     included_lines = []
@@ -1312,10 +1335,9 @@ def _build_dossier_pdf_response(person, entries):
         included_lines.append(f"{label} -- {family} -- {caducidad}")
 
     if not included_pdfs:
-        return HttpResponse(
+        raise DossierBuildError(
             "Ningún documento tiene un formato soportado para el PDF "
             "único (usa la descarga en ZIP para estos archivos).",
-            status=400,
         )
 
     person_line = (
@@ -1339,24 +1361,48 @@ def _build_dossier_pdf_response(person, entries):
     try:
         merged_bytes = merge_pdfs([cover_bytes] + included_pdfs)
     except EmptyDocumentListError as exc:
-        return HttpResponse(str(exc), status=400)
+        raise DossierBuildError(str(exc)) from exc
 
     person_token = naming_service.build_person_folder_name(
         person.first_surname, person.second_surname, person.given_name,
     )
     filename = f"Dossier_{person_token}_{timezone.localdate().isoformat()}.pdf"
-    response = HttpResponse(merged_bytes, content_type="application/pdf")
+    return merged_bytes, filename
+
+
+def _build_dossier_pdf_response(person, entries):
+    """
+    H31 (S103, refactorizado S104). Genera la respuesta HTTP del
+    dossier en PDF único a partir de un `person` y un queryset/lista
+    de `entries` ya resueltos -- compartido por
+    PersonalDocumentSelectionPdfView (a partir de la selección de
+    casilleros) y PersonalDossierTemplateApplyView (a partir de una
+    plantilla guardada, resolviendo el vigente de cada tipo en este
+    mismo instante). Nunca se llama con `entries` ya vacío -- el
+    llamador decide qué mensaje de error mostrar si no hay nada que
+    ofrecer. Delega la construcción real de bytes en
+    _build_dossier_pdf_bytes (S104), compartida también con el envío
+    por correo.
+    """
+    try:
+        pdf_bytes, filename = _build_dossier_pdf_bytes(person, entries)
+    except DossierBuildError as exc:
+        return HttpResponse(str(exc), status=400)
+    response = HttpResponse(pdf_bytes, content_type="application/pdf")
     response["Content-Disposition"] = f'attachment; filename="{filename}"'
     return response
 
 
-def _build_dossier_zip_response(person, entries):
+def _build_dossier_zip_bytes(person, entries):
     """
-    H31 (S103). Genera la respuesta HTTP del dossier en ZIP a partir
-    de un `person` y un queryset/lista de `entries` ya resueltos --
-    compartido por PersonalDocumentSelectionZipView y
-    PersonalDossierTemplateApplyView, mismo criterio que
-    `_build_dossier_pdf_response`.
+    H31 (S104). Extracted from _build_dossier_zip_response (S103) so
+    the raw ZIP bytes can also be attached to an .eml, not only served
+    as a direct HttpResponse download. Returns (zip_bytes, filename).
+    ---
+    H31 (S104). Extraido de _build_dossier_zip_response (S103) para
+    que los bytes del ZIP tambien puedan adjuntarse a un .eml, no solo
+    servirse como descarga HttpResponse directa. Devuelve
+    (zip_bytes, filename).
     """
     import io
     import zipfile
@@ -1398,7 +1444,22 @@ def _build_dossier_zip_response(person, entries):
         person.first_surname, person.second_surname, person.given_name,
     )
     filename = f"Dossier_{person_token}_{timezone.localdate().isoformat()}.zip"
-    response = HttpResponse(zip_buffer.getvalue(), content_type="application/zip")
+    return zip_buffer.getvalue(), filename
+
+
+def _build_dossier_zip_response(person, entries):
+    """
+    H31 (S103, refactorizado S104). Genera la respuesta HTTP del
+    dossier en ZIP a partir de un `person` y un queryset/lista de
+    `entries` ya resueltos -- compartido por
+    PersonalDocumentSelectionZipView y
+    PersonalDossierTemplateApplyView, mismo criterio que
+    `_build_dossier_pdf_response`. Delega la construcción real de
+    bytes en _build_dossier_zip_bytes (S104), compartida también con
+    el envío por correo.
+    """
+    zip_bytes, filename = _build_dossier_zip_bytes(person, entries)
+    response = HttpResponse(zip_bytes, content_type="application/zip")
     response["Content-Disposition"] = f'attachment; filename="{filename}"'
     return response
 
@@ -1452,6 +1513,70 @@ class PersonalDocumentSelectionZipView(CompanyUserRequiredMixin, View):
                 status=400,
             )
         return _build_dossier_zip_response(person, entries)
+
+
+class PersonalDossierEmailSendView(DocsUploadAccessMixin, View):
+    """
+    H31 (S104), punto 1 de la hoja de ruta. POST: genera y sirve para
+    descarga un `.eml` real con el dossier de documentación de una
+    persona adjunto (PDF único, o ZIP si el PDF no es viable para la
+    selección -- ver `_build_dossier_notification_eml`), un cuerpo de
+    mensaje editado por el propio supervisor en el editor básico del
+    panel (`body_html`, obligatorio) y la firma real de quien envía
+    (`request.user.company_user.email_signature_html`).
+
+    Fuente de los documentos a adjuntar, en este orden de prioridad:
+    1. `template_pk` en el POST -- dossier de una plantilla guardada
+       (`_resolve_template_entries`, resuelve el documento VIGENTE de
+       cada tipo en este mismo instante, igual que
+       `PersonalDossierTemplateApplyView`).
+    2. Sin `template_pk` -- la selección actual de casilleros
+       (`_resolve_document_selection`, misma fuente que las vistas de
+       PDF/ZIP directo).
+
+    Mismo criterio que `PersonalNotificationSendView`: no hay envío
+    SMTP real desde el servidor (sin EMAIL_BACKEND configurado). El
+    `.eml` se descarga y el supervisor lo abre/reenvía desde su propio
+    Outlook -- pendiente de confirmación visual real con Outlook antes
+    de dar este punto por cerrado (ver hoja de ruta H31-S104).
+    """
+
+    def post(self, request, pk):
+        person = get_object_or_404(PersonIdentity, pk=pk)
+
+        template_pk = request.POST.get("template_pk", "").strip()
+        if template_pk:
+            template = get_object_or_404(
+                PersonalDossierTemplate, pk=template_pk,
+            )
+            entries = _resolve_template_entries(person, template)
+        else:
+            _person, entries = _resolve_document_selection(request, pk)
+
+        if not entries:
+            return HttpResponse(
+                "No hay ningún documento que incluir en el dossier "
+                "(ni selección de casilleros ni plantilla con "
+                "documentos vigentes).", status=400,
+            )
+
+        body_html = request.POST.get("body_html", "").strip()
+        if not body_html:
+            return HttpResponse(
+                "Falta el cuerpo del mensaje (campo 'body_html', "
+                "editor básico del panel).", status=400,
+            )
+
+        try:
+            eml_bytes, filename = _build_dossier_notification_eml(
+                person, entries, body_html, request.user.company_user,
+            )
+        except NotificationEmlError as exc:
+            return HttpResponse(str(exc), status=400)
+
+        response = HttpResponse(eml_bytes, content_type="message/rfc822")
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
 
 
 def _resolve_template_entries(person, template):
@@ -2659,6 +2784,121 @@ def _build_notification_eml(person, document_type):
             )
 
     filename = f"notificacion_{document_type.code.lower()}_{person.pk}.eml"
+    return bytes(msg), filename
+
+
+def _build_dossier_notification_eml(person, entries, body_html, sender_company_user):
+    """
+    H31 (S104), punto 1 de la hoja de ruta. Construye el `.eml` real
+    de envío de un dossier de documentación para UNA persona --
+    extiende el mecanismo `.eml` de `_build_notification_eml`
+    (H31 S74/S75) pero adjuntando el PDF/ZIP del dossier en vez de
+    incrustar el HTML de una circular en el cuerpo, con un cuerpo de
+    mensaje editable (`body_html`, ver PersonalDossierEmailSendView) y
+    la firma real del supervisor que envía
+    (`sender_company_user.email_signature_html`, H31 S104 -- ver nota
+    en el modelo `CompanyUser` sobre por qué no se depende de la firma
+    por defecto de Outlook).
+
+    Intenta primero el PDF único (`_build_dossier_pdf_bytes`); si
+    `DossierBuildError` (ningún documento con formato soportado para
+    PDF), cae automáticamente al ZIP (`_build_dossier_zip_bytes`, que
+    admite cualquier formato original) -- nunca se aborta el envío
+    solo porque el PDF fusionado no sea viable para esta selección
+    concreta.
+
+    Lanza `NotificationEmlError` -- nunca HttpResponse, mismo patrón
+    que `_build_notification_eml` -- cuando la persona no tiene correo
+    registrado o cuando ni el PDF ni el ZIP pueden construirse (lista
+    de `entries` vacía o sin ningún documento descargable).
+    ---
+    H31 (S104), roadmap point 1. Builds the real dossier-sending
+    `.eml` for ONE person -- extends the `.eml` mechanism from
+    `_build_notification_eml` (H31 S74/S75) but attaching the
+    dossier's PDF/ZIP instead of embedding a circular's HTML in the
+    body, with an editable message body (`body_html`, see
+    PersonalDossierEmailSendView) and the real signature of the
+    sending supervisor (`sender_company_user.email_signature_html`,
+    H31 S104 -- see the note on the `CompanyUser` model on why
+    Outlook's default signature isn't relied upon).
+
+    Tries the single PDF first (`_build_dossier_pdf_bytes`); on
+    `DossierBuildError` (no document with a PDF-supported format) it
+    automatically falls back to the ZIP (`_build_dossier_zip_bytes`,
+    which accepts any original format) -- the send is never aborted
+    just because the merged PDF isn't viable for this particular
+    selection.
+
+    Raises `NotificationEmlError` -- never HttpResponse, same pattern
+    as `_build_notification_eml` -- when the person has no registered
+    email, or when neither the PDF nor the ZIP can be built (empty
+    `entries`, or no downloadable document at all).
+    """
+    recipient = (person.email or "").strip()
+    if not recipient:
+        raise NotificationEmlError(
+            f"{person} no tiene correo electrónico registrado -- no se "
+            f"puede enviar el dossier.",
+        )
+
+    try:
+        attachment_bytes, attachment_filename = _build_dossier_pdf_bytes(
+            person, entries,
+        )
+        attachment_mime = ("application", "pdf")
+    except DossierBuildError:
+        try:
+            attachment_bytes, attachment_filename = _build_dossier_zip_bytes(
+                person, entries,
+            )
+            attachment_mime = ("application", "zip")
+        except DossierBuildError as exc:
+            raise NotificationEmlError(str(exc)) from exc
+
+    msg = StdEmailMessage()
+    msg["Subject"] = f"Dossier de documentación -- {person}"
+    msg["From"] = "notificaciones@grupoalvarez.local"
+    msg["To"] = recipient
+
+    msg.set_content(
+        f"Dossier de documentación para {person}.\n"
+        "Este cliente de correo no muestra HTML -- consulte la "
+        "versión web o abra este mensaje con un cliente compatible."
+    )
+
+    signature_html = (
+        (sender_company_user.email_signature_html or "").strip()
+        if sender_company_user else ""
+    )
+    logo_cid = make_msgid()
+    html_body = f"""
+        <html><body style="font-family: Arial, sans-serif;">
+          <p style="margin-bottom:16px;">
+            <img src="cid:{logo_cid[1:-1]}" alt="Grupo Álvarez" height="40">
+          </p>
+          <p>Estimado/a <strong>{person}</strong>,</p>
+          {body_html}
+          {signature_html}
+        </body></html>
+    """
+    msg.add_alternative(html_body, subtype="html")
+
+    logo_path = find_static("panel/img/grupo_alvarez_logo.png")
+    if logo_path:
+        with open(logo_path, "rb") as logo_file:
+            msg.get_payload()[1].add_related(
+                logo_file.read(), "image", "png", cid=logo_cid,
+            )
+
+    maintype, subtype = attachment_mime
+    msg.add_attachment(
+        attachment_bytes,
+        maintype=maintype,
+        subtype=subtype,
+        filename=attachment_filename,
+    )
+
+    filename = f"dossier_notificacion_{person.pk}.eml"
     return bytes(msg), filename
 
 

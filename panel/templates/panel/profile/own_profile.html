@@ -89,5 +89,74 @@
     </div>
   </div>
 
+  {# Firma de correo -- H31 (S104). Incrustada a mano en cada .eml #}
+  {# generado desde el panel (dossieres, notificaciones), porque #}
+  {# abrir un .eml externo no dispara la firma por defecto de Outlook. #}
+  <div class="row mt-4">
+    <div class="col-md-8 col-lg-7">
+      <div class="card">
+        <div class="card-header fw-semibold d-flex align-items-center justify-content-between flex-wrap gap-1 py-2">
+          <span><i class="bi bi-pencil-square me-2 text-secondary"></i>Firma de correo</span>
+          <span class="d-flex align-items-center gap-1">
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-cmd="bold" title="Negrita"><i class="bi bi-type-bold"></i></button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-cmd="italic" title="Cursiva"><i class="bi bi-type-italic"></i></button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-cmd="underline" title="Subrayado"><i class="bi bi-type-underline"></i></button>
+            <button type="button" class="btn btn-sm btn-outline-danger" id="sig-clear-format" title="Limpiar formato"><i class="bi bi-eraser"></i></button>
+          </span>
+        </div>
+        <div class="card-body">
+          <p class="text-muted small">
+            Se incrusta tal cual en el cuerpo de cada dossier/notificación
+            enviados por correo desde el panel -- abrir un .eml externo no
+            dispara la firma por defecto de Outlook, así que se guarda aquí.
+          </p>
+          <div id="sig-editor" class="form-control" style="min-height: 120px; font-family: Arial, sans-serif;" contenteditable="true">{{ company_user.email_signature_html|safe }}</div>
+        </div>
+        <div class="card-footer text-end">
+          <form method="post" action="{% url 'panel:own_profile_signature_save' %}" id="sig-save-form">
+            {% csrf_token %}
+            <input type="hidden" name="email_signature_html" id="sig-content-hidden">
+            <button type="submit" class="btn btn-sm btn-primary">Guardar firma</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
 </div>
+
+<style>
+    #sig-editor:focus { outline: 2px solid #0d6efd33; }
+</style>
+
+<script>
+(function () {
+    const editor = document.getElementById('sig-editor');
+
+    // Mismo alcance reducido que el editor de circulares (H31 S75):
+    // pegar contenido externo se limpia a texto plano.
+    editor.addEventListener('paste', function (ev) {
+        ev.preventDefault();
+        const text = (ev.clipboardData || window.clipboardData).getData('text/plain');
+        document.execCommand('insertText', false, text);
+    });
+
+    document.querySelectorAll('#sig-editor').forEach(() => {});
+    document.querySelectorAll('[data-cmd]').forEach((btn) => {
+        btn.addEventListener('click', function () {
+            editor.focus();
+            document.execCommand(btn.dataset.cmd, false, null);
+        });
+    });
+
+    document.getElementById('sig-clear-format').addEventListener('click', function () {
+        editor.focus();
+        document.execCommand('removeFormat', false, null);
+    });
+
+    document.getElementById('sig-save-form').addEventListener('submit', function () {
+        document.getElementById('sig-content-hidden').value = editor.innerHTML;
+    });
+})();
+</script>
 {% endblock %}

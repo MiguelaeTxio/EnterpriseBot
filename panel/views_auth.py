@@ -1856,6 +1856,41 @@ class OwnProfileView (CompanyUserRequiredMixin ,View ):
 
 
 
+class OwnProfileSignatureSaveView (CompanyUserRequiredMixin ,View ):
+    """
+    H31 (S104). POST: guarda la firma HTML del CompanyUser autenticado
+    (email_signature_html), tal cual llega del editor básico
+    incrustado en own_profile.html -- mismo patrón/alcance reducido
+    que CircularSaveContentView (negrita/cursiva/subrayado vía
+    document.execCommand, pegado externo limpiado a texto plano por
+    el propio JS del editor, nunca HTML arbitrario).
+
+    Cualquier CompanyUser autenticado puede editar SU PROPIA firma
+    (nunca la de otro) -- se guarda siempre sobre
+    request.user.company_user, el pk nunca llega por parámetro.
+    ---
+    H31 (S104). POST: saves the authenticated CompanyUser's HTML
+    signature (email_signature_html), as received from the basic
+    editor embedded in own_profile.html -- same pattern/reduced scope
+    as CircularSaveContentView (bold/italic/underline via
+    document.execCommand, external paste cleaned to plain text by the
+    editor's own JS, never arbitrary HTML).
+
+    Any authenticated CompanyUser can edit THEIR OWN signature (never
+    someone else's) -- it is always saved onto
+    request.user.company_user, the pk never arrives as a parameter.
+    """
+
+    def post (self ,request ,*args ,**kwargs ):
+        company_user =request .user .company_user 
+        company_user .email_signature_html =request .POST .get ("email_signature_html","")
+        company_user .save (update_fields =["email_signature_html"])
+        django_messages .success (request ,"Firma de correo guardada.")
+        return redirect ("panel:own_profile")
+
+
+
+
 
 
 class CompanySettingsView (AdminRoleRequiredMixin ,View ):
