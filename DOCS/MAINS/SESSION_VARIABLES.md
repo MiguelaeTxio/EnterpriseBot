@@ -937,6 +937,73 @@ servicio, `watched_folders.json`, `history.json`,
 
 ---
 
+## ⛔⛔⛔ REGLA DE MÁXIMA VISIBILIDAD -- LAS 4 VMs SE CREARON A LA VEZ DESDE `h28-ocr-batch-image-v1`, LA IMAGEN PUEDE ESTAR DESACTUALIZADA (incidente real S105)
+
+**HECHO CONFIRMADO POR MIGUEL ÁNGEL, NUNCA VOLVER A PREGUNTARLO:** las
+4 VMs (`h28-ocr-batch-1/2/3/4`) se crearon **todas a la vez** desde el
+mismo disco imagen `h28-ocr-batch-image-v1`. Dos de ellas
+(`h28-ocr-batch-1/2`) llevan usándose desde entonces y han acumulado
+correcciones manuales posteriores a la creación de la imagen; las
+otras dos (`h28-ocr-batch-3/4`) llevaban paradas desde su creación y
+**nunca recibieron esas correcciones** -- la imagen en sí quedó
+congelada en 2026-09-02 (ver sección "IMAGEN PERSONALIZADA" más abajo)
+y no se ha regenerado desde entonces pese a cambios reales posteriores
+en el entorno.
+
+**Incidente real S105:** `extract_personal_dates_bulk.py` falló en
+`h28-ocr-batch-3` con `ValueError: No password or public key
+available!` al abrir el túnel SSH hacia PythonAnywhere --
+`~/.ssh/` en esa VM solo tenía `authorized_keys` (conexiones
+ENTRANTES), ninguna clave PRIVADA para conexiones SALIENTES. La
+misma VM recién creada desde la imagen nunca tuvo esa clave --
+`h28-ocr-batch-1/2` la tienen porque alguien la copió o generó a mano
+en algún momento posterior a 2026-09-02, sin dejarlo documentado
+aquí. Resultado: dos VMs de las cuatro totalmente inservibles para
+este script en el momento de usarlas por primera vez, descubierto a
+mitad de una campaña de 12 procesos ya lanzada.
+
+**REGLA DE OBLIGADO CUMPLIMIENTO, SIN EXCEPCIÓN, ANTES DE EJECUTAR
+`extract_personal_dates_bulk.py` (O CUALQUIER SCRIPT DE ESTE AGENTE
+QUE ABRA TÚNEL SSH) EN UNA VM QUE NO SE HAYA USADO YA EN LA SESIÓN
+ACTUAL:**
+
+1. Verificar primero, en esa VM, con un único comando:
+   ```bash
+   ls -la ~/.ssh/
+   ```
+2. Si no aparece una clave privada (`id_rsa`, `id_ed25519` o
+   equivalente, sin extensión `.pub`) junto a `authorized_keys`: la
+   VM NO puede abrir el túnel todavía. Nunca lanzar el script a
+   ciegas esperando que falle para enterarse.
+3. Arreglo -- copiar la clave desde una VM que SÍ funcione (nunca
+   generar una clave nueva y registrarla en PythonAnywhere, eso
+   requiere acceso al panel que el modelo no tiene):
+   ```bash
+   # En la VM que SI funciona (origen), imprimir la clave privada:
+   cat ~/.ssh/NOMBRE_CLAVE_REAL
+   ```
+   Pegar el contenido en la VM de destino:
+   ```bash
+   mkdir -p ~/.ssh && chmod 700 ~/.ssh && cat > ~/.ssh/NOMBRE_CLAVE_REAL << 'SSHKEYEOF'
+   [pegar aqui el contenido exacto]
+   SSHKEYEOF
+   chmod 600 ~/.ssh/NOMBRE_CLAVE_REAL
+   ```
+4. **Después de arreglar una VM, actualizar esta misma sección con el
+   nombre real del archivo de clave usado** -- la próxima sesión no
+   debe volver a descubrirlo de cero.
+5. Si esto obliga a regenerar `h28-ocr-batch-image-v1` (nueva versión
+   con la clave ya incluida), hacerlo y documentar la nueva imagen en
+   la sección de abajo -- no dejar el parche solo a nivel de VMs
+   sueltas si se repite una tercera vez.
+
+**Origen, verbatim (Miguel Ángel, S105):** *"cada vez que vayamos a
+utilizar las máquinas virtuales el modelo debe saber perfectamente
+cómo tenemos organizado todo y qué es lo que tiene que hacer. No debe
+de haber ninguna duda ni ninguna ambigüedad."*
+
+---
+
 ## IMAGEN PERSONALIZADA DE LAS VMs DE OCR -- `h28-ocr-batch-image-v1`
 ## (sesion tras S85, 2026-09-02)
 
