@@ -1228,32 +1228,69 @@ def main():
                 )
                 return new_code, is_ambiguous, matched, c_expiry, c_issue, c_other
 
+            def _date_field_value(expiry_v, issue_v, other_v):
+                if expiry_v:
+                    return "expiry_date", expiry_v
+                if issue_v:
+                    return "issue_date", issue_v
+                if other_v and len(set(other_v)) == 1:
+                    return "issue_date", other_v[0]
+                return None, None
+
+            def _is_usable(code_result, is_amb, expiry_v, issue_v, other_v):
+                # H35 (S105), corregido tras incidente real (VM
+                # h28-ocr-batch-1, pk GRANA_ALVAREZ_PALOMA): la
+                # version anterior escalaba de motor solo si NO habia
+                # NINGUNA fecha suelta ("other"), aunque esas fechas
+                # sueltas fueran ambiguas (mas de una) y por tanto
+                # nunca fueran a escribirse -- Tesseract PSM automatico
+                # encontraba "ruido" de fechas sin resolver nada de
+                # verdad, y el script se quedaba ahi sin probar PSM6/
+                # EasyOCR/Cloud Vision. Ahora "usable" se define igual
+                # que el resultado que de verdad se escribiria: un
+                # tipo resuelto sin ambiguedad, O una fecha resoluble
+                # de verdad (_date_field_value no-None) -- nunca la
+                # mera presencia de "other".
+                if code_result and not is_amb:
+                    return True
+                field, _ = _date_field_value(expiry_v, issue_v, other_v)
+                return field is not None
+
             resolved_code, is_ambiguous, matched, expiry, issue, other = (
                 _try_resolve(text)
             )
             engine_used = "TESSERACT (PSM automatico)"
 
-            if not resolved_code and not (expiry or issue or other) and (
+            if not _is_usable(resolved_code, is_ambiguous, expiry, issue, other) and (
                 name.lower().endswith((".pdf", ".jpg", ".jpeg", ".png"))
             ):
-                _log("  TESSERACT (PSM automatico) sin tipo ni fecha -- "
+                _log("  TESSERACT (PSM automatico) sin resultado usable -- "
                      "probando TESSERACT PSM 6...")
                 retry_text = extract_text(name, data, psm=6)
                 if retry_text:
                     (r_code, r_ambiguous, r_matched, r_expiry, r_issue,
                      r_other) = _try_resolve(retry_text)
-                    if r_code or r_ambiguous or r_expiry or r_issue or r_other:
-                        text = retry_text
+                    text = retry_text
+                    if _is_usable(r_code, r_ambiguous, r_expiry, r_issue, r_other):
                         resolved_code, is_ambiguous, matched = (
                             r_code, r_ambiguous, r_matched,
                         )
                         expiry, issue, other = r_expiry, r_issue, r_other
                         engine_used = "TESSERACT PSM 6"
-                    else:
-                        text = retry_text
+                    elif len(retry_text) > len(text or ""):
+                        # H31 (S97): aunque no resuelva nada, se cachea
+                        # el texto mas largo/rico visto hasta ahora --
+                        # util para la revision manual de lo que quede
+                        # sin resolver.
+                        resolved_code, is_ambiguous, matched = (
+                            r_code, r_ambiguous, r_matched,
+                        )
+                        expiry, issue, other = r_expiry, r_issue, r_other
+                else:
+                    _log("    TESSERACT PSM 6 no devolvio texto")
 
-                if not resolved_code and not (expiry or issue or other):
-                    _log("  TESSERACT PSM 6 tampoco resolvio nada -- "
+                if not _is_usable(resolved_code, is_ambiguous, expiry, issue, other):
+                    _log("    TESSERACT PSM 6 sin resultado usable -- "
                          "probando EASYOCR...")
                     try:
                         easy_text = easyocr_extract_text(name, data)
@@ -1263,18 +1300,24 @@ def main():
                     if easy_text:
                         (e_code, e_ambiguous, e_matched, e_expiry, e_issue,
                          e_other) = _try_resolve(easy_text)
-                        if (e_code or e_ambiguous or e_expiry or e_issue
-                                or e_other or easy_text != text):
+                        if _is_usable(e_code, e_ambiguous, e_expiry, e_issue, e_other):
                             text = easy_text
-                        if e_code or e_ambiguous or e_expiry or e_issue or e_other:
                             resolved_code, is_ambiguous, matched = (
                                 e_code, e_ambiguous, e_matched,
                             )
                             expiry, issue, other = e_expiry, e_issue, e_other
                             engine_used = "EASYOCR"
+                        elif len(easy_text) > len(text or ""):
+                            text = easy_text
+                            resolved_code, is_ambiguous, matched = (
+                                e_code, e_ambiguous, e_matched,
+                            )
+                            expiry, issue, other = e_expiry, e_issue, e_other
+                    else:
+                        _log("    EASYOCR no devolvio texto")
 
-                    if not resolved_code and not (expiry or issue or other):
-                        _log("  EASYOCR tampoco resolvio nada -- probando "
+                    if not _is_usable(resolved_code, is_ambiguous, expiry, issue, other):
+                        _log("    EASYOCR sin resultado usable -- probando "
                              "CLOUD VISION (ultimo recurso)...")
                         try:
                             vision_text = cloud_vision_extract_text(name, data)
@@ -1284,15 +1327,21 @@ def main():
                         if vision_text:
                             (v_code, v_ambiguous, v_matched, v_expiry,
                              v_issue, v_other) = _try_resolve(vision_text)
-                            if (v_code or v_ambiguous or v_expiry or v_issue
-                                    or v_other or vision_text != text):
+                            if _is_usable(v_code, v_ambiguous, v_expiry, v_issue, v_other):
                                 text = vision_text
-                            if v_code or v_ambiguous or v_expiry or v_issue or v_other:
                                 resolved_code, is_ambiguous, matched = (
                                     v_code, v_ambiguous, v_matched,
                                 )
                                 expiry, issue, other = v_expiry, v_issue, v_other
                                 engine_used = "CLOUD VISION"
+                            elif len(vision_text) > len(text or ""):
+                                text = vision_text
+                                resolved_code, is_ambiguous, matched = (
+                                    v_code, v_ambiguous, v_matched,
+                                )
+                                expiry, issue, other = v_expiry, v_issue, v_other
+                        else:
+                            _log("    CLOUD VISION no devolvio texto")
 
             # Cachear siempre el mejor texto encontrado, gane lo que
             # gane -- mismo principio que el modo normal (S97).
