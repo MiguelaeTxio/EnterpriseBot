@@ -109,6 +109,7 @@ Angel's 2021-01-01 placeholder if the type resolves but the date is
 still unclear).
 """
 from datetime import date
+import difflib
 import re
 
 from django.contrib.contenttypes.models import ContentType
@@ -187,7 +188,23 @@ CONTENT_WINS = [
     ("CARNET_GRUISTA", "DNI"),
     ("CARNET_CONDUCIR", "DNI"),
     ("CONTRATO", "ALTA"),
+    # S104, corregido tras revisar muestras: FORMACION (senal
+    # estructural, "ficha de inscripcion" + horas en el titulo) gana
+    # siempre sobre CURSO (senal generica, "diploma"/"certificado de
+    # aprovechamiento") -- un mismo PDF de varias paginas puede traer
+    # tambien un cuestionario/examen suelto que dispara CURSO por
+    # error, pero la ficha de inscripcion real manda.
+    ("FORMACION", "CURSO"),
 ]
+
+# H31 (S104), hallazgo real: algunos PDF de la migracion historica son
+# formularios dinamicos de Adobe (XFA) -- el texto que devuelve
+# cualquier extractor (embebido o Cloud Vision sobre el render
+# estatico) es solo el aviso generico de "tu lector no soporta este
+# documento", nunca el contenido real. Ninguna regla de contenido
+# puede resolver esto -- se detecta aparte y se deja fuera del
+# retipado/fechado automatico, nunca se cuenta como "sin señal".
+_ADOBE_DYNAMIC_PLACEHOLDER = "PLEASE WAIT"
 
 
 def _resolve_type_from_content(text_upper, current_code):
@@ -233,12 +250,30 @@ def _person_name_missing(text_upper, person):
     extraido, es posible que el documento este archivado bajo la
     persona equivocada -- se marca para revision manual, nunca se
     reasigna solo.
+
+    CORREGIDO EN LA MISMA SESION: coincidencia exacta de substring
+    daba demasiados falsos positivos reales (pk=27804/27808/27928--
+    el apellido SI estaba en el documento, pero el OCR lo devolvio tan
+    degradado -- "ADQLFO PlvAREZ DI=" en vez de "ADOLFO ALVAREZ DIAZ"
+    -- que ninguna comparacion exacta lo reconocia). Ahora se acepta
+    tambien una coincidencia aproximada (SequenceMatcher, ratio>=0.72)
+    contra cualquier palabra suficientemente larga (>=4 caracteres) del
+    texto, mismo umbral de tolerancia a ruido de OCR que
+    `_fuzzy_match_worker` ya usa en otra parte de la plataforma para
+    el mismo problema (analytics/views.py).
     """
     surnames = [s for s in (person.first_surname, person.second_surname) if s]
     if not surnames:
         return False
     norm_surnames = [_strip_accents(s).upper() for s in surnames]
-    return not any(s in text_upper for s in norm_surnames if s)
+    if any(s in text_upper for s in norm_surnames if s):
+        return False
+    words = [w for w in re.split(r"[^A-Z]+", text_upper) if len(w) >= 4]
+    for surname in norm_surnames:
+        for word in words:
+            if difflib.SequenceMatcher(None, surname, word).ratio() >= 0.72:
+                return False
+    return True
 
 
 class Command(BaseCommand):
@@ -302,6 +337,8 @@ class Command(BaseCommand):
             "tipo_ambiguo": 0,
             "sin_nada_resoluble": 0,
             "posible_persona_equivocada": 0,
+            "pdf_dinamico_sin_texto": 0,
+            "texto_vacio_o_ilegible": 0,
             "extension_no_soportada": 0,
             "error_descarga_u_ocr": 0,
         }
@@ -337,6 +374,29 @@ class Command(BaseCommand):
             if text is None:
                 stats["extension_no_soportada"] += 1
                 continue
+
+            # H31 (S104), hallazgo real: algunos PDF de la migracion
+            # historica son formularios dinamicos de Adobe (XFA) --
+            # ningun extractor (embebido ni Cloud Vision) devuelve mas
+            # que el aviso generico de "tu lector no soporta este
+            # documento". Se detecta aparte, antes de cualquier otra
+            # comprobacion -- ni es un problema de persona ni de tipo,
+            # es que no hay nada real que leer con este mecanismo.
+            if _ADOBE_DYNAMIC_PLACEHOLDER in (text or "").upper():
+                stats["pdf_dinamico_sin_texto"] += 1
+                self.stdout.write(
+                    "PDF DINAMICO (Adobe XFA), sin texto real -- SIN "
+                    "TOCAR [pk=%s] %s" % (entry.pk, entry.name)
+                )
+                continue
+            if len((text or "").strip()) < 20:
+                stats["texto_vacio_o_ilegible"] += 1
+                self.stdout.write(
+                    "TEXTO VACIO O CASI VACIO -- SIN TOCAR [pk=%s] %s "
+                    "(longitud=%d)" % (entry.pk, entry.name, len(text or ""))
+                )
+                continue
+
             if apply_changes and text:
                 entry.ocr_text = text
                 entry.save(update_fields=["ocr_text"])
@@ -357,15 +417,13 @@ class Command(BaseCommand):
                 stats["posible_persona_equivocada"] += 1
                 self.stdout.write(
                     "PERSONA EQUIVOCADA -- SIN TOCAR [pk=%s] %s -- ni "
-                    "%r ni %r aparecen en el texto extraido"
+                    "%r ni %r aparecen en el texto extraido (ni exacto "
+                    "ni aproximado)"
                     % (
                         entry.pk, entry.name, person.first_surname,
                         person.second_surname,
                     )
                 )
-                if apply_changes and text:
-                    entry.ocr_text = text
-                    entry.save(update_fields=["ocr_text"])
                 continue
 
             new_code, is_ambiguous, matched = _resolve_type_from_content(
