@@ -288,6 +288,18 @@ class Command(BaseCommand):
         parser.add_argument("--apply", action="store_true")
         parser.add_argument("--limit", type=int, default=40)
 
+    def _log(self, message):
+        """
+        H31 (S104): escribe y vuelca inmediatamente. La salida
+        redirigida a fichero (`> archivo 2>&1`, uso habitual en esta
+        plataforma) bufferiza en bloques grandes por defecto -- sin
+        este flush explicito, Miguel Angel no ve ninguna señal de que
+        el proceso sigue vivo durante los minutos que tarda una tanda
+        real de cientos de llamadas a Cloud Vision.
+        """
+        self.stdout.write(message)
+        self.stdout.flush()
+
     def handle(self, *args, **options):
         apply_changes = options["apply"]
         limit = options["limit"]
@@ -324,7 +336,7 @@ class Command(BaseCommand):
         ).order_by("id")[:limit]
 
         candidatos = list(qs)
-        self.stdout.write(
+        self._log(
             "--- H31-S104 retipado+fechado Cloud Vision: %d candidatos "
             "en este lote (limit=%d) ---" % (len(candidatos), limit)
         )
@@ -343,8 +355,18 @@ class Command(BaseCommand):
             "error_descarga_u_ocr": 0,
         }
 
-        for entry in candidatos:
+        for indice, entry in enumerate(candidatos, start=1):
             close_old_connections()
+            # H31 (S104), pedido explicito de Miguel Angel: senal de
+            # vida real por documento y volcado inmediato -- sin esto,
+            # la salida redirigida a fichero (`> archivo 2>&1`) se
+            # bufferiza en bloques grandes y el archivo puede verse
+            # vacio varios minutos con cientos de llamadas reales a
+            # Cloud Vision de por medio, aunque el proceso siga vivo.
+            self._log(
+                "[%d/%d] procesando pk=%s %s..."
+                % (indice, len(candidatos), entry.pk, entry.name)
+            )
             person = active_people.get(entry.domain_object_id)
             bad_dates = set()
             if person and person.birth_date:
@@ -366,7 +388,7 @@ class Command(BaseCommand):
                 text = extract_text(entry.name, data)
             except Exception as exc:
                 stats["error_descarga_u_ocr"] += 1
-                self.stdout.write(
+                self._log(
                     "ERROR [%s] %s -- %s"
                     % (entry.parent_path, entry.name, exc)
                 )
@@ -384,14 +406,14 @@ class Command(BaseCommand):
             # es que no hay nada real que leer con este mecanismo.
             if _ADOBE_DYNAMIC_PLACEHOLDER in (text or "").upper():
                 stats["pdf_dinamico_sin_texto"] += 1
-                self.stdout.write(
+                self._log(
                     "PDF DINAMICO (Adobe XFA), sin texto real -- SIN "
                     "TOCAR [pk=%s] %s" % (entry.pk, entry.name)
                 )
                 continue
             if len((text or "").strip()) < 20:
                 stats["texto_vacio_o_ilegible"] += 1
-                self.stdout.write(
+                self._log(
                     "TEXTO VACIO O CASI VACIO -- SIN TOCAR [pk=%s] %s "
                     "(longitud=%d)" % (entry.pk, entry.name, len(text or ""))
                 )
@@ -415,7 +437,7 @@ class Command(BaseCommand):
             # Se comprueba ANTES de resolver tipo/fecha, nunca despues.
             if person and _person_name_missing(text_upper, person):
                 stats["posible_persona_equivocada"] += 1
-                self.stdout.write(
+                self._log(
                     "PERSONA EQUIVOCADA -- SIN TOCAR [pk=%s] %s -- ni "
                     "%r ni %r aparecen en el texto extraido (ni exacto "
                     "ni aproximado)"
@@ -461,7 +483,7 @@ class Command(BaseCommand):
 
             if is_ambiguous:
                 stats["tipo_ambiguo"] += 1
-                self.stdout.write(
+                self._log(
                     "TIPO AMBIGUO %s [pk=%s] %s (actual=%s)"
                     % (sorted(matched), entry.pk, entry.name, current_code)
                 )
@@ -469,7 +491,7 @@ class Command(BaseCommand):
 
             if not resolved_type_code:
                 stats["sin_nada_resoluble"] += 1
-                self.stdout.write(
+                self._log(
                     "SIN TIPO NI SEÑAL [pk=%s] %s" % (entry.pk, entry.name)
                 )
                 continue
@@ -483,7 +505,7 @@ class Command(BaseCommand):
             else:
                 stats["sin_nada_resoluble"] += 1
 
-            self.stdout.write(
+            self._log(
                 "OK [pk=%s] %s -- tipo: %s%s -- fecha: %s%s"
                 % (
                     entry.pk, entry.name,
@@ -504,8 +526,8 @@ class Command(BaseCommand):
                     rename_kwargs["fictitious_date"] = FICTITIOUS_DATE
                 apply_personal_canonical_rename(entry, **rename_kwargs)
 
-        self.stdout.write("=== RESUMEN (%s, limit=%d) ===" % (
+        self._log("=== RESUMEN (%s, limit=%d) ===" % (
             "APLICADO" if apply_changes else "DRY-RUN, nada escrito", limit,
         ))
         for key, value in stats.items():
-            self.stdout.write("    %s: %d" % (key, value))
+            self._log("    %s: %d" % (key, value))
