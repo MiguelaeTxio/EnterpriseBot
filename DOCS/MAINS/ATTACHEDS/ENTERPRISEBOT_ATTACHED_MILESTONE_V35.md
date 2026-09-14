@@ -126,10 +126,13 @@ El caso "ANA REQUENA SOLER" en la ficha de Jorge es distinto del caso
 ya resuelto en S104 (documentos cortos tipo IBAN, que se dejan en paz
 por longitud insuficiente) -- aquí el documento es largo y
 perfectamente legible, y **sí** lleva el nombre de una persona real
-que no es el titular de la ficha. Queda **sin decidir** el criterio de
-remediación: ¿mover el documento a la ficha de esa persona si existe
-en el sistema? ¿dejarlo en cuarentena/revisión manual? -- decidir con
-Miguel Ángel al arrancar la sesión, antes de procesar en masa.
+que no es el titular de la ficha. **Criterio decidido en S104** (ver
+Hoja de Ruta, punto 0): comprobado en el buscador de personal
+(activos+inactivos, todas las empresas, incluido "sin empresa
+asignada") que "Ana Requena Soler" no existe en el sistema -- por
+tanto, a papelera. Regla general para el resto de casos que aparezcan:
+si la persona nombrada existe como `PersonIdentity` real, mover el
+documento a su ficha; si no existe, papelera.
 
 ---
 
@@ -161,15 +164,29 @@ Miguel Ángel al arrancar la sesión, antes de procesar en masa.
 
 ## Hoja de Ruta para la Sesión Siguiente (S105)
 
-**0. Decidir con Miguel Ángel, antes de procesar nada en masa:**
-   - Criterio de remediación para documentos de otra persona real
-     (caso "Ana Requena Soler") -- mover, poner en cuarentena, o
-     revisión manual uno a uno.
-   - Si además de `BAJA_PERSONAL` hace falta auditar otros tipos
-     `LABORAL`/`SALUD_BAJAS_PERSONA` de volumen alto por el mismo
-     patrón de cajón de sastre (la sesión S104 solo confirmó
-     `BAJA_PERSONAL`, no descartó que otros tipos tengan el mismo
-     problema).
+**0. Criterio de remediación para documentos de otra persona real
+(decidido en S104, verbatim tras comprobar en el buscador de personal
+-- activos+inactivos, todas las empresas, incluido "sin empresa
+asignada" -- que "Ana Requena Soler" no existe en el sistema):**
+buscar primero si la persona nombrada en el documento existe ya como
+`PersonIdentity` (activa o inactiva, cualquier empresa). Si existe,
+mover el documento a su ficha real. Si no existe -- caso confirmado de
+"Ana Requena Soler" -- el documento va a **papelera**
+(`deleted_at`, mismo mecanismo ya usado por `trash_dossier_entry`),
+nunca se deja archivado bajo una persona que no es la suya. Aplicar
+este criterio sistemáticamente a cualquier documento de este hito
+donde `_person_name_missing()` detecte un nombre real distinto del
+titular de la ficha (no solo el caso de Jorge).
+
+Queda además, como trabajo técnico normal (no decisión de negocio):
+ejecutar la misma auditoría de contenido de S104 sobre el resto de
+tipos de volumen alto de las familias `LABORAL`/`SALUD_BAJAS_PERSONA`
+-- la sesión S104 solo confirmó el patrón de cajón de sastre en
+`BAJA_PERSONAL`, sin comprobar si otros tipos comparten el mismo
+problema. Cierre objetivo: para cada tipo de volumen alto auditado,
+registrar en este anexo el mismo desglose que se hizo para
+`BAJA_PERSONAL` (confirmados / proponen otro tipo / sin señal /
+ambiguos / sin texto cacheado).
 
 **1. Estado real de las VMs de OCR.** Comprobar con `gcloud` si
 `h28-ocr-batch-1..4` siguen existiendo (S104 las dio por
