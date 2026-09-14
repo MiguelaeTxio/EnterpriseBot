@@ -2452,23 +2452,166 @@ de la auditoría, cada uno con commit real propio):**
   en amarillo. Todos los tonos son variables "subtle" de Bootstrap
   (primary/success/warning), nunca hex inventado.
 
-## Hoja de Ruta para la Sesión Siguiente (S103, reescrita por completo -- sustituye a la de S102)
+## USABILIDAD DOCUMENTAL: SELECCIÓN, DOSSIERES, PLANTILLAS Y CORRECCIÓN DE VIGENCIA (S103)
 
-**1. Usabilidad documental -- vistas de selección múltiple para
-generar dossieres/adjuntos.** Decisión explícita de Miguel Ángel al
-cerrar S102: con la gestión documental básica (añadir, actualizar,
-borrar) ya completa y auditada, el grueso de esta sesión es distinto
--- vistas para SELECCIONAR varios documentos ya existentes (checkbox
-por documento, vista de lista seleccionable) con vista a generar
-dossieres y/o adjuntos para enviar a plataformas o por correo. Esto es
-diseño nuevo desde cero -- no hay nada parecido hoy en el catálogo ni
-en el modelo (`DocumentIndexEntry` no tiene ningún concepto de
-"selección" o "dossier" todavía). Cierre objetivo de la sesión: al
-menos una ficha real de personal con una selección múltiple de
-documentos reales generando un dossier/adjunto de verdad (PDF unido, o
-el formato que se decida en la propia sesión), probado end-to-end
-contra datos reales -- nunca solo el diseño de la interfaz sin probar
-la generación real del archivo final.
+Sesión de 9 commits reales, cerrando por completo el punto 1 de la
+hoja de ruta de S102 (usabilidad documental) y encontrando dos
+incidencias reales de datos durante las pruebas en producción.
+
+**1. Selección de documentos + barra fija (`5ecf543`, `25b4466`).**
+Casilleros de selección en las tres tablas de documentos vigentes
+(Laboral, Salud, cada familia de Documentación), persistidos en BD
+por persona vía `PanelNavigationState` (`document_selection` añadido
+a `NESTED_MERGE_KEYS`, mismo mecanismo que `person_accordion` --
+`panel/views_navigation_state.py`), nunca en sesión ni localStorage.
+Modal de vista previa con "Quitar" por fila y "Vaciar selección".
+Corregido tras prueba real de Miguel Ángel: los botones de acción
+("Volver", "Selección de documentos") se perdían con el scroll --
+nueva clase reutilizable `.sticky-below-navbar` (`panel.css`) con la
+altura real del membrete calculada en JS (`base.html`), porque un
+valor fijo no serviría en páginas con título de una o dos líneas.
+
+**2. Generación real del dossier -- PDF único y ZIP (`cdefcf9`,
+`a35155c`).** Investigación previa de plataformas del sector (Nalanda,
+Klear/Kizeo, tradición del "dossier de calidad") confirmó dos formatos
+de referencia, no uno solo. Cablea por fin
+`document_management.pdf_merge_service` (construido en H26 S022/S023,
+nunca llamado desde ninguna vista hasta esta sesión): nuevas
+`convert_to_pdf_bytes()` (imagen -> PDF de una página, sin dependencia
+nueva -- PyMuPDF ya estaba en el proyecto) y `build_index_page()`
+(portada/índice paginado a mano, nunca `insert_textbox` con ajuste
+automático, para no perder líneas del índice en silencio). ZIP con los
+archivos originales por familia. **Bug real corregido tras revisión de
+Miguel Ángel del ZIP descargado:** el nombre de archivo dentro del ZIP
+se inventaba (`slugify(document_type.label)` -> `dni.pdf`) en vez de
+usar el nombre CANÓNICO real (`entry.name`, ya construido por
+`naming_service.build_filename_personal` al subir el documento) --
+corregido en `a35155c`. Ambas vías verificadas end-to-end contra datos
+reales (DNI + foto + certificado de formación de una ficha real).
+
+**3. Gestor de plantillas de dossier (`06a9944`, `40c2119`, `d6a8f57`)
+-- migraciones 0082 y 0083.** Diseño inicial (S103, primera versión):
+plantilla atada a UNA persona -- **error real de diseño**, detectado
+por Miguel Ángel al ir a un segundo trabajador y no encontrar ninguna
+plantilla ahí, y confirmado explícitamente: "las plantillas deben
+servir tb para cualquier supervisor y administrador". Corregido en la
+misma sesión (migración 0083): `PersonalDossierTemplate` pasa de FK
+`person` a FK `company` -- compartida por toda la empresa. Las
+plantillas guardadas y de prueba bajo el diseño anterior se borraron
+en la propia migración (dato de prueba, no de negocio). Decisión de
+diseño explícita (no bloqueante, declarada en sesión): la plantilla
+guarda TIPOS documentales (M2M a `DocumentTypeCatalog`), nunca IDs
+fijos de `DocumentIndexEntry` -- aplicar una plantilla resuelve el
+VIGENTE de cada tipo en ese instante, para la persona concreta
+elegida, y lo COMBINA con lo que esa persona tenga en ese momento en
+su selección de casilleros ad hoc (Miguel Ángel: "documentos como el
+DNI o la tarjeta de conducción estén en plantillas y luego se añadan
+los documentos que son específicos de cada trabajador, como formación
+determinada en un área"). Acciones: Guardar (con nombre autonumerado
+"Dossier N" si no se nombra), Descargar, Editar (nombre/formato/
+refrescar tipos desde la selección actual), Duplicar (copia con el
+formato contrario, PDF<->ZIP -- pregunta real de Miguel Ángel resuelta
+en la misma sesión).
+
+**4. Dos incidencias reales de datos encontradas en producción,
+DISTINTAS entre sí, ambas corregidas en la misma sesión:**
+
+- **Etiqueta de familia MEDIA con anotación interna filtrándose a un
+  documento externo (`bf2bb50`, migración 0081).** El índice del PDF
+  de dossier mostraba "Media (imagen, vídeo, audio) -- H30 S67" -- una
+  nota de desarrollo colándose en un documento potencialmente
+  compartido con un cliente o una plataforma CAE externa. Corregido:
+  etiqueta limpia, única entrada de `FAMILY_CHOICES` con este problema
+  (las otras diez ya eran texto limpio).
+
+- **`is_current()` dejaba dos documentos del mismo tipo vigentes a la
+  vez cuando uno tenía fecha real y el otro ninguna (`a31e544`).**
+  Hallazgo real de Miguel Ángel sobre una ficha real (Jorge Milheiro
+  Felicio, tipo NIE): un documento con `expiry_date` futuro y otro sin
+  ninguna fecha aparecían ambos como vigentes. Causa: el desempate para
+  un candidato sin fecha solo comparaba contra otros hermanos "igual de
+  ciegos" -- si el único hermano SÍ tenía fecha real, no había con qué
+  comparar y el candidato se colaba como vigente igualmente. Distinto
+  del incidente S102 (que era cuando TODOS los documentos de un tipo
+  estaban sin fecha). Regla aplicada, elegida por Miguel Ángel entre
+  tres opciones planteadas: un documento sin fecha NUNCA es vigente si
+  existe un hermano del mismo tipo con fecha real y todavía válida (un
+  hermano con `expiry_date` solo cuenta si no ha pasado; uno con
+  `issue_date` sin `expiry_date` cuenta siempre, porque no caduca por
+  el simple paso del tiempo). Verificado en frío con seis casos
+  (incluida la no-regresión de S102) antes de escribir el código
+  definitivo. Módulo compartido por H23 (máquinas) y H31 (personal) --
+  afecta a ambos dominios por igual. **Pendiente de verificar contra
+  la ficha real de Jorge Milheiro Felicio en producción** (ver hoja de
+  ruta de arranque de S104, punto 2).
+
+- Investigada además, a petición de Miguel Ángel, la posible confusión
+  entre "Permiso de Conducción" (`CARNET_CONDUCIR`, familia
+  `IDENTIDAD_PERSONAL` -- carné de conducir de la PERSONA) y "Permiso
+  de circulación" (`PERMISO_CIRCULACION`, familia `CIRCULACION` --
+  matriculación del VEHÍCULO): confirmado que **no es un error**, son
+  dos documentos distintos correctamente clasificados, solo se parecen
+  en el nombre. Matiz señalado para vigilar (no confirmado como
+  problema): el CAP aparece dos veces en el catálogo (`CAP` en
+  `IDENTIDAD_PERSONAL`, `TARJETA_CUALIF_CONDUCTOR` en `CIRCULACION`) --
+  probablemente el certificado y la tarjeta física son documentos
+  distintos de verdad, revisar si algún día aparecen duplicados reales.
+
+**Sin entorno Python nuevo ni dependencia nueva instalada esta
+sesión** (PyMuPDF ya estaba en el candado del proyecto; se instaló
+temporalmente solo en el sandbox de desarrollo del modelo para probar
+en frío, nunca en un entorno de producción/CI -- no aplica el PASO 2.4
+de este cierre).
+
+## Hoja de Ruta para la Sesión Siguiente (S104, reescrita por completo -- sustituye a la de S103)
+
+**0. APERTURA DE SESIÓN, DESVÍO A H20 (Laboratorio de Análisis
+Unificado) -- resolver ANTES de tocar nada de H31.** Corregir la
+exportación a Excel de los informes del laboratorio de análisis: el
+nombre del operario debe salir con el formato `APELLIDO1 APELLIDO2,
+NOMBRE` (nunca `NOMBRE APELLIDO1 APELLIDO2` ni ningún otro orden).
+Localizar primero el módulo real de exportación de H20 (no asumir
+ubicación desde memoria de otra sesión). Cierre objetivo: exportar un
+informe real desde el panel y confirmar visualmente, en el Excel
+descargado, que al menos un operario real aparece en ese formato
+exacto. No mover el marcador `EN PROGRESO` de H31 por este desvío
+(mismo criterio que el desvío de S99 sobre estructura de personal,
+reclasificado a H29 sin tocar el marcador).
+
+**1. Envío de dossieres por correo electrónico -- extender el
+mecanismo `.eml` ya existente.** Decisión explícita de Miguel Ángel:
+- Reutilizar/extender `_build_notification_eml()`
+  (`panel/views_documentation_h30.py`, H31 S74/S75) para adjuntar el
+  PDF/ZIP del dossier (de la selección actual, o de una plantilla
+  aplicada) en vez de incrustar el HTML de la circular en el cuerpo.
+- **Firma de Outlook -- opción 2 confirmada** (investigado en S103
+  contra documentación oficial de Microsoft: abrir un `.eml` externo
+  NO dispara la inserción automática de la firma por defecto de
+  Outlook, solo un "Nuevo correo" creado desde el propio Outlook lo
+  hace): guardar la firma de cada supervisor en la plataforma (campo/
+  modelo nuevo asociado a `CompanyUser` -- decidir en la propia sesión
+  si es un campo HTML directo o un modelo dedicado) e incrustarla
+  directamente en el cuerpo del `.eml` generado, nunca depender del
+  mecanismo de Outlook.
+- **Plantilla del cuerpo del mensaje**: cargable y editable con un
+  editor de texto básico (mismo criterio que el editor de circulares
+  del punto 5 del objetivo del hito) -- el supervisor debe poder
+  escribir/editar el texto que acompaña al dossier antes de generar el
+  `.eml`, no un texto fijo en código.
+- Cierre objetivo: al menos un dossier real (PDF o ZIP) enviado como
+  adjunto en un `.eml` generado desde el panel, con la firma real de
+  un supervisor y un cuerpo de mensaje editado por él mismo en el
+  editor básico, abierto y confirmado visualmente en Outlook real
+  (mismo criterio de verificación que la prueba de concepto de S73).
+
+**2. Verificación pendiente de la corrección de `is_current()` de
+S103.** Comprobar en la ficha real de Jorge Milheiro Felicio (tipo
+NIE) que ahora aparece un único documento vigente (el de
+`expiry_date=2030-12-04`) y que el otro (sin fecha) ha pasado a
+histórico/obsoleto. Cierre objetivo: consulta real (Comando S) contra
+`DocumentIndexEntry` confirmando `is_obsolete=True` en el documento
+sin fecha para esa persona y ese tipo.
+
 
 ---
 
