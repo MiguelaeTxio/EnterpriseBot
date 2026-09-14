@@ -306,6 +306,106 @@ esta plataforma. Anotadas aquí únicamente para que nunca se confundan:
 
 ---
 
+## ⛔⛔⛔ MODELO DE CICLO DE VIDA DE LAS VMs DE OCR -- VIGENTE DESDE S105 (2026-09-14), LEER ANTES DE TOCAR CUALQUIER VM DE ESTE PROYECTO
+
+**SUSTITUYE POR COMPLETO al modelo anterior de "4 VMs fijas siempre
+encendidas/suspendidas" (`h28-ocr-batch-1/2/3/4`, S77/S78).** Ese
+modelo se abandona tras un incidente real en S105: las 4 VMs se
+crearon a la vez desde la misma imagen, dos de ellas se usaron y
+acumularon correcciones manuales nunca trasladadas a la imagen ni a
+las otras dos, que llevaban paradas desde su creación -- al lanzar
+una campaña real de 12 procesos en paralelo, la mitad de las VMs
+resultaron inservibles a mitad de ejecución (clave SSH ausente hacia
+PythonAnywhere, ver incidente completo más abajo en este archivo).
+Decisión explícita de Miguel Ángel: nunca más VMs "de segunda clase"
+con estado desconocido -- o son la base, siempre al día, o son
+desechables y se borran, nunca se quedan a medias por ahí.
+
+### El modelo, en una frase
+**Una única VM base con disco persistente (`h28-ocr-batch-1`) que se
+mantiene siempre al día; el paralelismo se consigue creando VMs
+EFÍMERAS nuevas desde una imagen fresca de esa base, y esas VMs
+efímeras se BORRAN al terminar la campaña -- nunca se quedan
+suspendidas ni paradas "por si acaso".**
+
+### Ciclo completo, paso a paso, sin ambigüedad
+
+1. **`h28-ocr-batch-1` es la única VM con disco persistente real.**
+   Vive normalmente `SUSPENDED` entre sesiones. Se reanuda
+   (`gcloud compute instances resume`) cuando hace falta trabajar en
+   ella directamente (editar código, cambiar dependencias, probar
+   algo antes de escalar).
+
+2. **Antes de congelar una imagen nueva, `h28-ocr-batch-1` tiene que
+   estar en su MEJOR estado real:** código al día (`git pull` hecho),
+   `pip-sync` aplicado contra el `requirements-ocr-vm.txt` real,
+   `~/.ssh/id_rsa` presente y funcionando contra PythonAnywhere
+   (verificar con un `git pull`/ejecución real del script, nunca
+   asumir). Si algo de esto no está confirmado, arreglarlo primero en
+   esta misma VM -- nunca congelar una imagen "a ver si cuela".
+
+3. **Congelar la imagen requiere el disco PARADO DEL TODO, nunca
+   suspendido** (`SUSPENDED` dejaría el disco en un estado
+   inconsistente para el snapshot -- ver sección "IMAGEN
+   PERSONALIZADA" más abajo, ya documentado desde S85, motivo por el
+   que este paso no es nuevo, solo se aplica ahora con disciplina):
+   ```
+   gcloud compute instances stop h28-ocr-batch-1 --zone=europe-west1-b --project=gen-lang-client-0961484137
+   gcloud compute images create h28-ocr-batch-image-vN --source-disk=h28-ocr-batch-1 --source-disk-zone=europe-west1-b --project=gen-lang-client-0961484137
+   ```
+   `vN` es el siguiente número libre -- **nunca sobreescribir una
+   imagen existente**, las imágenes de GCE son inmutables por diseño
+   y además sirven de historial de qué estado se congeló cuándo.
+   Consultar la sección "IMAGEN PERSONALIZADA" para ver la última `vN`
+   usada antes de crear la siguiente.
+
+4. **Crear tantas VMs efímeras como haga falta ESE día**, nunca un
+   número fijo memorizado de sesiones anteriores -- decidir según el
+   volumen real de trabajo de la sesión en curso:
+   ```
+   gcloud compute instances create NOMBRE_VM --image=h28-ocr-batch-image-vN --zone=europe-west1-b --machine-type=e2-standard-8 --project=gen-lang-client-0961484137
+   ```
+   Nomenclatura de `NOMBRE_VM`: correlativa y descriptiva de la
+   sesión/campaña (p. ej. `h28-ocr-temp-1`, `h28-ocr-temp-2`...) --
+   nunca reutilizar el patrón `h28-ocr-batch-N` para estas, precisamente
+   para que no se confundan nunca con la VM base persistente.
+
+5. **Verificar SIEMPRE, antes de lanzar ningún script real, que la VM
+   efímera recién creada tiene lo que necesita** (mismo paso 2, sobre
+   la VM nueva) -- una imagen recién congelada en el paso 3 lo
+   garantiza, pero si se reutiliza una imagen más antigua hay que
+   comprobarlo, nunca asumirlo por analogía con la VM base.
+
+6. **Al terminar la campaña, las VMs efímeras se BORRAN, nunca se
+   suspenden ni se paran para "más adelante":**
+   ```
+   gcloud compute instances delete NOMBRE_VM --zone=europe-west1-b --project=gen-lang-client-0961484137 --quiet
+   ```
+   Son desechables por diseño -- no tienen disco persistente que
+   conservar, y dejarlas paradas por ahí es exactamente el patrón que
+   causó el incidente de S105 (VMs con estado desconocido que nadie
+   revisa hasta que hace falta usarlas, momento en el que ya es tarde).
+
+7. **`h28-ocr-batch-1` vuelve a quedar `SUSPENDED`** hasta la próxima
+   sesión que necesite tocarla o volver a congelar imagen.
+
+### Regla de decisión rápida para cualquier sesión futura
+
+- ¿Voy a editar código, probar algo puntual, o cambiar dependencias?
+  → Reanudar `h28-ocr-batch-1` únicamente.
+- ¿Voy a lanzar una campaña real con varios procesos en paralelo? →
+  Comprobar/congelar imagen fresca desde `h28-ocr-batch-1` (pasos 2-3
+  si hace falta), crear las VMs efímeras que ese día requiera (paso
+  4), verificar (paso 5), lanzar, y AL TERMINAR borrarlas (paso 6) en
+  la misma sesión -- nunca dejarlo para "la próxima vez".
+- ¿Me encuentro con una VM `h28-ocr-batch-N` (N=2/3/4) que no sea la
+  base? → Es un resto del modelo antiguo (anterior a S105), ya
+  eliminada por decisión de Miguel Ángel -- si reaparece alguna,
+  preguntar antes de usarla, nunca asumir que sigue vigente el modelo
+  de 4 VMs fijas.
+
+---
+
 ## VM h28-ocr-batch — ENTORNO REAL (registrado S53, 2026-08-14, tras
 ## descubrirlo a tientas paso a paso -- no volver a redescubrirlo)
 
@@ -937,7 +1037,15 @@ servicio, `watched_folders.json`, `history.json`,
 
 ---
 
-## ⛔⛔⛔ REGLA DE MÁXIMA VISIBILIDAD -- LAS 4 VMs SE CREARON A LA VEZ DESDE `h28-ocr-batch-image-v1`, LA IMAGEN PUEDE ESTAR DESACTUALIZADA (incidente real S105)
+## ⛔⛔⛔ REGLA DE MÁXIMA VISIBILIDAD -- LAS 4 VMs SE CREARON A LA VEZ DESDE `h28-ocr-batch-image-v1`, LA IMAGEN PUEDE ESTAR DESACTUALIZADA (incidente real S105) -- ORIGEN DEL CAMBIO DE MODELO
+
+**DESENLACE (S105, mismo día):** este incidente es precisamente el
+que llevó a Miguel Ángel a abandonar el modelo de "4 VMs fijas" --
+ver "MODELO DE CICLO DE VIDA DE LAS VMs DE OCR" al principio del
+archivo, ahora vigente. `h28-ocr-batch-2/3/4` se borraron ese mismo
+día; `h28-ocr-batch-1` sigue siendo la base persistente. El relato
+completo de abajo se conserva porque explica el PORQUÉ del modelo
+nuevo -- no como procedimiento a seguir con VMs que ya no existen.
 
 **HECHO CONFIRMADO POR MIGUEL ÁNGEL, NUNCA VOLVER A PREGUNTARLO:** las
 4 VMs (`h28-ocr-batch-1/2/3/4`) se crearon **todas a la vez** desde el
@@ -1053,14 +1161,20 @@ una herramienta nueva al proyecto, todo con `gcloud` nativo.
 
 ---
 
-## CORRECCIÓN REAL — NOMBRES DE LAS 4 VMs DE OCR (S78, 2026-08-28)
+## CORRECCIÓN REAL — NOMBRES DE LAS 4 VMs DE OCR (S78, 2026-08-28) -- ⛔ MODELO DE 4 VMs FIJAS SUPERADO EN S105, VER SECCIÓN AL PRINCIPIO DE ESTE ARCHIVO
+
+**Esta sección queda como registro histórico de un incidente de
+nomenclatura -- el modelo de "4 VMs fijas" que describe ya NO está
+vigente** (ver "MODELO DE CICLO DE VIDA DE LAS VMs DE OCR" al
+principio del archivo). `h28-ocr-batch-2/3/4` fueron borradas en
+S105; `h28-ocr-batch-1` sigue siendo la única VM base persistente.
 
 **Error detectado en sesión, corregido contra captura real de Cloud
 Console (VM instances, proyecto `gen-lang-client-0961484137`).** El
 anexo de H30 y este archivo venían citando de memoria las 4 VMs como
 `h28-ocr-batch`, `h28-ocr-batch-1`, `h28-ocr-batch-2`,
 `h28-ocr-batch-3` — **incorrecto**. Los nombres reales, confirmados
-por consola, son:
+por consola, eran:
 
 - `h28-ocr-batch-1`
 - `h28-ocr-batch-2`
@@ -1068,9 +1182,7 @@ por consola, son:
 - `h28-ocr-batch-4`
 
 No existe ninguna VM llamada `h28-ocr-batch` a secas. Todas en zona
-`europe-west1-b`. Usar siempre estos 4 nombres exactos en cualquier
-comando `gcloud compute instances` de este proyecto — no volver a citar
-la nomenclatura anterior.
+`europe-west1-b`.
 
 **PAQUETE DE SISTEMA -- `antiword` (H30 S78).** Para leer `.doc`
 antiguo (Word 97-2003, formato binario -- `python-docx` solo lee
