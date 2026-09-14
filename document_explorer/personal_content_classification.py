@@ -50,6 +50,16 @@ _FORMACION_HOURS_RE = re.compile(r"\b\d{1,3}\s*H\b")
 CONTENT_SIGNALS = {
     "TARJETA_SANITARIA": [
         "TARJETA SANITARIA INDIVIDUAL", "NUMERO DE HISTORIA UNICA DE SALUD",
+        # H35 (S105), confirmado con muestra real (pk=29196, tarjeta
+        # sanitaria formato Junta de Andalucia): "SISTEMA NACIONAL DE
+        # SALUD DE ESPANA" + "Tarjeta Sanitaria" -- variante regional
+        # sin "INDIVIDUAL" y sin "NUMERO DE HISTORIA UNICA DE SALUD"
+        # (esta trae "NUMERO DE HISTORIA DE SALUD DE ANDALUCIA", frase
+        # distinta). El nombre de archivo original decia "TARJ.S.
+        # SOCIAL", pero el contenido real es sanitaria, no de
+        # afiliacion a la Seguridad Social -- otra confirmacion mas de
+        # nunca fiarse del nombre de archivo.
+        "SISTEMA NACIONAL DE SALUD DE ESPANA",
     ],
     "DNI": ["DOCUMENTO NACIONAL DE IDENTIDAD"],
     "NIE": ["NUMERO DE IDENTIDAD DE EXTRANJERO", "CERTIFICADO DE REGISTRO DE CIUDADANO"],
@@ -198,14 +208,28 @@ def resolve_type_from_content(text_upper, current_code):
     tambien un patron de horas en el titulo del curso (r"\\d+H") --
     confirmado contra muestras reales que esa combinacion es la que
     de verdad distingue FORMACION de CURSO, nunca la frase sola.
+
+    H35 (S105), hallazgo real (pk=30353, CAPACITACION): el texto OCR
+    trae saltos de linea/espacios multiples exactamente donde una
+    frase de CONTENT_SIGNALS tiene un espacio simple ("...ACTIVIDADES"
+    seguido de salto de linea, luego "QUE PUEDE...") -- una frase
+    escrita como una sola linea en el diccionario nunca haria match
+    contra ese texto real aunque un humano la reconozca al instante.
+    Se normaliza aqui, en el unico punto donde se comparan frases
+    contra texto real, cualquier secuencia de espacios en blanco
+    (saltos de linea incluidos) a un espacio simple -- nunca se toca
+    `text_upper` fuera de esta funcion, para no afectar otras
+    comparaciones (MRZ, deteccion de codificacion rota) que si
+    dependen de la estructura real del texto.
     """
+    normalized = re.sub(r"\s+", " ", text_upper)
     matched = set()
     for code, phrases in CONTENT_SIGNALS.items():
         for phrase in phrases:
-            if phrase in text_upper:
+            if phrase in normalized:
                 matched.add(code)
                 break
-    if "FORMACION" in matched and not _FORMACION_HOURS_RE.search(text_upper):
+    if "FORMACION" in matched and not _FORMACION_HOURS_RE.search(normalized):
         matched.discard("FORMACION")
     for winner, loser in CONTENT_WINS:
         if winner in matched and loser in matched:
