@@ -45,6 +45,7 @@ from panel.views_documentation_h30 import (
     PersonalDocumentTypeHistoryView,
     PersonalDossierEmailSendView,
     DossierTemplateManageView,
+    DossierTemplateMissingCheckView,
     DossierTemplateSaveView,
     PersonalDossierMassGenerateView,
     PersonalDossierTemplateApplyView,
@@ -458,6 +459,8 @@ urlpatterns = [
     path("documentacion/plantillas-dosier/<int:template_pk>/guardar/", DossierTemplateSaveView.as_view(), name="dossier_template_update"),
     # H35 (S105): generar dosieres para varios trabajadores seleccionados a la vez, a partir de una plantilla -- descarga o envío por correo.
     path("documentacion/personal/dosieres-masivo/", PersonalDossierMassGenerateView.as_view(), name="documentation_personal_dossier_mass_generate"),
+    # H35 (S105): marca en el listado qué personas les falta algún documento de la plantilla elegida.
+    path("documentacion/personal/dosieres-masivo/comprobar/", DossierTemplateMissingCheckView.as_view(), name="documentation_personal_dossier_missing_check"),
     path("documentacion/personal/<int:pk>/parte-dia/<str:date_iso>/", PersonalWorkdayDetailView.as_view(), name="documentation_personal_workday_detail"),
     # H31 (S76) punto EPIs: historial completo de un EPI, bajo demanda.
     path("documentacion/personal/<int:pk>/historial-epi/<int:epi_id>/", PersonalEpiItemHistoryView.as_view(), name="documentation_personal_epi_history"),

@@ -383,6 +383,44 @@ haya al menos una persona seleccionada.
             resultEl.innerHTML = '<div class="alert alert-danger py-1 px-2 mb-0">Error de red al generar los correos.</div>';
         });
     });
+
+    // H35 (S105): "hay que hacer un marcado en el listado de
+    // trabajadores que les falte algún documento de los que entran en
+    // la plantilla" -- se dispara al elegir plantilla y, si ya había
+    // una elegida, otra vez cada vez que la tabla de resultados se
+    // repinta (búsqueda/orden/paginación vía htmx), para que el
+    // marcado nunca quede desactualizado ni desaparezca sin más al
+    // cambiar de página.
+    function checkDossierMissing() {
+        const templateId = document.getElementById('person-mass-dossier-template').value;
+        document.querySelectorAll('.dossier-missing-flag').forEach((el) => { el.innerHTML = ''; });
+        if (!templateId) return;
+        const flags = document.querySelectorAll('.dossier-missing-flag[data-person-id]');
+        const personIds = Array.from(flags).map((el) => el.dataset.personId);
+        if (personIds.length === 0) return;
+        const formData = new FormData();
+        personIds.forEach((pk) => formData.append('person_ids', pk));
+        formData.append('template_id', templateId);
+        fetch("{% url 'panel:documentation_personal_dossier_missing_check' %}", {
+            method: 'POST',
+            headers: {'X-CSRFToken': getCookie('csrftoken')},
+            body: formData,
+        }).then((r) => r.json()).then((data) => {
+            const missingSet = new Set((data.missing || []).map(String));
+            flags.forEach((el) => {
+                if (missingSet.has(el.dataset.personId)) {
+                    el.innerHTML = '<i class="bi bi-exclamation-triangle-fill text-warning" title="Le falta algún documento de la plantilla elegida"></i>';
+                }
+            });
+        });
+    }
+
+    document.getElementById('person-mass-dossier-template').addEventListener('change', checkDossierMissing);
+    document.body.addEventListener('htmx:afterSwap', function (ev) {
+        if (ev.detail.target && ev.detail.target.id === 'personal-results') {
+            checkDossierMissing();
+        }
+    });
 })();
 </script>
 

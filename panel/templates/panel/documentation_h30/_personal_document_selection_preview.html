@@ -1,12 +1,22 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation_h30/_personal_document_selection_preview.html #}
 {% comment %}
-H31 (S103). Fragmento de vista previa de la selección de documentos
-de una ficha de personal, cargado bajo demanda dentro del modal
-genérico (mismo patrón que documentHistoryModal/openHistoryModal --
-ver _personal_detail.html). Lee siempre de PanelNavigationState
-(PersonalDocumentSelectionPreviewView), nunca de lo que el
-navegador crea tener marcado, para que la vista previa nunca pueda
-divergir de lo realmente persistido.
+H31 (S103), rediseñado en H35 (S105). Fragmento de vista previa de la
+selección de documentos de una ficha de personal, cargado bajo
+demanda dentro del modal genérico (mismo patrón que
+documentHistoryModal/openHistoryModal -- ver _personal_detail.html).
+Lee siempre de PanelNavigationState (PersonalDocumentSelectionPreviewView),
+nunca de lo que el navegador crea tener marcado, para que la vista
+previa nunca pueda divergir de lo realmente persistido.
+
+H35 (S105), Miguel Ángel, verbatim: "en vez de ver y quitar y eso, con
+casillero, casillero y un botón solamente para eliminar los que están
+seleccionados. Y un botón pequeño de ver, con un ojito [...] vamos a
+reducir el tamaño de esa lista." -- cada fila lleva su propio
+casillero (para el borrado masivo) y un icono de ojo pequeño para
+"Ver"; "Quitar" por fila desaparece, sustituido por el único botón
+"Eliminar seleccionados" de la cabecera. "Guardar como plantilla"
+también desaparece de aquí -- crear/editar plantillas vive ya en su
+propia página (panel:dossier_templates_manage).
 
 Dos vías de descarga, investigadas online en la sesión anterior
 contra las plataformas CAE del sector (Nalanda, Klear/Kizeo) y la
@@ -30,8 +40,8 @@ sustituto de la otra.
         <button type="button" class="btn btn-sm btn-outline-primary" onclick="toggleSendEmailForm()">
             <i class="bi bi-envelope me-1"></i>Enviar por email
         </button>
-        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleSaveTemplateForm()">
-            <i class="bi bi-bookmark-plus me-1"></i>Guardar como plantilla
+        <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeCheckedFromPreview()">
+            <i class="bi bi-trash me-1"></i>Eliminar seleccionados
         </button>
         <button type="button" class="btn btn-sm btn-outline-danger" onclick="clearDocumentSelection()">
             <i class="bi bi-x-circle me-1"></i>Vaciar selección
@@ -64,47 +74,23 @@ notificaciones de circulares.
     </div>
     <div class="form-text">Se adjunta el dossier de la selección actual ({{ entries|length }} documento{{ entries|length|pluralize }}) y tu firma de Mi perfil.</div>
 </div>
-{% comment %}
-H31 (S103). Formulario oculto por defecto (toggleSaveTemplateForm,
-en _personal_detail.html) -- Miguel Ángel: "la plantilla guarda qué
-documentos se han enviado y si ha sido en zip o en pdf [...]
-numerados hasta que el supervisor les de nombre". El nombre es
-opcional a propósito -- si se deja en blanco, la vista asigna
-"Dossier N" automáticamente.
-{% endcomment %}
-<div id="saveTemplateForm" class="card card-body mb-2 py-2" style="display:none;">
-    <div class="row g-2 align-items-end">
-        <div class="col-12 col-md-5">
-            <label class="form-label small mb-0">Nombre (opcional)</label>
-            <input type="text" id="saveTemplateName" class="form-control form-control-sm" placeholder="Dossier N (automático si se deja en blanco)">
-        </div>
-        <div class="col-6 col-md-3">
-            <label class="form-label small mb-0">Formato</label>
-            <select id="saveTemplateFormat" class="form-select form-select-sm">
-                <option value="PDF">PDF único</option>
-                <option value="ZIP">ZIP</option>
-            </select>
-        </div>
-        <div class="col-6 col-md-4 d-flex gap-2">
-            <button type="button" class="btn btn-sm btn-success" onclick="saveSelectionAsTemplate()">Guardar</button>
-            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleSaveTemplateForm()">Cancelar</button>
-        </div>
-    </div>
-    <div id="saveTemplateResult" class="small mt-1"></div>
-</div>
-<table class="table table-sm table-hover mb-0">
-    <thead><tr><th>Tipo</th><th>Familia</th><th>Caducidad</th><th></th></tr></thead>
+<table class="table table-sm table-hover mb-0" style="font-size: 0.8rem;">
+    <thead><tr><th style="width:2rem;"></th><th>Tipo</th><th>Familia</th><th>Caducidad</th><th style="width:2.5rem;"></th></tr></thead>
     <tbody>
         {% for entry in entries %}
         <tr>
-            <td>{{ entry.document_type.label|default:"Sin tipo" }}</td>
-            <td>{{ entry.document_type.get_family_display|default:"—" }}</td>
-            <td>
+            <td class="py-1">
+                <input type="checkbox" class="form-check-input preview-row-checkbox" data-doc-pk="{{ entry.pk }}">
+            </td>
+            <td class="py-1">{{ entry.document_type.label|default:"Sin tipo" }}</td>
+            <td class="py-1">{{ entry.document_type.get_family_display|default:"—" }}</td>
+            <td class="py-1">
                 {% if entry.expiry_date %}{{ entry.expiry_date }}{% elif entry.issue_date %}<span class="text-muted small">Emisión:</span> {{ entry.issue_date }}{% else %}—{% endif %}
             </td>
-            <td class="text-end">
-                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="openDocumentViewer('{% url 'panel:documentation_document_view' pk=entry.pk %}')">Ver</button>
-                <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeFromSelection({{ entry.pk }})">Quitar</button>
+            <td class="py-1 text-end">
+                <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1" title="Ver documento" onclick="openDocumentViewer('{% url 'panel:documentation_document_view' pk=entry.pk %}')">
+                    <i class="bi bi-eye"></i>
+                </button>
             </td>
         </tr>
         {% endfor %}

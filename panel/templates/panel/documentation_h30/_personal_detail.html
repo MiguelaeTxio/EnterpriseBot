@@ -1145,6 +1145,27 @@ function removeFromSelection(pk) {
     loadSelectionPreview();
 }
 
+// H35 (S105): "un botón solamente para eliminar los que están
+// seleccionados" -- opera sobre los casilleros marcados DENTRO del
+// propio listado de previsualización (.preview-row-checkbox), nunca
+// uno por fila -- ver _personal_document_selection_preview.html.
+// Reutiliza exactamente el mismo camino que removeFromSelection() por
+// cada id marcado, pero persiste y recarga la vista previa una sola
+// vez al final, no una vez por documento.
+function removeCheckedFromPreview() {
+    const checkedIds = Array.from(
+        document.querySelectorAll('.preview-row-checkbox:checked'),
+    ).map(el => parseInt(el.dataset.docPk, 10));
+    if (checkedIds.length === 0) return;
+    checkedIds.forEach(pk => {
+        selectedDocumentIds.delete(pk);
+        const checkbox = document.querySelector(`input[data-doc-pk="${pk}"]`);
+        if (checkbox) checkbox.checked = false;
+    });
+    persistDocumentSelection();
+    loadSelectionPreview();
+}
+
 function clearDocumentSelection() {
     selectedDocumentIds.clear();
     document.querySelectorAll('input[data-doc-pk]').forEach(function (cb) { cb.checked = false; });
@@ -1152,15 +1173,10 @@ function clearDocumentSelection() {
     loadSelectionPreview();
 }
 
-// H31 (S103). Guardar la selección actual como plantilla -- formulario
-// oculto dentro del propio fragmento de vista previa (ver
-// _personal_document_selection_preview.html). No se cierra el modal
-// de selección al guardar: Miguel Ángel puede seguir ajustando la
-// selección o guardar varias plantillas seguidas sin reabrir nada.
-function toggleSaveTemplateForm() {
-    const form = document.getElementById('saveTemplateForm');
-    if (form) form.style.display = form.style.display === 'none' ? '' : 'none';
-}
+// H35 (S105): toggleSaveTemplateForm()/saveSelectionAsTemplate()
+// retirados -- "Guardar como plantilla" ya no vive en este fragmento,
+// crear/editar plantillas de dosier vive en su propia página
+// (panel:dossier_templates_manage).
 
 // H31 (S104). Envío del dossier por email -- genera y descarga un .eml
 // real con el dossier adjunto, el cuerpo escrito en el editor básico

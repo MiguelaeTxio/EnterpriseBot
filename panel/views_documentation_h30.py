@@ -3327,6 +3327,44 @@ class PersonalNotificationMassSendView(DocsUploadAccessMixin, View):
         return response
 
 
+class DossierTemplateMissingCheckView(CompanyUserRequiredMixin, View):
+    """
+    H35 (S105). POST: para una plantilla y un conjunto de personas (la
+    página visible del listado de Personal), devuelve qué personas NO
+    tienen un documento vigente de TODOS los tipos incluidos en la
+    plantilla -- Miguel Ángel, verbatim: "en la gestión de dossier,
+    cuando estamos seleccionando para todos los trabajadores, hay que
+    hacer un marcado en el listado de trabajadores que les falte algún
+    documento de los que entran en la plantilla."
+
+    Reutiliza `_resolve_template_entries` sin cambios -- el mismo
+    criterio de "vigente ahora mismo" que ya usa la generación real
+    del dosier, nunca una comprobación aparte que pudiera divergir.
+    """
+
+    def post(self, request):
+        template_pk = request.POST.get("template_id", "").strip()
+        person_ids = request.POST.getlist("person_ids")
+        if not template_pk or not person_ids:
+            return JsonResponse({"missing": []})
+
+        template = get_object_or_404(PersonalDossierTemplate, pk=template_pk)
+        required_type_ids = set(
+            template.document_types.values_list("pk", flat=True),
+        )
+        if not required_type_ids:
+            return JsonResponse({"missing": []})
+
+        missing = []
+        for person in PersonIdentity.objects.filter(pk__in=person_ids):
+            entries = _resolve_template_entries(person, template)
+            found_type_ids = {e.document_type_id for e in entries}
+            if required_type_ids - found_type_ids:
+                missing.append(person.pk)
+
+        return JsonResponse({"missing": missing})
+
+
 class PersonalDossierMassGenerateView(DocsUploadAccessMixin, View):
     """
     H35 (S105). POST: genera dosieres para VARIOS trabajadores
