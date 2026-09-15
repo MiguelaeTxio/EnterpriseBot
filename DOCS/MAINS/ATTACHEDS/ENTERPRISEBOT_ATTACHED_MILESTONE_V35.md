@@ -469,34 +469,87 @@ nunca a `PersonIdentity`. Confirmado, no es un olvido.
 
 ---
 
+## COMPLETADAS EN S106
+
+**Herramienta nueva:** `DocumentTypeCatalog.skip_light_ocr_engines`
+(migración `0088`) + `h28_migration_agent/extract_personal_dates_bulk_fast.py`,
+variante de `extract_personal_dates_bulk.py`. Origen real: dry-run de
+10 documentos `AUTONOMO`, 10/10 agotaron los 4 motores hasta Cloud
+Vision sin que Tesseract/EasyOCR resolvieran ni uno solo -- relanzar
+esa cadena completa sobre 189 documentos habría supuesto ~15h de
+intentos locales sin ningún valor. El campo es **distinto** de
+`ocr_unreliable` (que exige razonamiento de Gemini Vision y descarta
+la fecha resuelta): `skip_light_ocr_engines` solo salta Tesseract/
+EasyOCR cuando una muestra real ya demostró que nunca resuelven nada
+para ese tipo, y la fecha resuelta por Cloud Vision se escribe con
+normalidad. Verificado que ningún otro punto de la plataforma lee
+este campo -- cero interferencia con la ingesta normal ni con otros
+tipos documentales. Con el atajo activo, la campaña completa de 189
+documentos tardó ~7 minutos en un único proceso (sin VMs efímeras ni
+imagen nueva) -- activar este flag caso a caso, solo tras confirmar
+el patrón con un dry-run real, nunca por suposición.
+
+**Campaña `--retype` completa, alcance fijo `is_active_employee=True`:**
+
+| Tipo | Total activos | Retipados | Fecha corregida | Ambiguos reales | Sin señal |
+|---|---|---|---|---|---|
+| `AUTONOMO` | 189 | 0 | 176 | 0 | 13 |
+
+**13 SIN SEÑAL** (`skip_light_ocr_engines` activo, Cloud Vision
+agotado sin resolver tipo ni fecha nueva -- conservan la fecha que ya
+tenían de la ingesta normal, no quedan sin fecha en absoluto):
+```
+27494  ALVAREZ_DIAZ_ADOLFO_AUTONOMO_20121031.pdf
+27509  ALVAREZ_DIAZ_ADOLFO_AUTONOMO_20140829_1.pdf
+27570  ALVAREZ_DIAZ_ADOLFO_AUTONOMO_20170531.pdf
+27592  ALVAREZ_DIAZ_ADOLFO_AUTONOMO_20190102.pdf
+27612  ALVAREZ_DIAZ_ADOLFO_AUTONOMO_20190430.pdf
+27613  ALVAREZ_DIAZ_ADOLFO_AUTONOMO_20190830.pdf
+27615  ALVAREZ_DIAZ_ADOLFO_AUTONOMO_20190228.pdf
+27621  ALVAREZ_DIAZ_ADOLFO_AUTONOMO_20191231.pdf
+27646  ALVAREZ_DIAZ_ADOLFO_AUTONOMO_20201130.pdf
+27894  ALVAREZ_DIAZ_ALBERTO_JAVIER_AUTONOMO_20130930.pdf
+27954  ALVAREZ_DIAZ_ALEJANDRO_SERGIO_AUTONOMO_20130930.pdf
+27958  ALVAREZ_DIAZ_ALEJANDRO_SERGIO_AUTONOMO_20160801.pdf
+28016  ALVAREZ_DIAZ_JOSE_LUIS_AUTONOMO_20150730.pdf
+```
+
+---
+
 ## Hoja de Ruta para la Sesión Siguiente (S106)
 
 **0. Verificar el resultado de la re-ingesta de Miguel Ángel (ver el
 "DATO CRÍTICO DE CONTINUIDAD" al principio de este anexo) -- PRIMERA
-tarea, antes de cualquier otro punto.** Buscar `PersonIdentity` por
+tarea, antes de cualquier otro punto.** ~~Buscar `PersonIdentity` por
 DNI `74633524L`, listar sus documentos `CONTRATO` actuales y
 comprobar, por contenido real (`ocr_text` o descarga directa si no
-está cacheado), si alguno es en realidad una nómina. **Criterio de
-cierre: 0 documentos `CONTRATO` de esa ficha cuyo contenido real no
-sea un contrato.** Si aparece alguno, diagnosticar el flujo real de
-subida (`document_explorer/personal_intake_service.py` y/o
-`subject_upload_service.py`) contra el síntoma ya visto (`blob_name`
-repetido en varias filas de índice distintas) antes de dar el fallo
-por corregido -- nunca solo documentarlo, corregirlo.
+está cacheado), si alguno es en realidad una nómina.~~ **CERRADO EN
+S106, confirmación directa de Miguel Ángel: su ficha está bien.**
+Causa real del fallo original, para cuando se retome la interfaz/
+ingesta (H31): verificación ausente de qué documento se sube, y
+borrado indebido del blob al actualizar un documento (debería quedar
+como obsoleto en el historial, nunca borrarse).
 
 **1. Auditar con `--retype` los 6 tipos de volumen alto restantes de
 las familias `LABORAL`/`SALUD_BAJAS_PERSONA`, mismo procedimiento
 exacto que el resto de esta sesión** (dry-run de 10 primero, revisar
-el patrón, campaña completa con lotes de 20-25 por shard -- nunca
-shards de un tamaño que tarden horas sin haberlo avisado antes):
-`AUTONOMO` (189), `MOD_145` (161), `REGISTRO_JORNADA` (133), `CSS`
+el patrón, campaña completa -- ver nota de shards más abajo):
+~~`AUTONOMO` (189)~~ **CERRADO EN S106, ver "COMPLETADAS EN S106"
+arriba.** Quedan: `MOD_145` (161), `REGISTRO_JORNADA` (133), `CSS`
 (89), `VACACIONES` (74), `NOMINA` (73). Para cada uno, registrar en
 este anexo el mismo desglose que ya tienen `BAJA_PERSONAL`/`ALTA`/
-`CONTRATO`/`IDC`/`RECONOCIMIENTO_MEDICO`/`INVESTIGACION_ACCIDENTE`
-(retipados/fecha corregida/ambiguos con IDs/sin señal con IDs).
-**Criterio de cierre de este punto: los 6 tipos con su desglose
-comiteado en este anexo, cada uno con las listas de IDs pendientes
-reales (nunca solo el recuento).**
+`CONTRATO`/`IDC`/`RECONOCIMIENTO_MEDICO`/`INVESTIGACION_ACCIDENTE`/
+`AUTONOMO` (retipados/fecha corregida/ambiguos con IDs/sin señal con
+IDs). **Nota de shards (S106): si el dry-run de un tipo muestra el
+mismo patrón de `AUTONOMO` (100% de escalado hasta Cloud Vision),
+activar `skip_light_ocr_engines` para ese tipo y usar
+`extract_personal_dates_bulk_fast.py` -- un único proceso en
+`h28-ocr-batch-1` puede bastar sin necesidad de congelar imagen ni
+crear VMs efímeras (verificado real: 189 documentos en ~7 minutos).
+Si el patrón es mixto (algunos resuelven con Tesseract/EasyOCR),
+usar el script original sin el flag.** **Criterio de cierre de este
+punto: los 6 tipos con su desglose comiteado en este anexo, cada uno
+con las listas de IDs pendientes reales (nunca solo el recuento).**
 
 **2. Ejecutar el criterio de remediación del punto 0 original de
 S105** (documento de otra persona real archivado bajo una ficha que
@@ -508,9 +561,24 @@ Francisco Gómez Rivero archivados bajo Jorge Ramírez García). Si la
 persona nombrada existe ya como `PersonIdentity` (activa o inactiva,
 cualquier empresa), mover el documento a su ficha real; si no existe,
 papelera (`trash_dossier_entry`). **Criterio de cierre: barrido
-sistemático ejecutado sobre los 6+6=12 tipos ya auditados a fecha de
+sistemático ejecutado sobre los 6+7=13 tipos ya auditados a fecha de
 S105/S106, con el recuento real de cuántos documentos de otra persona
 se encontraron y qué se hizo con cada uno, comiteado en este anexo.**
+
+**3. Documento del vehículo mal archivado (`pk=28245`, ficha ITV de
+un Volkswagen matrícula 8534-BGX, archivado bajo Grana Álvarez,
+Paloma) -- aplicar el criterio de remediación del punto 2, adaptado:
+este no es un documento de OTRA PERSONA, es un documento que no
+pertenece al dominio `PersonIdentity` en absoluto.** Buscar primero en
+el catálogo real (`DocumentTypeCatalog`, dominio `MACHINE`/`BOTH`) si
+ya existe un tipo para fichas ITV de vehículos de empresa (turismos,
+no maquinaria pesada); si existe, reubicar el documento a su dominio y
+tipo reales con `move_service`. Si no existe ningún tipo/carpeta real
+para esto, darlo de alta siguiendo el mismo criterio ya usado en el
+resto de altas de tipo de esta plataforma (label, family, domain)
+antes de reubicar. **Criterio de cierre: `pk=28245` con
+`domain_content_type`/`document_type` reales de vehículo, ya no bajo
+la ficha de Grana Álvarez, Paloma.**
 
 **3. Documento del vehículo mal archivado (`pk=28245`, ficha ITV de
 un Volkswagen matrícula 8534-BGX, archivado bajo Grana Álvarez,
