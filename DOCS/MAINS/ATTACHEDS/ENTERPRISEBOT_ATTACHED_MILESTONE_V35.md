@@ -304,3 +304,31 @@ completo del punto 0 (buscar sistemáticamente, con
 entre los 85 "sin señal" restantes -- los 2 casos de arriba se
 encontraron por inspección manual puntual, no por un barrido
 sistemático).
+
+---
+
+## Pendientes de revisión manual -- CONTRATO (S105)
+
+De 449 `CONTRATO` de personal activo, 146 quedaron resueltos (fecha
+corregida y/o retipados), 303 confirmados como contrato real. Quedan
+**10 pendientes** (mucho menor proporción que `BAJA_PERSONAL` -- este
+tipo no compartía el mismo patrón de cajón de sastre tan agudo):
+
+**6 AMBIGUOS** (mismo patrón real ya visto: contrato + parte médico
+mezclados en el mismo PDF, todos del mismo trabajador):
+```
+35635  GOMEZ_GARCIA_JOSE_ANTONIO_CONTRATO_20680318.pdf    [CONTRATO, PARTE_BAJA_MEDICA]
+35637  GOMEZ_GARCIA_JOSE_ANTONIO_CONTRATO_20680318_1.pdf  [CONTRATO, PARTE_BAJA_MEDICA]
+35639  GOMEZ_GARCIA_JOSE_ANTONIO_CONTRATO_20070902.pdf    [CONTRATO, PARTE_BAJA_MEDICA]
+35640  GOMEZ_GARCIA_JOSE_ANTONIO_CONTRATO_20680318_2.pdf  [CONTRATO, PARTE_BAJA_MEDICA]
+35641  GOMEZ_GARCIA_JOSE_ANTONIO_CONTRATO_20680318_3.pdf  [CONTRATO, PARTE_BAJA_MEDICA]
+35684  GOMEZ_GARCIA_JOSE_ANTONIO_CONTRATO_19680318_1.pdf  [CONTRATO, PARTE_BAJA_MEDICA]
+```
+
+**4 SIN SEÑAL:**
+```
+34098  ALVAREZ_GEA_ALBERTO_ADOLFO_CONTRATO_20111231.pdf
+35636  GOMEZ_GARCIA_JOSE_ANTONIO_CONTRATO_20111231.pdf
+36311  MARTINEZ_SEGURA_JOSE_CARLOS_CONTRATO_20210101.pdf
+39831  RUEDA_ESCUDERO_JULIO_ALBERTO_CONTRATO_20251222.ordinario firmado-signe
+```
