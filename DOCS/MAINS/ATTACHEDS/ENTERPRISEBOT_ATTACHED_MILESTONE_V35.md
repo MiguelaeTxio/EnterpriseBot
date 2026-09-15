@@ -230,3 +230,77 @@ muestra revisada primero, mismo patrón que toda esta sesión.
 correctamente (o marcados explícitamente para revisión manual con
 motivo), y medida la extensión real del problema a otros tipos si el
 punto 0 confirmó que hacía falta auditar más allá de `BAJA_PERSONAL`.
+
+---
+
+## Pendientes de revisión manual -- BAJA_PERSONAL (S105, cierre real)
+
+**Nunca perder esta lista al borrar la VM que la produjo** -- vive
+aquí, en el repo, no en un log de una VM efímera que se borra al
+terminar la campaña (ver "MODELO DE CICLO DE VIDA DE LAS VMs" en
+`SESSION_VARIABLES.md`).
+
+De los 404 `BAJA_PERSONAL` de personal activo en toda la plataforma,
+tras la campaña completa de `--retype` (con el motor corregido para
+escalar de OCR mientras el TIPO no esté resuelto, no solo la fecha):
+306 quedaron resueltos (tipo confirmado como baja real, o retipados a
+su tipo real, o con fecha corregida). Quedan **98 sin resolver
+automáticamente**, nunca forzados a un tipo que el contenido no
+respalda:
+
+**13 AMBIGUOS** (dos o más tipos reales mezclados en el mismo PDF --
+contenido genuinamente mixto, no fallo de diccionario):
+```
+28930  ALVAREZ_SERRANO_ENRIQUE_BAJA_PERSONAL_20091110.pdf       [CONTRATO, PARTE_BAJA_MEDICA]
+28964  ALVAREZ_VIEIRA_LEANDRO_JAVIER_BAJA_PERSONAL_20150417_3.pdf [CONTRATO, IDC]
+29195  CRUCES_HEREDIA_JOSE_MANUEL_BAJA_PERSONAL_20170524_1.pdf   [CONTRATO, IDC]
+30088  REBOLLO_MANZANO_JACINTO_BAJA_PERSONAL_20250113_3.pdf      [CONTRATO, IDC]
+30354  ALVAREZ_SERRANO_ENRIQUE_BAJA_PERSONAL_20110721.pdf        [CONTRATO, PARTE_BAJA_MEDICA]
+30356  ALVAREZ_SERRANO_ENRIQUE_BAJA_PERSONAL_20810613.pdf        [CONTRATO, PARTE_BAJA_MEDICA]
+30358  ALVAREZ_SERRANO_ENRIQUE_BAJA_PERSONAL_20110721_1.pdf      [CONTRATO, PARTE_BAJA_MEDICA]
+32001  MARTIN_GONZALEZ_JESUS_BAJA_PERSONAL_20150303_1.pdf        [CONTRATO, IDC]
+32024  MARTIN_GONZALEZ_JESUS_BAJA_PERSONAL_20191026.pdf          [CARNET_CONDUCIR, TARJETA_CUALIF_CONDUCTOR]
+32720  RAMIREZ_GARCIA_JORGE_BAJA_PERSONAL_20081217.pdf           [CONTRATO, IDC, PARTE_BAJA_MEDICA]
+32731  RAMIREZ_GARCIA_JORGE_BAJA_PERSONAL_20181120.pdf           [CARNET_GRUISTA, RECONOCIMIENTO_MEDICO]
+32779  RAMIREZ_GARCIA_JORGE_BAJA_PERSONAL_20081217_1.pdf         [CONTRATO, IDC]
+32828  RAMIREZ_GARCIA_JORGE_BAJA_PERSONAL_20100212.pdf           [AUTORIZACION_USO_MAQUINARIA, CONTRATO, PARTE_BAJA_MEDICA]
+```
+
+**85 SIN SEÑAL** (ningún signal del diccionario coincide, ni tras
+pasar por Tesseract→EasyOCR→Cloud Vision):
+```
+28245 28249 28251 28255 28256 28266 28271 28276 28937 28942 28955
+28959 28960 28961 28962 28965 28966 28968 29194 30077 30078 30081
+30083 30084 30085 30086 30087 30091 30347 30357 30582 30583 30584
+30586 30598 30603 31972 31973 31978 31992 31995 32023 32732 32733
+32736 32737 32739 32743 32760 32761 32765 32771 32776 32782 32783
+32784 32785 32798 32800 32801 32829 32830 32832 32835 32837 32838
+36737 36945 36947 37106 37339 37340 37341 37342 37527 37531 37532
+37543 37794 37795 37796 37949 39829 40251 42793
+```
+
+**Casos ya inspeccionados visualmente dentro de este bloque, con
+motivo real confirmado (no van a resolver con más diccionario):**
+- `28245` (Grana Álvarez, Paloma): ficha ITV de un Volkswagen,
+  matrícula 8534-BGX -- documento de un **vehículo**, mal archivado
+  por completo bajo una persona. Encaja en el criterio de
+  remediación del punto 0 (mover a donde corresponda -- en este caso
+  ni siquiera a otra `PersonIdentity`, sino fuera del dominio
+  personal), pendiente de ejecutar.
+- `39829` (Rueda Escudero, Julio Alberto): factura de Correos por un
+  burofax -- contenido real es una factura de mensajería, sin
+  información de RRHH clasificable. Legítimamente sin tipo de
+  personal real.
+- `pk=41145`/`42128` (EPIS de Jorge Milheiro Felicio y Francisco
+  Gómez Rivero, archivados bajo la ficha de Jorge Ramírez García,
+  carpeta `_CUARENTENA`): confirmado en S105 que son documentos de
+  **otra persona real** -- aplicar el criterio de remediación del
+  punto 0 (mover a su `PersonIdentity` real si existe, papelera si
+  no). Pendiente de ejecutar, no de diagnosticar.
+
+**Todavía sin ejecutar de este bloque:** el criterio de remediación
+completo del punto 0 (buscar sistemáticamente, con
+`_person_name_missing()`, cualquier documento de otra persona real
+entre los 85 "sin señal" restantes -- los 2 casos de arriba se
+encontraron por inspección manual puntual, no por un barrido
+sistemático).
