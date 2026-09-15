@@ -97,7 +97,7 @@ EPI_TECHNICAL_SHEETS_ROOT = "_FICHAS_TECNICAS_EPI"
 # propia opción "sin_empresa" -- ninguno se oculta en silencio.
 COMPANY_FILTER_CHOICES = [
     ("adolfo_alvarez", "Grúas Adolfo Álvarez S.L.", ["GRUAS ADOLFO ALVAREZ SL"]),
-    ("transgrual", "Transgrúal S.L.", [
+    ("transgrual", "TRANSGRUAL S.L.", [
         "TRANSGRUAL SL", "TRANSGRUAL S.L.", "TRANSGRUAL Y ASITENCIA",
     ]),
     ("aldi", "GRUALDI S.L.", ["GRUALDI S.L"]),
