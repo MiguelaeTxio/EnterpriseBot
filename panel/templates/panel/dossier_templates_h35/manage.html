@@ -123,9 +123,9 @@ plantilla ya creada sobre una persona concreta.
             {% for fam in families %}
             <div class="mb-2 p-2 rounded" style="background-color: {{ fam.color }};">
                 <div class="fw-bold small mb-1">{{ fam.label }}</div>
-                <div class="d-flex flex-wrap gap-3">
+                <div style="columns: 3; column-gap: 1.5rem;">
                     {% for dt in fam.types %}
-                    <div class="form-check">
+                    <div class="form-check" style="break-inside: avoid;">
                         <input class="form-check-input dossier-type-checkbox" type="checkbox" value="{{ dt.pk }}" id="dtCheck{{ dt.pk }}">
                         <label class="form-check-label small" for="dtCheck{{ dt.pk }}">{{ dt.label }}</label>
                     </div>
