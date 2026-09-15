@@ -50,7 +50,6 @@ from panel.views_documentation_h30 import (
     PersonalDossierMassGenerateView,
     PersonalDossierTemplateApplyView,
     PersonalDossierTemplateDeleteView,
-    PersonalDossierTemplateDuplicateView,
     PersonalDossierTemplateListView,
     PersonalDossierTemplateSetActiveView,
     PersonalEpiItemHistoryView,
@@ -450,8 +449,7 @@ urlpatterns = [
     path("documentacion/personal/<int:pk>/plantillas/", PersonalDossierTemplateListView.as_view(), name="documentation_personal_dossier_template_list"),
     # H31 (S103): aplicar una plantilla de empresa sobre esta persona -- resuelve el vigente de cada tipo + la selección actual, descarga en el formato guardado.
     path("documentacion/personal/<int:pk>/plantillas/<int:template_pk>/aplicar/", PersonalDossierTemplateApplyView.as_view(), name="documentation_personal_dossier_template_apply"),
-    # H31 (S103): duplicar una plantilla con el formato contrario (PDF<->ZIP).
-    path("documentacion/personal/plantillas/<int:template_pk>/duplicar/", PersonalDossierTemplateDuplicateView.as_view(), name="documentation_personal_dossier_template_duplicate"),
+    # (S106: duplicar quedó sin propósito al dejar de existir un formato por plantilla -- eliminado con PersonalDossierTemplateDuplicateView)
     # H31 (S103): borrar una plantilla de dossier.
     path("documentacion/personal/plantillas/<int:template_pk>/eliminar/", PersonalDossierTemplateDeleteView.as_view(), name="documentation_personal_dossier_template_delete"),
     path("documentacion/plantillas-dosier/<int:template_pk>/activar/", PersonalDossierTemplateSetActiveView.as_view(), name="dossier_template_set_active"),

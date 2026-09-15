@@ -1614,77 +1614,6 @@ def _resolve_template_entries(person, template):
     return current
 
 
-class PersonalDossierTemplateCreateView(CompanyUserRequiredMixin, View):
-    """
-    H31 (S103). POST: guarda la selección ACTUAL de casilleros de una
-    persona como una plantilla de dossier nueva -- Miguel Ángel:
-    "selecciono 3 documentos y la plantilla guarda qué documentos se
-    han enviado y si ha sido en zip o en pdf". Guarda los TIPOS
-    documentales de los documentos seleccionados (nunca sus IDs fijos
-    -- ver `PersonalDossierTemplate`). Un documento seleccionado sin
-    `document_type` catalogado (posible en el cubo histórico) no
-    puede formar parte de una plantilla -- se excluye y se reporta en
-    `skipped`, nunca aborta el guardado si al menos un tipo es válido.
-    """
-
-    def post(self, request, pk):
-        _person, entries = _resolve_document_selection(request, pk)
-        if not entries:
-            return JsonResponse(
-                {"ok": False, "error": "No hay ningún documento seleccionado."},
-                status=400,
-            )
-
-        output_format = request.POST.get("output_format", "").strip().upper()
-        if output_format not in (
-            PersonalDossierTemplate.FORMAT_PDF, PersonalDossierTemplate.FORMAT_ZIP,
-        ):
-            return JsonResponse(
-                {"ok": False, "error": "Formato no válido (PDF o ZIP)."},
-                status=400,
-            )
-
-        type_ids = []
-        skipped = []
-        for entry in entries:
-            if entry.document_type_id:
-                if entry.document_type_id not in type_ids:
-                    type_ids.append(entry.document_type_id)
-            else:
-                skipped.append(entry.name)
-        if not type_ids:
-            return JsonResponse(
-                {
-                    "ok": False,
-                    "error": (
-                        "Ningún documento seleccionado tiene un tipo "
-                        "documental catalogado -- no se puede guardar "
-                        "como plantilla."
-                    ),
-                },
-                status=400,
-            )
-
-        name = request.POST.get("name", "").strip()
-        company = request.user.company_user.company
-        if not name:
-            existing_count = PersonalDossierTemplate.objects.filter(
-                company=company,
-            ).count()
-            name = f"Dossier {existing_count + 1}"
-
-        template = PersonalDossierTemplate.objects.create(
-            company=company, name=name, output_format=output_format,
-            created_by=request.user.company_user,
-        )
-        template.document_types.set(type_ids)
-
-        return JsonResponse({
-            "ok": True, "template_id": template.pk, "name": template.name,
-            "skipped": skipped,
-        })
-
-
 class PersonalDossierTemplateListView(CompanyUserRequiredMixin, View):
     """
     H31 (S103). GET: fragmento del "gestor de plantillas" -- lista las
@@ -1798,13 +1727,11 @@ class DossierTemplateManageView(CompanyUserRequiredMixin, View):
 class DossierTemplateSaveView(CompanyUserRequiredMixin, View):
     """
     H35 (S105). POST: crea una plantilla nueva (sin `template_pk`) o
-    edita una existente (con `template_pk`) -- nombre, formato y la
-    lista completa de tipos documentales marcados en
-    `DossierTemplateManageView`. Sustituye por completo al viejo
-    `PersonalDossierTemplateCreateView`/`PersonalDossierTemplateUpdateView`
-    (que derivaban los tipos de la selección de casilleros de una
-    persona concreta -- ya no hace falta ese rodeo, el formulario
-    nuevo ofrece todos los tipos directamente).
+    edita una existente (con `template_pk`) -- nombre y la lista
+    completa de tipos documentales marcados en
+    `DossierTemplateManageView`. El formato de salida (PDF/ZIP) ya no
+    se guarda aquí -- se pregunta siempre al aplicar la plantilla, ver
+    `PersonalDossierTemplateApplyView` (S106).
     """
 
     def post(self, request, template_pk=None):
@@ -1827,13 +1754,6 @@ class DossierTemplateSaveView(CompanyUserRequiredMixin, View):
                 n = company.dossier_templates.count() + 1
                 name = "Dossier %d" % n
 
-        output_format = request.POST.get("output_format", "")
-        if output_format not in dict(PersonalDossierTemplate.FORMAT_CHOICES):
-            output_format = (
-                template.output_format if template.pk
-                else PersonalDossierTemplate.FORMAT_PDF
-            )
-
         type_ids = request.POST.getlist("document_type_ids")
         if not type_ids:
             return JsonResponse(
@@ -1842,7 +1762,6 @@ class DossierTemplateSaveView(CompanyUserRequiredMixin, View):
             )
 
         template.name = name
-        template.output_format = output_format
         template.save()
         template.document_types.set(type_ids)
 
@@ -1862,14 +1781,28 @@ class PersonalDossierTemplateApplyView(CompanyUserRequiredMixin, View):
     área". Sin selección activa, se aplica solo la plantilla; sin
     plantilla resuelta pero con selección, se aplica solo la
     selección -- nunca un dossier vacío si hay algo que ofrecer por
-    cualquiera de las dos vías. Genera en el formato guardado en la
-    propia plantilla (PDF único o ZIP), reutilizando exactamente el
-    mismo generador que la descarga directa desde la selección.
+    cualquiera de las dos vías.
+
+    **S106**: el formato (`?format=PDF` o `?format=ZIP`) se pregunta
+    SIEMPRE en la propia ficha antes de llegar aquí -- la plantilla ya
+    no guarda un formato propio (ver `PersonalDossierTemplate`,
+    corregido S106). Sin `format` válido, 400 explícito -- nunca se
+    asume PDF por defecto.
     """
 
     def get(self, request, pk, template_pk):
         person = get_object_or_404(PersonIdentity, pk=pk)
         template = get_object_or_404(PersonalDossierTemplate, pk=template_pk)
+
+        output_format = request.GET.get("format", "").strip().upper()
+        if output_format not in (
+            PersonalDossierTemplate.FORMAT_PDF, PersonalDossierTemplate.FORMAT_ZIP,
+        ):
+            return HttpResponse(
+                "Falta indicar el formato (PDF o ZIP) para descargar "
+                "esta plantilla.",
+                status=400,
+            )
 
         template_entries = _resolve_template_entries(person, template)
         _person, selection_entries = _resolve_document_selection(request, pk)
@@ -1888,120 +1821,9 @@ class PersonalDossierTemplateApplyView(CompanyUserRequiredMixin, View):
                 "no hay ningún documento adicional seleccionado.",
                 status=400,
             )
-        if template.output_format == PersonalDossierTemplate.FORMAT_ZIP:
+        if output_format == PersonalDossierTemplate.FORMAT_ZIP:
             return _build_dossier_zip_response(person, combined)
         return _build_dossier_pdf_response(person, combined)
-
-
-class PersonalDossierTemplateUpdateView(CompanyUserRequiredMixin, View):
-    """
-    H31 (S103). POST: edita una plantilla ya guardada -- Miguel
-    Ángel: "pudiendo editar la plantilla de dossier, nombrarla etc.".
-    Tres ediciones independientes, cada una opcional en el mismo
-    POST:
-    - `name`: renombrar (nunca se deja vacío -- si llega vacío, se
-      ignora y se conserva el nombre actual).
-    - `output_format`: cambiar PDF<->ZIP.
-    - `refresh_types=1` + `person_pk`: sustituye los tipos documentales
-      de la plantilla por los de la SELECCIÓN ACTUAL de casilleros de
-      la persona indicada (la ficha desde la que se abrió el gestor)
-      -- así se "edita" qué documentos incluye sin tener que borrar y
-      crear una plantilla nueva. La plantilla ya no pertenece a una
-      persona (es de empresa), así que quién resuelve la selección se
-      indica explícitamente en cada petición.
-    """
-
-    def post(self, request, template_pk):
-        template = get_object_or_404(PersonalDossierTemplate, pk=template_pk)
-
-        name = request.POST.get("name", "").strip()
-        if name:
-            template.name = name
-
-        output_format = request.POST.get("output_format", "").strip().upper()
-        if output_format in (
-            PersonalDossierTemplate.FORMAT_PDF, PersonalDossierTemplate.FORMAT_ZIP,
-        ):
-            template.output_format = output_format
-
-        skipped = []
-        if request.POST.get("refresh_types") == "1":
-            person_pk = request.POST.get("person_pk")
-            if not person_pk:
-                return JsonResponse(
-                    {
-                        "ok": False,
-                        "error": (
-                            "Falta indicar de qué persona tomar la "
-                            "selección actual -- la plantilla no se "
-                            "ha tocado."
-                        ),
-                    },
-                    status=400,
-                )
-            _person, entries = _resolve_document_selection(request, person_pk)
-            type_ids = []
-            for entry in entries:
-                if entry.document_type_id:
-                    if entry.document_type_id not in type_ids:
-                        type_ids.append(entry.document_type_id)
-                else:
-                    skipped.append(entry.name)
-            if not type_ids:
-                return JsonResponse(
-                    {
-                        "ok": False,
-                        "error": (
-                            "La selección actual no tiene ningún "
-                            "documento con tipo catalogado -- la "
-                            "plantilla no se ha tocado."
-                        ),
-                    },
-                    status=400,
-                )
-            template.document_types.set(type_ids)
-
-        template.save(update_fields=["name", "output_format", "updated_at"])
-        return JsonResponse({
-            "ok": True, "name": template.name,
-            "output_format": template.output_format, "skipped": skipped,
-        })
-
-
-class PersonalDossierTemplateDuplicateView(CompanyUserRequiredMixin, View):
-    """
-    H31 (S103). POST: duplica una plantilla EXISTENTE -- mismos tipos
-    documentales, misma `company` -- pero con el formato contrario
-    (PDF -> ZIP o ZIP -> PDF). Miguel Ángel: "¿cómo puedo duplicar una
-    plantilla pero cambiando de zip a pdf y viceversa?" -- "Editar"
-    sustituye el formato de la MISMA plantilla; esta vista crea una
-    copia nueva para tener las dos versiones en paralelo, nunca toca
-    la original.
-    """
-
-    def post(self, request, template_pk):
-        original = get_object_or_404(
-            PersonalDossierTemplate.objects.select_related("company"),
-            pk=template_pk,
-        )
-        flipped_format = (
-            PersonalDossierTemplate.FORMAT_ZIP
-            if original.output_format == PersonalDossierTemplate.FORMAT_PDF
-            else PersonalDossierTemplate.FORMAT_PDF
-        )
-        flipped_label = dict(PersonalDossierTemplate.FORMAT_CHOICES)[flipped_format]
-        duplicate = PersonalDossierTemplate.objects.create(
-            company=original.company,
-            name=f"{original.name} ({flipped_label})",
-            output_format=flipped_format,
-            created_by=request.user.company_user,
-        )
-        duplicate.document_types.set(
-            original.document_types.values_list("pk", flat=True),
-        )
-        return JsonResponse({
-            "ok": True, "template_id": duplicate.pk, "name": duplicate.name,
-        })
 
 
 class PersonalDossierTemplateDeleteView(CompanyUserRequiredMixin, View):

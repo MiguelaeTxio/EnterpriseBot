@@ -16,6 +16,36 @@ Sustituye por completo al gestor modal que vivía dentro de la ficha
 de personal para crear/editar/duplicar/borrar -- la ficha
 (_personal_dossier_template_list.html) ya solo aplica (descarga) una
 plantilla ya creada sobre una persona concreta.
+
+REDISEÑADO EN S106, dos correcciones explícitas de Miguel Ángel sobre
+su propio diseño anterior de esta misma sesión:
+
+1. "Marcar como activa" YA NO abre un botón de previsualizar aparte
+   -- carga directamente sus tipos en el panel de trabajo de abajo, y
+   el visor (siempre visible, con scroll propio) muestra en todo
+   momento los tipos marcados ahora mismo, se hayan cargado de una
+   plantilla o se estén marcando a mano. Verbatim: "cuando marco una
+   plantilla como activa [...] se nos pone los documentos que están
+   señalados en el panel y además nos sale la lista de los documentos
+   que lleva esa plantilla [...] ya no hay que previsualizar". Esto
+   sustituye a los DOS botones de previsualizar que tenía el diseño
+   anterior de esta misma sesión (uno por plantilla activa, otro por
+   selección del formulario) -- verbatim: "dos botones de
+   previsualización [...] sobran los dos [...] ha hecho que lo
+   implementes de dos formas diferentes, con lo cual ya queda muy
+   enmarañado".
+2. Si hay cambios sin guardar (nombre o tipos marcados distintos de
+   lo último cargado/guardado) y se intenta activar otra plantilla o
+   cerrar la pestaña, se avisa antes de perderlos -- verbatim: "sale
+   un modal y dice plantilla no guardada, guardamos la plantilla,
+   ¿qué nombre le damos? el mismo que tenía o la vamos a cambiar de
+   nombre".
+
+El "Formato" (PDF/ZIP) desapareció por completo de esta página --
+`PersonalDossierTemplate` ya no lo guarda (ver models.py, S106): se
+pregunta siempre al aplicar la plantilla sobre una persona, nunca por
+plantilla. "Duplicar" desapareció con él (su único propósito era
+tener la misma plantilla en los dos formatos).
 {% endcomment %}
 
 {% block title %}Plantillas de dosier{% endblock %}
@@ -30,47 +60,38 @@ plantilla ya creada sobre una persona concreta.
             aplicarla sobre un trabajador (desde su ficha, o aquí
             mismo para varios a la vez) siempre se resuelve el
             documento vigente de cada tipo en ese momento, nunca uno
-            fijado desde que se creó la plantilla.
+            fijado desde que se creó la plantilla. El formato de
+            envío (PDF o ZIP) se pregunta en ese momento, no aquí.
         </p>
     </div>
 
     <div class="card mb-4">
-        <div class="card-header d-flex justify-content-between align-items-center">
-            <span>Plantillas guardadas</span>
-            <button type="button" class="btn btn-sm btn-outline-primary" id="previewActiveBtn" onclick="previewActiveTemplate()">
-                <i class="bi bi-eye me-1"></i>Previsualizar la plantilla activa
-            </button>
-        </div>
+        <div class="card-header">Plantillas guardadas</div>
         <div class="card-body p-0">
-            <div id="activeTemplatePreview" class="alert alert-secondary py-2 px-3 m-3 d-none">
-                <strong id="activeTemplatePreviewTitle">Tipos incluidos:</strong>
-                <ul class="mb-0" id="activeTemplatePreviewList"></ul>
-            </div>
             <table class="table table-sm table-hover mb-0">
-                <thead><tr><th style="width: 11rem;">Plantilla activa</th><th>Nombre</th><th>Formato</th><th>Tipos incluidos</th><th></th></tr></thead>
+                <thead><tr><th style="width: 11rem;">Plantilla activa</th><th>Nombre</th><th>Tipos incluidos</th><th></th></tr></thead>
                 <tbody>
                     {% for template in templates %}
-                    <tr id="templateRow{{ template.pk }}" data-name="{{ template.name|escapejs }}" data-types="{% for dt in template.document_types.all %}{{ dt.label }}|{% endfor %}">
+                    <tr id="templateRow{{ template.pk }}"
+                        data-name="{{ template.name|escapejs }}"
+                        data-type-ids="{% for dt in template.document_types.all %}{{ dt.pk }}{% if not forloop.last %},{% endif %}{% endfor %}">
                         <td>
                             {% if template.is_active %}
                             <span class="badge bg-success" id="activeBadge{{ template.pk }}">✓ Activa</span>
                             {% else %}
-                            <button type="button" class="btn btn-sm btn-outline-secondary dossier-set-active-btn" id="activeBtn{{ template.pk }}" onclick="setActiveTemplate({{ template.pk }})">Marcar como activa</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" id="activeBtn{{ template.pk }}" onclick="setActiveTemplate({{ template.pk }})">Marcar como activa</button>
                             {% endif %}
                         </td>
                         <td>{{ template.name }}</td>
-                        <td><span class="badge bg-secondary">{{ template.get_output_format_display }}</span></td>
                         <td class="small text-muted">
                             {% for dt in template.document_types.all %}{{ dt.label }}{% if not forloop.last %}, {% endif %}{% endfor %}
                         </td>
                         <td class="text-end">
-                            <button type="button" class="btn btn-sm btn-outline-secondary" onclick='editTemplate({{ template.pk }}, "{{ template.name|escapejs }}", "{{ template.output_format }}", "{% for dt in template.document_types.all %}{{ dt.pk }}{% if not forloop.last %},{% endif %}{% endfor %}")'>Editar</button>
-                            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="duplicateTemplate({{ template.pk }})" title="Crea una copia con el formato contrario (PDF↔ZIP)">Duplicar</button>
                             <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteTemplate({{ template.pk }})">Eliminar</button>
                         </td>
                     </tr>
                     {% empty %}
-                    <tr><td colspan="5" class="text-muted small py-3">Sin plantillas guardadas todavía.</td></tr>
+                    <tr><td colspan="4" class="text-muted small py-3">Sin plantillas guardadas todavía.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>
@@ -80,61 +101,48 @@ plantilla ya creada sobre una persona concreta.
     <div class="card">
         <div class="card-header d-flex justify-content-between align-items-center">
             <span id="formTitle">Nueva plantilla</span>
-            <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="cancelEditBtn" onclick="resetForm()">Cancelar edición</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="cancelEditBtn" onclick="resetForm()">Vaciar / nueva plantilla</button>
         </div>
         <div class="card-body">
             <input type="hidden" id="templatePk" value="">
-            <div class="mb-3">
-                <label class="form-label small mb-1">Nombre</label>
-                <input type="text" id="templateName" class="form-control form-control-sm" placeholder="Dossier N (automático si se deja en blanco)">
-            </div>
-            <div class="row g-2 align-items-end mb-3">
-                <div class="col-12 col-md-5">
-                    <label class="form-label small mb-1">Formato por defecto (uso individual desde una ficha)</label>
-                    <select id="templateFormat" class="form-select form-select-sm">
-                        <option value="PDF">PDF único</option>
-                        <option value="ZIP">ZIP</option>
-                    </select>
-                </div>
-                <div class="col-12 col-md-7 d-flex gap-2">
-                    <button type="button" class="btn btn-sm btn-outline-primary flex-fill" id="previewTemplateBtn" onclick="previewSelectedTypes()">
-                        <i class="bi bi-eye me-1"></i>Previsualizar selección
-                    </button>
-                    <button type="button" class="btn btn-sm btn-primary flex-fill" id="saveTemplateBtn" onclick="saveTemplate()">Guardar plantilla</button>
-                </div>
-            </div>
+            <div class="row g-3">
+                <div class="col-12 col-lg-8">
+                    <div class="mb-3">
+                        <label class="form-label small mb-1">Nombre</label>
+                        <input type="text" id="templateName" class="form-control form-control-sm" placeholder="Dossier N (automático si se deja en blanco)" oninput="refreshDraftPreview()">
+                    </div>
 
-            {% comment %}
-            H35 (S105): "previsualización de los documentos que he
-            elegido" -- Miguel Ángel: "cuando se pulse la
-            previsualización, se presenta una lista con todos los
-            documentos que hay en esa plantilla, a modo de lista."
-            Aquí es una lista de TIPOS (no hay una persona concreta en
-            esta pantalla, así que no hay un documento vigente que
-            resolver todavía) -- puramente del lado del cliente, a
-            partir de las casillas ya marcadas, sin ida y vuelta al
-            servidor.
-            {% endcomment %}
-            <div id="templateTypesPreview" class="alert alert-secondary py-2 px-3 mb-3 d-none">
-                <strong>Tipos incluidos:</strong>
-                <ul class="mb-0" id="templateTypesPreviewList"></ul>
-            </div>
-
-            {% for fam in families %}
-            <div class="mb-2 p-2 rounded" style="background-color: {{ fam.color }};">
-                <div class="fw-bold small mb-1">{{ fam.label }}</div>
-                <div style="columns: 3; column-gap: 1.5rem;">
-                    {% for dt in fam.types %}
-                    <div class="form-check" style="break-inside: avoid;">
-                        <input class="form-check-input dossier-type-checkbox" type="checkbox" value="{{ dt.pk }}" id="dtCheck{{ dt.pk }}">
-                        <label class="form-check-label small" for="dtCheck{{ dt.pk }}">{{ dt.label }}</label>
+                    {% for fam in families %}
+                    <div class="mb-2 p-2 rounded" style="background-color: {{ fam.color }};">
+                        <div class="fw-bold small mb-1">{{ fam.label }}</div>
+                        <div style="columns: 3; column-gap: 1.5rem;">
+                            {% for dt in fam.types %}
+                            <div class="form-check" style="break-inside: avoid;">
+                                <input class="form-check-input dossier-type-checkbox" type="checkbox" value="{{ dt.pk }}" id="dtCheck{{ dt.pk }}" data-label="{{ dt.label|escapejs }}" onchange="refreshDraftPreview()">
+                                <label class="form-check-label small" for="dtCheck{{ dt.pk }}">{{ dt.label }}</label>
+                            </div>
+                            {% endfor %}
+                        </div>
                     </div>
                     {% endfor %}
+
+                    <div id="templateFormResult" class="small mt-2"></div>
+                </div>
+
+                <div class="col-12 col-lg-4">
+                    <div class="card h-100">
+                        <div class="card-header small fw-bold">Visor -- tipos marcados ahora mismo</div>
+                        <div class="card-body p-2" style="max-height: 420px; overflow-y: auto;">
+                            <ul class="mb-0 small" id="draftPreviewList">
+                                <li class="text-muted">Ningún tipo marcado todavía.</li>
+                            </ul>
+                        </div>
+                        <div class="card-footer p-2">
+                            <button type="button" class="btn btn-sm btn-primary w-100" id="saveTemplateBtn" onclick="saveTemplate()">Guardar plantilla</button>
+                        </div>
+                    </div>
                 </div>
             </div>
-            {% endfor %}
-
-            <div id="templateFormResult" class="small mt-2"></div>
         </div>
     </div>
 
@@ -151,7 +159,61 @@ function getCheckedTypeIds() {
     return Array.from(document.querySelectorAll('.dossier-type-checkbox:checked')).map(el => el.value);
 }
 
+// --- Visor en vivo -----------------------------------------------------
+
+function refreshDraftPreview() {
+    const checked = document.querySelectorAll('.dossier-type-checkbox:checked');
+    const list = document.getElementById('draftPreviewList');
+    list.innerHTML = checked.length
+        ? Array.from(checked).map(el => `<li>${el.dataset.label}</li>`).join('')
+        : '<li class="text-muted">Ningún tipo marcado todavía.</li>';
+}
+
+// --- Deteccion de cambios sin guardar ------------------------------------
+
+let lastSnapshot = null;
+
+function currentSnapshot() {
+    return JSON.stringify({
+        pk: document.getElementById('templatePk').value,
+        name: document.getElementById('templateName').value.trim(),
+        ids: getCheckedTypeIds().slice().sort(),
+    });
+}
+
+function takeSnapshot() {
+    lastSnapshot = currentSnapshot();
+}
+
+function isDirty() {
+    return lastSnapshot !== null && lastSnapshot !== currentSnapshot();
+}
+
+window.addEventListener('beforeunload', function (e) {
+    if (isDirty()) {
+        e.preventDefault();
+        e.returnValue = '';
+    }
+});
+
+// --- Activar / cargar en el panel de trabajo -----------------------------
+
 function setActiveTemplate(pk) {
+    if (isDirty()) {
+        const currentName = document.getElementById('templateName').value.trim() || '(sin nombre)';
+        const wantsSave = confirm(`Tienes cambios sin guardar en "${currentName}". ¿Quieres guardarlos antes de continuar?`);
+        if (wantsSave) {
+            const newName = prompt('¿Qué nombre le damos a la plantilla?', currentName);
+            if (newName === null) return;
+            document.getElementById('templateName').value = newName;
+            saveTemplate(function () { activateAndLoad(pk); });
+            return;
+        }
+    }
+    activateAndLoad(pk);
+}
+
+function activateAndLoad(pk) {
     fetch(`/panel/documentacion/plantillas-dosier/${pk}/activar/`, {
         method: 'POST',
         headers: {'X-CSRFToken': getCookie('csrftoken')},
@@ -160,97 +222,47 @@ function setActiveTemplate(pk) {
             alert(data.error || 'No se pudo marcar la plantilla como activa.');
             return;
         }
-        // Vuelve a poner "Marcar como activa" en la fila que era activa hasta ahora.
-        document.querySelectorAll('[id^="activeBadge"]').forEach(badge => {
-            const oldPk = badge.id.replace('activeBadge', '');
-            const btn = document.createElement('button');
-            btn.type = 'button';
-            btn.className = 'btn btn-sm btn-outline-secondary dossier-set-active-btn';
-            btn.id = 'activeBtn' + oldPk;
-            btn.textContent = 'Marcar como activa';
-            btn.setAttribute('onclick', `setActiveTemplate(${oldPk})`);
-            badge.replaceWith(btn);
-        });
-        // Convierte el boton recien pulsado en la insignia "Activa".
-        const clickedBtn = document.getElementById('activeBtn' + pk);
-        if (clickedBtn) {
-            const badge = document.createElement('span');
-            badge.className = 'badge bg-success';
-            badge.id = 'activeBadge' + pk;
-            badge.textContent = '✓ Activa';
-            clickedBtn.replaceWith(badge);
-        }
-        document.getElementById('activeTemplatePreview').classList.add('d-none');
+        location.reload();
     }).catch(() => {
         alert('Error de red al marcar la plantilla como activa.');
     });
 }
 
-function previewActiveTemplate() {
+function loadActiveIntoForm() {
     const badge = document.querySelector('[id^="activeBadge"]');
-    const box = document.getElementById('activeTemplatePreview');
-    const title = document.getElementById('activeTemplatePreviewTitle');
-    const list = document.getElementById('activeTemplatePreviewList');
-    if (!badge) {
-        title.textContent = 'No hay ninguna plantilla activa.';
-        list.innerHTML = '<li class="text-muted">Marca una plantilla como activa en la tabla de arriba antes de previsualizar.</li>';
-        box.classList.remove('d-none');
-        return;
-    }
+    if (!badge) { takeSnapshot(); return; }
     const row = badge.closest('tr');
-    const name = row.dataset.name || '(sin nombre)';
-    const types = (row.dataset.types || '').split('|').filter(Boolean);
-    title.textContent = `Plantilla activa: ${name} -- estos son los documentos que se incluirán:`;
-    list.innerHTML = types.length
-        ? types.map(t => `<li>${t}</li>`).join('')
-        : '<li class="text-muted">Esta plantilla no tiene tipos incluidos.</li>';
-    box.classList.remove('d-none');
-}
+    const pk = row.id.replace('templateRow', '');
+    const name = row.dataset.name || '';
+    const ids = (row.dataset.typeIds || '').split(',').filter(Boolean);
 
-function previewSelectedTypes() {
-    const checked = document.querySelectorAll('.dossier-type-checkbox:checked');
-    const listEl = document.getElementById('templateTypesPreviewList');
-    const boxEl = document.getElementById('templateTypesPreview');
-    if (checked.length === 0) {
-        listEl.innerHTML = '<li class="text-muted">Ningún tipo marcado todavía.</li>';
-    } else {
-        listEl.innerHTML = Array.from(checked)
-            .map(el => `<li>${el.nextElementSibling.textContent}</li>`)
-            .join('');
-    }
-    boxEl.classList.remove('d-none');
+    document.getElementById('templatePk').value = pk;
+    document.getElementById('templateName').value = name;
+    document.querySelectorAll('.dossier-type-checkbox').forEach(el => { el.checked = false; });
+    ids.forEach(id => {
+        const el = document.getElementById('dtCheck' + id);
+        if (el) el.checked = true;
+    });
+    document.getElementById('formTitle').textContent = 'Plantilla activa: ' + name;
+    document.getElementById('cancelEditBtn').classList.remove('d-none');
+    refreshDraftPreview();
+    takeSnapshot();
 }
 
 function resetForm() {
     document.getElementById('templatePk').value = '';
     document.getElementById('templateName').value = '';
-    document.getElementById('templateFormat').value = 'PDF';
     document.querySelectorAll('.dossier-type-checkbox').forEach(el => { el.checked = false; });
     document.getElementById('formTitle').textContent = 'Nueva plantilla';
     document.getElementById('cancelEditBtn').classList.add('d-none');
     document.getElementById('templateFormResult').innerHTML = '';
-    document.getElementById('templateTypesPreview').classList.add('d-none');
+    refreshDraftPreview();
+    takeSnapshot();
 }
 
-function editTemplate(pk, name, outputFormat, typeIdsCsv) {
-    document.getElementById('templatePk').value = pk;
-    document.getElementById('templateName').value = name;
-    document.getElementById('templateFormat').value = outputFormat;
-    document.querySelectorAll('.dossier-type-checkbox').forEach(el => { el.checked = false; });
-    const ids = String(typeIdsCsv || '').split(',').filter(Boolean);
-    ids.forEach(id => {
-        const el = document.getElementById('dtCheck' + id);
-        if (el) el.checked = true;
-    });
-    document.getElementById('formTitle').textContent = 'Editando: ' + name;
-    document.getElementById('cancelEditBtn').classList.remove('d-none');
-    window.scrollTo({top: 0, behavior: 'smooth'});
-}
-
-function saveTemplate() {
+function saveTemplate(onSuccess) {
     const pk = document.getElementById('templatePk').value;
     const name = document.getElementById('templateName').value.trim();
-    const outputFormat = document.getElementById('templateFormat').value;
     const typeIds = getCheckedTypeIds();
     const resultDiv = document.getElementById('templateFormResult');
 
@@ -261,7 +273,6 @@ function saveTemplate() {
 
     const formData = new FormData();
     formData.append('name', name);
-    formData.append('output_format', outputFormat);
     typeIds.forEach(id => formData.append('document_type_ids', id));
 
     const url = pk
@@ -273,21 +284,13 @@ function saveTemplate() {
         headers: {'X-CSRFToken': getCookie('csrftoken')},
     }).then(r => r.json()).then(data => {
         if (data.ok) {
-            location.reload();
+            takeSnapshot();
+            if (onSuccess) { onSuccess(); } else { location.reload(); }
         } else {
             resultDiv.innerHTML = `<div class="alert alert-danger py-1 px-2 small mb-0">${data.error || 'Error al guardar.'}</div>`;
         }
     }).catch(() => {
         resultDiv.innerHTML = '<div class="alert alert-danger py-1 px-2 small mb-0">Error de red al guardar.</div>';
-    });
-}
-
-function duplicateTemplate(pk) {
-    fetch(`/panel/documentacion/personal/plantillas/${pk}/duplicar/`, {
-        method: 'POST',
-        headers: {'X-CSRFToken': getCookie('csrftoken')},
-    }).then(r => r.json()).then(data => {
-        if (data.ok) location.reload();
     });
 }
 
@@ -300,5 +303,7 @@ function deleteTemplate(pk) {
         if (data.ok) location.reload();
     });
 }
+
+document.addEventListener('DOMContentLoaded', loadActiveIntoForm);
 </script>
 {% endblock %}

@@ -2119,6 +2119,23 @@ class PersonalDossierTemplate(models.Model):
     que son específicos de cada trabajador [...] las plantillas deben
     servir tb para cualquier supervisor y administrador".
 
+    **CORREGIDO EN S106 -- el formato de salida YA NO vive en la
+    plantilla.** Miguel Ángel, verbatim: "tenemos el zip y tenemos el
+    PDF y hacemos dos plantillas [...] creo que es un error,
+    solamente una plantilla [...] a la hora de usarla preguntamos:
+    ¿esto cómo se va a enviar? ¿por PDF o por zip?". Tener
+    `output_format` en el modelo obligaba a duplicar cada plantilla
+    (una "X" en PDF, otra "X (ZIP)") solo para cubrir ambos formatos
+    del mismo conjunto de tipos documentales -- exactamente el mismo
+    conjunto de documentos, dos filas. El formato se pregunta ahora
+    SIEMPRE en el momento de aplicar la plantilla (mismo criterio que
+    ya usaba `PersonalDossierMassGenerateView` para el modo de
+    agrupación -- "siempre PREGUNTADO, nunca asumido"), nunca se
+    almacena por plantilla. `FORMAT_PDF`/`FORMAT_ZIP`/
+    `FORMAT_CHOICES` se conservan como constantes reutilizables por
+    las vistas que preguntan el formato al aplicar, pero ya no son un
+    campo del modelo.
+
     CORREGIDO tras el diseño inicial (que ataba la plantilla a UNA
     persona -- error real, detectado por Miguel Ángel al ir a un
     segundo trabajador y no encontrar ninguna plantilla ahí): la
@@ -2193,11 +2210,6 @@ class PersonalDossierTemplate(models.Model):
             "plantilla -- nunca fila fija de DocumentIndexEntry."
         ),
     )
-    output_format = models.CharField(
-        max_length=3,
-        choices=FORMAT_CHOICES,
-        verbose_name="Formato de salida",
-    )
     created_by = models.ForeignKey(
         "ivr_config.CompanyUser",
         null=True,
@@ -2235,4 +2247,4 @@ class PersonalDossierTemplate(models.Model):
         ordering = ["company_id", "created_at"]
 
     def __str__(self):
-        return f"{self.name} ({self.company} -- {self.get_output_format_display()})"
+        return f"{self.name} ({self.company})"

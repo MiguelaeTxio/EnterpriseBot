@@ -9,21 +9,28 @@ de uno solo. "Descargar" sigue resolviendo el vigente de cada tipo EN
 ESTE INSTANTE para la persona cuya ficha está abierta
 (PersonalDossierTemplateApplyView), combinándolo con lo que esa
 persona tenga ahora mismo seleccionado en sus casilleros.
+
+S106: la plantilla ya no guarda un formato propio (Miguel Ángel:
+"solamente una plantilla [...] a la hora de usarla preguntamos:
+¿esto cómo se va a enviar?") -- el formato se pregunta aquí mismo,
+un botón por formato, en vez de leerse de la plantilla.
 {% endcomment %}
 {% if templates %}
 <table class="table table-sm table-hover mb-0">
-    <thead><tr><th>Nombre</th><th>Formato</th><th>Tipos incluidos</th><th></th></tr></thead>
+    <thead><tr><th>Nombre</th><th>Tipos incluidos</th><th></th></tr></thead>
     <tbody>
         {% for template in templates %}
         <tr>
             <td>{{ template.name }}</td>
-            <td><span class="badge bg-secondary">{{ template.get_output_format_display }}</span></td>
             <td class="small text-muted">
                 {% for dt in template.document_types.all %}{{ dt.label }}{% if not forloop.last %}, {% endif %}{% endfor %}
             </td>
             <td class="text-end">
-                <a class="btn btn-sm btn-outline-primary" href="{% url 'panel:documentation_personal_dossier_template_apply' pk=person.pk template_pk=template.pk %}" title="Aplica la plantilla a esta persona, combinada con su selección actual">
-                    <i class="bi bi-download me-1"></i>Descargar
+                <a class="btn btn-sm btn-outline-primary" href="{% url 'panel:documentation_personal_dossier_template_apply' pk=person.pk template_pk=template.pk %}?format=PDF" title="Aplica la plantilla a esta persona en PDF único, combinada con su selección actual">
+                    <i class="bi bi-download me-1"></i>PDF
+                </a>
+                <a class="btn btn-sm btn-outline-secondary" href="{% url 'panel:documentation_personal_dossier_template_apply' pk=person.pk template_pk=template.pk %}?format=ZIP" title="Aplica la plantilla a esta persona en ZIP, combinada con su selección actual">
+                    <i class="bi bi-download me-1"></i>ZIP
                 </a>
             </td>
         </tr>
