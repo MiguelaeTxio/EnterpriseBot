@@ -365,6 +365,17 @@ suspendidas ni paradas "por si acaso".**
    ```
    gcloud compute instances create NOMBRE_VM --image=h28-ocr-batch-image-vN --zone=europe-west1-b --machine-type=e2-standard-8 --project=gen-lang-client-0961484137
    ```
+   **⛔ CUOTA REAL CONFIRMADA (S105): `CPUS_ALL_REGIONS` = 32 vCPUs
+   totales para todo el proyecto.** Cada VM `e2-standard-8` gasta 8 --
+   máximo **4 VMs efímeras simultáneas** con `batch-1` parada (nunca
+   `RUNNING` a la vez que las efímeras si eso supera las 32). Un intento
+   de crear 6 a la vez en S105 creó solo 4 y falló en las otras 2 con
+   `Quota 'CPUS_ALL_REGIONS' exceeded` -- verificar esto ANTES de pedir
+   más de 4 en un solo `gcloud compute instances create`, o pedirlas en
+   tandas. Si hace falta más de 12 procesos en paralelo de verdad
+   (4 VMs x 3), la única vía es pedir ampliación de cuota a Google
+   Cloud (tarda, no es inmediato) -- nunca asumir que se puede simplemente
+   crear más VMs.
    Nomenclatura de `NOMBRE_VM`: correlativa y descriptiva de la
    sesión/campaña (p. ej. `h28-ocr-temp-1`, `h28-ocr-temp-2`...) --
    nunca reutilizar el patrón `h28-ocr-batch-N` para estas, precisamente
