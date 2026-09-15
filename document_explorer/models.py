@@ -711,6 +711,23 @@ class DocumentTypeCatalog(models.Model):
             "otro tipo con el mismo problema."
         ),
     )
+    skip_light_ocr_engines = models.BooleanField(
+        default=False,
+        verbose_name="Saltar motores OCR locales (H35, S106)",
+        help_text=(
+            "H35 (S106). Distinto de 'OCR poco fiable': este campo NO "
+            "implica que el tipo necesite razonamiento de Gemini "
+            "Vision ni descarta la fecha resuelta -- únicamente "
+            "indica que una muestra real ya demostró que los motores "
+            "locales (Tesseract, EasyOCR) nunca resuelven nada para "
+            "este tipo, así que el barrido de "
+            "extract_personal_dates_bulk_fast.py va directo a Cloud "
+            "Vision, ahorrando el tiempo de los intentos locales que "
+            "la evidencia real ya descartó. Activar solo tras "
+            "confirmar el patrón con un dry-run real, nunca por "
+            "suposición."
+        ),
+    )
     DATING_SCOPE_CURRENT_ONLY = "SOLO_VIGENTE"
     DATING_SCOPE_ALL_INSTANCES = "TODAS"
     DATING_SCOPE_CHOICES = [

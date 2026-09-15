@@ -1,0 +1,1816 @@
+# C:\EnterpriseBot\h28_migration_agent\extract_personal_dates_bulk_fast.py
+"""
+H35 (S106). Variante de `extract_personal_dates_bulk.py` para tipos
+documentales donde una muestra real ya demostro que los motores OCR
+locales (Tesseract PSM automatico, Tesseract PSM 6, EasyOCR) nunca
+resuelven nada -- unicamente Cloud Vision lo hace (caso real:
+AUTONOMO, dry-run de 10/10 documentos, S106: 9 resueltos y 1 sin
+nada resoluble, los diez agotando los 4 motores sin que Tesseract/
+EasyOCR aportaran una sola resolucion). Relanzar esa cadena completa
+en campana real (189 documentos) supondria horas de intentos locales
+sin ningun valor antes de llegar al motor que si funciona.
+
+Este script NO reutiliza `DocumentTypeCatalog.ocr_unreliable` para
+esto -- ese campo significa algo distinto y mas fuerte (el tipo
+exige razonamiento de Gemini Vision, nunca fecha por este script
+standalone, ver `extract_personal_dates_bulk.py`). Usa en su lugar
+`DocumentTypeCatalog.skip_light_ocr_engines`, campo nuevo (S106) que
+unicamente salta Tesseract/EasyOCR e invoca Cloud Vision directamente
+-- la fecha resuelta SI se escribe con normalidad, sin el descarte
+que aplica ocr_unreliable.
+
+Para el resto de tipos (skip_light_ocr_engines=False), el
+comportamiento es identico al script original -- esta variante no
+esta pensada para sustituirlo, solo para los tipos ya confirmados
+con evidencia real de que la cascada local es pura perdida de
+tiempo.
+
+--- Docstring original de extract_personal_dates_bulk.py ---
+
+H30 (S78). Barrido UNICO de extraccion de fecha (heuristica de
+nombre + OCR) para TODO el dominio PERSONAL con
+`document_type.tracks_expiry=True`, personal activo confirmado
+(`PersonIdentity.is_active_employee=True`). Sustituye al enfoque de
+"un tipo, un barrido, mirar resultado, repetir" -- un unico script,
+un unico lanzamiento sharded en las 4 VMs (3 procesos cada una).
+
+Mismo patron standalone que `local_ocr_classify.py` /
+`extract_nomina_dates_ocr.py`: tunel SSH + pymysql + GCS directo, sin
+Django (el venv de la VM no lo tiene).
+
+Dos fases por documento, en orden (nunca se salta ninguna):
+1. Heuristica de nombre de archivo (gratis) -- solo para los codigos
+   de FIELD_BY_CODE (evidencia real ya confirmada, H30 S48) y los
+   codigos de tipo "periodo" (REGISTRO_JORNADA, VACACIONES, mismo
+   patron ya verificado hoy con NOMINA).
+2. OCR (Tesseract/PyMuPDF) + deteccion de fecha por contexto
+   (CADUCA/EXPEDICION...) -- si no hay contexto reconocible y solo
+   hay una fecha en el documento, se usa DEFAULT_FIELD_BY_CODE para
+   decidir si es caducidad o emision.
+
+Sharding: `--shard-count N --shard-index I` reparte por
+`entry_id % N == I`, sin solape entre procesos (mismo mecanismo que
+`local_ocr_classify.py`, S51).
+
+USO (un proceso, ejemplo shard 0 de 12):
+    python3 extract_personal_dates_bulk.py --shard-count 12 --shard-index 0 --limit 5
+    python3 extract_personal_dates_bulk.py --shard-count 12 --shard-index 0 --apply
+"""
+import argparse
+import getpass
+import io
+import os
+import re
+import shutil
+import unicodedata
+from datetime import date, datetime, timedelta
+
+import pymysql
+
+try:
+    import pymupdf as fitz
+except ImportError:
+    import fitz
+
+import paramiko
+if not hasattr(paramiko, "DSSKey"):
+    paramiko.DSSKey = paramiko.RSAKey
+
+# Mismo patron que local_ocr_classify.py (correccion S50): en Windows,
+# Tesseract no puede escribir en C:\Program Files\ sin permisos de
+# administrador, asi que el paquete de idioma vive en una carpeta
+# local propia junto al script (tessdata\) en vez de la ruta real de
+# instalacion. En Linux (VM de OCR) esto no hace falta -- el paquete
+# tesseract-ocr-spa ya instala el idioma en su sitio real.
+if os.name == "nt":
+    _TESSDATA_DIR = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "tessdata",
+    )
+    os.environ["TESSDATA_PREFIX"] = _TESSDATA_DIR
+
+import pytesseract
+import sshtunnel
+from google.cloud import storage
+from PIL import Image
+
+from config import get_service_account_key_path
+
+# H35 (S105). El checkout completo del repo vive en ~/EnterpriseBot en
+# las 4 VMs de OCR (confirmado en SESSION_VARIABLES.md) -- este script
+# corre desde el subdirectorio h28_migration_agent/, asi que la raiz
+# del repo (donde vive el paquete document_explorer/) es el directorio
+# padre. Se anade a sys.path para poder importar el modulo de
+# clasificacion de contenido SIN Django -- verificado que
+# document_explorer/__init__.py esta vacio, no dispara el registro de
+# apps ni pide DJANGO_SETTINGS_MODULE. Mismo diccionario CONTENT_
+# SIGNALS/CONTENT_WINS que usa run_personal_retype_and_date.py -- ver
+# ese modulo para el porque (decision explicita de Miguel Angel,
+# anexo H35, evitar mantener dos copias divergentes).
+import sys
+sys.path.insert(
+    0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")),
+)
+from document_explorer.personal_content_classification import (
+    resolve_type_from_content,
+)
+
+# Sesion de continuidad tras S79, a peticion explicita de Miguel
+# Angel: elimina el comentar/descomentar manual de TESSERACT_CMD por
+# maquina. Si Tesseract ya esta en el PATH del sistema (caso normal
+# en las VMs de Linux), shutil.which() lo encuentra y no hace falta
+# nada mas. Si no esta en el PATH (caso real del PC de Windows de
+# Miguel Angel, instalado sin permisos de administrador), prueba la
+# ruta tipica de instalacion por defecto -- solo si el archivo existe
+# de verdad ahi, nunca fuerza una ruta que no existe.
+if not shutil.which("tesseract"):
+    _WINDOWS_TESSERACT_DEFAULT = (
+        r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+    )
+    if os.path.isfile(_WINDOWS_TESSERACT_DEFAULT):
+        pytesseract.pytesseract.tesseract_cmd = _WINDOWS_TESSERACT_DEFAULT
+
+PYTHONANYWHERE_USERNAME = "MiguelAeTxio"
+SSH_HOSTNAME = "ssh.pythonanywhere.com"
+MYSQL_HOSTNAME = "MiguelAeTxio.mysql.pythonanywhere-services.com"
+MYSQL_DB_NAME = "MiguelAeTxio$enterprisebot"
+MYSQL_USERNAME = "MiguelAeTxio"
+
+# ---------------------------------------------------------------
+# Extraccion de texto -- copiado de local_ocr_classify.py
+# ---------------------------------------------------------------
+SAFE_MAX_PIXELS = 80_000_000
+MIN_DPI = 100
+
+
+def ocr_pdf_to_text(data, max_pages=2, dpi=400, psm=None, debug_save_prefix=None):
+    config = ("--psm %d" % psm) if psm else ""
+    text_parts = []
+    doc = fitz.open(stream=data, filetype="pdf")
+    for page_index in range(min(max_pages, doc.page_count)):
+        page = doc.load_page(page_index)
+        rect = page.rect
+        dpi_pagina = dpi
+        if rect.width > 0 and rect.height > 0:
+            pixeles_estimados = (rect.width / 72 * dpi) * (rect.height / 72 * dpi)
+            if pixeles_estimados > SAFE_MAX_PIXELS:
+                dpi_pagina = int(
+                    72 * (SAFE_MAX_PIXELS / (rect.width * rect.height)) ** 0.5
+                )
+                dpi_pagina = max(dpi_pagina, MIN_DPI)
+        pix = page.get_pixmap(dpi=dpi_pagina)
+        img = Image.open(io.BytesIO(pix.tobytes("png")))
+        # H30 (sesion tras S85): guardar la imagen real, tal cual la
+        # recibe Tesseract, para inspeccion visual directa -- nunca
+        # mas teorizar sobre por que una linea legible no se lee sin
+        # verla primero con los mismos ojos que Miguel Angel.
+        if debug_save_prefix:
+            img.save("%s_p%d.png" % (debug_save_prefix, page_index))
+        text_parts.append(pytesseract.image_to_string(img, lang="spa", config=config))
+    doc.close()
+    return "\n".join(text_parts)
+
+
+def ocr_image_to_text(data, psm=None):
+    config = ("--psm %d" % psm) if psm else ""
+    img = Image.open(io.BytesIO(data))
+    return pytesseract.image_to_string(img, lang="spa", config=config)
+
+
+_DOCUTEN_SIGNATURE_RE = re.compile(
+    r"Fecha y hora:\s*(\d{1,2})-(\d{1,2})-(\d{4})"
+)
+
+
+# H30 (sesion S91). Documentos multi-pagina firmados via Docuten (visto
+# en PLAN_ACTUACION_CALOR, boletin nacional de varias decenas de
+# paginas de boilerplate identico para todos los empleados) llevan la
+# fecha real -- la firma individual de ESE empleado concreto, no la
+# fecha de aprobacion del plan nacional que aparece en las primeras
+# paginas -- en la ULTIMA pagina del PDF ("Firmado por: NOMBRE...
+# Fecha y hora: DD-MM-AAAA HH:MM UTC+N"), fuera del alcance de
+# ocr_pdf_to_text(max_pages=2). Verificado real: id=40356 (gomez
+# gomez), pagina 54, "Fecha y hora: 25-06-2025 17:30 UTC+2". Se OCRea
+# solo la ultima pagina (nunca el documento completo -- estos PDFs
+# rondan 10MB/50+ paginas de imagenes, OCRearlo entero es coste real
+# innecesario) y se busca el patron literal de la cabecera de firma de
+# Docuten, nunca el regex generico de fecha (evita capturar cualquiera
+# de las decenas de fechas de boilerplate que pueda arrastrar la
+# ultima pagina). Sincronizado con la copia Django
+# (document_explorer/date_verification_service.py).
+def extract_docuten_signature_date(data):
+    """
+    Devuelve la fecha de la firma electronica individual (bloque
+    "Firmado por... Fecha y hora: DD-MM-AAAA") de la ULTIMA pagina de
+    un PDF firmado via Docuten, o None si no aparece ese patron
+    exacto.
+    """
+    doc = fitz.open(stream=data, filetype="pdf")
+    if doc.page_count == 0:
+        doc.close()
+        return None
+    page = doc.load_page(doc.page_count - 1)
+    pix = page.get_pixmap(dpi=300)
+    img = Image.open(io.BytesIO(pix.tobytes("png")))
+    text = pytesseract.image_to_string(img, lang="spa")
+    doc.close()
+    match = _DOCUTEN_SIGNATURE_RE.search(text)
+    if not match:
+        return None
+    day, month, year = match.groups()
+    try:
+        return date(int(year), int(month), int(day))
+    except ValueError:
+        return None
+
+
+# ---------------------------------------------------------------
+# H30 (sesion tras S85). EasyOCR -- lector de respaldo, no el
+# principal (ver TERCER NIVEL en el bucle principal). Carga perezosa
+# del modelo: solo se importa/carga la primera vez que un documento
+# real lo necesita, para no pagar el coste (varios segundos) en
+# ejecuciones donde Tesseract resuelve todo y nunca hace falta.
+# ---------------------------------------------------------------
+_EASYOCR_READER = None
+
+
+def _get_easyocr_reader():
+    global _EASYOCR_READER
+    if _EASYOCR_READER is None:
+        import easyocr
+        print("  (cargando modelo EasyOCR, una sola vez por ejecucion...)")
+        _EASYOCR_READER = easyocr.Reader(["es"])
+    return _EASYOCR_READER
+
+
+def easyocr_pdf_to_text(data, max_pages=2, dpi=400):
+    import numpy as np
+    reader = _get_easyocr_reader()
+    text_parts = []
+    doc = fitz.open(stream=data, filetype="pdf")
+    for page_index in range(min(max_pages, doc.page_count)):
+        page = doc.load_page(page_index)
+        rect = page.rect
+        dpi_pagina = dpi
+        if rect.width > 0 and rect.height > 0:
+            pixeles_estimados = (rect.width / 72 * dpi) * (rect.height / 72 * dpi)
+            if pixeles_estimados > SAFE_MAX_PIXELS:
+                dpi_pagina = int(
+                    72 * (SAFE_MAX_PIXELS / (rect.width * rect.height)) ** 0.5
+                )
+                dpi_pagina = max(dpi_pagina, MIN_DPI)
+        pix = page.get_pixmap(dpi=dpi_pagina)
+        img = Image.open(io.BytesIO(pix.tobytes("png")))
+        resultados = reader.readtext(np.array(img), detail=0)
+        text_parts.append(" ".join(resultados))
+    doc.close()
+    return "\n".join(text_parts)
+
+
+def easyocr_image_to_text(data):
+    import numpy as np
+    reader = _get_easyocr_reader()
+    img = Image.open(io.BytesIO(data))
+    resultados = reader.readtext(np.array(img), detail=0)
+    return " ".join(resultados)
+
+
+def easyocr_extract_text(filename, data):
+    name_lower = filename.lower()
+    if name_lower.endswith(".pdf"):
+        return easyocr_pdf_to_text(data)
+    if name_lower.endswith((".jpg", ".jpeg", ".png")):
+        return easyocr_image_to_text(data)
+    return None
+
+
+# ---------------------------------------------------------------
+# H35 (S105). Cloud Vision -- ULTIMO recurso del retipado (--retype),
+# solo cuando Tesseract (PSM automatico + reintento PSM 6) y EasyOCR
+# no han resuelto ni tipo ni fecha. Decision explicita de Miguel
+# Angel para este hito: "siempre primero Tesseract y si no, pasamos
+# a EasyOCR y si no, pasamos a Google Cloud Vision" -- orden inverso
+# al que usa run_personal_retype_and_date.py (Cloud Vision unico
+# motor, decision S102 para ESE comando en concreto), pero aqui el
+# objetivo es aprovechar las VMs de OCR ya pagadas y dimensionadas
+# para el volumen alto de este hito (ver anexo H35, seccion 1),
+# reservando Cloud Vision (coste por llamada de red) solo para lo que
+# de verdad lo necesite.
+#
+# Autenticacion: misma clave de cuenta de servicio que ya usa GCS en
+# este mismo script (`get_service_account_key_path()`) -- nunca
+# credenciales nuevas ni variables de entorno adicionales.
+# ---------------------------------------------------------------
+_VISION_CLIENT = None
+
+
+def _get_vision_client():
+    global _VISION_CLIENT
+    if _VISION_CLIENT is None:
+        from google.cloud import vision
+        _VISION_CLIENT = vision.ImageAnnotatorClient.from_service_account_json(
+            get_service_account_key_path()
+        )
+    return _VISION_CLIENT
+
+
+def cloud_vision_extract_text(filename, data):
+    """
+    OCR real vía Cloud Vision API, acotado a las 2 primeras páginas
+    (mismo límite que el resto del motor de fechas de este script).
+    Devuelve cadena vacía (nunca None) si no hay texto reconocible o
+    la extensión no está soportada por Cloud Vision -- el llamador
+    decide qué hacer con una cadena vacía.
+    """
+    from google.cloud import vision
+
+    name_lower = filename.lower()
+    client = _get_vision_client()
+
+    if name_lower.endswith((".jpg", ".jpeg", ".png")):
+        image = vision.Image(content=data)
+        response = client.text_detection(image=image)
+        if response.error.message:
+            raise RuntimeError(response.error.message)
+        return response.full_text_annotation.text or ""
+
+    if name_lower.endswith(".pdf"):
+        input_config = vision.InputConfig(
+            content=data, mime_type="application/pdf",
+        )
+        feature = vision.Feature(
+            type_=vision.Feature.Type.DOCUMENT_TEXT_DETECTION,
+        )
+        request = vision.AnnotateFileRequest(
+            input_config=input_config, features=[feature], pages=[1, 2],
+        )
+        response = client.batch_annotate_files(requests=[request])
+        texts = []
+        for file_response in response.responses:
+            for page_response in file_response.responses:
+                if page_response.error.message:
+                    continue
+                texts.append(page_response.full_text_annotation.text or "")
+        return "\n".join(texts)
+
+    return ""
+
+
+def docx_to_text(data):
+    # H30 (sesion tras S89). Bug real corregido -- ver comentario
+    # completo en la copia Django (document_explorer/
+    # date_verification_service.py): no leia doc.tables, solo
+    # doc.paragraphs. Descubierto en ENTREGA_MANUAL_COMBUSTIBLE,
+    # 23/23 documentos con texto identico y 0 fechas encontradas.
+    import docx
+    doc = docx.Document(io.BytesIO(data))
+    parts = [p.text for p in doc.paragraphs]
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                parts.append(cell.text)
+    return "\n".join(parts)
+
+
+def doc_to_text(data):
+    """
+    .doc antiguo (Word 97-2003, formato binario) -- python-docx NO lo
+    lee (solo .docx). Usa `antiword` como subproceso (instalar en la
+    VM: `sudo apt-get install -y antiword`), via archivo temporal
+    porque antiword no acepta stdin de forma fiable para todos los
+    .doc reales vistos en el corpus.
+    """
+    import subprocess
+    import tempfile
+    with tempfile.NamedTemporaryFile(suffix=".doc", delete=False) as tmp:
+        tmp.write(data)
+        tmp_path = tmp.name
+    try:
+        result = subprocess.run(
+            ["antiword", tmp_path],
+            capture_output=True, timeout=30,
+        )
+        return result.stdout.decode("utf-8", errors="ignore")
+    finally:
+        import os
+        os.unlink(tmp_path)
+
+
+def xlsx_to_text(data):
+    """Concatena el texto de todas las celdas de todas las hojas."""
+    import openpyxl
+    wb = openpyxl.load_workbook(io.BytesIO(data), data_only=True)
+    parts = []
+    for ws in wb.worksheets:
+        for row in ws.iter_rows():
+            for cell in row:
+                if cell.value is not None:
+                    parts.append(str(cell.value))
+    return "\n".join(parts)
+
+
+def txt_to_text(data):
+    """
+    H30 (sesion S91). Bug real corregido: extract_text() no
+    reconocia .txt en absoluto -- descubierto en CERTIFICADO_BANCARIO,
+    donde 4 de 15 documentos pendientes son notas de texto plano
+    ("cta bco Apellido.txt") nunca leidas por ningun barrido anterior
+    (ocr_text_cacheado=0 para los cuatro). No requiere OCR: se
+    decodifica directamente. utf-8 primero (mayoria real de estos
+    ficheros); latin-1 como red de seguridad para el resto sin fallar
+    nunca por encoding. Sincronizado con la copia Django
+    (document_explorer/date_verification_service.py).
+    """
+    for encoding in ("utf-8", "latin-1"):
+        try:
+            return data.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return data.decode("utf-8", errors="replace")
+
+
+def extract_text(filename, data, psm=None, debug_save_prefix=None):
+    name_lower = filename.lower()
+    if name_lower.endswith(".pdf"):
+        return ocr_pdf_to_text(data, psm=psm, debug_save_prefix=debug_save_prefix)
+    if name_lower.endswith((".jpg", ".jpeg", ".png")):
+        return ocr_image_to_text(data, psm=psm)
+    if name_lower.endswith(".docx"):
+        return docx_to_text(data)
+    if name_lower.endswith(".doc"):
+        return doc_to_text(data)
+    if name_lower.endswith((".xlsx", ".xls")):
+        return xlsx_to_text(data)
+    if name_lower.endswith(".txt"):
+        return txt_to_text(data)
+    return None
+
+
+def _strip_accents(value):
+    return "".join(
+        c for c in unicodedata.normalize("NFD", value)
+        if unicodedata.category(c) != "Mn"
+    )
+
+
+# ---------------------------------------------------------------
+# FASE 1 -- heuristica de nombre (evidencia real, H30 S48, copiado de
+# filename_date_service.py) + patron de periodo (H30 S78, ya
+# verificado hoy con NOMINA)
+# ---------------------------------------------------------------
+FIELD_BY_CODE = {
+    "ITV": "expiry",
+    "OCA": "expiry",
+    "CARNET_CONDUCIR": "expiry",
+    "PERMISO_CIRCULACION": "issue",
+    "FORMACION": "issue",
+}
+PERIODO_CODES = {"REGISTRO_JORNADA", "VACACIONES"}
+
+_DATE_RE_NAME = re.compile(r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})")
+
+_MESES = {
+    "ENERO": 1, "FEBRERO": 2, "MARZO": 3, "ABRIL": 4, "MAYO": 5,
+    "JUNIO": 6, "JULIO": 7, "AGOSTO": 8, "SEPTIEMBRE": 9, "OCTUBRE": 10,
+    "NOVIEMBRE": 11, "DICIEMBRE": 12,
+}
+_MES_ANIO_RE = re.compile(
+    r"\b(" + "|".join(_MESES.keys()) + r")\b\D{0,15}(\d{4})",
+)
+_PERIODO_CONTEXT = [
+    "PERIODO", "LIQUIDACION", "DEVENGO", "MES DE", "CORRESPONDIENTE AL MES",
+]
+
+
+def _parse_date_dmY(day_s, month_s, year_s):
+    # H30 (S87): anno impreso con separador de miles espanol ("1.996")
+    # -- incidente real (ALTA AUTONOMO.pdf, "6 NOVIEMBRE 1.996"): sin
+    # este strip, int("1.996") lanza ValueError y la fecha se pierde
+    # por completo en vez de leerse como 1996.
+    year_s = year_s.replace(".", "") if year_s else year_s
+    try:
+        day, month, year = int(day_s), int(month_s), int(year_s)
+    except ValueError:
+        return None
+    # H30 (S87): ventana de siglo real para anno de 2 digitos --
+    # incidente real (mismo documento de arriba): "6-11-96" (fecha de
+    # iniciacion de actividad, campo distinto) se leia como 2096
+    # porque el codigo sumaba siempre 2000 sin comprobar plausibilidad.
+    # Mismo criterio que ya usa _mrz_century_cutoff(): ningun documento
+    # de la plantilla es del futuro, asi que AA se resuelve como 20AA
+    # si AA <= año actual (2 digitos), y como 19AA en caso contrario.
+    if year < 100:
+        year += 2000 if year <= _mrz_century_cutoff() else 1900
+    if not (1 <= day <= 31 and 1 <= month <= 12 and 1900 <= year <= 2100):
+        return None
+    try:
+        return date(year, month, day)
+    except ValueError:
+        return None
+
+
+def _extract_date_from_name(name):
+    matches = list(_DATE_RE_NAME.finditer(name))
+    for match in reversed(matches):
+        parsed = _parse_date_dmY(*match.groups())
+        if parsed:
+            return parsed
+    return None
+
+
+def _extract_periodo_from_name(name):
+    norm = _strip_accents(name).upper()
+    for match in _MES_ANIO_RE.finditer(norm):
+        window_start = max(0, match.start() - 60)
+        window = norm[window_start:match.start()]
+        if any(word in window for word in _PERIODO_CONTEXT):
+            mes = _MESES[match.group(1)]
+            anio = int(match.group(2))
+            if 2000 <= anio <= 2026:
+                try:
+                    return date(anio, mes, 1)
+                except ValueError:
+                    pass
+    candidatos = []
+    for match in _MES_ANIO_RE.finditer(norm):
+        mes = _MESES[match.group(1)]
+        anio = int(match.group(2))
+        if 2000 <= anio <= 2026:
+            try:
+                candidatos.append(date(anio, mes, 1))
+            except ValueError:
+                continue
+    if len(set(candidatos)) == 1:
+        return candidatos[0]
+    return None
+
+
+def extract_date_by_filename(code, name):
+    """Devuelve (field, date) o None -- nunca adivina."""
+    if code in PERIODO_CODES:
+        found = _extract_periodo_from_name(name)
+        if found:
+            return "issue", found
+        return None
+    if code not in FIELD_BY_CODE:
+        return None
+    found = _extract_date_from_name(name)
+    if not found:
+        return None
+    return FIELD_BY_CODE[code], found
+
+
+# ---------------------------------------------------------------
+# FASE 1bis -- MRZ de DNI/NIE (H30 S79, hallazgo real de sesion,
+# copiado de date_verification_service.py). Nunca usa el nombre de
+# archivo -- el MRZ es contenido real impreso en el documento, la
+# misma via de "OCR/contenido real" que exige el comentario de mas
+# abajo tras la retirada de la heuristica de nombre en S78.
+# ---------------------------------------------------------------
+MRZ_CODES = {"DNI", "NIE"}
+_MRZ_LINE2_RE = re.compile(r"(\d{6})(\d)([MF])(\d{6})(\d)([A-Z]{3})")
+_MRZ_WEIGHTS = (7, 3, 1)
+
+
+def _mrz_check_digit(digits):
+    total = 0
+    for i, ch in enumerate(digits):
+        total += int(ch) * _MRZ_WEIGHTS[i % 3]
+    return total % 10
+
+
+def extract_dni_mrz_expiry(text):
+    """Fecha de caducidad del MRZ, validada por su propio digito de
+    control ICAO 9303 -- None si no valida o no hay MRZ."""
+    norm = _strip_accents(text).upper()
+    for match in _MRZ_LINE2_RE.finditer(norm):
+        _, _, _, expiry_digits, expiry_check, _ = match.groups()
+        if _mrz_check_digit(expiry_digits) != int(expiry_check):
+            continue
+        year, month, day = (
+            int(expiry_digits[0:2]), int(expiry_digits[2:4]),
+            int(expiry_digits[4:6]),
+        )
+        try:
+            return date(2000 + year, month, day)
+        except ValueError:
+            continue
+    return None
+
+
+# H30 (S83), copiado de date_verification_service.py -- ver ese
+# archivo para la explicacion completa de la ventana de siglo.
+def _mrz_century_cutoff():
+    return date.today().year % 100
+
+
+def extract_dni_mrz_birthdate(text):
+    """Fecha de nacimiento del MRZ (mismo match que la caducidad),
+    validada por su propio digito de control ICAO 9303 -- None si no
+    valida o no hay MRZ."""
+    norm = _strip_accents(text).upper()
+    cutoff = _mrz_century_cutoff()
+    for match in _MRZ_LINE2_RE.finditer(norm):
+        birth_digits, birth_check, _, _, _, _ = match.groups()
+        if _mrz_check_digit(birth_digits) != int(birth_check):
+            continue
+        year_2d, month, day = (
+            int(birth_digits[0:2]), int(birth_digits[2:4]),
+            int(birth_digits[4:6]),
+        )
+        century = 2000 if year_2d <= cutoff else 1900
+        try:
+            return date(century + year_2d, month, day)
+        except ValueError:
+            continue
+    return None
+
+
+# S79 -- cara frontal del DNI/NIE, etiquetas EMISION/VALIDEZ con
+# fecha "DD MM AAAA" separada por espacios (copiado de
+# date_verification_service.py).
+_DNI_FRONT_LABEL_RE = re.compile(r"(EMISION|VALIDEZ)")
+_SPACED_DATE_RE = re.compile(
+    r"(\d{1,2})[\s./,;\"'\u2019\u201c\u201d]+"
+    r"(\d{1,2})[\s./,;\"'\u2019\u201c\u201d]+(\d{4})"
+)
+_DNI_FRONT_PLAUSIBLE_YEARS = range(2015, 2046)
+
+
+def extract_dni_front_expiry(text):
+    """Caducidad tras EMISION/VALIDEZ. Si aparecen ambas etiquetas
+    pero solo se lee una fecha limpia, no se adivina -- None. Entre
+    varias fechas validas, la mas tardia (copiado de
+    date_verification_service.py)."""
+    norm = _strip_accents(text).upper()
+    label_matches = list(_DNI_FRONT_LABEL_RE.finditer(norm))
+    if not label_matches:
+        return None
+    labels_found = {m.group(1) for m in label_matches}
+    window = norm[label_matches[0].end():label_matches[0].end() + 100]
+    candidatas = []
+    for d, m, y in _SPACED_DATE_RE.findall(window):
+        year = int(y)
+        if year not in _DNI_FRONT_PLAUSIBLE_YEARS:
+            continue
+        try:
+            candidatas.append(date(year, int(m), int(d)))
+        except ValueError:
+            continue
+    if not candidatas:
+        return None
+    if "EMISION" in labels_found and "VALIDEZ" in labels_found and len(candidatas) < 2:
+        return None
+    return max(candidatas)
+
+
+# ---------------------------------------------------------------
+# FASE 2 -- OCR + deteccion por contexto (copiado de
+# date_verification_service.py, sin la parte de Gemini)
+#
+# Sesion de continuidad tras S79: esta copia se habia quedado
+# desincronizada de la version real del servicio Django -- le
+# faltaban _DATE_LARGO_RE (fecha en letra, "10 de Enero de 2022" /
+# "10 Enero 2022"), _LABELED_DATE_PATTERNS (etiquetas explicitas tipo
+# PERIODO/FECHA DE INICIO) y varias palabras de _ISSUE_CONTEXT. Con
+# solo el patron numerico, nunca reconocia fechas escritas en letra
+# -- que es como escriben la fecha la mayoria de los reconocimientos
+# medicos, formacion y comunicados oficiales. Sincronizada completa.
+# ---------------------------------------------------------------
+_EXPIRY_CONTEXT = [
+    "CADUCA", "CADUCIDAD", "VALIDO HASTA", "VALIDA HASTA", "VENCE",
+    "VENCIMIENTO", "HASTA EL", "PROXIMA REVISION", "PROXIMA INSPECCION",
+    "FECHA LIMITE",
+    # H30 (S91). Impreso oficial "COMUNICACION DE LA PRORROGA DEL
+    # CONTRATO DE TRABAJO" (SEPE/Seguridad Social) -- campo
+    # estructurado "Fecha de Termino: DD/MM/AAAA", verificado en
+    # COMUNICACION_CONTRATO (id=34826, id=36361). Sincronizado con la
+    # copia Django.
+    "FECHA DE TERMINO",
+]
+_ISSUE_CONTEXT = [
+    "EXPEDICION", "EXPEDIDO", "EXPEDIDA", "EMISION", "EMITIDO",
+    "EMITIDA", "CON FECHA", "SOMETIDO EL DIA", "MALAGA A",
+    # H30 (S87): "CONFECHA" fusionado sin espacio -- artefacto real
+    # de OCR de baja calidad, visto repetido en resoluciones de la
+    # Seguridad Social ("...D.N.I. 033356574L ,confecha 06-07-2012").
+    # "CON FECHA" (con espacio) ya estaba en la lista; esto cubre el
+    # caso en que Tesseract funde las dos palabras en una.
+    "CONFECHA",
+    # H30 (S87): etiqueta real de impreso antiguo REA (regimen
+    # autonomos, "ALTA AUTONOMO.pdf") -- "Fecha de alta Núm.
+    # identificación | | Ye : ese 6 NOVIEMBRE 1.996".
+    "FECHA DE ALTA",
+    # H30 (S87): etiqueta real del "PARTE MEDICO DE BAJA/ALTA DE
+    # INCAPACIDAD TEMPORAL (P.9)" -- "PARTE DE BAJA [X] Fecha de la
+    # baja 19/10/2020".
+    "FECHA DE LA BAJA",
+    # H31 (S97): mismo campo, fusionado sin espacios por OCR de baja
+    # calidad -- "FECHADELA BAJA 21/09/2021", verificado en documento
+    # real (entry_id=38420, PARTE_BAJA_MEDICA) que quedaba sin_fecha
+    # pese a tener la fecha perfectamente legible en el propio texto.
+    "FECHADELA BAJA",
+    # H30 (S91). Plantilla real de "Firma/recibi del trabajador... A
+    # fecha(DD/MM/AAAA)" -- verificada en EVALUACION_RIESGO (id=22002,
+    # id=22018, mismo impreso "ENTREGA DE EVALUACION DE RIESGO" de
+    # GRUPO ALVAREZ). "CON FECHA" ya estaba cubierto, "A FECHA" suelta
+    # nunca lo estuvo -- template usado en varios tipos con recibi
+    # firmado, no solo en este. Sincronizado con la copia Django
+    # (document_explorer/date_verification_service.py).
+    "A FECHA",
+    # H30 (S91). Cierre real de "CLAUSULA_PROTECCION_DATOS" (LOPD,
+    # plantilla de 2014) -- "...mediante la presente y firma de
+    # conformidad, en Santa Rosalía a 30 de septiembre de 2014."
+    # Verificado en 8 documentos reales. Mismo cierre "en <Ciudad> a
+    # <fecha>" que "MALAGA A", pero con ciudad variable. "FIRMA DE
+    # CONFORMIDAD" es la frase fija que precede a la fecha, sin
+    # depender de la ciudad. Sincronizado con la copia Django.
+    "FIRMA DE CONFORMIDAD",
+    # H30 (S91). Mismo impreso oficial que "FECHA DE TERMINO" arriba.
+    # Sincronizado con la copia Django.
+    "FECHA DE INICIO",
+]
+# Sesion de continuidad tras S79 -- incidente real: fechas de
+# nacimiento coladas como "unica fecha, por defecto" en
+# RECONOCIMIENTO_MEDICO. Ver date_verification_service.py para el
+# detalle completo. Se descartan por completo, nunca entran ni
+# siquiera en "otras fechas".
+_BIRTHDATE_CONTEXT = [
+    "NACIDO", "NACIDA", "NACIO", "FECHA DE NACIMIENTO", "NACIMIENTO",
+]
+# H30 (S89). Recibos domiciliados (AUTONOMO, CSS) traen fechas ruido
+# ademas de la fecha real -- ver comentario completo en la copia
+# Django (document_explorer/date_verification_service.py).
+_RECEIPT_NOISE_CONTEXT = [
+    "PERIODO", "INSCRITA", "INSCRIPC", "SERVLETOPERATION", "ELOPERATION",
+    "COOPERATIVO CAJAMAR",
+]
+_NOISE_SPAN_PATTERNS = [
+    re.compile(r"DEVOLUCION[\s\S]{0,200}?(\d{1,2}[-./]\d{1,2}[-./]\d{2,4})"),
+]
+_NOISE_LITERAL_DATES = {date(2012, 10, 31)}
+_DATE_RE = re.compile(r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})")
+_CONTEXT_WINDOW = 70
+
+_MESES_LARGO = {
+    "ENERO": 1, "FEBRERO": 2, "MARZO": 3, "ABRIL": 4, "MAYO": 5,
+    "JUNIO": 6, "JULIO": 7, "AGOSTO": 8, "SEPTIEMBRE": 9, "OCTUBRE": 10,
+    "NOVIEMBRE": 11, "DICIEMBRE": 12,
+}
+# "DE"/"DEL" opcional en los dos huecos -- cubre "10 de Enero de 2022"
+# y "10 Enero 2022" con la misma expresion (documento real confirmado
+# por Miguel Angel, certificado CENTRO MEDICO ALAMEDA).
+_DATE_LARGO_RE = re.compile(
+    r"(\d{1,2})\s+(?:DE\s+)?(" + "|".join(_MESES_LARGO.keys()) + r")\s+(?:DEL?\s+)?(\d\.?\d{3})",
+)
+
+_GAP = r"[^\d]{0,15}"
+# Par "4a."/"4b." del formato comunitario (permiso de conduccion UE,
+# reutilizado tal cual por la Tarjeta de Cualificacion del Conductor
+# -- misma disposicion de campos). Confirmado con Miguel Angel (S86)
+# y verificado contra fuentes independientes (DGT, Comunidad de
+# Madrid, Generalitat Valenciana, gestorias): 4a = fecha de expedicion
+# (issue), 4b = fecha de caducidad (expiry), 4c = autoridad emisora.
+# Maxima prioridad -- por delante incluso de _LABELED_DATE_PATTERNS,
+# porque un documento con el par completo es evidencia mas fuerte que
+# una unica fecha etiquetada, y evita que el escaneo generico de
+# fechas sueltas descarte por ambiguedad (nacimiento, numero de
+# carne, codigo comunitario) lo que el propio documento ya resuelve
+# sin dudas.
+_FIELD_4A_4B_RE = re.compile(
+    r"4A\.?\s*(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})"
+    r".{0,40}?"
+    r"4B\.?\s*(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})",
+    re.DOTALL,
+)
+
+_LABELED_DATE_PATTERNS = [
+    re.compile(r"PERIODO" + _GAP + r"DESDE" + _GAP + r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})"),
+    re.compile(r"FECHA\s+DE\s+INICIO\s+DEL\s+CONTRATO" + _GAP + r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})"),
+    re.compile(r"FECHA\s+DE\s+TRANSFORMACION" + _GAP + r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})"),
+    re.compile(r"(?:SE\s+)?EXTENDER[AÁ]\s+DESDE" + _GAP + r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})"),
+    re.compile(r"RELACION\s+LABORAL\s+EN\s+FECHA" + _GAP + r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})"),
+    re.compile(
+        r"PRORROGA[\s\S]{0,120}?DESDE" + _GAP + r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})",
+        re.DOTALL,
+    ),
+    # "A FECHA (DD/MM/AAAA)" -- sello real junto a la firma del
+    # administrador (Grupo Alvarez), visto en AUTORIZACION_USO_MAQUINARIA
+    # y otros tipos con el mismo pie de firma. Maxima prioridad porque
+    # desambigua documentos que llevan otras fechas de ruido (fecha de
+    # firma electronica, fechas de un curso de formacion adjunto,
+    # numero de carne con fechas de vigencia de categorias) -- incidente
+    # real S86, 4 de 8 fallos de un barrido tenian esta etiqueta
+    # presente y el documento se marcaba SIN FECHA por ambiguedad pese
+    # a que la etiqueta ya la resolvia sin dudas.
+    re.compile(r"A\s+FECHA" + _GAP + r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})"),
+    # H30 (S87): "...es la que se indica a continuacion: DD-MM-AAAA"
+    # -- boilerplate real de las resoluciones de Alta/Baja de la
+    # Seguridad Social (RECONOCIMIENTO DE ALTA/BAJA). Maxima prioridad
+    # porque en varios documentos reales la etiqueta "CON FECHA"/
+    # "CONFECHA" queda lejos (OCR reordena celdas de tabla) pero esta
+    # frase de cierre siempre aparece pegada a la fecha real de
+    # efectos.
+    re.compile(r"INDICA\s+A\s+CONTINUACION" + _GAP + r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})"),
+    # H30 (S87): etiqueta "ALTA:" pegada a la fecha real, formato fijo
+    # del impreso "Informe de Datos para la Cotizacion" (IDC) --
+    # "TIPO CONTRATO: ... ALTA: 27-01-2004 BAJA:". "L" opcional porque
+    # el OCR de baja calidad a veces la funde ("ATA 21-04-2025").
+    re.compile(r"AL?TA" + _GAP + r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})"),
+]
+
+DEFAULT_FIELD_BY_CODE = {
+    # EXPIRY -- documentos con caducidad real
+    "CARNET_CONDUCIR": "expiry", "CARNET_GRUISTA": "expiry",
+    "TARJETA_CUALIF_CONDUCTOR": "expiry", "TACOGRAFO": "expiry",
+    "DNI": "expiry", "NIE": "expiry",
+    "AUTORIZACION_TEMPORAL_CONDUCIR": "expiry",
+    "CERT_EXENCION_TACOGRAFO": "expiry", "CERTIF_DISCAPACIDAD": "expiry",
+    # ISSUE -- el mas reciente es el vigente, sin caducidad propia
+    "CAP": "issue", "ACUERDO_SALARIAL": "issue", "ALTA": "issue",
+    "AUTONOMO": "issue", "BAJA_PERSONAL": "issue",
+    # H30 (S87): activado tracks_expiry en el catalogo para este tipo
+    # (estaba en False, motivo real de que el barrido devolviera 0
+    # candidatos pese a 133 documentos reales sin fecha). "El mas
+    # reciente cuenta" -- mismo criterio que BAJA_PERSONAL, sin
+    # caducidad propia.
+    "PARTE_BAJA_MEDICA": "issue",
+    "CAMBIO_EMPRESA_SUBROGACION": "issue", "CAMBIO_IRPF": "issue",
+    "CARTA_BAJA_VOLUNTARIA": "issue", "CERTIFICADO_GIBRALTAR": "issue",
+    "CERTIF_TRABAJO_COLEGIO": "issue", "COMUNICACION_CONTRATO": "issue",
+    "COMUNICACION_JORNADA": "issue", "COMUNICADO_SEPE": "issue",
+    "CONVENIO_FCT": "issue", "CSS": "issue", "IDC": "issue",
+    # H30 (S89): tipo nuevo creado esta sesion (documentos "Vida
+    # laboral autonomo..." mal tipados como CSS). Sin caducidad
+    # propia, "el mas reciente cuenta" -- mismo criterio que CSS.
+    "INFORME_VIDA_LABORAL": "issue",
+    "MOD_145": "issue", "TC2": "issue", "VACACIONES": "issue",
+    "REGISTRO_JORNADA": "issue", "CURSO": "issue",
+    "ENTREGA_INFORMACION": "issue", "ENTREGA_MANUAL_COMBUSTIBLE": "issue",
+    "ENTREGA_PROTOCOLO_AUXILIO_CARRETERA": "issue",
+    "EVALUACION_RIESGO": "issue", "FORMACION_ITC_MINERA": "issue",
+    "FORMACION_PRL_MAQUINARIA": "issue",
+    "INFORMACION_MEDIDAS_PROTECCION": "issue",
+    "NOMBRAMIENTO_JEFE_MANIOBRAS": "issue",
+    "NOMBRAMIENTO_RESPONSABLE_SEGURIDAD": "issue",
+    "PLAN_ACTUACION_CALOR": "issue", "ALTA_MEDICA": "issue",
+    "CERT_LIMITACIONES": "issue", "DOC_MUTUA": "issue",
+    "RECONOCIMIENTO_MEDICO": "issue", "FICHA_TECNICA_EPI": "issue",
+    "AUTORIZACION_GENERICA": "issue", "AUTORIZACION_LIBRO_SUBCONTRATA": "issue",
+    "AUTORIZACION_MEDIOS_COMUNICACION": "issue", "CERTIFICADO_BANCARIO": "issue",
+    "CLAUSULA_PROTECCION_DATOS": "issue", "ENTREGA_DOCUMENTACION_VARIA": "issue",
+    "ENTREGA_MOVIL": "issue", "CONTRATO": "issue", "EXCEDENCIA": "issue",
+    "FORMACION": "issue", "AUTORIZACION_USO_MAQUINARIA": "issue",
+}
+
+
+def classify_dates_in_text(text):
+    # H30 (S87): normalizar espacios en blanco (incluidos saltos de
+    # linea reales del OCR) a un unico espacio ANTES de la comprobacion
+    # de contexto -- ver comentario completo en
+    # document_explorer/date_verification_service.py (copia sincronizada).
+    norm = _strip_accents(text).upper()
+    norm = re.sub(r"\s+", " ", norm)
+    # H30 (S91). Mismo principio que arriba, para comas: "En MALAGA, a
+    # 16 de JUNIO de 2026" no coincidia con "MALAGA A" ya existente por
+    # la coma real de en medio -- ver comentario completo en la copia
+    # Django (document_explorer/date_verification_service.py).
+    norm = re.sub(r",", " ", norm)
+    norm = re.sub(r"\s+", " ", norm)
+    expiry_candidates, issue_candidates, other_dates = [], [], []
+
+    # H30 (S89): fechas de ruido por posicion exacta -- ver comentario
+    # completo en la copia Django (document_explorer/date_verification_service.py).
+    _noise_spans = [
+        m.span(1)
+        for pattern in _NOISE_SPAN_PATTERNS
+        for m in pattern.finditer(norm)
+    ]
+
+    def _en_fecha_ruido(match, parsed=None):
+        for s, e in _noise_spans:
+            if match.start() >= s - 1 and match.end() <= e + 1:
+                return True
+        if parsed is not None and parsed in _NOISE_LITERAL_DATES:
+            return True
+        return False
+
+    # Maxima prioridad absoluta: par "4a."/"4b." del formato
+    # comunitario -- ver comentario junto a _FIELD_4A_4B_RE. Devuelve
+    # los DOS campos a la vez (unico caso de todo el extractor que lo
+    # hace), porque el propio documento ya distingue expedicion de
+    # caducidad sin ninguna ambiguedad.
+    match_4a4b = _FIELD_4A_4B_RE.search(norm)
+    if match_4a4b:
+        issue_4a = _parse_date_dmY(*match_4a4b.groups()[0:3])
+        expiry_4b = _parse_date_dmY(*match_4a4b.groups()[3:6])
+        if issue_4a and expiry_4b:
+            return expiry_4b, issue_4a, []
+
+    # Maxima prioridad: etiqueta explicita -- nunca ambigua.
+    for pattern in _LABELED_DATE_PATTERNS:
+        match = pattern.search(norm)
+        if match:
+            parsed = _parse_date_dmY(*match.groups())
+            if parsed:
+                return None, parsed, []
+
+    for match in _DATE_RE.finditer(norm):
+        parsed = _parse_date_dmY(*match.groups())
+        if not parsed:
+            continue
+        window_start = max(0, match.start() - _CONTEXT_WINDOW)
+        window_end = min(len(norm), match.end() + _CONTEXT_WINDOW)
+        context = norm[window_start:match.start()] + norm[match.end():window_end]
+        if any(word in context for word in _BIRTHDATE_CONTEXT):
+            continue
+        if any(word in context for word in _RECEIPT_NOISE_CONTEXT):
+            continue
+        if _en_fecha_ruido(match, parsed):
+            continue
+        if any(word in context for word in _EXPIRY_CONTEXT):
+            expiry_candidates.append(parsed)
+        elif any(word in context for word in _ISSUE_CONTEXT):
+            issue_candidates.append(parsed)
+        else:
+            other_dates.append(parsed)
+
+    for match in _DATE_LARGO_RE.finditer(norm):
+        day_s, mes_s, year_s = match.groups()
+        month = _MESES_LARGO.get(mes_s)
+        parsed = _parse_date_dmY(day_s, month, year_s) if month else None
+        if not parsed:
+            continue
+        window_start = max(0, match.start() - _CONTEXT_WINDOW)
+        window_end = min(len(norm), match.end() + _CONTEXT_WINDOW)
+        context = norm[window_start:match.start()] + norm[match.end():window_end]
+        if any(word in context for word in _BIRTHDATE_CONTEXT):
+            continue
+        if any(word in context for word in _RECEIPT_NOISE_CONTEXT):
+            continue
+        if _en_fecha_ruido(match, parsed):
+            continue
+        if any(word in context for word in _EXPIRY_CONTEXT):
+            expiry_candidates.append(parsed)
+        elif any(word in context for word in _ISSUE_CONTEXT):
+            issue_candidates.append(parsed)
+        else:
+            other_dates.append(parsed)
+
+    expiry = max(expiry_candidates) if expiry_candidates else None
+    issue = min(issue_candidates) if issue_candidates else None
+    return expiry, issue, other_dates
+
+
+_LOG_FILE = None
+
+
+def _log(msg):
+    line = "[%s] %s" % (datetime.now().strftime("%H:%M:%S"), msg)
+    print(line, flush=True)
+    if _LOG_FILE is not None:
+        _LOG_FILE.write(line + "\n")
+        _LOG_FILE.flush()
+
+
+def _log_plain(msg):
+    # H31 (S97). Sin marca de hora -- exclusiva para el bloque RESUMEN
+    # final, donde un timestamp no aporta nada (el proceso ya termino).
+    print(msg, flush=True)
+    if _LOG_FILE is not None:
+        _LOG_FILE.write(msg + "\n")
+        _LOG_FILE.flush()
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--limit", type=int, default=None)
+    parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--shard-count", type=int, default=1)
+    parser.add_argument("--shard-index", type=int, default=0)
+    parser.add_argument(
+        "--document-type", type=str, default=None,
+        help="Acota el barrido a un unico codigo de DocumentTypeCatalog "
+             "(p.ej. RECONOCIMIENTO_MEDICO). Sin este flag, barre todos "
+             "los tipos con tracks_expiry=True.",
+    )
+    parser.add_argument(
+        "--entry-ids", type=str, default=None,
+        help="H30 (S87). Lista de ids de DocumentIndexEntry separados "
+             "por coma (p.ej. 35390,39463) -- acota el barrido a "
+             "exactamente esos ids, ignorando shard/limit. Pensado para "
+             "usar tras la auditoria de 'realmente pendientes' (persona "
+             "sin OTRO documento del mismo tipo ya fechado), evitando "
+             "reprocesar en VM el resto del lote que ya es historico.",
+    )
+    parser.add_argument(
+        "--retype", action="store_true",
+        help="H35 (S105). Cambia el barrido y la logica de resolucion: "
+             "en vez de 'solo fecha para tipos ya correctos con "
+             "tracks_expiry=True y sin fecha', selecciona documentos "
+             "de PersonIdentity activa donde ademas se sospecha el "
+             "TIPO -- por defecto, via --document-type (p.ej. "
+             "BAJA_PERSONAL) -- y sin fecha o con fecha de nacimiento "
+             "colada (mismo criterio que run_personal_retype_and_"
+             "date.py). Anade la resolucion de tipo por contenido "
+             "(CONTENT_SIGNALS compartido) sobre el mismo texto que "
+             "ya extrae este script, con Cloud Vision como ultimo "
+             "nivel de OCR cuando Tesseract y EasyOCR no bastan. "
+             "Requiere --document-type (nunca barre todos los tipos "
+             "a la vez en modo retipado -- riesgo real de mezclar "
+             "campañas de contenido distintas en el mismo lote).",
+    )
+    args = parser.parse_args()
+    if not (0 <= args.shard_index < max(args.shard_count, 1)):
+        parser.error("--shard-index debe estar entre 0 y --shard-count - 1")
+    # H35 (S105), decision explicita de Miguel Angel: maximo 12
+    # procesos en paralelo en total (3 por VM x 4 VMs), nunca mas --
+    # ver com-gcloud-windows/SESSION_VARIABLES.md para el criterio de
+    # cuantos procesos por VM. Este limite es sobre el TOTAL de shards
+    # de la campaña (--shard-count), no sobre cuantos se lanzan en
+    # esta ventana de terminal concreta.
+    if args.shard_count > 12:
+        parser.error(
+            "--shard-count no puede superar 12 (3 procesos x 4 VMs "
+            "h28-ocr-batch-1..4 -- decision explicita de Miguel "
+            "Angel, S105)"
+        )
+    if args.retype and not args.document_type:
+        parser.error(
+            "--retype requiere --document-type (nunca se barren todos "
+            "los tipos a la vez en modo retipado)"
+        )
+
+    global _LOG_FILE
+    log_path = "extract_personal_dates_bulk_fast_shard%d.log" % args.shard_index
+    _LOG_FILE = open(log_path, "a", encoding="utf-8")
+    _log("=== INICIO (log propio: %s) ===" % log_path)
+
+    mysql_password = getpass.getpass(
+        "Contrasena de MySQL (panel PythonAnywhere, pestana 'Databases'): "
+    )
+
+    # Sesion de continuidad tras S79. Version anterior forzaba
+    # host_pkey_directories=[] / allow_agent=False (solo contraseña),
+    # y ese camino fallaba en el gateway de PythonAnywhere
+    # (sshtunnel.BaseSSHTunnelForwarderError: "Could not establish
+    # session to SSH gateway"). Diagnostico real con paramiko.SSHClient
+    # directo (descubrimiento de clave por defecto) autentico al
+    # instante por clave publica -- la clave de Miguel Angel
+    # (C:\Users\Usuario\.ssh\id_rsa) ya esta registrada en
+    # PythonAnywhere y funciona. Se deja que sshtunnel la descubra
+    # igual que hace `ssh` normal -- ya no hace falta pedir la
+    # contraseña de PythonAnywhere en absoluto.
+    print("Abriendo tunel SSH a %s (autenticando por clave ya registrada) ..." % SSH_HOSTNAME)
+    tunnel = sshtunnel.SSHTunnelForwarder(
+        SSH_HOSTNAME,
+        ssh_username=PYTHONANYWHERE_USERNAME,
+        remote_bind_address=(MYSQL_HOSTNAME, 3306),
+    )
+    tunnel.start()
+    print("Tunel abierto, puerto local %d." % tunnel.local_bind_port)
+
+    conn = pymysql.connect(
+        host="127.0.0.1", port=tunnel.local_bind_port,
+        user=MYSQL_USERNAME, passwd=mysql_password,
+        db=MYSQL_DB_NAME, charset="utf8mb4",
+    )
+
+    print("Autenticando con GCS (clave del agente H28) ...")
+    gcs_client = storage.Client.from_service_account_json(
+        get_service_account_key_path()
+    )
+
+    shard_clause = ""
+    shard_params = ()
+    if args.shard_count > 1:
+        shard_clause = " AND e.id %% %s = %s"
+        shard_params = (args.shard_count, args.shard_index)
+
+    type_clause = ""
+    type_params = ()
+    if args.document_type:
+        type_clause = " AND t.code = %s"
+        type_params = (args.document_type,)
+
+    entry_ids_clause = ""
+    entry_ids_params = ()
+    if args.entry_ids:
+        try:
+            ids = [int(x.strip()) for x in args.entry_ids.split(",") if x.strip()]
+        except ValueError:
+            parser.error("--entry-ids debe ser una lista de ids separados por coma")
+        if not ids:
+            parser.error("--entry-ids no puede quedar vacio")
+        placeholders = ", ".join(["%s"] * len(ids))
+        entry_ids_clause = " AND e.id IN (%s)" % placeholders
+        entry_ids_params = tuple(ids)
+
+    # H31 (S96): con --entry-ids el filtro de domain='PERSONAL' del
+    # catalogo se relaja -- la auditoria de esa sesion encontro tipos
+    # con domain mal etiquetado en DocumentTypeCatalog (SEGURO,
+    # POLIZA_SEGURO: domain=MACHINE; CONVENIO_FORMACION_BONIFICADA:
+    # domain=COMPANY) que tienen documentos reales vinculados a
+    # PersonIdentity, confirmados personales por auditoria uno a uno
+    # (nunca por heuristica). El join contra personidentity ya
+    # garantiza que el documento cuelga de una persona; exigir ademas
+    # domain='PERSONAL' del tipo excluiria exactamente estos casos ya
+    # verificados. Sin --entry-ids (barrido abierto) el filtro se
+    # mantiene tal cual, para no arrastrar sin querer documentos de
+    # tipos mal etiquetados que no se han auditado.
+    domain_clause = "" if args.entry_ids else " AND t.domain = 'PERSONAL'"
+
+    # H35 (S105), corregido tras confirmar con Miguel Angel el
+    # alcance real del hito: en modo --retype no se exige tracks_
+    # expiry/ocr_unreliable=0 (el objetivo es corregir el TIPO, no
+    # solo la fecha) NI se filtra por fecha ya resuelta -- un
+    # documento mal tipado (el problema real de "cajon de sastre" que
+    # motiva H35) puede llevar ya una fecha perfectamente valida y
+    # seguir necesitando retipado. El filtro de fecha de la version
+    # anterior (solo "sin fecha o fecha de nacimiento colada") queda
+    # exclusivo del modo normal, pensado para tipos YA correctos.
+    date_scope_clause = (
+        " AND e.expiry_date IS NULL AND e.issue_date IS NULL"
+        if not args.retype else ""
+    )
+    tracks_ocr_clause = (
+        " AND t.tracks_expiry = 1 AND t.ocr_unreliable = 0"
+        if not args.retype else ""
+    )
+    # H35 (S105): el barrido de retipado real (536 BAJA_PERSONAL "de
+    # toda la plataforma", segun el propio anexo) no se acota a
+    # personal activo -- el problema de tipo mal asignado es igual de
+    # real en trabajadores de baja. --include-inactive lo permite; sin
+    # el flag, se mantiene el filtro de activos por defecto (mismo
+    # comportamiento que antes, para no sorprender a --document-type
+    # usados sobre otros tipos donde si se quiera acotar a activos).
+    # H35 (S105), norma fija de Miguel Angel, sin excepcion ni flag
+    # que la relaje: el retipado SOLO se aplica a personal ACTIVO.
+    # Los documentos de trabajadores inactivos se quedan tal cual --
+    # se buscan y corrigen a mano por el explorador de archivos si
+    # hace falta, nunca por este barrido. No crear ningun flag tipo
+    # --include-inactive en el futuro sin que Miguel Angel lo pida
+    # explicitamente.
+    active_clause = " AND p.is_active_employee = 1"
+
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT id FROM django_content_type "
+            "WHERE app_label = 'document_explorer' AND model = 'personidentity'"
+        )
+        person_ct_id = cur.fetchone()[0]
+
+        cur.execute(
+            "SELECT e.id, e.name, e.bucket, e.blob_name, t.code, "
+            "       t.ocr_unreliable, t.skip_light_ocr_engines, p.birth_date "
+            "FROM document_explorer_documentindexentry e "
+            "JOIN document_explorer_documenttypecatalog t "
+            "  ON e.document_type_id = t.id "
+            "JOIN document_explorer_personidentity p "
+            "  ON e.domain_object_id = p.id "
+            "WHERE e.domain_content_type_id = %s"
+            + domain_clause + tracks_ocr_clause + date_scope_clause +
+            " AND e.deleted_at IS NULL AND e.purged_at IS NULL"
+            + active_clause
+            + type_clause + shard_clause + entry_ids_clause +
+            " ORDER BY e.id",
+            (person_ct_id,) + type_params + shard_params + entry_ids_params,
+        )
+        rows = cur.fetchall()
+
+        # H35 (S105). Catalogo de codigo -> id, solo hace falta en
+        # modo --retype (para escribir document_type_id cuando el
+        # contenido resuelve un tipo distinto del actual).
+        type_id_by_code = {}
+        if args.retype:
+            cur.execute(
+                "SELECT code, id FROM document_explorer_documenttypecatalog "
+                "WHERE is_active = 1"
+            )
+            type_id_by_code = dict(cur.fetchall())
+
+    if args.shard_count > 1:
+        print("Reparto: shard %d de %d (entry_id %% %d == %d)"
+              % (args.shard_index + 1, args.shard_count,
+                 args.shard_count, args.shard_index))
+    print("Candidatos en este shard: %d" % len(rows))
+    if args.limit:
+        rows = rows[:args.limit]
+    print("Se van a procesar en esta ejecucion: %d\n" % len(rows))
+
+    stats = {
+        "heuristica_nombre": 0, "mrz": 0, "frente": 0, "ocr_contexto": 0,
+        "ocr_unica_fecha": 0, "par_4a_4b": 0, "sin_fecha": 0,
+        "sin_extractor": 0, "error": 0,
+        # H35 (S105) -- solo se incrementan en modo --retype.
+        "tipo_ambiguo": 0, "solo_tipo_resuelto": 0, "sin_nada_resoluble": 0,
+    }
+    start_time = datetime.now()
+
+    for i, (entry_id, name, bucket_name, blob_name, code, ocr_unreliable,
+            skip_light_ocr_engines, birth_date) in enumerate(rows, start=1):
+        if i % 25 == 0 or i == len(rows):
+            pct = (i / len(rows) * 100) if rows else 100
+            elapsed = (datetime.now() - start_time).total_seconds()
+            eta_seg = (elapsed / i) * (len(rows) - i) if i else 0
+            eta_str = "%dm%02ds" % (int(eta_seg // 60), int(eta_seg % 60))
+            hora_fin = (datetime.now() + timedelta(seconds=eta_seg)).strftime("%H:%M:%S")
+            resumen = ", ".join("%s=%d" % (k, v) for k, v in stats.items() if v)
+            _log(
+                "Progreso: %d/%d (%.0f%%) -- ETA %s (fin aprox. %s) -- %s"
+                % (i, len(rows), pct, eta_str, hora_fin, resumen or "sin resultados todavia")
+            )
+        if i % 20 == 0:
+            conn.ping(reconnect=True)
+        _log("[%d/%d] [%s] %s -- quedan %d" % (i, len(rows), code, name, len(rows) - i))
+
+        # H30 (S78): heuristica de nombre de archivo RETIRADA por
+        # decision explicita de Miguel Angel -- ya causo dos errores
+        # reales (identidad falsa por nombre de carpeta, tipo
+        # documental cruzado). Todo pasa por OCR/contenido real.
+
+        # OCR
+        try:
+            bucket = gcs_client.bucket(bucket_name)
+            data = bucket.blob(blob_name).download_as_bytes()
+            if skip_light_ocr_engines:
+                # S106: tipo confirmado con muestra real donde
+                # Tesseract/EasyOCR nunca resuelven nada -- se salta
+                # directo a Cloud Vision, sin gastar tiempo en los
+                # motores locales.
+                _log("  skip_light_ocr_engines activo -- yendo directo "
+                     "a CLOUD VISION...")
+                text = cloud_vision_extract_text(name, data)
+            else:
+                _log("  Probando TESSERACT (PSM automatico)...")
+                text = extract_text(name, data)
+        except Exception as exc:
+            stats["error"] += 1
+            _log("  ERROR -- %s" % exc)
+            continue
+
+        if text is None:
+            stats["sin_extractor"] += 1
+            _log("  SIN EXTRACTOR (extension no soportada)")
+            continue
+
+        # ---------------------------------------------------------
+        # H35 (S105). MODO RETIPADO -- rama independiente, nunca se
+        # mezcla con la cascada de fecha de abajo (pensada para tipos
+        # YA correctos). Aqui el tipo mismo esta bajo sospecha, asi
+        # que se reintenta OCR (Tesseract PSM6 -> EasyOCR -> Cloud
+        # Vision, en ese orden, decision explicita de Miguel Angel)
+        # mientras no haya ni tipo ni fecha resueltos -- no solo
+        # fecha, como en el modo normal.
+        # ---------------------------------------------------------
+        if args.retype:
+            def _try_resolve(candidate_text, current_code=code):
+                text_upper = _strip_accents(candidate_text or "").upper()
+                new_code, is_ambiguous, matched = resolve_type_from_content(
+                    text_upper, current_code,
+                )
+                c_expiry, c_issue, c_other = classify_dates_in_text(
+                    candidate_text or "",
+                )
+                return new_code, is_ambiguous, matched, c_expiry, c_issue, c_other
+
+            def _date_field_value(expiry_v, issue_v, other_v):
+                if expiry_v:
+                    return "expiry_date", expiry_v
+                if issue_v:
+                    return "issue_date", issue_v
+                if other_v and len(set(other_v)) == 1:
+                    return "issue_date", other_v[0]
+                return None, None
+
+            def _is_usable(code_result, is_amb, expiry_v, issue_v, other_v):
+                # H35 (S105), corregido tras incidente real (VM
+                # h28-ocr-batch-1, pk GRANA_ALVAREZ_PALOMA): la
+                # version anterior escalaba de motor solo si NO habia
+                # NINGUNA fecha suelta ("other"), aunque esas fechas
+                # sueltas fueran ambiguas (mas de una) y por tanto
+                # nunca fueran a escribirse -- Tesseract PSM automatico
+                # encontraba "ruido" de fechas sin resolver nada de
+                # verdad, y el script se quedaba ahi sin probar PSM6/
+                # EasyOCR/Cloud Vision. Ahora "usable" se define igual
+                # que el resultado que de verdad se escribiria: un
+                # tipo resuelto sin ambiguedad, O una fecha resoluble
+                # de verdad (_date_field_value no-None) -- nunca la
+                # mera presencia de "other". Se usa para decidir si un
+                # resultado de un motor merece ADOPTARSE como el mejor
+                # visto hasta ahora (fecha sola ya cuenta), NUNCA para
+                # decidir si se sigue escalando de motor -- ver
+                # _type_settled().
+                if code_result and not is_amb:
+                    return True
+                field, _ = _date_field_value(expiry_v, issue_v, other_v)
+                return field is not None
+
+            def _type_settled(code_result, is_amb):
+                # H35 (S105), corregido tras incidente real (162
+                # BAJA_PERSONAL activos re-auditados desde BD: 112
+                # 'sin señal' que el propio resumen en tiempo de
+                # ejecucion nunca conto como pendientes): la version
+                # anterior dejaba de escalar de motor en cuanto
+                # aparecia CUALQUIER fecha resoluble, aunque el TIPO
+                # siguiera sin resolver -- un documento que consigue
+                # fecha por contexto generico en Tesseract PSM
+                # automatico nunca llegaba a EasyOCR/Cloud Vision, que
+                # quizas si habrian encontrado la frase de tipo. El
+                # objetivo de --retype es el tipo, no solo la fecha --
+                # se sigue escalando de motor mientras el tipo no este
+                # resuelto sin ambiguedad, tenga ya fecha o no.
+                return bool(code_result) and not is_amb
+
+            resolved_code, is_ambiguous, matched, expiry, issue, other = (
+                _try_resolve(text)
+            )
+            engine_used = "CLOUD VISION" if skip_light_ocr_engines else (
+                "TESSERACT (PSM automatico)"
+            )
+
+            # S106: con skip_light_ocr_engines activo, el texto ya viene
+            # de Cloud Vision (unico motor) -- no tiene sentido reintentar
+            # PSM6/EasyOCR/Cloud Vision otra vez sobre el mismo origen.
+            if not skip_light_ocr_engines and (
+                not _type_settled(resolved_code, is_ambiguous) and (
+                    name.lower().endswith((".pdf", ".jpg", ".jpeg", ".png"))
+                )
+            ):
+                _log("  TESSERACT (PSM automatico) sin resultado usable -- "
+                     "probando TESSERACT PSM 6...")
+                retry_text = extract_text(name, data, psm=6)
+                if retry_text:
+                    (r_code, r_ambiguous, r_matched, r_expiry, r_issue,
+                     r_other) = _try_resolve(retry_text)
+                    text = retry_text
+                    if _is_usable(r_code, r_ambiguous, r_expiry, r_issue, r_other):
+                        resolved_code, is_ambiguous, matched = (
+                            r_code, r_ambiguous, r_matched,
+                        )
+                        expiry, issue, other = r_expiry, r_issue, r_other
+                        engine_used = "TESSERACT PSM 6"
+                    else:
+                        _log(
+                            "    TESSERACT PSM 6 tampoco resolvio nada "
+                            "(%d caracteres)%s" % (
+                                len(retry_text),
+                                (" -- tipo ambiguo %s" % sorted(r_matched))
+                                if r_ambiguous else "",
+                            )
+                        )
+                        # H31 (S97): `text` ya quedo actualizado a
+                        # retry_text arriba (PSM6 es una relectura
+                        # completa, no aditiva) -- se cachea tambien
+                        # el resultado crudo (aunque no usable) para
+                        # que la revision manual, si hace falta, parta
+                        # del ultimo intento real.
+                        resolved_code, is_ambiguous, matched = (
+                            r_code, r_ambiguous, r_matched,
+                        )
+                        expiry, issue, other = r_expiry, r_issue, r_other
+                else:
+                    _log("    TESSERACT PSM 6 no devolvio texto")
+
+                if not _type_settled(resolved_code, is_ambiguous):
+                    _log("    TESSERACT PSM 6 sin resultado usable -- "
+                         "probando EASYOCR...")
+                    try:
+                        easy_text = easyocr_extract_text(name, data)
+                    except Exception as exc:
+                        easy_text = None
+                        _log("  EASYOCR ERROR -- %s" % exc)
+                    if easy_text:
+                        (e_code, e_ambiguous, e_matched, e_expiry, e_issue,
+                         e_other) = _try_resolve(easy_text)
+                        if _is_usable(e_code, e_ambiguous, e_expiry, e_issue, e_other):
+                            text = easy_text
+                            resolved_code, is_ambiguous, matched = (
+                                e_code, e_ambiguous, e_matched,
+                            )
+                            expiry, issue, other = e_expiry, e_issue, e_other
+                            engine_used = "EASYOCR"
+                        else:
+                            _log(
+                                "    EASYOCR tampoco resolvio nada "
+                                "(%d caracteres)%s" % (
+                                    len(easy_text),
+                                    (" -- tipo ambiguo %s" % sorted(e_matched))
+                                    if e_ambiguous else "",
+                                )
+                            )
+                            if len(easy_text) > len(text or ""):
+                                text = easy_text
+                                resolved_code, is_ambiguous, matched = (
+                                    e_code, e_ambiguous, e_matched,
+                                )
+                                expiry, issue, other = e_expiry, e_issue, e_other
+                    else:
+                        _log("    EASYOCR no devolvio texto")
+
+                    if not _type_settled(resolved_code, is_ambiguous):
+                        _log("    EASYOCR sin resultado usable -- probando "
+                             "CLOUD VISION (ultimo recurso)...")
+                        try:
+                            vision_text = cloud_vision_extract_text(name, data)
+                        except Exception as exc:
+                            vision_text = None
+                            _log("  CLOUD VISION ERROR -- %s" % exc)
+                        if vision_text:
+                            (v_code, v_ambiguous, v_matched, v_expiry,
+                             v_issue, v_other) = _try_resolve(vision_text)
+                            if _is_usable(v_code, v_ambiguous, v_expiry, v_issue, v_other):
+                                text = vision_text
+                                resolved_code, is_ambiguous, matched = (
+                                    v_code, v_ambiguous, v_matched,
+                                )
+                                expiry, issue, other = v_expiry, v_issue, v_other
+                                engine_used = "CLOUD VISION"
+                            else:
+                                _log(
+                                    "    CLOUD VISION tampoco resolvio nada "
+                                    "(%d caracteres)%s" % (
+                                        len(vision_text),
+                                        (" -- tipo ambiguo %s" % sorted(v_matched))
+                                        if v_ambiguous else "",
+                                    )
+                                )
+                                if len(vision_text) > len(text or ""):
+                                    text = vision_text
+                                    resolved_code, is_ambiguous, matched = (
+                                        v_code, v_ambiguous, v_matched,
+                                    )
+                                    expiry, issue, other = v_expiry, v_issue, v_other
+                        else:
+                            _log("    CLOUD VISION no devolvio texto")
+
+            # Cachear siempre el mejor texto encontrado, gane lo que
+            # gane -- mismo principio que el modo normal (S97).
+            if args.apply:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "UPDATE document_explorer_documentindexentry "
+                        "SET ocr_text=%s WHERE id=%s",
+                        (text, entry_id),
+                    )
+                conn.commit()
+
+            if is_ambiguous:
+                stats["tipo_ambiguo"] = stats.get("tipo_ambiguo", 0) + 1
+                _log("  TIPO AMBIGUO (%s) -- motor: %s -- sin escribir, "
+                     "queda para revision manual"
+                     % (sorted(matched), engine_used))
+                continue
+
+            # Descartar como fecha la fecha de nacimiento colada (con o
+            # sin el error de siglo +100 anios) -- mismo criterio que
+            # run_personal_retype_and_date.py.
+            bad_dates = set()
+            if birth_date:
+                bad_dates = {
+                    birth_date, birth_date.replace(year=birth_date.year + 100),
+                }
+            if expiry in bad_dates:
+                expiry = None
+            if issue in bad_dates:
+                issue = None
+            if other:
+                other = [d for d in other if d not in bad_dates]
+            date_field, date_value = None, None
+            if expiry:
+                date_field, date_value = "expiry_date", expiry
+            elif issue:
+                date_field, date_value = "issue_date", issue
+            elif len(set(other)) == 1:
+                date_field, date_value = "issue_date", other[0]
+
+            type_changed = bool(resolved_code and resolved_code != code)
+            # Un tipo resuelto como ocr_unreliable (DNI/NIE/CARNET_
+            # CONDUCIR/TACOGRAFO/TARJETA_CUALIF_CONDUCTOR) nunca fija
+            # fecha aqui -- ese tipo de documento exige Gemini Vision
+            # (run_personal_retype_and_date.py), que este script
+            # standalone no tiene disponible. Se deja sin fecha para
+            # que el comando Django lo resuelva despues.
+            resolved_is_unreliable = ocr_unreliable
+            if type_changed:
+                # H35 (S105): el ocr_unreliable del tipo NUEVO puede
+                # no coincidir con el del tipo actual -- se comprueba
+                # aparte con una consulta minima, solo si hizo falta.
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT ocr_unreliable FROM "
+                        "document_explorer_documenttypecatalog WHERE code=%s",
+                        (resolved_code,),
+                    )
+                    row = cur.fetchone()
+                    resolved_is_unreliable = bool(row[0]) if row else False
+            if resolved_is_unreliable:
+                date_field, date_value = None, None
+
+            if not type_changed and not date_value:
+                stats["sin_nada_resoluble"] = stats.get("sin_nada_resoluble", 0) + 1
+                _log("  SIN TIPO NI FECHA resolubles -- motor: %s "
+                     "(ocr_text_len=%d)" % (engine_used, len(text or "")))
+                continue
+
+            _log(
+                "  RESUELTO -- motor: %s -- tipo: %s%s -- fecha: %s%s"
+                % (
+                    engine_used, code,
+                    (" -> %s" % resolved_code) if type_changed else " (confirmado)",
+                    date_field or "sin resolver",
+                    (" = %s" % date_value) if date_value else "",
+                )
+            )
+            if type_changed:
+                stats["solo_tipo_resuelto"] = stats.get("solo_tipo_resuelto", 0) + 1
+            if date_value:
+                stats["ocr_contexto"] += 1
+
+            if args.apply:
+                with conn.cursor() as cur:
+                    if type_changed:
+                        new_type_id = type_id_by_code.get(resolved_code)
+                        if new_type_id:
+                            cur.execute(
+                                "UPDATE document_explorer_documentindexentry "
+                                "SET document_type_id=%s WHERE id=%s",
+                                (new_type_id, entry_id),
+                            )
+                    if date_value:
+                        cur.execute(
+                            "UPDATE document_explorer_documentindexentry "
+                            "SET %s=%%s WHERE id=%%s" % date_field,
+                            (date_value, entry_id),
+                        )
+                conn.commit()
+            continue
+
+        # FASE 1bis -- MRZ de DNI/NIE (S79). Contenido real impreso
+        # en el documento, nunca el nombre de archivo. Se prueba
+        # antes del OCR de contexto porque el MRZ es mas fiable que
+        # el patron generico cuando la cara frontal esta degradada.
+        if code in MRZ_CODES:
+            mrz_expiry = extract_dni_mrz_expiry(text)
+            if mrz_expiry:
+                stats["mrz"] = stats.get("mrz", 0) + 1
+                _log("  MRZ %s -> expiry=%s" % (code, mrz_expiry.isoformat()))
+                if args.apply:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "UPDATE document_explorer_documentindexentry "
+                            "SET ocr_text=%s, expiry_date=%s WHERE id=%s",
+                            (text, mrz_expiry, entry_id),
+                        )
+                    conn.commit()
+                continue
+            front_expiry = extract_dni_front_expiry(text)
+            if front_expiry:
+                stats["frente"] = stats.get("frente", 0) + 1
+                _log("  FRENTE %s -> expiry=%s" % (code, front_expiry.isoformat()))
+                if args.apply:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "UPDATE document_explorer_documentindexentry "
+                            "SET ocr_text=%s, expiry_date=%s WHERE id=%s",
+                            (text, front_expiry, entry_id),
+                        )
+                    conn.commit()
+                continue
+
+        # H30 (S78): cachear el texto OCR ya extraido, para que
+        # cualquier pasada futura de campos nuevos (numero de DNI,
+        # categorias, etc.) no tenga que repetir descarga+OCR.
+        if args.apply:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE document_explorer_documentindexentry "
+                    "SET ocr_text=%s WHERE id=%s",
+                    (text, entry_id),
+                )
+            conn.commit()
+
+        expiry, issue, other = classify_dates_in_text(text)
+
+        # H30 (sesion de continuidad tras S84/S85). Incidente real,
+        # confirmado con evidencia visual por Miguel Angel: el PSM
+        # automatico por defecto de Tesseract (PSM 3) se salta por
+        # completo una linea de texto perfectamente legible a simple
+        # vista cuando un sello/grafico la corta visualmente (caso
+        # real: certificado CENTRO MEDICO ALAMEDA, linea "expido el
+        # presente CERTIFICADO en... a 10 Enero 2022" ausente del OCR
+        # pese a no estar tapada por el sello). Mismo patron ya
+        # resuelto para EPIS en S82/S83 (reintento con otro PSM) --
+        # portado aqui. Solo se reintenta cuando la primera pasada no
+        # encontro NINGUNA fecha (ni siquiera "otras"), y solo para
+        # PDF/imagen (el OCR es lo unico que puede fallar asi -- docx/
+        # xlsx no pasan por Tesseract).
+        #
+        # H31 (S97, corregido tras incidente real S96). Cadena unica
+        # de tres pasos -- Tesseract PSM automatico -> Tesseract PSM 6
+        # -> EasyOCR (ultimo recurso) -- que se ejecuta siempre, en
+        # ese orden, mientras no aparezca ninguna fecha. La version
+        # anterior a esta correccion solo probaba EasyOCR cuando el
+        # PSM 6 SI devolvia texto (aunque sin fecha): si el PSM 6 no
+        # devolvia nada en absoluto, EasyOCR nunca llegaba a probarse
+        # -- hueco real que S96 intento tapar añadiendo una SEGUNDA
+        # llamada a EasyOCR mas abajo (duplicada con esta) en vez de
+        # corregir esta condicion. Esa segunda llamada queda retirada.
+        if not (expiry or issue or other) and name.lower().endswith(
+            (".pdf", ".jpg", ".jpeg", ".png")
+        ):
+            retry_text = extract_text(name, data, psm=6)
+            if retry_text:
+                r_expiry, r_issue, r_other = classify_dates_in_text(retry_text)
+                if r_expiry or r_issue or r_other:
+                    _log(
+                        "  REINTENTO PSM 6 -- encontro fecha que el PSM por "
+                        "defecto no vio"
+                    )
+                    text = retry_text
+                    expiry, issue, other = r_expiry, r_issue, r_other
+                    if args.apply:
+                        with conn.cursor() as cur:
+                            cur.execute(
+                                "UPDATE document_explorer_documentindexentry "
+                                "SET ocr_text=%s WHERE id=%s",
+                                (text, entry_id),
+                            )
+                        conn.commit()
+                else:
+                    # H30 (sesion tras S85): el reintento tambien
+                    # fallo -- nunca descartar el PSM alternativo sin
+                    # ver que leyo de verdad, podria ser un problema
+                    # distinto (linea realmente ausente del OCR, no
+                    # solo mal clasificada).
+                    retry_preview = retry_text.replace("\n", " | ")
+                    _log(
+                        "    REINTENTO PSM 6 tampoco encontro fecha "
+                        "(%d caracteres): %r"
+                        % (len(retry_preview), retry_preview)
+                    )
+                    text = retry_text
+            else:
+                _log("    REINTENTO PSM 6 no devolvio texto")
+
+            if not (expiry or issue or other):
+                # H30 (sesion tras S85). TERCER NIVEL -- EasyOCR como
+                # red de seguridad final, decision explicita de Miguel
+                # Angel: Tesseract primero (rapido), EasyOCR solo
+                # cuando Tesseract falla del todo (ni PSM automatico
+                # ni PSM 6, tenga o no tenga texto ese PSM 6). Calidad
+                # ya validada dos veces con el documento real que
+                # motivo todo esto (certificado CENTRO MEDICO ALAMEDA,
+                # lee "10 Enero 2022" donde Tesseract nunca lo
+                # encontro) -- pero es ~6-7x mas lento (benchmark real
+                # en h28-ocr-batch-1, 8 vCPU: 3.0s Tesseract vs 19.2s
+                # EasyOCR), por eso es el ultimo recurso, nunca el
+                # metodo por defecto.
+                _log("    Probando EASYOCR (ultimo recurso, mas lento)...")
+                try:
+                    easy_text = easyocr_extract_text(name, data)
+                except Exception as exc:
+                    easy_text = None
+                    _log("  EASYOCR ERROR -- %s" % exc)
+                if easy_text:
+                    e_expiry, e_issue, e_other = classify_dates_in_text(
+                        easy_text
+                    )
+                    if e_expiry or e_issue or e_other:
+                        _log(
+                            "  EASYOCR -- encontro fecha que Tesseract "
+                            "no vio (ni PSM automatico ni PSM 6)"
+                        )
+                        text = easy_text
+                        expiry, issue, other = e_expiry, e_issue, e_other
+                        if args.apply:
+                            with conn.cursor() as cur:
+                                cur.execute(
+                                    "UPDATE document_explorer_documentindexentry "
+                                    "SET ocr_text=%s WHERE id=%s",
+                                    (text, entry_id),
+                                )
+                            conn.commit()
+                    else:
+                        easy_preview = easy_text.replace("\n", " | ")
+                        _log(
+                            "    EASYOCR tampoco encontro fecha "
+                            "(%d caracteres): %r"
+                            % (len(easy_preview), easy_preview)
+                        )
+                        # H31 (S97). Aunque EasyOCR no encuentre
+                        # fecha, se cachea su texto si aporta mas
+                        # contenido que el ya guardado -- objetivo
+                        # explicito de Miguel Angel: tener el OCR real
+                        # de TODOS los documentos, encuentren fecha o
+                        # no, para que la revision visual posterior de
+                        # los que sigan sin fecha parta ya del mejor
+                        # texto disponible.
+                        if easy_text != text:
+                            text = easy_text
+                            if args.apply:
+                                with conn.cursor() as cur:
+                                    cur.execute(
+                                        "UPDATE document_explorer_documentindexentry "
+                                        "SET ocr_text=%s WHERE id=%s",
+                                        (text, entry_id),
+                                    )
+                                conn.commit()
+                else:
+                    _log("    EASYOCR no devolvio texto")
+
+        if expiry and issue:
+            # Par 4a/4b -- unico caso en que llegan los dos campos a
+            # la vez desde classify_dates_in_text. Escribir ambos en
+            # la misma actualizacion.
+            stats["par_4a_4b"] += 1
+            _log(
+                "  OCR %s -> issue=%s / expiry=%s (par 4a/4b)"
+                % (code, issue.isoformat(), expiry.isoformat())
+            )
+            if args.apply:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "UPDATE document_explorer_documentindexentry "
+                        "SET issue_date=%s, expiry_date=%s WHERE id=%s",
+                        (issue, expiry, entry_id),
+                    )
+                conn.commit()
+            continue
+
+        if expiry:
+            stats["ocr_contexto"] += 1
+            _log("  OCR %s -> expiry=%s (contexto)" % (code, expiry.isoformat()))
+            if args.apply:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "UPDATE document_explorer_documentindexentry "
+                        "SET expiry_date=%s WHERE id=%s",
+                        (expiry, entry_id),
+                    )
+                conn.commit()
+            continue
+
+        if issue:
+            stats["ocr_contexto"] += 1
+            _log("  OCR %s -> issue=%s (contexto)" % (code, issue.isoformat()))
+            if args.apply:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "UPDATE document_explorer_documentindexentry "
+                        "SET issue_date=%s WHERE id=%s",
+                        (issue, entry_id),
+                    )
+                conn.commit()
+            continue
+
+        default_field = DEFAULT_FIELD_BY_CODE.get(code)
+        if default_field and len(set(other)) == 1:
+            found = other[0]
+            stats["ocr_unica_fecha"] += 1
+            _log(
+                "  OCR %s -> %s=%s (unica fecha, defecto, ocr_text_len=%d)"
+                % (code, default_field, found.isoformat(), len(text or ""))
+            )
+            if args.apply:
+                with conn.cursor() as cur:
+                    col = "expiry_date" if default_field == "expiry" else "issue_date"
+                    cur.execute(
+                        "UPDATE document_explorer_documentindexentry "
+                        "SET %s=%%s WHERE id=%%s" % col,
+                        (found, entry_id),
+                    )
+                conn.commit()
+            continue
+
+        stats["sin_fecha"] += 1
+        _log(
+            "  SIN FECHA reconocible (ocr_text_len=%d, fechas_sueltas=%s)"
+            % (len(text or ""), other)
+        )
+        # H30 (sesion tras S85): guardar la imagen real que recibio
+        # Tesseract, en el directorio de trabajo actual, para que
+        # Miguel Angel la abra directamente y la compare con el PDF --
+        # nunca mas asumir que es visible/tapado/lo-que-sea sin verla.
+        if name.lower().endswith(".pdf"):
+            debug_prefix = "debug_entry_%d" % entry_id
+            extract_text(name, data, debug_save_prefix=debug_prefix)
+            _log("    Imagen real guardada en: %s\\%s_p0.png (y siguientes paginas si las hay)"
+                  % (os.getcwd(), debug_prefix))
+        preview = (text or "").replace("\n", " | ")
+        _log("    TEXTO REAL COMPLETO (%d caracteres): %r" % (len(preview), preview))
+
+    _log_plain("=== RESUMEN (%s, shard %d/%d) ===" % (
+        "APLICADO" if args.apply else "DRY-RUN",
+        args.shard_index + 1, args.shard_count,
+    ))
+    for key, value in stats.items():
+        _log_plain("    %s: %d" % (key, value))
+
+    conn.close()
+    tunnel.stop()
+    if _LOG_FILE is not None:
+        _LOG_FILE.close()
+
+
+if __name__ == "__main__":
+    main()
