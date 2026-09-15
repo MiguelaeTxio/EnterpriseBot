@@ -74,12 +74,27 @@ CONTENT_SIGNALS = {
     "IDC": ["INFORME DE DATOS PARA LA COTIZACION"],
     "TC2": ["RELACION NOMINAL DE TRABAJADORES", "BOLETIN DE COTIZACION"],
     "VACACIONES": ["PARTE DE VACACIONES", "SOLICITUD DE VACACIONES"],
-    "CURSO": ["CERTIFICADO DE APROVECHAMIENTO", "DIPLOMA"],
+    "CURSO": [
+        "CERTIFICADO DE APROVECHAMIENTO", "DIPLOMA",
+        # H35 (S105), confirmado con muestra real (pk=28931,
+        # certificado de Fraternidad Muprespa): "CERTIFICA: Que los
+        # trabajadores... Han realizado el Curso [nombre]" -- formato
+        # de certificacion de un servicio de prevencion externo,
+        # distinto de "CERTIFICADO DE APROVECHAMIENTO"/"DIPLOMA".
+        "HAN REALIZADO EL CURSO",
+    ],
     "FORMACION": ["FICHA DE INSCRIPCION"],
     "CARNET_CONDUCIR": ["PERMISO DE CONDUCCION", "DRIVING LICENCE"],
     "CARNET_GRUISTA": [
         "OPERADOR DE GRUAS MOVILES", "HABILITACION PROFESIONAL",
         "CARNE DE OPERADOR DE GRUAS",
+        # H35 (S105), confirmado con 2 muestras reales (pk=30576,
+        # 31972 -- certificados de la Delegacion Provincial de
+        # Industria, Energia y Minas de la Junta de Andalucia): el
+        # documento real dice "GRUA MOVIL" en singular, no "GRUAS
+        # MOVILES" en plural -- variante de redaccion no cubierta
+        # por el signal existente.
+        "OPERADOR DE GRUA MOVIL",
     ],
     "PARTE_BAJA_MEDICA": [
         "PARTE MEDICO DE BAJA", "PARTE MEDICO DE ALTA",
@@ -106,7 +121,28 @@ CONTENT_SIGNALS = {
         "REGLAMENTARIAMENTE",
     ],
     "COMUNICACION_CONTRATO": ["COMUNICACION DEL CONTRATO DE TRABAJO"],
-    "AUTORIZACION_USO_MAQUINARIA": ["AUTORIZACION DE MANEJO DE MAQUINARIA"],
+    "AUTORIZACION_USO_MAQUINARIA": [
+        "AUTORIZACION DE MANEJO DE MAQUINARIA",
+        # H35 (S105), confirmado con muestra real (pk=32725): el OCR
+        # real de este documento concreto trae un espacio insertado
+        # en medio de la palabra ("MA QUINARIA") -- ruido real del
+        # motor, no una redaccion distinta del documento. Variante
+        # literal añadida para cubrir este artefacto conocido.
+        "AUTORIZACION DE MANEJO DE MA QUINARIA",
+    ],
+    "INVESTIGACION_ACCIDENTE": [
+        # H35 (S105), confirmado con muestra real (pk=37334): "RELACION
+        # DE ACCIDENTES DE TRABAJO SIN BAJA" -- formulario Delt@ oficial
+        # de declaracion de accidentes de trabajo. Cubre tambien la
+        # variante "CON BAJA" al ser solo el prefijo comun.
+        "RELACION DE ACCIDENTES DE TRABAJO",
+    ],
+    "EXPEDIENTE_DISCIPLINARIO": [
+        # H35 (S105), confirmado con muestra real (pk=39463): carta de
+        # la empresa concediendo "TRAMITE DE AUDIENCIA PREVIA" antes de
+        # un despido por faltas graves/muy graves.
+        "TRAMITE DE AUDIENCIA PREVIA",
+    ],
     "AUTORIZACION_GENERICA": [
         "PARA EL USO DE LOS SIGUIENTES VEHICULOS Y/O MAQUINARIA",
     ],
