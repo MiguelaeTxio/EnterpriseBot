@@ -1,4 +1,46 @@
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V35.md
+
+## ⚠️ DATO CRÍTICO DE CONTINUIDAD -- LEER ANTES DE CUALQUIER OTRA COSA
+
+**Registro real afectado:** `PersonIdentity`, DNI `74633524L`, Miguel
+Ángel Muñoz Cara (id original 249 -- ya no existe, ver más abajo).
+
+**Motivo:** durante esta sesión se detectó un fallo real de ingesta
+en la propia ficha de Miguel Ángel -- 3 de sus 4 documentos indexados
+como `CONTRATO` eran en realidad **nóminas** mal clasificadas al
+subirlas (mismo `blob_name` repetido en varias filas de índice, un
+síntoma real de que la re-subida del mismo archivo generaba una fila
+de índice nueva en vez de actualizar la existente). Para reproducir el
+fallo y probar la ingesta de cero, se hizo lo siguiente, en este
+orden: (1) los 18 documentos de su ficha se enviaron a papelera
+(`trash_dossier_entry`, recuperable); (2) a petición explícita
+posterior de Miguel Ángel ("borra mi ficha completa"), se hizo un
+backup completo (`serializers.serialize`, `PersonIdentity` + sus 18
+`DocumentIndexEntry`) y se borró de verdad la fila `PersonIdentity`
+(`.delete()`, sin papelera -- no existe mecanismo de papelera para
+este modelo); (3) Miguel Ángel volvió a subir toda su documentación
+real desde cero, recreando su ficha por el flujo normal de alta
+guiada.
+
+**Estado del backup:** Miguel Ángel conserva su propia copia del JSON
+(confirmado explícitamente, S105) -- **no se comiteó al repositorio**,
+decisión suya explícita ("Tengo el J[SON]... déjalo"). No hace falta
+ninguna acción de restauración -- su ficha ya existe de nuevo, recreada
+por la re-subida real.
+
+**Primera tarea obligatoria de la sesión siguiente, con criterio de
+cierre objetivo:** comprobar si el fallo real que motivó todo esto se
+reprodujo en la ficha recreada -- consultar los documentos actuales de
+Miguel Ángel (buscar `PersonIdentity` por DNI `74633524L`) y revisar
+si alguno de tipo `CONTRATO` es, por contenido real, una nómina. Cierra
+a **0** documentos `CONTRATO` cuyo contenido real no sea un contrato
+-- si aparece alguno, diagnosticar `personal_intake_service.py`/el
+flujo de subida real (mismo síntoma ya visto: `blob_name` repetido
+entre filas de índice distintas) antes de dar el fallo por corregido.
+
+---
+
+
 # Anexo H35 — Retipado y Refechado Masivo de Documentación Histórica de Personal
 
 ---
@@ -173,65 +215,133 @@ documento a su ficha; si no existe, papelera.
 
 ---
 
-## Hoja de Ruta para la Sesión Siguiente (S105)
+## COMPLETADAS EN S105
 
-**0. Criterio de remediación para documentos de otra persona real
-(decidido en S104, verbatim tras comprobar en el buscador de personal
--- activos+inactivos, todas las empresas, incluido "sin empresa
-asignada" -- que "Ana Requena Soler" no existe en el sistema):**
-buscar primero si la persona nombrada en el documento existe ya como
-`PersonIdentity` (activa o inactiva, cualquier empresa). Si existe,
-mover el documento a su ficha real. Si no existe -- caso confirmado de
-"Ana Requena Soler" -- el documento va a **papelera**
-(`deleted_at`, mismo mecanismo ya usado por `trash_dossier_entry`),
-nunca se deja archivado bajo una persona que no es la suya. Aplicar
-este criterio sistemáticamente a cualquier documento de este hito
-donde `_person_name_missing()` detecte un nombre real distinto del
-titular de la ficha (no solo el caso de Jorge).
+**Resumen:** sesión larga dedicada casi por completo a H35 -- se
+retomaron las VMs de OCR, se extendió el agente H28 con un modo de
+retipado real por contenido, se amplió el diccionario de señales con
+todos los tipos nuevos confirmados con muestra real, se corrigieron
+dos bugs de fondo del propio motor de escalado de OCR, y se ejecutó
+la campaña completa de `--retype` sobre `BAJA_PERSONAL`, `ALTA`,
+`CONTRATO`, `IDC`, `RECONOCIMIENTO_MEDICO` e
+`INVESTIGACION_ACCIDENTE`. De paso, se rediseñó por completo el
+modelo de ciclo de vida de las VMs de OCR (incidente real de una VM
+sin clave SSH a mitad de campaña), y se construyó una funcionalidad
+nueva no relacionada con H35 pedida por Miguel Ángel a mitad de
+sesión: generación de dosieres para varios trabajadores a la vez.
 
-Queda además, como trabajo técnico normal (no decisión de negocio):
-ejecutar la misma auditoría de contenido de S104 sobre el resto de
-tipos de volumen alto de las familias `LABORAL`/`SALUD_BAJAS_PERSONA`
--- la sesión S104 solo confirmó el patrón de cajón de sastre en
-`BAJA_PERSONAL`, sin comprobar si otros tipos comparten el mismo
-problema. Cierre objetivo: para cada tipo de volumen alto auditado,
-registrar en este anexo el mismo desglose que se hizo para
-`BAJA_PERSONAL` (confirmados / proponen otro tipo / sin señal /
-ambiguos / sin texto cacheado).
+**Motor de retipado (`h28_migration_agent/extract_personal_dates_bulk.py`,
+modo `--retype`):** nuevo, reutiliza sin duplicar el diccionario de
+`run_personal_retype_and_date.py`, ahora extraído a un módulo
+compartido sin dependencias de Django
+(`document_explorer/personal_content_classification.py`) para que lo
+importe también el agente standalone de la VM. Cadena de motores
+Tesseract (PSM automático) → Tesseract PSM 6 → EasyOCR → Cloud
+Vision, decisión explícita de Miguel Ángel para este hito (excepción
+a la regla general de la plataforma, S102).
 
-**1. Estado real de las VMs de OCR.** Comprobar con `gcloud` si
-`h28-ocr-batch-1..4` siguen existiendo (S104 las dio por
-"suspendidas", verificar que no se hayan borrado) y reanudarlas.
-Revisar `h28_migration_agent/extract_personal_dates_bulk.py` (y
-scripts hermanos) para confirmar si ya resuelven tipo documental
-además de fecha, o si hace falta extenderlos con
-`CONTENT_SIGNALS`/`CONTENT_WINS` de `run_personal_retype_and_date.py`
-(mismo diccionario, evitar mantener dos copias divergentes).
+**Dos bugs reales de fondo corregidos en el motor, ambos con impacto
+retroactivo en resultados de campañas ya corridas:**
+1. El escalado de motor paraba en cuanto aparecía CUALQUIER fecha
+   resoluble, aunque el TIPO siguiera sin resolver -- muchos
+   documentos se daban por "resueltos" con solo fecha, sin llegar
+   nunca a EasyOCR/Cloud Vision, que sí habrían encontrado la frase
+   de tipo real. Corregido (`_type_settled()`, commit `3617346`):
+   ahora se sigue escalando mientras el tipo no esté resuelto sin
+   ambigüedad, tenga ya fecha o no.
+2. Las frases de `CONTENT_SIGNALS` se comparaban contra el texto tal
+   cual, sin normalizar saltos de línea -- una frase real partida en
+   dos líneas por el OCR (p. ej. "ACTIVIDADES\nQUE PUEDE...") nunca
+   hacía match aunque un humano la reconociera al instante. Corregido
+   (commit `823b728`): normalización de espacios en blanco en el
+   único punto donde se comparan frases.
 
-**2. Ampliar el diccionario de señales** con los tipos nuevos
-listados en la sección 2 de este anexo -- confirmar la frase exacta
-contra 2-3 muestras reales de cada uno antes de darla por buena (mismo
-rigor que el resto de `CONTENT_SIGNALS`, nunca palabra suelta).
+**Diccionario `CONTENT_SIGNALS` ampliado**, todo confirmado contra
+muestra real (nunca palabra suelta): `AUTORIZACION_GENERICA`,
+`CAPACITACION`, `FORMACION_PRL_GENERICA`, `RECURSO_PREVENTIVO`
+(códigos de catálogo nuevos, migraciones `0084`-`0086`);
+`CAMBIO_IRPF`, `COMUNICACION_CONTRATO`, `AUTORIZACION_USO_MAQUINARIA`,
+`TACOGRAFO`, `TARJETA_CUALIF_CONDUCTOR`, `EPIS` (códigos ya
+existentes, solo les faltaba el signal); variantes de redacción reales
+encontradas después (`OPERADOR DE GRUA MOVIL` singular, `HAN
+REALIZADO EL CURSO`, artefacto de OCR "MA QUINARIA" con espacio
+insertado); `INVESTIGACION_ACCIDENTE` y `EXPEDIENTE_DISCIPLINARIO`
+(códigos ya existentes, signal nuevo). Dos reglas de desempate
+(`CONTENT_WINS`) nuevas por falsos positivos sistemáticos de
+formularios oficiales: `ALTA` gana sobre `PARTE_BAJA_MEDICA`
+(formulario RETA de autónomos, cláusula de cobertura de incapacidad
+temporal) e `IDC` gana sobre `CONTRATO` (el propio formulario IDC
+trae "INICIO/FIN CONTRATO DE TRABAJO" como etiqueta de casilla).
 
-**3. Releer con Tesseract (VM) los 378 `BAJA_PERSONAL` sin `ocr_text`
-cacheado**, más los 96 de la fecha de nacimiento colada sin texto
-cacheado. Cachear el texto resuelto en `ocr_text` según se vaya
-obteniendo (mismo campo/convención ya establecida). Lo que Tesseract
-no resuelva con confianza, pasa a Cloud Vision (vía
-`run_personal_retype_and_date.py`, añadiendo el brazo Tesseract como
-intento previo al ya existente).
+**Campañas `--retype` completas, alcance fijo `is_active_employee=True`
+únicamente (decisión explícita y sin excepción de Miguel Ángel --
+nunca tocar documentación de trabajadores inactivos con este barrido):**
 
-**4. Aplicar en producción** con el mismo criterio dry-run → revisión
-→ `--apply` ya validado en S104 -- nunca escribir en masa sin una
-muestra revisada primero, mismo patrón que toda esta sesión.
+| Tipo | Total activos | Retipados | Fecha corregida | Ambiguos reales | Sin señal |
+|---|---|---|---|---|---|
+| `BAJA_PERSONAL` | 404 | ~166 | ~318 (solapado) | 13 | 85 |
+| `ALTA` | 304 | 51 | 191 | 6 | 7 |
+| `CONTRATO` | 449 | ~146 | -- | 6 | 4 |
+| `IDC` | 250 | 74 (bloque) | -- | 3 | -- |
+| `RECONOCIMIENTO_MEDICO` | 689 | 17 | 556 | 0 | 21 |
+| `INVESTIGACION_ACCIDENTE` | 661 | 96 | 173 | 0 | 34 |
+| `PAGO_CORRIENTE` | -- | -- | -- | fuera de alcance (dominio `CompanyWorksite`, nunca `PersonIdentity`) | -- |
 
-**5. Cierre objetivo de esta primera sesión de H35:** los 536
-`BAJA_PERSONAL` de toda la plataforma retipados/refechados
-correctamente (o marcados explícitamente para revisión manual con
-motivo), y medida la extensión real del problema a otros tipos si el
-punto 0 confirmó que hacía falta auditar más allá de `BAJA_PERSONAL`.
+Todas las listas completas de IDs pendientes (ambiguos + sin señal)
+quedan comiteadas en las secciones "Pendientes de revisión manual" de
+este mismo anexo, más abajo -- nunca solo en un log de una VM efímera
+que ya no existe.
 
----
+**Incidente real durante `IDC`:** la campaña de 3 shards de `IDC`
+corrió con código previo al fix `IDC`/`CONTRATO` (la imagen
+`h28-ocr-batch-image-v3` se había congelado antes de ese commit),
+reportando 169 ambiguos falsos. Reclasificación directa del
+`ocr_text` ya cacheado contra el diccionario corregido confirmó que
+solo 3 son ambiguos de verdad -- verificado también que no quedó
+ningún dato mal escrito en BD (los ambiguos nunca se escriben).
+
+**Modelo de ciclo de vida de las VMs de OCR, rediseñado de raíz**
+(incidente real: `h28-ocr-batch-3`, creada de la misma imagen que
+`h28-ocr-batch-1/2` pero nunca usada, no tenía la clave SSH hacia
+PythonAnywhere -- la imagen se había congelado antes de que esa clave
+existiera en el disco de origen). Se abandona el modelo de "4 VMs
+fijas siempre encendidas/suspendidas"; documentado completo en
+`SESSION_VARIABLES.md` (sección de máxima visibilidad, principio del
+bloque de VMs): `h28-ocr-batch-1` es la única VM con disco
+persistente; para escalar, se pone al día, se para del todo (nunca
+suspendida) y se congela una imagen nueva (`vN` incremental); el
+paralelismo se consigue con VMs efímeras creadas desde esa imagen,
+que se BORRAN siempre al terminar la campaña, nunca se quedan
+suspendidas. Cuota real de CPU confirmada: `CPUS_ALL_REGIONS`=32,
+máximo 4 VMs `e2-standard-8` efímeras simultáneas.
+
+**Funcionalidad nueva, no relacionada con H35, pedida por Miguel
+Ángel a mitad de sesión:** generación de dosieres para varios
+trabajadores a la vez. Página propia de gestión de plantillas
+(`panel:dossier_templates_manage`, todos los tipos agrupados por
+familia y coloreados, sin acordeón, plantillas guardadas arriba,
+previsualización de tipos marcados), acción masiva nueva en el
+listado de Personal (plantilla + modo de agrupación -- PDF por
+trabajador / ZIP por trabajador / todo junto, siempre PREGUNTADO,
+nunca asumido -- + descarga o envío por correo, este último siempre
+un `.eml` independiente por trabajador por privacidad), marcado
+visual en el listado de quién le falta algún documento de la
+plantilla elegida. De paso: campo `PersonIdentity.avatar_document`
+nuevo (usar un documento-imagen ya indexado como foto de perfil sin
+perder su clasificación real), y fix del modal de "Ver documento"
+que se cerraba junto con el de Historial.
+
+**Migraciones de esquema reales de esta sesión:** `0084`-`0086`
+(siembra de catálogo, sin cambio de esquema), `0087` (campo nuevo
+`avatar_document`, `AddField` nullable simple). Todas desplegadas
+automáticamente vía `deploy.yml` tras cada push -- sin incidencia
+reportada.
+
+**Dos correcciones de etiqueta sin relación con lo anterior:**
+"Grúas Aldi S.L." → "GRUALDI S.L." y "Transgrúal S.L." → "TRANSGRUAL
+S.L." en el filtro de empresa del listado de Personal (el Excel real
+ya tenía el nombre correcto, `GRUALDI S.L`/`TRANSGRUAL SL` -- el
+desajuste era solo la etiqueta visible).
 
 ## Pendientes de revisión manual -- BAJA_PERSONAL (S105, cierre real)
 
@@ -356,3 +466,63 @@ retipados, 34 sin nada, 0 ambiguos.
 **PAGO_CORRIENTE** (1.762 documentos): fuera de alcance de
 `--retype` -- vive vinculado a `CompanyWorksite` (empresa y obra),
 nunca a `PersonIdentity`. Confirmado, no es un olvido.
+
+---
+
+## Hoja de Ruta para la Sesión Siguiente (S106)
+
+**0. Verificar el resultado de la re-ingesta de Miguel Ángel (ver el
+"DATO CRÍTICO DE CONTINUIDAD" al principio de este anexo) -- PRIMERA
+tarea, antes de cualquier otro punto.** Buscar `PersonIdentity` por
+DNI `74633524L`, listar sus documentos `CONTRATO` actuales y
+comprobar, por contenido real (`ocr_text` o descarga directa si no
+está cacheado), si alguno es en realidad una nómina. **Criterio de
+cierre: 0 documentos `CONTRATO` de esa ficha cuyo contenido real no
+sea un contrato.** Si aparece alguno, diagnosticar el flujo real de
+subida (`document_explorer/personal_intake_service.py` y/o
+`subject_upload_service.py`) contra el síntoma ya visto (`blob_name`
+repetido en varias filas de índice distintas) antes de dar el fallo
+por corregido -- nunca solo documentarlo, corregirlo.
+
+**1. Auditar con `--retype` los 6 tipos de volumen alto restantes de
+las familias `LABORAL`/`SALUD_BAJAS_PERSONA`, mismo procedimiento
+exacto que el resto de esta sesión** (dry-run de 10 primero, revisar
+el patrón, campaña completa con lotes de 20-25 por shard -- nunca
+shards de un tamaño que tarden horas sin haberlo avisado antes):
+`AUTONOMO` (189), `MOD_145` (161), `REGISTRO_JORNADA` (133), `CSS`
+(89), `VACACIONES` (74), `NOMINA` (73). Para cada uno, registrar en
+este anexo el mismo desglose que ya tienen `BAJA_PERSONAL`/`ALTA`/
+`CONTRATO`/`IDC`/`RECONOCIMIENTO_MEDICO`/`INVESTIGACION_ACCIDENTE`
+(retipados/fecha corregida/ambiguos con IDs/sin señal con IDs).
+**Criterio de cierre de este punto: los 6 tipos con su desglose
+comiteado en este anexo, cada uno con las listas de IDs pendientes
+reales (nunca solo el recuento).**
+
+**2. Ejecutar el criterio de remediación del punto 0 original de
+S105** (documento de otra persona real archivado bajo una ficha que
+no es la suya -- buscar sistemáticamente con `_person_name_missing()`
+sobre el `ocr_text` ya cacheado de todos los tipos auditados hasta
+ahora, no solo los 2 casos ya encontrados por inspección manual
+puntual en S105: `pk=41145`/`42128`, EPIS de Jorge Milheiro Felicio y
+Francisco Gómez Rivero archivados bajo Jorge Ramírez García). Si la
+persona nombrada existe ya como `PersonIdentity` (activa o inactiva,
+cualquier empresa), mover el documento a su ficha real; si no existe,
+papelera (`trash_dossier_entry`). **Criterio de cierre: barrido
+sistemático ejecutado sobre los 6+6=12 tipos ya auditados a fecha de
+S105/S106, con el recuento real de cuántos documentos de otra persona
+se encontraron y qué se hizo con cada uno, comiteado en este anexo.**
+
+**3. Documento del vehículo mal archivado (`pk=28245`, ficha ITV de
+un Volkswagen matrícula 8534-BGX, archivado bajo Grana Álvarez,
+Paloma) -- aplicar el criterio de remediación del punto 2, adaptado:
+este no es un documento de OTRA PERSONA, es un documento que no
+pertenece al dominio `PersonIdentity` en absoluto.** Buscar primero en
+el catálogo real (`DocumentTypeCatalog`, dominio `MACHINE`/`BOTH`) si
+ya existe un tipo para fichas ITV de vehículos de empresa (turismos,
+no maquinaria pesada); si existe, reubicar el documento a su dominio y
+tipo reales con `move_service`. Si no existe ningún tipo/carpeta real
+para esto, darlo de alta siguiendo el mismo criterio ya usado en el
+resto de altas de tipo de esta plataforma (label, family, domain)
+antes de reubicar. **Criterio de cierre: `pk=28245` con
+`domain_content_type`/`document_type` reales de vehículo, ya no bajo
+la ficha de Grana Álvarez, Paloma.**
