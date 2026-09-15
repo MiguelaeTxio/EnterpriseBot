@@ -155,6 +155,19 @@ CONTENT_WINS = [
     # documento de comunicacion (mucho mas corto, sin firma de las
     # partes), nunca el contrato en si.
     ("COMUNICACION_CONTRATO", "CONTRATO"),
+    # H35 (S105), hallazgo real (pk=27484/27948, formulario oficial de
+    # alta de autonomo en el RETA): "RESOLUCION SOBRE RECONOCIMIENTO DE
+    # ALTA" es la senal decisiva y especifica de ALTA, pero el mismo
+    # formulario estandar de la Tesoreria General de la Seguridad
+    # Social siempre trae una clausula de cobertura ("...cobertura de
+    # la incapacidad temporal derivada de contingencias comunes...")
+    # que dispara el signal generico "INCAPACIDAD TEMPORAL" de
+    # PARTE_BAJA_MEDICA -- falso positivo sistematico, no contenido
+    # mixto real (a diferencia del caso CONTRATO+PARTE_BAJA_MEDICA
+    # visto en BAJA_PERSONAL, que si es mezcla real de dos documentos
+    # en el mismo PDF). Cuando aparece la frase especifica de ALTA,
+    # gana siempre sobre la señal generica de PARTE_BAJA_MEDICA.
+    ("ALTA", "PARTE_BAJA_MEDICA"),
 ]
 
 # H31 (S104), hallazgo real: algunos PDF de la migracion historica son
