@@ -332,3 +332,27 @@ mezclados en el mismo PDF, todos del mismo trabajador):
 36311  MARTINEZ_SEGURA_JOSE_CARLOS_CONTRATO_20210101.pdf
 39831  RUEDA_ESCUDERO_JULIO_ALBERTO_CONTRATO_20251222.ordinario firmado-signe
 ```
+
+---
+
+## Pendientes de revisión manual -- IDC, RECONOCIMIENTO_MEDICO, INVESTIGACION_ACCIDENTE (S105)
+
+**IDC** (250 activos): 176 quedaron sin retipar (ya eran IDC reales),
+74 resueltos con fecha/tipo. De los 176: **solo 3 ambiguos reales**
+(comprobado por reclasificación directa del `ocr_text` cacheado
+contra el diccionario ya corregido -- la campaña de 3 shards corrió
+por error con código previo al fix IDC/CONTRATO de este mismo
+anexo, imagen `h28-ocr-batch-image-v3` congelada antes de ese commit;
+como los ambiguos nunca se escriben, no quedó ningún dato incorrecto
+en BD, solo el log de la campaña sobreestimó el problema).
+
+**RECONOCIMIENTO_MEDICO** (689 activos): 556 fechas corregidas, 17
+retipados, 21 sin nada, 0 ambiguos -- tipo mayormente bien
+clasificado desde el origen, como se sospechaba.
+
+**INVESTIGACION_ACCIDENTE** (661 activos): 173 fechas corregidas, 96
+retipados, 34 sin nada, 0 ambiguos.
+
+**PAGO_CORRIENTE** (1.762 documentos): fuera de alcance de
+`--retype` -- vive vinculado a `CompanyWorksite` (empresa y obra),
+nunca a `PersonIdentity`. Confirmado, no es un olvido.
