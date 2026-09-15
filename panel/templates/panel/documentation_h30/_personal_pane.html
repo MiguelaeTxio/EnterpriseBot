@@ -16,6 +16,9 @@ pantalla completa aparte, no un fragmento htmx de este pane.
     <a class="btn btn-sm btn-outline-secondary" href="{% url 'panel:circulars_list' %}">
         <i class="bi bi-envelope-paper"></i> Gestionar circulares
     </a>
+    <a class="btn btn-sm btn-outline-secondary" href="{% url 'panel:dossier_templates_manage' %}">
+        <i class="bi bi-folder2-open"></i> Gestionar plantillas de dosier
+    </a>
 </div>
 
 {% include "panel/documentation_h30/_personal_search_form.html" with search=search %}
@@ -52,6 +55,31 @@ haya al menos una persona seleccionada.
             {% endfor %}
         </select>
         <button type="button" class="btn btn-sm btn-primary" id="person-mass-notify-submit">Enviar notificación masiva</button>
+
+        <span class="vr mx-2"></span>
+
+        {% comment %}
+        H35 (S105): "Generar dosieres" para varios trabajadores a la
+        vez -- Miguel Ángel: "cuando estés en el listado de
+        trabajadores y digas: este, este y este, quiero generar
+        dosieres con esta plantilla para descargar, enviar por
+        correo." El modo de agrupación se pregunta explícitamente
+        (mismo criterio ya usado en la exportación a Excel), nunca se
+        asume.
+        {% endcomment %}
+        <select id="person-mass-dossier-template" class="form-select form-select-sm" style="width:auto;">
+            <option value="">Plantilla de dosier…</option>
+            {% for template in dossier_templates %}
+            <option value="{{ template.pk }}">{{ template.name }}</option>
+            {% endfor %}
+        </select>
+        <select id="person-mass-dossier-mode" class="form-select form-select-sm" style="width:auto;">
+            <option value="pdf_per_person">PDF por trabajador</option>
+            <option value="zip_per_person">ZIP por trabajador</option>
+            <option value="combined">Todo junto (un único PDF)</option>
+        </select>
+        <button type="button" class="btn btn-sm btn-primary" id="person-mass-dossier-download">Descargar dosieres</button>
+        <button type="button" class="btn btn-sm btn-outline-primary" id="person-mass-dossier-email">Enviar por correo</button>
     </div>
     <div id="person-mass-result" class="small mt-2"></div>
 </div>
@@ -240,6 +268,119 @@ haya al menos una persona seleccionada.
             }
         }).catch(() => {
             resultEl.innerHTML = '<div class="alert alert-danger py-1 px-2 mb-0">Error de red al generar notificaciones.</div>';
+        });
+    });
+
+    document.getElementById('person-mass-dossier-download').addEventListener('click', function () {
+        const templateId = document.getElementById('person-mass-dossier-template').value;
+        const mode = document.getElementById('person-mass-dossier-mode').value;
+        if (selection.size === 0) {
+            resultEl.innerHTML = '<div class="alert alert-warning py-1 px-2 mb-0">No hay personas seleccionadas.</div>';
+            return;
+        }
+        if (!templateId) {
+            resultEl.innerHTML = '<div class="alert alert-warning py-1 px-2 mb-0">Falta elegir la plantilla de dosier.</div>';
+            return;
+        }
+        const formData = new FormData();
+        selection.forEach((pk) => formData.append('person_ids', pk));
+        formData.append('template_id', templateId);
+        formData.append('mode', mode);
+        formData.append('action', 'download');
+        resultEl.innerHTML = '<div class="text-muted">Generando dosieres…</div>';
+        fetch("{% url 'panel:documentation_personal_dossier_mass_generate' %}", {
+            method: 'POST',
+            headers: {'X-CSRFToken': getCookie('csrftoken')},
+            body: formData,
+        }).then((r) => {
+            if (!r.ok) {
+                r.json().then((data) => {
+                    resultEl.innerHTML = `<div class="alert alert-danger py-1 px-2 mb-0">${data.error || 'Error al generar los dosieres.'}</div>`;
+                });
+                return;
+            }
+            const skippedRaw = r.headers.get('X-Mass-Skipped') || '[]';
+            const contentType = r.headers.get('Content-Type') || '';
+            const extension = contentType.includes('application/pdf') ? 'pdf' : 'zip';
+            r.blob().then((blob) => {
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `dosieres.${extension}`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                window.URL.revokeObjectURL(url);
+                let msg = '<div class="alert alert-success py-1 px-2 mb-0">Dosieres generados y descargados.</div>';
+                try {
+                    const skipped = JSON.parse(skippedRaw);
+                    if (skipped.length) {
+                        msg += `<div class="alert alert-warning py-1 px-2 mb-0 mt-1">${skipped.length} personas sin documentos vigentes de esta plantilla, omitidas: ` +
+                            skipped.join(', ') + '</div>';
+                    }
+                } catch (e) { /* sin omitidos que parsear */ }
+                resultEl.innerHTML = msg;
+            });
+        }).catch(() => {
+            resultEl.innerHTML = '<div class="alert alert-danger py-1 px-2 mb-0">Error de red al generar los dosieres.</div>';
+        });
+    });
+
+    document.getElementById('person-mass-dossier-email').addEventListener('click', function () {
+        const templateId = document.getElementById('person-mass-dossier-template').value;
+        if (selection.size === 0) {
+            resultEl.innerHTML = '<div class="alert alert-warning py-1 px-2 mb-0">No hay personas seleccionadas.</div>';
+            return;
+        }
+        if (!templateId) {
+            resultEl.innerHTML = '<div class="alert alert-warning py-1 px-2 mb-0">Falta elegir la plantilla de dosier.</div>';
+            return;
+        }
+        const bodyText = prompt('Cuerpo del mensaje (se enviará un correo independiente a cada trabajador, nunca mezclados):');
+        if (!bodyText) return;
+        const formData = new FormData();
+        selection.forEach((pk) => formData.append('person_ids', pk));
+        formData.append('template_id', templateId);
+        formData.append('action', 'email');
+        formData.append('body_html', '<p>' + bodyText.replace(/\n/g, '</p><p>') + '</p>');
+        resultEl.innerHTML = '<div class="text-muted">Generando correos…</div>';
+        fetch("{% url 'panel:documentation_personal_dossier_mass_generate' %}", {
+            method: 'POST',
+            headers: {'X-CSRFToken': getCookie('csrftoken')},
+            body: formData,
+        }).then((r) => {
+            if (!r.ok) {
+                r.json().then((data) => {
+                    resultEl.innerHTML = `<div class="alert alert-danger py-1 px-2 mb-0">${data.error || 'Error al generar los correos.'}</div>`;
+                });
+                return;
+            }
+            const skippedRaw = r.headers.get('X-Mass-Skipped') || '[]';
+            const errorsRaw = r.headers.get('X-Mass-Errors') || '[]';
+            r.blob().then((blob) => {
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'dosieres_correo.zip';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                window.URL.revokeObjectURL(url);
+                let msg = '<div class="alert alert-success py-1 px-2 mb-0">Correos generados (un .eml por trabajador, descargados en .zip).</div>';
+                try {
+                    const skipped = JSON.parse(skippedRaw);
+                    const errors = JSON.parse(errorsRaw);
+                    if (skipped.length) {
+                        msg += `<div class="alert alert-warning py-1 px-2 mb-0 mt-1">${skipped.length} sin documentos vigentes, omitidas: ` + skipped.join(', ') + '</div>';
+                    }
+                    if (errors.length) {
+                        msg += `<div class="alert alert-warning py-1 px-2 mb-0 mt-1">${errors.length} errores: ` + errors.join('; ') + '</div>';
+                    }
+                } catch (e) { /* sin datos que parsear */ }
+                resultEl.innerHTML = msg;
+            });
+        }).catch(() => {
+            resultEl.innerHTML = '<div class="alert alert-danger py-1 px-2 mb-0">Error de red al generar los correos.</div>';
         });
     });
 })();

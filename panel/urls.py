@@ -44,12 +44,13 @@ from panel.views_documentation_h30 import (
     PersonalDocumentSelectionZipView,
     PersonalDocumentTypeHistoryView,
     PersonalDossierEmailSendView,
+    DossierTemplateManageView,
+    DossierTemplateSaveView,
+    PersonalDossierMassGenerateView,
     PersonalDossierTemplateApplyView,
-    PersonalDossierTemplateCreateView,
     PersonalDossierTemplateDeleteView,
     PersonalDossierTemplateDuplicateView,
     PersonalDossierTemplateListView,
-    PersonalDossierTemplateUpdateView,
     PersonalEpiItemHistoryView,
     PersonalCreateView,
     PersonalIntakeExtractView,
@@ -443,18 +444,20 @@ urlpatterns = [
     path("documentacion/personal/<int:pk>/seleccion/zip/", PersonalDocumentSelectionZipView.as_view(), name="documentation_personal_document_selection_zip"),
     # H31 (S104): envío del dossier (selección o plantilla) como adjunto de un .eml, con cuerpo editable y firma del supervisor.
     path("documentacion/personal/<int:pk>/seleccion/email/", PersonalDossierEmailSendView.as_view(), name="documentation_personal_dossier_email_send"),
-    # H31 (S103): guardar la selección actual como plantilla de dossier nueva.
-    path("documentacion/personal/<int:pk>/plantillas/guardar/", PersonalDossierTemplateCreateView.as_view(), name="documentation_personal_dossier_template_create"),
-    # H31 (S103): gestor de plantillas de dossier de la empresa (fragmento del modal, abierto desde una ficha de persona concreta).
+    # H31 (S103): gestor de plantillas de dossier de la empresa -- fragmento de solo "Descargar", abierto desde una ficha de persona concreta.
     path("documentacion/personal/<int:pk>/plantillas/", PersonalDossierTemplateListView.as_view(), name="documentation_personal_dossier_template_list"),
     # H31 (S103): aplicar una plantilla de empresa sobre esta persona -- resuelve el vigente de cada tipo + la selección actual, descarga en el formato guardado.
     path("documentacion/personal/<int:pk>/plantillas/<int:template_pk>/aplicar/", PersonalDossierTemplateApplyView.as_view(), name="documentation_personal_dossier_template_apply"),
-    # H31 (S103): editar una plantilla (nombre, formato, o refrescar tipos desde la selección actual).
-    path("documentacion/personal/plantillas/<int:template_pk>/editar/", PersonalDossierTemplateUpdateView.as_view(), name="documentation_personal_dossier_template_update"),
     # H31 (S103): duplicar una plantilla con el formato contrario (PDF<->ZIP).
     path("documentacion/personal/plantillas/<int:template_pk>/duplicar/", PersonalDossierTemplateDuplicateView.as_view(), name="documentation_personal_dossier_template_duplicate"),
     # H31 (S103): borrar una plantilla de dossier.
     path("documentacion/personal/plantillas/<int:template_pk>/eliminar/", PersonalDossierTemplateDeleteView.as_view(), name="documentation_personal_dossier_template_delete"),
+    # H35 (S105): página completa de gestión de plantillas -- crear/editar, todos los tipos agrupados por familia y coloreados.
+    path("documentacion/plantillas-dosier/", DossierTemplateManageView.as_view(), name="dossier_templates_manage"),
+    path("documentacion/plantillas-dosier/guardar/", DossierTemplateSaveView.as_view(), name="dossier_template_create"),
+    path("documentacion/plantillas-dosier/<int:template_pk>/guardar/", DossierTemplateSaveView.as_view(), name="dossier_template_update"),
+    # H35 (S105): generar dosieres para varios trabajadores seleccionados a la vez, a partir de una plantilla -- descarga o envío por correo.
+    path("documentacion/personal/dosieres-masivo/", PersonalDossierMassGenerateView.as_view(), name="documentation_personal_dossier_mass_generate"),
     path("documentacion/personal/<int:pk>/parte-dia/<str:date_iso>/", PersonalWorkdayDetailView.as_view(), name="documentation_personal_workday_detail"),
     # H31 (S76) punto EPIs: historial completo de un EPI, bajo demanda.
     path("documentacion/personal/<int:pk>/historial-epi/<int:epi_id>/", PersonalEpiItemHistoryView.as_view(), name="documentation_personal_epi_history"),

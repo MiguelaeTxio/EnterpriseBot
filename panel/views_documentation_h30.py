@@ -529,6 +529,11 @@ class PersonalListFragmentView(CompanyUserRequiredMixin, View):
             is_active=True, domain__in=["PERSONAL", "BOTH"],
         ).exclude(content_html="").order_by("label")
         ctx["company_filter_choices"] = COMPANY_FILTER_CHOICES
+        # H35 (S105): plantillas de dosier para la nueva acción masiva
+        # "Generar dosieres" -- mismo criterio que epi_items/
+        # notification_types de arriba, cargado una única vez en la
+        # carga inicial de la pestaña.
+        ctx["dossier_templates"] = request.user.company_user.company.dossier_templates.order_by("name")
         return render(request, "panel/documentation_h30/_personal_pane.html", ctx)
 
 
@@ -1685,10 +1690,14 @@ class PersonalDossierTemplateListView(CompanyUserRequiredMixin, View):
     H31 (S103). GET: fragmento del "gestor de plantillas" -- lista las
     plantillas de TODA LA EMPRESA (compartidas por cualquier
     supervisor/administrador, corregido tras el diseño inicial que las
-    ataba a una sola persona), con acciones de descarga/duplicado/
-    edición/borrado. Se pide siempre desde la ficha de una persona
-    concreta (`pk`) para que "Descargar" sepa sobre quién aplicar cada
-    plantilla.
+    ataba a una sola persona). Se pide siempre desde la ficha de una
+    persona concreta (`pk`) para que "Descargar" sepa sobre quién
+    aplicar cada plantilla.
+
+    H35 (S105): solo expone ya "Descargar" -- crear/editar/duplicar/
+    borrar se trasladó a `DossierTemplateManageView`, su propia
+    página, porque un dosier es una tarea multi-trabajador y no tenía
+    sentido gestionarla desde la ficha de uno solo.
     """
 
     def get(self, request, pk):
@@ -1702,6 +1711,142 @@ class PersonalDossierTemplateListView(CompanyUserRequiredMixin, View):
             "panel/documentation_h30/_personal_dossier_template_list.html",
             {"person": person, "templates": templates},
         )
+
+
+# H35 (S105). Paleta fija, en el mismo orden que DocumentTypeCatalog.
+# FAMILY_CHOICES -- estable entre sesiones y entre cargas de página
+# (nunca recalculada por orden de aparición real, que variaria si se
+# anaden/quitan tipos de una familia). Un color por familia, elegidos
+# para que se distingan bien entre si sin depender de que el usuario
+# tenga buena vision del color (tonos claramente distintos, no solo
+# matices).
+_DOSSIER_FAMILY_COLORS = {
+    DocumentTypeCatalog.FAMILY_CIRCULACION: "#e3f2fd",
+    DocumentTypeCatalog.FAMILY_TECNICA_SEGURIDAD: "#fff3e0",
+    DocumentTypeCatalog.FAMILY_SEGUROS: "#e8f5e9",
+    DocumentTypeCatalog.FAMILY_FINANCIERO: "#f3e5f5",
+    DocumentTypeCatalog.FAMILY_BAJAS_MAQUINA: "#fbe9e7",
+    DocumentTypeCatalog.FAMILY_ADMINISTRATIVO: "#e0f7fa",
+    DocumentTypeCatalog.FAMILY_IDENTIDAD_PERSONAL: "#fff9c4",
+    DocumentTypeCatalog.FAMILY_LABORAL: "#ede7f6",
+    DocumentTypeCatalog.FAMILY_SALUD_BAJAS_PERSONA: "#ffebee",
+    DocumentTypeCatalog.FAMILY_PRL_FORMACION: "#e8eaf6",
+    DocumentTypeCatalog.FAMILY_OTROS_DOCUMENTOS: "#eeeeee",
+    DocumentTypeCatalog.FAMILY_MEDIA: "#f1f8e9",
+}
+
+
+class DossierTemplateManageView(CompanyUserRequiredMixin, View):
+    """
+    H35 (S105). GET: página completa (nunca modal/acordeón) de
+    gestión de plantillas de dosier -- Miguel Ángel, verbatim: "he
+    cometido el error de incluirlo ahí [la ficha de una persona]...
+    los dosieres son tareas que se realizan con varios trabajadores
+    [...] quiero una lista con todos los documentos para que se forme
+    la plantilla eligiendo de un casillero [...] todo el listado de
+    documentos [...] agrupados por familia, eso sí, agrupados por
+    familia, no en acordeón [...] todo visible agrupado por familia
+    con colores diferentes".
+
+    Sustituye por completo al gestor modal que vivía dentro de la
+    ficha de personal para CREAR/EDITAR/DUPLICAR/BORRAR -- la ficha
+    (`PersonalDossierTemplateListView`) sigue existiendo solo para
+    "Descargar" una plantilla ya creada, aplicada a esa persona en
+    concreto.
+
+    Todos los tipos documentales de dominio PERSONAL/BOTH activos se
+    muestran siempre, agrupados por familia y coloreados
+    (`_DOSSIER_FAMILY_COLORS`) -- a diferencia del gestor antiguo, que
+    solo ofrecía marcar los tipos que la persona cuya ficha estuviera
+    abierta en ese momento ya tuviera subidos.
+    """
+
+    def get(self, request):
+        company = request.user.company_user.company
+        templates = company.dossier_templates.prefetch_related(
+            "document_types",
+        ).order_by("created_at")
+
+        types_by_family = {}
+        doc_types = DocumentTypeCatalog.objects.filter(
+            is_active=True, domain__in=["PERSONAL", "BOTH"],
+        ).order_by("family", "label")
+        family_labels = dict(DocumentTypeCatalog.FAMILY_CHOICES)
+        for dt in doc_types:
+            family_code = dt.family or ""
+            group = types_by_family.setdefault(family_code, {
+                "label": family_labels.get(family_code, "Sin familia"),
+                "color": _DOSSIER_FAMILY_COLORS.get(family_code, "#f5f5f5"),
+                "types": [],
+            })
+            group["types"].append(dt)
+        # Orden estable: el mismo de FAMILY_CHOICES, "Sin familia" al final.
+        ordered_families = [
+            types_by_family[code]
+            for code, _ in DocumentTypeCatalog.FAMILY_CHOICES
+            if code in types_by_family
+        ]
+        if "" in types_by_family:
+            ordered_families.append(types_by_family[""])
+
+        return render(request, "panel/dossier_templates_h35/manage.html", {
+            "templates": templates,
+            "families": ordered_families,
+        })
+
+
+class DossierTemplateSaveView(CompanyUserRequiredMixin, View):
+    """
+    H35 (S105). POST: crea una plantilla nueva (sin `template_pk`) o
+    edita una existente (con `template_pk`) -- nombre, formato y la
+    lista completa de tipos documentales marcados en
+    `DossierTemplateManageView`. Sustituye por completo al viejo
+    `PersonalDossierTemplateCreateView`/`PersonalDossierTemplateUpdateView`
+    (que derivaban los tipos de la selección de casilleros de una
+    persona concreta -- ya no hace falta ese rodeo, el formulario
+    nuevo ofrece todos los tipos directamente).
+    """
+
+    def post(self, request, template_pk=None):
+        company = request.user.company_user.company
+        if template_pk:
+            template = get_object_or_404(
+                PersonalDossierTemplate, pk=template_pk, company=company,
+            )
+        else:
+            template = PersonalDossierTemplate(
+                company=company,
+                created_by=getattr(request.user, "company_user", None),
+            )
+
+        name = request.POST.get("name", "").strip()
+        if not name:
+            if template.pk:
+                name = template.name
+            else:
+                n = company.dossier_templates.count() + 1
+                name = "Dossier %d" % n
+
+        output_format = request.POST.get("output_format", "")
+        if output_format not in dict(PersonalDossierTemplate.FORMAT_CHOICES):
+            output_format = (
+                template.output_format if template.pk
+                else PersonalDossierTemplate.FORMAT_PDF
+            )
+
+        type_ids = request.POST.getlist("document_type_ids")
+        if not type_ids:
+            return JsonResponse(
+                {"ok": False, "error": "Selecciona al menos un tipo documental."},
+                status=400,
+            )
+
+        template.name = name
+        template.output_format = output_format
+        template.save()
+        template.document_types.set(type_ids)
+
+        return JsonResponse({"ok": True, "id": template.pk})
 
 
 class PersonalDossierTemplateApplyView(CompanyUserRequiredMixin, View):
@@ -3179,6 +3324,174 @@ class PersonalNotificationMassSendView(DocsUploadAccessMixin, View):
         )
         response["X-Mass-Created-Count"] = str(created_count)
         response["X-Mass-Errors"] = json.dumps(errors)
+        return response
+
+
+class PersonalDossierMassGenerateView(DocsUploadAccessMixin, View):
+    """
+    H35 (S105). POST: genera dosieres para VARIOS trabajadores
+    seleccionados a la vez (casillero del listado Personal) a partir
+    de UNA plantilla guardada -- Miguel Ángel, verbatim: "cuando estés
+    en el listado de trabajadores y digas: este, este y este, quiero
+    generar dosieres con esta plantilla para descargar, enviar por
+    correo." Mismo patrón que `EpiMassDeliveryView`/
+    `PersonalNotificationMassSendView` (bucle sobre `person_ids`),
+    reutilizando exactamente los mismos constructores de PDF/ZIP/.eml
+    que ya usa la ficha individual (`_resolve_template_entries`,
+    `_build_dossier_pdf_bytes`, `_build_dossier_zip_bytes`,
+    `_build_dossier_notification_eml`) -- nunca una segunda
+    implementación de la generación en sí.
+
+    `mode` (obligatorio para `action=download`, decisión explícita de
+    Miguel Ángel de PREGUNTAR en vez de asumir, mismo criterio ya
+    usado en la exportación a Excel):
+    - `pdf_per_person`: un PDF por trabajador, todos dentro de un
+      único ZIP de descarga.
+    - `zip_per_person`: un ZIP por trabajador (sus propios archivos
+      tal cual), todos dentro de un ZIP exterior.
+    - `combined`: un único PDF con los dosieres de todos los
+      trabajadores seleccionados, cada uno con su propia portada, uno
+      detrás de otro -- reutiliza `_build_dossier_pdf_bytes` persona a
+      persona y funde el resultado con `merge_pdfs()`, sin lógica de
+      maquetación nueva.
+
+    `action`:
+    - `download` (por defecto): sirve el archivo resultante
+      directamente.
+    - `email`: **siempre** un `.eml` INDEPENDIENTE por trabajador,
+      nunca mezclados en un mismo correo sea cual sea el `mode`
+      elegido -- mezclar la documentación personal de varias personas
+      en un único envío sería un problema real de privacidad, no solo
+      de formato. Se devuelven todos los `.eml` dentro de un único ZIP
+      de descarga (mismo patrón que `PersonalNotificationMassSendView`),
+      para que el supervisor los abra/reenvíe uno a uno desde su
+      propio Outlook -- sin envío SMTP real desde el servidor, mismo
+      criterio que el resto del envío de circulares/dossier de esta
+      plataforma.
+
+    Trabajadores sin ningún documento vigente de la plantilla elegida
+    se omiten (nunca abortan el resto del lote) y se listan en
+    `X-Mass-Skipped`.
+    """
+
+    def post(self, request):
+        import io
+        import json
+        import zipfile
+
+
+        template_pk = request.POST.get("template_id", "").strip()
+        person_ids = request.POST.getlist("person_ids")
+        mode = request.POST.get("mode", "pdf_per_person")
+        action = request.POST.get("action", "download")
+
+        if not template_pk:
+            return JsonResponse({"error": "Falta la plantilla."}, status=400)
+        if not person_ids:
+            return JsonResponse(
+                {"error": "No hay ningún trabajador seleccionado."}, status=400,
+            )
+        template = get_object_or_404(PersonalDossierTemplate, pk=template_pk)
+        people = list(PersonIdentity.objects.filter(pk__in=person_ids))
+
+        per_person = []
+        skipped = []
+        for person in people:
+            entries = _resolve_template_entries(person, template)
+            if entries:
+                per_person.append((person, entries))
+            else:
+                skipped.append(
+                    "%s %s, %s" % (
+                        person.first_surname, person.second_surname,
+                        person.given_name,
+                    ),
+                )
+
+        if not per_person:
+            return JsonResponse(
+                {
+                    "error": (
+                        "Ningún trabajador seleccionado tiene documentos "
+                        "vigentes de esta plantilla."
+                    ),
+                },
+                status=400,
+            )
+
+        today = timezone.localdate().isoformat()
+
+        if action == "email":
+            body_html = request.POST.get("body_html", "").strip()
+            if not body_html:
+                return HttpResponse(
+                    "Falta el cuerpo del mensaje (campo 'body_html').",
+                    status=400,
+                )
+            email_errors = []
+            zip_buffer = io.BytesIO()
+            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+                for person, entries in per_person:
+                    try:
+                        eml_bytes, filename = _build_dossier_notification_eml(
+                            person, entries, body_html,
+                            request.user.company_user,
+                        )
+                    except NotificationEmlError as exc:
+                        email_errors.append("%s: %s" % (person, exc))
+                        continue
+                    zf.writestr(filename, eml_bytes)
+            response = HttpResponse(
+                zip_buffer.getvalue(), content_type="application/zip",
+            )
+            response["Content-Disposition"] = (
+                f'attachment; filename="dosieres_correo_{today}.zip"'
+            )
+            response["X-Mass-Skipped"] = json.dumps(skipped)
+            response["X-Mass-Errors"] = json.dumps(email_errors)
+            return response
+
+        # action == "download"
+        try:
+            if mode == "combined":
+                pdf_parts = []
+                for person, entries in per_person:
+                    pdf_bytes, _filename = _build_dossier_pdf_bytes(
+                        person, entries,
+                    )
+                    pdf_parts.append(pdf_bytes)
+                combined_bytes = merge_pdfs(pdf_parts)
+                response = HttpResponse(
+                    combined_bytes, content_type="application/pdf",
+                )
+                response["Content-Disposition"] = (
+                    f'attachment; filename="dosieres_combinado_{today}.pdf"'
+                )
+                response["X-Mass-Skipped"] = json.dumps(skipped)
+                return response
+
+            zip_buffer = io.BytesIO()
+            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+                for person, entries in per_person:
+                    if mode == "zip_per_person":
+                        file_bytes, filename = _build_dossier_zip_bytes(
+                            person, entries,
+                        )
+                    else:
+                        file_bytes, filename = _build_dossier_pdf_bytes(
+                            person, entries,
+                        )
+                    zf.writestr(filename, file_bytes)
+        except (DossierBuildError, EmptyDocumentListError) as exc:
+            return HttpResponse(str(exc), status=400)
+
+        response = HttpResponse(
+            zip_buffer.getvalue(), content_type="application/zip",
+        )
+        response["Content-Disposition"] = (
+            f'attachment; filename="dosieres_{today}.zip"'
+        )
+        response["X-Mass-Skipped"] = json.dumps(skipped)
         return response
 
 

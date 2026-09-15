@@ -777,6 +777,18 @@ function openDocumentViewer(url) {
 document.getElementById('documentViewerModal').addEventListener('hidden.bs.modal', function () {
     document.getElementById('documentViewerFrame').src = '';
 });
+
+// H35 (S105): "Ver" DESDE DENTRO del historial usaba la misma
+// openDocumentViewer() de arriba, que cierra el modal de Historial a
+// propósito -- Miguel Ángel: al cerrar el visor, el documento
+// "desaparece" del historial (en realidad el propio Historial se
+// había cerrado, no el documento). En vez de investigar el
+// anidamiento de modales de Bootstrap, se elimina el problema de raíz
+// para este caso concreto: abrir en pestaña nueva, nunca tocar el
+// modal de Historial, que se queda abierto tal cual estaba.
+function openDocumentViewerFromHistory(url) {
+    window.open(url, '_blank');
+}
 </script>
 
 <script>
@@ -1188,31 +1200,11 @@ function sendDossierByEmail() {
     form.remove();
 }
 
-function saveSelectionAsTemplate() {
-    const name = document.getElementById('saveTemplateName').value.trim();
-    const outputFormat = document.getElementById('saveTemplateFormat').value;
-    const resultDiv = document.getElementById('saveTemplateResult');
-    const formData = new FormData();
-    formData.append('name', name);
-    formData.append('output_format', outputFormat);
-    fetch("{% url 'panel:documentation_personal_dossier_template_create' pk=person.pk %}", {
-        method: 'POST', body: formData,
-        headers: {'X-CSRFToken': getCookie('csrftoken')},
-    }).then(r => r.json()).then(data => {
-        if (data.ok) {
-            let msg = `<div class="alert alert-success py-1 px-2 small mb-0">Plantilla "${data.name}" guardada.</div>`;
-            if (data.skipped && data.skipped.length) {
-                msg += `<div class="alert alert-warning py-1 px-2 small mb-0 mt-1">Sin tipo catalogado, no incluidos: ${data.skipped.join(', ')}</div>`;
-            }
-            resultDiv.innerHTML = msg;
-            document.getElementById('saveTemplateName').value = '';
-        } else {
-            resultDiv.innerHTML = `<div class="alert alert-danger py-1 px-2 small mb-0">${data.error || 'Error al guardar la plantilla.'}</div>`;
-        }
-    }).catch(() => {
-        resultDiv.innerHTML = '<div class="alert alert-danger py-1 px-2 small mb-0">Error de red al guardar la plantilla.</div>';
-    });
-}
+// H35 (S105): gestión de plantillas (crear/editar/duplicar/borrar)
+// se trasladó a su propia página (panel:dossier_templates_manage) --
+// la ficha de una persona ya solo APLICA una plantilla existente,
+// nunca la gestiona. Las funciones de gestión que vivían aquí se
+// retiraron con el mismo movimiento.
 
 // H31 (S103). Gestor de plantillas -- mismo patrón de modal genérico
 // + fragmento cargado bajo demanda que documentSelectionPreviewModal.
@@ -1238,80 +1230,10 @@ function openDossierTemplateManager() {
 }
 
 function toggleTemplateEdit(pk) {
-    const row = document.getElementById('templateEditRow' + pk);
-    if (row) row.style.display = row.style.display === 'none' ? '' : 'none';
+    // H35 (S105): retirado -- editar/duplicar/borrar una plantilla ya
+    // solo se hace desde panel:dossier_templates_manage. La ficha de
+    // una persona solo aplica (descarga) una plantilla existente.
 }
-
-function saveTemplateEdit(pk) {
-    const name = document.getElementById('templateEditName' + pk).value.trim();
-    const outputFormat = document.getElementById('templateEditFormat' + pk).value;
-    const resultDiv = document.getElementById('templateEditResult' + pk);
-    const formData = new FormData();
-    formData.append('name', name);
-    formData.append('output_format', outputFormat);
-    fetch(`/panel/documentacion/personal/plantillas/${pk}/editar/`, {
-        method: 'POST', body: formData,
-        headers: {'X-CSRFToken': getCookie('csrftoken')},
-    }).then(r => r.json()).then(data => {
-        if (data.ok) {
-            loadDossierTemplateList();
-        } else {
-            resultDiv.innerHTML = `<div class="alert alert-danger py-1 px-2 small mb-0">${data.error || 'Error al guardar.'}</div>`;
-        }
-    }).catch(() => {
-        resultDiv.innerHTML = '<div class="alert alert-danger py-1 px-2 small mb-0">Error de red al guardar.</div>';
-    });
-}
-
-// H31 (S103). "Editar" qué documentos incluye una plantilla: en vez
-// de un selector nuevo, reutiliza la selección de casilleros ya
-// activa en la ficha de la persona indicada -- marca los documentos
-// que quieras que contenga la plantilla y pulsa este botón. La
-// plantilla es de empresa (no de persona), así que hay que decir
-// explícitamente de qué persona tomar la selección actual.
-function refreshTemplateTypes(pk, personPk) {
-    const resultDiv = document.getElementById('templateEditResult' + pk);
-    const formData = new FormData();
-    formData.append('refresh_types', '1');
-    formData.append('person_pk', personPk);
-    fetch(`/panel/documentacion/personal/plantillas/${pk}/editar/`, {
-        method: 'POST', body: formData,
-        headers: {'X-CSRFToken': getCookie('csrftoken')},
-    }).then(r => r.json()).then(data => {
-        if (data.ok) {
-            loadDossierTemplateList();
-        } else {
-            resultDiv.innerHTML = `<div class="alert alert-danger py-1 px-2 small mb-0">${data.error || 'Error al actualizar los tipos.'}</div>`;
-        }
-    }).catch(() => {
-        resultDiv.innerHTML = '<div class="alert alert-danger py-1 px-2 small mb-0">Error de red al actualizar los tipos.</div>';
-    });
-}
-
-function deleteTemplate(pk) {
-    if (!confirm('¿Eliminar esta plantilla de dossier?')) return;
-    fetch(`/panel/documentacion/personal/plantillas/${pk}/eliminar/`, {
-        method: 'POST',
-        headers: {'X-CSRFToken': getCookie('csrftoken')},
-    }).then(r => r.json()).then(data => {
-        if (data.ok) loadDossierTemplateList();
-    });
-}
-
-// H31 (S103). "Duplicar" crea una copia nueva con el formato
-// contrario (PDF<->ZIP) -- nunca toca la plantilla original. Miguel
-// Ángel: "¿cómo puedo duplicar una plantilla pero cambiando de zip a
-// pdf y viceversa?".
-function duplicateTemplateFlipFormat(pk) {
-    fetch(`/panel/documentacion/personal/plantillas/${pk}/duplicar/`, {
-        method: 'POST',
-        headers: {'X-CSRFToken': getCookie('csrftoken')},
-    }).then(r => r.json()).then(data => {
-        if (data.ok) loadDossierTemplateList();
-    });
-}
-
-
 // H31 (S77): detalle real de un día concreto de Partes de trabajo --
 // Miguel Ángel: "debe de poder verse el parte en sí". Mismo modal
 // genérico, nunca uno nuevo.

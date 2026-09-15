@@ -22,7 +22,7 @@ PersonalDocumentTypeHistoryView.
                 <span class="badge bg-success">Vigente</span>
                 {% endif %}
             </td>
-            <td><button type="button" class="btn btn-sm btn-outline-secondary" onclick="openDocumentViewer('{% url 'panel:documentation_document_view' pk=entry.pk %}')">Ver</button></td>
+            <td><button type="button" class="btn btn-sm btn-outline-secondary" onclick="openDocumentViewerFromHistory('{% url 'panel:documentation_document_view' pk=entry.pk %}')">Ver</button></td>
         </tr>
         {% empty %}
         <tr><td colspan="3" class="text-muted small py-3">Sin documentos de este tipo.</td></tr>
