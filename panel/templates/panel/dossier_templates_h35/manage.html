@@ -130,8 +130,9 @@ tener la misma plantilla en los dos formatos).
                 </div>
 
                 <div class="col-12 col-lg-4">
+                    <label class="form-label small mb-1 invisible d-block">&nbsp;</label>
                     <div class="card h-100">
-                        <div class="card-header small fw-bold">Visor -- tipos marcados ahora mismo</div>
+                        <div class="card-header fw-bold" id="draftPreviewTitle">Nueva plantilla</div>
                         <div class="card-body p-2" style="max-height: 420px; overflow-y: auto;">
                             <ul class="mb-0 small" id="draftPreviewList">
                                 <li class="text-muted">Ningún tipo marcado todavía.</li>
@@ -167,6 +168,10 @@ function refreshDraftPreview() {
     list.innerHTML = checked.length
         ? Array.from(checked).map(el => `<li>${el.dataset.label}</li>`).join('')
         : '<li class="text-muted">Ningún tipo marcado todavía.</li>';
+
+    const title = document.getElementById('draftPreviewTitle');
+    const name = document.getElementById('templateName').value.trim();
+    title.textContent = name || 'Nueva plantilla';
 }
 
 // --- Deteccion de cambios sin guardar ------------------------------------
