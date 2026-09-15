@@ -204,6 +204,16 @@ CONTENT_WINS = [
     # en el mismo PDF). Cuando aparece la frase especifica de ALTA,
     # gana siempre sobre la señal generica de PARTE_BAJA_MEDICA.
     ("ALTA", "PARTE_BAJA_MEDICA"),
+    # H35 (S105), hallazgo real (pk=26289/26291, formulario oficial
+    # "Informe de Datos para la Cotizacion"): el propio formulario IDC
+    # trae los campos "INICIO CONTRATO DE TRABAJO"/"FIN CONTRATO DE
+    # TRABAJO" como etiquetas de casilla (tipo de contrato, fechas),
+    # nunca un contrato real incrustado -- dispara el signal generico
+    # de CONTRATO ("CONTRATO DE TRABAJO") por simple coincidencia de
+    # frase. Confirmado con 2 muestras reales, mismo patron sistematico
+    # en las 2 -- IDC (senal especifica y decisiva, "INFORME DE DATOS
+    # PARA LA COTIZACION") gana siempre sobre CONTRATO.
+    ("IDC", "CONTRATO"),
 ]
 
 # H31 (S104), hallazgo real: algunos PDF de la migracion historica son
