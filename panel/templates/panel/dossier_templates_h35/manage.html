@@ -37,24 +37,26 @@ plantilla ya creada sobre una persona concreta.
     <div class="card mb-4">
         <div class="card-header d-flex justify-content-between align-items-center">
             <span>Plantillas guardadas</span>
-            <button type="button" class="btn btn-sm btn-outline-primary" onclick="previewActiveTemplate()">
-                <i class="bi bi-eye me-1"></i>Previsualizar la activa
+            <button type="button" class="btn btn-sm btn-outline-primary" id="previewActiveBtn" onclick="previewActiveTemplate()">
+                <i class="bi bi-eye me-1"></i>Previsualizar la plantilla activa
             </button>
         </div>
         <div class="card-body p-0">
             <div id="activeTemplatePreview" class="alert alert-secondary py-2 px-3 m-3 d-none">
-                <strong>Tipos incluidos:</strong>
+                <strong id="activeTemplatePreviewTitle">Tipos incluidos:</strong>
                 <ul class="mb-0" id="activeTemplatePreviewList"></ul>
             </div>
             <table class="table table-sm table-hover mb-0">
-                <thead><tr><th class="text-center">Activa</th><th>Nombre</th><th>Formato</th><th>Tipos incluidos</th><th></th></tr></thead>
+                <thead><tr><th style="width: 11rem;">Plantilla activa</th><th>Nombre</th><th>Formato</th><th>Tipos incluidos</th><th></th></tr></thead>
                 <tbody>
                     {% for template in templates %}
-                    <tr id="templateRow{{ template.pk }}" data-types="{% for dt in template.document_types.all %}{{ dt.label }}|{% endfor %}">
-                        <td class="text-center">
-                            <input type="radio" name="activeTemplateRadio" class="form-check-input dossier-active-radio"
-                                   {% if template.is_active %}checked{% endif %}
-                                   onclick="setActiveTemplate({{ template.pk }})">
+                    <tr id="templateRow{{ template.pk }}" data-name="{{ template.name|escapejs }}" data-types="{% for dt in template.document_types.all %}{{ dt.label }}|{% endfor %}">
+                        <td>
+                            {% if template.is_active %}
+                            <span class="badge bg-success" id="activeBadge{{ template.pk }}">✓ Activa</span>
+                            {% else %}
+                            <button type="button" class="btn btn-sm btn-outline-secondary dossier-set-active-btn" id="activeBtn{{ template.pk }}" onclick="setActiveTemplate({{ template.pk }})">Marcar como activa</button>
+                            {% endif %}
                         </td>
                         <td>{{ template.name }}</td>
                         <td><span class="badge bg-secondary">{{ template.get_output_format_display }}</span></td>
@@ -82,26 +84,23 @@ plantilla ya creada sobre una persona concreta.
         </div>
         <div class="card-body">
             <input type="hidden" id="templatePk" value="">
-            <div class="row g-2 mb-3">
+            <div class="mb-3">
+                <label class="form-label small mb-1">Nombre</label>
+                <input type="text" id="templateName" class="form-control form-control-sm" placeholder="Dossier N (automático si se deja en blanco)">
+            </div>
+            <div class="row g-2 align-items-end mb-3">
                 <div class="col-12 col-md-5">
-                    <label class="form-label small mb-0 d-block" style="min-height: 2.4em;">Nombre</label>
-                    <input type="text" id="templateName" class="form-control form-control-sm" placeholder="Dossier N (automático si se deja en blanco)">
-                </div>
-                <div class="col-12 col-md-3">
-                    <label class="form-label small mb-0 d-block" style="min-height: 2.4em;">Formato por defecto (uso individual desde una ficha)</label>
+                    <label class="form-label small mb-1">Formato por defecto (uso individual desde una ficha)</label>
                     <select id="templateFormat" class="form-select form-select-sm">
                         <option value="PDF">PDF único</option>
                         <option value="ZIP">ZIP</option>
                     </select>
                 </div>
-                <div class="col-12 col-md-4">
-                    <label class="form-label small mb-0 d-block" style="min-height: 2.4em;">&nbsp;</label>
-                    <div class="d-flex gap-2">
-                        <button type="button" class="btn btn-sm btn-outline-primary w-100" id="previewTemplateBtn" onclick="previewSelectedTypes()">
-                            <i class="bi bi-eye me-1"></i>Previsualizar
-                        </button>
-                        <button type="button" class="btn btn-sm btn-primary w-100" id="saveTemplateBtn" onclick="saveTemplate()">Guardar plantilla</button>
-                    </div>
+                <div class="col-12 col-md-7 d-flex gap-2">
+                    <button type="button" class="btn btn-sm btn-outline-primary flex-fill" id="previewTemplateBtn" onclick="previewSelectedTypes()">
+                        <i class="bi bi-eye me-1"></i>Previsualizar selección
+                    </button>
+                    <button type="button" class="btn btn-sm btn-primary flex-fill" id="saveTemplateBtn" onclick="saveTemplate()">Guardar plantilla</button>
                 </div>
             </div>
 
@@ -159,23 +158,49 @@ function setActiveTemplate(pk) {
     }).then(r => r.json()).then(data => {
         if (!data.ok) {
             alert(data.error || 'No se pudo marcar la plantilla como activa.');
+            return;
         }
+        // Vuelve a poner "Marcar como activa" en la fila que era activa hasta ahora.
+        document.querySelectorAll('[id^="activeBadge"]').forEach(badge => {
+            const oldPk = badge.id.replace('activeBadge', '');
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'btn btn-sm btn-outline-secondary dossier-set-active-btn';
+            btn.id = 'activeBtn' + oldPk;
+            btn.textContent = 'Marcar como activa';
+            btn.setAttribute('onclick', `setActiveTemplate(${oldPk})`);
+            badge.replaceWith(btn);
+        });
+        // Convierte el boton recien pulsado en la insignia "Activa".
+        const clickedBtn = document.getElementById('activeBtn' + pk);
+        if (clickedBtn) {
+            const badge = document.createElement('span');
+            badge.className = 'badge bg-success';
+            badge.id = 'activeBadge' + pk;
+            badge.textContent = '✓ Activa';
+            clickedBtn.replaceWith(badge);
+        }
+        document.getElementById('activeTemplatePreview').classList.add('d-none');
     }).catch(() => {
         alert('Error de red al marcar la plantilla como activa.');
     });
 }
 
 function previewActiveTemplate() {
-    const checked = document.querySelector('.dossier-active-radio:checked');
+    const badge = document.querySelector('[id^="activeBadge"]');
     const box = document.getElementById('activeTemplatePreview');
+    const title = document.getElementById('activeTemplatePreviewTitle');
     const list = document.getElementById('activeTemplatePreviewList');
-    if (!checked) {
-        list.innerHTML = '<li class="text-muted">Ninguna plantilla marcada como activa todavía -- marca una con el radio de la columna \'Activa\'.</li>';
+    if (!badge) {
+        title.textContent = 'No hay ninguna plantilla activa.';
+        list.innerHTML = '<li class="text-muted">Marca una plantilla como activa en la tabla de arriba antes de previsualizar.</li>';
         box.classList.remove('d-none');
         return;
     }
-    const row = checked.closest('tr');
+    const row = badge.closest('tr');
+    const name = row.dataset.name || '(sin nombre)';
     const types = (row.dataset.types || '').split('|').filter(Boolean);
+    title.textContent = `Plantilla activa: ${name} -- estos son los documentos que se incluirán:`;
     list.innerHTML = types.length
         ? types.map(t => `<li>${t}</li>`).join('')
         : '<li class="text-muted">Esta plantilla no tiene tipos incluidos.</li>';
