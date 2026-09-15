@@ -494,8 +494,9 @@ el patrón con un dry-run real, nunca por suposición.
 | Tipo | Total activos | Retipados | Fecha corregida | Ambiguos reales | Sin señal |
 |---|---|---|---|---|---|
 | `AUTONOMO` | 189 | 0 | 176 | 0 | 13 |
+| `MOD_145` | 125 (no 161 -- la hoja de ruta partía de una estimación previa a auditar, corregido aquí) | 0 | 114 | 4 | 7 |
 
-**13 SIN SEÑAL** (`skip_light_ocr_engines` activo, Cloud Vision
+**13 SIN SEÑAL de `AUTONOMO`** (`skip_light_ocr_engines` activo, Cloud Vision
 agotado sin resolver tipo ni fecha nueva -- conservan la fecha que ya
 tenían de la ingesta normal, no quedan sin fecha en absoluto):
 ```
@@ -512,6 +513,26 @@ tenían de la ingesta normal, no quedan sin fecha en absoluto):
 27954  ALVAREZ_DIAZ_ALEJANDRO_SERGIO_AUTONOMO_20130930.pdf
 27958  ALVAREZ_DIAZ_ALEJANDRO_SERGIO_AUTONOMO_20160801.pdf
 28016  ALVAREZ_DIAZ_JOSE_LUIS_AUTONOMO_20150730.pdf
+```
+
+**`MOD_145` (S106, script original -- Tesseract sí resuelve bien este
+tipo, sin necesidad de `skip_light_ocr_engines`), 4 AMBIGUOS:**
+```
+28459  BANDERA_DIAZ_YOLANDA_MARINA_MOD_145_20130101.pdf
+28548  MACIAS_LUNA_ROCIO_MOD_145_20130101_1.pdf
+37471  RUIZ_PORTILLO_MANUEL_MOD_145_19780827.pdf
+37798  MENA_RUIZ_DAVID_MOD_145_19750101.pdf
+```
+
+**7 SIN SEÑAL:**
+```
+27784  ALVAREZ_DIAZ_ADOLFO_MOD_145_20160718.pdf
+28278  GRANA_ALVAREZ_PALOMA_MOD_145_20180731.pdf
+35951  GUTIERREZ_MATEO_CRISTHIAN_MOD_145_20250423.pdf
+37447  ROSA_SANCHEZ_FRANCISCO_JOSE_MOD_145_20260622.pdf
+38014  VARGAS_MORA_JOSE_ANTONIO_MOD_145_20260605.pdf
+38172  ZAVALA_MANZANO_FRANCISCO_DE_P_MOD_145_20130101.pdf
+40020  CARVAJAL_GONZALEZ_FRANCISCO_MOD_145_20110101.pdf
 ```
 
 ---
@@ -534,19 +555,22 @@ como obsoleto en el historial, nunca borrarse).
 las familias `LABORAL`/`SALUD_BAJAS_PERSONA`, mismo procedimiento
 exacto que el resto de esta sesión** (dry-run de 10 primero, revisar
 el patrón, campaña completa -- ver nota de shards más abajo):
-~~`AUTONOMO` (189)~~ **CERRADO EN S106, ver "COMPLETADAS EN S106"
-arriba.** Quedan: `MOD_145` (161), `REGISTRO_JORNADA` (133), `CSS`
-(89), `VACACIONES` (74), `NOMINA` (73). Para cada uno, registrar en
-este anexo el mismo desglose que ya tienen `BAJA_PERSONAL`/`ALTA`/
+~~`AUTONOMO` (189)~~ **CERRADO EN S106.** ~~`MOD_145` (161)~~
+**CERRADO EN S106 (125 reales, ver "COMPLETADAS EN S106" arriba).**
+Quedan: `REGISTRO_JORNADA` (133), `CSS` (89), `VACACIONES` (74),
+`NOMINA` (73) -- **estimaciones de la hoja de ruta original, sin
+auditar: el recuento real puede diferir, como ya pasó con `MOD_145`
+(161 estimados, 125 reales).** Para cada uno, registrar en este
+anexo el mismo desglose que ya tienen `BAJA_PERSONAL`/`ALTA`/
 `CONTRATO`/`IDC`/`RECONOCIMIENTO_MEDICO`/`INVESTIGACION_ACCIDENTE`/
-`AUTONOMO` (retipados/fecha corregida/ambiguos con IDs/sin señal con
-IDs). **Nota de shards (S106): si el dry-run de un tipo muestra el
-mismo patrón de `AUTONOMO` (100% de escalado hasta Cloud Vision),
-activar `skip_light_ocr_engines` para ese tipo y usar
+`AUTONOMO`/`MOD_145` (retipados/fecha corregida/ambiguos con IDs/sin
+señal con IDs). **Nota de shards (S106): si el dry-run de un tipo
+muestra el mismo patrón de `AUTONOMO` (100% de escalado hasta Cloud
+Vision), activar `skip_light_ocr_engines` para ese tipo y usar
 `extract_personal_dates_bulk_fast.py` -- un único proceso en
 `h28-ocr-batch-1` puede bastar sin necesidad de congelar imagen ni
 crear VMs efímeras (verificado real: 189 documentos en ~7 minutos).
-Si el patrón es mixto (algunos resuelven con Tesseract/EasyOCR),
+Si el patrón es mixto o Tesseract resuelve bien (como `MOD_145`),
 usar el script original sin el flag.** **Criterio de cierre de este
 punto: los 6 tipos con su desglose comiteado en este anexo, cada uno
 con las listas de IDs pendientes reales (nunca solo el recuento).**
