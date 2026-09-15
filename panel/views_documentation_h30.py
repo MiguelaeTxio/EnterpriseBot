@@ -100,7 +100,7 @@ COMPANY_FILTER_CHOICES = [
     ("transgrual", "Transgrúal S.L.", [
         "TRANSGRUAL SL", "TRANSGRUAL S.L.", "TRANSGRUAL Y ASITENCIA",
     ]),
-    ("aldi", "Grúas Aldi S.L.", ["GRUALDI S.L"]),
+    ("aldi", "GRUALDI S.L.", ["GRUALDI S.L"]),
     ("asistencia_granada", "Asistencia y Grúas Granada", ["ASIST.GRUAS GRANADA"]),
     ("sin_empresa", "Sin empresa asignada", [""]),
 ]
