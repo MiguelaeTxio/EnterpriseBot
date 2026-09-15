@@ -1259,18 +1259,38 @@ def main():
                 # que el resultado que de verdad se escribiria: un
                 # tipo resuelto sin ambiguedad, O una fecha resoluble
                 # de verdad (_date_field_value no-None) -- nunca la
-                # mera presencia de "other".
+                # mera presencia de "other". Se usa para decidir si un
+                # resultado de un motor merece ADOPTARSE como el mejor
+                # visto hasta ahora (fecha sola ya cuenta), NUNCA para
+                # decidir si se sigue escalando de motor -- ver
+                # _type_settled().
                 if code_result and not is_amb:
                     return True
                 field, _ = _date_field_value(expiry_v, issue_v, other_v)
                 return field is not None
+
+            def _type_settled(code_result, is_amb):
+                # H35 (S105), corregido tras incidente real (162
+                # BAJA_PERSONAL activos re-auditados desde BD: 112
+                # 'sin señal' que el propio resumen en tiempo de
+                # ejecucion nunca conto como pendientes): la version
+                # anterior dejaba de escalar de motor en cuanto
+                # aparecia CUALQUIER fecha resoluble, aunque el TIPO
+                # siguiera sin resolver -- un documento que consigue
+                # fecha por contexto generico en Tesseract PSM
+                # automatico nunca llegaba a EasyOCR/Cloud Vision, que
+                # quizas si habrian encontrado la frase de tipo. El
+                # objetivo de --retype es el tipo, no solo la fecha --
+                # se sigue escalando de motor mientras el tipo no este
+                # resuelto sin ambiguedad, tenga ya fecha o no.
+                return bool(code_result) and not is_amb
 
             resolved_code, is_ambiguous, matched, expiry, issue, other = (
                 _try_resolve(text)
             )
             engine_used = "TESSERACT (PSM automatico)"
 
-            if not _is_usable(resolved_code, is_ambiguous, expiry, issue, other) and (
+            if not _type_settled(resolved_code, is_ambiguous) and (
                 name.lower().endswith((".pdf", ".jpg", ".jpeg", ".png"))
             ):
                 _log("  TESSERACT (PSM automatico) sin resultado usable -- "
@@ -1308,7 +1328,7 @@ def main():
                 else:
                     _log("    TESSERACT PSM 6 no devolvio texto")
 
-                if not _is_usable(resolved_code, is_ambiguous, expiry, issue, other):
+                if not _type_settled(resolved_code, is_ambiguous):
                     _log("    TESSERACT PSM 6 sin resultado usable -- "
                          "probando EASYOCR...")
                     try:
@@ -1344,7 +1364,7 @@ def main():
                     else:
                         _log("    EASYOCR no devolvio texto")
 
-                    if not _is_usable(resolved_code, is_ambiguous, expiry, issue, other):
+                    if not _type_settled(resolved_code, is_ambiguous):
                         _log("    EASYOCR sin resultado usable -- probando "
                              "CLOUD VISION (ultimo recurso)...")
                         try:
