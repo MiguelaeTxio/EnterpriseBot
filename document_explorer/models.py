@@ -2206,6 +2206,20 @@ class PersonalDossierTemplate(models.Model):
         related_name="created_dossier_templates",
         verbose_name="Creada por",
     )
+    is_active = models.BooleanField(
+        default=False,
+        verbose_name="Plantilla activa",
+        help_text=(
+            "S106. Marca cuál es la plantilla que el supervisor tiene "
+            "seleccionada ahora mismo para previsualizar y usar, "
+            "dentro del gestor de plantillas -- Miguel Ángel, "
+            "verbatim: 'no hay forma de decir: esta plantilla es la "
+            "que quiero usar y voy a previsualizar'. Solo una activa "
+            "por empresa a la vez -- "
+            "PersonalDossierTemplateSetActiveView desmarca las demás "
+            "de la misma empresa al marcar una nueva."
+        ),
+    )
     created_at = models.DateTimeField(
         auto_now_add=True,
         verbose_name="Fecha de creación",

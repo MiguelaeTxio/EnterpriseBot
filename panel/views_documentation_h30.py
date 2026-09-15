@@ -2013,6 +2013,25 @@ class PersonalDossierTemplateDeleteView(CompanyUserRequiredMixin, View):
         return JsonResponse({"ok": True})
 
 
+class PersonalDossierTemplateSetActiveView(CompanyUserRequiredMixin, View):
+    """
+    S106. POST: marca UNA plantilla de dosier como "activa" (la que
+    el supervisor tiene seleccionada para previsualizar/usar ahora
+    mismo dentro del gestor) -- solo una activa por empresa a la vez,
+    desmarca las demás. Ver `PersonalDossierTemplate.is_active`.
+    """
+
+    def post(self, request, template_pk):
+        company = request.user.company_user.company
+        template = get_object_or_404(
+            PersonalDossierTemplate, pk=template_pk, company=company,
+        )
+        company.dossier_templates.exclude(pk=template.pk).update(is_active=False)
+        template.is_active = True
+        template.save(update_fields=["is_active"])
+        return JsonResponse({"ok": True})
+
+
 class PersonalDocumentTypeHistoryView(CompanyUserRequiredMixin, View):
     """
     H31 (S76), punto 5 de la hoja de ruta. GET: historial COMPLETO
