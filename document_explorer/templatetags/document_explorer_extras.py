@@ -50,3 +50,26 @@ def basename(blob_name):
     if not blob_name:
         return ""
     return blob_name.rstrip("/").rsplit("/", 1)[-1]
+
+
+_IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif")
+
+
+@register.filter
+def is_image_document(name):
+    """
+    H35 (S105). True si `name` (DocumentIndexEntry.name) termina en
+    una extensión de imagen real -- respalda el botón "Usar como foto
+    de perfil" de la ficha de personal (PersonalSetAvatarView), que
+    solo debe aparecer junto a documentos que de verdad son una
+    imagen, nunca un PDF aunque su contenido sea una foto escaneada.
+    Mismo criterio de "es imagen" (extensión, nunca inferencia de
+    contenido) que ya usa el resto del proyecto.
+
+    ---
+
+    H35 (S105). True si `name` (DocumentIndexEntry.name) termina en
+    una extensión de imagen real -- respalda el botón "Usar como foto
+    de perfil" de la ficha de personal (PersonalSetAvatarView).
+    """
+    return bool(name) and name.lower().endswith(_IMAGE_EXTENSIONS)

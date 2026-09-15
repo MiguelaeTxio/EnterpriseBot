@@ -1,5 +1,6 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation_h30/_personal_detail.html #}
 {% extends "panel/base.html" %}
+{% load document_explorer_extras %}
 
 {% block title %}{{ person.first_surname }} {{ person.second_surname }} — Documentación{% endblock %}
 {% block page_title %}{{ person.first_surname }} {{ person.second_surname }}, {{ person.given_name }} ({{ person.dni }})<br><small class="text-muted">{{ person.employer_company|default:"Sin empresa asignada" }}</small>{% endblock %}
@@ -261,6 +262,9 @@ y se habilita "Guardar".
             </td>
             <td>
                 <button type="button" class="btn btn-sm btn-outline-secondary" onclick="openDocumentViewer('{% url 'panel:documentation_document_view' pk=entry.pk %}')">Ver</button>
+                {% if entry.name|is_image_document %}
+                <button type="button" class="btn btn-sm btn-outline-success" onclick="usarComoFotoPerfil({{ entry.pk }}, this)" title="Usar esta imagen como foto de perfil"><i class="bi bi-person-badge"></i></button>
+                {% endif %}
                 <button type="button" class="btn btn-sm btn-outline-primary"
                         onclick="openUploadForm('{{ entry.document_type.code }}')">Actualizar</button>
                 <button type="button" class="btn btn-sm btn-outline-info"
@@ -465,6 +469,9 @@ vacaciones).
             </td>
             <td>
                 <button type="button" class="btn btn-sm btn-outline-secondary" onclick="openDocumentViewer('{% url 'panel:documentation_document_view' pk=entry.pk %}')">Ver</button>
+                {% if entry.name|is_image_document %}
+                <button type="button" class="btn btn-sm btn-outline-success" onclick="usarComoFotoPerfil({{ entry.pk }}, this)" title="Usar esta imagen como foto de perfil"><i class="bi bi-person-badge"></i></button>
+                {% endif %}
                 <button type="button" class="btn btn-sm btn-outline-primary"
                         onclick="openUploadForm('{{ entry.document_type.code }}')">Actualizar</button>
                 <button type="button" class="btn btn-sm btn-outline-info"
@@ -549,6 +556,9 @@ vez de una lista única sin estructura.
                             </td>
                             <td>
                                 <button type="button" class="btn btn-sm btn-outline-secondary" onclick="openDocumentViewer('{% url 'panel:documentation_document_view' pk=entry.pk %}')">Ver</button>
+                                {% if entry.name|is_image_document %}
+                                <button type="button" class="btn btn-sm btn-outline-success" onclick="usarComoFotoPerfil({{ entry.pk }}, this)" title="Usar esta imagen como foto de perfil"><i class="bi bi-person-badge"></i></button>
+                                {% endif %}
                                 <button type="button" class="btn btn-sm btn-outline-primary"
                                         onclick="openUploadForm('{{ entry.document_type.code }}')">Actualizar</button>
                                 <button type="button" class="btn btn-sm btn-outline-info"
@@ -904,6 +914,32 @@ function deleteDocument(pk, btn) {
         headers: {'X-CSRFToken': getCookie('csrftoken')},
     }).then(r => r.json()).then(data => {
         if (data.ok) btn.closest('tr').remove();
+    });
+}
+
+// H35 (S105): "usar como foto de perfil" sobre un documento-imagen ya
+// indexado -- Miguel Ángel: "en los documentos que son imágenes hay
+// que añadir la posibilidad de usar como foto de perfil". Recarga la
+// página al terminar (mismo patrón que subir/entregar EPI/actualizar
+// ficha en este mismo archivo) en vez de recomponer a mano el bloque
+// del avatar, que cambia de <i> a <img> según haya avatar o no.
+function usarComoFotoPerfil(entryId, btn) {
+    if (!confirm('¿Usar esta imagen como foto de perfil?')) return;
+    btn.disabled = true;
+    fetch("{% url 'panel:documentation_personal_set_avatar' pk=person.pk %}", {
+        method: 'POST',
+        headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/x-www-form-urlencoded'},
+        body: `entry_id=${entryId}`,
+    }).then(r => r.json()).then(data => {
+        if (data.ok) {
+            location.reload();
+        } else {
+            alert(data.error || 'No se pudo fijar la foto de perfil.');
+            btn.disabled = false;
+        }
+    }).catch(() => {
+        alert('Error de red al fijar la foto de perfil.');
+        btn.disabled = false;
     });
 }
 

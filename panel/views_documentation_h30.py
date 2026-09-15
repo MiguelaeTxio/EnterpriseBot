@@ -1162,10 +1162,17 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
         # H31 (S74). Avatar -- reutiliza el mismo mecanismo genérico
         # domain_content_type/domain_object_id que cualquier otro
         # documento vinculado, filtrando por el código de catálogo
-        # IMAGEN ya sembrado (H30 S67). Sin campo dedicado nuevo en
-        # PersonIdentity -- decisión confirmada por Miguel Ángel en
-        # S73. El más reciente gana si hay más de una imagen vigente.
-        avatar = entries.filter(document_type__code="IMAGEN").first()
+        # IMAGEN ya sembrado (H30 S67). El más reciente gana si hay
+        # más de una imagen vigente.
+        # H35 (S105): Miguel Ángel pidió poder usar como foto de
+        # perfil cualquier documento-imagen YA indexado con su tipo
+        # real (DNI, carnet de gruista, etc.) sin perder esa
+        # clasificación -- el mecanismo IMAGEN de S73 reasignaba el
+        # tipo, así que no servía para esto. `avatar_document` (campo
+        # dedicado nuevo) tiene prioridad si está relleno; si no, cae
+        # al mecanismo IMAGEN de siempre, sin romper fichas ya usando
+        # "Cambiar foto".
+        avatar = person.avatar_document or entries.filter(document_type__code="IMAGEN").first()
         doc_types = DocumentTypeCatalog.objects.filter(
             is_active=True, domain__in=["PERSONAL", "BOTH"],
         ).order_by("label")
@@ -2714,6 +2721,67 @@ class PersonalUpdateView(DocsUploadAccessMixin, View):
             "ok": True,
             "person": {f: getattr(person, f) for f in self.EDITABLE_FIELDS},
         })
+
+
+class PersonalSetAvatarView(DocsUploadAccessMixin, View):
+    """
+    H35 (S105). POST: fija `PersonIdentity.avatar_document` a un
+    `DocumentIndexEntry`-imagen ya indexado de esa misma persona --
+    Miguel Ángel, verbatim: "en los documentos que son imágenes hay
+    que añadir la posibilidad de usar como foto de perfil".
+
+    Deliberadamente NUNCA toca `document_type` del documento elegido
+    -- a diferencia del mecanismo antiguo (código de catálogo IMAGEN,
+    S73/S74), que reasignaba el tipo y por tanto le habría hecho
+    perder su clasificación real (un DNI o un carnet de gruista usado
+    como foto dejaría de ser DNI/CARNET_GRUISTA). Mismo control de
+    acceso que subir/eliminar/editar documentos de la ficha
+    (DocsUploadAccessMixin) -- fijar el avatar es una acción de
+    escritura sobre la ficha, no una simple consulta.
+
+    Solo admite un documento que:
+    - Pertenezca de verdad a esa persona (mismo domain_content_type/
+      domain_object_id que cualquier otro documento vinculado --
+      nunca se acepta a ciegas un id de otra ficha aunque llegue en
+      el POST).
+    - Tenga extensión de imagen real -- un PDF no puede ser el avatar
+      aunque su contenido sea una foto escaneada, mismo criterio que
+      el resto del proyecto usa para "es imagen" (extensión, nunca
+      inferencia de contenido).
+    """
+
+    IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif")
+
+    def post(self, request, pk):
+        person = get_object_or_404(PersonIdentity, pk=pk)
+        entry_id = request.POST.get("entry_id", "").strip()
+        if not entry_id:
+            return JsonResponse(
+                {"ok": False, "error": "Falta entry_id."}, status=400,
+            )
+        person_ct = ContentType.objects.get_for_model(PersonIdentity)
+        entry = get_object_or_404(
+            DocumentIndexEntry,
+            pk=entry_id,
+            domain_content_type=person_ct,
+            domain_object_id=person.id,
+            deleted_at__isnull=True,
+            purged_at__isnull=True,
+        )
+        if not entry.name.lower().endswith(self.IMAGE_EXTENSIONS):
+            return JsonResponse(
+                {"ok": False, "error": "Ese documento no es una imagen."},
+                status=400,
+            )
+        person.avatar_document = entry
+        person.save(update_fields=["avatar_document"])
+        return JsonResponse({
+            "ok": True,
+            "avatar_url": reverse(
+                "panel:documentation_document_view", args=[entry.pk],
+            ),
+        })
+
 
 
 class NotificationEmlError(Exception):

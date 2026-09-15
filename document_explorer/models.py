@@ -1508,6 +1508,28 @@ class PersonIdentity(models.Model):
         ),
     )
 
+    # ------------------------------------------------------------------
+    # H35 (S105). Foto de perfil elegida entre los documentos-imagen ya
+    # indexados de esta persona -- Miguel Angel: "en los documentos que
+    # son imagenes hay que anadir la posibilidad de usar como foto de
+    # perfil". Campo dedicado, NUNCA reutiliza el DocumentTypeCatalog
+    # "IMAGEN" que ya usaba el avatar (ese mecanismo reasignaba el TIPO
+    # del documento a IMAGEN, perdiendo su clasificacion real -- un DNI
+    # o un carnet de gruista usado como foto dejaria de ser DNI/CARNET_
+    # GRUISTA en el sistema, justo lo contrario del trabajo de todo H35).
+    # Este campo no toca `document_type` del documento elegido en
+    # absoluto. `PersonalDetailView` prioriza este campo sobre el
+    # antiguo mecanismo IMAGEN si esta relleno (ver vista para el
+    # fallback exacto).
+    avatar_document = models.ForeignKey(
+        DocumentIndexEntry,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+        verbose_name="Documento-imagen usado como foto de perfil",
+    )
+
     class Meta:
         verbose_name = "Identidad de personal"
         verbose_name_plural = "Identidades de personal"

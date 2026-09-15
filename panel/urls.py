@@ -58,6 +58,7 @@ from panel.views_documentation_h30 import (
     PersonalNotificationSendView,
     PersonalResultsFragmentView,
     PersonalUpdateView,
+    PersonalSetAvatarView,
     PersonalWorkdayDetailView,
     SubjectDocumentUploadView,
     VacationPeriodCreateFragmentView,
@@ -461,6 +462,7 @@ urlpatterns = [
     path("documentacion/epis/<int:epi_id>/ficha-tecnica/", EpiTechnicalSheetUploadView.as_view(), name="documentation_epi_technical_sheet_upload"),
     # H31 (S74): edición de ficha de persona (given_name/first_surname/second_surname/phone/email).
     path("documentacion/personal/<int:pk>/actualizar/", PersonalUpdateView.as_view(), name="documentation_personal_update"),
+    path("documentacion/personal/<int:pk>/avatar/", PersonalSetAvatarView.as_view(), name="documentation_personal_set_avatar"),
     # H31 (S74) punto 3: entrega individual de EPI desde la ficha.
     path("documentacion/personal/<int:pk>/entregar-epi/", EpiIndividualDeliveryView.as_view(), name="documentation_personal_epi_delivery"),
     path("documentacion/personal/<int:pk>/notificar/", PersonalNotificationSendView.as_view(), name="documentation_personal_notify"),
