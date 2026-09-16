@@ -1,0 +1,131 @@
+# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/.github/workflows/db_query.yml
+name: Consulta SQL de solo lectura (EnterpriseBot)
+
+# H35 (S107). Disparado a mano por Claude (workflow_dispatch) via la
+# API de GitHub -- api.github.com si esta permitida en el sandbox de
+# cualquier sesion, ssh.pythonanywhere.com/el host de MySQL no. Este
+# workflow corre en un runner de GitHub (red completa, sin ninguna
+# restriccion), abre una sesion SSH directa a PythonAnywhere con una
+# clave dedicada de solo este proposito (nunca la clave personal de
+# Miguel Angel ni la de deploy.yml) y ejecuta el SQL recibido con un
+# usuario MySQL de solo lectura (SELECT unicamente, sin permisos de
+# escritura a nivel de la propia base de datos -- segunda capa de
+# seguridad real, no solo la validacion de texto de abajo). El
+# resultado se comitea a un archivo fijo del repo; Claude lo lee con
+# un `git pull` normal, sin ningun paso intermedio de Miguel Angel.
+#
+# NUNCA sustituye a un Comando S cuando la operacion necesita pasar
+# por logica real de Django (apply_personal_canonical_rename,
+# move_entry, evaluate_substitution...) -- esto es solo para lecturas
+# SQL puras.
+
+on:
+  workflow_dispatch:
+    inputs:
+      sql_query:
+        description: "Consulta SQL de solo lectura (SELECT/SHOW/DESCRIBE unicamente)"
+        required: true
+        type: string
+
+concurrency:
+  group: enterprisebot-db-readonly-query
+  cancel-in-progress: false
+
+jobs:
+  query:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validar que la consulta es de solo lectura
+        # Defensa en profundidad, capa 1 de 2 -- la capa 2 real es que
+        # el usuario MySQL solo tiene GRANT SELECT, así que aunque
+        # esta validación de texto se saltara con algo raro, la propia
+        # base de datos rechazaría cualquier escritura.
+        env:
+          SQL_QUERY: ${{ inputs.sql_query }}
+        run: |
+          TRIMMED=$(printf '%s' "$SQL_QUERY" | sed -E 's/^[[:space:]]+//' | tr '[:lower:]' '[:upper:]')
+          if ! printf '%s' "$TRIMMED" | grep -qE '^(SELECT|SHOW|DESCRIBE|DESC|EXPLAIN)([[:space:]]|$)'; then
+            echo "⛔ RECHAZADO: la consulta no empieza por SELECT/SHOW/DESCRIBE/EXPLAIN." >&2
+            exit 1
+          fi
+          # Rechazar punto y coma salvo uno solo al final (bloquea
+          # consultas apiladas del tipo "SELECT 1; DROP TABLE ...").
+          BODY=$(printf '%s' "$SQL_QUERY" | sed -E 's/;[[:space:]]*$//')
+          if printf '%s' "$BODY" | grep -q ';'; then
+            echo "⛔ RECHAZADO: no se permite más de una sentencia por consulta." >&2
+            exit 1
+          fi
+          echo "Consulta validada, primera palabra: $(printf '%s' "$TRIMMED" | awk '{print $1}')"
+
+      - name: Preparar clave SSH dedicada (solo lectura)
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.PA_DB_READONLY_SSH_PRIVATE_KEY }}" > ~/.ssh/pa_readonly_key
+          chmod 600 ~/.ssh/pa_readonly_key
+          ssh-keyscan -H ssh.pythonanywhere.com >> ~/.ssh/known_hosts
+
+      - name: Ejecutar la consulta en PythonAnywhere (usuario MySQL de solo lectura)
+        env:
+          SQL_QUERY: ${{ inputs.sql_query }}
+          DB_RO_USER: ${{ secrets.PA_DB_READONLY_USER }}
+          DB_RO_PASSWORD: ${{ secrets.PA_DB_READONLY_PASSWORD }}
+        run: |
+          set -o pipefail
+          printf '%s\n' "$SQL_QUERY" > /tmp/query.sql
+          scp -i ~/.ssh/pa_readonly_key /tmp/query.sql \
+            MiguelAeTxio@ssh.pythonanywhere.com:/tmp/db_readonly_query_${{ github.run_id }}.sql
+          ssh -i ~/.ssh/pa_readonly_key MiguelAeTxio@ssh.pythonanywhere.com "
+            set -e
+            mysql -u '$DB_RO_USER' -p'$DB_RO_PASSWORD' \
+              -h MiguelAeTxio.mysql.pythonanywhere-services.com \
+              --table 'MiguelAeTxio\$enterprisebot' \
+              < /tmp/db_readonly_query_${{ github.run_id }}.sql
+            rm -f /tmp/db_readonly_query_${{ github.run_id }}.sql
+          " | tee /tmp/query_output.txt
+
+      - name: Comitear el resultado al repo
+        if: always()
+        run: |
+          mkdir -p DOCS/SESSION/QUERY_RESULTS
+          {
+            echo "# Resultado de consulta SQL de solo lectura"
+            echo ""
+            echo "**Ejecutada:** $(date -u '+%Y-%m-%d %H:%M UTC')"
+            echo "**Run:** ${{ github.run_id }}"
+            echo ""
+            echo "### Consulta"
+            echo '```sql'
+            printf '%s\n' "${{ inputs.sql_query }}"
+            echo '```'
+            echo ""
+            echo "### Resultado"
+            echo '```'
+            cat /tmp/query_output.txt 2>/dev/null || echo "(sin salida capturada -- revisar el log del Action)"
+            echo '```'
+          } > DOCS/SESSION/QUERY_RESULTS/ultimo_resultado.md
+          git config user.email "miguelaetxio@users.noreply.github.com"
+          git config user.name "MiguelaeTxio"
+          git add DOCS/SESSION/QUERY_RESULTS/ultimo_resultado.md
+          git diff --staged --quiet || git commit -m "chore: resultado de consulta SQL de solo lectura (run ${{ github.run_id }})"
+          git push
+
+      - name: Resumen en el propio Action
+        if: always()
+        run: |
+          {
+            echo "## Consulta SQL de solo lectura"
+            echo '```sql'
+            printf '%s\n' "${{ inputs.sql_query }}"
+            echo '```'
+            echo "### Resultado"
+            echo '```'
+            cat /tmp/query_output.txt 2>/dev/null || echo "(sin salida -- ver pasos anteriores)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Limpiar clave SSH
+        if: always()
+        run: rm -f ~/.ssh/pa_readonly_key
