@@ -96,6 +96,15 @@ CONTENT_SIGNALS = {
         # Cabecera "Reconocimiento Medico Laboral" formato Grupo MPE
         # (pk=37408):
         "RECONOCIMIENTO MEDICO LABORAL",
+        # H35 (S108), tercera plantilla real confirmada por inspeccion
+        # VISUAL (no de OCR -- Tesseract fallaba con gibberish por el
+        # fondo de seguridad tipo guilloche del papel oficial) de
+        # pk=40898/40953: "CERTIFICADO MEDICO OFICIAL" del Consejo
+        # General de Colegios Oficiales de Medicos de España,
+        # certificando aptitud para operador de grua movil. ocr_text
+        # de ambos regenerado a mano con la transcripcion real tras la
+        # lectura visual -- ver Comando S de la sesion.
+        "SIENDO APTO PARA ACTUAR COMO OPERADOR DE GRUA",
     ],
     "NOMINA": ["RECIBO DE SALARIOS", "LIQUIDO A PERCIBIR", "PERIODO DE LIQUIDACION"],
     "CONTRATO": ["CONTRATO DE TRABAJO", "DECLARAN QUE REUNEN LOS REQUISITOS"],
@@ -289,6 +298,13 @@ CONTENT_WINS = [
     ("PARTE_BAJA_MEDICA", "DNI"),
     ("CARNET_GRUISTA", "DNI"),
     ("CARNET_CONDUCIR", "DNI"),
+    # H35 (S108), hallazgo real (pk=40898/40953): el "CERTIFICADO
+    # MEDICO OFICIAL" de aptitud psicofisica cita textualmente
+    # "OPERADOR DE GRUA MOVIL" dentro de su propia frase ancla --
+    # coincide por casualidad con la senal de CARNET_GRUISTA (el
+    # carnet real, un documento distinto). El certificado medico
+    # de aptitud nunca es el carnet en si -- gana siempre.
+    ("RECONOCIMIENTO_MEDICO", "CARNET_GRUISTA"),
     ("CONTRATO", "ALTA"),
     # S104, corregido tras revisar muestras: FORMACION (senal
     # estructural, "ficha de inscripcion" + horas en el titulo) gana
