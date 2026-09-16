@@ -194,6 +194,52 @@ CONTENT_SIGNALS = {
         # de declaracion de accidentes de trabajo. Cubre tambien la
         # variante "CON BAJA" al ser solo el prefijo comun.
         "RELACION DE ACCIDENTES DE TRABAJO",
+        # H35 (S108), cierre de los 71 IDs "sin senal" (excluido
+        # pk=26847, deuda tecnica 4.21) de la hoja de ruta de S107.
+        # Confirmadas contra el texto real de cada muestra:
+        # Formulario oficial Delt@ "PARTE DE ACCIDENTE DE TRABAJO"
+        # (18 muestras reales: pk=26342/26345/26352/26355/26422/26436/
+        # 26518/26524/26526/26544/26549/26714/26751/26834/26848/26851/
+        # 26978/26982):
+        "PARTE DE ACCIDENTE DE TRABAJO",
+        # Formulario interno "REGISTRO DE ACCIDENTES" de la empresa,
+        # manuscrito/OCR muy degradado en casi todas las muestras pero
+        # con esta etiqueta de formulario siempre presente (13 muestras
+        # reales: pk=26337/26433/26514/26523/26525/26538/26551/26565/
+        # 26600/26749/27019/27154/27201):
+        "QUE/COMO OCURRIO",
+        # Informe real de investigacion (formato MPE/anp -- 9 muestras
+        # reales: pk=26434/26566/26567/26568/26750/26976/27009/27169/
+        # 35788):
+        "INFORME DE INVESTIGACION DE ACCIDENTE",
+        # Carta de reclamacion de documentacion de un accidente concreto
+        # a la mutua (pk=27103):
+        "PARTE ACCIDENTE LABORAL DE SU TRABAJADOR",
+        # Correspondencia real de la aseguradora de RC de la empresa
+        # sobre un siniestro/accidente concreto de un trabajador
+        # (distinto del caso pk=26847 de la deuda tecnica 4.21, que es
+        # una poliza de empresa sin accidente concreto asociado --
+        # aqui si hay una fecha de ocurrencia y un trabajador real
+        # ligados al siniestro, pk=26845):
+        "CENTRO OPERATIVO DE SINIESTROS",
+        # Parte de asistencia sanitaria sin baja tras un accidente
+        # laboral real (Fraternidad Muprespa, pk=27158) -- distinto de
+        # PARTE_BAJA_MEDICA (esa es cuando SI hay incapacidad temporal
+        # real, esta es justo la constancia de que NO la hubo):
+        "SE HA PRESTADO ASISTENCIA SANITARIA SIN BAJA MEDICA",
+    ],
+    # H35 (S108). Confirmado con 14 muestras reales durante el cierre
+    # del punto 2 de INVESTIGACION_ACCIDENTE (ver migracion 0094 para
+    # el alta de catalogo) -- ninguna de las dos plantillas reales es
+    # una investigacion de accidente, ambas son constancia de
+    # informacion PRL recibida de un tercero (cliente/obra).
+    "INFORMACION_RIESGOS_PRL_TERCEROS": [
+        # Certificado Endesa (10 muestras: pk=27031/27032/27037/27038/
+        # 27039/27040/27047/27048/27049/27050):
+        "CERTIFICADO DE INFORMACION DE LOS RIESGOS DE LAS INSTALACIONES",
+        # Entrega de Plan de Seguridad y Salud de obra F.C.C. (4
+        # muestras: pk=27068/27078/27082/27087):
+        "COPIA DEL PLAN DE SEGURIDAD Y SALUD",
     ],
     "EXPEDIENTE_DISCIPLINARIO": [
         # H35 (S105), confirmado con muestra real (pk=39463): carta de
