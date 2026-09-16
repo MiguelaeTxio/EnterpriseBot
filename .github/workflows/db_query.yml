@@ -48,6 +48,9 @@ concurrency:
   group: enterprisebot-db-readonly-query
   cancel-in-progress: false
 
+permissions:
+  contents: write
+
 jobs:
   query:
     runs-on: ubuntu-latest
