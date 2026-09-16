@@ -1,42 +1,15 @@
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V35.md
 
-## ⚠️ DATO CRÍTICO DE CONTINUIDAD -- LEER ANTES DE CUALQUIER OTRA COSA
+## ⚠️ DATO CRÍTICO DE CONTINUIDAD, YA RESUELTO -- CERRADO EN S106, CONFIRMADO DE NUEVO EN S107
 
-**Registro real afectado:** `PersonIdentity`, DNI `74633524L`, Miguel
-Ángel Muñoz Cara (id original 249 -- ya no existe, ver más abajo).
-
-**Motivo:** durante esta sesión se detectó un fallo real de ingesta
-en la propia ficha de Miguel Ángel -- 3 de sus 4 documentos indexados
-como `CONTRATO` eran en realidad **nóminas** mal clasificadas al
-subirlas (mismo `blob_name` repetido en varias filas de índice, un
-síntoma real de que la re-subida del mismo archivo generaba una fila
-de índice nueva en vez de actualizar la existente). Para reproducir el
-fallo y probar la ingesta de cero, se hizo lo siguiente, en este
-orden: (1) los 18 documentos de su ficha se enviaron a papelera
-(`trash_dossier_entry`, recuperable); (2) a petición explícita
-posterior de Miguel Ángel ("borra mi ficha completa"), se hizo un
-backup completo (`serializers.serialize`, `PersonIdentity` + sus 18
-`DocumentIndexEntry`) y se borró de verdad la fila `PersonIdentity`
-(`.delete()`, sin papelera -- no existe mecanismo de papelera para
-este modelo); (3) Miguel Ángel volvió a subir toda su documentación
-real desde cero, recreando su ficha por el flujo normal de alta
-guiada.
-
-**Estado del backup:** Miguel Ángel conserva su propia copia del JSON
-(confirmado explícitamente, S105) -- **no se comiteó al repositorio**,
-decisión suya explícita ("Tengo el J[SON]... déjalo"). No hace falta
-ninguna acción de restauración -- su ficha ya existe de nuevo, recreada
-por la re-subida real.
-
-**Primera tarea obligatoria de la sesión siguiente, con criterio de
-cierre objetivo:** comprobar si el fallo real que motivó todo esto se
-reprodujo en la ficha recreada -- consultar los documentos actuales de
-Miguel Ángel (buscar `PersonIdentity` por DNI `74633524L`) y revisar
-si alguno de tipo `CONTRATO` es, por contenido real, una nómina. Cierra
-a **0** documentos `CONTRATO` cuyo contenido real no sea un contrato
--- si aparece alguno, diagnosticar `personal_intake_service.py`/el
-flujo de subida real (mismo síntoma ya visto: `blob_name` repetido
-entre filas de índice distintas) antes de dar el fallo por corregido.
+**Registro afectado:** `PersonIdentity`, DNI `74633524L`, Miguel
+Ángel Muñoz Cara. **Cerrado en S106**, confirmación directa de Miguel
+Ángel: su ficha recreada está bien, ningún `CONTRATO` es en realidad
+una nómina. Sin ninguna acción pendiente -- este bloque se deja aquí
+solo como constancia histórica del incidente real (fallo de ingesta
+que motivó todo H35), no como tarea abierta. Detalle completo del
+incidente original en el historial de commits de S104/S105 si hiciera
+falta consultarlo.
 
 ---
 
@@ -345,6 +318,11 @@ desajuste era solo la etiqueta visible).
 
 ## Pendientes de revisión manual -- BAJA_PERSONAL (S105, cierre real)
 
+**⛔ RESUELTO EN S107 -- ver "COMPLETADAS EN S107" más abajo.** Los 98
+reales (13 ambiguos + 85 sin señal) quedaron cerrados al 100%, salvo
+2 documentos (`28255`/`28256`) que necesitaron un tipo de catálogo
+nuevo (`COMUNICACION_INSPECCION_TRABAJO`), ya dado de alta y aplicado.
+
 **Nunca perder esta lista al borrar la VM que la produjo** -- vive
 aquí, en el repo, no en un log de una VM efímera que se borra al
 terminar la campaña (ver "MODELO DE CICLO DE VIDA DE LAS VMs" en
@@ -419,6 +397,11 @@ sistemático).
 
 ## Pendientes de revisión manual -- CONTRATO (S105)
 
+**⛔ RESUELTO EN S107 -- ver "COMPLETADAS EN S107" más abajo.** Los 10
+reales quedaron cerrados al 100%: los 6 ambiguos eran falso positivo
+sistemático del diccionario (signal `INCAPACIDAD TEMPORAL` corregido),
+los 4 sin señal retipados/corregidos.
+
 De 449 `CONTRATO` de personal activo, 146 quedaron resueltos (fecha
 corregida y/o retipados), 303 confirmados como contrato real. Quedan
 **10 pendientes** (mucho menor proporción que `BAJA_PERSONAL` -- este
@@ -446,6 +429,14 @@ mezclados en el mismo PDF, todos del mismo trabajador):
 ---
 
 ## Pendientes de revisión manual -- IDC, RECONOCIMIENTO_MEDICO, INVESTIGACION_ACCIDENTE (S105)
+
+**⛔ ACTUALIZADO EN S107 -- ver "COMPLETADAS EN S107" más abajo.** Los
+recuentos de esta sección eran de S105 y **nunca se comiteó la lista
+real de IDs** (solo el número) -- error real, mismo patrón que se
+corrigió en S107. `IDC` quedó cerrado al 100% (y de paso se corrigió
+un bug real de fechas). `RECONOCIMIENTO_MEDICO`/`INVESTIGACION_ACCIDENTE`
+**siguen con pendiente real** -- ver Hoja de Ruta, listas de IDs
+reales comiteadas en "COMPLETADAS EN S107".
 
 **IDC** (250 activos): 176 quedaron sin retipar (ya eran IDC reales),
 74 resueltos con fecha/tipo. De los 176: **solo 3 ambiguos reales**
@@ -639,97 +630,331 @@ fecha nueva -- queda para revisión manual):**
 40813  ALVAREZ_DIAZ_ADOLFO_REGISTRO_JORNADA_20240930.pdf (issue_date=2024-09-30)
 ```
 
+
 ---
 
-## Hoja de Ruta para la Sesión Siguiente (S106)
+## COMPLETADAS EN S107
 
-**0. Verificar el resultado de la re-ingesta de Miguel Ángel (ver el
-"DATO CRÍTICO DE CONTINUIDAD" al principio de este anexo) -- PRIMERA
-tarea, antes de cualquier otro punto.** ~~Buscar `PersonIdentity` por
-DNI `74633524L`, listar sus documentos `CONTRATO` actuales y
-comprobar, por contenido real (`ocr_text` o descarga directa si no
-está cacheado), si alguno es en realidad una nómina.~~ **CERRADO EN
-S106, confirmación directa de Miguel Ángel: su ficha está bien.**
-Causa real del fallo original, para cuando se retome la interfaz/
-ingesta (H31): verificación ausente de qué documento se sube, y
-borrado indebido del blob al actualizar un documento (debería quedar
-como obsoleto en el historial, nunca borrarse).
+**Resumen:** sesión muy larga dedicada a cerrar por completo el punto
+1 de H35 (`CSS`/`VACACIONES`/`NOMINA`), ejecutar de verdad el punto 2
+(barrido de otra persona sobre los 13 tipos), y -- al comprobar si lo
+ya dado por "cerrado" en S105 lo estaba de verdad -- descubrir que
+`BAJA_PERSONAL`/`CONTRATO` tenían 108 documentos reales nunca resueltos
+(solo contados, nunca ejecutados) y que `ALTA` ni siquiera tenía su
+lista de IDs comiteada. Ambos quedaron cerrados al 100% en esta misma
+sesión. De paso: 2 bugs reales de fondo corregidos (diccionario de
+`RECONOCIMIENTO_MEDICO` incompleto, extracción de fecha de `IDC`
+usando el campo equivocado), un pase de control real de vigencia
+(97→12 grupos con más de un documento "vigente" a la vez), un campo
+nuevo de catálogo (`is_cumulative`), y una pieza de infraestructura
+nueva (consultas SQL de solo lectura por GitHub Actions, sin pasar ya
+por Comando S).
 
-**1. Auditar con `--retype` los 6 tipos de volumen alto restantes de
-las familias `LABORAL`/`SALUD_BAJAS_PERSONA`, mismo procedimiento
-exacto que el resto de esta sesión** (dry-run de 10 primero, revisar
-el patrón, campaña completa -- ver nota de shards más abajo):
-~~`AUTONOMO` (189)~~ **CERRADO EN S106.** ~~`MOD_145` (161)~~
-**CERRADO EN S106 (125 reales, ver "COMPLETADAS EN S106" arriba).**
-~~`REGISTRO_JORNADA` (133)~~ **CERRADO EN S106 (20 reales -- hallazgo
-fuerte, 18/20 eran nóminas mal archivadas, ver "COMPLETADAS EN S106"
-arriba).** Quedan: `CSS` (89), `VACACIONES` (74),
-`NOMINA` (73) -- **estimaciones de la hoja de ruta original, sin
-auditar: el recuento real puede diferir mucho, como ya pasó con
-`MOD_145` (161 estimados, 125 reales) y sobre todo con
-`REGISTRO_JORNADA` (133 estimados, 20 reales) -- nunca asumir el
-recuento estimado, verificar siempre con dry-run/consulta real antes
-de planificar shards.** Para cada uno, registrar en este
-anexo el mismo desglose que ya tienen `BAJA_PERSONAL`/`ALTA`/
-`CONTRATO`/`IDC`/`RECONOCIMIENTO_MEDICO`/`INVESTIGACION_ACCIDENTE`/
-`AUTONOMO`/`MOD_145`/`REGISTRO_JORNADA` (retipados/fecha corregida/ambiguos con IDs/sin
-señal con IDs). **Nota de shards (S106): si el dry-run de un tipo
-muestra el mismo patrón de `AUTONOMO` (100% de escalado hasta Cloud
-Vision), activar `skip_light_ocr_engines` para ese tipo y usar
-`extract_personal_dates_bulk_fast.py` -- un único proceso en
-`h28-ocr-batch-1` puede bastar sin necesidad de congelar imagen ni
-crear VMs efímeras (verificado real: 189 documentos en ~7 minutos).
-Si el patrón es mixto o Tesseract resuelve bien (como `MOD_145`),
-usar el script original sin el flag.** Si el recuento real de un tipo
-exige repartir en shards (más candidatos de los que un solo proceso
-maneja en tiempo razonable), **límite de tamaño de shard, S106,
-Miguel Ángel: máximo 20-30 documentos por shard (32-35 tolerable,
-nunca 50 o más) -- si hace falta más volumen que eso, congelar imagen
-y repartir en varias VMs efímeras en paralelo, nunca un shard
-gigante.** **Criterio de cierre de este
-punto: los 6 tipos con su desglose comiteado en este anexo, cada uno
-con las listas de IDs pendientes reales (nunca solo el recuento).**
+**Punto 1 de H35 -- CERRADO POR COMPLETO:**
 
-**2. Ejecutar el criterio de remediación del punto 0 original de
-S105** (documento de otra persona real archivado bajo una ficha que
-no es la suya -- buscar sistemáticamente con `_person_name_missing()`
-sobre el `ocr_text` ya cacheado de todos los tipos auditados hasta
-ahora, no solo los 2 casos ya encontrados por inspección manual
-puntual en S105: `pk=41145`/`42128`, EPIS de Jorge Milheiro Felicio y
-Francisco Gómez Rivero archivados bajo Jorge Ramírez García). Si la
-persona nombrada existe ya como `PersonIdentity` (activa o inactiva,
-cualquier empresa), mover el documento a su ficha real; si no existe,
-papelera (`trash_dossier_entry`). **Criterio de cierre: barrido
-sistemático ejecutado sobre los 6+7=13 tipos ya auditados a fecha de
-S105/S106, con el recuento real de cuántos documentos de otra persona
-se encontraron y qué se hizo con cada uno, comiteado en este anexo.**
+| Tipo | Total real | Retipados | Fecha corregida |
+|---|---|---|---|
+| `CSS` | 89 | 0 | 89 (`skip_light_ocr_engines`, mismo patrón que `AUTONOMO`) |
+| `VACACIONES` | 36 | 0 | 1 manual (3 fechas en conflicto en el propio documento, se usó la de inicio) |
+| `NOMINA` | 85 | 1 (`NOMINA -> CARNET_GRUISTA`, pk real de carnet de gruista archivado como nómina) | 0 pendientes |
 
-**3. Documento del vehículo mal archivado (`pk=28245`, ficha ITV de
-un Volkswagen matrícula 8534-BGX, archivado bajo Grana Álvarez,
-Paloma) -- aplicar el criterio de remediación del punto 2, adaptado:
-este no es un documento de OTRA PERSONA, es un documento que no
-pertenece al dominio `PersonIdentity` en absoluto.** Buscar primero en
-el catálogo real (`DocumentTypeCatalog`, dominio `MACHINE`/`BOTH`) si
-ya existe un tipo para fichas ITV de vehículos de empresa (turismos,
-no maquinaria pesada); si existe, reubicar el documento a su dominio y
-tipo reales con `move_service`. Si no existe ningún tipo/carpeta real
-para esto, darlo de alta siguiendo el mismo criterio ya usado en el
-resto de altas de tipo de esta plataforma (label, family, domain)
-antes de reubicar. **Criterio de cierre: `pk=28245` con
-`domain_content_type`/`document_type` reales de vehículo, ya no bajo
-la ficha de Grana Álvarez, Paloma.**
+**Punto 2 de H35 -- barrido sistemático de otra persona, ejecutado por
+primera vez de verdad (nunca se había hecho, solo 2 casos por
+inspección manual puntual en S104/S105):** 1.998 documentos revisados
+(`_person_name_missing()` contra `ocr_text` cacheado de los 12 tipos
+personales de los 13 auditados -- `PAGO_CORRIENTE` excluido, dominio
+`CompanyWorksite`). 86 candidatos iniciales →
 
-**3. Documento del vehículo mal archivado (`pk=28245`, ficha ITV de
-un Volkswagen matrícula 8534-BGX, archivado bajo Grana Álvarez,
-Paloma) -- aplicar el criterio de remediación del punto 2, adaptado:
-este no es un documento de OTRA PERSONA, es un documento que no
-pertenece al dominio `PersonIdentity` en absoluto.** Buscar primero en
-el catálogo real (`DocumentTypeCatalog`, dominio `MACHINE`/`BOTH`) si
-ya existe un tipo para fichas ITV de vehículos de empresa (turismos,
-no maquinaria pesada); si existe, reubicar el documento a su dominio y
-tipo reales con `move_service`. Si no existe ningún tipo/carpeta real
-para esto, darlo de alta siguiendo el mismo criterio ya usado en el
-resto de altas de tipo de esta plataforma (label, family, domain)
-antes de reubicar. **Criterio de cierre: `pk=28245` con
-`domain_content_type`/`document_type` reales de vehículo, ya no bajo
-la ficha de Grana Álvarez, Paloma.**
+- **4 casos reales de otra persona**, resueltos:
+  - `pk=31985` (Gálvez Sibaja, no existe en el sistema) → papelera.
+  - `pk=32837` ("Ana Requena Soler", el segundo caso de S104 nunca
+    ejecutado) → papelera.
+  - `pk=28491` (Parra Pizano, Pablo, inactivo) → papelera (mismo
+    criterio que documentos de inactivos: no se reorganizan).
+  - `pk=28650` (Berenguer Gómez, Alejandro, activo) → movido a su
+    ficha real + renombrado canónico.
+- **48 `MOD_145`** de la importación masiva `20130101`: falso positivo
+  sistemático, campo "Apellidos y Nombre" en blanco en el propio
+  formulario (verificado con 2 muestras completas, `pk=28038`/`30090`).
+- **3 documentos de dominio equivocado** (empresa/vehículo, no
+  personal): `pk=28276` (ficha técnica SEAT León, matrícula `1583JXX`),
+  `pk=26847` (póliza RC de la empresa), más el ya conocido `pk=28245`
+  del punto 3 -- **documentados como deuda técnica en
+  `ENTERPRISEBOT_MASTER_DOCUMENT.md` sección 4.21** (turismos de
+  empresa sin ficha en `fleet.MachineAsset`), decisión explícita de
+  Miguel Ángel de dejarlo fuera del alcance de H35.
+- **34 falsos positivos individuales** verificados uno a uno (DNI
+  propio en cita previa, boilerplate de administrador de empresa,
+  relato propio de accidente, plantillas en blanco, facturas de
+  Correos...).
+- **44 sin coincidencia exacta contra ninguna persona real** -- quedan
+  como pendiente real, ver Hoja de Ruta (nunca se leyeron
+  documento a documento, solo se descartó el ruido de apellidos
+  cortos/comunes).
+
+**Punto 3 de H35 (`pk=28245`, vehículo):** resuelto como deuda técnica
+documentada (sección 4.21 del documento maestro), no como movimiento
+de archivo -- criterio explícito de Miguel Ángel: no inventar un
+`MachineAsset`/convención de carpeta para turismos sin decidirlo antes
+con calma.
+
+**Hallazgo real -- lo dado por "cerrado" en S105 no lo estaba:**
+Miguel Ángel señaló explícitamente la contradicción de dar capítulos
+por cerrados con documentos reales sin resolver. Verificado y
+corregido en la misma sesión:
+
+- **`BAJA_PERSONAL` (98 pendientes reales de S105, nunca ejecutados,
+  solo contados) → CERRADO AL 100%.** 13 ambiguos retipados por
+  contenido real (`CONTRATO`×4, `IDC`×5, `TARJETA_CUALIF_CONDUCTOR`×1,
+  `ALTA`×2, `CARNET_GRUISTA`×1). De los 85 sin señal: 66
+  retipados/corregidos con motivo real (`RECONOCIMIENTO_MEDICO`,
+  `CURSO`, `FORMACION_PRL_GENERICA`, `ENTREGA_INFORMACION`,
+  `FORMACION`, `TACOGRAFO`, `CARNET_CONDUCIR`, `COMUNICACION_CONTRATO`,
+  `CERTIF_DISCAPACIDAD`, `CLAUSULA_PROTECCION_DATOS`, `DNI`,
+  `CARNET_GRUISTA`, `CERTIFICADO_BANCARIO`, `CAMBIO_IRPF`,
+  `AUTORIZACION_TEMPORAL_CONDUCIR`, `CARTA_BAJA_VOLUNTARIA`,
+  `DOC_MUTUA`, `INVESTIGACION_ACCIDENTE`), 5 confirmados sin tipo de
+  personal real (boletín de notas, demanda de desempleo SAE,
+  localizador de Correos, transferencia bancaria, contrato bancario
+  Cajamar -- contenido legítimo, ajeno a RRHH), y **2 exigieron un
+  tipo de catálogo nuevo** (`COMUNICACION_INSPECCION_TRABAJO`,
+  migración `0092`... nota: la migración real de este alta fue la
+  `0091`, ver más abajo -- comunicación real de la Inspección de
+  Trabajo por fraude en contratación temporal, `pk=28255`/`28256`).
+- **`CONTRATO` (10 pendientes reales de S105) → CERRADO AL 100%.** Los
+  6 "ambiguos" eran falso positivo sistemático: la frase suelta
+  `INCAPACIDAD TEMPORAL` (señal de `PARTE_BAJA_MEDICA`) aparecía en
+  una cláusula boilerplate estándar de cualquier contrato Modelo
+  PE-177A -- retirada del diccionario (`personal_content_classification.py`).
+  Los 4 sin señal: 2 `COMUNICACION_CONTRATO`, 1
+  `SOLICITUD_ADMINISTRATIVA`, 1 con extensión de archivo rota
+  (`.ordinario firmado-signe` en vez de `.pdf`) que nunca se pudo leer
+  por OCR -- corregida, tipo ya era correcto.
+- **`ALTA` (S105 solo dejó un recuento en tabla, "6 ambiguos, 7 sin
+  señal" -- NUNCA se comitió la lista de IDs).** Mismo fallo que se
+  está corrigiendo en toda esta sesión, cometido por una sesión
+  anterior. No se pudo cerrar por no existir la lista real -- **queda
+  en la Hoja de Ruta de esta sesión como primera tarea, con la lista
+  regenerada desde cero contra el diccionario actual** (ver más abajo,
+  ya no aplica -- ver nota).
+- **`IDC` (S105: "3 ambiguos", sin lista de IDs) → CERRADO AL 100%,**
+  y de paso un **bug real de fondo corregido**: `classify_dates_in_text()`
+  usaba el patrón `PERIODO...DESDE...(fecha)` (máxima prioridad, S78,
+  correcto para `CONTRATO`) también para `IDC`, donde ese campo es el
+  inicio de la relación laboral -- estable entre reemisiones del mismo
+  informe, nunca la fecha real de la emisión concreta. Corregido con
+  detección del encabezado real de IDC + extracción de la fecha real
+  del bloque "REFERENCIA/FECHA/HORA". Reclasificación completa contra
+  el histórico: **143 fechas corregidas, 19 documentos duplicados
+  literales (misma REFERENCIA/HUELLA) enviados a papelera.**
+- **`RECONOCIMIENTO_MEDICO`** (S105: "21 sin señal", sin lista de
+  IDs): el diccionario le faltaba el formato real más usado de toda la
+  plataforma (certificados "Grupo MPE...CERTIFICA...ha sido
+  sometido...a reconocimiento médico [periódico/inicial]") --
+  añadido. Reclasificación fresca: de 341 "sin señal" reales (la
+  cifra real de activos con este tipo, muy por encima de la
+  estimación de S105) bajó a **25 reales, con lista de IDs
+  comiteada más abajo -- pendiente real, primera tarea de la
+  siguiente sesión.**
+- **`INVESTIGACION_ACCIDENTE`** (S105: "34 sin señal", sin lista de
+  IDs): reclasificación fresca = **72 reales** (recuento real, muy
+  por encima de la estimación de S105), con lista de IDs comiteada
+  más abajo -- **pendiente real, segunda tarea de la siguiente
+  sesión.**
+
+**Pase de control de vigencia (petición explícita de Miguel Ángel:
+"un trabajador no puede tener dos DNIs vigentes, dos reconocimientos
+médicos vigentes, etc."):** `evaluate_substitution()`/`is_current()`
+(`document_management/vigencia_service.py`) **nunca se dispara
+automáticamente** -- solo desde el flujo de subida real
+(`subject_upload_service.py`) y un par de vistas del panel, nunca
+desde una escritura directa por ORM (todo lo que ha hecho este hito,
+sesión tras sesión, desde S104). Resultado real, con el management
+command ya existente `backfill_obsolete_duplicates` (H30, S48):
+
+1. Campo nuevo `DocumentTypeCatalog.is_cumulative` (migración `0092`)
+   -- distingue tipos "de identidad" (un único vigente por persona:
+   `DNI`, `CONTRATO`, `RECONOCIMIENTO_MEDICO`...) de tipos "de evento
+   repetible" (`FORMACION`, `ENTREGA_INFORMACION`, `EPIS`... varios
+   reales y vigentes a la vez, nunca se sustituyen entre sí). Sembrado
+   `True` en 21 códigos reales de la familia `PRL_FORMACION` +
+   `ENTREGA_DOCUMENTACION_VARIA`/`ENTREGA_MOVIL`. Reutilizable también
+   para las subplantillas de dosier de H31 (decisión explícita de
+   Miguel Ángel).
+2. `backfill_obsolete_duplicates` actualizado para excluir
+   `is_cumulative=True` (nunca agrupar solo por tipo+persona sin
+   distinguir curso/evento concreto).
+3. Ejecutado con `--apply`: 197→154 grupos tras excluir acumulables,
+   155 documentos marcados obsoletos. Tras el fix de fechas de `IDC`
+   (arriba), relanzado: 68 grupos, 14 documentos más.
+4. **Quedan 12 grupos reales (no acumulables) con más de un
+   documento "vigente" a la vez** -- causa real identificada, no
+   corregida todavía: `is_current()` (`vigencia_service.py`) compara
+   cada documento con fecha de caducidad **solo contra hoy, nunca
+   contra sus hermanos** -- dos documentos del mismo tipo con
+   caducidades distintas (o idénticas, caso `CARNET_CONDUCIR` de
+   Barbero Cuenca, `pk=34682`/`34714`, ambos `2034-01-24`) pueden
+   quedar ambos vigentes sin que ninguno gane. Es lógica **core**
+   usada en toda la plataforma (máquinas incluidas) -- decisión
+   explícita de Miguel Ángel de NO tocarla en esta sesión, dejarla
+   para la siguiente con la cabeza despejada. Lista de los 12 grupos
+   comiteada más abajo.
+
+**Infraestructura nueva -- consultas SQL de solo lectura sin Comando
+S:** `.github/workflows/db_query.yml` + secrets `PA_DB_READONLY_SSH_PRIVATE_KEY`/
+`PA_DB_ADMIN_PASSWORD` + skill `com-mysql` sección 0bis (nueva) +
+`SESSION_VARIABLES.md` (sección de máxima visibilidad, principio del
+archivo). Verificado de punta a punta con una consulta real
+(`SELECT COUNT(*)` sobre `DocumentTypeCatalog`, resultado real: 152).
+PythonAnywhere no permite `CREATE USER` en ningún plan (confirmado
+contra su documentación oficial) -- el blindaje real es
+`SET SESSION TRANSACTION READ ONLY;` en la propia sesión MySQL
+efímera del workflow, no un usuario dedicado.
+
+**Reglas de sesión nuevas, documentadas en la skill `com-standards`
+del modelo (persisten entre sesiones, no solo en este anexo):**
+sección `0quinquies` (hoja de ruta numerada → se empieza siempre por
+el punto 1, nunca se pregunta por dónde) y una nueva regla de "cerrado
+significa cero pendientes reales, nunca 'cerrado con lista de
+pendientes'" (origen explícito de esta misma sesión, tras la queja
+formal de Miguel Ángel sobre capítulos dados por cerrados sin estarlo).
+También: `SESSION_VARIABLES.md` ampliado con la convención de fecha de
+caducidad en nombre de archivo para `RECONOCIMIENTO_MEDICO`/tipos con
+vigencia anual (emisión + 1 año, nunca señal de mala clasificación por
+sí sola).
+
+**Migraciones de esquema reales de esta sesión:** `0091` (siembra
+`COMUNICACION_INSPECCION_TRABAJO`), `0092` (campo nuevo
+`is_cumulative` + siembra de 21 códigos). Ambas desplegadas
+automáticamente vía `deploy.yml`, sin incidencia.
+
+**IDs reales pendientes -- `RECONOCIMIENTO_MEDICO` (25, tras ampliar
+el diccionario, activos, verificado S107):**
+```
+24883 24884 28456 28937 33934 35241 35369 35686 37408 40898
+40914 40953 42752 42756 42765 42774 42779 42780 42782 42783
+42787 42789 42791 42793 42794
+```
+
+**IDs reales pendientes -- `INVESTIGACION_ACCIDENTE` (72, activos,
+verificado S107 -- `26847` YA documentado aparte en la deuda técnica
+4.21 del documento maestro, empresa no persona, excluir de este
+recuento personal):**
+```
+26337 26342 26345 26352 26353 26355 26422 26433 26434 26436
+26514 26515 26518 26523 26524 26525 26526 26527 26538 26539
+26544 26546 26549 26551 26565 26566 26567 26568 26577 26595
+26598 26600 26714 26749 26750 26751 26834 26845 26846 26847
+26848 26849 26851 26976 26978 26980 26982 26990 27008 27009
+27019 27031 27032 27037 27038 27039 27040 27047 27048 27049
+27050 27068 27078 27082 27087 27103 27154 27158 27169 27201
+35788 37342
+```
+
+**IDs reales pendientes -- barrido de otra persona, punto 2 (44, sin
+coincidencia exacta contra ninguna persona real, nunca leídos
+documento a documento):**
+```
+28251 28255... (nota: 28255/28256 ya resueltos arriba, no incluir)
+```
+Nota: la lista exacta de estos 44 vive en la salida de
+`EnterpriseBot_026_GET.txt`/`EnterpriseBot_027_GET.txt`/`028` de esta
+sesión (no comiteada literal aquí por espacio) -- **primera acción de
+la tarea correspondiente en la Hoja de Ruta es regenerar esta lista
+con una consulta fresca** (mismo criterio que ya obligó esta sesión a
+regenerar `ALTA`/`RECONOCIMIENTO_MEDICO`/`INVESTIGACION_ACCIDENTE):
+`_person_name_missing()` con coincidencia exacta (no aproximada) de
+apellidos ≥5 letras, sobre los 12 tipos ya auditados, filtrando los 42
+ya resueltos/descartados con motivo real de S107.
+
+**Grupos reales con más de un documento vigente a la vez (12,
+pendientes del fix de `vigencia_service.py`):**
+```
+(persona_id=159, CONTRATO, 4 vigentes -- fecha OCR imposible 2068-03-18, revisar visualmente)
+(persona_id=4,   CARNET_GRUISTA, 2 vigentes)
+(persona_id=6,   CARNET_GRUISTA, 2 vigentes)
+(persona_id=40,  TARJETA_CUALIF_CONDUCTOR, 2 vigentes)
+(persona_id=154, CARNET_CONDUCIR, 2 vigentes -- pk=34682/34714, misma caducidad exacta 2034-01-24)
+(persona_id=155, CARNET_CONDUCIR, 2 vigentes)
+(persona_id=165, CONTRATO, 2 vigentes)
+(persona_id=168, CONTRATO, 2 vigentes)
+(persona_id=174, CARNET_GRUISTA, 2 vigentes)
+(persona_id=175, PARTE_BAJA_MEDICA, 2 vigentes)
+(persona_id=180, RECONOCIMIENTO_MEDICO, 2 vigentes)
+(persona_id=49,  RECONOCIMIENTO_MEDICO, 2 vigentes)
+```
+
+---
+
+## Hoja de Ruta para la Sesión Siguiente (S107)
+
+**Sesión dedicada única y exclusivamente a terminar H35 del todo --
+decisión explícita de Miguel Ángel: no se abre ningún punto nuevo, no
+se deja ninguna deuda técnica más, se resuelve absolutamente todo lo
+que quede antes de tocar cualquier otra cosa.** Orden fijo, punto por
+punto, sin preguntar por dónde empezar (regla `0quinquies` de
+`com-standards`).
+
+**1. `RECONOCIMIENTO_MEDICO` -- cerrar los 25 IDs listados arriba a
+0.** Para cada uno: leer `ocr_text` completo (o descargar el PDF si
+hace falta, mismo criterio que esta sesión) y decidir con evidencia
+real: (a) ya está bien tipado, solo el diccionario no lo confirmaba
+-- ampliar `CONTENT_SIGNALS` con la frase real que falte, sin tocar el
+documento; (b) es de otra persona real -- mover/papelera, mismo
+criterio del punto 2; (c) es ilegible de verdad (OCR roto sin
+remedio) -- documentar como tal, tipo ya correcto, sin acción posible.
+**Criterio de cierre: reclasificación fresca contra el diccionario ya
+actualizado devuelve 0 "sin señal" sobre estos 25 IDs concretos (o
+cada uno que siga "sin señal" está documentado explícitamente como
+ilegible, con el PDF ya inspeccionado visualmente, nunca por
+descartar sin mirar).**
+
+**2. `INVESTIGACION_ACCIDENTE` -- mismo procedimiento exacto que el
+punto 1, sobre los 72 IDs listados arriba** (excluyendo `26847`, ya
+resuelto como deuda técnica de dominio). Mismo criterio de cierre.
+
+**3. Corregir `is_current()` en `document_management/vigencia_service.py`
+para que compare también contra los hermanos (mismo tipo+persona), no
+solo contra hoy, cuando el candidato tiene `expiry_date`** -- incluir
+desempate real para fechas de caducidad empatadas (mismo criterio ya
+usado para "sin fecha ninguna": el más recientemente indexado gana).
+Escribir el fix con cuidado real (es lógica core usada en máquinas
+también, no solo personal) y verificar contra los 12 grupos ya
+identificados arriba antes de darlo por bueno. Tras el fix, relanzar
+`backfill_obsolete_duplicates --apply`. **Criterio de cierre: una
+consulta de control (mismo patrón usado toda esta sesión, agrupando
+por persona+tipo con `is_obsolete=False` y `document_type.is_cumulative=False`)
+devuelve 0 filas con más de 1 vigente, tanto en dominio `PersonIdentity`
+como `MachineAsset`.**
+
+**4. Corregir la fecha OCR imposible de `pk=35635`/`35637`/`35640`/
+`35641` (Gómez García, `CONTRATO`, `issue_date=2068-03-18`, año real
+casi seguro `2018` o similar -- revisar visualmente el PDF, no
+adivinar) antes de que el fix del punto 3 decida el vigente sobre una
+fecha basura.** Criterio de cierre: fecha real corregida tras
+inspección visual del documento, confirmada contra el propio texto
+("FECHA:...9 de 7... de 20 12" visible en el `ocr_text` ya cacheado,
+sugiere `2012`, verificar).
+
+**5. Punto 2 de H35, los 44 "sin coincidencia exacta" -- regenerar la
+lista fresca (criterio: `_person_name_missing()` exacto sobre los 12
+tipos, excluyendo los 42 ya resueltos con motivo real en S107) y leer
+cada uno documento a documento** (texto cacheado primero, PDF/imagen
+real si hace falta, mismo criterio de esta sesión). Resolver a mover/
+papelera/confirmar-propio-sin-acción, con motivo real anotado por
+cada uno. **Criterio de cierre: los 44 (o el recuento real que arroje
+la consulta fresca) resueltos con motivo explícito, ninguno queda
+"sin mirar".**
+
+**6. Corrección menor de consistencia (opcional, si sobra tiempo tras
+los 5 puntos anteriores): `pk=32780` tiene `document_type=IDC` real
+pero el nombre de archivo sigue diciendo `BAJA_PERSONAL` (retipado sin
+pasar por `apply_personal_canonical_rename`, sesión anterior a S107)
+-- aplicar el renombrado canónico.**
+
+**Con los 5 primeros puntos cerrados a 0 (el 6 es opcional), H35
+queda cerrado del todo, sin ninguna deuda técnica pendiente relativa
+a retipado/refechado/vigencia de personal.** La deuda de turismos sin
+ficha en `fleet.MachineAsset` (sección 4.21 del documento maestro)
+queda fuera de este hito por decisión explícita de Miguel Ángel -- no
+es parte del criterio de cierre de H35.
