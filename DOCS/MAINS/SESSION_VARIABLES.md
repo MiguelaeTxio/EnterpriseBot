@@ -28,6 +28,35 @@
 
 ---
 
+## ⛔⛔⛔ CONVENCIÓN DE FECHAS EN NOMBRE DE ARCHIVO -- `RECONOCIMIENTO_MEDICO` Y CUALQUIER TIPO CON VIGENCIA ANUAL (S107) -- NO VOLVER A PREGUNTAR, NO VOLVER A INDAGAR ⛔⛔⛔
+
+**Regla fija de la plataforma, repetida ya varias veces por Miguel
+Ángel antes de esta sesión: lo normal y esperado es que la fecha del
+nombre de archivo sea la fecha de CADUCIDAD, un año por delante de
+la fecha real de emisión que trae el propio documento.** Un
+reconocimiento médico (u otro documento con vigencia anual) emitido
+el 09/07/2025 caduca el 09/07/2026 -- que el archivo lleve
+`..._20260709` mientras el texto interno dice "9 de julio de 2025"
+**no es un desfase, ni una anomalía, ni indicio de nada raro**: es la
+fecha de caducidad calculada sobre la fecha de emisión, tal cual
+funciona el propio negocio (vigencia == emisión + 1 año). Esta
+diferencia de un año entre nombre de archivo y fecha interna del
+documento **nunca es, por sí sola, señal de documento mal fechado,
+mal archivado o de otra persona** -- para eso hace falta evidencia de
+contenido real (nombre de otra persona, DNI distinto), nunca solo el
+desfase de fecha.
+
+**Origen -- incidente real S107 (H35):** el modelo señaló este
+desfase como algo a investigar sobre `pk=28650`
+(`PEREZ_SANCHEZ_MIGUEL_ANGEL_RECONOCIMIENTO_MEDICO_20260709_1.pdf`,
+texto interno "9 de julio de 2025"). Miguel Ángel, verbatim: *"yo he
+perdido la cuenta de las veces que he dicho que lo normal es que el
+reconocimiento trae fecha del año X y el nombre del archivo lleva X
+más uno [...] apúntalo ya con letras de posada en algún sitio, no lo
+preguntes más, no indagues más en eso."*
+
+---
+
 ## DOS CONSOLAS DISTINTAS, SIN NINGUNA RELACIÓN ENTRE SÍ
 
 La consola sftp permanente (Git Bash) que comunica el directorio de
