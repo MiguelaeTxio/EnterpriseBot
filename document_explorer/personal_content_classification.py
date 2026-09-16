@@ -142,6 +142,24 @@ CONTENT_SIGNALS = {
         "PARTE DE BAJA",
     ],
     "CERTIFICADO_BANCARIO": ["CERTIFICADO DE TITULARIDAD"],
+    # H35 (S108). Confirmados con muestra real durante el cierre de los
+    # 25 IDs "sin senal" de RECONOCIMIENTO_MEDICO -- decision explicita
+    # de Miguel Angel de retipar en vez de forzarlos como reconocimiento
+    # medico (ver migracion 0093 para el alta de catalogo de ambos
+    # codigos).
+    "FACTURA_SERVICIOS_PERSONAL": [
+        # pk=28456 (Medios de Prevencion Externos Sur S.L., factura de
+        # "VS GESTION CUPO"): frase de pie de factura, estable entre
+        # las facturas reales de este mismo proveedor.
+        "SOLICITE CITA PARA RECONOCIMIENTOS MEDICOS AL TELEFONO",
+    ],
+    "CITACION_RECONOCIMIENTO_MEDICO": [
+        # pk=35241: carta de cita de Fraternidad Muprespa, distinta de
+        # la notificacion de realizacion ya cubierta por
+        # RECONOCIMIENTO_MEDICO -- aqui el reconocimiento todavia no se
+        # ha hecho, solo se está citando a la persona.
+        "ESTA CITADO EN NUESTRO CENTRO MEDICO",
+    ],
     # ------------------------------------------------------------
     # H35 (S105). Confirmados con muestra real (2 lotes de 20
     # ficheros BAJA_PERSONAL de Jorge Ramirez Garcia, texto embebido
