@@ -12,11 +12,24 @@ alcanzado o fecha de emision o el periodo de referencia sean mas
 modernos"), interpretado y confirmado con Miguel Angel en S023:
 
 - Documentos CON expiry_date (certificados OCA, tarjeta ITV, recibos
-  de seguro...): vigentes mientras esa fecha no haya pasado. No se
-  comparan entre si -- varios documentos del mismo tipo pueden ser
-  vigentes a la vez si representan periodos distintos (ej. recibos de
-  seguro trimestrales, ver H23 anexo seccion 3.1 sobre period_start/
-  period_end).
+  de seguro...): vigentes mientras esa fecha no haya pasado. **Corregido
+  en H35 (S108):** entre varios documentos del mismo tipo+persona/
+  maquina con expiry_date todavia valida, solo el de fecha mas lejana
+  es el vigente -- ya no coexisten varios a la vez sin limite (ver
+  `is_current()` para el desempate real en fechas empatadas). La nota
+  original de este docstring (H26/S023) decia que "no se comparan entre
+  si" citando recibos de seguro trimestrales como ejemplo de varios
+  vigentes a la vez -- **superada** por el campo `is_cumulative` de
+  `DocumentTypeCatalog` (H35, S107): todo tipo con `tracks_expiry=True`
+  hoy en el catalogo (maquina o personal) tiene `is_cumulative=False`,
+  es decir, el diseño real vigente es "solo uno a la vez" en ambos
+  dominios. Un tipo que de verdad necesite coexistencia real (varios
+  periodos legitimamente vigentes al mismo tiempo) debe marcarse
+  `is_cumulative=True` en el catalogo -- este modulo no distingue por
+  si mismo `is_cumulative`, es responsabilidad del llamador filtrar
+  antes de invocar `is_current()`/`evaluate_substitution()` (mismo
+  patron ya usado por `backfill_obsolete_duplicates` en el dominio
+  personal).
 - Documentos SIN expiry_date pero con issue_date/periodo (ficha
   tecnica, declaracion CE...): como no caducan por si solos, el mas
   reciente de su mismo tipo es el vigente, los anteriores quedan
@@ -94,7 +107,58 @@ def is_current(
     reference_today = today or date.today()
 
     if candidate.expiry_date is not None:
-        return candidate.expiry_date >= reference_today
+        if candidate.expiry_date < reference_today:
+            return False
+        # H35 (S108), incidente real: esta rama solo comparaba contra
+        # `reference_today`, nunca contra los hermanos -- dos
+        # documentos del mismo tipo+persona/maquina con expiry_date
+        # futura quedaban vigentes A LA VEZ sin limite (12 grupos reales
+        # confirmados: CONTRATO, CARNET_GRUISTA, TARJETA_CUALIF_
+        # CONDUCTOR, CARNET_CONDUCIR, PARTE_BAJA_MEDICA,
+        # RECONOCIMIENTO_MEDICO). Corregido: entre los hermanos cuya
+        # propia expiry_date todavia no ha pasado, gana el de fecha mas
+        # lejana; un hermano ya caducado nunca compite (esta obsoleto
+        # el solo, por su propia fecha). Mismo criterio de "hermano
+        # valido" tanto si tiene expiry_date futura como issue_date sin
+        # expiry_date (ese tipo no caduca por si solo -- ver rama de
+        # abajo -- asi que siempre cuenta como competencia valida).
+        valid_dated_siblings = [
+            s for s in siblings
+            if (s.expiry_date is not None and s.expiry_date >= reference_today)
+            or (s.expiry_date is None and s.issue_date is not None)
+        ]
+        if not valid_dated_siblings:
+            return True
+        sibling_expiries = [
+            s.expiry_date for s in valid_dated_siblings
+            if s.expiry_date is not None
+        ]
+        # Un hermano sin expiry_date pero con issue_date (tipo que no
+        # caduca por si solo) siempre es mas "actual" que cualquier
+        # documento con expiry_date propia -- mismo principio que la
+        # rama de abajo, donde ese tipo de hermano define el vigente
+        # por su propio issue_date, nunca por comparacion de caducidad.
+        if len(sibling_expiries) < len(valid_dated_siblings):
+            return False
+        max_sibling_expiry = max(sibling_expiries)
+        if candidate.expiry_date > max_sibling_expiry:
+            return True
+        if candidate.expiry_date < max_sibling_expiry:
+            return False
+        # Empate exacto de expiry_date -- mismo desempate que el caso
+        # "sin fecha ninguna" de mas abajo: el mas recientemente
+        # indexado prevalece. Si no hay indexed_at (comportamiento por
+        # defecto de siempre), se mantiene vigente -- nunca se archiva
+        # a ciegas sin dato temporal para desempatar.
+        if candidate.indexed_at is None:
+            return True
+        tied_siblings_indexed_ats = [
+            s.indexed_at for s in valid_dated_siblings
+            if s.expiry_date == candidate.expiry_date and s.indexed_at is not None
+        ]
+        if not tied_siblings_indexed_ats:
+            return True
+        return candidate.indexed_at >= max(tied_siblings_indexed_ats)
 
     if candidate.issue_date is not None:
         sibling_issue_dates = [
