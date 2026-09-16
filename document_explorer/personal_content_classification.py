@@ -96,10 +96,19 @@ CONTENT_SIGNALS = {
         # por el signal existente.
         "OPERADOR DE GRUA MOVIL",
     ],
+    # H35 (S107), corregido tras falso positivo real (pk=35635/35637/
+    # 35639/35640/35641/35684, contratos Mod. PE-177A de Gomez
+    # Garcia): "INCAPACIDAD TEMPORAL" sola aparecia como clausula
+    # boilerplate estandar de CUALQUIER contrato de este modelo
+    # ("...trabajadores con discapacidad que tengan suspendido su
+    # contrato por incapacidad temporal..."), marcando como ambiguos
+    # 6 contratos reales sin ningun parte de baja mezclado. Retirada
+    # como frase suelta -- las otras 4 frases ya son especificas de
+    # cabecera real de un parte medico, nunca boilerplate legal.
     "PARTE_BAJA_MEDICA": [
         "PARTE MEDICO DE BAJA", "PARTE MEDICO DE ALTA",
         "PARTE MEDICO DE CONFIRMACION DE INCAPACIDAD",
-        "PARTE DE BAJA", "INCAPACIDAD TEMPORAL",
+        "PARTE DE BAJA",
     ],
     "CERTIFICADO_BANCARIO": ["CERTIFICADO DE TITULARIDAD"],
     # ------------------------------------------------------------
