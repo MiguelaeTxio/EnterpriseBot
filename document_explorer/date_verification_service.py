@@ -262,6 +262,18 @@ _LABELED_DATE_PATTERNS = [
 # importe directamente (VM scripts standalone que copian esta logica).
 _PERIODO_DESDE_RE = _LABELED_DATE_PATTERNS[0]
 
+# H35 (S107). Fecha real de emision de un IDC (bloque "REFERENCIA(S
+# ELECTRONICAS)/FECHA: DD-MM-AAAA/HORA:" -- verificado en las dos
+# variantes reales del impreso, "CODIFICACIONES INFORMATICAS" (mas
+# antiguo) y "REFERENCIAS ELECTRONICAS" (mas reciente): en ambas,
+# "FECHA:" va seguido siempre de "HORA:" justo despues de la fecha,
+# ancla suficientemente especifica para no confundirse con ninguna
+# otra "FECHA:" del documento. Ver classify_dates_in_text() para el
+# porque (PERIODO/DESDE no sirve para este tipo).
+_IDC_REFERENCE_DATE_RE = re.compile(
+    r"FECHA:\s*(\d{1,2})[-.](\d{1,2})[-.](\d{2,4})\s*HORA:"
+)
+
 # H30 (S79). MRZ (zona de lectura por maquina) de DNI/NIE espanol --
 # hallazgo real de sesion: cuando la cara frontal es ilegible para
 # Tesseract (fondo de seguridad que domina la lectura, mismo problema
@@ -590,6 +602,30 @@ def classify_dates_in_text(text):
         if parsed is not None and parsed in _NOISE_LITERAL_DATES:
             return True
         return False
+
+    # H35 (S107), incidente real (pk=35596/35597/35598/35691/42895,
+    # Gomez Garcia Jose Antonio, IDC): el patron PERIODO/DESDE de
+    # arriba es correcto para CONTRATO (ahi si es la fecha real de
+    # inicio del propio contrato) pero incorrecto para IDC -- ahi
+    # "PERIODO: DESDE" es el inicio de la relacion laboral, que se
+    # repite IDENTICO en cada nueva emision del informe (se puede
+    # volver a pedir en cualquier momento para certificar que el
+    # trabajador sigue de alta). La fecha real de CADA emision vive en
+    # el bloque "REFERENCIA(S ELECTRONICAS)/FECHA: DD-MM-AAAA/HORA:"
+    # al final del documento -- unica forma de que el vigente real sea
+    # siempre la emision mas reciente (decision explicita de Miguel
+    # Angel, S107: "el vigente siempre va a ser el ultimo, el mas
+    # moderno"), nunca las 4-5 emisiones distintas empatadas en la
+    # misma fecha de inicio de contrato. Se detecta por el propio
+    # encabezado real de IDC (misma frase que su CONTENT_SIGNALS en
+    # personal_content_classification.py) para no afectar a ningun
+    # otro tipo -- comprobado ANTES que _LABELED_DATE_PATTERNS.
+    if "INFORME DE DATOS PARA LA COTIZACION" in norm:
+        ref_match = _IDC_REFERENCE_DATE_RE.search(norm)
+        if ref_match:
+            parsed = _parse_date(*ref_match.groups())
+            if parsed:
+                return None, parsed, []
 
     # Maxima prioridad: etiqueta explicita (PERIODO/FECHA DE INICIO/
     # SE EXTENDERA DESDE/etc.) -- nunca ambigua, se prueba primero.
