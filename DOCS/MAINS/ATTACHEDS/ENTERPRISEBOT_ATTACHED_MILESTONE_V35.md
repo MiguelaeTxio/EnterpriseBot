@@ -495,6 +495,7 @@ el patrón con un dry-run real, nunca por suposición.
 |---|---|---|---|---|---|
 | `AUTONOMO` | 189 | 0 | 176 | 0 | 13 |
 | `MOD_145` | 125 (no 161 -- la hoja de ruta partía de una estimación previa a auditar, corregido aquí) | 0 | 114 | 4 | 7 |
+| `REGISTRO_JORNADA` | 20 (no 133 -- estimación muy alejada de la real, ver hallazgo abajo) | **18** | 3 | 0 | 1 |
 
 **13 SIN SEÑAL de `AUTONOMO`** (`skip_light_ocr_engines` activo, Cloud Vision
 agotado sin resolver tipo ni fecha nueva -- conservan la fecha que ya
@@ -535,6 +536,54 @@ tipo, sin necesidad de `skip_light_ocr_engines`), 4 AMBIGUOS:**
 40020  CARVAJAL_GONZALEZ_FRANCISCO_MOD_145_20110101.pdf
 ```
 
+**`REGISTRO_JORNADA` (S107 -- continuación de la misma sesión de chat
+que S106, PISA/PAH intentados por error sin PCS previo, anulados,
+ver más abajo). HALLAZGO FUERTE, el más marcado de todo H35 hasta
+ahora: de los 20 candidatos reales de toda la empresa, 18 (el 90%)
+NO eran `REGISTRO_JORNADA` -- eran nóminas archivadas bajo el tipo
+equivocado. Solo 1 de los 20 era un `REGISTRO_JORNADA` genuino.**
+Todos del mismo trabajador (Álvarez Díaz Adolfo) -- igual que pasó
+con la muestra de `AUTONOMO` en S106, así que si aparece otro
+trabajador con documentos de este tipo en el futuro, confirmar que
+el patrón se sostiene antes de asumirlo. La fecha (`issue_date`) ya
+la traían todos de la ingesta normal (coincide con la fecha del
+propio nombre de archivo) -- esta campaña solo necesitaba corregir
+el tipo, no la fecha; solo 2 fechas las puso Cloud Vision de nuevo
+en esta pasada.
+
+**18 RETIPADOS A `NOMINA`:**
+```
+40595  ALVAREZ_DIAZ_ADOLFO_REGISTRO_JORNADA_20230401.pdf
+40617  ALVAREZ_DIAZ_ADOLFO_REGISTRO_JORNADA_20230101.pdf
+40748  ALVAREZ_DIAZ_ADOLFO_REGISTRO_JORNADA_20240430.pdf
+40749  ALVAREZ_DIAZ_ADOLFO_REGISTRO_JORNADA_20240430_1.pdf
+40750  ALVAREZ_DIAZ_ADOLFO_REGISTRO_JORNADA_20240430_2.pdf
+40751  ALVAREZ_DIAZ_ADOLFO_REGISTRO_JORNADA_20240430_3.pdf
+40752  ALVAREZ_DIAZ_ADOLFO_REGISTRO_JORNADA_20240430_4.pdf
+40755  ALVAREZ_DIAZ_ADOLFO_REGISTRO_JORNADA_20240430_5.pdf
+40756  ALVAREZ_DIAZ_ADOLFO_REGISTRO_JORNADA_20240430_6.pdf
+40757  ALVAREZ_DIAZ_ADOLFO_REGISTRO_JORNADA_20240430_7.pdf
+40758  ALVAREZ_DIAZ_ADOLFO_REGISTRO_JORNADA_20240430_8.pdf
+40759  ALVAREZ_DIAZ_ADOLFO_REGISTRO_JORNADA_20240131.pdf
+40760  ALVAREZ_DIAZ_ADOLFO_REGISTRO_JORNADA_20240430_9.pdf
+40770  ALVAREZ_DIAZ_ADOLFO_REGISTRO_JORNADA_20240731.pdf
+40772  ALVAREZ_DIAZ_ADOLFO_REGISTRO_JORNADA_20240801.pdf
+40799  ALVAREZ_DIAZ_ADOLFO_REGISTRO_JORNADA_20241130.pdf
+40806  ALVAREZ_DIAZ_ADOLFO_REGISTRO_JORNADA_20241031.pdf (fecha nueva de Cloud Vision: issue_date=2024-10-31)
+40808  ALVAREZ_DIAZ_ADOLFO_REGISTRO_JORNADA_20241031_1.pdf (fecha nueva de Cloud Vision: issue_date=2024-10-31)
+```
+
+**1 SIN SEÑAL (conserva el tipo `REGISTRO_JORNADA` sin cambiar, sin
+fecha nueva -- queda para revisión manual):**
+```
+40764  ALVAREZ_DIAZ_ADOLFO_REGISTRO_JORNADA_20240831.pdf
+```
+
+**1 CONFIRMADO genuino como `REGISTRO_JORNADA`:**
+```
+40813  ALVAREZ_DIAZ_ADOLFO_REGISTRO_JORNADA_20240930.pdf (issue_date=2024-09-30)
+```
+
 ---
 
 ## Hoja de Ruta para la Sesión Siguiente (S106)
@@ -557,13 +606,18 @@ exacto que el resto de esta sesión** (dry-run de 10 primero, revisar
 el patrón, campaña completa -- ver nota de shards más abajo):
 ~~`AUTONOMO` (189)~~ **CERRADO EN S106.** ~~`MOD_145` (161)~~
 **CERRADO EN S106 (125 reales, ver "COMPLETADAS EN S106" arriba).**
-Quedan: `REGISTRO_JORNADA` (133), `CSS` (89), `VACACIONES` (74),
+~~`REGISTRO_JORNADA` (133)~~ **CERRADO EN S107 (20 reales -- hallazgo
+fuerte, 18/20 eran nóminas mal archivadas, ver "COMPLETADAS EN S106"
+arriba).** Quedan: `CSS` (89), `VACACIONES` (74),
 `NOMINA` (73) -- **estimaciones de la hoja de ruta original, sin
-auditar: el recuento real puede diferir, como ya pasó con `MOD_145`
-(161 estimados, 125 reales).** Para cada uno, registrar en este
+auditar: el recuento real puede diferir mucho, como ya pasó con
+`MOD_145` (161 estimados, 125 reales) y sobre todo con
+`REGISTRO_JORNADA` (133 estimados, 20 reales) -- nunca asumir el
+recuento estimado, verificar siempre con dry-run/consulta real antes
+de planificar shards.** Para cada uno, registrar en este
 anexo el mismo desglose que ya tienen `BAJA_PERSONAL`/`ALTA`/
 `CONTRATO`/`IDC`/`RECONOCIMIENTO_MEDICO`/`INVESTIGACION_ACCIDENTE`/
-`AUTONOMO`/`MOD_145` (retipados/fecha corregida/ambiguos con IDs/sin
+`AUTONOMO`/`MOD_145`/`REGISTRO_JORNADA` (retipados/fecha corregida/ambiguos con IDs/sin
 señal con IDs). **Nota de shards (S106): si el dry-run de un tipo
 muestra el mismo patrón de `AUTONOMO` (100% de escalado hasta Cloud
 Vision), activar `skip_light_ocr_engines` para ese tipo y usar
@@ -571,7 +625,13 @@ Vision), activar `skip_light_ocr_engines` para ese tipo y usar
 `h28-ocr-batch-1` puede bastar sin necesidad de congelar imagen ni
 crear VMs efímeras (verificado real: 189 documentos en ~7 minutos).
 Si el patrón es mixto o Tesseract resuelve bien (como `MOD_145`),
-usar el script original sin el flag.** **Criterio de cierre de este
+usar el script original sin el flag.** Si el recuento real de un tipo
+exige repartir en shards (más candidatos de los que un solo proceso
+maneja en tiempo razonable), **límite de tamaño de shard, S107,
+Miguel Ángel: máximo 20-30 documentos por shard (32-35 tolerable,
+nunca 50 o más) -- si hace falta más volumen que eso, congelar imagen
+y repartir en varias VMs efímeras en paralelo, nunca un shard
+gigante.** **Criterio de cierre de este
 punto: los 6 tipos con su desglose comiteado en este anexo, cada uno
 con las listas de IDs pendientes reales (nunca solo el recuento).**
 
