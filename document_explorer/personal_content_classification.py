@@ -75,6 +75,27 @@ CONTENT_SIGNALS = {
         # las decenas de variantes reales encontradas.
         "HA SIDO SOMETIDO EL DIA", "RECONOCIMIENTO MEDICO PERIODICO",
         "RECONOCIMIENTO MEDICO INICIAL",
+        # H35 (S108), cierre de los 25 IDs "sin senal" de RECONOCIMIENTO_
+        # MEDICO listados en la hoja de ruta de S107. Confirmado contra
+        # el texto OCR real de cada muestra, nunca de memoria.
+        # Formato CRC (pk=24883/24884, aptitud grua movil):
+        "RECONOCIMIENTO FACULTATIVO DE COMPROBACION DE APTITUDES FISICAS Y PSICOLOGICAS",
+        # Formato "Las Carmelitas" (pk=40914/42791/42793/42794,
+        # renovacion carnet operador grua torre):
+        "RECONOCIMIENTO FACULTATIVO PERTINENTE DE COMPROBACION DE LA CAPACIDAD FISICA Y LA APTITUD PSICOLOGICA",
+        # Notificacion Fraternidad Muprespa (12 muestras reales:
+        # pk=28937/35686/42752/42756/42765/42774/42779/42780/42782/
+        # 42783/42787/42789) -- notificacion de que el reconocimiento
+        # ya se realizo, informe de aptitud aun pendiente:
+        "NOTIFICACION DE LA REALIZACION DE RECONOCIMIENTO MEDICO",
+        # Informe "EXAMEN DE SALUD" formato ANP (pk=33934) -- se usa
+        # esta frase de cuerpo del informe, mas especifica que "EXAMEN
+        # DE SALUD" suelto (evita falso positivo con otros documentos
+        # que solo mencionen un examen de salud de pasada):
+        "ANAMNESIS Y ANTECEDENTES CLINICO-LABORALES",
+        # Cabecera "Reconocimiento Medico Laboral" formato Grupo MPE
+        # (pk=37408):
+        "RECONOCIMIENTO MEDICO LABORAL",
     ],
     "NOMINA": ["RECIBO DE SALARIOS", "LIQUIDO A PERCIBIR", "PERIODO DE LIQUIDACION"],
     "CONTRATO": ["CONTRATO DE TRABAJO", "DECLARAN QUE REUNEN LOS REQUISITOS"],
