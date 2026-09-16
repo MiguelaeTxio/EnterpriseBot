@@ -57,6 +57,44 @@ preguntes más, no indagues más en eso."*
 
 ---
 
+## ⛔⛔⛔ CONSULTAS DE SOLO LECTURA A MYSQL -- SIEMPRE POR GITHUB ACTIONS, NUNCA COMANDO S (VIGENTE DESDE S107, 2026-09-16) ⛔⛔⛔
+
+**Regla fija, sin excepción: en EnterpriseBot, ninguna consulta de
+solo lectura (`SELECT`/`SHOW`/`DESCRIBE`/`EXPLAIN`) contra MySQL se
+hace ya por Comando S.** Existe `.github/workflows/db_query.yml`
+(propio repo), que el modelo dispara, sondea y lee él solo, sin
+ningún paso de Miguel Ángel -- ver `com-mysql` sección 0bis
+(skill del modelo) para el procedimiento completo paso a paso.
+Origen explícito de Miguel Ángel (S107): reducir los comandos que él
+tiene que copiar/pegar/subir, en particular trabajando desde
+Android/tablet con las VMs de OCR a la vez.
+
+**Resumen operativo (detalle completo en `com-mysql` 0bis):**
+1. `POST /repos/MiguelaeTxio/EnterpriseBot/actions/workflows/db_query.yml/dispatches`
+   con `{"ref":"main","inputs":{"sql_query":"SELECT ..."}}` (mismo PAT
+   de sesión ya usado para git).
+2. Sondear `GET .../actions/runs` hasta `status: completed`.
+3. `git pull` autenticado normal + `cat DOCS/SESSION/QUERY_RESULTS/ultimo_resultado.md`.
+
+**Seguridad real:** sin usuario MySQL dedicado (PythonAnywhere no
+permite `CREATE USER` en ningún plan, confirmado contra su propia
+documentación oficial en S107) -- el blindaje real es
+`SET SESSION TRANSACTION READ ONLY;` como primera sentencia de la
+misma sesión MySQL efímera que abre el propio workflow (rechazo real
+a nivel de servidor, no depende de grants), más validación de texto
+(una sola sentencia, sin `INTO OUTFILE`/`DUMPFILE`/`LOAD_FILE`).
+Secrets del repo: `PA_DB_READONLY_SSH_PRIVATE_KEY` (clave SSH
+dedicada, nunca la personal de Miguel Ángel ni la de `deploy.yml`) y
+`PA_DB_ADMIN_PASSWORD` (única cuenta MySQL real de la plataforma).
+
+**Esto NUNCA sustituye Comando S para:** cualquier escritura real, ni
+para operaciones que necesiten lógica real de Django
+(`apply_personal_canonical_rename`, `move_entry`,
+`evaluate_substitution`...) -- eso sigue siendo Comando S con el ORM,
+igual que siempre.
+
+---
+
 ## DOS CONSOLAS DISTINTAS, SIN NINGUNA RELACIÓN ENTRE SÍ
 
 La consola sftp permanente (Git Bash) que comunica el directorio de
