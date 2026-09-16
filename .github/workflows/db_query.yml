@@ -7,12 +7,29 @@ name: Consulta SQL de solo lectura (EnterpriseBot)
 # workflow corre en un runner de GitHub (red completa, sin ninguna
 # restriccion), abre una sesion SSH directa a PythonAnywhere con una
 # clave dedicada de solo este proposito (nunca la clave personal de
-# Miguel Angel ni la de deploy.yml) y ejecuta el SQL recibido con un
-# usuario MySQL de solo lectura (SELECT unicamente, sin permisos de
-# escritura a nivel de la propia base de datos -- segunda capa de
-# seguridad real, no solo la validacion de texto de abajo). El
-# resultado se comitea a un archivo fijo del repo; Claude lo lee con
-# un `git pull` normal, sin ningun paso intermedio de Miguel Angel.
+# Miguel Angel ni la de deploy.yml) y ejecuta el SQL recibido contra
+# MySQL. El resultado se comitea a un archivo fijo del repo; Claude lo
+# lee con un `git pull` normal, sin ningun paso intermedio de Miguel
+# Angel.
+#
+# SEGURIDAD REAL (S107, confirmado contra documentacion oficial de
+# PythonAnywhere): NINGUN plan permite CREATE USER a nivel de MySQL,
+# asi que no existe un usuario de solo lectura dedicado -- se usa el
+# unico usuario real (`MiguelAeTxio`, con permisos completos). La
+# proteccion real de que esto siga siendo de solo lectura vive en DOS
+# sitios, ninguno de los cuales es el usuario:
+#   1. Validacion de texto (paso "Validar...") -- la consulta debe
+#      empezar por SELECT/SHOW/DESCRIBE/EXPLAIN, una sola sentencia,
+#      sin INTO OUTFILE/DUMPFILE/LOAD_FILE.
+#   2. `SET SESSION TRANSACTION READ ONLY;` inyectado por el propio
+#      workflow (nunca por el input del usuario) como primera
+#      sentencia de la MISMA sesion MySQL que la consulta -- el
+#      servidor rechaza cualquier escritura mientras esa sesion este
+#      abierta, sin depender de grants. Esta sesion es efimera: se
+#      abre y se cierra sola en los segundos que tarda el workflow,
+#      nunca queda "encendida" para ninguna otra conexion (Comando S,
+#      Django en produccion, lo que sea) -- cada conexion a MySQL es
+#      independiente, como llamadas de telefono distintas.
 #
 # NUNCA sustituye a un Comando S cuando la operacion necesita pasar
 # por logica real de Django (apply_personal_canonical_rename,
@@ -39,10 +56,11 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Validar que la consulta es de solo lectura
-        # Defensa en profundidad, capa 1 de 2 -- la capa 2 real es que
-        # el usuario MySQL solo tiene GRANT SELECT, así que aunque
-        # esta validación de texto se saltara con algo raro, la propia
-        # base de datos rechazaría cualquier escritura.
+        # Defensa en profundidad, capa 1 de 2 -- la capa 2 real es
+        # `SET SESSION TRANSACTION READ ONLY` en el paso de ejecución
+        # (el propio servidor MySQL rechaza cualquier escritura en esa
+        # sesión, sin depender de grants de usuario -- PythonAnywhere
+        # no permite CREATE USER en ningún plan, confirmado S107).
         env:
           SQL_QUERY: ${{ inputs.sql_query }}
         run: |
@@ -58,6 +76,12 @@ jobs:
             echo "⛔ RECHAZADO: no se permite más de una sentencia por consulta." >&2
             exit 1
           fi
+          # Escritura/lectura de archivo del propio servidor -- no son
+          # DML, "SET SESSION TRANSACTION READ ONLY" NO las bloquea.
+          if printf '%s' "$TRIMMED" | grep -qE 'INTO[[:space:]]+(OUTFILE|DUMPFILE)|LOAD_FILE[[:space:]]*\('; then
+            echo "⛔ RECHAZADO: acceso a archivo del servidor (OUTFILE/DUMPFILE/LOAD_FILE) no permitido." >&2
+            exit 1
+          fi
           echo "Consulta validada, primera palabra: $(printf '%s' "$TRIMMED" | awk '{print $1}')"
 
       - name: Preparar clave SSH dedicada (solo lectura)
@@ -67,19 +91,29 @@ jobs:
           chmod 600 ~/.ssh/pa_readonly_key
           ssh-keyscan -H ssh.pythonanywhere.com >> ~/.ssh/known_hosts
 
-      - name: Ejecutar la consulta en PythonAnywhere (usuario MySQL de solo lectura)
+      - name: Ejecutar la consulta en PythonAnywhere (sesión bloqueada a solo lectura por el propio servidor)
+        # PythonAnywhere no permite CREATE USER en ningún plan
+        # (confirmado S107, documentación oficial) -- un usuario MySQL
+        # de solo lectura dedicado no es viable aquí. La protección
+        # real de capa 2 es "SET SESSION TRANSACTION READ ONLY;" antes
+        # de la consulta, en la MISMA sesión -- el servidor MySQL
+        # rechaza cualquier escritura mientras esa sesión esté activa,
+        # sin depender de grants de usuario ni de la validación de
+        # texto del paso anterior.
         env:
           SQL_QUERY: ${{ inputs.sql_query }}
-          DB_RO_USER: ${{ secrets.PA_DB_READONLY_USER }}
-          DB_RO_PASSWORD: ${{ secrets.PA_DB_READONLY_PASSWORD }}
+          DB_ADMIN_PASSWORD: ${{ secrets.PA_DB_ADMIN_PASSWORD }}
         run: |
           set -o pipefail
-          printf '%s\n' "$SQL_QUERY" > /tmp/query.sql
+          {
+            echo "SET SESSION TRANSACTION READ ONLY;"
+            printf '%s\n' "$SQL_QUERY"
+          } > /tmp/query.sql
           scp -i ~/.ssh/pa_readonly_key /tmp/query.sql \
             MiguelAeTxio@ssh.pythonanywhere.com:/tmp/db_readonly_query_${{ github.run_id }}.sql
           ssh -i ~/.ssh/pa_readonly_key MiguelAeTxio@ssh.pythonanywhere.com "
             set -e
-            mysql -u '$DB_RO_USER' -p'$DB_RO_PASSWORD' \
+            mysql -u 'MiguelAeTxio' -p'$DB_ADMIN_PASSWORD' \
               -h MiguelAeTxio.mysql.pythonanywhere-services.com \
               --table 'MiguelAeTxio\$enterprisebot' \
               < /tmp/db_readonly_query_${{ github.run_id }}.sql
