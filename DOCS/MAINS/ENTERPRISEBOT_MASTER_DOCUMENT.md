@@ -1521,7 +1521,61 @@ pasado por esta comprobación (o su inspección visual equivalente
 línea por línea de cada `{# ... #}` añadido) no está verificado según
 el PASO 4.
 
+#### 4.21. DEUDA TÉCNICA — Turismos de empresa sin ficha en `fleet.MachineAsset` (documentos de vehículo archivados por error en el dominio PERSONAL)
 
+**Origen:** detectado en S107 (H35, punto 2 -- barrido de documentos de
+otra persona/otro dominio sobre los 13 tipos auditados). Al revisar
+`ocr_text` cacheado de tipos `PERSONAL`, aparecieron documentos reales
+de turismos de empresa (no maquinaria pesada) archivados dentro de la
+ficha de un trabajador, como si fueran suyos.
 
+**Casos reales confirmados, verificados visualmente (PDF real, no solo
+OCR):**
+- `pk=28245` (`GRANA_ALVAREZ_PALOMA_BAJA_PERSONAL_20180927.pdf`, tipo
+  actual `BAJA_PERSONAL`): ficha ITV de un Volkswagen, matrícula
+  `8534-BGX`.
+- `pk=28276` (`GRANA_ALVAREZ_PALOMA_BAJA_PERSONAL_20170324.pdf`, tipo
+  actual `BAJA_PERSONAL`): ficha técnica (certificado de fabricante,
+  nº `17S023818`) de un SEAT León / Volkswagen, matrícula `1583JXX`.
+- `pk=26847` (`RAMOS_ZAMBRANA_JOSE...INVESTIGACION_ACCIDENTE...pdf`):
+  póliza de responsabilidad civil general de Grúas Adolfo Álvarez,
+  S.L. (Generali, póliza `3R-G-427.000.498`) -- no es de un vehículo
+  concreto, es un documento de EMPRESA.
+
+**Comportamiento actual, verificado en código:** el catálogo
+(`DocumentTypeCatalog`) sí tiene tipos reales para esto (`FICHA_TECNICA`
+e `ITV`, dominio `MACHINE`, familia `CIRCULACION`), pero **ni
+`8534-BGX` ni `1583JXX` existen como fila real en `fleet.MachineAsset`**
+(confirmado por consulta directa, S107) -- `fleet` está pensado para
+grúas/maquinaria pesada (H12), nunca se dio de alta ningún turismo de
+empresa ahí. Además, a diferencia de `PersonIdentity`, `MachineAsset`
+**no tiene campo `folder_path` propio** -- la ubicación real de un
+documento de dominio `MACHINE` se resuelve por convención de nombre de
+carpeta (`resolve_machine_asset()`,
+`document_explorer/classification_service.py`, busca un código de
+flota tipo `A-29` en `parent_path`), no por una ruta almacenada. Mover
+estos 3 documentos a su sitio real exige por tanto decidir primero un
+mecanismo que hoy no existe para turismos.
+
+**Comportamiento deseado -- a decidir con Miguel Ángel, ninguna
+suposición tomada:**
+1. ¿Se dan de alta los turismos de empresa como `MachineAsset` real
+   (con su propio `code` de flota, `family`, `company`), o se crea un
+   dominio/carpeta distinto específico para "vehículos ligeros de
+   empresa" que nunca entren en el mismo `fleet` que las grúas?
+2. Convención de código de carpeta para turismos, si se opta por
+   `MachineAsset` -- el catálogo de flota real usa códigos tipo
+   `A-29`/`E-1364`, nunca se ha definido un patrón para turismos.
+3. `pk=26847` (póliza RC general) no encaja en ninguno de los dos casos
+   anteriores -- no es de un vehículo ni de una persona, es un
+   documento de la propia empresa. Necesita su propio criterio de
+   dominio, no forzarlo dentro de `MACHINE`.
+
+**Acción pendiente:** ninguna por ahora -- **Miguel Ángel ha pedido
+explícitamente dejarlo fuera del alcance de H35** (H35 es
+retipado/refechado de documentación de PERSONAL, no alta de flota de
+turismos). Los 3 `pk` de arriba **siguen archivados donde estaban**,
+sin tocar, hasta que se decida el mecanismo. Cuando se aborde, es
+tarea propia, no un punto de H35.
 
 
