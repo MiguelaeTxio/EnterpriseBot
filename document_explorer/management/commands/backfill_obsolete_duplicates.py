@@ -22,11 +22,17 @@ Criterio, por grupo (mismo `document_type` + mismo sujeto):
   explícito, nunca al azar.
 
 DRY-RUN POR DEFECTO. Sin `--apply`, solo informa.
+
+H35 (S107): excluye por completo los `document_type.is_cumulative=True`
+(FORMACION, ENTREGA_INFORMACION, EPIS...) -- agrupar solo por
+tipo+sujeto marcaria como obsoletos cursos/entregas reales y
+distintos entre si que son legitimamente vigentes a la vez. Ver
+docstring de `DocumentTypeCatalog.is_cumulative` en models.py.
 """
 from django.core.management.base import BaseCommand
 from django.db.models import Count
 
-from document_explorer.models import DocumentIndexEntry
+from document_explorer.models import DocumentIndexEntry, DocumentTypeCatalog
 from document_management.vigencia_service import DocumentSnapshot, is_current
 
 BUCKET = "cgs_grupo_alvarez"
@@ -36,7 +42,8 @@ class Command(BaseCommand):
     help = (
         "H30 (S48) -- marca is_obsolete en duplicados reales "
         "(mismo tipo+sujeto, nunca pasaron por la sustitucion real). "
-        "Dry-run por defecto, --apply para escribir."
+        "Dry-run por defecto, --apply para escribir. Excluye tipos "
+        "is_cumulative=True (S107)."
     )
 
     def add_arguments(self, parser):
@@ -44,12 +51,18 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         apply_changes = options["apply"]
+        non_cumulative_ids = set(
+            DocumentTypeCatalog.objects.filter(
+                is_cumulative=False,
+            ).values_list("id", flat=True)
+        )
 
         groups = (
             DocumentIndexEntry.objects.filter(
                 bucket=BUCKET, entry_kind=DocumentIndexEntry.KIND_FILE,
                 deleted_at__isnull=True, purged_at__isnull=True,
                 document_type__isnull=False, domain_object_id__isnull=False,
+                document_type_id__in=non_cumulative_ids,
                 is_obsolete=False,
             )
             .values("document_type_id", "domain_content_type_id", "domain_object_id")

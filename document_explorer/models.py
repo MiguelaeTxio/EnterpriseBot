@@ -766,6 +766,37 @@ class DocumentTypeCatalog(models.Model):
             "tipo a tipo)."
         ),
     )
+    is_cumulative = models.BooleanField(
+        default=False,
+        verbose_name="Acumulable (varios vigentes a la vez)",
+        help_text=(
+            "H35 (S107). Distinto de dating_scope (esa decide si hace "
+            "falta fecha en cada instancia; esta decide si varias "
+            "instancias del mismo tipo pueden ser vigentes A LA VEZ, "
+            "sin que una sustituya a la otra). False (defecto): tipo "
+            "'de identidad/renovable' -- DNI, CARNET_CONDUCIR, "
+            "CONTRATO, RECONOCIMIENTO_MEDICO... -- solo puede haber "
+            "un documento vigente por persona, evaluate_substitution() "
+            "marca el resto is_obsolete. True: tipo 'de evento "
+            "repetible' -- FORMACION, ENTREGA_INFORMACION, EPIS... -- "
+            "una persona puede tener varios documentos reales y "
+            "vigentes a la vez (cursos distintos, entregas distintas); "
+            "el backfill/sustitución automática NUNCA debe agrupar "
+            "estos solo por tipo+persona sin más. Dentro de un tipo "
+            "acumulable, dos instancias SÍ compiten entre sí cuando "
+            "son literalmente el mismo curso/evento repetido (p. ej. "
+            "una recertificación que sustituye a la anterior) -- ese "
+            "emparejamiento por curso/evento concreto queda pendiente "
+            "de construir (no hay campo estructurado de 'curso' todavía "
+            "en DocumentIndexEntry), por eso el backfill de S107 excluye "
+            "los tipos acumulables por completo en vez de adivinar. "
+            "Decisión explícita de Miguel Ángel (S107): mismo campo "
+            "reutilizable para las subplantillas de dosier (H31) -- "
+            "una plantilla como 'Sacyr' podrá tener una subplantilla "
+            "de formación donde se marquen varios tipos de curso a "
+            "incluir, precisamente porque son acumulables."
+        ),
+    )
     created_at = models.DateTimeField(
         auto_now_add=True,
         verbose_name="Fecha de alta",
