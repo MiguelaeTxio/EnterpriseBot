@@ -471,6 +471,60 @@ nunca a `PersonIdentity`. Confirmado, no es un olvido.
 
 ## COMPLETADAS EN S106
 
+**Resumen:** sesión larga, con un intento fallido de cierre a medio
+camino (se llegó a proponer abrir S107 con PISA/PAH sin haber
+cerrado S106 con PCS -- corregido al momento por aviso directo de
+Miguel Ángel, sin consecuencias reales más allá de una caja de texto
+anulada). Se cerraron 3 de los 6 tipos del punto 1 de H35
+(`AUTONOMO`, `MOD_145`, `REGISTRO_JORNADA`), con el hallazgo más
+fuerte de todo el hito hasta ahora en este último (90% cajón de
+sastre). De paso, un desvío de sesión no relacionado con H35: rediseño
+completo del flujo de plantillas de dosier (H31, S103/S105) a partir
+de feedback directo de uso real de Miguel Ángel sobre la propia
+interfaz.
+
+**Desvío de sesión -- plantillas de dosier (`document_explorer/models.py`,
+`panel/views_documentation_h30.py`, `panel/urls.py`,
+`panel/templates/panel/dossier_templates_h35/manage.html`,
+`panel/templates/panel/documentation_h30/_personal_dossier_template_list.html`):**
+1. `PersonalDossierTemplate.is_active` (migración `0089`): selector
+   de "plantilla activa" en el gestor -- botón que se convierte en
+   insignia verde, en vez del radio sin etiqueta del primer intento.
+2. `PersonalDossierTemplate.output_format` **eliminado** (migración
+   `0090`) -- Miguel Ángel: "tenemos el zip y tenemos el PDF y hacemos
+   dos plantillas [...] creo que es un error, solamente una
+   plantilla". El formato se pregunta siempre al aplicar
+   (`PersonalDossierTemplateApplyView` exige `?format=` explícito,
+   nunca por defecto), nunca se guarda por plantilla. Eliminadas de
+   paso `PersonalDossierTemplateCreateView`/`UpdateView` (dead code ya
+   superseded) y `DuplicateView` (su único propósito era el formato
+   contrario, ya no aplica).
+3. "Marcar como activa" ya no abre un botón de previsualizar aparte
+   -- carga sus tipos directamente en el panel de trabajo, con un
+   visor siempre visible (con su propio scroll) que muestra en vivo
+   los tipos marcados y usa el nombre de la plantilla como membrete.
+   Detección de cambios sin guardar (nombre/tipos distintos de lo
+   último cargado o guardado): activar otra plantilla o cerrar la
+   pestaña con cambios pendientes pregunta si guardar antes.
+4. Ajustes de UX menores sobre feedback directo: tipos incluidos en
+   columnas de lectura vertical (`columns: 3` CSS) en vez de fila
+   envuelta; alineación de la fila Nombre/Formato del formulario.
+
+**Incidencias de protocolo reales de la sesión (autocorregidas, sin
+impacto en producción):**
+- Se generó y activó `DocumentTypeCatalog.ocr_unreliable=True` para
+  `AUTONOMO` por una hipótesis incorrecta sobre su funcionamiento
+  (se creía que saltaba motores OCR; en realidad solo descarta la
+  fecha resuelta) -- revertido antes de causar ningún daño real, tras
+  revisar el código fuente del propio script. Corregido con un campo
+  nuevo y semánticamente distinto, `skip_light_ocr_engines`.
+- Una consulta ORM real se entregó sin el envoltorio `SWAP` + `sftp`
+  obligatorio de `com-bash-commands` sección 4 -- señalado por Miguel
+  Ángel, corregido en la siguiente caja.
+- Se intentó abrir sesión S107 (PISA completo + caja de PAH Momento 1)
+  sin haber cerrado S106 con PCS -- señalado por Miguel Ángel antes de
+  ejecutar ningún comando real, caja de PAH anulada sin uso.
+
 **Herramienta nueva:** `DocumentTypeCatalog.skip_light_ocr_engines`
 (migración `0088`) + `h28_migration_agent/extract_personal_dates_bulk_fast.py`,
 variante de `extract_personal_dates_bulk.py`. Origen real: dry-run de
@@ -536,9 +590,10 @@ tipo, sin necesidad de `skip_light_ocr_engines`), 4 AMBIGUOS:**
 40020  CARVAJAL_GONZALEZ_FRANCISCO_MOD_145_20110101.pdf
 ```
 
-**`REGISTRO_JORNADA` (S107 -- continuación de la misma sesión de chat
-que S106, PISA/PAH intentados por error sin PCS previo, anulados,
-ver más abajo). HALLAZGO FUERTE, el más marcado de todo H35 hasta
+**`REGISTRO_JORNADA` (mismo día, sesión S106 continuada -- se intentó
+por error abrir S107 con PISA/PAH sin haber cerrado S106 con PCS,
+anulado por Miguel Ángel al momento, sigue siendo S106). HALLAZGO
+FUERTE, el más marcado de todo H35 hasta
 ahora: de los 20 candidatos reales de toda la empresa, 18 (el 90%)
 NO eran `REGISTRO_JORNADA` -- eran nóminas archivadas bajo el tipo
 equivocado. Solo 1 de los 20 era un `REGISTRO_JORNADA` genuino.**
@@ -606,7 +661,7 @@ exacto que el resto de esta sesión** (dry-run de 10 primero, revisar
 el patrón, campaña completa -- ver nota de shards más abajo):
 ~~`AUTONOMO` (189)~~ **CERRADO EN S106.** ~~`MOD_145` (161)~~
 **CERRADO EN S106 (125 reales, ver "COMPLETADAS EN S106" arriba).**
-~~`REGISTRO_JORNADA` (133)~~ **CERRADO EN S107 (20 reales -- hallazgo
+~~`REGISTRO_JORNADA` (133)~~ **CERRADO EN S106 (20 reales -- hallazgo
 fuerte, 18/20 eran nóminas mal archivadas, ver "COMPLETADAS EN S106"
 arriba).** Quedan: `CSS` (89), `VACACIONES` (74),
 `NOMINA` (73) -- **estimaciones de la hoja de ruta original, sin
@@ -627,7 +682,7 @@ crear VMs efímeras (verificado real: 189 documentos en ~7 minutos).
 Si el patrón es mixto o Tesseract resuelve bien (como `MOD_145`),
 usar el script original sin el flag.** Si el recuento real de un tipo
 exige repartir en shards (más candidatos de los que un solo proceso
-maneja en tiempo razonable), **límite de tamaño de shard, S107,
+maneja en tiempo razonable), **límite de tamaño de shard, S106,
 Miguel Ángel: máximo 20-30 documentos por shard (32-35 tolerable,
 nunca 50 o más) -- si hace falta más volumen que eso, congelar imagen
 y repartir en varias VMs efímeras en paralelo, nunca un shard
