@@ -161,13 +161,37 @@ def is_current(
         return candidate.indexed_at >= max(tied_siblings_indexed_ats)
 
     if candidate.issue_date is not None:
-        sibling_issue_dates = [
-            s.issue_date for s in siblings
+        sibling_issue_docs = [
+            s for s in siblings
             if s.expiry_date is None and s.issue_date is not None
         ]
-        if not sibling_issue_dates:
+        if not sibling_issue_docs:
             return True
-        return candidate.issue_date >= max(sibling_issue_dates)
+        max_sibling_issue = max(s.issue_date for s in sibling_issue_docs)
+        if candidate.issue_date > max_sibling_issue:
+            return True
+        if candidate.issue_date < max_sibling_issue:
+            return False
+        # H35 (S108), segundo incidente real distinto del de arriba:
+        # esta rama nunca desempataba en absoluto -- con `>=` contra
+        # el maximo, TODOS los hermanos con exactamente la misma
+        # issue_date que el maximo (incluido el propio candidato)
+        # devolvian True a la vez. Confirmado con datos reales
+        # (CONTRATO/PARTE_BAJA_MEDICA/SEGURO con issue_date identica
+        # entre hermanos, indexed_at casi identico -- duplicados
+        # reales de la migracion historica). Mismo desempate que las
+        # otras dos ramas: el mas recientemente indexado prevalece: si
+        # no hay indexed_at, se mantiene vigente (nunca se archiva a
+        # ciegas sin dato para desempatar).
+        if candidate.indexed_at is None:
+            return True
+        tied_siblings_indexed_ats = [
+            s.indexed_at for s in sibling_issue_docs
+            if s.issue_date == candidate.issue_date and s.indexed_at is not None
+        ]
+        if not tied_siblings_indexed_ats:
+            return True
+        return candidate.indexed_at >= max(tied_siblings_indexed_ats)
 
     # Ningun dato real (ni caducidad ni emision) en el candidato.
     # INCIDENTE REAL S102: esta rama devolvia True sin mas ("no hay
