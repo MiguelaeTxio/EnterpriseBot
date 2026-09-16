@@ -28,6 +28,14 @@ H35 (S107): excluye por completo los `document_type.is_cumulative=True`
 tipo+sujeto marcaria como obsoletos cursos/entregas reales y
 distintos entre si que son legitimamente vigentes a la vez. Ver
 docstring de `DocumentTypeCatalog.is_cumulative` en models.py.
+
+H35 (S108), incidente real: tras corregir `is_current()` para
+desempatar por `indexed_at` en fechas de caducidad empatadas, la
+primera relanzada de este comando siguio dejando la inmensa mayoria
+de los grupos reales sin resolver (56 de 60) -- este comando nunca
+rellenaba `indexed_at` al construir `DocumentSnapshot` (a diferencia
+de `panel/views_documentation_h30.py._split_current_obsolete()`, que
+si lo hacia), asi que el desempate nunca se activaba. Corregido.
 """
 from django.core.management.base import BaseCommand
 from django.db.models import Count
@@ -93,7 +101,7 @@ class Command(BaseCommand):
                 snapshots = {
                     e.pk: DocumentSnapshot(
                         identifier=e.pk, expiry_date=e.expiry_date,
-                        issue_date=e.issue_date,
+                        issue_date=e.issue_date, indexed_at=e.indexed_at,
                     )
                     for e in entries
                 }
