@@ -166,6 +166,15 @@ CONTENT_SIGNALS = {
     # codificacion varia entre recto/tipografico segun el documento
     # y no siempre sobrevive la extraccion de texto).
     "EPIS": ["ENTREGA DE EPI"],
+    # H35 (S107). Confirmado con pk=28255/28256 (mismo documento
+    # duplicado, N/REF: 29/0117186/21) -- comunicacion real de la
+    # Inspeccion de Trabajo sobre fraude en contratacion temporal.
+    # Frase ancla especifica al organismo, nunca "COMUNICACION" sola
+    # (palabra generica que aparece tambien en COMUNICACION_CONTRATO/
+    # COMUNICACION_JORNADA).
+    "COMUNICACION_INSPECCION_TRABAJO": [
+        "ORGANISMO ESTATAL INSPECCION DE TRABAJO Y SEGURIDAD SOCIAL",
+    ],
 }
 
 # Pares "gana X sobre Y" -- mismo principio que SPECIFIC_WINS de
