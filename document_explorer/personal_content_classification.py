@@ -65,6 +65,16 @@ CONTENT_SIGNALS = {
     "NIE": ["NUMERO DE IDENTIDAD DE EXTRANJERO", "CERTIFICADO DE REGISTRO DE CIUDADANO"],
     "RECONOCIMIENTO_MEDICO": [
         "EXAMEN MEDICO ESPECIFICO", "APTO PARA EL PUESTO", "VIGILANCIA DE LA SALUD",
+        # H35 (S107), confirmado con 12+ muestras reales (formato MPE,
+        # Medios de Prevencion Externos Sur S.L., el proveedor de PRL
+        # mas usado de toda la plataforma): "CERTIFICA: Que el
+        # trabajador [NOMBRE] y DNI [numero], perteneciente a la
+        # empresa [EMPRESA]... ha sido sometido el dia [fecha]... a
+        # reconocimiento medico [periodico/inicial]...". Frase ancla
+        # sin el nombre/fecha variables, que es lo unico estable entre
+        # las decenas de variantes reales encontradas.
+        "HA SIDO SOMETIDO EL DIA", "RECONOCIMIENTO MEDICO PERIODICO",
+        "RECONOCIMIENTO MEDICO INICIAL",
     ],
     "NOMINA": ["RECIBO DE SALARIOS", "LIQUIDO A PERCIBIR", "PERIODO DE LIQUIDACION"],
     "CONTRATO": ["CONTRATO DE TRABAJO", "DECLARAN QUE REUNEN LOS REQUISITOS"],
