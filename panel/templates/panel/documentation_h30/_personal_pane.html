@@ -104,9 +104,30 @@ haya al menos una persona seleccionada.
     <div id="person-mass-result" class="small mt-2"></div>
 </div>
 
+<div id="personal-results-scroll" style="max-height: 60vh; overflow-y: auto; border: 1px solid #dee2e6; border-radius: 0.25rem;">
 <div id="personal-results">
     {% include "panel/documentation_h30/_personal_results.html" with page=page sort_key=sort_key sort_dir=sort_dir search=search %}
 </div>
+</div>
+
+{% comment %}
+H31 (S109). Cabecera de la tabla fija (sticky) dentro de su propio
+contenedor con scroll -- Miguel Ángel, con captura de pantalla real:
+"la parte arriba de la línea roja debe ser fija [buscador, filtros,
+barra de acción masiva], el scroll debe ser solo la parte de la
+doble flecha [las filas de la tabla]". La cabecera de columnas
+(Apellidos/Nombre/DNI/Alta/Documentos) se queda pegada arriba del
+propio contenedor de scroll -- nunca desaparece al bajar, aunque solo
+las filas de debajo se desplacen de verdad.
+{% endcomment %}
+<style>
+#personal-results-scroll thead th {
+    position: sticky;
+    top: 0;
+    background-color: #f8f9fa;
+    z-index: 2;
+}
+</style>
 
 <script>
 (function () {
