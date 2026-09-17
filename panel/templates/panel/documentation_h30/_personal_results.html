@@ -15,16 +15,8 @@ en la selección recordada por ese JS al reconstruir la tabla.
                 <a href="#"
                    hx-get="{% url 'panel:documentation_personal_results' %}?sort=first_surname&dir={% if sort_key == 'first_surname' and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&q={{ search }}"
                    hx-target="#personal-results" class="text-decoration-none text-dark">
-                    Apellidos
+                    Apellidos, Nombre
                     {% if sort_key == 'first_surname' %}<i class="bi bi-chevron-{% if sort_dir == 'asc' %}up{% else %}down{% endif %}"></i>{% endif %}
-                </a>
-            </th>
-            <th>
-                <a href="#"
-                   hx-get="{% url 'panel:documentation_personal_results' %}?sort=given_name&dir={% if sort_key == 'given_name' and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&q={{ search }}"
-                   hx-target="#personal-results" class="text-decoration-none text-dark">
-                    Nombre
-                    {% if sort_key == 'given_name' %}<i class="bi bi-chevron-{% if sort_dir == 'asc' %}up{% else %}down{% endif %}"></i>{% endif %}
                 </a>
             </th>
             <th>DNI</th>
@@ -53,15 +45,14 @@ en la selección recordada por ese JS al reconstruir la tabla.
         <tr>
             <td><input type="checkbox" class="form-check-input person-select-checkbox" value="{{ person.pk }}"></td>
             <td>{% if person.has_alert %}<i class="bi bi-exclamation-triangle-fill text-danger" title="{{ person.alert_labels|join:", " }}"></i>{% endif %}</td>
-            <td><a href="{% url 'panel:documentation_personal_detail' pk=person.pk %}">{{ person.first_surname }} {{ person.second_surname }}</a></td>
-            <td>{{ person.given_name }}</td>
+            <td><a href="{% url 'panel:documentation_personal_detail' pk=person.pk %}">{{ person.first_surname }} {{ person.second_surname }}, {{ person.given_name }}</a></td>
             <td>{{ person.dni }}</td>
             <td>{{ person.hire_date|default_if_none:"" }}</td>
             <td>{{ person.doc_count }}</td>
             <td><span class="dossier-missing-flag" data-person-id="{{ person.pk }}"></span></td>
         </tr>
         {% empty %}
-        <tr><td colspan="8" class="text-muted small py-3">No se encontró personal.</td></tr>
+        <tr><td colspan="7" class="text-muted small py-3">No se encontró personal.</td></tr>
         {% endfor %}
     </tbody>
 </table>
