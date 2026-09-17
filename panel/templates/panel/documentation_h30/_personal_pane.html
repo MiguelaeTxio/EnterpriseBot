@@ -60,6 +60,24 @@ haya al menos una persona seleccionada.
 
         <span class="vr mx-2"></span>
 
+        {% comment %}
+        H31 (S109). Asignar puesto masivo -- Miguel Ángel: "vamos a
+        crear el puesto ya de chófer [...] elegir los choferes [...]
+        asígnales el puesto de chófer". Sustituye siempre el puesto
+        anterior de cada persona (FK, no acumulativo) -- pensado tanto
+        para el alta masiva inicial (puesto "General" a todos) como
+        para reasignaciones puntuales después.
+        {% endcomment %}
+        <select id="person-mass-job-position" class="form-select form-select-sm" style="width:auto;">
+            <option value="">Asignar puesto…</option>
+            {% for position in job_positions %}
+            <option value="{{ position.pk }}">{{ position.name }}</option>
+            {% endfor %}
+        </select>
+        <button type="button" class="btn btn-sm btn-primary" id="person-mass-job-position-submit">Asignar puesto</button>
+
+        <span class="vr mx-2"></span>
+
         <select id="person-mass-epi" class="form-select form-select-sm" style="width:auto;">
             <option value="">EPI a entregar…</option>
             {% for epi in epi_items %}
@@ -281,6 +299,35 @@ las filas de debajo se desplacen de verdad.
             }
         }).catch(() => {
             resultEl.innerHTML = '<div class="alert alert-danger py-1 px-2 mb-0">Error de red al guardar el grupo.</div>';
+        });
+    });
+
+    document.getElementById('person-mass-job-position-submit').addEventListener('click', function () {
+        const jobPositionId = document.getElementById('person-mass-job-position').value;
+        if (selection.size === 0) {
+            resultEl.innerHTML = '<div class="alert alert-warning py-1 px-2 mb-0">No hay personas seleccionadas.</div>';
+            return;
+        }
+        if (!jobPositionId) {
+            resultEl.innerHTML = '<div class="alert alert-warning py-1 px-2 mb-0">Elige un puesto primero.</div>';
+            return;
+        }
+        const formData = new FormData();
+        selection.forEach((pk) => formData.append('person_ids', pk));
+        formData.append('job_position_id', jobPositionId);
+        resultEl.innerHTML = '<div class="text-muted">Asignando…</div>';
+        fetch("{% url 'panel:documentation_personal_job_position_mass_set' %}", {
+            method: 'POST',
+            headers: {'X-CSRFToken': getCookie('csrftoken')},
+            body: formData,
+        }).then((r) => r.json()).then((data) => {
+            if (data.ok) {
+                resultEl.innerHTML = `<div class="alert alert-success py-1 px-2 mb-0">${data.updated_count} personas asignadas al puesto "${data.job_position_name}".</div>`;
+            } else {
+                resultEl.innerHTML = `<div class="alert alert-danger py-1 px-2 mb-0">${data.error || 'Error al asignar el puesto.'}</div>`;
+            }
+        }).catch(() => {
+            resultEl.innerHTML = '<div class="alert alert-danger py-1 px-2 mb-0">Error de red al asignar el puesto.</div>';
         });
     });
 

@@ -557,6 +557,10 @@ class PersonalListFragmentView(CompanyUserRequiredMixin, View):
         ctx["person_groups"] = PersonGroupTemplate.objects.prefetch_related(
             "members",
         ).order_by("name")
+        # H31 (S109): catálogo de puestos para la acción masiva nueva
+        # "Asignar puesto" -- mismo criterio que person_groups, cargado
+        # una única vez en la carga inicial de la pestaña.
+        ctx["job_positions"] = JobPosition.objects.order_by("name")
         return render(request, "panel/documentation_h30/_personal_pane.html", ctx)
 
 
@@ -1099,9 +1103,21 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
                     "pk", flat=True,
                 ),
             )
+            # H31 (S109). DNI/NIE son excluyentes para el aviso de
+            # faltante -- Miguel Ángel, verbatim: "si tenemos el DNI
+            # ya no es necesario que tenga el NIE. Si tenemos el NIE
+            # ya no es necesario que tenga el DNI." Una persona
+            # nacional nunca tendrá NIE, y viceversa -- si el puesto
+            # exige ambos códigos (caso real de "General", pensado
+            # para cualquier nacionalidad) y la persona ya tiene
+            # CUALQUIERA de los dos, ninguno de los dos cuenta como
+            # faltante.
+            has_dni_or_nie = bool({"DNI", "NIE"} & present_type_codes)
             for dt in DocumentTypeCatalog.objects.filter(
                 pk__in=required_type_ids,
             ).exclude(code__in=present_type_codes).order_by("label"):
+                if dt.code in ("DNI", "NIE") and has_dni_or_nie:
+                    continue
                 missing_required_types_by_family.setdefault(
                     dt.family, [],
                 ).append(dt)
@@ -3318,6 +3334,46 @@ class PersonalNotificationSendView(DocsUploadAccessMixin, View):
         response = HttpResponse(eml_bytes, content_type="message/rfc822")
         response["Content-Disposition"] = f'attachment; filename="{filename}"'
         return response
+
+
+class PersonMassSetJobPositionView(DocsUploadAccessMixin, View):
+    """
+    H31 (S109). POST: asigna (o desasigna, con `job_position_id`
+    vacío) un puesto de trabajo a varias personas a la vez -- sobre
+    el mismo Set `selection` de siempre, mismo mecanismo que el resto
+    de acciones masivas de esta barra. Miguel Ángel, verbatim: "vamos
+    a crear el puesto ya de chófer [...] elegir los choferes [...]
+    asígnales el puesto de chófer [...] cambiaríamos en esos el
+    puesto de General por el puesto de chófer" -- una asignación
+    masiva nueva SIEMPRE sustituye el puesto anterior de cada
+    persona, nunca lo acumula (un `ForeignKey`, no M2M -- una persona
+    tiene un único puesto a la vez).
+    """
+
+    def post(self, request):
+        person_ids = request.POST.getlist("person_ids")
+        job_position_id = request.POST.get("job_position_id", "").strip()
+
+        if not person_ids:
+            return JsonResponse(
+                {"ok": False, "error": "No hay ninguna persona seleccionada."},
+                status=400,
+            )
+
+        if job_position_id:
+            job_position = get_object_or_404(JobPosition, pk=job_position_id)
+        else:
+            job_position = None
+
+        updated = PersonIdentity.objects.filter(
+            pk__in=person_ids,
+        ).update(job_position=job_position)
+
+        return JsonResponse({
+            "ok": True,
+            "updated_count": updated,
+            "job_position_name": str(job_position) if job_position else None,
+        })
 
 
 class PersonGroupTemplateCreateView(DocsUploadAccessMixin, View):
