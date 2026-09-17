@@ -47,7 +47,7 @@ from document_explorer.index_writer import ensure_folder_chain
 from document_explorer.models import (
     DocumentAcknowledgment, DocumentIndexEntry, DocumentTypeCatalog,
     EpiDelivery, EpiItemCatalog, EpiReview, PersonalDossierTemplate,
-    PersonIdentity, path_digest,
+    PersonGroupTemplate, PersonIdentity, path_digest,
 )
 from document_explorer.subject_upload_service import (
     SubjectUploadError, upload_subject_document,
@@ -534,6 +534,13 @@ class PersonalListFragmentView(CompanyUserRequiredMixin, View):
         # notification_types de arriba, cargado una única vez en la
         # carga inicial de la pestaña.
         ctx["dossier_templates"] = request.user.company_user.company.dossier_templates.order_by("name")
+        # H31 (S109): grupos de reparto guardados -- sin filtro de
+        # Company a propósito (PersonGroupTemplate cruza empresas por
+        # diseño), cargado una única vez igual que el resto de esta
+        # barra de acción masiva.
+        ctx["person_groups"] = PersonGroupTemplate.objects.prefetch_related(
+            "members",
+        ).order_by("name")
         return render(request, "panel/documentation_h30/_personal_pane.html", ctx)
 
 
@@ -3021,6 +3028,51 @@ class PersonalNotificationSendView(DocsUploadAccessMixin, View):
         response = HttpResponse(eml_bytes, content_type="message/rfc822")
         response["Content-Disposition"] = f'attachment; filename="{filename}"'
         return response
+
+
+class PersonGroupTemplateCreateView(DocsUploadAccessMixin, View):
+    """
+    H31 (S109), punto 1 del nuevo bloque de plantillas. POST: guarda
+    con nombre el Set `selection` que ya acumula el frontend de
+    `_personal_pane.html` (marcado entre filtros/páginas dentro de la
+    misma sesión de navegador) -- esta vista solo añade persistencia
+    con nombre más allá de esa sesión, para reutilizar el mismo
+    conjunto de personas en cualquier acción masiva y en días
+    distintos. Deliberadamente sin filtro de Company: el propio caso
+    de uso (chalecos a choferes de varias empresas) exige poder
+    mezclarlas en un mismo grupo.
+
+    Devuelve los `members` (pks) en la respuesta para que el
+    `<select>` de grupos guardados pueda añadir la nueva opción sin
+    recargar la pestaña.
+    """
+
+    def post(self, request):
+        name = request.POST.get("name", "").strip()
+        person_ids = request.POST.getlist("person_ids")
+
+        if not name:
+            return JsonResponse(
+                {"ok": False, "error": "Falta el nombre del grupo."}, status=400,
+            )
+        if not person_ids:
+            return JsonResponse(
+                {"ok": False, "error": "No hay ninguna persona seleccionada."},
+                status=400,
+            )
+
+        people = PersonIdentity.objects.filter(pk__in=person_ids)
+        group = PersonGroupTemplate.objects.create(
+            name=name, created_by=request.user.company_user,
+        )
+        group.members.set(people)
+
+        return JsonResponse({
+            "ok": True,
+            "id": group.pk,
+            "name": group.name,
+            "members": list(people.values_list("pk", flat=True)),
+        })
 
 
 class EpiMassDeliveryView(DocsUploadAccessMixin, View):

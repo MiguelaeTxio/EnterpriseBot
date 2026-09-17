@@ -33,6 +33,7 @@ from panel.views_documentation_h30 import (
     DocumentationHubV2View,
     EpiIndividualDeliveryView,
     EpiMassDeliveryView,
+    PersonGroupTemplateCreateView,
     EpiResultsFragmentView,
     EpiTabFragmentView,
     EpiTechnicalSheetUploadView,
@@ -473,6 +474,7 @@ urlpatterns = [
     path("documentacion/personal/<int:pk>/entregar-epi/", EpiIndividualDeliveryView.as_view(), name="documentation_personal_epi_delivery"),
     path("documentacion/personal/<int:pk>/notificar/", PersonalNotificationSendView.as_view(), name="documentation_personal_notify"),
     # H31 (S75) punto 1: acciones masivas sobre la selección con casillero del listado Personal.
+    path("documentacion/personal/grupos/crear/", PersonGroupTemplateCreateView.as_view(), name="documentation_personal_group_create"),
     path("documentacion/personal/entregar-epi-masivo/", EpiMassDeliveryView.as_view(), name="documentation_personal_epi_mass_delivery"),
     path("documentacion/personal/notificar-masivo/", PersonalNotificationMassSendView.as_view(), name="documentation_personal_notify_mass"),
     # H31 (S75) punto 2: CRUD de circulares/notificaciones.

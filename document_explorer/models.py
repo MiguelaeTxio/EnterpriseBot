@@ -2279,3 +2279,68 @@ class PersonalDossierTemplate(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.company})"
+
+
+class PersonGroupTemplate(models.Model):
+    """
+    H31 (S109). "Grupo de reparto" -- conjunto guardado de personas,
+    reutilizable en cualquier accion masiva sobre Personal (entrega de
+    EPI, notificacion/circular, generacion de dosieres) sin tener que
+    volver a marcar el mismo casillero cada vez. Miguel Angel,
+    verbatim: "normalmente se excluyen ciertas personas [...] marco
+    Transgrual, me van a salir listados todos los trabajadores de
+    Transgrual y ahora marco, por ejemplo, los que son gruistas [...]
+    puedo mezclar dos empresas, porque a lo mejor le voy a dar a todos
+    los choferes de todas las empresas un chaleco de alta
+    visibilidad".
+
+    Deliberadamente SIN FK a Company (a diferencia de
+    PersonalDossierTemplate) -- el propio caso de uso que lo motiva es
+    mezclar personas de varias empresas reales en un mismo grupo (el
+    ejemplo de los choferes/chalecos de arriba). El filtro por empresa
+    para construir el grupo sigue existiendo en el listado de Personal
+    tal cual ya funciona hoy -- este modelo solo persiste el resultado
+    final de la seleccion, cruzando empresas si el propio supervisor
+    lo decide asi.
+
+    Se guarda desde el frontend a partir del Set `selection` ya
+    existente en `_personal_pane.html` (acumulado en cliente entre
+    filtros/paginas dentro de la misma sesion de navegador) -- este
+    modelo es exclusivamente lo que anade PERSISTENCIA CON NOMBRE mas
+    alla de esa sesion, para reutilizarlo en dias distintos y en
+    cualquiera de las acciones masivas.
+    """
+
+    name = models.CharField(
+        max_length=150,
+        verbose_name="Nombre del grupo",
+    )
+    members = models.ManyToManyField(
+        "document_explorer.PersonIdentity",
+        related_name="group_templates",
+        verbose_name="Personas incluidas",
+    )
+    created_by = models.ForeignKey(
+        "ivr_config.CompanyUser",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="created_person_groups",
+        verbose_name="Creado por",
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Fecha de creación",
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name="Última edición",
+    )
+
+    class Meta:
+        verbose_name = "Grupo de reparto"
+        verbose_name_plural = "Grupos de reparto"
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name

@@ -37,6 +37,26 @@ haya al menos una persona seleccionada.
 
         <span class="vr mx-2"></span>
 
+        {% comment %}
+        H31 (S109): Grupo de reparto -- conjunto de personas guardado
+        con nombre, cruzando empresas si hace falta (caso real:
+        chalecos de alta visibilidad a choferes de varias empresas a
+        la vez). "Cargar" sustituye la selección actual por los
+        miembros del grupo (mismo Set `selection` de siempre, sin
+        tocar las vistas de acción masiva); "Guardar" persiste la
+        selección actual con un nombre para reutilizarla otro día.
+        {% endcomment %}
+        <select id="person-mass-group" class="form-select form-select-sm" style="width:auto;">
+            <option value="">Grupo de reparto guardado…</option>
+            {% for group in person_groups %}
+            <option value="{{ group.pk }}" data-members="[{% for m in group.members.all %}{{ m.pk }}{% if not forloop.last %},{% endif %}{% endfor %}]">{{ group.name }} ({{ group.members.count }})</option>
+            {% endfor %}
+        </select>
+        <button type="button" class="btn btn-sm btn-outline-secondary" id="person-mass-group-load">Cargar grupo</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" id="person-mass-group-save">Guardar selección como grupo</button>
+
+        <span class="vr mx-2"></span>
+
         <select id="person-mass-epi" class="form-select form-select-sm" style="width:auto;">
             <option value="">EPI a entregar…</option>
             {% for epi in epi_items %}
@@ -180,6 +200,64 @@ haya al menos una persona seleccionada.
         syncCheckboxesToSelection();
         refreshBar();
         resultEl.innerHTML = '';
+    });
+
+    // H31 (S109) -- Grupos de reparto: "Cargar" sustituye `selection`
+    // por los miembros del grupo elegido (embebidos en data-members
+    // al renderizar, sin llamada de red aparte); solo actua sobre las
+    // casillas visibles en la pagina actual -- syncCheckboxesToSelection()
+    // ya tolera esto (se re-sincroniza en cada repintado htmx).
+    document.getElementById('person-mass-group-load').addEventListener('click', function () {
+        const groupSelect = document.getElementById('person-mass-group');
+        const opt = groupSelect.options[groupSelect.selectedIndex];
+        if (!groupSelect.value) {
+            resultEl.innerHTML = '<div class="alert alert-warning py-1 px-2 mb-0">Elige un grupo guardado primero.</div>';
+            return;
+        }
+        let members = [];
+        try {
+            members = JSON.parse(opt.dataset.members || '[]');
+        } catch (e) {
+            members = [];
+        }
+        selection.clear();
+        members.forEach((pk) => selection.add(String(pk)));
+        syncCheckboxesToSelection();
+        refreshBar();
+        resultEl.innerHTML = `<div class="alert alert-success py-1 px-2 mb-0">Grupo "${opt.text}" cargado (${members.length} personas) -- si alguna no aparece en la página visible, sigue seleccionada igualmente para la acción masiva.</div>`;
+    });
+
+    document.getElementById('person-mass-group-save').addEventListener('click', function () {
+        if (selection.size === 0) {
+            resultEl.innerHTML = '<div class="alert alert-warning py-1 px-2 mb-0">No hay personas seleccionadas para guardar.</div>';
+            return;
+        }
+        const name = window.prompt('Nombre del grupo de reparto:', '');
+        if (!name || !name.trim()) {
+            return;
+        }
+        const formData = new FormData();
+        selection.forEach((pk) => formData.append('person_ids', pk));
+        formData.append('name', name.trim());
+        fetch("{% url 'panel:documentation_personal_group_create' %}", {
+            method: 'POST',
+            headers: {'X-CSRFToken': getCookie('csrftoken')},
+            body: formData,
+        }).then((r) => r.json()).then((data) => {
+            if (data.ok) {
+                const groupSelect = document.getElementById('person-mass-group');
+                const newOpt = document.createElement('option');
+                newOpt.value = data.id;
+                newOpt.dataset.members = JSON.stringify(data.members);
+                newOpt.textContent = `${data.name} (${data.members.length})`;
+                groupSelect.appendChild(newOpt);
+                resultEl.innerHTML = `<div class="alert alert-success py-1 px-2 mb-0">Grupo "${data.name}" guardado.</div>`;
+            } else {
+                resultEl.innerHTML = `<div class="alert alert-danger py-1 px-2 mb-0">${data.error || 'Error al guardar el grupo.'}</div>`;
+            }
+        }).catch(() => {
+            resultEl.innerHTML = '<div class="alert alert-danger py-1 px-2 mb-0">Error de red al guardar el grupo.</div>';
+        });
     });
 
     document.getElementById('person-mass-epi-submit').addEventListener('click', function () {
