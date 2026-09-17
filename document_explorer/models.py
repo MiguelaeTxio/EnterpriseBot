@@ -2241,6 +2241,36 @@ class PersonalDossierTemplate(models.Model):
             "plantilla -- nunca fila fija de DocumentIndexEntry."
         ),
     )
+    # ------------------------------------------------------------------
+    # H31/H36 (S109). EPIs a incluir como sección propia del dossier --
+    # deliberadamente separado de `document_types` porque una entrega
+    # de EPI vive en `EpiDelivery` (registro estructurado: persona,
+    # EPI, fecha), nunca en `DocumentIndexEntry` -- son dos fuentes de
+    # datos reales distintas. Al aplicar la plantilla se resuelven TODAS
+    # las entregas reales de cada EPI marcado aquí para la persona
+    # concreta (`_resolve_template_epi_deliveries`), igual criterio de
+    # "resolver en el momento de aplicar" que `document_types`.
+    #
+    # SIN FIRMA TODAVIA (decision explicita de Miguel Angel, S109): la
+    # seccion de EPIs del dossier se genera sin ningun bloque de firma
+    # -- el pipeline de firma electronica cualificada (proveedor
+    # externo homologado eIDAS, a elegir) esta en fase de eleccion de
+    # proveedor, fuera del alcance de este campo. Anadir la firma real
+    # es tarea aparte, sobre esta misma seccion, cuando el proveedor
+    # este integrado.
+    # ------------------------------------------------------------------
+    epi_items = models.ManyToManyField(
+        EpiItemCatalog,
+        blank=True,
+        related_name="dossier_templates",
+        verbose_name="EPIs incluidos",
+        help_text=(
+            "Se resuelven las entregas reales (EpiDelivery) de cada "
+            "EPI marcado, para la persona concreta, en el momento de "
+            "aplicar la plantilla -- sin firma electrónica todavía "
+            "(pendiente de elegir proveedor homologado eIDAS)."
+        ),
+    )
     created_by = models.ForeignKey(
         "ivr_config.CompanyUser",
         null=True,

@@ -69,12 +69,13 @@ tener la misma plantilla en los dos formatos).
         <div class="card-header">Plantillas guardadas</div>
         <div class="card-body p-0">
             <table class="table table-sm table-hover mb-0">
-                <thead><tr><th style="width: 11rem;">Plantilla activa</th><th>Nombre</th><th>Tipos incluidos</th><th></th></tr></thead>
+                <thead><tr><th style="width: 11rem;">Plantilla activa</th><th>Nombre</th><th>Tipos incluidos</th><th>EPIs incluidos</th><th></th></tr></thead>
                 <tbody>
                     {% for template in templates %}
                     <tr id="templateRow{{ template.pk }}"
                         data-name="{{ template.name|escapejs }}"
-                        data-type-ids="{% for dt in template.document_types.all %}{{ dt.pk }}{% if not forloop.last %},{% endif %}{% endfor %}">
+                        data-type-ids="{% for dt in template.document_types.all %}{{ dt.pk }}{% if not forloop.last %},{% endif %}{% endfor %}"
+                        data-epi-ids="{% for epi in template.epi_items.all %}{{ epi.pk }}{% if not forloop.last %},{% endif %}{% endfor %}">
                         <td>
                             {% if template.is_active %}
                             <span class="badge bg-success" id="activeBadge{{ template.pk }}">✓ Activa</span>
@@ -86,12 +87,15 @@ tener la misma plantilla en los dos formatos).
                         <td class="small text-muted">
                             {% for dt in template.document_types.all %}{{ dt.label }}{% if not forloop.last %}, {% endif %}{% endfor %}
                         </td>
+                        <td class="small text-muted">
+                            {% for epi in template.epi_items.all %}{{ epi.label }}{% if not forloop.last %}, {% endif %}{% endfor %}
+                        </td>
                         <td class="text-end">
                             <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteTemplate({{ template.pk }})">Eliminar</button>
                         </td>
                     </tr>
                     {% empty %}
-                    <tr><td colspan="4" class="text-muted small py-3">Sin plantillas guardadas todavía.</td></tr>
+                    <tr><td colspan="5" class="text-muted small py-3">Sin plantillas guardadas todavía.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>
@@ -125,6 +129,38 @@ tener la misma plantilla en los dos formatos).
                         </div>
                     </div>
                     {% endfor %}
+
+                    {% comment %}
+                    H31/H36 (S109). Seccion de EPIs -- entregas reales
+                    (EpiDelivery), nunca documentos escaneados (eso ya
+                    entra por su propio tipo "EPIS" en las familias de
+                    arriba). SIN FIRMA todavia (pendiente de elegir
+                    proveedor homologado eIDAS) -- aviso visible aqui
+                    mismo para que nunca se confunda con una
+                    acreditacion firmada real.
+                    {% endcomment %}
+                    {% regroup epi_items by family as epi_families %}
+                    {% if epi_families %}
+                    <div class="mb-2 p-2 rounded border">
+                        <div class="fw-bold small mb-1">EPIs (entregas reales -- sin firma todavía)</div>
+                        <div class="alert alert-warning py-1 px-2 small mb-2">
+                            Esta sección incluye las entregas reales registradas en el panel, sin ningún bloque de firma -- pendiente de integrar un proveedor de firma electrónica homologado (eIDAS). No usar como acreditación firmada ante terceros todavía.
+                        </div>
+                        {% for group in epi_families %}
+                        <div class="mb-2">
+                            <div class="fw-bold small text-muted mb-1">{{ group.grouper }}</div>
+                            <div style="columns: 3; column-gap: 1.5rem;">
+                                {% for epi in group.list %}
+                                <div class="form-check" style="break-inside: avoid;">
+                                    <input class="form-check-input dossier-epi-checkbox" type="checkbox" value="{{ epi.pk }}" id="epiCheck{{ epi.pk }}" data-label="{{ epi.label|escapejs }}" onchange="refreshDraftPreview()">
+                                    <label class="form-check-label small" for="epiCheck{{ epi.pk }}">{{ epi.label }}</label>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
 
                     <div id="templateFormResult" class="small mt-2"></div>
                 </div>
@@ -160,13 +196,21 @@ function getCheckedTypeIds() {
     return Array.from(document.querySelectorAll('.dossier-type-checkbox:checked')).map(el => el.value);
 }
 
+function getCheckedEpiIds() {
+    return Array.from(document.querySelectorAll('.dossier-epi-checkbox:checked')).map(el => el.value);
+}
+
 // --- Visor en vivo -----------------------------------------------------
 
 function refreshDraftPreview() {
-    const checked = document.querySelectorAll('.dossier-type-checkbox:checked');
+    const checkedTypes = document.querySelectorAll('.dossier-type-checkbox:checked');
+    const checkedEpis = document.querySelectorAll('.dossier-epi-checkbox:checked');
     const list = document.getElementById('draftPreviewList');
-    list.innerHTML = checked.length
-        ? Array.from(checked).map(el => `<li>${el.dataset.label}</li>`).join('')
+    const typeLines = Array.from(checkedTypes).map(el => `<li>${el.dataset.label}</li>`);
+    const epiLines = Array.from(checkedEpis).map(el => `<li>EPI: ${el.dataset.label}</li>`);
+    const allLines = typeLines.concat(epiLines);
+    list.innerHTML = allLines.length
+        ? allLines.join('')
         : '<li class="text-muted">Ningún tipo marcado todavía.</li>';
 
     const title = document.getElementById('draftPreviewTitle');
@@ -183,6 +227,7 @@ function currentSnapshot() {
         pk: document.getElementById('templatePk').value,
         name: document.getElementById('templateName').value.trim(),
         ids: getCheckedTypeIds().slice().sort(),
+        epiIds: getCheckedEpiIds().slice().sort(),
     });
 }
 
@@ -240,12 +285,18 @@ function loadActiveIntoForm() {
     const pk = row.id.replace('templateRow', '');
     const name = row.dataset.name || '';
     const ids = (row.dataset.typeIds || '').split(',').filter(Boolean);
+    const epiIds = (row.dataset.epiIds || '').split(',').filter(Boolean);
 
     document.getElementById('templatePk').value = pk;
     document.getElementById('templateName').value = name;
     document.querySelectorAll('.dossier-type-checkbox').forEach(el => { el.checked = false; });
+    document.querySelectorAll('.dossier-epi-checkbox').forEach(el => { el.checked = false; });
     ids.forEach(id => {
         const el = document.getElementById('dtCheck' + id);
+        if (el) el.checked = true;
+    });
+    epiIds.forEach(id => {
+        const el = document.getElementById('epiCheck' + id);
         if (el) el.checked = true;
     });
     document.getElementById('formTitle').textContent = 'Plantilla activa: ' + name;
@@ -258,6 +309,7 @@ function resetForm() {
     document.getElementById('templatePk').value = '';
     document.getElementById('templateName').value = '';
     document.querySelectorAll('.dossier-type-checkbox').forEach(el => { el.checked = false; });
+    document.querySelectorAll('.dossier-epi-checkbox').forEach(el => { el.checked = false; });
     document.getElementById('formTitle').textContent = 'Nueva plantilla';
     document.getElementById('cancelEditBtn').classList.add('d-none');
     document.getElementById('templateFormResult').innerHTML = '';
@@ -269,16 +321,18 @@ function saveTemplate(onSuccess) {
     const pk = document.getElementById('templatePk').value;
     const name = document.getElementById('templateName').value.trim();
     const typeIds = getCheckedTypeIds();
+    const epiIds = getCheckedEpiIds();
     const resultDiv = document.getElementById('templateFormResult');
 
-    if (typeIds.length === 0) {
-        resultDiv.innerHTML = '<div class="alert alert-danger py-1 px-2 small mb-0">Marca al menos un tipo documental.</div>';
+    if (typeIds.length === 0 && epiIds.length === 0) {
+        resultDiv.innerHTML = '<div class="alert alert-danger py-1 px-2 small mb-0">Marca al menos un tipo documental o un EPI.</div>';
         return;
     }
 
     const formData = new FormData();
     formData.append('name', name);
     typeIds.forEach(id => formData.append('document_type_ids', id));
+    epiIds.forEach(id => formData.append('epi_item_ids', id));
 
     const url = pk
         ? `/panel/documentacion/plantillas-dosier/${pk}/guardar/`

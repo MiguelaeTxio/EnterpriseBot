@@ -1352,12 +1352,53 @@ class DossierBuildError(Exception):
     """
 
 
-def _build_dossier_pdf_bytes(person, entries):
+def _build_epi_section_page(epi_deliveries):
+    """
+    H31/H36 (S109). Construye la página de la sección de EPIs del
+    dossier con el mismo mecanismo que la portada/índice
+    (`build_index_page`) -- una fila por entrega real
+    (`EpiDelivery`), nunca una fila por tipo de EPI marcado en la
+    plantilla (un EPI puede tener varias entregas reales a la misma
+    persona, p. ej. un chaleco sustituido).
+
+    SIN FIRMA TODAVÍA -- nota de pie de página explícita, para que
+    nadie confunda esta sección con una acreditación firmada de
+    verdad hasta que el proveedor de firma electrónica esté
+    integrado (decisión explícita de Miguel Ángel, S109: "tenemos
+    que ir buscando la opción de integrar con un proveedor
+    homologado" -- ver comparativa Docuten/Signaturit/Viafirma de
+    esa misma sesión).
+    """
+    header_lines = [
+        ("ENTREGAS DE EPI INCLUIDAS EN ESTE DOSSIER", 14, True),
+    ]
+    item_lines = [
+        f"{d.epi.label} -- entregado {d.delivery_date}"
+        for d in epi_deliveries
+    ]
+    footer_note = (
+        "Esta sección NO lleva firma electrónica todavía -- "
+        "integración con un proveedor de firma homologado (eIDAS) "
+        "pendiente de elegir. No usar como acreditación de entrega "
+        "ante terceros hasta que se complete esa integración."
+    )
+    return build_index_page(header_lines, item_lines, footer_note)
+
+
+def _build_dossier_pdf_bytes(person, entries, epi_deliveries=None):
     """
     H31 (S104). Extracted from _build_dossier_pdf_response (S103) so
     the raw PDF bytes can also be attached to an .eml, not only served
     as a direct HttpResponse download. Returns (pdf_bytes, filename).
     Raises DossierBuildError when no entry has a supported format.
+
+    H31/H36 (S109): `epi_deliveries` opcional (lista de `EpiDelivery`,
+    ver `_resolve_template_epi_deliveries`) -- cuando llega no vacío,
+    añade una página propia (`_build_epi_section_page`) justo después
+    de la portada, antes de los documentos. Nunca bloquea la
+    generación del PDF si `entries` está vacío pero sí hay EPIs (o al
+    revés) -- basta con que haya algo real que ofrecer entre las dos
+    fuentes.
     ---
     H31 (S104). Extraido de _build_dossier_pdf_response (S103) para
     que los bytes del PDF tambien puedan adjuntarse a un .eml, no solo
@@ -1389,7 +1430,7 @@ def _build_dossier_pdf_bytes(person, entries):
         )
         included_lines.append(f"{label} -- {family} -- {caducidad}")
 
-    if not included_pdfs:
+    if not included_pdfs and not epi_deliveries:
         raise DossierBuildError(
             "Ningún documento tiene un formato soportado para el PDF "
             "único (usa la descarga en ZIP para estos archivos).",
@@ -1413,8 +1454,13 @@ def _build_dossier_pdf_bytes(person, entries):
     )
     cover_bytes = build_index_page(header_lines, included_lines, footer_note)
 
+    pages = [cover_bytes]
+    if epi_deliveries:
+        pages.append(_build_epi_section_page(epi_deliveries))
+    pages.extend(included_pdfs)
+
     try:
-        merged_bytes = merge_pdfs([cover_bytes] + included_pdfs)
+        merged_bytes = merge_pdfs(pages)
     except EmptyDocumentListError as exc:
         raise DossierBuildError(str(exc)) from exc
 
@@ -1425,7 +1471,7 @@ def _build_dossier_pdf_bytes(person, entries):
     return merged_bytes, filename
 
 
-def _build_dossier_pdf_response(person, entries):
+def _build_dossier_pdf_response(person, entries, epi_deliveries=None):
     """
     H31 (S103, refactorizado S104). Genera la respuesta HTTP del
     dossier en PDF único a partir de un `person` y un queryset/lista
@@ -1440,7 +1486,9 @@ def _build_dossier_pdf_response(person, entries):
     por correo.
     """
     try:
-        pdf_bytes, filename = _build_dossier_pdf_bytes(person, entries)
+        pdf_bytes, filename = _build_dossier_pdf_bytes(
+            person, entries, epi_deliveries=epi_deliveries,
+        )
     except DossierBuildError as exc:
         return HttpResponse(str(exc), status=400)
     response = HttpResponse(pdf_bytes, content_type="application/pdf")
@@ -1448,11 +1496,16 @@ def _build_dossier_pdf_response(person, entries):
     return response
 
 
-def _build_dossier_zip_bytes(person, entries):
+def _build_dossier_zip_bytes(person, entries, epi_deliveries=None):
     """
     H31 (S104). Extracted from _build_dossier_zip_response (S103) so
     the raw ZIP bytes can also be attached to an .eml, not only served
     as a direct HttpResponse download. Returns (zip_bytes, filename).
+
+    H31/H36 (S109): `epi_deliveries` opcional, mismo criterio que
+    `_build_dossier_pdf_bytes` -- cuando llega no vacío, añade un PDF
+    propio (`_build_epi_section_page`) dentro del ZIP, en su propia
+    carpeta, sin firma todavía.
     ---
     H31 (S104). Extraido de _build_dossier_zip_response (S103) para
     que los bytes del ZIP tambien puedan adjuntarse a un .eml, no solo
@@ -1465,6 +1518,11 @@ def _build_dossier_zip_bytes(person, entries):
     zip_buffer = io.BytesIO()
     used_names = set()
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        if epi_deliveries:
+            zf.writestr(
+                "entregas-epi/Resumen_EPIs_entregados.pdf",
+                _build_epi_section_page(epi_deliveries),
+            )
         for entry in entries:
             family_folder = (
                 slugify(entry.document_type.get_family_display())
@@ -1502,7 +1560,7 @@ def _build_dossier_zip_bytes(person, entries):
     return zip_buffer.getvalue(), filename
 
 
-def _build_dossier_zip_response(person, entries):
+def _build_dossier_zip_response(person, entries, epi_deliveries=None):
     """
     H31 (S103, refactorizado S104). Genera la respuesta HTTP del
     dossier en ZIP a partir de un `person` y un queryset/lista de
@@ -1513,7 +1571,9 @@ def _build_dossier_zip_response(person, entries):
     bytes en _build_dossier_zip_bytes (S104), compartida también con
     el envío por correo.
     """
-    zip_bytes, filename = _build_dossier_zip_bytes(person, entries)
+    zip_bytes, filename = _build_dossier_zip_bytes(
+        person, entries, epi_deliveries=epi_deliveries,
+    )
     response = HttpResponse(zip_bytes, content_type="application/zip")
     response["Content-Disposition"] = f'attachment; filename="{filename}"'
     return response
@@ -1600,15 +1660,17 @@ class PersonalDossierEmailSendView(DocsUploadAccessMixin, View):
         person = get_object_or_404(PersonIdentity, pk=pk)
 
         template_pk = request.POST.get("template_pk", "").strip()
+        epi_deliveries = None
         if template_pk:
             template = get_object_or_404(
                 PersonalDossierTemplate, pk=template_pk,
             )
             entries = _resolve_template_entries(person, template)
+            epi_deliveries = _resolve_template_epi_deliveries(person, template)
         else:
             _person, entries = _resolve_document_selection(request, pk)
 
-        if not entries:
+        if not entries and not epi_deliveries:
             return HttpResponse(
                 "No hay ningún documento que incluir en el dossier "
                 "(ni selección de casilleros ni plantilla con "
@@ -1625,6 +1687,7 @@ class PersonalDossierEmailSendView(DocsUploadAccessMixin, View):
         try:
             eml_bytes, filename = _build_dossier_notification_eml(
                 person, entries, body_html, request.user.company_user,
+                epi_deliveries=epi_deliveries,
             )
         except NotificationEmlError as exc:
             return HttpResponse(str(exc), status=400)
@@ -1655,6 +1718,30 @@ def _resolve_template_entries(person, template):
     current, _obsolete = _split_current_obsolete(list(all_entries))
     current.sort(key=lambda e: (e.document_type.family, e.document_type.label))
     return current
+
+
+def _resolve_template_epi_deliveries(person, template):
+    """
+    H31/H36 (S109). Resuelve, EN EL MOMENTO de aplicar una plantilla,
+    TODAS las entregas reales (`EpiDelivery`) de cada EPI marcado en
+    `template.epi_items` para la persona concreta -- mismo criterio
+    de "resolver en el momento de aplicar, nunca fila fija" que
+    `_resolve_template_entries`. Un EPI marcado sin ninguna entrega
+    real a esa persona simplemente no aporta filas -- el llamador
+    decide qué hacer si la lista sale vacía (nunca bloquea el resto
+    del dossier).
+
+    Devuelve una lista de EpiDelivery, más reciente primero (orden ya
+    definido en `EpiDelivery.Meta.ordering`).
+    """
+    epi_ids = list(template.epi_items.values_list("pk", flat=True))
+    if not epi_ids:
+        return []
+    return list(
+        EpiDelivery.objects.filter(
+            person=person, epi_id__in=epi_ids,
+        ).select_related("epi"),
+    )
 
 
 class PersonalDossierTemplateListView(CompanyUserRequiredMixin, View):
@@ -1736,7 +1823,7 @@ class DossierTemplateManageView(CompanyUserRequiredMixin, View):
     def get(self, request):
         company = request.user.company_user.company
         templates = company.dossier_templates.prefetch_related(
-            "document_types",
+            "document_types", "epi_items",
         ).order_by("created_at")
 
         types_by_family = {}
@@ -1764,6 +1851,13 @@ class DossierTemplateManageView(CompanyUserRequiredMixin, View):
         return render(request, "panel/dossier_templates_h35/manage.html", {
             "templates": templates,
             "families": ordered_families,
+            # H31/H36 (S109): catálogo de EPIs para la sección propia
+            # de la plantilla -- mismo criterio de "todos los activos,
+            # agrupados", pero por familia de EpiItemCatalog (distinta
+            # de la de DocumentTypeCatalog, nunca mezclarlas).
+            "epi_items": EpiItemCatalog.objects.filter(
+                is_active=True,
+            ).order_by("family", "label"),
         })
 
 
@@ -1798,15 +1892,20 @@ class DossierTemplateSaveView(CompanyUserRequiredMixin, View):
                 name = "Dossier %d" % n
 
         type_ids = request.POST.getlist("document_type_ids")
-        if not type_ids:
+        epi_item_ids = request.POST.getlist("epi_item_ids")
+        if not type_ids and not epi_item_ids:
             return JsonResponse(
-                {"ok": False, "error": "Selecciona al menos un tipo documental."},
+                {
+                    "ok": False,
+                    "error": "Selecciona al menos un tipo documental o un EPI.",
+                },
                 status=400,
             )
 
         template.name = name
         template.save()
         template.document_types.set(type_ids)
+        template.epi_items.set(epi_item_ids)
 
         return JsonResponse({"ok": True, "id": template.pk})
 
@@ -1848,6 +1947,7 @@ class PersonalDossierTemplateApplyView(CompanyUserRequiredMixin, View):
             )
 
         template_entries = _resolve_template_entries(person, template)
+        epi_deliveries = _resolve_template_epi_deliveries(person, template)
         _person, selection_entries = _resolve_document_selection(request, pk)
 
         combined = list(template_entries)
@@ -1857,7 +1957,7 @@ class PersonalDossierTemplateApplyView(CompanyUserRequiredMixin, View):
                 combined.append(entry)
                 combined_pks.add(entry.pk)
 
-        if not combined:
+        if not combined and not epi_deliveries:
             return HttpResponse(
                 "Ninguno de los tipos documentales de esta plantilla "
                 "tiene hoy un documento vigente para esta persona, y "
@@ -1865,8 +1965,12 @@ class PersonalDossierTemplateApplyView(CompanyUserRequiredMixin, View):
                 status=400,
             )
         if output_format == PersonalDossierTemplate.FORMAT_ZIP:
-            return _build_dossier_zip_response(person, combined)
-        return _build_dossier_pdf_response(person, combined)
+            return _build_dossier_zip_response(
+                person, combined, epi_deliveries=epi_deliveries,
+            )
+        return _build_dossier_pdf_response(
+            person, combined, epi_deliveries=epi_deliveries,
+        )
 
 
 class PersonalDossierTemplateDeleteView(CompanyUserRequiredMixin, View):
@@ -2884,7 +2988,9 @@ def _build_notification_eml(person, document_type):
     return bytes(msg), filename
 
 
-def _build_dossier_notification_eml(person, entries, body_html, sender_company_user):
+def _build_dossier_notification_eml(
+    person, entries, body_html, sender_company_user, epi_deliveries=None,
+):
     """
     H31 (S104), punto 1 de la hoja de ruta. Construye el `.eml` real
     de envío de un dossier de documentación para UNA persona --
@@ -2940,13 +3046,13 @@ def _build_dossier_notification_eml(person, entries, body_html, sender_company_u
 
     try:
         attachment_bytes, attachment_filename = _build_dossier_pdf_bytes(
-            person, entries,
+            person, entries, epi_deliveries=epi_deliveries,
         )
         attachment_mime = ("application", "pdf")
     except DossierBuildError:
         try:
             attachment_bytes, attachment_filename = _build_dossier_zip_bytes(
-                person, entries,
+                person, entries, epi_deliveries=epi_deliveries,
             )
             attachment_mime = ("application", "zip")
         except DossierBuildError as exc:
@@ -3365,8 +3471,9 @@ class PersonalDossierMassGenerateView(DocsUploadAccessMixin, View):
         skipped = []
         for person in people:
             entries = _resolve_template_entries(person, template)
-            if entries:
-                per_person.append((person, entries))
+            epi_deliveries = _resolve_template_epi_deliveries(person, template)
+            if entries or epi_deliveries:
+                per_person.append((person, entries, epi_deliveries))
             else:
                 skipped.append(
                     "%s %s, %s" % (
@@ -3398,11 +3505,12 @@ class PersonalDossierMassGenerateView(DocsUploadAccessMixin, View):
             email_errors = []
             zip_buffer = io.BytesIO()
             with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-                for person, entries in per_person:
+                for person, entries, epi_deliveries in per_person:
                     try:
                         eml_bytes, filename = _build_dossier_notification_eml(
                             person, entries, body_html,
                             request.user.company_user,
+                            epi_deliveries=epi_deliveries,
                         )
                     except NotificationEmlError as exc:
                         email_errors.append("%s: %s" % (person, exc))
@@ -3422,9 +3530,9 @@ class PersonalDossierMassGenerateView(DocsUploadAccessMixin, View):
         try:
             if mode == "combined":
                 pdf_parts = []
-                for person, entries in per_person:
+                for person, entries, epi_deliveries in per_person:
                     pdf_bytes, _filename = _build_dossier_pdf_bytes(
-                        person, entries,
+                        person, entries, epi_deliveries=epi_deliveries,
                     )
                     pdf_parts.append(pdf_bytes)
                 combined_bytes = merge_pdfs(pdf_parts)
@@ -3439,14 +3547,14 @@ class PersonalDossierMassGenerateView(DocsUploadAccessMixin, View):
 
             zip_buffer = io.BytesIO()
             with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-                for person, entries in per_person:
+                for person, entries, epi_deliveries in per_person:
                     if mode == "zip_per_person":
                         file_bytes, filename = _build_dossier_zip_bytes(
-                            person, entries,
+                            person, entries, epi_deliveries=epi_deliveries,
                         )
                     else:
                         file_bytes, filename = _build_dossier_pdf_bytes(
-                            person, entries,
+                            person, entries, epi_deliveries=epi_deliveries,
                         )
                     zf.writestr(filename, file_bytes)
         except (DossierBuildError, EmptyDocumentListError) as exc:
