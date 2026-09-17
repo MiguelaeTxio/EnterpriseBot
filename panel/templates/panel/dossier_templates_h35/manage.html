@@ -116,6 +116,16 @@ tener la misma plantilla en los dos formatos).
                         <input type="text" id="templateName" class="form-control form-control-sm" placeholder="Dossier N (automático si se deja en blanco)" oninput="refreshDraftPreview()">
                     </div>
 
+                    {% comment %}
+                    H31 (S109). Miguel Ángel: "la parte coloreada con
+                    los documentos a elegir, esa parte es la que
+                    tenemos que hacer scrollable." Contenedor propio
+                    con altura fija -- el nombre y el mensaje de
+                    resultado quedan fuera, siempre visibles sin
+                    scroll, mismo criterio ya aplicado al listado de
+                    Personal.
+                    {% endcomment %}
+                    <div style="max-height: 55vh; overflow-y: auto; border: 1px solid #dee2e6; border-radius: 0.25rem; padding: 0.5rem;">
                     {% for fam in families %}
                     <div class="mb-2 p-2 rounded" style="background-color: {{ fam.color }};">
                         <div class="fw-bold small mb-1">{{ fam.label }}</div>
@@ -161,13 +171,21 @@ tener la misma plantilla en los dos formatos).
                         {% endfor %}
                     </div>
                     {% endif %}
+                    </div>
 
                     <div id="templateFormResult" class="small mt-2"></div>
                 </div>
 
                 <div class="col-12 col-lg-4">
                     <label class="form-label small mb-1 invisible d-block">&nbsp;</label>
-                    <div class="card h-100">
+                    {% comment %}
+                    H31 (S109). Miguel Ángel: "el visor donde salen los
+                    documentos elegidos [...] debe estar fijo también."
+                    `position: sticky` -- se queda a la vista mientras
+                    la columna de la izquierda hace scroll, en vez de
+                    desplazarse con el resto de la página.
+                    {% endcomment %}
+                    <div class="card h-100" style="position: sticky; top: 1rem;">
                         <div class="card-header fw-bold" id="draftPreviewTitle">Nueva plantilla</div>
                         <div class="card-body p-2" style="max-height: 420px; overflow-y: auto;">
                             <ul class="mb-0 small" id="draftPreviewList">
