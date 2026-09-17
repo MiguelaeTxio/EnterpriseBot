@@ -1193,6 +1193,20 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
         # necesarios [...] dependiendo del tipo de puesto". Sin
         # puesto asignado, ningun tipo se marca como faltante -- nunca
         # se asume un conjunto por defecto.
+        #
+        # BUG REAL corregido en la misma sesion: NUNCA reutilizar
+        # `present_type_codes` aqui -- esa variable cuenta a proposito
+        # "cualquier entrada viva, aunque este marcada obsoleta" (para
+        # el boton "+ Subir", ver comentario de mas arriba), asi que
+        # una persona con un CONTRATO histórico pero ya obsoleto (p.
+        # ej. retipado a "Carta de baja voluntaria" tras corregir una
+        # mala clasificacion) seguia contando como "tiene CONTRATO" y
+        # nunca avisaba de que le falta. El requisito obligatorio solo
+        # se satisface con un documento VIGENTE de verdad.
+        present_current_type_codes = {
+            entry.document_type.code for entry in current
+            if entry.document_type_id
+        }
         missing_required_types_by_family = {}
         if person.job_position_id:
             required_type_ids = set(
@@ -1209,10 +1223,10 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
             # para cualquier nacionalidad) y la persona ya tiene
             # CUALQUIERA de los dos, ninguno de los dos cuenta como
             # faltante.
-            has_dni_or_nie = bool({"DNI", "NIE"} & present_type_codes)
+            has_dni_or_nie = bool({"DNI", "NIE"} & present_current_type_codes)
             for dt in DocumentTypeCatalog.objects.filter(
                 pk__in=required_type_ids,
-            ).exclude(code__in=present_type_codes).order_by("label"):
+            ).exclude(code__in=present_current_type_codes).order_by("label"):
                 if dt.code in ("DNI", "NIE") and has_dni_or_nie:
                     continue
                 missing_required_types_by_family.setdefault(
