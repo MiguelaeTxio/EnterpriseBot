@@ -3,6 +3,15 @@
 
 ---
 
+**REACTIVADO EN S108** (PCH desde H35, cerrado en la misma sesión --
+ver "COMPLETADAS EN S108" en el anexo de H35 para el detalle
+completo). Hoja de ruta de arranque intacta desde S104, sin
+reescribir: el único punto pendiente real, "Hoja de ruta al reactivar
+H31" más abajo -- enviar un dossier real desde el panel con firma y
+cuerpo editado, confirmado visualmente en Outlook real.
+
+---
+
 **RENOMBRADO Y AMPLIADO EN S99 (2026-09-10).** Título anterior:
 "Interfaz de Ficha de Personal: EPIs y Notificaciones/Circulares".
 H33 (Subida de Documentación en Tiempo Real desde el Panel) se

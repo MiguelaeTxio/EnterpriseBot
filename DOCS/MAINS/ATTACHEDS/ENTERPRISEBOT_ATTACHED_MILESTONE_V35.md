@@ -958,3 +958,117 @@ a retipado/refechado/vigencia de personal.** La deuda de turismos sin
 ficha en `fleet.MachineAsset` (sección 4.21 del documento maestro)
 queda fuera de este hito por decisión explícita de Miguel Ángel -- no
 es parte del criterio de cierre de H35.
+
+---
+
+## COMPLETADAS EN S108 -- H35 CERRADO POR COMPLETO (los 6 puntos)
+
+**Punto 1 (`RECONOCIMIENTO_MEDICO`, 25 IDs).** 20 ya bien tipados,
+`CONTENT_SIGNALS` ampliado con 3 plantillas reales nuevas (CRC, "Las
+Carmelitas", Fraternidad Muprespa, "EXAMEN DE SALUD" formato ANP,
+Grupo MPE, y una tercera plantilla del Consejo General de Colegios de
+Médicos confirmada por inspección VISUAL de `pk=40898`/`40953` tras
+fallo de OCR por fondo guilloché -- `ocr_text` de ambos regenerado a
+mano con la transcripción real). Nueva regla `CONTENT_WINS`
+(`RECONOCIMIENTO_MEDICO` gana sobre `CARNET_GRUISTA`, coincidencia
+casual de frase). 4 fechas corregidas (`37408` y el trío
+`42791`/`42793`/`42794`, bug de fecha de nacimiento colada / regla de
+"caduca a los 3 meses" no aplicada). 2 retipados reales por decisión
+de Miguel Ángel: `pk=28456` (factura real, no un RM) y `pk=35241`
+(carta de citación, no el resultado) -- altas de catálogo
+`FACTURA_SERVICIOS_PERSONAL`/`CITACION_RECONOCIMIENTO_MEDICO`
+(migración `0093`).
+
+**Punto 2 (`INVESTIGACION_ACCIDENTE`, 71 IDs).** 57 ya bien tipados,
+`CONTENT_SIGNALS` ampliado con 6 frases reales (Delt@ oficial,
+formulario interno "REGISTRO DE ACCIDENTES", informe MPE, y 3 frases
+puntuales). Alta de `INFORMACION_RIESGOS_PRL_TERCEROS` (migración
+`0094`) para 14 IDs mal clasificados (certificado ENDESA + entrega de
+Plan de Seguridad de obra F.C.C., ninguno es una investigación de
+accidente real). 2 casos reales de otra persona resueltos con
+decisión de Miguel Ángel: `pk=27169` (Carlos Téllez Vargas, sin ficha
+real -- papelera) y `pk=26990` (enfermedad común, sin relación con
+accidente -- papelera).
+
+**Punto 3 (fix `is_current()`).** Dos incidentes reales encontrados
+al verificar contra los 12 grupos, ninguno cubierto por la hoja de
+ruta original:
+1. La rama de `expiry_date` no comparaba contra hermanos, solo contra
+   hoy -- corregida para comparar y desempatar por `indexed_at` en
+   empates exactos (commit `8b972ec`).
+2. `backfill_obsolete_duplicates` nunca rellenaba `indexed_at` al
+   construir `DocumentSnapshot` -- corregido (commit `6fb6b92`).
+3. La rama de `issue_date` tampoco desempataba nunca (usaba `>=`
+   contra el máximo, así que todos los empatados quedaban vigentes a
+   la vez) -- corregida igual que la de `expiry_date` (commit
+   `6a36192`). Verificado con casos sintéticos reales, incluido el
+   empate exacto de `indexed_at` con diferencia de microsegundos
+   (`pk=8794`/`8795`, SEGURO, dominio máquina).
+Consulta de control final: **0 filas** con más de 1 vigente, en ambos
+dominios (`PersonIdentity` y `MachineAsset`).
+
+**Punto 4 (fecha OCR imposible Gómez García).** Los 4 IDs
+(`35635`/`35637`/`35640`/`35641`) eran 4 contratos reales DISTINTOS
+(no duplicados), cada uno con la fecha de nacimiento del trabajador
+(`18-03-68`) colada como `issue_date=2068-03-18`. Fechas reales
+leídas del propio texto y corregidas: `2012-07-06` (x2),
+`2013-05-02`, `2011-05-04`.
+
+**Punto 5 (barrido de otra persona, regenerado fresco).** La consulta
+fresca (`_person_name_missing()` exacto, 12 tipos auditados: `ALTA`,
+`AUTONOMO`, `BAJA_PERSONAL`, `CARNET_CONDUCIR`... ver lista completa
+en el código de la consulta, commit de contexto de la sesión) devolvió
+**118 candidatos**, no 44 -- de los cuales **70 son `MOD_145`**
+(mismo falso positivo sistemático ya documentado: campo "Apellidos y
+Nombre" en blanco). De los 48 reales: la mayoría son falsos positivos
+por 3 patrones reales confirmados esta sesión -- (a) campo del
+trabajador en blanco en el propio formulario oficial (mismo patrón
+que `MOD_145`, aplica también a varios `CONTRATO`/`PARTE DE
+ASISTENCIA SIN BAJA`), (b) nombre manuscrito mal leído por OCR con
+NIF que sí coincide con la persona real, (c) variante de OCR de un
+apellido extranjero (mismo DNI real). Hallazgos reales de retipado
+(decisión de Miguel Ángel, "si no coincide, hay que tiparlo"):
+- `pk=34165`: `ALTA` real archivada como `CONTRATO`.
+- `pk=26596`/`26715`/`26983`: `INVESTIGACION_ACCIDENTE` real
+  archivada como `RECONOCIMIENTO_MEDICO`.
+- `pk=40772`/`40799`: `REGISTRO_JORNADA` real archivada como `NOMINA`.
+- `pk=29194`: reverso de DNI (confirmado visualmente) archivado como
+  `BAJA_PERSONAL` -- retipado a `DNI`; fechas reales (emisión
+  17/11/2022, validez 29/07/2027) aportadas por Miguel Ángel tras ver
+  el anverso, renombrado canónico completado.
+- `pk=32798`: permiso de conducir antiguo (formato libreta rosa,
+  confirmado visualmente) archivado como `BAJA_PERSONAL` -- retipado
+  a `CARNET_CONDUCIR`.
+- `pk=35157`/`37106`: confirmados visualmente como YA bien tipados
+  (`ALTA` y `BAJA_PERSONAL` respectivamente), solo ilegibles por OCR
+  (fondo de seguridad / foto borrosa de WhatsApp) -- sin acción.
+- `pk=31985` (Gálvez Sibaja) y `pk=28491` (Parra Pizano, inactivo):
+  decisiones YA TOMADAS en S107 ("papelera") pero nunca ejecutadas de
+  verdad en producción -- ejecutadas ahora.
+- `pk=30077`/`39829` (facturas de Correos) y `pk=27197` (informe
+  agregado mensual de accidentes de toda la empresa): ninguno de los
+  tres es de la persona cuya ficha los alojaba -- reubicados a
+  `CompanyWorksite` (dominio nuevo para estos 3, ya existente desde
+  H30) con altas de catálogo `FACTURA_SERVICIOS_EMPRESA`/
+  `INFORME_ACCIDENTES_EMPRESA` (migración `0095`).
+
+**Punto 6.** `pk=32780` renombrado: `..._BAJA_PERSONAL_..._3.pdf` →
+`RAMIREZ_GARCIA_JORGE_IDC_20190507.pdf`.
+
+**Incidente de infraestructura, no previsto en la hoja de ruta:**
+`db_query.yml` fallaba de forma reproducible (paso "Comitear el
+resultado") con consultas de varias filas de texto OCR real -- nunca
+aislado a una fila concreta, ninguna fila tenía bytes UTF-8 inválidos.
+Cambiado `mysql --table` (ASCII-art, cálculo de ancho de columna) por
+`--batch --raw` (TSV simple) -- resuelto. Commit `196bc68`.
+
+**Migraciones nuevas de esta sesión:** `0093` (`FACTURA_SERVICIOS_PERSONAL`,
+`CITACION_RECONOCIMIENTO_MEDICO`), `0094`
+(`INFORMACION_RIESGOS_PRL_TERCEROS`), `0095`
+(`FACTURA_SERVICIOS_EMPRESA`, `INFORME_ACCIDENTES_EMPRESA`).
+
+**H35 queda cerrado del todo. Sin hoja de ruta pendiente propia.** Si
+en el futuro aparece un caso residual de retipado/refechado de
+personal, se atiende como desvío puntual (Caso A de `com-pch`), no
+reabriendo el hito completo.
+

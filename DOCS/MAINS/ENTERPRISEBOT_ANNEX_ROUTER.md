@@ -54,11 +54,11 @@ Cumple dos funciones inseparables:
 | H28 | Migración y Reorganización de Documentación Histórica | `ENTERPRISEBOT_ATTACHED_MILESTONE_V28.md` |
 | H29 | Explorador de Archivos y Gobierno Documental del Panel sobre GCS | `ENTERPRISEBOT_ATTACHED_MILESTONE_V29.md` |
 | H30 | Vinculación Documental Real — Centros de Gasto y Personal | `ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md` |
-| H31 | Interfaz de Gestión Documental de Personal — Altas, Bajas, Sustituciones, EPIs y Circulares (título anterior: "Interfaz de Ficha de Personal — EPIs y Notificaciones/Circulares"; ampliado en S99 al fusionar H33) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md` |
+| H31 | Interfaz de Gestión Documental de Personal — Altas, Bajas, Sustituciones, EPIs y Circulares (título anterior: "Interfaz de Ficha de Personal — EPIs y Notificaciones/Circulares"; ampliado en S99 al fusionar H33) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md` ← EN PROGRESO |
 | H32 | Migraciones de Infraestructura (Modelo IA, Python, Registro Android) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V32.md` |
 | ~~H33~~ | ~~Subida de Documentación en Tiempo Real desde el Panel~~ — **FUSIONADO EN H31 el 2026-09-10 (S99)**, ver sección 6 | `ENTERPRISEBOT_ATTACHED_MILESTONE_V33.md` (conservado íntegro como archivo histórico) |
 | H34 | Modelo Propio de Clasificación de Documentos (entrenamiento) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V34.md` |
-| H35 | Retipado y Refechado Masivo de Documentación Histórica de Personal | `ENTERPRISEBOT_ATTACHED_MILESTONE_V35.md` ← EN PROGRESO |
+| H35 | Retipado y Refechado Masivo de Documentación Histórica de Personal | `ENTERPRISEBOT_ATTACHED_MILESTONE_V35.md` |
 
 Todos los anexos viven en `DOCS/MAINS/ATTACHEDS/`.
 
@@ -66,8 +66,27 @@ Todos los anexos viven en `DOCS/MAINS/ATTACHEDS/`.
 
 ## 3. Resultado Actual
 
-**Hito EN PROGRESO:** H35 — Retipado y Refechado Masivo de
-Documentación Histórica de Personal →
+**Hito EN PROGRESO:** H31 — Interfaz de Gestión Documental de
+Personal → `ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md`. Reactivado en
+S108 (PCH CASO D desde H35, cerrado en la misma sesión). Hoja de ruta
+de arranque: el único punto pendiente heredado sin cambios desde S104
+-- enviar un dossier real desde el panel con firma y cuerpo editado, y
+confirmarlo visualmente en Outlook real (ver "Hoja de ruta al
+reactivar H31" en su propio anexo).
+
+**Hito CERRADO en S108:** H35 — Retipado y Refechado Masivo de
+Documentación Histórica de Personal → `ENTERPRISEBOT_ATTACHED_MILESTONE_V35.md`.
+Los 6 puntos de su hoja de ruta quedaron cerrados a 0 -- ver
+"COMPLETADAS EN S108 -- H35 CERRADO POR COMPLETO" en su propio anexo
+para el detalle completo (3 migraciones nuevas de catálogo, 2 bugs
+reales corregidos en `is_current()`/`backfill_obsolete_duplicates`,
+un incidente de infraestructura en `db_query.yml`, y todos los casos
+reales de retipado/reubicación/papelera resueltos con decisión
+explícita de Miguel Ángel en cada uno). Sin hoja de ruta pendiente
+propia.
+
+**Hito EN PROGRESO (histórico, hasta S108):** H35 — Retipado y
+Refechado Masivo de Documentación Histórica de Personal →
 `ENTERPRISEBOT_ATTACHED_MILESTONE_V35.md`. Abierto en S104 (Caso C)
 tras un hallazgo real durante una sesión de H31: investigando por qué
 77 activos no tenían `hire_date`, se descubrió primero una fecha de
