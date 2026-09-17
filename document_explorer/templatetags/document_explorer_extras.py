@@ -73,3 +73,28 @@ def is_image_document(name):
     de perfil" de la ficha de personal (PersonalSetAvatarView).
     """
     return bool(name) and name.lower().endswith(_IMAGE_EXTENSIONS)
+
+
+@register.filter
+def get_item(mapping, key):
+    """
+    H31 (S109), punto 3. Lookup dinámico de diccionario en plantilla
+    -- `{{ dict.key }}` de Django solo resuelve claves LITERALES, no
+    una clave que llega en una variable de bucle (`fam.code`). Usado
+    por el acordeón genérico de familias de `_personal_detail.html`
+    para leer `missing_types_by_family`/`attention_types_by_family`
+    (claves = código de familia) dentro de un `{% for fam in
+    families %}` -- las dos familias con bloque propio (Laboral,
+    Salud) siguen usando la clave literal directamente, sin este
+    filtro, porque su código ya se conoce de antemano.
+
+    ---
+
+    H31 (S109). Dynamic dict lookup in template -- Django's
+    `{{ dict.key }}` only resolves LITERAL keys, never one arriving
+    via a loop variable. Backs the generic per-family accordion in
+    `_personal_detail.html`.
+    """
+    if not mapping:
+        return None
+    return mapping.get(key)

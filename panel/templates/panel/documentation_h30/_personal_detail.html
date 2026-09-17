@@ -226,6 +226,10 @@ y se habilita "Guardar".
         <h2 class="accordion-header">
             <button class="accordion-button{% if main_accordion_open != 'collapseLaboralMain' %} collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#collapseLaboralMain">
                 <i class="bi bi-briefcase me-2"></i>Laboral
+                {% if missing_types_by_family.LABORAL or attention_types_by_family.LABORAL %}
+                <i class="bi bi-exclamation-triangle-fill text-danger ms-2"
+                   title="{% if missing_types_by_family.LABORAL %}Falta: {{ missing_types_by_family.LABORAL|join:", " }}. {% endif %}{% if attention_types_by_family.LABORAL %}Caducado: {{ attention_types_by_family.LABORAL|join:", " }}{% endif %}"></i>
+                {% endif %}
             </button>
         </h2>
         <div id="collapseLaboralMain" class="accordion-collapse collapse{% if main_accordion_open == 'collapseLaboralMain' %} show{% endif %}" data-bs-parent="#personalMainAccordion">
@@ -442,6 +446,10 @@ vacaciones).
         <h2 class="accordion-header">
             <button class="accordion-button{% if main_accordion_open != 'collapseSaludMain' %} collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#collapseSaludMain">
                 <i class="bi bi-heart-pulse me-2"></i>Salud
+                {% if missing_types_by_family.SALUD_BAJAS_PERSONA or attention_types_by_family.SALUD_BAJAS_PERSONA %}
+                <i class="bi bi-exclamation-triangle-fill text-danger ms-2"
+                   title="{% if missing_types_by_family.SALUD_BAJAS_PERSONA %}Falta: {{ missing_types_by_family.SALUD_BAJAS_PERSONA|join:", " }}. {% endif %}{% if attention_types_by_family.SALUD_BAJAS_PERSONA %}Caducado: {{ attention_types_by_family.SALUD_BAJAS_PERSONA|join:", " }}{% endif %}"></i>
+                {% endif %}
             </button>
         </h2>
         <div id="collapseSaludMain" class="accordion-collapse collapse{% if main_accordion_open == 'collapseSaludMain' %} show{% endif %}" data-bs-parent="#personalMainAccordion">
@@ -531,6 +539,12 @@ vez de una lista única sin estructura.
         <h2 class="accordion-header">
             <button class="accordion-button {% if not forloop.first %}collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#collapseFam{{ forloop.counter }}">
                 {{ fam.label }} <span class="badge bg-primary ms-2">{{ fam.documents|length }}</span>
+                {% with fam_missing=missing_types_by_family|get_item:fam.code fam_attention=attention_types_by_family|get_item:fam.code %}
+                {% if fam_missing or fam_attention %}
+                <i class="bi bi-exclamation-triangle-fill text-danger ms-2"
+                   title="{% if fam_missing %}Falta: {{ fam_missing|join:", " }}. {% endif %}{% if fam_attention %}Caducado: {{ fam_attention|join:", " }}{% endif %}"></i>
+                {% endif %}
+                {% endwith %}
             </button>
         </h2>
         <div id="collapseFam{{ forloop.counter }}" class="accordion-collapse collapse {% if forloop.first %}show{% endif %}" data-bs-parent="#personalDocsAccordion">

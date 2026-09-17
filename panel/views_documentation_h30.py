@@ -248,22 +248,36 @@ def _attach_alert_flags(objects, content_type):
     salían en rojo SIEMPRE, estuvieran bien o mal. Ahora solo alerta
     una caducidad real ya pasada -- un tipo sin fecha nunca alerta por
     sí solo, sea PERSONAL o maquinaria.
+
+    AMPLIADO H31 (S109), punto 3: además de `has_alert`, adjunta
+    `obj.alert_labels` -- lista de labels de `DocumentTypeCatalog`
+    (uno por tipo distinto, sin duplicar) que disparan la alerta de
+    ESE sujeto concreto -- Miguel Ángel: "cuando se pasa el ratón por
+    encima, un globo indicando qué problema tiene". Antes el tooltip
+    era genérico ("Tiene documentación sin fecha vigente") y no decía
+    cuál. Mismo query base, solo se añade `document_type__label` al
+    `values_list` -- sin segunda consulta.
     """
     from datetime import date
 
     today = date.today()
     pks = [obj.pk for obj in objects]
-    alert_pks = set(
+    alert_rows = (
         DocumentIndexEntry.objects.filter(
             bucket=BUCKET, domain_content_type=content_type,
             domain_object_id__in=pks, entry_kind=DocumentIndexEntry.KIND_FILE,
             deleted_at__isnull=True, purged_at__isnull=True,
             is_obsolete=False, document_type__tracks_expiry=True,
             expiry_date__isnull=False, expiry_date__lt=today,
-        ).values_list("domain_object_id", flat=True).distinct()
+        ).values_list("domain_object_id", "document_type__label").distinct()
     )
+    alert_labels_by_pk = {}
+    for object_id, label in alert_rows:
+        alert_labels_by_pk.setdefault(object_id, []).append(label)
     for obj in objects:
-        obj.has_alert = obj.pk in alert_pks
+        labels = alert_labels_by_pk.get(obj.pk, [])
+        obj.has_alert = bool(labels)
+        obj.alert_labels = sorted(labels)
     return objects
 
 
@@ -1012,6 +1026,27 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
             deleted_at__isnull=True, purged_at__isnull=True,
         ).select_related("document_type").order_by("-id")
         current, obsolete = _split_current_obsolete(entries)
+        # H31 (S109), punto 3. Igual que `missing_types_by_family` mas
+        # abajo, pero para documentos YA presentes que necesitan
+        # atencion (`needs_attention`, caducidad real ya pasada) --
+        # agrupado por familia para poder poner el triangulo a nivel
+        # de cabecera de familia (Miguel Angel: "en documentacion, en
+        # identificacion, si puedes poner el batch del triangulo rojo
+        # indicando que falta documento [...] indicar: falta el DNI,
+        # falta la fecha del vigente es una fecha pasada"). Mismos
+        # objetos que `current` (sin query aparte) -- el atributo
+        # `needs_attention` ya viene calculado por
+        # `_split_current_obsolete`.
+        _attention_labels_by_family = {}
+        for entry in current:
+            if entry.needs_attention and entry.document_type_id:
+                _attention_labels_by_family.setdefault(
+                    entry.document_type.family, set(),
+                ).add(entry.document_type.label)
+        attention_types_by_family = {
+            family: sorted(labels)
+            for family, labels in _attention_labels_by_family.items()
+        }
         _laboral_salud_codes = (
             DocumentTypeCatalog.FAMILY_LABORAL,
             DocumentTypeCatalog.FAMILY_SALUD_BAJAS_PERSONA,
@@ -1204,6 +1239,7 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
             "laboral_documents": laboral_documents,
             "salud_documents": salud_documents,
             "missing_types_by_family": missing_types_by_family,
+            "attention_types_by_family": attention_types_by_family,
             "vacation_periods": vacation_periods,
             "partes_total_hours": partes_total_hours,
             "partes_by_machine": partes_by_machine,

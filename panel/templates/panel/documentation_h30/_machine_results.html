@@ -26,7 +26,7 @@ hx-target="#machine-results" en toda la pestana de maquinaria
     <tbody>
         {% for machine in page %}
         <tr>
-            <td>{% if machine.has_alert %}<i class="bi bi-exclamation-triangle-fill text-danger" title="Tiene documentación sin fecha vigente"></i>{% endif %}</td>
+            <td>{% if machine.has_alert %}<i class="bi bi-exclamation-triangle-fill text-danger" title="Caducado: {{ machine.alert_labels|join:", " }}"></i>{% endif %}</td>
             <td><a href="{% url 'panel:documentation_machine_detail' pk=machine.pk %}">{{ machine.code }}</a></td>
             <td>{{ machine.brand_model }}{% if machine.plate %} — {{ machine.plate }}{% endif %}</td>
             <td>{{ machine.doc_count }}</td>
