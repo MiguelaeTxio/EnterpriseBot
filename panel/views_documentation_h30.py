@@ -1228,6 +1228,32 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
             current, exclude_family_codes=_laboral_salud_codes,
             include_empty_families=missing_types_by_family.keys(),
         )
+        # H31 (S109). Miguel Ángel, con captura de pantalla real: el
+        # triángulo de "Identidad y personal (base)" (dentro del
+        # acordeón de segundo nivel) sí funcionaba bien, pero no subía
+        # al acordeón de PRIMER nivel "Documentación" que lo envuelve
+        # -- "Salud" y "Laboral" sí lo mostraban porque para ellos el
+        # primer nivel ES la familia, sin un segundo nivel de por
+        # medio. Se agrega aquí si CUALQUIERA de las familias del
+        # acordeón genérico (nunca Laboral/Salud, que ya tienen su
+        # propio triángulo de primer nivel) tiene algo que avisar.
+        documentacion_alert_titles = []
+        for fam in families:
+            fam_missing = missing_required_types_by_family.get(fam["code"])
+            fam_attention = attention_types_by_family.get(fam["code"])
+            if fam_missing:
+                documentacion_alert_titles.append(
+                    "Falta (%s): %s" % (
+                        fam["label"], ", ".join(dt.label for dt in fam_missing),
+                    ),
+                )
+            if fam_attention:
+                documentacion_alert_titles.append(
+                    "Caducado (%s): %s" % (
+                        fam["label"], ", ".join(fam_attention),
+                    ),
+                )
+        documentacion_has_alert = bool(documentacion_alert_titles)
         # H31 (S77). Documentos de las dos families que se sacan de
         # Documentación a su propio acordeón de primer nivel -- el
         # documento es el mismo de siempre (DocumentIndexEntry), solo
@@ -1381,6 +1407,8 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
             "missing_types_by_family": missing_types_by_family,
             "missing_required_types_by_family": missing_required_types_by_family,
             "attention_types_by_family": attention_types_by_family,
+            "documentacion_has_alert": documentacion_has_alert,
+            "documentacion_alert_title": ". ".join(documentacion_alert_titles),
             "job_positions": JobPosition.objects.order_by("name"),
             "vacation_periods": vacation_periods,
             "partes_total_hours": partes_total_hours,

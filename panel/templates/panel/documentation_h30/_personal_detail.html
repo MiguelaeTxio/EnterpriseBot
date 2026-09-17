@@ -520,6 +520,9 @@ vacaciones).
         <h2 class="accordion-header">
             <button class="accordion-button{% if main_accordion_open != 'collapseDocumentacionMain' %} collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#collapseDocumentacionMain">
                 <i class="bi bi-folder2-open me-2"></i>Documentación
+                {% if documentacion_has_alert %}
+                <i class="bi bi-exclamation-triangle-fill text-danger ms-2" title="{{ documentacion_alert_title }}"></i>
+                {% endif %}
             </button>
         </h2>
         <div id="collapseDocumentacionMain" class="accordion-collapse collapse{% if main_accordion_open == 'collapseDocumentacionMain' %} show{% endif %}" data-bs-parent="#personalMainAccordion">
