@@ -167,6 +167,52 @@ CONTENT_SIGNALS = {
         # de distribucion" en ambas muestras.
         "SUBESTACIONES Y CENTROS DE DISTRIBUCION",
     ],
+    "FORMACION_EXTINCION_INCENDIOS": [
+        # H36 (S110), confirmado con muestra real amplia (pk=25757,
+        # 34954/35097/35296 -- certificado GWO BST "Fire Awareness",
+        # 35096/35295 -- Ceunes Formacion "Extincion de incendios y
+        # emergencias"): frase estable presente en todas las variantes
+        # tras strip de acentos. pk=25757 es un curso mixto real
+        # ("Primeros Auxilios Y Extincion de Incendios") -- queda
+        # correctamente ambiguo al coincidir tambien con la senal de
+        # FORMACION_PRIMEROS_AUXILIOS, decision humana pendiente, nunca
+        # asignado en automatico a ninguna de las dos.
+        "EXTINCION DE INCENDIOS",
+    ],
+    "FORMACION_TRABAJOS_ALTURA": [
+        # H36 (S110), confirmado con muestra real amplia (pk=34970/
+        # 35117/35211/40171, certificado EPICENTER MALAGA S.L.): frase
+        # de cabecera estable, formato repetido letra a letra en las 4
+        # muestras ("... HA REALIZADO EL CURSO DE SEGURIDAD EN TRABAJOS
+        # EN ALTURA (8 HORAS PRESENCIALES)...").
+        "SEGURIDAD EN TRABAJOS EN ALTURA",
+    ],
+    "FORMACION_PRL_60H": [
+        # H36 (S110), confirmado con muestra real (pk=25096, ficha de
+        # inscripcion "CURSO: 60H NIVEL BASICO PRL"; pk=25519, "60 H
+        # NIVEL BASICO PRL"). Deliberadamente exige el digito "60"
+        # pegado a "NIVEL BASICO PRL" -- muestra real en el mismo lote
+        # (variante "20H NIVEL BASICO PRL") confirma que existen cursos
+        # de nivel basico PRL de otra duracion que NO son este tipo,
+        # nunca usar "NIVEL BASICO PRL" suelto como senal.
+        "60H NIVEL BASICO PRL", "60 H NIVEL BASICO PRL",
+    ],
+    "FORMACION_OPERADOR_APARATOS_ELEVACION": [
+        # H36 (S110), confirmado con muestra real (pk=25368/25732,
+        # ficha de inscripcion ILURO DE PREVENCION SL, titulo de curso
+        # "... OPERADOR DE APARATOS ELEVADORES)"; pk=34793, certificado
+        # MAUDE STUDIO, "acción formativa Operador de aparatos
+        # elevadores"). Frase con orden estable en las 3 muestras tras
+        # normalizar espacios/saltos de linea.
+        "OPERADOR DE APARATOS ELEVADORES",
+    ],
+    "FORMACION_CARRETILLAS_TRASPALETAS": [
+        # H36 (S110), confirmado con muestra real (pk=40094/40095/
+        # 40003, certificado Ceunes Formacion, PABLO CAÑAMERO NAVARRO):
+        # curso presencial de 6 horas, titulo exacto "Operador de
+        # carretilla elevadora" en las 3 muestras.
+        "OPERADOR DE CARRETILLA ELEVADORA",
+    ],
     "CARNET_CONDUCIR": ["PERMISO DE CONDUCCION", "DRIVING LICENCE"],
     "CARNET_GRUISTA": [
         "OPERADOR DE GRUAS MOVILES", "HABILITACION PROFESIONAL",
