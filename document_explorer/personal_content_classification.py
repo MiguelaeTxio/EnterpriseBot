@@ -205,6 +205,12 @@ CONTENT_SIGNALS = {
         # elevadores"). Frase con orden estable en las 3 muestras tras
         # normalizar espacios/saltos de linea.
         "OPERADOR DE APARATOS ELEVADORES",
+        # H36 (S110), tercer lote: variante en plural confirmada con
+        # muestra real (pk=25060, "PRL PARA OPERADORES DE APARATOS
+        # ELEVADORES"; pk=36454, "Operadores de aparatos elevadores")
+        # -- singular y plural no son intercambiables por substring,
+        # necesitan su propia frase.
+        "OPERADORES DE APARATOS ELEVADORES",
     ],
     "FORMACION_CARRETILLAS_TRASPALETAS": [
         # H36 (S110), confirmado con muestra real (pk=40094/40095/
@@ -212,6 +218,10 @@ CONTENT_SIGNALS = {
         # curso presencial de 6 horas, titulo exacto "Operador de
         # carretilla elevadora" en las 3 muestras.
         "OPERADOR DE CARRETILLA ELEVADORA",
+        # H36 (S110), tercer lote: variante en plural confirmada con
+        # muestra real (pk=36010, BASILIO MUÑOZ CRUZ S.L.U., "OPERADOR
+        # DE CARRETILLAS ELEVADORAS").
+        "OPERADOR DE CARRETILLAS ELEVADORAS",
     ],
     "CARNET_CONDUCIR": ["PERMISO DE CONDUCCION", "DRIVING LICENCE"],
     "CARNET_GRUISTA": [
