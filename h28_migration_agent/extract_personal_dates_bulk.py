@@ -1452,6 +1452,16 @@ def main():
                 # H35 (S105): el ocr_unreliable del tipo NUEVO puede
                 # no coincidir con el del tipo actual -- se comprueba
                 # aparte con una consulta minima, solo si hizo falta.
+                #
+                # H36 (S109), incidente real: esta consulta puntual
+                # cae FUERA del ping periodico de cada 20 items (linea
+                # ~1196) -- confirmado real en campana de FORMACION,
+                # item 18/20 (dos items antes del siguiente ping
+                # programado), `pymysql.err.OperationalError: (2013,
+                # 'Lost connection to MySQL server during query')`.
+                # Ping explicito aqui tambien, nunca asumir que el
+                # ciclo periodico ya cubrio esta consulta ad-hoc.
+                conn.ping(reconnect=True)
                 with conn.cursor() as cur:
                     cur.execute(
                         "SELECT ocr_unreliable FROM "
