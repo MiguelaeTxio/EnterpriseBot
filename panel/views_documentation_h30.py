@@ -1399,6 +1399,20 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
         epi_items = EpiItemCatalog.objects.filter(
             is_active=True,
         ).order_by("family", "label")
+        # H31 (S109). Catálogo completo para el selector de "Cambiar
+        # tipo" de un documento -- Miguel Ángel, tras encontrar un
+        # documento mal clasificado (una carta de baja voluntaria
+        # tipada como CONTRATO por un falso positivo de la señal de
+        # contenido): "no encuentro ni en la suya ni en la de ningún
+        # otro el mecanismo para poder cambiar el tipo de un
+        # documento". No existía ningún camino en el panel para
+        # corregir una clasificación equivocada sin pasar por una
+        # campaña completa de retipado -- este selector cubre el caso
+        # de UN documento suelto, mismo criterio de agrupación por
+        # familia que el resto de selectores de tipos de esta ficha.
+        all_document_types = DocumentTypeCatalog.objects.filter(
+            is_active=True, domain__in=["PERSONAL", "BOTH"],
+        ).order_by("family", "label")
         return render(request, "panel/documentation_h30/_personal_detail.html", {
             "person": person, "current": current, "obsolete": obsolete,
             "families": families,
@@ -1410,6 +1424,7 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
             "documentacion_has_alert": documentacion_has_alert,
             "documentacion_alert_title": ". ".join(documentacion_alert_titles),
             "job_positions": JobPosition.objects.order_by("name"),
+            "all_document_types": all_document_types,
             "vacation_periods": vacation_periods,
             "partes_total_hours": partes_total_hours,
             "partes_by_machine": partes_by_machine,
@@ -4416,6 +4431,50 @@ class DocumentDeleteView(DocsUploadAccessMixin, View):
             entry.deleted_by = company_user
         entry.save(update_fields=["deleted_at", "deleted_by"])
         return JsonResponse({"ok": True})
+
+
+class DocumentChangeTypeView(DocsUploadAccessMixin, View):
+    """
+    H31 (S109). POST: corrige el `document_type` de UN documento ya
+    indexado, sin tocar el archivo real ni su nombre (que se queda
+    con el tipo con el que se subió originalmente -- el renombrado es
+    solo virtual, mismo criterio que las campañas de retipado
+    masivo). Nunca toca `blob_name`/`bucket` -- solo el campo
+    `document_type`.
+
+    Origen real: Miguel Ángel encontró un documento mal clasificado
+    (una carta de baja voluntaria tipada como CONTRATO, por un falso
+    positivo de la señal de contenido "CONTRATO DE TRABAJO" que la
+    propia carta menciona de pasada en su cláusula de preaviso) y no
+    encontró en ningún sitio del panel un mecanismo para corregir UN
+    documento suelto sin montar una campaña completa de retipado por
+    OCR en VMs -- verbatim: "no encuentro ni en la suya ni en la de
+    ningún otro el mecanismo para poder cambiar el tipo de un
+    documento".
+
+    Deliberadamente genérico (`domain` -- personal o machine, ambos
+    dominios comparten `DocumentIndexEntry`) para no duplicar esta
+    vista cuando aparezca la misma necesidad en Centros de Gasto.
+    """
+
+    def post(self, request, pk):
+        entry = get_object_or_404(
+            DocumentIndexEntry, pk=pk, deleted_at__isnull=True,
+        )
+        new_type_code = request.POST.get("document_type_code", "").strip()
+        if not new_type_code:
+            return JsonResponse(
+                {"ok": False, "error": "Falta el tipo documental nuevo."},
+                status=400,
+            )
+        new_type = get_object_or_404(
+            DocumentTypeCatalog, code=new_type_code, is_active=True,
+        )
+        entry.document_type = new_type
+        entry.save(update_fields=["document_type"])
+        return JsonResponse({
+            "ok": True, "new_type_label": new_type.label,
+        })
 
 
 class SubjectDocumentUploadView(DocsUploadAccessMixin, View):

@@ -28,6 +28,7 @@ from panel.views_documentation_h30 import (
     CalendarResultsFragmentView,
     CalendarTabFragmentView,
     DocumentDeleteView,
+    DocumentChangeTypeView,
     DocumentTypeQuickCreateView,
     DocumentViewView,
     DocumentationHubV2View,
@@ -513,6 +514,7 @@ urlpatterns = [
     path("documentacion/<str:domain>/tipos/crear/", DocumentTypeQuickCreateView.as_view(), name="documentation_type_quick_create"),
     path("documentacion/documento/<int:pk>/ver/", DocumentViewView.as_view(), name="documentation_document_view"),
     path("documentacion/documento/<int:pk>/eliminar/", DocumentDeleteView.as_view(), name="documentation_document_delete"),
+    path("documentacion/documento/<int:pk>/cambiar-tipo/", DocumentChangeTypeView.as_view(), name="documentation_document_change_type"),
 
     # Section default role — Endpoint AJAX para pre-rellenar rol al crear usuario (H13).
     path("sections/<int:pk>/default-role/", SectionDefaultRoleView.as_view(), name="section_default_role"),

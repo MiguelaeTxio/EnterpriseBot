@@ -291,6 +291,8 @@ y se habilita "Guardar".
                         onclick="openUploadForm('{{ entry.document_type.code }}')">Actualizar</button>
                 <button type="button" class="btn btn-sm btn-outline-info"
                         onclick="openDocumentHistory('{{ entry.document_type.code }}')">Historial</button>
+                <button type="button" class="btn btn-sm btn-outline-warning"
+                        onclick="openChangeTypeModal({{ entry.pk }}, '{{ entry.document_type.label|escapejs }}')">Tipo</button>
                 <button type="button" class="btn btn-sm btn-outline-danger"
                         onclick="deleteDocument({{ entry.pk }}, this)">Eliminar</button>
             </td>
@@ -502,6 +504,8 @@ vacaciones).
                         onclick="openUploadForm('{{ entry.document_type.code }}')">Actualizar</button>
                 <button type="button" class="btn btn-sm btn-outline-info"
                         onclick="openDocumentHistory('{{ entry.document_type.code }}')">Historial</button>
+                <button type="button" class="btn btn-sm btn-outline-warning"
+                        onclick="openChangeTypeModal({{ entry.pk }}, '{{ entry.document_type.label|escapejs }}')">Tipo</button>
                 <button type="button" class="btn btn-sm btn-outline-danger"
                         onclick="deleteDocument({{ entry.pk }}, this)">Eliminar</button>
             </td>
@@ -598,6 +602,8 @@ vez de una lista única sin estructura.
                                         onclick="openUploadForm('{{ entry.document_type.code }}')">Actualizar</button>
                                 <button type="button" class="btn btn-sm btn-outline-info"
                                         onclick="openDocumentHistory('{{ entry.document_type.code }}')">Historial</button>
+                                <button type="button" class="btn btn-sm btn-outline-warning"
+                                        onclick="openChangeTypeModal({{ entry.pk }}, '{{ entry.document_type.label|escapejs }}')">Tipo</button>
                                 <button type="button" class="btn btn-sm btn-outline-danger"
                                         onclick="deleteDocument({{ entry.pk }}, this)">Eliminar</button>
                             </td>
@@ -721,6 +727,42 @@ completo aunque Bootstrap le añada la clase "show" vía JS.
             </div>
             <div class="modal-body" id="documentHistoryModalBody">
                 <div class="text-muted small py-3">Cargando…</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% comment %}
+H31 (S109). Modal de "Cambiar tipo" -- corrige el tipo documental de
+UN documento suelto (nunca toca el archivo ni su nombre). Único,
+reutilizado por las 3 secciones de documentos de esta ficha (Laboral,
+Salud, acordeón genérico) -- mismo patrón que documentHistoryModal.
+{% endcomment %}
+<div class="modal fade" id="documentChangeTypeModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Cambiar tipo de documento</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="changeTypeEntryPk" value="">
+                <label class="form-label small mb-1">Tipo actual: <strong id="changeTypeCurrentLabel"></strong></label>
+                <select id="changeTypeNewCode" class="form-select form-select-sm">
+                    {% regroup all_document_types by get_family_display as type_families %}
+                    {% for group in type_families %}
+                    <optgroup label="{{ group.grouper }}">
+                        {% for dt in group.list %}
+                        <option value="{{ dt.code }}">{{ dt.label }}</option>
+                        {% endfor %}
+                    </optgroup>
+                    {% endfor %}
+                </select>
+                <div id="changeTypeResult" class="small mt-2"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-sm btn-primary" onclick="submitChangeType()">Guardar</button>
             </div>
         </div>
     </div>
@@ -961,6 +1003,42 @@ function deleteDocument(pk, btn) {
         headers: {'X-CSRFToken': getCookie('csrftoken')},
     }).then(r => r.json()).then(data => {
         if (data.ok) btn.closest('tr').remove();
+    });
+}
+
+// H31 (S109). "Cambiar tipo" de un documento suelto -- Miguel Ángel,
+// tras encontrar un documento mal clasificado sin ningún mecanismo
+// en el panel para corregirlo. Un único modal reutilizado por las 3
+// secciones de esta ficha (mismo patrón que openDocumentHistory).
+// Recarga la página al guardar -- el documento cambia de familia/
+// sección real, recomponerlo a mano en el DOM sería más frágil que
+// una recarga simple.
+function openChangeTypeModal(entryPk, currentLabel) {
+    document.getElementById('changeTypeEntryPk').value = entryPk;
+    document.getElementById('changeTypeCurrentLabel').textContent = currentLabel;
+    document.getElementById('changeTypeResult').innerHTML = '';
+    if (!window._changeTypeModalInstance) {
+        window._changeTypeModalInstance = new bootstrap.Modal(document.getElementById('documentChangeTypeModal'));
+    }
+    window._changeTypeModalInstance.show();
+}
+
+function submitChangeType() {
+    const entryPk = document.getElementById('changeTypeEntryPk').value;
+    const newCode = document.getElementById('changeTypeNewCode').value;
+    const resultDiv = document.getElementById('changeTypeResult');
+    fetch(`/panel/documentacion/documento/${entryPk}/cambiar-tipo/`, {
+        method: 'POST',
+        headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/x-www-form-urlencoded'},
+        body: `document_type_code=${encodeURIComponent(newCode)}`,
+    }).then(r => r.json()).then(data => {
+        if (data.ok) {
+            location.reload();
+        } else {
+            resultDiv.innerHTML = `<div class="alert alert-danger py-1 px-2 mb-0">${data.error || 'Error al cambiar el tipo.'}</div>`;
+        }
+    }).catch(() => {
+        resultDiv.innerHTML = '<div class="alert alert-danger py-1 px-2 mb-0">Error de red al cambiar el tipo.</div>';
     });
 }
 
