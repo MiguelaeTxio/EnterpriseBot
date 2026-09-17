@@ -484,7 +484,56 @@ suspendidas ni paradas "por si acaso".**
 
 ---
 
-## VM h28-ocr-batch — ENTORNO REAL (registrado S53, 2026-08-14, tras
+## ⛔⛔⛔ INCIDENTE REAL -- STOCKOUT ALTERNANTE E2/N2 EN `europe-west1-b` PARA `h28-ocr-batch-1` (documentado S109, ocurrido primero "ayer" sin dejar constancia -- NUNCA MÁS SIN DOCUMENTAR)
+
+**Origen de la regla:** Miguel Ángel, verbatim (S109), tras que el
+modelo no tuviera constancia de un incidente idéntico del día
+anterior: *"esto ya pasó ayer pero no lo documentaste [...] la
+costumbre debe ser documentarlo todo para evitar tener que repetir
+las cosas."* Queda anotado aquí en el mismo momento en que se
+resuelve, no después.
+
+**Patrón real, confirmado dos veces (ayer y hoy, S109):** `gcloud
+compute instances resume h28-ocr-batch-1` falla con
+`ZONE_RESOURCE_POOL_EXHAUSTED_WITH_DETAILS` / `stockout` para el tipo
+de máquina que la VM tiene en ese momento, en la zona
+`europe-west1-b`. La solución real, verificada las dos veces, es
+**cambiar el tipo de máquina a la serie contraria** (E2 ↔ N2) --
+nunca cambiar de zona (movería el disco persistente, operación mucho
+mayor e innecesaria). Hipótesis de Miguel Ángel, no verificada contra
+documentación oficial de Google: la escasez alterna entre series
+porque mucha gente reacciona igual que nosotros y satura la serie a
+la que todos migran -- razonable como explicación práctica, pero
+tratarla como hipótesis, no como hecho confirmado.
+
+**Secuencia real que soluciona el stockout, cualquiera que sea la
+serie de origen (llevar la VM a la serie contraria a la que está
+fallando):**
+```powershell
+gcloud compute instances stop h28-ocr-batch-1 --zone=europe-west1-b --project=gen-lang-client-0961484137
+gcloud compute instances set-machine-type h28-ocr-batch-1 --zone=europe-west1-b --project=gen-lang-client-0961484137 --machine-type=SERIE-CONTRARIA
+gcloud compute instances start h28-ocr-batch-1 --zone=europe-west1-b --project=gen-lang-client-0961484137
+```
+(`stop` deja la instancia `TERMINATED`, no `SUSPENDED` -- por eso el
+arranque siguiente es `start`, nunca `resume`, aunque antes del
+`stop` sí estuviera `SUSPENDED`.)
+
+**Registro real de series usadas, para no tener que redescubrir el
+sentido del cambio la próxima vez:**
+- Hasta antes de "ayer": E2 (`e2-standard-2` o similar).
+- "Ayer": E2 dio stockout → se cambió a **N2** (`n2-standard-2`).
+- Hoy (S109): N2 dio el mismo stockout → se volvió a **E2**
+  (`e2-standard-2`) → arrancó sin problema.
+
+**Regla de obligado cumplimiento derivada:** si `resume`/`start` de
+`h28-ocr-batch-1` falla con este código de error, comprobar primero
+qué serie tiene la instancia ahora mismo
+(`gcloud compute instances describe h28-ocr-batch-1 --zone=europe-west1-b --project=gen-lang-client-0961484137 --format="value(machineType)"`)
+y aplicar la secuencia de arriba hacia la serie contraria -- nunca
+asumir de memoria cuál tocaba esta vez, el sentido del cambio se
+invierte cada vez que vuelve a fallar.
+
+
 ## descubrirlo a tientas paso a paso -- no volver a redescubrirlo)
 
 **Arrancar las 4 VMs (registrado S77, 2026-08-28 -- todas quedaron
