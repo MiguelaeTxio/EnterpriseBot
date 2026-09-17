@@ -10,6 +10,43 @@ reescribir: el único punto pendiente real, "Hoja de ruta al reactivar
 H31" más abajo -- enviar un dossier real desde el panel con firma y
 cuerpo editado, confirmado visualmente en Outlook real.
 
+## COMPLETADAS EN S108
+
+Ningún trabajo de ejecución sobre H31 en esta sesión -- la sesión
+completa (S108) se dedicó a H35 (retipado/refechado masivo de
+documentación histórica de personal), cerrado del todo en la misma
+sesión (ver "COMPLETADAS EN S108 -- H35 CERRADO POR COMPLETO" en
+`ENTERPRISEBOT_ATTACHED_MILESTONE_V35.md` para el detalle completo:
+118 candidatos de otra persona revisados, 3 bugs reales corregidos en
+`is_current()`/`backfill_obsolete_duplicates`/`db_query.yml`, 3
+migraciones nuevas de catálogo). Al cerrar H35, Miguel Ángel pivotó
+(PCH) a H31 para retomarlo en la sesión siguiente, y cerró esta misma
+sesión (PCS) inmediatamente después sin ejecutar nada más -- de ahí
+que la hoja de ruta de abajo llegue sin avance real desde su última
+ejecución en S104.
+
+## Hoja de ruta para la sesión siguiente (S109)
+
+**Punto único (arrastrado 1.ª sesión sin avanzar): enviar un dossier
+real desde el panel con firma y cuerpo editado, confirmado
+visualmente en Outlook real.** Backend ya completo desde S104
+(`CompanyUser.email_signature_html`, `_build_dossier_notification_eml()`,
+`PersonalDossierEmailSendView`, editor de firma en `own_profile.html`,
+botón "Enviar por email" en la ficha de personal) -- releer ese código
+en el turno actual antes de tocarlo, nunca de memoria. Orden fijo,
+sin preguntar por dónde empezar:
+1. Confirmar que el backend sigue intacto (no hubo ningún cambio
+   sobre estos archivos entre S104 y S108).
+2. Guiar a Miguel Ángel para que edite su firma en `own_profile.html`
+   si no la tiene ya guardada.
+3. Enviar un dossier real desde la ficha de una persona activa, con
+   cuerpo editado en el editor básico.
+4. **Criterio de cierre:** Miguel Ángel confirma visualmente, en su
+   Outlook real, que el `.eml` recibido/generado trae el dossier
+   adjunto, la firma real incrustada en el cuerpo (no la firma por
+   defecto de Outlook) y el texto del cuerpo tal cual lo editó --
+   mismo criterio de verificación que la prueba de concepto de S73.
+
 ---
 
 **RENOMBRADO Y AMPLIADO EN S99 (2026-09-10).** Título anterior:
