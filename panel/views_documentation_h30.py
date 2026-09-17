@@ -277,10 +277,94 @@ def _attach_alert_flags(objects, content_type):
     for object_id, label in alert_rows:
         alert_labels_by_pk.setdefault(object_id, []).append(label)
     for obj in objects:
-        labels = alert_labels_by_pk.get(obj.pk, [])
+        # H31 (S109): cada elemento se autodescribe ("Caducado: X") en
+        # vez de depender de un prefijo fijo en la plantilla -- ver
+        # _attach_missing_required_alert, que añade elementos propios
+        # ("Falta: Y") a esta misma lista para Personal, y ambos deben
+        # convivir sin ambigüedad en el mismo tooltip.
+        labels = [
+            "Caducado: %s" % label
+            for label in sorted(alert_labels_by_pk.get(obj.pk, []))
+        ]
         obj.has_alert = bool(labels)
-        obj.alert_labels = sorted(labels)
+        obj.alert_labels = labels
     return objects
+
+
+def _attach_missing_required_alert(persons, content_type):
+    """
+    H31 (S109). Incongruencia real detectada por Miguel Ángel con
+    captura de pantalla: la ficha de una persona (`PersonalDetailView`)
+    ya avisaba de un tipo OBLIGATORIO de su puesto que le falta
+    (`missing_required_types_by_family`), pero el listado de Personal
+    nunca lo reflejaba -- `_attach_alert_flags` solo mira documentos
+    CADUCADOS, nunca faltantes. Resultado real: una persona con un
+    problema real (tarjeta sanitaria obligatoria para su puesto, sin
+    subir) aparecía sin ningún triángulo en el listado, y sí en su
+    propia ficha -- imposible detectarla a golpe de vista sin abrir
+    fichas una a una, que es precisamente para lo que sirve el
+    listado.
+
+    Extiende `has_alert`/`alert_labels` (ya calculados por
+    `_attach_alert_flags` para caducados) con los tipos obligatorios
+    que faltan -- mismo criterio de DNI/NIE excluyentes que
+    `PersonalDetailView`. Solo aplica a personas CON puesto asignado;
+    sin puesto, ningún tipo se marca como obligatorio, igual que en
+    la ficha.
+
+    Deliberadamente una función aparte de `_attach_alert_flags` (que
+    es genérica, compartida con Centros de Gasto/`MachineAsset`, sin
+    concepto de puesto) -- solo se llama desde `_person_list_page`.
+    """
+    persons_by_position = {}
+    for obj in persons:
+        if obj.job_position_id:
+            persons_by_position.setdefault(obj.job_position_id, []).append(obj)
+    if not persons_by_position:
+        return persons
+
+    required_by_position = {
+        jp.pk: list(jp.required_document_types.all())
+        for jp in JobPosition.objects.filter(
+            pk__in=persons_by_position.keys(),
+        ).prefetch_related("required_document_types")
+    }
+
+    all_person_ids = [
+        obj.pk for group in persons_by_position.values() for obj in group
+    ]
+    present_codes_by_person = {}
+    rows = DocumentIndexEntry.objects.filter(
+        bucket=BUCKET, domain_content_type=content_type,
+        domain_object_id__in=all_person_ids,
+        entry_kind=DocumentIndexEntry.KIND_FILE,
+        deleted_at__isnull=True, purged_at__isnull=True, is_obsolete=False,
+    ).values_list("domain_object_id", "document_type__code")
+    for object_id, code in rows:
+        if code:
+            present_codes_by_person.setdefault(object_id, set()).add(code)
+
+    for position_id, group in persons_by_position.items():
+        required_types = required_by_position.get(position_id, [])
+        for obj in group:
+            present_codes = present_codes_by_person.get(obj.pk, set())
+            # Mismo criterio de DNI/NIE excluyentes que
+            # PersonalDetailView -- tener uno de los dos cubre el
+            # requisito de identidad, nunca se exigen ambos a la vez.
+            has_dni_or_nie = bool({"DNI", "NIE"} & present_codes)
+            missing_labels = [
+                dt.label for dt in required_types
+                if dt.code not in present_codes
+                and not (dt.code in ("DNI", "NIE") and has_dni_or_nie)
+            ]
+            if missing_labels:
+                obj.has_alert = True
+                obj.alert_labels = sorted(
+                    set(getattr(obj, "alert_labels", []) or []) | {
+                        "Falta: %s" % label for label in missing_labels
+                    },
+                )
+    return persons
 
 
 def _attach_doc_counts(objects, content_type):
@@ -500,6 +584,9 @@ def _person_list_page(request):
     page = paginator.get_page(request.GET.get("page"))
     page.object_list = _attach_alert_flags(
         list(page.object_list), person_ct,
+    )
+    page.object_list = _attach_missing_required_alert(
+        page.object_list, person_ct,
     )
     return {
         "page": page, "sort_key": sort_key, "sort_dir": sort_dir,

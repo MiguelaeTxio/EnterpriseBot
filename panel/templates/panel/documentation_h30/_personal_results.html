@@ -52,7 +52,7 @@ en la selección recordada por ese JS al reconstruir la tabla.
         {% for person in page %}
         <tr>
             <td><input type="checkbox" class="form-check-input person-select-checkbox" value="{{ person.pk }}"></td>
-            <td>{% if person.has_alert %}<i class="bi bi-exclamation-triangle-fill text-danger" title="Caducado: {{ person.alert_labels|join:", " }}"></i>{% endif %}</td>
+            <td>{% if person.has_alert %}<i class="bi bi-exclamation-triangle-fill text-danger" title="{{ person.alert_labels|join:", " }}"></i>{% endif %}</td>
             <td><a href="{% url 'panel:documentation_personal_detail' pk=person.pk %}">{{ person.first_surname }} {{ person.second_surname }}</a></td>
             <td>{{ person.given_name }}</td>
             <td>{{ person.dni }}</td>
