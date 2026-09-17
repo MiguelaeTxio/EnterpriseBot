@@ -1288,6 +1288,41 @@ una herramienta nueva al proyecto, todo con `gcloud` nativo.
 
 ---
 
+## IMAGEN PERSONALIZADA -- `h28-ocr-batch-image-v2` (S109, 2026-09-17)
+
+**Motivo real:** campaña de retipado de H36 (14+3 tipos de curso de
+FORMACION) -- la `v1` (2026-09-02) es muy anterior al código real de
+hoy (grupos de reparto, triángulo de alerta, catálogo de tipos nuevo,
+señales de contenido de H36). `h28-ocr-batch-1` se puso al día
+primero (`git pull`, `pip-sync requirements-ocr-vm.txt` -- candado
+verificado coherente, "FALTAN EN EL CANDADO: ninguna" -- y `~/.ssh/id_rsa`
+confirmado presente, 3389 bytes, mismo que S105) antes de congelar.
+
+- **Nombre real:** `h28-ocr-batch-image-v2` (mismo proyecto, sin
+  family). `STATUS: READY` confirmado tras la creación.
+- **Creada:** 2026-09-17 (S109), desde el disco de `h28-ocr-batch-1`
+  ya parado (`TERMINATED`) -- mismo procedimiento que `v1`.
+- **Comando real usado:**
+  ```
+  gcloud compute images create h28-ocr-batch-image-v2 --source-disk=h28-ocr-batch-1 --source-disk-zone=europe-west1-b --project=gen-lang-client-0961484137
+  ```
+- **Para levantar una VM nueva desde esta imagen (la vigente a partir
+  de ahora, usar esta y no `v1`):**
+  ```
+  gcloud compute instances create NOMBRE_VM --image=h28-ocr-batch-image-v2 --zone=europe-west1-b --machine-type=e2-standard-8 --project=gen-lang-client-0961484137
+  ```
+- **Incidente de esta misma sesión, ver más arriba en este archivo**
+  ("INCIDENTE REAL -- STOCKOUT ALTERNANTE E2/N2"): `h28-ocr-batch-1`
+  tuvo que pasar de N2 a `e2-standard-2` antes de poder arrancar --
+  si al crear las VMs efímeras desde esta imagen `e2-standard-8` da el
+  mismo stockout, aplicar la misma secuencia (stop + set-machine-type
+  a N2 + start) sobre la VM efímera afectada, nunca asumir que solo le
+  pasa a la VM base.
+
+---
+
+
+
 ## CORRECCIÓN REAL — NOMBRES DE LAS 4 VMs DE OCR (S78, 2026-08-28) -- ⛔ MODELO DE 4 VMs FIJAS SUPERADO EN S105, VER SECCIÓN AL PRINCIPIO DE ESTE ARCHIVO
 
 **Esta sección queda como registro histórico de un incidente de
