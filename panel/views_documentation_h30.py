@@ -486,7 +486,17 @@ def _person_list_page(request):
     qs, sort_key, sort_dir = _apply_sort(
         request, qs, sort_columns, "first_surname",
     )
-    paginator = Paginator(qs, 50)
+    # H31 (S109). Miguel Ángel, tras un fallo real al paginar (la
+    # página 2 no cargaba nada): "aquí nos convendría no paginar [...]
+    # entonces cuando seleccionamos no los vamos a seleccionar a
+    # todos." Con la lista ya en su propio contenedor con scroll
+    # (`#personal-results-scroll`, S109), paginar ya no aporta nada
+    # real y además rompe "seleccionar todos" (solo marcaba los 50 de
+    # la página visible). Límite generoso (nunca "sin límite" real,
+    # por si el censo crece mucho en el futuro) en vez de retirar
+    # `Paginator` del todo -- mismo mecanismo, un único "page" que
+    # cabe siempre entero.
+    paginator = Paginator(qs, 2000)
     page = paginator.get_page(request.GET.get("page"))
     page.object_list = _attach_alert_flags(
         list(page.object_list), person_ct,
