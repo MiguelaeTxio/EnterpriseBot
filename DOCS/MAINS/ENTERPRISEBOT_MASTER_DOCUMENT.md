@@ -1578,4 +1578,41 @@ turismos). Los 3 `pk` de arriba **siguen archivados donde estaban**,
 sin tocar, hasta que se decida el mecanismo. Cuando se aborde, es
 tarea propia, no un punto de H35.
 
+#### 4.22. DIRECTRIZ CRÍTICA — Ningún tipo documental nuevo (o desdoblado de uno genérico) se deja sin retipar el histórico correspondiente (añadida S109)
+
+**Regla, sin excepción, a partir de esta sesión:** cuando se crea un
+tipo documental nuevo en `DocumentTypeCatalog` para cubrir un hueco
+que antes vivía dentro de un tipo genérico (p. ej. desdoblar
+`FORMACION` en un tipo por curso real), el modelo **no da el punto
+por cerrado con solo crear la fila del catálogo**. En la misma
+sesión (o en la hoja de ruta inmediatamente siguiente si el volumen
+real no cabe en la sesión actual, nunca aparcado sin fecha): localizar
+los documentos históricos que deberían llevar el tipo nuevo, pasar
+OCR sobre los que no lo tengan ya cacheado, y retiparlos contra
+contenido real -- nunca dejar el hueco a medias (catálogo con la fila
+nueva, pero los documentos reales siguiendo con el tipo genérico
+viejo, que es la propia deuda que la regla prohíbe).
+
+**Cita textual de Miguel Ángel, autorizando y exigiendo esta regla
+(S109):** *"la directriz que vamos a tener ya a partir de ahora es no
+dejar ninguna deuda. Es decir, habrá que mirar los cursos, pasar OCR
+si no lo tienen y tiparlos. Y una vez que estén todos los cursos
+tipados seguimos con el siguiente punto."*
+
+**Relación con la directriz 4.9 (ningún hallazgo se deja como deuda
+técnica):** esta es su aplicación específica al desdoblamiento de
+tipos documentales -- 4.9 cubre errores de código detectados durante
+una sesión; 4.22 cubre específicamente el hueco entre "el catálogo ya
+sabe distinguir X" y "los documentos reales de X siguen sin
+distinguirse", que de otro modo queda invisible (no rompe nada, no
+sale ningún error) y por eso es fácil dejarlo aparcado sin darse
+cuenta.
+
+**Alcance real de volumen, precedente directo:** si el retipado
+afecta a un volumen grande de documentos (mismo perfil que H35,
+536 `BAJA_PERSONAL` reales), la directriz no exige terminarlo en una
+única sesión -- exige que quede como punto explícito de la hoja de
+ruta inmediatamente siguiente, con seguimiento real hasta cerrarlo a
+0, nunca mencionado una vez y olvidado.
+
 
