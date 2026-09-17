@@ -78,7 +78,131 @@ para EPI/información/cualquier firma) se planteó y se diseñó a nivel
 conceptual pero no se llegó a implementar en esta sesión -- queda
 como parte de la hoja de ruta de H31 al reactivarse.
 
-## Hoja de ruta para la sesión siguiente (S109)
+## COMPLETADAS EN S109 (continuación -- desvío de sesión tras el PCH a H36)
+
+Con H36 ya `EN PROGRESO` y sus 12 shards de OCR corriendo de fondo en
+las VMs efímeras, Miguel Ángel pidió atender en la misma sesión una
+serie de mejoras reales sobre H31 mientras la campaña avanzaba sola
+(Caso A de `nfs-enterprisebot-pch`, desvío de sesión -- el marcador
+`← EN PROGRESO` de H36 no se movió):
+
+1. **EPIs en plantillas de dosier** (`PersonalDossierTemplate.epi_items`,
+   M2M a `EpiItemCatalog`, migración `0099`): al aplicar una plantilla
+   se resuelven las entregas reales (`EpiDelivery`) de cada EPI
+   marcado para la persona concreta, añadiendo una sección propia al
+   PDF/ZIP generado (`_build_epi_section_page`) -- **deliberadamente
+   sin ningún bloque de firma todavía**, con aviso visible de que no
+   sirve como acreditación ante terceros hasta integrar un proveedor
+   de firma electrónica homologado (comparativa real Docuten/
+   Signaturit/Viafirma hecha en la propia sesión, sin decisión de
+   negocio tomada -- ver hoja de ruta). Conectado en los 3 flujos
+   reales que usan plantilla (aplicar individual, envío por correo,
+   generación masiva). Commit `7b6d57b`.
+2. **Puestos de trabajo** (`JobPosition`, migración `0100`): catálogo
+   de puestos con sus tipos documentales obligatorios ("plantilla de
+   puesto", misma mecánica que las de dosier), `PersonIdentity.
+   job_position` (FK nullable). El aviso de documento FALTANTE en la
+   ficha (`missing_required_types_by_family`) pasa a depender
+   exclusivamente del puesto de la persona, nunca del catálogo
+   completo de 70-80 tipos -- Miguel Ángel, verbatim: *"no es cuestión
+   de marcar cuando falte uno de los 70 u 80 tipos [...] sino de los
+   documentos que realmente son necesarios [...] dependiendo del tipo
+   de puesto que cada trabajador desempeña."* DNI/NIE tratados como
+   excluyentes (tener uno cubre el requisito de identidad). Asignación
+   masiva de puesto sobre el mismo Set `selection` de siempre
+   (`PersonMassSetJobPositionView`) -- sustituye siempre el puesto
+   anterior, nunca lo acumula. **Dos bugs reales corregidos en el
+   mismo mecanismo, ambos con caso real de Miguel Ángel**: (a) el
+   listado de Personal nunca reflejaba el aviso de obligatorio
+   faltante, solo el de caducado (`_attach_missing_required_alert`
+   nueva, commit `5d965f6`); (b) la ficha individual seguía contando
+   un tipo como "presente" aunque estuviera marcado `is_obsolete=1`
+   (reutilizaba por error `present_type_codes`, pensada a propósito
+   para el botón "+ Subir" -- nueva `present_current_type_codes`,
+   solo vigentes, commit `32a0427`, encontrado al retipar un documento
+   real de Daniel Anaya). Commits `1cb9835`, `4555c61`, `32a0427`.
+3. **Triángulo de aviso propagado al primer nivel "Documentación"**
+   (`documentacion_has_alert`): el acordeón que envuelve las familias
+   genéricas (Circulación, Administrativo, Identidad y personal...)
+   no heredaba el aviso de sus hijas, a diferencia de Salud/Laboral
+   (que son familia y primer nivel a la vez). Commit `f19bee4`.
+4. **Mecanismo nuevo "Cambiar tipo" de un documento suelto**
+   (`DocumentChangeTypeView`, genérico personal/máquina): no existía
+   ningún camino en el panel para corregir la clasificación de UN
+   documento sin montar una campaña completa de retipado por OCR en
+   VMs -- origen real: una carta de baja voluntaria de Daniel Anaya
+   tipada como `CONTRATO` por un falso positivo de la señal de
+   contenido "CONTRATO DE TRABAJO" (mencionada de pasada en la
+   cláusula de preaviso de la propia carta). Corregido por Miguel
+   Ángel en el momento, a `CARTA_BAJA_VOLUNTARIA`, con este mismo
+   mecanismo nuevo. Commit `754555e`.
+5. **UI/UX -- coherencia visual entre pantallas** (controles fijos +
+   scroll acotado, mismo patrón en las 3 pantallas con listas largas):
+   cabecera de tabla fija en el listado de Personal (`93ecf8a`),
+   controles fijos + lista de tipos con scroll en plantillas de puesto
+   y de dosier, visor de plantillas de dosier con `position: sticky`
+   (`8016bb6`), columnas "Apellidos"/"Nombre" unificadas en una sola
+   ("Apellidos, Nombre" -- apellidos repetidos en columnas separadas
+   dificultaban distinguir de un vistazo, `d6599d4`).
+6. **Bug real de paginación corregido**: la página 2 del listado de
+   Personal no cargaba nada, y "seleccionar todos" solo marcaba los 50
+   de la página visible -- causa real, `_apply_personal_filters`
+   ("ningún casillero marcado = ningún resultado", decisión explícita
+   de S76) disparándose porque los enlaces de orden/paginación nunca
+   reenviaban los parámetros `active`/`company`. Paginador subido de
+   50 a 2000 (paginación ya no aporta nada con la lista en su propio
+   contenedor con scroll) + los 4 enlaces corregidos. Commits
+   `e1d3209`, `3da1c0f`.
+7. **Hallazgo real, sin ejecutar todavía -- extracción de `hire_date`
+   desde contratos reales**: a petición de Miguel Ángel ("no tenemos
+   fecha de alta más que la mía") se investigó usar
+   `DocumentIndexEntry.issue_date` de los `CONTRATO` vigentes como
+   fuente (51 personas activas con contrato vigente, 50 con OCR ya
+   cacheado -- consulta pura a BD, sin OCR). **Se paró antes de
+   escribir nada**: la fecha `2016-04-27` aparece repetida en el
+   `issue_date` de 6 personas completamente distintas (algunas sin
+   relación siquiera con la fecha de su propio nombre de archivo) --
+   patrón sistemático, no ruido de OCR normal, que apunta a un fallo
+   real en la extracción original. Ver hoja de ruta.
+
+## Hoja de ruta para la sesión siguiente
+
+**Sin preguntas abiertas** -- las que surgieron en la propia sesión ya
+se resolvieron con Miguel Ángel antes de este cierre (elección de vía
+A para la firma electrónica -- proveedor homologado real, nunca un
+mecanismo propio presentado como equivalente -- ya decidida; alcance
+de la extracción de `hire_date` limitado a consulta de BD, sin OCR, ya
+decidido). Orden fijo:
+
+1. **Investigar el origen de la fecha `2016-04-27` duplicada** en el
+   `issue_date` de `CONTRATO` de 6 personas activas distintas (Álvarez
+   Díaz Alejandro Sergio, Barbero Cuenca Manuel, Cruces Heredia José
+   Manuel, Iordachi Petru, Muñoz González Antonio Javier, Ruiz
+   Portillo Manuel) -- releer el `ocr_text` real de esos 6 documentos
+   contra consulta de BD. **Criterio de cierre:** confirmar si es una
+   coincidencia real (6 contratos firmados de verdad el mismo día) o
+   un bug de extracción -- solo entonces decidir si `issue_date` de
+   `CONTRATO` es fuente fiable para poblar `PersonIdentity.hire_date`
+   en el resto de las ~44 personas restantes sin esa anomalía, y
+   enseñar la lista completa propuesta a Miguel Ángel antes de escribir
+   nada (igual que se hizo esta sesión).
+2. **Contactar con Docuten y Viafirma para presupuesto** (gestión de
+   Miguel Ángel, no técnica) -- descartada Signaturit de entrada por
+   su modelo de coste por envío, mal ajustado al volumen de entregas
+   de EPI recurrentes de la plataforma. En cuanto haya proveedor y
+   credenciales de API (sandbox), diseño técnico de la integración de
+   firma real sobre la sección de EPIs ya construida en el punto 1 de
+   "COMPLETADAS" de arriba.
+3. **Punto pendiente heredado, sin cambios (arrastrado 1.ª sesión sin
+   avanzar): enviar un dossier real desde el panel con firma y cuerpo
+   editado, confirmado visualmente en Outlook real.** Backend completo
+   desde S104 -- releer el código en el turno actual antes de tocarlo,
+   nunca de memoria. **Criterio de cierre:** Miguel Ángel confirma
+   visualmente, en su Outlook real, que el `.eml` recibido trae el
+   dossier adjunto, la firma real incrustada en el cuerpo (no la firma
+   por defecto de Outlook) y el texto del cuerpo tal cual lo editó.
+
+## Hoja de ruta para la sesión siguiente (S109) -- histórico, sustituido por la sección de arriba
 
 **Punto único (arrastrado 1.ª sesión sin avanzar): enviar un dossier
 real desde el panel con firma y cuerpo editado, confirmado

@@ -54,7 +54,7 @@ Cumple dos funciones inseparables:
 | H28 | Migración y Reorganización de Documentación Histórica | `ENTERPRISEBOT_ATTACHED_MILESTONE_V28.md` |
 | H29 | Explorador de Archivos y Gobierno Documental del Panel sobre GCS | `ENTERPRISEBOT_ATTACHED_MILESTONE_V29.md` |
 | H30 | Vinculación Documental Real — Centros de Gasto y Personal | `ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md` |
-| H31 | Interfaz de Gestión Documental de Personal — Altas, Bajas, Sustituciones, EPIs y Circulares (título anterior: "Interfaz de Ficha de Personal — EPIs y Notificaciones/Circulares"; ampliado en S99 al fusionar H33) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md` ← EN PROGRESO |
+| H31 | Interfaz de Gestión Documental de Personal — Altas, Bajas, Sustituciones, EPIs y Circulares (título anterior: "Interfaz de Ficha de Personal — EPIs y Notificaciones/Circulares"; ampliado en S99 al fusionar H33) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md` |
 | H32 | Migraciones de Infraestructura (Modelo IA, Python, Registro Android) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V32.md` |
 | ~~H33~~ | ~~Subida de Documentación en Tiempo Real desde el Panel~~ — **FUSIONADO EN H31 el 2026-09-10 (S99)**, ver sección 6 | `ENTERPRISEBOT_ATTACHED_MILESTONE_V33.md` (conservado íntegro como archivo histórico) |
 | H34 | Modelo Propio de Clasificación de Documentos (entrenamiento) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V34.md` |
@@ -76,9 +76,14 @@ para tratarse como un punto más de H31 -- 1.182 documentos de 67
 trabajadores ACTIVOS (los 414 documentos de 95 trabajadores inactivos
 quedan fuera de alcance a petición explícita de Miguel Ángel, siguen
 con el tipo genérico, recuperables desde la papelera si algún día
-hicieran falta), de los cuales 840 no tienen OCR cacheado todavía.
-Mismo perfil que motivó H35 (536 documentos) en su momento. Hoja de
-ruta de arranque: ver anexo propio.
+hicieran falta), de los cuales 840 no tenían OCR cacheado todavía.
+Mismo perfil que motivó H35 (536 documentos) en su momento.
+**Campaña de 12 shards ejecutada y verificada en la misma sesión
+(S109): 352 de los 1.182 retipados con éxito, 830 quedan en
+`FORMACION` genérico** (tipo ambiguo, sin nada resoluble, o
+formación genérica real sin curso más específico) -- ver
+"COMPLETADAS EN S109" en el anexo propio para el detalle completo y
+la hoja de ruta de continuación.
 
 **Hito PAUSADO en esta sesión (S109):** H31 — Interfaz de Gestión
 Documental de Personal → `ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md`.
