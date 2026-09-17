@@ -1,0 +1,181 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/job_positions/manage.html #}
+{% extends "panel/base.html" %}
+
+{% comment %}
+H31 (S109). Página de gestión de puestos de trabajo -- "plantilla de
+puesto", misma mecánica que DossierTemplateManageView (tipos
+documentales agrupados por familia, marcados con casillero), pero
+para JobPosition.required_document_types. Sin concepto de "plantilla
+activa" (un puesto no se aplica sobre nadie, solo se asigna a la
+persona desde su ficha) y sin FK a Company (catálogo de toda la
+plataforma, mismo criterio que los grupos de reparto).
+
+Origen: Miguel Ángel, verbatim -- "esto deberíamos de hacerlo igual
+que estamos haciendo la gestión de los dosieres [...] igual que
+estamos marcando para crear una plantilla de dosier, pues deberíamos
+de marcar para crear una plantilla de puesto".
+{% endcomment %}
+
+{% block title %}Puestos de trabajo{% endblock %}
+{% block page_title %}Puestos de trabajo{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-3 pt-3">
+
+    <div class="d-flex align-items-center justify-content-between mb-3">
+        <p class="text-muted small mb-0">
+            Un puesto guarda qué tipos documentales son OBLIGATORIOS para quien lo desempeña -- solo esos disparan el aviso de "documento faltante" en la ficha de la persona (el aviso de documento caducado no depende del puesto). Asigna el puesto a cada trabajador desde su propia ficha.
+        </p>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header">Puestos guardados</div>
+        <div class="card-body p-0">
+            <table class="table table-sm table-hover mb-0">
+                <thead><tr><th>Puesto</th><th>Documentos obligatorios</th><th></th></tr></thead>
+                <tbody>
+                    {% for position in positions %}
+                    <tr id="positionRow{{ position.pk }}"
+                        data-name="{{ position.name|escapejs }}"
+                        data-type-ids="{% for dt in position.required_document_types.all %}{{ dt.pk }}{% if not forloop.last %},{% endif %}{% endfor %}">
+                        <td>
+                            <a href="#" onclick="loadPositionIntoForm({{ position.pk }}); return false;">{{ position.name }}</a>
+                        </td>
+                        <td class="small text-muted">
+                            {% for dt in position.required_document_types.all %}{{ dt.label }}{% if not forloop.last %}, {% endif %}{% endfor %}
+                            {% if not position.required_document_types.all %}<span class="text-muted">Sin perfilar todavía</span>{% endif %}
+                        </td>
+                        <td class="text-end">
+                            <button type="button" class="btn btn-sm btn-outline-danger" onclick="deletePosition({{ position.pk }})">Eliminar</button>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="3" class="text-muted small py-3">Sin puestos guardados todavía.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span id="formTitle">Nuevo puesto</span>
+            <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="cancelEditBtn" onclick="resetForm()">Vaciar / nuevo puesto</button>
+        </div>
+        <div class="card-body">
+            <input type="hidden" id="positionPk" value="">
+            <div class="mb-3">
+                <label class="form-label small mb-1">Nombre del puesto</label>
+                <input type="text" id="positionName" class="form-control form-control-sm" placeholder="p. ej. Gruista, Administrativo, Mozo de almacén..." oninput="refreshDraftPreview()">
+            </div>
+
+            {% for fam in families %}
+            <div class="mb-2 p-2 rounded" style="background-color: {{ fam.color }};">
+                <div class="fw-bold small mb-1">{{ fam.label }}</div>
+                <div style="columns: 3; column-gap: 1.5rem;">
+                    {% for dt in fam.types %}
+                    <div class="form-check" style="break-inside: avoid;">
+                        <input class="form-check-input position-type-checkbox" type="checkbox" value="{{ dt.pk }}" id="ptCheck{{ dt.pk }}" data-label="{{ dt.label|escapejs }}" onchange="refreshDraftPreview()">
+                        <label class="form-check-label small" for="ptCheck{{ dt.pk }}">{{ dt.label }}</label>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endfor %}
+
+            <div id="positionFormResult" class="small mt-2"></div>
+            <button type="button" class="btn btn-sm btn-primary mt-2" id="savePositionBtn" onclick="savePosition()">Guardar puesto</button>
+        </div>
+    </div>
+
+</div>
+
+<script>
+function getCookie(name) {
+    const value = `; ${document.cookie}`;
+    const parts = value.split(`; ${name}=`);
+    if (parts.length === 2) return parts.pop().split(';').shift();
+}
+
+function getCheckedTypeIds() {
+    return Array.from(document.querySelectorAll('.position-type-checkbox:checked')).map(el => el.value);
+}
+
+function refreshDraftPreview() {
+    // Solo actualiza el titulo del formulario en base al nombre -- sin visor aparte (a diferencia de dosieres, la lista ya esta visible en la propia tabla de arriba tras guardar).
+    const title = document.getElementById('formTitle');
+    const pk = document.getElementById('positionPk').value;
+    const name = document.getElementById('positionName').value.trim();
+    title.textContent = pk ? ('Editando: ' + (name || '(sin nombre)')) : (name || 'Nuevo puesto');
+}
+
+function loadPositionIntoForm(pk) {
+    const row = document.getElementById('positionRow' + pk);
+    if (!row) return;
+    const name = row.dataset.name || '';
+    const ids = (row.dataset.typeIds || '').split(',').filter(Boolean);
+
+    document.getElementById('positionPk').value = pk;
+    document.getElementById('positionName').value = name;
+    document.querySelectorAll('.position-type-checkbox').forEach(el => { el.checked = false; });
+    ids.forEach(id => {
+        const el = document.getElementById('ptCheck' + id);
+        if (el) el.checked = true;
+    });
+    document.getElementById('cancelEditBtn').classList.remove('d-none');
+    refreshDraftPreview();
+}
+
+function resetForm() {
+    document.getElementById('positionPk').value = '';
+    document.getElementById('positionName').value = '';
+    document.querySelectorAll('.position-type-checkbox').forEach(el => { el.checked = false; });
+    document.getElementById('cancelEditBtn').classList.add('d-none');
+    document.getElementById('positionFormResult').innerHTML = '';
+    refreshDraftPreview();
+}
+
+function savePosition() {
+    const pk = document.getElementById('positionPk').value;
+    const name = document.getElementById('positionName').value.trim();
+    const typeIds = getCheckedTypeIds();
+    const resultDiv = document.getElementById('positionFormResult');
+
+    if (!name) {
+        resultDiv.innerHTML = '<div class="alert alert-danger py-1 px-2 small mb-0">Falta el nombre del puesto.</div>';
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('name', name);
+    typeIds.forEach(id => formData.append('document_type_ids', id));
+
+    const url = pk
+        ? `/panel/documentacion/puestos/${pk}/guardar/`
+        : '/panel/documentacion/puestos/guardar/';
+
+    fetch(url, {
+        method: 'POST', body: formData,
+        headers: {'X-CSRFToken': getCookie('csrftoken')},
+    }).then(r => r.json()).then(data => {
+        if (data.ok) {
+            location.reload();
+        } else {
+            resultDiv.innerHTML = `<div class="alert alert-danger py-1 px-2 small mb-0">${data.error || 'Error al guardar.'}</div>`;
+        }
+    }).catch(() => {
+        resultDiv.innerHTML = '<div class="alert alert-danger py-1 px-2 small mb-0">Error de red al guardar.</div>';
+    });
+}
+
+function deletePosition(pk) {
+    if (!confirm('¿Eliminar este puesto? Las personas que lo tuvieran asignado se quedarán sin puesto.')) return;
+    fetch(`/panel/documentacion/puestos/${pk}/eliminar/`, {
+        method: 'POST',
+        headers: {'X-CSRFToken': getCookie('csrftoken')},
+    }).then(r => r.json()).then(data => {
+        if (data.ok) location.reload();
+    });
+}
+</script>
+{% endblock %}

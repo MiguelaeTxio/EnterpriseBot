@@ -27,6 +27,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.contrib.staticfiles.finders import find as find_static
 from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
+from django.db import IntegrityError
 from django.db.models import Count, OuterRef, Q, Subquery, Sum
 from django.db.models.functions import Coalesce
 from django.http import HttpResponse, JsonResponse
@@ -46,8 +47,9 @@ from document_explorer import naming_service, personal_intake_service, postal_co
 from document_explorer.index_writer import ensure_folder_chain
 from document_explorer.models import (
     DocumentAcknowledgment, DocumentIndexEntry, DocumentTypeCatalog,
-    EpiDelivery, EpiItemCatalog, EpiReview, PersonalDossierTemplate,
-    PersonGroupTemplate, PersonIdentity, path_digest,
+    EpiDelivery, EpiItemCatalog, EpiReview, JobPosition,
+    PersonalDossierTemplate, PersonGroupTemplate, PersonIdentity,
+    path_digest,
 )
 from document_explorer.subject_upload_service import (
     SubjectUploadError, upload_subject_document,
@@ -1078,6 +1080,31 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
             is_active=True,
         ).exclude(code__in=present_type_codes).order_by("label"):
             missing_types_by_family.setdefault(dt.family, []).append(dt)
+        # H31 (S109), punto 3 corregido: el triangulo de "documento
+        # FALTANTE" ya NO usa missing_types_by_family (catalogo
+        # completo, 70-80 tipos -- eso sigue alimentando solo el
+        # boton "+ Subir", que debe seguir ofreciendo cualquier tipo
+        # opcional). El triangulo usa exclusivamente los tipos
+        # obligatorios del PUESTO de la persona
+        # (`JobPosition.required_document_types`) -- Miguel Angel:
+        # "no es cuestion de marcar cuando falte uno de los 70 u 80
+        # tipos [...] sino de los documentos que realmente son
+        # necesarios [...] dependiendo del tipo de puesto". Sin
+        # puesto asignado, ningun tipo se marca como faltante -- nunca
+        # se asume un conjunto por defecto.
+        missing_required_types_by_family = {}
+        if person.job_position_id:
+            required_type_ids = set(
+                person.job_position.required_document_types.values_list(
+                    "pk", flat=True,
+                ),
+            )
+            for dt in DocumentTypeCatalog.objects.filter(
+                pk__in=required_type_ids,
+            ).exclude(code__in=present_type_codes).order_by("label"):
+                missing_required_types_by_family.setdefault(
+                    dt.family, [],
+                ).append(dt)
         # INCIDENTE REAL S102: `include_empty_families` recibe SOLO
         # las familias con algún tipo de dominio PERSONAL/BOTH
         # pendiente (`missing_types_by_family`) -- nunca el
@@ -1239,7 +1266,9 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
             "laboral_documents": laboral_documents,
             "salud_documents": salud_documents,
             "missing_types_by_family": missing_types_by_family,
+            "missing_required_types_by_family": missing_required_types_by_family,
             "attention_types_by_family": attention_types_by_family,
+            "job_positions": JobPosition.objects.order_by("name"),
             "vacation_periods": vacation_periods,
             "partes_total_hours": partes_total_hours,
             "partes_by_machine": partes_by_machine,
@@ -1998,6 +2027,106 @@ class PersonalDossierTemplateSetActiveView(CompanyUserRequiredMixin, View):
         company.dossier_templates.exclude(pk=template.pk).update(is_active=False)
         template.is_active = True
         template.save(update_fields=["is_active"])
+        return JsonResponse({"ok": True})
+
+
+class JobPositionManageView(CompanyUserRequiredMixin, View):
+    """
+    H31 (S109). GET: página de gestión de puestos de trabajo --
+    "plantilla de puesto" con la misma mecánica que
+    `DossierTemplateManageView` (tipos documentales agrupados por
+    familia, marcados con casillero), pero para
+    `JobPosition.required_document_types` en vez de
+    `PersonalDossierTemplate.document_types`. Sin FK a Company (a
+    diferencia de las plantillas de dosier) -- el catálogo de puestos
+    es de toda la plataforma, mismo criterio que `PersonGroupTemplate`.
+    Sin concepto de "plantilla activa" -- un puesto no se "aplica"
+    sobre nadie, solo se asigna a la persona (`PersonIdentity.
+    job_position`) desde su ficha.
+    """
+
+    def get(self, request):
+        positions = JobPosition.objects.prefetch_related(
+            "required_document_types",
+        ).order_by("name")
+
+        types_by_family = {}
+        doc_types = DocumentTypeCatalog.objects.filter(
+            is_active=True, domain__in=["PERSONAL", "BOTH"],
+        ).order_by("family", "label")
+        family_labels = dict(DocumentTypeCatalog.FAMILY_CHOICES)
+        for dt in doc_types:
+            family_code = dt.family or ""
+            group = types_by_family.setdefault(family_code, {
+                "label": family_labels.get(family_code, "Sin familia"),
+                "color": _DOSSIER_FAMILY_COLORS.get(family_code, "#f5f5f5"),
+                "types": [],
+            })
+            group["types"].append(dt)
+        ordered_families = [
+            types_by_family[code]
+            for code, _ in DocumentTypeCatalog.FAMILY_CHOICES
+            if code in types_by_family
+        ]
+        if "" in types_by_family:
+            ordered_families.append(types_by_family[""])
+
+        return render(request, "panel/job_positions/manage.html", {
+            "positions": positions,
+            "families": ordered_families,
+        })
+
+
+class JobPositionSaveView(CompanyUserRequiredMixin, View):
+    """
+    H31 (S109). POST: crea un puesto nuevo (sin `position_pk`) o edita
+    uno existente (con `position_pk`) -- nombre y la lista completa de
+    tipos documentales obligatorios marcados en
+    `JobPositionManageView`. A diferencia de las plantillas de dosier,
+    un puesto SÍ puede guardarse sin ningún tipo marcado (un puesto
+    recién creado, todavía sin perfilar del todo -- "que eso se pueda
+    seguir perfilando en el futuro") -- nunca bloqueante.
+    """
+
+    def post(self, request, position_pk=None):
+        if position_pk:
+            position = get_object_or_404(JobPosition, pk=position_pk)
+        else:
+            position = JobPosition(
+                created_by=getattr(request.user, "company_user", None),
+            )
+
+        name = request.POST.get("name", "").strip()
+        if not name:
+            return JsonResponse(
+                {"ok": False, "error": "Falta el nombre del puesto."},
+                status=400,
+            )
+
+        position.name = name
+        try:
+            position.save()
+        except IntegrityError:
+            return JsonResponse(
+                {"ok": False, "error": "Ya existe un puesto con ese nombre."},
+                status=400,
+            )
+        type_ids = request.POST.getlist("document_type_ids")
+        position.required_document_types.set(type_ids)
+
+        return JsonResponse({"ok": True, "id": position.pk})
+
+
+class JobPositionDeleteView(CompanyUserRequiredMixin, View):
+    """
+    H31 (S109). POST: borra un puesto -- las personas que lo tuvieran
+    asignado quedan con `job_position=NULL` (on_delete=SET_NULL, ver
+    models.py), nunca se borran ni se tocan ellas.
+    """
+
+    def post(self, request, position_pk):
+        position = get_object_or_404(JobPosition, pk=position_pk)
+        position.delete()
         return JsonResponse({"ok": True})
 
 
@@ -2810,7 +2939,12 @@ class PersonalUpdateView(DocsUploadAccessMixin, View):
         "ss_affiliation_number",
     )
     DATE_EDITABLE_FIELDS = ("hire_date", "termination_date")
-    EDITABLE_FIELDS = TEXT_EDITABLE_FIELDS + DATE_EDITABLE_FIELDS
+    # H31 (S109): `job_position` -- FK a JobPosition, editable igual
+    # que el resto de esta ficha (nunca un formulario aparte). Sin
+    # valor en el POST -> desasigna (None), mismo criterio que un
+    # campo de fecha vacío.
+    FK_EDITABLE_FIELDS = ("job_position",)
+    EDITABLE_FIELDS = TEXT_EDITABLE_FIELDS + DATE_EDITABLE_FIELDS + FK_EDITABLE_FIELDS
 
     def post(self, request, pk):
         from datetime import date
@@ -2839,6 +2973,15 @@ class PersonalUpdateView(DocsUploadAccessMixin, View):
                 else:
                     setattr(person, field, None)
                 updated_fields.append(field)
+        for field in self.FK_EDITABLE_FIELDS:
+            if field in request.POST:
+                raw_value = request.POST.get(field, "").strip()
+                if raw_value:
+                    job_position = get_object_or_404(JobPosition, pk=raw_value)
+                    setattr(person, field, job_position)
+                else:
+                    setattr(person, field, None)
+                updated_fields.append(field)
         if not updated_fields:
             return JsonResponse(
                 {"ok": False, "error": "Sin campos que actualizar."}, status=400,
@@ -2850,10 +2993,15 @@ class PersonalUpdateView(DocsUploadAccessMixin, View):
                 {"ok": False, "error": "; ".join(exc.messages)}, status=400,
             )
         person.save(update_fields=updated_fields)
-        return JsonResponse({
-            "ok": True,
-            "person": {f: getattr(person, f) for f in self.EDITABLE_FIELDS},
-        })
+        person_data = {
+            f: getattr(person, f)
+            for f in self.TEXT_EDITABLE_FIELDS + self.DATE_EDITABLE_FIELDS
+        }
+        person_data["job_position"] = (
+            {"id": person.job_position_id, "name": str(person.job_position)}
+            if person.job_position_id else None
+        )
+        return JsonResponse({"ok": True, "person": person_data})
 
 
 class PersonalSetAvatarView(DocsUploadAccessMixin, View):

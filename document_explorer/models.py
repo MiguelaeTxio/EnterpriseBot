@@ -1506,6 +1506,22 @@ class PersonIdentity(models.Model):
     termination_date = models.DateField(
         null=True, blank=True, verbose_name="Fecha de baja en la empresa",
     )
+    # ------------------------------------------------------------------
+    # H31 (S109). Puesto de trabajo -- gobierna qué tipos documentales
+    # se marcan como FALTANTES en la ficha (ver JobPosition arriba).
+    # Nullable a propósito: sin puesto asignado, ningún tipo se marca
+    # como faltante -- nunca se asume un conjunto por defecto. El
+    # aviso de documento CADUCADO es independiente y no depende de
+    # este campo.
+    # ------------------------------------------------------------------
+    job_position = models.ForeignKey(
+        "document_explorer.JobPosition",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="people",
+        verbose_name="Puesto de trabajo",
+    )
     excel_imported_at = models.DateTimeField(
         null=True, blank=True,
         verbose_name="Última importación real del Excel",
@@ -2370,6 +2386,89 @@ class PersonGroupTemplate(models.Model):
     class Meta:
         verbose_name = "Grupo de reparto"
         verbose_name_plural = "Grupos de reparto"
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
+class JobPosition(models.Model):
+    """
+    H31 (S109). Catálogo de puestos de trabajo -- Gruista,
+    Administrativo, Mecánico, Mozo de almacén, Conductor... Cada
+    puesto guarda qué tipos documentales son OBLIGATORIOS para quien
+    lo desempeña, con la misma mecánica que `PersonalDossierTemplate`
+    (marcado de tipos agrupados por familia) -- Miguel Ángel,
+    verbatim: "esto deberíamos de hacerlo igual que estamos haciendo
+    la gestión de los dosieres [...] igual que estamos marcando para
+    crear una plantilla de dosier, pues deberíamos de marcar para
+    crear una plantilla de puesto".
+
+    Origen del hito: el triángulo de alerta por "documento que falta"
+    (H31, S109, punto 3) marcaba como faltante CUALQUIER tipo del
+    catálogo (70-80 tipos) que la persona no tuviera -- avisaba, por
+    ejemplo, de un curso de carretilla elevadora a un administrativo,
+    que nunca lo va a necesitar. Miguel Ángel, verbatim: "no es
+    cuestión de marcar cuando falte uno de los 70 u 80 tipos [...]
+    sino de los documentos que realmente son necesarios [...]
+    dependiendo del tipo de puesto que cada trabajador desempeña".
+
+    IMPORTANTE -- alcance de este modelo: solo gobierna el aviso de
+    "documento FALTANTE" (`missing_types_by_family` en
+    `PersonalDetailView`). El aviso de "documento CADUCADO"
+    (`attention_types_by_family`/`has_alert`) es independiente y
+    sigue aplicando siempre que la persona YA TENGA un documento con
+    fecha de caducidad real ya pasada, tenga o no puesto asignado --
+    Miguel Ángel confirmó explícitamente mantener ese comportamiento
+    tal cual: "tienes caducado el permiso de conducir, tienes
+    caducado el DNI [...] eso por una parte" (aviso siempre), frente
+    al aviso de faltante (solo por puesto).
+
+    `PersonIdentity.job_position` (FK, nullable) es "persona
+    relacionada con el puesto" -- sin puesto asignado, ningún tipo se
+    marca como faltante (nunca se asume un conjunto por defecto sin
+    que Miguel Ángel lo haya definido explícitamente). El catálogo de
+    puestos es deliberadamente abierto y editable -- "que eso se
+    pueda seguir perfilando en el futuro" -- nunca una lista cerrada
+    de puestos fija en código.
+    """
+
+    name = models.CharField(
+        max_length=150,
+        unique=True,
+        verbose_name="Puesto",
+    )
+    required_document_types = models.ManyToManyField(
+        DocumentTypeCatalog,
+        blank=True,
+        related_name="job_positions",
+        verbose_name="Documentos obligatorios para este puesto",
+        help_text=(
+            "Solo gobierna el aviso de documento FALTANTE en la "
+            "ficha de personal -- el aviso de documento CADUCADO es "
+            "independiente del puesto."
+        ),
+    )
+    created_by = models.ForeignKey(
+        "ivr_config.CompanyUser",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="created_job_positions",
+        verbose_name="Creado por",
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Fecha de creación",
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name="Última edición",
+    )
+
+    class Meta:
+        verbose_name = "Puesto de trabajo"
+        verbose_name_plural = "Puestos de trabajo"
         ordering = ["name"]
 
     def __str__(self):

@@ -48,6 +48,9 @@ from panel.views_documentation_h30 import (
     DossierTemplateManageView,
     DossierTemplateMissingCheckView,
     DossierTemplateSaveView,
+    JobPositionDeleteView,
+    JobPositionManageView,
+    JobPositionSaveView,
     PersonalDossierMassGenerateView,
     PersonalDossierTemplateApplyView,
     PersonalDossierTemplateDeleteView,
@@ -458,6 +461,11 @@ urlpatterns = [
     path("documentacion/plantillas-dosier/", DossierTemplateManageView.as_view(), name="dossier_templates_manage"),
     path("documentacion/plantillas-dosier/guardar/", DossierTemplateSaveView.as_view(), name="dossier_template_create"),
     path("documentacion/plantillas-dosier/<int:template_pk>/guardar/", DossierTemplateSaveView.as_view(), name="dossier_template_update"),
+    # H31 (S109): gestión de puestos de trabajo -- "plantilla de puesto" (tipos documentales obligatorios por puesto).
+    path("documentacion/puestos/", JobPositionManageView.as_view(), name="job_positions_manage"),
+    path("documentacion/puestos/guardar/", JobPositionSaveView.as_view(), name="job_position_create"),
+    path("documentacion/puestos/<int:position_pk>/guardar/", JobPositionSaveView.as_view(), name="job_position_update"),
+    path("documentacion/puestos/<int:position_pk>/eliminar/", JobPositionDeleteView.as_view(), name="job_position_delete"),
     # H35 (S105): generar dosieres para varios trabajadores seleccionados a la vez, a partir de una plantilla -- descarga o envío por correo.
     path("documentacion/personal/dosieres-masivo/", PersonalDossierMassGenerateView.as_view(), name="documentation_personal_dossier_mass_generate"),
     # H35 (S105): marca en el listado qué personas les falta algún documento de la plantilla elegida.
