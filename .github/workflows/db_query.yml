@@ -35,6 +35,19 @@ name: Consulta SQL de solo lectura (EnterpriseBot)
 # por logica real de Django (apply_personal_canonical_rename,
 # move_entry, evaluate_substitution...) -- esto es solo para lecturas
 # SQL puras.
+#
+# H35 (S108). `mysql --table` (renderizado ASCII-art con bordes y
+# cálculo de ancho de columna) fallaba en el paso "Comitear el
+# resultado al repo" de forma intermitente pero reproducible con
+# ciertas combinaciones de texto OCR real (multibyte/acentuado, varias
+# filas a la vez) -- nunca aislado a una fila concreta (cada fila
+# problematica funcionaba bien sola), asi que el sospechoso es el
+# propio calculo de ancho de `--table` con texto largo. Cambiado a
+# `--batch --raw` (TSV simple, sin bordes ni calculo de ancho) --
+# mucho mas robusto para contenido arbitrario. La salida cambia de
+# forma (columnas separadas por tabulador con una fila de cabecera, en
+# vez de tabla ASCII), asi que las consultas futuras deben esperar ese
+# formato al leer `ultimo_resultado.md`.
 
 on:
   workflow_dispatch:
@@ -118,7 +131,7 @@ jobs:
             set -e
             mysql -u 'MiguelAeTxio' -p'$DB_ADMIN_PASSWORD' \
               -h MiguelAeTxio.mysql.pythonanywhere-services.com \
-              --table 'MiguelAeTxio\$enterprisebot' \
+              --batch --raw 'MiguelAeTxio\$enterprisebot' \
               < /tmp/db_readonly_query_${{ github.run_id }}.sql
             rm -f /tmp/db_readonly_query_${{ github.run_id }}.sql
           " | tee /tmp/query_output.txt
