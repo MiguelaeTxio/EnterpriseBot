@@ -59,6 +59,7 @@ Cumple dos funciones inseparables:
 | ~~H33~~ | ~~Subida de Documentación en Tiempo Real desde el Panel~~ — **FUSIONADO EN H31 el 2026-09-10 (S99)**, ver sección 6 | `ENTERPRISEBOT_ATTACHED_MILESTONE_V33.md` (conservado íntegro como archivo histórico) |
 | H34 | Modelo Propio de Clasificación de Documentos (entrenamiento) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V34.md` |
 | H35 | Retipado y Refechado Masivo de Documentación Histórica de Personal | `ENTERPRISEBOT_ATTACHED_MILESTONE_V35.md` |
+| H36 | Retipado de Cursos de Formación (FORMACION genérico → 14 tipos por curso, solo trabajadores activos) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V36.md` ← EN PROGRESO |
 
 Todos los anexos viven en `DOCS/MAINS/ATTACHEDS/`.
 
@@ -66,13 +67,30 @@ Todos los anexos viven en `DOCS/MAINS/ATTACHEDS/`.
 
 ## 3. Resultado Actual
 
-**Hito EN PROGRESO:** H31 — Interfaz de Gestión Documental de
-Personal → `ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md`. Reactivado en
-S108 (PCH CASO D desde H35, cerrado en la misma sesión). Hoja de ruta
-de arranque: el único punto pendiente heredado sin cambios desde S104
--- enviar un dossier real desde el panel con firma y cuerpo editado, y
-confirmarlo visualmente en Outlook real (ver "Hoja de ruta al
-reactivar H31" en su propio anexo).
+**Hito EN PROGRESO:** H36 — Retipado de Cursos de Formación →
+`ENTERPRISEBOT_ATTACHED_MILESTONE_V36.md`. Abierto en S109 (PCH CASO C
+desde H31, desvío en la misma sesión): al desdoblar el tipo genérico
+`FORMACION` en 14 tipos por curso real (punto 2 de la hoja de ruta de
+H31), se confirmó que el histórico real afectado es demasiado grande
+para tratarse como un punto más de H31 -- 1.182 documentos de 67
+trabajadores ACTIVOS (los 414 documentos de 95 trabajadores inactivos
+quedan fuera de alcance a petición explícita de Miguel Ángel, siguen
+con el tipo genérico, recuperables desde la papelera si algún día
+hicieran falta), de los cuales 840 no tienen OCR cacheado todavía.
+Mismo perfil que motivó H35 (536 documentos) en su momento. Hoja de
+ruta de arranque: ver anexo propio.
+
+**Hito PAUSADO en esta sesión (S109):** H31 — Interfaz de Gestión
+Documental de Personal → `ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md`.
+En esta sesión se completaron los puntos 1 (grupos de reparto) y 3
+(triángulo de alerta con detalle) de su hoja de ruta ampliada, y se
+sembró el catálogo de 14 tipos de curso del punto 2 (ver "COMPLETADAS
+EN S109" en su propio anexo) -- el retipado real de los documentos
+históricos de ese punto 2 es precisamente lo que motiva este PCH a
+H36. Hoja de ruta pendiente al reactivar: intacta, sin cambios --
+enviar un dossier real desde el panel con firma y cuerpo editado,
+confirmado visualmente en Outlook real (heredada sin tocar desde
+S104/S108).
 
 **Hito CERRADO en S108:** H35 — Retipado y Refechado Masivo de
 Documentación Histórica de Personal → `ENTERPRISEBOT_ATTACHED_MILESTONE_V35.md`.

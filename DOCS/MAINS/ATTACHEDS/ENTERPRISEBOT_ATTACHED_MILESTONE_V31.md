@@ -25,6 +25,59 @@ sesión (PCS) inmediatamente después sin ejecutar nada más -- de ahí
 que la hoja de ruta de abajo llegue sin avance real desde su última
 ejecución en S104.
 
+## COMPLETADAS EN S109 -- PAUSADO por PCH a H36 (retipado de formación)
+
+Sesión que arrancó ejecutando ampliaciones reales a la hoja de ruta de
+H31, planteadas por Miguel Ángel sobre la marcha (grupos de reparto,
+agrupación de formación por curso, triángulo de alerta con detalle,
+avisos WhatsApp configurables, firma digital genérica):
+
+1. **Grupos de reparto** (`PersonGroupTemplate`, migración `0096`):
+   conjunto guardado de personas, sin FK a Company a propósito (cruza
+   empresas por diseño -- caso real de chalecos de alta visibilidad a
+   choferes de varias empresas). Selector "Grupo de reparto guardado"
+   + botón "Guardar selección como grupo" en `_personal_pane.html`,
+   sobre el mismo Set `selection` que ya acumulaba el frontend --
+   ninguna de las 3 vistas de acción masiva existentes se tocó.
+   Verificado real en producción (`django_migrations`, `applied`
+   real). Commit `f140ba5`.
+2. **Triángulo de alerta con detalle real**: `_attach_alert_flags`
+   ahora adjunta `alert_labels` (tipos exactos que disparan la
+   alerta) en vez del tooltip genérico de antes; en la ficha de
+   persona, el mismo triángulo aparece también a nivel de cabecera de
+   familia (Laboral, Salud, acordeón genérico), combinando tipos que
+   faltan (`missing_types_by_family`, ya existente) con tipos
+   caducados (`attention_types_by_family`, nuevo). Filtro de plantilla
+   `get_item` nuevo para el lookup dinámico del acordeón genérico. Sin
+   migración. Commit `c0bc55c`.
+3. **Catálogo de 14 tipos de curso de FORMACION** (migración `0097`,
+   dominio PERSONAL, familia PRL_FORMACION, `tracks_expiry=True`,
+   `is_cumulative=True`), confirmados contra el Excel real de Miguel
+   Ángel (hoja "CURSOS TRABAJADORES GRUAS"). Verificado real en
+   producción (17 filas `FORMACION_%` confirmadas por consulta SQL de
+   solo lectura). Junto a esto, nueva directriz **4.22** del documento
+   maestro: ningún tipo nuevo se deja sin retipar su histórico.
+   Commit `98d71a9`.
+
+**Al plantear el retipado real del punto 3** (los documentos que hoy
+llevan el tipo genérico `FORMACION`), la consulta real reveló un
+volumen -- 1.182 documentos de 67 trabajadores activos (tras acotar a
+activos por decisión explícita de Miguel Ángel, dejando fuera 414
+documentos de 95 inactivos) -- mayor que el que motivó H35 en su
+momento. Miguel Ángel decidió explícitamente abrir esto como su
+propio hito (**H36**, ver `ENTERPRISEBOT_ATTACHED_MILESTONE_V36.md`)
+en vez de seguir como punto de H31, y trabajarlo "en caliente" en la
+misma sesión (PCH CASO C, desvío). Con esto se PAUSA H31 y se PCH a
+H36, EN PROGRESO.
+
+**Los puntos 2 (formación) y 4 (firma digital genérica) quedaron
+sin cerrar del todo** -- el resto de tipos de curso ya sembrados
+cubre solo la parte de catálogo del punto 2 (el retipado real es
+ahora H36); el punto 4 (firma con el dedo/ratón vía link, genérica
+para EPI/información/cualquier firma) se planteó y se diseñó a nivel
+conceptual pero no se llegó a implementar en esta sesión -- queda
+como parte de la hoja de ruta de H31 al reactivarse.
+
 ## Hoja de ruta para la sesión siguiente (S109)
 
 **Punto único (arrastrado 1.ª sesión sin avanzar): enviar un dossier

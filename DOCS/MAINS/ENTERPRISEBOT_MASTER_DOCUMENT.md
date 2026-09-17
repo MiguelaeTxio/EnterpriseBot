@@ -586,6 +586,33 @@ la fusión.)
 - Sin hoja de ruta más allá del arranque -- ver anexo para el punto de
   partida real dejado en S104.
 
+#### Hito 36: Retipado de Cursos de Formación (FORMACION genérico → 14 tipos por curso, solo trabajadores activos)
+(Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V36.md`)
+- Hito nuevo, abierto en S109 (PCH desde H31, desvío en la misma
+  sesión): al desdoblar el catálogo cerrado de `DocumentTypeCatalog`
+  para el tipo genérico `FORMACION` en 14 tipos por curso real
+  (confirmados contra el Excel real de Miguel Ángel, hoja "CURSOS
+  TRABAJADORES GRUAS"), se confirmó que el histórico real afectado
+  --1.596 documentos de 162 personas-- es demasiado grande para
+  tratarse como un punto más de H31. Decisión explícita de Miguel
+  Ángel: acotar el alcance a trabajadores ACTIVOS únicamente
+  (`PersonIdentity.is_active_employee=True`) -- los 414 documentos de
+  95 trabajadores inactivos se quedan con el tipo genérico
+  `FORMACION`, sin tocar, recuperables desde la papelera si algún día
+  hicieran falta. Alcance real confirmado: 1.182 documentos de 67
+  trabajadores activos, de los cuales 840 no tienen OCR cacheado
+  todavía -- mismo perfil de volumen que motivó H35 en su momento.
+- Objetivo: pasar OCR sobre los 840 documentos sin texto cacheado
+  (mismo criterio de H35 -- primero Tesseract sobre las VMs de OCR ya
+  existentes, Cloud Vision solo si Tesseract no resuelve), y retipar
+  contra contenido real (nunca por nombre de archivo -- ninguno de
+  estos 1.182 documentos lleva el curso en el nombre, todos siguen el
+  patrón `APELLIDOS_NOMBRE_FORMACION_FECHA.pdf`) cada uno de los 1.182
+  documentos hacia su tipo de curso real de entre los 14 sembrados en
+  el catálogo.
+- Sin hoja de ruta más allá del arranque -- ver anexo para el punto de
+  partida real dejado en S109.
+
 ---
 
 ### 4. Directrices Técnicas Vinculantes
