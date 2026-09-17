@@ -124,6 +124,28 @@ CONTENT_SIGNALS = {
         "HAN REALIZADO EL CURSO",
     ],
     "FORMACION": ["FICHA DE INSCRIPCION"],
+    # H36 (S109). Primeros 2 de los 14 tipos de curso sembrados en
+    # migracion 0097 con evidencia real ya confirmada en la primera
+    # muestra de contenido -- los otros 12 quedan pendientes de
+    # muestra real todavia, nunca se anaden sin ella.
+    "FORMACION_PRL_ART_18_19": [
+        # Confirmado con muestra real amplia (pk=24409/24410/24427/
+        # 24428/24429/24430/24432/24433, varios trabajadores de GRUAS
+        # ADOLFO ALVAREZ y TRANSGRUAL): carta real de M.P.E. Servicio
+        # de Prevencion de Riesgos Laborales, frase estable de cierre
+        # del parrafo, presente en todas las muestras.
+        "EN CUMPLIMIENTO DE LOS ARTICULOS 18 Y 19",
+    ],
+    "FORMACION_PLATAFORMA_ELEVADORA": [
+        # Confirmado con muestra real (pk=24267,
+        # ALVAREZ_DIAZ_ADOLFO_FORMACION_20140715): certificado real de
+        # HAULOTTE IBERICA (fabricante de plataformas elevadoras),
+        # formacion de formadores segun norma UNE58923 de categorias
+        # de plataforma. Nombre del fabricante como ancla, mismo
+        # criterio que HAULOTTE/ANP/ANAGRUAL en otras entradas de este
+        # diccionario.
+        "HAULOTTE IBERICA", "NORMA UNE58923",
+    ],
     "CARNET_CONDUCIR": ["PERMISO DE CONDUCCION", "DRIVING LICENCE"],
     "CARNET_GRUISTA": [
         "OPERADOR DE GRUAS MOVILES", "HABILITACION PROFESIONAL",
@@ -161,6 +183,17 @@ CONTENT_SIGNALS = {
         # "VS GESTION CUPO"): frase de pie de factura, estable entre
         # las facturas reales de este mismo proveedor.
         "SOLICITE CITA PARA RECONOCIMIENTOS MEDICOS AL TELEFONO",
+        # H36 (S109), confirmado con muestra real (pk=24307/24308,
+        # ALVAREZ_GEA_ALBERTO_ADOLFO; pk=24309, ZAFRA_PERALTA_JOSE_
+        # ANTONIO): facturas reales de "Informa Consultoria y
+        # Formacion S.L." por servicios de formacion, archivadas hoy
+        # bajo el tipo generico FORMACION -- el nombre del proveedor
+        # en la propia cabecera de la factura es la senal estable.
+        "INFORMA CONSULTORIA Y FORMACION",
+        # H36 (S109), confirmado con muestra real (pk=24286,
+        # CASTILLA_NAVARRO_FRANCISCO_MIGUEL): albaran/factura real de
+        # "Facilauto Consulting S.L." -- mismo patron, otro proveedor.
+        "FACILAUTO CONSULTING",
     ],
     "CITACION_RECONOCIMIENTO_MEDICO": [
         # pk=35241: carta de cita de Fraternidad Muprespa, distinta de
@@ -168,6 +201,32 @@ CONTENT_SIGNALS = {
         # RECONOCIMIENTO_MEDICO -- aqui el reconocimiento todavia no se
         # ha hecho, solo se está citando a la persona.
         "ESTA CITADO EN NUESTRO CENTRO MEDICO",
+    ],
+    # H36 (S109). Confirmados con muestra real durante la primera
+    # muestra de contenido de FORMACION generico de trabajadores
+    # activos -- mismo patron de "cajon de sastre" que motivo H35 con
+    # BAJA_PERSONAL, a menor escala (ver migracion 0098 para el alta
+    # de catalogo de los 3 codigos).
+    "CUESTIONARIO_FORMACION": [
+        # pk=24414/24415/24419/24422/24424 (varios trabajadores):
+        # cuestionario real de evaluacion de la formacion COVID-19,
+        # nunca un certificado de curso tecnico.
+        "CUESTIONARIO COVID-19",
+    ],
+    "PACTO_PERMANENCIA": [
+        # pk=24670/24671 (CASTILLA_NAVARRO_FRANCISCO_MIGUEL): pacto de
+        # permanencia real ligado a una formacion bonificada, nunca el
+        # certificado del curso en si.
+        "PACTO DE PERMANENCIA",
+    ],
+    "JUSTIFICANTE_PAGO_PERSONAL": [
+        # pk=24296 (RAMIREZ_GARCIA_JORGE): justificante de
+        # transferencia bancaria real (Cajamar), nunca un certificado
+        # de curso. "DETALE DE LA OPERACION" es el artefacto real de
+        # OCR de esta muestra concreta (falta una L) -- se anade
+        # tambien la grafia correcta por si otra muestra real la trae
+        # sin ese artefacto.
+        "DETALLE DE LA OPERACION", "DETALE DE LA OPERACION",
     ],
     # ------------------------------------------------------------
     # H35 (S105). Confirmados con muestra real (2 lotes de 20
