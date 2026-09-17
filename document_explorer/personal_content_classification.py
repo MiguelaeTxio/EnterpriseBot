@@ -124,10 +124,10 @@ CONTENT_SIGNALS = {
         "HAN REALIZADO EL CURSO",
     ],
     "FORMACION": ["FICHA DE INSCRIPCION"],
-    # H36 (S109). Primeros 2 de los 14 tipos de curso sembrados en
-    # migracion 0097 con evidencia real ya confirmada en la primera
-    # muestra de contenido -- los otros 12 quedan pendientes de
-    # muestra real todavia, nunca se anaden sin ella.
+    # H36 (S109/S110). Tipos de curso sembrados en migracion 0097 con
+    # evidencia real ya confirmada en muestra de contenido -- los
+    # restantes quedan pendientes de muestra real todavia, nunca se
+    # anaden sin ella.
     "FORMACION_PRL_ART_18_19": [
         # Confirmado con muestra real amplia (pk=24409/24410/24427/
         # 24428/24429/24430/24432/24433, varios trabajadores de GRUAS
@@ -145,6 +145,27 @@ CONTENT_SIGNALS = {
         # criterio que HAULOTTE/ANP/ANAGRUAL en otras entradas de este
         # diccionario.
         "HAULOTTE IBERICA", "NORMA UNE58923",
+    ],
+    "FORMACION_OPERADOR_CAMION_AUTOCARGANTE": [
+        # H36 (S110), confirmado con muestra real (pk=34055/34777,
+        # certificado Ceunes Formacion, MANUEL ALONSO PEDROSA/MANUEL
+        # BURGOS FERNANDEZ): curso presencial de 6 horas, titulo exacto
+        # "Camion grua autocargante" en ambas muestras.
+        "CAMION GRUA AUTOCARGANTE",
+    ],
+    "FORMACION_PRIMEROS_AUXILIOS": [
+        # H36 (S110), confirmado con muestra real (pk=34774/34780,
+        # certificado Ceunes Formacion, MANUEL BURGOS FERNANDEZ): curso
+        # presencial de 4 horas, titulo exacto "Primeros Auxilios" en
+        # ambas muestras.
+        "PRIMEROS AUXILIOS",
+    ],
+    "FORMACION_SUBESTACIONES": [
+        # H36 (S110), confirmado con muestra real (pk=34776/34778,
+        # certificado Ceunes Formacion, MANUEL BURGOS FERNANDEZ): curso
+        # presencial de 6 horas, titulo exacto "Subestaciones y centros
+        # de distribucion" en ambas muestras.
+        "SUBESTACIONES Y CENTROS DE DISTRIBUCION",
     ],
     "CARNET_CONDUCIR": ["PERMISO DE CONDUCCION", "DRIVING LICENCE"],
     "CARNET_GRUISTA": [
