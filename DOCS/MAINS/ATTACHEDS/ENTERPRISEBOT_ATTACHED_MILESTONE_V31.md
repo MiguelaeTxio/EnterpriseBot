@@ -211,6 +211,71 @@ decidido). Orden fijo:
    visualmente, en su Outlook real, que el `.eml` recibido trae el
    dossier adjunto, la firma real incrustada en el cuerpo (no la firma
    por defecto de Outlook) y el texto del cuerpo tal cual lo editó.
+4. **PUNTO NUEVO (S110): sustituir por flujo programático la gestión
+   manual actual de firma de entrega/información/EPIs vía DocuSign**
+   (hoy: entrada manual a la web con las credenciales de la cuenta,
+   gestión manual de los documentos a firmar, envío manual de los
+   links de firma a cada trabajador). Investigado hoy (2026-09-18,
+   nunca de memoria de entrenamiento -- proceso real de DocuSign
+   cambia con frecuencia) el mecanismo actual real para credenciales
+   de API y automatización completa sin usuario presente:
+
+   **a) Comprobar primero el plan/cuenta real de DocuSign de Grúas
+   Álvarez** -- los planes normales de eSignature (Personal/Standard/
+   Business Pro) **no incluyen acceso API**; hace falta o un plan
+   "Developer API" aparte (Starter/Intermediate/Advanced, facturación
+   por sobre) o un plan Enhanced/Enterprise que ya lo incluya. Esto es
+   una decisión de coste de Miguel Ángel, no técnica, y bloquea
+   cualquier paso siguiente si la cuenta actual no lo tiene --
+   confirmarlo antes de avanzar.
+
+   **b) Cuenta de desarrollador gratuita** en developers.docusign.com
+   (sandbox/demo, sin coste, sirve para diseñar y probar el flujo
+   completo aunque el paso (a) tarde en resolverse).
+
+   **c) Mecanismo de credenciales real para automatización total (JWT
+   Grant -- OAuth2.0 server-to-server, sin usuario presente, el
+   encaje correcto para "sin entrada manual a la web"):**
+   1. Entrar a la cuenta DocuSign (demo primero) → Configuración/Admin
+      → *Apps and Keys*.
+   2. *Add App and Integration Key* → nombre del app → *Create App*.
+      Guardar el **Integration Key** (Client ID).
+   3. Dentro del app, sección *Service Integration* → *Generate RSA* →
+      guardar la **clave privada** (solo se muestra una vez).
+   4. Anotar el **API Username** (GUID) del usuario del sistema que
+      va a "impersonar" el envío (p.ej. un alias tipo
+      `rrhh@gruasalvarez.com`, nunca una persona física concreta).
+   5. Conceder consentimiento del Integration Key para actuar en
+      nombre de ese usuario: *consentimiento administrativo* (mejor
+      opción, sin nada que hacer por cada usuario, pero exige dominio
+      reclamado + función DocuSign Admin, solo en ciertos planes) o
+      *consentimiento individual* (una autorización única, sin
+      requisitos previos).
+   6. Con Integration Key + clave privada + API Username, construir y
+      probar el envío de sobres (`envelopes`) reales contra el entorno
+      demo -- sin ningún login manual desde aquí en adelante.
+
+   **d) Go-Live (paso a producción real, para que los trabajadores
+   reales firmen):** DocuSign eliminó en 2025 el requisito antiguo de
+   "20 llamadas API seguidas" -- el proceso está ahora integrado en el
+   *Developer Console*, con Go-Live en un clic (en beta abierta a
+   fecha de hoy). Exige cuenta de producción de pago con API
+   incluida (mismo punto (a)) y acceso de administrador a ella. Al
+   pasar a producción, el Integration Key se copia (no se mueve) al
+   entorno real -- hay que generar de nuevo clave secreta/RSA y volver
+   a dar consentimiento del usuario del sistema, esta vez en
+   producción.
+
+   **Fuentes reales consultadas hoy:**
+   `developers.docusign.com/platform/build-integration/`,
+   `developers.docusign.com/platform/go-live/`,
+   `developers.docusign.com/platform/auth/jwt/jwt-best-practice/`,
+   `docusign.com/blog/developers/oauth-jwt-granting-consent`,
+   `ecom.docusign.com/plans-and-pricing/developer`.
+
+   **Primer paso ejecutable de la sesión siguiente:** confirmar con
+   Miguel Ángel el plan real de la cuenta DocuSign actual de Grúas
+   Álvarez (paso a) antes de tocar código.
 
 ## Hoja de ruta para la sesión siguiente (S109) -- histórico, sustituido por la sección de arriba
 

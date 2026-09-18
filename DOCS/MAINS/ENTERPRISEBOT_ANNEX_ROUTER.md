@@ -71,13 +71,17 @@ Todos los anexos viven en `DOCS/MAINS/ATTACHEDS/`.
 → `ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md`. Reactivado en S110 tras
 cerrar H36 por completo en la misma sesión (PCH de vuelta) -- ver
 "COMPLETADAS EN S110 -- H36 CERRADO POR COMPLETO" en el anexo propio
-de H36 para el detalle completo. Hoja de ruta de arranque intacta
-desde S99: (1) investigar la fecha `2016-04-27` duplicada en
-`CONTRATO` de 6 personas, (2) gestión de Miguel Ángel con
-Docuten/Viafirma (sin dependencia técnica), (3) enviar un dossier real
-con firma y cuerpo editado, confirmado visualmente en Outlook real --
-punto pendiente heredado sin avance desde S104, el mismo que motivó el
-desvío a H36 en S109.
+de H36 para el detalle completo. Hoja de ruta: (1) investigar la
+fecha `2016-04-27` duplicada en `CONTRATO` de 6 personas, (2) gestión
+de Miguel Ángel con Docuten/Viafirma (sin dependencia técnica), (3)
+enviar un dossier real con firma y cuerpo editado, confirmado
+visualmente en Outlook real -- punto pendiente heredado sin avance
+desde S104, el mismo que motivó el desvío a H36 en S109, (4) punto
+nuevo de S110: sustituir por flujo programático (JWT Grant, sin
+usuario presente) la firma manual actual vía DocuSign de
+entrega/información/EPIs -- investigado con fuentes reales de hoy,
+primer paso confirmar el plan real de la cuenta DocuSign de Grúas
+Álvarez (los planes normales de eSignature no incluyen API).
 
 **Hito CERRADO en S110:** H36 — Retipado de Cursos de Formación →
 `ENTERPRISEBOT_ATTACHED_MILESTONE_V36.md`. Sesión larguísima: catálogo
