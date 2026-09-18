@@ -551,6 +551,30 @@ CONTENT_WINS = [
     ("FORMACION_CARRETILLAS_TRASPALETAS", "CURSO"),
     ("FORMACION_GRUAS_ASISTENCIA_CARRETERA", "CURSO"),
     ("FORMACION_GRUA_HIDRAULICA_ARTICULADA", "CURSO"),
+    # H36 (S110), hallazgo real (pk=34963, CARLIN CARVAJAL): documento
+    # real de "grua de asistencia en carretera" (M.P.E., 30/09/2015)
+    # estaba mal tipado como FORMACION_PRIMEROS_AUXILIOS -- el propio
+    # temario del certificado incluye "Primeros Auxilios: P.A.S." como
+    # punto 16 del indice de contenidos, simple mencion de pasada, no
+    # un curso aparte. La senal de FORMACION_PRIMEROS_AUXILIOS (frase
+    # suelta "PRIMEROS AUXILIOS") dispara con cualquier temario que la
+    # mencione. Cualquier tipo especifico de FORMACION_* gana siempre
+    # sobre FORMACION_PRIMEROS_AUXILIOS -- explica ademas buena parte
+    # de los "tipo ambiguo" ya vistos en las campanas de FORMACION y
+    # CURSO que se atribuyeron a cursos combinados reales.
+    ("FORMACION_EXTINCION_INCENDIOS", "FORMACION_PRIMEROS_AUXILIOS"),
+    ("FORMACION_ELECTRICIDAD", "FORMACION_PRIMEROS_AUXILIOS"),
+    ("FORMACION_SUBESTACIONES", "FORMACION_PRIMEROS_AUXILIOS"),
+    ("FORMACION_OPERADOR_CAMION_AUTOCARGANTE", "FORMACION_PRIMEROS_AUXILIOS"),
+    ("FORMACION_TRABAJOS_ALTURA", "FORMACION_PRIMEROS_AUXILIOS"),
+    ("FORMACION_PLATAFORMA_ELEVADORA", "FORMACION_PRIMEROS_AUXILIOS"),
+    ("FORMACION_PRL_ART_18_19", "FORMACION_PRIMEROS_AUXILIOS"),
+    ("FORMACION_OPERADOR_APARATOS_ELEVACION", "FORMACION_PRIMEROS_AUXILIOS"),
+    ("FORMACION_PRL_60H", "FORMACION_PRIMEROS_AUXILIOS"),
+    ("FORMACION_OPERADOR_MINIGRUA", "FORMACION_PRIMEROS_AUXILIOS"),
+    ("FORMACION_CARRETILLAS_TRASPALETAS", "FORMACION_PRIMEROS_AUXILIOS"),
+    ("FORMACION_GRUAS_ASISTENCIA_CARRETERA", "FORMACION_PRIMEROS_AUXILIOS"),
+    ("FORMACION_GRUA_HIDRAULICA_ARTICULADA", "FORMACION_PRIMEROS_AUXILIOS"),
 ]
 
 # H31 (S104), hallazgo real: algunos PDF de la migracion historica son
