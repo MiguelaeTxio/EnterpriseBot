@@ -196,6 +196,11 @@ CONTENT_SIGNALS = {
         # de nivel basico PRL de otra duracion que NO son este tipo,
         # nunca usar "NIVEL BASICO PRL" suelto como senal.
         "60H NIVEL BASICO PRL", "60 H NIVEL BASICO PRL",
+        # H36 (S110), confirmado con muestra real (pk=25220, ficha de
+        # inscripcion ILURO, "Titulo del curso: 60H NIVEL BASICO
+        # PREVENCION PRL"): variante de orden real, mismo digito 60
+        # exigido junto a la palabra clave.
+        "60H NIVEL BASICO PREVENCION PRL",
     ],
     "FORMACION_OPERADOR_APARATOS_ELEVACION": [
         # H36 (S110), confirmado con muestra real (pk=25368/25732,
@@ -211,6 +216,14 @@ CONTENT_SIGNALS = {
         # -- singular y plural no son intercambiables por substring,
         # necesitan su propia frase.
         "OPERADORES DE APARATOS ELEVADORES",
+        # H36 (S110), cuarto lote: fichas de inscripcion reales
+        # abreviadas (pk=25316/25317/25333, "6H PRL OP.APARATOS
+        # ELEVADORES"/"6H OP.APART.ELEVADORES"/"6H PRL OP APARATOS
+        # ELEVADORES") -- demasiadas grafias de puntuacion distintas
+        # para listarlas todas; se usa el fragmento estable comun
+        # "APARATOS ELEVADORES" solo, seguro porque no colisiona con
+        # ninguna otra senal de esta lista.
+        "APARATOS ELEVADORES",
     ],
     "FORMACION_CARRETILLAS_TRASPALETAS": [
         # H36 (S110), confirmado con muestra real (pk=40094/40095/
@@ -340,6 +353,12 @@ CONTENT_SIGNALS = {
         # cuestionario real de evaluacion de la formacion COVID-19,
         # nunca un certificado de curso tecnico.
         "CUESTIONARIO COVID-19",
+        # H36 (S110), confirmado con muestra real amplia (multiples
+        # pk, plantilla M.P.E. "CUESTIONARIO DE EVALUACION" en varias
+        # variantes: oficinas, talleres de automocion, vigilante/
+        # auxiliar, instalaciones de alta tension): examen real de la
+        # formacion, nunca el certificado del curso en si.
+        "CUESTIONARIO DE EVALUACION",
     ],
     "PACTO_PERMANENCIA": [
         # pk=24670/24671 (CASTILLA_NAVARRO_FRANCISCO_MIGUEL): pacto de
@@ -361,6 +380,9 @@ CONTENT_SIGNALS = {
         # cursos/servicios, nunca certificados. Frases estables de
         # cabecera de justificante bancario.
         "JUSTIFICANTE DE OPERACION", "OPERACION REALIZADA CORRECTAMENTE",
+        # H36 (S110), cuarto lote: variante real Santander
+        # ("Justificante provisional de transferencia").
+        "JUSTIFICANTE PROVISIONAL DE TRANSFERENCIA",
     ],
     # ------------------------------------------------------------
     # H35 (S105). Confirmados con muestra real (2 lotes de 20
