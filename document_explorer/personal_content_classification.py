@@ -610,6 +610,11 @@ CONTENT_WINS = [
     # sobre ambos.
     ("PACTO_PERMANENCIA", "CARNET_GRUISTA"),
     ("PACTO_PERMANENCIA", "CONTRATO"),
+    # H36 (S110), mismo documento (pk=24671) chocando esta vez con la
+    # senal nueva de FORMACION_PRL_GRUA_MOVIL_AUTOPROPULSADA -- el
+    # pacto de permanencia menciona el curso que lo justifica, pero
+    # sigue sin ser el curso en si.
+    ("PACTO_PERMANENCIA", "FORMACION_PRL_GRUA_MOVIL_AUTOPROPULSADA"),
     # H36 (S110), hallazgo real (pk=36103, HIDALGO ROSAS GABRIEL
     # ALEJANDRO, 29/01/2018): documento real es una "DESIGNACION DE
     # RECURSO PREVENTIVO" -- no es CURSO, gana siempre sobre el.
