@@ -223,6 +223,19 @@ CONTENT_SIGNALS = {
         # DE CARRETILLAS ELEVADORAS").
         "OPERADOR DE CARRETILLAS ELEVADORAS",
     ],
+    "FORMACION_ELECTRICIDAD": [
+        # H36 (S110), confirmado con muestra real subida por Miguel
+        # Angel (diploma Fundacion Laboral de la Construccion,
+        # ENRIQUE ALVAREZ SERRANO, NIF 30976093S, 23/07/2022, 6 horas):
+        # titulo exacto "PRL PARA TRABAJOS DE ELECTRICIDAD, MONTAJE Y
+        # MANTENIMIENTO DE INSTALACIONES ELECTRICAS DE ALTA Y BAJA
+        # TENSION. PARTE ESPECIFICA". Confirma ademas columna propia
+        # "ELECTRICIDAD 4H O 6H" en el Excel real de Yolanda (RRHH),
+        # curso 15 del catalogo, ya sembrado en 0097 pero sin senal
+        # hasta ahora. Frase acortada a la parte estable, sin la
+        # duracion (4H/6H varia segun la muestra).
+        "PRL PARA TRABAJOS DE ELECTRICIDAD",
+    ],
     "CARNET_CONDUCIR": ["PERMISO DE CONDUCCION", "DRIVING LICENCE"],
     "CARNET_GRUISTA": [
         "OPERADOR DE GRUAS MOVILES", "HABILITACION PROFESIONAL",
@@ -396,8 +409,15 @@ CONTENT_SIGNALS = {
         "PARA EL USO DE LOS SIGUIENTES VEHICULOS Y/O MAQUINARIA",
     ],
     "FORMACION_PRL_GENERICA": [
-        "HA RECIBIDO FORMACION E INFORMACION, EN CUMPLIMIENTO DE LOS "
-        "ARTICULOS 18 Y 19",
+        # H36 (S110). Senal retirada -- confirmado con el Excel real de
+        # Yolanda (RRHH), columna propia "ART.18 Y 19 PRL" sin ninguna
+        # columna "generica" aparte: es el mismo curso real que
+        # FORMACION_PRL_ART_18_19, nunca dos tipos distintos. La frase
+        # que tenia aqui ("HA RECIBIDO FORMACION E INFORMACION, EN
+        # CUMPLIMIENTO DE LOS ARTICULOS 18 Y 19") es un superconjunto
+        # exacto de la senal de FORMACION_PRL_ART_18_19 -- disparaba
+        # ambas siempre, nunca solo esta. Ver migracion de retipado de
+        # los documentos ya existentes con este codigo.
     ],
     "RECURSO_PREVENTIVO": ["DESIGNACION DE RECURSO PREVENTIVO"],
     # H35 (S105). TACOGRAFO y TARJETA_CUALIF_CONDUCTOR ya existian en
