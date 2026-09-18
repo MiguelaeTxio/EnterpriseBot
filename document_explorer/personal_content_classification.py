@@ -201,6 +201,14 @@ CONTENT_SIGNALS = {
         # PREVENCION PRL"): variante de orden real, mismo digito 60
         # exigido junto a la palabra clave.
         "60H NIVEL BASICO PREVENCION PRL",
+        # H36 (S110), confirmado con muestra real amplia (pk=24467 y
+        # ~11 mas, Centro Liber Formacion, 50 horas; pk=25192,
+        # Fundacion Laboral de la Construccion, 60h): mismo curso
+        # real de nivel basico PRL con nombres/duraciones distintos al
+        # patron "NIVEL BASICO PRL" ya cubierto -- sin conflicto de
+        # duracion conocido para estas dos redacciones concretas.
+        "PREVENCION DE RIESGOS LABORALES BASICO",
+        "NIVEL BASICO DE PREVENCION EN CONSTRUCCION",
     ],
     "FORMACION_OPERADOR_APARATOS_ELEVACION": [
         # H36 (S110), confirmado con muestra real (pk=25368/25732,
@@ -298,6 +306,13 @@ CONTENT_SIGNALS = {
         # MOVILES" en plural -- variante de redaccion no cubierta
         # por el signal existente.
         "OPERADOR DE GRUA MOVIL",
+        # H36 (S110), confirmado con muestra real amplia (~19 pk,
+        # plantilla real Junta de Andalucia/Delegacion Territorial de
+        # Conocimiento y Empleo: "inscrito en el Registro de
+        # OPERADORES de Gruas Moviles de esta provincia"): variante en
+        # plural real, distinta de "OPERADOR DE GRUAS MOVILES" (que
+        # exige singular pegado a plural) -- no colisiona con ella.
+        "OPERADORES DE GRUAS MOVILES",
     ],
     # H35 (S107), corregido tras falso positivo real (pk=35635/35637/
     # 35639/35640/35641/35684, contratos Mod. PE-177A de Gomez
