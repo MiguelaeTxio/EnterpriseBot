@@ -197,12 +197,17 @@ CONTENT_SIGNALS = {
         # muestras ("... HA REALIZADO EL CURSO DE SEGURIDAD EN TRABAJOS
         # EN ALTURA (8 HORAS PRESENCIALES)...").
         "SEGURIDAD EN TRABAJOS EN ALTURA",
-        # H36 (S110), confirmado con muestra real (pk=35300, Ceunes
-        # Formacion, JOSE GARCIA FERNANDEZ, curso presencial de 6
-        # horas "Trabajos en altura", Codigo Accion Formativa TA-0067):
-        # variante corta de otro proveedor, sin el prefijo "SEGURIDAD
-        # EN".
-        "TRABAJOS EN ALTURA",
+        # H36 (S110), corregido tras colision real: "TRABAJOS EN
+        # ALTURA" suelto (sin "SEGURIDAD EN") aparece tambien como
+        # simple punto de temario en certificados de otros cursos
+        # (confirmado real: certificado de Electricidad de Iluro,
+        # pk=27743, lista "Trabajos en altura." entre sus contenidos
+        # tecnicos) -- nunca usar la frase suelta. Variante real de
+        # Ceunes Formacion (pk=35300) que si es titulo de curso real,
+        # identificada por el contexto estable que la acompaña siempre
+        # en su plantilla ("...en Trabajos en altura / Codigo Accion
+        # Formativa:").
+        "TRABAJOS EN ALTURA CODIGO ACCION FORMATIVA",
     ],
     "FORMACION_PRL_60H": [
         # H36 (S110), confirmado con muestra real (pk=25096, ficha de
