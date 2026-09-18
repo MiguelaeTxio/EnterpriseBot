@@ -24,21 +24,29 @@ tienen su propia copia, ambos delegan aquí.
 from ai_services.gemini_client import ensure_gcp_credentials
 
 
-def pdf_embedded_text(data: bytes) -> str:
+def pdf_embedded_text(data: bytes, page_range: tuple[int, int] = (0, 2)) -> str:
     """
     Texto real ya incrustado en un PDF generado digitalmente (nunca
     un escaneo/foto) -- gratis, instantáneo, más fiable que cualquier
     OCR: es el texto real del documento, no una lectura visual.
     Devuelve cadena vacía (nunca lanza) si el PDF no trae texto real
     -- es un escaneo/foto -- para que el llamador caiga a Cloud
-    Vision en ese caso. Acotado a las 2 primeras páginas, mismo
-    límite que el resto del motor de fechas.
+    Vision en ese caso.
+
+    `page_range` es (inicio, fin) 0-based, fin exclusivo -- por
+    defecto las 2 primeras páginas (mismo límite de siempre). H31
+    (S111): cuando ninguna fecha se resuelve en ese rango, el
+    llamador reintenta con `(2, 4)` -- caso real confirmado (Arrabalí
+    Guzmán y otros 14 de 16): la cláusula CUARTA con la fecha de
+    alta cae en la página 3 en el impreso de "fijo discontinuo" del
+    SEPE, que el límite de 2 páginas nunca llegaba a leer.
     """
     import fitz
 
     try:
         doc = fitz.open(stream=data, filetype="pdf")
-        parts = [page.get_text() for page in doc[:2]]
+        start, end = page_range
+        parts = [page.get_text() for page in doc[start:end]]
         return "\n".join(parts).strip()
     except Exception:
         return ""
@@ -63,16 +71,25 @@ def cloud_vision_image_text(image_bytes: bytes) -> str:
     return response.full_text_annotation.text or ""
 
 
-def cloud_vision_text(data: bytes, filename: str) -> str:
+def cloud_vision_text(
+    data: bytes, filename: str, page_range: tuple[int, int] = (1, 2),
+) -> str:
     """
     OCR real vía Cloud Vision API -- nunca Tesseract local. Imagen
-    (jpg/jpeg/png): `cloud_vision_image_text()` directo. PDF:
-    `batch_annotate_files()` con `DOCUMENT_TEXT_DETECTION`, acotado a
-    las 2 primeras páginas -- un DNI o la primera página de un
-    contrato nunca necesitan más. Cloud Vision corre en la nube de
-    Google (mismo proyecto/credenciales ya usadas para Vertex AI),
-    responde en menos de un segundo por imagen/página, y no gasta ni
-    un ciclo de CPU en el servidor.
+    (jpg/jpeg/png): `cloud_vision_image_text()` directo (ignora
+    `page_range`, no aplica a una imagen suelta). PDF:
+    `batch_annotate_files()` con `DOCUMENT_TEXT_DETECTION`, acotado
+    por defecto a las 2 primeras páginas -- un DNI o la primera
+    página de un contrato nunca necesitan más. Cloud Vision corre en
+    la nube de Google (mismo proyecto/credenciales ya usadas para
+    Vertex AI), responde en menos de un segundo por imagen/página, y
+    no gasta ni un ciclo de CPU en el servidor.
+
+    `page_range` es (inicio, fin) 1-based inclusive, tal cual los
+    numera la API de Cloud Vision -- por defecto (1, 2). H31 (S111):
+    el llamador reintenta con (3, 4) cuando ninguna fecha se resuelve
+    en las 2 primeras -- ver `pdf_embedded_text()` para el caso real
+    que motivó esto.
 
     Devuelve cadena vacía (nunca None) si no hay texto reconocible, o
     si la extensión no está soportada -- el llamador decide el
@@ -94,10 +111,10 @@ def cloud_vision_text(data: bytes, filename: str) -> str:
         feature = vision.Feature(
             type_=vision.Feature.Type.DOCUMENT_TEXT_DETECTION,
         )
-        # Páginas 1-based en la API -- 1 y 2, mismo límite de 2
-        # páginas que el resto del motor de fechas.
+        start, end = page_range
         request = vision.AnnotateFileRequest(
-            input_config=input_config, features=[feature], pages=[1, 2],
+            input_config=input_config, features=[feature],
+            pages=list(range(start, end + 1)),
         )
         response = client.batch_annotate_files(requests=[request])
         texts = []
@@ -122,6 +139,8 @@ def extract_text(filename: str, data: bytes) -> str:
     que devolvía `None` para extensiones sin extractor: aquí toda
     extensión que Cloud Vision no reconoce ya devuelve cadena vacía
     por su cuenta, mismo resultado práctico para el llamador).
+    Acotado a las 2 primeras páginas -- para leer más, usar
+    `extract_text_for_dates()`.
     """
     text = ""
     if filename.lower().endswith(".pdf"):
@@ -129,3 +148,49 @@ def extract_text(filename: str, data: bytes) -> str:
     if not text:
         text = cloud_vision_text(data, filename)
     return text
+
+
+def extract_text_for_dates(filename: str, data: bytes):
+    """
+    H31 (S111). Igual que `extract_text()` seguido de
+    `date_verification_service.classify_dates_in_text()`, pero si
+    ninguna fecha se resuelve (ni `expiry` ni `issue`) en las 2
+    primeras páginas, reintenta automáticamente con las páginas 3-4
+    antes de rendirse -- Miguel Ángel, verbatim: "cuando no se lea
+    ninguna fecha se leen dos páginas más".
+
+    Origen real: al revisar a mano 16 personas sin ninguna fecha
+    resoluble, 15 de 16 SÍ tenían una fecha real, legible y sin
+    ambigüedad -- pero en la página 3 (impreso de "fijo discontinuo"
+    del SEPE: la cláusula CUARTA con la fecha de alta cae ahí, no en
+    las 2 primeras). El límite de 2 páginas nunca llegaba a leerla.
+
+    Devuelve (text, expiry, issue, other, paginas_leidas) --
+    `paginas_leidas` es 2 o 4, para que el llamador sepa si tuvo que
+    ampliar y pueda registrarlo si quiere. `text` es el texto
+    combinado de todas las páginas realmente leídas (para cachear en
+    `ocr_text` tal cual, sin perder lo ya obtenido en el primer
+    intento).
+    """
+    from document_explorer.date_verification_service import (
+        classify_dates_in_text,
+    )
+
+    text = extract_text(filename, data)
+    expiry, issue, other = classify_dates_in_text(text) if text else (
+        None, None, [],
+    )
+    if expiry or issue:
+        return text, expiry, issue, other, 2
+
+    if filename.lower().endswith(".pdf"):
+        extra = pdf_embedded_text(data, page_range=(2, 4))
+        if not extra:
+            extra = cloud_vision_text(data, filename, page_range=(3, 4))
+        if extra:
+            text_ampliado = (text + "\n" + extra).strip() if text else extra
+            expiry2, issue2, other2 = classify_dates_in_text(text_ampliado)
+            if expiry2 or issue2 or other2:
+                return text_ampliado, expiry2, issue2, other2, 4
+
+    return text, expiry, issue, other, 2

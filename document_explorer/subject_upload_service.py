@@ -56,15 +56,12 @@ from django.utils import timezone
 
 from document_explorer import naming_service
 from document_explorer.date_verification_service import (
-    classify_dates_in_text, extract_expiry_via_gemini,
+    extract_expiry_via_gemini,
 )
 from document_explorer.filename_date_service import extract_date_by_filename
 from document_explorer.index_writer import ensure_folder_chain
 from document_explorer.models import DocumentIndexEntry, path_digest
 from document_explorer.move_service import _virtual_location_taken
-from document_explorer.personal_intake_service import (
-    _cloud_vision_text, _pdf_embedded_text,
-)
 from document_management.alert_service import (
     create_default_expiry_alerts, get_docs_supervisor_contacts,
 )
@@ -193,9 +190,16 @@ def _resolve_date_and_text(document_type, filename, data, content_type):
     4. Gemini Vision directo sobre el archivo -- último recurso, solo
        si nada de lo anterior encontró ninguna fecha.
 
+    H31 (S111): si ninguna fecha se resuelve en las 2 primeras
+    páginas, reintenta automáticamente con las páginas 3-4 antes de
+    caer a Gemini (ver `cloud_vision_service.extract_text_for_dates()`
+    para el caso real que lo motivó -- 15 de 16 personas "sin fecha"
+    la tenían en la página 3, en la cláusula CUARTA del impreso de
+    "fijo discontinuo" del SEPE).
+
     Devuelve (field, date, text, source): `field` es "expiry"/"issue"
     o None si nada encontró fecha; `text` es el texto real extraído
-    (embebido o Cloud Vision), cadena vacía si no se pudo leer nada
+    (embebido o Cloud Vision, de todas las páginas realmente leídas)
     -- quien llama lo cachea en `DocumentIndexEntry.ocr_text` para no
     repetir la extracción; `source` identifica el paso que resolvió
     la fecha, para el aviso de discrepancia al supervisor.
@@ -205,24 +209,22 @@ def _resolve_date_and_text(document_type, filename, data, content_type):
         field, date_value = by_name
         return field, date_value, "", "nombre_archivo"
 
-    text = ""
-    if filename.lower().endswith(".pdf"):
-        text = _pdf_embedded_text(data)
-    if not text:
-        text = _cloud_vision_text(data, content_type, filename)
+    from document_explorer.cloud_vision_service import extract_text_for_dates
 
-    if text:
-        expiry, issue, other = classify_dates_in_text(text)
-        if expiry:
-            return "expiry", expiry, text, "Cloud Vision"
-        if issue:
-            return "issue", issue, text, "Cloud Vision"
-        if len(other) == 1:
-            # Fecha encontrada, sin contexto claro de caducidad ni
-            # emisión -- mismo criterio ya usado en el resto de la
-            # plataforma: una única fecha ambigua se trata como la
-            # relevante, mejor que ninguna.
-            return "issue", other[0], text, "Cloud Vision"
+    text, expiry, issue, other, _paginas = extract_text_for_dates(
+        filename, data,
+    )
+
+    if expiry:
+        return "expiry", expiry, text, "Cloud Vision"
+    if issue:
+        return "issue", issue, text, "Cloud Vision"
+    if len(other) == 1:
+        # Fecha encontrada, sin contexto claro de caducidad ni
+        # emisión -- mismo criterio ya usado en el resto de la
+        # plataforma: una única fecha ambigua se trata como la
+        # relevante, mejor que ninguna.
+        return "issue", other[0], text, "Cloud Vision"
 
     gemini_expiry = extract_expiry_via_gemini(data, filename)
     if gemini_expiry:
