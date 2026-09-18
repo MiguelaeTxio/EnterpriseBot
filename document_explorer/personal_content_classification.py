@@ -464,6 +464,27 @@ CONTENT_SIGNALS = {
         # los documentos ya existentes con este codigo.
     ],
     "RECURSO_PREVENTIVO": ["DESIGNACION DE RECURSO PREVENTIVO"],
+    "TITULACION_ACADEMICA": [
+        # H36 (S110), confirmado con muestra real (pk=24896/24938,
+        # GOMEZ_GARCIA_JOSE_ANTONIO/RAMIREZ_GARCIA_JORGE, 1970):
+        # titulo academico antiguo real, expedido por el Ministerio de
+        # Educacion, archivado hoy como FORMACION generico -- no tiene
+        # nada que ver con formacion laboral/PRL.
+        "EL MINISTRO DE EDUCACION Y CIENCIA",
+        # H36 (S110), confirmado con muestra real (pk=24903, HIDALGO_
+        # ROSAS_GABRIEL_ALEJANDRO, I.E.S. Fuente Luna): certificacion
+        # academica oficial de expediente, mismo criterio.
+        "CERTIFICACION OFICIAL DE EXPEDIENTE",
+    ],
+    "CONVENIO_FORMACION_BONIFICADA": [
+        # H36 (S110), confirmado con muestra real (pk=25085, ALVAREZ_
+        # SERRANO_ENRIQUE, TRANSGRUAL S.L.): contrato real de
+        # encomienda de gestion de formacion bonificada (FUNDAE, Ley
+        # 30/2015), archivado hoy como FORMACION generico -- es el
+        # acuerdo administrativo con la entidad de formacion, nunca un
+        # curso en si.
+        "CONTRATO DE ENCOMIENDA DE ORGANIZACION DE LA FORMACION",
+    ],
     "SOLICITUD_ADMINISTRATIVA": [
         # H36 (S110), confirmado con muestra real amplia (multiples
         # pk: ALVAREZ_VIEIRA, MOYANO_GUTIERREZ, ZAFRA_PERALTA,
