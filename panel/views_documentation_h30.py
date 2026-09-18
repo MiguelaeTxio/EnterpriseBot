@@ -539,11 +539,22 @@ def _person_list_page(request):
     qs = _apply_personal_filters(qs, request)
     search = request.GET.get("q", "").strip()
     if search:
-        qs = qs.filter(
-            Q(first_surname__icontains=search)
-            | Q(second_surname__icontains=search)
-            | Q(given_name__icontains=search) | Q(dni__icontains=search),
-        )
+        # S110: buscar "ALVAREZ VIEIRA" no encontraba a nadie -- el
+        # texto completo se comparaba contra CADA campo por separado
+        # (first_surname__icontains=search), pero apellidos y nombre
+        # viven en campos distintos (first_surname="ALVAREZ",
+        # second_surname="VIEIRA"), asi que ninguno contenia la cadena
+        # completa. Se parte la busqueda en palabras y se exige que
+        # CADA palabra aparezca en ALGUNO de los campos (AND entre
+        # palabras, OR entre campos por palabra), para que coincidan
+        # aunque las palabras esten repartidas entre first_surname/
+        # second_surname/given_name.
+        for word in search.split():
+            qs = qs.filter(
+                Q(first_surname__icontains=word)
+                | Q(second_surname__icontains=word)
+                | Q(given_name__icontains=word) | Q(dni__icontains=word),
+            )
     # H31 (S100): Miguel Ángel pidió ordenar también por Nombre, Alta y
     # Documentos (todas menos DNI). `domain_object` es una
     # GenericForeignKey sin `GenericRelation` inversa (ver docstring de
