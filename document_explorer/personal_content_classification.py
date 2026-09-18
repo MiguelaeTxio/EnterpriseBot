@@ -355,6 +355,12 @@ CONTENT_SIGNALS = {
         # tambien la grafia correcta por si otra muestra real la trae
         # sin ese artefacto.
         "DETALLE DE LA OPERACION", "DETALE DE LA OPERACION",
+        # H36 (S110), confirmado con muestra real amplia (multiples
+        # pk, plantillas CaixaBank y otro banco no identificado):
+        # justificantes de transferencia bancaria reales para pagar
+        # cursos/servicios, nunca certificados. Frases estables de
+        # cabecera de justificante bancario.
+        "JUSTIFICANTE DE OPERACION", "OPERACION REALIZADA CORRECTAMENTE",
     ],
     # ------------------------------------------------------------
     # H35 (S105). Confirmados con muestra real (2 lotes de 20
