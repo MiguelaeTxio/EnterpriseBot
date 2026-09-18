@@ -163,6 +163,11 @@ CONTENT_SIGNALS = {
         # BURGOS FERNANDEZ): curso presencial de 6 horas, titulo exacto
         # "Camion grua autocargante" en ambas muestras.
         "CAMION GRUA AUTOCARGANTE",
+        # H36 (S110), confirmado con muestra real (pk=36406, plantilla
+        # M.P.E., JOSE CARLOS MARTINEZ SEGURA, "TRABAJOS CON GRUA
+        # AUTOCARGANTE"): variante corta de PRL informativa sobre el
+        # mismo equipo, mismo tipo.
+        "GRUA AUTOCARGANTE",
     ],
     "FORMACION_PRIMEROS_AUXILIOS": [
         # H36 (S110), confirmado con muestra real (pk=34774/34780,
