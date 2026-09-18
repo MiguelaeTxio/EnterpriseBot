@@ -332,6 +332,49 @@ class DocumentIndexEntry(models.Model):
             "`document_management.vigencia_service`."
         ),
     )
+    prorroga_de = models.ForeignKey(
+        "self",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="prorrogas",
+        verbose_name="Prórroga del contrato",
+        help_text=(
+            "H31 (S111). Solo para la familia CONTRATO/"
+            "COMUNICACION_CONTRATO: enlaza una prórroga (o una "
+            "transformación a indefinido) con el contrato -- u otra "
+            "prórroga -- que extiende, formando una cadena. La "
+            "antigüedad real de la persona (`PersonIdentity.hire_date`) "
+            "se calcula recorriendo esta cadena hasta la raíz (el "
+            "contrato sin `prorroga_de`), nunca duplicada en un campo "
+            "propio, para no tener dos fuentes de verdad "
+            "desincronizables. Origen real: Martín González Jesús "
+            "(alta real 01/11/2006, transformación a indefinido "
+            "30/04/2007 -- dos fechas reales de un mismo contrato que "
+            "`issue_date` por sí solo no podía distinguir)."
+        ),
+    )
+    period_start_date = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name="Inicio del periodo (prórroga)",
+        help_text=(
+            "H31 (S111). El 'desde' real de la prórroga que este "
+            "documento comunica (\"acuerdan una prórroga... desde el "
+            "X hasta el Y\") -- distinto de `issue_date`, que sigue "
+            "siendo la fecha de firma/registro del propio papel, no "
+            "el periodo que cubre."
+        ),
+    )
+    period_end_date = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name="Fin del periodo (prórroga)",
+        help_text=(
+            "H31 (S111). El 'hasta' real de la prórroga que este "
+            "documento comunica -- ver `period_start_date`."
+        ),
+    )
     ocr_text = models.TextField(
         blank=True,
         verbose_name="Texto OCR cacheado",
