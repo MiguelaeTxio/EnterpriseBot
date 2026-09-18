@@ -510,6 +510,29 @@ CONTENT_WINS = [
     # en las 2 -- IDC (senal especifica y decisiva, "INFORME DE DATOS
     # PARA LA COTIZACION") gana siempre sobre CONTRATO.
     ("IDC", "CONTRATO"),
+    # H36 (S110), hallazgo real: campaña de retipado de CURSO (277
+    # documentos activos) dio 178 "tipo ambiguo", de los cuales 162
+    # (91%) eran choque estructural con la propia señal de CURSO
+    # ("DIPLOMA"/"CERTIFICADO DE APROVECHAMIENTO"/"HAN REALIZADO EL
+    # CURSO") -- estos documentos SON diplomas por definicion, asi que
+    # CURSO dispara siempre a la vez que cualquier tipo especifico de
+    # FORMACION_*. Mismo criterio que (FORMACION, CURSO) de mas arriba
+    # (S104), extendido a los 14 tipos especificos sembrados en 0097
+    # que todavia no lo tenian.
+    ("FORMACION_EXTINCION_INCENDIOS", "CURSO"),
+    ("FORMACION_ELECTRICIDAD", "CURSO"),
+    ("FORMACION_SUBESTACIONES", "CURSO"),
+    ("FORMACION_PRIMEROS_AUXILIOS", "CURSO"),
+    ("FORMACION_OPERADOR_CAMION_AUTOCARGANTE", "CURSO"),
+    ("FORMACION_TRABAJOS_ALTURA", "CURSO"),
+    ("FORMACION_PLATAFORMA_ELEVADORA", "CURSO"),
+    ("FORMACION_PRL_ART_18_19", "CURSO"),
+    ("FORMACION_OPERADOR_APARATOS_ELEVACION", "CURSO"),
+    ("FORMACION_PRL_60H", "CURSO"),
+    ("FORMACION_OPERADOR_MINIGRUA", "CURSO"),
+    ("FORMACION_CARRETILLAS_TRASPALETAS", "CURSO"),
+    ("FORMACION_GRUAS_ASISTENCIA_CARRETERA", "CURSO"),
+    ("FORMACION_GRUA_HIDRAULICA_ARTICULADA", "CURSO"),
 ]
 
 # H31 (S104), hallazgo real: algunos PDF de la migracion historica son
