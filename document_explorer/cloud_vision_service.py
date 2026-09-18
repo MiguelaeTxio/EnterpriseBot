@@ -186,7 +186,17 @@ def extract_text_for_dates(filename: str, data: bytes):
     if filename.lower().endswith(".pdf"):
         extra = pdf_embedded_text(data, page_range=(2, 4))
         if not extra:
-            extra = cloud_vision_text(data, filename, page_range=(3, 4))
+            try:
+                extra = cloud_vision_text(data, filename, page_range=(3, 4))
+            except Exception:
+                # H31 (S111), incidente real: Cloud Vision responde
+                # INVALID_ARGUMENT si se piden paginas que el
+                # documento no tiene (p. ej. pedir 3-4 en un PDF de 1
+                # sola pagina) -- nunca debe romper el llamador, mismo
+                # criterio "nunca lanza" que pdf_embedded_text() de
+                # mas arriba: sin paginas extra, se sigue con lo que
+                # ya se tenia.
+                extra = ""
         if extra:
             text_ampliado = (text + "\n" + extra).strip() if text else extra
             expiry2, issue2, other2 = classify_dates_in_text(text_ampliado)
