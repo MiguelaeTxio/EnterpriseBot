@@ -329,6 +329,12 @@ CONTENT_SIGNALS = {
         # Excel real de Yolanda para esta misma persona): titulo
         # exacto "TRABAJOS CON GRUA DE ASISTENCIA EN CARRETERA".
         "GRUA DE ASISTENCIA EN CARRETERA",
+        # H36 (S110), confirmado con muestra real (~4 pk, TVGV
+        # Formacion, curso de 6 horas "RESCATE EN CARRETERA": temario
+        # legislacion/senalizacion de vias; pk=34271, FENEAC/Ministerio
+        # de Fomento, "PRL. Auxilio en carretera Nivel I"): mismo
+        # ambito de asistencia/rescate en carretera, mismo tipo.
+        "RESCATE EN CARRETERA", "AUXILIO EN CARRETERA",
     ],
     "FORMACION_GRUA_HIDRAULICA_ARTICULADA": [
         # H36 (S110), confirmado con muestra real subida por Miguel
@@ -467,6 +473,12 @@ CONTENT_SIGNALS = {
         # H36 (S110), cuarto lote: variante real Santander
         # ("Justificante provisional de transferencia").
         "JUSTIFICANTE PROVISIONAL DE TRANSFERENCIA",
+        # H36 (S110), confirmado con muestra real (pk=24558): el
+        # encabezado "Justificante de operacion" a veces se pierde en
+        # el propio OCR (texto cacheado empieza literalmente "ante de
+        # operacion..."), pero esta frase de cuerpo siempre esta
+        # intacta en la misma plantilla bancaria.
+        "TRANSFERENCIA POR NUMERO DE CUENTA",
     ],
     # ------------------------------------------------------------
     # H35 (S105). Confirmados con muestra real (2 lotes de 20
