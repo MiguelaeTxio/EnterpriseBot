@@ -255,7 +255,23 @@ _LABELED_DATE_PATTERNS = [
     re.compile(r"FECHA\s+DE\s+INICIO\s+DEL\s+CONTRATO" + _GAP + r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})"),
     re.compile(r"FECHA\s+DE\s+TRANSFORMACION" + _GAP + r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})"),
     re.compile(r"(?:SE\s+)?EXTENDER[AÁ]\s+DESDE" + _GAP + r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})"),
-    re.compile(r"RELACION\s+LABORAL\s+EN\s+FECHA" + _GAP + r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})"),
+    re.compile(
+        r"RELACION\s+LABORAL\s+(?:EN|CON)\s+FECHA"
+        # H31 (S111), dos incidentes reales distintos en el mismo
+        # patron: (1) la plantilla real tambien usa "CON fecha", no
+        # solo "EN fecha" (Garcia Luque, verificado visualmente en el
+        # documento real); (2) el hueco de relleno de esta plantilla
+        # a veces es una linea de puntos larga ("en fecha
+        # .....06/03/2023", Alonso Pedrosa, verificado visualmente),
+        # que supera el _GAP generico de 15 caracteres. Se acepta
+        # ademas un relleno largo pero ACOTADO A SOLO PUNTOS/ESPACIOS
+        # (nunca "cualquier caracter no digito", que fue justo la
+        # causa de la regresion real de S89 con IMPORTANTE/DEVOLUCION)
+        # -- un punto de relleno nunca es contenido real que se pueda
+        # confundir con otra fecha.
+        + r"(?:" + _GAP + r"|[.\s]{0,80}?)"
+        + r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})",
+    ),
     # Prorroga (formato real distinto, sin la palabra "extendera"):
     # "...PRORROGA... DESDE 11/12/2019 ... HASTA 31/08/2020" -- se usa
     # la fecha de inicio de la prorroga (DESDE), mismo criterio que el

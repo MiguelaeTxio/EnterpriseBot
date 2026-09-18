@@ -761,7 +761,13 @@ _LABELED_DATE_PATTERNS = [
     re.compile(r"FECHA\s+DE\s+INICIO\s+DEL\s+CONTRATO" + _GAP + r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})"),
     re.compile(r"FECHA\s+DE\s+TRANSFORMACION" + _GAP + r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})"),
     re.compile(r"(?:SE\s+)?EXTENDER[AÁ]\s+DESDE" + _GAP + r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})"),
-    re.compile(r"RELACION\s+LABORAL\s+EN\s+FECHA" + _GAP + r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})"),
+    re.compile(
+        r"RELACION\s+LABORAL\s+(?:EN|CON)\s+FECHA"
+        # H31 (S111): sincronizado con date_verification_service.py --
+        # EN/CON, y hueco largo de puntos ademas del _GAP generico.
+        + r"(?:" + _GAP + r"|[.\s]{0,80}?)"
+        + r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})",
+    ),
     re.compile(
         r"PRORROGA[\s\S]{0,120}?DESDE" + _GAP + r"(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})",
         re.DOTALL,
