@@ -1063,7 +1063,16 @@ class FolderListingView(ExplorerAccessMixin, TemplateView):
         una búsqueda recursiva.
         """
         if self.filters["q"]:
-            query = query.filter(name__icontains=self.filters["q"])
+            # S110: Miguel Angel esperaba poder buscar "gruista+adolfo"
+            # como dos palabras que deben aparecer ambas en el nombre
+            # -- "+" no se trataba como separador, se comparaba la
+            # cadena completa (con el "+" incluido) contra name, que
+            # nunca coincide con ningun nombre real. Se parte por "+"
+            # y se exige cada palabra por separado (AND) contra name.
+            for word in self.filters["q"].split("+"):
+                word = word.strip()
+                if word:
+                    query = query.filter(name__icontains=word)
         if self.filters["ext"]:
             query = query.filter(
                 entry_kind=DocumentIndexEntry.KIND_FILE,
