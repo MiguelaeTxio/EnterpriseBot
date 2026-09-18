@@ -169,6 +169,29 @@ _NOISE_SPAN_PATTERNS = [
     # se toma la primera fecha que aparezca despues, sin exigir
     # ninguna palabra intermedia concreta.
     re.compile(r"DEVOLUCION[\s\S]{0,200}?(\d{1,2}[-./]\d{1,2}[-./]\d{2,4})"),
+    # H31 (S111). Clausula de proteccion de datos "REGLAMENTO (UE)
+    # 2016/679 del Parlamento Europeo, de 27 de abril de 2016" -- cita
+    # legal fija en TODOS los impresos oficiales de CONTRATO DE
+    # TRABAJO del SEPE, sin relacion con la fecha real de firma.
+    # Verificado real (ids 27970/34685/36124/36632/37460/40115,
+    # ALVAREZ DIAZ ALEJANDRO SERGIO / BARBERO CUENCA MANUEL / IORDACHI
+    # PETRU / MUNOZ GONZALEZ ANTONIO JAVIER / RUIZ PORTILLO MANUEL /
+    # CRUCES HEREDIA JOSE MANUEL): la fecha real de firma esta tan
+    # degradada por el OCR antiguo (previo a la migracion a Cloud
+    # Vision de S102) que no se reconoce, y la unica fecha legible que
+    # queda es esta cita legal -- capturada por el criterio de "unica
+    # fecha, por defecto" (`subject_upload_service.resolve_document_
+    # date`), dando 27/04/2016 como issue_date en los 6 casos.
+    # Exclusion por POSICION EXACTA (nunca por palabra cercana, como
+    # "REGLAMENTO" o "PARLAMENTO" a secas -- ambas demasiado genericas
+    # y con riesgo real de regresion, mismo motivo que obligo al
+    # cambio de enfoque de "IMPORTE" a posicion exacta en el caso
+    # DEVOLUCION de arriba): se ancla a la cadena literal fija
+    # "REGLAMENTO (UE) 2016/679", que solo aparece en esta clausula.
+    re.compile(
+        r"REGLAMENTO \(UE\) 2016/679[\s\S]{0,60}?"
+        r"(\d{1,2} DE [A-Z]+ DE \d{4})"
+    ),
 ]
 # H30 (S89): fecha de inscripcion registral de Cajamar en el pie de
 # pagina, constante en TODOS los recibos ("Inscripc.1a 31/10/2012").
