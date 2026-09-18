@@ -135,6 +135,17 @@ CONTENT_SIGNALS = {
         # de Prevencion de Riesgos Laborales, frase estable de cierre
         # del parrafo, presente en todas las muestras.
         "EN CUMPLIMIENTO DE LOS ARTICULOS 18 Y 19",
+        # H36 (S110), confirmado con muestra real (pk=24361, ANP
+        # Servicio de Prevencion Ajeno S.L., autorizacion SP-51/00):
+        # otro proveedor, mismo fin legal (art. 19 Ley 31/1995), titulo
+        # propio "CERTIFICADO FORMACION EN MATERIA DE PRL".
+        "CERTIFICADO FORMACION EN MATERIA DE PRL",
+        # H36 (S110), confirmado con muestra real (pk=34131, ASPREMA/
+        # PREVEM Servicio de Prevencion Ajeno S.L., ciclo "aula
+        # permanente" del Convenio General del Sector de la
+        # Construccion): mismo fin legal, titulo propio "CERTIFICADO
+        # DE FORMACION DE SEGURIDAD Y SALUD EN CONSTRUCCION".
+        "CERTIFICADO DE FORMACION DE SEGURIDAD Y SALUD EN CONSTRUCCION",
     ],
     "FORMACION_PLATAFORMA_ELEVADORA": [
         # Confirmado con muestra real (pk=24267,
@@ -186,6 +197,12 @@ CONTENT_SIGNALS = {
         # muestras ("... HA REALIZADO EL CURSO DE SEGURIDAD EN TRABAJOS
         # EN ALTURA (8 HORAS PRESENCIALES)...").
         "SEGURIDAD EN TRABAJOS EN ALTURA",
+        # H36 (S110), confirmado con muestra real (pk=35300, Ceunes
+        # Formacion, JOSE GARCIA FERNANDEZ, curso presencial de 6
+        # horas "Trabajos en altura", Codigo Accion Formativa TA-0067):
+        # variante corta de otro proveedor, sin el prefijo "SEGURIDAD
+        # EN".
+        "TRABAJOS EN ALTURA",
     ],
     "FORMACION_PRL_60H": [
         # H36 (S110), confirmado con muestra real (pk=25096, ficha de
@@ -232,6 +249,12 @@ CONTENT_SIGNALS = {
         # "APARATOS ELEVADORES" solo, seguro porque no colisiona con
         # ninguna otra senal de esta lista.
         "APARATOS ELEVADORES",
+        # H36 (S110), confirmado con muestra real amplia (~10 pk,
+        # plantilla TVGV Formacion): grafia real con error de imprenta
+        # estable en la plantilla, "APARATOS ELEVADORAS" (con A final,
+        # no E) -- no es ruido de OCR de una sola muestra, se repite
+        # igual en todas las certificaciones de este mismo proveedor.
+        "APARATOS ELEVADORAS",
     ],
     "FORMACION_CARRETILLAS_TRASPALETAS": [
         # H36 (S110), confirmado con muestra real (pk=40094/40095/
@@ -256,6 +279,12 @@ CONTENT_SIGNALS = {
         # hasta ahora. Frase acortada a la parte estable, sin la
         # duracion (4H/6H varia segun la muestra).
         "PRL PARA TRABAJOS DE ELECTRICIDAD",
+        # H36 (S110), confirmado con muestra real (pk=35100, Iluro
+        # Prevencion S.L./Fundacion del Metal, ANTONIO JESUS DIAZ
+        # QUINTERO, curso "Electricidad: montaje y mantenimiento de
+        # instalaciones electricas de alta y baja tension"): variante
+        # de otro proveedor, mismo fragmento estable central.
+        "MONTAJE Y MANTENIMIENTO DE INSTALACIONES ELECTRICAS",
     ],
     "FORMACION_OPERADOR_MINIGRUA": [
         # H36 (S110), confirmado con muestra real subida por Miguel
@@ -294,6 +323,22 @@ CONTENT_SIGNALS = {
         # FORMACION_GRUAS_ASISTENCIA_CARRETERA, titulo exacto
         # "TRABAJOS CON GRUA MOVIL AUTOPROPULSADA".
         "GRUA MOVIL AUTOPROPULSADA",
+    ],
+    "FORMACION_GWO_SEGURIDAD_EOLICA": [
+        # H36 (S110), confirmado con muestra real amplia (~15 pk,
+        # WINDA Delegate Training Certificate, SGS TECNOS S.A.):
+        # frase estable en todos los modulos (Fire Awareness, Working
+        # at Height, First Aid, Manual Handling, Sea Survival),
+        # cabecera identica en todos.
+        "GLOBAL WIND ORGANISATION", "WINDA DELEGATE TRAINING CERTIFICATE",
+    ],
+    "FORMACION_AVSEC_SEGURIDAD_AEROPORTUARIA": [
+        # H36 (S110), confirmado con muestra real amplia (~10 pk,
+        # formacionavsec.com y avsecformacion.es): titulo estable en
+        # ambos proveedores reales.
+        "CERTIFICADO DE FORMACION AVSEC",
+        "CONCIENCIACION DE SEGURIDAD AEROPORTUARIA",
+        "CONCIENCIACION EN SEGURIDAD AEROPORTUARIA",
     ],
     "CARNET_CONDUCIR": ["PERMISO DE CONDUCCION", "DRIVING LICENCE"],
     "CARNET_GRUISTA": [
@@ -640,6 +685,12 @@ CONTENT_WINS = [
     ("FORMACION_PRL_GRUA_MOVIL_AUTOPROPULSADA", "CARNET_GRUISTA"),
     ("FORMACION_PRL_GRUA_MOVIL_AUTOPROPULSADA", "FORMACION_PRL_ART_18_19"),
     ("FORMACION_PRL_GRUA_MOVIL_AUTOPROPULSADA", "CURSO"),
+    ("FORMACION_GWO_SEGURIDAD_EOLICA", "FORMACION"),
+    ("FORMACION_GWO_SEGURIDAD_EOLICA", "CURSO"),
+    ("FORMACION_GWO_SEGURIDAD_EOLICA", "FORMACION_PRL_ART_18_19"),
+    ("FORMACION_AVSEC_SEGURIDAD_AEROPORTUARIA", "FORMACION"),
+    ("FORMACION_AVSEC_SEGURIDAD_AEROPORTUARIA", "CURSO"),
+    ("FORMACION_AVSEC_SEGURIDAD_AEROPORTUARIA", "FORMACION_PRL_ART_18_19"),
     # H36 (S110), hallazgo real: 6 de los ambiguos restantes eran el
     # mismo tipo de choque estructural que CURSO/PRIMEROS_AUXILIOS,
     # pero contra el propio "FORMACION" generico ("FICHA DE
