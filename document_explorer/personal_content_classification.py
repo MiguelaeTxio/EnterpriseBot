@@ -236,6 +236,17 @@ CONTENT_SIGNALS = {
         # duracion (4H/6H varia segun la muestra).
         "PRL PARA TRABAJOS DE ELECTRICIDAD",
     ],
+    "FORMACION_OPERADOR_MINIGRUA": [
+        # H36 (S110), confirmado con muestra real subida por Miguel
+        # Angel (certificado GRUAS ADOLFO ALVAREZ, LEANDRO JAVIER
+        # ALVAREZ VIEIRA, DNI 77233157P, 8 de mayo de 2019 -- fecha
+        # que cuadra exacta con la columna "OPERAD.MINI GRUA" del
+        # Excel real de Yolanda para esta misma persona): 2 horas,
+        # titulo exacto "OPERADOR DE MINI GRUA DE ORUGA". Frase
+        # acortada a "OPERADOR DE MINI GRUA" por si existe variante sin
+        # "DE ORUGA" (otro tipo de minigrua) en otras muestras.
+        "OPERADOR DE MINI GRUA",
+    ],
     "CARNET_CONDUCIR": ["PERMISO DE CONDUCCION", "DRIVING LICENCE"],
     "CARNET_GRUISTA": [
         "OPERADOR DE GRUAS MOVILES", "HABILITACION PROFESIONAL",
