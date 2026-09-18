@@ -265,6 +265,15 @@ CONTENT_SIGNALS = {
         # DE OPERADOR DE GRUA HIDRAULICA ARTICULADA - UNE 58161:2021".
         "GRUA HIDRAULICA ARTICULADA",
     ],
+    "FORMACION_PRL_GRUA_MOVIL_AUTOPROPULSADA": [
+        # H36 (S110), confirmado con muestra real (pk=34124, ALBERTO
+        # A. ALVAREZ GEA, M.P.E., Malaga 06/11/2015; pk=36061, GABRIEL
+        # ALEJANDRO HIDALGO ROSAS, M.P.E., Malaga 23/10/2017 -- este
+        # ultimo en carpeta OBSOLETOS): mismo molde M.P.E. que
+        # FORMACION_GRUAS_ASISTENCIA_CARRETERA, titulo exacto
+        # "TRABAJOS CON GRUA MOVIL AUTOPROPULSADA".
+        "GRUA MOVIL AUTOPROPULSADA",
+    ],
     "CARNET_CONDUCIR": ["PERMISO DE CONDUCCION", "DRIVING LICENCE"],
     "CARNET_GRUISTA": [
         "OPERADOR DE GRUAS MOVILES", "HABILITACION PROFESIONAL",
@@ -551,6 +560,13 @@ CONTENT_WINS = [
     ("FORMACION_CARRETILLAS_TRASPALETAS", "CURSO"),
     ("FORMACION_GRUAS_ASISTENCIA_CARRETERA", "CURSO"),
     ("FORMACION_GRUA_HIDRAULICA_ARTICULADA", "CURSO"),
+    # H36 (S110): FORMACION_PRL_GRUA_MOVIL_AUTOPROPULSADA es un tipo
+    # real distinto de CARNET_GRUISTA y de FORMACION_PRL_ART_18_19,
+    # aunque su propio molde M.P.E. dispare ambas senales a la vez
+    # (menciona "grua movil" y trae el boilerplate legal de siempre).
+    ("FORMACION_PRL_GRUA_MOVIL_AUTOPROPULSADA", "CARNET_GRUISTA"),
+    ("FORMACION_PRL_GRUA_MOVIL_AUTOPROPULSADA", "FORMACION_PRL_ART_18_19"),
+    ("FORMACION_PRL_GRUA_MOVIL_AUTOPROPULSADA", "CURSO"),
     # H36 (S110), hallazgo real (pk=34963, CARLIN CARVAJAL): documento
     # real de "grua de asistencia en carretera" (M.P.E., 30/09/2015)
     # estaba mal tipado como FORMACION_PRIMEROS_AUXILIOS -- el propio
