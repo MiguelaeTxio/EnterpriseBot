@@ -77,11 +77,14 @@ de Miguel Ángel con Docuten/Viafirma (sin dependencia técnica), (3)
 enviar un dossier real con firma y cuerpo editado, confirmado
 visualmente en Outlook real -- punto pendiente heredado sin avance
 desde S104, el mismo que motivó el desvío a H36 en S109, (4) punto
-nuevo de S110: sustituir por flujo programático (JWT Grant, sin
-usuario presente) la firma manual actual vía DocuSign de
-entrega/información/EPIs -- investigado con fuentes reales de hoy,
-primer paso confirmar el plan real de la cuenta DocuSign de Grúas
-Álvarez (los planes normales de eSignature no incluyen API).
+nuevo de S110: sustituir por flujo programático la firma manual
+actual vía Docuten (proveedor real, cuenta ya activa -- corregido en
+la misma sesión tras confundirlo primero con DocuSign) de
+entrega/información/EPIs -- confirmado que existe API REST propia
+con manual en español, credencial de "secreto de aplicación" propia y
+cuenta Sandbox; pendiente de verificar con Docuten directamente el
+proceso exacto para obtenerla, dado que su manual REST bloquea el
+acceso automatizado.
 
 **Hito CERRADO en S110:** H36 — Retipado de Cursos de Formación →
 `ENTERPRISEBOT_ATTACHED_MILESTONE_V36.md`. Sesión larguísima: catálogo

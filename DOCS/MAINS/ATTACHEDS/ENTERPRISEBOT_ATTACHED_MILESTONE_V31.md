@@ -212,70 +212,59 @@ decidido). Orden fijo:
    dossier adjunto, la firma real incrustada en el cuerpo (no la firma
    por defecto de Outlook) y el texto del cuerpo tal cual lo editó.
 4. **PUNTO NUEVO (S110): sustituir por flujo programático la gestión
-   manual actual de firma de entrega/información/EPIs vía DocuSign**
-   (hoy: entrada manual a la web con las credenciales de la cuenta,
-   gestión manual de los documentos a firmar, envío manual de los
-   links de firma a cada trabajador). Investigado hoy (2026-09-18,
-   nunca de memoria de entrenamiento -- proceso real de DocuSign
-   cambia con frecuencia) el mecanismo actual real para credenciales
-   de API y automatización completa sin usuario presente:
+   manual actual de firma de entrega/información/EPIs vía Docuten**
+   (hoy: entrada manual a la web de Docuten con las credenciales de la
+   cuenta ya activa, gestión manual de los documentos a firmar, envío
+   manual de los links de firma a cada trabajador). Investigado hoy
+   (2026-09-18, nunca de memoria de entrenamiento) lo que se pudo
+   confirmar con fuentes reales -- **corrección real de esta misma
+   sesión: la investigación inicial se hizo por error sobre DocuSign,
+   confundido por el parecido del nombre con Docuten (el proveedor
+   real, con cuenta ya activa) -- corregido en cuanto Miguel Ángel lo
+   señaló, antes de escribir nada más.**
 
-   **a) Comprobar primero el plan/cuenta real de DocuSign de Grúas
-   Álvarez** -- los planes normales de eSignature (Personal/Standard/
-   Business Pro) **no incluyen acceso API**; hace falta o un plan
-   "Developer API" aparte (Starter/Intermediate/Advanced, facturación
-   por sobre) o un plan Enhanced/Enterprise que ya lo incluya. Esto es
-   una decisión de coste de Miguel Ángel, no técnica, y bloquea
-   cualquier paso siguiente si la cuenta actual no lo tiene --
-   confirmarlo antes de avanzar.
+   **Confirmado con fuentes reales (`docuten.com/es/apis-e-integracion/`):**
+   Docuten tiene una API REST propia de Firma (manual en español e
+   inglés) además de un servicio SOAP más antiguo. El manual SOAP
+   (`docs.docuten.com/Documentacion_API/Manual_SOAP_WS_Firma.pdf`)
+   exige como parámetro obligatorio en cada llamada un **"secreto de
+   la aplicación que invoca"** -- credencial propia por aplicación,
+   distinta de las credenciales de login web que se usan hoy a mano.
+   Docuten ofrece también una **cuenta Sandbox para probar de forma
+   ilimitada y segura** antes de tocar producción.
 
-   **b) Cuenta de desarrollador gratuita** en developers.docusign.com
-   (sandbox/demo, sin coste, sirve para diseñar y probar el flujo
-   completo aunque el paso (a) tarde en resolverse).
+   **No se pudo verificar en esta sesión** (el manual REST real,
+   `docutensignatureapiv2.docs.apiary.io`, bloquea el acceso
+   automatizado -- "robots disallowed"): el proceso exacto paso a paso
+   para solicitar/generar ese "secreto de la aplicación" desde la
+   cuenta ya activa de Grúas Álvarez. A diferencia de otros
+   proveedores con panel de autoservicio para crear apps y claves,
+   Docuten no muestra un flujo así en su web pública -- todo apunta a
+   que se gestiona a través de su equipo (`docuten.com/es/contacto/`,
+   +34 981 269 685), dado que ya existe relación comercial activa.
 
-   **c) Mecanismo de credenciales real para automatización total (JWT
-   Grant -- OAuth2.0 server-to-server, sin usuario presente, el
-   encaje correcto para "sin entrada manual a la web"):**
-   1. Entrar a la cuenta DocuSign (demo primero) → Configuración/Admin
-      → *Apps and Keys*.
-   2. *Add App and Integration Key* → nombre del app → *Create App*.
-      Guardar el **Integration Key** (Client ID).
-   3. Dentro del app, sección *Service Integration* → *Generate RSA* →
-      guardar la **clave privada** (solo se muestra una vez).
-   4. Anotar el **API Username** (GUID) del usuario del sistema que
-      va a "impersonar" el envío (p.ej. un alias tipo
-      `rrhh@gruasalvarez.com`, nunca una persona física concreta).
-   5. Conceder consentimiento del Integration Key para actuar en
-      nombre de ese usuario: *consentimiento administrativo* (mejor
-      opción, sin nada que hacer por cada usuario, pero exige dominio
-      reclamado + función DocuSign Admin, solo en ciertos planes) o
-      *consentimiento individual* (una autorización única, sin
-      requisitos previos).
-   6. Con Integration Key + clave privada + API Username, construir y
-      probar el envío de sobres (`envelopes`) reales contra el entorno
-      demo -- sin ningún login manual desde aquí en adelante.
-
-   **d) Go-Live (paso a producción real, para que los trabajadores
-   reales firmen):** DocuSign eliminó en 2025 el requisito antiguo de
-   "20 llamadas API seguidas" -- el proceso está ahora integrado en el
-   *Developer Console*, con Go-Live en un clic (en beta abierta a
-   fecha de hoy). Exige cuenta de producción de pago con API
-   incluida (mismo punto (a)) y acceso de administrador a ella. Al
-   pasar a producción, el Integration Key se copia (no se mueve) al
-   entorno real -- hay que generar de nuevo clave secreta/RSA y volver
-   a dar consentimiento del usuario del sistema, esta vez en
-   producción.
+   **Primer paso ejecutable de la sesión siguiente:**
+   1. Contactar con Docuten (canal comercial ya existente, el mismo
+      que gestiona la cuenta de Yolanda) y solicitar explícitamente
+      activar el acceso a la **API de Firma** para la cuenta de Grúas
+      Álvarez, pidiendo el "secreto de la aplicación" y confirmando si
+      existe panel de autoservicio para generarlo o si lo emite el
+      propio Docuten.
+   2. Con la respuesta real de Docuten, releer entonces el manual REST
+      completo (`docutensignatureapiv2.docs.apiary.io`, accediendo
+      manualmente desde el navegador -- no se puede automatizar la
+      lectura) para diseñar el flujo técnico real: envío de documento,
+      firmantes, y consulta de estado, contra la cuenta Sandbox
+      primero.
+   3. Diseño técnico de la integración (envío automático desde la
+      ficha de personal / entrega de EPIs ya construida) solo después
+      de tener el secreto de aplicación real y el manual leído --
+      nunca antes.
 
    **Fuentes reales consultadas hoy:**
-   `developers.docusign.com/platform/build-integration/`,
-   `developers.docusign.com/platform/go-live/`,
-   `developers.docusign.com/platform/auth/jwt/jwt-best-practice/`,
-   `docusign.com/blog/developers/oauth-jwt-granting-consent`,
-   `ecom.docusign.com/plans-and-pricing/developer`.
-
-   **Primer paso ejecutable de la sesión siguiente:** confirmar con
-   Miguel Ángel el plan real de la cuenta DocuSign actual de Grúas
-   Álvarez (paso a) antes de tocar código.
+   `docuten.com/es/apis-e-integracion/documentacion-de-apis/`,
+   `docuten.com/es/ventajas-api/`,
+   `docs.docuten.com/Documentacion_API/Manual_SOAP_WS_Firma.pdf`.
 
 ## Hoja de ruta para la sesión siguiente (S109) -- histórico, sustituido por la sección de arriba
 
