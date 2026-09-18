@@ -464,6 +464,15 @@ CONTENT_SIGNALS = {
         # los documentos ya existentes con este codigo.
     ],
     "RECURSO_PREVENTIVO": ["DESIGNACION DE RECURSO PREVENTIVO"],
+    "SOLICITUD_ADMINISTRATIVA": [
+        # H36 (S110), confirmado con muestra real amplia (multiples
+        # pk: ALVAREZ_VIEIRA, MOYANO_GUTIERREZ, ZAFRA_PERALTA,
+        # ALVAREZ_SERRANO, CARVAJAL_GONZALEZ): formulario real de
+        # autorizacion a la Junta de Andalucia para tramites
+        # telematicos, archivado hoy como FORMACION generico. Tipo ya
+        # existia en el catalogo pero sin ninguna senal hasta ahora.
+        "PARA LA FIRMA Y PRESENTACION POR VIA TELEMATICA DE SOLICITUDES",
+    ],
     # H35 (S105). TACOGRAFO y TARJETA_CUALIF_CONDUCTOR ya existian en
     # el catalogo (migraciones 0004/0045) pero sin signal todavia --
     # confirmados y diferenciados con muestra real: "TARJETA DE
