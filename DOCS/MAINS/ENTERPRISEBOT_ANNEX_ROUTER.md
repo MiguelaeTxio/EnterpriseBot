@@ -68,23 +68,24 @@ Todos los anexos viven en `DOCS/MAINS/ATTACHEDS/`.
 ## 3. Resultado Actual
 
 **Hito EN PROGRESO:** H31 — Interfaz de Gestión Documental de Personal
-→ `ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md`. Reactivado en S110 tras
-cerrar H36 por completo en la misma sesión (PCH de vuelta) -- ver
-"COMPLETADAS EN S110 -- H36 CERRADO POR COMPLETO" en el anexo propio
-de H36 para el detalle completo. Hoja de ruta: (1) investigar la
-fecha `2016-04-27` duplicada en `CONTRATO` de 6 personas, (2) gestión
-de Miguel Ángel con Docuten/Viafirma (sin dependencia técnica), (3)
-enviar un dossier real con firma y cuerpo editado, confirmado
-visualmente en Outlook real -- punto pendiente heredado sin avance
-desde S104, el mismo que motivó el desvío a H36 en S109, (4) punto
-nuevo de S110: sustituir por flujo programático la firma manual
-actual vía Docuten (proveedor real, cuenta ya activa -- corregido en
-la misma sesión tras confundirlo primero con DocuSign) de
-entrega/información/EPIs -- confirmado que existe API REST propia
-con manual en español, credencial de "secreto de aplicación" propia y
-cuenta Sandbox; pendiente de verificar con Docuten directamente el
-proceso exacto para obtenerla, dado que su manual REST bloquea el
-acceso automatizado.
+→ `ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md`. Punto 1 (fecha
+`2016-04-27` duplicada en `CONTRATO`) **cerrado en S111**: 77/77
+personas activas con `hire_date` real y verificado -- ver
+"COMPLETADAS EN S111" en el anexo propio para el detalle completo
+(tres bugs de fondo corregidos por el camino: cláusula RGPD, `is_
+current()` con `CONTRATO`, duplicación masiva de documentos). Hoja de
+ruta reescrita en S111: (1) Docuten -- credenciales/tokens esperados
+por Miguel Ángel el lunes; en cuanto estén, generar y verificar
+visualmente un documento real de entrega de EPIs desde BBDD antes de
+avanzar a firma, dejando mientras tanto preparado (diseño, no código)
+el resto del flujo de firma programática, (2) mientras no haya
+credenciales de Docuten, trabajar en plantillas de circulares
+-- cierre: al menos una plantilla completa y usable desde el panel,
+(3) gestión de Miguel Ángel con Docuten/Viafirma, sin dependencia
+técnica, sigue en marcha por su cuenta, (4) dos huecos reales de
+documentación (Grana Álvarez ~20/07/2018, García Sánchez ~18/02/2017)
+pendientes de que la supervisora escanee y suba los contratos
+originales -- sin acción de código pendiente.
 
 **Hito CERRADO en S110:** H36 — Retipado de Cursos de Formación →
 `ENTERPRISEBOT_ATTACHED_MILESTONE_V36.md`. Sesión larguísima: catálogo

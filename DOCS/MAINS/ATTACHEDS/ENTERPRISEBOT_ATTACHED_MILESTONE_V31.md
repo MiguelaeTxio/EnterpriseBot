@@ -2989,3 +2989,112 @@ descarta el `document_type_code` -- solo hace que ese documento no
 aporte ningún dato (DNI, nombre, dirección...) al borrador de la
 persona en el paso de extracción. El archivo se sube y se indexa igual
 con el tipo que se le asignó.
+
+---
+
+### COMPLETADAS EN S111 -- punto 1 de la hoja de ruta cerrado del todo (77/77 `hire_date`), tres bugs reales de fondo corregidos por el camino
+
+Sesión larga centrada en el punto 1 heredado de S110 ("investigar la
+fecha `2016-04-27` duplicada en `CONTRATO` de 6 personas"), que
+terminó destapando y corrigiendo varios problemas estructurales del
+pipeline de fechas, no solo el caso puntual de los 6.
+
+**Bug real 1 -- cláusula RGPD confundida con fecha de contrato.**
+`classify_dates_in_text()` cogía por defecto "27 de abril de 2016"
+(fecha del Reglamento (UE) 2016/679, presente en el boilerplate de
+protección de datos de TODOS los impresos oficiales de CONTRATO del
+SEPE) cuando el criterio de "única fecha, por defecto" no encontraba
+otra fecha legible -- la fecha real de firma estaba tan degradada por
+el OCR antiguo (Tesseract, previo a la migración a Cloud Vision de
+S102) que no se reconocía. Corregido con exclusión por posición
+exacta en `_NOISE_SPAN_PATTERNS` (`document_explorer/
+date_verification_service.py`), mismo patrón ya usado para el caso
+DEVOLUCION/Cajamar de S89 -- nunca por palabra suelta, que ya causó
+una regresión real entonces.
+
+**Bug real 2 -- duplicación masiva de documentos.** Auditoría de los
+304 documentos `CONTRATO` de las 77 personas activas sin `hire_date`:
+42 copias exactas y 6 pares casi-idénticos (mismo documento
+reescaneado), 22 de las 71 personas con al menos una duplicación real.
+48 archivados a papelera vía `trash_dossier_entry()` (mecanismo ya
+existente, atribuido a `alvarez_admin`), reversible, nunca borrado
+real de GCS.
+
+**Bug real 3 -- `is_current()` con `CONTRATO`.** Detectado a partir de
+un caso real (Burgos Fernández: un contrato de 2017 marcado vigente
+habiendo uno de 2018). Causa real: `CONTRATO`/`COMUNICACION_CONTRATO`
+tenían `tracks_expiry=True`, y el propio diseño documentado de
+`is_current()` (S108) hace que un hermano sin `expiry_date` gane
+siempre a uno con `expiry_date`, sin comparar fechas -- correcto para
+tipos que sí caducan (ITV, carnés), sin sentido para un contrato.
+Corregido quitando `tracks_expiry` a los dos tipos y limpiando el
+`expiry_date` ya guardado -- recalculado con datos reales: 93
+`expiry_date` limpiados, 155 grupos persona+tipo reevaluados, 80
+documentos con `is_obsolete` corregido de verdad.
+
+**Modelo nuevo -- prórrogas como lo que son.** `DocumentIndexEntry.
+prorroga_de` (FK a sí mismo) + `period_start_date`/`period_end_date`
+(migración `0120`), para no seguir forzando una prórroga o una
+transformación a indefinido a compartir el único campo `issue_date`
+con la fecha real de alta. De 37 prórrogas/transformaciones
+detectadas por contenido real, **35 enlazadas** con evidencia directa
+(texto del propio documento, dos de ellas contra un `ALTA` real en vez
+de un `CONTRATO`) -- solo 2 sin ningún documento en el sistema que lo
+confirme (Grana Álvarez ~20/07/2018, García Sánchez ~18/02/2017),
+pendientes del papel original.
+
+**Pipeline de fechas ampliado.** `cloud_vision_service.
+extract_text_for_dates()`: si no se resuelve ninguna fecha en las 2
+primeras páginas, reintenta con 3-4 antes de rendirse -- origen real:
+15 de 16 personas "sin fecha fiable" sí la tenían, en la página 3
+(impreso de "fijo discontinuo" del SEPE). Con su propio fix necesario
+después (Cloud Vision lanza `InvalidArgument` si se piden páginas que
+el PDF no tiene). Patrón `RELACION LABORAL EN/CON FECHA` corregido
+para aceptar la variante "CON fecha" y huecos de relleno con línea de
+puntos larga, sincronizado en las 3 copias (`date_verification_
+service.py` + `extract_personal_dates_bulk.py` + `_fast.py`).
+
+**Resultado final:** `hire_date` real y verificado documento a
+documento (nunca por heurística sin comprobar) en las **77 de 77**
+personas activas sin fecha de alta. Dos casos concretos corregidos ya
+cerrada la revisión automática (García Sánchez, Grana Álvarez) porque
+la fecha ya constaba en el texto real de una prórroga aunque el
+contrato original no estuviera subido -- Miguel Ángel, verbatim: *"la
+fecha de alta la tenemos, llevo 5 prompts diciéndotelo"* -- corregido
+en el momento, sin esperar al papel.
+
+**Incidente propio de sesión, para que conste:** el modelo tardó
+varias vueltas en aceptar que podía ejecutar código Python puro
+(`resolve_type_from_content()`, `classify_dates_in_text()`) en su
+propio entorno sin pasar por Comando S, por aplicar la regla "vive en
+una app Django" en vez de "necesita Django de verdad" -- corregido en
+la propia sesión, con fix documentado en la skill `com-mysql` (sección
+0bis), empaquetado y guardado con `skill-creator`.
+
+## Hoja de Ruta para la Sesión Siguiente (S112, reescrita por completo -- sustituye a la de S110/router)
+
+1. **Firma electrónica -- Docuten.** Miguel Ángel espera tener
+   credenciales y tokens de la API de Docuten resueltos el lunes. En
+   cuanto estén disponibles: generar un documento real de entrega de
+   EPIs desde BBDD (no una plantilla de prueba) y verificar
+   visualmente que sale correcto -- esa es la prueba pendiente antes
+   de avanzar a nada de firma. Hasta entonces, dejar preparado (diseño
+   y puntos de integración, no necesariamente código) el resto del
+   flujo de firma programática vía Docuten (API REST propia,
+   credencial de "secreto de aplicación", cuenta Sandbox ya
+   confirmada en S110), sin escribir la integración real todavía.
+2. **Mientras no haya credenciales de Docuten: trabajar en plantillas
+   de circulares.** Decisión explícita de Miguel Ángel: es mejor
+   aprovechar el tiempo aquí que esperando el acceso a Docuten.
+   Criterio de cierre: al menos una plantilla de circular completa y
+   usable desde el panel.
+3. Gestión de Miguel Ángel con Docuten/Viafirma (contacto directo con
+   el proveedor) -- sin dependencia técnica de esta plataforma, sigue
+   en marcha por su cuenta.
+4. Punto 1 de la hoja de ruta anterior ("fecha duplicada en `CONTRATO`
+   de 6 personas") -- **CERRADO en S111**, ver COMPLETADAS de arriba.
+5. Los 2 huecos reales de documentación (Grana Álvarez, García
+   Sánchez) quedan anotados para cuando la supervisora escanee y suba
+   los contratos originales -- sin acción de código pendiente, solo
+   enlazar `prorroga_de` cuando lleguen (mismo mecanismo ya
+   construido y probado esta sesión).
