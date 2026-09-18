@@ -3,12 +3,22 @@
 
 ---
 
-**REACTIVADO EN S108** (PCH desde H35, cerrado en la misma sesión --
-ver "COMPLETADAS EN S108" en el anexo de H35 para el detalle
-completo). Hoja de ruta de arranque intacta desde S104, sin
-reescribir: el único punto pendiente real, "Hoja de ruta al reactivar
-H31" más abajo -- enviar un dossier real desde el panel con firma y
-cuerpo editado, confirmado visualmente en Outlook real.
+**REACTIVADO EN S110** (PCH desde H36, cerrado por completo en la
+misma sesión -- ver "COMPLETADAS EN S110 -- H36 CERRADO POR COMPLETO"
+en `ENTERPRISEBOT_ATTACHED_MILESTONE_V36.md` para el detalle
+completo). Hoja de ruta de arranque intacta desde S99, sin reescribir
+-- los 3 puntos siguen tal cual, empezando por el punto 3 (enviar un
+dossier real con firma y confirmarlo visualmente en Outlook real),
+que es precisamente el que motivó el desvío a H36 en S109.
+
+## COMPLETADAS EN S110
+
+Ningún trabajo de ejecución sobre H31 en esta sesión -- la sesión
+completa (S110) se dedicó a H36 (retipado de cursos de formación),
+cerrado del todo (ver "COMPLETADAS EN S110 -- H36 CERRADO POR
+COMPLETO" en `ENTERPRISEBOT_ATTACHED_MILESTONE_V36.md`). Miguel Ángel
+pivotó (PCH) de vuelta a H31 al cierre de esta misma sesión para
+retomarlo en la sesión siguiente.
 
 ## COMPLETADAS EN S108
 

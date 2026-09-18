@@ -184,27 +184,75 @@ que sus 3 shards respectivos habían terminado: `h28-ocr-temp-3`/
 durante la sesión; `h28-ocr-temp-1`/`h28-ocr-temp-2` (shards 1-6)
 borradas al cierre, tras confirmar los 12 resúmenes completos.
 
+## COMPLETADAS EN S110 -- H36 CERRADO POR COMPLETO
+
+Sesión larguísima, punto de partida real: 830 documentos en
+`FORMACION` genérico (activos) heredados de S109, más las bolsas
+`CURSO` (277), `CARNET_GRUISTA` (154), `FORMACION_ITC_MINERA` (5) y
+`FORMACION_PRL_MAQUINARIA` (22) auditadas por primera vez esta sesión
+con el mismo método -- total real de partida: **1.268 documentos**.
+
+**Catálogo ampliado de 14 a 17 tipos de curso reales**, todos con
+evidencia real (muestra + fecha cruzada contra el Excel de Yolanda):
+`FORMACION_PRL_GRUA_MOVIL_AUTOPROPULSADA`,
+`FORMACION_GWO_SEGURIDAD_EOLICA`,
+`FORMACION_AVSEC_SEGURIDAD_AEROPORTUARIA` (migraciones `0106`, `0111`).
+Más de 80 variantes reales de señal añadidas a los 17 tipos y a otros
+tipos ya existentes del catálogo (`JUSTIFICANTE_PAGO_PERSONAL`,
+`SOLICITUD_ADMINISTRATIVA`, `TITULACION_ACADEMICA`,
+`CONVENIO_FORMACION_BONIFICADA`, `CUESTIONARIO_FORMACION`, etc.),
+más de 70 reglas `CONTENT_WINS` (tipo específico gana siempre sobre
+`FORMACION`/`CURSO` genéricos y sobre el boilerplate de
+`FORMACION_PRL_ART_18_19`).
+
+**Hallazgo tecnico real de la sesion:** relanzar la campana de la VM
+para cada senal nueva repetia Cloud Vision sobre los mismos
+documentos una y otra vez, coste evitable una vez el `ocr_text` ya
+esta cacheado. A partir de ese hallazgo (Miguel Angel), toda
+reclasificacion posterior se hizo con migraciones de datos puras
+(`0109` a `0115`, `resolve_type_from_content`/
+`classify_dates_in_text` reutilizados tal cual, sin descargar nada de
+Storage ni llamar a Cloud Vision) -- patron a reutilizar en cualquier
+retipado futuro con senales ya maduras.
+
+**3 bugs reales de intake corregidos** (no eran fallo de señal, el
+propio documento estaba mal tipado desde origen): Díaz Quintero
+(`CARNET_GRUISTA`→`FORMACION_GRUA_HIDRAULICA_ARTICULADA`), fusión
+`FORMACION_PRL_GENERICA`→`FORMACION_PRL_ART_18_19`, pacto de
+permanencia de Castilla Navarro. **2 bugs de búsqueda del panel**
+corregidos (apellidos compuestos en `views_documentation_h30.py`,
+separador `+` en `document_explorer/views.py`). **1 bug propio de esta
+sesión** detectado y corregido en el acto: la migración `0116` (cierre
+final) trashó por error 941 documentos sin persona ni empresa
+vinculada por un filtro que faltaba -- corregido en `0117` (restaura)
+antes de que nadie los echara en falta.
+
+**Cierre final, criterio explícito de Miguel Ángel** (papelera para
+inactivos y tipos fuera del Excel, reasignación a empresa de lo mal
+archivado): migraciones `0116`-`0119`. `FORMACION_ITC_MINERA` y
+`FORMACION_PRL_MAQUINARIA` (nunca columna real del Excel) a papelera
+por completo. Documentos de trabajadores inactivos, a papelera. 941 +
+1 documentos de infraestructura de formación de empresa (acreditación
+ANAPAT, EPIs varias empresas, procedimiento de acceso a recinto --
+nunca ligados a ninguna persona, fuera del alcance de este hito desde
+su apertura en S109) reasignados a `CompanyWorksite` (`GRUAS`). 4
+documentos de nivel empresa mal archivados bajo una persona (informe
+FUNDAE, información a la RLT, solicitud de participación) reasignados
+a `CompanyWorksite` (`TRANSGRUAL`, tipo `CONVENIO_FORMACION_BONIFICADA`).
+Resto de `FORMACION`/`CURSO` en activos sin encajar en ninguno de los
+17 tipos reales, a papelera.
+
+**Verificado con consulta real (`db_query.yml`), nunca de memoria:**
+`SELECT COUNT(*) FROM document_explorer_documentindexentry e JOIN
+document_explorer_documenttypecatalog t ON t.id=e.document_type_id
+WHERE t.family='PRL_FORMACION' AND e.domain_content_type_id IS NULL
+AND e.deleted_at IS NULL` devuelve **`0`** -- ningún documento de toda
+la familia de formación sin persona ni empresa asignada.
+
 ## Hoja de ruta para la sesión siguiente
 
-**Sin preguntas abiertas.** Orden fijo:
-
-1. **Revisar a mano los 137 documentos "tipo ambiguo"** de los 12
-   logs de shard (rutas `~/EnterpriseBot/h28_migration_agent/extract_personal_dates_shard{0..11}.log`
-   en las VMs, ya borradas -- si los logs no sobrevivieron, releer
-   `ocr_text` real de los que sigan en `FORMACION` con más de un tipo
-   candidato plausible por contenido) y decidir el tipo real de cada
-   uno contra el contenido, ampliando `CONTENT_SIGNALS` en
-   `personal_content_classification.py` con la evidencia real
-   encontrada -- nunca añadir una señal nueva sin muestra real que la
-   respalde (directriz 4.22).
-2. **Revisar los "sin nada resoluble"** (71) -- confirmar si el
-   documento es genuinamente ilegible (releer el PDF directamente,
-   nunca solo el `ocr_text` cacheado) o si merece un reintento con
-   Cloud Vision con mejor preprocesado.
-3. **Criterio de cierre del hito:** consulta real (`db_query.yml`)
-   `SELECT COUNT(*) FROM document_explorer_documentindexentry e JOIN
-   document_explorer_documenttypecatalog t ON t.id=e.document_type_id
-   JOIN document_explorer_personidentity p ON p.id=e.domain_object_id
-   WHERE t.code='FORMACION' AND e.deleted_at IS NULL AND
-   e.purged_at IS NULL AND p.is_active_employee=1` devolviendo `0` --
-   hoy devuelve `830`.
+**Hito cerrado por completo.** Ver "COMPLETADAS EN S110 -- H36 CERRADO
+POR COMPLETO" arriba. Sin hoja de ruta propia pendiente -- si algún
+día hiciera falta revisar a mano los documentos que quedaron en
+papelera (inactivos, tipos fuera del Excel), se recuperan desde ahí,
+nunca reabriendo el hito completo.

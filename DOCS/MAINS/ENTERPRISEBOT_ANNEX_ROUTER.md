@@ -54,12 +54,12 @@ Cumple dos funciones inseparables:
 | H28 | Migración y Reorganización de Documentación Histórica | `ENTERPRISEBOT_ATTACHED_MILESTONE_V28.md` |
 | H29 | Explorador de Archivos y Gobierno Documental del Panel sobre GCS | `ENTERPRISEBOT_ATTACHED_MILESTONE_V29.md` |
 | H30 | Vinculación Documental Real — Centros de Gasto y Personal | `ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md` |
-| H31 | Interfaz de Gestión Documental de Personal — Altas, Bajas, Sustituciones, EPIs y Circulares (título anterior: "Interfaz de Ficha de Personal — EPIs y Notificaciones/Circulares"; ampliado en S99 al fusionar H33) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md` |
+| H31 | Interfaz de Gestión Documental de Personal — Altas, Bajas, Sustituciones, EPIs y Circulares (título anterior: "Interfaz de Ficha de Personal — EPIs y Notificaciones/Circulares"; ampliado en S99 al fusionar H33) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md` ← EN PROGRESO |
 | H32 | Migraciones de Infraestructura (Modelo IA, Python, Registro Android) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V32.md` |
 | ~~H33~~ | ~~Subida de Documentación en Tiempo Real desde el Panel~~ — **FUSIONADO EN H31 el 2026-09-10 (S99)**, ver sección 6 | `ENTERPRISEBOT_ATTACHED_MILESTONE_V33.md` (conservado íntegro como archivo histórico) |
 | H34 | Modelo Propio de Clasificación de Documentos (entrenamiento) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V34.md` |
 | H35 | Retipado y Refechado Masivo de Documentación Histórica de Personal | `ENTERPRISEBOT_ATTACHED_MILESTONE_V35.md` |
-| H36 | Retipado de Cursos de Formación (FORMACION genérico → 14 tipos por curso, solo trabajadores activos) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V36.md` ← EN PROGRESO |
+| H36 | Retipado de Cursos de Formación (FORMACION genérico → 17 tipos por curso, solo trabajadores activos) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V36.md` |
 
 Todos los anexos viven en `DOCS/MAINS/ATTACHEDS/`.
 
@@ -67,7 +67,33 @@ Todos los anexos viven en `DOCS/MAINS/ATTACHEDS/`.
 
 ## 3. Resultado Actual
 
-**Hito EN PROGRESO:** H36 — Retipado de Cursos de Formación →
+**Hito EN PROGRESO:** H31 — Interfaz de Gestión Documental de Personal
+→ `ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md`. Reactivado en S110 tras
+cerrar H36 por completo en la misma sesión (PCH de vuelta) -- ver
+"COMPLETADAS EN S110 -- H36 CERRADO POR COMPLETO" en el anexo propio
+de H36 para el detalle completo. Hoja de ruta de arranque intacta
+desde S99: (1) investigar la fecha `2016-04-27` duplicada en
+`CONTRATO` de 6 personas, (2) gestión de Miguel Ángel con
+Docuten/Viafirma (sin dependencia técnica), (3) enviar un dossier real
+con firma y cuerpo editado, confirmado visualmente en Outlook real --
+punto pendiente heredado sin avance desde S104, el mismo que motivó el
+desvío a H36 en S109.
+
+**Hito CERRADO en S110:** H36 — Retipado de Cursos de Formación →
+`ENTERPRISEBOT_ATTACHED_MILESTONE_V36.md`. Sesión larguísima: catálogo
+ampliado de 14 a 17 tipos de curso reales, más de 80 señales y 70
+reglas `CONTENT_WINS` añadidas contra evidencia real, 3 bugs de intake
+corregidos, 2 bugs de búsqueda del panel corregidos, y cierre final
+completo (papelera para inactivos y tipos fuera del Excel de Yolanda,
+reasignación a empresa de 946 documentos que nunca debieron colgar de
+una persona). Punto de partida real 1.268 documentos genéricos;
+verificado con consulta real que hoy no queda ninguno de la familia
+`PRL_FORMACION` sin persona ni empresa asignada. Sin hoja de ruta
+pendiente propia -- ver "COMPLETADAS EN S110" en su propio anexo para
+el detalle completo.
+
+**Hito PAUSADO desde S109 (histórico, hasta este cierre):** H36 —
+Retipado de Cursos de Formación →
 `ENTERPRISEBOT_ATTACHED_MILESTONE_V36.md`. Abierto en S109 (PCH CASO C
 desde H31, desvío en la misma sesión): al desdoblar el tipo genérico
 `FORMACION` en 14 tipos por curso real (punto 2 de la hoja de ruta de
