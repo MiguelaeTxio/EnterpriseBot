@@ -247,6 +247,24 @@ CONTENT_SIGNALS = {
         # "DE ORUGA" (otro tipo de minigrua) en otras muestras.
         "OPERADOR DE MINI GRUA",
     ],
+    "FORMACION_GRUAS_ASISTENCIA_CARRETERA": [
+        # H36 (S110), confirmado con muestra real subida por Miguel
+        # Angel (certificado M.P.E. Servicio de Prevencion, CARLOS M.
+        # CARLIN CARVAJAL, DNI 74879491R, Malaga 30/09/2015 -- fecha
+        # que cuadra exacta con la columna "GRUAS ASIST.CARRETERA" del
+        # Excel real de Yolanda para esta misma persona): titulo
+        # exacto "TRABAJOS CON GRUA DE ASISTENCIA EN CARRETERA".
+        "GRUA DE ASISTENCIA EN CARRETERA",
+    ],
+    "FORMACION_GRUA_HIDRAULICA_ARTICULADA": [
+        # H36 (S110), confirmado con muestra real subida por Miguel
+        # Angel (certificado ANAGRUAL, ANTONIO JESUS DIAZ QUINTERO, DNI
+        # 33390084H, Madrid 20/10/2022 -- fecha que cuadra exacta con
+        # la columna "OPER.GRUA HIDRAUL.ARTIC." del Excel real de
+        # Yolanda para esta misma persona): titulo exacto "CERTIFICADO
+        # DE OPERADOR DE GRUA HIDRAULICA ARTICULADA - UNE 58161:2021".
+        "GRUA HIDRAULICA ARTICULADA",
+    ],
     "CARNET_CONDUCIR": ["PERMISO DE CONDUCCION", "DRIVING LICENCE"],
     "CARNET_GRUISTA": [
         "OPERADOR DE GRUAS MOVILES", "HABILITACION PROFESIONAL",
