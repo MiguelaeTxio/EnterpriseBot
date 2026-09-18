@@ -156,6 +156,12 @@ CONTENT_SIGNALS = {
         # criterio que HAULOTTE/ANP/ANAGRUAL en otras entradas de este
         # diccionario.
         "HAULOTTE IBERICA", "NORMA UNE58923",
+        # H36 (S110), confirmado con muestra real (pk=34328/34329/
+        # 34330/34331, Fundacion Estatal para la Formacion en el
+        # Empleo, ENRIQUE ALVAREZ SERRANO, 13/04/2024): diploma
+        # acreditativo real, titulo exacto "PLATAFORMAS ELEVADORAS
+        # MOVILES".
+        "PLATAFORMAS ELEVADORAS MOVILES",
     ],
     "FORMACION_OPERADOR_CAMION_AUTOCARGANTE": [
         # H36 (S110), confirmado con muestra real (pk=34055/34777,
@@ -236,6 +242,10 @@ CONTENT_SIGNALS = {
         # duracion conocido para estas dos redacciones concretas.
         "PREVENCION DE RIESGOS LABORALES BASICO",
         "NIVEL BASICO DE PREVENCION EN CONSTRUCCION",
+        # H36 (S110), corregido tras muestra real (pk=27906, MAUDE
+        # STUDIO, ALBERTO ALVAREZ DIAZ): variante real con articulo
+        # "EN LA CONSTRUCCION", no cubierta por la frase sin "LA".
+        "NIVEL BASICO DE PREVENCION EN LA CONSTRUCCION",
     ],
     "FORMACION_OPERADOR_APARATOS_ELEVACION": [
         # H36 (S110), confirmado con muestra real (pk=25368/25732,
@@ -276,6 +286,10 @@ CONTENT_SIGNALS = {
         # muestra real (pk=36010, BASILIO MUÑOZ CRUZ S.L.U., "OPERADOR
         # DE CARRETILLAS ELEVADORAS").
         "OPERADOR DE CARRETILLAS ELEVADORAS",
+        # H36 (S110), confirmado con muestra real (pk=27980, TVGV
+        # Formacion/Taga Formacion S.L., ALEJANDRO SERGIO ALVAREZ DIAZ,
+        # "MANEJO SEGURO DE CARRETILLAS ELEVADORAS Y TRASPALETAS").
+        "MANEJO SEGURO DE CARRETILLAS ELEVADORAS",
     ],
     "FORMACION_ELECTRICIDAD": [
         # H36 (S110), confirmado con muestra real subida por Miguel
