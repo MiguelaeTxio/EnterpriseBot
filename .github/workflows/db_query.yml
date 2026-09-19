@@ -1,16 +1,24 @@
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/.github/workflows/db_query.yml
 name: Consulta SQL de solo lectura (EnterpriseBot)
 
-# H35 (S107). Disparado a mano por Claude (workflow_dispatch) via la
-# API de GitHub -- api.github.com si esta permitida en el sandbox de
-# cualquier sesion, ssh.pythonanywhere.com/el host de MySQL no. Este
-# workflow corre en un runner de GitHub (red completa, sin ninguna
-# restriccion), abre una sesion SSH directa a PythonAnywhere con una
-# clave dedicada de solo este proposito (nunca la clave personal de
-# Miguel Angel ni la de deploy.yml) y ejecuta el SQL recibido contra
-# MySQL. El resultado se comitea a un archivo fijo del repo; Claude lo
-# lee con un `git pull` normal, sin ningun paso intermedio de Miguel
-# Angel.
+# H35 (S107, migrado a Drive en S112 -- ver com-actions-relay).
+# Disparado a mano por Claude (workflow_dispatch) via la API de GitHub
+# -- api.github.com si esta permitida en el sandbox de cualquier
+# sesion, ssh.pythonanywhere.com/el host de MySQL no. Este workflow
+# corre en un runner de GitHub (red completa, sin ninguna restriccion),
+# abre una sesion SSH directa a PythonAnywhere con una clave dedicada
+# de solo este proposito (nunca la clave personal de Miguel Angel ni
+# la de deploy.yml) y ejecuta el SQL recibido contra MySQL.
+#
+# S112: el resultado YA NO se comitea a git -- se sube a la carpeta de
+# Drive "EnterpriseBot - Intercambio Claude" (id fijo abajo) con la
+# credencial OAuth ya configurada del proyecto
+# (spare_parts.gdrive_service). Origen: purga real de ~150 commits
+# históricos con datos de personas tras exponer un contrato real vía
+# el mecanismo hermano file_fetch.yml -- ver com-actions-relay. El
+# resumen del propio Action (GITHUB_STEP_SUMMARY) tampoco imprime ya el
+# resultado real -- ese resumen persiste mientras dure la retención de
+# Actions, mismo problema de exposición si el repo se hace público.
 #
 # SEGURIDAD REAL (S107, confirmado contra documentacion oficial de
 # PythonAnywhere): NINGUN plan permite CREATE USER a nivel de MySQL,
@@ -23,31 +31,14 @@ name: Consulta SQL de solo lectura (EnterpriseBot)
 #      sin INTO OUTFILE/DUMPFILE/LOAD_FILE.
 #   2. `SET SESSION TRANSACTION READ ONLY;` inyectado por el propio
 #      workflow (nunca por el input del usuario) como primera
-#      sentencia de la MISMA sesion MySQL que la consulta -- el
-#      servidor rechaza cualquier escritura mientras esa sesion este
-#      abierta, sin depender de grants. Esta sesion es efimera: se
-#      abre y se cierra sola en los segundos que tarda el workflow,
-#      nunca queda "encendida" para ninguna otra conexion (Comando S,
-#      Django en produccion, lo que sea) -- cada conexion a MySQL es
-#      independiente, como llamadas de telefono distintas.
+#      sentencia de la MISMA sesion MySQL que la consulta.
 #
 # NUNCA sustituye a un Comando S cuando la operacion necesita pasar
-# por logica real de Django (apply_personal_canonical_rename,
-# move_entry, evaluate_substitution...) -- esto es solo para lecturas
-# SQL puras.
+# por logica real de Django -- esto es solo para lecturas SQL puras.
 #
-# H35 (S108). `mysql --table` (renderizado ASCII-art con bordes y
-# cálculo de ancho de columna) fallaba en el paso "Comitear el
-# resultado al repo" de forma intermitente pero reproducible con
-# ciertas combinaciones de texto OCR real (multibyte/acentuado, varias
-# filas a la vez) -- nunca aislado a una fila concreta (cada fila
-# problematica funcionaba bien sola), asi que el sospechoso es el
-# propio calculo de ancho de `--table` con texto largo. Cambiado a
-# `--batch --raw` (TSV simple, sin bordes ni calculo de ancho) --
-# mucho mas robusto para contenido arbitrario. La salida cambia de
-# forma (columnas separadas por tabulador con una fila de cabecera, en
-# vez de tabla ASCII), asi que las consultas futuras deben esperar ese
-# formato al leer `ultimo_resultado.md`.
+# H35 (S108). `mysql --table` fallaba de forma intermitente con texto
+# OCR real -- cambiado a `--batch --raw` (TSV simple). La salida es
+# columnas separadas por tabulador con una fila de cabecera.
 
 on:
   workflow_dispatch:
@@ -57,12 +48,15 @@ on:
         required: true
         type: string
 
+env:
+  DRIVE_FOLDER_ID: "1SSHSY2FHt-7eN17Wgza2Qcybs-ij6to0"
+
 concurrency:
   group: enterprisebot-db-readonly-query
   cancel-in-progress: false
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   query:
@@ -72,11 +66,6 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Validar que la consulta es de solo lectura
-        # Defensa en profundidad, capa 1 de 2 -- la capa 2 real es
-        # `SET SESSION TRANSACTION READ ONLY` en el paso de ejecución
-        # (el propio servidor MySQL rechaza cualquier escritura en esa
-        # sesión, sin depender de grants de usuario -- PythonAnywhere
-        # no permite CREATE USER en ningún plan, confirmado S107).
         env:
           SQL_QUERY: ${{ inputs.sql_query }}
         run: |
@@ -85,15 +74,11 @@ jobs:
             echo "⛔ RECHAZADO: la consulta no empieza por SELECT/SHOW/DESCRIBE/EXPLAIN." >&2
             exit 1
           fi
-          # Rechazar punto y coma salvo uno solo al final (bloquea
-          # consultas apiladas del tipo "SELECT 1; DROP TABLE ...").
           BODY=$(printf '%s' "$SQL_QUERY" | sed -E 's/;[[:space:]]*$//')
           if printf '%s' "$BODY" | grep -q ';'; then
             echo "⛔ RECHAZADO: no se permite más de una sentencia por consulta." >&2
             exit 1
           fi
-          # Escritura/lectura de archivo del propio servidor -- no son
-          # DML, "SET SESSION TRANSACTION READ ONLY" NO las bloquea.
           if printf '%s' "$TRIMMED" | grep -qE 'INTO[[:space:]]+(OUTFILE|DUMPFILE)|LOAD_FILE[[:space:]]*\('; then
             echo "⛔ RECHAZADO: acceso a archivo del servidor (OUTFILE/DUMPFILE/LOAD_FILE) no permitido." >&2
             exit 1
@@ -108,14 +93,6 @@ jobs:
           ssh-keyscan -H ssh.pythonanywhere.com >> ~/.ssh/known_hosts
 
       - name: Ejecutar la consulta en PythonAnywhere (sesión bloqueada a solo lectura por el propio servidor)
-        # PythonAnywhere no permite CREATE USER en ningún plan
-        # (confirmado S107, documentación oficial) -- un usuario MySQL
-        # de solo lectura dedicado no es viable aquí. La protección
-        # real de capa 2 es "SET SESSION TRANSACTION READ ONLY;" antes
-        # de la consulta, en la MISMA sesión -- el servidor MySQL
-        # rechaza cualquier escritura mientras esa sesión esté activa,
-        # sin depender de grants de usuario ni de la validación de
-        # texto del paso anterior.
         env:
           SQL_QUERY: ${{ inputs.sql_query }}
           DB_ADMIN_PASSWORD: ${{ secrets.PA_DB_ADMIN_PASSWORD }}
@@ -136,10 +113,10 @@ jobs:
             rm -f /tmp/db_readonly_query_${{ github.run_id }}.sql
           " | tee /tmp/query_output.txt
 
-      - name: Comitear el resultado al repo
+      - name: Subir el resultado a Drive (nunca a git -- com-actions-relay)
         if: always()
         run: |
-          mkdir -p DOCS/SESSION/QUERY_RESULTS
+          set +e
           {
             echo "# Resultado de consulta SQL de solo lectura"
             echo ""
@@ -155,25 +132,26 @@ jobs:
             echo '```'
             cat /tmp/query_output.txt 2>/dev/null || echo "(sin salida capturada -- revisar el log del Action)"
             echo '```'
-          } > DOCS/SESSION/QUERY_RESULTS/ultimo_resultado.md
-          git config user.email "miguelaetxio@users.noreply.github.com"
-          git config user.name "MiguelaeTxio"
-          git add DOCS/SESSION/QUERY_RESULTS/ultimo_resultado.md
-          git diff --staged --quiet || git commit -m "chore: resultado de consulta SQL de solo lectura (run ${{ github.run_id }})"
-          git push
+          } > /tmp/resultado.md
+          DRIVE_NAME="resultado_sql_${{ github.run_id }}.md"
+          scp -i ~/.ssh/pa_readonly_key /tmp/resultado.md \
+            MiguelAeTxio@ssh.pythonanywhere.com:/home/MiguelAeTxio/SWAP/resultado_${{ github.run_id }}.md
+          scp -i ~/.ssh/pa_readonly_key .github/scripts/drive_upload.py \
+            MiguelAeTxio@ssh.pythonanywhere.com:/home/MiguelAeTxio/SWAP/drive_upload_${{ github.run_id }}.py
+          ssh -i ~/.ssh/pa_readonly_key MiguelAeTxio@ssh.pythonanywhere.com \
+            "set -e; cd /home/MiguelAeTxio/PROJECTS/EnterpriseBot; source /home/MiguelAeTxio/.virtualenvs/EnterpriseBot_venv_py312/bin/activate; export PYTHONPATH=/home/MiguelAeTxio/PROJECTS/EnterpriseBot; python -m dotenv run python3 /home/MiguelAeTxio/SWAP/drive_upload_${{ github.run_id }}.py /home/MiguelAeTxio/SWAP/resultado_${{ github.run_id }}.md '$DRIVE_NAME' '${{ env.DRIVE_FOLDER_ID }}'; rm -f /home/MiguelAeTxio/SWAP/resultado_${{ github.run_id }}.md /home/MiguelAeTxio/SWAP/drive_upload_${{ github.run_id }}.py" \
+            > /tmp/drive_result.txt 2>&1
+          echo "EXIT=$?" >> /tmp/drive_result.txt
+          echo "DRIVE_NAME=$DRIVE_NAME" >> /tmp/drive_result.txt
+          cat /tmp/drive_result.txt
 
-      - name: Resumen en el propio Action
+      - name: Resumen en el propio Action (sin datos reales -- solo estado)
         if: always()
         run: |
           {
             echo "## Consulta SQL de solo lectura"
-            echo '```sql'
-            printf '%s\n' "${{ inputs.sql_query }}"
-            echo '```'
-            echo "### Resultado"
-            echo '```'
-            cat /tmp/query_output.txt 2>/dev/null || echo "(sin salida -- ver pasos anteriores)"
-            echo '```'
+            echo "Resultado subido a Drive, no impreso aquí -- ver com-actions-relay."
+            cat /tmp/drive_result.txt 2>/dev/null || echo "(sin datos de subida -- ver pasos anteriores)"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Limpiar clave SSH

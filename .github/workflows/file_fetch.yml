@@ -1,41 +1,18 @@
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/.github/workflows/file_fetch.yml
 name: Descarga de solo lectura de archivo (PythonAnywhere / GCS) — EnterpriseBot
 
-# H31 (S112, estudio de infraestructura -- desvío de sesión). Generaliza
-# el patrón de db_query.yml (SSH de solo lectura + commit del resultado
-# al repo) para traer un ARCHIVO -- no solo un resultado SQL -- al
-# workspace del modelo sin que Miguel Ángel tenga que descargarlo por
-# sftp y subirlo manualmente.
+# H31 (S112). Trae un archivo del servidor (PythonAnywhere) o de GCS al
+# modelo sin sftp manual de Miguel Ángel y SIN comitear nada a git --
+# ver com-actions-relay. El resultado se sube a la carpeta de Drive
+# "EnterpriseBot - Intercambio Claude" (id fijo abajo, ya creada y
+# verificada en S112) con la credencial OAuth drive.file ya configurada
+# del proyecto (spare_parts.gdrive_service). El modelo lo lee con su
+# propio conector de Drive y lo manda a la papelera en cuanto lo tiene.
 #
-# Dos modos:
-#   - pythonanywhere: el archivo ya existe en una ruta del servidor
-#     (código, DOCS/SESSION, o /var/log/ -- confirmado que sftp llega
-#     ahí, ver SESSION_VARIABLES.md).
-#   - gcs: el archivo vive en un bucket de GCS. Se descarga primero a
-#     SWAP/ en el propio servidor usando la Service Account YA
-#     configurada del proyecto (.github/scripts/gcs_fetch.py, que
-#     reutiliza spare_parts.gcs_service.get_storage_client() y las
-#     variables GCP_CREDENTIALS_PATH/GOOGLE_CLOUD_PROJECT del .env real
-#     -- verificado en el código en S112) -- sin secret nuevo de GCP en
-#     GitHub, la credencial nunca sale del servidor. El temporal de
-#     SWAP se borra en la misma sesión SSH tras generar el base64.
-#
-# En ambos modos el archivo (o las últimas N líneas si es un log
-# grande) se convierte a base64 dentro de la propia sesión SSH y se
-# comitea a un path fijo del repo -- igual que ultimo_resultado.md en
-# db_query.yml. NUNCA se usa un artifact de Actions: verificado real en
-# S112 que la descarga de artifacts falla en el sandbox del modelo (el
-# host de blob storage que asigna GitHub es distinto en cada descarga
-# y no está en la lista de red permitida).
-#
-# NOTA DE CONSTRUCCIÓN (S112): la primera versión intentaba generar
-# el script Python de GCS con un heredoc embebido dentro de este mismo
-# YAML -- roto, porque la indentación que exige YAML para un bloque
-# `run: |` es incompatible con el terminador exacto que exige un
-# heredoc de bash sin `<<-`. Solución real: el script vive en su propio
-# archivo versionado (.github/scripts/gcs_fetch.py), ya presente en el
-# checkout -- el workflow solo lo copia al servidor con scp, sin
-# comillas ni heredocs anidados.
+# NUNCA usar un artifact de Actions como mecanismo de entrega --
+# verificado real en S112 que la descarga falla siempre (host de blob
+# storage no determinista, no está en la lista de red permitida del
+# modelo).
 
 on:
   workflow_dispatch:
@@ -57,12 +34,15 @@ on:
         default: "0"
         type: string
 
+env:
+  DRIVE_FOLDER_ID: "1SSHSY2FHt-7eN17Wgza2Qcybs-ij6to0"
+
 concurrency:
   group: enterprisebot-file-readonly-fetch
   cancel-in-progress: false
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   fetch:
@@ -77,68 +57,58 @@ jobs:
           chmod 600 ~/.ssh/pa_readonly_key
           ssh-keyscan -H ssh.pythonanywhere.com >> ~/.ssh/known_hosts
 
-      - name: PythonAnywhere — codificar el archivo
+      - name: Subir el script de subida a Drive (una sola vez, lo usan ambos modos)
+        run: |
+          scp -i ~/.ssh/pa_readonly_key .github/scripts/drive_upload.py \
+            MiguelAeTxio@ssh.pythonanywhere.com:/home/MiguelAeTxio/SWAP/drive_upload_${{ github.run_id }}.py
+
+      - name: PythonAnywhere — preparar el archivo y subirlo a Drive
         if: inputs.mode == 'pythonanywhere'
         env:
           REMOTE_PATH: ${{ inputs.remote_path }}
           TAIL_LINES: ${{ inputs.tail_lines }}
         run: |
-          set -o pipefail
-          if [ "$TAIL_LINES" = "0" ]; then
-            ssh -i ~/.ssh/pa_readonly_key MiguelAeTxio@ssh.pythonanywhere.com \
-              "base64 -w0 '$REMOTE_PATH'" > /tmp/file_b64.txt
-          else
-            ssh -i ~/.ssh/pa_readonly_key MiguelAeTxio@ssh.pythonanywhere.com \
-              "tail -n '$TAIL_LINES' '$REMOTE_PATH' | base64 -w0" > /tmp/file_b64.txt
-          fi
-          basename "$REMOTE_PATH" > /tmp/file_name.txt
+          set +e
+          DRIVE_SCRIPT="/home/MiguelAeTxio/SWAP/drive_upload_${{ github.run_id }}.py"
+          DRIVE_NAME="$(basename "$REMOTE_PATH")_${{ github.run_id }}"
+          ssh -i ~/.ssh/pa_readonly_key MiguelAeTxio@ssh.pythonanywhere.com \
+            "set -e; cd /home/MiguelAeTxio/PROJECTS/EnterpriseBot; source /home/MiguelAeTxio/.virtualenvs/EnterpriseBot_venv_py312/bin/activate; export PYTHONPATH=/home/MiguelAeTxio/PROJECTS/EnterpriseBot; TARGET='$REMOTE_PATH'; if [ '$TAIL_LINES' != '0' ]; then TARGET=/home/MiguelAeTxio/SWAP/file_fetch_${{ github.run_id }}.txt; tail -n '$TAIL_LINES' '$REMOTE_PATH' > \"\$TARGET\"; fi; python -m dotenv run python3 '$DRIVE_SCRIPT' \"\$TARGET\" '$DRIVE_NAME' '${{ env.DRIVE_FOLDER_ID }}'; rm -f '$DRIVE_SCRIPT' /home/MiguelAeTxio/SWAP/file_fetch_${{ github.run_id }}.txt" \
+            > /tmp/result.txt 2>&1
+          echo "EXIT=$?" >> /tmp/result.txt
+          echo "DRIVE_NAME=$DRIVE_NAME" >> /tmp/result.txt
+          cat /tmp/result.txt
 
-      - name: GCS — subir script, ejecutar en el servidor, codificar y limpiar
+      - name: GCS — bajar a SWAP en el servidor y subirlo a Drive
         if: inputs.mode == 'gcs'
         env:
           REMOTE_PATH: ${{ inputs.remote_path }}
         run: |
           set +e
-          : > /tmp/debug.txt
           BUCKET=$(printf '%s' "$REMOTE_PATH" | cut -d'/' -f1)
           BLOB=$(printf '%s' "$REMOTE_PATH" | cut -d'/' -f2-)
           TMP_PATH="/home/MiguelAeTxio/SWAP/file_fetch_${{ github.run_id }}"
-          SCRIPT_PATH="/home/MiguelAeTxio/SWAP/gcs_fetch_${{ github.run_id }}.py"
+          GCS_SCRIPT_PATH="/home/MiguelAeTxio/SWAP/gcs_fetch_${{ github.run_id }}.py"
+          DRIVE_SCRIPT="/home/MiguelAeTxio/SWAP/drive_upload_${{ github.run_id }}.py"
+          DRIVE_NAME="$(basename "$REMOTE_PATH")_${{ github.run_id }}"
           scp -i ~/.ssh/pa_readonly_key .github/scripts/gcs_fetch.py \
-            MiguelAeTxio@ssh.pythonanywhere.com:"$SCRIPT_PATH" 2> /tmp/scp_err.txt
-          echo "SCP_EXIT=$?" >> /tmp/debug.txt
-          echo "--- SCP STDERR ---" >> /tmp/debug.txt
-          cat /tmp/scp_err.txt >> /tmp/debug.txt
+            MiguelAeTxio@ssh.pythonanywhere.com:"$GCS_SCRIPT_PATH"
           ssh -i ~/.ssh/pa_readonly_key MiguelAeTxio@ssh.pythonanywhere.com \
-            "set -e; cd /home/MiguelAeTxio/PROJECTS/EnterpriseBot; source /home/MiguelAeTxio/.virtualenvs/EnterpriseBot_venv_py312/bin/activate; export PYTHONPATH=/home/MiguelAeTxio/PROJECTS/EnterpriseBot; python -m dotenv run python3 '$SCRIPT_PATH' '$BUCKET' '$BLOB' '$TMP_PATH'; base64 -w0 '$TMP_PATH'; rm -f '$TMP_PATH' '$SCRIPT_PATH'" \
-            > /tmp/file_b64.txt 2> /tmp/ssh_err.txt
-          echo "SSH_EXIT=$?" >> /tmp/debug.txt
-          echo "--- SSH STDERR ---" >> /tmp/debug.txt
-          cat /tmp/ssh_err.txt >> /tmp/debug.txt
-          basename "$REMOTE_PATH" > /tmp/file_name.txt
-          exit 0
+            "set -e; cd /home/MiguelAeTxio/PROJECTS/EnterpriseBot; source /home/MiguelAeTxio/.virtualenvs/EnterpriseBot_venv_py312/bin/activate; export PYTHONPATH=/home/MiguelAeTxio/PROJECTS/EnterpriseBot; python -m dotenv run python3 '$GCS_SCRIPT_PATH' '$BUCKET' '$BLOB' '$TMP_PATH'; python -m dotenv run python3 '$DRIVE_SCRIPT' '$TMP_PATH' '$DRIVE_NAME' '${{ env.DRIVE_FOLDER_ID }}'; rm -f '$TMP_PATH' '$GCS_SCRIPT_PATH' '$DRIVE_SCRIPT'" \
+            > /tmp/result.txt 2>&1
+          echo "EXIT=$?" >> /tmp/result.txt
+          echo "DRIVE_NAME=$DRIVE_NAME" >> /tmp/result.txt
+          cat /tmp/result.txt
 
-      - name: Comitear el resultado al repo
+      - name: Resumen en el propio Action (no sensible -- solo nombres/estado)
         if: always()
         run: |
-          mkdir -p DOCS/SESSION/FILE_FETCH
-          cp /tmp/file_b64.txt DOCS/SESSION/FILE_FETCH/ultimo_archivo.b64 2>/dev/null || echo "(sin archivo -- ver log del Action)" > DOCS/SESSION/FILE_FETCH/ultimo_archivo.b64
           {
-            echo "# Metadatos de la última descarga de archivo"
-            echo "**Ejecutada:** $(date -u '+%Y-%m-%d %H:%M UTC')  —  **Run:** ${{ github.run_id }}"
+            echo "## Descarga de archivo -> Drive"
             echo "**Modo:** ${{ inputs.mode }}  —  **Origen:** ${{ inputs.remote_path }}"
-            echo "**Nombre original:** $(cat /tmp/file_name.txt 2>/dev/null || echo desconocido)"
-            echo ""
-            echo "### Depuración (modo gcs)"
             echo '```'
-            cat /tmp/debug.txt 2>/dev/null || echo "(sin datos de depuración -- modo pythonanywhere o fallo antes de generarlos)"
+            cat /tmp/result.txt 2>/dev/null || echo "(sin salida -- ver pasos anteriores)"
             echo '```'
-          } > DOCS/SESSION/FILE_FETCH/ultimo_archivo.meta.md
-          git config user.email "miguelaetxio@users.noreply.github.com"
-          git config user.name "MiguelaeTxio"
-          git add DOCS/SESSION/FILE_FETCH/
-          git diff --staged --quiet || git commit -m "chore: descarga de archivo de solo lectura (run ${{ github.run_id }})"
-          git push
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Limpiar clave SSH
         if: always()
