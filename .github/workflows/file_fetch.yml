@@ -106,7 +106,7 @@ jobs:
           scp -i ~/.ssh/pa_readonly_key .github/scripts/gcs_fetch.py \
             MiguelAeTxio@ssh.pythonanywhere.com:"$SCRIPT_PATH"
           ssh -i ~/.ssh/pa_readonly_key MiguelAeTxio@ssh.pythonanywhere.com \
-            "set -e; cd /home/MiguelAeTxio/PROJECTS/EnterpriseBot; source EnterpriseBot_venv_py312/bin/activate; python -m dotenv run python3 '$SCRIPT_PATH' '$BUCKET' '$BLOB' '$TMP_PATH'; base64 -w0 '$TMP_PATH'; rm -f '$TMP_PATH' '$SCRIPT_PATH'" \
+            "set -e; cd /home/MiguelAeTxio/PROJECTS/EnterpriseBot; source /home/MiguelAeTxio/.virtualenvs/EnterpriseBot_venv_py312/bin/activate; python -m dotenv run python3 '$SCRIPT_PATH' '$BUCKET' '$BLOB' '$TMP_PATH'; base64 -w0 '$TMP_PATH'; rm -f '$TMP_PATH' '$SCRIPT_PATH'" \
             > /tmp/file_b64.txt
           basename "$REMOTE_PATH" > /tmp/file_name.txt
 
