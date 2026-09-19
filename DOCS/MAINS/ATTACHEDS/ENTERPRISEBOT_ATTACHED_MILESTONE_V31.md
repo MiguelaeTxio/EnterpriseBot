@@ -3159,6 +3159,81 @@ papel). Restaurados los 756 (`deleted_at`/`deleted_by` a `None`, sin
 tocar tipo, nombre ni carpeta -- ya estaban correctos) vía Comando S,
 verificado con consulta real antes/después (756 en papelera -> 0).
 
+### Vinculación de las fichas técnicas al EPI real del catálogo, y copias para los productos secundarios
+
+Miguel Ángel pidió enlazar los 2 documentos `FICHA_TECNICA_EPI`
+restaurados a su EPI concreto (mecanismo genérico
+`domain_content_type`/`domain_object_id` -> `EpiItemCatalog`, real
+desde S76, con 7 documentos ya vinculados de antes):
+
+- pk 23093 (folleto MIGUEL MIRANDA S.L.) -> `ARNES_SEGURIDAD` (pk 27).
+- pk 22915 (certificado Portwest) -> `PANTALON_ALTA_VISIBILIDAD` (pk
+  8, mención literal "T501" en la etiqueta del catálogo).
+
+**Problema real detectado al enlazar:** cada uno de los 2 documentos
+cubre más de un producto -- el folleto MIRA es en realidad dos fichas
+en un mismo PDF (arnés 12A + equipo de amarre E15C) y el certificado
+Portwest cubre tres prendas (T501 pantalón, T180 polo, T181
+camiseta), pero el mecanismo genérico solo admite un
+`domain_object_id` por fila. Solución real, a petición explícita de
+Miguel Ángel: **copiar de verdad el blob en GCS** (no se puede
+apuntar dos filas vivas al mismo `blob_name` -- restricción real
+`unique_live_blob_per_bucket` sobre `bucket`+`blob_name_hash`) y crear
+una fila nueva de `DocumentIndexEntry` por cada producto adicional,
+mismo patrón real de creación que `subject_upload_service.
+upload_subject_document()` (`download_bytes`/`upload_bytes` de
+`spare_parts.gcs_service`, `path_digest` para los hashes). 3 copias
+reales creadas:
+
+| pk nuevo | Copia de | EPI vinculado |
+|---|---|---|
+| 49800 | 23093 (folleto MIRA) | `ELEMENTO_AMARRE` (pk 28) |
+| 49801 | 22915 (certificado Portwest) | `POLO_ALTA_VISIBILIDAD` (pk 4) |
+| 49802 | 22915 (certificado Portwest) | `CAMISETA_ALTA_VISIBILIDAD` (pk 33) |
+
+Con esto, los 6 productos reales cubiertos por los 2 documentos de
+hoy quedan cada uno con su propia ficha técnica vinculada en el
+catálogo.
+
+### Botón "Ver" en las entregas de EPI de la ficha de personal, y refactor real de los dosieres
+
+Miguel Ángel preguntó por el estado real de la interfaz tras la
+restauración. Verificado contra el código real: la pestaña "EPIs" de
+la ficha (`EpiDelivery.objects.filter(person=person)`) nunca dependió
+del estado de papelera del documento -- siempre mostró correctamente
+qué EPI y cuándo. Lo que sí faltaba: **ningún sitio de la interfaz
+enlazaba al documento real de una entrega concreta** (ni la fila de
+la tabla ni el modal de historial, que solo pintaba la fecha).
+
+**Añadido:** columna "Documento" con botón "Ver" en la tabla de EPIs
+de la ficha (`_personal_detail.html`), reutilizando la vista ya
+existente `DocumentViewView`/`documentation_document_view` (URL
+firmada de GCS), igual que ya hacía el botón de "Ficha técnica".
+
+**Refactor real de los dosieres, decisión explícita de Miguel Ángel
+("ahora no generamos el documento de entrega, sino que entregamos el
+PDF correspondiente a las entregas últimas de cada EPI. El documento
+se generará en otra interfaz, la que se ocupe de las firmas con
+Docuten"):**
+- `_resolve_template_epi_deliveries()` ya no devuelve TODAS las
+  entregas reales de cada EPI marcado -- solo la MÁS RECIENTE de
+  cada uno (mismo criterio "última entrega" que la propia ficha).
+- `_build_dossier_pdf_bytes()`/`_build_dossier_zip_bytes()` ya NO
+  generan la página sintética `_build_epi_section_page()`
+  ("ENTREGAS DE EPI INCLUIDAS EN ESTE DOSSIER" + lista de texto,
+  "SIN FIRMA TODAVÍA") -- el `source_entry` real de cada entrega se
+  mezcla con el resto de `entries` del dosier exactamente igual que
+  cualquier otro documento (misma descarga, misma conversión a PDF,
+  mismo criterio de formato no soportado; en el ZIP, misma carpeta
+  por familia, nunca una carpeta aparte "entregas-epi/" con un
+  resumen inventado). `_build_epi_section_page()` queda definida sin
+  uso -- generar un documento de acreditación de entrega pasa a ser
+  responsabilidad de la futura interfaz de firma con Docuten, no de
+  este dosier. Verificado que los 3 puntos reales de llamada
+  (aplicación individual de plantilla, generación masiva, envío por
+  correo) siguen siendo compatibles sin cambios, misma firma de
+  función.
+
 ## NOTA DE DESVÍO — S112 (sesión completa desviada a infraestructura cross-proyecto)
 
 La sesión completa (S112) se dedicó a infraestructura de solo lectura
