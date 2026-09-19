@@ -98,17 +98,25 @@ jobs:
         env:
           REMOTE_PATH: ${{ inputs.remote_path }}
         run: |
-          set -o pipefail
+          set +e
+          : > /tmp/debug.txt
           BUCKET=$(printf '%s' "$REMOTE_PATH" | cut -d'/' -f1)
           BLOB=$(printf '%s' "$REMOTE_PATH" | cut -d'/' -f2-)
           TMP_PATH="/home/MiguelAeTxio/SWAP/file_fetch_${{ github.run_id }}"
           SCRIPT_PATH="/home/MiguelAeTxio/SWAP/gcs_fetch_${{ github.run_id }}.py"
           scp -i ~/.ssh/pa_readonly_key .github/scripts/gcs_fetch.py \
-            MiguelAeTxio@ssh.pythonanywhere.com:"$SCRIPT_PATH"
+            MiguelAeTxio@ssh.pythonanywhere.com:"$SCRIPT_PATH" 2> /tmp/scp_err.txt
+          echo "SCP_EXIT=$?" >> /tmp/debug.txt
+          echo "--- SCP STDERR ---" >> /tmp/debug.txt
+          cat /tmp/scp_err.txt >> /tmp/debug.txt
           ssh -i ~/.ssh/pa_readonly_key MiguelAeTxio@ssh.pythonanywhere.com \
             "set -e; cd /home/MiguelAeTxio/PROJECTS/EnterpriseBot; source /home/MiguelAeTxio/.virtualenvs/EnterpriseBot_venv_py312/bin/activate; python -m dotenv run python3 '$SCRIPT_PATH' '$BUCKET' '$BLOB' '$TMP_PATH'; base64 -w0 '$TMP_PATH'; rm -f '$TMP_PATH' '$SCRIPT_PATH'" \
-            > /tmp/file_b64.txt
+            > /tmp/file_b64.txt 2> /tmp/ssh_err.txt
+          echo "SSH_EXIT=$?" >> /tmp/debug.txt
+          echo "--- SSH STDERR ---" >> /tmp/debug.txt
+          cat /tmp/ssh_err.txt >> /tmp/debug.txt
           basename "$REMOTE_PATH" > /tmp/file_name.txt
+          exit 0
 
       - name: Comitear el resultado al repo
         if: always()
@@ -120,6 +128,11 @@ jobs:
             echo "**Ejecutada:** $(date -u '+%Y-%m-%d %H:%M UTC')  —  **Run:** ${{ github.run_id }}"
             echo "**Modo:** ${{ inputs.mode }}  —  **Origen:** ${{ inputs.remote_path }}"
             echo "**Nombre original:** $(cat /tmp/file_name.txt 2>/dev/null || echo desconocido)"
+            echo ""
+            echo "### Depuración (modo gcs)"
+            echo '```'
+            cat /tmp/debug.txt 2>/dev/null || echo "(sin datos de depuración -- modo pythonanywhere o fallo antes de generarlos)"
+            echo '```'
           } > DOCS/SESSION/FILE_FETCH/ultimo_archivo.meta.md
           git config user.email "miguelaetxio@users.noreply.github.com"
           git config user.name "MiguelaeTxio"
