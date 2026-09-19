@@ -56,7 +56,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   query:
@@ -154,16 +154,16 @@ jobs:
           echo "DRIVE_NAME=$DRIVE_NAME" >> /tmp/debug.txt
           cat /tmp/debug.txt
 
-      - name: Resumen en el propio Action (sin datos reales -- solo estado y depuración)
+      - name: Comitear la depuración (nunca la consulta ni el resultado -- solo códigos de salida)
         if: always()
         run: |
-          {
-            echo "## Consulta SQL de solo lectura"
-            echo "Resultado subido a Drive, no impreso aquí -- ver com-actions-relay."
-            echo '```'
-            cat /tmp/debug.txt 2>/dev/null || echo "(sin datos de depuración -- ver pasos anteriores)"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+          mkdir -p DOCS/SESSION/FILE_FETCH
+          cp /tmp/debug.txt DOCS/SESSION/FILE_FETCH/ultimo_debug_db_query.txt 2>/dev/null || echo "(sin datos)" > DOCS/SESSION/FILE_FETCH/ultimo_debug_db_query.txt
+          git config user.email "miguelaetxio@users.noreply.github.com"
+          git config user.name "MiguelaeTxio"
+          git add DOCS/SESSION/FILE_FETCH/ultimo_debug_db_query.txt
+          git diff --staged --quiet || git commit -m "chore: depuración de subida a Drive (run ${{ github.run_id }})"
+          git push
 
       - name: Limpiar clave SSH
         if: always()
