@@ -3125,6 +3125,40 @@ en S99, distinta de la carpeta legacy `DOC. PERSONAL/ENTREGA EPIS/`
 donde vivían). Ejecutado vía Comando S (escritura real de Django, no
 por el relevo de solo lectura).
 
+### Hallazgo mayor, misma tarea: los 4.314 documentos reales de entrega de EPI también estaban en papelera
+
+Miguel Ángel preguntó explícitamente por las entregas reales (no solo
+los 5 documentos de referencia de arriba). Consulta real confirmó:
+`EpiDelivery` tiene **4.314 filas** (`HEURISTIC` 3.967, `OCR` 339,
+`MANUAL` 8), **las 4.314 con `source_entry` real** (documento
+`DocumentIndexEntry`, tipo `EPIS`) -- y las 4.314 estaban en papelera,
+0 purgadas. Borradas en 4 tandas por el usuario id 1 (26/08: 3.198,
+27/08: 180, 01/09: 908, 02/09: 28) -- confirma con dato real la
+intención original de Miguel Ángel de convertir EPIs en solo
+registros de BD, nunca revertida hasta ahora sobre estos documentos
+ya trasladados a papelera.
+
+**No hacía falta retipar ni renombrar nada aquí** -- a diferencia de
+los 5 anteriores, la clasificación por EPI concreto ya vive
+estructurada en `EpiDelivery.epi_id` (FK real a `EpiItemCatalog`), no
+en el nombre ni en el tipo documental. Desglose real por familia/EPI
+confirmado (top: Ropa de trabajo 446, Casco de seguridad 438, Zapatos
+de seguridad 420, Chaleco reflectante 392, Guantes de protección 392,
+Gafas 357, Protección auditiva 302, Arnés de seguridad 295,
+Mascarilla buconasal 233, Cinturón con amarre 182, Ropa ignífuga 155,
+y ~20 categorías más hasta 4.314) -- mismo tipo documental `EPIS`
+correcto para las 4.314, sin necesidad de partir el catálogo como
+tocó hacer con `FORMACION` en H36 (ahí no había ningún campo
+estructurado que distinguiera cursos; aquí sí).
+
+**Descubrimiento real al restaurar:** las 4.314 entregas apuntan a
+solo **756 documentos distintos** -- varias entregas comparten el
+mismo documento de origen (un mismo parte/recibo de entrega lista
+varios EPIs a la vez, p. ej. casco + guantes + botas en un solo
+papel). Restaurados los 756 (`deleted_at`/`deleted_by` a `None`, sin
+tocar tipo, nombre ni carpeta -- ya estaban correctos) vía Comando S,
+verificado con consulta real antes/después (756 en papelera -> 0).
+
 ## NOTA DE DESVÍO — S112 (sesión completa desviada a infraestructura cross-proyecto)
 
 La sesión completa (S112) se dedicó a infraestructura de solo lectura
