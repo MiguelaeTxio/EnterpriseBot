@@ -3071,30 +3071,100 @@ una app Django" en vez de "necesita Django de verdad" -- corregido en
 la propia sesión, con fix documentado en la skill `com-mysql` (sección
 0bis), empaquetado y guardado con `skill-creator`.
 
-## Hoja de Ruta para la Sesión Siguiente (S112, reescrita por completo -- sustituye a la de S110/router)
+## NOTA DE DESVÍO — S112 (sesión completa desviada a infraestructura cross-proyecto)
 
-1. **Firma electrónica -- Docuten.** Miguel Ángel espera tener
-   credenciales y tokens de la API de Docuten resueltos el lunes. En
-   cuanto estén disponibles: generar un documento real de entrega de
-   EPIs desde BBDD (no una plantilla de prueba) y verificar
-   visualmente que sale correcto -- esa es la prueba pendiente antes
-   de avanzar a nada de firma. Hasta entonces, dejar preparado (diseño
-   y puntos de integración, no necesariamente código) el resto del
-   flujo de firma programática vía Docuten (API REST propia,
-   credencial de "secreto de aplicación", cuenta Sandbox ya
-   confirmada en S110), sin escribir la integración real todavía.
-2. **Mientras no haya credenciales de Docuten: trabajar en plantillas
-   de circulares.** Decisión explícita de Miguel Ángel: es mejor
-   aprovechar el tiempo aquí que esperando el acceso a Docuten.
-   Criterio de cierre: al menos una plantilla de circular completa y
+La sesión completa (S112) se dedicó a infraestructura de solo lectura
+común a cualquier proyecto de la plataforma, no a la hoja de ruta
+propia de H31 (Docuten/circulares). Motivo real: al descargar un
+archivo de prueba real (el contrato vigente de Miguel Ángel, MUÑOZ
+CARA MIGUEL ANGEL, DNI 74633524L, como caso de prueba del nuevo
+mecanismo `file_fetch.yml`) se detectó que el patrón de comitear
+resultados a git (usado desde S107 en `db_query.yml`) expone
+permanentemente en el historial cualquier dato de persona -- riesgo
+real si el repositorio se hace público algún día (motivo real:
+agotar la cuota de minutos de Actions de un repo privado, compartida
+en la cuenta gratuita de GitHub, mientras que los públicos tienen
+minutos ilimitados).
+
+**Trabajo real de la sesión:**
+1. Estudio y descarte del mecanismo de artifacts de GitHub Actions
+   como vía de entrega (falla siempre, host de blob storage no
+   determinista fuera de la lista de red permitida del modelo) -- dos
+   pruebas reales, ambas negativas, documentadas y retiradas.
+2. Construcción de `file_fetch.yml` y migración de `db_query.yml`,
+   ambos migrados de comitear a git a subir el resultado a una
+   carpeta de Google Drive ("EnterpriseBot - Intercambio Claude",
+   `id: 1SSHSY2FHt-7eN17Wgza2Qcybs-ij6to0`), leída directamente por el
+   conector de Drive del modelo -- nunca más se comitea a git ningún
+   resultado con datos de personas.
+3. Descubrimiento real de que `db_query.yml` llevaba desde S107
+   comiteando resultados con datos de personas -- ~150 commits
+   históricos.
+4. Purga completa del historial con `git filter-repo` (dos veces: una
+   tras el hallazgo inicial, otra tras retirar los commits de
+   depuración de la propia migración), con force-push y
+   realineamiento del checkout del servidor sin usar `git reset
+   --hard` (prohibido, `com-bash-commands` sección 7) -- vía rama
+   nueva (`git fetch` + `git branch -m` + `git checkout -b`). Dos
+   ramas de respaldo quedan en el servidor sin borrar
+   (`main-old-S112`, `main-old-S112b`).
+5. Nueva skill común `com-actions-relay` (creada y guardada por
+   Miguel Ángel vía `skill-creator`), que documenta el mecanismo
+   completo para que cualquier proyecto de la plataforma lo reutilice
+   sin volver a comitear resultados a git.
+6. Bugs reales corregidos por el camino: ruta de venv mal asumida,
+   `PYTHONPATH` que falta al ejecutar un script por ruta absoluta,
+   heredocs anidados que rompen YAML dentro de un bloque `run: |`,
+   `MediaIoBaseUpload` sin `mimetype` obligatorio.
+7. Decisión explícita de Miguel Ángel: la limpieza de la carpeta de
+   Drive (papelera) se hace por lotes al cierre de sesión, no archivo
+   a archivo -- documentado en `com-actions-relay` sección 1bis.
+
+**El marcador `← EN PROGRESO` de H31 no cambia** -- la hoja de ruta de
+H31 (Docuten, circulares) no avanzó, pero sí se añade un punto nuevo
+y prioritario (ver Hoja de Ruta abajo), a petición explícita de
+Miguel Ángel al cierre.
+
+## ⚠️ Aviso de continuidad — documentos de EPI posiblemente en papelera
+
+Miguel Ángel señaló al cierre de S112 que cree ("creo que") que los
+documentos originales de EPI fueron enviados a la papelera durante el
+diseño inicial de esta misma sesión (su primera intención fue
+eliminar los documentos de EPI y dejarlos solo como registros de BD,
+decisión revertida al confirmar que Docuten generará documentos
+firmados reales que sí hay que conservar, guardados en GCS con el
+link en BBDD). No confirmado con dato real en esta sesión -- primera
+tarea de S113, ver punto 1 de la Hoja de Ruta.
+
+## Hoja de Ruta para la Sesión Siguiente (S113, reescrita por completo -- sustituye a la de S112)
+
+1. **Documentos de EPI en la papelera -- localizar y vincular a
+   BBDD.** Miguel Ángel cree que los documentos originales de EPI se
+   enviaron a la papelera (mecanismo reversible,
+   `trash_dossier_entry()`/`deleted_at`/`deleted_by` de
+   `DocumentIndexEntry`, nunca borrado real de GCS) durante el diseño
+   inicial de EPIs-como-registro-de-BD de esta misma sesión, después
+   revertido. Criterio de cierre: consulta real contra
+   `DocumentIndexEntry` filtrando por tipo documental de EPI y
+   `deleted_at IS NOT NULL`, confirmar cuántos hay y si siguen
+   recuperables, y para cada uno decidir restaurarlo o vincularlo
+   (`source_entry` o mecanismo equivalente) a su `EpiDelivery` real en
+   BD -- cierre a 0 documentos de EPI huérfanos sin decisión tomada.
+2. **Firma electrónica -- Docuten** (arrastrado 1.ª sesión sin
+   avanzar, S112 se desvió por completo a infraestructura). Sin
+   cambios respecto a S111: en cuanto Miguel Ángel tenga credenciales,
+   generar un documento real de entrega de EPIs desde BBDD y
+   verificar visualmente que sale correcto. Hasta entonces, dejar
+   preparado el resto del flujo de firma programática vía Docuten,
+   sin escribir la integración real todavía.
+3. **Plantillas de circulares** (arrastrado 1.ª sesión sin avanzar,
+   S112 se desvió por completo a infraestructura). Sin cambios
+   respecto a S111: al menos una plantilla de circular completa y
    usable desde el panel.
-3. Gestión de Miguel Ángel con Docuten/Viafirma (contacto directo con
+4. Gestión de Miguel Ángel con Docuten/Viafirma (contacto directo con
    el proveedor) -- sin dependencia técnica de esta plataforma, sigue
    en marcha por su cuenta.
-4. Punto 1 de la hoja de ruta anterior ("fecha duplicada en `CONTRATO`
-   de 6 personas") -- **CERRADO en S111**, ver COMPLETADAS de arriba.
 5. Los 2 huecos reales de documentación (Grana Álvarez, García
-   Sánchez) quedan anotados para cuando la supervisora escanee y suba
+   Sánchez) siguen pendientes de que la supervisora escanee y suba
    los contratos originales -- sin acción de código pendiente, solo
-   enlazar `prorroga_de` cuando lleguen (mismo mecanismo ya
-   construido y probado esta sesión).
+   enlazar `prorroga_de` cuando lleguen.
