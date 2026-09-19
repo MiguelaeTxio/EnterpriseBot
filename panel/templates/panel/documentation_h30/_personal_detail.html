@@ -657,12 +657,22 @@ usan los documentos.
         <div id="collapseEpiFam{{ forloop.counter }}" class="accordion-collapse collapse {% if forloop.first %}show{% endif %}" data-bs-parent="#personalEpiAccordion">
             <div class="accordion-body p-0">
                 <table class="table table-sm table-hover mb-0">
-                    <thead><tr><th>EPI</th><th>Última entrega</th><th>Ficha técnica</th><th></th></tr></thead>
+                    <thead><tr><th>EPI</th><th>Última entrega</th><th>Documento</th><th>Ficha técnica</th><th></th></tr></thead>
                     <tbody>
                         {% for delivery in fam.deliveries %}
                         <tr>
                             <td>{{ delivery.epi.label }}</td>
                             <td>{{ delivery.delivery_date }}</td>
+                            <td>
+                                {% if delivery.source_entry_id %}
+                                <button type="button" class="btn btn-sm btn-outline-secondary"
+                                        onclick="openDocumentViewer('{% url 'panel:documentation_document_view' pk=delivery.source_entry_id %}')">
+                                    <i class="bi bi-eye"></i> Ver
+                                </button>
+                                {% else %}
+                                <span class="text-muted small">Sin documento</span>
+                                {% endif %}
+                            </td>
                             <td>
                                 {% for doc in delivery.epi.technical_docs %}
                                 <button type="button" class="btn btn-sm btn-outline-secondary mb-1" onclick="openDocumentViewer('{% url 'panel:documentation_document_view' pk=doc.pk %}')">

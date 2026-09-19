@@ -1602,13 +1602,19 @@ def _build_dossier_pdf_bytes(person, entries, epi_deliveries=None):
     as a direct HttpResponse download. Returns (pdf_bytes, filename).
     Raises DossierBuildError when no entry has a supported format.
 
-    H31/H36 (S109): `epi_deliveries` opcional (lista de `EpiDelivery`,
-    ver `_resolve_template_epi_deliveries`) -- cuando llega no vacío,
-    añade una página propia (`_build_epi_section_page`) justo después
-    de la portada, antes de los documentos. Nunca bloquea la
-    generación del PDF si `entries` está vacío pero sí hay EPIs (o al
-    revés) -- basta con que haya algo real que ofrecer entre las dos
-    fuentes.
+    H31/H36 (S109, REDEFINIDO EN S113): `epi_deliveries` YA NO genera
+    una página sintética propia. Miguel Ángel, verbatim: "ahora no
+    generamos el documento de entrega, sino que entregamos el PDF
+    correspondiente a las entregas últimas de cada EPI. El documento
+    se generará en otra interfaz, la que se ocupe de las firmas con
+    Docuten." Cada entrega resuelve su `source_entry` (el documento
+    real de esa entrega) y se mezcla en el dosier exactamente igual
+    que cualquier otro documento de `entries` -- misma descarga,
+    misma conversión, mismo criterio de formato no soportado.
+    `_build_epi_section_page` queda sin uso en esta función (se
+    conserva por si otro llamador la necesita) -- generar un
+    documento de acreditación de entrega es responsabilidad de la
+    futura interfaz de firma con Docuten, no de este dosier.
     ---
     H31 (S104). Extraido de _build_dossier_pdf_response (S103) para
     que los bytes del PDF tambien puedan adjuntarse a un .eml, no solo
@@ -1616,10 +1622,18 @@ def _build_dossier_pdf_bytes(person, entries, epi_deliveries=None):
     (pdf_bytes, filename). Lanza DossierBuildError cuando ningun
     documento tiene un formato soportado.
     """
+    entries = list(entries)
+    entry_ids = {entry.pk for entry in entries}
+    epi_entries = [
+        d.source_entry for d in (epi_deliveries or [])
+        if d.source_entry_id and d.source_entry_id not in entry_ids
+    ]
+    all_entries = entries + epi_entries
+
     included_pdfs = []
     included_lines = []
     skipped_lines = []
-    for entry in entries:
+    for entry in all_entries:
         extension = entry.name.rsplit(".", 1)[-1] if "." in entry.name else ""
         label = entry.document_type.label if entry.document_type_id else entry.name
         family = (
@@ -1640,7 +1654,7 @@ def _build_dossier_pdf_bytes(person, entries, epi_deliveries=None):
         )
         included_lines.append(f"{label} -- {family} -- {caducidad}")
 
-    if not included_pdfs and not epi_deliveries:
+    if not included_pdfs:
         raise DossierBuildError(
             "Ningún documento tiene un formato soportado para el PDF "
             "único (usa la descarga en ZIP para estos archivos).",
@@ -1665,8 +1679,6 @@ def _build_dossier_pdf_bytes(person, entries, epi_deliveries=None):
     cover_bytes = build_index_page(header_lines, included_lines, footer_note)
 
     pages = [cover_bytes]
-    if epi_deliveries:
-        pages.append(_build_epi_section_page(epi_deliveries))
     pages.extend(included_pdfs)
 
     try:
@@ -1712,10 +1724,13 @@ def _build_dossier_zip_bytes(person, entries, epi_deliveries=None):
     the raw ZIP bytes can also be attached to an .eml, not only served
     as a direct HttpResponse download. Returns (zip_bytes, filename).
 
-    H31/H36 (S109): `epi_deliveries` opcional, mismo criterio que
-    `_build_dossier_pdf_bytes` -- cuando llega no vacío, añade un PDF
-    propio (`_build_epi_section_page`) dentro del ZIP, en su propia
-    carpeta, sin firma todavía.
+    H31/H36 (S109, REDEFINIDO EN S113): `epi_deliveries` ya NO añade un
+    PDF sintético de resumen -- mismo criterio y misma cita de Miguel
+    Ángel que `_build_dossier_pdf_bytes`. El documento real
+    (`source_entry`) de cada entrega se mezcla con `entries` y viaja
+    dentro del ZIP en la carpeta de su propia familia documental,
+    exactamente igual que cualquier otro archivo -- nunca en una
+    carpeta aparte "entregas-epi/" con un resumen inventado.
     ---
     H31 (S104). Extraido de _build_dossier_zip_response (S103) para
     que los bytes del ZIP tambien puedan adjuntarse a un .eml, no solo
@@ -1725,15 +1740,18 @@ def _build_dossier_zip_bytes(person, entries, epi_deliveries=None):
     import io
     import zipfile
 
+    entries = list(entries)
+    entry_ids = {entry.pk for entry in entries}
+    epi_entries = [
+        d.source_entry for d in (epi_deliveries or [])
+        if d.source_entry_id and d.source_entry_id not in entry_ids
+    ]
+    all_entries = entries + epi_entries
+
     zip_buffer = io.BytesIO()
     used_names = set()
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-        if epi_deliveries:
-            zf.writestr(
-                "entregas-epi/Resumen_EPIs_entregados.pdf",
-                _build_epi_section_page(epi_deliveries),
-            )
-        for entry in entries:
+        for entry in all_entries:
             family_folder = (
                 slugify(entry.document_type.get_family_display())
                 if entry.document_type_id else "sin-familia"
@@ -1932,26 +1950,38 @@ def _resolve_template_entries(person, template):
 
 def _resolve_template_epi_deliveries(person, template):
     """
-    H31/H36 (S109). Resuelve, EN EL MOMENTO de aplicar una plantilla,
-    TODAS las entregas reales (`EpiDelivery`) de cada EPI marcado en
-    `template.epi_items` para la persona concreta -- mismo criterio
-    de "resolver en el momento de aplicar, nunca fila fija" que
-    `_resolve_template_entries`. Un EPI marcado sin ninguna entrega
-    real a esa persona simplemente no aporta filas -- el llamador
-    decide qué hacer si la lista sale vacía (nunca bloquea el resto
-    del dossier).
+    H31/H36 (S109, redefinido S113). Resuelve, EN EL MOMENTO de aplicar
+    una plantilla, la entrega MÁS RECIENTE de cada EPI marcado en
+    `template.epi_items` para la persona concreta -- mismo criterio de
+    "resolver en el momento de aplicar, nunca fila fija" que
+    `_resolve_template_entries`.
 
-    Devuelve una lista de EpiDelivery, más reciente primero (orden ya
-    definido en `EpiDelivery.Meta.ordering`).
+    CORREGIDO EN S113 (decisión explícita de Miguel Ángel): antes
+    devolvía TODAS las entregas reales; ahora solo la última de cada
+    EPI, porque el documento real de esa última entrega es lo que se
+    adjunta al dosier (ver `_build_dossier_pdf_bytes`/
+    `_build_dossier_zip_bytes`) -- adjuntar el histórico completo
+    duplicaría documentos en el dosier sin aportar nada nuevo. Un EPI
+    marcado sin ninguna entrega real a esa persona simplemente no
+    aporta filas -- el llamador decide qué hacer si la lista sale
+    vacía (nunca bloquea el resto del dossier).
+
+    Devuelve una lista de `EpiDelivery` (una por EPI, la más
+    reciente), con `source_entry` ya resuelto (`select_related`) para
+    no disparar una consulta por entrega al mezclar sus documentos
+    reales en el dosier.
     """
     epi_ids = list(template.epi_items.values_list("pk", flat=True))
     if not epi_ids:
         return []
-    return list(
-        EpiDelivery.objects.filter(
-            person=person, epi_id__in=epi_ids,
-        ).select_related("epi"),
-    )
+    deliveries = EpiDelivery.objects.filter(
+        person=person, epi_id__in=epi_ids,
+    ).select_related("epi", "source_entry").order_by("-delivery_date")
+    latest_by_epi = {}
+    for delivery in deliveries:
+        if delivery.epi_id not in latest_by_epi:
+            latest_by_epi[delivery.epi_id] = delivery
+    return list(latest_by_epi.values())
 
 
 class PersonalDossierTemplateListView(CompanyUserRequiredMixin, View):
