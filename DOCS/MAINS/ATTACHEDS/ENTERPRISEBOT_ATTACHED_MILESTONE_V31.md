@@ -3071,6 +3071,60 @@ una app Django" en vez de "necesita Django de verdad" -- corregido en
 la propia sesión, con fix documentado en la skill `com-mysql` (sección
 0bis), empaquetado y guardado con `skill-creator`.
 
+## COMPLETADAS EN S113 -- punto 1 de la hoja de ruta cerrado (documentos de EPI en papelera)
+
+Primera tarea de la sesión, según la hoja de ruta dejada en S112.
+Consulta real confirmó que el único código de dominio `EPI` en el
+catálogo es `FICHA_TECNICA_EPI` (12 documentos, 5 en papelera, 0
+purgados). Dos correcciones reales sobre lo que se creía al cerrar
+S112: el borrado es del **27/08/2026**, no de la sesión de diseño de
+EPIs (esa fue en S112, un mes después) -- error de esta misma
+bitácora, no de Miguel Ángel; y ninguno de los 5 estaba vinculado a
+ninguna `EpiDelivery` como `source_entry` -- son documentación de
+referencia del catálogo de EPIs en general, sin persona ni entrega
+asociada (`domain_object_id` NULL en los 5).
+
+Inspección real del contenido de cada uno (descargados vía
+`file_fetch.yml` en modo `gcs`, com-actions-relay) reveló que solo 2
+de los 5 eran de verdad fichas técnicas de un producto concreto --
+los otros 3 son documentación normativa/institucional del INSHT o del
+Ministerio de Sanidad, sin fabricante ni producto:
+
+| pk | Documento real | Tipo final |
+|---|---|---|
+| 23093 | Folleto MIGUEL MIRANDA S.L. -- arnés 12A + amarre E15C, normas EN361/EN365/EN354 | `FICHA_TECNICA_EPI` (ya correcto) |
+| 22915 | Certificado de examen UE real, Portwest T501+T180/T181 (alta visibilidad), emitido 28/01/2020 | `FICHA_TECNICA_EPI` (ya correcto) |
+| 23500 | Guía Técnica INSHT para utilización de EPI (RD 773/1997), 2ª ed. diciembre 2012 | `GUIA_NORMATIVA_PRL_EPI` (**tipo nuevo**, pk 178) |
+| 22916 | Respuesta oficial del INSHT a consulta de la propia empresa (`documentacion@gralvarez.com`) sobre clases de ropa de alta visibilidad, 09/06/2015 | `GUIA_NORMATIVA_PRL_EPI` (**tipo nuevo**, pk 178) |
+| 23094 | Cartel informativo Ministerio de Sanidad -- uso correcto de mascarillas COVID-19, 13/04/2020 | `CARTEL_INFORMATIVO_PRL` (**tipo nuevo**, pk 179) |
+
+**Dos tipos nuevos dados de alta** (`DocumentTypeCatalog`, dominio
+`EPI`, familia `TECNICA_SEGURIDAD`), confirmados con Miguel Ángel
+antes de crearlos: `GUIA_NORMATIVA_PRL_EPI` (guías/respuestas
+oficiales del INSHT, no ligadas a un producto) y
+`CARTEL_INFORMATIVO_PRL` (material de concienciación, distinto de la
+doctrina técnica anterior).
+
+**Renombrado canónico -- hueco real cerrado en `naming_service.py`.**
+El módulo solo tenía `build_filename_machine`/`build_filename_personal`
+-- ninguno cubre un documento de dominio EPI sin persona asociada. Se
+resolvió ad hoc para estos 5 (formato
+`{TIPO}_{QUÉ_EPI_ES}_{FECHA}.pdf`, fecha real del contenido donde
+constaba -- certificado y consulta INSHT con fecha exacta del propio
+documento, guía INSHT con mes/año real y día `01` por no traer día
+exacto, folleto MIRA sin fecha impresa en el producto por lo que se
+usó su `indexed_at` real como respaldo, decisión explícita de Miguel
+Ángel) -- pendiente **construir un `build_filename_epi()` real en
+`naming_service.py`** si aparecen más casos de este dominio, en vez de
+seguir resolviendo caso a caso.
+
+**Restauradas las 5** (`deleted_at`/`deleted_by` a `None`) y movidas
+(vía `move_entry()`, puramente virtual, `blob_name` real en GCS nunca
+tocado) a `EPIS_FOLDER` (`DOC. PERSONAL/PERSONAL/EPIS`, ya construida
+en S99, distinta de la carpeta legacy `DOC. PERSONAL/ENTREGA EPIS/`
+donde vivían). Ejecutado vía Comando S (escritura real de Django, no
+por el relevo de solo lectura).
+
 ## NOTA DE DESVÍO — S112 (sesión completa desviada a infraestructura cross-proyecto)
 
 La sesión completa (S112) se dedicó a infraestructura de solo lectura
