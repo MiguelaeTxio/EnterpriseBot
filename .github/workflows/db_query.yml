@@ -117,6 +117,7 @@ jobs:
         if: always()
         run: |
           set +e
+          : > /tmp/debug.txt
           {
             echo "# Resultado de consulta SQL de solo lectura"
             echo ""
@@ -135,23 +136,33 @@ jobs:
           } > /tmp/resultado.md
           DRIVE_NAME="resultado_sql_${{ github.run_id }}.md"
           scp -i ~/.ssh/pa_readonly_key /tmp/resultado.md \
-            MiguelAeTxio@ssh.pythonanywhere.com:/home/MiguelAeTxio/SWAP/resultado_${{ github.run_id }}.md
+            MiguelAeTxio@ssh.pythonanywhere.com:/home/MiguelAeTxio/SWAP/resultado_${{ github.run_id }}.md 2> /tmp/scp1_err.txt
+          echo "SCP1_EXIT=$?" >> /tmp/debug.txt
+          cat /tmp/scp1_err.txt >> /tmp/debug.txt
           scp -i ~/.ssh/pa_readonly_key .github/scripts/drive_upload.py \
-            MiguelAeTxio@ssh.pythonanywhere.com:/home/MiguelAeTxio/SWAP/drive_upload_${{ github.run_id }}.py
+            MiguelAeTxio@ssh.pythonanywhere.com:/home/MiguelAeTxio/SWAP/drive_upload_${{ github.run_id }}.py 2> /tmp/scp2_err.txt
+          echo "SCP2_EXIT=$?" >> /tmp/debug.txt
+          cat /tmp/scp2_err.txt >> /tmp/debug.txt
           ssh -i ~/.ssh/pa_readonly_key MiguelAeTxio@ssh.pythonanywhere.com \
             "set -e; cd /home/MiguelAeTxio/PROJECTS/EnterpriseBot; source /home/MiguelAeTxio/.virtualenvs/EnterpriseBot_venv_py312/bin/activate; export PYTHONPATH=/home/MiguelAeTxio/PROJECTS/EnterpriseBot; python -m dotenv run python3 /home/MiguelAeTxio/SWAP/drive_upload_${{ github.run_id }}.py /home/MiguelAeTxio/SWAP/resultado_${{ github.run_id }}.md '$DRIVE_NAME' '${{ env.DRIVE_FOLDER_ID }}'; rm -f /home/MiguelAeTxio/SWAP/resultado_${{ github.run_id }}.md /home/MiguelAeTxio/SWAP/drive_upload_${{ github.run_id }}.py" \
-            > /tmp/drive_result.txt 2>&1
-          echo "EXIT=$?" >> /tmp/drive_result.txt
-          echo "DRIVE_NAME=$DRIVE_NAME" >> /tmp/drive_result.txt
-          cat /tmp/drive_result.txt
+            > /tmp/drive_result.txt 2> /tmp/ssh_err.txt
+          echo "SSH_EXIT=$?" >> /tmp/debug.txt
+          echo "--- SSH STDOUT ---" >> /tmp/debug.txt
+          cat /tmp/drive_result.txt >> /tmp/debug.txt
+          echo "--- SSH STDERR ---" >> /tmp/debug.txt
+          cat /tmp/ssh_err.txt >> /tmp/debug.txt
+          echo "DRIVE_NAME=$DRIVE_NAME" >> /tmp/debug.txt
+          cat /tmp/debug.txt
 
-      - name: Resumen en el propio Action (sin datos reales -- solo estado)
+      - name: Resumen en el propio Action (sin datos reales -- solo estado y depuración)
         if: always()
         run: |
           {
             echo "## Consulta SQL de solo lectura"
             echo "Resultado subido a Drive, no impreso aquí -- ver com-actions-relay."
-            cat /tmp/drive_result.txt 2>/dev/null || echo "(sin datos de subida -- ver pasos anteriores)"
+            echo '```'
+            cat /tmp/debug.txt 2>/dev/null || echo "(sin datos de depuración -- ver pasos anteriores)"
+            echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Limpiar clave SSH
