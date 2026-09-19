@@ -1,0 +1,41 @@
+# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/.github/workflows/test_artifact_fetch.yml
+name: PRUEBA — Verificación de descarga de artifact por el modelo (H31, estudio S112)
+
+# Prueba de una sola vez (S112) para verificar si el sandbox del
+# modelo puede descargar un artifact de GitHub Actions directamente
+# (sin pasar por commit+pull), aprovechando que
+# productionresultssa17.blob.core.windows.net aparece ahora en la
+# lista de red permitida del modelo -- antes (incidente S014,
+# nfs-enterprisebot-edit) ese dominio de blob no era alcanzable y por
+# eso db_query.yml resuelve comiteando el resultado al repo en vez de
+# usar un artifact. Si esta prueba funciona, sustituye ese patrón para
+# archivos binarios/grandes (documentos de GCS, logs largos de
+# PythonAnywhere) que no tiene sentido meter en el historial de git.
+#
+# Este workflow NO toca GCS ni PythonAnywhere -- genera un archivo de
+# prueba local en el propio runner, sin secretos, sin riesgo. Se borra
+# en cuanto la prueba concluya (S112).
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generar archivo de prueba (simula un documento binario real)
+        run: |
+          mkdir -p /tmp/artifact_test
+          head -c 2048 /dev/urandom > /tmp/artifact_test/prueba.bin
+          echo "contenido de control para verificar integridad" > /tmp/artifact_test/prueba.txt
+          sha256sum /tmp/artifact_test/prueba.bin > /tmp/artifact_test/prueba.sha256
+
+      - name: Subir como artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: prueba-descarga-modelo
+          path: /tmp/artifact_test/
+          retention-days: 1
