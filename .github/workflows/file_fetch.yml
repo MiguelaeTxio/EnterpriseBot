@@ -110,7 +110,7 @@ jobs:
           echo "--- SCP STDERR ---" >> /tmp/debug.txt
           cat /tmp/scp_err.txt >> /tmp/debug.txt
           ssh -i ~/.ssh/pa_readonly_key MiguelAeTxio@ssh.pythonanywhere.com \
-            "set -e; cd /home/MiguelAeTxio/PROJECTS/EnterpriseBot; source /home/MiguelAeTxio/.virtualenvs/EnterpriseBot_venv_py312/bin/activate; python -m dotenv run python3 '$SCRIPT_PATH' '$BUCKET' '$BLOB' '$TMP_PATH'; base64 -w0 '$TMP_PATH'; rm -f '$TMP_PATH' '$SCRIPT_PATH'" \
+            "set -e; cd /home/MiguelAeTxio/PROJECTS/EnterpriseBot; source /home/MiguelAeTxio/.virtualenvs/EnterpriseBot_venv_py312/bin/activate; export PYTHONPATH=/home/MiguelAeTxio/PROJECTS/EnterpriseBot; python -m dotenv run python3 '$SCRIPT_PATH' '$BUCKET' '$BLOB' '$TMP_PATH'; base64 -w0 '$TMP_PATH'; rm -f '$TMP_PATH' '$SCRIPT_PATH'" \
             > /tmp/file_b64.txt 2> /tmp/ssh_err.txt
           echo "SSH_EXIT=$?" >> /tmp/debug.txt
           echo "--- SSH STDERR ---" >> /tmp/debug.txt
