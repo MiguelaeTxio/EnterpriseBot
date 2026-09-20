@@ -12,17 +12,28 @@
                 </a>
             </th>
             {% endfor %}
+            <th>Documento</th>
         </tr>
     </thead>
     <tbody>
         {% for delivery in page %}
         <tr>
             <td>{{ delivery.delivery_date }}</td>
-            <td><a href="{% url 'panel:documentation_personal_detail' pk=delivery.person.pk %}">{{ delivery.person.first_surname }}, {{ delivery.person.given_name }}</a></td>
+            <td><a href="{% url 'panel:documentation_personal_detail' pk=delivery.person.pk %}">{{ delivery.person.first_surname }} {{ delivery.person.second_surname }}, {{ delivery.person.given_name }}</a></td>
             <td>{{ delivery.epi.label }}</td>
+            <td>
+                {% if delivery.source_entry_id %}
+                <button type="button" class="btn btn-sm btn-outline-secondary"
+                        onclick="openDocumentViewer('{% url 'panel:documentation_document_view' pk=delivery.source_entry_id %}')">
+                    <i class="bi bi-eye"></i> Ver
+                </button>
+                {% else %}
+                <span class="text-muted small">Sin documento</span>
+                {% endif %}
+            </td>
         </tr>
         {% empty %}
-        <tr><td colspan="3" class="text-muted small py-3">Sin entregas de EPI todavía.</td></tr>
+        <tr><td colspan="4" class="text-muted small py-3">Sin entregas de EPI todavía.</td></tr>
         {% endfor %}
     </tbody>
 </table>

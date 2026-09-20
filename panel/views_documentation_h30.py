@@ -3970,13 +3970,14 @@ class PersonalDossierMassGenerateView(DocsUploadAccessMixin, View):
 
 
 def _epi_list_page(request):
-    qs = EpiDelivery.objects.select_related("person", "epi").order_by(
-        "-delivery_date",
-    )
+    qs = EpiDelivery.objects.select_related(
+        "person", "epi", "source_entry",
+    ).order_by("-delivery_date")
     search = request.GET.get("q", "").strip()
     if search:
         qs = qs.filter(
             Q(person__first_surname__icontains=search)
+            | Q(person__second_surname__icontains=search)
             | Q(person__given_name__icontains=search)
             | Q(epi__label__icontains=search),
         )

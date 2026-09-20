@@ -24,3 +24,33 @@
         </p>
     </div>
 </div>
+
+<div class="modal fade" id="documentViewerModal" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Documento</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-0">
+                <iframe id="documentViewerFrame" src="" style="width:100%;height:75vh;border:0;"></iframe>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Visor de documento para el botón "Ver" de la tabla de búsqueda de
+// EPIs (S113) -- mismo mecanismo que openDocumentViewer() de
+// _personal_detail.html, duplicado aquí porque esta pestaña se carga
+// como fragmento independiente (EpiTabFragmentView) y no comparte
+// script ni modal con la ficha de persona.
+function openDocumentViewer(url) {
+    document.getElementById('documentViewerFrame').src = url;
+    const viewerModal = new bootstrap.Modal(document.getElementById('documentViewerModal'));
+    viewerModal.show();
+}
+document.getElementById('documentViewerModal').addEventListener('hidden.bs.modal', function () {
+    document.getElementById('documentViewerFrame').src = '';
+});
+</script>
