@@ -170,7 +170,7 @@ columnas -- ninguna de las dos puede quedar más baja que la otra.
 {% endcomment %}
 <div class="row g-2">
     <div class="col-lg-8">
-        <div id="personal-results-scroll" style="height: 68vh; overflow-y: auto; border: 1px solid #dee2e6; border-radius: 0.25rem;">
+        <div id="personal-results-scroll" style="height: 68vh; overflow-y: auto; overflow-x: auto; border: 1px solid #dee2e6; border-radius: 0.25rem;">
         <div id="personal-results">
             {% include "panel/documentation_h30/_personal_results.html" with page=page sort_key=sort_key sort_dir=sort_dir search=search %}
         </div>
@@ -202,6 +202,16 @@ las filas de debajo se desplacen de verdad.
     top: 0;
     background-color: #f8f9fa;
     z-index: 2;
+}
+/* H31 (S113), Miguel Ángel: "que nos quepa en una sola fila cada
+   trabajador [...] ponerle el desplazamiento horizontal a toda la
+   columna" -- nombres largos (p. ej. "Álvarez Díaz, Alejandro
+   Sergio") partían la fila en dos líneas. Sin wrap, el ancho real de
+   la tabla puede superar el contenedor -- para eso está el
+   overflow-x:auto del propio contenedor de scroll. */
+#personal-results-scroll table td,
+#personal-results-scroll table th {
+    white-space: nowrap;
 }
 </style>
 
