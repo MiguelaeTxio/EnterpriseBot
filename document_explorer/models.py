@@ -2151,6 +2151,9 @@ class EpiDeliveryBatchTemplate(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class DocumentAcknowledgment(models.Model):
     """
     A single acknowledgment/delivery record: which person received or
     signed which document type (a template-based document -- a
