@@ -1125,9 +1125,11 @@ function openEpiDeliveryForm() {
         const hue = epiFormHueForFamily(e.family);
         const style = `border-left:4px solid hsl(${hue}, 65%, 45%); background-color:hsl(${hue}, 65%, 96%);`;
         return `
-        <div class="form-check px-2 py-1" style="${style}">
-            <input class="form-check-input epi-delivery-item-checkbox" type="checkbox" value="${e.id}" id="edCheck${e.id}">
-            <label class="form-check-label small" for="edCheck${e.id}">${e.family} -- ${e.label}</label>
+        <div class="ps-3 pe-2 py-1" style="${style}">
+            <div class="form-check">
+                <input class="form-check-input epi-delivery-item-checkbox" type="checkbox" value="${e.id}" id="edCheck${e.id}">
+                <label class="form-check-label small" for="edCheck${e.id}">${e.family} -- ${e.label}</label>
+            </div>
         </div>`;
     }).join('');
     const today = new Date().toISOString().slice(0, 10);

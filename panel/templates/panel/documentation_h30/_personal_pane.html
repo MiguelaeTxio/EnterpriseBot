@@ -628,9 +628,11 @@ arriba, mismo motivo que el resto de modales de este archivo.
                 <p class="text-muted small mb-1">Al elegir un lote se marcan sus EPIs -- desmarca los que hoy no toque entregar, o marca EPIs sueltos sin lote:</p>
                 <div id="personMassEpiBatchList" style="max-height:40vh;overflow-y:auto;border:1px solid #dee2e6;border-radius:0.25rem;padding:0.5rem;">
                     {% for epi in epi_items %}
-                    <div class="form-check px-2 py-1" data-epi-family="{{ epi.family }}">
-                        <input class="form-check-input person-mass-epi-batch-checkbox" type="checkbox" value="{{ epi.pk }}" id="pmEbCheck{{ epi.pk }}">
-                        <label class="form-check-label small" for="pmEbCheck{{ epi.pk }}">{{ epi.family }} -- {{ epi.label }}</label>
+                    <div class="ps-3 pe-2 py-1" data-epi-family="{{ epi.family }}">
+                        <div class="form-check">
+                            <input class="form-check-input person-mass-epi-batch-checkbox" type="checkbox" value="{{ epi.pk }}" id="pmEbCheck{{ epi.pk }}">
+                            <label class="form-check-label small" for="pmEbCheck{{ epi.pk }}">{{ epi.family }} -- {{ epi.label }}</label>
+                        </div>
                     </div>
                     {% empty %}
                     <p class="text-muted small mb-0">Sin EPIs en el catálogo.</p>
