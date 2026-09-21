@@ -88,7 +88,7 @@ misma fila:
             <div class="col-lg-4">
                 <label class="form-label small mb-1 fw-bold">Contenido del lote</label>
                 <div class="border rounded p-2" style="height: 320px; overflow-y: auto;">
-                    <ul class="mb-0 small" id="epiBatchPreviewList">
+                    <ul class="mb-0 small ps-0" id="epiBatchPreviewList">
                         <li class="text-muted">Ningún EPI marcado todavía.</li>
                     </ul>
                 </div>
@@ -162,31 +162,32 @@ document.getElementById('documentViewerModal').addEventListener('hidden.bs.modal
 });
 
 // H31 (S113), Miguel Ángel: "meterle colores por las distintas
-// familias de EPIs". `EpiItemCatalog.family` es texto libre (sin
+// familias de EPIs" -- y ahora, mismo criterio, en el visor del
+// contenido del lote. `EpiItemCatalog.family` es texto libre (sin
 // choices fijas, ver docstring de _group_epi_deliveries_by_family) --
 // nunca se conoce de antemano el conjunto real de familias, así que
 // el color se deriva por hash del propio nombre de familia (misma
 // familia -> mismo color siempre, sin mantener una lista fija que se
-// quede corta el día que aparezca una familia nueva).
-(function () {
-    const hues = {};
-    let nextHue = 0;
-    function hueForFamily(family) {
-        if (!(family in hues)) {
-            // Reparte tonos lo más separados posible según van
-            // apareciendo familias nuevas (ángulo áureo), en vez de
-            // un hash bruto que puede repetir tonos parecidos.
-            hues[family] = (nextHue * 137.508) % 360;
-            nextHue += 1;
-        }
-        return hues[family];
+// quede corta el día que aparezca una familia nueva). Sacado de la
+// IIFE original para que el catálogo y el visor de la derecha
+// compartan exactamente el mismo mapa de colores (S113).
+const epiFamilyHues = {};
+let epiFamilyNextHue = 0;
+function hueForFamily(family) {
+    if (!(family in epiFamilyHues)) {
+        // Reparte tonos lo más separados posible según van
+        // apareciendo familias nuevas (ángulo áureo), en vez de un
+        // hash bruto que puede repetir tonos parecidos.
+        epiFamilyHues[family] = (epiFamilyNextHue * 137.508) % 360;
+        epiFamilyNextHue += 1;
     }
-    document.querySelectorAll('#epiCatalogList li[data-epi-family]').forEach(function (li) {
-        const hue = hueForFamily(li.dataset.epiFamily);
-        li.style.borderLeft = '4px solid hsl(' + hue + ', 65%, 45%)';
-        li.style.backgroundColor = 'hsl(' + hue + ', 65%, 96%)';
-    });
-})();
+    return epiFamilyHues[family];
+}
+document.querySelectorAll('#epiCatalogList li[data-epi-family]').forEach(function (li) {
+    const hue = hueForFamily(li.dataset.epiFamily);
+    li.style.borderLeft = '4px solid hsl(' + hue + ', 65%, 45%)';
+    li.style.backgroundColor = 'hsl(' + hue + ', 65%, 96%)';
+});
 
 // H31 (S113): CRUD de lotes de EPIs centralizado en esta pestaña --
 // Miguel Ángel: "que esté centralizado en los EPIs [...] el catálogo
@@ -216,7 +217,10 @@ function refreshEpiBatchPreview() {
     const list = document.getElementById('epiBatchPreviewList');
     const lines = Array.from(checked).map((el) => {
         const label = document.querySelector(`label[for="${el.id}"]`);
-        return `<li>${label ? label.textContent.trim() : el.value}</li>`;
+        const text = label ? label.textContent.trim() : el.value;
+        const family = el.closest('li').dataset.epiFamily;
+        const hue = hueForFamily(family);
+        return `<li style="border-left:4px solid hsl(${hue}, 65%, 45%); background-color:hsl(${hue}, 65%, 96%); padding:2px 4px; list-style:none;">${text}</li>`;
     });
     list.innerHTML = lines.length
         ? lines.join('')
