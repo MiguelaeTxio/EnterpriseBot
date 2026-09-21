@@ -179,29 +179,28 @@ seleccionados". Misma altura fija (height, no max-height) en las dos
 columnas -- ninguna de las dos puede quedar más baja que la otra.
 
 H31 (S114), incidente real reportado por Miguel Ángel con captura de
-pantalla: el 68vh fijo de S113 no evitaba que LA PÁGINA ENTERA hiciera
-scroll -- en pantallas donde la fila fija de arriba (filtros/grupos/
-acciones) + 68vh no cabían en el viewport, el navegador simplemente
-scrolleaba el documento completo, arrastrando consigo la parte que se
+pantalla, dos veces seguidas: ni el 68vh fijo de S113 ni un primer
+intento de cálculo de altura por JS en esta misma sesión evitaban que
+LA PÁGINA ENTERA hiciera scroll, arrastrando consigo la parte que se
 quería fija (títulos, pestañas, filtros). Verbatim: "esa pantalla fija
 no puede ni subir ni bajar ni moverse ni perderse [...] sin hacer
 scroll ya estemos viendo abajo la barra de desplazamiento horizontal
-[...] y veamos el fin y la barra de scroll vertical". Sustituido el
-68vh fijo por una altura calculada en JS (ver script más abajo,
-recomputePersonalResultsHeight()): el espacio real disponible bajo la
-fila fija, hasta el borde inferior del viewport -- así la suma de fila
-fija + zona de resultados NUNCA supera la altura de la ventana, y el
-único scroll posible es el de estos dos contenedores.
+[...] y veamos el fin y la barra de scroll vertical". Sustituido por
+una cadena flexbox real (clase .doc-personal-fixed, ver panel.css y
+el toggle de pestaña en hub.html) desde .main-content hasta estos dos
+contenedores -- el navegador reparte el alto exacto sin ningún
+cálculo, nunca más un remanente de scroll que depender de adivinar
+paddings o reflujos tardíos.
 {% endcomment %}
-<div class="row g-2">
-    <div class="col-lg-8">
+<div class="row g-2" id="personal-results-row">
+    <div class="col-lg-8 d-flex flex-column" id="personal-results-col">
         <div id="personal-results-scroll" style="overflow-y: auto; overflow-x: auto; border: 1px solid #dee2e6; border-radius: 0.25rem;">
         <div id="personal-results">
             {% include "panel/documentation_h30/_personal_results.html" with page=page sort_key=sort_key sort_dir=sort_dir search=search %}
         </div>
         </div>
     </div>
-    <div class="col-lg-4">
+    <div class="col-lg-4 d-flex flex-column" id="personal-selection-col">
         <label class="form-label small mb-1 fw-bold">Selección actual (<span id="personSelectionCount">0</span>)</label>
         <div class="border rounded p-2" id="personSelectionScroll" style="overflow-y: auto;">
             <ul class="mb-0 small ps-0" id="personSelectionPreviewList">
@@ -269,69 +268,15 @@ las filas de debajo se desplacen de verdad.
     let personMassEpiBatchModalInstance = null;
     let personMassJobPositionModalInstance = null;
 
-    // H31 (S114). La fila de arriba (filtros/grupos/acciones, ver
-    // #personal-fixed-row) nunca hace scroll -- lo único scrollable es
-    // el listado de trabajadores (#personal-results-scroll) y el
-    // visor de selección (#personSelectionScroll). Para que la PÁGINA
-    // nunca necesite scroll propio, la altura de ambos contenedores se
-    // calcula midiendo cuánto se pasa el documento del alto real del
-    // viewport (document.documentElement.scrollHeight -
-    // window.innerHeight) y encogiéndolos exactamente por ese exceso
-    // -- nunca restando un margen fijo adivinado (padding inferior de
-    // .page-content, altura real de los iconos, etc.): ese margen
-    // varía según la pantalla y adivinarlo dejaba un remanente de
-    // scroll (incidente real reportado por Miguel Ángel con captura,
-    // el 68vh fijo de S113 y luego el primer intento con margen fijo
-    // de esta misma sesión seguían dejando la página desplazable). Se
-    // pone 'auto' primero para medir el exceso real sin arrastrar el
-    // límite anterior, luego se resta ese exceso de la altura natural
-    // -- álgebra: si T es la altura natural del listado y "resto" es
-    // todo lo demás de la página, el exceso medido es (resto + T -
-    // viewport); la altura final (T - exceso) da exactamente
-    // (viewport - resto), el hueco real disponible, sea cual sea T.
-    const PERSONAL_RESULTS_GUTTER = 4;
-    const PERSONAL_RESULTS_MIN_HEIGHT = 240;
-    const resultsScrollEl = document.getElementById('personal-results-scroll');
-    const selectionScrollEl = document.getElementById('personSelectionScroll');
-
-    function recomputePersonalResultsHeight() {
-        if (!resultsScrollEl) return;
-        resultsScrollEl.style.height = 'auto';
-        if (selectionScrollEl) { selectionScrollEl.style.height = 'auto'; }
-        // Forzar reflujo antes de medir: scrollHeight/getBoundingClientRect
-        // ya disparan uno, pero se deja explícito por claridad.
-        const naturalHeight = resultsScrollEl.getBoundingClientRect().height;
-        const overflow = Math.max(document.documentElement.scrollHeight - window.innerHeight, 0);
-        const target = Math.max(naturalHeight - overflow - PERSONAL_RESULTS_GUTTER, PERSONAL_RESULTS_MIN_HEIGHT);
-        resultsScrollEl.style.height = target + 'px';
-        if (selectionScrollEl) { selectionScrollEl.style.height = target + 'px'; }
-    }
-
-    window.addEventListener('resize', recomputePersonalResultsHeight);
-    window.addEventListener('load', recomputePersonalResultsHeight);
-    // La fila fija puede cambiar de altura (p. ej. al abrir el
-    // formulario de edición de un grupo de reparto, o al mostrar un
-    // mensaje de resultado de una acción masiva) -- un
-    // MutationObserver sobre esa fila recalcula sin tener que
-    // localizar cada punto del código que la modifica.
-    const fixedRowEl = document.getElementById('personal-fixed-row');
-    if (fixedRowEl && window.MutationObserver) {
-        let recomputeTimer = null;
-        const observer = new MutationObserver(function () {
-            clearTimeout(recomputeTimer);
-            recomputeTimer = setTimeout(recomputePersonalResultsHeight, 50);
-        });
-        observer.observe(fixedRowEl, {childList: true, subtree: true, attributes: true});
-    }
-    // Primer cálculo en el siguiente frame (tras maquetar la fila fija
-    // con su contenido real), y una repetición de seguridad a los
-    // 300ms -- el evento 'load' de arriba no vuelve a dispararse para
-    // contenido cargado por htmx después de la carga inicial de la
-    // página (el hito Personal suele cargarse por "click once", ya
-    // con 'load' disparado hace rato), así que un reflujo tardío por
-    // fuentes/iconos no tendría ninguna otra red de seguridad.
-    requestAnimationFrame(recomputePersonalResultsHeight);
-    setTimeout(recomputePersonalResultsHeight, 300);
+    // H31 (S114). La altura de #personal-results-scroll y
+    // #personSelectionScroll ya NO se calcula aquí -- dos intentos
+    // por JS (68vh fijo, luego un cálculo de "exceso real" contra
+    // document.documentElement.scrollHeight) dejaban siempre un
+    // remanente de scroll de página real, reportado con captura por
+    // Miguel Ángel. Sustituido por una cadena flexbox real en CSS
+    // (.doc-personal-fixed, ver panel.css y el toggle en hub.html) --
+    // el navegador reparte el alto exacto sin ningún cálculo ni
+    // reflujo tardío que compensar.
 
 
     // H31 (S113): nombres de las personas actualmente seleccionadas,
