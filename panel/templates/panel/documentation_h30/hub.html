@@ -107,21 +107,6 @@
     const csrfToken = csrfMeta ? csrfMeta.getAttribute('content') : '';
     let saveTimer = null;
 
-    // H31 (S114). La pestaña Personal necesita layout de altura fija
-    // (ver .doc-personal-fixed en panel.css) -- las otras 4 pestañas
-    // no tienen todavía contenedores de scroll propios y deben seguir
-    // con el scroll de página normal. Se activa/desactiva aquí, nunca
-    // en CSS puro, porque depende de qué pestaña está activa en cada
-    // momento -- un dato que solo JS conoce en runtime.
-    function updateDocPersonalFixedClass(tabKey) {
-        const mainContent = document.querySelector('.main-content');
-        const pageContent = document.querySelector('.page-content');
-        const isPersonal = tabKey === 'personal';
-        if (mainContent) { mainContent.classList.toggle('doc-personal-fixed', isPersonal); }
-        if (pageContent) { pageContent.classList.toggle('doc-personal-fixed', isPersonal); }
-    }
-    updateDocPersonalFixedClass('{{ persisted_active_tab|default:""|escapejs }}');
-
     function saveState(partialUpdate) {
         clearTimeout(saveTimer);
         saveTimer = setTimeout(function () {
@@ -155,7 +140,6 @@
     document.querySelectorAll('#docH30Tabs a[data-bs-toggle="tab"]').forEach(function (tabLink) {
         tabLink.addEventListener('click', function (ev) {
             const tabKey = ev.currentTarget.id.replace('tab-', '');
-            updateDocPersonalFixedClass(tabKey);
             saveState({active_tab: tabKey});
         });
     });

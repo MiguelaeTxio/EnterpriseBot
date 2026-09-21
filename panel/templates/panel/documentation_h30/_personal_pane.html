@@ -9,35 +9,44 @@ ordenar, paginar) sustituyen SOLO el div de resultados.
 H31 (S75) punto 2: acceso al CRUD de circulares/notificaciones --
 pantalla completa aparte, no un fragmento htmx de este pane.
 {% endcomment %}
-<div class="d-flex justify-content-end gap-2 mb-2">
-    <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#personalCreateModal">
-        <i class="bi bi-person-plus"></i> Dar de alta trabajador
-    </button>
-    <a class="btn btn-sm btn-outline-secondary" href="{% url 'panel:circulars_list' %}">
-        <i class="bi bi-envelope-paper"></i> Gestionar circulares
-    </a>
-    <a class="btn btn-sm btn-outline-secondary" href="{% url 'panel:dossier_templates_manage' %}">
-        <i class="bi bi-folder2-open"></i> Gestionar plantillas de dosier
-    </a>
-    <a class="btn btn-sm btn-outline-secondary" href="{% url 'panel:job_positions_manage' %}">
-        <i class="bi bi-person-badge"></i> Gestionar requisitos de documentación
-    </a>
-</div>
+<div class="border rounded p-2 mb-2" id="personal-top-panel">
+    <div class="d-flex justify-content-end gap-2 mb-2">
+        <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#personalCreateModal">
+            <i class="bi bi-person-plus"></i> Dar de alta trabajador
+        </button>
+        <a class="btn btn-sm btn-outline-secondary" href="{% url 'panel:circulars_list' %}">
+            <i class="bi bi-envelope-paper"></i> Gestionar circulares
+        </a>
+        <a class="btn btn-sm btn-outline-secondary" href="{% url 'panel:dossier_templates_manage' %}">
+            <i class="bi bi-folder2-open"></i> Gestionar plantillas de dosier
+        </a>
+        <a class="btn btn-sm btn-outline-secondary" href="{% url 'panel:job_positions_manage' %}">
+            <i class="bi bi-person-badge"></i> Gestionar requisitos de documentación
+        </a>
+    </div>
 
-{% comment %}
-H31 (S113). Corrección explícita de Miguel Ángel sobre el rediseño
-anterior: "lo único que había que hacer es poner el visor de los
-seleccionados en el tercio de anchura del listado de trabajadores
-[...] de la mitad hacia arriba, cuanto menos altura mejor [...]
-podemos en la misma altura poner la empresa, la gestión de grupos y
-las acciones". TODO lo de gestión (filtros, grupos de reparto,
-acciones) comparte una ÚNICA fila compacta -- nunca varias filas
-apiladas -- para dejar el máximo de altura real (mínimo dos tercios)
-al listado de trabajadores + visor de selección de abajo.
-{% endcomment %}
-<div class="row g-2 mb-2" id="personal-fixed-row">
-    <div class="col-lg-3">
-        <div class="border rounded p-2 h-100">
+    {% comment %}
+    H31 (S113). Corrección explícita de Miguel Ángel sobre el rediseño
+    anterior: "lo único que había que hacer es poner el visor de los
+    seleccionados en el tercio de anchura del listado de trabajadores
+    [...] de la mitad hacia arriba, cuanto menos altura mejor [...]
+    podemos en la misma altura poner la empresa, la gestión de grupos y
+    las acciones". TODO lo de gestión (filtros, grupos de reparto,
+    acciones) comparte una ÚNICA fila compacta -- nunca varias filas
+    apiladas -- para dejar el máximo de altura real (mínimo dos tercios)
+    al listado de trabajadores + visor de selección de abajo.
+
+    H31 (S114). Envuelto junto a los botones en un único panel grande
+    con esquinas redondeadas (#personal-top-panel) -- Miguel Ángel:
+    "una gran área rectangular [...] dentro los botones [...] y luego
+    tres áreas también rectangulares con las esquinas redondeadas [...]
+    que ya lo están así, dentro". Las tres áreas (Buscar y filtrar,
+    Grupos de reparto, acciones masivas) no cambian de estilo -- ya
+    usaban border rounded p-2 desde S113.
+    {% endcomment %}
+    <div class="row g-2" id="personal-fixed-row">
+        <div class="col-lg-3">
+            <div class="border rounded p-2 h-100">
             <div class="fw-bold small mb-1">Buscar y filtrar</div>
             {% include "panel/documentation_h30/_personal_search_form.html" with search=search %}
         </div>
@@ -167,6 +176,7 @@ al listado de trabajadores + visor de selección de abajo.
             <div id="person-mass-result" class="small mt-1"></div>
         </div>
     </div>
+    </div>
 </div>
 
 {% comment %}
@@ -178,36 +188,54 @@ altura [...] el listado de trabajadores y el listado de trabajadores
 seleccionados". Misma altura fija (height, no max-height) en las dos
 columnas -- ninguna de las dos puede quedar más baja que la otra.
 
-H31 (S114), incidente real reportado por Miguel Ángel con captura de
-pantalla, dos veces seguidas: ni el 68vh fijo de S113 ni un primer
-intento de cálculo de altura por JS en esta misma sesión evitaban que
-LA PÁGINA ENTERA hiciera scroll, arrastrando consigo la parte que se
-quería fija (títulos, pestañas, filtros). Verbatim: "esa pantalla fija
-no puede ni subir ni bajar ni moverse ni perderse [...] sin hacer
-scroll ya estemos viendo abajo la barra de desplazamiento horizontal
-[...] y veamos el fin y la barra de scroll vertical". Sustituido por
-una cadena flexbox real (clase .doc-personal-fixed, ver panel.css y
-el toggle de pestaña en hub.html) desde .main-content hasta estos dos
-contenedores -- el navegador reparte el alto exacto sin ningún
-cálculo, nunca más un remanente de scroll que depender de adivinar
-paddings o reflujos tardíos.
+H31 (S114). Tercer intento tras dos incidentes reales seguidos
+reportados por Miguel Ángel con captura de pantalla: ni el 68vh fijo
+de S113, ni un cálculo de altura por JS, ni una cadena flexbox desde
+.main-content (que además rompió el scroll interno por completo, sin
+barra ni desplazamiento posible) resolvían esto de forma fiable.
+Sustituido por un mecanismo mucho más acotado y sencillo: un único
+panel grande (#personal-bottom-panel) con una altura en píxeles
+calculada por JS UNA sola vez (ver script más abajo,
+recomputeBottomPanelHeight()) -- el hueco real bajo el panel superior
+hasta el borde inferior del viewport, medido restando el exceso real
+del documento (mismo principio matemático que el intento anterior,
+pero aplicado a un solo contenedor, no a dos). Dentro de ese panel de
+altura fija, el listado y el visor de selección usan EXACTAMENTE el
+mismo patrón ya probado y en producción desde S113 para "Grupos de
+reparto" (border rounded p-2 h-100 d-flex flex-column + un div
+interior flex:1;min-height:0;overflow-y:auto) -- nunca flex-grow
+encadenado a través de varios niveles de grid de Bootstrap, que es
+donde se rompió el intento anterior.
+
+Además, Miguel Ángel pidió unificar el aspecto visual de las dos
+columnas: ambas son ahora un panel idéntico (border rounded, título
+en negrita arriba, dentro del área con esquinas redondeadas) --
+mismo criterio que ya se usa en "Grupos de reparto" y en el panel
+superior.
 {% endcomment %}
-<div class="row g-2" id="personal-results-row">
-    <div class="col-lg-8 d-flex flex-column" id="personal-results-col">
-        <div id="personal-results-scroll" style="overflow-y: auto; overflow-x: auto; border: 1px solid #dee2e6; border-radius: 0.25rem;">
-        <div id="personal-results">
-            {% include "panel/documentation_h30/_personal_results.html" with page=page sort_key=sort_key sort_dir=sort_dir search=search %}
-        </div>
-        </div>
-    </div>
-    <div class="col-lg-4 d-flex flex-column" id="personal-selection-col">
-        <label class="form-label small mb-1 fw-bold">Selección actual (<span id="personSelectionCount">0</span>)</label>
-        <div class="border rounded p-2" id="personSelectionScroll" style="overflow-y: auto;">
-            <ul class="mb-0 small ps-0" id="personSelectionPreviewList">
-                <li class="text-muted">Nadie seleccionado todavía.</li>
-            </ul>
+<div class="border rounded p-2" id="personal-bottom-panel">
+<div class="row g-2 h-100" id="personal-results-row">
+    <div class="col-lg-8 h-100" id="personal-results-col">
+        <div class="border rounded p-2 h-100 d-flex flex-column">
+            <div class="fw-bold small mb-1">Trabajadores</div>
+            <div id="personal-results-scroll" style="flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: auto;">
+            <div id="personal-results">
+                {% include "panel/documentation_h30/_personal_results.html" with page=page sort_key=sort_key sort_dir=sort_dir search=search %}
+            </div>
+            </div>
         </div>
     </div>
+    <div class="col-lg-4 h-100" id="personal-selection-col">
+        <div class="border rounded p-2 h-100 d-flex flex-column">
+            <div class="fw-bold small mb-1">Selección actual (<span id="personSelectionCount">0</span>)</div>
+            <div id="personSelectionScroll" style="flex: 1 1 auto; min-height: 0; overflow-y: auto;">
+                <ul class="mb-0 small ps-0" id="personSelectionPreviewList">
+                    <li class="text-muted">Nadie seleccionado todavía.</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
 </div>
 
 {% comment %}
@@ -268,16 +296,53 @@ las filas de debajo se desplacen de verdad.
     let personMassEpiBatchModalInstance = null;
     let personMassJobPositionModalInstance = null;
 
-    // H31 (S114). La altura de #personal-results-scroll y
-    // #personSelectionScroll ya NO se calcula aquí -- dos intentos
-    // por JS (68vh fijo, luego un cálculo de "exceso real" contra
-    // document.documentElement.scrollHeight) dejaban siempre un
-    // remanente de scroll de página real, reportado con captura por
-    // Miguel Ángel. Sustituido por una cadena flexbox real en CSS
-    // (.doc-personal-fixed, ver panel.css y el toggle en hub.html) --
-    // el navegador reparte el alto exacto sin ningún cálculo ni
-    // reflujo tardío que compensar.
+    // H31 (S114). Tercer intento tras dos incidentes reales seguidos
+    // (68vh fijo, luego una cadena flexbox desde .main-content que
+    // además rompió el scroll interno por completo). Se calcula la
+    // altura de UN SOLO panel (#personal-bottom-panel) -- el hueco
+    // real bajo el panel superior hasta el borde inferior del
+    // viewport, midiendo cuánto se pasa document.documentElement.
+    // scrollHeight de window.innerHeight con el panel puesto en
+    // 'auto' y restando ese exceso -- álgebra: si T es la altura
+    // natural del panel y "resto" es todo lo demás de la página, el
+    // exceso medido es (resto + T - viewport); la altura final
+    // (T - exceso) da exactamente (viewport - resto), sea cual sea T.
+    // Dentro de este panel de altura ya fija, el listado y el visor
+    // de selección usan el mismo patrón h-100 + flex:1;min-height:0
+    // ya probado en producción para "Grupos de reparto" -- nunca
+    // flex-grow encadenado a través de varios niveles del grid de
+    // Bootstrap, que es donde se rompió el intento anterior.
+    const PERSONAL_BOTTOM_PANEL_GUTTER = 8;
+    const PERSONAL_BOTTOM_PANEL_MIN_HEIGHT = 240;
+    const bottomPanelEl = document.getElementById('personal-bottom-panel');
 
+    function recomputeBottomPanelHeight() {
+        if (!bottomPanelEl) return;
+        bottomPanelEl.style.height = 'auto';
+        const naturalHeight = bottomPanelEl.getBoundingClientRect().height;
+        const overflow = Math.max(document.documentElement.scrollHeight - window.innerHeight, 0);
+        const target = Math.max(naturalHeight - overflow - PERSONAL_BOTTOM_PANEL_GUTTER, PERSONAL_BOTTOM_PANEL_MIN_HEIGHT);
+        bottomPanelEl.style.height = target + 'px';
+    }
+
+    window.addEventListener('resize', recomputeBottomPanelHeight);
+    // El panel superior (#personal-top-panel) puede cambiar de altura
+    // (formulario de edición de grupo, mensaje de una acción masiva)
+    // -- un ResizeObserver sobre él recalcula sin tener que localizar
+    // cada punto del código que lo modifica.
+    const topPanelEl = document.getElementById('personal-top-panel');
+    if (topPanelEl && window.ResizeObserver) {
+        const bottomPanelObserver = new ResizeObserver(function () {
+            recomputeBottomPanelHeight();
+        });
+        bottomPanelObserver.observe(topPanelEl);
+    }
+    // Primer cálculo en el siguiente frame, y una repetición de
+    // seguridad a los 300ms para cualquier reflujo tardío (fuentes,
+    // iconos) -- 'load' no vuelve a dispararse para contenido cargado
+    // por htmx después de la carga inicial de la página.
+    requestAnimationFrame(recomputeBottomPanelHeight);
+    setTimeout(recomputeBottomPanelHeight, 300);
 
     // H31 (S113): nombres de las personas actualmente seleccionadas,
     // para poder pintar el visor de selección (izquierda del selector
