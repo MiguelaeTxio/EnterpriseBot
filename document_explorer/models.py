@@ -626,14 +626,8 @@ class DocumentTypeCatalog(models.Model):
         (DOMAIN_MACHINE, "Maquinaria"),
         (DOMAIN_PERSONAL, "Personal"),
         (DOMAIN_BOTH, "Ambos"),
-        (
-            DOMAIN_COMPANY,
-            "Empresa y obra (CompanyWorksite, H30 S58)",
-        ),
-        (
-            DOMAIN_EPI,
-            "EPI (EpiItemCatalog, H31 S95)",
-        ),
+        (DOMAIN_COMPANY, "Empresa y obra"),
+        (DOMAIN_EPI, "EPI"),
     ]
 
     FAMILY_CIRCULACION = "CIRCULACION"
