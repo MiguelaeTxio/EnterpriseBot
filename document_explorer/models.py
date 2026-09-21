@@ -1397,26 +1397,6 @@ class PersonIdentity(models.Model):
         verbose_name="DNI/NIE",
         help_text="Normalizado: mayúsculas, sin espacios ni guiones.",
     )
-    # ------------------------------------------------------------------
-    # H31 (S100). Numero de afiliacion a la Seguridad Social -- Miguel
-    # Angel, verbatim: "hay datos que si son necesarios para la
-    # empresa, para el supervisor y sin embargo no los ponemos ahi
-    # [...] el numero de afiliacion a la Seguridad Social [...] lo
-    # extraemos al principio". Ya aparece impreso en el ALTA y en el
-    # IDC ("numero de afiliacion"/"NSS") -- se guarda tal cual
-    # aparece (con o sin espacios/guion segun el documento real, sin
-    # normalizar un formato que Miguel Angel no ha pedido). Nullable a
-    # proposito, mismo criterio que `birth_date`: los activos ya
-    # existentes no lo tienen todavia, se rellena de forma incremental.
-    # ------------------------------------------------------------------
-    ss_affiliation_number = models.CharField(
-        max_length=32, blank=True,
-        verbose_name="Número de afiliación a la Seguridad Social",
-        help_text=(
-            "H31 (S100). Tal cual aparece en el documento real (ALTA, "
-            "IDC) -- nunca normalizado a un formato inventado aquí."
-        ),
-    )
     first_surname = models.CharField(
         max_length=100, verbose_name="Primer apellido",
     )
@@ -1507,9 +1487,27 @@ class PersonIdentity(models.Model):
         null=True, blank=True,
         verbose_name="Reconocimiento médico -- RM (Excel)",
     )
+    # ------------------------------------------------------------------
+    # H31 (S100, corregido S113). Número de afiliación a la Seguridad
+    # Social -- Miguel Ángel, verbatim (S100): "hay datos que sí son
+    # necesarios para la empresa, para el supervisor y sin embargo no
+    # los ponemos ahí [...] el número de afiliación a la Seguridad
+    # Social [...] lo extraemos al principio". Aparece impreso en el
+    # ALTA y en el IDC ("número de afiliación"/"NSS"), y también lo
+    # trae el Excel de plantilla (columna NUMERO AFILIACION SS,
+    # `import_worker_machine_excel`) -- ambas fuentes escriben este
+    # mismo campo, nunca dos campos separados: Miguel Ángel (S113),
+    # el único dato realmente inmutable de la ficha es el DNI, así que
+    # este SÍ debe quedar editable a mano sin importar de dónde vino
+    # el valor la última vez ("da igual cuál coger"). Existió
+    # brevemente como dos campos duplicados con el mismo nombre en el
+    # cuerpo de la clase (S100 y S54) -- Python se quedaba solo con el
+    # segundo (`max_length=30`, el que de verdad llegó a la BD real);
+    # unificado aquí en uno solo (S113).
+    # ------------------------------------------------------------------
     ss_affiliation_number = models.CharField(
         max_length=30, blank=True,
-        verbose_name="Número de afiliación SS (Excel)",
+        verbose_name="Número de afiliación a la Seguridad Social",
     )
     phone = models.CharField(
         max_length=30, blank=True, verbose_name="Teléfono (Excel)",

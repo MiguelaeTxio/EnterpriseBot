@@ -3131,19 +3131,24 @@ class PersonalCreateView(DocsUploadAccessMixin, View):
 class PersonalUpdateView(DocsUploadAccessMixin, View):
     """
 
-    H31 (S74, ampliado S76). POST: edita los campos reales de
-    PersonIdentity que tiene sentido de negocio corregir a mano desde
-    el panel -- datos personales/contacto/dirección + fecha de alta/
-    baja en la empresa (S76, Miguel Ángel: "echo en falta la
-    dirección [...] fecha de alta, fecha de baja"). El resto de
-    campos del modelo (dni, is_active_employee, employer_company,
-    fechas de caducidad, ss_affiliation_number) son datos de
-    `import_worker_machine_excel` -- editarlos a mano aquí quedaría
-    sobrescrito por la siguiente importación real del Excel, así que
-    se muestran de solo lectura en la ficha, nunca en este formulario.
-    Mismo control de acceso que subir/eliminar documentos
-    (DocsUploadAccessMixin) -- editar la ficha es una acción de
-    escritura, no de simple consulta.
+    H31 (S74, ampliado S76, corregido S113). POST: edita los campos
+    reales de PersonIdentity que tiene sentido de negocio corregir a
+    mano desde el panel -- datos personales/contacto/dirección +
+    fecha de alta/baja en la empresa (S76, Miguel Ángel: "echo en
+    falta la dirección [...] fecha de alta, fecha de baja"). El resto
+    de campos del modelo (dni, is_active_employee, employer_company,
+    fechas de caducidad) son datos de `import_worker_machine_excel` --
+    editarlos a mano aquí quedaría sobrescrito por la siguiente
+    importación real del Excel, así que se muestran de solo lectura en
+    la ficha, nunca en este formulario. `ss_affiliation_number` es la
+    EXCEPCIÓN explícita (S113): aunque también lo trae el Excel, el
+    único dato realmente inmutable de la ficha es el DNI -- Miguel
+    Ángel decidió que este campo sí sea editable a mano sin importar
+    de dónde vino el valor la última vez ("da igual cuál coger"),
+    asumiendo que una importación posterior del Excel puede
+    sobrescribirlo. Mismo control de acceso que subir/eliminar
+    documentos (DocsUploadAccessMixin) -- editar la ficha es una
+    acción de escritura, no de simple consulta.
     """
 
     TEXT_EDITABLE_FIELDS = (

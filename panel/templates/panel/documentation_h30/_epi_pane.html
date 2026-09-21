@@ -5,15 +5,19 @@ H31 (S113): dos columnas con scroll independiente -- Miguel Ángel:
 scrollable por un lado y la columna [del catálogo] scrollable por
 otro". max-height + overflow-y en cada contenedor, nunca en la
 página completa -- así cada lado se desplaza sin arrastrar al otro
-ni alargar la pestaña entera. #epi-results (el fragmento que
-recarga htmx en cada búsqueda/orden/página) queda DENTRO del
-contenedor con scroll, nunca el contenedor en sí, para no perder el
-scroll al repintarse.
+ni alargar la pestaña entera. overflow-x:hidden explícito (mismo
+S113, Miguel Ángel): sin él aparecía un scroll horizontal no
+pedido -- efecto lateral real del scrollbar vertical, que resta
+unos píxeles de ancho disponible y hace desbordar la tabla por muy
+poco; nunca hace falta scroll horizontal en esta pestaña.
+#epi-results (el fragmento que recarga htmx en cada
+búsqueda/orden/página) queda DENTRO del contenedor con scroll,
+nunca el contenedor en sí, para no perder el scroll al repintarse.
 {% endcomment %}
 <div class="row">
     <div class="col-md-9">
         {% include "panel/documentation_h30/_epi_search_form.html" with search=search %}
-        <div id="epi-results-scroll" style="max-height:70vh;overflow-y:auto;">
+        <div id="epi-results-scroll" style="max-height:70vh;overflow-y:auto;overflow-x:hidden;">
             <div id="epi-results">
                 {% include "panel/documentation_h30/_epi_results.html" with page=page sort_key=sort_key sort_dir=sort_dir search=search sort_columns_epi=sort_columns_epi %}
             </div>
@@ -22,7 +26,7 @@ scroll al repintarse.
 
     <div class="col-md-3">
         <h6>Catálogo de EPIs</h6>
-        <div id="epi-catalog-scroll" style="max-height:70vh;overflow-y:auto;">
+        <div id="epi-catalog-scroll" style="max-height:70vh;overflow-y:auto;overflow-x:hidden;">
             <ul class="list-group list-group-flush small" id="epiCatalogList">
                 {% for epi in catalog %}
                 <li class="list-group-item px-2 py-1" data-epi-family="{{ epi.family }}">
