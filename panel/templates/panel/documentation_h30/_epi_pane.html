@@ -15,70 +15,82 @@ búsqueda/orden/página) queda DENTRO del contenedor con scroll,
 nunca el contenedor en sí, para no perder el scroll al repintarse.
 {% endcomment %}
 {% comment %}
-H31 (S113). Miguel Ángel: "que esté centralizado en los EPIs" --
-CRUD de lotes arriba (nombre, guardar, lista de lotes con
-editar/eliminar), el catálogo de abajo pasa a ser seleccionable con
-casillas para construir/editar el lote. La tabla de entregas NUNCA
-cambia -- "inamovible, inmutable y es lo que hay. Son los EPIs
-entregados, ahí no hay que hacer más nada."
+H31 (S113). Miguel Ángel: "que esté centralizado en los EPIs" -- CRUD
+de lotes centralizado en esta pestaña (antes página aparte), catálogo
+de abajo seleccionable con casillas para construir/editar el lote. La
+tabla de entregas NUNCA cambia -- "inamovible, inmutable y es lo que
+hay. Son los EPIs entregados, ahí no hay que hacer más nada."
+{% endcomment %}
+{% comment %}
+H31 (S113). Miguel Ángel, rediseño explícito tras revisar la versión
+anterior: "la organización de la pantalla de arriba debe ser
+coherente y simétrica y guardar las columnas y guardar las filas [...]
+el visor es un cuadrado fijo, fijo [...] siempre va a tener el mismo
+tamaño". Tres columnas de ALTURA FIJA idéntica (height, nunca
+max-height, para que ninguna "baje" más que otra), alineadas en la
+misma fila:
+1. Visor de LOTES GUARDADOS (izquierda) -- casillero de selección
+   ÚNICA (un lote a la vez, comportamiento de radio aunque el control
+   visual sea un checkbox, tal como lo pidió Miguel Ángel).
+2. GESTIÓN del lote seleccionado (centro) -- vacía por completo
+   ("no tendrá ningún nombre ni tendrá nada") hasta que se seleccione
+   un lote guardado o se marque un EPI del catálogo de abajo, momento
+   en el que aparece el nombre + los botones (guardar, eliminar solo
+   si es un lote ya existente, vaciar/nuevo -- mismo botón que en
+   plantillas de dosier).
+3. Visor del CONTENIDO del lote actual (derecha) -- mismo componente
+   de visor que el de la izquierda, reutilizado tal cual pidió Miguel
+   Ángel ("reutilizamos el concepto de visor").
 {% endcomment %}
 <div class="card mb-3">
-    <div class="card-header d-flex justify-content-between align-items-center">
-        <span>Lotes de EPIs</span>
-        <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="epiBatchCancelEditBtn" onclick="resetEpiBatchForm()">Vaciar / nuevo lote</button>
-    </div>
+    <div class="card-header">Lotes de EPIs</div>
     <div class="card-body">
         <div class="row g-3">
-            <div class="col-12 col-lg-4">
-                <label class="form-label small mb-1">Lotes guardados</label>
-                <table class="table table-sm table-hover mb-0">
-                    <tbody id="epiBatchTemplateTableBody">
+            <div class="col-lg-4">
+                <label class="form-label small mb-1 fw-bold">Lotes guardados</label>
+                <div class="border rounded p-2" style="height: 320px; overflow-y: auto;">
+                    <ul class="list-group list-group-flush small" id="epiBatchSavedList">
                         {% for template in batch_templates %}
-                        <tr id="epiBatchTemplateRow{{ template.pk }}"
+                        <li class="list-group-item px-1 py-1" id="epiBatchTemplateRow{{ template.pk }}"
                             data-name="{{ template.name|escapejs }}"
                             data-item-ids="{% for item in template.items.all %}{{ item.pk }}{% if not forloop.last %},{% endif %}{% endfor %}">
-                            <td>
-                                <a href="#" onclick="loadEpiBatchIntoForm({{ template.pk }}); return false;">{{ template.name }}</a>
-                                <div class="text-muted small">{% for item in template.items.all %}{{ item.label }}{% if not forloop.last %}, {% endif %}{% endfor %}{% if not template.items.all %}Sin perfilar todavía{% endif %}</div>
-                            </td>
-                            <td class="text-end align-middle">
-                                <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteEpiBatch({{ template.pk }})">Eliminar</button>
-                            </td>
-                        </tr>
+                            <div class="form-check">
+                                <input class="form-check-input epi-batch-select-checkbox" type="checkbox" id="epiBatchSelect{{ template.pk }}" data-pk="{{ template.pk }}" onchange="onEpiBatchSelectChange(this)">
+                                <label class="form-check-label" for="epiBatchSelect{{ template.pk }}">{{ template.name }}</label>
+                            </div>
+                        </li>
                         {% empty %}
-                        <tr id="epiBatchTemplateEmptyRow"><td colspan="2" class="text-muted small py-3">Sin lotes guardados todavía.</td></tr>
+                        <li class="list-group-item px-1 py-1 text-muted" id="epiBatchTemplateEmptyRow">Sin lotes guardados todavía.</li>
                         {% endfor %}
-                    </tbody>
-                </table>
+                    </ul>
+                </div>
             </div>
-            <div class="col-12 col-lg-4">
-                <label class="form-label small mb-1">Nombre del lote</label>
-                <input type="text" id="epiBatchName" class="form-control form-control-sm mb-2" placeholder="p. ej. EPI mecánico, EPI chóferes...">
-                <div id="epiBatchFormResult" class="small mb-2"></div>
-                <button type="button" class="btn btn-sm btn-primary" onclick="saveEpiBatch()">Guardar lote</button>
-                <p class="text-muted small mt-2 mb-0">Marca en el catálogo de la derecha (abajo) los EPIs que forman este lote.</p>
-            </div>
-            {% comment %}
-            H31 (S113). Miguel Ángel: precedente real en la gestión de
-            plantillas de dosier -- "tenemos un visor con los EPIs
-            elegidos [...] nos va a decir qué EPIs están dentro de
-            forma clara, intuitiva y muy clara, de que esos EPIs
-            pertenecen al lote que tengamos, con el nombre que le
-            vayamos a dar". Mismo patrón exacto que
-            dossier_templates_h35/manage.html (draftPreviewTitle/
-            draftPreviewList): tarjeta con scroll propio, título =
-            nombre del lote actual, lista de los EPIs marcados ahora
-            mismo -- nunca solo un contador de texto.
-            {% endcomment %}
-            <div class="col-12 col-lg-4">
-                <label class="form-label small mb-1 invisible d-block">&nbsp;</label>
-                <div class="card h-100" style="position: sticky; top: 1rem;">
-                    <div class="card-header fw-bold" id="epiBatchPreviewTitle">Nuevo lote de EPIs</div>
-                    <div class="card-body p-2" style="max-height: 300px; overflow-y: auto;">
-                        <ul class="mb-0 small" id="epiBatchPreviewList">
-                            <li class="text-muted">Ningún EPI marcado todavía.</li>
-                        </ul>
+
+            <div class="col-lg-4">
+                <label class="form-label small mb-1 fw-bold">Gestión del lote</label>
+                <div class="border rounded p-2" style="height: 320px; overflow-y: auto;">
+                    <p class="text-muted small mb-0" id="epiBatchManagementEmpty">
+                        Selecciona un lote de la izquierda, o marca un EPI del catálogo (abajo) para empezar uno nuevo.
+                    </p>
+                    <div id="epiBatchManagementForm" class="d-none">
+                        <label class="form-label small mb-1">Nombre del lote</label>
+                        <input type="text" id="epiBatchName" class="form-control form-control-sm mb-2" placeholder="p. ej. EPI mecánico, EPI chóferes...">
+                        <div id="epiBatchFormResult" class="small mb-2"></div>
+                        <div class="d-flex gap-2 flex-wrap">
+                            <button type="button" class="btn btn-sm btn-primary" onclick="saveEpiBatch()">Guardar lote</button>
+                            <button type="button" class="btn btn-sm btn-outline-danger d-none" id="epiBatchDeleteBtn" onclick="deleteEpiBatch()">Eliminar lote</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="resetEpiBatchForm()">Vaciar / nuevo lote</button>
+                        </div>
                     </div>
+                </div>
+            </div>
+
+            <div class="col-lg-4">
+                <label class="form-label small mb-1 fw-bold">Contenido del lote</label>
+                <div class="border rounded p-2" style="height: 320px; overflow-y: auto;">
+                    <ul class="mb-0 small" id="epiBatchPreviewList">
+                        <li class="text-muted">Ningún EPI marcado todavía.</li>
+                    </ul>
                 </div>
             </div>
         </div>
@@ -194,11 +206,11 @@ function getCheckedEpiBatchItemIds() {
     return Array.from(document.querySelectorAll('.epi-batch-item-checkbox:checked')).map((el) => el.value);
 }
 
-// H31 (S113), Miguel Ángel: precedente real en plantillas de dosier
-// -- visor siempre visible con scroll propio, título = nombre del
-// lote actual, lista de los EPIs marcados ahora mismo (nunca solo un
-// contador de texto). Más el propio elemento del catálogo resaltado
-// mientras está marcado.
+// H31 (S113), Miguel Ángel: "reutilizamos el concepto de visor [...]
+// para la lista de lotes y para la lista del contenido de cada
+// lote". Visor de la derecha -- solo la lista, sin título propio (el
+// nombre vive en el campo de texto del panel de gestión, en el
+// centro).
 function refreshEpiBatchPreview() {
     const checked = document.querySelectorAll('.epi-batch-item-checkbox:checked');
     const list = document.getElementById('epiBatchPreviewList');
@@ -209,19 +221,41 @@ function refreshEpiBatchPreview() {
     list.innerHTML = lines.length
         ? lines.join('')
         : '<li class="text-muted">Ningún EPI marcado todavía.</li>';
+}
 
-    const title = document.getElementById('epiBatchPreviewTitle');
-    const name = document.getElementById('epiBatchName').value.trim();
-    title.textContent = name || 'Nuevo lote de EPIs';
+// H31 (S113), Miguel Ángel: "la parte del medio [...] no tendrá
+// ningún nombre ni tendrá nada [...] en el momento en que
+// seleccionemos un EPI del catálogo será cuando empezaremos a poder
+// gestionar ese nuevo lote". El panel de gestión (nombre + botones)
+// permanece oculto hasta el primer marcado o hasta cargar un lote
+// guardado -- una vez activado, se queda visible el resto de la
+// sesión de la pestaña.
+function activateEpiBatchManagement() {
+    document.getElementById('epiBatchManagementEmpty').classList.add('d-none');
+    document.getElementById('epiBatchManagementForm').classList.remove('d-none');
 }
 
 document.querySelectorAll('.epi-batch-item-checkbox').forEach((el) => {
     el.addEventListener('change', function () {
         this.closest('li').style.outline = this.checked ? '2px solid #0d6efd' : '';
+        activateEpiBatchManagement();
         refreshEpiBatchPreview();
     });
 });
-document.getElementById('epiBatchName').addEventListener('input', refreshEpiBatchPreview);
+
+// H31 (S113): selección ÚNICA en el visor de lotes guardados --
+// casillero (pedido así explícitamente por Miguel Ángel), pero
+// comportamiento de radio: marcar uno desmarca cualquier otro.
+function onEpiBatchSelectChange(checkbox) {
+    if (checkbox.checked) {
+        document.querySelectorAll('.epi-batch-select-checkbox').forEach((el) => {
+            if (el !== checkbox) el.checked = false;
+        });
+        loadEpiBatchIntoForm(checkbox.dataset.pk);
+    } else {
+        resetEpiBatchForm();
+    }
+}
 
 function loadEpiBatchIntoForm(pk) {
     const row = document.getElementById('epiBatchTemplateRow' + pk);
@@ -230,7 +264,9 @@ function loadEpiBatchIntoForm(pk) {
     const ids = (row.dataset.itemIds || '').split(',').filter(Boolean);
 
     epiBatchEditingPk = String(pk);
+    activateEpiBatchManagement();
     document.getElementById('epiBatchName').value = name;
+    document.getElementById('epiBatchDeleteBtn').classList.remove('d-none');
     document.querySelectorAll('.epi-batch-item-checkbox').forEach((el) => {
         el.checked = false;
         el.closest('li').style.outline = '';
@@ -242,18 +278,18 @@ function loadEpiBatchIntoForm(pk) {
             el.closest('li').style.outline = '2px solid #0d6efd';
         }
     });
-    document.getElementById('epiBatchCancelEditBtn').classList.remove('d-none');
     refreshEpiBatchPreview();
 }
 
 function resetEpiBatchForm() {
     epiBatchEditingPk = '';
     document.getElementById('epiBatchName').value = '';
+    document.getElementById('epiBatchDeleteBtn').classList.add('d-none');
+    document.querySelectorAll('.epi-batch-select-checkbox').forEach((el) => { el.checked = false; });
     document.querySelectorAll('.epi-batch-item-checkbox').forEach((el) => {
         el.checked = false;
         el.closest('li').style.outline = '';
     });
-    document.getElementById('epiBatchCancelEditBtn').classList.add('d-none');
     document.getElementById('epiBatchFormResult').innerHTML = '';
     refreshEpiBatchPreview();
 }
@@ -290,9 +326,10 @@ function saveEpiBatch() {
     });
 }
 
-function deleteEpiBatch(pk) {
+function deleteEpiBatch() {
+    if (!epiBatchEditingPk) return;
     if (!confirm('¿Eliminar este lote? No afecta a ninguna entrega ya registrada.')) return;
-    fetch(`/panel/documentacion/lotes-epi/${pk}/eliminar/`, {
+    fetch(`/panel/documentacion/lotes-epi/${epiBatchEditingPk}/eliminar/`, {
         method: 'POST',
         headers: {'X-CSRFToken': getCookie('csrftoken')},
     }).then((r) => r.json()).then((data) => {
