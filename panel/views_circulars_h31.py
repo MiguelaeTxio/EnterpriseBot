@@ -10,10 +10,11 @@ current_template`) de forma consistente con el mecanismo ya en uso
 (un `DocumentIndexEntry` más, nunca un archivo fuera del sistema --
 ver el propio help_text del campo, H30 S69).
 
-Alcance: solo tipos documentales de dominio PERSONAL/BOTH -- las
-circulares son, por definición de este hito, comunicaciones a
-personas (ver anexo H31, objetivo del hito). No toca el catálogo de
-tipos de Maquinaria.
+Alcance: tipos documentales de dominio PERSONAL/BOTH/COMPANY --
+ampliado en S114 a COMPANY porque el tipo genérico real de circular
+(`CIRCULAR_INFORMATIVA`) vive en ese dominio, no en PERSONAL/BOTH
+como asumía el alcance original de S75. No toca el catálogo de tipos
+de Maquinaria (`DOMAIN_MACHINE`) ni el de EPI (`DOMAIN_EPI`).
 
 Acceso: DocsUploadAccessMixin (DOCS_SUPERVISOR/ADMIN) -- mismo
 criterio que el resto de acciones de escritura de H31 (entrega de
@@ -47,7 +48,11 @@ BUCKET = "cgs_grupo_alvarez"
 # centro de gasto o una persona.
 TEMPLATES_ROOT = "_PLANTILLAS_CIRCULARES"
 
-_CIRCULAR_DOMAINS = [DocumentTypeCatalog.DOMAIN_PERSONAL, DocumentTypeCatalog.DOMAIN_BOTH]
+_CIRCULAR_DOMAINS = [
+    DocumentTypeCatalog.DOMAIN_PERSONAL,
+    DocumentTypeCatalog.DOMAIN_BOTH,
+    DocumentTypeCatalog.DOMAIN_COMPANY,
+]
 
 
 class CircularImportError(Exception):
@@ -225,8 +230,8 @@ class CircularCreateView(DocsUploadAccessMixin, View):
     patrón que `DocumentTypeQuickCreateView` (H30 S51): `code` se
     deriva del `label` con `naming_service._sanitize_token()`,
     `content_html` nace vacío (se rellena en `CircularEditView`).
-    `domain` restringido a PERSONAL/BOTH -- las circulares son
-    comunicaciones a personas, nunca de dominio MACHINE puro.
+    `domain` restringido a PERSONAL/BOTH/COMPANY (S114) -- nunca
+    MACHINE ni EPI.
     """
 
     def post(self, request):
