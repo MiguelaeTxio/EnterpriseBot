@@ -24,12 +24,12 @@ entregados, ahí no hay que hacer más nada."
 {% endcomment %}
 <div class="card mb-3">
     <div class="card-header d-flex justify-content-between align-items-center">
-        <span id="epiBatchFormTitle">Nuevo lote de EPIs</span>
+        <span>Lotes de EPIs</span>
         <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="epiBatchCancelEditBtn" onclick="resetEpiBatchForm()">Vaciar / nuevo lote</button>
     </div>
     <div class="card-body">
         <div class="row g-3">
-            <div class="col-md-4">
+            <div class="col-12 col-lg-4">
                 <label class="form-label small mb-1">Lotes guardados</label>
                 <table class="table table-sm table-hover mb-0">
                     <tbody id="epiBatchTemplateTableBody">
@@ -51,13 +51,35 @@ entregados, ahí no hay que hacer más nada."
                     </tbody>
                 </table>
             </div>
-            <div class="col-md-8">
+            <div class="col-12 col-lg-4">
                 <label class="form-label small mb-1">Nombre del lote</label>
                 <input type="text" id="epiBatchName" class="form-control form-control-sm mb-2" placeholder="p. ej. EPI mecánico, EPI chóferes...">
-                <div id="epiBatchSelectionPreview" class="small mb-2 text-muted">0 EPIs marcados en el catálogo de la derecha.</div>
                 <div id="epiBatchFormResult" class="small mb-2"></div>
                 <button type="button" class="btn btn-sm btn-primary" onclick="saveEpiBatch()">Guardar lote</button>
-                <p class="text-muted small mt-2 mb-0">Marca en el catálogo de la derecha los EPIs que forman este lote.</p>
+                <p class="text-muted small mt-2 mb-0">Marca en el catálogo de la derecha (abajo) los EPIs que forman este lote.</p>
+            </div>
+            {% comment %}
+            H31 (S113). Miguel Ángel: precedente real en la gestión de
+            plantillas de dosier -- "tenemos un visor con los EPIs
+            elegidos [...] nos va a decir qué EPIs están dentro de
+            forma clara, intuitiva y muy clara, de que esos EPIs
+            pertenecen al lote que tengamos, con el nombre que le
+            vayamos a dar". Mismo patrón exacto que
+            dossier_templates_h35/manage.html (draftPreviewTitle/
+            draftPreviewList): tarjeta con scroll propio, título =
+            nombre del lote actual, lista de los EPIs marcados ahora
+            mismo -- nunca solo un contador de texto.
+            {% endcomment %}
+            <div class="col-12 col-lg-4">
+                <label class="form-label small mb-1 invisible d-block">&nbsp;</label>
+                <div class="card h-100" style="position: sticky; top: 1rem;">
+                    <div class="card-header fw-bold" id="epiBatchPreviewTitle">Nuevo lote de EPIs</div>
+                    <div class="card-body p-2" style="max-height: 300px; overflow-y: auto;">
+                        <ul class="mb-0 small" id="epiBatchPreviewList">
+                            <li class="text-muted">Ningún EPI marcado todavía.</li>
+                        </ul>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -172,37 +194,34 @@ function getCheckedEpiBatchItemIds() {
     return Array.from(document.querySelectorAll('.epi-batch-item-checkbox:checked')).map((el) => el.value);
 }
 
-// H31 (S113), Miguel Ángel: al marcar EPIs del catálogo no aparecía
-// nada que indicara que iban a formar el lote -- vista en vivo de la
-// selección, visible en la propia tarjeta del lote, más el propio
-// elemento del catálogo resaltado mientras está marcado.
-function refreshEpiBatchSelectionPreview() {
+// H31 (S113), Miguel Ángel: precedente real en plantillas de dosier
+// -- visor siempre visible con scroll propio, título = nombre del
+// lote actual, lista de los EPIs marcados ahora mismo (nunca solo un
+// contador de texto). Más el propio elemento del catálogo resaltado
+// mientras está marcado.
+function refreshEpiBatchPreview() {
     const checked = document.querySelectorAll('.epi-batch-item-checkbox:checked');
-    const preview = document.getElementById('epiBatchSelectionPreview');
-    if (checked.length === 0) {
-        preview.textContent = '0 EPIs marcados en el catálogo de la derecha.';
-        return;
-    }
-    const labels = Array.from(checked).map((el) => {
+    const list = document.getElementById('epiBatchPreviewList');
+    const lines = Array.from(checked).map((el) => {
         const label = document.querySelector(`label[for="${el.id}"]`);
-        return label ? label.textContent.trim() : el.value;
+        return `<li>${label ? label.textContent.trim() : el.value}</li>`;
     });
-    preview.textContent = `${checked.length} EPI(s) marcados: ${labels.join(', ')}`;
+    list.innerHTML = lines.length
+        ? lines.join('')
+        : '<li class="text-muted">Ningún EPI marcado todavía.</li>';
+
+    const title = document.getElementById('epiBatchPreviewTitle');
+    const name = document.getElementById('epiBatchName').value.trim();
+    title.textContent = name || 'Nuevo lote de EPIs';
 }
 
 document.querySelectorAll('.epi-batch-item-checkbox').forEach((el) => {
     el.addEventListener('change', function () {
         this.closest('li').style.outline = this.checked ? '2px solid #0d6efd' : '';
-        refreshEpiBatchSelectionPreview();
+        refreshEpiBatchPreview();
     });
 });
-
-function refreshEpiBatchFormTitle() {
-    const title = document.getElementById('epiBatchFormTitle');
-    const name = document.getElementById('epiBatchName').value.trim();
-    title.textContent = epiBatchEditingPk ? ('Editando: ' + (name || '(sin nombre)')) : (name || 'Nuevo lote de EPIs');
-}
-document.getElementById('epiBatchName').addEventListener('input', refreshEpiBatchFormTitle);
+document.getElementById('epiBatchName').addEventListener('input', refreshEpiBatchPreview);
 
 function loadEpiBatchIntoForm(pk) {
     const row = document.getElementById('epiBatchTemplateRow' + pk);
@@ -224,8 +243,7 @@ function loadEpiBatchIntoForm(pk) {
         }
     });
     document.getElementById('epiBatchCancelEditBtn').classList.remove('d-none');
-    refreshEpiBatchFormTitle();
-    refreshEpiBatchSelectionPreview();
+    refreshEpiBatchPreview();
 }
 
 function resetEpiBatchForm() {
@@ -237,8 +255,7 @@ function resetEpiBatchForm() {
     });
     document.getElementById('epiBatchCancelEditBtn').classList.add('d-none');
     document.getElementById('epiBatchFormResult').innerHTML = '';
-    refreshEpiBatchFormTitle();
-    refreshEpiBatchSelectionPreview();
+    refreshEpiBatchPreview();
 }
 
 function saveEpiBatch() {
