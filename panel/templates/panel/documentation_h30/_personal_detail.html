@@ -1127,7 +1127,7 @@ function openEpiDeliveryForm() {
         return `
         <div class="ps-3 pe-2 py-1" style="${style}">
             <div class="form-check">
-                <input class="form-check-input epi-delivery-item-checkbox" type="checkbox" value="${e.id}" id="edCheck${e.id}">
+                <input class="form-check-input epi-delivery-item-checkbox" type="checkbox" value="${e.id}" id="edCheck${e.id}" data-row-style="${style}">
                 <label class="form-check-label small" for="edCheck${e.id}">${e.family} -- ${e.label}</label>
             </div>
         </div>`;
@@ -1152,13 +1152,43 @@ function openEpiDeliveryForm() {
                         <button type="button" id="epiDeliverySubmit" class="btn btn-sm btn-success w-100">Entregar</button>
                     </div>
                 </div>
-                <p class="text-muted small mb-1">Al elegir un lote se marcan sus EPIs -- desmarca los que hoy no toque entregar, o marca EPIs sueltos sin lote:</p>
-                <div style="max-height:35vh;overflow-y:auto;border:1px solid #dee2e6;border-radius:0.25rem;padding:0.5rem;">
-                    ${itemCheckboxes}
+                <div class="row g-2">
+                    <div class="col-7">
+                        <label class="form-label small mb-1">Al elegir un lote se marcan sus EPIs -- desmarca los que hoy no toque entregar, o marca EPIs sueltos sin lote:</label>
+                        <div style="height:35vh;overflow-y:auto;border:1px solid #dee2e6;border-radius:0.25rem;padding:0.5rem;">
+                            ${itemCheckboxes}
+                        </div>
+                    </div>
+                    <div class="col-5">
+                        <label class="form-label small mb-1 fw-bold">Se van a entregar</label>
+                        <div style="height:35vh;overflow-y:auto;border:1px solid #dee2e6;border-radius:0.25rem;padding:0.5rem;">
+                            <ul class="mb-0 small ps-0" id="epiDeliveryPreviewList">
+                                <li class="text-muted">Ningún EPI marcado todavía.</li>
+                            </ul>
+                        </div>
+                    </div>
                 </div>
                 <div id="epiDeliveryResult" class="mt-2"></div>
             </div>
         </div>`;
+
+    function refreshEpiDeliveryPreview() {
+        const checked = document.querySelectorAll('.epi-delivery-item-checkbox:checked');
+        const list = document.getElementById('epiDeliveryPreviewList');
+        const lines = Array.from(checked).map((el) => {
+            const label = document.querySelector(`label[for="${el.id}"]`);
+            const style = el.dataset.rowStyle || '';
+            const text = label ? label.textContent.trim() : el.value;
+            return `<li style="${style} padding:2px 4px; list-style:none;">${text}</li>`;
+        });
+        list.innerHTML = lines.length
+            ? lines.join('')
+            : '<li class="text-muted">Ningún EPI marcado todavía.</li>';
+    }
+
+    document.querySelectorAll('.epi-delivery-item-checkbox').forEach((el) => {
+        el.addEventListener('change', refreshEpiDeliveryPreview);
+    });
 
     document.getElementById('epiDeliveryTemplate').addEventListener('change', function () {
         const raw = this.options[this.selectedIndex].dataset.itemIds || '';
@@ -1166,6 +1196,7 @@ function openEpiDeliveryForm() {
         document.querySelectorAll('.epi-delivery-item-checkbox').forEach((el) => {
             el.checked = ids.includes(parseInt(el.value, 10));
         });
+        refreshEpiDeliveryPreview();
     });
 
     document.getElementById('epiDeliverySubmit').addEventListener('click', function () {

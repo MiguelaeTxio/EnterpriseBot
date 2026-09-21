@@ -332,10 +332,36 @@ las filas de debajo se desplacen de verdad.
         }
         document.getElementById('personMassEpiBatchCount').textContent = selection.size;
         document.getElementById('personMassEpiBatchResult').innerHTML = '';
+        refreshPersonMassEpiBatchPreview();
         if (!personMassEpiBatchModalInstance) {
             personMassEpiBatchModalInstance = new bootstrap.Modal(document.getElementById('personMassEpiBatchModal'));
         }
         personMassEpiBatchModalInstance.show();
+    });
+
+    // H31 (S113), Miguel Ángel: "el visor de contenido que nos
+    // indique qué EPIs se van a entregar, para no tener que estar
+    // scrolleando y viendo en el catálogo". Reutiliza el color ya
+    // aplicado a cada fila del checklist (mismo hue por familia,
+    // calculado una única vez al cargar el modal) en vez de
+    // recalcularlo -- una sola fuente de verdad para el color.
+    function refreshPersonMassEpiBatchPreview() {
+        const checked = document.querySelectorAll('.person-mass-epi-batch-checkbox:checked');
+        const list = document.getElementById('personMassEpiBatchPreviewList');
+        const lines = Array.from(checked).map((el) => {
+            const label = document.querySelector(`label[for="${el.id}"]`);
+            const row = el.closest('[data-epi-family]');
+            const style = row ? `border-left:${row.style.borderLeft}; background-color:${row.style.backgroundColor};` : '';
+            const text = label ? label.textContent.trim() : el.value;
+            return `<li style="${style} padding:2px 4px; list-style:none;">${text}</li>`;
+        });
+        list.innerHTML = lines.length
+            ? lines.join('')
+            : '<li class="text-muted">Ningún EPI marcado todavía.</li>';
+    }
+
+    document.querySelectorAll('.person-mass-epi-batch-checkbox').forEach((el) => {
+        el.addEventListener('change', refreshPersonMassEpiBatchPreview);
     });
 
     document.getElementById('personMassEpiBatchTemplate').addEventListener('change', function () {
@@ -349,6 +375,7 @@ las filas de debajo se desplacen de verdad.
         document.querySelectorAll('.person-mass-epi-batch-checkbox').forEach((el) => {
             el.checked = ids.includes(parseInt(el.value, 10));
         });
+        refreshPersonMassEpiBatchPreview();
     });
 
     document.getElementById('personMassEpiBatchSubmit').addEventListener('click', function () {
@@ -603,7 +630,7 @@ EpiBatchDeliveryExecuteView). Modal aparte, fuera de la IIFE de
 arriba, mismo motivo que el resto de modales de este archivo.
 {% endcomment %}
 <div class="modal fade" id="personMassEpiBatchModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
+    <div class="modal-dialog modal-xl">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">Entregar EPIs a <span id="personMassEpiBatchCount">0</span> personas</h5>
@@ -625,18 +652,38 @@ arriba, mismo motivo que el resto de modales de este archivo.
                         <input type="date" id="personMassEpiBatchDate" class="form-control form-control-sm">
                     </div>
                 </div>
-                <p class="text-muted small mb-1">Al elegir un lote se marcan sus EPIs -- desmarca los que hoy no toque entregar, o marca EPIs sueltos sin lote:</p>
-                <div id="personMassEpiBatchList" style="max-height:40vh;overflow-y:auto;border:1px solid #dee2e6;border-radius:0.25rem;padding:0.5rem;">
-                    {% for epi in epi_items %}
-                    <div class="ps-3 pe-2 py-1" data-epi-family="{{ epi.family }}">
-                        <div class="form-check">
-                            <input class="form-check-input person-mass-epi-batch-checkbox" type="checkbox" value="{{ epi.pk }}" id="pmEbCheck{{ epi.pk }}">
-                            <label class="form-check-label small" for="pmEbCheck{{ epi.pk }}">{{ epi.family }} -- {{ epi.label }}</label>
+                {% comment %}
+                H31 (S113). Miguel Ángel: "en el modal de entrega se
+                echa en falta el visor de contenido que nos indique
+                qué EPIs se van a entregar, para no tener que estar
+                scrolleando y viendo en el catálogo". Mismo concepto
+                de visor que en la gestión de lotes -- checklist y
+                visor en columnas independientes, misma altura fija.
+                {% endcomment %}
+                <div class="row g-2">
+                    <div class="col-7">
+                        <label class="form-label small mb-1">Al elegir un lote se marcan sus EPIs -- desmarca los que hoy no toque entregar, o marca EPIs sueltos sin lote:</label>
+                        <div id="personMassEpiBatchList" style="height:40vh;overflow-y:auto;border:1px solid #dee2e6;border-radius:0.25rem;padding:0.5rem;">
+                            {% for epi in epi_items %}
+                            <div class="ps-3 pe-2 py-1" data-epi-family="{{ epi.family }}">
+                                <div class="form-check">
+                                    <input class="form-check-input person-mass-epi-batch-checkbox" type="checkbox" value="{{ epi.pk }}" id="pmEbCheck{{ epi.pk }}">
+                                    <label class="form-check-label small" for="pmEbCheck{{ epi.pk }}">{{ epi.family }} -- {{ epi.label }}</label>
+                                </div>
+                            </div>
+                            {% empty %}
+                            <p class="text-muted small mb-0">Sin EPIs en el catálogo.</p>
+                            {% endfor %}
                         </div>
                     </div>
-                    {% empty %}
-                    <p class="text-muted small mb-0">Sin EPIs en el catálogo.</p>
-                    {% endfor %}
+                    <div class="col-5">
+                        <label class="form-label small mb-1 fw-bold">Se van a entregar</label>
+                        <div id="personMassEpiBatchPreview" style="height:40vh;overflow-y:auto;border:1px solid #dee2e6;border-radius:0.25rem;padding:0.5rem;">
+                            <ul class="mb-0 small ps-0" id="personMassEpiBatchPreviewList">
+                                <li class="text-muted">Ningún EPI marcado todavía.</li>
+                            </ul>
+                        </div>
+                    </div>
                 </div>
                 <div id="personMassEpiBatchResult" class="small mt-2"></div>
             </div>
