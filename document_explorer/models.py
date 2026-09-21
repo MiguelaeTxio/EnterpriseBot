@@ -1514,8 +1514,30 @@ class PersonIdentity(models.Model):
     phone = models.CharField(
         max_length=30, blank=True, verbose_name="Teléfono (Excel)",
     )
+    # ------------------------------------------------------------------
+    # H31 (S113). Segundo teléfono -- Miguel Ángel: "habría que añadir
+    # un segundo campo para el teléfono, por si tiene teléfono en el
+    # trabajo y teléfono personal." Campo de texto libre sin distinguir
+    # a nivel de esquema cuál es cuál (igual que `phone`) -- quien lo
+    # rellena decide qué va en cada uno.
+    # ------------------------------------------------------------------
+    phone_secondary = models.CharField(
+        max_length=30, blank=True, verbose_name="Segundo teléfono",
+    )
     email = models.EmailField(
         max_length=150, blank=True, verbose_name="Correo electrónico (Excel)",
+    )
+    # ------------------------------------------------------------------
+    # H31 (S113). Categoría profesional -- Miguel Ángel detectó que la
+    # categoría profesional que trae algún documento no siempre
+    # coincide con la del contrato. Campo único de referencia de la
+    # ficha, rellenado a mano -- nunca extraído automáticamente de
+    # ningún documento (a diferencia de los campos "(Excel)" de
+    # arriba), precisamente porque las fuentes reales discrepan entre
+    # sí y decidir cuál vale es un juicio humano, no una extracción.
+    # ------------------------------------------------------------------
+    professional_category = models.CharField(
+        max_length=150, blank=True, verbose_name="Categoría profesional",
     )
     # ------------------------------------------------------------------
     # H31 (S76). Dirección postal y fechas de alta/baja en la empresa --

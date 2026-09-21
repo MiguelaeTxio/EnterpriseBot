@@ -1,24 +1,39 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation_h30/_epi_pane.html #}
+{% comment %}
+H31 (S113): dos columnas con scroll independiente -- Miguel Ángel:
+"la pantalla con la vista con los trabajadores y las entregas
+scrollable por un lado y la columna [del catálogo] scrollable por
+otro". max-height + overflow-y en cada contenedor, nunca en la
+página completa -- así cada lado se desplaza sin arrastrar al otro
+ni alargar la pestaña entera. #epi-results (el fragmento que
+recarga htmx en cada búsqueda/orden/página) queda DENTRO del
+contenedor con scroll, nunca el contenedor en sí, para no perder el
+scroll al repintarse.
+{% endcomment %}
 <div class="row">
     <div class="col-md-9">
         {% include "panel/documentation_h30/_epi_search_form.html" with search=search %}
-        <div id="epi-results">
-            {% include "panel/documentation_h30/_epi_results.html" with page=page sort_key=sort_key sort_dir=sort_dir search=search sort_columns_epi=sort_columns_epi %}
+        <div id="epi-results-scroll" style="max-height:70vh;overflow-y:auto;">
+            <div id="epi-results">
+                {% include "panel/documentation_h30/_epi_results.html" with page=page sort_key=sort_key sort_dir=sort_dir search=search sort_columns_epi=sort_columns_epi %}
+            </div>
         </div>
     </div>
 
     <div class="col-md-3">
         <h6>Catálogo de EPIs</h6>
-        <ul class="list-group list-group-flush small">
-            {% for epi in catalog %}
-            <li class="list-group-item px-0 py-1">
-                <span class="text-muted">{{ epi.family }}</span> — {{ epi.label }}
-                {% if epi.requires_periodic_review %}<span class="badge bg-info text-dark">revisión periódica</span>{% endif %}
-            </li>
-            {% empty %}
-            <li class="list-group-item px-0 py-1 text-muted">Sin EPIs en el catálogo.</li>
-            {% endfor %}
-        </ul>
+        <div id="epi-catalog-scroll" style="max-height:70vh;overflow-y:auto;">
+            <ul class="list-group list-group-flush small" id="epiCatalogList">
+                {% for epi in catalog %}
+                <li class="list-group-item px-2 py-1" data-epi-family="{{ epi.family }}">
+                    <span class="text-muted">{{ epi.family }}</span> — {{ epi.label }}
+                    {% if epi.requires_periodic_review %}<span class="badge bg-info text-dark">revisión periódica</span>{% endif %}
+                </li>
+                {% empty %}
+                <li class="list-group-item px-0 py-1 text-muted">Sin EPIs en el catálogo.</li>
+                {% endfor %}
+            </ul>
+        </div>
         <p class="text-muted small mt-2">
             Para registrar la entrega de un EPI a un trabajador, hazlo desde su propia ficha (pestaña Personal).
         </p>
@@ -53,4 +68,31 @@ function openDocumentViewer(url) {
 document.getElementById('documentViewerModal').addEventListener('hidden.bs.modal', function () {
     document.getElementById('documentViewerFrame').src = '';
 });
+
+// H31 (S113), Miguel Ángel: "meterle colores por las distintas
+// familias de EPIs". `EpiItemCatalog.family` es texto libre (sin
+// choices fijas, ver docstring de _group_epi_deliveries_by_family) --
+// nunca se conoce de antemano el conjunto real de familias, así que
+// el color se deriva por hash del propio nombre de familia (misma
+// familia -> mismo color siempre, sin mantener una lista fija que se
+// quede corta el día que aparezca una familia nueva).
+(function () {
+    const hues = {};
+    let nextHue = 0;
+    function hueForFamily(family) {
+        if (!(family in hues)) {
+            // Reparte tonos lo más separados posible según van
+            // apareciendo familias nuevas (ángulo áureo), en vez de
+            // un hash bruto que puede repetir tonos parecidos.
+            hues[family] = (nextHue * 137.508) % 360;
+            nextHue += 1;
+        }
+        return hues[family];
+    }
+    document.querySelectorAll('#epiCatalogList li[data-epi-family]').forEach(function (li) {
+        const hue = hueForFamily(li.dataset.epiFamily);
+        li.style.borderLeft = '4px solid hsl(' + hue + ', 65%, 45%)';
+        li.style.backgroundColor = 'hsl(' + hue + ', 65%, 96%)';
+    });
+})();
 </script>

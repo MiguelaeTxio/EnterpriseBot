@@ -2724,9 +2724,9 @@ class PersonalCreateView(DocsUploadAccessMixin, View):
 
     REQUIRED_FIELDS = ("dni", "first_surname", "given_name")
     OPTIONAL_TEXT_FIELDS = (
-        "second_surname", "employer_company", "phone", "email",
-        "address_street", "postal_code", "city", "province",
-        "ss_affiliation_number",
+        "second_surname", "employer_company", "phone", "phone_secondary",
+        "email", "address_street", "postal_code", "city", "province",
+        "ss_affiliation_number", "professional_category",
     )
     OPTIONAL_DATE_FIELDS = ("birth_date", "hire_date")
 
@@ -3092,12 +3092,14 @@ class PersonalCreateView(DocsUploadAccessMixin, View):
             is_active_employee=True,
             employer_company=data["employer_company"],
             phone=data["phone"],
+            phone_secondary=data["phone_secondary"],
             email=data["email"],
             address_street=data["address_street"],
             postal_code=postal_code,
             city=data["city"],
             province=data["province"],
             ss_affiliation_number=data["ss_affiliation_number"],
+            professional_category=data["professional_category"],
             birth_date=date_values["birth_date"],
             hire_date=date_values["hire_date"],
             folder_path=folder_path,
@@ -3145,9 +3147,10 @@ class PersonalUpdateView(DocsUploadAccessMixin, View):
     """
 
     TEXT_EDITABLE_FIELDS = (
-        "given_name", "first_surname", "second_surname", "phone", "email",
-        "address_street", "postal_code", "city", "province",
-        "ss_affiliation_number",
+        "given_name", "first_surname", "second_surname", "phone",
+        "phone_secondary", "email", "address_street", "postal_code",
+        "city", "province", "ss_affiliation_number",
+        "professional_category",
     )
     DATE_EDITABLE_FIELDS = ("hire_date", "termination_date")
     # H31 (S109): `job_position` -- FK a JobPosition, editable igual
