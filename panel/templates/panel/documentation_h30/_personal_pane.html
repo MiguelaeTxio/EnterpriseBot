@@ -626,9 +626,9 @@ arriba, mismo motivo que el resto de modales de este archivo.
                     </div>
                 </div>
                 <p class="text-muted small mb-1">Al elegir un lote se marcan sus EPIs -- desmarca los que hoy no toque entregar, o marca EPIs sueltos sin lote:</p>
-                <div style="max-height:40vh;overflow-y:auto;border:1px solid #dee2e6;border-radius:0.25rem;padding:0.5rem;">
+                <div id="personMassEpiBatchList" style="max-height:40vh;overflow-y:auto;border:1px solid #dee2e6;border-radius:0.25rem;padding:0.5rem;">
                     {% for epi in epi_items %}
-                    <div class="form-check">
+                    <div class="form-check px-2 py-1" data-epi-family="{{ epi.family }}">
                         <input class="form-check-input person-mass-epi-batch-checkbox" type="checkbox" value="{{ epi.pk }}" id="pmEbCheck{{ epi.pk }}">
                         <label class="form-check-label small" for="pmEbCheck{{ epi.pk }}">{{ epi.family }} -- {{ epi.label }}</label>
                     </div>
@@ -645,6 +645,36 @@ arriba, mismo motivo que el resto de modales de este archivo.
         </div>
     </div>
 </div>
+
+{% comment %}
+H31 (S113). Miguel Ángel: "extendemos este tema de los colores aquí
+al modal de entrega de EPIs" -- mismo criterio de coloreado por
+familia que la pestaña EPIs (_epi_pane.html): color derivado por hash
+(ángulo áureo) del nombre de familia, misma familia -> mismo color en
+cualquier sitio de la app, sin lista fija. Encuentro en el mismo orden
+(EpiItemCatalog.objects.filter(is_active=True).order_by("family",
+"label")) en todos los sitios donde se usa, así que el resultado
+coincide con la pestaña EPIs sin necesidad de compartir estado entre
+páginas distintas.
+{% endcomment %}
+<script>
+(function () {
+    const hues = {};
+    let nextHue = 0;
+    function hueForFamily(family) {
+        if (!(family in hues)) {
+            hues[family] = (nextHue * 137.508) % 360;
+            nextHue += 1;
+        }
+        return hues[family];
+    }
+    document.querySelectorAll('#personMassEpiBatchList [data-epi-family]').forEach(function (row) {
+        const hue = hueForFamily(row.dataset.epiFamily);
+        row.style.borderLeft = '4px solid hsl(' + hue + ', 65%, 45%)';
+        row.style.backgroundColor = 'hsl(' + hue + ', 65%, 96%)';
+    });
+})();
+</script>
 
 {% comment %}
 H31 (S100), Bloque 1 -- alta de trabajador nuevo, GUIADA POR

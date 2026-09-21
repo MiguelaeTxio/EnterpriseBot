@@ -1108,12 +1108,28 @@ function openEpiDeliveryForm() {
     const templateOptions = EPI_BATCH_TEMPLATES.map(t =>
         `<option value="${t.id}" data-item-ids="${t.itemIds.join(',')}">${t.name}</option>`,
     ).join('');
-    const itemCheckboxes = EPI_ITEMS.map(e => `
-        <div class="form-check">
+    // H31 (S113), Miguel Ángel: "extendemos este tema de los colores
+    // aquí al modal de entrega de EPIs" -- mismo criterio de coloreado
+    // por familia que la pestaña EPIs (color por hash/ángulo áureo del
+    // nombre de familia, misma familia -> mismo color en toda la app).
+    const epiFormFamilyHues = {};
+    let epiFormNextHue = 0;
+    function epiFormHueForFamily(family) {
+        if (!(family in epiFormFamilyHues)) {
+            epiFormFamilyHues[family] = (epiFormNextHue * 137.508) % 360;
+            epiFormNextHue += 1;
+        }
+        return epiFormFamilyHues[family];
+    }
+    const itemCheckboxes = EPI_ITEMS.map(e => {
+        const hue = epiFormHueForFamily(e.family);
+        const style = `border-left:4px solid hsl(${hue}, 65%, 45%); background-color:hsl(${hue}, 65%, 96%);`;
+        return `
+        <div class="form-check px-2 py-1" style="${style}">
             <input class="form-check-input epi-delivery-item-checkbox" type="checkbox" value="${e.id}" id="edCheck${e.id}">
             <label class="form-check-label small" for="edCheck${e.id}">${e.family} -- ${e.label}</label>
-        </div>`,
-    ).join('');
+        </div>`;
+    }).join('');
     const today = new Date().toISOString().slice(0, 10);
     container.innerHTML = `
         <div class="card">
