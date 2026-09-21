@@ -2062,14 +2062,19 @@ class CompanyFiscalProfile(models.Model):
     `_RECIPIENT_TAX_ID_TO_COMPANY_CODE` en `spare_parts.services`
     (S004): la misma empresa aparece en varios sitios bajo variantes
     de texto libre distintas ("TRANSGRUAL SL" / "TRANSGRUAL S.L.").
-    Confirmado real (S113, consulta SQL sobre `employer_company`): 3
-    empresas reales con CIF conocido (Grúas Adolfo Álvarez B29405040,
-    Transgrual B92493022, Asistencia y Grúas Granada B93261824,
-    dirección fiscal confirmada por Miguel Ángel -- las tres en C/
-    Ronda del Norte, 12, Santa Rosalía, 29591 Málaga), más dos
-    variantes reales sin resolver ("GRUALDI S.L", "TRANSGRUAL Y
-    ASITENCIA", 2+1 personas) que Miguel Ángel no ha confirmado
-    todavía a qué empresa real corresponden -- ver anexo H31.
+    Confirmado real (S113, consulta SQL sobre `employer_company`) y
+    corregido tras aclaración explícita de Miguel Ángel: 4 empresas
+    reales, ninguna variante queda sin resolver -- Grúas Adolfo
+    Álvarez (B29405040), Transgrual (B92493022, agrupa también
+    "TRANSGRUAL Y ASITENCIA", variante de escritura ya decidida en
+    S76 vía `COMPANY_FILTER_CHOICES`), Asistencia y Grúas Granada
+    (B93261824) y Grualdi (B29739059, la 4ª empresa real del grupo,
+    también ya reconocida en `COMPANY_FILTER_CHOICES` desde S76 --
+    "esas son las empresas que hay y ya está. Ya no tenemos más
+    empresas"). Dirección fiscal confirmada por Miguel Ángel para las
+    tres primeras (C/ Ronda del Norte, 12, Santa Rosalía, 29591
+    Málaga); Grualdi con dirección propia verificada contra registro
+    mercantil público (C/ Diseminado de Cantos, 12, Málaga).
 
     Si `employer_company` de una persona no casa con ningún alias de
     ningún perfil, el documento de entrega se genera igualmente, sin
