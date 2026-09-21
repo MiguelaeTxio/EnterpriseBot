@@ -34,7 +34,6 @@ from panel.views_documentation_h30 import (
     DocumentationHubV2View,
     EpiBatchDeliveryExecuteView,
     EpiBatchTemplateDeleteView,
-    EpiBatchTemplateManageView,
     EpiBatchTemplateSaveView,
     PersonGroupTemplateCreateView,
     PersonMassSetJobPositionView,
@@ -492,8 +491,9 @@ urlpatterns = [
     path("documentacion/personal/grupos/crear/", PersonGroupTemplateCreateView.as_view(), name="documentation_personal_group_create"),
     path("documentacion/personal/puesto-masivo/", PersonMassSetJobPositionView.as_view(), name="documentation_personal_job_position_mass_set"),
     path("documentacion/personal/notificar-masivo/", PersonalNotificationMassSendView.as_view(), name="documentation_personal_notify_mass"),
-    # H31 (S113): CRUD de lotes de EPIs.
-    path("documentacion/lotes-epi/", EpiBatchTemplateManageView.as_view(), name="epi_batch_templates_manage"),
+    # H31 (S113): CRUD de lotes de EPIs -- centralizado en la propia
+    # pestaña EPIs (ver EpiTabFragmentView / _epi_pane.html), sin
+    # página aparte.
     path("documentacion/lotes-epi/guardar/", EpiBatchTemplateSaveView.as_view(), name="epi_batch_template_create"),
     path("documentacion/lotes-epi/<int:template_pk>/guardar/", EpiBatchTemplateSaveView.as_view(), name="epi_batch_template_update"),
     path("documentacion/lotes-epi/<int:template_pk>/eliminar/", EpiBatchTemplateDeleteView.as_view(), name="epi_batch_template_delete"),

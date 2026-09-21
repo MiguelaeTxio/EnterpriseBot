@@ -2627,40 +2627,11 @@ class EpiBatchDeliveryExecuteView(DocsUploadAccessMixin, View):
         })
 
 
-class EpiBatchTemplateManageView(CompanyUserRequiredMixin, View):
-    """
-    H31 (S113). GET: página de gestión de lotes de EPIs -- mismo
-    patrón que `JobPositionManageView` (nombre libre + catálogo con
-    casillero, agrupado por familia como en la pestaña EPIs), pero
-    para `EpiDeliveryBatchTemplate.items`. Sin concepto de "lote
-    activo" -- un lote no se aplica solo, se elige al entregar (ver
-    `EpiBatchDeliveryExecuteView`) y el supervisor puede desmarcar
-    EPIs concretos de ese lote en ese momento.
-    """
-
-    def get(self, request):
-        templates = EpiDeliveryBatchTemplate.objects.prefetch_related(
-            "items",
-        ).order_by("name")
-        items_by_family = {}
-        for epi in EpiItemCatalog.objects.filter(is_active=True).order_by(
-            "family", "label",
-        ):
-            items_by_family.setdefault(epi.family or "Sin familia asignada", []).append(epi)
-        families = [
-            {"label": family, "items": items}
-            for family, items in sorted(items_by_family.items())
-        ]
-        return render(request, "panel/epi_batch_templates/manage.html", {
-            "templates": templates, "families": families,
-        })
-
-
 class EpiBatchTemplateSaveView(CompanyUserRequiredMixin, View):
     """
     H31 (S113). POST: crea un lote nuevo (sin `template_pk`) o edita
     uno existente -- nombre y la lista completa de EPIs marcados en
-    `EpiBatchTemplateManageView`. Igual que un puesto de trabajo, un
+    la propia pestaña EPIs (EpiTabFragmentView). Igual que un puesto de trabajo, un
     lote sí puede guardarse sin ningún EPI marcado todavía (se puede
     seguir perfilando después).
     """
@@ -4156,6 +4127,13 @@ class EpiTabFragmentView(CompanyUserRequiredMixin, View):
         ctx["catalog"] = EpiItemCatalog.objects.filter(is_active=True).order_by(
             "family", "label",
         )
+        # H31 (S113): lotes de EPIs guardados -- el CRUD ahora vive
+        # centralizado en esta misma pestaña (antes página aparte),
+        # decisión explícita de Miguel Ángel: "que esté centralizado
+        # en los EPIs".
+        ctx["batch_templates"] = EpiDeliveryBatchTemplate.objects.prefetch_related(
+            "items",
+        ).order_by("name")
         return render(request, "panel/documentation_h30/_epi_pane.html", ctx)
 
 

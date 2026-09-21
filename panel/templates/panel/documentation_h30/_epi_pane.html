@@ -14,6 +14,54 @@ poco; nunca hace falta scroll horizontal en esta pestaña.
 búsqueda/orden/página) queda DENTRO del contenedor con scroll,
 nunca el contenedor en sí, para no perder el scroll al repintarse.
 {% endcomment %}
+{% comment %}
+H31 (S113). Miguel Ángel: "que esté centralizado en los EPIs" --
+CRUD de lotes arriba (nombre, guardar, lista de lotes con
+editar/eliminar), el catálogo de abajo pasa a ser seleccionable con
+casillas para construir/editar el lote. La tabla de entregas NUNCA
+cambia -- "inamovible, inmutable y es lo que hay. Son los EPIs
+entregados, ahí no hay que hacer más nada."
+{% endcomment %}
+<div class="card mb-3">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span id="epiBatchFormTitle">Nuevo lote de EPIs</span>
+        <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="epiBatchCancelEditBtn" onclick="resetEpiBatchForm()">Vaciar / nuevo lote</button>
+    </div>
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-md-4">
+                <label class="form-label small mb-1">Lotes guardados</label>
+                <table class="table table-sm table-hover mb-0">
+                    <tbody id="epiBatchTemplateTableBody">
+                        {% for template in batch_templates %}
+                        <tr id="epiBatchTemplateRow{{ template.pk }}"
+                            data-name="{{ template.name|escapejs }}"
+                            data-item-ids="{% for item in template.items.all %}{{ item.pk }}{% if not forloop.last %},{% endif %}{% endfor %}">
+                            <td>
+                                <a href="#" onclick="loadEpiBatchIntoForm({{ template.pk }}); return false;">{{ template.name }}</a>
+                                <div class="text-muted small">{% for item in template.items.all %}{{ item.label }}{% if not forloop.last %}, {% endif %}{% endfor %}{% if not template.items.all %}Sin perfilar todavía{% endif %}</div>
+                            </td>
+                            <td class="text-end align-middle">
+                                <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteEpiBatch({{ template.pk }})">Eliminar</button>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr id="epiBatchTemplateEmptyRow"><td colspan="2" class="text-muted small py-3">Sin lotes guardados todavía.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="col-md-8">
+                <label class="form-label small mb-1">Nombre del lote</label>
+                <input type="text" id="epiBatchName" class="form-control form-control-sm mb-2" placeholder="p. ej. EPI mecánico, EPI chóferes...">
+                <div id="epiBatchFormResult" class="small mb-2"></div>
+                <button type="button" class="btn btn-sm btn-primary" onclick="saveEpiBatch()">Guardar lote</button>
+                <p class="text-muted small mt-2 mb-0">Marca en el catálogo de la derecha los EPIs que forman este lote.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="row">
     <div class="col-md-9">
         {% include "panel/documentation_h30/_epi_search_form.html" with search=search %}
@@ -30,8 +78,13 @@ nunca el contenedor en sí, para no perder el scroll al repintarse.
             <ul class="list-group list-group-flush small" id="epiCatalogList">
                 {% for epi in catalog %}
                 <li class="list-group-item px-2 py-1" data-epi-family="{{ epi.family }}">
-                    <span class="text-muted">{{ epi.family }}</span> — {{ epi.label }}
-                    {% if epi.requires_periodic_review %}<span class="badge bg-info text-dark">revisión periódica</span>{% endif %}
+                    <div class="form-check">
+                        <input class="form-check-input epi-batch-item-checkbox" type="checkbox" value="{{ epi.pk }}" id="epiCatalogCheck{{ epi.pk }}">
+                        <label class="form-check-label" for="epiCatalogCheck{{ epi.pk }}">
+                            <span class="text-muted">{{ epi.family }}</span> — {{ epi.label }}
+                            {% if epi.requires_periodic_review %}<span class="badge bg-info text-dark">revisión periódica</span>{% endif %}
+                        </label>
+                    </div>
                 </li>
                 {% empty %}
                 <li class="list-group-item px-0 py-1 text-muted">Sin EPIs en el catálogo.</li>
@@ -99,4 +152,97 @@ document.getElementById('documentViewerModal').addEventListener('hidden.bs.modal
         li.style.backgroundColor = 'hsl(' + hue + ', 65%, 96%)';
     });
 })();
+
+// H31 (S113): CRUD de lotes de EPIs centralizado en esta pestaña --
+// Miguel Ángel: "que esté centralizado en los EPIs [...] el catálogo
+// [...] hacerlo con casillas para añadir al lote". El catálogo de la
+// derecha (#epiCatalogList) hace de selector del lote que se está
+// creando o editando; guardar/eliminar van contra los mismos
+// endpoints que ya usaba la página aparte (ahora retirada).
+function getCookie(name) {
+    const value = `; ${document.cookie}`;
+    const parts = value.split(`; ${name}=`);
+    if (parts.length === 2) return parts.pop().split(';').shift();
+}
+
+let epiBatchEditingPk = '';
+
+function getCheckedEpiBatchItemIds() {
+    return Array.from(document.querySelectorAll('.epi-batch-item-checkbox:checked')).map((el) => el.value);
+}
+
+function refreshEpiBatchFormTitle() {
+    const title = document.getElementById('epiBatchFormTitle');
+    const name = document.getElementById('epiBatchName').value.trim();
+    title.textContent = epiBatchEditingPk ? ('Editando: ' + (name || '(sin nombre)')) : (name || 'Nuevo lote de EPIs');
+}
+document.getElementById('epiBatchName').addEventListener('input', refreshEpiBatchFormTitle);
+
+function loadEpiBatchIntoForm(pk) {
+    const row = document.getElementById('epiBatchTemplateRow' + pk);
+    if (!row) return;
+    const name = row.dataset.name || '';
+    const ids = (row.dataset.itemIds || '').split(',').filter(Boolean);
+
+    epiBatchEditingPk = String(pk);
+    document.getElementById('epiBatchName').value = name;
+    document.querySelectorAll('.epi-batch-item-checkbox').forEach((el) => { el.checked = false; });
+    ids.forEach((id) => {
+        const el = document.getElementById('epiCatalogCheck' + id);
+        if (el) el.checked = true;
+    });
+    document.getElementById('epiBatchCancelEditBtn').classList.remove('d-none');
+    refreshEpiBatchFormTitle();
+}
+
+function resetEpiBatchForm() {
+    epiBatchEditingPk = '';
+    document.getElementById('epiBatchName').value = '';
+    document.querySelectorAll('.epi-batch-item-checkbox').forEach((el) => { el.checked = false; });
+    document.getElementById('epiBatchCancelEditBtn').classList.add('d-none');
+    document.getElementById('epiBatchFormResult').innerHTML = '';
+    refreshEpiBatchFormTitle();
+}
+
+function saveEpiBatch() {
+    const name = document.getElementById('epiBatchName').value.trim();
+    const itemIds = getCheckedEpiBatchItemIds();
+    const resultDiv = document.getElementById('epiBatchFormResult');
+
+    if (!name) {
+        resultDiv.innerHTML = '<div class="alert alert-danger py-1 px-2 small mb-0">Falta el nombre del lote.</div>';
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('name', name);
+    itemIds.forEach((id) => formData.append('item_ids', id));
+
+    const url = epiBatchEditingPk
+        ? `/panel/documentacion/lotes-epi/${epiBatchEditingPk}/guardar/`
+        : '/panel/documentacion/lotes-epi/guardar/';
+
+    fetch(url, {
+        method: 'POST', body: formData,
+        headers: {'X-CSRFToken': getCookie('csrftoken')},
+    }).then((r) => r.json()).then((data) => {
+        if (data.ok) {
+            location.reload();
+        } else {
+            resultDiv.innerHTML = `<div class="alert alert-danger py-1 px-2 small mb-0">${data.error || 'Error al guardar.'}</div>`;
+        }
+    }).catch(() => {
+        resultDiv.innerHTML = '<div class="alert alert-danger py-1 px-2 small mb-0">Error de red al guardar.</div>';
+    });
+}
+
+function deleteEpiBatch(pk) {
+    if (!confirm('¿Eliminar este lote? No afecta a ninguna entrega ya registrada.')) return;
+    fetch(`/panel/documentacion/lotes-epi/${pk}/eliminar/`, {
+        method: 'POST',
+        headers: {'X-CSRFToken': getCookie('csrftoken')},
+    }).then((r) => r.json()).then((data) => {
+        if (data.ok) location.reload();
+    });
+}
 </script>
