@@ -272,25 +272,39 @@ las filas de debajo se desplacen de verdad.
     // H31 (S114). La fila de arriba (filtros/grupos/acciones, ver
     // #personal-fixed-row) nunca hace scroll -- lo único scrollable es
     // el listado de trabajadores (#personal-results-scroll) y el
-    // visor de selección (#personSelectionScroll). Para que la suma
-    // de ambos bloques nunca supere la altura del viewport (y así la
-    // PÁGINA nunca necesite scroll propio, solo estos dos
-    // contenedores), la altura de ambos se calcula en JS como el
-    // espacio real que queda bajo ellos hasta el borde inferior de la
-    // ventana -- nunca un vh fijo, que no tiene en cuenta cuánto mide
-    // de verdad la fila fija en cada pantalla/resolución.
-    const PERSONAL_RESULTS_BOTTOM_MARGIN = 16;
+    // visor de selección (#personSelectionScroll). Para que la PÁGINA
+    // nunca necesite scroll propio, la altura de ambos contenedores se
+    // calcula midiendo cuánto se pasa el documento del alto real del
+    // viewport (document.documentElement.scrollHeight -
+    // window.innerHeight) y encogiéndolos exactamente por ese exceso
+    // -- nunca restando un margen fijo adivinado (padding inferior de
+    // .page-content, altura real de los iconos, etc.): ese margen
+    // varía según la pantalla y adivinarlo dejaba un remanente de
+    // scroll (incidente real reportado por Miguel Ángel con captura,
+    // el 68vh fijo de S113 y luego el primer intento con margen fijo
+    // de esta misma sesión seguían dejando la página desplazable). Se
+    // pone 'auto' primero para medir el exceso real sin arrastrar el
+    // límite anterior, luego se resta ese exceso de la altura natural
+    // -- álgebra: si T es la altura natural del listado y "resto" es
+    // todo lo demás de la página, el exceso medido es (resto + T -
+    // viewport); la altura final (T - exceso) da exactamente
+    // (viewport - resto), el hueco real disponible, sea cual sea T.
+    const PERSONAL_RESULTS_GUTTER = 4;
     const PERSONAL_RESULTS_MIN_HEIGHT = 240;
     const resultsScrollEl = document.getElementById('personal-results-scroll');
     const selectionScrollEl = document.getElementById('personSelectionScroll');
 
     function recomputePersonalResultsHeight() {
         if (!resultsScrollEl) return;
-        const top = resultsScrollEl.getBoundingClientRect().top;
-        const available = window.innerHeight - top - PERSONAL_RESULTS_BOTTOM_MARGIN;
-        const height = Math.max(available, PERSONAL_RESULTS_MIN_HEIGHT) + 'px';
-        resultsScrollEl.style.height = height;
-        if (selectionScrollEl) { selectionScrollEl.style.height = height; }
+        resultsScrollEl.style.height = 'auto';
+        if (selectionScrollEl) { selectionScrollEl.style.height = 'auto'; }
+        // Forzar reflujo antes de medir: scrollHeight/getBoundingClientRect
+        // ya disparan uno, pero se deja explícito por claridad.
+        const naturalHeight = resultsScrollEl.getBoundingClientRect().height;
+        const overflow = Math.max(document.documentElement.scrollHeight - window.innerHeight, 0);
+        const target = Math.max(naturalHeight - overflow - PERSONAL_RESULTS_GUTTER, PERSONAL_RESULTS_MIN_HEIGHT);
+        resultsScrollEl.style.height = target + 'px';
+        if (selectionScrollEl) { selectionScrollEl.style.height = target + 'px'; }
     }
 
     window.addEventListener('resize', recomputePersonalResultsHeight);
@@ -309,10 +323,16 @@ las filas de debajo se desplacen de verdad.
         });
         observer.observe(fixedRowEl, {childList: true, subtree: true, attributes: true});
     }
-    // Primer cálculo: en el siguiente frame, para que el navegador ya
-    // haya maquetado la fila fija con su contenido real (grupos de
-    // reparto cargados, etc.) antes de medir su altura.
+    // Primer cálculo en el siguiente frame (tras maquetar la fila fija
+    // con su contenido real), y una repetición de seguridad a los
+    // 300ms -- el evento 'load' de arriba no vuelve a dispararse para
+    // contenido cargado por htmx después de la carga inicial de la
+    // página (el hito Personal suele cargarse por "click once", ya
+    // con 'load' disparado hace rato), así que un reflujo tardío por
+    // fuentes/iconos no tendría ninguna otra red de seguridad.
     requestAnimationFrame(recomputePersonalResultsHeight);
+    setTimeout(recomputePersonalResultsHeight, 300);
+
 
     // H31 (S113): nombres de las personas actualmente seleccionadas,
     // para poder pintar el visor de selección (izquierda del selector
