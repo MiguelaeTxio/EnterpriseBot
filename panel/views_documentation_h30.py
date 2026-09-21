@@ -3752,24 +3752,33 @@ class PersonMassSetJobPositionView(DocsUploadAccessMixin, View):
         })
 
 
-class PersonGroupTemplateCreateView(DocsUploadAccessMixin, View):
+class PersonGroupTemplateSaveView(DocsUploadAccessMixin, View):
     """
-    H31 (S109), punto 1 del nuevo bloque de plantillas. POST: guarda
-    con nombre el Set `selection` que ya acumula el frontend de
+    H31 (S113). POST: crea un grupo nuevo (sin `group_pk`) o edita uno
+    existente (renombrar y/o cambiar la composición) -- guarda con
+    nombre el Set `selection` que ya acumula el frontend de
     `_personal_pane.html` (marcado entre filtros/páginas dentro de la
-    misma sesión de navegador) -- esta vista solo añade persistencia
-    con nombre más allá de esa sesión, para reutilizar el mismo
-    conjunto de personas en cualquier acción masiva y en días
-    distintos. Deliberadamente sin filtro de Company: el propio caso
-    de uso (chalecos a choferes de varias empresas) exige poder
-    mezclarlas en un mismo grupo.
+    misma sesión de navegador). Deliberadamente sin filtro de Company:
+    el propio caso de uso (chalecos a choferes de varias empresas)
+    exige poder mezclarlas en un mismo grupo.
 
-    Devuelve los `members` (pks) en la respuesta para que el
-    `<select>` de grupos guardados pueda añadir la nueva opción sin
-    recargar la pestaña.
+    Sustituye a `PersonGroupTemplateCreateView` (S109, solo creaba) --
+    unificado con el mismo patrón guardar/eliminar que
+    `EpiBatchTemplateSaveView`, ahora que la gestión de grupos vive
+    centralizada en esta misma pestaña (visor de grupos guardados +
+    panel de gestión + visor de la selección actual).
+
+    Devuelve `member_names` (ya formateados "Apellidos, Nombre") junto
+    a los `members` (pks), para que el visor de la derecha pueda
+    pintarse sin tener que resolver nombres por separado.
     """
 
-    def post(self, request):
+    def post(self, request, group_pk=None):
+        if group_pk:
+            group = get_object_or_404(PersonGroupTemplate, pk=group_pk)
+        else:
+            group = PersonGroupTemplate(created_by=request.user.company_user)
+
         name = request.POST.get("name", "").strip()
         person_ids = request.POST.getlist("person_ids")
 
@@ -3783,18 +3792,33 @@ class PersonGroupTemplateCreateView(DocsUploadAccessMixin, View):
                 status=400,
             )
 
+        group.name = name
+        group.save()
         people = PersonIdentity.objects.filter(pk__in=person_ids)
-        group = PersonGroupTemplate.objects.create(
-            name=name, created_by=request.user.company_user,
-        )
         group.members.set(people)
 
         return JsonResponse({
             "ok": True,
             "id": group.pk,
             "name": group.name,
-            "members": list(people.values_list("pk", flat=True)),
+            "members": [p.pk for p in people],
+            "member_names": [
+                "%s %s, %s" % (p.first_surname, p.second_surname, p.given_name)
+                for p in people
+            ],
         })
+
+
+class PersonGroupTemplateDeleteView(DocsUploadAccessMixin, View):
+    """
+    H31 (S113). POST: borra un grupo de reparto -- nunca toca a las
+    personas en sí, solo el conjunto guardado con nombre.
+    """
+
+    def post(self, request, group_pk):
+        group = get_object_or_404(PersonGroupTemplate, pk=group_pk)
+        group.delete()
+        return JsonResponse({"ok": True})
 
 
 class PersonalNotificationMassSendView(DocsUploadAccessMixin, View):
