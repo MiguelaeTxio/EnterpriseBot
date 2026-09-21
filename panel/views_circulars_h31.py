@@ -32,6 +32,8 @@ gestionando sus propias circulares, no administración de la
 plataforma.
 """
 from django.contrib import messages
+from django.contrib.contenttypes.models import ContentType
+from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -40,7 +42,13 @@ from django.http import HttpResponse
 
 from document_explorer import naming_service
 from document_explorer.index_writer import ensure_folder_chain
-from document_explorer.models import DocumentIndexEntry, DocumentTypeCatalog, path_digest
+from document_explorer.models import (
+    CompanyFiscalProfile, DocumentIndexEntry, DocumentTypeCatalog,
+    PersonIdentity, path_digest,
+)
+from document_explorer.subject_upload_service import (
+    SubjectUploadError, upload_subject_document,
+)
 from panel.mixins import DocsUploadAccessMixin
 from spare_parts.gcs_service import upload_bytes
 
@@ -572,11 +580,170 @@ class CircularExportWordView(DocsUploadAccessMixin, View):
         doc.save(buffer)
         buffer.seek(0)
 
-        filename = "%s.docx" % naming_service._sanitize_token(document_type.label)
-        response = HttpResponse(
-            buffer.read(),
-            content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        )
         response["Content-Disposition"] = 'attachment; filename="%s"' % filename
         return response
+
+
+def _render_document_variables(content_html, *, worker=None, administrator=None, company=None):
+    """
+    H31 (S114). Primer paso de "documentos programáticos" pedido por
+    Miguel Ángel: sustituye tokens `{{...}}` del `content_html` de una
+    plantilla por datos reales de la persona/empresa elegidas al
+    generar. Un token sin dato disponible (p. ej. {{empresa.cif}} sin
+    empresa elegida) se deja tal cual, nunca se sustituye por vacío a
+    ciegas -- así un fallo de selección se ve en el documento en vez
+    de desaparecer en silencio.
+    """
+    tokens = {}
+    if worker is not None:
+        tokens["trabajador.nombre_completo"] = (
+            "%s %s %s" % (worker.given_name, worker.first_surname, worker.second_surname)
+        ).strip()
+        tokens["trabajador.dni"] = worker.dni
+    if administrator is not None:
+        tokens["administrador.nombre_completo"] = (
+            "%s %s %s" % (administrator.given_name, administrator.first_surname, administrator.second_surname)
+        ).strip()
+        tokens["administrador.dni"] = administrator.dni
+    if company is not None:
+        tokens["empresa.razon_social"] = company.legal_name
+        tokens["empresa.cif"] = company.tax_id
+        tokens["empresa.direccion_fiscal"] = company.fiscal_address
+    tokens["fecha"] = timezone.now().strftime("%d/%m/%Y")
+
+    result = content_html
+    for key, value in tokens.items():
+        result = result.replace("{{%s}}" % key, value or "")
+    return result
+
+
+def _circular_generate_person_search(request):
+    """
+    H31 (S114). Búsqueda de trabajador para "Generar documento" --
+    mismo criterio que `_vacation_person_autocomplete_page` (H31 S94,
+    panel/views_documentation_h30.py): nombre/apellidos/DNI icontains,
+    solo activos, máx. 15, nada con menos de 2 caracteres. Duplicado
+    aquí en vez de importado para no acoplar este módulo al de
+    Documentación/Personal por una función de 8 líneas.
+    """
+    search = request.GET.get("q", "").strip()
+    if len(search) < 2:
+        return []
+    return list(
+        PersonIdentity.objects.filter(is_active_employee=True).filter(
+            Q(first_surname__icontains=search)
+            | Q(second_surname__icontains=search)
+            | Q(given_name__icontains=search)
+            | Q(dni__icontains=search),
+        ).order_by("first_surname", "second_surname", "given_name")[:15],
+    )
+
+
+class CircularGenerateView(DocsUploadAccessMixin, View):
+    """
+    GET/POST: genera un documento real a partir de una plantilla de
+    comunicación con variables. Miguel Ángel, verbatim: "las
+    plantillas deben ser programáticas [...] elegida la plantilla el
+    documento se genera con variables basadas en la base de datos, si
+    por ejemplo se quiere dar poderes a un trabajador, elegimos la
+    empresa, el administrador y el trabajador y se genera el
+    documento ad-hoc".
+
+    El administrador se resuelve SIEMPRE de forma automática a partir
+    de la empresa elegida (`CompanyFiscalProfile.administrator`,
+    confirmado contra contrato real de cada empresa, S114) -- sin
+    selector aparte para él en este primer alcance; Miguel Ángel no
+    llegó a confirmar si hace falta poder elegir a otra persona caso
+    por caso, así que de momento es siempre el administrador oficial.
+
+    El PDF generado se guarda en la carpeta real del trabajador (vía
+    `upload_subject_document`, mismo mecanismo que la entrega de
+    EPIs, H31 S113) con el propio `document_type` de la plantilla --
+    confirmado explícitamente por Miguel Ángel (pregunta 2 de esta
+    misma sesión: "¿se guardan en la carpeta del trabajador?" -- "Sí").
+    """
+
+    def get(self, request, pk):
+        document_type = get_object_or_404(
+            DocumentTypeCatalog, pk=pk, is_notification_template=True,
+        )
+        if not document_type.content_html.strip():
+            messages.error(
+                request,
+                "«%s» todavía no tiene contenido -- edítala antes de generar un documento."
+                % document_type.label,
+            )
+            return redirect(reverse("panel:circulars_edit", args=[document_type.pk]))
+        companies = CompanyFiscalProfile.objects.select_related(
+            "administrator",
+        ).order_by("legal_name")
+        return render(request, "panel/circulars_h31/circular_generate.html", {
+            "document_type": document_type,
+            "companies": companies,
+        })
+
+    def post(self, request, pk):
+        document_type = get_object_or_404(
+            DocumentTypeCatalog, pk=pk, is_notification_template=True,
+        )
+        company = get_object_or_404(CompanyFiscalProfile, pk=request.POST.get("company_id"))
+        worker = get_object_or_404(PersonIdentity, pk=request.POST.get("person_id"))
+        administrator = company.administrator
+
+        rendered_body = _render_document_variables(
+            document_type.content_html, worker=worker,
+            administrator=administrator, company=company,
+        )
+        html_content = (
+            "<!DOCTYPE html><html lang='es'><head><meta charset='utf-8'>"
+            "<style>"
+            "body{font-family:Arial,sans-serif;font-size:11pt;margin:2.5cm 2cm}"
+            "h1{font-size:14pt;margin-bottom:18px}"
+            "</style></head><body>"
+            "<h1>%s</h1>%s"
+            "</body></html>"
+        ) % (document_type.label, rendered_body)
+
+        import weasyprint
+        pdf_bytes = weasyprint.HTML(string=html_content).write_pdf()
+
+        person_ct = ContentType.objects.get_for_model(PersonIdentity)
+        subject_label = "%s %s, %s" % (
+            worker.first_surname, worker.second_surname, worker.given_name,
+        )
+        try:
+            upload_subject_document(
+                subject=worker, domain_content_type=person_ct,
+                document_type=document_type, data=pdf_bytes,
+                original_filename="%s_%s.pdf" % (
+                    naming_service._sanitize_token(document_type.label),
+                    timezone.now().strftime("%Y%m%d"),
+                ),
+                typed_date=None, subject_label=subject_label,
+                uploaded_by=getattr(request.user, "company_user", None),
+            )
+        except SubjectUploadError as exc:
+            messages.error(request, "No se pudo guardar el documento generado: %s" % exc)
+            return redirect(reverse("panel:circulars_generate", args=[document_type.pk]))
+
+        messages.success(
+            request,
+            "Documento «%s» generado para %s %s y guardado en su carpeta."
+            % (document_type.label, worker.given_name, worker.first_surname),
+        )
+        return redirect(reverse("panel:documentation_personal_detail", args=[worker.pk]))
+
+
+class CircularGeneratePersonSearchView(DocsUploadAccessMixin, View):
+    """GET: fragmento de sugerencias de trabajador para "Generar
+    documento" -- ver _circular_generate_person_search."""
+
+    def get(self, request):
+        results = _circular_generate_person_search(request)
+        search_performed = len(request.GET.get("q", "").strip()) >= 2
+        return render(
+            request,
+            "panel/circulars_h31/_circular_generate_person_options.html",
+            {"results": results, "search_performed": search_performed},
+        )
 

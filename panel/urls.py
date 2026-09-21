@@ -20,6 +20,8 @@ from panel.views_circulars_h31 import (
     CircularEditView,
     CircularExportPdfView,
     CircularExportWordView,
+    CircularGeneratePersonSearchView,
+    CircularGenerateView,
     CircularImportDocumentView,
     CircularListView,
     CircularSaveContentView,
@@ -513,6 +515,8 @@ urlpatterns = [
     path("documentacion/circulares/<int:pk>/plantilla/quitar/", CircularTemplateClearView.as_view(), name="circulars_template_clear"),
     path("documentacion/circulares/<int:pk>/descargar/pdf/", CircularExportPdfView.as_view(), name="circulars_export_pdf"),
     path("documentacion/circulares/<int:pk>/descargar/word/", CircularExportWordView.as_view(), name="circulars_export_word"),
+    path("documentacion/circulares/<int:pk>/generar/", CircularGenerateView.as_view(), name="circulars_generate"),
+    path("documentacion/circulares/generar/buscar-persona/", CircularGeneratePersonSearchView.as_view(), name="circulars_generate_person_search"),
     path("documentacion/epis/", EpiTabFragmentView.as_view(), name="documentation_epi_tab"),
     # H30 (S50): mismo motivo que documentation_personal_results.
     path("documentacion/epis/resultados/", EpiResultsFragmentView.as_view(), name="documentation_epi_results"),
