@@ -2123,6 +2123,30 @@ class CompanyFiscalProfile(models.Model):
             "distinguir mayúsculas/minúsculas). Una por línea."
         ),
     )
+    administrator = models.ForeignKey(
+        "PersonIdentity",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="administered_companies",
+        verbose_name="Administrador/representante legal",
+        help_text=(
+            "H31 (S114). Para generar documentos programáticos "
+            "(circulares con variables, p. ej. \"dar poderes a un "
+            "trabajador\") que necesiten el nombre de quien firma en "
+            "representación de la empresa. Confirmado contra contrato "
+            "real de un trabajador de cada una de las 4 empresas "
+            "(campo 'EN CONCEPTO' del modelo de contrato indefinido "
+            "del SEPE) -- nunca asumido de memoria: Grúas Adolfo "
+            "Álvarez y Transgrual llevan a Adolfo Álvarez Díaz como "
+            "Gerente/Administrador; Grualdi y Asistencia y Grúas "
+            "Granada llevan a José Luis Álvarez Díaz como Administrador/"
+            "Administrador mancomunado -- Grualdi NO es Adolfo, pese a "
+            "ser la suposición inicial de Miguel Ángel (\"como norma "
+            "general es uno de los hermanos Álvarez Díaz [...] espera, "
+            "lo suyo es leer contratos [...] e informar desde ahí\")."
+        ),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
