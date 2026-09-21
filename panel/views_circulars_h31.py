@@ -377,6 +377,33 @@ class CircularImportDocumentView(DocsUploadAccessMixin, View):
         return redirect(reverse("panel:circulars_edit", args=[document_type.pk]))
 
 
+class CircularTemplateClearView(DocsUploadAccessMixin, View):
+    """
+    POST: desvincula `current_template` (lo pone a NULL) sin subir
+    ningún archivo nuevo -- nunca borra el `DocumentIndexEntry` real
+    ni el archivo en GCS, solo quita la referencia. Origen real
+    (S114): dos plantillas vigentes mal atribuidas (una era en
+    realidad un documento de ANAGRUAL, otra apuntaba a un archivo ya
+    en papelera y daba 404 al pulsar "Ver") solo se pudieron corregir
+    con una migración de datos porque no existía ningún mecanismo en
+    el panel para quitar una plantilla sin sustituirla por otra --
+    esta vista cubre ese hueco para que no vuelva a hacer falta.
+    """
+
+    def post(self, request, pk):
+        document_type = get_object_or_404(
+            DocumentTypeCatalog, pk=pk, is_notification_template=True,
+        )
+        document_type.current_template = None
+        document_type.save(update_fields=["current_template"])
+        messages.success(
+            request,
+            "Plantilla vigente de «%s» desvinculada -- el archivo "
+            "real no se ha borrado, solo la referencia." % document_type.label,
+        )
+        return redirect(reverse("panel:circulars_edit", args=[document_type.pk]))
+
+
 class CircularTemplateUploadView(DocsUploadAccessMixin, View):
     """
     POST: sustituye la plantilla vigente (`current_template`) de un

@@ -23,6 +23,7 @@ from panel.views_circulars_h31 import (
     CircularImportDocumentView,
     CircularListView,
     CircularSaveContentView,
+    CircularTemplateClearView,
     CircularTemplateUploadView,
 )
 from panel.views_navigation_state import NavigationStateSaveView
@@ -509,6 +510,7 @@ urlpatterns = [
     path("documentacion/circulares/<int:pk>/guardar-contenido/", CircularSaveContentView.as_view(), name="circulars_save_content"),
     path("documentacion/circulares/<int:pk>/importar/", CircularImportDocumentView.as_view(), name="circulars_import"),
     path("documentacion/circulares/<int:pk>/plantilla/", CircularTemplateUploadView.as_view(), name="circulars_template_upload"),
+    path("documentacion/circulares/<int:pk>/plantilla/quitar/", CircularTemplateClearView.as_view(), name="circulars_template_clear"),
     path("documentacion/circulares/<int:pk>/descargar/pdf/", CircularExportPdfView.as_view(), name="circulars_export_pdf"),
     path("documentacion/circulares/<int:pk>/descargar/word/", CircularExportWordView.as_view(), name="circulars_export_word"),
     path("documentacion/epis/", EpiTabFragmentView.as_view(), name="documentation_epi_tab"),

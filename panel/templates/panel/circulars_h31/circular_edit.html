@@ -106,10 +106,17 @@ CircularExportPdfView/CircularExportWordView.
                         golpe, solo se repunta a una versión nueva.
                     </p>
                     {% if document_type.current_template %}
-                    <p class="mb-2">
+                    <p class="mb-2 d-flex align-items-center gap-2">
                         <a href="{% url 'panel:documentation_document_view' pk=document_type.current_template.pk %}" target="_blank">
                             <i class="bi bi-file-earmark-text"></i> {{ document_type.current_template.name }}
                         </a>
+                        <form method="post" action="{% url 'panel:circulars_template_clear' pk=document_type.pk %}"
+                              onsubmit="return confirm('¿Quitar la plantilla vigente? El archivo real no se borra, solo se desvincula.');">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-1" title="Quitar plantilla">
+                                <i class="bi bi-x-lg"></i>
+                            </button>
+                        </form>
                     </p>
                     {% else %}
                     <p class="text-muted small mb-2">Sin plantilla vigente todavía.</p>
