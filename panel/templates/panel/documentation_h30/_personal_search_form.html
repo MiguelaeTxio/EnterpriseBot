@@ -61,6 +61,27 @@ para un momento distinto.
             </div>
             {% endfor %}
         </div>
+        {% comment %}
+        H31 (S113). Miguel Ángel: "si tuviésemos una casilla que
+        dijese mostrar y la diéramos y nos mostrase en el listado de
+        trabajadores [...] justamente los trabajadores que están en
+        el grupo de reparto [...] porque sí nos aparece el listado de
+        los seleccionados, pero no nos aparece en el listado de
+        trabajadores". Marcada, sustituye POR COMPLETO los casilleros
+        de Estado/Empresa (nunca los combina) -- ver
+        `_person_list_page`. `selected_ids` lo mantiene sincronizado
+        el JS de _personal_pane.html cada vez que cambia la
+        selección (refreshPersonSelectionPreview).
+        {% endcomment %}
+        <div>
+            <div class="fw-semibold mb-1">Selección</div>
+            <div class="form-check">
+                <input class="form-check-input personal-filter-checkbox" type="checkbox" name="only_selected" value="1"
+                       id="personalOnlySelectedCheckbox" title="Sustituye los filtros de Estado/Empresa de arriba mientras esté marcada">
+                <label class="form-check-label" for="personalOnlySelectedCheckbox">Mostrar solo la selección actual</label>
+            </div>
+            <input type="hidden" name="selected_ids" id="personalSelectedIdsInput" value="">
+        </div>
     </div>
 </form>
 <script>

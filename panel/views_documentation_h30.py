@@ -539,7 +539,23 @@ class MachineDetailView(CompanyUserRequiredMixin, View):
 
 def _person_list_page(request):
     qs = PersonIdentity.objects.select_related("job_position")
-    qs = _apply_personal_filters(qs, request)
+    # H31 (S113). Miguel Ángel: "si tuviésemos una casilla que dijese
+    # mostrar [...] que mostrase en el listado de trabajadores
+    # justamente los trabajadores que están en el grupo de reparto".
+    # Con `only_selected=1` y una lista de pks (la propia selección
+    # JS, cargada de un grupo o marcada a mano -- da igual el origen),
+    # el listado se filtra EXACTAMENTE a esos pks, saltándose del
+    # todo los casilleros de Estado/Empresa -- nunca los combina con
+    # ellos, para no ocultar a nadie del grupo por no cumplir un
+    # filtro de empresa/estado que no pintaba nada aquí.
+    only_selected = request.GET.get("only_selected") == "1"
+    selected_ids = [
+        pk for pk in request.GET.get("selected_ids", "").split(",") if pk
+    ]
+    if only_selected and selected_ids:
+        qs = qs.filter(pk__in=selected_ids)
+    else:
+        qs = _apply_personal_filters(qs, request)
     search = request.GET.get("q", "").strip()
     if search:
         # S110: buscar "ALVAREZ VIEIRA" no encontraba a nadie -- el

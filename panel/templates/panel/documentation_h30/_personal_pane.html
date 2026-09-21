@@ -269,6 +269,23 @@ las filas de debajo se desplacen de verdad.
         list.innerHTML = names.length
             ? names.map((n) => `<li style="list-style:none;">${n}</li>`).join('')
             : '<li class="text-muted">Nadie seleccionado todavía.</li>';
+
+        // H31 (S113), Miguel Ángel: "una casilla que dijese mostrar
+        // [...] que mostrase en el listado de trabajadores justamente
+        // los trabajadores que están en el grupo de reparto". El
+        // campo oculto viaja con cada petición htmx del formulario de
+        // filtros; si la casilla ya está marcada, se relanza la
+        // búsqueda para que el listado siga la selección en vivo
+        // (cargar otro grupo, marcar a alguien más, etc.) sin tener
+        // que desmarcar y volver a marcar la casilla a mano.
+        const idsInput = document.getElementById('personalSelectedIdsInput');
+        if (idsInput) {
+            idsInput.value = Array.from(selection).join(',');
+            const onlySelectedCheckbox = document.getElementById('personalOnlySelectedCheckbox');
+            if (onlySelectedCheckbox && onlySelectedCheckbox.checked) {
+                onlySelectedCheckbox.dispatchEvent(new Event('change', {bubbles: true}));
+            }
+        }
     }
 
     function syncCheckboxesToSelection() {
