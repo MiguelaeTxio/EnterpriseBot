@@ -235,6 +235,41 @@ function activateEpiBatchManagement() {
     document.getElementById('epiBatchManagementForm').classList.remove('d-none');
 }
 
+// H31 (S113), Miguel Ángel: "el aviso cuando vamos a cambiar de URL
+// en el navegador [...] tal y como hacemos en los dosieres" -- mismo
+// mecanismo exacto que dossier_templates_h35/manage.html: una
+// instantánea del estado (lote en edición, nombre, EPIs marcados) se
+// compara contra el estado actual; si difieren, el navegador
+// pregunta antes de salir de la página (beforeunload nativo, nunca
+// un modal propio -- es el único aviso real que un navegador permite
+// disparar al cerrar pestaña/navegar fuera).
+let epiBatchLastSnapshot = null;
+
+function epiBatchCurrentSnapshot() {
+    return JSON.stringify({
+        pk: epiBatchEditingPk,
+        name: document.getElementById('epiBatchName').value.trim(),
+        ids: getCheckedEpiBatchItemIds().slice().sort(),
+    });
+}
+
+function epiBatchTakeSnapshot() {
+    epiBatchLastSnapshot = epiBatchCurrentSnapshot();
+}
+
+function epiBatchIsDirty() {
+    return epiBatchLastSnapshot !== null && epiBatchLastSnapshot !== epiBatchCurrentSnapshot();
+}
+
+window.addEventListener('beforeunload', function (e) {
+    if (epiBatchIsDirty()) {
+        e.preventDefault();
+        e.returnValue = '';
+    }
+});
+
+document.addEventListener('DOMContentLoaded', epiBatchTakeSnapshot);
+
 document.querySelectorAll('.epi-batch-item-checkbox').forEach((el) => {
     el.addEventListener('change', function () {
         this.closest('li').style.outline = this.checked ? '2px solid #0d6efd' : '';
@@ -279,6 +314,7 @@ function loadEpiBatchIntoForm(pk) {
         }
     });
     refreshEpiBatchPreview();
+    epiBatchTakeSnapshot();
 }
 
 function resetEpiBatchForm() {
@@ -292,6 +328,7 @@ function resetEpiBatchForm() {
     });
     document.getElementById('epiBatchFormResult').innerHTML = '';
     refreshEpiBatchPreview();
+    epiBatchTakeSnapshot();
 }
 
 function saveEpiBatch() {
@@ -317,6 +354,7 @@ function saveEpiBatch() {
         headers: {'X-CSRFToken': getCookie('csrftoken')},
     }).then((r) => r.json()).then((data) => {
         if (data.ok) {
+            epiBatchTakeSnapshot();
             location.reload();
         } else {
             resultDiv.innerHTML = `<div class="alert alert-danger py-1 px-2 small mb-0">${data.error || 'Error al guardar.'}</div>`;
@@ -333,7 +371,10 @@ function deleteEpiBatch() {
         method: 'POST',
         headers: {'X-CSRFToken': getCookie('csrftoken')},
     }).then((r) => r.json()).then((data) => {
-        if (data.ok) location.reload();
+        if (data.ok) {
+            epiBatchTakeSnapshot();
+            location.reload();
+        }
     });
 }
 </script>
