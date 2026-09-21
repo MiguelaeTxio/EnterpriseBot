@@ -538,7 +538,7 @@ class MachineDetailView(CompanyUserRequiredMixin, View):
 
 
 def _person_list_page(request):
-    qs = PersonIdentity.objects.all()
+    qs = PersonIdentity.objects.select_related("job_position")
     qs = _apply_personal_filters(qs, request)
     search = request.GET.get("q", "").strip()
     if search:

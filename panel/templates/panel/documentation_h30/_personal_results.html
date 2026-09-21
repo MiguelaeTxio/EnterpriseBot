@@ -36,6 +36,7 @@ en la selección recordada por ese JS al reconstruir la tabla.
                     {% if sort_key == 'doc_count' %}<i class="bi bi-chevron-{% if sort_dir == 'asc' %}up{% else %}down{% endif %}"></i>{% endif %}
                 </a>
             </th>
+            <th>Requisitos de documentación</th>
             {% comment %}H35 (S105): columna de aviso "falta algo de la plantilla" -- se rellena por JS solo cuando hay una plantilla elegida en la barra de acción masiva, ver _personal_pane.html.{% endcomment %}
             <th></th>
         </tr>
@@ -49,10 +50,11 @@ en la selección recordada por ese JS al reconstruir la tabla.
             <td>{{ person.dni }}</td>
             <td>{{ person.hire_date|default_if_none:"" }}</td>
             <td>{{ person.doc_count }}</td>
+            <td>{{ person.job_position.name|default:"—" }}</td>
             <td><span class="dossier-missing-flag" data-person-id="{{ person.pk }}"></span></td>
         </tr>
         {% empty %}
-        <tr><td colspan="7" class="text-muted small py-3">No se encontró personal.</td></tr>
+        <tr><td colspan="8" class="text-muted small py-3">No se encontró personal.</td></tr>
         {% endfor %}
     </tbody>
 </table>
