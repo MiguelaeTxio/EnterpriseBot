@@ -2325,7 +2325,7 @@ class JobPositionSaveView(CompanyUserRequiredMixin, View):
         name = request.POST.get("name", "").strip()
         if not name:
             return JsonResponse(
-                {"ok": False, "error": "Falta el nombre del puesto."},
+                {"ok": False, "error": "Falta el nombre del requisito."},
                 status=400,
             )
 
@@ -2334,13 +2334,13 @@ class JobPositionSaveView(CompanyUserRequiredMixin, View):
             position.save()
         except IntegrityError:
             return JsonResponse(
-                {"ok": False, "error": "Ya existe un puesto con ese nombre."},
+                {"ok": False, "error": "Ya existe un requisito con ese nombre."},
                 status=400,
             )
         type_ids = request.POST.getlist("document_type_ids")
         position.required_document_types.set(type_ids)
 
-        return JsonResponse({"ok": True, "id": position.pk})
+        return JsonResponse({"ok": True, "id": position.pk, "name": position.name})
 
 
 class JobPositionDeleteView(CompanyUserRequiredMixin, View):

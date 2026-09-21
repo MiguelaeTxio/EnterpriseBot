@@ -2,18 +2,23 @@
 {% extends "panel/base.html" %}
 
 {% comment %}
-H31 (S109, renombrado de cara al usuario en S113). Página de gestión
-de "Requisitos de documentación" -- Miguel Ángel: "el nombre tiene a
-confusión, porque en el puesto lo que tenemos es [...] la
-documentación obligatoria por puestos [...] habría que darle otro
-nombre". Mismo modelo/vistas/URLs internos (JobPosition,
-job_position, /puestos/...) -- solo cambia el rótulo visible. Misma
-mecánica que DossierTemplateManageView (tipos documentales agrupados
-por familia, marcados con casillero), pero para
-JobPosition.required_document_types. Sin concepto de "plantilla
-activa" (un requisito no se aplica sobre nadie, solo se asigna a la
-persona desde su ficha) y sin FK a Company (catálogo de toda la
-plataforma, mismo criterio que los grupos de reparto).
+H31 (S109, renombrado de cara al usuario y alineado de formato en
+S113). Página de gestión de "Requisitos de documentación" -- Miguel
+Ángel: "aplicamos a la gestión de requisitos de documentación la
+misma filosofía que tenemos en todo: visor, parte de listado con los
+documentos, el visor de documentación elegida, la parte del CRUD
+[...] para mantener el mismo formato que con los dosieres". Mismo
+modelo/vistas/URLs internos (JobPosition, job_position, /puestos/...)
+-- solo cambia el rótulo visible y el formato de esta página.
+
+Igual que dossier_templates_h35/manage.html: checklist de tipos
+documentales agrupados por familia y coloreados a la izquierda, visor
+sticky con lo marcado ahora mismo a la derecha, guardar/eliminar sin
+recargar la página (toast en su lugar), aviso del navegador si hay
+cambios sin guardar al salir. Sin concepto de "activa" -- un requisito
+no se aplica sobre nadie, solo se asigna a la persona desde su ficha
+-- por eso no hay aquí el botón "Marcar como activa" ni su confirmación
+de cambios sin guardar al cambiar de fila, solo al salir de la página.
 
 Origen: Miguel Ángel, verbatim -- "esto deberíamos de hacerlo igual
 que estamos haciendo la gestión de los dosieres [...] igual que
@@ -38,7 +43,7 @@ de marcar para crear una plantilla de puesto".
         <div class="card-body p-0">
             <table class="table table-sm table-hover mb-0">
                 <thead><tr><th>Nombre</th><th>Documentos obligatorios</th><th></th></tr></thead>
-                <tbody>
+                <tbody id="positionsTableBody">
                     {% for position in positions %}
                     <tr id="positionRow{{ position.pk }}"
                         data-name="{{ position.name|escapejs }}"
@@ -55,7 +60,7 @@ de marcar para crear una plantilla de puesto".
                         </td>
                     </tr>
                     {% empty %}
-                    <tr><td colspan="3" class="text-muted small py-3">Sin requisitos guardados todavía.</td></tr>
+                    <tr id="positionsEmptyRow"><td colspan="3" class="text-muted small py-3">Sin requisitos guardados todavía.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>
@@ -69,39 +74,77 @@ de marcar para crear una plantilla de puesto".
         </div>
         <div class="card-body">
             <input type="hidden" id="positionPk" value="">
-            <div class="mb-3">
-                <label class="form-label small mb-1">Nombre del requisito</label>
-                <input type="text" id="positionName" class="form-control form-control-sm" placeholder="p. ej. Gruista, Administrativo, Mozo de almacén..." oninput="refreshDraftPreview()">
-            </div>
-            <div id="positionFormResult" class="small mb-2"></div>
-            <button type="button" class="btn btn-sm btn-primary mb-3" id="savePositionBtn" onclick="savePosition()">Guardar requisito</button>
+            <div class="row g-3">
+                <div class="col-12 col-lg-8">
+                    <div class="mb-3">
+                        <label class="form-label small mb-1">Nombre</label>
+                        <input type="text" id="positionName" class="form-control form-control-sm" placeholder="p. ej. Gruista, Administrativo, Mozo de almacén..." oninput="refreshDraftPreview()">
+                    </div>
 
-            {% comment %}
-            H31 (S109). Miguel Ángel: "la parte coloreada con los
-            documentos a elegir, esa parte es la que tenemos que
-            hacer scrollable" -- mismo criterio ya aplicado en
-            plantillas de dosier y en el listado de Personal: nombre
-            y botón de guardar quedan fuera del scroll, siempre
-            visibles.
-            {% endcomment %}
-            <div style="max-height: 55vh; overflow-y: auto; border: 1px solid #dee2e6; border-radius: 0.25rem; padding: 0.5rem;">
-            {% for fam in families %}
-            <div class="mb-2 p-2 rounded" style="background-color: {{ fam.color }};">
-                <div class="fw-bold small mb-1">{{ fam.label }}</div>
-                <div style="columns: 3; column-gap: 1.5rem;">
-                    {% for dt in fam.types %}
-                    <div class="form-check" style="break-inside: avoid;">
-                        <input class="form-check-input position-type-checkbox" type="checkbox" value="{{ dt.pk }}" id="ptCheck{{ dt.pk }}" data-label="{{ dt.label|escapejs }}" onchange="refreshDraftPreview()">
-                        <label class="form-check-label small" for="ptCheck{{ dt.pk }}">{{ dt.label }}</label>
+                    {% comment %}
+                    H31 (S109). Miguel Ángel: "la parte coloreada con
+                    los documentos a elegir, esa parte es la que
+                    tenemos que hacer scrollable" -- mismo criterio ya
+                    aplicado en plantillas de dosier: nombre y visor
+                    quedan fuera del scroll, siempre visibles.
+                    {% endcomment %}
+                    <div style="max-height: 55vh; overflow-y: auto; border: 1px solid #dee2e6; border-radius: 0.25rem; padding: 0.5rem;">
+                    {% for fam in families %}
+                    <div class="mb-2 p-2 rounded" style="background-color: {{ fam.color }};">
+                        <div class="fw-bold small mb-1">{{ fam.label }}</div>
+                        <div style="columns: 3; column-gap: 1.5rem;">
+                            {% for dt in fam.types %}
+                            <div class="form-check" style="break-inside: avoid;">
+                                <input class="form-check-input position-type-checkbox" type="checkbox" value="{{ dt.pk }}" id="ptCheck{{ dt.pk }}" data-label="{{ dt.label|escapejs }}" onchange="refreshDraftPreview()">
+                                <label class="form-check-label small" for="ptCheck{{ dt.pk }}">{{ dt.label }}</label>
+                            </div>
+                            {% endfor %}
+                        </div>
                     </div>
                     {% endfor %}
+                    </div>
+
+                    <div id="positionFormResult" class="small mt-2"></div>
                 </div>
-            </div>
-            {% endfor %}
+
+                <div class="col-12 col-lg-4">
+                    <label class="form-label small mb-1 invisible d-block">&nbsp;</label>
+                    {% comment %}
+                    H31 (S109/S113). Miguel Ángel: "el visor donde
+                    salen los documentos elegidos [...] debe estar
+                    fijo también" -- mismo componente sticky que
+                    plantillas de dosier, reutilizado aquí tal cual.
+                    {% endcomment %}
+                    <div class="card h-100" style="position: sticky; top: 1rem;">
+                        <div class="card-header fw-bold" id="draftPreviewTitle">Nuevo requisito</div>
+                        <div class="card-body p-2" style="max-height: 420px; overflow-y: auto;">
+                            <ul class="mb-0 small" id="draftPreviewList">
+                                <li class="text-muted">Ningún documento marcado todavía.</li>
+                            </ul>
+                        </div>
+                        <div class="card-footer p-2">
+                            <button type="button" class="btn btn-sm btn-primary w-100" id="savePositionBtn" onclick="savePosition()">Guardar requisito</button>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
 
+</div>
+
+{% comment %}
+H31 (S113). Mismo criterio ya aplicado a lotes de EPIs, plantillas de
+dosier y grupos de reparto: guardar/eliminar no recarga la página,
+avisa con un toast auto-oculto.
+{% endcomment %}
+<div class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 1080;">
+    <div id="positionToast" class="toast align-items-center text-white bg-success border-0" role="alert" aria-live="assertive" aria-atomic="true" data-bs-delay="2000">
+        <div class="d-flex">
+            <div class="toast-body" id="positionToastBody">Guardado.</div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+        </div>
+    </div>
 </div>
 
 <script>
@@ -115,13 +158,47 @@ function getCheckedTypeIds() {
     return Array.from(document.querySelectorAll('.position-type-checkbox:checked')).map(el => el.value);
 }
 
+// --- Visor en vivo -----------------------------------------------------
+
 function refreshDraftPreview() {
-    // Solo actualiza el titulo del formulario en base al nombre -- sin visor aparte (a diferencia de dosieres, la lista ya esta visible en la propia tabla de arriba tras guardar).
-    const title = document.getElementById('formTitle');
-    const pk = document.getElementById('positionPk').value;
+    const checked = document.querySelectorAll('.position-type-checkbox:checked');
+    const list = document.getElementById('draftPreviewList');
+    const lines = Array.from(checked).map(el => `<li>${el.dataset.label}</li>`);
+    list.innerHTML = lines.length
+        ? lines.join('')
+        : '<li class="text-muted">Ningún documento marcado todavía.</li>';
+
+    const title = document.getElementById('draftPreviewTitle');
     const name = document.getElementById('positionName').value.trim();
-    title.textContent = pk ? ('Editando: ' + (name || '(sin nombre)')) : (name || 'Nuevo requisito');
+    title.textContent = name || 'Nuevo requisito';
 }
+
+// --- Deteccion de cambios sin guardar ------------------------------------
+
+let lastSnapshot = null;
+
+function currentSnapshot() {
+    return JSON.stringify({
+        pk: document.getElementById('positionPk').value,
+        name: document.getElementById('positionName').value.trim(),
+        ids: getCheckedTypeIds().slice().sort(),
+    });
+}
+
+function takeSnapshot() {
+    lastSnapshot = currentSnapshot();
+}
+
+function isDirty() {
+    return lastSnapshot !== null && lastSnapshot !== currentSnapshot();
+}
+
+window.addEventListener('beforeunload', function (e) {
+    if (isDirty()) {
+        e.preventDefault();
+        e.returnValue = '';
+    }
+});
 
 function loadPositionIntoForm(pk) {
     const row = document.getElementById('positionRow' + pk);
@@ -136,17 +213,60 @@ function loadPositionIntoForm(pk) {
         const el = document.getElementById('ptCheck' + id);
         if (el) el.checked = true;
     });
+    document.getElementById('formTitle').textContent = 'Editando: ' + name;
     document.getElementById('cancelEditBtn').classList.remove('d-none');
     refreshDraftPreview();
+    takeSnapshot();
 }
 
 function resetForm() {
     document.getElementById('positionPk').value = '';
     document.getElementById('positionName').value = '';
     document.querySelectorAll('.position-type-checkbox').forEach(el => { el.checked = false; });
+    document.getElementById('formTitle').textContent = 'Nuevo requisito';
     document.getElementById('cancelEditBtn').classList.add('d-none');
     document.getElementById('positionFormResult').innerHTML = '';
     refreshDraftPreview();
+    takeSnapshot();
+}
+
+function showPositionToast(message) {
+    document.getElementById('positionToastBody').textContent = message;
+    new bootstrap.Toast(document.getElementById('positionToast')).show();
+}
+
+function upsertPositionRow(pk, name, typeIds) {
+    const typeLabels = typeIds.map(id => document.getElementById('ptCheck' + id)?.dataset.label).filter(Boolean);
+    let row = document.getElementById('positionRow' + pk);
+    if (row) {
+        row.dataset.name = name;
+        row.dataset.typeIds = typeIds.join(',');
+        row.children[0].textContent = '';
+        const link = document.createElement('a');
+        link.href = '#';
+        link.setAttribute('onclick', `loadPositionIntoForm(${pk}); return false;`);
+        link.textContent = name;
+        row.children[0].appendChild(link);
+        row.children[1].textContent = typeLabels.join(', ') || 'Sin perfilar todavía';
+    } else {
+        const emptyRow = document.getElementById('positionsEmptyRow');
+        if (emptyRow) emptyRow.remove();
+        row = document.createElement('tr');
+        row.id = 'positionRow' + pk;
+        row.dataset.name = name;
+        row.dataset.typeIds = typeIds.join(',');
+        row.innerHTML = `
+            <td></td>
+            <td class="small text-muted"></td>
+            <td class="text-end"><button type="button" class="btn btn-sm btn-outline-danger" onclick="deletePosition(${pk})">Eliminar</button></td>`;
+        const link = document.createElement('a');
+        link.href = '#';
+        link.setAttribute('onclick', `loadPositionIntoForm(${pk}); return false;`);
+        link.textContent = name;
+        row.children[0].appendChild(link);
+        row.children[1].textContent = typeLabels.join(', ') || 'Sin perfilar todavía';
+        document.getElementById('positionsTableBody').appendChild(row);
+    }
 }
 
 function savePosition() {
@@ -173,7 +293,13 @@ function savePosition() {
         headers: {'X-CSRFToken': getCookie('csrftoken')},
     }).then(r => r.json()).then(data => {
         if (data.ok) {
-            location.reload();
+            resultDiv.innerHTML = '';
+            document.getElementById('positionPk').value = data.id;
+            document.getElementById('formTitle').textContent = 'Editando: ' + data.name;
+            document.getElementById('cancelEditBtn').classList.remove('d-none');
+            upsertPositionRow(data.id, data.name, typeIds);
+            takeSnapshot();
+            showPositionToast('Requisito guardado.');
         } else {
             resultDiv.innerHTML = `<div class="alert alert-danger py-1 px-2 small mb-0">${data.error || 'Error al guardar.'}</div>`;
         }
@@ -188,8 +314,24 @@ function deletePosition(pk) {
         method: 'POST',
         headers: {'X-CSRFToken': getCookie('csrftoken')},
     }).then(r => r.json()).then(data => {
-        if (data.ok) location.reload();
+        if (data.ok) {
+            const row = document.getElementById('positionRow' + pk);
+            if (row) row.remove();
+            const tbody = document.getElementById('positionsTableBody');
+            if (!tbody.children.length) {
+                const tr = document.createElement('tr');
+                tr.id = 'positionsEmptyRow';
+                tr.innerHTML = '<td colspan="3" class="text-muted small py-3">Sin requisitos guardados todavía.</td>';
+                tbody.appendChild(tr);
+            }
+            if (document.getElementById('positionPk').value === String(pk)) {
+                resetForm();
+            }
+            showPositionToast('Requisito eliminado.');
+        }
     });
 }
+
+document.addEventListener('DOMContentLoaded', takeSnapshot);
 </script>
 {% endblock %}
