@@ -24,78 +24,61 @@ pantalla completa aparte, no un fragmento htmx de este pane.
     </a>
 </div>
 
-{% include "panel/documentation_h30/_personal_search_form.html" with search=search %}
-
 {% comment %}
-H31 (S113). Miguel Ángel: "deberíamos extender también el tema del
-visor de seleccionados que estamos usando en todo, tanto en los
-dosieres como en la entrega de lotes [...] aquí también [...]
-tenemos que tener una gestión de dichos grupos, igual que tenemos la
-gestión de los dosieres, igual que tenemos la gestión de los lotes de
-EPIs". Mismo patrón de 3 columnas fijas y simétricas:
-1. Visor de GRUPOS GUARDADOS -- casillero de selección única.
-2. GESTIÓN del grupo seleccionado -- vacía hasta seleccionar un grupo
-   o marcar alguna persona en el listado de abajo.
-3. Visor de la SELECCIÓN ACTUAL -- muestra en todo momento quién está
-   marcado para cualquier acción masiva (EPIs, notificaciones,
-   dosieres, puesto), no solo mientras se construye un grupo. Resuelve
-   también la queja real de Miguel Ángel sobre "Cargar grupo": antes
-   no había forma de VER quién quedaba seleccionado fuera de la página/
-   filtro visible en ese momento; este visor lo deja siempre claro.
+H31 (S113). Rediseño explícito de Miguel Ángel tras revisar la
+versión anterior: dar mucho más espacio vertical al listado de
+trabajadores (al menos la mitad de la pantalla), comprimiendo todo lo
+demás arriba. El filtro de Empresa comparte fila con la Gestión del
+grupo, cada uno en su propio recuadro fino y diferenciado. Grupos
+guardados queda compacto debajo. El visor de SELECCIÓN ACTUAL se baja
+junto al listado de trabajadores (2/3 tabla, 1/3 visor, misma altura)
+en vez de vivir arriba con el resto de la gestión.
 {% endcomment %}
-<div class="card mb-3">
-    <div class="card-header">Grupos de reparto y selección actual</div>
-    <div class="card-body">
-        <div class="row g-3">
-            <div class="col-lg-4">
-                <label class="form-label small mb-1 fw-bold">Grupos guardados</label>
-                <div class="border rounded p-2" style="height: 220px; overflow-y: auto;">
-                    <ul class="list-group list-group-flush small" id="personGroupSavedList">
-                        {% for group in person_groups %}
-                        <li class="list-group-item px-1 py-1" id="personGroupRow{{ group.pk }}"
-                            data-name="{{ group.name|escapejs }}"
-                            data-member-ids="{% for m in group.members.all %}{{ m.pk }}{% if not forloop.last %},{% endif %}{% endfor %}"
-                            data-member-names="{% for m in group.members.all %}{{ m.first_surname }} {{ m.second_surname }}, {{ m.given_name|escapejs }}{% if not forloop.last %}||{% endif %}{% endfor %}">
-                            <div class="form-check">
-                                <input class="form-check-input person-group-select-checkbox" type="checkbox" id="personGroupSelect{{ group.pk }}" data-pk="{{ group.pk }}" onchange="onPersonGroupSelectChange(this)">
-                                <label class="form-check-label" for="personGroupSelect{{ group.pk }}">{{ group.name }} ({{ group.members.count }})</label>
-                            </div>
-                        </li>
-                        {% empty %}
-                        <li class="list-group-item px-1 py-1 text-muted" id="personGroupEmptyRow">Sin grupos guardados todavía.</li>
-                        {% endfor %}
-                    </ul>
-                </div>
-            </div>
-
-            <div class="col-lg-4">
-                <label class="form-label small mb-1 fw-bold">Gestión del grupo</label>
-                <div class="border rounded p-2" style="height: 220px; overflow-y: auto;">
-                    <p class="text-muted small mb-0" id="personGroupManagementEmpty">
-                        Selecciona un grupo de la izquierda, o marca personas en el listado de abajo para empezar uno nuevo.
-                    </p>
-                    <div id="personGroupManagementForm" class="d-none">
-                        <label class="form-label small mb-1">Nombre del grupo</label>
-                        <input type="text" id="personGroupName" class="form-control form-control-sm mb-2" placeholder="p. ej. Choferes, Chalecos alta visibilidad...">
-                        <div id="personGroupFormResult" class="small mb-2"></div>
-                        <div class="d-flex gap-2 flex-wrap">
-                            <button type="button" class="btn btn-sm btn-primary" onclick="savePersonGroup()">Guardar grupo</button>
-                            <button type="button" class="btn btn-sm btn-outline-danger d-none" id="personGroupDeleteBtn" onclick="deletePersonGroup()">Eliminar grupo</button>
-                            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="resetPersonGroupForm()">Vaciar / nuevo grupo</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="col-lg-4">
-                <label class="form-label small mb-1 fw-bold">Selección actual (<span id="personSelectionCount">0</span>)</label>
-                <div class="border rounded p-2" style="height: 220px; overflow-y: auto;">
-                    <ul class="mb-0 small ps-0" id="personSelectionPreviewList">
-                        <li class="text-muted">Nadie seleccionado todavía.</li>
-                    </ul>
+<div class="row g-2 mb-2">
+    <div class="col-lg-7">
+        <div class="border rounded p-2 h-100">
+            <div class="fw-bold small mb-1">Buscar y filtrar</div>
+            {% include "panel/documentation_h30/_personal_search_form.html" with search=search %}
+        </div>
+    </div>
+    <div class="col-lg-5">
+        <div class="border rounded p-2 h-100">
+            <div class="fw-bold small mb-1">Gestión del grupo</div>
+            <p class="text-muted small mb-0" id="personGroupManagementEmpty">
+                Selecciona un grupo de la lista de abajo, o marca personas en el listado para empezar uno nuevo.
+            </p>
+            <div id="personGroupManagementForm" class="d-none">
+                <label class="form-label small mb-1">Nombre del grupo</label>
+                <input type="text" id="personGroupName" class="form-control form-control-sm mb-2" placeholder="p. ej. Choferes, Chalecos alta visibilidad...">
+                <div id="personGroupFormResult" class="small mb-2"></div>
+                <div class="d-flex gap-2 flex-wrap">
+                    <button type="button" class="btn btn-sm btn-primary" onclick="savePersonGroup()">Guardar grupo</button>
+                    <button type="button" class="btn btn-sm btn-outline-danger d-none" id="personGroupDeleteBtn" onclick="deletePersonGroup()">Eliminar grupo</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="resetPersonGroupForm()">Vaciar / nuevo grupo</button>
                 </div>
             </div>
         </div>
+    </div>
+</div>
+
+<div class="border rounded p-2 mb-2">
+    <div class="fw-bold small mb-1">Grupos guardados</div>
+    <div style="max-height: 90px; overflow-y: auto;">
+        <ul class="list-group list-group-flush small" id="personGroupSavedList">
+            {% for group in person_groups %}
+            <li class="list-group-item px-1 py-1" id="personGroupRow{{ group.pk }}"
+                data-name="{{ group.name|escapejs }}"
+                data-member-ids="{% for m in group.members.all %}{{ m.pk }}{% if not forloop.last %},{% endif %}{% endfor %}"
+                data-member-names="{% for m in group.members.all %}{{ m.first_surname }} {{ m.second_surname }}, {{ m.given_name|escapejs }}{% if not forloop.last %}||{% endif %}{% endfor %}">
+                <div class="form-check">
+                    <input class="form-check-input person-group-select-checkbox" type="checkbox" id="personGroupSelect{{ group.pk }}" data-pk="{{ group.pk }}" onchange="onPersonGroupSelectChange(this)">
+                    <label class="form-check-label" for="personGroupSelect{{ group.pk }}">{{ group.name }} ({{ group.members.count }})</label>
+                </div>
+            </li>
+            {% empty %}
+            <li class="list-group-item px-1 py-1 text-muted" id="personGroupEmptyRow">Sin grupos guardados todavía.</li>
+            {% endfor %}
+        </ul>
     </div>
 </div>
 
@@ -113,7 +96,7 @@ cada una en su propia columna separada visualmente -- Miguel Ángel:
 de acción con el tema de los EPIs [...] con el tema de la información
 [...] con las circulares."
 {% endcomment %}
-<div id="person-mass-bar" class="alert alert-secondary py-2 px-3 mb-3">
+<div id="person-mass-bar" class="alert alert-secondary py-2 px-3 mb-2">
     <div class="d-flex align-items-center gap-2 flex-wrap mb-2">
         <strong><span id="person-mass-count">0</span> seleccionados</strong>
         <button type="button" class="btn btn-sm btn-outline-secondary" id="person-mass-clear">Limpiar selección</button>
@@ -188,10 +171,31 @@ de acción con el tema de los EPIs [...] con el tema de la información
     <div id="person-mass-result" class="small mt-2"></div>
 </div>
 
-<div id="personal-results-scroll" style="max-height: 60vh; overflow-y: auto; border: 1px solid #dee2e6; border-radius: 0.25rem;">
-<div id="personal-results">
-    {% include "panel/documentation_h30/_personal_results.html" with page=page sort_key=sort_key sort_dir=sort_dir search=search %}
-</div>
+{% comment %}
+H31 (S113), Miguel Ángel: "el listado de trabajadores [...] ocupe,
+por ejemplo, dos tercios del ancho y un tercio del ancho para el
+listado de los que están seleccionados [...] el visor iría junto con
+el listado de trabajadores con la misma altura [...] darle más
+espacio y división al listado de trabajadores". Misma altura fija
+(height, no max-height) en las dos columnas -- ninguna de las dos
+puede quedar más baja que la otra.
+{% endcomment %}
+<div class="row g-2">
+    <div class="col-lg-8">
+        <div id="personal-results-scroll" style="height: 65vh; overflow-y: auto; border: 1px solid #dee2e6; border-radius: 0.25rem;">
+        <div id="personal-results">
+            {% include "panel/documentation_h30/_personal_results.html" with page=page sort_key=sort_key sort_dir=sort_dir search=search %}
+        </div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <label class="form-label small mb-1 fw-bold">Selección actual (<span id="personSelectionCount">0</span>)</label>
+        <div class="border rounded p-2" style="height: 65vh; overflow-y: auto;">
+            <ul class="mb-0 small ps-0" id="personSelectionPreviewList">
+                <li class="text-muted">Nadie seleccionado todavía.</li>
+            </ul>
+        </div>
+    </div>
 </div>
 
 {% comment %}
