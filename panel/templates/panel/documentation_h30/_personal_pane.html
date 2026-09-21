@@ -242,6 +242,7 @@ las filas de debajo se desplacen de verdad.
     const countEl = document.getElementById('person-mass-count');
     const resultEl = document.getElementById('person-mass-result');
     let personMassEpiBatchModalInstance = null;
+    let personMassJobPositionModalInstance = null;
 
     // H31 (S113): nombres de las personas actualmente seleccionadas,
     // para poder pintar el visor de selección (izquierda del selector
@@ -512,6 +513,27 @@ las filas de debajo se desplacen de verdad.
         if (!jobPositionId) {
             resultEl.innerHTML = '<div class="alert alert-warning py-1 px-2 mb-0">Elige un requisito de documentación primero.</div>';
             return;
+        }
+        // H31 (S113), Miguel Ángel: "no hay ningún tipo de filtro.
+        // Directamente se añaden [...] deberíamos de tener un modal
+        // que diga: va a cambiar tantos trabajadores de requisito de
+        // documentación [...] para evitar los cambios por error". El
+        // listado de quiénes son ya está siempre visible en el visor
+        // de "Selección actual" -- no hace falta repetirlo aquí.
+        const select = document.getElementById('person-mass-job-position');
+        const jobPositionName = select.options[select.selectedIndex].textContent;
+        document.getElementById('personMassJobPositionConfirmText').textContent =
+            `Vas a cambiar el requisito de documentación de ${selection.size} trabajador(es) a "${jobPositionName}".`;
+        if (!personMassJobPositionModalInstance) {
+            personMassJobPositionModalInstance = new bootstrap.Modal(document.getElementById('personMassJobPositionConfirmModal'));
+        }
+        personMassJobPositionModalInstance.show();
+    });
+
+    document.getElementById('personMassJobPositionConfirmBtn').addEventListener('click', function () {
+        const jobPositionId = document.getElementById('person-mass-job-position').value;
+        if (personMassJobPositionModalInstance) {
+            personMassJobPositionModalInstance.hide();
         }
         const formData = new FormData();
         selection.forEach((pk) => formData.append('person_ids', pk));
@@ -942,6 +964,31 @@ página, avisa con un toast auto-oculto.
         <div class="d-flex">
             <div class="toast-body" id="personGroupToastBody">Guardado.</div>
             <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+        </div>
+    </div>
+</div>
+
+{% comment %}
+H31 (S113). Miguel Ángel: "ahora mismo no hay ningún tipo de filtro.
+Directamente se añaden [...] deberíamos de tener un modal que diga:
+va a cambiar tantos trabajadores de requisito de documentación [...]
+para evitar los cambios por error". No repite el listado de personas
+-- ya está siempre visible en el visor de "Selección actual".
+{% endcomment %}
+<div class="modal fade" id="personMassJobPositionConfirmModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Confirmar cambio de requisito de documentación</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p id="personMassJobPositionConfirmText" class="mb-0"></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary btn-sm" id="personMassJobPositionConfirmBtn">Confirmar</button>
+            </div>
         </div>
     </div>
 </div>
