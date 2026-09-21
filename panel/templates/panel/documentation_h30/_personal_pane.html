@@ -25,164 +25,150 @@ pantalla completa aparte, no un fragmento htmx de este pane.
 </div>
 
 {% comment %}
-H31 (S113). Rediseño explícito de Miguel Ángel tras revisar la
-versión anterior: dar mucho más espacio vertical al listado de
-trabajadores (al menos la mitad de la pantalla), comprimiendo todo lo
-demás arriba. El filtro de Empresa comparte fila con la Gestión del
-grupo, cada uno en su propio recuadro fino y diferenciado. Grupos
-guardados queda compacto debajo. El visor de SELECCIÓN ACTUAL se baja
-junto al listado de trabajadores (2/3 tabla, 1/3 visor, misma altura)
-en vez de vivir arriba con el resto de la gestión.
+H31 (S113). Corrección explícita de Miguel Ángel sobre el rediseño
+anterior: "lo único que había que hacer es poner el visor de los
+seleccionados en el tercio de anchura del listado de trabajadores
+[...] de la mitad hacia arriba, cuanto menos altura mejor [...]
+podemos en la misma altura poner la empresa, la gestión de grupos y
+las acciones". TODO lo de gestión (filtros, grupos de reparto,
+acciones) comparte una ÚNICA fila compacta -- nunca varias filas
+apiladas -- para dejar el máximo de altura real (mínimo dos tercios)
+al listado de trabajadores + visor de selección de abajo.
 {% endcomment %}
 <div class="row g-2 mb-2">
-    <div class="col-lg-7">
+    <div class="col-lg-3">
         <div class="border rounded p-2 h-100">
             <div class="fw-bold small mb-1">Buscar y filtrar</div>
             {% include "panel/documentation_h30/_personal_search_form.html" with search=search %}
         </div>
     </div>
-    <div class="col-lg-5">
+
+    <div class="col-lg-4">
         <div class="border rounded p-2 h-100">
-            <div class="fw-bold small mb-1">Gestión del grupo</div>
+            <div class="fw-bold small mb-1">Grupos de reparto</div>
+            <div style="max-height: 70px; overflow-y: auto;" class="mb-1">
+                <ul class="list-group list-group-flush small" id="personGroupSavedList">
+                    {% for group in person_groups %}
+                    <li class="list-group-item px-1 py-0" id="personGroupRow{{ group.pk }}"
+                        data-name="{{ group.name|escapejs }}"
+                        data-member-ids="{% for m in group.members.all %}{{ m.pk }}{% if not forloop.last %},{% endif %}{% endfor %}"
+                        data-member-names="{% for m in group.members.all %}{{ m.first_surname }} {{ m.second_surname }}, {{ m.given_name|escapejs }}{% if not forloop.last %}||{% endif %}{% endfor %}">
+                        <div class="form-check">
+                            <input class="form-check-input person-group-select-checkbox" type="checkbox" id="personGroupSelect{{ group.pk }}" data-pk="{{ group.pk }}" onchange="onPersonGroupSelectChange(this)">
+                            <label class="form-check-label" for="personGroupSelect{{ group.pk }}">{{ group.name }} ({{ group.members.count }})</label>
+                        </div>
+                    </li>
+                    {% empty %}
+                    <li class="list-group-item px-1 py-0 text-muted" id="personGroupEmptyRow">Sin grupos guardados todavía.</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            <hr class="my-1">
             <p class="text-muted small mb-0" id="personGroupManagementEmpty">
-                Selecciona un grupo de la lista de abajo, o marca personas en el listado para empezar uno nuevo.
+                Selecciona un grupo, o marca personas en el listado para empezar uno nuevo.
             </p>
             <div id="personGroupManagementForm" class="d-none">
-                <label class="form-label small mb-1">Nombre del grupo</label>
-                <input type="text" id="personGroupName" class="form-control form-control-sm mb-2" placeholder="p. ej. Choferes, Chalecos alta visibilidad...">
-                <div id="personGroupFormResult" class="small mb-2"></div>
-                <div class="d-flex gap-2 flex-wrap">
-                    <button type="button" class="btn btn-sm btn-primary" onclick="savePersonGroup()">Guardar grupo</button>
-                    <button type="button" class="btn btn-sm btn-outline-danger d-none" id="personGroupDeleteBtn" onclick="deletePersonGroup()">Eliminar grupo</button>
-                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="resetPersonGroupForm()">Vaciar / nuevo grupo</button>
+                <div class="input-group input-group-sm mb-1">
+                    <input type="text" id="personGroupName" class="form-control form-control-sm" placeholder="Nombre del grupo">
+                    <button type="button" class="btn btn-sm btn-primary" onclick="savePersonGroup()">Guardar</button>
+                </div>
+                <div id="personGroupFormResult" class="small mb-1"></div>
+                <div class="d-flex gap-1 flex-wrap">
+                    <button type="button" class="btn btn-sm btn-outline-danger d-none" id="personGroupDeleteBtn" onclick="deletePersonGroup()">Eliminar</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="resetPersonGroupForm()">Vaciar / nuevo</button>
                 </div>
             </div>
         </div>
     </div>
-</div>
 
-<div class="border rounded p-2 mb-2">
-    <div class="fw-bold small mb-1">Grupos guardados</div>
-    <div style="max-height: 90px; overflow-y: auto;">
-        <ul class="list-group list-group-flush small" id="personGroupSavedList">
-            {% for group in person_groups %}
-            <li class="list-group-item px-1 py-1" id="personGroupRow{{ group.pk }}"
-                data-name="{{ group.name|escapejs }}"
-                data-member-ids="{% for m in group.members.all %}{{ m.pk }}{% if not forloop.last %},{% endif %}{% endfor %}"
-                data-member-names="{% for m in group.members.all %}{{ m.first_surname }} {{ m.second_surname }}, {{ m.given_name|escapejs }}{% if not forloop.last %}||{% endif %}{% endfor %}">
-                <div class="form-check">
-                    <input class="form-check-input person-group-select-checkbox" type="checkbox" id="personGroupSelect{{ group.pk }}" data-pk="{{ group.pk }}" onchange="onPersonGroupSelectChange(this)">
-                    <label class="form-check-label" for="personGroupSelect{{ group.pk }}">{{ group.name }} ({{ group.members.count }})</label>
+    {% comment %}
+    H31 (S75/S113). Acciones masivas -- SIEMPRE VISIBLES (Miguel
+    Ángel, S113: "hasta que no marcas el casillero [...] esto debería
+    de aparecer [...] en la parte fija"), organizadas por categoría en
+    una rejilla 2x2 compacta -- "que no estén mezclados [...] podemos
+    en la misma altura poner [...] las acciones".
+    {% endcomment %}
+    <div class="col-lg-5">
+        <div id="person-mass-bar" class="border rounded p-2 h-100">
+            <div class="d-flex align-items-center gap-2 mb-1">
+                <strong class="small"><span id="person-mass-count">0</span> seleccionados</strong>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="person-mass-clear">Limpiar</button>
+            </div>
+            <div class="row g-1">
+                <div class="col-6 border-end pe-2">
+                    <div class="small text-muted fw-bold">Puesto</div>
+                    <div class="d-flex gap-1 flex-wrap">
+                        {% comment %}
+                        H31 (S109). Asignar puesto masivo -- sustituye
+                        siempre el puesto anterior de cada persona (FK,
+                        no acumulativo).
+                        {% endcomment %}
+                        <select id="person-mass-job-position" class="form-select form-select-sm" style="width:auto;">
+                            <option value="">Asignar puesto…</option>
+                            {% for position in job_positions %}
+                            <option value="{{ position.pk }}">{{ position.name }}</option>
+                            {% endfor %}
+                        </select>
+                        <button type="button" class="btn btn-sm btn-primary" id="person-mass-job-position-submit">Asignar</button>
+                    </div>
                 </div>
-            </li>
-            {% empty %}
-            <li class="list-group-item px-1 py-1 text-muted" id="personGroupEmptyRow">Sin grupos guardados todavía.</li>
-            {% endfor %}
-        </ul>
+                <div class="col-6">
+                    <div class="small text-muted fw-bold">EPIs</div>
+                    <button type="button" class="btn btn-sm btn-primary" id="person-mass-epi-submit">Entregar EPIs…</button>
+                </div>
+                <div class="col-6 border-end pe-2 border-top pt-1 mt-1">
+                    <div class="small text-muted fw-bold">Información</div>
+                    <div class="d-flex gap-1 flex-wrap">
+                        <select id="person-mass-notify" class="form-select form-select-sm" style="width:auto;">
+                            <option value="">Circular/notificación…</option>
+                            {% for ntype in notification_types %}
+                            <option value="{{ ntype.code }}">{{ ntype.label }}</option>
+                            {% endfor %}
+                        </select>
+                        <button type="button" class="btn btn-sm btn-primary" id="person-mass-notify-submit">Enviar</button>
+                    </div>
+                </div>
+                <div class="col-6 border-top pt-1 mt-1">
+                    {% comment %}
+                    H35 (S105): "Generar dosieres" para varios
+                    trabajadores a la vez. El modo de agrupación se
+                    pregunta explícitamente, nunca se asume.
+                    {% endcomment %}
+                    <div class="small text-muted fw-bold">Dosieres</div>
+                    <div class="d-flex gap-1 flex-wrap">
+                        <select id="person-mass-dossier-template" class="form-select form-select-sm" style="width:auto;">
+                            <option value="">Plantilla…</option>
+                            {% for template in dossier_templates %}
+                            <option value="{{ template.pk }}">{{ template.name }}</option>
+                            {% endfor %}
+                        </select>
+                        <select id="person-mass-dossier-mode" class="form-select form-select-sm" style="width:auto;">
+                            <option value="pdf_per_person">PDF/trabajador</option>
+                            <option value="zip_per_person">ZIP/trabajador</option>
+                            <option value="combined">Todo junto</option>
+                        </select>
+                        <button type="button" class="btn btn-sm btn-primary" id="person-mass-dossier-download">Descargar</button>
+                        <button type="button" class="btn btn-sm btn-outline-primary" id="person-mass-dossier-email">Enviar por correo</button>
+                    </div>
+                </div>
+            </div>
+            <div id="person-mass-result" class="small mt-1"></div>
+        </div>
     </div>
 </div>
 
 {% comment %}
-H31 (S75/S113). Barra de acción masiva -- Vive AQUÍ, fuera de
-#personal-results, porque este bloque nunca se repinta al buscar/
-paginar (a diferencia de la tabla) -- la selección debe sobrevivir a
-esos repintados, no reiniciarse con cada uno. SIEMPRE VISIBLE (Miguel
-Ángel, S113: "hasta que no marcas el casillero de selección [...] no
-aparece [...] esto debería de aparecer [...] en la parte fija de esa
-pantalla") -- nunca se oculta aunque la selección esté vacía. Botones
-organizados por categoría (Puesto / EPIs / Información / Dosieres),
-cada una en su propia columna separada visualmente -- Miguel Ángel:
-"que no estén mezclados y se vea claramente dónde están los botones
-de acción con el tema de los EPIs [...] con el tema de la información
-[...] con las circulares."
-{% endcomment %}
-<div id="person-mass-bar" class="alert alert-secondary py-2 px-3 mb-2">
-    <div class="d-flex align-items-center gap-2 flex-wrap mb-2">
-        <strong><span id="person-mass-count">0</span> seleccionados</strong>
-        <button type="button" class="btn btn-sm btn-outline-secondary" id="person-mass-clear">Limpiar selección</button>
-    </div>
-
-    <div class="row g-3">
-        <div class="col-12 col-lg-3 border-end">
-            <div class="small text-muted fw-bold mb-1">Puesto</div>
-            <div class="d-flex gap-1 flex-wrap">
-                {% comment %}
-                H31 (S109). Asignar puesto masivo -- Miguel Ángel:
-                "vamos a crear el puesto ya de chófer [...] elegir los
-                choferes [...] asígnales el puesto de chófer".
-                Sustituye siempre el puesto anterior de cada persona
-                (FK, no acumulativo).
-                {% endcomment %}
-                <select id="person-mass-job-position" class="form-select form-select-sm" style="width:auto;">
-                    <option value="">Asignar puesto…</option>
-                    {% for position in job_positions %}
-                    <option value="{{ position.pk }}">{{ position.name }}</option>
-                    {% endfor %}
-                </select>
-                <button type="button" class="btn btn-sm btn-primary" id="person-mass-job-position-submit">Asignar puesto</button>
-            </div>
-        </div>
-
-        <div class="col-12 col-lg-2 border-end">
-            <div class="small text-muted fw-bold mb-1">EPIs</div>
-            <button type="button" class="btn btn-sm btn-primary" id="person-mass-epi-submit">Entregar EPIs…</button>
-        </div>
-
-        <div class="col-12 col-lg-4 border-end">
-            <div class="small text-muted fw-bold mb-1">Información</div>
-            <div class="d-flex gap-1 flex-wrap">
-                <select id="person-mass-notify" class="form-select form-select-sm" style="width:auto;">
-                    <option value="">Circular/notificación a enviar…</option>
-                    {% for ntype in notification_types %}
-                    <option value="{{ ntype.code }}">{{ ntype.label }}</option>
-                    {% endfor %}
-                </select>
-                <button type="button" class="btn btn-sm btn-primary" id="person-mass-notify-submit">Enviar notificación masiva</button>
-            </div>
-        </div>
-
-        <div class="col-12 col-lg-3">
-            <div class="small text-muted fw-bold mb-1">Dosieres</div>
-            <div class="d-flex gap-1 flex-wrap">
-                {% comment %}
-                H35 (S105): "Generar dosieres" para varios trabajadores
-                a la vez -- Miguel Ángel: "cuando estés en el listado
-                de trabajadores y digas: este, este y este, quiero
-                generar dosieres con esta plantilla para descargar,
-                enviar por correo." El modo de agrupación se pregunta
-                explícitamente, nunca se asume.
-                {% endcomment %}
-                <select id="person-mass-dossier-template" class="form-select form-select-sm" style="width:auto;">
-                    <option value="">Plantilla de dosier…</option>
-                    {% for template in dossier_templates %}
-                    <option value="{{ template.pk }}">{{ template.name }}</option>
-                    {% endfor %}
-                </select>
-                <select id="person-mass-dossier-mode" class="form-select form-select-sm" style="width:auto;">
-                    <option value="pdf_per_person">PDF por trabajador</option>
-                    <option value="zip_per_person">ZIP por trabajador</option>
-                    <option value="combined">Todo junto (un único PDF)</option>
-                </select>
-                <button type="button" class="btn btn-sm btn-primary" id="person-mass-dossier-download">Descargar dosieres</button>
-                <button type="button" class="btn btn-sm btn-outline-primary" id="person-mass-dossier-email">Enviar por correo</button>
-            </div>
-        </div>
-    </div>
-    <div id="person-mass-result" class="small mt-2"></div>
-</div>
-
-{% comment %}
-H31 (S113), Miguel Ángel: "el listado de trabajadores [...] ocupe,
-por ejemplo, dos tercios del ancho y un tercio del ancho para el
-listado de los que están seleccionados [...] el visor iría junto con
-el listado de trabajadores con la misma altura [...] darle más
-espacio y división al listado de trabajadores". Misma altura fija
-(height, no max-height) en las dos columnas -- ninguna de las dos
-puede quedar más baja que la otra.
+H31 (S113), Miguel Ángel: "el listado de trabajadores [...] ocupe dos
+tercios del ancho y un tercio [...] para el listado de los que están
+seleccionados [...] el visor iría junto con el listado de
+trabajadores con la misma altura [...] dejar en dos tercios de
+altura [...] el listado de trabajadores y el listado de trabajadores
+seleccionados". Misma altura fija (height, no max-height) en las dos
+columnas -- ninguna de las dos puede quedar más baja que la otra.
 {% endcomment %}
 <div class="row g-2">
     <div class="col-lg-8">
-        <div id="personal-results-scroll" style="height: 65vh; overflow-y: auto; border: 1px solid #dee2e6; border-radius: 0.25rem;">
+        <div id="personal-results-scroll" style="height: 68vh; overflow-y: auto; border: 1px solid #dee2e6; border-radius: 0.25rem;">
         <div id="personal-results">
             {% include "panel/documentation_h30/_personal_results.html" with page=page sort_key=sort_key sort_dir=sort_dir search=search %}
         </div>
@@ -190,7 +176,7 @@ puede quedar más baja que la otra.
     </div>
     <div class="col-lg-4">
         <label class="form-label small mb-1 fw-bold">Selección actual (<span id="personSelectionCount">0</span>)</label>
-        <div class="border rounded p-2" style="height: 65vh; overflow-y: auto;">
+        <div class="border rounded p-2" style="height: 68vh; overflow-y: auto;">
             <ul class="mb-0 small ps-0" id="personSelectionPreviewList">
                 <li class="text-muted">Nadie seleccionado todavía.</li>
             </ul>
