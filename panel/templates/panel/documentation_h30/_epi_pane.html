@@ -146,6 +146,22 @@ misma fila:
     </div>
 </div>
 
+{% comment %}
+H31 (S113). Miguel Ángel: "no debería recargar la página [...]
+simplemente salga un modal diciendo guardado, que aparezca un poco
+tiempo [...] y desaparezca". Toast de Bootstrap (auto-oculto, tiempo
+propio de Bootstrap vía data-bs-delay) en vez de un modal bloqueante
+-- nunca interrumpe la interacción, ni hace falta cerrarlo a mano.
+{% endcomment %}
+<div class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 1080;">
+    <div id="epiBatchToast" class="toast align-items-center text-white bg-success border-0" role="alert" aria-live="assertive" aria-atomic="true" data-bs-delay="2000">
+        <div class="d-flex">
+            <div class="toast-body" id="epiBatchToastBody">Guardado.</div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+        </div>
+    </div>
+</div>
+
 <script>
 // Visor de documento para el botón "Ver" de la tabla de búsqueda de
 // EPIs (S113) -- mismo mecanismo que openDocumentViewer() de
@@ -335,6 +351,42 @@ function resetEpiBatchForm() {
     epiBatchTakeSnapshot();
 }
 
+// H31 (S113), Miguel Ángel: "no debería recargar la página [...]
+// simplemente guardamos, ponemos el modal [...] tan solo si el lote
+// no existe nos aparecería ya en la parte de la lista de lotes y
+// seleccionado [...] sería el único cambio que tendría la página".
+function showEpiBatchToast(message) {
+    document.getElementById('epiBatchToastBody').textContent = message;
+    new bootstrap.Toast(document.getElementById('epiBatchToast')).show();
+}
+
+function upsertEpiBatchRow(pk, name, itemIds) {
+    let row = document.getElementById('epiBatchTemplateRow' + pk);
+    if (row) {
+        row.dataset.name = name;
+        row.dataset.itemIds = itemIds.join(',');
+        row.querySelector('label').textContent = name;
+    } else {
+        const emptyRow = document.getElementById('epiBatchTemplateEmptyRow');
+        if (emptyRow) emptyRow.remove();
+        row = document.createElement('li');
+        row.className = 'list-group-item px-1 py-1';
+        row.id = 'epiBatchTemplateRow' + pk;
+        row.dataset.name = name;
+        row.dataset.itemIds = itemIds.join(',');
+        row.innerHTML = `
+            <div class="form-check">
+                <input class="form-check-input epi-batch-select-checkbox" type="checkbox" id="epiBatchSelect${pk}" data-pk="${pk}" onchange="onEpiBatchSelectChange(this)">
+                <label class="form-check-label" for="epiBatchSelect${pk}"></label>
+            </div>`;
+        row.querySelector('label').textContent = name;
+        document.getElementById('epiBatchSavedList').appendChild(row);
+    }
+    document.querySelectorAll('.epi-batch-select-checkbox').forEach((el) => {
+        el.checked = (el.dataset.pk === String(pk));
+    });
+}
+
 function saveEpiBatch() {
     const name = document.getElementById('epiBatchName').value.trim();
     const itemIds = getCheckedEpiBatchItemIds();
@@ -358,8 +410,12 @@ function saveEpiBatch() {
         headers: {'X-CSRFToken': getCookie('csrftoken')},
     }).then((r) => r.json()).then((data) => {
         if (data.ok) {
+            resultDiv.innerHTML = '';
+            upsertEpiBatchRow(data.id, name, itemIds);
+            epiBatchEditingPk = String(data.id);
+            document.getElementById('epiBatchDeleteBtn').classList.remove('d-none');
             epiBatchTakeSnapshot();
-            location.reload();
+            showEpiBatchToast('Lote guardado.');
         } else {
             resultDiv.innerHTML = `<div class="alert alert-danger py-1 px-2 small mb-0">${data.error || 'Error al guardar.'}</div>`;
         }
@@ -371,13 +427,24 @@ function saveEpiBatch() {
 function deleteEpiBatch() {
     if (!epiBatchEditingPk) return;
     if (!confirm('¿Eliminar este lote? No afecta a ninguna entrega ya registrada.')) return;
-    fetch(`/panel/documentacion/lotes-epi/${epiBatchEditingPk}/eliminar/`, {
+    const pk = epiBatchEditingPk;
+    fetch(`/panel/documentacion/lotes-epi/${pk}/eliminar/`, {
         method: 'POST',
         headers: {'X-CSRFToken': getCookie('csrftoken')},
     }).then((r) => r.json()).then((data) => {
         if (data.ok) {
-            epiBatchTakeSnapshot();
-            location.reload();
+            const row = document.getElementById('epiBatchTemplateRow' + pk);
+            if (row) row.remove();
+            const list = document.getElementById('epiBatchSavedList');
+            if (!list.children.length) {
+                const li = document.createElement('li');
+                li.className = 'list-group-item px-1 py-1 text-muted';
+                li.id = 'epiBatchTemplateEmptyRow';
+                li.textContent = 'Sin lotes guardados todavía.';
+                list.appendChild(li);
+            }
+            resetEpiBatchForm();
+            showEpiBatchToast('Lote eliminado.');
         }
     });
 }

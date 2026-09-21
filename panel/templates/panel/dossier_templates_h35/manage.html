@@ -70,7 +70,7 @@ tener la misma plantilla en los dos formatos).
         <div class="card-body p-0">
             <table class="table table-sm table-hover mb-0">
                 <thead><tr><th style="width: 11rem;">Plantilla activa</th><th>Nombre</th><th>Tipos incluidos</th><th>EPIs incluidos</th><th></th></tr></thead>
-                <tbody>
+                <tbody id="templatesTableBody">
                     {% for template in templates %}
                     <tr id="templateRow{{ template.pk }}"
                         data-name="{{ template.name|escapejs }}"
@@ -95,7 +95,7 @@ tener la misma plantilla en los dos formatos).
                         </td>
                     </tr>
                     {% empty %}
-                    <tr><td colspan="5" class="text-muted small py-3">Sin plantillas guardadas todavía.</td></tr>
+                    <tr id="templatesEmptyRow"><td colspan="5" class="text-muted small py-3">Sin plantillas guardadas todavía.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>
@@ -201,6 +201,21 @@ tener la misma plantilla en los dos formatos).
         </div>
     </div>
 
+</div>
+
+{% comment %}
+H31 (S113). Miguel Ángel, mismo criterio pedido para los lotes de
+EPIs, aplicado aquí también: "no podemos recargar la página cuando
+guardamos [...] simplemente guardamos, ponemos el modal [...] y
+desaparece". Toast de Bootstrap, auto-oculto.
+{% endcomment %}
+<div class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 1080;">
+    <div id="dossierTemplateToast" class="toast align-items-center text-white bg-success border-0" role="alert" aria-live="assertive" aria-atomic="true" data-bs-delay="2000">
+        <div class="d-flex">
+            <div class="toast-body" id="dossierTemplateToastBody">Guardado.</div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+        </div>
+    </div>
 </div>
 
 <script>
@@ -335,6 +350,49 @@ function resetForm() {
     takeSnapshot();
 }
 
+function showDossierTemplateToast(message) {
+    document.getElementById('dossierTemplateToastBody').textContent = message;
+    new bootstrap.Toast(document.getElementById('dossierTemplateToast')).show();
+}
+
+function upsertDossierTemplateRow(pk, name, typeIds, epiIds) {
+    const typeLabels = typeIds.map(id => document.getElementById('dtCheck' + id)?.dataset.label).filter(Boolean);
+    const epiLabels = epiIds.map(id => document.getElementById('epiCheck' + id)?.dataset.label).filter(Boolean);
+    let row = document.getElementById('templateRow' + pk);
+    if (row) {
+        row.dataset.name = name;
+        row.dataset.typeIds = typeIds.join(',');
+        row.dataset.epiIds = epiIds.join(',');
+        row.children[1].textContent = name;
+        row.children[2].textContent = typeLabels.join(', ');
+        row.children[3].textContent = epiLabels.join(', ');
+    } else {
+        const emptyRow = document.getElementById('templatesEmptyRow');
+        if (emptyRow) emptyRow.remove();
+        row = document.createElement('tr');
+        row.id = 'templateRow' + pk;
+        row.dataset.name = name;
+        row.dataset.typeIds = typeIds.join(',');
+        row.dataset.epiIds = epiIds.join(',');
+        row.innerHTML = `
+            <td><button type="button" class="btn btn-sm btn-outline-secondary" id="activeBtn${pk}" onclick="setActiveTemplate(${pk})">Marcar como activa</button></td>
+            <td></td>
+            <td class="small text-muted"></td>
+            <td class="small text-muted"></td>
+            <td class="text-end"><button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteTemplate(${pk})">Eliminar</button></td>`;
+        row.children[1].textContent = name;
+        row.children[2].textContent = typeLabels.join(', ');
+        row.children[3].textContent = epiLabels.join(', ');
+        document.getElementById('templatesTableBody').appendChild(row);
+    }
+}
+
+// H31 (S113), Miguel Ángel: mismo criterio que en lotes de EPIs --
+// "no podemos recargar la página cuando guardamos". Cuando hay
+// onSuccess (viene de setActiveTemplate, que sí necesita recargar
+// para refrescar la insignia "Activa" de TODAS las filas) se respeta
+// tal cual; guardar directo desde el botón actualiza la fila en el
+// sitio y muestra el toast, sin recargar nada.
 function saveTemplate(onSuccess) {
     const pk = document.getElementById('templatePk').value;
     const name = document.getElementById('templateName').value.trim();
@@ -361,8 +419,19 @@ function saveTemplate(onSuccess) {
         headers: {'X-CSRFToken': getCookie('csrftoken')},
     }).then(r => r.json()).then(data => {
         if (data.ok) {
+            if (onSuccess) {
+                takeSnapshot();
+                onSuccess();
+                return;
+            }
+            resultDiv.innerHTML = '';
+            document.getElementById('templatePk').value = data.id;
+            document.getElementById('templateName').value = data.name;
+            document.getElementById('formTitle').textContent = 'Editando: ' + data.name;
+            document.getElementById('cancelEditBtn').classList.remove('d-none');
+            upsertDossierTemplateRow(data.id, data.name, typeIds, epiIds);
             takeSnapshot();
-            if (onSuccess) { onSuccess(); } else { location.reload(); }
+            showDossierTemplateToast('Plantilla guardada.');
         } else {
             resultDiv.innerHTML = `<div class="alert alert-danger py-1 px-2 small mb-0">${data.error || 'Error al guardar.'}</div>`;
         }
@@ -377,7 +446,21 @@ function deleteTemplate(pk) {
         method: 'POST',
         headers: {'X-CSRFToken': getCookie('csrftoken')},
     }).then(r => r.json()).then(data => {
-        if (data.ok) location.reload();
+        if (data.ok) {
+            const row = document.getElementById('templateRow' + pk);
+            if (row) row.remove();
+            const tbody = document.getElementById('templatesTableBody');
+            if (!tbody.children.length) {
+                const tr = document.createElement('tr');
+                tr.id = 'templatesEmptyRow';
+                tr.innerHTML = '<td colspan="5" class="text-muted small py-3">Sin plantillas guardadas todavía.</td>';
+                tbody.appendChild(tr);
+            }
+            if (document.getElementById('templatePk').value === String(pk)) {
+                resetForm();
+            }
+            showDossierTemplateToast('Plantilla eliminada.');
+        }
     });
 }
 

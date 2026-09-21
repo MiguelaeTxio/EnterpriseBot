@@ -2162,7 +2162,7 @@ class DossierTemplateSaveView(CompanyUserRequiredMixin, View):
         template.document_types.set(type_ids)
         template.epi_items.set(epi_item_ids)
 
-        return JsonResponse({"ok": True, "id": template.pk})
+        return JsonResponse({"ok": True, "id": template.pk, "name": template.name})
 
 
 class PersonalDossierTemplateApplyView(CompanyUserRequiredMixin, View):
