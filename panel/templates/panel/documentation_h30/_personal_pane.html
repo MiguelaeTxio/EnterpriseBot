@@ -44,9 +44,19 @@ al listado de trabajadores + visor de selección de abajo.
     </div>
 
     <div class="col-lg-4">
-        <div class="border rounded p-2 h-100">
+        {% comment %}
+        H31 (S113). Miguel Ángel: "bajamos esa parte [la gestión] en
+        la gestión de grupos de reparto para que nos quede todo el
+        espacio para la lista de grupos de reparto [...] esa lista
+        [...] debe ser scrollable". Columna en flex-column: el
+        listado crece para ocupar todo el hueco disponible (flex:1,
+        min-height:0 para que el overflow-y funcione dentro de un
+        flex item) y la gestión queda anclada abajo, con su altura
+        natural.
+        {% endcomment %}
+        <div class="border rounded p-2 h-100 d-flex flex-column">
             <div class="fw-bold small mb-1">Grupos de reparto</div>
-            <div style="max-height: 70px; overflow-y: auto;" class="mb-1">
+            <div style="flex: 1 1 auto; min-height: 0; overflow-y: auto;" class="mb-1">
                 <ul class="list-group list-group-flush small" id="personGroupSavedList">
                     {% for group in person_groups %}
                     <li class="list-group-item px-1 py-0" id="personGroupRow{{ group.pk }}"
