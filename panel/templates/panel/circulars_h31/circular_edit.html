@@ -5,10 +5,11 @@
 H31 (S75) punto 2. Edición de UNA circular -- editor de texto básico
 (negrita, cursiva, color, fuente, lista -- vía document.execCommand,
 alcance deliberadamente reducido, nunca un procesador de textos
-completo), importación de Word/PDF, y sustitución de la plantilla
-vigente en archivo (current_template). Ver CircularEditView/
-CircularSaveContentView/CircularImportDocumentView/
-CircularTemplateUploadView.
+completo), importación de Word/PDF, descarga en PDF/Word (S114), y
+sustitución de la plantilla vigente en archivo (current_template).
+Ver CircularEditView/CircularSaveContentView/
+CircularImportDocumentView/CircularTemplateUploadView/
+CircularExportPdfView/CircularExportWordView.
 {% endcomment %}
 
 {% block title %}Editar circular -- {{ document_type.label }}{% endblock %}
@@ -60,11 +61,19 @@ CircularTemplateUploadView.
                 </div>
                 <div class="card-footer d-flex justify-content-between align-items-center">
                     <span class="text-muted small">Se guarda tal cual se ve aquí -- esto es lo que recibirá la persona por email.</span>
-                    <form method="post" action="{% url 'panel:circulars_save_content' pk=document_type.pk %}" id="circular-save-form">
-                        {% csrf_token %}
-                        <input type="hidden" name="content_html" id="circular-content-hidden">
-                        <button type="submit" class="btn btn-sm btn-primary">Guardar contenido</button>
-                    </form>
+                    <div class="d-flex gap-2">
+                        <a class="btn btn-sm btn-outline-secondary" href="{% url 'panel:circulars_export_pdf' pk=document_type.pk %}">
+                            <i class="bi bi-file-earmark-pdf"></i> Descargar PDF
+                        </a>
+                        <a class="btn btn-sm btn-outline-secondary" href="{% url 'panel:circulars_export_word' pk=document_type.pk %}">
+                            <i class="bi bi-file-earmark-word"></i> Descargar Word
+                        </a>
+                        <form method="post" action="{% url 'panel:circulars_save_content' pk=document_type.pk %}" id="circular-save-form">
+                            {% csrf_token %}
+                            <input type="hidden" name="content_html" id="circular-content-hidden">
+                            <button type="submit" class="btn btn-sm btn-primary">Guardar contenido</button>
+                        </form>
+                    </div>
                 </div>
             </div>
         </div>

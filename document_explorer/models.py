@@ -887,6 +887,30 @@ class DocumentTypeCatalog(models.Model):
         ),
     )
 
+    is_notification_template = models.BooleanField(
+        default=False,
+        verbose_name="Plantilla de comunicación (circular/notificación)",
+        help_text=(
+            "H31 (S114). Corrección real: el CRUD de circulares "
+            "(panel:circulars_list) y el selector de envío de "
+            "notificación filtraban antes por `domain` "
+            "(PERSONAL/BOTH/COMPANY) -- eso mostraba el catálogo "
+            "ENTERO de documentos de persona (DNI, nóminas, "
+            "reconocimientos médicos...), no una lista de plantillas "
+            "de comunicación reutilizables. Miguel Ángel, verbatim, al "
+            "ver la pantalla real: \"eso es un galimatías [...] ahí "
+            "están prácticamente todos los documentos habidos y por "
+            "haber. No es eso lo que queremos hacer [...] aquí vamos "
+            "a tener unas 10, 15, 20 plantillas como mucho\". Este "
+            "campo, no `domain`, es ahora el único criterio real: "
+            "solo los tipos marcados aquí aparecen en el CRUD de "
+            "circulares y en el selector de envío. Falso por defecto "
+            "-- un tipo documental de persona (DNI, nómina...) nunca "
+            "lo lleva a True solo por vivir en el mismo dominio que "
+            "una circular real."
+        ),
+    )
+
     tags = models.ManyToManyField(
         "DocumentTag",
         blank=True,

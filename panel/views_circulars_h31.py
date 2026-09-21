@@ -10,11 +10,17 @@ current_template`) de forma consistente con el mecanismo ya en uso
 (un `DocumentIndexEntry` más, nunca un archivo fuera del sistema --
 ver el propio help_text del campo, H30 S69).
 
-Alcance: tipos documentales de dominio PERSONAL/BOTH/COMPANY --
-ampliado en S114 a COMPANY porque el tipo genérico real de circular
-(`CIRCULAR_INFORMATIVA`) vive en ese dominio, no en PERSONAL/BOTH
-como asumía el alcance original de S75. No toca el catálogo de tipos
-de Maquinaria (`DOMAIN_MACHINE`) ni el de EPI (`DOMAIN_EPI`).
+Alcance: tipos documentales marcados explícitamente como plantilla
+de comunicación (`is_notification_template=True`) -- corregido en
+S114 tras detectar que el criterio anterior (filtrar por `domain`)
+mostraba el catálogo ENTERO de documentos de persona (DNI, nóminas,
+formación, salud...), no una lista acotada de circulares/
+notificaciones reutilizables. Miguel Ángel, verbatim, al ver la
+pantalla real: "eso es un galimatías [...] aquí vamos a tener unas
+10, 15, 20 plantillas como mucho". `domain` sigue existiendo como
+dato de a quién se dirige (PERSONAL/BOTH/COMPANY), pero ya NO decide
+si algo aparece aquí -- ver `is_notification_template` en
+`DocumentTypeCatalog` para el detalle completo de la corrección.
 
 Acceso: DocsUploadAccessMixin (DOCS_SUPERVISOR/ADMIN) -- mismo
 criterio que el resto de acciones de escritura de H31 (entrega de
@@ -30,6 +36,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.views import View
+from django.http import HttpResponse
 
 from document_explorer import naming_service
 from document_explorer.index_writer import ensure_folder_chain
@@ -53,6 +60,9 @@ _CIRCULAR_DOMAINS = [
     DocumentTypeCatalog.DOMAIN_BOTH,
     DocumentTypeCatalog.DOMAIN_COMPANY,
 ]
+# Dominios válidos a ofrecer al crear una circular NUEVA (a quién se
+# dirige) -- ya no decide qué aparece en el listado/edición, eso lo
+# decide is_notification_template (S114, ver docstring del módulo).
 
 
 class CircularImportError(Exception):
@@ -208,14 +218,14 @@ def _upload_circular_template(document_type, data, original_filename):
 
 
 class CircularListView(DocsUploadAccessMixin, View):
-    """GET: listado de tipos documentales de circular/notificación
-    (dominio PERSONAL/BOTH) -- estado de content_html y de
-    current_template de un vistazo, acceso a crear uno nuevo o editar
-    uno existente."""
+    """GET: listado de tipos documentales marcados como plantilla de
+    comunicación (is_notification_template=True, S114) -- estado de
+    content_html y de current_template de un vistazo, acceso a crear
+    uno nuevo o editar uno existente."""
 
     def get(self, request):
         types = DocumentTypeCatalog.objects.filter(
-            is_active=True, domain__in=_CIRCULAR_DOMAINS,
+            is_active=True, is_notification_template=True,
         ).select_related("current_template").order_by("label")
         return render(request, "panel/circulars_h31/circular_list.html", {
             "types": types,
@@ -230,8 +240,11 @@ class CircularCreateView(DocsUploadAccessMixin, View):
     patrón que `DocumentTypeQuickCreateView` (H30 S51): `code` se
     deriva del `label` con `naming_service._sanitize_token()`,
     `content_html` nace vacío (se rellena en `CircularEditView`).
-    `domain` restringido a PERSONAL/BOTH/COMPANY (S114) -- nunca
-    MACHINE ni EPI.
+    `domain` restringido a PERSONAL/BOTH/COMPANY -- a quién se
+    dirige, nunca MACHINE ni EPI. Todo lo creado aquí nace con
+    `is_notification_template=True` (S114) -- es, por definición, una
+    plantilla de comunicación real, el único criterio que decide su
+    aparición en este CRUD y en el selector de envío.
     """
 
     def post(self, request):
@@ -264,6 +277,7 @@ class CircularCreateView(DocsUploadAccessMixin, View):
 
         document_type = DocumentTypeCatalog.objects.create(
             code=code, label=label, domain=domain, family=family,
+            is_notification_template=True,
         )
         messages.success(
             request,
@@ -279,7 +293,7 @@ class CircularEditView(DocsUploadAccessMixin, View):
 
     def get(self, request, pk):
         document_type = get_object_or_404(
-            DocumentTypeCatalog, pk=pk, domain__in=_CIRCULAR_DOMAINS,
+            DocumentTypeCatalog, pk=pk, is_notification_template=True,
         )
         return render(request, "panel/circulars_h31/circular_edit.html", {
             "document_type": document_type,
@@ -303,7 +317,7 @@ class CircularSaveContentView(DocsUploadAccessMixin, View):
 
     def post(self, request, pk):
         document_type = get_object_or_404(
-            DocumentTypeCatalog, pk=pk, domain__in=_CIRCULAR_DOMAINS,
+            DocumentTypeCatalog, pk=pk, is_notification_template=True,
         )
         content_html = request.POST.get("content_html", "")
         document_type.content_html = content_html
@@ -325,7 +339,7 @@ class CircularImportDocumentView(DocsUploadAccessMixin, View):
 
     def post(self, request, pk):
         document_type = get_object_or_404(
-            DocumentTypeCatalog, pk=pk, domain__in=_CIRCULAR_DOMAINS,
+            DocumentTypeCatalog, pk=pk, is_notification_template=True,
         )
         uploaded_file = request.FILES.get("file")
         if not uploaded_file:
@@ -376,7 +390,7 @@ class CircularTemplateUploadView(DocsUploadAccessMixin, View):
 
     def post(self, request, pk):
         document_type = get_object_or_404(
-            DocumentTypeCatalog, pk=pk, domain__in=_CIRCULAR_DOMAINS,
+            DocumentTypeCatalog, pk=pk, is_notification_template=True,
         )
         uploaded_file = request.FILES.get("file")
         if not uploaded_file:
@@ -391,3 +405,151 @@ class CircularTemplateUploadView(DocsUploadAccessMixin, View):
             % (document_type.label, uploaded_file.name),
         )
         return redirect(reverse("panel:circulars_edit", args=[document_type.pk]))
+
+
+def _html_to_docx_runs(paragraph, node, bold=False, italic=False, underline=False, color=None, font_name=None):
+    """
+    Recorre el árbol de un bloque (<p>/<li>) del `content_html` del
+    editor y añade runs a `paragraph` conservando negrita/cursiva/
+    subrayado/color/fuente -- el mismo subconjunto reducido que el
+    propio editor permite generar (ver circular_edit.html: negrita,
+    cursiva, subrayado, color de una paleta fija, fuente de una lista
+    fija). `document.execCommand` en navegadores reales suele emitir
+    `<font color="#..." face="...">` para color/fuente (en vez de
+    `style="color:..."` moderno) -- se contemplan ambas formas.
+    """
+    import re
+
+    from bs4 import NavigableString
+
+    for child in node.children:
+        if isinstance(child, NavigableString):
+            text = str(child)
+            if not text:
+                continue
+            run = paragraph.add_run(text)
+            run.font.bold = bold
+            run.font.italic = italic
+            run.font.underline = underline
+            if color:
+                try:
+                    from docx.shared import RGBColor
+                    run.font.color.rgb = RGBColor.from_string(color.lstrip("#"))
+                except ValueError:
+                    pass
+            if font_name:
+                run.font.name = font_name
+            continue
+
+        name = getattr(child, "name", None)
+        if name == "br":
+            paragraph.add_run().add_break()
+            continue
+
+        new_bold = bold or name in ("b", "strong")
+        new_italic = italic or name in ("i", "em")
+        new_underline = underline or name == "u"
+        new_color = child.get("color") if name == "font" else color
+        new_font = child.get("face") if name == "font" else font_name
+        style = child.get("style") or ""
+        match = re.search(r"color:\s*([^;]+)", style)
+        if match:
+            new_color = match.group(1).strip()
+        if new_font:
+            new_font = new_font.split(",")[0].strip().strip("'\"")
+        _html_to_docx_runs(paragraph, child, new_bold, new_italic, new_underline, new_color, new_font)
+
+
+class CircularExportPdfView(DocsUploadAccessMixin, View):
+    """
+    GET: descarga el `content_html` de una circular como PDF real,
+    vía WeasyPrint -- mismo mecanismo ya en producción para tarifas de
+    aseguradora y albaranes (`budgets/views.py`,
+    `weasyprint.HTML(string=...).write_pdf()`). Una copia genérica del
+    contenido, sin personalizar a ninguna persona -- para imprimir,
+    adjuntar o archivar fuera del flujo de envío por email.
+    """
+
+    def get(self, request, pk):
+        import weasyprint
+
+        document_type = get_object_or_404(
+            DocumentTypeCatalog, pk=pk, is_notification_template=True,
+        )
+        if not document_type.content_html.strip():
+            messages.error(
+                request,
+                "«%s» todavía no tiene contenido -- edítala antes de descargarla."
+                % document_type.label,
+            )
+            return redirect(reverse("panel:circulars_edit", args=[document_type.pk]))
+
+        html_content = (
+            "<!DOCTYPE html><html lang='es'><head><meta charset='utf-8'>"
+            "<style>"
+            "body{font-family:Arial,sans-serif;font-size:11pt;margin:2.5cm 2cm}"
+            "h1{font-size:14pt;margin-bottom:18px}"
+            "</style></head><body>"
+            "<h1>%s</h1>%s"
+            "</body></html>"
+        ) % (document_type.label, document_type.content_html)
+
+        pdf_bytes = weasyprint.HTML(string=html_content).write_pdf()
+        filename = "%s.pdf" % naming_service._sanitize_token(document_type.label)
+        response = HttpResponse(pdf_bytes, content_type="application/pdf")
+        response["Content-Disposition"] = 'attachment; filename="%s"' % filename
+        return response
+
+
+class CircularExportWordView(DocsUploadAccessMixin, View):
+    """
+    GET: descarga el `content_html` de una circular como Word (.docx)
+    real -- mismo mecanismo ya en producción para tarifas de
+    aseguradora (`budgets/views.py`, python-docx). Recorre el HTML con
+    BeautifulSoup (`_html_to_docx_runs`) para conservar negrita/
+    cursiva/subrayado/color/fuente dentro del alcance reducido del
+    propio editor.
+    """
+
+    def get(self, request, pk):
+        from bs4 import BeautifulSoup
+        from docx import Document
+
+        document_type = get_object_or_404(
+            DocumentTypeCatalog, pk=pk, is_notification_template=True,
+        )
+        if not document_type.content_html.strip():
+            messages.error(
+                request,
+                "«%s» todavía no tiene contenido -- edítala antes de descargarla."
+                % document_type.label,
+            )
+            return redirect(reverse("panel:circulars_edit", args=[document_type.pk]))
+
+        doc = Document()
+        doc.add_heading(document_type.label, level=1)
+
+        soup = BeautifulSoup(document_type.content_html, "html.parser")
+        blocks = soup.find_all(["p", "li"])
+        if not blocks:
+            doc.add_paragraph(soup.get_text())
+        for block in blocks:
+            paragraph = doc.add_paragraph()
+            if block.name == "li":
+                paragraph.style = "List Bullet"
+            _html_to_docx_runs(paragraph, block)
+
+        import io
+
+        buffer = io.BytesIO()
+        doc.save(buffer)
+        buffer.seek(0)
+
+        filename = "%s.docx" % naming_service._sanitize_token(document_type.label)
+        response = HttpResponse(
+            buffer.read(),
+            content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )
+        response["Content-Disposition"] = 'attachment; filename="%s"' % filename
+        return response
+

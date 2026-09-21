@@ -2,10 +2,10 @@
 {% extends "panel/base.html" %}
 
 {% comment %}
-H31 (S75) punto 2, ampliado en S114 a dominio COMPANY. Listado de
-tipos documentales de circular/notificación (dominio PERSONAL/BOTH/
-COMPANY) -- estado de content_html y de current_template de un
-vistazo. Ver CircularListView.
+H31 (S75) punto 2, corregido de raíz en S114. Listado de tipos
+documentales marcados como plantilla de comunicación
+(is_notification_template=True) -- estado de content_html y de
+current_template de un vistazo. Ver CircularListView.
 {% endcomment %}
 
 {% block title %}Circulares y notificaciones{% endblock %}
@@ -16,11 +16,13 @@ vistazo. Ver CircularListView.
 
     <div class="d-flex align-items-center justify-content-between mb-3">
         <p class="text-muted small mb-0">
-            Tipos documentales de circular/notificación (personal y empresa). Cada
-            fila puede tener contenido enriquecido (`content_html`, se
-            envía por email desde la ficha de persona) y/o una plantilla
-            en archivo (legacy, `current_template`) -- ambos coexisten,
-            se pueden usar por separado.
+            Plantillas de comunicación reutilizables (circulares/
+            notificaciones) -- nunca el catálogo completo de
+            documentos de persona. Cada fila puede tener contenido
+            enriquecido (`content_html`, se envía por email desde la
+            ficha de persona, y se descarga en PDF/Word) y/o una
+            plantilla en archivo (legacy, `current_template`) --
+            ambos coexisten, se pueden usar por separado.
         </p>
         <a class="btn btn-sm btn-outline-secondary" href="{% url 'panel:documentation_hub' %}">
             <i class="bi bi-arrow-left"></i> Volver a Documentación

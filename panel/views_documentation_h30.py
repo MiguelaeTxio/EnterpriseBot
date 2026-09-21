@@ -677,7 +677,7 @@ class PersonalListFragmentView(CompanyUserRequiredMixin, View):
             is_active=True,
         ).order_by("family", "label")
         ctx["notification_types"] = DocumentTypeCatalog.objects.filter(
-            is_active=True, domain__in=["PERSONAL", "BOTH"],
+            is_active=True, is_notification_template=True,
         ).exclude(content_html="").order_by("label")
         ctx["company_filter_choices"] = COMPANY_FILTER_CHOICES
         # H35 (S105): plantillas de dosier para la nueva acción masiva
@@ -1448,7 +1448,7 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
             is_active=True, domain__in=["PERSONAL", "BOTH"],
         ).order_by("label")
         notification_types = DocumentTypeCatalog.objects.filter(
-            is_active=True, domain__in=["PERSONAL", "BOTH"],
+            is_active=True, is_notification_template=True,
         ).exclude(content_html="").order_by("label")
         epi_deliveries = EpiDelivery.objects.filter(
             person=person,
