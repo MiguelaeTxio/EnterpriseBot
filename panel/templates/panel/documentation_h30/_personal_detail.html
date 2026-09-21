@@ -931,6 +931,11 @@ document.querySelectorAll('.family-upload-btn').forEach(function (btn) {
 const EPI_ITEMS = [
     {% for epi in epi_items %}{id: {{ epi.pk }}, label: "{{ epi.label|escapejs }}", family: "{{ epi.family|escapejs }}"},{% endfor %}
 ];
+// H31 (S113): lotes de EPIs guardados, para precargar el casillero de
+// entrega -- ver openEpiDeliveryForm() más abajo.
+const EPI_BATCH_TEMPLATES = [
+    {% for template in epi_batch_templates %}{id: {{ template.pk }}, name: "{{ template.name|escapejs }}", itemIds: [{% for item in template.items.all %}{{ item.pk }}{% if not forloop.last %},{% endif %}{% endfor %}]},{% endfor %}
+];
 
 function openUploadForm(preselectCode, avatarMode, restrictedTypes) {
     // H31 (S100), Miguel Ángel: "salga un tipo documentales [...] a
@@ -1100,34 +1105,65 @@ function usarComoFotoPerfil(entryId, btn) {
 
 function openEpiDeliveryForm() {
     const container = document.getElementById('epiDeliveryFormContainer');
-    const options = EPI_ITEMS.map(e =>
-        `<option value="${e.id}">${e.family} -- ${e.label}</option>`,
+    const templateOptions = EPI_BATCH_TEMPLATES.map(t =>
+        `<option value="${t.id}" data-item-ids="${t.itemIds.join(',')}">${t.name}</option>`,
+    ).join('');
+    const itemCheckboxes = EPI_ITEMS.map(e => `
+        <div class="form-check">
+            <input class="form-check-input epi-delivery-item-checkbox" type="checkbox" value="${e.id}" id="edCheck${e.id}">
+            <label class="form-check-label small" for="edCheck${e.id}">${e.family} -- ${e.label}</label>
+        </div>`,
     ).join('');
     const today = new Date().toISOString().slice(0, 10);
     container.innerHTML = `
         <div class="card">
             <div class="card-body">
-                <form id="epiDeliveryForm" class="row g-2">
+                <div class="row g-2 mb-2">
                     <div class="col-12 col-md-6">
-                        <label class="form-label small mb-0">EPI</label>
-                        <select name="epi_id" class="form-select form-select-sm" required>${options}</select>
+                        <label class="form-label small mb-0">Lote guardado</label>
+                        <select id="epiDeliveryTemplate" class="form-select form-select-sm">
+                            <option value="" data-item-ids="">Sin lote -- elegir EPIs sueltos</option>
+                            ${templateOptions}
+                        </select>
                     </div>
                     <div class="col-8 col-md-3">
                         <label class="form-label small mb-0">Fecha de entrega</label>
-                        <input type="date" name="delivery_date" class="form-control form-control-sm" value="${today}" required>
+                        <input type="date" id="epiDeliveryDate" class="form-control form-control-sm" value="${today}">
                     </div>
                     <div class="col-4 col-md-3 d-flex align-items-end">
-                        <button type="submit" class="btn btn-sm btn-success w-100">Registrar</button>
+                        <button type="button" id="epiDeliverySubmit" class="btn btn-sm btn-success w-100">Entregar</button>
                     </div>
-                    <div id="epiDeliveryResult" class="col-12"></div>
-                </form>
+                </div>
+                <p class="text-muted small mb-1">Al elegir un lote se marcan sus EPIs -- desmarca los que hoy no toque entregar, o marca EPIs sueltos sin lote:</p>
+                <div style="max-height:35vh;overflow-y:auto;border:1px solid #dee2e6;border-radius:0.25rem;padding:0.5rem;">
+                    ${itemCheckboxes}
+                </div>
+                <div id="epiDeliveryResult" class="mt-2"></div>
             </div>
         </div>`;
-    document.getElementById('epiDeliveryForm').onsubmit = function(ev) {
-        ev.preventDefault();
-        const formData = new FormData(ev.target);
+
+    document.getElementById('epiDeliveryTemplate').addEventListener('change', function () {
+        const raw = this.options[this.selectedIndex].dataset.itemIds || '';
+        const ids = raw ? raw.split(',').map(Number) : [];
+        document.querySelectorAll('.epi-delivery-item-checkbox').forEach((el) => {
+            el.checked = ids.includes(parseInt(el.value, 10));
+        });
+    });
+
+    document.getElementById('epiDeliverySubmit').addEventListener('click', function () {
+        const epiIds = Array.from(document.querySelectorAll('.epi-delivery-item-checkbox:checked')).map(el => el.value);
+        const deliveryDate = document.getElementById('epiDeliveryDate').value;
         const resultDiv = document.getElementById('epiDeliveryResult');
-        fetch("{% url 'panel:documentation_personal_epi_delivery' pk=person.pk %}", {
+        if (!epiIds.length || !deliveryDate) {
+            resultDiv.innerHTML = '<div class="alert alert-warning py-1 px-2 small mb-0">Elige al menos un EPI y la fecha de entrega.</div>';
+            return;
+        }
+        const formData = new FormData();
+        formData.append('person_ids', {{ person.pk }});
+        epiIds.forEach((id) => formData.append('epi_ids', id));
+        formData.append('delivery_date', deliveryDate);
+        resultDiv.innerHTML = '<div class="text-muted small">Entregando y generando el documento…</div>';
+        fetch("{% url 'panel:documentation_personal_epi_batch_delivery' %}", {
             method: 'POST', body: formData,
             headers: {'X-CSRFToken': getCookie('csrftoken')},
         }).then(r => r.json()).then(data => {
@@ -1138,11 +1174,13 @@ function openEpiDeliveryForm() {
                 // lógica de _group_epi_deliveries_by_family(); más
                 // simple y fiable recargar, mismo patrón que ya usa
                 // subjectUploadForm más arriba.
-                if (data.whatsapp_sent) {
-                    resultDiv.innerHTML = '<div class="alert alert-success py-1 px-2 small mb-0">EPI entregado registrado. Confirmación WhatsApp enviada al trabajador. Actualizando…</div>';
-                } else {
-                    resultDiv.innerHTML = '<div class="alert alert-warning py-1 px-2 small mb-0">EPI entregado registrado. No se pudo enviar la confirmación WhatsApp (sin teléfono, sin vínculo de empresa, o plantilla aún no aprobada por Meta). Actualizando…</div>';
+                let msg = data.whatsapp_sent_count
+                    ? 'EPIs entregados registrados y documento generado. Confirmación WhatsApp enviada. '
+                    : 'EPIs entregados registrados y documento generado. No se pudo enviar la confirmación WhatsApp (sin teléfono, sin vínculo de empresa, o plantilla aún no aprobada por Meta). ';
+                if (data.errors && data.errors.length) {
+                    msg += data.errors.map((e) => e.error).join('; ');
                 }
+                resultDiv.innerHTML = `<div class="alert alert-success py-1 px-2 small mb-0">${msg} Actualizando…</div>`;
                 setTimeout(() => location.reload(), 1500);
             } else {
                 resultDiv.innerHTML = `<div class="alert alert-danger py-1 px-2 small mb-0">${data.error || 'Error al registrar.'}</div>`;
@@ -1150,7 +1188,7 @@ function openEpiDeliveryForm() {
         }).catch(() => {
             resultDiv.innerHTML = '<div class="alert alert-danger py-1 px-2 small mb-0">Error de red al registrar.</div>';
         });
-    };
+    });
 }
 
 document.getElementById('personalUpdateForm').onsubmit = function(ev) {

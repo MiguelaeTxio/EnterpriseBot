@@ -2048,7 +2048,109 @@ class EpiDelivery(models.Model):
         return f"{self.person} -- {self.epi.code} ({self.delivery_date})"
 
 
-class DocumentAcknowledgment(models.Model):
+class CompanyFiscalProfile(models.Model):
+    """
+    H31 (S113). Datos fiscales reales de una razón social del grupo
+    (CIF, dirección), para el encabezado del documento de entrega de
+    EPIs -- ninguno de los dos vivía antes en ningún sitio de la BBDD
+    (`ivr_config.Company` es una única fila "Grupo Álvarez" para
+    IVR/WhatsApp, no una por razón social real; `PersonIdentity.
+    employer_company` es texto libre del Excel, sin CIF ni dirección).
+
+    `name_aliases` (una variante de texto por línea, comparación sin
+    mayúsculas/minúsculas) resuelve el mismo problema real que motivó
+    `_RECIPIENT_TAX_ID_TO_COMPANY_CODE` en `spare_parts.services`
+    (S004): la misma empresa aparece en varios sitios bajo variantes
+    de texto libre distintas ("TRANSGRUAL SL" / "TRANSGRUAL S.L.").
+    Confirmado real (S113, consulta SQL sobre `employer_company`): 3
+    empresas reales con CIF conocido (Grúas Adolfo Álvarez B29405040,
+    Transgrual B92493022, Asistencia y Grúas Granada B93261824,
+    dirección fiscal confirmada por Miguel Ángel -- las tres en C/
+    Ronda del Norte, 12, Santa Rosalía, 29591 Málaga), más dos
+    variantes reales sin resolver ("GRUALDI S.L", "TRANSGRUAL Y
+    ASITENCIA", 2+1 personas) que Miguel Ángel no ha confirmado
+    todavía a qué empresa real corresponden -- ver anexo H31.
+
+    Si `employer_company` de una persona no casa con ningún alias de
+    ningún perfil, el documento de entrega se genera igualmente, sin
+    encabezado de empresa (nunca se inventa un CIF ni una dirección).
+
+    ---
+
+    Real fiscal data (tax ID, address) of a group legal entity, for
+    the EPI delivery document header -- see Spanish docstring above
+    for the full real-data context (S113).
+    """
+
+    legal_name = models.CharField(
+        max_length=200, verbose_name="Razón social",
+    )
+    tax_id = models.CharField(
+        max_length=20, verbose_name="CIF",
+    )
+    fiscal_address = models.CharField(
+        max_length=300, blank=True, verbose_name="Dirección fiscal",
+    )
+    name_aliases = models.TextField(
+        blank=True,
+        verbose_name="Variantes de texto (una por línea)",
+        help_text=(
+            "Formas en que PersonIdentity.employer_company puede "
+            "aparecer para esta empresa real (comparación sin "
+            "distinguir mayúsculas/minúsculas). Una por línea."
+        ),
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Perfil fiscal de empresa"
+        verbose_name_plural = "Perfiles fiscales de empresa"
+        ordering = ["legal_name"]
+
+    def __str__(self):
+        return self.legal_name
+
+
+class EpiDeliveryBatchTemplate(models.Model):
+    """
+    H31 (S113). "Lote" de EPIs -- Miguel Ángel: el proceso real de la
+    empresa entrega varios EPIs a la vez según el puesto (p. ej. "EPI
+    mecánico", "EPI chóferes"), y el propio supervisor pone el nombre.
+    Al usar el lote en una entrega real, el supervisor puede desmarcar
+    del lote los EPIs que hoy no toca entregar -- este modelo guarda
+    solo la lista completa reutilizable, nunca una entrega concreta
+    (eso sigue siendo `EpiDelivery`, uno real por persona y EPI
+    entregado).
+
+    Sin FK a Company -- catálogo de toda la plataforma, mismo criterio
+    que `JobPosition`/`PersonGroupTemplate`.
+
+    ---
+
+    An EPI "batch" -- a reusable, named set of catalog items the
+    supervisor can deliver together (see Spanish docstring for full
+    context, S113).
+    """
+
+    name = models.CharField(
+        max_length=150, unique=True, verbose_name="Nombre del lote",
+    )
+    items = models.ManyToManyField(
+        EpiItemCatalog,
+        related_name="batch_templates",
+        verbose_name="EPIs del lote",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Plantilla de lote de EPIs"
+        verbose_name_plural = "Plantillas de lote de EPIs"
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
     """
     A single acknowledgment/delivery record: which person received or
     signed which document type (a template-based document -- a

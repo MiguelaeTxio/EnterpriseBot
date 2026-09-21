@@ -22,6 +22,9 @@ pantalla completa aparte, no un fragmento htmx de este pane.
     <a class="btn btn-sm btn-outline-secondary" href="{% url 'panel:job_positions_manage' %}">
         <i class="bi bi-person-badge"></i> Gestionar puestos
     </a>
+    <a class="btn btn-sm btn-outline-secondary" href="{% url 'panel:epi_batch_templates_manage' %}">
+        <i class="bi bi-shield-check"></i> Gestionar lotes de EPI
+    </a>
 </div>
 
 {% include "panel/documentation_h30/_personal_search_form.html" with search=search %}
@@ -78,14 +81,7 @@ haya al menos una persona seleccionada.
 
         <span class="vr mx-2"></span>
 
-        <select id="person-mass-epi" class="form-select form-select-sm" style="width:auto;">
-            <option value="">EPI a entregar…</option>
-            {% for epi in epi_items %}
-            <option value="{{ epi.pk }}">{{ epi.family }} -- {{ epi.label }}</option>
-            {% endfor %}
-        </select>
-        <input type="date" id="person-mass-epi-date" class="form-control form-control-sm" style="width:auto;">
-        <button type="button" class="btn btn-sm btn-primary" id="person-mass-epi-submit">Entregar EPI masivo</button>
+        <button type="button" class="btn btn-sm btn-primary" id="person-mass-epi-submit">Entregar EPIs…</button>
 
         <span class="vr mx-2"></span>
 
@@ -176,6 +172,7 @@ las filas de debajo se desplacen de verdad.
     const bar = document.getElementById('person-mass-bar');
     const countEl = document.getElementById('person-mass-count');
     const resultEl = document.getElementById('person-mass-result');
+    let personMassEpiBatchModalInstance = null;
 
     function refreshBar() {
         countEl.textContent = selection.size;
@@ -332,39 +329,65 @@ las filas de debajo se desplacen de verdad.
     });
 
     document.getElementById('person-mass-epi-submit').addEventListener('click', function () {
-        const epiId = document.getElementById('person-mass-epi').value;
-        const deliveryDate = document.getElementById('person-mass-epi-date').value;
         if (selection.size === 0) {
             resultEl.innerHTML = '<div class="alert alert-warning py-1 px-2 mb-0">No hay personas seleccionadas.</div>';
             return;
         }
-        if (!epiId || !deliveryDate) {
-            resultEl.innerHTML = '<div class="alert alert-warning py-1 px-2 mb-0">Falta elegir el EPI o la fecha de entrega.</div>';
+        document.getElementById('personMassEpiBatchCount').textContent = selection.size;
+        document.getElementById('personMassEpiBatchResult').innerHTML = '';
+        if (!personMassEpiBatchModalInstance) {
+            personMassEpiBatchModalInstance = new bootstrap.Modal(document.getElementById('personMassEpiBatchModal'));
+        }
+        personMassEpiBatchModalInstance.show();
+    });
+
+    document.getElementById('personMassEpiBatchTemplate').addEventListener('change', function () {
+        const opt = this.options[this.selectedIndex];
+        let ids = [];
+        try {
+            ids = JSON.parse(opt.dataset.itemIds || '[]');
+        } catch (e) {
+            ids = [];
+        }
+        document.querySelectorAll('.person-mass-epi-batch-checkbox').forEach((el) => {
+            el.checked = ids.includes(parseInt(el.value, 10));
+        });
+    });
+
+    document.getElementById('personMassEpiBatchSubmit').addEventListener('click', function () {
+        const epiIds = Array.from(document.querySelectorAll('.person-mass-epi-batch-checkbox:checked')).map((el) => el.value);
+        const deliveryDate = document.getElementById('personMassEpiBatchDate').value;
+        const modalResult = document.getElementById('personMassEpiBatchResult');
+        if (!epiIds.length || !deliveryDate) {
+            modalResult.innerHTML = '<div class="alert alert-warning py-1 px-2 mb-0">Elige al menos un EPI y la fecha de entrega.</div>';
             return;
         }
         const formData = new FormData();
         selection.forEach((pk) => formData.append('person_ids', pk));
-        formData.append('epi_id', epiId);
+        epiIds.forEach((id) => formData.append('epi_ids', id));
         formData.append('delivery_date', deliveryDate);
-        resultEl.innerHTML = '<div class="text-muted">Entregando…</div>';
-        fetch("{% url 'panel:documentation_personal_epi_mass_delivery' %}", {
+        modalResult.innerHTML = '<div class="text-muted">Entregando y generando documentos…</div>';
+        fetch("{% url 'panel:documentation_personal_epi_batch_delivery' %}", {
             method: 'POST',
             headers: {'X-CSRFToken': getCookie('csrftoken')},
             body: formData,
         }).then((r) => r.json()).then((data) => {
             if (data.ok) {
-                let msg = `<div class="alert alert-success py-1 px-2 mb-0">${data.created_count} entregas registradas` +
+                let msg = `<div class="alert alert-success py-1 px-2 mb-0">${data.created_count} personas, ${data.documents_generated} documentos generados` +
                     ` (${data.whatsapp_sent_count} confirmaciones WhatsApp enviadas).</div>`;
                 if (data.errors && data.errors.length) {
-                    msg += `<div class="alert alert-warning py-1 px-2 mb-0 mt-1">${data.errors.length} personas omitidas: ` +
+                    msg += `<div class="alert alert-warning py-1 px-2 mb-0 mt-1">${data.errors.length} incidencias: ` +
                         data.errors.map((e) => e.error).join('; ') + '</div>';
                 }
                 resultEl.innerHTML = msg;
+                if (personMassEpiBatchModalInstance) {
+                    personMassEpiBatchModalInstance.hide();
+                }
             } else {
-                resultEl.innerHTML = `<div class="alert alert-danger py-1 px-2 mb-0">${data.error || 'Error al entregar.'}</div>`;
+                modalResult.innerHTML = `<div class="alert alert-danger py-1 px-2 mb-0">${data.error || 'Error al entregar.'}</div>`;
             }
         }).catch(() => {
-            resultEl.innerHTML = '<div class="alert alert-danger py-1 px-2 mb-0">Error de red al entregar.</div>';
+            modalResult.innerHTML = '<div class="alert alert-danger py-1 px-2 mb-0">Error de red al entregar.</div>';
         });
     });
 
@@ -572,6 +595,59 @@ las filas de debajo se desplacen de verdad.
     });
 })();
 </script>
+
+{% comment %}
+H31 (S113). Modal de entrega de EPIs por lote a la selección masiva --
+Miguel Ángel: elegir un lote guardado (o EPIs sueltos sin lote),
+refinar con casillas cuáles se entregan hoy de verdad, confirmar
+fecha, y por cada persona seleccionada se genera un documento real
+distinto con la relación exacta de lo que le toca a ella (ver
+EpiBatchDeliveryExecuteView). Modal aparte, fuera de la IIFE de
+arriba, mismo motivo que el resto de modales de este archivo.
+{% endcomment %}
+<div class="modal fade" id="personMassEpiBatchModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Entregar EPIs a <span id="personMassEpiBatchCount">0</span> personas</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-2 mb-3">
+                    <div class="col-6">
+                        <label class="form-label small mb-0">Lote guardado</label>
+                        <select id="personMassEpiBatchTemplate" class="form-select form-select-sm">
+                            <option value="" data-item-ids="[]">Sin lote -- elegir EPIs sueltos</option>
+                            {% for template in epi_batch_templates %}
+                            <option value="{{ template.pk }}" data-item-ids="[{% for item in template.items.all %}{{ item.pk }}{% if not forloop.last %},{% endif %}{% endfor %}]">{{ template.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label small mb-0">Fecha de entrega</label>
+                        <input type="date" id="personMassEpiBatchDate" class="form-control form-control-sm">
+                    </div>
+                </div>
+                <p class="text-muted small mb-1">Al elegir un lote se marcan sus EPIs -- desmarca los que hoy no toque entregar, o marca EPIs sueltos sin lote:</p>
+                <div style="max-height:40vh;overflow-y:auto;border:1px solid #dee2e6;border-radius:0.25rem;padding:0.5rem;">
+                    {% for epi in epi_items %}
+                    <div class="form-check">
+                        <input class="form-check-input person-mass-epi-batch-checkbox" type="checkbox" value="{{ epi.pk }}" id="pmEbCheck{{ epi.pk }}">
+                        <label class="form-check-label small" for="pmEbCheck{{ epi.pk }}">{{ epi.family }} -- {{ epi.label }}</label>
+                    </div>
+                    {% empty %}
+                    <p class="text-muted small mb-0">Sin EPIs en el catálogo.</p>
+                    {% endfor %}
+                </div>
+                <div id="personMassEpiBatchResult" class="small mt-2"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary btn-sm" id="personMassEpiBatchSubmit">Entregar</button>
+            </div>
+        </div>
+    </div>
+</div>
 
 {% comment %}
 H31 (S100), Bloque 1 -- alta de trabajador nuevo, GUIADA POR

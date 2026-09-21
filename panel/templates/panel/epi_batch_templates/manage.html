@@ -1,0 +1,201 @@
+# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/epi_batch_templates/manage.html
+{% extends "panel/base.html" %}
+
+{% comment %}
+H31 (S113). Página de gestión de lotes de EPIs -- misma mecánica que
+JobPositionManageView (nombre libre + catálogo agrupado por familia,
+marcados con casillero), pero para EpiDeliveryBatchTemplate.items.
+Sin concepto de "lote activo" (un lote no se aplica solo -- se elige
+al entregar, ver EpiBatchDeliveryExecuteView, y el supervisor puede
+desmarcar EPIs concretos de ese lote en ese momento).
+
+Origen: Miguel Ángel, verbatim -- "estas plantillas de lotes deberían
+ser editables, guardables, etcétera, para tener varios tipos de
+plantillas, pues por ejemplo, EPI mecánico [...] eso ya el nombre lo
+pondría el propio supervisor."
+{% endcomment %}
+
+{% block title %}Lotes de EPIs{% endblock %}
+{% block page_title %}Lotes de EPIs{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-3 pt-3">
+
+    <div class="d-flex align-items-center justify-content-between mb-3">
+        <p class="text-muted small mb-0">
+            Un lote es una lista reutilizable de EPIs con el nombre que quieras (p. ej. "EPI mecánico", "EPI chóferes"). Al entregar EPIs a uno o varios trabajadores podrás elegir un lote y desmarcar sobre la marcha los que hoy no toque entregar.
+        </p>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header">Lotes guardados</div>
+        <div class="card-body p-0">
+            <table class="table table-sm table-hover mb-0">
+                <thead><tr><th>Lote</th><th>EPIs</th><th></th></tr></thead>
+                <tbody>
+                    {% for template in templates %}
+                    <tr id="templateRow{{ template.pk }}"
+                        data-name="{{ template.name|escapejs }}"
+                        data-item-ids="{% for item in template.items.all %}{{ item.pk }}{% if not forloop.last %},{% endif %}{% endfor %}">
+                        <td>
+                            <a href="#" onclick="loadTemplateIntoForm({{ template.pk }}); return false;">{{ template.name }}</a>
+                        </td>
+                        <td class="small text-muted">
+                            {% for item in template.items.all %}{{ item.label }}{% if not forloop.last %}, {% endif %}{% endfor %}
+                            {% if not template.items.all %}<span class="text-muted">Sin perfilar todavía</span>{% endif %}
+                        </td>
+                        <td class="text-end">
+                            <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteTemplate({{ template.pk }})">Eliminar</button>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="3" class="text-muted small py-3">Sin lotes guardados todavía.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span id="formTitle">Nuevo lote</span>
+            <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="cancelEditBtn" onclick="resetForm()">Vaciar / nuevo lote</button>
+        </div>
+        <div class="card-body">
+            <input type="hidden" id="templatePk" value="">
+            <div class="mb-3">
+                <label class="form-label small mb-1">Nombre del lote</label>
+                <input type="text" id="templateName" class="form-control form-control-sm" placeholder="p. ej. EPI mecánico, EPI chóferes..." oninput="refreshDraftPreview()">
+            </div>
+            <div id="templateFormResult" class="small mb-2"></div>
+            <button type="button" class="btn btn-sm btn-primary mb-3" id="saveTemplateBtn" onclick="saveTemplate()">Guardar lote</button>
+
+            <div style="max-height: 55vh; overflow-y: auto; border: 1px solid #dee2e6; border-radius: 0.25rem; padding: 0.5rem;" id="epiBatchFamilyList">
+            {% for fam in families %}
+            <div class="mb-2 p-2 rounded epi-batch-family-group" data-family="{{ fam.label }}">
+                <div class="fw-bold small mb-1">{{ fam.label }}</div>
+                <div style="columns: 3; column-gap: 1.5rem;">
+                    {% for item in fam.items %}
+                    <div class="form-check" style="break-inside: avoid;">
+                        <input class="form-check-input epi-batch-item-checkbox" type="checkbox" value="{{ item.pk }}" id="ebCheck{{ item.pk }}" data-label="{{ item.label|escapejs }}" onchange="refreshDraftPreview()">
+                        <label class="form-check-label small" for="ebCheck{{ item.pk }}">{{ item.label }}</label>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endfor %}
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+function getCookie(name) {
+    const value = `; ${document.cookie}`;
+    const parts = value.split(`; ${name}=`);
+    if (parts.length === 2) return parts.pop().split(';').shift();
+}
+
+// H31 (S113): mismo coloreado determinista por familia que la pestaña
+// EPIs (_epi_pane.html) -- EpiItemCatalog.family es texto libre, sin
+// lista cerrada, así que el color se deriva por ángulo áureo del
+// propio nombre de familia en vez de una paleta fija.
+(function () {
+    const hues = {};
+    let nextHue = 0;
+    function hueForFamily(family) {
+        if (!(family in hues)) {
+            hues[family] = (nextHue * 137.508) % 360;
+            nextHue += 1;
+        }
+        return hues[family];
+    }
+    document.querySelectorAll('#epiBatchFamilyList .epi-batch-family-group').forEach(function (el) {
+        const hue = hueForFamily(el.dataset.family);
+        el.style.backgroundColor = 'hsl(' + hue + ', 65%, 96%)';
+        el.style.borderLeft = '4px solid hsl(' + hue + ', 65%, 45%)';
+    });
+})();
+
+function getCheckedItemIds() {
+    return Array.from(document.querySelectorAll('.epi-batch-item-checkbox:checked')).map(el => el.value);
+}
+
+function refreshDraftPreview() {
+    const title = document.getElementById('formTitle');
+    const pk = document.getElementById('templatePk').value;
+    const name = document.getElementById('templateName').value.trim();
+    title.textContent = pk ? ('Editando: ' + (name || '(sin nombre)')) : (name || 'Nuevo lote');
+}
+
+function loadTemplateIntoForm(pk) {
+    const row = document.getElementById('templateRow' + pk);
+    if (!row) return;
+    const name = row.dataset.name || '';
+    const ids = (row.dataset.itemIds || '').split(',').filter(Boolean);
+
+    document.getElementById('templatePk').value = pk;
+    document.getElementById('templateName').value = name;
+    document.querySelectorAll('.epi-batch-item-checkbox').forEach(el => { el.checked = false; });
+    ids.forEach(id => {
+        const el = document.getElementById('ebCheck' + id);
+        if (el) el.checked = true;
+    });
+    document.getElementById('cancelEditBtn').classList.remove('d-none');
+    refreshDraftPreview();
+}
+
+function resetForm() {
+    document.getElementById('templatePk').value = '';
+    document.getElementById('templateName').value = '';
+    document.querySelectorAll('.epi-batch-item-checkbox').forEach(el => { el.checked = false; });
+    document.getElementById('cancelEditBtn').classList.add('d-none');
+    document.getElementById('templateFormResult').innerHTML = '';
+    refreshDraftPreview();
+}
+
+function saveTemplate() {
+    const pk = document.getElementById('templatePk').value;
+    const name = document.getElementById('templateName').value.trim();
+    const itemIds = getCheckedItemIds();
+    const resultDiv = document.getElementById('templateFormResult');
+
+    if (!name) {
+        resultDiv.innerHTML = '<div class="alert alert-danger py-1 px-2 small mb-0">Falta el nombre del lote.</div>';
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('name', name);
+    itemIds.forEach(id => formData.append('item_ids', id));
+
+    const url = pk
+        ? `/panel/documentacion/lotes-epi/${pk}/guardar/`
+        : '/panel/documentacion/lotes-epi/guardar/';
+
+    fetch(url, {
+        method: 'POST', body: formData,
+        headers: {'X-CSRFToken': getCookie('csrftoken')},
+    }).then(r => r.json()).then(data => {
+        if (data.ok) {
+            location.reload();
+        } else {
+            resultDiv.innerHTML = `<div class="alert alert-danger py-1 px-2 small mb-0">${data.error || 'Error al guardar.'}</div>`;
+        }
+    }).catch(() => {
+        resultDiv.innerHTML = '<div class="alert alert-danger py-1 px-2 small mb-0">Error de red al guardar.</div>';
+    });
+}
+
+function deleteTemplate(pk) {
+    if (!confirm('¿Eliminar este lote? No afecta a ninguna entrega ya registrada.')) return;
+    fetch(`/panel/documentacion/lotes-epi/${pk}/eliminar/`, {
+        method: 'POST',
+        headers: {'X-CSRFToken': getCookie('csrftoken')},
+    }).then(r => r.json()).then(data => {
+        if (data.ok) location.reload();
+    });
+}
+</script>
+{% endblock %}

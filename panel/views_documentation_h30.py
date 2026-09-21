@@ -46,10 +46,13 @@ from analytics.views import _resolve_work_period
 from document_explorer import naming_service, personal_intake_service, postal_code_service
 from document_explorer.index_writer import ensure_folder_chain
 from document_explorer.models import (
-    DocumentAcknowledgment, DocumentIndexEntry, DocumentTypeCatalog,
-    EpiDelivery, EpiItemCatalog, EpiReview, JobPosition,
-    PersonalDossierTemplate, PersonGroupTemplate, PersonIdentity,
-    path_digest,
+    CompanyFiscalProfile, DocumentAcknowledgment, DocumentIndexEntry,
+    DocumentTypeCatalog, EpiDelivery, EpiDeliveryBatchTemplate,
+    EpiItemCatalog, EpiReview, JobPosition, PersonalDossierTemplate,
+    PersonGroupTemplate, PersonIdentity, path_digest,
+)
+from document_explorer.epi_delivery_document_service import (
+    build_epi_delivery_pdf_bytes, resolve_company_fiscal_profile,
 )
 from document_explorer.subject_upload_service import (
     SubjectUploadError, upload_subject_document,
@@ -669,6 +672,12 @@ class PersonalListFragmentView(CompanyUserRequiredMixin, View):
         # "Asignar puesto" -- mismo criterio que person_groups, cargado
         # una única vez en la carga inicial de la pestaña.
         ctx["job_positions"] = JobPosition.objects.order_by("name")
+        # H31 (S113): lotes de EPIs guardados para la nueva acción
+        # masiva de entrega -- mismo criterio que job_positions/
+        # person_groups de arriba, cargado una única vez.
+        ctx["epi_batch_templates"] = EpiDeliveryBatchTemplate.objects.prefetch_related(
+            "items",
+        ).order_by("name")
         return render(request, "panel/documentation_h30/_personal_pane.html", ctx)
 
 
@@ -1469,6 +1478,12 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
             "doc_types": doc_types, "epi_deliveries": epi_deliveries,
             "epi_families": epi_families,
             "epi_items": epi_items,
+            # H31 (S113): lotes de EPIs guardados para el nuevo flujo de
+            # entrega desde la ficha individual (mismo modal que la
+            # acción masiva de Personal).
+            "epi_batch_templates": EpiDeliveryBatchTemplate.objects.prefetch_related(
+                "items",
+            ).order_by("name"),
             "notification_types": notification_types,
             "active_nav": "documentation_hub",
             "main_accordion_open": main_accordion_open,
@@ -2459,48 +2474,235 @@ class EpiTechnicalSheetUploadView(DocsUploadAccessMixin, View):
         })
 
 
-class EpiIndividualDeliveryView(DocsUploadAccessMixin, View):
+class EpiBatchDeliveryExecuteView(DocsUploadAccessMixin, View):
     """
-    H31 (S74), punto 3 de la hoja de ruta. POST: registra una entrega
-    individual de EPI desde la ficha de persona -- desplegable de
-    EpiItemCatalog + fecha, crea un EpiDelivery real con
-    extraction_method=MANUAL (panel), igual criterio que el resto de
-    entregas manuales del sistema. Sin destination_machine aquí --
-    ese campo es para EPIs con Centro de Gasto de destino (botiquines
-    y similares), fuera de alcance de la entrega individual estándar
-    de este punto.
+    H31 (S113). POST: entrega real de EPIs -- sustituye a
+    `EpiIndividualDeliveryView` (S74) y `EpiMassDeliveryView` (S75),
+    unificadas en una sola vista porque el proceso real de la empresa
+    es el mismo en los dos casos (una o varias personas, uno o varios
+    EPIs a la vez, nunca uno solo): Miguel Ángel, verbatim -- "se
+    confecciona un documento a través de una plantilla [...] vienen
+    una serie de EPIs [...] el trabajador firma el documento [...] los
+    documentos variarán unos de otros dependiendo de a qué personas
+    van dirigidos y dependiendo de la lista de EPIs que se les hace
+    entrega."
+
+    `person_ids`: una o varias pks (la ficha individual manda una
+    sola; la barra de acción masiva del listado, las del casillero).
+    `epi_ids`: una o varias pks de `EpiItemCatalog` -- ya vienen
+    resueltas por el frontend, sea cual sea el origen (lote con
+    casillas desmarcadas, o EPIs sueltos sin lote). Esta vista no sabe
+    ni le importa si hubo una `EpiDeliveryBatchTemplate` de por medio
+    -- eso es solo una ayuda de UI para rellenar la lista de EPIs más
+    rápido, nunca un dato que se persista en el `EpiDelivery`.
+
+    Por cada persona: un `EpiDelivery(extraction_method=MANUAL)` real
+    por EPI entregado (igual que las vistas que sustituye), MÁS un
+    documento PDF real generado con la relación exacta de EPIs
+    entregados a esa persona en este lote concreto (nunca el mismo
+    documento para dos personas distintas, ni con X -- una línea de
+    texto por EPI, ver `epi_delivery_document_service`), indexado vía
+    `upload_subject_document` (mismo mecanismo que cualquier subida
+    real -- carpeta real de la persona, nunca la ruta antigua "DOC.
+    PERSONAL/ENTREGA EPIS/{año}" de antes de la reorganización de
+    H29) como tipo documental EPIS, y enlazado como `source_entry` de
+    TODAS las entregas creadas para esa persona en esta misma llamada
+    -- así el botón "Ver" de la pestaña EPIs (ya arreglado esta
+    sesión) funciona también con estas.
+
+    Encabezado de empresa resuelto por `CompanyFiscalProfile` contra
+    `person.employer_company` -- si no hay perfil que case (variante
+    de empresa todavía sin confirmar por Miguel Ángel), el documento
+    se genera igual, sin esas 3 líneas, nunca bloqueante.
+
+    WhatsApp de confirmación igual de no bloqueante que las vistas que
+    sustituye -- un fallo de WhatsApp o de generación del PDF de una
+    persona nunca revierte sus entregas ya comprometidas en BD, ni
+    afecta al resto del lote.
     """
 
-    def post(self, request, pk):
-        person = get_object_or_404(PersonIdentity, pk=pk)
-        epi_id = request.POST.get("epi_id", "")
-        delivery_date = request.POST.get("delivery_date", "")
-        if not epi_id or not delivery_date:
+    def post(self, request):
+        person_ids = request.POST.getlist("person_ids")
+        epi_ids = request.POST.getlist("epi_ids")
+        delivery_date_str = request.POST.get("delivery_date", "")
+
+        if not person_ids:
             return JsonResponse(
-                {"ok": False, "error": "EPI y fecha de entrega son obligatorios."},
+                {"ok": False, "error": "No hay ninguna persona seleccionada."},
                 status=400,
             )
-        epi = get_object_or_404(EpiItemCatalog, pk=epi_id, is_active=True)
-        delivery = EpiDelivery.objects.create(
-            person=person, epi=epi, delivery_date=delivery_date,
-            extraction_method=EpiDelivery.METHOD_MANUAL,
+        if not epi_ids or not delivery_date_str:
+            return JsonResponse(
+                {"ok": False, "error": "Selecciona al menos un EPI y la fecha de entrega."},
+                status=400,
+            )
+        try:
+            year, month, day = (int(x) for x in delivery_date_str.split("-"))
+            delivery_date = date(year, month, day)
+        except ValueError:
+            return JsonResponse(
+                {"ok": False, "error": "Fecha de entrega con formato inválido."},
+                status=400,
+            )
+
+        epis = list(
+            EpiItemCatalog.objects.filter(pk__in=epi_ids, is_active=True)
+            .order_by("family", "label"),
         )
-        # H31 (S74), requisito explícito de Miguel Ángel: confirmación
-        # WhatsApp al trabajador para que quede constancia por escrito
-        # de la entrega. No bloqueante -- la entrega ya está en BD;
-        # si el WhatsApp falla (sin teléfono, sin Company vinculada,
-        # plantilla aún no aprobada por Meta...) se loguea y se
-        # informa en la respuesta, pero la entrega NUNCA se revierte.
-        whatsapp_sent = send_epi_delivery_whatsapp_confirmation(delivery)
+        if not epis:
+            return JsonResponse(
+                {"ok": False, "error": "Ninguno de los EPIs seleccionados existe o está activo."},
+                status=400,
+            )
+        epi_labels = [epi.label for epi in epis]
+        person_ct = ContentType.objects.get_for_model(PersonIdentity)
+        try:
+            epis_document_type = DocumentTypeCatalog.objects.get(code="EPIS")
+        except DocumentTypeCatalog.DoesNotExist:
+            return JsonResponse(
+                {"ok": False, "error": "El tipo documental EPIS no existe en el catálogo."},
+                status=400,
+            )
+
+        created = []
+        errors = []
+        whatsapp_sent_count = 0
+        documents_generated = 0
+        for person_id in person_ids:
+            try:
+                person = PersonIdentity.objects.get(pk=person_id)
+            except (PersonIdentity.DoesNotExist, ValueError):
+                errors.append({"person_id": person_id, "error": "Persona no encontrada."})
+                continue
+
+            deliveries = [
+                EpiDelivery.objects.create(
+                    person=person, epi=epi, delivery_date=delivery_date,
+                    extraction_method=EpiDelivery.METHOD_MANUAL,
+                )
+                for epi in epis
+            ]
+
+            company_profile = resolve_company_fiscal_profile(person.employer_company)
+            try:
+                pdf_bytes = build_epi_delivery_pdf_bytes(
+                    person, epi_labels, delivery_date, company_profile,
+                )
+                subject_label = "%s %s, %s" % (
+                    person.first_surname, person.second_surname, person.given_name,
+                )
+                upload_result = upload_subject_document(
+                    subject=person, domain_content_type=person_ct,
+                    document_type=epis_document_type, data=pdf_bytes,
+                    original_filename="entrega_epis_%s.pdf" % delivery_date.isoformat(),
+                    typed_date=None, subject_label=subject_label,
+                    uploaded_by=getattr(request.user, "company_user", None),
+                )
+                entry = upload_result["entry"]
+                EpiDelivery.objects.filter(
+                    pk__in=[d.pk for d in deliveries],
+                ).update(source_entry=entry)
+                documents_generated += 1
+            except SubjectUploadError as exc:
+                errors.append({
+                    "person_id": person.pk,
+                    "error": "Entregas registradas, pero el documento no se pudo generar: %s" % exc,
+                })
+
+            for delivery in deliveries:
+                if send_epi_delivery_whatsapp_confirmation(delivery):
+                    whatsapp_sent_count += 1
+            created.append({
+                "person_id": person.pk,
+                "delivery_ids": [d.pk for d in deliveries],
+            })
+
         return JsonResponse({
             "ok": True,
-            "whatsapp_sent": whatsapp_sent,
-            "delivery": {
-                "id": delivery.pk,
-                "epi_label": epi.label,
-                "delivery_date": delivery.delivery_date.isoformat(),
-            },
+            "created_count": len(created),
+            "documents_generated": documents_generated,
+            "whatsapp_sent_count": whatsapp_sent_count,
+            "created": created,
+            "errors": errors,
         })
+
+
+class EpiBatchTemplateManageView(CompanyUserRequiredMixin, View):
+    """
+    H31 (S113). GET: página de gestión de lotes de EPIs -- mismo
+    patrón que `JobPositionManageView` (nombre libre + catálogo con
+    casillero, agrupado por familia como en la pestaña EPIs), pero
+    para `EpiDeliveryBatchTemplate.items`. Sin concepto de "lote
+    activo" -- un lote no se aplica solo, se elige al entregar (ver
+    `EpiBatchDeliveryExecuteView`) y el supervisor puede desmarcar
+    EPIs concretos de ese lote en ese momento.
+    """
+
+    def get(self, request):
+        templates = EpiDeliveryBatchTemplate.objects.prefetch_related(
+            "items",
+        ).order_by("name")
+        items_by_family = {}
+        for epi in EpiItemCatalog.objects.filter(is_active=True).order_by(
+            "family", "label",
+        ):
+            items_by_family.setdefault(epi.family or "Sin familia asignada", []).append(epi)
+        families = [
+            {"label": family, "items": items}
+            for family, items in sorted(items_by_family.items())
+        ]
+        return render(request, "panel/epi_batch_templates/manage.html", {
+            "templates": templates, "families": families,
+        })
+
+
+class EpiBatchTemplateSaveView(CompanyUserRequiredMixin, View):
+    """
+    H31 (S113). POST: crea un lote nuevo (sin `template_pk`) o edita
+    uno existente -- nombre y la lista completa de EPIs marcados en
+    `EpiBatchTemplateManageView`. Igual que un puesto de trabajo, un
+    lote sí puede guardarse sin ningún EPI marcado todavía (se puede
+    seguir perfilando después).
+    """
+
+    def post(self, request, template_pk=None):
+        if template_pk:
+            template = get_object_or_404(EpiDeliveryBatchTemplate, pk=template_pk)
+        else:
+            template = EpiDeliveryBatchTemplate()
+
+        name = request.POST.get("name", "").strip()
+        if not name:
+            return JsonResponse(
+                {"ok": False, "error": "Falta el nombre del lote."},
+                status=400,
+            )
+
+        template.name = name
+        try:
+            template.save()
+        except IntegrityError:
+            return JsonResponse(
+                {"ok": False, "error": "Ya existe un lote con ese nombre."},
+                status=400,
+            )
+        item_ids = request.POST.getlist("item_ids")
+        template.items.set(item_ids)
+
+        return JsonResponse({"ok": True, "id": template.pk})
+
+
+class EpiBatchTemplateDeleteView(CompanyUserRequiredMixin, View):
+    """
+    H31 (S113). POST: borra un lote -- nunca toca ningún `EpiDelivery`
+    ya registrado (el lote es solo una ayuda de UI, no se referencia
+    desde la entrega real).
+    """
+
+    def post(self, request, template_pk):
+        template = get_object_or_404(EpiDeliveryBatchTemplate, pk=template_pk)
+        template.delete()
+        return JsonResponse({"ok": True})
 
 
 class PersonalIntakeExtractView(DocsUploadAccessMixin, View):
@@ -3624,66 +3826,6 @@ class PersonGroupTemplateCreateView(DocsUploadAccessMixin, View):
         })
 
 
-class EpiMassDeliveryView(DocsUploadAccessMixin, View):
-    """
-    H31 (S75), punto 1 de la hoja de ruta. POST: entrega masiva de UN
-    EPI a un conjunto de personas seleccionadas (casillero del listado
-    Personal) -- mismo backend que `EpiIndividualDeliveryView` (S74),
-    en bucle sobre `person_ids`, un `EpiDelivery(extraction_method=
-    MANUAL)` real por persona, sin destination_machine (mismo alcance
-    que la entrega individual estándar). WhatsApp de confirmación
-    igual de no bloqueante que en la entrega individual -- un fallo de
-    WhatsApp de una persona nunca revierte su entrega ya comprometida
-    en BD, ni afecta al resto del lote.
-
-    `person_ids` llega como lista de pks (checkboxes marcados en el
-    listado). Personas repetidas o inexistentes se ignoran sin abortar
-    el resto -- se informan en `errors` de la respuesta.
-    """
-
-    def post(self, request):
-        person_ids = request.POST.getlist("person_ids")
-        epi_id = request.POST.get("epi_id", "")
-        delivery_date = request.POST.get("delivery_date", "")
-
-        if not person_ids:
-            return JsonResponse(
-                {"ok": False, "error": "No hay ninguna persona seleccionada."},
-                status=400,
-            )
-        if not epi_id or not delivery_date:
-            return JsonResponse(
-                {"ok": False, "error": "EPI y fecha de entrega son obligatorios."},
-                status=400,
-            )
-        epi = get_object_or_404(EpiItemCatalog, pk=epi_id, is_active=True)
-
-        created = []
-        errors = []
-        whatsapp_sent_count = 0
-        for person_id in person_ids:
-            try:
-                person = PersonIdentity.objects.get(pk=person_id)
-            except (PersonIdentity.DoesNotExist, ValueError):
-                errors.append({"person_id": person_id, "error": "Persona no encontrada."})
-                continue
-            delivery = EpiDelivery.objects.create(
-                person=person, epi=epi, delivery_date=delivery_date,
-                extraction_method=EpiDelivery.METHOD_MANUAL,
-            )
-            if send_epi_delivery_whatsapp_confirmation(delivery):
-                whatsapp_sent_count += 1
-            created.append({"person_id": person.pk, "delivery_id": delivery.pk})
-
-        return JsonResponse({
-            "ok": True,
-            "created_count": len(created),
-            "whatsapp_sent_count": whatsapp_sent_count,
-            "created": created,
-            "errors": errors,
-        })
-
-
 class PersonalNotificationMassSendView(DocsUploadAccessMixin, View):
     """
     H31 (S75), punto 1 de la hoja de ruta. POST: envío masivo de UNA
@@ -3814,7 +3956,7 @@ class PersonalDossierMassGenerateView(DocsUploadAccessMixin, View):
     de UNA plantilla guardada -- Miguel Ángel, verbatim: "cuando estés
     en el listado de trabajadores y digas: este, este y este, quiero
     generar dosieres con esta plantilla para descargar, enviar por
-    correo." Mismo patrón que `EpiMassDeliveryView`/
+    correo." Mismo patrón que `EpiBatchDeliveryExecuteView`/
     `PersonalNotificationMassSendView` (bucle sobre `person_ids`),
     reutilizando exactamente los mismos constructores de PDF/ZIP/.eml
     que ya usa la ficha individual (`_resolve_template_entries`,

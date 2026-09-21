@@ -32,8 +32,10 @@ from panel.views_documentation_h30 import (
     DocumentTypeQuickCreateView,
     DocumentViewView,
     DocumentationHubV2View,
-    EpiIndividualDeliveryView,
-    EpiMassDeliveryView,
+    EpiBatchDeliveryExecuteView,
+    EpiBatchTemplateDeleteView,
+    EpiBatchTemplateManageView,
+    EpiBatchTemplateSaveView,
     PersonGroupTemplateCreateView,
     PersonMassSetJobPositionView,
     EpiResultsFragmentView,
@@ -480,14 +482,21 @@ urlpatterns = [
     # H31 (S74): edición de ficha de persona (given_name/first_surname/second_surname/phone/email).
     path("documentacion/personal/<int:pk>/actualizar/", PersonalUpdateView.as_view(), name="documentation_personal_update"),
     path("documentacion/personal/<int:pk>/avatar/", PersonalSetAvatarView.as_view(), name="documentation_personal_set_avatar"),
-    # H31 (S74) punto 3: entrega individual de EPI desde la ficha.
-    path("documentacion/personal/<int:pk>/entregar-epi/", EpiIndividualDeliveryView.as_view(), name="documentation_personal_epi_delivery"),
-    path("documentacion/personal/<int:pk>/notificar/", PersonalNotificationSendView.as_view(), name="documentation_personal_notify"),
+    # H31 (S113): entrega real de EPIs (individual desde la ficha, o
+    # masiva sobre la selección con casillero) -- sustituye a las
+    # rutas separadas de S74/S75, unificadas porque el proceso real
+    # es el mismo (una o varias personas, uno o varios EPIs a la vez).
+    path("documentacion/personal/entregar-epi/", EpiBatchDeliveryExecuteView.as_view(), name="documentation_personal_epi_batch_delivery"),
+    path("documentacion/personal/notificar/", PersonalNotificationSendView.as_view(), name="documentation_personal_notify"),
     # H31 (S75) punto 1: acciones masivas sobre la selección con casillero del listado Personal.
     path("documentacion/personal/grupos/crear/", PersonGroupTemplateCreateView.as_view(), name="documentation_personal_group_create"),
     path("documentacion/personal/puesto-masivo/", PersonMassSetJobPositionView.as_view(), name="documentation_personal_job_position_mass_set"),
-    path("documentacion/personal/entregar-epi-masivo/", EpiMassDeliveryView.as_view(), name="documentation_personal_epi_mass_delivery"),
     path("documentacion/personal/notificar-masivo/", PersonalNotificationMassSendView.as_view(), name="documentation_personal_notify_mass"),
+    # H31 (S113): CRUD de lotes de EPIs.
+    path("documentacion/lotes-epi/", EpiBatchTemplateManageView.as_view(), name="epi_batch_templates_manage"),
+    path("documentacion/lotes-epi/guardar/", EpiBatchTemplateSaveView.as_view(), name="epi_batch_template_create"),
+    path("documentacion/lotes-epi/<int:template_pk>/guardar/", EpiBatchTemplateSaveView.as_view(), name="epi_batch_template_update"),
+    path("documentacion/lotes-epi/<int:template_pk>/eliminar/", EpiBatchTemplateDeleteView.as_view(), name="epi_batch_template_delete"),
     # H31 (S75) punto 2: CRUD de circulares/notificaciones.
     path("documentacion/circulares/", CircularListView.as_view(), name="circulars_list"),
     path("documentacion/circulares/nueva/", CircularCreateView.as_view(), name="circulars_create"),
