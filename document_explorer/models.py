@@ -1583,7 +1583,7 @@ class PersonIdentity(models.Model):
         blank=True,
         on_delete=models.SET_NULL,
         related_name="people",
-        verbose_name="Puesto de trabajo",
+        verbose_name="Requisitos de documentación",
     )
     excel_imported_at = models.DateTimeField(
         null=True, blank=True,
@@ -2597,6 +2597,16 @@ class JobPosition(models.Model):
     caducado el DNI [...] eso por una parte" (aviso siempre), frente
     al aviso de faltante (solo por puesto).
 
+    RENOMBRADO DE CARA AL USUARIO EN S113 (nunca la clase ni el campo
+    en código, solo verbose_name/textos de interfaz): Miguel Ángel,
+    tras confundir este modelo con la entrega de EPIs -- "el nombre
+    tiene a confusión, porque en el puesto lo que tenemos es [...] la
+    documentación obligatoria por puestos [...] habría que darle otro
+    nombre". Ahora se presenta como "Requisitos de documentación" en
+    toda la interfaz -- el modelo, el campo FK y las vistas siguen
+    llamándose JobPosition/job_position internamente, sin ningún
+    cambio de esquema ni de URL, solo de rótulo visible.
+
     `PersonIdentity.job_position` (FK, nullable) es "persona
     relacionada con el puesto" -- sin puesto asignado, ningún tipo se
     marca como faltante (nunca se asume un conjunto por defecto sin
@@ -2609,13 +2619,13 @@ class JobPosition(models.Model):
     name = models.CharField(
         max_length=150,
         unique=True,
-        verbose_name="Puesto",
+        verbose_name="Nombre",
     )
     required_document_types = models.ManyToManyField(
         DocumentTypeCatalog,
         blank=True,
         related_name="job_positions",
-        verbose_name="Documentos obligatorios para este puesto",
+        verbose_name="Documentos obligatorios para este requisito",
         help_text=(
             "Solo gobierna el aviso de documento FALTANTE en la "
             "ficha de personal -- el aviso de documento CADUCADO es "
@@ -2640,8 +2650,8 @@ class JobPosition(models.Model):
     )
 
     class Meta:
-        verbose_name = "Puesto de trabajo"
-        verbose_name_plural = "Puestos de trabajo"
+        verbose_name = "Requisito de documentación"
+        verbose_name_plural = "Requisitos de documentación"
         ordering = ["name"]
 
     def __str__(self):

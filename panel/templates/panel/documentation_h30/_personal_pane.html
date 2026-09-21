@@ -20,7 +20,7 @@ pantalla completa aparte, no un fragmento htmx de este pane.
         <i class="bi bi-folder2-open"></i> Gestionar plantillas de dosier
     </a>
     <a class="btn btn-sm btn-outline-secondary" href="{% url 'panel:job_positions_manage' %}">
-        <i class="bi bi-person-badge"></i> Gestionar puestos
+        <i class="bi bi-person-badge"></i> Gestionar requisitos de documentación
     </a>
 </div>
 
@@ -96,15 +96,17 @@ al listado de trabajadores + visor de selección de abajo.
             </div>
             <div class="row g-1">
                 <div class="col-6 border-end pe-2">
-                    <div class="small text-muted fw-bold">Puesto</div>
+                    <div class="small text-muted fw-bold">Requisitos de documentación</div>
                     <div class="d-flex gap-1 flex-wrap">
                         {% comment %}
-                        H31 (S109). Asignar puesto masivo -- sustituye
-                        siempre el puesto anterior de cada persona (FK,
-                        no acumulativo).
+                        H31 (S109, renombrado en S113). Asignar
+                        requisito de documentación masivo -- sustituye
+                        siempre el anterior de cada persona (FK, no
+                        acumulativo). Modelo/campo internos siguen
+                        llamándose JobPosition/job_position.
                         {% endcomment %}
                         <select id="person-mass-job-position" class="form-select form-select-sm" style="width:auto;">
-                            <option value="">Asignar puesto…</option>
+                            <option value="">Asignar requisitos…</option>
                             {% for position in job_positions %}
                             <option value="{{ position.pk }}">{{ position.name }}</option>
                             {% endfor %}
@@ -498,7 +500,7 @@ las filas de debajo se desplacen de verdad.
             return;
         }
         if (!jobPositionId) {
-            resultEl.innerHTML = '<div class="alert alert-warning py-1 px-2 mb-0">Elige un puesto primero.</div>';
+            resultEl.innerHTML = '<div class="alert alert-warning py-1 px-2 mb-0">Elige un requisito de documentación primero.</div>';
             return;
         }
         const formData = new FormData();
@@ -511,12 +513,12 @@ las filas de debajo se desplacen de verdad.
             body: formData,
         }).then((r) => r.json()).then((data) => {
             if (data.ok) {
-                resultEl.innerHTML = `<div class="alert alert-success py-1 px-2 mb-0">${data.updated_count} personas asignadas al puesto "${data.job_position_name}".</div>`;
+                resultEl.innerHTML = `<div class="alert alert-success py-1 px-2 mb-0">${data.updated_count} personas asignadas al requisito "${data.job_position_name}".</div>`;
             } else {
-                resultEl.innerHTML = `<div class="alert alert-danger py-1 px-2 mb-0">${data.error || 'Error al asignar el puesto.'}</div>`;
+                resultEl.innerHTML = `<div class="alert alert-danger py-1 px-2 mb-0">${data.error || 'Error al asignar el requisito.'}</div>`;
             }
         }).catch(() => {
-            resultEl.innerHTML = '<div class="alert alert-danger py-1 px-2 mb-0">Error de red al asignar el puesto.</div>';
+            resultEl.innerHTML = '<div class="alert alert-danger py-1 px-2 mb-0">Error de red al asignar el requisito.</div>';
         });
     });
 

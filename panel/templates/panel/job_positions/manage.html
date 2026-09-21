@@ -2,11 +2,16 @@
 {% extends "panel/base.html" %}
 
 {% comment %}
-H31 (S109). Página de gestión de puestos de trabajo -- "plantilla de
-puesto", misma mecánica que DossierTemplateManageView (tipos
-documentales agrupados por familia, marcados con casillero), pero
-para JobPosition.required_document_types. Sin concepto de "plantilla
-activa" (un puesto no se aplica sobre nadie, solo se asigna a la
+H31 (S109, renombrado de cara al usuario en S113). Página de gestión
+de "Requisitos de documentación" -- Miguel Ángel: "el nombre tiene a
+confusión, porque en el puesto lo que tenemos es [...] la
+documentación obligatoria por puestos [...] habría que darle otro
+nombre". Mismo modelo/vistas/URLs internos (JobPosition,
+job_position, /puestos/...) -- solo cambia el rótulo visible. Misma
+mecánica que DossierTemplateManageView (tipos documentales agrupados
+por familia, marcados con casillero), pero para
+JobPosition.required_document_types. Sin concepto de "plantilla
+activa" (un requisito no se aplica sobre nadie, solo se asigna a la
 persona desde su ficha) y sin FK a Company (catálogo de toda la
 plataforma, mismo criterio que los grupos de reparto).
 
@@ -16,23 +21,23 @@ estamos marcando para crear una plantilla de dosier, pues deberíamos
 de marcar para crear una plantilla de puesto".
 {% endcomment %}
 
-{% block title %}Puestos de trabajo{% endblock %}
-{% block page_title %}Puestos de trabajo{% endblock %}
+{% block title %}Requisitos de documentación{% endblock %}
+{% block page_title %}Requisitos de documentación{% endblock %}
 
 {% block content %}
 <div class="container-fluid px-3 pt-3">
 
     <div class="d-flex align-items-center justify-content-between mb-3">
         <p class="text-muted small mb-0">
-            Un puesto guarda qué tipos documentales son OBLIGATORIOS para quien lo desempeña -- solo esos disparan el aviso de "documento faltante" en la ficha de la persona (el aviso de documento caducado no depende del puesto). Asigna el puesto a cada trabajador desde su propia ficha.
+            Un requisito de documentación guarda qué tipos documentales son OBLIGATORIOS para quien lo tiene asignado -- solo esos disparan el aviso de "documento faltante" en la ficha de la persona (el aviso de documento caducado no depende de esto). Asígnalo a cada trabajador desde su propia ficha.
         </p>
     </div>
 
     <div class="card mb-4">
-        <div class="card-header">Puestos guardados</div>
+        <div class="card-header">Requisitos guardados</div>
         <div class="card-body p-0">
             <table class="table table-sm table-hover mb-0">
-                <thead><tr><th>Puesto</th><th>Documentos obligatorios</th><th></th></tr></thead>
+                <thead><tr><th>Nombre</th><th>Documentos obligatorios</th><th></th></tr></thead>
                 <tbody>
                     {% for position in positions %}
                     <tr id="positionRow{{ position.pk }}"
@@ -50,7 +55,7 @@ de marcar para crear una plantilla de puesto".
                         </td>
                     </tr>
                     {% empty %}
-                    <tr><td colspan="3" class="text-muted small py-3">Sin puestos guardados todavía.</td></tr>
+                    <tr><td colspan="3" class="text-muted small py-3">Sin requisitos guardados todavía.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>
@@ -59,17 +64,17 @@ de marcar para crear una plantilla de puesto".
 
     <div class="card">
         <div class="card-header d-flex justify-content-between align-items-center">
-            <span id="formTitle">Nuevo puesto</span>
-            <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="cancelEditBtn" onclick="resetForm()">Vaciar / nuevo puesto</button>
+            <span id="formTitle">Nuevo requisito</span>
+            <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="cancelEditBtn" onclick="resetForm()">Vaciar / nuevo requisito</button>
         </div>
         <div class="card-body">
             <input type="hidden" id="positionPk" value="">
             <div class="mb-3">
-                <label class="form-label small mb-1">Nombre del puesto</label>
+                <label class="form-label small mb-1">Nombre del requisito</label>
                 <input type="text" id="positionName" class="form-control form-control-sm" placeholder="p. ej. Gruista, Administrativo, Mozo de almacén..." oninput="refreshDraftPreview()">
             </div>
             <div id="positionFormResult" class="small mb-2"></div>
-            <button type="button" class="btn btn-sm btn-primary mb-3" id="savePositionBtn" onclick="savePosition()">Guardar puesto</button>
+            <button type="button" class="btn btn-sm btn-primary mb-3" id="savePositionBtn" onclick="savePosition()">Guardar requisito</button>
 
             {% comment %}
             H31 (S109). Miguel Ángel: "la parte coloreada con los
@@ -115,7 +120,7 @@ function refreshDraftPreview() {
     const title = document.getElementById('formTitle');
     const pk = document.getElementById('positionPk').value;
     const name = document.getElementById('positionName').value.trim();
-    title.textContent = pk ? ('Editando: ' + (name || '(sin nombre)')) : (name || 'Nuevo puesto');
+    title.textContent = pk ? ('Editando: ' + (name || '(sin nombre)')) : (name || 'Nuevo requisito');
 }
 
 function loadPositionIntoForm(pk) {
@@ -151,7 +156,7 @@ function savePosition() {
     const resultDiv = document.getElementById('positionFormResult');
 
     if (!name) {
-        resultDiv.innerHTML = '<div class="alert alert-danger py-1 px-2 small mb-0">Falta el nombre del puesto.</div>';
+        resultDiv.innerHTML = '<div class="alert alert-danger py-1 px-2 small mb-0">Falta el nombre del requisito.</div>';
         return;
     }
 
@@ -178,7 +183,7 @@ function savePosition() {
 }
 
 function deletePosition(pk) {
-    if (!confirm('¿Eliminar este puesto? Las personas que lo tuvieran asignado se quedarán sin puesto.')) return;
+    if (!confirm('¿Eliminar este requisito? Las personas que lo tuvieran asignado se quedarán sin él.')) return;
     fetch(`/panel/documentacion/puestos/${pk}/eliminar/`, {
         method: 'POST',
         headers: {'X-CSRFToken': getCookie('csrftoken')},

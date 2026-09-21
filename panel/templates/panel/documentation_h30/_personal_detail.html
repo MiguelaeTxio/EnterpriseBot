@@ -198,18 +198,21 @@ y se habilita "Guardar".
                     <input type="date" name="termination_date" class="form-control form-control-sm personal-edit-field" value="{{ person.termination_date|date:'Y-m-d' }}" readonly>
                 </div>
                 {% comment %}
-                H31 (S109): puesto de trabajo -- gobierna qué tipos
-                documentales se marcan como faltantes en esta misma
-                ficha (ver JobPosition.required_document_types). Mismo
-                patrón de bloqueo que el resto del formulario, pero
-                con `disabled` en vez de `readonly` (los <select> no
+                H31 (S109, renombrado en S113): "Requisitos de
+                documentación" -- gobierna qué tipos documentales se
+                marcan como faltantes en esta misma ficha (ver
+                JobPosition.required_document_types). Modelo/campo
+                internos siguen llamándose JobPosition/job_position,
+                solo cambia el rótulo visible. Mismo patrón de
+                bloqueo que el resto del formulario, pero con
+                `disabled` en vez de `readonly` (los <select> no
                 respetan `readonly` en ningún navegador) -- el JS de
                 modo edición distingue el tipo de campo.
                 {% endcomment %}
                 <div class="col-12 col-md-4">
-                    <label class="form-label small mb-0">Puesto de trabajo</label>
+                    <label class="form-label small mb-0">Requisitos de documentación</label>
                     <select name="job_position" class="form-select form-select-sm personal-edit-field" disabled>
-                        <option value="">Sin puesto asignado</option>
+                        <option value="">Sin requisitos asignados</option>
                         {% for position in job_positions %}
                         <option value="{{ position.pk }}" {% if person.job_position_id == position.pk %}selected{% endif %}>{{ position.name }}</option>
                         {% endfor %}
