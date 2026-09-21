@@ -54,6 +54,7 @@ entregados, ahí no hay que hacer más nada."
             <div class="col-md-8">
                 <label class="form-label small mb-1">Nombre del lote</label>
                 <input type="text" id="epiBatchName" class="form-control form-control-sm mb-2" placeholder="p. ej. EPI mecánico, EPI chóferes...">
+                <div id="epiBatchSelectionPreview" class="small mb-2 text-muted">0 EPIs marcados en el catálogo de la derecha.</div>
                 <div id="epiBatchFormResult" class="small mb-2"></div>
                 <button type="button" class="btn btn-sm btn-primary" onclick="saveEpiBatch()">Guardar lote</button>
                 <p class="text-muted small mt-2 mb-0">Marca en el catálogo de la derecha los EPIs que forman este lote.</p>
@@ -171,6 +172,31 @@ function getCheckedEpiBatchItemIds() {
     return Array.from(document.querySelectorAll('.epi-batch-item-checkbox:checked')).map((el) => el.value);
 }
 
+// H31 (S113), Miguel Ángel: al marcar EPIs del catálogo no aparecía
+// nada que indicara que iban a formar el lote -- vista en vivo de la
+// selección, visible en la propia tarjeta del lote, más el propio
+// elemento del catálogo resaltado mientras está marcado.
+function refreshEpiBatchSelectionPreview() {
+    const checked = document.querySelectorAll('.epi-batch-item-checkbox:checked');
+    const preview = document.getElementById('epiBatchSelectionPreview');
+    if (checked.length === 0) {
+        preview.textContent = '0 EPIs marcados en el catálogo de la derecha.';
+        return;
+    }
+    const labels = Array.from(checked).map((el) => {
+        const label = document.querySelector(`label[for="${el.id}"]`);
+        return label ? label.textContent.trim() : el.value;
+    });
+    preview.textContent = `${checked.length} EPI(s) marcados: ${labels.join(', ')}`;
+}
+
+document.querySelectorAll('.epi-batch-item-checkbox').forEach((el) => {
+    el.addEventListener('change', function () {
+        this.closest('li').style.outline = this.checked ? '2px solid #0d6efd' : '';
+        refreshEpiBatchSelectionPreview();
+    });
+});
+
 function refreshEpiBatchFormTitle() {
     const title = document.getElementById('epiBatchFormTitle');
     const name = document.getElementById('epiBatchName').value.trim();
@@ -186,22 +212,33 @@ function loadEpiBatchIntoForm(pk) {
 
     epiBatchEditingPk = String(pk);
     document.getElementById('epiBatchName').value = name;
-    document.querySelectorAll('.epi-batch-item-checkbox').forEach((el) => { el.checked = false; });
+    document.querySelectorAll('.epi-batch-item-checkbox').forEach((el) => {
+        el.checked = false;
+        el.closest('li').style.outline = '';
+    });
     ids.forEach((id) => {
         const el = document.getElementById('epiCatalogCheck' + id);
-        if (el) el.checked = true;
+        if (el) {
+            el.checked = true;
+            el.closest('li').style.outline = '2px solid #0d6efd';
+        }
     });
     document.getElementById('epiBatchCancelEditBtn').classList.remove('d-none');
     refreshEpiBatchFormTitle();
+    refreshEpiBatchSelectionPreview();
 }
 
 function resetEpiBatchForm() {
     epiBatchEditingPk = '';
     document.getElementById('epiBatchName').value = '';
-    document.querySelectorAll('.epi-batch-item-checkbox').forEach((el) => { el.checked = false; });
+    document.querySelectorAll('.epi-batch-item-checkbox').forEach((el) => {
+        el.checked = false;
+        el.closest('li').style.outline = '';
+    });
     document.getElementById('epiBatchCancelEditBtn').classList.add('d-none');
     document.getElementById('epiBatchFormResult').innerHTML = '';
     refreshEpiBatchFormTitle();
+    refreshEpiBatchSelectionPreview();
 }
 
 function saveEpiBatch() {
