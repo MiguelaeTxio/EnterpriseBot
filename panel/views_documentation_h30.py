@@ -552,11 +552,19 @@ def _person_list_page(request):
         # palabras, OR entre campos por palabra), para que coincidan
         # aunque las palabras esten repartidas entre first_surname/
         # second_surname/given_name.
+        # S113: Miguel Ángel pidió que la búsqueda alcance también al
+        # requisito de documentación asignado (p. ej. escribir
+        # "general" encuentra a todos los que tienen ese requisito) --
+        # mismo criterio AND-entre-palabras/OR-entre-campos de arriba,
+        # un campo más a la lista. select_related("job_position") ya
+        # aplicado arriba cubre el JOIN sin coste extra; al ser FK
+        # (no M2M), no hay riesgo de duplicar filas.
         for word in search.split():
             qs = qs.filter(
                 Q(first_surname__icontains=word)
                 | Q(second_surname__icontains=word)
-                | Q(given_name__icontains=word) | Q(dni__icontains=word),
+                | Q(given_name__icontains=word) | Q(dni__icontains=word)
+                | Q(job_position__name__icontains=word),
             )
     # H31 (S100): Miguel Ángel pidió ordenar también por Nombre, Alta y
     # Documentos (todas menos DNI). `domain_object` es una
