@@ -3288,46 +3288,201 @@ H31 (Docuten, circulares) no avanzó, pero sí se añade un punto nuevo
 y prioritario (ver Hoja de Ruta abajo), a petición explícita de
 Miguel Ángel al cierre.
 
-## ⚠️ Aviso de continuidad — documentos de EPI posiblemente en papelera
+## COMPLETADAS EN S113 (continuación, tras compactación de contexto) -- sistema completo de entrega de EPIs por lote, rediseño íntegro de la interfaz de Personal (grupos de reparto, visor de selección, "Requisitos de documentación"), 39 commits reales
 
-Miguel Ángel señaló al cierre de S112 que cree ("creo que") que los
-documentos originales de EPI fueron enviados a la papelera durante el
-diseño inicial de esta misma sesión (su primera intención fue
-eliminar los documentos de EPI y dejarlos solo como registros de BD,
-decisión revertida al confirmar que Docuten generará documentos
-firmados reales que sí hay que conservar, guardados en GCS con el
-link en BBDD). No confirmado con dato real en esta sesión -- primera
-tarea de S113, ver punto 1 de la Hoja de Ruta.
+Esta sección cubre el resto de la sesión S113 a partir del commit
+`4465aa1` (punto de partida capturado tras el checkpoint intermedio
+ya documentado arriba -- fichas técnicas, botón Ver, refactor de
+dosieres). Sesión larga y muy extensa, con varios bloques de trabajo
+real independientes.
 
-## Hoja de Ruta para la Sesión Siguiente (S113, reescrita por completo -- sustituye a la de S112)
+### Bloque 1 -- Correcciones reales en la pestaña Documentación → EPIs
 
-1. **Documentos de EPI en la papelera -- localizar y vincular a
-   BBDD.** Miguel Ángel cree que los documentos originales de EPI se
-   enviaron a la papelera (mecanismo reversible,
-   `trash_dossier_entry()`/`deleted_at`/`deleted_by` de
-   `DocumentIndexEntry`, nunca borrado real de GCS) durante el diseño
-   inicial de EPIs-como-registro-de-BD de esta misma sesión, después
-   revertido. Criterio de cierre: consulta real contra
-   `DocumentIndexEntry` filtrando por tipo documental de EPI y
-   `deleted_at IS NOT NULL`, confirmar cuántos hay y si siguen
-   recuperables, y para cada uno decidir restaurarlo o vincularlo
-   (`source_entry` o mecanismo equivalente) a su `EpiDelivery` real en
-   BD -- cierre a 0 documentos de EPI huérfanos sin decisión tomada.
-2. **Firma electrónica -- Docuten** (arrastrado 1.ª sesión sin
-   avanzar, S112 se desvió por completo a infraestructura). Sin
-   cambios respecto a S111: en cuanto Miguel Ángel tenga credenciales,
-   generar un documento real de entrega de EPIs desde BBDD y
-   verificar visualmente que sale correcto. Hasta entonces, dejar
-   preparado el resto del flujo de firma programática vía Docuten,
-   sin escribir la integración real todavía.
-3. **Plantillas de circulares** (arrastrado 1.ª sesión sin avanzar,
-   S112 se desvió por completo a infraestructura). Sin cambios
-   respecto a S111: al menos una plantilla de circular completa y
-   usable desde el panel.
-4. Gestión de Miguel Ángel con Docuten/Viafirma (contacto directo con
-   el proveedor) -- sin dependencia técnica de esta plataforma, sigue
-   en marcha por su cuenta.
-5. Los 2 huecos reales de documentación (Grana Álvarez, García
+- Un solo apellido mostrado en la tabla (faltaba `second_surname`,
+  tanto en la plantilla como en el filtro de búsqueda del backend) --
+  corregido.
+- Sin botón "Ver" documento en esta pestaña (fragmento independiente
+  de la ficha de persona, nunca tuvo el modal/JS del visor) --
+  añadido, verificado contra BD real (4.314/4.314 `EpiDelivery` con
+  `source_entry_id`).
+- Dos campos nuevos en `PersonIdentity` (migración `0121`):
+  `phone_secondary` y `professional_category` (esta última, rellenada
+  a mano, es la categoría profesional pensada para gobernar en el
+  futuro qué EPIs corresponden a cada trabajador -- explícitamente
+  DISTINTA del sistema de "Requisitos de documentación", ver más
+  abajo).
+- `ss_affiliation_number` deduplicado: existían dos definiciones
+  distintas del mismo campo en el modelo (max_length 32 y 30) --
+  unificado, migración `0122`, solo metadatos.
+
+### Bloque 2 -- Sistema completo de entrega de EPIs por lote, con documento PDF real
+
+Construido de cero: `CompanyFiscalProfile` (CIF/dirección fiscal por
+razón social, con alias por nombre, sembrado con las 4 empresas
+reales de Grupo Álvarez -- Gruas Adolfo Alvarez, Transgrual,
+Asistencia y Gruas Granada, Grualdi) y `EpiDeliveryBatchTemplate`
+(lote reutilizable de EPIs, M2M a `EpiItemCatalog`). Generador de
+documento real (`epi_delivery_document_service.py`, PyMuPDF, formato
+calcado de un documento real de entrega en papel) y vista unificada
+`EpiBatchDeliveryExecuteView` que sustituye a las dos vistas
+anteriores de entrega individual/masiva (S74/S75): un POST crea las
+`EpiDelivery` reales, genera el PDF por persona y lo sube como
+documento real de esa persona.
+
+**Incidente real corregido en el propio bloque:** un `str_replace` al
+insertar los modelos nuevos borró por accidente
+`class DocumentAcknowledgment(models.Model):`, dejando su docstring
+como cadena suelta -- no detectado por `py_compile` (sintaxis válida
+igualmente). Detectado y corregido en el mismo bloque con inventario
+AST (`ast.ClassDef`) antes de comitear -- desde ahora, cualquier
+edición de `models.py` que inserte clases nuevas se verifica así
+antes de comitear, no solo con `py_compile`.
+
+### Bloque 3 -- UX de la gestión de lotes de EPIs (varias iteraciones sobre la propia sesión)
+
+CRUD de lotes centralizado en la propia pestaña EPIs (sin página
+aparte), rediseñado en 3 columnas fijas y simétricas -- visor de
+lotes guardados (casillero de selección única) / panel de gestión
+(vacío hasta activarse) / visor del contenido del lote, coloreado por
+familia con el mismo criterio en los tres sitios donde aparece
+(catálogo, modal de entrega masivo, formulario de entrega individual
+de la ficha). Aviso del navegador (`beforeunload`) si hay cambios sin
+guardar. Guardar/eliminar dejó de recargar la página (toast
+auto-oculto en su lugar) -- mismo criterio extendido después a
+plantillas de dosier, grupos de reparto y "Requisitos de
+documentación".
+
+**Corrección real de estilo, no solo de plantillas de dosier**: el
+casillero de Bootstrap (`margin-left:-1.5em` sobre el
+`padding-left:1.5em` propio de `.form-check`) quedaba tapado por la
+franja de color de familia cuando se aplicaba `px-2` directamente
+sobre el mismo elemento (la utilidad, con `!important`, rompe el
+cálculo del margen negativo) -- corregido separando el color en un
+contenedor exterior con más padding, `.form-check` interior intacto,
+en los tres sitios donde aparece.
+
+### Bloque 4 -- Modal de entrega de EPIs: visor de contenido
+
+Miguel Ángel: "se echa en falta el visor de contenido que nos indique
+qué EPIs se van a entregar, para no tener que estar scrolleando el
+catálogo". Añadido a los dos modales de entrega (masivo e individual)
+un visor en vivo junto al checklist, misma columna de color por
+familia.
+
+### Bloque 5 -- Rediseño íntegro de la pestaña Personal (varias iteraciones, corregidas en la propia sesión a petición de Miguel Ángel)
+
+Trabajo más extenso de la sesión, en varias vueltas sucesivas:
+
+1. **Barra de acción masiva** dejó de ocultarse hasta marcar a
+   alguien -- siempre visible, en la parte fija de la pantalla.
+2. **Grupos de reparto**: CRUD completo nuevo (`PersonGroupTemplate`
+   solo tenía creación, S109) -- `PersonGroupTemplateSaveView`/
+   `DeleteView` (guardar/editar/eliminar sin recargar, toast), visor
+   de grupos guardados con selección única, y un **visor de
+   SELECCIÓN ACTUAL** (nombres, no solo un contador) que resuelve la
+   queja real de Miguel Ángel sobre "Cargar grupo": antes no había
+   forma de ver quién quedaba seleccionado si los miembros del grupo
+   no estaban en la página/filtro visible en ese momento.
+3. **Reestructuración de la disposición, dos vueltas completas** a
+   petición explícita de Miguel Ángel tras revisar el resultado de la
+   primera: la intención final es dar al listado de trabajadores
+   **al menos dos tercios de la altura de la pantalla**, comprimiendo
+   al máximo la gestión de arriba. Resultado final: filtros de
+   Empresa, gestión de grupos (guardados + gestión, combinados en una
+   sola columna con flex-column -- la lista de guardados crece para
+   ocupar el hueco disponible y hace scroll, la gestión queda anclada
+   abajo) y acciones masivas (rejilla 2x2 por categoría: Puesto/EPIs/
+   Información/Dosieres) comparten TODOS una única fila compacta
+   arriba; el listado de trabajadores (2/3 del ancho) y el visor de
+   SELECCIÓN ACTUAL (1/3 del ancho) comparten fila abajo, misma
+   altura fija (68vh).
+4. **Ajustes finos del listado**: cada trabajador en una sola fila
+   (`white-space:nowrap` + scroll horizontal del contenedor, antes
+   los nombres largos partían la fila en dos líneas), fecha de Alta
+   en formato `dd/mm/aaaa` explícito.
+5. **Casilla "Mostrar solo la selección actual"**: sustituye por
+   completo los filtros de Estado/Empresa (nunca los combina)
+   mientras esté marcada, mostrando en el listado exactamente a
+   quienes están seleccionados ahora mismo (JS de `selection`,
+   sincronizado en vivo vía `only_selected`/`selected_ids` en el
+   propio formulario htmx).
+
+### Bloque 6 -- "Puesto" renombrado a "Requisitos de documentación" (solo interfaz, sin tocar código)
+
+Miguel Ángel detectó una confusión conceptual real: el modelo
+`JobPosition` (documentación obligatoria por puesto, para el aviso de
+"documento faltante") no tiene nada que ver con la categoría
+profesional pensada para EPIs (Bloque 1) -- no tiene sentido una
+"entrega general de EPIs" (sería absurdo dar guantes a un
+administrativo). Ambos sistemas se mantienen deliberadamente
+separados; lo único que cambió es el nombre visible del primero, que
+inducía a pensar que debía abarcar también EPIs/información.
+Decisión explícita: **"Requisitos de documentación"**.
+
+Cambio puramente de rótulo -- decisión explícita de no tocar
+identificadores internos de código (clase `JobPosition`, campo
+`job_position`, vistas, URLs `/puestos/...`) sobre una app en
+producción real, cuando el problema era solo de nomenclatura de cara
+al usuario. Migración `0125` (solo metadatos: `verbose_name`). Página
+de gestión (`job_positions/manage.html`) alineada al mismo formato
+que dosieres/lotes (checklist + visor sticky + CRUD sin recarga).
+Extendido también: columna en el listado de Personal
+(`select_related` para evitar N+1), inclusión en la búsqueda
+(`job_position__name__icontains`), y modal de confirmación antes de
+asignar el requisito de forma masiva (Miguel Ángel: "ahora mismo no
+hay ningún tipo de filtro, directamente se añaden [...] para evitar
+los cambios por error").
+
+### Pendiente sin iniciar -- Docuten, API REST de firma de documentos
+
+Miguel Ángel habló con Yolanda (responsable real de documentación) y
+con el propio chatbot de soporte de Docuten: Docuten ofrece acceso
+por API REST, y el chatbot dio una dirección de correo para
+solicitarlo. Uso exclusivo previsto, confirmado explícitamente a
+Docuten: generación del documento, preparación de la firma, envío
+del enlace de firma por WhatsApp, y recogida del documento ya firmado
+-- nunca más alcance que ese. Miguel Ángel pidió investigar primero
+la documentación real de la API REST de Docuten (proceso de firma,
+credenciales/token que hay que solicitar, coste adicional si lo
+hubiera y cómo se factura) y, con esa información, redactar el correo
+de solicitud del servicio -- explícitamente aplazado a la sesión
+siguiente ("dejamos esto último para la siguiente sesión"), sin
+ninguna investigación ni borrador todavía. Ver punto 1 de la Hoja de
+Ruta.
+
+## Hoja de Ruta para la Sesión Siguiente (S114, reescrita por completo -- sustituye a la de S113)
+
+1. **Docuten -- investigar la API REST y redactar el correo de
+   solicitud del servicio.** Miguel Ángel ya tiene, vía Yolanda y el
+   chatbot de soporte de Docuten, una dirección de correo a la que
+   escribir. Investigar primero la documentación real de la API REST
+   de Docuten (proceso de firma electrónica, qué credenciales/token
+   hace falta solicitar, si genera algún coste adicional y cómo se
+   factura). Uso exclusivo a comunicar a Docuten, confirmado por
+   Miguel Ángel: generación del documento, preparación de la firma,
+   envío del enlace de firma por WhatsApp, y recogida del documento ya
+   firmado -- nunca más alcance que ese. Con esa información,
+   redactar el correo de solicitud (destino: la dirección de correo
+   que Yolanda obtuvo del chatbot de Docuten -- pedírsela a Miguel
+   Ángel si no queda ya registrada en un mensaje o captura que pueda
+   compartir). Criterio de cierre: correo redactado y listo para
+   enviar, con las preguntas concretas sobre credenciales/token y
+   coste ya resueltas por la propia investigación de la
+   documentación, no dejadas como pregunta abierta en el correo.
+2. **Plantillas de circulares** (arrastrado 2.ª sesión sin avanzar --
+   S112 se desvió por completo a infraestructura, S113 se dedicó por
+   completo al sistema de entrega de EPIs por lote y al rediseño de
+   la interfaz de Personal). Prioridad máxima de la sesión, por
+   delante de cualquier otro punto salvo lo que Miguel Ángel indique
+   al arrancar: al menos una plantilla de circular completa y usable
+   desde el panel.
+3. **Firma electrónica -- Docuten, integración real.** Bloqueado
+   hasta tener acceso a la API (ver punto 1). En cuanto haya
+   credenciales/token, generar un documento real de entrega de EPIs
+   desde BBDD y verificar visualmente que sale correcto y firmado.
+   Hasta entonces, no hay más acción de código posible sobre este
+   punto.
+4. Los 2 huecos reales de documentación (Grana Álvarez, García
    Sánchez) siguen pendientes de que la supervisora escanee y suba
    los contratos originales -- sin acción de código pendiente, solo
    enlazar `prorroga_de` cuando lleguen.
