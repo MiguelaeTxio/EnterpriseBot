@@ -35,7 +35,7 @@ acciones) comparte una ÚNICA fila compacta -- nunca varias filas
 apiladas -- para dejar el máximo de altura real (mínimo dos tercios)
 al listado de trabajadores + visor de selección de abajo.
 {% endcomment %}
-<div class="row g-2 mb-2">
+<div class="row g-2 mb-2" id="personal-fixed-row">
     <div class="col-lg-3">
         <div class="border rounded p-2 h-100">
             <div class="fw-bold small mb-1">Buscar y filtrar</div>
@@ -177,10 +177,25 @@ trabajadores con la misma altura [...] dejar en dos tercios de
 altura [...] el listado de trabajadores y el listado de trabajadores
 seleccionados". Misma altura fija (height, no max-height) en las dos
 columnas -- ninguna de las dos puede quedar más baja que la otra.
+
+H31 (S114), incidente real reportado por Miguel Ángel con captura de
+pantalla: el 68vh fijo de S113 no evitaba que LA PÁGINA ENTERA hiciera
+scroll -- en pantallas donde la fila fija de arriba (filtros/grupos/
+acciones) + 68vh no cabían en el viewport, el navegador simplemente
+scrolleaba el documento completo, arrastrando consigo la parte que se
+quería fija (títulos, pestañas, filtros). Verbatim: "esa pantalla fija
+no puede ni subir ni bajar ni moverse ni perderse [...] sin hacer
+scroll ya estemos viendo abajo la barra de desplazamiento horizontal
+[...] y veamos el fin y la barra de scroll vertical". Sustituido el
+68vh fijo por una altura calculada en JS (ver script más abajo,
+recomputePersonalResultsHeight()): el espacio real disponible bajo la
+fila fija, hasta el borde inferior del viewport -- así la suma de fila
+fija + zona de resultados NUNCA supera la altura de la ventana, y el
+único scroll posible es el de estos dos contenedores.
 {% endcomment %}
 <div class="row g-2">
     <div class="col-lg-8">
-        <div id="personal-results-scroll" style="height: 68vh; overflow-y: auto; overflow-x: auto; border: 1px solid #dee2e6; border-radius: 0.25rem;">
+        <div id="personal-results-scroll" style="overflow-y: auto; overflow-x: auto; border: 1px solid #dee2e6; border-radius: 0.25rem;">
         <div id="personal-results">
             {% include "panel/documentation_h30/_personal_results.html" with page=page sort_key=sort_key sort_dir=sort_dir search=search %}
         </div>
@@ -188,7 +203,7 @@ columnas -- ninguna de las dos puede quedar más baja que la otra.
     </div>
     <div class="col-lg-4">
         <label class="form-label small mb-1 fw-bold">Selección actual (<span id="personSelectionCount">0</span>)</label>
-        <div class="border rounded p-2" style="height: 68vh; overflow-y: auto;">
+        <div class="border rounded p-2" id="personSelectionScroll" style="overflow-y: auto;">
             <ul class="mb-0 small ps-0" id="personSelectionPreviewList">
                 <li class="text-muted">Nadie seleccionado todavía.</li>
             </ul>
@@ -253,6 +268,51 @@ las filas de debajo se desplacen de verdad.
     const resultEl = document.getElementById('person-mass-result');
     let personMassEpiBatchModalInstance = null;
     let personMassJobPositionModalInstance = null;
+
+    // H31 (S114). La fila de arriba (filtros/grupos/acciones, ver
+    // #personal-fixed-row) nunca hace scroll -- lo único scrollable es
+    // el listado de trabajadores (#personal-results-scroll) y el
+    // visor de selección (#personSelectionScroll). Para que la suma
+    // de ambos bloques nunca supere la altura del viewport (y así la
+    // PÁGINA nunca necesite scroll propio, solo estos dos
+    // contenedores), la altura de ambos se calcula en JS como el
+    // espacio real que queda bajo ellos hasta el borde inferior de la
+    // ventana -- nunca un vh fijo, que no tiene en cuenta cuánto mide
+    // de verdad la fila fija en cada pantalla/resolución.
+    const PERSONAL_RESULTS_BOTTOM_MARGIN = 16;
+    const PERSONAL_RESULTS_MIN_HEIGHT = 240;
+    const resultsScrollEl = document.getElementById('personal-results-scroll');
+    const selectionScrollEl = document.getElementById('personSelectionScroll');
+
+    function recomputePersonalResultsHeight() {
+        if (!resultsScrollEl) return;
+        const top = resultsScrollEl.getBoundingClientRect().top;
+        const available = window.innerHeight - top - PERSONAL_RESULTS_BOTTOM_MARGIN;
+        const height = Math.max(available, PERSONAL_RESULTS_MIN_HEIGHT) + 'px';
+        resultsScrollEl.style.height = height;
+        if (selectionScrollEl) { selectionScrollEl.style.height = height; }
+    }
+
+    window.addEventListener('resize', recomputePersonalResultsHeight);
+    window.addEventListener('load', recomputePersonalResultsHeight);
+    // La fila fija puede cambiar de altura (p. ej. al abrir el
+    // formulario de edición de un grupo de reparto, o al mostrar un
+    // mensaje de resultado de una acción masiva) -- un
+    // MutationObserver sobre esa fila recalcula sin tener que
+    // localizar cada punto del código que la modifica.
+    const fixedRowEl = document.getElementById('personal-fixed-row');
+    if (fixedRowEl && window.MutationObserver) {
+        let recomputeTimer = null;
+        const observer = new MutationObserver(function () {
+            clearTimeout(recomputeTimer);
+            recomputeTimer = setTimeout(recomputePersonalResultsHeight, 50);
+        });
+        observer.observe(fixedRowEl, {childList: true, subtree: true, attributes: true});
+    }
+    // Primer cálculo: en el siguiente frame, para que el navegador ya
+    // haya maquetado la fila fija con su contenido real (grupos de
+    // reparto cargados, etc.) antes de medir su altura.
+    requestAnimationFrame(recomputePersonalResultsHeight);
 
     // H31 (S113): nombres de las personas actualmente seleccionadas,
     // para poder pintar el visor de selección (izquierda del selector
