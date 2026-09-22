@@ -2379,6 +2379,15 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
                     "odometer_reading":float (line .odometer_reading )if line .odometer_reading is not None else "",
                     "engine_hours_reading":float (line .engine_hours_reading )if line .engine_hours_reading is not None else "",
                     "crane_hours_reading":float (line .crane_hours_reading )if line .crane_hours_reading is not None else "",
+                    # S116-H07: mismo hueco que en _ip_entradas (ya
+                    # corregido en 1bd08c7) pero en este OTRO
+                    # constructor -- el de reeditar un parte YA
+                    # cerrado (DONE), no el de uno en curso. Sin esto,
+                    # la casilla "Avería resuelta" siempre salía
+                    # desmarcada al reabrir un parte cerrado, aunque el
+                    # ticket real llevara CLOSED en BD.
+                    "ticket_closed":line .ticket_closed ,
+                    "breakdown_ticket":line .breakdown_ticket ,
                     })
                     for spare in _SPL_E .objects .filter (entry_line =line ).order_by ("line_number"):
                         repuestos_enriched .append ({
