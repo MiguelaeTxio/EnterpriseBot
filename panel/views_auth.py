@@ -5,7 +5,7 @@ from django.contrib.auth import update_session_auth_hash
 from django.contrib.auth.views import LoginView, LogoutView
 from django.contrib import messages as django_messages
 from django.views.generic import TemplateView, View, ListView, UpdateView
-from django.shortcuts import redirect, render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.db.models import Q, Prefetch
 from django.utils.timezone import now
 from django.views.decorators.csrf import csrf_exempt
@@ -1805,6 +1805,95 @@ class WhatsAppActiveSessionListView (AdminRoleRequiredMixin ,ListView ):
 
 
 
+
+
+class MiBuzonListView(CompanyUserRequiredMixin, View):
+    """
+    H31 (S115). "Mi buzón" -- listado de circulares/notificaciones
+    entregadas por WhatsApp al CompanyUser autenticado, resuelto vía
+    su PersonIdentity vinculada (company_user, cruce por DNI, mismo
+    mecanismo ya usado para epi_delivery_confirmation). Login normal,
+    sin mecanismo de acceso especial -- destino real del botón "Ver
+    en navegador" de la plantilla circular_notification.
+
+    Si el CompanyUser no tiene PersonIdentity vinculada (no es
+    también trabajador de plantilla, o el cruce por DNI no encontró
+    pareja), se muestra la pantalla vacía con un aviso explicativo
+    en vez de un error.
+
+    URL: GET /panel/mi-buzon/
+    ---
+    H31 (S115). "Mi buzón" -- listado de circulares/notificaciones
+    entregadas por WhatsApp al CompanyUser autenticado, resuelto vía
+    su PersonIdentity vinculada (company_user, cruce por DNI, mismo
+    mecanismo ya usado para epi_delivery_confirmation). Login normal,
+    sin mecanismo de acceso especial -- destino real del botón "Ver
+    en navegador" de la plantilla circular_notification.
+
+    Si el CompanyUser no tiene PersonIdentity vinculada (no es
+    también trabajador de plantilla, o el cruce por DNI no encontró
+    pareja), se muestra la pantalla vacía con un aviso explicativo
+    en vez de un error.
+
+    URL: GET /panel/mi-buzon/
+    """
+
+    template_name = "panel/profile/mi_buzon_list.html"
+
+    def get(self, request, *args, **kwargs):
+        from document_explorer.models import DocumentAcknowledgment
+
+        person = getattr(request.user.company_user, "person_identity", None)
+        circulars = (
+            DocumentAcknowledgment.objects.filter(
+                person=person,
+                channel=DocumentAcknowledgment.CHANNEL_WHATSAPP,
+            ).select_related("document_type").order_by("-created_at")
+            if person is not None else DocumentAcknowledgment.objects.none()
+        )
+        return render(request, self.template_name, {
+            "person": person,
+            "circulars": circulars,
+            "active_nav": "own_profile",
+        })
+
+
+class MiBuzonDetailView(CompanyUserRequiredMixin, View):
+    """
+    H31 (S115). Detalle de UNA circular de "Mi buzón" -- solo visible
+    para el CompanyUser cuya PersonIdentity vinculada coincide con la
+    del DocumentAcknowledgment solicitado (nunca por pk libre). Marca
+    whatsapp_read_at si todavía estaba sin confirmar, mismo criterio
+    que la confirmación por botón "Leer aquí" del webhook -- ver
+    aquí una circular desde el navegador cuenta igual como lectura
+    confirmada.
+
+    URL: GET /panel/mi-buzon/<int:pk>/
+    """
+
+    template_name = "panel/profile/mi_buzon_detail.html"
+
+    def get(self, request, pk, *args, **kwargs):
+        from django.http import Http404
+
+        from document_explorer.models import DocumentAcknowledgment
+
+        person = getattr(request.user.company_user, "person_identity", None)
+        if person is None:
+            raise Http404("No hay ninguna persona de plantilla vinculada a este usuario.")
+
+        ack = get_object_or_404(
+            DocumentAcknowledgment.objects.select_related("document_type"),
+            pk=pk, person=person,
+        )
+        if ack.whatsapp_read_at is None:
+            ack.whatsapp_read_at = now()
+            ack.save(update_fields=["whatsapp_read_at"])
+
+        return render(request, self.template_name, {
+            "ack": ack,
+            "active_nav": "own_profile",
+        })
 
 
 class OwnProfileView (CompanyUserRequiredMixin ,View ):

@@ -170,6 +170,8 @@ from panel.views import (
     CompanyUserBulkDeleteView,
     WorkerScheduleUpdateView,
     OwnProfileView,
+    MiBuzonListView,
+    MiBuzonDetailView,
     OwnProfileSignatureSaveView,
     TrustDeviceView,
     TrustDeviceToggleView,
@@ -546,6 +548,8 @@ urlpatterns = [
 
     # Own profile — Perfil propio del operario: edición de alias de chat (Hito 14 Paso 6).
     path("profile/", OwnProfileView.as_view(), name="own_profile"),
+    path("mi-buzon/", MiBuzonListView.as_view(), name="mi_buzon_list"),
+    path("mi-buzon/<int:pk>/", MiBuzonDetailView.as_view(), name="mi_buzon_detail"),
     # H31 (S104): guardado de la firma de correo del propio CompanyUser.
     path("profile/signature/", OwnProfileSignatureSaveView.as_view(), name="own_profile_signature_save"),
 

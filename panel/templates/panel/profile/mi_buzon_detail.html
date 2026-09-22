@@ -1,0 +1,22 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/profile/mi_buzon_detail.html #}
+{# H31 (S115). Detalle de una circular concreta de Mi buzón. #}
+{% extends "panel/base.html" %}
+
+{% block title %}{{ ack.document_type.label }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+
+  <div class="d-flex align-items-center gap-3 mb-4">
+    <a href="{% url 'panel:mi_buzon_list' %}" class="btn btn-sm btn-outline-secondary">&laquo; Mi buzón</a>
+    <h4 class="mb-0">{{ ack.document_type.label }}</h4>
+  </div>
+
+  <p class="text-muted small">Recibida el {{ ack.delivery_date }} por WhatsApp.</p>
+
+  <div class="border rounded p-3">
+    {{ ack.document_type.content_html|safe }}
+  </div>
+
+</div>
+{% endblock %}

@@ -1,0 +1,40 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/profile/mi_buzon_list.html #}
+{# H31 (S115). Listado de circulares/notificaciones entregadas por WhatsApp al CompanyUser autenticado. #}
+{% extends "panel/base.html" %}
+
+{% block title %}Mi buzón{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+
+  <div class="d-flex align-items-center gap-3 mb-4">
+    <h4 class="mb-0">Mi buzón</h4>
+  </div>
+
+  {% if person is None %}
+    <p class="text-muted">
+      Tu usuario no tiene ninguna ficha de personal vinculada -- no hay
+      circulares que mostrar aquí. Si crees que es un error, contacta con
+      tu responsable.
+    </p>
+  {% elif not circulars %}
+    <p class="text-muted">Todavía no tienes ninguna circular recibida por WhatsApp.</p>
+  {% else %}
+    <div class="list-group">
+      {% for ack in circulars %}
+      <a href="{% url 'panel:mi_buzon_detail' ack.pk %}"
+         class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
+        <span>
+          {{ ack.document_type.label }}
+          {% if ack.whatsapp_read_at is None %}
+            <span class="badge bg-primary ms-2">Nueva</span>
+          {% endif %}
+        </span>
+        <span class="text-muted small">{{ ack.delivery_date }}</span>
+      </a>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+</div>
+{% endblock %}
