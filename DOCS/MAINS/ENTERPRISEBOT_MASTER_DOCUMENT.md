@@ -1670,16 +1670,40 @@ con vistas a eso [...] es importantísimo poder escalar luego el
 modelo [...] no dejar modelos cerrados sin posibilidad de
 expandirlo."*
 
-**Decisión explícita de Miguel Ángel:** no diseñar esto de forma
-apresurada al cierre de una sesión con aprobaciones externas
-pendientes (Meta, Docuten) -- se abordará con calma, previsiblemente
-junto con el cambio de hito de albaranes/asignación de máquina ya
-planteado para la sesión siguiente, dado que es el mismo problema de
-fondo.
+**Actualización -- construido en la propia S115, más deprisa de lo
+previsto:** Miguel Ángel decidió no esperar al diseño completo y
+crear ya la tabla (`worksites.Worksite`: nombre, código autogenerado
+`OBRA-0001`, cliente en texto libre, empresa gestora, ubicación),
+con `DocumentAcknowledgment.worksite` y `{{obra.*}}` en
+`_render_document_variables` -- ver commits `9e75baa`/`4844e2b`.
+Verificado end-to-end con una obra real de prueba ("Mercadona Summer
+XDD", cliente "LidoVario") y las dos circulares de nombramiento.
+Sigue pendiente, para la sesión de albaranes, el resto del ecosistema
+(Cliente/Proveedor reales, facturación, centros de gasto, DECA).
 
-**Acción pendiente:** ninguna de código por ahora. El hueco de la
-circular `NOMBRAMIENTO_JEFE_MANIOBRAS` queda como blanco manual
-(sin variable), a la espera de que exista un modelo de Obra real
-contra el que resolverlo.
+**Requisito nuevo descubierto en la misma sesión (S115), tras probar
+el nombramiento real:** estas circulares de nombramiento
+(`NOMBRAMIENTO_JEFE_MANIOBRAS`, `NOMBRAMIENTO_RESPONSABLE_SEGURIDAD`)
+no son solo una notificación al trabajador -- son también el
+**documento acreditativo de esa designación de cara a la empresa que
+gestiona la obra** (coordinación de actividades empresariales/PRL),
+que hay que poder incluir en un dossier enviado a esa empresa
+cliente. Cita textual de Miguel Ángel, con caso real: *"con Sacyr,
+que es un caso ya real, una obra de Sacyr en una obra pública [...]
+el responsable de seguridad que nombra Grúas Álvarez [...] es un
+documento que [...] se va a entregar a la empresa que está
+realizando la obra"*.
+
+Implicación de diseño para cuando se aborde el dossier al cliente
+(no construido todavía): al estar ya `DocumentAcknowledgment.worksite`
+enlazado, filtrar "todos los documentos de la obra X" para componer
+ese dossier es una consulta directa -- la pieza que faltará es el
+propio mecanismo de envío/generación del dossier al cliente de la
+obra (`Worksite.client_name`, todavía texto libre), no el modelo de
+datos de base.
+
+**Acción pendiente:** ninguna de código más por ahora -- registrado
+para que el diseño del dossier al cliente, cuando se aborde, parta
+de este requisito real y no se descubra de nuevo desde cero.
 
 
