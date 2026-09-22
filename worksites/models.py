@@ -43,8 +43,9 @@ class Worksite(models.Model):
         default="",
         verbose_name="Código interno",
         help_text=(
-            "Código corto opcional de la obra (para referencia cruzada futura con "
-            "albaranes, facturación, centros de gasto). Sin formato fijo todavía."
+            "Autogenerado al crear la obra (formato OBRA-0001), nunca "
+            "introducido a mano -- evita que cada persona invente su "
+            "propio formato con el tiempo (0001, A01, Build 1...)."
         ),
     )
     client_name = models.CharField(

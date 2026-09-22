@@ -20,19 +20,15 @@
             <h6 class="card-title">Nueva obra</h6>
             <form method="post" action="{% url 'panel:worksites_list' %}" class="row g-2 align-items-end">
                 {% csrf_token %}
-                <div class="col-12 col-md-3">
+                <div class="col-12 col-md-4">
                     <label class="form-label small mb-1">Nombre</label>
                     <input type="text" class="form-control form-control-sm" name="name" required>
-                </div>
-                <div class="col-12 col-md-2">
-                    <label class="form-label small mb-1">Código</label>
-                    <input type="text" class="form-control form-control-sm" name="code">
                 </div>
                 <div class="col-12 col-md-3">
                     <label class="form-label small mb-1">Cliente</label>
                     <input type="text" class="form-control form-control-sm" name="client_name">
                 </div>
-                <div class="col-12 col-md-3">
+                <div class="col-12 col-md-4">
                     <label class="form-label small mb-1">Ubicación</label>
                     <input type="text" class="form-control form-control-sm" name="address">
                 </div>

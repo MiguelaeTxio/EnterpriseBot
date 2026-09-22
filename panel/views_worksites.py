@@ -41,11 +41,17 @@ class WorksiteListView(AdminRoleRequiredMixin, View):
             messages.error(request, "Falta el nombre de la obra.")
             return redirect(reverse("panel:worksites_list"))
 
-        Worksite.objects.create(
+        worksite = Worksite.objects.create(
             name=name,
-            code=request.POST.get("code", "").strip(),
             client_name=request.POST.get("client_name", "").strip(),
             address=request.POST.get("address", "").strip(),
         )
-        messages.success(request, "Obra «%s» dada de alta." % name)
+        # Código autogenerado a partir del pk real, nunca a mano por el
+        # usuario de turno -- Miguel Ángel, verbatim: "si es un código de
+        # referencia, lo suyo es que lo vayamos generando conforme se van
+        # dando de alta las obras y no un código generado al tuntún".
+        worksite.code = "OBRA-%04d" % worksite.pk
+        worksite.save(update_fields=["code"])
+
+        messages.success(request, "Obra «%s» dada de alta con código %s." % (name, worksite.code))
         return redirect(reverse("panel:worksites_list"))
