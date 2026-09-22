@@ -2547,6 +2547,16 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
                     "odometer_reading":float (_ip_line .odometer_reading )if _ip_line .odometer_reading is not None else "",
                     "engine_hours_reading":float (_ip_line .engine_hours_reading )if _ip_line .engine_hours_reading is not None else "",
                     "crane_hours_reading":float (_ip_line .crane_hours_reading )if _ip_line .crane_hours_reading is not None else "",
+                    # S116-H07: faltaban por completo -- sin esto, al
+                    # reabrir un parte en curso para editar, la casilla
+                    # "Avería resuelta -- cerrar ticket" siempre salía
+                    # desmarcada (aunque el ticket real ya estuviera
+                    # CLOSED en BD), porque el diccionario de la línea no
+                    # llevaba el dato. Confirmado contra BD real: el
+                    # ticket sí se cerró bien, solo la pantalla de
+                    # reedición no lo reflejaba.
+                    "ticket_closed":_ip_line .ticket_closed ,
+                    "breakdown_ticket":_ip_line .breakdown_ticket ,
                     })
                     for _ip_spare in _SPL_IP .objects .filter (entry_line =_ip_line ).order_by ("line_number"):
                         _ip_repuestos .append ({
@@ -3722,7 +3732,19 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
                             ])
 
 
-                        _ip_entry .lines .all ().delete ()
+                        # S116-H07: ya NO se borran todas las líneas aquí.
+                        # Se capturan por número de línea para actualizarlas
+                        # en su sitio más abajo -- borrar y recrear perdía en
+                        # cascada cualquier TaskPhoto (y duplicaba
+                        # SparePartLine) colgado de una línea que seguía
+                        # existiendo tras un segundo "Guardar tareas" sobre
+                        # el mismo parte. Ver incidente real reportado por
+                        # Miguel Ángel (H07) -- una foto de justificante de
+                        # ausencia desaparecía sin dejar rastro tras un
+                        # segundo guardado.
+                        _ip_existing_lines_by_num ={
+                        l .line_number :l for l in _ip_entry .lines .all ()
+                        }
 
 
 
@@ -3877,9 +3899,7 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
                             _ip_delta_net =max (_Dec_ip ("0"),_ip_delta_net )
                         else :
                             _ip_delta_net =_ip_delta_raw 
-                        _ip_line_obj =_WOEL_IP2 .objects .create (
-                        entry =_ip_entry ,
-                        line_number =_ip_line_num ,
+                        _ip_line_fields =dict (
                         machine_asset =_ip_ld .get ("machine_asset"),
                         machine_raw =_ip_ld .get ("machine_raw",""),
                         machine_norm =_ip_ld .get ("machine_norm",""),
@@ -3894,7 +3914,49 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
                         engine_hours_reading =_ip_ld .get ("engine_hours_reading"),
                         crane_hours_reading =_ip_ld .get ("crane_hours_reading"),
                         )
+                        # S116-H07: actualizar en su sitio cuando la línea ya
+                        # existía (mismo número de línea) -- preserva su pk,
+                        # y con él, cualquier TaskPhoto ya adjunto. Solo se
+                        # crea una línea nueva de verdad si el número de
+                        # línea no existía todavía.
+                        _ip_existing_line =_ip_existing_lines_by_num .pop (
+                        _ip_line_num ,None ,
+                        )
+                        if _ip_existing_line is not None :
+                            for _ip_field ,_ip_value in _ip_line_fields .items ():
+                                setattr (_ip_existing_line ,_ip_field ,_ip_value )
+                            _ip_existing_line .save (
+                            update_fields =list (_ip_line_fields .keys ())
+                            )
+                            _ip_line_obj =_ip_existing_line 
+                        else :
+                            _ip_line_obj =_WOEL_IP2 .objects .create (
+                            entry =_ip_entry ,
+                            line_number =_ip_line_num ,
+                            **_ip_line_fields ,
+                            )
                         _ip_created_lines [_ip_line_num ]=_ip_line_obj 
+
+                    # S116-H07: los números de línea que ya NO aparecen en
+                    # los datos enviados son bloques que el mecánico ha
+                    # quitado de verdad del formulario -- esos sí se borran
+                    # (y sus TaskPhoto/SparePartLine con ellos, correcto
+                    # porque la tarea entera ha desaparecido). Los que
+                    # siguen presentes nunca llegan aquí, porque .pop() ya
+                    # los quitó del diccionario arriba.
+                    for _ip_removed_line in _ip_existing_lines_by_num .values ():
+                        _ip_removed_line .delete ()
+
+                    # S116-H07: SparePartLine ya no se borra en cascada para
+                    # las líneas que persisten (ya no se recrean, se
+                    # actualizan) -- limpiar aquí explícitamente antes de
+                    # rematerializar desde spare_parts_data/consume_part_pks
+                    # más abajo, para no duplicar. Mismo efecto neto que el
+                    # borrado en cascada de antes, pero sin arrastrar
+                    # TaskPhoto con él.
+                    _SPL_IP2 .objects .filter (
+                    entry_line__in =_ip_created_lines .values ()
+                    ).delete ()
 
                     # Fix critico (2026-07-23, reportado por Miguel Angel en
                     # produccion): save_blocks nunca materializaba
