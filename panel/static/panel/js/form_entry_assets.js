@@ -900,7 +900,7 @@
                     '<input type="file" class="form-control form-control-sm" ' +
                            'id="id_entrada_' + idx + '_new_photo" ' +
                            'name="entrada_' + idx + '_new_photo" ' +
-                           'accept="image/*" capture="environment">' +
+                           'accept="image/*">' +
                     '<div class="form-text">Se guardará junto con la tarea.</div>' +
                 '</div>' +
             '</div>';

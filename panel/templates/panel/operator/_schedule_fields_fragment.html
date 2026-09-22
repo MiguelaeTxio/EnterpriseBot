@@ -260,6 +260,23 @@
                     </label>
                 </div>
             </div>
+            {# S116-H07: mismo campo que ya lleva el bucle de form_entry.html   #}
+            {# y el bloque generado por JS -- faltaba aquí, que es justo el    #}
+            {# fragmento que renderiza la PRIMERA tarea de un parte nuevo, el  #}
+            {# caso que Miguel Ángel señaló como el real (no el segundo bloque #}
+            {# en adelante, que sí lo llevaba).                                #}
+            <div class="col-12">
+                <label class="form-label fw-medium mb-1" for="id_entrada_1_new_photo">
+                    <i class="bi bi-camera me-1 text-secondary"></i>
+                    Fotos (opcional)
+                </label>
+                <input type="file"
+                       class="form-control form-control-sm"
+                       id="id_entrada_1_new_photo"
+                       name="entrada_1_new_photo"
+                       accept="image/*">
+                <div class="form-text">Se guardará junto con la tarea.</div>
+            </div>
         </div>
     </div>
     {% endif %}
