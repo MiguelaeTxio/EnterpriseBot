@@ -471,6 +471,43 @@ class CircularExportWordView(DocsUploadAccessMixin, View):
         return response
 
 
+def _get_letterhead_logo_data_uri():
+    """
+    H31 (S115). Devuelve el logo corporativo de Grupo Álvarez como
+    data URI base64 -- mismo archivo estático ya usado para el
+    membrete real del flujo de email (.eml, `panel/img/
+    grupo_alvarez_logo.png`, ver views_documentation_h30.py). Se
+    embebe como data URI (no como <img src="/static/...">) para que
+    funcione igual en el navegador (Mi buzón) y en weasyprint (PDF de
+    "Generar documento"), sin depender de que ambos resuelvan
+    STATIC_URL de la misma forma. Devuelve None si el archivo no
+    existe (nunca rompe la generación del documento por esto).
+    """
+    import base64
+
+    from django.contrib.staticfiles.finders import find as find_static
+
+    logo_path = find_static("panel/img/grupo_alvarez_logo.png")
+    if not logo_path:
+        return None
+    with open(logo_path, "rb") as logo_file:
+        encoded = base64.b64encode(logo_file.read()).decode("ascii")
+    return "data:image/png;base64,%s" % encoded
+
+
+def is_letter_format(content_html):
+    """
+    H31 (S115). Heurística para saber si un content_html ya lleva su
+    propio título recuadrado de carta formal (nombramientos, S115) en
+    vez del formato antiguo de notificación -- todo el contenido
+    escrito en el nuevo formato empieza por el <div> del título
+    recuadrado; el antiguo, por un <p>. Usado para no duplicar título
+    (h1 de la pantalla + título propio de la carta) ni membrete donde
+    no aplica.
+    """
+    return content_html.strip().startswith("<div")
+
+
 def _render_document_variables(content_html, *, worker=None, administrator=None, company=None, worksite=None):
     """
     H31 (S114, ampliado S115 con {{obra.*}}). Sustituye tokens
@@ -595,15 +632,23 @@ class CircularGenerateView(DocsUploadAccessMixin, View):
             administrator=administrator, company=company,
             worksite=worksite,
         )
+        letter_format = is_letter_format(document_type.content_html)
+        logo_data_uri = _get_letterhead_logo_data_uri() if letter_format else None
+        heading_html = "" if letter_format else "<h1>%s</h1>" % document_type.label
+        logo_html = (
+            '<div style="text-align:center;margin-bottom:12px;">'
+            '<img src="%s" style="max-height:70px;"></div>' % logo_data_uri
+            if logo_data_uri else ""
+        )
         html_content = (
             "<!DOCTYPE html><html lang='es'><head><meta charset='utf-8'>"
             "<style>"
             "body{font-family:Arial,sans-serif;font-size:11pt;margin:2.5cm 2cm}"
             "h1{font-size:14pt;margin-bottom:18px}"
             "</style></head><body>"
-            "<h1>%s</h1>%s"
+            "%s%s%s"
             "</body></html>"
-        ) % (document_type.label, rendered_body)
+        ) % (logo_html, heading_html, rendered_body)
 
         import weasyprint
         pdf_bytes = weasyprint.HTML(string=html_content).write_pdf()

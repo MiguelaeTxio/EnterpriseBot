@@ -1877,7 +1877,7 @@ class MiBuzonDetailView(CompanyUserRequiredMixin, View):
         from django.http import Http404
 
         from document_explorer.models import DocumentAcknowledgment
-        from panel.views_circulars_h31 import _render_document_variables
+        from panel.views_circulars_h31 import _render_document_variables, is_letter_format, _get_letterhead_logo_data_uri
 
         person = getattr(request.user.company_user, "person_identity", None)
         if person is None:
@@ -1901,10 +1901,13 @@ class MiBuzonDetailView(CompanyUserRequiredMixin, View):
             company=company_profile,
             worksite=ack.worksite,
         )
+        letter_format = is_letter_format(ack.document_type.content_html)
+        logo_data_uri = _get_letterhead_logo_data_uri() if letter_format else None
 
         return render(request, self.template_name, {
             "ack": ack,
             "rendered_content": rendered_content,
+            "logo_data_uri": logo_data_uri,
             "active_nav": "mi_buzon",
         })
 
