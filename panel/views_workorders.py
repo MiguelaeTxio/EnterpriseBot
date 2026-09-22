@@ -308,11 +308,27 @@ class WorkOrderListView (SupervisorAccessMixin ,View ):
         elif bulk_op =="delete":
 
             count =qs .count ()
+            # S116-H07: mismo criterio -- borrar también los tickets que
+            # estos partes habían originado y que no seguían en ningún
+            # otro parte.
+            _ticket_pks =_ticket_pks_linked_to_work_orders (
+            list (qs .values_list ("pk",flat =True ))
+            )
             qs .delete ()
-            django_messages .success (
-            request ,
+            _deleted_tickets =_delete_orphaned_tickets (_ticket_pks )
+            _msg =(
             f"{count} parte{'s' if count != 1 else ''} "
             f"eliminado{'s' if count != 1 else ''} correctamente."
+            )
+            if _deleted_tickets :
+                _msg +=(
+                f" También se ha eliminado "
+                f"{'el ticket de avería que' if _deleted_tickets == 1 else f'{_deleted_tickets} tickets de avería que'} "
+                f"esos partes habían originado y que no seguía en ningún otro parte."
+                )
+            django_messages .success (
+            request ,
+            _msg
             )
 
         else :
@@ -611,7 +627,12 @@ class WorkOrderUploadView (SupervisorAccessMixin ,View ):
 
         if duplicate_wo and request .POST .get ("confirm_overwrite"):
             dup_pk =duplicate_wo .pk 
+            # S116-H07: mismo criterio -- borrar también los tickets que
+            # este parte duplicado había originado y que no seguían en
+            # ningún otro parte.
+            _ticket_pks =_ticket_pks_linked_to_work_orders ([dup_pk ])
             duplicate_wo .delete ()
+            _delete_orphaned_tickets (_ticket_pks )
             django_messages .warning (
             request ,
             f"El parte duplicado #{dup_pk} y todos sus datos han sido "
@@ -1960,6 +1981,71 @@ class WorkOrderLineRestoreView (SupervisorAccessMixin ,View ):
         )
 
 
+def _ticket_pks_linked_to_work_orders (work_order_pks ):
+    """
+    S116-H07: BreakdownTicket pks currently linked to any real
+    WorkOrderEntryLine belonging to any of these WorkOrders --
+    instantánea que hay que tomar ANTES de borrarlos, para que
+    _delete_orphaned_tickets() pueda saber después cuáles se han
+    quedado sin ninguna línea real en ningún sitio (y por tanto se
+    pueden borrar también), a petición explícita de Miguel Ángel:
+    "si borrar el parte hay que borrar el ticket asociado si el
+    parte que se ha borrado es el que ha dado inicio al ticket".
+
+    ---
+
+    Pks de BreakdownTicket enlazados ahora mismo a alguna
+    WorkOrderEntryLine real de cualquiera de estos WorkOrders --
+    snapshot to take BEFORE deleting them, so
+    _delete_orphaned_tickets() can tell afterwards which ones this
+    left with zero real lines anywhere.
+    """
+    from chat .models import BreakdownTicket 
+    return set (
+    BreakdownTicket .objects .filter (
+    work_entry_lines__entry__work_order__pk__in =work_order_pks ,
+    ).values_list ("pk",flat =True ).distinct ()
+    )
+
+
+def _delete_orphaned_tickets (ticket_pks ):
+    """
+    S116-H07: llamar DESPUÉS de haber borrado ya el/los WorkOrder(s)
+    o línea(s) que produjeron `ticket_pks` (de
+    _ticket_pks_linked_to_work_orders(), o el breakdown_ticket_id de
+    una sola línea antes de borrarla). Borra los tickets de ese
+    conjunto que ya no tienen NINGUNA WorkOrderEntryLine real en
+    ningún sitio -- es decir, el parte que se acaba de borrar era de
+    verdad el que lo originó, no un ticket que también rastrea otro
+    parte distinto. Nunca toca un ticket que todavía tiene una línea
+    real en otro parte.
+
+    Devuelve cuántos tickets se han borrado.
+
+    ---
+
+    Call AFTER the WorkOrder(s)/line(s) that produced `ticket_pks`
+    have already been deleted. Deletes any of those tickets left
+    with NO real WorkOrderEntryLine anywhere -- i.e. the parte just
+    deleted genuinely originated it, not a ticket also tracked by a
+    different work order. Never touches a ticket that still has a
+    real line elsewhere.
+
+    Returns how many tickets were deleted.
+    """
+    from chat .models import BreakdownTicket 
+    if not ticket_pks :
+        return 0 
+    orphaned =BreakdownTicket .objects .filter (
+    pk__in =ticket_pks ,
+    work_entry_lines__isnull =True ,
+    )
+    count =orphaned .count ()
+    if count :
+        orphaned .delete ()
+    return count 
+
+
 class WorkOrderLineDeleteView (SupervisorAccessMixin ,View ):
     """
     Deletes a single WorkOrderEntryLine identified by line_pk, scoped to the
@@ -2007,7 +2093,14 @@ class WorkOrderLineDeleteView (SupervisorAccessMixin ,View ):
         entry__work_order =wo ,
         )
         entry =line .entry 
+        # S116-H07: capturar el ticket ANTES de borrar la línea -- tras
+        # borrarla, si ese ticket no queda enganchado a ninguna otra
+        # línea real, se borra también (era esta línea la que lo
+        # originó).
+        _ticket_pk =line .breakdown_ticket_id 
         line .delete ()
+        if _ticket_pk :
+            _delete_orphaned_tickets ({_ticket_pk })
 
         # If the entry has no remaining lines, delete it too.
         # Si el entry ha quedado sin líneas, eliminarlo también.
@@ -2049,10 +2142,24 @@ class WorkOrderDeleteView (SupervisorAccessMixin ,View ):
         company =request .user .company_user .company 
         wo =get_object_or_404 (WorkOrder ,pk =pk ,company =company )
         wo_pk =wo .pk 
+        # S116-H07: capturar los tickets enganchados a este parte ANTES
+        # de borrarlo -- si tras el borrado se quedan sin ninguna línea
+        # real en ningún otro parte, se borran también (petición
+        # explícita de Miguel Ángel: si el parte que se borra es el que
+        # dio origen al ticket, el ticket se borra con él).
+        _ticket_pks =_ticket_pks_linked_to_work_orders ([wo_pk ])
         wo .delete ()
+        _deleted_tickets =_delete_orphaned_tickets (_ticket_pks )
+        _msg =f"Parte #{wo_pk} eliminado correctamente."
+        if _deleted_tickets :
+            _msg +=(
+            f" También se ha eliminado "
+            f"{'el ticket de avería que' if _deleted_tickets == 1 else f'{_deleted_tickets} tickets de avería que'} "
+            f"este parte había originado y que no seguía en ningún otro parte."
+            )
         django_messages .success (
         request ,
-        f"Parte #{wo_pk} eliminado correctamente."
+        _msg 
         )
         return redirect ("panel:work_order_list")
 
@@ -2748,8 +2855,12 @@ class WorkOrderDuplicateDeleteView (SupervisorAccessMixin ,View ):
 
         company =request .user .company_user .company 
         wo =get_object_or_404 (WorkOrder ,pk =pk ,company =company )
+        # S116-H07: mismo criterio que WorkOrderDeleteView -- borrar
+        # también los tickets que este duplicado había originado y que
+        # no seguían en ningún otro parte.
+        _ticket_pks =_ticket_pks_linked_to_work_orders ([wo .pk ])
         wo .delete ()
-
+        _delete_orphaned_tickets (_ticket_pks )
 
 
         return HttpResponse ("")
