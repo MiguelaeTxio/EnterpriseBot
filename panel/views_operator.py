@@ -3702,6 +3702,11 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
                         lunch_break_end =None if _no_lunch_break else _lb_end ,
                         no_lunch_break =_no_lunch_break ,
                         )
+                        # S116-H07: parte recién creado, todavía sin ninguna
+                        # línea -- diccionario vacío para que el bucle de
+                        # abajo cree todas las líneas de nuevas (ninguna
+                        # que actualizar).
+                        _ip_existing_lines_by_num ={}
                     else :
 
 
@@ -3721,6 +3726,9 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
                             lunch_break_end =None if _no_lunch_break else _lb_end ,
                             no_lunch_break =_no_lunch_break ,
                             )
+                            # S116-H07: mismo caso que arriba -- entrada
+                            # recién creada, sin líneas todavía.
+                            _ip_existing_lines_by_num ={}
                         else :
 
 
