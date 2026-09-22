@@ -36,10 +36,13 @@
     var btnSaveFinal      = document.getElementById("btn-confirm-save-final");
     var ticketWarningListEl = document.getElementById("ticket-close-warning-list");
     var btnTicketWarningContinue = document.getElementById("btn-ticket-close-warning-continue");
+    var pendingPartsListEl = document.getElementById("ticket-pending-parts-warning-list");
+    var btnPendingPartsContinue = document.getElementById("btn-ticket-pending-parts-continue");
 
     var zeroMeterModal   = null;
     var confirmSaveModal = null;
     var ticketWarningModal = null;
+    var pendingPartsModal = null;
     var _pendingZeroData = {};
 
     if (typeof bootstrap !== "undefined") {
@@ -47,6 +50,8 @@
         confirmSaveModal = new bootstrap.Modal(document.getElementById("confirmSaveModal"));
         var _ticketModalEl = document.getElementById("ticketCloseWarningModal");
         if (_ticketModalEl) { ticketWarningModal = new bootstrap.Modal(_ticketModalEl); }
+        var _pendingPartsModalEl = document.getElementById("ticketPendingPartsWarningModal");
+        if (_pendingPartsModalEl) { pendingPartsModal = new bootstrap.Modal(_pendingPartsModalEl); }
     }
 
     /*
@@ -74,6 +79,47 @@
             }
         });
         return open;
+    }
+
+    /*
+     * Detects work-order blocks that are about to CLOSE a breakdown
+     * ticket (entrada_{idx}_ticket_closed checkbox checked) while that
+     * ticket's pre-assigned spare-parts checklist
+     * (entrada_{idx}_consume_part_{pk}, rendered by
+     * workorder_spare_parts._ticket_resolution.html inside the same
+     * .ticket-resolution-container) still has items left UNCHECKED --
+     * i.e. not marked as placed in this repair. Soft warning only,
+     * mirrors _detectOpenTickets() for the opposite case. 2026-09-22,
+     * H10 (reactivación S115, punto 2 de la hoja de ruta), a petición
+     * explícita de Miguel Ángel.
+     * Detecta bloques del parte que van a CERRAR un ticket de avería
+     * (casilla entrada_{idx}_ticket_closed marcada) mientras el
+     * checklist de repuestos pre-asignados de ese ticket todavía tiene
+     * artículos SIN marcar como colocados en esta reparación. Solo
+     * aviso, no bloqueo -- simétrico de _detectOpenTickets().
+     */
+    function _detectPendingPartsOnClose() {
+        var pending = [];
+        document.querySelectorAll(".ticket-resolution-container").forEach(function (container) {
+            if (!container.innerHTML.trim()) { return; }
+            var bIdx = container.dataset.blockIdx;
+            if (!bIdx) { return; }
+            var closeCheckbox = document.getElementById("id_entrada_" + bIdx + "_ticket_closed");
+            if (!closeCheckbox || !closeCheckbox.checked) { return; }
+            var uncheckedParts = container.querySelectorAll(
+                'input[type="checkbox"][name^="entrada_' + bIdx + '_consume_part_"]:not(:checked)'
+            );
+            if (uncheckedParts.length === 0) { return; }
+            var machineInput = form.querySelector('[name="entrada_' + bIdx + '_machine_raw"]');
+            var machineLabel = (machineInput && machineInput.value) ? machineInput.value : ("Bloque " + bIdx);
+            var partLabels = [];
+            uncheckedParts.forEach(function (cb) {
+                var lbl = document.querySelector('label[for="' + cb.id + '"]');
+                partLabels.push(lbl ? lbl.textContent.trim() : cb.name);
+            });
+            pending.push({ blockIdx: bIdx, machine: machineLabel, parts: partLabels });
+        });
+        return pending;
     }
 
     /*
@@ -155,6 +201,32 @@
      * de ticket sin cerrar.
      */
     function _afterTicketCheck() {
+        var pendingParts = _detectPendingPartsOnClose();
+        if (pendingParts.length > 0) {
+            if (pendingPartsListEl) {
+                pendingPartsListEl.innerHTML = "";
+                pendingParts.forEach(function (t) {
+                    var li = document.createElement("li");
+                    li.textContent = "Bloque " + t.blockIdx + " — " + t.machine +
+                        ": " + t.parts.join(", ");
+                    pendingPartsListEl.appendChild(li);
+                });
+            }
+            if (pendingPartsModal) {
+                pendingPartsModal.show();
+                return;
+            }
+        }
+        _afterPendingPartsCheck();
+    }
+
+    /*
+     * Continues the save flow after the pending-spare-parts warning has
+     * been shown (or skipped because there was nothing to warn about).
+     * Continúa el flujo de guardado tras mostrar (u omitir) el aviso de
+     * repuestos pendientes al cerrar el ticket.
+     */
+    function _afterPendingPartsCheck() {
         var zeros = _detectZeroMeters();
         if (Object.keys(zeros).length > 0) {
             _pendingZeroData = zeros;
@@ -185,6 +257,13 @@
         btnTicketWarningContinue.addEventListener("click", function () {
             if (ticketWarningModal) { ticketWarningModal.hide(); }
             _afterTicketCheck();
+        });
+    }
+
+    if (btnPendingPartsContinue) {
+        btnPendingPartsContinue.addEventListener("click", function () {
+            if (pendingPartsModal) { pendingPartsModal.hide(); }
+            _afterPendingPartsCheck();
         });
     }
 

@@ -1,0 +1,80 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/_ticket_pending_parts_warning_modal.html #}
+{#                                                                                          #}
+{# Partial: warning modal shown when a work-order block is about to CLOSE a breakdown      #}
+{# ticket (the "Avería resuelta — cerrar ticket" checkbox IS marked) while that ticket      #}
+{# still has pre-assigned spare parts (workorder_spare_parts._ticket_resolution.html        #}
+{# checklist, entrada_{block_idx}_consume_part_{pk}) left UNCHECKED -- i.e. not marked as   #}
+{# actually placed in this repair. Added 2026-09-22 (H10, S116), reactivación S115, punto 2 #}
+{# de la hoja de ruta: "al cerrar un TICKET de avería, sí preguntar explícitamente si los   #}
+{# artículos... se han colocado". Symmetric counterpart of                                 #}
+{# _ticket_close_warning_modal.html (that one warns the opposite case: ticket left open).   #}
+{# Included via {% include %} from the operator entry templates, same pattern as            #}
+{# _ticket_close_warning_modal.html / _zero_meter_modal.html.                                #}
+{#                                                                                          #}
+{# Usage:                                                                                   #}
+{#   JS (form_entry_modal.js, _detectPendingPartsOnClose()) scans work-order blocks whose   #}
+{#   entrada_{idx}_ticket_closed checkbox IS checked and finds any consume_part_{pk}        #}
+{#   checkbox left unchecked within that block's ticket-resolution fragment. If any are     #}
+{#   found, this modal shows as part of the save confirmation chain. It is a soft warning,  #}
+{#   not a hard block -- the mechanic can still close the ticket leaving those items         #}
+{#   pending: they simply remain SparePartEntry.status=PRE_ASSIGNED (limbo), unchanged,      #}
+{#   visible in the limbo CRUD for a later parte or ticket -- nothing new to persist, this  #}
+{#   modal only makes the state explicit before it happens.                                 #}
+{#                                                                                          #}
+{# Partial: modal de aviso mostrado cuando un bloque del parte va a CERRAR un ticket de     #}
+{# avería (casilla «Avería resuelta — cerrar ticket» marcada) mientras ese ticket todavía   #}
+{# tiene repuestos pre-asignados sin marcar como colocados en esta reparación.              #}
+<div class="modal fade"
+     id="ticketPendingPartsWarningModal"
+     tabindex="-1"
+     aria-labelledby="ticketPendingPartsWarningModalLabel"
+     aria-hidden="true"
+     data-bs-backdrop="static"
+     data-bs-keyboard="false">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title fw-semibold text-warning" id="ticketPendingPartsWarningModalLabel">
+                    <i class="bi bi-box-seam me-2"></i>
+                    Vas a cerrar un ticket con repuestos sin marcar
+                </h5>
+            </div>
+
+            <div class="modal-body pt-2">
+                <p class="mb-2">
+                    Los siguientes tickets se van a cerrar con repuestos pre-asignados
+                    todavía sin marcar como colocados:
+                </p>
+                {# List of block/machine/parts injected by JS before the modal opens. #}
+                {# Lista de bloque/máquina/repuestos inyectada por JS antes de abrir el modal. #}
+                <ul id="ticket-pending-parts-warning-list" class="mb-3"></ul>
+
+                <div class="alert alert-warning d-flex align-items-start gap-2 mb-0 py-2">
+                    <i class="bi bi-info-circle-fill flex-shrink-0 mt-1"></i>
+                    <div class="small">
+                        Si esos repuestos <strong>ya se han colocado</strong>, vuelve atrás
+                        y marca la casilla de cada uno antes de guardar. Si
+                        <strong>siguen pendientes</strong> de verdad, puedes cerrar el
+                        ticket así — quedarán en el almacén de repuestos, disponibles para
+                        un parte posterior.
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-footer border-0 pt-0">
+                <button type="button"
+                        class="btn btn-outline-secondary"
+                        data-bs-dismiss="modal">
+                    <i class="bi bi-arrow-left me-1"></i>Revisar
+                </button>
+                <button type="button"
+                        id="btn-ticket-pending-parts-continue"
+                        class="btn btn-warning px-4">
+                    <i class="bi bi-check-lg me-1"></i>Cerrar ticket con pendientes
+                </button>
+            </div>
+
+        </div>
+    </div>
+</div>
