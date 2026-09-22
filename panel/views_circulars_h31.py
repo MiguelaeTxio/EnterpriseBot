@@ -636,7 +636,8 @@ class CircularGenerateView(DocsUploadAccessMixin, View):
         logo_data_uri = _get_letterhead_logo_data_uri() if letter_format else None
         heading_html = "" if letter_format else "<h1>%s</h1>" % document_type.label
         logo_html = (
-            '<div style="text-align:center;margin-bottom:12px;">'
+            '<div style="text-align:center;margin-bottom:12px;background:#1c1c2e;'
+            'padding:12px;border-radius:4px;">'
             '<img src="%s" style="max-height:70px;"></div>' % logo_data_uri
             if logo_data_uri else ""
         )
