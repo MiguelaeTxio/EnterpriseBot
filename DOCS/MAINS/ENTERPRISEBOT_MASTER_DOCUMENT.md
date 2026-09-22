@@ -1642,4 +1642,44 @@ afecta a un volumen grande de documentos (mismo perfil que H35,
 ruta inmediatamente siguiente, con seguimiento real hasta cerrarlo a
 0, nunca mencionado una vez y olvidado.
 
+#### 4.23. DEUDA TÉCNICA — Falta un modelo real de "Obra" (y, ligados a él, Cliente/Proveedor), necesario para asignación de albaranes, circulares con obra y el futuro DECA (S115)
+
+**Origen:** al generar por primera vez la circular `NOMBRAMIENTO_
+JEFE_MANIOBRAS` con datos reales (H31, "Mi buzón"), quedó un hueco
+literal sin sustituir ("en la obra ________________") porque hoy
+**no existe ningún concepto de Obra en el sistema** -- ni modelo, ni
+campo, ni tabla. `PersonIdentity.employer_company` y
+`CompanyFiscalProfile` resuelven la empresa del grupo, pero ninguno
+resuelve la obra/centro de trabajo concreto donde se presta el
+servicio.
+
+**Miguel Ángel identificó que es el mismo problema de fondo que
+motiva el replanteamiento de los albaranes** (asignación real a
+`MachineAsset`/centro de gasto, tratado aparte, ver conversación de
+cierre de S115) -- ambos necesitan un dato de "obra" que hoy no
+existe en ningún sitio.
+
+**Alcance futuro descrito por Miguel Ángel (S115), no solo el campo
+de hoy:** un modelo de Obra real (lugar, empresa que la gestiona/a
+quien se factura), relacionado con modelos de Cliente y Proveedor,
+del que colgarán a su vez albaranes, facturación, centros de gasto y
+la futura documentación digital DECA (ver deuda técnica de H30/H35
+sobre turismos de empresa, sección 4.21, con la que también podría
+relacionarse). Cita textual: *"si queremos ir preparando un modelo
+con vistas a eso [...] es importantísimo poder escalar luego el
+modelo [...] no dejar modelos cerrados sin posibilidad de
+expandirlo."*
+
+**Decisión explícita de Miguel Ángel:** no diseñar esto de forma
+apresurada al cierre de una sesión con aprobaciones externas
+pendientes (Meta, Docuten) -- se abordará con calma, previsiblemente
+junto con el cambio de hito de albaranes/asignación de máquina ya
+planteado para la sesión siguiente, dado que es el mismo problema de
+fondo.
+
+**Acción pendiente:** ninguna de código por ahora. El hueco de la
+circular `NOMBRAMIENTO_JEFE_MANIOBRAS` queda como blanco manual
+(sin variable), a la espera de que exista un modelo de Obra real
+contra el que resolverlo.
+
 
