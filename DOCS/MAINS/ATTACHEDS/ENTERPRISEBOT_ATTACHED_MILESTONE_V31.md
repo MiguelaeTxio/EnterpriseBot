@@ -3450,38 +3450,199 @@ siguiente ("dejamos esto último para la siguiente sesión"), sin
 ninguna investigación ni borrador todavía. Ver punto 1 de la Hoja de
 Ruta.
 
-## Hoja de Ruta para la Sesión Siguiente (S114, reescrita por completo -- sustituye a la de S113)
+### COMPLETADAS EN S114
 
-1. **Docuten -- investigar la API REST y redactar el correo de
-   solicitud del servicio.** Miguel Ángel ya tiene, vía Yolanda y el
-   chatbot de soporte de Docuten, una dirección de correo a la que
-   escribir. Investigar primero la documentación real de la API REST
-   de Docuten (proceso de firma electrónica, qué credenciales/token
-   hace falta solicitar, si genera algún coste adicional y cómo se
-   factura). Uso exclusivo a comunicar a Docuten, confirmado por
-   Miguel Ángel: generación del documento, preparación de la firma,
-   envío del enlace de firma por WhatsApp, y recogida del documento ya
-   firmado -- nunca más alcance que ese. Con esa información,
-   redactar el correo de solicitud (destino: la dirección de correo
-   que Yolanda obtuvo del chatbot de Docuten -- pedírsela a Miguel
-   Ángel si no queda ya registrada en un mensaje o captura que pueda
-   compartir). Criterio de cierre: correo redactado y listo para
-   enviar, con las preguntas concretas sobre credenciales/token y
-   coste ya resueltas por la propia investigación de la
-   documentación, no dejadas como pregunta abierta en el correo.
-2. **Plantillas de circulares** (arrastrado 2.ª sesión sin avanzar --
-   S112 se desvió por completo a infraestructura, S113 se dedicó por
-   completo al sistema de entrega de EPIs por lote y al rediseño de
-   la interfaz de Personal). Prioridad máxima de la sesión, por
-   delante de cualquier otro punto salvo lo que Miguel Ángel indique
-   al arrancar: al menos una plantilla de circular completa y usable
-   desde el panel.
-3. **Firma electrónica -- Docuten, integración real.** Bloqueado
-   hasta tener acceso a la API (ver punto 1). En cuanto haya
-   credenciales/token, generar un documento real de entrega de EPIs
-   desde BBDD y verificar visualmente que sale correcto y firmado.
-   Hasta entonces, no hay más acción de código posible sobre este
-   punto.
+Sesión larga, con un giro real de rumbo a mitad de camino: empezó
+retomando el punto 1 de la hoja de ruta de S113 (Docuten) y acabó
+dedicada casi entera al punto 2 (circulares), corrigiendo por el
+camino un diseño equivocado desde la base y arreglando varios
+incidentes reales de datos descubiertos durante el propio trabajo.
+
+**Docuten (punto 1 cerrado).** Investigada la documentación pública
+de la API REST de Docuten -- no hay especificación técnica accesible
+(endpoints, autenticación) publicada; solo se confirma que ofrecen
+integración por API Key (visible en su conector de Google Docs) y su
+condición de PCSC bajo eIDAS. Con eso, redactado y enviado (por
+Yolanda, a la dirección que ella obtuvo del chatbot de soporte de
+Docuten) el correo de solicitud de acceso a la API REST, con el caso
+de uso exclusivo ya acotado (generación de documento, preparación de
+firma, envío del enlace por WhatsApp, recogida del documento firmado)
+y las preguntas concretas sobre credenciales/token y coste. Sigue sin
+respuesta de Docuten -- bloqueado, sin acción de código posible.
+
+**Corrección de scroll en la pestaña Personal (tres intentos hasta
+dar con la solución correcta).** Miguel Ángel reportó con captura que
+la pestaña hacía scroll de página completa pese al rediseño de S113.
+Primer intento (68vh fijo → cálculo de altura por JS basado en
+`top offset`) dejó un remanente real de scroll. Segundo intento
+(álgebra de "exceso real" contra `document.documentElement.
+scrollHeight`) tampoco lo resolvió. Tercer intento -- una cadena
+flexbox real desde `.main-content` (mismo principio que
+`.page-content-flush` de la vista de chat) -- sí eliminó el scroll de
+página, pero rompió por completo el scroll interno del listado y del
+visor de selección (ni barra ni desplazamiento posible). Solución
+final: revertido íntegro el cambio de flexbox global, sustituido por
+un mecanismo acotado y autocontenido dentro de la propia pestaña (un
+panel con altura calculada por JS una sola vez, reutilizando el
+patrón h-100+flex ya probado y en producción desde S113 para "Grupos
+de reparto"). De paso, rediseño visual pedido por Miguel Ángel:
+panel superior (botones + filtros/grupos/acciones) y panel inferior
+(listado + selección) como dos rectángulos grandes de esquinas
+redondeadas, con las dos columnas del panel inferior ahora con
+estilo idéntico (antes tenían aspecto distinto entre sí).
+
+**Corrección de fondo del scope de circulares.** Al abrir la pantalla
+real de "Circulares y notificaciones", Miguel Ángel encontró que
+listaba el catálogo ENTERO de tipos documentales de persona (~73
+filas: DNI, nóminas, formación, salud...) en vez de una lista acotada
+de plantillas de comunicación reutilizables -- el filtro original
+(S75) usaba `domain`, criterio equivocado. Verbatim: "eso es un
+galimatías [...] aquí vamos a tener unas 10, 15, 20 plantillas como
+mucho". Corregido con un campo nuevo, `DocumentTypeCatalog.
+is_notification_template` (migración 0126), único criterio real a
+partir de ahora -- marcado `True` en 8 tipos ya existentes con uso
+histórico real confirmado (`DocumentAcknowledgment`: RECURSO_
+PREVENTIVO 57 usos, ENTREGA_INFORMACION 51, NOMBRAMIENTO_* varios,
+PLAN_ACTUACION_CALOR 8, CIRCULAR_INFORMATIVA) y en 4 tipos nuevos
+pedidos explícitamente por Miguel Ángel (CIRCULAR_CAMBIO_HORARIO,
+CIRCULAR_CIERRE_INSTALACIONES, CIRCULAR_EVENTO_EMPRESA, CIRCULAR_
+PROTOCOLO_ACTUACION). Limpiadas también las etiquetas de dominio
+visibles en el panel, que llevaban coladas notas internas de
+desarrollo ("Empresa y obra (CompanyWorksite, H30 S58)") -- ahora
+"Empresa y obra" a secas (migración 0127).
+
+**Incidentes reales de datos encontrados y corregidos sobre la
+marcha.** Revisando las plantillas vigentes (archivo) de las 12
+circulares, aparecieron dos rotas: la de `CIRCULAR_INFORMATIVA`
+("Circular Leave Letter.doc") resultó ser, verificado por Miguel
+Ángel abriéndola en Word, una carta real de ANAGRUAL (agrupación de
+grúas) sobre exención de tacógrafo -- no una circular de Grupo
+Álvarez, mal atribuida; y la de `RECURSO_PREVENTIVO` daba 404 real al
+pulsar "Ver" porque el archivo estaba en la papelera. Migración 0128
+limpió ambas referencias. Investigando la segunda, se descubrió que
+ese mismo instante (2026-08-27 10:19:55, mismo usuario) había
+mandado a la papelera **183 elementos**, no solo esa plantilla --
+casi con toda seguridad el barrido deliberado de H36/S110 ("papelera
+para inactivos y tipos fuera del Excel"), en el que 3 plantillas de
+circular se colaron por error. Migración 0129 restauró esas 3
+(`INFORMACION_MEDIDAS_PROTECCION`, `NOMBRAMIENTO_JEFE_MANIOBRAS`,
+`NOMBRAMIENTO_RESPONSABLE_SEGURIDAD`) y la de `RECURSO_PREVENTIVO`,
+sin tocar las ~179 restantes (fuera de alcance de esta sesión). Más
+tarde, ya en producción, apareció un `NoReverseMatch` real
+(`documentation_personal_notify` con `pk=250`) al abrir una ficha de
+persona -- bug preexistente desde que se escribió la URL (nunca
+llevó `<int:pk>`, pese a que la vista sí lo espera desde S74), nunca
+disparado hasta ahora porque el desplegable de notificación llevaba
+años sin filas que renderizar. Corregido añadiendo el `<int:pk>` que
+faltaba.
+
+**Documentos programáticos con variables (pedido nuevo de Miguel
+Ángel, cambio de enfoque sobre la marcha).** Corrección explícita:
+"las plantillas deben ser programáticas [...] elegimos la empresa, el
+administrador y el trabajador y se genera el documento ad-hoc".
+Construido: `CompanyFiscalProfile.administrator` (FK a
+`PersonIdentity`, migración 0130) -- **nunca asumido de memoria**,
+verificado contra un contrato real (modelo SEPE, campo "EN CONCEPTO")
+de un trabajador de cada una de las 4 empresas, descargado y leído en
+esta misma sesión; reveló que la suposición inicial de Miguel Ángel
+("Adolfo en todas excepto Asistencia y Grúas Granada") era incorrecta
+para Grualdi, cuyo administrador real es José Luis Álvarez Díaz.
+Sustitución de variables `{{trabajador.*}}`, `{{administrador.*}}`,
+`{{empresa.*}}`, `{{fecha}}` en `content_html`
+(`_render_document_variables`); pantalla nueva "Generar documento"
+(elegir empresa + buscar trabajador, administrador resuelto solo) que
+genera el PDF real y lo guarda en la carpeta del trabajador
+(`upload_subject_document`, mismo mecanismo que la entrega de EPIs);
+botón "Insertar variable" en el editor para no tener que teclear los
+tokens a mano.
+
+**Contenido real de las 6 circulares con documento de ejemplo.**
+Descargados y leídos los documentos reales de `RECURSO_PREVENTIVO`,
+`NOMBRAMIENTO_JEFE_MANIOBRAS`, `NOMBRAMIENTO_RESPONSABLE_SEGURIDAD`,
+`INFORMACION_MEDIDAS_PROTECCION` y `CIRCULAR_INFORMATIVA` (esta
+última: la circular real de Grupo Álvarez sobre permiso de conducir,
+distinta del archivo de ANAGRUAL detectado como mal atribuido) --
+`content_html` rellenado con el texto real de cada una, variables ya
+puestas en su sitio en la propia redacción (migración 0131).
+`PLAN_ACTUACION_CALOR` queda fuera a propósito: su documento de
+ejemplo resultó ser un folleto oficial del Ministerio de Sanidad
+firmado como acuse de recibo, no un texto de Grupo Álvarez con huecos
+-- sigue con su plantilla en archivo, sin `content_html`.
+
+**Retirada de la plantilla legacy en archivo de la pantalla de
+editar circular.** Miguel Ángel: "eliminaría el tema del legacy [...]
+es una cosa que no interesa y complica". Retiradas
+`CircularTemplateUploadView`/`CircularTemplateClearView`, sus URLs y
+el helper de subida -- el campo `current_template` sigue en el
+modelo (lo usan otros tipos fuera de circulares) pero ya no tiene
+ningún punto de entrada aquí. Aligerado también el texto de
+"Importar desde Word/PDF" (quitada la advertencia "no perfecto,
+revísalo") y fusionadas en el listado las dos columnas de estado en
+una sola "Plantilla" (Sí/No), sin exponer de dónde viene el contenido
+-- Miguel Ángel: "al usuario final le da igual de dónde venga la
+plantilla [...] lo que importa es que tenga o no tenga plantilla".
+Aplicada también, por primera vez como directriz general de aquí en
+adelante, "pantalla fija, scroll solo en el contenido interno que lo
+necesite" a la propia pantalla de editar circular (el editor de texto
+es el único que hace scroll).
+
+**Investigación de WhatsApp/Meta/Twilio para el envío de circulares
+(diseño cerrado, nada construido todavía -- ver Hoja de Ruta).**
+Confirmado que no existe ninguna plantilla de WhatsApp aprovechable
+para circulares (las 13 reales en `WhatsAppTemplate` son de otros
+flujos). Diseño acordado con Miguel Ángel tras verificar en línea la
+documentación actual de Twilio (no de memoria, corrigiendo un primer
+diseño equivocado con `twilio/call-to-action`, que NO admite mezclar
+quick-reply con URL): plantilla `twilio/card` (sí lo admite, una vez
+aprobada), categoría UTILITY, botón quick-reply "Leer aquí" + botón
+URL "Ver en navegador"; coletilla ya aprobada ("consta como
+trabajador de Grupo Álvarez") + "si no lo es, ignore este mensaje";
+saludo al principio, nunca variable al final (lección ya aprendida
+con `document_expiry_alert`, rechazada dos veces por eso mismo). Flujo
+único para todas las circulares por ahora, sin excluir las que
+necesiten firma -- se adaptará cuando llegue Docuten. Acceso al
+"buzón" vía login normal, reutilizando el mecanismo de dispositivo de
+confianza ya existente (`CompanyUser.trusted_device_token`, cookie
+`eb_trusted_device`) -- sin token ni mecanismo de acceso nuevo.
+
+## Hoja de Ruta para la Sesión Siguiente (S115, reescrita por completo -- sustituye a la de S114)
+
+1. **WhatsApp -- construir el flujo completo de envío de circulares,
+   diseño ya cerrado en S114, sin preguntas abiertas.** Comando de
+   creación de la plantilla `twilio/card` vía Content API de Twilio
+   (mismo patrón que `create_epi_delivery_whatsapp_template.py`:
+   `requests` crudo, no el SDK, por el bug conocido de
+   twilio-python#881) -- cuerpo con la coletilla aprobada + "si no lo
+   es, ignore este mensaje", botón quick-reply "Leer aquí" + botón URL
+   "Ver en navegador" hacia `/panel/mi-buzon/...`. Gestión del
+   `ButtonPayload` del botón "Leer aquí" en el webhook real
+   (`whatsapp/views.py`, mismo patrón ya existente para
+   `chat_session_renewal`) -- responde con el texto completo de la
+   circular dentro de la sesión ya abierta. Ajustar
+   `TrustDeviceQuickLoginView` (hoy redirige siempre a `/panel/` fijo)
+   para que respete `?next=` y así el enlace lleve directo a la
+   circular en cuestión. Pantalla nueva "Mi buzón" (Mi perfil),
+   protegida con login normal sin mecanismo de acceso especial.
+   Criterio de cierre: plantilla creada y sometida a aprobación de
+   Meta (SID real registrado en `WhatsAppTemplate`), botón "Leer aquí"
+   probado de verdad contra el webhook, y "Mi buzón" mostrando al
+   menos una circular real de un trabajador de prueba.
+2. **Docuten -- sigue bloqueado en espera de respuesta.** El correo
+   de solicitud ya se envió en S114 (ver COMPLETADAS). Sin ninguna
+   acción de código posible hasta que Docuten responda -- no
+   arrastrar como ítem de trabajo, solo comprobar al arrancar si ya
+   ha llegado respuesta.
+3. **Contenido real de las 7 plantillas de comunicación que aún no
+   lo tienen** (`ENTREGA_INFORMACION`, `NOMBRAMIENTO_RECURSO_
+   PREVENTIVO`, `CIRCULAR_CAMBIO_HORARIO`, `CIRCULAR_CIERRE_
+   INSTALACIONES`, `CIRCULAR_EVENTO_EMPRESA`, `CIRCULAR_PROTOCOLO_
+   ACTUACION`, y cualquier otra que se dé de alta antes de esta
+   sesión). Buscar documento de ejemplo real de cada una donde exista
+   histórico (mismo método que S114: `DocumentAcknowledgment` +
+   `DocumentIndexEntry` por `document_type`); donde no exista,
+   redactar desde cero con Miguel Ángel. Criterio de cierre:
+   `content_html` no vacío en las 7, o decisión explícita registrada
+   de dejarla vacía (mismo caso que `PLAN_ACTUACION_CALOR`).
 4. Los 2 huecos reales de documentación (Grana Álvarez, García
    Sánchez) siguen pendientes de que la supervisora escanee y suba
    los contratos originales -- sin acción de código pendiente, solo
