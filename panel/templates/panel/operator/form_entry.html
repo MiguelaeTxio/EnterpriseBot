@@ -40,7 +40,7 @@
         </div>
         {% endif %}
 
-        <form method="post" id="form-entry">
+        <form method="post" id="form-entry" enctype="multipart/form-data">
             {% csrf_token %}
 
             {# Hidden counters updated by JS / Contadores ocultos actualizados por JS #}
@@ -306,7 +306,7 @@
                                          class="ticket-resolution-container"
                                          data-block-idx="{{ entrada.idx }}"
                                          {% if entrada.machine_asset %}
-                                         hx-get="{% url 'workorder_spare_parts:task_ticket_resolution' %}?code={{ entrada.machine_asset.code|urlencode }}&block_idx={{ entrada.idx }}"
+                                         hx-get="{% url 'workorder_spare_parts:task_ticket_resolution' %}?code={{ entrada.machine_asset.code|urlencode }}&block_idx={{ entrada.idx }}&work_order_pk={{ edit_wo_pk|default:'' }}"
                                          hx-trigger="load"
                                          hx-swap="innerHTML"
                                          {% endif %}>
@@ -340,6 +340,25 @@
                                          hx-get="{% url 'panel:task_photo_widget' line_pk=entrada.pk %}"
                                          hx-trigger="load"
                                          hx-swap="innerHTML"></div>
+                                </div>
+                                {% else %}
+                                <div class="col-12">
+                                    {# S116-H07: para una tarea todavía sin guardar, la foto se #}
+                                    {# adjunta en la MISMA petición que la crea -- ya no hace     #}
+                                    {# falta "Guardar tareas" primero para poder fotografiarla.  #}
+                                    <label class="form-label fw-medium mb-1"
+                                           for="id_entrada_{{ entrada.idx }}_new_photo">
+                                        <i class="bi bi-camera me-1 text-secondary"></i>
+                                        Fotos (opcional)
+                                    </label>
+                                    <input type="file"
+                                           class="form-control form-control-sm"
+                                           id="id_entrada_{{ entrada.idx }}_new_photo"
+                                           name="entrada_{{ entrada.idx }}_new_photo"
+                                           accept="image/*" capture="environment">
+                                    <div class="form-text">
+                                        Se guardará junto con la tarea.
+                                    </div>
                                 </div>
                                 {% endif %}
                             </div>

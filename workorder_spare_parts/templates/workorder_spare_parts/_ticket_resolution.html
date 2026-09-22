@@ -18,17 +18,28 @@
 
 {% elif resolution.action == 'ASK_REOPEN' %}
 <div class="border rounded p-2 small">
+    {% if resolution.ticket.pk == same_parte_ticket_pk %}
+    <p class="mb-2">
+        <i class="bi bi-info-circle-fill text-primary me-1"></i>
+        Esta es la misma avería que registraste en la
+        <strong>Tarea {{ same_parte_line_number }}</strong> de este mismo parte —
+        se continúa en el mismo ticket.
+    </p>
+    {% else %}
     <p class="mb-2">
         Hay un ticket cerrado hace menos de {{ reopen_window_hours }}h para esta máquina —
         <strong>{{ resolution.ticket.ticket_date_code|default:resolution.ticket.pk }}</strong>
         {% if resolution.ticket.fault_summary %}({{ resolution.ticket.fault_summary|truncatechars:60 }}){% endif %}.
         ¿Es la misma avería?
     </p>
+    {% endif %}
     <div class="form-check form-check-inline">
         <input class="form-check-input" type="radio"
                name="entrada_{{ block_idx }}_ticket_reopen"
                id="id_entrada_{{ block_idx }}_ticket_reopen_si"
-               value="1" required>
+               value="1"
+               {% if resolution.ticket.pk == same_parte_ticket_pk %}checked{% endif %}
+               required>
         <label class="form-check-label" for="id_entrada_{{ block_idx }}_ticket_reopen_si">
             Sí, es la misma — reabrir
         </label>
@@ -54,10 +65,15 @@
         <input class="form-check-input" type="radio"
                name="entrada_{{ block_idx }}_ticket_chosen_pk"
                id="id_entrada_{{ block_idx }}_ticket_choice_{{ t.pk }}"
-               value="{{ t.pk }}" required>
+               value="{{ t.pk }}"
+               {% if t.pk == same_parte_ticket_pk %}checked{% endif %}
+               required>
         <label class="form-check-label" for="id_entrada_{{ block_idx }}_ticket_choice_{{ t.pk }}">
             {{ t.ticket_date_code|default:t.pk }} — {{ t.get_status_display }}
             {% if t.fault_summary %} | {{ t.fault_summary|truncatechars:50 }}{% endif %}
+            {% if t.pk == same_parte_ticket_pk %}
+                <span class="text-primary">— Tarea {{ same_parte_line_number }} de este mismo parte</span>
+            {% endif %}
         </label>
     </div>
     {% endfor %}

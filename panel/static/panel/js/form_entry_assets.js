@@ -117,9 +117,12 @@
     function _loadTicketResolution(blockIdx, code) {
         var target = document.getElementById("ticket-resolution-" + blockIdx);
         if (!target || !window.htmx) { return; }
+        var editWoPkInput = document.querySelector('[name="edit_wo_pk"]');
+        var editWoPk = editWoPkInput ? editWoPkInput.value : "";
         var url = TICKET_RESOLUTION_URL
             + "?code=" + encodeURIComponent(code)
-            + "&block_idx=" + encodeURIComponent(blockIdx);
+            + "&block_idx=" + encodeURIComponent(blockIdx)
+            + "&work_order_pk=" + encodeURIComponent(editWoPk);
         htmx.ajax("GET", url, { target: target, swap: "innerHTML" });
     }
 
@@ -884,6 +887,22 @@
                 // Ticket de avería vinculado (H17)
                 // Linked breakdown ticket selector (H17)
                 _buildTicketBlock(idx) +
+                // S116-H07: la foto se adjunta en la MISMA petición que
+                // crea la tarea -- ya no hace falta guardar primero.
+                // Foto attached in the SAME request that creates the
+                // task -- no longer requires saving first.
+                '<div class="col-12">' +
+                    '<label class="form-label fw-medium mb-1" ' +
+                           'for="id_entrada_' + idx + '_new_photo">' +
+                        '<i class="bi bi-camera me-1 text-secondary"></i>' +
+                        ' Fotos (opcional)' +
+                    '</label>' +
+                    '<input type="file" class="form-control form-control-sm" ' +
+                           'id="id_entrada_' + idx + '_new_photo" ' +
+                           'name="entrada_' + idx + '_new_photo" ' +
+                           'accept="image/*" capture="environment">' +
+                    '<div class="form-text">Se guardará junto con la tarea.</div>' +
+                '</div>' +
             '</div>';
         return div;
     }

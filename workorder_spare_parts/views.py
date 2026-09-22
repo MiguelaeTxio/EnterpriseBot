@@ -1023,6 +1023,32 @@ class TaskTicketResolutionView(CatalogReadAccessMixin, View):
 
         resolution = resolve_ticket_for_machine(machine)
 
+        # S116-H07: distinguir un ticket realmente ajeno de uno que el
+        # propio mecánico acaba de crear/cerrar en OTRA tarea de este
+        # MISMO parte -- confusión real reportada por Miguel Ángel: "no
+        # tenemos conciencia de que parte es el que dice que hay un
+        # ticket abierto". Si el candidato ya está enganchado a una
+        # línea de este mismo work_order, se marca aquí para que la
+        # plantilla lo dilucide con un mensaje claro y lo preseleccione
+        # -- nunca oculta la elección, el mecánico sigue pudiendo
+        # corregirla.
+        work_order_pk = request.GET.get('work_order_pk', '').strip()
+        same_parte_ticket_pk = None
+        same_parte_line_number = None
+        if work_order_pk and resolution.action in ('ASK_REOPEN', 'CHOOSE'):
+            _candidates = (
+                [resolution.ticket] if resolution.action == 'ASK_REOPEN'
+                else list(resolution.candidates)
+            )
+            for _cand in _candidates:
+                _same_line = _cand.work_entry_lines.filter(
+                    entry__work_order_id=work_order_pk,
+                ).order_by('line_number').first()
+                if _same_line is not None:
+                    same_parte_ticket_pk = _cand.pk
+                    same_parte_line_number = _same_line.line_number
+                    break
+
         from spare_parts.services import StockAssignmentService
         pre_assigned_parts = list(
             StockAssignmentService.list_pre_assigned(machine=machine)
@@ -1034,6 +1060,8 @@ class TaskTicketResolutionView(CatalogReadAccessMixin, View):
             'resolution': resolution,
             'reopen_window_hours': _REOPEN_WINDOW_HOURS_DISPLAY,
             'pre_assigned_parts': pre_assigned_parts,
+            'same_parte_ticket_pk': same_parte_ticket_pk,
+            'same_parte_line_number': same_parte_line_number,
         })
 
 

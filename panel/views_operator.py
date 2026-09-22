@@ -15,12 +15,13 @@ from ivr_config.models import (
     Contact,
 )
 from work_order_processor.models import (
+    TaskPhoto,
     WorkOrder,
     WorkOrderEntry,
     WorkOrderEntryLine,
 )
 from work_order_processor.services import find_cached_classification
-from work_order_processor.tasks import classify_fault_line
+from work_order_processor.tasks import classify_fault_line, upload_task_photo_to_drive
 import logging
 
 logger = logging.getLogger(__name__)
@@ -2219,6 +2220,55 @@ def _resolve_editable_work_order(pk, cu, company):
     )
 
 
+def _attach_new_task_photo(request, line, prefix, company_user):
+    """
+    S116-H07: adjunta la foto tomada AL CREAR/EDITAR la propia tarea,
+    en la misma petición que la guarda -- Miguel Ángel, verbatim:
+    "obligarlo a hacer una foto para una tarea después de grabarla es
+    un desastre total [...] grabar primero y luego añadir las fotos
+    es un desastre". El campo de archivo (`{prefix}new_photo`) vive
+    ya en el propio bloque del formulario principal (multipart), sin
+    esperar a que la línea exista todavía guardada -- para cuando se
+    llama a esta función la línea YA existe (se acaba de crear o
+    actualizar justo antes, en el mismo bucle), así que el resultado
+    es idéntico al de TaskPhotoUploadView (mismos campos, mismo
+    encolado de subida a GCS) -- ese endpoint sigue existiendo tal
+    cual, para añadir fotos adicionales más tarde sobre una tarea que
+    ya se guardó.
+
+    No hace nada si no se ha seleccionado ningún archivo -- la foto
+    sigue siendo opcional.
+    ---
+    S116-H07: attaches the photo taken WHILE CREATING/EDITING the
+    task itself, in the same request that saves it -- Miguel Ángel,
+    verbatim: "forcing them to take a photo of a task after saving it
+    is a total disaster [...] save first and then add photos is a
+    disaster". The file field (`{prefix}new_photo`) already lives on
+    the main form's own task block (multipart), without waiting for
+    the line to already exist saved -- by the time this is called the
+    line already exists (just created or updated right before, in the
+    same loop), so the result is identical to TaskPhotoUploadView
+    (same fields, same GCS upload enqueue) -- that endpoint still
+    exists as-is, for adding further photos later to an already-saved
+    task.
+
+    Does nothing if no file was selected -- the photo stays optional.
+    """
+    image = request.FILES.get(f"{prefix}new_photo")
+    if not image:
+        return
+    photo = TaskPhoto.objects.create(
+        line=line,
+        company=line.entry.work_order.company,
+        breakdown_ticket=line.breakdown_ticket,
+        machine_asset=line.machine_asset,
+        uploaded_by=company_user,
+        image=image,
+        caption="",
+    )
+    upload_task_photo_to_drive.delay(photo.pk)
+
+
 class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
     """
     Structured web form entry path for work orders (Via A).
@@ -4034,6 +4084,14 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
                                     _ip_line_obj .pk ,_ip_bt .pk ,_ip_ticket_action ,
                                     )
 
+                        # S116-H07: adjuntar la foto tomada al crear/editar
+                        # esta misma tarea, si se seleccionó alguna --
+                        # después de la resolución del ticket, para que
+                        # quede correctamente vinculada a él si aplica.
+                        _attach_new_task_photo (
+                        request ,_ip_line_obj ,f"entrada_{_ip_line_num }_",cu ,
+                        )
+
                     # S116-H07: los números de línea que ya NO aparecen en
                     # los datos enviados son bloques que el mecánico ha
                     # quitado de verdad del formulario -- esos sí se borran
@@ -4700,6 +4758,14 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
                                     " a ticket pk=%s (resolución: %s).",
                                     line.pk, _bt.pk, _ticket_action,
                                 )
+
+                    # S116-H07: adjuntar la foto tomada al crear/editar
+                    # esta misma tarea, si se seleccionó alguna --
+                    # después de la resolución del ticket, para que quede
+                    # correctamente vinculada a él si aplica.
+                    _attach_new_task_photo(
+                        request, line, f"entrada_{ld['line_number']}_", cu,
+                    )
 
                     # Consumo de repuestos ya pre-asignados a la maquina
                     # (sin ticket) confirmados por el mecanico en esta
