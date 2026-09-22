@@ -4,11 +4,16 @@ H31 (S75), punto 2 de la hoja de ruta. CRUD de circulares/
 notificaciones -- crear un tipo documental nuevo de circular, editar
 su `content_html` con un editor de texto básico integrado (colores,
 pocas fuentes -- alcance deliberadamente reducido, nunca un procesador
-de textos completo), importar el contenido inicial desde un Word/PDF
-real, y sustituir la plantilla vigente (`DocumentTypeCatalog.
-current_template`) de forma consistente con el mecanismo ya en uso
-(un `DocumentIndexEntry` más, nunca un archivo fuera del sistema --
-ver el propio help_text del campo, H30 S69).
+de textos completo), e importar el contenido inicial desde un Word/PDF
+real.
+
+S114: retirada por completo la gestión de la plantilla legacy en
+archivo (`DocumentTypeCatalog.current_template`) desde esta pantalla
+-- Miguel Ángel: "yo, sinceramente, eliminaría el tema del legacy. Es
+que es una cosa que no interesa y complica". El campo sigue
+existiendo en el modelo (lo usan otros tipos documentales fuera de
+circulares), pero ya no tiene ningún punto de entrada en el CRUD de
+circulares.
 
 Alcance: tipos documentales marcados explícitamente como plantilla
 de comunicación (`is_notification_template=True`) -- corregido en
@@ -41,27 +46,13 @@ from django.views import View
 from django.http import HttpResponse
 
 from document_explorer import naming_service
-from document_explorer.index_writer import ensure_folder_chain
 from document_explorer.models import (
-    CompanyFiscalProfile, DocumentIndexEntry, DocumentTypeCatalog,
-    PersonIdentity, path_digest,
+    CompanyFiscalProfile, DocumentTypeCatalog, PersonIdentity,
 )
 from document_explorer.subject_upload_service import (
     SubjectUploadError, upload_subject_document,
 )
 from panel.mixins import DocsUploadAccessMixin
-from spare_parts.gcs_service import upload_bytes
-
-BUCKET = "cgs_grupo_alvarez"
-
-# Carpeta virtual dedicada, mismo criterio de nomenclatura que
-# `_CUARENTENA/` (document_explorer.buckets) -- prefijo `_` para
-# distinguir carpetas de infraestructura de las carpetas reales de
-# DOC. PERSONAL/DOC. MAQUINAS. Las plantillas de circular no
-# pertenecen a ningún sujeto (domain_content_type/domain_object_id
-# quedan nulos), así que necesitan una carpeta propia, no la de un
-# centro de gasto o una persona.
-TEMPLATES_ROOT = "_PLANTILLAS_CIRCULARES"
 
 _CIRCULAR_DOMAINS = [
     DocumentTypeCatalog.DOMAIN_PERSONAL,
@@ -179,57 +170,13 @@ def _extract_html_from_pdf(data):
     return "\n".join(f"<p>{line}</p>" for line in safe_lines)
 
 
-def _upload_circular_template(document_type, data, original_filename):
-    """
-    Sube el archivo real (Word/PDF, tal cual, sin parsear) a una
-    carpeta propia de plantillas y repunta `current_template` al
-    `DocumentIndexEntry` nuevo -- nunca borra ni toca el anterior
-    (4.12, y el propio help_text de `current_template`: "el histórico
-    de entregas no se toca"). `domain_content_type`/`domain_object_id`
-    quedan nulos -- esta fila no pertenece a ningún sujeto, es
-    infraestructura del propio tipo documental.
-    """
-    extension = (
-        original_filename.rsplit(".", 1)[-1].lower()
-        if "." in original_filename else "bin"
-    )
-    today = timezone.now().date()
-    filename = "%s_PLANTILLA_%s.%s" % (
-        document_type.code, today.isoformat(), extension,
-    )
-    target_folder = "%s/%s" % (TEMPLATES_ROOT, document_type.code)
-    ensure_folder_chain(BUCKET, target_folder)
-    blob_name = "%s/%s" % (target_folder, filename)
-    content_type = (
-        "application/pdf" if extension == "pdf"
-        else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        if extension == "docx"
-        else "application/octet-stream"
-    )
-    upload_bytes(BUCKET, blob_name, data, content_type=content_type)
-
-    entry = DocumentIndexEntry.objects.create(
-        bucket=BUCKET,
-        entry_kind=DocumentIndexEntry.KIND_FILE,
-        blob_name=blob_name,
-        blob_name_hash=path_digest(blob_name),
-        parent_path=target_folder,
-        parent_path_hash=path_digest(target_folder),
-        name=filename,
-        size_bytes=len(data),
-        content_type=content_type,
-        document_type=document_type,
-    )
-    document_type.current_template = entry
-    document_type.save(update_fields=["current_template"])
-    return entry
-
-
 class CircularListView(DocsUploadAccessMixin, View):
     """GET: listado de tipos documentales marcados como plantilla de
-    comunicación (is_notification_template=True, S114) -- estado de
-    content_html y de current_template de un vistazo, acceso a crear
-    uno nuevo o editar uno existente."""
+    comunicación (is_notification_template=True, S114) -- si tiene
+    plantilla o no (content_html o current_template, cualquiera de
+    los dos cuenta -- fusionado en una sola columna en S114, Miguel
+    Ángel: "al usuario final le da igual de dónde venga la
+    plantilla"), acceso a crear uno nuevo o editar uno existente."""
 
     def get(self, request):
         types = DocumentTypeCatalog.objects.filter(
@@ -296,8 +243,8 @@ class CircularCreateView(DocsUploadAccessMixin, View):
 
 class CircularEditView(DocsUploadAccessMixin, View):
     """GET: pantalla de edición de UNA circular -- editor de texto
-    básico sobre content_html, más el bloque de plantilla vigente
-    (current_template)."""
+    básico sobre content_html. Ya no gestiona current_template (S114,
+    retirado de esta pantalla -- ver docstring del módulo)."""
 
     def get(self, request, pk):
         document_type = get_object_or_404(
@@ -341,8 +288,7 @@ class CircularImportDocumentView(DocsUploadAccessMixin, View):
     donde `python-docx` lo confirma para .docx) -- punto de partida
     para que el supervisor lo termine de maquetar en el editor, nunca
     una conversión perfecta 1:1 (fuera de alcance, ver docstring del
-    módulo). No toca `current_template` -- eso es
-    `CircularTemplateUploadView`, una acción deliberadamente separada.
+    módulo).
     """
 
     def post(self, request, pk):
@@ -378,66 +324,7 @@ class CircularImportDocumentView(DocsUploadAccessMixin, View):
         document_type.save(update_fields=["content_html"])
         messages.success(
             request,
-            "Contenido importado desde «%s» -- revísalo y ajusta "
-            "colores/formato en el editor antes de darlo por bueno."
-            % uploaded_file.name,
-        )
-        return redirect(reverse("panel:circulars_edit", args=[document_type.pk]))
-
-
-class CircularTemplateClearView(DocsUploadAccessMixin, View):
-    """
-    POST: desvincula `current_template` (lo pone a NULL) sin subir
-    ningún archivo nuevo -- nunca borra el `DocumentIndexEntry` real
-    ni el archivo en GCS, solo quita la referencia. Origen real
-    (S114): dos plantillas vigentes mal atribuidas (una era en
-    realidad un documento de ANAGRUAL, otra apuntaba a un archivo ya
-    en papelera y daba 404 al pulsar "Ver") solo se pudieron corregir
-    con una migración de datos porque no existía ningún mecanismo en
-    el panel para quitar una plantilla sin sustituirla por otra --
-    esta vista cubre ese hueco para que no vuelva a hacer falta.
-    """
-
-    def post(self, request, pk):
-        document_type = get_object_or_404(
-            DocumentTypeCatalog, pk=pk, is_notification_template=True,
-        )
-        document_type.current_template = None
-        document_type.save(update_fields=["current_template"])
-        messages.success(
-            request,
-            "Plantilla vigente de «%s» desvinculada -- el archivo "
-            "real no se ha borrado, solo la referencia." % document_type.label,
-        )
-        return redirect(reverse("panel:circulars_edit", args=[document_type.pk]))
-
-
-class CircularTemplateUploadView(DocsUploadAccessMixin, View):
-    """
-    POST: sustituye la plantilla vigente (`current_template`) de un
-    tipo documental de circular -- sube el archivo real (Word/PDF) y
-    repunta el FK, nunca borra ni toca la plantilla anterior (4.12).
-    Acción deliberadamente separada de la importación de contenido
-    (`CircularImportDocumentView`): esta es la plantilla legacy en
-    archivo que Miguel Ángel decidió mantener en paralelo al
-    `content_html` (S73), no el contenido enriquecido en sí.
-    """
-
-    def post(self, request, pk):
-        document_type = get_object_or_404(
-            DocumentTypeCatalog, pk=pk, is_notification_template=True,
-        )
-        uploaded_file = request.FILES.get("file")
-        if not uploaded_file:
-            messages.error(request, "Falta el archivo de la nueva plantilla.")
-            return redirect(reverse("panel:circulars_edit", args=[document_type.pk]))
-
-        data = uploaded_file.read()
-        _upload_circular_template(document_type, data, uploaded_file.name)
-        messages.success(
-            request,
-            "Plantilla vigente de «%s» actualizada a «%s»."
-            % (document_type.label, uploaded_file.name),
+            "Contenido importado desde «%s»." % uploaded_file.name,
         )
         return redirect(reverse("panel:circulars_edit", args=[document_type.pk]))
 

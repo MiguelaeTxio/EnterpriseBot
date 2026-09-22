@@ -2,21 +2,33 @@
 {% extends "panel/base.html" %}
 
 {% comment %}
-H31 (S75) punto 2. Edición de UNA circular -- editor de texto básico
-(negrita, cursiva, color, fuente, lista -- vía document.execCommand,
-alcance deliberadamente reducido, nunca un procesador de textos
-completo), importación de Word/PDF, descarga en PDF/Word (S114), y
-sustitución de la plantilla vigente en archivo (current_template).
+H31 (S75) punto 2, simplificado en S114: Miguel Ángel eliminó del
+todo la sección de "plantilla vigente (archivo)" -- mecanismo legacy
+en paralelo al contenido enriquecido que solo añadía confusión ("es
+una cosa que no interesa y complica"). El campo current_template
+sigue existiendo en el modelo (lo usan otros tipos documentales fuera
+de circulares) pero ya no se gestiona desde esta pantalla.
+
+H31 (S114). Pantalla de altura fija -- Miguel Ángel, como directriz
+general de aquí en adelante: "la pantalla tiene que ser fija [...] el
+scroll [...] sería en el input text, donde se ve la carta, ahí su
+scroll vertical, su scroll horizontal si es necesario, pero la
+pantalla fija". Un solo panel (#circular-edit-panel) con altura
+calculada por JS (mismo mecanismo ya probado en la pestaña Personal,
+H31 S114: 'auto', medir cuánto se pasa el documento del viewport,
+restar ese exceso) -- dentro, el editor (#circular-editor) es el
+único que hace scroll, con el patrón h-100 + flex ya usado y
+probado, nunca flex-grow encadenado a través de varios niveles.
+
 Ver CircularEditView/CircularSaveContentView/
-CircularImportDocumentView/CircularTemplateUploadView/
-CircularExportPdfView/CircularExportWordView.
+CircularImportDocumentView/CircularExportPdfView/CircularExportWordView.
 {% endcomment %}
 
 {% block title %}Editar circular -- {{ document_type.label }}{% endblock %}
 {% block page_title %}Editar circular{% endblock %}
 
 {% block content %}
-<div class="container-fluid px-3 pt-3">
+<div class="container-fluid px-3 pt-3 d-flex flex-column" id="circular-edit-page">
 
     <div class="d-flex align-items-center justify-content-between mb-3">
         <div>
@@ -28,9 +40,10 @@ CircularExportPdfView/CircularExportWordView.
         </a>
     </div>
 
-    <div class="row g-3">
-        <div class="col-12 col-lg-8">
-            <div class="card mb-3">
+    <div id="circular-edit-panel">
+    <div class="row g-3 h-100">
+        <div class="col-12 col-lg-8 h-100 d-flex flex-column">
+            <div class="card h-100">
                 <div class="card-header d-flex align-items-center gap-1 flex-wrap py-2">
                     <button type="button" class="btn btn-sm btn-outline-secondary" data-cmd="bold" title="Negrita"><i class="bi bi-type-bold"></i></button>
                     <button type="button" class="btn btn-sm btn-outline-secondary" data-cmd="italic" title="Cursiva"><i class="bi bi-type-italic"></i></button>
@@ -77,8 +90,8 @@ CircularExportPdfView/CircularExportWordView.
                         <i class="bi bi-eraser"></i>
                     </button>
                 </div>
-                <div class="card-body">
-                    <div id="circular-editor" class="form-control" style="min-height: 320px; font-family: Arial, sans-serif;" contenteditable="true">{{ document_type.content_html|safe }}</div>
+                <div class="card-body d-flex flex-column" style="flex: 1 1 auto; min-height: 0; overflow: hidden;">
+                    <div id="circular-editor" class="form-control" style="flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: auto; font-family: Arial, sans-serif;" contenteditable="true">{{ document_type.content_html|safe }}</div>
                 </div>
                 <div class="card-footer d-flex justify-content-between align-items-center">
                     <span class="text-muted small">Se guarda tal cual se ve aquí -- esto es lo que recibirá la persona por email.</span>
@@ -103,14 +116,13 @@ CircularExportPdfView/CircularExportWordView.
         </div>
 
         <div class="col-12 col-lg-4">
-            <div class="card mb-3">
+            <div class="card">
                 <div class="card-header py-2"><strong>Importar desde Word/PDF</strong></div>
                 <div class="card-body">
                     <p class="text-muted small">
-                        Extrae el texto del archivo y SUSTITUYE el contenido
-                        actual del editor (no perfecto -- revísalo y ajusta
-                        colores/formato después). Solo .docx o .pdf con
-                        texto real, no escaneos de imagen sin OCR.
+                        Extrae el texto del archivo y sustituye el contenido
+                        actual del editor. Solo .docx o .pdf con texto real,
+                        no escaneos de imagen sin OCR.
                     </p>
                     <form method="post" action="{% url 'panel:circulars_import' pk=document_type.pk %}"
                           enctype="multipart/form-data" class="d-flex gap-2">
@@ -120,42 +132,8 @@ CircularExportPdfView/CircularExportWordView.
                     </form>
                 </div>
             </div>
-
-            <div class="card">
-                <div class="card-header py-2"><strong>Plantilla vigente (archivo)</strong></div>
-                <div class="card-body">
-                    <p class="text-muted small mb-2">
-                        Mecanismo legacy en paralelo al contenido enriquecido
-                        (S73) -- un archivo real, nunca se sustituye de
-                        golpe, solo se repunta a una versión nueva.
-                    </p>
-                    {% if document_type.current_template %}
-                    <p class="mb-2 d-flex align-items-center gap-2">
-                        <a href="{% url 'panel:documentation_document_view' pk=document_type.current_template.pk %}" target="_blank">
-                            <i class="bi bi-file-earmark-text"></i> {{ document_type.current_template.name }}
-                        </a>
-                        <form method="post" action="{% url 'panel:circulars_template_clear' pk=document_type.pk %}"
-                              onsubmit="return confirm('¿Quitar la plantilla vigente? El archivo real no se borra, solo se desvincula.');">
-                            {% csrf_token %}
-                            <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-1" title="Quitar plantilla">
-                                <i class="bi bi-x-lg"></i>
-                            </button>
-                        </form>
-                    </p>
-                    {% else %}
-                    <p class="text-muted small mb-2">Sin plantilla vigente todavía.</p>
-                    {% endif %}
-                    <form method="post" action="{% url 'panel:circulars_template_upload' pk=document_type.pk %}"
-                          enctype="multipart/form-data" class="d-flex gap-2">
-                        {% csrf_token %}
-                        <input type="file" name="file" class="form-control form-control-sm" required>
-                        <button type="submit" class="btn btn-sm btn-outline-secondary flex-shrink-0">
-                            {% if document_type.current_template %}Sustituir{% else %}Subir{% endif %}
-                        </button>
-                    </form>
-                </div>
-            </div>
         </div>
+    </div>
     </div>
 
 </div>
@@ -166,6 +144,7 @@ CircularExportPdfView/CircularExportWordView.
         padding: 0; cursor: pointer;
     }
     #circular-editor:focus { outline: 2px solid #0d6efd33; }
+    #circular-edit-panel { overflow: hidden; }
 </style>
 
 <script>
@@ -222,6 +201,30 @@ CircularExportPdfView/CircularExportWordView.
     document.getElementById('circular-save-form').addEventListener('submit', function () {
         document.getElementById('circular-content-hidden').value = editor.innerHTML;
     });
+
+    // H31 (S114). Pantalla fija -- mismo mecanismo probado en la
+    // pestaña Personal: se pone el panel en 'auto', se mide cuánto se
+    // pasa el documento del alto del viewport, y se resta ese exceso
+    // -- álgebra que da el hueco real disponible sea cual sea la
+    // altura natural del panel. El editor (#circular-editor), con
+    // flex:1;min-height:0;overflow-y/x:auto, es el único que
+    // scrollea de verdad.
+    const PANEL_GUTTER = 8;
+    const PANEL_MIN_HEIGHT = 240;
+    const panelEl = document.getElementById('circular-edit-panel');
+
+    function recomputePanelHeight() {
+        if (!panelEl) return;
+        panelEl.style.height = 'auto';
+        const naturalHeight = panelEl.getBoundingClientRect().height;
+        const overflow = Math.max(document.documentElement.scrollHeight - window.innerHeight, 0);
+        const target = Math.max(naturalHeight - overflow - PANEL_GUTTER, PANEL_MIN_HEIGHT);
+        panelEl.style.height = target + 'px';
+    }
+
+    window.addEventListener('resize', recomputePanelHeight);
+    requestAnimationFrame(recomputePanelHeight);
+    setTimeout(recomputePanelHeight, 300);
 })();
 </script>
 {% endblock content %}
