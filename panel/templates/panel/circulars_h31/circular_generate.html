@@ -30,9 +30,12 @@ CircularGenerateView/CircularGeneratePersonSearchView.
     <div class="border rounded p-3" style="max-width: 640px;">
         <p class="text-muted small">
             Elige la empresa y el trabajador. El documento se genera
-            sustituyendo las variables de la plantilla ({% verbatim %}{{trabajador.nombre_completo}}, {{empresa.razon_social}}, {{administrador.nombre_completo}}{% endverbatim %}...)
-            por los datos reales, se guarda en la carpeta del
-            trabajador y queda disponible para descargar aquí mismo.
+            sustituyendo las variables que hayas insertado en la
+            plantilla (nombre, DNI y nº de afiliación a la Seguridad
+            Social del trabajador; razón social, CIF y dirección de
+            la empresa; nombre y DNI del administrador; fecha) por
+            los datos reales, se guarda en la carpeta del trabajador
+            y queda disponible para descargar aquí mismo.
         </p>
         <form method="post" action="{% url 'panel:circulars_generate' pk=document_type.pk %}">
             {% csrf_token %}

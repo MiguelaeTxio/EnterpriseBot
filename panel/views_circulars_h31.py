@@ -600,6 +600,7 @@ def _render_document_variables(content_html, *, worker=None, administrator=None,
             "%s %s %s" % (worker.given_name, worker.first_surname, worker.second_surname)
         ).strip()
         tokens["trabajador.dni"] = worker.dni
+        tokens["trabajador.num_seguridad_social"] = worker.ss_affiliation_number
     if administrator is not None:
         tokens["administrador.nombre_completo"] = (
             "%s %s %s" % (administrator.given_name, administrator.first_surname, administrator.second_surname)
