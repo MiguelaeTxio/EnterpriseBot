@@ -3945,6 +3945,86 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
                             )
                         _ip_created_lines [_ip_line_num ]=_ip_line_obj 
 
+                        # S116-H07: resolución de ticket de avería también
+                        # en "Guardar tareas" -- antes solo se procesaba al
+                        # cerrar el parte, así que marcar "Avería resuelta"
+                        # y guardar tareas sin cerrar el parte no dejaba
+                        # rastro (la casilla volvía a aparecer desmarcada).
+                        # Mismo código que el bloque de cierre más abajo en
+                        # esta misma vista, adaptado a esta línea.
+                        _ip_ticket_action =_ip_ld .get ("ticket_action")
+                        _ip_t_close =_ip_ld .get ("ticket_closed",False )
+                        if _ip_ticket_action and _ip_ld .get ("machine_asset")is not None :
+                            from chat .models import BreakdownTicket as _IP_BT 
+                            from chat .ticket_resolution import get_or_create_ticket_for_machine as _ip_get_ticket 
+                            _ip_bt =None 
+                            try :
+                                if _ip_ticket_action =="create":
+                                    _ip_bt =_ip_get_ticket (
+                                    _ip_ld ["machine_asset"],cu ,
+                                    )
+                                elif _ip_ticket_action =="ask_reopen":
+                                    _ip_bt =_ip_get_ticket (
+                                    _ip_ld ["machine_asset"],cu ,
+                                    reopen =_ip_ld .get ("ticket_reopen"),
+                                    )
+                                elif _ip_ticket_action =="choose":
+                                    if _ip_ld .get ("ticket_create_new"):
+                                        _ip_bt =_ip_get_ticket (
+                                        _ip_ld ["machine_asset"],cu ,
+                                        create_new =True ,
+                                        )
+                                    else :
+                                        _ip_bt =_ip_get_ticket (
+                                        _ip_ld ["machine_asset"],cu ,
+                                        chosen_ticket_pk =_ip_ld .get ("ticket_chosen_pk"),
+                                        )
+                            except ValueError as _ip_tk_exc :
+                                logger .warning (
+                                "# [FormView/save_blocks] Resolución de"
+                                " ticket obsoleta para línea pk=%s: %s"
+                                " -- vínculo omitido, revisar manualmente.",
+                                _ip_line_obj .pk ,_ip_tk_exc ,
+                                )
+
+                            if _ip_bt is not None :
+                                _ip_line_obj .breakdown_ticket =_ip_bt 
+                                _ip_line_obj .ticket_closed =_ip_t_close 
+                                _ip_line_obj .save (update_fields =[
+                                "breakdown_ticket","ticket_closed",
+                                ])
+                                if _ip_t_close :
+                                    _ip_bt .status =_IP_BT .STATUS_CLOSED 
+                                    _ip_bt .resolved_by =cu 
+                                    _ip_bt .resolved_at =now ()
+                                    _ip_bt .save (update_fields =[
+                                    "status","resolved_by","resolved_at",
+                                    ])
+                                    logger .info (
+                                    "# [FormView/save_blocks] Ticket pk=%s"
+                                    " cerrado al guardar tareas por CU pk=%s.",
+                                    _ip_bt .pk ,cu .pk ,
+                                    )
+                                elif _ip_bt .status !=_IP_BT .STATUS_IN_PROGRESS :
+                                    _ip_prev_status =_ip_bt .status 
+                                    _ip_bt .status =_IP_BT .STATUS_IN_PROGRESS 
+                                    _ip_bt .resolved_by =None 
+                                    _ip_bt .resolved_at =None 
+                                    _ip_bt .save (update_fields =[
+                                    "status","resolved_by","resolved_at",
+                                    ])
+                                    logger .info (
+                                    "# [FormView/save_blocks] Ticket pk=%s:"
+                                    " %s -> IN_PROGRESS (línea pk=%s).",
+                                    _ip_bt .pk ,_ip_prev_status ,_ip_line_obj .pk ,
+                                    )
+                                else :
+                                    logger .info (
+                                    "# [FormView/save_blocks] Línea pk=%s"
+                                    " vinculada a ticket pk=%s (resolución: %s).",
+                                    _ip_line_obj .pk ,_ip_bt .pk ,_ip_ticket_action ,
+                                    )
+
                     # S116-H07: los números de línea que ya NO aparecen en
                     # los datos enviados son bloques que el mecánico ha
                     # quitado de verdad del formulario -- esos sí se borran
