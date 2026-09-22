@@ -1891,10 +1891,14 @@ class MiBuzonDetailView(CompanyUserRequiredMixin, View):
             ack.whatsapp_read_at = now()
             ack.save(update_fields=["whatsapp_read_at"])
 
+        from document_explorer.epi_delivery_document_service import resolve_company_fiscal_profile
+
+        company_profile = resolve_company_fiscal_profile(person.employer_company)
         rendered_content = _render_document_variables(
             ack.document_type.content_html,
             worker=person,
-            company=person.company,
+            administrator=company_profile.administrator if company_profile else None,
+            company=company_profile,
         )
 
         return render(request, self.template_name, {

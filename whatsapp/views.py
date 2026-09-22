@@ -499,10 +499,14 @@ class IncomingWhatsAppView(View):
                 if _person is not None else None
             )
             if _pending_ack is not None:
+                from document_explorer.epi_delivery_document_service import resolve_company_fiscal_profile
+
+                _company_profile = resolve_company_fiscal_profile(_person.employer_company)
                 _rendered_html = _render_document_variables(
                     _pending_ack.document_type.content_html,
                     worker=_person,
-                    company=_person.company,
+                    administrator=_company_profile.administrator if _company_profile else None,
+                    company=_company_profile,
                 )
                 _plain_text = BeautifulSoup(
                     _rendered_html, "html.parser",
