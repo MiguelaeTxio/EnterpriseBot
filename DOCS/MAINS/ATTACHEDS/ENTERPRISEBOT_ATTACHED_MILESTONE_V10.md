@@ -529,6 +529,58 @@ tarea + tipo_tarea + transición de estado en la misma operación).
 
 ## 5. Hoja de Ruta para la Siguiente Sesión
 
+### REACTIVACIÓN EN S115 (PCH desde H31) — Reparto de artículos de albarán entre partes de trabajo diarios
+
+Hito reactivado por decisión explícita de Miguel Ángel al cierre de
+S115 (que se cerraba en H31) -- releer también el resto de esta
+sección 5 y la 4-bis (diseño ya construido de anclaje de repuestos a
+`BreakdownTicket`) antes de empezar: esto es una extensión de ese
+diseño, no un punto aislado nuevo.
+
+**Requisito real, tal como lo planteó Miguel Ángel (S115):** que un
+albarán esté asignado a una máquina NO implica que todos sus
+artículos se coloquen en un único parte de trabajo. Un mecánico
+puede, en un día, colocar uno, varios, todos o ninguno de los
+artículos del albarán -- por ejemplo, desmontar lo viejo un día y
+dejar el montaje de lo nuevo para el día siguiente. El sistema debe
+contemplar todas esas posibilidades:
+
+1. **Al cerrar un parte de trabajo diario**, el mecánico debe poder
+   seleccionar qué artículos concretos del albarán asignado a esa
+   máquina se han colocado ESE día -- el resto quedan pendientes,
+   disponibles para seleccionarse en un parte posterior. El cierre
+   del parte **nunca** se supedita ni se bloquea a que se hayan
+   colocado todos los artículos del albarán, ni siquiera a que se
+   haya colocado alguno.
+2. **Al cerrar un TICKET de avería** (`BreakdownTicket`, no un parte
+   diario suelto), sí preguntar explícitamente si los artículos del
+   albarán/repuestos asignados a ese ticket se han colocado. Si la
+   respuesta es que no (olvido, pendiente real, lo que sea), quedan
+   marcados como pendientes sin resolver ("en el limbo") -- el cierre
+   del ticket tampoco se bloquea por esto, solo se registra el estado
+   real.
+3. **Primer paso ejecutable de la sesión siguiente:** releer en el
+   turno actual los modelos reales de `spare_parts`, `workorder_
+   spare_parts` y `work_order_processor` (nunca de memoria de esta
+   nota) y el diseño ya cerrado del Paso 4-bis de esta misma sección,
+   antes de diseñar el mecanismo de reparto por parte diario --
+   probablemente una tabla intermedia por (parte de trabajo, línea de
+   albarán, cantidad/artículo colocado ese día), pero confirmar contra
+   el esquema real antes de asumir nada.
+4. **Criterio de cierre:** un mecánico puede, al guardar un parte de
+   trabajo, marcar qué artículos del albarán asignado a la máquina se
+   colocaron ese día, sin que eso bloquee el guardado; los artículos
+   no marcados quedan visibles como pendientes en el propio
+   albarán/ticket; al cerrar un ticket de avería con artículos
+   pendientes, el sistema pregunta explícitamente por ellos y los dos
+   caminos (colocados / siguen pendientes) quedan registrados sin
+   bloquear el cierre.
+5. Relacionar con el modelo de Obra construido en S115 (`worksites.
+   Worksite`, ver `ENTERPRISEBOT_MASTER_DOCUMENT.md` deuda técnica
+   4.23) cuando llegue el momento de vincular albaranes/facturación a
+   una obra concreta -- no bloquea este punto, que puede avanzar
+   independientemente.
+
 ### COMPLETADO EN S040 (sesión invasora, en paralelo con la sesión principal en H29, 2026-08-04) — resuelve el PENDIENTE de S028 de abajo
 
 Ver directriz 4.11 del documento maestro para el patrón general de

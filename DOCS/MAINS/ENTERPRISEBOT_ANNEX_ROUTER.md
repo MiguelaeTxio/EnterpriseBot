@@ -33,7 +33,7 @@ Cumple dos funciones inseparables:
 | H07 | Partes Diarios de Reparación Digital | `ENTERPRISEBOT_ATTACHED_MILESTONE_V07.md` |
 | H08 | Mejoras Procesador PDF→Excel + HTMX | `ENTERPRISEBOT_ATTACHED_MILESTONE_V08.md` |
 | H09 | Informes y Analítica Cruzada | `ENTERPRISEBOT_ATTACHED_MILESTONE_V09.md` |
-| H10 | Albaranes de Proveedores y Almacén de Repuestos | `ENTERPRISEBOT_ATTACHED_MILESTONE_V10.md` |
+| H10 | Albaranes de Proveedores y Almacén de Repuestos | `ENTERPRISEBOT_ATTACHED_MILESTONE_V10.md` ← EN PROGRESO |
 | H11 | Albaranes a Clientes | `ENTERPRISEBOT_ATTACHED_MILESTONE_V11.md` |
 | H12 | Gestión Centros de Gasto | `ENTERPRISEBOT_ATTACHED_MILESTONE_V12.md` |
 | H13 | Salas de Chat IRC por Sección | `ENTERPRISEBOT_ATTACHED_MILESTONE_V13.md` |
@@ -54,7 +54,7 @@ Cumple dos funciones inseparables:
 | H28 | Migración y Reorganización de Documentación Histórica | `ENTERPRISEBOT_ATTACHED_MILESTONE_V28.md` |
 | H29 | Explorador de Archivos y Gobierno Documental del Panel sobre GCS | `ENTERPRISEBOT_ATTACHED_MILESTONE_V29.md` |
 | H30 | Vinculación Documental Real — Centros de Gasto y Personal | `ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md` |
-| H31 | Interfaz de Gestión Documental de Personal — Altas, Bajas, Sustituciones, EPIs y Circulares (título anterior: "Interfaz de Ficha de Personal — EPIs y Notificaciones/Circulares"; ampliado en S99 al fusionar H33) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md` ← EN PROGRESO |
+| H31 | Interfaz de Gestión Documental de Personal — Altas, Bajas, Sustituciones, EPIs y Circulares (título anterior: "Interfaz de Ficha de Personal — EPIs y Notificaciones/Circulares"; ampliado en S99 al fusionar H33) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md` |
 | H32 | Migraciones de Infraestructura (Modelo IA, Python, Registro Android) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V32.md` |
 | ~~H33~~ | ~~Subida de Documentación en Tiempo Real desde el Panel~~ — **FUSIONADO EN H31 el 2026-09-10 (S99)**, ver sección 6 | `ENTERPRISEBOT_ATTACHED_MILESTONE_V33.md` (conservado íntegro como archivo histórico) |
 | H34 | Modelo Propio de Clasificación de Documentos (entrenamiento) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V34.md` |
@@ -67,8 +67,28 @@ Todos los anexos viven en `DOCS/MAINS/ATTACHEDS/`.
 
 ## 3. Resultado Actual
 
-**Hito EN PROGRESO:** H31 — Interfaz de Gestión Documental de Personal
-→ `ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md`. Punto 1 (fecha
+**Hito EN PROGRESO:** H10 — Albaranes de Proveedores y Almacén de
+Repuestos → `ENTERPRISEBOT_ATTACHED_MILESTONE_V10.md`. Reactivado por
+PCH explícito de Miguel Ángel al cierre de S115 (que se cerraba en
+H31), para resolver el reparto de artículos de un albarán entre
+varios partes de trabajo diarios (un parte puede colocar 0, algunos o
+todos los artículos; el cierre de un parte nunca se bloquea por eso;
+al cerrar un ticket de avería sí se pregunta explícitamente por los
+pendientes). Ver "REACTIVACIÓN EN S115" al principio de la Sección 5
+del propio anexo para la hoja de ruta ejecutable completa.
+
+**Hito PAUSADO en S115:** H31 — Interfaz de Gestión Documental de
+Personal → `ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md`. Sesión larga:
+flujo completo de circulares por WhatsApp (plantilla creada,
+pendiente de aprobación de Meta ~24h), identidad CompanyUser↔
+PersonIdentity↔Contact unificada con sincronización automática,
+modelo real de Obra (app `worksites`), formato de carta real para los
+nombramientos. Ver "COMPLETADAS EN S115" en el anexo propio para el
+detalle completo y "Hoja de Ruta pendiente al reactivar H31" para lo
+que queda al retomarlo.
+
+**Hito EN PROGRESO (histórico, hasta S115):** H31 — Interfaz de
+Gestión Documental de Personal → `ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md`. Punto 1 (fecha
 `2016-04-27` duplicada en `CONTRATO`) **cerrado en S111**: 77/77
 personas activas con `hire_date` real y verificado -- ver
 "COMPLETADAS EN S111" en el anexo propio para el detalle completo

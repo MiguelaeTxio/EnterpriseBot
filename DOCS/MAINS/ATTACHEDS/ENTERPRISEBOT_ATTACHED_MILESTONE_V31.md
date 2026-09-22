@@ -3605,45 +3605,126 @@ necesiten firma -- se adaptará cuando llegue Docuten. Acceso al
 confianza ya existente (`CompanyUser.trusted_device_token`, cookie
 `eb_trusted_device`) -- sin token ni mecanismo de acceso nuevo.
 
-## Hoja de Ruta para la Sesión Siguiente (S115, reescrita por completo -- sustituye a la de S114)
+## COMPLETADAS EN S115
 
-1. **WhatsApp -- construir el flujo completo de envío de circulares,
-   diseño ya cerrado en S114, sin preguntas abiertas.** Comando de
-   creación de la plantilla `twilio/card` vía Content API de Twilio
-   (mismo patrón que `create_epi_delivery_whatsapp_template.py`:
-   `requests` crudo, no el SDK, por el bug conocido de
-   twilio-python#881) -- cuerpo con la coletilla aprobada + "si no lo
-   es, ignore este mensaje", botón quick-reply "Leer aquí" + botón URL
-   "Ver en navegador" hacia `/panel/mi-buzon/...`. Gestión del
-   `ButtonPayload` del botón "Leer aquí" en el webhook real
-   (`whatsapp/views.py`, mismo patrón ya existente para
-   `chat_session_renewal`) -- responde con el texto completo de la
-   circular dentro de la sesión ya abierta. Ajustar
-   `TrustDeviceQuickLoginView` (hoy redirige siempre a `/panel/` fijo)
-   para que respete `?next=` y así el enlace lleve directo a la
-   circular en cuestión. Pantalla nueva "Mi buzón" (Mi perfil),
-   protegida con login normal sin mecanismo de acceso especial.
-   Criterio de cierre: plantilla creada y sometida a aprobación de
-   Meta (SID real registrado en `WhatsAppTemplate`), botón "Leer aquí"
-   probado de verdad contra el webhook, y "Mi buzón" mostrando al
-   menos una circular real de un trabajador de prueba.
-2. **Docuten -- sigue bloqueado en espera de respuesta.** El correo
-   de solicitud ya se envió en S114 (ver COMPLETADAS). Sin ninguna
-   acción de código posible hasta que Docuten responda -- no
-   arrastrar como ítem de trabajo, solo comprobar al arrancar si ya
-   ha llegado respuesta.
-3. **Contenido real de las 7 plantillas de comunicación que aún no
-   lo tienen** (`ENTREGA_INFORMACION`, `NOMBRAMIENTO_RECURSO_
-   PREVENTIVO`, `CIRCULAR_CAMBIO_HORARIO`, `CIRCULAR_CIERRE_
-   INSTALACIONES`, `CIRCULAR_EVENTO_EMPRESA`, `CIRCULAR_PROTOCOLO_
-   ACTUACION`, y cualquier otra que se dé de alta antes de esta
-   sesión). Buscar documento de ejemplo real de cada una donde exista
-   histórico (mismo método que S114: `DocumentAcknowledgment` +
-   `DocumentIndexEntry` por `document_type`); donde no exista,
-   redactar desde cero con Miguel Ángel. Criterio de cierre:
+Sesión larga, con avance real en varios frentes de la hoja de ruta de
+S114 y varios hallazgos importantes tratados sobre la marcha:
+
+1. **Flujo de circulares por WhatsApp construido de punta a punta.**
+   Comando de gestión `create_circular_notification_whatsapp_template.py`
+   (patrón `requests` crudo, mismo que `epi_delivery_confirmation`)
+   crea la plantilla `twilio/card` real y la somete a aprobación de
+   Meta -- `content_sid=HXc54b0ea29b774f4081476bb1b3594347`, estado
+   `received`, **pendiente de aprobación de Meta al cierre de esta
+   sesión (~24h)**. `TrustDeviceQuickLoginView` ajustada para
+   respetar `?next=` (antes redirigía siempre a `/panel/`). Backend
+   de envío real (`send_circular_notification_whatsapp`, mismo
+   patrón que la confirmación de EPI) y webhook del botón "Leer
+   aquí" (`ButtonPayload=leer_aqui_circular`) que responde con el
+   texto de la circular pendiente y la marca como leída
+   (`DocumentAcknowledgment.channel`/`whatsapp_read_at`, migraciones
+   0132/0133). Pantalla nueva "Mi buzón" (listado + detalle),
+   protegida con login normal, con entrada propia en la sidebar bajo
+   "Mi perfil". Verificado end-to-end con tres `DocumentAcknowledgment`
+   de prueba reales (pk 122/123/124) creados directamente por consola
+   (sin gastar mensajes de WhatsApp reales, aprobación de Meta
+   todavía pendiente).
+2. **Fix real de un `ImportError` que tumbó el sitio en producción**
+   (commit `c96fc02`): `MiBuzonListView`/`MiBuzonDetailView` no
+   estaban reexportadas en el facade `panel/views.py`, del que
+   `urls.py` importa -- detectado y corregido con el log de error
+   real del servidor, no por suposición.
+3. **Unificación de identidad CompanyUser↔PersonIdentity↔Contact.**
+   Consulta de solo lectura real (vía GitHub Actions, sin que Miguel
+   Ángel tuviera que ejecutar nada) reveló que, de 11 CompanyUser
+   activos con DNI, 9 ya estaban bien enlazados y 2 no
+   (`miguelangel.munoz`/pk=35 y Estevao Veloso/pk=42, ambos con DNI
+   coincidente pero sin el FK escrito -- backfill de S74 nunca
+   repetido para altas posteriores). Corregido con signals reales en
+   ambos sentidos (`document_explorer.signals`/`ivr_config.signals`,
+   función compartida `document_explorer.identity_sync.
+   sync_identity_link`) para que el enlace se mantenga solo hacia
+   adelante, sin backfill manual nunca más. Además: `miguelangel.munoz`
+   (CompanyUser+User) y el Contact de pruebas `+34711509585`
+   **borrados físicamente** a petición explícita de Miguel Ángel, tras
+   confirmar contra BD real que no tenían ningún dato real enlazado
+   (0 presupuestos/unidades de asistencia con `PROTECT`, 0 tickets de
+   avería). El usuario real de Miguel Ángel es `alvarez_admin`
+   (DNI `74633524L`), ahora correctamente enlazado a su `PersonIdentity`
+   (pk=250).
+4. **Modelo real de Obra construido (app `worksites`), no aplazado
+   del todo pese a la deuda técnica 4.23** -- decisión explícita de
+   Miguel Ángel de crear ya la tabla (nombre, código autogenerado
+   `OBRA-000N`, cliente en texto libre, empresa gestora, ubicación),
+   pensada como costura para los futuros modelos Cliente/Proveedor.
+   `DocumentAcknowledgment.worksite` y variables `{{obra.*}}` en
+   `_render_document_variables`. CRUD mínimo en `/panel/obras/`
+   (solo ADMIN). Verificado con una obra de prueba real ("Mercadona
+   Summer XDD", cliente "LidoVario").
+5. **Formato real de "carta de nombramiento" para las plantillas de
+   designación** (`NOMBRAMIENTO_JEFE_MANIOBRAS`,
+   `NOMBRAMIENTO_RESPONSABLE_SEGURIDAD`), sustituyendo el formato de
+   notificación interna (COMUNICA/TRANSMITE/RECIBE) por el mismo
+   formato que un nombramiento real de Grupo Álvarez que Miguel Ángel
+   aportó como referencia (título recuadrado, FECHA/EMPRESA, "Sr.
+   D./DNI.-", "Muy Sr. nuestro:", cita legal de la Ley de PRL
+   -- copiada literal del documento real solo para "interlocutor de
+   seguridad", sin inventar base legal para "jefe de maniobras" --,
+   bloque de firmas empresa/trabajador/representante). Membrete con
+   el logo real a color de Grupo Álvarez (`grupo_alvarez_logo_color.png`,
+   aportado directamente por Miguel Ángel tras detectar que el logo
+   usado hasta entonces tiene el texto en blanco, ilegible sobre
+   fondo blanco -- mismo problema, sin corregir todavía, en el
+   membrete del flujo de email `.eml`).
+6. **Hallazgo importante, no resuelto en esta sesión:** estas
+   circulares de nombramiento no son solo una notificación al
+   trabajador -- son el documento acreditativo de la designación de
+   cara a la empresa que gestiona la obra (coordinación de
+   actividades empresariales/PRL), que habrá que poder incluir en un
+   dossier real enviado a esa empresa cliente (caso real citado por
+   Miguel Ángel: Sacyr). Registrado en la deuda técnica 4.23 del
+   documento maestro -- el modelo de datos ya está listo
+   (`DocumentAcknowledgment.worksite`), falta el mecanismo de
+   envío/generación del dossier al cliente.
+
+**Migraciones reales desplegadas esta sesión (todas confirmadas
+aplicadas en producción con datos reales, nunca solo por el icono
+verde de Actions):** `document_explorer` 0132, 0133, 0134, 0135;
+`worksites` 0001, 0002.
+
+## Hoja de Ruta pendiente al reactivar H31
+
+1. **WhatsApp -- probar el botón "Leer aquí" contra el webhook real**
+   en cuanto llegue la aprobación de Meta (SID `HXc54b0ea29b774f4081476bb1b3594347`,
+   ~24h desde el cierre de S115) -- comprobar el estado real con
+   `GET .../ApprovalRequests/whatsapp` antes de dar por bueno el
+   primer envío real.
+2. **Construir el disparador real de envío de circulares por
+   WhatsApp desde el panel** -- hoy `send_circular_notification_
+   whatsapp()` existe pero nada la llama; el envío por email sigue
+   siendo el único operativo desde `PersonalNotificationSendView`/
+   `MassSendView`. Añadir la opción de canal WhatsApp ahí (o una
+   acción paralela), reutilizando el mismo mecanismo de selección de
+   obra ya construido en "Generar documento".
+3. **Docuten -- sigue bloqueado en espera de respuesta.** Sin ninguna
+   acción de código posible hasta que Docuten responda -- comprobar
+   al arrancar si ya ha llegado respuesta.
+4. **Contenido real de las 7 plantillas de comunicación que aún no lo
+   tienen** (`ENTREGA_INFORMACION`, `NOMBRAMIENTO_RECURSO_PREVENTIVO`,
+   `CIRCULAR_CAMBIO_HORARIO`, `CIRCULAR_CIERRE_INSTALACIONES`,
+   `CIRCULAR_EVENTO_EMPRESA`, `CIRCULAR_PROTOCOLO_ACTUACION`, y
+   cualquier otra dada de alta desde entonces) -- criterio de cierre:
    `content_html` no vacío en las 7, o decisión explícita registrada
-   de dejarla vacía (mismo caso que `PLAN_ACTUACION_CALOR`).
-4. Los 2 huecos reales de documentación (Grana Álvarez, García
+   de dejarla vacía (mismo caso que `PLAN_ACTUACION_CALOR`). Si el rol
+   de la plantilla es de designación/nombramiento, aplicar el mismo
+   formato de carta real de S115 (título recuadrado, firmas), no el
+   de notificación.
+5. **Dossier de nombramientos al cliente de la obra** (hallazgo 6 de
+   S115, deuda técnica 4.23) -- diseñar el mecanismo de envío/
+   generación cuando se aborde el ecosistema Obra/Cliente/Proveedor.
+6. Los 2 huecos reales de documentación (Grana Álvarez, García
    Sánchez) siguen pendientes de que la supervisora escanee y suba
    los contratos originales -- sin acción de código pendiente, solo
    enlazar `prorroga_de` cuando lleguen.
+
+
