@@ -7,15 +7,15 @@
 {% block content %}
 <div class="container-fluid py-4">
 
-  <div class="d-flex align-items-center gap-3 mb-4">
+  <div class="mb-3">
     <a href="{% url 'panel:mi_buzon_list' %}" class="btn btn-sm btn-outline-secondary">&laquo; Mi buzón</a>
-    <h4 class="mb-0">{{ ack.document_type.label }}</h4>
   </div>
+  <h4 class="mb-4">{{ ack.document_type.label }}</h4>
 
   <p class="text-muted small">Recibida el {{ ack.delivery_date }} por WhatsApp.</p>
 
   <div class="border rounded p-3">
-    {{ ack.document_type.content_html|safe }}
+    {{ rendered_content|safe }}
   </div>
 
 </div>

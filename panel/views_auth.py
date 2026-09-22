@@ -1877,6 +1877,7 @@ class MiBuzonDetailView(CompanyUserRequiredMixin, View):
         from django.http import Http404
 
         from document_explorer.models import DocumentAcknowledgment
+        from panel.views_circulars_h31 import _render_document_variables
 
         person = getattr(request.user.company_user, "person_identity", None)
         if person is None:
@@ -1890,8 +1891,15 @@ class MiBuzonDetailView(CompanyUserRequiredMixin, View):
             ack.whatsapp_read_at = now()
             ack.save(update_fields=["whatsapp_read_at"])
 
+        rendered_content = _render_document_variables(
+            ack.document_type.content_html,
+            worker=person,
+            company=person.company,
+        )
+
         return render(request, self.template_name, {
             "ack": ack,
+            "rendered_content": rendered_content,
             "active_nav": "mi_buzon",
         })
 

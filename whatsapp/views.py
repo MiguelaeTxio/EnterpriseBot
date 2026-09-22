@@ -485,6 +485,7 @@ class IncomingWhatsAppView(View):
             from bs4 import BeautifulSoup
             from document_explorer.models import DocumentAcknowledgment as _DocAck
             from document_explorer.models import PersonIdentity as _PersonIdentity
+            from panel.views_circulars_h31 import _render_document_variables
 
             _person = _PersonIdentity.objects.filter(
                 company=company, phone=from_number,
@@ -498,8 +499,13 @@ class IncomingWhatsAppView(View):
                 if _person is not None else None
             )
             if _pending_ack is not None:
+                _rendered_html = _render_document_variables(
+                    _pending_ack.document_type.content_html,
+                    worker=_person,
+                    company=_person.company,
+                )
                 _plain_text = BeautifulSoup(
-                    _pending_ack.document_type.content_html, "html.parser",
+                    _rendered_html, "html.parser",
                 ).get_text(separator="\n").strip()
                 _reply_text = (
                     f"*{_pending_ack.document_type.label}*\n\n{_plain_text}"
