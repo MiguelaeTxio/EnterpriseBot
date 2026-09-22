@@ -1158,6 +1158,12 @@ class TrustDeviceQuickLoginView (View ):
                 "# [TRUSTED DEVICE] Acceso rápido concedido a usuario pk=%s.",
                 _user .pk ,
                 )
+                from django .utils .http import url_has_allowed_host_and_scheme 
+                _next =request .POST .get ("next","")
+                if _next and url_has_allowed_host_and_scheme (
+                _next ,allowed_hosts ={request .get_host ()},require_https =request .is_secure (),
+                ):
+                    return redirect (_next )
                 return redirect ("/panel/")
         except Exception as _exc :
             logger .warning ("# [TRUSTED DEVICE] Cookie inválida en quick-login: %s",_exc )

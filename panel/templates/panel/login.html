@@ -147,6 +147,9 @@
                     </p>
                     <form method="post" action="{% url 'panel:trust_device_quick_login' %}">
                         {% csrf_token %}
+                        {% if next %}
+                            <input type="hidden" name="next" value="{{ next }}">
+                        {% endif %}
                         <div class="d-grid mb-2">
                             <button type="submit" class="btn btn-login">
                                 <i class="bi bi-shield-check me-2"></i>Entrar
