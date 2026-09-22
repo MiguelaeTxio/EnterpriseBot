@@ -492,7 +492,7 @@ urlpatterns = [
     # rutas separadas de S74/S75, unificadas porque el proceso real
     # es el mismo (una o varias personas, uno o varios EPIs a la vez).
     path("documentacion/personal/entregar-epi/", EpiBatchDeliveryExecuteView.as_view(), name="documentation_personal_epi_batch_delivery"),
-    path("documentacion/personal/notificar/", PersonalNotificationSendView.as_view(), name="documentation_personal_notify"),
+    path("documentacion/personal/<int:pk>/notificar/", PersonalNotificationSendView.as_view(), name="documentation_personal_notify"),
     # H31 (S75) punto 1: acciones masivas sobre la selección con casillero del listado Personal.
     path("documentacion/personal/grupos/guardar/", PersonGroupTemplateSaveView.as_view(), name="documentation_personal_group_create"),
     path("documentacion/personal/grupos/<int:group_pk>/guardar/", PersonGroupTemplateSaveView.as_view(), name="documentation_personal_group_update"),
