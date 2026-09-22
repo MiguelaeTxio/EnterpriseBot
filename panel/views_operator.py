@@ -4232,12 +4232,15 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
                 synthetic_name =f"{worker_name}_{date_tag}.pdf"
 
                 if _reuse_wo is not None :
-                    # Reuse existing work order — delete previous entries first
-                    # to prevent duplication, then update status to DONE.
-                    # Reutilizar parte existente — borrar las entries previas
-                    # para evitar duplicación, luego actualizar status a DONE.
+                    # S116-H07: ya NO se borran las entries/líneas
+                    # existentes -- se reutilizan (misma causa raíz y
+                    # mismo arreglo que en "Guardar tareas", ver commit
+                    # 1bd08c7): borrar y recrear perdía en cascada
+                    # cualquier TaskPhoto/SparePartLine ya colgado de
+                    # una línea que seguía existiendo al cerrar el
+                    # parte tras haber subido una foto.
                     work_order =_reuse_wo 
-                    work_order .entries .all ().delete ()
+                    _close_existing_entry =work_order .entries .first ()
                     work_order .status =WorkOrder .Status .DONE 
                     work_order .save (update_fields =["status"])
                 else :
@@ -4254,10 +4257,15 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
                     )
                     work_order .source_pdf .name =synthetic_name 
                     work_order .save ()
+                    _close_existing_entry =None 
 
                 # Determine next page number for the new entry.
                 # Determinar el numero de pagina siguiente para la nueva entry.
-                _next_page =work_order .entries .count ()+1 
+                _next_page =(
+                _close_existing_entry .page_number 
+                if _close_existing_entry is not None 
+                else work_order .entries .count ()+1 
+                )
 
                 # Backup log — record full part payload before persisting.
                 # Serves as a temporary recovery copy in the server log.
@@ -4309,19 +4317,54 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
                 # has_diet — checkbox enviado como "1" cuando está marcado.
                 _has_diet = POST.get("has_diet", "") == "1"
 
-                entry =WorkOrderEntry .objects .create (
-                work_order =work_order ,
-                page_number =_next_page ,
-                worker_name =worker_name ,
-                work_date =work_date ,
-                uncertain_date =False ,
-                extraction_confidence =WorkOrderEntry .Confidence .HIGH ,
-                raw_gemini_response =None ,
-                lunch_break_start =None if _no_lunch_break else _lb_start ,
-                lunch_break_end =None if _no_lunch_break else _lb_end ,
-                no_lunch_break =_no_lunch_break ,
-                has_diet =_has_diet ,
-                )
+                entry =_close_existing_entry 
+                if entry is not None :
+                    entry .worker_name =worker_name 
+                    entry .work_date =work_date 
+                    entry .uncertain_date =False 
+                    entry .extraction_confidence =WorkOrderEntry .Confidence .HIGH 
+                    entry .lunch_break_start =None if _no_lunch_break else _lb_start 
+                    entry .lunch_break_end =None if _no_lunch_break else _lb_end 
+                    entry .no_lunch_break =_no_lunch_break 
+                    entry .has_diet =_has_diet 
+                    entry .save (update_fields =[
+                    "worker_name","work_date","uncertain_date",
+                    "extraction_confidence","lunch_break_start",
+                    "lunch_break_end","no_lunch_break","has_diet",
+                    ])
+                else :
+                    entry =WorkOrderEntry .objects .create (
+                    work_order =work_order ,
+                    page_number =_next_page ,
+                    worker_name =worker_name ,
+                    work_date =work_date ,
+                    uncertain_date =False ,
+                    extraction_confidence =WorkOrderEntry .Confidence .HIGH ,
+                    raw_gemini_response =None ,
+                    lunch_break_start =None if _no_lunch_break else _lb_start ,
+                    lunch_break_end =None if _no_lunch_break else _lb_end ,
+                    no_lunch_break =_no_lunch_break ,
+                    has_diet =_has_diet ,
+                    )
+
+                # S116-H07: mismo arreglo que en "Guardar tareas" -- capturar
+                # las líneas ya existentes de esta entrada por número de
+                # línea, para actualizarlas en su sitio (preserva TaskPhoto)
+                # en vez de borrarlas y recrearlas.
+                _close_existing_lines_by_num ={
+                l .line_number :l for l in entry .lines .all ()
+                }
+
+                # SparePartLine ya no se borra en cascada para las líneas
+                # que persisten (se actualizan, no se recrean) -- limpiar
+                # aquí, ANTES del bucle de líneas (los repuestos se
+                # consumen dentro de ese mismo bucle, vía consume_part_pks/
+                # consume_warehouse_items, y no deben perderse justo
+                # después de crearse). Mismo efecto neto que el borrado en
+                # cascada de antes, sin arrastrar TaskPhoto.
+                SparePartLine .objects .filter (
+                entry_line__in =_close_existing_lines_by_num .values ()
+                ).delete ()
 
                 created_lines ={}
                 created_line_pks =[]
@@ -4398,9 +4441,7 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
                     else :
                         _delta_net =_delta_raw 
 
-                    line =WorkOrderEntryLine .objects .create (
-                    entry =entry ,
-                    line_number =ld ["line_number"],
+                    _line_fields =dict (
                     machine_asset =ld ["machine_asset"],
                     machine_raw =ld ["machine_raw"],
                     machine_norm =ld ["machine_norm"],
@@ -4416,6 +4457,25 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
                     crane_hours_reading =ld .get ("crane_hours_reading"),
                     is_on_site =ld .get ("is_on_site", False),
                     )
+                    # S116-H07: actualizar en su sitio si el número de línea
+                    # ya existía en esta entrada (preserva pk -> TaskPhoto),
+                    # crear solo si es realmente nueva.
+                    _close_existing_line =_close_existing_lines_by_num .pop (
+                    _line_num ,None ,
+                    )
+                    if _close_existing_line is not None :
+                        for _close_field ,_close_value in _line_fields .items ():
+                            setattr (_close_existing_line ,_close_field ,_close_value )
+                        _close_existing_line .save (
+                        update_fields =list (_line_fields .keys ())
+                        )
+                        line =_close_existing_line 
+                    else :
+                        line =WorkOrderEntryLine .objects .create (
+                        entry =entry ,
+                        line_number =ld ["line_number"],
+                        **_line_fields ,
+                        )
                     created_lines [ld ["line_number"]]=line 
                     created_line_pks .append (line .pk )
 
@@ -4635,6 +4695,14 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
                                 _wh_item["entry_pk"], line.pk,
                                 _consume_wh_exc,
                             )
+
+                # S116-H07: los números de línea que ya no aparecen en los
+                # datos enviados son tareas quitadas de verdad -- esas sí
+                # se borran (con su TaskPhoto/SparePartLine, correcto
+                # porque la tarea entera desaparece). Las que persisten ya
+                # se actualizaron arriba, nunca llegan aquí.
+                for _close_removed_line in _close_existing_lines_by_num .values ():
+                    _close_removed_line .delete ()
 
                 for spd in spare_parts_data :
 
