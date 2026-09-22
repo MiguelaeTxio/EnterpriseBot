@@ -1,0 +1,72 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/worksites/worksite_list.html #}
+{# H31 (S115). Listado y alta simple de Obras -- ver deuda tecnica 4.23 del documento maestro. #}
+{% extends "panel/base.html" %}
+
+{% block title %}Obras{% endblock %}
+{% block page_title %}Obras{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-3 pt-3">
+
+    <p class="text-muted small mb-3">
+        Obras a las que se pueden ligar circulares (y, en el futuro,
+        albaranes y facturación). Primer alcance: solo nombre, código,
+        cliente y ubicación libres -- ver deuda técnica 4.23 del
+        documento maestro para el diseño completo previsto.
+    </p>
+
+    <div class="card mb-4">
+        <div class="card-body">
+            <h6 class="card-title">Nueva obra</h6>
+            <form method="post" action="{% url 'panel:worksites_list' %}" class="row g-2 align-items-end">
+                {% csrf_token %}
+                <div class="col-12 col-md-3">
+                    <label class="form-label small mb-1">Nombre</label>
+                    <input type="text" class="form-control form-control-sm" name="name" required>
+                </div>
+                <div class="col-12 col-md-2">
+                    <label class="form-label small mb-1">Código</label>
+                    <input type="text" class="form-control form-control-sm" name="code">
+                </div>
+                <div class="col-12 col-md-3">
+                    <label class="form-label small mb-1">Cliente</label>
+                    <input type="text" class="form-control form-control-sm" name="client_name">
+                </div>
+                <div class="col-12 col-md-3">
+                    <label class="form-label small mb-1">Ubicación</label>
+                    <input type="text" class="form-control form-control-sm" name="address">
+                </div>
+                <div class="col-12 col-md-1">
+                    <button type="submit" class="btn btn-sm btn-primary w-100">Añadir</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <table class="table table-sm">
+        <thead>
+            <tr>
+                <th>Nombre</th>
+                <th>Código</th>
+                <th>Cliente</th>
+                <th>Ubicación</th>
+                <th>Activa</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for worksite in worksites %}
+            <tr>
+                <td>{{ worksite.name }}</td>
+                <td>{{ worksite.code }}</td>
+                <td>{{ worksite.client_name }}</td>
+                <td>{{ worksite.address }}</td>
+                <td>{% if worksite.is_active %}Sí{% else %}No{% endif %}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="5" class="text-muted">Todavía no hay ninguna obra dada de alta.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+</div>
+{% endblock %}

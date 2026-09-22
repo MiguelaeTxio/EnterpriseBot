@@ -15,6 +15,7 @@ from panel.views_task_photos import (
     TaskPhotoUploadView,
     TaskPhotoWidgetView,
 )
+from panel.views_worksites import WorksiteListView
 from panel.views_circulars_h31 import (
     CircularCreateView,
     CircularEditView,
@@ -507,6 +508,7 @@ urlpatterns = [
     path("documentacion/lotes-epi/<int:template_pk>/eliminar/", EpiBatchTemplateDeleteView.as_view(), name="epi_batch_template_delete"),
     # H31 (S75) punto 2: CRUD de circulares/notificaciones.
     path("documentacion/circulares/", CircularListView.as_view(), name="circulars_list"),
+    path("obras/", WorksiteListView.as_view(), name="worksites_list"),
     path("documentacion/circulares/nueva/", CircularCreateView.as_view(), name="circulars_create"),
     path("documentacion/circulares/<int:pk>/", CircularEditView.as_view(), name="circulars_edit"),
     path("documentacion/circulares/<int:pk>/guardar-contenido/", CircularSaveContentView.as_view(), name="circulars_save_content"),

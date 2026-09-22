@@ -471,15 +471,14 @@ class CircularExportWordView(DocsUploadAccessMixin, View):
         return response
 
 
-def _render_document_variables(content_html, *, worker=None, administrator=None, company=None):
+def _render_document_variables(content_html, *, worker=None, administrator=None, company=None, worksite=None):
     """
-    H31 (S114). Primer paso de "documentos programáticos" pedido por
-    Miguel Ángel: sustituye tokens `{{...}}` del `content_html` de una
-    plantilla por datos reales de la persona/empresa elegidas al
-    generar. Un token sin dato disponible (p. ej. {{empresa.cif}} sin
-    empresa elegida) se deja tal cual, nunca se sustituye por vacío a
-    ciegas -- así un fallo de selección se ve en el documento en vez
-    de desaparecer en silencio.
+    H31 (S114, ampliado S115 con {{obra.*}}). Sustituye tokens
+    `{{...}}` del `content_html` de una plantilla por datos reales de
+    la persona/empresa/obra elegidas al generar. Un token sin dato
+    disponible (p. ej. {{empresa.cif}} sin empresa elegida) se deja
+    tal cual, nunca se sustituye por vacío a ciegas -- así un fallo de
+    selección se ve en el documento en vez de desaparecer en silencio.
     """
     tokens = {}
     if worker is not None:
@@ -497,6 +496,10 @@ def _render_document_variables(content_html, *, worker=None, administrator=None,
         tokens["empresa.razon_social"] = company.legal_name
         tokens["empresa.cif"] = company.tax_id
         tokens["empresa.direccion_fiscal"] = company.fiscal_address
+    if worksite is not None:
+        tokens["obra.nombre"] = worksite.name
+        tokens["obra.direccion"] = worksite.address
+        tokens["obra.cliente"] = worksite.client_name
     tokens["fecha"] = timezone.now().strftime("%d/%m/%Y")
 
     result = content_html
@@ -565,9 +568,12 @@ class CircularGenerateView(DocsUploadAccessMixin, View):
         companies = CompanyFiscalProfile.objects.select_related(
             "administrator",
         ).order_by("legal_name")
+        from worksites.models import Worksite
+        worksites = Worksite.objects.filter(is_active=True).order_by("name")
         return render(request, "panel/circulars_h31/circular_generate.html", {
             "document_type": document_type,
             "companies": companies,
+            "worksites": worksites,
         })
 
     def post(self, request, pk):
@@ -578,9 +584,16 @@ class CircularGenerateView(DocsUploadAccessMixin, View):
         worker = get_object_or_404(PersonIdentity, pk=request.POST.get("person_id"))
         administrator = company.administrator
 
+        worksite = None
+        worksite_id = request.POST.get("worksite_id", "").strip()
+        if worksite_id:
+            from worksites.models import Worksite
+            worksite = get_object_or_404(Worksite, pk=worksite_id)
+
         rendered_body = _render_document_variables(
             document_type.content_html, worker=worker,
             administrator=administrator, company=company,
+            worksite=worksite,
         )
         html_content = (
             "<!DOCTYPE html><html lang='es'><head><meta charset='utf-8'>"

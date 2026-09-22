@@ -495,7 +495,7 @@ class IncomingWhatsAppView(View):
                     person=_person,
                     channel=_DocAck.CHANNEL_WHATSAPP,
                     whatsapp_read_at__isnull=True,
-                ).select_related("document_type").order_by("-created_at").first()
+                ).select_related("document_type", "worksite").order_by("-created_at").first()
                 if _person is not None else None
             )
             if _pending_ack is not None:
@@ -507,6 +507,7 @@ class IncomingWhatsAppView(View):
                     worker=_person,
                     administrator=_company_profile.administrator if _company_profile else None,
                     company=_company_profile,
+                    worksite=_pending_ack.worksite,
                 )
                 _plain_text = BeautifulSoup(
                     _rendered_html, "html.parser",

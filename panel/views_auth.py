@@ -1884,7 +1884,7 @@ class MiBuzonDetailView(CompanyUserRequiredMixin, View):
             raise Http404("No hay ninguna persona de plantilla vinculada a este usuario.")
 
         ack = get_object_or_404(
-            DocumentAcknowledgment.objects.select_related("document_type"),
+            DocumentAcknowledgment.objects.select_related("document_type", "worksite"),
             pk=pk, person=person,
         )
         if ack.whatsapp_read_at is None:
@@ -1899,6 +1899,7 @@ class MiBuzonDetailView(CompanyUserRequiredMixin, View):
             worker=person,
             administrator=company_profile.administrator if company_profile else None,
             company=company_profile,
+            worksite=ack.worksite,
         )
 
         return render(request, self.template_name, {

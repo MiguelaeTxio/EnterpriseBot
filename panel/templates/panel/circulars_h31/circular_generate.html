@@ -53,6 +53,16 @@ CircularGenerateView/CircularGeneratePersonSearchView.
                 </select>
             </div>
 
+            <div class="mb-3">
+                <label class="form-label small fw-bold">Obra (opcional)</label>
+                <select class="form-select" name="worksite_id">
+                    <option value="">Sin obra asociada</option>
+                    {% for worksite in worksites %}
+                    <option value="{{ worksite.pk }}">{{ worksite.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
             <div class="mb-3 position-relative">
                 <label class="form-label small fw-bold">Trabajador</label>
                 <input type="text" class="form-control" id="circular-generate-person-input"

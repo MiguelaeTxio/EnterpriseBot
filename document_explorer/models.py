@@ -2321,6 +2321,19 @@ class DocumentAcknowledgment(models.Model):
             "botón (el más reciente con este campo nulo)."
         ),
     )
+    worksite = models.ForeignKey(
+        "worksites.Worksite",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="document_acknowledgments",
+        verbose_name="Obra",
+        help_text=(
+            "H31 (S115). Obra a la que se refiere esta circular concreta "
+            "(p. ej. NOMBRAMIENTO_JEFE_MANIOBRAS), si aplica. Nula para "
+            "circulares generales sin obra asociada."
+        ),
+    )
     created_at = models.DateTimeField(
         auto_now_add=True,
         verbose_name="Fecha de registro",

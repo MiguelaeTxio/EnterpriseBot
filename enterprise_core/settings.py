@@ -118,6 +118,11 @@ INSTALLED_APPS = [
     # explorer — explorador de archivos y gobierno documental sobre
     # Google Cloud Storage (Hito 29).
     'document_explorer',
+    # Real worksite ("obra") model -- seam for future Cliente/Proveedor/
+    # facturación models (H31, S115, deuda técnica 4.23) -- modelo real de
+    # obra, pensado como costura para los futuros modelos de Cliente/
+    # Proveedor/facturación.
+    'worksites',
 ]
 
 # Middleware stack optimized for async processing in Django 5.2.12.
