@@ -137,6 +137,17 @@
                             </a>
                         </li>
                     {% endif %}
+                    {# Mi buzón -- H31 (S115). Circulares/notificaciones     #}
+                    {# recibidas por WhatsApp, visible para todos los roles #}
+                    {# de esta sección (mismo criterio de acceso que Mi     #}
+                    {# perfil -- CompanyUserRequiredMixin, sin restricción  #}
+                    {# de rol propia). #}
+                    <li class="nav-item">
+                        <a class="nav-link {% if active_nav == 'mi_buzon' %}active{% endif %}"
+                           href="{% url 'panel:mi_buzon_list' %}">
+                            <i class="bi bi-envelope"></i>Mi buzón
+                        </a>
+                    </li>
                     {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
                         <li class="nav-item">
                             <a class="nav-link {% if active_nav == 'presence' %}active{% endif %}"
@@ -760,6 +771,7 @@
     // Actualizado 2026-07-08 tras la reestructuración de la sidebar.
     var NAV_TO_ACC = {
         'own_profile':              'acc-mi-perfil',
+        'mi_buzon':                 'acc-mi-perfil',
         'presence':                 'acc-mi-perfil',
         'callflows':                'acc-telefonia',
         'phonenumbers':             'acc-telefonia',

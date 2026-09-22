@@ -39,3 +39,16 @@ class DocumentExplorerConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
     name = "document_explorer"
     verbose_name = "Explorador de Archivos y Gobierno Documental"
+
+    def ready(self) -> None:
+        """
+        Imports document_explorer.signals to register the PersonIdentity
+        post_save handler (identity_sync, H31/S115) when the app is fully
+        loaded -- same canonical pattern as ivr_config.apps.
+        ---
+        Importa document_explorer.signals para registrar el manejador
+        post_save de PersonIdentity (identity_sync, H31/S115) cuando la
+        app está completamente cargada -- mismo patrón canónico que
+        ivr_config.apps.
+        """
+        import document_explorer.signals  # noqa: F401

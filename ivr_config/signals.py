@@ -398,3 +398,26 @@ def auto_manage_section_call_flow(sender, instance, created, **kwargs):
             instance.name,
             instance.pk,
         )
+
+
+# ---------------------------------------------------------------------------
+# CompanyUser <-> PersonIdentity identity sync (H31, S115)
+# ---------------------------------------------------------------------------
+
+@receiver(post_save, sender="ivr_config.CompanyUser")
+def company_user_saved(sender, instance, **kwargs):
+    """
+    Ensures PersonIdentity.company_user is kept in sync whenever a
+    CompanyUser is created or updated -- reverse direction of
+    document_explorer.signals.person_identity_saved. See
+    document_explorer.identity_sync for the shared logic and the real
+    incident that motivated this (H31/S115).
+    ---
+    Asegura que PersonIdentity.company_user se mantenga sincronizada
+    cada vez que se crea o actualiza un CompanyUser -- dirección
+    inversa de document_explorer.signals.person_identity_saved. Ver
+    document_explorer.identity_sync para la lógica compartida y el
+    incidente real que lo motivó (H31/S115).
+    """
+    from document_explorer.identity_sync import sync_identity_link
+    sync_identity_link(instance.dni)

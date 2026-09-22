@@ -1854,7 +1854,7 @@ class MiBuzonListView(CompanyUserRequiredMixin, View):
         return render(request, self.template_name, {
             "person": person,
             "circulars": circulars,
-            "active_nav": "own_profile",
+            "active_nav": "mi_buzon",
         })
 
 
@@ -1892,7 +1892,7 @@ class MiBuzonDetailView(CompanyUserRequiredMixin, View):
 
         return render(request, self.template_name, {
             "ack": ack,
-            "active_nav": "own_profile",
+            "active_nav": "mi_buzon",
         })
 
 
