@@ -2,10 +2,14 @@
 {% extends "panel/base.html" %}
 
 {% comment %}
-H31 (S75) punto 2, corregido de raíz en S114. Listado de tipos
-documentales marcados como plantilla de comunicación
-(is_notification_template=True) -- estado de content_html y de
-current_template de un vistazo. Ver CircularListView.
+H31 (S75) punto 2, corregido de raíz en S114, simplificado de nuevo en
+S114: Miguel Ángel, viendo las dos columnas separadas (contenido
+enriquecido / plantilla en archivo) -- "eso es un poco lioso [...]
+al usuario final realmente le da igual de dónde venga la plantilla
+[...] lo que realmente importa es que tenga o no tenga plantilla".
+Una sola columna "Plantilla": Sí si hay content_html O
+current_template (cualquiera de los dos cuenta), No solo si no hay
+ninguno de los dos -- nunca expone de dónde viene. Ver CircularListView.
 {% endcomment %}
 
 {% block title %}Circulares y notificaciones{% endblock %}
@@ -18,11 +22,8 @@ current_template de un vistazo. Ver CircularListView.
         <p class="text-muted small mb-0">
             Plantillas de comunicación reutilizables (circulares/
             notificaciones) -- nunca el catálogo completo de
-            documentos de persona. Cada fila puede tener contenido
-            enriquecido (`content_html`, se envía por email desde la
-            ficha de persona, y se descarga en PDF/Word) y/o una
-            plantilla en archivo (legacy, `current_template`) --
-            ambos coexisten, se pueden usar por separado.
+            documentos de persona. Desde cada una se puede editar,
+            generar un documento real y descargar en PDF/Word.
         </p>
         <a class="btn btn-sm btn-outline-secondary" href="{% url 'panel:documentation_hub' %}">
             <i class="bi bi-arrow-left"></i> Volver a Documentación
@@ -71,8 +72,7 @@ current_template de un vistazo. Ver CircularListView.
                     <th>Nombre visible</th>
                     <th>Código</th>
                     <th>Dominio</th>
-                    <th>Contenido enriquecido</th>
-                    <th>Plantilla vigente</th>
+                    <th>Plantilla</th>
                     <th></th>
                 </tr>
             </thead>
@@ -83,17 +83,10 @@ current_template de un vistazo. Ver CircularListView.
                     <td class="font-monospace small">{{ doc_type.code }}</td>
                     <td>{{ doc_type.get_domain_display }}</td>
                     <td>
-                        {% if doc_type.content_html %}
+                        {% if doc_type.content_html or doc_type.current_template %}
                         <span class="badge bg-success">Sí</span>
                         {% else %}
-                        <span class="badge bg-secondary">Vacío</span>
-                        {% endif %}
-                    </td>
-                    <td>
-                        {% if doc_type.current_template %}
-                        <span class="badge bg-success">{{ doc_type.current_template.name }}</span>
-                        {% else %}
-                        <span class="badge bg-secondary">Sin plantilla</span>
+                        <span class="badge bg-secondary">No</span>
                         {% endif %}
                     </td>
                     <td class="text-end">
@@ -103,7 +96,7 @@ current_template de un vistazo. Ver CircularListView.
                     </td>
                 </tr>
                 {% empty %}
-                <tr><td colspan="6" class="text-muted small py-3">No hay circulares dadas de alta todavía.</td></tr>
+                <tr><td colspan="5" class="text-muted small py-3">No hay circulares dadas de alta todavía.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
