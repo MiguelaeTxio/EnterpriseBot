@@ -1114,6 +1114,75 @@ def generate_period_excel(self, work_order_id: int) -> None:
         )
 
 
+def _register_task_photo_in_index(blob_name: str) -> None:
+    """
+    Registers a just-uploaded TaskPhoto blob in the document index
+    (H29) immediately, mirroring document_explorer.views.
+    RegisterUploadedObjectView -- Miguel Ángel was explicit (S040)
+    that the panel must never depend on a manual/periodic refresh to
+    see a file that genuinely already exists in GCS: "no debe de ser
+    necesario refrescar desde Google Cloud Storage."
+
+    TaskPhoto's own upload flow (H7/S016, migrated to GCS in S022)
+    predates that convention and had never been wired to it --
+    confirmed real gap (S116-H07): the photo was genuinely landing in
+    TASK_PHOTOS_BUCKET, but "Fotos Partes" showed empty in the
+    explorer because nothing had ever told the index it existed.
+
+    Never blocks or retries the upload itself if this fails -- the
+    photo is already safely in GCS at this point (see caller); a
+    missing index row just means it stays invisible in the explorer
+    until the next periodic refresh, not that anything is lost.
+
+    ---
+
+    Registra un blob de TaskPhoto recién subido en el índice
+    documental (H29) de inmediato, replicando document_explorer.
+    views.RegisterUploadedObjectView -- Miguel Ángel fue explícito
+    (S040) en que el panel nunca debe depender de un refresco manual/
+    periódico para ver un archivo que ya existe de verdad en GCS: "no
+    debe de ser necesario refrescar desde Google Cloud Storage."
+
+    El propio flujo de subida de TaskPhoto (H7/S016, migrado a GCS en
+    S022) es anterior a esa convención y nunca se enganchó a ella --
+    hueco real confirmado (S116-H07): la foto sí llegaba de verdad a
+    TASK_PHOTOS_BUCKET, pero "Fotos Partes" salía vacía en el
+    explorador porque nada le había dicho nunca al índice que
+    existía.
+
+    Nunca bloquea ni reintenta la subida en sí si esto falla -- la
+    foto ya está a salvo en GCS en este punto (ver quien llama); que
+    falte la fila de índice solo significa que queda invisible en el
+    explorador hasta el siguiente refresco periódico, no que se
+    pierda nada.
+    """
+    from document_explorer import index_writer as _idx_writer
+    from spare_parts.gcs_service import TASK_PHOTOS_BUCKET as _idx_bucket
+    from spare_parts.gcs_service import get_storage_client as _idx_get_client
+
+    client = _idx_get_client()
+    blob = client.bucket(_idx_bucket).get_blob(blob_name)
+    if blob is None:
+        logger.warning(
+            "# [Tarea] Registro en índice documental: blob=%s no "
+            "encontrado todavía en %s -- se omite (quedará para el "
+            "siguiente refresco periódico).",
+            blob_name, _idx_bucket,
+        )
+        return
+
+    parent_path, _ = _idx_writer.split_path(blob_name)
+    row = _idx_writer.file_row(blob)
+    with transaction.atomic():
+        _idx_writer.ensure_folder_chain(_idx_bucket, parent_path)
+        _idx_writer.persist_rows(_idx_bucket, [row])
+        _idx_writer.recount_children(
+            _idx_bucket,
+            folder_paths=_idx_writer.ancestors_of(parent_path),
+        )
+        _idx_writer.link_domain_objects(_idx_bucket)
+
+
 @app.task(base=DjangoTask, bind=True, max_retries=3, default_retry_delay=60)
 def upload_task_photo_to_drive(self, task_photo_id: int) -> None:
     """
@@ -1173,6 +1242,17 @@ def upload_task_photo_to_drive(self, task_photo_id: int) -> None:
     photo.gcs_blob_name = blob_name
     photo.image.delete(save=False)
     photo.save(update_fields=["gcs_blob_name", "image"])
+
+    try :
+        _register_task_photo_in_index (blob_name )
+    except Exception :
+        logger .exception (
+        "# [Tarea] TaskPhoto #%d subida a GCS pero fallo registrando "
+        "en el índice documental (H29) -- el archivo existe en el "
+        "cubo pero no aparecerá en el explorador hasta un refresco "
+        "periódico. blob=%s",
+        task_photo_id ,blob_name ,
+        )
 
     logger.info(
         "# [Tarea] TaskPhoto #%d subida a Google Cloud Storage (blob=%s) "
