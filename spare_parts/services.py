@@ -892,6 +892,80 @@ def resolve_document_assignment(
     return 'UNASSIGNED', None
 
 
+def detect_machine_code_discrepancy(handwritten_code, raw_code, company):
+    """
+    Detects a real disagreement between the handwritten annotation and
+    the printed code of a delivery note (S116-H10, reactivación S115
+    punto 2, petición explícita de Miguel Ángel: los proveedores
+    colocan el código de máquina en sitios distintos del documento, y
+    hasta ahora el manuscrito ganaba en silencio -- sin comparar nunca
+    contra el impreso).
+
+    Resolves both codes independently via resolve_line_assignment()
+    (the same resolver the automatic extraction path uses) and only
+    reports a discrepancy when BOTH resolve to a real destination
+    (WAREHOUSE or an actual MachineAsset) and those destinations are
+    different. A code that fails to resolve at all (UNASSIGNED) is
+    OCR noise, not a genuine second candidate -- reporting it as a
+    "discrepancy" would flag garbled text as if it were a real
+    conflict, which is not what Miguel Ángel described ("la nota
+    manuscrita dice una cosa, el resto del albarán dice otra").
+
+    Returns None when there is nothing to disambiguate (either code
+    empty, either code unresolved, or both resolve to the same
+    destination). Otherwise returns a dict with both candidate
+    resolutions for the review screen to present.
+
+    ---
+
+    Detecta un desacuerdo real entre la anotación manuscrita y el
+    código impreso de un albarán (S116-H10, reactivación S115 punto
+    2, petición explícita de Miguel Ángel: los proveedores colocan el
+    código de máquina en sitios distintos del documento, y hasta
+    ahora el manuscrito ganaba en silencio -- sin comparar nunca
+    contra el impreso).
+
+    Resuelve ambos códigos por separado vía resolve_line_assignment()
+    (el mismo resolver que usa la vía automática de extracción) y
+    solo reporta discrepancia cuando AMBOS resuelven a un destino
+    real (Almacén o una MachineAsset real) y esos destinos son
+    distintos. Un código que no resuelve a nada (UNASSIGNED) es ruido
+    de OCR, no un segundo candidato genuino -- reportarlo como
+    "discrepancia" marcaría texto mal leído como si fuera un
+    conflicto real, que no es lo que describió Miguel Ángel ("la nota
+    manuscrita dice una cosa, el resto del albarán dice otra").
+
+    Devuelve None cuando no hay nada que dilucidar (algún código
+    vacío, algún código sin resolver, o ambos resuelven al mismo
+    destino). Si no, devuelve un diccionario con las dos resoluciones
+    candidatas para que la pantalla de revisión las presente.
+    """
+    handwritten_code = (handwritten_code or '').strip()
+    raw_code = (raw_code or '').strip()
+    if not handwritten_code or not raw_code:
+        return None
+
+    hw_type, hw_machine = resolve_line_assignment(handwritten_code, company)
+    pr_type, pr_machine = resolve_line_assignment(raw_code, company)
+
+    if hw_type == 'UNASSIGNED' or pr_type == 'UNASSIGNED':
+        return None
+
+    hw_key = (hw_type, hw_machine.pk if hw_machine else None)
+    pr_key = (pr_type, pr_machine.pk if pr_machine else None)
+    if hw_key == pr_key:
+        return None
+
+    return {
+        'handwritten_code': handwritten_code,
+        'handwritten_type': hw_type,
+        'handwritten_machine': hw_machine,
+        'printed_code': raw_code,
+        'printed_type': pr_type,
+        'printed_machine': pr_machine,
+    }
+
+
 def validate_document_assignment(delivery_note, company):
     """
     Validates the mandatory whole-document assignment rule (annex
@@ -905,11 +979,15 @@ def validate_document_assignment(delivery_note, company):
     must re-upload a clearer photo instead of editing the data
     (confirmed by Miguel Ángel, S015).
 
-    Returns a tuple (is_valid, reason, assignment_type, machine).
-    reason is a human-readable Spanish string explaining the specific
-    rejection cause, or None if is_valid is True. assignment_type/
-    machine are the resolved target when is_valid, else
-    ('UNASSIGNED', None).
+    Returns a tuple (is_valid, reason, assignment_type, machine,
+    discrepancy). reason is a human-readable Spanish string
+    explaining the specific rejection cause, or None if is_valid is
+    True. assignment_type/machine are the resolved target when
+    is_valid, else ('UNASSIGNED', None). discrepancy is the dict
+    returned by detect_machine_code_discrepancy() when the rejection
+    is specifically a handwritten-vs-printed disagreement (S116-H10),
+    or None for every other case (missing code, unresolved code,
+    ambiguous placement, or a valid result).
 
     ---
 
@@ -925,11 +1003,15 @@ def validate_document_assignment(delivery_note, company):
     operario debe volver a subir una foto más clara en vez de
     corregir el dato (confirmado por Miguel Ángel, S015).
 
-    Devuelve una tupla (is_valid, reason, assignment_type, machine).
-    reason es un texto en castellano legible explicando el motivo
-    concreto de rechazo, o None si is_valid es True. assignment_type/
-    machine son el destino resuelto cuando is_valid, si no
-    ('UNASSIGNED', None).
+    Devuelve una tupla (is_valid, reason, assignment_type, machine,
+    discrepancy). reason es un texto en castellano legible explicando
+    el motivo concreto de rechazo, o None si is_valid es True.
+    assignment_type/machine son el destino resuelto cuando is_valid,
+    si no ('UNASSIGNED', None). discrepancy es el diccionario que
+    devuelve detect_machine_code_discrepancy() cuando el rechazo es
+    específicamente un desacuerdo manuscrito-vs-impreso (S116-H10), o
+    None para cualquier otro caso (código ausente, código sin
+    resolver, colocación ambigua, o un resultado válido).
 
     S040: se añade handwritten_machine_code_raw (columna propia del
     modelo, igual que general_machine_code_raw) como fuente
@@ -960,7 +1042,7 @@ def validate_document_assignment(delivery_note, company):
             'en la línea -- o el operario puede anotarlo a mano, '
             'igualmente delimitado -- antes de volver a '
             'fotografiarlo.',
-            'UNASSIGNED', None,
+            'UNASSIGNED', None, None,
         )
 
     warehouse_keyword_found = bool(
@@ -978,7 +1060,26 @@ def validate_document_assignment(delivery_note, company):
             'stock/almacén) en el albarán. El proveedor o el '
             'operario deben anotarlo antes de volver a '
             'fotografiarlo.',
-            'UNASSIGNED', None,
+            'UNASSIGNED', None, None,
+        )
+
+    # S116-H10: los proveedores anotan el código de máquina en sitios
+    # distintos del documento -- comprobar ANTES de resolver el
+    # destino final si manuscrito e impreso, cuando ambos existen,
+    # discrepan de verdad (ambos resuelven, a destinos distintos).
+    # Hasta ahora el manuscrito prevalecía en silencio (S040); ahora
+    # se pregunta explícitamente en vez de decidir por el operario.
+    discrepancy = detect_machine_code_discrepancy(
+        handwritten_code, raw_code, company,
+    )
+    if discrepancy is not None:
+        return (
+            False,
+            f'La nota manuscrita dice «{discrepancy["handwritten_code"]}» '
+            f'y el resto del albarán dice «{discrepancy["printed_code"]}» '
+            f'-- no coinciden. Elige cuál es correcto, o escribe otro '
+            f'código, antes de confirmar.',
+            'UNASSIGNED', None, discrepancy,
         )
 
     assignment_type, machine = resolve_document_assignment(
@@ -993,10 +1094,10 @@ def validate_document_assignment(delivery_note, company):
             f'reconoce como ninguna máquina ni departamento de la '
             f'empresa. Revisa que esté escrito correctamente en el '
             f'albarán físico y vuelve a fotografiarlo.',
-            'UNASSIGNED', None,
+            'UNASSIGNED', None, None,
         )
 
-    return (True, None, assignment_type, machine)
+    return (True, None, assignment_type, machine, None)
 
 
 def generate_internal_reference(company):

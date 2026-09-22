@@ -29,6 +29,7 @@ from .services import (
     confirm_credit_note,
     confirm_delivery_note,
     preview_credit_note_matches,
+    resolve_line_assignment,
     validate_document_assignment,
 )
 from .tasks import extract_delivery_note_data, upload_delivery_note_photo_to_drive
@@ -211,6 +212,7 @@ class DeliveryNoteDetailView(CompanyUserRequiredMixin, View):
 
         is_valid, rejection_reason = True, None
         resolved_type, resolved_machine = None, None
+        discrepancy = None
         credit_note_matches = None
         if delivery_note.status == 'PROCESSED':
             if delivery_note.note_type == DeliveryNote.NOTE_TYPE_CREDIT_NOTE:
@@ -227,9 +229,10 @@ class DeliveryNoteDetailView(CompanyUserRequiredMixin, View):
                         'revisa el detalle de cada línea abajo.'
                     )
             else:
-                is_valid, rejection_reason, resolved_type, resolved_machine = (
-                    validate_document_assignment(delivery_note, company)
-                )
+                (
+                    is_valid, rejection_reason, resolved_type,
+                    resolved_machine, discrepancy,
+                ) = validate_document_assignment(delivery_note, company)
 
         # S025: lista de máquinas/centros de gasto para el desplegable
         # de asignación manual -- solo se necesita cuando la
@@ -241,6 +244,7 @@ class DeliveryNoteDetailView(CompanyUserRequiredMixin, View):
         handwritten_annotation = None
         if (
             not is_valid
+            and discrepancy is None
             and not delivery_note.manually_assigned
             and delivery_note.note_type != DeliveryNote.NOTE_TYPE_CREDIT_NOTE
         ):
@@ -304,6 +308,7 @@ class DeliveryNoteDetailView(CompanyUserRequiredMixin, View):
             'rejection_reason': rejection_reason,
             'resolved_type': resolved_type,
             'resolved_machine': resolved_machine,
+            'discrepancy': discrepancy,
             'download_url': download_url,
             'assignable_machines': assignable_machines,
             'credit_note_matches': credit_note_matches,
@@ -325,6 +330,19 @@ class DeliveryNoteManualAssignView(CompanyUserRequiredMixin, View):
     (manually_assigned/manually_assigned_by/manually_assigned_at en
     DeliveryNote), nunca se confunde con una asignación automática
     real.
+
+    `assignment_choice` acepta dos formas (S116-H10, reactivación
+    S115 punto de lectura de albaranes -- añadido para la pantalla de
+    discrepancia manuscrito-vs-impreso, reutilizando esta misma
+    vista): un pk numérico de MachineAsset (el `<select>` de S025,
+    caso "no se encontró ningún código"), o un código de texto libre
+    -- los botones de "usar este" de la pantalla de discrepancia
+    envían el propio texto leído (manuscrito o impreso tal cual), y
+    el campo de texto con autocompletado envía lo que teclee el
+    operario -- resuelto con el MISMO resolve_line_assignment() que
+    usa la extracción automática, para que un código escrito a mano
+    aquí se comporte exactamente igual que si se hubiera leído de la
+    foto.
 
     Aplica el mismo assignment_type/machine elegido a TODAS las
     líneas del albarán (mismo criterio "un albarán, un destino" ya
@@ -361,7 +379,7 @@ class DeliveryNoteManualAssignView(CompanyUserRequiredMixin, View):
         if not choice:
             messages.error(
                 request, 'Selecciona una máquina, centro de gasto o '
-                '"Almacén" antes de asignar.',
+                '"Almacén" antes de asignar, o escribe un código.',
             )
             return redirect(
                 'spare_parts:delivery_note_detail', pk=delivery_note.pk,
@@ -369,20 +387,28 @@ class DeliveryNoteManualAssignView(CompanyUserRequiredMixin, View):
 
         if choice == 'WAREHOUSE':
             assignment_type, machine = 'WAREHOUSE', None
+        elif choice.isdigit() and MachineAsset.objects.filter(
+            pk=choice, company=company,
+        ).exists():
+            # Selección desde el <select> de máquinas (S025).
+            machine = MachineAsset.objects.get(pk=choice, company=company)
+            assignment_type = 'MACHINE'
         else:
-            machine = MachineAsset.objects.filter(
-                pk=choice, company=company,
-            ).first()
-            if machine is None:
+            # Código de texto libre (S116-H10): botón "usar este" de
+            # la pantalla de discrepancia, o campo con autocompletado
+            # -- mismo resolver que la vía automática.
+            assignment_type, machine = resolve_line_assignment(
+                choice, company,
+            )
+            if assignment_type == 'UNASSIGNED':
                 messages.error(
                     request,
-                    'La máquina/centro de gasto seleccionado no es '
-                    'válido.',
+                    f'El código «{choice}» no se reconoce como ninguna '
+                    f'máquina, centro de gasto ni almacén de la empresa.',
                 )
                 return redirect(
                     'spare_parts:delivery_note_detail', pk=delivery_note.pk,
                 )
-            assignment_type = 'MACHINE'
 
         DeliveryNoteLine.objects.filter(
             delivery_note=delivery_note,
@@ -502,7 +528,7 @@ class DeliveryNoteConfirmView(CompanyUserRequiredMixin, View):
                     'spare_parts:delivery_note_detail', pk=delivery_note.pk,
                 )
         elif not delivery_note.manually_assigned:
-            is_valid, rejection_reason, _, _ = validate_document_assignment(
+            is_valid, rejection_reason, _, _, _ = validate_document_assignment(
                 delivery_note, company,
             )
             if not is_valid:

@@ -238,6 +238,78 @@
                                 el {{ delivery_note.manually_assigned_at|date:"d/m/Y H:i" }}.
                             </div>
                             {% endif %}
+                        {% elif discrepancy %}
+                            {# S116-H10: manuscrito e impreso resuelven a destinos #}
+                            {# distintos -- preguntar explícitamente, nunca decidir #}
+                            {# en silencio (antes S040 hacía prevalecer siempre el  #}
+                            {# manuscrito sin comparar). #}
+                            <div class="alert alert-warning mb-3">
+                                <i class="bi bi-exclamation-triangle-fill me-1"></i>
+                                {{ rejection_reason }}
+                            </div>
+                            <ul class="mb-3">
+                                <li>
+                                    Nota manuscrita: <strong>«{{ discrepancy.handwritten_code }}»</strong>
+                                    →
+                                    {% if discrepancy.handwritten_type == 'WAREHOUSE' %}
+                                        <strong>Almacén general</strong>
+                                    {% else %}
+                                        <strong>{{ discrepancy.handwritten_machine.code }}</strong>{% if discrepancy.handwritten_machine.brand_model %} — {{ discrepancy.handwritten_machine.brand_model }}{% endif %}
+                                    {% endif %}
+                                </li>
+                                <li>
+                                    Resto del albarán: <strong>«{{ discrepancy.printed_code }}»</strong>
+                                    →
+                                    {% if discrepancy.printed_type == 'WAREHOUSE' %}
+                                        <strong>Almacén general</strong>
+                                    {% else %}
+                                        <strong>{{ discrepancy.printed_machine.code }}</strong>{% if discrepancy.printed_machine.brand_model %} — {{ discrepancy.printed_machine.brand_model }}{% endif %}
+                                    {% endif %}
+                                </li>
+                            </ul>
+                            <div class="d-flex flex-wrap gap-2 mb-3">
+                                <form method="post"
+                                      action="{% url 'spare_parts:delivery_note_manual_assign' pk=delivery_note.pk %}">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="assignment_choice"
+                                           value="{{ discrepancy.handwritten_code }}">
+                                    <button type="submit" class="btn btn-sm btn-outline-primary"
+                                            onclick="return confirm('¿Usar el código manuscrito «{{ discrepancy.handwritten_code }}»?');">
+                                        <i class="bi bi-pencil-fill me-1"></i>Usar manuscrito: {{ discrepancy.handwritten_code }}
+                                    </button>
+                                </form>
+                                <form method="post"
+                                      action="{% url 'spare_parts:delivery_note_manual_assign' pk=delivery_note.pk %}">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="assignment_choice"
+                                           value="{{ discrepancy.printed_code }}">
+                                    <button type="submit" class="btn btn-sm btn-outline-secondary"
+                                            onclick="return confirm('¿Usar el código impreso «{{ discrepancy.printed_code }}»?');">
+                                        <i class="bi bi-file-text me-1"></i>Usar impreso: {{ discrepancy.printed_code }}
+                                    </button>
+                                </form>
+                            </div>
+                            <div class="border rounded p-2">
+                                <label class="form-label small mb-1" for="discrepancy-machine-search">
+                                    O escribe/busca otro código de máquina o centro de gasto:
+                                </label>
+                                <form method="post"
+                                      action="{% url 'spare_parts:delivery_note_manual_assign' pk=delivery_note.pk %}"
+                                      class="position-relative">
+                                    {% csrf_token %}
+                                    <input type="text"
+                                           class="form-control form-control-sm discrepancy-machine-search"
+                                           id="discrepancy-machine-search"
+                                           name="assignment_choice"
+                                           placeholder="Código de máquina o centro de gasto…"
+                                           autocomplete="off" required>
+                                    <div class="list-group position-absolute w-100 shadow-sm d-none discrepancy-machine-dropdown"
+                                         style="z-index:1050;"></div>
+                                    <button type="submit" class="btn btn-sm btn-warning mt-2">
+                                        <i class="bi bi-check-lg me-1"></i>Asignar este código
+                                    </button>
+                                </form>
+                            </div>
                         {% else %}
                             <div class="alert alert-danger mb-3">
                                 <i class="bi bi-x-octagon-fill me-1"></i>
@@ -335,4 +407,62 @@
             {% endif %}
         </div>
     </div>
+
+{# S116-H10: autocompletado minimo para el campo de texto de la #}
+{# pantalla de discrepancia manuscrito-vs-impreso -- reutiliza el #}
+{# mismo endpoint JSON que el autocompletado de maquina del parte #}
+{# (panel:operator_assets), pero sin ningun efecto colateral propio #}
+{# de esa pantalla (bloques, tickets, contadores): aqui solo rellena #}
+{# el propio input de texto, que se envia tal cual como codigo. #}
+<script>
+(function () {
+    "use strict";
+    var input = document.getElementById("discrepancy-machine-search");
+    if (!input) { return; }
+    var dropdown = input.parentElement.querySelector(".discrepancy-machine-dropdown");
+    if (!dropdown) { return; }
+    var timer = null;
+
+    function hideDropdown() {
+        dropdown.classList.add("d-none");
+        dropdown.innerHTML = "";
+    }
+
+    function search(q) {
+        fetch("{% url 'panel:operator_assets' %}?q=" + encodeURIComponent(q))
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                dropdown.innerHTML = "";
+                if (!data.assets || data.assets.length === 0) {
+                    hideDropdown();
+                    return;
+                }
+                data.assets.forEach(function (asset) {
+                    var btn = document.createElement("button");
+                    btn.type = "button";
+                    btn.className = "list-group-item list-group-item-action text-sm py-1 px-2";
+                    btn.textContent = asset.code + " — " + asset.brand_model;
+                    btn.addEventListener("click", function () {
+                        input.value = asset.code;
+                        hideDropdown();
+                        input.focus();
+                    });
+                    dropdown.appendChild(btn);
+                });
+                dropdown.classList.remove("d-none");
+            })
+            .catch(function () { hideDropdown(); });
+    }
+
+    input.addEventListener("input", function () {
+        clearTimeout(timer);
+        var q = input.value.trim();
+        if (!q) { hideDropdown(); return; }
+        timer = setTimeout(function () { search(q); }, 250);
+    });
+    input.addEventListener("blur", function () {
+        setTimeout(hideDropdown, 150);
+    });
+}());
+</script>
 {% endblock %}
