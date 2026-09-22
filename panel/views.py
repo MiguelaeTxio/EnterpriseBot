@@ -112,6 +112,8 @@ from panel.views_auth import (
     OwnProfileView,
     OwnProfileSignatureSaveView,
     CompanySettingsView,
+    MiBuzonListView,
+    MiBuzonDetailView,
 )
 
 # --- Fleet views — re-exported from fleet.views (H12/H21 split) ---
