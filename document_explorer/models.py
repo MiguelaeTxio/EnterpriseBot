@@ -2288,6 +2288,39 @@ class DocumentAcknowledgment(models.Model):
         default=METHOD_MANUAL,
         verbose_name="Método de extracción",
     )
+
+    CHANNEL_EMAIL = "EMAIL"
+    CHANNEL_WHATSAPP = "WHATSAPP"
+    CHANNEL_CHOICES = [
+        (CHANNEL_EMAIL, "Correo (.eml)"),
+        (CHANNEL_WHATSAPP, "WhatsApp"),
+    ]
+    channel = models.CharField(
+        max_length=10,
+        choices=CHANNEL_CHOICES,
+        default=CHANNEL_EMAIL,
+        verbose_name="Canal de envío",
+        help_text=(
+            "Canal por el que se entregó/notificó esta circular a la "
+            "persona -- EMAIL (.eml descargado, flujo original H31/S74) "
+            "o WHATSAPP (plantilla circular_notification, H31/S115). "
+            "Distinto de extraction_method, que describe cómo se "
+            "determinó el tipo documental, no el canal de entrega."
+        ),
+    )
+    whatsapp_read_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Leída por WhatsApp (fecha/hora)",
+        help_text=(
+            "Nula por defecto. Se rellena cuando la persona pulsa el "
+            "botón 'Leer aquí' de la plantilla circular_notification "
+            "para ESTE envío concreto (channel=WHATSAPP) -- permite "
+            "distinguir, entre varios envíos WhatsApp al mismo "
+            "trabajador, cuál es el pendiente de confirmar lectura vía "
+            "botón (el más reciente con este campo nulo)."
+        ),
+    )
     created_at = models.DateTimeField(
         auto_now_add=True,
         verbose_name="Fecha de registro",

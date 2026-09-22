@@ -2332,3 +2332,100 @@ def send_epi_delivery_whatsapp_confirmation(delivery) -> bool:
             phone, delivery.pk, exc,
         )
         return False
+
+
+def send_circular_notification_whatsapp(ack) -> bool:
+    """
+    H31 (S115). Envía la plantilla WhatsApp 'circular_notification' a
+    la persona destinataria de una circular, mismo patrón exacto que
+    send_epi_delivery_whatsapp_confirmation (H31, S74) -- Twilio
+    Messages API con content_sid + content_variables, sin pasar por
+    la Content API de creación (esa ya se ejecutó una vez, S115, vía
+    el management command).
+
+    `ack` es un DocumentAcknowledgment ya creado por el llamador con
+    channel=DocumentAcknowledgment.CHANNEL_WHATSAPP (mismo principio
+    que EpiDelivery para la variante EMAIL -- la fila se crea ANTES
+    de llamar a esta función; un fallo de Twilio aquí solo se loguea,
+    nunca revierte el registro ya comprometido en BD).
+
+    {{3}} lleva el pk del propio ack -- la vista "Mi buzón" (pendiente
+    de construir en esta misma sesión) resolverá la circular concreta
+    a partir de ese pk, protegida con login normal (login_required
+    respeta ?next= de forma nativa, sin necesidad de hardcodear la
+    query string en la plantilla).
+
+    Devuelve True en caso de despacho Twilio exitoso, False ante
+    cualquier fallo (sin teléfono, sin Company vinculada, plantilla
+    ausente/no aprobada, o error de Twilio).
+    """
+    from .tasks import _get_whatsapp_sender
+
+    person = ack.person
+    phone = (person.phone or "").strip()
+    if not phone:
+        logger.warning(
+            "# [CIRCULAR WHATSAPP] Persona %s sin teléfono registrado. "
+            "DocumentAcknowledgment pk=%s. Abortando.",
+            person, ack.pk,
+        )
+        return False
+
+    company = person.company
+    if company is None:
+        logger.warning(
+            "# [CIRCULAR WHATSAPP] Persona %s sin Company vinculada "
+            "(employer_company='%s'). DocumentAcknowledgment pk=%s. "
+            "Abortando.",
+            person, person.employer_company, ack.pk,
+        )
+        return False
+
+    try:
+        template = WhatsAppTemplate.objects.get(
+            company=company, name="circular_notification", is_active=True,
+        )
+    except WhatsAppTemplate.DoesNotExist:
+        logger.error(
+            "# [CIRCULAR WHATSAPP] Template circular_notification no "
+            "encontrado para empresa %s. Abortando.",
+            company.name,
+        )
+        return False
+
+    whatsapp_sender = _get_whatsapp_sender()
+    if not whatsapp_sender:
+        logger.error(
+            "# [CIRCULAR WHATSAPP] TWILIO_WHATSAPP_SENDER no configurado. "
+            "Abortando.",
+        )
+        return False
+
+    person_name = f"{person.given_name} {person.first_surname}".strip()
+    content_variables = {
+        "1": person_name or str(person),
+        "2": ack.document_type.label,
+        "3": str(ack.pk),
+    }
+
+    try:
+        twilio_client = _build_twilio_client()
+        message = twilio_client.messages.create(
+            from_=f"whatsapp:{whatsapp_sender}",
+            to=f"whatsapp:{phone}",
+            content_sid=template.content_sid,
+            content_variables=json.dumps(content_variables),
+        )
+        logger.info(
+            "# [CIRCULAR WHATSAPP] Notificación enviada a %s (%s) por "
+            "DocumentAcknowledgment pk=%s — SID: %s",
+            person, phone, ack.pk, message.sid,
+        )
+        return True
+    except Exception as exc:
+        logger.error(
+            "# [CIRCULAR WHATSAPP] Error enviando notificación a %s "
+            "(DocumentAcknowledgment pk=%s): %s",
+            phone, ack.pk, exc,
+        )
+        return False

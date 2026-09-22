@@ -462,6 +462,75 @@ class IncomingWhatsAppView(View):
                 )
             return HttpResponse(status=200)
 
+        # --- Step 4b-ter: Handle ButtonPayload for circular_notification — H31, S115. ---
+        # Intercepts the "Leer aquí" Quick Reply of the circular_notification
+        # template BEFORE the IRC dispatcher, same principle as opt_in/opt_out
+        # above. Resolves the most recent unconfirmed WhatsApp
+        # DocumentAcknowledgment for the sender's PersonIdentity (matched by
+        # phone), replies with the plain-text content of the circular, and
+        # marks it as read (whatsapp_read_at). If no pending circular is
+        # found (button pressed twice, or after the 24h window), replies with
+        # a short explanatory message instead of failing silently.
+        # --- Paso 4b-ter: Gestionar ButtonPayload de circular_notification — H31, S115. ---
+        # Intercepta el Quick Reply "Leer aquí" de la plantilla
+        # circular_notification ANTES del despachador IRC, mismo principio que
+        # opt_in/opt_out arriba. Resuelve el DocumentAcknowledgment de WhatsApp
+        # más reciente sin confirmar de la PersonIdentity del remitente
+        # (emparejada por teléfono), responde con el texto plano de la
+        # circular y lo marca como leído (whatsapp_read_at). Si no hay ninguna
+        # circular pendiente (botón pulsado dos veces, o fuera de la ventana
+        # de 24h), responde con un mensaje explicativo breve en vez de fallar
+        # en silencio.
+        if _button_payload == "leer_aqui_circular":
+            from bs4 import BeautifulSoup
+            from document_explorer.models import DocumentAcknowledgment as _DocAck
+            from document_explorer.models import PersonIdentity as _PersonIdentity
+
+            _person = _PersonIdentity.objects.filter(
+                company=company, phone=from_number,
+            ).first()
+            _pending_ack = (
+                _DocAck.objects.filter(
+                    person=_person,
+                    channel=_DocAck.CHANNEL_WHATSAPP,
+                    whatsapp_read_at__isnull=True,
+                ).select_related("document_type").order_by("-created_at").first()
+                if _person is not None else None
+            )
+            if _pending_ack is not None:
+                _plain_text = BeautifulSoup(
+                    _pending_ack.document_type.content_html, "html.parser",
+                ).get_text(separator="\n").strip()
+                _reply_text = (
+                    f"*{_pending_ack.document_type.label}*\n\n{_plain_text}"
+                )
+                _pending_ack.whatsapp_read_at = now()
+                _pending_ack.save(update_fields=["whatsapp_read_at"])
+            else:
+                _reply_text = (
+                    "No he encontrado ninguna circular pendiente de lectura "
+                    "asociada a este número. Si crees que es un error, "
+                    "contacta con tu responsable."
+                )
+            try:
+                WhatsAppChatService.send_reply(
+                    from_number=to_number,
+                    to_number=from_number,
+                    reply_text=_reply_text,
+                )
+            except Exception as _exc:
+                logger.error(
+                    "# [WHATSAPP] Error enviando circular a %s: %s",
+                    from_number, _exc,
+                )
+            logger.info(
+                "# [WHATSAPP] leer_aqui_circular procesado para %s — "
+                "ack pk=%s.",
+                from_number,
+                _pending_ack.pk if _pending_ack is not None else None,
+            )
+            return HttpResponse(status=200)
+
         # =======================================================================
         # --- Step 5 (H17): Route by sender identity. ---
         # Bifurcación H17: enrutar según identidad del remitente.
