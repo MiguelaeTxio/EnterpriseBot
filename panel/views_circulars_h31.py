@@ -473,10 +473,12 @@ class CircularExportWordView(DocsUploadAccessMixin, View):
 
 def _get_letterhead_logo_data_uri():
     """
-    H31 (S115). Devuelve el logo corporativo de Grupo Álvarez como
-    data URI base64 -- mismo archivo estático ya usado para el
-    membrete real del flujo de email (.eml, `panel/img/
-    grupo_alvarez_logo.png`, ver views_documentation_h30.py). Se
+    H31 (S115). Devuelve el logo corporativo de Grupo Álvarez (versión
+    a color, texto naranja -- legible sobre fondo blanco, a diferencia
+    de `grupo_alvarez_logo.png`, cuyo texto es blanco y solo se lee
+    sobre fondo oscuro como el de la sidebar; aportado directamente
+    por Miguel Ángel tras detectar el problema de legibilidad) como
+    data URI base64. Se
     embebe como data URI (no como <img src="/static/...">) para que
     funcione igual en el navegador (Mi buzón) y en weasyprint (PDF de
     "Generar documento"), sin depender de que ambos resuelvan
@@ -487,7 +489,7 @@ def _get_letterhead_logo_data_uri():
 
     from django.contrib.staticfiles.finders import find as find_static
 
-    logo_path = find_static("panel/img/grupo_alvarez_logo.png")
+    logo_path = find_static("panel/img/grupo_alvarez_logo_color.png")
     if not logo_path:
         return None
     with open(logo_path, "rb") as logo_file:
@@ -636,8 +638,7 @@ class CircularGenerateView(DocsUploadAccessMixin, View):
         logo_data_uri = _get_letterhead_logo_data_uri() if letter_format else None
         heading_html = "" if letter_format else "<h1>%s</h1>" % document_type.label
         logo_html = (
-            '<div style="text-align:center;margin-bottom:12px;background:#1c1c2e;'
-            'padding:12px;border-radius:4px;">'
+            '<div style="text-align:center;margin-bottom:12px;">'
             '<img src="%s" style="max-height:70px;"></div>' % logo_data_uri
             if logo_data_uri else ""
         )
