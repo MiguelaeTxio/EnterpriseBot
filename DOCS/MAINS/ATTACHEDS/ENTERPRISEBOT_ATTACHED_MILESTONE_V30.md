@@ -7858,3 +7858,42 @@ Consecuencias:
    paralelo.
 3. El acceso de roles de taller a Centros de gasto se mantiene tal como
    está hoy.
+
+## S117 -- FASE 1 (TIPADO POR NOMBRE) DE MÁQUINAS: CERRADA
+
+Resultado real (logs EnterpriseBot_001 a _010 en SWAP):
+
+| Paso | Asignados (tipo + máquina) |
+|---|---|
+| Diccionario de S50, sin tocar (dry-run 001) | 98 |
+| 1ª vuelta S117, aplicada (007) | 795 (+2 máquinas creadas, decisión de Miguel Ángel: `E1405` pk=646, `SE7625` pk=647 -- sin matrícula ni familia, matrículas reales E-1405-BBW y SE-7625-CT, a completar desde su ficha) |
+| 2ª vuelta S117, aplicada (010) | +88 |
+| **Total Fase 1** | **883** |
+
+Quedan sin tipo **1.115** en alcance: ~320 nombres ciegos (Scan0754,
+A57.pdf, `_compressed (6)`) + nombres sin palabra de tipo
+("CERTIFICADO", "DOCUMENTACION B-47", proveedores/bancos) → **Fase 3
+(OCR)**. 17 con tipo pero sin máquina: genéricos de la raíz de familia
+(norma UNE 58921, plantillas NTP 634, catálogo de la minigrúa 506) --
+correcto que no se asignen. 3 dosieres de póliza para revisión manual
+(5263LZK, A-69 x2).
+
+Decisiones de Miguel Ángel en esta fase (tomadas con el CONTENIDO real
+de documentos de muestra, extraído con el modo `gcs_text` del relevo):
+- Tipos nuevos (migración 0137): `CERTIFICADO_SEGURO` (con caducidad),
+  `AUTORIZACION_COMPLEMENTARIA_CIRCULACION` (con caducidad),
+  `ESPECIFICACIONES_FABRICANTE`. `IMAGEN` pasa a BOTH y acumulable.
+- Archivos de sistema fuera de alcance (PP11Thumbs, maxdesk,
+  SearchVerity, .log).
+- Diccionario: bloques `_S117_MACHINE_ADDITIONS` y `_2` en
+  `calibrate_fase_a_keywords.py`. Causa de raíz del hueco: las frases no
+  admitían palabras intermedias ("MANUAL USO" nunca reconocía "MANUAL DE
+  USO").
+
+Corregido de paso (fallo real): los dry-run de `run_fase_a_sweep`,
+`run_fase_a_sweep_scoped` y `run_fase_b1_ocr_classify` daban de alta
+máquinas en `fleet.MachineAsset` sin `--apply`
+(`resolve_or_create_machine_asset(..., allow_create=...)`).
+
+**Siguiente, por el orden de la hoja de ruta:** Fase 2 -- los 384
+documentos con tipo pero sin máquina.
