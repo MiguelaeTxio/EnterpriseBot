@@ -47,6 +47,7 @@ from panel.mixins import (
     SupervisorAccessMixin,
     _company_user_for_role_check,
 )
+from panel.navigation_persistence import apply_list_navigation
 from spare_parts.models import SparePartEntry, StockMovement
 from spare_parts.services import (
     StockAssignmentService,
@@ -168,6 +169,15 @@ class SparePartEntryListView(SupervisorAccessMixin, ListView):
                 keys.append((key, desc))
                 seen.add(key)
         return keys
+
+    def get(self, request, *args, **kwargs):
+        # S117 -- directrices 4.15/4.24: filtros y orden persistidos por
+        # usuario (pieza compartida panel.navigation_persistence).
+        apply_list_navigation(
+            request, 'spare_parts_catalog_list',
+            ('status', 'machine', 'q', 'sort'),
+        )
+        return super().get(request, *args, **kwargs)
 
     def get_queryset(self):
         company = self.request.user.company_user.company
@@ -314,18 +324,16 @@ class SparePartEntryListView(SupervisorAccessMixin, ListView):
             params.pop('page', None)
             sort_urls[key] = '?' + params.urlencode()
 
+        # S117: "sort=" vacío explícito, ver delivery_notes/views.py.
         clear_sort_params = self.request.GET.copy()
-        clear_sort_params.pop('sort', None)
+        clear_sort_params['sort'] = ''
         clear_sort_params.pop('page', None)
         ctx['sort_urls'] = sort_urls
         ctx['sort_arrows'] = sort_arrows
         ctx['sort_priority'] = sort_priority
         ctx['sort_active'] = bool(sort_keys)
         ctx['current_sort'] = self.request.GET.get('sort', '')
-        ctx['clear_sort_url'] = (
-            '?' + clear_sort_params.urlencode() if clear_sort_params
-            else '?'
-        )
+        ctx['clear_sort_url'] = '?' + clear_sort_params.urlencode()
 
         # S116-H10: hallazgo real de Miguel Ángel -- "al cambiar de
         # página se pierden todos los ordenamientos [...] tiene
@@ -777,6 +785,12 @@ class SparePartWarehouseListView(CatalogReadAccessMixin, View):
     def get(self, request):
         from django.utils.timezone import now as _tz_now
 
+        # S117 -- directrices 4.15/4.24: filtros y orden persistidos por
+        # usuario (pieza compartida panel.navigation_persistence).
+        apply_list_navigation(
+            request, 'spare_parts_warehouse_list',
+            ('status', 'machine', 'sort'),
+        )
         company = request.user.company_user.company
         qs = (
             SparePartEntry.objects.filter(company=company)
@@ -874,12 +888,10 @@ class SparePartWarehouseListView(CatalogReadAccessMixin, View):
             params['sort'] = new_sort_param
             sort_urls[key] = '?' + params.urlencode()
 
+        # S117: "sort=" vacío explícito, ver delivery_notes/views.py.
         clear_sort_params = request.GET.copy()
-        clear_sort_params.pop('sort', None)
-        clear_sort_url = (
-            '?' + clear_sort_params.urlencode() if clear_sort_params
-            else '?'
-        )
+        clear_sort_params['sort'] = ''
+        clear_sort_url = '?' + clear_sort_params.urlencode()
 
         machines = (
             MachineAsset.objects.filter(company=company, is_active=True)

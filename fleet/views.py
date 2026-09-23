@@ -37,7 +37,7 @@ from panel.mixins import (
     FleetManageAccessMixin,
     SupervisorAccessMixin,
 )
-from panel.models import PanelNavigationState
+from panel.navigation_persistence import apply_list_navigation
 
 
 # ---------------------------------------------------------------------------
@@ -265,59 +265,10 @@ def _build_queryset(company, request):
     return qs
 
 
-# ---------------------------------------------------------------------------
-# Navigation persistence (S117, directive 4.15) /
-# Persistencia de navegación (S117, directriz 4.15)
-# ---------------------------------------------------------------------------
-
+# S117 -- directrices 4.15/4.24: filtros y orden persistidos por
+# usuario con la pieza compartida panel.navigation_persistence.
 _FLEET_SCREEN_KEY = "fleet_list"
 _FLEET_FILTER_KEYS = ("search", "family", "is_active", "sort")
-
-
-def _save_fleet_navigation(company_user, request):
-    """
-    Stores the current filters/sort of the fleet list for this user,
-    reusing the generic PanelNavigationState (never a new mechanism).
-    ---
-    Guarda los filtros/orden actuales del listado de flota para este
-    usuario, reutilizando el PanelNavigationState genérico (nunca un
-    mecanismo nuevo).
-    """
-    state = {key: request.GET.get(key, "") for key in _FLEET_FILTER_KEYS}
-    PanelNavigationState.objects.update_or_create(
-        company_user=company_user,
-        screen_key=_FLEET_SCREEN_KEY,
-        defaults={"state": {"filters": state}},
-    )
-
-
-def _seed_fleet_navigation(company_user, request):
-    """
-    On a full page load without filter parameters, fills request.GET
-    with the last filters/sort saved by this user.
-    ---
-    En una carga completa sin parámetros de filtro, rellena
-    request.GET con los últimos filtros/orden guardados por este
-    usuario.
-    """
-    if any(key in request.GET for key in _FLEET_FILTER_KEYS):
-        return
-    saved = (
-        PanelNavigationState.objects
-        .filter(company_user=company_user, screen_key=_FLEET_SCREEN_KEY)
-        .values_list("state", flat=True)
-        .first()
-    )
-    filters = saved.get("filters") if isinstance(saved, dict) else None
-    if not isinstance(filters, dict):
-        return
-    mutable = request.GET.copy()
-    for key in _FLEET_FILTER_KEYS:
-        value = filters.get(key)
-        if isinstance(value, str) and value:
-            mutable[key] = value
-    request.GET = mutable
-
 
 def _build_fragment_context(company, company_user, request):
     """
@@ -397,14 +348,12 @@ class MachineAssetListView(FleetAccessMixin, View):
         """
         company_user = request.user.company_user
         company = company_user.company
-        # S117 -- directriz 4.15 (navegación persistida por usuario):
-        # cada cambio de filtro/orden (petición htmx) se guarda en
-        # PanelNavigationState; una carga completa sin parámetros en
-        # la URL recupera lo último guardado por ESE usuario.
-        if request.headers.get("HX-Request"):
-            _save_fleet_navigation(company_user, request)
-        else:
-            _seed_fleet_navigation(company_user, request)
+        # S117 -- directriz 4.15/4.24: cada cambio de filtro/orden se
+        # guarda; una carga completa sin parámetros recupera lo último
+        # guardado por ESE usuario.
+        apply_list_navigation(
+            request, _FLEET_SCREEN_KEY, _FLEET_FILTER_KEYS,
+        )
         fragment_ctx = _build_fragment_context(company, company_user, request)
 
         ctx = {

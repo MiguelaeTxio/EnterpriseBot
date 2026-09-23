@@ -49,6 +49,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.views import View
 
 from panel.mixins import SupervisorAccessMixin
+from panel.navigation_persistence import apply_list_navigation
 from spare_parts.gcs_service import DELIVERY_NOTES_BUCKET, generate_signed_url
 from spare_parts.models import DeliveryNote
 
@@ -137,6 +138,12 @@ class DeliveryNoteAdminListView(SupervisorAccessMixin, View):
         return keys
 
     def get(self, request):
+        # S117 -- directrices 4.15/4.24: filtros y orden persistidos por
+        # usuario (pieza compartida panel.navigation_persistence).
+        apply_list_navigation(
+            request, 'delivery_notes_list',
+            ('status', 'supplier', 'recipient', 'sort'),
+        )
         company = request.user.company_user.company
         status = request.GET.get('status', '').strip()
         supplier = request.GET.get('supplier', '').strip()
@@ -277,12 +284,12 @@ class DeliveryNoteAdminListView(SupervisorAccessMixin, View):
             params['sort'] = new_sort_param
             sort_urls[key] = '?' + params.urlencode()
 
+        # S117: "sort=" vacío explícito (nunca quitar la clave) -- sin
+        # ninguna clave en la URL, la persistencia de navegación
+        # restauraría el orden que se acaba de quitar.
         clear_sort_params = request.GET.copy()
-        clear_sort_params.pop('sort', None)
-        clear_sort_url = (
-            '?' + clear_sort_params.urlencode() if clear_sort_params
-            else '?'
-        )
+        clear_sort_params['sort'] = ''
+        clear_sort_url = '?' + clear_sort_params.urlencode()
 
         return render(request, self.template_name, {
             'company_user': request.user.company_user,

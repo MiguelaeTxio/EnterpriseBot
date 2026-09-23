@@ -125,7 +125,7 @@ la lista hace scroll. Dos paneles:
                 <span id="fleet-row-count">{{ assets|length }}</span> centros de gasto
                 <span id="fleet-row-filtered" class="text-muted fw-normal{% if not filter_search and not filter_family and not filter_is_active %} d-none{% endif %}">(filtrado)</span>
             </div>
-            <div id="fleet-results-scroll" style="flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: auto;">
+            <div id="fleet-results-scroll" class="fixed-list-scroll" style="flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: auto;">
                 <div id="fleet-table-container">
                     {% include "panel/fleet/_table_fragment.html" %}
                 </div>
@@ -149,12 +149,6 @@ la lista hace scroll. Dos paneles:
 </div>
 
 <style>
-#fleet-results-scroll thead th {
-    position: sticky;
-    top: 0;
-    background-color: #f8f9fa;
-    z-index: 2;
-}
 #fleet-results-scroll table td,
 #fleet-results-scroll table th {
     white-space: nowrap;
@@ -209,6 +203,7 @@ la lista hace scroll. Dos paneles:
 {% endblock %}
 
 {% block extra_scripts %}
+{% include "panel/_fixed_list_layout.html" with top_id="fleet-top-panel" bottom_id="fleet-bottom-panel" %}
 <script>
 (function () {
     "use strict";
@@ -379,29 +374,6 @@ la lista hace scroll. Dos paneles:
             refreshFromFragment();
         }
     });
-
-    // Altura del panel inferior = hueco real bajo el panel fijo hasta
-    // el borde del viewport -- mismo algoritmo que
-    // #personal-bottom-panel (H31 S114), ya probado en producción.
-    const BOTTOM_PANEL_GUTTER = 8;
-    const BOTTOM_PANEL_MIN_HEIGHT = 240;
-    const bottomPanelEl = document.getElementById("fleet-bottom-panel");
-
-    function recomputeBottomPanelHeight() {
-        bottomPanelEl.style.height = "auto";
-        const naturalHeight = bottomPanelEl.getBoundingClientRect().height;
-        const overflow = Math.max(document.documentElement.scrollHeight - window.innerHeight, 0);
-        const target = Math.max(naturalHeight - overflow - BOTTOM_PANEL_GUTTER, BOTTOM_PANEL_MIN_HEIGHT);
-        bottomPanelEl.style.height = target + "px";
-    }
-
-    window.addEventListener("resize", recomputeBottomPanelHeight);
-    const topPanelEl = document.getElementById("fleet-top-panel");
-    if (topPanelEl && window.ResizeObserver) {
-        new ResizeObserver(recomputeBottomPanelHeight).observe(topPanelEl);
-    }
-    requestAnimationFrame(recomputeBottomPanelHeight);
-    setTimeout(recomputeBottomPanelHeight, 300);
 
     refreshFromFragment();
 }());

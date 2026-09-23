@@ -1,0 +1,46 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/_fixed_list_layout.html #}
+{% comment %}
+S117 -- directriz 4.24 (formato único de visor). Pieza COMPARTIDA por
+todos los listados del panel: el panel inferior (bottom_id) toma la
+altura exacta del hueco que queda bajo el panel fijo (top_id) hasta el
+borde del viewport, y dentro de él solo hace scroll el contenedor
+.fixed-list-scroll, con la cabecera de columnas pegada arriba (sticky).
+Mismo algoritmo que #personal-bottom-panel (H31 S114): altura natural
+menos el exceso real de document.scrollHeight sobre window.innerHeight,
+recalculado al redimensionar la ventana y cuando cambia la altura del
+panel superior (ResizeObserver).
+
+Uso: {% include "panel/_fixed_list_layout.html" with top_id="..." bottom_id="..." %}
+{% endcomment %}
+<style>
+.fixed-list-scroll thead th {
+    position: sticky;
+    top: 0;
+    background-color: #f8f9fa;
+    z-index: 2;
+}
+</style>
+<script>
+(function () {
+    "use strict";
+    const GUTTER = 8;
+    const MIN_HEIGHT = 240;
+    const bottomPanel = document.getElementById("{{ bottom_id|escapejs }}");
+    const topPanel = document.getElementById("{{ top_id|escapejs }}");
+    if (!bottomPanel) return;
+
+    function recompute() {
+        bottomPanel.style.height = "auto";
+        const naturalHeight = bottomPanel.getBoundingClientRect().height;
+        const overflow = Math.max(document.documentElement.scrollHeight - window.innerHeight, 0);
+        bottomPanel.style.height = Math.max(naturalHeight - overflow - GUTTER, MIN_HEIGHT) + "px";
+    }
+
+    window.addEventListener("resize", recompute);
+    if (topPanel && window.ResizeObserver) {
+        new ResizeObserver(recompute).observe(topPanel);
+    }
+    requestAnimationFrame(recompute);
+    setTimeout(recompute, 300);
+}());
+</script>

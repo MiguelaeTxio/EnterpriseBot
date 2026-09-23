@@ -8,7 +8,14 @@
 {% block page_title %}Almacén{% endblock %}
 
 {% block content %}
-<div class="mb-3 d-flex justify-content-between align-items-start gap-2">
+{% comment %}
+S117 -- directriz 4.24 (formato único de visor): panel superior fijo
+(#list-top-panel) y panel inferior (#list-bottom-panel) de altura
+calculada donde SOLO la lista hace scroll, con la cabecera de columnas
+pegada arriba -- ver panel/_fixed_list_layout.html.
+{% endcomment %}
+<div class="border rounded p-2 mb-2" id="list-top-panel">
+<div class="mb-2 d-flex justify-content-between align-items-start gap-2">
     <div>
         <h5 class="mb-0 fw-semibold">Almacén</h5>
         <p class="text-muted small mb-0">
@@ -26,7 +33,7 @@
     </div>
 </div>
 
-<div class="d-flex gap-2 mb-3 small">
+<div class="d-flex gap-2 mb-2 small">
     <span class="text-muted">Antigüedad en el limbo:</span>
     <span class="badge bg-success">&lt; 2 semanas</span>
     <span class="badge bg-info text-dark">1 mes</span>
@@ -34,7 +41,7 @@
     <span class="badge bg-danger">6 meses o más</span>
 </div>
 
-<form method="get" class="row g-2 mb-3">
+<form method="get" class="row g-2 mb-2">
     <input type="hidden" name="sort" value="{{ current_sort }}">
     <div class="col-auto">
         <select name="status" class="form-select form-select-sm">
@@ -57,13 +64,13 @@
     </div>
 </form>
 
-<div class="d-flex justify-content-between align-items-center mb-2">
-    <div id="bulk-actions-bar" class="d-none">
+<div class="d-flex justify-content-between align-items-center">
+    <div id="bulk-actions-bar">
         <form id="bulk-return-form" method="post" action="{% url 'workorder_spare_parts:bulk_return_to_warehouse' %}"
               onsubmit="return confirm('¿Devolver a almacén los repuestos seleccionados? Se quitará su pre-asignación.');">
             {% csrf_token %}
             <input type="hidden" name="next" value="{{ request.get_full_path }}">
-            <button type="submit" class="btn btn-sm btn-outline-secondary">
+            <button type="submit" disabled class="btn btn-sm btn-outline-secondary">
                 <i class="bi bi-arrow-return-left me-1"></i>Devolver seleccionados a almacén (<span id="selected-count">0</span>)
             </button>
         </form>
@@ -75,8 +82,11 @@
     {% endif %}
 </div>
 
-<div class="card shadow-sm">
-    <div class="table-responsive">
+</div>
+
+<div class="border rounded p-2" id="list-bottom-panel">
+    <div class="h-100 d-flex flex-column">
+    <div class="fixed-list-scroll" style="flex: 1 1 auto; min-height: 0; overflow: auto;">
         <table class="table table-hover align-middle mb-0">
             <thead class="table-light">
                 <tr>
@@ -189,7 +199,7 @@
                 {% endfor %}
             </tbody>
         </table>
-    </div>
+    </div>    </div>
 </div>
 
 {# S116-H10: seleccionar todos/algunos para la devolución masiva a    #}
@@ -209,7 +219,7 @@
     function updateBar() {
         var checked = document.querySelectorAll(".part-select-checkbox:checked");
         counter.textContent = checked.length;
-        bar.classList.toggle("d-none", checked.length === 0);
+        bar.querySelector("button[type=submit]").disabled = checked.length === 0;
     }
 
     if (selectAll) {
@@ -223,4 +233,5 @@
     });
 }());
 </script>
+{% include "panel/_fixed_list_layout.html" with top_id="list-top-panel" bottom_id="list-bottom-panel" %}
 {% endblock %}

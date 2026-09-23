@@ -5,14 +5,21 @@
 {% block page_title %}Albaranes{% endblock %}
 
 {% block content %}
-<div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
+{% comment %}
+S117 -- directriz 4.24 (formato único de visor): panel superior fijo
+(#list-top-panel) y panel inferior (#list-bottom-panel) de altura
+calculada donde SOLO la lista hace scroll, con la cabecera de columnas
+pegada arriba -- ver panel/_fixed_list_layout.html.
+{% endcomment %}
+<div class="border rounded p-2 mb-2" id="list-top-panel">
+<div class="d-flex align-items-center justify-content-between mb-2 flex-wrap gap-2">
     <h5 class="mb-0 fw-semibold">Albaranes de proveedor</h5>
     <a href="{% url 'spare_parts:delivery_note_upload' %}" class="btn btn-primary btn-sm">
         <i class="bi bi-plus-lg me-1"></i>Subir albarán
     </a>
 </div>
 
-<div class="card shadow-sm mb-3">
+<div class="card shadow-sm mb-2">
     <div class="card-body">
         <form method="get" class="row g-2 align-items-end">
             <input type="hidden" name="sort" value="{{ current_sort }}">
@@ -43,7 +50,7 @@
                 <button type="submit" class="btn btn-primary btn-sm">
                     <i class="bi bi-funnel me-1"></i>Filtrar
                 </button>
-                <a href="{% url 'delivery_notes:list' %}" class="btn btn-outline-secondary btn-sm">
+                <a href="{% url 'delivery_notes:list' %}?reset=1" class="btn btn-outline-secondary btn-sm" title="Quitar filtros">
                     <i class="bi bi-x-lg"></i>
                 </a>
             </div>
@@ -51,12 +58,12 @@
     </div>
 </div>
 
-<div class="d-flex justify-content-between align-items-center mb-2">
-    <div id="bulk-actions-bar" class="d-none">
+<div class="d-flex justify-content-between align-items-center">
+    <div id="bulk-actions-bar">
         <form id="bulk-delete-form" method="post" action="{% url 'delivery_notes:bulk_delete' %}"
               onsubmit="return confirm('¿Eliminar los albaranes seleccionados? Esta acción no se puede deshacer.');">
             {% csrf_token %}
-            <button type="submit" class="btn btn-sm btn-outline-danger">
+            <button type="submit" disabled class="btn btn-sm btn-outline-danger">
                 <i class="bi bi-trash me-1"></i>Eliminar seleccionados (<span id="selected-count">0</span>)
             </button>
         </form>
@@ -68,8 +75,11 @@
     {% endif %}
 </div>
 
-<div class="card shadow-sm">
-    <div class="table-responsive">
+</div>
+
+<div class="border rounded p-2" id="list-bottom-panel">
+    <div class="h-100 d-flex flex-column">
+    <div class="fixed-list-scroll" style="flex: 1 1 auto; min-height: 0; overflow: auto;">
         <table class="table table-hover align-middle mb-0">
             <thead class="table-light">
                 <tr>
@@ -167,7 +177,7 @@
                 {% endfor %}
             </tbody>
         </table>
-    </div>
+    </div>    </div>
 </div>
 
 {# S116-H10: seleccionar todos/algunos para borrado masivo -- petición #}
@@ -190,7 +200,7 @@
     function updateBar() {
         var checked = document.querySelectorAll(".note-select-checkbox:checked");
         counter.textContent = checked.length;
-        bar.classList.toggle("d-none", checked.length === 0);
+        bar.querySelector("button[type=submit]").disabled = checked.length === 0;
     }
 
     if (selectAll) {
@@ -204,4 +214,5 @@
     });
 }());
 </script>
+{% include "panel/_fixed_list_layout.html" with top_id="list-top-panel" bottom_id="list-bottom-panel" %}
 {% endblock %}
