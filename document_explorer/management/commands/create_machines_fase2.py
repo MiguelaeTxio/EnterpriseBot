@@ -50,12 +50,18 @@ MACHINES = [
      "folders": ["PLATAFORMAS (Z)/ALTESUR"], "name_contains": "8834KFJ"},
     {"code": "MA5936", "plate": "MA5936", "brand_model": "Tractor",
      "folders": ["TRACTOR"]},
+    # "GARANTIA DESBROZADORA.pdf" vive en la carpeta de la barca pero es
+    # de una desbrozadora (revisión del dry-run EnterpriseBot_014).
     {"code": "BARCA", "brand_model": "Embarcación de Alberto Álvarez",
      "folders": [
          "BARCA ALBERTO ALVAREZ",
          "VEHICULOS DE EMPRESA/AA PARTICULAR VEHICULOS/DOCUMENT EMBARCACION ALBERTO",
-     ]},
-    {"code": "LEANDRO", "brand_model": "Vehículo particular de Leandro Álvarez",
+     ],
+     "exclude_names": ["GARANTIA DESBROZADORA"]},
+    # Matrícula real vista en sus documentos (9737-KKF FICHA TECNICA /
+    # PERM.CIRCULACION) -- regla confirmada: matrícula como código.
+    {"code": "9737KKF", "plate": "9737KKF",
+     "brand_model": "Vehículo particular de Leandro Álvarez",
      "folders": ["VEHICULOS DE EMPRESA/AA PARTICULAR VEHICULOS/LEANDRO ALVAREZ"]},
     {"code": "HINOWA251", "brand_model": "Hinowa (n.º serie 251L4ULAX08)",
      "folders": ["MAQUINARIA OTROS/MAMMSA/HINOWA 251L4ULAX08"]},
@@ -75,8 +81,16 @@ MACHINES = [
      "folders": ["DESPOSITOS GASOIL"]},
     {"code": "DEPAGUAMLG", "brand_model": "Depósito de agua contra incendios (Málaga)",
      "folders": ["DEPOSITO AGUA CONTRA INCENDIOS-MALAGA"]},
-    {"code": "DOLLYS", "brand_model": "Dollys",
-     "folders": ["DOLLYS"]},
+    # DOLLYS: no es una máquina, son tres dollys con matrícula propia
+    # (transferencias de LU-85824-VE, LU-87711-VE y PO-39974-VE). Cada uno
+    # se lleva los archivos con su matrícula; el certificado de poderes y
+    # el mandato de la carpeta son de gestoría y quedan sin máquina.
+    {"code": "LU85824VE", "plate": "LU85824VE", "brand_model": "Dolly",
+     "folders": ["DOLLYS"], "name_contains": "LU-85824-VE"},
+    {"code": "LU87711VE", "plate": "LU87711VE", "brand_model": "Dolly",
+     "folders": ["DOLLYS"], "name_contains": "LU-87711-VE"},
+    {"code": "PO39974VE", "plate": "PO39974VE", "brand_model": "Dolly",
+     "folders": ["DOLLYS"], "name_contains": "PO-39974-VE"},
     {"code": "COMOLI", "brand_model": "Oruga Comoli (n.º 1588006604)",
      "folders": ["MAQUINARIA OTROS/COMOLI/ORUGA 1588006604"]},
     {"code": "BOBCAT", "brand_model": "Barredora Bobcat",
@@ -173,8 +187,13 @@ class Command(BaseCommand):
                     domain_object_id__isnull=True,
                     deleted_at__isnull=True, purged_at__isnull=True,
                 )
-                if not spec.get("name_contains")
-                or _normalized(spec["name_contains"]) in _normalized(e.name)
+                if (
+                    not spec.get("name_contains")
+                    or _normalized(spec["name_contains"]) in _normalized(e.name)
+                ) and not any(
+                    _normalized(excluded) in _normalized(e.name)
+                    for excluded in spec.get("exclude_names", [])
+                )
             ]
 
             existing = MachineAsset.objects.filter(code__iexact=spec["code"]).first()
