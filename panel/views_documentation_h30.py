@@ -663,11 +663,6 @@ class PersonalListFragmentView(CompanyUserRequiredMixin, View):
         ctx["epi_batch_templates"] = EpiDeliveryBatchTemplate.objects.prefetch_related(
             "items",
         ).order_by("name")
-        # H31 (S117): trabajadores activos para el desplegable de "Dar
-        # de baja trabajador" (rescisión de contrato).
-        ctx["active_persons_for_termination"] = PersonIdentity.objects.filter(
-            is_active_employee=True,
-        ).order_by("first_surname", "second_surname", "given_name")
         return render(request, "panel/documentation_h30/_personal_pane.html", ctx)
 
 
@@ -3744,115 +3739,131 @@ class PersonMassSetJobPositionView(DocsUploadAccessMixin, View):
 
 class PersonalTerminateView(DocsUploadAccessMixin, View):
     """
-    H31 (S117). POST: baja de un trabajador por RESCISIÓN DE CONTRATO
-    (deja de trabajar en la empresa) -- nunca confundir con una baja
-    médica/ITL (hr_calendar.MedicalLeavePeriod). Petición explícita de
-    Miguel Ángel: "tenemos el alta, pero no tenemos la opción de dar de
-    baja a un trabajador activo [...] poderlos elegir desde el
-    desplegable [...] una baja por rescisión de contrato".
+    H31 (S117). POST: baja por RESCISIÓN DE CONTRATO (el trabajador
+    deja la empresa) de uno o varios trabajadores a la vez -- nunca
+    confundir con una baja médica/ITL (hr_calendar.MedicalLeavePeriod).
+    Mismo proceso que "Dar de baja" en Centros de gasto, decisión
+    explícita de Miguel Ángel: "señalo en el listado, en el casillero
+    50 personas y en el panel de acciones me aparece ya accionable el
+    botón de dar de baja [...] con fecha del día [...] la selección de
+    personal la haces desde el CRUD, no desde el modal" -- el modal del
+    frontend solo confirma.
 
-    Aplica lo ya decidido en S100 para la baja: el trabajador pasa a
-    inactivo y su documentación a la carpeta de inactivos, desde donde
-    se consulta en el explorador de archivos. Reutiliza sin duplicar
-    la regla de carpetas de S99 (naming_service.build_person_category_
-    root -> PERSONAL/INACTIVOS) y el movimiento VIRTUAL de
-    move_service.move_entries() por domain_object real (4.12: nunca se
-    toca GCS, solo parent_path/name), igual que
-    restructure_personal_folders.
+    Aplica lo ya decidido en S100 para la baja: pasa a inactivo, se
+    guarda la fecha de baja (HOY) y su documentación va a la carpeta de
+    inactivos, desde donde se consulta en el explorador de archivos.
+    Reutiliza sin duplicar la regla de carpetas de S99
+    (naming_service.build_person_category_root -> PERSONAL/INACTIVOS) y
+    el movimiento VIRTUAL de move_service.move_entries() por
+    domain_object real (4.12: nunca se toca GCS), igual que
+    restructure_personal_folders. Una transacción por persona: si una
+    falla, las demás no se deshacen.
 
-    POST person_id, termination_date (AAAA-MM-DD).
+    POST person_ids (uno o varios).
     """
 
     def post(self, request):
-        from django.db import transaction
-
-        from document_explorer.move_service import move_entries
-
-        person = get_object_or_404(
-            PersonIdentity, pk=request.POST.get("person_id"),
-        )
-        if not person.is_active_employee:
+        person_ids = request.POST.getlist("person_ids")
+        if not person_ids:
             return JsonResponse(
-                {"ok": False, "error": "Este trabajador ya está de baja."},
+                {"ok": False, "error": "No hay ningún trabajador seleccionado."},
                 status=400,
             )
-        raw_date = request.POST.get("termination_date", "").strip()
-        try:
-            termination_date = datetime.strptime(raw_date, "%Y-%m-%d").date()
-        except ValueError:
-            return JsonResponse(
-                {"ok": False, "error": "Fecha de baja no válida."},
-                status=400,
-            )
-        if person.hire_date and termination_date < person.hire_date:
-            return JsonResponse(
-                {
-                    "ok": False,
-                    "error": "La fecha de baja no puede ser anterior a "
-                    "la de alta (%s)." % person.hire_date.strftime("%d/%m/%Y"),
-                },
-                status=400,
-            )
-
+        today = timezone.localdate()
         person_ct = ContentType.objects.get_for_model(PersonIdentity)
-        new_folder_path = "%s/%s" % (
-            naming_service.build_person_category_root(
-                person.first_surname, person.second_surname,
-                person.employer_company, False,
-            ),
-            naming_service.build_person_folder_name(
-                person.first_surname, person.second_surname,
-                person.given_name,
-            ),
-        )
-        # Mismo criterio que restructure_personal_folders ante dos
-        # personas con el mismo nombre: nunca mezclar su documentación
-        # en una misma carpeta -- sufijo _2, _3... si la carpeta ya
-        # tiene documentos de OTRA persona.
-        base_folder_path = new_folder_path
-        ordinal = 2
-        while DocumentIndexEntry.objects.filter(
-            bucket=BUCKET, parent_path=new_folder_path,
-            entry_kind=DocumentIndexEntry.KIND_FILE,
-            deleted_at__isnull=True, purged_at__isnull=True,
-        ).exclude(
-            domain_content_type=person_ct, domain_object_id=person.pk,
-        ).exists():
-            new_folder_path = "%s_%d" % (base_folder_path, ordinal)
-            ordinal += 1
-
-        with transaction.atomic():
-            entries = list(
-                DocumentIndexEntry.objects.filter(
-                    bucket=BUCKET, domain_content_type=person_ct,
-                    domain_object_id=person.pk,
-                    entry_kind=DocumentIndexEntry.KIND_FILE,
-                    deleted_at__isnull=True, purged_at__isnull=True,
-                )
+        terminated_ids = []
+        skipped_names = []
+        moved_total = 0
+        for person in PersonIdentity.objects.filter(pk__in=person_ids):
+            if not person.is_active_employee:
+                skipped_names.append(_person_display_name(person))
+                continue
+            moved_total += _terminate_person(
+                person, today, person_ct, request.user.company_user,
             )
-            moved = len(move_entries(entries, new_folder_path)) if entries else 0
-            person.is_active_employee = False
-            person.termination_date = termination_date
-            person.folder_path = new_folder_path
-            person.save(update_fields=[
-                "is_active_employee", "termination_date", "folder_path",
-                "updated_at",
-            ])
-        logger.info(
-            "# [H31-BAJA] PersonIdentity pk=%s dado de baja (rescisión) "
-            "con fecha %s por CU pk=%s -- %d documento(s) movidos a %s.",
-            person.pk, termination_date, request.user.company_user.pk,
-            moved, new_folder_path,
-        )
+            terminated_ids.append(person.pk)
         return JsonResponse({
             "ok": True,
-            "person_id": person.pk,
-            "name": "%s %s, %s" % (
-                person.first_surname, person.second_surname, person.given_name,
-            ),
-            "moved_count": moved,
-            "folder_path": new_folder_path,
+            "terminated_count": len(terminated_ids),
+            "terminated_ids": terminated_ids,
+            "skipped_names": skipped_names,
+            "moved_count": moved_total,
         })
+
+
+def _person_display_name(person):
+    """
+    "APELLIDO1 APELLIDO2, NOMBRE", same format as the list.
+    ---
+    "APELLIDO1 APELLIDO2, NOMBRE", mismo formato que el listado.
+    """
+    return "%s %s, %s" % (
+        person.first_surname, person.second_surname, person.given_name,
+    )
+
+
+def _terminate_person(person, termination_date, person_ct, company_user):
+    """
+    H31 (S117). Marks one worker as terminated (rescisión de contrato)
+    and moves his/her documentation virtually to PERSONAL/INACTIVOS.
+    Returns the number of documents moved.
+    ---
+    Marca un trabajador como dado de baja (rescisión de contrato) y
+    mueve virtualmente su documentación a PERSONAL/INACTIVOS. Devuelve
+    el número de documentos movidos.
+    """
+    from django.db import transaction
+
+    from document_explorer.move_service import move_entries
+
+    base_folder_path = "%s/%s" % (
+        naming_service.build_person_category_root(
+            person.first_surname, person.second_surname,
+            person.employer_company, False,
+        ),
+        naming_service.build_person_folder_name(
+            person.first_surname, person.second_surname, person.given_name,
+        ),
+    )
+    # Mismo criterio que restructure_personal_folders ante homónimos:
+    # nunca mezclar la documentación de dos personas en una carpeta --
+    # sufijo _2, _3... si ya tiene documentos de OTRA persona.
+    new_folder_path = base_folder_path
+    ordinal = 2
+    while DocumentIndexEntry.objects.filter(
+        bucket=BUCKET, parent_path=new_folder_path,
+        entry_kind=DocumentIndexEntry.KIND_FILE,
+        deleted_at__isnull=True, purged_at__isnull=True,
+    ).exclude(
+        domain_content_type=person_ct, domain_object_id=person.pk,
+    ).exists():
+        new_folder_path = "%s_%d" % (base_folder_path, ordinal)
+        ordinal += 1
+
+    with transaction.atomic():
+        entries = list(
+            DocumentIndexEntry.objects.filter(
+                bucket=BUCKET, domain_content_type=person_ct,
+                domain_object_id=person.pk,
+                entry_kind=DocumentIndexEntry.KIND_FILE,
+                deleted_at__isnull=True, purged_at__isnull=True,
+            )
+        )
+        moved = len(move_entries(entries, new_folder_path)) if entries else 0
+        person.is_active_employee = False
+        person.termination_date = termination_date
+        person.folder_path = new_folder_path
+        person.save(update_fields=[
+            "is_active_employee", "termination_date", "folder_path",
+            "updated_at",
+        ])
+    logger.info(
+        "# [H31-BAJA] PersonIdentity pk=%s dado de baja (rescisión) con "
+        "fecha %s por CU pk=%s -- %d documento(s) movidos a %s.",
+        person.pk, termination_date, company_user.pk, moved,
+        new_folder_path,
+    )
+    return moved
 
 
 class PersonGroupTemplateSaveView(DocsUploadAccessMixin, View):
