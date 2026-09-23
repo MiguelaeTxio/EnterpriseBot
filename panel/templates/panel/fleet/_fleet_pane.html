@@ -25,41 +25,71 @@ la lista hace scroll. Dos paneles:
   #personal-bottom-panel, S114) con la tabla dentro de un contenedor
   con scroll propio y cabecera de columnas fija (sticky).
 {% endcomment %}
+    {% comment %}
+    S117 -- mismo formato que la pestaña Personal (petición de Miguel
+    Ángel, con capturas de ambas): barra de botones de gestión arriba a
+    la derecha y, debajo, subpaneles con una función cada uno -- "Buscar
+    y filtrar" (búsqueda a lo ancho, Estado en casillas, Familia, "Mostrar
+    solo la selección actual") y acciones sobre la selección agrupadas
+    por categoría.
+    {% endcomment %}
     <div class="border rounded p-2 mb-2" id="fleet-top-panel">
-        <div class="d-flex align-items-center justify-content-between mb-2 flex-wrap gap-2">
-            <h5 class="mb-0 fw-semibold">Centros de gasto</h5>
+        <div class="d-flex justify-content-end gap-2 mb-2">
             {% if can_manage %}
-            <button class="btn btn-sm btn-primary"
+            <button type="button" class="btn btn-sm btn-primary"
                     data-bs-toggle="modal"
                     data-bs-target="#fleetCreateModal">
-                <i class="bi bi-plus-lg me-1"></i>Nuevo centro
+                <i class="bi bi-plus-lg me-1"></i>Nuevo centro de gasto
             </button>
             {% endif %}
         </div>
 
         <div class="row g-2">
-            <div class="col-lg-5">
+            <div class="col-lg-4">
                 <div class="border rounded p-2 h-100">
                     <div class="fw-bold small mb-1">Buscar y filtrar</div>
-                    <div class="row g-2 align-items-end">
-                        <div class="col-12 col-sm">
-                            <input id="fleet-filter-search"
-                                   type="search"
-                                   class="form-control form-control-sm"
-                                   placeholder="Código, marca/modelo, matrícula…"
-                                   name="search"
-                                   value="{{ filter_search }}"
-                                   autocomplete="off"
+                    <input id="fleet-filter-search"
+                           type="search"
+                           class="form-control form-control-sm mb-2"
+                           placeholder="Buscar por código, marca/modelo, matrícula…"
+                           name="search"
+                           value="{{ filter_search }}"
+                           autocomplete="off"
+                           hx-get="{% url 'panel:fleet_fragment' %}"
+                           hx-target="#fleet-table-container"
+                           hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door, #fleet-sort-inputs"
+                           hx-trigger="input changed delay:300ms, search">
+                    <div class="d-flex gap-4">
+                        <div>
+                            <div class="small fw-bold">Estado</div>
+                            {% comment %}
+                            Casillas sin "name": el JS traduce la combinación
+                            al valor único de is_active (#fleet-filter-is-active)
+                            -- ambas = todos, ninguna = ninguno (semántica
+                            literal de casilla, mismo criterio que Personal).
+                            {% endcomment %}
+                            <div class="form-check">
+                                <input class="form-check-input fleet-estado-check" type="checkbox" id="fleet-estado-activos" data-estado="1" autocomplete="off"
+                                       {% if filter_is_active == '' or filter_is_active == '1' %}checked{% endif %}>
+                                <label class="form-check-label small" for="fleet-estado-activos">Activos</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input fleet-estado-check" type="checkbox" id="fleet-estado-inactivos" data-estado="0" autocomplete="off"
+                                       {% if filter_is_active == '' or filter_is_active == '0' %}checked{% endif %}>
+                                <label class="form-check-label small" for="fleet-estado-inactivos">Inactivos</label>
+                            </div>
+                            <input type="hidden" id="fleet-filter-is-active" name="is_active" value="{{ filter_is_active }}"
                                    hx-get="{% url 'panel:fleet_fragment' %}"
                                    hx-target="#fleet-table-container"
-                                   hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-is-active, #fleet-sort-inputs, #fleet-door"
-                                   hx-trigger="input changed delay:300ms, search">
+                                   hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door, #fleet-sort-inputs"
+                                   hx-trigger="fleet-estado-change">
                         </div>
-                        <div class="col-12 col-sm-auto">
+                        <div class="flex-grow-1">
+                            <div class="small fw-bold">Familia</div>
                             <select id="fleet-filter-family" class="form-select form-select-sm"
                                     hx-get="{% url 'panel:fleet_fragment' %}"
                                     hx-target="#fleet-table-container"
-                                    hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-is-active, #fleet-sort-inputs, #fleet-door"
+                                    hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door, #fleet-sort-inputs"
                                     hx-trigger="change"
                                     name="family" autocomplete="off">
                                 <option value="">Todas las familias</option>
@@ -68,52 +98,45 @@ la lista hace scroll. Dos paneles:
                                 {% endfor %}
                             </select>
                         </div>
-                        <div class="col-12 col-sm-auto">
-                            <select id="fleet-filter-is-active" class="form-select form-select-sm"
-                                    hx-get="{% url 'panel:fleet_fragment' %}"
-                                    hx-target="#fleet-table-container"
-                                    hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-is-active, #fleet-sort-inputs, #fleet-door"
-                                    hx-trigger="change"
-                                    name="is_active" autocomplete="off">
-                                <option value="" {% if filter_is_active == '' %}selected{% endif %}>Activos e inactivos</option>
-                                <option value="1" {% if filter_is_active == '1' %}selected{% endif %}>Solo activos</option>
-                                <option value="0" {% if filter_is_active == '0' %}selected{% endif %}>Solo inactivos</option>
-                            </select>
+                    </div>
+                    <div class="small fw-bold mt-2">Selección</div>
+                    <div class="d-flex align-items-center justify-content-between gap-2">
+                        <div class="form-check mb-0">
+                            <input class="form-check-input" type="checkbox" id="fleet-only-selected" name="only_selected" value="1" autocomplete="off"
+                                   hx-get="{% url 'panel:fleet_fragment' %}"
+                                   hx-target="#fleet-table-container"
+                                   hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door, #fleet-sort-inputs"
+                                   hx-trigger="change, fleet-selection-refresh">
+                            <label class="form-check-label small" for="fleet-only-selected">Mostrar solo la selección actual</label>
                         </div>
-                        <div class="col-12 col-sm-auto">
-                            <button type="button"
-                                    class="btn btn-sm btn-outline-secondary{% if not sort_active %} d-none{% endif %}"
-                                    id="fleet-clear-sort"
-                                    hx-get="{% url 'panel:fleet_fragment' %}"
-                                    hx-target="#fleet-table-container"
-                                    hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-is-active, #fleet-door"
-                                    hx-vals='{"sort": ""}'
-                                    title="Deshacer todos los órdenes aplicados">
-                                <i class="bi bi-x-circle me-1"></i>Quitar orden
-                            </button>
-                        </div>
+                        <input type="hidden" id="fleet-selected-ids" name="selected_ids" value="">
+                        <button type="button"
+                                class="btn btn-sm btn-outline-secondary{% if not sort_active %} d-none{% endif %}"
+                                id="fleet-clear-sort"
+                                hx-get="{% url 'panel:fleet_fragment' %}"
+                                hx-target="#fleet-table-container"
+                                hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
+                                hx-vals='{"sort": ""}'
+                                title="Deshacer todos los órdenes aplicados">
+                            <i class="bi bi-x-circle me-1"></i>Quitar orden
+                        </button>
                     </div>
                 </div>
             </div>
 
             {% comment %}
-            S117 -- petición de Miguel Ángel: acciones en DOS paneles
-            junto a la selección. "Varios centros" actúa sobre toda la
-            selección (dar de baja, reactivar, eliminar, exportar a
-            Excel); "Un solo centro" (Editar, Documentación) solo se
-            habilita con exactamente UNO marcado -- con varios se ve pero
-            deshabilitado. "Limpiar" sirve para ambos.
+            Acciones sobre la selección, por categoría (como Personal):
+            "Varios centros" (1 o más), "Un solo centro" (exactamente 1,
+            si no deshabilitado) y "Exportar". "Limpiar" sirve para todo.
             {% endcomment %}
-            <div class="col-lg-7">
+            <div class="col-lg-8">
                 <div class="border rounded p-2 h-100" id="fleet-mass-bar">
                     <div class="d-flex align-items-center gap-2 mb-1">
                         <strong class="small"><span id="fleet-mass-count">0</span> seleccionados</strong>
-                        <button type="button" class="btn btn-sm btn-outline-secondary" id="fleet-mass-clear">
-                            <i class="bi bi-x-lg me-1"></i>Limpiar selección
-                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="fleet-mass-clear">Limpiar</button>
                     </div>
                     <div class="row g-1">
-                        <div class="col-7 border-end pe-2">
+                        <div class="col-md-5 border-end pe-2">
                             <div class="small text-muted fw-bold">Varios centros</div>
                             <div class="d-flex gap-1 flex-wrap">
                                 {% if can_manage %}
@@ -129,12 +152,12 @@ la lista hace scroll. Dos paneles:
                                     <i class="bi bi-trash me-1"></i>Eliminar
                                 </button>
                                 {% endif %}
-                                <button type="button" class="btn btn-sm btn-outline-primary fleet-needs-selection" id="fleet-mass-export" disabled>
-                                    <i class="bi bi-file-earmark-excel me-1"></i>Exportar a Excel
-                                </button>
+                                {% if not can_manage and not can_delete %}
+                                <span class="text-muted small">Solo consulta para tu rol.</span>
+                                {% endif %}
                             </div>
                         </div>
-                        <div class="col-5">
+                        <div class="col-md-4 border-end px-2">
                             <div class="small text-muted fw-bold">Un solo centro</div>
                             <div class="d-flex gap-1 flex-wrap">
                                 {% if can_manage %}
@@ -146,6 +169,12 @@ la lista hace scroll. Dos paneles:
                                     <i class="bi bi-file-earmark-text me-1"></i>Documentación
                                 </button>
                             </div>
+                        </div>
+                        <div class="col-md-3 ps-2">
+                            <div class="small text-muted fw-bold">Exportar</div>
+                            <button type="button" class="btn btn-sm btn-outline-primary fleet-needs-selection" id="fleet-mass-export" disabled>
+                                <i class="bi bi-file-earmark-excel me-1"></i>Excel
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -322,6 +351,16 @@ la lista hace scroll. Dos paneles:
         }
         // S117: panel "Varios centros" activo con 1 o más; panel "Un
         // solo centro" activo SOLO con exactamente 1.
+        // "Mostrar solo la selección actual": los pks viajan en
+        // #fleet-selected-ids; si la casilla está marcada, el listado se
+        // repinta con cada cambio de selección (mismo criterio que Personal).
+        const idsInput = document.getElementById("fleet-selected-ids");
+        const newIds = Array.from(selection.keys()).join(",");
+        if (idsInput.value !== newIds) {
+            idsInput.value = newIds;
+            const onlySel = document.getElementById("fleet-only-selected");
+            if (onlySel.checked) htmx.trigger(onlySel, "fleet-selection-refresh");
+        }
         document.querySelectorAll(".fleet-needs-selection").forEach(function (btn) {
             btn.disabled = selection.size === 0;
         });
@@ -335,6 +374,18 @@ la lista hace scroll. Dos paneles:
         all.checked = rows.length > 0 && checked.length === rows.length;
         all.indeterminate = checked.length > 0 && checked.length < rows.length;
     }
+
+    // Estado (casillas) -> valor único de is_active: "" ambas, "1"
+    // solo activos, "0" solo inactivos, "none" ninguna.
+    const estadoHidden = document.getElementById("fleet-filter-is-active");
+    document.querySelectorAll(".fleet-estado-check").forEach(function (cb) {
+        cb.addEventListener("change", function () {
+            const act = document.getElementById("fleet-estado-activos").checked;
+            const inact = document.getElementById("fleet-estado-inactivos").checked;
+            estadoHidden.value = act && inact ? "" : (act ? "1" : (inact ? "0" : "none"));
+            htmx.trigger(estadoHidden, "fleet-estado-change");
+        });
+    });
 
     container.addEventListener("change", function (evt) {
         const target = evt.target;

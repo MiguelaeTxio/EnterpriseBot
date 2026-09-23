@@ -254,15 +254,32 @@ def _build_queryset(company, request):
         """Read from GET first, fall back to POST (mutation requests)."""
         return request.GET.get(key) or request.POST.get(f"_f_{key}", default)
 
-    family_filter = _gp("family").strip()
-    if family_filter:
-        qs = qs.filter(family__iexact=family_filter)
+    # S117 -- "Mostrar solo la selección actual" (mismo criterio que la
+    # pestaña Personal, S113): con la casilla marcada, el listado se
+    # limita EXACTAMENTE a los pks seleccionados y se saltan Familia y
+    # Estado (nunca se combinan, para no ocultar nada de la selección);
+    # la búsqueda de texto sí sigue aplicando.
+    selected_ids = [
+        pk for pk in request.GET.get("selected_ids", "").split(",")
+        if pk.isdigit()
+    ]
+    if request.GET.get("only_selected") == "1" and selected_ids:
+        qs = qs.filter(pk__in=selected_ids)
+    else:
+        family_filter = _gp("family").strip()
+        if family_filter:
+            qs = qs.filter(family__iexact=family_filter)
 
-    active_filter = _gp("is_active")
-    if active_filter == "1":
-        qs = qs.filter(is_active=True)
-    elif active_filter == "0":
-        qs = qs.filter(is_active=False)
+        # Estado en casillas (S117): "" ambas, "1" solo activos, "0"
+        # solo inactivos, "none" ninguna marcada -> ningún resultado
+        # (semántica literal de casilla, mismo criterio que Personal).
+        active_filter = _gp("is_active")
+        if active_filter == "1":
+            qs = qs.filter(is_active=True)
+        elif active_filter == "0":
+            qs = qs.filter(is_active=False)
+        elif active_filter == "none":
+            qs = qs.none()
 
     search_filter = _gp("search").strip()
     if search_filter:
@@ -411,6 +428,7 @@ def _build_fragment_context(company, company_user, request):
         "filter_family":    _p("family"),
         "filter_is_active": _p("is_active"),
         "filter_search":    _p("search"),
+        "only_selected":    request.GET.get("only_selected") == "1",
         **_build_sort_controls(_p("sort")),
         **_fleet_permissions(company_user),
         "fleet_door":       _fleet_door(_p("door")),
