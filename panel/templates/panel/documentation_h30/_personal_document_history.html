@@ -16,7 +16,7 @@ PersonalDocumentTypeHistoryView.
                 {% else %}Sin fecha{% endif %}
             </td>
             <td>
-                {% if entry.is_obsolete %}
+                {% if not entry.is_current_computed %}
                 <span class="badge bg-secondary">Obsoleto</span>
                 {% else %}
                 <span class="badge bg-success">Vigente</span>

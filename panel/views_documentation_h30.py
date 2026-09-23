@@ -207,6 +207,21 @@ def _split_current_obsolete(entries):
         by_type.setdefault(entry.document_type_id, []).append(entry)
 
     for _type_id, group in by_type.items():
+        # S117 -- vigencia_service deja al llamador filtrar los tipos
+        # acumulables (DocumentTypeCatalog.is_cumulative, S107: varias
+        # instancias vigentes A LA VEZ -- cursos, entregas,
+        # nombramientos...), y aquí nunca se hacía: una persona con
+        # varias entregas de información solo veía la última como
+        # vigente. En un tipo acumulable todo lo no obsoleto es vigente.
+        if group[0].document_type_id and group[0].document_type.is_cumulative:
+            for entry in group:
+                entry.needs_attention = bool(
+                    entry.document_type.tracks_expiry
+                    and entry.expiry_date
+                    and entry.expiry_date < today
+                )
+                current.append(entry)
+            continue
         snapshots = {
             e.pk: DocumentSnapshot(
                 identifier=e.pk, expiry_date=e.expiry_date,
@@ -2356,11 +2371,33 @@ class PersonalDocumentTypeHistoryView(CompanyUserRequiredMixin, View):
         person = get_object_or_404(PersonIdentity, pk=pk)
         document_type = get_object_or_404(DocumentTypeCatalog, code=type_code)
         ct = ContentType.objects.get_for_model(PersonIdentity)
-        entries = DocumentIndexEntry.objects.filter(
+        entries = list(DocumentIndexEntry.objects.filter(
             bucket=BUCKET, domain_content_type=ct, domain_object_id=person.pk,
             document_type=document_type, entry_kind=DocumentIndexEntry.KIND_FILE,
             deleted_at__isnull=True, purged_at__isnull=True,
-        ).order_by("-expiry_date", "-id")
+        ).select_related("document_type").order_by("-expiry_date", "-id"))
+        # S117 -- incidente real de Miguel Ángel (Carvajal González,
+        # pk=218): el Historial pintaba "Vigente/Obsoleto" leyendo solo
+        # el is_obsolete guardado, mientras la ficha lo CALCULA por
+        # fechas (_split_current_obsolete) -- mostraba como vigente una
+        # investigación de 2023 con otra de 2025 más reciente. Ahora el
+        # estado del Historial sale del mismo cálculo que la ficha.
+        current, _obsolete = _split_current_obsolete(entries)
+        current_pks = {entry.pk for entry in current}
+        for entry in entries:
+            entry.is_current_computed = entry.pk in current_pks
+        # Orden por fecha efectiva (caducidad si la hay, si no emisión),
+        # más reciente arriba, sin fecha al final -- antes ordenaba solo
+        # por expiry_date y los tipos fechados por emisión salían
+        # desordenados (5/5, 31/10, 25/6, 3/2 en la captura de S117).
+        entries.sort(
+            key=lambda entry: (
+                (entry.expiry_date or entry.issue_date) is not None,
+                entry.expiry_date or entry.issue_date or date.min,
+                entry.pk,
+            ),
+            reverse=True,
+        )
         return render(
             request, "panel/documentation_h30/_personal_document_history.html",
             {"person": person, "document_type": document_type, "entries": entries},
