@@ -7791,3 +7791,39 @@ describiendo la infraestructura actual:**
 
 
 
+---
+
+## HOJA DE RUTA DOMINIO MÁQUINAS (S117, confirmada por Miguel Ángel -- sustituye por completo a cualquier hoja de ruta anterior de este anexo, incluidos los "puntos heredados de S73", que eran de PERSONAL y ya estaban resueltos)
+
+Criterio rector, verbatim de Miguel Ángel (S116): *"Estuvimos
+ordenando, clasificando, tipando, fechando personal. Vamos a hacer lo
+mismo con la maquinaria."* Mismo orden que PERSONAL: primero datos
+limpios (puntos 1-7), después interfaz (puntos 8-9). Las vistas de
+mecánicos (historial de máquinas H22, tickets de avería) no se tocan.
+
+Estado real de partida (S117, `db_query.yml`, `DOC. MAQUINAS` vivo):
+10.760 documentos tipados y vinculados a máquina (solo 3.584 con
+alguna fecha, 130 con OCR), 384 con tipo sin máquina, 3.117 sin tipo.
+ITV: 107 vigentes ya caducadas; POLIZA_SEGURO: 204 vigentes todas sin
+fecha; 8.299 `is_obsolete` decididos mayoritariamente sin fecha.
+
+1. Auditoría de partida solo sobre máquinas ACTIVAS: cotejo de
+   `MachineAsset.is_active` contra el Excel real de maquinaria,
+   situación documental por tipo, verificación del pipeline de OCR
+   real (Tesseract -> EasyOCR -> Cloud Vision) contra el código.
+2. Fase 1 -- tipado por heurística de los 3.117 sin tipo (cierre: 0
+   resolubles por heurística).
+3. Fase 2 -- dominio de los 384 con tipo sin máquina.
+4. Retipado por contenido de cajones de sastre (documentos de persona
+   colados en máquinas, FICHA_TECNICA vs ITV, CERT_MANTENIMIENTO).
+5. Fechado tipo a tipo, primero los de caducidad legal (ITV, póliza y
+   recibo de seguro, OCA, tacógrafo, Carta verde, IVTM, eslingas),
+   cierre a 0 con auditoría histórico vs. pendiente real.
+6. Recalcular vigencia real y activar avisos de caducidad de máquinas.
+7. Renombrado canónico y carpetas activas/inactivas.
+8. Ficha de máquina en el panel de Documentación al nivel de la de
+   personal (familias, vigente + historial, avisos, dossier,
+   sustitución guiada, requisitos de documentación por familia,
+   reparaciones/revisiones solo en consulta).
+9. Accesorios de elevación (eslingas, líneas de carga, certificados),
+   equivalente de los EPIs para maquinaria -- diseño con Miguel Ángel.
