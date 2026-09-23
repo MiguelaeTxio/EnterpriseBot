@@ -805,8 +805,37 @@ _S117_MACHINE_ADDITIONS = {
     # asistencia de Europ Assistance.
     "POLIZA_SEGURO": ["COBERTURA ASIST VIAJE"],
 }
-for _code, _phrases in _S117_MACHINE_ADDITIONS.items():
-    CANDIDATES_SAFE["MACHINE"].setdefault(_code, []).extend(_phrases)
+# Segunda vuelta S117 (EnterpriseBot_008, tras aplicar la primera): la
+# cola de variantes de tipos YA existentes cuyo tipo es evidente por el
+# propio nombre (menos de 10 archivos cada una).
+_S117_MACHINE_ADDITIONS_2 = {
+    # "MANUAL" suelto: MANUAL_DESPIECE gana si aparece DESPIECE
+    # (SPECIFIC_WINS en heuristic_type_service).
+    "MANUAL_USO": [
+        "MANUAL", "MANUAL USUARIO", "MANUAL DE USUARIO", "MANUAL DE SERVICIO",
+    ],
+    "PERMISO_CIRCULACION": ["PERM CIRCULA"],
+    # "AUTORIZACION PROVISIONAL CONDUCCION" (B-44) es de conducir, no de
+    # circulacion -- ver EXCLUSIONS.
+    "AUTORIZACION_PROVISIONAL_CIRCULACION": [
+        "AUT PROV CIRCULAC", "AUTORIZACIO PROVISIONAL",
+        "AUTORIZACION PROVISIONAL",
+    ],
+    "CERTIFICADO_SEGURO": ["CERT ALLIANZ", "SEG CERTIF", "CERTIFICADO POL"],
+    "SEGURO": ["REC MAPFRE", "REC ASEGRUP", "REC PYME", "PAGO SEG"],
+    "POLIZA_SEGURO": ["SUPL ALTA", "SUPL BAJA", "SUPL RENV"],
+    "LIBRO_HISTORIAL": ["LIBRO HISTORIA", "LIBRO DE REVISIONES"],
+    "CERT_REVISION": [
+        "REGISTRO REVISIONES", "CERTIFICADO DE REVISIONES",
+        "CERT ULTIMA REVISION", "REVISION INTERNA", "REV INTERCARRETILLA",
+    ],
+    # Fotos guardadas como PDF (el respaldo por extension no las ve).
+    "IMAGEN": ["FOTO PLACA", "IMAGEN DE WHATSAPP", "WHATSAPP IMAGE"],
+    "CERTIFICADO_PODERES": ["OTORGAMIENTO DE REPRESENTACION"],
+}
+for _additions in (_S117_MACHINE_ADDITIONS, _S117_MACHINE_ADDITIONS_2):
+    for _code, _phrases in _additions.items():
+        CANDIDATES_SAFE["MACHINE"].setdefault(_code, []).extend(_phrases)
 
 # Exclusiones por falso positivo real, detectado contra el corpus
 # (mismo patron que "BAJA TENSION" excluido de BAJA_PERSONAL en S46).
@@ -814,6 +843,10 @@ for _code, _phrases in _S117_MACHINE_ADDITIONS.items():
 # el nombre, anulan esa coincidencia aunque el patron de palabra
 # suelta hubiera matcheado.
 EXCLUSIONS = {
+    # S117: autorizacion provisional de CONDUCIR, no de circulacion.
+    ("MACHINE", "AUTORIZACION_PROVISIONAL_CIRCULACION", "AUTORIZACION PROVISIONAL"): [
+        "AUTORIZACION PROVISIONAL CONDUCCION",
+    ],
     ("PERSONAL", "ALTA", "ALTA"): ["ALTA VISIBILIDAD"],
     # Añadido en esta sesion: falso positivo real detectado en
     # calibracion -- "CIRCULAR INFORMATIVA PERMISO CONDUCIR.pdf"/.docx

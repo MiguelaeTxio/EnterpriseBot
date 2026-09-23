@@ -74,6 +74,9 @@ SPECIFIC_WINS = [
     ("CERTIFICADO_SEGURO", "SEGURO"),
     ("CERTIFICADO_SEGURO", "POLIZA_SEGURO"),
     ("AUTORIZACION_PROVISIONAL_CIRCULACION", "PERMISO_CIRCULACION"),
+    # S117 (2a vuelta): "MANUAL" suelto es manual de uso salvo que el
+    # nombre diga DESPIECE; y cualquier tipo real gana a la foto.
+    ("MANUAL_DESPIECE", "MANUAL_USO"),
     # Retirada S56 (migracion 0036): FACTURA_TERCEROS se fusiono en
     # FACTURA_COMPRA -- ya no hay dos codigos que puedan colisionar
     # aqui, la regla queda obsoleta y se retira en vez de dejarla
