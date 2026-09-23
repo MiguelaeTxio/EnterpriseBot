@@ -33,7 +33,7 @@ Cumple dos funciones inseparables:
 | H07 | Partes Diarios de Reparación Digital | `ENTERPRISEBOT_ATTACHED_MILESTONE_V07.md` |
 | H08 | Mejoras Procesador PDF→Excel + HTMX | `ENTERPRISEBOT_ATTACHED_MILESTONE_V08.md` |
 | H09 | Informes y Analítica Cruzada | `ENTERPRISEBOT_ATTACHED_MILESTONE_V09.md` |
-| H10 | Albaranes de Proveedores y Almacén de Repuestos | `ENTERPRISEBOT_ATTACHED_MILESTONE_V10.md` ← EN PROGRESO |
+| H10 | Albaranes de Proveedores y Almacén de Repuestos | `ENTERPRISEBOT_ATTACHED_MILESTONE_V10.md` |
 | H11 | Albaranes a Clientes | `ENTERPRISEBOT_ATTACHED_MILESTONE_V11.md` |
 | H12 | Gestión Centros de Gasto | `ENTERPRISEBOT_ATTACHED_MILESTONE_V12.md` |
 | H13 | Salas de Chat IRC por Sección | `ENTERPRISEBOT_ATTACHED_MILESTONE_V13.md` |
@@ -53,7 +53,7 @@ Cumple dos funciones inseparables:
 | H27 | Ingesta de Documentación vía Correo Electrónico | `ENTERPRISEBOT_ATTACHED_MILESTONE_V27.md` |
 | H28 | Migración y Reorganización de Documentación Histórica | `ENTERPRISEBOT_ATTACHED_MILESTONE_V28.md` |
 | H29 | Explorador de Archivos y Gobierno Documental del Panel sobre GCS | `ENTERPRISEBOT_ATTACHED_MILESTONE_V29.md` |
-| H30 | Vinculación Documental Real — Centros de Gasto y Personal | `ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md` |
+| H30 | Vinculación Documental Real — Centros de Gasto y Personal | `ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md` ← EN PROGRESO |
 | H31 | Interfaz de Gestión Documental de Personal — Altas, Bajas, Sustituciones, EPIs y Circulares (título anterior: "Interfaz de Ficha de Personal — EPIs y Notificaciones/Circulares"; ampliado en S99 al fusionar H33) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md` |
 | H32 | Migraciones de Infraestructura (Modelo IA, Python, Registro Android) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V32.md` |
 | ~~H33~~ | ~~Subida de Documentación en Tiempo Real desde el Panel~~ — **FUSIONADO EN H31 el 2026-09-10 (S99)**, ver sección 6 | `ENTERPRISEBOT_ATTACHED_MILESTONE_V33.md` (conservado íntegro como archivo histórico) |
@@ -67,15 +67,29 @@ Todos los anexos viven en `DOCS/MAINS/ATTACHEDS/`.
 
 ## 3. Resultado Actual
 
-**Hito EN PROGRESO:** H10 — Albaranes de Proveedores y Almacén de
-Repuestos → `ENTERPRISEBOT_ATTACHED_MILESTONE_V10.md`. Reactivado por
-PCH explícito de Miguel Ángel al cierre de S115 (que se cerraba en
-H31), para resolver el reparto de artículos de un albarán entre
-varios partes de trabajo diarios (un parte puede colocar 0, algunos o
-todos los artículos; el cierre de un parte nunca se bloquea por eso;
-al cerrar un ticket de avería sí se pregunta explícitamente por los
-pendientes). Ver "REACTIVACIÓN EN S115" al principio de la Sección 5
-del propio anexo para la hoja de ruta ejecutable completa.
+**Hito EN PROGRESO:** H30 — Vinculación Documental Real: Centros de
+Gasto y Personal → `ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md`.
+Retomado por PCH explícito de Miguel Ángel al cierre de S116 (que se
+cerraba en H10), dominio MÁQUINAS — el dominio PERSONAL ya se cerró
+al 100% en S92. Condición que tenía puesta para retomarse (H32
+cerrado) cumplida desde S93. Ver "PCH (S92): hito pausado" al final
+del propio anexo, y "Fase A de `DOC. MAQUINAS`" en sus secciones
+anteriores, para la hoja de ruta ejecutable completa — intacta, sin
+tocar desde S92.
+
+**Hito PAUSADO en S116:** H10 — Albaranes de Proveedores y Almacén de
+Repuestos → `ENTERPRISEBOT_ATTACHED_MILESTONE_V10.md`. Sesión muy
+larga: fotos y repuestos que se perdían al guardar/cerrar un parte o
+al borrarlo (corregido en los dos flujos de guardado y en los 5
+sitios reales donde se borra un parte/línea, con devolución real de
+repuestos y borrado de fotos en GCS/índice), tickets huérfanos
+limpiados (15 reales) y su borrado en cascada resuelto hacia
+delante, foto adjuntable en el mismo guardado de la tarea (sin
+`capture=environment`), y gestión de Albaranes/Almacén/Catálogo de
+repuestos rediseñada por completo (orden múltiple con prioridad,
+selección y borrado masivo, ficha de artículo con historial
+completo, stock mínimo con aviso). Ver "COMPLETADAS EN S116" en el
+anexo propio para el detalle completo.
 
 **Hito PAUSADO en S115:** H31 — Interfaz de Gestión Documental de
 Personal → `ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md`. Sesión larga:

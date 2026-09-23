@@ -7748,4 +7748,46 @@ de este mismo anexo, sin tocar en esta sesión). Se retoma cuando
 H32 -- Migraciones de Infraestructura (modelo IA, Python, registro
 Android) esté cerrado.
 
+---
+
+## AVISO AL RETOMAR (añadido en S116, PCH desde H10 -- concertado
+## explícitamente con Miguel Ángel en esa misma sesión, sin tocar la
+## hoja de ruta de arriba)
+
+**El contexto técnico ha cambiado de forma real desde S92 -- verificar
+antes de continuar, no asumir que el diseño de más arriba sigue
+describiendo la infraestructura actual:**
+
+- **Pipeline de OCR con tres niveles, no el que describa la hoja de
+  ruta original.** Miguel Ángel, verbatim: *"desde la máquina virtual
+  estábamos usando Tesseract, EasyOCR y, por último, Google Cloud
+  Vision cuando fallan todos estos [...] cuando hemos detectado que
+  tanto Tesseract como EasyOCR no iban bien, teníamos una bandera para
+  directamente ese tipo de archivos hacerlo con Google Cloud Vision y
+  ahorrar tiempo. Mientras funcionen, sí los usamos, porque evitamos
+  llamadas a la API que, al fin de cuentas, cuestan dinero."* Es decir:
+  Tesseract → EasyOCR → Google Cloud Vision como último recurso, con
+  una bandera que salta directamente a Google Cloud Vision para los
+  tipos de archivo ya identificados como malos candidatos para los dos
+  primeros, precisamente para ahorrar coste de API. Confirmar contra
+  el código real (`local_ocr_classify.py` y lo que lo haya sustituido
+  o ampliado desde S92) antes de dar por buena cualquier suposición
+  sobre qué motor de OCR se usa hoy.
+- **Aplicar al dominio MÁQUINAS toda la experiencia real ganada
+  cerrando el dominio PERSONAL.** Miguel Ángel, verbatim: *"ya tenemos
+  mucha experiencia con la clasificación a la hora de las fechas, de
+  todo eso. Hay que verlo todo para no cometer los mismos errores y
+  para que toda la experiencia que hemos ganado al realizar el dominio
+  de personal lo tengamos ahora con la maquinaria."* Antes de ejecutar
+  ciegamente la hoja de ruta de MÁQUINAS tal como quedó escrita en
+  S92, releer los patrones/heurísticas/errores reales documentados a
+  lo largo de todo este mismo anexo para el dominio PERSONAL (patrón
+  `MALAGA A`, histórico vs. pendiente real por persona con otro
+  documento del mismo tipo ya fechado, `current_template`/
+  `DocumentAcknowledgment`, exclusión de plantillas, etc.) y valorar
+  explícitamente con Miguel Ángel cuáles aplican tal cual a MÁQUINAS y
+  cuáles no, en vez de repetir desde cero el proceso de descubrimiento
+  ya hecho para PERSONAL.
+
+
 

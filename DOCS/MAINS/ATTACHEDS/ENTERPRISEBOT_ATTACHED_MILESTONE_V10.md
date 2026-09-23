@@ -1035,3 +1035,83 @@ almacén el de Mecánicos (antes ambos abrían Mecánicos por error).
 | S005 | ¿? | Backend de `StockAssignmentService` completo (Paso 4); fix familias/tipos de avería a español; dominio Twilio resuelto | **Fila reparada a posteriori en S006, sin fecha ni detalle de commits recuperable** — esta sesión ocurrió (confirmado por Miguel Ángel al arrancar S006: family/subcategoría de avería en castellano y dominio Twilio resueltos, ambos vistos en producción) pero nunca se registró aquí en su momento. No se reconstruye el detalle de commits por no tener acceso a ese rango exacto de forma fiable — se deja esta fila mínima para no romper la numeración correlativa de sesiones. |
 | S006 | 2026-07-07 | H10 Paso 4 bloques 1/4-3/4 completados (app `workorder_spare_parts`, CRUD catálogo, Casos A/B/C); `internal_reference`; modelo y CRUD `Supplier`; diseño completo (sin implementar) de repuestos anclados a `BreakdownTicket`; desvío completo a H21 (Fases D/E/F/G); 3 fixes de producción fuera de hoja de ruta; preparación de acceso M365 | Sesión larga, 14 commits. **Desvío a H21 (al inicio):** Fases D (descartada — flota ya en app propia), E (`views_ivr.py`), F (`views_auth.py`) y G (limpieza final, `panel/views.py` de 4.033 a 115 líneas) completadas — detalle técnico completo y la incidencia de un re-export de `fleet.views` perdido en la extracción (y su fix) en `ENTERPRISEBOT_ATTACHED_MILESTONE_V21.md`. **H10 Paso 4:** nueva app `workorder_spare_parts` (bloques 1/4-3/4, ver Paso 4 arriba) — CRUD de catálogo con `internal_reference` estable frente a cambios de proveedor, endpoints HTMX de los 3 casos de consumo, modelo `Supplier` (reciclado interno = otro proveedor). El bloque 4/4 original (integrar el widget en `form_entry.html`/`confirm_entry.html` anclado a `entry_line_pk`) quedó **descartado a media sesión** al descubrir que la `WorkOrderEntryLine` no existe en BD durante la creación directa del parte (Vía A) — Miguel Ángel replanteó el anclaje a `BreakdownTicket` en su lugar (más natural: los tickets existen antes que cualquier parte, vía IVR/WhatsApp/panel). Se cerró un diseño completo de 12 puntos tras varias rondas de refinamiento (desambiguación con lista corta si hay >1 ticket candidato, `get_or_create` atómico con `select_for_update` sobre `MachineAsset` como mutex, ventana de 72h para ofrecer reapertura de un ticket cerrado por error, nuevo campo `tipo_tarea` con categorización libre para lo que no sea avería, reapertura por edición de la propia tarea en vez de acción administrativa aparte, cambio de comportamiento de `confirm_delivery_note()`) — **sin una sola línea de código todavía**, íntegro en la sección Paso 4-bis de este anexo para la siguiente sesión. **Fixes de producción fuera de la hoja de ruta de H10/H21** (diagnosticados vía `error.log`, no a ciegas): (1) `TypeError` en el export consolidado de partes (`date_key` mezclaba `datetime.date` y `str` en el `sort()`); (2) `IntegrityError` al insertar una línea de parte en medio de otras (`line_number` shift en bloque chocaba contra la constraint única bajo MySQL, corregido a shift descendente fila a fila); (3) `modal-backdrop` huérfano tras descargar Excel desde el modal de exportación (race entre `hide()` y `submit()`, corregido esperando `hidden.bs.modal`, reforzado con `getOrCreateInstance` y una limpieza defensiva tras persistir el síntoma en un segundo reporte). **Preparación M365 (sin código):** confirmado SharePoint (no OneDrive), permiso `Sites.Selected`, roles a pedir (Application Administrator + SharePoint Administrator, consentimiento final por alguien con Global/Privileged Role Administrator), y pendiente de resolver si hace falta IP fija (QuotaGuard Static, 19 $/mes) o si el administrador de Grúas Álvarez acepta autenticación por certificado en su lugar — pregunta pendiente de respuesta. Bug cruzado sin diagnosticar, ya mencionado en sesiones anteriores y ahora relevante para el punto 9 del diseño de tickets: "revisar/editar" en el listado de partes de operario no entra en modo edición real. |
 | S007 | 2026-07-07 | H10 Paso 4-bis puntos 1-2/11 integrados en producción (bloques A y B); Paso 5 completo (almacén + limbo); Paso 6 completo (sidebar/permisos); corrección Catálogo/Almacén; 4 bugs de producción corregidos; código general `#CÓDIGO#` de albarán; limpieza de datos de prueba | Sesión muy larga, empezó con reconciliación de un cierre de S006 que no se había pulled a tiempo al arrancar (sin daño real, commit local erróneo descartado antes de pushear). **Paso 4-bis:** puntos 1-2 revisados en vivo (PAUSED cuenta como candidato abierto, confirmación obligatoria con 1+ candidatos, ya no hay enganche silencioso) e integrados de verdad en el formulario de parte -- bloque A (sustituye el desplegable `ticket_pk` de H17) y bloque B (confirmación de repuestos al guardar, ampliada en vivo a petición de Miguel Ángel para incluir también un checklist de repuestos pre-asignados directamente en el propio formulario, no solo en la pantalla posterior). Punto 12 (bis) implementado y **revertido** en la misma sesión: Miguel Ángel confirmó que generar el ticket ya al confirmar el albarán (antes de que exista ninguna avería real) crea riesgo de tickets huérfanos -- `confirm_delivery_note()` vuelve al planteamiento diferido de S001-S005. **Paso 5:** vista de almacén con limbo de pre-asignación integrado (código de color por antigüedad, acción Devolver a almacén). **Corrección mayor en vivo (Miguel Ángel, tras ver el resultado):** Catálogo (Administración) y Almacén (Mecánicos) se habían construido como la misma vista con dos etiquetas -- son dos entidades distintas (proveedor/precio vs. stock/limbo/ajuste de inventario por los propios mecánicos) y se separaron por completo, con nueva `SparePartStockAdjustView` para que los mecánicos ajusten stock sin pasar por el catálogo administrativo. **4 bugs de producción diagnosticados y corregidos, todos verificados empíricamente antes de tocar código:** (1) "Editar/Revisar" no entraba en modo edición real para ADMIN sobre partes de otros operarios (condición de consulta demasiado restrictiva); (2) SUPERVISOR recibía 403 en el mismo flujo (mixin correcto ya existía en el código, `WorkOrderFormAccessMixin`, pero nunca se había conectado); (3) `ImportError` real en producción (`ChatRoom`/`ChatMessage` eliminados en H17 pero `chat/services.py` seguía importándolos a nivel de módulo) -- verificado exhaustivamente que tres archivos completos (`chat/services.py`, `chat/views.py`, `chat/management/commands/init_chat_rooms.py`) llevaban huérfanos e inalcanzables desde H17, retirados a placeholders vacíos siguiendo el mismo patrón ya usado en `chat/tasks.py`; función de resolución de tickets movida a módulo propio `chat/ticket_resolution.py`; (4) repuestos pre-asignados solo a máquina (sin ticket) no aparecían en la pantalla de revisión posterior al guardado. **Fuera de H10:** nuevo campo `DeliveryNote.general_machine_code_raw` (anotación `#CÓDIGO#` general para todo el albarán, gap real detectado por Miguel Ángel); destinatario temporal de fotos de albarán cambiado a `nummenor@gmail.com`; comandos de gestión `delete_all_breakdown_tickets` y `delete_all_spare_parts_data` (dry-run por defecto) ejecutados con `--apply` para dejar la BD limpia antes de una prueba de campo que finalmente no se hizo (no había mecánicos en el taller). Cuatro migraciones aplicadas en el ciclo completo (pull→makemigrations→migrate→push del archivo de migración desde servidor→pull silencioso en workspace), todas confirmadas sin error. Pendiente sin resolver, señalado a Miguel Ángel: si `WORKSHOPBOSS` también necesita acceso completo a "Editar/Revisar" igual que `SUPERVISOR` (se dejó restringido a lo propio, sin confirmación explícita). Próxima sesión: Paso 7 (alta de repuestos por canibalización), confirmado por Miguel Ángel al cierre. |
+
+---
+
+### COMPLETADAS EN S116 (sesión muy larga -- PCH al cierre, hito pausa
+### aquí, se retoma H30 dominio MÁQUINAS)
+
+**Fotos de tarea y repuestos que se perdían al guardar/cerrar/borrar un
+parte -- causa raíz doble, corregida en los dos sitios reales:**
+- `WorkOrderEntryFormView` ("Guardar tareas" y "Cerrar parte") hacía
+  `entries.all().delete()`/recreaba todas las líneas en cada guardado
+  -- `TaskPhoto`/`SparePartLine` de una línea que seguía existiendo se
+  perdían en cascada. Corregido en los dos flujos: actualizar en su
+  sitio (mismo pk) las líneas que ya existían, borrar de verdad solo
+  las que el mecánico quitó.
+- "Guardar tareas" nunca ejecutaba la resolución de ticket de avería
+  (solo "Cerrar parte") -- añadido también ahí.
+- Foto adjuntable en la MISMA petición que crea la tarea (ya no hace
+  falta guardar primero) -- campo `entrada_N_new_photo` en los tres
+  sitios que renderizan un bloque de tarea (incluido el fragmento que
+  renderiza la primera tarea de un parte nuevo, que se me había pasado
+  la primera vez). Quitado `capture="environment"` -- daba solo cámara
+  en móvil, sin opción de archivo/galería.
+- Al borrar un parte o una tarea: repuestos consumidos se devuelven a
+  su sitio (`StockAssignmentService.revert_consumption()`, restaura
+  PRE_ASSIGNED o WAREHOUSE según de dónde vinieran, con movimiento
+  ADJUST de devolución); fotos borradas de verdad de GCS y del índice
+  del explorador (antes solo desaparecía la fila de BD); tickets que
+  el parte había originado se borran también si no queda ninguna línea
+  real en ningún otro parte (nunca si sigue enganchado a uno real) --
+  aplicado en los 5 sitios reales de borrado. 15 tickets ya huérfanos
+  de antes del arreglo, limpiados con un comando de gestión dedicado
+  (`cleanup_orphaned_tickets`, dry-run por defecto).
+- Aviso de "hay un ticket abierto/cerrado" cuando en realidad es el
+  ticket que el propio mecánico acaba de crear en otra tarea del mismo
+  parte: ahora se detecta y se muestra claro ("Tarea N de este mismo
+  parte"), preseleccionado.
+
+**Gestión de Albaranes/Almacén/Catálogo de repuestos, rediseñada por
+completo a petición explícita de Miguel Ángel ("gestionar el almacén
+conlleva todo eso [...] vamos a pensar en la organización del almacén
+para que sea una gestión de almacén realmente buena"), tras revisar
+online buenas prácticas reales de gestión de almacén (stock
+mínimo/reorden, trazabilidad completa origen→destino):**
+- Las tres pantallas (`delivery_notes` Albaranes, `SparePartWarehouseListView`
+  Almacén de mecánicos, `SparePartEntryListView` Catálogo de
+  Administración) llevan ahora orden múltiple con prioridad (clic
+  promueve a criterio principal, conserva los demás como desempate),
+  botón "Quitar orden", selección múltiple con casilla "todos" y
+  borrado/acción masiva, respetando siempre las mismas reglas de
+  seguridad que ya tenía el borrado de uno (nunca toca un albarán
+  ASSIGNED ni un repuesto con movimientos reales).
+- Catálogo de repuestos reestructurado de una lista plana (una fila
+  por `SparePartEntry`) a una ficha de artículo real
+  (`SparePartArticleDetailView`, agrupado por `internal_reference`) --
+  confirmado contra el constraint real `unique_internal_reference_per_company`
+  que cada referencia es siempre una única fila que cambia de estado a
+  lo largo de su vida, nunca varias. La ficha reúne el historial
+  completo de `StockMovement` y el albarán de origen.
+- Nuevo campo `SparePartEntry.minimum_stock` (migración `0016`) con
+  aviso visual "Bajo mínimo" en las tres pantallas donde tiene sentido
+  verlo, editable desde el catálogo.
+- Bug real corregido de paso: cambiar de página en el Catálogo (el
+  único de los tres que pagina de verdad) perdía el orden y los
+  filtros -- enlaces "Anterior"/"Siguiente" ahora preservan todos los
+  parámetros; cambiar de orden ahora vuelve siempre a la página 1.
+
+**Pendiente real, confirmado por Miguel Ángel para cuando se retome
+H10:** "terminar de asignar" un repuesto en limbo sin que exista un
+parte real detrás -- decisión ya tomada (crear un parte administrativo
+mínimo por debajo, para que quede la misma traza que un consumo
+normal), sin una sola línea de código todavía. Empezar por ahí.
+
+**Fuera de H10, mencionado por trazabilidad:** verificado (no
+implicaba código) el circuito de "abono a proveedor" ya existente
+(`confirm_credit_note()`, S040) -- solo empareja contra stock ya en
+almacén, nunca contra el limbo; para devolver a proveedor algo hoy en
+limbo, el camino real es primero "Devolver a almacén" y luego subir el
+albarán de abono como documento aparte, sin acción directa desde la
+línea del limbo (decisión explícita de Miguel Ángel: se deja así).
+
