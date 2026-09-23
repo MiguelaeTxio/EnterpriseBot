@@ -5,10 +5,11 @@ todos los listados del panel: el panel inferior (bottom_id) toma la
 altura exacta del hueco que queda bajo el panel fijo (top_id) hasta el
 borde del viewport, y dentro de él solo hace scroll el contenedor
 .fixed-list-scroll, con la cabecera de columnas pegada arriba (sticky).
-Mismo algoritmo que #personal-bottom-panel (H31 S114): altura natural
-menos el exceso real de document.scrollHeight sobre window.innerHeight,
-recalculado al redimensionar la ventana y cuando cambia la altura del
-panel superior (ResizeObserver).
+Altura = hueco real desde el panel hasta el borde inferior de la ventana,
+menos cualquier exceso que aún haga salirse la página (corregido S117,
+ver comentario en el script), recalculado al redimensionar, cuando
+cambia la altura del panel superior (ResizeObserver), al asentarse un
+swap de htmx y al mostrarse una pestaña.
 
 Uso: {% include "panel/_fixed_list_layout.html" with top_id="..." bottom_id="..." %}
 {% endcomment %}
@@ -29,17 +30,41 @@ Uso: {% include "panel/_fixed_list_layout.html" with top_id="..." bottom_id="...
     const topPanel = document.getElementById("{{ top_id|escapejs }}");
     if (!bottomPanel) return;
 
+    // CORREGIDO S117 (incidente real de Miguel Ángel con captura: en la
+    // pestaña Centros de Gasto del hub de Documentación, cargada por
+    // htmx, el listado se quedaba en el mínimo de 240px con media
+    // pantalla vacía debajo). El algoritmo anterior (altura natural
+    // menos el exceso de document.scrollHeight) dependía de que la
+    // página ya estuviera asentada al medir; con contenido llegado por
+    // htmx el exceso salía inflado. Ahora, dos pasadas:
+    // 1) altura = hueco real desde el borde superior del panel hasta el
+    //    borde inferior de la ventana;
+    // 2) si aun así la página se sale (relleno/margen inferior de los
+    //    contenedores), se resta exactamente ese exceso.
+    // Se recalcula además al asentarse cualquier swap de htmx y al
+    // mostrarse una pestaña de Bootstrap.
     function recompute() {
-        bottomPanel.style.height = "auto";
-        const naturalHeight = bottomPanel.getBoundingClientRect().height;
-        const overflow = Math.max(document.documentElement.scrollHeight - window.innerHeight, 0);
-        bottomPanel.style.height = Math.max(naturalHeight - overflow - GUTTER, MIN_HEIGHT) + "px";
+        if (!bottomPanel.isConnected || bottomPanel.offsetParent === null) return;
+        const top = bottomPanel.getBoundingClientRect().top + window.scrollY;
+        let target = Math.max(window.innerHeight - top - GUTTER, MIN_HEIGHT);
+        bottomPanel.style.height = target + "px";
+        const overflow = document.documentElement.scrollHeight - window.innerHeight;
+        if (overflow > 0) {
+            target = Math.max(target - overflow, MIN_HEIGHT);
+            bottomPanel.style.height = target + "px";
+        }
     }
 
     window.addEventListener("resize", recompute);
     if (topPanel && window.ResizeObserver) {
         new ResizeObserver(recompute).observe(topPanel);
     }
+    document.body.addEventListener("htmx:afterSettle", function () {
+        requestAnimationFrame(recompute);
+    });
+    document.addEventListener("shown.bs.tab", function () {
+        requestAnimationFrame(recompute);
+    });
     requestAnimationFrame(recompute);
     setTimeout(recompute, 300);
 }());
