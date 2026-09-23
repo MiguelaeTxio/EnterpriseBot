@@ -42,7 +42,11 @@ from django.views.generic import ListView
 
 from fleet.models import MachineAsset
 from ivr_config.models import CompanyUser
-from panel.mixins import CompanyUserRequiredMixin, SupervisorAccessMixin
+from panel.mixins import (
+    CompanyUserRequiredMixin,
+    SupervisorAccessMixin,
+    _company_user_for_role_check,
+)
 from spare_parts.models import SparePartEntry, StockMovement
 from spare_parts.services import (
     StockAssignmentService,
@@ -89,18 +93,18 @@ class CatalogReadAccessMixin(CompanyUserRequiredMixin):
     }
 
     def dispatch(self, request, *args, **kwargs):
-        response = super().dispatch(request, *args, **kwargs)
-        if not request.user.is_authenticated:
-            return response
-        company_user = getattr(request.user, "company_user", None)
-        if company_user is None:
-            return response
-        if company_user.role not in self._allowed_roles:
+        # S117: rol comprobado ANTES de ejecutar la vista -- ver
+        # panel.mixins._company_user_for_role_check().
+        company_user = _company_user_for_role_check(request)
+        if (
+            company_user is not None
+            and company_user.role not in self._allowed_roles
+        ):
             return HttpResponseForbidden(
                 "Acceso denegado. Esta sección requiere rol de "
                 "Administrador, Supervisor, Operario o Jefe de taller."
             )
-        return response
+        return super().dispatch(request, *args, **kwargs)
 
 
 class SparePartEntryListView(SupervisorAccessMixin, ListView):

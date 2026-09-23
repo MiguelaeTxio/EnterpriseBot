@@ -112,6 +112,42 @@ class CompanyUserRequiredMixin(PanelLoginRequiredMixin):
         return super().dispatch(request, *args, **kwargs)
 
 
+def _company_user_for_role_check(request):
+    """
+    Returns the active CompanyUser of the request when a role check can
+    be performed, or None when the request must fall through to the
+    authentication checks of CompanyUserRequiredMixin (anonymous user,
+    no CompanyUser, inactive CompanyUser).
+
+    Every role mixin of this module must run its role check BEFORE
+    calling super().dispatch(): super().dispatch() ends in
+    View.dispatch(), which runs the real handler (get/post). Checking
+    the role afterwards (the pattern used until S117) let a user
+    without permission execute a POST -- delete, deactivate... -- and
+    only then receive the 403/redirect, with the change already
+    written to the database.
+    ---
+    Devuelve el CompanyUser activo de la petición cuando se puede
+    comprobar el rol, o None cuando la petición debe seguir hacia las
+    comprobaciones de autenticación de CompanyUserRequiredMixin
+    (anónimo, sin CompanyUser, CompanyUser inactivo).
+
+    Todo mixin de rol de este módulo debe comprobar el rol ANTES de
+    llamar a super().dispatch(): super().dispatch() termina en
+    View.dispatch(), que ejecuta el manejador real (get/post).
+    Comprobar el rol después (patrón usado hasta S117) dejaba a un
+    usuario sin permiso ejecutar un POST -- borrar, dar de baja... --
+    y solo después recibir el 403/redirección, con el cambio ya
+    escrito en la base de datos.
+    """
+    if not request.user.is_authenticated:
+        return None
+    company_user = getattr(request.user, "company_user", None)
+    if company_user is None or not company_user.is_active:
+        return None
+    return company_user
+
+
 class WorkshopRequiredMixin(CompanyUserRequiredMixin):
     """
     Mixin that grants access to CompanyUsers with the WORKSHOP or ADMIN role.
@@ -126,20 +162,18 @@ class WorkshopRequiredMixin(CompanyUserRequiredMixin):
     def dispatch(self, request, *args, **kwargs):
         """
         Verify that the authenticated CompanyUser holds the WORKSHOP or ADMIN role.
-        Delegates to parent for authentication and CompanyUser checks first.
+        Role is checked before running the view (S117).
         ---
         Verifica que el CompanyUser autenticado posee el rol WORKSHOP o ADMIN.
-        Delega al padre para las comprobaciones de autenticación y CompanyUser primero.
+        El rol se comprueba antes de ejecutar la vista (S117).
         """
-        # Delegate authentication and CompanyUser checks to parent first.
-        # Delegar las comprobaciones de autenticación y CompanyUser al padre primero.
-        response = super().dispatch(request, *args, **kwargs)
-        if not request.user.is_authenticated:
-            return response
-
-        company_user = getattr(request.user, "company_user", None)
+        # Role check BEFORE running the view -- see
+        # _company_user_for_role_check().
+        # Comprobación de rol ANTES de ejecutar la vista -- ver
+        # _company_user_for_role_check().
+        company_user = _company_user_for_role_check(request)
         if company_user is None:
-            return response
+            return super().dispatch(request, *args, **kwargs)
 
         # Grant access only to WORKSHOP and ADMIN roles.
         # Conceder acceso a WORKSHOP, WORKSHOPBOSS y ADMIN.
@@ -154,7 +188,7 @@ class WorkshopRequiredMixin(CompanyUserRequiredMixin):
                 "Acceso denegado. Esta sección requiere el rol de Operario o Jefe de taller."
             )
 
-        return response
+        return super().dispatch(request, *args, **kwargs)
 
 
 class AdminRoleRequiredMixin(CompanyUserRequiredMixin):
@@ -169,20 +203,18 @@ class AdminRoleRequiredMixin(CompanyUserRequiredMixin):
     def dispatch(self, request, *args, **kwargs):
         """
         Verify that the authenticated CompanyUser holds the ADMIN role.
-        Delegates to parent for authentication and CompanyUser checks first.
+        Role is checked before running the view (S117).
         ---
         Verifica que el CompanyUser autenticado posee el rol ADMIN.
-        Delega al padre para las comprobaciones de autenticación y CompanyUser primero.
+        El rol se comprueba antes de ejecutar la vista (S117).
         """
-        # Delegate authentication and CompanyUser checks to parent first.
-        # Delegar las comprobaciones de autenticación y CompanyUser al padre primero.
-        response = super().dispatch(request, *args, **kwargs)
-        if not request.user.is_authenticated:
-            return response
-
-        company_user = getattr(request.user, "company_user", None)
+        # Role check BEFORE running the view -- see
+        # _company_user_for_role_check().
+        # Comprobación de rol ANTES de ejecutar la vista -- ver
+        # _company_user_for_role_check().
+        company_user = _company_user_for_role_check(request)
         if company_user is None:
-            return response
+            return super().dispatch(request, *args, **kwargs)
 
         # Block access if the user does not hold the ADMIN role.
         # Bloquear el acceso si el usuario no posee el rol ADMIN.
@@ -191,7 +223,7 @@ class AdminRoleRequiredMixin(CompanyUserRequiredMixin):
                 "Acceso denegado. Esta sección requiere el rol de Administrador."
             )
 
-        return response
+        return super().dispatch(request, *args, **kwargs)
 
 
 class AssistanceRequiredMixin(CompanyUserRequiredMixin):
@@ -208,20 +240,16 @@ class AssistanceRequiredMixin(CompanyUserRequiredMixin):
     def dispatch(self, request, *args, **kwargs):
         """
         Verify that the authenticated CompanyUser holds the ASSISTANCE
-        or ADMIN role. Delegates to parent for authentication and
-        CompanyUser checks first.
+        or ADMIN role. Role is checked before running the
+        view (S117).
         ---
         Verifica que el CompanyUser autenticado posee el rol ASSISTANCE
-        o ADMIN. Delega al padre las comprobaciones de autenticacion
-        y CompanyUser primero.
+        o ADMIN. El rol se comprueba antes de
+        ejecutar la vista (S117).
         """
-        response = super().dispatch(request, *args, **kwargs)
-        if not request.user.is_authenticated:
-            return response
-
-        company_user = getattr(request.user, "company_user", None)
+        company_user = _company_user_for_role_check(request)
         if company_user is None:
-            return response
+            return super().dispatch(request, *args, **kwargs)
 
         allowed_roles = {
             CompanyUser.ROLE_ASSISTANCE,
@@ -235,7 +263,7 @@ class AssistanceRequiredMixin(CompanyUserRequiredMixin):
             )
             return redirect("/panel/")
 
-        return response
+        return super().dispatch(request, *args, **kwargs)
 
 
 class BudgetAuditAccessMixin(CompanyUserRequiredMixin):
@@ -264,20 +292,16 @@ class BudgetAuditAccessMixin(CompanyUserRequiredMixin):
     def dispatch(self, request, *args, **kwargs):
         """
         Verify that the authenticated CompanyUser holds ADMIN, or holds
-        ASSISTANCE with can_view_budget_breakdown=True. Delegates to
-        parent for authentication and CompanyUser checks first.
+        ASSISTANCE with can_view_budget_breakdown=True. Checked
+        before running the view (S117).
         ---
         Verifica que el CompanyUser autenticado posee ADMIN, o posee
-        ASSISTANCE con can_view_budget_breakdown=True. Delega al padre
-        las comprobaciones de autenticación y CompanyUser primero.
+        ASSISTANCE con can_view_budget_breakdown=True. Se
+        comprueba antes de ejecutar la vista (S117).
         """
-        response = super().dispatch(request, *args, **kwargs)
-        if not request.user.is_authenticated:
-            return response
-
-        company_user = getattr(request.user, "company_user", None)
+        company_user = _company_user_for_role_check(request)
         if company_user is None:
-            return response
+            return super().dispatch(request, *args, **kwargs)
 
         has_access = (
             company_user.role == CompanyUser.ROLE_ADMIN
@@ -295,7 +319,7 @@ class BudgetAuditAccessMixin(CompanyUserRequiredMixin):
             )
             return redirect("/panel/")
 
-        return response
+        return super().dispatch(request, *args, **kwargs)
 
 
 class SupervisorAccessMixin(CompanyUserRequiredMixin):
@@ -328,24 +352,22 @@ class SupervisorAccessMixin(CompanyUserRequiredMixin):
     def dispatch(self, request, *args, **kwargs):
         """
         Verify that the authenticated CompanyUser holds the SUPERVISOR or ADMIN role.
-        Delegates to parent for authentication and CompanyUser checks first.
+        Role is checked before running the view (S117).
         On insufficient role, redirects to the dashboard with an error message
         instead of returning a bare 403, to provide a better UX within the panel.
         ---
         Verifica que el CompanyUser autenticado posee el rol SUPERVISOR o ADMIN.
-        Delega al padre para las comprobaciones de autenticación y CompanyUser primero.
+        El rol se comprueba antes de ejecutar la vista (S117).
         En caso de rol insuficiente, redirige al dashboard con un mensaje de error
         en lugar de devolver un 403 desnudo, para mejorar la experiencia en el panel.
         """
-        # Delegate authentication and CompanyUser checks to parent first.
-        # Delegar las comprobaciones de autenticación y CompanyUser al padre primero.
-        response = super().dispatch(request, *args, **kwargs)
-        if not request.user.is_authenticated:
-            return response
-
-        company_user = getattr(request.user, "company_user", None)
+        # Role check BEFORE running the view -- see
+        # _company_user_for_role_check().
+        # Comprobación de rol ANTES de ejecutar la vista -- ver
+        # _company_user_for_role_check().
+        company_user = _company_user_for_role_check(request)
         if company_user is None:
-            return response
+            return super().dispatch(request, *args, **kwargs)
 
         # Grant access only to SUPERVISOR and ADMIN roles.
         # Conceder acceso a SUPERVISOR, WORKSHOPBOSS y ADMIN.
@@ -362,7 +384,7 @@ class SupervisorAccessMixin(CompanyUserRequiredMixin):
             )
             return redirect("/panel/")
 
-        return response
+        return super().dispatch(request, *args, **kwargs)
 
 
 class DocsUploadAccessMixin(CompanyUserRequiredMixin):
@@ -392,13 +414,9 @@ class DocsUploadAccessMixin(CompanyUserRequiredMixin):
         Verifica que el CompanyUser autenticado posee el rol
         DOCS_SUPERVISOR o ADMIN.
         """
-        response = super().dispatch(request, *args, **kwargs)
-        if not request.user.is_authenticated:
-            return response
-
-        company_user = getattr(request.user, "company_user", None)
+        company_user = _company_user_for_role_check(request)
         if company_user is None:
-            return response
+            return super().dispatch(request, *args, **kwargs)
 
         allowed_roles = {
             CompanyUser.ROLE_DOCS_SUPERVISOR,
@@ -412,7 +430,7 @@ class DocsUploadAccessMixin(CompanyUserRequiredMixin):
             )
             return redirect("/panel/")
 
-        return response
+        return super().dispatch(request, *args, **kwargs)
 
 
 class WorkOrderFormAccessMixin(CompanyUserRequiredMixin):
@@ -465,20 +483,16 @@ class WorkOrderFormAccessMixin(CompanyUserRequiredMixin):
     def dispatch(self, request, *args, **kwargs):
         """
         Verify that the authenticated CompanyUser holds one of the allowed
-        roles for work-order form access. Delegates authentication and
-        CompanyUser checks to parent first.
+        roles for work-order form access. Checked before
+        running the view (S117).
         ---
         Verifica que el CompanyUser autenticado posee uno de los roles
-        permitidos para el formulario de partes. Delega al padre las
-        comprobaciones de autenticacion y CompanyUser primero.
+        permitidos para el formulario de partes. Se comprueba
+        antes de ejecutar la vista (S117).
         """
-        response = super().dispatch(request, *args, **kwargs)
-        if not request.user.is_authenticated:
-            return response
-
-        company_user = getattr(request.user, "company_user", None)
+        company_user = _company_user_for_role_check(request)
         if company_user is None:
-            return response
+            return super().dispatch(request, *args, **kwargs)
 
         allowed_roles = {
             CompanyUser.ROLE_WORKSHOP,
@@ -494,7 +508,7 @@ class WorkOrderFormAccessMixin(CompanyUserRequiredMixin):
             )
             return redirect("/panel/")
 
-        return response
+        return super().dispatch(request, *args, **kwargs)
 
 
 class SuperuserRequiredMixin(CompanyUserRequiredMixin):
@@ -522,15 +536,13 @@ class SuperuserRequiredMixin(CompanyUserRequiredMixin):
     def dispatch(self, request, *args, **kwargs):
         """
         Verify that the authenticated user is a Django superuser.
-        Delegates to parent for authentication and CompanyUser checks first.
+        Role is checked before running the view (S117).
         ---
         Verifica que el usuario autenticado es superusuario de Django.
-        Delega al padre las comprobaciones de autenticación y CompanyUser
-        primero.
+        Se comprueba antes de ejecutar la vista (S117).
         """
-        response = super().dispatch(request, *args, **kwargs)
-        if not request.user.is_authenticated:
-            return response
+        if _company_user_for_role_check(request) is None:
+            return super().dispatch(request, *args, **kwargs)
 
         if not request.user.is_superuser:
             messages.error(
@@ -539,6 +551,6 @@ class SuperuserRequiredMixin(CompanyUserRequiredMixin):
             )
             return redirect("/panel/")
 
-        return response
+        return super().dispatch(request, *args, **kwargs)
 
 
