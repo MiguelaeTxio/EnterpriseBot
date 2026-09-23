@@ -44,7 +44,7 @@ desincronizaría esos registros del albarán en silencio. Por tanto:
 import logging
 
 from django.contrib import messages
-from django.db.models import Q
+from django.db.models import Case, Count, F, IntegerField, Q, Value, When
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views import View
 
@@ -95,12 +95,24 @@ class DeliveryNoteAdminListView(SupervisorAccessMixin, View):
     # recuento y un cálculo en Python (assignment_progress()), no un
     # campo de BD, y ordenar por ellos exigiría anotar la consulta;
     # no se ha hecho todavía.
+    # S116-H10: columnas ordenables desde la cabecera de la tabla,
+    # petición explícita de Miguel Ángel ("debemos poder ordenar por
+    # columna [...] falta la columna de asignación y la de revisado
+    # por, la del número de líneas"). 'lineas' y 'asignacion' se
+    # resuelven con anotaciones (num_lines_annotated/progress_rank,
+    # ver get()) porque no son un campo real de DeliveryNote --
+    # 'revisado' ordena por processed_by__user__username, el único
+    # campo de nombre siempre poblado (first_name/last_name pueden
+    # estar vacíos).
     _SORTABLE_FIELDS = {
         'fecha': 'delivery_date',
         'proveedor': 'supplier_name',
         'numero': 'delivery_number',
         'destinatario': 'recipient_company_code',
         'estado': 'status',
+        'revisado': 'processed_by__user__username',
+        'lineas': 'num_lines_annotated',
+        'asignacion': 'progress_rank',
     }
     _DEFAULT_SORT = '-fecha'
 
@@ -123,6 +135,41 @@ class DeliveryNoteAdminListView(SupervisorAccessMixin, View):
             .filter(company=company)
             .select_related('processed_by__user', 'supplier')
             .prefetch_related('lines', 'lines__spare_part_entry')
+            .annotate(
+                num_lines_annotated=Count('lines', distinct=True),
+                _total_machine=Count(
+                    'lines',
+                    filter=Q(
+                        lines__assignment_type='MACHINE',
+                        lines__spare_part_entry__isnull=False,
+                    ),
+                    distinct=True,
+                ),
+                _assigned_machine=Count(
+                    'lines',
+                    filter=Q(
+                        lines__assignment_type='MACHINE',
+                        lines__spare_part_entry__isnull=False,
+                    ) & ~Q(lines__spare_part_entry__status='PRE_ASSIGNED'),
+                    distinct=True,
+                ),
+            )
+            .annotate(
+                # S116-H10: rango numérico para poder ordenar por
+                # 'Asignación' -- 0=En limbo, 1=Parcial, 2=Total,
+                # 3=nada que rastrear (sin líneas MACHINE confirmadas).
+                # Mismo criterio que DeliveryNote.assignment_progress().
+                progress_rank=Case(
+                    When(_total_machine=0, then=Value(3)),
+                    When(_assigned_machine=0, then=Value(0)),
+                    When(
+                        _assigned_machine=F('_total_machine'),
+                        then=Value(2),
+                    ),
+                    default=Value(1),
+                    output_field=IntegerField(),
+                ),
+            )
             .order_by(order_expr)
         )
         if status:
@@ -288,4 +335,57 @@ class DeliveryNoteAdminDeleteView(SupervisorAccessMixin, View):
 
         note.delete()
         messages.success(request, 'Albarán eliminado correctamente.')
+        return redirect('delivery_notes:list')
+
+
+class DeliveryNoteAdminBulkDeleteView(SupervisorAccessMixin, View):
+    """
+    Bulk-deletes several DeliveryNote at once -- petición explícita de
+    Miguel Ángel: "una vez que están vistos los que erróneos [...] si
+    hay 50, no tener que estar borrando de uno en uno".
+
+    Misma regla de seguridad que DeliveryNoteAdminDeleteView: nunca
+    borra uno con status=ASSIGNED (ya generó movimientos de stock
+    reales) -- en vez de bloquear todo el lote por eso, lo omite
+    silenciosamente y avisa cuántos se han saltado, para no impedir
+    borrar los demás.
+    ---
+    Borra varios DeliveryNote a la vez -- ver arriba.
+    """
+
+    def post(self, request):
+        company = request.user.company_user.company
+        pks = request.POST.getlist('selected')
+        if not pks:
+            messages.warning(request, 'No has seleccionado ningún albarán.')
+            return redirect('delivery_notes:list')
+
+        qs = DeliveryNote.objects.filter(pk__in=pks, company=company)
+        assigned_count = qs.filter(status='ASSIGNED').count()
+        deletable = qs.exclude(status='ASSIGNED')
+        deleted_count = deletable.count()
+        deletable.delete()
+
+        if deleted_count:
+            messages.success(
+                request,
+                f"{deleted_count} albarán"
+                f"{'es' if deleted_count != 1 else ''} eliminado"
+                f"{'s' if deleted_count != 1 else ''} correctamente.",
+            )
+        if assigned_count:
+            messages.warning(
+                request,
+                f"{assigned_count} albarán"
+                f"{'es' if assigned_count != 1 else ''} ya "
+                f"{'estaban' if assigned_count != 1 else 'estaba'} "
+                f"asignado{'s' if assigned_count != 1 else ''} y no "
+                f"se {'han' if assigned_count != 1 else 'ha'} tocado "
+                f"-- ya generó movimientos de stock reales.",
+            )
+        if not deleted_count and not assigned_count:
+            messages.warning(
+                request, 'Ningún albarán seleccionado existía ya.',
+            )
+
         return redirect('delivery_notes:list')

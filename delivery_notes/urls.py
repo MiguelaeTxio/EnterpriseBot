@@ -22,4 +22,9 @@ urlpatterns = [
         views.DeliveryNoteAdminDeleteView.as_view(),
         name='delete',
     ),
+    path(
+        'eliminar-varios/',
+        views.DeliveryNoteAdminBulkDeleteView.as_view(),
+        name='bulk_delete',
+    ),
 ]

@@ -51,30 +51,51 @@
     </div>
 </div>
 
+<div class="d-flex justify-content-between align-items-center mb-2">
+    <div id="bulk-actions-bar" class="d-none">
+        <form id="bulk-delete-form" method="post" action="{% url 'delivery_notes:bulk_delete' %}"
+              onsubmit="return confirm('¿Eliminar los albaranes seleccionados? Esta acción no se puede deshacer.');">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-sm btn-outline-danger">
+                <i class="bi bi-trash me-1"></i>Eliminar seleccionados (<span id="selected-count">0</span>)
+            </button>
+        </form>
+    </div>
+</div>
+
 <div class="card shadow-sm">
     <div class="table-responsive">
         <table class="table table-hover align-middle mb-0">
             <thead class="table-light">
                 <tr>
+                    <th style="width:2rem;">
+                        <input type="checkbox" id="select-all-notes" title="Seleccionar todos">
+                    </th>
                     <th><a href="{{ sort_urls.fecha }}" class="text-decoration-none text-dark">Fecha albarán {{ sort_arrows.fecha }}</a></th>
                     <th><a href="{{ sort_urls.proveedor }}" class="text-decoration-none text-dark">Proveedor {{ sort_arrows.proveedor }}</a></th>
                     <th><a href="{{ sort_urls.numero }}" class="text-decoration-none text-dark">Nº albarán {{ sort_arrows.numero }}</a></th>
                     <th><a href="{{ sort_urls.destinatario }}" class="text-decoration-none text-dark">Destinatario {{ sort_arrows.destinatario }}</a></th>
-                    <th>Líneas</th>
+                    <th><a href="{{ sort_urls.lineas }}" class="text-decoration-none text-dark">Líneas {{ sort_arrows.lineas }}</a></th>
                     <th><a href="{{ sort_urls.estado }}" class="text-decoration-none text-dark">Estado {{ sort_arrows.estado }}</a></th>
-                    <th>Asignación</th>
-                    <th>Revisado por</th>
+                    <th><a href="{{ sort_urls.asignacion }}" class="text-decoration-none text-dark">Asignación {{ sort_arrows.asignacion }}</a></th>
+                    <th><a href="{{ sort_urls.revisado }}" class="text-decoration-none text-dark">Revisado por {{ sort_arrows.revisado }}</a></th>
                     <th class="text-end">Acciones</th>
                 </tr>
             </thead>
             <tbody>
                 {% for note in notes %}
                 <tr>
+                    <td>
+                        {% if note.status != 'ASSIGNED' %}
+                        <input type="checkbox" name="selected" value="{{ note.pk }}"
+                               class="note-select-checkbox" form="bulk-delete-form">
+                        {% endif %}
+                    </td>
                     <td>{{ note.delivery_date|date:"d/m/Y"|default:"—" }}</td>
                     <td>{{ note.supplier.name|default:note.supplier_name|default:"—" }}</td>
                     <td>{{ note.delivery_number|default:"—" }}</td>
                     <td>{{ note.recipient_company_code|default:"—" }}</td>
-                    <td>{{ note.lines.count }}</td>
+                    <td>{{ note.num_lines_annotated }}</td>
                     <td>
                         {% if note.status == 'ASSIGNED' %}
                             <span class="badge bg-success">Asignado</span>
@@ -129,7 +150,7 @@
                 </tr>
                 {% empty %}
                 <tr>
-                    <td colspan="9" class="text-center text-muted py-4">
+                    <td colspan="10" class="text-center text-muted py-4">
                         No hay albaranes con los filtros aplicados.
                     </td>
                 </tr>
@@ -138,4 +159,39 @@
         </table>
     </div>
 </div>
+
+{# S116-H10: seleccionar todos/algunos para borrado masivo -- petición #}
+{# explícita de Miguel Ángel: "si hay 50, no tener que estar borrando  #}
+{# de uno en uno". Los albaranes ya ASSIGNED no llevan casilla (mismo  #}
+{# criterio que el borrado individual: nunca se pueden borrar desde   #}
+{# aquí), así que "seleccionar todos" solo marca los que sí se pueden #}
+{# borrar.                                                             #}
+<script>
+(function () {
+    "use strict";
+    var selectAll = document.getElementById("select-all-notes");
+    var bar = document.getElementById("bulk-actions-bar");
+    var counter = document.getElementById("selected-count");
+
+    function checkboxes() {
+        return document.querySelectorAll(".note-select-checkbox");
+    }
+
+    function updateBar() {
+        var checked = document.querySelectorAll(".note-select-checkbox:checked");
+        counter.textContent = checked.length;
+        bar.classList.toggle("d-none", checked.length === 0);
+    }
+
+    if (selectAll) {
+        selectAll.addEventListener("change", function () {
+            checkboxes().forEach(function (cb) { cb.checked = selectAll.checked; });
+            updateBar();
+        });
+    }
+    checkboxes().forEach(function (cb) {
+        cb.addEventListener("change", updateBar);
+    });
+}());
+</script>
 {% endblock %}
