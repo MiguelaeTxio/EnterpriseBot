@@ -205,7 +205,15 @@ def _scoped_files():
         document_type__isnull=True,
         deleted_at__isnull=True, purged_at__isnull=True,
     )
-    return qs.exclude(exclude_query)
+    # S117 -- archivos de sistema, no documentos (decision de Miguel
+    # Angel, mismo criterio que FOTOS CARNET en S59): miniaturas de
+    # PowerPoint/visor (PP11Thumbs.ptn/.ptn2), configuracion de visor
+    # (maxdesk.ini2), indices de SearchVerity y logs.
+    system_files = (
+        Q(name__istartswith="PP11Thumbs") | Q(name__istartswith="maxdesk")
+        | Q(name__iendswith=".log") | Q(parent_path__icontains="/SearchVerity")
+    )
+    return qs.exclude(exclude_query).exclude(system_files)
 
 
 HEARTBEAT_EVERY = 25

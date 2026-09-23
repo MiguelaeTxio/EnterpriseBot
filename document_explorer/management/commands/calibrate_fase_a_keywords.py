@@ -698,6 +698,116 @@ CANDIDATES_SAFE = {
     },
 }
 
+# ----------------------------------------------------------------------
+# H30 (S117) -- CIERRE DE LA FASE 1 DE MAQUINAS. Frases nuevas sacadas
+# del recorrido EXHAUSTIVO de palabras de los 1.997 nombres sin tipo
+# (fase_a_word_frequency_machines, EnterpriseBot_005) y, para las
+# dudas, del CONTENIDO real de documentos de muestra (modo gcs_text del
+# relevo, S117), con las decisiones de Miguel Angel. Bloque aparte (en
+# vez de repartido por el literal de arriba) para que cada ampliacion
+# quede trazable a esta decision.
+#
+# Causa de raiz de buena parte del hueco: las frases del diccionario no
+# admiten palabras intermedias -- "MANUAL USO" nunca reconocia "MANUAL
+# DE USO", "TABLA CARGA" nunca "TABLA DE CARGA", "TARJETA TRANSPORTE"
+# nunca "TARJETA DE TRANSPORTE" -- mas las abreviaturas reales de la
+# oficina (FRA, AUT PROV, TARJ TTES, INF, REV...).
+# ----------------------------------------------------------------------
+_S117_MACHINE_ADDITIONS = {
+    "FACTURA_COMPRA": ["FRA COMPRA"],
+    "MANUAL_USO": [
+        "MANUAL DE USO", "MANUAL OPERADOR", "MANUAL DEL OPERADOR",
+        "MANUAL DE OPERADOR", "MANUAL OPERARIO", "MANUAL DEL OPERARIO",
+        "MANUAL DE OPERARIO", "MANUAL DE INSTRUCCIONES",
+        "MANUAL INSTRUCCIONES",
+    ],
+    "AUTORIZACION_PROVISIONAL_CIRCULACION": [
+        "AUT PROV CIRC", "AUT PROV CIRCUL", "AUT PROV CIRCULACION",
+        "AUTORIZACION PROVISIONAL CIRCULACION",
+        "AUTORIZACION PROVISIONAL DE CIRCULACION",
+        "AUTORIZACION DE CIRCULACION PROVISIONAL",
+        "JUST PROV CIRCULACION",
+    ],
+    # "PERMISO DE CIRC-AUX.CTRA" (P-17): contenido real = permiso de
+    # circulacion de un vehiculo dedicado a auxilio en carretera.
+    "PERMISO_CIRCULACION": [
+        "PERMISO CIRC", "PERMISO CIRCU", "PERMISO DE CIRC",
+        "PERM CIRCUL", "PERM CIRCULAC",
+    ],
+    "TARJETA_TRANSPORTE": [
+        "TARJETA DE TRANSPORTE", "TARJ TTES", "TARJ TTE", "TARJETA TTE",
+        "TARJETA DE TTE",
+    ],
+    "CERT_MANTENIMIENTO": [
+        "INF MANTENIMIENTO", "REGISTRO MANTENIMIENTO",
+        "REVISION DE MANTENIMIENTO", "HOJA MNTO",
+    ],
+    # "INSPECCION PERIODICA" (A-56): contenido real = hoja de revisiones
+    # tecnicas periodicas de la empresa mantenedora, no IPO/ITC (OCA).
+    # "CERTIFICADO INSPECCION" (Z-92): inspeccion anual del fabricante.
+    "CERT_REVISION": [
+        "REV ANUAL", "REVISION ANUAL", "REVISION PERIODICA",
+        "REV PERIODICA", "INFORME REVISION", "INFORME DE REVISION",
+        "UNE 58921", "INSPECCION PERIODICA", "CERTIFICADO INSPECCION",
+        "INSPECCION ANUAL",
+    ],
+    "TABLA_DE_CARGA": ["TABLA DE CARGA"],
+    "CUADRO_AMORTIZACION": [
+        "CUADRO CUOTAS", "CUADRO DE CUOTAS", "CUADRO RENTAS",
+        "CUADRO DE RENTAS",
+    ],
+    "CONTRATO_COMPRAVENTA": ["CONTRATO COMPRA", "CONTRATO DE COMPRA"],
+    "IVTM": ["IMPUESTO SOBRE VEHICULOS", "IMP VEH TRAC MEC"],
+    "IEDMT": [
+        "IMPUESTO ESPECIAL SOBRE DETERMINADOS MEDIOS DE TRANSPORTE",
+        "IMP MEDIO TPTE",
+    ],
+    # Contenido real (B-23): declaracion CE de MYCSA/Palfinger.
+    "CE": ["DECLARACION DE CONFORMIDAD", "DECLARACION CONFORMIDAD"],
+    # Contenido real: carta ejerciendo la opcion de compra (A-56) y
+    # certificados de entrega del bien en leasing (Abanca, Z-109).
+    "LEASING": [
+        "OPCION DE COMPRA", "CERTIFICADO ENTREGA", "CERTIFICADO DE ENTREGA",
+        "ENTREGA MATERIAL",
+    ],
+    # Contenido real (B-33): "Autorizacion de representacion" ante la
+    # estacion ITV.
+    "CERTIFICADO_PODERES": [
+        "AUTORIZACION NO PERIODICAS",
+        "AUTORIZACION INSPECCIONES NO PERIODICAS",
+        "AUTORIZACION DE REPRESENTACION",
+    ],
+    # Contenido real (B-44): declaracion responsable ante la Jefatura
+    # de Trafico (Anexo III, grúas de auxilio en carretera).
+    "SOLICITUD_ADMINISTRATIVA": ["DECLARACION RESPONSABLE"],
+    # Tipo nuevo S117 (migracion 0137).
+    "CERTIFICADO_SEGURO": [
+        "CERT SEG", "CERTIFICADO SEGURO", "CERTIFICADO DE SEGURO",
+        "CERT EUROP ASSISTANCE", "CERTIFICADO EUROP ASSISTANCE",
+    ],
+    # Tipo nuevo S117 (migracion 0137): autorizaciones especiales DGT
+    # con vigencia (transporte especial / conjunto de auxilio).
+    "AUTORIZACION_COMPLEMENTARIA_CIRCULACION": [
+        "AUTORIZACION COMPLEMENTARIA", "SERV AUXILIAR", "SERV AUX",
+        "PERM GEN", "PERMISO ESPECIAL", "PERMISO ESPECIFICO",
+    ],
+    # Tipo nuevo S117 (migracion 0137): hojas tecnicas del fabricante.
+    "ESPECIFICACIONES_FABRICANTE": [
+        "ESPECIFICACIONES TECNICAS", "ESPECIFICACIONES", "CARACT TECNICAS",
+        "CARACTERISTICAS TECNICAS", "FICHA CARACT",
+    ],
+    # Recibos de seguro por aseguradora/correduria.
+    "SEGURO": [
+        "REC GENERALI", "REC HELVETIA", "REC ALLIANZ", "REC AXA",
+        "REC MEDITRES", "REC MAQ", "REC EUROP", "FRA EUROP",
+    ],
+    # Contenido real (P-18): condiciones generales del seguro de
+    # asistencia de Europ Assistance.
+    "POLIZA_SEGURO": ["COBERTURA ASIST VIAJE"],
+}
+for _code, _phrases in _S117_MACHINE_ADDITIONS.items():
+    CANDIDATES_SAFE["MACHINE"].setdefault(_code, []).extend(_phrases)
+
 # Exclusiones por falso positivo real, detectado contra el corpus
 # (mismo patron que "BAJA TENSION" excluido de BAJA_PERSONAL en S46).
 # clave (domain, code, phrase) -> lista de frases que, si aparecen en

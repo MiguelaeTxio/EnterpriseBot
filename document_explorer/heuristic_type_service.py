@@ -67,6 +67,13 @@ SPECIFIC_WINS = [
     ("ALTA_IDC", "ALTA"),
     ("ALTA", "SEG_SOCIAL"),
     ("CURSO", "TACOGRAFO"),
+    # S117 (cierre Fase 1 MAQUINAS): la frase mas especifica gana --
+    # "CERT NO TARJ TTES" contiene "TARJ TTES"; "CERTIFICADO SEGURO"
+    # contiene "SEGURO"; un certificado de cobertura no es la poliza.
+    ("CERT_NO_TARJ_TTES", "TARJETA_TRANSPORTE"),
+    ("CERTIFICADO_SEGURO", "SEGURO"),
+    ("CERTIFICADO_SEGURO", "POLIZA_SEGURO"),
+    ("AUTORIZACION_PROVISIONAL_CIRCULACION", "PERMISO_CIRCULACION"),
     # Retirada S56 (migracion 0036): FACTURA_TERCEROS se fusiono en
     # FACTURA_COMPRA -- ya no hay dos codigos que puedan colisionar
     # aqui, la regla queda obsoleta y se retira en vez de dejarla
@@ -77,6 +84,10 @@ SPECIFIC_WINS = [
 # mismo objeto de catalogo, ver docstring de la migracion.
 # Cualquier tipo especifico gana siempre sobre SOLICITUD_ADMINISTRATIVA.
 GENERIC_LOSER = "SOLICITUD_ADMINISTRATIVA"
+
+# S117: extensiones de fotografia para el respaldo IMAGEN de MAQUINAS
+# (ver resolve_document_type_heuristic).
+IMAGE_EXTENSIONS = frozenset({"JPG", "JPEG", "PNG", "HEIC", "GIF", "BMP", "TIF", "TIFF", "WEBP"})
 
 # CURSO <-> FORMACION: gana FORMACION si hay patron de horas
 # (2H/6H/60H/20 HORAS...), si no gana CURSO (S48).
@@ -306,6 +317,15 @@ def resolve_document_type_heuristic(entry, domain, name_upper=None):
         entry, domain, CANDIDATES_RISKY, name_upper,
     )
     if not matched:
+        # S117 -- decision de Miguel Angel (cierre Fase 1 MAQUINAS): una
+        # fotografia sin ninguna palabra clave en una carpeta de maquina
+        # es una IMAGEN (tipo MEDIA ya existente en Personal, ahora
+        # BOTH y acumulable, migracion 0137) -- queda en la ficha de su
+        # maquina en vez de "sin tipo" para siempre. Solo MAQUINAS y
+        # solo si ninguna palabra clave matcheo (una foto de una ITV
+        # llamada "ITV.jpg" sigue siendo ITV).
+        if domain == "MACHINE" and name_upper.rsplit(".", 1)[-1] in IMAGE_EXTENSIONS:
+            return "IMAGEN", None
         return None, None
 
     if len(matched) == 1:
