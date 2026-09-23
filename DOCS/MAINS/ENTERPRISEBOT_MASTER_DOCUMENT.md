@@ -1707,3 +1707,46 @@ para que el diseño del dossier al cliente, cuando se aborde, parta
 de este requisito real y no se descubra de nuevo desde cero.
 
 
+#### 4.24. DIRECTRIZ CRÍTICA — Formato único de visor/listado del panel: pantalla fija, scroll solo en la lista, orden múltiple, casilleros y acciones masivas (S117)
+
+**Origen, verbatim de Miguel Ángel (S117), al pedir el acceso de
+Yolanda a Centros de gasto:** *"vamos a ir haciendo todos los visores
+que sea con el mismo formato [...] tenemos que tener una parte fija de
+la pantalla que nunca va a hacer scroll y que la parte de la lista es
+la scrollable [...] pantalla fija, finita, en una sola pantalla de PC,
+en la que se scrollea la lista [...] eso da muy buena forma para verlo
+todo."* Ya se venía aplicando de hecho (pestaña Personal S113/S114,
+gestores de dosieres/lotes/requisitos, Albaranes/Almacén/Catálogo
+S116); desde S117 es directriz explícita.
+
+**Todo listado/visor del panel que se cree o se toque cumple, sin
+excepción:**
+
+1. **Pantalla fija en una sola pantalla de PC.** Panel superior fijo
+   (botones, búsqueda/filtros, acciones masivas) que nunca hace
+   scroll; debajo, un panel de altura calculada por JS (mismo
+   algoritmo ya probado de `#personal-bottom-panel`, S114: altura
+   natural menos el exceso real sobre `window.innerHeight`, con
+   `ResizeObserver` sobre el panel superior) donde **solo la lista**
+   hace scroll (`flex:1; min-height:0; overflow:auto`). Cabecera de
+   columnas `position: sticky` dentro de ese contenedor. Nunca `68vh`
+   fijo ni cadenas flex a través del grid de Bootstrap (incidentes
+   reales de S114).
+2. **Orden múltiple con prioridad** (S116): clic en una cabecera la
+   promueve a criterio principal conservando las demás como
+   desempate, clic en la principal invierte su sentido, máximo 4,
+   superíndice con la prioridad, botón **"Quitar orden"**. Formato
+   `sort=clave,-clave`, resuelto en la vista (plantillas tontas).
+3. **Casilla por fila + casilla "todos"**, selección que sobrevive a
+   filtros/orden/paginación, y **acciones masivas siempre visibles**
+   en el panel fijo (nunca apareciendo solo al marcar algo, S113).
+4. **Navegación persistida por usuario** (directriz 4.15,
+   `PanelNavigationState`).
+5. **Acciones visibles solo para quien puede usarlas** (flags de
+   permiso resueltos en la vista) -- nunca botones que devuelven 403.
+
+**Implementaciones de referencia:** `panel/templates/panel/fleet/
+list.html` + `fleet/views.py` (S117, las cinco reglas juntas);
+`panel/templates/panel/documentation_h30/_personal_pane.html` (panel
+fijo + visor de selección); `delivery_notes/views.py` (orden múltiple,
+S116).
