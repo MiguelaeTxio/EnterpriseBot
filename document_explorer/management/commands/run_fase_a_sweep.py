@@ -462,7 +462,9 @@ class Command(BaseCommand):
 
                 if dossier_pair:
                     if domain == "MACHINE":
-                        obj = resolve_or_create_machine_asset(entry, {})
+                        obj = resolve_or_create_machine_asset(
+                            entry, {}, allow_create=apply_changes,
+                        )
                         ct = machine_ct
                     else:
                         obj = _resolve_person_by_folder(entry)
@@ -496,7 +498,9 @@ class Command(BaseCommand):
                     continue
 
                 if domain == "MACHINE":
-                    asset = resolve_or_create_machine_asset(entry, {})
+                    asset = resolve_or_create_machine_asset(
+                        entry, {}, allow_create=apply_changes,
+                    )
                     obj, ct = asset, machine_ct
                 else:
                     obj = _resolve_person_by_folder(entry)

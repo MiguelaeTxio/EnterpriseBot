@@ -64,7 +64,20 @@ uso aqui, domain=MACHINE unicamente, confirmado por Miguel Angel:
 DRY-RUN POR DEFECTO. Con --apply escribe de verdad (document_type,
 domain_content_type, domain_object_id; papelera para dosieres ya
 divididos). Nunca toca GCS (4.12), nunca toca nada fuera de SCOPE.
+
+S117 -- dos correcciones reales antes de relanzarlo en H30 (dominio
+MÁQUINAS):
+- El dry-run NO era un dry-run: resolve_or_create_machine_asset() daba
+  de alta máquinas nuevas en fleet.MachineAsset también sin --apply.
+  Ahora, en dry-run, allow_create=False: nunca se crea nada y se lista
+  qué código/matrícula se crearía ("SE CREARIA MAQUINA NUEVA").
+- com-standards 0bis/0ter: log propio (--log-file, pantalla y archivo a
+  la vez con flush), heartbeat cada 25 archivos o 30 s con ETA y hora
+  de fin, resumen final sin tiempos.
 """
+import time
+from datetime import datetime, timedelta
+
 from django.contrib.contenttypes.models import ContentType
 from django.core.management.base import BaseCommand
 from django.db.models import Q
@@ -195,6 +208,10 @@ def _scoped_files():
     return qs.exclude(exclude_query)
 
 
+HEARTBEAT_EVERY = 25
+HEARTBEAT_SECONDS = 30
+
+
 class Command(BaseCommand):
     help = (
         "H30 (S50) -- Fase A restringida al mapa de carpetas de "
@@ -207,9 +224,38 @@ class Command(BaseCommand):
             "--apply", action="store_true",
             help="Escribe de verdad. Sin esta flag, solo informa.",
         )
+        parser.add_argument(
+            "--log-file", required=True,
+            help="Log propio (pantalla y archivo a la vez, com-standards 0bis).",
+        )
+
+    def _log(self, message):
+        """
+        Timestamped line to screen and own log file, flushed.
+        ---
+        Línea con hora a pantalla y al log propio, con flush.
+        """
+        self._log_plain("[%s] %s" % (datetime.now().strftime("%H:%M:%S"), message))
+
+    def _log_plain(self, message):
+        """
+        Line WITHOUT timestamp (final summary, com-standards 0ter).
+        ---
+        Línea SIN hora (resumen final, com-standards 0ter).
+        """
+        print(message, flush=True)
+        self._log_handle.write(message + "\n")
+        self._log_handle.flush()
 
     def handle(self, *args, **options):
         apply_changes = options["apply"]
+        self._log_handle = open(options["log_file"], "a", encoding="utf-8")
+        try:
+            self._run(apply_changes)
+        finally:
+            self._log_handle.close()
+
+    def _run(self, apply_changes):
         machine_ct = ContentType.objects.get_for_model(MachineAsset)
         type_catalog = {
             t.code: t
@@ -220,71 +266,148 @@ class Command(BaseCommand):
             "asignados": 0, "dosier_eliminado": 0,
             "dosier_sin_dividir_pendiente": 0, "sin_resolver_tipo": 0,
             "sin_resolver_dominio": 0, "folder_type": 0,
+            "se_crearia_maquina": 0,
         }
+        would_create = {}
+        by_type = {}
 
         entries = list(_scoped_files().only("id", "name", "parent_path"))
-        self.stdout.write(
-            "--- MACHINE (alcance acotado S50): %d archivos candidatos ---"
-            % len(entries)
+        total = len(entries)
+        self._log(
+            "MODO: %s -- MACHINE (alcance acotado S50): %d archivos "
+            "candidatos sin tipo" % (
+                "APLICAR (escribe)" if apply_changes
+                else "DRY-RUN (no escribe nada, no crea maquinas)",
+                total,
+            )
         )
 
-        for entry in entries:
-            name_upper = _strip_accents(entry.name).upper()
-
-            folder_code = folder_based_type(entry, "MACHINE")
-            if folder_code:
-                code, dossier_pair = folder_code, None
-                stats["folder_type"] += 1
-            else:
-                code, dossier_pair = resolve_document_type_heuristic(
-                    entry, "MACHINE", name_upper,
+        start_time = datetime.now()
+        last_beat = time.monotonic()
+        for index, entry in enumerate(entries, start=1):
+            self._process_entry(
+                entry, apply_changes, machine_ct, type_catalog, stats,
+                would_create, by_type,
+            )
+            if (
+                index % HEARTBEAT_EVERY == 0
+                or time.monotonic() - last_beat >= HEARTBEAT_SECONDS
+                or index == total
+            ):
+                last_beat = time.monotonic()
+                elapsed = (datetime.now() - start_time).total_seconds()
+                eta_seg = (elapsed / index) * (total - index) if index else 0
+                hora_fin = (
+                    datetime.now() + timedelta(seconds=eta_seg)
+                ).strftime("%H:%M:%S")
+                self._log(
+                    "Progreso: %d/%d (%d%%) -- ETA %dm%02ds (fin aprox. %s) "
+                    "-- asignados=%d, sin_tipo=%d, sin_dominio=%d, "
+                    "se_crearia_maquina=%d" % (
+                        index, total, index * 100 // total if total else 100,
+                        int(eta_seg // 60), int(eta_seg % 60), hora_fin,
+                        stats["asignados"], stats["sin_resolver_tipo"],
+                        stats["sin_resolver_dominio"],
+                        stats["se_crearia_maquina"],
+                    )
                 )
 
-            if dossier_pair:
-                obj = resolve_or_create_machine_asset(entry, {})
-                if _dossier_types_already_filed(obj, machine_ct, dossier_pair):
-                    stats["dosier_eliminado"] += 1
-                    self.stdout.write(
-                        "DOSIER ELIMINADO (ya dividido en %s) [%s] %s"
-                        % (sorted(dossier_pair), entry.parent_path, entry.name)
-                    )
-                    if apply_changes:
-                        trash_dossier_entry(entry)
-                else:
-                    stats["dosier_sin_dividir_pendiente"] += 1
-                    self.stdout.write(
-                        "DOSIER SIN DIVIDIR, NO SE ELIMINA (revision manual) "
-                        "[%s] %s -> %s"
-                        % (entry.parent_path, entry.name, sorted(dossier_pair))
-                    )
-                continue
-
-            if not code:
-                stats["sin_resolver_tipo"] += 1
-                continue
-
-            asset = resolve_or_create_machine_asset(entry, {})
-            if not asset and ("/RAE" in entry.parent_path or "/CE PLATAFORMAS" in entry.parent_path):
-                asset = _resolve_machine_by_filename(entry)
-            if not asset:
-                stats["sin_resolver_dominio"] += 1
-                self.stdout.write(
-                    "TIPO OK, DOMINIO SIN RESOLVER  [%s] %s -> %s"
-                    % (entry.parent_path, entry.name, code)
-                )
-                continue
-
-            stats["asignados"] += 1
-            if apply_changes:
-                entry.document_type = type_catalog[code]
-                entry.domain_content_type = machine_ct
-                entry.domain_object_id = asset.pk
-                entry.save(update_fields=[
-                    "document_type", "domain_content_type", "domain_object_id",
-                ])
-
-        self.stdout.write("=== RESUMEN (%s) ===" % (
+        self._log_plain("=== RESUMEN (%s) ===" % (
             "APLICADO" if apply_changes else "DRY-RUN, nada escrito"
         ))
         for key, value in stats.items():
-            self.stdout.write("    %s: %d" % (key, value))
+            self._log_plain("    %s: %d" % (key, value))
+        self._log_plain("--- Asignables por tipo documental ---")
+        for code, count in sorted(by_type.items(), key=lambda kv: -kv[1]):
+            self._log_plain("    %s: %d" % (code, count))
+        if would_create:
+            self._log_plain(
+                "--- Maquinas que se CREARIAN con --apply (%d distintas; "
+                "en dry-run NO se ha creado ninguna) ---" % len(would_create)
+            )
+            for code, count in sorted(would_create.items()):
+                self._log_plain("    %s: %d archivos" % (code, count))
+
+    def _process_entry(
+        self, entry, apply_changes, machine_ct, type_catalog, stats,
+        would_create, by_type,
+    ):
+        """
+        Types/assigns one file (same rules as before S117).
+        ---
+        Tipa/asigna un archivo (mismas reglas que antes de S117).
+        """
+        name_upper = _strip_accents(entry.name).upper()
+
+        folder_code = folder_based_type(entry, "MACHINE")
+        if folder_code:
+            code, dossier_pair = folder_code, None
+            stats["folder_type"] += 1
+        else:
+            code, dossier_pair = resolve_document_type_heuristic(
+                entry, "MACHINE", name_upper,
+            )
+
+        if dossier_pair:
+            result = {}
+            obj = resolve_or_create_machine_asset(
+                entry, result, allow_create=apply_changes,
+            )
+            if obj and _dossier_types_already_filed(
+                obj, machine_ct, dossier_pair,
+            ):
+                stats["dosier_eliminado"] += 1
+                self._log(
+                    "DOSIER ELIMINADO (ya dividido en %s) [%s] %s"
+                    % (sorted(dossier_pair), entry.parent_path, entry.name)
+                )
+                if apply_changes:
+                    trash_dossier_entry(entry)
+            else:
+                stats["dosier_sin_dividir_pendiente"] += 1
+                self._log(
+                    "DOSIER SIN DIVIDIR, NO SE ELIMINA (revision manual) "
+                    "[%s] %s -> %s"
+                    % (entry.parent_path, entry.name, sorted(dossier_pair))
+                )
+            return
+
+        if not code:
+            stats["sin_resolver_tipo"] += 1
+            return
+
+        result = {}
+        asset = resolve_or_create_machine_asset(
+            entry, result, allow_create=apply_changes,
+        )
+        if not asset and (
+            "/RAE" in entry.parent_path
+            or "/CE PLATAFORMAS" in entry.parent_path
+        ):
+            asset = _resolve_machine_by_filename(entry)
+        if not asset:
+            new_code = result.get("would_create_machine")
+            if new_code:
+                stats["se_crearia_maquina"] += 1
+                would_create[new_code] = would_create.get(new_code, 0) + 1
+                self._log(
+                    "SE CREARIA MAQUINA NUEVA %s [%s] %s -> %s"
+                    % (new_code, entry.parent_path, entry.name, code)
+                )
+                return
+            stats["sin_resolver_dominio"] += 1
+            self._log(
+                "TIPO OK, DOMINIO SIN RESOLVER  [%s] %s -> %s"
+                % (entry.parent_path, entry.name, code)
+            )
+            return
+
+        stats["asignados"] += 1
+        by_type[code] = by_type.get(code, 0) + 1
+        if apply_changes:
+            entry.document_type = type_catalog[code]
+            entry.domain_content_type = machine_ct
+            entry.domain_object_id = asset.pk
+            entry.save(update_fields=[
+                "document_type", "domain_content_type", "domain_object_id",
+            ])

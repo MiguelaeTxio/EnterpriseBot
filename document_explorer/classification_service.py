@@ -586,7 +586,7 @@ _FOLDER_PLATE_RE = re.compile(r"(\d{4})[\s-]?([A-Z]{3})\b")
 
 
 def resolve_or_create_machine_asset(
-    entry, result: dict,
+    entry, result: dict, allow_create: bool = True,
 ) -> MachineAsset | None:
     """
     Same lookup as `resolve_machine_asset()`, extended to create a
@@ -776,6 +776,19 @@ def resolve_or_create_machine_asset(
         ).first()
         if asset:
             return asset
+
+    # S117 -- fallo real: los tres comandos de barrido (run_fase_a_
+    # sweep, run_fase_a_sweep_scoped, run_fase_b1_ocr_classify)
+    # llamaban a esta función también en DRY-RUN, así que una
+    # "simulación" daba de alta máquinas nuevas de verdad en
+    # fleet.MachineAsset. Con allow_create=False (lo que pasan ahora
+    # en dry-run) nunca se crea nada: se anota en
+    # result["would_create_machine"] qué código/matrícula se crearía y
+    # se devuelve None. El pipeline real de ingesta sigue igual
+    # (allow_create=True por defecto).
+    if not allow_create:
+        result["would_create_machine"] = candidate_plate or candidate_code
+        return None
 
     reference = (
         MachineAsset.objects

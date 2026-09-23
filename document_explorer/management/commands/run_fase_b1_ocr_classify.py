@@ -267,7 +267,9 @@ class Command(BaseCommand):
                 stats["sin_tipo_reconocible_en_ocr"] += 1
                 continue
 
-            asset = resolve_or_create_machine_asset(entry, {})
+            asset = resolve_or_create_machine_asset(
+                entry, {}, allow_create=apply_changes,
+            )
             if not asset:
                 stats["dominio_sin_resolver"] += 1
                 self.stdout.write(
