@@ -19,6 +19,8 @@ from ivr_config.models import (
     Section,
 )
 from work_order_processor.models import (
+    SparePartLine,
+    TaskPhoto,
     WorkOrder,
     WorkOrderEntry,
     WorkOrderEntryLine,
@@ -308,12 +310,19 @@ class WorkOrderListView (SupervisorAccessMixin ,View ):
         elif bulk_op =="delete":
 
             count =qs .count ()
-            # S116-H07: mismo criterio -- borrar también los tickets que
-            # estos partes habían originado y que no seguían en ningún
-            # otro parte.
-            _ticket_pks =_ticket_pks_linked_to_work_orders (
-            list (qs .values_list ("pk",flat =True ))
+            _wo_pks =list (qs .values_list ("pk",flat =True ))
+            # S116-H07/H10: antes de borrar -- devolver los repuestos que
+            # estos partes hubieran consumido, borrar de GCS/índice las
+            # fotos que hubieran tenido, y capturar los tickets que
+            # hubieran originado.
+            _line_pks =list (
+            WorkOrderEntryLine .objects .filter (
+            entry__work_order__pk__in =_wo_pks 
+            ).values_list ("pk",flat =True )
             )
+            _revert_spare_parts_for_lines (_line_pks ,company_user )
+            _delete_task_photo_files (work_order_pks =_wo_pks )
+            _ticket_pks =_ticket_pks_linked_to_work_orders (_wo_pks )
             qs .delete ()
             _deleted_tickets =_delete_orphaned_tickets (_ticket_pks )
             _msg =(
@@ -627,9 +636,17 @@ class WorkOrderUploadView (SupervisorAccessMixin ,View ):
 
         if duplicate_wo and request .POST .get ("confirm_overwrite"):
             dup_pk =duplicate_wo .pk 
-            # S116-H07: mismo criterio -- borrar también los tickets que
-            # este parte duplicado había originado y que no seguían en
-            # ningún otro parte.
+            # S116-H07/H10: mismo criterio -- devolver los repuestos,
+            # borrar de GCS/índice las fotos, y borrar también los
+            # tickets que este parte duplicado había originado y que no
+            # seguían en ningún otro parte.
+            _dup_line_pks =list (
+            WorkOrderEntryLine .objects .filter (
+            entry__work_order =duplicate_wo 
+            ).values_list ("pk",flat =True )
+            )
+            _revert_spare_parts_for_lines (_dup_line_pks ,company_user )
+            _delete_task_photo_files (work_order_pks =[dup_pk ])
             _ticket_pks =_ticket_pks_linked_to_work_orders ([dup_pk ])
             duplicate_wo .delete ()
             _delete_orphaned_tickets (_ticket_pks )
@@ -2046,6 +2063,87 @@ def _delete_orphaned_tickets (ticket_pks ):
     return count 
 
 
+def _delete_task_photo_files (work_order_pks =None ,line_pks =None ):
+    """
+    S116-H07: Miguel Ángel, verbatim: "ahora borramos un parte y la
+    foto se queda. Borrado el parte, hay que borrar la foto
+    también". TaskPhoto.line es on_delete=CASCADE, así que la FILA
+    de base de datos ya se borraba sola en cuanto se borraba la
+    línea/parte -- lo que nunca se borraba era el archivo real en
+    Google Cloud Storage (Django nunca borra el blob de un FileField
+    solo porque se borre la fila) ni la entrada del índice del
+    explorador de documentos (H29, ver commit d4033bb) -- ambos se
+    quedaban huérfanos para siempre.
+
+    Llamar ANTES de borrar el WorkOrder o la línea (mientras
+    gcs_blob_name todavía existe en la fila -- una vez borrada la
+    línea, TaskPhoto desaparece con ella y ya no hay forma de saber
+    qué blob había que borrar). No hace nada si no hubo fotos --
+    "evidentemente, si no ha habido fotos, no podemos borrar nada".
+
+    Pasar exactamente uno de los dos filtros: work_order_pks para un
+    borrado de parte(s) completo(s), line_pks para el borrado de una
+    sola tarea.
+    """
+    from document_explorer .models import DocumentIndexEntry 
+    from spare_parts .gcs_service import TASK_PHOTOS_BUCKET ,delete_file 
+
+    qs =TaskPhoto .objects .exclude (gcs_blob_name ="")
+    if work_order_pks :
+        qs =qs .filter (line__entry__work_order__pk__in =work_order_pks )
+    elif line_pks :
+        qs =qs .filter (line__pk__in =line_pks )
+    else :
+        return 
+
+    for photo in qs :
+        try :
+            delete_file (TASK_PHOTOS_BUCKET ,photo .gcs_blob_name )
+        except Exception :
+            logger .exception (
+            "# [WorkOrderDelete] Fallo borrando de GCS la foto pk=%d "
+            "(blob=%s) al borrar su parte -- se continúa con el "
+            "borrado del parte de todos modos.",
+            photo .pk ,photo .gcs_blob_name ,
+            )
+        DocumentIndexEntry .objects .filter (
+        bucket =TASK_PHOTOS_BUCKET ,
+        blob_name =photo .gcs_blob_name ,
+        ).delete ()
+
+
+def _revert_spare_parts_for_lines (line_pks ,company_user ):
+    """
+    S116-H10: Miguel Ángel, verbatim: "si se han asignado a una tarea
+    de un parte repuestos y se borra, esos repuestos deben devolver
+    a donde estaban. No se pueden quedar asignados a la máquina,
+    puesto que hemos borrado el parte."
+
+    Llamar ANTES de borrar la(s) línea(s) -- reutiliza
+    StockAssignmentService.revert_consumption() por cada
+    SparePartLine real que cuelgue de ellas, que repone el
+    SparePartEntry a su estado anterior (PRE_ASSIGNED o WAREHOUSE,
+    según de dónde viniera) y registra el movimiento de devolución.
+    La propia SparePartLine se borra sola en cascada al borrarse la
+    línea después -- esta función no la toca.
+    """
+    from spare_parts .services import StockAssignmentService 
+
+    for spl in SparePartLine .objects .filter (
+    entry_line__pk__in =line_pks ,
+    spare_part_entry__isnull =False ,
+    ):
+        try :
+            StockAssignmentService .revert_consumption (spl ,company_user )
+        except Exception :
+            logger .exception (
+            "# [WorkOrderDelete] Fallo devolviendo el repuesto de "
+            "SparePartLine pk=%d al borrar su tarea -- se continúa "
+            "con el borrado de todos modos.",
+            spl .pk ,
+            )
+
+
 class WorkOrderLineDeleteView (SupervisorAccessMixin ,View ):
     """
     Deletes a single WorkOrderEntryLine identified by line_pk, scoped to the
@@ -2079,7 +2177,8 @@ class WorkOrderLineDeleteView (SupervisorAccessMixin ,View ):
         from django .shortcuts import get_object_or_404 
         from django .http import HttpResponse 
 
-        company =request .user .company_user .company 
+        company_user =request .user .company_user 
+        company =company_user .company 
         wo =get_object_or_404 (WorkOrder ,pk =wo_pk ,company =company )
         if wo .source in (WorkOrder .Source .DIGITAL ,WorkOrder .Source .GENERATED ):
             from django .http import HttpResponseForbidden 
@@ -2093,10 +2192,15 @@ class WorkOrderLineDeleteView (SupervisorAccessMixin ,View ):
         entry__work_order =wo ,
         )
         entry =line .entry 
-        # S116-H07: capturar el ticket ANTES de borrar la línea -- tras
-        # borrarla, si ese ticket no queda enganchado a ninguna otra
-        # línea real, se borra también (era esta línea la que lo
-        # originó).
+        # S116-H07/H10: devolver el repuesto (si lo hubiera) y borrar de
+        # GCS/índice la foto (si la hubiera) ANTES de borrar la línea --
+        # una vez borrada, TaskPhoto/SparePartLine desaparecen con ella
+        # y ya no hay forma de saber qué había que devolver/borrar.
+        _revert_spare_parts_for_lines ([line .pk ],company_user )
+        _delete_task_photo_files (line_pks =[line .pk ])
+        # Capturar el ticket ANTES de borrar la línea -- tras borrarla,
+        # si ese ticket no queda enganchado a ninguna otra línea real,
+        # se borra también (era esta línea la que lo originó).
         _ticket_pk =line .breakdown_ticket_id 
         line .delete ()
         if _ticket_pk :
@@ -2139,14 +2243,26 @@ class WorkOrderDeleteView (SupervisorAccessMixin ,View ):
         """
         from django .shortcuts import get_object_or_404 
 
-        company =request .user .company_user .company 
+        company_user =request .user .company_user 
+        company =company_user .company 
         wo =get_object_or_404 (WorkOrder ,pk =pk ,company =company )
         wo_pk =wo .pk 
-        # S116-H07: capturar los tickets enganchados a este parte ANTES
-        # de borrarlo -- si tras el borrado se quedan sin ninguna línea
-        # real en ningún otro parte, se borran también (petición
-        # explícita de Miguel Ángel: si el parte que se borra es el que
-        # dio origen al ticket, el ticket se borra con él).
+        # S116-H07/H10: devolver los repuestos y borrar de GCS/índice
+        # las fotos ANTES de borrar el parte -- una vez borrado,
+        # TaskPhoto/SparePartLine desaparecen en cascada con él y ya no
+        # hay forma de saber qué había que devolver/borrar. Los tickets
+        # se capturan aquí también, por el mismo motivo, y se borran
+        # DESPUÉS (si tras el borrado se quedan sin ninguna línea real
+        # en ningún otro parte -- petición explícita de Miguel Ángel: si
+        # el parte que se borra es el que dio origen al ticket, el
+        # ticket se borra con él; si no, nunca se toca).
+        _line_pks =list (
+        WorkOrderEntryLine .objects .filter (
+        entry__work_order =wo 
+        ).values_list ("pk",flat =True )
+        )
+        _revert_spare_parts_for_lines (_line_pks ,company_user )
+        _delete_task_photo_files (work_order_pks =[wo_pk ])
         _ticket_pks =_ticket_pks_linked_to_work_orders ([wo_pk ])
         wo .delete ()
         _deleted_tickets =_delete_orphaned_tickets (_ticket_pks )
@@ -2853,11 +2969,20 @@ class WorkOrderDuplicateDeleteView (SupervisorAccessMixin ,View ):
         from django .shortcuts import get_object_or_404 
         from django .http import HttpResponse 
 
-        company =request .user .company_user .company 
+        company_user =request .user .company_user 
+        company =company_user .company 
         wo =get_object_or_404 (WorkOrder ,pk =pk ,company =company )
-        # S116-H07: mismo criterio que WorkOrderDeleteView -- borrar
-        # también los tickets que este duplicado había originado y que
-        # no seguían en ningún otro parte.
+        # S116-H07/H10: mismo criterio que WorkOrderDeleteView -- devolver
+        # repuestos, borrar de GCS/índice las fotos, y borrar también los
+        # tickets que este duplicado había originado y que no seguían en
+        # ningún otro parte.
+        _line_pks =list (
+        WorkOrderEntryLine .objects .filter (
+        entry__work_order =wo 
+        ).values_list ("pk",flat =True )
+        )
+        _revert_spare_parts_for_lines (_line_pks ,company_user )
+        _delete_task_photo_files (work_order_pks =[wo .pk ])
         _ticket_pks =_ticket_pks_linked_to_work_orders ([wo .pk ])
         wo .delete ()
         _delete_orphaned_tickets (_ticket_pks )

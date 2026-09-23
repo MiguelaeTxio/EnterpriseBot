@@ -2144,6 +2144,94 @@ class StockAssignmentService:
 
     @staticmethod
     @transaction.atomic
+    def revert_consumption(spare_part_line, created_by, notes=''):
+        """
+        S116-H10: revierte un consumo ya materializado cuando se borra
+        la tarea/parte que lo consumió -- petición explícita de
+        Miguel Ángel: "si se han asignado repuestos a una tarea de un
+        parte y se borra, esos repuestos deben devolver a donde
+        estaban. No se pueden quedar asignados a la máquina, puesto
+        que hemos borrado el parte."
+
+        Lee el StockMovement OUT emparejado (creado junto a la propia
+        SparePartLine en _materialize_consumption) para saber
+        exactamente qué se sacó, y lo devuelve:
+        - Incontable: stock_level vuelve al valor de antes del
+          consumo (movement.level_before).
+        - Contable: stock_quantity recupera la cantidad consumida
+          (movement.quantity).
+        - status: vuelve a PRE_ASSIGNED si el repuesto estaba
+          reservado para una máquina o ticket concreto (Caso B -- de
+          ahí venía antes de CONSUMED), o a WAREHOUSE si no (Caso A,
+          almacén general).
+
+        Registra un StockMovement ADJUST nuevo como devolución, para
+        que quede constancia en el histórico de por qué el stock
+        subió sin que haya entrado mercancía real.
+
+        No hace nada si la línea no tiene spare_part_entry vinculado
+        (nada que devolver -- p.ej. un consumible anotado a mano que
+        nunca se rastreó como stock real).
+
+        Quien llama es responsable de borrar después la propia
+        spare_part_line (o dejar que la cascada de borrar la línea de
+        la tarea lo haga) -- esto solo repone el estado del
+        SparePartEntry.
+        """
+        from .models import SparePartEntry, StockMovement
+
+        entry = spare_part_line.spare_part_entry
+        if entry is None:
+            return None
+
+        movement = StockMovement.objects.filter(
+            spare_part_line=spare_part_line,
+            movement_type=StockMovement.MOVEMENT_OUT,
+        ).order_by('-created_at').first()
+
+        level_before_restore = entry.stock_level
+        quantity_restored = Decimal('0')
+
+        if entry.is_uncountable:
+            if movement is not None:
+                entry.stock_level = movement.level_before
+        else:
+            quantity_restored = (
+                movement.quantity if movement is not None
+                else (spare_part_line.quantity or Decimal('0'))
+            )
+            entry.stock_quantity = (
+                entry.stock_quantity or Decimal('0')
+            ) + quantity_restored
+
+        entry.status = (
+            SparePartEntry.STATUS_PRE_ASSIGNED
+            if (entry.machine_id or entry.breakdown_ticket_id)
+            else SparePartEntry.STATUS_WAREHOUSE
+        )
+        entry.consumed_at = None
+        entry.save(update_fields=[
+            'status', 'stock_quantity', 'stock_level', 'consumed_at',
+        ])
+
+        StockMovement.objects.create(
+            spare_part_entry=entry,
+            movement_type=StockMovement.MOVEMENT_ADJUST,
+            quantity=quantity_restored,
+            level_before=level_before_restore,
+            level_after=entry.stock_level,
+            machine=entry.machine,
+            breakdown_ticket=entry.breakdown_ticket,
+            created_by=created_by,
+            notes=notes or (
+                'Repuesto devuelto automáticamente: se borró la '
+                'tarea/parte que lo consumía (S116-H10).'
+            ),
+        )
+        return entry
+
+    @staticmethod
+    @transaction.atomic
     def register_new_and_consume(
         company, entry_line, machine, breakdown_ticket, created_by,
         description, reference='', is_uncountable=False,
