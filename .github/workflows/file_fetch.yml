@@ -24,8 +24,9 @@ on:
         options:
           - pythonanywhere
           - gcs
+          - gcs_text
       remote_path:
-        description: "pythonanywhere: ruta absoluta en el servidor. gcs: 'bucket/ruta/al/blob'"
+        description: "pythonanywhere: ruta absoluta en el servidor. gcs: 'bucket/ruta/al/blob'. gcs_text: varios 'bucket/blob' separados por ' || '"
         required: true
         type: string
       tail_lines:
@@ -94,6 +95,38 @@ jobs:
             MiguelAeTxio@ssh.pythonanywhere.com:"$GCS_SCRIPT_PATH"
           ssh -i ~/.ssh/pa_readonly_key MiguelAeTxio@ssh.pythonanywhere.com \
             "set -e; cd /home/MiguelAeTxio/PROJECTS/EnterpriseBot; source /home/MiguelAeTxio/.virtualenvs/EnterpriseBot_venv_py312/bin/activate; export PYTHONPATH=/home/MiguelAeTxio/PROJECTS/EnterpriseBot; python -m dotenv run python3 '$GCS_SCRIPT_PATH' '$BUCKET' '$BLOB' '$TMP_PATH'; python -m dotenv run python3 '$DRIVE_SCRIPT' '$TMP_PATH' '$DRIVE_NAME' '${{ env.DRIVE_FOLDER_ID }}'; rm -f '$TMP_PATH' '$GCS_SCRIPT_PATH' '$DRIVE_SCRIPT'" \
+            > /tmp/result.txt 2>&1
+          echo "EXIT=$?" >> /tmp/result.txt
+          echo "DRIVE_NAME=$DRIVE_NAME" >> /tmp/result.txt
+          cat /tmp/result.txt
+
+      # S117 (H30) -- modo gcs_text: en vez del archivo entero, SOLO el
+      # texto de las 2 primeras páginas de uno o varios blobs, extraído
+      # en el servidor con document_explorer.cloud_vision_service.
+      # extract_text() (texto incrustado de PDF -> Cloud Vision, nunca
+      # Tesseract local). El conector de Drive del modelo mete el
+      # archivo completo en su contexto: un escaneo de cientos de KB no
+      # cabe, su texto sí. Los blobs viajan en un archivo (uno por
+      # línea) para no depender de comillas anidadas en el ssh.
+      - name: GCS texto — extraer texto de varios blobs en el servidor y subirlo a Drive
+        if: inputs.mode == 'gcs_text'
+        env:
+          REMOTE_PATH: ${{ inputs.remote_path }}
+        run: |
+          set +e
+          printf '%s' "$REMOTE_PATH" | sed 's/ || /\n/g' > /tmp/targets.txt
+          echo "Blobs pedidos: $(grep -c . /tmp/targets.txt)"
+          TARGETS_PATH="/home/MiguelAeTxio/SWAP/gcs_text_targets_${{ github.run_id }}.txt"
+          SCRIPT_PATH="/home/MiguelAeTxio/SWAP/gcs_text_extract_${{ github.run_id }}.py"
+          OUT_PATH="/home/MiguelAeTxio/SWAP/gcs_text_${{ github.run_id }}.txt"
+          DRIVE_SCRIPT="/home/MiguelAeTxio/SWAP/drive_upload_${{ github.run_id }}.py"
+          DRIVE_NAME="gcs_text_${{ github.run_id }}.txt"
+          scp -i ~/.ssh/pa_readonly_key /tmp/targets.txt \
+            MiguelAeTxio@ssh.pythonanywhere.com:"$TARGETS_PATH"
+          scp -i ~/.ssh/pa_readonly_key .github/scripts/gcs_text_extract.py \
+            MiguelAeTxio@ssh.pythonanywhere.com:"$SCRIPT_PATH"
+          ssh -i ~/.ssh/pa_readonly_key MiguelAeTxio@ssh.pythonanywhere.com \
+            "set -e; cd /home/MiguelAeTxio/PROJECTS/EnterpriseBot; source /home/MiguelAeTxio/.virtualenvs/EnterpriseBot_venv_py312/bin/activate; export PYTHONPATH=/home/MiguelAeTxio/PROJECTS/EnterpriseBot; python -m dotenv run python3 '$SCRIPT_PATH' '$OUT_PATH' 2500 '$TARGETS_PATH'; python -m dotenv run python3 '$DRIVE_SCRIPT' '$OUT_PATH' '$DRIVE_NAME' '${{ env.DRIVE_FOLDER_ID }}'; rm -f '$OUT_PATH' '$SCRIPT_PATH' '$TARGETS_PATH' '$DRIVE_SCRIPT'" \
             > /tmp/result.txt 2>&1
           echo "EXIT=$?" >> /tmp/result.txt
           echo "DRIVE_NAME=$DRIVE_NAME" >> /tmp/result.txt
