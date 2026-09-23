@@ -7827,3 +7827,34 @@ fecha; 8.299 `is_obsolete` decididos mayoritariamente sin fecha.
    reparaciones/revisiones solo en consulta).
 9. Accesorios de elevación (eslingas, líneas de carga, certificados),
    equivalente de los EPIs para maquinaria -- diseño con Miguel Ángel.
+
+## DECISIÓN DE DISEÑO (S117, Miguel Ángel) -- UNA SOLA VISTA DE MAQUINARIA: "Centros de gasto" SUSTITUIRÁ A LA PESTAÑA PRIMITIVA DE DOCUMENTACIÓN
+
+Verbatim de Miguel Ángel (S117), con capturas de las tres pantallas
+(hub de Documentación > Centros de Gasto, `/panel/fleet/`, y hub >
+Personal): *"esta vista de los centros de gasto, tendremos que hacer
+un merge con la vista de lista que tenemos ahora mismo, que es muy
+escueta, para que sea análoga a la de personal. Es decir, que lo que
+estamos construyendo ahora mismo nos va a servir para luego hacer la
+vista de documentación [...] Centros de gasto ya es una vista más
+elaborada, pero que a esta vista va a seguir teniendo acceso los
+operarios de taller, tal y como tienen ahora, para que puedan
+consultar los centros de gasto desde ahí y la vamos a enriquecer para
+que se parezca a esta vista de personal. Sustituyendo a esa vista
+primitiva que tenemos ahora."*
+
+Y antes, en la misma sesión: *"De momento vamos a seguir centrándonos
+en esta vista, luego ya compaginaremos con la vista de
+documentación."*
+
+Consecuencias:
+1. `/panel/fleet/` (Centros de gasto) es LA vista de maquinaria; se
+   enriquece hasta ser análoga a la pestaña Personal del hub (panel
+   fijo con búsqueda/filtros, acciones múltiples/individuales, visor de
+   selección, dossiers...).
+2. Cuando esté lista, sustituye a la pestaña "Centros de Gasto" del hub
+   de Documentación (`_machine_pane.html`/`_machine_results.html`,
+   vista primitiva de S48-S50) -- nunca dos vistas de maquinaria en
+   paralelo.
+3. El acceso de roles de taller a Centros de gasto se mantiene tal como
+   está hoy.
