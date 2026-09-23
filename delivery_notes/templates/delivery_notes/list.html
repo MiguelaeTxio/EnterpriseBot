@@ -61,6 +61,11 @@
             </button>
         </form>
     </div>
+    {% if sort_active %}
+    <a href="{{ clear_sort_url }}" class="btn btn-sm btn-outline-secondary ms-auto">
+        <i class="bi bi-x-circle me-1"></i>Quitar orden
+    </a>
+    {% endif %}
 </div>
 
 <div class="card shadow-sm">
@@ -71,14 +76,14 @@
                     <th style="width:2rem;">
                         <input type="checkbox" id="select-all-notes" title="Seleccionar todos">
                     </th>
-                    <th><a href="{{ sort_urls.fecha }}" class="text-decoration-none text-dark">Fecha albarán {{ sort_arrows.fecha }}</a></th>
-                    <th><a href="{{ sort_urls.proveedor }}" class="text-decoration-none text-dark">Proveedor {{ sort_arrows.proveedor }}</a></th>
-                    <th><a href="{{ sort_urls.numero }}" class="text-decoration-none text-dark">Nº albarán {{ sort_arrows.numero }}</a></th>
-                    <th><a href="{{ sort_urls.destinatario }}" class="text-decoration-none text-dark">Destinatario {{ sort_arrows.destinatario }}</a></th>
-                    <th><a href="{{ sort_urls.lineas }}" class="text-decoration-none text-dark">Líneas {{ sort_arrows.lineas }}</a></th>
-                    <th><a href="{{ sort_urls.estado }}" class="text-decoration-none text-dark">Estado {{ sort_arrows.estado }}</a></th>
-                    <th><a href="{{ sort_urls.asignacion }}" class="text-decoration-none text-dark">Asignación {{ sort_arrows.asignacion }}</a></th>
-                    <th><a href="{{ sort_urls.revisado }}" class="text-decoration-none text-dark">Revisado por {{ sort_arrows.revisado }}</a></th>
+                    <th><a href="{{ sort_urls.fecha }}" class="text-decoration-none text-dark">Fecha albarán {{ sort_arrows.fecha }}<sup>{{ sort_priority.fecha }}</sup></a></th>
+                    <th><a href="{{ sort_urls.proveedor }}" class="text-decoration-none text-dark">Proveedor {{ sort_arrows.proveedor }}<sup>{{ sort_priority.proveedor }}</sup></a></th>
+                    <th><a href="{{ sort_urls.numero }}" class="text-decoration-none text-dark">Nº albarán {{ sort_arrows.numero }}<sup>{{ sort_priority.numero }}</sup></a></th>
+                    <th><a href="{{ sort_urls.destinatario }}" class="text-decoration-none text-dark">Destinatario {{ sort_arrows.destinatario }}<sup>{{ sort_priority.destinatario }}</sup></a></th>
+                    <th><a href="{{ sort_urls.lineas }}" class="text-decoration-none text-dark">Líneas {{ sort_arrows.lineas }}<sup>{{ sort_priority.lineas }}</sup></a></th>
+                    <th><a href="{{ sort_urls.estado }}" class="text-decoration-none text-dark">Estado {{ sort_arrows.estado }}<sup>{{ sort_priority.estado }}</sup></a></th>
+                    <th><a href="{{ sort_urls.asignacion }}" class="text-decoration-none text-dark">Asignación {{ sort_arrows.asignacion }}<sup>{{ sort_priority.asignacion }}</sup></a></th>
+                    <th><a href="{{ sort_urls.revisado }}" class="text-decoration-none text-dark">Revisado por {{ sort_arrows.revisado }}<sup>{{ sort_priority.revisado }}</sup></a></th>
                     <th class="text-end">Acciones</th>
                 </tr>
             </thead>

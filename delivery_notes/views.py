@@ -88,22 +88,23 @@ class DeliveryNoteAdminListView(SupervisorAccessMixin, View):
     }
 
     # S116-H10: columnas ordenables desde la cabecera de la tabla,
-    # petición explícita de Miguel Ángel ("debemos poder ordenar por
-    # columna para gestionar un poco esto"). Clave = nombre corto que
-    # sale en el enlace ?sort=; valor = campo real de DeliveryNote.
-    # 'lineas' y 'asignacion' quedan fuera a propósito -- son un
-    # recuento y un cálculo en Python (assignment_progress()), no un
-    # campo de BD, y ordenar por ellos exigiría anotar la consulta;
-    # no se ha hecho todavía.
-    # S116-H10: columnas ordenables desde la cabecera de la tabla,
-    # petición explícita de Miguel Ángel ("debemos poder ordenar por
-    # columna [...] falta la columna de asignación y la de revisado
-    # por, la del número de líneas"). 'lineas' y 'asignacion' se
-    # resuelven con anotaciones (num_lines_annotated/progress_rank,
-    # ver get()) porque no son un campo real de DeliveryNote --
-    # 'revisado' ordena por processed_by__user__username, el único
-    # campo de nombre siempre poblado (first_name/last_name pueden
-    # estar vacíos).
+    # petición explícita de Miguel Ángel. Orden MÚLTIPLE con
+    # prioridad: "ordeno por tipo y luego por fecha, me deben quedar
+    # ordenados por fecha y tipo" -- cada clic promueve esa columna a
+    # criterio PRINCIPAL, conservando los criterios ya activos como
+    # desempate, en el orden en que se pulsaron. Clic en la que ya es
+    # principal invierte su sentido; clic en una que ya estaba activa
+    # pero no era la principal la asciende al primer puesto sin
+    # invertir su sentido. Un enlace aparte ("Quitar orden") vacía
+    # sort= del todo -- vuelve al orden natural de entrada (pk
+    # ascendente, la única aproximación real a "como han ido entrando"
+    # que soporta MySQL sin ORDER BY explícito).
+    #
+    # 'lineas' y 'asignacion' se resuelven con anotaciones
+    # (num_lines_annotated/progress_rank, ver get()) porque no son un
+    # campo real de DeliveryNote -- 'revisado' ordena por
+    # processed_by__user__username, el único campo de nombre siempre
+    # poblado (first_name/last_name pueden estar vacíos).
     _SORTABLE_FIELDS = {
         'fecha': 'delivery_date',
         'proveedor': 'supplier_name',
@@ -114,7 +115,26 @@ class DeliveryNoteAdminListView(SupervisorAccessMixin, View):
         'lineas': 'num_lines_annotated',
         'asignacion': 'progress_rank',
     }
-    _DEFAULT_SORT = '-fecha'
+    _MAX_SORT_KEYS = 4
+
+    def _parse_sort_param(self, raw):
+        """
+        '<clave>' o '-<clave>' separadas por comas, en orden de
+        prioridad -- devuelve [(clave, descendente), ...], ignorando
+        claves inválidas o repetidas.
+        """
+        keys = []
+        seen = set()
+        for token in raw.split(','):
+            token = token.strip()
+            if not token:
+                continue
+            desc = token.startswith('-')
+            key = token.lstrip('-')
+            if key in self._SORTABLE_FIELDS and key not in seen:
+                keys.append((key, desc))
+                seen.add(key)
+        return keys
 
     def get(self, request):
         company = request.user.company_user.company
@@ -122,13 +142,18 @@ class DeliveryNoteAdminListView(SupervisorAccessMixin, View):
         supplier = request.GET.get('supplier', '').strip()
         recipient = request.GET.get('recipient', '').strip()
 
-        sort = request.GET.get('sort', self._DEFAULT_SORT).strip()
-        sort_key = sort.lstrip('-')
-        if sort_key not in self._SORTABLE_FIELDS:
-            sort = self._DEFAULT_SORT
-            sort_key = sort.lstrip('-')
-        db_field = self._SORTABLE_FIELDS[sort_key]
-        order_expr = ('-' + db_field) if sort.startswith('-') else db_field
+        sort_param = request.GET.get('sort', '').strip()
+        sort_keys = self._parse_sort_param(sort_param)
+
+        if sort_keys:
+            order_exprs = [
+                ('-' if desc else '') + self._SORTABLE_FIELDS[key]
+                for key, desc in sort_keys
+            ]
+        else:
+            # Orden natural de entrada -- sin esto, MySQL no garantiza
+            # ningún orden estable en absoluto.
+            order_exprs = ['pk']
 
         notes = (
             DeliveryNote.objects
@@ -170,7 +195,7 @@ class DeliveryNoteAdminListView(SupervisorAccessMixin, View):
                     output_field=IntegerField(),
                 ),
             )
-            .order_by(order_expr)
+            .order_by(*order_exprs)
         )
         if status:
             notes = notes.filter(status=status)
@@ -219,23 +244,45 @@ class DeliveryNoteAdminListView(SupervisorAccessMixin, View):
             .order_by('recipient_company_code')
         )
 
-        # S116-H10: enlace y flecha de cada cabecera ordenable,
-        # resueltos aquí (directriz de plantillas tontas, misma que ya
-        # sigue esta vista para progress_badge_class/download_url) --
-        # nunca en el propio template. Preserva el resto de filtros al
-        # cambiar de orden.
+        # S116-H10: enlace, flecha y prioridad de cada cabecera
+        # ordenable, resueltos aquí (directriz de plantillas tontas) --
+        # nunca en el propio template. Clic en una columna la promueve
+        # a criterio principal (ver _parse_sort_param arriba), clic en
+        # la que ya es principal invierte su sentido. Preserva el
+        # resto de filtros.
+        active_keys = [k for k, _ in sort_keys]
         sort_urls = {}
         sort_arrows = {}
-        for key in self._SORTABLE_FIELDS :
-            if sort_key == key :
-                next_sort = ("" if sort .startswith ("-")else "-")+key 
-                sort_arrows [key ]="▲" if not sort .startswith ("-")else "▼"
-            else :
-                next_sort =key 
-                sort_arrows [key ]=""
-            params =request .GET .copy ()
-            params ["sort"]=next_sort 
-            sort_urls [key ]="?"+params .urlencode ()
+        sort_priority = {}
+        for key in self._SORTABLE_FIELDS:
+            if key in active_keys:
+                idx = active_keys.index(key)
+                _, desc = sort_keys[idx]
+                sort_arrows[key] = '▼' if desc else '▲'
+                sort_priority[key] = idx + 1 if len(sort_keys) > 1 else ''
+                new_desc = (not desc) if idx == 0 else False
+                new_keys = (
+                    [(key, new_desc)]
+                    + [(k, d) for k, d in sort_keys if k != key]
+                )
+            else:
+                sort_arrows[key] = ''
+                sort_priority[key] = ''
+                new_keys = [(key, False)] + sort_keys
+            new_keys = new_keys[:self._MAX_SORT_KEYS]
+            new_sort_param = ','.join(
+                (('-' if d else '') + k) for k, d in new_keys
+            )
+            params = request.GET.copy()
+            params['sort'] = new_sort_param
+            sort_urls[key] = '?' + params.urlencode()
+
+        clear_sort_params = request.GET.copy()
+        clear_sort_params.pop('sort', None)
+        clear_sort_url = (
+            '?' + clear_sort_params.urlencode() if clear_sort_params
+            else '?'
+        )
 
         return render(request, self.template_name, {
             'company_user': request.user.company_user,
@@ -248,7 +295,10 @@ class DeliveryNoteAdminListView(SupervisorAccessMixin, View):
             'filter_recipient': recipient,
             'sort_urls': sort_urls,
             'sort_arrows': sort_arrows,
-            'current_sort': sort,
+            'sort_priority': sort_priority,
+            'clear_sort_url': clear_sort_url,
+            'sort_active': bool(sort_keys),
+            'current_sort': sort_param,
         })
 
 
