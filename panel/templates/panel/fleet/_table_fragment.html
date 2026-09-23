@@ -19,12 +19,12 @@ pestaña Personal, S113/S114):
 <table class="table table-sm table-hover align-middle mb-0" id="fleet-table">
         <thead class="table-light">
             <tr>
-                <th style="width:32px">
+                <th class="sticky-col sticky-col-1">
                     <input class="form-check-input" type="checkbox" id="fleet-check-all"
                            title="Marcar/desmarcar todos los visibles">
                 </th>
-                <th style="width:24px"></th>
-                <th style="min-width:80px">
+                <th class="sticky-col sticky-col-2"></th>
+                <th class="sticky-col sticky-col-3 sticky-col-last" style="min-width:80px">
                     <a class="text-decoration-none text-reset d-flex align-items-center gap-1 user-select-none"
                        hx-get="{% url 'panel:fleet_fragment' %}"
                        hx-target="#fleet-table-container"
@@ -160,7 +160,7 @@ pestaña Personal, S113/S114):
             {% for asset in assets %}
             <tr class="{% if not asset.is_active %}table-secondary text-muted{% endif %}">
 
-                <td>
+                <td class="sticky-col sticky-col-1">
                     <input class="form-check-input fleet-row-check" type="checkbox"
                            data-pk="{{ asset.pk }}" data-code="{{ asset.code }}"
                            data-label="{{ asset.code }}{% if asset.brand_model %} — {{ asset.brand_model }}{% endif %}{% if asset.plate %} — {{ asset.plate }}{% endif %}"
@@ -168,10 +168,10 @@ pestaña Personal, S113/S114):
                 </td>
 
                 {# Aviso de documentación caducada (mismo helper que el hub) #}
-                <td>{% if asset.has_alert %}<i class="bi bi-exclamation-triangle-fill text-danger" title="{{ asset.alert_labels|join:", " }}"></i>{% endif %}</td>
+                <td class="sticky-col sticky-col-2">{% if asset.has_alert %}<i class="bi bi-exclamation-triangle-fill text-danger" title="{{ asset.alert_labels|join:", " }}"></i>{% endif %}</td>
 
                 {# Código — badge diferencial para CdG EMPRESA_* y PERSONAL #}
-                <td class="fw-semibold">
+                <td class="fw-semibold sticky-col sticky-col-3 sticky-col-last">
                     {% if asset.code|slice:":8" == "EMPRESA_" %}
                     <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle me-1"
                           title="Centro de gasto de empresa">EMP</span>

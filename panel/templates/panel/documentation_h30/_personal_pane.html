@@ -263,6 +263,12 @@ las filas de debajo se desplacen de verdad.
     background-color: #f8f9fa;
     z-index: 2;
 }
+/* S117: la esquina (cabecera de las columnas fijas a la izquierda, ver
+   .sticky-col en panel.css) va por encima del resto de la cabecera,
+   que pasa por debajo al desplazar en horizontal. */
+#personal-results-scroll thead th.sticky-col {
+    z-index: 3;
+}
 /* H31 (S113), Miguel Ángel: "que nos quepa en una sola fila cada
    trabajador [...] ponerle el desplazamiento horizontal a toda la
    columna" -- nombres largos (p. ej. "Álvarez Díaz, Alejandro

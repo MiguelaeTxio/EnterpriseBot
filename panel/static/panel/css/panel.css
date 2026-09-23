@@ -1240,3 +1240,53 @@ table.table #toll-thead ~ tbody tr:nth-child(even):not(.table-secondary) td {
 #collapseSaludMain.show {
     background-color: var(--bs-warning-bg-subtle);
 }
+
+/* -----------------------------------------------------------------------
+   Columnas fijas a la izquierda en los listados con scroll horizontal
+   (S117, petición de Miguel Ángel): la columna que identifica la fila
+   -- nombre de la persona en Personal, código interno en Centros de
+   gasto -- y las que tiene delante (casilla de selección, aviso) no se
+   desplazan nunca; el resto de columnas pasa por debajo. Así, al
+   desplazar a la derecha, siempre se sabe de qué fila se trata.
+   Las celdas conservan su propio fondo opaco de Bootstrap (color de la
+   tabla + sombra interior de filas alternas/hover), así que lo que
+   pasa por debajo no se transparenta. Las dos primeras columnas llevan
+   ancho fijo para que el desplazamiento "left" de cada una sea exacto.
+   ----------------------------------------------------------------------- */
+.table .sticky-col {
+    position: sticky;
+    z-index: 1;
+}
+
+.table thead th.sticky-col {
+    z-index: 3;
+}
+
+.table .sticky-col-1 {
+    left: 0;
+    width: 36px;
+    min-width: 36px;
+    max-width: 36px;
+}
+
+.table .sticky-col-2 {
+    left: 36px;
+    width: 28px;
+    min-width: 28px;
+    max-width: 28px;
+}
+
+.table .sticky-col-3 {
+    left: 64px;
+}
+
+/* Línea de separación a la derecha de la última columna fija. */
+.table .sticky-col-last::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 1px;
+    background-color: var(--bs-border-color);
+}
