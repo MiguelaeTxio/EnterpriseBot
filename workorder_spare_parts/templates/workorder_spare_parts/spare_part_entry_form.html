@@ -55,6 +55,15 @@
                         </div>
                     </div>
                     <div class="mb-3">
+                        <label class="form-label">{{ form.minimum_stock.label }}</label>
+                        {{ form.minimum_stock }}
+                        <div class="form-text">
+                            Cuando el stock en almacén caiga por debajo de este número,
+                            se avisará en el catálogo y en el Almacén de mecánicos.
+                            Solo aplica a repuestos contables.
+                        </div>
+                    </div>
+                    <div class="mb-3">
                         <label class="form-label">{{ form.status.label }}</label>
                         {{ form.status }}
                     </div>

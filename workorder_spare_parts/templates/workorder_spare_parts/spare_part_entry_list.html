@@ -63,10 +63,17 @@
             </thead>
             <tbody>
                 {% for article in articles %}
-                <tr>
+                <tr {% if article.minimum_stock and article.total_stock is not None and article.total_stock < article.minimum_stock %}class="table-warning"{% endif %}>
                     <td><code>{{ article.internal_reference }}</code></td>
                     <td>{{ article.description }}</td>
-                    <td>{{ article.total_stock|default:"0" }}</td>
+                    <td>
+                        {{ article.total_stock|default:"0" }}
+                        {% if article.minimum_stock and article.total_stock is not None and article.total_stock < article.minimum_stock %}
+                            <span class="badge bg-warning text-dark ms-1" title="Mínimo: {{ article.minimum_stock }}">
+                                <i class="bi bi-exclamation-triangle-fill"></i> Bajo mínimo ({{ article.minimum_stock }})
+                            </span>
+                        {% endif %}
+                    </td>
                     <td>
                         {% if article.warehouse_count %}
                             <span class="badge bg-info text-dark">{{ article.warehouse_count }} en almacén</span>

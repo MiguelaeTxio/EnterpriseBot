@@ -168,6 +168,7 @@ class SparePartEntryListView(SupervisorAccessMixin, ListView):
             .values('internal_reference')
             .annotate(
                 description=Max('description'),
+                minimum_stock=Max('minimum_stock'),
                 total_stock=Sum(
                     'stock_quantity',
                     filter=Q(status='WAREHOUSE', is_uncountable=False),
@@ -260,6 +261,10 @@ class SparePartArticleDetailView(SupervisorAccessMixin, View):
             if e.status == SparePartEntry.STATUS_WAREHOUSE
             and not e.is_uncountable
         )
+        minimum_stock = entries[0].minimum_stock or Decimal('0')
+        below_minimum = bool(
+            minimum_stock and total_stock < minimum_stock
+        )
 
         return render(request, self.template_name, {
             'company_user': request.user.company_user,
@@ -269,6 +274,8 @@ class SparePartArticleDetailView(SupervisorAccessMixin, View):
             'entries': entries,
             'movements': movements,
             'total_stock': total_stock,
+            'minimum_stock': minimum_stock,
+            'below_minimum': below_minimum,
         })
 
 

@@ -45,6 +45,7 @@ class SparePartEntryCatalogForm(forms.ModelForm):
             'is_uncountable',
             'stock_quantity',
             'stock_level',
+            'minimum_stock',
             'status',
             'machine',
         ]
@@ -59,6 +60,7 @@ class SparePartEntryCatalogForm(forms.ModelForm):
             'description': forms.TextInput(attrs={'class': 'form-control'}),
             'is_uncountable': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'stock_quantity': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01'}),
+            'minimum_stock': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01'}),
             'stock_level': forms.Select(
                 attrs={'class': 'form-select'},
                 choices=[

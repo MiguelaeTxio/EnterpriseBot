@@ -800,6 +800,22 @@ class SparePartEntry(models.Model):
         blank=True,
         verbose_name='Nivel de stock',
     )
+    minimum_stock = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0,
+        verbose_name='Stock mínimo',
+        help_text=(
+            'Umbral de reposición para este artículo (S116-H10, a '
+            'petición de Miguel Ángel tras revisar buenas prácticas de '
+            'gestión de almacén). Solo aplica a repuestos contables -- '
+            'sin significado para uno incontable (is_uncountable=True), '
+            'que se controla por nivel, no por cantidad. El aviso de '
+            '"por debajo del mínimo" solo se muestra mientras '
+            'status=WAREHOUSE -- no tiene sentido avisar sobre un '
+            'repuesto que ya está pre-asignado o consumido.'
+        ),
+    )
     status = models.CharField(
         max_length=15,
         choices=STATUS_CHOICES,

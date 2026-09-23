@@ -127,6 +127,11 @@
                                     <i class="bi bi-check-lg"></i>
                                 </button>
                             </form>
+                            {% if not row.entry.is_uncountable and row.entry.minimum_stock and row.entry.stock_quantity < row.entry.minimum_stock %}
+                                <span class="badge bg-warning text-dark mt-1" title="Mínimo: {{ row.entry.minimum_stock }}">
+                                    <i class="bi bi-exclamation-triangle-fill"></i> Bajo mínimo ({{ row.entry.minimum_stock }})
+                                </span>
+                            {% endif %}
                         {% elif row.entry.is_uncountable %}
                             Nivel: {{ row.entry.stock_level|default:"—"|level_label }}
                         {% else %}
