@@ -46,19 +46,39 @@ logger = logging.getLogger(__name__)
 # Cliente Vertex AI autenticado usando credenciales Service Account JSON.
 # ---------------------------------------------------------------------------
 
+# S117 -- fix de produccion: gemini-3.5-flash NO se sirve en la region
+# us-central1 de este proyecto (404 NOT_FOUND real en el log del
+# 2026-09-23, agente de averias H17, ticket pk=117) -- solo en el
+# endpoint "global" (y en algunas regiones/multirregiones concretas),
+# verificado en linea contra la documentacion de Vertex AI. El cliente
+# compartido ai_services.gemini_client ya usa "global" desde H32/S93;
+# estos dos clientes propios de WhatsApp seguian leyendo
+# GOOGLE_CLOUD_LOCATION (us-central1), que se mantiene tal cual porque
+# la usa el puente de voz (Live API, vox_bridge), otro modelo con su
+# propio ciclo de vida.
+# ---
+# S117 -- production fix: gemini-3.5-flash is NOT served in this
+# project's us-central1 region (real 404 NOT_FOUND) -- only on the
+# "global" endpoint. GOOGLE_CLOUD_LOCATION stays untouched: the voice
+# bridge (Live API, vox_bridge) still uses it.
+GEMINI_TEXT_LOCATION = "global"
+
+
 def _build_genai_client() -> genai.Client:
     """
     Builds and returns an authenticated google-genai Client instance using
-    Vertex AI Service Account JSON credentials. Reads GCP_CREDENTIALS_PATH,
-    GOOGLE_CLOUD_PROJECT and GOOGLE_CLOUD_LOCATION from the environment.
+    Vertex AI Service Account JSON credentials. Reads GCP_CREDENTIALS_PATH
+    and GOOGLE_CLOUD_PROJECT from the environment; location is
+    GEMINI_TEXT_LOCATION ("global", S117).
     ---
     Construye y devuelve una instancia autenticada de google-genai Client usando
-    credenciales Service Account JSON de Vertex AI. Lee GCP_CREDENTIALS_PATH,
-    GOOGLE_CLOUD_PROJECT y GOOGLE_CLOUD_LOCATION del entorno.
+    credenciales Service Account JSON de Vertex AI. Lee GCP_CREDENTIALS_PATH
+    y GOOGLE_CLOUD_PROJECT del entorno; la region es GEMINI_TEXT_LOCATION
+    ("global", S117).
     """
     credentials_path = os.environ["GCP_CREDENTIALS_PATH"]
     project          = os.environ["GOOGLE_CLOUD_PROJECT"]
-    location         = os.environ["GOOGLE_CLOUD_LOCATION"]
+    location         = GEMINI_TEXT_LOCATION
 
     credentials = service_account.Credentials.from_service_account_file(
         credentials_path,
@@ -100,7 +120,7 @@ def _build_genai_client_maps() -> genai.Client:
     """
     credentials_path = os.environ["GCP_CREDENTIALS_PATH"]
     project          = os.environ["GOOGLE_CLOUD_PROJECT"]
-    location         = os.environ["GOOGLE_CLOUD_LOCATION"]
+    location         = GEMINI_TEXT_LOCATION
 
     credentials = service_account.Credentials.from_service_account_file(
         credentials_path,

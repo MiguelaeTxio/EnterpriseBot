@@ -30,7 +30,9 @@ from google.genai import types
 
 GCP_CREDENTIALS_PATH = os.environ.get("GCP_CREDENTIALS_PATH")
 GOOGLE_CLOUD_PROJECT  = os.environ.get("GOOGLE_CLOUD_PROJECT")
-GOOGLE_CLOUD_LOCATION = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
+# S117: gemini-3.5-flash solo se sirve en el endpoint "global" (404 real
+# en us-central1) -- ver whatsapp/services.py, GEMINI_TEXT_LOCATION.
+GOOGLE_CLOUD_LOCATION = "global"
 MODEL                 = "gemini-3.5-flash"
 ZIP_PATH              = os.environ.get("ORGANIZER_ZIP_PATH", "")
 OUTPUT_PATH           = os.environ.get("ORGANIZER_OUTPUT_PATH", "/home/MiguelAeTxio/SWAP/informe_organizacion.txt")
