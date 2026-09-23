@@ -82,6 +82,7 @@
                     <th>Precio total</th>
                     <th>Código máquina/almacén</th>
                     <th>Asignación</th>
+                    <th>Estado del repuesto</th>
                 </tr>
             </thead>
             <tbody>
@@ -103,10 +104,44 @@
                             <span class="badge bg-warning text-dark">Sin asignar</span>
                         {% endif %}
                     </td>
+                    <td>
+                        {% if line.entry_status == 'PRE_ASSIGNED' %}
+                            <span class="badge bg-danger">En limbo</span>
+                            {% if line.ticket %}
+                                <div class="small mt-1">
+                                    Ticket
+                                    <a href="{% url 'panel:breakdown_ticket_detail' line.ticket.pk %}">
+                                        {{ line.ticket.ticket_date_code|default:line.ticket.pk }}
+                                    </a>
+                                    —
+                                    {% if line.ticket.status == 'CLOSED' %}
+                                        <span class="text-danger fw-semibold">cerrado</span>
+                                        <div class="text-danger">
+                                            La avería ya se dio por resuelta sin consumir
+                                            este repuesto.
+                                        </div>
+                                    {% else %}
+                                        <span class="text-muted">{{ line.ticket.get_status_display }}</span>
+                                        — la avería sigue sin resolver.
+                                    {% endif %}
+                                </div>
+                            {% elif line.assignment_type == 'MACHINE' %}
+                                <div class="small text-muted mt-1">
+                                    Pre-asignado a la máquina, sin ticket de avería vinculado.
+                                </div>
+                            {% endif %}
+                        {% elif line.entry_status == 'CONSUMED' %}
+                            <span class="badge bg-success">Consumido</span>
+                        {% elif line.entry_status == 'WAREHOUSE' %}
+                            <span class="badge bg-info text-dark">En almacén</span>
+                        {% else %}
+                            <span class="text-muted">—</span>
+                        {% endif %}
+                    </td>
                 </tr>
                 {% empty %}
                 <tr>
-                    <td colspan="8" class="text-center text-muted py-4">Sin líneas.</td>
+                    <td colspan="9" class="text-center text-muted py-4">Sin líneas.</td>
                 </tr>
                 {% endfor %}
             </tbody>

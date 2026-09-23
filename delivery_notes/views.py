@@ -87,17 +87,43 @@ class DeliveryNoteAdminListView(SupervisorAccessMixin, View):
         'FULL': 'Totalmente asignado',
     }
 
+    # S116-H10: columnas ordenables desde la cabecera de la tabla,
+    # petición explícita de Miguel Ángel ("debemos poder ordenar por
+    # columna para gestionar un poco esto"). Clave = nombre corto que
+    # sale en el enlace ?sort=; valor = campo real de DeliveryNote.
+    # 'lineas' y 'asignacion' quedan fuera a propósito -- son un
+    # recuento y un cálculo en Python (assignment_progress()), no un
+    # campo de BD, y ordenar por ellos exigiría anotar la consulta;
+    # no se ha hecho todavía.
+    _SORTABLE_FIELDS = {
+        'fecha': 'delivery_date',
+        'proveedor': 'supplier_name',
+        'numero': 'delivery_number',
+        'destinatario': 'recipient_company_code',
+        'estado': 'status',
+    }
+    _DEFAULT_SORT = '-fecha'
+
     def get(self, request):
         company = request.user.company_user.company
         status = request.GET.get('status', '').strip()
         supplier = request.GET.get('supplier', '').strip()
         recipient = request.GET.get('recipient', '').strip()
 
+        sort = request.GET.get('sort', self._DEFAULT_SORT).strip()
+        sort_key = sort.lstrip('-')
+        if sort_key not in self._SORTABLE_FIELDS:
+            sort = self._DEFAULT_SORT
+            sort_key = sort.lstrip('-')
+        db_field = self._SORTABLE_FIELDS[sort_key]
+        order_expr = ('-' + db_field) if sort.startswith('-') else db_field
+
         notes = (
             DeliveryNote.objects
             .filter(company=company)
             .select_related('processed_by__user', 'supplier')
             .prefetch_related('lines', 'lines__spare_part_entry')
+            .order_by(order_expr)
         )
         if status:
             notes = notes.filter(status=status)
@@ -146,6 +172,24 @@ class DeliveryNoteAdminListView(SupervisorAccessMixin, View):
             .order_by('recipient_company_code')
         )
 
+        # S116-H10: enlace y flecha de cada cabecera ordenable,
+        # resueltos aquí (directriz de plantillas tontas, misma que ya
+        # sigue esta vista para progress_badge_class/download_url) --
+        # nunca en el propio template. Preserva el resto de filtros al
+        # cambiar de orden.
+        sort_urls = {}
+        sort_arrows = {}
+        for key in self._SORTABLE_FIELDS :
+            if sort_key == key :
+                next_sort = ("" if sort .startswith ("-")else "-")+key 
+                sort_arrows [key ]="▲" if not sort .startswith ("-")else "▼"
+            else :
+                next_sort =key 
+                sort_arrows [key ]=""
+            params =request .GET .copy ()
+            params ["sort"]=next_sort 
+            sort_urls [key ]="?"+params .urlencode ()
+
         return render(request, self.template_name, {
             'company_user': request.user.company_user,
             'active_nav': 'delivery_notes_admin',
@@ -155,6 +199,9 @@ class DeliveryNoteAdminListView(SupervisorAccessMixin, View):
             'filter_status': status,
             'filter_supplier': supplier,
             'filter_recipient': recipient,
+            'sort_urls': sort_urls,
+            'sort_arrows': sort_arrows,
+            'current_sort': sort,
         })
 
 
@@ -181,11 +228,37 @@ class DeliveryNoteAdminDetailView(SupervisorAccessMixin, View):
                 'spare_parts:delivery_note_detail', pk=note.pk,
             )
 
+        # S116-H10: petición explícita de Miguel Ángel -- "ver los que
+        # están en el limbo, ver por qué no están asignados, si la
+        # máquina a la que se habían asignado o preasignado se ha
+        # terminado la avería o no". Resuelto aquí (directriz de
+        # plantillas tontas), nunca en el template: para cada línea
+        # con un SparePartEntry vinculado, su estado real (en limbo /
+        # consumido / almacén) y, si sigue en limbo y está ligado a un
+        # ticket, el estado actual de ese ticket.
+        lines = list(
+            note.lines.select_related(
+                'spare_part_entry', 'spare_part_entry__breakdown_ticket',
+                'machine',
+            )
+        )
+        for line in lines:
+            entry = line.spare_part_entry
+            line.entry_status = entry.status if entry else None
+            line.entry_status_label = (
+                entry.get_status_display() if entry else None
+            )
+            line.ticket = (
+                entry.breakdown_ticket
+                if entry and entry.status == 'PRE_ASSIGNED'
+                else None
+            )
+
         return render(request, self.template_name, {
             'company_user': request.user.company_user,
             'active_nav': 'delivery_notes_admin',
             'note': note,
-            'lines': note.lines.all(),
+            'lines': lines,
         })
 
 
