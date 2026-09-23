@@ -580,7 +580,8 @@ def _machine_from_text(text, plates_first=False):
         if asset:
             return asset
     for word in upper.split():
-        word = word.strip("()[]{}.,;:_")
+        # "P.16" / "R.2": el punto hace de separador como el guion.
+        word = word.strip("()[]{}.,;:_").replace(".", "-")
         match = _FOLDER_MACHINE_CODE_RE.match(word)
         if not match:
             continue
@@ -588,6 +589,15 @@ def _machine_from_text(text, plates_first=False):
         asset = MachineAsset.objects.filter(code__iexact=candidate_code).first()
         if asset:
             return asset
+        # "b9" es la B-09 del catálogo: número de una cifra sin el cero
+        # a la izquierda con que lo escribe Centros de gasto.
+        padded = re.match(r"^([A-Z]+)(\d)$", candidate_code)
+        if padded:
+            asset = MachineAsset.objects.filter(
+                code__iexact=padded.group(1) + "0" + padded.group(2),
+            ).first()
+            if asset:
+                return asset
     return _machine_from_plates(upper)
 
 
