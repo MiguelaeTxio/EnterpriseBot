@@ -66,6 +66,7 @@ from panel.views_documentation_h30 import (
     PersonalEpiItemHistoryView,
     PersonalCreateView,
     PersonalTerminateView,
+    PersonalReactivateView,
     PersonalIntakeExtractView,
     PersonalListFragmentView,
     PersonalNotificationMassSendView,
@@ -452,6 +453,7 @@ urlpatterns = [
     # H31 (S100) Bloque 1: alta de trabajador nuevo desde el panel.
     path("documentacion/personal/alta/", PersonalCreateView.as_view(), name="documentation_personal_create"),
     path("documentacion/personal/baja/", PersonalTerminateView.as_view(), name="documentation_personal_terminate"),
+    path("documentacion/personal/reactivar/", PersonalReactivateView.as_view(), name="documentation_personal_reactivate"),
     # H31 (S100) Bloque 1, paso 1: extracción de datos de los documentos subidos para el alta.
     path("documentacion/personal/alta/extraer/", PersonalIntakeExtractView.as_view(), name="documentation_personal_intake_extract"),
     # H30 (S50): endpoint de solo-resultados -- el formulario de busqueda

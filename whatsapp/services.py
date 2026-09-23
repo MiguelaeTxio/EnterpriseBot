@@ -1988,6 +1988,31 @@ class OnboardingService:
             normalize_dni as _normalize_dni_signup,
         )
         dni = _normalize_dni_signup(dni) or dni
+
+        # S117 -- Miguel Ángel: "el alta en la plataforma a través de
+        # WhatsApp [...] solo es para trabajadores activos". Un DNI con
+        # ficha en Personal dada de BAJA (rescisión de contrato,
+        # PersonIdentity.is_active_employee=False) no puede darse de
+        # alta ni reactivar su cuenta por esta vía -- se reactiva desde
+        # el panel (Personal > Reactivar). Un DNI sin ficha todavía
+        # (contratación nueva) sigue el flujo de siempre.
+        from document_explorer.models import PersonIdentity as _PI
+        if dni and _PI.objects.filter(
+            dni__iexact=dni, is_active_employee=False,
+        ).exists() and not _PI.objects.filter(
+            dni__iexact=dni, is_active_employee=True,
+        ).exists():
+            cls.clear_state(session)
+            logger.warning(
+                "# [ONBOARDING] Alta rechazada: DNI %s consta dado de baja "
+                "en Personal (rescisión de contrato).", dni,
+            )
+            return (
+                "No podemos completar el alta: según nuestros registros "
+                "no figuras como trabajador en activo. Si crees que es un "
+                "error, contacta con la oficina."
+            )
+
         section_name = (data.get("section") or "").strip()
         base_name    = (data.get("base") or "").strip()
 

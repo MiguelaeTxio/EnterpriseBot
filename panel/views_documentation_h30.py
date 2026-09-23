@@ -3894,13 +3894,162 @@ def _terminate_person(person, termination_date, person_ct, company_user):
             "is_active_employee", "termination_date", "folder_path",
             "updated_at",
         ])
+        # S117 -- Miguel Ángel: "hay que desactivar su cuenta de acceso
+        # si la tiene". Se desactiva en los dos sitios que la gobiernan:
+        # CompanyUser.is_active (acceso al panel) y User.is_active de
+        # Django (bloquea el inicio de sesión).
+        account_disabled = _set_person_account_active(person, False)
     logger.info(
         "# [H31-BAJA] PersonIdentity pk=%s dado de baja (rescisión) con "
-        "fecha %s por CU pk=%s -- %d documento(s) movidos a %s.",
+        "fecha %s por CU pk=%s -- %d documento(s) movidos a %s; cuenta "
+        "de acceso desactivada: %s.",
         person.pk, termination_date, company_user.pk, moved,
-        new_folder_path,
+        new_folder_path, account_disabled,
     )
     return moved
+
+
+def _set_person_account_active(person, active):
+    """
+    S117. Enables/disables the panel account linked to a worker
+    (PersonIdentity.company_user), if any: CompanyUser.is_active and the
+    Django User.is_active. Never touches a pending pre-registration
+    (pending_onboarding), which is not a usable account yet. Returns
+    True if an account was changed.
+    ---
+    Activa/desactiva la cuenta del panel enlazada a un trabajador
+    (PersonIdentity.company_user), si la tiene: CompanyUser.is_active y
+    User.is_active de Django. Nunca toca un pre-registro pendiente
+    (pending_onboarding), que aún no es una cuenta utilizable. Devuelve
+    True si se ha cambiado alguna cuenta.
+    """
+    account = person.company_user
+    if account is None or account.pending_onboarding:
+        return False
+    account.is_active = active
+    account.save(update_fields=["is_active"])
+    if account.user_id:
+        account.user.is_active = active
+        account.user.save(update_fields=["is_active"])
+    return True
+
+
+def _reactivate_person(person, rehire_date, person_ct, company_user):
+    """
+    S117. Undoes a termination or re-hires a worker: back to active,
+    termination date cleared, documentation moved back (virtually) to
+    his/her ACTIVOS folder (same S99 rule), panel account re-enabled.
+    With rehire_date, the hire date becomes that date (re-hiring);
+    without it, the original hire date is kept (undo). Returns the
+    number of documents moved.
+    ---
+    Deshace una baja o recontrata a un trabajador: vuelve a activo, se
+    borra la fecha de baja, su documentación vuelve (virtualmente) a su
+    carpeta de ACTIVOS (misma regla de S99) y se reactiva su cuenta del
+    panel. Con rehire_date, la fecha de alta pasa a ser esa
+    (recontratación); sin ella, se conserva la fecha de alta original
+    (deshacer). Devuelve el número de documentos movidos.
+    """
+    from django.db import transaction
+
+    from document_explorer.move_service import move_entries
+
+    base_folder_path = "%s/%s" % (
+        naming_service.build_person_category_root(
+            person.first_surname, person.second_surname,
+            person.employer_company, True,
+        ),
+        naming_service.build_person_folder_name(
+            person.first_surname, person.second_surname, person.given_name,
+        ),
+    )
+    new_folder_path = base_folder_path
+    ordinal = 2
+    while DocumentIndexEntry.objects.filter(
+        bucket=BUCKET, parent_path=new_folder_path,
+        entry_kind=DocumentIndexEntry.KIND_FILE,
+        deleted_at__isnull=True, purged_at__isnull=True,
+    ).exclude(
+        domain_content_type=person_ct, domain_object_id=person.pk,
+    ).exists():
+        new_folder_path = "%s_%d" % (base_folder_path, ordinal)
+        ordinal += 1
+
+    with transaction.atomic():
+        entries = list(
+            DocumentIndexEntry.objects.filter(
+                bucket=BUCKET, domain_content_type=person_ct,
+                domain_object_id=person.pk,
+                entry_kind=DocumentIndexEntry.KIND_FILE,
+                deleted_at__isnull=True, purged_at__isnull=True,
+            )
+        )
+        moved = len(move_entries(entries, new_folder_path)) if entries else 0
+        person.is_active_employee = True
+        person.termination_date = None
+        update_fields = [
+            "is_active_employee", "termination_date", "folder_path",
+            "updated_at",
+        ]
+        if rehire_date:
+            person.hire_date = rehire_date
+            update_fields.append("hire_date")
+        person.folder_path = new_folder_path
+        person.save(update_fields=update_fields)
+        account_enabled = _set_person_account_active(person, True)
+    logger.info(
+        "# [H31-REACTIVAR] PersonIdentity pk=%s reactivado (%s) por CU "
+        "pk=%s -- %d documento(s) movidos a %s; cuenta reactivada: %s.",
+        person.pk,
+        "recontratación %s" % rehire_date if rehire_date else "deshacer baja",
+        company_user.pk, moved, new_folder_path, account_enabled,
+    )
+    return moved
+
+
+class PersonalReactivateView(DocsUploadAccessMixin, View):
+    """
+    H31 (S117). POST: deshace la baja por rescisión de contrato o
+    recontrata a uno o varios trabajadores inactivos -- Miguel Ángel:
+    "evidentemente es preciso poder recontratar o deshacer". Mismo
+    patrón que PersonalTerminateView: la selección se hace en el
+    listado y el modal solo confirma. Con rehire=1, la fecha de alta
+    pasa a ser HOY (recontratación); sin él, se conserva la original
+    (deshacer una baja dada por error).
+
+    POST person_ids (uno o varios), rehire ("1" o vacío).
+    """
+
+    def post(self, request):
+        person_ids = request.POST.getlist("person_ids")
+        if not person_ids:
+            return JsonResponse(
+                {"ok": False, "error": "No hay ningún trabajador seleccionado."},
+                status=400,
+            )
+        rehire_date = (
+            timezone.localdate() if request.POST.get("rehire") == "1" else None
+        )
+        person_ct = ContentType.objects.get_for_model(PersonIdentity)
+        reactivated_ids = []
+        skipped_names = []
+        moved_total = 0
+        for person in PersonIdentity.objects.filter(pk__in=person_ids):
+            if person.is_active_employee:
+                skipped_names.append(_person_display_name(person))
+                continue
+            moved_total += _reactivate_person(
+                person, rehire_date, person_ct, request.user.company_user,
+            )
+            reactivated_ids.append(person.pk)
+        return JsonResponse({
+            "ok": True,
+            "reactivated_count": len(reactivated_ids),
+            "reactivated_ids": reactivated_ids,
+            "skipped_names": skipped_names,
+            "moved_count": moved_total,
+            "rehire": bool(rehire_date),
+        })
 
 
 class PersonGroupTemplateSaveView(DocsUploadAccessMixin, View):

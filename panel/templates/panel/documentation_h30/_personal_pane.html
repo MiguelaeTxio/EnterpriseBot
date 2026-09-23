@@ -157,10 +157,16 @@ pantalla completa aparte, no un fragmento htmx de este pane.
                 con 1 o más y el modal solo confirma, con fecha de hoy.
                 {% endcomment %}
                 <div class="col-6 border-top border-start pt-1 mt-1 ps-2">
-                    <div class="small text-muted fw-bold">Baja en la empresa</div>
-                    <button type="button" class="btn btn-sm btn-outline-danger" id="person-mass-terminate" disabled>
-                        <i class="bi bi-person-dash me-1"></i>Dar de baja
-                    </button>
+                    <div class="small text-muted fw-bold">Alta y baja en la empresa</div>
+                    <div class="d-flex gap-1 flex-wrap">
+                        <button type="button" class="btn btn-sm btn-outline-danger" id="person-mass-terminate" disabled>
+                            <i class="bi bi-person-dash me-1"></i>Dar de baja
+                        </button>
+                        {% comment %}S117: deshacer una baja o recontratar (Miguel Ángel).{% endcomment %}
+                        <button type="button" class="btn btn-sm btn-outline-success" id="person-mass-reactivate" disabled>
+                            <i class="bi bi-person-check me-1"></i>Reactivar
+                        </button>
+                    </div>
                 </div>
                 <div class="col-12 border-top pt-1 mt-1">
                     {% comment %}
@@ -383,6 +389,8 @@ las filas de debajo se desplacen de verdad.
         // H31 (S117): "Dar de baja" solo accionable con 1 o más marcados.
         const terminateBtn = document.getElementById('person-mass-terminate');
         if (terminateBtn) terminateBtn.disabled = selection.size === 0;
+        const reactivateBtn = document.getElementById('person-mass-reactivate');
+        if (reactivateBtn) reactivateBtn.disabled = selection.size === 0;
     }
 
     // H31 (S113), Miguel Ángel: "el visor de seleccionados [...]
@@ -758,6 +766,71 @@ las filas de debajo se desplacen de verdad.
         }).catch(function () {
             confirmBtn.disabled = false;
             resultBox.innerHTML = '<div class="alert alert-danger py-1 px-2 mb-0">Error de red al dar de baja.</div>';
+        });
+    });
+
+    // H31 (S117): reactivar (deshacer baja o recontratar) la selección.
+    let personalReactivateModalInstance = null;
+    document.getElementById('person-mass-reactivate').addEventListener('click', function () {
+        if (selection.size === 0) return;
+        const list = document.getElementById('personalReactivateList');
+        list.innerHTML = '';
+        Array.from(selection).map(function (pk) {
+            return selectionNames.get(pk) || ('Trabajador ' + pk);
+        }).sort().forEach(function (name) {
+            const li = document.createElement('li');
+            li.textContent = name;
+            list.appendChild(li);
+        });
+        document.getElementById('personalReactivateCount').textContent = selection.size;
+        document.getElementById('personalReactivateResult').innerHTML = '';
+        document.getElementById('personalReactivateRehire').checked = false;
+        document.getElementById('personalReactivateConfirm').disabled = false;
+        if (!personalReactivateModalInstance) {
+            personalReactivateModalInstance = new bootstrap.Modal(document.getElementById('personalReactivateModal'));
+        }
+        personalReactivateModalInstance.show();
+    });
+
+    document.getElementById('personalReactivateConfirm').addEventListener('click', function () {
+        const confirmBtn = this;
+        const resultBox = document.getElementById('personalReactivateResult');
+        const formData = new FormData();
+        selection.forEach(function (pk) { formData.append('person_ids', pk); });
+        if (document.getElementById('personalReactivateRehire').checked) {
+            formData.append('rehire', '1');
+        }
+        confirmBtn.disabled = true;
+        resultBox.innerHTML = '<div class="text-muted">Reactivando…</div>';
+        fetch("{% url 'panel:documentation_personal_reactivate' %}", {
+            method: 'POST',
+            headers: {'X-CSRFToken': getCookie('csrftoken')},
+            body: formData,
+        }).then(function (r) { return r.json(); }).then(function (data) {
+            if (!data.ok) {
+                confirmBtn.disabled = false;
+                resultBox.innerHTML = '<div class="alert alert-danger py-1 px-2 mb-0">' + (data.error || 'No se ha podido reactivar.') + '</div>';
+                return;
+            }
+            (data.reactivated_ids || []).forEach(function (pk) {
+                selection.delete(String(pk));
+                selectionNames.delete(String(pk));
+            });
+            let message = data.reactivated_count + ' trabajador(es) reactivados' +
+                (data.rehire ? ' como recontratación (fecha de alta: hoy)' : ' (baja deshecha)') + '; ' +
+                data.moved_count + ' documento(s) devueltos a su carpeta de activos.';
+            if (data.skipped_names && data.skipped_names.length) {
+                message += ' Ya estaban activos (no se han tocado): ' + data.skipped_names.join(', ') + '.';
+            }
+            resultEl.innerHTML = '<div class="alert alert-success py-1 px-2 mb-0">' + message + '</div>';
+            if (personalReactivateModalInstance) personalReactivateModalInstance.hide();
+            refreshBar();
+            if (typeof refreshPersonSelectionPreview === 'function') refreshPersonSelectionPreview();
+            const searchForm = document.getElementById('personal-search-form');
+            if (searchForm && window.htmx) htmx.trigger(searchForm, 'submit');
+        }).catch(function () {
+            confirmBtn.disabled = false;
+            resultBox.innerHTML = '<div class="alert alert-danger py-1 px-2 mb-0">Error de red al reactivar.</div>';
         });
     });
 
@@ -1262,6 +1335,49 @@ confirmar. Llama a PersonalTerminateView.
                 <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
                 <button type="button" class="btn btn-sm btn-danger" id="personalTerminateConfirm">
                     <i class="bi bi-person-dash me-1"></i>Confirmar baja
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% comment %}
+H31 (S117) -- confirmación de REACTIVACIÓN (deshacer una baja o
+recontratar). Misma mecánica que la baja: selección en el listado,
+el modal solo confirma. Con "Recontratación" marcada, la fecha de alta
+pasa a ser hoy; sin marcar, se conserva la original. Llama a
+PersonalReactivateView.
+{% endcomment %}
+<div class="modal fade" id="personalReactivateModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-person-check me-1"></i>Reactivar en la empresa</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-2">
+                    Vas a reactivar a <strong><span id="personalReactivateCount">0</span> trabajador(es)</strong>:
+                </p>
+                <ul class="small mb-2" id="personalReactivateList"></ul>
+                <div class="form-check mb-2">
+                    <input class="form-check-input" type="checkbox" id="personalReactivateRehire">
+                    <label class="form-check-label small" for="personalReactivateRehire">
+                        Es una <strong>recontratación</strong>: nueva fecha de alta, hoy
+                        (<strong>{% now "d/m/Y" %}</strong>). Sin marcar, se deshace la baja y
+                        se conserva la fecha de alta original.
+                    </label>
+                </div>
+                <div class="small text-muted">
+                    Volverán a <strong>Activos</strong>, su documentación a su carpeta de activos y,
+                    si tenían cuenta de acceso al panel, se reactivará. Los que ya estén activos no se tocan.
+                </div>
+                <div id="personalReactivateResult" class="small mt-2"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-sm btn-success" id="personalReactivateConfirm">
+                    <i class="bi bi-person-check me-1"></i>Confirmar reactivación
                 </button>
             </div>
         </div>
