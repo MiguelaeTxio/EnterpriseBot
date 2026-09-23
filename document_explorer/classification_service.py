@@ -539,17 +539,75 @@ def resolve_machine_asset(entry) -> MachineAsset | None:
     como "no hay discrepancia".
     """
     for segment in entry.parent_path.split("/"):
-        for word in segment.strip().split():
-            match = _FOLDER_MACHINE_CODE_RE.match(word)
-            if not match:
-                continue
-            candidate_code = match.group(1).replace("-", "")
-            asset = MachineAsset.objects.filter(
-                code__iexact=candidate_code,
-            ).first()
-            if asset:
-                return asset
+        asset = _machine_from_text(segment)
+        if asset:
+            return asset
     return None
+
+
+# S117 (H30, Fase 2) -- matrícula española en texto libre: 4 dígitos y 3
+# letras, con o sin separador ("3968HWN", "0230 KWB", "9843-KBZ").
+_TEXT_PLATE_RE = re.compile(r"(?<![0-9A-Z])(\d{4})[\s-]?([A-Z]{3})(?![A-Z])")
+
+
+def _machine_from_text(text):
+    """
+    S117. Finds the real MachineAsset named in a piece of text (a folder
+    segment or a file name): fleet codes word by word (punctuation
+    around the word stripped -- "(X-01)" is X01) and Spanish plates,
+    compared against BOTH MachineAsset.code and MachineAsset.plate
+    without dashes/spaces (plate-coded cars carry the plate as code:
+    "0230KWB"). Returns None when nothing matches a real machine.
+    ---
+    S117. Busca la MachineAsset real nombrada en un texto (un segmento
+    de carpeta o un nombre de archivo): códigos de flota palabra a
+    palabra (quitando la puntuación que rodea la palabra -- "(X-01)" es
+    X01) y matrículas españolas, contra MachineAsset.code Y
+    MachineAsset.plate sin guiones ni espacios (los turismos llevan la
+    matrícula como código: "0230KWB"). Devuelve None si nada coincide
+    con una máquina real.
+    """
+    from django.db.models import Value
+    from django.db.models.functions import Replace, Upper
+
+    upper = (text or "").upper()
+    for word in upper.split():
+        word = word.strip("()[]{}.,;:_")
+        match = _FOLDER_MACHINE_CODE_RE.match(word)
+        if not match:
+            continue
+        candidate_code = match.group(1).replace("-", "")
+        asset = MachineAsset.objects.filter(code__iexact=candidate_code).first()
+        if asset:
+            return asset
+    for match in _TEXT_PLATE_RE.finditer(upper):
+        plate = match.group(1) + match.group(2)
+        asset = (
+            MachineAsset.objects
+            .annotate(
+                norm_code=Upper(Replace(Replace("code", Value("-"), Value("")), Value(" "), Value(""))),
+                norm_plate=Upper(Replace(Replace("plate", Value("-"), Value("")), Value(" "), Value(""))),
+            )
+            .filter(Q(norm_code=plate) | Q(norm_plate=plate))
+            .first()
+        )
+        if asset:
+            return asset
+    return None
+
+
+def resolve_machine_asset_with_filename(entry):
+    """
+    S117 (H30, Fase 2). Same as resolve_machine_asset(), and, when the
+    folder names no real machine (generic folders: GESTORIA VEHICULOS,
+    a family's OBSOLETO...), the file name itself.
+    ---
+    S117 (H30, Fase 2). Igual que resolve_machine_asset() y, si la
+    carpeta no nombra ninguna máquina real (carpetas genéricas:
+    GESTORIA VEHICULOS, OBSOLETO de una familia...), el propio nombre
+    del archivo.
+    """
+    return resolve_machine_asset(entry) or _machine_from_text(entry.name)
 
 
 # S042, Miguel Ángel, verbatim tras confirmar que el `company` de
