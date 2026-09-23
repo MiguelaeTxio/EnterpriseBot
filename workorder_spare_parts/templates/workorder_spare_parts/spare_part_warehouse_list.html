@@ -88,6 +88,7 @@
                     <th><a href="{{ sort_urls.cantidad }}" class="text-decoration-none text-dark">Cantidad / Nivel {{ sort_arrows.cantidad }}<sup>{{ sort_priority.cantidad }}</sup></a></th>
                     <th><a href="{{ sort_urls.estado }}" class="text-decoration-none text-dark">Estado {{ sort_arrows.estado }}<sup>{{ sort_priority.estado }}</sup></a></th>
                     <th><a href="{{ sort_urls.maquina }}" class="text-decoration-none text-dark">Máquina / Ticket {{ sort_arrows.maquina }}<sup>{{ sort_priority.maquina }}</sup></a></th>
+                    <th>Albarán origen</th>
                     <th><a href="{{ sort_urls.antiguedad }}" class="text-decoration-none text-dark">Antigüedad (limbo) {{ sort_arrows.antiguedad }}<sup>{{ sort_priority.antiguedad }}</sup></a></th>
                     <th class="text-end">Acciones</th>
                 </tr>
@@ -143,6 +144,15 @@
                         {% endif %}
                     </td>
                     <td>
+                        {% if row.origin_note %}
+                            <a href="{% url 'delivery_notes:detail' row.origin_note.pk %}">
+                                {{ row.origin_note.delivery_number|default:"s/n" }}
+                            </a>
+                        {% else %}
+                            <span class="text-muted">—</span>
+                        {% endif %}
+                    </td>
+                    <td>
                         {% if row.age_class %}
                             <span class="badge bg-{{ row.age_class }} {% if row.age_class == 'info' or row.age_class == 'warning' %}text-dark{% endif %}">
                                 {{ row.age_days }} día{{ row.age_days|pluralize }}
@@ -167,7 +177,7 @@
                 </tr>
                 {% empty %}
                 <tr>
-                    <td colspan="8" class="text-center text-muted py-4">
+                    <td colspan="9" class="text-center text-muted py-4">
                         No hay repuestos en el almacén todavía.
                     </td>
                 </tr>

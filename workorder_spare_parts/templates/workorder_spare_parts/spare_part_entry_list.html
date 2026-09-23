@@ -1,7 +1,7 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/workorder_spare_parts/templates/workorder_spare_parts/spare_part_entry_list.html #}
-{# Catalogo de repuestos (SparePartEntry), registro maestro de Administracion -- H10 Paso 4. #}
-{# Corregido 2026-07-07: entidad distinta del Almacen de Mecanicos (ver spare_part_warehouse_list.html) -- #}
-{# aqui va proveedor y precio de compra, sin limbo ni avisos de stock (eso es cosa del Almacen). #}
+{# Catalogo de repuestos, para Administracion -- AGRUPADO por articulo real (internal_reference), #}
+{# S116-H10. Cada fila abre la ficha de detalle (spare_part_article_detail.html) con el historial  #}
+{# completo de movimientos y todas las entradas de stock de ese articulo.                          #}
 {% extends "panel/base.html" %}
 {% load spare_parts_extras %}
 
@@ -12,9 +12,10 @@
     <div>
         <h5 class="mb-0 fw-semibold">Catálogo de Repuestos</h5>
         <p class="text-muted small mb-0">
-            Registro general: qué repuestos existen, a qué proveedor se compran y a qué
-            precio. La gestión del stock físico y el limbo de pre-asignación la hacen los
-            mecánicos en su propia pantalla de <strong>Almacén</strong>.
+            Registro general por artículo -- referencia, descripción, stock total y en
+            cuántas entradas está repartido (almacén, limbo, consumido). La gestión del
+            stock físico y el limbo de pre-asignación la hacen los mecánicos en su propia
+            pantalla de <strong>Almacén</strong>.
         </p>
     </div>
     <a href="{% url 'workorder_spare_parts:catalog_create' %}" class="btn btn-primary btn-sm">
@@ -55,62 +56,38 @@
                 <tr>
                     <th>Ref. interna</th>
                     <th>Descripción</th>
-                    <th>Proveedor</th>
-                    <th>Precio compra</th>
-                    <th>Stock</th>
-                    <th>Estado</th>
-                    <th>Máquina</th>
+                    <th>Stock en almacén</th>
+                    <th>Entradas</th>
                     <th class="text-end">Acciones</th>
                 </tr>
             </thead>
             <tbody>
-                {% for entry in entries %}
+                {% for article in articles %}
                 <tr>
-                    <td><code>{{ entry.internal_reference|default:"—" }}</code></td>
+                    <td><code>{{ article.internal_reference }}</code></td>
+                    <td>{{ article.description }}</td>
+                    <td>{{ article.total_stock|default:"0" }}</td>
                     <td>
-                        {{ entry.description }}
-                        {% if entry.reference %}<br><small class="text-muted">Ref. prov.: {{ entry.reference }}</small>{% endif %}
-                    </td>
-                    <td>
-                        {% if entry.supplier %}
-                            {{ entry.supplier.name }}
-                        {% elif entry.supplier_name %}
-                            {{ entry.supplier_name }}
-                            <br><small class="text-muted">(texto libre, sin resolver)</small>
-                        {% else %}
-                            —
+                        {% if article.warehouse_count %}
+                            <span class="badge bg-info text-dark">{{ article.warehouse_count }} en almacén</span>
+                        {% endif %}
+                        {% if article.pre_assigned_count %}
+                            <span class="badge bg-danger">{{ article.pre_assigned_count }} en limbo</span>
+                        {% endif %}
+                        {% if article.consumed_count %}
+                            <span class="badge bg-success">{{ article.consumed_count }} consumido{{ article.consumed_count|pluralize }}</span>
                         {% endif %}
                     </td>
-                    <td>
-                        {% if entry.purchase_unit_price %}
-                            {{ entry.purchase_unit_price }} €
-                        {% else %}
-                            —
-                        {% endif %}
-                    </td>
-                    <td>
-                        {% if entry.is_uncountable %}
-                            {{ entry.stock_level|default:"—"|level_label }}
-                        {% else %}
-                            {{ entry.stock_quantity }}
-                        {% endif %}
-                    </td>
-                    <td><span class="badge bg-secondary">{{ entry.get_status_display }}</span></td>
-                    <td>{{ entry.machine.code|default:"—" }}</td>
                     <td class="text-end">
-                        <a href="{% url 'workorder_spare_parts:catalog_edit' entry.pk %}"
+                        <a href="{% url 'workorder_spare_parts:catalog_article_detail' article.internal_reference %}"
                            class="btn btn-sm btn-outline-primary">
-                            <i class="bi bi-pencil"></i>
-                        </a>
-                        <a href="{% url 'workorder_spare_parts:catalog_delete' entry.pk %}"
-                           class="btn btn-sm btn-outline-danger">
-                            <i class="bi bi-trash"></i>
+                            <i class="bi bi-file-earmark-text me-1"></i>Ver ficha
                         </a>
                     </td>
                 </tr>
                 {% empty %}
                 <tr>
-                    <td colspan="8" class="text-center text-muted py-4">
+                    <td colspan="5" class="text-center text-muted py-4">
                         No hay repuestos en el catálogo todavía.
                     </td>
                 </tr>

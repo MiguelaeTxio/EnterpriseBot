@@ -33,8 +33,8 @@ import logging
 from decimal import Decimal, InvalidOperation
 
 from django.contrib import messages
-from django.db.models import Q, Case, When
-from django.http import HttpResponseForbidden, JsonResponse
+from django.db.models import Count, Max, Q, Case, Sum, When
+from django.http import Http404, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views import View
@@ -105,39 +105,40 @@ class CatalogReadAccessMixin(CompanyUserRequiredMixin):
 
 class SparePartEntryListView(SupervisorAccessMixin, ListView):
     """
-    Registro maestro del catálogo de repuestos, para Administración --
-    referencia, descripción, proveedor y precio de compra. Corregido
-    2026-07-07 a petición de Miguel Ángel: esto y el "Almacén" de
-    Mecánicos (SparePartWarehouseListView) son DOS entidades
-    distintas, no la misma vista con dos etiquetas. Este catálogo es
-    el registro general (quién lo vende, a qué precio) -- sin limbo,
-    sin avisos de antigüedad, sin gestión de stock físico, eso es
-    responsabilidad de los mecánicos en su propia vista de Almacén.
-    Acceso restringido a ADMIN/SUPERVISOR -- los mecánicos no tienen
-    por qué ver precios de compra ni datos de proveedor.
+    Catálogo de repuestos, para Administración -- AGRUPADO por
+    artículo real (internal_reference), no una fila por cada entrada
+    de stock individual. Petición explícita de Miguel Ángel
+    (S116-H10): "pensar en la organización del almacén [...] la
+    ficha de cada repuesto" -- confirmado tras revisar la pantalla
+    real: antes era una lista plana, una fila por SparePartEntry, sin
+    agrupar ni mostrar nunca el historial de movimientos junto. La
+    misma referencia interna puede tener varias SparePartEntry a lo
+    largo del tiempo (una en almacén, otra ya consumida hace meses,
+    etc.) -- aquí se agrupan en una sola fila por artículo, y el
+    detalle de cada una (con su historial completo de movimientos)
+    vive en SparePartArticleDetailView.
+
+    Corregido 2026-07-07 a petición de Miguel Ángel: esto y el
+    "Almacén" de Mecánicos (SparePartWarehouseListView) son DOS
+    entidades distintas, no la misma vista con dos etiquetas. Este
+    catálogo es el registro general (quién lo vende, a qué precio) --
+    sin limbo, sin avisos de antigüedad, sin gestión de stock físico,
+    eso es responsabilidad de los mecánicos en su propia vista de
+    Almacén. Acceso restringido a ADMIN/SUPERVISOR -- los mecánicos
+    no tienen por qué ver precios de compra ni datos de proveedor.
     ---
-    Master catalog registry of spare parts, for Administración --
-    reference, description, supplier and purchase price. Fixed
-    2026-07-07 at Miguel Ángel's request: this and the mechanics'
-    "Almacén" (SparePartWarehouseListView) are TWO distinct entities,
-    not the same view with two labels. This catalog is the general
-    registry (who sells it, at what price) -- no limbo, no age
-    warnings, no physical stock management, that is the mechanics'
-    responsibility in their own Almacén view. Access restricted to
-    ADMIN/SUPERVISOR -- mechanics have no reason to see purchase
-    prices or supplier data.
+    Spare parts catalog, for Administración -- GROUPED by real
+    article (internal_reference), not one row per individual stock
+    entry. See above for the S116-H10 rationale.
     """
 
-    model = SparePartEntry
     template_name = 'workorder_spare_parts/spare_part_entry_list.html'
-    context_object_name = 'entries'
+    context_object_name = 'articles'
     paginate_by = 30
 
     def get_queryset(self):
         company = self.request.user.company_user.company
-        qs = SparePartEntry.objects.filter(company=company).select_related(
-            'machine', 'supplier',
-        )
+        qs = SparePartEntry.objects.filter(company=company)
         status = self.request.GET.get('status', '').strip()
         if status:
             qs = qs.filter(status=status)
@@ -151,7 +152,39 @@ class SparePartEntryListView(SupervisorAccessMixin, ListView):
                 | Q(reference__icontains=q)
                 | Q(description__icontains=q)
             )
-        return qs.order_by('-pk')
+        # S116-H10: agrupado por artículo -- descripción representativa
+        # (la más reciente, vía Max(pk) implícito en el order_by de
+        # abajo no aplica a Max(description) directamente, así que se
+        # toma la de mayor pk con una subconsulta sería más exacto,
+        # pero Max(description) alfabético es una aproximación
+        # aceptable dado que la descripción rara vez cambia entre
+        # entradas del mismo artículo -- a revisar si da problemas
+        # reales). Stock total SOLO cuenta entradas en almacén
+        # contables -- ni el limbo ni lo consumido es "stock
+        # disponible" (mismo criterio que StockAssignmentService en
+        # todo el módulo).
+        return (
+            qs.exclude(internal_reference='')
+            .values('internal_reference')
+            .annotate(
+                description=Max('description'),
+                total_stock=Sum(
+                    'stock_quantity',
+                    filter=Q(status='WAREHOUSE', is_uncountable=False),
+                ),
+                warehouse_count=Count(
+                    'id', filter=Q(status='WAREHOUSE'), distinct=True,
+                ),
+                pre_assigned_count=Count(
+                    'id', filter=Q(status='PRE_ASSIGNED'), distinct=True,
+                ),
+                consumed_count=Count(
+                    'id', filter=Q(status='CONSUMED'), distinct=True,
+                ),
+                entry_count=Count('id', distinct=True),
+            )
+            .order_by('internal_reference')
+        )
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
@@ -172,6 +205,71 @@ class SparePartEntryListView(SupervisorAccessMixin, ListView):
         # si en el futuro se abre a otro rol de solo lectura.
         ctx['can_edit'] = True
         return ctx
+
+
+class SparePartArticleDetailView(SupervisorAccessMixin, View):
+    """
+    Ficha de artículo (S116-H10) -- petición explícita de Miguel
+    Ángel: "pensar en la organización del almacén [...] de dónde
+    vienen [las cosas]". Reúne, para una referencia interna dada,
+    TODAS sus SparePartEntry a lo largo del tiempo (una en almacén
+    hoy, otra ya consumida hace meses, etc. -- pueden ser varias) y
+    el historial COMPLETO de StockMovement de todas ellas juntas, en
+    un único sitio: de qué albarán vino cada una, a qué máquina/
+    ticket se pre-asignó, en qué parte se consumió, y cualquier
+    ajuste o devolución. Antes esta trazabilidad ya existía en BD
+    pero repartida en tres pantallas distintas sin unir nunca.
+
+    GET /panel/repuestos/catalogo/articulo/<internal_reference>/
+    """
+
+    template_name = 'workorder_spare_parts/spare_part_article_detail.html'
+
+    def get(self, request, internal_reference):
+        company = request.user.company_user.company
+        entries = list(
+            SparePartEntry.objects.filter(
+                company=company, internal_reference=internal_reference,
+            )
+            .select_related('machine', 'breakdown_ticket', 'supplier')
+            .prefetch_related('source_delivery_note_lines__delivery_note')
+            .order_by('-pk')
+        )
+        if not entries:
+            raise Http404(
+                'No existe ningún repuesto con esa referencia interna.'
+            )
+
+        for entry in entries:
+            origin_line = entry.source_delivery_note_lines.first()
+            entry.origin_note = (
+                origin_line.delivery_note if origin_line else None
+            )
+
+        movements = (
+            StockMovement.objects.filter(spare_part_entry__in=entries)
+            .select_related(
+                'machine', 'breakdown_ticket', 'work_order_entry_line',
+                'created_by__user',
+            )
+            .order_by('-created_at')
+        )
+
+        total_stock = sum(
+            (e.stock_quantity or Decimal('0')) for e in entries
+            if e.status == SparePartEntry.STATUS_WAREHOUSE
+            and not e.is_uncountable
+        )
+
+        return render(request, self.template_name, {
+            'company_user': request.user.company_user,
+            'active_nav': 'workorder_spare_parts_catalog',
+            'internal_reference': internal_reference,
+            'description': entries[0].description,
+            'entries': entries,
+            'movements': movements,
+            'total_stock': total_stock,
+        })
 
 
 class SparePartEntryCreateView(SupervisorAccessMixin, View):
@@ -230,7 +328,10 @@ class SparePartEntryCreateView(SupervisorAccessMixin, View):
                 created_by=request.user.company_user,
             )
         messages.success(request, f"Repuesto '{entry.description}' creado correctamente.")
-        return redirect('workorder_spare_parts:catalog_list')
+        return redirect(
+            'workorder_spare_parts:catalog_article_detail',
+            entry.internal_reference,
+        )
 
 
 class SparePartEntryUpdateView(SupervisorAccessMixin, View):
@@ -293,6 +394,15 @@ class SparePartEntryUpdateView(SupervisorAccessMixin, View):
                 created_by=request.user.company_user,
             )
         messages.success(request, f"Repuesto '{entry.description}' actualizado correctamente.")
+        # S116-H10: vuelve a la ficha del artículo (agrupado por
+        # internal_reference), no al catálogo plano -- el catálogo ya
+        # no lista entradas individuales, así que ese "de vuelta"
+        # perdía el contexto de qué artículo se estaba editando.
+        if entry.internal_reference:
+            return redirect(
+                'workorder_spare_parts:catalog_article_detail',
+                entry.internal_reference,
+            )
         return redirect('workorder_spare_parts:catalog_list')
 
 
@@ -326,16 +436,33 @@ class SparePartEntryDeleteView(SupervisorAccessMixin, View):
         entry = get_object_or_404(
             SparePartEntry, pk=pk, company=request.user.company_user.company,
         )
+        internal_reference = entry.internal_reference
         if entry.movements.exists():
             messages.error(
                 request,
                 "No se puede eliminar: este repuesto ya tiene movimientos de "
                 "stock registrados (afectaría al historial de analítica de costes).",
             )
+            if internal_reference:
+                return redirect(
+                    'workorder_spare_parts:catalog_article_detail',
+                    internal_reference,
+                )
             return redirect('workorder_spare_parts:catalog_list')
         description = entry.description
         entry.delete()
         messages.success(request, f"Repuesto '{description}' eliminado correctamente.")
+        # S116-H10: si era la última entrada de este artículo, la
+        # ficha ya no existe (0 resultados) -- vuelve al catálogo en
+        # ese caso, a la ficha si todavía quedan otras entradas.
+        if internal_reference and SparePartEntry.objects.filter(
+            company=request.user.company_user.company,
+            internal_reference=internal_reference,
+        ).exists():
+            return redirect(
+                'workorder_spare_parts:catalog_article_detail',
+                internal_reference,
+            )
         return redirect('workorder_spare_parts:catalog_list')
 
 
@@ -459,6 +586,7 @@ class SparePartWarehouseListView(CatalogReadAccessMixin, View):
         qs = (
             SparePartEntry.objects.filter(company=company)
             .select_related('machine', 'breakdown_ticket')
+            .prefetch_related('source_delivery_note_lines__delivery_note')
         )
         status = request.GET.get('status', '').strip()
         if status:
@@ -500,8 +628,19 @@ class SparePartWarehouseListView(CatalogReadAccessMixin, View):
                     age_class = 'info'
                 else:
                     age_class = 'success'
+            # S116-H10: albarán de origen -- petición explícita de
+            # Miguel Ángel ("poder verlos desde aquí mismo, el albarán
+            # al que pertenecían"). El dato ya existía en BD
+            # (DeliveryNoteLine.spare_part_entry), nunca se había
+            # mostrado en ningún sitio -- un SparePartEntry solo tiene
+            # UNA línea de origen real (se crea una vez, al confirmar
+            # el albarán), así que .first() es seguro aquí.
+            origin_line = entry.source_delivery_note_lines.first()
             rows.append({
                 'entry': entry, 'age_days': age_days, 'age_class': age_class,
+                'origin_note': (
+                    origin_line.delivery_note if origin_line else None
+                ),
             })
 
         sort_param = request.GET.get('sort', '').strip()

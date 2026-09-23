@@ -22,6 +22,11 @@ urlpatterns = [
         name='catalog_create',
     ),
     path(
+        'catalogo/articulo/<str:internal_reference>/',
+        views.SparePartArticleDetailView.as_view(),
+        name='catalog_article_detail',
+    ),
+    path(
         'catalogo/<int:pk>/editar/',
         views.SparePartEntryUpdateView.as_view(),
         name='catalog_edit',
