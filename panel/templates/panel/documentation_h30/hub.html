@@ -31,7 +31,16 @@
 {% with pf_personal=persisted_filters.personal pf_epis=persisted_filters.epis pf_vacaciones=persisted_filters.vacaciones %}
 <ul class="nav nav-tabs mb-3" id="docH30Tabs">
     <li class="nav-item">
-        <a class="nav-link {% if persisted_active_tab == 'maquinaria' %}active{% endif %}" id="tab-maquinaria" data-bs-toggle="tab" href="#pane-maquinaria">
+        {% comment %}
+        S117: la pestaña carga por htmx el panel compartido de
+        maquinaria (puerta "docs") -- el mismo componente que Taller
+        Mecánico > Centros de gasto, análogo a Personal. Sustituye al
+        listado primitivo de S48-S50 (decisión de Miguel Ángel).
+        {% endcomment %}
+        <a class="nav-link {% if persisted_active_tab == 'maquinaria' %}active{% endif %}" id="tab-maquinaria" data-bs-toggle="tab" href="#pane-maquinaria"
+           hx-get="{% url 'panel:fleet_docs_pane' %}"
+           hx-target="#pane-maquinaria"
+           hx-trigger="{% if persisted_active_tab == 'maquinaria' %}load once{% else %}click once{% endif %}">
             <i class="bi bi-truck me-1"></i>Centros de Gasto
         </a>
     </li>
@@ -71,10 +80,7 @@
 
 <div class="tab-content">
     <div class="tab-pane fade {% if persisted_active_tab == 'maquinaria' %}show active{% endif %}" id="pane-maquinaria">
-        {% include "panel/documentation_h30/_machine_search_form.html" with search=machines_page.search %}
-        <div id="machine-results">
-            {% include "panel/documentation_h30/_machine_results.html" with page=machines_page.page sort_key=machines_page.sort_key sort_dir=machines_page.sort_dir search=machines_page.search sort_columns_machine=machines_page.sort_columns_machine %}
-        </div>
+        <div class="text-muted small py-3">Cargando…</div>
     </div>
     <div class="tab-pane fade {% if persisted_active_tab == 'personal' %}show active{% endif %}" id="pane-personal">
         <div class="text-muted small py-3">Cargando…</div>
@@ -152,7 +158,6 @@
     // entregar-epi, notificar…) tienen un pk de por medio y no deben
     // pisar los filtros guardados con valores vacíos.
     const FILTER_ENDPOINTS = [
-        {match: /\/documentacion\/maquinaria\/?(\?|$)/, tab: 'maquinaria'},
         {match: /\/documentacion\/personal\/?(\?|$)/, tab: 'personal'},
         {match: /\/documentacion\/personal\/resultados\/?(\?|$)/, tab: 'personal'},
         {match: /\/documentacion\/epis\/?(\?|$)/, tab: 'epis'},

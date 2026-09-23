@@ -23,11 +23,12 @@ pestaña Personal, S113/S114):
                     <input class="form-check-input" type="checkbox" id="fleet-check-all"
                            title="Marcar/desmarcar todos los visibles">
                 </th>
+                <th style="width:24px"></th>
                 <th style="min-width:80px">
                     <a class="text-decoration-none text-reset d-flex align-items-center gap-1 user-select-none"
-                       hx-get="{% url 'panel:fleet_list' %}"
+                       hx-get="{% url 'panel:fleet_fragment' %}"
                        hx-target="#fleet-table-container"
-                       hx-include="#filter-search, #filter-family, #filter-is-active"
+                       hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-is-active, #fleet-door"
                        hx-trigger="click"
                        hx-vals='{"sort": "{{ sort_next.code }}"}'
                        style="cursor:pointer">
@@ -41,9 +42,9 @@ pestaña Personal, S113/S114):
                 </th>
                 <th style="min-width:90px">
                     <a class="text-decoration-none text-reset d-flex align-items-center gap-1 user-select-none"
-                       hx-get="{% url 'panel:fleet_list' %}"
+                       hx-get="{% url 'panel:fleet_fragment' %}"
                        hx-target="#fleet-table-container"
-                       hx-include="#filter-search, #filter-family, #filter-is-active"
+                       hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-is-active, #fleet-door"
                        hx-trigger="click"
                        hx-vals='{"sort": "{{ sort_next.family }}"}'
                        style="cursor:pointer">
@@ -57,9 +58,9 @@ pestaña Personal, S113/S114):
                 </th>
                 <th >
                     <a class="text-decoration-none text-reset d-flex align-items-center gap-1 user-select-none"
-                       hx-get="{% url 'panel:fleet_list' %}"
+                       hx-get="{% url 'panel:fleet_fragment' %}"
                        hx-target="#fleet-table-container"
-                       hx-include="#filter-search, #filter-family, #filter-is-active"
+                       hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-is-active, #fleet-door"
                        hx-trigger="click"
                        hx-vals='{"sort": "{{ sort_next.brand_model }}"}'
                        style="cursor:pointer">
@@ -73,9 +74,9 @@ pestaña Personal, S113/S114):
                 </th>
                 <th style="min-width:100px">
                     <a class="text-decoration-none text-reset d-flex align-items-center gap-1 user-select-none"
-                       hx-get="{% url 'panel:fleet_list' %}"
+                       hx-get="{% url 'panel:fleet_fragment' %}"
                        hx-target="#fleet-table-container"
-                       hx-include="#filter-search, #filter-family, #filter-is-active"
+                       hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-is-active, #fleet-door"
                        hx-trigger="click"
                        hx-vals='{"sort": "{{ sort_next.type_name }}"}'
                        style="cursor:pointer">
@@ -89,9 +90,9 @@ pestaña Personal, S113/S114):
                 </th>
                 <th style="min-width:90px">
                     <a class="text-decoration-none text-reset d-flex align-items-center gap-1 user-select-none"
-                       hx-get="{% url 'panel:fleet_list' %}"
+                       hx-get="{% url 'panel:fleet_fragment' %}"
                        hx-target="#fleet-table-container"
-                       hx-include="#filter-search, #filter-family, #filter-is-active"
+                       hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-is-active, #fleet-door"
                        hx-trigger="click"
                        hx-vals='{"sort": "{{ sort_next.plate }}"}'
                        style="cursor:pointer">
@@ -103,12 +104,28 @@ pestaña Personal, S113/S114):
                         {% endif %}
                     </a>
                 </th>
+                <th class="text-center" style="min-width:90px">
+                    <a class="text-decoration-none text-reset d-flex align-items-center justify-content-center gap-1 user-select-none"
+                       hx-get="{% url 'panel:fleet_fragment' %}"
+                       hx-target="#fleet-table-container"
+                       hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-is-active, #fleet-door"
+                       hx-trigger="click"
+                       hx-vals='{"sort": "{{ sort_next.doc_count }}"}'
+                       style="cursor:pointer">
+                        Documentos
+                        {% if sort_arrows.doc_count %}
+                            <i class="bi bi-arrow-{{ sort_arrows.doc_count }}-short"></i>{% if sort_priority.doc_count %}<sup class="small">{{ sort_priority.doc_count }}</sup>{% endif %}
+                        {% else %}
+                            <i class="bi bi-arrow-down-up text-muted opacity-50 small"></i>
+                        {% endif %}
+                    </a>
+                </th>
                 <th class="text-center" style="min-width:70px">Contad.</th>
                 <th class="text-center" style="min-width:70px">
                     <a class="text-decoration-none text-reset d-flex align-items-center justify-content-center gap-1 user-select-none"
-                       hx-get="{% url 'panel:fleet_list' %}"
+                       hx-get="{% url 'panel:fleet_fragment' %}"
                        hx-target="#fleet-table-container"
-                       hx-include="#filter-search, #filter-family, #filter-is-active"
+                       hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-is-active, #fleet-door"
                        hx-trigger="click"
                        hx-vals='{"sort": "{{ sort_next.is_active }}"}'
                        style="cursor:pointer">
@@ -122,9 +139,9 @@ pestaña Personal, S113/S114):
                 </th>
                 <th class="text-center" style="min-width:55px">
                     <a class="text-decoration-none text-reset d-flex align-items-center justify-content-center gap-1 user-select-none"
-                       hx-get="{% url 'panel:fleet_list' %}"
+                       hx-get="{% url 'panel:fleet_fragment' %}"
                        hx-target="#fleet-table-container"
-                       hx-include="#filter-search, #filter-family, #filter-is-active"
+                       hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-is-active, #fleet-door"
                        hx-trigger="click"
                        hx-vals='{"sort": "{{ sort_next.use_count }}"}'
                        style="cursor:pointer">
@@ -146,8 +163,12 @@ pestaña Personal, S113/S114):
                 <td>
                     <input class="form-check-input fleet-row-check" type="checkbox"
                            data-pk="{{ asset.pk }}" data-code="{{ asset.code }}"
-                           data-doc-url="{% url 'panel:documentation_machine_detail' pk=asset.pk %}?back_url={% url 'panel:fleet_list' %}">
+                           data-label="{{ asset.code }}{% if asset.brand_model %} — {{ asset.brand_model }}{% endif %}{% if asset.plate %} — {{ asset.plate }}{% endif %}"
+                           data-doc-url="{% url 'panel:documentation_machine_detail' pk=asset.pk %}?back_url={{ fleet_back_url|urlencode }}">
                 </td>
+
+                {# Aviso de documentación caducada (mismo helper que el hub) #}
+                <td>{% if asset.has_alert %}<i class="bi bi-exclamation-triangle-fill text-danger" title="{{ asset.alert_labels|join:", " }}"></i>{% endif %}</td>
 
                 {# Código — badge diferencial para CdG EMPRESA_* y PERSONAL #}
                 <td class="fw-semibold">
@@ -158,7 +179,7 @@ pestaña Personal, S113/S114):
                     <span class="badge bg-info-subtle text-info-emphasis border border-info-subtle me-1"
                           title="Centro de gasto de personal">PER</span>
                     {% endif %}
-                    {{ asset.code }}
+                    <a href="{% url 'panel:documentation_machine_detail' pk=asset.pk %}?back_url={{ fleet_back_url|urlencode }}">{{ asset.code }}</a>
                 </td>
 
                 <td><span class="text-muted small">{{ asset.family|default:"—" }}</span></td>
@@ -179,6 +200,8 @@ pestaña Personal, S113/S114):
                 </td>
 
                 <td class="small">{{ asset.plate|default:"—" }}</td>
+
+                <td class="text-center">{{ asset.doc_count }}</td>
 
                 <td class="text-center">
                     {% if asset.has_odometer %}
@@ -233,7 +256,7 @@ pestaña Personal, S113/S114):
                             {% endif %}
                             <li>
                                 <a class="dropdown-item"
-                                   href="{% url 'panel:documentation_machine_detail' pk=asset.pk %}?back_url={% url 'panel:fleet_list' %}">
+                                   href="{% url 'panel:documentation_machine_detail' pk=asset.pk %}?back_url={{ fleet_back_url|urlencode }}">
                                     <i class="bi bi-file-earmark-text me-2"></i>Documentación
                                 </a>
                             </li>
@@ -280,13 +303,13 @@ pestaña Personal, S113/S114):
 Estado del fragmento para el panel fijo de list.html (que no se repinta
 con htmx): nº de filas, si hay filtro, y el orden vigente -- el JS de
 list.html lo lee tras cada repintado para actualizar el contador y
-mostrar/ocultar "Quitar orden". #sort-inputs lo incluyen los filtros
+mostrar/ocultar "Quitar orden". #fleet-sort-inputs lo incluyen los filtros
 para no perder el orden al buscar.
 {% endcomment %}
 <span id="fleet-fragment-state" class="d-none"
       data-count="{{ assets|length }}"
       data-filtered="{% if filter_search or filter_family or filter_is_active %}1{% endif %}"
       data-sort-active="{% if sort_active %}1{% endif %}"></span>
-<span id="sort-inputs" class="d-none">
+<span id="fleet-sort-inputs" class="d-none">
     <input type="hidden" name="sort" value="{{ current_sort }}">
 </span>

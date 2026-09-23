@@ -46,7 +46,6 @@ from panel.views_documentation_h30 import (
     EpiTabFragmentView,
     EpiTechnicalSheetUploadView,
     MachineDetailView,
-    MachineListFragmentView,
     PersonalDetailView,
     PersonalDocumentSelectionPdfView,
     PersonalDocumentSelectionPreviewView,
@@ -156,6 +155,8 @@ from panel.views import (
     MachineAssetBulkStatusView,
     MachineAssetBulkDeleteView,
     MachineAssetExportView,
+    MachineAssetDocsPaneView,
+    MachineAssetFragmentView,
     WorkerAbsenceUpdateView,
     WorkerAbsenceDeleteView,
     WorkOrderAdminExportView,
@@ -432,6 +433,8 @@ urlpatterns = [
     path("fleet/bulk/status/", MachineAssetBulkStatusView.as_view(), name="fleet_bulk_status"),
     path("fleet/bulk/delete/", MachineAssetBulkDeleteView.as_view(), name="fleet_bulk_delete"),
     path("fleet/export/", MachineAssetExportView.as_view(), name="fleet_export"),
+    path("fleet/tabla/", MachineAssetFragmentView.as_view(), name="fleet_fragment"),
+    path("fleet/documentacion/", MachineAssetDocsPaneView.as_view(), name="fleet_docs_pane"),
     # Fleet analytics — Hito 12 Paso PRIORIDAD 2
     path("fleet/analytics/", MachineAssetAnalyticsView.as_view(), name="fleet_analytics"),
 
@@ -443,7 +446,6 @@ urlpatterns = [
     path("documentacion/", DocumentationHubV2View.as_view(), name="documentation_hub"),
     # H31 (S75): persistencia de pestaña/filtros -- genérica por screen_key.
     path("navegacion/estado/<str:screen_key>/", NavigationStateSaveView.as_view(), name="navigation_state_save"),
-    path("documentacion/maquinaria/", MachineListFragmentView.as_view(), name="documentation_machine_list"),
     path("documentacion/maquinaria/<int:pk>/", MachineDetailView.as_view(), name="documentation_machine_detail"),
     path("documentacion/personal/", PersonalListFragmentView.as_view(), name="documentation_personal_list"),
     # H31 (S100) Bloque 1: alta de trabajador nuevo desde el panel.

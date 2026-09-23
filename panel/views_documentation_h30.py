@@ -232,9 +232,9 @@ def _split_current_obsolete(entries):
 
 def _attach_alert_flags(objects, content_type):
     """
-    H30 (S50) -- mismo principio que `_attach_doc_counts` (misma
-    limitacion real de GenericForeignKey sin GenericRelation inversa,
-    se calcula aparte y se adjunta como atributo). Marca `obj.
+    H30 (S50) -- limitacion real de GenericForeignKey sin
+    GenericRelation inversa: se calcula aparte y se adjunta como
+    atributo. Marca `obj.
     has_alert = True` cuando el sujeto tiene AL MENOS un documento
     vigente de un tipo `tracks_expiry=True` con una fecha de caducidad
     real ya pasada -- para la columna de alerta del listado (Centros
@@ -370,28 +370,6 @@ def _attach_missing_required_alert(persons, content_type):
     return persons
 
 
-def _attach_doc_counts(objects, content_type):
-    """
-    `domain_object` es una GenericForeignKey sin `GenericRelation`
-    declarada en el otro extremo (MachineAsset/PersonIdentity) -- no
-    existe relación inversa por la que hacer `.annotate(Count(...))`
-    directamente. Se calcula aparte, agrupando por `domain_object_id`,
-    y se adjunta como atributo `doc_count` a cada objeto ya paginado
-    (solo sobre la página visible, nunca sobre la lista completa).
-    """
-    pks = [obj.pk for obj in objects]
-    counts = dict(
-        DocumentIndexEntry.objects.filter(
-            bucket=BUCKET, domain_content_type=content_type,
-            domain_object_id__in=pks, entry_kind=DocumentIndexEntry.KIND_FILE,
-            deleted_at__isnull=True, purged_at__isnull=True,
-        ).values_list("domain_object_id").annotate(n=Count("id")),
-    )
-    for obj in objects:
-        obj.doc_count = counts.get(obj.pk, 0)
-    return objects
-
-
 class DocumentationHubV2View(CompanyUserRequiredMixin, View):
     """GET: página completa, tres pestañas, listado inicial de Centros de Gasto.
 
@@ -415,11 +393,13 @@ class DocumentationHubV2View(CompanyUserRequiredMixin, View):
             active_tab = "maquinaria"
         filters = state.get("filters") if isinstance(state.get("filters"), dict) else {}
 
-        _seed_request_get(request, filters.get("maquinaria"))
-        machines_page = _machine_list_page(request)
+        # S117: la pestaña "Centros de Gasto" ya no se pinta aquí -- la
+        # carga por htmx el panel compartido de maquinaria (puerta
+        # "docs", fleet.views.MachineAssetDocsPaneView), que guarda su
+        # propia navegación. Decisión de Miguel Ángel: sustituye al
+        # listado primitivo de S48-S50.
         return render(request, "panel/documentation_h30/hub.html", {
             "active_tab": "maquinaria",
-            "machines_page": machines_page,
             "active_nav": "documentation_hub",
             "persisted_active_tab": active_tab,
             "persisted_filters": filters,
@@ -485,36 +465,6 @@ def _seed_request_get(request, persisted_filters):
             mutable[key] = value
     if mutable is not None:
         request.GET = mutable
-
-
-def _machine_list_page(request):
-    qs = MachineAsset.objects.filter(is_active=True)
-    search = request.GET.get("q", "").strip()
-    if search:
-        qs = qs.filter(
-            Q(code__icontains=search) | Q(brand_model__icontains=search)
-            | Q(plate__icontains=search),
-        )
-    sort_columns = [("code", "Código"), ("brand_model", "Marca/modelo")]
-    qs, sort_key, sort_dir = _apply_sort(request, qs, sort_columns, "code")
-    paginator = Paginator(qs, 50)
-    page = paginator.get_page(request.GET.get("page"))
-    page.object_list = _attach_doc_counts(
-        list(page.object_list), ContentType.objects.get_for_model(MachineAsset),
-    )
-    page.object_list = _attach_alert_flags(
-        page.object_list, ContentType.objects.get_for_model(MachineAsset),
-    )
-    return {
-        "page": page, "sort_key": sort_key, "sort_dir": sort_dir,
-        "search": search, "sort_columns_machine": sort_columns,
-    }
-
-
-class MachineListFragmentView(CompanyUserRequiredMixin, View):
-    def get(self, request):
-        ctx = _machine_list_page(request)
-        return render(request, "panel/documentation_h30/_machine_results.html", ctx)
 
 
 class MachineDetailView(CompanyUserRequiredMixin, View):
@@ -596,13 +546,12 @@ def _person_list_page(request):
             )
     # H31 (S100): Miguel Ángel pidió ordenar también por Nombre, Alta y
     # Documentos (todas menos DNI). `domain_object` es una
-    # GenericForeignKey sin `GenericRelation` inversa (ver docstring de
-    # `_attach_doc_counts`) -- no admite `.annotate(Count(...))`
-    # directo, así que el conteo se anota vía Subquery correlacionada
-    # por `domain_object_id`, sobre el queryset COMPLETO (antes de
-    # paginar), para que el `order_by` de `_apply_sort` pueda usarlo.
-    # Sustituye aquí a `_attach_doc_counts` (que solo opera sobre la
-    # página ya paginada) -- mismo dato, ahora también ordenable.
+    # GenericForeignKey sin `GenericRelation` inversa -- no admite
+    # `.annotate(Count(...))` directo, así que el conteo se anota vía
+    # Subquery correlacionada por `domain_object_id`, sobre el queryset
+    # COMPLETO (antes de paginar), para que el `order_by` de
+    # `_apply_sort` pueda usarlo (mismo patrón que usa desde S117 el
+    # panel compartido de maquinaria, fleet.views).
     person_ct = ContentType.objects.get_for_model(PersonIdentity)
     doc_count_subquery = (
         DocumentIndexEntry.objects.filter(

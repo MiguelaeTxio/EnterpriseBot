@@ -1,0 +1,508 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/fleet/_fleet_pane.html #}
+{% comment %}
+S117 -- PANEL COMPARTIDO DE MAQUINARIA (decisión de Miguel Ángel,
+opción 2): un único componente con dos puertas de entrada --
+"taller" (panel/fleet/list.html, Taller Mecánico > Centros de gasto) y
+"docs" (pestaña "Centros de Gasto" del hub de Documentación, cargada
+por htmx desde fleet.views.MachineAssetDocsPaneView). El parámetro
+"door" viaja en cada petición (#fleet-door, _f_door) para que cada
+puerta guarde su propia navegación y su propio "Volver". Cualquier
+mejora se hace AQUÍ una sola vez y aparece en ambas puertas, según
+los permisos de cada rol (can_manage/can_delete).
+
+Formato de la directriz 4.24: panel fijo arriba, SOLO la lista hace
+scroll, orden múltiple, casillas, acciones múltiples/individuales,
+visor de selección (como Personal), navegación persistida.
+{% endcomment %}
+{% comment %}
+S117 -- mismo formato que el resto de visores (pestaña Personal
+S113/S114, Albaranes/Almacén/Catálogo S116), petición explícita de
+Miguel Ángel: pantalla fija que cabe en una sola pantalla de PC; SOLO
+la lista hace scroll. Dos paneles:
+- #fleet-top-panel (fijo): búsqueda/filtros + "Quitar orden", y
+  acciones masivas sobre la selección (siempre visibles).
+- #fleet-bottom-panel: altura calculada por JS (mismo algoritmo que
+  #personal-bottom-panel, S114) con la tabla dentro de un contenedor
+  con scroll propio y cabecera de columnas fija (sticky).
+{% endcomment %}
+    <div class="border rounded p-2 mb-2" id="fleet-top-panel">
+        <div class="d-flex align-items-center justify-content-between mb-2 flex-wrap gap-2">
+            <h5 class="mb-0 fw-semibold">Centros de gasto</h5>
+            {% if can_manage %}
+            <button class="btn btn-sm btn-primary"
+                    data-bs-toggle="modal"
+                    data-bs-target="#fleetCreateModal">
+                <i class="bi bi-plus-lg me-1"></i>Nuevo centro
+            </button>
+            {% endif %}
+        </div>
+
+        <div class="row g-2">
+            <div class="col-lg-5">
+                <div class="border rounded p-2 h-100">
+                    <div class="fw-bold small mb-1">Buscar y filtrar</div>
+                    <div class="row g-2 align-items-end">
+                        <div class="col-12 col-sm">
+                            <input id="fleet-filter-search"
+                                   type="search"
+                                   class="form-control form-control-sm"
+                                   placeholder="Código, marca/modelo, matrícula…"
+                                   name="search"
+                                   value="{{ filter_search }}"
+                                   autocomplete="off"
+                                   hx-get="{% url 'panel:fleet_fragment' %}"
+                                   hx-target="#fleet-table-container"
+                                   hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-is-active, #fleet-sort-inputs, #fleet-door"
+                                   hx-trigger="input changed delay:300ms, search">
+                        </div>
+                        <div class="col-12 col-sm-auto">
+                            <select id="fleet-filter-family" class="form-select form-select-sm"
+                                    hx-get="{% url 'panel:fleet_fragment' %}"
+                                    hx-target="#fleet-table-container"
+                                    hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-is-active, #fleet-sort-inputs, #fleet-door"
+                                    hx-trigger="change"
+                                    name="family" autocomplete="off">
+                                <option value="">Todas las familias</option>
+                                {% for fam in families %}
+                                <option value="{{ fam }}" {% if filter_family == fam %}selected{% endif %}>{{ fam }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-12 col-sm-auto">
+                            <select id="fleet-filter-is-active" class="form-select form-select-sm"
+                                    hx-get="{% url 'panel:fleet_fragment' %}"
+                                    hx-target="#fleet-table-container"
+                                    hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-is-active, #fleet-sort-inputs, #fleet-door"
+                                    hx-trigger="change"
+                                    name="is_active" autocomplete="off">
+                                <option value="" {% if filter_is_active == '' %}selected{% endif %}>Activos e inactivos</option>
+                                <option value="1" {% if filter_is_active == '1' %}selected{% endif %}>Solo activos</option>
+                                <option value="0" {% if filter_is_active == '0' %}selected{% endif %}>Solo inactivos</option>
+                            </select>
+                        </div>
+                        <div class="col-12 col-sm-auto">
+                            <button type="button"
+                                    class="btn btn-sm btn-outline-secondary{% if not sort_active %} d-none{% endif %}"
+                                    id="fleet-clear-sort"
+                                    hx-get="{% url 'panel:fleet_fragment' %}"
+                                    hx-target="#fleet-table-container"
+                                    hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-is-active, #fleet-door"
+                                    hx-vals='{"sort": ""}'
+                                    title="Deshacer todos los órdenes aplicados">
+                                <i class="bi bi-x-circle me-1"></i>Quitar orden
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {% comment %}
+            S117 -- petición de Miguel Ángel: acciones en DOS paneles
+            junto a la selección. "Varios centros" actúa sobre toda la
+            selección (dar de baja, reactivar, eliminar, exportar a
+            Excel); "Un solo centro" (Editar, Documentación) solo se
+            habilita con exactamente UNO marcado -- con varios se ve pero
+            deshabilitado. "Limpiar" sirve para ambos.
+            {% endcomment %}
+            <div class="col-lg-7">
+                <div class="border rounded p-2 h-100" id="fleet-mass-bar">
+                    <div class="d-flex align-items-center gap-2 mb-1">
+                        <strong class="small"><span id="fleet-mass-count">0</span> seleccionados</strong>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="fleet-mass-clear">
+                            <i class="bi bi-x-lg me-1"></i>Limpiar selección
+                        </button>
+                    </div>
+                    <div class="row g-1">
+                        <div class="col-7 border-end pe-2">
+                            <div class="small text-muted fw-bold">Varios centros</div>
+                            <div class="d-flex gap-1 flex-wrap">
+                                {% if can_manage %}
+                                <button type="button" class="btn btn-sm btn-outline-warning fleet-needs-selection" id="fleet-mass-deactivate" disabled>
+                                    <i class="bi bi-dash-circle me-1"></i>Dar de baja
+                                </button>
+                                <button type="button" class="btn btn-sm btn-outline-success fleet-needs-selection" id="fleet-mass-reactivate" disabled>
+                                    <i class="bi bi-check-circle me-1"></i>Reactivar
+                                </button>
+                                {% endif %}
+                                {% if can_delete %}
+                                <button type="button" class="btn btn-sm btn-outline-danger fleet-needs-selection" id="fleet-mass-delete" disabled>
+                                    <i class="bi bi-trash me-1"></i>Eliminar
+                                </button>
+                                {% endif %}
+                                <button type="button" class="btn btn-sm btn-outline-primary fleet-needs-selection" id="fleet-mass-export" disabled>
+                                    <i class="bi bi-file-earmark-excel me-1"></i>Exportar a Excel
+                                </button>
+                            </div>
+                        </div>
+                        <div class="col-5">
+                            <div class="small text-muted fw-bold">Un solo centro</div>
+                            <div class="d-flex gap-1 flex-wrap">
+                                {% if can_manage %}
+                                <button type="button" class="btn btn-sm btn-outline-secondary fleet-needs-single" id="fleet-single-edit" disabled>
+                                    <i class="bi bi-pencil me-1"></i>Editar
+                                </button>
+                                {% endif %}
+                                <button type="button" class="btn btn-sm btn-outline-secondary fleet-needs-single" id="fleet-single-docs" disabled>
+                                    <i class="bi bi-file-earmark-text me-1"></i>Documentación
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% comment %}
+    S117: lista (2/3) + visor de SELECCIÓN ACTUAL (1/3), mismo formato
+    que la pestaña Personal (S113) -- se ve quién está marcado aunque
+    no aparezca en el filtro visible en ese momento.
+    {% endcomment %}
+    <div class="border rounded p-2" id="fleet-bottom-panel">
+        <div class="row g-2 h-100">
+            <div class="col-lg-8 h-100">
+                <div class="border rounded p-2 h-100 d-flex flex-column">
+                    <div class="fw-bold small mb-1">
+                        <span id="fleet-row-count">{{ assets|length }}</span> centros de gasto
+                        <span id="fleet-row-filtered" class="text-muted fw-normal{% if not filter_search and not filter_family and not filter_is_active %} d-none{% endif %}">(filtrado)</span>
+                    </div>
+                    <div id="fleet-results-scroll" class="fixed-list-scroll" style="flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: auto;">
+                        <div id="fleet-table-container">
+                            {% include "panel/fleet/_table_fragment.html" %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-4 h-100">
+                <div class="border rounded p-2 h-100 d-flex flex-column">
+                    <div class="fw-bold small mb-1">Selección actual (<span id="fleet-selection-count">0</span>)</div>
+                    <div style="flex: 1 1 auto; min-height: 0; overflow-y: auto;">
+                        <ul class="mb-0 small ps-0 list-unstyled" id="fleet-selection-list">
+                            <li class="text-muted">Nada seleccionado todavía.</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% comment %}
+    Filtros y orden VIGENTES, siempre al día (JS), con el prefijo _f_
+    que leen las vistas de mutación (_build_fragment_context) -- los
+    incluyen los formularios del modal (hx-include) y las acciones por
+    fetch, para que la tabla repintada respete lo que se está viendo.
+    {% endcomment %}
+    <input type="hidden" id="fleet-door" name="door" value="{{ fleet_door }}">
+    <div id="fleet-live-filters" class="d-none">
+        <input type="hidden" name="_f_door" value="{{ fleet_door }}">
+        <input type="hidden" name="_f_search" value="{{ filter_search }}">
+        <input type="hidden" name="_f_family" value="{{ filter_family }}">
+        <input type="hidden" name="_f_is_active" value="{{ filter_is_active }}">
+        <input type="hidden" name="_f_sort" value="{{ current_sort }}">
+    </div>
+
+
+<style>
+#fleet-results-scroll table td,
+#fleet-results-scroll table th {
+    white-space: nowrap;
+}
+</style>
+
+{% if can_manage %}
+<div class="modal fade" id="fleetCreateModal" tabindex="-1"
+     aria-labelledby="fleetCreateModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="fleetCreateModalLabel">
+                    <i class="bi bi-truck me-2"></i>Nuevo centro de gasto
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="fleet-create-form-container">
+                {% include "panel/fleet/_form_fragment.html" with form=form form_action="create" %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="fleetEditModal" tabindex="-1"
+     aria-labelledby="fleetEditModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="fleetEditModalLabel">
+                    <i class="bi bi-pencil me-2"></i>Editar centro de gasto
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="fleet-edit-form-container">
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<div class="toast-container position-fixed bottom-0 end-0 p-3">
+    <div id="fleet-toast" class="toast align-items-center text-bg-dark border-0"
+         role="alert" aria-live="assertive" aria-atomic="true">
+        <div class="d-flex">
+            <div class="toast-body" id="fleet-toast-msg"></div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto"
+                    data-bs-dismiss="toast"></button>
+        </div>
+    </div>
+</div>
+{% include "panel/_fixed_list_layout.html" with top_id="fleet-top-panel" bottom_id="fleet-bottom-panel" %}
+<script>
+(function () {
+    "use strict";
+
+    const container = document.getElementById("fleet-table-container");
+    const liveFilters = document.getElementById("fleet-live-filters");
+    const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute("content");
+
+    // Selección (pk -> {code, docUrl}) en memoria de la página: sobrevive a
+    // cada repintado htmx del fragmento, nunca a un F5 -- mismo
+    // criterio que la selección de la pestaña Personal (S75/S113).
+    const selection = new Map();
+
+    function showToast(text, danger) {
+        const toast = document.getElementById("fleet-toast");
+        toast.classList.toggle("text-bg-danger", !!danger);
+        toast.classList.toggle("text-bg-dark", !danger);
+        document.getElementById("fleet-toast-msg").textContent = text;
+        new bootstrap.Toast(toast).show();
+    }
+
+    function setLive(name, value) {
+        const input = liveFilters.querySelector(`input[name="${name}"]`);
+        if (input) input.value = value;
+    }
+
+    function refreshFromFragment() {
+        // Estado del fragmento recién pintado -> panel fijo.
+        const state = document.getElementById("fleet-fragment-state");
+        if (state) {
+            document.getElementById("fleet-row-count").textContent = state.dataset.count;
+            document.getElementById("fleet-row-filtered").classList.toggle("d-none", !state.dataset.filtered);
+            document.getElementById("fleet-clear-sort").classList.toggle("d-none", !state.dataset.sortActive);
+        }
+        const sortInput = document.querySelector("#fleet-sort-inputs input[name=sort]");
+        setLive("_f_sort", sortInput ? sortInput.value : "");
+        setLive("_f_search", document.getElementById("fleet-filter-search").value);
+        setLive("_f_family", document.getElementById("fleet-filter-family").value);
+        setLive("_f_is_active", document.getElementById("fleet-filter-is-active").value);
+        // Casillas: repintar las marcadas según la selección vigente.
+        container.querySelectorAll(".fleet-row-check").forEach(function (cb) {
+            cb.checked = selection.has(cb.dataset.pk);
+        });
+        updateSelectionUi();
+    }
+
+    function updateSelectionUi() {
+        document.getElementById("fleet-mass-count").textContent = selection.size;
+        document.getElementById("fleet-selection-count").textContent = selection.size;
+        const list = document.getElementById("fleet-selection-list");
+        list.innerHTML = "";
+        if (!selection.size) {
+            const empty = document.createElement("li");
+            empty.className = "text-muted";
+            empty.textContent = "Nada seleccionado todavía.";
+            list.appendChild(empty);
+        } else {
+            Array.from(selection.values())
+                .sort(function (a, b) { return a.code.localeCompare(b.code); })
+                .forEach(function (item) {
+                    const li = document.createElement("li");
+                    li.textContent = item.label || item.code;
+                    list.appendChild(li);
+                });
+        }
+        // S117: panel "Varios centros" activo con 1 o más; panel "Un
+        // solo centro" activo SOLO con exactamente 1.
+        document.querySelectorAll(".fleet-needs-selection").forEach(function (btn) {
+            btn.disabled = selection.size === 0;
+        });
+        document.querySelectorAll(".fleet-needs-single").forEach(function (btn) {
+            btn.disabled = selection.size !== 1;
+        });
+        const all = document.getElementById("fleet-check-all");
+        if (!all) return;
+        const rows = container.querySelectorAll(".fleet-row-check");
+        const checked = container.querySelectorAll(".fleet-row-check:checked");
+        all.checked = rows.length > 0 && checked.length === rows.length;
+        all.indeterminate = checked.length > 0 && checked.length < rows.length;
+    }
+
+    container.addEventListener("change", function (evt) {
+        const target = evt.target;
+        if (target.classList.contains("fleet-row-check")) {
+            if (target.checked) selection.set(target.dataset.pk, {code: target.dataset.code, label: target.dataset.label, docUrl: target.dataset.docUrl});
+            else selection.delete(target.dataset.pk);
+            updateSelectionUi();
+        } else if (target.id === "fleet-check-all") {
+            container.querySelectorAll(".fleet-row-check").forEach(function (cb) {
+                cb.checked = target.checked;
+                if (target.checked) selection.set(cb.dataset.pk, {code: cb.dataset.code, label: cb.dataset.label, docUrl: cb.dataset.docUrl});
+                else selection.delete(cb.dataset.pk);
+            });
+            updateSelectionUi();
+        }
+    });
+
+    document.getElementById("fleet-mass-clear").addEventListener("click", function () {
+        selection.clear();
+        refreshFromFragment();
+    });
+
+    function postAction(url, extra) {
+        // Filtros/orden vigentes + datos propios de la acción; la
+        // respuesta es siempre el fragmento de tabla (o 409 JSON en el
+        // borrado individual de un centro con partes asociados).
+        const body = new FormData();
+        liveFilters.querySelectorAll("input").forEach(function (input) {
+            body.append(input.name, input.value);
+        });
+        Object.entries(extra || {}).forEach(function ([key, value]) {
+            (Array.isArray(value) ? value : [value]).forEach(function (v) { body.append(key, v); });
+        });
+        return fetch(url, {method: "POST", headers: {"X-CSRFToken": csrfToken}, body: body})
+            .then(function (r) {
+                if (r.status === 409) {
+                    return r.json().then(function (data) {
+                        showToast(data.error || "No se puede eliminar este centro de gasto.", true);
+                        return false;
+                    });
+                }
+                if (!r.ok) {
+                    showToast("No se ha podido completar la acción (" + r.status + ").", true);
+                    return false;
+                }
+                const message = r.headers.get("X-Fleet-Message");
+                return r.text().then(function (html) {
+                    container.innerHTML = html;
+                    htmx.process(container);
+                    refreshFromFragment();
+                    if (message) showToast(decodeURIComponent(message), false);
+                    return true;
+                });
+            });
+    }
+
+    function selectedPks() {
+        return Array.from(selection.keys());
+    }
+
+    function massAction(buttonId, url, action, question) {
+        const button = document.getElementById(buttonId);
+        if (!button) return;
+        button.addEventListener("click", function () {
+            if (!selection.size) {
+                showToast("No hay ningún centro de gasto seleccionado.", true);
+                return;
+            }
+            const codes = Array.from(selection.values()).map(function (v) { return v.code; }).sort().join(", ");
+            if (!confirm(question.replace("{n}", selection.size) + "\n\n" + codes)) return;
+            const extra = {selected: selectedPks()};
+            if (action) extra.action = action;
+            postAction(url, extra).then(function (ok) {
+                if (ok) { selection.clear(); refreshFromFragment(); }
+            });
+        });
+    }
+
+    massAction("fleet-mass-deactivate", "{% url 'panel:fleet_bulk_status' %}", "deactivate",
+        "¿Dar de baja {n} centros de gasto? Quedarán inactivos, se conserva todo su histórico.");
+    massAction("fleet-mass-reactivate", "{% url 'panel:fleet_bulk_status' %}", "reactivate",
+        "¿Reactivar {n} centros de gasto?");
+    massAction("fleet-mass-delete", "{% url 'panel:fleet_bulk_delete' %}", "",
+        "¿Eliminar DEFINITIVAMENTE {n} centros de gasto? Los que tengan partes de trabajo asociados no se tocarán.");
+
+    // Exportar la selección a Excel (mismas columnas que la hoja
+    // MAQUINARIA del Excel de Yolanda): formulario POST temporal, para
+    // que el navegador gestione la descarga como cualquier otra.
+    document.getElementById("fleet-mass-export").addEventListener("click", function () {
+        if (!selection.size) return;
+        const form = document.createElement("form");
+        form.method = "post";
+        form.action = "{% url 'panel:fleet_export' %}";
+        form.style.display = "none";
+        const csrf = document.createElement("input");
+        csrf.type = "hidden"; csrf.name = "csrfmiddlewaretoken"; csrf.value = csrfToken;
+        form.appendChild(csrf);
+        selectedPks().forEach(function (pk) {
+            const input = document.createElement("input");
+            input.type = "hidden"; input.name = "selected"; input.value = pk;
+            form.appendChild(input);
+        });
+        document.body.appendChild(form);
+        form.submit();
+        form.remove();
+    });
+
+    // S117: "Nueva familia…" en el desplegable de Familia del
+    // formulario (alta y edición) despliega el campo de texto. Delegado
+    // en document porque el formulario de edición llega por htmx.
+    document.addEventListener("change", function (evt) {
+        const select = evt.target;
+        if (select.name !== "family" || !select.dataset.newFamilyValue) return;
+        const wrap = select.closest("div").querySelector(".fleet-family-new");
+        if (!wrap) return;
+        const isNew = select.value === select.dataset.newFamilyValue;
+        wrap.classList.toggle("d-none", !isNew);
+        if (isNew) wrap.querySelector("input").focus();
+    });
+
+    function singleSelected() {
+        if (selection.size !== 1) return null;
+        const [pk, data] = selection.entries().next().value;
+        return {pk: pk, data: data};
+    }
+    const singleEdit = document.getElementById("fleet-single-edit");
+    if (singleEdit) {
+        singleEdit.addEventListener("click", function () {
+            const one = singleSelected();
+            if (one) window.fleetOpenEditModal(one.pk);
+        });
+    }
+    document.getElementById("fleet-single-docs").addEventListener("click", function () {
+        const one = singleSelected();
+        if (one) window.location.href = one.data.docUrl;
+    });
+
+    window.fleetOpenEditModal = function (pk) {
+        const editContainer = document.getElementById("fleet-edit-form-container");
+        htmx.ajax("GET", `/panel/fleet/${pk}/update/`, {target: editContainer});
+        new bootstrap.Modal(document.getElementById("fleetEditModal")).show();
+    };
+    window.fleetDeactivateAsset = function (pk) {
+        if (!confirm("¿Dar de baja este centro de gasto? Quedará inactivo pero se conservará el histórico.")) return;
+        postAction(`/panel/fleet/${pk}/deactivate/`);
+    };
+    window.fleetReactivateAsset = function (pk) {
+        if (!confirm("¿Reactivar este centro de gasto?")) return;
+        postAction(`/panel/fleet/${pk}/reactivate/`);
+    };
+    window.fleetDeleteAsset = function (pk) {
+        if (!confirm("¿Eliminar definitivamente este centro de gasto? Esta acción no se puede deshacer.")) return;
+        postAction(`/panel/fleet/${pk}/delete/`).then(function (ok) {
+            if (ok) { selection.delete(String(pk)); refreshFromFragment(); }
+        });
+    };
+
+    document.body.addEventListener("htmx:afterSwap", function (evt) {
+        if (evt.detail.target && evt.detail.target.id === "fleet-table-container") {
+            ["fleetCreateModal", "fleetEditModal"].forEach(function (id) {
+                const el = document.getElementById(id);
+                const instance = el ? bootstrap.Modal.getInstance(el) : null;
+                if (instance) instance.hide();
+            });
+            refreshFromFragment();
+        }
+    });
+
+    refreshFromFragment();
+}());
+</script>

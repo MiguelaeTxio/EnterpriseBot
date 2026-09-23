@@ -1,7 +1,9 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation_h30/_personal_search_form.html #}
 {% comment %}
-H30 (S50): separado de los resultados por el mismo motivo que
-_machine_search_form.html -- ver ese archivo.
+H30 (S50): separado de los resultados a propósito -- el <input> de
+búsqueda nunca vive dentro del contenedor que htmx sustituye en cada
+tecleo (si no, cada carácter destruye y recrea el campo y se pierde el
+foco a mitad de escritura; incidente real S50).
 
 H31 (S76): añade los casilleros Activos/Inactivos + Empresa dentro
 del MISMO <form> -- htmx serializa automáticamente todos los campos

@@ -33,6 +33,7 @@ from fleet.models import MachineAsset
 from ivr_config.models import CompanyUser, PresenceStatus
 from panel.mixins import (
     AdminRoleRequiredMixin,
+    DocsUploadAccessMixin,
     FleetAccessMixin,
     FleetManageAccessMixin,
     SupervisorAccessMixin,
@@ -95,6 +96,7 @@ _SORTABLE_FIELDS = {
     "plate": "plate",
     "is_active": "is_active",
     "use_count": "use_count",  # anotado en _build_fragment_context
+    "doc_count": "doc_count",  # anotado en _build_fragment_context
 }
 _MAX_SORT_KEYS = 4
 
@@ -267,8 +269,42 @@ def _build_queryset(company, request):
 
 # S117 -- directrices 4.15/4.24: filtros y orden persistidos por
 # usuario con la pieza compartida panel.navigation_persistence.
-_FLEET_SCREEN_KEY = "fleet_list"
 _FLEET_FILTER_KEYS = ("search", "family", "is_active", "sort")
+
+# S117 -- decisión de Miguel Ángel (opción 2): UN solo componente de
+# maquinaria con DOS puertas de entrada -- "taller" (Taller Mecánico >
+# Centros de gasto: ADMIN gestiona, SUPERVISOR/WORKSHOPBOSS consultan) y
+# "docs" (hub de Documentación > pestaña Centros de Gasto: gestionan
+# DOCS_SUPERVISOR y ADMIN). Cada puerta guarda su propia navegación y
+# su propio "Volver" de la ficha documental.
+FLEET_DOOR_TALLER = "taller"
+FLEET_DOOR_DOCS = "docs"
+_FLEET_SCREEN_KEYS = {
+    FLEET_DOOR_TALLER: "fleet_list",
+    FLEET_DOOR_DOCS: "fleet_docs",
+}
+
+
+def _fleet_door(value):
+    """
+    Normalises the door parameter ("taller" by default).
+    ---
+    Normaliza el parámetro de puerta ("taller" por defecto).
+    """
+    return FLEET_DOOR_DOCS if value == FLEET_DOOR_DOCS else FLEET_DOOR_TALLER
+
+
+def _fleet_back_url(door):
+    """
+    Where "Volver" of the machine documentation page must return.
+    ---
+    A dónde debe volver "Volver" de la ficha documental de máquina.
+    """
+    from django.urls import reverse
+
+    if door == FLEET_DOOR_DOCS:
+        return reverse("panel:documentation_hub")
+    return reverse("panel:fleet_list")
 
 def _build_fragment_context(company, company_user, request):
     """
@@ -292,11 +328,41 @@ def _build_fragment_context(company, company_user, request):
         """Read from GET, fall back to POST."""
         return request.GET.get(key) or request.POST.get(f"_f_{key}", default)
 
-    qs = _build_queryset(company, request).annotate(
-        use_count=Count("work_order_lines", distinct=True)
+    # S117 -- lo que tenía la pestaña primitiva de Documentación y no
+    # tenía esta vista (decisión de Miguel Ángel: Centros de gasto será
+    # la vista única de maquinaria): nº de documentos vivos de cada
+    # máquina (anotado por Subquery para poder ordenar por él, mismo
+    # patrón que la pestaña Personal) y aviso de documentación
+    # caducada (helper compartido _attach_alert_flags, misma regla que
+    # el hub de Documentación).
+    from django.contrib.contenttypes.models import ContentType
+    from django.db.models import IntegerField, OuterRef, Subquery
+
+    from document_explorer.models import DocumentIndexEntry
+    from panel.views_documentation_h30 import BUCKET, _attach_alert_flags
+
+    machine_ct = ContentType.objects.get_for_model(MachineAsset)
+    doc_count_subquery = (
+        DocumentIndexEntry.objects.filter(
+            bucket=BUCKET, domain_content_type=machine_ct,
+            domain_object_id=OuterRef("pk"),
+            entry_kind=DocumentIndexEntry.KIND_FILE,
+            deleted_at__isnull=True, purged_at__isnull=True,
+        )
+        .order_by()
+        .values("domain_object_id")
+        .annotate(n=Count("id"))
+        .values("n")
     )
+    qs = _build_queryset(company, request).annotate(
+        use_count=Count("work_order_lines", distinct=True),
+        doc_count=Coalesce(
+            Subquery(doc_count_subquery, output_field=IntegerField()), 0,
+        ),
+    )
+    assets = _attach_alert_flags(list(qs), machine_ct)
     return {
-        "assets":           qs,
+        "assets":           assets,
         "families":         _get_families(company),
         "company":          company,
         "company_user":     company_user,
@@ -305,6 +371,8 @@ def _build_fragment_context(company, company_user, request):
         "filter_search":    _p("search"),
         **_build_sort_controls(_p("sort")),
         **_fleet_permissions(company_user),
+        "fleet_door":       _fleet_door(_p("door")),
+        "fleet_back_url":   _fleet_back_url(_fleet_door(_p("door"))),
     }
 
 
@@ -312,60 +380,118 @@ def _build_fragment_context(company, company_user, request):
 # MachineAssetListView
 # ---------------------------------------------------------------------------
 
-class MachineAssetListView(FleetAccessMixin, View):
+def _build_pane_context(request, door):
     """
-    List view for MachineAsset records belonging to the authenticated user's
-    company. Supports filtering by family, is_active status and free-text
-    search. Renders the full list page on GET. HTMX partial refresh is
-    triggered by the filter controls in the template.
+    Full context of the shared machine pane (_fleet_pane.html) for one
+    door: table fragment context + create form + presence/nav.
+    ---
+    Contexto completo del panel compartido de maquinaria
+    (_fleet_pane.html) para una puerta: contexto del fragmento de tabla
+    + formulario de alta + presencia/navegación.
+    """
+    company_user = request.user.company_user
+    company = company_user.company
+    apply_list_navigation(
+        request, _FLEET_SCREEN_KEYS[door], _FLEET_FILTER_KEYS,
+    )
+    mutable = request.GET.copy()
+    mutable["door"] = door
+    request.GET = mutable
+    fragment_ctx = _build_fragment_context(company, company_user, request)
+    return {
+        **fragment_ctx,
+        "own_presence": _get_own_presence(company_user),
+        "form": MachineAssetForm(company=company),
+    }
+
+
+class MachineAssetListView(SupervisorAccessMixin, View):
+    """
+    "Taller" door of the machine pane: Taller Mecánico > Centros de
+    gasto, for ADMIN, SUPERVISOR and WORKSHOPBOSS (S117, option 2 of
+    Miguel Ángel -- DOCS_SUPERVISOR works from the Documentation door).
 
     GET /panel/fleet/
-
     ---
-
-    Vista de listado de registros MachineAsset de la empresa del usuario
-    autenticado. Soporta filtrado por family, is_active y búsqueda de texto
-    libre. Renderiza la página completa en GET. El refresco parcial HTMX se
-    activa desde los controles de filtro del template.
+    Puerta "taller" del panel de maquinaria: Taller Mecánico > Centros
+    de gasto, para ADMIN, SUPERVISOR y WORKSHOPBOSS (S117, opción 2 de
+    Miguel Ángel -- DOCS_SUPERVISOR trabaja desde la puerta de
+    Documentación).
 
     GET /panel/fleet/
     """
 
     template_name = "panel/fleet/list.html"
-    template_name_partial = "panel/fleet/_table_fragment.html"
 
     def get(self, request, *args, **kwargs):
         """
-        Renders the fleet list page or a partial HTMX table fragment.
-        Detects HTMX requests via the HX-Request header and returns only
-        the table fragment for partial page updates.
-
+        Renders the full page with the shared pane.
         ---
+        Renderiza la página completa con el panel compartido.
+        """
+        ctx = _build_pane_context(request, FLEET_DOOR_TALLER)
+        ctx["active_nav"] = "fleet"
+        return render(request, self.template_name, ctx)
 
-        Renderiza la página de listado de flota o un fragmento parcial HTMX.
-        Detecta peticiones HTMX via HX-Request y devuelve solo el fragmento
-        de tabla para actualizaciones parciales.
+
+class MachineAssetDocsPaneView(DocsUploadAccessMixin, View):
+    """
+    "Docs" door of the machine pane: loaded by htmx into the
+    "Centros de Gasto" tab of the Documentation hub, replacing the
+    primitive listing of S48-S50 (decision of Miguel Ángel, S117).
+    ADMIN and DOCS_SUPERVISOR.
+
+    GET /panel/fleet/documentacion/
+    ---
+    Puerta "docs" del panel de maquinaria: cargada por htmx en la
+    pestaña "Centros de Gasto" del hub de Documentación, sustituyendo
+    al listado primitivo de S48-S50 (decisión de Miguel Ángel, S117).
+    ADMIN y DOCS_SUPERVISOR.
+
+    GET /panel/fleet/documentacion/
+    """
+
+    def get(self, request, *args, **kwargs):
+        """
+        Renders only the pane (no page chrome).
+        ---
+        Renderiza solo el panel (sin la página alrededor).
+        """
+        ctx = _build_pane_context(request, FLEET_DOOR_DOCS)
+        return render(request, "panel/fleet/_fleet_pane.html", ctx)
+
+
+class MachineAssetFragmentView(FleetAccessMixin, View):
+    """
+    Table fragment of the machine pane (filters, sorting) for BOTH
+    doors -- the "door" parameter decides which navigation state is
+    stored and where "Volver" of the documentation page returns.
+
+    GET /panel/fleet/tabla/
+    ---
+    Fragmento de tabla del panel de maquinaria (filtros, orden) para
+    AMBAS puertas -- el parámetro "door" decide qué estado de
+    navegación se guarda y a dónde vuelve "Volver" de la ficha
+    documental.
+
+    GET /panel/fleet/tabla/
+    """
+
+    def get(self, request, *args, **kwargs):
+        """
+        Stores the navigation of the door and returns the fragment.
+        ---
+        Guarda la navegación de la puerta y devuelve el fragmento.
         """
         company_user = request.user.company_user
-        company = company_user.company
-        # S117 -- directriz 4.15/4.24: cada cambio de filtro/orden se
-        # guarda; una carga completa sin parámetros recupera lo último
-        # guardado por ESE usuario.
+        door = _fleet_door(request.GET.get("door"))
         apply_list_navigation(
-            request, _FLEET_SCREEN_KEY, _FLEET_FILTER_KEYS,
+            request, _FLEET_SCREEN_KEYS[door], _FLEET_FILTER_KEYS,
         )
-        fragment_ctx = _build_fragment_context(company, company_user, request)
-
-        ctx = {
-            **fragment_ctx,
-            "own_presence": _get_own_presence(company_user),
-            "active_nav": "fleet",
-            "form": MachineAssetForm(company=company),
-        }
-
-        if request.headers.get("HX-Request"):
-            return render(request, self.template_name_partial, ctx)
-        return render(request, self.template_name, ctx)
+        ctx = _build_fragment_context(
+            company_user.company, company_user, request,
+        )
+        return render(request, "panel/fleet/_table_fragment.html", ctx)
 
 
 # ---------------------------------------------------------------------------
