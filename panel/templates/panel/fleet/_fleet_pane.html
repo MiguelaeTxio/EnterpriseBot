@@ -283,6 +283,7 @@ la lista hace scroll. Dos paneles:
         </div>
     </div>
 </div>
+{{ saved_selection|json_script:"fleet-saved-selection" }}
 {% include "panel/_fixed_list_layout.html" with top_id="fleet-top-panel" bottom_id="fleet-bottom-panel" %}
 <script>
 (function () {
@@ -296,6 +297,39 @@ la lista hace scroll. Dos paneles:
     // cada repintado htmx del fragmento, nunca a un F5 -- mismo
     // criterio que la selección de la pestaña Personal (S75/S113).
     const selection = new Map();
+
+    // S117: selección persistida por usuario y por puerta (sobrevive a
+    // ir a la ficha documental y volver, a recargar y a cambiar de
+    // dispositivo) -- se restaura de lo que el servidor ya guardó y se
+    // vuelve a guardar, con un pequeño retardo, en cada cambio.
+    const SELECTION_SCREEN_KEY = "{{ fleet_screen_key|escapejs }}";
+    try {
+        JSON.parse(document.getElementById("fleet-saved-selection").textContent).forEach(function (item) {
+            if (item && item.pk) {
+                selection.set(String(item.pk), {code: item.code || "", label: item.label || "", docUrl: item.docUrl || ""});
+            }
+        });
+    } catch (e) { /* estado guardado ilegible: se empieza sin selección */ }
+    let selectionSaveTimer = null;
+    let lastSavedSelection = JSON.stringify(Array.from(selection.entries()).map(function ([pk, data]) {
+        return {pk: pk, code: data.code, label: data.label, docUrl: data.docUrl};
+    }));
+    function saveSelection() {
+        const payload = Array.from(selection.entries()).map(function ([pk, data]) {
+            return {pk: pk, code: data.code, label: data.label, docUrl: data.docUrl};
+        });
+        const serialized = JSON.stringify(payload);
+        if (serialized === lastSavedSelection) return;
+        lastSavedSelection = serialized;
+        clearTimeout(selectionSaveTimer);
+        selectionSaveTimer = setTimeout(function () {
+            fetch("/panel/navegacion/estado/" + SELECTION_SCREEN_KEY + "/", {
+                method: "POST",
+                headers: {"X-CSRFToken": csrfToken, "Content-Type": "application/json"},
+                body: JSON.stringify({selection: payload}),
+            });
+        }, 400);
+    }
 
     function showToast(text, danger) {
         const toast = document.getElementById("fleet-toast");
@@ -331,6 +365,7 @@ la lista hace scroll. Dos paneles:
     }
 
     function updateSelectionUi() {
+        saveSelection();
         document.getElementById("fleet-mass-count").textContent = selection.size;
         document.getElementById("fleet-selection-count").textContent = selection.size;
         const list = document.getElementById("fleet-selection-list");

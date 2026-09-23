@@ -38,7 +38,10 @@ from panel.mixins import (
     FleetManageAccessMixin,
     SupervisorAccessMixin,
 )
-from panel.navigation_persistence import apply_list_navigation
+from panel.navigation_persistence import (
+    apply_list_navigation,
+    get_saved_state_key,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -458,10 +461,23 @@ def _build_pane_context(request, door):
     mutable["door"] = door
     request.GET = mutable
     fragment_ctx = _build_fragment_context(company, company_user, request)
+    # S117 -- incidente real de Miguel Ángel: con varios centros
+    # marcados, ir a la ficha documental de uno y pulsar "Volver"
+    # perdía la selección (vivía solo en memoria de la página). Ahora se
+    # guarda por usuario y por puerta en PanelNavigationState (clave
+    # "selection", endpoint genérico /panel/navegacion/estado/) y se
+    # restaura aquí al volver a cargar el panel.
+    saved_selection = get_saved_state_key(
+        company_user, _FLEET_SCREEN_KEYS[door], "selection", [],
+    )
+    if not isinstance(saved_selection, list):
+        saved_selection = []
     return {
         **fragment_ctx,
         "own_presence": _get_own_presence(company_user),
         "form": MachineAssetForm(company=company),
+        "fleet_screen_key": _FLEET_SCREEN_KEYS[door],
+        "saved_selection": saved_selection,
     }
 
 

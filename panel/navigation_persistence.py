@@ -72,12 +72,37 @@ def apply_list_navigation(request, screen_key, keys):
 
 def _store(company_user, screen_key, filters):
     """
-    Upserts the filters of one screen for one user.
+    Upserts the filters of one screen for one user, keeping any other
+    key already stored for that screen (e.g. the row selection, S117).
     ---
-    Inserta o actualiza los filtros de una pantalla para un usuario.
+    Inserta o actualiza los filtros de una pantalla para un usuario,
+    conservando cualquier otra clave ya guardada de esa pantalla (p. ej.
+    la selección de filas, S117).
     """
-    PanelNavigationState.objects.update_or_create(
+    obj, _created = PanelNavigationState.objects.get_or_create(
         company_user=company_user,
         screen_key=screen_key,
-        defaults={"state": {"filters": filters}},
+        defaults={"state": {}},
     )
+    state = obj.state if isinstance(obj.state, dict) else {}
+    state["filters"] = filters
+    obj.state = state
+    obj.save(update_fields=["state", "updated_at"])
+
+
+def get_saved_state_key(company_user, screen_key, key, default=None):
+    """
+    Returns one key of the saved navigation state of a screen.
+    ---
+    Devuelve una clave del estado de navegación guardado de una
+    pantalla.
+    """
+    saved = (
+        PanelNavigationState.objects
+        .filter(company_user=company_user, screen_key=screen_key)
+        .values_list("state", flat=True)
+        .first()
+    )
+    if isinstance(saved, dict):
+        return saved.get(key, default)
+    return default
