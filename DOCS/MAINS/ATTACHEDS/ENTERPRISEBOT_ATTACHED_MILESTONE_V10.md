@@ -1115,3 +1115,8 @@ limbo, el camino real es primero "Devolver a almacén" y luego subir el
 albarán de abono como documento aparte, sin acción directa desde la
 línea del limbo (decisión explícita de Miguel Ángel: se deja así).
 
+**Cierre de sesión (S116):** PCH ejecutado y commiteado (`9a61718`) --
+hito pausa aquí, se retoma H30 dominio MÁQUINAS. Bitácora narrativa
+completa en el commit de cierre de `nfs-enterprisebot-pcs`.
+
+
