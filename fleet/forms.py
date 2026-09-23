@@ -72,10 +72,6 @@ class MachineAssetForm(forms.ModelForm):
                 "class": "form-control",
                 "placeholder": "Ej: Gruas Adolfo Álvarez, S.L.",
             }),
-            "family": forms.TextInput(attrs={
-                "class": "form-control text-uppercase",
-                "placeholder": "Ej: MOVILES",
-            }),
             "type_code": forms.TextInput(attrs={
                 "class": "form-control text-uppercase",
                 "placeholder": "Ej: MV035",
@@ -118,3 +114,79 @@ class MachineAssetForm(forms.ModelForm):
             "hours":          "Horas",
             "is_active":      "Activo",
         }
+
+    # S117 -- petición de Miguel Ángel: "Familia" deja de ser texto libre
+    # y pasa a ser el mismo desplegable de familias que ya tiene el
+    # filtro del listado, con una opción "Nueva familia…" que despliega
+    # un campo de texto para dar de alta una familia nueva sin salir del
+    # formulario. Evita variantes escritas a mano de una misma familia.
+    NEW_FAMILY_VALUE = "__new__"
+
+    family_new = forms.CharField(
+        label="Nueva familia",
+        required=False,
+        max_length=100,
+        widget=forms.TextInput(attrs={
+            "class": "form-control text-uppercase",
+            "placeholder": "Ej: GRUAS TORRE",
+        }),
+    )
+
+    def __init__(self, *args, company=None, **kwargs):
+        """
+        Builds the "family" select from the families already used by
+        the company's cost centres (same source as the list filter),
+        keeping the current value even if it is not in the list.
+        ---
+        Construye el desplegable de "family" con las familias ya usadas
+        por los centros de gasto de la empresa (misma fuente que el
+        filtro del listado), conservando el valor actual aunque no esté
+        en la lista.
+        """
+        super().__init__(*args, **kwargs)
+        families = []
+        if company is not None:
+            families = list(
+                MachineAsset.objects
+                .filter(company=company)
+                .exclude(family="")
+                .values_list("family", flat=True)
+                .distinct()
+                .order_by("family")
+            )
+        current = (self.instance.family or "") if self.instance else ""
+        if current and current not in families:
+            families.append(current)
+            families.sort()
+        choices = [("", "(Sin familia)")]
+        choices += [(family, family) for family in families]
+        choices.append((self.NEW_FAMILY_VALUE, "Nueva familia…"))
+        self.fields["family"] = forms.ChoiceField(
+            label="Familia",
+            required=False,
+            choices=choices,
+            widget=forms.Select(attrs={
+                "class": "form-select",
+                "data-new-family-value": self.NEW_FAMILY_VALUE,
+            }),
+        )
+
+    def clean(self):
+        """
+        Resolves "Nueva familia…" into the typed family name
+        (upper-cased, like the rest of the catalogue).
+        ---
+        Resuelve "Nueva familia…" en el nombre de familia escrito (en
+        mayúsculas, igual que el resto del catálogo).
+        """
+        cleaned = super().clean()
+        if cleaned.get("family") == self.NEW_FAMILY_VALUE:
+            new_family = (cleaned.get("family_new") or "").strip().upper()
+            if not new_family:
+                self.add_error(
+                    "family_new",
+                    "Escribe el nombre de la nueva familia.",
+                )
+            cleaned["family"] = new_family
+        return cleaned
+

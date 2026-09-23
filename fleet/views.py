@@ -360,7 +360,7 @@ class MachineAssetListView(FleetAccessMixin, View):
             **fragment_ctx,
             "own_presence": _get_own_presence(company_user),
             "active_nav": "fleet",
-            "form": MachineAssetForm(),
+            "form": MachineAssetForm(company=company),
         }
 
         if request.headers.get("HX-Request"):
@@ -402,7 +402,7 @@ class MachineAssetCreateView(FleetManageAccessMixin, View):
         """
         company_user = request.user.company_user
         company = company_user.company
-        form = MachineAssetForm(request.POST)
+        form = MachineAssetForm(request.POST, company=company)
 
         if form.is_valid():
             asset = form.save(commit=False)
@@ -483,7 +483,7 @@ class MachineAssetUpdateView(FleetManageAccessMixin, View):
         company_user = request.user.company_user
         company = company_user.company
         asset = self._get_asset(pk, company)
-        form = MachineAssetForm(instance=asset)
+        form = MachineAssetForm(instance=asset, company=company)
         return render(request, "panel/fleet/_form_fragment.html", {
             "form":             form,
             "asset":            asset,
@@ -505,7 +505,9 @@ class MachineAssetUpdateView(FleetManageAccessMixin, View):
         company_user = request.user.company_user
         company = company_user.company
         asset = self._get_asset(pk, company)
-        form = MachineAssetForm(request.POST, instance=asset)
+        form = MachineAssetForm(
+            request.POST, instance=asset, company=company,
+        )
 
         if form.is_valid():
             updated = form.save(commit=False)
@@ -809,6 +811,110 @@ class MachineAssetBulkDeleteView(AdminRoleRequiredMixin, View):
         return _fragment_with_message(
             request, company, company_user, message,
         )
+
+
+# ---------------------------------------------------------------------------
+# Excel export of the selection (S117) / Exportación a Excel (S117)
+# ---------------------------------------------------------------------------
+
+# Mismas columnas y mismo orden que la hoja MAQUINARIA del Excel real de
+# Yolanda (document_explorer/data_imports/EXCEL_TRABAJADORES.xlsx), y el
+# mismo mapeo columna<->campo que ya usa import_worker_machine_excel.
+_EXPORT_COLUMNS = (
+    "CODIGO", "MATRICULA", "ITV", "CITA ITV", "SEGURO", "OCA", "EMPRESA",
+)
+
+
+def _short_company_name(company_name):
+    """
+    "GRUAS ADOLFO ALVAREZ, S.L. CIF B29405040" -> "GRUAS ADOLFO
+    ALVAREZ": same short form as the EMPRESA column of the real Excel.
+    ---
+    "GRUAS ADOLFO ALVAREZ, S.L. CIF B29405040" -> "GRUAS ADOLFO
+    ALVAREZ": misma forma corta que la columna EMPRESA del Excel real.
+    """
+    name = (company_name or "").strip()
+    for separator in (",", " CIF"):
+        if separator in name:
+            name = name.split(separator, 1)[0]
+    return name.strip()
+
+
+class MachineAssetExportView(FleetAccessMixin, View):
+    """
+    Downloads the selected cost centres as an .xlsx with the columns of
+    the MAQUINARIA sheet of Yolanda's real Excel (POST selected=<pk>...).
+    Read-only: available to every role that can see the list.
+
+    POST /panel/fleet/export/
+    ---
+    Descarga los centros de gasto seleccionados en un .xlsx con las
+    columnas de la hoja MAQUINARIA del Excel real de Yolanda (POST
+    selected=<pk>...). Solo lectura: disponible para todo rol que vea
+    el listado.
+
+    POST /panel/fleet/export/
+    """
+
+    def post(self, request, *args, **kwargs):
+        """
+        Builds and returns the workbook.
+        ---
+        Construye y devuelve el libro Excel.
+        """
+        from io import BytesIO
+
+        from openpyxl import Workbook
+        from openpyxl.styles import Font
+
+        company = request.user.company_user.company
+        assets = _selected_assets(company, request).order_by("code")
+        if not assets.exists():
+            return HttpResponse(
+                "No hay ningún centro de gasto seleccionado.", status=400,
+            )
+
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.title = "MAQUINARIA"
+        sheet.append(list(_EXPORT_COLUMNS))
+        for cell in sheet[1]:
+            cell.font = Font(bold=True)
+        for asset in assets:
+            sheet.append([
+                asset.code,
+                asset.plate,
+                asset.itv_date,
+                asset.itv_next_appointment,
+                asset.insurance_info,
+                asset.oca_date,
+                _short_company_name(asset.company_name),
+            ])
+        for column in ("C", "D", "F"):
+            for cell in sheet[column][1:]:
+                cell.number_format = "DD/MM/YYYY"
+        widths = {"A": 12, "B": 16, "C": 12, "D": 12, "E": 24,
+                  "F": 12, "G": 28}
+        for column, width in widths.items():
+            sheet.column_dimensions[column].width = width
+        sheet.freeze_panes = "A2"
+
+        buffer = BytesIO()
+        workbook.save(buffer)
+        filename = (
+            f"centros_de_gasto_{now().strftime('%Y%m%d_%H%M')}.xlsx"
+        )
+        response = HttpResponse(
+            buffer.getvalue(),
+            content_type=(
+                "application/vnd.openxmlformats-officedocument."
+                "spreadsheetml.sheet"
+            ),
+        )
+        response["Content-Disposition"] = (
+            f'attachment; filename="{filename}"'
+        )
+        return response
 
 
 # ---------------------------------------------------------------------------

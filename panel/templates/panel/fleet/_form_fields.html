@@ -57,6 +57,17 @@
     <div class="col-12 col-sm-4">
         <label class="form-label form-label-sm">{{ form.family.label }}</label>
         {{ form.family }}
+        {% comment %}
+        S117: "Nueva familia…" despliega este campo (JS de
+        fleet/list.html, delegado sobre los modales); oculto por
+        defecto salvo que el POST vuelva con "Nueva familia…" elegida.
+        {% endcomment %}
+        <div class="fleet-family-new mt-1{% if form.family.value != form.NEW_FAMILY_VALUE %} d-none{% endif %}">
+            {{ form.family_new }}
+            {% for error in form.family_new.errors %}
+            <div class="text-danger small">{{ error }}</div>
+            {% endfor %}
+        </div>
     </div>
 
     <div class="col-12 col-sm-4">

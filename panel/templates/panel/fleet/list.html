@@ -32,7 +32,7 @@ la lista hace scroll. Dos paneles:
         </div>
 
         <div class="row g-2">
-            <div class="col-lg-7">
+            <div class="col-lg-5">
                 <div class="border rounded p-2 h-100">
                     <div class="fw-bold small mb-1">Buscar y filtrar</div>
                     <div class="row g-2 align-items-end">
@@ -90,29 +90,57 @@ la lista hace scroll. Dos paneles:
                 </div>
             </div>
 
-            <div class="col-lg-5">
+            {% comment %}
+            S117 -- petición de Miguel Ángel: acciones en DOS paneles
+            junto a la selección. "Varios centros" actúa sobre toda la
+            selección (dar de baja, reactivar, eliminar, exportar a
+            Excel); "Un solo centro" (Editar, Documentación) solo se
+            habilita con exactamente UNO marcado -- con varios se ve pero
+            deshabilitado. "Limpiar" sirve para ambos.
+            {% endcomment %}
+            <div class="col-lg-7">
                 <div class="border rounded p-2 h-100" id="fleet-mass-bar">
                     <div class="d-flex align-items-center gap-2 mb-1">
                         <strong class="small"><span id="fleet-mass-count">0</span> seleccionados</strong>
-                        <button type="button" class="btn btn-sm btn-outline-secondary" id="fleet-mass-clear">Limpiar</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="fleet-mass-clear">
+                            <i class="bi bi-x-lg me-1"></i>Limpiar selección
+                        </button>
                     </div>
-                    <div class="d-flex gap-1 flex-wrap">
-                        {% if can_manage %}
-                        <button type="button" class="btn btn-sm btn-outline-warning" id="fleet-mass-deactivate">
-                            <i class="bi bi-dash-circle me-1"></i>Dar de baja
-                        </button>
-                        <button type="button" class="btn btn-sm btn-outline-success" id="fleet-mass-reactivate">
-                            <i class="bi bi-check-circle me-1"></i>Reactivar
-                        </button>
-                        {% endif %}
-                        {% if can_delete %}
-                        <button type="button" class="btn btn-sm btn-outline-danger" id="fleet-mass-delete">
-                            <i class="bi bi-trash me-1"></i>Eliminar
-                        </button>
-                        {% endif %}
-                        {% if not can_manage and not can_delete %}
-                        <span class="text-muted small">Sin acciones disponibles para tu rol.</span>
-                        {% endif %}
+                    <div class="row g-1">
+                        <div class="col-7 border-end pe-2">
+                            <div class="small text-muted fw-bold">Varios centros</div>
+                            <div class="d-flex gap-1 flex-wrap">
+                                {% if can_manage %}
+                                <button type="button" class="btn btn-sm btn-outline-warning fleet-needs-selection" id="fleet-mass-deactivate" disabled>
+                                    <i class="bi bi-dash-circle me-1"></i>Dar de baja
+                                </button>
+                                <button type="button" class="btn btn-sm btn-outline-success fleet-needs-selection" id="fleet-mass-reactivate" disabled>
+                                    <i class="bi bi-check-circle me-1"></i>Reactivar
+                                </button>
+                                {% endif %}
+                                {% if can_delete %}
+                                <button type="button" class="btn btn-sm btn-outline-danger fleet-needs-selection" id="fleet-mass-delete" disabled>
+                                    <i class="bi bi-trash me-1"></i>Eliminar
+                                </button>
+                                {% endif %}
+                                <button type="button" class="btn btn-sm btn-outline-primary fleet-needs-selection" id="fleet-mass-export" disabled>
+                                    <i class="bi bi-file-earmark-excel me-1"></i>Exportar a Excel
+                                </button>
+                            </div>
+                        </div>
+                        <div class="col-5">
+                            <div class="small text-muted fw-bold">Un solo centro</div>
+                            <div class="d-flex gap-1 flex-wrap">
+                                {% if can_manage %}
+                                <button type="button" class="btn btn-sm btn-outline-secondary fleet-needs-single" id="fleet-single-edit" disabled>
+                                    <i class="bi bi-pencil me-1"></i>Editar
+                                </button>
+                                {% endif %}
+                                <button type="button" class="btn btn-sm btn-outline-secondary fleet-needs-single" id="fleet-single-docs" disabled>
+                                    <i class="bi bi-file-earmark-text me-1"></i>Documentación
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -212,7 +240,7 @@ la lista hace scroll. Dos paneles:
     const liveFilters = document.getElementById("fleet-live-filters");
     const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute("content");
 
-    // Selección (pk -> código) en memoria de la página: sobrevive a
+    // Selección (pk -> {code, docUrl}) en memoria de la página: sobrevive a
     // cada repintado htmx del fragmento, nunca a un F5 -- mismo
     // criterio que la selección de la pestaña Personal (S75/S113).
     const selection = new Map();
@@ -252,6 +280,14 @@ la lista hace scroll. Dos paneles:
 
     function updateSelectionUi() {
         document.getElementById("fleet-mass-count").textContent = selection.size;
+        // S117: panel "Varios centros" activo con 1 o más; panel "Un
+        // solo centro" activo SOLO con exactamente 1.
+        document.querySelectorAll(".fleet-needs-selection").forEach(function (btn) {
+            btn.disabled = selection.size === 0;
+        });
+        document.querySelectorAll(".fleet-needs-single").forEach(function (btn) {
+            btn.disabled = selection.size !== 1;
+        });
         const all = document.getElementById("fleet-check-all");
         if (!all) return;
         const rows = container.querySelectorAll(".fleet-row-check");
@@ -263,13 +299,13 @@ la lista hace scroll. Dos paneles:
     container.addEventListener("change", function (evt) {
         const target = evt.target;
         if (target.classList.contains("fleet-row-check")) {
-            if (target.checked) selection.set(target.dataset.pk, target.dataset.code);
+            if (target.checked) selection.set(target.dataset.pk, {code: target.dataset.code, docUrl: target.dataset.docUrl});
             else selection.delete(target.dataset.pk);
             updateSelectionUi();
         } else if (target.id === "fleet-check-all") {
             container.querySelectorAll(".fleet-row-check").forEach(function (cb) {
                 cb.checked = target.checked;
-                if (target.checked) selection.set(cb.dataset.pk, cb.dataset.code);
+                if (target.checked) selection.set(cb.dataset.pk, {code: cb.dataset.code, docUrl: cb.dataset.docUrl});
                 else selection.delete(cb.dataset.pk);
             });
             updateSelectionUi();
@@ -327,7 +363,7 @@ la lista hace scroll. Dos paneles:
                 showToast("No hay ningún centro de gasto seleccionado.", true);
                 return;
             }
-            const codes = Array.from(selection.values()).sort().join(", ");
+            const codes = Array.from(selection.values()).map(function (v) { return v.code; }).sort().join(", ");
             if (!confirm(question.replace("{n}", selection.size) + "\n\n" + codes)) return;
             const extra = {selected: selectedPks()};
             if (action) extra.action = action;
@@ -343,6 +379,58 @@ la lista hace scroll. Dos paneles:
         "¿Reactivar {n} centros de gasto?");
     massAction("fleet-mass-delete", "{% url 'panel:fleet_bulk_delete' %}", "",
         "¿Eliminar DEFINITIVAMENTE {n} centros de gasto? Los que tengan partes de trabajo asociados no se tocarán.");
+
+    // Exportar la selección a Excel (mismas columnas que la hoja
+    // MAQUINARIA del Excel de Yolanda): formulario POST temporal, para
+    // que el navegador gestione la descarga como cualquier otra.
+    document.getElementById("fleet-mass-export").addEventListener("click", function () {
+        if (!selection.size) return;
+        const form = document.createElement("form");
+        form.method = "post";
+        form.action = "{% url 'panel:fleet_export' %}";
+        form.style.display = "none";
+        const csrf = document.createElement("input");
+        csrf.type = "hidden"; csrf.name = "csrfmiddlewaretoken"; csrf.value = csrfToken;
+        form.appendChild(csrf);
+        selectedPks().forEach(function (pk) {
+            const input = document.createElement("input");
+            input.type = "hidden"; input.name = "selected"; input.value = pk;
+            form.appendChild(input);
+        });
+        document.body.appendChild(form);
+        form.submit();
+        form.remove();
+    });
+
+    // S117: "Nueva familia…" en el desplegable de Familia del
+    // formulario (alta y edición) despliega el campo de texto. Delegado
+    // en document porque el formulario de edición llega por htmx.
+    document.addEventListener("change", function (evt) {
+        const select = evt.target;
+        if (select.name !== "family" || !select.dataset.newFamilyValue) return;
+        const wrap = select.closest("div").querySelector(".fleet-family-new");
+        if (!wrap) return;
+        const isNew = select.value === select.dataset.newFamilyValue;
+        wrap.classList.toggle("d-none", !isNew);
+        if (isNew) wrap.querySelector("input").focus();
+    });
+
+    function singleSelected() {
+        if (selection.size !== 1) return null;
+        const [pk, data] = selection.entries().next().value;
+        return {pk: pk, data: data};
+    }
+    const singleEdit = document.getElementById("fleet-single-edit");
+    if (singleEdit) {
+        singleEdit.addEventListener("click", function () {
+            const one = singleSelected();
+            if (one) window.fleetOpenEditModal(one.pk);
+        });
+    }
+    document.getElementById("fleet-single-docs").addEventListener("click", function () {
+        const one = singleSelected();
+        if (one) window.location.href = one.data.docUrl;
+    });
 
     window.fleetOpenEditModal = function (pk) {
         const editContainer = document.getElementById("fleet-edit-form-container");

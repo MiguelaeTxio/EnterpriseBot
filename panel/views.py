@@ -132,6 +132,7 @@ from fleet.views import (
     MachineAssetAnalyticsView,
     MachineAssetBulkStatusView,
     MachineAssetBulkDeleteView,
+    MachineAssetExportView,
 )
 
 # --- Google Drive one-time OAuth setup (S014-H10) ---
