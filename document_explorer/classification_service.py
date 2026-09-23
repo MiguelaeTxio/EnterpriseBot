@@ -579,7 +579,8 @@ def _machine_from_text(text, plates_first=False):
         asset = _machine_from_plates(upper)
         if asset:
             return asset
-    for word in upper.split():
+    words = upper.split()
+    for word in words:
         # "P.16" / "R.2": el punto hace de separador como el guion.
         word = word.strip("()[]{}.,;:_").replace(".", "-")
         match = _FOLDER_MACHINE_CODE_RE.match(word)
@@ -590,9 +591,13 @@ def _machine_from_text(text, plates_first=False):
         if asset:
             return asset
         # "b9" es la B-09 del catálogo: número de una cifra sin el cero
-        # a la izquierda con que lo escribe Centros de gasto.
+        # a la izquierda con que lo escribe Centros de gasto. SOLO cuando
+        # el código es el texto entero (un segmento de carpeta "b9",
+        # "P.16", "R.2") -- nunca una palabra suelta de un texto: en
+        # "DOCUMENT 2119NGV (BMW X5 ADOLFO)" el modelo "X5" acabaría en
+        # la máquina X05.
         padded = re.match(r"^([A-Z]+)(\d)$", candidate_code)
-        if padded:
+        if padded and len(words) == 1:
             asset = MachineAsset.objects.filter(
                 code__iexact=padded.group(1) + "0" + padded.group(2),
             ).first()
