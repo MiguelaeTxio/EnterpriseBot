@@ -96,7 +96,7 @@ _SORTABLE_FIELDS = {
     "plate": "plate",
     "is_active": "is_active",
     "use_count": "use_count",  # anotado en _build_fragment_context
-    "doc_count": "doc_count",  # anotado en _build_fragment_context
+    "doc_count": "doc_count",  # recuento en Python, ver _build_fragment_context
 }
 _MAX_SORT_KEYS = 4
 
@@ -173,6 +173,34 @@ def _build_sort_controls(raw):
         "sort_active": bool(sort_keys),
         "current_sort": current_sort,
     }
+
+
+def _sort_assets_in_python(assets, sort_keys):
+    """
+    Sorts already-loaded assets by [(key, descending)] in priority
+    order (stable sorts applied from the least to the most important
+    key), with "code" as final tie-breaker -- same result as the
+    database ordering of _build_queryset.
+    ---
+    Ordena activos ya cargados por [(clave, descendente)] en orden de
+    prioridad (ordenaciones estables de la clave menos a la más
+    importante), con "code" como último desempate -- mismo resultado
+    que el orden en BD de _build_queryset.
+    """
+    def value(asset, key):
+        raw = getattr(asset, key, None)
+        if raw is None:
+            return (1, "")
+        if isinstance(raw, str):
+            return (0, raw.upper())
+        return (0, raw)
+
+    assets = sorted(assets, key=lambda asset: value(asset, "code"))
+    for key, desc in reversed(sort_keys):
+        assets = sorted(
+            assets, key=lambda asset, k=key: value(asset, k), reverse=desc,
+        )
+    return assets
 
 
 def _fleet_permissions(company_user):
@@ -254,7 +282,11 @@ def _build_queryset(company, request):
     # orden de prioridad) -- ver _parse_sort_param() y
     # _build_sort_controls(). Sin orden explícito se mantiene el
     # order_by inicial de arriba (empresa, familia, código).
+    # "doc_count" no es columna de BD: si participa en el orden, el
+    # orden completo lo aplica _sort_assets_in_python() después.
     sort_keys = _parse_sort_param(_gp("sort"))
+    if any(key == "doc_count" for key, _desc in sort_keys):
+        sort_keys = []
     if sort_keys:
         order_fields = [
             ("-" if desc else "") + _SORTABLE_FIELDS[key]
@@ -331,36 +363,46 @@ def _build_fragment_context(company, company_user, request):
     # S117 -- lo que tenía la pestaña primitiva de Documentación y no
     # tenía esta vista (decisión de Miguel Ángel: Centros de gasto será
     # la vista única de maquinaria): nº de documentos vivos de cada
-    # máquina (anotado por Subquery para poder ordenar por él, mismo
-    # patrón que la pestaña Personal) y aviso de documentación
-    # caducada (helper compartido _attach_alert_flags, misma regla que
-    # el hub de Documentación).
+    # máquina y aviso de documentación caducada (helper compartido
+    # _attach_alert_flags, misma regla que el hub de Documentación).
+    #
+    # CORREGIDO S117 (incidente real: la pestaña de Documentación no
+    # llegaba a cargar -- "OSError: write error" en el log, el
+    # navegador abandonaba la petición): la primera versión anotaba el
+    # recuento con una Subquery correlacionada POR MÁQUINA sobre
+    # DocumentIndexEntry, y domain_object_id no tiene índice -- con las
+    # ~560 máquinas del listado sin filtro, ~560 recorridos de la tabla.
+    # Ahora es UNA sola consulta agrupada; si se ordena por
+    # "Documentos", el orden completo se aplica en Python sobre la
+    # lista ya resuelta (mismas reglas de prioridad que en BD).
     from django.contrib.contenttypes.models import ContentType
-    from django.db.models import IntegerField, OuterRef, Subquery
 
     from document_explorer.models import DocumentIndexEntry
     from panel.views_documentation_h30 import BUCKET, _attach_alert_flags
 
     machine_ct = ContentType.objects.get_for_model(MachineAsset)
-    doc_count_subquery = (
+    doc_counts = dict(
         DocumentIndexEntry.objects.filter(
             bucket=BUCKET, domain_content_type=machine_ct,
-            domain_object_id=OuterRef("pk"),
             entry_kind=DocumentIndexEntry.KIND_FILE,
             deleted_at__isnull=True, purged_at__isnull=True,
+            domain_object_id__isnull=False,
         )
         .order_by()
-        .values("domain_object_id")
+        .values_list("domain_object_id")
         .annotate(n=Count("id"))
-        .values("n")
     )
-    qs = _build_queryset(company, request).annotate(
-        use_count=Count("work_order_lines", distinct=True),
-        doc_count=Coalesce(
-            Subquery(doc_count_subquery, output_field=IntegerField()), 0,
-        ),
+    assets = list(
+        _build_queryset(company, request).annotate(
+            use_count=Count("work_order_lines", distinct=True),
+        )
     )
-    assets = _attach_alert_flags(list(qs), machine_ct)
+    for asset in assets:
+        asset.doc_count = doc_counts.get(asset.pk, 0)
+    sort_keys = _parse_sort_param(_p("sort"))
+    if any(key == "doc_count" for key, _desc in sort_keys):
+        assets = _sort_assets_in_python(assets, sort_keys)
+    assets = _attach_alert_flags(assets, machine_ct)
     return {
         "assets":           assets,
         "families":         _get_families(company),
