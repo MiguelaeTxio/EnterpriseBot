@@ -35,6 +35,7 @@
 </div>
 
 <form method="get" class="row g-2 mb-3">
+    <input type="hidden" name="sort" value="{{ current_sort }}">
     <div class="col-auto">
         <select name="status" class="form-select form-select-sm">
             <option value="">Todos los estados</option>
@@ -56,23 +57,52 @@
     </div>
 </form>
 
+<div class="d-flex justify-content-between align-items-center mb-2">
+    <div id="bulk-actions-bar" class="d-none">
+        <form id="bulk-return-form" method="post" action="{% url 'workorder_spare_parts:bulk_return_to_warehouse' %}"
+              onsubmit="return confirm('¿Devolver a almacén los repuestos seleccionados? Se quitará su pre-asignación.');">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="{{ request.get_full_path }}">
+            <button type="submit" class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-arrow-return-left me-1"></i>Devolver seleccionados a almacén (<span id="selected-count">0</span>)
+            </button>
+        </form>
+    </div>
+    {% if sort_active %}
+    <a href="{{ clear_sort_url }}" class="btn btn-sm btn-outline-secondary ms-auto">
+        <i class="bi bi-x-circle me-1"></i>Quitar orden
+    </a>
+    {% endif %}
+</div>
+
 <div class="card shadow-sm">
     <div class="table-responsive">
         <table class="table table-hover align-middle mb-0">
             <thead class="table-light">
                 <tr>
-                    <th>Ref. interna</th>
-                    <th>Descripción</th>
-                    <th>Cantidad / Nivel</th>
-                    <th>Estado</th>
-                    <th>Máquina / Ticket</th>
-                    <th>Antigüedad (limbo)</th>
+                    <th style="width:2rem;">
+                        <input type="checkbox" id="select-all-parts" title="Seleccionar todos">
+                    </th>
+                    <th><a href="{{ sort_urls.ref }}" class="text-decoration-none text-dark">Ref. interna {{ sort_arrows.ref }}<sup>{{ sort_priority.ref }}</sup></a></th>
+                    <th><a href="{{ sort_urls.descripcion }}" class="text-decoration-none text-dark">Descripción {{ sort_arrows.descripcion }}<sup>{{ sort_priority.descripcion }}</sup></a></th>
+                    <th><a href="{{ sort_urls.cantidad }}" class="text-decoration-none text-dark">Cantidad / Nivel {{ sort_arrows.cantidad }}<sup>{{ sort_priority.cantidad }}</sup></a></th>
+                    <th><a href="{{ sort_urls.estado }}" class="text-decoration-none text-dark">Estado {{ sort_arrows.estado }}<sup>{{ sort_priority.estado }}</sup></a></th>
+                    <th><a href="{{ sort_urls.maquina }}" class="text-decoration-none text-dark">Máquina / Ticket {{ sort_arrows.maquina }}<sup>{{ sort_priority.maquina }}</sup></a></th>
+                    <th><a href="{{ sort_urls.antiguedad }}" class="text-decoration-none text-dark">Antigüedad (limbo) {{ sort_arrows.antiguedad }}<sup>{{ sort_priority.antiguedad }}</sup></a></th>
                     <th class="text-end">Acciones</th>
                 </tr>
             </thead>
             <tbody>
                 {% for row in rows %}
                 <tr {% if row.age_class %}class="table-{{ row.age_class }} bg-opacity-25"{% endif %}>
+                    <td>
+                        {% if row.entry.status == 'PRE_ASSIGNED' %}
+                        <input type="checkbox" name="selected" value="{{ row.entry.pk }}"
+                               class="part-select-checkbox" form="bulk-return-form">
+                        {% else %}
+                        <input type="checkbox" disabled title="No está en el limbo">
+                        {% endif %}
+                    </td>
                     <td><code>{{ row.entry.internal_reference|default:"—" }}</code></td>
                     <td>{{ row.entry.description }}</td>
                     <td>
@@ -127,7 +157,8 @@
                                   action="{% url 'workorder_spare_parts:return_to_warehouse' row.entry.pk %}"
                                   onsubmit="return confirm('¿Devolver este repuesto al almacén general? Se quitará la pre-asignación.');">
                                 {% csrf_token %}
-                                <button type="submit" class="btn btn-sm btn-outline-secondary">
+                                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                                <button type="submit" class="btn btn-sm btn-outline-secondary text-nowrap">
                                     <i class="bi bi-arrow-return-left me-1"></i>Devolver a almacén
                                 </button>
                             </form>
@@ -136,7 +167,7 @@
                 </tr>
                 {% empty %}
                 <tr>
-                    <td colspan="7" class="text-center text-muted py-4">
+                    <td colspan="8" class="text-center text-muted py-4">
                         No hay repuestos en el almacén todavía.
                     </td>
                 </tr>
@@ -145,4 +176,36 @@
         </table>
     </div>
 </div>
+
+{# S116-H10: seleccionar todos/algunos para la devolución masiva a    #}
+{# almacén -- mismo patrón que delivery_notes/list.html. Solo los     #}
+{# PRE_ASSIGNED llevan casilla activa.                                 #}
+<script>
+(function () {
+    "use strict";
+    var selectAll = document.getElementById("select-all-parts");
+    var bar = document.getElementById("bulk-actions-bar");
+    var counter = document.getElementById("selected-count");
+
+    function checkboxes() {
+        return document.querySelectorAll(".part-select-checkbox");
+    }
+
+    function updateBar() {
+        var checked = document.querySelectorAll(".part-select-checkbox:checked");
+        counter.textContent = checked.length;
+        bar.classList.toggle("d-none", checked.length === 0);
+    }
+
+    if (selectAll) {
+        selectAll.addEventListener("change", function () {
+            checkboxes().forEach(function (cb) { cb.checked = selectAll.checked; });
+            updateBar();
+        });
+    }
+    checkboxes().forEach(function (cb) {
+        cb.addEventListener("change", updateBar);
+    });
+}());
+</script>
 {% endblock %}

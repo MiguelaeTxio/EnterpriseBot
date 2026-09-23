@@ -408,6 +408,50 @@ class SparePartWarehouseListView(CatalogReadAccessMixin, View):
     # fifth colour of its own. Non-blocking assumption, to confirm
     # with Miguel Ángel if 4 real thresholds were wanted.
 
+    # S116-H10: mismo patrón de orden múltiple con prioridad que
+    # delivery_notes.DeliveryNoteAdminListView -- petición explícita
+    # de Miguel Ángel ("pasar aquí todo lo que hemos hecho en el
+    # anterior"). `rows` ya es una lista de Python materializada (no
+    # una queryset -- cada fila mezcla el SparePartEntry con
+    # age_days/age_class calculados), así que aquí se ordena en
+    # Python, no con order_by() de Django: una función por columna
+    # que extrae la clave de un `row` (el dict {'entry':...,
+    # 'age_days':...}).
+    _SORTABLE_FIELDS = {
+        'ref': lambda row: (row['entry'].internal_reference or ''),
+        'descripcion': lambda row: (row['entry'].description or '').lower(),
+        'cantidad': lambda row: (
+            Decimal('-1') if row['entry'].is_uncountable
+            else (row['entry'].stock_quantity or Decimal('0'))
+        ),
+        'estado': lambda row: row['entry'].status,
+        'maquina': lambda row: (
+            row['entry'].machine.code if row['entry'].machine
+            else (
+                row['entry'].breakdown_ticket.ticket_date_code or ''
+                if row['entry'].breakdown_ticket else ''
+            )
+        ),
+        'antiguedad': lambda row: (
+            row['age_days'] if row['age_days'] is not None else -1
+        ),
+    }
+    _MAX_SORT_KEYS = 4
+
+    def _parse_sort_param(self, raw):
+        keys = []
+        seen = set()
+        for token in raw.split(','):
+            token = token.strip()
+            if not token:
+                continue
+            desc = token.startswith('-')
+            key = token.lstrip('-')
+            if key in self._SORTABLE_FIELDS and key not in seen:
+                keys.append((key, desc))
+                seen.add(key)
+        return keys
+
     def get(self, request):
         from django.utils.timezone import now as _tz_now
 
@@ -423,9 +467,13 @@ class SparePartWarehouseListView(CatalogReadAccessMixin, View):
         if machine_pk:
             qs = qs.filter(machine_id=machine_pk)
         # Pre-asignados primero (por antigüedad, los más viejos arriba
-        # para que salten a la vista), el resto por pk descendente.
+        # para que salten a la vista), el resto por pk descendente --
+        # este es el orden de partida antes de aplicar, si lo hay, el
+        # orden explícito pedido por columna (ver más abajo).
         # Pre-assigned first (by age, oldest on top so they stand
-        # out), the rest by descending pk.
+        # out), the rest by descending pk -- this is the starting
+        # order before applying, if any, the explicit per-column sort
+        # requested (see below).
         entries = list(qs.order_by(
             Case(
                 When(status=SparePartEntry.STATUS_PRE_ASSIGNED, then=0),
@@ -456,6 +504,49 @@ class SparePartWarehouseListView(CatalogReadAccessMixin, View):
                 'entry': entry, 'age_days': age_days, 'age_class': age_class,
             })
 
+        sort_param = request.GET.get('sort', '').strip()
+        sort_keys = self._parse_sort_param(sort_param)
+        if sort_keys:
+            # Truco de sort estable: aplicar de la prioridad más baja a
+            # la más alta, para que el último sort() (la más alta
+            # prioridad) sea el que de verdad manda.
+            for key, desc in reversed(sort_keys):
+                rows.sort(key=self._SORTABLE_FIELDS[key], reverse=desc)
+
+        active_keys = [k for k, _ in sort_keys]
+        sort_urls = {}
+        sort_arrows = {}
+        sort_priority = {}
+        for key in self._SORTABLE_FIELDS:
+            if key in active_keys:
+                idx = active_keys.index(key)
+                _, desc = sort_keys[idx]
+                sort_arrows[key] = '▼' if desc else '▲'
+                sort_priority[key] = idx + 1 if len(sort_keys) > 1 else ''
+                new_desc = (not desc) if idx == 0 else False
+                new_keys = (
+                    [(key, new_desc)]
+                    + [(k, d) for k, d in sort_keys if k != key]
+                )
+            else:
+                sort_arrows[key] = ''
+                sort_priority[key] = ''
+                new_keys = [(key, False)] + sort_keys
+            new_keys = new_keys[:self._MAX_SORT_KEYS]
+            new_sort_param = ','.join(
+                (('-' if d else '') + k) for k, d in new_keys
+            )
+            params = request.GET.copy()
+            params['sort'] = new_sort_param
+            sort_urls[key] = '?' + params.urlencode()
+
+        clear_sort_params = request.GET.copy()
+        clear_sort_params.pop('sort', None)
+        clear_sort_url = (
+            '?' + clear_sort_params.urlencode() if clear_sort_params
+            else '?'
+        )
+
         machines = (
             MachineAsset.objects.filter(company=company, is_active=True)
             .order_by('code')
@@ -470,6 +561,12 @@ class SparePartWarehouseListView(CatalogReadAccessMixin, View):
             'selected_status': status,
             'selected_machine': machine_pk,
             'level_choices': StockAssignmentService.LEVEL_CHOICES,
+            'sort_urls': sort_urls,
+            'sort_arrows': sort_arrows,
+            'sort_priority': sort_priority,
+            'clear_sort_url': clear_sort_url,
+            'sort_active': bool(sort_keys),
+            'current_sort': sort_param,
         })
 
 
@@ -537,6 +634,76 @@ class SparePartReturnToWarehouseView(CatalogReadAccessMixin, View):
         # almacén, y debe volver a esa pantalla, no saltar siempre al
         # almacén general. Compatible hacia atrás: sin `next`, mismo
         # comportamiento de siempre.
+        next_url = request.POST.get('next', '').strip()
+        if next_url and url_has_allowed_host_and_scheme(
+            next_url, allowed_hosts={request.get_host()},
+        ):
+            return redirect(next_url)
+        return redirect('workorder_spare_parts:warehouse_list')
+
+
+class SparePartBulkReturnToWarehouseView(CatalogReadAccessMixin, View):
+    """
+    S116-H10: devuelve a almacén varios repuestos en limbo a la vez --
+    petición explícita de Miguel Ángel ("pasar aquí todo lo que hemos
+    hecho en el anterior [Albaranes]": casillas + acción masiva).
+    Misma transición exacta que SparePartReturnToWarehouseView,
+    aplicada uno a uno a cada SparePartEntry seleccionada -- nunca
+    toca uno que no esté en PRE_ASSIGNED (se omite en silencio, por si
+    la lista cambió entre que se cargó la página y se envió el
+    formulario).
+
+    URL: POST /panel/repuestos/almacen/devolver-varios/
+    """
+
+    def post(self, request):
+        company = request.user.company_user.company
+        pks = request.POST.getlist('selected')
+        if not pks:
+            messages.warning(request, 'No has seleccionado ningún repuesto.')
+            return redirect('workorder_spare_parts:warehouse_list')
+
+        entries = SparePartEntry.objects.filter(
+            pk__in=pks, company=company,
+            status=SparePartEntry.STATUS_PRE_ASSIGNED,
+        )
+        count = 0
+        for entry in entries:
+            entry.status = SparePartEntry.STATUS_WAREHOUSE
+            entry.machine = None
+            entry.breakdown_ticket = None
+            entry.pre_assigned_at = None
+            entry.save(update_fields=[
+                'status', 'machine', 'breakdown_ticket', 'pre_assigned_at',
+            ])
+            StockMovement.objects.create(
+                spare_part_entry=entry,
+                movement_type=StockMovement.MOVEMENT_RETURN_TO_WAREHOUSE,
+                quantity=(
+                    entry.stock_quantity if not entry.is_uncountable else 0
+                ),
+                created_by=request.user.company_user,
+                notes=(
+                    'Devuelto a almacén desde el limbo de pre-asignación '
+                    '(acción masiva).'
+                ),
+            )
+            count += 1
+
+        if count:
+            messages.success(
+                request,
+                f"{count} repuesto{'s' if count != 1 else ''} "
+                f"devuelto{'s' if count != 1 else ''} a almacén "
+                f"correctamente.",
+            )
+        else:
+            messages.warning(
+                request,
+                'Ningún repuesto seleccionado seguía en el limbo -- no '
+                'se ha tocado nada.',
+            )
+
         next_url = request.POST.get('next', '').strip()
         if next_url and url_has_allowed_host_and_scheme(
             next_url, allowed_hosts={request.get_host()},

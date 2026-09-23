@@ -44,6 +44,11 @@ urlpatterns = [
         name='return_to_warehouse',
     ),
     path(
+        'almacen/devolver-varios/',
+        views.SparePartBulkReturnToWarehouseView.as_view(),
+        name='bulk_return_to_warehouse',
+    ),
+    path(
         'almacen/<int:pk>/ajustar/',
         views.SparePartStockAdjustView.as_view(),
         name='stock_adjust',
