@@ -387,6 +387,89 @@ class SupervisorAccessMixin(CompanyUserRequiredMixin):
         return super().dispatch(request, *args, **kwargs)
 
 
+class FleetAccessMixin(CompanyUserRequiredMixin):
+    """
+    Read access to the cost-centre list ("Centros de gasto",
+    /panel/fleet/): ADMIN, SUPERVISOR, WORKSHOPBOSS and -- since S117,
+    explicit request of Miguel Ángel -- DOCS_SUPERVISOR (Yolanda
+    Bandera), who keeps the active/inactive status of the fleet up to
+    date as part of the machinery documentation work (H30).
+    ---
+    Acceso de lectura al listado de centros de gasto (/panel/fleet/):
+    ADMIN, SUPERVISOR, WORKSHOPBOSS y -- desde S117, petición explícita
+    de Miguel Ángel -- DOCS_SUPERVISOR (Yolanda Bandera), que mantiene
+    al día el estado activo/inactivo de la flota como parte del
+    trabajo documental de maquinaria (H30).
+    """
+
+    allowed_roles = {
+        CompanyUser.ROLE_ADMIN,
+        CompanyUser.ROLE_SUPERVISOR,
+        CompanyUser.ROLE_WORKSHOPBOSS,
+        CompanyUser.ROLE_DOCS_SUPERVISOR,
+    }
+
+    def dispatch(self, request, *args, **kwargs):
+        """
+        Checks the role before running the view.
+        ---
+        Comprueba el rol antes de ejecutar la vista.
+        """
+        company_user = _company_user_for_role_check(request)
+        if (
+            company_user is not None
+            and company_user.role not in self.allowed_roles
+        ):
+            messages.error(
+                request,
+                "Acceso denegado. Esta sección requiere el rol de "
+                "Supervisor, Jefe de taller, Supervisor de "
+                "Documentación o Administrador.",
+            )
+            return redirect("/panel/")
+        return super().dispatch(request, *args, **kwargs)
+
+
+class FleetManageAccessMixin(FleetAccessMixin):
+    """
+    Write access to cost centres (create, edit, deactivate/reactivate,
+    individually or in bulk): ADMIN and DOCS_SUPERVISOR (S117).
+    Permanent deletion stays ADMIN-only (AdminRoleRequiredMixin).
+    ---
+    Acceso de escritura a centros de gasto (alta, edición, baja/
+    reactivación, individual o masiva): ADMIN y DOCS_SUPERVISOR (S117).
+    El borrado definitivo sigue siendo solo de ADMIN
+    (AdminRoleRequiredMixin).
+    """
+
+    allowed_roles = {
+        CompanyUser.ROLE_ADMIN,
+        CompanyUser.ROLE_DOCS_SUPERVISOR,
+    }
+
+    def dispatch(self, request, *args, **kwargs):
+        """
+        Checks the role before running the view; returns 403 (these
+        endpoints are always called via fetch/htmx, never navigated).
+        ---
+        Comprueba el rol antes de ejecutar la vista; devuelve 403
+        (estos endpoints se llaman siempre por fetch/htmx, nunca se
+        navega a ellos).
+        """
+        company_user = _company_user_for_role_check(request)
+        if (
+            company_user is not None
+            and company_user.role not in self.allowed_roles
+        ):
+            return HttpResponseForbidden(
+                "Acceso denegado. Esta acción requiere el rol de "
+                "Supervisor de Documentación o Administrador."
+            )
+        return CompanyUserRequiredMixin.dispatch(
+            self, request, *args, **kwargs,
+        )
+
+
 class DocsUploadAccessMixin(CompanyUserRequiredMixin):
     """
     Mixin that grants access to CompanyUsers with the DOCS_SUPERVISOR

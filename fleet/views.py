@@ -30,8 +30,14 @@ from django.views import View
 
 from fleet.forms import MachineAssetForm
 from fleet.models import MachineAsset
-from ivr_config.models import PresenceStatus
-from panel.mixins import AdminRoleRequiredMixin, SupervisorAccessMixin
+from ivr_config.models import CompanyUser, PresenceStatus
+from panel.mixins import (
+    AdminRoleRequiredMixin,
+    FleetAccessMixin,
+    FleetManageAccessMixin,
+    SupervisorAccessMixin,
+)
+from panel.models import PanelNavigationState
 
 
 # ---------------------------------------------------------------------------
@@ -75,6 +81,115 @@ def _get_families(company):
         .distinct()
         .order_by("family")
     )
+
+
+# ---------------------------------------------------------------------------
+# Multi-column sorting (S117) / Ordenación múltiple (S117)
+# ---------------------------------------------------------------------------
+
+_SORTABLE_FIELDS = {
+    "code": "code",
+    "family": "family",
+    "brand_model": "brand_model",
+    "type_name": "type_name",
+    "plate": "plate",
+    "is_active": "is_active",
+    "use_count": "use_count",  # anotado en _build_fragment_context
+}
+_MAX_SORT_KEYS = 4
+
+
+def _parse_sort_param(raw):
+    """
+    Parses "key,-key,..." (priority order) into [(key, descending)],
+    ignoring invalid or repeated keys, capped at _MAX_SORT_KEYS.
+    ---
+    Interpreta "clave,-clave,..." (orden de prioridad) como
+    [(clave, descendente)], ignorando claves inválidas o repetidas,
+    con un máximo de _MAX_SORT_KEYS.
+    """
+    keys = []
+    seen = set()
+    for token in (raw or "").split(","):
+        token = token.strip()
+        if not token:
+            continue
+        desc = token.startswith("-")
+        key = token.lstrip("-")
+        if key in _SORTABLE_FIELDS and key not in seen:
+            keys.append((key, desc))
+            seen.add(key)
+    return keys[:_MAX_SORT_KEYS]
+
+
+def _build_sort_controls(raw):
+    """
+    Resolves, for every sortable column, the "sort" value a click on
+    its header must send, its arrow and its priority number -- same
+    rules as S116 (H10): clicking a column promotes it to primary
+    criterion keeping the others as tie-breakers; clicking the one
+    that is already primary flips its direction. Resolved here, never
+    in the template (dumb templates).
+    ---
+    Resuelve, para cada columna ordenable, el valor de "sort" que debe
+    enviar un clic en su cabecera, su flecha y su número de prioridad
+    -- mismas reglas que S116 (H10): clic en una columna la promueve a
+    criterio principal conservando las demás como desempate; clic en
+    la que ya es principal invierte su sentido. Resuelto aquí, nunca
+    en la plantilla (plantillas tontas).
+    """
+    sort_keys = _parse_sort_param(raw)
+    active_keys = [key for key, _desc in sort_keys]
+    sort_next = {}
+    sort_arrows = {}
+    sort_priority = {}
+    for key in _SORTABLE_FIELDS:
+        if key in active_keys:
+            idx = active_keys.index(key)
+            desc = sort_keys[idx][1]
+            sort_arrows[key] = "down" if desc else "up"
+            sort_priority[key] = idx + 1 if len(sort_keys) > 1 else ""
+            new_desc = (not desc) if idx == 0 else desc
+            new_keys = [(key, new_desc)] + [
+                (k, d) for k, d in sort_keys if k != key
+            ]
+        else:
+            sort_arrows[key] = ""
+            sort_priority[key] = ""
+            new_keys = [(key, False)] + sort_keys
+        new_keys = new_keys[:_MAX_SORT_KEYS]
+        sort_next[key] = ",".join(
+            ("-" if d else "") + k for k, d in new_keys
+        )
+    current_sort = ",".join(
+        ("-" if d else "") + k for k, d in sort_keys
+    )
+    return {
+        "sort_next": sort_next,
+        "sort_arrows": sort_arrows,
+        "sort_priority": sort_priority,
+        "sort_active": bool(sort_keys),
+        "current_sort": current_sort,
+    }
+
+
+def _fleet_permissions(company_user):
+    """
+    Permission flags for the template (dumb templates): who can
+    create/edit/deactivate (ADMIN, DOCS_SUPERVISOR) and who can delete
+    permanently (ADMIN only) -- same matrix as FleetManageAccessMixin
+    and AdminRoleRequiredMixin.
+    ---
+    Flags de permiso para la plantilla (plantillas tontas): quién puede
+    dar de alta/editar/dar de baja (ADMIN, DOCS_SUPERVISOR) y quién
+    puede borrar definitivamente (solo ADMIN) -- misma matriz que
+    FleetManageAccessMixin y AdminRoleRequiredMixin.
+    """
+    role = company_user.role
+    return {
+        "can_manage": role in FleetManageAccessMixin.allowed_roles,
+        "can_delete": role == CompanyUser.ROLE_ADMIN,
+    }
 
 
 def _build_queryset(company, request):
@@ -132,27 +247,76 @@ def _build_queryset(company, request):
     # ------------------------------------------------------------------
     # Column sorting / Ordenación por columna
     # ------------------------------------------------------------------
-    _SORTABLE = {
-        "code":       "code",
-        "family":     "family",
-        "brand_model": "brand_model",
-        "type_name":  "type_name",
-        "plate":      "plate",
-        "is_active":  "is_active",
-        "use_count":  "use_count",   # anotado en _build_fragment_context
-    }
-    sort_field = _gp("sort").strip()
-    sort_dir   = _gp("dir", "asc").strip()
-
-    if sort_field in _SORTABLE:
-        orm_field = _SORTABLE[sort_field]
-        if sort_dir == "desc":
-            qs = qs.order_by(f"-{orm_field}", "code")
-        else:
-            qs = qs.order_by(orm_field, "code")
-    # Si no hay sort explícito se mantiene el order_by inicial
+    # S117: orden MÚLTIPLE con prioridad, mismo formato ya implantado en
+    # S116 para Albaranes/Almacén/Catálogo ("sort=clave,-clave", en
+    # orden de prioridad) -- ver _parse_sort_param() y
+    # _build_sort_controls(). Sin orden explícito se mantiene el
+    # order_by inicial de arriba (empresa, familia, código).
+    sort_keys = _parse_sort_param(_gp("sort"))
+    if sort_keys:
+        order_fields = [
+            ("-" if desc else "") + _SORTABLE_FIELDS[key]
+            for key, desc in sort_keys
+        ]
+        if "code" not in [key for key, _desc in sort_keys]:
+            order_fields.append("code")
+        qs = qs.order_by(*order_fields)
 
     return qs
+
+
+# ---------------------------------------------------------------------------
+# Navigation persistence (S117, directive 4.15) /
+# Persistencia de navegación (S117, directriz 4.15)
+# ---------------------------------------------------------------------------
+
+_FLEET_SCREEN_KEY = "fleet_list"
+_FLEET_FILTER_KEYS = ("search", "family", "is_active", "sort")
+
+
+def _save_fleet_navigation(company_user, request):
+    """
+    Stores the current filters/sort of the fleet list for this user,
+    reusing the generic PanelNavigationState (never a new mechanism).
+    ---
+    Guarda los filtros/orden actuales del listado de flota para este
+    usuario, reutilizando el PanelNavigationState genérico (nunca un
+    mecanismo nuevo).
+    """
+    state = {key: request.GET.get(key, "") for key in _FLEET_FILTER_KEYS}
+    PanelNavigationState.objects.update_or_create(
+        company_user=company_user,
+        screen_key=_FLEET_SCREEN_KEY,
+        defaults={"state": {"filters": state}},
+    )
+
+
+def _seed_fleet_navigation(company_user, request):
+    """
+    On a full page load without filter parameters, fills request.GET
+    with the last filters/sort saved by this user.
+    ---
+    En una carga completa sin parámetros de filtro, rellena
+    request.GET con los últimos filtros/orden guardados por este
+    usuario.
+    """
+    if any(key in request.GET for key in _FLEET_FILTER_KEYS):
+        return
+    saved = (
+        PanelNavigationState.objects
+        .filter(company_user=company_user, screen_key=_FLEET_SCREEN_KEY)
+        .values_list("state", flat=True)
+        .first()
+    )
+    filters = saved.get("filters") if isinstance(saved, dict) else None
+    if not isinstance(filters, dict):
+        return
+    mutable = request.GET.copy()
+    for key in _FLEET_FILTER_KEYS:
+        value = filters.get(key)
+        if isinstance(value, str) and value:
+            mutable[key] = value
+    request.GET = mutable
 
 
 def _build_fragment_context(company, company_user, request):
@@ -188,8 +352,8 @@ def _build_fragment_context(company, company_user, request):
         "filter_family":    _p("family"),
         "filter_is_active": _p("is_active"),
         "filter_search":    _p("search"),
-        "sort_col":         _p("sort"),
-        "sort_dir":         _p("dir", "asc"),
+        **_build_sort_controls(_p("sort")),
+        **_fleet_permissions(company_user),
     }
 
 
@@ -197,7 +361,7 @@ def _build_fragment_context(company, company_user, request):
 # MachineAssetListView
 # ---------------------------------------------------------------------------
 
-class MachineAssetListView(SupervisorAccessMixin, View):
+class MachineAssetListView(FleetAccessMixin, View):
     """
     List view for MachineAsset records belonging to the authenticated user's
     company. Supports filtering by family, is_active status and free-text
@@ -233,6 +397,14 @@ class MachineAssetListView(SupervisorAccessMixin, View):
         """
         company_user = request.user.company_user
         company = company_user.company
+        # S117 -- directriz 4.15 (navegación persistida por usuario):
+        # cada cambio de filtro/orden (petición htmx) se guarda en
+        # PanelNavigationState; una carga completa sin parámetros en
+        # la URL recupera lo último guardado por ESE usuario.
+        if request.headers.get("HX-Request"):
+            _save_fleet_navigation(company_user, request)
+        else:
+            _seed_fleet_navigation(company_user, request)
         fragment_ctx = _build_fragment_context(company, company_user, request)
 
         ctx = {
@@ -251,7 +423,7 @@ class MachineAssetListView(SupervisorAccessMixin, View):
 # MachineAssetCreateView
 # ---------------------------------------------------------------------------
 
-class MachineAssetCreateView(AdminRoleRequiredMixin, View):
+class MachineAssetCreateView(FleetManageAccessMixin, View):
     """
     Creates a new MachineAsset for the authenticated user's company.
     Accepts HTMX POST requests and returns an updated table fragment on
@@ -295,19 +467,25 @@ class MachineAssetCreateView(AdminRoleRequiredMixin, View):
                 request, "panel/fleet/_table_fragment.html", fragment_ctx
             )
 
-        return render(request, "panel/fleet/_form_fragment.html", {
+        # S117: con errores de validación el formulario vuelve a su
+        # propio modal -- antes se pintaba dentro del contenedor de la
+        # tabla (hx-target del form) y el modal se cerraba solo.
+        response = render(request, "panel/fleet/_form_fragment.html", {
             "form": form,
             "company_user": company_user,
             "company": company,
             "form_action": "create",
         })
+        response["HX-Retarget"] = "#fleet-create-form-container"
+        response["HX-Reswap"] = "innerHTML"
+        return response
 
 
 # ---------------------------------------------------------------------------
 # MachineAssetUpdateView
 # ---------------------------------------------------------------------------
 
-class MachineAssetUpdateView(AdminRoleRequiredMixin, View):
+class MachineAssetUpdateView(FleetManageAccessMixin, View):
     """
     Updates an existing MachineAsset belonging to the authenticated user's
     company. GET returns the pre-filled edit form fragment for the modal.
@@ -365,11 +543,6 @@ class MachineAssetUpdateView(AdminRoleRequiredMixin, View):
             "form_action":      "update",
             # Pasar filtros al contexto para que el form los embeba
             # como hidden inputs y el POST los preserve al cerrar el modal.
-            "filter_search":    request.GET.get("search", ""),
-            "filter_family":    request.GET.get("family", ""),
-            "filter_is_active": request.GET.get("is_active", ""),
-            "sort_col":         request.GET.get("sort", ""),
-            "sort_dir":         request.GET.get("dir", "asc"),
         })
 
     def post(self, request, pk, *args, **kwargs):
@@ -396,20 +569,24 @@ class MachineAssetUpdateView(AdminRoleRequiredMixin, View):
                 request, "panel/fleet/_table_fragment.html", fragment_ctx
             )
 
-        return render(request, "panel/fleet/_form_fragment.html", {
+        # S117: mismo retarget que en el alta (ver arriba).
+        response = render(request, "panel/fleet/_form_fragment.html", {
             "form": form,
             "asset": asset,
             "company_user": company_user,
             "company": company,
             "form_action": "update",
         })
+        response["HX-Retarget"] = "#fleet-edit-form-container"
+        response["HX-Reswap"] = "innerHTML"
+        return response
 
 
 # ---------------------------------------------------------------------------
 # MachineAssetDeactivateView
 # ---------------------------------------------------------------------------
 
-class MachineAssetDeactivateView(AdminRoleRequiredMixin, View):
+class MachineAssetDeactivateView(FleetManageAccessMixin, View):
     """
     Sets is_active=False on a MachineAsset belonging to the authenticated
     user's company. Does not delete the record — preserves historical data
@@ -456,7 +633,7 @@ class MachineAssetDeactivateView(AdminRoleRequiredMixin, View):
 # MachineAssetReactivateView
 # ---------------------------------------------------------------------------
 
-class MachineAssetReactivateView(AdminRoleRequiredMixin, View):
+class MachineAssetReactivateView(FleetManageAccessMixin, View):
     """
     Sets is_active=True on a MachineAsset belonging to the authenticated
     user's company. Counterpart to MachineAssetDeactivateView.
@@ -557,6 +734,131 @@ class MachineAssetDeleteView(AdminRoleRequiredMixin, View):
         fragment_ctx = _build_fragment_context(company, company_user, request)
         return render(
             request, "panel/fleet/_table_fragment.html", fragment_ctx
+        )
+
+
+# ---------------------------------------------------------------------------
+# Bulk actions (S117) / Acciones masivas (S117)
+# ---------------------------------------------------------------------------
+
+def _selected_assets(company, request):
+    """
+    MachineAsset queryset of the company restricted to the pks sent
+    as "selected" (checkboxes of the list).
+    ---
+    Queryset de MachineAsset de la empresa restringido a los pks
+    enviados como "selected" (casillas del listado).
+    """
+    pks = [pk for pk in request.POST.getlist("selected") if pk.isdigit()]
+    return MachineAsset.objects.filter(company=company, pk__in=pks)
+
+
+def _fragment_with_message(request, company, company_user, message):
+    """
+    Renders the table fragment and carries a user message in the
+    X-Fleet-Message header (URL-encoded), shown by the page as a toast.
+    ---
+    Renderiza el fragmento de tabla y lleva un mensaje para el usuario
+    en la cabecera X-Fleet-Message (codificada en URL), que la página
+    muestra como aviso.
+    """
+    from urllib.parse import quote
+
+    fragment_ctx = _build_fragment_context(company, company_user, request)
+    response = render(
+        request, "panel/fleet/_table_fragment.html", fragment_ctx
+    )
+    response["X-Fleet-Message"] = quote(message)
+    return response
+
+
+class MachineAssetBulkStatusView(FleetManageAccessMixin, View):
+    """
+    Deactivates or reactivates every selected MachineAsset at once
+    (POST action=deactivate|reactivate, selected=<pk>...). Never
+    deletes anything -- same semantics as the per-row buttons.
+
+    POST /panel/fleet/bulk/status/
+    ---
+    Da de baja o reactiva a la vez todos los MachineAsset
+    seleccionados (POST action=deactivate|reactivate, selected=<pk>...).
+    Nunca borra nada -- misma semántica que los botones por fila.
+
+    POST /panel/fleet/bulk/status/
+    """
+
+    def post(self, request, *args, **kwargs):
+        """
+        Applies the status change and returns the refreshed fragment.
+        ---
+        Aplica el cambio de estado y devuelve el fragmento refrescado.
+        """
+        company_user = request.user.company_user
+        company = company_user.company
+        action = request.POST.get("action", "")
+        if action not in ("deactivate", "reactivate"):
+            return HttpResponse("Acción no válida.", status=400)
+        target_active = action == "reactivate"
+        updated = (
+            _selected_assets(company, request)
+            .exclude(is_active=target_active)
+            .update(is_active=target_active)
+        )
+        verb = "reactivado" if target_active else "dado de baja"
+        message = (
+            f"{updated} centro{'s' if updated != 1 else ''} de gasto "
+            f"{verb}{'s' if updated != 1 else ''}."
+        )
+        return _fragment_with_message(
+            request, company, company_user, message,
+        )
+
+
+class MachineAssetBulkDeleteView(AdminRoleRequiredMixin, View):
+    """
+    Permanently deletes the selected MachineAssets that have no linked
+    work-order lines (same integrity guard as MachineAssetDeleteView);
+    the ones in use are skipped and reported. ADMIN only.
+
+    POST /panel/fleet/bulk/delete/
+    ---
+    Borra definitivamente los MachineAsset seleccionados que no tienen
+    líneas de parte asociadas (misma guardia de integridad que
+    MachineAssetDeleteView); los que están en uso se saltan y se
+    informa de ellos. Solo ADMIN.
+
+    POST /panel/fleet/bulk/delete/
+    """
+
+    def post(self, request, *args, **kwargs):
+        """
+        Deletes the deletable ones and returns the refreshed fragment.
+        ---
+        Borra los borrables y devuelve el fragmento refrescado.
+        """
+        company_user = request.user.company_user
+        company = company_user.company
+        selected = _selected_assets(company, request)
+        in_use = list(
+            selected.filter(work_order_lines__isnull=False)
+            .values_list("code", flat=True)
+            .distinct()
+        )
+        deletable = selected.exclude(code__in=in_use)
+        deleted = deletable.count()
+        deletable.delete()
+        message = (
+            f"{deleted} centro{'s' if deleted != 1 else ''} de gasto "
+            f"eliminado{'s' if deleted != 1 else ''}."
+        )
+        if in_use:
+            message += (
+                f" {len(in_use)} no se ha{'n' if len(in_use) != 1 else ''}"
+                f" tocado por tener partes de trabajo asociados (usar "
+                f"'Dar de baja'): {', '.join(sorted(in_use))}."
+            )
+        return _fragment_with_message(
+            request, company, company_user, message,
         )
 
 

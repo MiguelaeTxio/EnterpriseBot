@@ -52,7 +52,7 @@
 {#   "operator_dashboard" → Nuevo parte                      (Taller Mecánico / Mecánicos, != ASSISTANCE) #}
 {#   "spare_parts_upload" → Subir albarán                    (Taller Mecánico / Mecánicos, WORKSHOP/ADMIN) #}
 {#   "work_orders"        → PDFs                             (Administración)      #}
-{#   "fleet"              → Centros de gasto                 (Taller Mecánico / Centro de gasto, ADMIN/SUPERVISOR/WORKSHOPBOSS) #}
+{#   "fleet"              → Centros de gasto                 (Taller Mecánico / Centro de gasto, ADMIN/SUPERVISOR/WORKSHOPBOSS/DOCS_SUPERVISOR) #}
 {#   "fleet_analytics"    → Analítica de centros de gasto   (Taller Mecánico / Centro de gasto) #}
 {#   "users"              → Usuarios                         (Administración)      #}
 {#   "analytics_lab"      → Laboratorio de Análisis          (Administración, ADMIN) #}
@@ -484,7 +484,8 @@
                         <li class="nav-item px-2 pt-2">
                             <small class="sidebar-subgroup-label">Centro de gasto</small>
                         </li>
-                        {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
+                        {# S117: DOCS_SUPERVISOR añadido (FleetAccessMixin) #}
+                        {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' or company_user.role == 'DOCS_SUPERVISOR' %}
                             <li class="nav-item">
                                 <a class="nav-link {% if active_nav == 'fleet' %}active{% endif %}"
                                    href="{% url 'panel:fleet_list' %}">

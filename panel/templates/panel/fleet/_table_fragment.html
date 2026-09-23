@@ -1,161 +1,152 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/fleet/_table_fragment.html #}
-{# Fragmento de tabla HTMX para la lista de centros de gasto.                                  #}
-{# Incluido por list.html y devuelto directamente en respuestas HTMX de mutación.              #}
-{# Contexto requerido: assets, families, company_user, filter_family,                          #}
-{#   filter_is_active, filter_search.                                                           #}
 {% comment %}
-  sort_col / sort_dir vienen del contexto (pasados por la vista).
-  _sort_icon devuelve el icono Bootstrap apropiado según la columna activa.
+Fragmento de tabla HTMX de "Centros de gasto" -- incluido por list.html
+y devuelto por todas las respuestas htmx/fetch (filtros, orden,
+mutaciones individuales y masivas).
+
+S117 (mismo formato que Albaranes/Almacén/Catálogo, S116, y que la
+pestaña Personal, S113/S114):
+- Orden múltiple con prioridad: sort_next/sort_arrows/sort_priority
+  vienen resueltos desde la vista (_build_sort_controls); aquí solo se
+  pintan. El botón "Quitar orden" vive en el panel fijo de list.html.
+- Casilla por fila + casilla "todos" en la cabecera; la selección vive
+  en JS (list.html) y sobrevive a cada repintado de este fragmento.
+- Cabecera de columnas fija (sticky) dentro del contenedor con scroll.
+- Acciones según permisos (can_manage/can_delete, resueltos en la
+  vista): DOCS_SUPERVISOR y ADMIN gestionan; solo ADMIN borra.
 {% endcomment %}
 {% if assets %}
-<div class="table-responsive">
-    <table class="table table-sm table-hover align-middle mb-0">
+<table class="table table-sm table-hover align-middle mb-0" id="fleet-table">
         <thead class="table-light">
             <tr>
-                {# ---- macro de encabezado ordenable ---- #}
-                {# col_key: clave GET; col_label: texto visible          #}
-                {# Activo: flecha sólida; Inactivo: flecha tenue         #}
-
-                {% with cur=sort_col ndir=sort_dir %}
-
-                {# Código #}
+                <th style="width:32px">
+                    <input class="form-check-input" type="checkbox" id="fleet-check-all"
+                           title="Marcar/desmarcar todos los visibles">
+                </th>
                 <th style="min-width:80px">
                     <a class="text-decoration-none text-reset d-flex align-items-center gap-1 user-select-none"
                        hx-get="{% url 'panel:fleet_list' %}"
                        hx-target="#fleet-table-container"
-                       hx-include="#filter-search, #filter-family, #filter-is-active, #sort-inputs"
+                       hx-include="#filter-search, #filter-family, #filter-is-active"
                        hx-trigger="click"
-                       hx-vals='{"sort":"code","dir":"{% if cur == "code" and ndir == "asc" %}desc{% else %}asc{% endif %}"}'
+                       hx-vals='{"sort": "{{ sort_next.code }}"}'
                        style="cursor:pointer">
                         Código
-                        {% if cur == "code" %}
-                            <i class="bi bi-arrow-{% if ndir == "asc" %}up{% else %}down{% endif %}-short"></i>
+                        {% if sort_arrows.code %}
+                            <i class="bi bi-arrow-{{ sort_arrows.code }}-short"></i>{% if sort_priority.code %}<sup class="small">{{ sort_priority.code }}</sup>{% endif %}
                         {% else %}
                             <i class="bi bi-arrow-down-up text-muted opacity-50 small"></i>
                         {% endif %}
                     </a>
                 </th>
-
-                {# Familia #}
                 <th style="min-width:90px">
                     <a class="text-decoration-none text-reset d-flex align-items-center gap-1 user-select-none"
                        hx-get="{% url 'panel:fleet_list' %}"
                        hx-target="#fleet-table-container"
-                       hx-include="#filter-search, #filter-family, #filter-is-active, #sort-inputs"
+                       hx-include="#filter-search, #filter-family, #filter-is-active"
                        hx-trigger="click"
-                       hx-vals='{"sort":"family","dir":"{% if cur == "family" and ndir == "asc" %}desc{% else %}asc{% endif %}"}'
+                       hx-vals='{"sort": "{{ sort_next.family }}"}'
                        style="cursor:pointer">
                         Familia
-                        {% if cur == "family" %}
-                            <i class="bi bi-arrow-{% if ndir == "asc" %}up{% else %}down{% endif %}-short"></i>
+                        {% if sort_arrows.family %}
+                            <i class="bi bi-arrow-{{ sort_arrows.family }}-short"></i>{% if sort_priority.family %}<sup class="small">{{ sort_priority.family }}</sup>{% endif %}
                         {% else %}
                             <i class="bi bi-arrow-down-up text-muted opacity-50 small"></i>
                         {% endif %}
                     </a>
                 </th>
-
-                {# Descripción #}
-                <th>
+                <th >
                     <a class="text-decoration-none text-reset d-flex align-items-center gap-1 user-select-none"
                        hx-get="{% url 'panel:fleet_list' %}"
                        hx-target="#fleet-table-container"
-                       hx-include="#filter-search, #filter-family, #filter-is-active, #sort-inputs"
+                       hx-include="#filter-search, #filter-family, #filter-is-active"
                        hx-trigger="click"
-                       hx-vals='{"sort":"brand_model","dir":"{% if cur == "brand_model" and ndir == "asc" %}desc{% else %}asc{% endif %}"}'
+                       hx-vals='{"sort": "{{ sort_next.brand_model }}"}'
                        style="cursor:pointer">
                         Descripción / Marca-Modelo
-                        {% if cur == "brand_model" %}
-                            <i class="bi bi-arrow-{% if ndir == "asc" %}up{% else %}down{% endif %}-short"></i>
+                        {% if sort_arrows.brand_model %}
+                            <i class="bi bi-arrow-{{ sort_arrows.brand_model }}-short"></i>{% if sort_priority.brand_model %}<sup class="small">{{ sort_priority.brand_model }}</sup>{% endif %}
                         {% else %}
                             <i class="bi bi-arrow-down-up text-muted opacity-50 small"></i>
                         {% endif %}
                     </a>
                 </th>
-
-                {# Tipo #}
                 <th style="min-width:100px">
                     <a class="text-decoration-none text-reset d-flex align-items-center gap-1 user-select-none"
                        hx-get="{% url 'panel:fleet_list' %}"
                        hx-target="#fleet-table-container"
-                       hx-include="#filter-search, #filter-family, #filter-is-active, #sort-inputs"
+                       hx-include="#filter-search, #filter-family, #filter-is-active"
                        hx-trigger="click"
-                       hx-vals='{"sort":"type_name","dir":"{% if cur == "type_name" and ndir == "asc" %}desc{% else %}asc{% endif %}"}'
+                       hx-vals='{"sort": "{{ sort_next.type_name }}"}'
                        style="cursor:pointer">
                         Tipo
-                        {% if cur == "type_name" %}
-                            <i class="bi bi-arrow-{% if ndir == "asc" %}up{% else %}down{% endif %}-short"></i>
+                        {% if sort_arrows.type_name %}
+                            <i class="bi bi-arrow-{{ sort_arrows.type_name }}-short"></i>{% if sort_priority.type_name %}<sup class="small">{{ sort_priority.type_name }}</sup>{% endif %}
                         {% else %}
                             <i class="bi bi-arrow-down-up text-muted opacity-50 small"></i>
                         {% endif %}
                     </a>
                 </th>
-
-                {# Matrícula #}
                 <th style="min-width:90px">
                     <a class="text-decoration-none text-reset d-flex align-items-center gap-1 user-select-none"
                        hx-get="{% url 'panel:fleet_list' %}"
                        hx-target="#fleet-table-container"
-                       hx-include="#filter-search, #filter-family, #filter-is-active, #sort-inputs"
+                       hx-include="#filter-search, #filter-family, #filter-is-active"
                        hx-trigger="click"
-                       hx-vals='{"sort":"plate","dir":"{% if cur == "plate" and ndir == "asc" %}desc{% else %}asc{% endif %}"}'
+                       hx-vals='{"sort": "{{ sort_next.plate }}"}'
                        style="cursor:pointer">
                         Matrícula
-                        {% if cur == "plate" %}
-                            <i class="bi bi-arrow-{% if ndir == "asc" %}up{% else %}down{% endif %}-short"></i>
+                        {% if sort_arrows.plate %}
+                            <i class="bi bi-arrow-{{ sort_arrows.plate }}-short"></i>{% if sort_priority.plate %}<sup class="small">{{ sort_priority.plate }}</sup>{% endif %}
                         {% else %}
                             <i class="bi bi-arrow-down-up text-muted opacity-50 small"></i>
                         {% endif %}
                     </a>
                 </th>
-
-                {# Contadores — no ordenable #}
                 <th class="text-center" style="min-width:70px">Contad.</th>
-
-                {# Estado #}
                 <th class="text-center" style="min-width:70px">
                     <a class="text-decoration-none text-reset d-flex align-items-center justify-content-center gap-1 user-select-none"
                        hx-get="{% url 'panel:fleet_list' %}"
                        hx-target="#fleet-table-container"
-                       hx-include="#filter-search, #filter-family, #filter-is-active, #sort-inputs"
+                       hx-include="#filter-search, #filter-family, #filter-is-active"
                        hx-trigger="click"
-                       hx-vals='{"sort":"is_active","dir":"{% if cur == "is_active" and ndir == "asc" %}desc{% else %}asc{% endif %}"}'
+                       hx-vals='{"sort": "{{ sort_next.is_active }}"}'
                        style="cursor:pointer">
                         Estado
-                        {% if cur == "is_active" %}
-                            <i class="bi bi-arrow-{% if ndir == "asc" %}up{% else %}down{% endif %}-short"></i>
+                        {% if sort_arrows.is_active %}
+                            <i class="bi bi-arrow-{{ sort_arrows.is_active }}-short"></i>{% if sort_priority.is_active %}<sup class="small">{{ sort_priority.is_active }}</sup>{% endif %}
                         {% else %}
                             <i class="bi bi-arrow-down-up text-muted opacity-50 small"></i>
                         {% endif %}
                     </a>
                 </th>
-
-                {# Usos #}
                 <th class="text-center" style="min-width:55px">
                     <a class="text-decoration-none text-reset d-flex align-items-center justify-content-center gap-1 user-select-none"
                        hx-get="{% url 'panel:fleet_list' %}"
                        hx-target="#fleet-table-container"
-                       hx-include="#filter-search, #filter-family, #filter-is-active, #sort-inputs"
+                       hx-include="#filter-search, #filter-family, #filter-is-active"
                        hx-trigger="click"
-                       hx-vals='{"sort":"use_count","dir":"{% if cur == "use_count" and ndir == "asc" %}desc{% else %}asc{% endif %}"}'
+                       hx-vals='{"sort": "{{ sort_next.use_count }}"}'
                        style="cursor:pointer">
                         Usos
-                        {% if cur == "use_count" %}
-                            <i class="bi bi-arrow-{% if ndir == "asc" %}up{% else %}down{% endif %}-short"></i>
+                        {% if sort_arrows.use_count %}
+                            <i class="bi bi-arrow-{{ sort_arrows.use_count }}-short"></i>{% if sort_priority.use_count %}<sup class="small">{{ sort_priority.use_count }}</sup>{% endif %}
                         {% else %}
                             <i class="bi bi-arrow-down-up text-muted opacity-50 small"></i>
                         {% endif %}
                     </a>
                 </th>
-
-                {# Acciones — no ordenable #}
                 <th class="text-end" style="min-width:60px">Acciones</th>
-
-                {% endwith %}
             </tr>
         </thead>
         <tbody>
             {% for asset in assets %}
             <tr class="{% if not asset.is_active %}table-secondary text-muted{% endif %}">
+
+                <td>
+                    <input class="form-check-input fleet-row-check" type="checkbox"
+                           data-pk="{{ asset.pk }}" data-code="{{ asset.code }}">
+                </td>
 
                 {# Código — badge diferencial para CdG EMPRESA_* y PERSONAL #}
                 <td class="fw-semibold">
@@ -169,10 +160,8 @@
                     {{ asset.code }}
                 </td>
 
-                {# Familia #}
                 <td><span class="text-muted small">{{ asset.family|default:"—" }}</span></td>
 
-                {# Descripción / Marca-Modelo #}
                 <td>
                     <span title="{{ asset.brand_model }}">
                         {{ asset.brand_model|default:"—"|truncatechars:50 }}
@@ -182,17 +171,14 @@
                     {% endif %}
                 </td>
 
-                {# Tipo #}
                 <td>
                     <span class="text-muted small" title="{{ asset.type_name }}">
                         {{ asset.type_name|default:"—"|truncatechars:35 }}
                     </span>
                 </td>
 
-                {# Matrícula #}
                 <td class="small">{{ asset.plate|default:"—" }}</td>
 
-                {# Contadores — iconos #}
                 <td class="text-center">
                     {% if asset.has_odometer %}
                     <i class="bi bi-speedometer2 text-secondary" title="Odómetro (km)"></i>
@@ -208,7 +194,6 @@
                     {% endif %}
                 </td>
 
-                {# Estado #}
                 <td class="text-center">
                     {% if asset.is_active %}
                     <span class="badge bg-success-subtle text-success border border-success-subtle">Activo</span>
@@ -217,7 +202,6 @@
                     {% endif %}
                 </td>
 
-                {# Usos #}
                 <td class="text-center">
                     {% if asset.use_count %}
                     <span class="badge bg-primary-subtle text-primary border border-primary-subtle"
@@ -229,7 +213,6 @@
                     {% endif %}
                 </td>
 
-                {# Acciones #}
                 <td class="text-end">
                     <div class="dropdown">
                         <button class="btn btn-sm btn-outline-secondary border-0 px-2"
@@ -239,18 +222,21 @@
                             <i class="bi bi-three-dots-vertical"></i>
                         </button>
                         <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                            {% if can_manage %}
                             <li>
                                 <button class="dropdown-item"
                                         onclick="fleetOpenEditModal({{ asset.pk }})">
                                     <i class="bi bi-pencil me-2"></i>Editar
                                 </button>
                             </li>
+                            {% endif %}
                             <li>
                                 <a class="dropdown-item"
                                    href="{% url 'panel:documentation_machine_detail' pk=asset.pk %}">
                                     <i class="bi bi-file-earmark-text me-2"></i>Documentación
                                 </a>
                             </li>
+                            {% if can_manage %}
                             {% if asset.is_active %}
                             <li>
                                 <button class="dropdown-item text-warning"
@@ -266,7 +252,8 @@
                                 </button>
                             </li>
                             {% endif %}
-                            {% if company_user.role == 'ADMIN' %}
+                            {% endif %}
+                            {% if can_delete %}
                             <li><hr class="dropdown-divider"></li>
                             <li>
                                 <button class="dropdown-item text-danger"
@@ -281,23 +268,24 @@
             </tr>
             {% endfor %}
         </tbody>
-    </table>
-</div>
-<div class="text-muted small px-1 pt-2">
-    {{ assets|length }} centro{{ assets|length|pluralize }} de gasto
-    {% if filter_search or filter_family or filter_is_active %}
-    <span class="ms-1">(filtrado{{ assets|length|pluralize }})</span>
-    {% endif %}
-</div>
+</table>
 {% else %}
 <div class="text-center text-muted py-5">
     <i class="bi bi-truck fs-1 d-block mb-2 opacity-25"></i>
     <p class="mb-0">No hay centros de gasto que coincidan con los filtros aplicados.</p>
 </div>
 {% endif %}
-{# Inputs ocultos que preservan sort_col/sort_dir en peticiones HTMX #}
-<span id="sort-inputs" style="display:none">
-    <input type="hidden" name="sort" value="{{ sort_col }}">
-    <input type="hidden" name="dir"  value="{{ sort_dir }}">
+{% comment %}
+Estado del fragmento para el panel fijo de list.html (que no se repinta
+con htmx): nº de filas, si hay filtro, y el orden vigente -- el JS de
+list.html lo lee tras cada repintado para actualizar el contador y
+mostrar/ocultar "Quitar orden". #sort-inputs lo incluyen los filtros
+para no perder el orden al buscar.
+{% endcomment %}
+<span id="fleet-fragment-state" class="d-none"
+      data-count="{{ assets|length }}"
+      data-filtered="{% if filter_search or filter_family or filter_is_active %}1{% endif %}"
+      data-sort-active="{% if sort_active %}1{% endif %}"></span>
+<span id="sort-inputs" class="d-none">
+    <input type="hidden" name="sort" value="{{ current_sort }}">
 </span>
-
