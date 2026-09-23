@@ -1,7 +1,8 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/workorder_spare_parts/templates/workorder_spare_parts/spare_part_entry_list.html #}
 {# Catalogo de repuestos, para Administracion -- AGRUPADO por articulo real (internal_reference), #}
 {# S116-H10. Cada fila abre la ficha de detalle (spare_part_article_detail.html) con el historial  #}
-{# completo de movimientos y todas las entradas de stock de ese articulo.                          #}
+{# completo de movimientos y todas las entradas de stock de ese articulo. Orden multiple con       #}
+{# prioridad + seleccion + borrado masivo, mismo patron que Albaranes y Almacen.                    #}
 {% extends "panel/base.html" %}
 {% load spare_parts_extras %}
 
@@ -24,6 +25,7 @@
 </div>
 
 <form method="get" class="row g-2 mb-3">
+    <input type="hidden" name="sort" value="{{ current_sort }}">
     <div class="col-auto">
         <input type="text" name="q" value="{{ selected_q }}" class="form-control form-control-sm"
                placeholder="Ref. interna, ref. proveedor o descripción...">
@@ -49,14 +51,34 @@
     </div>
 </form>
 
+<div class="d-flex justify-content-between align-items-center mb-2">
+    <div id="bulk-actions-bar" class="d-none">
+        <form id="bulk-delete-form" method="post" action="{% url 'workorder_spare_parts:catalog_bulk_delete' %}"
+              onsubmit="return confirm('¿Eliminar los repuestos seleccionados? Esta acción no se puede deshacer.');">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-sm btn-outline-danger">
+                <i class="bi bi-trash me-1"></i>Eliminar seleccionados (<span id="selected-count">0</span>)
+            </button>
+        </form>
+    </div>
+    {% if sort_active %}
+    <a href="{{ clear_sort_url }}" class="btn btn-sm btn-outline-secondary ms-auto">
+        <i class="bi bi-x-circle me-1"></i>Quitar orden
+    </a>
+    {% endif %}
+</div>
+
 <div class="card shadow-sm">
     <div class="table-responsive">
         <table class="table table-hover align-middle mb-0">
             <thead class="table-light">
                 <tr>
-                    <th>Ref. interna</th>
-                    <th>Descripción</th>
-                    <th>Stock en almacén</th>
+                    <th style="width:2rem;">
+                        <input type="checkbox" id="select-all-articles" title="Seleccionar todos">
+                    </th>
+                    <th><a href="{{ sort_urls.ref }}" class="text-decoration-none text-dark">Ref. interna {{ sort_arrows.ref }}<sup>{{ sort_priority.ref }}</sup></a></th>
+                    <th><a href="{{ sort_urls.descripcion }}" class="text-decoration-none text-dark">Descripción {{ sort_arrows.descripcion }}<sup>{{ sort_priority.descripcion }}</sup></a></th>
+                    <th><a href="{{ sort_urls.stock }}" class="text-decoration-none text-dark">Stock en almacén {{ sort_arrows.stock }}<sup>{{ sort_priority.stock }}</sup></a></th>
                     <th>Entradas</th>
                     <th class="text-end">Acciones</th>
                 </tr>
@@ -64,6 +86,14 @@
             <tbody>
                 {% for article in articles %}
                 <tr {% if article.minimum_stock and article.total_stock is not None and article.total_stock < article.minimum_stock %}class="table-warning"{% endif %}>
+                    <td>
+                        {% if not article.has_movements %}
+                        <input type="checkbox" name="selected" value="{{ article.entry_pk }}"
+                               class="article-select-checkbox" form="bulk-delete-form">
+                        {% else %}
+                        <input type="checkbox" disabled title="Ya tiene movimientos de stock -- no se puede borrar">
+                        {% endif %}
+                    </td>
                     <td><code>{{ article.internal_reference }}</code></td>
                     <td>{{ article.description }}</td>
                     <td>
@@ -94,7 +124,7 @@
                 </tr>
                 {% empty %}
                 <tr>
-                    <td colspan="5" class="text-center text-muted py-4">
+                    <td colspan="6" class="text-center text-muted py-4">
                         No hay repuestos en el catálogo todavía.
                     </td>
                 </tr>
@@ -117,4 +147,34 @@
     </ul>
 </nav>
 {% endif %}
+
+{# S116-H10: seleccionar todos/algunos para el borrado masivo -- mismo patrón que Albaranes/Almacén. #}
+<script>
+(function () {
+    "use strict";
+    var selectAll = document.getElementById("select-all-articles");
+    var bar = document.getElementById("bulk-actions-bar");
+    var counter = document.getElementById("selected-count");
+
+    function checkboxes() {
+        return document.querySelectorAll(".article-select-checkbox");
+    }
+
+    function updateBar() {
+        var checked = document.querySelectorAll(".article-select-checkbox:checked");
+        counter.textContent = checked.length;
+        bar.classList.toggle("d-none", checked.length === 0);
+    }
+
+    if (selectAll) {
+        selectAll.addEventListener("change", function () {
+            checkboxes().forEach(function (cb) { cb.checked = selectAll.checked; });
+            updateBar();
+        });
+    }
+    checkboxes().forEach(function (cb) {
+        cb.addEventListener("change", updateBar);
+    });
+}());
+</script>
 {% endblock %}

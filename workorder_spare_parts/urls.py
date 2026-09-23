@@ -36,6 +36,11 @@ urlpatterns = [
         views.SparePartEntryDeleteView.as_view(),
         name='catalog_delete',
     ),
+    path(
+        'catalogo/eliminar-varios/',
+        views.SparePartEntryBulkDeleteView.as_view(),
+        name='catalog_bulk_delete',
+    ),
     # --- H10 Paso 5/6 (corregido 2026-07-07): Almacen para Mecanicos, ---
     # --- entidad distinta del catalogo de Administracion ---
     path(

@@ -136,6 +136,34 @@ class SparePartEntryListView(SupervisorAccessMixin, ListView):
     context_object_name = 'articles'
     paginate_by = 30
 
+    # S116-H10: mismo patron de orden multiple con prioridad que ya
+    # se hizo en Albaranes y Almacen -- peticion explicita de Miguel
+    # Angel ("deberiamos poder lo mismo ordenar, senalar casilleros,
+    # etcetera"). Aqui SI sigue siendo una queryset real (agrupada con
+    # .values()/.annotate(), no una lista de Python materializada
+    # como en Almacen), asi que el orden multiple se aplica con
+    # order_by() de Django, no con sort() de Python.
+    _SORTABLE_FIELDS = {
+        'ref': 'internal_reference',
+        'descripcion': 'description',
+        'stock': 'total_stock',
+    }
+    _MAX_SORT_KEYS = 3
+
+    def _parse_sort_param(self, raw):
+        keys = []
+        seen = set()
+        for token in raw.split(','):
+            token = token.strip()
+            if not token:
+                continue
+            desc = token.startswith('-')
+            key = token.lstrip('-')
+            if key in self._SORTABLE_FIELDS and key not in seen:
+                keys.append((key, desc))
+                seen.add(key)
+        return keys
+
     def get_queryset(self):
         company = self.request.user.company_user.company
         qs = SparePartEntry.objects.filter(company=company)
@@ -152,6 +180,17 @@ class SparePartEntryListView(SupervisorAccessMixin, ListView):
                 | Q(reference__icontains=q)
                 | Q(description__icontains=q)
             )
+
+        sort_param = self.request.GET.get('sort', '').strip()
+        self._sort_keys = self._parse_sort_param(sort_param)
+        if self._sort_keys:
+            order_exprs = [
+                ('-' if desc else '') + self._SORTABLE_FIELDS[key]
+                for key, desc in self._sort_keys
+            ]
+        else:
+            order_exprs = ['internal_reference']
+
         # S116-H10: agrupado por artículo -- descripción representativa
         # (la más reciente, vía Max(pk) implícito en el order_by de
         # abajo no aplica a Max(description) directamente, así que se
@@ -162,13 +201,19 @@ class SparePartEntryListView(SupervisorAccessMixin, ListView):
         # reales). Stock total SOLO cuenta entradas en almacén
         # contables -- ni el limbo ni lo consumido es "stock
         # disponible" (mismo criterio que StockAssignmentService en
-        # todo el módulo).
+        # todo el módulo). entry_pk: dado el constraint real
+        # unique_internal_reference_per_company, cada grupo tiene
+        # SIEMPRE exactamente una SparePartEntry -- Max('id') la
+        # recupera sin necesidad de otra consulta, para las acciones
+        # (ficha, borrado) que operan por pk.
         return (
             qs.exclude(internal_reference='')
             .values('internal_reference')
             .annotate(
                 description=Max('description'),
                 minimum_stock=Max('minimum_stock'),
+                entry_pk=Max('id'),
+                has_movements=Count('movements', distinct=True),
                 total_stock=Sum(
                     'stock_quantity',
                     filter=Q(status='WAREHOUSE', is_uncountable=False),
@@ -184,7 +229,7 @@ class SparePartEntryListView(SupervisorAccessMixin, ListView):
                 ),
                 entry_count=Count('id', distinct=True),
             )
-            .order_by('internal_reference')
+            .order_by(*order_exprs)
         )
 
     def get_context_data(self, **kwargs):
@@ -205,6 +250,49 @@ class SparePartEntryListView(SupervisorAccessMixin, ListView):
         # siempre True aquí, se mantiene la variable en la plantilla por
         # si en el futuro se abre a otro rol de solo lectura.
         ctx['can_edit'] = True
+
+        # S116-H10: enlaces/flecha/prioridad de cabecera, mismo patrón
+        # que Albaranes/Almacén -- resuelto aquí (plantillas tontas),
+        # preservando el resto de filtros y la página actual.
+        sort_keys = getattr(self, '_sort_keys', [])
+        active_keys = [k for k, _ in sort_keys]
+        sort_urls = {}
+        sort_arrows = {}
+        sort_priority = {}
+        for key in self._SORTABLE_FIELDS:
+            if key in active_keys:
+                idx = active_keys.index(key)
+                _, desc = sort_keys[idx]
+                sort_arrows[key] = '▼' if desc else '▲'
+                sort_priority[key] = idx + 1 if len(sort_keys) > 1 else ''
+                new_desc = (not desc) if idx == 0 else False
+                new_keys = (
+                    [(key, new_desc)]
+                    + [(k, d) for k, d in sort_keys if k != key]
+                )
+            else:
+                sort_arrows[key] = ''
+                sort_priority[key] = ''
+                new_keys = [(key, False)] + sort_keys
+            new_keys = new_keys[:self._MAX_SORT_KEYS]
+            new_sort_param = ','.join(
+                (('-' if d else '') + k) for k, d in new_keys
+            )
+            params = self.request.GET.copy()
+            params['sort'] = new_sort_param
+            sort_urls[key] = '?' + params.urlencode()
+
+        clear_sort_params = self.request.GET.copy()
+        clear_sort_params.pop('sort', None)
+        ctx['sort_urls'] = sort_urls
+        ctx['sort_arrows'] = sort_arrows
+        ctx['sort_priority'] = sort_priority
+        ctx['sort_active'] = bool(sort_keys)
+        ctx['current_sort'] = self.request.GET.get('sort', '')
+        ctx['clear_sort_url'] = (
+            '?' + clear_sort_params.urlencode() if clear_sort_params
+            else '?'
+        )
         return ctx
 
 
@@ -469,6 +557,55 @@ class SparePartEntryDeleteView(SupervisorAccessMixin, View):
             return redirect(
                 'workorder_spare_parts:catalog_article_detail',
                 internal_reference,
+            )
+        return redirect('workorder_spare_parts:catalog_list')
+
+
+class SparePartEntryBulkDeleteView(SupervisorAccessMixin, View):
+    """
+    S116-H10: borra varios artículos del catálogo a la vez -- petición
+    explícita de Miguel Ángel ("deberíamos poder lo mismo ordenar,
+    señalar casilleros [...] las acciones que se pueden realizar").
+    Misma regla de seguridad que SparePartEntryDeleteView: nunca borra
+    uno que ya tenga movimientos de stock reales -- en vez de bloquear
+    todo el lote por eso, lo omite en silencio y avisa cuántos se han
+    saltado.
+    """
+
+    def post(self, request):
+        company = request.user.company_user.company
+        pks = request.POST.getlist('selected')
+        if not pks:
+            messages.warning(request, 'No has seleccionado ningún repuesto.')
+            return redirect('workorder_spare_parts:catalog_list')
+
+        qs = SparePartEntry.objects.filter(pk__in=pks, company=company)
+        blocked_count = 0
+        deleted_count = 0
+        for entry in qs:
+            if entry.movements.exists():
+                blocked_count += 1
+                continue
+            entry.delete()
+            deleted_count += 1
+
+        if deleted_count:
+            messages.success(
+                request,
+                f"{deleted_count} repuesto{'s' if deleted_count != 1 else ''} "
+                f"eliminado{'s' if deleted_count != 1 else ''} correctamente.",
+            )
+        if blocked_count:
+            messages.warning(
+                request,
+                f"{blocked_count} repuesto{'s' if blocked_count != 1 else ''} "
+                f"no se {'han' if blocked_count != 1 else 'ha'} tocado -- ya "
+                f"{'tenían' if blocked_count != 1 else 'tenía'} movimientos de "
+                f"stock reales registrados.",
+            )
+        if not deleted_count and not blocked_count:
+            messages.warning(
+                request, 'Ningún repuesto seleccionado existía ya.',
             )
         return redirect('workorder_spare_parts:catalog_list')
 
