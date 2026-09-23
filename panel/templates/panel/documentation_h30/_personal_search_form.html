@@ -29,7 +29,7 @@ checkboxes que ves en pantalla y los resultados de la tabla dejan de
 corresponder entre sí, aunque cada uno por separado sea "correcto"
 para un momento distinto.
 {% endcomment %}
-<form method="get" class="mb-3" autocomplete="off"
+<form method="get" class="mb-3" autocomplete="off" id="personal-search-form"
       hx-get="{% url 'panel:documentation_personal_results' %}" hx-target="#personal-results"
       hx-trigger="input changed delay:300ms from:input[name='q'], change from:.personal-filter-checkbox, submit">
     <div class="d-flex gap-2 mb-2">

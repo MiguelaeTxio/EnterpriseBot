@@ -14,6 +14,13 @@ pantalla completa aparte, no un fragmento htmx de este pane.
         <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#personalCreateModal">
             <i class="bi bi-person-plus"></i> Dar de alta trabajador
         </button>
+        {% comment %}
+        H31 (S117): baja por RESCISIÓN DE CONTRATO (el trabajador deja la
+        empresa) -- nunca una baja médica/ITL, que va en su ficha.
+        {% endcomment %}
+        <button type="button" class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#personalTerminateModal">
+            <i class="bi bi-person-dash"></i> Dar de baja trabajador
+        </button>
         <a class="btn btn-sm btn-outline-secondary" href="{% url 'panel:circulars_list' %}">
             <i class="bi bi-envelope-paper"></i> Gestionar circulares
         </a>
@@ -1155,6 +1162,127 @@ lógica, y así queda autocontenido).
     100% { background-position: -200% center; }
 }
 </style>
+{% comment %}
+H31 (S117) -- modal de baja por rescisión de contrato. Desplegable de
+trabajadores ACTIVOS con buscador (filtra por nombre o DNI mientras se
+escribe), fecha de baja (hoy por defecto) y confirmación explícita.
+Llama a PersonalTerminateView: pasa a inactivo, guarda la fecha de baja
+y mueve (virtualmente) su documentación a PERSONAL/INACTIVOS.
+{% endcomment %}
+<div class="modal fade" id="personalTerminateModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-person-dash me-1"></i>Dar de baja trabajador</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-secondary small py-2">
+                    Baja por <strong>rescisión de contrato</strong>: el trabajador deja la empresa.
+                    No es una baja médica (incapacidad temporal, enfermedad común o accidente) — esas
+                    se registran en su ficha.
+                </div>
+                <label class="form-label small fw-bold mb-1" for="personalTerminateFilter">Trabajador</label>
+                <input type="text" class="form-control form-control-sm mb-1" id="personalTerminateFilter"
+                       placeholder="Escribe para buscar por nombre o DNI…" autocomplete="off">
+                <select class="form-select form-select-sm" id="personalTerminatePerson" size="8">
+                    {% for person in active_persons_for_termination %}
+                    <option value="{{ person.pk }}">{{ person.first_surname }} {{ person.second_surname }}, {{ person.given_name }} — {{ person.dni }}</option>
+                    {% endfor %}
+                </select>
+                <label class="form-label small fw-bold mt-2 mb-1" for="personalTerminateDate">Fecha de baja</label>
+                <input type="date" class="form-control form-control-sm" id="personalTerminateDate" value="{% now 'Y-m-d' %}">
+                <div class="small text-muted mt-2">
+                    Pasará a <strong>Inactivos</strong> y su documentación, a la carpeta de inactivos
+                    (se sigue consultando desde el explorador de archivos).
+                </div>
+                <div id="personalTerminateResult" class="small mt-2"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-sm btn-danger" id="personalTerminateSubmit">
+                    <i class="bi bi-person-dash me-1"></i>Dar de baja
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    const filterInput = document.getElementById('personalTerminateFilter');
+    const select = document.getElementById('personalTerminatePerson');
+    const resultBox = document.getElementById('personalTerminateResult');
+    const submitBtn = document.getElementById('personalTerminateSubmit');
+    const csrfMeta = document.querySelector('meta[name="csrf-token"]');
+
+    filterInput.addEventListener('input', function () {
+        const needle = filterInput.value.trim().toUpperCase();
+        let firstVisible = null;
+        Array.from(select.options).forEach(function (opt) {
+            const visible = !needle || opt.textContent.toUpperCase().includes(needle);
+            opt.hidden = !visible;
+            if (visible && !firstVisible) firstVisible = opt;
+        });
+        if (select.selectedOptions.length && select.selectedOptions[0].hidden) {
+            select.value = '';
+        }
+        if (!select.value && firstVisible && needle) firstVisible.selected = true;
+    });
+
+    document.getElementById('personalTerminateModal').addEventListener('show.bs.modal', function () {
+        resultBox.innerHTML = '';
+        filterInput.value = '';
+        Array.from(select.options).forEach(function (opt) { opt.hidden = false; });
+    });
+
+    submitBtn.addEventListener('click', function () {
+        const option = select.selectedOptions[0];
+        const dateValue = document.getElementById('personalTerminateDate').value;
+        if (!option) {
+            resultBox.innerHTML = '<div class="alert alert-warning py-1 px-2 mb-0">Elige el trabajador que causa baja.</div>';
+            return;
+        }
+        if (!dateValue) {
+            resultBox.innerHTML = '<div class="alert alert-warning py-1 px-2 mb-0">Indica la fecha de baja.</div>';
+            return;
+        }
+        const shownDate = dateValue.split('-').reverse().join('/');
+        if (!confirm('¿Dar de baja a ' + option.textContent + ' con fecha ' + shownDate + '?\n\nPasará a Inactivos y su documentación a la carpeta de inactivos.')) {
+            return;
+        }
+        const formData = new FormData();
+        formData.append('person_id', option.value);
+        formData.append('termination_date', dateValue);
+        submitBtn.disabled = true;
+        resultBox.innerHTML = '<div class="text-muted">Dando de baja…</div>';
+        fetch("{% url 'panel:documentation_personal_terminate' %}", {
+            method: 'POST',
+            headers: {'X-CSRFToken': csrfMeta ? csrfMeta.getAttribute('content') : ''},
+            body: formData,
+        }).then(function (r) { return r.json(); }).then(function (data) {
+            submitBtn.disabled = false;
+            if (!data.ok) {
+                resultBox.innerHTML = '<div class="alert alert-danger py-1 px-2 mb-0">' + (data.error || 'No se ha podido dar de baja.') + '</div>';
+                return;
+            }
+            option.remove();
+            if (window.__personMassSelection) {
+                window.__personMassSelection.delete(String(data.person_id));
+                window.__personMassSelection.delete(data.person_id);
+            }
+            resultBox.innerHTML = '<div class="alert alert-success py-1 px-2 mb-0">' + data.name +
+                ' dado de baja. ' + data.moved_count + ' documento(s) movidos a la carpeta de inactivos.</div>';
+            const searchForm = document.getElementById('personal-search-form');
+            if (searchForm && window.htmx) htmx.trigger(searchForm, 'submit');
+        }).catch(function () {
+            submitBtn.disabled = false;
+            resultBox.innerHTML = '<div class="alert alert-danger py-1 px-2 mb-0">Error de red al dar de baja.</div>';
+        });
+    });
+}());
+</script>
+
 <div class="modal fade" id="personalCreateModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
     <div class="modal-dialog">
         <div class="modal-content">
