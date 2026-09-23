@@ -33,7 +33,7 @@ import logging
 from decimal import Decimal, InvalidOperation
 
 from django.contrib import messages
-from django.db.models import Count, Max, Q, Case, Sum, When
+from django.db.models import Count, IntegerField, Max, Q, Case, Sum, Value, When
 from django.http import Http404, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.http import url_has_allowed_host_and_scheme
@@ -147,8 +147,9 @@ class SparePartEntryListView(SupervisorAccessMixin, ListView):
         'ref': 'internal_reference',
         'descripcion': 'description',
         'stock': 'total_stock',
+        'tipo': 'status_rank',
     }
-    _MAX_SORT_KEYS = 3
+    _MAX_SORT_KEYS = 4
 
     def _parse_sort_param(self, raw):
         keys = []
@@ -214,6 +215,15 @@ class SparePartEntryListView(SupervisorAccessMixin, ListView):
                 minimum_stock=Max('minimum_stock'),
                 entry_pk=Max('id'),
                 has_movements=Count('movements', distinct=True),
+                # S116-H10: petición explícita de Miguel Ángel -- "la
+                # única columna que falta por ordenar" es la de
+                # Entradas (tipo: limbo/almacén/consumido). Es la
+                # columna original que ya usaba WAREHOUSE/PRE_ASSIGNED/
+                # CONSUMED para las badges -- max_status aquí (un solo
+                # valor real por grupo, dado el constraint) es la base
+                # sobre la que status_rank (abajo, en el SEGUNDO
+                # .annotate()) construye el orden de agrupación real.
+                max_status=Max('status'),
                 total_stock=Sum(
                     'stock_quantity',
                     filter=Q(status='WAREHOUSE', is_uncountable=False),
@@ -228,6 +238,17 @@ class SparePartEntryListView(SupervisorAccessMixin, ListView):
                     'id', filter=Q(status='CONSUMED'), distinct=True,
                 ),
                 entry_count=Count('id', distinct=True),
+            )
+            .annotate(
+                # Rango de agrupación -- limbo primero (lo más urgente
+                # de ver junto), luego almacén, luego consumido.
+                status_rank=Case(
+                    When(max_status='PRE_ASSIGNED', then=Value(0)),
+                    When(max_status='WAREHOUSE', then=Value(1)),
+                    When(max_status='CONSUMED', then=Value(2)),
+                    default=Value(3),
+                    output_field=IntegerField(),
+                ),
             )
             .order_by(*order_exprs)
         )
