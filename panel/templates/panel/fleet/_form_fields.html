@@ -123,7 +123,8 @@
 
 </div>
 
-{# Form footer with action buttons #}
+{# Form footer with action buttons -- S117: sin pie en la ficha de máquina (hide_footer), que pone el suyo #}
+{% if not hide_footer %}
 <div class="d-flex justify-content-end gap-2 mt-4 pt-2 border-top">
     <button type="button" class="btn btn-sm btn-outline-secondary"
             data-bs-dismiss="modal">Cancelar</button>
@@ -135,3 +136,4 @@
         {% endif %}
     </button>
 </div>
+{% endif %}

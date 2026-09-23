@@ -15,6 +15,54 @@
 <div id="uploadFormContainer" class="mb-4"></div>
 
 <div class="accordion" id="machineDocsAccordion">
+    {% comment %}
+    S117 -- datos del centro de gasto editables en la propia ficha
+    (como "Datos personales" en Personal). Se sustituye al modal
+    "Editar" del listado: al listado se entra ya por el código. Para
+    roles sin permiso de gestión, los mismos campos en solo lectura
+    (fieldset disabled, sin botón).
+    {% endcomment %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button{% if not machine_form_open %} collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#collapseMachineData">
+                <i class="bi bi-truck me-2"></i>Datos del centro de gasto
+            </button>
+        </h2>
+        <div id="collapseMachineData" class="accordion-collapse collapse{% if machine_form_open %} show{% endif %}">
+            <div class="accordion-body">
+                {% if machine_saved %}
+                <div class="alert alert-success py-1 px-2 small">Datos del centro de gasto guardados.</div>
+                {% endif %}
+                <form method="post" action="">
+                    <fieldset {% if not can_edit_machine %}disabled{% endif %}>
+                        {% include "panel/fleet/_form_fields.html" with hide_footer=True form_action="update" %}
+                    </fieldset>
+                    {% if can_edit_machine %}
+                    <div class="d-flex justify-content-end mt-3">
+                        <button type="submit" class="btn btn-sm btn-primary">
+                            <i class="bi bi-check-lg me-1"></i>Guardar datos
+                        </button>
+                    </div>
+                    {% endif %}
+                </form>
+                <script>
+                (function () {
+                    // "Nueva familia…" despliega el campo de texto (mismo
+                    // comportamiento que en el listado, S117).
+                    const select = document.querySelector('#collapseMachineData select[name="family"]');
+                    if (!select) return;
+                    select.addEventListener('change', function () {
+                        const wrap = select.closest('div').querySelector('.fleet-family-new');
+                        if (!wrap) return;
+                        const isNew = select.value === select.dataset.newFamilyValue;
+                        wrap.classList.toggle('d-none', !isNew);
+                        if (isNew) wrap.querySelector('input').focus();
+                    });
+                }());
+                </script>
+            </div>
+        </div>
+    </div>
     <div class="accordion-item">
         <h2 class="accordion-header">
             <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#collapseVigentesMachine">

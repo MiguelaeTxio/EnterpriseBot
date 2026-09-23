@@ -126,8 +126,9 @@ la lista hace scroll. Dos paneles:
 
             {% comment %}
             Acciones sobre la selección, por categoría (como Personal):
-            "Varios centros" (1 o más), "Un solo centro" (exactamente 1,
-            si no deshabilitado) y "Exportar". "Limpiar" sirve para todo.
+            "Varios centros" (1 o más) y "Exportar". "Limpiar" sirve para
+            todo. S117: sin panel "Un solo centro" -- a la ficha (datos y
+            documentación) se entra pulsando el código, como en Personal.
             {% endcomment %}
             <div class="col-lg-8">
                 <div class="border rounded p-2 h-100" id="fleet-mass-bar">
@@ -136,7 +137,7 @@ la lista hace scroll. Dos paneles:
                         <button type="button" class="btn btn-sm btn-outline-secondary" id="fleet-mass-clear">Limpiar</button>
                     </div>
                     <div class="row g-1">
-                        <div class="col-md-5 border-end pe-2">
+                        <div class="col-md-8 border-end pe-2">
                             <div class="small text-muted fw-bold">Varios centros</div>
                             <div class="d-flex gap-1 flex-wrap">
                                 {% if can_manage %}
@@ -155,19 +156,6 @@ la lista hace scroll. Dos paneles:
                                 {% if not can_manage and not can_delete %}
                                 <span class="text-muted small">Solo consulta para tu rol.</span>
                                 {% endif %}
-                            </div>
-                        </div>
-                        <div class="col-md-4 border-end px-2">
-                            <div class="small text-muted fw-bold">Un solo centro</div>
-                            <div class="d-flex gap-1 flex-wrap">
-                                {% if can_manage %}
-                                <button type="button" class="btn btn-sm btn-outline-secondary fleet-needs-single" id="fleet-single-edit" disabled>
-                                    <i class="bi bi-pencil me-1"></i>Editar
-                                </button>
-                                {% endif %}
-                                <button type="button" class="btn btn-sm btn-outline-secondary fleet-needs-single" id="fleet-single-docs" disabled>
-                                    <i class="bi bi-file-earmark-text me-1"></i>Documentación
-                                </button>
                             </div>
                         </div>
                         <div class="col-md-3 ps-2">
@@ -256,21 +244,6 @@ la lista hace scroll. Dos paneles:
     </div>
 </div>
 
-<div class="modal fade" id="fleetEditModal" tabindex="-1"
-     aria-labelledby="fleetEditModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-scrollable">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="fleetEditModalLabel">
-                    <i class="bi bi-pencil me-2"></i>Editar centro de gasto
-                </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body" id="fleet-edit-form-container">
-            </div>
-        </div>
-    </div>
-</div>
 {% endif %}
 
 <div class="toast-container position-fixed bottom-0 end-0 p-3">
@@ -293,7 +266,7 @@ la lista hace scroll. Dos paneles:
     const liveFilters = document.getElementById("fleet-live-filters");
     const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute("content");
 
-    // Selección (pk -> {code, docUrl}) en memoria de la página: sobrevive a
+    // Selección (pk -> {code, label}) en memoria de la página: sobrevive a
     // cada repintado htmx del fragmento, nunca a un F5 -- mismo
     // criterio que la selección de la pestaña Personal (S75/S113).
     const selection = new Map();
@@ -306,17 +279,17 @@ la lista hace scroll. Dos paneles:
     try {
         JSON.parse(document.getElementById("fleet-saved-selection").textContent).forEach(function (item) {
             if (item && item.pk) {
-                selection.set(String(item.pk), {code: item.code || "", label: item.label || "", docUrl: item.docUrl || ""});
+                selection.set(String(item.pk), {code: item.code || "", label: item.label || ""});
             }
         });
     } catch (e) { /* estado guardado ilegible: se empieza sin selección */ }
     let selectionSaveTimer = null;
     let lastSavedSelection = JSON.stringify(Array.from(selection.entries()).map(function ([pk, data]) {
-        return {pk: pk, code: data.code, label: data.label, docUrl: data.docUrl};
+        return {pk: pk, code: data.code, label: data.label};
     }));
     function saveSelection() {
         const payload = Array.from(selection.entries()).map(function ([pk, data]) {
-            return {pk: pk, code: data.code, label: data.label, docUrl: data.docUrl};
+            return {pk: pk, code: data.code, label: data.label};
         });
         const serialized = JSON.stringify(payload);
         if (serialized === lastSavedSelection) return;
@@ -399,9 +372,6 @@ la lista hace scroll. Dos paneles:
         document.querySelectorAll(".fleet-needs-selection").forEach(function (btn) {
             btn.disabled = selection.size === 0;
         });
-        document.querySelectorAll(".fleet-needs-single").forEach(function (btn) {
-            btn.disabled = selection.size !== 1;
-        });
         const all = document.getElementById("fleet-check-all");
         if (!all) return;
         const rows = container.querySelectorAll(".fleet-row-check");
@@ -425,13 +395,13 @@ la lista hace scroll. Dos paneles:
     container.addEventListener("change", function (evt) {
         const target = evt.target;
         if (target.classList.contains("fleet-row-check")) {
-            if (target.checked) selection.set(target.dataset.pk, {code: target.dataset.code, label: target.dataset.label, docUrl: target.dataset.docUrl});
+            if (target.checked) selection.set(target.dataset.pk, {code: target.dataset.code, label: target.dataset.label});
             else selection.delete(target.dataset.pk);
             updateSelectionUi();
         } else if (target.id === "fleet-check-all") {
             container.querySelectorAll(".fleet-row-check").forEach(function (cb) {
                 cb.checked = target.checked;
-                if (target.checked) selection.set(cb.dataset.pk, {code: cb.dataset.code, label: cb.dataset.label, docUrl: cb.dataset.docUrl});
+                if (target.checked) selection.set(cb.dataset.pk, {code: cb.dataset.code, label: cb.dataset.label});
                 else selection.delete(cb.dataset.pk);
             });
             updateSelectionUi();
@@ -541,28 +511,6 @@ la lista hace scroll. Dos paneles:
         if (isNew) wrap.querySelector("input").focus();
     });
 
-    function singleSelected() {
-        if (selection.size !== 1) return null;
-        const [pk, data] = selection.entries().next().value;
-        return {pk: pk, data: data};
-    }
-    const singleEdit = document.getElementById("fleet-single-edit");
-    if (singleEdit) {
-        singleEdit.addEventListener("click", function () {
-            const one = singleSelected();
-            if (one) window.fleetOpenEditModal(one.pk);
-        });
-    }
-    document.getElementById("fleet-single-docs").addEventListener("click", function () {
-        const one = singleSelected();
-        if (one) window.location.href = one.data.docUrl;
-    });
-
-    window.fleetOpenEditModal = function (pk) {
-        const editContainer = document.getElementById("fleet-edit-form-container");
-        htmx.ajax("GET", `/panel/fleet/${pk}/update/`, {target: editContainer});
-        new bootstrap.Modal(document.getElementById("fleetEditModal")).show();
-    };
     window.fleetDeactivateAsset = function (pk) {
         if (!confirm("¿Dar de baja este centro de gasto? Quedará inactivo pero se conservará el histórico.")) return;
         postAction(`/panel/fleet/${pk}/deactivate/`);
@@ -580,7 +528,7 @@ la lista hace scroll. Dos paneles:
 
     document.body.addEventListener("htmx:afterSwap", function (evt) {
         if (evt.detail.target && evt.detail.target.id === "fleet-table-container") {
-            ["fleetCreateModal", "fleetEditModal"].forEach(function (id) {
+            ["fleetCreateModal"].forEach(function (id) {
                 const el = document.getElementById(id);
                 const instance = el ? bootstrap.Modal.getInstance(el) : null;
                 if (instance) instance.hide();

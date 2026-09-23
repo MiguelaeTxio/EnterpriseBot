@@ -1,13 +1,12 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/fleet/_form_fragment.html #}
 {#                                                                                             #}
-{# Envuelve _form_fields.html en un <form> HTMX para create y update.                        #}
+{# Envuelve _form_fields.html en un <form> HTMX para el alta (create).                        #}
 {# S117: los filtros/orden vigentes viajan con hx-include="#fleet-live-filters" (bloque     #}
 {# oculto de list.html, siempre al día) -- antes eran hidden inputs pintados al abrir la     #}
 {# página, que se quedaban desfasados en cuanto se cambiaba un filtro.                        #}
 {#                                                                                             #}
 {# Contexto requerido: form, form_action, company_user, company.                              #}
-{# Contexto opcional: asset (solo en form_action==update).                                    #}
-{% if form_action == 'create' %}
+{# S117: solo alta -- la edición vive en la ficha de la máquina (MachineDetailView). #}
 {% url 'panel:fleet_create' as action_url %}
 <form hx-post="{{ action_url }}"
       hx-target="#fleet-table-container"
@@ -15,13 +14,4 @@
       hx-swap="innerHTML">
     {% include "panel/fleet/_form_fields.html" %}
 </form>
-{% else %}
-{% url 'panel:fleet_update' pk=asset.pk as action_url %}
-<form hx-post="{{ action_url }}"
-      hx-target="#fleet-table-container"
-      hx-include="#fleet-live-filters"
-      hx-swap="innerHTML">
-    {% include "panel/fleet/_form_fields.html" %}
-</form>
-{% endif %}
 

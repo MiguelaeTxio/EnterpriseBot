@@ -163,8 +163,7 @@ pestaña Personal, S113/S114):
                 <td class="sticky-col sticky-col-1">
                     <input class="form-check-input fleet-row-check" type="checkbox"
                            data-pk="{{ asset.pk }}" data-code="{{ asset.code }}"
-                           data-label="{{ asset.code }}{% if asset.brand_model %} — {{ asset.brand_model }}{% endif %}{% if asset.plate %} — {{ asset.plate }}{% endif %}"
-                           data-doc-url="{% url 'panel:documentation_machine_detail' pk=asset.pk %}?back_url={{ fleet_back_url|urlencode }}">
+                           data-label="{{ asset.code }}{% if asset.brand_model %} — {{ asset.brand_model }}{% endif %}{% if asset.plate %} — {{ asset.plate }}{% endif %}">
                 </td>
 
                 {# Aviso de documentación caducada (mismo helper que el hub) #}
@@ -238,6 +237,7 @@ pestaña Personal, S113/S114):
                 </td>
 
                 <td class="text-end">
+                    {% if can_manage or can_delete %}
                     <div class="dropdown">
                         <button class="btn btn-sm btn-outline-secondary border-0 px-2"
                                 type="button"
@@ -246,20 +246,6 @@ pestaña Personal, S113/S114):
                             <i class="bi bi-three-dots-vertical"></i>
                         </button>
                         <ul class="dropdown-menu dropdown-menu-end shadow-sm">
-                            {% if can_manage %}
-                            <li>
-                                <button class="dropdown-item"
-                                        onclick="fleetOpenEditModal({{ asset.pk }})">
-                                    <i class="bi bi-pencil me-2"></i>Editar
-                                </button>
-                            </li>
-                            {% endif %}
-                            <li>
-                                <a class="dropdown-item"
-                                   href="{% url 'panel:documentation_machine_detail' pk=asset.pk %}?back_url={{ fleet_back_url|urlencode }}">
-                                    <i class="bi bi-file-earmark-text me-2"></i>Documentación
-                                </a>
-                            </li>
                             {% if can_manage %}
                             {% if asset.is_active %}
                             <li>
@@ -288,6 +274,7 @@ pestaña Personal, S113/S114):
                             {% endif %}
                         </ul>
                     </div>
+                    {% endif %}
                 </td>
             </tr>
             {% endfor %}

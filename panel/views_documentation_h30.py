@@ -483,8 +483,27 @@ def _seed_request_get(request, persisted_filters):
 
 
 class MachineDetailView(CompanyUserRequiredMixin, View):
-    def get(self, request, pk):
-        machine = get_object_or_404(MachineAsset, pk=pk)
+    """
+    Ficha de una máquina (centro de gasto): documentación vigente e
+    histórico y, desde S117, sus DATOS editables en la propia ficha.
+
+    S117 -- decisión de Miguel Ángel: emular Personal. Se entra a la
+    ficha pulsando el código interno en el listado (como el nombre en
+    Personal) y los datos del centro de gasto se editan AQUÍ, en el
+    apartado "Datos del centro de gasto" (análogo a "Datos personales"),
+    en vez de en un modal del listado -- el botón Editar y el de
+    Documentación del listado desaparecen. Mismo formulario
+    (fleet.forms.MachineAssetForm) y misma normalización del código que
+    la edición anterior; guardar solo para ADMIN/DOCS_SUPERVISOR (mismos
+    roles que FleetManageAccessMixin), lectura para el resto.
+    """
+
+    EDIT_ROLES = {"ADMIN", "DOCS_SUPERVISOR"}
+
+    def _can_edit(self, request):
+        return request.user.company_user.role in self.EDIT_ROLES
+
+    def _render(self, request, machine, form, saved=False, status=200):
         ct = ContentType.objects.get_for_model(MachineAsset)
         entries = DocumentIndexEntry.objects.filter(
             bucket=BUCKET, domain_content_type=ct, domain_object_id=machine.pk,
@@ -511,7 +530,47 @@ class MachineDetailView(CompanyUserRequiredMixin, View):
             "doc_types": doc_types, "active_nav": "documentation_hub",
             "family_choices": DocumentTypeCatalog.FAMILY_CHOICES,
             "back_url": back_url,
-        })
+            "form": form,
+            "can_edit_machine": self._can_edit(request),
+            "machine_saved": saved,
+            "machine_form_open": saved or form.errors,
+        }, status=status)
+
+    def get(self, request, pk):
+        from fleet.forms import MachineAssetForm
+
+        machine = get_object_or_404(MachineAsset, pk=pk)
+        form = MachineAssetForm(instance=machine, company=machine.company)
+        return self._render(
+            request, machine, form, saved=request.GET.get("saved") == "1",
+        )
+
+    def post(self, request, pk):
+        from urllib.parse import urlencode
+
+        from fleet.forms import MachineAssetForm
+
+        machine = get_object_or_404(MachineAsset, pk=pk)
+        if not self._can_edit(request):
+            return HttpResponse(
+                "No tienes permiso para editar este centro de gasto.",
+                status=403,
+            )
+        form = MachineAssetForm(
+            request.POST, instance=machine, company=machine.company,
+        )
+        if form.is_valid():
+            updated = form.save(commit=False)
+            updated.code = updated.code.strip().upper()
+            updated.save()
+            params = {"saved": "1"}
+            if request.GET.get("back_url"):
+                params["back_url"] = request.GET["back_url"]
+            return redirect("%s?%s" % (
+                reverse("panel:documentation_machine_detail", args=[machine.pk]),
+                urlencode(params),
+            ))
+        return self._render(request, machine, form, status=400)
 
 
 def _person_list_page(request):

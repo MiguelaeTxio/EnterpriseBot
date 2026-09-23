@@ -19,13 +19,15 @@ from fleet.models import MachineAsset
 class MachineAssetForm(forms.ModelForm):
     """
     Form for creating and updating a MachineAsset record from the panel.
-    Used by MachineAssetCreateView and MachineAssetUpdateView.
+    Used by MachineAssetCreateView and, since S117, by the machine
+    detail page (panel MachineDetailView), where machine data is edited.
     All fields are optional except code, which is the primary lookup key.
 
     ---
 
     Formulario para crear y actualizar un registro MachineAsset desde el panel.
-    Usado por MachineAssetCreateView y MachineAssetUpdateView.
+    Usado por MachineAssetCreateView y, desde S117, por la ficha de la
+    máquina (MachineDetailView del panel), donde se editan sus datos.
     Todos los campos son opcionales excepto code, que es la clave de búsqueda
     principal.
     """

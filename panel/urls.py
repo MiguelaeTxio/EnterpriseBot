@@ -150,7 +150,6 @@ from panel.views import (
     WorkOrderDescriptionAutocompleteView,
     WorkshopIntensiveToggleView,
     MachineAssetCreateView,
-    MachineAssetUpdateView,
     MachineAssetDeactivateView,
     MachineAssetReactivateView,
     MachineAssetDeleteView,
@@ -428,7 +427,6 @@ urlpatterns = [
     # Fleet / Centros de gasto — Hito 12 Paso 4
     path("fleet/", MachineAssetListView.as_view(), name="fleet_list"),
     path("fleet/create/", MachineAssetCreateView.as_view(), name="fleet_create"),
-    path("fleet/<int:pk>/update/", MachineAssetUpdateView.as_view(), name="fleet_update"),
     path("fleet/<int:pk>/deactivate/", MachineAssetDeactivateView.as_view(), name="fleet_deactivate"),
     path("fleet/<int:pk>/reactivate/", MachineAssetReactivateView.as_view(), name="fleet_reactivate"),
     path("fleet/<int:pk>/delete/", MachineAssetDeleteView.as_view(), name="fleet_delete"),

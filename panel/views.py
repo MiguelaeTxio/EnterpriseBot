@@ -125,7 +125,6 @@ from panel.views_auth import (
 from fleet.views import (
     MachineAssetListView,
     MachineAssetCreateView,
-    MachineAssetUpdateView,
     MachineAssetDeactivateView,
     MachineAssetReactivateView,
     MachineAssetDeleteView,
