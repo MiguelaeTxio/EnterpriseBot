@@ -146,7 +146,7 @@ pestaña Personal, S113/S114):
                 <td>
                     <input class="form-check-input fleet-row-check" type="checkbox"
                            data-pk="{{ asset.pk }}" data-code="{{ asset.code }}"
-                           data-doc-url="{% url 'panel:documentation_machine_detail' pk=asset.pk %}">
+                           data-doc-url="{% url 'panel:documentation_machine_detail' pk=asset.pk %}?back_url={% url 'panel:fleet_list' %}">
                 </td>
 
                 {# Código — badge diferencial para CdG EMPRESA_* y PERSONAL #}
@@ -233,7 +233,7 @@ pestaña Personal, S113/S114):
                             {% endif %}
                             <li>
                                 <a class="dropdown-item"
-                                   href="{% url 'panel:documentation_machine_detail' pk=asset.pk %}">
+                                   href="{% url 'panel:documentation_machine_detail' pk=asset.pk %}?back_url={% url 'panel:fleet_list' %}">
                                     <i class="bi bi-file-earmark-text me-2"></i>Documentación
                                 </a>
                             </li>

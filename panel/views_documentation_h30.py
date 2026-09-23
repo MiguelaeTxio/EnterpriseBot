@@ -530,10 +530,22 @@ class MachineDetailView(CompanyUserRequiredMixin, View):
         doc_types = DocumentTypeCatalog.objects.filter(
             is_active=True, domain__in=["MACHINE", "BOTH"],
         ).order_by("label")
+        # S117 -- "Volver" regresa a la pantalla desde la que se entró
+        # (p. ej. Centros de gasto del taller), nunca a una URL fija:
+        # back_url validado con el helper compartido safe_back_url
+        # (mismo host, sin open-redirect); sin back_url, el hub de
+        # Documentación, que era el único origen hasta ahora.
+        from panel.url_utils import safe_back_url
+
+        back_url = safe_back_url(
+            request, request.GET.get("back_url"),
+            reverse("panel:documentation_hub"),
+        )
         return render(request, "panel/documentation_h30/_machine_detail.html", {
             "machine": machine, "current": current, "obsolete": obsolete,
             "doc_types": doc_types, "active_nav": "documentation_hub",
             "family_choices": DocumentTypeCatalog.FAMILY_CHOICES,
+            "back_url": back_url,
         })
 
 
