@@ -130,6 +130,26 @@
                                     Pre-asignado a la máquina, sin ticket de avería vinculado.
                                 </div>
                             {% endif %}
+                            {# S116-H10: petición explícita de Miguel Ángel -- un repuesto  #}
+                            {# en limbo se quedaba ahí para siempre, sin ninguna acción      #}
+                            {# posible desde aquí. Los dos mecanismos ya existían en el      #}
+                            {# módulo de repuestos (workorder_spare_parts) -- solo faltaba   #}
+                            {# enlazarlos desde esta pantalla.                                #}
+                            <div class="d-flex gap-1 mt-2">
+                                <form method="post"
+                                      action="{% url 'workorder_spare_parts:return_to_warehouse' line.spare_part_entry.pk %}"
+                                      onsubmit="return confirm('¿Devolver este repuesto a almacén? Dejará de estar asignado a la máquina/ticket.');">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="next" value="{% url 'delivery_notes:detail' note.pk %}">
+                                    <button type="submit" class="btn btn-sm btn-outline-secondary">
+                                        <i class="bi bi-box-arrow-in-left me-1"></i>Devolver a almacén
+                                    </button>
+                                </form>
+                                <a href="{% url 'workorder_spare_parts:catalog_edit' line.spare_part_entry.pk %}"
+                                   class="btn btn-sm btn-outline-primary">
+                                    <i class="bi bi-pencil me-1"></i>Reasignar
+                                </a>
+                            </div>
                         {% elif line.entry_status == 'CONSUMED' %}
                             <span class="badge bg-success">Consumido</span>
                         {% elif line.entry_status == 'WAREHOUSE' %}

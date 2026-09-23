@@ -36,6 +36,7 @@ from django.contrib import messages
 from django.db.models import Q, Case, When
 from django.http import HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views import View
 from django.views.generic import ListView
 
@@ -530,6 +531,17 @@ class SparePartReturnToWarehouseView(CatalogReadAccessMixin, View):
             request,
             f"'{entry.description}' devuelto a almacén correctamente.",
         )
+        # S116-H10: soporte opcional de vuelta al origen -- petición
+        # explícita de Miguel Ángel: desde "Albaranes" (delivery_notes)
+        # ahora también se puede devolver un repuesto en limbo a
+        # almacén, y debe volver a esa pantalla, no saltar siempre al
+        # almacén general. Compatible hacia atrás: sin `next`, mismo
+        # comportamiento de siempre.
+        next_url = request.POST.get('next', '').strip()
+        if next_url and url_has_allowed_host_and_scheme(
+            next_url, allowed_hosts={request.get_host()},
+        ):
+            return redirect(next_url)
         return redirect('workorder_spare_parts:warehouse_list')
 
 
