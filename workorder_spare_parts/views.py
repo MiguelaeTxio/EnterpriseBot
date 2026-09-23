@@ -301,10 +301,18 @@ class SparePartEntryListView(SupervisorAccessMixin, ListView):
             )
             params = self.request.GET.copy()
             params['sort'] = new_sort_param
+            # S116-H10: cambiar de orden vuelve siempre a la página 1
+            # -- quedarse en la página 3 de un listado que se acaba de
+            # reordenar no tiene ningún sentido (mismo motivo por el
+            # que Miguel Ángel señaló que cambiar de página perdía el
+            # orden: aquí es el caso simétrico, cambiar el orden no
+            # debe arrastrar una página que ya no corresponde).
+            params.pop('page', None)
             sort_urls[key] = '?' + params.urlencode()
 
         clear_sort_params = self.request.GET.copy()
         clear_sort_params.pop('sort', None)
+        clear_sort_params.pop('page', None)
         ctx['sort_urls'] = sort_urls
         ctx['sort_arrows'] = sort_arrows
         ctx['sort_priority'] = sort_priority
@@ -314,6 +322,24 @@ class SparePartEntryListView(SupervisorAccessMixin, ListView):
             '?' + clear_sort_params.urlencode() if clear_sort_params
             else '?'
         )
+
+        # S116-H10: hallazgo real de Miguel Ángel -- "al cambiar de
+        # página se pierden todos los ordenamientos [...] tiene
+        # sentido solo si el número de entradas fuese inferior al
+        # número de entradas permitidas por página". Los enlaces
+        # "Anterior"/"Siguiente" solo llevaban page=N, perdiendo sort/
+        # status/q/machine por el camino. Resueltos aquí, como el
+        # resto de enlaces de esta vista (plantillas tontas).
+        page_obj = ctx.get('page_obj')
+        if page_obj is not None:
+            if page_obj.has_previous():
+                prev_params = self.request.GET.copy()
+                prev_params['page'] = page_obj.previous_page_number()
+                ctx['prev_page_url'] = '?' + prev_params.urlencode()
+            if page_obj.has_next():
+                next_params = self.request.GET.copy()
+                next_params['page'] = page_obj.next_page_number()
+                ctx['next_page_url'] = '?' + next_params.urlencode()
         return ctx
 
 
