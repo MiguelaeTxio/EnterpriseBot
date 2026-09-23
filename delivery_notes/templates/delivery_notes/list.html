@@ -89,6 +89,9 @@
                         {% if note.status != 'ASSIGNED' %}
                         <input type="checkbox" name="selected" value="{{ note.pk }}"
                                class="note-select-checkbox" form="bulk-delete-form">
+                        {% else %}
+                        <input type="checkbox" disabled
+                               title="Ya asignado -- no se puede borrar desde aquí">
                         {% endif %}
                     </td>
                     <td>{{ note.delivery_date|date:"d/m/Y"|default:"—" }}</td>
@@ -122,6 +125,7 @@
                         {% else %}—{% endif %}
                     </td>
                     <td class="text-end">
+                        <div class="d-flex gap-1 justify-content-end flex-nowrap">
                         {% if note.download_url %}
                         <a href="{{ note.download_url }}" target="_blank" rel="noopener"
                            class="btn btn-sm btn-outline-secondary" title="Ver archivo original">
@@ -146,6 +150,7 @@
                             </button>
                         </form>
                         {% endif %}
+                        </div>
                     </td>
                 </tr>
                 {% empty %}
