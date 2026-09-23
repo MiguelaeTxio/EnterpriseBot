@@ -550,7 +550,7 @@ def resolve_machine_asset(entry) -> MachineAsset | None:
 _TEXT_PLATE_RE = re.compile(r"(?<![0-9A-Z])(\d{4})[\s-]?([A-Z]{3})(?![A-Z])")
 
 
-def _machine_from_text(text):
+def _machine_from_text(text, plates_first=False):
     """
     S117. Finds the real MachineAsset named in a piece of text (a folder
     segment or a file name): fleet codes word by word (punctuation
@@ -566,11 +566,19 @@ def _machine_from_text(text):
     MachineAsset.plate sin guiones ni espacios (los turismos llevan la
     matrícula como código: "0230KWB"). Devuelve None si nada coincide
     con una máquina real.
-    """
-    from django.db.models import Value
-    from django.db.models.functions import Replace, Upper
 
+    plates_first (nombres de archivo): la matrícula antes que el código.
+    Fallo real del dry-run de Fase 2 (EnterpriseBot_011): "AUDI A3
+    8109DCG LILI SEGURO 2015.pdf" se asignaba a la máquina A3 -- el "A3"
+    del MODELO del coche coincidía con un código de flota. En un nombre
+    de archivo, un código corto puede ser un modelo (A3, A4, X5...); la
+    matrícula no.
+    """
     upper = (text or "").upper()
+    if plates_first:
+        asset = _machine_from_plates(upper)
+        if asset:
+            return asset
     for word in upper.split():
         word = word.strip("()[]{}.,;:_")
         match = _FOLDER_MACHINE_CODE_RE.match(word)
@@ -580,6 +588,19 @@ def _machine_from_text(text):
         asset = MachineAsset.objects.filter(code__iexact=candidate_code).first()
         if asset:
             return asset
+    return _machine_from_plates(upper)
+
+
+def _machine_from_plates(upper):
+    """
+    Spanish plates in an upper-cased text, against code and plate.
+    ---
+    Matrículas españolas de un texto en mayúsculas, contra código y
+    matrícula.
+    """
+    from django.db.models import Value
+    from django.db.models.functions import Replace, Upper
+
     for match in _TEXT_PLATE_RE.finditer(upper):
         plate = match.group(1) + match.group(2)
         asset = (
@@ -607,7 +628,9 @@ def resolve_machine_asset_with_filename(entry):
     GESTORIA VEHICULOS, OBSOLETO de una familia...), el propio nombre
     del archivo.
     """
-    return resolve_machine_asset(entry) or _machine_from_text(entry.name)
+    return resolve_machine_asset(entry) or _machine_from_text(
+        entry.name, plates_first=True,
+    )
 
 
 # S042, Miguel Ángel, verbatim tras confirmar que el `company` de
