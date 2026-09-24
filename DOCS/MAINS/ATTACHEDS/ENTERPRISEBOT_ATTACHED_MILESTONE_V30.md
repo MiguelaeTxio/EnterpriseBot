@@ -7897,3 +7897,40 @@ máquinas en `fleet.MachineAsset` sin `--apply`
 
 **Siguiente, por el orden de la hoja de ruta:** Fase 2 -- los 384
 documentos con tipo pero sin máquina.
+
+## S117 -- FASE 2 (DOCUMENTOS CON TIPO Y SIN MÁQUINA) DE MÁQUINAS: CERRADA
+
+| Paso | Documentos asignados |
+|---|---|
+| `run_fase2_assign_machines --apply` (EnterpriseBot_013) | 172 |
+| `create_machines_fase2 --apply` (EnterpriseBot_015): **25 máquinas nuevas** dadas de alta desde consola (decisión de Miguel Ángel) | 97 |
+| **Total Fase 2** | **269** |
+
+Causa real y corrección (`classification_service._machine_from_text`):
+resolve_machine_asset() solo reconocía palabras que EMPIEZAN como código
+de flota; ahora también matrículas (contra código Y matrícula, sin
+guiones), códigos entre paréntesis "(X-01)", con punto "P.16" y sin cero
+a la izquierda "b9" = B09 (solo si el código es el segmento entero: en
+"BMW X5" el modelo X5 nunca acaba en X05), y en nombres de archivo la
+matrícula antes que el código ("AUDI A3 8109DCG" era de LILI, no de A3).
+Beneficia también a la ingesta.
+
+Máquinas nuevas (familia VACÍA, a completar por Yolanda en la ficha;
+empresa GRA por defecto): 4980JVX, 5032KDS, 8834KFJ (plataformas
+Altesur), MA5936 (tractor), BARCA, 9737KKF (vehículo particular de
+Leandro Álvarez), HINOWA251, HINOWA583, JENG, GEMETALURG, GENERADOR,
+GEPEPE, COMPMALAGA, DEPGASOIL, DEPAGUAMLG, LU85824VE, LU87711VE,
+PO39974VE (dollys), COMOLI, BOBCAT, CHORREO, CARGADORA, CANASTA,
+PARALELAS, SEPBEZABALA. Más las 2 de la Fase 1 (E1405, SE7625).
+
+Se quedan SIN máquina, por decisión de Miguel Ángel (documentación de
+empresa o genérica, no de un vehículo): plantillas y mandatos de
+GESTORIA VEHICULOS y DOC OFIAUTO, IVTM por empresa, poderes/mandato de
+los dollys, catálogos del fabricante (MINIGRUA SPAIN CRANE 506, MARCA Y
+MODELO/JLG), formularios ECA, y las raíces genéricas (CERTIFICADOS,
+SEGUROS/OBSOLETOS, POLIZA RC, SINIESTROS...). Eslingas (28) fuera:
+punto 9 de la hoja de ruta, pendiente de diseño.
+
+**Siguiente:** punto 4 de la hoja de ruta (retipado de cajones de
+sastre) o Fase 3 (OCR de los ~1.115 sin tipo), a decidir con Miguel
+Ángel.
