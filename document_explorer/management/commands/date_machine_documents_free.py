@@ -20,6 +20,10 @@ Solo rellena huecos: nunca sobrescribe una fecha ya puesta. En un tipo
 que NO caduca nunca escribe caducidad. DRY-RUN por defecto; --apply
 escribe. Log propio (0bis).
 ---
+S119: antes que todo lo anterior, reglas de fecha por tipo sobre el texto
+guardado (`machine_date_rules`), con emisión y caducidad a la vez
+cuando el documento trae un periodo.
+---
 H30 (S118), roadmap item 8 -- FREE dating step for active machines:
 file name first, then the cached OCR text. Only fills blanks.
 """
@@ -40,6 +44,7 @@ from document_explorer.filename_date_service import (
     _parse_single_date_str,
     extract_date_by_filename,
 )
+from document_explorer.machine_date_rules import dates_by_rules, normalize
 from document_explorer.models import DocumentIndexEntry
 from fleet.models import MachineAsset
 
@@ -103,6 +108,31 @@ class Command(BaseCommand):
         if value is None or value < MIN_DATE:
             return False
         return value <= (MAX_EXPIRY if is_expiry else today)
+
+    def _decide_by_rules(self, entry):
+        """
+        Return ({field_name: date}, source) from the S119 type rules.
+        ---
+        S119 (punto 1): reglas por tipo sobre el texto guardado
+        (`machine_date_rules`), antes que nombre y texto genérico. Solo
+        rellena campos vacíos; nunca escribe caducidad en un tipo que no
+        caduca, ni una caducidad anterior a la emisión ya guardada.
+        """
+        found = dates_by_rules(
+            entry.document_type.code, entry.name, entry.ocr_text,
+        )
+        if not found:
+            return {}, None
+        updates = {}
+        expiry = found["expiry"]
+        issue = found["issue"]
+        if expiry and entry.document_type.tracks_expiry \
+                and entry.expiry_date is None \
+                and (entry.issue_date is None or expiry > entry.issue_date):
+            updates["expiry_date"] = expiry
+        if issue and entry.issue_date is None:
+            updates["issue_date"] = issue
+        return updates, found["source"]
 
     def _decide(self, entry):
         """
@@ -183,20 +213,38 @@ class Command(BaseCommand):
         )
         found = Counter()
         missing = Counter()
+        missing_ids = {}
         examples = {}
         start_time = datetime.now()
         last_beat = time.monotonic()
         for index, entry in enumerate(entries, start=1):
             code = entry.document_type.code
-            field, value, source = self._decide(entry)
-            if field is None:
+            updates, rule_source = self._decide_by_rules(entry)
+            field, value, source = (None, None, None) if updates \
+                else self._decide(entry)
+            if updates:
+                key = (code, "+".join(
+                    sorted(name[:-5] for name in updates)), rule_source)
+                found[key] += 1
+                examples.setdefault(key, []).append("id=%d %s -> %s" % (
+                    entry.id, entry.name, ", ".join(
+                        "%s=%s" % (k, v) for k, v in sorted(updates.items())
+                    ),
+                ))
+                if apply_changes:
+                    DocumentIndexEntry.objects.filter(pk=entry.pk).update(
+                        **updates,
+                    )
+            elif field is None:
                 missing[code] += 1
+                missing_ids.setdefault(code, []).append(entry)
             else:
                 # Nunca sobrescribe: en un caducable con emisión ya puesta
                 # y sin caducidad, una "emisión" nueva no aporta nada.
                 current = getattr(entry, "%s_date" % field)
                 if current is not None:
                     missing[code] += 1
+                    missing_ids.setdefault(code, []).append(entry)
                 else:
                     found[(code, field, source)] += 1
                     examples.setdefault((code, field, source), []).append(
@@ -234,6 +282,17 @@ class Command(BaseCommand):
         self._log_plain("--- SIGUEN SIN FECHA POR TIPO ---")
         for code, count in missing.most_common():
             self._log_plain("    %s: %d" % (code, count))
+        # S119: el cierre del punto 1 exige listar por id los que no
+        # tienen ninguna fecha legible -- con el arranque del texto para
+        # poder escribir la regla que falte sin otra consulta.
+        self._log_plain("--- SIGUEN SIN FECHA: LISTA POR ID ---")
+        for code, items in sorted(missing_ids.items()):
+            self._log_plain("  %s (%d)" % (code, len(items)))
+            for item in items:
+                self._log_plain("      id=%d %s | %s" % (
+                    item.id, item.name,
+                    normalize(item.ocr_text)[:220] or "(sin texto)",
+                ))
         self._log_plain("--- EJEMPLOS (hasta 5 por grupo) ---")
         for key, items in sorted(examples.items()):
             self._log_plain("  %s %s (%s)" % key)
