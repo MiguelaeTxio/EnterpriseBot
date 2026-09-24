@@ -25,6 +25,7 @@ out of this first pass on purpose.
 Uso:
     python -m dotenv run python manage.py find_orphaned_index_entries
     python -m dotenv run python manage.py find_orphaned_index_entries --bucket cgs_grupo_alvarez
+    python -m dotenv run python manage.py find_orphaned_index_entries --bucket cgs_grupo_alvarez --log-file /home/MiguelAeTxio/SWAP/EnterpriseBot_001.txt
 
 ---
 
@@ -75,8 +76,37 @@ class Command(BaseCommand):
                 "defecto, los cinco cubos indexados."
             ),
         )
+        # H30 (S118): log propio en SWAP (com-standards 0bis) -- pantalla
+        # y archivo a la vez, flush en cada línea, sin redirección de
+        # shell, para que el modelo lo lea con el relevo.
+        parser.add_argument(
+            "--log-file",
+            dest="log_file",
+            help="Ruta del log propio (pantalla y archivo a la vez).",
+        )
+
+    def _emit(self, message, style=None):
+        """
+        Write one line to the screen and, if set, to the own log file.
+        ---
+        Escribe una línea en pantalla y, si lo hay, en el log propio.
+        """
+        self.stdout.write(style(message) if style else message)
+        self.stdout.flush()
+        if self._log:
+            self._log.write(message + "\n")
+            self._log.flush()
 
     def handle(self, *args, **options):
+        log_path = options.get("log_file")
+        self._log = open(log_path, "w", encoding="utf-8") if log_path else None
+        try:
+            self._run(options)
+        finally:
+            if self._log:
+                self._log.close()
+
+    def _run(self, options):
         selected = options.get("buckets") or list(INDEXED_BUCKETS)
         unknown = [b for b in selected if b not in INDEXED_BUCKETS]
         if unknown:
@@ -90,16 +120,17 @@ class Command(BaseCommand):
             total_orphans += self._audit_bucket(client, bucket_name)
 
         if total_orphans:
-            self.stdout.write(self.style.WARNING(
+            self._emit(
                 "\n%d fila(s) huerfana(s) en total, en todos los "
                 "cubos auditados. No se ha escrito nada en la base de "
                 "datos -- decide caso por caso qué hacer con cada una."
-                % total_orphans
-            ))
+                % total_orphans, self.style.WARNING,
+            )
         else:
-            self.stdout.write(self.style.SUCCESS(
-                "\nNinguna fila huerfana en los cubos auditados."
-            ))
+            self._emit(
+                "\nNinguna fila huerfana en los cubos auditados.",
+                self.style.SUCCESS,
+            )
 
     def _audit_bucket(self, client, bucket_name):
         """
@@ -110,9 +141,8 @@ class Command(BaseCommand):
         Audita un cubo e informa del resultado. Devuelve el número de
         huérfanas.
         """
-        self.stdout.write(self.style.MIGRATE_HEADING(
-            "=== %s ===" % bucket_name,
-        ))
+        self._emit("=== %s ===" % bucket_name, self.style.MIGRATE_HEADING)
+        self._emit("  Listando objetos reales del cubo...")
 
         real_blob_names = {
             blob.name for blob in client.list_blobs(bucket_name)
@@ -133,15 +163,15 @@ class Command(BaseCommand):
             if entry.blob_name not in real_blob_names
         ]
 
-        self.stdout.write(
+        self._emit(
             "  %d fila(s) FILE vivas en el indice, %d objeto(s) "
             "reales en el cubo, %d huerfana(s)."
             % (len(live_entries), len(real_blob_names), len(orphans))
         )
         for entry in orphans:
-            self.stdout.write("  id=%d  %s" % (entry.id, entry.blob_name))
+            self._emit("  id=%d  %s" % (entry.id, entry.blob_name))
 
         if not orphans:
-            self.stdout.write("  (ninguna huérfana)")
+            self._emit("  (ninguna huérfana)")
 
         return len(orphans)
