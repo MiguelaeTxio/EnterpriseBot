@@ -97,6 +97,13 @@ class Command(BaseCommand):
         parser.add_argument("--apply", action="store_true")
         parser.add_argument("--limit", type=int, default=0,
                             help="Solo los N primeros (tandas). 0 = todos.")
+        parser.add_argument(
+            "--shard", default="1/1",
+            help="Reparto en procesos paralelos, numerado desde 1: '2/3' = "
+                 "segundo de tres. Por maquina (id de la maquina modulo el "
+                 "total), nunca por posicion: dos procesos nunca trabajan "
+                 "en la carpeta de la misma maquina a la vez.",
+        )
         parser.add_argument("--log-file", required=True)
 
     def _log(self, message):
@@ -110,7 +117,10 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         self._log_handle = open(options["log_file"], "a", encoding="utf-8")
         try:
-            self._run(options["apply"], options["limit"])
+            shard_index, shard_total = (int(part) for part in options["shard"].split("/"))
+            if not 1 <= shard_index <= shard_total:
+                raise ValueError("--shard fuera de rango: %s" % options["shard"])
+            self._run(options["apply"], options["limit"], shard_index, shard_total)
         finally:
             self._log_handle.close()
 
@@ -129,7 +139,7 @@ class Command(BaseCommand):
                 return name
             ordinal = (ordinal or 1) + 1
 
-    def _run(self, apply_changes, limit):
+    def _run(self, apply_changes, limit, shard_index=1, shard_total=1):
         machine_ct = ContentType.objects.get_for_model(MachineAsset)
         ficha_type = DocumentTypeCatalog.objects.get(code="FICHA_TECNICA")
         itv_type = DocumentTypeCatalog.objects.get(code="ITV")
@@ -140,13 +150,21 @@ class Command(BaseCommand):
             domain_content_type=machine_ct,
             deleted_at__isnull=True, purged_at__isnull=True,
         ).order_by("parent_path", "name")
-        entries = list(qs[:limit] if limit else qs)
+        # S117: reparto por máquina en --shard k/n (1-based) -- nunca dos
+        # procesos en la carpeta de la misma máquina a la vez.
+        entries = [
+            e for e in qs
+            if (e.domain_object_id % shard_total) == (shard_index - 1)
+        ]
+        if limit:
+            entries = entries[:limit]
         total = len(entries)
         self._log(
-            "MODO: %s -- %d combinados FICHA+ITV%s"
+            "MODO: %s -- %d combinados FICHA+ITV%s -- proceso %d de %d"
             % ("APLICAR (sube a GCS, indexa, papelera)" if apply_changes
                else "DRY-RUN (no escribe nada)",
-               total, " (tanda --limit %d)" % limit if limit else "")
+               total, " (tanda --limit %d)" % limit if limit else "",
+               shard_index, shard_total)
         )
 
         stats = {"divididos": 0, "revision_manual": 0, "errores": 0}
