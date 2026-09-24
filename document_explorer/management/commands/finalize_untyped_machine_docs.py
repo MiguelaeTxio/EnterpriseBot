@@ -61,6 +61,21 @@ OWNERSHIP_TEXT_RE = re.compile(
     r"(ES PROPIEDAD|TITULARIDAD|TITULAR)",
 )
 OWNERSHIP_NAME_RE = re.compile(r"CERT\.?\s*(PROPIEDAD|TITULARIDAD)")
+# S118 -- revisados uno a uno tras el dry-run EnterpriseBot_016: 9 de
+# los "NINGUNO" de Gemini son documentación real de la máquina, no
+# ruido. Decisión de Miguel Ángel ("Ok"): se rescatan con estos tipos en
+# vez de ir a la papelera.
+RESCUED_TYPES = {
+    6025: "REFORMA_VEHICULO",      # B-35 CERT. NEUMATICOS
+    8461: "REV_TACOGRAFO",         # certificado limitador de velocidad
+    10287: "ITV",                  # A-58 informe pesada (ITV de pesaje)
+    10920: "CERT_REVISION",        # H-06 montaje puente grua
+    14675: "CERT_REVISION",        # validez sensor de angulo Bronto
+    10915: "CERT_REVISION",        # Cert quality (pruebas polipasto)
+    19502: "ORDEN_TRABAJO_MANTENIMIENTO",  # 2018 07 11 MANTENIMIENTO
+    17507: "INFORME_INCIDENCIAS",  # declaracion de RC (siniestro)
+    3917: "INFORME_INCIDENCIAS",   # 9184.pdf (rechazo de siniestro)
+}
 PHOTO_NAME_RE = re.compile(r"\bFOTOS?\b|\bIMG|DANOS|WHATSAPP")
 PARTS_NAME_RE = re.compile(r"CATALOGO\s+(DE\s+)?PARTES|DESPIECE|PARTS")
 
@@ -154,6 +169,10 @@ class Command(BaseCommand):
         Decide la acción: PERSONA_A_FICHA, CERT_PROPIEDAD, IMAGEN,
         MANUAL_DESPIECE o PAPELERA.
         """
+        if entry.id in RESCUED_TYPES:
+            return RESCUED_TYPES[entry.id], {
+                "why": "rescatado tras revision manual (S118)",
+            }
         name = normalize(entry.name)
         text = normalize(entry.ocr_text)
 
