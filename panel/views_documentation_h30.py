@@ -54,6 +54,7 @@ from document_explorer.models import (
 from document_explorer.epi_delivery_document_service import (
     build_epi_delivery_pdf_bytes, resolve_company_fiscal_profile,
 )
+from document_explorer.vigencia_selector import current_fn_for
 from document_explorer.subject_upload_service import (
     SubjectUploadError, upload_subject_document,
 )
@@ -62,7 +63,7 @@ from document_management.pdf_merge_service import (
     EmptyDocumentListError, build_index_page, convert_to_pdf_bytes, merge_pdfs,
 )
 from document_management.vigencia_service import (
-    DocumentSnapshot, evaluate_substitution, is_current,
+    DocumentSnapshot, evaluate_substitution,
 )
 from fleet.models import MachineAsset
 from hr_calendar.models import VacationPeriod
@@ -229,10 +230,15 @@ def _split_current_obsolete(entries):
             )
             for e in group
         }
+        # S119 (opción 1 de Miguel Ángel): los tipos que caducan en
+        # máquinas usan su propio criterio -- ver vigencia_selector.
+        current_fn = current_fn_for(
+            group[0].document_type, group[0].domain_content_type_id,
+        )
         for entry in group:
             candidate = snapshots[entry.pk]
             siblings = [s for pk, s in snapshots.items() if pk != entry.pk]
-            if is_current(candidate, siblings):
+            if current_fn(candidate, siblings):
                 entry.needs_attention = bool(
                     entry.document_type_id
                     and entry.document_type.tracks_expiry

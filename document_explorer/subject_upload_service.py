@@ -62,6 +62,7 @@ from document_explorer.filename_date_service import extract_date_by_filename
 from document_explorer.index_writer import ensure_folder_chain
 from document_explorer.models import DocumentIndexEntry, path_digest
 from document_explorer.move_service import _virtual_location_taken
+from document_explorer.vigencia_selector import current_fn_for
 from document_management.alert_service import (
     create_default_expiry_alerts, get_docs_supervisor_contacts,
 )
@@ -384,7 +385,10 @@ def upload_subject_document(
         identifier=entry.pk, expiry_date=entry.expiry_date,
         issue_date=entry.issue_date, indexed_at=entry.indexed_at,
     )
-    result = evaluate_substitution(incoming_snapshot, existing_snapshots)
+    result = evaluate_substitution(
+        incoming_snapshot, existing_snapshots,
+        current_fn=current_fn_for(document_type, domain_content_type.id),
+    )
     if result.incoming_should_prevail and result.existing_to_archive:
         to_obsolete = siblings_qs.filter(
             pk__in=result.existing_to_archive,

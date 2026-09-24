@@ -264,10 +264,84 @@ class SubstitutionResult:
     reasoning: str = ""
 
 
+def is_current_expiring(
+    candidate: DocumentSnapshot,
+    siblings: list[DocumentSnapshot],
+    today: date | None = None,
+) -> bool:
+    """
+    Currency rule for EXPIRING document types (H30 S119, option 1).
+    ---
+    Criterio de vigencia para tipos QUE CADUCAN, elegido por Miguel
+    Ángel en H30 S119 (opción 1, solo máquinas; `is_current()` sigue
+    intacto para todo lo demás, incluido Personal):
+
+    1. Si algún documento del tipo tiene caducidad futura, gana el de
+       caducidad más lejana (empate: el indexado más reciente). Un
+       documento con solo fecha de emisión nunca le gana -- es un
+       recibo o una inspección que queda dentro de esa cobertura.
+    2. Si ninguno tiene caducidad futura, gana el más moderno por
+       fecha de referencia (emisión y, si falta, caducidad). Si ese
+       ganador está caducado, SIGUE siendo el vigente: es la "vigente
+       caducada" que la ficha marca en rojo (punto 4 de S119).
+    3. Sin ninguna fecha en el candidato: solo gana si ningún hermano
+       tiene fecha, y entre ciegos el indexado más reciente.
+
+    Origen, datos reales S119: con `is_current()` una póliza de 2026
+    salía obsoleta frente a un recibo de 2010 con solo fecha de cargo
+    (118 grupos de máquinas activas en ese caso), y una ITV caducada
+    nunca podía quedar como vigente para avisar de ella.
+    """
+    reference_today = today or date.today()
+
+    def _tie_wins(tied):
+        if candidate.indexed_at is None:
+            return True
+        indexed = [s.indexed_at for s in tied if s.indexed_at is not None]
+        return not indexed or candidate.indexed_at >= max(indexed)
+
+    future = [
+        s for s in siblings
+        if s.expiry_date is not None and s.expiry_date >= reference_today
+    ]
+    candidate_future = (
+        candidate.expiry_date is not None
+        and candidate.expiry_date >= reference_today
+    )
+    if future or candidate_future:
+        if not candidate_future:
+            return False
+        best = max(s.expiry_date for s in future) if future else None
+        if best is None or candidate.expiry_date > best:
+            return True
+        if candidate.expiry_date < best:
+            return False
+        return _tie_wins([s for s in future if s.expiry_date == best])
+
+    def _reference(snapshot):
+        return snapshot.issue_date or snapshot.expiry_date
+
+    dated = [s for s in siblings if _reference(s) is not None]
+    candidate_reference = _reference(candidate)
+    if candidate_reference is None:
+        if dated:
+            return False
+        return _tie_wins(siblings)
+    if not dated:
+        return True
+    best = max(_reference(s) for s in dated)
+    if candidate_reference > best:
+        return True
+    if candidate_reference < best:
+        return False
+    return _tie_wins([s for s in dated if _reference(s) == best])
+
+
 def evaluate_substitution(
     incoming: DocumentSnapshot,
     existing_same_type: list[DocumentSnapshot],
     today: date | None = None,
+    current_fn=None,
 ) -> SubstitutionResult:
     """
     Compara un documento entrante contra los documentos existentes del
@@ -293,8 +367,11 @@ def evaluate_substitution(
         )
 
     reference_today = today or date.today()
+    # S119: el llamador elige el criterio (`is_current_expiring` para
+    # tipos que caducan en máquinas); por defecto, el de siempre.
+    current_fn = current_fn or is_current
     all_docs = existing_same_type + [incoming]
-    incoming_should_prevail = is_current(
+    incoming_should_prevail = current_fn(
         incoming, existing_same_type, reference_today,
     )
 
@@ -302,7 +379,7 @@ def evaluate_substitution(
         existing_to_archive = [
             existing.identifier
             for existing in existing_same_type
-            if not is_current(
+            if not current_fn(
                 existing,
                 [d for d in all_docs if d is not existing],
                 reference_today,
