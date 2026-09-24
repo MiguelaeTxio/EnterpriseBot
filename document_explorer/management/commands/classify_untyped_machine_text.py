@@ -83,6 +83,10 @@ EU_REGISTRATION_RE = re.compile(
     r"|\bB F\.1\b.*\bH F\.2\b",
 )
 
+# Centinela: la cabecera se reconoce, pero no es de ningún tipo del
+# catálogo -- queda pendiente en vez de caer en un marcador posterior.
+UNRESOLVED = "__SIN_TIPO__"
+
 # (código, frases de cabecera) -- el orden es la prioridad.
 MACHINE_HEADER_MARKERS = [
     # S118: orden de reparación de Prologic ("Proceder presupuesto
@@ -187,6 +191,12 @@ MACHINE_HEADER_MARKERS = [
         "BOLETIN DE DENUNCIA", "IDENTIFICACION DEL CONDUCTOR",
     ]),
     ("FACTURA", ["FACTURA"]),
+    # S118: cabeceras que llevan "oferta" sin serlo -- contrato de
+    # servicio de Mercedes, detalle de movimiento bancario. Se quedan
+    # SIN TIPO (pendientes) antes que mal tipadas.
+    (UNRESOLVED, [
+        "CONTRATO DE SERVICIO", "INFORMACION GENERAL NUMERO DE CUENTA",
+    ]),
     # Solo si no es factura (una factura puede citar su presupuesto).
     ("PROFORMA", ["PRESUPUESTO", "OFERTA"]),
     ("MANUAL_USO", [
@@ -431,6 +441,8 @@ class Command(BaseCommand):
                     code = "SEGURO"
                 if code is None and EU_REGISTRATION_RE.search(header):
                     code = "PERMISO_CIRCULACION"
+                if code == UNRESOLVED:
+                    code = None
                 if code == "FACTURA":
                     code = resolve_invoice(entry.name, header)
                     if code is None:
