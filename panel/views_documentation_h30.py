@@ -604,6 +604,9 @@ class MachineDetailView(CompanyUserRequiredMixin, View):
             "can_edit_machine": self._can_edit(request),
             "machine_saved": saved,
             "machine_form_open": saved or form.errors,
+            # S119, punto 5: con errores de validación se reabre ya en
+            # modo edición, para poder corregir sin volver a confirmar.
+            "start_in_edit_mode": bool(form.errors),
         }, status=status)
 
     def get(self, request, pk):
@@ -633,6 +636,14 @@ class MachineDetailView(CompanyUserRequiredMixin, View):
             updated = form.save(commit=False)
             updated.code = updated.code.strip().upper()
             updated.save()
+            # H30 (S119), punto 5: si cambian familia o código, la
+            # carpeta y los nombres canónicos de sus documentos le
+            # siguen (punto 3).
+            from document_explorer.machine_folder_service import (
+                sync_machine_documents,
+            )
+
+            sync_machine_documents(updated)
             params = {"saved": "1"}
             if request.GET.get("back_url"):
                 params["back_url"] = request.GET["back_url"]

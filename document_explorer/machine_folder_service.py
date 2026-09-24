@@ -14,6 +14,8 @@ move_entries()` (lote eficiente, contadores de carpeta al día), nunca
 baja de una máquina desde el panel, para que la carpeta siga siempre
 al estado real de la máquina.
 """
+import datetime
+
 from django.contrib.contenttypes.models import ContentType
 from django.db.models import Q
 
@@ -23,6 +25,9 @@ from document_explorer.move_service import move_entries
 from document_explorer.naming_service import build_machine_folder_path
 
 BUCKET = "cgs_grupo_alvarez"
+# Convención de Miguel Ángel (Personal S98), decisión 2a de S119: solo en
+# el nombre de un documento sin ninguna fecha.
+FICTITIOUS_DATE = datetime.date(2021, 1, 1)
 
 
 def machine_folder_for(asset) -> str:
@@ -83,3 +88,44 @@ def move_machine_documents(asset) -> int:
     if not entries:
         return 0
     return len(move_entries(entries, target))
+
+
+def sync_machine_documents(asset) -> dict:
+    """
+    Keep a machine's documents in its folder and, if active, with
+    canonical names.
+    ---
+    Mantiene los documentos de una máquina en su carpeta y, si está
+    activa, con nombre canónico (S119, punto 3). Se llama al guardar sus
+    datos (familia o código pueden cambiar la carpeta y el nombre) y al
+    darla de baja o reactivarla. Devuelve `{"moved", "renamed"}`.
+    """
+    from document_explorer.classification_service import (
+        apply_machine_canonical_rename,
+    )
+    from fleet.models import MachineAsset
+
+    moved = move_machine_documents(asset)
+    renamed = 0
+    if not asset.is_active:
+        return {"moved": moved, "renamed": renamed}
+    entries = list(DocumentIndexEntry.objects.filter(
+        bucket=BUCKET, entry_kind=DocumentIndexEntry.KIND_FILE,
+        deleted_at__isnull=True, purged_at__isnull=True,
+        domain_content_type=ContentType.objects.get_for_model(MachineAsset),
+        domain_object_id=asset.pk,
+    ).filter(outside_intake_q()).select_related(
+        "document_type",
+    ).order_by("id"))
+    reserved = {
+        (entry.bucket, entry.parent_path, entry.name): entry.pk
+        for entry in entries
+    }
+    for entry in entries:
+        result = apply_machine_canonical_rename(
+            entry, asset, fictitious_date=FICTITIOUS_DATE,
+            apply_changes=True, reserved_names=reserved,
+        )
+        if result["renamed"]:
+            renamed += 1
+    return {"moved": moved, "renamed": renamed}

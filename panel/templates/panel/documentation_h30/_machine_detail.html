@@ -58,13 +58,23 @@ sube una nueva con la cámara (se sube como IMAGEN y queda fijada).
                 {% if machine_saved %}
                 <div class="alert alert-success py-1 px-2 small">Datos del centro de gasto guardados.</div>
                 {% endif %}
+                {% comment %}
+                H30 (S119), punto 5 -- modo edición con confirmación, igual
+                que "Datos personales" (H31 S76): el fieldset nace
+                bloqueado; "Modo edición" abre un modal y solo al aceptar
+                se desbloquea y aparece "Guardar datos". Con errores de
+                validación se reabre ya desbloqueado.
+                {% endcomment %}
                 <form method="post" action="">
-                    <fieldset {% if not can_edit_machine %}disabled{% endif %}>
+                    <fieldset id="machineDataFieldset" {% if not start_in_edit_mode %}disabled{% endif %}>
                         {% include "panel/fleet/_form_fields.html" with hide_footer=True form_action="update" %}
                     </fieldset>
                     {% if can_edit_machine %}
-                    <div class="d-flex justify-content-end mt-3">
-                        <button type="submit" class="btn btn-sm btn-primary">
+                    <div class="d-flex justify-content-end gap-2 mt-3">
+                        <button type="button" id="machineEditModeBtn" class="btn btn-sm btn-outline-primary"{% if start_in_edit_mode %} style="display:none;"{% endif %} onclick="requestMachineEditMode()">
+                            <i class="bi bi-pencil me-1"></i>Modo edición
+                        </button>
+                        <button type="submit" id="machineSaveBtn" class="btn btn-sm btn-primary"{% if not start_in_edit_mode %} style="display:none;"{% endif %}>
                             <i class="bi bi-check-lg me-1"></i>Guardar datos
                         </button>
                     </div>
@@ -477,4 +487,44 @@ function getCookie(name) {
     if (parts.length === 2) return parts.pop().split(';').shift();
 }
 </script>
+{% if can_edit_machine %}
+{% comment %}
+H30 (S119), punto 5 -- modal fuera de cualquier acordeón a propósito
+(mismo motivo que editModeConfirmModal de Personal, H31 S76).
+{% endcomment %}
+<div class="modal fade" id="machineEditModeConfirmModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">¿Activar modo edición?</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-0">Vas a poder modificar los datos de este centro de gasto. Confirma para evitar cambios accidentales.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary" onclick="confirmMachineEditMode()">Aceptar, activar edición</button>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+let machineEditModeModal = null;
+
+function requestMachineEditMode() {
+    if (!machineEditModeModal) {
+        machineEditModeModal = new bootstrap.Modal(document.getElementById('machineEditModeConfirmModal'));
+    }
+    machineEditModeModal.show();
+}
+
+function confirmMachineEditMode() {
+    document.getElementById('machineDataFieldset').disabled = false;
+    document.getElementById('machineEditModeBtn').style.display = 'none';
+    document.getElementById('machineSaveBtn').style.display = '';
+    if (machineEditModeModal) machineEditModeModal.hide();
+}
+</script>
+{% endif %}
 {% endblock %}
