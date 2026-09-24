@@ -14,10 +14,10 @@ dictadas por Miguel Ángel:
    "un comando de gestión que ponga ahora mismo en inactivas todas las
    máquinas que tengan documentos en baja definitiva".
 
-Solo se INFORMA, nunca se toca (decisión pendiente de Miguel Ángel):
-- máquinas del Excel marcadas "BAJA" en su columna de notas (B-20);
-- máquinas con documentos en carpetas "(VENTA)", "(VENDIDA)" o "BAJA
-  TEMPORAL" que no caen en las dos reglas.
+3. Máquinas del Excel marcadas "BAJA" en su columna de notas (B-20) --
+   decisión de Miguel Ángel tras el dry-run EnterpriseBot_024: "inactiva".
+4. Máquinas con documentos en carpetas "(VENTA)", "(VENDIDA)" o "BAJA
+   TEMPORAL" -- misma decisión: "inactivas".
 
 Nunca reactiva nada. DRY-RUN por defecto; --apply escribe is_active.
 Log propio (com-standards 0bis/0ter).
@@ -103,6 +103,12 @@ class Command(BaseCommand):
                 reasons.setdefault(asset.pk, []).append("familia A/B fuera del Excel")
         for pk in self._machines_with_docs_in(machine_ct, "BAJA DEFINITIVA"):
             reasons.setdefault(pk, []).append("documentos en BAJA DEFINITIVA")
+        for asset in MachineAsset.objects.all():
+            if _norm(asset.code) in excel_baja:
+                reasons.setdefault(asset.pk, []).append("marcada BAJA en el Excel")
+        for needle in ("(VENTA)", "(VENDIDA)", "BAJA TEMPORAL"):
+            for pk in self._machines_with_docs_in(machine_ct, needle):
+                reasons.setdefault(pk, []).append("documentos en %s" % needle)
 
         assets = {a.pk: a for a in MachineAsset.objects.filter(pk__in=reasons)}
         to_change = sorted(
@@ -116,17 +122,6 @@ class Command(BaseCommand):
             ))
         if apply_changes and to_change:
             MachineAsset.objects.filter(pk__in=[a.pk for a in to_change]).update(is_active=False)
-
-        self._log("--- SOLO INFORMATIVO, NO SE TOCA (decision pendiente) ---")
-        for code in sorted(excel_baja):
-            asset = MachineAsset.objects.filter(code__iexact=code).first()
-            self._log("    %-12s en el Excel pero marcada BAJA en notas (activa ahora: %s)"
-                      % (code, asset.is_active if asset else "no existe en Centros de gasto"))
-        others = set()
-        for needle in ("(VENTA)", "(VENDIDA)", "BAJA TEMPORAL"):
-            others |= self._machines_with_docs_in(machine_ct, needle)
-        for asset in MachineAsset.objects.filter(pk__in=others - set(reasons), is_active=True).order_by("code"):
-            self._log("    %-12s activa, con documentos en carpetas de VENTA/VENDIDA/BAJA TEMPORAL" % asset.code)
 
         self._log("=== RESUMEN (%s) ===" % ("APLICADO" if apply_changes else "DRY-RUN, nada escrito"))
         self._log("    maquinas puestas inactivas: %d" % len(to_change))
