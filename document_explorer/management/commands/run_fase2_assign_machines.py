@@ -49,6 +49,9 @@ BUCKET = "cgs_grupo_alvarez"
 ROOT = "DOC. MAQUINAS/"
 OUT_OF_SCOPE_PREFIXES = ("DOC. MAQUINAS/ESLINGAS",)
 OCR_CANDIDATE_EXTENSIONS = (".pdf", ".jpg", ".jpeg", ".png")
+# S118 -- permisos de transporte que cubren VARIOS vehículos a la vez
+# ("p14 g02 g03.pdf"): asignarlos al primer código sería falso.
+UNTYPED_OUT_OF_SCOPE_PREFIXES = ("DOC. MAQUINAS/PERMISOS ESPECIALES",)
 
 
 class Command(BaseCommand):
@@ -96,7 +99,12 @@ class Command(BaseCommand):
             if not e.parent_path.upper().startswith(OUT_OF_SCOPE_PREFIXES)
             and (
                 not untyped
-                or e.name.lower().endswith(OCR_CANDIDATE_EXTENSIONS)
+                or (
+                    e.name.lower().endswith(OCR_CANDIDATE_EXTENSIONS)
+                    and not e.parent_path.upper().startswith(
+                        UNTYPED_OUT_OF_SCOPE_PREFIXES,
+                    )
+                )
             )
         ]
         excluded = qs.count() - len(entries)
@@ -110,7 +118,8 @@ class Command(BaseCommand):
                 total,
                 "SIN TIPO (PDF e imagenes)" if untyped else "con tipo",
                 excluded,
-                ", y extensiones no OCR" if untyped else "",
+                ", extensiones no OCR y PERMISOS ESPECIALES"
+                if untyped else "",
             )
         )
 
@@ -178,7 +187,8 @@ class Command(BaseCommand):
         ))
         self._log_plain("    sin maquina reconocible: %d" % (total - assigned))
         self._log_plain("    fuera de alcance (eslingas, punto 9%s): %d" % (
-            "; y extensiones no OCR" if untyped else "", excluded,
+            "; extensiones no OCR y PERMISOS ESPECIALES" if untyped else "",
+            excluded,
         ))
         self._log_plain("--- Asignados por maquina ---")
         for (code, is_active), count in sorted(by_machine.items()):
