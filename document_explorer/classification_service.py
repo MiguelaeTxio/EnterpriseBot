@@ -2773,6 +2773,68 @@ def apply_personal_canonical_rename(
     return {"new_name": final_name, "renamed": renamed, "reason": None}
 
 
+def apply_machine_canonical_rename(
+    entry, asset, fictitious_date=None, apply_changes=False,
+    reserved_names=None,
+) -> dict:
+    """
+    No-Gemini canonical rename for a MACHINE document (H30 S119).
+    ---
+    Homólogo de `apply_personal_canonical_rename()` para el dominio
+    MÁQUINA (H30 S119, punto 3): `{CÓDIGO}_{TIPO}_{AAAAMMDD}[_N]` con
+    datos ya resueltos en BD, sin OCR ni Gemini. Solo cambia
+    `entry.name`, nunca `blob_name`/GCS.
+
+    Fecha, opción 2a de Miguel Ángel (excepción expresa a la directriz
+    4.16, anotada en el documento maestro): caducidad si la hay; si no,
+    emisión; si no hay ninguna, `fictitious_date` (2021-01-01, su
+    convención de Personal S98), solo en el nombre, nunca en las
+    columnas de fecha.
+
+    `reserved_names`: dict `{(bucket, parent_path, name): pk}` que
+    comparte todo el lote -- contiene los nombres que ya ocuparán la
+    carpeta (incluidos los de documentos todavía no movidos en un
+    dry-run), así el dry-run da los mismos ordinales que el --apply.
+    Devuelve `{"new_name", "renamed", "reason"}` como la de Personal.
+    """
+    if not entry.document_type or not entry.document_type.code:
+        return {"new_name": None, "renamed": False, "reason": "sin_tipo"}
+    date = entry.expiry_date or entry.issue_date or fictitious_date
+    if date is None:
+        return {"new_name": None, "renamed": False, "reason": "sin_fecha"}
+    extension = entry.name.rsplit(".", 1)[-1] if "." in entry.name else "pdf"
+    code = entry.document_type.code
+
+    def _taken(name):
+        key = (entry.bucket, entry.parent_path, name)
+        if reserved_names is not None and key in reserved_names:
+            return reserved_names[key] != entry.pk
+        return _virtual_location_taken(
+            entry.bucket, entry.parent_path, name, exclude_pk=entry.pk,
+        )
+
+    final_name = naming_service.build_filename_machine(
+        asset.code, code, date, extension=extension,
+    )
+    ordinal = 1
+    while _taken(final_name):
+        final_name = naming_service.build_filename_machine(
+            asset.code, code, date, ordinal=ordinal, extension=extension,
+        )
+        ordinal += 1
+
+    if reserved_names is not None:
+        reserved_names.pop((entry.bucket, entry.parent_path, entry.name), None)
+        reserved_names[(entry.bucket, entry.parent_path, final_name)] = (
+            entry.pk
+        )
+    renamed = final_name != entry.name
+    if renamed and apply_changes:
+        entry.name = final_name
+        entry.save(update_fields=["name", "updated_at"])
+    return {"new_name": final_name, "renamed": renamed, "reason": None}
+
+
 def quarantine_domain_for_entry(entry) -> str | None:
     """
     Domain of a file sitting inside `_CUARENTENA/` -- same rule as
@@ -3251,9 +3313,13 @@ def apply_quarantine_classification(entry) -> dict:
         )
         return result
 
-    target_parent_path = entry.parent_path
-    if target_parent_path.startswith(QUARANTINE_PREFIX):
-        target_parent_path = target_parent_path[len(QUARANTINE_PREFIX):]
+    # H30 (S119), punto 3: el documento va a la carpeta de su máquina
+    # (ACTIVAS/{FAMILIA}/{CÓDIGO} o INACTIVAS/{CÓDIGO}), nunca a la ruta
+    # histórica de la que vino -- si no, lo nuevo volvería a caer en
+    # las carpetas viejas tras la reorganización.
+    target_parent_path = naming_service.build_machine_folder_path(
+        asset.code, asset.family, asset.is_active,
+    )
 
     final_name = candidate_name
     ordinal = 1

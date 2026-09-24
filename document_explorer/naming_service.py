@@ -265,6 +265,37 @@ GERENCIA_SECOND_SURNAME = "DIAZ"
 SIN_EMPRESA_FOLDER_NAME = "SIN_EMPRESA"
 
 
+# ----------------------------------------------------------------------
+# H30 (S119), punto 3 -- estructura ACTIVAS/INACTIVAS de MÁQUINAS,
+# opción 1a de Miguel Ángel: análogo exacto de Personal (activas
+# subdivididas -- aquí por `MachineAsset.family`, allí por empresa --,
+# inactivas sin subdivisión). Regla única para el comando de
+# reorganización, la cuarentena y el alta/baja desde el panel.
+# ----------------------------------------------------------------------
+MACHINE_ROOT = "DOC. MAQUINAS"
+MACHINE_ACTIVE_ROOT = "%s/ACTIVAS" % MACHINE_ROOT
+MACHINE_INACTIVE_ROOT = "%s/INACTIVAS" % MACHINE_ROOT
+SIN_FAMILIA_FOLDER_NAME = "SIN_FAMILIA"
+
+
+def build_machine_folder_path(code: str, family: str, is_active) -> str:
+    """
+    Virtual folder of a machine: ACTIVAS/{FAMILY}/{CODE} or
+    INACTIVAS/{CODE}.
+    ---
+    Carpeta virtual de una máquina: `DOC. MAQUINAS/ACTIVAS/{FAMILIA}/
+    {CÓDIGO}` si está activa, `DOC. MAQUINAS/INACTIVAS/{CÓDIGO}` si no
+    (H30 S119, opción 1a). Código y familia con la misma normalización
+    que los nombres de archivo (`_sanitize_token`); una máquina activa
+    sin familia va a `SIN_FAMILIA`.
+    """
+    code_folder = _sanitize_token(code)
+    if not is_active:
+        return "%s/%s" % (MACHINE_INACTIVE_ROOT, code_folder)
+    family_folder = _sanitize_token(family) or SIN_FAMILIA_FOLDER_NAME
+    return "%s/%s/%s" % (MACHINE_ACTIVE_ROOT, family_folder, code_folder)
+
+
 def build_person_category_root(
     first_surname: str,
     second_surname: str,

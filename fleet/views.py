@@ -28,6 +28,7 @@ from django.shortcuts import get_object_or_404, render
 from django.utils.timezone import now
 from django.views import View
 
+from document_explorer.machine_folder_service import move_machine_documents
 from fleet.forms import MachineAssetForm
 from fleet.models import MachineAsset
 from ivr_config.models import CompanyUser, PresenceStatus
@@ -670,6 +671,10 @@ class MachineAssetDeactivateView(FleetManageAccessMixin, View):
 
         asset.is_active = False
         asset.save(update_fields=["is_active"])
+        # H30 (S119), punto 3: la carpeta de documentos sigue al estado
+        # real de la máquina (ACTIVAS/{FAMILIA}/{CÓDIGO} <->
+        # INACTIVAS/{CÓDIGO}), solo virtual.
+        move_machine_documents(asset)
 
         fragment_ctx = _build_fragment_context(company, company_user, request)
         return render(
@@ -717,6 +722,10 @@ class MachineAssetReactivateView(FleetManageAccessMixin, View):
 
         asset.is_active = True
         asset.save(update_fields=["is_active"])
+        # H30 (S119), punto 3: la carpeta de documentos sigue al estado
+        # real de la máquina (ACTIVAS/{FAMILIA}/{CÓDIGO} <->
+        # INACTIVAS/{CÓDIGO}), solo virtual.
+        move_machine_documents(asset)
 
         fragment_ctx = _build_fragment_context(company, company_user, request)
         return render(
