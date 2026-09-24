@@ -57,7 +57,13 @@ class Command(BaseCommand):
         self._log_handle.flush()
 
     def _one(self, code):
-        matches = [a for a in MachineAsset.objects.all() if _norm(a.code) == _norm(code)]
+        # S117: primero el código EXACTO -- "X01" y "X-01" son justo las
+        # dos fichas duplicadas que se quieren fusionar, y sin guion
+        # serían indistinguibles. La comparación normalizada queda de
+        # respaldo (p. ej. "Z010" escrito como "z010").
+        matches = list(MachineAsset.objects.filter(code__iexact=code.strip()))
+        if not matches:
+            matches = [a for a in MachineAsset.objects.all() if _norm(a.code) == _norm(code)]
         if len(matches) != 1:
             raise CommandError("'%s' no identifica una sola ficha (%d)." % (code, len(matches)))
         return matches[0]
