@@ -557,6 +557,14 @@ class MachineDetailView(CompanyUserRequiredMixin, View):
             family: sorted(labels)
             for family, labels in _attention_labels_by_family.items()
         }
+        # H30 (S119), punto 4: aviso en rojo en la cabecera de
+        # Documentación con cada vigente de caducidad ya pasada (la
+        # "vigente caducada" del criterio de vigencia de máquinas, S119
+        # opción 1), el más antiguo primero.
+        expired_current_documents = sorted(
+            (entry for entry in current if entry.needs_attention),
+            key=lambda entry: (entry.expiry_date, entry.document_type.label),
+        )
         families = _group_current_by_family(
             current, include_empty_families=missing_types_by_family.keys(),
         )
@@ -587,6 +595,8 @@ class MachineDetailView(CompanyUserRequiredMixin, View):
             "untyped_documents": untyped_documents,
             "missing_types_by_family": missing_types_by_family,
             "attention_types_by_family": attention_types_by_family,
+            "expired_current_documents": expired_current_documents,
+            "has_expired_documents": bool(expired_current_documents),
             "all_document_types": all_document_types,
             "doc_types": doc_types, "active_nav": "documentation_hub",
             "back_url": back_url,

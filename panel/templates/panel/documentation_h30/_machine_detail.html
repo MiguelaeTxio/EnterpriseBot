@@ -102,10 +102,29 @@ sube una nueva con la cámara (se sube como IMAGEN y queda fijada).
         <h2 class="accordion-header">
             <button class="accordion-button{% if machine_form_open %} collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#collapseDocumentacionMachine">
                 <i class="bi bi-folder2-open me-2"></i>Documentación
+                {% if has_expired_documents %}
+                <i class="bi bi-exclamation-triangle-fill text-danger ms-2"
+                   title="Documentación caducada"></i>
+                {% endif %}
             </button>
         </h2>
         <div id="collapseDocumentacionMachine" class="accordion-collapse collapse{% if not machine_form_open %} show{% endif %}">
             <div class="accordion-body">
+{% comment %}
+H30 (S119), punto 4 -- aviso de caducidad en la cabecera: cada vigente
+cuya caducidad ya ha pasado (calculado en MachineDetailView).
+{% endcomment %}
+{% if has_expired_documents %}
+<div class="alert alert-danger py-2 mb-3" role="alert">
+    <i class="bi bi-exclamation-triangle-fill me-1"></i>
+    <strong>Documentación caducada:</strong>
+    <ul class="mb-0 mt-1">
+        {% for entry in expired_current_documents %}
+        <li>{{ entry.document_type.label }} &mdash; caducó el {{ entry.expiry_date|date:"d/m/Y" }}</li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
 <div class="accordion" id="machineFamiliesAccordion">
     {% for fam in families %}
     <div class="accordion-item">
