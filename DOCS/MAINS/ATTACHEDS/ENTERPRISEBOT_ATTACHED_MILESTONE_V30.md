@@ -7793,112 +7793,103 @@ describiendo la infraestructura actual:**
 
 ---
 
-## HOJA DE RUTA PARA LA SIGUIENTE SESIÓN (S118) -- REESCRITA AL CIERRE DE S117, SUSTITUYE POR COMPLETO A LA ANTERIOR
+## HOJA DE RUTA PARA LA SIGUIENTE SESIÓN (S119) -- REESCRITA AL CIERRE DE S118, SUSTITUYE POR COMPLETO A LA ANTERIOR
 
 **Reglas vigentes que la sesión siguiente aplica sin preguntar:**
 
-- **Alcance: SOLO máquinas activas.** Miguel Ángel (S117): *"El alcance
-  es única y exclusivamente activos. Los que están de baja ya no
-  queremos saber nada de esos documentos."* Todo comando de tipado,
+- **Alcance: SOLO máquinas activas** (S117). Todo comando de tipado,
   fechado, división u OCR de máquinas filtra `MachineAsset.is_active`.
 - **Lista maestra de máquinas activas = PDF del programa de gestión**
-  ("Maquinaria de Empresas", "Bajas: No", 24/09/2026, entregado por
-  Alejandro Sergio Álvarez Díaz), aplicado con la migración de datos
-  `fleet 0009`. Siempre activos, aunque no estén en el PDF: los
-  centros de coste internos `EMPRESA_*` (cualquier familia: taller
-  mecánico en MOVILES, taller de elevación en PLATAFOR, Huelva,
-  Logística, Dependencias) y `PERSONAL`. Siempre inactivas: RESIDUOS,
-  VENTA, C, DOCUMEN, E.M., LARIOS, M01, NB, PILOTES, REPARACI, U y
-  ASIS-VAR. Un cambio de estado de una máquina concreta es una baja o
-  alta excepcional desde el panel (Centros de gasto → Dar de baja /
-  Reactivar), nunca una regla nueva por carpetas.
-- **Comando S (flujo S117):** Miguel Ángel solo lanza el comando y
-  dice "listo"; el modelo lee el log de SWAP con el relevo
-  (`file_fetch.yml`). Logs del servidor, directamente con el relevo
-  (`tail_lines`), sin caja bash. Nunca se le pide pegar ni subir
-  salidas. Skills `com-bash-commands`, `com-file-request` y `com-pee`
-  actualizadas y guardadas por Miguel Ángel en S117.
+  (`fleet 0009`, S117), con las excepciones de centros internos
+  `EMPRESA_*`/`PERSONAL` siempre activos y RESIDUOS, VENTA, C, DOCUMEN,
+  E.M., LARIOS, M01, NB, PILOTES, REPARACI, U, ASIS-VAR siempre
+  inactivas. Cambios puntuales, desde el panel (Dar de baja/Reactivar).
+- **Comando S (flujo S117):** Miguel Ángel solo lanza el comando y dice
+  "listo"; el modelo lee el log con el relevo (`file_fetch.yml`) y
+  verifica con consultas reales (`db_query.yml`). Nunca se le pide pegar
+  ni subir salidas.
+- **OCR/lectura:** texto incrustado del PDF y, si no hay, Cloud Vision
+  (`cloud_vision_service`, 2 primeras páginas, cacheado en `ocr_text`).
+  **No usar Gemini para fechar** (S118, Miguel Ángel): con Gemini el
+  fechado de 690 documentos daba 504 DEADLINE_EXCEEDED de Vertex con
+  reintentos de 60 s y un ETA de 11 horas -- se canceló. En Personal las
+  fechas se sacaron con reglas propias por tipo sobre el texto de GCV,
+  y así se hace en máquinas.
+- **Documentos de personas archivados bajo máquinas** (S118, Miguel
+  Ángel): si existe su ficha y es trabajador activo o dueño, se mueven a
+  su ficha con su tipo y fecha; si no, papelera.
+- **Orden de trabajo** (Miguel Ángel, S118: *"dejamos de momento la
+  interfaz y continuamos con la tarea"*): primero los datos (puntos 1-3),
+  después la interfaz de la ficha de máquina (puntos 4-7). La numeración
+  ES el orden, empezar por el 1.
 
-**Orden de trabajo (decidido con Miguel Ángel al cierre de S117 -- la
-numeración ES el orden, empezar por el 1):**
-
-1. **Ficha de máquina -- Documentación por familia** (mismo formato que
-   Personal, `_personal_detail.html` bloque "Documentación"): acordeón
-   por familia del catálogo (dominios MACHINE/BOTH) con recuento; solo
-   el VIGENTE de cada tipo, nombrado por `document_type.label`; por
-   fila Ver · Actualizar · Historial · Tipo · Eliminar; "+ Subir"
-   dentro de cada familia. Desaparecen las tablas planas "Vigentes" y
-   "Obsoletos" de `_machine_detail.html`: los obsoletos se ven en el
-   Historial de su tipo. Reutilizar vistas/partials de Personal
-   (historial por tipo, cambiar tipo) en vez de duplicarlos.
-   **Cierre:** la ficha de la A-69 (pk 567) y la de la Z-92 muestran
-   el acordeón por familia, ninguna tabla "Obsoletos" plana, y el
-   Historial de ITV de la Z-92 lista sus ITV anteriores.
-2. **Aviso de caducidad** en rojo por familia y en la cabecera de
-   Documentación de la ficha de máquina, con los vigentes cuya
-   `expiry_date` < hoy. **Cierre:** una máquina activa con ITV vigente
-   caducada (consulta real) muestra el aviso en la familia CIRCULACIÓN
-   y en la cabecera; una sin caducados no muestra ninguno.
-3. **Datos del centro de gasto con modo edición con confirmación**
-   (como Datos personales) **y foto de la máquina** (botón "usar como
-   foto" en sus documentos IMAGEN, como la foto de perfil de Personal).
-   **Cierre:** editar la matrícula de una máquina exige confirmar el
-   modo edición; una IMAGEN marcada como foto aparece en la cabecera
-   de la ficha y en su fila de Centros de gasto.
-4. **Selección y Plantillas de dossier** en la cabecera de la ficha de
-   máquina (mismo mecanismo que Personal). **Cierre:** marcar ITV +
-   seguro + última revisión de una máquina y generar su dossier en un
-   único PDF descargable.
-5. **Sección Taller** en la ficha (equivalente de "Laboral"): partes
-   de trabajo y mantenimientos de esa máquina (fecha, mecánico, horas)
-   leídos de los modelos de partes existentes, solo consulta.
-   **Cierre:** la ficha de una máquina con partes reales los lista con
-   el mismo total de horas que da una consulta directa a BD.
-6. **Retipado de CERT_MANTENIMIENTO** (último cajón de sastre del
-   punto 4 original), solo máquinas activas: medir con consulta real
-   qué hay dentro por nombre y contenido, proponer reparto a Miguel
-   Ángel con ejemplos reales, aplicar. **Cierre:** 0 documentos de
-   máquinas activas en CERT_MANTENIMIENTO cuyo nombre o contenido
-   corresponda a otro tipo del catálogo.
-7. **Fase 3 -- OCR de los documentos SIN TIPO de máquinas activas**
-   (lo que el tipado por nombre no pudo resolver: nombres ciegos y
-   genéricos), por contenido con `cloud_vision_service`. **Cierre:**
-   consulta real de documentos sin tipo de máquinas activas a 0, salvo
-   los que tras OCR no correspondan a ningún tipo (listados).
-8. **Fechado tipo a tipo** (punto 5 original), primero los de
-   caducidad legal (ITV, póliza y recibo de seguro, certificado de
-   seguro, autorización complementaria de circulación, OCA,
-   tacógrafo, IVTM), solo máquinas activas. **Cierre:** por cada tipo,
-   0 vigentes de máquinas activas sin fecha, con auditoría histórico
-   vs. pendiente real.
-9. **Recalcular vigencia y activar avisos de caducidad de máquinas**
-   (punto 6 original), incluidos los duplicados de ficha técnica
-   generados por la división de combinados (un solo vigente por tipo).
-   **Cierre:** por máquina activa, como máximo un vigente por tipo no
-   acumulable.
-10. **Renombrado canónico y carpetas activas/inactivas** (punto 7
-    original).
-11. **Accesorios de elevación** (eslingas, líneas de carga,
-    certificados), equivalente de los EPIs para maquinaria -- diseño
-    con Miguel Ángel (punto 9 original).
+1. **Terminar el fechado (punto 8 original) de los 703 documentos de
+   tipos que caducan sin ninguna fecha** en máquinas activas (consulta
+   real al cierre de S118: 703; eran 3.070 al empezar S118). Todos
+   tienen ya el texto guardado en `ocr_text` salvo 14 sin texto legible.
+   Hacer lo mismo que Personal: **reglas de fecha por tipo sobre el texto
+   guardado, sin ninguna API**, ampliando
+   `date_machine_documents_free` (que ya aplica nombre de archivo +
+   `classify_dates_in_text`). Primero sacar el texto real de una muestra
+   de cada tipo con `db_query.yml` (patrón del punto 7 de S118) y
+   escribir las reglas con frases reales: recibos del seguro (~450:
+   periodo de cobertura "desde ... hasta", "del ... al ...", fecha de
+   cargo del adeudo), pólizas (~150: "fecha efecto" / "vencimiento"),
+   ITV, IVTM, OCA, tacógrafo. Dry-run con ejemplos antes de aplicar.
+   **Cierre:** consulta real de documentos de máquinas activas con tipo
+   `tracks_expiry=True` y sin `expiry_date` ni `issue_date` = 0, salvo
+   los que no tengan ninguna fecha legible en el texto (listados por id
+   en el log del comando).
+2. **Recalcular vigencia y activar avisos de caducidad de máquinas**
+   (punto 9 de S118, arrastrado 1.ª sesión sin avanzar), incluidos los
+   duplicados de ficha técnica de la división de combinados. **Cierre:**
+   por máquina activa, como máximo un vigente por tipo no acumulable
+   (consulta real agrupando por máquina y tipo).
+3. **Renombrado canónico y carpetas activas/inactivas** (punto 10 de
+   S118, arrastrado 1.ª sesión sin avanzar). **Cierre:** consulta real
+   de documentos de máquinas activas con nombre no canónico = 0.
+4. **Aviso de caducidad** en rojo en la cabecera de Documentación de la
+   ficha de máquina (el aviso por familia ya existe desde S118) con los
+   vigentes cuya `expiry_date` < hoy (punto 2 de S118, arrastrado 1.ª
+   sesión sin avanzar). **Cierre:** una máquina activa con ITV vigente
+   caducada (consulta real) muestra el aviso en la cabecera; una sin
+   caducados no muestra ninguno.
+5. **Datos del centro de gasto con modo edición con confirmación**
+   (como Datos personales -- la foto de la máquina ya está hecha en
+   S118). **Cierre:** editar la matrícula de una máquina exige
+   confirmar el modo edición.
+6. **Selección y Plantillas de dossier** en la cabecera de la ficha de
+   máquina (mismo mecanismo que Personal; punto 4 de S118, arrastrado
+   1.ª sesión sin avanzar). **Cierre:** marcar ITV + seguro + última
+   revisión de una máquina y generar su dossier en un único PDF.
+7. **Sección Taller en la ficha** (punto 5 de S118, arrastrado 1.ª
+   sesión sin avanzar), ampliada por Miguel Ángel en S118: *"el libro
+   historial que ya tenemos debido a los partes digitales que hacen los
+   mecánicos, podemos incluirlos en las fichas"* -- partes de trabajo y
+   mantenimientos de esa máquina (fecha, mecánico, horas) de los modelos
+   de partes existentes, solo consulta, junto a los documentos de
+   LIBRO_HISTORIAL y ORDEN_TRABAJO_MANTENIMIENTO. **Cierre:** la ficha
+   de una máquina con partes reales los lista con el mismo total de
+   horas que da una consulta directa a BD.
+8. **Accesorios de elevación** (eslingas, líneas de carga,
+   certificados), equivalente de los EPIs para maquinaria (punto 11 de
+   S118, arrastrado 1.ª sesión sin avanzar). **Cierre:** diseño cerrado
+   con Miguel Ángel en el chat y modelo/pantalla creados.
 
 **Pendientes técnicos, sin decisión de negocio:**
 
-- **Los 18 combinados FICHA+ITV que no se pueden partir** (log
-  EnterpriseBot_038): 8 góndolas G-01/G-02 de 2017-2019 y 2 de la P-17
-  sin página de ficha reconocible, T-11/T-13/T-18/A-46 sin fecha, Z-92,
-  R-11 y R-21 de una sola página, y P-25 "ITV Solicitud tarjeta"
-  (no es tarjeta). Se quedan tipados como ITV; se corrigen a mano
-  desde la ficha de máquina (punto 1) cuando se revise cada una.
-- **El relevo `db_query.yml` sigue comiteando** un "chore: depuración
-  de subida a Drive" por cada consulta (más de 30 en S117). Migrarlo
-  al patrón de `com-actions-relay` sección 6 (resultado solo en Drive).
-  **Cierre:** lanzar una consulta de solo lectura y comprobar con
-  `git log origin/main -1` que no aparece ningún commit nuevo.
-- **Prueba del agente de averías por WhatsApp con número real** (fix
-  de región Gemini `global`, commit `a96314b`). **Cierre:** un mensaje
-  real de un empleado recibe respuesta del agente y el log web no
-  registra el 404 de Gemini.
+- **Los 18 combinados FICHA+ITV que no se pueden partir** (S117, log
+  EnterpriseBot_038 de S117): se quedan como ITV y se corrigen a mano
+  desde la ficha con el botón "Tipo" (ya disponible desde S118).
+- **El relevo `db_query.yml` sigue comiteando** un "chore: depuración de
+  subida a Drive" por cada consulta (arrastrado 1.ª sesión sin avanzar;
+  en S118 obligó a rebases antes de cada push). Migrarlo al patrón de
+  `com-actions-relay` sección 6. **Cierre:** lanzar una consulta y
+  comprobar con `git log origin/main -1` que no aparece commit nuevo.
+- **Prueba del agente de averías por WhatsApp con número real**
+  (arrastrado 1.ª sesión sin avanzar). **Cierre:** un mensaje real de
+  un empleado recibe respuesta y el log web no registra el 404 de
+  Gemini.
 
 ## DECISIÓN DE DISEÑO (S117, Miguel Ángel) -- UNA SOLA VISTA DE MAQUINARIA: "Centros de gasto" SUSTITUIRÁ A LA PESTAÑA PRIMITIVA DE DOCUMENTACIÓN
 
@@ -8084,4 +8075,106 @@ sastre) o Fase 3 (OCR de los ~1.115 sin tipo), a decidir con Miguel
   nuevo y se subió el commit pendiente del anexo.
 - Reglas por carpeta y por Excel parcial inactivaron máquinas vivas
   (A-69, B-37..B-48, Z15...); resuelto con el PDF como lista maestra.
+
+## COMPLETADAS EN S118 (24/09/2026, PEE PC; H30 dominio MÁQUINAS + detalle de H31)
+
+### Interfaz de la ficha de máquina (punto 1 cerrado; foto del punto 3)
+
+- **Ficha de máquina con Documentación por familia** (`5df3048`),
+  mismo formato que Personal: acordeón por familia del catálogo
+  (MACHINE/BOTH), solo el vigente por tipo, filas Ver · Actualizar ·
+  Historial · Tipo · Eliminar, "+ Subir" por familia limitado a los
+  tipos que faltan, triángulo rojo por familia con caducados. Fuera las
+  tablas planas Vigentes/Obsoletos. Historial por tipo extraído a
+  `_document_type_history_response()`, compartido con Personal
+  (`MachineDocumentTypeHistoryView`, `documentacion/maquinaria/<pk>/
+  historial/<tipo>/`). Los documentos sin tipo, aparte y todos (antes
+  caían casi todos a Obsoletos por agruparse bajo tipo None). Miguel
+  Ángel lo vio en producción con la Z-92.
+- **Colores de acordeón de Personal** también en la ficha de máquina
+  (`582e94e`), a petición de Miguel Ángel: nivel 1 azul, familia verde,
+  contenido amarillo (`panel.css`).
+- **Foto de la máquina** (`bea08ce`, migración `fleet 0010`
+  `MachineAsset.avatar_document`): botón "usar como foto" en cada fila
+  de imagen, cámara en la cabecera (sube como IMAGEN y la fija),
+  miniatura en Centros de gasto. **Barrido** (decisión de Miguel Ángel:
+  *"si hay fotos de una máquina, se coge la primera y se coloca"*):
+  `fleet 0011` + corrección `fleet 0012` (incidente real: cogía la
+  imagen de id más bajo -- la placa de características de la Z-92 --
+  en vez de la primera que muestra la ficha; corregido a id más alto y
+  tipo IMAGEN primero, sin tocar fotos elegidas a mano). 64 máquinas
+  activas con foto.
+- **Miniatura también en el listado de Personal** (`099c7e2`,
+  `_attach_person_avatars`, una sola query por página), a petición de
+  Miguel Ángel.
+
+### Punto 6 cerrado -- reparto de CERT_MANTENIMIENTO (1.344 docs de activas)
+
+Decisiones de Miguel Ángel sobre contenido real de muestras: Word ->
+papelera (`0138`, 212); "PLANTILLA REGISTRO MANTENIMIENTO" firmados ->
+LIBRO_HISTORIAL (7); lista RD 1215 de la P-26 -> C_ADECUACION; "Z-79
+Cert.pdf" -> Z80 (certifica la Z-80). Órdenes de reparación de
+**Prologic** (programa alternativo de la empresa, reparaciones con la
+máquina alquilada, "parte del libro de mantenimiento") -> tipo nuevo
+**ORDEN_TRABAJO_MANTENIMIENTO**, acumulable (`0139`, 21). Revisiones
+preventivas de Z-42/Z-57 -> CERT_REVISION (`0140`). Certificado de la
+A-54 archivado en la A-56 -> A54 (`0141`). Quedan 1.106 que son
+certificados de mantenimiento por contenido. Auditoría del cubo con
+`find_orphaned_index_entries` (ahora con `--log-file`): 0 huérfanas en
+27.209 filas -- los "404" eran rutas mal construidas por el modelo
+(dobles espacios perdidos), no objetos ausentes.
+
+### Punto 7 cerrado -- OCR de los sin tipo de máquinas activas: 918 -> 0
+
+- `run_fase2_assign_machines --untyped` (máquina por ruta, gratis):
+  1.505 sin tipo vinculados a su máquina (916 activas, 589 inactivas);
+  fuera PERMISOS ESPECIALES (varios vehículos por permiso).
+- `read_untyped_machine_text` (paso A): texto incrustado o Cloud Vision
+  (2 páginas) cacheado en `ocr_text`; 912 de 918. **Arreglo del
+  servicio común** `cloud_vision_service` (`6d481fa`): PDF > 30 MB se
+  recorta a las páginas pedidas (Cloud Vision rechazaba > 40 MB).
+- `classify_untyped_machine_text` (paso B): tipo por CABECERA (800
+  caracteres) con marcadores sacados del texto real; 523 tipados.
+  Correcciones reales tras dry-run: persona por nombre de archivo antes
+  que DNI (el primer DNI de un alta TGSS es el del administrador), venta
+  solo por nombre, De Lage Landen = RECIBO_LEASING, "presupuesto previo"
+  de Prologic no es proforma.
+- `classify_untyped_machine_gemini` (paso C): Gemini sobre texto, lista
+  cerrada del catálogo; 301 tipados (ALTA/MEDIA).
+- `finalize_untyped_machine_docs` (paso D) + tipo nuevo
+  **CERT_PROPIEDAD** (`0142`): 3 certificados de propiedad, 9 rescatados
+  a mano (neumáticos, limitador, pesaje, montaje puente grúa, sensor
+  Bronto, pruebas polipasto, mantenimiento 2018, 2 siniestros), fotos
+  sin texto -> IMAGEN, catálogo Z-43 -> MANUAL_DESPIECE, 69 papelera.
+- Personas bajo vehículos: el alta de Jorge Ramírez García a su ficha
+  (pk 127); 12 documentos de personas sin ficha (vendedores, altas
+  antiguas, administradora de Copar) a papelera, por la regla de Miguel
+  Ángel. Ninguno era de un trabajador activo.
+
+### Punto 8 avanzado -- fechado (3.070 caducables sin fecha -> 703)
+
+`date_machine_documents_free` (sin API): nombre de archivo
+(`filename_date_service`, criterios S48) + `classify_dates_in_text` del
+texto guardado; ~3.200 documentos fechados. Correcciones reales tras
+dry-run: nombres de escáner/subida ("Scan2025-...", "doc0...",
+"_20260924") y horas de WhatsApp no son fecha; rango "X A Y" = caducidad
+Y en tipos que caducan; caducidad del texto anterior a su emisión se
+descarta; fecha FUTURA en el nombre de un tipo que caduca = caducidad
+("REV.TACOGRAFO 04-09-2027" salía 18/01/2026). `read_untyped_machine_text
+--caducables-sin-fecha` leyó el texto de 1.097 de los 1.111 restantes.
+`date_machine_documents_gemini` existe pero **no se usa** (ver reglas
+vigentes arriba).
+
+### Incidencias reales de la sesión
+
+- Barrido de fotos con id más bajo (placa en vez de camión, Z-92) --
+  corregido con `fleet 0012`.
+- "404" de GCS inventados por rutas mal construidas -- falsa alarma,
+  auditoría 0 huérfanas.
+- Consulta de `db_query.yml` fallida por alias `blob` (palabra reservada
+  MySQL) -- repetida con alias válido.
+- Pushes rechazados por los commits "chore" del relevo `db_query.yml`
+  -- resuelto con `pull --rebase` en cada push (pendiente técnico).
+- Gemini para fechar: 504 DEADLINE_EXCEEDED repetidos, ETA 11 h --
+  cancelado por Miguel Ángel; cambio de enfoque a reglas por tipo.
 
