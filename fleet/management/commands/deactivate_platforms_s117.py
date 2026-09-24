@@ -8,17 +8,18 @@ su columna "Nº Parque" -- 103 plataformas. Instrucción de Miguel Ángel:
 "Toda plataforma elevadora que no esté en este listado, automáticamente
 la damos de baja."
 
-1. Plataforma Z<n> que NO está en el listado -> inactiva.
-Solo se INFORMA (nunca se toca sin decisión suya):
-- plataformas del listado que están inactivas (p. ej. Z67, inactivada
-  esa misma mañana por deactivate_machines_s117 por una carpeta
-  "(VENTA)");
-- plataformas del listado que no existen en Centros de gasto;
-- códigos Z duplicados (más de una ficha con el mismo código
-  normalizado).
+Corrección de Miguel Ángel sobre el dry-run: "Todas las máquinas que
+vienen en las tres páginas [...] todas se ponen en activo. Las que no
+estén en estas tres páginas se ponen inactivas. No hay que mirar
+ninguna cosa más." El listado es la verdad para las plataformas:
+1. Plataforma Z<n> que ESTÁ en el listado -> activa (incluidas las que
+   estaban inactivas, p. ej. Z67, inactivada esa mañana por una carpeta
+   "(VENTA)").
+2. Plataforma Z<n> que NO está en el listado -> inactiva.
+Solo informativo (no cambia nada): plataformas del listado que no
+existen en Centros de gasto.
 
-Nunca reactiva ni borra nada. DRY-RUN por defecto; --apply escribe
-is_active. Log propio (com-standards 0bis/0ter).
+Nunca borra nada. DRY-RUN por defecto; --apply escribe is_active. Log propio (com-standards 0bis/0ter).
 """
 import re
 from collections import defaultdict
@@ -63,8 +64,8 @@ def _norm(code):
 
 class Command(BaseCommand):
     help = (
-        "H30 (S117) -- plataformas Z fuera del listado del parque "
-        "(29/06/2026) a inactivas. Dry-run por defecto."
+        "H30 (S117) -- plataformas Z: las del listado del parque "
+        "(29/06/2026) activas, el resto inactivas. Dry-run por defecto."
     )
 
     def add_arguments(self, parser):
@@ -97,35 +98,31 @@ class Command(BaseCommand):
             if key:
                 by_code[key].append(asset)
 
-        to_deactivate = [
-            asset for key, assets in sorted(by_code.items(), key=lambda kv: int(kv[0][1:]))
-            if key not in park for asset in assets if asset.is_active
-        ]
+        to_activate, to_deactivate = [], []
+        for key, assets in sorted(by_code.items(), key=lambda kv: int(kv[0][1:])):
+            for asset in assets:
+                if key in park and not asset.is_active:
+                    to_activate.append(asset)
+                elif key not in park and asset.is_active:
+                    to_deactivate.append(asset)
+
+        self._log("--- SE PONEN ACTIVAS: en el listado y estaban inactivas (%d) ---" % len(to_activate))
+        for asset in to_activate:
+            self._log("    %-8s pk=%-5d %s" % (asset.code, asset.pk, asset.brand_model or ""))
         self._log("--- SE PONEN INACTIVAS: plataformas Z fuera del listado (%d) ---" % len(to_deactivate))
         for asset in to_deactivate:
             self._log("    %-8s pk=%-5d %s" % (asset.code, asset.pk, asset.brand_model or ""))
-        if apply_changes and to_deactivate:
-            MachineAsset.objects.filter(pk__in=[a.pk for a in to_deactivate]).update(is_active=False)
-
-        self._log("--- SOLO INFORMATIVO: en el listado pero INACTIVAS (no se tocan) ---")
-        for key in sorted(park, key=lambda k: int(k[1:])):
-            for asset in by_code.get(key, []):
-                if not asset.is_active:
-                    self._log("    %-8s pk=%-5d %s" % (asset.code, asset.pk, asset.brand_model or ""))
+        if apply_changes:
+            if to_activate:
+                MachineAsset.objects.filter(pk__in=[a.pk for a in to_activate]).update(is_active=True)
+            if to_deactivate:
+                MachineAsset.objects.filter(pk__in=[a.pk for a in to_deactivate]).update(is_active=False)
 
         self._log("--- SOLO INFORMATIVO: en el listado pero NO existen en Centros de gasto ---")
         for key in sorted(park, key=lambda k: int(k[1:])):
             if key not in by_code:
                 self._log("    %s" % key)
 
-        self._log("--- SOLO INFORMATIVO: codigos Z DUPLICADOS (mas de una ficha) ---")
-        for key, assets in sorted(by_code.items(), key=lambda kv: int(kv[0][1:])):
-            if len(assets) > 1:
-                self._log("    %s: %s" % (key, ", ".join(
-                    "%s (pk=%d, %s, %s)" % (a.code, a.pk, "activa" if a.is_active else "inactiva",
-                                             a.brand_model or "sin modelo")
-                    for a in assets
-                )))
-
         self._log("=== RESUMEN (%s) ===" % ("APLICADO" if apply_changes else "DRY-RUN, nada escrito"))
+        self._log("    plataformas puestas activas: %d" % len(to_activate))
         self._log("    plataformas puestas inactivas: %d" % len(to_deactivate))
