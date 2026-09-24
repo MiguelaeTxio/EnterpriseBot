@@ -135,6 +135,14 @@ class Command(BaseCommand):
             field, value = by_name
             if field == "expiry" and not dt.tracks_expiry:
                 field = "issue"
+            # S118, corregido tras el dry-run EnterpriseBot_024: en un
+            # tipo que caduca, una fecha FUTURA en el nombre es la
+            # caducidad ("REV.TACOGRAFO 04-09-2027", "... 31-12-2027") --
+            # tratada como emisión se descartaba por futura y el texto
+            # ponía una caducidad falsa.
+            if field == "issue" and dt.tracks_expiry and value \
+                    and value > date.today():
+                field = "expiry"
             if self._plausible(value, field == "expiry"):
                 return field, value, "nombre"
         if entry.ocr_text:
