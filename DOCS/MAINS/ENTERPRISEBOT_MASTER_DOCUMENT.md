@@ -1301,6 +1301,18 @@ anterior. Miguel Ángel, verbatim: *"Tenemos que tener todas las
 fechas bien puestas en los documentos y cuando las tengamos, entonces
 renombraremos."*
 
+**Excepción expresa, dominio MÁQUINAS (H30 S119, decisión 2a de Miguel
+Ángel, con las cifras delante):** en el renombrado canónico de
+máquinas (`classification_service.apply_machine_canonical_rename`) la
+fecha del nombre es la caducidad si la hay; si no, la emisión; si no
+hay ninguna, la fecha ficticia 2021-01-01 (su convención de Personal
+S98), solo en el nombre y nunca en las columnas de fecha. Motivo: tras
+fechar por reglas (S119, punto 1), ~2.060 documentos de máquinas
+activas de tipo que caduca solo tienen emisión (recibos por fecha de
+cargo, inspecciones sin "valedera hasta") y 72 no tienen ninguna fecha
+legible; con la 4.16 al pie de la letra el punto 3 (nombre no canónico
+= 0) no podría cerrarse. Personal sigue con la 4.16 tal cual.
+
 #### 4.17. QUEJA FORMAL DE MIGUEL ÁNGEL — INCUMPLIMIENTO SISTEMÁTICO DE INSTRUCCIONES, DOCUMENTACIÓN Y SKILLS (registrada S81, 2026-08-31, verbatim, no reinterpretada)
 
 **Esta sección no es una directriz técnica más -- es una queja formal
