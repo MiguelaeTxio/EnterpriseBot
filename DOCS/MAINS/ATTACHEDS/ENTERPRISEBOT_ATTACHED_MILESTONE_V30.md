@@ -7793,40 +7793,112 @@ describiendo la infraestructura actual:**
 
 ---
 
-## HOJA DE RUTA DOMINIO MÁQUINAS (S117, confirmada por Miguel Ángel -- sustituye por completo a cualquier hoja de ruta anterior de este anexo, incluidos los "puntos heredados de S73", que eran de PERSONAL y ya estaban resueltos)
+## HOJA DE RUTA PARA LA SIGUIENTE SESIÓN (S118) -- REESCRITA AL CIERRE DE S117, SUSTITUYE POR COMPLETO A LA ANTERIOR
 
-Criterio rector, verbatim de Miguel Ángel (S116): *"Estuvimos
-ordenando, clasificando, tipando, fechando personal. Vamos a hacer lo
-mismo con la maquinaria."* Mismo orden que PERSONAL: primero datos
-limpios (puntos 1-7), después interfaz (puntos 8-9). Las vistas de
-mecánicos (historial de máquinas H22, tickets de avería) no se tocan.
+**Reglas vigentes que la sesión siguiente aplica sin preguntar:**
 
-Estado real de partida (S117, `db_query.yml`, `DOC. MAQUINAS` vivo):
-10.760 documentos tipados y vinculados a máquina (solo 3.584 con
-alguna fecha, 130 con OCR), 384 con tipo sin máquina, 3.117 sin tipo.
-ITV: 107 vigentes ya caducadas; POLIZA_SEGURO: 204 vigentes todas sin
-fecha; 8.299 `is_obsolete` decididos mayoritariamente sin fecha.
+- **Alcance: SOLO máquinas activas.** Miguel Ángel (S117): *"El alcance
+  es única y exclusivamente activos. Los que están de baja ya no
+  queremos saber nada de esos documentos."* Todo comando de tipado,
+  fechado, división u OCR de máquinas filtra `MachineAsset.is_active`.
+- **Lista maestra de máquinas activas = PDF del programa de gestión**
+  ("Maquinaria de Empresas", "Bajas: No", 24/09/2026, entregado por
+  Alejandro Sergio Álvarez Díaz), aplicado con la migración de datos
+  `fleet 0009`. Siempre activos, aunque no estén en el PDF: los
+  centros de coste internos `EMPRESA_*` (cualquier familia: taller
+  mecánico en MOVILES, taller de elevación en PLATAFOR, Huelva,
+  Logística, Dependencias) y `PERSONAL`. Siempre inactivas: RESIDUOS,
+  VENTA, C, DOCUMEN, E.M., LARIOS, M01, NB, PILOTES, REPARACI, U y
+  ASIS-VAR. Un cambio de estado de una máquina concreta es una baja o
+  alta excepcional desde el panel (Centros de gasto → Dar de baja /
+  Reactivar), nunca una regla nueva por carpetas.
+- **Comando S (flujo S117):** Miguel Ángel solo lanza el comando y
+  dice "listo"; el modelo lee el log de SWAP con el relevo
+  (`file_fetch.yml`). Logs del servidor, directamente con el relevo
+  (`tail_lines`), sin caja bash. Nunca se le pide pegar ni subir
+  salidas. Skills `com-bash-commands`, `com-file-request` y `com-pee`
+  actualizadas y guardadas por Miguel Ángel en S117.
 
-1. Auditoría de partida solo sobre máquinas ACTIVAS: cotejo de
-   `MachineAsset.is_active` contra el Excel real de maquinaria,
-   situación documental por tipo, verificación del pipeline de OCR
-   real (Tesseract -> EasyOCR -> Cloud Vision) contra el código.
-2. Fase 1 -- tipado por heurística de los 3.117 sin tipo (cierre: 0
-   resolubles por heurística).
-3. Fase 2 -- dominio de los 384 con tipo sin máquina.
-4. Retipado por contenido de cajones de sastre (documentos de persona
-   colados en máquinas, FICHA_TECNICA vs ITV, CERT_MANTENIMIENTO).
-5. Fechado tipo a tipo, primero los de caducidad legal (ITV, póliza y
-   recibo de seguro, OCA, tacógrafo, Carta verde, IVTM, eslingas),
-   cierre a 0 con auditoría histórico vs. pendiente real.
-6. Recalcular vigencia real y activar avisos de caducidad de máquinas.
-7. Renombrado canónico y carpetas activas/inactivas.
-8. Ficha de máquina en el panel de Documentación al nivel de la de
-   personal (familias, vigente + historial, avisos, dossier,
-   sustitución guiada, requisitos de documentación por familia,
-   reparaciones/revisiones solo en consulta).
-9. Accesorios de elevación (eslingas, líneas de carga, certificados),
-   equivalente de los EPIs para maquinaria -- diseño con Miguel Ángel.
+**Orden de trabajo (decidido con Miguel Ángel al cierre de S117 -- la
+numeración ES el orden, empezar por el 1):**
+
+1. **Ficha de máquina -- Documentación por familia** (mismo formato que
+   Personal, `_personal_detail.html` bloque "Documentación"): acordeón
+   por familia del catálogo (dominios MACHINE/BOTH) con recuento; solo
+   el VIGENTE de cada tipo, nombrado por `document_type.label`; por
+   fila Ver · Actualizar · Historial · Tipo · Eliminar; "+ Subir"
+   dentro de cada familia. Desaparecen las tablas planas "Vigentes" y
+   "Obsoletos" de `_machine_detail.html`: los obsoletos se ven en el
+   Historial de su tipo. Reutilizar vistas/partials de Personal
+   (historial por tipo, cambiar tipo) en vez de duplicarlos.
+   **Cierre:** la ficha de la A-69 (pk 567) y la de la Z-92 muestran
+   el acordeón por familia, ninguna tabla "Obsoletos" plana, y el
+   Historial de ITV de la Z-92 lista sus ITV anteriores.
+2. **Aviso de caducidad** en rojo por familia y en la cabecera de
+   Documentación de la ficha de máquina, con los vigentes cuya
+   `expiry_date` < hoy. **Cierre:** una máquina activa con ITV vigente
+   caducada (consulta real) muestra el aviso en la familia CIRCULACIÓN
+   y en la cabecera; una sin caducados no muestra ninguno.
+3. **Datos del centro de gasto con modo edición con confirmación**
+   (como Datos personales) **y foto de la máquina** (botón "usar como
+   foto" en sus documentos IMAGEN, como la foto de perfil de Personal).
+   **Cierre:** editar la matrícula de una máquina exige confirmar el
+   modo edición; una IMAGEN marcada como foto aparece en la cabecera
+   de la ficha y en su fila de Centros de gasto.
+4. **Selección y Plantillas de dossier** en la cabecera de la ficha de
+   máquina (mismo mecanismo que Personal). **Cierre:** marcar ITV +
+   seguro + última revisión de una máquina y generar su dossier en un
+   único PDF descargable.
+5. **Sección Taller** en la ficha (equivalente de "Laboral"): partes
+   de trabajo y mantenimientos de esa máquina (fecha, mecánico, horas)
+   leídos de los modelos de partes existentes, solo consulta.
+   **Cierre:** la ficha de una máquina con partes reales los lista con
+   el mismo total de horas que da una consulta directa a BD.
+6. **Retipado de CERT_MANTENIMIENTO** (último cajón de sastre del
+   punto 4 original), solo máquinas activas: medir con consulta real
+   qué hay dentro por nombre y contenido, proponer reparto a Miguel
+   Ángel con ejemplos reales, aplicar. **Cierre:** 0 documentos de
+   máquinas activas en CERT_MANTENIMIENTO cuyo nombre o contenido
+   corresponda a otro tipo del catálogo.
+7. **Fase 3 -- OCR de los documentos SIN TIPO de máquinas activas**
+   (lo que el tipado por nombre no pudo resolver: nombres ciegos y
+   genéricos), por contenido con `cloud_vision_service`. **Cierre:**
+   consulta real de documentos sin tipo de máquinas activas a 0, salvo
+   los que tras OCR no correspondan a ningún tipo (listados).
+8. **Fechado tipo a tipo** (punto 5 original), primero los de
+   caducidad legal (ITV, póliza y recibo de seguro, certificado de
+   seguro, autorización complementaria de circulación, OCA,
+   tacógrafo, IVTM), solo máquinas activas. **Cierre:** por cada tipo,
+   0 vigentes de máquinas activas sin fecha, con auditoría histórico
+   vs. pendiente real.
+9. **Recalcular vigencia y activar avisos de caducidad de máquinas**
+   (punto 6 original), incluidos los duplicados de ficha técnica
+   generados por la división de combinados (un solo vigente por tipo).
+   **Cierre:** por máquina activa, como máximo un vigente por tipo no
+   acumulable.
+10. **Renombrado canónico y carpetas activas/inactivas** (punto 7
+    original).
+11. **Accesorios de elevación** (eslingas, líneas de carga,
+    certificados), equivalente de los EPIs para maquinaria -- diseño
+    con Miguel Ángel (punto 9 original).
+
+**Pendientes técnicos, sin decisión de negocio:**
+
+- **Los 18 combinados FICHA+ITV que no se pueden partir** (log
+  EnterpriseBot_038): 8 góndolas G-01/G-02 de 2017-2019 y 2 de la P-17
+  sin página de ficha reconocible, T-11/T-13/T-18/A-46 sin fecha, Z-92,
+  R-11 y R-21 de una sola página, y P-25 "ITV Solicitud tarjeta"
+  (no es tarjeta). Se quedan tipados como ITV; se corrigen a mano
+  desde la ficha de máquina (punto 1) cuando se revise cada una.
+- **El relevo `db_query.yml` sigue comiteando** un "chore: depuración
+  de subida a Drive" por cada consulta (más de 30 en S117). Migrarlo
+  al patrón de `com-actions-relay` sección 6 (resultado solo en Drive).
+  **Cierre:** lanzar una consulta de solo lectura y comprobar con
+  `git log origin/main -1` que no aparece ningún commit nuevo.
+- **Prueba del agente de averías por WhatsApp con número real** (fix
+  de región Gemini `global`, commit `a96314b`). **Cierre:** un mensaje
+  real de un empleado recibe respuesta del agente y el log web no
+  registra el 404 de Gemini.
 
 ## DECISIÓN DE DISEÑO (S117, Miguel Ángel) -- UNA SOLA VISTA DE MAQUINARIA: "Centros de gasto" SUSTITUIRÁ A LA PESTAÑA PRIMITIVA DE DOCUMENTACIÓN
 
@@ -7934,3 +8006,82 @@ punto 9 de la hoja de ruta, pendiente de diseño.
 **Siguiente:** punto 4 de la hoja de ruta (retipado de cajones de
 sastre) o Fase 3 (OCR de los ~1.115 sin tipo), a decidir con Miguel
 Ángel.
+
+## COMPLETADAS EN S117 (sesión muy larga, 23-24/09/2026, PEE A y PC; H30 dominio MÁQUINAS + mejoras de H31 PERSONAL)
+
+### Interfaz y seguridad (panel)
+- **Seguridad:** los mixins de rol ejecutaban la vista ANTES de
+  comprobar el rol (`d1e7093`) -- corregido.
+- **Centros de gasto:** acceso DOCS_SUPERVISOR, formato de visor
+  unificado (directriz 4.24 en el master, aplicada también a
+  Albaranes, Almacén y Catálogo), familia en desplegable, acciones
+  múltiples, exportar a Excel, panel único de maquinaria con dos
+  puertas (Taller y pestaña Centros de Gasto de Documentación),
+  columnas fijas en scroll horizontal, selección persistida en
+  `PanelNavigationState`, "Volver" correcto desde la ficha, cálculo de
+  altura del listado en dos pasadas.
+- **Ficha de máquina:** se entra por el código (como Personal), datos
+  del centro de gasto editables en la ficha; retirados el modal de
+  edición y `MachineAssetUpdateView`.
+- **Sesión caducada + htmx:** el login aparecía incrustado dentro de
+  las tablas; `HtmxLoginRedirectMiddleware` (`397d99a`) responde con
+  `HX-Redirect` al login completo, para todo el panel.
+- **Familias:** los desplegables solo ofrecen familias con alguna
+  máquina activa (`fleet/family_service.active_families`); HUELVA y
+  LOGÍSTICA fusionadas en DEPENDENCIAS (migración `fleet 0007`).
+
+### H31 PERSONAL
+- Baja de trabajadores como acción sobre la selección (desactiva la
+  cuenta, documentación a INACTIVOS virtual), Reactivar
+  (deshacer/recontratar), alta por WhatsApp bloqueada para quien
+  consta de baja.
+- Vigencia coherente entre ficha e Historial; NOMINA, VACACIONES y
+  REGISTRO_JORNADA acumulables (migración 0136, 170 obsoletos
+  rescatados); `resolve_vigencia_bidireccional --domain PERSONAL`
+  aplicado (142 grupos corregidos).
+
+### H30 MÁQUINAS -- datos
+- **Fase 1 (tipado por nombre) cerrada:** 98 → 883 documentos tipados y
+  asignados; tipos nuevos CERTIFICADO_SEGURO,
+  AUTORIZACION_COMPLEMENTARIA_CIRCULACION y ESPECIFICACIONES_FABRICANTE;
+  IMAGEN pasa a BOTH y acumulable (migración 0137).
+- **Fase 2 (con tipo y sin máquina) cerrada:** 269 asignados, 27
+  máquinas nuevas dadas de alta desde consola; resolución de máquina
+  por matrícula, código entre paréntesis, con punto, sin cero y por
+  nombre de archivo (`classification_service._machine_from_text`).
+- **Cajones de sastre:** 12 "personas coladas" retipadas (la regla de
+  carpeta "/BAJAS/" ya no asigna tipos de persona bajo DOC. MAQUINAS);
+  **combinados FICHA+ITV divididos** (decisión de Miguel Ángel:
+  "dividirlos [...] a la larga, es lo correcto"): 492 en la primera
+  vuelta (3 procesos en paralelo con `--shard k/3`) + 35 en la segunda
+  (solo activas, ficha en cualquier página, tarjeta de remolque, fecha
+  de los sellos de validez) = 527 combinados → 1.054 documentos; 18 sin
+  partir (ver pendientes).
+- **Máquinas activas:** tras varias listas parciales (Excel de
+  Yolanda, listado del parque de plataformas, Excel de asistencia),
+  la lista maestra definitiva es el PDF del programa de gestión
+  (migración `fleet 0009`): 318 activas (307 del PDF + 10 centros de
+  coste internos + la X01, antes duplicada). Asistencia: familia
+  ASISTENC según su Excel + A50 y A60 (Loja); B38 a AUTOCARG.
+- **Fichas duplicadas fusionadas** con `merge_machine_duplicate`
+  (mueve todas las relaciones directas y genéricas y borra la
+  duplicada): 3848BZW → A50, Z010 → Z10, X-01 → X01.
+- **Excel de maquinaria de Yolanda** actualizado en
+  `data_imports/EXCEL_TRABAJADORES.xlsx` (A-55, A-67..A-69,
+  B-37..B-48 y las 103 plataformas Z) y entregado a Miguel Ángel para
+  reenviárselo.
+- Retirados los comandos de reglas superadas por el PDF
+  (`deactivate_machines_s117`, `deactivate_platforms_s117`,
+  `sync_active_from_excel_s117`): relanzarlos desharía el PDF.
+
+### Incidencias reales de la sesión
+- El modelo pidió a Miguel Ángel pegar salidas de consola que no
+  cabían en pantalla -- origen del nuevo flujo de Comando S.
+- Tres consolas abiertas con el iniciador de CampuStudiOnline (entorno
+  sin PyMuPDF): falló el import sin tocar nada; relanzadas con el
+  entorno de EnterpriseBot.
+- El token de GitHub caducó a mitad de sesión (401); se recibió uno
+  nuevo y se subió el commit pendiente del anexo.
+- Reglas por carpeta y por Excel parcial inactivaron máquinas vivas
+  (A-69, B-37..B-48, Z15...); resuelto con el PDF como lista maestra.
+
