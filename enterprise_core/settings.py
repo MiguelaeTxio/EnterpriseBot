@@ -135,6 +135,9 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     # Blocks CompanyUser access to /admin/ — bloquea el acceso de CompanyUser a /admin/.
     'panel.middleware.CompanyUserAdminBlockMiddleware',
+    # S117: htmx + sesión caducada -> HX-Redirect al login completo en
+    # vez de incrustar la página de login en el hueco del fragmento.
+    'panel.middleware.HtmxLoginRedirectMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
