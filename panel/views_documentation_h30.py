@@ -488,6 +488,78 @@ def _seed_request_get(request, persisted_filters):
         request.GET = mutable
 
 
+# H30 (S119), punto 7: documentos que forman parte del "libro de taller"
+# de una máquina, junto a sus partes y mantenimientos.
+MACHINE_WORKSHOP_DOCUMENT_TYPES = (
+    "LIBRO_HISTORIAL", "ORDEN_TRABAJO_MANTENIMIENTO",
+)
+MACHINE_WORKSHOP_LIST_LIMIT = 100
+
+
+def _machine_workshop_context(machine, entries):
+    """
+    Workshop section of a machine file: work-order lines, maintenance
+    logs and workshop documents, read-only.
+    ---
+    H30 (S119), punto 7 -- sección Taller de la ficha de máquina, solo
+    consulta (Miguel Ángel, S118: "el libro historial que ya tenemos
+    debido a los partes digitales que hacen los mecánicos, podemos
+    incluirlos en las fichas"):
+    - Partes: `WorkOrderEntryLine` con esta máquina (fecha y mecánico del
+      `WorkOrderEntry`, tipo, avería, horas `delta_hours`). El total de
+      horas es un agregado sobre TODAS las líneas, aunque la tabla solo
+      muestre las últimas `MACHINE_WORKSHOP_LIST_LIMIT`.
+    - Mantenimientos: `fleet.MaintenanceLog` de la máquina.
+    - Documentos LIBRO_HISTORIAL y ORDEN_TRABAJO_MANTENIMIENTO, vigentes
+      y obsoletos, más recientes primero.
+    """
+    from django.db.models import Count, Sum
+
+    from fleet.models import MaintenanceLog
+
+    lines_qs = WorkOrderEntryLine.objects.filter(
+        machine_asset=machine, entry__work_date__isnull=False,
+    )
+    lines_totals = lines_qs.aggregate(total=Sum("delta_hours"), n=Count("id"))
+    work_lines = list(
+        lines_qs.select_related("entry").order_by(
+            "-entry__work_date", "-id",
+        )[:MACHINE_WORKSHOP_LIST_LIMIT]
+    )
+    logs_qs = MaintenanceLog.objects.filter(machine_asset=machine)
+    logs_totals = logs_qs.aggregate(
+        total=Sum("charged_hours"), n=Count("id"),
+    )
+    maintenance_logs = list(
+        logs_qs.order_by("-date", "-id")[:MACHINE_WORKSHOP_LIST_LIMIT]
+    )
+    workshop_documents = sorted(
+        (
+            entry for entry in entries
+            if entry.document_type_id
+            and entry.document_type.code in MACHINE_WORKSHOP_DOCUMENT_TYPES
+        ),
+        key=lambda entry: (
+            entry.expiry_date or entry.issue_date or date.min, entry.pk,
+        ),
+        reverse=True,
+    )
+    return {
+        "work_lines": work_lines,
+        "work_lines_count": lines_totals["n"] or 0,
+        "work_lines_total_hours": lines_totals["total"] or 0,
+        "work_lines_truncated": (lines_totals["n"] or 0) > len(work_lines),
+        "maintenance_logs": maintenance_logs,
+        "maintenance_count": logs_totals["n"] or 0,
+        "maintenance_total_hours": logs_totals["total"] or 0,
+        "workshop_documents": workshop_documents,
+        "has_workshop_data": bool(
+            work_lines or maintenance_logs or workshop_documents
+        ),
+        "workshop_list_limit": MACHINE_WORKSHOP_LIST_LIMIT,
+    }
+
+
 class MachineDetailView(CompanyUserRequiredMixin, View):
     """
     Ficha de una máquina (centro de gasto): documentación vigente e
@@ -590,7 +662,9 @@ class MachineDetailView(CompanyUserRequiredMixin, View):
         avatar = machine.avatar_document
         if avatar and (avatar.deleted_at or avatar.purged_at):
             avatar = None
+        entries_list = list(entries)
         return render(request, "panel/documentation_h30/_machine_detail.html", {
+            **_machine_workshop_context(machine, entries_list),
             "machine": machine, "families": families, "avatar": avatar,
             "untyped_documents": untyped_documents,
             "missing_types_by_family": missing_types_by_family,

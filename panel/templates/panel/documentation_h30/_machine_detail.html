@@ -246,6 +246,93 @@ cuya caducidad ya ha pasado (calculado en MachineDetailView).
             </div>
         </div>
     </div>
+    {% comment %}
+    H30 (S119), punto 7 -- sección Taller, solo consulta: partes de
+    trabajo digitales de esta máquina (WorkOrderEntryLine), sus
+    mantenimientos (fleet.MaintenanceLog) y los documentos
+    LIBRO_HISTORIAL / ORDEN_TRABAJO_MANTENIMIENTO. Totales calculados en
+    la vista sobre TODAS las filas, aunque la tabla muestre las últimas.
+    {% endcomment %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseMachineWorkshop">
+                <i class="bi bi-tools me-2"></i>Taller
+                <span class="badge bg-secondary ms-2">{{ work_lines_count }} parte{{ work_lines_count|pluralize }} · {{ work_lines_total_hours|floatformat:2 }} h</span>
+            </button>
+        </h2>
+        <div id="collapseMachineWorkshop" class="accordion-collapse collapse">
+            <div class="accordion-body">
+                {% if not has_workshop_data %}
+                <p class="text-muted small mb-0">Sin partes, mantenimientos ni libro historial registrados para esta máquina.</p>
+                {% else %}
+                <h6 class="mb-2">Partes de trabajo <small class="text-muted">({{ work_lines_count }} · {{ work_lines_total_hours|floatformat:2 }} h en total)</small></h6>
+                {% if work_lines %}
+                {% if work_lines_truncated %}<p class="text-muted small mb-1">Se muestran los {{ workshop_list_limit }} más recientes.</p>{% endif %}
+                <div class="table-responsive mb-3">
+                    <table class="table table-sm table-hover mb-0" style="font-size: 0.85rem;">
+                        <thead><tr><th>Fecha</th><th>Mecánico</th><th>Tipo</th><th>Trabajo</th><th class="text-end">Horas</th></tr></thead>
+                        <tbody>
+                            {% for line in work_lines %}
+                            <tr>
+                                <td class="text-nowrap">{{ line.entry.work_date|date:"d/m/Y" }}</td>
+                                <td>{{ line.entry.worker_name|default:"—" }}</td>
+                                <td>{{ line.get_tipo_tarea_display|default:"—" }}</td>
+                                <td>{{ line.fault_description|default:"—"|truncatechars:90 }}</td>
+                                <td class="text-end">{{ line.delta_hours|default_if_none:"—" }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-muted small">Sin partes de trabajo para esta máquina.</p>
+                {% endif %}
+
+                <h6 class="mb-2">Mantenimientos <small class="text-muted">({{ maintenance_count }} · {{ maintenance_total_hours|floatformat:2 }} h imputadas)</small></h6>
+                {% if maintenance_logs %}
+                <div class="table-responsive mb-3">
+                    <table class="table table-sm table-hover mb-0" style="font-size: 0.85rem;">
+                        <thead><tr><th>Fecha</th><th>Mecánico</th><th>Descripción</th><th class="text-end">Horas</th></tr></thead>
+                        <tbody>
+                            {% for log in maintenance_logs %}
+                            <tr>
+                                <td class="text-nowrap">{{ log.date|date:"d/m/Y" }}</td>
+                                <td>{{ log.worker|default:"—" }}</td>
+                                <td>{{ log.description|default:"—"|truncatechars:90 }}</td>
+                                <td class="text-end">{{ log.charged_hours|default_if_none:"—" }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-muted small">Sin mantenimientos registrados.</p>
+                {% endif %}
+
+                <h6 class="mb-2">Libro historial y órdenes de mantenimiento</h6>
+                {% if workshop_documents %}
+                <table class="table table-sm table-hover mb-0" style="font-size: 0.85rem;">
+                    <thead><tr><th>Tipo</th><th>Fecha</th><th>Archivo</th><th></th></tr></thead>
+                    <tbody>
+                        {% for entry in workshop_documents %}
+                        <tr{% if entry.is_obsolete %} class="text-muted"{% endif %}>
+                            <td>{{ entry.document_type.label }}{% if entry.is_obsolete %} <span class="badge bg-light text-muted">histórico</span>{% endif %}</td>
+                            <td class="text-nowrap">{% if entry.expiry_date %}{{ entry.expiry_date|date:"d/m/Y" }}{% elif entry.issue_date %}{{ entry.issue_date|date:"d/m/Y" }}{% else %}—{% endif %}</td>
+                            <td class="small">{{ entry.name }}</td>
+                            <td class="text-end">
+                                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="openDocumentViewer('{% url 'panel:documentation_document_view' pk=entry.pk %}')">Ver</button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <p class="text-muted small mb-0">Sin libro historial ni órdenes de mantenimiento.</p>
+                {% endif %}
+                {% endif %}
+            </div>
+        </div>
+    </div>
 </div>
 
 <div class="modal fade" id="documentHistoryModal" tabindex="-1">
