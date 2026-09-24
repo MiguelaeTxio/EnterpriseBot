@@ -23,6 +23,7 @@ escribe. Log propio (0bis).
 H30 (S118), roadmap item 8 -- FREE dating step for active machines:
 file name first, then the cached OCR text. Only fills blanks.
 """
+import re
 import time
 from collections import Counter
 from datetime import date, datetime, timedelta
@@ -36,6 +37,7 @@ from document_explorer.date_verification_service import (
 )
 from document_explorer.filename_date_service import (
     _extract_date,
+    _parse_single_date_str,
     extract_date_by_filename,
 )
 from document_explorer.models import DocumentIndexEntry
@@ -45,6 +47,25 @@ BUCKET = "cgs_grupo_alvarez"
 # Fechas fuera de este rango son lecturas falsas (códigos, matrículas).
 MIN_DATE = date(1980, 1, 1)
 MAX_EXPIRY = date(2045, 12, 31)
+
+# S118, corregido tras el dry-run EnterpriseBot_018 -- nombres cuya
+# "fecha" es la del escaneo, la de la subida o una hora, nunca la del
+# documento: "Scan2025-10-27_094743" (salía caducidad 25/10/2027 en una
+# ITV), "doc06476220240320093349", "img20231019_...", "..._20260924"
+# (sello de subida del alta), "Imagen de WhatsApp 2024-11-18 a las
+# 13.04.08" (salía 13/04/2008 leyendo la hora).
+SCANNER_NAME_RE = re.compile(
+    r"^(SCAN\d|DOC\d{6,}|IMG\d{6,})|_\d{8}(_\d+)?\.[A-Z]+$",
+    re.IGNORECASE,
+)
+WHATSAPP_RE = re.compile(
+    r"WHATSAPP\s+(\d{4})-(\d{2})-(\d{2})", re.IGNORECASE,
+)
+# "del X al Y" en el nombre: "17-12-20 A 31-12-20".
+RANGE_RE = re.compile(
+    r"(\d{1,2}[-./]\d{1,2}[-./]\d{2,4})\s*[aA]\s*"
+    r"(\d{1,2}[-./]\d{1,2}[-./]\d{2,4})",
+)
 
 
 class Command(BaseCommand):
@@ -90,11 +111,26 @@ class Command(BaseCommand):
         Decide la fecha a rellenar: primero el nombre, luego el texto.
         """
         dt = entry.document_type
-        by_name = extract_date_by_filename(dt.code, entry.name)
-        if by_name is None:
-            generic = _extract_date(entry.name)
-            if generic:
-                by_name = ("issue", generic)
+        by_name = None
+        whatsapp = WHATSAPP_RE.search(entry.name)
+        range_match = RANGE_RE.search(entry.name)
+        if whatsapp:
+            by_name = ("issue", date(*(int(g) for g in whatsapp.groups())))
+        elif SCANNER_NAME_RE.search(entry.name):
+            by_name = None
+        elif range_match:
+            start = _parse_single_date_str(range_match.group(1))
+            end = _parse_single_date_str(range_match.group(2))
+            if dt.tracks_expiry and end:
+                by_name = ("expiry", end)
+            elif start:
+                by_name = ("issue", start)
+        else:
+            by_name = extract_date_by_filename(dt.code, entry.name)
+            if by_name is None:
+                generic = _extract_date(entry.name)
+                if generic:
+                    by_name = ("issue", generic)
         if by_name:
             field, value = by_name
             if field == "expiry" and not dt.tracks_expiry:
@@ -103,7 +139,10 @@ class Command(BaseCommand):
                 return field, value, "nombre"
         if entry.ocr_text:
             expiry, issue, other = classify_dates_in_text(entry.ocr_text)
-            if expiry and dt.tracks_expiry and self._plausible(expiry, True):
+            # Una caducidad anterior a la emisión del mismo texto es una
+            # lectura falsa (informe DGT tipado como ITV, S118).
+            if expiry and dt.tracks_expiry and self._plausible(expiry, True) \
+                    and (issue is None or expiry > issue):
                 return "expiry", expiry, "texto"
             if issue and self._plausible(issue, False):
                 return "issue", issue, "texto"
