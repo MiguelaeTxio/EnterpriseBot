@@ -10,6 +10,35 @@
     <i class="bi bi-arrow-left"></i> Volver
 </a>
 
+{% comment %}
+H30 (S118) -- foto de la máquina, como la foto de perfil de Personal:
+se elige entre sus documentos-imagen ("Usar como foto" en su fila) o se
+sube una nueva con la cámara (se sube como IMAGEN y queda fijada).
+{% endcomment %}
+<div class="card mb-3">
+    <div class="card-body d-flex align-items-center gap-3 py-2">
+        <div class="position-relative" style="min-width:96px;">
+            {% if avatar %}
+            <img src="{% url 'panel:documentation_document_view' pk=avatar.pk %}"
+                 alt="Foto de la máquina" class="rounded border"
+                 style="width:96px;height:96px;object-fit:cover;">
+            {% else %}
+            <i class="bi bi-truck text-secondary" style="font-size:80px;line-height:1;"></i>
+            {% endif %}
+            <button type="button" class="btn btn-sm btn-primary rounded-circle position-absolute"
+                    style="width:32px;height:32px;padding:0;bottom:0;right:0;"
+                    title="{% if avatar %}Cambiar foto{% else %}Añadir foto{% endif %}"
+                    onclick="openUploadForm('IMAGEN', null, true)">
+                <i class="bi bi-camera-fill"></i>
+            </button>
+        </div>
+        <div>
+            <div class="fw-semibold">{{ machine.code }}</div>
+            <div class="text-muted small">{{ machine.brand_model|default:"" }}{% if machine.plate %} · {{ machine.plate }}{% endif %}</div>
+        </div>
+    </div>
+</div>
+
 <div class="accordion" id="machineDocsAccordion">
     {% comment %}
     S117 -- datos del centro de gasto editables en la propia ficha
@@ -109,6 +138,9 @@
                             </td>
                             <td>
                                 <button type="button" class="btn btn-sm btn-outline-secondary" onclick="openDocumentViewer('{% url 'panel:documentation_document_view' pk=entry.pk %}')">Ver</button>
+                                {% if entry.name|is_image_document %}
+                                <button type="button" class="btn btn-sm btn-outline-success" onclick="usarComoFotoMaquina({{ entry.pk }}, this)" title="Usar esta imagen como foto de la máquina"><i class="bi bi-truck"></i></button>
+                                {% endif %}
                                 <button type="button" class="btn btn-sm btn-outline-primary"
                                         onclick="openUploadForm('{{ entry.document_type.code }}')">Actualizar</button>
                                 <button type="button" class="btn btn-sm btn-outline-info"
@@ -145,6 +177,9 @@
                             <td class="small">{{ entry.name }}</td>
                             <td>
                                 <button type="button" class="btn btn-sm btn-outline-secondary" onclick="openDocumentViewer('{% url 'panel:documentation_document_view' pk=entry.pk %}')">Ver</button>
+                                {% if entry.name|is_image_document %}
+                                <button type="button" class="btn btn-sm btn-outline-success" onclick="usarComoFotoMaquina({{ entry.pk }}, this)" title="Usar esta imagen como foto de la máquina"><i class="bi bi-truck"></i></button>
+                                {% endif %}
                                 <button type="button" class="btn btn-sm btn-outline-warning"
                                         onclick="openChangeTypeModal({{ entry.pk }}, 'Sin tipo')">Tipo</button>
                                 <button type="button" class="btn btn-sm btn-outline-danger"
@@ -282,27 +317,31 @@ function openDocumentHistory(typeCode) {
         });
 }
 
-function openUploadForm(preselectCode, restrictedTypes) {
+function openUploadForm(preselectCode, restrictedTypes, photoMode) {
+    // H30 (S118): photoMode = cámara de la foto de la máquina -- una
+    // sola imagen, tipo fijo IMAGEN, y al subir queda fijada como foto.
     const container = document.getElementById('uploadFormContainer');
     const typesToShow = restrictedTypes || DOC_TYPES_MACHINE;
-    const options = typesToShow.map(dt =>
-        `<option value="${dt.code}" data-tracks-expiry="${dt.tracksExpiry}" ${dt.code === preselectCode ? 'selected' : ''}>${dt.label}</option>`,
-    ).join('');
+    const typeFieldHtml = photoMode
+        ? `<input type="hidden" name="document_type_code" value="IMAGEN">`
+        : `<div class="mb-2">
+                <label class="form-label">Tipo documental</label>
+                <select name="document_type_code" id="uploadTypeSelect" class="form-select" required>${typesToShow.map(dt =>
+                    `<option value="${dt.code}" data-tracks-expiry="${dt.tracksExpiry}" ${dt.code === preselectCode ? 'selected' : ''}>${dt.label}</option>`,
+                ).join('')}</select>
+            </div>`;
     container.innerHTML = `
         <form id="subjectUploadForm">
+            ${typeFieldHtml}
             <div class="mb-2">
-                <label class="form-label">Tipo documental</label>
-                <select name="document_type_code" id="uploadTypeSelect" class="form-select" required>${options}</select>
+                <label class="form-label">${photoMode ? 'Foto' : 'Archivo(s) — puedes seleccionar varios a la vez si son del mismo tipo'}</label>
+                <input type="file" name="file" class="form-control" ${photoMode ? 'accept="image/*"' : 'multiple'} required>
             </div>
-            <div class="mb-2">
-                <label class="form-label">Archivo(s) — puedes seleccionar varios a la vez si son del mismo tipo</label>
-                <input type="file" name="file" class="form-control" multiple required>
-            </div>
-            <div class="mb-2" id="expiryDateField">
+            <div class="mb-2" id="expiryDateField" ${photoMode ? 'style="display:none;"' : ''}>
                 <label class="form-label">Fecha de caducidad</label>
                 <input type="date" name="expiry_date" class="form-control">
             </div>
-            <button type="submit" class="btn btn-primary btn-sm">Subir</button>
+            <button type="submit" class="btn btn-primary btn-sm">${photoMode ? 'Subir foto' : 'Subir'}</button>
             <div id="uploadResult" class="mt-2"></div>
         </form>`;
 
@@ -312,8 +351,10 @@ function openUploadForm(preselectCode, restrictedTypes) {
         const opt = select.options[select.selectedIndex];
         expiryField.style.display = opt && opt.dataset.tracksExpiry === 'true' ? '' : 'none';
     }
-    select.onchange = toggleExpiry;
-    toggleExpiry();
+    if (select) {
+        select.onchange = toggleExpiry;
+        toggleExpiry();
+    }
 
     bootstrap.Modal.getOrCreateInstance(document.getElementById('uploadDocumentModal')).show();
 
@@ -341,9 +382,38 @@ function openUploadForm(preselectCode, restrictedTypes) {
                 html += `<div class="alert alert-danger py-1 px-2 small">${data.error}</div>`;
             }
             resultDiv.innerHTML = html;
-            if (data.ok) setTimeout(() => location.reload(), 2000);
+            const uploadedPhoto = (data.uploaded || [])[0];
+            if (data.ok && photoMode && uploadedPhoto) {
+                setMachinePhoto(uploadedPhoto.entry_id).then(() => location.reload());
+            } else if (data.ok) {
+                setTimeout(() => location.reload(), 2000);
+            }
         });
     };
+}
+
+function setMachinePhoto(entryId) {
+    return fetch("{% url 'panel:documentation_machine_set_avatar' pk=machine.pk %}", {
+        method: 'POST',
+        headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/x-www-form-urlencoded'},
+        body: `entry_id=${entryId}`,
+    }).then(r => r.json());
+}
+
+function usarComoFotoMaquina(entryId, btn) {
+    if (!confirm('¿Usar esta imagen como foto de la máquina?')) return;
+    btn.disabled = true;
+    setMachinePhoto(entryId).then(data => {
+        if (data.ok) {
+            location.reload();
+        } else {
+            alert(data.error || 'No se pudo fijar la foto de la máquina.');
+            btn.disabled = false;
+        }
+    }).catch(() => {
+        alert('Error de red al fijar la foto de la máquina.');
+        btn.disabled = false;
+    });
 }
 
 function openChangeTypeModal(entryPk, currentLabel) {

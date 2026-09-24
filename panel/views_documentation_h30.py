@@ -571,8 +571,13 @@ class MachineDetailView(CompanyUserRequiredMixin, View):
             request, request.GET.get("back_url"),
             reverse("panel:documentation_hub"),
         )
+        # H30 (S118): foto de la máquina -- solo la elegida
+        # explícitamente, y solo si el documento sigue vivo.
+        avatar = machine.avatar_document
+        if avatar and (avatar.deleted_at or avatar.purged_at):
+            avatar = None
         return render(request, "panel/documentation_h30/_machine_detail.html", {
-            "machine": machine, "families": families,
+            "machine": machine, "families": families, "avatar": avatar,
             "untyped_documents": untyped_documents,
             "missing_types_by_family": missing_types_by_family,
             "attention_types_by_family": attention_types_by_family,
@@ -3615,6 +3620,47 @@ class PersonalSetAvatarView(DocsUploadAccessMixin, View):
             ),
         })
 
+
+
+class MachineSetAvatarView(DocsUploadAccessMixin, View):
+    """
+    Set an already indexed image document of a machine as its photo.
+    ---
+    H30 (S118). POST: fija `MachineAsset.avatar_document` a un
+    documento-imagen ya indexado de esa misma máquina -- Miguel Ángel:
+    "tenemos muchas máquinas con fotos, pues una de las fotos es
+    elegirla como foto de perfil de la maquinaria". Mismas garantías
+    que PersonalSetAvatarView: el documento tiene que pertenecer a esa
+    máquina y tener extensión de imagen real, y nunca se toca su
+    `document_type`.
+    """
+
+    def post(self, request, pk):
+        machine = get_object_or_404(MachineAsset, pk=pk)
+        entry_id = request.POST.get("entry_id", "").strip()
+        if not entry_id:
+            return JsonResponse(
+                {"ok": False, "error": "Falta entry_id."}, status=400,
+            )
+        machine_ct = ContentType.objects.get_for_model(MachineAsset)
+        entry = get_object_or_404(
+            DocumentIndexEntry,
+            pk=entry_id,
+            domain_content_type=machine_ct,
+            domain_object_id=machine.pk,
+            deleted_at__isnull=True,
+            purged_at__isnull=True,
+        )
+        if not entry.name.lower().endswith(
+            PersonalSetAvatarView.IMAGE_EXTENSIONS,
+        ):
+            return JsonResponse(
+                {"ok": False, "error": "Ese documento no es una imagen."},
+                status=400,
+            )
+        machine.avatar_document = entry
+        machine.save(update_fields=["avatar_document"])
+        return JsonResponse({"ok": True})
 
 
 class NotificationEmlError(Exception):

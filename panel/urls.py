@@ -52,6 +52,7 @@ from panel.views_documentation_h30 import (
     PersonalDocumentSelectionZipView,
     PersonalDocumentTypeHistoryView,
     MachineDocumentTypeHistoryView,
+    MachineSetAvatarView,
     PersonalDossierEmailSendView,
     DossierTemplateManageView,
     DossierTemplateMissingCheckView,
@@ -450,6 +451,8 @@ urlpatterns = [
     path("documentacion/maquinaria/<int:pk>/", MachineDetailView.as_view(), name="documentation_machine_detail"),
     # H30 (S118) punto 1: historial completo de un tipo documental de una máquina.
     path("documentacion/maquinaria/<int:pk>/historial/<str:type_code>/", MachineDocumentTypeHistoryView.as_view(), name="documentation_machine_type_history"),
+    # H30 (S118): foto de la máquina (documento-imagen ya indexado).
+    path("documentacion/maquinaria/<int:pk>/foto/", MachineSetAvatarView.as_view(), name="documentation_machine_set_avatar"),
     path("documentacion/personal/", PersonalListFragmentView.as_view(), name="documentation_personal_list"),
     # H31 (S100) Bloque 1: alta de trabajador nuevo desde el panel.
     path("documentacion/personal/alta/", PersonalCreateView.as_view(), name="documentation_personal_create"),

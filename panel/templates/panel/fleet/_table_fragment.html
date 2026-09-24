@@ -178,6 +178,12 @@ pestaña Personal, S113/S114):
                     <span class="badge bg-info-subtle text-info-emphasis border border-info-subtle me-1"
                           title="Centro de gasto de personal">PER</span>
                     {% endif %}
+                    {# H30 (S118): foto de la máquina, si se ha elegido una #}
+                    {% if asset.avatar_document and not asset.avatar_document.deleted_at %}
+                    <img src="{% url 'panel:documentation_document_view' pk=asset.avatar_document_id %}"
+                         alt="" loading="lazy" class="rounded border me-1"
+                         style="width:28px;height:28px;object-fit:cover;">
+                    {% endif %}
                     <a href="{% url 'panel:documentation_machine_detail' pk=asset.pk %}?back_url={{ fleet_back_url|urlencode }}">{{ asset.code }}</a>
                 </td>
 

@@ -245,6 +245,9 @@ def _build_queryset(company, request):
     qs = (
         MachineAsset.objects
         .filter(company=company)
+        # H30 (S118): foto de la máquina en su fila, sin una query
+        # extra por fila.
+        .select_related("avatar_document")
         .order_by("company_code", "family", "code")
     )
 

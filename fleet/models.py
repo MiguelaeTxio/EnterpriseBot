@@ -285,6 +285,26 @@ class MachineAsset(models.Model):
         verbose_name=_("Última importación real del Excel"),
     )
 
+    # ------------------------------------------------------------------
+    # H30 (S118) -- foto de la máquina. Mismo mecanismo que
+    # PersonIdentity.avatar_document (H35, S105): FK opcional al
+    # documento-imagen YA indexado de esta máquina que se elige como
+    # foto, sin tocar su tipo documental. Referencia en cadena para no
+    # importar document_explorer desde fleet.
+    # ---
+    # H30 (S118) -- machine photo, same mechanism as
+    # PersonIdentity.avatar_document: optional FK to an already indexed
+    # image document of this machine, never retyping it.
+    # ------------------------------------------------------------------
+    avatar_document = models.ForeignKey(
+        "document_explorer.DocumentIndexEntry",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+        verbose_name=_("Documento-imagen usado como foto de la máquina"),
+    )
+
     class Meta:
         verbose_name        = _("Centro de gasto")
         verbose_name_plural = _("Centros de gasto")
