@@ -52,6 +52,36 @@ def pdf_embedded_text(data: bytes, page_range: tuple[int, int] = (0, 2)) -> str:
         return ""
 
 
+# H30 (S118) -- Cloud Vision rechaza una petición en línea de más de
+# 40 MB ("Request payload size exceeds the limit: 41943040 bytes") aunque
+# solo se pidan 2 páginas: el PDF viaja entero. Por encima de este
+# umbral se recortan antes las páginas pedidas (margen para la
+# codificación de la petición).
+# ---
+# Cloud Vision rejects inline requests over 40 MB even when only 2 pages
+# are asked for; above this threshold the requested pages are cut out
+# first.
+MAX_INLINE_PDF_BYTES = 30 * 1024 * 1024
+
+
+def _pdf_page_subset(data: bytes, start: int, end: int) -> bytes:
+    """
+    Return a new PDF with only pages start..end (1-based, inclusive).
+    ---
+    Devuelve un PDF nuevo solo con las páginas start..end (1-based,
+    inclusive) -- para no mandar a Cloud Vision un PDF de más de 40 MB
+    entero cuando solo se van a leer un par de páginas.
+    """
+    import fitz
+
+    source = fitz.open(stream=data, filetype="pdf")
+    subset = fitz.open()
+    last = min(end, source.page_count)
+    if start <= last:
+        subset.insert_pdf(source, from_page=start - 1, to_page=last - 1)
+    return subset.tobytes(garbage=3, deflate=True)
+
+
 def cloud_vision_image_text(image_bytes: bytes) -> str:
     """
     OCR real de una imagen ya rasterizada (PNG/JPEG en memoria) vía
@@ -105,13 +135,16 @@ def cloud_vision_text(
     if name_lower.endswith(".pdf"):
         ensure_gcp_credentials()
         client = vision.ImageAnnotatorClient()
+        start, end = page_range
+        if len(data) > MAX_INLINE_PDF_BYTES:
+            data = _pdf_page_subset(data, start, end)
+            start, end = 1, end - start + 1
         input_config = vision.InputConfig(
             content=data, mime_type="application/pdf",
         )
         feature = vision.Feature(
             type_=vision.Feature.Type.DOCUMENT_TEXT_DETECTION,
         )
-        start, end = page_range
         request = vision.AnnotateFileRequest(
             input_config=input_config, features=[feature],
             pages=list(range(start, end + 1)),
