@@ -21,6 +21,13 @@ para decidir con Miguel Ángel/Yolanda. Deja FUERA las eslingas
 (ESLINGAS ...): accesorios de elevación, punto 9 de la hoja de ruta de
 H30, pendiente de diseño con Miguel Ángel.
 
+H30 (S118), punto 7 de la hoja de ruta: --untyped aplica la misma
+resolución por ruta y nombre a los documentos SIN TIPO y sin máquina
+(solo PDF e imágenes, los candidatos a OCR) -- paso gratuito previo al
+OCR, para que el OCR se lance solo sobre documentos de máquinas ACTIVAS
+y nunca sobre los de máquinas de baja. El resumen separa activas e
+inactivas.
+
 DRY-RUN por defecto; --apply escribe domain_content_type/
 domain_object_id. Nunca toca GCS (4.12). Log propio con heartbeat y
 ETA (com-standards 0bis/0ter).
@@ -41,6 +48,7 @@ from fleet.models import MachineAsset
 BUCKET = "cgs_grupo_alvarez"
 ROOT = "DOC. MAQUINAS/"
 OUT_OF_SCOPE_PREFIXES = ("DOC. MAQUINAS/ESLINGAS",)
+OCR_CANDIDATE_EXTENSIONS = (".pdf", ".jpg", ".jpeg", ".png")
 
 
 class Command(BaseCommand):
@@ -51,6 +59,10 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument("--apply", action="store_true")
+        parser.add_argument(
+            "--untyped", action="store_true",
+            help="Documentos SIN tipo (PDF e imagenes) en vez de con tipo.",
+        )
         parser.add_argument(
             "--log-file", required=True,
             help="Log propio (pantalla y archivo a la vez, com-standards 0bis).",
@@ -67,35 +79,43 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         self._log_handle = open(options["log_file"], "a", encoding="utf-8")
         try:
-            self._run(options["apply"])
+            self._run(options["apply"], options["untyped"])
         finally:
             self._log_handle.close()
 
-    def _run(self, apply_changes):
+    def _run(self, apply_changes, untyped=False):
         machine_ct = ContentType.objects.get_for_model(MachineAsset)
         qs = DocumentIndexEntry.objects.filter(
             bucket=BUCKET, entry_kind=DocumentIndexEntry.KIND_FILE,
-            document_type__isnull=False, domain_object_id__isnull=True,
+            document_type__isnull=untyped, domain_object_id__isnull=True,
             parent_path__startswith=ROOT,
             deleted_at__isnull=True, purged_at__isnull=True,
         ).select_related("document_type")
         entries = [
             e for e in qs
             if not e.parent_path.upper().startswith(OUT_OF_SCOPE_PREFIXES)
+            and (
+                not untyped
+                or e.name.lower().endswith(OCR_CANDIDATE_EXTENSIONS)
+            )
         ]
         excluded = qs.count() - len(entries)
         total = len(entries)
         self._log(
-            "MODO: %s -- %d documentos con tipo y sin maquina en DOC. "
-            "MAQUINAS (%d de eslingas fuera, punto 9 de la hoja de ruta)"
+            "MODO: %s -- %d documentos %s y sin maquina en DOC. "
+            "MAQUINAS (%d fuera: eslingas, punto 9 de la hoja de ruta%s)"
             % (
                 "APLICAR (escribe)" if apply_changes
                 else "DRY-RUN (no escribe nada, no crea maquinas)",
-                total, excluded,
+                total,
+                "SIN TIPO (PDF e imagenes)" if untyped else "con tipo",
+                excluded,
+                ", y extensiones no OCR" if untyped else "",
             )
         )
 
         assigned = 0
+        assigned_active = 0
         by_machine = Counter()
         unresolved_by_folder = Counter()
         unresolved_examples = {}
@@ -104,13 +124,20 @@ class Command(BaseCommand):
 
         for index, entry in enumerate(entries, start=1):
             asset = resolve_machine_asset_with_filename(entry)
+            type_code = (
+                entry.document_type.code if entry.document_type_id
+                else "SIN TIPO"
+            )
             if asset:
                 assigned += 1
-                by_machine[asset.code] += 1
+                if asset.is_active:
+                    assigned_active += 1
+                by_machine[(asset.code, asset.is_active)] += 1
                 self._log(
-                    "ASIGNADO -> %s  [%s] %s (%s)"
-                    % (asset.code, entry.parent_path, entry.name,
-                       entry.document_type.code)
+                    "ASIGNADO -> %s (%s)  [%s] %s (%s)"
+                    % (asset.code,
+                       "activa" if asset.is_active else "INACTIVA",
+                       entry.parent_path, entry.name, type_code)
                 )
                 if apply_changes:
                     entry.domain_content_type = machine_ct
@@ -121,7 +148,7 @@ class Command(BaseCommand):
             else:
                 unresolved_by_folder[entry.parent_path] += 1
                 unresolved_examples.setdefault(entry.parent_path, []).append(
-                    "%s (%s)" % (entry.name, entry.document_type.code)
+                    "%s (%s)" % (entry.name, type_code)
                 )
 
             if index % 25 == 0 or time.monotonic() - last_beat >= 30 or index == total:
@@ -133,10 +160,10 @@ class Command(BaseCommand):
                 ).strftime("%H:%M:%S")
                 self._log(
                     "Progreso: %d/%d (%d%%) -- ETA %dm%02ds (fin aprox. %s) "
-                    "-- asignados=%d, sin_maquina=%d" % (
+                    "-- asignados=%d (activas=%d), sin_maquina=%d" % (
                         index, total, index * 100 // total if total else 100,
                         int(eta_seg // 60), int(eta_seg % 60), hora_fin,
-                        assigned, index - assigned,
+                        assigned, assigned_active, index - assigned,
                     )
                 )
 
@@ -145,11 +172,19 @@ class Command(BaseCommand):
         ))
         self._log_plain("    documentos revisados: %d" % total)
         self._log_plain("    asignados a su maquina: %d" % assigned)
+        self._log_plain("      - a maquina ACTIVA: %d" % assigned_active)
+        self._log_plain("      - a maquina INACTIVA: %d" % (
+            assigned - assigned_active,
+        ))
         self._log_plain("    sin maquina reconocible: %d" % (total - assigned))
-        self._log_plain("    eslingas fuera (punto 9): %d" % excluded)
+        self._log_plain("    fuera de alcance (eslingas, punto 9%s): %d" % (
+            "; y extensiones no OCR" if untyped else "", excluded,
+        ))
         self._log_plain("--- Asignados por maquina ---")
-        for code, count in sorted(by_machine.items()):
-            self._log_plain("    %s: %d" % (code, count))
+        for (code, is_active), count in sorted(by_machine.items()):
+            self._log_plain("    %s%s: %d" % (
+                code, "" if is_active else " (INACTIVA)", count,
+            ))
         self._log_plain("--- SIN MAQUINA, por carpeta (TODOS, con sus archivos) ---")
         for folder, count in unresolved_by_folder.most_common():
             self._log_plain("  %4d | %s" % (count, folder))
