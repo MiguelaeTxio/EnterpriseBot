@@ -85,6 +85,10 @@ EU_REGISTRATION_RE = re.compile(
 
 # (código, frases de cabecera) -- el orden es la prioridad.
 MACHINE_HEADER_MARKERS = [
+    # S118: orden de reparación de Prologic ("Proceder presupuesto
+    # previo" en su pie hacía que cayera en PROFORMA).
+    ("ORDEN_TRABAJO_MANTENIMIENTO", ["FECHA PREV. ENTREGA"]),
+    ("RECIBO_LEASING", ["DE LAGE LANDEN", "RECIBO-FACTURA POR CUOTA"]),
     ("SEGURO", [
         "NOTA DE ADEUDO", "RECIBO PRIMA", "RECIBO DE PRIMA",
         "FACTURACION SEGUROS SUSCRITOS", "DETALLE DEL MOVIMIENTO",
@@ -173,7 +177,7 @@ MACHINE_HEADER_MARKERS = [
     ("CONTRATO_COMPRAVENTA", [
         "CONTRATO DE COMPRAVENTA", "CONTRATO DE COMPRA VENTA",
     ]),
-    ("PROFORMA", ["PRESUPUESTO", "PROFORMA", "OFERTA"]),
+    ("PROFORMA", ["FACTURA PROFORMA", "PROFORMA", "FRA.PROF"]),
     ("JUSTIFICANTE_TRANSFERENCIA", [
         "JUSTIFICANTE DE TRANSFERENCIA",
         "JUSTIFICANTE PROVISIONAL DE TRANSFERENCIA",
@@ -183,6 +187,8 @@ MACHINE_HEADER_MARKERS = [
         "BOLETIN DE DENUNCIA", "IDENTIFICACION DEL CONDUCTOR",
     ]),
     ("FACTURA", ["FACTURA"]),
+    # Solo si no es factura (una factura puede citar su presupuesto).
+    ("PROFORMA", ["PRESUPUESTO", "OFERTA"]),
     ("MANUAL_USO", [
         "MANUAL DE INSTRUCCIONES", "MANUAL DE USO", "MANUAL DEL OPERADOR",
         "OPERATOR'S MANUAL", "MANUAL DE SEGURIDAD",
@@ -233,24 +239,20 @@ def resolve_invoice(entry_name, header):
     """
     FACTURA_COMPRA / FACTURA_VENTA, or None when it cannot be decided.
     ---
-    Compra si una de nuestras empresas figura como CLIENTE; venta si el
-    nombre lo dice o si la cabecera empieza por una de nuestras
-    empresas. Si no, None -- nunca se adivina.
+    Venta solo si lo dice el nombre del archivo; compra si lo dice el
+    nombre o si una de nuestras empresas (o el banco del leasing)
+    figura en la cabecera. Si no, None -- nunca se adivina.
     """
     name = normalize(entry_name)
     if "VENTA" in name:
         return "FACTURA_VENTA"
     if "COMPRA" in name:
         return "FACTURA_COMPRA"
-    for match in re.finditer(r"CLIENTE", header):
-        window = header[match.end():match.end() + 150]
-        if any(company in window for company in COMPANY_NAMES):
-            return "FACTURA_COMPRA"
-    if any(company in header[:80] for company in COMPANY_NAMES):
-        return "FACTURA_VENTA"
-    # S118, casos reales: el proveedor encabeza la factura y una de
-    # nuestras empresas (o el banco del leasing) figura como destinatario
-    # más abajo -- es una compra.
+    # S118, corregido tras el dry-run EnterpriseBot_009: el OCR pone a
+    # menudo PRIMERO el bloque del destinatario (De Lage Landen,
+    # Vemasur...), así que "nuestra empresa al principio" NO significa
+    # venta -- la venta solo se decide por el nombre del archivo. Una de
+    # nuestras empresas (o el banco del leasing) en la cabecera = compra.
     if any(tax_id in header for tax_id in COMPANY_TAX_IDS) or any(
         company in header for company in COMPANY_NAMES
     ) or any(bank in header for bank in LEASING_BANKS):
@@ -266,6 +268,13 @@ def resolve_person(text, entry_name):
     no, por "APELLIDO APELLIDO, NOMBRE" en el nombre del archivo con la
     regla de S69. (None, motivo) si no se resuelve.
     """
+    # S118, corregido tras el dry-run EnterpriseBot_009: en un alta de
+    # la Seguridad Social el PRIMER DNI del texto es el del
+    # administrador que firma (Adolfo Álvarez), no el del trabajador --
+    # el nombre del archivo, cuando lo trae, manda sobre el DNI.
+    person, how = _person_from_file_name(entry_name)
+    if person:
+        return person, how
     for number, letter in DNI_RE.findall(text):
         person = resolve_person_identity(number + letter)
         if person:
@@ -274,15 +283,58 @@ def resolve_person(text, entry_name):
         person = resolve_person_identity(prefix + number + letter)
         if person:
             return person, "NIE %s%s%s" % (prefix, number, letter)
-    name_match = COMMA_NAME_RE.match(normalize(entry_name))
-    if name_match:
-        first_surname, second_surname, given = name_match.groups()
+    return None, how
+
+
+def _person_from_file_name(entry_name):
+    """
+    Resolve a person from the file name with the S69 name-count rule.
+    ---
+    "APELLIDO APELLIDO, NOMBRE" o "DNI <nombre y apellidos>" en los dos
+    órdenes (nombre primero o apellidos primero), cada uno con la regla
+    de S69 (`resolve_person_by_name_count`): solo vale una coincidencia
+    ÚNICA. Devuelve (persona, cómo) o (None, motivo).
+    """
+    name = normalize(entry_name)
+    name = re.sub(r"\.(PDF|JPE?G|PNG)$", "", name)
+    name = re.sub(r"\(.*?\)|\d+", " ", name)
+    name = re.sub(r"\bCOMP\b", " ", name)
+    candidates = []
+    comma = COMMA_NAME_RE.match(name)
+    if comma:
+        first_surname, second_surname, given = comma.groups()
+        # "RAMOS JIMENEZ, M.LEANDRO": la inicial no es el nombre -- se
+        # toma la palabra real más larga tras la coma.
+        after_comma = re.findall(r"[A-Z]{2,}", name.split(",", 1)[1])
+        if after_comma:
+            given = max(after_comma, key=len)
+        candidates.append((given, first_surname, second_surname))
+    else:
+        words = re.findall(r"[A-Z]{2,}", name)
+        if words and words[0] == "DNI":
+            words = words[1:]
+        if len(words) >= 2:
+            candidates.append((
+                words[0], words[1], words[2] if len(words) > 2 else None,
+            ))
+            candidates.append((
+                words[2] if len(words) > 2 else words[-1], words[0],
+                words[1] if len(words) > 2 else None,
+            ))
+    statuses = []
+    for given, first_surname, second_surname in candidates:
         status, person = resolve_person_by_name_count(
             given, first_surname, second_surname,
         )
+        statuses.append(status)
         if status == NAME_MATCH_UNIQUE:
-            return person, "nombre de archivo"
-        return None, "nombre de archivo sin ficha única (%s)" % status
+            return person, "nombre de archivo (%s %s)" % (
+                given, first_surname,
+            )
+    if statuses:
+        return None, "nombre de archivo sin ficha única (%s)" % (
+            "/".join(statuses),
+        )
     return None, "sin DNI ni nombre reconocible"
 
 
