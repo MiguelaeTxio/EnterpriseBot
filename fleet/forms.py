@@ -146,16 +146,12 @@ class MachineAssetForm(forms.ModelForm):
         en la lista.
         """
         super().__init__(*args, **kwargs)
-        families = []
-        if company is not None:
-            families = list(
-                MachineAsset.objects
-                .filter(company=company)
-                .exclude(family="")
-                .values_list("family", flat=True)
-                .distinct()
-                .order_by("family")
-            )
+        # S117: solo familias con al menos una máquina activa (mismo punto
+        # único que el filtro del listado); la familia actual de ESTA
+        # máquina se conserva aunque esté "desactivada".
+        from fleet.family_service import active_families
+
+        families = active_families(company) if company is not None else []
         current = (self.instance.family or "") if self.instance else ""
         if current and current not in families:
             families.append(current)

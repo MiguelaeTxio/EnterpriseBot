@@ -69,22 +69,17 @@ def _get_own_presence(company_user):
 
 def _get_families(company):
     """
-    Returns a sorted list of distinct non-empty family values for the
-    given company's MachineAsset records.
+    Families offered in the list filter: only those with at least one
+    active machine (S117, fleet.family_service.active_families).
 
     ---
 
-    Retorna una lista ordenada de valores de family distintos y no vacíos
-    para los registros MachineAsset de la empresa dada.
+    Familias que ofrece el filtro del listado: solo las que tienen al
+    menos una máquina activa (S117, fleet.family_service.active_families).
     """
-    return (
-        MachineAsset.objects
-        .filter(company=company)
-        .exclude(family="")
-        .values_list("family", flat=True)
-        .distinct()
-        .order_by("family")
-    )
+    from fleet.family_service import active_families
+
+    return active_families(company)
 
 
 # ---------------------------------------------------------------------------
