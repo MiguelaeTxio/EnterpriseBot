@@ -43,6 +43,15 @@ MIN_DATE = date(1980, 1, 1)
 MAX_EXPIRY = date(2045, 12, 31)
 MIN_PERIOD_DAYS = 25
 MAX_PERIOD_DAYS = 800
+# IVTM: el impuesto es anual; un "periodo" más corto es el plazo de
+# pago voluntario, nunca una vigencia (dry-run EnterpriseBot_001, S119).
+MIN_PERIOD_DAYS_BY_CODE = {"IVTM": 300}
+# Contexto previo que delata un plazo de pago o de devolución, no una
+# cobertura: "Período de pago del ... al ...", "periodo voluntario".
+_PAYMENT_CONTEXT = ("PAGO", "VOLUNTARI", "COBRO", "DEVOLUCION")
+# Contexto previo de una fecha registral del propio banco: pie de
+# Cajamar "Inscripción 1ª de fecha 31/10/2012" (id=4794, id=13337).
+_REGISTRY_CONTEXT = ("INSCRIP", "REG. MERC", "REGISTRO MERCANTIL")
 
 # Tipos cuya fecha en el nombre es caducidad (criterio S48).
 EXPIRY_BY_NAME_CODES = {"ITV", "OCA"}
@@ -121,8 +130,9 @@ _EXPIRY_LABEL_RE = re.compile(
 )
 
 # --- 3. Emisión con etiqueta ------------------------------------------
+# Tarjeta ITV con varias inspecciones: se toma la más reciente.
+_INSPECTION_RE = re.compile(r"FECHA DE (?:LA )?INSPECCION\s*:?\s*" + _D)
 _ISSUE_LABEL_PATTERNS = [
-    re.compile(r"FECHA DE (?:LA )?INSPECCION\s*:?\s*" + _D),
     re.compile(r"FECHA INICIO[A-Z ]{0,30}:?\s*" + _D),
     re.compile(r"FECHA DE (?:ENTREGA|EFECTO|EMISION|EXPEDICION)\s*:?\s*"
                + _D),
@@ -198,28 +208,36 @@ def _valid_expiry(value):
     return value is not None and MIN_DATE <= value <= MAX_EXPIRY
 
 
-def _valid_period(start, end):
+def _valid_period(start, end, min_days):
     if start is None or end is None or start < MIN_DATE:
         return False
     if end > MAX_EXPIRY:
         return False
     days = (end - start).days
-    return MIN_PERIOD_DAYS <= days <= MAX_PERIOD_DAYS
+    return min_days <= days <= MAX_PERIOD_DAYS
 
 
-def _find_period(norm):
+def _preceded_by(norm, match, words, width=40):
+    before = norm[max(0, match.start() - width):match.start()]
+    return any(word in before for word in words)
+
+
+def _find_period(norm, code):
+    min_days = MIN_PERIOD_DAYS_BY_CODE.get(code, MIN_PERIOD_DAYS)
     for pattern in _PERIOD_PATTERNS:
         for match in pattern.finditer(norm):
+            if _preceded_by(norm, match, _PAYMENT_CONTEXT):
+                continue
             groups = match.groups()
             start = _from_groups(groups[0:3])
             end = _from_groups(groups[3:6])
-            if _valid_period(start, end):
+            if _valid_period(start, end, min_days):
                 return start, end
     match = _COMPACT_PERIOD_RE.search(norm)
     if match:
         start = _compact(match.groups()[0:3])
         end = _compact(match.groups()[3:6])
-        if _valid_period(start, end):
+        if _valid_period(start, end, min_days):
             return start, end
     return None
 
@@ -233,9 +251,20 @@ def _find_expiry(norm):
     return max(found) if found else None
 
 
-def _find_issue(norm, today):
+def _find_issue(norm, today, expiry=None):
+    inspections = [
+        _from_groups(m.groups()) for m in _INSPECTION_RE.finditer(norm)
+    ]
+    inspections = [
+        value for value in inspections if _valid_issue(value, today)
+        and (expiry is None or value < expiry)
+    ]
+    if inspections:
+        return max(inspections)
     for pattern in _ISSUE_LABEL_PATTERNS:
         for match in pattern.finditer(norm):
+            if _preceded_by(norm, match, _REGISTRY_CONTEXT):
+                continue
             value = _from_groups(match.groups())
             if _valid_issue(value, today):
                 return value
@@ -292,15 +321,20 @@ def dates_by_rules(code, name, text, today=None):
     """
     today = today or date.today()
     norm = normalize(text)
+    by_name = _from_name(code, name or "")
     if norm:
-        period = _find_period(norm)
+        period = _find_period(norm, code)
         if period:
             return {
                 "issue": period[0] if period[0] <= today else None,
                 "expiry": period[1], "source": "regla periodo",
             }
         expiry = _find_expiry(norm)
-        issue = _find_issue(norm, today)
+        issue = _find_issue(norm, today, expiry)
+        # ITV/OCA: si el texto solo da la emisión, la caducidad del
+        # nombre ("ITV SEP-2014", criterio S48) la completa (id=4715).
+        if expiry is None and by_name and by_name[0] == "expiry":
+            expiry = by_name[1]
         if expiry and issue and expiry <= issue:
             expiry = None
         if expiry or issue:
@@ -308,7 +342,6 @@ def dates_by_rules(code, name, text, today=None):
                 "expiry": expiry, "issue": issue,
                 "source": "regla etiqueta",
             }
-    by_name = _from_name(code, name or "")
     if by_name:
         field, value = by_name
         if field == "expiry" and _valid_expiry(value):

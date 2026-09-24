@@ -109,6 +109,19 @@ class Command(BaseCommand):
             return False
         return value <= (MAX_EXPIRY if is_expiry else today)
 
+    def _track_undated(self, entry, missing_ids):
+        """
+        Keep entries of expiring types that still have no date at all.
+        ---
+        Guarda los de tipo que caduca que siguen sin ninguna fecha --
+        el criterio de cierre del punto 1 (S119).
+        """
+        if entry.document_type.tracks_expiry and entry.issue_date is None \
+                and entry.expiry_date is None:
+            missing_ids.setdefault(
+                entry.document_type.code, [],
+            ).append(entry)
+
     def _decide_by_rules(self, entry):
         """
         Return ({field_name: date}, source) from the S119 type rules.
@@ -237,14 +250,14 @@ class Command(BaseCommand):
                     )
             elif field is None:
                 missing[code] += 1
-                missing_ids.setdefault(code, []).append(entry)
+                self._track_undated(entry, missing_ids)
             else:
                 # Nunca sobrescribe: en un caducable con emisión ya puesta
                 # y sin caducidad, una "emisión" nueva no aporta nada.
                 current = getattr(entry, "%s_date" % field)
                 if current is not None:
                     missing[code] += 1
-                    missing_ids.setdefault(code, []).append(entry)
+                    self._track_undated(entry, missing_ids)
                 else:
                     found[(code, field, source)] += 1
                     examples.setdefault((code, field, source), []).append(
@@ -282,10 +295,18 @@ class Command(BaseCommand):
         self._log_plain("--- SIGUEN SIN FECHA POR TIPO ---")
         for code, count in missing.most_common():
             self._log_plain("    %s: %d" % (code, count))
-        # S119: el cierre del punto 1 exige listar por id los que no
-        # tienen ninguna fecha legible -- con el arranque del texto para
-        # poder escribir la regla que falte sin otra consulta.
-        self._log_plain("--- SIGUEN SIN FECHA: LISTA POR ID ---")
+        self._log_plain("--- EJEMPLOS (hasta 5 por grupo) ---")
+        for key, items in sorted(examples.items()):
+            self._log_plain("  %s %s (%s)" % key)
+            for line in items[:5]:
+                self._log_plain("      %s" % line)
+        # S119: el cierre del punto 1 son los de tipo que caduca sin
+        # NINGUNA fecha; van al final del log, listados por id con el
+        # arranque del texto, para leerlos con la cola del relevo sin
+        # traer los miles de recibos que solo esperan caducidad.
+        self._log_plain(
+            "--- CIERRE PUNTO 1: CADUCABLES SIN NINGUNA FECHA, POR ID ---"
+        )
         for code, items in sorted(missing_ids.items()):
             self._log_plain("  %s (%d)" % (code, len(items)))
             for item in items:
@@ -293,8 +314,10 @@ class Command(BaseCommand):
                     item.id, item.name,
                     normalize(item.ocr_text)[:220] or "(sin texto)",
                 ))
-        self._log_plain("--- EJEMPLOS (hasta 5 por grupo) ---")
-        for key, items in sorted(examples.items()):
-            self._log_plain("  %s %s (%s)" % key)
-            for line in items[:5]:
-                self._log_plain("      %s" % line)
+        self._log_plain(
+            "=== CIERRE PUNTO 1: %d caducables quedarian sin ninguna "
+            "fecha (%s) ===" % (
+                sum(len(items) for items in missing_ids.values()),
+                "APLICADO" if apply_changes else "DRY-RUN",
+            )
+        )
