@@ -1,0 +1,39 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation_h30/_machine_dossier_template_list.html #}
+{% comment %}
+H30 (S119), punto 6 -- plantillas de dossier de ámbito Maquinaria desde
+la ficha de una máquina, mismo mecanismo que Personal
+(_personal_dossier_template_list.html): "Descargar" resuelve EN ESTE
+INSTANTE el vigente de cada tipo para esta máquina y lo combina con su
+selección actual; el formato (PDF o ZIP) se elige aquí, un botón por
+formato. Crear y editar plantillas vive en el gestor (?ambito=MAQUINARIA).
+{% endcomment %}
+{% if templates %}
+<table class="table table-sm table-hover mb-0">
+    <thead><tr><th>Nombre</th><th>Tipos incluidos</th><th></th></tr></thead>
+    <tbody>
+        {% for template in templates %}
+        <tr>
+            <td>{{ template.name }}</td>
+            <td class="small text-muted">
+                {% for dt in template.document_types.all %}{{ dt.label }}{% if not forloop.last %}, {% endif %}{% endfor %}
+            </td>
+            <td class="text-end">
+                <a class="btn btn-sm btn-outline-primary" href="{% url 'panel:documentation_machine_dossier_template_apply' pk=machine.pk template_pk=template.pk %}?format=PDF" title="Aplica la plantilla a esta máquina en PDF único, combinada con su selección actual">
+                    <i class="bi bi-download me-1"></i>PDF
+                </a>
+                <a class="btn btn-sm btn-outline-secondary" href="{% url 'panel:documentation_machine_dossier_template_apply' pk=machine.pk template_pk=template.pk %}?format=ZIP" title="Aplica la plantilla a esta máquina en ZIP, combinada con su selección actual">
+                    <i class="bi bi-download me-1"></i>ZIP
+                </a>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<div class="text-muted small py-3">Sin plantillas de maquinaria guardadas todavía en la empresa.</div>
+{% endif %}
+<div class="text-end mt-2">
+    <a class="btn btn-sm btn-outline-secondary" href="{% url 'panel:dossier_templates_manage' %}?ambito=MAQUINARIA" target="_blank">
+        <i class="bi bi-gear me-1"></i>Gestionar plantillas
+    </a>
+</div>

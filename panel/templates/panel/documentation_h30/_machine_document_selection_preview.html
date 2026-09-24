@@ -1,0 +1,52 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation_h30/_machine_document_selection_preview.html #}
+{% comment %}
+H30 (S119), punto 6 -- vista previa de la selección de documentos de una
+ficha de máquina, mismo mecanismo que Personal
+(_personal_document_selection_preview.html): lee siempre de
+PanelNavigationState (MachineDocumentSelectionPreviewView), casillero por
+fila para "Eliminar seleccionados", ojo para "Ver", y descarga en PDF
+único (portada + índice + documentos) o ZIP (originales por familia).
+{% endcomment %}
+{% if entries %}
+<div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+    <span class="text-muted small">{{ entries|length }} documento{{ entries|length|pluralize }} seleccionado{{ entries|length|pluralize }}</span>
+    <div class="d-flex gap-2 flex-wrap">
+        <a class="btn btn-sm btn-outline-primary" href="{% url 'panel:documentation_machine_document_selection_pdf' pk=machine.pk %}">
+            <i class="bi bi-file-earmark-pdf me-1"></i>PDF único
+        </a>
+        <a class="btn btn-sm btn-outline-primary" href="{% url 'panel:documentation_machine_document_selection_zip' pk=machine.pk %}">
+            <i class="bi bi-file-earmark-zip me-1"></i>ZIP
+        </a>
+        <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeCheckedFromPreview()">
+            <i class="bi bi-trash me-1"></i>Eliminar seleccionados
+        </button>
+        <button type="button" class="btn btn-sm btn-outline-danger" onclick="clearDocumentSelection()">
+            <i class="bi bi-x-circle me-1"></i>Vaciar selección
+        </button>
+    </div>
+</div>
+<table class="table table-sm table-hover mb-0" style="font-size: 0.8rem;">
+    <thead><tr><th style="width:2rem;"></th><th>Tipo</th><th>Familia</th><th>Caducidad</th><th style="width:2.5rem;"></th></tr></thead>
+    <tbody>
+        {% for entry in entries %}
+        <tr>
+            <td class="py-1">
+                <input type="checkbox" class="form-check-input preview-row-checkbox" data-doc-pk="{{ entry.pk }}">
+            </td>
+            <td class="py-1">{{ entry.document_type.label|default:"Sin tipo" }}</td>
+            <td class="py-1">{{ entry.document_type.get_family_display|default:"—" }}</td>
+            <td class="py-1">
+                {% if entry.expiry_date %}{{ entry.expiry_date }}{% elif entry.issue_date %}<span class="text-muted small">Emisión:</span> {{ entry.issue_date }}{% else %}—{% endif %}
+            </td>
+            <td class="py-1 text-end">
+                <a class="btn btn-sm btn-outline-secondary py-0 px-1" title="Ver documento" href="{% url 'panel:documentation_document_view' pk=entry.pk %}" target="_blank">
+                    <i class="bi bi-eye"></i>
+                </a>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<div class="text-muted small py-3">No hay ningún documento seleccionado. Marca las casillas de la documentación de esta máquina.</div>
+{% endif %}

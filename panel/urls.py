@@ -46,6 +46,11 @@ from panel.views_documentation_h30 import (
     EpiTabFragmentView,
     EpiTechnicalSheetUploadView,
     MachineDetailView,
+    MachineDocumentSelectionPdfView,
+    MachineDocumentSelectionPreviewView,
+    MachineDocumentSelectionZipView,
+    MachineDossierTemplateApplyView,
+    MachineDossierTemplateListView,
     PersonalDetailView,
     PersonalDocumentSelectionPdfView,
     PersonalDocumentSelectionPreviewView,
@@ -469,6 +474,12 @@ urlpatterns = [
     path("documentacion/personal/<int:pk>/historial/<str:type_code>/", PersonalDocumentTypeHistoryView.as_view(), name="documentation_personal_type_history"),
     # H31 (S103): vista previa de la selección de documentos (checkboxes) para dossieres/adjuntos.
     path("documentacion/personal/<int:pk>/seleccion/", PersonalDocumentSelectionPreviewView.as_view(), name="documentation_personal_document_selection_preview"),
+    # H30 (S119), punto 6: selección y plantillas de dossier en la ficha de máquina (mismo mecanismo que Personal).
+    path("documentacion/maquinaria/<int:pk>/seleccion/", MachineDocumentSelectionPreviewView.as_view(), name="documentation_machine_document_selection_preview"),
+    path("documentacion/maquinaria/<int:pk>/seleccion/pdf/", MachineDocumentSelectionPdfView.as_view(), name="documentation_machine_document_selection_pdf"),
+    path("documentacion/maquinaria/<int:pk>/seleccion/zip/", MachineDocumentSelectionZipView.as_view(), name="documentation_machine_document_selection_zip"),
+    path("documentacion/maquinaria/<int:pk>/plantillas/", MachineDossierTemplateListView.as_view(), name="documentation_machine_dossier_template_list"),
+    path("documentacion/maquinaria/<int:pk>/plantillas/<int:template_pk>/aplicar/", MachineDossierTemplateApplyView.as_view(), name="documentation_machine_dossier_template_apply"),
     # H31 (S103): descarga del dossier de la selección como PDF único (portada + índice + documentos).
     path("documentacion/personal/<int:pk>/seleccion/pdf/", PersonalDocumentSelectionPdfView.as_view(), name="documentation_personal_document_selection_pdf"),
     # H31 (S103): descarga del dossier de la selección como ZIP (archivos originales, una carpeta por familia).

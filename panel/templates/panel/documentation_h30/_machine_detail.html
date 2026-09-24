@@ -36,6 +36,18 @@ sube una nueva con la cámara (se sube como IMAGEN y queda fijada).
             <div class="fw-semibold">{{ machine.code }}</div>
             <div class="text-muted small">{{ machine.brand_model|default:"" }}{% if machine.plate %} · {{ machine.plate }}{% endif %}</div>
         </div>
+        {% comment %}
+        H30 (S119), punto 6 -- Selección y Plantillas de dossier en la
+        cabecera, mismo mecanismo que la ficha de Personal (H31 S103).
+        {% endcomment %}
+        <div class="ms-auto d-flex flex-wrap gap-2">
+            <button type="button" class="btn btn-sm btn-outline-primary" onclick="openSelectionPreview()">
+                <i class="bi bi-collection me-1"></i>Selección de documentos <span class="badge bg-primary" id="documentSelectionBadge">{{ selected_document_ids|length }}</span>
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="openDossierTemplateManager()">
+                <i class="bi bi-bookmark-star me-1"></i>Plantillas de dossier
+            </button>
+        </div>
     </div>
 </div>
 
@@ -156,10 +168,15 @@ cuya caducidad ya ha pasado (calculado en MachineDetailView).
                     <i class="bi bi-upload me-1"></i>+ Subir
                 </button>
                 <table class="table table-sm table-hover mb-0">
-                    <thead><tr><th>Tipo</th><th>Caducidad</th><th>Acciones</th></tr></thead>
+                    <thead><tr><th style="width:2rem;"></th><th>Tipo</th><th>Caducidad</th><th>Acciones</th></tr></thead>
                     <tbody>
                         {% for entry in fam.documents %}
                         <tr{% if entry.needs_attention %} class="table-danger"{% endif %}>
+                            <td>
+                                <input type="checkbox" class="form-check-input" data-doc-pk="{{ entry.pk }}"
+                                       {% if entry.pk in selected_document_ids %}checked{% endif %}
+                                       onchange="toggleDocumentSelection(this)">
+                            </td>
                             <td>{{ entry.document_type.label }}</td>
                             <td>
                                 {% if entry.needs_attention %}<i class="bi bi-exclamation-triangle-fill text-danger me-1" title="Caducado -- necesita atención"></i>{% endif %}
@@ -527,4 +544,118 @@ function confirmMachineEditMode() {
 }
 </script>
 {% endif %}
+{% comment %}
+H30 (S119), punto 6 -- modales de selección y plantillas de dossier,
+fuera de cualquier acordeón (mismo motivo que Personal, H31 S76), y su
+JS: la selección vive en PanelNavigationState (screen_key
+"machine_ficha", clave "document_selection" por máquina), nunca en el
+almacenamiento del navegador.
+{% endcomment %}
+<div class="modal fade" id="documentSelectionPreviewModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Selección de documentos</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="documentSelectionPreviewModalBody"></div>
+        </div>
+    </div>
+</div>
+<div class="modal fade" id="dossierTemplateModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Plantillas de dossier</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="dossierTemplateModalBody"></div>
+        </div>
+    </div>
+</div>
+<script>
+let selectedDocumentIds = new Set([
+    {% for doc_pk in selected_document_ids %}{{ doc_pk }},{% endfor %}
+]);
+let documentSelectionPreviewModalInstance = null;
+let dossierTemplateModalInstance = null;
+
+function persistDocumentSelection() {
+    document.getElementById('documentSelectionBadge').textContent = selectedDocumentIds.size;
+    const update = {document_selection: {}};
+    update.document_selection['{{ machine.pk }}'] = Array.from(selectedDocumentIds);
+    fetch('/panel/navegacion/estado/machine_ficha/', {
+        method: 'POST',
+        headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
+        body: JSON.stringify(update),
+    });
+}
+
+function toggleDocumentSelection(checkbox) {
+    const pk = parseInt(checkbox.dataset.docPk, 10);
+    if (checkbox.checked) {
+        selectedDocumentIds.add(pk);
+    } else {
+        selectedDocumentIds.delete(pk);
+    }
+    persistDocumentSelection();
+}
+
+function loadSelectionPreview() {
+    const body = document.getElementById('documentSelectionPreviewModalBody');
+    fetch("{% url 'panel:documentation_machine_document_selection_preview' pk=machine.pk %}")
+        .then(r => r.text())
+        .then(html => { body.innerHTML = html; })
+        .catch(() => {
+            body.innerHTML = '<div class="alert alert-danger py-1 px-2 small mb-0">Error de red al cargar la selección.</div>';
+        });
+}
+
+function openSelectionPreview() {
+    if (!documentSelectionPreviewModalInstance) {
+        documentSelectionPreviewModalInstance = new bootstrap.Modal(document.getElementById('documentSelectionPreviewModal'));
+    }
+    document.getElementById('documentSelectionPreviewModalBody').innerHTML = '<div class="text-muted small py-3">Cargando…</div>';
+    documentSelectionPreviewModalInstance.show();
+    // La persistencia es asíncrona: se da un instante para que la
+    // última casilla marcada llegue al servidor antes de leer.
+    setTimeout(loadSelectionPreview, 300);
+}
+
+function removeCheckedFromPreview() {
+    const checkedIds = Array.from(
+        document.querySelectorAll('.preview-row-checkbox:checked'),
+    ).map(el => parseInt(el.dataset.docPk, 10));
+    if (checkedIds.length === 0) return;
+    checkedIds.forEach(pk => {
+        selectedDocumentIds.delete(pk);
+        const checkbox = document.querySelector(`input[data-doc-pk="${pk}"]:not(.preview-row-checkbox)`);
+        if (checkbox) checkbox.checked = false;
+    });
+    persistDocumentSelection();
+    setTimeout(loadSelectionPreview, 300);
+}
+
+function clearDocumentSelection() {
+    selectedDocumentIds.clear();
+    document.querySelectorAll('input[data-doc-pk]').forEach(function (cb) { cb.checked = false; });
+    persistDocumentSelection();
+    setTimeout(loadSelectionPreview, 300);
+}
+
+function openDossierTemplateManager() {
+    if (!dossierTemplateModalInstance) {
+        dossierTemplateModalInstance = new bootstrap.Modal(document.getElementById('dossierTemplateModal'));
+    }
+    const body = document.getElementById('dossierTemplateModalBody');
+    body.innerHTML = '<div class="text-muted small py-3">Cargando…</div>';
+    dossierTemplateModalInstance.show();
+    fetch("{% url 'panel:documentation_machine_dossier_template_list' pk=machine.pk %}")
+        .then(r => r.text())
+        .then(html => { body.innerHTML = html; })
+        .catch(() => {
+            body.innerHTML = '<div class="alert alert-danger py-1 px-2 small mb-0">Error de red al cargar las plantillas.</div>';
+        });
+}
+</script>
 {% endblock %}

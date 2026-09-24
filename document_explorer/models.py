@@ -2490,6 +2490,27 @@ class PersonalDossierTemplate(models.Model):
         (FORMAT_ZIP, "ZIP"),
     ]
 
+    SCOPE_PERSONAL = "PERSONAL"
+    SCOPE_MACHINE = "MACHINE"
+    SCOPE_CHOICES = [
+        (SCOPE_PERSONAL, "Personal"),
+        (SCOPE_MACHINE, "Maquinaria"),
+    ]
+
+    # H30 (S119), punto 6: plantillas de dossier también para la ficha de
+    # máquina, con el mismo mecanismo que Personal. Cada ficha lista solo
+    # las de su ámbito y el gestor ofrece solo los tipos de ese ámbito.
+    # Las plantillas ya existentes son todas de Personal (default).
+    scope = models.CharField(
+        max_length=10,
+        choices=SCOPE_CHOICES,
+        default=SCOPE_PERSONAL,
+        verbose_name="Ámbito",
+        help_text=(
+            "Personal o Maquinaria: en qué fichas se ofrece la "
+            "plantilla y qué tipos documentales puede incluir."
+        ),
+    )
     company = models.ForeignKey(
         "ivr_config.Company",
         on_delete=models.CASCADE,

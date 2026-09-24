@@ -597,6 +597,10 @@ class MachineDetailView(CompanyUserRequiredMixin, View):
             "attention_types_by_family": attention_types_by_family,
             "expired_current_documents": expired_current_documents,
             "has_expired_documents": bool(expired_current_documents),
+            # S119, punto 6: casillas marcadas (PanelNavigationState).
+            "selected_document_ids": _machine_selected_ids(
+                request, machine.pk,
+            ),
             "all_document_types": all_document_types,
             "doc_types": doc_types, "active_nav": "documentation_hub",
             "back_url": back_url,
@@ -831,7 +835,10 @@ class PersonalListFragmentView(CompanyUserRequiredMixin, View):
         # "Generar dosieres" -- mismo criterio que epi_items/
         # notification_types de arriba, cargado una única vez en la
         # carga inicial de la pestaña.
-        ctx["dossier_templates"] = request.user.company_user.company.dossier_templates.order_by("name")
+        company = request.user.company_user.company
+        ctx["dossier_templates"] = company.dossier_templates.filter(
+            scope=PersonalDossierTemplate.SCOPE_PERSONAL,
+        ).order_by("name")
         # H31 (S109): grupos de reparto guardados -- sin filtro de
         # Company a propósito (PersonGroupTemplate cruza empresas por
         # diseño), cargado una única vez igual que el resto de esta
@@ -1781,6 +1788,33 @@ def _build_epi_section_page(epi_deliveries):
     return build_index_page(header_lines, item_lines, footer_note)
 
 
+def _dossier_subject_texts(subject):
+    """
+    Cover lines and filename token of a dossier for a person or machine.
+    ---
+    H30 (S119), punto 6: líneas de portada y token de nombre de archivo
+    del dossier -- PersonIdentity igual que siempre (nombre, DNI,
+    empresa); MachineAsset con código, marca/modelo y matrícula.
+    """
+    if isinstance(subject, MachineAsset):
+        title = "%s -- %s" % (subject.code, subject.brand_model or "")
+        plate = "Matrícula: %s" % (subject.plate or "sin matrícula")
+        lines = [(title, 13, False), (plate, 11, False)]
+        return lines, naming_service._sanitize_token(subject.code)
+    person_line = (
+        f"{subject.first_surname} {subject.second_surname}, "
+        f"{subject.given_name} ({subject.dni})"
+    )
+    lines = [
+        (person_line, 13, False),
+        (subject.employer_company or "Sin empresa asignada", 11, False),
+    ]
+    token = naming_service.build_person_folder_name(
+        subject.first_surname, subject.second_surname, subject.given_name,
+    )
+    return lines, token
+
+
 def _build_dossier_pdf_bytes(person, entries, epi_deliveries=None):
     """
     H31 (S104). Extracted from _build_dossier_pdf_response (S103) so
@@ -1846,14 +1880,11 @@ def _build_dossier_pdf_bytes(person, entries, epi_deliveries=None):
             "único (usa la descarga en ZIP para estos archivos).",
         )
 
-    person_line = (
-        f"{person.first_surname} {person.second_surname}, "
-        f"{person.given_name} ({person.dni})"
-    )
+    # S119, punto 6: `person` puede ser también una MachineAsset.
+    subject_lines, person_token = _dossier_subject_texts(person)
     header_lines = [
         ("DOSSIER DE DOCUMENTACIÓN", 18, True),
-        (person_line, 13, False),
-        (person.employer_company or "Sin empresa asignada", 11, False),
+        *subject_lines,
         (f"Generado: {timezone.localdate().isoformat()}", 10, False),
         (f"Documentos incluidos: {len(included_lines)}", 11, True),
     ]
@@ -1872,9 +1903,6 @@ def _build_dossier_pdf_bytes(person, entries, epi_deliveries=None):
     except EmptyDocumentListError as exc:
         raise DossierBuildError(str(exc)) from exc
 
-    person_token = naming_service.build_person_folder_name(
-        person.first_surname, person.second_surname, person.given_name,
-    )
     filename = f"Dossier_{person_token}_{timezone.localdate().isoformat()}.pdf"
     return merged_bytes, filename
 
@@ -1967,9 +1995,7 @@ def _build_dossier_zip_bytes(person, entries, epi_deliveries=None):
             data = download_bytes(entry.bucket, entry.blob_name)
             zf.writestr(arcname, data)
 
-    person_token = naming_service.build_person_folder_name(
-        person.first_surname, person.second_surname, person.given_name,
-    )
+    _lines, person_token = _dossier_subject_texts(person)
     filename = f"Dossier_{person_token}_{timezone.localdate().isoformat()}.zip"
     return zip_buffer.getvalue(), filename
 
@@ -2188,7 +2214,9 @@ class PersonalDossierTemplateListView(CompanyUserRequiredMixin, View):
     def get(self, request, pk):
         person = get_object_or_404(PersonIdentity, pk=pk)
         company = request.user.company_user.company
-        templates = company.dossier_templates.prefetch_related(
+        templates = company.dossier_templates.filter(
+            scope=PersonalDossierTemplate.SCOPE_PERSONAL,
+        ).prefetch_related(
             "document_types",
         ).order_by("created_at")
         return render(
@@ -2248,13 +2276,27 @@ class DossierTemplateManageView(CompanyUserRequiredMixin, View):
 
     def get(self, request):
         company = request.user.company_user.company
-        templates = company.dossier_templates.prefetch_related(
+        # H30 (S119), punto 6: ámbito del gestor -- Personal (por
+        # defecto, como hasta ahora) o Maquinaria (?ambito=MAQUINARIA).
+        ambito = request.GET.get("ambito", "").upper()
+        is_machine_scope = ambito == "MAQUINARIA"
+        scope = (
+            PersonalDossierTemplate.SCOPE_MACHINE if is_machine_scope
+            else PersonalDossierTemplate.SCOPE_PERSONAL
+        )
+        templates = company.dossier_templates.filter(
+            scope=scope,
+        ).prefetch_related(
             "document_types", "epi_items",
         ).order_by("created_at")
 
         types_by_family = {}
         doc_types = DocumentTypeCatalog.objects.filter(
-            is_active=True, domain__in=["PERSONAL", "BOTH"],
+            is_active=True,
+            domain__in=(
+                ["MACHINE", "BOTH"] if is_machine_scope
+                else ["PERSONAL", "BOTH"]
+            ),
         ).order_by("family", "label")
         family_labels = dict(DocumentTypeCatalog.FAMILY_CHOICES)
         for dt in doc_types:
@@ -2277,13 +2319,18 @@ class DossierTemplateManageView(CompanyUserRequiredMixin, View):
         return render(request, "panel/dossier_templates_h35/manage.html", {
             "templates": templates,
             "families": ordered_families,
+            "scope": scope,
+            "is_machine_scope": is_machine_scope,
             # H31/H36 (S109): catálogo de EPIs para la sección propia
             # de la plantilla -- mismo criterio de "todos los activos,
             # agrupados", pero por familia de EpiItemCatalog (distinta
             # de la de DocumentTypeCatalog, nunca mezclarlas).
-            "epi_items": EpiItemCatalog.objects.filter(
-                is_active=True,
-            ).order_by("family", "label"),
+            # S119: los EPIs son solo de Personal.
+            "epi_items": [] if is_machine_scope else (
+                EpiItemCatalog.objects.filter(
+                    is_active=True,
+                ).order_by("family", "label")
+            ),
         })
 
 
@@ -2304,9 +2351,16 @@ class DossierTemplateSaveView(CompanyUserRequiredMixin, View):
                 PersonalDossierTemplate, pk=template_pk, company=company,
             )
         else:
+            scope = request.POST.get("scope", "")
             template = PersonalDossierTemplate(
                 company=company,
                 created_by=getattr(request.user, "company_user", None),
+                # S119, punto 6: ámbito elegido en el gestor.
+                scope=(
+                    scope
+                    if scope in dict(PersonalDossierTemplate.SCOPE_CHOICES)
+                    else PersonalDossierTemplate.SCOPE_PERSONAL
+                ),
             )
 
         name = request.POST.get("name", "").strip()
@@ -2421,10 +2475,201 @@ class PersonalDossierTemplateSetActiveView(CompanyUserRequiredMixin, View):
         template = get_object_or_404(
             PersonalDossierTemplate, pk=template_pk, company=company,
         )
-        company.dossier_templates.exclude(pk=template.pk).update(is_active=False)
+        company.dossier_templates.filter(scope=template.scope).exclude(
+            pk=template.pk,
+        ).update(is_active=False)
         template.is_active = True
         template.save(update_fields=["is_active"])
         return JsonResponse({"ok": True})
+
+
+# ---------------------------------------------------------------------------
+# H30 (S119), punto 6 -- selección y plantillas de dossier en la ficha de
+# MÁQUINA, mismo mecanismo que Personal (S103-S106): selección guardada en
+# PanelNavigationState (screen_key "machine_ficha"), dossier de la
+# selección en PDF único o ZIP, y plantillas de empresa de ámbito
+# Maquinaria que resuelven el vigente de cada tipo al aplicarlas.
+# ---------------------------------------------------------------------------
+MACHINE_FICHA_SCREEN_KEY = "machine_ficha"
+
+
+def _machine_selected_ids(request, pk):
+    """
+    Selected document ids of one machine, from PanelNavigationState.
+    ---
+    Ids seleccionados de una máquina, leídos de PanelNavigationState --
+    la misma fuente que pinta las casillas, nunca parámetros de query.
+    """
+    nav_state = PanelNavigationState.objects.filter(
+        company_user=request.user.company_user,
+        screen_key=MACHINE_FICHA_SCREEN_KEY,
+    ).first()
+    state = (
+        nav_state.state
+        if nav_state and isinstance(nav_state.state, dict) else {}
+    )
+    selection = state.get("document_selection")
+    if not isinstance(selection, dict):
+        return []
+    selected = selection.get(str(pk)) or []
+    return selected if isinstance(selected, list) else []
+
+
+def _resolve_machine_document_selection(request, pk):
+    """
+    Return (machine, selected entries) in family/type order.
+    ---
+    Devuelve (máquina, documentos seleccionados) en orden de familia y
+    tipo; solo documentos vivos de ESA máquina.
+    """
+    machine = get_object_or_404(MachineAsset, pk=pk)
+    ct = ContentType.objects.get_for_model(MachineAsset)
+    entries = DocumentIndexEntry.objects.filter(
+        pk__in=_machine_selected_ids(request, pk), bucket=BUCKET,
+        domain_content_type=ct, domain_object_id=machine.pk,
+        entry_kind=DocumentIndexEntry.KIND_FILE,
+        deleted_at__isnull=True, purged_at__isnull=True,
+    ).select_related("document_type").order_by(
+        "document_type__family", "document_type__label",
+    )
+    return machine, entries
+
+
+def _resolve_machine_template_entries(machine, template):
+    """
+    Current document of each template type for this machine, now.
+    ---
+    El vigente de cada tipo de la plantilla para esta máquina, resuelto
+    en este instante con el mismo cálculo que la ficha.
+    """
+    ct = ContentType.objects.get_for_model(MachineAsset)
+    type_ids = list(template.document_types.values_list("pk", flat=True))
+    all_entries = DocumentIndexEntry.objects.filter(
+        bucket=BUCKET, domain_content_type=ct, domain_object_id=machine.pk,
+        entry_kind=DocumentIndexEntry.KIND_FILE,
+        deleted_at__isnull=True, purged_at__isnull=True,
+        document_type_id__in=type_ids,
+    ).select_related("document_type")
+    current, _obsolete = _split_current_obsolete(list(all_entries))
+    current.sort(key=lambda e: (e.document_type.family, e.document_type.label))
+    return current
+
+
+class MachineDocumentSelectionPreviewView(CompanyUserRequiredMixin, View):
+    """
+    GET: preview of a machine's document selection.
+    ---
+    GET: vista previa de la selección de documentos de una máquina.
+    """
+
+    def get(self, request, pk):
+        machine, entries = _resolve_machine_document_selection(request, pk)
+        return render(
+            request,
+            "panel/documentation_h30/_machine_document_selection_preview.html",
+            {"machine": machine, "entries": entries},
+        )
+
+
+class MachineDocumentSelectionPdfView(CompanyUserRequiredMixin, View):
+    """
+    GET: dossier of the selection as a single PDF.
+    ---
+    GET: dossier de la selección en un único PDF (portada + índice +
+    documentos), mismo constructor que Personal.
+    """
+
+    def get(self, request, pk):
+        machine, entries = _resolve_machine_document_selection(request, pk)
+        if not entries:
+            return HttpResponse(
+                "No hay ningún documento seleccionado para esta máquina.",
+                status=400,
+            )
+        return _build_dossier_pdf_response(machine, entries)
+
+
+class MachineDocumentSelectionZipView(CompanyUserRequiredMixin, View):
+    """
+    GET: dossier of the selection as a ZIP of the originals.
+    ---
+    GET: dossier de la selección en ZIP con los archivos originales,
+    una carpeta por familia, mismo constructor que Personal.
+    """
+
+    def get(self, request, pk):
+        machine, entries = _resolve_machine_document_selection(request, pk)
+        if not entries:
+            return HttpResponse(
+                "No hay ningún documento seleccionado para esta máquina.",
+                status=400,
+            )
+        return _build_dossier_zip_response(machine, entries)
+
+
+class MachineDossierTemplateListView(CompanyUserRequiredMixin, View):
+    """
+    GET: company machine-scope dossier templates, from a machine file.
+    ---
+    GET: plantillas de dossier de ámbito Maquinaria de la empresa,
+    pedidas desde la ficha de una máquina.
+    """
+
+    def get(self, request, pk):
+        machine = get_object_or_404(MachineAsset, pk=pk)
+        templates = request.user.company_user.company.dossier_templates.filter(
+            scope=PersonalDossierTemplate.SCOPE_MACHINE,
+        ).prefetch_related("document_types").order_by("created_at")
+        return render(
+            request,
+            "panel/documentation_h30/_machine_dossier_template_list.html",
+            {"machine": machine, "templates": templates},
+        )
+
+
+class MachineDossierTemplateApplyView(CompanyUserRequiredMixin, View):
+    """
+    GET: apply a machine template to one machine (PDF or ZIP).
+    ---
+    GET: aplica una plantilla de Maquinaria a una máquina -- el vigente
+    de cada tipo en este instante, combinado con su selección actual;
+    formato (?format=PDF|ZIP) siempre elegido, nunca asumido.
+    """
+
+    def get(self, request, pk, template_pk):
+        machine = get_object_or_404(MachineAsset, pk=pk)
+        template = get_object_or_404(
+            PersonalDossierTemplate, pk=template_pk,
+            company=request.user.company_user.company,
+            scope=PersonalDossierTemplate.SCOPE_MACHINE,
+        )
+        output_format = request.GET.get("format", "").strip().upper()
+        if output_format not in (
+            PersonalDossierTemplate.FORMAT_PDF,
+            PersonalDossierTemplate.FORMAT_ZIP,
+        ):
+            return HttpResponse(
+                "Falta indicar el formato (PDF o ZIP) para descargar "
+                "esta plantilla.",
+                status=400,
+            )
+        combined = list(_resolve_machine_template_entries(machine, template))
+        combined_pks = {entry.pk for entry in combined}
+        _machine, selection = _resolve_machine_document_selection(request, pk)
+        for entry in selection:
+            if entry.pk not in combined_pks:
+                combined.append(entry)
+                combined_pks.add(entry.pk)
+        if not combined:
+            return HttpResponse(
+                "Ninguno de los tipos de esta plantilla tiene hoy un "
+                "documento vigente para esta máquina, y no hay ningún "
+                "documento adicional seleccionado.",
+                status=400,
+            )
+        if output_format == PersonalDossierTemplate.FORMAT_ZIP:
+            return _build_dossier_zip_response(machine, combined)
+        return _build_dossier_pdf_response(machine, combined)
 
 
 class JobPositionManageView(CompanyUserRequiredMixin, View):

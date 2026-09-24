@@ -54,6 +54,20 @@ tener la misma plantilla en los dos formatos).
 {% block content %}
 <div class="container-fluid px-3 pt-3">
 
+    {% comment %}
+    H30 (S119), punto 6 -- ámbito del gestor: plantillas de Personal (por
+    defecto) o de Maquinaria. Cada ámbito ofrece solo sus tipos
+    documentales y cada ficha lista solo las plantillas de su ámbito.
+    {% endcomment %}
+    <ul class="nav nav-pills mb-3">
+        <li class="nav-item">
+            <a class="nav-link{% if not is_machine_scope %} active{% endif %}" href="{% url 'panel:dossier_templates_manage' %}">Personal</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link{% if is_machine_scope %} active{% endif %}" href="{% url 'panel:dossier_templates_manage' %}?ambito=MAQUINARIA">Maquinaria</a>
+        </li>
+    </ul>
+
     <div class="d-flex align-items-center justify-content-between mb-3">
         <p class="text-muted small mb-0">
             Una plantilla guarda qué TIPOS documentales incluir -- al
@@ -407,6 +421,7 @@ function saveTemplate(onSuccess) {
 
     const formData = new FormData();
     formData.append('name', name);
+    formData.append('scope', '{{ scope }}');
     typeIds.forEach(id => formData.append('document_type_ids', id));
     epiIds.forEach(id => formData.append('epi_item_ids', id));
 
