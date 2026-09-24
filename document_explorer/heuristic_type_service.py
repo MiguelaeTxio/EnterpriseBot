@@ -209,6 +209,14 @@ FOLDER_TYPE_RULES = [
 ]
 
 
+# S117: tipos de PERSONA que asignan las reglas de carpeta -- nunca bajo
+# DOC. MAQUINAS (ver folder_based_type).
+PERSON_ONLY_FOLDER_CODES = frozenset({
+    "BAJA_PERSONAL", "PARTE_BAJA_MEDICA", "INVESTIGACION_ACCIDENTE",
+    "REGISTRO_JORNADA", "PAGO_CORRIENTE", "AUTORIZACION_USO_MAQUINARIA",
+})
+
+
 def folder_based_type(entry, domain):
     """
     BAJA_PERSONAL / PARTE_BAJA_MEDICA / INVESTIGACION_ACCIDENTE (dominio
@@ -252,7 +260,18 @@ def folder_based_type(entry, domain):
     # (ninguna regla existente depende de que falte esa barra), solo
     # habilita las que estaban rotas por este motivo.
     path_upper = _strip_accents(entry.parent_path).upper() + "/"
+    in_machines = path_upper.startswith("DOC. MAQUINAS/")
     for needle, code in FOLDER_TYPE_RULES:
+        # S117 -- fallo real (punto 4 de H30, "personas coladas"): la
+        # regla "/BAJAS/" -> BAJA_PERSONAL se añadió creyendo que en
+        # MAQUINAS la carpeta siempre es "BAJA" en singular, pero existe
+        # "DOC. MAQUINAS/PLATAFORMAS (Z)/BAJAS/" (plataformas vendidas):
+        # 10 documentos de maquina (IEDMT, revisiones, certificados de
+        # aislamiento...) acabaron tipados como baja de personal. Los
+        # tipos de PERSONA nunca se asignan por carpeta bajo DOC.
+        # MAQUINAS.
+        if in_machines and code in PERSON_ONLY_FOLDER_CODES:
+            continue
         if needle.upper() in path_upper:
             return code
     return None

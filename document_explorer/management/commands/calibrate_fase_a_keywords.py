@@ -813,6 +813,7 @@ _S117_MACHINE_ADDITIONS_2 = {
     # (SPECIFIC_WINS en heuristic_type_service).
     "MANUAL_USO": [
         "MANUAL", "MANUAL USUARIO", "MANUAL DE USUARIO", "MANUAL DE SERVICIO",
+        "MANEJO E INSTRUCCIONES",
     ],
     "PERMISO_CIRCULACION": ["PERM CIRCULA"],
     # "AUTORIZACION PROVISIONAL CONDUCCION" (B-44) es de conducir, no de
@@ -828,10 +829,14 @@ _S117_MACHINE_ADDITIONS_2 = {
     "CERT_REVISION": [
         "REGISTRO REVISIONES", "CERTIFICADO DE REVISIONES",
         "CERT ULTIMA REVISION", "REVISION INTERNA", "REV INTERCARRETILLA",
+        "CORRECTO FUNCIONAMIENTO",
     ],
     # Fotos guardadas como PDF (el respaldo por extension no las ve).
     "IMAGEN": ["FOTO PLACA", "IMAGEN DE WHATSAPP", "WHATSAPP IMAGE"],
     "CERTIFICADO_PODERES": ["OTORGAMIENTO DE REPRESENTACION"],
+    # Punto 4 (S117), casos reales de "PLATAFORMAS (Z)/BAJAS/" que
+    # estaban tipados como baja de personal.
+    "IEDMT": ["IMP ESPEC MEDIOS", "IMP MEDIOS TTES"],
 }
 for _additions in (_S117_MACHINE_ADDITIONS, _S117_MACHINE_ADDITIONS_2):
     for _code, _phrases in _additions.items():
