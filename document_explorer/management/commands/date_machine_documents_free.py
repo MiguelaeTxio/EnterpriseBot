@@ -44,7 +44,11 @@ from document_explorer.filename_date_service import (
     _parse_single_date_str,
     extract_date_by_filename,
 )
-from document_explorer.machine_date_rules import dates_by_rules, normalize
+from document_explorer.machine_date_rules import (
+    dates_by_rules,
+    fallback_dates,
+    normalize,
+)
 from document_explorer.models import DocumentIndexEntry
 from fleet.models import MachineAsset
 
@@ -122,7 +126,7 @@ class Command(BaseCommand):
                 entry.document_type.code, [],
             ).append(entry)
 
-    def _decide_by_rules(self, entry):
+    def _decide_by_rules(self, entry, fallback=False):
         """
         Return ({field_name: date}, source) from the S119 type rules.
         ---
@@ -131,9 +135,12 @@ class Command(BaseCommand):
         rellena campos vacíos; nunca escribe caducidad en un tipo que no
         caduca, ni una caducidad anterior a la emisión ya guardada.
         """
-        found = dates_by_rules(
-            entry.document_type.code, entry.name, entry.ocr_text,
-        )
+        if fallback:
+            found = fallback_dates(entry.name, entry.ocr_text)
+        else:
+            found = dates_by_rules(
+                entry.document_type.code, entry.name, entry.ocr_text,
+            )
         if not found:
             return {}, None
         updates = {}
@@ -235,6 +242,12 @@ class Command(BaseCommand):
             updates, rule_source = self._decide_by_rules(entry)
             field, value, source = (None, None, None) if updates \
                 else self._decide(entry)
+            # S119: respaldo solo si nada anterior dio fecha útil.
+            if not updates and (field is None or getattr(
+                    entry, "%s_date" % field) is not None):
+                updates, rule_source = self._decide_by_rules(
+                    entry, fallback=True,
+                )
             if updates:
                 key = (code, "+".join(
                     sorted(name[:-5] for name in updates)), rule_source)

@@ -163,6 +163,22 @@ _OCA_NOTIFICATION_RE = re.compile(
     r"NOTIFICACION\s*:?\s*\d{1,3}-(\d{2})(\d{2})((?:19|20)\d{2})"
 )
 
+# Carta con lugar y fecha: "TUBINGEN, 20.07.2006" (DGT alemana, S119).
+_PLACE_DATE_RE = re.compile(
+    r"\b[A-Z]{3,}\s*,\s*(\d{1,2})[./-](\d{1,2})[./-]((?:19|20)\d{2})\b"
+)
+# Respaldo final: cualquier fecha con año de 4 dígitos.
+_FULL_DATE_RE = re.compile(
+    r"(?<!\d)(\d{1,2})[-./](\d{1,2})[-./]((?:19|20)\d{2})(?!\d)"
+)
+# Nombre con DDMMAAAA suelto ("26012024_hijstechniek", "8233 CKZ
+# 19062025"); nunca el sello canónico "_TIPO_AAAAMMDD", que puede ser la
+# fecha de subida (S118).
+_NAME_DDMMYYYY_RE = re.compile(
+    r"(?<![\d_])(\d{2})(\d{2})((?:19|20)\d{2})(?!\d)"
+)
+_CANONICAL_NAME_RE = re.compile(r"_[A-Z_]+_\d{8}(?:_\d+)?\.[A-Z]+$")
+
 # --- 4. Mes y año en el nombre ------------------------------------------
 _NAME_MONTH_YEAR_RE = re.compile(
     r"\b(" + "|".join(_MONTH_ABBR) + r")[A-Z]*[-_. ]*((?:19|20)\d{2})\b"
@@ -298,6 +314,35 @@ def _find_long_or_words(norm, today):
     return None
 
 
+def _find_latest(norm, today):
+    """
+    Most recent full date of the text (fallback, S119).
+    ---
+    Respaldo: la fecha más reciente con año de 4 dígitos, sin las
+    registrales ni las futuras. En justificantes bancarios las etiquetas
+    y los valores van separados y esa es la fecha del cargo.
+    """
+    found = []
+    for match in _FULL_DATE_RE.finditer(norm):
+        if _preceded_by(norm, match, _REGISTRY_CONTEXT):
+            continue
+        value = _from_groups(match.groups())
+        if _valid_issue(value, today):
+            found.append(value)
+    return max(found) if found else None
+
+
+def _from_name_digits(name, today):
+    upper = normalize(name)
+    if _CANONICAL_NAME_RE.search(upper):
+        return None
+    for match in _NAME_DDMMYYYY_RE.finditer(upper):
+        value = _from_groups(match.groups())
+        if _valid_issue(value, today):
+            return value
+    return None
+
+
 def _from_name(code, name):
     match = _NAME_MONTH_YEAR_RE.search(normalize(name))
     if not match:
@@ -355,4 +400,32 @@ def dates_by_rules(code, name, text, today=None):
         if value:
             return {"expiry": None, "issue": value,
                     "source": "regla fecha larga"}
+    return None
+
+
+def fallback_dates(name, text, today=None):
+    """
+    Weak fallback rules; only when nothing else found a date.
+    ---
+    Reglas de respaldo (S119): lugar y fecha, DDMMAAAA del nombre y la
+    fecha más reciente del texto. El comando solo las usa cuando ni
+    `dates_by_rules` ni el criterio S48 por nombre dan ninguna fecha.
+    """
+    today = today or date.today()
+    norm = normalize(text)
+    if norm:
+        match = _PLACE_DATE_RE.search(norm)
+        value = _from_groups(match.groups()) if match else None
+        if _valid_issue(value, today):
+            return {"expiry": None, "issue": value,
+                    "source": "regla lugar y fecha"}
+    value = _from_name_digits(name or "", today)
+    if value:
+        return {"expiry": None, "issue": value,
+                "source": "regla DDMMAAAA del nombre"}
+    if norm:
+        value = _find_latest(norm, today)
+        if value:
+            return {"expiry": None, "issue": value,
+                    "source": "regla fecha mas reciente"}
     return None
