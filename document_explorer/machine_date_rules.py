@@ -177,6 +177,11 @@ _FULL_DATE_RE = re.compile(
 _NAME_DDMMYYYY_RE = re.compile(
     r"(?<![\d_])(\d{2})(\d{2})((?:19|20)\d{2})(?!\d)"
 )
+# CaixaBank: el cargo lleva la fecha con año de 2 dígitos ("REFERENCIA
+# 23.07.26", id=42113); solo se busca si el texto es de CaixaBank.
+_CAIXA_SHORT_DATE_RE = re.compile(
+    r"(?<![\d.])(\d{1,2})\.(\d{2})\.(\d{2})(?![\d.])"
+)
 _CANONICAL_NAME_RE = re.compile(r"_[A-Z_]+_\d{8}(?:_\d+)?\.[A-Z]+$")
 
 # --- 4. Mes y año en el nombre ------------------------------------------
@@ -428,4 +433,13 @@ def fallback_dates(name, text, today=None):
         if value:
             return {"expiry": None, "issue": value,
                     "source": "regla fecha mas reciente"}
+        if "CAIXABANK" in norm:
+            found = [
+                _from_groups(m.groups())
+                for m in _CAIXA_SHORT_DATE_RE.finditer(norm)
+            ]
+            found = [v for v in found if _valid_issue(v, today)]
+            if found:
+                return {"expiry": None, "issue": max(found),
+                        "source": "regla cargo CaixaBank"}
     return None

@@ -242,9 +242,12 @@ class Command(BaseCommand):
             updates, rule_source = self._decide_by_rules(entry)
             field, value, source = (None, None, None) if updates \
                 else self._decide(entry)
-            # S119: respaldo solo si nada anterior dio fecha útil.
-            if not updates and (field is None or getattr(
-                    entry, "%s_date" % field) is not None):
+            # S119: respaldo solo si nada anterior dio fecha útil, y solo
+            # en tipos que caducan (alcance del punto 1): en el resto daba
+            # fechas dudosas (id=14750, denuncia de 2022 fechada en 2002).
+            if not updates and entry.document_type.tracks_expiry and (
+                    field is None
+                    or getattr(entry, "%s_date" % field) is not None):
                 updates, rule_source = self._decide_by_rules(
                     entry, fallback=True,
                 )
