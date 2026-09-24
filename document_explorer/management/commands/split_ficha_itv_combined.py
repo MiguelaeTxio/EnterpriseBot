@@ -19,6 +19,17 @@ EnterpriseBot_018 -- 55 de 60 con la página 1 reconocida como ficha):
    dos piezas se han subido e indexado bien.
 4. Si la página 1 NO se reconoce como ficha (escaneado en otro orden,
    anverso ilegible), NO se parte: lista de revisión manual.
+SEGUNDA VUELTA (S117, Miguel Ángel: "los 66 combinados de ficha más ITV
+los partimos [...] El alcance es única y exclusivamente activos"):
+- solo combinados de máquinas ACTIVAS;
+- la ficha se busca en CUALQUIER página (la primera reconocida como
+  ficha va a FICHA_TECNICA; todas las demás, a ITV) -- tarjetas
+  escaneadas empezando por la hoja de sellos;
+- encabezados de la tarjeta de remolque/semirremolque añadidos al
+  clasificador (góndolas G-01/G-02);
+- sin fecha en el nombre ni en la entrada: la "Validez" más reciente
+  sellada en las páginas de ITV (dato real, nunca inventado), que pasa
+  también a caducidad de la pieza ITV.
 Ambas piezas heredan el is_obsolete del combinado (un combinado ya
 obsoleto da dos piezas obsoletas); después pasan por el cálculo normal
 de vigencia como cualquier documento. La regla de S50 (si ya existen
@@ -59,19 +70,43 @@ from spare_parts.gcs_service import download_bytes, upload_bytes
 _DATE_RE = re.compile(r"(\d{1,2})[-.](\d{1,2})[-.](\d{2,4})")
 
 
-def _pages_range(data, first, last):
+def _pages_list(data, pages):
     """
-    Bytes of a new PDF with pages first..last (0-based, inclusive).
+    Bytes of a new PDF with the given pages (0-based), in order.
     ---
-    Bytes de un PDF nuevo con las páginas first..last (base 0, incl.).
+    Bytes de un PDF nuevo con esas páginas (base 0), en orden.
     """
     src = fitz.open(stream=data, filetype="pdf")
     out = fitz.open()
-    out.insert_pdf(src, from_page=first, to_page=last)
+    for page in pages:
+        out.insert_pdf(src, from_page=page, to_page=page)
     result = out.tobytes()
     out.close()
     src.close()
     return result
+
+
+_VALIDITY_RE = re.compile(
+    r"VALIDEZ[^0-9]{0,6}(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})", re.IGNORECASE,
+)
+
+
+def _latest_validity(texts):
+    """
+    Most recent "Validez: dd-mm-yyyy" stamped on the ITV pages, or None.
+    ---
+    La "Validez: dd-mm-aaaa" más reciente sellada en las páginas de ITV,
+    o None.
+    """
+    found = []
+    for text in texts:
+        for day, month, year in _VALIDITY_RE.findall(text or ""):
+            year = int(year) + (2000 if int(year) < 100 else 0)
+            try:
+                found.append(date(year, int(month), int(day)))
+            except ValueError:
+                continue
+    return max(found) if found else None
 
 
 def _date_from_name(name):
@@ -152,9 +187,16 @@ class Command(BaseCommand):
         ).order_by("parent_path", "name")
         # S117: reparto por máquina en --shard k/n (1-based) -- nunca dos
         # procesos en la carpeta de la misma máquina a la vez.
+        # S117 (segunda vuelta) -- Miguel Ángel: "El alcance es única y
+        # exclusivamente activos. Los que están de baja ya no queremos
+        # saber nada de esos documentos."
+        active_ids = set(
+            MachineAsset.objects.filter(is_active=True).values_list("pk", flat=True)
+        )
         entries = [
             e for e in qs
-            if (e.domain_object_id % shard_total) == (shard_index - 1)
+            if e.domain_object_id in active_ids
+            and (e.domain_object_id % shard_total) == (shard_index - 1)
         ]
         if limit:
             entries = entries[:limit]
@@ -178,12 +220,12 @@ class Command(BaseCommand):
                 reason = None
                 asset = MachineAsset.objects.filter(pk=entry.domain_object_id).first()
                 doc_date = entry.expiry_date or entry.issue_date or _date_from_name(entry.name)
+                validity_date = None
+                ficha_index = None
                 if not entry.name.lower().endswith(".pdf"):
                     reason = "no es PDF (imagen suelta)"
                 elif not asset:
                     reason = "sin maquina asignada"
-                elif not doc_date:
-                    reason = "sin fecha para el nombre canonico"
                 if not reason:
                     data = download_bytes(entry.bucket, entry.blob_name)
                     doc = fitz.open(stream=data, filetype="pdf")
@@ -192,23 +234,48 @@ class Command(BaseCommand):
                     if n_pages < 2:
                         reason = "una sola pagina"
                     else:
-                        label = _classify(extract_text("p.pdf", _single_page(data, 0)))
-                        if label != "F":
-                            reason = "pagina 1 no reconocida como ficha (%s)" % label
+                        # S117 (segunda vuelta): la ficha puede estar en
+                        # CUALQUIER página (tarjetas escaneadas empezando
+                        # por la hoja de sellos) -- la primera reconocida
+                        # como ficha va a FICHA_TECNICA, el resto a ITV.
+                        texts = [
+                            extract_text("p.pdf", _single_page(data, i))
+                            for i in range(min(n_pages, 6))
+                        ]
+                        for i, text in enumerate(texts):
+                            if _classify(text) == "F":
+                                ficha_index = i
+                                break
+                        if ficha_index is None:
+                            reason = "ninguna pagina reconocida como ficha"
+                        # Sin fecha en el nombre: la VALIDEZ más reciente
+                        # de los sellos de la ITV (dato real, nunca
+                        # inventado).
+                        validity_date = _latest_validity(
+                            t for i, t in enumerate(texts) if i != ficha_index
+                        )
+                        doc_date = doc_date or validity_date
+                        if not reason and not doc_date:
+                            reason = "sin fecha (ni en el nombre ni en los sellos)"
                 if reason:
                     stats["revision_manual"] += 1
                     manual.append("%s -- %s" % (path, reason))
                     self._log("REVISION MANUAL [%s] %s" % (reason, path))
                 else:
                     real_folder = posixpath.dirname(entry.blob_name)
+                    itv_pages = [i for i in range(n_pages) if i != ficha_index]
                     self._log(
-                        "DIVIDIR %s -> p1 FICHA_TECNICA + p2-%d ITV (%s, %s)"
-                        % (path, n_pages, asset.code, doc_date.isoformat())
+                        "DIVIDIR %s -> p%d FICHA_TECNICA + p%s ITV (%s, %s%s)"
+                        % (path, ficha_index + 1, ",".join(str(i + 1) for i in itv_pages),
+                           asset.code, doc_date.isoformat(),
+                           ", fecha de los sellos" if doc_date == validity_date and not (
+                               entry.expiry_date or entry.issue_date or _date_from_name(entry.name)
+                           ) else "")
                     )
                     if apply_changes:
                         pieces = (
-                            (ficha_type, _pages_range(data, 0, 0), False),
-                            (itv_type, _pages_range(data, 1, n_pages - 1), True),
+                            (ficha_type, _pages_list(data, [ficha_index]), False),
+                            (itv_type, _pages_list(data, itv_pages), True),
                         )
                         created = []
                         for doc_type, piece_bytes, keep_dates in pieces:
@@ -227,7 +294,7 @@ class Command(BaseCommand):
                             fields = ["document_type", "domain_content_type",
                                       "domain_object_id", "is_obsolete"]
                             if keep_dates:
-                                new_entry.expiry_date = entry.expiry_date
+                                new_entry.expiry_date = entry.expiry_date or validity_date
                                 new_entry.issue_date = entry.issue_date
                                 fields += ["expiry_date", "issue_date"]
                             new_entry.save(update_fields=fields)
