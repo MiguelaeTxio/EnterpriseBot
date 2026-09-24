@@ -627,6 +627,36 @@ class MachineDetailView(CompanyUserRequiredMixin, View):
         return self._render(request, machine, form, status=400)
 
 
+def _attach_person_avatars(persons, person_ct):
+    """
+    Attach `avatar_entry_id` to each person of the visible list.
+    ---
+    H31 (S118) -- miniatura de la foto en el listado de Personal, como
+    en Centros de gasto. Mismo criterio exacto que la ficha
+    (PersonalDetailView): la foto elegida (`avatar_document`) y, si no
+    hay, la IMAGEN más reciente de la persona. Una sola query para
+    todas las personas sin foto elegida, nunca una por fila.
+    """
+    without_choice = [
+        person.pk for person in persons if not person.avatar_document_id
+    ]
+    fallback = {}
+    if without_choice:
+        for person_pk, entry_pk in DocumentIndexEntry.objects.filter(
+            bucket=BUCKET, domain_content_type=person_ct,
+            domain_object_id__in=without_choice,
+            entry_kind=DocumentIndexEntry.KIND_FILE,
+            document_type__code="IMAGEN",
+            deleted_at__isnull=True, purged_at__isnull=True,
+        ).order_by("-id").values_list("domain_object_id", "pk"):
+            fallback.setdefault(person_pk, entry_pk)
+    for person in persons:
+        person.avatar_entry_id = (
+            person.avatar_document_id or fallback.get(person.pk)
+        )
+    return persons
+
+
 def _person_list_page(request):
     qs = PersonIdentity.objects.select_related("job_position")
     # H31 (S113). Miguel Ángel: "si tuviésemos una casilla que dijese
@@ -715,6 +745,7 @@ def _person_list_page(request):
     page.object_list = _attach_missing_required_alert(
         page.object_list, person_ct,
     )
+    page.object_list = _attach_person_avatars(page.object_list, person_ct)
     return {
         "page": page, "sort_key": sort_key, "sort_dir": sort_dir,
         "search": search, "sort_columns_person": sort_columns,

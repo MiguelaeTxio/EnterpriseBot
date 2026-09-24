@@ -46,7 +46,7 @@ en la selección recordada por ese JS al reconstruir la tabla.
         <tr>
             <td class="sticky-col sticky-col-1"><input type="checkbox" class="form-check-input person-select-checkbox" value="{{ person.pk }}" data-name="{{ person.first_surname }} {{ person.second_surname }}, {{ person.given_name }}"></td>
             <td class="sticky-col sticky-col-2">{% if person.has_alert %}<i class="bi bi-exclamation-triangle-fill text-danger" title="{{ person.alert_labels|join:", " }}"></i>{% endif %}</td>
-            <td class="sticky-col sticky-col-3 sticky-col-last"><a href="{% url 'panel:documentation_personal_detail' pk=person.pk %}">{{ person.first_surname }} {{ person.second_surname }}, {{ person.given_name }}</a></td>
+            <td class="sticky-col sticky-col-3 sticky-col-last">{% if person.avatar_entry_id %}<img src="{% url 'panel:documentation_document_view' pk=person.avatar_entry_id %}" alt="" loading="lazy" class="rounded border me-1" style="width:28px;height:28px;object-fit:cover;">{% endif %}<a href="{% url 'panel:documentation_personal_detail' pk=person.pk %}">{{ person.first_surname }} {{ person.second_surname }}, {{ person.given_name }}</a></td>
             <td>{{ person.dni }}</td>
             <td>{{ person.hire_date|date:"d/m/Y"|default_if_none:"" }}</td>
             <td>{{ person.doc_count }}</td>
