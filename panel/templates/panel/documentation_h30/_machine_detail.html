@@ -1,5 +1,6 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation_h30/_machine_detail.html #}
 {% extends "panel/base.html" %}
+{% load document_explorer_extras %}
 
 {% block title %}{{ machine.code }} — Documentación{% endblock %}
 {% block page_title %}{{ machine.code }} — {{ machine.brand_model }}{% endblock %}
@@ -8,11 +9,6 @@
 <a href="{{ back_url }}" class="btn btn-sm btn-outline-secondary mb-3">
     <i class="bi bi-arrow-left"></i> Volver
 </a>
-
-<button type="button" class="btn btn-primary btn-sm mb-3" onclick="openUploadForm()">
-    <i class="bi bi-upload me-1"></i>+ Subir documento
-</button>
-<div id="uploadFormContainer" class="mb-4"></div>
 
 <div class="accordion" id="machineDocsAccordion">
     {% comment %}
@@ -63,65 +59,180 @@
             </div>
         </div>
     </div>
+    {% comment %}
+    H30 (S118), punto 1 de la hoja de ruta -- mismo formato que el bloque
+    "Documentación" de _personal_detail.html: acordeón por familia del
+    catálogo (dominios MACHINE/BOTH) con recuento, solo el VIGENTE de
+    cada tipo nombrado por document_type.label, por fila Ver ·
+    Actualizar · Historial · Tipo · Eliminar, y "+ Subir" dentro de cada
+    familia. Desaparecen las tablas planas "Vigentes" y "Obsoletos": los
+    obsoletos se ven en el Historial de su tipo. Los documentos SIN TIPO
+    se listan aparte, todos, con su nombre de archivo, para tiparlos.
+    {% endcomment %}
     <div class="accordion-item">
         <h2 class="accordion-header">
-            <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#collapseVigentesMachine">
-                Vigentes <span class="badge bg-success ms-2">{{ current|length }}</span>
+            <button class="accordion-button{% if machine_form_open %} collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#collapseDocumentacionMachine">
+                <i class="bi bi-folder2-open me-2"></i>Documentación
             </button>
         </h2>
-        <div id="collapseVigentesMachine" class="accordion-collapse collapse show">
-            <div class="accordion-body p-0">
+        <div id="collapseDocumentacionMachine" class="accordion-collapse collapse{% if not machine_form_open %} show{% endif %}">
+            <div class="accordion-body">
+<div class="accordion" id="machineFamiliesAccordion">
+    {% for fam in families %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button {% if not forloop.first %}collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#collapseMachineFam{{ forloop.counter }}">
+                {{ fam.label }} <span class="badge bg-primary ms-2">{{ fam.documents|length }}</span>
+                {% with fam_attention=attention_types_by_family|get_item:fam.code %}
+                {% if fam_attention %}
+                <i class="bi bi-exclamation-triangle-fill text-danger ms-2"
+                   title="Caducado: {{ fam_attention|join:", " }}"></i>
+                {% endif %}
+                {% endwith %}
+            </button>
+        </h2>
+        <div id="collapseMachineFam{{ forloop.counter }}" class="accordion-collapse collapse {% if forloop.first %}show{% endif %}" data-bs-parent="#machineFamiliesAccordion">
+            <div class="accordion-body">
+                <button type="button" class="btn btn-sm btn-outline-primary mb-2 family-upload-btn" data-family="{{ fam.code }}"
+                        onclick="openUploadForm(null, MISSING_TYPES_BY_FAMILY['{{ fam.code }}'])">
+                    <i class="bi bi-upload me-1"></i>+ Subir
+                </button>
                 <table class="table table-sm table-hover mb-0">
-                    <thead><tr><th>Tipo</th><th>Nombre</th><th>Caducidad</th><th>Acciones</th></tr></thead>
+                    <thead><tr><th>Tipo</th><th>Caducidad</th><th>Acciones</th></tr></thead>
                     <tbody>
-                        {% for entry in current %}
+                        {% for entry in fam.documents %}
                         <tr{% if entry.needs_attention %} class="table-danger"{% endif %}>
                             <td>{{ entry.document_type.label }}</td>
-                            <td>{{ entry.name }}</td>
                             <td>
-                                {% if entry.needs_attention %}<i class="bi bi-exclamation-triangle-fill text-danger me-1" title="Sin fecha vigente -- necesita atención"></i>{% endif %}
-                                {{ entry.expiry_date|default:"—" }}
+                                {% if entry.needs_attention %}<i class="bi bi-exclamation-triangle-fill text-danger me-1" title="Caducado -- necesita atención"></i>{% endif %}
+                                {% if entry.expiry_date %}{{ entry.expiry_date }}{% elif entry.issue_date %}<span class="text-muted small">Emisión:</span> {{ entry.issue_date }}{% else %}—{% endif %}
                             </td>
                             <td>
-                                <a href="{% url 'panel:documentation_document_view' pk=entry.pk %}" target="_blank" class="btn btn-sm btn-outline-secondary">Ver</a>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="openDocumentViewer('{% url 'panel:documentation_document_view' pk=entry.pk %}')">Ver</button>
                                 <button type="button" class="btn btn-sm btn-outline-primary"
                                         onclick="openUploadForm('{{ entry.document_type.code }}')">Actualizar</button>
+                                <button type="button" class="btn btn-sm btn-outline-info"
+                                        onclick="openDocumentHistory('{{ entry.document_type.code }}')">Historial</button>
+                                <button type="button" class="btn btn-sm btn-outline-warning"
+                                        onclick="openChangeTypeModal({{ entry.pk }}, '{{ entry.document_type.label|escapejs }}')">Tipo</button>
                                 <button type="button" class="btn btn-sm btn-outline-danger"
                                         onclick="deleteDocument({{ entry.pk }}, this)">Eliminar</button>
                             </td>
                         </tr>
                         {% empty %}
-                        <tr><td colspan="4" class="text-muted small py-3">Sin documentos vigentes todavía.</td></tr>
+                        <tr><td colspan="3" class="text-muted small">Sin documentos vigentes todavía.</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>
             </div>
         </div>
     </div>
+    {% endfor %}
+    {% if untyped_documents %}
     <div class="accordion-item">
         <h2 class="accordion-header">
-            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseObsoletosMachine">
-                Histórico (obsoletos) <span class="badge bg-secondary ms-2">{{ obsolete|length }}</span>
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseMachineUntyped">
+                Sin tipo asignado <span class="badge bg-secondary ms-2">{{ untyped_documents|length }}</span>
             </button>
         </h2>
-        <div id="collapseObsoletosMachine" class="accordion-collapse collapse">
-            <div class="accordion-body p-0">
-                <table class="table table-sm table-hover text-muted mb-0">
-                    <thead><tr><th>Tipo</th><th>Nombre</th><th>Caducidad</th><th>Acciones</th></tr></thead>
+        <div id="collapseMachineUntyped" class="accordion-collapse collapse" data-bs-parent="#machineFamiliesAccordion">
+            <div class="accordion-body">
+                <table class="table table-sm table-hover mb-0">
+                    <thead><tr><th>Archivo</th><th>Acciones</th></tr></thead>
                     <tbody>
-                        {% for entry in obsolete %}
+                        {% for entry in untyped_documents %}
                         <tr>
-                            <td>{{ entry.document_type.label|default:"—" }}</td>
-                            <td>{{ entry.name }}</td>
-                            <td>{{ entry.expiry_date|default:"—" }}</td>
-                            <td><a href="{% url 'panel:documentation_document_view' pk=entry.pk %}" target="_blank" class="btn btn-sm btn-outline-secondary">Ver</a></td>
+                            <td class="small">{{ entry.name }}</td>
+                            <td>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="openDocumentViewer('{% url 'panel:documentation_document_view' pk=entry.pk %}')">Ver</button>
+                                <button type="button" class="btn btn-sm btn-outline-warning"
+                                        onclick="openChangeTypeModal({{ entry.pk }}, 'Sin tipo')">Tipo</button>
+                                <button type="button" class="btn btn-sm btn-outline-danger"
+                                        onclick="deleteDocument({{ entry.pk }}, this)">Eliminar</button>
+                            </td>
                         </tr>
-                        {% empty %}
-                        <tr><td colspan="4" class="small py-3">Sin histórico todavía.</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>
             </div>
+        </div>
+    </div>
+    {% endif %}
+    {% if not families and not untyped_documents %}
+    <p class="text-muted small py-3 mb-0">Sin documentos todavía.</p>
+    {% endif %}
+</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="documentHistoryModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Historial</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="documentHistoryModalBody">
+                <div class="text-muted small py-3">Cargando…</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="documentChangeTypeModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Cambiar tipo de documento</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="changeTypeEntryPk" value="">
+                <label class="form-label small mb-1">Tipo actual: <strong id="changeTypeCurrentLabel"></strong></label>
+                <select id="changeTypeNewCode" class="form-select form-select-sm">
+                    {% regroup all_document_types by get_family_display as type_families %}
+                    {% for group in type_families %}
+                    <optgroup label="{{ group.grouper }}">
+                        {% for dt in group.list %}
+                        <option value="{{ dt.code }}">{{ dt.label }}</option>
+                        {% endfor %}
+                    </optgroup>
+                    {% endfor %}
+                </select>
+                <div id="changeTypeResult" class="small mt-2"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-sm btn-primary" onclick="submitChangeType()">Guardar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="documentViewerModal" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header py-2">
+                <h6 class="modal-title mb-0">Documento</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-0" style="height: 80vh;">
+                <iframe id="documentViewerFrame" src="" style="width: 100%; height: 100%; border: 0;"></iframe>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="uploadDocumentModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Subir documento</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="uploadFormContainer"></div>
         </div>
     </div>
 </div>
@@ -130,75 +241,81 @@
 const DOC_TYPES_MACHINE = [
     {% for dt in doc_types %}{code: "{{ dt.code }}", label: "{{ dt.label|escapejs }}", tracksExpiry: {{ dt.tracks_expiry|yesno:"true,false" }}},{% endfor %}
 ];
-const FAMILY_CHOICES_MACHINE = [
-    {% for value, display in family_choices %}{value: "{{ value }}", display: "{{ display|escapejs }}"},{% endfor %}
-];
+// H30 (S118): tipos que esta máquina todavía no tiene, por familia --
+// alimentan el "+ Subir" de cada familia (mismo pipeline que Personal).
+const MISSING_TYPES_BY_FAMILY = {
+    {% for fam_code, types in missing_types_by_family.items %}"{{ fam_code }}": [{% for dt in types %}{code: "{{ dt.code }}", label: "{{ dt.label|escapejs }}", tracksExpiry: {{ dt.tracks_expiry|yesno:"true,false" }}},{% endfor %}],{% endfor %}
+};
+document.querySelectorAll('.family-upload-btn').forEach(function (btn) {
+    if (!(MISSING_TYPES_BY_FAMILY[btn.dataset.family] || []).length) {
+        btn.disabled = true;
+        btn.title = 'Esta máquina ya tiene todos los tipos de esta familia';
+    }
+});
 
-function openUploadForm(preselectCode) {
+function openDocumentViewer(url) {
+    const historyModal = bootstrap.Modal.getInstance(document.getElementById('documentHistoryModal'));
+    if (historyModal) {
+        historyModal.hide();
+    }
+    document.getElementById('documentViewerFrame').src = url;
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('documentViewerModal')).show();
+}
+document.getElementById('documentViewerModal').addEventListener('hidden.bs.modal', function () {
+    document.getElementById('documentViewerFrame').src = '';
+});
+// "Ver" desde dentro del Historial abre pestaña nueva y deja el
+// Historial abierto (mismo criterio que la ficha de Personal, H35 S105).
+function openDocumentViewerFromHistory(url) {
+    window.open(url, '_blank');
+}
+
+function openDocumentHistory(typeCode) {
+    const body = document.getElementById('documentHistoryModalBody');
+    body.innerHTML = '<div class="text-muted small py-3">Cargando…</div>';
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('documentHistoryModal')).show();
+    fetch(`/panel/documentacion/maquinaria/{{ machine.pk }}/historial/${encodeURIComponent(typeCode)}/`)
+        .then(r => r.text())
+        .then(html => { body.innerHTML = html; })
+        .catch(() => {
+            body.innerHTML = '<div class="alert alert-danger py-1 px-2 small mb-0">Error de red al cargar el historial.</div>';
+        });
+}
+
+function openUploadForm(preselectCode, restrictedTypes) {
     const container = document.getElementById('uploadFormContainer');
-    const options = DOC_TYPES_MACHINE.map(dt =>
+    const typesToShow = restrictedTypes || DOC_TYPES_MACHINE;
+    const options = typesToShow.map(dt =>
         `<option value="${dt.code}" data-tracks-expiry="${dt.tracksExpiry}" ${dt.code === preselectCode ? 'selected' : ''}>${dt.label}</option>`,
-    ).join('') + '<option value="__NEW__">+ Añadir tipo documental nuevo</option>';
+    ).join('');
     container.innerHTML = `
-        <div class="card">
-            <div class="card-body">
-                <h6>Subir documento</h6>
-                <form id="subjectUploadForm">
-                    <div class="mb-2">
-                        <label class="form-label">Tipo documental</label>
-                        <select name="document_type_code" id="uploadTypeSelect" class="form-select" required>${options}</select>
-                    </div>
-                    <div id="newTypeFields" class="border rounded p-2 mb-2" style="display:none;">
-                        <div class="mb-2">
-                            <label class="form-label">Nombre visible del tipo nuevo</label>
-                            <input type="text" id="newTypeLabel" class="form-control" placeholder="p. ej. Certificado de manipulador">
-                        </div>
-                        <div class="mb-2">
-                            <label class="form-label">Familia documental</label>
-                            <select id="newTypeFamily" class="form-select">
-                                <option value="">-- Elige familia --</option>
-                                ${FAMILY_CHOICES_MACHINE.map(f => `<option value="${f.value}">${f.display}</option>`).join('')}
-                            </select>
-                        </div>
-                        <div class="form-check mb-2">
-                            <input type="checkbox" id="newTypeTracksExpiry" class="form-check-input">
-                            <label class="form-check-label" for="newTypeTracksExpiry">Este tipo tiene fecha de caducidad/vigencia</label>
-                        </div>
-                        <button type="button" class="btn btn-outline-primary btn-sm" onclick="createNewDocumentType('machine')">Crear tipo documental</button>
-                        <div id="newTypeResult" class="mt-1"></div>
-                    </div>
-                    <div class="mb-2">
-                        <label class="form-label">Archivo(s) — puedes seleccionar varios a la vez si son del mismo tipo</label>
-                        <input type="file" name="file" class="form-control" multiple required>
-                    </div>
-                    <div class="mb-2" id="expiryDateField">
-                        <label class="form-label">Fecha de caducidad</label>
-                        <input type="date" name="expiry_date" class="form-control">
-                    </div>
-                    <button type="submit" class="btn btn-primary btn-sm" id="subjectUploadSubmitBtn">Subir</button>
-                    <div id="uploadResult" class="mt-2"></div>
-                </form>
+        <form id="subjectUploadForm">
+            <div class="mb-2">
+                <label class="form-label">Tipo documental</label>
+                <select name="document_type_code" id="uploadTypeSelect" class="form-select" required>${options}</select>
             </div>
-        </div>`;
+            <div class="mb-2">
+                <label class="form-label">Archivo(s) — puedes seleccionar varios a la vez si son del mismo tipo</label>
+                <input type="file" name="file" class="form-control" multiple required>
+            </div>
+            <div class="mb-2" id="expiryDateField">
+                <label class="form-label">Fecha de caducidad</label>
+                <input type="date" name="expiry_date" class="form-control">
+            </div>
+            <button type="submit" class="btn btn-primary btn-sm">Subir</button>
+            <div id="uploadResult" class="mt-2"></div>
+        </form>`;
 
     const select = document.getElementById('uploadTypeSelect');
     const expiryField = document.getElementById('expiryDateField');
-    const newTypeFields = document.getElementById('newTypeFields');
-    const submitBtn = document.getElementById('subjectUploadSubmitBtn');
     function toggleExpiry() {
-        if (select.value === '__NEW__') {
-            newTypeFields.style.display = '';
-            expiryField.style.display = 'none';
-            submitBtn.disabled = true;
-            return;
-        }
-        newTypeFields.style.display = 'none';
-        submitBtn.disabled = false;
         const opt = select.options[select.selectedIndex];
-        expiryField.style.display = opt.dataset.tracksExpiry === 'true' ? '' : 'none';
+        expiryField.style.display = opt && opt.dataset.tracksExpiry === 'true' ? '' : 'none';
     }
     select.onchange = toggleExpiry;
     toggleExpiry();
+
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('uploadDocumentModal')).show();
 
     document.getElementById('subjectUploadForm').onsubmit = function(ev) {
         ev.preventDefault();
@@ -220,35 +337,38 @@ function openUploadForm(preselectCode) {
             (data.errors || []).forEach(e => {
                 html += `<div class="alert alert-danger py-1 px-2 small">${e.file}: ${e.error}</div>`;
             });
+            if (data.error) {
+                html += `<div class="alert alert-danger py-1 px-2 small">${data.error}</div>`;
+            }
             resultDiv.innerHTML = html;
             if (data.ok) setTimeout(() => location.reload(), 2000);
         });
     };
 }
 
-function createNewDocumentType(domain) {
-    const label = document.getElementById('newTypeLabel').value.trim();
-    const family = document.getElementById('newTypeFamily').value;
-    const tracksExpiry = document.getElementById('newTypeTracksExpiry').checked;
-    const resultDiv = document.getElementById('newTypeResult');
-    if (!label || !family) {
-        resultDiv.innerHTML = '<div class="alert alert-danger py-1 px-2 small">Nombre y familia son obligatorios.</div>';
-        return;
-    }
-    const formData = new FormData();
-    formData.append('label', label);
-    formData.append('family', family);
-    formData.append('tracks_expiry', tracksExpiry ? 'true' : 'false');
-    fetch(`/panel/documentacion/${domain}/tipos/crear/`, {
-        method: 'POST', body: formData,
-        headers: {'X-CSRFToken': getCookie('csrftoken')},
+function openChangeTypeModal(entryPk, currentLabel) {
+    document.getElementById('changeTypeEntryPk').value = entryPk;
+    document.getElementById('changeTypeCurrentLabel').textContent = currentLabel;
+    document.getElementById('changeTypeResult').innerHTML = '';
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('documentChangeTypeModal')).show();
+}
+
+function submitChangeType() {
+    const entryPk = document.getElementById('changeTypeEntryPk').value;
+    const newCode = document.getElementById('changeTypeNewCode').value;
+    const resultDiv = document.getElementById('changeTypeResult');
+    fetch(`/panel/documentacion/documento/${entryPk}/cambiar-tipo/`, {
+        method: 'POST',
+        headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/x-www-form-urlencoded'},
+        body: `document_type_code=${encodeURIComponent(newCode)}`,
     }).then(r => r.json()).then(data => {
-        if (data.error) {
-            resultDiv.innerHTML = `<div class="alert alert-danger py-1 px-2 small">${data.error}</div>`;
-            return;
+        if (data.ok) {
+            location.reload();
+        } else {
+            resultDiv.innerHTML = `<div class="alert alert-danger py-1 px-2 mb-0">${data.error || 'Error al cambiar el tipo.'}</div>`;
         }
-        DOC_TYPES_MACHINE.push({code: data.code, label: data.label, tracksExpiry: data.tracks_expiry});
-        openUploadForm(data.code);
+    }).catch(() => {
+        resultDiv.innerHTML = '<div class="alert alert-danger py-1 px-2 mb-0">Error de red al cambiar el tipo.</div>';
     });
 }
 
@@ -258,7 +378,7 @@ function deleteDocument(pk, btn) {
         method: 'POST',
         headers: {'X-CSRFToken': getCookie('csrftoken')},
     }).then(r => r.json()).then(data => {
-        if (data.ok) btn.closest('tr').remove();
+        if (data.ok) location.reload();
     });
 }
 

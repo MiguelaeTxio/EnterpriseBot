@@ -510,10 +510,56 @@ class MachineDetailView(CompanyUserRequiredMixin, View):
             entry_kind=DocumentIndexEntry.KIND_FILE,
             deleted_at__isnull=True, purged_at__isnull=True,
         ).select_related("document_type").order_by("-id")
-        current, obsolete = _split_current_obsolete(entries)
+        # H30 (S118), punto 1: los documentos SIN TIPO no pasan por el
+        # cálculo de vigencia -- agrupados todos bajo document_type=None,
+        # is_current() dejaría uno solo "vigente" y mandaría el resto a
+        # obsoletos, y sin la tabla plana "Obsoletos" desaparecerían de
+        # la ficha. Se listan todos aparte, con su nombre de archivo,
+        # para poder tiparlos con "Tipo".
+        untyped_documents = [
+            entry for entry in entries if not entry.document_type_id
+        ]
+        current, _obsolete = _split_current_obsolete(
+            [entry for entry in entries if entry.document_type_id],
+        )
+        machine_domains = [
+            DocumentTypeCatalog.DOMAIN_MACHINE,
+            DocumentTypeCatalog.DOMAIN_BOTH,
+        ]
+        # H30 (S118), punto 1 -- mismo formato que la ficha de Personal
+        # (PersonalDetailView): acordeón por familia del catálogo,
+        # "+ Subir" por familia limitado a los tipos que esta máquina
+        # todavía no tiene (vigentes o históricos: si ya existe uno, se
+        # sustituye con "Actualizar" en su fila), aviso por familia de
+        # los vigentes con caducidad real ya pasada.
+        present_type_codes = {
+            entry.document_type.code for entry in entries
+            if entry.document_type_id
+        }
+        missing_types_by_family = {}
+        for dt in DocumentTypeCatalog.objects.filter(
+            domain__in=machine_domains, is_active=True,
+        ).exclude(code__in=present_type_codes).order_by("label"):
+            missing_types_by_family.setdefault(dt.family, []).append(dt)
+        _attention_labels_by_family = {}
+        for entry in current:
+            if entry.needs_attention:
+                _attention_labels_by_family.setdefault(
+                    entry.document_type.family, set(),
+                ).add(entry.document_type.label)
+        attention_types_by_family = {
+            family: sorted(labels)
+            for family, labels in _attention_labels_by_family.items()
+        }
+        families = _group_current_by_family(
+            current, include_empty_families=missing_types_by_family.keys(),
+        )
         doc_types = DocumentTypeCatalog.objects.filter(
-            is_active=True, domain__in=["MACHINE", "BOTH"],
+            is_active=True, domain__in=machine_domains,
         ).order_by("label")
+        all_document_types = DocumentTypeCatalog.objects.filter(
+            is_active=True, domain__in=machine_domains,
+        ).order_by("family", "label")
         # S117 -- "Volver" regresa a la pantalla desde la que se entró
         # (p. ej. Centros de gasto del taller), nunca a una URL fija:
         # back_url validado con el helper compartido safe_back_url
@@ -526,9 +572,12 @@ class MachineDetailView(CompanyUserRequiredMixin, View):
             reverse("panel:documentation_hub"),
         )
         return render(request, "panel/documentation_h30/_machine_detail.html", {
-            "machine": machine, "current": current, "obsolete": obsolete,
+            "machine": machine, "families": families,
+            "untyped_documents": untyped_documents,
+            "missing_types_by_family": missing_types_by_family,
+            "attention_types_by_family": attention_types_by_family,
+            "all_document_types": all_document_types,
             "doc_types": doc_types, "active_nav": "documentation_hub",
-            "family_choices": DocumentTypeCatalog.FAMILY_CHOICES,
             "back_url": back_url,
             "form": form,
             "can_edit_machine": self._can_edit(request),
@@ -2415,6 +2464,52 @@ class JobPositionDeleteView(CompanyUserRequiredMixin, View):
         return JsonResponse({"ok": True})
 
 
+def _document_type_history_response(request, subject_model, subject_pk,
+                                    type_code):
+    """
+    Render the full history (current + obsolete) of one document type
+    for one subject, shared by Personal and machine files.
+    ---
+    Historial COMPLETO (vigente + obsoletos) de UN tipo documental para
+    UN sujeto -- persona o máquina. H30 (S118): extraído de
+    PersonalDocumentTypeHistoryView para que la ficha de máquina use
+    exactamente el mismo cálculo y el mismo fragmento, sin duplicarlo.
+
+    S117 -- incidente real de Miguel Ángel (Carvajal González, pk=218):
+    el Historial pintaba "Vigente/Obsoleto" leyendo solo el is_obsolete
+    guardado, mientras la ficha lo CALCULA por fechas
+    (_split_current_obsolete) -- mostraba como vigente una
+    investigación de 2023 con otra de 2025 más reciente. El estado del
+    Historial sale del mismo cálculo que la ficha. Orden por fecha
+    efectiva (caducidad si la hay, si no emisión), más reciente arriba,
+    sin fecha al final.
+    """
+    subject = get_object_or_404(subject_model, pk=subject_pk)
+    document_type = get_object_or_404(DocumentTypeCatalog, code=type_code)
+    ct = ContentType.objects.get_for_model(subject_model)
+    entries = list(DocumentIndexEntry.objects.filter(
+        bucket=BUCKET, domain_content_type=ct, domain_object_id=subject.pk,
+        document_type=document_type, entry_kind=DocumentIndexEntry.KIND_FILE,
+        deleted_at__isnull=True, purged_at__isnull=True,
+    ).select_related("document_type").order_by("-expiry_date", "-id"))
+    current, _obsolete = _split_current_obsolete(entries)
+    current_pks = {entry.pk for entry in current}
+    for entry in entries:
+        entry.is_current_computed = entry.pk in current_pks
+    entries.sort(
+        key=lambda entry: (
+            (entry.expiry_date or entry.issue_date) is not None,
+            entry.expiry_date or entry.issue_date or date.min,
+            entry.pk,
+        ),
+        reverse=True,
+    )
+    return render(
+        request, "panel/documentation_h30/_personal_document_history.html",
+        {"document_type": document_type, "entries": entries},
+    )
+
+
 class PersonalDocumentTypeHistoryView(CompanyUserRequiredMixin, View):
     """
     H31 (S76), punto 5 de la hoja de ruta. GET: historial COMPLETO
@@ -2427,39 +2522,23 @@ class PersonalDocumentTypeHistoryView(CompanyUserRequiredMixin, View):
     """
 
     def get(self, request, pk, type_code):
-        person = get_object_or_404(PersonIdentity, pk=pk)
-        document_type = get_object_or_404(DocumentTypeCatalog, code=type_code)
-        ct = ContentType.objects.get_for_model(PersonIdentity)
-        entries = list(DocumentIndexEntry.objects.filter(
-            bucket=BUCKET, domain_content_type=ct, domain_object_id=person.pk,
-            document_type=document_type, entry_kind=DocumentIndexEntry.KIND_FILE,
-            deleted_at__isnull=True, purged_at__isnull=True,
-        ).select_related("document_type").order_by("-expiry_date", "-id"))
-        # S117 -- incidente real de Miguel Ángel (Carvajal González,
-        # pk=218): el Historial pintaba "Vigente/Obsoleto" leyendo solo
-        # el is_obsolete guardado, mientras la ficha lo CALCULA por
-        # fechas (_split_current_obsolete) -- mostraba como vigente una
-        # investigación de 2023 con otra de 2025 más reciente. Ahora el
-        # estado del Historial sale del mismo cálculo que la ficha.
-        current, _obsolete = _split_current_obsolete(entries)
-        current_pks = {entry.pk for entry in current}
-        for entry in entries:
-            entry.is_current_computed = entry.pk in current_pks
-        # Orden por fecha efectiva (caducidad si la hay, si no emisión),
-        # más reciente arriba, sin fecha al final -- antes ordenaba solo
-        # por expiry_date y los tipos fechados por emisión salían
-        # desordenados (5/5, 31/10, 25/6, 3/2 en la captura de S117).
-        entries.sort(
-            key=lambda entry: (
-                (entry.expiry_date or entry.issue_date) is not None,
-                entry.expiry_date or entry.issue_date or date.min,
-                entry.pk,
-            ),
-            reverse=True,
+        return _document_type_history_response(
+            request, PersonIdentity, pk, type_code,
         )
-        return render(
-            request, "panel/documentation_h30/_personal_document_history.html",
-            {"person": person, "document_type": document_type, "entries": entries},
+
+
+class MachineDocumentTypeHistoryView(CompanyUserRequiredMixin, View):
+    """
+    H30 (S118), punto 1 de la hoja de ruta. GET: historial completo de
+    UN tipo documental para UNA máquina -- mismo fragmento y mismo
+    cálculo de vigencia que el de Personal. Sustituye a la tabla plana
+    "Obsoletos" de la ficha de máquina: los obsoletos se ven aquí, en
+    el Historial de su tipo.
+    """
+
+    def get(self, request, pk, type_code):
+        return _document_type_history_response(
+            request, MachineAsset, pk, type_code,
         )
 
 

@@ -51,6 +51,7 @@ from panel.views_documentation_h30 import (
     PersonalDocumentSelectionPreviewView,
     PersonalDocumentSelectionZipView,
     PersonalDocumentTypeHistoryView,
+    MachineDocumentTypeHistoryView,
     PersonalDossierEmailSendView,
     DossierTemplateManageView,
     DossierTemplateMissingCheckView,
@@ -447,6 +448,8 @@ urlpatterns = [
     # H31 (S75): persistencia de pestaña/filtros -- genérica por screen_key.
     path("navegacion/estado/<str:screen_key>/", NavigationStateSaveView.as_view(), name="navigation_state_save"),
     path("documentacion/maquinaria/<int:pk>/", MachineDetailView.as_view(), name="documentation_machine_detail"),
+    # H30 (S118) punto 1: historial completo de un tipo documental de una máquina.
+    path("documentacion/maquinaria/<int:pk>/historial/<str:type_code>/", MachineDocumentTypeHistoryView.as_view(), name="documentation_machine_type_history"),
     path("documentacion/personal/", PersonalListFragmentView.as_view(), name="documentation_personal_list"),
     # H31 (S100) Bloque 1: alta de trabajador nuevo desde el panel.
     path("documentacion/personal/alta/", PersonalCreateView.as_view(), name="documentation_personal_create"),
