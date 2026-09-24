@@ -1193,8 +1193,8 @@ table.table #toll-thead ~ tbody tr:nth-child(even):not(.table-secondary) td {
    un hex inventado, y el mismo par claro/oscuro que ya usa Bootstrap
    para su propia jerarquía visual normal/activo. Solo afecta a la
    ficha de personal (`#personalMainAccordion` y sus tres acordeones
-   hijos reales, más el caso especial de Salud) -- la ficha de máquina
-   no se toca.
+   hijos reales, más el caso especial de Salud); desde S118 también la
+   ficha de máquina (ver más abajo).
 
    Miguel Ángel, final scheme (reconsidered in this same session after
    seeing the first version live): this record only has TWO real
@@ -1216,8 +1216,20 @@ table.table #toll-thead ~ tbody tr:nth-child(even):not(.table-secondary) td {
    invented hex, the same light/dark pairing Bootstrap already uses for
    its own normal/active hierarchy. Only affects the personal record
    (`#personalMainAccordion` and its three real child accordions, plus
-   Salud's special case) -- the machine record is untouched. */
-#personalMainAccordion {
+   Salud's special case); since S118 also the machine record (below).
+
+   H30 (S118) -- la ficha de máquina adopta EXACTAMENTE el mismo
+   esquema, a petición de Miguel Ángel ("mira bien cómo está
+   estructurado [...] los colores de los acordeones de personal"):
+   nivel 1 `#machineDocsAccordion` (Datos del centro de gasto /
+   Documentación), nivel 2 `#machineFamiliesAccordion` (cada familia),
+   contenido final en amarillo.
+   ---
+   H30 (S118) -- the machine record now uses EXACTLY the same scheme:
+   level 1 `#machineDocsAccordion`, level 2 `#machineFamiliesAccordion`,
+   final content in yellow. */
+#personalMainAccordion,
+#machineDocsAccordion {
     --bs-accordion-bg: var(--bs-primary-bg-subtle);
     --bs-accordion-active-bg: var(--bs-primary-border-subtle);
     --bs-accordion-active-color: var(--bs-primary-text-emphasis);
@@ -1225,7 +1237,8 @@ table.table #toll-thead ~ tbody tr:nth-child(even):not(.table-secondary) td {
 
 #personalLaboralAccordion,
 #personalDocsAccordion,
-#personalEpiAccordion {
+#personalEpiAccordion,
+#machineFamiliesAccordion {
     --bs-accordion-bg: var(--bs-success-bg-subtle);
     --bs-accordion-active-bg: var(--bs-success-border-subtle);
     --bs-accordion-active-color: var(--bs-success-text-emphasis);
@@ -1237,6 +1250,7 @@ table.table #toll-thead ~ tbody tr:nth-child(even):not(.table-secondary) td {
 #personalLaboralAccordion .accordion-collapse.show,
 #personalDocsAccordion .accordion-collapse.show,
 #personalEpiAccordion .accordion-collapse.show,
+#machineFamiliesAccordion .accordion-collapse.show,
 #collapseSaludMain.show {
     background-color: var(--bs-warning-bg-subtle);
 }
