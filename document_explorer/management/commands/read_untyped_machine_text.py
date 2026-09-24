@@ -55,6 +55,14 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument("--limit", type=int, default=0)
+        # H30 (S118), punto 8: misma lectura para los documentos YA
+        # tipados de tipos que caducan que siguen sin ninguna fecha.
+        parser.add_argument(
+            "--caducables-sin-fecha", action="store_true",
+            dest="expiring_undated",
+            help="Tipados con caducidad y sin ninguna fecha, en vez de "
+                 "los sin tipo.",
+        )
         parser.add_argument(
             "--shard", default="1/1",
             help="K/N, 1-based: procesa los documentos con id %% N == K-1.",
@@ -83,19 +91,28 @@ class Command(BaseCommand):
             raise CommandError("--shard: K debe estar entre 1 y N.")
         self._log_handle = open(options["log_file"], "a", encoding="utf-8")
         try:
-            self._run(shard_k, shard_n, options["limit"])
+            self._run(
+                shard_k, shard_n, options["limit"],
+                options["expiring_undated"],
+            )
         finally:
             self._log_handle.close()
 
-    def _run(self, shard_k, shard_n, limit):
+    def _run(self, shard_k, shard_n, limit, expiring_undated=False):
         machine_ct = ContentType.objects.get_for_model(MachineAsset)
         active_pks = list(MachineAsset.objects.filter(
             is_active=True,
         ).values_list("pk", flat=True))
+        scope = (
+            {
+                "document_type__tracks_expiry": True,
+                "expiry_date__isnull": True, "issue_date__isnull": True,
+            } if expiring_undated else {"document_type__isnull": True}
+        )
         entries = [
             entry for entry in DocumentIndexEntry.objects.filter(
                 bucket=BUCKET, entry_kind=DocumentIndexEntry.KIND_FILE,
-                document_type__isnull=True,
+                **scope,
                 domain_content_type=machine_ct,
                 domain_object_id__in=active_pks,
                 ocr_text="",
@@ -109,9 +126,11 @@ class Command(BaseCommand):
         total = len(entries)
         self._log(
             "PASO A (lectura de texto, solo escribe ocr_text) -- shard "
-            "%d/%d -- %d documentos sin tipo de maquinas activas sin "
+            "%d/%d -- %d documentos %s de maquinas activas sin "
             "texto guardado%s" % (
                 shard_k, shard_n, total,
+                "TIPADOS QUE CADUCAN SIN FECHA" if expiring_undated
+                else "sin tipo",
                 " (limitado a %d)" % limit if limit else "",
             )
         )
