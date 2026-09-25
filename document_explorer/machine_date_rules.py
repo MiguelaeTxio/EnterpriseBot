@@ -123,6 +123,20 @@ _COMPACT_PERIOD_RE = re.compile(
 )
 
 # --- 2. Caducidad con etiqueta ---------------------------------------
+# Carta de anulación: "con fecha 31-12-2026 queda anulada su póliza"
+# (id=18497) -- es el fin de la vigencia.
+_CANCELLATION_RE = re.compile(r"CON FECHA\s*" + _D + r"\s*QUEDA ANULAD")
+# Tarjeta ITV catalana: "DATA DE LA INSPECCIO ... ABR 2008" (id=16407).
+_INSPECTION_MONTH_RE = re.compile(
+    r"INSPECCI\w*[^0-9]{0,40}?\b(ENE|FEB|MAR|ABR|MAY|JUN|JUL|AGO|SEP|SET|"
+    r"OCT|NOV|DIC)\w*\s+((?:19|20)\d{2})\b"
+)
+# IVTM: "Periodo de pago: Hasta el 24/07/26" (id=42502) -- única fecha
+# del recibo del año; se toma como su fecha de emisión.
+_IVTM_PAYMENT_RE = re.compile(r"PERIODO DE PAGO\s*:?\s*HASTA EL\s*" + _D)
+# Fecha ISO "2024-03-15" (factura de Ritchie Bros, id=13263).
+_ISO_DATE_RE = re.compile(r"(?<!\d)((?:19|20)\d{2})-(\d{2})-(\d{2})(?!\d)")
+
 _EXPIRY_LABEL_RE = re.compile(
     r"(?:VALIDEZ|VALEDERA HASTA(?:/POR)?|PROXIMA (?:ITV|INSPECCION|"
     r"REVISION)|VENCIMIENTO|VALID[OA] HASTA(?: EL)?|FECHA DE CADUCIDAD|"
@@ -141,6 +155,9 @@ _ISSUE_LABEL_PATTERNS = [
     re.compile(r"FECHA OPERACION\s*:?\s*" + _D),
     re.compile(r"F\.\s*EXP\.?\s*:?\s*" + _D),
     re.compile(r"\bFECHA\s*:?\s*" + _D),
+    # Certificados holandeses/alemanes: "DATUM 08.03.01 DATE" (id=10494).
+    re.compile(r"\bDATUM\s*:?\s*" + _D),
+    re.compile(r"\bDATE\s*:?\s*" + _D),
     re.compile(r"INFORME TECNICO DE TACOGRAFO\D{0,20}" + _D),
     # Cajamar (IVTM): "GRUAS ADOLFO ALVAREZ S.L. 05/07/2021 80,43 EUR",
     # fecha del cargo pegada al importe, sin etiqueta.
@@ -200,6 +217,12 @@ _WORDS_DATE_RE = re.compile(
 )
 
 
+_SPACED_DATE_RE = re.compile(
+    r"(?<!\d)(?<!\d )(\d) (\d) ?([-/.]) ?(\d) (\d) ?([-/.]) ?"
+    r"(\d) (\d) (\d) (\d)(?![\d])"
+)
+
+
 def normalize(text):
     """
     Upper-case, accent-free, single-spaced text.
@@ -209,7 +232,13 @@ def normalize(text):
     """
     plain = unicodedata.normalize("NFKD", text or "")
     plain = "".join(c for c in plain if not unicodedata.combining(c))
-    return re.sub(r"\s+", " ", plain.upper()).strip()
+    plain = re.sub(r"\s+", " ", plain.upper()).strip()
+    # S119: fechas con los dígitos separados por espacios en recibos
+    # antiguos ("DESDE 0 9 - 1 2 - 2 0 0 8 HASTA 0 8 - 1 2 - 2 0 0 9",
+    # id=4755) se juntan antes de aplicar ninguna regla.
+    return _SPACED_DATE_RE.sub(
+        lambda m: "".join(m.group(i) for i in range(1, 11)), plain,
+    )
 
 
 def _from_groups(groups):
@@ -266,6 +295,8 @@ def _find_period(norm, code):
 def _find_expiry(norm):
     found = [
         _from_groups(m.groups()) for m in _EXPIRY_LABEL_RE.finditer(norm)
+    ] + [
+        _from_groups(m.groups()) for m in _CANCELLATION_RE.finditer(norm)
     ]
     found = [value for value in found if _valid_expiry(value)]
     # Tarjeta ITV con varias inspecciones: la más reciente manda.
@@ -297,6 +328,16 @@ def _find_issue(norm, today, expiry=None):
     match = _OCA_NOTIFICATION_RE.search(norm)
     if match:
         value = _parse_date(*match.groups())
+        if _valid_issue(value, today):
+            return value
+    match = _INSPECTION_MONTH_RE.search(norm)
+    if match:
+        value = _parse_date(1, _MONTH_ABBR[match.group(1)], match.group(2))
+        if _valid_issue(value, today):
+            return value
+    match = _IVTM_PAYMENT_RE.search(norm)
+    if match:
+        value = _from_groups(match.groups())
         if _valid_issue(value, today):
             return value
     return None
@@ -332,6 +373,11 @@ def _find_latest(norm, today):
         if _preceded_by(norm, match, _REGISTRY_CONTEXT):
             continue
         value = _from_groups(match.groups())
+        if _valid_issue(value, today):
+            found.append(value)
+    for match in _ISO_DATE_RE.finditer(norm):
+        year, month, day = match.groups()
+        value = _parse_date(day, month, year)
         if _valid_issue(value, today):
             found.append(value)
     return max(found) if found else None

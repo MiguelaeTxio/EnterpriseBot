@@ -69,6 +69,19 @@ def _pdf_page_count(data):
         return doc.page_count
 
 
+def _is_poor_text(text):
+    """
+    True when text is empty or mostly non-readable characters.
+    ---
+    Vacío o mayoritariamente caracteres no legibles (fuente sin mapa de
+    caracteres en el PDF).
+    """
+    if len(text.strip()) < 100:
+        return True
+    readable = sum(1 for c in text if c.isalnum() or c.isspace())
+    return readable / len(text) < 0.7
+
+
 def _full_pdf_text(data, filename, max_pages, notes):
     """
     All embedded text, plus Cloud Vision for pages 3..max_pages.
@@ -78,8 +91,14 @@ def _full_pdf_text(data, filename, max_pages, notes):
     """
     pages = _pdf_page_count(data)
     notes.append("%d paginas" % pages)
-    parts = [pdf_embedded_text(data, page_range=(0, pages))]
-    start = 3
+    embedded = pdf_embedded_text(data, page_range=(0, pages))
+    parts = [embedded]
+    # S119, dry-run EnterpriseBot_009: si el texto incrustado está vacío o
+    # es basura de codificación (id=10797, id=10035, id=10251), las
+    # páginas 1-2 también van por Cloud Vision, no solo de la 3 en adelante.
+    start = 1 if _is_poor_text(embedded) else 3
+    if start == 1:
+        notes.append("incrustado pobre, OCR desde la 1")
     while start <= min(pages, max_pages):
         end = min(start + 1, pages, max_pages)
         try:
@@ -206,11 +225,17 @@ class Command(BaseCommand):
                 part for part in (entry.ocr_text, text) if part
             )
             entry.ocr_text = combined
-            updates, source = dating._decide_by_rules(entry)
+            # Criterio S48 de Miguel Ángel: la fecha escrita a mano en el
+            # nombre ORIGINAL manda sobre la del OCR (id=44015: "ITV
+            # 06-04-2027" en el nombre frente a un 2028 leído del texto).
+            field, value, source = dating._decide(entry)
+            updates = {}
+            if field and source == "nombre":
+                updates = {"%s_date" % field: value}
             if not updates:
-                field, value, source = dating._decide(entry)
-                if field:
-                    updates = {"%s_date" % field: value}
+                updates, source = dating._decide_by_rules(entry)
+            if not updates and field:
+                updates = {"%s_date" % field: value}
             if not updates:
                 updates, source = dating._decide_by_rules(
                     entry, fallback=True,
