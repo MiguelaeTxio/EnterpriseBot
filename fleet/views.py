@@ -248,7 +248,7 @@ def _build_queryset(company, request):
         .filter(company=company)
         # H30 (S118): foto de la máquina en su fila, sin una query
         # extra por fila.
-        .select_related("avatar_document")
+        .select_related("avatar_document", "document_requirement")
         .order_by("company_code", "family", "code")
     )
 

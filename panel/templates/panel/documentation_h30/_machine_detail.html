@@ -6,9 +6,27 @@
 {% block page_title %}{{ machine.code }} — {{ machine.brand_model }}{% endblock %}
 
 {% block content %}
-<a href="{{ back_url }}" class="btn btn-sm btn-outline-secondary mb-3">
+{% comment %}
+H30 (S119) -- barra de acciones fija justo debajo del membrete, mismo
+mecanismo que la ficha de Personal (H31 S103, ver .sticky-below-navbar
+en panel.css) -- Miguel Ángel: "aquí es que si no se perdiera no
+podríamos acceder al listado [...] en la tablet es totalmente
+necesario". Antes "Selección de documentos" y "Plantillas de dossier"
+vivían dentro de la tarjeta de la foto (más abajo, con scroll normal),
+así que se perdían igual que "Volver" -- ahora los tres viven juntos,
+fijos, y la tarjeta de la foto se queda solo con la foto y el nombre.
+{% endcomment %}
+<div class="sticky-below-navbar">
+<a href="{{ back_url }}" class="btn btn-sm btn-outline-secondary mb-0">
     <i class="bi bi-arrow-left"></i> Volver
 </a>
+<button type="button" class="btn btn-sm btn-outline-primary mb-0 ms-2" onclick="openSelectionPreview()">
+    <i class="bi bi-collection me-1"></i>Selección de documentos <span class="badge bg-primary" id="documentSelectionBadge">{{ selected_document_ids|length }}</span>
+</button>
+<button type="button" class="btn btn-sm btn-outline-secondary mb-0 ms-2" onclick="openDossierTemplateManager()">
+    <i class="bi bi-bookmark-star me-1"></i>Plantillas de dossier
+</button>
+</div>
 
 {% comment %}
 H30 (S118) -- foto de la máquina, como la foto de perfil de Personal:
@@ -35,18 +53,6 @@ sube una nueva con la cámara (se sube como IMAGEN y queda fijada).
         <div>
             <div class="fw-semibold">{{ machine.code }}</div>
             <div class="text-muted small">{{ machine.brand_model|default:"" }}{% if machine.plate %} · {{ machine.plate }}{% endif %}</div>
-        </div>
-        {% comment %}
-        H30 (S119), punto 6 -- Selección y Plantillas de dossier en la
-        cabecera, mismo mecanismo que la ficha de Personal (H31 S103).
-        {% endcomment %}
-        <div class="ms-auto d-flex flex-wrap gap-2">
-            <button type="button" class="btn btn-sm btn-outline-primary" onclick="openSelectionPreview()">
-                <i class="bi bi-collection me-1"></i>Selección de documentos <span class="badge bg-primary" id="documentSelectionBadge">{{ selected_document_ids|length }}</span>
-            </button>
-            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="openDossierTemplateManager()">
-                <i class="bi bi-bookmark-star me-1"></i>Plantillas de dossier
-            </button>
         </div>
     </div>
 </div>

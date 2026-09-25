@@ -121,6 +121,7 @@ pestaña Personal, S113/S114):
                     </a>
                 </th>
                 <th class="text-center" style="min-width:70px">Contad.</th>
+                <th style="min-width:100px">Requisito de documentación</th>
                 <th class="text-center" style="min-width:70px">
                     <a class="text-decoration-none text-reset d-flex align-items-center justify-content-center gap-1 user-select-none"
                        hx-get="{% url 'panel:fleet_fragment' %}"
@@ -207,6 +208,13 @@ pestaña Personal, S113/S114):
                 <td class="small">{{ asset.plate|default:"—" }}</td>
 
                 <td class="text-center">{{ asset.doc_count }}</td>
+
+                {# H30 (S119): mismo criterio que la columna "Requisitos
+                de documentación" de Personal (_personal_results.html)
+                -- Miguel Angel: "que aparezca en las columnas [...]
+                mientras que si aparece en personal, no lo hace en la
+                maquinaria". #}
+                <td class="small">{{ asset.document_requirement.name|default:"—" }}</td>
 
                 <td class="text-center">
                     {% if asset.has_odometer %}
