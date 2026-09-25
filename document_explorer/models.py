@@ -2676,10 +2676,10 @@ class PersonGroupTemplate(models.Model):
 
 class JobPosition(models.Model):
     """
-    H31 (S109). Catálogo de puestos de trabajo -- Gruista,
-    Administrativo, Mecánico, Mozo de almacén, Conductor... Cada
-    puesto guarda qué tipos documentales son OBLIGATORIOS para quien
-    lo desempeña, con la misma mecánica que `PersonalDossierTemplate`
+    H31 (S109). Catálogo de "Requisitos de documentación" -- Gruista,
+    Administrativo, Con tacógrafo, Sin tacógrafo... Cada requisito
+    guarda qué tipos documentales son OBLIGATORIOS para quien lo tenga
+    asignado, con la misma mecánica que `PersonalDossierTemplate`
     (marcado de tipos agrupados por familia) -- Miguel Ángel,
     verbatim: "esto deberíamos de hacerlo igual que estamos haciendo
     la gestión de los dosieres [...] igual que estamos marcando para
@@ -2719,13 +2719,35 @@ class JobPosition(models.Model):
     llamándose JobPosition/job_position internamente, sin ningún
     cambio de esquema ni de URL, solo de rótulo visible.
 
-    `PersonIdentity.job_position` (FK, nullable) es "persona
-    relacionada con el puesto" -- sin puesto asignado, ningún tipo se
-    marca como faltante (nunca se asume un conjunto por defecto sin
-    que Miguel Ángel lo haya definido explícitamente). El catálogo de
-    puestos es deliberadamente abierto y editable -- "que eso se
+    AMPLIADO EN S119 -- CATÁLOGO ÚNICO, GLOBAL, NUNCA POR DOMINIO:
+    primer intento real de la propia sesión, corregido por Miguel
+    Ángel antes de desplegarse con datos: se creó un modelo APARTE
+    (`MachineDocumentRequirement`) para máquinas, con su propio
+    selector de tipos filtrado a MACHINE/BOTH. Miguel Ángel, verbatim:
+    "los requisitos documentales no son ni para personas ni para
+    máquinas [...] la gestión de requisitos documentales es global
+    [...] cogemos de todos los documentos, cogemos los que queremos y
+    fabricamos un requisito documental [...] ese requisito se asigna a
+    una máquina, a una dependencia o a una persona [...] no tenemos
+    que tener un arreglo para máquinas y un arreglo para personas."
+    Por eso el selector de tipos de `JobPositionManageView` ofrece TODO
+    el catálogo activo, sin filtrar por dominio -- la pertinencia de
+    cada tipo para un requisito concreto la decide quien lo crea y
+    quien lo asigna, nunca una restricción de código. Un requisito
+    pensado para personas asignado por error a una máquina simplemente
+    generará avisos de documentos faltantes que no le corresponden --
+    esa señal, visible en la propia ficha, es la que delata el error y
+    lleva a corregir la asignación, sin necesidad de ninguna
+    validación que lo impida de antemano.
+
+    `PersonIdentity.job_position` y `MachineAsset.document_requirement`
+    (los dos FK, nullable) son la persona o la máquina relacionada con
+    el requisito -- sin ninguno asignado, ningún tipo se marca como
+    faltante ni como caducado (nunca se asume un conjunto por defecto
+    sin que Miguel Ángel lo haya definido explícitamente). El catálogo
+    de requisitos es deliberadamente abierto y editable -- "que eso se
     pueda seguir perfilando en el futuro" -- nunca una lista cerrada
-    de puestos fija en código.
+    fija en código.
     """
 
     name = models.CharField(
@@ -2739,9 +2761,11 @@ class JobPosition(models.Model):
         related_name="job_positions",
         verbose_name="Documentos obligatorios para este requisito",
         help_text=(
-            "S119: gobierna los dos avisos de la ficha de personal -- "
-            "documento FALTANTE y documento CADUCADO. Ninguno de los "
-            "dos se aplica a un tipo que no esté en esta lista."
+            "S119: gobierna los dos avisos -- documento FALTANTE y "
+            "documento CADUCADO -- tanto en la ficha de personal como "
+            "en la de máquina. Catálogo completo, sin restricción de "
+            "dominio: la pertinencia de cada tipo la decide quien "
+            "crea y quien asigna el requisito, nunca el código."
         ),
     )
     created_by = models.ForeignKey(
@@ -2770,79 +2794,3 @@ class JobPosition(models.Model):
         return self.name
 
 
-class MachineDocumentRequirement(models.Model):
-    """
-    H30 (S119). Same mechanism as JobPosition, for MachineAsset.
-    ---
-    H30 (S119). La misma mecánica de `JobPosition`, aplicada a
-    `MachineAsset` -- Miguel Ángel, verbatim: "lo mismo que tenemos
-    requisitos documentales para personas, también lo tenemos que
-    tener para los tipos de máquina [...] exactamente la misma
-    filosofía que con los empleados."
-
-    Cada máquina apunta a UN requisito (`MachineAsset.
-    document_requirement`, FK nula) -- igual que una persona apunta a
-    UN puesto. Sin ninguna excepción por máquina ni por documento:
-    para que una máquina concreta exija otro conjunto de documentos
-    (ejemplo real de Miguel Ángel: una grúa móvil de asistencia que no
-    lleva tacógrafo), esa máquina se reasigna a OTRO requisito ya
-    existente o nuevo -- dos requisitos con casi los mismos tipos,
-    salvo el que cambia, nunca "el requisito de esta máquina con una
-    excepción". Asignación masiva por familia con el mismo mecanismo
-    que `PersonMassSetJobPositionView` (selección + sustituye siempre,
-    nunca acumula).
-
-    Sin requisito asignado, ninguna máquina avisa de nada -- una
-    dependencia como el taller mecánico o una nave sencillamente no
-    lleva ningún requisito, nunca se asume un conjunto por defecto.
-    Catálogo deliberadamente abierto y editable, igual que
-    `JobPosition` -- ni los requisitos que existen hoy ni sus tipos
-    están fijados en código.
-
-    `required_document_types` gobierna los dos avisos (documento
-    FALTANTE y CADUCADO) exactamente igual que en `JobPosition`, vía
-    el mismo servicio `required_documentation_service` -- una única
-    fuente de verdad, parametrizada por sujeto (Personal o Máquina),
-    nunca dos implementaciones separadas de la misma regla.
-    """
-
-    name = models.CharField(
-        max_length=150,
-        unique=True,
-        verbose_name="Nombre",
-    )
-    required_document_types = models.ManyToManyField(
-        DocumentTypeCatalog,
-        blank=True,
-        related_name="machine_document_requirements",
-        verbose_name="Documentos obligatorios para este requisito",
-        help_text=(
-            "Gobierna los dos avisos de la ficha de máquina -- "
-            "documento FALTANTE y documento CADUCADO. Ninguno de los "
-            "dos se aplica a un tipo que no esté en esta lista."
-        ),
-    )
-    created_by = models.ForeignKey(
-        "ivr_config.CompanyUser",
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
-        related_name="created_machine_document_requirements",
-        verbose_name="Creado por",
-    )
-    created_at = models.DateTimeField(
-        auto_now_add=True,
-        verbose_name="Fecha de creación",
-    )
-    updated_at = models.DateTimeField(
-        auto_now=True,
-        verbose_name="Última edición",
-    )
-
-    class Meta:
-        verbose_name = "Requisito de documentación (máquina)"
-        verbose_name_plural = "Requisitos de documentación (máquina)"
-        ordering = ["name"]
-
-    def __str__(self):
-        return self.name

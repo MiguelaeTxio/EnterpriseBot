@@ -471,10 +471,10 @@ def _build_pane_context(request, door):
     )
     if not isinstance(saved_selection, list):
         saved_selection = []
-    # H30 (S119): requisitos de documentación de máquina, para el
-    # desplegable de asignación masiva -- mismo criterio que
-    # job_positions en el panel de Personal.
-    from document_explorer.models import MachineDocumentRequirement
+    # H30 (S119): mismo catálogo ÚNICO de "Requisitos de
+    # documentación" que Personal (JobPosition, sin modelo aparte para
+    # máquina) -- para el desplegable de asignación masiva.
+    from document_explorer.models import JobPosition
 
     return {
         **fragment_ctx,
@@ -482,9 +482,7 @@ def _build_pane_context(request, door):
         "form": MachineAssetForm(company=company),
         "fleet_screen_key": _FLEET_SCREEN_KEYS[door],
         "saved_selection": saved_selection,
-        "machine_document_requirements": (
-            MachineDocumentRequirement.objects.order_by("name")
-        ),
+        "job_positions": JobPosition.objects.order_by("name"),
     }
 
 
@@ -892,16 +890,19 @@ class MachineAssetBulkSetDocumentRequirementView(FleetManageAccessMixin, View):
     vacío) un requisito de documentación a la vez a todos los
     MachineAsset seleccionados -- mismo mecanismo que
     `MachineAssetBulkStatusView` y que
-    `PersonMassSetJobPositionView` en Personal. Una asignación masiva
-    nueva SIEMPRE sustituye el requisito anterior de cada máquina,
-    nunca lo acumula (`ForeignKey`, no M2M -- una máquina tiene un
-    único requisito a la vez).
+    `PersonMassSetJobPositionView` en Personal, sobre el mismo
+    catálogo ÚNICO `JobPosition` (nunca un modelo aparte para máquina
+    -- Miguel Ángel: "los requisitos documentales no son ni para
+    personas ni para máquinas [...] la gestión es global"). Una
+    asignación masiva nueva SIEMPRE sustituye el requisito anterior de
+    cada máquina, nunca lo acumula (`ForeignKey`, no M2M -- una
+    máquina tiene un único requisito a la vez).
 
     POST /panel/fleet/bulk/requisito/
     """
 
     def post(self, request, *args, **kwargs):
-        from document_explorer.models import MachineDocumentRequirement
+        from document_explorer.models import JobPosition
 
         company_user = request.user.company_user
         company = company_user.company
@@ -909,7 +910,7 @@ class MachineAssetBulkSetDocumentRequirementView(FleetManageAccessMixin, View):
             "document_requirement_id", "",
         ).strip()
         requirement = (
-            get_object_or_404(MachineDocumentRequirement, pk=requirement_id)
+            get_object_or_404(JobPosition, pk=requirement_id)
             if requirement_id else None
         )
         updated = _selected_assets(company, request).update(

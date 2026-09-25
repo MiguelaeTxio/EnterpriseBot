@@ -36,12 +36,14 @@ la lista hace scroll. Dos paneles:
     <div class="border rounded p-2 mb-2" id="fleet-top-panel">
         <div class="d-flex justify-content-end gap-2 mb-2">
             {% comment %}
-            H30 (S119) -- mismo formato que la pestaña Personal:
-            "Gestionar requisitos de documentación" (máquina), misma
-            mecánica que JobPosition pero con
-            MachineDocumentRequirement.
+            H30 (S119) -- mismo formato que la pestaña Personal, y la
+            MISMA página de gestión: "Requisitos de documentación" es
+            un catálogo único (JobPosition), sin modelo aparte para
+            máquina -- Miguel Ángel: "la gestión de requisitos
+            documentales es global [...] no tenemos que tener un
+            arreglo para máquinas y un arreglo para personas".
             {% endcomment %}
-            <a class="btn btn-sm btn-outline-secondary" href="{% url 'panel:machine_document_requirements_manage' %}">
+            <a class="btn btn-sm btn-outline-secondary" href="{% url 'panel:job_positions_manage' %}">
                 <i class="bi bi-truck"></i> Gestionar requisitos de documentación
             </a>
             {% if can_manage %}
@@ -189,7 +191,7 @@ la lista hace scroll. Dos paneles:
                             <div class="d-flex gap-1 flex-wrap">
                                 <select id="fleet-mass-document-requirement" class="form-select form-select-sm" style="width:auto; max-width:100%; min-width:0;">
                                     <option value="">Asignar requisito…</option>
-                                    {% for requirement in machine_document_requirements %}
+                                    {% for requirement in job_positions %}
                                     <option value="{{ requirement.pk }}">{{ requirement.name }}</option>
                                     {% endfor %}
                                 </select>

@@ -96,18 +96,19 @@ class MachineAsset(models.Model):
         ),
     )
     document_requirement = models.ForeignKey(
-        "document_explorer.MachineDocumentRequirement",
+        "document_explorer.JobPosition",
         null=True,
         blank=True,
         on_delete=models.SET_NULL,
         related_name="machines",
         verbose_name=_("Requisito de documentación"),
         help_text=_(
-            "S119 -- mismo mecanismo que el puesto de una persona: "
-            "sin requisito asignado, esta máquina no avisa de ningún "
-            "documento faltante ni caducado. Para exigirle otro "
-            "conjunto de documentos, se reasigna a otro requisito, "
-            "nunca se marca una excepción dentro de este mismo."
+            "S119 -- mismo catálogo único que el de una persona "
+            "(Requisitos de documentación): sin requisito asignado, "
+            "esta máquina no avisa de ningún documento faltante ni "
+            "caducado. Para exigirle otro conjunto de documentos, se "
+            "reasigna a otro requisito ya existente o nuevo, nunca se "
+            "marca una excepción dentro de este mismo."
         ),
     )
     type_code = models.CharField(

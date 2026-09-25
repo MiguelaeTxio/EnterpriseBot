@@ -64,9 +64,6 @@ from panel.views_documentation_h30 import (
     DossierTemplateSaveView,
     JobPositionDeleteView,
     JobPositionManageView,
-    MachineDocumentRequirementDeleteView,
-    MachineDocumentRequirementManageView,
-    MachineDocumentRequirementSaveView,
     JobPositionSaveView,
     PersonalDossierMassGenerateView,
     PersonalDossierTemplateApplyView,
@@ -509,10 +506,6 @@ urlpatterns = [
     path("documentacion/puestos/<int:position_pk>/guardar/", JobPositionSaveView.as_view(), name="job_position_update"),
     path("documentacion/puestos/<int:position_pk>/eliminar/", JobPositionDeleteView.as_view(), name="job_position_delete"),
     # H30 (S119): gestión de requisitos de documentación de máquina -- misma mecánica, filtro de tipos MACHINE/BOTH.
-    path("documentacion/maquinaria/requisitos/", MachineDocumentRequirementManageView.as_view(), name="machine_document_requirements_manage"),
-    path("documentacion/maquinaria/requisitos/guardar/", MachineDocumentRequirementSaveView.as_view(), name="machine_document_requirement_create"),
-    path("documentacion/maquinaria/requisitos/<int:requirement_pk>/guardar/", MachineDocumentRequirementSaveView.as_view(), name="machine_document_requirement_update"),
-    path("documentacion/maquinaria/requisitos/<int:requirement_pk>/eliminar/", MachineDocumentRequirementDeleteView.as_view(), name="machine_document_requirement_delete"),
     # H35 (S105): generar dosieres para varios trabajadores seleccionados a la vez, a partir de una plantilla -- descarga o envío por correo.
     path("documentacion/personal/dosieres-masivo/", PersonalDossierMassGenerateView.as_view(), name="documentation_personal_dossier_mass_generate"),
     # H35 (S105): marca en el listado qué personas les falta algún documento de la plantilla elegida.

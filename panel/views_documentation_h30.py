@@ -48,9 +48,8 @@ from document_explorer.index_writer import ensure_folder_chain
 from document_explorer.models import (
     CompanyFiscalProfile, DocumentAcknowledgment, DocumentIndexEntry,
     DocumentTypeCatalog, EpiDelivery, EpiDeliveryBatchTemplate,
-    EpiItemCatalog, EpiReview, JobPosition, MachineDocumentRequirement,
-    PersonalDossierTemplate, PersonGroupTemplate, PersonIdentity,
-    path_digest,
+    EpiItemCatalog, EpiReview, JobPosition, PersonalDossierTemplate,
+    PersonGroupTemplate, PersonIdentity, path_digest,
 )
 from document_explorer.epi_delivery_document_service import (
     build_epi_delivery_pdf_bytes, resolve_company_fiscal_profile,
@@ -2744,17 +2743,24 @@ class MachineDossierTemplateApplyView(CompanyUserRequiredMixin, View):
 
 class JobPositionManageView(CompanyUserRequiredMixin, View):
     """
-    H31 (S109). GET: página de gestión de puestos de trabajo --
-    "plantilla de puesto" con la misma mecánica que
-    `DossierTemplateManageView` (tipos documentales agrupados por
-    familia, marcados con casillero), pero para
-    `JobPosition.required_document_types` en vez de
-    `PersonalDossierTemplate.document_types`. Sin FK a Company (a
-    diferencia de las plantillas de dosier) -- el catálogo de puestos
-    es de toda la plataforma, mismo criterio que `PersonGroupTemplate`.
-    Sin concepto de "plantilla activa" -- un puesto no se "aplica"
-    sobre nadie, solo se asigna a la persona (`PersonIdentity.
-    job_position`) desde su ficha.
+    H31 (S109). GET: página de gestión de "Requisitos de
+    documentación" -- misma mecánica que `DossierTemplateManageView`
+    (tipos documentales agrupados por familia, marcados con
+    casillero), pero para `JobPosition.required_document_types` en
+    vez de `PersonalDossierTemplate.document_types`. Sin FK a Company
+    -- el catálogo es de toda la plataforma, mismo criterio que
+    `PersonGroupTemplate`. Sin concepto de "plantilla activa" -- un
+    requisito no se "aplica" sobre nadie, solo se asigna desde la
+    propia ficha (`PersonIdentity.job_position` o `MachineAsset.
+    document_requirement`) o en lote desde el listado.
+
+    AMPLIADO EN S119 -- CATÁLOGO ÚNICO, GLOBAL: el selector de tipos ya
+    NO filtra por dominio (antes solo PERSONAL/BOTH) -- Miguel Ángel,
+    verbatim: "los requisitos documentales no son ni para personas ni
+    para máquinas [...] es un absurdo ahora acotar a personal o acotar
+    a máquina. Eso se acota al crearlo y al asignarlo." Ofrece TODO el
+    catálogo activo; qué tipos tienen sentido para un requisito
+    concreto lo decide quien lo crea, nunca el código.
     """
 
     def get(self, request):
@@ -2763,8 +2769,10 @@ class JobPositionManageView(CompanyUserRequiredMixin, View):
         ).order_by("name")
 
         types_by_family = {}
+        # S119: catálogo completo, sin filtro de dominio (ver
+        # docstring de la clase).
         doc_types = DocumentTypeCatalog.objects.filter(
-            is_active=True, domain__in=["PERSONAL", "BOTH"],
+            is_active=True,
         ).order_by("family", "label")
         family_labels = dict(DocumentTypeCatalog.FAMILY_CHOICES)
         for dt in doc_types:
@@ -2839,104 +2847,6 @@ class JobPositionDeleteView(CompanyUserRequiredMixin, View):
     def post(self, request, position_pk):
         position = get_object_or_404(JobPosition, pk=position_pk)
         position.delete()
-        return JsonResponse({"ok": True})
-
-
-class MachineDocumentRequirementManageView(CompanyUserRequiredMixin, View):
-    """
-    H30 (S119). GET: página de gestión de requisitos de documentación
-    de máquina -- misma mecánica exacta que `JobPositionManageView`,
-    para `MachineDocumentRequirement.required_document_types` en vez
-    de `JobPosition.required_document_types`. Único cambio real: el
-    filtro de dominio del selector de tipos es MACHINE/BOTH, nunca
-    PERSONAL/BOTH.
-    """
-
-    def get(self, request):
-        requirements = MachineDocumentRequirement.objects.prefetch_related(
-            "required_document_types",
-        ).order_by("name")
-
-        types_by_family = {}
-        doc_types = DocumentTypeCatalog.objects.filter(
-            is_active=True, domain__in=["MACHINE", "BOTH"],
-        ).order_by("family", "label")
-        family_labels = dict(DocumentTypeCatalog.FAMILY_CHOICES)
-        for dt in doc_types:
-            family_code = dt.family or ""
-            group = types_by_family.setdefault(family_code, {
-                "label": family_labels.get(family_code, "Sin familia"),
-                "color": _DOSSIER_FAMILY_COLORS.get(family_code, "#f5f5f5"),
-                "types": [],
-            })
-            group["types"].append(dt)
-        ordered_families = [
-            types_by_family[code]
-            for code, _ in DocumentTypeCatalog.FAMILY_CHOICES
-            if code in types_by_family
-        ]
-        if "" in types_by_family:
-            ordered_families.append(types_by_family[""])
-
-        return render(
-            request, "panel/machine_document_requirements/manage.html", {
-                "requirements": requirements,
-                "families": ordered_families,
-            },
-        )
-
-
-class MachineDocumentRequirementSaveView(CompanyUserRequiredMixin, View):
-    """
-    H30 (S119). POST: crea un requisito nuevo (sin `requirement_pk`) o
-    edita uno existente -- mismo contrato que `JobPositionSaveView`.
-    """
-
-    def post(self, request, requirement_pk=None):
-        if requirement_pk:
-            requirement = get_object_or_404(
-                MachineDocumentRequirement, pk=requirement_pk,
-            )
-        else:
-            requirement = MachineDocumentRequirement(
-                created_by=getattr(request.user, "company_user", None),
-            )
-
-        name = request.POST.get("name", "").strip()
-        if not name:
-            return JsonResponse(
-                {"ok": False, "error": "Falta el nombre del requisito."},
-                status=400,
-            )
-
-        requirement.name = name
-        try:
-            requirement.save()
-        except IntegrityError:
-            return JsonResponse(
-                {"ok": False, "error": "Ya existe un requisito con ese nombre."},
-                status=400,
-            )
-        type_ids = request.POST.getlist("document_type_ids")
-        requirement.required_document_types.set(type_ids)
-
-        return JsonResponse(
-            {"ok": True, "id": requirement.pk, "name": requirement.name},
-        )
-
-
-class MachineDocumentRequirementDeleteView(CompanyUserRequiredMixin, View):
-    """
-    H30 (S119). POST: borra un requisito -- las máquinas que lo
-    tuvieran asignado quedan con `document_requirement=NULL`
-    (on_delete=SET_NULL), nunca se tocan ellas.
-    """
-
-    def post(self, request, requirement_pk):
-        requirement = get_object_or_404(
-            MachineDocumentRequirement, pk=requirement_pk,
-        )
-        requirement.delete()
         return JsonResponse({"ok": True})
 
 
