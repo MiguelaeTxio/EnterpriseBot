@@ -8178,3 +8178,264 @@ vigentes arriba).
 - Gemini para fechar: 504 DEADLINE_EXCEEDED repetidos, ETA 11 h --
   cancelado por Miguel Ángel; cambio de enfoque a reglas por tipo.
 
+---
+
+### COMPLETADAS EN S119 (sesión muy larga, retoma dominio MÁQUINAS
+### desde el "AVISO AL RETOMAR" de arriba -- los 7 puntos de la Fase A
+### de `DOC. MAQUINAS` quedan cerrados y verificados con consulta
+### real, y de ahí se abre un frente nuevo no previsto: unificar
+### "Requisitos de documentación" para Personal y Máquinas)
+
+**Nota de continuidad honesta:** las referencias a "S117"/"S118" que
+aparecen en comentarios del código de esta misma sesión (relevo
+`gcs_image`, puntos 2-7 "cerrados en sesiones anteriores" según el
+resumen con el que arrancó esta sesión) no corresponden a sesiones
+reales distintas con su propio cierre documentado -- son partes
+anteriores de esta MISMA sesión S119, antes de un corte de contexto
+por compactación a mitad de camino. No existe ningún anexo "S117"/
+"S118" que reconstruir; todo el trabajo desde el punto 1 hasta el
+cierre de hoy es de S119.
+
+#### Punto 1 -- Fechado de caducables sin fecha (CERRADO, 0/0 verificado)
+
+Punto de partida real: 703 caducables sin fecha en máquinas activas.
+Reglas automáticas por tipo sobre el texto guardado (`ocr_text`)
+bajaron esa cifra a 72; corregidas tras dos dry-runs reales
+(`EnterpriseBot_001`, `_002`) por patrones de fecha mal interpretados
+y por respaldo de fecha aplicado a tipos que no debían tenerlo.
+
+**Lectura completa nueva** (`read_full_machine_undated.py`): en vez de
+fiarse solo del `ocr_text` cacheado, lee cada documento entero (texto
+incrustado + Cloud Vision desde la página 3 si el incrustado es pobre,
+desde la página 1 si es basura; DOCX/MSG/EML con sus extractores) y da
+prioridad a la fecha del nombre ORIGINAL del blob sobre el OCR. Dry-run
+`EnterpriseBot_010`: 29 fechados automáticamente (aplicados en
+`_011`), 43 sin ninguna regla capaz de fecharlos.
+
+**Modo `gcs_image` del relevo** (nuevo, construido en esta misma
+sesión): el servidor renderiza páginas de un documento a PNG por id de
+`DocumentIndexEntry` (sin OCR) y las publica en la release privada
+`relevo-imagenes`; el modelo las baja, las ve y las recorta con PIL.
+Documentado en `com-actions-relay` sección 4bis, con las reglas que
+motivó el incidente real de esta sesión: prohibido proponer una fecha
+de OCR ilegible sin ver el documento, prohibido decir "no puedo" sin
+probarlo. Ampliado con un modo `gcs_unrar` para el único `.rar` de los
+43 (descomprime en el servidor y renderiza cada miembro).
+
+**Resolución manual de los 43**, documento a documento, con la vista
+delante en cada caso (nunca una fecha propuesta a ciegas): 29 con
+fecha real (issue/expiry) confirmada visualmente o por Miguel Ángel,
+14 con el tipo corregido (los "caducables" que en realidad eran ITV
+mal tipadas, autorizaciones de poderes, leasings, condiciones
+generales de seguro sin fecha propia, imágenes sueltas, garantías de
+fabricante con inicio en la fecha de compra/entrega, o simplemente
+papelera). Dos correcciones reales sobre mis propias propuestas dentro
+de la propia sesión: el `.rar` de la A-36 lo di por "empresa ajena"
+sin comprobarlo -- Miguel Ángel señaló que GRUALDI S.L. es empresa del
+grupo (verificado real, `company_code=GLA`), pasó de papelera a fecha
+real; y a la inversa, confirmé con Miguel Ángel que Alquiber Quality
+(garantía Socage de una máquina comprada de segunda mano) sí es ajena,
+esa sí va a papelera. Tipo de catálogo nuevo creado por el camino:
+`CONDICIONES_GENERALES_SEGURO` (familia Seguros, sin caducidad).
+
+Comando `apply_manual_machine_resolutions` con la lista de 43 fija en
+el propio código (sin `--ids`, para que no pueda ejecutarse parcial ni
+por error). **Cierre verificado con consulta real: 0 documentos de
+máquinas activas con tipo que caduca y sin ninguna fecha.**
+
+#### Punto 2 -- Vigencia y avisos de caducidad (CERRADO, 0 verificado)
+
+Comando `recalculate_machine_vigencia`: un vigente por (tipo no
+acumulable, máquina activa), avisos de caducidad (30/15/7 días) al
+vigente con fecha futura, resolución de las que pasan a obsoletas.
+Tuvo que relanzarse tras el cierre real del punto 1 (43 documentos
+cambiaron de fecha o de tipo): dry-run mostró 10 cambios de estado
+esperables (documentos nuevos con nombre ya canónico compitiendo
+correctamente contra los recién fechados). **Cierre verificado con
+consulta real: 0 grupos con más de un vigente por tipo no acumulable y
+máquina activa.**
+
+#### Punto 3 -- Carpetas y renombrado canónico (CERRADO, 0 verificado)
+
+Comando `reorganize_machine_documents`: estructura ACTIVAS/INACTIVAS,
+renombrado canónico `{CODIGO}_{TIPO}_{FECHA}.ext`. Relanzado dos veces
+más: tras el punto 1 (75 renombrados) y tras la normalización de
+familias de más abajo (204 máquinas movidas de carpeta). **Cierre
+verificado con consulta real: 0 documentos de máquinas activas con
+nombre no canónico**, sobre 9.767 documentos totales.
+
+#### Puntos 4-7 -- Comprobados visualmente, sin incidencias
+
+Punto 4 (aviso de caducidad en rojo en la cabecera de la ficha),
+punto 5 (datos del centro de gasto con modo edición bloqueado por
+defecto), punto 6 (selección y plantillas de dosier en la ficha de
+máquina) y punto 7 (sección Taller con partes de trabajo agregados)
+ya estaban desplegados de sesiones anteriores a la compactación de
+esta misma sesión -- comprobados uno a uno en el panel real por
+Miguel Ángel durante S119 (capturas de pantalla de H01, G01, A58, A34)
+sin encontrar ninguna incidencia.
+
+#### Normalización de familias de máquina
+
+`MachineAsset.family` era texto libre con abreviaturas históricas
+(`PLATAFOR`, `ASISTENC`, `CARR`, `TTE.`...). Revisadas una a una contra
+la máquina real que representa cada abreviatura poco clara (`E.M.` →
+"EMPRESA MANTENEDORA", `S/TM` → "NAVE MAQUEDA") y normalizadas las 14
+con nombre completo (comando `normalize_machine_families`, 377
+máquinas actualizadas). Las carpetas de las 246 máquinas activas
+afectadas se movieron solas en el siguiente `reorganize_machine_
+documents`.
+
+#### El frente no previsto: "Requisitos de documentación" único para Personal y Máquinas
+
+Origen real: al comprobar visualmente el punto 4, Miguel Ángel abrió
+la ficha de una persona y notó que el listado de Personal marcaba a
+alguien con falta de documentación que su propia ficha no marcaba.
+Investigar esa divergencia llevó a un rediseño de fondo, no previsto
+en la hoja de ruta original de esta sesión:
+
+1. **`JobPosition` ("Requisitos de documentación") generalizado a
+   ambos dominios.** Antes solo gobernaba el aviso de "falta" en
+   Personal, con el aviso de "caducado" calculado aparte, de forma
+   genérica, para CUALQUIER documento vigente con fecha pasada
+   (tuviera o no puesto asignado) -- incidente real: Manuel Alonso
+   salía marcado en el listado por un permiso de conducir caducado que
+   su puesto no exige. Corregido para que "falta" y "caducado" salgan
+   los dos, siempre, únicamente de `required_document_types`
+   (`document_explorer/required_documentation_service.py`, función
+   `resolve_required_document_status`).
+2. **Primer diseño equivocado, corregido en la misma sesión antes de
+   tener ningún dato real:** se creó un modelo aparte
+   (`MachineDocumentRequirement`) para máquinas, con su propio
+   selector de tipos filtrado por dominio. Miguel Ángel: "los
+   requisitos documentales no son ni para personas ni para máquinas
+   [...] la gestión es global." Revertido (migraciones fleet 0014 +
+   document_explorer 0146, sobre las 0013/0145 recién desplegadas, 0
+   filas reales afectadas) y sustituido por un único catálogo
+   (`JobPosition`, el mismo de siempre), con `MachineAsset.
+   document_requirement` como segundo FK al mismo catálogo
+   (migraciones fleet 0015 + document_explorer 0146). El selector de
+   tipos de `JobPositionManageView` ya no filtra por dominio -- catálogo
+   completo, la pertinencia de cada tipo la decide quien crea y quien
+   asigna el requisito, nunca el código.
+3. **El bug de fondo real, encontrado con el incidente de Alberto
+   Javier Álvarez Díaz:** su carné de conducir caducado y sin
+   sustituto desaparecía de la tabla sin dejar ninguna fila visible
+   (`is_current()` excluye de raíz cualquier candidato caducado,
+   tenga o no sustituto) -- la cabecera sabía que faltaba, la tabla no
+   mostraba nada. En máquinas "parecía" funcionar porque
+   `is_current_expiring` se aplicaba por DOMINIO, sin mirar si el tipo
+   era obligatorio -- el mismo error en la dirección contraria.
+   Corregido de fondo: `vigencia_selector.current_fn_for()` ya no
+   distingue dominio, decide por si el tipo está en el conjunto de
+   tipos exigidos AHORA MISMO al sujeto concreto
+   (`get_required_type_ids`). `_split_current_obsolete()` generalizada
+   con ese conjunto como parámetro, sus 6 puntos de llamada
+   actualizados (fichas de persona y máquina, las dos resoluciones de
+   plantilla de dosier, el historial de un tipo suelto,
+   `subject_upload_service`, `recalculate_machine_vigencia`).
+   **Hallazgo real derivado, aparcado explícitamente por Miguel Ángel
+   para la sesión siguiente:** el carné de conducir español no tiene
+   una única fecha de caducidad -- cada categoría (B, C, D, sus
+   combinaciones con E...) caduca por su cuenta, y un mismo documento
+   puede tener una categoría vigente y otra caducada a la vez. Ver
+   Hoja de Ruta.
+4. **Interfaz completa**: gestión (`job_positions/manage.html`, guardar
+   con nombre distinto crea un requisito nuevo en vez de sobrescribir
+   el cargado -- incidente real, pedido explícito de Miguel Ángel),
+   asignación masiva en los dos listados (con modal de confirmación,
+   toast de 2 s en vez de recargar la página, opción real de
+   desasignar aclarada en el texto), columna "Requisito de
+   documentación" en ambos listados, y un letrero SIEMPRE VISIBLE
+   (no un tooltip) con "Falta: X"/"Caducado: Y -- caducó el fecha"
+   dentro de cada acordeón, en las dos fichas -- Miguel Ángel, tras
+   repetirlo varias veces: "lo que no puede ser es que la interfaz no
+   informe de lo que pasa."
+5. **Reorganización de navegación, decidida sobre la marcha:**
+   "Requisitos", "Circulares" y "Dosieres" (antes páginas aparte con
+   botón "Gestionar...") pasan a ser pestañas del propio hub de
+   Documentación -- sin botón "Volver" (se probó uno y el propio
+   Miguel Ángel cayó en la cuenta de que sobraba, las pestañas ya son
+   el camino de vuelta). "Dar de alta trabajador" y "Nuevo centro de
+   gasto" se trasladan de botón suelto en la cabecera a su panel de
+   acción correspondiente (Alta y baja de cada listado).
+6. **Visita guiada (Driver.js/`EbTour`) retirada de toda la
+   aplicación**, a petición explícita de Miguel Ángel ("a veces es un
+   incordio, cuando cambia de dispositivo vuelve a salir") -- motor y
+   las 9 plantillas que lo registraban (`operator/*`, `budgets/*`)
+   limpiadas sin dejar ninguna llamada a `window.EbTour` huérfana. La
+   fila de cabecera genérica de `base.html` (estado de presencia,
+   nombre, botón Ayuda) también se retira por completo -- el título de
+   página no aporta ya nada que la sidebar o las pestañas no digan.
+7. **Cabecera fija aplicada también a la ficha de máquina**
+   (`.sticky-below-navbar`, ya existente y en uso en Personal desde
+   S103, nunca adoptada por la ficha de máquina) -- Miguel Ángel, en
+   tablet: "si no se perdiera no podríamos acceder al listado."
+
+#### Incidencias reales de este frente, cada una corregida en el momento
+
+- `ImportError` en el primer deploy tras crear la vista de asignación
+  masiva de máquina: `panel/urls.py` importa de `panel.views`, no
+  directamente de `fleet.views` -- faltaba el reexport.
+- Comentario Django `{# ... #}` de varias líneas (sintaxis de UNA sola
+  línea) rompió el listado de Centros de Gasto entero ("ha salido todo
+  el crudo en la página") -- único caso así en todo el proyecto,
+  confirmado con búsqueda real antes de corregir a `{% comment %}`.
+- Columna "Requisito de documentación" desplazada una posición entre
+  cabecera y cuerpo de la tabla (mostraba los iconos de Contadores en
+  vez del nombre del requisito) -- reordenada para coincidir.
+- Dos fallos de despliegue por caída puntual de PythonAnywhere
+  (timeout del `curl` de recarga, código 28) -- no eran fallos de
+  código, confirmado con `manage.py check` limpio y con el log real de
+  GitHub Actions que Miguel Ángel aportó.
+
+---
+
+## Hoja de Ruta para la Siguiente Sesión (S120) -- REESCRITA al cierre,
+## sustituye por completo a la "Fase A de DOC. MAQUINAS" de más arriba
+## (los 7 puntos están cerrados) y al "AVISO AL RETOMAR" de S116 (ya
+## no aplica, el dominio MÁQUINAS quedó vinculado en esta sesión)
+
+**Único punto comprometido, instrucción explícita de Miguel Ángel al
+cierre de S119** -- diseñar el permiso de conducción español como una
+matriz de permisos, no como un documento con una única fecha de
+caducidad:
+
+1. **Investigar y fijar la lista completa y definitiva de los permisos
+   de conducción que existen en España** (AM, A1, A2, A, B, B1, BE,
+   C1, C, C1E, CE, D1, D, D1E, DE, y cualquier otro que la
+   investigación real confirme que falta) tal como aparecen reflejados
+   en el propio carné -- fuente oficial (DGT), no de memoria. Cierre
+   objetivo: una lista escrita, con la fuente citada, que Miguel Ángel
+   pueda confirmar como completa antes de tocar el modelo.
+2. Con esa lista confirmada, diseñar el cambio de modelo: en vez de
+   pedir en un requisito de documentación "Permiso de conducción" a
+   secas, poder pedir permisos concretos (p. ej. "B1" para un puesto,
+   "C" para otro, "E" para quien lleve remolque) -- Miguel Ángel: "esto
+   en realidad es una matriz." Diseño concreto (qué modelo, qué
+   migración, cómo convive con `CARNET_CONDUCIR` tal como existe hoy)
+   a decidir en la propia sesión con la lista del punto 1 ya cerrada,
+   nunca antes.
+3. **Comando de gestión para recolectar, de las personas activas
+   (~80), la fecha real de cada permiso que tengan** en su carné ya
+   subido -- Miguel Ángel ya sabe de al menos dos personas (él mismo,
+   Jerónimo) que no tienen ningún permiso de camión, y de sí mismo que
+   solo tiene el B1 confirmado, con duda real sobre si los inferiores
+   (A1/A2) se conceden automáticamente al B1 -- verificar esa regla de
+   concesión automática entre categorías como parte de la
+   investigación del punto 1, no asumirla.
+4. **`id=27899` (carné de conducir de Alberto Javier Álvarez Díaz,
+   `PersonIdentity` id=5)** es el caso real que destapó todo esto:
+   guardado hoy con `expiry_date=2023-09-04` (la fecha de las
+   categorías de camión, C/C1/D1/CE/C1E/D1E/DE), cuando la categoría B
+   (turismo, la que de verdad exige su puesto GENERAL) caduca en
+   2028. No se ha tocado -- se corrige como parte del punto 2 de esta
+   hoja de ruta, con el modelo de matriz ya construido, nunca antes
+   con un parche puntual sobre el dato de este único documento.
+
+**Fuera de alcance de esta hoja de ruta, explícitamente aparcado por
+Miguel Ángel:** cualquier ajuste adicional de la interfaz de
+Requisitos de documentación más allá de lo ya cerrado en S119 -- si
+aparece algo nuevo, se trata como lo que sea en su momento, no se
+anticipa aquí.
+

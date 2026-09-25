@@ -69,13 +69,17 @@ Todos los anexos viven en `DOCS/MAINS/ATTACHEDS/`.
 
 **Hito EN PROGRESO:** H30 — Vinculación Documental Real: Centros de
 Gasto y Personal → `ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md`.
-Retomado por PCH explícito de Miguel Ángel al cierre de S116 (que se
-cerraba en H10), dominio MÁQUINAS — el dominio PERSONAL ya se cerró
-al 100% en S92. Condición que tenía puesta para retomarse (H32
-cerrado) cumplida desde S93. Ver "PCH (S92): hito pausado" al final
-del propio anexo, y "Fase A de `DOC. MAQUINAS`" en sus secciones
-anteriores, para la hoja de ruta ejecutable completa — intacta, sin
-tocar desde S92.
+Dominio MÁQUINAS (los 7 puntos de la "Fase A de `DOC. MAQUINAS`")
+**cerrado y verificado con consulta real en S119** — fechado,
+vigencia, renombrado canónico, aviso de caducidad, edición de datos,
+selección/plantillas de dosier y sección Taller. Dominio PERSONAL
+cerrado al 100% desde S92. De S119 salió además un frente no previsto
+y ya cerrado: "Requisitos de documentación" (antes solo Personal)
+generalizado a un catálogo único para Personal y Máquinas. Ver
+"COMPLETADAS EN S119" al final del propio anexo para el detalle
+completo, y "Hoja de Ruta para la Siguiente Sesión (S120)" justo
+después para lo único que queda abierto (permisos de conducción como
+matriz).
 
 **Hito PAUSADO en S116:** H10 — Albaranes de Proveedores y Almacén de
 Repuestos → `ENTERPRISEBOT_ATTACHED_MILESTONE_V10.md`. Sesión muy
