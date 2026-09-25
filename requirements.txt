@@ -324,6 +324,8 @@ pyyaml==6.0.3
     # via
     #   djlint
     #   pymupdf-layout
+rarfile==4.5
+    # via -r requirements.in
 red-black-tree-mod==1.22
     # via extract-msg
 redis==7.4.0
