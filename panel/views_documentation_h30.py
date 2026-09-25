@@ -55,7 +55,7 @@ from document_explorer.epi_delivery_document_service import (
     build_epi_delivery_pdf_bytes, resolve_company_fiscal_profile,
 )
 from document_explorer.required_documentation_service import (
-    resolve_required_document_status,
+    get_required_type_ids, resolve_required_document_status,
 )
 from document_explorer.vigencia_selector import current_fn_for
 from document_explorer.subject_upload_service import (
@@ -176,7 +176,7 @@ def _apply_sort(request, queryset, sort_columns, default_sort):
     return queryset.order_by(order), sort_key, sort_dir
 
 
-def _split_current_obsolete(entries):
+def _split_current_obsolete(entries, required_type_ids=frozenset()):
     """
     Agrupa entries (ya filtradas a un sujeto) en (vigentes, obsoletas)
     por document_type -- reutiliza vigencia_service.is_current() tal
@@ -198,6 +198,19 @@ def _split_current_obsolete(entries):
     caducidad. Con la regla vieja salían siempre en rojo, estuvieran
     bien o mal. Ahora solo una caducidad real ya pasada dispara el
     aviso -- un tipo sin fecha nunca alerta por sí solo.
+
+    `required_type_ids` (S119, corregido tras el incidente real de
+    Alberto Javier Álvarez Díaz): pk de `DocumentTypeCatalog` exigidos
+    ahora mismo por el requisito de documentación del sujeto (ver
+    `required_documentation_service.get_required_type_ids`) -- decide,
+    vía `current_fn_for`, si un tipo caducado y sin sustituto sigue
+    contando como "vigente caducado" (se ve en la tabla, en rojo, con
+    su fecha) o desaparece sin más (criterio general `is_current()`).
+    Sin este conjunto (valor por defecto), TODO tipo caducado y sin
+    sustituto desaparece -- correcto para un llamador que no conoce
+    ningún requisito real (p. ej. el historial de un tipo suelto sin
+    mirar a quién pertenece), nunca para pintar la ficha completa de un
+    sujeto con requisito asignado.
     """
     from datetime import date
 
@@ -233,10 +246,11 @@ def _split_current_obsolete(entries):
             )
             for e in group
         }
-        # S119 (opción 1 de Miguel Ángel): los tipos que caducan en
-        # máquinas usan su propio criterio -- ver vigencia_selector.
+        # S119 (corregido tras el incidente de Alberto Javier Álvarez
+        # Díaz): el criterio ya no es por dominio, es por si ESTE tipo
+        # está en el requisito de ESTE sujeto -- ver vigencia_selector.
         current_fn = current_fn_for(
-            group[0].document_type, group[0].domain_content_type_id,
+            group[0].document_type, required_type_ids,
         )
         for entry in group:
             candidate = snapshots[entry.pk]
@@ -603,8 +617,13 @@ class MachineDetailView(CompanyUserRequiredMixin, View):
         untyped_documents = [
             entry for entry in entries if not entry.document_type_id
         ]
+        # S119: qué tipos exige el requisito de ESTA máquina en
+        # concreto -- decide si un tipo caducado y sin sustituto sigue
+        # contando como vigente (ver docstring de _split_current_obsolete).
+        required_type_ids = get_required_type_ids(machine)
         current, _obsolete = _split_current_obsolete(
             [entry for entry in entries if entry.document_type_id],
+            required_type_ids,
         )
         machine_domains = [
             DocumentTypeCatalog.DOMAIN_MACHINE,
@@ -629,19 +648,21 @@ class MachineDetailView(CompanyUserRequiredMixin, View):
         # salen SOLO del requisito de documentación de la máquina
         # (MachineAsset.document_requirement, mismo catálogo único
         # JobPosition que Personal) -- ver resolve_required_document_
-        # status. Antes "Caducado" salía de CUALQUIER documento vigente
-        # con needs_attention, tuviera la máquina requisito o no; con
-        # 0 máquinas con requisito asignado hoy, el aviso de "vigente
-        # caducada" en la cabecera (expired_current_documents, más
-        # abajo, sin cambios) sigue siendo la señal general -- este
-        # triángulo por familia es la señal ceñida al requisito.
+        # status.
         missing_required_types_by_family, attention_types_by_family = (
             resolve_required_document_status(machine)
         )
         # H30 (S119), punto 4: aviso en rojo en la cabecera de
-        # Documentación con cada vigente de caducidad ya pasada (la
-        # "vigente caducada" del criterio de vigencia de máquinas, S119
-        # opción 1), el más antiguo primero.
+        # Documentación con cada vigente de caducidad ya pasada. YA NO
+        # es una señal general aparte del requisito -- `current` sale
+        # de `_split_current_obsolete(entries, required_type_ids)`
+        # (más arriba, en MachineDetailView), así que un tipo caducado
+        # y sin sustituto solo sigue siendo "vigente" (needs_attention
+        # incluido) si además es obligatorio para ESTA máquina. Sin
+        # ningún requisito asignado -- el caso de las 318 máquinas de
+        # hoy -- este banner sale vacío, coherente con el listado y con
+        # el triángulo por familia de arriba: mismo criterio en los
+        # tres sitios, nunca dos reglas distintas conviviendo.
         expired_current_documents = sorted(
             (entry for entry in current if entry.needs_attention),
             key=lambda entry: (entry.expiry_date, entry.document_type.label),
@@ -1409,7 +1430,13 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
             entry_kind=DocumentIndexEntry.KIND_FILE,
             deleted_at__isnull=True, purged_at__isnull=True,
         ).select_related("document_type").order_by("-id")
-        current, obsolete = _split_current_obsolete(entries)
+        # S119: qué tipos exige el requisito de ESTA persona en
+        # concreto -- decide si un tipo caducado y sin sustituto sigue
+        # contando como vigente (ver docstring de _split_current_obsolete).
+        required_type_ids = get_required_type_ids(person)
+        current, obsolete = _split_current_obsolete(
+            entries, required_type_ids,
+        )
         # H31 (S119): "Falta"/"Caducado" del puesto ya NO se calculan
         # aqui a partir de `current` (cualquier documento vigente con
         # `needs_attention`) -- ver `resolve_required_document_status`
@@ -2199,7 +2226,9 @@ def _resolve_template_entries(person, template):
         deleted_at__isnull=True, purged_at__isnull=True,
         document_type_id__in=type_ids,
     ).select_related("document_type")
-    current, _obsolete = _split_current_obsolete(list(all_entries))
+    current, _obsolete = _split_current_obsolete(
+        list(all_entries), get_required_type_ids(person),
+    )
     current.sort(key=lambda e: (e.document_type.family, e.document_type.label))
     return current
 
@@ -2594,7 +2623,9 @@ def _resolve_machine_template_entries(machine, template):
         deleted_at__isnull=True, purged_at__isnull=True,
         document_type_id__in=type_ids,
     ).select_related("document_type")
-    current, _obsolete = _split_current_obsolete(list(all_entries))
+    current, _obsolete = _split_current_obsolete(
+        list(all_entries), get_required_type_ids(machine),
+    )
     current.sort(key=lambda e: (e.document_type.family, e.document_type.label))
     return current
 
@@ -2853,7 +2884,9 @@ def _document_type_history_response(request, subject_model, subject_pk,
         document_type=document_type, entry_kind=DocumentIndexEntry.KIND_FILE,
         deleted_at__isnull=True, purged_at__isnull=True,
     ).select_related("document_type").order_by("-expiry_date", "-id"))
-    current, _obsolete = _split_current_obsolete(entries)
+    current, _obsolete = _split_current_obsolete(
+        entries, get_required_type_ids(subject),
+    )
     current_pks = {entry.pk for entry in current}
     for entry in entries:
         entry.is_current_computed = entry.pk in current_pks

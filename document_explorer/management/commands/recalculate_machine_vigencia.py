@@ -10,9 +10,14 @@ ACTIVAS, tras el fechado del punto 1.
 Por grupo (mismo tipo no acumulable + misma máquina activa):
 
 1. Criterio: `vigencia_selector.current_fn_for()` -- en tipos que
-   caducan, `is_current_expiring` (opción 1 de Miguel Ángel, S119); en
-   el resto, `is_current` de siempre. El mismo selector usa la ficha,
-   así que lo que se guarda aquí es lo mismo que se ve en pantalla.
+   caducan Y están en el requisito de documentación de ESA máquina en
+   concreto (`MachineAsset.document_requirement`), `is_current_expiring`;
+   en el resto, `is_current` de siempre. Corregido tras el incidente
+   real de Alberto Javier Álvarez Díaz (S119): el criterio nunca fue
+   por dominio, es por si el tipo es obligatorio para el sujeto -- ver
+   docstring completo de `vigencia_selector.current_fn_for`. El mismo
+   selector usa la ficha, así que lo que se guarda aquí es lo mismo que
+   se ve en pantalla.
 2. Compiten los no obsoletos Y los marcados obsoletos por un algoritmo
    anterior; NUNCA vuelve a vigente un documento que está dentro de una
    carpeta OBSOLETO/OBSOLETOS (organización manual, S50).
@@ -37,6 +42,9 @@ from django.core.management.base import BaseCommand
 from django.utils import timezone
 
 from document_explorer.models import DocumentIndexEntry
+from document_explorer.required_documentation_service import (
+    get_required_type_ids,
+)
 from document_explorer.vigencia_selector import current_fn_for
 from document_management.alert_service import (
     create_default_expiry_alerts,
@@ -86,6 +94,21 @@ class Command(BaseCommand):
         path = "/%s/" % entry.blob_name.upper().strip("/")
         return any(marker in path for marker in MANUAL_OBSOLETE_MARKERS)
 
+    @staticmethod
+    def _get_required_type_ids(machine, cache):
+        """
+        Cached per document_requirement_id -- avoids one query per
+        machine when many share (or lack) the same requirement.
+        ---
+        Cacheado por document_requirement_id -- evita una consulta por
+        máquina cuando muchas comparten (o carecen de) el mismo
+        requisito.
+        """
+        requirement_id = machine.document_requirement_id
+        if requirement_id not in cache:
+            cache[requirement_id] = get_required_type_ids(machine)
+        return cache[requirement_id]
+
     def _run(self, apply_changes):
         today = date.today()
         machine_ct = ContentType.objects.get_for_model(MachineAsset)
@@ -119,13 +142,16 @@ class Command(BaseCommand):
         stats = Counter()
         by_type = Counter()
         examples = {}
+        required_ids_cache = {}
         start_time = datetime.now()
         last_beat = time.monotonic()
         for index, ((_type_id, machine_pk), group) in enumerate(
                 sorted(groups.items()), start=1):
+            machine = machines[machine_pk]
             self._process_group(
-                group, machines[machine_pk], machine_ct, entry_ct,
-                company, contacts, today, apply_changes,
+                group, machine,
+                self._get_required_type_ids(machine, required_ids_cache),
+                entry_ct, company, contacts, today, apply_changes,
                 stats, by_type, examples,
             )
             if index % 100 == 0 or time.monotonic() - last_beat >= 30 \
@@ -146,9 +172,9 @@ class Command(BaseCommand):
                 )
         self._summary(apply_changes, total, stats, by_type, examples)
 
-    def _process_group(self, group, machine, machine_ct, entry_ct, company,
-                       contacts, today, apply_changes, stats, by_type,
-                       examples):
+    def _process_group(self, group, machine, required_type_ids, entry_ct,
+                       company, contacts, today, apply_changes, stats,
+                       by_type, examples):
         """
         Recompute one (type, machine) group.
         ---
@@ -160,7 +186,7 @@ class Command(BaseCommand):
             entry for entry in group
             if not (entry.is_obsolete and self._is_manual_obsolete(entry))
         ]
-        current_fn = current_fn_for(document_type, machine_ct.id)
+        current_fn = current_fn_for(document_type, required_type_ids)
         snapshots = {
             entry.pk: DocumentSnapshot(
                 identifier=entry.pk, expiry_date=entry.expiry_date,

@@ -53,6 +53,31 @@ BUCKET = "cgs_grupo_alvarez"
 IDENTITY_CODES = ("DNI", "NIE")
 
 
+def get_required_type_ids(subject):
+    """
+    Return the frozenset of DocumentTypeCatalog pks required for this
+    subject right now, or an empty frozenset if none assigned.
+    ---
+    H30 (S119). Devuelve el conjunto de pk de `DocumentTypeCatalog`
+    exigidos ahora mismo por el requisito de documentación de `subject`
+    (`PersonIdentity.job_position` o `MachineAsset.document_requirement`
+    -- mismo catálogo único `JobPosition`), vacío si no tiene ninguno
+    asignado. Único punto de esta lectura -- lo usan tanto
+    `resolve_required_document_status` como `vigencia_selector.
+    current_fn_for` (vía sus llamadores), para que los dos calculen
+    "obligatorio para este sujeto" exactamente igual.
+    """
+    requirement = (
+        getattr(subject, "job_position", None)
+        or getattr(subject, "document_requirement", None)
+    )
+    if requirement is None:
+        return frozenset()
+    return frozenset(
+        requirement.required_document_types.values_list("pk", flat=True),
+    )
+
+
 def resolve_required_document_status(subject):
     """
     Return (missing_by_family, expired_by_family) for this subject.
@@ -66,20 +91,18 @@ def resolve_required_document_status(subject):
     `JobPosition`. Sin ningún requisito asignado, los dos salen
     vacíos -- ningún tipo es obligatorio.
     """
-    from document_explorer.models import DocumentIndexEntry
+    from document_explorer.models import (
+        DocumentIndexEntry, DocumentTypeCatalog,
+    )
 
     missing_by_family = {}
     expired_by_family = {}
-    requirement = (
-        getattr(subject, "job_position", None)
-        or getattr(subject, "document_requirement", None)
+    required_type_ids = get_required_type_ids(subject)
+    if not required_type_ids:
+        return missing_by_family, expired_by_family
+    required_types = list(
+        DocumentTypeCatalog.objects.filter(pk__in=required_type_ids),
     )
-    if requirement is None:
-        return missing_by_family, expired_by_family
-
-    required_types = list(requirement.required_document_types.all())
-    if not required_types:
-        return missing_by_family, expired_by_family
 
     ct = ContentType.objects.get_for_model(type(subject))
     entries = DocumentIndexEntry.objects.filter(
