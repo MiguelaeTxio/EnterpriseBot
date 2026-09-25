@@ -77,6 +77,20 @@ RANGE_RE = re.compile(
 )
 
 
+def original_name(entry):
+    """
+    Original file name of the document (never the canonical one).
+    ---
+    Nombre ORIGINAL del archivo, el último tramo de `blob_name` (nunca
+    cambia). S119, incidente real: tras el renombrado canónico del punto
+    3, `entry.name` es `{CÓDIGO}_{TIPO}_20210101...` en los documentos
+    sin fecha -- fechar por ese nombre les pondría la fecha FICTICIA, y
+    la fecha real que traía el nombre original ("ITV 06-04-2027") se
+    habría perdido. Toda regla de nombre lee de aquí.
+    """
+    return entry.blob_name.rsplit("/", 1)[-1]
+
+
 class Command(BaseCommand):
     help = (
         "H30 (S118) -- punto 8, paso gratis: fecha por nombre de "
@@ -136,10 +150,11 @@ class Command(BaseCommand):
         caduca, ni una caducidad anterior a la emisión ya guardada.
         """
         if fallback:
-            found = fallback_dates(entry.name, entry.ocr_text)
+            found = fallback_dates(original_name(entry), entry.ocr_text)
         else:
             found = dates_by_rules(
-                entry.document_type.code, entry.name, entry.ocr_text,
+                entry.document_type.code, original_name(entry),
+                entry.ocr_text,
             )
         if not found:
             return {}, None
@@ -162,11 +177,12 @@ class Command(BaseCommand):
         """
         dt = entry.document_type
         by_name = None
-        whatsapp = WHATSAPP_RE.search(entry.name)
-        range_match = RANGE_RE.search(entry.name)
+        name = original_name(entry)
+        whatsapp = WHATSAPP_RE.search(name)
+        range_match = RANGE_RE.search(name)
         if whatsapp:
             by_name = ("issue", date(*(int(g) for g in whatsapp.groups())))
-        elif SCANNER_NAME_RE.search(entry.name):
+        elif SCANNER_NAME_RE.search(name):
             by_name = None
         elif range_match:
             start = _parse_single_date_str(range_match.group(1))
@@ -176,9 +192,9 @@ class Command(BaseCommand):
             elif start:
                 by_name = ("issue", start)
         else:
-            by_name = extract_date_by_filename(dt.code, entry.name)
+            by_name = extract_date_by_filename(dt.code, name)
             if by_name is None:
-                generic = _extract_date(entry.name)
+                generic = _extract_date(name)
                 if generic:
                     by_name = ("issue", generic)
         if by_name:
