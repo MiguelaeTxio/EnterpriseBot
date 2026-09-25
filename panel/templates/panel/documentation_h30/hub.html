@@ -81,13 +81,14 @@
         H30 (S119): "Requisitos de documentación" como pestaña más del
         hub, no como página aparte -- Miguel Ángel: "las gestiones
         deben ir en pestañas en la vista principal de documentación".
-        Se llega aquí por enlace directo (?tab=requisitos&from=X desde
-        Personal o Centros de Gasto) -- el "Volver" del propio panel
-        usa ese "from" para reactivar la pestaña de origen (ver
-        job_positions/manage.html).
+        Se llega aquí por enlace directo (?tab=requisitos desde
+        Personal o Centros de Gasto) -- sin botón "Volver": se probó
+        con uno en la misma sesión y Miguel Ángel cayó en la cuenta él
+        mismo de que sobraba, las propias pestañas del hub ya son el
+        camino de vuelta.
         {% endcomment %}
         <a class="nav-link {% if persisted_active_tab == 'requisitos' %}active{% endif %}" id="tab-requisitos" data-bs-toggle="tab" href="#pane-requisitos"
-           hx-get="{% url 'panel:job_positions_manage' %}?from={{ requisitos_from_tab }}"
+           hx-get="{% url 'panel:job_positions_manage' %}"
            hx-target="#pane-requisitos"
            hx-trigger="{% if persisted_active_tab == 'requisitos' %}load once{% else %}click once{% endif %}">
             <i class="bi bi-clipboard-check me-1"></i>Requisitos
