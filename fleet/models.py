@@ -91,8 +91,23 @@ class MachineAsset(models.Model):
         max_length=100,
         blank=True,
         help_text=_(
-            "Familia de maquinaria del catálogo (ej: MOVILES, PLATAFOR, CARR, "
-            "AUTOCARG, REMOLQUE, TTE.)."
+            "Familia de maquinaria del catálogo (ej: PLATAFORMAS, "
+            "CARRETILLAS, AUTOCARGANTES, ASISTENCIA)."
+        ),
+    )
+    document_requirement = models.ForeignKey(
+        "document_explorer.MachineDocumentRequirement",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="machines",
+        verbose_name=_("Requisito de documentación"),
+        help_text=_(
+            "S119 -- mismo mecanismo que el puesto de una persona: "
+            "sin requisito asignado, esta máquina no avisa de ningún "
+            "documento faltante ni caducado. Para exigirle otro "
+            "conjunto de documentos, se reasigna a otro requisito, "
+            "nunca se marca una excepción dentro de este mismo."
         ),
     )
     type_code = models.CharField(

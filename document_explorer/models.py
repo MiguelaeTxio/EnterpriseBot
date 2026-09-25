@@ -2695,16 +2695,19 @@ class JobPosition(models.Model):
     sino de los documentos que realmente son necesarios [...]
     dependiendo del tipo de puesto que cada trabajador desempeña".
 
-    IMPORTANTE -- alcance de este modelo: solo gobierna el aviso de
-    "documento FALTANTE" (`missing_types_by_family` en
-    `PersonalDetailView`). El aviso de "documento CADUCADO"
-    (`attention_types_by_family`/`has_alert`) es independiente y
-    sigue aplicando siempre que la persona YA TENGA un documento con
-    fecha de caducidad real ya pasada, tenga o no puesto asignado --
-    Miguel Ángel confirmó explícitamente mantener ese comportamiento
-    tal cual: "tienes caducado el permiso de conducir, tienes
-    caducado el DNI [...] eso por una parte" (aviso siempre), frente
-    al aviso de faltante (solo por puesto).
+    IMPORTANTE -- alcance de este modelo, CORREGIDO EN S119: al crear
+    este modelo (S109) se decidió que el aviso de "documento CADUCADO"
+    (`attention_types_by_family`/`has_alert`) fuera independiente del
+    puesto -- se aplicaba a cualquier documento con caducidad real ya
+    pasada, tuviera o no puesto asignado. Miguel Ángel revirtió esa
+    decisión en S119, verbatim: "avisamos a una persona que es
+    administrativa [...] de que tiene cumplido el carnet de conducir
+    o el CAP [...] tenemos grupos hechos de requisitos documentales
+    para avisar de unos requisitos de documentación. Tenemos que
+    ceñirnos a eso." Desde S119, TANTO el aviso de faltante COMO el de
+    caducado salen únicamente de `required_document_types` -- ver
+    `document_explorer.required_documentation_service`, única fuente
+    para los dos.
 
     RENOMBRADO DE CARA AL USUARIO EN S113 (nunca la clase ni el campo
     en código, solo verbose_name/textos de interfaz): Miguel Ángel,
@@ -2736,9 +2739,9 @@ class JobPosition(models.Model):
         related_name="job_positions",
         verbose_name="Documentos obligatorios para este requisito",
         help_text=(
-            "Solo gobierna el aviso de documento FALTANTE en la "
-            "ficha de personal -- el aviso de documento CADUCADO es "
-            "independiente del puesto."
+            "S119: gobierna los dos avisos de la ficha de personal -- "
+            "documento FALTANTE y documento CADUCADO. Ninguno de los "
+            "dos se aplica a un tipo que no esté en esta lista."
         ),
     )
     created_by = models.ForeignKey(
@@ -2761,6 +2764,84 @@ class JobPosition(models.Model):
     class Meta:
         verbose_name = "Requisito de documentación"
         verbose_name_plural = "Requisitos de documentación"
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
+class MachineDocumentRequirement(models.Model):
+    """
+    H30 (S119). Same mechanism as JobPosition, for MachineAsset.
+    ---
+    H30 (S119). La misma mecánica de `JobPosition`, aplicada a
+    `MachineAsset` -- Miguel Ángel, verbatim: "lo mismo que tenemos
+    requisitos documentales para personas, también lo tenemos que
+    tener para los tipos de máquina [...] exactamente la misma
+    filosofía que con los empleados."
+
+    Cada máquina apunta a UN requisito (`MachineAsset.
+    document_requirement`, FK nula) -- igual que una persona apunta a
+    UN puesto. Sin ninguna excepción por máquina ni por documento:
+    para que una máquina concreta exija otro conjunto de documentos
+    (ejemplo real de Miguel Ángel: una grúa móvil de asistencia que no
+    lleva tacógrafo), esa máquina se reasigna a OTRO requisito ya
+    existente o nuevo -- dos requisitos con casi los mismos tipos,
+    salvo el que cambia, nunca "el requisito de esta máquina con una
+    excepción". Asignación masiva por familia con el mismo mecanismo
+    que `PersonMassSetJobPositionView` (selección + sustituye siempre,
+    nunca acumula).
+
+    Sin requisito asignado, ninguna máquina avisa de nada -- una
+    dependencia como el taller mecánico o una nave sencillamente no
+    lleva ningún requisito, nunca se asume un conjunto por defecto.
+    Catálogo deliberadamente abierto y editable, igual que
+    `JobPosition` -- ni los requisitos que existen hoy ni sus tipos
+    están fijados en código.
+
+    `required_document_types` gobierna los dos avisos (documento
+    FALTANTE y CADUCADO) exactamente igual que en `JobPosition`, vía
+    el mismo servicio `required_documentation_service` -- una única
+    fuente de verdad, parametrizada por sujeto (Personal o Máquina),
+    nunca dos implementaciones separadas de la misma regla.
+    """
+
+    name = models.CharField(
+        max_length=150,
+        unique=True,
+        verbose_name="Nombre",
+    )
+    required_document_types = models.ManyToManyField(
+        DocumentTypeCatalog,
+        blank=True,
+        related_name="machine_document_requirements",
+        verbose_name="Documentos obligatorios para este requisito",
+        help_text=(
+            "Gobierna los dos avisos de la ficha de máquina -- "
+            "documento FALTANTE y documento CADUCADO. Ninguno de los "
+            "dos se aplica a un tipo que no esté en esta lista."
+        ),
+    )
+    created_by = models.ForeignKey(
+        "ivr_config.CompanyUser",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="created_machine_document_requirements",
+        verbose_name="Creado por",
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Fecha de creación",
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name="Última edición",
+    )
+
+    class Meta:
+        verbose_name = "Requisito de documentación (máquina)"
+        verbose_name_plural = "Requisitos de documentación (máquina)"
         ordering = ["name"]
 
     def __str__(self):
