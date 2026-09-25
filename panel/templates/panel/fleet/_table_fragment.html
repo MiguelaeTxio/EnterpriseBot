@@ -209,11 +209,13 @@ pestaña Personal, S113/S114):
 
                 <td class="text-center">{{ asset.doc_count }}</td>
 
-                {# H30 (S119): mismo criterio que la columna "Requisitos
+                {% comment %}
+                H30 (S119): mismo criterio que la columna "Requisitos
                 de documentación" de Personal (_personal_results.html)
                 -- Miguel Angel: "que aparezca en las columnas [...]
                 mientras que si aparece en personal, no lo hace en la
-                maquinaria". #}
+                maquinaria".
+                {% endcomment %}
                 <td class="small">{{ asset.document_requirement.name|default:"—" }}</td>
 
                 <td class="text-center">
