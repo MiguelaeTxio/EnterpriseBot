@@ -24,6 +24,25 @@ Origen: Miguel Ángel, verbatim -- "esto deberíamos de hacerlo igual
 que estamos haciendo la gestión de los dosieres [...] igual que
 estamos marcando para crear una plantilla de dosier, pues deberíamos
 de marcar para crear una plantilla de puesto".
+
+AMPLIADO EN S119 -- CATÁLOGO ÚNICO, GLOBAL: ya no es solo de Personal
+-- el selector de tipos no filtra por dominio, y el requisito se
+asigna tanto a `PersonIdentity.job_position` como a `MachineAsset.
+document_requirement`. Miguel Ángel: "los requisitos documentales no
+son ni para personas ni para máquinas [...] la gestión de requisitos
+documentales es global." Y TANTO "falta" como "caducado" salen ya de
+aquí para los dos sujetos -- ver `document_explorer.required_
+documentation_service`.
+
+CORREGIDO EN S119, incidente real reportado por Miguel Ángel tras
+probarlo: "grabar un requisito, cargarlo, cambiar el nombre, grabar y
+no machacar el cargado" -- antes, cargar "Básico" y renombrarlo a
+"Premium" antes de guardar SOBRESCRIBÍA la fila de "Básico" (mismo
+pk). Ahora "Guardar" compara el nombre actual contra el nombre con el
+que se cargó la fila: si coincide, es la edición de siempre (mismo
+pk); si es distinto, se crea un requisito NUEVO y el original queda
+intacto -- así se puede partir de "Básico" para construir "Premium"
+sin perder "Básico" (ver `loadedName` en el JS de más abajo).
 {% endcomment %}
 
 {% block title %}Requisitos de documentación{% endblock %}
@@ -34,7 +53,7 @@ de marcar para crear una plantilla de puesto".
 
     <div class="d-flex align-items-center justify-content-between mb-3">
         <p class="text-muted small mb-0">
-            Un requisito de documentación guarda qué tipos documentales son OBLIGATORIOS para quien lo tiene asignado -- solo esos disparan el aviso de "documento faltante" en la ficha de la persona (el aviso de documento caducado no depende de esto). Asígnalo a cada trabajador desde su propia ficha.
+            Un requisito de documentación guarda qué tipos documentales son OBLIGATORIOS para quien lo tiene asignado -- disparan el aviso de documento faltante y de documento caducado, tanto en la ficha de una persona como en la de una máquina. Asígnalo desde la propia ficha, o en lote desde el listado de Personal o de Centros de Gasto.
         </p>
     </div>
 
@@ -176,6 +195,11 @@ function refreshDraftPreview() {
 // --- Deteccion de cambios sin guardar ------------------------------------
 
 let lastSnapshot = null;
+// Nombre con el que se cargo la fila en el formulario (o null si es
+// "Nuevo requisito"). Miguel Angel: cargar "Basico" y CAMBIAR el
+// nombre antes de guardar crea un requisito nuevo (el original queda
+// intacto); guardar con el mismo nombre es la edicion de siempre.
+let loadedName = null;
 
 function currentSnapshot() {
     return JSON.stringify({
@@ -208,6 +232,7 @@ function loadPositionIntoForm(pk) {
 
     document.getElementById('positionPk').value = pk;
     document.getElementById('positionName').value = name;
+    loadedName = name;
     document.querySelectorAll('.position-type-checkbox').forEach(el => { el.checked = false; });
     ids.forEach(id => {
         const el = document.getElementById('ptCheck' + id);
@@ -222,6 +247,7 @@ function loadPositionIntoForm(pk) {
 function resetForm() {
     document.getElementById('positionPk').value = '';
     document.getElementById('positionName').value = '';
+    loadedName = null;
     document.querySelectorAll('.position-type-checkbox').forEach(el => { el.checked = false; });
     document.getElementById('formTitle').textContent = 'Nuevo requisito';
     document.getElementById('cancelEditBtn').classList.add('d-none');
@@ -270,8 +296,14 @@ function upsertPositionRow(pk, name, typeIds) {
 }
 
 function savePosition() {
-    const pk = document.getElementById('positionPk').value;
     const name = document.getElementById('positionName').value.trim();
+    // Miguel Angel: si el nombre ya no coincide con el que se cargo,
+    // se guarda como requisito NUEVO -- el pk del formulario se
+    // ignora a proposito, el original (loadedName) queda intacto sin
+    // tocarlo. Con el mismo nombre, es la edicion de siempre.
+    const pk = (loadedName !== null && name === loadedName)
+        ? document.getElementById('positionPk').value
+        : '';
     const typeIds = getCheckedTypeIds();
     const resultDiv = document.getElementById('positionFormResult');
 
@@ -295,6 +327,7 @@ function savePosition() {
         if (data.ok) {
             resultDiv.innerHTML = '';
             document.getElementById('positionPk').value = data.id;
+            loadedName = data.name;
             document.getElementById('formTitle').textContent = 'Editando: ' + data.name;
             document.getElementById('cancelEditBtn').classList.remove('d-none');
             upsertPositionRow(data.id, data.name, typeIds);
