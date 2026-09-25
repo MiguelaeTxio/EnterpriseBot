@@ -275,6 +275,28 @@ y se habilita "Guardar".
         </h2>
         <div id="collapseLaboralMain" class="accordion-collapse collapse{% if main_accordion_open == 'collapseLaboralMain' %} show{% endif %}" data-bs-parent="#personalMainAccordion">
             <div class="accordion-body p-0">
+{% comment %}
+H31 (S119) -- letrero SIEMPRE VISIBLE al abrir el acordeón, no solo un
+triángulo con tooltip (invisible en móvil y, según Miguel Ángel,
+insuficiente incluso en PC): "si abro el acordeón, me tiene que decir
+con el acordeón abierto qué es lo que está pasando [...] lo que no
+puede ser es que la interfaz no informe de lo que pasa." El tooltip de
+arriba (title=...) se queda para cuando el acordeón está cerrado.
+{% endcomment %}
+{% if missing_required_types_by_family.LABORAL or attention_types_by_family.LABORAL %}
+<div class="alert alert-danger py-2 mb-0 rounded-0" role="alert">
+    <i class="bi bi-exclamation-triangle-fill me-1"></i>
+    <strong>Documentación incompleta:</strong>
+    <ul class="mb-0 mt-1">
+        {% for dt in missing_required_types_by_family.LABORAL %}
+        <li>Falta: {{ dt.label }}</li>
+        {% endfor %}
+        {% for label in attention_types_by_family.LABORAL %}
+        <li>{{ label }}</li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
 <div class="accordion" id="personalLaboralAccordion">
 
     <div class="accordion-item">
@@ -497,7 +519,20 @@ vacaciones).
         </h2>
         <div id="collapseSaludMain" class="accordion-collapse collapse{% if main_accordion_open == 'collapseSaludMain' %} show{% endif %}" data-bs-parent="#personalMainAccordion">
             <div class="accordion-body">
-
+{% if missing_required_types_by_family.SALUD_BAJAS_PERSONA or attention_types_by_family.SALUD_BAJAS_PERSONA %}
+<div class="alert alert-danger py-2 mb-3" role="alert">
+    <i class="bi bi-exclamation-triangle-fill me-1"></i>
+    <strong>Documentación incompleta:</strong>
+    <ul class="mb-0 mt-1">
+        {% for dt in missing_required_types_by_family.SALUD_BAJAS_PERSONA %}
+        <li>Falta: {{ dt.label }}</li>
+        {% endfor %}
+        {% for label in attention_types_by_family.SALUD_BAJAS_PERSONA %}
+        <li>{{ label }}</li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
 <button type="button" class="btn btn-sm btn-outline-primary mb-2"
         {% if not missing_types_by_family.SALUD_BAJAS_PERSONA %}disabled title="Ya tienes todos los tipos de esta familia"{% endif %}
         onclick="openUploadForm(null, false, MISSING_TYPES_BY_FAMILY['SALUD_BAJAS_PERSONA'])">
@@ -592,11 +627,25 @@ vez de una lista única sin estructura.
                 <i class="bi bi-exclamation-triangle-fill text-danger ms-2"
                    title="{% if fam_missing %}Falta: {{ fam_missing|join:", " }}. {% endif %}{% if fam_attention %}Caducado: {{ fam_attention|join:", " }}{% endif %}"></i>
                 {% endif %}
-                {% endwith %}
             </button>
         </h2>
         <div id="collapseFam{{ forloop.counter }}" class="accordion-collapse collapse {% if forloop.first %}show{% endif %}" data-bs-parent="#personalDocsAccordion">
             <div class="accordion-body">
+                {% if fam_missing or fam_attention %}
+                <div class="alert alert-danger py-2 mb-2" role="alert">
+                    <i class="bi bi-exclamation-triangle-fill me-1"></i>
+                    <strong>Documentación incompleta:</strong>
+                    <ul class="mb-0 mt-1">
+                        {% for dt in fam_missing %}
+                        <li>Falta: {{ dt.label }}</li>
+                        {% endfor %}
+                        {% for label in fam_attention %}
+                        <li>{{ label }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% endif %}
+                {% endwith %}
                 <button type="button" class="btn btn-sm btn-outline-primary mb-2 family-upload-btn" data-family="{{ fam.code }}"
                         onclick="openUploadForm(null, false, MISSING_TYPES_BY_FAMILY['{{ fam.code }}'])">
                     <i class="bi bi-upload me-1"></i>+ Subir

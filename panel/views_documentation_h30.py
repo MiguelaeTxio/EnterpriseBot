@@ -379,7 +379,11 @@ def _attach_required_document_alerts(
                     docs, key=lambda doc: doc[4] or doc[3] or date.min,
                 )
                 if tracks_expiry and expiry_date and expiry_date < today:
-                    labels.append("Caducado: %s" % label)
+                    labels.append(
+                        "Caducado: %s — caducó el %s" % (
+                            label, expiry_date.strftime("%d/%m/%Y"),
+                        ),
+                    )
             obj.has_alert = bool(labels)
             obj.alert_labels = sorted(labels)
     return objects

@@ -124,25 +124,35 @@ sube una nueva con la cámara (se sube como IMAGEN y queda fijada).
         <h2 class="accordion-header">
             <button class="accordion-button{% if machine_form_open %} collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#collapseDocumentacionMachine">
                 <i class="bi bi-folder2-open me-2"></i>Documentación
-                {% if has_expired_documents %}
+                {% if has_expired_documents or missing_required_types_by_family %}
                 <i class="bi bi-exclamation-triangle-fill text-danger ms-2"
-                   title="Documentación caducada"></i>
+                   title="Documentación incompleta"></i>
                 {% endif %}
             </button>
         </h2>
         <div id="collapseDocumentacionMachine" class="accordion-collapse collapse{% if not machine_form_open %} show{% endif %}">
             <div class="accordion-body">
 {% comment %}
-H30 (S119), punto 4 -- aviso de caducidad en la cabecera: cada vigente
-cuya caducidad ya ha pasado (calculado en MachineDetailView).
+H30 (S119), punto 4 -- aviso de caducidad en la cabecera, ampliado con
+"Falta" tras el incidente real de Alberto Javier Álvarez Díaz: antes
+solo avisaba de caducados (expired_current_documents); ahora también
+de los tipos que faltan (missing_required_types_by_family), con el
+mismo criterio ceñido al requisito -- Miguel Ángel: "cuando falte o
+esté caducado, hay que poner un letrero grande arriba [...] lo que no
+puede ser es que la interfaz no informe de lo que pasa."
 {% endcomment %}
-{% if has_expired_documents %}
+{% if has_expired_documents or missing_required_types_by_family %}
 <div class="alert alert-danger py-2 mb-3" role="alert">
     <i class="bi bi-exclamation-triangle-fill me-1"></i>
-    <strong>Documentación caducada:</strong>
+    <strong>Documentación incompleta:</strong>
     <ul class="mb-0 mt-1">
+        {% for family_code, types in missing_required_types_by_family.items %}
+        {% for dt in types %}
+        <li>Falta: {{ dt.label }}</li>
+        {% endfor %}
+        {% endfor %}
         {% for entry in expired_current_documents %}
-        <li>{{ entry.document_type.label }} &mdash; caducó el {{ entry.expiry_date|date:"d/m/Y" }}</li>
+        <li>Caducado: {{ entry.document_type.label }} &mdash; caducó el {{ entry.expiry_date|date:"d/m/Y" }}</li>
         {% endfor %}
     </ul>
 </div>
@@ -158,11 +168,25 @@ cuya caducidad ya ha pasado (calculado en MachineDetailView).
                 <i class="bi bi-exclamation-triangle-fill text-danger ms-2"
                    title="{% if fam_missing %}Falta: {{ fam_missing|join:", " }}. {% endif %}{% if fam_attention %}Caducado: {{ fam_attention|join:", " }}{% endif %}"></i>
                 {% endif %}
-                {% endwith %}
             </button>
         </h2>
         <div id="collapseMachineFam{{ forloop.counter }}" class="accordion-collapse collapse {% if forloop.first %}show{% endif %}" data-bs-parent="#machineFamiliesAccordion">
             <div class="accordion-body">
+                {% if fam_missing or fam_attention %}
+                <div class="alert alert-danger py-2 mb-2" role="alert">
+                    <i class="bi bi-exclamation-triangle-fill me-1"></i>
+                    <strong>Documentación incompleta:</strong>
+                    <ul class="mb-0 mt-1">
+                        {% for dt in fam_missing %}
+                        <li>Falta: {{ dt.label }}</li>
+                        {% endfor %}
+                        {% for label in fam_attention %}
+                        <li>{{ label }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% endif %}
+                {% endwith %}
                 <button type="button" class="btn btn-sm btn-outline-primary mb-2 family-upload-btn" data-family="{{ fam.code }}"
                         onclick="openUploadForm(null, MISSING_TYPES_BY_FAMILY['{{ fam.code }}'])">
                     <i class="bi bi-upload me-1"></i>+ Subir

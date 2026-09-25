@@ -143,5 +143,10 @@ def resolve_required_document_status(subject):
         ):
             expired_by_family.setdefault(
                 document_type.family, [],
-            ).append(document_type.label)
+            ).append(
+                "%s — caducó el %s" % (
+                    document_type.label,
+                    most_recent.expiry_date.strftime("%d/%m/%Y"),
+                ),
+            )
     return missing_by_family, expired_by_family
