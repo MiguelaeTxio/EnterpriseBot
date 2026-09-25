@@ -94,67 +94,37 @@
          ================================================================ -->
     <div class="main-content">
 
-        <!-- Top navbar with hamburger (mobile), page title and presence badge -->
-        <!-- Barra superior con hamburguesa (móvil), título de página e indicador de presencia -->
-        <div class="top-navbar d-flex align-items-center justify-content-between gap-2">
+        <!-- Top navbar with hamburger (mobile) and page title -->
+        <!-- Barra superior con hamburguesa (móvil) y título de página -->
+        {% comment %}
+        H30 (S119). Antes esta fila también llevaba, a la derecha, el
+        estado de presencia propio, el nombre del usuario y un botón
+        "Ayuda" que abría una visita guiada -- Miguel Ángel, viendo la
+        pantalla de Documentación: "no le veo funcionalidad a esa
+        línea [...] para solamente decir el estado, que vaya cada cual
+        a su perfil. El estado quitado. Quitada la línea entera. Esa
+        línea la aprovechamos para lo que es la página en sí." El
+        botón "Ayuda" nunca hizo nada en Documentación (la visita
+        guiada nunca llegó a construirse ahí) y era genérico para
+        todas las pantallas de esos roles -- se va con el resto.
+        {% endcomment %}
+        <div class="top-navbar d-flex align-items-center gap-2">
 
-            <div class="d-flex align-items-center gap-2">
-                <!-- Hamburger button — visible only on mobile/tablet (<lg) -->
-                <!-- Botón hamburguesa — visible solo en móvil/tablet (<lg) -->
-                <button class="btn btn-sm btn-outline-secondary d-lg-none border-0 px-2"
-                        type="button"
-                        data-bs-toggle="offcanvas"
-                        data-bs-target="#sidebarOffcanvas"
-                        aria-controls="sidebarOffcanvas"
-                        aria-label="Abrir menú de navegación">
-                    <i class="bi bi-list fs-5"></i>
-                </button>
+            <!-- Hamburger button — visible only on mobile/tablet (<lg) -->
+            <!-- Botón hamburguesa — visible solo en móvil/tablet (<lg) -->
+            <button class="btn btn-sm btn-outline-secondary d-lg-none border-0 px-2"
+                    type="button"
+                    data-bs-toggle="offcanvas"
+                    data-bs-target="#sidebarOffcanvas"
+                    aria-controls="sidebarOffcanvas"
+                    aria-label="Abrir menú de navegación">
+                <i class="bi bi-list fs-5"></i>
+            </button>
 
-                <!-- Page title — Título de la página actual -->
-                <span class="fw-semibold text-dark panel-page-title">
-                    {% block page_title %}Panel{% endblock %}
-                </span>
-            </div>
-
-            <div class="d-flex align-items-center gap-2">
-                <!-- Presence status badge — Indicador de estado de presencia -->
-                {% if own_presence %}
-                    <span class="presence-badge presence-{{ own_presence.status }}">
-                        {% if own_presence.status == 'AVAILABLE' %}
-                            <i class="bi bi-circle-fill me-1 icon-xs"></i>Disponible
-                        {% elif own_presence.status == 'IN_MEETING' %}
-                            <i class="bi bi-circle-fill me-1 icon-xs"></i>Reunido
-                        {% elif own_presence.status == 'BUSY_UNTIL' %}
-                            <i class="bi bi-circle-fill me-1 icon-xs"></i>Ocupado
-                        {% elif own_presence.status == 'ABSENT_SCHEDULED' %}
-                            <i class="bi bi-circle-fill me-1 icon-xs"></i>Ausente
-                        {% elif own_presence.status == 'ABSENT_VACATION' %}
-                            <i class="bi bi-circle-fill me-1 icon-xs"></i>Vacaciones
-                        {% endif %}
-                    </span>
-                {% else %}
-                    <span class="presence-badge presence-unknown">
-                        <i class="bi bi-circle me-1 icon-xs"></i>Sin estado
-                    </span>
-                {% endif %}
-
-                <!-- Authenticated user name — hidden on very narrow screens -->
-                <!-- Nombre del usuario autenticado — oculto en pantallas muy estrechas -->
-                <span class="text-muted text-sm d-none d-sm-inline">
-                    <i class="bi bi-person-circle me-1"></i>{{ request.user.get_full_name|default:request.user.username }}
-                </span>
-                {% if request.user.company_user.role == 'WORKSHOP' or request.user.company_user.role == 'ADMIN' %}
-                <!-- Tour help button — visible only for WORKSHOP and ADMIN roles -->
-                <!-- Boton de ayuda del tour — visible solo para roles WORKSHOP y ADMIN -->
-                <button type="button"
-                        id="btn-tour-help"
-                        class="btn btn-outline-primary btn-sm d-inline-flex align-items-center gap-1"
-                        title="Visita guiada de esta pantalla">
-                    <i class="bi bi-question-circle"></i>
-                    <span class="d-none d-md-inline">Ayuda</span>
-                </button>
-                {% endif %}
-            </div>
+            <!-- Page title — Título de la página actual -->
+            <span class="fw-semibold text-dark panel-page-title">
+                {% block page_title %}Panel{% endblock %}
+            </span>
         </div>
 
         <!-- Django messages — Mensajes de Django -->
@@ -214,9 +184,14 @@
     {% if active_nav == 'chat' %}
     <script src="{% static 'panel/js/chat.js' %}" defer></script>
     {% endif %}
-    {% if request.user.company_user.role == 'WORKSHOP' or request.user.company_user.role == 'ADMIN' %}
-    {% include "panel/_tour_workshop.html" %}
-    {% endif %}
+    <!-- H30 (S119): la visita guiada (Driver.js, EbTour) se quitó por
+         completo -- Miguel Ángel: "a veces esa es un incordio [...]
+         cuando cambia de dispositivo vuelve a salir [...] la quitamos
+         totalmente". El motor vivía en panel/_tour_workshop.html
+         (borrado); todas las páginas que registraban sus propios
+         pasos (operator/*, budgets/*) han quedado con
+         {% templatetag openblock %} block extra_scripts {% templatetag closeblock %}
+         vacío en su lugar. -->
     <!-- H31 (S103). Calcula --top-navbar-height a partir de la altura -->
     <!-- real del membrete (.top-navbar) para que cualquier barra con   -->
     <!-- .sticky-below-navbar (p. ej. los botones de la ficha de        -->

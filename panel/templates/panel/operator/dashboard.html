@@ -61,40 +61,6 @@
 </div>
 {% endblock %}
 
-{% block extra_scripts %}
-<script>
-/*
- * Tour steps for the operator dashboard.
- * Vía C (Upload) deactivated H07/S051 — tour step removed accordingly.
- * Pasos del tour para el dashboard del operario.
- */
-document.addEventListener("DOMContentLoaded", function () {
-
-    window.EbTour.register("dashboard", [
-        {
-            popover: {
-                title:       "Bienvenido al panel del operario",
-                description: "Desde aqui introduces tus partes de trabajo diarios. " +
-                             "Usa el formulario para rellenar tu parte campo a campo.",
-                side:        "over",
-                align:       "center",
-            },
-        },
-        {
-            element:  "#tour-via-form",
-            popover: {
-                title:       "Formulario de parte",
-                description: "Rellena el parte campo a campo directamente en pantalla. " +
-                             "Es la via mas rapida y precisa. Sin conexion a internet adicional ni esperas.",
-                side:        "bottom",
-                align:       "center",
-            },
-        },
-    ]);
-
-    window.EbTour.startIfNew("dashboard");
-});
-</script>
-{% endblock %}
+{% block extra_scripts %}{% endblock %}
 
 
