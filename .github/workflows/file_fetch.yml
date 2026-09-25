@@ -25,8 +25,9 @@ on:
           - pythonanywhere
           - gcs
           - gcs_text
+          - gcs_image
       remote_path:
-        description: "pythonanywhere: ruta absoluta en el servidor. gcs: 'bucket/ruta/al/blob'. gcs_text: varios 'bucket/blob' separados por ' || '"
+        description: "pythonanywhere: ruta absoluta en el servidor. gcs: 'bucket/ruta/al/blob' o 'id/<pk>'. gcs_text: varios 'bucket/blob' separados por ' || '. gcs_image: ids de DocumentIndexEntry separados por comas"
         required: true
         type: string
       tail_lines:
@@ -42,8 +43,10 @@ concurrency:
   group: enterprisebot-file-readonly-fetch
   cancel-in-progress: false
 
+# S119: contents write SOLO para publicar los PNG del modo gcs_image como
+# adjuntos de la release privada "relevo-imagenes" (nunca un commit).
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   fetch:
@@ -131,6 +134,41 @@ jobs:
           echo "EXIT=$?" >> /tmp/result.txt
           echo "DRIVE_NAME=$DRIVE_NAME" >> /tmp/result.txt
           cat /tmp/result.txt
+
+      # H30 (S119) -- modo gcs_image: el modelo necesita VER documentos
+      # escaneados (el conector de Drive solo le da texto). Las primeras
+      # páginas se renderizan a PNG en el servidor (PyMuPDF, render, no
+      # OCR), se traen al runner y se publican como adjuntos de la
+      # release PRIVADA "relevo-imagenes" (repo privado): el dominio de
+      # esos adjuntos está en la red permitida del modelo, que los baja
+      # a su entorno y los abre como imagen. Nunca un commit ni un
+      # artifact (los artifacts no son descargables por el modelo, S112).
+      - name: GCS imagen — renderizar páginas en el servidor y publicarlas en la release privada
+        if: inputs.mode == 'gcs_image'
+        env:
+          IDS: ${{ inputs.remote_path }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          RUN_DIR="/home/MiguelAeTxio/SWAP/gcs_image_${{ github.run_id }}"
+          SCRIPT="/home/MiguelAeTxio/SWAP/gcs_render_${{ github.run_id }}.py"
+          scp -i ~/.ssh/pa_readonly_key .github/scripts/gcs_render_pages.py \
+            MiguelAeTxio@ssh.pythonanywhere.com:"$SCRIPT"
+          ssh -i ~/.ssh/pa_readonly_key MiguelAeTxio@ssh.pythonanywhere.com \
+            "set -e; cd /home/MiguelAeTxio/PROJECTS/EnterpriseBot; source /home/MiguelAeTxio/.virtualenvs/EnterpriseBot_venv_py312/bin/activate; export PYTHONPATH=/home/MiguelAeTxio/PROJECTS/EnterpriseBot; python -m dotenv run python3 '$SCRIPT' '$IDS' '$RUN_DIR'" \
+            | tee /tmp/result.txt
+          mkdir -p /tmp/pages
+          scp -i ~/.ssh/pa_readonly_key \
+            MiguelAeTxio@ssh.pythonanywhere.com:"$RUN_DIR/*" /tmp/pages/
+          ssh -i ~/.ssh/pa_readonly_key MiguelAeTxio@ssh.pythonanywhere.com \
+            "rm -rf '$RUN_DIR' '$SCRIPT' /home/MiguelAeTxio/SWAP/drive_upload_${{ github.run_id }}.py"
+          gh release view relevo-imagenes >/dev/null 2>&1 || \
+            gh release create relevo-imagenes --prerelease \
+              --title "Relevo de imágenes (solo lectura, temporal)" \
+              --notes "Páginas renderizadas por file_fetch.yml (modo gcs_image) para que el modelo las vea. Se vacía al cierre de sesión."
+          gh release upload relevo-imagenes /tmp/pages/* --clobber
+          echo "PUBLICADOS:" >> /tmp/result.txt
+          ls /tmp/pages >> /tmp/result.txt
 
       - name: Resumen en el propio Action (no sensible -- solo nombres/estado)
         if: always()
