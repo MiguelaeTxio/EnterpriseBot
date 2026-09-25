@@ -389,9 +389,34 @@ class DocumentationHubV2View(CompanyUserRequiredMixin, View):
             company_user=request.user.company_user, screen_key="documentation_hub",
         ).first()
         state = nav_state.state if nav_state and isinstance(nav_state.state, dict) else {}
-        active_tab = state.get("active_tab") or "maquinaria"
-        if active_tab not in ("maquinaria", "personal", "epis", "vacaciones", "calendario"):
-            active_tab = "maquinaria"
+        valid_tabs = (
+            "maquinaria", "personal", "epis", "vacaciones", "calendario",
+            "requisitos",
+        )
+        # H30 (S119): "Gestionar requisitos de documentación" (Personal
+        # y Centros de Gasto) enlaza aquí con ?tab=requisitos&from=X --
+        # una pestaña más del hub, en vez de una página aparte, para
+        # que "Volver" pueda devolver a la pestaña concreta desde la
+        # que se entró (personal o maquinaria) -- Miguel Ángel: "las
+        # gestiones deben ir en pestañas en la vista principal de
+        # documentación [...] un botón volver atrás que las devuelva a
+        # la página desde donde se las llamó". Un enlace directo pisa
+        # lo persistido (es una navegación deliberada), y se persiste
+        # igual que un clic de pestaña normal.
+        requested_tab = request.GET.get("tab")
+        if requested_tab in valid_tabs:
+            active_tab = requested_tab
+            if not nav_state:
+                nav_state = PanelNavigationState(
+                    company_user=request.user.company_user,
+                    screen_key="documentation_hub", state={},
+                )
+            nav_state.state = {**state, "active_tab": active_tab}
+            nav_state.save()
+        else:
+            active_tab = state.get("active_tab") or "maquinaria"
+            if active_tab not in valid_tabs:
+                active_tab = "maquinaria"
         filters = state.get("filters") if isinstance(state.get("filters"), dict) else {}
 
         # S117: la pestaña "Centros de Gasto" ya no se pinta aquí -- la
@@ -405,6 +430,7 @@ class DocumentationHubV2View(CompanyUserRequiredMixin, View):
             "persisted_active_tab": active_tab,
             "persisted_filters": filters,
             "personal_tab_qs": _build_personal_tab_querystring(filters),
+            "requisitos_from_tab": request.GET.get("from", "personal"),
         })
 
 
@@ -2743,6 +2769,7 @@ class JobPositionManageView(CompanyUserRequiredMixin, View):
         return render(request, "panel/job_positions/manage.html", {
             "positions": positions,
             "families": ordered_families,
+            "from_tab": request.GET.get("from", "personal"),
         })
 
 

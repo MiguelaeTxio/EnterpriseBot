@@ -1,6 +1,4 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/job_positions/manage.html #}
-{% extends "panel/base.html" %}
-
 {% comment %}
 H31 (S109, renombrado de cara al usuario y alineado de formato en
 S113). Página de gestión de "Requisitos de documentación" -- Miguel
@@ -43,12 +41,30 @@ que se cargó la fila: si coincide, es la edición de siempre (mismo
 pk); si es distinto, se crea un requisito NUEVO y el original queda
 intacto -- así se puede partir de "Básico" para construir "Premium"
 sin perder "Básico" (ver `loadedName` en el JS de más abajo).
+
+CONVERTIDO EN FRAGMENTO EN S119 -- ya no es una página aparte
+(`{% templatetag openblock %} extends "panel/base.html" {% templatetag closeblock %}`
+más `{% templatetag openblock %} block content {% templatetag closeblock %}`),
+sino el contenido de la pestaña "Requisitos" del propio hub de
+Documentación (cargado por htmx en `#pane-requisitos`, ver hub.html)
+-- Miguel Ángel: "las gestiones deben ir en pestañas en la vista
+principal de documentación [...] un botón volver atrás que las
+devuelva a la página desde donde se las llamó (ya que mantenemos el
+enlace en personal y maquinaria)". El botón "Volver" de más abajo NO
+navega a ninguna URL -- reactiva la pestaña de origen (`from_tab`,
+"personal" o "maquinaria", recibido por querystring en el enlace que
+trajo aquí) haciendo clic en su propio `<a>` de pestaña, que ya sabe
+cargar su contenido y persistir el cambio -- funciona igual si esta
+pestaña se abrió desde el hub o desde la página de Taller Mecánico >
+Centros de gasto, que comparte el mismo `_fleet_pane.html`.
 {% endcomment %}
 
-{% block title %}Requisitos de documentación{% endblock %}
-{% block page_title %}Requisitos de documentación{% endblock %}
+<div class="d-flex align-items-center justify-content-between mb-3">
+    <button type="button" class="btn btn-sm btn-outline-secondary" id="requirementsBackBtn" data-from-tab="{{ from_tab|default:'personal' }}">
+        <i class="bi bi-arrow-left"></i> Volver
+    </button>
+</div>
 
-{% block content %}
 <div class="container-fluid px-3 pt-3">
 
     <div class="d-flex align-items-center justify-content-between mb-3">
@@ -366,5 +382,22 @@ function deletePosition(pk) {
 }
 
 document.addEventListener('DOMContentLoaded', takeSnapshot);
+
+// H30 (S119). "Volver" no navega a ninguna URL -- esta página ya no
+// es una página aparte, es la pestaña "Requisitos" del hub. Reactiva
+// la pestaña de origen (personal o maquinaria) haciendo clic en su
+// propio <a> de pestaña, que ya sabe cargar su contenido y persistir
+// el cambio (ver hub.html). Mismo aviso de cambios sin guardar que
+// beforeunload -- un cambio de pestaña no dispara ese evento del
+// navegador, así que hace falta preguntar aquí también.
+document.getElementById('requirementsBackBtn').addEventListener('click', function () {
+    if (isDirty() && !confirm('Hay cambios sin guardar. ¿Salir igualmente?')) {
+        return;
+    }
+    const fromTab = this.dataset.fromTab || 'personal';
+    const tabLink = document.getElementById('tab-' + fromTab);
+    if (tabLink) {
+        tabLink.click();
+    }
+});
 </script>
-{% endblock %}
