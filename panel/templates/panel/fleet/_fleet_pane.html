@@ -41,17 +41,17 @@ la lista hace scroll. Dos paneles:
             un catálogo único (JobPosition), sin modelo aparte para
             máquina -- Miguel Ángel: "la gestión de requisitos
             documentales es global [...] no tenemos que tener un
-            arreglo para máquinas y un arreglo para personas".
+            arreglo para máquinas y un arreglo para personas". Solo
+            se muestra en la puerta "taller" (Taller Mecánico > Centros
+            de gasto, sin barra de pestañas) -- en la puerta "docs" (el
+            hub) la pestaña "Requisitos" ya está justo ahí arriba, un
+            botón más para lo mismo sobraba (Miguel Ángel: "un botón
+            para la gestión de los requisitos que no viene a cuento ya").
             {% endcomment %}
+            {% if fleet_door == 'taller' %}
             <a class="btn btn-sm btn-outline-secondary" href="{% url 'panel:documentation_hub' %}?tab=requisitos">
                 <i class="bi bi-truck"></i> Gestionar requisitos de documentación
             </a>
-            {% if can_manage %}
-            <button type="button" class="btn btn-sm btn-primary"
-                    data-bs-toggle="modal"
-                    data-bs-target="#fleetCreateModal">
-                <i class="bi bi-plus-lg me-1"></i>Nuevo centro de gasto
-            </button>
             {% endif %}
         </div>
 
@@ -151,7 +151,24 @@ la lista hace scroll. Dos paneles:
                         <div class="col-md-8 border-end pe-2">
                             <div class="small text-muted fw-bold">Varios centros</div>
                             <div class="d-flex gap-1 flex-wrap">
+                                {% comment %}
+                                H30 (S119): "Nuevo centro de gasto" vivía
+                                como botón suelto en la cabecera --
+                                Miguel Ángel, mismo criterio que "Dar de
+                                alta trabajador" en Personal: "panel de
+                                acción". Este panel ya trata altas y
+                                bajas de centros de gasto, es el que le
+                                corresponde -- no depende de ninguna
+                                selección (crea uno NUEVO), por eso no
+                                lleva "fleet-needs-selection" ni "disabled"
+                                como sus vecinos.
+                                {% endcomment %}
                                 {% if can_manage %}
+                                <button type="button" class="btn btn-sm btn-primary"
+                                        data-bs-toggle="modal"
+                                        data-bs-target="#fleetCreateModal">
+                                    <i class="bi bi-plus-lg me-1"></i>Nuevo
+                                </button>
                                 <button type="button" class="btn btn-sm btn-outline-warning fleet-needs-selection" id="fleet-mass-deactivate" disabled>
                                     <i class="bi bi-dash-circle me-1"></i>Dar de baja
                                 </button>
