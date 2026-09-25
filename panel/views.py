@@ -131,6 +131,7 @@ from fleet.views import (
     MachineAssetAnalyticsView,
     MachineAssetBulkStatusView,
     MachineAssetBulkDeleteView,
+    MachineAssetBulkSetDocumentRequirementView,
     MachineAssetExportView,
     MachineAssetDocsPaneView,
     MachineAssetFragmentView,
