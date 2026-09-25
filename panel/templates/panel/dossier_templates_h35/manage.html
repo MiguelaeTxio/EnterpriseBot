@@ -1,6 +1,4 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/dossier_templates_h35/manage.html #}
-{% extends "panel/base.html" %}
-
 {% comment %}
 H35 (S105). Página completa de gestión de plantillas de dosier --
 Miguel Ángel, verbatim: "he cometido el error de incluirlo [el
@@ -46,12 +44,18 @@ El "Formato" (PDF/ZIP) desapareció por completo de esta página --
 pregunta siempre al aplicar la plantilla sobre una persona, nunca por
 plantilla. "Duplicar" desapareció con él (su único propósito era
 tener la misma plantilla en los dos formatos).
+
+CONVERTIDO EN FRAGMENTO EN S119 -- ya no es una página aparte, es el
+contenido de la pestaña "Plantillas" del hub de Documentación (cargado
+por htmx en `#pane-plantillas`, ver hub.html) -- Miguel Ángel: "las
+gestiones deben ir en pestañas en la vista principal de
+documentación". Sin botón "Volver" -- las propias pestañas del hub ya
+son el camino de vuelta. El switcher Personal/Maquinaria de aquí abajo
+pasa a ser htmx (`hx-get`/`hx-target="#pane-plantillas"`) en vez de
+navegación normal -- si no, un clic ahí sacaría al usuario del hub por
+completo, a una página suelta sin ninguna barra de pestañas.
 {% endcomment %}
 
-{% block title %}Plantillas de dosier{% endblock %}
-{% block page_title %}Plantillas de dosier{% endblock %}
-
-{% block content %}
 <div class="container-fluid px-3 pt-3">
 
     {% comment %}
@@ -61,10 +65,12 @@ tener la misma plantilla en los dos formatos).
     {% endcomment %}
     <ul class="nav nav-pills mb-3">
         <li class="nav-item">
-            <a class="nav-link{% if not is_machine_scope %} active{% endif %}" href="{% url 'panel:dossier_templates_manage' %}">Personal</a>
+            <a class="nav-link{% if not is_machine_scope %} active{% endif %}" href="{% url 'panel:dossier_templates_manage' %}"
+               hx-get="{% url 'panel:dossier_templates_manage' %}" hx-target="#pane-plantillas" hx-swap="innerHTML">Personal</a>
         </li>
         <li class="nav-item">
-            <a class="nav-link{% if is_machine_scope %} active{% endif %}" href="{% url 'panel:dossier_templates_manage' %}?ambito=MAQUINARIA">Maquinaria</a>
+            <a class="nav-link{% if is_machine_scope %} active{% endif %}" href="{% url 'panel:dossier_templates_manage' %}?ambito=MAQUINARIA"
+               hx-get="{% url 'panel:dossier_templates_manage' %}?ambito=MAQUINARIA" hx-target="#pane-plantillas" hx-swap="innerHTML">Maquinaria</a>
         </li>
     </ul>
 
@@ -481,4 +487,3 @@ function deleteTemplate(pk) {
 
 document.addEventListener('DOMContentLoaded', loadActiveIntoForm);
 </script>
-{% endblock %}

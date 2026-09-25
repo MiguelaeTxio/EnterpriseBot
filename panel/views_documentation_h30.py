@@ -391,16 +391,18 @@ class DocumentationHubV2View(CompanyUserRequiredMixin, View):
         state = nav_state.state if nav_state and isinstance(nav_state.state, dict) else {}
         valid_tabs = (
             "maquinaria", "personal", "epis", "vacaciones", "calendario",
-            "requisitos",
+            "requisitos", "circulares", "plantillas",
         )
-        # H30 (S119): "Gestionar requisitos de documentación" (Personal
-        # y Centros de Gasto) enlaza aquí con ?tab=requisitos -- una
-        # pestaña más del hub, en vez de una página aparte -- Miguel
-        # Ángel: "las gestiones deben ir en pestañas en la vista
-        # principal de documentación". Sin botón "Volver" (se probó y
-        # se quitó en la misma sesión): las propias pestañas del hub
-        # ya son el camino de vuelta. Un enlace directo pisa lo
-        # persistido (es una navegación deliberada), y se persiste
+        # H30 (S119): "Circulares", "Plantillas" y "Requisitos" pasan
+        # de botones "Gestionar..." en la barra de acción de Personal a
+        # pestañas propias del hub -- Miguel Ángel: "las gestiones
+        # deben ir en pestañas en la vista principal de documentación,
+        # [...] eliminamos la palabra gestionar". Sin botón "Volver"
+        # (se probó uno en Requisitos y Miguel Ángel cayó en la cuenta
+        # él mismo de que sobraba): las propias pestañas del hub ya son
+        # el camino de vuelta. "Requisitos" se enlaza además desde
+        # Centros de Gasto (?tab=requisitos) -- un enlace directo pisa
+        # lo persistido (es una navegación deliberada), y se persiste
         # igual que un clic de pestaña normal.
         requested_tab = request.GET.get("tab")
         if requested_tab in valid_tabs:

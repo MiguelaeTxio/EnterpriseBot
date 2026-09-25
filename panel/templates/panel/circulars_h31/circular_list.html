@@ -1,6 +1,4 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/circulars_h31/circular_list.html #}
-{% extends "panel/base.html" %}
-
 {% comment %}
 H31 (S75) punto 2, corregido de raíz en S114, simplificado de nuevo en
 S114: Miguel Ángel, viendo las dos columnas separadas (contenido
@@ -10,12 +8,15 @@ al usuario final realmente le da igual de dónde venga la plantilla
 Una sola columna "Plantilla": Sí si hay content_html O
 current_template (cualquiera de los dos cuenta), No solo si no hay
 ninguno de los dos -- nunca expone de dónde viene. Ver CircularListView.
+
+CONVERTIDO EN FRAGMENTO EN S119 -- ya no es una página aparte, es el
+contenido de la pestaña "Circulares" del hub de Documentación (cargado
+por htmx en `#pane-circulares`, ver hub.html) -- Miguel Ángel: "las
+gestiones deben ir en pestañas en la vista principal de
+documentación". Sin botón "Volver" -- las propias pestañas del hub ya
+son el camino de vuelta (se probó con uno en Requisitos y sobraba).
 {% endcomment %}
 
-{% block title %}Circulares y notificaciones{% endblock %}
-{% block page_title %}Circulares y notificaciones{% endblock %}
-
-{% block content %}
 <div class="container-fluid px-3 pt-3">
 
     <div class="d-flex align-items-center justify-content-between mb-3">
@@ -109,4 +110,3 @@ ninguno de los dos -- nunca expone de dónde viene. Ver CircularListView.
     </div>
 
 </div>
-{% endblock content %}

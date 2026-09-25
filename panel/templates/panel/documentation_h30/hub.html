@@ -77,6 +77,22 @@
         </a>
     </li>
     <li class="nav-item">
+        <a class="nav-link {% if persisted_active_tab == 'circulares' %}active{% endif %}" id="tab-circulares" data-bs-toggle="tab" href="#pane-circulares"
+           hx-get="{% url 'panel:circulars_list' %}"
+           hx-target="#pane-circulares"
+           hx-trigger="{% if persisted_active_tab == 'circulares' %}load once{% else %}click once{% endif %}">
+            <i class="bi bi-envelope-paper me-1"></i>Circulares
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if persisted_active_tab == 'plantillas' %}active{% endif %}" id="tab-plantillas" data-bs-toggle="tab" href="#pane-plantillas"
+           hx-get="{% url 'panel:dossier_templates_manage' %}"
+           hx-target="#pane-plantillas"
+           hx-trigger="{% if persisted_active_tab == 'plantillas' %}load once{% else %}click once{% endif %}">
+            <i class="bi bi-folder2-open me-1"></i>Plantillas
+        </a>
+    </li>
+    <li class="nav-item">
         {% comment %}
         H30 (S119): "Requisitos de documentación" como pestaña más del
         hub, no como página aparte -- Miguel Ángel: "las gestiones
@@ -113,6 +129,12 @@
         <div class="text-muted small py-3">Cargando…</div>
     </div>
     <div class="tab-pane fade {% if persisted_active_tab == 'requisitos' %}show active{% endif %}" id="pane-requisitos">
+        <div class="text-muted small py-3">Cargando…</div>
+    </div>
+    <div class="tab-pane fade {% if persisted_active_tab == 'circulares' %}show active{% endif %}" id="pane-circulares">
+        <div class="text-muted small py-3">Cargando…</div>
+    </div>
+    <div class="tab-pane fade {% if persisted_active_tab == 'plantillas' %}show active{% endif %}" id="pane-plantillas">
         <div class="text-muted small py-3">Cargando…</div>
     </div>
 </div>

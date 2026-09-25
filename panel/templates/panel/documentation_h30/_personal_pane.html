@@ -10,20 +10,16 @@ H31 (S75) punto 2: acceso al CRUD de circulares/notificaciones --
 pantalla completa aparte, no un fragmento htmx de este pane.
 {% endcomment %}
 <div class="border rounded p-2 mb-2" id="personal-top-panel">
-    <div class="d-flex justify-content-end gap-2 mb-2">
-        <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#personalCreateModal">
-            <i class="bi bi-person-plus"></i> Dar de alta trabajador
-        </button>
-        <a class="btn btn-sm btn-outline-secondary" href="{% url 'panel:circulars_list' %}">
-            <i class="bi bi-envelope-paper"></i> Gestionar circulares
-        </a>
-        <a class="btn btn-sm btn-outline-secondary" href="{% url 'panel:dossier_templates_manage' %}">
-            <i class="bi bi-folder2-open"></i> Gestionar plantillas de dosier
-        </a>
-        <a class="btn btn-sm btn-outline-secondary" href="{% url 'panel:documentation_hub' %}?tab=requisitos">
-            <i class="bi bi-person-badge"></i> Gestionar requisitos de documentación
-        </a>
-    </div>
+    {% comment %}
+    H30 (S119): "Dar de alta trabajador", "Gestionar circulares",
+    "Gestionar plantillas de dosier" y "Gestionar requisitos de
+    documentación" ya no viven aquí -- Miguel Ángel: "las gestiones
+    deben ir en pestañas [...] eliminamos la palabra gestionar" (las
+    tres últimas ahora son las pestañas Circulares/Plantillas/
+    Requisitos del hub) y "el botón de dar de alta lo embutimos en
+    alguno de los paneles de acción" (ver el panel "Alta y baja en la
+    empresa", más abajo).
+    {% endcomment %}
 
     {% comment %}
     H31 (S113). Corrección explícita de Miguel Ángel sobre el rediseño
@@ -159,6 +155,19 @@ pantalla completa aparte, no un fragmento htmx de este pane.
                 <div class="col-6 border-top border-start pt-1 mt-1 ps-2">
                     <div class="small text-muted fw-bold">Alta y baja en la empresa</div>
                     <div class="d-flex gap-1 flex-wrap">
+                        {% comment %}
+                        H30 (S119): "Dar de alta trabajador" vivía como
+                        botón suelto en la cabecera de la pestaña --
+                        Miguel Ángel: "el botón de dar de alta lo
+                        embutimos en alguno de los paneles de acción".
+                        Este panel ya trata altas y bajas, así que es
+                        el que le corresponde -- no depende de ninguna
+                        selección (da de alta a alguien NUEVO), por eso
+                        no lleva "disabled" como sus vecinos.
+                        {% endcomment %}
+                        <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#personalCreateModal">
+                            <i class="bi bi-person-plus me-1"></i>Dar de alta
+                        </button>
                         <button type="button" class="btn btn-sm btn-outline-danger" id="person-mass-terminate" disabled>
                             <i class="bi bi-person-dash me-1"></i>Dar de baja
                         </button>
