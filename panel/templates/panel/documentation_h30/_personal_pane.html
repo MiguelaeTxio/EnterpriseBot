@@ -121,7 +121,7 @@ pantalla completa aparte, no un fragmento htmx de este pane.
                         llamándose JobPosition/job_position.
                         {% endcomment %}
                         <select id="person-mass-job-position" class="form-select form-select-sm" style="width:auto; max-width:100%; min-width:0;">
-                            <option value="">Asignar requisitos…</option>
+                            <option value="">— Sin requisito (quitar) —</option>
                             {% for position in job_positions %}
                             <option value="{{ position.pk }}">{{ position.name }}</option>
                             {% endfor %}
