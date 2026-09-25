@@ -162,3 +162,11 @@ cssutils
 # y mantenida (verificado por web_search en S92, no de memoria):
 # https://github.com/mentax/msg-extractor, Python 3.8+.
 extract-msg
+
+# H30 (S119). rarfile -- lectura puntual de un .rar legado en máquinas
+# (id=8787, "A36 E-2052-BCW POLIZA +REC.rar"), vía gcs_unrar_peek.py.
+# Solo lectura de metadatos/miembros; requiere un extractor de sistema
+# (unrar/7z/bsdtar) en PATH -- verificar tras el pip-sync si el
+# servidor ya tiene alguno; si no, ver com-gcs-download como vía
+# alternativa para este documento concreto.
+rarfile
