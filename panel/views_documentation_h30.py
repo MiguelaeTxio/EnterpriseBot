@@ -54,6 +54,9 @@ from document_explorer.models import (
 from document_explorer.epi_delivery_document_service import (
     build_epi_delivery_pdf_bytes, resolve_company_fiscal_profile,
 )
+from document_explorer.required_documentation_service import (
+    resolve_required_document_status,
+)
 from document_explorer.vigencia_selector import current_fn_for
 from document_explorer.subject_upload_service import (
     SubjectUploadError, upload_subject_document,
@@ -251,6 +254,110 @@ def _split_current_obsolete(entries):
     return current, obsolete
 
 
+def _attach_required_document_alerts(persons, content_type):
+    """
+    H31 (S119). Alert flags for the Personal listing -- based ONLY on
+    each person's JobPosition.required_document_types, never on any
+    document type they happen to have. Replaces the old pair
+    (`_attach_alert_flags` + `_attach_missing_required_alert`) for
+    Personal -- that pair alerted on ANY expired `tracks_expiry` type
+    the person had, required or not (Miguel Ángel, verbatim, incidente
+    real: "avisamos a una persona que es administrativa [...] de que
+    tiene cumplido el carnet de conducir o el CAP" -- documentos que su
+    puesto actual no exige en absoluto).
+
+    Same rule as `required_documentation_service.
+    resolve_required_document_status` (nunca duplicar la decisión sin
+    motivo, pero aquí en forma de lote -- una consulta para todos los
+    puestos de la página en vez de una por persona), incluida la
+    correccion del mismo incidente: un tipo obligatorio cuyo único
+    documento ya caducó cuenta como "caducado", nunca como "falta" --
+    `is_current()` lo habría excluido de la competición por estar
+    caducado y sin sustituto, ocultándolo como si no existiera.
+
+    `_attach_alert_flags` sigue intacta y en uso para Centros de
+    Gasto/`MachineAsset` (`fleet/views.py`) -- las máquinas no tienen
+    concepto de puesto, ese aviso genérico sigue siendo el correcto
+    ahí.
+    """
+    from datetime import date
+
+    from document_explorer.required_documentation_service import (
+        IDENTITY_CODES,
+    )
+
+    persons_by_position = {}
+    for obj in persons:
+        if obj.job_position_id:
+            persons_by_position.setdefault(obj.job_position_id, []).append(obj)
+        obj.has_alert = False
+        obj.alert_labels = []
+    if not persons_by_position:
+        return persons
+
+    required_by_position = {
+        jp.pk: list(jp.required_document_types.all())
+        for jp in JobPosition.objects.filter(
+            pk__in=persons_by_position.keys(),
+        ).prefetch_related("required_document_types")
+    }
+    all_person_ids = [
+        obj.pk for group in persons_by_position.values() for obj in group
+    ]
+    all_type_ids = {
+        dt.pk
+        for types in required_by_position.values() for dt in types
+    }
+    rows = DocumentIndexEntry.objects.filter(
+        bucket=BUCKET, domain_content_type=content_type,
+        domain_object_id__in=all_person_ids,
+        entry_kind=DocumentIndexEntry.KIND_FILE,
+        deleted_at__isnull=True, purged_at__isnull=True,
+        document_type_id__in=all_type_ids,
+    ).values_list(
+        "domain_object_id", "document_type_id", "document_type__code",
+        "document_type__label", "document_type__tracks_expiry",
+        "issue_date", "expiry_date",
+    )
+    docs_by_person = {}
+    for (
+        person_id, type_id, code, label, tracks_expiry,
+        issue_date, expiry_date,
+    ) in rows:
+        docs_by_person.setdefault(person_id, {}).setdefault(
+            type_id, [],
+        ).append((code, label, tracks_expiry, issue_date, expiry_date))
+
+    today = date.today()
+    for position_id, group in persons_by_position.items():
+        required_types = required_by_position.get(position_id, [])
+        for obj in group:
+            docs_by_type = docs_by_person.get(obj.pk, {})
+            present_codes = {
+                doc[0] for docs in docs_by_type.values() for doc in docs
+            }
+            has_identity_doc = bool(set(IDENTITY_CODES) & present_codes)
+            labels = []
+            for document_type in required_types:
+                docs = docs_by_type.get(document_type.pk, [])
+                if not docs:
+                    if (
+                        document_type.code in IDENTITY_CODES
+                        and has_identity_doc
+                    ):
+                        continue
+                    labels.append("Falta: %s" % document_type.label)
+                    continue
+                _code, label, tracks_expiry, issue_date, expiry_date = max(
+                    docs, key=lambda doc: doc[4] or doc[3] or date.min,
+                )
+                if tracks_expiry and expiry_date and expiry_date < today:
+                    labels.append("Caducado: %s" % label)
+            obj.has_alert = bool(labels)
+            obj.alert_labels = sorted(labels)
+    return persons
+
+
 def _attach_alert_flags(objects, content_type):
     """
     H30 (S50) -- limitacion real de GenericForeignKey sin
@@ -283,6 +390,12 @@ def _attach_alert_flags(objects, content_type):
     era genérico ("Tiene documentación sin fecha vigente") y no decía
     cuál. Mismo query base, solo se añade `document_type__label` al
     `values_list` -- sin segunda consulta.
+
+    H31 (S119): dejó de usarse para el listado de Personal (que ya
+    tiene su propio criterio, ceñido a los requisitos del puesto --
+    ver `_attach_required_document_alerts`). Sigue siendo la correcta
+    para Centros de Gasto/`MachineAsset` (`fleet/views.py`), que no
+    tiene concepto de puesto ni de documentación "obligatoria".
     """
     from datetime import date
 
@@ -313,82 +426,6 @@ def _attach_alert_flags(objects, content_type):
         obj.has_alert = bool(labels)
         obj.alert_labels = labels
     return objects
-
-
-def _attach_missing_required_alert(persons, content_type):
-    """
-    H31 (S109). Incongruencia real detectada por Miguel Ángel con
-    captura de pantalla: la ficha de una persona (`PersonalDetailView`)
-    ya avisaba de un tipo OBLIGATORIO de su puesto que le falta
-    (`missing_required_types_by_family`), pero el listado de Personal
-    nunca lo reflejaba -- `_attach_alert_flags` solo mira documentos
-    CADUCADOS, nunca faltantes. Resultado real: una persona con un
-    problema real (tarjeta sanitaria obligatoria para su puesto, sin
-    subir) aparecía sin ningún triángulo en el listado, y sí en su
-    propia ficha -- imposible detectarla a golpe de vista sin abrir
-    fichas una a una, que es precisamente para lo que sirve el
-    listado.
-
-    Extiende `has_alert`/`alert_labels` (ya calculados por
-    `_attach_alert_flags` para caducados) con los tipos obligatorios
-    que faltan -- mismo criterio de DNI/NIE excluyentes que
-    `PersonalDetailView`. Solo aplica a personas CON puesto asignado;
-    sin puesto, ningún tipo se marca como obligatorio, igual que en
-    la ficha.
-
-    Deliberadamente una función aparte de `_attach_alert_flags` (que
-    es genérica, compartida con Centros de Gasto/`MachineAsset`, sin
-    concepto de puesto) -- solo se llama desde `_person_list_page`.
-    """
-    persons_by_position = {}
-    for obj in persons:
-        if obj.job_position_id:
-            persons_by_position.setdefault(obj.job_position_id, []).append(obj)
-    if not persons_by_position:
-        return persons
-
-    required_by_position = {
-        jp.pk: list(jp.required_document_types.all())
-        for jp in JobPosition.objects.filter(
-            pk__in=persons_by_position.keys(),
-        ).prefetch_related("required_document_types")
-    }
-
-    all_person_ids = [
-        obj.pk for group in persons_by_position.values() for obj in group
-    ]
-    present_codes_by_person = {}
-    rows = DocumentIndexEntry.objects.filter(
-        bucket=BUCKET, domain_content_type=content_type,
-        domain_object_id__in=all_person_ids,
-        entry_kind=DocumentIndexEntry.KIND_FILE,
-        deleted_at__isnull=True, purged_at__isnull=True, is_obsolete=False,
-    ).values_list("domain_object_id", "document_type__code")
-    for object_id, code in rows:
-        if code:
-            present_codes_by_person.setdefault(object_id, set()).add(code)
-
-    for position_id, group in persons_by_position.items():
-        required_types = required_by_position.get(position_id, [])
-        for obj in group:
-            present_codes = present_codes_by_person.get(obj.pk, set())
-            # Mismo criterio de DNI/NIE excluyentes que
-            # PersonalDetailView -- tener uno de los dos cubre el
-            # requisito de identidad, nunca se exigen ambos a la vez.
-            has_dni_or_nie = bool({"DNI", "NIE"} & present_codes)
-            missing_labels = [
-                dt.label for dt in required_types
-                if dt.code not in present_codes
-                and not (dt.code in ("DNI", "NIE") and has_dni_or_nie)
-            ]
-            if missing_labels:
-                obj.has_alert = True
-                obj.alert_labels = sorted(
-                    set(getattr(obj, "alert_labels", []) or []) | {
-                        "Falta: %s" % label for label in missing_labels
-                    },
-                )
-    return persons
 
 
 class DocumentationHubV2View(CompanyUserRequiredMixin, View):
@@ -844,11 +881,8 @@ def _person_list_page(request):
     # cabe siempre entero.
     paginator = Paginator(qs, 2000)
     page = paginator.get_page(request.GET.get("page"))
-    page.object_list = _attach_alert_flags(
+    page.object_list = _attach_required_document_alerts(
         list(page.object_list), person_ct,
-    )
-    page.object_list = _attach_missing_required_alert(
-        page.object_list, person_ct,
     )
     page.object_list = _attach_person_avatars(page.object_list, person_ct)
     return {
@@ -1401,27 +1435,11 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
             deleted_at__isnull=True, purged_at__isnull=True,
         ).select_related("document_type").order_by("-id")
         current, obsolete = _split_current_obsolete(entries)
-        # H31 (S109), punto 3. Igual que `missing_types_by_family` mas
-        # abajo, pero para documentos YA presentes que necesitan
-        # atencion (`needs_attention`, caducidad real ya pasada) --
-        # agrupado por familia para poder poner el triangulo a nivel
-        # de cabecera de familia (Miguel Angel: "en documentacion, en
-        # identificacion, si puedes poner el batch del triangulo rojo
-        # indicando que falta documento [...] indicar: falta el DNI,
-        # falta la fecha del vigente es una fecha pasada"). Mismos
-        # objetos que `current` (sin query aparte) -- el atributo
-        # `needs_attention` ya viene calculado por
-        # `_split_current_obsolete`.
-        _attention_labels_by_family = {}
-        for entry in current:
-            if entry.needs_attention and entry.document_type_id:
-                _attention_labels_by_family.setdefault(
-                    entry.document_type.family, set(),
-                ).add(entry.document_type.label)
-        attention_types_by_family = {
-            family: sorted(labels)
-            for family, labels in _attention_labels_by_family.items()
-        }
+        # H31 (S119): "Falta"/"Caducado" del puesto ya NO se calculan
+        # aqui a partir de `current` (cualquier documento vigente con
+        # `needs_attention`) -- ver `resolve_required_document_status`
+        # mas abajo, unica fuente para ambos, ceñida a los tipos
+        # obligatorios del puesto de la persona.
         _laboral_salud_codes = (
             DocumentTypeCatalog.FAMILY_LABORAL,
             DocumentTypeCatalog.FAMILY_SALUD_BAJAS_PERSONA,
@@ -1466,44 +1484,21 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
         # puesto asignado, ningun tipo se marca como faltante -- nunca
         # se asume un conjunto por defecto.
         #
-        # BUG REAL corregido en la misma sesion: NUNCA reutilizar
-        # `present_type_codes` aqui -- esa variable cuenta a proposito
-        # "cualquier entrada viva, aunque este marcada obsoleta" (para
-        # el boton "+ Subir", ver comentario de mas arriba), asi que
-        # una persona con un CONTRATO histórico pero ya obsoleto (p.
-        # ej. retipado a "Carta de baja voluntaria" tras corregir una
-        # mala clasificacion) seguia contando como "tiene CONTRATO" y
-        # nunca avisaba de que le falta. El requisito obligatorio solo
-        # se satisface con un documento VIGENTE de verdad.
-        present_current_type_codes = {
-            entry.document_type.code for entry in current
-            if entry.document_type_id
-        }
-        missing_required_types_by_family = {}
-        if person.job_position_id:
-            required_type_ids = set(
-                person.job_position.required_document_types.values_list(
-                    "pk", flat=True,
-                ),
-            )
-            # H31 (S109). DNI/NIE son excluyentes para el aviso de
-            # faltante -- Miguel Ángel, verbatim: "si tenemos el DNI
-            # ya no es necesario que tenga el NIE. Si tenemos el NIE
-            # ya no es necesario que tenga el DNI." Una persona
-            # nacional nunca tendrá NIE, y viceversa -- si el puesto
-            # exige ambos códigos (caso real de "General", pensado
-            # para cualquier nacionalidad) y la persona ya tiene
-            # CUALQUIERA de los dos, ninguno de los dos cuenta como
-            # faltante.
-            has_dni_or_nie = bool({"DNI", "NIE"} & present_current_type_codes)
-            for dt in DocumentTypeCatalog.objects.filter(
-                pk__in=required_type_ids,
-            ).exclude(code__in=present_current_type_codes).order_by("label"):
-                if dt.code in ("DNI", "NIE") and has_dni_or_nie:
-                    continue
-                missing_required_types_by_family.setdefault(
-                    dt.family, [],
-                ).append(dt)
+        # H31 (S119): "Falta" y "Caducado" del triángulo salen SOLO de
+        # los tipos obligatorios del puesto de la persona EN ESTE
+        # MOMENTO (`JobPosition.required_document_types`, nunca un
+        # conjunto fijo en el código -- Miguel Ángel: "no se puede
+        # hardcodear nada, ni los grupos que hay, ni los documentos").
+        # Un tipo obligatorio caducado sin sustituto cuenta como
+        # "Caducado", nunca como "Falta" -- `resolve_required_document_
+        # status` mira el documento MÁS MODERNO de cada tipo exigido,
+        # sin pasar por `is_current()` (que lo habría excluido de la
+        # competición por estar caducado y sin sustituto, como si no
+        # existiera). Sin puesto asignado, ningún tipo se marca como
+        # obligatorio -- nunca se asume un conjunto por defecto.
+        missing_required_types_by_family, attention_types_by_family = (
+            resolve_required_document_status(person)
+        )
         # INCIDENTE REAL S102: `include_empty_families` recibe SOLO
         # las familias con algún tipo de dominio PERSONAL/BOTH
         # pendiente (`missing_types_by_family`) -- nunca el
