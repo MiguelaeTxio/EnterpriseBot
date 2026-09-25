@@ -566,9 +566,16 @@ las filas de debajo se desplacen de verdad.
     }
     window.resetPersonGroupForm = resetPersonGroupForm;
 
-    function showPersonGroupToast(message) {
+    // H31 (S119): reutilizado tambien por la asignacion masiva de
+    // requisito de documentacion (mas abajo) -- Miguel Angel: "deberia
+    // salir un modal un par de segundos diciendo exito o no". Acepta
+    // isError para el caso de fallo (fondo rojo en vez de verde).
+    function showPersonGroupToast(message, isError) {
+        const toastEl = document.getElementById('personGroupToast');
+        toastEl.classList.toggle('bg-success', !isError);
+        toastEl.classList.toggle('bg-danger', !!isError);
         document.getElementById('personGroupToastBody').textContent = message;
-        new bootstrap.Toast(document.getElementById('personGroupToast')).show();
+        new bootstrap.Toast(toastEl).show();
     }
 
     function upsertPersonGroupRow(pk, name, memberIds, memberNames) {
@@ -699,13 +706,26 @@ las filas de debajo se desplacen de verdad.
             headers: {'X-CSRFToken': getCookie('csrftoken')},
             body: formData,
         }).then((r) => r.json()).then((data) => {
+            resultEl.innerHTML = '';
             if (data.ok) {
-                resultEl.innerHTML = `<div class="alert alert-success py-1 px-2 mb-0">${data.updated_count} personas asignadas al requisito "${data.job_position_name}".</div>`;
+                showPersonGroupToast(`${data.updated_count} persona(s) asignadas al requisito "${data.job_position_name}".`);
+                // H31 (S119): refresca la pestaña de Personal en el
+                // sitio (mismo endpoint htmx que la carga la primera
+                // vez) para que el listado ya muestre el cambio sin
+                // recargar la pagina -- Miguel Angel: "a la par que es
+                // visible en el listado".
+                const tabEl = document.getElementById('tab-personal');
+                if (window.htmx && tabEl) {
+                    htmx.ajax('GET', tabEl.getAttribute('hx-get'), {
+                        target: '#pane-personal', swap: 'innerHTML',
+                    });
+                }
             } else {
-                resultEl.innerHTML = `<div class="alert alert-danger py-1 px-2 mb-0">${data.error || 'Error al asignar el requisito.'}</div>`;
+                showPersonGroupToast(data.error || 'Error al asignar el requisito.', true);
             }
         }).catch(() => {
-            resultEl.innerHTML = '<div class="alert alert-danger py-1 px-2 mb-0">Error de red al asignar el requisito.</div>';
+            resultEl.innerHTML = '';
+            showPersonGroupToast('Error de red al asignar el requisito.', true);
         });
     });
 
@@ -1235,18 +1255,12 @@ páginas distintas.
 </script>
 
 {% comment %}
-H31 (S113). Mismo criterio ya aplicado a lotes de EPIs y plantillas
-de dosier: guardar/eliminar un grupo de reparto no recarga la
-página, avisa con un toast auto-oculto.
+H31 (S119): el contenedor de este toast se movió a hub.html, fuera de
+cualquier tab-pane (ver comentario allí) -- justo lo que hace falta
+para que sobreviva al refresco de la propia pestaña de Personal tras
+la asignación masiva de requisito de documentación. showPersonGroupToast()
+lo sigue encontrando por id igual, esté donde esté en el DOM.
 {% endcomment %}
-<div class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 1080;">
-    <div id="personGroupToast" class="toast align-items-center text-white bg-success border-0" role="alert" aria-live="assertive" aria-atomic="true" data-bs-delay="2000">
-        <div class="d-flex">
-            <div class="toast-body" id="personGroupToastBody">Guardado.</div>
-            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
-        </div>
-    </div>
-</div>
 
 {% comment %}
 H31 (S113). Miguel Ángel: "ahora mismo no hay ningún tipo de filtro.

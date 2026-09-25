@@ -97,6 +97,25 @@
 </div>
 {% endwith %}
 
+{% comment %}
+H31 (S119). Contenedor del toast de éxito/error compartido por las
+pestañas -- vive AQUÍ, fuera de cualquier `tab-pane`, porque una
+pestaña puede refrescarse (htmx.ajax swap de su contenido) justo
+después de una acción con éxito, y si el toast estuviera dentro de esa
+pestaña se destruiría a medio mostrar. `showPersonGroupToast()`
+(definida dentro de _personal_pane.html, reutilizada por la
+asignación masiva de requisito de documentación) sigue buscándolo por
+id, indistinto de dónde viva en el DOM.
+{% endcomment %}
+<div class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 1080;">
+    <div id="personGroupToast" class="toast align-items-center text-white bg-success border-0" role="alert" aria-live="assertive" aria-atomic="true" data-bs-delay="2000">
+        <div class="d-flex">
+            <div class="toast-body" id="personGroupToastBody">Guardado.</div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+        </div>
+    </div>
+</div>
+
 <script>
 (function () {
     // H31 (S75). Persistencia de navegación real en BD (nunca
