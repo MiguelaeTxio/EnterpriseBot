@@ -35,6 +35,15 @@ la lista hace scroll. Dos paneles:
     {% endcomment %}
     <div class="border rounded p-2 mb-2" id="fleet-top-panel">
         <div class="d-flex justify-content-end gap-2 mb-2">
+            {% comment %}
+            H30 (S119) -- mismo formato que la pestaña Personal:
+            "Gestionar requisitos de documentación" (máquina), misma
+            mecánica que JobPosition pero con
+            MachineDocumentRequirement.
+            {% endcomment %}
+            <a class="btn btn-sm btn-outline-secondary" href="{% url 'panel:machine_document_requirements_manage' %}">
+                <i class="bi bi-truck"></i> Gestionar requisitos de documentación
+            </a>
             {% if can_manage %}
             <button type="button" class="btn btn-sm btn-primary"
                     data-bs-toggle="modal"
@@ -165,6 +174,30 @@ la lista hace scroll. Dos paneles:
                             </button>
                         </div>
                     </div>
+                    {% if can_manage %}
+                    {% comment %}
+                    H30 (S119). Asignar requisito de documentación
+                    masivo -- sustituye siempre el anterior de cada
+                    máquina (FK, no acumulativo). Mismo mecanismo que
+                    "Requisitos de documentación" en Personal, con
+                    modal de confirmación (Miguel Ángel, S113, mismo
+                    criterio: "para evitar los cambios por error").
+                    {% endcomment %}
+                    <div class="row g-1 mt-1">
+                        <div class="col-md-8">
+                            <div class="small text-muted fw-bold">Requisito de documentación</div>
+                            <div class="d-flex gap-1 flex-wrap">
+                                <select id="fleet-mass-document-requirement" class="form-select form-select-sm" style="width:auto; max-width:100%; min-width:0;">
+                                    <option value="">Asignar requisito…</option>
+                                    {% for requirement in machine_document_requirements %}
+                                    <option value="{{ requirement.pk }}">{{ requirement.name }}</option>
+                                    {% endfor %}
+                                </select>
+                                <button type="button" class="btn btn-sm btn-primary fleet-needs-selection" id="fleet-mass-document-requirement-submit" disabled>Asignar</button>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
                 </div>
             </div>
         </div>
@@ -239,6 +272,24 @@ la lista hace scroll. Dos paneles:
             </div>
             <div class="modal-body" id="fleet-create-form-container">
                 {% include "panel/fleet/_form_fragment.html" with form=form form_action="create" %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="fleetMassDocumentRequirementConfirmModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Confirmar cambio de requisito de documentación</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p id="fleetMassDocumentRequirementConfirmText" class="mb-0"></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary btn-sm" id="fleetMassDocumentRequirementConfirmBtn">Confirmar</button>
             </div>
         </div>
     </div>
@@ -475,6 +526,43 @@ la lista hace scroll. Dos paneles:
         "¿Reactivar {n} centros de gasto?");
     massAction("fleet-mass-delete", "{% url 'panel:fleet_bulk_delete' %}", "",
         "¿Eliminar DEFINITIVAMENTE {n} centros de gasto? Los que tengan partes de trabajo asociados no se tocarán.");
+
+    // H30 (S119). Asignar requisito de documentación masivo -- no usa
+    // el helper massAction() (necesita mandar tambien el valor del
+    // desplegable, no solo un action fijo) ni el confirm() nativo --
+    // modal propio, mismo criterio que Personal (S113): "para evitar
+    // los cambios por error".
+    const massDocReqSubmit = document.getElementById("fleet-mass-document-requirement-submit");
+    if (massDocReqSubmit) {
+        let massDocReqModalInstance = null;
+        massDocReqSubmit.addEventListener("click", function () {
+            if (!selection.size) {
+                showToast("No hay ningún centro de gasto seleccionado.", true);
+                return;
+            }
+            const select = document.getElementById("fleet-mass-document-requirement");
+            const requirementId = select.value;
+            const requirementName = requirementId
+                ? select.options[select.selectedIndex].textContent
+                : "(ninguno -- se quita el requisito actual)";
+            document.getElementById("fleetMassDocumentRequirementConfirmText").textContent =
+                `Vas a cambiar el requisito de documentación de ${selection.size} centro(s) de gasto a "${requirementName}".`;
+            if (!massDocReqModalInstance) {
+                massDocReqModalInstance = new bootstrap.Modal(document.getElementById("fleetMassDocumentRequirementConfirmModal"));
+            }
+            massDocReqModalInstance.show();
+        });
+        document.getElementById("fleetMassDocumentRequirementConfirmBtn").addEventListener("click", function () {
+            if (massDocReqModalInstance) massDocReqModalInstance.hide();
+            const requirementId = document.getElementById("fleet-mass-document-requirement").value;
+            postAction("{% url 'panel:fleet_bulk_set_document_requirement' %}", {
+                selected: selectedPks(),
+                document_requirement_id: requirementId,
+            }).then(function (ok) {
+                if (ok) { selection.clear(); refreshFromFragment(); }
+            });
+        });
+    }
 
     // Exportar la selección a Excel (mismas columnas que la hoja
     // MAQUINARIA del Excel de Yolanda): formulario POST temporal, para

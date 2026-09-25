@@ -471,12 +471,20 @@ def _build_pane_context(request, door):
     )
     if not isinstance(saved_selection, list):
         saved_selection = []
+    # H30 (S119): requisitos de documentación de máquina, para el
+    # desplegable de asignación masiva -- mismo criterio que
+    # job_positions en el panel de Personal.
+    from document_explorer.models import MachineDocumentRequirement
+
     return {
         **fragment_ctx,
         "own_presence": _get_own_presence(company_user),
         "form": MachineAssetForm(company=company),
         "fleet_screen_key": _FLEET_SCREEN_KEYS[door],
         "saved_selection": saved_selection,
+        "machine_document_requirements": (
+            MachineDocumentRequirement.objects.order_by("name")
+        ),
     }
 
 
@@ -867,6 +875,53 @@ class MachineAssetBulkStatusView(FleetManageAccessMixin, View):
         message = (
             f"{updated} centro{'s' if updated != 1 else ''} de gasto "
             f"{verb}{'s' if updated != 1 else ''}."
+        )
+        return _fragment_with_message(
+            request, company, company_user, message,
+        )
+
+
+class MachineAssetBulkSetDocumentRequirementView(FleetManageAccessMixin, View):
+    """
+    Assigns (or clears, with document_requirement_id empty) a
+    document requirement to every selected MachineAsset at once.
+
+    POST /panel/fleet/bulk/requisito/
+    ---
+    H30 (S119). Asigna (o desasigna, con `document_requirement_id`
+    vacío) un requisito de documentación a la vez a todos los
+    MachineAsset seleccionados -- mismo mecanismo que
+    `MachineAssetBulkStatusView` y que
+    `PersonMassSetJobPositionView` en Personal. Una asignación masiva
+    nueva SIEMPRE sustituye el requisito anterior de cada máquina,
+    nunca lo acumula (`ForeignKey`, no M2M -- una máquina tiene un
+    único requisito a la vez).
+
+    POST /panel/fleet/bulk/requisito/
+    """
+
+    def post(self, request, *args, **kwargs):
+        from document_explorer.models import MachineDocumentRequirement
+
+        company_user = request.user.company_user
+        company = company_user.company
+        requirement_id = request.POST.get(
+            "document_requirement_id", "",
+        ).strip()
+        requirement = (
+            get_object_or_404(MachineDocumentRequirement, pk=requirement_id)
+            if requirement_id else None
+        )
+        updated = _selected_assets(company, request).update(
+            document_requirement=requirement,
+        )
+        verb = (
+            f"asignado el requisito «{requirement}»" if requirement
+            else "quitado su requisito de documentación"
+        )
+        message = (
+            f"{updated} centro{'s' if updated != 1 else ''} de gasto "
+            f"con {verb}."
         )
         return _fragment_with_message(
             request, company, company_user, message,

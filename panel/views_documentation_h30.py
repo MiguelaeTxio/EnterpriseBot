@@ -48,8 +48,9 @@ from document_explorer.index_writer import ensure_folder_chain
 from document_explorer.models import (
     CompanyFiscalProfile, DocumentAcknowledgment, DocumentIndexEntry,
     DocumentTypeCatalog, EpiDelivery, EpiDeliveryBatchTemplate,
-    EpiItemCatalog, EpiReview, JobPosition, PersonalDossierTemplate,
-    PersonGroupTemplate, PersonIdentity, path_digest,
+    EpiItemCatalog, EpiReview, JobPosition, MachineDocumentRequirement,
+    PersonalDossierTemplate, PersonGroupTemplate, PersonIdentity,
+    path_digest,
 )
 from document_explorer.epi_delivery_document_service import (
     build_epi_delivery_pdf_bytes, resolve_company_fiscal_profile,
@@ -2838,6 +2839,104 @@ class JobPositionDeleteView(CompanyUserRequiredMixin, View):
     def post(self, request, position_pk):
         position = get_object_or_404(JobPosition, pk=position_pk)
         position.delete()
+        return JsonResponse({"ok": True})
+
+
+class MachineDocumentRequirementManageView(CompanyUserRequiredMixin, View):
+    """
+    H30 (S119). GET: página de gestión de requisitos de documentación
+    de máquina -- misma mecánica exacta que `JobPositionManageView`,
+    para `MachineDocumentRequirement.required_document_types` en vez
+    de `JobPosition.required_document_types`. Único cambio real: el
+    filtro de dominio del selector de tipos es MACHINE/BOTH, nunca
+    PERSONAL/BOTH.
+    """
+
+    def get(self, request):
+        requirements = MachineDocumentRequirement.objects.prefetch_related(
+            "required_document_types",
+        ).order_by("name")
+
+        types_by_family = {}
+        doc_types = DocumentTypeCatalog.objects.filter(
+            is_active=True, domain__in=["MACHINE", "BOTH"],
+        ).order_by("family", "label")
+        family_labels = dict(DocumentTypeCatalog.FAMILY_CHOICES)
+        for dt in doc_types:
+            family_code = dt.family or ""
+            group = types_by_family.setdefault(family_code, {
+                "label": family_labels.get(family_code, "Sin familia"),
+                "color": _DOSSIER_FAMILY_COLORS.get(family_code, "#f5f5f5"),
+                "types": [],
+            })
+            group["types"].append(dt)
+        ordered_families = [
+            types_by_family[code]
+            for code, _ in DocumentTypeCatalog.FAMILY_CHOICES
+            if code in types_by_family
+        ]
+        if "" in types_by_family:
+            ordered_families.append(types_by_family[""])
+
+        return render(
+            request, "panel/machine_document_requirements/manage.html", {
+                "requirements": requirements,
+                "families": ordered_families,
+            },
+        )
+
+
+class MachineDocumentRequirementSaveView(CompanyUserRequiredMixin, View):
+    """
+    H30 (S119). POST: crea un requisito nuevo (sin `requirement_pk`) o
+    edita uno existente -- mismo contrato que `JobPositionSaveView`.
+    """
+
+    def post(self, request, requirement_pk=None):
+        if requirement_pk:
+            requirement = get_object_or_404(
+                MachineDocumentRequirement, pk=requirement_pk,
+            )
+        else:
+            requirement = MachineDocumentRequirement(
+                created_by=getattr(request.user, "company_user", None),
+            )
+
+        name = request.POST.get("name", "").strip()
+        if not name:
+            return JsonResponse(
+                {"ok": False, "error": "Falta el nombre del requisito."},
+                status=400,
+            )
+
+        requirement.name = name
+        try:
+            requirement.save()
+        except IntegrityError:
+            return JsonResponse(
+                {"ok": False, "error": "Ya existe un requisito con ese nombre."},
+                status=400,
+            )
+        type_ids = request.POST.getlist("document_type_ids")
+        requirement.required_document_types.set(type_ids)
+
+        return JsonResponse(
+            {"ok": True, "id": requirement.pk, "name": requirement.name},
+        )
+
+
+class MachineDocumentRequirementDeleteView(CompanyUserRequiredMixin, View):
+    """
+    H30 (S119). POST: borra un requisito -- las máquinas que lo
+    tuvieran asignado quedan con `document_requirement=NULL`
+    (on_delete=SET_NULL), nunca se tocan ellas.
+    """
+
+    def post(self, request, requirement_pk):
+        requirement = get_object_or_404(
+            MachineDocumentRequirement, pk=requirement_pk,
+        )
+        requirement.delete()
         return JsonResponse({"ok": True})
 
 

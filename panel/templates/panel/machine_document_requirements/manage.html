@@ -1,0 +1,348 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/machine_document_requirements/manage.html #}
+{% extends "panel/base.html" %}
+
+{% comment %}
+H30 (S119). Página de gestión de "Requisitos de documentación" para
+MÁQUINAS -- copia exacta de job_positions/manage.html (Personal),
+adaptada al modelo `document_explorer.MachineDocumentRequirement` y al
+campo `MachineAsset.document_requirement`. Miguel Ángel: "lo mismo que
+tenemos requisitos documentales para personas, también lo tenemos que
+tener para los tipos de máquina [...] exactamente la misma filosofía
+que con los empleados".
+
+Mismo checklist de tipos por familia (aquí solo dominio MACHINE/BOTH),
+visor sticky, guardar/eliminar sin recargar. Sin ninguna excepción por
+máquina ni por documento: para exigir otro conjunto de tipos, la
+máquina se reasigna a OTRO requisito, nunca una excepción dentro del
+mismo -- por eso "Guardar" con un nombre distinto al que se cargó crea
+un requisito NUEVO en vez de sobrescribir el original (ver JS más
+abajo), para poder partir de "Básico" y construir "Gruista" sin perder
+"Básico".
+
+Se asigna a cada máquina desde el listado de Centros de Gasto
+(asignación masiva por selección) o una a una desde su propia ficha.
+{% endcomment %}
+
+{% block title %}Requisitos de documentación (máquina){% endblock %}
+{% block page_title %}Requisitos de documentación (máquina){% endblock %}
+
+{% block content %}
+<div class="container-fluid px-3 pt-3">
+
+    <div class="d-flex align-items-center justify-content-between mb-3">
+        <p class="text-muted small mb-0">
+            Un requisito de documentación guarda qué tipos documentales son OBLIGATORIOS para la máquina que lo tiene asignado -- disparan el aviso de documento faltante y de documento caducado en su ficha; una máquina sin requisito asignado no avisa de nada. Asígnalo desde el listado de Centros de Gasto (selección + "Asignar requisito…") o desde la propia ficha de la máquina.
+        </p>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header">Requisitos guardados</div>
+        <div class="card-body p-0">
+            <table class="table table-sm table-hover mb-0">
+                <thead><tr><th>Nombre</th><th>Documentos obligatorios</th><th></th></tr></thead>
+                <tbody id="requirementsTableBody">
+                    {% for requirement in requirements %}
+                    <tr id="requirementRow{{ requirement.pk }}"
+                        data-name="{{ requirement.name|escapejs }}"
+                        data-type-ids="{% for dt in requirement.required_document_types.all %}{{ dt.pk }}{% if not forloop.last %},{% endif %}{% endfor %}">
+                        <td>
+                            <a href="#" onclick="loadRequirementIntoForm({{ requirement.pk }}); return false;">{{ requirement.name }}</a>
+                        </td>
+                        <td class="small text-muted">
+                            {% for dt in requirement.required_document_types.all %}{{ dt.label }}{% if not forloop.last %}, {% endif %}{% endfor %}
+                            {% if not requirement.required_document_types.all %}<span class="text-muted">Sin perfilar todavía</span>{% endif %}
+                        </td>
+                        <td class="text-end">
+                            <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteRequirement({{ requirement.pk }})">Eliminar</button>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr id="requirementsEmptyRow"><td colspan="3" class="text-muted small py-3">Sin requisitos guardados todavía.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span id="formTitle">Nuevo requisito</span>
+            <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="cancelEditBtn" onclick="resetForm()">Vaciar / nuevo requisito</button>
+        </div>
+        <div class="card-body">
+            <input type="hidden" id="requirementPk" value="">
+            <div class="row g-3">
+                <div class="col-12 col-lg-8">
+                    <div class="mb-3">
+                        <label class="form-label small mb-1">Nombre</label>
+                        <input type="text" id="requirementName" class="form-control form-control-sm" placeholder="p. ej. Básico, Con tacógrafo, Sin tacógrafo..." oninput="refreshDraftPreview()">
+                    </div>
+
+                    {% comment %}
+                    H31 (S109). Miguel Ángel: "la parte coloreada con
+                    los documentos a elegir, esa parte es la que
+                    tenemos que hacer scrollable" -- mismo criterio ya
+                    aplicado en plantillas de dosier: nombre y visor
+                    quedan fuera del scroll, siempre visibles.
+                    {% endcomment %}
+                    <div style="max-height: 55vh; overflow-y: auto; border: 1px solid #dee2e6; border-radius: 0.25rem; padding: 0.5rem;">
+                    {% for fam in families %}
+                    <div class="mb-2 p-2 rounded" style="background-color: {{ fam.color }};">
+                        <div class="fw-bold small mb-1">{{ fam.label }}</div>
+                        <div style="columns: 3; column-gap: 1.5rem;">
+                            {% for dt in fam.types %}
+                            <div class="form-check" style="break-inside: avoid;">
+                                <input class="form-check-input requirement-type-checkbox" type="checkbox" value="{{ dt.pk }}" id="ptCheck{{ dt.pk }}" data-label="{{ dt.label|escapejs }}" onchange="refreshDraftPreview()">
+                                <label class="form-check-label small" for="ptCheck{{ dt.pk }}">{{ dt.label }}</label>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                    </div>
+
+                    <div id="requirementFormResult" class="small mt-2"></div>
+                </div>
+
+                <div class="col-12 col-lg-4">
+                    <label class="form-label small mb-1 invisible d-block">&nbsp;</label>
+                    {% comment %}
+                    H31 (S109/S113). Miguel Ángel: "el visor donde
+                    salen los documentos elegidos [...] debe estar
+                    fijo también" -- mismo componente sticky que
+                    plantillas de dosier, reutilizado aquí tal cual.
+                    {% endcomment %}
+                    <div class="card h-100" style="requirement: sticky; top: 1rem;">
+                        <div class="card-header fw-bold" id="draftPreviewTitle">Nuevo requisito</div>
+                        <div class="card-body p-2" style="max-height: 420px; overflow-y: auto;">
+                            <ul class="mb-0 small" id="draftPreviewList">
+                                <li class="text-muted">Ningún documento marcado todavía.</li>
+                            </ul>
+                        </div>
+                        <div class="card-footer p-2">
+                            <button type="button" class="btn btn-sm btn-primary w-100" id="saveRequirementBtn" onclick="saveRequirement()">Guardar requisito</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+{% comment %}
+H31 (S113). Mismo criterio ya aplicado a lotes de EPIs, plantillas de
+dosier y grupos de reparto: guardar/eliminar no recarga la página,
+avisa con un toast auto-oculto.
+{% endcomment %}
+<div class="toast-container requirement-fixed top-0 end-0 p-3" style="z-index: 1080;">
+    <div id="requirementToast" class="toast align-items-center text-white bg-success border-0" role="alert" aria-live="assertive" aria-atomic="true" data-bs-delay="2000">
+        <div class="d-flex">
+            <div class="toast-body" id="requirementToastBody">Guardado.</div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+        </div>
+    </div>
+</div>
+
+<script>
+function getCookie(name) {
+    const value = `; ${document.cookie}`;
+    const parts = value.split(`; ${name}=`);
+    if (parts.length === 2) return parts.pop().split(';').shift();
+}
+
+function getCheckedTypeIds() {
+    return Array.from(document.querySelectorAll('.requirement-type-checkbox:checked')).map(el => el.value);
+}
+
+// --- Visor en vivo -----------------------------------------------------
+
+function refreshDraftPreview() {
+    const checked = document.querySelectorAll('.requirement-type-checkbox:checked');
+    const list = document.getElementById('draftPreviewList');
+    const lines = Array.from(checked).map(el => `<li>${el.dataset.label}</li>`);
+    list.innerHTML = lines.length
+        ? lines.join('')
+        : '<li class="text-muted">Ningún documento marcado todavía.</li>';
+
+    const title = document.getElementById('draftPreviewTitle');
+    const name = document.getElementById('requirementName').value.trim();
+    title.textContent = name || 'Nuevo requisito';
+}
+
+// --- Deteccion de cambios sin guardar ------------------------------------
+
+let lastSnapshot = null;
+// Nombre con el que se cargo la fila en el formulario (o null si es
+// "Nuevo requisito"). Miguel Angel: cargar "Basico" y CAMBIAR el
+// nombre antes de guardar crea un requisito nuevo (el original queda
+// intacto); guardar con el mismo nombre es la edicion de siempre.
+let loadedName = null;
+
+function currentSnapshot() {
+    return JSON.stringify({
+        pk: document.getElementById('requirementPk').value,
+        name: document.getElementById('requirementName').value.trim(),
+        ids: getCheckedTypeIds().slice().sort(),
+    });
+}
+
+function takeSnapshot() {
+    lastSnapshot = currentSnapshot();
+}
+
+function isDirty() {
+    return lastSnapshot !== null && lastSnapshot !== currentSnapshot();
+}
+
+window.addEventListener('beforeunload', function (e) {
+    if (isDirty()) {
+        e.preventDefault();
+        e.returnValue = '';
+    }
+});
+
+function loadRequirementIntoForm(pk) {
+    const row = document.getElementById('requirementRow' + pk);
+    if (!row) return;
+    const name = row.dataset.name || '';
+    const ids = (row.dataset.typeIds || '').split(',').filter(Boolean);
+
+    document.getElementById('requirementPk').value = pk;
+    document.getElementById('requirementName').value = name;
+    loadedName = name;
+    document.querySelectorAll('.requirement-type-checkbox').forEach(el => { el.checked = false; });
+    ids.forEach(id => {
+        const el = document.getElementById('ptCheck' + id);
+        if (el) el.checked = true;
+    });
+    document.getElementById('formTitle').textContent = 'Editando: ' + name;
+    document.getElementById('cancelEditBtn').classList.remove('d-none');
+    refreshDraftPreview();
+    takeSnapshot();
+}
+
+function resetForm() {
+    document.getElementById('requirementPk').value = '';
+    document.getElementById('requirementName').value = '';
+    loadedName = null;
+    document.querySelectorAll('.requirement-type-checkbox').forEach(el => { el.checked = false; });
+    document.getElementById('formTitle').textContent = 'Nuevo requisito';
+    document.getElementById('cancelEditBtn').classList.add('d-none');
+    document.getElementById('requirementFormResult').innerHTML = '';
+    refreshDraftPreview();
+    takeSnapshot();
+}
+
+function showRequirementToast(message) {
+    document.getElementById('requirementToastBody').textContent = message;
+    new bootstrap.Toast(document.getElementById('requirementToast')).show();
+}
+
+function upsertRequirementRow(pk, name, typeIds) {
+    const typeLabels = typeIds.map(id => document.getElementById('ptCheck' + id)?.dataset.label).filter(Boolean);
+    let row = document.getElementById('requirementRow' + pk);
+    if (row) {
+        row.dataset.name = name;
+        row.dataset.typeIds = typeIds.join(',');
+        row.children[0].textContent = '';
+        const link = document.createElement('a');
+        link.href = '#';
+        link.setAttribute('onclick', `loadRequirementIntoForm(${pk}); return false;`);
+        link.textContent = name;
+        row.children[0].appendChild(link);
+        row.children[1].textContent = typeLabels.join(', ') || 'Sin perfilar todavía';
+    } else {
+        const emptyRow = document.getElementById('requirementsEmptyRow');
+        if (emptyRow) emptyRow.remove();
+        row = document.createElement('tr');
+        row.id = 'requirementRow' + pk;
+        row.dataset.name = name;
+        row.dataset.typeIds = typeIds.join(',');
+        row.innerHTML = `
+            <td></td>
+            <td class="small text-muted"></td>
+            <td class="text-end"><button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteRequirement(${pk})">Eliminar</button></td>`;
+        const link = document.createElement('a');
+        link.href = '#';
+        link.setAttribute('onclick', `loadRequirementIntoForm(${pk}); return false;`);
+        link.textContent = name;
+        row.children[0].appendChild(link);
+        row.children[1].textContent = typeLabels.join(', ') || 'Sin perfilar todavía';
+        document.getElementById('requirementsTableBody').appendChild(row);
+    }
+}
+
+function saveRequirement() {
+    const name = document.getElementById('requirementName').value.trim();
+    // Miguel Angel: si el nombre ya no coincide con el que se cargo,
+    // se guarda como requisito NUEVO -- el pk del formulario se
+    // ignora a proposito, el original (loadedName) queda intacto sin
+    // tocarlo. Con el mismo nombre, es la edicion de siempre.
+    const pk = (loadedName !== null && name === loadedName)
+        ? document.getElementById('requirementPk').value
+        : '';
+    const typeIds = getCheckedTypeIds();
+    const resultDiv = document.getElementById('requirementFormResult');
+
+    if (!name) {
+        resultDiv.innerHTML = '<div class="alert alert-danger py-1 px-2 small mb-0">Falta el nombre del requisito.</div>';
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('name', name);
+    typeIds.forEach(id => formData.append('document_type_ids', id));
+
+    const url = pk
+        ? `/panel/documentacion/maquinaria/requisitos/${pk}/guardar/`
+        : '/panel/documentacion/maquinaria/requisitos/guardar/';
+
+    fetch(url, {
+        method: 'POST', body: formData,
+        headers: {'X-CSRFToken': getCookie('csrftoken')},
+    }).then(r => r.json()).then(data => {
+        if (data.ok) {
+            resultDiv.innerHTML = '';
+            document.getElementById('requirementPk').value = data.id;
+            loadedName = data.name;
+            document.getElementById('formTitle').textContent = 'Editando: ' + data.name;
+            document.getElementById('cancelEditBtn').classList.remove('d-none');
+            upsertRequirementRow(data.id, data.name, typeIds);
+            takeSnapshot();
+            showRequirementToast('Requisito guardado.');
+        } else {
+            resultDiv.innerHTML = `<div class="alert alert-danger py-1 px-2 small mb-0">${data.error || 'Error al guardar.'}</div>`;
+        }
+    }).catch(() => {
+        resultDiv.innerHTML = '<div class="alert alert-danger py-1 px-2 small mb-0">Error de red al guardar.</div>';
+    });
+}
+
+function deleteRequirement(pk) {
+    if (!confirm('¿Eliminar este requisito? Las máquinas que lo tuvieran asignado se quedarán sin él.')) return;
+    fetch(`/panel/documentacion/maquinaria/requisitos/${pk}/eliminar/`, {
+        method: 'POST',
+        headers: {'X-CSRFToken': getCookie('csrftoken')},
+    }).then(r => r.json()).then(data => {
+        if (data.ok) {
+            const row = document.getElementById('requirementRow' + pk);
+            if (row) row.remove();
+            const tbody = document.getElementById('requirementsTableBody');
+            if (!tbody.children.length) {
+                const tr = document.createElement('tr');
+                tr.id = 'requirementsEmptyRow';
+                tr.innerHTML = '<td colspan="3" class="text-muted small py-3">Sin requisitos guardados todavía.</td>';
+                tbody.appendChild(tr);
+            }
+            if (document.getElementById('requirementPk').value === String(pk)) {
+                resetForm();
+            }
+            showRequirementToast('Requisito eliminado.');
+        }
+    });
+}
+
+document.addEventListener('DOMContentLoaded', takeSnapshot);
+</script>
+{% endblock %}
