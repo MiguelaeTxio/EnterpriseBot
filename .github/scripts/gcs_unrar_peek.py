@@ -71,3 +71,4 @@ except Exception:
         out.write(traceback.format_exc())
     print("ERROR descomprimiendo id=%d (ver %d_ERROR.txt)" % (pk, pk),
           flush=True)
+# S119: disparo manual del deploy para que el pip-sync de rarfile (commit 5394e78d) surta efecto -- compile-requirements.yml comitea con GITHUB_TOKEN y no dispara deploy.yml (prevención de bucles de Actions).
