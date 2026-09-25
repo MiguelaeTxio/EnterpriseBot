@@ -35,6 +35,11 @@ on:
         required: false
         default: "0"
         type: string
+      dpi:
+        description: "Opcional (solo gcs_image): resolución del render. 110 por defecto; 220 para letra manuscrita sobre trama."
+        required: false
+        default: "110"
+        type: string
 
 env:
   DRIVE_FOLDER_ID: "1SSHSY2FHt-7eN17Wgza2Qcybs-ij6to0"
@@ -147,6 +152,7 @@ jobs:
         if: inputs.mode == 'gcs_image'
         env:
           IDS: ${{ inputs.remote_path }}
+          DPI: ${{ inputs.dpi }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -e
@@ -155,7 +161,7 @@ jobs:
           scp -i ~/.ssh/pa_readonly_key .github/scripts/gcs_render_pages.py \
             MiguelAeTxio@ssh.pythonanywhere.com:"$SCRIPT"
           ssh -i ~/.ssh/pa_readonly_key MiguelAeTxio@ssh.pythonanywhere.com \
-            "set -e; cd /home/MiguelAeTxio/PROJECTS/EnterpriseBot; source /home/MiguelAeTxio/.virtualenvs/EnterpriseBot_venv_py312/bin/activate; export PYTHONPATH=/home/MiguelAeTxio/PROJECTS/EnterpriseBot; python -m dotenv run python3 '$SCRIPT' '$IDS' '$RUN_DIR'" \
+            "set -e; cd /home/MiguelAeTxio/PROJECTS/EnterpriseBot; source /home/MiguelAeTxio/.virtualenvs/EnterpriseBot_venv_py312/bin/activate; export PYTHONPATH=/home/MiguelAeTxio/PROJECTS/EnterpriseBot; python -m dotenv run python3 '$SCRIPT' '$IDS' '$RUN_DIR' 4 '$DPI'" \
             | tee /tmp/result.txt
           mkdir -p /tmp/pages
           scp -i ~/.ssh/pa_readonly_key \
