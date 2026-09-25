@@ -49,10 +49,25 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument("--apply", action="store_true")
+        parser.add_argument(
+            "--log-file", required=True,
+            help="Log propio (pantalla y archivo a la vez, 0bis).",
+        )
+
+    def _log(self, message):
+        print(message, flush=True)
+        self._handle.write(message + "\n")
+        self._handle.flush()
 
     def handle(self, *args, **options):
-        apply_changes = options["apply"]
-        self.stdout.write(
+        self._handle = open(options["log_file"], "a", encoding="utf-8")
+        try:
+            self._run(options["apply"])
+        finally:
+            self._handle.close()
+
+    def _run(self, apply_changes):
+        self._log(
             "MODO: %s" % (
                 "APLICAR (escribe)" if apply_changes
                 else "DRY-RUN (no escribe nada)"
@@ -65,7 +80,7 @@ class Command(BaseCommand):
             if count == 0:
                 continue
             active_count = queryset.filter(is_active=True).count()
-            self.stdout.write(
+            self._log(
                 "  %s -> %s: %d maquinas (%d activas)" % (
                     old_family, new_family, count, active_count,
                 )
@@ -73,7 +88,7 @@ class Command(BaseCommand):
             if apply_changes:
                 queryset.update(family=new_family)
             total += count
-        self.stdout.write("=== RESUMEN (%s) ===" % (
+        self._log("=== RESUMEN (%s) ===" % (
             "APLICADO" if apply_changes else "DRY-RUN, nada escrito"
         ))
-        self.stdout.write("    maquinas actualizadas: %d" % total)
+        self._log("    maquinas actualizadas: %d" % total)
