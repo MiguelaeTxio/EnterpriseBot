@@ -209,15 +209,6 @@ pestaña Personal, S113/S114):
 
                 <td class="text-center">{{ asset.doc_count }}</td>
 
-                {% comment %}
-                H30 (S119): mismo criterio que la columna "Requisitos
-                de documentación" de Personal (_personal_results.html)
-                -- Miguel Angel: "que aparezca en las columnas [...]
-                mientras que si aparece en personal, no lo hace en la
-                maquinaria".
-                {% endcomment %}
-                <td class="small">{{ asset.document_requirement.name|default:"—" }}</td>
-
                 <td class="text-center">
                     {% if asset.has_odometer %}
                     <i class="bi bi-speedometer2 text-secondary" title="Odómetro (km)"></i>
@@ -232,6 +223,15 @@ pestaña Personal, S113/S114):
                     <span class="text-muted small">—</span>
                     {% endif %}
                 </td>
+
+                {% comment %}
+                H30 (S119): mismo criterio que la columna "Requisitos
+                de documentación" de Personal (_personal_results.html)
+                -- Miguel Angel: "que aparezca en las columnas [...]
+                mientras que si aparece en personal, no lo hace en la
+                maquinaria".
+                {% endcomment %}
+                <td class="small">{{ asset.document_requirement.name|default:"—" }}</td>
 
                 <td class="text-center">
                     {% if asset.is_active %}
