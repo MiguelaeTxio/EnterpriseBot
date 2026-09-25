@@ -383,7 +383,9 @@ def _build_fragment_context(company, company_user, request):
     # tenía esta vista (decisión de Miguel Ángel: Centros de gasto será
     # la vista única de maquinaria): nº de documentos vivos de cada
     # máquina y aviso de documentación caducada (helper compartido
-    # _attach_alert_flags, misma regla que el hub de Documentación).
+    # _attach_required_document_alerts desde S119, misma regla que el
+    # hub de Documentación -- antes _attach_alert_flags, genérico y
+    # sin ceñirse al requisito de documentación de cada máquina).
     #
     # CORREGIDO S117 (incidente real: la pestaña de Documentación no
     # llegaba a cargar -- "OSError: write error" en el log, el
@@ -397,7 +399,9 @@ def _build_fragment_context(company, company_user, request):
     from django.contrib.contenttypes.models import ContentType
 
     from document_explorer.models import DocumentIndexEntry
-    from panel.views_documentation_h30 import BUCKET, _attach_alert_flags
+    from panel.views_documentation_h30 import (
+        BUCKET, _attach_required_document_alerts,
+    )
 
     machine_ct = ContentType.objects.get_for_model(MachineAsset)
     doc_counts = dict(
@@ -421,7 +425,14 @@ def _build_fragment_context(company, company_user, request):
     sort_keys = _parse_sort_param(_p("sort"))
     if any(key == "doc_count" for key, _desc in sort_keys):
         assets = _sort_assets_in_python(assets, sort_keys)
-    assets = _attach_alert_flags(assets, machine_ct)
+    # H30 (S119): mismo cálculo que Personal, ceñido al requisito de
+    # documentación de CADA máquina (MachineAsset.document_requirement,
+    # mismo catálogo único JobPosition) -- ver docstring completo en
+    # _attach_required_document_alerts. Sin requisito asignado, la
+    # máquina no avisa de nada.
+    assets = _attach_required_document_alerts(
+        assets, machine_ct, requirement_field="document_requirement",
+    )
     return {
         "assets":           assets,
         "families":         _get_families(company),

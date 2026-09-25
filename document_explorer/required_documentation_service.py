@@ -1,15 +1,16 @@
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/document_explorer/required_documentation_service.py
 """
-H31 (S119). Required-document status of a person, driven entirely by
-their JobPosition.required_document_types -- never a hardcoded list
-of positions or type codes.
+H31 (S119). Required-document status of a subject (person or
+machine), driven entirely by their assigned JobPosition.
+required_document_types -- never a hardcoded list of positions,
+domains or type codes.
 ---
-H31 (S119). Estado de los documentos obligatorios de una persona,
-según los tipos reales que exija su `JobPosition.required_document_types`
-EN ESTE MOMENTO -- nunca una lista de puestos o de códigos de tipo
-escrita en el código. Decisión de Miguel Ángel, verbatim: "no se puede
-hardcodear nada, ni los grupos que hay, ni los documentos [...] no
-sabemos qué grupos va a haber."
+H31 (S119). Estado de los documentos obligatorios de un sujeto
+(persona o máquina), según los tipos reales que exija el requisito de
+documentación que tenga asignado EN ESTE MOMENTO -- nunca una lista de
+puestos, dominios o códigos de tipo escrita en el código. Decisión de
+Miguel Ángel, verbatim: "no se puede hardcodear nada, ni los grupos
+que hay, ni los documentos [...] no sabemos qué grupos va a haber."
 
 Origen -- incidente real S119: el aviso de "vigente caducada" se había
 generalizado a CUALQUIER documento con `tracks_expiry=True` que la
@@ -21,8 +22,17 @@ una persona que es administrativa [...] de que tiene caducado el CAP
 [...] tenemos grupos hechos de requisitos documentales para avisar de
 unos requisitos de documentación. Tenemos que ceñirnos a eso."
 
-Regla, para cada tipo del requisito del puesto (nunca otro documento
-que la persona tenga, exija o no su puesto):
+AMPLIADO S119: "los requisitos documentales no son ni para personas ni
+para máquinas [...] la gestión de requisitos documentales es global
+[...] ese requisito se asigna a una máquina, a una dependencia o a una
+persona [...] no tenemos que tener un arreglo para máquinas y un
+arreglo para personas." Un único catálogo (`JobPosition`), asignado
+por `PersonIdentity.job_position` o por `MachineAsset.
+document_requirement` -- esta función sirve a los dos sujetos con el
+mismo cálculo, sin ninguna rama por dominio.
+
+Regla, para cada tipo del requisito asignado (nunca otro documento que
+el sujeto tenga, exija o no su requisito):
 - Si no existe ningún documento vivo de ese tipo -> falta.
 - Si existe, se mira el MÁS MODERNO (por caducidad si la tiene, si no
   por emisión) -- deliberadamente sin pasar por `is_current()`, que
@@ -43,32 +53,37 @@ BUCKET = "cgs_grupo_alvarez"
 IDENTITY_CODES = ("DNI", "NIE")
 
 
-def resolve_required_document_status(person):
+def resolve_required_document_status(subject):
     """
-    Return (missing_by_family, expired_by_family) for this person.
+    Return (missing_by_family, expired_by_family) for this subject.
     ---
     Devuelve (faltantes_por_familia, caducados_por_familia) -- dicts
     `family_code -> [DocumentTypeCatalog, ...]` (faltantes) y
     `family_code -> [str label, ...]` (caducados), listos para el
-    mismo contrato de plantilla que ya usan las fichas. Sin puesto
-    asignado, los dos salen vacíos -- ningún tipo es obligatorio.
+    mismo contrato de plantilla que ya usan las fichas. `subject` es
+    una `PersonIdentity` (usa `job_position`) o un `MachineAsset` (usa
+    `document_requirement`) -- ambos FK al mismo catálogo
+    `JobPosition`. Sin ningún requisito asignado, los dos salen
+    vacíos -- ningún tipo es obligatorio.
     """
-    from document_explorer.models import DocumentIndexEntry, PersonIdentity
+    from document_explorer.models import DocumentIndexEntry
 
     missing_by_family = {}
     expired_by_family = {}
-    if not person.job_position_id:
+    requirement = (
+        getattr(subject, "job_position", None)
+        or getattr(subject, "document_requirement", None)
+    )
+    if requirement is None:
         return missing_by_family, expired_by_family
 
-    required_types = list(
-        person.job_position.required_document_types.all(),
-    )
+    required_types = list(requirement.required_document_types.all())
     if not required_types:
         return missing_by_family, expired_by_family
 
-    ct = ContentType.objects.get_for_model(PersonIdentity)
+    ct = ContentType.objects.get_for_model(type(subject))
     entries = DocumentIndexEntry.objects.filter(
-        bucket=BUCKET, domain_content_type=ct, domain_object_id=person.pk,
+        bucket=BUCKET, domain_content_type=ct, domain_object_id=subject.pk,
         entry_kind=DocumentIndexEntry.KIND_FILE,
         deleted_at__isnull=True, purged_at__isnull=True,
         document_type_id__in=[dt.pk for dt in required_types],

@@ -254,31 +254,39 @@ def _split_current_obsolete(entries):
     return current, obsolete
 
 
-def _attach_required_document_alerts(persons, content_type):
+def _attach_required_document_alerts(
+    objects, content_type, requirement_field="job_position",
+):
     """
-    H31 (S119). Alert flags for the Personal listing -- based ONLY on
-    each person's JobPosition.required_document_types, never on any
-    document type they happen to have. Replaces the old pair
+    H31 (S119). Alert flags for a listing (Personal or MachineAsset)
+    -- based ONLY on the subject's `JobPosition.required_document_
+    types` (via `requirement_field`, "job_position" or "document_
+    requirement" -- both FK to the SAME catálogo único), never on any
+    document type it happens to have. Replaces the old pair
     (`_attach_alert_flags` + `_attach_missing_required_alert`) for
-    Personal -- that pair alerted on ANY expired `tracks_expiry` type
-    the person had, required or not (Miguel Ángel, verbatim, incidente
-    real: "avisamos a una persona que es administrativa [...] de que
-    tiene cumplido el carnet de conducir o el CAP" -- documentos que su
-    puesto actual no exige en absoluto).
+    Personal, y el uso genérico de `_attach_alert_flags` para Centros
+    de Gasto/`MachineAsset` -- ambos alertaban de CUALQUIER tipo
+    caducado que el sujeto tuviera, exigido o no (Miguel Ángel,
+    verbatim, incidente real: "avisamos a una persona que es
+    administrativa [...] de que tiene cumplido el carnet de conducir o
+    el CAP" -- documentos que su puesto actual no exige en absoluto).
+
+    AMPLIADO S119: "los requisitos documentales no son ni para
+    personas ni para máquinas [...] la gestión es global" -- un único
+    catálogo (`JobPosition`), asignado por `job_position` en
+    `PersonIdentity` o por `document_requirement` en `MachineAsset`.
+    Esta función sirve a los dos con el mismo cálculo, parametrizando
+    solo el nombre del campo FK -- nunca dos implementaciones de la
+    misma regla.
 
     Same rule as `required_documentation_service.
     resolve_required_document_status` (nunca duplicar la decisión sin
     motivo, pero aquí en forma de lote -- una consulta para todos los
-    puestos de la página en vez de una por persona), incluida la
+    requisitos de la página en vez de uno por sujeto), incluida la
     correccion del mismo incidente: un tipo obligatorio cuyo único
     documento ya caducó cuenta como "caducado", nunca como "falta" --
     `is_current()` lo habría excluido de la competición por estar
     caducado y sin sustituto, ocultándolo como si no existiera.
-
-    `_attach_alert_flags` sigue intacta y en uso para Centros de
-    Gasto/`MachineAsset` (`fleet/views.py`) -- las máquinas no tienen
-    concepto de puesto, ese aviso genérico sigue siendo el correcto
-    ahí.
     """
     from datetime import date
 
@@ -286,31 +294,36 @@ def _attach_required_document_alerts(persons, content_type):
         IDENTITY_CODES,
     )
 
-    persons_by_position = {}
-    for obj in persons:
-        if obj.job_position_id:
-            persons_by_position.setdefault(obj.job_position_id, []).append(obj)
+    requirement_fk_id = requirement_field + "_id"
+    objects_by_requirement = {}
+    for obj in objects:
+        requirement_id = getattr(obj, requirement_fk_id, None)
+        if requirement_id:
+            objects_by_requirement.setdefault(
+                requirement_id, [],
+            ).append(obj)
         obj.has_alert = False
         obj.alert_labels = []
-    if not persons_by_position:
-        return persons
+    if not objects_by_requirement:
+        return objects
 
-    required_by_position = {
+    required_by_requirement = {
         jp.pk: list(jp.required_document_types.all())
         for jp in JobPosition.objects.filter(
-            pk__in=persons_by_position.keys(),
+            pk__in=objects_by_requirement.keys(),
         ).prefetch_related("required_document_types")
     }
-    all_person_ids = [
-        obj.pk for group in persons_by_position.values() for obj in group
+    all_object_ids = [
+        obj.pk
+        for group in objects_by_requirement.values() for obj in group
     ]
     all_type_ids = {
         dt.pk
-        for types in required_by_position.values() for dt in types
+        for types in required_by_requirement.values() for dt in types
     }
     rows = DocumentIndexEntry.objects.filter(
         bucket=BUCKET, domain_content_type=content_type,
-        domain_object_id__in=all_person_ids,
+        domain_object_id__in=all_object_ids,
         entry_kind=DocumentIndexEntry.KIND_FILE,
         deleted_at__isnull=True, purged_at__isnull=True,
         document_type_id__in=all_type_ids,
@@ -319,20 +332,20 @@ def _attach_required_document_alerts(persons, content_type):
         "document_type__label", "document_type__tracks_expiry",
         "issue_date", "expiry_date",
     )
-    docs_by_person = {}
+    docs_by_object = {}
     for (
-        person_id, type_id, code, label, tracks_expiry,
+        object_id, type_id, code, label, tracks_expiry,
         issue_date, expiry_date,
     ) in rows:
-        docs_by_person.setdefault(person_id, {}).setdefault(
+        docs_by_object.setdefault(object_id, {}).setdefault(
             type_id, [],
         ).append((code, label, tracks_expiry, issue_date, expiry_date))
 
     today = date.today()
-    for position_id, group in persons_by_position.items():
-        required_types = required_by_position.get(position_id, [])
+    for requirement_id, group in objects_by_requirement.items():
+        required_types = required_by_requirement.get(requirement_id, [])
         for obj in group:
-            docs_by_type = docs_by_person.get(obj.pk, {})
+            docs_by_type = docs_by_object.get(obj.pk, {})
             present_codes = {
                 doc[0] for docs in docs_by_type.values() for doc in docs
             }
@@ -355,76 +368,6 @@ def _attach_required_document_alerts(persons, content_type):
                     labels.append("Caducado: %s" % label)
             obj.has_alert = bool(labels)
             obj.alert_labels = sorted(labels)
-    return persons
-
-
-def _attach_alert_flags(objects, content_type):
-    """
-    H30 (S50) -- limitacion real de GenericForeignKey sin
-    GenericRelation inversa: se calcula aparte y se adjunta como
-    atributo. Marca `obj.
-    has_alert = True` cuando el sujeto tiene AL MENOS un documento
-    vigente de un tipo `tracks_expiry=True` con una fecha de caducidad
-    real ya pasada -- para la columna de alerta del listado (Centros
-    de Gasto/Personal). Solo sobre la pagina visible, nunca sobre el
-    listado completo.
-
-    CORREGIDO EN H31 (S100), confirmado explícitamente por Miguel
-    Ángel: antes también alertaba cuando `expiry_date` estaba VACÍO,
-    pensado para maquinaria (ITV, seguro -- si falta la fecha,
-    probablemente no se ha leído bien y hay que revisarlo). Pero
-    muchos tipos reales de PERSONAL con `tracks_expiry=True` (ALTA,
-    MOD_145, IDC...) no tienen ninguna fecha de caducidad que imprimir
-    -- son documentos administrativos de un solo uso, su vigencia se
-    decide por `issue_date` (ver `document_management.
-    vigencia_service`), nunca por caducidad. Con la regla vieja,
-    salían en rojo SIEMPRE, estuvieran bien o mal. Ahora solo alerta
-    una caducidad real ya pasada -- un tipo sin fecha nunca alerta por
-    sí solo, sea PERSONAL o maquinaria.
-
-    AMPLIADO H31 (S109), punto 3: además de `has_alert`, adjunta
-    `obj.alert_labels` -- lista de labels de `DocumentTypeCatalog`
-    (uno por tipo distinto, sin duplicar) que disparan la alerta de
-    ESE sujeto concreto -- Miguel Ángel: "cuando se pasa el ratón por
-    encima, un globo indicando qué problema tiene". Antes el tooltip
-    era genérico ("Tiene documentación sin fecha vigente") y no decía
-    cuál. Mismo query base, solo se añade `document_type__label` al
-    `values_list` -- sin segunda consulta.
-
-    H31 (S119): dejó de usarse para el listado de Personal (que ya
-    tiene su propio criterio, ceñido a los requisitos del puesto --
-    ver `_attach_required_document_alerts`). Sigue siendo la correcta
-    para Centros de Gasto/`MachineAsset` (`fleet/views.py`), que no
-    tiene concepto de puesto ni de documentación "obligatoria".
-    """
-    from datetime import date
-
-    today = date.today()
-    pks = [obj.pk for obj in objects]
-    alert_rows = (
-        DocumentIndexEntry.objects.filter(
-            bucket=BUCKET, domain_content_type=content_type,
-            domain_object_id__in=pks, entry_kind=DocumentIndexEntry.KIND_FILE,
-            deleted_at__isnull=True, purged_at__isnull=True,
-            is_obsolete=False, document_type__tracks_expiry=True,
-            expiry_date__isnull=False, expiry_date__lt=today,
-        ).values_list("domain_object_id", "document_type__label").distinct()
-    )
-    alert_labels_by_pk = {}
-    for object_id, label in alert_rows:
-        alert_labels_by_pk.setdefault(object_id, []).append(label)
-    for obj in objects:
-        # H31 (S109): cada elemento se autodescribe ("Caducado: X") en
-        # vez de depender de un prefijo fijo en la plantilla -- ver
-        # _attach_missing_required_alert, que añade elementos propios
-        # ("Falta: Y") a esta misma lista para Personal, y ambos deben
-        # convivir sin ambigüedad en el mismo tooltip.
-        labels = [
-            "Caducado: %s" % label
-            for label in sorted(alert_labels_by_pk.get(obj.pk, []))
-        ]
-        obj.has_alert = bool(labels)
-        obj.alert_labels = labels
     return objects
 
 
@@ -656,16 +599,19 @@ class MachineDetailView(CompanyUserRequiredMixin, View):
             domain__in=machine_domains, is_active=True,
         ).exclude(code__in=present_type_codes).order_by("label"):
             missing_types_by_family.setdefault(dt.family, []).append(dt)
-        _attention_labels_by_family = {}
-        for entry in current:
-            if entry.needs_attention:
-                _attention_labels_by_family.setdefault(
-                    entry.document_type.family, set(),
-                ).add(entry.document_type.label)
-        attention_types_by_family = {
-            family: sorted(labels)
-            for family, labels in _attention_labels_by_family.items()
-        }
+        # H30 (S119): "Falta" y "Caducado" del triángulo por familia
+        # salen SOLO del requisito de documentación de la máquina
+        # (MachineAsset.document_requirement, mismo catálogo único
+        # JobPosition que Personal) -- ver resolve_required_document_
+        # status. Antes "Caducado" salía de CUALQUIER documento vigente
+        # con needs_attention, tuviera la máquina requisito o no; con
+        # 0 máquinas con requisito asignado hoy, el aviso de "vigente
+        # caducada" en la cabecera (expired_current_documents, más
+        # abajo, sin cambios) sigue siendo la señal general -- este
+        # triángulo por familia es la señal ceñida al requisito.
+        missing_required_types_by_family, attention_types_by_family = (
+            resolve_required_document_status(machine)
+        )
         # H30 (S119), punto 4: aviso en rojo en la cabecera de
         # Documentación con cada vigente de caducidad ya pasada (la
         # "vigente caducada" del criterio de vigencia de máquinas, S119
@@ -705,6 +651,9 @@ class MachineDetailView(CompanyUserRequiredMixin, View):
             "machine": machine, "families": families, "avatar": avatar,
             "untyped_documents": untyped_documents,
             "missing_types_by_family": missing_types_by_family,
+            "missing_required_types_by_family": (
+                missing_required_types_by_family
+            ),
             "attention_types_by_family": attention_types_by_family,
             "expired_current_documents": expired_current_documents,
             "has_expired_documents": bool(expired_current_documents),

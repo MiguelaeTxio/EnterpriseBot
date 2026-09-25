@@ -153,10 +153,10 @@ cuya caducidad ya ha pasado (calculado en MachineDetailView).
         <h2 class="accordion-header">
             <button class="accordion-button {% if not forloop.first %}collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#collapseMachineFam{{ forloop.counter }}">
                 {{ fam.label }} <span class="badge bg-primary ms-2">{{ fam.documents|length }}</span>
-                {% with fam_attention=attention_types_by_family|get_item:fam.code %}
-                {% if fam_attention %}
+                {% with fam_missing=missing_required_types_by_family|get_item:fam.code fam_attention=attention_types_by_family|get_item:fam.code %}
+                {% if fam_missing or fam_attention %}
                 <i class="bi bi-exclamation-triangle-fill text-danger ms-2"
-                   title="Caducado: {{ fam_attention|join:", " }}"></i>
+                   title="{% if fam_missing %}Falta: {{ fam_missing|join:", " }}. {% endif %}{% if fam_attention %}Caducado: {{ fam_attention|join:", " }}{% endif %}"></i>
                 {% endif %}
                 {% endwith %}
             </button>
