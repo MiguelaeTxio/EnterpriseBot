@@ -392,12 +392,11 @@ def _attach_required_document_alerts(
             cards_by_object.setdefault(
                 card.domain_object_id, [],
             ).append(card)
-        latest_card_ids = [
-            latest_driving_card(cards).pk
-            for cards in cards_by_object.values()
+        all_card_ids = [
+            card.pk for cards in cards_by_object.values() for card in cards
         ]
         for grant in DrivingLicenceGrant.objects.filter(
-            entry_id__in=latest_card_ids,
+            entry_id__in=all_card_ids,
         ).select_related("category"):
             grants_by_card.setdefault(grant.entry_id, []).append(grant)
 
@@ -440,7 +439,10 @@ def _attach_required_document_alerts(
                         ),
                     )
             if required_categories:
-                card = latest_driving_card(cards_by_object.get(obj.pk, []))
+                card = latest_driving_card(
+                    cards_by_object.get(obj.pk, []),
+                    frozenset(grants_by_card),
+                )
                 grants = grants_by_card.get(card.pk, []) if card else []
                 category_missing, category_expired = (
                     evaluate_driving_categories(

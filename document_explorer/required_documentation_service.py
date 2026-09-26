@@ -95,20 +95,30 @@ def get_requirement(subject):
     )
 
 
-def latest_driving_card(cards):
+def latest_driving_card(cards, card_ids_with_grants=frozenset()):
     """
     Return the most recent driving licence card entry, or None.
     ---
     H30 (S120). Carné más reciente de una lista de entradas
     `CARNET_CONDUCIR` -- mismo criterio que el resto del servicio
     (caducidad si la tiene, si no emisión), desempate por pk. Las
-    clases vigentes se leen SIEMPRE de este carné, nunca mezclando
+    clases vigentes se leen SIEMPRE de un único carné, nunca mezclando
     carnés distintos (decisión S120).
+
+    Se elige entre los carnés CON matriz registrada
+    (`card_ids_with_grants`): anverso y reverso vienen a menudo en
+    archivos separados y solo el reverso lleva las clases -- un anverso
+    más reciente nunca debe tapar la matriz de su propio reverso. Solo
+    si ningún carné tiene matriz se devuelve el más reciente de todos
+    (para el aviso "clases del carné sin registrar").
     """
     if not cards:
         return None
+    with_grants = [
+        entry for entry in cards if entry.pk in card_ids_with_grants
+    ]
     return max(
-        cards,
+        with_grants or cards,
         key=lambda entry: (
             entry.expiry_date or entry.issue_date or date.min, entry.pk,
         ),
@@ -227,13 +237,16 @@ def resolve_required_document_status(subject):
             deleted_at__isnull=True, purged_at__isnull=True,
             document_type__code=DRIVING_CARD_CODE,
         ))
-        card = latest_driving_card(cards)
-        grants = (
-            list(DrivingLicenceGrant.objects.filter(
-                entry=card,
-            ).select_related("category"))
-            if card is not None else []
+        all_grants = list(DrivingLicenceGrant.objects.filter(
+            entry__in=cards,
+        ).select_related("category"))
+        card = latest_driving_card(
+            cards, frozenset(grant.entry_id for grant in all_grants),
         )
+        grants = [
+            grant for grant in all_grants
+            if card is not None and grant.entry_id == card.pk
+        ]
         category_missing, category_expired = evaluate_driving_categories(
             required_categories, card, grants, today,
         )
