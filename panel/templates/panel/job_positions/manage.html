@@ -60,7 +60,7 @@ botón aparte para lo mismo sobraba.
 
     <div class="d-flex align-items-center justify-content-between mb-3">
         <p class="text-muted small mb-0">
-            Un requisito de documentación guarda qué tipos documentales son OBLIGATORIOS para quien lo tiene asignado -- disparan el aviso de documento faltante y de documento caducado, tanto en la ficha de una persona como en la de una máquina. Asígnalo desde la propia ficha, o en lote desde el listado de Personal o de Centros de Gasto.
+            Un requisito de documentación guarda qué tipos documentales (y qué clases del permiso de conducción) son OBLIGATORIOS para quien lo tiene asignado -- disparan el aviso de documento faltante y de documento caducado, tanto en la ficha de una persona como en la de una máquina. Asígnalo desde la propia ficha, o en lote desde el listado de Personal o de Centros de Gasto.
         </p>
     </div>
 
@@ -73,13 +73,14 @@ botón aparte para lo mismo sobraba.
                     {% for position in positions %}
                     <tr id="positionRow{{ position.pk }}"
                         data-name="{{ position.name|escapejs }}"
-                        data-type-ids="{% for dt in position.required_document_types.all %}{{ dt.pk }}{% if not forloop.last %},{% endif %}{% endfor %}">
+                        data-type-ids="{% for dt in position.required_document_types.all %}{{ dt.pk }}{% if not forloop.last %},{% endif %}{% endfor %}"
+                        data-category-ids="{% for cat in position.required_driving_categories.all %}{{ cat.pk }}{% if not forloop.last %},{% endif %}{% endfor %}">
                         <td>
                             <a href="#" onclick="loadPositionIntoForm({{ position.pk }}); return false;">{{ position.name }}</a>
                         </td>
                         <td class="small text-muted">
-                            {% for dt in position.required_document_types.all %}{{ dt.label }}{% if not forloop.last %}, {% endif %}{% endfor %}
-                            {% if not position.required_document_types.all %}<span class="text-muted">Sin perfilar todavía</span>{% endif %}
+                            {% for dt in position.required_document_types.all %}{{ dt.label }}{% if not forloop.last %}, {% endif %}{% endfor %}{% if position.required_document_types.all and position.required_driving_categories.all %}, {% endif %}{% for cat in position.required_driving_categories.all %}Permiso {{ cat.code }}{% if not forloop.last %}, {% endif %}{% endfor %}
+                            {% if not position.required_document_types.all and not position.required_driving_categories.all %}<span class="text-muted">Sin perfilar todavía</span>{% endif %}
                         </td>
                         <td class="text-end">
                             <button type="button" class="btn btn-sm btn-outline-danger" onclick="deletePosition({{ position.pk }})">Eliminar</button>
@@ -115,6 +116,26 @@ botón aparte para lo mismo sobraba.
                     quedan fuera del scroll, siempre visibles.
                     {% endcomment %}
                     <div style="max-height: 55vh; overflow-y: auto; border: 1px solid #dee2e6; border-radius: 0.25rem; padding: 0.5rem;">
+                    {% comment %}
+                    H30 (S120). Clases concretas del permiso de
+                    conducción -- Miguel Ángel: "esto en realidad es una
+                    matriz". Cada clase marcada se comprueba contra la
+                    matriz del carné vigente de quien tenga asignado el
+                    requisito. Con alguna clase marcada, "Carnet de
+                    conducir" (si también se marca) solo avisa si falta
+                    el carné, nunca por caducidad.
+                    {% endcomment %}
+                    <div class="mb-2 p-2 rounded border">
+                        <div class="fw-bold small mb-1">Permiso de conducción -- clases exigidas</div>
+                        <div class="d-flex flex-wrap gap-3">
+                            {% for cat in driving_categories %}
+                            <div class="form-check" title="{{ cat.label }}">
+                                <input class="form-check-input position-category-checkbox" type="checkbox" value="{{ cat.pk }}" id="pcCheck{{ cat.pk }}" data-label="Permiso {{ cat.code|escapejs }}" onchange="refreshDraftPreview()">
+                                <label class="form-check-label small" for="pcCheck{{ cat.pk }}">{{ cat.code }}</label>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
                     {% for fam in families %}
                     <div class="mb-2 p-2 rounded" style="background-color: {{ fam.color }};">
                         <div class="fw-bold small mb-1">{{ fam.label }}</div>
@@ -184,10 +205,15 @@ function getCheckedTypeIds() {
     return Array.from(document.querySelectorAll('.position-type-checkbox:checked')).map(el => el.value);
 }
 
+// H30 (S120): clases de permiso de conduccion marcadas.
+function getCheckedCategoryIds() {
+    return Array.from(document.querySelectorAll('.position-category-checkbox:checked')).map(el => el.value);
+}
+
 // --- Visor en vivo -----------------------------------------------------
 
 function refreshDraftPreview() {
-    const checked = document.querySelectorAll('.position-type-checkbox:checked');
+    const checked = document.querySelectorAll('.position-category-checkbox:checked, .position-type-checkbox:checked');
     const list = document.getElementById('draftPreviewList');
     const lines = Array.from(checked).map(el => `<li>${el.dataset.label}</li>`);
     list.innerHTML = lines.length
@@ -213,6 +239,7 @@ function currentSnapshot() {
         pk: document.getElementById('positionPk').value,
         name: document.getElementById('positionName').value.trim(),
         ids: getCheckedTypeIds().slice().sort(),
+        categoryIds: getCheckedCategoryIds().slice().sort(),
     });
 }
 
@@ -236,6 +263,7 @@ function loadPositionIntoForm(pk) {
     if (!row) return;
     const name = row.dataset.name || '';
     const ids = (row.dataset.typeIds || '').split(',').filter(Boolean);
+    const categoryIds = (row.dataset.categoryIds || '').split(',').filter(Boolean);
 
     document.getElementById('positionPk').value = pk;
     document.getElementById('positionName').value = name;
@@ -243,6 +271,11 @@ function loadPositionIntoForm(pk) {
     document.querySelectorAll('.position-type-checkbox').forEach(el => { el.checked = false; });
     ids.forEach(id => {
         const el = document.getElementById('ptCheck' + id);
+        if (el) el.checked = true;
+    });
+    document.querySelectorAll('.position-category-checkbox').forEach(el => { el.checked = false; });
+    categoryIds.forEach(id => {
+        const el = document.getElementById('pcCheck' + id);
         if (el) el.checked = true;
     });
     document.getElementById('formTitle').textContent = 'Editando: ' + name;
@@ -255,7 +288,7 @@ function resetForm() {
     document.getElementById('positionPk').value = '';
     document.getElementById('positionName').value = '';
     loadedName = null;
-    document.querySelectorAll('.position-type-checkbox').forEach(el => { el.checked = false; });
+    document.querySelectorAll('.position-type-checkbox, .position-category-checkbox').forEach(el => { el.checked = false; });
     document.getElementById('formTitle').textContent = 'Nuevo requisito';
     document.getElementById('cancelEditBtn').classList.add('d-none');
     document.getElementById('positionFormResult').innerHTML = '';
@@ -268,12 +301,15 @@ function showPositionToast(message) {
     new bootstrap.Toast(document.getElementById('positionToast')).show();
 }
 
-function upsertPositionRow(pk, name, typeIds) {
-    const typeLabels = typeIds.map(id => document.getElementById('ptCheck' + id)?.dataset.label).filter(Boolean);
+function upsertPositionRow(pk, name, typeIds, categoryIds) {
+    const typeLabels = typeIds.map(id => document.getElementById('ptCheck' + id)?.dataset.label)
+        .concat(categoryIds.map(id => document.getElementById('pcCheck' + id)?.dataset.label))
+        .filter(Boolean);
     let row = document.getElementById('positionRow' + pk);
     if (row) {
         row.dataset.name = name;
         row.dataset.typeIds = typeIds.join(',');
+        row.dataset.categoryIds = categoryIds.join(',');
         row.children[0].textContent = '';
         const link = document.createElement('a');
         link.href = '#';
@@ -288,6 +324,7 @@ function upsertPositionRow(pk, name, typeIds) {
         row.id = 'positionRow' + pk;
         row.dataset.name = name;
         row.dataset.typeIds = typeIds.join(',');
+        row.dataset.categoryIds = categoryIds.join(',');
         row.innerHTML = `
             <td></td>
             <td class="small text-muted"></td>
@@ -312,6 +349,7 @@ function savePosition() {
         ? document.getElementById('positionPk').value
         : '';
     const typeIds = getCheckedTypeIds();
+    const categoryIds = getCheckedCategoryIds();
     const resultDiv = document.getElementById('positionFormResult');
 
     if (!name) {
@@ -322,6 +360,7 @@ function savePosition() {
     const formData = new FormData();
     formData.append('name', name);
     typeIds.forEach(id => formData.append('document_type_ids', id));
+    categoryIds.forEach(id => formData.append('driving_category_ids', id));
 
     const url = pk
         ? `/panel/documentacion/puestos/${pk}/guardar/`
@@ -337,7 +376,7 @@ function savePosition() {
             loadedName = data.name;
             document.getElementById('formTitle').textContent = 'Editando: ' + data.name;
             document.getElementById('cancelEditBtn').classList.remove('d-none');
-            upsertPositionRow(data.id, data.name, typeIds);
+            upsertPositionRow(data.id, data.name, typeIds, categoryIds);
             takeSnapshot();
             showPositionToast('Requisito guardado.');
         } else {

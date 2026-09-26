@@ -680,6 +680,41 @@ vez de una lista única sin estructura.
                                         onclick="deleteDocument({{ entry.pk }}, this)">Eliminar</button>
                             </td>
                         </tr>
+                        {% if entry.is_driving_card %}
+                        {% comment %}
+                        H30 (S120). Matriz de clases del carné de conducir
+                        -- columnas 9 (clase), 10 (primera expedición), 11
+                        (caducidad) y 12 (códigos) del reverso. En rojo
+                        solo la clase caducada que exige el requisito de
+                        la persona (is_required_expired, calculado en la
+                        vista). Aprobado por Miguel Ángel en S120.
+                        {% endcomment %}
+                        <tr class="driving-grants-row">
+                            <td></td>
+                            <td colspan="3" class="pt-0">
+                                {% if entry.driving_grants %}
+                                <table class="table table-sm table-bordered mb-1 small">
+                                    <thead class="table-light"><tr><th>Clase</th><th>Primera expedición</th><th>Caducidad</th><th>Códigos</th></tr></thead>
+                                    <tbody>
+                                        {% for grant in entry.driving_grants %}
+                                        <tr{% if grant.is_required_expired %} class="table-danger"{% endif %}>
+                                            <td class="fw-bold" title="{{ grant.category.label }}">{{ grant.category.code }}</td>
+                                            <td>{{ grant.first_issue_date|default:"—" }}</td>
+                                            <td>
+                                                {% if grant.is_required_expired %}<i class="bi bi-exclamation-triangle-fill text-danger me-1" title="Caducada y exigida por su requisito de documentación"></i>{% endif %}
+                                                {{ grant.expiry_date|default:"—" }}
+                                            </td>
+                                            <td>{{ grant.codes|default:"—" }}</td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                                {% else %}
+                                <span class="text-muted small">Clases del carné sin registrar todavía.</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endif %}
                         {% empty %}
                         <tr><td colspan="4" class="text-muted small">Sin documentos vigentes todavía.</td></tr>
                         {% endfor %}

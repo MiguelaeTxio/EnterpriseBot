@@ -47,15 +47,17 @@ from document_explorer import naming_service, personal_intake_service, postal_co
 from document_explorer.index_writer import ensure_folder_chain
 from document_explorer.models import (
     CompanyFiscalProfile, DocumentAcknowledgment, DocumentIndexEntry,
-    DocumentTypeCatalog, EpiDelivery, EpiDeliveryBatchTemplate,
-    EpiItemCatalog, EpiReview, JobPosition, PersonalDossierTemplate,
-    PersonGroupTemplate, PersonIdentity, path_digest,
+    DocumentTypeCatalog, DrivingLicenceCategory, EpiDelivery,
+    EpiDeliveryBatchTemplate, EpiItemCatalog, EpiReview, JobPosition,
+    PersonalDossierTemplate, PersonGroupTemplate, PersonIdentity,
+    path_digest,
 )
 from document_explorer.epi_delivery_document_service import (
     build_epi_delivery_pdf_bytes, resolve_company_fiscal_profile,
 )
 from document_explorer.required_documentation_service import (
-    get_required_type_ids, resolve_required_document_status,
+    attach_driving_grants, get_required_type_ids,
+    resolve_required_document_status,
 )
 from document_explorer.vigencia_selector import current_fn_for
 from document_explorer.subject_upload_service import (
@@ -304,8 +306,12 @@ def _attach_required_document_alerts(
     """
     from datetime import date
 
+    from document_explorer.models import DrivingLicenceGrant
     from document_explorer.required_documentation_service import (
+        DRIVING_CARD_CODE,
         IDENTITY_CODES,
+        evaluate_driving_categories,
+        latest_driving_card,
     )
 
     requirement_fk_id = requirement_field + "_id"
@@ -321,11 +327,20 @@ def _attach_required_document_alerts(
     if not objects_by_requirement:
         return objects
 
+    requirements = list(JobPosition.objects.filter(
+        pk__in=objects_by_requirement.keys(),
+    ).prefetch_related(
+        "required_document_types", "required_driving_categories",
+    ))
     required_by_requirement = {
         jp.pk: list(jp.required_document_types.all())
-        for jp in JobPosition.objects.filter(
-            pk__in=objects_by_requirement.keys(),
-        ).prefetch_related("required_document_types")
+        for jp in requirements
+    }
+    # H30 (S120). Clases de permiso exigidas por requisito -- mismo
+    # cálculo que la ficha (`evaluate_driving_categories`), en lote.
+    categories_by_requirement = {
+        jp.pk: list(jp.required_driving_categories.all())
+        for jp in requirements
     }
     all_object_ids = [
         obj.pk
@@ -356,8 +371,41 @@ def _attach_required_document_alerts(
         ).append((code, label, tracks_expiry, issue_date, expiry_date))
 
     today = date.today()
+    # H30 (S120). Carnés y clases solo de los sujetos cuyo requisito
+    # exige alguna clase -- dos consultas para toda la página.
+    category_object_ids = [
+        obj.pk
+        for requirement_id, group in objects_by_requirement.items()
+        if categories_by_requirement.get(requirement_id)
+        for obj in group
+    ]
+    cards_by_object = {}
+    grants_by_card = {}
+    if category_object_ids:
+        for card in DocumentIndexEntry.objects.filter(
+            bucket=BUCKET, domain_content_type=content_type,
+            domain_object_id__in=category_object_ids,
+            entry_kind=DocumentIndexEntry.KIND_FILE,
+            deleted_at__isnull=True, purged_at__isnull=True,
+            document_type__code=DRIVING_CARD_CODE,
+        ).only("pk", "domain_object_id", "issue_date", "expiry_date"):
+            cards_by_object.setdefault(
+                card.domain_object_id, [],
+            ).append(card)
+        latest_card_ids = [
+            latest_driving_card(cards).pk
+            for cards in cards_by_object.values()
+        ]
+        for grant in DrivingLicenceGrant.objects.filter(
+            entry_id__in=latest_card_ids,
+        ).select_related("category"):
+            grants_by_card.setdefault(grant.entry_id, []).append(grant)
+
     for requirement_id, group in objects_by_requirement.items():
         required_types = required_by_requirement.get(requirement_id, [])
+        required_categories = categories_by_requirement.get(
+            requirement_id, [],
+        )
         for obj in group:
             docs_by_type = docs_by_object.get(obj.pk, {})
             present_codes = {
@@ -378,12 +426,33 @@ def _attach_required_document_alerts(
                 _code, label, tracks_expiry, issue_date, expiry_date = max(
                     docs, key=lambda doc: doc[4] or doc[3] or date.min,
                 )
+                # S120 (decisión 1): con clases exigidas, el carné solo
+                # cuenta para "falta" -- la caducidad es de las clases.
+                if (
+                    document_type.code == DRIVING_CARD_CODE
+                    and required_categories
+                ):
+                    continue
                 if tracks_expiry and expiry_date and expiry_date < today:
                     labels.append(
                         "Caducado: %s — caducó el %s" % (
                             label, expiry_date.strftime("%d/%m/%Y"),
                         ),
                     )
+            if required_categories:
+                card = latest_driving_card(cards_by_object.get(obj.pk, []))
+                grants = grants_by_card.get(card.pk, []) if card else []
+                category_missing, category_expired = (
+                    evaluate_driving_categories(
+                        required_categories, card, grants, today,
+                    )
+                )
+                labels.extend(
+                    "Falta: %s" % item.label for item in category_missing
+                )
+                labels.extend(
+                    "Caducado: %s" % text for text in category_expired
+                )
             obj.has_alert = bool(labels)
             obj.alert_labels = sorted(labels)
     return objects
@@ -1441,6 +1510,10 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
         current, obsolete = _split_current_obsolete(
             entries, required_type_ids,
         )
+        # H30 (S120). Matriz de clases del carné de conducir (columnas
+        # 9-12 del reverso) colgada de cada carné vigente, para la
+        # tabla de clases de su fila -- ver attach_driving_grants.
+        attach_driving_grants(current, person)
         # H31 (S119): "Falta"/"Caducado" del puesto ya NO se calculan
         # aqui a partir de `current` (cualquier documento vigente con
         # `needs_attention`) -- ver `resolve_required_document_status`
@@ -2775,7 +2848,7 @@ class JobPositionManageView(CompanyUserRequiredMixin, View):
 
     def get(self, request):
         positions = JobPosition.objects.prefetch_related(
-            "required_document_types",
+            "required_document_types", "required_driving_categories",
         ).order_by("name")
 
         types_by_family = {}
@@ -2804,6 +2877,9 @@ class JobPositionManageView(CompanyUserRequiredMixin, View):
         return render(request, "panel/job_positions/manage.html", {
             "positions": positions,
             "families": ordered_families,
+            # H30 (S120). Las 14 clases del catálogo, para exigir
+            # clases concretas del carné en un requisito.
+            "driving_categories": DrivingLicenceCategory.objects.all(),
         })
 
 
@@ -2843,6 +2919,9 @@ class JobPositionSaveView(CompanyUserRequiredMixin, View):
             )
         type_ids = request.POST.getlist("document_type_ids")
         position.required_document_types.set(type_ids)
+        # H30 (S120). Clases de permiso de conducción exigidas.
+        category_ids = request.POST.getlist("driving_category_ids")
+        position.required_driving_categories.set(category_ids)
 
         return JsonResponse({"ok": True, "id": position.pk, "name": position.name})
 

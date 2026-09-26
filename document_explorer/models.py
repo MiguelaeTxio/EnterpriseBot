@@ -2768,6 +2768,18 @@ class JobPosition(models.Model):
             "crea y quien asigna el requisito, nunca el código."
         ),
     )
+    required_driving_categories = models.ManyToManyField(
+        "DrivingLicenceCategory",
+        blank=True,
+        related_name="job_positions",
+        verbose_name="Clases de permiso de conducción exigidas",
+        help_text=(
+            "H30 (S120). Clases concretas del carné (B, C, CE...) que "
+            "exige este requisito. Cada una se comprueba contra la "
+            "matriz del carné vigente del sujeto: si no la tiene, "
+            "falta; si su fecha ya pasó, caducada."
+        ),
+    )
     created_by = models.ForeignKey(
         "ivr_config.CompanyUser",
         null=True,
@@ -2794,3 +2806,120 @@ class JobPosition(models.Model):
         return self.name
 
 
+
+
+class DrivingLicenceCategory(models.Model):
+    """
+    H30 (S120). Closed catalogue of Spanish driving licence classes
+    (art. 4.2 RGC, RD 818/2009 as amended by RD 971/2020).
+    ---
+    H30 (S120). Catálogo cerrado de las 14 clases vigentes de permiso
+    de conducción en España (art. 4.2 del Reglamento General de
+    Conductores, redacción vigente tras el RD 971/2020): AM, A1, A2, A,
+    B, BE, C1, C1E, C, CE, D1, D1E, D y DE. Sembrado por migración
+    (0147) -- datos en base de datos, nunca una lista en el código.
+
+    Confirmado por Miguel Ángel en S120, punto 1 de la hoja de ruta:
+    (1) estas 14 clases son el catálogo completo; (2) los códigos 96 y
+    97 NO son clases, se guardan como códigos de su clase en
+    `DrivingLicenceGrant.codes`; (3) las clases del modelo de carné
+    anterior al RD 772/1997 (B1, B2, C1 hasta 16 t, C2, E) se
+    traducen a su clase actual equivalente al recolectar (DT 1ª del
+    RGC), nunca se guardan como clases propias. BTP ya no existe
+    (suprimido por el RD 1055/2015).
+    """
+
+    code = models.CharField(
+        max_length=4,
+        unique=True,
+        verbose_name="Clase",
+    )
+    label = models.CharField(
+        max_length=120,
+        verbose_name="Vehículos que autoriza",
+    )
+    display_order = models.PositiveSmallIntegerField(
+        default=0,
+        verbose_name="Orden",
+    )
+
+    class Meta:
+        verbose_name = "Clase de permiso de conducción"
+        verbose_name_plural = "Clases de permiso de conducción"
+        ordering = ["display_order"]
+
+    def __str__(self):
+        return self.code
+
+
+class DrivingLicenceGrant(models.Model):
+    """
+    H30 (S120). One class printed on one driving licence card: the
+    matrix rows of columns 9-12 of the card's reverse side.
+    ---
+    H30 (S120). Una clase impresa en UN carné de conducir concreto --
+    una fila de la matriz del reverso del carné: columna 9 (clase),
+    10 (fecha de primera expedición de esa clase), 11 (fecha de
+    caducidad de esa clase) y 12 (códigos armonizados, p. ej. 96 o
+    97). Cuelga del `DocumentIndexEntry` del carné (tipo
+    `CARNET_CONDUCIR`), no de la persona: al subir un carné renovado,
+    sus clases cuelgan del documento nuevo y la vigencia se lee
+    siempre del carné más reciente, nunca mezclando carnés.
+
+    Origen -- caso real `id=27899` (Alberto Javier Álvarez Díaz): el
+    carné guardaba una única `expiry_date` (la de las clases de
+    camión, 2023) mientras la clase B que exige su puesto caduca en
+    2028. Miguel Ángel, verbatim (S119): "esto en realidad es una
+    matriz."
+    """
+
+    entry = models.ForeignKey(
+        DocumentIndexEntry,
+        on_delete=models.CASCADE,
+        related_name="driving_licence_grants",
+        verbose_name="Carné de conducir",
+    )
+    category = models.ForeignKey(
+        DrivingLicenceCategory,
+        on_delete=models.PROTECT,
+        related_name="grants",
+        verbose_name="Clase",
+    )
+    first_issue_date = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name="Primera expedición (columna 10)",
+    )
+    expiry_date = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name="Caducidad (columna 11)",
+    )
+    codes = models.CharField(
+        max_length=100,
+        blank=True,
+        verbose_name="Códigos (columna 12)",
+        help_text="Códigos armonizados tal cual el carné, p. ej. 96 o 97.",
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Fecha de creación",
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name="Última edición",
+    )
+
+    class Meta:
+        verbose_name = "Clase de un carné de conducir"
+        verbose_name_plural = "Clases de carnés de conducir"
+        ordering = ["entry", "category__display_order"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=("entry", "category"),
+                name="unique_driving_grant_per_card_and_category",
+            ),
+        ]
+
+    def __str__(self):
+        return "%s (%s)" % (self.category.code, self.entry_id)
