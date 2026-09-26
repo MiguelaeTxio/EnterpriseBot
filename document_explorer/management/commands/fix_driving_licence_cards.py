@@ -38,6 +38,9 @@ from django.db import transaction
 from document_explorer.classification_service import (
     apply_personal_canonical_rename,
 )
+from document_explorer.management.commands.rename_personal_documents import (
+    FICTITIOUS_DATE,
+)
 from document_explorer.models import (
     DocumentIndexEntry,
     DocumentTypeCatalog,
@@ -179,8 +182,12 @@ class Command(BaseCommand):
             old_name = entry.name
             if apply_changes:
                 entry.refresh_from_db()
+            # Sin fecha real: la fecha ficticia fija de S98 (2021-01-01),
+            # solo dentro del nombre -- misma convención que
+            # rename_personal_documents.
             result = apply_personal_canonical_rename(
-                entry, apply_changes=apply_changes, reserved_names=reserved,
+                entry, fictitious_date=FICTITIOUS_DATE,
+                apply_changes=apply_changes, reserved_names=reserved,
             )
             new_name = result.get("new_name")
             if new_name is None:
