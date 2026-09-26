@@ -358,3 +358,47 @@ def attach_driving_grants(entries, subject):
         card.is_driving_card = True
         card.driving_grants = grants_by_card.get(card.pk, [])
     return entries
+
+
+def attach_subtype_documents(entries, current, obsolete):
+    """
+    Move subtype documents under their parent's current document.
+    ---
+    H30 (S120). Documentos de un SUBTIPO (`DocumentTypeCatalog.
+    parent_type`, p. ej. la autorización temporal de la DGT, subtipo
+    del permiso de conducción): se sacan de las listas `current` y
+    `obsolete` y se cuelgan de la entrada vigente MÁS RECIENTE del tipo
+    padre (`parent.subtype_documents`, del más nuevo al más viejo),
+    para pintarlos dentro de su fila. Si la persona no tiene ningún
+    documento vigente del padre, el documento del subtipo se queda
+    donde estaba -- nunca desaparece de la ficha. Devuelve
+    (current, obsolete) ya filtradas.
+    """
+    parents_by_type = {}
+    for entry in current:
+        if not entry.document_type_id:
+            continue
+        best = parents_by_type.get(entry.document_type_id)
+        key = (entry.expiry_date or entry.issue_date or date.min, entry.pk)
+        if best is None or key > (
+            best.expiry_date or best.issue_date or date.min, best.pk,
+        ):
+            parents_by_type[entry.document_type_id] = entry
+    moved = set()
+    for entry in sorted(entries, key=lambda item: item.pk, reverse=True):
+        document_type = entry.document_type
+        if document_type is None or not document_type.parent_type_id:
+            continue
+        parent = parents_by_type.get(document_type.parent_type_id)
+        if parent is None:
+            continue
+        if not hasattr(parent, "subtype_documents"):
+            parent.subtype_documents = []
+        parent.subtype_documents.append(entry)
+        moved.add(entry.pk)
+    if not moved:
+        return current, obsolete
+    return (
+        [entry for entry in current if entry.pk not in moved],
+        [entry for entry in obsolete if entry.pk not in moved],
+    )

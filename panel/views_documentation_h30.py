@@ -56,8 +56,8 @@ from document_explorer.epi_delivery_document_service import (
     build_epi_delivery_pdf_bytes, resolve_company_fiscal_profile,
 )
 from document_explorer.required_documentation_service import (
-    attach_driving_grants, get_required_type_ids,
-    resolve_required_document_status,
+    attach_driving_grants, attach_subtype_documents,
+    get_required_type_ids, resolve_required_document_status,
 )
 from document_explorer.vigencia_selector import current_fn_for
 from document_explorer.subject_upload_service import (
@@ -1516,6 +1516,12 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
         # 9-12 del reverso) colgada de cada carné vigente, para la
         # tabla de clases de su fila -- ver attach_driving_grants.
         attach_driving_grants(current, person)
+        # H30 (S120). Documentos de un subtipo (parent_type) dentro de
+        # la fila del documento vigente de su tipo padre, nunca como
+        # fila propia -- ver attach_subtype_documents.
+        current, obsolete = attach_subtype_documents(
+            entries, current, obsolete,
+        )
         # H31 (S119): "Falta"/"Caducado" del puesto ya NO se calculan
         # aqui a partir de `current` (cualquier documento vigente con
         # `needs_attention`) -- ver `resolve_required_document_status`

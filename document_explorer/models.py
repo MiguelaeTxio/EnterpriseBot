@@ -834,6 +834,26 @@ class DocumentTypeCatalog(models.Model):
             "incluir, precisamente porque son acumulables."
         ),
     )
+    parent_type = models.ForeignKey(
+        "self",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="subtypes",
+        verbose_name="Tipo padre (subtipo de)",
+        help_text=(
+            "H30 (S120). Si se rellena, este tipo es un SUBTIPO del "
+            "padre: un documento auxiliar que pertenece a él (p. ej. la "
+            "autorización temporal de la DGT pertenece al permiso de "
+            "conducción). En la ficha, sus documentos se pintan DENTRO "
+            "de la fila del documento vigente del padre, nunca como "
+            "fila propia; y como es un tipo distinto, nunca cuenta para "
+            "los avisos de falta/caducidad del padre. Vacío (defecto): "
+            "tipo normal. Decisión de Miguel Ángel (S120, opción 2): "
+            "concepto general, reutilizable para cualquier documento "
+            "auxiliar de otro tipo."
+        ),
+    )
     created_at = models.DateTimeField(
         auto_now_add=True,
         verbose_name="Fecha de alta",

@@ -715,6 +715,33 @@ vez de una lista única sin estructura.
                             </td>
                         </tr>
                         {% endif %}
+                        {% if entry.subtype_documents %}
+                        {% comment %}
+                        H30 (S120). Documentos de un SUBTIPO de este tipo
+                        (DocumentTypeCatalog.parent_type, p. ej. la
+                        autorización temporal de la DGT dentro del permiso
+                        de conducción) -- pertenecen a este documento, por
+                        eso van dentro de su fila y no como fila propia.
+                        Opción 2 de Miguel Ángel.
+                        {% endcomment %}
+                        <tr class="subtype-documents-row">
+                            <td></td>
+                            <td colspan="3" class="pt-0">
+                                {% for sub in entry.subtype_documents %}
+                                <div class="d-flex flex-wrap align-items-center gap-2 small border-start border-3 ps-2 mb-1">
+                                    <i class="bi bi-arrow-return-right text-muted"></i>
+                                    <span>{{ sub.document_type.label }}</span>
+                                    <span class="text-muted">{% if sub.expiry_date %}{{ sub.expiry_date }}{% elif sub.issue_date %}Emisión: {{ sub.issue_date }}{% endif %}</span>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="openDocumentViewer('{% url 'panel:documentation_document_view' pk=sub.pk %}')">Ver</button>
+                                    <button type="button" class="btn btn-sm btn-outline-warning"
+                                            onclick="openChangeTypeModal({{ sub.pk }}, '{{ sub.document_type.label|escapejs }}')">Tipo</button>
+                                    <button type="button" class="btn btn-sm btn-outline-danger"
+                                            onclick="deleteDocument({{ sub.pk }}, this)">Eliminar</button>
+                                </div>
+                                {% endfor %}
+                            </td>
+                        </tr>
+                        {% endif %}
                         {% empty %}
                         <tr><td colspan="4" class="text-muted small">Sin documentos vigentes todavía.</td></tr>
                         {% endfor %}
