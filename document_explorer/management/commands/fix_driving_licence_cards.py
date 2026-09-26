@@ -23,7 +23,7 @@ B. REALINEADO de nombres canónicos con
    con matriz, cuya `expiry_date` cambió a la caducidad más lejana de
    sus clases (decisión 2 de Miguel Ángel, S120).
 
---retype id:TIPO[,id:TIPO...]: decisiones humanas para los que el
+--retype id:TIPO[:AAAA-MM-DD][,...]: decisiones humanas para los que el
 criterio automático deja en revisión manual (mixtos y ajenos). Tienen
 prioridad sobre la nota de Gemini y quedan registradas en el log. S120:
 revisados uno a uno por el modelo sobre su imagen real (relevo
@@ -31,7 +31,11 @@ gcs_image) -- 36437 tacógrafo + tarjeta SS pegada -> TACOGRAFO;
 30598 prórroga DGT y 35322 justificante de la Junta ->
 SOLICITUD_ADMINISTRATIVA; 36710 hoja provisional DGT ->
 OTROS_DOCUMENTOS; 40077 y 40300 circular de permiso de conducción ->
-CIRCULAR_INFORMATIVA.
+CIRCULAR_INFORMATIVA (mismo tipo que las circulares firmadas que ya
+cuelgan de una persona). La fecha opcional corrige la `expiry_date` del
+documento en el mismo paso: 38195 (CAP vigente + tacógrafo caducado en
+un solo PDF), opción 1 de Miguel Ángel -> CAP con la caducidad de la
+CAP leída en la imagen (29/05/2026).
 
 DRY-RUN por defecto; --apply escribe. Log propio (com-standards
 0bis/0ter).
@@ -39,7 +43,7 @@ DRY-RUN por defecto; --apply escribe. Log propio (com-standards
 import json
 import re
 import unicodedata
-from datetime import datetime
+from datetime import date, datetime
 
 from django.contrib.contenttypes.models import ContentType
 from django.core.management.base import BaseCommand
@@ -133,11 +137,15 @@ class Command(BaseCommand):
     def _run(self, apply_changes, cache_path, retype_arg):
         with open(cache_path, encoding="utf-8") as handle:
             cache = json.load(handle)
-        overrides = {}
+        overrides, override_dates = {}, {}
         for item in retype_arg.split(","):
             if item.strip():
-                entry_id, code = item.strip().split(":")
-                overrides[int(entry_id)] = code.strip()
+                pieces = item.strip().split(":")
+                overrides[int(pieces[0])] = pieces[1].strip()
+                if len(pieces) > 2:
+                    override_dates[int(pieces[0])] = date.fromisoformat(
+                        pieces[2].strip(),
+                    )
         types = {
             catalog.code: catalog
             for catalog in DocumentTypeCatalog.objects.filter(
@@ -177,7 +185,11 @@ class Command(BaseCommand):
             notes = answer.get("notes", "")
             code = overrides.get(entry.id) or _target_code(notes)
             if entry.id in overrides:
-                self._log("DECISION HUMANA id=%d -> %s" % (entry.id, code))
+                self._log("DECISION HUMANA id=%d -> %s%s" % (
+                    entry.id, code,
+                    " (caducidad %s)" % override_dates[entry.id]
+                    if entry.id in override_dates else "",
+                ))
             if code is None:
                 manual.append((entry, notes))
                 continue
@@ -186,13 +198,18 @@ class Command(BaseCommand):
             if apply_changes:
                 with transaction.atomic():
                     DrivingLicenceGrant.objects.filter(entry=entry).delete()
+                    changes = {"document_type": types[code]}
+                    if entry.id in override_dates:
+                        changes["expiry_date"] = override_dates[entry.id]
                     DocumentIndexEntry.objects.filter(pk=entry.pk).update(
-                        document_type=types[code],
+                        **changes
                     )
             # En memoria también en dry-run: el nombre canónico del
             # bloque B se calcula ya con el tipo nuevo (nunca se guarda
             # en dry-run: apply_changes=False no escribe).
             entry.document_type = types[code]
+            if entry.id in override_dates:
+                entry.expiry_date = override_dates[entry.id]
         self._log("--- REVISION MANUAL (no se tocan) ---")
         for entry, notes in manual:
             self._log("    id=%d %s -- %s" % (entry.id, entry.name, notes))
