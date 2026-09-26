@@ -33,6 +33,15 @@ Cómo:
   clases (decisión 2 de Miguel Ángel, S120). Un carné sin reverso
   visible no se toca.
 
+RELECTURA (S120, incidente real): dos lecturas de confianza MEDIA
+salieron mal (años confundidos) en PDF que son fotos de móvil de poca
+resolución -- y eran justo los carnés más recientes de esas personas.
+--reread-ids vuelve a leer SOLO esos documentos renderizando cada
+página del PDF a --reread-dpi (220 por defecto, `fitz`, el mismo motor
+que ya usa el relevo en el servidor) y enviando las imágenes, y
+sustituye su respuesta en la caché. Renderizar no es OCR: coste de CPU
+despreciable para unos pocos documentos.
+
 DRY-RUN por defecto. Respuestas en un JSON de trabajo (--cache-file):
 el --apply las reutiliza sin volver a llamar a Gemini. Log propio,
 pantalla y archivo a la vez (com-standards 0bis), progreso con ETA
@@ -172,6 +181,11 @@ class Command(BaseCommand):
             "--log-file", required=True,
             help="Log propio (pantalla y archivo a la vez, 0bis).",
         )
+        parser.add_argument(
+            "--reread-ids", default="",
+            help="Ids separados por comas a releer renderizados.",
+        )
+        parser.add_argument("--reread-dpi", type=int, default=220)
 
     def _log(self, message):
         self._log_plain(
@@ -190,18 +204,37 @@ class Command(BaseCommand):
         finally:
             self._log_handle.close()
 
-    def _ask_gemini(self, client, entry):
+    def _file_parts(self, entry, render_dpi):
+        """
+        Return the Gemini parts for the card file.
+        ---
+        Partes para Gemini: el archivo tal cual, o -- si `render_dpi`
+        y es PDF -- cada página renderizada a esa resolución como PNG.
+        """
+        data = download_bytes(BUCKET, entry.blob_name)
+        if not render_dpi or entry.content_type != "application/pdf":
+            return [Part.from_bytes(data=data, mime_type=entry.content_type)]
+        import fitz
+
+        parts = []
+        with fitz.open(stream=data, filetype="pdf") as document:
+            for page in document:
+                parts.append(Part.from_bytes(
+                    data=page.get_pixmap(dpi=render_dpi).tobytes("png"),
+                    mime_type="image/png",
+                ))
+        return parts
+
+    def _ask_gemini(self, client, entry, render_dpi=None):
         """
         Send the card file to Gemini and return its parsed JSON answer.
         ---
-        Envía el archivo del carné a Gemini y devuelve su respuesta
-        JSON ya parseada.
+        Envía el archivo del carné a Gemini (tal cual, o renderizado si
+        `render_dpi`) y devuelve su respuesta JSON ya parseada.
         """
-        data = download_bytes(BUCKET, entry.blob_name)
         response = _generate_content_with_retry(
             client, model=DEFAULT_MODEL,
-            contents=[
-                Part.from_bytes(data=data, mime_type=entry.content_type),
+            contents=self._file_parts(entry, render_dpi) + [
                 PROMPT.format(name=entry.name),
             ],
             config=GenerateContentConfig(
@@ -305,6 +338,10 @@ class Command(BaseCommand):
             )
         )
         client = None
+        reread_ids = {
+            int(value) for value in options["reread_ids"].split(",")
+            if value.strip()
+        }
         stats = {"calls": 0, "errors": 0, "with_matrix": 0,
                  "no_reverse": 0, "not_licence": 0, "low_confidence": 0,
                  "unsupported": 0, "grants": 0}
@@ -316,6 +353,23 @@ class Command(BaseCommand):
         for index, entry in enumerate(entries, start=1):
             lines = report.setdefault(entry.domain_object_id, [])
             key = str(entry.id)
+            if entry.id in reread_ids:
+                client = client or get_gemini_client()
+                try:
+                    cache[key] = self._ask_gemini(
+                        client, entry, render_dpi=options["reread_dpi"],
+                    )
+                    stats["calls"] += 1
+                    with open(cache_path, "w", encoding="utf-8") as handle:
+                        json.dump(cache, handle, ensure_ascii=False)
+                    self._log("RELEIDO id=%d a %d DPI" % (
+                        entry.id, options["reread_dpi"],
+                    ))
+                except Exception as exc:  # noqa: BLE001 -- se registra
+                    stats["errors"] += 1
+                    self._log("ERROR relectura id=%d: %s" % (
+                        entry.id, str(exc)[:200],
+                    ))
             if key not in cache:
                 if entry.content_type not in SUPPORTED_MIME:
                     stats["unsupported"] += 1

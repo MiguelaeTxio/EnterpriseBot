@@ -23,6 +23,16 @@ B. REALINEADO de nombres canónicos con
    con matriz, cuya `expiry_date` cambió a la caducidad más lejana de
    sus clases (decisión 2 de Miguel Ángel, S120).
 
+--retype id:TIPO[,id:TIPO...]: decisiones humanas para los que el
+criterio automático deja en revisión manual (mixtos y ajenos). Tienen
+prioridad sobre la nota de Gemini y quedan registradas en el log. S120:
+revisados uno a uno por el modelo sobre su imagen real (relevo
+gcs_image) -- 36437 tacógrafo + tarjeta SS pegada -> TACOGRAFO;
+30598 prórroga DGT y 35322 justificante de la Junta ->
+SOLICITUD_ADMINISTRATIVA; 36710 hoja provisional DGT ->
+OTROS_DOCUMENTOS; 40077 y 40300 circular de permiso de conducción ->
+CIRCULAR_INFORMATIVA.
+
 DRY-RUN por defecto; --apply escribe. Log propio (com-standards
 0bis/0ter).
 """
@@ -100,6 +110,10 @@ class Command(BaseCommand):
             help="Cache JSON de harvest_driving_licence_classes.",
         )
         parser.add_argument("--log-file", required=True)
+        parser.add_argument(
+            "--retype", default="",
+            help="Decisiones humanas: id:TIPO separados por comas.",
+        )
 
     def _log(self, message):
         line = "[%s] %s" % (datetime.now().strftime("%H:%M:%S"), message)
@@ -110,19 +124,31 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         self._log_handle = open(options["log_file"], "a", encoding="utf-8")
         try:
-            self._run(options["apply"], options["cache_file"])
+            self._run(
+                options["apply"], options["cache_file"], options["retype"],
+            )
         finally:
             self._log_handle.close()
 
-    def _run(self, apply_changes, cache_path):
+    def _run(self, apply_changes, cache_path, retype_arg):
         with open(cache_path, encoding="utf-8") as handle:
             cache = json.load(handle)
+        overrides = {}
+        for item in retype_arg.split(","):
+            if item.strip():
+                entry_id, code = item.strip().split(":")
+                overrides[int(entry_id)] = code.strip()
         types = {
             catalog.code: catalog
             for catalog in DocumentTypeCatalog.objects.filter(
-                code__in=[TACHO_CODE, CAP_CODE],
+                code__in={TACHO_CODE, CAP_CODE, *overrides.values()},
             )
         }
+        unknown = set(overrides.values()) - set(types)
+        if unknown:
+            self._log("ABORTADO: tipos inexistentes en --retype: %s"
+                      % ", ".join(sorted(unknown)))
+            return
         person_ct = ContentType.objects.get_for_model(PersonIdentity)
         active_ids = list(PersonIdentity.objects.filter(
             is_active_employee=True,
@@ -149,7 +175,9 @@ class Command(BaseCommand):
             if not answer or answer.get("is_driving_licence", True):
                 continue
             notes = answer.get("notes", "")
-            code = _target_code(notes)
+            code = overrides.get(entry.id) or _target_code(notes)
+            if entry.id in overrides:
+                self._log("DECISION HUMANA id=%d -> %s" % (entry.id, code))
             if code is None:
                 manual.append((entry, notes))
                 continue
