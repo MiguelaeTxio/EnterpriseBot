@@ -8391,51 +8391,213 @@ en la hoja de ruta original de esta sesión:
 
 ---
 
-## Hoja de Ruta para la Siguiente Sesión (S120) -- REESCRITA al cierre,
-## sustituye por completo a la "Fase A de DOC. MAQUINAS" de más arriba
-## (los 7 puntos están cerrados) y al "AVISO AL RETOMAR" de S116 (ya
-## no aplica, el dominio MÁQUINAS quedó vinculado en esta sesión)
+### COMPLETADAS EN S120 (26/09/2026, PEE A; H30 -- permiso de
+### conducción como matriz de clases, retipado de no-carnés, subtipos
+### de tipo documental y sincronización de migraciones)
 
-**Único punto comprometido, instrucción explícita de Miguel Ángel al
-cierre de S119** -- diseñar el permiso de conducción español como una
-matriz de permisos, no como un documento con una única fecha de
-caducidad:
+Los 4 puntos de la hoja de ruta de S120 quedan cerrados y verificados
+con consulta real, más tres frentes que salieron de ellos (retipado de
+34 documentos que no eran carnés, concepto de subtipo, deriva de
+migraciones). Sin PCH en la sesión.
 
-1. **Investigar y fijar la lista completa y definitiva de los permisos
-   de conducción que existen en España** (AM, A1, A2, A, B, B1, BE,
-   C1, C, C1E, CE, D1, D, D1E, DE, y cualquier otro que la
-   investigación real confirme que falta) tal como aparecen reflejados
-   en el propio carné -- fuente oficial (DGT), no de memoria. Cierre
-   objetivo: una lista escrita, con la fuente citada, que Miguel Ángel
-   pueda confirmar como completa antes de tocar el modelo.
-2. Con esa lista confirmada, diseñar el cambio de modelo: en vez de
-   pedir en un requisito de documentación "Permiso de conducción" a
-   secas, poder pedir permisos concretos (p. ej. "B1" para un puesto,
-   "C" para otro, "E" para quien lleve remolque) -- Miguel Ángel: "esto
-   en realidad es una matriz." Diseño concreto (qué modelo, qué
-   migración, cómo convive con `CARNET_CONDUCIR` tal como existe hoy)
-   a decidir en la propia sesión con la lista del punto 1 ya cerrada,
-   nunca antes.
-3. **Comando de gestión para recolectar, de las personas activas
-   (~80), la fecha real de cada permiso que tengan** en su carné ya
-   subido -- Miguel Ángel ya sabe de al menos dos personas (él mismo,
-   Jerónimo) que no tienen ningún permiso de camión, y de sí mismo que
-   solo tiene el B1 confirmado, con duda real sobre si los inferiores
-   (A1/A2) se conceden automáticamente al B1 -- verificar esa regla de
-   concesión automática entre categorías como parte de la
-   investigación del punto 1, no asumirla.
-4. **`id=27899` (carné de conducir de Alberto Javier Álvarez Díaz,
-   `PersonIdentity` id=5)** es el caso real que destapó todo esto:
-   guardado hoy con `expiry_date=2023-09-04` (la fecha de las
-   categorías de camión, C/C1/D1/CE/C1E/D1E/DE), cuando la categoría B
-   (turismo, la que de verdad exige su puesto GENERAL) caduca en
-   2028. No se ha tocado -- se corrige como parte del punto 2 de esta
-   hoja de ruta, con el modelo de matriz ya construido, nunca antes
-   con un parche puntual sobre el dato de este único documento.
+#### Punto 1 -- Lista oficial de permisos (CERRADO, confirmado por Miguel Ángel)
 
-**Fuera de alcance de esta hoja de ruta, explícitamente aparcado por
-Miguel Ángel:** cualquier ajuste adicional de la interfaz de
-Requisitos de documentación más allá de lo ya cerrado en S119 -- si
-aparece algo nuevo, se trata como lo que sea en su momento, no se
-anticipa aquí.
+Fuente: DGT (clases de permiso) y Reglamento General de Conductores
+(RD 818/2009, art. 4.2 vigente tras el RD 971/2020; art. 5.2; DT 1ª).
+14 clases vigentes: AM, A1, A2, A, B, BE, C1, C1E, C, CE, D1, D1E, D,
+DE. Confirmado por Miguel Ángel, tres decisiones:
+1. Esas 14 son el catálogo completo.
+2. Los códigos 96 y 97 NO son clases: se guardan como códigos de su
+   clase (columna 12).
+3. Las clases del modelo anterior al RD 772/1997 se traducen a la
+   actual al recolectar, nunca como clases propias. **"B1" no existe
+   hoy: es el nombre antiguo del B** (DT 1ª). BTP suprimido (RD
+   1055/2015).
+Concesiones del art. 5.2 (C implica C1, etc.): no se modelan -- la
+DGT imprime en el carné todas las clases que el titular tiene. El B
+NO concede A1/A2; con más de 3 años de B se pueden conducir en España
+motos del tipo A1 (habilitación nacional, no fila del carné).
 
+#### Punto 2 -- Modelo matriz (CERRADO, `65c9eb32`, migración 0147)
+
+- `DrivingLicenceCategory`: catálogo de las 14 clases, sembrado por
+  migración (datos en BD, nunca lista en código).
+- `DrivingLicenceGrant`: una fila por clase impresa en UN carné (FK al
+  `DocumentIndexEntry` del carné): primera expedición (col. 10),
+  caducidad (col. 11), códigos (col. 12). Única por (carné, clase).
+- `JobPosition.required_driving_categories` (M2M): el requisito puede
+  exigir clases concretas. Regla en `required_documentation_service`
+  (ficha) y `_attach_required_document_alerts` (listado, en lote):
+  cada clase exigida se mira en el carné más reciente CON matriz
+  (`latest_driving_card`) -- falta si no está, caducada si su fecha
+  pasó. **Decisión 1 de Miguel Ángel:** con clases exigidas,
+  `CARNET_CONDUCIR` solo cuenta para "falta", nunca para "caducado".
+- **Decisión 2:** la `expiry_date` del documento del carné es la
+  caducidad MÁS LEJANA de sus clases.
+- **Decisión 4:** en la ficha, tabla de clases bajo la fila del carné;
+  en rojo solo la clase caducada que exige su requisito.
+- **Decisión 3:** `PersonIdentity.driving_license_expiry_date` (Excel,
+  53 fechas reales, 49 de 75 activos, nadie la lee en código) **se
+  conserva como histórico** -- nunca se retira.
+- Pantalla Requisitos: casilleros de las 14 clases.
+- Despliegue verificado: 0147 aplicada, 14 clases en BD.
+
+#### Punto 3 -- Recolección (CERRADO, `06bd588e`, `10833ee1`)
+
+Comando `harvest_driving_licence_classes`: Gemini lee cada carné (PDF
+o imagen tal cual) y transcribe la matriz; la traducción la hace el
+código. Volumen real medido antes: 75 activos, 54 con carné, 190
+documentos. Dry-run largo (~1 h: 190 llamadas multimodales + reintentos
+429/504; no se estimó la duración antes de entregar la caja --
+anotado). `--apply` verificado: 952 clases, 128 carnés, 52 personas.
+**Incidente real:** las 2 lecturas de confianza MEDIA estaban mal
+(años confundidos en fotos de móvil) y eran los carnés MÁS RECIENTES
+de sus titulares -- su referencia caía en el carné anterior, con C
+caducado en 2025 ("Caducado" falso). Detectado al ver el renombrado
+(bajaba de 2035 a 2015/2025) y verificado por el modelo sobre la
+imagen real (relevo `gcs_image` a 220 DPI). Solución sistémica:
+`--reread-ids`/`--reread-dpi` (renderiza cada página con `fitz` y
+relee). Releídos 36211, 36189 y 37526 (la BAJA): verificado contra la
+imagen -- caducidades correctas (36211: A/B 17/02/2035, C1/C
+17/02/2030; 36189: A/B/BE 15/07/2035, C1/C/C1E/CE 15/07/2030; 37526:
+B/BE 12/05/2034, camión 12/05/2029). Diferencia menor aceptada: en
+36211 las primeras expediciones salen 1986 donde la imagen dice 1985
+(ningún aviso usa ese dato, no se corrige a mano). **Total final: 968
+clases en 129 carnés.** `id=35602` sin matriz (sin reverso); su
+titular tiene el carné de 2029 leído.
+Quedan fuera por falta de documento (trabajo de Miguel Ángel, no del
+modelo): 21 activos sin ningún carné subido (entre ellos él mismo,
+pk=250, y Jerónimo, pk=227); pk=172 y pk=221 solo con el anverso.
+
+#### Punto 4 -- Caso real `id=27899` (CERRADO sin parche)
+
+Con la matriz: B/AM/A vigentes hasta 04/09/2028, clases de camión
+caducadas el 04/09/2023; documento con caducidad 2028-09-04 y nombre
+`ALVAREZ_DIAZ_ALBERTO_JAVIER_CARNET_CONDUCIR_20280904.pdf` (verificado
+en BD).
+
+#### Retipado de 34 documentos que no eran carnés (`998111d5`, `f892f5ea`, `00306795`)
+
+Gemini marcó 34 `CARNET_CONDUCIR` que no eran permisos. Origen: la
+etiqueta "Carnet / tarjeta de conductor" coincidía con `TACOGRAFO`
+("Tarjeta de Conductor"). Comando `fix_driving_licence_cards`
+(retipado desde la caché + realineado canónico con
+`apply_personal_canonical_rename`, fecha ficticia S98 para los sin
+fecha). Mixtos y ajenos revisados por el modelo uno a uno sobre su
+imagen real; decisiones vía `--retype id:TIPO[:AAAA-MM-DD]`, que
+quedan en el log. Resultado verificado en BD: 26 `TACOGRAFO` (ids
+34450, 34462, 34882, 34892, 35371, 35851, 36097, 36260, 36428, 36429,
+36437, 36438, 36607, 37070, 37077, 37272, 37273, 37274, 37283, 37417,
+37557, 37558, 38001, 38194, 38196, 39351 -- conservan la fecha que
+tenían como carné, sin contrastar todavía), 3 `CAP`
+(38195 Zavala, opción 1 de Miguel Ángel: CAP vigente con caducidad
+29/05/2026 leída en la imagen), 2 `SOLICITUD_ADMINISTRATIVA` (30598,
+35322), 2 `CIRCULAR_INFORMATIVA` (40077, 40300 -- mismo tipo que las
+circulares firmadas que ya cuelgan de persona, precedente real), 1
+subtipo nuevo (36710). 104 nombres canónicos realineados.
+**Protección que funcionó:** el primer `--apply` abortó sin escribir
+nada porque `OTROS_DOCUMENTOS` existe en una migración antigua pero NO
+en el catálogo real -- el comando valida los tipos contra la BD antes
+de tocar nada.
+
+#### Subtipos de tipo documental + etiqueta del permiso (`d51c014a`, migración 0148)
+
+- `CARNET_CONDUCIR` se muestra como **"Permiso de conducción"**
+  (decisión de Miguel Ángel: quitar la duplicidad). El código no cambia.
+- **Opción 2 de Miguel Ángel, subtipo de verdad:**
+  `DocumentTypeCatalog.parent_type` (FK a sí mismo). Los documentos de
+  un subtipo se pintan DENTRO de la fila del documento vigente más
+  reciente del padre en la ficha de persona
+  (`attach_subtype_documents`); sin padre vigente se quedan donde
+  estaban. Al ser otro tipo, nunca cuentan en los avisos del padre.
+- Tipo nuevo `AUTORIZACION_TEMPORAL_CONDUCIR` ("Autorización temporal
+  / trámite DGT del permiso"), subtipo del permiso, familia del padre,
+  sin control de caducidad. Primer caso: 36710 (Paraschiv), dentro de
+  su permiso 36679.
+
+#### Deriva de migraciones (`130906b1`)
+
+Detectada al validar la 0147. Analizada campo a campo (deconstruct del
+estado frente al modelo): de ~120 operaciones solo 13 no eran de
+texto. Sincronizadas 9 apps (`*_sync_state_s120`, aplicadas y
+verificadas en `django_migrations`): textos, un `default` sin efecto
+en BD, 2 `RENAME INDEX`, y la `CheckConstraint` de `hr_calendar`
+(idéntica, solo cambia el anidado del Q) como
+`SeparateDatabaseAndState`, sin DROP/ADD. **Excluidos a propósito los
+11 `id` `AutoField -> BigAutoField` de `document_explorer`** -- punto
+3 de la hoja de ruta de abajo.
+
+#### Incidencias reales de la sesión
+
+- Dry-run de ~1 h sin estimación previa de duración (ver punto 3).
+- 2 lecturas MEDIA erróneas en los carnés más recientes (ver punto 3).
+- `OTROS_DOCUMENTOS` inexistente en el catálogo real (ver retipado).
+- `CIRCULAR_INFORMATIVA` es de dominio COMPANY; se mantiene para las
+  circulares firmadas por precedente real verificado.
+- El relevo `db_query.yml` comiteó 12 "chore: depuración de subida a
+  Drive" en esta sesión (punto 2 de la hoja de ruta).
+- La caché de Gemini del harvest (`SWAP/EnterpriseBot_harvest_
+  licences_s120.json`) se borra con el vaciado de SWAP del cierre: un
+  retipado o relectura futuros volverán a llamar a Gemini.
+
+---
+
+## Hoja de Ruta para la Siguiente Sesión (S121) -- REESCRITA al cierre,
+## sustituye por completo a la de S120 (sus 4 puntos están cerrados)
+
+Orden confirmado por Miguel Ángel al cierre de S120. La numeración ES
+el orden: empezar por el 1.
+
+1. **Accesorios de elevación** (eslingas, líneas de carga y sus
+   certificados), equivalente de los EPIs para maquinaria (punto 8 de
+   la Fase A de S119 y punto 11 de S118; arrastrado 2.ª sesión sin
+   avanzar -- reincorporado como punto 1 por decisión explícita de
+   Miguel Ángel en S120, no se pregunta de nuevo). Primero medir con
+   consulta real los documentos existentes de accesorios (tipo
+   `CERT_ACCESORIO_ELEVACION` y los de eslingas en `DOC. MAQUINAS`) y
+   ver una muestra con el relevo `gcs_image`; con eso, cerrar el
+   diseño con Miguel Ángel en el chat antes de escribir código.
+   **Cierre:** modelo y migración desplegados y verificados en
+   `django_migrations`, pantalla accesible desde la ficha de máquina, y
+   al menos un accesorio real dado de alta con su certificado
+   vinculado, comprobado con consulta real a BD.
+2. **El relevo `db_query.yml` deja de comitear** el "chore: depuración
+   de subida a Drive" (arrastrado 2.ª sesión sin avanzar --
+   reincorporado por decisión de Miguel Ángel en S120). Migrarlo al
+   patrón de `com-actions-relay` sección 6. **Cierre:** lanzar una
+   consulta y comprobar con `git log origin/main -1` que no aparece
+   commit nuevo.
+3. **Los 11 `id` `AutoField -> BigAutoField` de `document_explorer`**
+   (`companyfiscalprofile`, `documentacknowledgment`, `documenttag`,
+   `epidelivery`, `epideliverybatchtemplate`, `epiitemcatalog`,
+   `epireview`, `jobposition`, `personaldossiertemplate`,
+   `persongrouptemplate`, `subjectdocumentreference`). Medir con
+   consulta real el tipo actual de cada columna en MySQL
+   (`information_schema.COLUMNS`), sus FKs entrantes y el número de
+   filas; con esa medición presentar a Miguel Ángel el coste real y
+   ejecutar lo que él decida en el chat. **Cierre:**
+   `makemigrations --check` local sin cambios pendientes, y si se
+   migra, la migración verificada en `django_migrations` y el tipo de
+   columna `bigint` verificado en `information_schema`.
+4. **Fechas heredadas de los 26 documentos retipados a `TACOGRAFO`**
+   en S120 (ids en "COMPLETADAS EN S120"): contrastar su `expiry_date`
+   con la fecha 4b de la tarjeta vista con el relevo `gcs_image`, y
+   corregir las que no coincidan con un comando con registro en log.
+   **Cierre:** consulta real con los 26 ids y 0 discrepancias frente a
+   la lista id -> fecha 4b anotada en el anexo.
+5. **Prueba real del agente de averías por WhatsApp** (arrastrado 2.ª
+   sesión sin avanzar -- reincorporado por decisión de Miguel Ángel en
+   S120). **Cierre:** un mensaje real de un empleado recibe respuesta y
+   el log web no registra el 404 de Gemini.
+
+**Trabajo de Miguel Ángel en el panel (no del modelo, no bloquea la
+hoja de ruta):** marcar en Requisitos las clases de permiso que exige
+cada requisito (mientras no se marquen, los avisos funcionan como
+antes de S120); revisar en el PC la tabla de clases, la fila del
+permiso con la autorización temporal de Paraschiv (pk=173) y la
+etiqueta nueva; subir el carné de los 21 activos que no lo tienen y el
+reverso de pk=172 y pk=221.
+
+**Pendiente técnico heredado, sin cambios:** los 18 combinados
+FICHA+ITV que no se pueden partir se corrigen a mano desde la ficha
+con el botón "Tipo".
