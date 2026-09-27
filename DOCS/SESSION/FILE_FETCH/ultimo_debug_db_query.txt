@@ -1,10 +1,14 @@
-SCP1_EXIT=0
-<<<<<<:>~ PythonAnywhere SSH. Help @ https://help.pythonanywhere.com/pages/SSHAccess
-SCP2_EXIT=0
-<<<<<<:>~ PythonAnywhere SSH. Help @ https://help.pythonanywhere.com/pages/SSHAccess
-SSH_EXIT=0
+SCP1_EXIT=255
+Warning: Identity file /home/runner/.ssh/pa_readonly_key not accessible: No such file or directory.
+Host key verification failed.
+scp: Connection closed
+SCP2_EXIT=255
+Warning: Identity file /home/runner/.ssh/pa_readonly_key not accessible: No such file or directory.
+Host key verification failed.
+scp: Connection closed
+SSH_EXIT=255
 --- SSH STDOUT ---
-1HFM98toe5n6yue4fxWLo5VlXdH0VU3kd
 --- SSH STDERR ---
-<<<<<<:>~ PythonAnywhere SSH. Help @ https://help.pythonanywhere.com/pages/SSHAccess
-DRIVE_NAME=resultado_sql_36351767411.md
+Warning: Identity file /home/runner/.ssh/pa_readonly_key not accessible: No such file or directory.
+Host key verification failed.
+DRIVE_NAME=resultado_sql_36351838138.md
