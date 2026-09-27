@@ -7,6 +7,7 @@
 {% block extra_head %}
 <style>
     .doc-h30-search { max-width: 400px; }
+    .doc-h30-toast { z-index: 1080; }
 
     /* H31 (S94). Estilos del calendario -- migrados desde
        hr_calendar/templates/hr_calendar/calendar.html para la
@@ -58,6 +59,20 @@
            hx-target="#pane-epis"
            hx-trigger="{% if persisted_active_tab == 'epis' %}load once{% else %}click once{% endif %}">
             <i class="bi bi-shield-check me-1"></i>EPIs
+        </a>
+    </li>
+    <li class="nav-item">
+        {% comment %}
+        H30 (S121): accesorios de elevación, con su CRUD en pestaña como
+        los EPIs (decisión de Miguel Ángel). Filtros, orden y selección
+        los guarda la propia pestaña (screen_key "lifting_accessories",
+        panel.navigation_persistence) -- por eso no lleva querystring.
+        {% endcomment %}
+        <a class="nav-link {% if persisted_active_tab == 'accesorios' %}active{% endif %}" id="tab-accesorios" data-bs-toggle="tab" href="#pane-accesorios"
+           hx-get="{% url 'panel:lifting_accessory_tab' %}"
+           hx-target="#pane-accesorios"
+           hx-trigger="{% if persisted_active_tab == 'accesorios' %}load once{% else %}click once{% endif %}">
+            <i class="bi bi-link-45deg me-1"></i>Accesorios de elevación
         </a>
     </li>
     <li class="nav-item">
@@ -122,6 +137,9 @@
     <div class="tab-pane fade {% if persisted_active_tab == 'epis' %}show active{% endif %}" id="pane-epis">
         <div class="text-muted small py-3">Cargando…</div>
     </div>
+    <div class="tab-pane fade {% if persisted_active_tab == 'accesorios' %}show active{% endif %}" id="pane-accesorios">
+        <div class="text-muted small py-3">Cargando…</div>
+    </div>
     <div class="tab-pane fade {% if persisted_active_tab == 'vacaciones' %}show active{% endif %}" id="pane-vacaciones">
         <div class="text-muted small py-3">Cargando…</div>
     </div>
@@ -150,7 +168,7 @@ pestaña se destruiría a medio mostrar. `showPersonGroupToast()`
 asignación masiva de requisito de documentación) sigue buscándolo por
 id, indistinto de dónde viva en el DOM.
 {% endcomment %}
-<div class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 1080;">
+<div class="toast-container position-fixed top-0 end-0 p-3 doc-h30-toast">
     <div id="personGroupToast" class="toast align-items-center text-white bg-success border-0" role="alert" aria-live="assertive" aria-atomic="true" data-bs-delay="2000">
         <div class="d-flex">
             <div class="toast-body" id="personGroupToastBody">Guardado.</div>

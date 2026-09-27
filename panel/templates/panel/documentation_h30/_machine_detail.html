@@ -5,6 +5,20 @@
 {% block title %}{{ machine.code }} — Documentación{% endblock %}
 {% block page_title %}{{ machine.code }} — {{ machine.brand_model }}{% endblock %}
 
+{% block extra_head %}
+<style>
+    /* S121 (directriz 4.9): estilos que vivían en línea. */
+    .mdet-avatar-wrap { min-width: 96px; }
+    .mdet-avatar { width: 96px; height: 96px; object-fit: cover; }
+    .mdet-avatar-icon { font-size: 80px; line-height: 1; }
+    .mdet-avatar-btn { width: 32px; height: 32px; padding: 0; bottom: 0; right: 0; }
+    .mdet-check-col { width: 2rem; }
+    .mdet-table-sm { font-size: 0.85rem; }
+    .mdet-viewer-body { height: 80vh; }
+    .mdet-viewer-frame { width: 100%; height: 100%; border: 0; }
+</style>
+{% endblock %}
+
 {% block content %}
 {% comment %}
 H30 (S119) -- barra de acciones fija justo debajo del membrete, mismo
@@ -35,16 +49,15 @@ sube una nueva con la cámara (se sube como IMAGEN y queda fijada).
 {% endcomment %}
 <div class="card mb-3">
     <div class="card-body d-flex align-items-center gap-3 py-2">
-        <div class="position-relative" style="min-width:96px;">
+        <div class="position-relative mdet-avatar-wrap">
             {% if avatar %}
             <img src="{% url 'panel:documentation_document_view' pk=avatar.pk %}"
-                 alt="Foto de la máquina" class="rounded border"
-                 style="width:96px;height:96px;object-fit:cover;">
+                 alt="Foto de la máquina" class="rounded border mdet-avatar"
+                 width="96" height="96">
             {% else %}
-            <i class="bi bi-truck text-secondary" style="font-size:80px;line-height:1;"></i>
+            <i class="bi bi-truck text-secondary mdet-avatar-icon"></i>
             {% endif %}
-            <button type="button" class="btn btn-sm btn-primary rounded-circle position-absolute"
-                    style="width:32px;height:32px;padding:0;bottom:0;right:0;"
+            <button type="button" class="btn btn-sm btn-primary rounded-circle position-absolute mdet-avatar-btn"
                     title="{% if avatar %}Cambiar foto{% else %}Añadir foto{% endif %}"
                     onclick="openUploadForm('IMAGEN', null, true)">
                 <i class="bi bi-camera-fill"></i>
@@ -158,7 +171,7 @@ puede ser es que la interfaz no informe de lo que pasa."
         {% endfor %}
         {% endfor %}
         {% for entry in expired_current_documents %}
-        <li>Caducado: {{ entry.document_type.label }} &mdash; caducó el {{ entry.expiry_date|date:"d/m/Y" }}</li>
+        <li>Caducado: {{ entry.document_type.label }} — caducó el {{ entry.expiry_date|date:"d/m/Y" }}</li>
         {% endfor %}
     </ul>
 </div>
@@ -198,7 +211,7 @@ puede ser es que la interfaz no informe de lo que pasa."
                     <i class="bi bi-upload me-1"></i>+ Subir
                 </button>
                 <table class="table table-sm table-hover mb-0">
-                    <thead><tr><th style="width:2rem;"></th><th>Tipo</th><th>Caducidad</th><th>Acciones</th></tr></thead>
+                    <thead><tr><th class="mdet-check-col"></th><th>Tipo</th><th>Caducidad</th><th>Acciones</th></tr></thead>
                     <tbody>
                         {% for entry in fam.documents %}
                         <tr{% if entry.needs_attention %} class="table-danger"{% endif %}>
@@ -277,6 +290,48 @@ puede ser es que la interfaz no informe de lo que pasa."
         </div>
     </div>
     {% comment %}
+    H30 (S121) -- accesorios de elevación entregados ahora a esta
+    máquina, solo consulta: el CRUD vive en la pestaña "Accesorios de
+    elevación" del hub (decisión de Miguel Ángel). Cada nº abre la ficha
+    del accesorio, que vuelve aquí.
+    {% endcomment %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseMachineLifting">
+                <i class="bi bi-link-45deg me-2"></i>Accesorios de elevación
+                <span class="badge bg-secondary ms-2">{{ lifting_accessories|length }}</span>
+                {% if lifting_accessories_expired %}<i class="bi bi-exclamation-triangle-fill text-danger ms-2" title="Hay accesorios caducados"></i>{% endif %}
+            </button>
+        </h2>
+        <div id="collapseMachineLifting" class="accordion-collapse collapse">
+            <div class="accordion-body">
+                {% if lifting_accessories %}
+                <table class="table table-sm table-hover mb-2 mdet-table-sm">
+                    <thead><tr><th>Tipo</th><th>Nº</th><th>Descripción</th><th>Responsable</th><th>Caducidad</th></tr></thead>
+                    <tbody>
+                        {% for accessory in lifting_accessories %}
+                        <tr>
+                            <td>{{ accessory.accessory_type.label }}</td>
+                            <td><a href="{% url 'panel:lifting_accessory_detail' accessory.pk %}?back_url={{ request.get_full_path|urlencode }}">{{ accessory.identifier }}</a></td>
+                            <td>{{ accessory.description|default:"—" }}</td>
+                            <td>{{ accessory.responsible_label|default:"—" }}</td>
+                            <td class="text-nowrap">
+                                {% if accessory.is_expired %}
+                                <span class="text-danger fw-semibold"><i class="bi bi-exclamation-triangle-fill me-1"></i>{{ accessory.expiry|date:"d/m/Y" }}</span>
+                                {% else %}{{ accessory.expiry|date:"d/m/Y"|default:"—" }}{% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <p class="text-muted small mb-2">Sin accesorios de elevación entregados a esta máquina.</p>
+                {% endif %}
+                <a class="small" href="{% url 'panel:documentation_hub' %}?tab=accesorios">Gestionar en la pestaña Accesorios de elevación</a>
+            </div>
+        </div>
+    </div>
+    {% comment %}
     H30 (S119), punto 7 -- sección Taller, solo consulta: partes de
     trabajo digitales de esta máquina (WorkOrderEntryLine), sus
     mantenimientos (fleet.MaintenanceLog) y los documentos
@@ -299,7 +354,7 @@ puede ser es que la interfaz no informe de lo que pasa."
                 {% if work_lines %}
                 {% if work_lines_truncated %}<p class="text-muted small mb-1">Se muestran los {{ workshop_list_limit }} más recientes.</p>{% endif %}
                 <div class="table-responsive mb-3">
-                    <table class="table table-sm table-hover mb-0" style="font-size: 0.85rem;">
+                    <table class="table table-sm table-hover mb-0 mdet-table-sm">
                         <thead><tr><th>Fecha</th><th>Mecánico</th><th>Tipo</th><th>Trabajo</th><th class="text-end">Horas</th></tr></thead>
                         <tbody>
                             {% for line in work_lines %}
@@ -321,7 +376,7 @@ puede ser es que la interfaz no informe de lo que pasa."
                 <h6 class="mb-2">Mantenimientos <small class="text-muted">({{ maintenance_count }} · {{ maintenance_total_hours|floatformat:2 }} h imputadas)</small></h6>
                 {% if maintenance_logs %}
                 <div class="table-responsive mb-3">
-                    <table class="table table-sm table-hover mb-0" style="font-size: 0.85rem;">
+                    <table class="table table-sm table-hover mb-0 mdet-table-sm">
                         <thead><tr><th>Fecha</th><th>Mecánico</th><th>Descripción</th><th class="text-end">Horas</th></tr></thead>
                         <tbody>
                             {% for log in maintenance_logs %}
@@ -341,7 +396,7 @@ puede ser es que la interfaz no informe de lo que pasa."
 
                 <h6 class="mb-2">Libro historial y órdenes de mantenimiento</h6>
                 {% if workshop_documents %}
-                <table class="table table-sm table-hover mb-0" style="font-size: 0.85rem;">
+                <table class="table table-sm table-hover mb-0 mdet-table-sm">
                     <thead><tr><th>Tipo</th><th>Fecha</th><th>Archivo</th><th></th></tr></thead>
                     <tbody>
                         {% for entry in workshop_documents %}
@@ -416,8 +471,8 @@ puede ser es que la interfaz no informe de lo que pasa."
                 <h6 class="modal-title mb-0">Documento</h6>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-            <div class="modal-body p-0" style="height: 80vh;">
-                <iframe id="documentViewerFrame" src="" style="width: 100%; height: 100%; border: 0;"></iframe>
+            <div class="modal-body p-0 mdet-viewer-body">
+                <iframe id="documentViewerFrame" src="" class="mdet-viewer-frame"></iframe>
             </div>
         </div>
     </div>

@@ -28,6 +28,20 @@ from panel.views_circulars_h31 import (
     CircularSaveContentView,
 )
 from panel.views_navigation_state import NavigationStateSaveView
+from panel.views_lifting_accessories import (
+    LiftingAccessoryAssignView,
+    LiftingAccessoryBulkReviewView,
+    LiftingAccessoryBulkStatusView,
+    LiftingAccessoryCreateView,
+    LiftingAccessoryDetailView,
+    LiftingAccessoryResultsView,
+    LiftingAccessoryReturnView,
+    LiftingAccessoryReviewCreateView,
+    LiftingAccessoryReviewDeleteView,
+    LiftingAccessoryTabView,
+    LiftingAccessoryTypeRemoveView,
+    LiftingAccessoryTypeSaveView,
+)
 from panel.views_documentation_h30 import (
     CalendarResultsFragmentView,
     CalendarTabFragmentView,
@@ -550,6 +564,21 @@ urlpatterns = [
     path("documentacion/epis/", EpiTabFragmentView.as_view(), name="documentation_epi_tab"),
     # H30 (S50): mismo motivo que documentation_personal_results.
     path("documentacion/epis/resultados/", EpiResultsFragmentView.as_view(), name="documentation_epi_results"),
+    # H30 (S121). Pestaña "Accesorios de elevación" del hub -- CRUD
+    # completo como el de los EPIs, ver panel/views_lifting_accessories.py.
+    path("documentacion/accesorios/", LiftingAccessoryTabView.as_view(), name="lifting_accessory_tab"),
+    path("documentacion/accesorios/resultados/", LiftingAccessoryResultsView.as_view(), name="lifting_accessory_results"),
+    path("documentacion/accesorios/nuevo/", LiftingAccessoryCreateView.as_view(), name="lifting_accessory_create"),
+    path("documentacion/accesorios/estado/", LiftingAccessoryBulkStatusView.as_view(), name="lifting_accessory_bulk_status"),
+    path("documentacion/accesorios/revision-masiva/", LiftingAccessoryBulkReviewView.as_view(), name="lifting_accessory_bulk_review"),
+    path("documentacion/accesorios/<int:pk>/", LiftingAccessoryDetailView.as_view(), name="lifting_accessory_detail"),
+    path("documentacion/accesorios/<int:pk>/entrega/", LiftingAccessoryAssignView.as_view(), name="lifting_accessory_assign"),
+    path("documentacion/accesorios/<int:pk>/devolucion/", LiftingAccessoryReturnView.as_view(), name="lifting_accessory_return"),
+    path("documentacion/accesorios/<int:pk>/revision/", LiftingAccessoryReviewCreateView.as_view(), name="lifting_accessory_review_create"),
+    path("documentacion/accesorios/<int:pk>/revision/<int:review_pk>/eliminar/", LiftingAccessoryReviewDeleteView.as_view(), name="lifting_accessory_review_delete"),
+    path("documentacion/accesorios/tipos/nuevo/", LiftingAccessoryTypeSaveView.as_view(), name="lifting_accessory_type_create"),
+    path("documentacion/accesorios/tipos/<int:type_pk>/", LiftingAccessoryTypeSaveView.as_view(), name="lifting_accessory_type_update"),
+    path("documentacion/accesorios/tipos/<int:type_pk>/quitar/", LiftingAccessoryTypeRemoveView.as_view(), name="lifting_accessory_type_remove"),
     # H31 (S94). Pestaña Vacaciones htmx del hub -- ver panel/views_documentation_h30.py.
     path("documentacion/vacaciones/", VacationTabFragmentView.as_view(), name="documentation_vacation_tab"),
     path("documentacion/vacaciones/resultados/", VacationResultsFragmentView.as_view(), name="documentation_vacation_results"),

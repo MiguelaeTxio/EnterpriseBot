@@ -479,8 +479,8 @@ class DocumentationHubV2View(CompanyUserRequiredMixin, View):
         ).first()
         state = nav_state.state if nav_state and isinstance(nav_state.state, dict) else {}
         valid_tabs = (
-            "maquinaria", "personal", "epis", "vacaciones", "calendario",
-            "requisitos", "circulares", "plantillas",
+            "maquinaria", "personal", "epis", "accesorios", "vacaciones",
+            "calendario", "requisitos", "circulares", "plantillas",
         )
         # H30 (S119): "Circulares", "Plantillas" y "Requisitos" pasan
         # de botones "Gestionar..." en la barra de acción de Personal a
@@ -768,8 +768,20 @@ class MachineDetailView(CompanyUserRequiredMixin, View):
         if avatar and (avatar.deleted_at or avatar.purged_at):
             avatar = None
         entries_list = list(entries)
+        # H30 (S121): accesorios de elevación entregados ahora a esta
+        # máquina -- solo consulta, el CRUD vive en su pestaña del hub.
+        from document_explorer.lifting_accessory_service import (
+            accessories_for_machine,
+        )
+        from panel.views_lifting_accessories import _annotate
+
+        lifting_accessories = _annotate(accessories_for_machine(machine))
         return render(request, "panel/documentation_h30/_machine_detail.html", {
             **_machine_workshop_context(machine, entries_list),
+            "lifting_accessories": lifting_accessories,
+            "lifting_accessories_expired": any(
+                accessory.is_expired for accessory in lifting_accessories
+            ),
             "machine": machine, "families": families, "avatar": avatar,
             "untyped_documents": untyped_documents,
             "missing_types_by_family": missing_types_by_family,

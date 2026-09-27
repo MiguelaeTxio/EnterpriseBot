@@ -1,0 +1,35 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/lifting_accessories/_create_form.html #}
+{% comment %}
+H30 (S121). Formulario de alta de accesorio dentro del modal de la
+pestaña. Con éxito, la vista devuelve la tabla (hx-target); con
+errores, devuelve este mismo formulario y lo recoloca aquí dentro
+(HX-Retarget) sin perder lo escrito. La primera entrega es opcional.
+{% endcomment %}
+<form hx-post="{% url 'panel:lifting_accessory_create' %}"
+      hx-target="#lifting-table-container"
+      hx-include="#lifting-live-filters"
+      id="lifting-create-form">
+    {% csrf_token %}
+    {% if create_form.non_field_errors %}
+    <div class="alert alert-danger py-1 small">{{ create_form.non_field_errors|join:" " }}</div>
+    {% endif %}
+    <div class="row g-2">
+        {% for field in create_form %}
+        {% if field.name == "responsible_person" %}
+    </div>
+    <div class="fw-bold small mt-3 mb-1 border-top pt-2">Primera entrega (opcional)</div>
+    <div class="row g-2">
+        {% endif %}
+        <div class="col-md-6">
+            <label class="form-label small mb-0" for="{{ field.id_for_label }}">{{ field.label }}</label>
+            {{ field }}
+            {% if field.help_text %}<div class="form-text small">{{ field.help_text }}</div>{% endif %}
+            {% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+        </div>
+        {% endfor %}
+    </div>
+    <div class="d-flex justify-content-end gap-2 mt-3">
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="submit" class="btn btn-sm btn-primary">Dar de alta</button>
+    </div>
+</form>

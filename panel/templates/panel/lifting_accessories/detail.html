@@ -1,0 +1,183 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/lifting_accessories/detail.html #}
+{% extends "panel/base.html" %}
+{% comment %}
+H30 (S121). Ficha de un accesorio de elevación: datos (editables para
+ADMIN y DOCS_SUPERVISOR), certificado del fabricante, historial de
+entregas (responsable obligatorio, máquina opcional) e historial de
+revisiones con su vigencia (revisión + 12 meses, salvo caducidad
+indicada, que prevalece). Todo resuelto en la vista (plantillas
+tontas); cada formulario vuelve aquí (PRG).
+{% endcomment %}
+
+{% block title %}{{ accessory.accessory_type.label }} {{ accessory.identifier }}{% endblock %}
+{% block page_title %}Accesorio de elevación{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center gap-2 mb-3">
+    <a href="{{ back_url }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Volver</a>
+    <h5 class="mb-0">{{ accessory.accessory_type.label }} <span class="fw-bold">{{ accessory.identifier }}</span></h5>
+    {% if accessory.is_active %}
+    <span class="badge text-bg-success">En servicio</span>
+    {% else %}
+    <span class="badge text-bg-secondary">Retirado</span>
+    {% endif %}
+    {% if accessory.is_expired %}
+    <span class="badge text-bg-danger"><i class="bi bi-exclamation-triangle-fill me-1"></i>Caducado el {{ accessory.expiry|date:"d/m/Y" }}</span>
+    {% elif accessory.expiry %}
+    <span class="badge text-bg-light border">Vigente hasta {{ accessory.expiry|date:"d/m/Y" }}</span>
+    {% endif %}
+</div>
+
+<div class="row g-3">
+    <div class="col-lg-5">
+        <div class="border rounded p-3 h-100">
+            <div class="fw-bold mb-2">Datos del accesorio</div>
+            {% if can_manage %}
+            <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="back_url" value="{{ back_url }}">
+                {% for field in form %}
+                <div class="mb-2">
+                    <label class="form-label small mb-0" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                    {{ field }}
+                    {% if field.help_text %}<div class="form-text small">{{ field.help_text }}</div>{% endif %}
+                    {% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+                </div>
+                {% endfor %}
+                <button type="submit" class="btn btn-sm btn-primary">Guardar datos</button>
+            </form>
+            {% else %}
+            <dl class="row small mb-0">
+                <dt class="col-5">Descripción</dt><dd class="col-7">{{ accessory.description|default:"—" }}</dd>
+                <dt class="col-5">Medidas</dt><dd class="col-7">{{ accessory.dimensions|default:"—" }}</dd>
+                <dt class="col-5">Carga de trabajo</dt><dd class="col-7">{% if accessory.working_load_kg %}{{ accessory.working_load_kg }} kg{% else %}—{% endif %}</dd>
+                <dt class="col-5">Norma</dt><dd class="col-7">{{ accessory.standard|default:"—" }}</dd>
+                <dt class="col-5">Fabricante</dt><dd class="col-7">{{ accessory.manufacturer|default:"—" }}</dd>
+                <dt class="col-5">Suministro</dt><dd class="col-7">{{ accessory.supply_date|date:"d/m/Y"|default:"—" }}</dd>
+            </dl>
+            {% endif %}
+            <div class="mt-3 small">
+                <span class="fw-bold">Certificado del fabricante:</span>
+                {% if accessory.certificate_entry %}
+                <a href="{% url 'panel:documentation_document_view' pk=accessory.certificate_entry.pk %}" target="_blank" rel="noopener">{{ accessory.certificate_entry.name }}</a>
+                {% else %}
+                <span class="text-muted">sin vincular</span>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-7 d-flex flex-column gap-3">
+        <div class="border rounded p-3">
+            <div class="fw-bold mb-2">Entregas</div>
+            {% if assignments %}
+            <table class="table table-sm align-middle small mb-2">
+                <thead class="table-light">
+                    <tr><th>Responsable</th><th>Máquina</th><th>Entrega</th><th>Devolución</th><th>Observaciones</th></tr>
+                </thead>
+                <tbody>
+                    {% for item in assignments %}
+                    <tr class="{% if not item.row.end_date %}table-success{% endif %}">
+                        <td>{{ item.responsible }}</td>
+                        <td>{% if item.row.machine %}{{ item.row.machine.code }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+                        <td>{{ item.row.start_date|date:"d/m/Y" }}</td>
+                        <td>{% if item.row.end_date %}{{ item.row.end_date|date:"d/m/Y" }}{% else %}<span class="fw-semibold">Actual</span>{% endif %}</td>
+                        <td>{{ item.row.notes }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="text-muted small mb-2">Sin entregas registradas.</div>
+            {% endif %}
+            {% if can_manage %}
+            <form method="post" action="{% url 'panel:lifting_accessory_assign' accessory.pk %}" class="border-top pt-2">
+                {% csrf_token %}
+                <input type="hidden" name="back_url" value="{{ back_url }}">
+                <div class="small fw-bold mb-1">Nueva entrega{% if has_open_assignment %} <span class="fw-normal text-muted">(cierra la actual)</span>{% endif %}</div>
+                <div class="row g-2">
+                    {% for field in assignment_form %}
+                    <div class="col-md-6">
+                        <label class="form-label small mb-0" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                        {{ field }}
+                        {% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+                    </div>
+                    {% endfor %}
+                </div>
+                <button type="submit" class="btn btn-sm btn-primary mt-2">Registrar entrega</button>
+            </form>
+            {% if has_open_assignment %}
+            <form method="post" action="{% url 'panel:lifting_accessory_return' accessory.pk %}" class="border-top pt-2 mt-2 d-flex align-items-end gap-2">
+                {% csrf_token %}
+                <input type="hidden" name="back_url" value="{{ back_url }}">
+                <div>
+                    <label class="form-label small mb-0" for="{{ return_form.end_date.id_for_label }}">{{ return_form.end_date.label }}</label>
+                    {{ return_form.end_date }}
+                    {% for error in return_form.end_date.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+                </div>
+                <button type="submit" class="btn btn-sm btn-outline-secondary">Registrar devolución</button>
+            </form>
+            {% endif %}
+            {% endif %}
+        </div>
+
+        <div class="border rounded p-3">
+            <div class="fw-bold mb-2">Revisiones</div>
+            {% if reviews %}
+            <table class="table table-sm align-middle small mb-2">
+                <thead class="table-light">
+                    <tr><th>Revisión</th><th>Caducidad</th><th>Documento</th>{% if can_manage %}<th></th>{% endif %}</tr>
+                </thead>
+                <tbody>
+                    {% for review in reviews %}
+                    <tr>
+                        <td>{{ review.review_date|date:"d/m/Y" }}</td>
+                        <td>
+                            {{ review.expiry_date|date:"d/m/Y" }}
+                            {% if review.explicit_expiry_date %}<span class="badge text-bg-light border ms-1" title="Indicada por el supervisor">indicada</span>{% endif %}
+                        </td>
+                        <td>
+                            {% if review.source_entry %}
+                            <a href="{% url 'panel:documentation_document_view' pk=review.source_entry.pk %}" target="_blank" rel="noopener">{{ review.source_entry.name }}</a>
+                            {% else %}<span class="text-muted">—</span>{% endif %}
+                        </td>
+                        {% if can_manage %}
+                        <td class="text-end">
+                            <form method="post" action="{% url 'panel:lifting_accessory_review_delete' accessory.pk review.pk %}"
+                                  onsubmit="return confirm('¿Eliminar esta revisión? Solo se borra el registro; el documento no se toca.');">
+                                {% csrf_token %}
+                                <input type="hidden" name="back_url" value="{{ back_url }}">
+                                <button type="submit" class="btn btn-sm btn-link text-danger p-0" title="Eliminar"><i class="bi bi-trash"></i></button>
+                            </form>
+                        </td>
+                        {% endif %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="text-muted small mb-2">Sin revisiones registradas{% if accessory.supply_date %}: la vigencia se cuenta desde el suministro ({{ accessory.supply_date|date:"d/m/Y" }}){% endif %}.</div>
+            {% endif %}
+            {% if can_manage %}
+            <form method="post" action="{% url 'panel:lifting_accessory_review_create' accessory.pk %}" class="border-top pt-2">
+                {% csrf_token %}
+                <input type="hidden" name="back_url" value="{{ back_url }}">
+                <div class="small fw-bold mb-1">Nueva revisión</div>
+                {% for error in review_form.non_field_errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+                <div class="row g-2">
+                    {% for field in review_form %}
+                    <div class="{% if field.name == 'source_entry' %}col-12{% else %}col-md-6{% endif %}">
+                        <label class="form-label small mb-0" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                        {{ field }}
+                        {% if field.help_text %}<div class="form-text small">{{ field.help_text }}</div>{% endif %}
+                        {% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+                    </div>
+                    {% endfor %}
+                </div>
+                <button type="submit" class="btn btn-sm btn-primary mt-2">Registrar revisión</button>
+            </form>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

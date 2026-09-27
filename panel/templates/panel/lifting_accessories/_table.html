@@ -1,0 +1,96 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/lifting_accessories/_table.html #}
+{% comment %}
+H30 (S121). Fragmento de tabla de la pestaña "Accesorios de
+elevación" -- lo devuelven la carga inicial, cada filtro/orden y cada
+acción masiva. Cabeceras (sort_columns) y datos derivados de cada fila
+(máquina, responsable, caducidad, aviso) llegan resueltos desde la
+vista: aquí solo se pintan (plantillas tontas). La selección vive en el
+JS de _pane.html y sobrevive a cada repintado.
+{% endcomment %}
+<div id="lifting-fragment-state" class="d-none"
+     data-count="{{ accessories|length }}"
+     data-filtered="{% if is_filtered %}1{% endif %}"
+     data-sort-active="{% if sort_active %}1{% endif %}"
+     data-sort="{{ current_sort }}"></div>
+{% comment %}
+Orden vigente, para que los filtros del panel fijo lo conserven
+(hx-include="#lifting-sort-inputs", mismo mecanismo que
+#fleet-sort-inputs de Centros de gasto).
+{% endcomment %}
+<span id="lifting-sort-inputs" class="d-none">
+    <input type="hidden" name="sort" value="{{ current_sort }}">
+</span>
+{% if accessories %}
+<table class="table table-sm table-hover align-middle mb-0" id="lifting-table">
+    <thead class="table-light">
+        <tr>
+            <th class="lifting-check-col">
+                <input class="form-check-input" type="checkbox" id="lifting-check-all"
+                       title="Marcar/desmarcar todos los visibles">
+            </th>
+            {% for column in sort_columns %}
+            <th>
+                <a class="text-decoration-none text-reset d-flex align-items-center gap-1 user-select-none lifting-sort-link"
+                   hx-get="{% url 'panel:lifting_accessory_results' %}"
+                   hx-target="#lifting-table-container"
+                   hx-include="#lifting-filter-search, #lifting-filter-type, #lifting-filter-status, #lifting-only-selected, #lifting-selected-ids"
+                   hx-trigger="click"
+                   hx-vals='{"sort": "{{ column.next }}"}'>
+                    {{ column.label }}
+                    {% if column.arrow %}
+                        <i class="bi bi-arrow-{{ column.arrow }}-short"></i>{% if column.priority %}<sup class="small">{{ column.priority }}</sup>{% endif %}
+                    {% else %}
+                        <i class="bi bi-arrow-down-up text-muted opacity-50 small"></i>
+                    {% endif %}
+                </a>
+            </th>
+            {% endfor %}
+        </tr>
+    </thead>
+    <tbody>
+        {% for accessory in accessories %}
+        <tr class="{% if not accessory.is_active %}text-muted{% endif %}">
+            <td>
+                <input class="form-check-input lifting-row-check" type="checkbox"
+                       data-pk="{{ accessory.pk }}"
+                       data-label="{{ accessory.accessory_type.label }} {{ accessory.identifier }}">
+            </td>
+            <td>{{ accessory.accessory_type.label }}</td>
+            <td>
+                <a href="{% url 'panel:lifting_accessory_detail' accessory.pk %}"
+                   class="fw-semibold">{{ accessory.identifier }}</a>
+            </td>
+            <td>{{ accessory.description }}{% if accessory.dimensions %} <span class="text-muted">({{ accessory.dimensions }})</span>{% endif %}</td>
+            <td class="text-end">{{ accessory.working_load_kg|default_if_none:"" }}</td>
+            <td>{% if accessory.current_machine %}{{ accessory.current_machine.code }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+            <td>{% if accessory.responsible_label %}{{ accessory.responsible_label }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+            <td>{{ accessory.last_review_date|date:"d/m/Y"|default:"—" }}</td>
+            <td>
+                {% if accessory.expiry %}
+                    {% if accessory.is_expired %}
+                    <span class="text-danger fw-semibold" title="Caducado">
+                        <i class="bi bi-exclamation-triangle-fill me-1"></i>{{ accessory.expiry|date:"d/m/Y" }}
+                    </span>
+                    {% else %}
+                    {{ accessory.expiry|date:"d/m/Y" }}
+                    {% endif %}
+                {% else %}
+                <span class="text-muted">—</span>
+                {% endif %}
+            </td>
+            <td>
+                {% if accessory.is_active %}
+                <span class="badge text-bg-success">En servicio</span>
+                {% else %}
+                <span class="badge text-bg-secondary">Retirado</span>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<div class="text-muted small py-3">
+    {% if is_filtered %}Ningún accesorio coincide con el filtro.{% else %}Todavía no hay accesorios de elevación dados de alta.{% endif %}
+</div>
+{% endif %}
