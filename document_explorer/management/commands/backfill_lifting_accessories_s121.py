@@ -176,6 +176,16 @@ class Command(BaseCommand):
                                   % (item["id"], item["subject_from"]))
                     continue
             before = entry.document_type.code if entry.document_type else "-"
+            if before == doc_type.code and (
+                source is None
+                or (entry.domain_content_type_id
+                    == source.domain_content_type_id
+                    and entry.domain_object_id == source.domain_object_id)
+            ):
+                self.out("  %s: ya es %s | %s" % (
+                    entry.pk, doc_type.code, item["note"],
+                ))
+                continue
             self.out("  %s: %s -> %s%s | %s" % (
                 entry.pk, before, doc_type.code,
                 " (sujeto de %s)" % source.pk if source else "",
@@ -367,9 +377,11 @@ class Command(BaseCommand):
                 fields.append("traceability")
             if apply and fields:
                 accessory.save(update_fields=fields + ["updated_at"])
-        verb = "" if apply else "a "
-        self.out("  -> modelos %screar: %d | accesorios con modelo "
-                 "%sasignar: %d | trazabilidades %sguardar: %d" % (
-                     "" if apply else "a ", new_models, verb, set_model,
-                     verb, set_trace,
-                 ))
+        if apply:
+            self.out("  -> modelos creados: %d | modelos asignados: %d | "
+                     "trazabilidades guardadas: %d"
+                     % (new_models, set_model, set_trace))
+        else:
+            self.out("  -> modelos a crear: %d | modelos a asignar: %d | "
+                     "trazabilidades a guardar: %d"
+                     % (new_models, set_model, set_trace))
