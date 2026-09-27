@@ -1486,7 +1486,7 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
         if main_accordion_open not in (
             "collapseDatosPersonales", "collapseLaboralMain",
             "collapseSaludMain", "collapseDocumentacionMain",
-            "collapseEpisMain",
+            "collapseEpisMain", "collapseAccesoriosMain",
         ):
             main_accordion_open = "collapseDatosPersonales"
 
@@ -1824,6 +1824,12 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
             "doc_types": doc_types, "epi_deliveries": epi_deliveries,
             "epi_families": epi_families,
             "epi_items": epi_items,
+            # H30 (S121): accesorios de elevación entregados ahora a esta
+            # persona (su responsable) -- solo consulta, el CRUD vive en
+            # su pestaña del hub.
+            "lifting_accessories": _person_lifting_accessories(
+                person, request.user.company_user.company,
+            ),
             # H31 (S113): lotes de EPIs guardados para el nuevo flujo de
             # entrega desde la ficha individual (mismo modal que la
             # acción masiva de Personal).
@@ -1835,6 +1841,22 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
             "main_accordion_open": main_accordion_open,
             "selected_document_ids": selected_document_ids,
         })
+
+
+def _person_lifting_accessories(person, company):
+    """
+    Lifting accessories delivered now to a person, ready to paint.
+    ---
+    Accesorios de elevación entregados ahora a una persona, con sus
+    datos derivados (centro de gasto, fecha de entrega, caducidad,
+    certificado) ya resueltos.
+    """
+    from document_explorer.lifting_accessory_service import (
+        accessories_for_person,
+    )
+    from panel.views_lifting_accessories import _annotate
+
+    return _annotate(accessories_for_person(person, company))
 
 
 def _resolve_document_selection(request, pk):

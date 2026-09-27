@@ -287,3 +287,20 @@ def accessories_for_machine(machine):
     ).select_related("accessory_type").distinct().order_by(
         "accessory_type__display_order", "identifier",
     )
+
+
+def accessories_for_person(person, company):
+    """
+    Accessories of the company currently delivered to a person.
+    ---
+    Accesorios de la empresa entregados ahora mismo a una persona (es su
+    responsable, entrega abierta), para la sección de la ficha de
+    personal.
+    """
+    return LiftingAccessory.objects.filter(
+        company=company,
+        assignments__responsible_person=person,
+        assignments__end_date__isnull=True,
+    ).select_related("accessory_type").distinct().order_by(
+        "accessory_type__display_order", "identifier",
+    )

@@ -307,7 +307,7 @@ puede ser es que la interfaz no informe de lo que pasa."
             <div class="accordion-body">
                 {% if lifting_accessories %}
                 <table class="table table-sm table-hover mb-2 mdet-table-sm">
-                    <thead><tr><th>Tipo</th><th>Nº</th><th>Descripción</th><th>Responsable</th><th>Caducidad</th><th>Certificado</th></tr></thead>
+                    <thead><tr><th>Tipo</th><th>Nº</th><th>Descripción</th><th>Entregado a</th><th>Entregado el</th><th>Caducidad</th><th>Certificado</th></tr></thead>
                     <tbody>
                         {% for accessory in lifting_accessories %}
                         <tr>
@@ -315,6 +315,7 @@ puede ser es que la interfaz no informe de lo que pasa."
                             <td><a href="{% url 'panel:lifting_accessory_detail' accessory.pk %}?back_url={{ request.get_full_path|urlencode }}">{{ accessory.identifier }}</a></td>
                             <td>{{ accessory.description|default:"—" }}</td>
                             <td>{{ accessory.responsible_label|default:"—" }}</td>
+                            <td class="text-nowrap">{{ accessory.current_assignment_row.start_date|date:"d/m/Y" }}</td>
                             <td class="text-nowrap">
                                 {% if accessory.is_expired %}
                                 <span class="text-danger fw-semibold"><i class="bi bi-exclamation-triangle-fill me-1"></i>{{ accessory.expiry|date:"d/m/Y" }}</span>
