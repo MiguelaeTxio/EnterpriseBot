@@ -210,38 +210,33 @@ def _safe_segment(value):
     return value.upper() or "SIN-NUMERO"
 
 
-def _upload_document(accessory, uploaded_file, type_code, root, label,
-                     stamp_date=None):
+def store_document(accessory, data, extension, type_code, root, filename,
+                   issue_date=None):
     """
-    Upload a file typed `type_code` into `root/<accessory type>/` and link
-    it to the accessory.
+    Store ready-made bytes as a document typed `type_code` in
+    `root/<accessory type>/filename`, linked to the accessory.
     ---
-    Sube un archivo tipado `type_code` a `root/<tipo de accesorio>/` y
-    lo enlaza al accesorio (vínculo genérico de dominio) -- mismo flujo
-    que la ficha técnica de un EPI (EpiTechnicalSheetUploadView). Cada
-    subida AÑADE un documento, nunca sustituye a otro (4.12). Lanza
-    ValueError si el archivo no es PDF o imagen.
+    Guarda unos bytes ya preparados como documento tipado `type_code` en
+    `root/<tipo de accesorio>/filename`, enlazado al accesorio (vínculo
+    genérico de dominio). Lo usan la subida desde el panel y el alta de
+    los certificados del bucket (backfill S121), con la misma regla. No
+    sobrescribe: si ya hay un documento vivo con ese blob, lo devuelve
+    tal cual (idempotente). ValueError si la extensión no es PDF o
+    imagen.
     """
     from spare_parts.gcs_service import upload_bytes
 
-    extension = (
-        uploaded_file.name.rsplit(".", 1)[-1].lower()
-        if "." in uploaded_file.name else ""
-    )
     if extension not in _CONTENT_TYPES:
         raise ValueError("Debe ser un PDF o una imagen.")
-    document_type = DocumentTypeCatalog.objects.get(code=type_code)
-    data = uploaded_file.read()
-    stamp = timezone.now().strftime("%Y%m%d%H%M%S")
-    if stamp_date is not None:
-        stamp = "%s_%s" % (stamp_date.strftime("%Y%m%d"), stamp)
-    filename = "%s_%s_%s_%s.%s" % (
-        accessory.accessory_type.code, _safe_segment(accessory.identifier),
-        label, stamp, extension,
-    )
     target_folder = "%s/%s" % (root, accessory.accessory_type.code)
-    ensure_folder_chain(BUCKET, target_folder)
     blob_name = "%s/%s" % (target_folder, filename)
+    existing = _live_documents().filter(
+        blob_name_hash=path_digest(blob_name),
+    ).first()
+    if existing is not None:
+        return existing
+    document_type = DocumentTypeCatalog.objects.get(code=type_code)
+    ensure_folder_chain(BUCKET, target_folder)
     upload_bytes(
         BUCKET, blob_name, data, content_type=_CONTENT_TYPES[extension],
     )
@@ -256,8 +251,37 @@ def _upload_document(accessory, uploaded_file, type_code, root, label,
         size_bytes=len(data),
         content_type=_CONTENT_TYPES[extension],
         document_type=document_type,
+        issue_date=issue_date,
         domain_content_type=_accessory_ct(),
         domain_object_id=accessory.pk,
+    )
+
+
+def _upload_document(accessory, uploaded_file, type_code, root, label,
+                     stamp_date=None):
+    """
+    Upload a panel file typed `type_code` and link it to the accessory.
+    ---
+    Sube un archivo del panel tipado `type_code` y lo enlaza al
+    accesorio -- mismo flujo que la ficha técnica de un EPI
+    (EpiTechnicalSheetUploadView). Cada subida AÑADE un documento (el
+    nombre lleva fecha y hora), nunca sustituye a otro (4.12).
+    ValueError si el archivo no es PDF o imagen.
+    """
+    extension = (
+        uploaded_file.name.rsplit(".", 1)[-1].lower()
+        if "." in uploaded_file.name else ""
+    )
+    stamp = timezone.now().strftime("%Y%m%d%H%M%S")
+    if stamp_date is not None:
+        stamp = "%s_%s" % (stamp_date.strftime("%Y%m%d"), stamp)
+    filename = "%s_%s_%s_%s.%s" % (
+        accessory.accessory_type.code, _safe_segment(accessory.identifier),
+        label, stamp, extension,
+    )
+    return store_document(
+        accessory, uploaded_file.read(), extension, type_code, root,
+        filename, issue_date=stamp_date,
     )
 
 
