@@ -35,15 +35,17 @@ BUCKET = "cgs_grupo_alvarez"
 
 # S121 -- decisión de Miguel Ángel: "igual que tenemos fichas técnicas
 # para los EPIs, debemos tener certificados para los accesorios de
-# elevación, y estos deben estar perfectamente tipados". Solo este tipo
-# se ofrece como certificado (la primera versión incluía CE: 416
-# declaraciones CE de toda la maquinaria mezcladas en el desplegable).
+# elevación, y estos deben estar perfectamente tipados". Lo que ya está
+# en el bucket lo tipa y enlaza el sistema; el supervisor solo sube el
+# documento al dar de alta algo nuevo (nunca elige archivos de una
+# lista ni ve rutas).
 CERTIFICATE_TYPE_CODE = "CERT_ACCESORIO_ELEVACION"
-REVIEW_TYPE_CODES = ("REVISION_ESLINGAS", "CERT_ACCESORIO_ELEVACION")
+REVIEW_TYPE_CODE = "REVISION_ESLINGAS"
 
-# Carpeta de los certificados subidos desde el panel, una subcarpeta
-# por tipo de accesorio -- mismo patrón que _FICHAS_TECNICAS_EPI/<código>.
+# Carpetas de lo subido desde el panel, una subcarpeta por tipo de
+# accesorio -- mismo patrón que _FICHAS_TECNICAS_EPI/<código>.
 CERTIFICATES_ROOT = "_CERTIFICADOS_ACCESORIOS_ELEVACION"
+REVIEWS_ROOT = "_REVISIONES_ACCESORIOS_ELEVACION"
 _CONTENT_TYPES = {
     "pdf": "application/pdf",
     "jpg": "image/jpeg",
@@ -53,15 +55,17 @@ _CONTENT_TYPES = {
 
 
 @transaction.atomic
-def assign_accessory(accessory, responsible_person, start_date,
-                     machine=None, notes=""):
+def assign_accessory(accessory, responsible_person, machine, start_date,
+                     notes=""):
     """
-    Deliver an accessory: close the open delivery (if any) the day the
-    new one starts and create the new one -- never overwrite history.
+    Deliver an accessory to a cost centre and a responsible person:
+    close the open delivery (if any) the day the new one starts and
+    create the new one -- never overwrite history.
     ---
-    Entrega un accesorio: cierra la entrega abierta (si la hay) el día
-    en que empieza la nueva y crea la nueva -- el historial nunca se
-    sobrescribe (decisión 3 de Miguel Ángel, S121).
+    Entrega un accesorio a un centro de gasto y a una persona
+    responsable (ambos obligatorios, S121): cierra la entrega abierta
+    (si la hay) el día en que empieza la nueva y crea la nueva -- el
+    historial nunca se sobrescribe.
     """
     LiftingAccessoryAssignment.objects.filter(
         accessory=accessory, end_date__isnull=True,
@@ -89,14 +93,22 @@ def return_accessory(accessory, end_date):
 
 
 def register_review(accessory, review_date, explicit_expiry_date=None,
-                    source_entry=None):
+                    review_file=None):
     """
-    Record one periodic review of one accessory.
+    Record one periodic review of one accessory, with its document
+    uploaded if given.
     ---
-    Registra una revisión periódica de un accesorio. La vigencia la
-    calcula el propio modelo (revisión + 12 meses, salvo caducidad
-    indicada, que prevalece -- decisión 5).
+    Registra una revisión periódica de un accesorio y, si se da, sube
+    su documento ya tipado REVISION_ESLINGAS y enlazado al accesorio.
+    La vigencia la calcula el propio modelo (revisión + 12 meses, salvo
+    caducidad indicada, que prevalece -- decisión 5).
     """
+    source_entry = None
+    if review_file is not None:
+        source_entry = _upload_document(
+            accessory, review_file, REVIEW_TYPE_CODE, REVIEWS_ROOT,
+            "REVISION", stamp_date=review_date,
+        )
     return LiftingAccessoryReview.objects.create(
         accessory=accessory,
         review_date=review_date,
@@ -150,23 +162,6 @@ def _accessory_ct():
     return ContentType.objects.get_for_model(LiftingAccessory)
 
 
-def certificate_candidates():
-    """
-    Certificates offered to link: live CERT_ACCESORIO_ELEVACION documents
-    not yet linked to any accessory.
-    ---
-    Certificados que se ofrecen para vincular: documentos vivos
-    `CERT_ACCESORIO_ELEVACION` que no están vinculados todavía a ningún
-    accesorio (los que cuelgan de una máquina sí se ofrecen: al
-    vincularlos pasan a su accesorio, que la ficha de máquina muestra).
-    """
-    return _live_documents().filter(
-        document_type__code=CERTIFICATE_TYPE_CODE,
-    ).exclude(
-        domain_content_type=_accessory_ct(),
-    ).select_related("document_type").order_by("parent_path", "name")
-
-
 def certificates_of(accessories):
     """
     {accessory pk: [certificate entries]} for the given accessories, in
@@ -204,22 +199,6 @@ def link_certificate(accessory, entry):
     return entry
 
 
-def unlink_certificate(accessory, entry_id):
-    """
-    Unlink a certificate from the accessory; the document stays as it is.
-    Returns True if it was linked to this accessory.
-    ---
-    Desvincula un certificado del accesorio; el documento sigue igual,
-    tipado, sin sujeto, y vuelve a ofrecerse para vincular. Devuelve
-    True si estaba vinculado a este accesorio.
-    """
-    return bool(_live_documents().filter(
-        pk=entry_id,
-        domain_content_type=_accessory_ct(),
-        domain_object_id=accessory.pk,
-    ).update(domain_content_type=None, domain_object_id=None))
-
-
 def _safe_segment(value):
     """
     File-name-safe version of a free text (the accessory identifier).
@@ -231,15 +210,17 @@ def _safe_segment(value):
     return value.upper() or "SIN-NUMERO"
 
 
-def upload_certificate(accessory, uploaded_file):
+def _upload_document(accessory, uploaded_file, type_code, root, label,
+                     stamp_date=None):
     """
-    Upload a certificate file, typed CERT_ACCESORIO_ELEVACION and linked
-    to the accessory -- same flow as the EPI technical sheet upload.
+    Upload a file typed `type_code` into `root/<accessory type>/` and link
+    it to the accessory.
     ---
-    Sube un certificado ya tipado `CERT_ACCESORIO_ELEVACION` y vinculado
-    al accesorio -- mismo flujo que la subida de ficha técnica de un EPI
-    (EpiTechnicalSheetUploadView). Cada subida AÑADE un documento, nunca
-    sustituye a otro. Lanza ValueError si el archivo no es PDF o imagen.
+    Sube un archivo tipado `type_code` a `root/<tipo de accesorio>/` y
+    lo enlaza al accesorio (vínculo genérico de dominio) -- mismo flujo
+    que la ficha técnica de un EPI (EpiTechnicalSheetUploadView). Cada
+    subida AÑADE un documento, nunca sustituye a otro (4.12). Lanza
+    ValueError si el archivo no es PDF o imagen.
     """
     from spare_parts.gcs_service import upload_bytes
 
@@ -248,17 +229,17 @@ def upload_certificate(accessory, uploaded_file):
         if "." in uploaded_file.name else ""
     )
     if extension not in _CONTENT_TYPES:
-        raise ValueError("El certificado debe ser un PDF o una imagen.")
-    document_type = DocumentTypeCatalog.objects.get(code=CERTIFICATE_TYPE_CODE)
+        raise ValueError("Debe ser un PDF o una imagen.")
+    document_type = DocumentTypeCatalog.objects.get(code=type_code)
     data = uploaded_file.read()
     stamp = timezone.now().strftime("%Y%m%d%H%M%S")
-    filename = "%s_%s_CERT_ACCESORIO_ELEVACION_%s.%s" % (
+    if stamp_date is not None:
+        stamp = "%s_%s" % (stamp_date.strftime("%Y%m%d"), stamp)
+    filename = "%s_%s_%s_%s.%s" % (
         accessory.accessory_type.code, _safe_segment(accessory.identifier),
-        stamp, extension,
+        label, stamp, extension,
     )
-    target_folder = "%s/%s" % (
-        CERTIFICATES_ROOT, accessory.accessory_type.code,
-    )
+    target_folder = "%s/%s" % (root, accessory.accessory_type.code)
     ensure_folder_chain(BUCKET, target_folder)
     blob_name = "%s/%s" % (target_folder, filename)
     upload_bytes(
@@ -280,15 +261,17 @@ def upload_certificate(accessory, uploaded_file):
     )
 
 
-def review_candidates():
+def upload_certificate(accessory, uploaded_file):
     """
-    Documents offered as the document of a review.
+    Upload a certificate, typed CERT_ACCESORIO_ELEVACION and linked.
     ---
-    Documentos que se ofrecen como documento de una revisión.
+    Sube un certificado, ya tipado CERT_ACCESORIO_ELEVACION y enlazado
+    al accesorio.
     """
-    return _live_documents().filter(
-        document_type__code__in=REVIEW_TYPE_CODES,
-    ).select_related("document_type").order_by("parent_path", "name")
+    return _upload_document(
+        accessory, uploaded_file, CERTIFICATE_TYPE_CODE, CERTIFICATES_ROOT,
+        "CERT_ACCESORIO_ELEVACION",
+    )
 
 
 def accessories_for_machine(machine):

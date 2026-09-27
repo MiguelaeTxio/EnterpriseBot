@@ -1,9 +1,12 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/lifting_accessories/_create_form.html #}
 {% comment %}
-H30 (S121). Formulario de alta de accesorio dentro del modal de la
-pestaña. Con éxito, la vista devuelve la tabla (hx-target); con
-errores, devuelve este mismo formulario y lo recoloca aquí dentro
-(HX-Retarget) sin perder lo escrito. La primera entrega es opcional.
+H30 (S121). Alta de un accesorio NUEVO (que no existe todavía): sus
+datos y su certificado, obligatorio, que se sube ya tipado y enlazado.
+Sin entrega -- entregar es un acto aparte (acción "Entregar" del
+listado o de la ficha). Nunca se eligen archivos existentes ni se ven
+rutas: lo que ya está en el bucket lo da de alta el sistema. Con éxito
+la vista devuelve la tabla; con errores, este mismo formulario
+recolocado aquí (HX-Retarget).
 {% endcomment %}
 <form hx-post="{% url 'panel:lifting_accessory_create' %}"
       hx-target="#lifting-table-container"
@@ -14,19 +17,18 @@ errores, devuelve este mismo formulario y lo recoloca aquí dentro
     {% if create_form.non_field_errors %}
     <div class="alert alert-danger py-1 small">{{ create_form.non_field_errors|join:" " }}</div>
     {% endif %}
+    <div class="alert alert-light border small py-2">
+        Solo para un accesorio que todavía no existe en la lista. Los accesorios que ya tienen su certificado en el sistema aparecen dados de alta.
+    </div>
     <div class="row g-2">
         {% for field in create_form %}
-        {% if field.name == "responsible_person" %}
-    </div>
-    <div class="fw-bold small mt-3 mb-1 border-top pt-2">Primera entrega (opcional)</div>
-    <div class="row g-2">
-        {% elif field.name == "certificate_existing" %}
+        {% if field.name == "certificate_file" %}
     </div>
     <div class="fw-bold small mt-3 mb-1 border-top pt-2">Certificado del fabricante</div>
     <div class="row g-2">
         {% endif %}
-        <div class="col-md-6">
-            <label class="form-label small mb-0" for="{{ field.id_for_label }}">{{ field.label }}</label>
+        <div class="{% if field.name == 'certificate_file' %}col-12{% else %}col-md-6{% endif %}">
+            <label class="form-label small mb-0" for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %} <span class="text-danger">*</span>{% endif %}</label>
             {{ field }}
             {% if field.help_text %}<div class="form-text small">{{ field.help_text }}</div>{% endif %}
             {% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}

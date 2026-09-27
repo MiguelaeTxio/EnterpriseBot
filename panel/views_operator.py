@@ -4,7 +4,6 @@
 from django.contrib import messages as django_messages
 from django.views.generic import TemplateView, View
 from django.shortcuts import get_object_or_404, redirect, render
-from django.db import models as django_models
 from django.db.models import Q, Prefetch
 from django.utils.timezone import now
 
@@ -163,54 +162,19 @@ class WorkshopAssetAutocompleteView (WorkshopRequiredMixin ,View ):
         Devuelve una lista filtrada de registros MachineAsset activos como JSON.
         """
         from django .http import JsonResponse 
-        from fleet .models import MachineAsset 
 
         try :
             company =request .user .company_user .company 
         except AttributeError :
             return JsonResponse ({"error":"Sin perfil de empresa."},status =403 )
 
-        q =request .GET .get ("q","").strip ()
-        qs =MachineAsset .objects .filter (company =company ,is_active =True )
+        # S121: la búsqueda vive en fleet.cost_center_search (una sola
+        # regla, compartida con la entrega de accesorios de elevación).
+        from fleet.cost_center_search import search_cost_centers
 
-        if q :
-            # Build a compound OR filter so the operator can search by
-            # asset code, brand/model or plate. A fourth branch extracts
-            # only the digit characters from the query and searches them
-            # as a substring inside the plate field — this allows finding
-            # "AB1234C" by typing "1234", regardless of the letter layout
-            # of the plate format (LNNNNLL, NNNNLLL, LLLNNNN, etc.).
-            #
-            # Construye un filtro OR compuesto para que el operario pueda
-            # buscar por código, marca/modelo o matrícula. Una cuarta rama
-            # extrae únicamente los dígitos del query y los busca como
-            # subcadena dentro del campo plate — permite encontrar "AB1234C"
-            # escribiendo "1234", independientemente del formato de la
-            # matrícula (LNNNNLL, NNNNLLL, LLLNNNN, etc.).
-            _q_digits = "".join(ch for ch in q if ch.isdigit())
-            _plate_filter = django_models.Q(plate__icontains=q)
-            if len(_q_digits) >= 4:
-                # Only activate digit-substring plate search when the query
-                # contains at least 4 consecutive digit characters. Shorter
-                # digit sequences (e.g. 'G12') produce too many false positives
-                # because they match any plate containing those digits.
-                # Solo activar la búsqueda por subcadena de dígitos en
-                # matrícula cuando el query contiene al menos 4 dígitos.
-                # Secuencias más cortas (ej: 'G12') generan demasiados falsos
-                # positivos al coincidir con cualquier matrícula que las contenga.
-                _plate_filter = (
-                    django_models.Q(plate__icontains=q)
-                    | django_models.Q(plate__icontains=_q_digits)
-                )
-            qs = qs.filter(
-                django_models.Q(code__icontains=q)
-                | django_models.Q(brand_model__icontains=q)
-                | _plate_filter
-            )
-
-        assets =list (
-        qs .order_by ("code")
-        .values ("code","brand_model","plate")[:20 ]
+        assets = list(
+            search_cost_centers(company, request.GET.get("q", ""))
+            .values("code", "brand_model", "plate")
         )
         return JsonResponse ({"assets":assets })
 

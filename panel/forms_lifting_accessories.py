@@ -1,29 +1,37 @@
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/forms_lifting_accessories.py
 """
 H30 (S121). Forms of the "Accesorios de elevación" tab of the
-Documentation hub: accessory, delivery, review and accessory type.
+Documentation hub: accessory, certificate, delivery, return, review and
+accessory type.
 
 ---
 
 H30 (S121). Formularios de la pestaña "Accesorios de elevación" del hub
-de Documentación: accesorio, entrega, revisión y tipo de accesorio.
+de Documentación: accesorio, certificado, entrega, devolución, revisión
+y tipo de accesorio.
+
+Criterio de Miguel Ángel (S121): el supervisor nunca ve nombres de
+archivo ni rutas del bucket, ni enlaza documentos a mano. Lo que ya
+existe en el bucket lo tipa y enlaza el sistema; el supervisor solo
+sube el documento cuando da de alta algo nuevo. Por eso aquí no hay
+ningún selector de documentos: solo campos de subida.
 """
 
 from django import forms
+from django.urls import reverse
 
-from document_explorer import lifting_accessory_service as service
 from document_explorer.models import (
-    DocumentIndexEntry,
     LiftingAccessory,
     LiftingAccessoryType,
     PersonIdentity,
 )
-from fleet.models import MachineAsset
+from fleet.cost_center_search import resolve_cost_center
 
 _DATE_WIDGET = forms.DateInput(
     format="%Y-%m-%d",
     attrs={"type": "date", "class": "form-control form-control-sm"},
 )
+_ACCEPTED_EXTENSIONS = ("pdf", "jpg", "jpeg", "png")
 
 
 def _small(widget_class, **attrs):
@@ -38,6 +46,35 @@ def _small(widget_class, **attrs):
         else "form-control form-control-sm"
     )
     return widget_class(attrs={"class": css, **attrs})
+
+
+def _file_field(label, required):
+    """
+    PDF or image upload field.
+    ---
+    Campo de subida de PDF o imagen.
+    """
+    return forms.FileField(
+        required=required,
+        label=label,
+        widget=forms.ClearableFileInput(attrs={
+            "class": "form-control form-control-sm",
+            "accept": ".pdf,.jpg,.jpeg,.png",
+        }),
+    )
+
+
+def _check_extension(form, field_name):
+    """
+    Add an error if the uploaded file is not a PDF or an image.
+    ---
+    Añade un error si el archivo subido no es un PDF o una imagen.
+    """
+    upload = form.cleaned_data.get(field_name)
+    if upload and (
+        upload.name.rsplit(".", 1)[-1].lower() not in _ACCEPTED_EXTENSIONS
+    ):
+        form.add_error(field_name, "Debe ser un PDF o una imagen.")
 
 
 class PersonChoiceField(forms.ModelChoiceField):
@@ -55,73 +92,15 @@ class PersonChoiceField(forms.ModelChoiceField):
         return "%s, %s" % (surnames, obj.given_name)
 
 
-class MachineChoiceField(forms.ModelChoiceField):
-    """
-    Machine selector labelled "code -- brand/model".
-    ---
-    Selector de máquina con etiqueta "código -- marca/modelo".
-    """
-
-    def label_from_instance(self, obj):
-        if obj.brand_model:
-            return "%s -- %s" % (obj.code, obj.brand_model)
-        return obj.code
-
-
-class DocumentChoiceField(forms.ModelChoiceField):
-    """
-    Document selector labelled "folder / file name".
-    ---
-    Selector de documento con etiqueta "carpeta / nombre de archivo".
-    """
-
-    def label_from_instance(self, obj):
-        folder = obj.parent_path.rstrip("/")
-        return "%s / %s" % (folder, obj.name) if folder else obj.name
-
-
-def _responsible_field(required):
-    """
-    Active workers, by surname.
-    ---
-    Trabajadores activos, por apellidos.
-    """
-    return PersonChoiceField(
-        queryset=PersonIdentity.objects.filter(
-            is_active_employee=True,
-        ).order_by("first_surname", "second_surname", "given_name"),
-        required=required,
-        label="Responsable",
-        empty_label="-- Elegir trabajador --",
-        widget=_small(forms.Select),
-    )
-
-
-def _machine_field(company):
-    """
-    Active machines of the company, by code.
-    ---
-    Máquinas activas de la empresa, por código.
-    """
-    return MachineChoiceField(
-        queryset=MachineAsset.objects.filter(
-            company=company, is_active=True,
-        ).order_by("code"),
-        required=False,
-        label="Máquina",
-        empty_label="-- Sin máquina --",
-        widget=_small(forms.Select),
-    )
-
-
 class LiftingAccessoryForm(forms.ModelForm):
     """
-    Create or edit one accessory. On create, an optional first delivery
-    (responsible, machine, date) can be recorded in the same step.
+    Create or edit one accessory. Creating means a NEW accessory (one
+    that does not exist yet), so its certificate upload is mandatory.
     ---
-    Alta o edición de un accesorio. En el alta se puede registrar en el
-    mismo paso una primera entrega opcional (responsable, máquina,
-    fecha).
+    Alta o edición de un accesorio. El alta es para un accesorio NUEVO
+    (que no existe todavía), así que subir su certificado es
+    obligatorio. El alta no incluye ninguna entrega: entregar es un acto
+    aparte (Miguel Ángel, S121).
     """
 
     class Meta:
@@ -141,7 +120,7 @@ class LiftingAccessoryForm(forms.ModelForm):
             "supply_date": _DATE_WIDGET,
         }
 
-    def __init__(self, *args, company=None, with_delivery=False, **kwargs):
+    def __init__(self, *args, company=None, is_create=False, **kwargs):
         super().__init__(*args, **kwargs)
         self.company = company
         self.fields["accessory_type"].queryset = (
@@ -151,41 +130,19 @@ class LiftingAccessoryForm(forms.ModelForm):
             )
         ).distinct()
         self.fields["accessory_type"].empty_label = "-- Elegir tipo --"
-        self.with_delivery = with_delivery
-        if with_delivery:
-            # Solo en el alta: el certificado se vincula (uno existente,
-            # ya tipado) o se sube (queda tipado al subirlo). En la ficha
-            # tienen su propia sección, con varios por accesorio.
-            self.fields["certificate_existing"] = DocumentChoiceField(
-                queryset=service.certificate_candidates(),
-                required=False,
-                label="Certificado del fabricante (existente)",
-                empty_label="-- Ninguno --",
-                widget=_small(forms.Select),
-            )
-            self.fields["certificate_file"] = forms.FileField(
-                required=False,
-                label="o subir el certificado (PDF o imagen)",
-                widget=forms.ClearableFileInput(attrs={
-                    "class": "form-control form-control-sm",
-                    "accept": ".pdf,.jpg,.jpeg,.png",
-                }),
-            )
-            self.fields["responsible_person"] = _responsible_field(False)
-            self.fields["machine"] = _machine_field(company)
-            self.fields["start_date"] = forms.DateField(
-                required=False, label="Fecha de entrega",
-                widget=_DATE_WIDGET,
+        if is_create:
+            self.fields["certificate_file"] = _file_field(
+                "Certificado del fabricante (PDF o foto)", required=True,
             )
 
     def clean(self):
         """
-        Unique (company, type, identifier), and a complete first delivery.
+        Unique (company, type, identifier); certificate PDF or image.
         ---
         Único por (empresa, tipo, nº) -- la restricción de BD incluye la
         empresa, que no es campo del formulario, así que se comprueba
-        aquí para dar un error legible en vez de un IntegrityError. Y
-        la primera entrega, si se rellena, necesita responsable y fecha.
+        aquí para dar un error legible en vez de un IntegrityError. Y el
+        certificado, PDF o imagen.
         """
         cleaned = super().clean()
         accessory_type = cleaned.get("accessory_type")
@@ -202,103 +159,46 @@ class LiftingAccessoryForm(forms.ModelForm):
                     "identifier",
                     "Ya existe un accesorio de este tipo con ese nº.",
                 )
-        if self.with_delivery:
-            person = cleaned.get("responsible_person")
-            machine = cleaned.get("machine")
-            start = cleaned.get("start_date")
-            if (machine or start) and not person:
-                self.add_error(
-                    "responsible_person",
-                    "Una entrega necesita siempre un responsable.",
-                )
-            if person and not start:
-                self.add_error("start_date", "Indica la fecha de entrega.")
-            if (cleaned.get("certificate_existing")
-                    and cleaned.get("certificate_file")):
-                self.add_error(
-                    "certificate_file",
-                    "Elige un certificado existente o sube uno, no ambos.",
-                )
-            upload = cleaned.get("certificate_file")
-            if upload and not _is_certificate_file(upload.name):
-                self.add_error(
-                    "certificate_file",
-                    "El certificado debe ser un PDF o una imagen.",
-                )
+        if "certificate_file" in self.fields:
+            _check_extension(self, "certificate_file")
         return cleaned
-
-
-def _is_certificate_file(name):
-    """
-    Whether a file name has an accepted certificate extension.
-    ---
-    Si el nombre de archivo tiene una extensión admitida de certificado.
-    """
-    return name.rsplit(".", 1)[-1].lower() in ("pdf", "jpg", "jpeg", "png")
 
 
 class LiftingAccessoryCertificateForm(forms.Form):
     """
-    Link an existing certificate or upload a new one (exactly one).
+    Upload one more certificate of an accessory (e.g. a renewed one).
     ---
-    Vincular un certificado existente o subir uno nuevo (exactamente
-    uno de los dos).
+    Subir otro certificado de un accesorio (p. ej. uno renovado).
     """
 
-    certificate_existing = DocumentChoiceField(
-        queryset=DocumentIndexEntry.objects.none(),
-        required=False,
-        label="Vincular un certificado existente",
-        empty_label="-- Ninguno --",
-        widget=_small(forms.Select),
+    certificate_file = _file_field(
+        "Subir certificado (PDF o foto)", required=True,
     )
-    certificate_file = forms.FileField(
-        required=False,
-        label="o subir uno nuevo (PDF o imagen)",
-        widget=forms.ClearableFileInput(attrs={
-            "class": "form-control form-control-sm",
-            "accept": ".pdf,.jpg,.jpeg,.png",
-        }),
-    )
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.fields["certificate_existing"].queryset = (
-            service.certificate_candidates()
-        )
 
     def clean(self):
-        """
-        Exactly one of the two, and only PDF or image uploads.
-        ---
-        Exactamente uno de los dos, y solo PDF o imagen al subir.
-        """
         cleaned = super().clean()
-        existing = cleaned.get("certificate_existing")
-        upload = cleaned.get("certificate_file")
-        if existing and upload:
-            raise forms.ValidationError(
-                "Elige un certificado existente o sube uno, no ambos.",
-            )
-        if not existing and not upload and not self.errors:
-            raise forms.ValidationError(
-                "Elige un certificado existente o sube uno.",
-            )
-        if upload and not _is_certificate_file(upload.name):
-            self.add_error(
-                "certificate_file",
-                "El certificado debe ser un PDF o una imagen.",
-            )
+        _check_extension(self, "certificate_file")
         return cleaned
 
 
 class LiftingAccessoryAssignmentForm(forms.Form):
     """
-    New delivery of an accessory.
+    Delivery: to which cost centre and to whom -- both mandatory.
     ---
-    Nueva entrega de un accesorio.
+    Entrega: a qué centro de gasto y a quién -- ambos obligatorios
+    (Miguel Ángel, S121). El centro de gasto se escribe por código y se
+    elige en el desplegable de coincidencias, el mismo sistema que el
+    parte diario digital (fleet.cost_center_search).
     """
 
+    cost_center = forms.CharField(
+        label="Centro de gasto",
+        widget=forms.TextInput(attrs={
+            "class": "form-control form-control-sm cdg-search",
+            "placeholder": "Código de máquina o CdG",
+            "autocomplete": "off",
+        }),
+    )
     start_date = forms.DateField(label="Fecha de entrega", widget=_DATE_WIDGET)
     notes = forms.CharField(
         required=False, label="Observaciones",
@@ -307,11 +207,37 @@ class LiftingAccessoryAssignmentForm(forms.Form):
 
     def __init__(self, *args, company=None, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["responsible_person"] = _responsible_field(True)
-        self.fields["machine"] = _machine_field(company)
-        self.order_fields(
-            ["responsible_person", "machine", "start_date", "notes"],
+        self.company = company
+        self.fields["cost_center"].widget.attrs["data-cdg-url"] = reverse(
+            "panel:lifting_accessory_cost_centers",
         )
+        self.fields["responsible_person"] = PersonChoiceField(
+            queryset=PersonIdentity.objects.filter(
+                is_active_employee=True,
+            ).order_by("first_surname", "second_surname", "given_name"),
+            label="Entregado a (responsable)",
+            empty_label="-- Elegir trabajador --",
+            widget=_small(forms.Select),
+        )
+        self.order_fields(
+            ["cost_center", "responsible_person", "start_date", "notes"],
+        )
+
+    def clean_cost_center(self):
+        """
+        Resolve the typed code to an active cost centre of the company.
+        ---
+        Resuelve el código escrito a un centro de gasto activo de la
+        empresa; si no existe, error legible.
+        """
+        machine = resolve_cost_center(
+            self.company, self.cleaned_data.get("cost_center"),
+        )
+        if machine is None:
+            raise forms.ValidationError(
+                "No existe ningún centro de gasto activo con ese código.",
+            )
+        return machine
 
 
 class LiftingAccessoryReturnForm(forms.Form):
@@ -331,7 +257,8 @@ class LiftingAccessoryReviewForm(forms.Form):
     New review; the explicit expiry, if given, prevails over +12 months.
     ---
     Nueva revisión; la caducidad indicada, si la hay, prevalece sobre
-    la fecha de revisión + 12 meses (decisión 5).
+    la fecha de revisión + 12 meses. Su documento, si lo hay, se sube
+    (nunca se elige de una lista de archivos).
     """
 
     review_date = forms.DateField(
@@ -342,20 +269,13 @@ class LiftingAccessoryReviewForm(forms.Form):
         widget=_DATE_WIDGET,
         help_text="Si la indicas, prevalece sobre la revisión + 12 meses.",
     )
-    source_entry = DocumentChoiceField(
-        queryset=DocumentIndexEntry.objects.none(),
-        required=False,
-        label="Documento de la revisión",
-        empty_label="-- Sin documento --",
-        widget=_small(forms.Select),
-    )
 
     def __init__(self, *args, with_document=True, **kwargs):
         super().__init__(*args, **kwargs)
         if with_document:
-            self.fields["source_entry"].queryset = service.review_candidates()
-        else:
-            del self.fields["source_entry"]
+            self.fields["review_file"] = _file_field(
+                "Documento de la revisión (opcional)", required=False,
+            )
 
     def clean(self):
         """
@@ -371,6 +291,8 @@ class LiftingAccessoryReviewForm(forms.Form):
                 "explicit_expiry_date",
                 "La caducidad no puede ser anterior a la revisión.",
             )
+        if "review_file" in self.fields:
+            _check_extension(self, "review_file")
         return cleaned
 
 

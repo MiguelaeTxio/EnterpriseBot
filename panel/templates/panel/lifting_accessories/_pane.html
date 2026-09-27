@@ -1,4 +1,5 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/lifting_accessories/_pane.html #}
+{% load static %}
 {% comment %}
 H30 (S121). Pestaña "Accesorios de elevación" del hub de
 Documentación -- el CRUD de los accesorios vive aquí, como el de los
@@ -107,6 +108,9 @@ screen_key "lifting_accessories"); la selección también (clave
                             data-bs-toggle="modal" data-bs-target="#liftingCreateModal">
                         <i class="bi bi-plus-lg me-1"></i>Nuevo accesorio
                     </button>
+                    <button type="button" class="btn btn-sm btn-outline-primary lifting-needs-selection" id="lifting-mass-assign" disabled>
+                        <i class="bi bi-box-arrow-right me-1"></i>Entregar
+                    </button>
                     <button type="button" class="btn btn-sm btn-outline-primary lifting-needs-selection" id="lifting-mass-review" disabled>
                         <i class="bi bi-clipboard-check me-1"></i>Registrar revisión
                     </button>
@@ -118,7 +122,7 @@ screen_key "lifting_accessories"); la selección también (clave
                     </button>
                 </div>
                 <div class="form-text small mt-1">
-                    La entrega a una persona o máquina y las revisiones de un solo accesorio se registran en su ficha (pulsa su nº).
+                    "Nuevo accesorio" es solo para uno que no está en la lista. Para ver o editar un accesorio, pulsa su nº.
                 </div>
                 {% else %}
                 <span class="text-muted small">Solo consulta para tu rol.</span>
@@ -203,6 +207,30 @@ respeta lo que se estaba viendo.
     </div>
 </div>
 
+<div class="modal fade" id="liftingAssignModal" tabindex="-1" aria-labelledby="liftingAssignModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="liftingAssignModalLabel">Entregar accesorios</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="lifting-assign-fields">
+                <p class="small mb-2" id="liftingAssignModalText"></p>
+                {% for field in assign_form %}
+                <div class="mb-2{% if field.name == 'cost_center' %} position-relative{% endif %}">
+                    <label class="form-label small mb-0" for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %} <span class="text-danger">*</span>{% endif %}</label>
+                    {{ field }}
+                </div>
+                {% endfor %}
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-sm btn-primary" id="lifting-assign-confirm">Entregar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="modal fade" id="liftingReviewModal" tabindex="-1" aria-labelledby="liftingReviewModalLabel" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -241,6 +269,7 @@ respeta lo que se estaba viendo.
     </div>
 </div>
 {{ saved_selection|json_script:"lifting-saved-selection" }}
+<script src="{% static 'panel/js/cost_center_picker.js' %}"></script>
 {% include "panel/_fixed_list_layout.html" with top_id="lifting-top-panel" bottom_id="lifting-bottom-panel" %}
 <script>
 (function () {
@@ -423,6 +452,34 @@ respeta lo que se estaba viendo.
     massStatus("lifting-mass-retire", "retire",
         "¿Retirar del servicio {n} accesorios? Se cierra su entrega actual con fecha de hoy; no se borra nada.");
     massStatus("lifting-mass-reactivate", "reactivate", "¿Reactivar {n} accesorios?");
+
+    // Entrega: a qué centro de gasto y a quién (ambos obligatorios),
+    // la misma para todos los marcados -- p. ej. el juego de eslingas
+    // de una grúa y su operador. Los retirados no se entregan.
+    const assignButton = document.getElementById("lifting-mass-assign");
+    if (assignButton) {
+        let assignModal = null;
+        const fields = document.getElementById("lifting-assign-fields");
+        assignButton.addEventListener("click", function () {
+            if (!selection.size) return;
+            document.getElementById("liftingAssignModalText").textContent =
+                "Se entregarán " + selection.size + " accesorio(s). Si ya estaban entregados, su entrega anterior se cierra con esta fecha.";
+            if (!assignModal) assignModal = new bootstrap.Modal(document.getElementById("liftingAssignModal"));
+            assignModal.show();
+        });
+        document.getElementById("lifting-assign-confirm").addEventListener("click", function () {
+            const extra = {selected: Array.from(selection.keys())};
+            fields.querySelectorAll("input[name], select[name]").forEach(function (input) {
+                extra[input.name] = input.value;
+            });
+            if (!extra.cost_center || !extra.responsible_person || !extra.start_date) {
+                showToast("Indica centro de gasto, responsable y fecha.", true);
+                return;
+            }
+            postAction("{% url 'panel:lifting_accessory_bulk_assign' %}", extra)
+                .then(function (ok) { if (ok && assignModal) assignModal.hide(); });
+        });
+    }
 
     // Revisión masiva: la misma fecha (y caducidad opcional) en todos
     // los marcados -- la revisión anual de eslingas se hace por lotes.

@@ -25,7 +25,7 @@ from urllib.parse import quote
 
 from django.contrib import messages
 from django.db import transaction
-from django.http import HttpResponse, HttpResponseBadRequest
+from django.http import HttpResponse, HttpResponseBadRequest, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views import View
@@ -39,6 +39,7 @@ from document_explorer.models import (
     LiftingAccessoryType,
     add_months,
 )
+from fleet.cost_center_search import search_cost_centers
 from ivr_config.models import CompanyUser
 from panel.forms_lifting_accessories import (
     LiftingAccessoryAssignmentForm,
@@ -82,7 +83,7 @@ _COLUMNS = (
     ("identifier", "Nº certificado / serie"),
     ("description", "Descripción"),
     ("load", "Carga (kg)"),
-    ("machine", "Máquina"),
+    ("machine", "Centro de gasto"),
     ("responsible", "Responsable"),
     ("review", "Última revisión"),
     ("expiry", "Caducidad"),
@@ -376,7 +377,10 @@ class LiftingAccessoryTabView(CompanyUserRequiredMixin, View):
                 is_active=True,
             ).order_by("display_order", "label"),
             "create_form": LiftingAccessoryForm(
-                company=company, with_delivery=True,
+                company=company, is_create=True,
+            ),
+            "assign_form": LiftingAccessoryAssignmentForm(
+                company=company, initial={"start_date": date.today()},
             ),
             "review_form": LiftingAccessoryReviewForm(with_document=False),
             "type_form": LiftingAccessoryTypeForm(),
@@ -403,16 +407,18 @@ class LiftingAccessoryResultsView(CompanyUserRequiredMixin, View):
 
 class LiftingAccessoryCreateView(DocsUploadAccessMixin, View):
     """
-    POST: create one accessory (and its optional first delivery).
+    POST: create one NEW accessory, with its mandatory certificate.
     ---
-    POST: alta de un accesorio (y su primera entrega opcional). Con
-    errores, repinta el formulario dentro del modal (HX-Retarget).
+    POST: alta de un accesorio NUEVO (que no existe todavía), con su
+    certificado obligatorio, que se sube ya tipado y enlazado. Sin
+    entrega: entregar es un acto aparte (S121). Con errores, repinta el
+    formulario dentro del modal (HX-Retarget).
     """
 
     def post(self, request):
         company = request.user.company_user.company
         form = LiftingAccessoryForm(
-            request.POST, request.FILES, company=company, with_delivery=True,
+            request.POST, request.FILES, company=company, is_create=True,
         )
         if not form.is_valid():
             response = render(
@@ -426,20 +432,9 @@ class LiftingAccessoryCreateView(DocsUploadAccessMixin, View):
             accessory = form.save(commit=False)
             accessory.company = company
             accessory.save()
-            person = form.cleaned_data.get("responsible_person")
-            if person:
-                service.assign_accessory(
-                    accessory, person, form.cleaned_data["start_date"],
-                    machine=form.cleaned_data.get("machine"),
-                )
-            if form.cleaned_data.get("certificate_existing"):
-                service.link_certificate(
-                    accessory, form.cleaned_data["certificate_existing"],
-                )
-            elif form.cleaned_data.get("certificate_file"):
-                service.upload_certificate(
-                    accessory, form.cleaned_data["certificate_file"],
-                )
+            service.upload_certificate(
+                accessory, form.cleaned_data["certificate_file"],
+            )
         return _table_response(request, "Accesorio %s dado de alta." % (
             accessory.identifier,
         ))
@@ -491,6 +486,56 @@ class LiftingAccessoryBulkReviewView(DocsUploadAccessMixin, View):
             request,
             "Revisión registrada en %d accesorios." % len(accessories),
         )
+
+
+class LiftingAccessoryBulkAssignView(DocsUploadAccessMixin, View):
+    """
+    POST: deliver the selected accessories to one cost centre and one
+    responsible person on one date.
+    ---
+    POST: entrega los accesorios marcados a un mismo centro de gasto y
+    una misma persona responsable, con la misma fecha (p. ej. el juego
+    de eslingas de una grúa y su operador). Cada uno cierra su entrega
+    anterior (historial).
+    """
+
+    def post(self, request):
+        form = LiftingAccessoryAssignmentForm(
+            request.POST, company=request.user.company_user.company,
+        )
+        if not form.is_valid():
+            errors = "; ".join(
+                str(err) for errs in form.errors.values() for err in errs
+            )
+            return HttpResponseBadRequest(errors or "Datos no válidos.")
+        accessories = list(_selected(request).filter(is_active=True))
+        with transaction.atomic():
+            for accessory in accessories:
+                service.assign_accessory(
+                    accessory, form.cleaned_data["responsible_person"],
+                    form.cleaned_data["cost_center"],
+                    form.cleaned_data["start_date"],
+                    notes=form.cleaned_data.get("notes", ""),
+                )
+        return _table_response(request, "%d accesorios entregados a %s." % (
+            len(accessories), form.cleaned_data["cost_center"].code,
+        ))
+
+
+class LiftingAccessoryCostCenterSearchView(DocsUploadAccessMixin, View):
+    """
+    GET: cost centres matching ?q=, same JSON as the daily work order.
+    ---
+    GET: centros de gasto que coinciden con ?q=, mismo JSON y misma
+    regla que el parte diario digital (fleet.cost_center_search) -- el
+    endpoint del parte exige rol de taller; este, el de documentación.
+    """
+
+    def get(self, request):
+        assets = list(search_cost_centers(
+            request.user.company_user.company, request.GET.get("q", ""),
+        ).values("code", "brand_model", "plate"))
+        return JsonResponse({"assets": assets})
 
 
 class LiftingAccessoryDetailView(CompanyUserRequiredMixin, View):
@@ -622,8 +667,8 @@ class LiftingAccessoryAssignView(_AccessoryActionView):
             return self._invalid(request, pk, assignment_form=form)
         service.assign_accessory(
             accessory, form.cleaned_data["responsible_person"],
+            form.cleaned_data["cost_center"],
             form.cleaned_data["start_date"],
-            machine=form.cleaned_data.get("machine"),
             notes=form.cleaned_data.get("notes", ""),
         )
         messages.success(request, "Entrega registrada.")
@@ -665,13 +710,13 @@ class LiftingAccessoryReviewCreateView(_AccessoryActionView):
 
     def post(self, request, pk):
         accessory = self._accessory(request, pk)
-        form = LiftingAccessoryReviewForm(request.POST)
+        form = LiftingAccessoryReviewForm(request.POST, request.FILES)
         if not form.is_valid():
             return self._invalid(request, pk, review_form=form)
         service.register_review(
             accessory, form.cleaned_data["review_date"],
             form.cleaned_data.get("explicit_expiry_date"),
-            form.cleaned_data.get("source_entry"),
+            form.cleaned_data.get("review_file"),
         )
         messages.success(request, "Revisión registrada.")
         return self._back(request, pk)
@@ -679,10 +724,12 @@ class LiftingAccessoryReviewCreateView(_AccessoryActionView):
 
 class LiftingAccessoryCertificateAddView(_AccessoryActionView):
     """
-    POST: link an existing certificate or upload a new one.
+    POST: upload one more certificate (e.g. a renewed one).
     ---
-    POST: vincula un certificado existente o sube uno nuevo, ya tipado
-    CERT_ACCESORIO_ELEVACION (como la ficha técnica de un EPI).
+    POST: sube otro certificado (p. ej. uno renovado), ya tipado
+    CERT_ACCESORIO_ELEVACION y enlazado, como la ficha técnica de un
+    EPI. Nunca se elige un archivo existente ni se desenlaza a mano
+    (S121): lo que está en el bucket lo enlaza el sistema.
     """
 
     def post(self, request, pk):
@@ -690,35 +737,10 @@ class LiftingAccessoryCertificateAddView(_AccessoryActionView):
         form = LiftingAccessoryCertificateForm(request.POST, request.FILES)
         if not form.is_valid():
             return self._invalid(request, pk, certificate_form=form)
-        if form.cleaned_data.get("certificate_existing"):
-            service.link_certificate(
-                accessory, form.cleaned_data["certificate_existing"],
-            )
-        else:
-            service.upload_certificate(
-                accessory, form.cleaned_data["certificate_file"],
-            )
-        messages.success(request, "Certificado vinculado.")
-        return self._back(request, pk)
-
-
-class LiftingAccessoryCertificateUnlinkView(_AccessoryActionView):
-    """
-    POST: unlink a certificate (the document is kept, typed).
-    ---
-    POST: desvincula un certificado; el documento se conserva tipado y
-    vuelve a ofrecerse para vincular (4.12: el archivo no se toca).
-    """
-
-    def post(self, request, pk, entry_pk):
-        accessory = self._accessory(request, pk)
-        if service.unlink_certificate(accessory, entry_pk):
-            messages.success(request, "Certificado desvinculado.")
-        else:
-            messages.error(
-                request,
-                "Ese certificado no está vinculado a este accesorio.",
-            )
+        service.upload_certificate(
+            accessory, form.cleaned_data["certificate_file"],
+        )
+        messages.success(request, "Certificado subido.")
         return self._back(request, pk)
 
 

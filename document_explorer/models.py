@@ -3167,10 +3167,11 @@ class LiftingAccessoryAssignment(models.Model):
     H30 (S121). Delivery of a lifting accessory to a responsible person
     and, optionally, a machine -- one row per delivery, with history.
     ---
-    H30 (S121). Entrega de un accesorio de elevación -- decisión 3 de
-    Miguel Ángel en S121: máquina opcional, con historial, y "hay que
-    añadir la persona a quien se le entrega, que es la responsable del
-    elemento". Una fila por entrega; la vigente es la que no tiene
+    H30 (S121). Entrega de un accesorio de elevación, con historial.
+    Miguel Ángel (S121): la entrega es un acto aparte del alta; "cuando
+    el supervisor entrega un accesorio se anota para qué centro de gasto
+    se entrega y a quién se entrega" -- ambos obligatorios. La persona
+    es la responsable del elemento. Una fila por entrega; la vigente es la que no tiene
     `end_date`. Una entrega nueva cierra la anterior (servicio
     `lifting_accessory_service.assign_accessory`) -- nunca se sobrescribe,
     para conservar el historial.
@@ -3191,11 +3192,13 @@ class LiftingAccessoryAssignment(models.Model):
     )
     machine = models.ForeignKey(
         "fleet.MachineAsset",
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
+        on_delete=models.PROTECT,
         related_name="lifting_accessory_assignments",
-        verbose_name="Máquina",
+        verbose_name="Centro de gasto",
+        help_text=(
+            "Centro de gasto al que se entrega (máquina, EMPRESA_* o "
+            "PERSONAL). Obligatorio (S121)."
+        ),
     )
     start_date = models.DateField(
         verbose_name="Fecha de entrega",

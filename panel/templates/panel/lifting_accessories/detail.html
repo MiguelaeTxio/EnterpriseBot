@@ -1,5 +1,6 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/lifting_accessories/detail.html #}
 {% extends "panel/base.html" %}
+{% load static %}
 {% comment %}
 H30 (S121). Ficha de un accesorio de elevación: datos (editables para
 ADMIN y DOCS_SUPERVISOR), certificado del fabricante, historial de
@@ -72,15 +73,9 @@ tontas); cada formulario vuelve aquí (PRG).
             <ul class="list-unstyled small mb-2">
                 {% for certificate in accessory.certificates %}
                 <li class="d-flex align-items-center gap-2 border-bottom py-1">
-                    <a class="flex-grow-1" href="{% url 'panel:documentation_document_view' pk=certificate.pk %}" target="_blank" rel="noopener">{{ certificate.name }}</a>
-                    {% if can_manage %}
-                    <form method="post" action="{% url 'panel:lifting_accessory_certificate_unlink' accessory.pk certificate.pk %}"
-                          onsubmit="return confirm('¿Desvincular este certificado? El documento se conserva.');">
-                        {% csrf_token %}
-                        <input type="hidden" name="back_url" value="{{ back_url }}">
-                        <button type="submit" class="btn btn-sm btn-link text-danger p-0" title="Desvincular"><i class="bi bi-x-circle"></i></button>
-                    </form>
-                    {% endif %}
+                    <i class="bi bi-file-earmark-check text-success"></i>
+                    <span class="flex-grow-1">Certificado {{ forloop.revcounter }}{% if forloop.first %} <span class="text-muted">(el más reciente)</span>{% endif %}</span>
+                    <a class="btn btn-sm btn-outline-secondary py-0" href="{% url 'panel:documentation_document_view' pk=certificate.pk %}" target="_blank" rel="noopener"><i class="bi bi-eye me-1"></i>Ver</a>
                 </li>
                 {% endfor %}
             </ul>
@@ -91,17 +86,14 @@ tontas); cada formulario vuelve aquí (PRG).
             <form method="post" enctype="multipart/form-data" action="{% url 'panel:lifting_accessory_certificate_add' accessory.pk %}" class="border-top pt-2">
                 {% csrf_token %}
                 <input type="hidden" name="back_url" value="{{ back_url }}">
-                {% for error in certificate_form.non_field_errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
-                <div class="row g-2">
-                    {% for field in certificate_form %}
-                    <div class="col-md-6">
-                        <label class="form-label small mb-0" for="{{ field.id_for_label }}">{{ field.label }}</label>
-                        {{ field }}
-                        {% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
-                    </div>
-                    {% endfor %}
+                {% for field in certificate_form %}
+                <label class="form-label small mb-0" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                <div class="d-flex gap-2">
+                    {{ field }}
+                    <button type="submit" class="btn btn-sm btn-primary text-nowrap">Subir</button>
                 </div>
-                <button type="submit" class="btn btn-sm btn-primary mt-2">Añadir certificado</button>
+                {% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+                {% endfor %}
             </form>
             {% endif %}
         </div>
@@ -111,13 +103,13 @@ tontas); cada formulario vuelve aquí (PRG).
             {% if assignments %}
             <table class="table table-sm align-middle small mb-2">
                 <thead class="table-light">
-                    <tr><th>Responsable</th><th>Máquina</th><th>Entrega</th><th>Devolución</th><th>Observaciones</th></tr>
+                    <tr><th>Centro de gasto</th><th>Entregado a</th><th>Entrega</th><th>Devolución</th><th>Observaciones</th></tr>
                 </thead>
                 <tbody>
                     {% for item in assignments %}
                     <tr class="{% if not item.row.end_date %}table-success{% endif %}">
+                        <td>{{ item.row.machine.code }}</td>
                         <td>{{ item.responsible }}</td>
-                        <td>{% if item.row.machine %}{{ item.row.machine.code }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
                         <td>{{ item.row.start_date|date:"d/m/Y" }}</td>
                         <td>{% if item.row.end_date %}{{ item.row.end_date|date:"d/m/Y" }}{% else %}<span class="fw-semibold">Actual</span>{% endif %}</td>
                         <td>{{ item.row.notes }}</td>
@@ -135,8 +127,8 @@ tontas); cada formulario vuelve aquí (PRG).
                 <div class="small fw-bold mb-1">Nueva entrega{% if has_open_assignment %} <span class="fw-normal text-muted">(cierra la actual)</span>{% endif %}</div>
                 <div class="row g-2">
                     {% for field in assignment_form %}
-                    <div class="col-md-6">
-                        <label class="form-label small mb-0" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                    <div class="col-md-6{% if field.name == 'cost_center' %} position-relative{% endif %}">
+                        <label class="form-label small mb-0" for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %} <span class="text-danger">*</span>{% endif %}</label>
                         {{ field }}
                         {% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
                     </div>
@@ -176,7 +168,7 @@ tontas); cada formulario vuelve aquí (PRG).
                         </td>
                         <td>
                             {% if review.source_entry %}
-                            <a href="{% url 'panel:documentation_document_view' pk=review.source_entry.pk %}" target="_blank" rel="noopener">{{ review.source_entry.name }}</a>
+                            <a class="btn btn-sm btn-outline-secondary py-0" href="{% url 'panel:documentation_document_view' pk=review.source_entry.pk %}" target="_blank" rel="noopener"><i class="bi bi-eye me-1"></i>Ver</a>
                             {% else %}<span class="text-muted">—</span>{% endif %}
                         </td>
                         {% if can_manage %}
@@ -197,14 +189,14 @@ tontas); cada formulario vuelve aquí (PRG).
             <div class="text-muted small mb-2">Sin revisiones registradas{% if accessory.supply_date %}: la vigencia se cuenta desde el suministro ({{ accessory.supply_date|date:"d/m/Y" }}){% endif %}.</div>
             {% endif %}
             {% if can_manage %}
-            <form method="post" action="{% url 'panel:lifting_accessory_review_create' accessory.pk %}" class="border-top pt-2">
+            <form method="post" enctype="multipart/form-data" action="{% url 'panel:lifting_accessory_review_create' accessory.pk %}" class="border-top pt-2">
                 {% csrf_token %}
                 <input type="hidden" name="back_url" value="{{ back_url }}">
                 <div class="small fw-bold mb-1">Nueva revisión</div>
                 {% for error in review_form.non_field_errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
                 <div class="row g-2">
                     {% for field in review_form %}
-                    <div class="{% if field.name == 'source_entry' %}col-12{% else %}col-md-6{% endif %}">
+                    <div class="{% if field.name == 'review_file' %}col-12{% else %}col-md-6{% endif %}">
                         <label class="form-label small mb-0" for="{{ field.id_for_label }}">{{ field.label }}</label>
                         {{ field }}
                         {% if field.help_text %}<div class="form-text small">{{ field.help_text }}</div>{% endif %}
@@ -218,4 +210,8 @@ tontas); cada formulario vuelve aquí (PRG).
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{% static 'panel/js/cost_center_picker.js' %}"></script>
 {% endblock %}
