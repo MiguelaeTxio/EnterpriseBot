@@ -307,7 +307,7 @@ puede ser es que la interfaz no informe de lo que pasa."
             <div class="accordion-body">
                 {% if lifting_accessories %}
                 <table class="table table-sm table-hover mb-2 mdet-table-sm">
-                    <thead><tr><th>Tipo</th><th>Nº</th><th>Descripción</th><th>Responsable</th><th>Caducidad</th></tr></thead>
+                    <thead><tr><th>Tipo</th><th>Nº</th><th>Descripción</th><th>Responsable</th><th>Caducidad</th><th>Certificado</th></tr></thead>
                     <tbody>
                         {% for accessory in lifting_accessories %}
                         <tr>
@@ -320,6 +320,7 @@ puede ser es que la interfaz no informe de lo que pasa."
                                 <span class="text-danger fw-semibold"><i class="bi bi-exclamation-triangle-fill me-1"></i>{{ accessory.expiry|date:"d/m/Y" }}</span>
                                 {% else %}{{ accessory.expiry|date:"d/m/Y"|default:"—" }}{% endif %}
                             </td>
+                            <td>{% if accessory.has_certificate %}<span class="text-success">Sí</span>{% else %}<span class="text-danger">Falta</span>{% endif %}</td>
                         </tr>
                         {% endfor %}
                     </tbody>

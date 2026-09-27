@@ -124,20 +124,11 @@ class LiftingAccessoryForm(forms.ModelForm):
     fecha).
     """
 
-    certificate_entry = DocumentChoiceField(
-        queryset=DocumentIndexEntry.objects.none(),
-        required=False,
-        label="Certificado del fabricante",
-        empty_label="-- Sin certificado vinculado --",
-        widget=_small(forms.Select),
-    )
-
     class Meta:
         model = LiftingAccessory
         fields = [
             "accessory_type", "identifier", "description", "dimensions",
             "working_load_kg", "standard", "manufacturer", "supply_date",
-            "certificate_entry",
         ]
         widgets = {
             "accessory_type": _small(forms.Select),
@@ -160,11 +151,26 @@ class LiftingAccessoryForm(forms.ModelForm):
             )
         ).distinct()
         self.fields["accessory_type"].empty_label = "-- Elegir tipo --"
-        self.fields["certificate_entry"].queryset = (
-            service.certificate_candidates(self.instance.certificate_entry_id)
-        )
         self.with_delivery = with_delivery
         if with_delivery:
+            # Solo en el alta: el certificado se vincula (uno existente,
+            # ya tipado) o se sube (queda tipado al subirlo). En la ficha
+            # tienen su propia sección, con varios por accesorio.
+            self.fields["certificate_existing"] = DocumentChoiceField(
+                queryset=service.certificate_candidates(),
+                required=False,
+                label="Certificado del fabricante (existente)",
+                empty_label="-- Ninguno --",
+                widget=_small(forms.Select),
+            )
+            self.fields["certificate_file"] = forms.FileField(
+                required=False,
+                label="o subir el certificado (PDF o imagen)",
+                widget=forms.ClearableFileInput(attrs={
+                    "class": "form-control form-control-sm",
+                    "accept": ".pdf,.jpg,.jpeg,.png",
+                }),
+            )
             self.fields["responsible_person"] = _responsible_field(False)
             self.fields["machine"] = _machine_field(company)
             self.fields["start_date"] = forms.DateField(
@@ -207,6 +213,82 @@ class LiftingAccessoryForm(forms.ModelForm):
                 )
             if person and not start:
                 self.add_error("start_date", "Indica la fecha de entrega.")
+            if (cleaned.get("certificate_existing")
+                    and cleaned.get("certificate_file")):
+                self.add_error(
+                    "certificate_file",
+                    "Elige un certificado existente o sube uno, no ambos.",
+                )
+            upload = cleaned.get("certificate_file")
+            if upload and not _is_certificate_file(upload.name):
+                self.add_error(
+                    "certificate_file",
+                    "El certificado debe ser un PDF o una imagen.",
+                )
+        return cleaned
+
+
+def _is_certificate_file(name):
+    """
+    Whether a file name has an accepted certificate extension.
+    ---
+    Si el nombre de archivo tiene una extensión admitida de certificado.
+    """
+    return name.rsplit(".", 1)[-1].lower() in ("pdf", "jpg", "jpeg", "png")
+
+
+class LiftingAccessoryCertificateForm(forms.Form):
+    """
+    Link an existing certificate or upload a new one (exactly one).
+    ---
+    Vincular un certificado existente o subir uno nuevo (exactamente
+    uno de los dos).
+    """
+
+    certificate_existing = DocumentChoiceField(
+        queryset=DocumentIndexEntry.objects.none(),
+        required=False,
+        label="Vincular un certificado existente",
+        empty_label="-- Ninguno --",
+        widget=_small(forms.Select),
+    )
+    certificate_file = forms.FileField(
+        required=False,
+        label="o subir uno nuevo (PDF o imagen)",
+        widget=forms.ClearableFileInput(attrs={
+            "class": "form-control form-control-sm",
+            "accept": ".pdf,.jpg,.jpeg,.png",
+        }),
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["certificate_existing"].queryset = (
+            service.certificate_candidates()
+        )
+
+    def clean(self):
+        """
+        Exactly one of the two, and only PDF or image uploads.
+        ---
+        Exactamente uno de los dos, y solo PDF o imagen al subir.
+        """
+        cleaned = super().clean()
+        existing = cleaned.get("certificate_existing")
+        upload = cleaned.get("certificate_file")
+        if existing and upload:
+            raise forms.ValidationError(
+                "Elige un certificado existente o sube uno, no ambos.",
+            )
+        if not existing and not upload and not self.errors:
+            raise forms.ValidationError(
+                "Elige un certificado existente o sube uno.",
+            )
+        if upload and not _is_certificate_file(upload.name):
+            self.add_error(
+                "certificate_file",
+                "El certificado debe ser un PDF o una imagen.",
+            )
         return cleaned
 
 

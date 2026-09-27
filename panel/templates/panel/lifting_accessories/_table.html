@@ -79,6 +79,13 @@ Orden vigente, para que los filtros del panel fijo lo conserven
                 {% endif %}
             </td>
             <td>
+                {% if accessory.has_certificate %}
+                <span class="text-success"><i class="bi bi-file-earmark-check me-1"></i>Sí</span>
+                {% else %}
+                <span class="text-danger"><i class="bi bi-file-earmark-x me-1"></i>Falta</span>
+                {% endif %}
+            </td>
+            <td>
                 {% if accessory.is_active %}
                 <span class="badge text-bg-success">En servicio</span>
                 {% else %}

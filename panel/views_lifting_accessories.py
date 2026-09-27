@@ -42,6 +42,7 @@ from document_explorer.models import (
 from ivr_config.models import CompanyUser
 from panel.forms_lifting_accessories import (
     LiftingAccessoryAssignmentForm,
+    LiftingAccessoryCertificateForm,
     LiftingAccessoryForm,
     LiftingAccessoryReturnForm,
     LiftingAccessoryReviewForm,
@@ -70,6 +71,7 @@ _SORT_VALUES = {
     "responsible": lambda a: a.responsible_label.upper() or None,
     "review": lambda a: a.last_review_date,
     "expiry": lambda a: a.expiry,
+    "certificate": lambda a: a.has_certificate,
     "status": lambda a: a.is_active,
 }
 _MAX_SORT_KEYS = 4
@@ -84,6 +86,7 @@ _COLUMNS = (
     ("responsible", "Responsable"),
     ("review", "Última revisión"),
     ("expiry", "Caducidad"),
+    ("certificate", "Certificado"),
     ("status", "Estado"),
 )
 
@@ -199,12 +202,15 @@ def _annotate(accessories):
     """
     today = date.today()
     accessories = list(accessories.select_related(
-        "accessory_type", "certificate_entry",
+        "accessory_type",
     ).prefetch_related(
         "assignments__machine", "assignments__responsible_person",
         "reviews",
     ))
+    certificates = service.certificates_of(accessories)
     for accessory in accessories:
+        accessory.certificates = certificates.get(accessory.pk, [])
+        accessory.has_certificate = bool(accessory.certificates)
         open_assignments = [
             a for a in accessory.assignments.all() if a.end_date is None
         ]
@@ -406,7 +412,7 @@ class LiftingAccessoryCreateView(DocsUploadAccessMixin, View):
     def post(self, request):
         company = request.user.company_user.company
         form = LiftingAccessoryForm(
-            request.POST, company=company, with_delivery=True,
+            request.POST, request.FILES, company=company, with_delivery=True,
         )
         if not form.is_valid():
             response = render(
@@ -425,6 +431,14 @@ class LiftingAccessoryCreateView(DocsUploadAccessMixin, View):
                 service.assign_accessory(
                     accessory, person, form.cleaned_data["start_date"],
                     machine=form.cleaned_data.get("machine"),
+                )
+            if form.cleaned_data.get("certificate_existing"):
+                service.link_certificate(
+                    accessory, form.cleaned_data["certificate_existing"],
+                )
+            elif form.cleaned_data.get("certificate_file"):
+                service.upload_certificate(
+                    accessory, form.cleaned_data["certificate_file"],
                 )
         return _table_response(request, "Accesorio %s dado de alta." % (
             accessory.identifier,
@@ -498,7 +512,8 @@ class LiftingAccessoryDetailView(CompanyUserRequiredMixin, View):
         )
 
     def _render(self, request, accessory, form=None, assignment_form=None,
-                return_form=None, review_form=None, status=200):
+                return_form=None, review_form=None, certificate_form=None,
+                status=200):
         company = request.user.company_user.company
         annotated = _annotate(LiftingAccessory.objects.filter(pk=accessory.pk))
         accessory = annotated[0]
@@ -534,6 +549,8 @@ class LiftingAccessoryDetailView(CompanyUserRequiredMixin, View):
             "review_form": review_form or LiftingAccessoryReviewForm(
                 initial={"review_date": date.today()},
             ),
+            "certificate_form": certificate_form
+            or LiftingAccessoryCertificateForm(),
             "has_open_assignment": accessory.current_assignment_row
             is not None,
             "can_manage": _can_manage(request),
@@ -657,6 +674,51 @@ class LiftingAccessoryReviewCreateView(_AccessoryActionView):
             form.cleaned_data.get("source_entry"),
         )
         messages.success(request, "Revisión registrada.")
+        return self._back(request, pk)
+
+
+class LiftingAccessoryCertificateAddView(_AccessoryActionView):
+    """
+    POST: link an existing certificate or upload a new one.
+    ---
+    POST: vincula un certificado existente o sube uno nuevo, ya tipado
+    CERT_ACCESORIO_ELEVACION (como la ficha técnica de un EPI).
+    """
+
+    def post(self, request, pk):
+        accessory = self._accessory(request, pk)
+        form = LiftingAccessoryCertificateForm(request.POST, request.FILES)
+        if not form.is_valid():
+            return self._invalid(request, pk, certificate_form=form)
+        if form.cleaned_data.get("certificate_existing"):
+            service.link_certificate(
+                accessory, form.cleaned_data["certificate_existing"],
+            )
+        else:
+            service.upload_certificate(
+                accessory, form.cleaned_data["certificate_file"],
+            )
+        messages.success(request, "Certificado vinculado.")
+        return self._back(request, pk)
+
+
+class LiftingAccessoryCertificateUnlinkView(_AccessoryActionView):
+    """
+    POST: unlink a certificate (the document is kept, typed).
+    ---
+    POST: desvincula un certificado; el documento se conserva tipado y
+    vuelve a ofrecerse para vincular (4.12: el archivo no se toca).
+    """
+
+    def post(self, request, pk, entry_pk):
+        accessory = self._accessory(request, pk)
+        if service.unlink_certificate(accessory, entry_pk):
+            messages.success(request, "Certificado desvinculado.")
+        else:
+            messages.error(
+                request,
+                "Ese certificado no está vinculado a este accesorio.",
+            )
         return self._back(request, pk)
 
 

@@ -56,18 +56,56 @@ tontas); cada formulario vuelve aquí (PRG).
                 <dt class="col-5">Suministro</dt><dd class="col-7">{{ accessory.supply_date|date:"d/m/Y"|default:"—" }}</dd>
             </dl>
             {% endif %}
-            <div class="mt-3 small">
-                <span class="fw-bold">Certificado del fabricante:</span>
-                {% if accessory.certificate_entry %}
-                <a href="{% url 'panel:documentation_document_view' pk=accessory.certificate_entry.pk %}" target="_blank" rel="noopener">{{ accessory.certificate_entry.name }}</a>
-                {% else %}
-                <span class="text-muted">sin vincular</span>
-                {% endif %}
-            </div>
         </div>
     </div>
 
     <div class="col-lg-7 d-flex flex-column gap-3">
+        {% comment %}
+        S121 -- certificados del accesorio, como la ficha técnica de un
+        EPI: documentos CERT_ACCESORIO_ELEVACION vinculados al accesorio
+        (varios admitidos). Vincular uno existente ya tipado o subir uno
+        nuevo, que queda tipado al subirlo.
+        {% endcomment %}
+        <div class="border rounded p-3{% if not accessory.has_certificate %} border-danger{% endif %}">
+            <div class="fw-bold mb-2">Certificados del fabricante</div>
+            {% if accessory.certificates %}
+            <ul class="list-unstyled small mb-2">
+                {% for certificate in accessory.certificates %}
+                <li class="d-flex align-items-center gap-2 border-bottom py-1">
+                    <a class="flex-grow-1" href="{% url 'panel:documentation_document_view' pk=certificate.pk %}" target="_blank" rel="noopener">{{ certificate.name }}</a>
+                    {% if can_manage %}
+                    <form method="post" action="{% url 'panel:lifting_accessory_certificate_unlink' accessory.pk certificate.pk %}"
+                          onsubmit="return confirm('¿Desvincular este certificado? El documento se conserva.');">
+                        {% csrf_token %}
+                        <input type="hidden" name="back_url" value="{{ back_url }}">
+                        <button type="submit" class="btn btn-sm btn-link text-danger p-0" title="Desvincular"><i class="bi bi-x-circle"></i></button>
+                    </form>
+                    {% endif %}
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <div class="text-danger small mb-2"><i class="bi bi-file-earmark-x me-1"></i>Sin certificado.</div>
+            {% endif %}
+            {% if can_manage %}
+            <form method="post" enctype="multipart/form-data" action="{% url 'panel:lifting_accessory_certificate_add' accessory.pk %}" class="border-top pt-2">
+                {% csrf_token %}
+                <input type="hidden" name="back_url" value="{{ back_url }}">
+                {% for error in certificate_form.non_field_errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+                <div class="row g-2">
+                    {% for field in certificate_form %}
+                    <div class="col-md-6">
+                        <label class="form-label small mb-0" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                        {{ field }}
+                        {% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+                    </div>
+                    {% endfor %}
+                </div>
+                <button type="submit" class="btn btn-sm btn-primary mt-2">Añadir certificado</button>
+            </form>
+            {% endif %}
+        </div>
+
         <div class="border rounded p-3">
             <div class="fw-bold mb-2">Entregas</div>
             {% if assignments %}

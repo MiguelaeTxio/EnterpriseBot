@@ -3037,6 +3037,13 @@ class LiftingAccessory(models.Model):
     trabajo, norma, fabricante y fecha de suministro. A quién y a qué
     máquina se entrega vive en `LiftingAccessoryAssignment` (con
     historial); sus revisiones periódicas, en `LiftingAccessoryReview`.
+
+    Sus certificados, igual que la ficha técnica de un EPI (decisión de
+    Miguel Ángel, S121): documentos `CERT_ACCESORIO_ELEVACION` vinculados
+    por el mecanismo genérico de siempre (`DocumentIndexEntry.
+    domain_content_type`/`domain_object_id` apuntando a este accesorio),
+    nunca una FK propia -- mismo error que se corrigió en S76 con
+    `EpiItemCatalog.technical_sheet`. Admite varios por accesorio.
     """
 
     company = models.ForeignKey(
@@ -3090,14 +3097,6 @@ class LiftingAccessory(models.Model):
             "Fecha del certificado del fabricante. Sin ninguna revisión "
             "registrada, la vigencia se cuenta desde aquí."
         ),
-    )
-    certificate_entry = models.ForeignKey(
-        DocumentIndexEntry,
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
-        related_name="lifting_accessories",
-        verbose_name="Certificado del fabricante",
     )
     is_active = models.BooleanField(
         default=True,
