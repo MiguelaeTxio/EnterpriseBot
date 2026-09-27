@@ -66,6 +66,7 @@ filas y se va a navegar constantemente:
 - `domain_object` NO debe resolverse al navegar: hacerlo por fila es
   un N+1. Se resuelve solo al abrir un documento concreto.
 """
+import calendar
 import hashlib
 
 from django.contrib.contenttypes.fields import GenericForeignKey
@@ -1294,7 +1295,10 @@ class DataOperationLogEntry(models.Model):
         (ACTION_RELOCATED, "Reubicada fuera de cuarentena"),
         (ACTION_SENT_TO_NO_CONFORMES, "Enviada a No Conformes"),
         (ACTION_MERGED, "Fusionada a carpeta destino"),
-        (ACTION_FOLDER_REMOVED, "Fila de carpeta huérfana eliminada del índice"),
+        (
+            ACTION_FOLDER_REMOVED,
+            "Fila de carpeta huérfana eliminada del índice",
+        ),
     ]
 
     log = models.ForeignKey(
@@ -1515,7 +1519,9 @@ class PersonIdentity(models.Model):
     )
     driver_qualification_card_expiry_date = models.DateField(
         null=True, blank=True,
-        verbose_name="Caducidad tarjeta cualificación de conductor -- CAP (Excel)",
+        verbose_name=(
+            "Caducidad tarjeta cualificación de conductor -- CAP (Excel)"
+        ),
     )
     tachograph_card_expiry_date = models.DateField(
         null=True, blank=True,
@@ -1780,7 +1786,9 @@ class CompanyWorksite(models.Model):
         ]
 
     def __str__(self):
-        return f"{self.company} -- {self.worksite}" if self.worksite else self.company
+        if self.worksite:
+            return f"{self.company} -- {self.worksite}"
+        return str(self.company)
 
 
 class SubjectDocumentReference(models.Model):
@@ -2371,7 +2379,9 @@ class DocumentAcknowledgment(models.Model):
         ]
 
     def __str__(self):
-        return f"{self.person} -- {self.document_type.code} ({self.delivery_date})"
+        return "%s -- %s (%s)" % (
+            self.person, self.document_type.code, self.delivery_date,
+        )
 
 
 class EpiReview(models.Model):
@@ -2943,3 +2953,336 @@ class DrivingLicenceGrant(models.Model):
 
     def __str__(self):
         return "%s (%s)" % (self.category.code, self.entry_id)
+
+
+# H30 (S121) -- accesorios de elevación (eslingas, líneas de carga,
+# grilletes...): equivalente de los EPIs para la maquinaria.
+LIFTING_ACCESSORY_REVIEW_MONTHS = 12
+
+
+def add_months(value, months):
+    """
+    Return `value` shifted by `months` calendar months, clamping the day
+    to the last day of the target month (31/01 + 1 month -> 28/02).
+    ---
+    Devuelve `value` desplazada `months` meses naturales, ajustando el
+    día al último del mes de destino (31/01 + 1 mes -> 28/02).
+    """
+    month_index = value.month - 1 + months
+    year = value.year + month_index // 12
+    month = month_index % 12 + 1
+    day = min(value.day, calendar.monthrange(year, month)[1])
+    return value.replace(year=year, month=month, day=day)
+
+
+class LiftingAccessoryType(models.Model):
+    """
+    H30 (S121). Editable catalogue of lifting accessory types.
+    ---
+    H30 (S121). Catálogo de tipos de accesorio de elevación, editable
+    desde el panel (alta, edición y baja) -- decisión 2 de Miguel Ángel
+    en S121: "siempre que podamos añadir/quitar/editar". Sembrado por
+    migración con los 6 tipos iniciales; datos en base de datos, nunca
+    una lista en el código. "Quitar" es desactivar (`is_active=False`)
+    cuando el tipo ya tiene accesorios, para conservar su histórico
+    (mismo criterio que `EpiItemCatalog.is_active`).
+    """
+
+    code = models.CharField(
+        max_length=40,
+        unique=True,
+        verbose_name="Código",
+        help_text="Código corto único del tipo de accesorio.",
+    )
+    label = models.CharField(
+        max_length=150,
+        verbose_name="Nombre visible",
+    )
+    display_order = models.PositiveSmallIntegerField(
+        default=0,
+        verbose_name="Orden",
+    )
+    is_active = models.BooleanField(
+        default=True,
+        verbose_name="Activo",
+        help_text=(
+            "Desactivar en vez de borrar conserva los accesorios ya "
+            "registrados con este tipo."
+        ),
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Fecha de alta",
+    )
+
+    class Meta:
+        verbose_name = "Tipo de accesorio de elevación"
+        verbose_name_plural = "Tipos de accesorio de elevación"
+        ordering = ["display_order", "label"]
+
+    def __str__(self):
+        return self.label
+
+
+class LiftingAccessory(models.Model):
+    """
+    H30 (S121). One physical lifting accessory (a sling, a load line, a
+    shackle...), identified by its certificate or serial number.
+    ---
+    H30 (S121). Un accesorio de elevación físico (una eslinga, una
+    línea de carga, un grillete...), identificado por su nº de
+    certificado o de serie -- decisión 1 de Miguel Ángel en S121: una
+    ficha por accesorio. Los datos salen del certificado del fabricante
+    (Bezabala, Polymax, Deij...): descripción, medidas, carga de
+    trabajo, norma, fabricante y fecha de suministro. A quién y a qué
+    máquina se entrega vive en `LiftingAccessoryAssignment` (con
+    historial); sus revisiones periódicas, en `LiftingAccessoryReview`.
+    """
+
+    company = models.ForeignKey(
+        "ivr_config.Company",
+        on_delete=models.CASCADE,
+        related_name="lifting_accessories",
+        verbose_name="Empresa",
+    )
+    accessory_type = models.ForeignKey(
+        LiftingAccessoryType,
+        on_delete=models.PROTECT,
+        related_name="accessories",
+        verbose_name="Tipo",
+    )
+    identifier = models.CharField(
+        max_length=100,
+        verbose_name="Nº de certificado / serie",
+    )
+    description = models.CharField(
+        max_length=255,
+        blank=True,
+        verbose_name="Descripción",
+    )
+    dimensions = models.CharField(
+        max_length=100,
+        blank=True,
+        verbose_name="Medidas",
+        help_text="Tal cual el certificado, p. ej. '26 mm x 6 m'.",
+    )
+    working_load_kg = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        verbose_name="Carga de trabajo (kg)",
+    )
+    standard = models.CharField(
+        max_length=100,
+        blank=True,
+        verbose_name="Norma",
+        help_text="P. ej. 'EN 13414-1' o 'EN 1492-1'.",
+    )
+    manufacturer = models.CharField(
+        max_length=150,
+        blank=True,
+        verbose_name="Fabricante / proveedor",
+    )
+    supply_date = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name="Fecha de suministro",
+        help_text=(
+            "Fecha del certificado del fabricante. Sin ninguna revisión "
+            "registrada, la vigencia se cuenta desde aquí."
+        ),
+    )
+    certificate_entry = models.ForeignKey(
+        DocumentIndexEntry,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="lifting_accessories",
+        verbose_name="Certificado del fabricante",
+    )
+    is_active = models.BooleanField(
+        default=True,
+        verbose_name="En servicio",
+        help_text="Desmarcar al retirar el accesorio; nunca se borra.",
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Fecha de alta",
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name="Última edición",
+    )
+
+    class Meta:
+        verbose_name = "Accesorio de elevación"
+        verbose_name_plural = "Accesorios de elevación"
+        ordering = ["accessory_type__display_order", "identifier"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=("company", "accessory_type", "identifier"),
+                name="unique_lifting_accessory_per_company_type",
+            ),
+        ]
+
+    def __str__(self):
+        return "%s %s" % (self.accessory_type.label, self.identifier)
+
+    def current_assignment(self):
+        """
+        Return the open assignment (no return date), or None.
+        ---
+        Devuelve la entrega abierta (sin fecha de devolución), o None.
+        """
+        return self.assignments.filter(end_date__isnull=True).order_by(
+            "-start_date", "-id",
+        ).first()
+
+    def latest_review(self):
+        """
+        Return the most recent review, or None.
+        ---
+        Devuelve la revisión más reciente, o None.
+        """
+        return self.reviews.order_by("-review_date", "-id").first()
+
+    def expiry_date(self):
+        """
+        Effective expiry: the latest review's, or supply date + 12 months.
+        ---
+        Caducidad efectiva: la de la revisión más reciente; sin
+        revisiones, fecha de suministro + 12 meses; sin ninguna de las
+        dos, None.
+        """
+        review = self.latest_review()
+        if review is not None:
+            return review.expiry_date
+        if self.supply_date:
+            return add_months(
+                self.supply_date, LIFTING_ACCESSORY_REVIEW_MONTHS,
+            )
+        return None
+
+
+class LiftingAccessoryAssignment(models.Model):
+    """
+    H30 (S121). Delivery of a lifting accessory to a responsible person
+    and, optionally, a machine -- one row per delivery, with history.
+    ---
+    H30 (S121). Entrega de un accesorio de elevación -- decisión 3 de
+    Miguel Ángel en S121: máquina opcional, con historial, y "hay que
+    añadir la persona a quien se le entrega, que es la responsable del
+    elemento". Una fila por entrega; la vigente es la que no tiene
+    `end_date`. Una entrega nueva cierra la anterior (servicio
+    `lifting_accessory_service.assign_accessory`) -- nunca se sobrescribe,
+    para conservar el historial.
+    """
+
+    accessory = models.ForeignKey(
+        LiftingAccessory,
+        on_delete=models.CASCADE,
+        related_name="assignments",
+        verbose_name="Accesorio",
+    )
+    responsible_person = models.ForeignKey(
+        PersonIdentity,
+        on_delete=models.PROTECT,
+        related_name="lifting_accessory_assignments",
+        verbose_name="Responsable",
+        help_text="Persona a quien se entrega y responde del accesorio.",
+    )
+    machine = models.ForeignKey(
+        "fleet.MachineAsset",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="lifting_accessory_assignments",
+        verbose_name="Máquina",
+    )
+    start_date = models.DateField(
+        verbose_name="Fecha de entrega",
+    )
+    end_date = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name="Fecha de devolución",
+    )
+    notes = models.TextField(
+        blank=True,
+        verbose_name="Observaciones",
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Fecha de registro",
+    )
+
+    class Meta:
+        verbose_name = "Entrega de accesorio de elevación"
+        verbose_name_plural = "Entregas de accesorios de elevación"
+        ordering = ["-start_date", "-id"]
+
+    def __str__(self):
+        return "%s -> %s (%s)" % (
+            self.accessory, self.responsible_person, self.start_date,
+        )
+
+
+class LiftingAccessoryReview(models.Model):
+    """
+    H30 (S121). One periodic review of one lifting accessory.
+    ---
+    H30 (S121). Una revisión periódica de un accesorio de elevación --
+    decisión 4 de Miguel Ángel en S121: la revisión cuelga de cada
+    accesorio. Vigencia (decisión 5): fecha de revisión + 12 meses,
+    salvo que el supervisor indique una caducidad explícita, que
+    prevalece.
+    """
+
+    accessory = models.ForeignKey(
+        LiftingAccessory,
+        on_delete=models.CASCADE,
+        related_name="reviews",
+        verbose_name="Accesorio",
+    )
+    review_date = models.DateField(
+        verbose_name="Fecha de revisión",
+    )
+    explicit_expiry_date = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name="Caducidad indicada",
+        help_text=(
+            "Solo si el supervisor la indica: prevalece sobre la fecha "
+            "de revisión + 12 meses."
+        ),
+    )
+    source_entry = models.ForeignKey(
+        DocumentIndexEntry,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="lifting_accessory_reviews",
+        verbose_name="Documento de la revisión",
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Fecha de registro",
+    )
+
+    class Meta:
+        verbose_name = "Revisión de accesorio de elevación"
+        verbose_name_plural = "Revisiones de accesorios de elevación"
+        ordering = ["-review_date", "-id"]
+
+    def __str__(self):
+        return "%s (%s)" % (self.accessory, self.review_date)
+
+    @property
+    def expiry_date(self):
+        """
+        Explicit expiry if given, otherwise review date + 12 months.
+        ---
+        Caducidad indicada si la hay; si no, revisión + 12 meses.
+        """
+        if self.explicit_expiry_date:
+            return self.explicit_expiry_date
+        return add_months(self.review_date, LIFTING_ACCESSORY_REVIEW_MONTHS)
