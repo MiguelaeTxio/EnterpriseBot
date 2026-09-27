@@ -114,18 +114,6 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.AlterModelOptions(
-            name="tariffline",
-            options={
-                "ordering": [
-                    "tariff",
-                    "vehicle_type__sort_order",
-                    "concept__sort_order",
-                ],
-                "verbose_name": "Linea de tarifa",
-                "verbose_name_plural": "Lineas de tarifa",
-            },
-        ),
         migrations.CreateModel(
             name="TariffConcept",
             fields=[
@@ -227,5 +215,24 @@ class Migration(migrations.Migration):
                 to="budgets.tariffconcept",
                 verbose_name="Concepto",
             ),
+        ),
+        # S121 (H30, directriz 4.9): AlterModelOptions va AL FINAL.
+        # Antes era la primera operación: el orden por defecto
+        # 'concept__sort_order' ya regía mientras 'concept' seguía
+        # siendo texto, y el recorrido de migrate_concept_strings_to_fk
+        # fallaba con FieldError al reconstruir una BD desde cero.
+        # Producción la tiene aplicada desde 2026-06-19 y no la
+        # vuelve a ejecutar; el estado final no cambia.
+        migrations.AlterModelOptions(
+            name="tariffline",
+            options={
+                "ordering": [
+                    "tariff",
+                    "vehicle_type__sort_order",
+                    "concept__sort_order",
+                ],
+                "verbose_name": "Linea de tarifa",
+                "verbose_name_plural": "Lineas de tarifa",
+            },
         ),
     ]
