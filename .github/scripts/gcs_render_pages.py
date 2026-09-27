@@ -51,6 +51,11 @@ for number, pk in enumerate(ids, start=1):
         else:
             doc = fitz.open(stream=data, filetype="pdf")
         with doc:
+            # S121: marcador con el total de páginas, para saber si el
+            # límite (max_pages) ha dejado páginas sin renderizar.
+            open(os.path.join(
+                out_dir, "%d_TOTAL_%d.txt" % (pk, doc.page_count),
+            ), "w", encoding="utf-8").close()
             for page_index in range(min(doc.page_count, max_pages)):
                 path = os.path.join(
                     out_dir, "%d_p%d.png" % (pk, page_index + 1),

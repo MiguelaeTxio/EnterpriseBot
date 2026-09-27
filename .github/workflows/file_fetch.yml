@@ -41,6 +41,11 @@ on:
         required: false
         default: "110"
         type: string
+      max_pages:
+        description: "Opcional (solo gcs_image): páginas máximas por documento. 4 por defecto; más para PDF que agrupan varios documentos (S121)."
+        required: false
+        default: "4"
+        type: string
 
 env:
   DRIVE_FOLDER_ID: "1SSHSY2FHt-7eN17Wgza2Qcybs-ij6to0"
@@ -154,6 +159,7 @@ jobs:
         env:
           IDS: ${{ inputs.remote_path }}
           DPI: ${{ inputs.dpi }}
+          MAX_PAGES: ${{ inputs.max_pages }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -e
@@ -162,7 +168,7 @@ jobs:
           scp -i ~/.ssh/pa_readonly_key .github/scripts/gcs_render_pages.py \
             MiguelAeTxio@ssh.pythonanywhere.com:"$SCRIPT"
           ssh -i ~/.ssh/pa_readonly_key MiguelAeTxio@ssh.pythonanywhere.com \
-            "set -e; cd /home/MiguelAeTxio/PROJECTS/EnterpriseBot; source /home/MiguelAeTxio/.virtualenvs/EnterpriseBot_venv_py312/bin/activate; export PYTHONPATH=/home/MiguelAeTxio/PROJECTS/EnterpriseBot; python -m dotenv run python3 '$SCRIPT' '$IDS' '$RUN_DIR' 4 '$DPI'" \
+            "set -e; cd /home/MiguelAeTxio/PROJECTS/EnterpriseBot; source /home/MiguelAeTxio/.virtualenvs/EnterpriseBot_venv_py312/bin/activate; export PYTHONPATH=/home/MiguelAeTxio/PROJECTS/EnterpriseBot; python -m dotenv run python3 '$SCRIPT' '$IDS' '$RUN_DIR' '$MAX_PAGES' '$DPI'" \
             | tee /tmp/result.txt
           mkdir -p /tmp/pages
           scp -i ~/.ssh/pa_readonly_key \
