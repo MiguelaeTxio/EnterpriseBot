@@ -49,6 +49,8 @@ tontas); cada formulario vuelve aquí (PRG).
             </form>
             {% else %}
             <dl class="row small mb-0">
+                <dt class="col-5">Modelo</dt><dd class="col-7">{{ accessory.model.name|default:"—" }}</dd>
+                <dt class="col-5">Trazabilidad</dt><dd class="col-7">{{ accessory.traceability|default:"—" }}</dd>
                 <dt class="col-5">Descripción</dt><dd class="col-7">{{ accessory.description|default:"—" }}</dd>
                 <dt class="col-5">Medidas</dt><dd class="col-7">{{ accessory.dimensions|default:"—" }}</dd>
                 <dt class="col-5">Carga de trabajo</dt><dd class="col-7">{% if accessory.working_load_kg %}{{ accessory.working_load_kg }} kg{% else %}—{% endif %}</dd>

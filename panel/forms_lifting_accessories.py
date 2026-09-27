@@ -22,6 +22,7 @@ from django.urls import reverse
 
 from document_explorer.models import (
     LiftingAccessory,
+    LiftingAccessoryModel,
     LiftingAccessoryType,
     PersonIdentity,
 )
@@ -106,12 +107,15 @@ class LiftingAccessoryForm(forms.ModelForm):
     class Meta:
         model = LiftingAccessory
         fields = [
-            "accessory_type", "identifier", "description", "dimensions",
-            "working_load_kg", "standard", "manufacturer", "supply_date",
+            "model", "accessory_type", "identifier", "traceability",
+            "description", "dimensions", "working_load_kg", "standard",
+            "manufacturer", "supply_date",
         ]
         widgets = {
+            "model": _small(forms.Select),
             "accessory_type": _small(forms.Select),
             "identifier": _small(forms.TextInput),
+            "traceability": _small(forms.TextInput),
             "description": _small(forms.TextInput),
             "dimensions": _small(forms.TextInput),
             "working_load_kg": _small(forms.NumberInput, min="0"),
@@ -130,6 +134,20 @@ class LiftingAccessoryForm(forms.ModelForm):
             )
         ).distinct()
         self.fields["accessory_type"].empty_label = "-- Elegir tipo --"
+        # S121: el modelo rellena tipo, medidas, carga y norma; con modelo
+        # el tipo no hace falta elegirlo aparte.
+        self.fields["accessory_type"].required = False
+        self.fields["accessory_type"].help_text = (
+            "Solo si no eliges modelo (el modelo ya lo lleva)."
+        )
+        self.fields["model"].queryset = (
+            LiftingAccessoryModel.objects.filter(is_active=True)
+            | LiftingAccessoryModel.objects.filter(pk=self.instance.model_id)
+        ).distinct().select_related("accessory_type")
+        self.fields["model"].empty_label = "-- Elegir modelo --"
+        self.fields["model"].help_text = (
+            "Rellena tipo, medidas, carga y norma si los dejas en blanco."
+        )
         if is_create:
             self.fields["certificate_file"] = _file_field(
                 "Certificado del fabricante (PDF o foto)", required=True,
@@ -145,6 +163,22 @@ class LiftingAccessoryForm(forms.ModelForm):
         certificado, PDF o imagen.
         """
         cleaned = super().clean()
+        model = cleaned.get("model")
+        if model is not None:
+            if (cleaned.get("accessory_type") is not None
+                    and cleaned["accessory_type"] != model.accessory_type):
+                self.add_error(
+                    "accessory_type",
+                    "El tipo no coincide con el del modelo elegido.",
+                )
+            cleaned["accessory_type"] = model.accessory_type
+            for field in ("dimensions", "working_load_kg", "standard"):
+                if cleaned.get(field) in (None, ""):
+                    cleaned[field] = getattr(model, field)
+        elif cleaned.get("accessory_type") is None:
+            self.add_error(
+                "accessory_type", "Elige un modelo o, si no hay, un tipo.",
+            )
         accessory_type = cleaned.get("accessory_type")
         identifier = (cleaned.get("identifier") or "").strip()
         cleaned["identifier"] = identifier
@@ -294,6 +328,48 @@ class LiftingAccessoryReviewForm(forms.Form):
         if "review_file" in self.fields:
             _check_extension(self, "review_file")
         return cleaned
+
+
+class LiftingAccessoryModelForm(forms.ModelForm):
+    """
+    Create or edit one catalogue model.
+    ---
+    Alta o edición de un modelo del catálogo.
+    """
+
+    class Meta:
+        model = LiftingAccessoryModel
+        fields = [
+            "accessory_type", "name", "dimensions", "working_load_kg",
+            "standard", "display_order",
+        ]
+        widgets = {
+            "accessory_type": _small(forms.Select),
+            "name": _small(forms.TextInput),
+            "dimensions": _small(forms.TextInput),
+            "working_load_kg": _small(forms.NumberInput, min="0"),
+            "standard": _small(forms.TextInput),
+            "display_order": _small(forms.NumberInput, min="0"),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["accessory_type"].queryset = (
+            LiftingAccessoryType.objects.filter(is_active=True)
+            | LiftingAccessoryType.objects.filter(
+                pk=self.instance.accessory_type_id,
+            )
+        ).distinct()
+        self.fields["accessory_type"].empty_label = "-- Tipo --"
+        self.fields["display_order"].required = False
+
+    def clean_display_order(self):
+        """
+        Empty order means 0 (the quick create form does not send it).
+        ---
+        Orden vacío es 0 (el alta rápida del panel no lo envía).
+        """
+        return self.cleaned_data.get("display_order") or 0
 
 
 class LiftingAccessoryTypeForm(forms.ModelForm):

@@ -108,8 +108,12 @@ screen_key "lifting_accessories"); la selección también (clave
                             data-bs-toggle="modal" data-bs-target="#liftingCreateModal">
                         <i class="bi bi-plus-lg me-1"></i>Nuevo accesorio
                     </button>
+                    <button type="button" class="btn btn-sm btn-success"
+                            data-bs-toggle="modal" data-bs-target="#liftingModelAssignModal">
+                        <i class="bi bi-box-arrow-right me-1"></i>Entregar por modelo
+                    </button>
                     <button type="button" class="btn btn-sm btn-outline-primary lifting-needs-selection" id="lifting-mass-assign" disabled>
-                        <i class="bi bi-box-arrow-right me-1"></i>Entregar
+                        <i class="bi bi-box-arrow-right me-1"></i>Entregar marcados
                     </button>
                     <button type="button" class="btn btn-sm btn-outline-primary lifting-needs-selection" id="lifting-mass-review" disabled>
                         <i class="bi bi-clipboard-check me-1"></i>Registrar revisión
@@ -157,6 +161,12 @@ screen_key "lifting_accessories"); la selección también (clave
                 </div>
             </div>
             <div class="border rounded p-2 d-flex flex-column lifting-half">
+                <div class="fw-bold small mb-1">Modelos <span class="fw-normal text-muted">(en almacén / total)</span></div>
+                <div id="lifting-models-container" class="lifting-fill lifting-scroll-y">
+                    {% include "panel/lifting_accessories/_models.html" %}
+                </div>
+            </div>
+            <div class="border rounded p-2 d-flex flex-column lifting-half">
                 <div class="fw-bold small mb-1">Tipos de accesorio</div>
                 <div id="lifting-types-container" class="lifting-fill lifting-scroll-y">
                     {% include "panel/lifting_accessories/_types.html" %}
@@ -190,6 +200,7 @@ respeta lo que se estaba viendo.
 .lifting-check-col { width: 2rem; }
 .lifting-sort-link { cursor: pointer; }
 .lifting-order-input { width: 4.5rem; }
+.lifting-units-scroll { max-height: 40vh; overflow-y: auto; }
 </style>
 
 {% if can_manage %}
@@ -202,6 +213,66 @@ respeta lo que se estaba viendo.
             </div>
             <div class="modal-body" id="lifting-create-form-container">
                 {% include "panel/lifting_accessories/_create_form.html" %}
+            </div>
+        </div>
+    </div>
+</div>
+
+{% comment %}
+S121 -- entrega por modelo (Miguel Ángel, opción 1): modelo y cantidad
+-> el sistema propone las unidades del almacén (las más antiguas) -> el
+supervisor confirma o cambia según las etiquetas -> centro de gasto,
+persona y fecha. Termina en la misma entrega masiva que "Entregar
+marcados".
+{% endcomment %}
+<div class="modal fade" id="liftingModelAssignModal" tabindex="-1" aria-labelledby="liftingModelAssignModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="liftingModelAssignModalLabel">Entregar por modelo</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-2 mb-2">
+                    <div class="col-md-9">
+                        <label class="form-label small mb-0" for="lifting-bym-model">Modelo <span class="text-danger">*</span></label>
+                        <select id="lifting-bym-model" name="model" class="form-select form-select-sm"
+                                hx-get="{% url 'panel:lifting_accessory_model_units' %}"
+                                hx-target="#lifting-model-units"
+                                hx-include="#lifting-bym-model, #lifting-bym-quantity"
+                                hx-trigger="change">
+                            <option value="">-- Elegir modelo --</option>
+                            {% for accessory_model in accessory_models %}
+                            {% if accessory_model.is_active %}
+                            <option value="{{ accessory_model.pk }}" data-name="{{ accessory_model.name }}" data-store="{{ accessory_model.n_store }}" {% if not accessory_model.n_store %}disabled{% endif %}>{{ accessory_model.name }} ({{ accessory_model.n_store }} en almacén)</option>
+                            {% endif %}
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small mb-0" for="lifting-bym-quantity">Cantidad <span class="text-danger">*</span></label>
+                        <input type="number" id="lifting-bym-quantity" name="quantity" value="1" min="1" class="form-control form-control-sm"
+                               hx-get="{% url 'panel:lifting_accessory_model_units' %}"
+                               hx-target="#lifting-model-units"
+                               hx-include="#lifting-bym-model, #lifting-bym-quantity"
+                               hx-trigger="change[document.getElementById('lifting-bym-model').value]">
+                    </div>
+                </div>
+                <div id="lifting-model-units" class="mb-3">
+                    <div class="text-muted small">Elige un modelo para ver las unidades del almacén.</div>
+                </div>
+                <div class="row g-2" id="lifting-bym-fields">
+                    {% for field in model_assign_form %}
+                    <div class="col-md-6{% if field.name == 'cost_center' %} position-relative{% endif %}">
+                        <label class="form-label small mb-0" for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %} <span class="text-danger">*</span>{% endif %}</label>
+                        {{ field }}
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-sm btn-success" id="lifting-bym-confirm">Entregar</button>
             </div>
         </div>
     </div>
@@ -478,6 +549,45 @@ respeta lo que se estaba viendo.
             }
             postAction("{% url 'panel:lifting_accessory_bulk_assign' %}", extra)
                 .then(function (ok) { if (ok && assignModal) assignModal.hide(); });
+        });
+    }
+
+    // Entrega por modelo: las unidades marcadas en la lista del modelo
+    // (propuestas por el sistema y confirmadas por el supervisor según
+    // las etiquetas) + centro de gasto, persona y fecha.
+    const bymConfirm = document.getElementById("lifting-bym-confirm");
+    if (bymConfirm) {
+        const bymModalEl = document.getElementById("liftingModelAssignModal");
+        bymConfirm.addEventListener("click", function () {
+            const units = Array.from(document.querySelectorAll("#lifting-model-units .lifting-unit-check:checked"))
+                .map(function (cb) { return cb.value; });
+            if (!units.length) { showToast("Marca al menos una unidad.", true); return; }
+            const extra = {selected: units};
+            document.querySelectorAll("#lifting-bym-fields input[name], #lifting-bym-fields select[name]").forEach(function (input) {
+                extra[input.name] = input.value;
+            });
+            if (!extra.cost_center || !extra.responsible_person || !extra.start_date) {
+                showToast("Indica centro de gasto, responsable y fecha.", true);
+                return;
+            }
+            postAction("{% url 'panel:lifting_accessory_bulk_assign' %}", extra).then(function (ok) {
+                if (!ok) return;
+                bootstrap.Modal.getOrCreateInstance(bymModalEl).hide();
+                // Lo que queda en almacén: restar en el desplegable y
+                // repintar el catálogo de modelos (sin recargar la pestaña).
+                const select = document.getElementById("lifting-bym-model");
+                const option = select.options[select.selectedIndex];
+                if (option && option.value) {
+                    const left = Math.max((parseInt(option.dataset.store, 10) || 0) - units.length, 0);
+                    option.dataset.store = left;
+                    option.textContent = option.dataset.name + " (" + left + " en almacén)";
+                    option.disabled = left === 0;
+                }
+                select.value = "";
+                document.getElementById("lifting-model-units").innerHTML =
+                    '<div class="text-muted small">Elige un modelo para ver las unidades del almacén.</div>';
+                htmx.ajax("GET", "{% url 'panel:lifting_accessory_model_create' %}", {target: "#lifting-models-container"});
+            });
         });
     }
 

@@ -264,15 +264,21 @@ def _upload_document(accessory, uploaded_file, type_code, root, label,
     ---
     Sube un archivo del panel tipado `type_code` y lo enlaza al
     accesorio -- mismo flujo que la ficha técnica de un EPI
-    (EpiTechnicalSheetUploadView). Cada subida AÑADE un documento (el
-    nombre lleva fecha y hora), nunca sustituye a otro (4.12).
+    (EpiTechnicalSheetUploadView). Cada subida AÑADE un documento, nunca
+    sustituye a otro (4.12): el nombre lleva fecha, hora y un sufijo
+    único, porque store_document es idempotente por nombre y dos
+    subidas en el mismo segundo no deben colapsar en una (S121).
     ValueError si el archivo no es PDF o imagen.
     """
+    import uuid
+
     extension = (
         uploaded_file.name.rsplit(".", 1)[-1].lower()
         if "." in uploaded_file.name else ""
     )
-    stamp = timezone.now().strftime("%Y%m%d%H%M%S")
+    stamp = "%s_%s" % (
+        timezone.now().strftime("%Y%m%d%H%M%S"), uuid.uuid4().hex[:6],
+    )
     if stamp_date is not None:
         stamp = "%s_%s" % (stamp_date.strftime("%Y%m%d"), stamp)
     filename = "%s_%s_%s_%s.%s" % (
@@ -328,3 +334,55 @@ def accessories_for_person(person, company):
     ).select_related("accessory_type").distinct().order_by(
         "accessory_type__display_order", "identifier",
     )
+
+
+def _open_delivery_ids():
+    """
+    Ids of accessories with an open delivery (subquery).
+    ---
+    Ids de los accesorios con una entrega abierta (subconsulta). Explícita
+    a propósito: un exclude con dos condiciones sobre una relación
+    múltiple no garantiza que ambas se evalúen sobre la misma entrega.
+    """
+    return LiftingAccessoryAssignment.objects.filter(
+        end_date__isnull=True,
+    ).values("accessory_id")
+
+
+def units_in_store(model, company):
+    """
+    Units of a model that are in the store: in service and with no open
+    delivery, oldest first.
+    ---
+    Unidades de un modelo que están en el almacén: en servicio y sin
+    entrega abierta, primero las más antiguas (fecha de suministro; sin
+    fecha, al final) -- las que se proponen al entregar por modelo
+    (Miguel Ángel, S121, opción 1). A igualdad, por trazabilidad y nº,
+    para que las de un mismo lote salgan juntas.
+    """
+    from django.db.models import F
+
+    return LiftingAccessory.objects.filter(
+        company=company, model=model, is_active=True,
+    ).exclude(
+        pk__in=_open_delivery_ids(),
+    ).order_by(
+        F("supply_date").asc(nulls_last=True), "traceability", "identifier",
+    )
+
+
+def store_counts(company):
+    """
+    {model pk: units in the store} for the company.
+    ---
+    {pk del modelo: unidades en el almacén} de la empresa, para mostrar
+    el disponible de cada modelo al entregar.
+    """
+    from django.db.models import Count
+
+    rows = LiftingAccessory.objects.filter(
+        company=company, is_active=True, model__isnull=False,
+    ).exclude(
+        pk__in=_open_delivery_ids(),
+    ).values("model").annotate(n=Count("id"))
+    return {row["model"]: row["n"] for row in rows}

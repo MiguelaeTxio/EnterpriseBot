@@ -23,6 +23,11 @@ validados por Miguel Ángel en S121:
    8184, 8185, 8188) cada página se guarda como PDF propio, tipado y
    enlazado a su accesorio ("un PDF por certificado"); el original se
    conserva. Los demás se enlazan tal cual.
+4. Modelos (13) y trazabilidad (S121, entrega por modelo): crea el
+   catálogo de modelos y asigna a cada accesorio su modelo y su código
+   de trazabilidad tal como viene impreso en su certificado (lo que va
+   en la etiqueta según EN 1492-1). Nunca pisa un modelo o una
+   trazabilidad que ya tenga el accesorio (corregidos en el panel).
 
 DRY-RUN POR DEFECTO: comprueba que todo existe y cuenta lo que haría.
 Con --apply escribe. Idempotente: se puede repetir sin duplicar nada.
@@ -46,6 +51,7 @@ from document_explorer.models import (
     DocumentIndexEntry,
     DocumentTypeCatalog,
     LiftingAccessory,
+    LiftingAccessoryModel,
     LiftingAccessoryType,
 )
 from spare_parts.gcs_service import download_bytes
@@ -138,6 +144,8 @@ class Command(BaseCommand):
         self._retypes(data["retypes"], apply, errors)
         self._trash(data["trash"], apply, errors)
         self._accessories(data["accessories"], company, apply, errors)
+        self._models(data["models"], data["accessories"], company, apply,
+                     errors)
         self.out("\n# ERRORES: %d" % len(errors))
         for error in errors:
             self.out("  - %s" % error)
@@ -250,6 +258,9 @@ class Command(BaseCommand):
                                 "working_load_kg": item["working_load_kg"],
                                 "standard": item["standard"],
                                 "manufacturer": item["manufacturer"],
+                                "traceability": item.get(
+                                    "traceability", "",
+                                ),
                                 "supply_date": (
                                     date.fromisoformat(item["supply_date"])
                                     if item["supply_date"] else None
@@ -305,3 +316,60 @@ class Command(BaseCommand):
                               "enlazados" if apply else "a enlazar",
                               certificates,
                           ))
+
+    def _models(self, models_data, items, company, apply, errors):
+        self.out("\n## 4. Modelos (%d) y trazabilidad" % len(models_data))
+        types = {t.code: t for t in LiftingAccessoryType.objects.all()}
+        by_key = {}
+        new_models = 0
+        for spec in models_data:
+            accessory_type = types.get(spec["type"])
+            if accessory_type is None:
+                errors.append("modelo %s: tipo %s inexistente"
+                              % (spec["key"], spec["type"]))
+                continue
+            model = LiftingAccessoryModel.objects.filter(
+                accessory_type=accessory_type, name=spec["name"],
+            ).first()
+            if model is None:
+                new_models += 1
+                if apply:
+                    model = LiftingAccessoryModel.objects.create(
+                        accessory_type=accessory_type,
+                        name=spec["name"],
+                        dimensions=spec["dimensions"],
+                        working_load_kg=spec["working_load_kg"],
+                        standard=spec["standard"],
+                        display_order=spec["display_order"],
+                    )
+            by_key[spec["key"]] = model
+        set_model = set_trace = 0
+        for item in items:
+            accessory = LiftingAccessory.objects.filter(
+                company=company, accessory_type__code=item["type"],
+                identifier=item["identifier"],
+            ).first()
+            if accessory is None:
+                if apply:
+                    errors.append("modelo: accesorio %s %s inexistente"
+                                  % (item["type"], item["identifier"]))
+                continue
+            fields = []
+            model = by_key.get(item["model"])
+            if accessory.model_id is None:
+                set_model += 1
+                if model is not None:
+                    accessory.model = model
+                    fields.append("model")
+            if item["traceability"] and not accessory.traceability:
+                set_trace += 1
+                accessory.traceability = item["traceability"]
+                fields.append("traceability")
+            if apply and fields:
+                accessory.save(update_fields=fields + ["updated_at"])
+        verb = "" if apply else "a "
+        self.out("  -> modelos %screar: %d | accesorios con modelo "
+                 "%sasignar: %d | trazabilidades %sguardar: %d" % (
+                     "" if apply else "a ", new_models, verb, set_model,
+                     verb, set_trace,
+                 ))

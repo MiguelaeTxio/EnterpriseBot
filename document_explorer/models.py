@@ -3024,6 +3024,77 @@ class LiftingAccessoryType(models.Model):
         return self.label
 
 
+class LiftingAccessoryModel(models.Model):
+    """
+    H30 (S121). Catalogue model of lifting accessory (e.g. "polyester
+    flat sling 2 t x 3 m"): the level below the type that deliveries use.
+    ---
+    H30 (S121). Modelo de catálogo de accesorio de elevación (p. ej.
+    "Poliéster plana 2 t × 3 m"): el nivel por debajo del tipo. Decisión
+    de Miguel Ángel (S121, opción 1): se entrega eligiendo el MODELO, la
+    cantidad, el centro de gasto y la persona; el sistema propone las
+    unidades de ese modelo que están en el almacén (las más antiguas) y
+    el supervisor las confirma o cambia según las etiquetas. Así la
+    entrega es tan sencilla como la de un EPI sin perder el certificado
+    ni las revisiones de cada unidad. Al dar de alta una unidad nueva,
+    el modelo rellena tipo, medidas, carga y norma. Editable desde el
+    panel; se desactiva en vez de borrarse si tiene unidades.
+    """
+
+    accessory_type = models.ForeignKey(
+        LiftingAccessoryType,
+        on_delete=models.PROTECT,
+        related_name="models",
+        verbose_name="Tipo",
+    )
+    name = models.CharField(
+        max_length=150,
+        verbose_name="Modelo",
+        help_text="P. ej. 'Poliéster plana 2 t × 3 m'.",
+    )
+    dimensions = models.CharField(
+        max_length=100,
+        blank=True,
+        verbose_name="Medidas",
+    )
+    working_load_kg = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        verbose_name="Carga de trabajo (kg)",
+    )
+    standard = models.CharField(
+        max_length=100,
+        blank=True,
+        verbose_name="Norma",
+    )
+    display_order = models.PositiveSmallIntegerField(
+        default=0,
+        verbose_name="Orden",
+    )
+    is_active = models.BooleanField(
+        default=True,
+        verbose_name="Activo",
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Fecha de alta",
+    )
+
+    class Meta:
+        verbose_name = "Modelo de accesorio de elevación"
+        verbose_name_plural = "Modelos de accesorio de elevación"
+        ordering = ["display_order", "name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=("accessory_type", "name"),
+                name="unique_lifting_model_name_per_type",
+            ),
+        ]
+
+    def __str__(self):
+        return self.name
+
+
 class LiftingAccessory(models.Model):
     """
     H30 (S121). One physical lifting accessory (a sling, a load line, a
@@ -3061,6 +3132,24 @@ class LiftingAccessory(models.Model):
     identifier = models.CharField(
         max_length=100,
         verbose_name="Nº de certificado / serie",
+    )
+    model = models.ForeignKey(
+        LiftingAccessoryModel,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="accessories",
+        verbose_name="Modelo",
+    )
+    traceability = models.CharField(
+        max_length=100,
+        blank=True,
+        verbose_name="Nº de trazabilidad",
+        help_text=(
+            "Tal como viene impreso en el certificado (puede ser de "
+            "unidad o de lote). Se muestra junto al nº de certificado "
+            "para localizar la eslinga por su etiqueta."
+        ),
     )
     description = models.CharField(
         max_length=255,
@@ -3164,15 +3253,15 @@ class LiftingAccessory(models.Model):
 
 class LiftingAccessoryAssignment(models.Model):
     """
-    H30 (S121). Delivery of a lifting accessory to a responsible person
-    and, optionally, a machine -- one row per delivery, with history.
+    H30 (S121). Delivery of a lifting accessory to a cost centre and a
+    responsible person -- one row per delivery, with history.
     ---
     H30 (S121). Entrega de un accesorio de elevación, con historial.
     Miguel Ángel (S121): la entrega es un acto aparte del alta; "cuando
     el supervisor entrega un accesorio se anota para qué centro de gasto
     se entrega y a quién se entrega" -- ambos obligatorios. La persona
-    es la responsable del elemento. Una fila por entrega; la vigente es la que no tiene
-    `end_date`. Una entrega nueva cierra la anterior (servicio
+    es la responsable del elemento. Una fila por entrega; la vigente es
+    la que no tiene `end_date`. Una entrega nueva cierra la anterior (servicio
     `lifting_accessory_service.assign_accessory`) -- nunca se sobrescribe,
     para conservar el historial.
     """

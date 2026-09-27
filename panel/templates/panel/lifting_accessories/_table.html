@@ -55,10 +55,11 @@ Orden vigente, para que los filtros del panel fijo lo conserven
                        data-pk="{{ accessory.pk }}"
                        data-label="{{ accessory.accessory_type.label }} {{ accessory.identifier }}">
             </td>
-            <td>{{ accessory.accessory_type.label }}</td>
+            <td>{% if accessory.model %}{{ accessory.model.name }}{% else %}{{ accessory.accessory_type.label }}{% endif %}</td>
             <td>
                 <a href="{% url 'panel:lifting_accessory_detail' accessory.pk %}"
                    class="fw-semibold">{{ accessory.identifier }}</a>
+                {% if accessory.traceability %}<div class="small text-muted">Traz. {{ accessory.traceability }}</div>{% endif %}
             </td>
             <td>{{ accessory.description }}{% if accessory.dimensions %} <span class="text-muted">({{ accessory.dimensions }})</span>{% endif %}</td>
             <td class="text-end">{{ accessory.working_load_kg|default_if_none:"" }}</td>

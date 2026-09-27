@@ -1,0 +1,33 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/lifting_accessories/_model_units.html #}
+{% comment %}
+H30 (S121). Paso de la entrega por modelo: unidades de ese modelo en el
+almacén, las N más antiguas ya marcadas. El supervisor confirma o cambia
+las marcas según lo que lee en las etiquetas: primero la TRAZABILIDAD
+(lo que lleva la etiqueta según EN 1492-1; en algunos lotes es común a
+todo el lote) y al lado el nº de certificado.
+{% endcomment %}
+{% if not units %}
+<div class="alert alert-warning py-2 small mb-0">No hay unidades de «{{ model.name }}» en el almacén.</div>
+{% else %}
+{% if short %}
+<div class="alert alert-warning py-1 small mb-2">Pides {{ quantity }} y en el almacén solo hay {{ units|length }}: se han marcado todas.</div>
+{% endif %}
+<div class="small text-muted mb-1">Marca las que entregas según sus etiquetas ({{ units|length }} en el almacén).</div>
+<div class="lifting-units-scroll border rounded">
+    <table class="table table-sm table-hover align-middle mb-0 small">
+        <thead class="table-light">
+            <tr><th></th><th>Trazabilidad</th><th>Nº certificado</th><th>Suministro</th></tr>
+        </thead>
+        <tbody>
+            {% for unit in units %}
+            <tr>
+                <td><input class="form-check-input lifting-unit-check" type="checkbox" value="{{ unit.pk }}" {% if unit.preselected %}checked{% endif %}></td>
+                <td class="fw-semibold">{{ unit.traceability|default:"—" }}</td>
+                <td>{{ unit.identifier }}</td>
+                <td class="text-nowrap">{{ unit.supply_date|date:"d/m/Y"|default:"—" }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}

@@ -34,6 +34,7 @@ from document_explorer import lifting_accessory_service as service
 from document_explorer.models import (
     LIFTING_ACCESSORY_REVIEW_MONTHS,
     LiftingAccessory,
+    LiftingAccessoryModel,
     LiftingAccessoryAssignment,
     LiftingAccessoryReview,
     LiftingAccessoryType,
@@ -45,6 +46,7 @@ from panel.forms_lifting_accessories import (
     LiftingAccessoryAssignmentForm,
     LiftingAccessoryCertificateForm,
     LiftingAccessoryForm,
+    LiftingAccessoryModelForm,
     LiftingAccessoryReturnForm,
     LiftingAccessoryReviewForm,
     LiftingAccessoryTypeForm,
@@ -64,7 +66,7 @@ MANAGE_ROLES = {CompanyUser.ROLE_ADMIN, CompanyUser.ROLE_DOCS_SUPERVISOR}
 # real es de decenas de accesorios y varias columnas (máquina,
 # responsable, caducidad) son datos derivados, no columnas de la tabla.
 _SORT_VALUES = {
-    "type": lambda a: a.accessory_type.display_order,
+    "model": lambda a: (a.model.name if a.model else a.accessory_type.label),
     "identifier": lambda a: a.identifier.upper(),
     "description": lambda a: a.description.upper(),
     "load": lambda a: a.working_load_kg,
@@ -79,7 +81,7 @@ _MAX_SORT_KEYS = 4
 
 # Cabeceras de la tabla, en orden (clave de _SORT_VALUES, etiqueta).
 _COLUMNS = (
-    ("type", "Tipo"),
+    ("model", "Modelo"),
     ("identifier", "Nº certificado / serie"),
     ("description", "Descripción"),
     ("load", "Carga (kg)"),
@@ -203,7 +205,7 @@ def _annotate(accessories):
     """
     today = date.today()
     accessories = list(accessories.select_related(
-        "accessory_type",
+        "accessory_type", "model",
     ).prefetch_related(
         "assignments__machine", "assignments__responsible_person",
         "reviews",
@@ -283,8 +285,9 @@ def _list_context(request):
         rows = [
             a for a in rows
             if needle in " ".join((
-                a.identifier, a.description, a.dimensions, a.standard,
-                a.manufacturer, a.accessory_type.label,
+                a.identifier, a.traceability, a.description, a.dimensions,
+                a.standard, a.manufacturer, a.accessory_type.label,
+                a.model.name if a.model else "",
                 a.current_machine.code if a.current_machine else "",
                 a.responsible_label,
             )).upper()
@@ -321,6 +324,31 @@ def _types_context(request):
             n_accessories=Count("accessories"),
         ).order_by("display_order", "label"),
         "can_manage_types": _can_manage(request),
+    }
+
+
+def _models_context(request):
+    """
+    Catalogue models with their units in the store and in total.
+    ---
+    Modelos del catálogo con sus unidades en el almacén y en total, y si
+    el usuario puede editarlos (resuelto aquí, plantillas tontas).
+    """
+    from django.db.models import Count
+
+    company = request.user.company_user.company
+    in_store = service.store_counts(company)
+    models_list = list(LiftingAccessoryModel.objects.select_related(
+        "accessory_type",
+    ).annotate(n_total=Count("accessories")).order_by(
+        "display_order", "name",
+    ))
+    for model in models_list:
+        model.n_store = in_store.get(model.pk, 0)
+    return {
+        "accessory_models": models_list,
+        "can_manage_models": _can_manage(request),
+        "model_form": LiftingAccessoryModelForm(),
     }
 
 
@@ -371,6 +399,7 @@ class LiftingAccessoryTabView(CompanyUserRequiredMixin, View):
         context = {
             **_list_context(request),
             **_types_context(request),
+            **_models_context(request),
             "screen_key": SCREEN_KEY,
             "saved_selection": saved_selection,
             "active_types": LiftingAccessoryType.objects.filter(
@@ -381,6 +410,13 @@ class LiftingAccessoryTabView(CompanyUserRequiredMixin, View):
             ),
             "assign_form": LiftingAccessoryAssignmentForm(
                 company=company, initial={"start_date": date.today()},
+            ),
+            # Mismo formulario para la entrega por modelo, con otros ids
+            # (los dos modales conviven en la página); los nombres de
+            # campo son los mismos, así ambos acaban en la entrega masiva.
+            "model_assign_form": LiftingAccessoryAssignmentForm(
+                company=company, initial={"start_date": date.today()},
+                auto_id="bym_%s",
             ),
             "review_form": LiftingAccessoryReviewForm(with_document=False),
             "type_form": LiftingAccessoryTypeForm(),
@@ -520,6 +556,99 @@ class LiftingAccessoryBulkAssignView(DocsUploadAccessMixin, View):
         return _table_response(request, "%d accesorios entregados a %s." % (
             len(accessories), form.cleaned_data["cost_center"].code,
         ))
+
+
+class LiftingAccessoryModelUnitsView(DocsUploadAccessMixin, View):
+    """
+    GET ?model=&quantity=: units of the model in the store, the oldest
+    `quantity` pre-ticked, for the delivery by model.
+    ---
+    GET ?model=&quantity=: unidades del modelo en el almacén, con las
+    `quantity` más antiguas ya marcadas -- paso de la entrega por modelo
+    (Miguel Ángel, S121, opción 1). El supervisor confirma o cambia las
+    marcas según las etiquetas (trazabilidad, que es lo que va en la
+    etiqueta según EN 1492-1, y nº de certificado).
+    """
+
+    def get(self, request):
+        company = request.user.company_user.company
+        model = get_object_or_404(
+            LiftingAccessoryModel, pk=request.GET.get("model") or 0,
+        )
+        try:
+            quantity = max(int(request.GET.get("quantity") or 1), 1)
+        except ValueError:
+            quantity = 1
+        units = list(service.units_in_store(model, company))
+        for index, unit in enumerate(units):
+            unit.preselected = index < quantity
+        return render(request, "panel/lifting_accessories/_model_units.html", {
+            "model": model,
+            "units": units,
+            "quantity": quantity,
+            "short": quantity > len(units),
+        })
+
+
+class LiftingAccessoryModelSaveView(DocsUploadAccessMixin, View):
+    """
+    POST: create (no pk) or edit (pk) one model; returns the catalogue.
+    GET: the catalogue as it is now (refresh after a delivery).
+    ---
+    POST: alta (sin pk) o edición (con pk) de un modelo; devuelve el
+    catálogo de modelos repintado. GET: el catálogo tal como está (se
+    repinta tras una entrega, para actualizar lo que queda en almacén).
+    """
+
+    def get(self, request, model_pk=None):
+        return render(
+            request, "panel/lifting_accessories/_models.html",
+            _models_context(request),
+        )
+
+    def post(self, request, model_pk=None):
+        instance = (
+            get_object_or_404(LiftingAccessoryModel, pk=model_pk)
+            if model_pk else None
+        )
+        form = LiftingAccessoryModelForm(request.POST, instance=instance)
+        context = {}
+        if form.is_valid():
+            form.save()
+        else:
+            context["model_errors"] = "; ".join(
+                str(err) for errs in form.errors.values() for err in errs
+            )
+            context["model_error_pk"] = model_pk
+        context.update(_models_context(request))
+        return render(
+            request, "panel/lifting_accessories/_models.html", context,
+        )
+
+
+class LiftingAccessoryModelRemoveView(DocsUploadAccessMixin, View):
+    """
+    POST: remove a model -- deleted if unused, otherwise deactivated.
+    ---
+    POST: quitar un modelo -- se borra si no tiene unidades; si las
+    tiene, se desactiva (conserva el histórico). "reactivate" lo vuelve
+    a activar.
+    """
+
+    def post(self, request, model_pk):
+        model = get_object_or_404(LiftingAccessoryModel, pk=model_pk)
+        if request.POST.get("action") == "reactivate":
+            model.is_active = True
+            model.save(update_fields=["is_active"])
+        elif model.accessories.exists():
+            model.is_active = False
+            model.save(update_fields=["is_active"])
+        else:
+            model.delete()
+        return render(
+            request, "panel/lifting_accessories/_models.html",
+            _models_context(request),
+        )
 
 
 class LiftingAccessoryCostCenterSearchView(DocsUploadAccessMixin, View):
