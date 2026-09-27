@@ -92,9 +92,36 @@ class Command(BaseCommand):
             "--apply", action="store_true",
             help="Escribe de verdad (sin esto, solo comprueba y cuenta).",
         )
+        parser.add_argument(
+            "--log-file", default=None,
+            help="Archivo de log (pantalla y archivo a la vez, flush por "
+                 "línea -- com-standards 0bis).",
+        )
+
+    def out(self, message):
+        """
+        Write one line to screen and log file, flushed.
+        ---
+        Escribe una línea en pantalla y en el log, con flush.
+        """
+        self.stdout.write(message)
+        self.stdout.flush()
+        if self.log_handle is not None:
+            self.log_handle.write(message + "\n")
+            self.log_handle.flush()
 
     def handle(self, *args, **options):
-        apply = options["apply"]
+        self.log_handle = (
+            open(options["log_file"], "a", encoding="utf-8")
+            if options["log_file"] else None
+        )
+        try:
+            self._run(options["apply"])
+        finally:
+            if self.log_handle is not None:
+                self.log_handle.close()
+
+    def _run(self, apply):
         with open(DATA_FILE, encoding="utf-8") as handle:
             data = json.load(handle)
         admin = _resolve_dossier_trash_user()
@@ -104,17 +131,17 @@ class Command(BaseCommand):
                 "nada.",
             )
         company = admin.company
-        self.stdout.write("# Modo: %s | empresa: %s" % (
+        self.out("# Modo: %s | empresa: %s" % (
             "APPLY" if apply else "DRY-RUN", company,
         ))
         errors = []
         self._retypes(data["retypes"], apply, errors)
         self._trash(data["trash"], apply, errors)
         self._accessories(data["accessories"], company, apply, errors)
-        self.stdout.write("\n# ERRORES: %d" % len(errors))
+        self.out("\n# ERRORES: %d" % len(errors))
         for error in errors:
-            self.stdout.write("  - %s" % error)
-        self.stdout.write("# FIN (%s)" % ("APPLY" if apply else "DRY-RUN"))
+            self.out("  - %s" % error)
+        self.out("# FIN (%s)" % ("APPLY" if apply else "DRY-RUN"))
 
     def _live(self, pk):
         return DocumentIndexEntry.objects.filter(
@@ -122,7 +149,7 @@ class Command(BaseCommand):
         ).select_related("document_type").first()
 
     def _retypes(self, retypes, apply, errors):
-        self.stdout.write("\n## 1. Cambios de tipo (%d)" % len(retypes))
+        self.out("\n## 1. Cambios de tipo (%d)" % len(retypes))
         done = 0
         for item in retypes:
             entry = self._live(item["id"])
@@ -141,7 +168,7 @@ class Command(BaseCommand):
                                   % (item["id"], item["subject_from"]))
                     continue
             before = entry.document_type.code if entry.document_type else "-"
-            self.stdout.write("  %s: %s -> %s%s | %s" % (
+            self.out("  %s: %s -> %s%s | %s" % (
                 entry.pk, before, doc_type.code,
                 " (sujeto de %s)" % source.pk if source else "",
                 item["note"],
@@ -157,33 +184,33 @@ class Command(BaseCommand):
                     fields += ["domain_content_type", "domain_object_id"]
                 entry.save(update_fields=fields)
             done += 1
-        self.stdout.write("  -> %d %s" % (
+        self.out("  -> %d %s" % (
             done, "aplicados" if apply else "a aplicar",
         ))
 
     def _trash(self, trash, apply, errors):
-        self.stdout.write("\n## 2. Papelera (%d)" % len(trash))
+        self.out("\n## 2. Papelera (%d)" % len(trash))
         done = skipped = 0
         for item in trash:
             entry = self._live(item["id"])
             if entry is None:
                 skipped += 1
-                self.stdout.write("  %s: ya en papelera o inexistente"
+                self.out("  %s: ya en papelera o inexistente"
                                   % item["id"])
                 continue
-            self.stdout.write("  %s: %s | %s" % (
+            self.out("  %s: %s | %s" % (
                 entry.pk, entry.name, item["note"],
             ))
             if apply and not trash_dossier_entry(entry):
                 errors.append("papelera %s: no aplicada" % entry.pk)
                 continue
             done += 1
-        self.stdout.write("  -> %d %s, %d ya estaban" % (
+        self.out("  -> %d %s, %d ya estaban" % (
             done, "enviados" if apply else "a enviar", skipped,
         ))
 
     def _accessories(self, items, company, apply, errors):
-        self.stdout.write("\n## 3. Accesorios (%d)" % len(items))
+        self.out("\n## 3. Accesorios (%d)" % len(items))
         cert_type = DocumentTypeCatalog.objects.get(
             code=service.CERTIFICATE_TYPE_CODE,
         )
@@ -191,7 +218,9 @@ class Command(BaseCommand):
         types = {t.code: t for t in LiftingAccessoryType.objects.all()}
         sources = {}
         created = existing = certificates = 0
-        for item in items:
+        for number, item in enumerate(items, start=1):
+            if number % 25 == 0:
+                self.out("  ... %d/%d" % (number, len(items)))
             label = "%s %s" % (item["type"], item["identifier"])
             accessory_type = types.get(item["type"])
             source = self._live(item["source"])
@@ -269,7 +298,7 @@ class Command(BaseCommand):
             created += was_created
             existing += not was_created
             certificates += 1
-        self.stdout.write("  -> fichas %s: %d | ya existían: %d | "
+        self.out("  -> fichas %s: %d | ya existían: %d | "
                           "certificados %s: %d" % (
                               "creadas" if apply else "a crear", created,
                               existing,
