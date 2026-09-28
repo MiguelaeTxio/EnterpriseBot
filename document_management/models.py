@@ -231,7 +231,10 @@ class DocumentAlert(models.Model):
         ]
 
     def __str__(self) -> str:
-        return f"Alerta {self.get_status_display()} -- vence {self.expiry_date}"
+        return (
+            f"Alerta {self.get_status_display()} -- vence "
+            f"{self.expiry_date}"
+        )
 
 
 class DocumentSubstitutionLog(models.Model):
@@ -342,3 +345,66 @@ class DocumentSubstitutionLog(models.Model):
 
     def __str__(self) -> str:
         return f"{self.superseded_label} -> {self.superseding_label}"
+
+
+class DocumentAlertSettings(models.Model):
+    """
+    H30 (S122). Company-wide switch for the automatic WhatsApp sending
+    of document alerts. No row, or a row with whatsapp_enabled=False,
+    means the daily task sends nothing.
+
+    ---
+
+    H30 (S122). Interruptor por empresa del envío AUTOMÁTICO por
+    WhatsApp de los avisos de documentación. Sin fila, o con
+    `whatsapp_enabled=False`, la tarea diaria no envía nada. Miguel
+    Ángel, verbatim: "eso hay que cortarlo [...] si no vamos a dejar
+    un teléfono ahí colapsado" -- con la documentación todavía sin
+    poner al día, el envío automático generaría miles de mensajes. Se
+    enciende desde el panel cuando la documentación esté al día.
+    """
+
+    company = models.OneToOneField(
+        Company,
+        on_delete=models.CASCADE,
+        related_name="document_alert_settings",
+        verbose_name="Empresa",
+    )
+    whatsapp_enabled = models.BooleanField(
+        default=False,
+        verbose_name="Envío automático por WhatsApp activo",
+    )
+    updated_by = models.ForeignKey(
+        CompanyUser,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="document_alert_settings_updated",
+        verbose_name="Último cambio por",
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name="Último cambio",
+    )
+
+    class Meta:
+        verbose_name = "Configuración de avisos de documentación"
+        verbose_name_plural = "Configuraciones de avisos de documentación"
+
+    def __str__(self) -> str:
+        state = "activo" if self.whatsapp_enabled else "apagado"
+        return f"Avisos WhatsApp {state} -- {self.company}"
+
+    @classmethod
+    def is_whatsapp_enabled(cls, company) -> bool:
+        """
+        True only if `company` has a row with whatsapp_enabled=True.
+
+        ---
+
+        True solo si `company` tiene fila con whatsapp_enabled=True.
+        Sin fila, apagado.
+        """
+        return cls.objects.filter(
+            company=company, whatsapp_enabled=True,
+        ).exists()

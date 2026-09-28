@@ -33,7 +33,7 @@ from celery import shared_task
 from django.utils.timezone import now
 
 from .alert_service import send_alert_now
-from .models import DocumentAlert
+from .models import DocumentAlert, DocumentAlertSettings
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +74,32 @@ def send_document_expiry_alerts() -> str:
         alert for alert in due_alerts
         if alert.expiry_date - timedelta(days=alert.alert_offset_days) <= today
     ]
+
+    # H30 (S122): interruptor del envío automático. Mientras la
+    # empresa no lo encienda desde el panel, no sale ningún WhatsApp
+    # -- las alertas se quedan PENDING, sin tocar, para enviarse (o
+    # recalcularse) cuando se active. Miguel Ángel: "eso hay que
+    # cortarlo [...] si no vamos a dejar un teléfono ahí colapsado".
+    enabled_by_company = {}
+    blocked_count = 0
+    allowed_alerts = []
+    for alert in due_alerts:
+        if alert.company_id not in enabled_by_company:
+            enabled_by_company[alert.company_id] = (
+                DocumentAlertSettings.is_whatsapp_enabled(alert.company)
+            )
+        if enabled_by_company[alert.company_id]:
+            allowed_alerts.append(alert)
+        else:
+            blocked_count += 1
+    if blocked_count:
+        logger.info(
+            "# [CELERY] send_document_expiry_alerts: %d alerta(s) "
+            "debidas NO enviadas -- envío automático por WhatsApp "
+            "apagado.",
+            blocked_count,
+        )
+    due_alerts = allowed_alerts
 
     if not due_alerts:
         result = (
