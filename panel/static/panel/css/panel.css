@@ -1381,6 +1381,8 @@ table.table #toll-thead ~ tbody tr:nth-child(even):not(.table-secondary) td {
 .alerts-panel-list {
     overflow-y: auto;
     max-height: 50vh;
+    /* Al llegar al final de una lista, la rueda no arrastra la pagina. */
+    overscroll-behavior: contain;
 }
 
 .alerts-month-head {

@@ -133,20 +133,29 @@ desaparece solo en cuanto se sube el documento que lo resuelve.
     }
 
     // Directriz 4.24: los paneles ocupan lo que queda de pantalla y
-    // solo sus listas hacen scroll. En pantalla estrecha, altura
-    // natural (cada lista limitada por CSS).
+    // solo sus listas hacen scroll. Mismo algoritmo ya probado de
+    // #personal-bottom-panel (S114): altura natural menos el exceso
+    // REAL de la pagina sobre la ventana -- la pagina nunca sobresale,
+    // asi que la rueda sobre un panel sin scroll ya no mueve la
+    // pantalla (incidente S122 con capturas: medir desde el borde
+    // superior dejaba la pagina unos pixeles mas alta que la ventana).
+    // En pantalla estrecha, altura natural (listas limitadas por CSS).
+    const BODY_GUTTER = 8;
+    const BODY_MIN_HEIGHT = 320;
     const body = document.getElementById('alertsNoticesBody');
     function sizeBody() {
         if (!body.isConnected) {
             window.removeEventListener('resize', sizeBody);
             return;
         }
+        body.style.height = 'auto';
         if (window.innerWidth < 992 || body.offsetParent === null) {
             body.style.height = '';
             return;
         }
-        const top = body.getBoundingClientRect().top;
-        body.style.height = Math.max(320, window.innerHeight - top - 12) + 'px';
+        const naturalHeight = body.getBoundingClientRect().height;
+        const overflow = Math.max(document.documentElement.scrollHeight - window.innerHeight, 0);
+        body.style.height = Math.max(naturalHeight - overflow - BODY_GUTTER, BODY_MIN_HEIGHT) + 'px';
     }
     window.addEventListener('resize', sizeBody);
     // Al volver a esta subpestana o a la pestana Avisos del hub, el
@@ -155,6 +164,14 @@ desaparece solo en cuanto se sube el documento que lo resuelve.
     document.querySelectorAll('#alertsSubtabs a, #tab-avisos').forEach(function (link) {
         link.addEventListener('click', function () { setTimeout(sizeBody, 250); });
     });
-    sizeBody();
+    // La barra de filtros puede cambiar de alto (se parte en dos
+    // lineas al estrechar la ventana).
+    if (window.ResizeObserver) {
+        new ResizeObserver(sizeBody).observe(document.getElementById('alertsNoticesFilters'));
+    }
+    // Primer calculo en el siguiente frame y repeticion de seguridad
+    // para reflujos tardios (fuentes, iconos) -- mismo criterio S114.
+    requestAnimationFrame(sizeBody);
+    setTimeout(sizeBody, 300);
 })();
 </script>
