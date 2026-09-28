@@ -39,6 +39,18 @@ name: Consulta SQL de solo lectura (EnterpriseBot)
 # H35 (S108). `mysql --table` fallaba de forma intermitente con texto
 # OCR real -- cambiado a `--batch --raw` (TSV simple). La salida es
 # columnas separadas por tabulador con una fila de cabecera.
+#
+# H30 (S121). Ya NO se comitea nada (antes: DOCS/SESSION/FILE_FETCH/
+# ultimo_debug_db_query.txt en cada ejecución -- ~20 commits "chore:
+# depuración" por sesión). Motivo del commit original: el modelo no
+# puede descargar los logs del Action (redirigen a un host de blob
+# storage fuera de la lista permitida de su entorno). Sustituto: las
+# ANOTACIONES del Action (::error::), que se leen por api.github.com
+# (check-runs/<id>/annotations) y caducan con el propio Action. Solo
+# llevan el error de MySQL o los códigos de salida y el stderr de la
+# subida -- nunca el resultado de la consulta. Además, el paso de
+# subida a Drive ahora FALLA (rojo) si la subida falla; antes salía
+# siempre en verde.
 
 on:
   workflow_dispatch:
@@ -56,7 +68,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   query:
@@ -104,6 +116,7 @@ jobs:
           } > /tmp/query.sql
           scp -i ~/.ssh/pa_readonly_key /tmp/query.sql \
             MiguelAeTxio@ssh.pythonanywhere.com:/tmp/db_readonly_query_${{ github.run_id }}.sql
+          set +e
           ssh -i ~/.ssh/pa_readonly_key MiguelAeTxio@ssh.pythonanywhere.com "
             set -e
             mysql -u 'MiguelAeTxio' -p'$DB_ADMIN_PASSWORD' \
@@ -111,7 +124,15 @@ jobs:
               --batch --raw 'MiguelAeTxio\$enterprisebot' \
               < /tmp/db_readonly_query_${{ github.run_id }}.sql
             rm -f /tmp/db_readonly_query_${{ github.run_id }}.sql
-          " | tee /tmp/query_output.txt
+          " > /tmp/query_output.txt 2> /tmp/query_err.txt
+          QUERY_EXIT=$?
+          if [ "$QUERY_EXIT" -ne 0 ]; then
+            # Anotación leíble por la API (sin descargar logs): el error de
+            # MySQL, en una línea. Nunca lleva filas del resultado.
+            MSG=$(grep -v "Using a password on the command line" /tmp/query_err.txt | head -c 600 | tr '\n' ' ')
+            echo "::error title=Consulta SQL fallida (exit $QUERY_EXIT)::${MSG:-sin mensaje de error}"
+            exit "$QUERY_EXIT"
+          fi
 
       - name: Subir el resultado a Drive (nunca a git -- com-actions-relay)
         if: always()
@@ -131,8 +152,15 @@ jobs:
             echo ""
             echo "### Resultado"
             echo '```'
-            cat /tmp/query_output.txt 2>/dev/null || echo "(sin salida capturada -- revisar el log del Action)"
+            cat /tmp/query_output.txt 2>/dev/null || echo "(sin salida capturada)"
             echo '```'
+            if grep -qv "Using a password on the command line" /tmp/query_err.txt 2>/dev/null; then
+              echo ""
+              echo "### Error"
+              echo '```'
+              grep -v "Using a password on the command line" /tmp/query_err.txt
+              echo '```'
+            fi
           } > /tmp/resultado.md
           DRIVE_NAME="resultado_sql_${{ github.run_id }}.md"
           scp -i ~/.ssh/pa_readonly_key /tmp/resultado.md \
@@ -153,17 +181,13 @@ jobs:
           cat /tmp/ssh_err.txt >> /tmp/debug.txt
           echo "DRIVE_NAME=$DRIVE_NAME" >> /tmp/debug.txt
           cat /tmp/debug.txt
-
-      - name: Comitear la depuración (nunca la consulta ni el resultado -- solo códigos de salida)
-        if: always()
-        run: |
-          mkdir -p DOCS/SESSION/FILE_FETCH
-          cp /tmp/debug.txt DOCS/SESSION/FILE_FETCH/ultimo_debug_db_query.txt 2>/dev/null || echo "(sin datos)" > DOCS/SESSION/FILE_FETCH/ultimo_debug_db_query.txt
-          git config user.email "miguelaetxio@users.noreply.github.com"
-          git config user.name "MiguelaeTxio"
-          git add DOCS/SESSION/FILE_FETCH/ultimo_debug_db_query.txt
-          git diff --staged --quiet || git commit -m "chore: depuración de subida a Drive (run ${{ github.run_id }})"
-          git push
+          # S121: si la subida falla, el paso falla (antes salía siempre en
+          # verde) y la depuración -- solo códigos de salida y stderr, nunca
+          # el resultado -- va como anotación leíble por la API.
+          if grep -qE '^(SCP1|SCP2|SSH)_EXIT=[1-9]' /tmp/debug.txt; then
+            echo "::error title=Subida a Drive fallida::$(head -c 900 /tmp/debug.txt | tr '\n' ' ')"
+            exit 1
+          fi
 
       - name: Limpiar clave SSH
         if: always()
