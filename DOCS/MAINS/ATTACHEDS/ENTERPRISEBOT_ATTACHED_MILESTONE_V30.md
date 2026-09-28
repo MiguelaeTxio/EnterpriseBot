@@ -8542,62 +8542,204 @@ en BD, 2 `RENAME INDEX`, y la `CheckConstraint` de `hr_calendar`
 
 ---
 
-## Hoja de Ruta para la Siguiente Sesión (S121) -- REESCRITA al cierre,
-## sustituye por completo a la de S120 (sus 4 puntos están cerrados)
+### COMPLETADAS EN S121 (27-28/09/2026, PEE A; H30 -- accesorios de
+### elevación, relevo sin commits, BigAutoField, fechas TACOGRAFO y
+### agente de averías)
 
-Orden confirmado por Miguel Ángel al cierre de S120. La numeración ES
-el orden: empezar por el 1.
+Los 5 puntos de la hoja de ruta de S121, cerrados y verificados con
+consulta real. 17 commits de trabajo (más 20 "chore: depuración" del
+`db_query.yml` antiguo, eliminados desde el punto 2).
 
-1. **Accesorios de elevación** (eslingas, líneas de carga y sus
-   certificados), equivalente de los EPIs para maquinaria (punto 8 de
-   la Fase A de S119 y punto 11 de S118; arrastrado 2.ª sesión sin
-   avanzar -- reincorporado como punto 1 por decisión explícita de
-   Miguel Ángel en S120, no se pregunta de nuevo). Primero medir con
-   consulta real los documentos existentes de accesorios (tipo
-   `CERT_ACCESORIO_ELEVACION` y los de eslingas en `DOC. MAQUINAS`) y
-   ver una muestra con el relevo `gcs_image`; con eso, cerrar el
-   diseño con Miguel Ángel en el chat antes de escribir código.
-   **Cierre:** modelo y migración desplegados y verificados en
-   `django_migrations`, pantalla accesible desde la ficha de máquina, y
-   al menos un accesorio real dado de alta con su certificado
-   vinculado, comprobado con consulta real a BD.
-2. **El relevo `db_query.yml` deja de comitear** el "chore: depuración
-   de subida a Drive" (arrastrado 2.ª sesión sin avanzar --
-   reincorporado por decisión de Miguel Ángel en S120). Migrarlo al
-   patrón de `com-actions-relay` sección 6. **Cierre:** lanzar una
-   consulta y comprobar con `git log origin/main -1` que no aparece
-   commit nuevo.
-3. **Los 11 `id` `AutoField -> BigAutoField` de `document_explorer`**
-   (`companyfiscalprofile`, `documentacknowledgment`, `documenttag`,
-   `epidelivery`, `epideliverybatchtemplate`, `epiitemcatalog`,
-   `epireview`, `jobposition`, `personaldossiertemplate`,
-   `persongrouptemplate`, `subjectdocumentreference`). Medir con
-   consulta real el tipo actual de cada columna en MySQL
-   (`information_schema.COLUMNS`), sus FKs entrantes y el número de
-   filas; con esa medición presentar a Miguel Ángel el coste real y
-   ejecutar lo que él decida en el chat. **Cierre:**
-   `makemigrations --check` local sin cambios pendientes, y si se
-   migra, la migración verificada en `django_migrations` y el tipo de
-   columna `bigint` verificado en `information_schema`.
-4. **Fechas heredadas de los 26 documentos retipados a `TACOGRAFO`**
-   en S120 (ids en "COMPLETADAS EN S120"): contrastar su `expiry_date`
-   con la fecha 4b de la tarjeta vista con el relevo `gcs_image`, y
-   corregir las que no coincidan con un comando con registro en log.
-   **Cierre:** consulta real con los 26 ids y 0 discrepancias frente a
-   la lista id -> fecha 4b anotada en el anexo.
-5. **Prueba real del agente de averías por WhatsApp** (arrastrado 2.ª
-   sesión sin avanzar -- reincorporado por decisión de Miguel Ángel en
-   S120). **Cierre:** un mensaje real de un empleado recibe respuesta y
-   el log web no registra el 404 de Gemini.
+#### Punto 1 -- Accesorios de elevación (CERRADO)
+
+Diseño cerrado con Miguel Ángel en varias vueltas, cada una sobre la
+anterior (orden real, conviene no repetir los errores de concepto):
+
+- **Concepto final** (Miguel Ángel): "una cosa es el accesorio y el
+  catálogo de accesorios y otra cosa son las entregas". Inventario
+  (qué accesorios existen, cada uno con su certificado), alta (solo
+  para uno que no existe; certificado OBLIGATORIO, subido ya tipado) y
+  entrega (acto aparte: centro de gasto + persona, ambos obligatorios).
+- **Certificados como las fichas técnicas de EPIs**: tipo
+  `CERT_ACCESORIO_ELEVACION`, vínculo genérico de dominio al accesorio
+  (nunca una FK propia -- mismo error que S76 con
+  `EpiItemCatalog.technical_sheet`; la FK `certificate_entry` de la
+  0150 se quitó en la 0151). **El supervisor nunca ve nombres de
+  archivo ni rutas del bucket ni enlaza documentos a mano**: lo que ya
+  existe lo tipa y enlaza el sistema (preferencia fijada en memoria).
+- **CdG con el mismo sistema que el parte diario**: búsqueda extraída a
+  `fleet/cost_center_search.py` (una sola regla, la usan el parte
+  diario y los accesorios); JS `panel/static/panel/js/cost_center_picker.js`.
+- **Entrega por modelo** (opción 1 de Miguel Ángel): catálogo de
+  MODELOS (`LiftingAccessoryModel`, 13 sembrados: planas 2 t/3 t x
+  3/6 m, redonda 10 t, 5 de cadena, 2 de cable, balancín); se elige
+  modelo + cantidad + CdG + persona + fecha; el sistema propone las
+  unidades del almacén más antiguas y el supervisor las confirma o
+  cambia según la etiqueta. **Etiquetas (EN 1492-1, consultado en la
+  red)**: llevan el CÓDIGO DE TRAZABILIDAD, no el nº de certificado --
+  se guarda en `traceability` tal como viene impreso (por unidad en
+  2025, `194263.0N.0 M`; por lote en 2024, `184519.x`, 30 por lote).
+- **Fichas de CdG y de personal**: sección "Accesorios de elevación"
+  (solo consulta) con lo entregado.
+- **Alta de lo que ya estaba en el bucket** (revisión de los 39
+  documentos candidatos SOBRE SU CONTENIDO REAL -- relevo `gcs_image`
+  + OCR local con Tesseract, comprobado a ojo donde dudaba; nunca por
+  nombre ni carpeta): **259 accesorios en servicio**, cada uno con su
+  certificado (249 PDF de una sola página cortados de 8160/8184/8185/
+  8188, originales conservados). Decisiones de Miguel Ángel: fichas
+  individuales por unidad, un PDF por certificado; pedido Bezabala
+  2006 por lotes (~300 uds, "ya no se sabe ni dónde estarán") NO se da
+  de alta, queda como histórico tipado; 2010/2015/2018 en servicio.
+  Hallazgos por contenido: "ARNES ANTICAIDA" (7993) era un pulpo de
+  cadena; A63 (10494) son los cables de la propia grúa Liebherr; H08/
+  H09 (10937/10987) el dossier de componentes Hoeflon.
+- **Tipo nuevo `CERT_COMPONENTE_MAQUINA`** (migración 0153): componentes
+  de la propia máquina (cables, gancho, cabrestante, corona). Miguel
+  Ángel: su revisión es la OCA de la grúa -- no se crea tipo de
+  revisión de cables (ninguno en el bucket, buscado por nombre y OCR).
+- 13 documentos retipados, 11 duplicados exactos a papelera
+  (comprobados píxel a píxel; 7987 NO -- es la copia sellada de 6940).
+- Comando `backfill_lifting_accessories_s121` (dry-run por defecto,
+  idempotente, `--log-file`), datos en
+  `document_explorer/data/lifting_accessories_s121.json`. Logs reales
+  `EnterpriseBot_001/002/003`.
+- Verificado en BD: 259 accesorios, 0 sin certificado, 13 modelos, 0
+  sin modelo, 227 con trazabilidad.
+- Migraciones 0150, 0151, 0152 (CdG obligatorio en la entrega), 0153,
+  0154 (modelos y trazabilidad).
+
+#### Punto 2 -- `db_query.yml` sin commits (CERRADO, `4dc0222d`, `90d82558`)
+
+Los logs del Action no son descargables desde el entorno del modelo
+(redirigen a `productionresultssaN.blob.core.windows.net`, fuera de la
+lista de red permitida). Sustituto sin git: el error de MySQL va en
+una sección "Error" del resultado en Drive (el canal que el modelo SÍ
+lee), el paso falla de verdad cuando algo falla, `contents: read`.
+Las anotaciones `::error::` las ve Miguel Ángel en la web; **el modelo
+no puede leerlas**: el permiso "Checks" no existe para tokens
+fine-grained. Probado real: consulta buena verde, errónea roja con el
+`ERROR 1146` en Drive, 0 commits nuevos.
+
+#### Punto 3 -- 11 `id` a BigAutoField (CERRADO, `3b671f92`, migración 0155)
+
+Medido en producción: 11 claves y 13 FK en `int`. No era reparación de
+tablas (BD e historial coincidían; divergía el código). Verificado en
+BD: bigint 11/11 y 13/13, 0 huérfanas. `makemigrations --check` limpio
+por primera vez.
+
+#### Punto 4 -- Fechas de los 26 TACOGRAFO (CERRADO, `474170ee`)
+
+Revisados uno a uno sobre la imagen (fecha 4b): 22 coincidían;
+corregidas 36438 (2026-12-09 -> 2026-12-06) y 37274 (2015-03-06, era
+la 4a -> 2020-03-06); 36429 y 38196 son REVERSOS sin fechas y heredan
+la de su anverso (2021-04-29 y 2025-01-18). Comando genérico nuevo
+`set_document_expiry_dates --set id:AAAA-MM-DD` (realinea el nombre
+canónico, log propio). Log real `EnterpriseBot_004`. Verificado: 26
+revisados, 0 discrepancias. Lista id -> 4b: 34450 2019-11-15, 34462
+2024-11-29, 34882 2021-12-25, 34892 2027-01-24, 35371 2021-07-10,
+35851 2027-02-18, 36097 2022-11-17, 36260 2025-02-23, 36428/36429/
+36437 2021-04-29, 36438 2026-12-06, 36607 2023-08-17, 37070
+2021-03-27, 37077 2026-03-27, 37272 2025-03-06, 37273/37274
+2020-03-06, 37283 2030-03-06, 37417 2026-08-17, 37557 2021-07-21,
+37558 2026-07-21, 38001 2021-11-03, 38194/38196 2025-01-18, 39351
+2024-10-27.
+
+#### Punto 5 -- Agente de averías por WhatsApp (CERRADO)
+
+Mensaje real de Miguel Ángel ("Buenos días la b43 no arranca", 28/09
+05:37 UTC): Gemini en `locations/global` -> 200 OK, Twilio -> 201,
+Alia pide ubicación, síntoma y urgencia. Sin 404 en el log de errores
+(el arreglo S117 funciona). Rama B: el ticket se crea cuando Alia
+reúne los datos.
+
+#### Fuera del plan, corregido en la sesión (directriz 4.9)
+
+- `budgets.0021` no se podía reconstruir desde cero (orden por
+  `concept__sort_order` antes de convertir `concept` a FK); reordenada,
+  sin efecto en producción (`67acd66c`).
+- Ficha de personal: corregir nombre/apellidos no realineaba los
+  nombres de sus documentos. Ahora sí (`346737cf`). Caso real: persona
+  198 "CORREO" -> CORREA MUNHOZ (DNI a la vista); 64 documentos
+  realineados, 0 con "CORREO" (verificado).
+- Release `relevo-imagenes`: tenía ~100 páginas de S119/S120 (carnés
+  de personas) sin vaciar. Vaciada; `gcs_image` admite `max_pages` y
+  deja el total de páginas (`ad67bc94`, `302df2c9`).
+- Skills actualizadas y presentadas para "Guardar habilidad"
+  (procedimiento de `com-standards`): `nfs-enterprisebot-token`,
+  `nfs-campustudionline-token`, `englishb1-token`,
+  `newflow-android-token` (el token es UNO para todos los `Init*.txt`,
+  permisos Contents/Actions/Workflows/Commit statuses; "code" = Contents
+  en el resumen de GitHub) y `com-actions-relay` (§4 depuración sin
+  commits, §6 migración completada, vaciar la release). Repo del
+  Sistema: `RestartTokens.sh` escribe "contents" (`bd22850`, `git pull`
+  en el servidor verificado).
+- Regresión propia cazada por la prueba antes de producción: dos
+  subidas del panel en el mismo segundo colapsaban en una (sufijo único).
+
+## Hoja de Ruta para la Siguiente Sesión (S122) -- REESCRITA al cierre,
+## sustituye por completo a la de S121 (sus 5 puntos están cerrados)
+
+Decidido por Miguel Ángel al cierre de S121: la sesión siguiente se
+centra en la **interfaz de gestión de avisos**. Sigue en H30 (el
+enrutador ya incluye "aviso de caducidad" en su alcance; el motor de
+H26 se enganchó a `document_explorer` en S119).
+
+1. **Pestaña "Avisos" en el hub de Documentación**, para maquinaria y
+   personal. Especificación de Miguel Ángel (cerrada, no se pregunta de
+   nuevo):
+   - Tipos de aviso: **30 días, 15 días, 7 días y el día anterior**, más
+     **dos avisos personalizados** por documento con antelación propia
+     (p. ej. 5 meses y 3 meses antes).
+   - Se asignan **por documento**: un documento puede no llevar ninguno
+     o llevar varios (ejemplo de Miguel Ángel: los 2 personalizados + 30
+     + 15 + 7 + día anterior = 6 avisos).
+   - Interfaz parecida a las existentes: se elige el documento y los
+     avisos que se le asignan.
+   - **Los documentos sin caducidad no aparecen** en la interfaz (nunca
+     llevan aviso; fuera para no meter ruido).
+   Punto de partida real (medido en S121, releer antes de diseñar):
+   `document_management.DocumentAlert` (una fila por antelación,
+   `alert_offset_days`, `contacts` M2M a `CompanyUser`, `status`,
+   `sent_at`); `alert_service.create_default_expiry_alerts` crea
+   automáticamente 30/15/7 al ingresar cada documento, para los
+   `DOCS_SUPERVISOR`; la tarea diaria `send_document_expiry_alerts`
+   (Celery Beat, 8:00) envía por WhatsApp con la plantilla
+   `document_expiry_alert`. Pasos: (a) medir con consulta real las
+   filas de `DocumentAlert` por antelación, estado y dominio, y cuántos
+   documentos vivos con caducidad hay por dominio; (b) presentar a
+   Miguel Ángel en el chat el diseño concreto -- modelo, migración,
+   pantalla, y qué se hace con las alertas automáticas actuales y con
+   las filas existentes -- y construir tras su confirmación (directriz
+   4.8). **Cierre:** migración verificada en `django_migrations`;
+   pestaña desplegada; un documento real configurado con 6 avisos (30,
+   15, 7, día anterior y 2 personalizados) verificado con consulta
+   real; y consulta real que confirme que la pestaña no lista ningún
+   documento de tipo sin caducidad (`tracks_expiry=False`).
+
+**Decisiones de Miguel Ángel que el modelo NO debe tocar por su
+cuenta:**
+- **Entregas de accesorios de elevación**: los 259 están en servicio y
+  sin entregas porque todo lo existente es histórico. Miguel Ángel lo
+  consulta; si se decide tomarse en serio las entregas a partir de
+  ahora, se retiran todos del servicio y se empieza de cero. Sin esa
+  instrucción, el modelo no cambia ni entregas ni estado.
+- **Cabrestante VIME EPH 6200FN serie 03210** (7968, tipado
+  `CERT_COMPONENTE_MAQUINA`, sin máquina): va montado en un remolcador
+  de asistencia (Miguel Ángel); se vincula cuando él diga cuál. Baja
+  prioridad. Pista del dossier: entregado a "INDUSTRIAS J. CORTE..."
+  el 12/06/2015.
 
 **Trabajo de Miguel Ángel en el panel (no del modelo, no bloquea la
-hoja de ruta):** marcar en Requisitos las clases de permiso que exige
-cada requisito (mientras no se marquen, los avisos funcionan como
-antes de S120); revisar en el PC la tabla de clases, la fila del
-permiso con la autorización temporal de Paraschiv (pk=173) y la
+hoja de ruta):** pulsar "Guardar habilidad" en las 6 skills
+presentadas en S121 si no lo hizo; marcar en Requisitos las clases de
+permiso que exige cada requisito; revisar la tabla de clases, la fila
+del permiso con la autorización temporal de Paraschiv (pk=173) y la
 etiqueta nueva; subir el carné de los 21 activos que no lo tienen y el
 reverso de pk=172 y pk=221.
 
 **Pendiente técnico heredado, sin cambios:** los 18 combinados
 FICHA+ITV que no se pueden partir se corrigen a mano desde la ficha
-con el botón "Tipo".
+con el botón "Tipo". Hallazgo de S121 sin impacto en producción: 13
+migraciones antiguas (datos reales de producción, `budgets`/`fleet`)
+no se pueden aplicar sobre una BD vacía -- solo afecta a montar el
+proyecto desde cero.
