@@ -31,6 +31,7 @@ from panel.views_document_alerts import (
     DocumentAlertRulesSaveView,
     DocumentAlertsPaneView,
     DocumentAlertWhatsAppToggleView,
+    DocumentNoticesView,
 )
 from panel.views_navigation_state import NavigationStateSaveView
 from panel.views_lifting_accessories import (
@@ -530,6 +531,7 @@ urlpatterns = [
     # H30 (S122). Pestaña "Avisos": avisos por requisito e interruptor de WhatsApp.
     path("documentacion/avisos/", DocumentAlertsPaneView.as_view(), name="document_alerts_pane"),
     path("documentacion/avisos/requisito/<int:position_pk>/guardar/", DocumentAlertRulesSaveView.as_view(), name="document_alert_rules_save"),
+    path("documentacion/avisos/pendientes/", DocumentNoticesView.as_view(), name="document_notices"),
     path("documentacion/avisos/whatsapp/", DocumentAlertWhatsAppToggleView.as_view(), name="document_alerts_whatsapp_toggle"),
     path("documentacion/puestos/guardar/", JobPositionSaveView.as_view(), name="job_position_create"),
     path("documentacion/puestos/<int:position_pk>/guardar/", JobPositionSaveView.as_view(), name="job_position_update"),

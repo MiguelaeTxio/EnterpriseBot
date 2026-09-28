@@ -1,0 +1,160 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/document_alerts/_notices.html #}
+{% comment %}
+H30 (S122). Subpestaña "Pendientes" de Avisos. Miguel Ángel: dos
+paneles -- lo que ya toca avisar y el calendario completo -- con "la
+vista dividida en paneles verticales y horizontales agrupando
+temáticas [...] paneles scrollables con partes fijas, misma filosofía
+que el resto de los paneles y pestañas" (directriz 4.24).
+
+Arriba, fijo: conmutador Personal / Centros de gasto y filtros.
+Debajo, a la altura que queda en pantalla (calculada por JS): a la
+izquierda tres paneles apilados (Caducados, Próximos a caducar,
+Faltan), a la derecha el Calendario por meses; cada panel con su
+cabecera fija y solo su lista con scroll. En pantalla estrecha los
+paneles se apilan y cada lista se limita a media pantalla.
+
+Todo viene decidido de la vista (`DocumentNoticesView`); aquí solo se
+pinta. Un aviso aparece el mismo día en que lo mandaría el WhatsApp y
+desaparece solo en cuanto se sube el documento que lo resuelve.
+{% endcomment %}
+<div class="container-fluid px-3 pt-3" id="alertsNoticesRoot">
+
+    <form class="card mb-2" id="alertsNoticesFilters"
+          hx-get="{% url 'panel:document_notices' %}" hx-target="#alertsNoticesPane" hx-swap="innerHTML"
+          hx-trigger="change, keyup changed delay:500ms from:#alertsNoticesQuery">
+        <div class="card-body py-2 d-flex flex-wrap align-items-center gap-2">
+            <div class="btn-group btn-group-sm" role="group" aria-label="Personal o centros de gasto">
+                <input type="radio" class="btn-check" name="domain" id="alertsDomainPersonal" value="personal" {% if is_personal %}checked{% endif %}>
+                <label class="btn btn-outline-primary" for="alertsDomainPersonal"><i class="bi bi-people me-1"></i>Personal</label>
+                <input type="radio" class="btn-check" name="domain" id="alertsDomainMachine" value="maquinaria" {% if not is_personal %}checked{% endif %}>
+                <label class="btn btn-outline-primary" for="alertsDomainMachine"><i class="bi bi-truck me-1"></i>Centros de gasto</label>
+            </div>
+            <select class="form-select form-select-sm alerts-filter-select" name="requirement" aria-label="Requisito">
+                <option value="">Todos los requisitos</option>
+                {% for option in requirement_options %}
+                <option value="{{ option.pk }}" {% if option.pk == selected_requirement %}selected{% endif %}>{{ option.name }}</option>
+                {% endfor %}
+            </select>
+            <select class="form-select form-select-sm alerts-filter-select" name="doc_type" aria-label="Documento">
+                <option value="">Todos los documentos</option>
+                {% for option in type_options %}
+                <option value="{{ option.pk }}" {% if option.pk == selected_doc_type %}selected{% endif %}>{{ option.label }}</option>
+                {% endfor %}
+            </select>
+            <input type="search" class="form-control form-control-sm alerts-filter-query" name="q" id="alertsNoticesQuery" value="{{ query }}" placeholder="Buscar persona, máquina o documento">
+        </div>
+    </form>
+
+    {% if not has_any_rules %}
+    <div class="alert alert-info small">Ningún requisito tiene avisos configurados todavía. Configúralos en la subpestaña Configuración.</div>
+    {% elif not has_subjects %}
+    <div class="alert alert-info small">{% if is_personal %}Ninguna persona activa{% else %}Ningún centro de gasto activo{% endif %} tiene un requisito de documentación asignado.</div>
+    {% endif %}
+
+    <div class="row g-2 alerts-notices-body" id="alertsNoticesBody">
+        <div class="col-12 col-lg-7 alerts-column">
+            <div class="card alerts-panel">
+                <div class="card-header py-1 small fw-bold text-danger">Caducados <span class="badge text-bg-danger">{{ expired|length }}</span></div>
+                <div class="list-group list-group-flush alerts-panel-list">
+                    {% for notice in expired %}
+                    <a class="list-group-item list-group-item-action py-1 small" href="{{ notice.detail_url }}">
+                        <div class="d-flex justify-content-between gap-2"><span class="fw-bold">{{ notice.subject_label }}</span><span class="text-danger text-nowrap">hace {{ notice.days_ago }} día{{ notice.days_ago|pluralize }}</span></div>
+                        <div>{{ notice.document_label }} — caducó el {{ notice.expiry_date|date:"d/m/Y" }}</div>
+                    </a>
+                    {% empty %}
+                    <div class="list-group-item small text-muted">Ningún documento caducado.</div>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="card alerts-panel">
+                <div class="card-header py-1 small fw-bold text-warning-emphasis">Próximos a caducar <span class="badge text-bg-warning">{{ upcoming|length }}</span></div>
+                <div class="list-group list-group-flush alerts-panel-list">
+                    {% for notice in upcoming %}
+                    <a class="list-group-item list-group-item-action py-1 small" href="{{ notice.detail_url }}">
+                        <div class="d-flex justify-content-between gap-2"><span class="fw-bold">{{ notice.subject_label }}</span><span class="text-nowrap">faltan {{ notice.days_left }} día{{ notice.days_left|pluralize }}</span></div>
+                        <div>{{ notice.document_label }} — caduca el {{ notice.expiry_date|date:"d/m/Y" }} <span class="text-muted">(aviso de {{ notice.reached_step.label }})</span></div>
+                    </a>
+                    {% empty %}
+                    <div class="list-group-item small text-muted">Ningún aviso de caducidad ha llegado todavía.</div>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="card alerts-panel">
+                <div class="card-header py-1 small fw-bold">Faltan <span class="badge text-bg-secondary">{{ missing|length }}</span></div>
+                <div class="list-group list-group-flush alerts-panel-list">
+                    {% for notice in missing %}
+                    <a class="list-group-item list-group-item-action py-1 small" href="{{ notice.detail_url }}">
+                        <div class="d-flex justify-content-between gap-2"><span class="fw-bold">{{ notice.subject_label }}</span><span class="text-muted text-nowrap">{{ notice.requirement_name }}</span></div>
+                        <div>Falta: {{ notice.document_label }}</div>
+                    </a>
+                    {% empty %}
+                    <div class="list-group-item small text-muted">No falta ningún documento con aviso configurado.</div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12 col-lg-5 alerts-column">
+            <div class="card alerts-panel">
+                <div class="card-header py-1 small fw-bold">Calendario de avisos <span class="badge text-bg-primary">{{ calendar_count }}</span></div>
+                <div class="alerts-panel-list">
+                    {% for month in calendar_months %}
+                    <div class="alerts-month-head px-2 py-1 small fw-bold">{{ month.label }}</div>
+                    <div class="list-group list-group-flush">
+                        {% for item in month.items %}
+                        <a class="list-group-item list-group-item-action py-1 small" href="{{ item.notice.detail_url }}">
+                            <div class="d-flex justify-content-between gap-2"><span class="fw-bold">{{ item.trigger_date|date:"d/m" }} · {{ item.step_label }}</span><span class="text-muted text-nowrap">caduca {{ item.notice.expiry_date|date:"d/m/Y" }}</span></div>
+                            <div>{{ item.notice.subject_label }} — {{ item.notice.document_label }}</div>
+                        </a>
+                        {% endfor %}
+                    </div>
+                    {% empty %}
+                    <div class="small text-muted p-2">No hay avisos programados.</div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    // Directriz 4.15: dominio y filtros de Pendientes se guardan con
+    // el resto del estado de la pestana Avisos.
+    const form = document.getElementById('alertsNoticesFilters');
+    const data = new FormData(form);
+    if (window.saveDocAlertsNav) {
+        window.saveDocAlertsNav({
+            domain: data.get('domain') || '',
+            requirement: data.get('requirement') || '',
+            doc_type: data.get('doc_type') || '',
+            q: data.get('q') || '',
+        });
+    }
+
+    // Directriz 4.24: los paneles ocupan lo que queda de pantalla y
+    // solo sus listas hacen scroll. En pantalla estrecha, altura
+    // natural (cada lista limitada por CSS).
+    const body = document.getElementById('alertsNoticesBody');
+    function sizeBody() {
+        if (!body.isConnected) {
+            window.removeEventListener('resize', sizeBody);
+            return;
+        }
+        if (window.innerWidth < 992 || body.offsetParent === null) {
+            body.style.height = '';
+            return;
+        }
+        const top = body.getBoundingClientRect().top;
+        body.style.height = Math.max(320, window.innerHeight - top - 12) + 'px';
+    }
+    window.addEventListener('resize', sizeBody);
+    // Al volver a esta subpestana o a la pestana Avisos del hub, el
+    // panel pasa de oculto a visible: se recalcula tras la transicion
+    // (clic nativo, no 'shown.bs.tab' -- ver incidente S94 en hub.html).
+    document.querySelectorAll('#alertsSubtabs a, #tab-avisos').forEach(function (link) {
+        link.addEventListener('click', function () { setTimeout(sizeBody, 250); });
+    });
+    sizeBody();
+})();
+</script>

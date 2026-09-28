@@ -19,20 +19,30 @@ Aquí vive también el interruptor del envío automático por WhatsApp
 al día.
 """
 import json
+from urllib.parse import urlencode
 
 from django.db import transaction
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, render
+from django.urls import reverse
 from django.views import View
 
-from document_explorer.models import JobPosition, RequirementAlertRule
+from document_explorer import document_notice_service as notices
+from document_explorer.models import (
+    DocumentTypeCatalog, JobPosition, PersonIdentity, RequirementAlertRule,
+)
 from document_management.models import DocumentAlertSettings
+from fleet.models import MachineAsset
 from ivr_config.models import CompanyUser
 from panel.mixins import CompanyUserRequiredMixin, SupervisorAccessMixin
 from panel.models import PanelNavigationState
 
 NAV_SCREEN_KEY = "documentation_hub"
 NAV_TAB_KEY = "avisos"
+MONTH_NAMES = (
+    "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio",
+    "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
+)
 WHATSAPP_TOGGLE_ROLES = {
     CompanyUser.ROLE_SUPERVISOR,
     CompanyUser.ROLE_WORKSHOPBOSS,
@@ -145,29 +155,39 @@ def _parse_alert_rules(raw_json, required_types):
     return parsed
 
 
-def _persisted_position_pk(company_user):
+def _persisted_tab_state(company_user):
     """
-    Requirement selected last time in this tab (4.15).
+    Saved navigation of the "Avisos" tab (4.15), always a dict.
 
     ---
 
-    Requisito seleccionado la última vez en esta pestaña, guardado en
-    `PanelNavigationState` (directriz 4.15), o None.
+    Navegación guardada de la pestaña "Avisos" (directriz 4.15):
+    subpestaña, requisito elegido en Configuración y filtros de
+    Pendientes. Siempre un dict (vacío si no hay nada guardado).
     """
     nav_state = PanelNavigationState.objects.filter(
         company_user=company_user, screen_key=NAV_SCREEN_KEY,
     ).first()
     state = nav_state.state if nav_state else None
     if not isinstance(state, dict):
-        return None
+        return {}
     filters = state.get("filters")
     if not isinstance(filters, dict):
-        return None
+        return {}
     tab_state = filters.get(NAV_TAB_KEY)
-    if not isinstance(tab_state, dict):
-        return None
+    return tab_state if isinstance(tab_state, dict) else {}
+
+
+def _int_or_none(value):
+    """
+    int(value) or None.
+
+    ---
+
+    Entero o None si no se puede convertir.
+    """
     try:
-        return int(tab_state.get("position"))
+        return int(value)
     except (TypeError, ValueError):
         return None
 
@@ -217,13 +237,34 @@ class DocumentAlertsPaneView(CompanyUserRequiredMixin, View):
                 "rules": rules,
             })
 
-        selected_pk = _persisted_position_pk(company_user)
+        tab_state = _persisted_tab_state(company_user)
+        selected_pk = _int_or_none(tab_state.get("position"))
         if selected_pk not in {item["id"] for item in positions_data}:
             selected_pk = None
+        subtab = tab_state.get("subtab")
+        if subtab not in ("pendientes", "configuracion"):
+            subtab = "pendientes"
+        notices_query = {
+            key: str(tab_state.get(key) or "")
+            for key in ("domain", "requirement", "doc_type", "q")
+        }
 
         return render(request, "panel/document_alerts/pane.html", {
             "positions_data": positions_data,
             "selected_position_pk": selected_pk,
+            "active_subtab": subtab,
+            "tab_state": {
+                "subtab": subtab,
+                "position": selected_pk,
+                **notices_query,
+            },
+            "notices_url": "%s?%s" % (
+                reverse("panel:document_notices"),
+                urlencode({
+                    key: value for key, value in notices_query.items()
+                    if value
+                }),
+            ),
             "whatsapp_enabled": DocumentAlertSettings.is_whatsapp_enabled(
                 company_user.company,
             ),
@@ -301,3 +342,141 @@ class DocumentAlertWhatsAppToggleView(SupervisorAccessMixin, View):
             update_fields=["whatsapp_enabled", "updated_by", "updated_at"],
         )
         return JsonResponse({"ok": True, "enabled": enabled})
+
+
+class DocumentNoticesView(CompanyUserRequiredMixin, View):
+    """
+    GET: "Pendientes" sub-tab (fragment, htmx).
+
+    ---
+
+    GET: subpestaña "Pendientes" de Avisos (fragmento, htmx). Miguel
+    Ángel: dos paneles -- lo que ya toca avisar (caducados, próximos
+    con su fecha de aviso alcanzada, y faltantes) y el calendario
+    completo de avisos futuros -- "la vista dividida en paneles
+    verticales y horizontales agrupando temáticas [...] paneles
+    scrollables con partes fijas". Conmutador Personal / Centros de
+    gasto; filtros por requisito, tipo y texto. Todo se decide aquí;
+    la plantilla solo pinta.
+    """
+
+    def get(self, request):
+        domain = request.GET.get("domain")
+        if domain not in (notices.DOMAIN_PERSONAL, notices.DOMAIN_MACHINE):
+            domain = notices.DOMAIN_PERSONAL
+        requirement_pk = _int_or_none(request.GET.get("requirement"))
+        doc_type_pk = _int_or_none(request.GET.get("doc_type"))
+        query = (request.GET.get("q") or "").strip()
+
+        pending, _scheduled, calendar_items = notices.compute_notices(
+            domain,
+        )
+
+        requirement_names = sorted({n.requirement_name for n in pending} | {
+            item.notice.requirement_name for item in calendar_items
+        })
+        requirement_options = list(
+            JobPosition.objects.filter(name__in=requirement_names)
+            .order_by("name").values("pk", "name"),
+        )
+        type_ids = {
+            n.document_type_id for n in pending
+        } | {item.notice.document_type_id for item in calendar_items}
+        type_options = list(
+            DocumentTypeCatalog.objects.filter(pk__in=type_ids)
+            .order_by("label").values("pk", "label"),
+        )
+
+        # Un filtro que no existe en este dominio (p. ej. tras cambiar
+        # de Personal a Centros de gasto) se descarta, nunca vacía la
+        # lista sin motivo visible.
+        requirement_name = next((
+            option["name"] for option in requirement_options
+            if option["pk"] == requirement_pk
+        ), None)
+        if requirement_name is None:
+            requirement_pk = None
+        if doc_type_pk not in {option["pk"] for option in type_options}:
+            doc_type_pk = None
+
+        def keep(notice):
+            if (
+                requirement_name is not None
+                and notice.requirement_name != requirement_name
+            ):
+                return False
+            if (
+                doc_type_pk is not None
+                and notice.document_type_id != doc_type_pk
+            ):
+                return False
+            if query and query.lower() not in (
+                "%s %s" % (notice.subject_label, notice.document_label)
+            ).lower():
+                return False
+            return True
+
+        pending = [notice for notice in pending if keep(notice)]
+        calendar_items = [
+            item for item in calendar_items if keep(item.notice)
+        ]
+        detail_url_name = (
+            "panel:documentation_personal_detail"
+            if domain == notices.DOMAIN_PERSONAL
+            else "panel:documentation_machine_detail"
+        )
+        for notice in pending:
+            notice.detail_url = reverse(
+                detail_url_name, kwargs={"pk": notice.subject_id},
+            )
+        for item in calendar_items:
+            item.notice.detail_url = reverse(
+                detail_url_name, kwargs={"pk": item.notice.subject_id},
+            )
+
+        calendar_months = []
+        for item in calendar_items:
+            month_key = item.trigger_date.strftime("%Y-%m")
+            if not calendar_months or calendar_months[-1]["key"] != month_key:
+                calendar_months.append({
+                    "key": month_key,
+                    "label": "%s %d" % (
+                        MONTH_NAMES[item.trigger_date.month - 1],
+                        item.trigger_date.year,
+                    ),
+                    "items": [],
+                })
+            calendar_months[-1]["items"].append(item)
+
+        for notice in pending:
+            # Plantillas tontas: días ya calculados en positivo.
+            if notice.days_left is not None and notice.days_left < 0:
+                notice.days_ago = -notice.days_left
+        if domain == notices.DOMAIN_PERSONAL:
+            has_subjects = PersonIdentity.objects.filter(
+                is_active_employee=True, job_position__isnull=False,
+            ).exists()
+        else:
+            has_subjects = MachineAsset.objects.filter(
+                is_active=True, document_requirement__isnull=False,
+            ).exists()
+
+        expired = [n for n in pending if n.kind == notices.KIND_EXPIRED]
+        upcoming = [n for n in pending if n.kind == notices.KIND_UPCOMING]
+        missing = [n for n in pending if n.kind == notices.KIND_MISSING]
+        return render(request, "panel/document_alerts/_notices.html", {
+            "domain": domain,
+            "is_personal": domain == notices.DOMAIN_PERSONAL,
+            "requirement_options": requirement_options,
+            "type_options": type_options,
+            "selected_requirement": requirement_pk,
+            "selected_doc_type": doc_type_pk,
+            "query": query,
+            "expired": expired,
+            "upcoming": upcoming,
+            "missing": missing,
+            "calendar_months": calendar_months,
+            "calendar_count": len(calendar_items),
+            "has_any_rules": RequirementAlertRule.objects.exists(),
+            "has_subjects": has_subjects,
+        })

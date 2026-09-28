@@ -1357,3 +1357,55 @@ table.table #toll-thead ~ tbody tr:nth-child(even):not(.table-secondary) td {
 .alerts-custom-notice {
     max-width: 22rem;
 }
+
+.alerts-filter-select {
+    width: auto;
+    max-width: 16rem;
+}
+
+.alerts-filter-query {
+    max-width: 18rem;
+}
+
+.alerts-column {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.alerts-panel {
+    display: flex;
+    flex-direction: column;
+}
+
+.alerts-panel-list {
+    overflow-y: auto;
+    max-height: 50vh;
+}
+
+.alerts-month-head {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background-color: var(--bs-tertiary-bg);
+}
+
+/* Pantalla de PC: los paneles llenan la altura calculada por JS y solo
+   sus listas hacen scroll (directriz 4.24). */
+@media (min-width: 992px) {
+    .alerts-notices-body > .alerts-column {
+        height: 100%;
+        min-height: 0;
+    }
+
+    .alerts-panel {
+        flex: 1 1 0;
+        min-height: 0;
+    }
+
+    .alerts-panel-list {
+        flex: 1 1 auto;
+        min-height: 0;
+        max-height: none;
+    }
+}

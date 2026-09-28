@@ -14,7 +14,56 @@ y visor: cada documento obligatorio es una tarjeta con sus casillas en
 línea, que se apilan solas en pantalla estrecha. En tipos sin
 caducidad solo cabe "Si falta". El requisito elegido se guarda en la
 navegación del usuario (directriz 4.15).
+
+AMPLIADO EN S122: dos subpestañas -- "Pendientes" (lo que ya toca
+avisar y el calendario de avisos futuros, `_notices.html`, cargado
+por htmx) y "Configuración" (lo de arriba). Miguel Ángel: "deberíamos
+tener un panel de avisos donde aparecieran los avisos" cuando el
+WhatsApp está apagado. Subpestaña, requisito elegido y filtros se
+guardan juntos en `filters.avisos` de la navegación.
 {% endcomment %}
+<ul class="nav nav-pills px-3 pt-3" id="alertsSubtabs">
+    <li class="nav-item">
+        <a class="nav-link {% if active_subtab == 'pendientes' %}active{% endif %}" id="alertsSubtab-pendientes" data-bs-toggle="pill" href="#alertsSubpane-pendientes"
+           onclick="saveDocAlertsNav({subtab: 'pendientes'})">
+            <i class="bi bi-exclamation-triangle me-1"></i>Pendientes
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if active_subtab == 'configuracion' %}active{% endif %}" id="alertsSubtab-configuracion" data-bs-toggle="pill" href="#alertsSubpane-configuracion"
+           onclick="saveDocAlertsNav({subtab: 'configuracion'})">
+            <i class="bi bi-sliders me-1"></i>Configuración
+        </a>
+    </li>
+</ul>
+
+{{ tab_state|json_script:"alertsNavStateData" }}
+<script>
+// Estado de navegacion de la pestana Avisos (4.15). Se envia SIEMPRE
+// completo: el servidor fusiona filters.<pestana> reemplazandolo
+// entero, asi que un envio parcial borraria el resto.
+window.docAlertsNavState = JSON.parse(document.getElementById('alertsNavStateData').textContent) || {};
+window.saveDocAlertsNav = function (patch) {
+    Object.assign(window.docAlertsNavState, patch);
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    const match = document.cookie.match(/(?:^|; )csrftoken=([^;]+)/);
+    const token = meta ? meta.getAttribute('content') : (match ? match[1] : '');
+    fetch('/panel/navegacion/estado/documentation_hub/', {
+        method: 'POST',
+        headers: {'X-CSRFToken': token, 'Content-Type': 'application/json'},
+        body: JSON.stringify({filters: {avisos: window.docAlertsNavState}}),
+    });
+};
+</script>
+
+<div class="tab-content">
+<div class="tab-pane fade {% if active_subtab == 'pendientes' %}show active{% endif %}" id="alertsSubpane-pendientes">
+    <div id="alertsNoticesPane" hx-get="{{ notices_url }}" hx-trigger="load" hx-swap="innerHTML">
+        <div class="text-muted small p-3">Calculando avisos…</div>
+    </div>
+</div>
+
+<div class="tab-pane fade {% if active_subtab == 'configuracion' %}show active{% endif %}" id="alertsSubpane-configuracion">
 <div class="container-fluid px-3 pt-3">
 
     <div class="card mb-3">
@@ -63,6 +112,8 @@ navegación del usuario (directriz 4.15).
             </div>
         </div>
     </div>
+</div>
+</div>
 </div>
 
 {{ positions_data|json_script:"alertsPositionsData" }}
@@ -191,11 +242,7 @@ navegación del usuario (directriz 4.15).
         selectedId = positionId;
         renderViewer();
         // Directriz 4.15: el requisito elegido sobrevive a recargar.
-        fetch('/panel/navegacion/estado/documentation_hub/', {
-            method: 'POST',
-            headers: {'X-CSRFToken': csrfToken(), 'Content-Type': 'application/json'},
-            body: JSON.stringify({filters: {avisos: {position: positionId}}}),
-        });
+        window.saveDocAlertsNav({position: positionId});
     };
 
     function showResult(message, isError) {
