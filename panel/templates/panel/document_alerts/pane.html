@@ -66,7 +66,7 @@ window.saveDocAlertsNav = function (patch) {
 <div class="tab-pane fade {% if active_subtab == 'configuracion' %}show active{% endif %}" id="alertsSubpane-configuracion">
 <div class="container-fluid px-3 pt-3">
 
-    <div class="card mb-3">
+    <div class="card mb-3" id="alertsConfigTop">
         <div class="card-body py-2 d-flex flex-wrap align-items-center gap-3">
             <div class="form-check form-switch mb-0">
                 <input class="form-check-input" type="checkbox" role="switch" id="alertsWhatsAppSwitch"
@@ -81,11 +81,20 @@ window.saveDocAlertsNav = function (patch) {
         </div>
     </div>
 
-    <div class="row g-3">
-        <div class="col-12 col-lg-4">
-            <div class="card">
+    {% comment %}
+    H30 (S122). Directriz 4.24 -- Miguel Ángel: "tenemos ahora mismo
+    tres paneles. Pues vamos a repartirlos y hacerlos scrollables para
+    que quepa todo en la misma pantalla". Arriba, fijo, el interruptor.
+    Debajo, a la altura que queda en pantalla (JS al final): fila 1,
+    Requisitos | Avisos del requisito; fila 2, Destinatarios
+    (supervisores | ficha). Cada panel con su cabecera fija y solo su
+    cuerpo con scroll. En pantalla estrecha se apilan.
+    {% endcomment %}
+    <div class="alerts-config-body" id="alertsConfigBody">
+        <div class="alerts-config-row">
+            <div class="card alerts-cfg-card alerts-cfg-narrow">
                 <div class="card-header fw-bold">Requisitos de documentación</div>
-                <div class="list-group list-group-flush alerts-position-list" id="alertsPositionList">
+                <div class="list-group list-group-flush alerts-cfg-scroll" id="alertsPositionList">
                     {% for item in positions_data %}
                     <button type="button" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
                             id="alertsPosition{{ item.id }}" onclick="selectAlertsPosition({{ item.id }})">
@@ -97,10 +106,8 @@ window.saveDocAlertsNav = function (patch) {
                     {% endfor %}
                 </div>
             </div>
-        </div>
 
-        <div class="col-12 col-lg-8">
-            <div class="card">
+            <div class="card alerts-cfg-card alerts-cfg-wide">
                 <div class="card-header d-flex justify-content-between align-items-center gap-2">
                     <span class="fw-bold" id="alertsViewerTitle">Elige un requisito</span>
                     <span class="d-flex align-items-center gap-2">
@@ -110,45 +117,45 @@ window.saveDocAlertsNav = function (patch) {
                 </div>
                 {% comment %}
                 H30 (S122). Resultado del guardado justo debajo de la
-                cabecera, visible sin scroll -- Miguel Ángel: "no hay
+                cabecera, fuera del scroll -- Miguel Ángel: "no hay
                 ningún indicativo de que esté haciendo algo [...]
                 pecamos de silencio" (antes era una línea al pie).
                 {% endcomment %}
                 <div class="alert small py-1 px-2 m-2 mb-0 d-none" id="alertsViewerResult" role="status"></div>
-                <div class="card-body alerts-viewer-body" id="alertsViewerBody">
+                <div class="card-body alerts-cfg-scroll" id="alertsViewerBody">
                     <p class="text-muted small mb-0">Elige un requisito de la lista para ver sus documentos obligatorios y asignarles avisos.</p>
                 </div>
             </div>
         </div>
-    </div>
 
-    {% comment %}
-    H30 (S122). Destinatarios: qué avisos recibe cada supervisor de
-    documentación. Miguel Ángel: "los avisos deben de definirse a nivel
-    global, pero también de forma específica y que el supervisor puede
-    decir, estos avisos yo no los quiero recibir". Sin ficha, no recibe
-    nada; cada uno edita la suya y el administrador todas. La dibuja el
-    JS de abajo a partir de `recipients_data`.
-    {% endcomment %}
-    <div class="card mt-3 mb-3">
-        <div class="card-header fw-bold">Destinatarios de los avisos</div>
-        <div class="card-body">
-            <p class="small text-muted mb-2">Cada supervisor de documentación recibe solo los avisos de su ámbito: marca qué personal y qué centros de gasto lleva, y excluye los requisitos o documentos que no quiera recibir. Sin nada marcado no recibe ningún aviso.</p>
-            <div class="row g-3">
-                <div class="col-12 col-lg-3">
-                    <div class="list-group" id="recipientsList"></div>
+        {% comment %}
+        H30 (S122). Destinatarios: qué avisos recibe cada supervisor de
+        documentación. Miguel Ángel: "los avisos deben de definirse a
+        nivel global, pero también de forma específica y que el
+        supervisor puede decir, estos avisos yo no los quiero
+        recibir". Sin ficha, no recibe nada; cada uno edita la suya y
+        el administrador todas. La dibuja el JS de abajo a partir de
+        `recipients_data`.
+        {% endcomment %}
+        <div class="alerts-config-row">
+            <div class="card alerts-cfg-card alerts-cfg-narrow">
+                <div class="card-header">
+                    <div class="fw-bold">Destinatarios de los avisos</div>
+                    <div class="small text-muted">Cada supervisor recibe solo lo de su ámbito. Sin nada marcado, no recibe ningún aviso.</div>
                 </div>
-                <div class="col-12 col-lg-9">
-                    <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
-                        <span class="fw-bold" id="recipientsTitle">Elige un supervisor</span>
-                        <span class="d-flex align-items-center gap-2">
-                            <span class="badge text-bg-warning d-none" id="recipientsDirtyBadge">Cambios sin guardar</span>
-                            <button type="button" class="btn btn-sm btn-primary d-none" id="recipientsSaveBtn" onclick="saveRecipientScope()">Guardar destinatario</button>
-                        </span>
-                    </div>
-                    <div class="alert small py-1 px-2 mb-2 d-none" id="recipientsResult" role="status"></div>
-                    <div id="recipientsEditor"></div>
+                <div class="list-group list-group-flush alerts-cfg-scroll" id="recipientsList"></div>
+            </div>
+
+            <div class="card alerts-cfg-card alerts-cfg-wide">
+                <div class="card-header d-flex justify-content-between align-items-center gap-2">
+                    <span class="fw-bold" id="recipientsTitle">Elige un supervisor</span>
+                    <span class="d-flex align-items-center gap-2">
+                        <span class="badge text-bg-warning d-none" id="recipientsDirtyBadge">Cambios sin guardar</span>
+                        <button type="button" class="btn btn-sm btn-primary d-none" id="recipientsSaveBtn" onclick="saveRecipientScope()">Guardar destinatario</button>
+                    </span>
                 </div>
+                <div class="alert small py-1 px-2 m-2 mb-0 d-none" id="recipientsResult" role="status"></div>
+                <div class="card-body alerts-cfg-scroll" id="recipientsEditor"></div>
             </div>
         </div>
     </div>
@@ -567,5 +574,42 @@ window.saveDocAlertsNav = function (patch) {
     const me = data.supervisors.find(sup => sup.is_me);
     renderList();
     if (me) { window.selectRecipient(me.id); } else { renderEditor(); }
+})();
+
+(function () {
+    // Directriz 4.24: los paneles de Configuracion ocupan lo que queda
+    // de pantalla y solo sus cuerpos hacen scroll. Mismo algoritmo que
+    // #personal-bottom-panel (S114) y que Pendientes: altura natural
+    // menos el exceso real de la pagina sobre la ventana; mientras se
+    // mide, cada fila toma su altura real (is-measuring).
+    const GUTTER = 8;
+    const MIN_HEIGHT = 420;
+    const body = document.getElementById('alertsConfigBody');
+    function sizeConfigBody() {
+        if (!body.isConnected) {
+            window.removeEventListener('resize', sizeConfigBody);
+            return;
+        }
+        body.style.height = 'auto';
+        if (window.innerWidth < 992 || body.offsetParent === null) {
+            body.style.height = '';
+            return;
+        }
+        body.classList.add('is-measuring');
+        const naturalHeight = body.getBoundingClientRect().height;
+        const overflow = Math.max(document.documentElement.scrollHeight - window.innerHeight, 0);
+        body.classList.remove('is-measuring');
+        body.style.height = Math.max(naturalHeight - overflow - GUTTER, MIN_HEIGHT) + 'px';
+    }
+    window.docAlertsSizeConfig = sizeConfigBody;
+    window.addEventListener('resize', sizeConfigBody);
+    document.querySelectorAll('#alertsSubtabs a, #tab-avisos').forEach(function (link) {
+        link.addEventListener('click', function () { setTimeout(sizeConfigBody, 250); });
+    });
+    if (window.ResizeObserver) {
+        new ResizeObserver(sizeConfigBody).observe(document.getElementById('alertsConfigTop'));
+    }
+    requestAnimationFrame(sizeConfigBody);
+    setTimeout(sizeConfigBody, 300);
 })();
 </script>

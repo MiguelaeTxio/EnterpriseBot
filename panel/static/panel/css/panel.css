@@ -1344,14 +1344,30 @@ table.table #toll-thead ~ tbody tr:nth-child(even):not(.table-secondary) td {
 /* ------------------------------------------------------------------
    H30 (S122) -- Pestaña "Avisos" del hub de Documentación.
    ------------------------------------------------------------------ */
-.alerts-position-list {
-    max-height: 60vh;
-    overflow-y: auto;
+/* Configuracion: dos filas (Requisitos | Avisos; Destinatarios),
+   paneles con cabecera fija y cuerpo con scroll (directriz 4.24). */
+.alerts-config-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
 }
 
-.alerts-viewer-body {
-    max-height: 60vh;
+.alerts-config-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.alerts-cfg-card {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.alerts-cfg-scroll {
     overflow-y: auto;
+    overscroll-behavior: contain;
+    max-height: 50vh;
 }
 
 .alerts-custom-notice {
@@ -1413,6 +1429,31 @@ table.table #toll-thead ~ tbody tr:nth-child(even):not(.table-secondary) td {
 
     /* Solo durante la medicion de altura (JS de _notices.html). */
     .alerts-notices-body.is-measuring .alerts-panel {
+        flex: none;
+    }
+
+    .alerts-config-body > .alerts-config-row {
+        flex: 1 1 0;
+        flex-direction: row;
+        min-height: 0;
+    }
+
+    .alerts-cfg-narrow {
+        flex: 0 0 25%;
+    }
+
+    .alerts-cfg-wide {
+        flex: 1 1 0;
+    }
+
+    .alerts-cfg-scroll {
+        flex: 1 1 auto;
+        min-height: 0;
+        max-height: none;
+    }
+
+    /* Solo durante la medicion de altura (JS de pane.html). */
+    .alerts-config-body.is-measuring > .alerts-config-row {
         flex: none;
     }
 }
