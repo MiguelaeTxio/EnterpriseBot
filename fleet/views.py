@@ -96,6 +96,8 @@ _SORTABLE_FIELDS = {
     "is_active": "is_active",
     "use_count": "use_count",  # anotado en _build_fragment_context
     "doc_count": "doc_count",  # recuento en Python, ver _build_fragment_context
+    # H30 (S123), punto 6: ordenar por requisito de documentación.
+    "requirement": "document_requirement__name",
 }
 _MAX_SORT_KEYS = 4
 
@@ -187,7 +189,11 @@ def _sort_assets_in_python(assets, sort_keys):
     que el orden en BD de _build_queryset.
     """
     def value(asset, key):
-        raw = getattr(asset, key, None)
+        if key == "requirement":
+            requirement = asset.document_requirement
+            raw = requirement.name if requirement else None
+        else:
+            raw = getattr(asset, key, None)
         if raw is None:
             return (1, "")
         if isinstance(raw, str):

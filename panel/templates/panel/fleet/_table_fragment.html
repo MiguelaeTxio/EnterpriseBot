@@ -121,7 +121,22 @@ pestaña Personal, S113/S114):
                     </a>
                 </th>
                 <th class="text-center" style="min-width:70px">Contad.</th>
-                <th style="min-width:100px">Requisito de documentación</th>
+                <th style="min-width:100px">
+                    <a class="text-decoration-none text-reset d-flex align-items-center gap-1 user-select-none"
+                       hx-get="{% url 'panel:fleet_fragment' %}"
+                       hx-target="#fleet-table-container"
+                       hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
+                       hx-trigger="click"
+                       hx-vals='{"sort": "{{ sort_next.requirement }}"}'
+                       style="cursor:pointer">
+                        Requisito de documentación
+                        {% if sort_arrows.requirement %}
+                            <i class="bi bi-arrow-{{ sort_arrows.requirement }}-short"></i>{% if sort_priority.requirement %}<sup class="small">{{ sort_priority.requirement }}</sup>{% endif %}
+                        {% else %}
+                            <i class="bi bi-arrow-down-up text-muted opacity-50 small"></i>
+                        {% endif %}
+                    </a>
+                </th>
                 <th class="text-center" style="min-width:70px">
                     <a class="text-decoration-none text-reset d-flex align-items-center justify-content-center gap-1 user-select-none"
                        hx-get="{% url 'panel:fleet_fragment' %}"

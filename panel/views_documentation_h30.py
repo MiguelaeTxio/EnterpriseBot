@@ -959,10 +959,18 @@ def _person_list_page(request):
     sort_columns = [
         ("first_surname", "Primer apellido"), ("given_name", "Nombre"),
         ("hire_date", "Alta"), ("doc_count", "Documentos"),
+        # H30 (S123), punto 6: ordenar por requisito de documentación.
+        ("job_position__name", "Requisito"),
     ]
     qs, sort_key, sort_dir = _apply_sort(
         request, qs, sort_columns, "first_surname",
     )
+    if sort_key == "job_position__name":
+        # Dentro de un mismo requisito, por apellidos y nombre.
+        qs = qs.order_by(
+            *qs.query.order_by, "first_surname", "second_surname",
+            "given_name",
+        )
     # H31 (S109). Miguel Ángel, tras un fallo real al paginar (la
     # página 2 no cargaba nada): "aquí nos convendría no paginar [...]
     # entonces cuando seleccionamos no los vamos a seleccionar a
