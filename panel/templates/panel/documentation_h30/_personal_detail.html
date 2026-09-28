@@ -28,6 +28,16 @@ H31 (S103). Barra de acciones fija justo debajo del membrete -- ver
 una parte fija debajo del membrete de ficha de la persona".
 {% endcomment %}
 <div class="sticky-below-navbar">
+{% comment %}
+H30 (S123): breadcrumb hacia la pantalla de origen (mismo destino que
+"Volver"); el scroll y la pestaña los repone return_state.js.
+{% endcomment %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small mb-1">
+        <li class="breadcrumb-item"><a href="{% url 'panel:documentation_hub' %}">Documentación</a></li>
+        <li class="breadcrumb-item active" aria-current="page">{{ person.first_surname }} {{ person.second_surname }}, {{ person.given_name }}</li>
+    </ol>
+</nav>
 <a href="{% url 'panel:documentation_hub' %}" class="btn btn-sm btn-outline-secondary mb-0">
     <i class="bi bi-arrow-left"></i> Volver
 </a>

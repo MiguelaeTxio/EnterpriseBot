@@ -31,6 +31,16 @@ así que se perdían igual que "Volver" -- ahora los tres viven juntos,
 fijos, y la tarjeta de la foto se queda solo con la foto y el nombre.
 {% endcomment %}
 <div class="sticky-below-navbar">
+{% comment %}
+H30 (S123): breadcrumb hacia la pantalla de origen (mismo destino que
+"Volver"); el scroll y la pestaña los repone return_state.js.
+{% endcomment %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small mb-1">
+        <li class="breadcrumb-item"><a href="{{ back_url }}">{{ back_label }}</a></li>
+        <li class="breadcrumb-item active" aria-current="page">{{ machine.code }} — {{ machine.brand_model }}</li>
+    </ol>
+</nav>
 <a href="{{ back_url }}" class="btn btn-sm btn-outline-secondary mb-0">
     <i class="bi bi-arrow-left"></i> Volver
 </a>

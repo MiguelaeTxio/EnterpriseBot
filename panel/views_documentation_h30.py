@@ -766,6 +766,12 @@ class MachineDetailView(CompanyUserRequiredMixin, View):
             request, request.GET.get("back_url"),
             reverse("panel:documentation_hub"),
         )
+        # S123: primer tramo del breadcrumb, según la puerta de origen.
+        back_label = (
+            "Taller mecánico — Centros de gasto"
+            if back_url.split("?")[0] == reverse("panel:fleet_list")
+            else "Documentación"
+        )
         # H30 (S118): foto de la máquina -- solo la elegida
         # explícitamente, y solo si el documento sigue vivo.
         avatar = machine.avatar_document
@@ -802,6 +808,7 @@ class MachineDetailView(CompanyUserRequiredMixin, View):
             "all_document_types": all_document_types,
             "doc_types": doc_types, "active_nav": "documentation_hub",
             "back_url": back_url,
+            "back_label": back_label,
             "form": form,
             "can_edit_machine": self._can_edit(request),
             "machine_saved": saved,
