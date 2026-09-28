@@ -8676,70 +8676,182 @@ reúne los datos.
 - Regresión propia cazada por la prueba antes de producción: dos
   subidas del panel en el mismo segundo colapsaban en una (sufijo único).
 
-## Hoja de Ruta para la Siguiente Sesión (S122) -- REESCRITA al cierre,
-## sustituye por completo a la de S121 (sus 5 puntos están cerrados)
+### COMPLETADAS EN S122 (28/09/2026, PEE PC; H30 -- avisos de
+### documentación por requisito y supervisor, y periodos de contratación)
 
-Decidido por Miguel Ángel al cierre de S121: la sesión siguiente se
-centra en la **interfaz de gestión de avisos**. Sigue en H30 (el
-enrutador ya incluye "aviso de caducidad" en su alcance; el motor de
-H26 se enganchó a `document_explorer` en S119).
+**Avisos (punto único de la hoja de ruta de S121, rediseñado con
+Miguel Ángel en el chat).** El diseño "avisos por documento" de S121 se
+sustituyó por decisión suya: **el requisito de documentación es el
+grupo de aviso** -- cada tipo obligatorio de un requisito lleva sus
+avisos (Si falta, 30, 15, 7 días, día anterior y dos personalizados en
+días o meses). Construido y desplegado:
+- Interruptor global del envío automático por WhatsApp
+  (`DocumentAlertSettings`, migración `document_management.0005`),
+  **apagado**. La tarea de las 8:00 ya había enviado 30 avisos antiguos
+  desde el 25/09; cortado en el primer commit de la sesión.
+- Plantillas nuevas dadas de alta y enviadas a Meta (UTILITY):
+  `document_expiry_notice` (HX825d2aad9d6bb8546804378ee6005f47) y
+  `document_missing_notice` (HXec5a94d9e583ea3e62f3324725276a90),
+  estado "received" al cierre. Sustituyen a `document_expiry_alert`
+  (su texto decía "de la maquina" también para personal).
+- `RequirementAlertRule` (0156): avisos por (requisito, tipo).
+- Pestaña **Avisos** del hub, separada de Requisitos a petición de
+  Miguel Ángel, con dos subpestañas: **Pendientes** (Caducados,
+  Próximos a caducar, Faltan y Calendario de avisos por meses; filtro
+  Personal/Centros de gasto, requisito, documento, texto y "Solo mis
+  avisos / Todos / Sin destinatario") y **Configuración** (interruptor,
+  requisitos con su visor de avisos, y Destinatarios). Todo con paneles
+  de cabecera fija y cuerpo con scroll a la altura de la pantalla
+  (algoritmo de #personal-bottom-panel con medición a altura real,
+  clase `is-measuring`).
+- Cálculo en vivo (`document_explorer/document_notice_service.py`),
+  sin guardar nada, con el mismo criterio que los triángulos de la
+  ficha; clases del permiso de conducción con los avisos de "Carnet de
+  conducir".
+- **Destinatarios por supervisor** (`NoticeRecipientScope`,
+  `NoticeDelivery`, 0157; `notice_recipients.py`): cada supervisor de
+  documentación define su ámbito (personal: todo/empresas/grupos de
+  reparto/personas; centros de gasto: todo/familias/empresas/máquinas)
+  y exclusiones por requisito o documento. Sin ficha no recibe nada.
+  Cada uno edita la suya, el administrador todas.
+- Envío (`notice_delivery_service.py`, la tarea de las 8:00 delega en
+  él): lo mismo que Pendientes, a cada supervisor según su ámbito;
+  próximos una vez por aviso alcanzado; caducados y faltantes al
+  aparecer y **cada 7 días** (decisión de Miguel Ángel).
+  `create_default_expiry_alerts` retirada (las filas antiguas de
+  `DocumentAlert` quedan como histórico, ya no se envían).
+- Configuración real de Miguel Ángel: GENERAL con avisos en DNI, NIE,
+  Permiso de conducción, Reconocimiento médico y Contrato laboral.
+- Pulido pedido en caliente: "Guardando…", resultado visible y toast en
+  todo guardado ("pecamos de silencio"), rueda sin arrastrar la página.
 
-1. **Pestaña "Avisos" en el hub de Documentación**, para maquinaria y
-   personal. Especificación de Miguel Ángel (cerrada, no se pregunta de
-   nuevo):
-   - Tipos de aviso: **30 días, 15 días, 7 días y el día anterior**, más
-     **dos avisos personalizados** por documento con antelación propia
-     (p. ej. 5 meses y 3 meses antes).
-   - Se asignan **por documento**: un documento puede no llevar ninguno
-     o llevar varios (ejemplo de Miguel Ángel: los 2 personalizados + 30
-     + 15 + 7 + día anterior = 6 avisos).
-   - Interfaz parecida a las existentes: se elige el documento y los
-     avisos que se le asignan.
-   - **Los documentos sin caducidad no aparecen** en la interfaz (nunca
-     llevan aviso; fuera para no meter ruido).
-   Punto de partida real (medido en S121, releer antes de diseñar):
-   `document_management.DocumentAlert` (una fila por antelación,
-   `alert_offset_days`, `contacts` M2M a `CompanyUser`, `status`,
-   `sent_at`); `alert_service.create_default_expiry_alerts` crea
-   automáticamente 30/15/7 al ingresar cada documento, para los
-   `DOCS_SUPERVISOR`; la tarea diaria `send_document_expiry_alerts`
-   (Celery Beat, 8:00) envía por WhatsApp con la plantilla
-   `document_expiry_alert`. Pasos: (a) medir con consulta real las
-   filas de `DocumentAlert` por antelación, estado y dominio, y cuántos
-   documentos vivos con caducidad hay por dominio; (b) presentar a
-   Miguel Ángel en el chat el diseño concreto -- modelo, migración,
-   pantalla, y qué se hace con las alertas automáticas actuales y con
-   las filas existentes -- y construir tras su confirmación (directriz
-   4.8). **Cierre:** migración verificada en `django_migrations`;
-   pestaña desplegada; un documento real configurado con 6 avisos (30,
-   15, 7, día anterior y 2 personalizados) verificado con consulta
-   real; y consulta real que confirme que la pestaña no lista ningún
-   documento de tipo sin caducidad (`tracks_expiry=False`).
+**Punto 5 de la hoja de ruta interna (requisitos en centros de gasto):
+no hacía falta construirlo.** La asignación en lote existe desde S119
+(barra de acciones de Centros de gasto). Decisión de Miguel Ángel: los
+requisitos de maquinaria los definen los propios supervisores.
+
+**Contratos (petición nueva de Miguel Ángel en la sesión).** "Tengo
+dos contratos, tres contratos, pero solamente está apareciendo el
+primero":
+- 0158: CONTRATO, ALTA, IDC, COMUNICACION_CONTRATO y BAJA_PERSONAL
+  pasan a acumulables y se liberaron 812 documentos de personal
+  marcados obsoletos (respetando carpetas "obsolet*" y copias).
+  Corregido además un bug real previo: las dos vías de subida de la
+  ficha sustituían también tipos acumulables.
+- `employment_period_service.py`: cada alta abre un periodo (copias a
+  menos de 15 días = misma alta); contrato emparejado a **±15 días**
+  (decisión de Miguel Ángel); la primera baja posterior lo cierra.
+  Aviso "Contrato laboral (alta del dd/mm/aaaa)" por periodo sin
+  contrato.
+- Sección **Periodos de contratación** en la ficha de persona ("En
+  curso" solo el último periodo; el resto sin baja, "Sin baja
+  registrada"). Caso real de prueba: la ficha de Miguel Ángel (Muñoz
+  Cara, pk=250) -- alta 05/05/2025 sin contrato.
+- Subtipos nuevos de CONTRATO: **Prórroga de contrato** (0159) y
+  **Modificación de contrato** (0160), dentro de su periodo y sin
+  contar como contrato del alta. `attach_subtype_documents` cuelga cada
+  subtipo del documento padre anterior a su fecha.
+- Revisión VISUAL real, documento a documento con el relevo
+  `gcs_image`, de 33 contratos sin fecha y de 7 altas sin fecha y 34
+  contratos cuya fecha discrepaba del nombre: 52 eran prórrogas, 5
+  modificaciones, 2 contratos por fechar, 7 contratos con la fecha de
+  BD buena y el nombre con la fecha de nacimiento o 01/01/2021.
+  Aplicado con `set_contract_review` (listas explícitas por argumento,
+  log con valor anterior). Lección: la fecha del nombre NO es fiable
+  para contratos (lleva el término de la prórroga, la fecha de
+  nacimiento o el relleno) y el OCR tampoco (cogía la fecha de
+  nacimiento); `date_contracts_cloud_vision` (cruce nombre/OCR) quedó
+  construido pero solo resolvió 1 de 33, y ese 1 resultó ser una
+  prórroga.
+- Medida final en activos: 157 altas, todas con fecha; 84 con contrato
+  a ±15 días y **73 sin contrato (34 personas)** -- contratos que no
+  están en el bucket, visibles en Avisos > Pendientes > Faltan.
+
+**Incidencias.** Un despliegue (b864e1e8) falló en la recarga de la
+web por la API de PythonAnywhere; relanzado el trabajo fallido, verde.
+Todas las migraciones de la sesión (0005, 0156-0160) verificadas en
+`django_migrations`. La release `relevo-imagenes` quedó vacía.
+
+## Hoja de Ruta para la Siguiente Sesión (S123) -- REESCRITA al cierre,
+## sustituye por completo a la de S122 (su punto está cerrado)
+
+Orden obligatorio. Todo en H30 salvo lo que se indica.
+
+1. **Plantilla de WhatsApp para la alerta del agente H28 -- lo PRIMERO
+   de la sesión** (Meta tarda ~24 h en aprobar). Revisar las plantillas
+   registradas (`WhatsAppTemplate`, consulta real) por si alguna sirve
+   para un aviso de sistema a Miguel Ángel fuera de la ventana de 24 h;
+   si ninguna sirve, dar de alta `system_agent_down_alert` (UTILITY,
+   saludo al principio y texto plano al final, variables: agente y hora
+   del último latido) con el mismo patrón que
+   `create_document_notice_whatsapp_templates`. **Cierre:** plantilla
+   registrada en BD con su content_sid y estado "received" o
+   "approved".
+2. **Bug: no se puede subir un contrato nuevo ni actualizarlo desde la
+   ficha.** Reproducir con Miguel Ángel, leer el log de errores de la
+   web (`LOG_WEB_ERROR`, relevo, últimas 150 líneas) y el código de
+   `subject_upload_service` / vista de subida (S122 añadió la salida
+   anticipada para tipos acumulables y retiró el bloque de alertas).
+   **Cierre:** un contrato real subido desde la ficha aparece en
+   Documentación y en su periodo, y una consulta real lo muestra con su
+   tipo y fecha.
+3. **Requisito nuevo sin recargar:** al guardar un requisito en la
+   pestaña Requisitos debe aparecer al momento en los desplegables de
+   asignación (Personal y Centros de gasto) y en Avisos > Configuración.
+   **Cierre:** crear un requisito de prueba y asignarlo desde Personal
+   sin recargar (Miguel Ángel lo ve), y borrarlo.
+4. **Botón "Volver" y breadcrumb de las fichas de persona y de
+   máquina:** deben volver a la pantalla de origen con su estado
+   (pestaña, filtros, scroll; directriz 4.15). **Cierre:** desde
+   Personal, Centros de gasto y Avisos > Pendientes, abrir una ficha y
+   volver deja la pantalla exactamente como estaba.
+5. **Altura real de las listas con scroll en cualquier pantalla** (en
+   el ordenador de Alejandro no se ve bien): aplicar a Personal y
+   Centros de gasto el mismo cálculo de altura que Avisos (medición a
+   altura real y resta del exceso real), recalculado al redimensionar.
+   **Cierre:** Miguel Ángel lo confirma en el ordenador de Alejandro.
+6. **Ordenar por requisito** en los listados de Personal y de Centros
+   de gasto (columna ordenable del orden múltiple de la directriz
+   4.24). **Cierre:** ordenar por requisito en ambos listados agrupa
+   las filas por requisito, y el orden se conserva al volver.
+7. **Latido del agente H28 y alerta si cae** (petición de Miguel Ángel;
+   se hizo tras un corte de luz): el agente escribe en la BD cada 5
+   minutos "fecha, hora, estoy vivo" (modelo nuevo de latido con
+   nombre de agente y último latido); una comprobación periódica en el
+   servidor detecta más de 15 minutos sin latido y envía a Miguel Ángel
+   por WhatsApp la plantilla del punto 1, una sola vez por caída (y
+   otra al recuperarse). Antes de construir, localizar en el repo el
+   agente H28 que corre fuera de PythonAnywhere y cómo se conecta a la
+   BD (túnel SSH + pymysql), y usar esa misma vía para el latido.
+   **Cierre:** con el agente parado, llega el WhatsApp a Miguel Ángel
+   en menos de 20 minutos y queda registrado; al arrancarlo, deja de
+   alertar.
+8. **Fecha del contrato de Alonso Pedrosa (34042):** ver con el relevo
+   `gcs_image` la cláusula con la fecha de inicio (página 2) y, si no
+   es 06/03/2023, corregirla con `set_contract_review --contratos`.
+   **Cierre:** la fecha en BD coincide con la del documento.
 
 **Decisiones de Miguel Ángel que el modelo NO debe tocar por su
 cuenta:**
-- **Entregas de accesorios de elevación**: los 259 están en servicio y
-  sin entregas porque todo lo existente es histórico. Miguel Ángel lo
-  consulta; si se decide tomarse en serio las entregas a partir de
-  ahora, se retiran todos del servicio y se empieza de cero. Sin esa
-  instrucción, el modelo no cambia ni entregas ni estado.
-- **Cabrestante VIME EPH 6200FN serie 03210** (7968, tipado
-  `CERT_COMPONENTE_MAQUINA`, sin máquina): va montado en un remolcador
-  de asistencia (Miguel Ángel); se vincula cuando él diga cuál. Baja
-  prioridad. Pista del dossier: entregado a "INDUSTRIAS J. CORTE..."
-  el 12/06/2015.
+- Envío automático por WhatsApp de avisos de documentación: **sigue
+  apagado** hasta que Miguel Ángel lo encienda desde Avisos >
+  Configuración.
+- Requisitos de maquinaria: los definen los supervisores; el modelo no
+  crea ninguno.
+- **Entregas de accesorios de elevación** y **cabrestante VIME 03210**:
+  sin cambios respecto a S121 (no se tocan sin instrucción suya).
 
-**Trabajo de Miguel Ángel en el panel (no del modelo, no bloquea la
-hoja de ruta):** pulsar "Guardar habilidad" en las 6 skills
-presentadas en S121 si no lo hizo; marcar en Requisitos las clases de
-permiso que exige cada requisito; revisar la tabla de clases, la fila
-del permiso con la autorización temporal de Paraschiv (pk=173) y la
-etiqueta nueva; subir el carné de los 21 activos que no lo tienen y el
-reverso de pk=172 y pk=221.
+**Trabajo de Miguel Ángel y de los supervisores en el panel (no
+bloquea la hoja de ruta):** configurar la ficha de Destinatarios de
+Yolanda Bandera (hoy no recibe nada); comprobar en Twilio la
+aprobación de `document_expiry_notice` y `document_missing_notice`;
+localizar y subir los contratos que faltan (lista en Avisos >
+Pendientes > Faltan); separar el dosier de Burgos (30574) si se
+quiere; marcar clases de permiso en los requisitos y subir los carnés
+pendientes (heredado de S121).
 
 **Pendiente técnico heredado, sin cambios:** los 18 combinados
 FICHA+ITV que no se pueden partir se corrigen a mano desde la ficha
-con el botón "Tipo". Hallazgo de S121 sin impacto en producción: 13
-migraciones antiguas (datos reales de producción, `budgets`/`fleet`)
-no se pueden aplicar sobre una BD vacía -- solo afecta a montar el
-proyecto desde cero.
+con el botón "Tipo". 13 migraciones antiguas no se aplican sobre una
+BD vacía (solo afecta a montar el proyecto desde cero; para probar en
+local se usa `migrate --run-syncdb` con `MIGRATION_MODULES` vacío).
