@@ -1488,6 +1488,7 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
             "collapseDatosPersonales", "collapseLaboralMain",
             "collapseSaludMain", "collapseDocumentacionMain",
             "collapseEpisMain", "collapseAccesoriosMain",
+            "collapsePeriodosMain",
         ):
             main_accordion_open = "collapseDatosPersonales"
 
@@ -1831,6 +1832,9 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
             "lifting_accessories": _person_lifting_accessories(
                 person, request.user.company_user.company,
             ),
+            # H30 (S122): periodos de contratación (altas) con su
+            # contrato emparejado a ±15 días, o "falta contrato".
+            "employment": _person_employment_periods(person),
             # H31 (S113): lotes de EPIs guardados para el nuevo flujo de
             # entrega desde la ficha individual (mismo modal que la
             # acción masiva de Personal).
@@ -1842,6 +1846,56 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
             "main_accordion_open": main_accordion_open,
             "selected_document_ids": selected_document_ids,
         })
+
+
+def _person_employment_periods(person):
+    """
+    Employment periods of a person, ready to paint.
+
+    ---
+
+    H30 (S122). Periodos de contratación de una persona -- cada alta
+    con su contrato emparejado a ±15 días o "falta contrato", la baja
+    que lo cierra, y aparte las altas sin fecha y los contratos que no
+    se emparejan con ninguna alta. Miguel Ángel: "tengo dos contratos,
+    tres contratos, pero solamente está apareciendo el primero".
+    """
+    from document_explorer import employment_period_service as periods
+
+    person_ct = ContentType.objects.get_for_model(PersonIdentity)
+    by_code = {code: [] for code in periods.PERIOD_CODES}
+    for entry in DocumentIndexEntry.objects.filter(
+        bucket=BUCKET, domain_content_type=person_ct,
+        domain_object_id=person.pk,
+        entry_kind=DocumentIndexEntry.KIND_FILE,
+        deleted_at__isnull=True, purged_at__isnull=True,
+        document_type__code__in=periods.PERIOD_CODES,
+    ).select_related("document_type"):
+        by_code[entry.document_type.code].append(entry)
+
+    built, undated_altas = periods.build_periods(
+        by_code[periods.ALTA_CODE], by_code[periods.CONTRACT_CODE],
+        by_code[periods.BAJA_CODE],
+    )
+    for period in built:
+        if not period.has_contract:
+            period.search_from, period.search_to = (
+                periods.missing_contract_window(period)
+            )
+    missing_count = sum(1 for period in built if not period.has_contract)
+    return {
+        "periods": list(reversed(built)),
+        "undated_altas": undated_altas,
+        "unmatched_contracts": sorted(
+            periods.unmatched_contracts(
+                built, by_code[periods.CONTRACT_CODE],
+            ),
+            key=lambda entry: (entry.issue_date is None, entry.issue_date,
+                               entry.pk),
+        ),
+        "missing_count": missing_count,
+        "has_warnings": bool(missing_count or undated_altas),
+    }
 
 
 def _person_lifting_accessories(person, company):
