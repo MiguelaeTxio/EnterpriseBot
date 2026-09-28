@@ -711,9 +711,12 @@ class MachineDetailView(CompanyUserRequiredMixin, View):
         # todavía no tiene (vigentes o históricos: si ya existe uno, se
         # sustituye con "Actualizar" en su fila), aviso por familia de
         # los vigentes con caducidad real ya pasada.
+        # S123: los tipos acumulables (varios vigentes a la vez) se
+        # ofrecen siempre -- "Actualizar" no es la vía para añadir otro.
         present_type_codes = {
             entry.document_type.code for entry in entries
             if entry.document_type_id
+            and not entry.document_type.is_cumulative
         }
         missing_types_by_family = {}
         for dt in DocumentTypeCatalog.objects.filter(
@@ -1559,9 +1562,14 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
         # `DocumentTypeCatalog` queda limitada al administrador; un
         # tipo que no existe en el catálogo se sube por el Explorador
         # de archivos, nunca desde este modal.
+        # S123: los tipos acumulables (contratos, altas, cursos...) se
+        # ofrecen siempre, aunque la persona ya tenga alguno -- Miguel
+        # Ángel: "¿cómo subo el contrato nuevo?". Con uno ya subido,
+        # "+ Subir" no ofrecía "Contrato laboral".
         present_type_codes = {
             entry.document_type.code for entry in entries
             if entry.document_type_id
+            and not entry.document_type.is_cumulative
         }
         missing_types_by_family = {}
         for dt in DocumentTypeCatalog.objects.filter(
@@ -5832,6 +5840,7 @@ class SubjectDocumentUploadView(DocsUploadAccessMixin, View):
     def post(self, request, domain, subject_pk):
         document_type_code = request.POST.get("document_type_code", "")
         expiry_date_str = request.POST.get("expiry_date", "")
+        issue_date_str = request.POST.get("issue_date", "")
         uploaded_files = request.FILES.getlist("file")
 
         if not uploaded_files or not document_type_code:
@@ -5850,6 +5859,19 @@ class SubjectDocumentUploadView(DocsUploadAccessMixin, View):
             try:
                 year, month, day = (int(x) for x in expiry_date_str.split("-"))
                 typed_date = date(year, month, day)
+            except ValueError:
+                return JsonResponse(
+                    {"error": "Fecha con formato inválido."}, status=400,
+                )
+
+        # S123: fecha del documento (tipos sin caducidad, p. ej. la
+        # fecha de inicio de un contrato), escrita en la ficha.
+        typed_issue_date = None
+        if issue_date_str and not document_type.tracks_expiry:
+            try:
+                typed_issue_date = datetime.strptime(
+                    issue_date_str, "%Y-%m-%d",
+                ).date()
             except ValueError:
                 return JsonResponse(
                     {"error": "Fecha con formato inválido."}, status=400,
@@ -5877,6 +5899,7 @@ class SubjectDocumentUploadView(DocsUploadAccessMixin, View):
                     document_type=document_type, data=data,
                     original_filename=uploaded_file.name,
                     typed_date=typed_date, subject_label=subject_label,
+                    typed_issue_date=typed_issue_date,
                 )
             except SubjectUploadError as exc:
                 errors.append({"file": uploaded_file.name, "error": str(exc)})

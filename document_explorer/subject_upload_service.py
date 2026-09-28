@@ -234,7 +234,7 @@ def _resolve_date_and_text(document_type, filename, data, content_type):
 
 def upload_subject_document(
     *, subject, domain_content_type, document_type, data, original_filename,
-    typed_date, subject_label, uploaded_by=None,
+    typed_date, subject_label, uploaded_by=None, typed_issue_date=None,
 ):
     """
     Ejecuta el flujo completo. Devuelve un dict:
@@ -242,7 +242,6 @@ def upload_subject_document(
             "entry": DocumentIndexEntry (la fila creada),
             "warning": dict|None (de verify_typed_date, o None),
             "superseded_count": int,
-            "alerts_created": int,
         }
     Lanza `SubjectUploadError` si no se puede resolver una carpeta
     destino real.
@@ -252,6 +251,12 @@ def upload_subject_document(
     DOCS_SUPERVISOR reales (ver get_docs_supervisor_contacts()),
     aunque quien suba no sea documentación (p. ej. un ADMIN subiendo
     en su nombre). Nunca bloquea la subida si viene None.
+
+    `typed_issue_date` (H30 S123): fecha del documento escrita a mano
+    en la ficha para los tipos sin caducidad (un contrato: su fecha de
+    inicio). Manda sobre la de Cloud Vision/Gemini, igual que
+    `typed_date` para la caducidad -- en S122 el OCR cogía la fecha de
+    nacimiento de los contratos y los dejaba fuera de su periodo.
     """
     extension = original_filename.rsplit(".", 1)[-1] if "." in original_filename else "pdf"
     target_folder = _resolve_target_folder(
@@ -283,6 +288,7 @@ def upload_subject_document(
         domain_content_type=domain_content_type,
         domain_object_id=subject.pk,
         expiry_date=typed_date if document_type.tracks_expiry else None,
+        issue_date=typed_issue_date,
     )
 
     # H31 (S102): antes se usaba `verify_typed_date()` (Tesseract
@@ -304,12 +310,17 @@ def upload_subject_document(
         )
     )
     warning = None
+    # S123: el aviso compara con la fecha escrita del mismo campo que
+    # ha leído el motor (caducidad o fecha del documento).
+    compared_date = (
+        typed_issue_date if engine_field == "issue" else typed_date
+    )
     if (
-        engine_date is not None and typed_date is not None
-        and engine_date != typed_date
+        engine_date is not None and compared_date is not None
+        and engine_date != compared_date
     ):
         warning = {
-            "system_date": engine_date, "typed_date": typed_date,
+            "system_date": engine_date, "typed_date": compared_date,
             "source": engine_source,
         }
 

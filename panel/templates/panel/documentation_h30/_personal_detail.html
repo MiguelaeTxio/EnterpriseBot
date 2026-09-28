@@ -914,6 +914,9 @@ usan los documentos.
         </h2>
         <div id="collapsePeriodosMain" class="accordion-collapse collapse{% if main_accordion_open == 'collapsePeriodosMain' %} show{% endif %}" data-bs-parent="#personalMainAccordion">
             <div class="accordion-body">
+                <button type="button" class="btn btn-sm btn-outline-primary mb-2" onclick="openUploadForm('CONTRATO')">
+                    <i class="bi bi-upload me-1"></i>+ Subir contrato
+                </button>
                 {% if employment.periods %}
                 <table class="table table-sm table-hover mb-2">
                     <thead><tr><th>Alta</th><th>Baja</th><th>Contrato</th></tr></thead>
@@ -932,6 +935,7 @@ usan los documentos.
                                 {% else %}
                                 <span class="text-danger fw-semibold"><i class="bi bi-exclamation-triangle-fill me-1"></i>Falta contrato</span>
                                 <span class="small text-muted">(fechado entre el {{ period.search_from|date:"d/m/Y" }} y el {{ period.search_to|date:"d/m/Y" }})</span>
+                                <button type="button" class="btn btn-sm btn-outline-primary ms-2 py-0" onclick="openUploadForm('CONTRATO')"><i class="bi bi-upload me-1"></i>Subir contrato</button>
                                 {% endif %}
                                 {% for extension in period.extensions %}
                                 <div class="small text-muted"><i class="bi bi-arrow-return-right me-1"></i><a href="{% url 'panel:documentation_document_view' extension.pk %}" target="_blank">{{ extension.document_type.label }} del {{ extension.issue_date|date:"d/m/Y" }}{% if extension.expiry_date %} al {{ extension.expiry_date|date:"d/m/Y" }}{% endif %}</a></div>
@@ -1222,6 +1226,11 @@ function openUploadForm(preselectCode, avatarMode, restrictedTypes) {
                         <label class="form-label">Fecha de caducidad</label>
                         <input type="date" name="expiry_date" class="form-control">
                     </div>
+                    <div class="mb-2" id="issueDateField" style="display:none;">
+                        <label class="form-label">Fecha del documento (en un contrato, su fecha de inicio)</label>
+                        <input type="date" name="issue_date" class="form-control">
+                        <div class="form-text">Si la dejas vacía, el sistema intenta leerla del documento.</div>
+                    </div>
                     <button type="submit" class="btn btn-primary btn-sm" id="subjectUploadSubmitBtn">${avatarMode ? 'Subir foto' : 'Subir'}</button>
                     <div id="uploadResult" class="mt-2"></div>
                 </form>
@@ -1230,10 +1239,16 @@ function openUploadForm(preselectCode, avatarMode, restrictedTypes) {
 
     const select = document.getElementById('uploadTypeSelect');
     const expiryField = document.getElementById('expiryDateField');
+    const issueField = document.getElementById('issueDateField');
+    // S123: los tipos que caducan piden la caducidad; los que no, la
+    // fecha del documento (la de inicio de un contrato), que es la que
+    // lo coloca en su periodo de contratación.
     function toggleExpiry() {
         if (!select) { return; }
         const opt = select.options[select.selectedIndex];
-        expiryField.style.display = opt.dataset.tracksExpiry === 'true' ? '' : 'none';
+        const tracksExpiry = opt.dataset.tracksExpiry === 'true';
+        expiryField.style.display = tracksExpiry ? '' : 'none';
+        issueField.style.display = tracksExpiry ? 'none' : '';
     }
     if (select) {
         select.onchange = toggleExpiry;
