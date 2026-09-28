@@ -1305,6 +1305,27 @@ table.table #toll-thead ~ tbody tr:nth-child(even):not(.table-secondary) td {
     background-color: var(--bs-border-color);
 }
 
+/* H30 (S123): en el móvil (captura de Miguel Ángel) el nombre fijo
+   ocupaba casi todo el ancho y las demás columnas pasaban por debajo
+   sin llegar a verse. Por debajo de 992 px (mismo corte que la altura
+   de las listas) nada va fijo: la tabla se desplaza entera. */
+@media (max-width: 991.98px) {
+    .table .sticky-col {
+        position: static;
+        left: auto;
+    }
+
+    /* Las cabeceras siguen fijas arriba (scroll vertical), pero ya no
+       a la izquierda. */
+    .table thead th.sticky-col {
+        left: auto;
+    }
+
+    .table .sticky-col-last::after {
+        display: none;
+    }
+}
+
 /* ------------------------------------------------------------------
    H30 (S122) -- Gestor de Requisitos de documentación: estilos
    sacados de la plantilla (antes inline, avisos H021 de djlint --
