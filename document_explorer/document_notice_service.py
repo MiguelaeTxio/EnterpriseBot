@@ -39,6 +39,8 @@ from datetime import date, timedelta
 
 from django.contrib.contenttypes.models import ContentType
 
+from document_explorer import employment_period_service as periods
+
 BUCKET = "cgs_grupo_alvarez"
 IDENTITY_CODES = ("DNI", "NIE")
 DRIVING_CARD_CODE = "CARNET_CONDUCIR"
@@ -367,6 +369,23 @@ def compute_notices(domain):
             entry,
         )
 
+    # H30 (S122): altas en la Seguridad Social de cada persona, para
+    # exigir un contrato por periodo (employment_period_service).
+    altas_by_subject = {}
+    if domain == DOMAIN_PERSONAL:
+        for entry in DocumentIndexEntry.objects.filter(
+            bucket=BUCKET,
+            domain_content_type=content_type,
+            domain_object_id__in=[s.pk for s in subjects],
+            entry_kind=DocumentIndexEntry.KIND_FILE,
+            deleted_at__isnull=True,
+            purged_at__isnull=True,
+            document_type__code=periods.ALTA_CODE,
+        ):
+            altas_by_subject.setdefault(entry.domain_object_id, []).append(
+                entry,
+            )
+
     card_ids = [
         entry.pk for group in entries_by_subject.values() for entry in group
         if entry.document_type.code == DRIVING_CARD_CODE
@@ -414,6 +433,17 @@ def compute_notices(domain):
                 "kind": None,
             }
             docs = by_type.get(type_id, [])
+            if (
+                doc_type.code == periods.CONTRACT_CODE
+                and altas_by_subject.get(subject.pk)
+            ):
+                # H30 (S122): con altas registradas, un contrato POR
+                # periodo de contratación, no "tiene o no tiene".
+                if rule.notify_missing:
+                    pending.extend(_missing_contract_notices(
+                        base, altas_by_subject[subject.pk], docs,
+                    ))
+                continue
             if not docs:
                 if doc_type.code in IDENTITY_CODES and has_identity:
                     continue
@@ -445,6 +475,32 @@ def compute_notices(domain):
         key=lambda item: (item.trigger_date, item.notice.subject_label),
     )
     return pending, scheduled, calendar_items
+
+
+def _missing_contract_notices(base, altas, contracts):
+    """
+    One MISSING notice per employment period without a contract.
+
+    ---
+
+    Un aviso de "falta" por cada periodo de contratación (alta) sin
+    contrato emparejado a ±15 días -- "Contrato laboral (alta del
+    dd/mm/aaaa)".
+    """
+    built, _undated = periods.build_periods(altas, contracts, [])
+    notices_out = []
+    for period in built:
+        if period.has_contract:
+            continue
+        period_base = dict(base)
+        period_base["document_label"] = "%s (alta del %s)" % (
+            base["document_label"], period.start_date.strftime("%d/%m/%Y"),
+        )
+        notice = DocumentNotice(**period_base)
+        notice.kind = KIND_MISSING
+        notice.entry_id = period.altas[0].pk
+        notices_out.append(notice)
+    return notices_out
 
 
 def _driving_class_notices(base, rule, cards, categories, grants_by_card,
