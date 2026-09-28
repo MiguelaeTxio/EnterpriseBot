@@ -1,39 +1,22 @@
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/document_management/tasks.py
 """
-Motor de alertas de vencimiento de documentos (Hito 26, anexo seccion
-2.1). Tarea Celery periodica que revisa los DocumentAlert pendientes,
-dispara el envio via WhatsApp usando la plantilla ya creada y aprobada
-en H23/S021 (document_expiry_alert, UTILITY, content_sid
-HX55da66276bb2025f691c378abff0123e -- pendiente de aprobacion de Meta
-a fecha de esta sesion, ver whatsapp/management/commands/
-seed_whatsapp_templates.py), y marca cada alerta como enviada.
+Motor de avisos de documentación (Hito 26, reescrito en H30/S122).
 
-Reutiliza el patron real ya en produccion de
-whatsapp.tasks.check_in_meeting_reminders (mismo mecanismo Twilio
-Content API, mismas variables de entorno) -- no reinventa nada.
-
-Este modulo NUNCA importa MachineDocument ni el futuro modelo de H25:
-DocumentAlert ya lleva denormalizados document_label/subject_label
-(rellenados por quien crea la alerta), asi que esta tarea no necesita
-resolver el objeto generico para construir el texto del mensaje.
+La tarea diaria delega en document_explorer.notice_delivery_service:
+avisos calculados desde los requisitos de documentación, enviados a
+cada supervisor según su ámbito, con las plantillas
+document_expiry_notice / document_missing_notice. Las filas antiguas
+de DocumentAlert (30/15/7 automáticas) ya no se envían ni se crean; se
+conservan como histórico.
 
 ---
 
-Document expiry alert engine (Milestone 26, annex section 2.1).
-Periodic Celery task that checks pending DocumentAlert rows, dispatches
-via WhatsApp using the template already created in H23/S021, and marks
-each alert as sent. Reuses the real pattern already in production from
-whatsapp.tasks.check_in_meeting_reminders -- same Twilio Content API
-mechanism, same environment variables.
+Document notice engine (Milestone 26, rewritten in H30/S122). The daily
+task delegates to document_explorer.notice_delivery_service.
 """
 import logging
-from datetime import timedelta
 
 from celery import shared_task
-from django.utils.timezone import now
-
-from .alert_service import send_alert_now
-from .models import DocumentAlert, DocumentAlertSettings
 
 logger = logging.getLogger(__name__)
 
@@ -41,93 +24,31 @@ logger = logging.getLogger(__name__)
 @shared_task(name="document_management.tasks.send_document_expiry_alerts")
 def send_document_expiry_alerts() -> str:
     """
-    Tarea periodica -- se ejecuta a diario via Celery Beat (hueco
-    horario 3:00, reutilizado tras eliminar la tarea muerta de
-    purge_old_chat_messages, ver enterprise_core/settings.py).
-
-    Busca DocumentAlert con status=PENDING cuya fecha de aviso
-    (expiry_date - alert_offset_days) ya se ha alcanzado, y delega el
-    envio real en document_management.alert_service.send_alert_now()
-    (S025 -- extraida de aqui para que el envio MANUAL desde el panel
-    reutilice exactamente la misma logica, un unico punto de verdad
-    para el mecanismo de Twilio/plantilla).
-
-    Nunca deja que el fallo de una alerta aborte el resto del lote --
-    mismo principio que process_machine_document_batch.
+    Daily task (Celery Beat, 8:00): send the document notices.
 
     ---
 
-    Periodic task -- runs daily via Celery Beat. Finds PENDING
-    DocumentAlert rows whose alert date has been reached and delegates
-    the actual send to alert_service.send_alert_now() (S025 -- shared
-    with the manual "send now" button in the panel).
+    Tarea diaria (Celery Beat, 8:00). REESCRITA EN H30 (S122): ya no
+    envía las filas de `DocumentAlert` (30/15/7 automáticas por
+    documento, con la plantilla antigua `document_expiry_alert`, que
+    decía "de la maquina" también para personal). Delega en
+    `document_explorer.notice_delivery_service.send_due_notices()`:
+    los avisos calculados desde los requisitos de documentación,
+    exactamente los de Avisos > Pendientes, a cada supervisor según su
+    ámbito, sin repeticiones y con recordatorio semanal de faltantes y
+    caducados. Mismo nombre de tarea para no tocar Celery Beat.
+    Respeta el interruptor de envío automático por empresa.
     """
-    today = now().date()
+    from document_explorer.notice_delivery_service import send_due_notices
 
-    due_alerts = list(
-        DocumentAlert.objects
-        .filter(status=DocumentAlert.Status.PENDING)
-        .select_related("company")
-        .prefetch_related("contacts")
-    )
-    due_alerts = [
-        alert for alert in due_alerts
-        if alert.expiry_date - timedelta(days=alert.alert_offset_days) <= today
-    ]
-
-    # H30 (S122): interruptor del envío automático. Mientras la
-    # empresa no lo encienda desde el panel, no sale ningún WhatsApp
-    # -- las alertas se quedan PENDING, sin tocar, para enviarse (o
-    # recalcularse) cuando se active. Miguel Ángel: "eso hay que
-    # cortarlo [...] si no vamos a dejar un teléfono ahí colapsado".
-    enabled_by_company = {}
-    blocked_count = 0
-    allowed_alerts = []
-    for alert in due_alerts:
-        if alert.company_id not in enabled_by_company:
-            enabled_by_company[alert.company_id] = (
-                DocumentAlertSettings.is_whatsapp_enabled(alert.company)
-            )
-        if enabled_by_company[alert.company_id]:
-            allowed_alerts.append(alert)
-        else:
-            blocked_count += 1
-    if blocked_count:
-        logger.info(
-            "# [CELERY] send_document_expiry_alerts: %d alerta(s) "
-            "debidas NO enviadas -- envío automático por WhatsApp "
-            "apagado.",
-            blocked_count,
+    try:
+        result = send_due_notices()
+    except Exception:
+        logger.exception(
+            "# [CELERY] send_document_expiry_alerts: fallo del envío de "
+            "avisos.",
         )
-    due_alerts = allowed_alerts
-
-    if not due_alerts:
-        result = (
-            "# [CELERY] send_document_expiry_alerts: sin alertas "
-            "pendientes que disparar hoy."
-        )
-        logger.info(result)
-        return result
-
-    sent_count = 0
-    error_count = 0
-
-    for alert in due_alerts:
-        success, detail = send_alert_now(alert)
-        if success:
-            sent_count += 1
-        else:
-            error_count += 1
-            logger.warning(
-                "# [CELERY] send_document_expiry_alerts: alerta #%d "
-                "no enviada -- %s",
-                alert.pk, detail,
-            )
-
-    result = (
-        f"# [CELERY] send_document_expiry_alerts: {sent_count} "
-        f"alerta(s) enviada(s), {error_count} con error/sin contacto "
-        f"valido."
-    )
+        raise
+    result = "# [CELERY] send_document_expiry_alerts: " + result
     logger.info(result)
     return result

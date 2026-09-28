@@ -19,9 +19,7 @@ expiry_date/company/default_contact antes de invocar esto.
 import json
 import logging
 import os
-from datetime import date
 
-from django.contrib.contenttypes.models import ContentType
 from django.utils.timezone import now
 
 from .models import DocumentAlert
@@ -267,53 +265,13 @@ def create_default_expiry_alerts(
     `offsets_days` (30/15/7 by default), idempotent per offset. Does
     nothing if `expiry_date` is None or already in the past.
     """
-    if expiry_date is None:
-        return []
+    # H30 (S122): RETIRADA. Los avisos ya no se crean documento a
+    # documento con 30/15/7 fijos -- se calculan en vivo desde los
+    # requisitos de documentación y el ámbito de cada supervisor
+    # (document_explorer.document_notice_service / notice_delivery_
+    # service). Se conserva la firma para no tocar los cinco puntos de
+    # entrada que la llaman; las filas ya existentes quedan como
+    # histórico y la tarea diaria ya no las envía.
+    return []
 
-    if expiry_date < date.today():
-        logger.info(
-            "# [create_default_expiry_alerts] #%d (%s): expiry_date "
-            "%s ya pasó -- documento archivado por definición, no se "
-            "crea ninguna alerta.",
-            document.pk, document_label, expiry_date,
-        )
-        return []
 
-    content_type = ContentType.objects.get_for_model(document)
-    existing_offsets = set(
-        DocumentAlert.objects
-        .filter(content_type=content_type, object_id=document.pk)
-        .values_list("alert_offset_days", flat=True)
-    )
-
-    created = []
-    for offset_days in offsets_days:
-        if offset_days in existing_offsets:
-            logger.info(
-                "# [create_default_expiry_alerts] %s #%d ya tiene "
-                "alerta a %d días -- no se duplica.",
-                content_type.model, document.pk, offset_days,
-            )
-            continue
-
-        alert = DocumentAlert.objects.create(
-            content_type=content_type,
-            object_id=document.pk,
-            document_label=document_label,
-            subject_label=subject_label,
-            company=company,
-            expiry_date=expiry_date,
-            alert_offset_days=offset_days,
-        )
-        if default_contact is not None:
-            alert.contacts.add(default_contact)
-        created.append(alert)
-
-        logger.info(
-            "# [create_default_expiry_alerts] Alerta #%d creada para "
-            "%s #%d (%s, vence %s, aviso %d días antes).",
-            alert.pk, content_type.model, document.pk, document_label,
-            expiry_date, offset_days,
-        )
-
-    return created
