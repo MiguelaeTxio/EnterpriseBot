@@ -49,8 +49,6 @@ Flujo:
    `is_obsolete=True` -- NUNCA se mueven ni se borran (4.12), y queda
    registro en `DocumentSubstitutionLog` para trazabilidad real.
 """
-import datetime
-
 from django.contrib.contenttypes.models import ContentType
 from django.utils import timezone
 
@@ -66,9 +64,6 @@ from document_explorer.required_documentation_service import (
     get_required_type_ids,
 )
 from document_explorer.vigencia_selector import current_fn_for
-from document_management.alert_service import (
-    create_default_expiry_alerts, get_docs_supervisor_contacts,
-)
 from document_management.models import DocumentSubstitutionLog
 from document_management.vigencia_service import (
     DocumentSnapshot, evaluate_substitution,
@@ -335,29 +330,10 @@ def upload_subject_document(
     if update_fields:
         entry.save(update_fields=update_fields)
 
-    alerts_created = 0
-    if document_type.tracks_expiry and entry.expiry_date:
-        # H30 (S50): hueco real detectado -- esta via de subida nunca
-        # habia llamado a create_default_expiry_alerts. Ninguna
-        # subida hecha desde la ficha del sujeto generaba alerta de
-        # caducidad hasta ahora, aunque el motor de envio (Twilio,
-        # tarea diaria) llevaba activo desde H26. Se enganchan aqui
-        # las 3 alertas por defecto (30/15/7 dias) mas los DOCS_
-        # SUPERVISOR reales como contacto, mas quien sube el
-        # documento si no es ya uno de ellos.
-        alerts = create_default_expiry_alerts(
-            document=entry,
-            expiry_date=entry.expiry_date,
-            document_label=document_type.label,
-            subject_label=subject_label,
-            company=_resolve_company(),
-        )
-        contacts = get_docs_supervisor_contacts()
-        if uploaded_by is not None and uploaded_by not in contacts:
-            contacts.append(uploaded_by)
-        for alert in alerts:
-            alert.contacts.add(*contacts)
-        alerts_created = len(alerts)
+    # H30 (S122): aquí se creaban las 3 alertas 30/15/7 de H30/S50. Ya
+    # no: los avisos se calculan en vivo desde los requisitos de
+    # documentación y el ámbito de cada supervisor
+    # (document_notice_service / notice_delivery_service).
 
     # S102: la sustitución YA NO se limita a `tracks_expiry=True` --
     # `evaluate_substitution()` sabe decidir igual de bien por
@@ -369,6 +345,15 @@ def upload_subject_document(
     # ningún criterio real (incidente real S102, `CONTRATO`).
     superseded_count = 0
     company = _resolve_company()
+    # H30 (S122): un tipo acumulable (varios vigentes a la vez --
+    # contratos, altas, cursos, entregas...) nunca entra en la
+    # sustitución: vigencia_service deja este filtro al llamador y aquí
+    # faltaba, así que cada documento nuevo dejaba obsoleto al anterior.
+    if document_type.is_cumulative:
+        return {
+            "entry": entry, "warning": warning,
+            "superseded_count": superseded_count,
+        }
     siblings_qs = DocumentIndexEntry.objects.filter(
         bucket=BUCKET, document_type=document_type,
         domain_content_type=domain_content_type,

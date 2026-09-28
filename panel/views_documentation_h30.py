@@ -28,7 +28,7 @@ from django.contrib.staticfiles.finders import find as find_static
 from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
 from django.db import IntegrityError
-from django.db.models import Count, OuterRef, Q, Subquery, Sum
+from django.db.models import Count, OuterRef, Q, Subquery
 from django.db.models.functions import Coalesce
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -46,9 +46,9 @@ from analytics.views import _resolve_work_period
 from document_explorer import naming_service, personal_intake_service, postal_code_service
 from document_explorer.index_writer import ensure_folder_chain
 from document_explorer.models import (
-    CompanyFiscalProfile, DocumentAcknowledgment, DocumentIndexEntry,
+    DocumentAcknowledgment, DocumentIndexEntry,
     DocumentTypeCatalog, DrivingLicenceCategory, EpiDelivery,
-    EpiDeliveryBatchTemplate, EpiItemCatalog, EpiReview, JobPosition,
+    EpiDeliveryBatchTemplate, EpiItemCatalog, JobPosition,
     PersonalDossierTemplate, PersonGroupTemplate, PersonIdentity,
     path_digest,
 )
@@ -72,7 +72,7 @@ from document_management.vigencia_service import (
 )
 from fleet.models import MachineAsset
 from hr_calendar.models import VacationPeriod
-from ivr_config.models import Company, CompanyUser, WorkPeriod
+from ivr_config.models import Company, WorkPeriod
 from panel.mixins import (
     CompanyUserRequiredMixin, DocsUploadAccessMixin, SupervisorAccessMixin,
 )
@@ -3810,6 +3810,12 @@ class PersonalCreateView(DocsUploadAccessMixin, View):
                 # ALTA y de la mayoría de tipos sin caducidad propia.
                 # Limitarlo a `tracks_expiry` era justo lo que dejaba
                 # dos ALTA "vigentes" a la vez sin ningún criterio.
+                # H30 (S122): un tipo acumulable (varios vigentes a la
+                # vez -- contratos, altas, cursos, entregas...) nunca
+                # entra en la sustitución (vigencia_service deja este
+                # filtro al llamador y aquí faltaba).
+                if document_type is not None and document_type.is_cumulative:
+                    continue
                 existing_snapshots = current_by_type.get(code, [])
                 incoming_snapshot = DocumentSnapshot(
                     identifier=entry.pk, expiry_date=entry.expiry_date,
