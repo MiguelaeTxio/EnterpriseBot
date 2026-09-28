@@ -153,8 +153,14 @@ desaparece solo en cuanto se sube el documento que lo resuelve.
             body.style.height = '';
             return;
         }
+        // Mientras se mide, cada panel ocupa su altura real de
+        // contenido: con 'flex: 1 1 0' y altura automatica los paneles
+        // se colapsan y la altura natural sale casi nula (incidente
+        // real S122: todo quedaba en el minimo de 320 px).
+        body.classList.add('is-measuring');
         const naturalHeight = body.getBoundingClientRect().height;
         const overflow = Math.max(document.documentElement.scrollHeight - window.innerHeight, 0);
+        body.classList.remove('is-measuring');
         body.style.height = Math.max(naturalHeight - overflow - BODY_GUTTER, BODY_MIN_HEIGHT) + 'px';
     }
     window.addEventListener('resize', sizeBody);

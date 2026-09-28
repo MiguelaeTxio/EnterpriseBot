@@ -1410,4 +1410,9 @@ table.table #toll-thead ~ tbody tr:nth-child(even):not(.table-secondary) td {
         min-height: 0;
         max-height: none;
     }
+
+    /* Solo durante la medicion de altura (JS de _notices.html). */
+    .alerts-notices-body.is-measuring .alerts-panel {
+        flex: none;
+    }
 }
