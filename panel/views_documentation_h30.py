@@ -1875,7 +1875,7 @@ def _person_employment_periods(person):
 
     built, undated_altas = periods.build_periods(
         by_code[periods.ALTA_CODE], by_code[periods.CONTRACT_CODE],
-        by_code[periods.BAJA_CODE],
+        by_code[periods.BAJA_CODE], by_code[periods.EXTENSION_CODE],
     )
     for index, period in enumerate(built):
         if not period.has_contract:
@@ -1900,6 +1900,9 @@ def _person_employment_periods(person):
             ),
             key=lambda entry: (entry.issue_date is None, entry.issue_date,
                                entry.pk),
+        ),
+        "unplaced_extensions": periods.unplaced_extensions(
+            built, by_code[periods.EXTENSION_CODE],
         ),
         "missing_count": missing_count,
         "has_warnings": bool(missing_count or undated_altas),

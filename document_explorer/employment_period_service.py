@@ -19,6 +19,9 @@ Reglas (decididas por Miguel Ángel en S122):
 - El periodo termina con la primera baja (Seguridad Social) fechada
   después de su inicio y antes del periodo siguiente.
 - Un alta sin fecha no se puede emparejar: se cuenta aparte.
+- Las prórrogas (PRORROGA_CONTRATO, S122) nunca cuentan como contrato
+  del alta: se colocan en el periodo en cuyo tramo empiezan (desde su
+  alta hasta la siguiente), para verlas dentro de su contrato.
 
 Funciones puras sobre listas de `DocumentIndexEntry` (sin consultas),
 para que las usen igual la ficha, los avisos y los informes.
@@ -30,7 +33,8 @@ MATCH_WINDOW_DAYS = 15
 ALTA_CODE = "ALTA"
 CONTRACT_CODE = "CONTRATO"
 BAJA_CODE = "BAJA_PERSONAL"
-PERIOD_CODES = (ALTA_CODE, CONTRACT_CODE, BAJA_CODE)
+EXTENSION_CODE = "PRORROGA_CONTRATO"
+PERIOD_CODES = (ALTA_CODE, CONTRACT_CODE, BAJA_CODE, EXTENSION_CODE)
 
 
 @dataclass
@@ -47,6 +51,7 @@ class EmploymentPeriod:
     start_date: object
     altas: list = field(default_factory=list)
     contracts: list = field(default_factory=list)
+    extensions: list = field(default_factory=list)
     end_baja: object = None
 
     @property
@@ -83,7 +88,7 @@ def _within(date_a, date_b):
     return abs((date_a - date_b).days) <= MATCH_WINDOW_DAYS
 
 
-def build_periods(altas, contracts, bajas):
+def build_periods(altas, contracts, bajas, extensions=()):
     """
     Employment periods from ALTA/CONTRATO/BAJA entries of one person.
 
@@ -133,7 +138,34 @@ def build_periods(altas, contracts, bajas):
                 break
             period.end_baja = baja
             break
+    dated_extensions = sorted(
+        (entry for entry in extensions if entry.issue_date),
+        key=lambda entry: (entry.issue_date, entry.pk),
+    )
+    for extension in dated_extensions:
+        home = None
+        for period in periods:
+            if period.start_date <= extension.issue_date:
+                home = period
+        if home is not None:
+            home.extensions.append(extension)
     return periods, undated
+
+
+def unplaced_extensions(periods, extensions):
+    """
+    Extensions not placed in any period (undated or before every alta).
+
+    ---
+
+    Prórrogas que no caen en ningún periodo (sin fecha, o anteriores a
+    toda alta registrada): se enseñan aparte, nunca se pierden.
+    """
+    placed = {
+        extension.pk for period in periods
+        for extension in period.extensions
+    }
+    return [entry for entry in extensions if entry.pk not in placed]
 
 
 def unmatched_contracts(periods, contracts):

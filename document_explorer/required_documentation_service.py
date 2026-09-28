@@ -374,24 +374,44 @@ def attach_subtype_documents(entries, current, obsolete):
     donde estaba -- nunca desaparece de la ficha. Devuelve
     (current, obsolete) ya filtradas.
     """
+    # H30 (S122): con un padre ACUMULABLE (varios vigentes a la vez --
+    # contratos) el subtipo se cuelga del documento del padre más
+    # reciente ANTERIOR (o igual) a su propia fecha -- la prórroga del
+    # contrato que alarga, nunca siempre del último contrato. Sin fecha
+    # en el subtipo, o sin ningún padre anterior, el más reciente de
+    # todos (criterio de S120, que es el único posible con un padre no
+    # acumulable: solo hay un vigente).
+    def _date_key(item):
+        return (item.expiry_date or item.issue_date or date.min, item.pk)
+
     parents_by_type = {}
     for entry in current:
         if not entry.document_type_id:
             continue
-        best = parents_by_type.get(entry.document_type_id)
-        key = (entry.expiry_date or entry.issue_date or date.min, entry.pk)
-        if best is None or key > (
-            best.expiry_date or best.issue_date or date.min, best.pk,
-        ):
-            parents_by_type[entry.document_type_id] = entry
+        parents_by_type.setdefault(entry.document_type_id, []).append(entry)
+    for group in parents_by_type.values():
+        group.sort(key=lambda item: (item.issue_date or date.min, item.pk))
+
+    def _parent_for(entry, candidates):
+        latest = max(candidates, key=_date_key)
+        if not entry.issue_date:
+            return latest
+        earlier = [
+            candidate for candidate in candidates
+            if candidate.issue_date
+            and candidate.issue_date <= entry.issue_date
+        ]
+        return earlier[-1] if earlier else latest
+
     moved = set()
     for entry in sorted(entries, key=lambda item: item.pk, reverse=True):
         document_type = entry.document_type
         if document_type is None or not document_type.parent_type_id:
             continue
-        parent = parents_by_type.get(document_type.parent_type_id)
-        if parent is None:
+        candidates = parents_by_type.get(document_type.parent_type_id)
+        if not candidates:
             continue
+        parent = _parent_for(entry, candidates)
         if not hasattr(parent, "subtype_documents"):
             parent.subtype_documents = []
         parent.subtype_documents.append(entry)

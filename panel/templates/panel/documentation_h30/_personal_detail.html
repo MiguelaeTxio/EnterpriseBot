@@ -933,6 +933,9 @@ usan los documentos.
                                 <span class="text-danger fw-semibold"><i class="bi bi-exclamation-triangle-fill me-1"></i>Falta contrato</span>
                                 <span class="small text-muted">(fechado entre el {{ period.search_from|date:"d/m/Y" }} y el {{ period.search_to|date:"d/m/Y" }})</span>
                                 {% endif %}
+                                {% for extension in period.extensions %}
+                                <div class="small text-muted"><i class="bi bi-arrow-return-right me-1"></i><a href="{% url 'panel:documentation_document_view' extension.pk %}" target="_blank">Prórroga del {{ extension.issue_date|date:"d/m/Y" }}{% if extension.expiry_date %} al {{ extension.expiry_date|date:"d/m/Y" }}{% endif %}</a></div>
+                                {% endfor %}
                             </td>
                         </tr>
                         {% endfor %}
@@ -944,6 +947,11 @@ usan los documentos.
                 {% if employment.undated_altas %}
                 <p class="small mb-1 text-danger"><i class="bi bi-exclamation-triangle-fill me-1"></i>Altas sin fecha (no se pueden emparejar con su contrato):
                     {% for alta in employment.undated_altas %}<a href="{% url 'panel:documentation_document_view' alta.pk %}" target="_blank">{{ alta.name }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}
+                </p>
+                {% endif %}
+                {% if employment.unplaced_extensions %}
+                <p class="small mb-1 text-muted">Prórrogas sin periodo (sin fecha o anteriores a toda alta):
+                    {% for extension in employment.unplaced_extensions %}<a href="{% url 'panel:documentation_document_view' extension.pk %}" target="_blank">{% if extension.issue_date %}{{ extension.issue_date|date:"d/m/Y" }}{% else %}{{ extension.name }} (sin fecha){% endif %}</a>{% if not forloop.last %}, {% endif %}{% endfor %}
                 </p>
                 {% endif %}
                 {% if employment.unmatched_contracts %}
