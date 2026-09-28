@@ -101,14 +101,23 @@ window.saveDocAlertsNav = function (patch) {
 
         <div class="col-12 col-lg-8">
             <div class="card">
-                <div class="card-header d-flex justify-content-between align-items-center">
+                <div class="card-header d-flex justify-content-between align-items-center gap-2">
                     <span class="fw-bold" id="alertsViewerTitle">Elige un requisito</span>
-                    <button type="button" class="btn btn-sm btn-primary d-none" id="alertsSaveBtn" onclick="saveAlertRules()">Guardar avisos</button>
+                    <span class="d-flex align-items-center gap-2">
+                        <span class="badge text-bg-warning d-none" id="alertsDirtyBadge">Cambios sin guardar</span>
+                        <button type="button" class="btn btn-sm btn-primary d-none" id="alertsSaveBtn" onclick="saveAlertRules()">Guardar avisos</button>
+                    </span>
                 </div>
+                {% comment %}
+                H30 (S122). Resultado del guardado justo debajo de la
+                cabecera, visible sin scroll -- Miguel Ángel: "no hay
+                ningún indicativo de que esté haciendo algo [...]
+                pecamos de silencio" (antes era una línea al pie).
+                {% endcomment %}
+                <div class="alert small py-1 px-2 m-2 mb-0 d-none" id="alertsViewerResult" role="status"></div>
                 <div class="card-body alerts-viewer-body" id="alertsViewerBody">
                     <p class="text-muted small mb-0">Elige un requisito de la lista para ver sus documentos obligatorios y asignarles avisos.</p>
                 </div>
-                <div class="card-footer small d-none" id="alertsViewerResult"></div>
             </div>
         </div>
     </div>
@@ -183,6 +192,7 @@ window.saveDocAlertsNav = function (patch) {
         const title = document.getElementById('alertsViewerTitle');
         const saveBtn = document.getElementById('alertsSaveBtn');
         document.getElementById('alertsViewerResult').classList.add('d-none');
+        setDirty(false);
         document.querySelectorAll('#alertsPositionList .list-group-item').forEach(el => el.classList.remove('active'));
 
         const position = byId[selectedId];
@@ -229,6 +239,7 @@ window.saveDocAlertsNav = function (patch) {
         const field = input.dataset.field;
         if (!typeId || !field) return;
         const cfg = draft[typeId] || (draft[typeId] = emptyConfig());
+        setDirty(true);
         if (input.type === 'checkbox') {
             cfg[field] = input.checked;
         } else if (field.endsWith('v')) {
@@ -245,11 +256,35 @@ window.saveDocAlertsNav = function (patch) {
         window.saveDocAlertsNav({position: positionId});
     };
 
+    function setDirty(isDirty) {
+        document.getElementById('alertsDirtyBadge').classList.toggle('d-none', !isDirty);
+    }
+
+    // Toast compartido del hub (vive fuera de las pestanas, ver
+    // hub.html) -- verde si todo fue bien, rojo si fallo.
+    function showToast(message, isError) {
+        const toastEl = document.getElementById('personGroupToast');
+        if (!toastEl || !window.bootstrap) return;
+        document.getElementById('personGroupToastBody').textContent = message;
+        toastEl.classList.toggle('bg-success', !isError);
+        toastEl.classList.toggle('bg-danger', isError);
+        bootstrap.Toast.getOrCreateInstance(toastEl).show();
+    }
+
     function showResult(message, isError) {
         const result = document.getElementById('alertsViewerResult');
         result.textContent = message;
-        result.classList.remove('d-none', 'text-danger', 'text-success');
-        result.classList.add(isError ? 'text-danger' : 'text-success');
+        result.classList.remove('d-none', 'alert-danger', 'alert-success');
+        result.classList.add(isError ? 'alert-danger' : 'alert-success');
+        showToast(message, isError);
+    }
+
+    function setSaving(isSaving) {
+        const btn = document.getElementById('alertsSaveBtn');
+        btn.disabled = isSaving;
+        btn.innerHTML = isSaving
+            ? '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Guardando…'
+            : 'Guardar avisos';
     }
 
     window.saveAlertRules = function () {
@@ -257,19 +292,31 @@ window.saveDocAlertsNav = function (patch) {
         if (!position) return;
         const formData = new FormData();
         formData.append('alert_rules', JSON.stringify(draft));
+        setSaving(true);
         fetch(`/panel/documentacion/avisos/requisito/${position.id}/guardar/`, {
             method: 'POST', body: formData,
             headers: {'X-CSRFToken': csrfToken()},
-        }).then(r => r.json()).then(data => {
+        }).then(r => r.json().catch(() => ({ok: false, error: `El servidor respondió con un error (HTTP ${r.status}).`})))
+        .then(data => {
+            setSaving(false);
             if (data.ok) {
                 position.rules = data.rules;
                 refreshBadge(position);
                 renderViewer();
-                showResult('Avisos guardados.', false);
+                const now = new Date().toLocaleTimeString('es-ES', {hour: '2-digit', minute: '2-digit'});
+                showResult(`Avisos de "${position.name}" guardados a las ${now}.`, false);
+                // Pendientes se recalcula con los avisos nuevos.
+                const noticesPane = document.getElementById('alertsNoticesPane');
+                if (noticesPane && window.htmx) {
+                    htmx.trigger('#alertsNoticesFilters', 'change');
+                }
             } else {
-                showResult(data.error || 'Error al guardar.', true);
+                showResult('No se ha guardado: ' + (data.error || 'error desconocido.'), true);
             }
-        }).catch(() => showResult('Error de red al guardar.', true));
+        }).catch(() => {
+            setSaving(false);
+            showResult('No se ha guardado: sin conexión con el servidor.', true);
+        });
     };
 
     window.toggleAlertsWhatsApp = function (input) {
@@ -288,9 +335,10 @@ window.saveDocAlertsNav = function (patch) {
             document.getElementById('alertsWhatsAppState').textContent = data.enabled
                 ? 'Activo: los avisos se envían cada día a las 8:00.'
                 : 'Apagado: no se envía ningún aviso por WhatsApp.';
+            showToast(data.enabled ? 'Envío automático por WhatsApp ACTIVADO.' : 'Envío automático por WhatsApp apagado.', false);
         }).catch(() => {
             input.checked = !enabled;
-            alert('No se pudo cambiar el envío por WhatsApp.');
+            showToast('No se pudo cambiar el envío por WhatsApp.', true);
         });
     };
 
