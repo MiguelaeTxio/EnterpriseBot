@@ -1877,11 +1877,19 @@ def _person_employment_periods(person):
         by_code[periods.ALTA_CODE], by_code[periods.CONTRACT_CODE],
         by_code[periods.BAJA_CODE],
     )
-    for period in built:
+    for index, period in enumerate(built):
         if not period.has_contract:
             period.search_from, period.search_to = (
                 periods.missing_contract_window(period)
             )
+        # Incidente real S122 (captura de Miguel Ángel, su propia
+        # ficha): un periodo sin baja registrada salía "En curso"
+        # aunque hubiera un alta posterior -- imposible, la relación
+        # anterior terminó. Solo el último periodo puede estar en
+        # curso; el resto sin baja es "Sin baja registrada".
+        period.is_open = (
+            period.end_baja is None and index == len(built) - 1
+        )
     missing_count = sum(1 for period in built if not period.has_contract)
     return {
         "periods": list(reversed(built)),

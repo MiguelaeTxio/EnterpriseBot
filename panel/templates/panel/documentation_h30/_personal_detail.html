@@ -924,7 +924,7 @@ usan los documentos.
                                 {% for alta in period.altas %}<a href="{% url 'panel:documentation_document_view' alta.pk %}" target="_blank">{{ alta.issue_date|date:"d/m/Y" }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}
                             </td>
                             <td class="text-nowrap">
-                                {% if period.end_baja %}<a href="{% url 'panel:documentation_document_view' period.end_baja.pk %}" target="_blank">{{ period.end_date|date:"d/m/Y" }}</a>{% else %}<span class="text-muted">En curso</span>{% endif %}
+                                {% if period.end_baja %}<a href="{% url 'panel:documentation_document_view' period.end_baja.pk %}" target="_blank">{{ period.end_date|date:"d/m/Y" }}</a>{% elif period.is_open %}<span class="text-muted">En curso</span>{% else %}<span class="text-warning-emphasis"><i class="bi bi-exclamation-circle me-1"></i>Sin baja registrada</span>{% endif %}
                             </td>
                             <td>
                                 {% if period.has_contract %}
