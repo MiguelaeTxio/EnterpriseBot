@@ -231,8 +231,8 @@ de S113, ni un cálculo de altura por JS, ni una cadena flexbox desde
 barra ni desplazamiento posible) resolvían esto de forma fiable.
 Sustituido por un mecanismo mucho más acotado y sencillo: un único
 panel grande (#personal-bottom-panel) con una altura en píxeles
-calculada por JS UNA sola vez (ver script más abajo,
-recomputeBottomPanelHeight()) -- el hueco real bajo el panel superior
+calculada por JS (desde S123 en el parcial compartido
+panel/_fixed_list_layout.html, mismo algoritmo que Avisos) -- el hueco real bajo el panel superior
 hasta el borde inferior del viewport, medido restando el exceso real
 del documento (mismo principio matemático que el intento anterior,
 pero aplicado a un solo contenedor, no a dos). Dentro de ese panel de
@@ -338,53 +338,11 @@ las filas de debajo se desplacen de verdad.
     let personMassEpiBatchModalInstance = null;
     let personMassJobPositionModalInstance = null;
 
-    // H31 (S114). Tercer intento tras dos incidentes reales seguidos
-    // (68vh fijo, luego una cadena flexbox desde .main-content que
-    // además rompió el scroll interno por completo). Se calcula la
-    // altura de UN SOLO panel (#personal-bottom-panel) -- el hueco
-    // real bajo el panel superior hasta el borde inferior del
-    // viewport, midiendo cuánto se pasa document.documentElement.
-    // scrollHeight de window.innerHeight con el panel puesto en
-    // 'auto' y restando ese exceso -- álgebra: si T es la altura
-    // natural del panel y "resto" es todo lo demás de la página, el
-    // exceso medido es (resto + T - viewport); la altura final
-    // (T - exceso) da exactamente (viewport - resto), sea cual sea T.
-    // Dentro de este panel de altura ya fija, el listado y el visor
-    // de selección usan el mismo patrón h-100 + flex:1;min-height:0
-    // ya probado en producción para "Grupos de reparto" -- nunca
-    // flex-grow encadenado a través de varios niveles del grid de
-    // Bootstrap, que es donde se rompió el intento anterior.
-    const PERSONAL_BOTTOM_PANEL_GUTTER = 8;
-    const PERSONAL_BOTTOM_PANEL_MIN_HEIGHT = 240;
-    const bottomPanelEl = document.getElementById('personal-bottom-panel');
-
-    function recomputeBottomPanelHeight() {
-        if (!bottomPanelEl) return;
-        bottomPanelEl.style.height = 'auto';
-        const naturalHeight = bottomPanelEl.getBoundingClientRect().height;
-        const overflow = Math.max(document.documentElement.scrollHeight - window.innerHeight, 0);
-        const target = Math.max(naturalHeight - overflow - PERSONAL_BOTTOM_PANEL_GUTTER, PERSONAL_BOTTOM_PANEL_MIN_HEIGHT);
-        bottomPanelEl.style.height = target + 'px';
-    }
-
-    window.addEventListener('resize', recomputeBottomPanelHeight);
-    // El panel superior (#personal-top-panel) puede cambiar de altura
-    // (formulario de edición de grupo, mensaje de una acción masiva)
-    // -- un ResizeObserver sobre él recalcula sin tener que localizar
-    // cada punto del código que lo modifica.
-    const topPanelEl = document.getElementById('personal-top-panel');
-    if (topPanelEl && window.ResizeObserver) {
-        const bottomPanelObserver = new ResizeObserver(function () {
-            recomputeBottomPanelHeight();
-        });
-        bottomPanelObserver.observe(topPanelEl);
-    }
-    // Primer cálculo en el siguiente frame, y una repetición de
-    // seguridad a los 300ms para cualquier reflujo tardío (fuentes,
-    // iconos) -- 'load' no vuelve a dispararse para contenido cargado
-    // por htmx después de la carga inicial de la página.
-    requestAnimationFrame(recomputeBottomPanelHeight);
-    setTimeout(recomputeBottomPanelHeight, 300);
+    // H30 (S123): la altura de #personal-bottom-panel la calcula ya el
+    // parcial compartido panel/_fixed_list_layout.html (incluido al
+    // final de este archivo), mismo algoritmo que Avisos y que Centros
+    // de gasto -- antes vivía aquí una copia propia que no se
+    // recalculaba al mostrarse la pestaña.
 
     // H31 (S113): nombres de las personas actualmente seleccionadas,
     // para poder pintar el visor de selección (izquierda del selector
@@ -1805,3 +1763,4 @@ modal de alta por completo, nunca dando pie a seguir con esta persona).
     };
 })();
 </script>
+{% include "panel/_fixed_list_layout.html" with top_id="personal-top-panel" bottom_id="personal-bottom-panel" %}

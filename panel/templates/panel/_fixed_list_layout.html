@@ -5,11 +5,11 @@ todos los listados del panel: el panel inferior (bottom_id) toma la
 altura exacta del hueco que queda bajo el panel fijo (top_id) hasta el
 borde del viewport, y dentro de él solo hace scroll el contenedor
 .fixed-list-scroll, con la cabecera de columnas pegada arriba (sticky).
-Altura = hueco real desde el panel hasta el borde inferior de la ventana,
-menos cualquier exceso que aún haga salirse la página (corregido S117,
-ver comentario en el script), recalculado al redimensionar, cuando
-cambia la altura del panel superior (ResizeObserver), al asentarse un
-swap de htmx y al mostrarse una pestaña.
+Altura = altura natural del panel menos el exceso real de la página
+sobre la ventana (mismo algoritmo que Avisos, S123), recalculada al
+redimensionar, cuando cambia el panel superior (ResizeObserver), al
+asentarse un swap de htmx y al pulsar una pestaña. Por debajo de 992 px,
+altura natural.
 
 Uso: {% include "panel/_fixed_list_layout.html" with top_id="..." bottom_id="..." %}
 {% endcomment %}
@@ -30,41 +30,65 @@ Uso: {% include "panel/_fixed_list_layout.html" with top_id="..." bottom_id="...
     const topPanel = document.getElementById("{{ top_id|escapejs }}");
     if (!bottomPanel) return;
 
-    // CORREGIDO S117 (incidente real de Miguel Ángel con captura: en la
-    // pestaña Centros de Gasto del hub de Documentación, cargada por
-    // htmx, el listado se quedaba en el mínimo de 240px con media
-    // pantalla vacía debajo). El algoritmo anterior (altura natural
-    // menos el exceso de document.scrollHeight) dependía de que la
-    // página ya estuviera asentada al medir; con contenido llegado por
-    // htmx el exceso salía inflado. Ahora, dos pasadas:
-    // 1) altura = hueco real desde el borde superior del panel hasta el
-    //    borde inferior de la ventana;
-    // 2) si aun así la página se sale (relleno/margen inferior de los
-    //    contenedores), se resta exactamente ese exceso.
-    // Se recalcula además al asentarse cualquier swap de htmx y al
-    // mostrarse una pestaña de Bootstrap.
+    // H30 (S123), punto 5 de la hoja de ruta: mismo algoritmo que
+    // Avisos (S122), el que sí se ve bien en cualquier pantalla. En el
+    // ordenador de Alejandro las listas de Personal y Centros de gasto
+    // no cabían: el cálculo anterior medía desde el borde del panel y
+    // no se repetía al mostrarse la pestaña (el evento shown.bs.tab no
+    // es fiable en el hub, ver incidente S94 en hub.html).
+    // 1) El panel se pone en altura natural ('auto') y se mide.
+    // 2) Se mide cuánto se sale la página entera de la ventana.
+    // 3) Altura = natural - exceso: exactamente el hueco que queda
+    //    (álgebra de #personal-bottom-panel, S114), sea cual sea la
+    //    altura del contenido o de la pantalla.
+    // Por debajo de 992 px las columnas se apilan y el panel vuelve a
+    // su altura natural (scroll de página), igual que Avisos. Se
+    // recalcula al redimensionar, al cambiar el panel superior, al
+    // asentarse un swap de htmx y al pulsar cualquier pestaña del hub.
+    function detach() {
+        window.removeEventListener("resize", recompute);
+        document.body.removeEventListener("htmx:afterSettle", onSettle);
+        document.removeEventListener("click", onTabClick, true);
+        if (observer) observer.disconnect();
+    }
+
     function recompute() {
-        if (!bottomPanel.isConnected || bottomPanel.offsetParent === null) return;
-        const top = bottomPanel.getBoundingClientRect().top + window.scrollY;
-        let target = Math.max(window.innerHeight - top - GUTTER, MIN_HEIGHT);
-        bottomPanel.style.height = target + "px";
-        const overflow = document.documentElement.scrollHeight - window.innerHeight;
-        if (overflow > 0) {
-            target = Math.max(target - overflow, MIN_HEIGHT);
-            bottomPanel.style.height = target + "px";
+        if (!bottomPanel.isConnected) {
+            detach();
+            return;
+        }
+        bottomPanel.style.height = "auto";
+        if (window.innerWidth < 992 || bottomPanel.offsetParent === null) {
+            bottomPanel.style.height = "";
+            return;
+        }
+        const naturalHeight = bottomPanel.getBoundingClientRect().height;
+        const overflow = Math.max(
+            document.documentElement.scrollHeight - window.innerHeight, 0
+        );
+        bottomPanel.style.height = Math.max(
+            naturalHeight - overflow - GUTTER, MIN_HEIGHT
+        ) + "px";
+    }
+
+    function onSettle() {
+        requestAnimationFrame(recompute);
+    }
+
+    function onTabClick(ev) {
+        if (ev.target.closest("#docH30Tabs a, .nav-tabs a")) {
+            setTimeout(recompute, 250);
         }
     }
 
+    let observer = null;
     window.addEventListener("resize", recompute);
     if (topPanel && window.ResizeObserver) {
-        new ResizeObserver(recompute).observe(topPanel);
+        observer = new ResizeObserver(recompute);
+        observer.observe(topPanel);
     }
-    document.body.addEventListener("htmx:afterSettle", function () {
-        requestAnimationFrame(recompute);
-    });
-    document.addEventListener("shown.bs.tab", function () {
-        requestAnimationFrame(recompute);
-    });
+    document.body.addEventListener("htmx:afterSettle", onSettle);
+    document.addEventListener("click", onTabClick, true);
     requestAnimationFrame(recompute);
     setTimeout(recompute, 300);
 }());
