@@ -1304,3 +1304,54 @@ table.table #toll-thead ~ tbody tr:nth-child(even):not(.table-secondary) td {
     width: 1px;
     background-color: var(--bs-border-color);
 }
+
+/* ------------------------------------------------------------------
+   H30 (S122) -- Gestor de Requisitos de documentación: estilos
+   sacados de la plantilla (antes inline, avisos H021 de djlint --
+   directriz 4.9) y tabla de avisos por documento obligatorio.
+   ------------------------------------------------------------------ */
+.jp-types-scroll {
+    max-height: 55vh;
+    overflow-y: auto;
+    border: 1px solid #dee2e6;
+    border-radius: 0.25rem;
+    padding: 0.5rem;
+}
+
+.jp-type-columns {
+    columns: 3;
+    column-gap: 1.5rem;
+}
+
+.jp-type-item {
+    break-inside: avoid;
+}
+
+.jp-alert-scroll {
+    max-height: 35vh;
+    overflow-y: auto;
+}
+
+.jp-sticky-head {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+
+.jp-custom-notice {
+    min-width: 9rem;
+}
+
+.jp-preview-card {
+    position: sticky;
+    top: 1rem;
+}
+
+.jp-preview-body {
+    max-height: 420px;
+    overflow-y: auto;
+}
+
+.jp-toast-container {
+    z-index: 1080;
+}

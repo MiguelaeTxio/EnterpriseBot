@@ -115,7 +115,7 @@ botón aparte para lo mismo sobraba.
                     aplicado en plantillas de dosier: nombre y visor
                     quedan fuera del scroll, siempre visibles.
                     {% endcomment %}
-                    <div style="max-height: 55vh; overflow-y: auto; border: 1px solid #dee2e6; border-radius: 0.25rem; padding: 0.5rem;">
+                    <div class="jp-types-scroll">
                     {% comment %}
                     H30 (S120). Clases concretas del permiso de
                     conducción -- Miguel Ángel: "esto en realidad es una
@@ -137,18 +137,50 @@ botón aparte para lo mismo sobraba.
                         </div>
                     </div>
                     {% for fam in families %}
-                    <div class="mb-2 p-2 rounded" style="background-color: {{ fam.color }};">
+                    <div class="mb-2 p-2 rounded jp-family-block" data-bg-color="{{ fam.color }}">
                         <div class="fw-bold small mb-1">{{ fam.label }}</div>
-                        <div style="columns: 3; column-gap: 1.5rem;">
+                        <div class="jp-type-columns">
                             {% for dt in fam.types %}
-                            <div class="form-check" style="break-inside: avoid;">
-                                <input class="form-check-input position-type-checkbox" type="checkbox" value="{{ dt.pk }}" id="ptCheck{{ dt.pk }}" data-label="{{ dt.label|escapejs }}" onchange="refreshDraftPreview()">
+                            <div class="form-check jp-type-item">
+                                <input class="form-check-input position-type-checkbox" type="checkbox" value="{{ dt.pk }}" id="ptCheck{{ dt.pk }}" data-label="{{ dt.label|escapejs }}" data-tracks-expiry="{% if dt.tracks_expiry %}1{% else %}0{% endif %}" onchange="refreshDraftPreview()">
                                 <label class="form-check-label small" for="ptCheck{{ dt.pk }}">{{ dt.label }}</label>
                             </div>
                             {% endfor %}
                         </div>
                     </div>
                     {% endfor %}
+                    </div>
+
+                    {% comment %}
+                    H30 (S122). Avisos de cada documento obligatorio --
+                    Miguel Ángel: "el mismo requisito de documentación
+                    es el que nos sirve para los avisos [...] además de
+                    avisar porque estén caducados habrá que avisar
+                    también de que no los tenemos". Una fila por tipo
+                    marcado arriba (la dibuja el JS al marcar/desmarcar);
+                    en tipos sin caducidad solo cabe "Si falta".
+                    {% endcomment %}
+                    <div class="mt-3">
+                        <div class="fw-bold small mb-1">Avisos de cada documento obligatorio</div>
+                        <div class="table-responsive border rounded jp-alert-scroll">
+                            <table class="table table-sm align-middle mb-0 small">
+                                <thead class="table-light jp-sticky-head">
+                                    <tr>
+                                        <th>Documento</th>
+                                        <th class="text-center">Si falta</th>
+                                        <th class="text-center">30 días</th>
+                                        <th class="text-center">15 días</th>
+                                        <th class="text-center">7 días</th>
+                                        <th class="text-center">Día anterior</th>
+                                        <th>Personalizado 1</th>
+                                        <th>Personalizado 2</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="alertRulesBody">
+                                    <tr><td colspan="8" class="text-muted">Marca arriba los documentos obligatorios para configurar sus avisos.</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
 
                     <div id="positionFormResult" class="small mt-2"></div>
@@ -162,9 +194,9 @@ botón aparte para lo mismo sobraba.
                     fijo también" -- mismo componente sticky que
                     plantillas de dosier, reutilizado aquí tal cual.
                     {% endcomment %}
-                    <div class="card h-100" style="position: sticky; top: 1rem;">
+                    <div class="card h-100 jp-preview-card">
                         <div class="card-header fw-bold" id="draftPreviewTitle">Nuevo requisito</div>
-                        <div class="card-body p-2" style="max-height: 420px; overflow-y: auto;">
+                        <div class="card-body p-2 jp-preview-body">
                             <ul class="mb-0 small" id="draftPreviewList">
                                 <li class="text-muted">Ningún documento marcado todavía.</li>
                             </ul>
@@ -185,7 +217,7 @@ H31 (S113). Mismo criterio ya aplicado a lotes de EPIs, plantillas de
 dosier y grupos de reparto: guardar/eliminar no recarga la página,
 avisa con un toast auto-oculto.
 {% endcomment %}
-<div class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 1080;">
+<div class="toast-container position-fixed top-0 end-0 p-3 jp-toast-container">
     <div id="positionToast" class="toast align-items-center text-white bg-success border-0" role="alert" aria-live="assertive" aria-atomic="true" data-bs-delay="2000">
         <div class="d-flex">
             <div class="toast-body" id="positionToastBody">Guardado.</div>
@@ -194,7 +226,79 @@ avisa con un toast auto-oculto.
     </div>
 </div>
 
+{{ alert_rules_by_position|json_script:"alertRulesByPositionData" }}
+
 <script>
+// H30 (S122): avisos guardados de cada requisito ({pk: {id_tipo: cfg}})
+// y configuracion en edicion del formulario actual ({id_tipo: cfg}).
+const alertRulesByPosition = JSON.parse(document.getElementById('alertRulesByPositionData').textContent);
+let alertConfig = {};
+
+function emptyAlertConfig() {
+    return {missing: false, d30: false, d15: false, d7: false, d1: false, c1v: null, c1u: '', c2v: null, c2u: ''};
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function customCell(typeId, slot, cfg) {
+    const value = cfg['c' + slot + 'v'] ?? '';
+    const unit = cfg['c' + slot + 'u'] || '';
+    return `<div class="input-group input-group-sm jp-custom-notice">
+        <input type="number" min="1" max="999" class="form-control" value="${value}" data-type-id="${typeId}" data-field="c${slot}v" onchange="onAlertFieldChange(this)">
+        <select class="form-select" data-type-id="${typeId}" data-field="c${slot}u" onchange="onAlertFieldChange(this)">
+            <option value="" ${unit === '' ? 'selected' : ''}>--</option>
+            <option value="DAYS" ${unit === 'DAYS' ? 'selected' : ''}>días</option>
+            <option value="MONTHS" ${unit === 'MONTHS' ? 'selected' : ''}>meses</option>
+        </select>
+    </div>`;
+}
+
+function checkCell(typeId, field, cfg) {
+    return `<td class="text-center"><input class="form-check-input" type="checkbox" data-type-id="${typeId}" data-field="${field}" ${cfg[field] ? 'checked' : ''} onchange="onAlertFieldChange(this)"></td>`;
+}
+
+function renderAlertRules() {
+    const body = document.getElementById('alertRulesBody');
+    const checked = Array.from(document.querySelectorAll('.position-type-checkbox:checked'));
+    if (!checked.length) {
+        body.innerHTML = '<tr><td colspan="8" class="text-muted">Marca arriba los documentos obligatorios para configurar sus avisos.</td></tr>';
+        return;
+    }
+    body.innerHTML = checked.map(el => {
+        const typeId = el.value;
+        if (!alertConfig[typeId]) alertConfig[typeId] = emptyAlertConfig();
+        const cfg = alertConfig[typeId];
+        const label = escapeHtml(el.dataset.label);
+        if (el.dataset.tracksExpiry !== '1') {
+            return `<tr><td>${label}</td>${checkCell(typeId, 'missing', cfg)}<td colspan="6" class="text-muted">Sin caducidad: solo aviso si falta.</td></tr>`;
+        }
+        return `<tr><td>${label}</td>${checkCell(typeId, 'missing', cfg)}${checkCell(typeId, 'd30', cfg)}${checkCell(typeId, 'd15', cfg)}${checkCell(typeId, 'd7', cfg)}${checkCell(typeId, 'd1', cfg)}<td>${customCell(typeId, 1, cfg)}</td><td>${customCell(typeId, 2, cfg)}</td></tr>`;
+    }).join('');
+}
+
+function onAlertFieldChange(input) {
+    const cfg = alertConfig[input.dataset.typeId] || (alertConfig[input.dataset.typeId] = emptyAlertConfig());
+    const field = input.dataset.field;
+    if (input.type === 'checkbox') {
+        cfg[field] = input.checked;
+    } else if (field.endsWith('v')) {
+        cfg[field] = input.value === '' ? null : Number(input.value);
+    } else {
+        cfg[field] = input.value;
+    }
+}
+
+// Solo los tipos marcados viajan al servidor.
+function checkedAlertConfig() {
+    const result = {};
+    getCheckedTypeIds().forEach(id => { result[id] = alertConfig[id] || emptyAlertConfig(); });
+    return result;
+}
+
 function getCookie(name) {
     const value = `; ${document.cookie}`;
     const parts = value.split(`; ${name}=`);
@@ -223,6 +327,7 @@ function refreshDraftPreview() {
     const title = document.getElementById('draftPreviewTitle');
     const name = document.getElementById('positionName').value.trim();
     title.textContent = name || 'Nuevo requisito';
+    renderAlertRules();
 }
 
 // --- Deteccion de cambios sin guardar ------------------------------------
@@ -240,6 +345,7 @@ function currentSnapshot() {
         name: document.getElementById('positionName').value.trim(),
         ids: getCheckedTypeIds().slice().sort(),
         categoryIds: getCheckedCategoryIds().slice().sort(),
+        alerts: checkedAlertConfig(),
     });
 }
 
@@ -278,6 +384,7 @@ function loadPositionIntoForm(pk) {
         const el = document.getElementById('pcCheck' + id);
         if (el) el.checked = true;
     });
+    alertConfig = JSON.parse(JSON.stringify(alertRulesByPosition[String(pk)] || {}));
     document.getElementById('formTitle').textContent = 'Editando: ' + name;
     document.getElementById('cancelEditBtn').classList.remove('d-none');
     refreshDraftPreview();
@@ -289,6 +396,7 @@ function resetForm() {
     document.getElementById('positionName').value = '';
     loadedName = null;
     document.querySelectorAll('.position-type-checkbox, .position-category-checkbox').forEach(el => { el.checked = false; });
+    alertConfig = {};
     document.getElementById('formTitle').textContent = 'Nuevo requisito';
     document.getElementById('cancelEditBtn').classList.add('d-none');
     document.getElementById('positionFormResult').innerHTML = '';
@@ -361,6 +469,8 @@ function savePosition() {
     formData.append('name', name);
     typeIds.forEach(id => formData.append('document_type_ids', id));
     categoryIds.forEach(id => formData.append('driving_category_ids', id));
+    const savedAlerts = checkedAlertConfig();
+    formData.append('alert_rules', JSON.stringify(savedAlerts));
 
     const url = pk
         ? `/panel/documentacion/puestos/${pk}/guardar/`
@@ -377,6 +487,7 @@ function savePosition() {
             document.getElementById('formTitle').textContent = 'Editando: ' + data.name;
             document.getElementById('cancelEditBtn').classList.remove('d-none');
             upsertPositionRow(data.id, data.name, typeIds, categoryIds);
+            alertRulesByPosition[String(data.id)] = JSON.parse(JSON.stringify(savedAlerts));
             takeSnapshot();
             showPositionToast('Requisito guardado.');
         } else {
@@ -396,6 +507,7 @@ function deletePosition(pk) {
         if (data.ok) {
             const row = document.getElementById('positionRow' + pk);
             if (row) row.remove();
+            delete alertRulesByPosition[String(pk)];
             const tbody = document.getElementById('positionsTableBody');
             if (!tbody.children.length) {
                 const tr = document.createElement('tr');
@@ -412,4 +524,10 @@ function deletePosition(pk) {
 }
 
 document.addEventListener('DOMContentLoaded', takeSnapshot);
+
+// H30 (S122): color de fondo de cada familia (dato del catalogo), fuera
+// de atributos style en la plantilla (aviso H021 de djlint, 4.9).
+document.querySelectorAll('.jp-family-block').forEach(el => {
+    el.style.backgroundColor = el.dataset.bgColor;
+});
 </script>

@@ -2836,6 +2836,104 @@ class JobPosition(models.Model):
         return self.name
 
 
+class RequirementAlertRule(models.Model):
+    """
+    H30 (S122). Notice settings of one mandatory document type inside
+    one documentation requirement (JobPosition).
+
+    ---
+
+    H30 (S122). Configuración de avisos de UN tipo documental
+    obligatorio dentro de UN requisito de documentación. Miguel Ángel:
+    "el mismo requisito de documentación es el que nos sirve para los
+    avisos [...] cada requisito de documentación tiene una serie de
+    documentos que son obligatorios [...] además de avisar porque
+    estén caducados habrá que avisar también de que no los tenemos".
+
+    Una fila por (requisito, tipo). Todo apagado por defecto: un tipo
+    obligatorio sin ninguna casilla marcada no genera ningún aviso.
+    Los avisos de caducidad solo tienen sentido en tipos con
+    `tracks_expiry=True`; "si falta" vale para cualquier tipo.
+    """
+
+    UNIT_DAYS = "DAYS"
+    UNIT_MONTHS = "MONTHS"
+    UNIT_CHOICES = [
+        (UNIT_DAYS, "días"),
+        (UNIT_MONTHS, "meses"),
+    ]
+
+    job_position = models.ForeignKey(
+        JobPosition,
+        on_delete=models.CASCADE,
+        related_name="alert_rules",
+        verbose_name="Requisito de documentación",
+    )
+    document_type = models.ForeignKey(
+        DocumentTypeCatalog,
+        on_delete=models.CASCADE,
+        related_name="requirement_alert_rules",
+        verbose_name="Tipo documental",
+    )
+    notify_missing = models.BooleanField(
+        default=False,
+        verbose_name="Avisar si falta",
+    )
+    notify_30_days = models.BooleanField(
+        default=False,
+        verbose_name="Avisar 30 días antes",
+    )
+    notify_15_days = models.BooleanField(
+        default=False,
+        verbose_name="Avisar 15 días antes",
+    )
+    notify_7_days = models.BooleanField(
+        default=False,
+        verbose_name="Avisar 7 días antes",
+    )
+    notify_day_before = models.BooleanField(
+        default=False,
+        verbose_name="Avisar el día anterior",
+    )
+    custom_1_value = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        verbose_name="Aviso personalizado 1 -- antelación",
+    )
+    custom_1_unit = models.CharField(
+        max_length=6,
+        choices=UNIT_CHOICES,
+        blank=True,
+        verbose_name="Aviso personalizado 1 -- unidad",
+    )
+    custom_2_value = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        verbose_name="Aviso personalizado 2 -- antelación",
+    )
+    custom_2_unit = models.CharField(
+        max_length=6,
+        choices=UNIT_CHOICES,
+        blank=True,
+        verbose_name="Aviso personalizado 2 -- unidad",
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name="Última edición",
+    )
+
+    class Meta:
+        verbose_name = "Aviso de requisito de documentación"
+        verbose_name_plural = "Avisos de requisitos de documentación"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("job_position", "document_type"),
+                name="unique_alert_rule_per_position_type",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.job_position} -- {self.document_type}"
 
 
 class DrivingLicenceCategory(models.Model):

@@ -27,7 +27,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.contrib.staticfiles.finders import find as find_static
 from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 from django.db.models import Count, OuterRef, Q, Subquery, Sum
 from django.db.models.functions import Coalesce
 from django.http import HttpResponse, JsonResponse
@@ -39,6 +39,7 @@ from django.views import View
 from email.message import EmailMessage as StdEmailMessage
 from email.utils import make_msgid
 from datetime import date, datetime
+import json
 import logging
 import unicodedata
 
@@ -50,7 +51,7 @@ from document_explorer.models import (
     DocumentTypeCatalog, DrivingLicenceCategory, EpiDelivery,
     EpiDeliveryBatchTemplate, EpiItemCatalog, EpiReview, JobPosition,
     PersonalDossierTemplate, PersonGroupTemplate, PersonIdentity,
-    path_digest,
+    RequirementAlertRule, path_digest,
 )
 from document_explorer.epi_delivery_document_service import (
     build_epi_delivery_pdf_bytes, resolve_company_fiscal_profile,
@@ -2866,6 +2867,113 @@ class MachineDossierTemplateApplyView(CompanyUserRequiredMixin, View):
         return _build_dossier_pdf_response(machine, combined)
 
 
+def _alert_rule_to_dict(rule):
+    """
+    Serialize one RequirementAlertRule for the requirement form.
+
+    ---
+
+    H30 (S122). Serializa un RequirementAlertRule para el formulario
+    de requisitos (mismas claves que envía el JS al guardar).
+    """
+    return {
+        "missing": rule.notify_missing,
+        "d30": rule.notify_30_days,
+        "d15": rule.notify_15_days,
+        "d7": rule.notify_7_days,
+        "d1": rule.notify_day_before,
+        "c1v": rule.custom_1_value,
+        "c1u": rule.custom_1_unit,
+        "c2v": rule.custom_2_value,
+        "c2u": rule.custom_2_unit,
+    }
+
+
+class AlertRuleError(Exception):
+    """
+    Invalid notice configuration sent by the requirement form.
+
+    ---
+
+    H30 (S122). Configuración de avisos no válida enviada por el
+    formulario de requisitos (mensaje listo para mostrar).
+    """
+
+
+def _parse_custom_notice(raw_value, raw_unit, position, type_label):
+    """
+    Validate one custom notice (amount + unit).
+
+    ---
+
+    H30 (S122). Valida un aviso personalizado (número + unidad).
+    Vacío = sin aviso. Devuelve (valor, unidad) o lanza
+    AlertRuleError.
+    """
+    if raw_value in (None, ""):
+        return None, ""
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError):
+        raise AlertRuleError(
+            "Aviso personalizado %d de '%s': la antelación debe ser un "
+            "número entero." % (position, type_label)
+        )
+    valid_units = {code for code, _ in RequirementAlertRule.UNIT_CHOICES}
+    if value < 1 or value > 999 or raw_unit not in valid_units:
+        raise AlertRuleError(
+            "Aviso personalizado %d de '%s': indica una antelación "
+            "entre 1 y 999 y si son días o meses." % (position, type_label)
+        )
+    return value, raw_unit
+
+
+def _parse_alert_rules(raw_json, type_ids):
+    """
+    Parse and validate the notice settings of the marked types.
+
+    ---
+
+    H30 (S122). Lee y valida la configuración de avisos que envía el
+    formulario (`alert_rules`, JSON {id_tipo: {...}}), solo para los
+    tipos marcados. Los avisos de caducidad se fuerzan a False en
+    tipos sin caducidad (`tracks_expiry=False`) -- la verdad es el
+    catálogo, nunca el cliente. Devuelve {id_tipo: dict de campos}.
+    """
+    try:
+        payload = json.loads(raw_json or "{}")
+    except ValueError:
+        raise AlertRuleError("La configuración de avisos no es válida.")
+    if not isinstance(payload, dict):
+        raise AlertRuleError("La configuración de avisos no es válida.")
+
+    types = DocumentTypeCatalog.objects.in_bulk(
+        [int(type_id) for type_id in type_ids],
+    )
+    parsed = {}
+    for type_pk, doc_type in types.items():
+        config = payload.get(str(type_pk)) or {}
+        tracks = doc_type.tracks_expiry
+        custom_1 = _parse_custom_notice(
+            config.get("c1v"), config.get("c1u"), 1, doc_type.label,
+        ) if tracks else (None, "")
+        custom_2 = _parse_custom_notice(
+            config.get("c2v"), config.get("c2u"), 2, doc_type.label,
+        ) if tracks else (None, "")
+        parsed[type_pk] = {
+            "notify_missing": bool(config.get("missing")),
+            "notify_30_days": tracks and bool(config.get("d30")),
+            "notify_15_days": tracks and bool(config.get("d15")),
+            "notify_7_days": tracks and bool(config.get("d7")),
+            "notify_day_before": tracks and bool(config.get("d1")),
+            "custom_1_value": custom_1[0],
+            "custom_1_unit": custom_1[1],
+            "custom_2_value": custom_2[0],
+            "custom_2_unit": custom_2[1],
+        }
+    return parsed
+
+
 class JobPositionManageView(CompanyUserRequiredMixin, View):
     """
     H31 (S109). GET: página de gestión de "Requisitos de
@@ -2916,9 +3024,18 @@ class JobPositionManageView(CompanyUserRequiredMixin, View):
         if "" in types_by_family:
             ordered_families.append(types_by_family[""])
 
+        # H30 (S122). Avisos configurados por tipo en cada requisito,
+        # para que el formulario los cargue junto con los tipos.
+        alert_rules_by_position = {}
+        for rule in RequirementAlertRule.objects.all():
+            alert_rules_by_position.setdefault(
+                str(rule.job_position_id), {},
+            )[str(rule.document_type_id)] = _alert_rule_to_dict(rule)
+
         return render(request, "panel/job_positions/manage.html", {
             "positions": positions,
             "families": ordered_families,
+            "alert_rules_by_position": alert_rules_by_position,
             # H30 (S120). Las 14 clases del catálogo, para exigir
             # clases concretas del carné en un requisito.
             "driving_categories": DrivingLicenceCategory.objects.all(),
@@ -2951,19 +3068,39 @@ class JobPositionSaveView(CompanyUserRequiredMixin, View):
                 status=400,
             )
 
+        type_ids = request.POST.getlist("document_type_ids")
+        # H30 (S122). Avisos por tipo obligatorio -- se validan ANTES
+        # de guardar nada, para no dejar el requisito a medias.
+        try:
+            alert_rules = _parse_alert_rules(
+                request.POST.get("alert_rules"), type_ids,
+            )
+        except AlertRuleError as exc:
+            return JsonResponse({"ok": False, "error": str(exc)}, status=400)
+
         position.name = name
         try:
-            position.save()
+            with transaction.atomic():
+                position.save()
+                position.required_document_types.set(type_ids)
+                # H30 (S120). Clases de permiso de conducción exigidas.
+                category_ids = request.POST.getlist("driving_category_ids")
+                position.required_driving_categories.set(category_ids)
+                # H30 (S122). Un tipo desmarcado pierde sus avisos.
+                RequirementAlertRule.objects.filter(
+                    job_position=position,
+                ).exclude(document_type_id__in=alert_rules.keys()).delete()
+                for type_pk, fields in alert_rules.items():
+                    RequirementAlertRule.objects.update_or_create(
+                        job_position=position,
+                        document_type_id=type_pk,
+                        defaults=fields,
+                    )
         except IntegrityError:
             return JsonResponse(
                 {"ok": False, "error": "Ya existe un requisito con ese nombre."},
                 status=400,
             )
-        type_ids = request.POST.getlist("document_type_ids")
-        position.required_document_types.set(type_ids)
-        # H30 (S120). Clases de permiso de conducción exigidas.
-        category_ids = request.POST.getlist("driving_category_ids")
-        position.required_driving_categories.set(category_ids)
 
         return JsonResponse({"ok": True, "id": position.pk, "name": position.name})
 
