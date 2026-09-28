@@ -1308,7 +1308,7 @@ table.table #toll-thead ~ tbody tr:nth-child(even):not(.table-secondary) td {
 /* ------------------------------------------------------------------
    H30 (S122) -- Gestor de Requisitos de documentación: estilos
    sacados de la plantilla (antes inline, avisos H021 de djlint --
-   directriz 4.9) y tabla de avisos por documento obligatorio.
+   directriz 4.9).
    ------------------------------------------------------------------ */
 .jp-types-scroll {
     max-height: 55vh;
@@ -1327,21 +1327,6 @@ table.table #toll-thead ~ tbody tr:nth-child(even):not(.table-secondary) td {
     break-inside: avoid;
 }
 
-.jp-alert-scroll {
-    max-height: 35vh;
-    overflow-y: auto;
-}
-
-.jp-sticky-head {
-    position: sticky;
-    top: 0;
-    z-index: 1;
-}
-
-.jp-custom-notice {
-    min-width: 9rem;
-}
-
 .jp-preview-card {
     position: sticky;
     top: 1rem;
@@ -1354,4 +1339,21 @@ table.table #toll-thead ~ tbody tr:nth-child(even):not(.table-secondary) td {
 
 .jp-toast-container {
     z-index: 1080;
+}
+
+/* ------------------------------------------------------------------
+   H30 (S122) -- Pestaña "Avisos" del hub de Documentación.
+   ------------------------------------------------------------------ */
+.alerts-position-list {
+    max-height: 60vh;
+    overflow-y: auto;
+}
+
+.alerts-viewer-body {
+    max-height: 60vh;
+    overflow-y: auto;
+}
+
+.alerts-custom-notice {
+    max-width: 22rem;
 }

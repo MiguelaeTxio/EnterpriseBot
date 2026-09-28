@@ -125,6 +125,19 @@
             <i class="bi bi-clipboard-check me-1"></i>Requisitos
         </a>
     </li>
+    <li class="nav-item">
+        {% comment %}
+        H30 (S122): avisos de los documentos obligatorios de cada
+        requisito, separados de la creación de requisitos a petición
+        de Miguel Ángel ("queda mucho más claro").
+        {% endcomment %}
+        <a class="nav-link {% if persisted_active_tab == 'avisos' %}active{% endif %}" id="tab-avisos" data-bs-toggle="tab" href="#pane-avisos"
+           hx-get="{% url 'panel:document_alerts_pane' %}"
+           hx-target="#pane-avisos"
+           hx-trigger="{% if persisted_active_tab == 'avisos' %}load once{% else %}click once{% endif %}">
+            <i class="bi bi-bell me-1"></i>Avisos
+        </a>
+    </li>
 </ul>
 
 <div class="tab-content">
@@ -147,6 +160,9 @@
         <div class="text-muted small py-3">Cargando…</div>
     </div>
     <div class="tab-pane fade {% if persisted_active_tab == 'requisitos' %}show active{% endif %}" id="pane-requisitos">
+        <div class="text-muted small py-3">Cargando…</div>
+    </div>
+    <div class="tab-pane fade {% if persisted_active_tab == 'avisos' %}show active{% endif %}" id="pane-avisos">
         <div class="text-muted small py-3">Cargando…</div>
     </div>
     <div class="tab-pane fade {% if persisted_active_tab == 'circulares' %}show active{% endif %}" id="pane-circulares">

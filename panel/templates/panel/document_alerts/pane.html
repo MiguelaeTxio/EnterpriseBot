@@ -1,0 +1,253 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/document_alerts/pane.html #}
+{% comment %}
+H30 (S122). Pestaña "Avisos" del hub de Documentación, separada de
+"Requisitos" a petición de Miguel Ángel: "la creación de requisitos es
+tal como lo teníamos. Y crear una pestaña nueva [...] para gestionar
+los avisos de esos requisitos [...] el listado de requisitos con el
+visor de los documentos que va a llevar cada requisito y los avisos
+que vamos a asignar a esos documentos [...] si un día tenemos que usar
+el móvil va a ser más cómodo".
+
+Arriba, el interruptor del envío automático por WhatsApp (apagado
+mientras la documentación no esté al día). Debajo, lista de requisitos
+y visor: cada documento obligatorio es una tarjeta con sus casillas en
+línea, que se apilan solas en pantalla estrecha. En tipos sin
+caducidad solo cabe "Si falta". El requisito elegido se guarda en la
+navegación del usuario (directriz 4.15).
+{% endcomment %}
+<div class="container-fluid px-3 pt-3">
+
+    <div class="card mb-3">
+        <div class="card-body py-2 d-flex flex-wrap align-items-center gap-3">
+            <div class="form-check form-switch mb-0">
+                <input class="form-check-input" type="checkbox" role="switch" id="alertsWhatsAppSwitch"
+                       {% if whatsapp_enabled %}checked{% endif %}
+                       {% if not can_toggle_whatsapp %}disabled{% endif %}
+                       onchange="toggleAlertsWhatsApp(this)">
+                <label class="form-check-label fw-bold" for="alertsWhatsAppSwitch">Envío automático por WhatsApp</label>
+            </div>
+            <span class="small text-muted" id="alertsWhatsAppState">
+                {% if whatsapp_enabled %}Activo: los avisos se envían cada día a las 8:00.{% else %}Apagado: no se envía ningún aviso por WhatsApp.{% endif %}
+            </span>
+        </div>
+    </div>
+
+    <div class="row g-3">
+        <div class="col-12 col-lg-4">
+            <div class="card">
+                <div class="card-header fw-bold">Requisitos de documentación</div>
+                <div class="list-group list-group-flush alerts-position-list" id="alertsPositionList">
+                    {% for item in positions_data %}
+                    <button type="button" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
+                            id="alertsPosition{{ item.id }}" onclick="selectAlertsPosition({{ item.id }})">
+                        <span>{{ item.name }}</span>
+                        <span class="badge text-bg-light" id="alertsPositionBadge{{ item.id }}"></span>
+                    </button>
+                    {% empty %}
+                    <div class="list-group-item text-muted small">No hay requisitos de documentación. Créalos en la pestaña Requisitos.</div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12 col-lg-8">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span class="fw-bold" id="alertsViewerTitle">Elige un requisito</span>
+                    <button type="button" class="btn btn-sm btn-primary d-none" id="alertsSaveBtn" onclick="saveAlertRules()">Guardar avisos</button>
+                </div>
+                <div class="card-body alerts-viewer-body" id="alertsViewerBody">
+                    <p class="text-muted small mb-0">Elige un requisito de la lista para ver sus documentos obligatorios y asignarles avisos.</p>
+                </div>
+                <div class="card-footer small d-none" id="alertsViewerResult"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{{ positions_data|json_script:"alertsPositionsData" }}
+{{ selected_position_pk|json_script:"alertsSelectedPositionData" }}
+
+<script>
+(function () {
+    const positions = JSON.parse(document.getElementById('alertsPositionsData').textContent);
+    const byId = {};
+    positions.forEach(p => { byId[p.id] = p; });
+    let selectedId = JSON.parse(document.getElementById('alertsSelectedPositionData').textContent);
+    let draft = {};
+
+    function csrfToken() {
+        const meta = document.querySelector('meta[name="csrf-token"]');
+        if (meta) return meta.getAttribute('content');
+        const match = document.cookie.match(/(?:^|; )csrftoken=([^;]+)/);
+        return match ? match[1] : '';
+    }
+
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    function emptyConfig() {
+        return {missing: false, d30: false, d15: false, d7: false, d1: false, c1v: null, c1u: '', c2v: null, c2u: ''};
+    }
+
+    // Etiqueta de cada requisito en la lista: cuantos documentos
+    // obligatorios tienen al menos un aviso.
+    function refreshBadge(position) {
+        const badge = document.getElementById('alertsPositionBadge' + position.id);
+        if (!badge) return;
+        const withNotice = position.types.filter(t => {
+            const r = position.rules[String(t.id)];
+            return r && (r.missing || r.d30 || r.d15 || r.d7 || r.d1 || r.c1v || r.c2v);
+        }).length;
+        badge.textContent = withNotice + '/' + position.types.length;
+    }
+
+    function checkBox(typeId, field, label, cfg) {
+        const id = 'alertsChk_' + typeId + '_' + field;
+        return `<div class="form-check form-check-inline mb-0">
+            <input class="form-check-input" type="checkbox" id="${id}" data-type-id="${typeId}" data-field="${field}" ${cfg[field] ? 'checked' : ''}>
+            <label class="form-check-label small" for="${id}">${label}</label>
+        </div>`;
+    }
+
+    function customField(typeId, slot, cfg) {
+        const value = cfg['c' + slot + 'v'] ?? '';
+        const unit = cfg['c' + slot + 'u'] || '';
+        return `<div class="input-group input-group-sm alerts-custom-notice">
+            <span class="input-group-text">Personalizado ${slot}</span>
+            <input type="number" min="1" max="999" class="form-control" value="${value}" data-type-id="${typeId}" data-field="c${slot}v">
+            <select class="form-select" data-type-id="${typeId}" data-field="c${slot}u">
+                <option value="" ${unit === '' ? 'selected' : ''}>--</option>
+                <option value="DAYS" ${unit === 'DAYS' ? 'selected' : ''}>días</option>
+                <option value="MONTHS" ${unit === 'MONTHS' ? 'selected' : ''}>meses</option>
+            </select>
+        </div>`;
+    }
+
+    function renderViewer() {
+        const body = document.getElementById('alertsViewerBody');
+        const title = document.getElementById('alertsViewerTitle');
+        const saveBtn = document.getElementById('alertsSaveBtn');
+        document.getElementById('alertsViewerResult').classList.add('d-none');
+        document.querySelectorAll('#alertsPositionList .list-group-item').forEach(el => el.classList.remove('active'));
+
+        const position = byId[selectedId];
+        if (!position) {
+            title.textContent = 'Elige un requisito';
+            saveBtn.classList.add('d-none');
+            body.innerHTML = '<p class="text-muted small mb-0">Elige un requisito de la lista para ver sus documentos obligatorios y asignarles avisos.</p>';
+            return;
+        }
+        const listItem = document.getElementById('alertsPosition' + position.id);
+        if (listItem) listItem.classList.add('active');
+        title.textContent = position.name;
+        draft = JSON.parse(JSON.stringify(position.rules));
+
+        if (!position.types.length) {
+            saveBtn.classList.add('d-none');
+            body.innerHTML = '<p class="text-muted small mb-0">Este requisito no tiene documentos obligatorios. Márcalos en la pestaña Requisitos.</p>';
+            return;
+        }
+        saveBtn.classList.remove('d-none');
+        body.innerHTML = position.types.map(t => {
+            const cfg = draft[String(t.id)] || (draft[String(t.id)] = emptyConfig());
+            let controls = checkBox(t.id, 'missing', 'Si falta', cfg);
+            if (t.tracks_expiry) {
+                controls += checkBox(t.id, 'd30', '30 días', cfg)
+                    + checkBox(t.id, 'd15', '15 días', cfg)
+                    + checkBox(t.id, 'd7', '7 días', cfg)
+                    + checkBox(t.id, 'd1', 'Día anterior', cfg);
+            }
+            const customs = t.tracks_expiry
+                ? `<div class="d-flex flex-wrap gap-2 mt-2">${customField(t.id, 1, cfg)}${customField(t.id, 2, cfg)}</div>`
+                : '<div class="small text-muted mt-1">Sin caducidad: solo aviso si falta.</div>';
+            return `<div class="border rounded p-2 mb-2">
+                <div class="fw-bold small mb-1">${escapeHtml(t.label)}</div>
+                <div class="d-flex flex-wrap gap-1">${controls}</div>
+                ${customs}
+            </div>`;
+        }).join('');
+    }
+
+    document.getElementById('alertsViewerBody').addEventListener('change', function (ev) {
+        const input = ev.target;
+        const typeId = input.dataset.typeId;
+        const field = input.dataset.field;
+        if (!typeId || !field) return;
+        const cfg = draft[typeId] || (draft[typeId] = emptyConfig());
+        if (input.type === 'checkbox') {
+            cfg[field] = input.checked;
+        } else if (field.endsWith('v')) {
+            cfg[field] = input.value === '' ? null : Number(input.value);
+        } else {
+            cfg[field] = input.value;
+        }
+    });
+
+    window.selectAlertsPosition = function (positionId) {
+        selectedId = positionId;
+        renderViewer();
+        // Directriz 4.15: el requisito elegido sobrevive a recargar.
+        fetch('/panel/navegacion/estado/documentation_hub/', {
+            method: 'POST',
+            headers: {'X-CSRFToken': csrfToken(), 'Content-Type': 'application/json'},
+            body: JSON.stringify({filters: {avisos: {position: positionId}}}),
+        });
+    };
+
+    function showResult(message, isError) {
+        const result = document.getElementById('alertsViewerResult');
+        result.textContent = message;
+        result.classList.remove('d-none', 'text-danger', 'text-success');
+        result.classList.add(isError ? 'text-danger' : 'text-success');
+    }
+
+    window.saveAlertRules = function () {
+        const position = byId[selectedId];
+        if (!position) return;
+        const formData = new FormData();
+        formData.append('alert_rules', JSON.stringify(draft));
+        fetch(`/panel/documentacion/avisos/requisito/${position.id}/guardar/`, {
+            method: 'POST', body: formData,
+            headers: {'X-CSRFToken': csrfToken()},
+        }).then(r => r.json()).then(data => {
+            if (data.ok) {
+                position.rules = data.rules;
+                refreshBadge(position);
+                renderViewer();
+                showResult('Avisos guardados.', false);
+            } else {
+                showResult(data.error || 'Error al guardar.', true);
+            }
+        }).catch(() => showResult('Error de red al guardar.', true));
+    };
+
+    window.toggleAlertsWhatsApp = function (input) {
+        const enabled = input.checked;
+        if (enabled && !confirm('¿Activar el envío automático por WhatsApp? En el próximo envío diario de las 8:00 saldrán todos los avisos que correspondan.')) {
+            input.checked = false;
+            return;
+        }
+        const formData = new FormData();
+        formData.append('enabled', enabled ? '1' : '0');
+        fetch('/panel/documentacion/avisos/whatsapp/', {
+            method: 'POST', body: formData,
+            headers: {'X-CSRFToken': csrfToken()},
+        }).then(r => r.json()).then(data => {
+            if (!data.ok) throw new Error();
+            document.getElementById('alertsWhatsAppState').textContent = data.enabled
+                ? 'Activo: los avisos se envían cada día a las 8:00.'
+                : 'Apagado: no se envía ningún aviso por WhatsApp.';
+        }).catch(() => {
+            input.checked = !enabled;
+            alert('No se pudo cambiar el envío por WhatsApp.');
+        });
+    };
+
+    positions.forEach(refreshBadge);
+    renderViewer();
+})();
+</script>

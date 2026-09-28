@@ -27,6 +27,11 @@ from panel.views_circulars_h31 import (
     CircularListView,
     CircularSaveContentView,
 )
+from panel.views_document_alerts import (
+    DocumentAlertRulesSaveView,
+    DocumentAlertsPaneView,
+    DocumentAlertWhatsAppToggleView,
+)
 from panel.views_navigation_state import NavigationStateSaveView
 from panel.views_lifting_accessories import (
     LiftingAccessoryAssignView,
@@ -522,6 +527,10 @@ urlpatterns = [
     path("documentacion/plantillas-dosier/<int:template_pk>/guardar/", DossierTemplateSaveView.as_view(), name="dossier_template_update"),
     # H31 (S109): gestión de puestos de trabajo -- "plantilla de puesto" (tipos documentales obligatorios por puesto).
     path("documentacion/puestos/", JobPositionManageView.as_view(), name="job_positions_manage"),
+    # H30 (S122). Pestaña "Avisos": avisos por requisito e interruptor de WhatsApp.
+    path("documentacion/avisos/", DocumentAlertsPaneView.as_view(), name="document_alerts_pane"),
+    path("documentacion/avisos/requisito/<int:position_pk>/guardar/", DocumentAlertRulesSaveView.as_view(), name="document_alert_rules_save"),
+    path("documentacion/avisos/whatsapp/", DocumentAlertWhatsAppToggleView.as_view(), name="document_alerts_whatsapp_toggle"),
     path("documentacion/puestos/guardar/", JobPositionSaveView.as_view(), name="job_position_create"),
     path("documentacion/puestos/<int:position_pk>/guardar/", JobPositionSaveView.as_view(), name="job_position_update"),
     path("documentacion/puestos/<int:position_pk>/eliminar/", JobPositionDeleteView.as_view(), name="job_position_delete"),
