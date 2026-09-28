@@ -4017,10 +4017,13 @@ class PersonalUpdateView(DocsUploadAccessMixin, View):
     FK_EDITABLE_FIELDS = ("job_position",)
     EDITABLE_FIELDS = TEXT_EDITABLE_FIELDS + DATE_EDITABLE_FIELDS + FK_EDITABLE_FIELDS
 
+    NAME_FIELDS = ("given_name", "first_surname", "second_surname")
+
     def post(self, request, pk):
         from datetime import date
 
         person = get_object_or_404(PersonIdentity, pk=pk)
+        old_names = tuple(getattr(person, f) for f in self.NAME_FIELDS)
         updated_fields = []
         for field in self.TEXT_EDITABLE_FIELDS:
             if field in request.POST:
@@ -4064,6 +4067,9 @@ class PersonalUpdateView(DocsUploadAccessMixin, View):
                 {"ok": False, "error": "; ".join(exc.messages)}, status=400,
             )
         person.save(update_fields=updated_fields)
+        renamed = 0
+        if tuple(getattr(person, f) for f in self.NAME_FIELDS) != old_names:
+            renamed = _realign_person_document_names(person)
         person_data = {
             f: getattr(person, f)
             for f in self.TEXT_EDITABLE_FIELDS + self.DATE_EDITABLE_FIELDS
@@ -4072,7 +4078,55 @@ class PersonalUpdateView(DocsUploadAccessMixin, View):
             {"id": person.job_position_id, "name": str(person.job_position)}
             if person.job_position_id else None
         )
-        return JsonResponse({"ok": True, "person": person_data})
+        return JsonResponse({
+            "ok": True, "person": person_data,
+            "renamed_documents": renamed,
+        })
+
+
+def _realign_person_document_names(person):
+    """
+    Realign the canonical names of a person's documents after a name or
+    surname change. Returns how many names changed.
+    ---
+    Realinea los nombres canónicos de los documentos de una persona tras
+    cambiar su nombre o apellidos (el nombre canónico los lleva dentro).
+    Devuelve cuántos nombres cambiaron. S121: hueco real encontrado al
+    corregir "CORREO" -> "CORREA" MUNHOZ (DNI a la vista) -- la ficha
+    permitía editar los apellidos, pero sus 64 documentos seguían con el
+    apellido viejo en el nombre. Misma función y convención que los
+    realineados masivos (apply_personal_canonical_rename, fecha ficticia
+    2021-01-01 de S98 solo dentro del nombre de los que no tienen
+    fecha): solo cambia `name` en BD, nunca el archivo en GCS.
+    """
+    from document_explorer.classification_service import (
+        apply_personal_canonical_rename,
+    )
+    from document_explorer.machine_folder_service import FICTITIOUS_DATE
+
+    entries = DocumentIndexEntry.objects.filter(
+        domain_content_type=ContentType.objects.get_for_model(PersonIdentity),
+        domain_object_id=person.pk,
+        entry_kind=DocumentIndexEntry.KIND_FILE,
+        deleted_at__isnull=True,
+        purged_at__isnull=True,
+        document_type__isnull=False,
+    ).select_related("document_type").order_by("pk")
+    reserved = set()
+    renamed = 0
+    for entry in entries:
+        old_name = entry.name
+        result = apply_personal_canonical_rename(
+            entry, fictitious_date=FICTITIOUS_DATE, apply_changes=True,
+            reserved_names=reserved,
+        )
+        if result.get("new_name") and result["new_name"] != old_name:
+            renamed += 1
+    logger.info(
+        "Ficha %s: nombre/apellidos cambiados, %d nombres de documento "
+        "realineados", person.pk, renamed,
+    )
+    return renamed
 
 
 class PersonalSetAvatarView(DocsUploadAccessMixin, View):

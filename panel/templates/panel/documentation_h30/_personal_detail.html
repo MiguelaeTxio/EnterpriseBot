@@ -1421,8 +1421,13 @@ document.getElementById('personalUpdateForm').onsubmit = function(ev) {
         headers: {'X-CSRFToken': getCookie('csrftoken')},
     }).then(r => r.json()).then(data => {
         if (data.ok) {
-            resultDiv.innerHTML = '<div class="alert alert-success py-1 px-2 small mb-0">Ficha actualizada.</div>';
+            // S121: al cambiar nombre o apellidos se realinean los nombres
+            // de sus documentos -- recargar para verlos ya con el nuevo.
+            const renamed = data.renamed_documents || 0;
+            resultDiv.innerHTML = '<div class="alert alert-success py-1 px-2 small mb-0">Ficha actualizada.'
+                + (renamed ? ' ' + renamed + ' nombres de documento actualizados.' : '') + '</div>';
             exitEditMode();
+            if (renamed) setTimeout(() => location.reload(), 1500);
         } else {
             resultDiv.innerHTML = `<div class="alert alert-danger py-1 px-2 small mb-0">${data.error || 'Error al guardar.'}</div>`;
         }
