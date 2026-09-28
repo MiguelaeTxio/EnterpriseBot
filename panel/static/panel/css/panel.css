@@ -1416,3 +1416,9 @@ table.table #toll-thead ~ tbody tr:nth-child(even):not(.table-secondary) td {
         flex: none;
     }
 }
+
+.recipients-checklist {
+    max-height: 12rem;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}

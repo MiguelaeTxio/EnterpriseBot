@@ -41,6 +41,11 @@ desaparece solo en cuanto se sube el documento que lo resuelve.
                 <option value="{{ option.pk }}" {% if option.pk == selected_doc_type %}selected{% endif %}>{{ option.label }}</option>
                 {% endfor %}
             </select>
+            <select class="form-select form-select-sm alerts-filter-select" name="who" aria-label="Destinatario">
+                {% if is_supervisor %}<option value="mine" {% if who == 'mine' %}selected{% endif %}>Solo mis avisos</option>{% endif %}
+                <option value="all" {% if who == 'all' %}selected{% endif %}>Todos los avisos</option>
+                <option value="none" {% if who == 'none' %}selected{% endif %}>Sin destinatario</option>
+            </select>
             <input type="search" class="form-control form-control-sm alerts-filter-query" name="q" id="alertsNoticesQuery" value="{{ query }}" placeholder="Buscar persona, máquina o documento">
         </div>
     </form>
@@ -60,6 +65,7 @@ desaparece solo en cuanto se sube el documento que lo resuelve.
                     <a class="list-group-item list-group-item-action py-1 small" href="{{ notice.detail_url }}">
                         <div class="d-flex justify-content-between gap-2"><span class="fw-bold">{{ notice.subject_label }}</span><span class="text-danger text-nowrap">hace {{ notice.days_ago }} día{{ notice.days_ago|pluralize }}</span></div>
                         <div>{{ notice.document_label }} — caducó el {{ notice.expiry_date|date:"d/m/Y" }}</div>
+                        <div class="small">{% if notice.recipient_names %}<span class="text-muted"><i class="bi bi-person-check me-1"></i>{{ notice.recipient_names }}</span>{% else %}<span class="badge text-bg-danger">Sin destinatario</span>{% endif %}</div>
                     </a>
                     {% empty %}
                     <div class="list-group-item small text-muted">Ningún documento caducado.</div>
@@ -73,6 +79,7 @@ desaparece solo en cuanto se sube el documento que lo resuelve.
                     <a class="list-group-item list-group-item-action py-1 small" href="{{ notice.detail_url }}">
                         <div class="d-flex justify-content-between gap-2"><span class="fw-bold">{{ notice.subject_label }}</span><span class="text-nowrap">faltan {{ notice.days_left }} día{{ notice.days_left|pluralize }}</span></div>
                         <div>{{ notice.document_label }} — caduca el {{ notice.expiry_date|date:"d/m/Y" }} <span class="text-muted">(aviso de {{ notice.reached_step.label }})</span></div>
+                        <div class="small">{% if notice.recipient_names %}<span class="text-muted"><i class="bi bi-person-check me-1"></i>{{ notice.recipient_names }}</span>{% else %}<span class="badge text-bg-danger">Sin destinatario</span>{% endif %}</div>
                     </a>
                     {% empty %}
                     <div class="list-group-item small text-muted">Ningún aviso de caducidad ha llegado todavía.</div>
@@ -86,6 +93,7 @@ desaparece solo en cuanto se sube el documento que lo resuelve.
                     <a class="list-group-item list-group-item-action py-1 small" href="{{ notice.detail_url }}">
                         <div class="d-flex justify-content-between gap-2"><span class="fw-bold">{{ notice.subject_label }}</span><span class="text-muted text-nowrap">{{ notice.requirement_name }}</span></div>
                         <div>Falta: {{ notice.document_label }}</div>
+                        <div class="small">{% if notice.recipient_names %}<span class="text-muted"><i class="bi bi-person-check me-1"></i>{{ notice.recipient_names }}</span>{% else %}<span class="badge text-bg-danger">Sin destinatario</span>{% endif %}</div>
                     </a>
                     {% empty %}
                     <div class="list-group-item small text-muted">No falta ningún documento con aviso configurado.</div>
@@ -105,6 +113,7 @@ desaparece solo en cuanto se sube el documento que lo resuelve.
                         <a class="list-group-item list-group-item-action py-1 small" href="{{ item.notice.detail_url }}">
                             <div class="d-flex justify-content-between gap-2"><span class="fw-bold">{{ item.trigger_date|date:"d/m" }} · {{ item.step_label }}</span><span class="text-muted text-nowrap">caduca {{ item.notice.expiry_date|date:"d/m/Y" }}</span></div>
                             <div>{{ item.notice.subject_label }} — {{ item.notice.document_label }}</div>
+                            <div class="small">{% if item.notice.recipient_names %}<span class="text-muted"><i class="bi bi-person-check me-1"></i>{{ item.notice.recipient_names }}</span>{% else %}<span class="badge text-bg-danger">Sin destinatario</span>{% endif %}</div>
                         </a>
                         {% endfor %}
                     </div>
@@ -129,6 +138,7 @@ desaparece solo en cuanto se sube el documento que lo resuelve.
             requirement: data.get('requirement') || '',
             doc_type: data.get('doc_type') || '',
             q: data.get('q') || '',
+            who: data.get('who') || '',
         });
     }
 

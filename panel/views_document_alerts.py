@@ -29,7 +29,11 @@ from django.views import View
 
 from document_explorer import document_notice_service as notices
 from document_explorer.models import (
-    DocumentTypeCatalog, JobPosition, PersonIdentity, RequirementAlertRule,
+    DocumentTypeCatalog, JobPosition, NoticeRecipientScope,
+    PersonGroupTemplate, PersonIdentity, RequirementAlertRule,
+)
+from document_explorer.notice_recipients import (
+    docs_supervisors, load_scopes, recipients_for,
 )
 from document_management.models import DocumentAlertSettings
 from fleet.models import MachineAsset
@@ -192,6 +196,152 @@ def _int_or_none(value):
         return None
 
 
+def _can_edit_scope(editor, supervisor):
+    """
+    True if `editor` may edit the notice scope of `supervisor`.
+
+    ---
+
+    Cada supervisor edita su propio ámbito y el administrador todos
+    (decisión de Miguel Ángel, S122).
+    """
+    return (
+        editor.pk == supervisor.pk
+        or editor.role == CompanyUser.ROLE_ADMIN
+    )
+
+
+def _scope_to_dict(scope):
+    """
+    Serialize one NoticeRecipientScope (or None) for the client.
+
+    ---
+
+    Serializa el ámbito de un supervisor para el cliente; sin ficha,
+    todo vacío (no recibe nada).
+    """
+    if scope is None:
+        return {
+            "personal_all": False, "personal_companies": [],
+            "personal_groups": [], "personal_persons": [],
+            "machine_all": False, "machine_families": [],
+            "machine_companies": [], "machines": [],
+            "excluded_requirements": [], "excluded_document_types": [],
+        }
+    return {
+        "personal_all": scope.personal_all,
+        "personal_companies": list(scope.personal_companies),
+        "personal_groups": [g.pk for g in scope.personal_groups.all()],
+        "personal_persons": [p.pk for p in scope.personal_persons.all()],
+        "machine_all": scope.machine_all,
+        "machine_families": list(scope.machine_families),
+        "machine_companies": list(scope.machine_companies),
+        "machines": [m.pk for m in scope.machines.all()],
+        "excluded_requirements": [
+            r.pk for r in scope.excluded_requirements.all()
+        ],
+        "excluded_document_types": [
+            t.pk for t in scope.excluded_document_types.all()
+        ],
+    }
+
+
+def _recipients_context(editor):
+    """
+    Supervisors, their scopes and the option lists of "Destinatarios".
+
+    ---
+
+    Datos de la sección "Destinatarios": supervisores de documentación
+    con su ámbito y si el usuario actual puede editarlo, y las listas
+    de opciones reales (empresas, grupos, personas, familias, máquinas,
+    requisitos y documentos).
+    """
+    supervisors = docs_supervisors(editor.company)
+    scopes = {
+        scope.company_user_id: scope
+        for scope in NoticeRecipientScope.objects.filter(
+            company_user__in=supervisors,
+        ).prefetch_related(
+            "personal_groups", "personal_persons", "machines",
+            "excluded_requirements", "excluded_document_types",
+        )
+    }
+    active_people = PersonIdentity.objects.filter(is_active_employee=True)
+    active_machines = MachineAsset.objects.filter(is_active=True)
+    required_type_ids = set(
+        JobPosition.required_document_types.through.objects.values_list(
+            "documenttypecatalog_id", flat=True,
+        ),
+    )
+    return {
+        "supervisors": [
+            {
+                "id": supervisor.pk,
+                "name": (
+                    supervisor.user.get_full_name()
+                    or supervisor.user.username
+                ),
+                "can_edit": _can_edit_scope(editor, supervisor),
+                "is_me": supervisor.pk == editor.pk,
+                "scope": _scope_to_dict(scopes.get(supervisor.pk)),
+            }
+            for supervisor in supervisors
+        ],
+        "options": {
+            "personal_companies": sorted(
+                value for value in set(
+                    active_people.values_list(
+                        "employer_company", flat=True,
+                    ),
+                ) if value
+            ),
+            "personal_groups": [
+                {"id": g.pk, "label": g.name}
+                for g in PersonGroupTemplate.objects.order_by("name")
+            ],
+            "personal_persons": [
+                {
+                    "id": p.pk,
+                    "label": "%s %s, %s" % (
+                        p.first_surname, p.second_surname or "",
+                        p.given_name,
+                    ),
+                }
+                for p in active_people.order_by(
+                    "first_surname", "second_surname", "given_name",
+                )
+            ],
+            "machine_families": sorted(
+                value for value in set(
+                    active_machines.values_list("family", flat=True),
+                ) if value
+            ),
+            "machine_companies": sorted(
+                value for value in set(
+                    active_machines.values_list(
+                        "company_code", flat=True,
+                    ),
+                ) if value
+            ),
+            "machines": [
+                {"id": m.pk, "label": "%s -- %s" % (m.code, m.brand_model)}
+                for m in active_machines.order_by("code")
+            ],
+            "excluded_requirements": [
+                {"id": r.pk, "label": r.name}
+                for r in JobPosition.objects.order_by("name")
+            ],
+            "excluded_document_types": [
+                {"id": t.pk, "label": t.label}
+                for t in DocumentTypeCatalog.objects.filter(
+                    pk__in=required_type_ids,
+                ).order_by("label")
+            ],
+        },
+    }
+
+
 class DocumentAlertsPaneView(CompanyUserRequiredMixin, View):
     """
     GET: "Avisos" tab fragment (loaded by htmx in the hub).
@@ -246,7 +396,7 @@ class DocumentAlertsPaneView(CompanyUserRequiredMixin, View):
             subtab = "pendientes"
         notices_query = {
             key: str(tab_state.get(key) or "")
-            for key in ("domain", "requirement", "doc_type", "q")
+            for key in ("domain", "requirement", "doc_type", "q", "who")
         }
 
         return render(request, "panel/document_alerts/pane.html", {
@@ -271,6 +421,7 @@ class DocumentAlertsPaneView(CompanyUserRequiredMixin, View):
             "can_toggle_whatsapp": (
                 company_user.role in WHATSAPP_TOGGLE_ROLES
             ),
+            "recipients_data": _recipients_context(company_user),
         })
 
 
@@ -367,6 +518,18 @@ class DocumentNoticesView(CompanyUserRequiredMixin, View):
         requirement_pk = _int_or_none(request.GET.get("requirement"))
         doc_type_pk = _int_or_none(request.GET.get("doc_type"))
         query = (request.GET.get("q") or "").strip()
+        # H30 (S122): a quién va cada aviso. Un supervisor de
+        # documentación ve por defecto solo los suyos.
+        company_user = request.user.company_user
+        is_supervisor = (
+            company_user.role == CompanyUser.ROLE_DOCS_SUPERVISOR
+        )
+        who = request.GET.get("who")
+        valid_who = ("mine", "all", "none") if is_supervisor else (
+            "all", "none",
+        )
+        if who not in valid_who:
+            who = "mine" if is_supervisor else "all"
 
         pending, _scheduled, calendar_items = notices.compute_notices(
             domain,
@@ -399,7 +562,22 @@ class DocumentNoticesView(CompanyUserRequiredMixin, View):
         if doc_type_pk not in {option["pk"] for option in type_options}:
             doc_type_pk = None
 
+        scopes = load_scopes(company_user.company)
+        all_notices = pending + [item.notice for item in calendar_items]
+        for notice in all_notices:
+            if not hasattr(notice, "recipient_names"):
+                recipients = recipients_for(notice, scopes)
+                notice.recipient_ids = {r.pk for r in recipients}
+                notice.recipient_names = ", ".join(
+                    r.user.get_full_name() or r.user.username
+                    for r in recipients
+                )
+
         def keep(notice):
+            if who == "mine" and company_user.pk not in notice.recipient_ids:
+                return False
+            if who == "none" and notice.recipient_ids:
+                return False
             if (
                 requirement_name is not None
                 and notice.requirement_name != requirement_name
@@ -479,4 +657,91 @@ class DocumentNoticesView(CompanyUserRequiredMixin, View):
             "calendar_count": len(calendar_items),
             "has_any_rules": RequirementAlertRule.objects.exists(),
             "has_subjects": has_subjects,
+            "who": who,
+            "is_supervisor": is_supervisor,
         })
+
+
+class NoticeScopeSaveView(CompanyUserRequiredMixin, View):
+    """
+    POST: save the notice scope of one documentation supervisor.
+
+    ---
+
+    POST: guarda el ámbito de avisos de un supervisor de documentación
+    (JSON `scope`). Solo el propio supervisor o el administrador.
+    Valores fuera de las opciones reales se descartan.
+    """
+
+    def post(self, request, supervisor_pk):
+        editor = request.user.company_user
+        supervisor = get_object_or_404(
+            CompanyUser, pk=supervisor_pk, company=editor.company,
+            role=CompanyUser.ROLE_DOCS_SUPERVISOR,
+        )
+        if not _can_edit_scope(editor, supervisor):
+            return JsonResponse(
+                {"ok": False, "error": "Solo el propio supervisor o el "
+                 "administrador pueden cambiar estos avisos."},
+                status=403,
+            )
+        try:
+            payload = json.loads(request.POST.get("scope") or "{}")
+        except ValueError:
+            payload = None
+        if not isinstance(payload, dict):
+            return JsonResponse(
+                {"ok": False, "error": "Los datos enviados no son válidos."},
+                status=400,
+            )
+
+        def ids(key):
+            return [
+                _int_or_none(value) for value in payload.get(key) or []
+                if _int_or_none(value) is not None
+            ]
+
+        def texts(key):
+            return [
+                str(value) for value in payload.get(key) or [] if value
+            ]
+
+        with transaction.atomic():
+            scope, _created = NoticeRecipientScope.objects.get_or_create(
+                company_user=supervisor,
+            )
+            scope.personal_all = bool(payload.get("personal_all"))
+            scope.personal_companies = texts("personal_companies")
+            scope.machine_all = bool(payload.get("machine_all"))
+            scope.machine_families = texts("machine_families")
+            scope.machine_companies = texts("machine_companies")
+            scope.updated_by = editor
+            scope.save()
+            scope.personal_groups.set(
+                PersonGroupTemplate.objects.filter(
+                    pk__in=ids("personal_groups"),
+                ),
+            )
+            scope.personal_persons.set(
+                PersonIdentity.objects.filter(
+                    pk__in=ids("personal_persons"),
+                ),
+            )
+            scope.machines.set(
+                MachineAsset.objects.filter(pk__in=ids("machines")),
+            )
+            scope.excluded_requirements.set(
+                JobPosition.objects.filter(
+                    pk__in=ids("excluded_requirements"),
+                ),
+            )
+            scope.excluded_document_types.set(
+                DocumentTypeCatalog.objects.filter(
+                    pk__in=ids("excluded_document_types"),
+                ),
+            )
+        scope = NoticeRecipientScope.objects.prefetch_related(
+            "personal_groups", "personal_persons", "machines",
+            "excluded_requirements", "excluded_document_types",
+        ).get(pk=scope.pk)
+        return JsonResponse({"ok": True, "scope": _scope_to_dict(scope)})

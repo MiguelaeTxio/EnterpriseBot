@@ -121,11 +121,43 @@ window.saveDocAlertsNav = function (patch) {
             </div>
         </div>
     </div>
+
+    {% comment %}
+    H30 (S122). Destinatarios: qué avisos recibe cada supervisor de
+    documentación. Miguel Ángel: "los avisos deben de definirse a nivel
+    global, pero también de forma específica y que el supervisor puede
+    decir, estos avisos yo no los quiero recibir". Sin ficha, no recibe
+    nada; cada uno edita la suya y el administrador todas. La dibuja el
+    JS de abajo a partir de `recipients_data`.
+    {% endcomment %}
+    <div class="card mt-3 mb-3">
+        <div class="card-header fw-bold">Destinatarios de los avisos</div>
+        <div class="card-body">
+            <p class="small text-muted mb-2">Cada supervisor de documentación recibe solo los avisos de su ámbito: marca qué personal y qué centros de gasto lleva, y excluye los requisitos o documentos que no quiera recibir. Sin nada marcado no recibe ningún aviso.</p>
+            <div class="row g-3">
+                <div class="col-12 col-lg-3">
+                    <div class="list-group" id="recipientsList"></div>
+                </div>
+                <div class="col-12 col-lg-9">
+                    <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
+                        <span class="fw-bold" id="recipientsTitle">Elige un supervisor</span>
+                        <span class="d-flex align-items-center gap-2">
+                            <span class="badge text-bg-warning d-none" id="recipientsDirtyBadge">Cambios sin guardar</span>
+                            <button type="button" class="btn btn-sm btn-primary d-none" id="recipientsSaveBtn" onclick="saveRecipientScope()">Guardar destinatario</button>
+                        </span>
+                    </div>
+                    <div class="alert small py-1 px-2 mb-2 d-none" id="recipientsResult" role="status"></div>
+                    <div id="recipientsEditor"></div>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 </div>
 </div>
 
 {{ positions_data|json_script:"alertsPositionsData" }}
+{{ recipients_data|json_script:"alertsRecipientsData" }}
 {{ selected_position_pk|json_script:"alertsSelectedPositionData" }}
 
 <script>
@@ -342,7 +374,198 @@ window.saveDocAlertsNav = function (patch) {
         });
     };
 
+    window.docAlertsToast = showToast;
+    window.docAlertsCsrf = csrfToken;
+
     positions.forEach(refreshBadge);
     renderViewer();
+})();
+
+(function () {
+    // H30 (S122): Destinatarios -- ambito de avisos de cada supervisor.
+    const data = JSON.parse(document.getElementById('alertsRecipientsData').textContent);
+    const options = data.options;
+    const SECTIONS = [
+        {title: 'Personal', allKey: 'personal_all', allLabel: 'Todo el personal', lists: [
+            {key: 'personal_companies', label: 'Empresas'},
+            {key: 'personal_groups', label: 'Grupos de reparto'},
+            {key: 'personal_persons', label: 'Personas concretas', filter: true},
+        ]},
+        {title: 'Centros de gasto', allKey: 'machine_all', allLabel: 'Todos los centros de gasto', lists: [
+            {key: 'machine_families', label: 'Familias'},
+            {key: 'machine_companies', label: 'Empresas'},
+            {key: 'machines', label: 'Centros de gasto concretos', filter: true},
+        ]},
+        {title: 'No quiero recibir', lists: [
+            {key: 'excluded_requirements', label: 'Requisitos'},
+            {key: 'excluded_document_types', label: 'Documentos'},
+        ]},
+    ];
+    let current = null;
+    let draft = null;
+
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    function optionValue(option) { return typeof option === 'object' ? String(option.id) : option; }
+    function optionLabel(option) { return typeof option === 'object' ? option.label : option; }
+
+    function renderList() {
+        const list = document.getElementById('recipientsList');
+        if (!data.supervisors.length) {
+            list.innerHTML = '<div class="list-group-item small text-muted">No hay ningún usuario con rol de supervisor de documentación.</div>';
+            return;
+        }
+        list.innerHTML = data.supervisors.map(sup => {
+            const scope = sup.scope;
+            const empty = !scope.personal_all && !scope.machine_all
+                && ['personal_companies', 'personal_groups', 'personal_persons', 'machine_families', 'machine_companies', 'machines']
+                    .every(key => !scope[key].length);
+            return `<button type="button" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center ${current && current.id === sup.id ? 'active' : ''}" onclick="selectRecipient(${sup.id})">
+                <span>${escapeHtml(sup.name)}${sup.is_me ? ' (tú)' : ''}</span>
+                ${empty ? '<span class="badge text-bg-secondary">No recibe nada</span>' : ''}
+            </button>`;
+        }).join('');
+    }
+
+    function checklist(list, disabled) {
+        const selected = new Set((draft[list.key] || []).map(String));
+        const items = (options[list.key] || []).map(option => {
+            const value = optionValue(option);
+            const id = `rcpt_${list.key}_${value}`.replace(/[^A-Za-z0-9_-]/g, '_');
+            return `<div class="form-check recipients-item" data-label="${escapeHtml(optionLabel(option).toLowerCase())}">
+                <input class="form-check-input" type="checkbox" id="${id}" data-list="${list.key}" value="${escapeHtml(value)}" ${selected.has(value) ? 'checked' : ''} ${disabled ? 'disabled' : ''}>
+                <label class="form-check-label small" for="${id}">${escapeHtml(optionLabel(option))}</label>
+            </div>`;
+        }).join('') || '<div class="small text-muted">Sin opciones.</div>';
+        const filter = list.filter
+            ? `<input type="search" class="form-control form-control-sm mb-1" placeholder="Filtrar…" data-filter-for="${list.key}">`
+            : '';
+        return `<div class="mb-2">
+            <div class="small fw-bold">${list.label} <span class="text-muted fw-normal" data-count-for="${list.key}">(${selected.size} marcados)</span></div>
+            ${filter}
+            <div class="recipients-checklist border rounded p-1" data-checklist="${list.key}">${items}</div>
+        </div>`;
+    }
+
+    function renderEditor() {
+        const editor = document.getElementById('recipientsEditor');
+        const saveBtn = document.getElementById('recipientsSaveBtn');
+        document.getElementById('recipientsResult').classList.add('d-none');
+        setDirty(false);
+        if (!current) {
+            document.getElementById('recipientsTitle').textContent = 'Elige un supervisor';
+            saveBtn.classList.add('d-none');
+            editor.innerHTML = '';
+            return;
+        }
+        document.getElementById('recipientsTitle').textContent = current.name + (current.can_edit ? '' : ' (solo lectura)');
+        saveBtn.classList.toggle('d-none', !current.can_edit);
+        const disabled = !current.can_edit;
+        editor.innerHTML = '<div class="row g-3">' + SECTIONS.map(section => {
+            const allSwitch = section.allKey
+                ? `<div class="form-check form-switch mb-2">
+                    <input class="form-check-input" type="checkbox" role="switch" id="rcpt_${section.allKey}" data-all="${section.allKey}" ${draft[section.allKey] ? 'checked' : ''} ${disabled ? 'disabled' : ''}>
+                    <label class="form-check-label small fw-bold" for="rcpt_${section.allKey}">${section.allLabel}</label>
+                </div>`
+                : '';
+            return `<div class="col-12 col-md-6 col-xl-4"><div class="border rounded p-2 h-100">
+                <div class="fw-bold mb-1">${section.title}</div>
+                ${allSwitch}
+                ${section.lists.map(list => checklist(list, disabled)).join('')}
+            </div></div>`;
+        }).join('') + '</div>';
+    }
+
+    function setDirty(isDirty) {
+        document.getElementById('recipientsDirtyBadge').classList.toggle('d-none', !isDirty);
+    }
+
+    window.selectRecipient = function (supervisorId) {
+        current = data.supervisors.find(sup => sup.id === supervisorId) || null;
+        draft = current ? JSON.parse(JSON.stringify(current.scope)) : null;
+        renderList();
+        renderEditor();
+    };
+
+    const editorEl = document.getElementById('recipientsEditor');
+    editorEl.addEventListener('change', function (ev) {
+        const input = ev.target;
+        if (!draft) return;
+        if (input.dataset.all) {
+            draft[input.dataset.all] = input.checked;
+        } else if (input.dataset.list) {
+            const key = input.dataset.list;
+            const values = new Set((draft[key] || []).map(String));
+            if (input.checked) { values.add(input.value); } else { values.delete(input.value); }
+            draft[key] = Array.from(values);
+            const counter = editorEl.querySelector(`[data-count-for="${key}"]`);
+            if (counter) counter.textContent = `(${values.size} marcados)`;
+        } else {
+            return;
+        }
+        setDirty(true);
+    });
+    editorEl.addEventListener('input', function (ev) {
+        const key = ev.target.dataset.filterFor;
+        if (!key) return;
+        const term = ev.target.value.trim().toLowerCase();
+        editorEl.querySelectorAll(`[data-checklist="${key}"] .recipients-item`).forEach(item => {
+            item.classList.toggle('d-none', term !== '' && !item.dataset.label.includes(term));
+        });
+    });
+
+    function showResult(message, isError) {
+        const result = document.getElementById('recipientsResult');
+        result.textContent = message;
+        result.classList.remove('d-none', 'alert-danger', 'alert-success');
+        result.classList.add(isError ? 'alert-danger' : 'alert-success');
+        if (window.docAlertsToast) window.docAlertsToast(message, isError);
+    }
+
+    function setSaving(isSaving) {
+        const btn = document.getElementById('recipientsSaveBtn');
+        btn.disabled = isSaving;
+        btn.innerHTML = isSaving
+            ? '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Guardando…'
+            : 'Guardar destinatario';
+    }
+
+    window.saveRecipientScope = function () {
+        if (!current || !current.can_edit) return;
+        const formData = new FormData();
+        formData.append('scope', JSON.stringify(draft));
+        setSaving(true);
+        fetch(`/panel/documentacion/avisos/destinatarios/${current.id}/guardar/`, {
+            method: 'POST', body: formData,
+            headers: {'X-CSRFToken': window.docAlertsCsrf()},
+        }).then(r => r.json().catch(() => ({ok: false, error: `El servidor respondió con un error (HTTP ${r.status}).`})))
+        .then(result => {
+            setSaving(false);
+            if (result.ok) {
+                current.scope = result.scope;
+                draft = JSON.parse(JSON.stringify(result.scope));
+                renderList();
+                renderEditor();
+                const now = new Date().toLocaleTimeString('es-ES', {hour: '2-digit', minute: '2-digit'});
+                showResult(`Destinatario "${current.name}" guardado a las ${now}.`, false);
+                if (window.htmx && document.getElementById('alertsNoticesFilters')) {
+                    htmx.trigger('#alertsNoticesFilters', 'change');
+                }
+            } else {
+                showResult('No se ha guardado: ' + (result.error || 'error desconocido.'), true);
+            }
+        }).catch(() => {
+            setSaving(false);
+            showResult('No se ha guardado: sin conexión con el servidor.', true);
+        });
+    };
+
+    const me = data.supervisors.find(sup => sup.is_me);
+    renderList();
+    if (me) { window.selectRecipient(me.id); } else { renderEditor(); }
 })();
 </script>

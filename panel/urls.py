@@ -32,6 +32,7 @@ from panel.views_document_alerts import (
     DocumentAlertsPaneView,
     DocumentAlertWhatsAppToggleView,
     DocumentNoticesView,
+    NoticeScopeSaveView,
 )
 from panel.views_navigation_state import NavigationStateSaveView
 from panel.views_lifting_accessories import (
@@ -532,6 +533,7 @@ urlpatterns = [
     path("documentacion/avisos/", DocumentAlertsPaneView.as_view(), name="document_alerts_pane"),
     path("documentacion/avisos/requisito/<int:position_pk>/guardar/", DocumentAlertRulesSaveView.as_view(), name="document_alert_rules_save"),
     path("documentacion/avisos/pendientes/", DocumentNoticesView.as_view(), name="document_notices"),
+    path("documentacion/avisos/destinatarios/<int:supervisor_pk>/guardar/", NoticeScopeSaveView.as_view(), name="notice_scope_save"),
     path("documentacion/avisos/whatsapp/", DocumentAlertWhatsAppToggleView.as_view(), name="document_alerts_whatsapp_toggle"),
     path("documentacion/puestos/guardar/", JobPositionSaveView.as_view(), name="job_position_create"),
     path("documentacion/puestos/<int:position_pk>/guardar/", JobPositionSaveView.as_view(), name="job_position_update"),
