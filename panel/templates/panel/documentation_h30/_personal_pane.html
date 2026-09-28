@@ -120,7 +120,7 @@ pantalla completa aparte, no un fragmento htmx de este pane.
                         acumulativo). Modelo/campo internos siguen
                         llamándose JobPosition/job_position.
                         {% endcomment %}
-                        <select id="person-mass-job-position" class="form-select form-select-sm" style="width:auto; max-width:100%; min-width:0;">
+                        <select id="person-mass-job-position" data-requirement-select class="form-select form-select-sm" style="width:auto; max-width:100%; min-width:0;">
                             <option value="">— Sin requisito (quitar) —</option>
                             {% for position in job_positions %}
                             <option value="{{ position.pk }}">{{ position.name }}</option>

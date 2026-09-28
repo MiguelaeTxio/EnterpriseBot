@@ -379,6 +379,11 @@ function savePosition() {
             upsertPositionRow(data.id, data.name, typeIds, categoryIds);
             takeSnapshot();
             showPositionToast('Requisito guardado.');
+            // S123: aviso al resto del hub (desplegables de Personal y
+            // Centros de gasto, Avisos > Configuración) sin recargar.
+            document.dispatchEvent(new CustomEvent('eb:requirement-saved', {
+                detail: {id: data.id, name: data.name},
+            }));
         } else {
             resultDiv.innerHTML = `<div class="alert alert-danger py-1 px-2 small mb-0">${data.error || 'Error al guardar.'}</div>`;
         }
@@ -407,6 +412,9 @@ function deletePosition(pk) {
                 resetForm();
             }
             showPositionToast('Requisito eliminado.');
+            document.dispatchEvent(new CustomEvent('eb:requirement-deleted', {
+                detail: {id: pk},
+            }));
         }
     });
 }

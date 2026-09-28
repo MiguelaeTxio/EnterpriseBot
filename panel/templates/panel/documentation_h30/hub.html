@@ -308,6 +308,64 @@ id, indistinto de dónde viva en el DOM.
         }
         saveState({filters: filters});
     });
+
+    // H30 (S123). Un requisito guardado o borrado en la pestaña
+    // Requisitos aparece al momento en el resto del hub, sin recargar
+    // la página: se actualizan los desplegables de asignación
+    // (Personal, Centros de gasto: `select[data-requirement-select]`)
+    // y se vuelve a pedir la pestaña Avisos si ya estaba cargada (su
+    // estado -- subpestaña, requisito elegido, filtros -- está
+    // persistido, directriz 4.15). Si Avisos tiene cambios sin
+    // guardar no se recarga, para no perderlos.
+    function requirementSelects() {
+        return document.querySelectorAll('select[data-requirement-select]');
+    }
+
+    function reloadAlertsPane() {
+        if (!window.htmx || !document.getElementById('alertsConfigBody')) {
+            return;
+        }
+        const dirty = ['alertsDirtyBadge', 'recipientsDirtyBadge'].some(function (id) {
+            const badge = document.getElementById(id);
+            return badge && !badge.classList.contains('d-none');
+        });
+        if (dirty) { return; }
+        const url = document.getElementById('tab-avisos').getAttribute('hx-get');
+        htmx.ajax('GET', url, {target: '#pane-avisos', swap: 'innerHTML'});
+    }
+
+    document.addEventListener('eb:requirement-saved', function (ev) {
+        const id = String(ev.detail.id);
+        requirementSelects().forEach(function (select) {
+            let option = Array.from(select.options).find(function (opt) {
+                return opt.value === id;
+            });
+            if (!option) {
+                option = document.createElement('option');
+                option.value = id;
+                select.appendChild(option);
+            }
+            option.textContent = ev.detail.name;
+            // Mismo orden alfabético que sirve la vista; la primera
+            // opción ("Sin requisito") se queda siempre arriba.
+            const items = Array.from(select.options).slice(1);
+            items.sort(function (a, b) {
+                return a.textContent.localeCompare(b.textContent, 'es');
+            });
+            items.forEach(function (opt) { select.appendChild(opt); });
+        });
+        reloadAlertsPane();
+    });
+
+    document.addEventListener('eb:requirement-deleted', function (ev) {
+        const id = String(ev.detail.id);
+        requirementSelects().forEach(function (select) {
+            Array.from(select.options).forEach(function (opt) {
+                if (opt.value === id) { opt.remove(); }
+            });
+        });
+        reloadAlertsPane();
+    });
 })();
 </script>
 {% endblock %}
