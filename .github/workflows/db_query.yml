@@ -129,7 +129,7 @@ jobs:
           if [ "$QUERY_EXIT" -ne 0 ]; then
             # Anotación leíble por la API (sin descargar logs): el error de
             # MySQL, en una línea. Nunca lleva filas del resultado.
-            MSG=$(grep -v "Using a password on the command line" /tmp/query_err.txt | head -c 600 | tr '\n' ' ')
+            MSG=$(grep -vE "Using a password on the command line|PythonAnywhere SSH" /tmp/query_err.txt | head -c 600 | tr '\n' ' ')
             echo "::error title=Consulta SQL fallida (exit $QUERY_EXIT)::${MSG:-sin mensaje de error}"
             exit "$QUERY_EXIT"
           fi
@@ -154,11 +154,11 @@ jobs:
             echo '```'
             cat /tmp/query_output.txt 2>/dev/null || echo "(sin salida capturada)"
             echo '```'
-            if grep -qv "Using a password on the command line" /tmp/query_err.txt 2>/dev/null; then
+            if grep -vE "Using a password on the command line|PythonAnywhere SSH" /tmp/query_err.txt 2>/dev/null | grep -q .; then
               echo ""
               echo "### Error"
               echo '```'
-              grep -v "Using a password on the command line" /tmp/query_err.txt
+              grep -vE "Using a password on the command line|PythonAnywhere SSH" /tmp/query_err.txt
               echo '```'
             fi
           } > /tmp/resultado.md
