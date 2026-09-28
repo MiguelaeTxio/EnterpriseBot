@@ -19,9 +19,10 @@ Reglas (decididas por Miguel Ángel en S122):
 - El periodo termina con la primera baja (Seguridad Social) fechada
   después de su inicio y antes del periodo siguiente.
 - Un alta sin fecha no se puede emparejar: se cuenta aparte.
-- Las prórrogas (PRORROGA_CONTRATO, S122) nunca cuentan como contrato
-  del alta: se colocan en el periodo en cuyo tramo empiezan (desde su
-  alta hasta la siguiente), para verlas dentro de su contrato.
+- Las prórrogas y modificaciones de contrato (PRORROGA_CONTRATO,
+  MODIFICACION_CONTRATO, S122) nunca cuentan como contrato del alta:
+  se colocan en el periodo en cuyo tramo empiezan (desde su alta hasta
+  la siguiente), para verlas dentro de su contrato.
 
 Funciones puras sobre listas de `DocumentIndexEntry` (sin consultas),
 para que las usen igual la ficha, los avisos y los informes.
@@ -34,7 +35,11 @@ ALTA_CODE = "ALTA"
 CONTRACT_CODE = "CONTRATO"
 BAJA_CODE = "BAJA_PERSONAL"
 EXTENSION_CODE = "PRORROGA_CONTRATO"
-PERIOD_CODES = (ALTA_CODE, CONTRACT_CODE, BAJA_CODE, EXTENSION_CODE)
+MODIFICATION_CODE = "MODIFICACION_CONTRATO"
+# Subtipos de contrato que se ven dentro de su periodo y nunca cuentan
+# como contrato del alta (prórrogas y modificaciones, S122).
+CONTRACT_SUBTYPE_CODES = (EXTENSION_CODE, MODIFICATION_CODE)
+PERIOD_CODES = (ALTA_CODE, CONTRACT_CODE, BAJA_CODE) + CONTRACT_SUBTYPE_CODES
 
 
 @dataclass

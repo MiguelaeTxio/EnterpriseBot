@@ -19,8 +19,15 @@ Genérico, sin ids en el código: las fechas las decide quien revisa la
 imagen y se pasan por argumento:
   --prorrogas id:INICIO:TERMINO[,id:INICIO:TERMINO...]
   --contratos id:FECHA[,id:FECHA...]
-(fechas AAAA-MM-DD). Solo actúa sobre documentos vivos de personal que
-HOY sean CONTRATO; cualquier otro id aborta sin escribir nada. Realinea
+  --modificaciones id:EFECTOS[,...]   (S122, segunda tanda)
+  --altas id:FECHA[,...]              (S122, segunda tanda)
+  --renombrar id[,id...]              (S122, segunda tanda)
+(fechas AAAA-MM-DD). Prórrogas, contratos y modificaciones solo sobre
+documentos vivos de personal que HOY sean CONTRATO o uno de sus
+subtipos; altas solo sobre documentos que HOY sean ALTA; --renombrar
+solo realinea el nombre canónico de documentos cuya fecha ya es
+correcta (contratos cuyo nombre llevaba la fecha de nacimiento o la de
+relleno 01/01/2021). Cualquier otro id aborta sin escribir nada. Realinea
 el nombre canónico (solo `name` en BD, nunca GCS) con
 `apply_personal_canonical_rename()`. Log con el valor anterior de cada
 campo.
@@ -42,6 +49,9 @@ from document_explorer.models import (
 
 CONTRACT_CODE = "CONTRATO"
 EXTENSION_CODE = "PRORROGA_CONTRATO"
+MODIFICATION_CODE = "MODIFICACION_CONTRATO"
+ALTA_CODE = "ALTA"
+CONTRACT_FAMILY_CODES = (CONTRACT_CODE, EXTENSION_CODE, MODIFICATION_CODE)
 
 
 def _parse_items(raw, fields):
@@ -88,6 +98,9 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("--prorrogas", default="")
         parser.add_argument("--contratos", default="")
+        parser.add_argument("--modificaciones", default="")
+        parser.add_argument("--altas", default="")
+        parser.add_argument("--renombrar", default="")
         parser.add_argument("--log-file", required=True)
         parser.add_argument("--apply", action="store_true")
 
@@ -107,32 +120,57 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         extensions = _parse_items(options["prorrogas"], 2)
         contracts = _parse_items(options["contratos"], 1)
-        overlap = set(extensions) & set(contracts)
-        if overlap:
-            raise CommandError(
-                "Ids en las dos listas: %s" % sorted(overlap),
-            )
-        if not extensions and not contracts:
-            raise CommandError(
-                "Nada que hacer: --prorrogas y --contratos vacíos.",
-            )
+        modifications = _parse_items(options["modificaciones"], 1)
+        altas = _parse_items(options["altas"], 1)
+        try:
+            renames = {
+                int(item) for item in options["renombrar"].split(",")
+                if item.strip()
+            }
+        except ValueError as exc:
+            raise CommandError("--renombrar: ids no válidos.") from exc
+        lists = [
+            set(extensions), set(contracts), set(modifications),
+            set(altas), renames,
+        ]
+        seen = set()
+        for ids in lists:
+            if seen & ids:
+                raise CommandError(
+                    "Ids en más de una lista: %s" % sorted(seen & ids),
+                )
+            seen |= ids
+        if not seen:
+            raise CommandError("Nada que hacer: todas las listas vacías.")
         with open(options["log_file"], "a", encoding="utf-8") as handle:
             self._log_handle = handle
-            self._run(extensions, contracts, options["apply"])
+            self._run(
+                extensions, contracts, modifications, altas, renames,
+                options["apply"],
+            )
 
-    def _run(self, extensions, contracts, apply_changes):
-        wanted = set(extensions) | set(contracts)
-        self._log(
-            "REVISIÓN DE CONTRATOS (%s) -- %d prórroga(s), %d contrato(s)"
-            % ("APLICAR" if apply_changes else "DRY-RUN, nada se escribe",
-               len(extensions), len(contracts))
+    def _run(self, extensions, contracts, modifications, altas, renames,
+             apply_changes):
+        wanted = (
+            set(extensions) | set(contracts) | set(modifications)
+            | set(altas) | renames
         )
-        extension_type = DocumentTypeCatalog.objects.filter(
-            code=EXTENSION_CODE,
-        ).first()
-        if extension_type is None:
-            self._log("ABORTADO: no existe el tipo %s." % EXTENSION_CODE)
-            return
+        self._log(
+            "REVISIÓN DE CONTRATOS (%s) -- %d prórroga(s), %d contrato(s), "
+            "%d modificación(es), %d alta(s), %d solo nombre"
+            % ("APLICAR" if apply_changes else "DRY-RUN, nada se escribe",
+               len(extensions), len(contracts), len(modifications),
+               len(altas), len(renames))
+        )
+        types = {
+            t.code: t for t in DocumentTypeCatalog.objects.filter(
+                code__in=(EXTENSION_CODE, MODIFICATION_CODE),
+            )
+        }
+        for code in (EXTENSION_CODE, MODIFICATION_CODE):
+            if code not in types:
+                self._log("ABORTADO: no existe el tipo %s." % code)
+                return
         entries = {
             entry.pk: entry
             for entry in DocumentIndexEntry.objects.filter(
@@ -148,14 +186,19 @@ class Command(BaseCommand):
                 % missing
             )
             return
+        def _code(pk):
+            entry = entries[pk]
+            return entry.document_type.code if entry.document_type else None
+
         wrong_type = sorted(
-            pk for pk, entry in entries.items()
-            if not entry.document_type
-            or entry.document_type.code not in (CONTRACT_CODE, EXTENSION_CODE)
+            pk for pk in entries
+            if (pk in altas and _code(pk) != ALTA_CODE)
+            or (pk not in altas and _code(pk) not in CONTRACT_FAMILY_CODES)
         )
         if wrong_type:
             self._log(
-                "ABORTADO: ids que no son CONTRATO ni PRORROGA_CONTRATO: %s"
+                "ABORTADO: ids de un tipo que no corresponde a su lista "
+                "(altas: ALTA; resto: CONTRATO o sus subtipos): %s"
                 % wrong_type
             )
             return
@@ -164,13 +207,22 @@ class Command(BaseCommand):
         stats = {"changed": 0, "unchanged": 0, "renamed": 0}
         for pk in sorted(wanted):
             entry = entries[pk]
+            if pk in renames:
+                self._rename_only(entry, apply_changes, reserved, stats)
+                continue
+            new_type = entry.document_type
+            new_expiry = entry.expiry_date
             if pk in extensions:
-                new_type = extension_type
+                new_type = types[EXTENSION_CODE]
                 new_issue, new_expiry = extensions[pk]
+            elif pk in modifications:
+                new_type = types[MODIFICATION_CODE]
+                (new_issue,) = modifications[pk]
+                new_expiry = None
+            elif pk in altas:
+                (new_issue,) = altas[pk]
             else:
-                new_type = entry.document_type
                 (new_issue,) = contracts[pk]
-                new_expiry = entry.expiry_date
             before = (entry.document_type.code, entry.issue_date,
                       entry.expiry_date)
             after = (new_type.code, new_issue, new_expiry)
@@ -213,3 +265,33 @@ class Command(BaseCommand):
             % ("APLICADO" if apply_changes else "DRY-RUN", stats["changed"],
                stats["unchanged"], stats["renamed"])
         )
+
+    def _rename_only(self, entry, apply_changes, reserved, stats):
+        """
+        Realign the canonical name of an already-correct document.
+
+        ---
+
+        Solo realinea el nombre canónico (tipo y fecha ya correctos en
+        BD, nombre con la fecha de nacimiento o la de relleno).
+        """
+        old_name = entry.name
+        with transaction.atomic():
+            result = apply_personal_canonical_rename(
+                entry, apply_changes=apply_changes, reserved_names=reserved,
+            )
+        new_name = result.get("new_name")
+        if new_name and new_name != old_name:
+            stats["renamed"] += 1
+            stats["changed"] += 1
+            self._log(
+                "SOLO NOMBRE id=%d (%s %s): %s -> %s"
+                % (entry.pk, entry.document_type.code, entry.issue_date,
+                   old_name, new_name)
+            )
+        else:
+            stats["unchanged"] += 1
+            self._log(
+                "SOLO NOMBRE id=%d sin cambio (%s): %s"
+                % (entry.pk, result.get("reason") or "ya alineado", old_name)
+            )

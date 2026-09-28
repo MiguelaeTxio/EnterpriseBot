@@ -934,7 +934,7 @@ usan los documentos.
                                 <span class="small text-muted">(fechado entre el {{ period.search_from|date:"d/m/Y" }} y el {{ period.search_to|date:"d/m/Y" }})</span>
                                 {% endif %}
                                 {% for extension in period.extensions %}
-                                <div class="small text-muted"><i class="bi bi-arrow-return-right me-1"></i><a href="{% url 'panel:documentation_document_view' extension.pk %}" target="_blank">Prórroga del {{ extension.issue_date|date:"d/m/Y" }}{% if extension.expiry_date %} al {{ extension.expiry_date|date:"d/m/Y" }}{% endif %}</a></div>
+                                <div class="small text-muted"><i class="bi bi-arrow-return-right me-1"></i><a href="{% url 'panel:documentation_document_view' extension.pk %}" target="_blank">{{ extension.document_type.label }} del {{ extension.issue_date|date:"d/m/Y" }}{% if extension.expiry_date %} al {{ extension.expiry_date|date:"d/m/Y" }}{% endif %}</a></div>
                                 {% endfor %}
                             </td>
                         </tr>
@@ -950,7 +950,7 @@ usan los documentos.
                 </p>
                 {% endif %}
                 {% if employment.unplaced_extensions %}
-                <p class="small mb-1 text-muted">Prórrogas sin periodo (sin fecha o anteriores a toda alta):
+                <p class="small mb-1 text-muted">Prórrogas y modificaciones sin periodo (sin fecha o anteriores a toda alta):
                     {% for extension in employment.unplaced_extensions %}<a href="{% url 'panel:documentation_document_view' extension.pk %}" target="_blank">{% if extension.issue_date %}{{ extension.issue_date|date:"d/m/Y" }}{% else %}{{ extension.name }} (sin fecha){% endif %}</a>{% if not forloop.last %}, {% endif %}{% endfor %}
                 </p>
                 {% endif %}
