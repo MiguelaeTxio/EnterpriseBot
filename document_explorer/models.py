@@ -2936,6 +2936,168 @@ class RequirementAlertRule(models.Model):
         return f"{self.job_position} -- {self.document_type}"
 
 
+class NoticeRecipientScope(models.Model):
+    """
+    H30 (S122). Which document notices one documentation supervisor
+    receives.
+
+    ---
+
+    H30 (S122). Qué avisos de documentación recibe UN supervisor de
+    documentación. Miguel Ángel: "los avisos deben de definirse a nivel
+    global, pero también de forma específica y que el supervisor puede
+    decir, estos avisos yo no los quiero recibir [...] si Rocío necesita
+    recibir avisos de las máquinas de plataformas, duplicar los avisos
+    para que los reciba también Yolanda va a ser una redundancia".
+
+    Nivel global: los requisitos dicen qué avisos existen
+    (`RequirementAlertRule`). Nivel de cada supervisor: este ámbito
+    dice cuáles le llegan a él. Sin ficha, o con la ficha vacía, no
+    recibe nada (decisión de Miguel Ángel, S122). Un aviso entra en su
+    ámbito si su sujeto cumple CUALQUIERA de los criterios de su
+    dominio ("todo", empresa, grupo de reparto o persona concreta;
+    "todo", familia, empresa o máquina concreta) y no está excluido por
+    requisito ni por tipo de documento.
+    """
+
+    company_user = models.OneToOneField(
+        "ivr_config.CompanyUser",
+        on_delete=models.CASCADE,
+        related_name="notice_scope",
+        verbose_name="Supervisor de documentación",
+    )
+    personal_all = models.BooleanField(
+        default=False,
+        verbose_name="Todo el personal",
+    )
+    personal_companies = models.JSONField(
+        default=list,
+        blank=True,
+        verbose_name="Empresas (personal)",
+        help_text="Valores de PersonIdentity.employer_company.",
+    )
+    personal_groups = models.ManyToManyField(
+        PersonGroupTemplate,
+        blank=True,
+        related_name="notice_scopes",
+        verbose_name="Grupos de reparto",
+    )
+    personal_persons = models.ManyToManyField(
+        PersonIdentity,
+        blank=True,
+        related_name="notice_scopes",
+        verbose_name="Personas concretas",
+    )
+    machine_all = models.BooleanField(
+        default=False,
+        verbose_name="Todos los centros de gasto",
+    )
+    machine_families = models.JSONField(
+        default=list,
+        blank=True,
+        verbose_name="Familias (centros de gasto)",
+        help_text="Valores de MachineAsset.family.",
+    )
+    machine_companies = models.JSONField(
+        default=list,
+        blank=True,
+        verbose_name="Empresas (centros de gasto)",
+        help_text="Valores de MachineAsset.company_code.",
+    )
+    machines = models.ManyToManyField(
+        "fleet.MachineAsset",
+        blank=True,
+        related_name="notice_scopes",
+        verbose_name="Centros de gasto concretos",
+    )
+    excluded_requirements = models.ManyToManyField(
+        JobPosition,
+        blank=True,
+        related_name="excluded_in_notice_scopes",
+        verbose_name="Requisitos excluidos",
+    )
+    excluded_document_types = models.ManyToManyField(
+        DocumentTypeCatalog,
+        blank=True,
+        related_name="excluded_in_notice_scopes",
+        verbose_name="Documentos excluidos",
+    )
+    updated_by = models.ForeignKey(
+        "ivr_config.CompanyUser",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="edited_notice_scopes",
+        verbose_name="Último cambio por",
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name="Último cambio",
+    )
+
+    class Meta:
+        verbose_name = "Ámbito de avisos de un supervisor"
+        verbose_name_plural = "Ámbitos de avisos de supervisores"
+
+    def __str__(self):
+        return f"Ámbito de avisos -- {self.company_user}"
+
+
+class NoticeDelivery(models.Model):
+    """
+    H30 (S122). WhatsApp delivery log of one notice to one supervisor.
+
+    ---
+
+    H30 (S122). Registro de envío por WhatsApp de UN aviso a UN
+    supervisor, para no repetirlo. `notice_key` identifica el aviso
+    (dominio, sujeto, documento, clase, fecha de caducidad y, en los
+    próximos, el aviso alcanzado): un aviso de caducidad se envía una
+    vez; faltantes y caducados se recuerdan cada semana mientras sigan
+    sin resolverse (decisión de Miguel Ángel, S122). Si se renueva el
+    documento cambia la caducidad, y con ella la clave: los avisos del
+    documento nuevo cuentan desde cero.
+    """
+
+    company_user = models.ForeignKey(
+        "ivr_config.CompanyUser",
+        on_delete=models.CASCADE,
+        related_name="notice_deliveries",
+        verbose_name="Supervisor",
+    )
+    notice_key = models.CharField(
+        max_length=255,
+        verbose_name="Clave del aviso",
+    )
+    kind = models.CharField(
+        max_length=10,
+        verbose_name="Clase de aviso",
+    )
+    first_sent_at = models.DateTimeField(
+        verbose_name="Primer envío",
+    )
+    last_sent_at = models.DateTimeField(
+        verbose_name="Último envío",
+    )
+    send_count = models.PositiveIntegerField(
+        default=1,
+        verbose_name="Envíos",
+    )
+
+    class Meta:
+        verbose_name = "Envío de aviso"
+        verbose_name_plural = "Envíos de avisos"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("company_user", "notice_key"),
+                name="unique_notice_delivery_per_user_key",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.company_user} -- {self.notice_key}"
+
+
 class DrivingLicenceCategory(models.Model):
     """
     H30 (S120). Closed catalogue of Spanish driving licence classes
