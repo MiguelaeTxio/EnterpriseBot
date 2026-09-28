@@ -85,10 +85,33 @@ class DocumentNotice:
     document_label: str
     document_type_id: object
     kind: str
+    requirement_id: int = None
+    subject_company: str = ""
+    subject_family: str = ""
     expiry_date: date = None
     entry_id: int = None
     steps: list = field(default_factory=list)
     reached_step: NoticeStep = None
+
+    @property
+    def notice_key(self):
+        """
+        Stable identity of this notice for the delivery log.
+
+        ---
+
+        Identidad estable del aviso para el registro de envíos: cambia
+        si cambia la caducidad (documento renovado) o, en los
+        próximos, el aviso alcanzado.
+        """
+        parts = [
+            self.domain, str(self.subject_id), str(self.document_type_id),
+            self.document_label, self.kind,
+            self.expiry_date.isoformat() if self.expiry_date else "",
+        ]
+        if self.kind == KIND_UPCOMING and self.reached_step is not None:
+            parts.append(self.reached_step.label)
+        return "|".join(parts)[:255]
 
     @property
     def days_left(self):
@@ -283,9 +306,6 @@ def compute_notices(domain):
         DocumentIndexEntry, DrivingLicenceGrant, JobPosition,
         PersonIdentity, RequirementAlertRule,
     )
-    from document_explorer.required_documentation_service import (
-        latest_driving_card,
-    )
     from fleet.models import MachineAsset
 
     today = date.today()
@@ -370,6 +390,14 @@ def compute_notices(domain):
         has_identity = bool(set(IDENTITY_CODES) & present_codes)
         categories = categories_of.get(requirement.pk, [])
         label = _subject_label(subject, domain)
+        # H30 (S122): datos del sujeto que usan los ámbitos de avisos
+        # de cada supervisor (notice_recipients).
+        if domain == DOMAIN_PERSONAL:
+            subject_company = subject.employer_company or ""
+            subject_family = ""
+        else:
+            subject_company = subject.company_code or ""
+            subject_family = subject.family or ""
 
         for type_id, rule in subject_rules.items():
             doc_type = rule.document_type
@@ -378,6 +406,9 @@ def compute_notices(domain):
                 "subject_id": subject.pk,
                 "subject_label": label,
                 "requirement_name": requirement.name,
+                "requirement_id": requirement.pk,
+                "subject_company": subject_company,
+                "subject_family": subject_family,
                 "document_label": doc_type.label,
                 "document_type_id": type_id,
                 "kind": None,
@@ -427,6 +458,10 @@ def _driving_class_notices(base, rule, cards, categories, grants_by_card,
     carné más reciente CON matriz (mismo criterio que la ficha), con
     la configuración de avisos de "Carnet de conducir".
     """
+    from document_explorer.required_documentation_service import (
+        latest_driving_card,
+    )
+
     cards_with_grants = frozenset(
         entry.pk for entry in cards if entry.pk in grants_by_card
     )
