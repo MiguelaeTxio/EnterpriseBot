@@ -42,6 +42,7 @@ from config import (
     LOG_FILE_NAME,
 )
 from gcs_client import MissingCredentialsError, build_client
+from heartbeat import start_heartbeat_thread
 from history import append_event, load_events
 from reconciler import reconcile_folder
 from state import load_watched_folders, save_watched_folders
@@ -1077,6 +1078,9 @@ def main():
     """
     _configure_logging()
     logger.info("Agente H28 arrancado.")
+    # H30 (S123): latido al servidor cada 5 minutos -- si deja de
+    # llegar mas de 15, el servidor avisa a Miguel Angel por WhatsApp.
+    start_heartbeat_thread()
 
     menu = pystray.Menu(
         pystray.MenuItem(
