@@ -244,6 +244,62 @@ _DATE_LARGO_RE = re.compile(
     r"(\d{1,2})\s+(?:DE\s+)?(" + "|".join(_MESES_LARGO.keys()) + r")\s+(?:DEL?\s+)?(\d\.?\d{3})",
 )
 
+
+# H30 (S123). Fecha de firma del Modelo 145 (bloque "6. Fecha y firma de
+# la comunicación"). Miguel Ángel: "mira a ver qué pasa con esos 99,
+# míralos tú mismo". Revisados a mano 6 reales con la página dibujada
+# por Cloud Vision: la fecha SÍ está en todos, pero el impreso la
+# parte en huecos con puntos de relleno y letra a mano, y el lector la
+# devuelve rota -- "a ..1.... de... FEBRERO.. de 2.0.2.0",
+# "06 de MARZO [firma, acuse de recibo...] de de 2023",
+# "21 de Novembre de 2023", "21 de Junio En .de 2024". Ningún patrón
+# estricto la reconoce. Aquí, SOLO dentro de ese bloque: se quitan los
+# puntos de relleno y los del año, y se busca día + mes (nombre,
+# tolerando erratas por sus 3 primeras letras, o número) + "de" + año
+# (4 o 2 cifras) con hasta 260 caracteres de ruido entre mes y año. Se
+# toma la primera fecha no futura. Si el lector la destrozó ("21 de u
+# [...] de e23"), no hay fecha: mejor sin fecha que inventada.
+_MOD145_HEADER = "COMUNICACION DE DATOS AL PAGADOR"
+_MOD145_BLOCK_RE = re.compile(
+    r"FECHA Y FIRMA DE LA COMUNICACION([\s\S]*?)(?:DE CONFORMIDAD|$)"
+)
+_MOD145_DATE_RE = re.compile(
+    r"(?<!\d)(\d{1,2}) DE ([A-Z]{3,12}|\d{1,2})\b[\s\S]{0,260}?"
+    r"\bDE (\d{4}|\d{2})\b"
+)
+_MESES_PREFIJO = {name[:3]: number for name, number in _MESES_LARGO.items()}
+
+
+def _mod145_signature_date(norm):
+    """
+    Signature date of a Modelo 145 (block 6), tolerant to form filler
+    dots, handwriting typos and noise between month and year; None if
+    it cannot be read.
+
+    ---
+
+    Fecha de firma del Modelo 145 (bloque 6), tolerante a los puntos de
+    relleno del impreso, erratas de letra a mano y ruido entre mes y
+    año; None si no se puede leer.
+    """
+    block_match = _MOD145_BLOCK_RE.search(norm)
+    if not block_match:
+        return None
+    block = re.sub(r"(?<=\d)\.(?=\d)", "", block_match.group(1))
+    block = re.sub(r"[._'\"]+", " ", block)
+    block = re.sub(r"\s+", " ", block)
+    today = date.today()
+    for match in _MOD145_DATE_RE.finditer(block):
+        day_s, month_s, year_s = match.groups()
+        month = (
+            int(month_s) if month_s.isdigit()
+            else _MESES_PREFIJO.get(month_s[:3])
+        )
+        parsed = _parse_date(day_s, month, year_s) if month else None
+        if parsed and parsed <= today:
+            return parsed
+    return None
+
 # H30 (S78). Impresos oficiales estructurados (IDC, similares) traen
 # VARIAS fechas numericas a la vez (periodo, alta, nacimiento...) --
 # la regla de "unica fecha del documento" se rompe ahi siempre.
@@ -674,6 +730,13 @@ def classify_dates_in_text(text):
     # encabezado real de IDC (misma frase que su CONTENT_SIGNALS en
     # personal_content_classification.py) para no afectar a ningun
     # otro tipo -- comprobado ANTES que _LABELED_DATE_PATTERNS.
+    # H30 (S123): Modelo 145 -- su fecha es la de firma del bloque 6,
+    # ver _mod145_signature_date (la única otra fecha del impreso es la
+    # condición "antes del 1 de enero de 2013").
+    if _MOD145_HEADER in norm:
+        signed = _mod145_signature_date(norm)
+        if signed:
+            return None, signed, []
     if "INFORME DE DATOS PARA LA COTIZACION" in norm:
         ref_match = _IDC_REFERENCE_DATE_RE.search(norm)
         if ref_match:
