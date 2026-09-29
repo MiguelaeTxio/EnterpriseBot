@@ -36,6 +36,7 @@ Actualizado en el Paso 21 (2026-04-20): detección y registro de sección destin
 
 import json
 import logging
+import os
 import re
 from decimal import Decimal, InvalidOperation
 
@@ -305,7 +306,6 @@ class IncomingWhatsAppView(View):
 
                 if _pending_units:
                     from budgets.models import WorkOrderAssistanceUnit as _WAU
-                    from django.urls import reverse as _reverse
 
                     # Build and send one message per pending unit.
                     # Construir y enviar un mensaje por cada unidad pendiente.
@@ -374,7 +374,6 @@ class IncomingWhatsAppView(View):
                 # Entregar mensajes de circular pendientes encolados fuera de la ventana.
                 # Los mensajes con más de 48h se descartan — se consideran expirados.
                 if _active_session:
-                    import json as _json_bc_opt
                     from datetime import timedelta as _td_bc_opt, datetime as _dt_bc_opt
                     _pending_bc = list(
                         _active_session.pending_broadcast_messages or []
