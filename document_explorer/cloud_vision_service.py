@@ -209,12 +209,63 @@ def extract_text_for_dates(filename: str, data: bytes):
         classify_dates_in_text,
     )
 
+    def classify(value):
+        return classify_dates_in_text(value) if value else (None, None, [])
+
+    def rendered_text(page_range):
+        # Cloud Vision sobre la página renderizada; nunca lanza (ver
+        # incidente S111 de más abajo).
+        try:
+            return cloud_vision_text(data, filename, page_range=page_range)
+        except Exception:
+            return ""
+
+    is_pdf = filename.lower().endswith(".pdf")
     text = extract_text(filename, data)
-    expiry, issue, other = classify_dates_in_text(text) if text else (
-        None, None, [],
-    )
+    expiry, issue, other = classify(text)
     if expiry or issue:
         return text, expiry, issue, other, 2
+
+    # H30 (S123), contrato real de Miguel Ángel subido desde su ficha:
+    # el PDF del SEPE es un formulario rellenable y su capa de texto
+    # solo trae la plantilla vacía ("iniciándose la relación laboral
+    # en fecha ..........................") -- los valores rellenados
+    # viven en los campos del formulario, que solo aparecen al
+    # renderizar la página. Como el texto embebido no venía vacío,
+    # nunca se probaba Cloud Vision y el contrato quedaba sin fecha.
+    # Si el texto salió de la capa embebida y no dio ninguna fecha, se
+    # lee además la página renderizada con Cloud Vision.
+    from_embedded = is_pdf and bool(text) and text == pdf_embedded_text(data)
+    if from_embedded:
+        rendered = rendered_text((1, 2))
+        if rendered:
+            text = rendered
+            expiry, issue, other = classify(text)
+            if expiry or issue:
+                return text, expiry, issue, other, 2
+
+    if is_pdf:
+        # H31 (S111), incidente real: Cloud Vision responde
+        # INVALID_ARGUMENT si se piden paginas que el documento no
+        # tiene (p. ej. pedir 3-4 en un PDF de 1 sola pagina) -- nunca
+        # debe romper el llamador (rendered_text() no lanza): sin
+        # paginas extra, se sigue con lo que ya se tenia.
+        # S123: primero la capa embebida de las paginas 3-4 (gratis) y,
+        # si no da fecha, la pagina renderizada (mismo motivo de arriba).
+        candidates = []
+        if not from_embedded:
+            candidates.append(lambda: pdf_embedded_text(data, page_range=(2, 4)))
+        candidates.append(lambda: rendered_text((3, 4)))
+        for read_extra in candidates:
+            extra = read_extra()
+            if not extra:
+                continue
+            text_ampliado = (text + "\n" + extra).strip() if text else extra
+            expiry2, issue2, other2 = classify(text_ampliado)
+            if expiry2 or issue2 or other2:
+                return text_ampliado, expiry2, issue2, other2, 4
+
+    return text, expiry, issue, other, 2
 
     if filename.lower().endswith(".pdf"):
         extra = pdf_embedded_text(data, page_range=(2, 4))
