@@ -34,6 +34,7 @@ from google.genai.types import (
 )
 from twilio.rest import Client as TwilioClient
 
+from document_explorer.person_phone_service import mobile_of
 from ivr_config.models import Contact, PresenceStatus, Section
 from .models import WhatsAppMessage, WhatsAppSession, WhatsAppTemplate
 
@@ -770,11 +771,8 @@ class WhatsAppChatService:
         Los errores se registran y nunca se propagan — el fallo del
         broadcast nunca debe bloquear el flujo principal de avería.
         """
-        import os as _os
-
         from ivr_config.models import (
             Contact as _Contact,
-            SectionContact as _SC,
             Section as _Sec,
         )
         from whatsapp.models import WhatsAppTemplate as _WATpl
@@ -1060,7 +1058,6 @@ def send_capture_notification(
     asyncio.create_task(asyncio.to_thread(send_capture_notification, ...))
     desde el contexto async del voice bridge.
     """
-    from ivr_config.models import CallDataCapture as _CDC
 
     contact = call_data_capture.contact
     section = call_data_capture.section
@@ -1535,7 +1532,6 @@ class BreakdownAgentService:
         ---
         Anade un turno al conversation_log del ticket y guarda el campo.
         """
-        import json as _json
         from django.utils.timezone import now as _now
 
         log = list(ticket.conversation_log or [])
@@ -2311,7 +2307,7 @@ def send_epi_delivery_whatsapp_confirmation(delivery) -> bool:
     from .tasks import _get_whatsapp_sender
 
     person = delivery.person
-    phone = (person.phone or "").strip()
+    phone = mobile_of(person) or ""  # S125: E.164 (+34...)
     if not phone:
         logger.warning(
             "# [EPI WHATSAPP] Persona %s sin teléfono registrado. "
@@ -2407,7 +2403,7 @@ def send_circular_notification_whatsapp(ack) -> bool:
     from .tasks import _get_whatsapp_sender
 
     person = ack.person
-    phone = (person.phone or "").strip()
+    phone = mobile_of(person) or ""  # S125: E.164 (+34...)
     if not phone:
         logger.warning(
             "# [CIRCULAR WHATSAPP] Persona %s sin teléfono registrado. "

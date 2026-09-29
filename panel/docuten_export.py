@@ -30,6 +30,7 @@ import re
 from django.utils import timezone
 
 from document_explorer import naming_service
+from document_explorer.person_phone_service import normalize_mobile
 
 SIGNATURE_TYPE = "OTP"
 SIGNER_ROLE = "S"
@@ -79,24 +80,6 @@ def full_name(person):
             person.given_name, person.first_surname, person.second_surname,
         ) if part
     )
-
-
-def normalize_mobile(raw):
-    """
-    Return the 9-digit mobile number, or None if it is not one.
-
-    ---
-
-    Devuelve el móvil de 9 dígitos (sin espacios ni prefijo +34/0034),
-    o None si no lo es. Así se guarda en la ficha (65 de 76 activos en
-    S124); lo que no encaja se deja fuera, nunca se adivina.
-    """
-    digits = re.sub(r"\D", "", raw or "")
-    if len(digits) == 11 and digits.startswith("34"):
-        digits = digits[2:]
-    elif len(digits) == 13 and digits.startswith("0034"):
-        digits = digits[4:]
-    return digits if len(digits) == 9 else None
 
 
 def _clean(value):

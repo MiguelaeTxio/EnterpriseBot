@@ -33,6 +33,7 @@ from django.conf import settings
 from django.utils import timezone
 
 from .models import PersonIdentity, SystemAgentHeartbeat
+from .person_phone_service import mobile_of
 
 logger = logging.getLogger(__name__)
 
@@ -90,7 +91,7 @@ def _send_to_recipients(template_name, heartbeat, moment):
     person_ids = getattr(settings, "SYSTEM_AGENT_ALERT_PERSON_IDS", [])
     first_sid = ""
     for person in PersonIdentity.objects.filter(pk__in=person_ids):
-        phone = (person.phone or "").strip()
+        phone = mobile_of(person) or ""  # S125: E.164 (+34...)
         company = person.company or fallback_company
         template = WhatsAppTemplate.objects.filter(
             company=company, name=template_name, is_active=True,

@@ -483,12 +483,14 @@ class IncomingWhatsAppView(View):
         if _button_payload == "leer_aqui_circular":
             from bs4 import BeautifulSoup
             from document_explorer.models import DocumentAcknowledgment as _DocAck
-            from document_explorer.models import PersonIdentity as _PersonIdentity
+            from document_explorer.person_phone_service import (
+                resolve_person_by_phone,
+            )
             from panel.views_circulars_h31 import _render_document_variables
 
-            _person = _PersonIdentity.objects.filter(
-                company=company, phone=from_number,
-            ).first()
+            # S125: por los 9 dígitos normalizados -- la ficha guarda el
+            # móvil sin +34 y la comparación literal no casaba nunca.
+            _person = resolve_person_by_phone(company, from_number)
             _pending_ack = (
                 _DocAck.objects.filter(
                     person=_person,
