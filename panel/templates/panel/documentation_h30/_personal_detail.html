@@ -3,7 +3,7 @@
 {% load document_explorer_extras %}
 
 {% block title %}{{ person.first_surname }} {{ person.second_surname }} — Documentación{% endblock %}
-{% block page_title %}{{ person.first_surname }} {{ person.second_surname }}, {{ person.given_name }} ({{ person.dni }})<br><small class="text-muted">{{ person.employer_company|default:"Sin empresa asignada" }}</small>{% endblock %}
+{% block page_title %}{{ person.first_surname }} {{ person.second_surname }}, {{ person.given_name }} ({{ person.dni }})<br><small class="text-muted">{{ person.employer_legal_name|default:"Sin empresa asignada" }}</small>{% endblock %}
 
 {% block extra_head %}
 <style>

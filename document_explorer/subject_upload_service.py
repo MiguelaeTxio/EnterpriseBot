@@ -58,7 +58,9 @@ from document_explorer.date_verification_service import (
 )
 from document_explorer.filename_date_service import extract_date_by_filename
 from document_explorer.index_writer import ensure_folder_chain
-from document_explorer.models import DocumentIndexEntry, path_digest
+from document_explorer.models import (
+    DocumentIndexEntry, PersonIdentity, path_digest,
+)
 from document_explorer.move_service import _virtual_location_taken
 from document_explorer.required_documentation_service import (
     get_required_type_ids,
@@ -414,6 +416,15 @@ def upload_subject_document(
                 reasoning=result.reasoning,
             )
             superseded_count += 1
+
+    # H30 (S125): un contrato que entra puede cambiar la empresa de la
+    # persona (manda el más reciente que la identifique).
+    if isinstance(subject, PersonIdentity):
+        from document_explorer.employer_service import (
+            refresh_after_contract,
+        )
+
+        refresh_after_contract(subject, document_type.code)
 
     return {
         "entry": entry, "warning": warning,

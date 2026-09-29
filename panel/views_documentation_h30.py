@@ -2178,7 +2178,7 @@ def _dossier_subject_texts(subject):
     )
     lines = [
         (person_line, 13, False),
-        (subject.employer_company or "Sin empresa asignada", 11, False),
+        (subject.employer_legal_name or "Sin empresa asignada", 11, False),
     ]
     token = naming_service.build_person_folder_name(
         subject.first_surname, subject.second_surname, subject.given_name,

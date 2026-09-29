@@ -3349,6 +3349,20 @@ def apply_quarantine_classification(entry) -> dict:
         move_entry(entry, target_parent_path)
         _persist_type_and_subject(entry, result, identity)
         _activate_person_on_hiring_document(identity, result)
+        # H30 (S125): la empresa sale del propio contrato (el más
+        # reciente que la identifique), no del Excel.
+        from document_explorer.employer_service import (
+            refresh_after_contract,
+        )
+
+        employer = refresh_after_contract(
+            identity, result.get("document_type_code"),
+        )
+        if employer and employer["changed"]:
+            result["person_identity_note"] = " -- ".join(filter(None, [
+                result.get("person_identity_note"),
+                "Empresa según contrato: %s." % employer["new"],
+            ]))
 
         result["new_name"] = final_name
         result["classified"] = True

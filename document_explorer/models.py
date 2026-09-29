@@ -1731,6 +1731,25 @@ class PersonIdentity(models.Model):
         verbose_name_plural = "Identidades de personal"
         ordering = ["first_surname", "second_surname", "given_name"]
 
+    @property
+    def employer_legal_name(self):
+        """
+        Normalized legal name of the employer, for display.
+
+        ---
+
+        Razón social normalizada de la empresa empleadora, para mostrar
+        (H30, S125): la del `CompanyFiscalProfile` que casa con
+        `employer_company`; si no casa ninguno, el texto tal cual.
+        """
+        from document_explorer.epi_delivery_document_service import (
+            resolve_company_fiscal_profile,
+        )
+
+        profile = resolve_company_fiscal_profile(self.employer_company)
+        return profile.legal_name if profile else self.employer_company
+
+
     def __str__(self):
         return (
             f"{self.dni} -- {self.first_surname} "
