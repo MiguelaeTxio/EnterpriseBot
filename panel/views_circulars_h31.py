@@ -532,6 +532,9 @@ def _render_document_variables(content_html, *, worker=None, administrator=None,
         ).strip()
         tokens["trabajador.dni"] = worker.dni
         tokens["trabajador.num_seguridad_social"] = worker.ss_affiliation_number
+        # H30 (S124): puesto (categoría profesional de la ficha), lo pide
+        # la entrega de información PRL real.
+        tokens["trabajador.puesto"] = worker.professional_category
     if administrator is not None:
         tokens["administrador.nombre_completo"] = (
             "%s %s %s" % (administrator.given_name, administrator.first_surname, administrator.second_surname)

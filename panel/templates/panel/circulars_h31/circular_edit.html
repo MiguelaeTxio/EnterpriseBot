@@ -71,6 +71,7 @@ CircularImportDocumentView/CircularExportPdfView/CircularExportWordView.
                             <option value="{% templatetag openvariable %}trabajador.nombre_completo{% templatetag closevariable %}">Nombre completo</option>
                             <option value="{% templatetag openvariable %}trabajador.dni{% templatetag closevariable %}">DNI</option>
                             <option value="{% templatetag openvariable %}trabajador.num_seguridad_social{% templatetag closevariable %}">Nº afiliación S.S.</option>
+                            <option value="{% templatetag openvariable %}trabajador.puesto{% templatetag closevariable %}">Puesto</option>
                         </optgroup>
                         <optgroup label="Empresa">
                             <option value="{% templatetag openvariable %}empresa.razon_social{% templatetag closevariable %}">Razón social</option>
@@ -80,6 +81,11 @@ CircularImportDocumentView/CircularExportPdfView/CircularExportWordView.
                         <optgroup label="Administrador">
                             <option value="{% templatetag openvariable %}administrador.nombre_completo{% templatetag closevariable %}">Nombre completo</option>
                             <option value="{% templatetag openvariable %}administrador.dni{% templatetag closevariable %}">DNI</option>
+                        </optgroup>
+                        <optgroup label="Obra">
+                            <option value="{% templatetag openvariable %}obra.nombre{% templatetag closevariable %}">Nombre</option>
+                            <option value="{% templatetag openvariable %}obra.direccion{% templatetag closevariable %}">Dirección</option>
+                            <option value="{% templatetag openvariable %}obra.cliente{% templatetag closevariable %}">Cliente</option>
                         </optgroup>
                         <optgroup label="Otros">
                             <option value="{% templatetag openvariable %}fecha{% templatetag closevariable %}">Fecha de generación</option>
