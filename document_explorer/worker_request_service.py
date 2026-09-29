@@ -22,17 +22,23 @@ pedido. Diseño de Miguel Ángel (S125), tal cual:
   sustitución del vigente). No conforme -> se guarda en NO CONFORMES/
   y se avisa al trabajador: "El archivo entregado no es el
   solicitado. Hemos solicitado X y usted ha entregado Y."
-- Un adjunto de un trabajador SIN solicitud pendiente sigue el camino
-  de la hoja de ruta de S124: a la cuarentena. Ningún adjunto se
-  pierde.
+- Segunda entrega (la otra cara, más páginas) de un documento aceptado
+  por WhatsApp en las últimas 24 h: se añade a él (un solo PDF),
+  siempre que sea lo esperado (mismo tipo, misma persona).
+- Adjunto SIN solicitud pendiente: actualización o primera subida por
+  iniciativa del trabajador -- se clasifica contra el catálogo de
+  Personal, se valida igual y se archiva con su nombre canónico. Ningún
+  adjunto de trabajador va a la cuarentena; ninguno se pierde (lo que
+  no encaja va a NO CONFORMES/ con aviso al trabajador).
 """
 import json
 import logging
 import os
 import re
 import unicodedata
-from datetime import date
+from datetime import date, timedelta
 
+import fitz
 import requests
 from django.contrib.contenttypes.models import ContentType
 from django.db import transaction
@@ -42,23 +48,26 @@ from google.genai.types import GenerateContentConfig, HttpOptions, Part
 from ai_services.gemini_client import DEFAULT_MODEL, get_gemini_client
 from ai_services.gemini_rate_limiter import acquire_gemini_slot
 from document_explorer import index_writer, naming_service
-from document_explorer.buckets import NO_CONFORMES_PREFIX, QUARANTINE_PREFIX
+from document_explorer.buckets import NO_CONFORMES_PREFIX
 from document_explorer.models import (
     DocumentIndexEntry, DocumentTypeCatalog, PersonIdentity,
     WorkerDocumentRequest, WorkerDocumentSubmission,
 )
+from document_management.models import DocumentSubstitutionLog
 from document_explorer.person_phone_service import mobile_of
 from document_explorer.subject_upload_service import (
     BUCKET, SubjectUploadError, upload_subject_document,
 )
-from spare_parts.gcs_service import get_storage_client, upload_bytes
+from spare_parts.gcs_service import (
+    download_bytes, get_storage_client, upload_bytes,
+)
 
 logger = logging.getLogger(__name__)
 
 TEMPLATE_MISSING = "document_request_missing"
 TEMPLATE_EXPIRY = "document_request_expiry"
 CLOSING = "Responda a este mensaje con una foto o un PDF del documento."
-WHATSAPP_QUARANTINE_FOLDER = QUARANTINE_PREFIX + "WHATSAPP"
+SECOND_DELIVERY_HOURS = 24
 MEDIA_EXTENSIONS = {
     "application/pdf": "pdf",
     "image/jpeg": "jpg",
@@ -400,15 +409,89 @@ def _download_media(url):
     return response.content
 
 
-def process_submission(submission_id):
+def _candidate_types(queue, recent):
     """
-    Check one attachment against the person's open requests and act.
+    Types Gemini may choose from, requested ones first.
 
     ---
 
-    Comprueba un adjunto contra las solicitudes abiertas de la persona
-    y actúa: conforme a la ficha, no conforme a NO CONFORMES/ con aviso
-    al trabajador, sin solicitud a la cuarentena.
+    Tipos entre los que Gemini puede elegir, primero los pedidos. Con
+    solicitudes abiertas: lo pedido y lo recién aceptado (segunda
+    entrega). Sin solicitudes: además, todo el catálogo activo de
+    Personal (actualización o primera subida por iniciativa del
+    trabajador), sin las plantillas de circulares.
+    """
+    types, seen = [], set()
+
+    def add(doc_type):
+        if doc_type.pk not in seen:
+            types.append(doc_type)
+            seen.add(doc_type.pk)
+
+    for request_obj in queue:
+        add(request_obj.document_type)
+    for prior in recent:
+        add(prior.entry.document_type)
+    if not queue:
+        for doc_type in DocumentTypeCatalog.objects.filter(
+            is_active=True,
+            is_notification_template=False,
+            domain__in=(
+                DocumentTypeCatalog.DOMAIN_PERSONAL,
+                DocumentTypeCatalog.DOMAIN_BOTH,
+            ),
+        ).order_by("label"):
+            add(doc_type)
+    return types
+
+
+def _recent_accepted(person):
+    """
+    Documents accepted over WhatsApp for this person in the last 24 h
+    (still current), newest first -- candidates for a second delivery.
+
+    ---
+
+    Documentos aceptados por WhatsApp de esta persona en las últimas
+    24 h (ventana de sesión de WhatsApp) y aún vigentes, el más reciente
+    primero: candidatos a recibir una segunda entrega (la otra cara).
+    """
+    since = timezone.now() - timedelta(hours=SECOND_DELIVERY_HOURS)
+    recent, seen_types = [], set()
+    for prior in WorkerDocumentSubmission.objects.filter(
+        person=person,
+        status=WorkerDocumentSubmission.STATUS_ACCEPTED,
+        processed_at__gte=since,
+        entry__isnull=False,
+        entry__is_obsolete=False,
+        entry__document_type__isnull=False,
+    ).select_related(
+        "entry", "entry__document_type", "request",
+    ).order_by("-processed_at", "-pk"):
+        if prior.entry.document_type_id not in seen_types:
+            recent.append(prior)
+            seen_types.add(prior.entry.document_type_id)
+    return recent
+
+
+def process_submission(submission_id):
+    """
+    Check one attachment and act.
+
+    ---
+
+    Comprueba un adjunto y actúa (decisiones de Miguel Ángel, S125):
+
+    1. Es uno de los documentos pedidos -> se valida contra lo pedido;
+       conforme a la ficha, no conforme a NO CONFORMES/ con aviso.
+    2. Es otra parte de un documento aceptado por WhatsApp en las
+       últimas 24 h (misma persona, mismo tipo) -> se añade a él.
+    3. Hay solicitudes abiertas y no es nada de lo anterior -> no
+       conforme ("Hemos solicitado X y usted ha entregado Y").
+    4. Sin solicitudes -> actualización o primera subida por iniciativa
+       del trabajador: se clasifica contra el catálogo, se valida y se
+       archiva con su nombre canónico; si no encaja, NO CONFORMES/ y
+       aviso. Ningún adjunto de trabajador va a la cuarentena.
     """
     submission = WorkerDocumentSubmission.objects.select_related(
         "person",
@@ -417,77 +500,108 @@ def process_submission(submission_id):
         return submission.status
     person = submission.person
     content_type = (submission.media_content_type or "").split(";")[0]
-    extension = MEDIA_EXTENSIONS.get(content_type.lower(), "bin")
+    content_type = content_type.lower()
+    extension = MEDIA_EXTENSIONS.get(content_type, "bin")
     try:
         data = _download_media(submission.media_url)
     except Exception as exc:
+        # El adjunto sigue en Twilio y su URL queda en el registro.
+        _reply(submission.from_phone, (
+            "No hemos podido recibir su archivo. Por favor, vuelva a "
+            "enviarlo."
+        ))
         return _finish(
             submission, WorkerDocumentSubmission.STATUS_ERROR,
             "No se pudo descargar de Twilio: %s" % exc,
         )
 
-    queue = open_requests(person) if person is not None else []
-    if not queue:
-        entry = _store_loose_object(
-            WHATSAPP_QUARANTINE_FOLDER, person, submission, data,
-            content_type, extension,
+    queue = open_requests(person)
+    recent = _recent_accepted(person)
+    context = _Delivery(submission, person, data, content_type, extension)
+    if content_type not in GEMINI_MIME_TYPES:
+        return _refuse(
+            context, queue, "un archivo que no es una foto ni un PDF", {},
         )
-        _reply(submission.from_phone, (
-            "Hemos recibido su archivo. Gracias."
-        ))
-        return _finish(
-            submission, WorkerDocumentSubmission.STATUS_QUARANTINED,
-            "Sin solicitud pendiente: a la cuarentena.", entry=entry,
-        )
-
-    active = queue[0]
-    if content_type.lower() not in GEMINI_MIME_TYPES:
-        return _reject(
-            submission, person, active, data, content_type, extension,
-            "un archivo que no es una foto ni un PDF", {},
-        )
+    candidates = _candidate_types(queue, recent)
     try:
-        verdict = _read_with_gemini(data, content_type, person, queue)
+        verdict = _read_with_gemini(data, content_type, candidates)
     except Exception as exc:
         logger.exception("# [DOC REQUEST] Gemini falló (%s)", submission.pk)
-        return _finish(
-            submission, WorkerDocumentSubmission.STATUS_ERROR,
-            "Gemini no pudo leer el archivo: %s" % exc,
-        )
+        return _fail(context, "Gemini no pudo leer el archivo: %s" % exc)
 
-    matched, delivered = _decide(verdict, person, queue)
-    if matched is None:
-        return _reject(
-            submission, person, active, data, content_type, extension,
-            delivered, verdict,
-        )
-    return _accept(
-        submission, person, matched, data, content_type, extension, verdict,
+    code = (verdict.get("detected_type_code") or "").strip().upper()
+    described = (verdict.get("detected_description") or "").strip()
+    requested = next(
+        (req for req in queue if req.document_type.code == code), None,
     )
+    if requested is not None:
+        problem = _check_document(verdict, person, requested.document_type)
+        if problem:
+            return _refuse(context, queue, problem, verdict)
+        return _accept(context, requested.document_type, verdict, requested)
+
+    prior = next(
+        (p for p in recent if p.entry.document_type.code == code), None,
+    )
+    if prior is not None:
+        if _holder_read(verdict) and not _holder_matches(verdict, person):
+            return _refuse(context, queue, "%s de otra persona" % (
+                prior.entry.document_type.label,
+            ), verdict)
+        return _append(context, prior, verdict)
+
+    chosen = next((t for t in candidates if t.code == code), None)
+    if queue or chosen is None:
+        return _refuse(
+            context, queue, described or "un documento que no se reconoce",
+            verdict,
+        )
+    problem = _check_document(verdict, person, chosen)
+    if problem:
+        return _refuse(context, queue, problem, verdict)
+    return _accept(context, chosen, verdict, None)
 
 
-def _read_with_gemini(data, content_type, person, queue):
+class _Delivery:
     """
-    Ask Gemini what the document is and read holder and dates.
+    One attachment being processed (keeps the call signatures short).
 
     ---
 
-    Pregunta a Gemini qué documento es y lee titular y fechas. Solo
-    puede elegir entre los tipos pedidos o OTRO: nunca clasifica
-    contra el catálogo entero.
+    Un adjunto en proceso (mantiene cortas las firmas de las funciones).
+    """
+
+    def __init__(self, submission, person, data, content_type, extension):
+        self.submission = submission
+        self.person = person
+        self.data = data
+        self.content_type = content_type
+        self.extension = extension
+
+
+def _read_with_gemini(data, content_type, candidates):
+    """
+    Ask Gemini which of the candidate types the document is, and read
+    holder and dates.
+
+    ---
+
+    Pregunta a Gemini cuál de los tipos candidatos es el documento y
+    lee titular y fechas. Solo puede elegir entre esos tipos u OTRO.
     """
     types_text = "\n".join(
-        "- %s: %s" % (req.document_type.code, req.document_type.label)
-        for req in queue
+        "- %s: %s" % (doc_type.code, doc_type.label)
+        for doc_type in candidates
     )
     prompt = (
         "Eres un asistente que revisa documentación laboral española. "
-        "A un trabajador se le ha pedido UNO de estos documentos:\n"
+        "Un trabajador ha enviado este archivo por WhatsApp. Estos son "
+        "los únicos tipos de documento posibles:\n"
         "%s\n\n"
-        "Mira el archivo adjunto y responde:\n"
+        "Responde:\n"
         "- detected_type_code: el código de la lista que corresponde a "
-        "lo que es REALMENTE el archivo; si no es ninguno de ellos, "
-        "'%s'.\n"
+        "lo que es REALMENTE el archivo (también si es solo una cara o "
+        "una parte del documento); si no es ninguno de ellos, '%s'.\n"
         "- detected_description: qué es el documento, en pocas "
         "palabras y en castellano (p. ej. 'Tarjeta sanitaria', 'DNI', "
         "'Recibo de la luz', 'Foto sin documento').\n"
@@ -542,6 +656,20 @@ def _normalize_text(value):
     return re.sub(r"[^A-Z0-9 ]", "", value.upper())
 
 
+def _holder_read(verdict):
+    """
+    Whether Gemini read any holder data at all.
+
+    ---
+
+    Si Gemini ha leído algún dato del titular.
+    """
+    return bool(
+        _normalize_text(verdict.get("holder_id_number")).strip()
+        or _normalize_text(verdict.get("holder_full_name")).strip()
+    )
+
+
 def _holder_matches(verdict, person):
     """
     Whether the document belongs to the person.
@@ -567,122 +695,264 @@ def _holder_matches(verdict, person):
     )
 
 
-def _decide(verdict, person, queue):
+def _check_document(verdict, person, doc_type):
     """
-    Return (matched request, "") or (None, what was delivered).
+    Return "" if the document is valid for the person, else what is
+    wrong with it (worded for the worker).
 
     ---
 
-    Devuelve (solicitud casada, "") o (None, descripción de lo
-    entregado) para el aviso de no conforme. Reglas, por orden:
-    es uno de los tipos pedidos, es de esa persona, trae caducidad si
-    el tipo la tiene, no está caducado y es más reciente que el
-    vigente que ya tenemos.
+    Devuelve "" si el documento vale para la persona o, si no, qué le
+    pasa (redactado para el trabajador): es de esa persona, trae
+    caducidad si el tipo la tiene, no está caducado y es más reciente
+    que el vigente que ya tenemos.
     """
-    code = (verdict.get("detected_type_code") or "").strip().upper()
-    described = (verdict.get("detected_description") or "").strip()
-    matched = next(
-        (req for req in queue if req.document_type.code == code), None,
-    )
-    if matched is None:
-        return None, described or "un documento que no se reconoce"
-    label = matched.document_type.label
+    label = doc_type.label
     if not _holder_matches(verdict, person):
-        return None, "%s de otra persona" % label
+        return "%s de otra persona" % label
+    if not doc_type.tracks_expiry:
+        return ""
     expiry = _parse_iso(verdict.get("expiry_date"))
-    if matched.document_type.tracks_expiry:
-        if expiry is None:
-            return None, (
-                "%s en el que no se lee la fecha de caducidad" % label
+    if expiry is None:
+        return "%s en el que no se lee la fecha de caducidad" % label
+    if expiry < timezone.localdate():
+        return "%s caducado el %s" % (label, expiry.strftime("%d/%m/%Y"))
+    current = _current_entry(person, doc_type)
+    if current and current.expiry_date and expiry <= current.expiry_date:
+        return (
+            "%s que no es más reciente que el que ya tenemos "
+            "(caduca el %s)" % (
+                label, current.expiry_date.strftime("%d/%m/%Y"),
             )
-        if expiry < timezone.localdate():
-            return None, "%s caducado el %s" % (
-                label, expiry.strftime("%d/%m/%Y"),
-            )
-        current = _current_entry(person, matched.document_type)
-        if current and current.expiry_date and expiry <= current.expiry_date:
-            return None, (
-                "%s que no es más reciente que el que ya tenemos "
-                "(caduca el %s)" % (
-                    label, current.expiry_date.strftime("%d/%m/%Y"),
-                )
-            )
-    return matched, ""
+        )
+    return ""
 
 
-def _accept(submission, person, request_obj, data, content_type,
-            extension, verdict):
+def _file_in_record(context, doc_type, data, extension, expiry, issue,
+                    uploaded_by):
     """
-    File the document in the person's record and move the queue on.
+    File a document in the person's record (direct classification).
 
     ---
 
-    Archiva el documento en la ficha de la persona (clasificación
-    directa, nunca cuarentena), marca la solicitud como recibida,
-    confirma al trabajador y pide el siguiente de la cola.
+    Archiva un documento en la ficha de la persona (clasificación
+    directa: tipo, vínculo, nombre canónico, fechas y sustitución del
+    vigente), igual que una subida del supervisor.
     """
-    doc_type = request_obj.document_type
+    return upload_subject_document(
+        subject=context.person,
+        domain_content_type=ContentType.objects.get_for_model(PersonIdentity),
+        document_type=doc_type,
+        data=data,
+        original_filename="whatsapp_%s.%s" % (
+            context.submission.media_sid, extension,
+        ),
+        typed_date=expiry,
+        typed_issue_date=issue,
+        subject_label=_person_label(context.person),
+        uploaded_by=uploaded_by,
+    )["entry"]
+
+
+def _accept(context, doc_type, verdict, request_obj):
+    """
+    File the document; close the request (if any) and move the queue.
+
+    ---
+
+    Archiva el documento en la ficha. Si respondía a una solicitud, la
+    marca recibida, lo confirma y pide el siguiente de la cola; si era
+    iniciativa del trabajador, confirma que queda archivado.
+    """
+    submission = context.submission
     try:
-        result = upload_subject_document(
-            subject=person,
-            domain_content_type=ContentType.objects.get_for_model(
-                PersonIdentity,
-            ),
-            document_type=doc_type,
-            data=data,
-            original_filename="whatsapp_%s.%s" % (
-                submission.media_sid, extension,
-            ),
-            typed_date=_parse_iso(verdict.get("expiry_date")),
-            typed_issue_date=_parse_iso(verdict.get("issue_date")),
-            subject_label=_person_label(person),
-            uploaded_by=request_obj.approved_by,
+        entry = _file_in_record(
+            context, doc_type, context.data, context.extension,
+            _parse_iso(verdict.get("expiry_date")),
+            _parse_iso(verdict.get("issue_date")),
+            request_obj.approved_by if request_obj else None,
         )
     except SubjectUploadError as exc:
-        return _finish(
-            submission, WorkerDocumentSubmission.STATUS_ERROR,
-            "No se pudo archivar en la ficha: %s" % exc, verdict=verdict,
+        return _fail(
+            context, "No se pudo archivar en la ficha: %s" % exc, verdict,
         )
-    entry = result["entry"]
-    request_obj.status = WorkerDocumentRequest.STATUS_RECEIVED
-    request_obj.received_at = timezone.now()
-    request_obj.received_entry = entry
-    request_obj.save(update_fields=[
-        "status", "received_at", "received_entry",
-    ])
-    submission.request = request_obj
-    _reply(submission.from_phone, (
-        "Documento recibido y aceptado: %s. Gracias." % doc_type.label
-    ))
-    advance_queue(person, free_text=True)
+    if request_obj is not None:
+        request_obj.status = WorkerDocumentRequest.STATUS_RECEIVED
+        request_obj.received_at = timezone.now()
+        request_obj.received_entry = entry
+        request_obj.save(update_fields=[
+            "status", "received_at", "received_entry",
+        ])
+        submission.request = request_obj
+        _reply(submission.from_phone, (
+            "Documento recibido y aceptado: %s. Gracias." % doc_type.label
+        ))
+        advance_queue(context.person, free_text=True)
+        reason = "Aceptado como %s (solicitud)." % doc_type.code
+    else:
+        _reply(submission.from_phone, (
+            "Documento recibido y archivado: %s. Gracias." % doc_type.label
+        ))
+        reason = "Archivado como %s (sin solicitud)." % doc_type.code
     return _finish(
-        submission, WorkerDocumentSubmission.STATUS_ACCEPTED,
-        "Aceptado como %s." % doc_type.code, verdict=verdict, entry=entry,
+        submission, WorkerDocumentSubmission.STATUS_ACCEPTED, reason,
+        verdict=verdict, entry=entry,
     )
 
 
-def _reject(submission, person, active, data, content_type, extension,
-            delivered, verdict):
+def _merge_into_pdf(parts):
     """
-    Keep the file in NO CONFORMES and tell the worker.
+    Join photos and/or PDFs into one PDF, in order.
 
     ---
 
-    Guarda el archivo en NO CONFORMES/ (ningún adjunto se pierde) y
-    avisa al trabajador con la frase de Miguel Ángel; la solicitud
-    sigue abierta para que lo reenvíe.
+    Une fotos y/o PDF en un solo PDF, en orden (PyMuPDF).
     """
-    entry = _store_loose_object(
-        NO_CONFORMES_PREFIX.rstrip("/"), person, submission, data,
-        content_type, extension,
-    )
-    _reply(submission.from_phone, (
-        "El archivo entregado no es el solicitado. Hemos solicitado %s y "
-        "usted ha entregado %s. %s" % (
-            active.document_type.label, delivered, CLOSING,
+    merged = fitz.open()
+    for data, content_type in parts:
+        # El formato se decide por los propios bytes: el content_type
+        # guardado puede no reflejar lo que hay (p. ej. un PDF ya unido).
+        if data[:5] == b"%PDF-":
+            source = fitz.open(stream=data, filetype="pdf")
+        else:
+            image = fitz.open(
+                stream=data,
+                filetype=MEDIA_EXTENSIONS.get(content_type, "jpg"),
+            )
+            source = fitz.open("pdf", image.convert_to_pdf())
+        merged.insert_pdf(source)
+    return merged.tobytes()
+
+
+def _append(context, prior, verdict):
+    """
+    Add a second delivery (other side, more pages) to a document
+    accepted over WhatsApp in the last 24 h.
+
+    ---
+
+    Añade una segunda entrega (la otra cara, más páginas) a un
+    documento aceptado por WhatsApp en las últimas 24 h: une ambos en
+    un PDF, lo archiva como documento nuevo con las mismas fechas y
+    deja el anterior obsoleto con su registro de sustitución (nunca se
+    sobrescribe un blob, S102).
+    """
+    submission = context.submission
+    old_entry = prior.entry
+    doc_type = old_entry.document_type
+    try:
+        old_data = download_bytes(BUCKET, old_entry.blob_name)
+        merged = _merge_into_pdf([
+            (old_data, (old_entry.content_type or "").lower()),
+            (context.data, context.content_type),
+        ])
+        new_entry = _file_in_record(
+            context, doc_type, merged, "pdf",
+            old_entry.expiry_date, old_entry.issue_date,
+            prior.request.approved_by if prior.request else None,
         )
+    except Exception as exc:
+        logger.exception("# [DOC REQUEST] No se pudo unir (%s)", submission.pk)
+        return _fail(
+            context, "No se pudo añadir al documento aceptado: %s" % exc,
+            verdict,
+        )
+    old_entry.refresh_from_db(fields=["is_obsolete"])
+    if not old_entry.is_obsolete:
+        old_entry.is_obsolete = True
+        old_entry.save(update_fields=["is_obsolete"])
+        entry_ct = ContentType.objects.get_for_model(DocumentIndexEntry)
+        DocumentSubstitutionLog.objects.create(
+            company=context.person.company,
+            superseding_content_type=entry_ct,
+            superseding_object_id=new_entry.pk,
+            superseding_label=new_entry.name,
+            superseded_content_type=entry_ct,
+            superseded_object_id=old_entry.pk,
+            superseded_label=old_entry.name,
+            subject_label=_person_label(context.person),
+            document_type=doc_type.code,
+            reasoning=(
+                "Segunda entrega por WhatsApp (S125): unida al documento "
+                "aceptado en un solo PDF."
+            ),
+        )
+    if prior.request and prior.request.received_entry_id == old_entry.pk:
+        prior.request.received_entry = new_entry
+        prior.request.save(update_fields=["received_entry"])
+    submission.request = prior.request
+    _reply(submission.from_phone, (
+        "Recibida también esta parte de su %s; la hemos unido al "
+        "documento. Gracias." % doc_type.label
     ))
-    submission.request = active
+    return _finish(
+        submission, WorkerDocumentSubmission.STATUS_ACCEPTED,
+        "Añadido a %s (segunda entrega)." % old_entry.name,
+        verdict=verdict, entry=new_entry,
+    )
+
+
+def _fail(context, reason, verdict=None):
+    """
+    Something broke after download: keep the file and tell the worker.
+
+    ---
+
+    Algo ha fallado después de descargar (Gemini, archivado, unión):
+    el archivo se guarda en NO CONFORMES/ para revisión humana y el
+    trabajador lo sabe -- ni se pierde ni se queda en silencio.
+    """
+    submission = context.submission
+    try:
+        entry = _store_loose_object(
+            NO_CONFORMES_PREFIX.rstrip("/"), context.person, submission,
+            context.data, context.content_type, context.extension,
+        )
+    except Exception:
+        logger.exception(
+            "# [DOC REQUEST] Tampoco se pudo guardar (%s)", submission.pk,
+        )
+        entry = None
+    _reply(submission.from_phone, (
+        "Hemos recibido su archivo, pero no hemos podido revisarlo "
+        "automáticamente. Lo revisará una persona."
+    ))
+    return _finish(
+        submission, WorkerDocumentSubmission.STATUS_ERROR, reason,
+        verdict=verdict, entry=entry,
+    )
+
+
+def _refuse(context, queue, delivered, verdict):
+    """
+    Keep the file in NO CONFORMES and tell the worker why.
+
+    ---
+
+    Guarda el archivo en NO CONFORMES/ (ningún adjunto se pierde) y le
+    dice al trabajador por qué. Con una solicitud abierta, con la frase
+    de Miguel Ángel; la solicitud sigue abierta para que lo reenvíe.
+    """
+    submission = context.submission
+    entry = _store_loose_object(
+        NO_CONFORMES_PREFIX.rstrip("/"), context.person, submission,
+        context.data, context.content_type, context.extension,
+    )
+    if queue:
+        active = queue[0]
+        text = (
+            "El archivo entregado no es el solicitado. Hemos solicitado "
+            "%s y usted ha entregado %s. %s" % (
+                active.document_type.label, delivered, CLOSING,
+            )
+        )
+        submission.request = active
+    else:
+        text = (
+            "El archivo entregado no se ha podido archivar: usted ha "
+            "entregado %s." % delivered
+        )
+    _reply(submission.from_phone, text)
     return _finish(
         submission, WorkerDocumentSubmission.STATUS_REJECTED,
         "No conforme: %s." % delivered, verdict=verdict, entry=entry,

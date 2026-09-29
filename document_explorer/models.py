@@ -3827,21 +3827,19 @@ class WorkerDocumentSubmission(models.Model):
 
     H30 (S125). Un adjunto recibido por WhatsApp de un trabajador, con
     el veredicto de la comprobación contra lo pedido. Ningún adjunto se
-    pierde (S124): el aceptado va a la ficha, el no conforme a
-    NO CONFORMES/ y el que no responde a ninguna solicitud a la
-    cuarentena.
+    pierde (S124): el aceptado (pedido, segunda entrega o iniciativa del
+    trabajador) va a la ficha y el no conforme a NO CONFORMES/. Ninguno
+    va a la cuarentena (Miguel Ángel, S125).
     """
 
     STATUS_PROCESSING = "PROCESSING"
     STATUS_ACCEPTED = "ACCEPTED"
     STATUS_REJECTED = "REJECTED"
-    STATUS_QUARANTINED = "QUARANTINED"
     STATUS_ERROR = "ERROR"
     STATUS_CHOICES = [
         (STATUS_PROCESSING, "Revisando"),
         (STATUS_ACCEPTED, "Aceptado"),
         (STATUS_REJECTED, "No conforme"),
-        (STATUS_QUARANTINED, "A cuarentena (sin solicitud)"),
         (STATUS_ERROR, "Error"),
     ]
 
