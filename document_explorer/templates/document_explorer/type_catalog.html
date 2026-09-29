@@ -10,6 +10,11 @@
     Catálogo de tipos documentales, gestionable desde el panel sin
     tocar código (H29, S040). Solo administrador -- ver
     DocumentTypeCatalogListView.
+    H30 (S125): formato único de visor (directriz 4.24): panel superior
+    fijo (#list-top-panel), scroll solo en la lista (#list-bottom-panel,
+    panel/_fixed_list_layout.html), orden múltiple con prioridad,
+    casilleros con selección persistida por usuario, acciones masivas
+    siempre visibles, y casilla «Lo aporta el trabajador» por fila.
 {% endcomment %}
 
 {% block title %}Catálogo de tipos documentales{% endblock title %}
@@ -18,7 +23,9 @@
 {% block content %}
 <div class="container-fluid px-3 pt-3">
 
-    <div class="d-flex align-items-center justify-content-between mb-3">
+<div class="border rounded p-2 mb-2" id="list-top-panel">
+    {% csrf_token %}
+    <div class="d-flex align-items-center justify-content-between mb-2 flex-wrap gap-2">
         <p class="text-muted small mb-0">
             Gemini solo sugiere un código de esta lista -- añadir un
             tipo aquí no necesita ningún despliegue, la próxima
@@ -30,63 +37,54 @@
         </a>
     </div>
 
-    <div class="card mb-4">
-        <div class="card-body">
-            <h6 class="card-title">Añadir tipo nuevo</h6>
-            <form method="post" action="{% url 'document_explorer:type_catalog_create' %}"
-                  class="row g-2 align-items-end">
-                {% csrf_token %}
-                <div class="col-12 col-md-4">
-                    <label class="form-label small mb-1" for="id_code">Código</label>
-                    <input type="text" class="form-control form-control-sm"
-                           id="id_code" name="code" placeholder="p. ej. MANUAL DESPIECE"
-                           required>
-                    <div class="form-text">
-                        Se normaliza solo -- mayúsculas, sin acentos ni
-                        espacios (quedaría "MANUAL_DESPIECE").
-                    </div>
-                </div>
-                <div class="col-12 col-md-4">
-                    <label class="form-label small mb-1" for="id_label">Nombre visible</label>
-                    <input type="text" class="form-control form-control-sm"
-                           id="id_label" name="label"
-                           placeholder="p. ej. Manual de despiece / catálogo de piezas"
-                           required>
-                </div>
-                <div class="col-8 col-md-3">
-                    <label class="form-label small mb-1" for="id_domain">Dominio</label>
-                    <select class="form-select form-select-sm" id="id_domain" name="domain" required>
-                        {% for value, display in domain_choices %}
-                            <option value="{{ value }}">{{ display }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div class="col-4 col-md-1">
-                    <button type="submit" class="btn btn-sm btn-primary w-100">Añadir</button>
-                </div>
-            </form>
+    <form method="post" action="{% url 'document_explorer:type_catalog_create' %}"
+          class="row g-2 align-items-end mb-2 js-busy-form">
+        {% csrf_token %}
+        <div class="col-12 col-md-4">
+            <label class="form-label small mb-1" for="id_code">Añadir tipo: código</label>
+            <input type="text" class="form-control form-control-sm"
+                   id="id_code" name="code" placeholder="p. ej. MANUAL DESPIECE"
+                   title="Se normaliza solo -- mayúsculas, sin acentos ni espacios"
+                   required>
         </div>
-    </div>
+        <div class="col-12 col-md-4">
+            <label class="form-label small mb-1" for="id_label">Nombre visible</label>
+            <input type="text" class="form-control form-control-sm"
+                   id="id_label" name="label"
+                   placeholder="p. ej. Manual de despiece / catálogo de piezas"
+                   required>
+        </div>
+        <div class="col-8 col-md-3">
+            <label class="form-label small mb-1" for="id_domain">Dominio</label>
+            <select class="form-select form-select-sm" id="id_domain" name="domain" required>
+                {% for value, display in domain_choices %}
+                    <option value="{{ value }}">{{ display }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-4 col-md-1">
+            <button type="submit" class="btn btn-sm btn-primary w-100">Añadir</button>
+        </div>
+    </form>
 
-    <form method="get" class="row g-2 align-items-end mb-3">
-        <div class="col-12 col-md-5">
+    <form method="get" class="row g-2 align-items-end mb-2">
+        <input type="hidden" name="sort" value="{{ current_sort }}">
+        <div class="col-12 col-md-4">
             <label class="form-label small mb-1" for="id_q">Buscar</label>
             <input type="text" class="form-control form-control-sm"
                    id="id_q" name="q" value="{{ filters.q }}"
                    placeholder="Código o nombre visible…">
         </div>
-        <div class="col-6 col-md-3">
+        <div class="col-6 col-md-2">
             <label class="form-label small mb-1" for="id_filter_domain">Dominio</label>
             <select class="form-select form-select-sm" id="id_filter_domain" name="domain">
                 <option value="">Todos</option>
                 {% for value, display in domain_choices %}
-                    <option value="{{ value }}" {% if filters.domain == value %}selected{% endif %}>
-                        {{ display }}
-                    </option>
+                    <option value="{{ value }}" {% if filters.domain == value %}selected{% endif %}>{{ display }}</option>
                 {% endfor %}
             </select>
         </div>
-        <div class="col-6 col-md-3">
+        <div class="col-6 col-md-2">
             <label class="form-label small mb-1" for="id_filter_state">Estado</label>
             <select class="form-select form-select-sm" id="id_filter_state" name="state">
                 <option value="">Todos</option>
@@ -94,66 +92,88 @@
                 <option value="inactive" {% if filters.state == "inactive" %}selected{% endif %}>Inactivo</option>
             </select>
         </div>
-        <div class="col-12 col-md-1 d-grid">
-            <button type="submit" class="btn btn-sm btn-outline-primary" title="Filtrar">
-                <i class="bi bi-search"></i>
+        <div class="col-6 col-md-2">
+            <label class="form-label small mb-1" for="id_filter_worker">Lo aporta el trabajador</label>
+            <select class="form-select form-select-sm" id="id_filter_worker" name="worker">
+                <option value="">Todos</option>
+                <option value="yes" {% if filters.worker == "yes" %}selected{% endif %}>Sí</option>
+                <option value="no" {% if filters.worker == "no" %}selected{% endif %}>No</option>
+            </select>
+        </div>
+        <div class="col-6 col-md-2 d-flex gap-1">
+            <button type="submit" class="btn btn-sm btn-outline-primary flex-fill" title="Filtrar">
+                <i class="bi bi-search"></i> Filtrar
             </button>
+            <a href="{{ reset_url }}" class="btn btn-sm btn-outline-secondary" title="Limpiar filtros">
+                <i class="bi bi-x-lg"></i>
+            </a>
         </div>
     </form>
 
-    <div class="table-responsive">
+    <form method="post" action="{% url 'document_explorer:type_catalog_bulk' %}"
+          id="catalog-bulk-form" class="d-flex align-items-center flex-wrap gap-2 js-busy-form">
+        {% csrf_token %}
+        <span class="small text-muted">
+            Seleccionados: <strong id="catalog-selected-count">{{ selected_ids|length }}</strong>
+        </span>
+        <button type="submit" name="action" value="mark_worker" class="btn btn-sm btn-outline-primary js-bulk-button">
+            <i class="bi bi-person-check"></i> Marcar «lo aporta el trabajador»
+        </button>
+        <button type="submit" name="action" value="unmark_worker" class="btn btn-sm btn-outline-secondary js-bulk-button">
+            <i class="bi bi-person-dash"></i> Quitar la marca
+        </button>
+        <button type="submit" name="action" value="activate" class="btn btn-sm btn-outline-success js-bulk-button">
+            Reactivar
+        </button>
+        <button type="submit" name="action" value="deactivate" class="btn btn-sm btn-outline-warning js-bulk-button">
+            Desactivar
+        </button>
+        <button type="button" id="catalog-clear-selection" class="btn btn-sm btn-link">
+            Vaciar selección
+        </button>
+        {% if sort_active %}
+            <a href="{{ clear_sort_url }}" class="btn btn-sm btn-outline-secondary ms-auto">
+                <i class="bi bi-x-circle me-1"></i>Quitar orden
+            </a>
+        {% endif %}
+    </form>
+</div>
+
+<div class="border rounded p-2" id="list-bottom-panel">
+    <div class="h-100 d-flex flex-column">
+    <div class="fixed-list-scroll catalog-scroll">
         <table class="table table-sm table-hover align-middle mb-0">
             <thead>
                 <tr>
-                    <th>
-                        <a href="{{ sort_columns.code.url }}" class="text-decoration-none">
-                            Código
-                            {% if sort_columns.code.active %}
-                                <i class="bi bi-caret-{% if sort_columns.code.dir == "asc" %}up{% else %}down{% endif %}-fill"></i>
-                            {% endif %}
-                        </a>
+                    <th class="catalog-check-col">
+                        <input type="checkbox" id="catalog-select-all" title="Seleccionar todos los de la lista">
                     </th>
-                    <th>
-                        <a href="{{ sort_columns.label.url }}" class="text-decoration-none">
-                            Nombre visible
-                            {% if sort_columns.label.active %}
-                                <i class="bi bi-caret-{% if sort_columns.label.dir == "asc" %}up{% else %}down{% endif %}-fill"></i>
-                            {% endif %}
-                        </a>
-                    </th>
-                    <th>
-                        <a href="{{ sort_columns.domain.url }}" class="text-decoration-none">
-                            Dominio
-                            {% if sort_columns.domain.active %}
-                                <i class="bi bi-caret-{% if sort_columns.domain.dir == "asc" %}up{% else %}down{% endif %}-fill"></i>
-                            {% endif %}
-                        </a>
-                    </th>
-                    <th>
-                        <a href="{{ sort_columns.state.url }}" class="text-decoration-none">
-                            Estado
-                            {% if sort_columns.state.active %}
-                                <i class="bi bi-caret-{% if sort_columns.state.dir == "asc" %}up{% else %}down{% endif %}-fill"></i>
-                            {% endif %}
-                        </a>
-                    </th>
-                    <th>
-                        <a href="{{ sort_columns.created.url }}" class="text-decoration-none">
-                            Alta
-                            {% if sort_columns.created.active %}
-                                <i class="bi bi-caret-{% if sort_columns.created.dir == "asc" %}up{% else %}down{% endif %}-fill"></i>
-                            {% endif %}
-                        </a>
-                    </th>
+                    <th><a href="{{ sort_urls.code }}" class="text-decoration-none text-dark">Código {{ sort_arrows.code }}<sup>{{ sort_priority.code }}</sup></a></th>
+                    <th><a href="{{ sort_urls.label }}" class="text-decoration-none text-dark">Nombre visible {{ sort_arrows.label }}<sup>{{ sort_priority.label }}</sup></a></th>
+                    <th><a href="{{ sort_urls.domain }}" class="text-decoration-none text-dark">Dominio {{ sort_arrows.domain }}<sup>{{ sort_priority.domain }}</sup></a></th>
+                    <th><a href="{{ sort_urls.worker }}" class="text-decoration-none text-dark">Lo aporta el trabajador {{ sort_arrows.worker }}<sup>{{ sort_priority.worker }}</sup></a></th>
+                    <th><a href="{{ sort_urls.state }}" class="text-decoration-none text-dark">Estado {{ sort_arrows.state }}<sup>{{ sort_priority.state }}</sup></a></th>
+                    <th><a href="{{ sort_urls.created }}" class="text-decoration-none text-dark">Alta {{ sort_arrows.created }}<sup>{{ sort_priority.created }}</sup></a></th>
                     <th></th>
                 </tr>
             </thead>
             <tbody>
                 {% for doc_type in types %}
                     <tr class="{% if not doc_type.is_active %}table-light text-muted{% endif %}">
+                        <td>
+                            <input type="checkbox" class="catalog-row-check" value="{{ doc_type.pk }}"
+                                   {% if doc_type.is_selected %}checked{% endif %}>
+                        </td>
                         <td class="font-monospace">{{ doc_type.code }}</td>
                         <td>{{ doc_type.label }}</td>
                         <td>{{ doc_type.get_domain_display }}</td>
+                        <td class="text-nowrap">
+                            <input type="checkbox" class="form-check-input catalog-worker-check"
+                                   data-url="{% url 'document_explorer:type_catalog_worker_provides' doc_type.pk %}"
+                                   title="Lo aporta el trabajador"
+                                   {% if doc_type.worker_provides %}checked{% endif %}>
+                            <span class="small ms-1 catalog-worker-status"></span>
+                        </td>
                         <td>
                             {% if doc_type.is_active %}
                                 <span class="badge bg-success">Activo</span>
@@ -163,7 +183,7 @@
                         </td>
                         <td class="small text-muted">{{ doc_type.created_at|date:"d/m/Y" }}</td>
                         <td class="text-end">
-                            <form method="post"
+                            <form method="post" class="js-busy-form"
                                   action="{% url 'document_explorer:type_catalog_toggle' doc_type.pk %}">
                                 {% csrf_token %}
                                 <button type="submit" class="btn btn-sm btn-outline-secondary">
@@ -172,16 +192,170 @@
                             </form>
                         </td>
                     </tr>
+                {% empty %}
+                    <tr>
+                        <td colspan="8" class="text-center text-muted py-4">
+                            Sin resultados para este filtro.
+                        </td>
+                    </tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
-
-    {% if not types %}
-        <p class="text-muted small mt-3 mb-0">
-            Sin resultados para este filtro.
-        </p>
-    {% endif %}
+    </div>
+</div>
 
 </div>
+
+{{ selected_ids|json_script:"catalog-selection-data" }}
+<style>
+.catalog-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; }
+.catalog-check-col { width: 2rem; }
+</style>
+<script>
+(function () {
+    "use strict";
+    const saveUrl = "{% url 'panel:navigation_state_save' screen_key %}";
+    const csrf = document.querySelector(
+        "#list-top-panel [name=csrfmiddlewaretoken]"
+    ).value;
+    const bulkForm = document.getElementById("catalog-bulk-form");
+    const counter = document.getElementById("catalog-selected-count");
+    const selectAll = document.getElementById("catalog-select-all");
+    const rowChecks = Array.from(
+        document.querySelectorAll(".catalog-row-check")
+    );
+    let selection = new Set(
+        JSON.parse(
+            document.getElementById("catalog-selection-data").textContent
+        ).map(String)
+    );
+
+    // Selección: sobrevive a filtros y orden (se guarda por usuario en
+    // PanelNavigationState, directriz 4.24 punto 3).
+    function refreshSelection() {
+        counter.textContent = selection.size;
+        bulkForm.querySelectorAll(".js-bulk-button").forEach(function (b) {
+            b.disabled = selection.size === 0;
+        });
+        selectAll.checked = rowChecks.length > 0 &&
+            rowChecks.every(function (cb) { return cb.checked; });
+    }
+
+    function saveSelection() {
+        fetch(saveUrl, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "X-CSRFToken": csrf,
+            },
+            body: JSON.stringify({selection: Array.from(selection)}),
+        }).catch(function () {
+            counter.textContent = selection.size +
+                " (no se pudo guardar la selección)";
+        });
+    }
+
+    rowChecks.forEach(function (cb) {
+        cb.addEventListener("change", function () {
+            if (cb.checked) { selection.add(cb.value); }
+            else { selection.delete(cb.value); }
+            refreshSelection();
+            saveSelection();
+        });
+    });
+    selectAll.addEventListener("change", function () {
+        rowChecks.forEach(function (cb) {
+            cb.checked = selectAll.checked;
+            if (cb.checked) { selection.add(cb.value); }
+            else { selection.delete(cb.value); }
+        });
+        refreshSelection();
+        saveSelection();
+    });
+    document.getElementById("catalog-clear-selection").addEventListener(
+        "click", function () {
+            selection = new Set();
+            rowChecks.forEach(function (cb) { cb.checked = false; });
+            refreshSelection();
+            saveSelection();
+        }
+    );
+
+    // Acciones masivas: se envía la selección completa, también la que
+    // no se ve con el filtro actual.
+    bulkForm.addEventListener("submit", function () {
+        bulkForm.querySelectorAll("input[name=selected]").forEach(
+            function (el) { el.remove(); }
+        );
+        selection.forEach(function (pk) {
+            const input = document.createElement("input");
+            input.type = "hidden";
+            input.name = "selected";
+            input.value = pk;
+            bulkForm.appendChild(input);
+        });
+    });
+
+    // Ningún botón en silencio: se ve que está trabajando.
+    document.querySelectorAll(".js-busy-form").forEach(function (form) {
+        form.addEventListener("submit", function (ev) {
+            const button = ev.submitter || form.querySelector("[type=submit]");
+            if (!button) { return; }
+            if (button.name) {
+                const hidden = document.createElement("input");
+                hidden.type = "hidden";
+                hidden.name = button.name;
+                hidden.value = button.value;
+                form.appendChild(hidden);
+            }
+            setTimeout(function () {
+                form.querySelectorAll("button").forEach(function (b) {
+                    b.disabled = true;
+                });
+                button.innerHTML =
+                    '<span class="spinner-border spinner-border-sm"></span>' +
+                    " Aplicando…";
+            }, 0);
+        });
+    });
+
+    // «Lo aporta el trabajador» por fila: guarda al momento y lo dice.
+    document.querySelectorAll(".catalog-worker-check").forEach(function (cb) {
+        cb.addEventListener("change", function () {
+            const status = cb.parentElement.querySelector(
+                ".catalog-worker-status"
+            );
+            const wanted = cb.checked;
+            cb.disabled = true;
+            status.className = "small ms-1 catalog-worker-status text-muted";
+            status.textContent = "Guardando…";
+            const body = new URLSearchParams({value: wanted ? "1" : "0"});
+            fetch(cb.dataset.url, {
+                method: "POST",
+                headers: {"X-CSRFToken": csrf},
+                body: body,
+            }).then(function (resp) {
+                return resp.json().then(function (data) {
+                    if (!resp.ok || !data.ok) {
+                        throw new Error(data.error || ("HTTP " + resp.status));
+                    }
+                });
+            }).then(function () {
+                status.className = "small ms-1 catalog-worker-status text-success";
+                status.textContent = "Guardado";
+            }).catch(function (err) {
+                cb.checked = !wanted;
+                status.className = "small ms-1 catalog-worker-status text-danger";
+                status.textContent = "Error: " + err.message;
+            }).finally(function () {
+                cb.disabled = false;
+            });
+        });
+    });
+
+    refreshSelection();
+}());
+</script>
+{% include "panel/_fixed_list_layout.html" with top_id="list-top-panel" bottom_id="list-bottom-panel" %}
 {% endblock content %}

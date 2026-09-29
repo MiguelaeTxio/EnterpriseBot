@@ -126,6 +126,17 @@ urlpatterns = [
         views.DocumentTypeCatalogToggleView.as_view(),
         name="type_catalog_toggle",
     ),
+    # H30 (S125): «Lo aporta el trabajador», por fila y en bloque.
+    path(
+        "catalogo/<int:pk>/aporta-trabajador/",
+        views.DocumentTypeCatalogWorkerProvidesView.as_view(),
+        name="type_catalog_worker_provides",
+    ),
+    path(
+        "catalogo/masivo/",
+        views.DocumentTypeCatalogBulkView.as_view(),
+        name="type_catalog_bulk",
+    ),
     path(
         "cuarentena/",
         views.QuarantineStatusView.as_view(),

@@ -153,6 +153,9 @@ from django.views import View
 from django.views.generic import TemplateView
 
 from panel.mixins import CompanyUserRequiredMixin
+from panel.navigation_persistence import (
+    apply_list_navigation, get_saved_state_key,
+)
 from django.conf import settings
 from django.db import transaction
 
@@ -3234,23 +3237,40 @@ class RegisterUploadedObjectView(View):
         })
 
 
+TYPE_CATALOG_SCREEN_KEY = "document_type_catalog"
+_TYPE_CATALOG_FILTER_KEYS = ("q", "domain", "state", "worker", "sort")
+_TYPE_CATALOG_BULK_ACTIONS = {
+    "mark_worker": (
+        "worker_provides", True, "Marcados «lo aporta el trabajador»",
+    ),
+    "unmark_worker": (
+        "worker_provides", False, "Sin la marca «lo aporta el trabajador»",
+    ),
+    "activate": ("is_active", True, "Reactivados"),
+    "deactivate": ("is_active", False, "Desactivados"),
+}
+
+
+def _require_catalog_admin(request):
+    """
+    Only the administrator manages the type catalog.
+
+    ---
+
+    Solo el administrador gestiona el catálogo de tipos.
+    """
+    if not permissions.is_unrestricted(request.user.company_user):
+        raise Http404("Solo el administrador puede gestionar el catálogo.")
+
+
 class DocumentTypeCatalogListView(ExplorerAccessMixin, TemplateView):
     """
     Admin screen to manage `DocumentTypeCatalog` from the panel,
-    without touching code (H29, S040) -- Miguel Ángel, verbatim: *"al
-    panel, tenemos que dotar al panel de un sistema para añadir tipo
-    (...) con esto quiero evitar tener que tocar código para añadir un
-    tipo de documento al catálogo."* Real incident that prompted this:
-    several "manual de despiece" (spare-parts catalog) files for
-    forklifts stayed unclassified in quarantine even though the
-    machine was known with certainty, purely because that document
-    type didn't exist yet in the closed vocabulary (3.18: "cerrado
-    pero extensible, no congelado permanentemente").
-
-    `classify_entry()`'s prompt already reads `DocumentTypeCatalog`
-    live from the database on every call (`_build_prompt`) -- adding a
-    row here needs no deploy, no restart, nothing: the very next
-    Gemini call already sees it.
+    without touching code (H29, S040). Since H30/S125 it follows the
+    single list format of directive 4.24: fixed top panel, only the
+    list scrolls, multi-column sort with priority, per-row and "all"
+    checkboxes with a selection that survives filters and sorting,
+    always-visible bulk actions and per-user persisted navigation.
 
     ---
 
@@ -3258,92 +3278,109 @@ class DocumentTypeCatalogListView(ExplorerAccessMixin, TemplateView):
     desde el panel, sin tocar código (H29, S040) -- Miguel Ángel,
     verbatim: *"al panel, tenemos que dotar al panel de un sistema
     para añadir tipo (...) con esto quiero evitar tener que tocar
-    código para añadir un tipo de documento al catálogo."* Incidente
-    real que lo motivó: varios "manual de despiece" (catálogo de
-    piezas) de carretillas se quedaban sin clasificar en cuarentena
-    aunque la máquina se conocía con total certeza, solo porque ese
-    tipo documental todavía no existía en el vocabulario cerrado
-    (3.18: "cerrado pero extensible, no congelado permanentemente").
+    código para añadir un tipo de documento al catálogo."* El prompt
+    de `classify_entry()` lee el catálogo en vivo en cada llamada:
+    añadir una fila no necesita despliegue.
 
-    El prompt de `classify_entry()` ya lee `DocumentTypeCatalog` en
-    vivo de la base de datos en cada llamada (`_build_prompt`) --
-    añadir una fila aquí no necesita despliegue, ni reinicio, nada: la
-    siguiente llamada a Gemini ya la ve.
+    H30 (S125): pasa al formato único de visor de la directriz 4.24
+    (panel fijo, scroll solo en la lista, orden múltiple con
+    prioridad, casilleros con selección persistida, acciones masivas
+    siempre visibles, navegación persistida por usuario) al añadir la
+    casilla «Lo aporta el trabajador» (`worker_provides`), editable en
+    cada fila y en bloque.
     """
 
     template_name = "document_explorer/type_catalog.html"
 
-    # Cinco columnas reales de la tabla (type_catalog.html) -- clave
-    # pública en la URL (?sort=) -> campo real del modelo para
-    # order_by(). "estado" ordena por is_active (False/True ==
-    # Inactivo/Activo alfabéticamente al revés de lo intuitivo, así
-    # que se invierte con el signo "-" ya en el propio mapeo, no en
-    # tiempo de petición, para que "ascendente" siempre signifique
-    # "Inactivo primero" de forma consistente con lo que muestra la
-    # columna).
     _SORT_FIELDS = {
         "code": "code",
         "label": "label",
         "domain": "domain",
         "state": "is_active",
+        "worker": "worker_provides",
         "created": "created_at",
     }
-    _SORT_LABELS = {
-        "code": "Código",
-        "label": "Nombre visible",
-        "domain": "Dominio",
-        "state": "Estado",
-        "created": "Alta",
-    }
-    _DEFAULT_SORT = "code"
+    _MAX_SORT_KEYS = 4
 
-    def _sort_params(self):
+    def _parse_sort_param(self, raw):
         """
-        Lee y valida sort/dir de la query string, igual patrón que
-        `FolderListingView._sort_params()` -- cae en code/asc ante
-        cualquier valor no reconocido.
-        """
-        sort = self.request.GET.get("sort") or self._DEFAULT_SORT
-        if sort not in self._SORT_FIELDS:
-            sort = self._DEFAULT_SORT
-        direction = self.request.GET.get("dir") or "asc"
-        if direction not in ("asc", "desc"):
-            direction = "asc"
-        return sort, direction
+        Parse "sort=key,-key" into [(key, desc)], known keys only.
 
-    def _sort_columns(self, sort_key, sort_dir, base_params):
+        ---
+
+        Convierte "sort=clave,-clave" en [(clave, desc)], solo claves
+        conocidas, sin repetir y como mucho cuatro.
         """
-        Estado de cabecera de las cinco columnas ordenables, resuelto
-        aquí por completo (URL incluida) -- mismo patrón que
-        `FolderListingView._sort_columns()`, adaptado a una página
-        normal (enlaces `<a href>`, sin HTMX: esta pantalla no es un
-        fragmento parcial).
+        keys = []
+        seen = set()
+        for token in (raw or "").split(","):
+            token = token.strip()
+            key = token.lstrip("-")
+            if key in self._SORT_FIELDS and key not in seen:
+                keys.append((key, token.startswith("-")))
+                seen.add(key)
+        return keys[:self._MAX_SORT_KEYS]
+
+    def _sort_controls(self, sort_keys):
         """
-        columns = {}
-        for key, label in self._SORT_LABELS.items():
-            active = sort_key == key
-            toggle_dir = "desc" if (active and sort_dir == "asc") else "asc"
-            params = dict(base_params, sort=key, dir=toggle_dir)
-            columns[key] = {
-                "label": label,
-                "active": active,
-                "dir": sort_dir if active else None,
-                "url": "?%s" % urlencode(
-                    {k: v for k, v in params.items() if v},
-                ),
-            }
-        return columns
+        Header URLs, arrows and priorities, resolved here (dumb
+        templates) -- same pattern as the spare parts catalog (S116).
+
+        ---
+
+        Enlaces, flechas y prioridad de cada cabecera, resueltos aquí
+        (plantillas tontas) -- mismo patrón que el catálogo de
+        repuestos (S116): clic en una columna la promueve a criterio
+        principal conservando las demás como desempate; clic en la
+        principal invierte su sentido.
+        """
+        active_keys = [key for key, _desc in sort_keys]
+        urls, arrows, priority = {}, {}, {}
+        for key in self._SORT_FIELDS:
+            if key in active_keys:
+                idx = active_keys.index(key)
+                desc = sort_keys[idx][1]
+                arrows[key] = "▼" if desc else "▲"
+                priority[key] = idx + 1 if len(sort_keys) > 1 else ""
+                new_keys = [(key, (not desc) if idx == 0 else False)] + [
+                    (k, d) for k, d in sort_keys if k != key
+                ]
+            else:
+                arrows[key] = ""
+                priority[key] = ""
+                new_keys = [(key, False)] + sort_keys
+            params = self.request.GET.copy()
+            params["sort"] = ",".join(
+                ("-" if d else "") + k
+                for k, d in new_keys[:self._MAX_SORT_KEYS]
+            )
+            urls[key] = "?" + params.urlencode()
+        clear_params = self.request.GET.copy()
+        clear_params["sort"] = ""
+        return {
+            "sort_urls": urls,
+            "sort_arrows": arrows,
+            "sort_priority": priority,
+            "sort_active": bool(sort_keys),
+            "clear_sort_url": "?" + clear_params.urlencode(),
+        }
+
+    def get(self, request, *args, **kwargs):
+        _require_catalog_admin(request)
+        apply_list_navigation(
+            request, TYPE_CATALOG_SCREEN_KEY, _TYPE_CATALOG_FILTER_KEYS,
+        )
+        return super().get(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         company_user = self.request.user.company_user
-        if not permissions.is_unrestricted(company_user):
-            raise Http404("Solo el administrador puede ver el catálogo.")
-
-        q = (self.request.GET.get("q") or "").strip()
-        domain = (self.request.GET.get("domain") or "").strip()
-        state = (self.request.GET.get("state") or "").strip()
-        sort_key, sort_dir = self._sort_params()
+        params = self.request.GET
+        q = (params.get("q") or "").strip()
+        domain = (params.get("domain") or "").strip()
+        state = (params.get("state") or "").strip()
+        worker = (params.get("worker") or "").strip()
+        sort_keys = self._parse_sort_param(params.get("sort"))
 
         types = DocumentTypeCatalog.objects.all()
         if q:
@@ -3356,23 +3393,112 @@ class DocumentTypeCatalogListView(ExplorerAccessMixin, TemplateView):
             types = types.filter(is_active=True)
         elif state == "inactive":
             types = types.filter(is_active=False)
+        if worker == "yes":
+            types = types.filter(worker_provides=True)
+        elif worker == "no":
+            types = types.filter(worker_provides=False)
 
-        order_field = self._SORT_FIELDS[sort_key]
-        if sort_dir == "desc":
-            order_field = "-%s" % order_field
-        # Desempate estable por pk -- dos filas con el mismo valor en
-        # la columna ordenada (dos tipos "Activo", dos dados de alta
-        # el mismo día) no deben cambiar de orden entre peticiones.
-        types = types.order_by(order_field, "pk")
+        order = [
+            ("-" if desc else "") + self._SORT_FIELDS[key]
+            for key, desc in sort_keys
+        ] or ["code"]
+        # Desempate estable por pk.
+        types = list(types.order_by(*order, "pk"))
+
+        saved_selection = get_saved_state_key(
+            company_user, TYPE_CATALOG_SCREEN_KEY, "selection", [],
+        )
+        selected_ids = sorted({
+            int(value) for value in saved_selection
+            if str(value).isdigit()
+        } if isinstance(saved_selection, list) else set())
+        selected_set = set(selected_ids)
+        for doc_type in types:
+            doc_type.is_selected = doc_type.pk in selected_set
 
         context["active_nav"] = "document_explorer"
         context["types"] = types
         context["domain_choices"] = DocumentTypeCatalog.DOMAIN_CHOICES
-        context["filters"] = {"q": q, "domain": domain, "state": state}
-        context["sort_columns"] = self._sort_columns(
-            sort_key, sort_dir, {"q": q, "domain": domain, "state": state},
-        )
+        context["filters"] = {
+            "q": q, "domain": domain, "state": state, "worker": worker,
+        }
+        context["current_sort"] = params.get("sort", "")
+        context["selected_ids"] = selected_ids
+        context["screen_key"] = TYPE_CATALOG_SCREEN_KEY
+        context["reset_url"] = "?reset=1"
+        context.update(self._sort_controls(sort_keys))
         return context
+
+
+class DocumentTypeCatalogWorkerProvidesView(ExplorerAccessMixin, View):
+    """
+    Sets `worker_provides` on one type from its row checkbox (H30,
+    S125). JSON answer so the screen shows "saved" or the real error.
+
+    ---
+
+    Fija `worker_provides` de un tipo desde la casilla de su fila (H30,
+    S125). Responde JSON para que la pantalla muestre «Guardado» o el
+    error real -- ninguna acción en silencio.
+    """
+
+    def post(self, request, pk):
+        if not permissions.is_unrestricted(request.user.company_user):
+            return JsonResponse(
+                {"ok": False, "error": "Solo el administrador."}, status=403,
+            )
+        value = request.POST.get("value")
+        if value not in ("0", "1"):
+            return JsonResponse(
+                {"ok": False, "error": "Valor no válido."}, status=400,
+            )
+        doc_type = DocumentTypeCatalog.objects.filter(pk=pk).first()
+        if doc_type is None:
+            return JsonResponse(
+                {"ok": False, "error": "El tipo ya no existe."}, status=404,
+            )
+        doc_type.worker_provides = value == "1"
+        doc_type.save(update_fields=["worker_provides"])
+        return JsonResponse(
+            {"ok": True, "worker_provides": doc_type.worker_provides},
+        )
+
+
+class DocumentTypeCatalogBulkView(ExplorerAccessMixin, View):
+    """
+    Bulk actions over the selected catalog types (H30, S125): mark or
+    unmark "worker provides", activate or deactivate (never delete).
+
+    ---
+
+    Acciones masivas sobre los tipos seleccionados (H30, S125): marcar
+    o quitar «lo aporta el trabajador», reactivar o desactivar (nunca
+    borrar -- desactivar conserva el histórico).
+    """
+
+    def post(self, request):
+        _require_catalog_admin(request)
+        action = request.POST.get("action")
+        if action not in _TYPE_CATALOG_BULK_ACTIONS:
+            messages.error(request, "Acción no válida.")
+            return redirect(reverse("document_explorer:type_catalog"))
+        ids = [
+            int(value) for value in request.POST.getlist("selected")
+            if value.isdigit()
+        ]
+        if not ids:
+            messages.warning(request, "No hay ningún tipo seleccionado.")
+            return redirect(reverse("document_explorer:type_catalog"))
+        field, value, headline = _TYPE_CATALOG_BULK_ACTIONS[action]
+        updated = DocumentTypeCatalog.objects.filter(pk__in=ids).update(
+            **{field: value}
+        )
+        messages.success(
+            request, "%s: %d tipo%s." % (
+                headline, updated, "" if updated == 1 else "s",
+            ),
+        )
+        return redirect(reverse("document_explorer:type_catalog"))
 
 
 class DocumentTypeCatalogCreateView(ExplorerAccessMixin, View):
@@ -3396,9 +3522,7 @@ class DocumentTypeCatalogCreateView(ExplorerAccessMixin, View):
     """
 
     def post(self, request):
-        company_user = request.user.company_user
-        if not permissions.is_unrestricted(company_user):
-            raise Http404("Solo el administrador puede gestionar el catálogo.")
+        _require_catalog_admin(request)
 
         raw_code = (request.POST.get("code") or "").strip()
         label = (request.POST.get("label") or "").strip()
@@ -3451,9 +3575,7 @@ class DocumentTypeCatalogToggleView(ExplorerAccessMixin, View):
     """
 
     def post(self, request, pk):
-        company_user = request.user.company_user
-        if not permissions.is_unrestricted(company_user):
-            raise Http404("Solo el administrador puede gestionar el catálogo.")
+        _require_catalog_admin(request)
 
         doc_type = get_object_or_404(DocumentTypeCatalog, pk=pk)
         doc_type.is_active = not doc_type.is_active
