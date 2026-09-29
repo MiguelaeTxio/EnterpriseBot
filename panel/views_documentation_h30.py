@@ -158,6 +158,15 @@ def _apply_personal_filters(qs, request):
             matched_any = True
             company_q |= Q(employer_company__in=raws)
         qs = qs.filter(company_q) if matched_any else qs.none()
+
+    # H30 (S123): filtro por requisito de documentación -- Miguel Ángel:
+    # "podemos filtrar también por requisitos". "" = todos, "none" =
+    # sin requisito, un pk = ese requisito.
+    requirement_filter = request.GET.get("requirement", "")
+    if requirement_filter == "none":
+        qs = qs.filter(job_position__isnull=True)
+    elif requirement_filter.isdigit():
+        qs = qs.filter(job_position_id=int(requirement_filter))
     else:
         qs = qs.none()
 
@@ -558,6 +567,11 @@ def _build_personal_tab_querystring(filters):
         company_values = [slug for slug, _label, _raws in COMPANY_FILTER_CHOICES]
     for value in company_values:
         params.append(("company", value))
+
+    # H30 (S123): filtro por requisito ("" = todos).
+    requirement_value = personal_filters.get("requirement", "")
+    if isinstance(requirement_value, str) and requirement_value:
+        params.append(("requirement", requirement_value))
 
     return urlencode(params)
 
@@ -992,6 +1006,7 @@ def _person_list_page(request):
         "search": search, "sort_columns_person": sort_columns,
         "active_filter": request.GET.getlist("active"),
         "company_filter": request.GET.getlist("company"),
+        "requirement_filter": request.GET.get("requirement", ""),
     }
 
 

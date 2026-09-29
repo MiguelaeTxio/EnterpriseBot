@@ -28,7 +28,7 @@ pestaña Personal, S113/S114):
                     <a class="text-decoration-none text-reset d-flex align-items-center gap-1 user-select-none"
                        hx-get="{% url 'panel:fleet_fragment' %}"
                        hx-target="#fleet-table-container"
-                       hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
+                       hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
                        hx-trigger="click"
                        hx-vals='{"sort": "{{ sort_next.code }}"}'
                        style="cursor:pointer">
@@ -44,7 +44,7 @@ pestaña Personal, S113/S114):
                     <a class="text-decoration-none text-reset d-flex align-items-center gap-1 user-select-none"
                        hx-get="{% url 'panel:fleet_fragment' %}"
                        hx-target="#fleet-table-container"
-                       hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
+                       hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
                        hx-trigger="click"
                        hx-vals='{"sort": "{{ sort_next.family }}"}'
                        style="cursor:pointer">
@@ -60,7 +60,7 @@ pestaña Personal, S113/S114):
                     <a class="text-decoration-none text-reset d-flex align-items-center gap-1 user-select-none"
                        hx-get="{% url 'panel:fleet_fragment' %}"
                        hx-target="#fleet-table-container"
-                       hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
+                       hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
                        hx-trigger="click"
                        hx-vals='{"sort": "{{ sort_next.brand_model }}"}'
                        style="cursor:pointer">
@@ -76,7 +76,7 @@ pestaña Personal, S113/S114):
                     <a class="text-decoration-none text-reset d-flex align-items-center gap-1 user-select-none"
                        hx-get="{% url 'panel:fleet_fragment' %}"
                        hx-target="#fleet-table-container"
-                       hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
+                       hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
                        hx-trigger="click"
                        hx-vals='{"sort": "{{ sort_next.type_name }}"}'
                        style="cursor:pointer">
@@ -92,7 +92,7 @@ pestaña Personal, S113/S114):
                     <a class="text-decoration-none text-reset d-flex align-items-center gap-1 user-select-none"
                        hx-get="{% url 'panel:fleet_fragment' %}"
                        hx-target="#fleet-table-container"
-                       hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
+                       hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
                        hx-trigger="click"
                        hx-vals='{"sort": "{{ sort_next.plate }}"}'
                        style="cursor:pointer">
@@ -108,7 +108,7 @@ pestaña Personal, S113/S114):
                     <a class="text-decoration-none text-reset d-flex align-items-center justify-content-center gap-1 user-select-none"
                        hx-get="{% url 'panel:fleet_fragment' %}"
                        hx-target="#fleet-table-container"
-                       hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
+                       hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
                        hx-trigger="click"
                        hx-vals='{"sort": "{{ sort_next.doc_count }}"}'
                        style="cursor:pointer">
@@ -125,7 +125,7 @@ pestaña Personal, S113/S114):
                     <a class="text-decoration-none text-reset d-flex align-items-center gap-1 user-select-none"
                        hx-get="{% url 'panel:fleet_fragment' %}"
                        hx-target="#fleet-table-container"
-                       hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
+                       hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
                        hx-trigger="click"
                        hx-vals='{"sort": "{{ sort_next.requirement }}"}'
                        style="cursor:pointer">
@@ -141,7 +141,7 @@ pestaña Personal, S113/S114):
                     <a class="text-decoration-none text-reset d-flex align-items-center justify-content-center gap-1 user-select-none"
                        hx-get="{% url 'panel:fleet_fragment' %}"
                        hx-target="#fleet-table-container"
-                       hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
+                       hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
                        hx-trigger="click"
                        hx-vals='{"sort": "{{ sort_next.is_active }}"}'
                        style="cursor:pointer">
@@ -157,7 +157,7 @@ pestaña Personal, S113/S114):
                     <a class="text-decoration-none text-reset d-flex align-items-center justify-content-center gap-1 user-select-none"
                        hx-get="{% url 'panel:fleet_fragment' %}"
                        hx-target="#fleet-table-container"
-                       hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
+                       hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
                        hx-trigger="click"
                        hx-vals='{"sort": "{{ sort_next.use_count }}"}'
                        style="cursor:pointer">

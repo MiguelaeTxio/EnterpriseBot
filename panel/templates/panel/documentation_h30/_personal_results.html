@@ -13,7 +13,7 @@ en la selección recordada por ese JS al reconstruir la tabla.
             <th class="sticky-col sticky-col-2"></th>
             <th class="sticky-col sticky-col-3 sticky-col-last">
                 <a href="#"
-                   hx-get="{% url 'panel:documentation_personal_results' %}?sort=first_surname&dir={% if sort_key == 'first_surname' and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&q={{ search }}{% for a in active_filter %}&active={{ a }}{% endfor %}{% for c in company_filter %}&company={{ c }}{% endfor %}"
+                   hx-get="{% url 'panel:documentation_personal_results' %}?sort=first_surname&dir={% if sort_key == 'first_surname' and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&q={{ search }}{% for a in active_filter %}&active={{ a }}{% endfor %}{% for c in company_filter %}&company={{ c }}{% endfor %}{% if requirement_filter %}&requirement={{ requirement_filter }}{% endif %}"
                    hx-target="#personal-results" class="text-decoration-none text-dark">
                     Apellidos, Nombre
                     {% if sort_key == 'first_surname' %}<i class="bi bi-chevron-{% if sort_dir == 'asc' %}up{% else %}down{% endif %}"></i>{% endif %}
@@ -22,7 +22,7 @@ en la selección recordada por ese JS al reconstruir la tabla.
             <th>DNI</th>
             <th>
                 <a href="#"
-                   hx-get="{% url 'panel:documentation_personal_results' %}?sort=hire_date&dir={% if sort_key == 'hire_date' and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&q={{ search }}{% for a in active_filter %}&active={{ a }}{% endfor %}{% for c in company_filter %}&company={{ c }}{% endfor %}"
+                   hx-get="{% url 'panel:documentation_personal_results' %}?sort=hire_date&dir={% if sort_key == 'hire_date' and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&q={{ search }}{% for a in active_filter %}&active={{ a }}{% endfor %}{% for c in company_filter %}&company={{ c }}{% endfor %}{% if requirement_filter %}&requirement={{ requirement_filter }}{% endif %}"
                    hx-target="#personal-results" class="text-decoration-none text-dark">
                     Alta
                     {% if sort_key == 'hire_date' %}<i class="bi bi-chevron-{% if sort_dir == 'asc' %}up{% else %}down{% endif %}"></i>{% endif %}
@@ -30,7 +30,7 @@ en la selección recordada por ese JS al reconstruir la tabla.
             </th>
             <th>
                 <a href="#"
-                   hx-get="{% url 'panel:documentation_personal_results' %}?sort=doc_count&dir={% if sort_key == 'doc_count' and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&q={{ search }}{% for a in active_filter %}&active={{ a }}{% endfor %}{% for c in company_filter %}&company={{ c }}{% endfor %}"
+                   hx-get="{% url 'panel:documentation_personal_results' %}?sort=doc_count&dir={% if sort_key == 'doc_count' and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&q={{ search }}{% for a in active_filter %}&active={{ a }}{% endfor %}{% for c in company_filter %}&company={{ c }}{% endfor %}{% if requirement_filter %}&requirement={{ requirement_filter }}{% endif %}"
                    hx-target="#personal-results" class="text-decoration-none text-dark">
                     Documentos
                     {% if sort_key == 'doc_count' %}<i class="bi bi-chevron-{% if sort_dir == 'asc' %}up{% else %}down{% endif %}"></i>{% endif %}
@@ -38,7 +38,7 @@ en la selección recordada por ese JS al reconstruir la tabla.
             </th>
             <th>
                 <a href="#"
-                   hx-get="{% url 'panel:documentation_personal_results' %}?sort=job_position__name&dir={% if sort_key == 'job_position__name' and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&q={{ search }}{% for a in active_filter %}&active={{ a }}{% endfor %}{% for c in company_filter %}&company={{ c }}{% endfor %}"
+                   hx-get="{% url 'panel:documentation_personal_results' %}?sort=job_position__name&dir={% if sort_key == 'job_position__name' and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&q={{ search }}{% for a in active_filter %}&active={{ a }}{% endfor %}{% for c in company_filter %}&company={{ c }}{% endfor %}{% if requirement_filter %}&requirement={{ requirement_filter }}{% endif %}"
                    hx-target="#personal-results" class="text-decoration-none text-dark">
                     Requisitos de documentación
                     {% if sort_key == 'job_position__name' %}<i class="bi bi-chevron-{% if sort_dir == 'asc' %}up{% else %}down{% endif %}"></i>{% endif %}
@@ -72,7 +72,7 @@ en la selección recordada por ese JS al reconstruir la tabla.
         {% for num in page.paginator.page_range %}
         <li class="page-item {% if num == page.number %}active{% endif %}">
             <a class="page-link"
-               hx-get="{% url 'panel:documentation_personal_results' %}?page={{ num }}&sort={{ sort_key }}&dir={{ sort_dir }}&q={{ search }}{% for a in active_filter %}&active={{ a }}{% endfor %}{% for c in company_filter %}&company={{ c }}{% endfor %}"
+               hx-get="{% url 'panel:documentation_personal_results' %}?page={{ num }}&sort={{ sort_key }}&dir={{ sort_dir }}&q={{ search }}{% for a in active_filter %}&active={{ a }}{% endfor %}{% for c in company_filter %}&company={{ c }}{% endfor %}{% if requirement_filter %}&requirement={{ requirement_filter }}{% endif %}"
                hx-target="#personal-results">{{ num }}</a>
         </li>
         {% endfor %}

@@ -68,7 +68,7 @@ la lista hace scroll. Dos paneles:
                            autocomplete="off"
                            hx-get="{% url 'panel:fleet_fragment' %}"
                            hx-target="#fleet-table-container"
-                           hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door, #fleet-sort-inputs"
+                           hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door, #fleet-sort-inputs"
                            hx-trigger="input changed delay:300ms, search">
                     <div class="d-flex gap-4">
                         <div>
@@ -92,7 +92,7 @@ la lista hace scroll. Dos paneles:
                             <input type="hidden" id="fleet-filter-is-active" name="is_active" value="{{ filter_is_active }}"
                                    hx-get="{% url 'panel:fleet_fragment' %}"
                                    hx-target="#fleet-table-container"
-                                   hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door, #fleet-sort-inputs"
+                                   hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door, #fleet-sort-inputs"
                                    hx-trigger="fleet-estado-change">
                         </div>
                         <div class="flex-grow-1">
@@ -100,12 +100,28 @@ la lista hace scroll. Dos paneles:
                             <select id="fleet-filter-family" class="form-select form-select-sm"
                                     hx-get="{% url 'panel:fleet_fragment' %}"
                                     hx-target="#fleet-table-container"
-                                    hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door, #fleet-sort-inputs"
+                                    hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door, #fleet-sort-inputs"
                                     hx-trigger="change"
                                     name="family" autocomplete="off">
                                 <option value="">Todas las familias</option>
                                 {% for fam in families %}
                                 <option value="{{ fam }}" {% if filter_family == fam %}selected{% endif %}>{{ fam }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        {% comment %}H30 (S123): filtro por requisito de documentación.{% endcomment %}
+                        <div class="flex-grow-1">
+                            <div class="small fw-bold">Requisito</div>
+                            <select id="fleet-filter-requirement" class="form-select form-select-sm" data-requirement-select
+                                    hx-get="{% url 'panel:fleet_fragment' %}"
+                                    hx-target="#fleet-table-container"
+                                    hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door, #fleet-sort-inputs"
+                                    hx-trigger="change"
+                                    name="requirement" autocomplete="off">
+                                <option value="" data-fixed {% if not filter_requirement %}selected{% endif %}>Todos</option>
+                                <option value="none" data-fixed {% if filter_requirement == "none" %}selected{% endif %}>Sin requisito</option>
+                                {% for position in job_positions %}
+                                <option value="{{ position.pk }}" {% if filter_requirement == position.pk|stringformat:"s" %}selected{% endif %}>{{ position.name }}</option>
                                 {% endfor %}
                             </select>
                         </div>
@@ -116,7 +132,7 @@ la lista hace scroll. Dos paneles:
                             <input class="form-check-input" type="checkbox" id="fleet-only-selected" name="only_selected" value="1" autocomplete="off"
                                    hx-get="{% url 'panel:fleet_fragment' %}"
                                    hx-target="#fleet-table-container"
-                                   hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door, #fleet-sort-inputs"
+                                   hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door, #fleet-sort-inputs"
                                    hx-trigger="change, fleet-selection-refresh">
                             <label class="form-check-label small" for="fleet-only-selected">Mostrar solo la selección actual</label>
                         </div>
@@ -126,7 +142,7 @@ la lista hace scroll. Dos paneles:
                                 id="fleet-clear-sort"
                                 hx-get="{% url 'panel:fleet_fragment' %}"
                                 hx-target="#fleet-table-container"
-                                hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
+                                hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
                                 hx-vals='{"sort": ""}'
                                 title="Deshacer todos los órdenes aplicados">
                             <i class="bi bi-x-circle me-1"></i>Quitar orden
@@ -266,6 +282,7 @@ la lista hace scroll. Dos paneles:
         <input type="hidden" name="_f_door" value="{{ fleet_door }}">
         <input type="hidden" name="_f_search" value="{{ filter_search }}">
         <input type="hidden" name="_f_family" value="{{ filter_family }}">
+        <input type="hidden" name="_f_requirement" value="{{ filter_requirement }}">
         <input type="hidden" name="_f_is_active" value="{{ filter_is_active }}">
         <input type="hidden" name="_f_sort" value="{{ current_sort }}">
     </div>
@@ -399,6 +416,7 @@ la lista hace scroll. Dos paneles:
         setLive("_f_sort", sortInput ? sortInput.value : "");
         setLive("_f_search", document.getElementById("fleet-filter-search").value);
         setLive("_f_family", document.getElementById("fleet-filter-family").value);
+        setLive("_f_requirement", document.getElementById("fleet-filter-requirement").value);
         setLive("_f_is_active", document.getElementById("fleet-filter-is-active").value);
         // Casillas: repintar las marcadas según la selección vigente.
         container.querySelectorAll(".fleet-row-check").forEach(function (cb) {

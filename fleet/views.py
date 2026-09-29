@@ -278,6 +278,14 @@ def _build_queryset(company, request):
         if family_filter:
             qs = qs.filter(family__iexact=family_filter)
 
+        # H30 (S123): filtro por requisito de documentación, mismo
+        # criterio que Personal ("" todos, "none" sin requisito, pk).
+        requirement_filter = _gp("requirement").strip()
+        if requirement_filter == "none":
+            qs = qs.filter(document_requirement__isnull=True)
+        elif requirement_filter.isdigit():
+            qs = qs.filter(document_requirement_id=int(requirement_filter))
+
         # Estado en casillas (S117): "" ambas, "1" solo activos, "0"
         # solo inactivos, "none" ninguna marcada -> ningún resultado
         # (semántica literal de casilla, mismo criterio que Personal).
@@ -326,7 +334,7 @@ def _build_queryset(company, request):
 
 # S117 -- directrices 4.15/4.24: filtros y orden persistidos por
 # usuario con la pieza compartida panel.navigation_persistence.
-_FLEET_FILTER_KEYS = ("search", "family", "is_active", "sort")
+_FLEET_FILTER_KEYS = ("search", "family", "is_active", "sort", "requirement")
 
 # S117 -- decisión de Miguel Ángel (opción 2): UN solo componente de
 # maquinaria con DOS puertas de entrada -- "taller" (Taller Mecánico >
@@ -445,6 +453,7 @@ def _build_fragment_context(company, company_user, request):
         "company":          company,
         "company_user":     company_user,
         "filter_family":    _p("family"),
+        "filter_requirement": _p("requirement"),
         "filter_is_active": _p("is_active"),
         "filter_search":    _p("search"),
         "only_selected":    request.GET.get("only_selected") == "1",

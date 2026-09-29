@@ -305,6 +305,7 @@ id, indistinto de dónde viva en el DOM.
         if (hit.tab === 'personal') {
             filters[hit.tab].active = parsed.searchParams.getAll('active');
             filters[hit.tab].company = parsed.searchParams.getAll('company');
+            filters[hit.tab].requirement = parsed.searchParams.get('requirement') || '';
         }
         saveState({filters: filters});
     });
@@ -346,9 +347,12 @@ id, indistinto de dónde viva en el DOM.
                 select.appendChild(option);
             }
             option.textContent = ev.detail.name;
-            // Mismo orden alfabético que sirve la vista; la primera
-            // opción ("Sin requisito") se queda siempre arriba.
-            const items = Array.from(select.options).slice(1);
+            // Mismo orden alfabético que sirve la vista; las opciones
+            // fijas ("Sin requisito", "Todos"...) se quedan arriba: la
+            // primera siempre, y cualquiera marcada con data-fixed.
+            const items = Array.from(select.options).slice(1).filter(function (opt) {
+                return !opt.hasAttribute('data-fixed');
+            });
             items.sort(function (a, b) {
                 return a.textContent.localeCompare(b.textContent, 'es');
             });

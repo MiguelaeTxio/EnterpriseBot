@@ -63,6 +63,18 @@ para un momento distinto.
             </div>
             {% endfor %}
         </div>
+        {% comment %}H30 (S123): filtro por requisito de documentación.{% endcomment %}
+        <div>
+            <div class="fw-semibold mb-1">Requisito</div>
+            <select name="requirement" class="form-select form-select-sm personal-filter-checkbox" data-requirement-select
+                    id="filterRequirement" autocomplete="off">
+                <option value="" data-fixed {% if not requirement_filter %}selected{% endif %}>Todos</option>
+                <option value="none" data-fixed {% if requirement_filter == "none" %}selected{% endif %}>Sin requisito</option>
+                {% for position in job_positions %}
+                <option value="{{ position.pk }}" {% if requirement_filter == position.pk|stringformat:"s" %}selected{% endif %}>{{ position.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
         {% comment %}
         H31 (S113). Miguel Ángel: "si tuviésemos una casilla que
         dijese mostrar y la diéramos y nos mostrase en el listado de
