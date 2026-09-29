@@ -105,9 +105,14 @@ CircularImportDocumentView/CircularExportPdfView/CircularExportWordView.
                         <a class="btn btn-sm btn-outline-secondary" href="{% url 'panel:circulars_export_word' pk=document_type.pk %}">
                             <i class="bi bi-file-earmark-word"></i> Descargar Word
                         </a>
-                        <form method="post" action="{% url 'panel:circulars_save_content' pk=document_type.pk %}" id="circular-save-form">
+                        <form method="post" action="{% url 'panel:circulars_save_content' pk=document_type.pk %}" id="circular-save-form" class="d-flex align-items-center">
                             {% csrf_token %}
                             <input type="hidden" name="content_html" id="circular-content-hidden">
+                            {# H30 (S124): solo las marcadas pasan por Docuten. #}
+                            <div class="form-check form-check-inline small mb-0 me-2">
+                                <input class="form-check-input" type="checkbox" name="requires_signature" id="circular-requires-signature" value="1"{% if document_type.requires_signature %} checked{% endif %}>
+                                <label class="form-check-label" for="circular-requires-signature">Requiere firma (Docuten)</label>
+                            </div>
                             <button type="submit" class="btn btn-sm btn-primary">Guardar contenido</button>
                         </form>
                     </div>

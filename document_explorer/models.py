@@ -925,6 +925,17 @@ class DocumentTypeCatalog(models.Model):
             "una circular real."
         ),
     )
+    requires_signature = models.BooleanField(
+        default=False,
+        verbose_name="Requiere firma certificada (Docuten)",
+        help_text=(
+            "H30 (S124). Solo las circulares marcadas aquí se envían a "
+            "firmar por Docuten (Personal > Información > Preparar para "
+            "Docuten). Miguel Ángel: \"Docuten solo intervendrá en el "
+            "caso que sea necesaria una firma certificada\". El resto "
+            "se envía directamente por WhatsApp/email."
+        ),
+    )
 
     tags = models.ManyToManyField(
         "DocumentTag",

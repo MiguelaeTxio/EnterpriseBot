@@ -276,7 +276,13 @@ class CircularSaveContentView(DocsUploadAccessMixin, View):
         )
         content_html = request.POST.get("content_html", "")
         document_type.content_html = content_html
-        document_type.save(update_fields=["content_html"])
+        # H30 (S124): casilla "Requiere firma (Docuten)".
+        document_type.requires_signature = (
+            request.POST.get("requires_signature") == "1"
+        )
+        document_type.save(
+            update_fields=["content_html", "requires_signature"],
+        )
         messages.success(request, "Contenido de «%s» guardado." % document_type.label)
         return redirect(reverse("panel:circulars_edit", args=[document_type.pk]))
 
@@ -738,7 +744,7 @@ class PersonalDocutenExportView(DocsUploadAccessMixin, View):
             )
         document_type = get_object_or_404(
             DocumentTypeCatalog, code=type_code, is_active=True,
-            is_notification_template=True,
+            is_notification_template=True, requires_signature=True,
         )
         if not document_type.content_html.strip():
             return JsonResponse(

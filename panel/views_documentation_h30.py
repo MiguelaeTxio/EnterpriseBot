@@ -1057,6 +1057,11 @@ class PersonalListFragmentView(CompanyUserRequiredMixin, View):
         ctx["notification_types"] = DocumentTypeCatalog.objects.filter(
             is_active=True, is_notification_template=True,
         ).exclude(content_html="").order_by("label")
+        # H30 (S124): solo las circulares que requieren firma
+        # certificada se preparan para Docuten.
+        ctx["docuten_types"] = ctx["notification_types"].filter(
+            requires_signature=True,
+        )
         ctx["company_filter_choices"] = COMPANY_FILTER_CHOICES
         # H35 (S105): plantillas de dosier para la nueva acción masiva
         # "Generar dosieres" -- mismo criterio que epi_items/

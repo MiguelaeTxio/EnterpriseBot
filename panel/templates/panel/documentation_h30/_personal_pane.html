@@ -147,9 +147,15 @@ pantalla completa aparte, no un fragmento htmx de este pane.
                         H30 (S124), punto 4: los tres archivos sueltos
                         (nunca ZIP) para que Yolanda lance la firma
                         masiva en Docuten -- PDF de la circular, CSV y
-                        hoja de pasos. Usa la misma circular elegida en
-                        el desplegable de al lado.
+                        hoja de pasos. Desplegable propio: solo las
+                        circulares que requieren firma certificada.
                         {% endcomment %}
+                        <select id="person-mass-docuten" class="form-select form-select-sm" style="width:auto; max-width:100%; min-width:0;">
+                            <option value="">Circular con firma…</option>
+                            {% for ntype in docuten_types %}
+                            <option value="{{ ntype.code }}">{{ ntype.label }}</option>
+                            {% endfor %}
+                        </select>
                         <button type="button" class="btn btn-sm btn-outline-primary" id="person-mass-docuten-submit">Preparar para Docuten</button>
                     </div>
                 </div>
@@ -972,7 +978,7 @@ las filas de debajo se desplacen de verdad.
     });
 
     document.getElementById('person-mass-docuten-submit').addEventListener('click', async function () {
-        const typeCode = document.getElementById('person-mass-notify').value;
+        const typeCode = document.getElementById('person-mass-docuten').value;
         if (selection.size === 0) {
             resultEl.innerHTML = '<div class="alert alert-warning py-1 px-2 mb-0">No hay personas seleccionadas.</div>';
             return;
