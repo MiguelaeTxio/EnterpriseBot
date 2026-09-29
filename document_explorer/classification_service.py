@@ -2986,6 +2986,71 @@ def _try_heuristic_classification(entry, domain) -> dict | None:
     }
 
 
+# H30 (S124), punto 1: tipos que, al llegar por cuarentena, dan de alta
+# al trabajador. Miguel Ángel: "si tiene contrato o alta en la Seguridad
+# Social, pasa a ACTIVO con su ficha activa; sin contrato ni alta, no."
+HIRING_DOCUMENT_TYPE_CODES = frozenset({"CONTRATO", "ALTA"})
+
+
+def _persist_type_and_subject(entry, result, subject) -> None:
+    """
+    Store the classified type and the owner link on a relocated entry.
+
+    Until S124 the quarantine pipeline only renamed and moved: the
+    type Gemini/heuristics returned and the resolved person/machine
+    were never written, so the file showed up in the right folder but
+    on nobody's sheet (781 of 803 PERSONAL files in September).
+
+    ---
+
+    Guarda en la entrada reubicada el tipo clasificado y el vínculo con
+    su dueño (persona o máquina).
+
+    Hasta S124 el pipeline de cuarentena solo renombraba y movía: el
+    tipo que devolvían Gemini/heurística y la persona o máquina
+    resuelta nunca se escribían, así que el archivo quedaba en la
+    carpeta correcta pero en la ficha de nadie (781 de 803 archivos de
+    PERSONAL en septiembre). Un código que no está en el catálogo deja
+    el tipo en blanco, pero el vínculo se guarda igual.
+    """
+    from django.contrib.contenttypes.models import ContentType
+
+    document_type = DocumentTypeCatalog.objects.filter(
+        code=result.get("document_type_code") or "",
+    ).first()
+    entry.document_type = document_type
+    entry.domain_content_type = ContentType.objects.get_for_model(subject)
+    entry.domain_object_id = subject.pk
+    entry.save(update_fields=[
+        "document_type", "domain_content_type", "domain_object_id",
+        "updated_at",
+    ])
+    result["document_type_saved"] = bool(document_type)
+
+
+def _activate_person_on_hiring_document(identity, result) -> None:
+    """
+    Mark the worker as active when a CONTRATO or ALTA arrives.
+
+    ---
+
+    Marca al trabajador como activo cuando llega un CONTRATO o un ALTA
+    (H30 S124, punto 1). El Excel de plantilla ya no decide quién es
+    activo: todo trabajador que entra por cuarentena es nuevo.
+    """
+    code = result.get("document_type_code")
+    if code not in HIRING_DOCUMENT_TYPE_CODES:
+        return
+    if identity.is_active_employee is True:
+        return
+    identity.is_active_employee = True
+    identity.save(update_fields=["is_active_employee", "updated_at"])
+    result["person_identity_note"] = " -- ".join(filter(None, [
+        result.get("person_identity_note"),
+        "Trabajador marcado como activo por %s." % code,
+    ]))
+
+
 def apply_quarantine_classification(entry) -> dict:
     """
     Full pipeline for ONE quarantine file (H29, S040 -- the "Always-on
@@ -3282,6 +3347,8 @@ def apply_quarantine_classification(entry) -> dict:
 
         entry.name = final_name
         move_entry(entry, target_parent_path)
+        _persist_type_and_subject(entry, result, identity)
+        _activate_person_on_hiring_document(identity, result)
 
         result["new_name"] = final_name
         result["classified"] = True
@@ -3333,6 +3400,7 @@ def apply_quarantine_classification(entry) -> dict:
 
     entry.name = final_name
     move_entry(entry, target_parent_path)
+    _persist_type_and_subject(entry, result, asset)
 
     result["new_name"] = final_name
     result["classified"] = True
