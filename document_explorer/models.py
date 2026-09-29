@@ -3637,3 +3637,59 @@ class LiftingAccessoryReview(models.Model):
         if self.explicit_expiry_date:
             return self.explicit_expiry_date
         return add_months(self.review_date, LIFTING_ACCESSORY_REVIEW_MONTHS)
+
+
+class SystemAgentHeartbeat(models.Model):
+    """
+    H30 (S123). Last heartbeat of an agent that runs outside
+    PythonAnywhere (the H28 migration agent on a Windows machine) and
+    the WhatsApp alerts sent when it stops beating.
+
+    ---
+
+    H30 (S123), punto 7 de la hoja de ruta. Último latido de un agente
+    que corre fuera de PythonAnywhere (el agente de migración H28, en
+    una máquina Windows) y registro de las alertas por WhatsApp.
+    Miguel Ángel, tras un corte de luz: el agente escribe cada 5
+    minutos "fecha, hora, estoy vivo"; una comprobación periódica del
+    servidor (`document_explorer.tasks.check_system_agents_task`)
+    detecta más de 15 minutos sin latido y avisa por WhatsApp una sola
+    vez por caída, y otra al recuperarse.
+
+    El latido llega por la misma vía que ya usa el agente para avisar
+    de cada subida (`RegisterUploadedObjectView`): POST con el token
+    compartido `H28_AGENT_API_TOKEN`. El agente NO se conecta a la BD
+    (ni túnel SSH ni pymysql): solo tiene la clave de GCS y ese token.
+    """
+
+    agent_name = models.CharField(
+        max_length=100, unique=True, verbose_name="Agente",
+    )
+    host = models.CharField(
+        max_length=255, blank=True, default="",
+        verbose_name="Equipo",
+    )
+    last_beat_at = models.DateTimeField(verbose_name="Último latido")
+    down_alerted_at = models.DateTimeField(
+        null=True, blank=True, verbose_name="Alerta de caída enviada",
+        help_text="Vacío si el agente está vivo o aún no se ha avisado.",
+    )
+    down_alert_sid = models.CharField(
+        max_length=64, blank=True, default="",
+        verbose_name="SID de la alerta de caída",
+    )
+    recovered_alerted_at = models.DateTimeField(
+        null=True, blank=True,
+        verbose_name="Aviso de recuperación enviado",
+    )
+    recovered_alert_sid = models.CharField(
+        max_length=64, blank=True, default="",
+        verbose_name="SID del aviso de recuperación",
+    )
+
+    class Meta:
+        verbose_name = "Latido de agente de sistema"
+        verbose_name_plural = "Latidos de agentes de sistema"
+
+    def __str__(self):
+        return "%s (%s)" % (self.agent_name, self.last_beat_at)

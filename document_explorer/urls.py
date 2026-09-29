@@ -105,6 +105,12 @@ urlpatterns = [
         views.RegisterUploadedObjectView.as_view(),
         name="register_uploaded_object",
     ),
+    # H30 (S123): latido del agente H28 cada 5 minutos.
+    path(
+        "agente/latido/",
+        views.AgentHeartbeatView.as_view(),
+        name="agent_heartbeat",
+    ),
     path(
         "catalogo/",
         views.DocumentTypeCatalogListView.as_view(),

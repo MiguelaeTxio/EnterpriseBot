@@ -434,4 +434,19 @@ CELERY_BEAT_SCHEDULE = {
         'task':     'document_explorer.tasks.consume_quarantine_task',
         'schedule': crontab(minute='*/10'),
     },
+
+    # H30 (S123), punto 7: alerta por WhatsApp si el agente H28 lleva
+    # más de 15 minutos sin latido (una vez por caída, y al volver).
+    'check-system-agents': {
+        'task':     'document_explorer.tasks.check_system_agents_task',
+        'schedule': crontab(minute='*/5'),
+    },
 }
+
+# H30 (S123): destinatarios (PersonIdentity.pk) de la alerta de caída
+# de agentes de sistema -- Miguel Ángel (ficha 250).
+SYSTEM_AGENT_ALERT_PERSON_IDS = [
+    int(value) for value in os.getenv(
+        'SYSTEM_AGENT_ALERT_PERSON_IDS', '250',
+    ).split(',') if value.strip()
+]

@@ -3088,6 +3088,43 @@ class PurgeTrashView(ExplorerAccessMixin, View):
 
 
 @method_decorator(csrf_exempt, name="dispatch")
+class AgentHeartbeatView(View):
+    """
+    Webhook: `POST /panel/explorador/agente/latido/`. Heartbeat of a
+    system agent running outside PythonAnywhere.
+
+    ---
+
+    H30 (S123), punto 7. Webhook: `POST /panel/explorador/agente/
+    latido/`. Latido de un agente de sistema que corre fuera de
+    PythonAnywhere (el agente H28, cada 5 minutos). Misma vía y mismo
+    token compartido (`settings.H28_AGENT_API_TOKEN`, comparado con
+    `constant_time_compare`) que `RegisterUploadedObjectView`: el
+    agente no tiene acceso a la BD. Payload: `agent_name` y, opcional,
+    `host`. Las alertas las decide `check_system_agents_task`, nunca
+    esta vista.
+    """
+
+    def post(self, request):
+        from .system_agent_service import record_heartbeat
+
+        token = request.headers.get("Authorization", "")
+        token = token.removeprefix("Bearer ").strip()
+        expected = getattr(settings, "H28_AGENT_API_TOKEN", "") or ""
+        if not expected or not constant_time_compare(token, expected):
+            return HttpResponseForbidden("Token inválido.")
+        agent_name = (request.POST.get("agent_name") or "").strip()[:100]
+        if not agent_name:
+            return HttpResponseBadRequest("Falta 'agent_name'.")
+        heartbeat = record_heartbeat(
+            agent_name, (request.POST.get("host") or "").strip(),
+        )
+        return JsonResponse({
+            "ok": True, "last_beat_at": heartbeat.last_beat_at.isoformat(),
+        })
+
+
+@method_decorator(csrf_exempt, name="dispatch")
 class RegisterUploadedObjectView(View):
     """
     Webhook: `POST /panel/explorador/agente/registrar/`.

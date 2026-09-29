@@ -802,3 +802,20 @@ def consume_quarantine_task(self) -> None:
         log.status = DataOperationLog.STATUS_FAILED
         log.save(update_fields=["status"])
         raise
+
+
+@app.task(base=DjangoTask, bind=True, max_retries=0)
+def check_system_agents_task(self) -> None:
+    """
+    Every 5 minutes: WhatsApp alert when a system agent stops beating.
+
+    ---
+
+    H30 (S123), punto 7. Cada 5 minutos: alerta por WhatsApp cuando un
+    agente de sistema (H28) lleva más de 15 minutos sin latido, una vez
+    por caída, y aviso al recuperarse -- ver
+    `system_agent_service.check_agents`.
+    """
+    from .system_agent_service import check_agents
+
+    check_agents()
