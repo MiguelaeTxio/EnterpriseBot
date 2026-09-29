@@ -8772,64 +8772,155 @@ web por la API de PythonAnywhere; relanzado el trabajo fallido, verde.
 Todas las migraciones de la sesión (0005, 0156-0160) verificadas en
 `django_migrations`. La release `relevo-imagenes` quedó vacía.
 
-## Hoja de Ruta para la Siguiente Sesión (S123) -- REESCRITA al cierre,
-## sustituye por completo a la de S122 (su punto está cerrado)
+### COMPLETADAS EN S123 (28-29/09/2026, PEE A y PC; H30 -- hoja de
+### ruta de S123 completa, saneamiento de fechas y alerta del agente H28)
 
-Orden obligatorio. Todo en H30 salvo lo que se indica.
+**Los 8 puntos de la hoja de ruta de S123, cerrados:**
+1. Plantillas WhatsApp de alerta de agentes (ninguna de las 18 servía):
+   `system_agent_down_alert` (HX142021fabf281458e8b4b60f928883e5) y
+   `system_agent_recovered_alert` (HXd22c067cf79dd0037fbf3869352a6805),
+   UTILITY, comando `create_system_agent_whatsapp_templates`. Al cierre,
+   Meta las tiene aprobadas solo como "user initiated" (en Twilio,
+   "business initiated" en gris).
+2. Subir contrato desde la ficha: botón "Subir contrato" en Periodos de
+   contratación (general y por periodo sin contrato); campo "Fecha del
+   documento" para tipos sin caducidad, que manda sobre el OCR
+   (`typed_issue_date`); "+ Subir" ofrece siempre los tipos acumulables.
+   Cerrado con el contrato real de Miguel Ángel (52189, 05/05/2025,
+   leída sola). En la misma línea: el modal de subida muestra "Subiendo…",
+   bloquea el doble envío, dice la fecha con que queda cada documento y
+   se cierra solo (`subject_upload.js`, común a persona y máquina); la
+   ficha solo enseña los documentos laborales acumulables del periodo
+   actual, los anteriores pasan al Historial
+   (`_move_previous_period_documents`).
+3. Requisito nuevo visible al momento en todo el hub (evento
+   `eb:requirement-saved/deleted`). Confirmado por Miguel Ángel.
+4. Volver y breadcrumb devuelven la pantalla de origen con pestaña,
+   filtros y scroll (`return_state.js` en base.html). Confirmado.
+5. Altura de listas: `_fixed_list_layout.html` con el algoritmo de
+   Avisos, Personal usa el mismo parcial; en móvil (<992 px) sin columnas
+   fijas. Confirmado en el ordenador de Alejandro.
+6. Ordenar por requisito en Personal y Centros de gasto. Confirmado. A
+   petición suya se añadió además **filtrar por requisito** (Todos / Sin
+   requisito / cada uno) en las dos listas, persistido; la primera
+   versión vaciaba Personal (el `else` del filtro de empresa quedó
+   colgado del nuevo filtro), corregida en 98a5d123.
+7. Latido del agente H28 (el agente NO usa túnel SSH ni pymysql: usa el
+   mismo POST con token que `agente/registrar`): modelo
+   `SystemAgentHeartbeat` (migración 0161, verificada en
+   `django_migrations`), webhook `/panel/explorador/agente/latido/`,
+   `check_system_agents_task` cada 5 min, destinatarios
+   `SYSTEM_AGENT_ALERT_PERSON_IDS` (250). Agente con `heartbeat.py`,
+   `.exe` reempaquetado por Miguel Ángel en `C:\EnterpriseBot\
+   h28_migration_agent\dist` (DESKTOP-JTIBG8Q). Prueba real: caída ->
+   WhatsApp a las 10:16 (SID MMfd91bb...), recuperación a las 10:20 (SID
+   MM0bb07f...), ambos registrados. La alerta tardó porque
+   `refresh_quarantine_index_task` ocupó más de 12 minutos el único
+   proceso del worker: **worker Celery a concurrencia 2** (decisión de
+   Miguel Ángel).
+8. Contrato de Alonso Pedrosa (34042): el documento dice 06/03/2023 y la
+   BD también. Sin cambios.
 
-1. **Plantilla de WhatsApp para la alerta del agente H28 -- lo PRIMERO
-   de la sesión** (Meta tarda ~24 h en aprobar). Revisar las plantillas
-   registradas (`WhatsAppTemplate`, consulta real) por si alguna sirve
-   para un aviso de sistema a Miguel Ángel fuera de la ventana de 24 h;
-   si ninguna sirve, dar de alta `system_agent_down_alert` (UTILITY,
-   saludo al principio y texto plano al final, variables: agente y hora
-   del último latido) con el mismo patrón que
-   `create_document_notice_whatsapp_templates`. **Cierre:** plantilla
-   registrada en BD con su content_sid y estado "received" o
-   "approved".
-2. **Bug: no se puede subir un contrato nuevo ni actualizarlo desde la
-   ficha.** Reproducir con Miguel Ángel, leer el log de errores de la
-   web (`LOG_WEB_ERROR`, relevo, últimas 150 líneas) y el código de
-   `subject_upload_service` / vista de subida (S122 añadió la salida
-   anticipada para tipos acumulables y retiró el bloque de alertas).
-   **Cierre:** un contrato real subido desde la ficha aparece en
-   Documentación y en su periodo, y una consulta real lo muestra con su
-   tipo y fecha.
-3. **Requisito nuevo sin recargar:** al guardar un requisito en la
-   pestaña Requisitos debe aparecer al momento en los desplegables de
-   asignación (Personal y Centros de gasto) y en Avisos > Configuración.
-   **Cierre:** crear un requisito de prueba y asignarlo desde Personal
-   sin recargar (Miguel Ángel lo ve), y borrarlo.
-4. **Botón "Volver" y breadcrumb de las fichas de persona y de
-   máquina:** deben volver a la pantalla de origen con su estado
-   (pestaña, filtros, scroll; directriz 4.15). **Cierre:** desde
-   Personal, Centros de gasto y Avisos > Pendientes, abrir una ficha y
-   volver deja la pantalla exactamente como estaba.
-5. **Altura real de las listas con scroll en cualquier pantalla** (en
-   el ordenador de Alejandro no se ve bien): aplicar a Personal y
-   Centros de gasto el mismo cálculo de altura que Avisos (medición a
-   altura real y resta del exceso real), recalculado al redimensionar.
-   **Cierre:** Miguel Ángel lo confirma en el ordenador de Alejandro.
-6. **Ordenar por requisito** en los listados de Personal y de Centros
-   de gasto (columna ordenable del orden múltiple de la directriz
-   4.24). **Cierre:** ordenar por requisito en ambos listados agrupa
-   las filas por requisito, y el orden se conserva al volver.
-7. **Latido del agente H28 y alerta si cae** (petición de Miguel Ángel;
-   se hizo tras un corte de luz): el agente escribe en la BD cada 5
-   minutos "fecha, hora, estoy vivo" (modelo nuevo de latido con
-   nombre de agente y último latido); una comprobación periódica en el
-   servidor detecta más de 15 minutos sin latido y envía a Miguel Ángel
-   por WhatsApp la plantilla del punto 1, una sola vez por caída (y
-   otra al recuperarse). Antes de construir, localizar en el repo el
-   agente H28 que corre fuera de PythonAnywhere y cómo se conecta a la
-   BD (túnel SSH + pymysql), y usar esa misma vía para el latido.
-   **Cierre:** con el agente parado, llega el WhatsApp a Miguel Ángel
-   en menos de 20 minutos y queda registrado; al arrancarlo, deja de
-   alertar.
-8. **Fecha del contrato de Alonso Pedrosa (34042):** ver con el relevo
-   `gcs_image` la cláusula con la fecha de inicio (página 2) y, si no
-   es 06/03/2023, corregirla con `set_contract_review --contratos`.
-   **Cierre:** la fecha en BD coincide con la del documento.
+**Saneamiento de fechas (fuera de la hoja de ruta, a raíz de su Modelo
+145 fechado en 2013).** Motor corregido: una fecha tras "antes de(l)" es
+un umbral legal (ruido); si la capa de texto de un PDF no da fecha se lee
+la página dibujada con Cloud Vision (formularios rellenables del SEPE);
+lector específico de la fecha de firma del Modelo 145 (bloque 6).
+Comando nuevo `redate_boilerplate_documents` (dry-run, --apply,
+--wrong-date, --undated, --ids; cruza con la fecha del nombre ORIGINAL
+del blob, en contratos un nombre posterior en menos de 400 días es la
+fecha de fin; descarta fechas futuras y anteriores al primer alta).
+Resultado verificado en BD: Modelo 145, 125 con fecha real y 36 sin
+fecha (0 con 01/01/2013); contratos, 312 con fecha y 9 sin ella (0 con
+27/04/2016, 0 anteriores a 1995, 0 futuros). 8 contratos antiguos de 5
+personas se dejaron con su fecha aunque sean anteriores a su primer alta
+registrado (el documento la confirma). Nombres canónicos regenerados con
+`rename_personal_documents --type MOD_145 --type CONTRATO` (349
+renombrados, sin fecha -> `_20210101`, 0 nombres con fecha de
+plantilla). Acceso directo `.lnk` (39772) a la papelera con el comando
+nuevo `trash_entries_by_id`.
+
+**Diagnóstico abierto al cierre (primer punto de S124).** Farraces Gómez,
+Francisco "sin ficha": la ficha existe (PersonIdentity 254, DNI
+53430615M, creada sola el 21/09 en `PTE CONTRATACION`), pero
+`is_active_employee` NULL y sin empresa -> no aparece con "Activos"; y
+sus 7 documentos (DNI x2, carnet, CAP, EPIs x2, IDC, alta) no tienen tipo
+ni persona. Causa: la rama PERSONAL de `classification_service`
+(`apply_classification`, ~línea 3254) renombra y mueve a la carpeta de
+la persona pero nunca guarda `document_type` ni `domain_content_type`/
+`domain_object_id`. Alcance: 781 de los 803 archivos entrados en carpetas
+`DOC. PERSONAL/PERSONAL/%` en septiembre, en 90 carpetas (en agosto, 6 de
+120).
+
+**Docuten (circulares con firma, manual por Yolanda).** Formato del CSV
+de envío masivo recogido (ayuda de su cuenta + web de Docuten): UTF-8,
+separador `;`, una línea por proceso, columnas `Nombre;Email;NIF;Móvil;
+Tipo de firma;Rol;Idioma;Canal` y metadatos `clave=valor` desde la 9.ª
+(rellenan campos de plantillas editables con el mismo nombre). Datos de
+los 75 activos: 75 con DNI, 66 con móvil, 62 con email, 8 sin contacto.
+
+**Incidencias.** Un `--apply` de fechas se ejecutó con el motor anterior
+(el archivo de log se reutilizó para la simulación); se reparó con
+`--undated`/`--ids`. La release `relevo-imagenes` quedó vacía al cierre.
+
+## Hoja de Ruta para la Siguiente Sesión (S124) -- REESCRITA al cierre,
+## sustituye por completo a la de S123 (todos sus puntos cerrados)
+
+**Arranque directo, sin preguntar (instrucción de Miguel Ángel): los
+puntos 1 a 3 son lo primero de la sesión, en este orden.**
+
+**Decisión de Miguel Ángel que rige los puntos 1-3:** el Excel de
+plantilla es un HISTÓRICO y ya no se usa para decidir quién es activo.
+Todo trabajador que entra por cuarentena es nuevo: si tiene contrato o
+alta en la Seguridad Social, pasa a ACTIVO con su ficha activa; sin
+contrato ni alta, no.
+
+1. **Pipeline de cuarentena, rama PERSONAL:** al clasificar un documento
+   de personal, guardar también su `document_type` y el vínculo con la
+   persona (`domain_content_type` PersonIdentity + `domain_object_id`),
+   igual que ya queda en máquinas; y si el documento es CONTRATO o ALTA,
+   marcar a la persona `is_active_employee=True`. **Cierre:** un archivo
+   real clasificado desde cuarentena queda en BD con `document_type_id`
+   y `domain_object_id` no nulos (consulta), y su persona activa si el
+   documento es contrato o alta.
+2. **Reparación de lo ya entrado:** comando (dry-run, --apply, log
+   propio) que vincula cada archivo de `DOC. PERSONAL/PERSONAL/%` sin
+   persona a la PersonIdentity cuyo `folder_path` es su carpeta, y le
+   pone el tipo que indica su nombre canónico
+   (`APELLIDOS_NOMBRE_{TIPO}_{AAAAMMDD}`). **Cierre:** la ficha de
+   Farraces (254) muestra sus 7 documentos, y los archivos de personal
+   sin persona quedan reducidos a los que no tienen carpeta de dueño,
+   listados con su motivo.
+3. **Activación por contrato o alta:** las personas con
+   `is_active_employee` NULL que tengan un CONTRATO o un ALTA vinculados
+   y posteriores a su última BAJA pasan a activas (dry-run primero, con
+   la lista para que Miguel Ángel la vea antes de aplicar). Ningún
+   proceso vuelve a usar el Excel para activar o desactivar a nadie.
+   **Cierre:** Farraces aparece en Personal con "Activos" marcado, y la
+   consulta de personas no activas con contrato/alta posterior a su
+   última baja devuelve 0.
+4. **Docuten -- "Preparar para Docuten"** en Personal > Información:
+   con una circular elegida y las personas seleccionadas, descarga un ZIP
+   con el PDF de la circular, el CSV (UTF-8, `;`, una línea por persona:
+   Nombre;Email;NIF;Móvil;`OTP`;`S`;`es`;`WhatsApp`) y una hoja de pasos
+   para Yolanda con la lista de quién queda fuera por no tener móvil.
+   Decisiones de Miguel Ángel: canal **WhatsApp**, firma **OTP**.
+   Investigar en la web de Docuten cómo se crean las **plantillas
+   editables** (Fast Templates / plantillas con campos) y dejar en la
+   hoja de pasos cómo crear una con campos `nombre` y `dni`, añadiendo
+   esos metadatos al CSV. **Cierre:** Miguel Ángel sube el CSV generado
+   en "Nuevo envío de firma" de Docuten y la tabla de procesos
+   detectados no marca ningún error de formato.
+5. **Plantillas `system_agent_*`:** consultar su estado de aprobación en
+   la Content API de Twilio (`ApprovalRequests`). **Cierre:** las dos en
+   "approved" para business initiated; si siguen pendientes, se anota el
+   estado con fecha y se vuelve a consultar en la sesión siguiente.
+6. **`refresh_quarantine_index_task` tarda más de 12 minutos** (red de
+   seguridad horaria, pensada como barrido ligero): medir la duración
+   real en el log del worker (`LOG_CELERY_WORKER`, líneas "received" y
+   "succeeded" de las 10:00, 11:00...) y localizar qué recorre. **Cierre:**
+   duración medida en el log y la tarea corregida para que baje de 2
+   minutos, o la causa documentada si no puede bajar.
 
 **Decisiones de Miguel Ángel que el modelo NO debe tocar por su
 cuenta:**
@@ -8841,10 +8932,17 @@ cuenta:**
 - **Entregas de accesorios de elevación** y **cabrestante VIME 03210**:
   sin cambios respecto a S121 (no se tocan sin instrucción suya).
 
+- **Excel de plantilla:** histórico; ya no discrimina activos (ver
+  hoja de ruta S124).
+- **Agente H28:** con latido desde S123; si se reempaqueta, sale con
+  `heartbeat.py` incluido (no quitarlo).
+
 **Trabajo de Miguel Ángel y de los supervisores en el panel (no
 bloquea la hoja de ruta):** configurar la ficha de Destinatarios de
 Yolanda Bandera (hoy no recibe nada); comprobar en Twilio la
 aprobación de `document_expiry_notice` y `document_missing_notice`;
+subir de nuevo, escribiendo la fecha, los 36 Modelos 145 y 9 contratos
+que quedaron sin fecha legible;
 localizar y subir los contratos que faltan (lista en Avisos >
 Pendientes > Faltan); separar el dosier de Burgos (30574) si se
 quiere; marcar clases de permiso en los requisitos y subir los carnés
