@@ -144,10 +144,11 @@ pantalla completa aparte, no un fragmento htmx de este pane.
                         </select>
                         <button type="button" class="btn btn-sm btn-primary" id="person-mass-notify-submit">Enviar</button>
                         {% comment %}
-                        H30 (S124), punto 4: ZIP para que Yolanda lance
-                        la firma masiva en Docuten (PDF de la circular,
-                        CSV y hoja de pasos). Usa la misma circular
-                        elegida en el desplegable de al lado.
+                        H30 (S124), punto 4: los tres archivos sueltos
+                        (nunca ZIP) para que Yolanda lance la firma
+                        masiva en Docuten -- PDF de la circular, CSV y
+                        hoja de pasos. Usa la misma circular elegida en
+                        el desplegable de al lado.
                         {% endcomment %}
                         <button type="button" class="btn btn-sm btn-outline-primary" id="person-mass-docuten-submit">Preparar para Docuten</button>
                     </div>
@@ -970,7 +971,7 @@ las filas de debajo se desplacen de verdad.
         });
     });
 
-    document.getElementById('person-mass-docuten-submit').addEventListener('click', function () {
+    document.getElementById('person-mass-docuten-submit').addEventListener('click', async function () {
         const typeCode = document.getElementById('person-mass-notify').value;
         if (selection.size === 0) {
             resultEl.innerHTML = '<div class="alert alert-warning py-1 px-2 mb-0">No hay personas seleccionadas.</div>';
@@ -980,45 +981,49 @@ las filas de debajo se desplacen de verdad.
             resultEl.innerHTML = '<div class="alert alert-warning py-1 px-2 mb-0">Falta elegir la circular.</div>';
             return;
         }
-        const formData = new FormData();
-        selection.forEach((pk) => formData.append('person_ids', pk));
-        formData.append('tipo', typeCode);
-        resultEl.innerHTML = '<div class="text-muted">Preparando el envío para Docuten…</div>';
-        fetch("{% url 'panel:documentation_personal_docuten_export' %}", {
-            method: 'POST',
-            headers: {'X-CSRFToken': getCookie('csrftoken')},
-            body: formData,
-        }).then((r) => {
-            const contentType = r.headers.get('Content-Type') || '';
-            if (!contentType.includes('application/zip')) {
-                r.json().then((data) => {
-                    resultEl.innerHTML = `<div class="alert alert-danger py-1 px-2 mb-0">${data.error || 'Error al preparar el envío.'}</div>`;
+        resultEl.innerHTML = '<div class="text-muted">Preparando los archivos para Docuten…</div>';
+        let included = '0';
+        let excluded = [];
+        try {
+            for (const kind of ['pdf', 'csv', 'pasos']) {
+                const formData = new FormData();
+                selection.forEach((pk) => formData.append('person_ids', pk));
+                formData.append('tipo', typeCode);
+                formData.append('archivo', kind);
+                const r = await fetch("{% url 'panel:documentation_personal_docuten_export' %}", {
+                    method: 'POST',
+                    headers: {'X-CSRFToken': getCookie('csrftoken')},
+                    body: formData,
                 });
-                return;
-            }
-            const included = r.headers.get('X-Docuten-Included') || '0';
-            let excluded = [];
-            try {
-                excluded = JSON.parse(r.headers.get('X-Docuten-Excluded') || '[]');
-            } catch (e) { /* sin excluidos que parsear */ }
-            r.blob().then((blob) => {
+                if (!r.ok) {
+                    const data = await r.json();
+                    resultEl.innerHTML = `<div class="alert alert-danger py-1 px-2 mb-0">${data.error || 'Error al preparar los archivos.'}</div>`;
+                    return;
+                }
+                included = r.headers.get('X-Docuten-Included') || '0';
+                try {
+                    excluded = JSON.parse(r.headers.get('X-Docuten-Excluded') || '[]');
+                } catch (e) { excluded = []; }
+                const filename = decodeURIComponent(r.headers.get('X-Docuten-Filename') || `docuten_${kind}`);
+                const blob = await r.blob();
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = `docuten_${typeCode.toLowerCase()}.zip`;
+                a.download = filename;
                 document.body.appendChild(a);
                 a.click();
                 a.remove();
                 window.URL.revokeObjectURL(url);
-                let msg = `<div class="alert alert-success py-1 px-2 mb-0">${included} personas en el CSV de Docuten (descargado en .zip, con la hoja de pasos).</div>`;
-                if (excluded.length) {
-                    msg += `<div class="alert alert-warning py-1 px-2 mb-0 mt-1">${excluded.length} fuera por no tener móvil válido: ${excluded.join(', ')}</div>`;
-                }
-                resultEl.innerHTML = msg;
-            });
-        }).catch(() => {
-            resultEl.innerHTML = '<div class="alert alert-danger py-1 px-2 mb-0">Error de red al preparar el envío.</div>';
-        });
+            }
+        } catch (e) {
+            resultEl.innerHTML = '<div class="alert alert-danger py-1 px-2 mb-0">Error de red al preparar los archivos.</div>';
+            return;
+        }
+        let msg = `<div class="alert alert-success py-1 px-2 mb-0">Descargados la circular (PDF), el CSV con ${included} personas y la hoja de pasos.</div>`;
+        if (excluded.length) {
+            msg += `<div class="alert alert-warning py-1 px-2 mb-0 mt-1">${excluded.length} fuera por no tener móvil válido: ${excluded.join(', ')}</div>`;
+        }
+        resultEl.innerHTML = msg;
     });
 
     document.getElementById('person-mass-dossier-download').addEventListener('click', function () {

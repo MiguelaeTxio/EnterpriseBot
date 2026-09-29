@@ -698,26 +698,30 @@ class CircularGeneratePersonSearchView(DocsUploadAccessMixin, View):
 
 class PersonalDocutenExportView(DocsUploadAccessMixin, View):
     """
-    POST: ZIP to launch a mass signature of one circular in Docuten.
+    POST: one of the three Docuten files for a circular.
 
     ---
 
-    H30 (S124), punto 4. POST con `tipo` (código de la circular) y
-    `person_ids`: devuelve el ZIP de `panel.docuten_export.build_zip`
-    (PDF de la circular, CSV de envío masivo y hoja de pasos para
-    Yolanda). Cabeceras `X-Docuten-Included`/`X-Docuten-Excluded` para
-    el aviso del panel. Solo lectura: no crea documentos ni acuses.
+    H30 (S124), punto 4. POST con `tipo` (código de la circular),
+    `person_ids` y `archivo` (`pdf`, `csv` o `pasos`): devuelve ese
+    archivo suelto (`panel.docuten_export.build_file`). El panel pide
+    los tres seguidos con un solo clic -- nunca un ZIP (Miguel Ángel:
+    "¿para qué vamos a darle una cosa que tiene que descomprimir?").
+    Cabeceras `X-Docuten-Included`/`X-Docuten-Excluded` para el aviso
+    del panel. Solo lectura: no crea documentos ni acuses.
     """
 
     def post(self, request):
         import json
+        from urllib.parse import quote
 
         from django.http import JsonResponse
 
-        from panel.docuten_export import build_zip
+        from panel.docuten_export import FILE_KINDS, build_file
 
         person_ids = request.POST.getlist("person_ids")
         type_code = request.POST.get("tipo", "").strip()
+        kind = request.POST.get("archivo", "").strip()
         if not person_ids:
             return JsonResponse(
                 {"ok": False, "error": "No hay ninguna persona seleccionada."},
@@ -727,6 +731,10 @@ class PersonalDocutenExportView(DocsUploadAccessMixin, View):
             return JsonResponse(
                 {"ok": False, "error": "Falta elegir la circular."},
                 status=400,
+            )
+        if kind not in FILE_KINDS:
+            return JsonResponse(
+                {"ok": False, "error": "Archivo no válido."}, status=400,
             )
         document_type = get_object_or_404(
             DocumentTypeCatalog, code=type_code, is_active=True,
@@ -740,18 +748,20 @@ class PersonalDocutenExportView(DocsUploadAccessMixin, View):
         people = list(PersonIdentity.objects.filter(
             pk__in=person_ids,
         ).order_by("first_surname", "second_surname", "given_name"))
-        zip_bytes, included, excluded = build_zip(document_type, people)
+        filename, data, content_type, included, excluded = build_file(
+            document_type, people, kind,
+        )
         if not included:
             return JsonResponse({
                 "ok": False,
                 "error": "Ninguna persona seleccionada tiene móvil válido.",
             }, status=400)
 
-        response = HttpResponse(zip_bytes, content_type="application/zip")
+        response = HttpResponse(data, content_type=content_type)
         response["Content-Disposition"] = (
-            'attachment; filename="docuten_%s_%s.zip"'
-            % (type_code.lower(), timezone.localdate().isoformat())
+            "attachment; filename*=UTF-8''%s" % quote(filename)
         )
+        response["X-Docuten-Filename"] = quote(filename)
         response["X-Docuten-Included"] = str(len(included))
         response["X-Docuten-Excluded"] = json.dumps([
             "%s %s" % (person.given_name, person.first_surname)

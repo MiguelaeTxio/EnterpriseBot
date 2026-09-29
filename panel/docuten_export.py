@@ -19,11 +19,11 @@ Yolanda sube a mano a Docuten para firmar una circular en envío masivo
   la plantilla editable que se llamen igual).
 - Hoja de pasos para Yolanda, con quién queda fuera y por qué.
 
+Los tres se descargan sueltos, nunca en un ZIP (Miguel Ángel, S124).
+
 Solo lectura de datos: no crea documentos ni acuses.
 """
-import io
 import re
-import zipfile
 
 from django.utils import timezone
 
@@ -167,7 +167,7 @@ def build_steps_text(document_type, included, excluded, pdf_name, csv_name,
             len(included), len(excluded),
         ),
         "",
-        "Contenido de este ZIP:",
+        "Archivos descargados junto a este:",
         "  - %s: la circular, con el nombre y el DNI del trabajador en "
         "blanco." % pdf_name,
         "  - %s: una línea por trabajador (firma OTP, aviso por "
@@ -238,31 +238,41 @@ def build_steps_text(document_type, included, excluded, pdf_name, csv_name,
     return "\r\n".join(lines) + "\r\n"
 
 
-def build_zip(document_type, people):
+FILE_KINDS = ("pdf", "csv", "pasos")
+
+
+def build_file(document_type, people, kind):
     """
-    Return (zip_bytes, included, excluded).
+    Return (filename, bytes, content_type, included, excluded).
 
     ---
 
-    Devuelve (bytes del ZIP, incluidas, excluidas).
+    Devuelve UNO de los tres archivos, ya suelto (S124: Miguel Ángel no
+    quiere un ZIP que Yolanda tenga que descomprimir): `pdf` (la
+    circular), `csv` (envío masivo) o `pasos` (hoja de pasos).
     """
-    import weasyprint
-
     base = naming_service._sanitize_token(document_type.label) or "CIRCULAR"
     pdf_name = "%s.pdf" % base
     csv_name = "%s_DOCUTEN.csv" % base
-    html = render_circular_html(document_type)
-    pending_tokens = set(_PENDING_TOKEN_RE.findall(html))
-    pdf_bytes = weasyprint.HTML(string=html).write_pdf()
     csv_text, included, excluded = build_csv(people)
+    if kind == "csv":
+        return (
+            csv_name, csv_text.encode("utf-8-sig"), "text/csv",
+            included, excluded,
+        )
+    html = render_circular_html(document_type)
+    if kind == "pdf":
+        import weasyprint
+
+        return (
+            pdf_name, weasyprint.HTML(string=html).write_pdf(),
+            "application/pdf", included, excluded,
+        )
     steps = build_steps_text(
         document_type, included, excluded, pdf_name, csv_name,
-        pending_tokens,
+        set(_PENDING_TOKEN_RE.findall(html)),
     )
-
-    buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr(pdf_name, pdf_bytes)
-        archive.writestr(csv_name, csv_text.encode("utf-8-sig"))
-        archive.writestr("PASOS_DOCUTEN.txt", steps.encode("utf-8-sig"))
-    return buffer.getvalue(), included, excluded
+    return (
+        "PASOS_DOCUTEN_%s.txt" % base, steps.encode("utf-8-sig"),
+        "text/plain; charset=utf-8", included, excluded,
+    )
