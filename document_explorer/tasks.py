@@ -228,14 +228,9 @@ def refresh_quarantine_index_task(self) -> None:
     tree on a timer would be needless cost for a problem that only
     ever happens in one small corner of it.
 
-    Walks `_CUARENTENA/` breadth-first using `index_writer.
-    refresh_folder()` (same routine logic as the
-    `refresh_document_folder` management command, not duplicated)
-    one level at a time -- quarantine is expected to stay small
-    (pending classification, not the whole historical corpus), so a
-    plain queue-based walk is simple and cheap enough; no need for
-    the single-listing-call optimisation `refresh_document_folder`'s
-    docstring describes for the full bucket.
+    S124: one single listing of the whole prefix and one index query;
+    only blobs missing from the index are created (see the comment in
+    the body for the real 12-minute incident that led to this).
 
     ---
 
@@ -273,33 +268,69 @@ def refresh_quarantine_index_task(self) -> None:
     ~37.500 archivos con un temporizador sería un coste innecesario
     para un problema que solo ocurre en un rincón pequeño de él.
 
-    Recorre `_CUARENTENA/` en anchura con `index_writer.
-    refresh_folder()` (misma lógica rutinaria que ya usa el comando
-    de gestión `refresh_document_folder`, no duplicada) un nivel cada
-    vez -- se espera que la cuarentena se mantenga pequeña (pendiente
-    de clasificar, no el corpus histórico entero), así que un
-    recorrido simple por cola es suficientemente barato; no hace
-    falta la optimización de listado único que describe el docstring
-    de `refresh_document_folder` para el cubo completo.
+    S124: un único listado del prefijo entero y una única consulta al
+    índice; solo se dan de alta los blobs que faltan (ver el
+    comentario del cuerpo para el incidente real de 12 minutos que lo
+    motivó).
     """
-    from document_explorer.buckets import PRIMARY_BUCKET, QUARANTINE_PREFIX
+    # H30 (S124), punto 6: la versión anterior recorría la cuarentena
+    # carpeta a carpeta (`refresh_folder`, un listado de GCS y una
+    # reconciliación por carpeta) y tardaba más de 12 minutos,
+    # ocupando el worker. Causa real: por la directriz 4.12 el blob
+    # nunca se mueve, así que el prefijo físico `_CUARENTENA/` no se
+    # vacía nunca -- 1.385 archivos ya reubicados y 381 carpetas a
+    # 29/09/2026, creciendo con cada archivo que entra. Esta red de
+    # seguridad solo tiene que encontrar blobs que el índice no tiene:
+    # un único listado del prefijo entero, una única consulta de los
+    # ya indexados (incluidos los que están en la papelera, para que
+    # no reaparezcan) y alta solo de lo que falte, con las mismas
+    # funciones de `index_writer` (nunca toca filas existentes, 4.12).
+    import time
+
+    from django.db import transaction
+
     from document_explorer import index_writer
+    from document_explorer.buckets import PRIMARY_BUCKET, QUARANTINE_PREFIX
+    from document_explorer.models import DocumentIndexEntry, path_digest
+    from spare_parts.gcs_service import get_storage_client
 
-    root = QUARANTINE_PREFIX.rstrip("/")
-    queue = [root]
-    folders_seen = 0
-
-    while queue:
-        folder_path = queue.pop(0)
-        folders_seen += 1
-        _, _, _, subfolders = index_writer.refresh_folder(
-            PRIMARY_BUCKET, folder_path,
+    started = time.monotonic()
+    blobs = [
+        blob for blob in get_storage_client().list_blobs(
+            PRIMARY_BUCKET, prefix=QUARANTINE_PREFIX,
         )
-        queue.extend(subfolders)
+        if not blob.name.endswith("/")
+    ]
+    by_hash = {path_digest(blob.name): blob for blob in blobs}
+    indexed = set(
+        DocumentIndexEntry.objects.filter(
+            bucket=PRIMARY_BUCKET, purged_at__isnull=True,
+            blob_name_hash__in=list(by_hash),
+        ).values_list("blob_name_hash", flat=True)
+    )
+    missing = [
+        blob for digest, blob in by_hash.items() if digest not in indexed
+    ]
+    created = 0
+    if missing:
+        rows = [index_writer.file_row(blob) for blob in missing]
+        parents = sorted({row["parent_path"] for row in rows})
+        with transaction.atomic():
+            for parent in parents:
+                index_writer.ensure_folder_chain(PRIMARY_BUCKET, parent)
+            created, _updated = index_writer.persist_rows(
+                PRIMARY_BUCKET, rows,
+                scope_hashes={path_digest(row["blob_name"]) for row in rows},
+                skip_fields=("total_size_bytes",),
+            )
+            index_writer.recount_children(
+                PRIMARY_BUCKET, folder_paths=parents,
+            )
 
     logger.info(
-        "# [refresh_quarantine_index_task] %d carpeta(s) de cuarentena "
-        "recorrida(s).", folders_seen,
+        "# [refresh_quarantine_index_task] %d objeto(s) en cuarentena, "
+        "%d sin indexar dado(s) de alta, %.1f s.",
+        len(blobs), created, time.monotonic() - started,
     )
 
 
