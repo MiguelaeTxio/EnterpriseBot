@@ -27,7 +27,7 @@ guardado:
   fecha mala y la repetiría.
 - Fecha nueva: la de emisión leída; si no hay, una única fecha sin
   contexto (mismo criterio que la subida desde la ficha); si tampoco,
-  SIN FECHA -- mejor sin fecha que una fecha falsa.
+  o si es posterior a hoy, SIN FECHA -- mejor sin fecha que una falsa.
 - Se escriben `issue_date` y `ocr_text`. No retipa, no renombra (los
   nombres siguen llevando la fecha antigua), no mueve nada.
 
@@ -132,6 +132,14 @@ class Command(BaseCommand):
                 continue
 
             new_date = issue or (other[0] if len(other) == 1 else None)
+            # S123 (dry-run real): un Modelo 145 salía con 10/04/2028.
+            # La fecha de un documento ya firmado nunca es futura.
+            if new_date and new_date > date.today():
+                self._log(
+                    "%s -- fecha futura descartada: %s"
+                    % (prefix, new_date.isoformat())
+                )
+                new_date = None
             counts["fechado" if new_date else "sin_fecha"] += 1
             self._log(
                 "%s -- %s -> %s (páginas leídas: %d)"
