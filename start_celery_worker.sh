@@ -34,9 +34,17 @@ cd /home/MiguelAeTxio/PROJECTS/EnterpriseBot
 # un único worker (Celery solo advierte contra -B con VARIOS workers
 # simultáneos, por duplicar el disparo del scheduler -- no es el caso
 # aquí).
+#
+# H30 (S123), decisión de Miguel Ángel: concurrencia 2. Con 1, la
+# alerta de caída del agente H28 (check_system_agents_task, cada 5
+# minutos) quedó en cola detrás de refresh_quarantine_index_task, que a
+# las 10:00 seguía corriendo más de 5 minutos: una tarea larga no debe
+# retrasar las rápidas. Con CELERY_WORKER_PREFETCH_MULTIPLIER = 1 y
+# acks_late (settings.py), el proceso ocupado no se reserva tareas: las
+# toma el otro.
 exec python -m dotenv run celery -A enterprise_core worker \
     --beat \
     --loglevel=info \
-    --concurrency=1 \
+    --concurrency=2 \
     --queues=work_orders \
     --hostname=enterprisebot_worker@%h
