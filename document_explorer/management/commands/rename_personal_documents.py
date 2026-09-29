@@ -78,6 +78,13 @@ class Command(BaseCommand):
                 "(para pruebas rapidas antes del barrido completo)."
             ),
         )
+        # H30 (S123): acotar a uno o varios tipos (p. ej. MOD_145 y
+        # CONTRATO tras volver a fecharlos) sin barrer los 8.000+
+        # documentos de PERSONAL.
+        parser.add_argument(
+            "--type", action="append", dest="types", default=[],
+            help="Código de tipo documental (repetible), p. ej. MOD_145.",
+        )
         parser.add_argument(
             "--no-fictitious-date", action="store_true",
             help=(
@@ -106,6 +113,10 @@ class Command(BaseCommand):
             .prefetch_related("domain_object")
             .order_by("id")
         )
+        if options["types"]:
+            queryset = queryset.filter(
+                document_type__code__in=options["types"],
+            )
         total = queryset.count()
         if limit:
             queryset = queryset[:limit]
