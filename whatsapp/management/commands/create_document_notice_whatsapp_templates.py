@@ -87,6 +87,10 @@ class Command(BaseCommand):
         "Crea y somete a aprobacion de Meta las plantillas WhatsApp "
         "document_expiry_notice y document_missing_notice (H30, S122)."
     )
+    # Overridable by subclasses (S125, document requests to workers).
+    # Sustituibles por subclases (S125, solicitudes al trabajador).
+    templates = TEMPLATES
+    start_message = "Inicio: alta de plantillas de avisos de documentación."
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -114,7 +118,7 @@ class Command(BaseCommand):
             self._run()
 
     def _run(self):
-        self._log("Inicio: alta de plantillas de avisos de documentación.")
+        self._log(self.start_message)
         company = Company.objects.filter(slug=COMPANY_SLUG).first()
         if company is None:
             self._log("ERROR: no existe Company slug=%s." % COMPANY_SLUG)
@@ -129,10 +133,10 @@ class Command(BaseCommand):
             self._log("ERROR: variable de entorno ausente: %s" % exc)
             raise CommandError("Variable de entorno ausente.")
 
-        for position, definition in enumerate(TEMPLATES, start=1):
+        for position, definition in enumerate(self.templates, start=1):
             self._log(
                 "Plantilla %d/%d: %s"
-                % (position, len(TEMPLATES), definition["name"])
+                % (position, len(self.templates), definition["name"])
             )
             self._create_one(company, auth, definition)
         self._log("Fin.")
