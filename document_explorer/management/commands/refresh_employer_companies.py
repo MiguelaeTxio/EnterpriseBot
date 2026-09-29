@@ -10,6 +10,10 @@ contrato a partir de sus propios contratos (ver
 document_explorer.employer_service): manda el más reciente que la
 identifique, por CIF en el texto o, si da problemas, por Gemini.
 
+Además (punto 4 de S125): todo trabajador ACTIVO que no esté en su
+carpeta ACTIVOS/{EMPRESA}/ (p. ej. Farraces en PTE CONTRATACION) pasa
+allí con toda su documentación (movimiento virtual, solo índice).
+
 Con --dry-run no guarda nada: solo informa de lo que cambiaría.
 Salida en pantalla y en archivo a la vez (--log-file).
 """
@@ -17,8 +21,14 @@ from datetime import datetime
 
 from django.core.management.base import BaseCommand
 
+from django.db import transaction
+
 from document_explorer.employer_service import (
-    CONTRACT_TYPE_CODES, refresh_employer_company,
+    ACTIVATING_TYPE_CODES, refresh_employer_company,
+)
+from document_explorer.person_folder_service import (
+    expected_base_folder, free_folder_for, is_in_expected_folder,
+    move_person_documents,
 )
 from document_explorer.models import DocumentIndexEntry, PersonIdentity
 
@@ -65,7 +75,7 @@ class Command(BaseCommand):
     def _run(self, dry_run):
         person_ids = set(
             DocumentIndexEntry.objects.filter(
-                document_type__code__in=CONTRACT_TYPE_CODES,
+                document_type__code__in=ACTIVATING_TYPE_CODES,
                 domain_object_id__isnull=False,
                 deleted_at__isnull=True,
                 purged_at__isnull=True,
@@ -75,56 +85,90 @@ class Command(BaseCommand):
             "first_surname", "second_surname", "given_name",
         )
         self._log(
-            "Inicio%s: %d trabajadores con contrato." % (
+            "Inicio%s: %d trabajadores con contrato o alta." % (
                 " (SIMULACIÓN, no se guarda nada)" if dry_run else "",
                 people.count(),
             )
         )
-        changed = unchanged = unresolved = 0
+        changed = unchanged = unresolved = relocated = 0
         by_method = {"CIF": 0, "Gemini": 0}
         for position, person in enumerate(people, start=1):
             result = refresh_employer_company(person, save=not dry_run)
+            # En simulación la empresa nueva no se guarda, pero la carpeta
+            # de destino se calcula con ella.
+            person.employer_company = result["new"]
             name = "%s %s, %s (pk %s)" % (
                 person.first_surname, person.second_surname,
                 person.given_name, person.pk,
             )
+            self._log("%d. %s: %s." % (
+                position, name, self._employer_text(result),
+            ))
             if result["profile"] is None:
                 unresolved += 1
-                self._log(
-                    "%d. %s: NINGÚN contrato identifica la empresa "
-                    "(%d contratos) -- se queda '%s'." % (
-                        position, name, len(result["unresolved"]),
-                        result["old"] or "vacía",
-                    )
-                )
-                continue
-            by_method[result["method"]] += 1
-            contract = result["contract"]
-            detail = "contrato %s (%s, %s, por %s)" % (
-                contract.pk, contract.document_type.code,
-                contract.issue_date or "sin fecha", result["method"],
-            )
-            if result["unresolved"]:
-                detail += "; %d contrato(s) más reciente(s) sin empresa " \
-                    "legible: %s" % (
-                        len(result["unresolved"]),
-                        ", ".join(str(c.pk) for c in result["unresolved"]),
-                    )
-            if result["changed"]:
-                changed += 1
-                self._log("%d. %s: '%s' -> '%s' -- %s." % (
-                    position, name, result["old"] or "vacía",
-                    result["new"], detail,
-                ))
             else:
-                unchanged += 1
-                self._log("%d. %s: sin cambio ('%s') -- %s." % (
-                    position, name, result["new"], detail,
+                by_method[result["method"]] += 1
+                if result["changed"]:
+                    changed += 1
+                else:
+                    unchanged += 1
+            if person.is_active_employee and not is_in_expected_folder(
+                person,
+            ):
+                relocated += 1
+                target = free_folder_for(person, expected_base_folder(person))
+                self._log("   carpeta '%s' -> '%s'%s." % (
+                    person.folder_path, target,
+                    "" if dry_run else self._move(person, target),
                 ))
         self._log(
-            "Fin. Cambian: %d. Sin cambio: %d. Sin empresa identificable: "
-            "%d. Resueltos por CIF: %d, por Gemini: %d." % (
+            "Fin. Empresa: cambian %d, sin cambio %d, sin identificar %d "
+            "(por CIF %d, por Gemini %d). Carpetas movidas a ACTIVOS: %d." % (
                 changed, unchanged, unresolved,
-                by_method["CIF"], by_method["Gemini"],
+                by_method["CIF"], by_method["Gemini"], relocated,
             )
         )
+
+    def _move(self, person, target):
+        """
+        Move the person's documentation; returns a log suffix.
+
+        ---
+
+        Mueve la documentación de la persona; devuelve el sufijo del log.
+        """
+        with transaction.atomic():
+            moved = move_person_documents(person, target)
+        return " (%d archivo(s) movidos)" % moved
+
+    def _employer_text(self, result):
+        """
+        One log line about the employer result.
+
+        ---
+
+        Una línea de log con el resultado de la empresa.
+        """
+        if result["profile"] is None:
+            return (
+                "NINGÚN contrato identifica la empresa (%d contrato(s)) "
+                "-- se queda '%s'" % (
+                    len(result["unresolved"]), result["old"] or "vacía",
+                )
+            )
+        contract = result["contract"]
+        detail = "contrato %s (%s, %s, por %s)" % (
+            contract.pk, contract.document_type.code,
+            contract.issue_date or "sin fecha", result["method"],
+        )
+        if result["unresolved"]:
+            detail += "; %d contrato(s) más reciente(s) sin empresa " \
+                "legible: %s" % (
+                    len(result["unresolved"]),
+                    ", ".join(str(c.pk) for c in result["unresolved"]),
+                )
+        if result["changed"]:
+            return "'%s' -> '%s' -- %s" % (
+                result["old"] or "vacía", result["new"], detail,
+            )
+        return "sin cambio ('%s') -- %s" % (result["new"], detail)

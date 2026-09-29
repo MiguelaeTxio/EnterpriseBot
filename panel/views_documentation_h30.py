@@ -4797,48 +4797,24 @@ def _terminate_person(person, termination_date, person_ct, company_user):
     """
     from django.db import transaction
 
-    from document_explorer.move_service import move_entries
-
-    base_folder_path = "%s/%s" % (
-        naming_service.build_person_category_root(
-            person.first_surname, person.second_surname,
-            person.employer_company, False,
-        ),
-        naming_service.build_person_folder_name(
-            person.first_surname, person.second_surname, person.given_name,
-        ),
+    from document_explorer.person_folder_service import (
+        expected_base_folder, free_folder_for, move_person_documents,
     )
+
     # Mismo criterio que restructure_personal_folders ante homónimos:
     # nunca mezclar la documentación de dos personas en una carpeta --
-    # sufijo _2, _3... si ya tiene documentos de OTRA persona.
-    new_folder_path = base_folder_path
-    ordinal = 2
-    while DocumentIndexEntry.objects.filter(
-        bucket=BUCKET, parent_path=new_folder_path,
-        entry_kind=DocumentIndexEntry.KIND_FILE,
-        deleted_at__isnull=True, purged_at__isnull=True,
-    ).exclude(
-        domain_content_type=person_ct, domain_object_id=person.pk,
-    ).exists():
-        new_folder_path = "%s_%d" % (base_folder_path, ordinal)
-        ordinal += 1
+    # sufijo _2, _3... si ya tiene documentos de OTRA persona (S125:
+    # compartido en person_folder_service).
+    new_folder_path = free_folder_for(
+        person, expected_base_folder(person, is_active=False),
+    )
 
     with transaction.atomic():
-        entries = list(
-            DocumentIndexEntry.objects.filter(
-                bucket=BUCKET, domain_content_type=person_ct,
-                domain_object_id=person.pk,
-                entry_kind=DocumentIndexEntry.KIND_FILE,
-                deleted_at__isnull=True, purged_at__isnull=True,
-            )
-        )
-        moved = len(move_entries(entries, new_folder_path)) if entries else 0
+        moved = move_person_documents(person, new_folder_path)
         person.is_active_employee = False
         person.termination_date = termination_date
-        person.folder_path = new_folder_path
         person.save(update_fields=[
-            "is_active_employee", "termination_date", "folder_path",
-            "updated_at",
+            "is_active_employee", "termination_date", "updated_at",
         ])
         # S117 -- Miguel Ángel: "hay que desactivar su cuenta de acceso
         # si la tiene". Se desactiva en los dos sitios que la gobiernan:
@@ -4898,49 +4874,24 @@ def _reactivate_person(person, rehire_date, person_ct, company_user):
     """
     from django.db import transaction
 
-    from document_explorer.move_service import move_entries
-
-    base_folder_path = "%s/%s" % (
-        naming_service.build_person_category_root(
-            person.first_surname, person.second_surname,
-            person.employer_company, True,
-        ),
-        naming_service.build_person_folder_name(
-            person.first_surname, person.second_surname, person.given_name,
-        ),
+    from document_explorer.person_folder_service import (
+        expected_base_folder, free_folder_for, move_person_documents,
     )
-    new_folder_path = base_folder_path
-    ordinal = 2
-    while DocumentIndexEntry.objects.filter(
-        bucket=BUCKET, parent_path=new_folder_path,
-        entry_kind=DocumentIndexEntry.KIND_FILE,
-        deleted_at__isnull=True, purged_at__isnull=True,
-    ).exclude(
-        domain_content_type=person_ct, domain_object_id=person.pk,
-    ).exists():
-        new_folder_path = "%s_%d" % (base_folder_path, ordinal)
-        ordinal += 1
+
+    new_folder_path = free_folder_for(
+        person, expected_base_folder(person, is_active=True),
+    )
 
     with transaction.atomic():
-        entries = list(
-            DocumentIndexEntry.objects.filter(
-                bucket=BUCKET, domain_content_type=person_ct,
-                domain_object_id=person.pk,
-                entry_kind=DocumentIndexEntry.KIND_FILE,
-                deleted_at__isnull=True, purged_at__isnull=True,
-            )
-        )
-        moved = len(move_entries(entries, new_folder_path)) if entries else 0
+        moved = move_person_documents(person, new_folder_path)
         person.is_active_employee = True
         person.termination_date = None
         update_fields = [
-            "is_active_employee", "termination_date", "folder_path",
-            "updated_at",
+            "is_active_employee", "termination_date", "updated_at",
         ]
         if rehire_date:
             person.hire_date = rehire_date
             update_fields.append("hire_date")
-        person.folder_path = new_folder_path
         person.save(update_fields=update_fields)
         account_enabled = _set_person_account_active(person, True)
     logger.info(

@@ -45,6 +45,9 @@ logger = logging.getLogger(__name__)
 CONTRACT_TYPE_CODES = (
     "CONTRATO", "PRORROGA_CONTRATO", "MODIFICACION_CONTRATO",
 )
+# Documentos que activan a un trabajador (S124) y que por tanto pueden
+# llevarlo a ACTIVOS/{EMPRESA}/: los de contrato y el alta.
+ACTIVATING_TYPE_CODES = CONTRACT_TYPE_CODES + ("ALTA",)
 NONE_CODE = "NINGUNA"
 _GEMINI_MIME_TYPES = {
     "application/pdf", "image/jpeg", "image/png", "image/webp",
@@ -252,21 +255,32 @@ def refresh_employer_company(person, use_gemini=True, save=True):
 
 def refresh_after_contract(person, document_type_code):
     """
-    Hook for every contract that enters (never raises).
+    Hook for every contract or ALTA that enters (never raises).
 
     ---
 
-    Enganche para todo contrato que entra (cuarentena, panel,
-    WhatsApp): si el tipo es de contrato, recalcula la empresa. Nunca
-    lanza excepción -- un fallo aquí no puede tumbar la ingesta.
+    Enganche para todo contrato o alta que entra (cuarentena, panel,
+    WhatsApp). Si es contrato, recalcula la empresa. Si la persona está
+    activa y no está en su carpeta ACTIVOS/{EMPRESA}/ (acaba de
+    activarse, ha cambiado de empresa), traslada su documentación allí
+    (punto 4 de S125). Nunca mueve a un inactivo. Nunca lanza excepción
+    -- un fallo aquí no puede tumbar la ingesta.
     """
-    if document_type_code not in CONTRACT_TYPE_CODES:
+    from document_explorer.person_folder_service import relocate_if_needed
+
+    if document_type_code not in ACTIVATING_TYPE_CODES:
         return None
+    result = None
     try:
-        return refresh_employer_company(person)
+        if document_type_code in CONTRACT_TYPE_CODES:
+            result = refresh_employer_company(person)
+        if person.is_active_employee:
+            relocated, folder, moved = relocate_if_needed(person)
+            if result is not None:
+                result["relocated_to"] = folder if relocated else ""
     except Exception:
         logger.exception(
-            "# [EMPLOYER] No se pudo recalcular la empresa de %s",
+            "# [EMPLOYER] No se pudo actualizar empresa/carpeta de %s",
             person.pk,
         )
-        return None
+    return result
