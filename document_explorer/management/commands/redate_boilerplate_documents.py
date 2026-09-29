@@ -31,7 +31,8 @@ guardado:
 - Cruce con la fecha del nombre ORIGINAL del archivo (blob), si la
   lleva: si el documento no da fecha, se usa la del nombre; si las dos
   discrepan más de 15 días, SIN FECHA (mismo criterio que S122 para
-  contratos).
+  contratos) -- salvo en un CONTRATO cuyo nombre es posterior a la
+  fecha leída en menos de 400 días: es su fecha de fin y la respalda.
 - Nunca posterior a hoy ni anterior al primer alta de la persona menos
   15 días (Miguel Ángel: "no puedo tener un documento en esta empresa
   de antes de 2024"): en ese caso, SIN FECHA -- mejor sin fecha que
@@ -53,6 +54,10 @@ from document_explorer.employment_period_service import MATCH_WINDOW_DAYS
 from document_explorer.models import DocumentIndexEntry
 
 BUCKET = "cgs_grupo_alvarez"
+
+# S123: margen máximo entre la fecha leída de un contrato (inicio) y la
+# del nombre del archivo cuando esta es la de fin del contrato.
+CONTRACT_END_NAME_MAX_DAYS = 400
 
 # S123: fecha escrita a mano en el nombre ORIGINAL del archivo (el del
 # blob, p. ej. "Mod 145 Alonso Pedrosa, Manuel 6-3-23.pdf"), nunca el
@@ -215,7 +220,23 @@ class Command(BaseCommand):
             name_date = blob_name_date(entry.blob_name)
             new_date, reason = read_date, "leída"
             if read_date and name_date:
-                if abs((read_date - name_date).days) > MATCH_WINDOW_DAYS:
+                gap = (name_date - read_date).days
+                if abs(gap) <= MATCH_WINDOW_DAYS:
+                    pass
+                elif (
+                    entry.document_type.code == "CONTRATO"
+                    and 0 < gap <= CONTRACT_END_NAME_MAX_DAYS
+                ):
+                    # S123 (dry-run real de 141 contratos sin fecha):
+                    # en los contratos temporales el nombre del archivo
+                    # lleva casi siempre la fecha de FIN (leída
+                    # 01/10/2019, nombre 31/12/2019; leída 17/04/2018,
+                    # nombre 16/07/2018...). Un nombre posterior a la
+                    # fecha leída, dentro de un año largo, la respalda.
+                    reason = "leída; el nombre lleva la fecha de fin %s" % (
+                        name_date.isoformat()
+                    )
+                else:
                     new_date, reason = None, (
                         "leída %s y nombre %s discrepan"
                         % (read_date.isoformat(), name_date.isoformat())
