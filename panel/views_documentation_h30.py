@@ -158,17 +158,19 @@ def _apply_personal_filters(qs, request):
             matched_any = True
             company_q |= Q(employer_company__in=raws)
         qs = qs.filter(company_q) if matched_any else qs.none()
+    else:
+        qs = qs.none()
 
     # H30 (S123): filtro por requisito de documentación -- Miguel Ángel:
     # "podemos filtrar también por requisitos". "" = todos, "none" =
-    # sin requisito, un pk = ese requisito.
+    # sin requisito, un pk = ese requisito. (Incidente S123: la primera
+    # versión se insertó entre el `if company_filter` y su `else`, que
+    # quedó colgado de este filtro y vaciaba la lista con "Todos".)
     requirement_filter = request.GET.get("requirement", "")
     if requirement_filter == "none":
         qs = qs.filter(job_position__isnull=True)
     elif requirement_filter.isdigit():
         qs = qs.filter(job_position_id=int(requirement_filter))
-    else:
-        qs = qs.none()
 
     return qs
 
