@@ -8863,90 +8863,241 @@ los 75 activos: 75 con DNI, 66 con móvil, 62 con email, 8 sin contacto.
 (el archivo de log se reutilizó para la simulación); se reparó con
 `--undated`/`--ids`. La release `relevo-imagenes` quedó vacía al cierre.
 
-## Hoja de Ruta para la Siguiente Sesión (S124) -- REESCRITA al cierre,
-## sustituye por completo a la de S123 (todos sus puntos cerrados)
+### COMPLETADAS EN S124 (29/09/2026, PEE PC; H30 -- hoja de ruta de
+### S124 completa salvo la prueba de Miguel Ángel en Docuten, circulares
+### con firma certificada, y red de seguridad de cuarentena a 7,5 s)
 
-**Arranque directo, sin preguntar (instrucción de Miguel Ángel): los
-puntos 1 a 3 son lo primero de la sesión, en este orden.**
+**1. Cuarentena, rama PERSONAL (y MÁQUINA) -- cerrado y verificado.**
+`apply_quarantine_classification` renombraba y movía pero nunca guardaba
+`document_type` ni el vínculo con el dueño. Medido antes del cambio: de
+lo reubicado desde agosto, 787 archivos de PERSONAL y 22 de MÁQUINAS sin
+tipo o sin vínculo. **Corrección de premisa:** la hoja de ruta decía
+"igual que ya queda en máquinas", pero en máquinas tampoco lo hacía el
+pipeline (sus vínculos venían de los barridos de S117); se corrigieron
+las dos ramas (directriz 4.9). Nuevas `_persist_type_and_subject` y
+`_activate_person_on_hiring_document` (CONTRATO/ALTA -> activo) en
+`classification_service.py` (e1f5de3b). Verificado con archivo real:
+#52202 `FARRACES_GOMEZ_FRANCISCO_ENTREGA_INFORMACION_20260929.pdf`,
+reubicado a las 10:35 UTC con `document_type_id=43` y
+`domain_object_id=254`.
 
-**Decisión de Miguel Ángel que rige los puntos 1-3:** el Excel de
-plantilla es un HISTÓRICO y ya no se usa para decidir quién es activo.
-Todo trabajador que entra por cuarentena es nuevo: si tiene contrato o
-alta en la Seguridad Social, pasa a ACTIVO con su ficha activa; sin
-contrato ni alta, no.
+**2. Reparación de lo ya entrado -- cerrado y verificado.** Comando
+`link_personal_folder_entries` (216f77dd): vincula por carpeta EXACTA de
+la persona y tipa por nombre canónico (código de catálogo más largo en
+que termina el nombre sin fecha ni ordinal). Resultado del --apply:
+1.082 archivos sin persona -> 731 vinculados y tipados, 0 nombres no
+canónicos, 1 con prefijo de otra persona (en el log), 351 sin carpeta de
+dueño (subcarpetas OBSOLETO/BAJA/VACACIONES, carpetas antiguas
+`OPERARIOS/...`, algunas `ACTIVOS/...` sin ficha), listados con su
+motivo en el log `EnterpriseBot_002.txt`. Verificado en BD: 351 sin
+persona; Farraces (254) con **8** documentos con tipo y vínculo (no 7:
+el DNI está duplicado).
 
-1. **Pipeline de cuarentena, rama PERSONAL:** al clasificar un documento
-   de personal, guardar también su `document_type` y el vínculo con la
-   persona (`domain_content_type` PersonIdentity + `domain_object_id`),
-   igual que ya queda en máquinas; y si el documento es CONTRATO o ALTA,
-   marcar a la persona `is_active_employee=True`. **Cierre:** un archivo
-   real clasificado desde cuarentena queda en BD con `document_type_id`
-   y `domain_object_id` no nulos (consulta), y su persona activa si el
-   documento es contrato o alta.
-2. **Reparación de lo ya entrado:** comando (dry-run, --apply, log
-   propio) que vincula cada archivo de `DOC. PERSONAL/PERSONAL/%` sin
-   persona a la PersonIdentity cuyo `folder_path` es su carpeta, y le
-   pone el tipo que indica su nombre canónico
-   (`APELLIDOS_NOMBRE_{TIPO}_{AAAAMMDD}`). **Cierre:** la ficha de
-   Farraces (254) muestra sus 7 documentos, y los archivos de personal
-   sin persona quedan reducidos a los que no tienen carpeta de dueño,
-   listados con su motivo.
-3. **Activación por contrato o alta:** las personas con
-   `is_active_employee` NULL que tengan un CONTRATO o un ALTA vinculados
-   y posteriores a su última BAJA pasan a activas (dry-run primero, con
-   la lista para que Miguel Ángel la vea antes de aplicar). Ningún
-   proceso vuelve a usar el Excel para activar o desactivar a nadie.
-   **Cierre:** Farraces aparece en Personal con "Activos" marcado, y la
-   consulta de personas no activas con contrato/alta posterior a su
-   última baja devuelve 0.
-4. **Docuten -- "Preparar para Docuten"** en Personal > Información:
-   con una circular elegida y las personas seleccionadas, descarga un ZIP
-   con el PDF de la circular, el CSV (UTF-8, `;`, una línea por persona:
-   Nombre;Email;NIF;Móvil;`OTP`;`S`;`es`;`WhatsApp`) y una hoja de pasos
-   para Yolanda con la lista de quién queda fuera por no tener móvil.
-   Decisiones de Miguel Ángel: canal **WhatsApp**, firma **OTP**.
-   Investigar en la web de Docuten cómo se crean las **plantillas
-   editables** (Fast Templates / plantillas con campos) y dejar en la
-   hoja de pasos cómo crear una con campos `nombre` y `dni`, añadiendo
-   esos metadatos al CSV. **Cierre:** Miguel Ángel sube el CSV generado
-   en "Nuevo envío de firma" de Docuten y la tabla de procesos
-   detectados no marca ningún error de formato.
-5. **Plantillas `system_agent_*`:** consultar su estado de aprobación en
-   la Content API de Twilio (`ApprovalRequests`). **Cierre:** las dos en
-   "approved" para business initiated; si siguen pendientes, se anota el
-   estado con fecha y se vuelve a consultar en la sesión siguiente.
-6. **`refresh_quarantine_index_task` tarda más de 12 minutos** (red de
-   seguridad horaria, pensada como barrido ligero): medir la duración
-   real en el log del worker (`LOG_CELERY_WORKER`, líneas "received" y
-   "succeeded" de las 10:00, 11:00...) y localizar qué recorre. **Cierre:**
-   duración medida en el log y la tarea corregida para que baje de 2
-   minutos, o la causa documentada si no puede bajar.
+**3. Activación por contrato o alta -- cerrado y verificado.** Comando
+`activate_people_with_hiring_documents` (2682dd8f, corregido 19d3bc82).
+Primer dry-run erróneo (43 activaciones): tomaba también las False del
+histórico y daba una baja SIN FECHA por anterior a cualquier contrato;
+corregido antes de aplicar nada. Criterio final: solo `is_active_employee`
+NULL; alta = CONTRATO o ALTA (sin subtipos); baja = BAJA_PERSONAL o
+CARTA_BAJA_VOLUNTARIA (PARTE_BAJA_MEDICA no cuenta); fecha = issue_date
+o fecha del nombre canónico (nunca 2021-01-01); baja sin fecha ->
+revisar, nunca activar. Aplicado: Farraces (254) activo. García Álvarez
+(252) no: último contrato 01/12/2023, baja 15/09/2026. Verificado en BD:
+0 personas NULL con contrato/alta posterior a su última baja. Las 48
+personas False del histórico NO se tocaron (15 sin ninguna baja con
+contrato o alta -- entre ellas Aranda Reyes, Ruiz Portillo, Correa Prada,
+con carpeta en ACTIVOS --, y 33 con BAJA_PERSONAL sin fecha); listadas en
+`EnterpriseBot_004.txt`.
+
+**4. Docuten -- construido y desplegado; falta la prueba de Miguel
+Ángel.** Decisiones de Miguel Ángel en la sesión:
+- **Sin ZIP**: un clic descarga tres archivos sueltos (PDF, CSV, pasos).
+- **Solo las circulares que requieren firma certificada** pasan por
+  Docuten; el resto se envía por WhatsApp/email con "Enviar". Campo nuevo
+  `DocumentTypeCatalog.requires_signature` (migración 0162): marcadas
+  ENTREGA_INFORMACION, INFORMACION_MEDIDAS_PROTECCION, los tres
+  NOMBRAMIENTO_*, RECURSO_PREVENTIVO y PLAN_ACTUACION_CALOR; las cinco
+  CIRCULAR_* sin firma. Casilla "Requiere firma (Docuten)" en Editar
+  circular y columna "Firma" en el listado. Desplegable propio en
+  Personal > Información ("Circular con firma…") + selector de obra.
+- **Las plantillas salen ya con los campos que cambian** (Miguel Ángel:
+  "las plantillas tienen que salir con los campos que cambian ya
+  directamente"): `panel/docuten_export.py` convierte cada variable del
+  trabajador en campo rellenable del PDF (PyMuPDF sobre el render de
+  WeasyPrint: nombre, dni, nss, puesto, empresa, cif,
+  direccion_empresa, administrador, dni_administrador; empresa y
+  administrador de la empresa DE CADA trabajador vía
+  `resolve_company_fiscal_profile`), y el CSV lleva un metadato
+  `campo=valor` por cada campo del PDF. Fecha y obra van ya escritas.
+  Probado en local con las versiones de producción (PyMuPDF 1.27.2.2,
+  WeasyPrint 68.1): Entrega de información sale con 5 campos y se
+  rellena completa.
+- Flujo de Yolanda (según la guía oficial de Docuten): una vez por
+  circular, subir el PDF en Administrar > Plantillas PDF > Añadir y
+  marcar los campos obligatorios; en cada envío, Enviar documento >
+  Seleccionar plantilla > Crear firma desde archivo > CSV (una línea
+  por trabajador; un solo CSV para todos los seleccionados).
+- CSV: UTF-8 con BOM, `;`, sin cabecera,
+  `Nombre;Email;NIF;Móvil;OTP;S;es;WhatsApp;campo=valor...`. Móvil de 9
+  dígitos tal cual está en la ficha (65 de 76 activos; 10 vacíos y 1 de
+  8 dígitos quedan fuera con motivo). La guía de Docuten marca el email
+  como obligatorio: los que no lo tienen van igualmente y la hoja de
+  pasos avisa.
+- **Plantillas revisadas contra los documentos reales del cubo** (el
+  modelo los miró, no Miguel Ángel): 4 circulares (Cambio de horario,
+  Cierre de instalaciones, Evento de empresa, Protocolo de actuación)
+  NUNCA tuvieron documentos: las creó la migración 0126 (S114) vacías a
+  propósito, siguen pendientes de redactar y son sin firma. ENTREGA_
+  INFORMACION (792 docs) y NOMBRAMIENTO_RECURSO_PREVENTIVO (6) tenían
+  documentos y ningún texto: transcritos de #42678 (firmado por Docuten
+  el 18/08/2026) y #36978 (migración 0163); variable nueva
+  `{{trabajador.puesto}}` (categoría profesional) y variables de obra
+  en el editor. INFORMACION_MEDIDAS_PROTECCION: sus rayas de obra pasan a
+  `{{obra.nombre}}`/`{{obra.cliente}}`/`{{obra.direccion}}` (migración
+  0164); sus [corchetes] de la deficiencia concreta se escriben en cada
+  caso.
+- **Plan de calor = circular de PDF fijo.** Su "plantilla" era la copia
+  YA FIRMADA por Docuten de Gómez Gómez (#40356, 2025). Miguel Ángel
+  aportó el PDF limpio del Plan Nacional 2026 (55 páginas, versionado en
+  `document_explorer/fixed_templates/`); comando
+  `set_circular_fixed_template` lo subió a GCS e indexó como **#52207**
+  en `DOC. PERSONAL/PLAN DE ACTUACION FRENTE AL CALOR/2026` y es la
+  plantilla vigente (verificado en BD). Docuten lo entrega tal cual, sin
+  campos (Docuten añade su hoja de firma). #40356 no se tocó.
+- Migraciones 0162, 0163 y 0164 verificadas en `django_migrations`.
+
+**5. Plantillas `system_agent_*` -- cerrado.** Comando nuevo de solo
+lectura `check_whatsapp_template_approvals` (44b72b81). A las 12:41 del
+29/09: `system_agent_*` pendientes, `document_expiry_notice` y
+`document_missing_notice` aprobadas. Captura de Miguel Ángel de la
+consola de Twilio: `system_agent_recovered_alert` aprobada 12:57:31 y
+`system_agent_down_alert` 13:01:01 (GMT+2), las dos "WhatsApp business
+initiated".
+
+**6. `refresh_quarantine_index_task` -- cerrado: 7,5 s.** Medido en el log
+del worker: 703-1.306 s por ejecución (12-22 min), 770 carpetas, y dos
+ejecuciones solapadas con la concurrencia 2. Causa: por la directriz 4.12
+el blob no se mueve nunca, así que `_CUARENTENA/` no se vacía (7.416
+objetos físicos) y la tarea lo listaba carpeta a carpeta. Reescrita
+(35c86d6d): un único listado del prefijo, una única consulta de los
+indexados (incluida la papelera) y alta solo de lo que falta.
+Ejecutada a mano: 7.416 objetos, 0 sin indexar, **7,5 s**.
+
+**Hallazgos de la sesión (directriz 4.9).**
+- El WhatsApp de la plataforma **no recoge adjuntos**: no hay ningún
+  tratamiento de `NumMedia`/`MediaUrl0` en `whatsapp/`; cualquier foto o
+  PDF que envíe un trabajador se pierde hoy en silencio. Se resuelve en
+  el punto 3 de la hoja de ruta S125.
+- **H27 (ingesta por correo) nunca se construyó**: su anexo solo tiene
+  plan y el registro de sesiones vacío; no hay código de lectura de
+  buzón.
+- Farraces (254), ya activo, sigue en la carpeta
+  `PERSONAL/PTE CONTRATACION/` y sin `employer_company` (punto 4 de S125).
+
+**Incidencias.** El modelo afirmó que la ingesta por correo "ya
+funciona" sin comprobarlo; corregido en la misma conversación tras
+revisar el anexo H27 y el código. El `--apply` del Plan de calor (008) no
+se llegó a lanzar (se relanzó el dry-run 007); se repitió como 010.
+La release `relevo-imagenes` se vació tras su uso (datos personales).
+
+## Hoja de Ruta para la Siguiente Sesión (S125) -- REESCRITA al cierre,
+## sustituye por completo a la de S124
+
+**Arranque directo por el punto 1, sin preguntar.**
+
+**Decisión de Miguel Ángel que rige los puntos 1-3 (S124):** desde el
+panel, el supervisor da luz verde para pedir por WhatsApp al trabajador
+(con móvil y WhatsApp) la documentación que falta **y que el propio
+trabajador puede aportar**: DNI, permiso de conducir, tarjeta de
+conductor, tarjeta de la Seguridad Social, tarjeta sanitaria y
+similares. Nunca lo que depende de la empresa (contrato; reconocimiento
+médico, que exige cita de la empresa y lo suele enviar el propio centro
+médico). El trabajador lo entrega **contestando al WhatsApp con una foto
+o un PDF**, y el sistema tiene que aceptarlo aunque no conteste en el
+momento, escriba antes otras cosas o abra antes un ticket de avería.
+
+1. **Plantillas WhatsApp nuevas para pedir documentación al
+   trabajador** (las `document_*_notice` son para el aviso diario a
+   supervisores y dicen "consulte el panel"): comando de alta con la
+   misma filosofía que `create_document_notice_whatsapp_templates`
+   (UTILITY, preámbulo, variables de ejemplo, alta en BD, envío a Meta).
+   Una para documento que falta y otra para documento caducado, las dos
+   con la frase exacta de Miguel Ángel: **"Responda a este mensaje con
+   una foto o un PDF del documento."** **Cierre:** creadas y enviadas a
+   Meta en la sesión; aprobación comprobada con
+   `check_whatsapp_template_approvals` ("approved"); si Meta tarda, se
+   anota el estado con fecha y se sigue con los puntos 2-3, que no
+   dependen de la aprobación para construirse.
+2. **Marca "lo aporta el trabajador" en el catálogo** (campo booleano
+   nuevo en `DocumentTypeCatalog` + migración; casilla editable en el
+   catálogo). Marcados de inicio: DNI, permiso de conducir, tarjeta de
+   conductor, tarjeta de la Seguridad Social y tarjeta sanitaria, con
+   los códigos reales del catálogo verificados por consulta al ejecutar
+   (candidatos vistos: `DNI`, `CARNET_CONDUCIR`,
+   `TARJETA_CUALIF_CONDUCTOR`, `TARJETA_SANITARIA`). **Cierre:**
+   consulta a BD con esos tipos marcados y CONTRATO y
+   RECONOCIMIENTO_MEDICO sin marcar.
+3. **Pedir documentación desde Avisos, con luz verde del supervisor, y
+   recoger la respuesta:**
+   - En Avisos > Pendientes, acción del supervisor para pedir al
+     trabajador los documentos que faltan o caducan de tipos marcados
+     (punto 2), solo si tiene móvil válido. Registro de cada solicitud
+     (persona, tipo, quién la aprobó, cuándo, SID, estado
+     pendiente/recibida).
+   - Pipeline de adjuntos del WhatsApp: todo mensaje entrante con
+     adjunto de un teléfono que corresponda a una persona se descarga
+     de Twilio y entra en la cuarentena como cualquier otro documento
+     (se clasifica y vincula por el camino del punto 1 de S124), EN
+     CUALQUIER MOMENTO y en cualquier estado de la conversación
+     (respuesta tardía, mensajes intermedios, ticket de avería abierto
+     antes). Cuando el documento clasificado es de un tipo con solicitud
+     pendiente de esa persona, la solicitud pasa a recibida y el
+     trabajador recibe confirmación. Ningún adjunto se pierde.
+   - **Cierre (prueba real con el teléfono de Miguel Ángel):** se le pide
+     un documento; escribe antes un mensaje cualquiera y abre un ticket
+     de avería; después manda la foto del documento -> el documento
+     aparece en su ficha con tipo y vínculo, y la solicitud consta como
+     recibida (consulta a BD).
+4. **Trabajador activado que sigue en PTE CONTRATACION:** Farraces (254)
+   está activo pero su carpeta sigue en `PERSONAL/PTE CONTRATACION/` y
+   sin `employer_company`. Al activarse por contrato o alta, la persona
+   toma la empresa del propio documento y su carpeta pasa a
+   `ACTIVOS/{EMPRESA}/`. **Cierre:** la ficha y la carpeta de Farraces
+   bajo `ACTIVOS/` con su empresa (consulta a BD), y el mismo paso
+   automático para las siguientes activaciones.
+5. **Prueba de Docuten (Miguel Ángel):** generar desde Personal >
+   Información una circular con firma para varios activos y subir el CSV
+   en "Nuevo envío de firma" de Docuten. **Cierre:** la tabla de procesos
+   detectados no marca ningún error de formato. Si marca error en el
+   móvil (formato de 9 dígitos sin prefijo) o en las líneas sin email,
+   se corrige el formato en `panel/docuten_export.py` en la misma sesión.
 
 **Decisiones de Miguel Ángel que el modelo NO debe tocar por su
 cuenta:**
-- Envío automático por WhatsApp de avisos de documentación: **sigue
-  apagado** hasta que Miguel Ángel lo encienda desde Avisos >
-  Configuración.
+- Envío automático diario por WhatsApp de avisos a supervisores
+  (`notice_delivery_service`): **sigue apagado** hasta que Miguel Ángel
+  lo encienda desde Avisos > Configuración.
 - Requisitos de maquinaria: los definen los supervisores; el modelo no
   crea ninguno.
 - **Entregas de accesorios de elevación** y **cabrestante VIME 03210**:
-  sin cambios respecto a S121 (no se tocan sin instrucción suya).
-
-- **Excel de plantilla:** histórico; ya no discrimina activos (ver
-  hoja de ruta S124).
-- **Agente H28:** con latido desde S123; si se reempaqueta, sale con
-  `heartbeat.py` incluido (no quitarlo).
+  sin cambios respecto a S121.
+- **Excel de plantilla:** histórico; ya no decide quién es activo. Las 48
+  personas False del histórico no se activan sin instrucción de Miguel
+  Ángel (lista en el log `EnterpriseBot_004.txt` de S124: 15 sin ninguna
+  baja, 33 con BAJA_PERSONAL sin fecha).
+- **Agente H28:** con latido; si se reempaqueta, sale con `heartbeat.py`.
+- **Circulares:** solo las marcadas "Requiere firma" van a Docuten; las
+  4 CIRCULAR_* vacías se redactan desde Editar (no las redacta el modelo
+  sin texto de Miguel Ángel).
 
 **Trabajo de Miguel Ángel y de los supervisores en el panel (no
 bloquea la hoja de ruta):** configurar la ficha de Destinatarios de
-Yolanda Bandera (hoy no recibe nada); comprobar en Twilio la
-aprobación de `document_expiry_notice` y `document_missing_notice`;
-subir de nuevo, escribiendo la fecha, los 36 Modelos 145 y 9 contratos
-que quedaron sin fecha legible;
-localizar y subir los contratos que faltan (lista en Avisos >
-Pendientes > Faltan); separar el dosier de Burgos (30574) si se
-quiere; marcar clases de permiso en los requisitos y subir los carnés
-pendientes (heredado de S121).
+Yolanda Bandera (hoy no recibe nada); subir de nuevo, escribiendo la
+fecha, los 36 Modelos 145 y 9 contratos que quedaron sin fecha legible;
+localizar y subir los contratos que faltan (Avisos > Pendientes >
+Faltan); separar el dosier de Burgos (30574) si se quiere; marcar clases
+de permiso en los requisitos y subir los carnés pendientes; redactar las
+4 circulares informativas vacías.
 
 **Pendiente técnico heredado, sin cambios:** los 18 combinados
 FICHA+ITV que no se pueden partir se corrigen a mano desde la ficha
