@@ -1544,6 +1544,18 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
         current, obsolete = _split_current_obsolete(
             entries, required_type_ids,
         )
+        # H30 (S123). Los documentos laborales acumulables (contrato,
+        # alta, IDC, baja...) de periodos ANTERIORES al actual pasan al
+        # historial de su tipo. Miguel Ángel, sobre su propia ficha:
+        # "si vamos a estar metiendo [...] un contrato y otro y otro,
+        # al final tengo 15 contratos ahí [...] ¿entonces lo del
+        # historial para qué sirve?". Cada periodo sigue con su
+        # contrato en "Periodos de contratación"; Documentos muestra
+        # solo el juego del periodo en curso (o el último).
+        employment = _person_employment_periods(person)
+        current, obsolete = _move_previous_period_documents(
+            current, obsolete, employment["periods"],
+        )
         # H30 (S120). Matriz de clases del carné de conducir (columnas
         # 9-12 del reverso) colgada de cada carné vigente, para la
         # tabla de clases de su fila -- ver attach_driving_grants.
@@ -1857,7 +1869,7 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
             ),
             # H30 (S122): periodos de contratación (altas) con su
             # contrato emparejado a ±15 días, o "falta contrato".
-            "employment": _person_employment_periods(person),
+            "employment": employment,
             # H31 (S113): lotes de EPIs guardados para el nuevo flujo de
             # entrega desde la ficha individual (mismo modal que la
             # acción masiva de Personal).
@@ -1869,6 +1881,47 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
             "main_accordion_open": main_accordion_open,
             "selected_document_ids": selected_document_ids,
         })
+
+
+def _move_previous_period_documents(current, obsolete, periods_newest_first):
+    """
+    H30 (S123). Moves the cumulative LABORAL documents dated before the
+    latest employment period (start minus the period matching window)
+    from `current` to `obsolete`, so the person detail page shows only
+    the current set and the rest lives in each type's history.
+
+    ---
+
+    Pasa de `current` a `obsolete` los documentos LABORAL acumulables
+    fechados antes del último periodo de contratación (su alta menos la
+    ventana de emparejamiento de periodos, para que el IDC o el
+    contrato fechados unos días antes del alta sigan contando como de
+    ese periodo). Sin fecha: se quedan a la vista, para poder
+    corregirlos. Sin periodos: no se toca nada. Solo afecta a la ficha
+    de persona; avisos y requisitos siguen con `_split_current_obsolete`.
+    """
+    from datetime import timedelta
+
+    from document_explorer import employment_period_service as periods
+
+    if not periods_newest_first:
+        return current, obsolete
+    latest_start = periods_newest_first[0].start_date
+    if not latest_start:
+        return current, obsolete
+    cutoff = latest_start - timedelta(days=periods.MATCH_WINDOW_DAYS)
+    kept, moved = [], []
+    for entry in current:
+        document_type = entry.document_type if entry.document_type_id else None
+        is_previous = (
+            document_type is not None
+            and document_type.is_cumulative
+            and document_type.family == DocumentTypeCatalog.FAMILY_LABORAL
+            and entry.issue_date is not None
+            and entry.issue_date < cutoff
+        )
+        (moved if is_previous else kept).append(entry)
+    return kept, obsolete + moved
 
 
 def _person_employment_periods(person):
@@ -3108,6 +3161,13 @@ def _document_type_history_response(request, subject_model, subject_pk,
     current, _obsolete = _split_current_obsolete(
         entries, get_required_type_ids(subject),
     )
+    # S123: mismo criterio que la ficha -- un contrato/alta/IDC de un
+    # periodo anterior sale como obsoleto en su historial.
+    if subject_model is PersonIdentity:
+        current, _obsolete = _move_previous_period_documents(
+            current, _obsolete,
+            _person_employment_periods(subject)["periods"],
+        )
     current_pks = {entry.pk for entry in current}
     for entry in entries:
         entry.is_current_computed = entry.pk in current_pks
