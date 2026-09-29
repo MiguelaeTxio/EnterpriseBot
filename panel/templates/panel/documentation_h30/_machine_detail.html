@@ -588,37 +588,24 @@ function openUploadForm(preselectCode, restrictedTypes, photoMode) {
 
     bootstrap.Modal.getOrCreateInstance(document.getElementById('uploadDocumentModal')).show();
 
+    // S123: envío común con indicador de carga, sin doble envío,
+    // fecha leída en el mensaje y cierre solo (panel/js/subject_upload.js).
+    // La foto de la máquina se fija antes de recargar.
     document.getElementById('subjectUploadForm').onsubmit = function(ev) {
         ev.preventDefault();
-        const formData = new FormData(ev.target);
-        fetch("{% url 'panel:documentation_upload' domain='machine' subject_pk=machine.pk %}", {
-            method: 'POST', body: formData,
-            headers: {'X-CSRFToken': getCookie('csrftoken')},
-        }).then(r => r.json()).then(data => {
-            const resultDiv = document.getElementById('uploadResult');
-            let html = '';
-            (data.uploaded || []).forEach(u => {
-                html += `<div class="alert alert-success py-1 px-2 small">Subido: ${u.entry_name}`;
-                if (u.superseded_count) html += ` — ${u.superseded_count} anterior(es) marcado(s) obsoleto(s)`;
-                html += `</div>`;
-                if (u.warning) {
-                    html += `<div class="alert alert-warning py-1 px-2 small">⚠ Escribiste ${u.warning.typed_date}, el sistema (${u.warning.source}) lee ${u.warning.system_date}. Verifica.</div>`;
+        submitSubjectUpload(
+            ev.target,
+            "{% url 'panel:documentation_upload' domain='machine' subject_pk=machine.pk %}",
+            getCookie('csrftoken'),
+            function (data) {
+                const uploadedPhoto = (data.uploaded || [])[0];
+                if (photoMode && uploadedPhoto) {
+                    setMachinePhoto(uploadedPhoto.entry_id).then(() => location.reload());
+                    return true;
                 }
-            });
-            (data.errors || []).forEach(e => {
-                html += `<div class="alert alert-danger py-1 px-2 small">${e.file}: ${e.error}</div>`;
-            });
-            if (data.error) {
-                html += `<div class="alert alert-danger py-1 px-2 small">${data.error}</div>`;
-            }
-            resultDiv.innerHTML = html;
-            const uploadedPhoto = (data.uploaded || [])[0];
-            if (data.ok && photoMode && uploadedPhoto) {
-                setMachinePhoto(uploadedPhoto.entry_id).then(() => location.reload());
-            } else if (data.ok) {
-                setTimeout(() => location.reload(), 2000);
-            }
-        });
+                return false;
+            },
+        );
     };
 }
 

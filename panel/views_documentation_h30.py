@@ -5919,10 +5919,28 @@ class SubjectDocumentUploadView(DocsUploadAccessMixin, View):
             except SubjectUploadError as exc:
                 errors.append({"file": uploaded_file.name, "error": str(exc)})
                 continue
+            # S123: la fecha con la que ha quedado el documento, para
+            # decírselo al supervisor en el propio modal (Miguel Ángel:
+            # "le das al botón y no sabemos lo que está ocurriendo").
+            stored_entry = result["entry"]
+            stored_date = stored_entry.expiry_date or stored_entry.issue_date
             entry_result = {
-                "entry_id": result["entry"].pk,
-                "entry_name": result["entry"].name,
+                "entry_id": stored_entry.pk,
+                "entry_name": stored_entry.name,
                 "superseded_count": result["superseded_count"],
+                "date_label": (
+                    stored_date.strftime("%d/%m/%Y") if stored_date else ""
+                ),
+                "date_kind": (
+                    "caducidad" if stored_entry.expiry_date else "documento"
+                ),
+                # Solo se avisa de "sin fecha" donde la fecha importa:
+                # tipos con caducidad y acumulables (contratos, altas,
+                # bajas...), que se colocan por su fecha.
+                "needs_date": bool(
+                    document_type.tracks_expiry
+                    or document_type.is_cumulative
+                ),
             }
             if result["warning"]:
                 entry_result["warning"] = {
