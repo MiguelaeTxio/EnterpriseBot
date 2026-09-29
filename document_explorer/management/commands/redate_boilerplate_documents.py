@@ -47,7 +47,7 @@ import re
 from datetime import date, datetime, timedelta
 
 from django.core.management.base import BaseCommand, CommandError
-from django.db.models import Min
+from django.db.models import Min, Q
 
 from document_explorer.employment_period_service import MATCH_WINDOW_DAYS
 from document_explorer.models import DocumentIndexEntry
@@ -102,9 +102,17 @@ class Command(BaseCommand):
             help="Código de tipo (repetible), p. ej. MOD_145.",
         )
         parser.add_argument(
-            "--wrong-date", action="append", required=True,
+            "--wrong-date", action="append", default=[],
             dest="wrong_dates",
             help="Fecha de plantilla AAAA-MM-DD (repetible).",
+        )
+        # S123: la primera pasada (--apply, motor anterior) dejó 99
+        # Modelos 145 SIN FECHA y 19 con fecha sin los cruces nuevos.
+        # --undated relee los sin fecha; --ids relee ids concretos.
+        parser.add_argument("--undated", action="store_true")
+        parser.add_argument(
+            "--ids", default="",
+            help="Ids separados por comas, además de lo anterior.",
         )
         parser.add_argument("--apply", action="store_true")
         parser.add_argument("--limit", type=int, default=200)
@@ -132,9 +140,17 @@ class Command(BaseCommand):
             raise CommandError("Fecha con formato inválido: %s" % exc)
         with open(options["log_file"], "a", encoding="utf-8") as handle:
             self._log_handle = handle
+            ids = [
+                int(value) for value in options["ids"].split(",")
+                if value.strip()
+            ]
+            if not (wrong_dates or options["undated"] or ids):
+                raise CommandError(
+                    "Indica --wrong-date, --undated o --ids."
+                )
             self._run(
                 options["types"], wrong_dates, options["apply"],
-                options["limit"],
+                options["limit"], options["undated"], ids,
             )
 
     def _first_alta(self, entry):
@@ -153,22 +169,31 @@ class Command(BaseCommand):
             document_type__code="ALTA", issue_date__isnull=False,
         ).aggregate(first=Min("issue_date"))["first"]
 
-    def _run(self, types, wrong_dates, apply, limit):
+    def _run(self, types, wrong_dates, apply, limit, undated=False, ids=()):
         from document_explorer.cloud_vision_service import (
             extract_text_for_dates,
         )
         from spare_parts.gcs_service import download_bytes
 
         mode = "APPLY" if apply else "DRY-RUN"
+        selector = Q(issue_date__in=wrong_dates) if wrong_dates else Q(pk__in=[])
+        if undated:
+            selector |= Q(issue_date__isnull=True)
+        if ids:
+            selector |= Q(pk__in=ids)
         entries = list(DocumentIndexEntry.objects.filter(
+            selector,
             bucket=BUCKET, entry_kind=DocumentIndexEntry.KIND_FILE,
             deleted_at__isnull=True, purged_at__isnull=True,
-            document_type__code__in=types, issue_date__in=wrong_dates,
+            document_type__code__in=types,
         ).select_related("document_type").order_by("id")[:limit])
         self._log(
-            "Inicio (%s): tipos %s, fechas %s -- %d documento(s)."
+            "Inicio (%s): tipos %s, fechas %s, sin fecha %s, ids %s -- "
+            "%d documento(s)."
             % (mode, ",".join(types),
-               ",".join(d.isoformat() for d in wrong_dates), len(entries))
+               ",".join(d.isoformat() for d in wrong_dates) or "-",
+               "sí" if undated else "no",
+               ",".join(str(i) for i in ids) or "-", len(entries))
         )
 
         counts = {"fechado": 0, "sin_fecha": 0, "error": 0}
@@ -212,7 +237,8 @@ class Command(BaseCommand):
             counts["fechado" if new_date else "sin_fecha"] += 1
             self._log(
                 "%s -- %s -> %s (%s; páginas leídas: %d)"
-                % (prefix, entry.issue_date.isoformat(),
+                % (prefix,
+                   entry.issue_date.isoformat() if entry.issue_date else "SIN FECHA",
                    new_date.isoformat() if new_date else "SIN FECHA",
                    reason if read_date or name_date else "nada legible",
                    pages)
