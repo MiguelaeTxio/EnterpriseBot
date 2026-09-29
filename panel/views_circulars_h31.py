@@ -695,3 +695,66 @@ class CircularGeneratePersonSearchView(DocsUploadAccessMixin, View):
             {"results": results, "search_performed": search_performed},
         )
 
+
+class PersonalDocutenExportView(DocsUploadAccessMixin, View):
+    """
+    POST: ZIP to launch a mass signature of one circular in Docuten.
+
+    ---
+
+    H30 (S124), punto 4. POST con `tipo` (código de la circular) y
+    `person_ids`: devuelve el ZIP de `panel.docuten_export.build_zip`
+    (PDF de la circular, CSV de envío masivo y hoja de pasos para
+    Yolanda). Cabeceras `X-Docuten-Included`/`X-Docuten-Excluded` para
+    el aviso del panel. Solo lectura: no crea documentos ni acuses.
+    """
+
+    def post(self, request):
+        import json
+
+        from django.http import JsonResponse
+
+        from panel.docuten_export import build_zip
+
+        person_ids = request.POST.getlist("person_ids")
+        type_code = request.POST.get("tipo", "").strip()
+        if not person_ids:
+            return JsonResponse(
+                {"ok": False, "error": "No hay ninguna persona seleccionada."},
+                status=400,
+            )
+        if not type_code:
+            return JsonResponse(
+                {"ok": False, "error": "Falta elegir la circular."},
+                status=400,
+            )
+        document_type = get_object_or_404(
+            DocumentTypeCatalog, code=type_code, is_active=True,
+            is_notification_template=True,
+        )
+        if not document_type.content_html.strip():
+            return JsonResponse(
+                {"ok": False, "error": "La circular no tiene contenido."},
+                status=400,
+            )
+        people = list(PersonIdentity.objects.filter(
+            pk__in=person_ids,
+        ).order_by("first_surname", "second_surname", "given_name"))
+        zip_bytes, included, excluded = build_zip(document_type, people)
+        if not included:
+            return JsonResponse({
+                "ok": False,
+                "error": "Ninguna persona seleccionada tiene móvil válido.",
+            }, status=400)
+
+        response = HttpResponse(zip_bytes, content_type="application/zip")
+        response["Content-Disposition"] = (
+            'attachment; filename="docuten_%s_%s.zip"'
+            % (type_code.lower(), timezone.localdate().isoformat())
+        )
+        response["X-Docuten-Included"] = str(len(included))
+        response["X-Docuten-Excluded"] = json.dumps([
+            "%s %s" % (person.given_name, person.first_surname)
+            for person, _reason in excluded
+        ])
+        return response

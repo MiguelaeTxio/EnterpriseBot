@@ -26,6 +26,7 @@ from panel.views_circulars_h31 import (
     CircularImportDocumentView,
     CircularListView,
     CircularSaveContentView,
+    PersonalDocutenExportView,
 )
 from panel.views_document_alerts import (
     DocumentAlertRulesSaveView,
@@ -563,6 +564,8 @@ urlpatterns = [
     path("documentacion/personal/grupos/<int:group_pk>/eliminar/", PersonGroupTemplateDeleteView.as_view(), name="documentation_personal_group_delete"),
     path("documentacion/personal/puesto-masivo/", PersonMassSetJobPositionView.as_view(), name="documentation_personal_job_position_mass_set"),
     path("documentacion/personal/notificar-masivo/", PersonalNotificationMassSendView.as_view(), name="documentation_personal_notify_mass"),
+    # H30 (S124), punto 4: material para el envío masivo en Docuten.
+    path("documentacion/personal/preparar-docuten/", PersonalDocutenExportView.as_view(), name="documentation_personal_docuten_export"),
     # H31 (S113): CRUD de lotes de EPIs -- centralizado en la propia
     # pestaña EPIs (ver EpiTabFragmentView / _epi_pane.html), sin
     # página aparte.
