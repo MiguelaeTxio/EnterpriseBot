@@ -3718,3 +3718,186 @@ class SystemAgentHeartbeat(models.Model):
 
     def __str__(self):
         return "%s (%s)" % (self.agent_name, self.last_beat_at)
+
+
+class WorkerDocumentRequest(models.Model):
+    """
+    H30 (S125). A document asked to a worker over WhatsApp, approved
+    by a supervisor from Avisos. One worker has a queue: only one
+    request is active (SENT) at a time; when its document is accepted
+    the next queued one is sent.
+
+    ---
+
+    H30 (S125). Documento pedido a un trabajador por WhatsApp, con luz
+    verde de un supervisor desde Avisos. Cada trabajador tiene su cola:
+    solo una solicitud activa (SENT) a la vez; cuando su documento se
+    acepta, se pide la siguiente de la cola. Decisión de Miguel Ángel
+    (S125): lo que entra se valida contra lo pedido (Gemini) y se
+    clasifica directamente, nunca por la cuarentena.
+    """
+
+    REASON_MISSING = "MISSING"
+    REASON_EXPIRY = "EXPIRY"
+    REASON_CHOICES = [
+        (REASON_MISSING, "Falta"),
+        (REASON_EXPIRY, "Caducado o por caducar"),
+    ]
+
+    STATUS_QUEUED = "QUEUED"
+    STATUS_SENT = "SENT"
+    STATUS_RECEIVED = "RECEIVED"
+    STATUS_CANCELLED = "CANCELLED"
+    STATUS_CHOICES = [
+        (STATUS_QUEUED, "En cola"),
+        (STATUS_SENT, "Pedido, esperando respuesta"),
+        (STATUS_RECEIVED, "Recibido"),
+        (STATUS_CANCELLED, "Cancelado"),
+    ]
+    OPEN_STATUSES = (STATUS_QUEUED, STATUS_SENT)
+
+    person = models.ForeignKey(
+        "PersonIdentity",
+        on_delete=models.CASCADE,
+        related_name="document_requests",
+        verbose_name="Trabajador",
+    )
+    document_type = models.ForeignKey(
+        "DocumentTypeCatalog",
+        on_delete=models.PROTECT,
+        related_name="worker_requests",
+        verbose_name="Tipo documental pedido",
+    )
+    reason = models.CharField(
+        max_length=10, choices=REASON_CHOICES, verbose_name="Motivo",
+    )
+    status = models.CharField(
+        max_length=10, choices=STATUS_CHOICES, default=STATUS_QUEUED,
+        verbose_name="Estado",
+    )
+    approved_by = models.ForeignKey(
+        "ivr_config.CompanyUser",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="approved_document_requests",
+        verbose_name="Aprobada por",
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True, verbose_name="Aprobada el",
+    )
+    sent_at = models.DateTimeField(
+        null=True, blank=True, verbose_name="Enviada el",
+    )
+    message_sid = models.CharField(
+        max_length=64, blank=True, verbose_name="SID del mensaje",
+    )
+    send_error = models.TextField(
+        blank=True, verbose_name="Error de envío",
+    )
+    received_at = models.DateTimeField(
+        null=True, blank=True, verbose_name="Recibida el",
+    )
+    received_entry = models.ForeignKey(
+        "DocumentIndexEntry",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="fulfilled_requests",
+        verbose_name="Documento recibido",
+    )
+
+    class Meta:
+        verbose_name = "Solicitud de documento al trabajador"
+        verbose_name_plural = "Solicitudes de documentos al trabajador"
+        ordering = ["created_at", "pk"]
+
+    def __str__(self):
+        return "%s -- %s (%s)" % (
+            self.person, self.document_type.label, self.status,
+        )
+
+
+class WorkerDocumentSubmission(models.Model):
+    """
+    H30 (S125). One attachment received over WhatsApp from a worker,
+    with the verdict of the check against what was requested.
+
+    ---
+
+    H30 (S125). Un adjunto recibido por WhatsApp de un trabajador, con
+    el veredicto de la comprobación contra lo pedido. Ningún adjunto se
+    pierde (S124): el aceptado va a la ficha, el no conforme a
+    NO CONFORMES/ y el que no responde a ninguna solicitud a la
+    cuarentena.
+    """
+
+    STATUS_PROCESSING = "PROCESSING"
+    STATUS_ACCEPTED = "ACCEPTED"
+    STATUS_REJECTED = "REJECTED"
+    STATUS_QUARANTINED = "QUARANTINED"
+    STATUS_ERROR = "ERROR"
+    STATUS_CHOICES = [
+        (STATUS_PROCESSING, "Revisando"),
+        (STATUS_ACCEPTED, "Aceptado"),
+        (STATUS_REJECTED, "No conforme"),
+        (STATUS_QUARANTINED, "A cuarentena (sin solicitud)"),
+        (STATUS_ERROR, "Error"),
+    ]
+
+    person = models.ForeignKey(
+        "PersonIdentity",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="document_submissions",
+        verbose_name="Trabajador",
+    )
+    request = models.ForeignKey(
+        WorkerDocumentRequest,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="submissions",
+        verbose_name="Solicitud a la que responde",
+    )
+    from_phone = models.CharField(
+        max_length=30, verbose_name="Teléfono remitente",
+    )
+    media_url = models.TextField(verbose_name="URL del adjunto (Twilio)")
+    media_sid = models.CharField(
+        max_length=64, blank=True, verbose_name="SID del adjunto",
+    )
+    media_content_type = models.CharField(
+        max_length=100, blank=True, verbose_name="Tipo de contenido",
+    )
+    status = models.CharField(
+        max_length=12, choices=STATUS_CHOICES, default=STATUS_PROCESSING,
+        verbose_name="Estado",
+    )
+    verdict = models.JSONField(
+        default=dict, blank=True, verbose_name="Lectura de Gemini",
+    )
+    reason = models.TextField(blank=True, verbose_name="Motivo")
+    entry = models.ForeignKey(
+        "DocumentIndexEntry",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="worker_submissions",
+        verbose_name="Archivo guardado",
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True, verbose_name="Recibido el",
+    )
+    processed_at = models.DateTimeField(
+        null=True, blank=True, verbose_name="Revisado el",
+    )
+
+    class Meta:
+        verbose_name = "Documento recibido por WhatsApp"
+        verbose_name_plural = "Documentos recibidos por WhatsApp"
+        ordering = ["-created_at", "-pk"]
+
+    def __str__(self):
+        return "%s (%s)" % (self.from_phone, self.status)

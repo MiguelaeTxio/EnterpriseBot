@@ -31,14 +31,19 @@ from document_explorer import document_notice_service as notices
 from document_explorer.models import (
     DocumentTypeCatalog, JobPosition, NoticeRecipientScope,
     PersonGroupTemplate, PersonIdentity, RequirementAlertRule,
+    WorkerDocumentRequest, WorkerDocumentSubmission,
 )
+from document_explorer.person_phone_service import mobile_of
+from document_explorer.worker_request_service import create_requests
 from document_explorer.notice_recipients import (
     docs_supervisors, load_scopes, recipients_for,
 )
 from document_management.models import DocumentAlertSettings
 from fleet.models import MachineAsset
 from ivr_config.models import CompanyUser
-from panel.mixins import CompanyUserRequiredMixin, SupervisorAccessMixin
+from panel.mixins import (
+    CompanyUserRequiredMixin, DocsUploadAccessMixin, SupervisorAccessMixin,
+)
 from panel.models import PanelNavigationState
 
 NAV_SCREEN_KEY = "documentation_hub"
@@ -47,6 +52,11 @@ MONTH_NAMES = (
     "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio",
     "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
 )
+# H30 (S125): quién da luz verde para pedir documentación al trabajador.
+DOC_REQUEST_ROLES = {
+    CompanyUser.ROLE_DOCS_SUPERVISOR,
+    CompanyUser.ROLE_ADMIN,
+}
 WHATSAPP_TOGGLE_ROLES = {
     CompanyUser.ROLE_SUPERVISOR,
     CompanyUser.ROLE_WORKSHOPBOSS,
@@ -495,6 +505,116 @@ class DocumentAlertWhatsAppToggleView(SupervisorAccessMixin, View):
         return JsonResponse({"ok": True, "enabled": enabled})
 
 
+def _annotate_worker_requests(pending, can_request_docs):
+    """
+    Request state and "can be requested" flag of each personal notice.
+
+    ---
+
+    Estado de la solicitud al trabajador y marca "se puede pedir" de
+    cada aviso de Personal (H30, S125). Se puede pedir si quien mira
+    puede dar luz verde, el tipo lo aporta el trabajador, la persona
+    tiene móvil válido y no hay ya una solicitud abierta. Plantillas
+    tontas: el texto del estado se decide aquí.
+    """
+    person_ids = {notice.subject_id for notice in pending}
+    people = PersonIdentity.objects.in_bulk(person_ids)
+    worker_type_ids = set(
+        DocumentTypeCatalog.objects.filter(worker_provides=True)
+        .values_list("pk", flat=True)
+    )
+    open_requests = {
+        (req.person_id, req.document_type_id): req
+        for req in WorkerDocumentRequest.objects.filter(
+            person_id__in=person_ids,
+            status__in=WorkerDocumentRequest.OPEN_STATUSES,
+        )
+    }
+    last_rejected = {}
+    for submission in WorkerDocumentSubmission.objects.filter(
+        request__in=list(open_requests.values()),
+        status=WorkerDocumentSubmission.STATUS_REJECTED,
+    ).order_by("created_at"):
+        last_rejected[submission.request_id] = submission
+    for notice in pending:
+        notice.request_key = "%s:%s" % (
+            notice.subject_id, notice.document_type_id,
+        )
+        request_obj = open_requests.get(
+            (notice.subject_id, notice.document_type_id),
+        )
+        notice.request_state = ""
+        notice.request_state_class = "text-bg-info"
+        if request_obj is not None:
+            rejected = last_rejected.get(request_obj.pk)
+            if request_obj.send_error:
+                notice.request_state = (
+                    "WhatsApp no enviado: %s" % request_obj.send_error
+                )
+                notice.request_state_class = "text-bg-danger"
+            elif rejected is not None:
+                notice.request_state = "Entregado no conforme: %s" % (
+                    rejected.reason.removeprefix("No conforme: ")
+                )
+                notice.request_state_class = "text-bg-warning"
+            elif request_obj.status == WorkerDocumentRequest.STATUS_SENT:
+                notice.request_state = "Pedido por WhatsApp el %s" % (
+                    request_obj.sent_at.strftime("%d/%m %H:%M")
+                )
+            else:
+                notice.request_state = "En cola para pedir por WhatsApp"
+        person = people.get(notice.subject_id)
+        notice.is_requestable = bool(
+            can_request_docs and request_obj is None
+            and notice.document_type_id in worker_type_ids
+            and person is not None and mobile_of(person)
+        )
+
+
+class DocumentRequestCreateView(DocsUploadAccessMixin, View):
+    """
+    POST: green light to ask the selected workers for their documents.
+
+    ---
+
+    POST: luz verde del supervisor para pedir por WhatsApp a los
+    trabajadores seleccionados los documentos que les faltan o
+    caducan (H30, S125). Cuerpo JSON {"items": ["persona:tipo", ...]}.
+    Responde JSON con un resumen legible -- la pantalla lo muestra,
+    ninguna acción en silencio.
+    """
+
+    def post(self, request):
+        try:
+            payload = json.loads(request.body.decode("utf-8") or "{}")
+        except (ValueError, UnicodeDecodeError):
+            return JsonResponse(
+                {"ok": False, "error": "Petición no válida."}, status=400,
+            )
+        pairs = []
+        for item in payload.get("items") or []:
+            person_id, _, type_id = str(item).partition(":")
+            if person_id.isdigit() and type_id.isdigit():
+                pairs.append((int(person_id), int(type_id)))
+        if not pairs:
+            return JsonResponse(
+                {"ok": False, "error": "No hay nada seleccionado."},
+                status=400,
+            )
+        summary = create_requests(pairs, request.user.company_user)
+        lines = ["Solicitudes nuevas: %d. Enviadas ahora por WhatsApp: %d." % (
+            summary["queued"], summary["sent"],
+        )]
+        if summary["queued"] > summary["sent"]:
+            lines.append(
+                "El resto queda en cola: se pide al trabajador cuando "
+                "entregue el anterior."
+            )
+        lines.extend("No enviado -- %s" % e for e in summary["send_errors"])
+        lines.extend("Descartado -- %s" % e for e in summary["skipped"])
+        return JsonResponse({"ok": True, "message": "\n".join(lines)})
+
+
 class DocumentNoticesView(CompanyUserRequiredMixin, View):
     """
     GET: "Pendientes" sub-tab (fragment, htmx).
@@ -639,6 +759,13 @@ class DocumentNoticesView(CompanyUserRequiredMixin, View):
                 is_active=True, document_requirement__isnull=False,
             ).exists()
 
+        can_request_docs = (
+            domain == notices.DOMAIN_PERSONAL
+            and company_user.role in DOC_REQUEST_ROLES
+        )
+        if domain == notices.DOMAIN_PERSONAL:
+            _annotate_worker_requests(pending, can_request_docs)
+
         expired = [n for n in pending if n.kind == notices.KIND_EXPIRED]
         upcoming = [n for n in pending if n.kind == notices.KIND_UPCOMING]
         missing = [n for n in pending if n.kind == notices.KIND_MISSING]
@@ -659,6 +786,7 @@ class DocumentNoticesView(CompanyUserRequiredMixin, View):
             "has_subjects": has_subjects,
             "who": who,
             "is_supervisor": is_supervisor,
+            "can_request_docs": can_request_docs,
         })
 
 

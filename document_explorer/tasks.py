@@ -850,3 +850,21 @@ def check_system_agents_task(self) -> None:
     from .system_agent_service import check_agents
 
     check_agents()
+
+
+@app.task(base=DjangoTask, bind=True, max_retries=0)
+def process_worker_submission_task(self, submission_id: int) -> str:
+    """
+    H30 (S125). Checks one WhatsApp attachment against the worker's
+    open requests (Gemini) and files it, outside the webhook (Twilio
+    only waits 15 s).
+
+    ---
+
+    H30 (S125). Comprueba un adjunto de WhatsApp contra las solicitudes
+    abiertas del trabajador (Gemini) y lo archiva, fuera del webhook
+    (Twilio solo espera 15 s a la respuesta).
+    """
+    from .worker_request_service import process_submission
+
+    return process_submission(submission_id)

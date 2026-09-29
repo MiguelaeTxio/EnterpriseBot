@@ -111,6 +111,11 @@ class IncomingWhatsAppView(View):
         raw_latitude     = request.POST.get("Latitude", "").strip()
         raw_longitude    = request.POST.get("Longitude", "").strip()
         is_location_msg  = bool(raw_latitude)
+        # H30 (S125): adjunto (foto o PDF). WhatsApp manda uno por mensaje.
+        try:
+            num_media = int(request.POST.get("NumMedia", "0") or 0)
+        except ValueError:
+            num_media = 0
 
         logger.info(
             "# [WHATSAPP] Mensaje entrante de %s a %s: '%s' "
@@ -125,7 +130,9 @@ class IncomingWhatsAppView(View):
 
         # A message must have either a body or location coordinates to be processed.
         # Un mensaje debe tener cuerpo o coordenadas de ubicación para ser procesado.
-        if not from_number or not to_number or (not body and not is_location_msg):
+        if not from_number or not to_number or (
+            not body and not is_location_msg and not num_media
+        ):
             logger.warning(
                 "# [WHATSAPP] Parámetros incompletos en webhook entrante. "
                 "From=%s To=%s Body=%s Latitude=%s",
@@ -164,6 +171,37 @@ class IncomingWhatsAppView(View):
                 to_number,
             )
             return HttpResponse(status=200)
+
+        # --- Step 2b (H30, S125): worker attachments, before anything else. ---
+        # Every attachment from a phone that belongs to a worker is recorded
+        # and checked (Celery) against the documents asked to that worker,
+        # whatever the conversation state: late answer, other messages in
+        # between, breakdown ticket opened before. Any text that comes with
+        # it follows the normal flow below.
+        # --- Paso 2b (H30, S125): adjuntos de trabajadores, antes que nada. ---
+        # Todo adjunto de un teléfono que es de un trabajador se registra y
+        # se comprueba (Celery) contra lo que se le ha pedido, en cualquier
+        # estado de la conversación. El texto que lo acompañe sigue el
+        # camino normal de abajo.
+        if num_media:
+            from document_explorer.person_phone_service import (
+                resolve_person_by_phone,
+            )
+            from document_explorer.worker_request_service import (
+                register_incoming_media,
+            )
+
+            _media_person = resolve_person_by_phone(company, from_number)
+            if _media_person is not None:
+                register_incoming_media(_media_person, from_number, request.POST)
+            else:
+                logger.warning(
+                    "# [WHATSAPP] Adjunto de %s: el teléfono no es de "
+                    "ningún trabajador -- no se procesa.",
+                    from_number,
+                )
+            if not body and not is_location_msg:
+                return HttpResponse(status=200)
 
         # --- Step 3: Resolve or create active WhatsAppSession. ---
         # --- Paso 3: Resolver o crear WhatsAppSession activa. ---

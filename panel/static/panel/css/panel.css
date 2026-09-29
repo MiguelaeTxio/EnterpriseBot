@@ -1484,3 +1484,8 @@ table.table #toll-thead ~ tbody tr:nth-child(even):not(.table-secondary) td {
     overflow-y: auto;
     overscroll-behavior: contain;
 }
+
+/* H30 (S125): resumen de "Pedir por WhatsApp al trabajador" (varias lineas). */
+.doc-request-result {
+    white-space: pre-line;
+}

@@ -32,6 +32,7 @@ from panel.views_document_alerts import (
     DocumentAlertRulesSaveView,
     DocumentAlertsPaneView,
     DocumentAlertWhatsAppToggleView,
+    DocumentRequestCreateView,
     DocumentNoticesView,
     NoticeScopeSaveView,
 )
@@ -536,6 +537,8 @@ urlpatterns = [
     path("documentacion/avisos/pendientes/", DocumentNoticesView.as_view(), name="document_notices"),
     path("documentacion/avisos/destinatarios/<int:supervisor_pk>/guardar/", NoticeScopeSaveView.as_view(), name="notice_scope_save"),
     path("documentacion/avisos/whatsapp/", DocumentAlertWhatsAppToggleView.as_view(), name="document_alerts_whatsapp_toggle"),
+    # H30 (S125): pedir documentación al trabajador por WhatsApp.
+    path("documentacion/avisos/pedir-al-trabajador/", DocumentRequestCreateView.as_view(), name="document_request_create"),
     path("documentacion/puestos/guardar/", JobPositionSaveView.as_view(), name="job_position_create"),
     path("documentacion/puestos/<int:position_pk>/guardar/", JobPositionSaveView.as_view(), name="job_position_update"),
     path("documentacion/puestos/<int:position_pk>/eliminar/", JobPositionDeleteView.as_view(), name="job_position_delete"),

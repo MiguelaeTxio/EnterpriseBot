@@ -50,6 +50,22 @@ desaparece solo en cuanto se sube el documento que lo resuelve.
         </div>
     </form>
 
+    {% if can_request_docs %}
+    {% comment %}
+    H30 (S125): luz verde del supervisor para pedir al trabajador, por
+    WhatsApp, los documentos que él mismo aporta (casillas de las filas).
+    Cola por trabajador: se le pide uno y, cuando se acepta, el siguiente.
+    {% endcomment %}
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-2" id="docRequestBar">
+        <button type="button" class="btn btn-sm btn-success" id="docRequestSend" disabled>
+            <i class="bi bi-whatsapp me-1"></i>Pedir por WhatsApp al trabajador (<span id="docRequestCount">0</span>)
+        </button>
+        <button type="button" class="btn btn-sm btn-link" id="docRequestClear">Vaciar selección</button>
+        <span class="small text-muted">Solo los documentos que aporta el propio trabajador y con móvil válido tienen casilla.</span>
+    </div>
+    <div class="alert alert-info small py-1 d-none doc-request-result" id="docRequestResult"></div>
+    {% endif %}
+
     {% if not has_any_rules %}
     <div class="alert alert-info small">Ningún requisito tiene avisos configurados todavía. Configúralos en la subpestaña Configuración.</div>
     {% elif not has_subjects %}
@@ -62,11 +78,15 @@ desaparece solo en cuanto se sube el documento que lo resuelve.
                 <div class="card-header py-1 small fw-bold text-danger">Caducados <span class="badge text-bg-danger">{{ expired|length }}</span></div>
                 <div class="list-group list-group-flush alerts-panel-list">
                     {% for notice in expired %}
-                    <a class="list-group-item list-group-item-action py-1 small" href="{{ notice.detail_url }}">
+                    <div class="list-group-item list-group-item-action py-1 small d-flex gap-2 align-items-start">
+                        {% if notice.is_requestable %}<input type="checkbox" class="form-check-input mt-1 notice-request-check" value="{{ notice.request_key }}" title="Pedir al trabajador por WhatsApp" aria-label="Pedir al trabajador por WhatsApp">{% endif %}
+                        <a class="flex-grow-1 text-reset text-decoration-none" href="{{ notice.detail_url }}">
                         <div class="d-flex justify-content-between gap-2"><span class="fw-bold">{{ notice.subject_label }}</span><span class="text-danger text-nowrap">hace {{ notice.days_ago }} día{{ notice.days_ago|pluralize }}</span></div>
                         <div>{{ notice.document_label }} — caducó el {{ notice.expiry_date|date:"d/m/Y" }}</div>
                         <div class="small">{% if notice.recipient_names %}<span class="text-muted"><i class="bi bi-person-check me-1"></i>{{ notice.recipient_names }}</span>{% else %}<span class="badge text-bg-danger">Sin destinatario</span>{% endif %}</div>
-                    </a>
+                            {% if notice.request_state %}<div><span class="badge {{ notice.request_state_class }} text-wrap text-start">{{ notice.request_state }}</span></div>{% endif %}
+                        </a>
+                    </div>
                     {% empty %}
                     <div class="list-group-item small text-muted">Ningún documento caducado.</div>
                     {% endfor %}
@@ -76,11 +96,15 @@ desaparece solo en cuanto se sube el documento que lo resuelve.
                 <div class="card-header py-1 small fw-bold text-warning-emphasis">Próximos a caducar <span class="badge text-bg-warning">{{ upcoming|length }}</span></div>
                 <div class="list-group list-group-flush alerts-panel-list">
                     {% for notice in upcoming %}
-                    <a class="list-group-item list-group-item-action py-1 small" href="{{ notice.detail_url }}">
+                    <div class="list-group-item list-group-item-action py-1 small d-flex gap-2 align-items-start">
+                        {% if notice.is_requestable %}<input type="checkbox" class="form-check-input mt-1 notice-request-check" value="{{ notice.request_key }}" title="Pedir al trabajador por WhatsApp" aria-label="Pedir al trabajador por WhatsApp">{% endif %}
+                        <a class="flex-grow-1 text-reset text-decoration-none" href="{{ notice.detail_url }}">
                         <div class="d-flex justify-content-between gap-2"><span class="fw-bold">{{ notice.subject_label }}</span><span class="text-nowrap">faltan {{ notice.days_left }} día{{ notice.days_left|pluralize }}</span></div>
                         <div>{{ notice.document_label }} — caduca el {{ notice.expiry_date|date:"d/m/Y" }} <span class="text-muted">(aviso de {{ notice.reached_step.label }})</span></div>
                         <div class="small">{% if notice.recipient_names %}<span class="text-muted"><i class="bi bi-person-check me-1"></i>{{ notice.recipient_names }}</span>{% else %}<span class="badge text-bg-danger">Sin destinatario</span>{% endif %}</div>
-                    </a>
+                            {% if notice.request_state %}<div><span class="badge {{ notice.request_state_class }} text-wrap text-start">{{ notice.request_state }}</span></div>{% endif %}
+                        </a>
+                    </div>
                     {% empty %}
                     <div class="list-group-item small text-muted">Ningún aviso de caducidad ha llegado todavía.</div>
                     {% endfor %}
@@ -90,11 +114,15 @@ desaparece solo en cuanto se sube el documento que lo resuelve.
                 <div class="card-header py-1 small fw-bold">Faltan <span class="badge text-bg-secondary">{{ missing|length }}</span></div>
                 <div class="list-group list-group-flush alerts-panel-list">
                     {% for notice in missing %}
-                    <a class="list-group-item list-group-item-action py-1 small" href="{{ notice.detail_url }}">
+                    <div class="list-group-item list-group-item-action py-1 small d-flex gap-2 align-items-start">
+                        {% if notice.is_requestable %}<input type="checkbox" class="form-check-input mt-1 notice-request-check" value="{{ notice.request_key }}" title="Pedir al trabajador por WhatsApp" aria-label="Pedir al trabajador por WhatsApp">{% endif %}
+                        <a class="flex-grow-1 text-reset text-decoration-none" href="{{ notice.detail_url }}">
                         <div class="d-flex justify-content-between gap-2"><span class="fw-bold">{{ notice.subject_label }}</span><span class="text-muted text-nowrap">{{ notice.requirement_name }}</span></div>
                         <div>Falta: {{ notice.document_label }}</div>
                         <div class="small">{% if notice.recipient_names %}<span class="text-muted"><i class="bi bi-person-check me-1"></i>{{ notice.recipient_names }}</span>{% else %}<span class="badge text-bg-danger">Sin destinatario</span>{% endif %}</div>
-                    </a>
+                            {% if notice.request_state %}<div><span class="badge {{ notice.request_state_class }} text-wrap text-start">{{ notice.request_state }}</span></div>{% endif %}
+                        </a>
+                    </div>
                     {% empty %}
                     <div class="list-group-item small text-muted">No falta ningún documento con aviso configurado.</div>
                     {% endfor %}
@@ -140,6 +168,72 @@ desaparece solo en cuanto se sube el documento que lo resuelve.
             q: data.get('q') || '',
             who: data.get('who') || '',
         });
+    }
+
+    // H30 (S125): pedir documentación al trabajador. La selección vive
+    // en window para sobrevivir al refresco htmx de filtros (4.24).
+    const requestBar = document.getElementById('docRequestBar');
+    if (requestBar) {
+        window.docRequestSelection = window.docRequestSelection || new Set();
+        const selection = window.docRequestSelection;
+        const sendButton = document.getElementById('docRequestSend');
+        const counter = document.getElementById('docRequestCount');
+        const result = document.getElementById('docRequestResult');
+        const checks = Array.from(document.querySelectorAll('.notice-request-check'));
+        function csrfToken() {
+            const meta = document.querySelector('meta[name="csrf-token"]');
+            if (meta) { return meta.content; }
+            const match = document.cookie.match(/(?:^|; )csrftoken=([^;]+)/);
+            return match ? decodeURIComponent(match[1]) : '';
+        }
+        function refresh() {
+            counter.textContent = selection.size;
+            sendButton.disabled = selection.size === 0;
+        }
+        function showResult(text, kind) {
+            result.className = 'alert small py-1 doc-request-result alert-' + kind;
+            result.textContent = text;
+        }
+        checks.forEach(function (cb) {
+            cb.checked = selection.has(cb.value);
+            cb.addEventListener('change', function () {
+                if (cb.checked) { selection.add(cb.value); } else { selection.delete(cb.value); }
+                refresh();
+            });
+        });
+        document.getElementById('docRequestClear').addEventListener('click', function () {
+            selection.clear();
+            checks.forEach(function (cb) { cb.checked = false; });
+            refresh();
+        });
+        if (window.docRequestLastMessage) {
+            showResult(window.docRequestLastMessage.text, window.docRequestLastMessage.kind);
+            window.docRequestLastMessage = null;
+        }
+        sendButton.addEventListener('click', function () {
+            sendButton.disabled = true;
+            const original = sendButton.innerHTML;
+            sendButton.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Pidiendo…';
+            fetch("{% url 'panel:document_request_create' %}", {
+                method: 'POST',
+                headers: {'X-CSRFToken': csrfToken(), 'Content-Type': 'application/json'},
+                body: JSON.stringify({items: Array.from(selection)}),
+            }).then(function (resp) {
+                return resp.json().then(function (data) {
+                    if (!resp.ok || !data.ok) { throw new Error(data.error || ('HTTP ' + resp.status)); }
+                    return data;
+                });
+            }).then(function (data) {
+                selection.clear();
+                window.docRequestLastMessage = {text: data.message, kind: 'success'};
+                htmx.trigger(document.getElementById('alertsNoticesFilters'), 'change');
+            }).catch(function (err) {
+                sendButton.innerHTML = original;
+                refresh();
+                showResult('No se ha podido pedir: ' + err.message, 'danger');
+            });
+        });
+        refresh();
     }
 
     // Directriz 4.24: los paneles ocupan lo que queda de pantalla y
