@@ -711,8 +711,9 @@ class PersonalDocutenExportView(DocsUploadAccessMixin, View):
 
     ---
 
-    H30 (S124), punto 4. POST con `tipo` (código de la circular),
-    `person_ids` y `archivo` (`pdf`, `csv` o `pasos`): devuelve ese
+    H30 (S124), punto 4. POST con `tipo` (código de una circular con
+    firma), `person_ids`, `archivo` (`pdf`, `csv` o `pasos`) y, si la
+    circular lleva datos de obra, `worksite_id`: devuelve ese
     archivo suelto (`panel.docuten_export.build_file`). El panel pide
     los tres seguidos con un solo clic -- nunca un ZIP (Miguel Ángel:
     "¿para qué vamos a darle una cosa que tiene que descomprimir?").
@@ -726,7 +727,10 @@ class PersonalDocutenExportView(DocsUploadAccessMixin, View):
 
         from django.http import JsonResponse
 
-        from panel.docuten_export import FILE_KINDS, build_file
+        from panel.docuten_export import (
+            FILE_KINDS, DocutenExportError, build_file,
+        )
+        from worksites.models import Worksite
 
         person_ids = request.POST.getlist("person_ids")
         type_code = request.POST.get("tipo", "").strip()
@@ -757,13 +761,24 @@ class PersonalDocutenExportView(DocsUploadAccessMixin, View):
         people = list(PersonIdentity.objects.filter(
             pk__in=person_ids,
         ).order_by("first_surname", "second_surname", "given_name"))
-        filename, data, content_type, included, excluded = build_file(
-            document_type, people, kind,
-        )
+        worksite = None
+        worksite_id = request.POST.get("worksite_id", "").strip()
+        if worksite_id:
+            worksite = get_object_or_404(Worksite, pk=worksite_id)
+        try:
+            filename, data, content_type, included, excluded = build_file(
+                document_type, people, kind, worksite=worksite,
+            )
+        except DocutenExportError as exc:
+            return JsonResponse({"ok": False, "error": str(exc)}, status=400)
         if not included:
             return JsonResponse({
                 "ok": False,
-                "error": "Ninguna persona seleccionada tiene móvil válido.",
+                "error": "Ninguna persona seleccionada se puede incluir: %s."
+                % "; ".join(
+                    "%s %s: %s" % (p.given_name, p.first_surname, reason)
+                    for p, reason in excluded
+                ),
             }, status=400)
 
         response = HttpResponse(data, content_type=content_type)

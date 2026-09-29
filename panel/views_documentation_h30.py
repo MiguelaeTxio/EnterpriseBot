@@ -1062,6 +1062,10 @@ class PersonalListFragmentView(CompanyUserRequiredMixin, View):
         ctx["docuten_types"] = ctx["notification_types"].filter(
             requires_signature=True,
         )
+        from worksites.models import Worksite
+        ctx["docuten_worksites"] = Worksite.objects.filter(
+            is_active=True,
+        ).order_by("name")
         ctx["company_filter_choices"] = COMPANY_FILTER_CHOICES
         # H35 (S105): plantillas de dosier para la nueva acción masiva
         # "Generar dosieres" -- mismo criterio que epi_items/

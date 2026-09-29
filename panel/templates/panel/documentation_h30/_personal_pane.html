@@ -156,6 +156,13 @@ pantalla completa aparte, no un fragmento htmx de este pane.
                             <option value="{{ ntype.code }}">{{ ntype.label }}</option>
                             {% endfor %}
                         </select>
+                        {# Obra: solo la piden las circulares con datos de obra (nombramientos). #}
+                        <select id="person-mass-docuten-worksite" class="form-select form-select-sm" style="width:auto; max-width:100%; min-width:0;">
+                            <option value="">Obra (si la pide)…</option>
+                            {% for worksite in docuten_worksites %}
+                            <option value="{{ worksite.pk }}">{{ worksite.name }}</option>
+                            {% endfor %}
+                        </select>
                         <button type="button" class="btn btn-sm btn-outline-primary" id="person-mass-docuten-submit">Preparar para Docuten</button>
                     </div>
                 </div>
@@ -996,6 +1003,7 @@ las filas de debajo se desplacen de verdad.
                 selection.forEach((pk) => formData.append('person_ids', pk));
                 formData.append('tipo', typeCode);
                 formData.append('archivo', kind);
+                formData.append('worksite_id', document.getElementById('person-mass-docuten-worksite').value);
                 const r = await fetch("{% url 'panel:documentation_personal_docuten_export' %}", {
                     method: 'POST',
                     headers: {'X-CSRFToken': getCookie('csrftoken')},
