@@ -36,6 +36,8 @@ esto es parte del flujo normal de un supervisor de documentación
 gestionando sus propias circulares, no administración de la
 plataforma.
 """
+from urllib.parse import urlencode
+
 from django.contrib import messages
 from django.contrib.contenttypes.models import ContentType
 from django.db.models import Q
@@ -53,6 +55,9 @@ from document_explorer.subject_upload_service import (
     SubjectUploadError, upload_subject_document,
 )
 from panel.mixins import DocsUploadAccessMixin
+from panel.navigation_persistence import (
+    apply_list_navigation, get_saved_state_key,
+)
 
 _CIRCULAR_DOMAINS = [
     DocumentTypeCatalog.DOMAIN_PERSONAL,
@@ -170,23 +175,200 @@ def _extract_html_from_pdf(data):
     return "\n".join(f"<p>{line}</p>" for line in safe_lines)
 
 
+CIRCULARS_SCREEN_KEY = "circulars_list"
+_CIRCULARS_FILTER_KEYS = ("q", "sort")
+_CIRCULARS_SORT_KEYS = ("label", "code", "domain", "template", "signature")
+_CIRCULARS_MAX_SORT = 4
+_CIRCULARS_BULK = {
+    "sign": (True, "Marcadas «requiere firma (Docuten)»"),
+    "unsign": (False, "Marcadas «sin firma»"),
+}
+
+
+def _circulars_hub_url():
+    """
+    Documentation hub with the Circulares tab open.
+
+    ---
+
+    Hub de Documentación con la pestaña Circulares abierta (enlace
+    directo que el hub persiste como un clic de pestaña).
+    """
+    return "%s?tab=circulares" % reverse("panel:documentation_hub")
+
+
+def _parse_circular_sort(raw):
+    """
+    "sort=key,-key" -> [(key, desc)], known keys only, max four.
+
+    ---
+
+    "sort=clave,-clave" -> [(clave, desc)], solo claves conocidas, sin
+    repetir y como mucho cuatro.
+    """
+    keys, seen = [], set()
+    for token in (raw or "").split(","):
+        token = token.strip()
+        key = token.lstrip("-")
+        if key in _CIRCULARS_SORT_KEYS and key not in seen:
+            keys.append((key, token.startswith("-")))
+            seen.add(key)
+    return keys[:_CIRCULARS_MAX_SORT]
+
+
+def _circular_sort_value(doc_type, key):
+    """
+    Sort value of one column for one circular.
+
+    ---
+
+    Valor de orden de una columna para una circular.
+    """
+    if key == "template":
+        return bool(doc_type.content_html or doc_type.current_template_id)
+    if key == "signature":
+        return doc_type.requires_signature
+    if key == "domain":
+        return doc_type.get_domain_display()
+    return (getattr(doc_type, key) or "").lower()
+
+
+def _render_circular_list(request, bulk_message=""):
+    """
+    Circulars tab fragment (directive 4.24 list format).
+
+    ---
+
+    Fragmento de la pestaña Circulares con el formato único de visor
+    (directriz 4.24, H30 S125): búsqueda, orden múltiple con prioridad,
+    casilleros con selección persistida por usuario y acciones masivas
+    siempre visibles. Todo decidido aquí; la plantilla solo pinta.
+    """
+    params = request.GET
+    q = (params.get("q") or "").strip()
+    sort_keys = _parse_circular_sort(params.get("sort"))
+    types = DocumentTypeCatalog.objects.filter(
+        is_active=True, is_notification_template=True,
+    ).select_related("current_template")
+    if q:
+        types = types.filter(Q(label__icontains=q) | Q(code__icontains=q))
+    rows = sorted(types, key=lambda t: (t.label or "").lower())
+    for key, desc in reversed(sort_keys):
+        rows = sorted(
+            rows, key=lambda t: _circular_sort_value(t, key), reverse=desc,
+        )
+
+    saved = get_saved_state_key(
+        request.user.company_user, CIRCULARS_SCREEN_KEY, "selection", [],
+    )
+    selected = {
+        int(value) for value in (saved if isinstance(saved, list) else [])
+        if str(value).isdigit()
+    }
+    for doc_type in rows:
+        doc_type.has_template = bool(
+            doc_type.content_html or doc_type.current_template_id
+        )
+        doc_type.is_selected = doc_type.pk in selected
+
+    active = [key for key, _desc in sort_keys]
+    sort_urls, sort_arrows, sort_priority = {}, {}, {}
+    base_url = reverse("panel:circulars_list")
+    for key in _CIRCULARS_SORT_KEYS:
+        if key in active:
+            idx = active.index(key)
+            desc = sort_keys[idx][1]
+            sort_arrows[key] = "▼" if desc else "▲"
+            sort_priority[key] = idx + 1 if len(sort_keys) > 1 else ""
+            new_keys = [(key, (not desc) if idx == 0 else False)] + [
+                (k, d) for k, d in sort_keys if k != key
+            ]
+        else:
+            sort_arrows[key] = ""
+            sort_priority[key] = ""
+            new_keys = [(key, False)] + sort_keys
+        sort_urls[key] = "%s?%s" % (base_url, urlencode({
+            "q": q,
+            "sort": ",".join(
+                ("-" if d else "") + k
+                for k, d in new_keys[:_CIRCULARS_MAX_SORT]
+            ),
+        }))
+
+    return render(request, "panel/circulars_h31/circular_list.html", {
+        "types": rows,
+        "family_choices": DocumentTypeCatalog.FAMILY_CHOICES,
+        "active_nav": "documentation_hub",
+        "q": q,
+        "current_sort": params.get("sort", ""),
+        "sort_urls": sort_urls,
+        "sort_arrows": sort_arrows,
+        "sort_priority": sort_priority,
+        "sort_active": bool(sort_keys),
+        "clear_sort_url": "%s?%s" % (base_url, urlencode({
+            "q": q, "sort": "",
+        })),
+        "selected_count": len(selected),
+        "selected_ids": sorted(selected),
+        "screen_key": CIRCULARS_SCREEN_KEY,
+        "bulk_message": bulk_message,
+    })
+
+
 class CircularListView(DocsUploadAccessMixin, View):
     """GET: listado de tipos documentales marcados como plantilla de
     comunicación (is_notification_template=True, S114) -- si tiene
     plantilla o no (content_html o current_template, cualquiera de
     los dos cuenta -- fusionado en una sola columna en S114, Miguel
     Ángel: "al usuario final le da igual de dónde venga la
-    plantilla"), acceso a crear uno nuevo o editar uno existente."""
+    plantilla"), acceso a crear uno nuevo o editar uno existente.
+
+    H30 (S125): es un fragmento de la pestaña Circulares del hub (S119).
+    Pedido fuera de htmx (el "Volver" de Editar, una redirección tras
+    un error de alta) se servía suelto, sin la página del panel -- ahora
+    lleva al hub con la pestaña abierta."""
 
     def get(self, request):
-        types = DocumentTypeCatalog.objects.filter(
-            is_active=True, is_notification_template=True,
-        ).select_related("current_template").order_by("label")
-        return render(request, "panel/circulars_h31/circular_list.html", {
-            "types": types,
-            "family_choices": DocumentTypeCatalog.FAMILY_CHOICES,
-            "active_nav": "documentation_hub",
-        })
+        if request.headers.get("HX-Request") != "true":
+            return redirect(_circulars_hub_url())
+        apply_list_navigation(
+            request, CIRCULARS_SCREEN_KEY, _CIRCULARS_FILTER_KEYS,
+        )
+        return _render_circular_list(request)
+
+
+class CircularBulkSignatureView(DocsUploadAccessMixin, View):
+    """
+    POST (htmx): mark the selected circulars with or without
+    certified signature, and re-render the tab.
+
+    ---
+
+    POST (htmx): marca las circulares seleccionadas con o sin firma
+    certificada (Docuten) y vuelve a pintar la pestaña con el
+    resultado a la vista (H30, S125).
+    """
+
+    def post(self, request):
+        action = request.POST.get("action")
+        ids = [
+            int(value) for value in request.POST.getlist("selected")
+            if value.isdigit()
+        ]
+        if action not in _CIRCULARS_BULK or not ids:
+            message = "No hay ninguna circular seleccionada."
+        else:
+            value, headline = _CIRCULARS_BULK[action]
+            updated = DocumentTypeCatalog.objects.filter(
+                pk__in=ids, is_notification_template=True,
+            ).update(requires_signature=value)
+            message = "%s: %d circular%s." % (
+                headline, updated, "" if updated == 1 else "es",
+            )
+        apply_list_navigation(
+            request, CIRCULARS_SCREEN_KEY, _CIRCULARS_FILTER_KEYS,
+        )
+        return _render_circular_list(request, bulk_message=message)
 
 
 class CircularCreateView(DocsUploadAccessMixin, View):
@@ -210,17 +392,17 @@ class CircularCreateView(DocsUploadAccessMixin, View):
         valid_families = dict(DocumentTypeCatalog.FAMILY_CHOICES)
         if not label:
             messages.error(request, "Falta el nombre visible de la circular.")
-            return redirect(reverse("panel:circulars_list"))
+            return redirect(_circulars_hub_url())
         if family not in valid_families:
             messages.error(request, "Falta elegir una familia documental válida.")
-            return redirect(reverse("panel:circulars_list"))
+            return redirect(_circulars_hub_url())
         if domain not in _CIRCULAR_DOMAINS:
             domain = DocumentTypeCatalog.DOMAIN_PERSONAL
 
         code = naming_service._sanitize_token(label)
         if not code:
             messages.error(request, "El nombre visible no genera un código válido.")
-            return redirect(reverse("panel:circulars_list"))
+            return redirect(_circulars_hub_url())
         if DocumentTypeCatalog.objects.filter(code=code).exists():
             messages.error(
                 request,
@@ -228,7 +410,7 @@ class CircularCreateView(DocsUploadAccessMixin, View):
                 "revisa el listado, puede que ya esté ahí con otro "
                 "nombre visible." % code,
             )
-            return redirect(reverse("panel:circulars_list"))
+            return redirect(_circulars_hub_url())
 
         document_type = DocumentTypeCatalog.objects.create(
             code=code, label=label, domain=domain, family=family,
@@ -473,6 +655,18 @@ class CircularExportWordView(DocsUploadAccessMixin, View):
         doc.save(buffer)
         buffer.seek(0)
 
+        # S125 (4.9): faltaban estas dos líneas -- "Descargar en Word"
+        # daba siempre NameError (500).
+        filename = "%s.docx" % naming_service._sanitize_token(
+            document_type.label,
+        )
+        response = HttpResponse(
+            buffer.getvalue(),
+            content_type=(
+                "application/vnd.openxmlformats-officedocument."
+                "wordprocessingml.document"
+            ),
+        )
         response["Content-Disposition"] = 'attachment; filename="%s"' % filename
         return response
 

@@ -24,6 +24,7 @@ from panel.views_circulars_h31 import (
     CircularGeneratePersonSearchView,
     CircularGenerateView,
     CircularImportDocumentView,
+    CircularBulkSignatureView,
     CircularListView,
     CircularSaveContentView,
     PersonalDocutenExportView,
@@ -577,6 +578,7 @@ urlpatterns = [
     path("documentacion/lotes-epi/<int:template_pk>/eliminar/", EpiBatchTemplateDeleteView.as_view(), name="epi_batch_template_delete"),
     # H31 (S75) punto 2: CRUD de circulares/notificaciones.
     path("documentacion/circulares/", CircularListView.as_view(), name="circulars_list"),
+    path("documentacion/circulares/firma/", CircularBulkSignatureView.as_view(), name="circulars_bulk_signature"),
     path("obras/", WorksiteListView.as_view(), name="worksites_list"),
     path("documentacion/circulares/nueva/", CircularCreateView.as_view(), name="circulars_create"),
     path("documentacion/circulares/<int:pk>/", CircularEditView.as_view(), name="circulars_edit"),

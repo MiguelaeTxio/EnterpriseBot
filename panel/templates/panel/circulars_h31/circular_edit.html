@@ -35,7 +35,7 @@ CircularImportDocumentView/CircularExportPdfView/CircularExportWordView.
             <h5 class="mb-0">{{ document_type.label }}</h5>
             <span class="text-muted small font-monospace">{{ document_type.code }}</span>
         </div>
-        <a class="btn btn-sm btn-outline-secondary" href="{% url 'panel:circulars_list' %}">
+        <a class="btn btn-sm btn-outline-secondary" href="{% url 'panel:documentation_hub' %}?tab=circulares">
             <i class="bi bi-arrow-left"></i> Volver al listado
         </a>
     </div>
@@ -50,7 +50,7 @@ CircularImportDocumentView/CircularExportPdfView/CircularExportWordView.
                     <button type="button" class="btn btn-sm btn-outline-secondary" data-cmd="underline" title="Subrayado"><i class="bi bi-type-underline"></i></button>
                     <button type="button" class="btn btn-sm btn-outline-secondary" data-cmd="insertUnorderedList" title="Lista"><i class="bi bi-list-ul"></i></button>
                     <span class="vr mx-1"></span>
-                    <select id="circular-font-select" class="form-select form-select-sm" style="width:auto;" title="Fuente">
+                    <select id="circular-font-select" class="form-select form-select-sm w-auto" title="Fuente">
                         <option value="Arial, sans-serif">Arial</option>
                         <option value="Georgia, serif">Georgia</option>
                         <option value="'Courier New', monospace">Courier New</option>
@@ -58,14 +58,14 @@ CircularImportDocumentView/CircularExportPdfView/CircularExportWordView.
                     <span class="vr mx-1"></span>
                     {# Paleta de color deliberadamente reducida -- alcance del editor básico. #}
                     <div id="circular-color-swatches" class="d-flex gap-1">
-                        <button type="button" class="circular-swatch" data-color="#212529" style="background:#212529;" title="Negro"></button>
-                        <button type="button" class="circular-swatch" data-color="#dc3545" style="background:#dc3545;" title="Rojo"></button>
-                        <button type="button" class="circular-swatch" data-color="#0d6efd" style="background:#0d6efd;" title="Azul"></button>
-                        <button type="button" class="circular-swatch" data-color="#198754" style="background:#198754;" title="Verde"></button>
-                        <button type="button" class="circular-swatch" data-color="#fd7e14" style="background:#fd7e14;" title="Naranja"></button>
+                        <button type="button" class="circular-swatch circular-swatch-negro" data-color="#212529" title="Negro"></button>
+                        <button type="button" class="circular-swatch circular-swatch-rojo" data-color="#dc3545" title="Rojo"></button>
+                        <button type="button" class="circular-swatch circular-swatch-azul" data-color="#0d6efd" title="Azul"></button>
+                        <button type="button" class="circular-swatch circular-swatch-verde" data-color="#198754" title="Verde"></button>
+                        <button type="button" class="circular-swatch circular-swatch-naranja" data-color="#fd7e14" title="Naranja"></button>
                     </div>
                     <span class="vr mx-1"></span>
-                    <select id="circular-insert-variable" class="form-select form-select-sm" style="width:auto;" title="Insertar variable">
+                    <select id="circular-insert-variable" class="form-select form-select-sm w-auto" title="Insertar variable">
                         <option value="">Insertar variable...</option>
                         <optgroup label="Trabajador">
                             <option value="{% templatetag openvariable %}trabajador.nombre_completo{% templatetag closevariable %}">Nombre completo</option>
@@ -96,8 +96,8 @@ CircularImportDocumentView/CircularExportPdfView/CircularExportWordView.
                         <i class="bi bi-eraser"></i>
                     </button>
                 </div>
-                <div class="card-body d-flex flex-column" style="flex: 1 1 auto; min-height: 0; overflow: hidden;">
-                    <div id="circular-editor" class="form-control" style="flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: auto; font-family: Arial, sans-serif;" contenteditable="true">{{ document_type.content_html|safe }}</div>
+                <div class="card-body d-flex flex-column circular-editor-body">
+                    <div id="circular-editor" class="form-control" contenteditable="true">{{ document_type.content_html|safe }}</div>
                 </div>
                 <div class="card-footer d-flex justify-content-between align-items-center">
                     <span class="text-muted small">Se guarda tal cual se ve aquí -- esto es lo que recibirá la persona por email.</span>
@@ -153,6 +153,16 @@ CircularImportDocumentView/CircularExportPdfView/CircularExportWordView.
     .circular-swatch {
         width: 22px; height: 22px; border-radius: 4px; border: 1px solid #dee2e6;
         padding: 0; cursor: pointer;
+    }
+    .circular-swatch-negro { background: #212529; }
+    .circular-swatch-rojo { background: #dc3545; }
+    .circular-swatch-azul { background: #0d6efd; }
+    .circular-swatch-verde { background: #198754; }
+    .circular-swatch-naranja { background: #fd7e14; }
+    .circular-editor-body { flex: 1 1 auto; min-height: 0; overflow: hidden; }
+    #circular-editor {
+        flex: 1 1 auto; min-height: 0; overflow: auto;
+        font-family: Arial, sans-serif;
     }
     #circular-editor:focus { outline: 2px solid #0d6efd33; }
     #circular-edit-panel { overflow: hidden; }
