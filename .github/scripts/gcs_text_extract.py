@@ -28,7 +28,9 @@ import django
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "enterprise_core.settings")
 django.setup()
 
-from document_explorer.cloud_vision_service import extract_text  # noqa: E402
+from document_explorer.cloud_vision_service import (  # noqa: E402
+    cloud_vision_text, extract_text,
+)
 from spare_parts.gcs_service import get_storage_client  # noqa: E402
 
 dest_path, max_chars = sys.argv[1], int(sys.argv[2])
@@ -47,6 +49,19 @@ with open(dest_path, "w", encoding="utf-8") as out:
             text = extract_text(os.path.basename(blob_name), data) or ""
             text = " ".join(text.split())
             out.write((text[:max_chars] if text else "(sin texto legible)") + "\n\n")
+            # S123: en un PDF, además, lo que lee Cloud Vision de la
+            # página DIBUJADA (valores de formularios rellenables y
+            # letra manuscrita que la capa de texto no trae). Si hay un
+            # bloque "Fecha y firma", se muestra desde ahí.
+            if blob_name.lower().endswith(".pdf"):
+                rendered = " ".join((cloud_vision_text(
+                    data, os.path.basename(blob_name), page_range=(1, 2),
+                ) or "").split())
+                anchor = rendered.upper().find("FECHA Y FIRMA")
+                if anchor >= 0:
+                    rendered = rendered[anchor:]
+                out.write("--- Cloud Vision (pagina dibujada) ---\n")
+                out.write((rendered[:max_chars] if rendered else "(sin texto)") + "\n\n")
         except Exception as exc:  # un archivo que falla no para el resto
             out.write("(ERROR: %s)\n\n" % exc)
         out.flush()
