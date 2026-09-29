@@ -25,22 +25,61 @@ guardado:
   (texto embebido, página renderizada con Cloud Vision, páginas 3-4) --
   NUNCA la fecha del nombre del archivo, que se puso a partir de la
   fecha mala y la repetiría.
-- Fecha nueva: la de emisión leída; si no hay, una única fecha sin
-  contexto (mismo criterio que la subida desde la ficha); si tampoco,
-  o si es posterior a hoy, SIN FECHA -- mejor sin fecha que una falsa.
+- Fecha nueva: la de emisión leída (en el Modelo 145, la de firma del
+  bloque 6, S123); si no hay, una única fecha sin contexto (mismo
+  criterio que la subida desde la ficha).
+- Cruce con la fecha del nombre ORIGINAL del archivo (blob), si la
+  lleva: si el documento no da fecha, se usa la del nombre; si las dos
+  discrepan más de 15 días, SIN FECHA (mismo criterio que S122 para
+  contratos).
+- Nunca posterior a hoy ni anterior al primer alta de la persona menos
+  15 días (Miguel Ángel: "no puedo tener un documento en esta empresa
+  de antes de 2024"): en ese caso, SIN FECHA -- mejor sin fecha que
+  una falsa.
 - Se escriben `issue_date` y `ocr_text`. No retipa, no renombra (los
   nombres siguen llevando la fecha antigua), no mueve nada.
 
 DRY-RUN POR DEFECTO. `--apply` escribe. `--log-file` obligatorio: log
 propio en pantalla y en archivo a la vez.
 """
-from datetime import date, datetime
+import os
+import re
+from datetime import date, datetime, timedelta
 
 from django.core.management.base import BaseCommand, CommandError
+from django.db.models import Min
 
+from document_explorer.employment_period_service import MATCH_WINDOW_DAYS
 from document_explorer.models import DocumentIndexEntry
 
 BUCKET = "cgs_grupo_alvarez"
+
+# S123: fecha escrita a mano en el nombre ORIGINAL del archivo (el del
+# blob, p. ej. "Mod 145 Alonso Pedrosa, Manuel 6-3-23.pdf"), nunca el
+# nombre canónico, que se puso a partir de la fecha mala.
+_BLOB_NAME_DATE_RE = re.compile(
+    r"(?<!\d)(\d{1,2})[-._](\d{1,2})[-._](\d{4}|\d{2})(?!\d)"
+)
+
+
+def blob_name_date(blob_name):
+    """
+    dd-mm-yy(yy) date in the original file name, or None.
+
+    ---
+
+    Fecha dd-mm-aa(aa) del nombre original del archivo, o None.
+    """
+    match = _BLOB_NAME_DATE_RE.search(os.path.basename(blob_name or ""))
+    if not match:
+        return None
+    day, month, year = (int(part) for part in match.groups())
+    if year < 100:
+        year += 2000
+    try:
+        return date(year, month, day)
+    except ValueError:
+        return None
 
 
 class Command(BaseCommand):
@@ -98,6 +137,22 @@ class Command(BaseCommand):
                 options["limit"],
             )
 
+    def _first_alta(self, entry):
+        """
+        Earliest dated ALTA of the same subject, or None.
+
+        ---
+
+        Primer alta fechado del mismo sujeto, o None.
+        """
+        return DocumentIndexEntry.objects.filter(
+            bucket=BUCKET, entry_kind=DocumentIndexEntry.KIND_FILE,
+            deleted_at__isnull=True, purged_at__isnull=True,
+            domain_content_type_id=entry.domain_content_type_id,
+            domain_object_id=entry.domain_object_id,
+            document_type__code="ALTA", issue_date__isnull=False,
+        ).aggregate(first=Min("issue_date"))["first"]
+
     def _run(self, types, wrong_dates, apply, limit):
         from document_explorer.cloud_vision_service import (
             extract_text_for_dates,
@@ -131,20 +186,36 @@ class Command(BaseCommand):
                 self._log("%s -- ERROR al leer: %s" % (prefix, exc))
                 continue
 
-            new_date = issue or (other[0] if len(other) == 1 else None)
+            read_date = issue or (other[0] if len(other) == 1 else None)
+            name_date = blob_name_date(entry.blob_name)
+            new_date, reason = read_date, "leída"
+            if read_date and name_date:
+                if abs((read_date - name_date).days) > MATCH_WINDOW_DAYS:
+                    new_date, reason = None, (
+                        "leída %s y nombre %s discrepan"
+                        % (read_date.isoformat(), name_date.isoformat())
+                    )
+            elif name_date:
+                new_date, reason = name_date, "nombre del archivo"
             # S123 (dry-run real): un Modelo 145 salía con 10/04/2028.
-            # La fecha de un documento ya firmado nunca es futura.
             if new_date and new_date > date.today():
-                self._log(
-                    "%s -- fecha futura descartada: %s"
-                    % (prefix, new_date.isoformat())
+                new_date, reason = None, "fecha futura %s" % new_date
+            first_alta = self._first_alta(entry)
+            if (
+                new_date and first_alta
+                and new_date < first_alta - timedelta(days=MATCH_WINDOW_DAYS)
+            ):
+                new_date, reason = None, (
+                    "%s anterior al primer alta %s"
+                    % (new_date.isoformat(), first_alta.isoformat())
                 )
-                new_date = None
             counts["fechado" if new_date else "sin_fecha"] += 1
             self._log(
-                "%s -- %s -> %s (páginas leídas: %d)"
+                "%s -- %s -> %s (%s; páginas leídas: %d)"
                 % (prefix, entry.issue_date.isoformat(),
-                   new_date.isoformat() if new_date else "SIN FECHA", pages)
+                   new_date.isoformat() if new_date else "SIN FECHA",
+                   reason if read_date or name_date else "nada legible",
+                   pages)
             )
             if apply:
                 entry.issue_date = new_date
