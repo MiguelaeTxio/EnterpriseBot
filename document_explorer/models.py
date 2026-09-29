@@ -936,6 +936,20 @@ class DocumentTypeCatalog(models.Model):
             "se envía directamente por WhatsApp/email."
         ),
     )
+    worker_provides = models.BooleanField(
+        default=False,
+        verbose_name="Lo aporta el trabajador",
+        help_text=(
+            "H30 (S125). Documentos que el propio trabajador puede "
+            "aportar (DNI, permiso de conducción, tarjeta de conductor, "
+            "tarjeta de la Seguridad Social, tarjeta sanitaria y "
+            "similares). Solo para estos tipos el supervisor puede, "
+            "desde Avisos, pedírselos por WhatsApp para que conteste "
+            "con una foto o un PDF. Nunca lo que depende de la empresa "
+            "(contrato, reconocimiento médico). Editable desde el "
+            "Catálogo de tipos."
+        ),
+    )
 
     tags = models.ManyToManyField(
         "DocumentTag",
