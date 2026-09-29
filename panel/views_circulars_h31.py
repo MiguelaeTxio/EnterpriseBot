@@ -753,11 +753,6 @@ class PersonalDocutenExportView(DocsUploadAccessMixin, View):
             DocumentTypeCatalog, code=type_code, is_active=True,
             is_notification_template=True, requires_signature=True,
         )
-        if not document_type.content_html.strip():
-            return JsonResponse(
-                {"ok": False, "error": "La circular no tiene contenido."},
-                status=400,
-            )
         people = list(PersonIdentity.objects.filter(
             pk__in=person_ids,
         ).order_by("first_surname", "second_surname", "given_name"))

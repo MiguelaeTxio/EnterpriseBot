@@ -1059,9 +1059,15 @@ class PersonalListFragmentView(CompanyUserRequiredMixin, View):
         ).exclude(content_html="").order_by("label")
         # H30 (S124): solo las circulares que requieren firma
         # certificada se preparan para Docuten.
-        ctx["docuten_types"] = ctx["notification_types"].filter(
+        # Incluye las de PDF fijo (sin texto, con plantilla en PDF:
+        # Plan Nacional de calor, S124).
+        ctx["docuten_types"] = DocumentTypeCatalog.objects.filter(
+            is_active=True, is_notification_template=True,
             requires_signature=True,
-        )
+        ).filter(
+            ~Q(content_html="")
+            | Q(current_template__name__iendswith=".pdf")
+        ).order_by("label")
         from worksites.models import Worksite
         ctx["docuten_worksites"] = Worksite.objects.filter(
             is_active=True,

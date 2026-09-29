@@ -323,7 +323,11 @@ def build_steps_text(document_type, fields, included, excluded, pdf_name,
         "Trabajadores en el CSV: %d -- fuera: %d" % (
             len(included), len(excluded),
         ),
-        "Campos rellenables del PDF: %s" % (", ".join(fields) or "ninguno"),
+        "Campos rellenables del PDF: %s" % (
+            ", ".join(fields)
+            or "ninguno (documento fijo: Docuten añade la hoja de firma "
+            "con los datos de cada firmante)"
+        ),
         "",
         "Archivos descargados junto a este:",
         "  - %s: la circular, con los campos del trabajador ya puestos."
@@ -384,6 +388,22 @@ def build_steps_text(document_type, fields, included, excluded, pdf_name,
     return "\r\n".join(lines) + "\r\n"
 
 
+def fixed_pdf_template(document_type):
+    """
+    The circular's fixed PDF template entry, if it is one.
+
+    ---
+
+    Plantilla de PDF fijo de la circular (sin texto propio y con
+    `current_template` en PDF, p. ej. el Plan Nacional de calor), o
+    None si la circular se genera desde su texto.
+    """
+    template = document_type.current_template
+    if document_type.content_html.strip() or template is None:
+        return None
+    return template if template.name.lower().endswith(".pdf") else None
+
+
 def build_file(document_type, people, kind, worksite=None):
     """
     Return (filename, bytes, content_type, included, excluded).
@@ -396,6 +416,9 @@ def build_file(document_type, people, kind, worksite=None):
     elegido ninguna.
     """
     content = document_type.content_html
+    fixed_template = fixed_pdf_template(document_type)
+    if not content.strip() and fixed_template is None:
+        raise DocutenExportError("La circular no tiene contenido.")
     if uses_worksite(content) and worksite is None:
         raise DocutenExportError(
             "Esta circular lleva datos de obra: elige la obra."
@@ -414,7 +437,21 @@ def build_file(document_type, people, kind, worksite=None):
             csv_name, csv_text.encode("utf-8-sig"), "text/csv",
             included, excluded,
         )
-    html = render_circular_html(document_type, worksite=worksite)
+    if fixed_template is not None:
+        # PDF fijo (S124): se entrega tal cual, sin campos; Docuten
+        # añade su propia hoja de firma con los datos del firmante.
+        html = ""
+        if kind == "pdf":
+            from spare_parts.gcs_service import download_bytes
+
+            return (
+                pdf_name,
+                download_bytes(fixed_template.bucket,
+                               fixed_template.blob_name),
+                "application/pdf", included, excluded,
+            )
+    else:
+        html = render_circular_html(document_type, worksite=worksite)
     if kind == "pdf":
         return pdf_name, build_pdf(html), "application/pdf", included, \
             excluded
