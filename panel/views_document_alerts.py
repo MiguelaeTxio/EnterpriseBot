@@ -33,7 +33,9 @@ from document_explorer.models import (
     PersonGroupTemplate, PersonIdentity, RequirementAlertRule,
     WorkerDocumentRequest, WorkerDocumentSubmission,
 )
-from document_explorer.person_phone_service import mobile_of
+from document_explorer.person_phone_service import (
+    has_panel_access, mobile_of,
+)
 from document_explorer.worker_request_service import create_requests
 from document_explorer.notice_recipients import (
     docs_supervisors, load_scopes, recipients_for,
@@ -514,11 +516,14 @@ def _annotate_worker_requests(pending, can_request_docs):
     Estado de la solicitud al trabajador y marca "se puede pedir" de
     cada aviso de Personal (H30, S125). Se puede pedir si quien mira
     puede dar luz verde, el tipo lo aporta el trabajador, la persona
-    tiene móvil válido y no hay ya una solicitud abierta. Plantillas
+    tiene móvil válido y acceso al panel, y no hay ya una solicitud
+    abierta. Plantillas
     tontas: el texto del estado se decide aquí.
     """
     person_ids = {notice.subject_id for notice in pending}
-    people = PersonIdentity.objects.in_bulk(person_ids)
+    people = PersonIdentity.objects.select_related(
+        "company_user__user",
+    ).in_bulk(person_ids)
     worker_type_ids = set(
         DocumentTypeCatalog.objects.filter(worker_provides=True)
         .values_list("pk", flat=True)
@@ -568,6 +573,7 @@ def _annotate_worker_requests(pending, can_request_docs):
             can_request_docs and request_obj is None
             and notice.document_type_id in worker_type_ids
             and person is not None and mobile_of(person)
+            and has_panel_access(person)
         )
 
 

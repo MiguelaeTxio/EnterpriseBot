@@ -11,8 +11,15 @@ contratos deberíamos presentar la empresa correcta (con el nombre
 normalizado) que se informe en el contrato y modificarla cuando se
 actualice si procede."
 
+- SOLO trabajadores activos y SOLO a partir de ahora, al entrar un
+  documento (Miguel Ángel, S125): lo que ya constaba (Excel histórico)
+  se queda como estaba; nunca un barrido hacia atrás -- faltan contratos
+  y se rompería lo que estaba bien. Si la empresa queda mal, el
+  supervisor sube el contrato que falta. Un inactivo nunca se toca.
 - Manda el contrato más reciente (CONTRATO, prórroga o modificación,
-  por fecha del contrato) que identifique la empresa.
+  por fecha del contrato) que identifique la empresa; si ningún
+  contrato la identifica (trabajador nuevo solo con el alta), el alta
+  más reciente.
 - Caso limpio: el texto OCR ya guardado trae el CIF de UNA sola
   empresa del grupo (310 de 383 contratos reales, S125). Si no (dos
   CIF, ninguno, sin texto), Gemini lee el propio archivo y dice cuál de
@@ -134,8 +141,9 @@ def company_from_file(entry):
         for profile in profiles
     )
     prompt = (
-        "Este archivo es un contrato de trabajo (o su prórroga o "
-        "modificación) de una empresa española. De estas empresas, "
+        "Este archivo es un documento laboral de una empresa española "
+        "(contrato de trabajo, prórroga, modificación o alta en la "
+        "Seguridad Social). De estas empresas, "
         "¿cuál es la EMPLEADORA, la que contrata al trabajador? No "
         "confundir con clientes, obras u otras empresas mencionadas.\n"
         "%s\n\n"
@@ -164,14 +172,14 @@ def company_from_file(entry):
     )
 
 
-def person_contracts(person):
+def person_contracts(person, codes=CONTRACT_TYPE_CODES):
     """
-    The person's contracts, newest first (contract date).
+    The person's documents of those types, newest first.
 
     ---
 
-    Contratos de la persona (contrato, prórroga, modificación), el más
-    reciente primero por fecha del contrato.
+    Documentos de la persona de esos tipos (por defecto contrato,
+    prórroga, modificación), el más reciente primero por fecha.
     """
     return DocumentIndexEntry.objects.filter(
         entry_kind=DocumentIndexEntry.KIND_FILE,
@@ -179,7 +187,7 @@ def person_contracts(person):
             PersonIdentity,
         ),
         domain_object_id=person.pk,
-        document_type__code__in=CONTRACT_TYPE_CODES,
+        document_type__code__in=codes,
         deleted_at__isnull=True,
         purged_at__isnull=True,
     ).select_related("document_type").order_by(
@@ -198,7 +206,10 @@ def employer_from_contracts(person, use_gemini=True):
     ningún contrato la identifica.
     """
     unresolved = []
-    for contract in person_contracts(person):
+    documents = list(person_contracts(person)) + list(
+        person_contracts(person, codes=("ALTA",)),
+    )
+    for contract in documents:
         profile = company_from_text(contract.ocr_text)
         method = "CIF"
         if profile is None and use_gemini:
@@ -260,24 +271,23 @@ def refresh_after_contract(person, document_type_code):
     ---
 
     Enganche para todo contrato o alta que entra (cuarentena, panel,
-    WhatsApp). Si es contrato, recalcula la empresa. Si la persona está
-    activa y no está en su carpeta ACTIVOS/{EMPRESA}/ (acaba de
-    activarse, ha cambiado de empresa), traslada su documentación allí
-    (punto 4 de S125). Nunca mueve a un inactivo. Nunca lanza excepción
-    -- un fallo aquí no puede tumbar la ingesta.
+    WhatsApp), SOLO para trabajadores activos: recalcula la empresa y,
+    si no está en su carpeta ACTIVOS/{EMPRESA}/, traslada su
+    documentación allí (punto 4 de S125). A un inactivo no se le toca
+    nada ni se le activa. Nunca lanza excepción -- un fallo aquí no
+    puede tumbar la ingesta.
     """
     from document_explorer.person_folder_service import relocate_if_needed
 
     if document_type_code not in ACTIVATING_TYPE_CODES:
         return None
+    if person.is_active_employee is not True:
+        return None
     result = None
     try:
-        if document_type_code in CONTRACT_TYPE_CODES:
-            result = refresh_employer_company(person)
-        if person.is_active_employee:
-            relocated, folder, moved = relocate_if_needed(person)
-            if result is not None:
-                result["relocated_to"] = folder if relocated else ""
+        result = refresh_employer_company(person)
+        relocated, folder, moved = relocate_if_needed(person)
+        result["relocated_to"] = folder if relocated else ""
     except Exception:
         logger.exception(
             "# [EMPLOYER] No se pudo actualizar empresa/carpeta de %s",

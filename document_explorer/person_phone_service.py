@@ -103,3 +103,25 @@ def resolve_person_by_phone(company, raw_phone):
     if len(candidates) > 1:
         candidates = [p for p in candidates if p.is_active_employee]
     return candidates[0] if len(candidates) == 1 else None
+
+
+def has_panel_access(person):
+    """
+    Whether the worker has been onboarded with panel access.
+
+    ---
+
+    Si el trabajador está dado de alta con acceso al panel (cuenta
+    vinculada, activa, con el alta terminada y usuario activo). Miguel
+    Ángel (S125): mientras no tenga acceso al panel se le trata como si
+    no estuviera en la empresa, aunque tenga ficha -- ni entra en el
+    pipeline de WhatsApp ni se le piden documentos.
+    """
+    account = getattr(person, "company_user", None)
+    return bool(
+        account is not None
+        and account.is_active
+        and not account.pending_onboarding
+        and account.user_id
+        and account.user.is_active
+    )

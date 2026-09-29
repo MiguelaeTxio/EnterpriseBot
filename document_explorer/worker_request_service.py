@@ -10,7 +10,8 @@ trabajador por WhatsApp, y comprobación de lo que entrega contra lo
 pedido. Diseño de Miguel Ángel (S125), tal cual:
 
 - El supervisor da luz verde desde Avisos > Pendientes; solo tipos
-  marcados "lo aporta el trabajador" y solo con móvil válido.
+  marcados "lo aporta el trabajador", solo con móvil válido y solo a
+  trabajadores dados de alta con acceso al panel (S125).
 - Cola por trabajador: una sola solicitud activa (SENT) a la vez;
   cuando su documento se acepta, se pide la siguiente, hasta vaciarla.
 - Lo que entrega el trabajador NO va a la cuarentena: Gemini lo lee y
@@ -54,7 +55,9 @@ from document_explorer.models import (
     WorkerDocumentRequest, WorkerDocumentSubmission,
 )
 from document_management.models import DocumentSubstitutionLog
-from document_explorer.person_phone_service import mobile_of
+from document_explorer.person_phone_service import (
+    has_panel_access, mobile_of,
+)
 from document_explorer.subject_upload_service import (
     BUCKET, SubjectUploadError, upload_subject_document,
 )
@@ -185,6 +188,11 @@ def create_requests(pairs, approved_by):
             continue
         if not mobile_of(person):
             summary["skipped"].append("%s: sin móvil válido" % label)
+            continue
+        if not has_panel_access(person):
+            summary["skipped"].append(
+                "%s: sin acceso al panel (no está dado de alta)" % label
+            )
             continue
         if WorkerDocumentRequest.objects.filter(
             person=person, document_type=doc_type,
