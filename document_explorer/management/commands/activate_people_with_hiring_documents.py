@@ -6,10 +6,12 @@ are later than their last termination.
 ---
 
 H30 (S124), punto 3 de la hoja de ruta. Pasa a activas
-(`is_active_employee=True`) las personas no activas (NULL o False) que
-tengan un CONTRATO o un ALTA vinculados y posteriores a su última baja.
-Decisión de Miguel Ángel: el Excel de plantilla es un histórico y ya no
-decide quién es activo.
+(`is_active_employee=True`) las personas con `is_active_employee` NULL
+que tengan un CONTRATO o un ALTA vinculados y posteriores a su última
+baja (texto literal del punto 3). Decisión de Miguel Ángel: el Excel de
+plantilla es un histórico y ya no decide quién es activo. Las personas
+con False (marcadas inactivas por ese histórico) no se tocan: se listan
+aparte, solo como información.
 
 Criterios:
 - Alta: tipos `CONTRATO` y `ALTA` (sin subtipos).
@@ -19,8 +21,10 @@ Criterios:
   canónico (`..._AAAAMMDD[_N]`), salvo la ficticia 2021-01-01.
 - Sin ninguna baja: basta con un contrato o alta, con o sin fecha.
 - Con baja: hace falta un contrato o alta con fecha posterior a la
-  última baja. Una persona que solo tiene altas/contratos sin fecha se
-  lista aparte, sin activarla.
+  última baja. Si alguna baja no tiene fecha, o solo hay altas/contratos
+  sin fecha, no se puede comparar: se lista para revisar, sin activarla
+  (corregido en S124 tras el primer dry-run, que daba por anterior una
+  baja sin fecha).
 
 DRY-RUN POR DEFECTO (lista a quién activaría). `--apply` escribe.
 `--log-file` obligatorio: log propio en pantalla y en archivo a la vez.
@@ -128,8 +132,13 @@ class Command(BaseCommand):
             )
         }
         self._log(
-            "Modo: %s -- %d personas no activas (NULL o False)."
-            % ("APPLY" if apply_changes else "DRY-RUN", len(people))
+            "Modo: %s -- %d personas no activas (%d NULL, se evalúan; "
+            "el resto False, solo informativo)."
+            % (
+                "APPLY" if apply_changes else "DRY-RUN", len(people),
+                sum(1 for p in people.values()
+                    if p.is_active_employee is None),
+            )
         )
 
         hiring = defaultdict(list)
@@ -147,7 +156,9 @@ class Command(BaseCommand):
             )
             bucket[entry.domain_object_id].append(entry)
 
-        activated, undated_only, later_termination = [], [], []
+        activated, review, later_termination, historic_false = (
+            [], [], [], [],
+        )
         for person_pk in sorted(hiring):
             person = people[person_pk]
             label = "%d %s %s, %s (DNI %s, activo=%s)" % (
@@ -155,49 +166,24 @@ class Command(BaseCommand):
                 person.second_surname or "", person.given_name,
                 person.dni, person.is_active_employee,
             )
-            last_termination = max(
-                (
-                    found for found in (
-                        document_date(e) for e in terminations[person_pk]
-                    ) if found
-                ),
-                default=None,
+            verdict, reason = self._evaluate(
+                hiring[person_pk], terminations[person_pk],
             )
-            dated_hiring = [
-                (document_date(e), e) for e in hiring[person_pk]
-                if document_date(e)
-            ]
-            if not terminations[person_pk]:
-                reason = "sin ninguna baja; %s" % ", ".join(
-                    "%s #%d" % (e.document_type.code, e.pk)
-                    for e in hiring[person_pk]
-                )
+            if person.is_active_employee is False:
+                historic_false.append((label, verdict, reason))
+            elif verdict == "ACTIVAR":
                 activated.append((person, label, reason))
-                continue
-            if not dated_hiring:
-                undated_only.append((label, "altas/contratos sin fecha"))
-                continue
-            newest_date, newest = max(dated_hiring, key=lambda pair: pair[0])
-            if last_termination is None or newest_date > last_termination:
-                reason = "%s #%d del %s > última baja %s" % (
-                    newest.document_type.code, newest.pk, newest_date,
-                    last_termination or "sin fecha",
-                )
-                activated.append((person, label, reason))
+            elif verdict == "BAJA POSTERIOR":
+                later_termination.append((label, reason))
             else:
-                later_termination.append((
-                    label, "último %s del %s <= última baja %s" % (
-                        newest.document_type.code, newest_date,
-                        last_termination,
-                    ),
-                ))
+                review.append((label, reason))
 
         for person, label, reason in activated:
             if apply_changes:
                 person.is_active_employee = True
                 person.save(update_fields=["is_active_employee", "updated_at"])
             self._log("ACTIVAR %s -- %s" % (label, reason))
-        for label, reason in undated_only:
+        for label, reason in review:
             self._log("NO ACTIVADA (revisar) %s -- %s" % (label, reason))
 
         self._log_plain("")
@@ -206,12 +192,52 @@ class Command(BaseCommand):
         ))
         self._log_plain("  Personas no activas: %d" % len(people))
         self._log_plain("  Con CONTRATO o ALTA: %d" % len(hiring))
-        self._log_plain("  Activadas: %d" % len(activated))
+        self._log_plain("  NULL activadas: %d" % len(activated))
         self._log_plain(
-            "  Sin activar, baja posterior: %d" % len(later_termination)
+            "  NULL sin activar, baja posterior: %d" % len(later_termination)
         )
-        self._log_plain(
-            "  Sin activar, altas sin fecha: %d" % len(undated_only)
-        )
+        self._log_plain("  NULL sin activar, revisar: %d" % len(review))
         for label, reason in later_termination:
             self._log_plain("    BAJA POSTERIOR %s -- %s" % (label, reason))
+        self._log_plain(
+            "  False en el histórico (no se tocan): %d" % len(historic_false)
+        )
+        for label, verdict, reason in historic_false:
+            self._log_plain("    [%s] %s -- %s" % (verdict, label, reason))
+
+    def _evaluate(self, hiring, terminations):
+        """
+        Return (verdict, reason) for one person's documents.
+
+        ---
+
+        Devuelve (veredicto, motivo) para los documentos de una persona:
+        ACTIVAR, BAJA POSTERIOR o REVISAR.
+        """
+        if not terminations:
+            return "ACTIVAR", "sin ninguna baja; %s" % ", ".join(
+                "%s #%d" % (e.document_type.code, e.pk) for e in hiring
+            )
+        undated_terminations = [
+            e for e in terminations if not document_date(e)
+        ]
+        if undated_terminations:
+            return "REVISAR", "baja sin fecha: %s" % ", ".join(
+                "%s #%d" % (e.document_type.code, e.pk)
+                for e in undated_terminations
+            )
+        dated_hiring = [
+            (document_date(e), e) for e in hiring if document_date(e)
+        ]
+        if not dated_hiring:
+            return "REVISAR", "altas/contratos sin fecha"
+        last_termination = max(document_date(e) for e in terminations)
+        newest_date, newest = max(dated_hiring, key=lambda pair: pair[0])
+        if newest_date > last_termination:
+            return "ACTIVAR", "%s #%d del %s > última baja %s" % (
+                newest.document_type.code, newest.pk, newest_date,
+                last_termination,
+            )
+        return "BAJA POSTERIOR", "último %s del %s <= última baja %s" % (
+            newest.document_type.code, newest_date, last_termination,
+        )
