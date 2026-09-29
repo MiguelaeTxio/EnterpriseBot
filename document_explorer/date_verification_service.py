@@ -192,6 +192,21 @@ _NOISE_SPAN_PATTERNS = [
         r"REGLAMENTO \(UE\) 2016/679[\s\S]{0,60}?"
         r"(\d{1,2} DE [A-Z]+ DE \d{4})"
     ),
+    # H30 (S123). Fecha de CONDICIÓN legal del impreso, nunca de un
+    # hecho del documento: "...hayan adquirido su vivienda habitual
+    # [...] antes del 1 de enero de 2013" (Modelo 145 de la AEAT,
+    # verificado real id=43990, MUÑOZ CARA MIGUEL ANGEL -- el
+    # documento quedó fechado el 01/01/2013, más de una década antes de
+    # su primera alta). Medido en S123: 81 de los 86 Modelos 145
+    # fechados antes del primer alta de su persona llevan justo esa
+    # fecha. Un "antes de(l)" o "con anterioridad a(l)" delante de una
+    # fecha la convierte en un umbral, nunca en la fecha del documento;
+    # se excluye por POSICIÓN EXACTA, mismo enfoque que las dos de
+    # arriba.
+    re.compile(
+        r"(?:ANTES DEL?|CON ANTERIORIDAD AL?) "
+        r"(\d{1,2} DE [A-Z]+ DEL? \d{4}|\d{1,2}[-./]\d{1,2}[-./]\d{2,4})"
+    ),
 ]
 # H30 (S89): fecha de inscripcion registral de Cajamar en el pie de
 # pagina, constante en TODOS los recibos ("Inscripc.1a 31/10/2012").
