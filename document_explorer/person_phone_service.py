@@ -113,9 +113,9 @@ def has_panel_access(person):
 
     Si el trabajador está dado de alta con acceso al panel (cuenta
     vinculada, activa, con el alta terminada y usuario activo). Miguel
-    Ángel (S125): mientras no tenga acceso al panel se le trata como si
-    no estuviera en la empresa, aunque tenga ficha -- ni entra en el
-    pipeline de WhatsApp ni se le piden documentos.
+    Ángel (S125, corregido S126): sin acceso al panel no se archiva lo
+    que entregue por WhatsApp por iniciativa propia; lo que se le pide
+    (solo hace falta móvil válido) sí se procesa.
     """
     account = getattr(person, "company_user", None)
     return bool(

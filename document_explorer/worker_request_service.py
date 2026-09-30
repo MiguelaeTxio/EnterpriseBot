@@ -10,8 +10,10 @@ trabajador por WhatsApp, y comprobación de lo que entrega contra lo
 pedido. Diseño de Miguel Ángel (S125), tal cual:
 
 - El supervisor da luz verde desde Avisos > Pendientes; solo tipos
-  marcados "lo aporta el trabajador", solo con móvil válido y solo a
-  trabajadores dados de alta con acceso al panel (S125).
+  marcados "lo aporta el trabajador" y solo con móvil válido. Para
+  pedir NO hace falta acceso al panel (corregido S126, Miguel Ángel:
+  exigirlo "entorpece más que ayuda"); el acceso al panel solo se
+  exige a lo que el trabajador entrega sin que se le haya pedido.
 - Cola por trabajador: una sola solicitud activa (SENT) a la vez;
   cuando su documento se acepta, se pide la siguiente, hasta vaciarla.
 - Lo que entrega el trabajador NO va a la cuarentena: Gemini lo lee y
@@ -28,9 +30,11 @@ pedido. Diseño de Miguel Ángel (S125), tal cual:
   siempre que sea lo esperado (mismo tipo, misma persona).
 - Adjunto SIN solicitud pendiente: actualización o primera subida por
   iniciativa del trabajador -- se clasifica contra el catálogo de
-  Personal, se valida igual y se archiva con su nombre canónico. Ningún
-  adjunto de trabajador va a la cuarentena; ninguno se pierde (lo que
-  no encaja va a NO CONFORMES/ con aviso al trabajador).
+  Personal, se valida igual y se archiva con su nombre canónico. Solo
+  para trabajadores con acceso al panel (S126); sin acceso no se
+  archiva. Ningún adjunto de trabajador va a la cuarentena; ninguno se
+  pierde (lo que no encaja va a NO CONFORMES/ con aviso al
+  trabajador).
 """
 import hashlib
 import json
@@ -135,6 +139,23 @@ def open_requests(person):
     return queue
 
 
+def expects_media(person):
+    """
+    Whether an attachment from this person must be processed.
+
+    ---
+
+    Si un adjunto de esta persona se procesa (S126, Miguel Ángel): con
+    acceso al panel, siempre; sin acceso, solo si responde a algo que
+    le hemos pedido -- una solicitud abierta, o un documento pedido y
+    aceptado en las últimas 24 h (la otra cara).
+    """
+    return bool(
+        has_panel_access(person) or open_requests(person)
+        or _recent_accepted(person)
+    )
+
+
 def _current_entry(person, document_type):
     """
     Current (non-obsolete) document of that type for the person.
@@ -191,11 +212,6 @@ def create_requests(pairs, approved_by):
             continue
         if not mobile_of(person):
             summary["skipped"].append("%s: sin móvil válido" % label)
-            continue
-        if not has_panel_access(person):
-            summary["skipped"].append(
-                "%s: sin acceso al panel (no está dado de alta)" % label
-            )
             continue
         if WorkerDocumentRequest.objects.filter(
             person=person, document_type=doc_type,
@@ -588,7 +604,8 @@ def process_submission(submission_id, final=False):
     4. Sin solicitudes -> actualización o primera subida por iniciativa
        del trabajador: se clasifica contra el catálogo, se valida y se
        archiva con su nombre canónico; si no encaja, NO CONFORMES/ y
-       aviso. Ningún adjunto de trabajador va a la cuarentena.
+       aviso. Solo con acceso al panel (S126): sin él, NO CONFORMES/.
+       Ningún adjunto de trabajador va a la cuarentena.
     """
     submission = WorkerDocumentSubmission.objects.select_related(
         "person",
@@ -690,6 +707,12 @@ def process_submission(submission_id, final=False):
         return _append(context, prior, verdict)
 
     chosen = next((t for t in candidates if t.code == code), None)
+    if not queue and not has_panel_access(person):
+        # Entrega por iniciativa propia sin acceso al panel (S126).
+        return _refuse(
+            context, queue, described or "un documento que no se ha "
+            "solicitado", verdict,
+        )
     if queue or chosen is None:
         return _refuse(
             context, queue, described or "un documento que no se reconoce",

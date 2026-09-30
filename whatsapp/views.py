@@ -185,22 +185,23 @@ class IncomingWhatsAppView(View):
         # camino normal de abajo.
         if num_media:
             from document_explorer.person_phone_service import (
-                has_panel_access, resolve_person_by_phone,
+                resolve_person_by_phone,
             )
             from document_explorer.worker_request_service import (
-                register_incoming_media,
+                expects_media, register_incoming_media,
             )
 
-            # Solo trabajadores dados de alta con acceso al panel (S125):
-            # sin acceso se le trata como si no estuviera en la empresa.
+            # Con acceso al panel, siempre; sin acceso, solo si responde
+            # a algo que le hemos pedido (S126, corrige S125).
             _media_person = resolve_person_by_phone(company, from_number)
-            if _media_person is not None and has_panel_access(_media_person):
+            if _media_person is not None and expects_media(_media_person):
                 register_incoming_media(_media_person, from_number, request.POST)
             else:
                 logger.warning(
                     "# [WHATSAPP] Adjunto de %s: %s -- no se procesa.",
                     from_number,
-                    "trabajador sin acceso al panel" if _media_person
+                    "trabajador sin acceso al panel y sin nada pedido"
+                    if _media_person
                     else "el teléfono no es de ningún trabajador",
                 )
             if not body and not is_location_msg:

@@ -33,9 +33,7 @@ from document_explorer.models import (
     PersonGroupTemplate, PersonIdentity, RequirementAlertRule,
     WorkerDocumentRequest, WorkerDocumentSubmission,
 )
-from document_explorer.person_phone_service import (
-    has_panel_access, mobile_of,
-)
+from document_explorer.person_phone_service import mobile_of
 from document_explorer.worker_request_service import create_requests
 from document_explorer.notice_recipients import (
     docs_supervisors, load_scopes, recipients_for,
@@ -573,7 +571,6 @@ def _annotate_worker_requests(pending, can_request_docs):
             can_request_docs and request_obj is None
             and notice.document_type_id in worker_type_ids
             and person is not None and mobile_of(person)
-            and has_panel_access(person)
         )
 
 
