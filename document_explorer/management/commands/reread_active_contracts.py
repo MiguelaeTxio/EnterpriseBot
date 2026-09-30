@@ -31,6 +31,7 @@ corta, al relanzarlo continúa donde iba.
 import json
 import os
 import time
+import traceback
 from datetime import datetime
 
 from django.core.management.base import BaseCommand, CommandError
@@ -119,11 +120,19 @@ class Command(BaseCommand):
                   ))
         totals = {
             "docs": 0, "dates": 0, "ends": 0, "errors": 0,
-            "employer": 0, "moved": 0,
+            "employer": 0, "moved": 0, "failed_people": 0,
         }
         started = time.monotonic()
         for position, person in enumerate(people, start=1):
-            self._person(position, person, dry_run, totals)
+            try:
+                self._person(position, person, dry_run, totals)
+            except Exception:  # noqa: BLE001 -- al log, y a por el siguiente
+                totals["failed_people"] += 1
+                connection.close()
+                self._log("%d. %s %s, %s (pk %s): FALLO, se salta:\n%s" % (
+                    position, person.first_surname, person.second_surname,
+                    person.given_name, person.pk, traceback.format_exc(),
+                ))
             elapsed = time.monotonic() - started
             eta = elapsed / position * (len(people) - position)
             if position % 5 == 0 or position == len(people):
@@ -133,9 +142,10 @@ class Command(BaseCommand):
         self._log(
             "Fin. Contratos leídos: %d (errores %d). Fechas cambiadas: "
             "%d, fechas de fin nuevas: %d. Empresas cambiadas: %d. "
-            "Carpetas movidas: %d." % (
+            "Carpetas movidas: %d. Trabajadores con fallo: %d." % (
                 totals["docs"], totals["errors"], totals["dates"],
                 totals["ends"], totals["employer"], totals["moved"],
+                totals["failed_people"],
             )
         )
 
