@@ -9103,45 +9103,152 @@ recuenta).
 
 **Migraciones aplicadas y verificadas:** 0165-0174 (document_explorer).
 
-## Hoja de Ruta para la Siguiente Sesión (S126) -- REESCRITA al cierre,
-## sustituye por completo a la de S125
+### COMPLETADAS EN S126 (30/09/2026, PEE PC; H30 -- regla de solicitudes
+### corregida, avisos por destinatario, Bandeja de entrada para firmados
+### de Docuten, punto 2 construido y obras eliminables)
 
-**Arranque directo por el punto 1, sin preguntar.**
+**Punto 1 -- Solicitud al trabajador por WhatsApp (ABIERTO).**
+`check_whatsapp_template_approvals` (EnterpriseBot_001) devolvió las dos
+plantillas `pending` a las 11:52. Por la tarde Miguel Ángel confirmó en
+Twilio que `document_request_missing` y `document_request_expiry` ya
+están **aprobadas**. Falta la prueba real (punto 1 de S127).
 
-1. **Solicitud de documentación al trabajador desde Avisos, prueba
-   real.** `check_whatsapp_template_approvals --name
-   document_request_missing --name document_request_expiry` -> las dos
-   `approved`. Después, desde Avisos > Pendientes, pedir a Miguel Ángel
-   (pk 250, con acceso al panel) un documento de tipo marcado que le
-   falte; recibe la plantilla y contesta con la foto. **Cierre:** consulta
-   a BD con su `WorkerDocumentRequest` en `RECEIVED` y `received_entry`
-   no nulo, y el documento en su ficha.
-2. **Documentación que aporta la empresa (no el trabajador) en Avisos >
-   Pendientes.** Para los avisos de tipos sin "lo aporta el trabajador"
-   (contrato, reconocimiento médico, etc.): subir el documento
-   directamente desde la fila del aviso a la ficha de la persona (mismo
-   `upload_subject_document`, con enganches de contrato y carné); y para
-   RECONOCIMIENTO_MEDICO, acción "Cita solicitada" que registra quién y
-   cuándo y deja el aviso en ese estado hasta que entra el certificado.
-   **Cierre:** en local y en producción, subir un contrato desde un aviso
-   "Falta" de una persona de prueba -> el aviso desaparece y el contrato
-   está en su ficha (consulta a BD); marcar "Cita solicitada" en un aviso
-   de reconocimiento médico -> el aviso lo muestra y el registro existe
-   en BD.
-3. **Avisos de revisiones de accesorios de elevación (eslingas...) y de
-   EPIs.** Hoy `document_notice_service` (Avisos) no usa
-   `LiftingAccessoryReview` ni `EpiReview`. Incorporar sus fechas de
-   próxima revisión/caducidad a Avisos (Pendientes: caducados,
-   próximos y sin revisión) con el mismo criterio de días que los
-   documentos. **Cierre:** consulta a BD con los accesorios y EPIs de
-   revisión vencida o en <=30 días, y los mismos aparecen en Avisos >
-   Pendientes con su fecha.
-4. **Prueba de Docuten (Miguel Ángel) (arrastrado 1.ª sesión sin
-   avanzar):** generar desde Personal > Información una circular con
-   firma para varios activos y subir el CSV en "Nuevo envío de firma" de
-   Docuten. **Cierre:** la tabla de procesos detectados no marca ningún
-   error de formato; si lo marca (móvil de 9 dígitos, líneas sin email),
-   se corrige `panel/docuten_export.py` en la misma sesión.
+**Regla de negocio corregida por Miguel Ángel (`ef6b4b42`).** Pedir
+documentos por WhatsApp solo exige **móvil válido**, no acceso al panel
+("entorpece más que ayuda"). El acceso al panel solo se exige a lo que el
+trabajador entrega por iniciativa propia. Webhook: se procesa el adjunto
+si la persona tiene acceso o si responde a algo pedido (solicitud
+abierta o documento pedido aceptado en 24 h, la otra cara); una entrega
+sin solicitud de alguien sin acceso va a `NO CONFORMES/`.
+
+**Avisos -- destinatarios e interruptor (pedido en sesión).**
+- Los **administradores** también son destinatarios (`03347598`,
+  `RECIPIENT_ROLES`); guardar su ámbito daba 404 (`6b277704`).
+- Ámbito de Yolanda con "TRANSGRUAL S.L." (grafía previa a S125)
+  invisible en la ficha y sin casar con los avisos (`e800d049`): las
+  empresas se comparan ahora por perfil fiscal
+  (`CompanyKeyResolver`, sin puntos, espacios ni acentos); valores
+  guardados que ya no están en la lista se muestran marcados y
+  señalados.
+- **Interruptor de WhatsApp por destinatario** (`1c08837b`,
+  `NoticeRecipientScope.whatsapp_enabled`, 0175): encenderlo solo afecta
+  a quien lo enciende ("debería de afectarme solamente a mí"). Estado en
+  BD a 30/09 12:30: nadie encendido; ámbito de `alvarez_admin` = todo el
+  personal; el de Yolanda, vacío (lo vació Miguel Ángel en sesión).
+  Miguel Ángel lo enciende para recibir él los avisos a las 8:00.
+- Aclarado (sin cambio): un caducado avisa siempre que su tipo tenga
+  marcada al menos una casilla de caducidad en el requisito; el
+  recordatorio de caducados y faltantes es cada 7 días.
+
+**Bandeja de entrada (diseño de Miguel Ángel, `a41d2e88` + `e429478a`).**
+Docuten no envía adjuntos (solo un correo con enlace): Yolanda descarga
+los firmados y los sube ella misma. Se descartan agente en su PC,
+vigilancia de `ACCESO_BUZON_DOCUMENTACION` y lectura de Outlook; el H28
+sigue solo en el PC de Miguel Ángel.
+- `InboxItem` (0177): cada archivo por SHA-256, nunca dos veces; un ZIP
+  se abre en sus archivos (Docuten no documenta el formato de la
+  descarga de varios); mismo MD5 que un documento vivo -> "ya estaba".
+- Gemini lee tipo (catálogo de Personal con circulares), trabajador,
+  fechas y firma; trabajador solo con certeza (DNI/NIE o apellido y
+  nombre). Archivo con `upload_subject_document`; circular firmada ->
+  `DocumentAcknowledgment` canal `DOCUTEN` o `PAPER` (0176) con el PDF
+  firmado como `source_entry`. No conformes a `NO CONFORMES BANDEJA DE
+  ENTRADA/` (separada del NO CONFORMES del H28); copia temporal en
+  `_BANDEJA_ENTRADA/`.
+- Pestaña "Bandeja de entrada" (supervisores de documentación y
+  administradores): arrastrar y soltar archivos o carpetas, avance por
+  archivo, lista 4.24 con "Volver a clasificar".
+
+**Punto 2 -- construido, falta la prueba (`d9f1d8d5`).** Avisos >
+Pendientes, tipos que aporta la empresa: botón "Subir" (archivo + fecha
+opcional) a la ficha; reconocimiento médico: "Cita solicitada" /
+"Anular cita" (`NoticeAppointmentRequest`, 0178), se cierra sola al
+entrar un reconocimiento posterior a la solicitud.
+
+**Otros cambios pedidos en sesión.**
+- Personal > Información: "Circular/notificación…" ya no muestra las
+  circulares con firma (van solo por Docuten, S124) -- en masiva y en la
+  ficha (`64e847ea`). Hoy solo sale "Circular informativa" (las otras 4
+  sin firma no tienen texto).
+- Obras: botón "Eliminar" con confirmación; las circulares enviadas con
+  esa obra se conservan sin obra (`740f9e7e`).
+
+**Hallazgo corregido (4.9).** `upload_subject_document` salía antes de
+los enganches en los tipos acumulables (CONTRATO, ALTA, prórroga,
+modificación): un contrato subido desde la ficha nunca recalculaba la
+empresa. Enganches movidos antes de esa salida (`a41d2e88`).
+
+**Incidencia de despliegue.** `64e847ea` salió en rojo en "Recargar la
+web app" (API de PythonAnywhere) con pull/migrate/collectstatic en
+verde; relanzado el trabajo fallido, segundo intento verde completo.
+
+**Migraciones aplicadas y verificadas en BD:** 0175-0178
+(document_explorer).
+
+## Hoja de Ruta para la Siguiente Sesión (S127) -- REESCRITA al cierre,
+## sustituye por completo a la de S126
+
+**Primera línea -- prueba del CSV de Docuten (arrastrado 2.ª sesión sin
+avanzar):** depende solo de que Miguel Ángel suba en Docuten ("Nuevo
+envío de firma") el CSV que genera "Preparar para Docuten". Se hace
+dentro del punto 5 (circular con firma y entrega de EPIs). **Cierre:** la
+tabla de procesos detectados de Docuten no marca ningún error de
+formato; si lo marca, se corrige `panel/docuten_export.py` en la misma
+sesión.
+
+**Arranque directo por el punto 1, sin preguntar.** Orden de Miguel
+Ángel: primero las pruebas que quedaron por hacer, después las firmas de
+Docuten para la entrega de EPIs.
+
+1. **Solicitud al trabajador por WhatsApp, prueba real** (plantillas ya
+   aprobadas por Meta). Desde Avisos > Pendientes, pedir a Miguel Ángel
+   (pk 250) un documento de tipo marcado "lo aporta el trabajador" que
+   le falte o caduque; contesta con la foto. **Cierre:** consulta a BD
+   con su `WorkerDocumentRequest` en `RECEIVED` y `received_entry` no
+   nulo, y el documento vigente en su ficha.
+2. **Punto 2, prueba en producción** (no hay entorno local: se prueba
+   solo en producción). Miguel Ángel sube un contrato con "Subir" desde
+   un aviso "Falta: Contrato laboral" de una persona de prueba y marca
+   "Cita solicitada" en un aviso de reconocimiento médico. **Cierre:**
+   consulta a BD: `DocumentIndexEntry` CONTRATO de esa persona con
+   `indexed_at` de hoy y el aviso ya no sale en Pendientes;
+   `NoticeAppointmentRequest` con `requested_by` y `cancelled_at` nulo
+   para el reconocimiento.
+3. **Bandeja de entrada, prueba real.** Yolanda (o Miguel Ángel) sube el
+   firmado de Docuten "PREVENCION LEANDRO ALVAREZ" tal cual lo descarga
+   (si Docuten entrega ZIP, el ZIP). **Cierre:** consulta a BD:
+   `InboxItem` en `ARCHIVED` con `person` = Leandro Álvarez, su
+   `DocumentAcknowledgment` con `channel=DOCUTEN` y `source_entry` =
+   el `entry` del `InboxItem`; si sale `REJECTED`, se corrige el motivo
+   en la misma sesión y se usa "Volver a clasificar" hasta `ARCHIVED`.
+   Si la descarga trae documento de evidencias de Docuten, se decide con
+   ese archivo delante qué se hace con él (hoy entraría como un archivo
+   más).
+4. **Avisos por WhatsApp a Miguel Ángel, primer envío real de las
+   8:00.** **Cierre:** consulta a BD: filas `NoticeDelivery` de
+   `company_user_id=1` con `first_sent_at` del día y ninguna de otro
+   destinatario; Miguel Ángel confirma que le llegaron. Si su
+   interruptor seguía apagado, se enciende y el cierre pasa al día
+   siguiente.
+5. **Firmas de Docuten para la entrega de EPIs (nuevo, pedido por Miguel
+   Ángel al cierre).** La entrega de EPIs debe ir firmada: desde la
+   entrega masiva de EPIs, "Preparar para Docuten" genera los tres
+   archivos sueltos (PDF de entrega por trabajador con sus EPIs, CSV y
+   hoja de pasos, mismo formato que las circulares de S124), y el
+   firmado que vuelve por la Bandeja de entrada queda enlazado a su
+   `EpiDelivery`. **Cierre:** entrega real de un EPI a Miguel Ángel ->
+   archivos generados y subidos a Docuten sin errores de formato (cierra
+   también la primera línea); firmado subido a la Bandeja -> `InboxItem`
+   `ARCHIVED` y la entrega de EPI con su documento firmado enlazado
+   (consulta a BD).
+6. **Avisos de revisiones de accesorios de elevación y de EPIs
+   (arrastrado 1.ª sesión sin avanzar).** `document_notice_service` no
+   usa `LiftingAccessoryReview` ni `EpiReview`: incorporar sus fechas de
+   próxima revisión/caducidad a Avisos > Pendientes (caducados, próximos
+   y sin revisión) con el mismo criterio de días que los documentos.
+   **Cierre:** consulta a BD con los accesorios y EPIs de revisión
+   vencida o en <=30 días, y los mismos aparecen en Avisos > Pendientes
+   con su fecha.
 
 **Decisiones de Miguel Ángel que el modelo NO debe tocar por su
 cuenta:**
@@ -9150,12 +9257,18 @@ cuenta:**
   contrato nuevo fija la empresa (el más reciente manda; si queda mal, el
   supervisor sube el que falta). Los nuevos se dan de alta con lo que
   digan sus documentos. La activación por cuarentena de S124 se queda.
-- **WhatsApp y solicitudes:** solo trabajadores con acceso al panel.
+- **WhatsApp y solicitudes (S126):** pedir documentos solo exige móvil
+  válido; el acceso al panel solo se exige a lo que el trabajador
+  entrega sin que se le haya pedido.
 - **Procesos largos:** nunca un comando de 80-90 minutos; se reparten en
   trozos (`--shard N --shards 4`, desde 1) para las 4 consolas, con caché.
-- Envío automático diario de avisos a supervisores
-  (`notice_delivery_service`): **sigue apagado** hasta que Miguel Ángel
-  lo encienda.
+- Envío diario de avisos por WhatsApp: **interruptor por
+  destinatario** (S126); cada uno enciende el suyo, nunca el modelo.
+- **Firmados de Docuten:** los sube la supervisora por la Bandeja de
+  entrada; sin agente en su PC. El H28 sigue solo en el PC de Miguel
+  Ángel.
+- **Obras:** la ampliación (cliente real, coordenadas...) sigue en la
+  deuda técnica 4.23; de momento solo alta y borrado.
 - Requisitos de maquinaria: los definen los supervisores.
 - Entregas de accesorios y cabrestante VIME 03210: sin cambios.
 - Agente H28: con latido; si se reempaqueta, sale con `heartbeat.py`.
