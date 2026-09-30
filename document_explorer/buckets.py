@@ -125,6 +125,12 @@ def quarantine_scope_q(field="parent_path"):
 # de cuarentena, así que `consume_quarantine_task` deja de
 # reprocesarlo para siempre hasta que un humano lo reencole a mano.
 NO_CONFORMES_PREFIX = "NO CONFORMES/"
+# H30 (S126): Bandeja de entrada del panel. Sus no conformes van a una
+# carpeta propia, separada del NO CONFORMES del H28 (Miguel Ángel: que
+# no se mezclen), y la copia temporal mientras se clasifica vive en
+# _BANDEJA_ENTRADA/ (nunca indexada; se borra al terminar).
+INBOX_NO_CONFORMES_PREFIX = "NO CONFORMES BANDEJA DE ENTRADA/"
+INBOX_STAGING_PREFIX = "_BANDEJA_ENTRADA/"
 
 # Carpeta real de nivel superior, hermana de DOC. MAQUINAS/DOC.
 # PERSONAL -- destino fijo para el tipo documental MANUAL_USO

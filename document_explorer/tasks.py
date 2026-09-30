@@ -908,6 +908,31 @@ def process_worker_submission_task(self, submission_id: int) -> str:
     return result
 
 
+INBOX_FINAL_ATTEMPT = 5
+
+
+@app.task(base=DjangoTask, bind=True, max_retries=INBOX_FINAL_ATTEMPT)
+def process_inbox_item_task(self, item_id: int) -> str:
+    """
+    H30 (S126). Classifies and files one file of the panel's
+    "Bandeja de entrada" (see inbox_service).
+
+    ---
+
+    H30 (S126). Clasifica y archiva un archivo de la pestaña "Bandeja
+    de entrada" del panel (ver inbox_service), fuera de la petición web
+    (Gemini tarda). Gemini saturado se reintenta al minuto; en el
+    último intento queda como error visible, nunca en silencio.
+    """
+    from .inbox_service import TransientInboxError, process_item
+
+    final = self.request.retries >= INBOX_FINAL_ATTEMPT
+    try:
+        return process_item(item_id, final=final)
+    except TransientInboxError:
+        raise self.retry(countdown=60)
+
+
 @app.task(base=DjangoTask, bind=True, max_retries=0)
 def harvest_driving_licence_task(self, entry_pk: int) -> str:
     """

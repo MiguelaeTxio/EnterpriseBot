@@ -265,6 +265,32 @@ def _resolve_date_and_text(document_type, filename, data, content_type):
     return None, None, text, None
 
 
+def _queue_entry_hooks(subject, document_type, entry):
+    """
+    Queue the reading hooks of a document that has just entered.
+
+    ---
+
+    Encola los enganches de un documento recién entrado (Celery, tras
+    confirmar la transacción): un permiso de conducción se lee su
+    matriz de clases, y un contrato/alta puede cambiar la empresa de la
+    persona (H30, S125). S126: antes estaban al final de
+    `upload_subject_document`, después de la salida anticipada de los
+    tipos acumulables -- y CONTRATO, ALTA, prórroga y modificación son
+    acumulables, así que un contrato subido desde la ficha nunca
+    recalculaba la empresa.
+    """
+    from document_explorer.driving_licence_service import queue_harvest
+
+    queue_harvest(entry)
+    if isinstance(subject, PersonIdentity):
+        from document_explorer.employer_service import (
+            queue_contract_refresh,
+        )
+
+        queue_contract_refresh(subject, document_type.code, entry)
+
+
 def upload_subject_document(
     *, subject, domain_content_type, document_type, data, original_filename,
     typed_date, subject_label, uploaded_by=None, typed_issue_date=None,
@@ -394,6 +420,7 @@ def upload_subject_document(
     # sustitución: vigencia_service deja este filtro al llamador y aquí
     # faltaba, así que cada documento nuevo dejaba obsoleto al anterior.
     if document_type.is_cumulative:
+        _queue_entry_hooks(subject, document_type, entry)
         return {
             "entry": entry, "warning": warning,
             "superseded_count": superseded_count,
@@ -448,21 +475,7 @@ def upload_subject_document(
             )
             superseded_count += 1
 
-    # H30 (S125): un permiso de conducción que entra se lee su matriz de
-    # clases (Celery, tras confirmar la transacción).
-    from document_explorer.driving_licence_service import queue_harvest
-
-    queue_harvest(entry)
-
-    # H30 (S125): un contrato que entra puede cambiar la empresa de la
-    # persona (manda el más reciente que la identifique).
-    if isinstance(subject, PersonIdentity):
-        from document_explorer.employer_service import (
-            queue_contract_refresh,
-        )
-
-        queue_contract_refresh(subject, document_type.code, entry)
-
+    _queue_entry_hooks(subject, document_type, entry)
     return {
         "entry": entry, "warning": warning,
         "superseded_count": superseded_count,

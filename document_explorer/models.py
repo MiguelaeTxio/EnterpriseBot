@@ -2413,9 +2413,14 @@ class DocumentAcknowledgment(models.Model):
 
     CHANNEL_EMAIL = "EMAIL"
     CHANNEL_WHATSAPP = "WHATSAPP"
+    # H30 (S126): circular firmada que entra por la Bandeja de entrada.
+    CHANNEL_DOCUTEN = "DOCUTEN"
+    CHANNEL_PAPER = "PAPER"
     CHANNEL_CHOICES = [
         (CHANNEL_EMAIL, "Correo (.eml)"),
         (CHANNEL_WHATSAPP, "WhatsApp"),
+        (CHANNEL_DOCUTEN, "Firmada por Docuten"),
+        (CHANNEL_PAPER, "Firmada en papel"),
     ]
     channel = models.CharField(
         max_length=10,
@@ -3988,3 +3993,129 @@ class WorkerDocumentSubmission(models.Model):
 
     def __str__(self):
         return "%s (%s)" % (self.from_phone, self.status)
+
+
+class InboxItem(models.Model):
+    """
+    H30 (S126). One file uploaded through the panel's "Bandeja de
+    entrada" (supervisor drag and drop), identified by its SHA-256.
+
+    ---
+
+    H30 (S126). Un archivo subido por la pestaña "Bandeja de entrada"
+    del panel (arrastrar y soltar del supervisor), identificado por su
+    huella SHA-256: el mismo archivo nunca se procesa dos veces, entre
+    suelto o dentro de un ZIP. Diseño de Miguel Ángel (S126): la propia
+    supervisora sube los firmados que descarga de Docuten -- nada de
+    agente vigilando su PC. El servidor lee el documento, identifica
+    al trabajador y el tipo y lo archiva en su ficha; una circular
+    firmada queda además registrada como firmada
+    (`DocumentAcknowledgment`, canal DOCUTEN o PAPER). Lo que no se
+    identifica con certeza va a "NO CONFORMES BANDEJA DE ENTRADA",
+    separado del NO CONFORMES del H28.
+    """
+
+    STATUS_PENDING = "PENDING"
+    STATUS_PROCESSING = "PROCESSING"
+    STATUS_ARCHIVED = "ARCHIVED"
+    STATUS_DUPLICATE = "DUPLICATE"
+    STATUS_REJECTED = "REJECTED"
+    STATUS_ERROR = "ERROR"
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "En cola"),
+        (STATUS_PROCESSING, "Clasificando"),
+        (STATUS_ARCHIVED, "Archivado"),
+        (STATUS_DUPLICATE, "Ya estaba en la plataforma"),
+        (STATUS_REJECTED, "No conforme"),
+        (STATUS_ERROR, "Error"),
+    ]
+    OPEN_STATUSES = (STATUS_PENDING, STATUS_PROCESSING)
+    RETRYABLE_STATUSES = (STATUS_REJECTED, STATUS_ERROR)
+
+    sha256 = models.CharField(
+        max_length=64, unique=True, verbose_name="Huella SHA-256",
+    )
+    original_name = models.CharField(
+        max_length=255, verbose_name="Nombre del archivo subido",
+    )
+    container_name = models.CharField(
+        max_length=255,
+        blank=True,
+        verbose_name="ZIP de origen",
+        help_text="Nombre del ZIP del que salió el archivo, si vino dentro "
+                  "de uno.",
+    )
+    content_type = models.CharField(
+        max_length=100, blank=True, verbose_name="Tipo MIME",
+    )
+    size_bytes = models.BigIntegerField(default=0, verbose_name="Tamaño")
+    staging_blob = models.TextField(
+        blank=True,
+        verbose_name="Copia temporal en GCS",
+        help_text="Copia en _BANDEJA_ENTRADA/ mientras se procesa; se "
+                  "borra al terminar.",
+    )
+    status = models.CharField(
+        max_length=12,
+        choices=STATUS_CHOICES,
+        default=STATUS_PENDING,
+        verbose_name="Estado",
+    )
+    reason = models.TextField(blank=True, verbose_name="Resultado")
+    verdict = models.JSONField(
+        default=dict, blank=True, verbose_name="Lectura de Gemini",
+    )
+    person = models.ForeignKey(
+        "PersonIdentity",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="inbox_items",
+        verbose_name="Trabajador",
+    )
+    document_type = models.ForeignKey(
+        "DocumentTypeCatalog",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="inbox_items",
+        verbose_name="Tipo documental",
+    )
+    entry = models.ForeignKey(
+        "DocumentIndexEntry",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="inbox_items",
+        verbose_name="Archivo guardado",
+    )
+    acknowledgment = models.ForeignKey(
+        "DocumentAcknowledgment",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="inbox_items",
+        verbose_name="Firma registrada",
+    )
+    uploaded_by = models.ForeignKey(
+        "ivr_config.CompanyUser",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="inbox_items",
+        verbose_name="Subido por",
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True, verbose_name="Subido el",
+    )
+    processed_at = models.DateTimeField(
+        null=True, blank=True, verbose_name="Procesado el",
+    )
+
+    class Meta:
+        verbose_name = "Archivo de la bandeja de entrada"
+        verbose_name_plural = "Archivos de la bandeja de entrada"
+        ordering = ["-created_at", "-pk"]
+
+    def __str__(self):
+        return "%s (%s)" % (self.original_name, self.status)
