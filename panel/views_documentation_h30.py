@@ -1719,6 +1719,13 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
             if entry.document_type
             and entry.document_type.family == DocumentTypeCatalog.FAMILY_LABORAL
         ]
+        # S125: aviso por antigüedad (o caducidad) del contrato vigente.
+        contract_alert = _contract_alert(person)
+        for entry in laboral_documents:
+            entry.contract_alert = (
+                contract_alert
+                if entry.document_type.code == "CONTRATO" else None
+            )
         salud_documents = [
             entry for entry in current
             if entry.document_type
@@ -1872,6 +1879,7 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
             "person": person, "current": current, "obsolete": obsolete,
             "families": families,
             "laboral_documents": laboral_documents,
+            "contract_alert": contract_alert,
             "salud_documents": salud_documents,
             "missing_types_by_family": missing_types_by_family,
             "missing_required_types_by_family": missing_required_types_by_family,
@@ -1960,6 +1968,57 @@ def _move_previous_period_documents(current, obsolete, periods_newest_first):
         )
         (moved if is_previous else kept).append(entry)
     return kept, obsolete + moved
+
+
+def _contract_alert(person):
+    """
+    Age (or expiry) alert of the person's current contract.
+
+    ---
+
+    Aviso del contrato vigente de un trabajador activo (H30, S125). No
+    hay forma de saber cuándo acaba un indefinido o un fin de obra, así
+    que se avisa por antigüedad para que el supervisor revise si falta
+    un contrato más reciente. Miguel Ángel: más de 1 año amarillo, más
+    de 2 naranja, más de 3 rojo; un temporal con fin ya pasado,
+    caducado. El vigente es el contrato, prórroga o modificación de
+    fecha más reciente. Devuelve {level, css, text} o None.
+    """
+    from datetime import date
+
+    from document_explorer.employer_service import person_contracts
+
+    if person.is_active_employee is not True:
+        return None
+    latest = person_contracts(person).first()
+    if latest is None:
+        return None
+    today = date.today()
+    if latest.expiry_date and latest.expiry_date < today:
+        return {
+            "level": 3, "css": "text-bg-danger",
+            "text": "Contrato caducado el %s" % (
+                latest.expiry_date.strftime("%d/%m/%Y")
+            ),
+        }
+    if latest.issue_date is None:
+        return None
+    age_days = (today - latest.issue_date).days
+    since = latest.issue_date.strftime("%d/%m/%Y")
+    for years, level, css in (
+        (3, 3, "text-bg-danger"),
+        (2, 2, "contract-alert-orange"),
+        (1, 1, "text-bg-warning"),
+    ):
+        if age_days > 365 * years:
+            return {
+                "level": level, "css": css,
+                "text": "Contrato de hace más de %d año%s (%s): revisar "
+                        "si hay uno más reciente" % (
+                            years, "" if years == 1 else "s", since,
+                        ),
+            }
+    return None
 
 
 def _keep_latest_laboral_per_type(current, obsolete):

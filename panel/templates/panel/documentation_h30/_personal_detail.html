@@ -291,6 +291,7 @@ y se habilita "Guardar".
         <h2 class="accordion-header">
             <button class="accordion-button{% if main_accordion_open != 'collapseLaboralMain' %} collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#collapseLaboralMain">
                 <i class="bi bi-briefcase me-2"></i>Laboral
+                {% if contract_alert %}<span class="badge {{ contract_alert.css }} ms-2" title="{{ contract_alert.text }}"><i class="bi bi-clock-history"></i></span>{% endif %}
                 {% if missing_required_types_by_family.LABORAL or attention_types_by_family.LABORAL %}
                 <i class="bi bi-exclamation-triangle-fill text-danger ms-2"
                    title="{% if missing_required_types_by_family.LABORAL %}Falta: {{ missing_required_types_by_family.LABORAL|join:", " }}. {% endif %}{% if attention_types_by_family.LABORAL %}Caducado: {{ attention_types_by_family.LABORAL|join:", " }}{% endif %}"></i>
@@ -346,7 +347,7 @@ arriba (title=...) se queda para cuando el acordeón está cerrado.
                        {% if entry.pk in selected_document_ids %}checked{% endif %}
                        onchange="toggleDocumentSelection(this)">
             </td>
-            <td>{{ entry.document_type.label }}</td>
+            <td>{{ entry.document_type.label }}{% if entry.contract_alert %}<div><span class="badge {{ entry.contract_alert.css }} text-wrap text-start">{{ entry.contract_alert.text }}</span></div>{% endif %}</td>
             <td>
                 {% if entry.needs_attention %}<i class="bi bi-exclamation-triangle-fill text-danger me-1" title="Sin fecha vigente -- necesita atención"></i>{% endif %}
                 {% if entry.expiry_date %}{{ entry.expiry_date }}{% elif entry.issue_date %}<span class="text-muted small">Emisión:</span> {{ entry.issue_date }}{% else %}—{% endif %}

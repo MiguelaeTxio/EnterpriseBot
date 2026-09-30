@@ -1,0 +1,184 @@
+# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/document_explorer/management/commands/reread_active_contracts.py
+"""
+H30 (S125). Rereads the contracts of ACTIVE workers only: dates, end
+date of fixed-term contracts and employer company.
+
+---
+
+H30 (S125). Relee los contratos (contrato, prórroga, modificación) de
+los trabajadores ACTIVOS -- solo ellos, nunca un inactivo, nunca se
+activa a nadie (Miguel Ángel, S125) -- y deja en BD:
+
+- la fecha de cada contrato y la de fin si es temporal (ningún contrato
+  de los activos tenía fecha de fin: los temporales vencidos no se
+  podían avisar);
+- la empresa del contrato más reciente que la identifique (forma
+  canónica del sistema), y su carpeta en ACTIVOS/{EMPRESA}/.
+
+Una fecha existente nunca se borra por no poder leerla. Con --dry-run
+no guarda nada: informa de lo que cambiaría. Salida en pantalla y en
+archivo a la vez (--log-file), con progreso.
+"""
+import time
+from datetime import datetime
+
+from django.core.management.base import BaseCommand
+from django.db import transaction
+
+from document_explorer.contract_service import (
+    apply_reading, dates_to_write, read_contract,
+)
+from document_explorer.employer_service import (
+    canonical_employer_text, person_contracts,
+)
+from document_explorer.models import PersonIdentity
+from document_explorer.person_folder_service import (
+    expected_base_folder, free_folder_for, is_in_expected_folder,
+    move_person_documents,
+)
+
+
+class Command(BaseCommand):
+    """
+    Reread active workers' contracts.
+
+    ---
+
+    Relee los contratos de los trabajadores activos.
+    """
+
+    help = (
+        "Relee los contratos de los trabajadores ACTIVOS: fechas, fin de "
+        "los temporales y empresa (nunca inactivos)."
+    )
+
+    def add_arguments(self, parser):
+        parser.add_argument("--dry-run", action="store_true")
+        parser.add_argument("--log-file", default="")
+
+    def _log(self, message):
+        line = "[%s] %s" % (datetime.now().strftime("%H:%M:%S"), message)
+        self.stdout.write(line)
+        if self._log_handle:
+            self._log_handle.write(line + "\n")
+            self._log_handle.flush()
+
+    def handle(self, *args, **options):
+        self._log_handle = (
+            open(options["log_file"], "w", encoding="utf-8")
+            if options["log_file"] else None
+        )
+        try:
+            self._run(options["dry_run"])
+        finally:
+            if self._log_handle:
+                self._log_handle.close()
+
+    def _run(self, dry_run):
+        people = list(PersonIdentity.objects.filter(
+            is_active_employee=True,
+        ).order_by("first_surname", "second_surname", "given_name"))
+        self._log("Inicio%s: %d trabajadores ACTIVOS." % (
+            " (SIMULACIÓN, no se guarda nada)" if dry_run else "",
+            len(people),
+        ))
+        totals = {
+            "docs": 0, "dates": 0, "ends": 0, "errors": 0,
+            "employer": 0, "moved": 0,
+        }
+        started = time.monotonic()
+        for position, person in enumerate(people, start=1):
+            self._person(position, person, dry_run, totals)
+            elapsed = time.monotonic() - started
+            eta = elapsed / position * (len(people) - position)
+            if position % 5 == 0 or position == len(people):
+                self._log("Progreso: %d/%d -- ETA %dm%02ds" % (
+                    position, len(people), eta // 60, eta % 60,
+                ))
+        self._log(
+            "Fin. Contratos leídos: %d (errores %d). Fechas cambiadas: "
+            "%d, fechas de fin nuevas: %d. Empresas cambiadas: %d. "
+            "Carpetas movidas: %d." % (
+                totals["docs"], totals["errors"], totals["dates"],
+                totals["ends"], totals["employer"], totals["moved"],
+            )
+        )
+
+    def _person(self, position, person, dry_run, totals):
+        name = "%s %s, %s (pk %s)" % (
+            person.first_surname, person.second_surname,
+            person.given_name, person.pk,
+        )
+        documents = list(person_contracts(person))
+        if not documents:
+            self._log("%d. %s: sin contratos." % (position, name))
+            return
+        self._log("%d. %s: %d contrato(s)." % (
+            position, name, len(documents),
+        ))
+        readings = []
+        for document in documents:
+            totals["docs"] += 1
+            try:
+                reading = read_contract(document)
+            except Exception as exc:  # noqa: BLE001 -- se registra
+                totals["errors"] += 1
+                self._log("   %s %s: ERROR de lectura: %s" % (
+                    document.document_type.code, document.pk, exc,
+                ))
+                continue
+            if reading is None:
+                self._log("   %s %s: formato no legible." % (
+                    document.document_type.code, document.pk,
+                ))
+                continue
+            changes = dates_to_write(document, reading)
+            if changes and not dry_run:
+                apply_reading(document, reading)
+            if changes:
+                totals["dates"] += 1
+                if changes.get("expiry_date"):
+                    totals["ends"] += 1
+            self._log("   %s %s: %s, inicio %s, fin %s%s%s" % (
+                document.document_type.code, document.pk,
+                reading["profile"].legal_name if reading["profile"]
+                else "empresa no identificada",
+                reading["start_date"] or "?",
+                reading["end_date"] or (
+                    "indefinido" if reading["is_indefinite"] else "-"
+                ),
+                " -- CAMBIA %s" % {
+                    k: str(v) for k, v in changes.items()
+                } if changes else "",
+                "" if not changes or not dry_run else " (simulación)",
+            ))
+            readings.append((
+                reading["start_date"] or document.issue_date, reading,
+            ))
+        dated = [item for item in readings if item[0] and item[1]["profile"]]
+        if not dated:
+            self._log("   Empresa: ningún contrato la identifica -- "
+                      "se queda '%s'." % (person.employer_company or "vacía"))
+            return
+        dated.sort(key=lambda item: item[0], reverse=True)
+        new = canonical_employer_text(dated[0][1]["profile"])
+        if new != (person.employer_company or ""):
+            totals["employer"] += 1
+            self._log("   Empresa: '%s' -> '%s' (contrato del %s)." % (
+                person.employer_company or "vacía", new, dated[0][0],
+            ))
+            person.employer_company = new
+            if not dry_run:
+                person.save(update_fields=["employer_company", "updated_at"])
+        if not is_in_expected_folder(person):
+            totals["moved"] += 1
+            target = free_folder_for(person, expected_base_folder(person))
+            origin = person.folder_path
+            suffix = ""
+            if not dry_run:
+                with transaction.atomic():
+                    moved = move_person_documents(person, target)
+                suffix = " (%d archivo(s))" % moved
+            self._log("   Carpeta '%s' -> '%s'%s." % (
+                origin, target, suffix,
+            ))

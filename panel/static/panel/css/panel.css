@@ -1489,3 +1489,9 @@ table.table #toll-thead ~ tbody tr:nth-child(even):not(.table-secondary) td {
 .doc-request-result {
     white-space: pre-line;
 }
+
+/* H30 (S125): aviso naranja de contrato de hace más de 2 años. */
+.contract-alert-orange {
+    background-color: #fd7e14;
+    color: #fff;
+}

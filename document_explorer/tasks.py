@@ -922,3 +922,25 @@ def harvest_driving_licence_task(self, entry_pk: int) -> str:
     from .driving_licence_service import harvest_card
 
     return harvest_card(entry_pk)
+
+
+@app.task(base=DjangoTask, bind=True, max_retries=0)
+def refresh_contract_task(self, person_pk, document_type_code, entry_pk):
+    """
+    H30 (S125). Contract/ALTA hook, outside the upload request.
+
+    ---
+
+    H30 (S125). Enganche de contrato/alta fuera de la petición de
+    subida: lee el contrato (fechas y fin), recalcula la empresa y
+    traslada la carpeta si procede. Solo trabajadores activos.
+    """
+    from .employer_service import refresh_after_contract
+    from .models import DocumentIndexEntry, PersonIdentity
+
+    person = PersonIdentity.objects.filter(pk=person_pk).first()
+    if person is None:
+        return "sin persona"
+    entry = DocumentIndexEntry.objects.filter(pk=entry_pk).first()
+    result = refresh_after_contract(person, document_type_code, entry)
+    return "ok" if result is not None else "sin cambios"

@@ -458,10 +458,10 @@ def upload_subject_document(
     # persona (manda el más reciente que la identifique).
     if isinstance(subject, PersonIdentity):
         from document_explorer.employer_service import (
-            refresh_after_contract,
+            queue_contract_refresh,
         )
 
-        refresh_after_contract(subject, document_type.code)
+        queue_contract_refresh(subject, document_type.code, entry)
 
     return {
         "entry": entry, "warning": warning,

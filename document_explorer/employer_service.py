@@ -266,19 +266,23 @@ def refresh_employer_company(person, use_gemini=True, save=True):
     return result
 
 
-def refresh_after_contract(person, document_type_code):
+def refresh_after_contract(person, document_type_code, entry=None):
     """
     Hook for every contract or ALTA that enters (never raises).
 
     ---
 
     Enganche para todo contrato o alta que entra (cuarentena, panel,
-    WhatsApp), SOLO para trabajadores activos: recalcula la empresa y,
-    si no está en su carpeta ACTIVOS/{EMPRESA}/, traslada su
-    documentación allí (punto 4 de S125). A un inactivo no se le toca
-    nada ni se le activa. Nunca lanza excepción -- un fallo aquí no
-    puede tumbar la ingesta.
+    WhatsApp), SOLO para trabajadores activos: si es un contrato, lo
+    lee (fechas y fin si es temporal, S125), recalcula la empresa y, si
+    la persona no está en su carpeta ACTIVOS/{EMPRESA}/, traslada su
+    documentación allí. A un inactivo no se le toca nada ni se le
+    activa. Nunca lanza excepción -- un fallo aquí no puede tumbar la
+    ingesta. Se llama desde Celery (`queue_contract_refresh`).
     """
+    from document_explorer.contract_service import (
+        apply_reading, read_contract,
+    )
     from document_explorer.person_folder_service import relocate_if_needed
 
     if document_type_code not in ACTIVATING_TYPE_CODES:
@@ -287,6 +291,10 @@ def refresh_after_contract(person, document_type_code):
         return None
     result = None
     try:
+        if entry is not None and document_type_code in CONTRACT_TYPE_CODES:
+            reading = read_contract(entry)
+            if reading is not None:
+                apply_reading(entry, reading)
         result = refresh_employer_company(person)
         relocated, folder, moved = relocate_if_needed(person)
         result["relocated_to"] = folder if relocated else ""
@@ -296,3 +304,25 @@ def refresh_after_contract(person, document_type_code):
             person.pk,
         )
     return result
+
+
+def queue_contract_refresh(person, document_type_code, entry):
+    """
+    Queue the hook after the current transaction (Gemini is slow).
+
+    ---
+
+    Encola el enganche al confirmar la transacción en curso: Gemini
+    tarda y nunca debe ir dentro de la petición web de una subida.
+    """
+    from django.db import transaction
+
+    from document_explorer.tasks import refresh_contract_task
+
+    if document_type_code not in ACTIVATING_TYPE_CODES:
+        return
+    if person.is_active_employee is not True:
+        return
+    transaction.on_commit(lambda: refresh_contract_task.delay(
+        person.pk, document_type_code, entry.pk if entry else None,
+    ))
