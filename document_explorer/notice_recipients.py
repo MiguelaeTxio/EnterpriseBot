@@ -119,6 +119,7 @@ class ScopeSnapshot:
     excluded_requirement_ids: set = field(default_factory=set)
     excluded_type_ids: set = field(default_factory=set)
     company_key: object = None
+    whatsapp_enabled: bool = False
 
     def covers(self, notice):
         """
@@ -204,6 +205,7 @@ def load_scopes(company=None):
             person_ids = {p.pk for p in scope.personal_persons.all()}
             for group in scope.personal_groups.all():
                 person_ids |= {p.pk for p in group.members.all()}
+            snapshot.whatsapp_enabled = scope.whatsapp_enabled
             snapshot.personal_all = scope.personal_all
             snapshot.personal_companies = {
                 resolver.key(value) for value in scope.personal_companies

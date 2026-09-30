@@ -10,8 +10,11 @@ según su ámbito (`notice_recipients`), con las plantillas nuevas
 `document_expiry_notice` / `document_missing_notice`. Sustituye al
 envío de las filas antiguas de `DocumentAlert` (30/15/7 automáticas).
 
-Solo para empresas con el interruptor encendido
-(`DocumentAlertSettings`). Sin repeticiones (`NoticeDelivery`):
+Solo a los destinatarios con su propio interruptor encendido
+(`NoticeRecipientScope.whatsapp_enabled`, S126 -- antes era uno por
+empresa, `DocumentAlertSettings`: encenderlo mandaba a todos; Miguel
+Ángel: "debería de afectarme solamente a mí"). Sin repeticiones
+(`NoticeDelivery`):
 - Próximo a caducar: una vez por cada aviso alcanzado.
 - Caducado y falta: al aparecer y después un recordatorio cada 7
   días mientras sigan sin resolverse (decisión de Miguel Ángel, S122).
@@ -89,22 +92,27 @@ def send_due_notices():
 
     ---
 
-    Envía los avisos que tocan hoy en cada empresa con el interruptor
-    encendido. Nunca deja que un fallo aborte el resto. Devuelve un
-    resumen legible para el log de la tarea.
+    Envía los avisos que tocan hoy a cada destinatario que tiene su
+    propio interruptor encendido (S126). Nunca deja que un fallo aborte
+    el resto. Devuelve un resumen legible para el log de la tarea.
     """
-    from document_explorer.models import NoticeDelivery
+    from document_explorer.models import (
+        NoticeDelivery, NoticeRecipientScope,
+    )
     from document_management.alert_service import (
         _build_twilio_client, _get_whatsapp_sender,
     )
-    from document_management.models import DocumentAlertSettings
+    from ivr_config.models import Company
     from whatsapp.models import WhatsAppTemplate
 
-    enabled = DocumentAlertSettings.objects.filter(
-        whatsapp_enabled=True,
-    ).select_related("company")
-    if not enabled:
-        return "Envío automático por WhatsApp apagado en todas las empresas."
+    company_ids = set(
+        NoticeRecipientScope.objects.filter(
+            whatsapp_enabled=True, company_user__is_active=True,
+        ).values_list("company_user__company_id", flat=True),
+    )
+    if not company_ids:
+        return "Ningún destinatario tiene activado el envío por WhatsApp."
+    enabled = Company.objects.filter(pk__in=company_ids)
 
     pending = []
     for domain in (notices.DOMAIN_PERSONAL, notices.DOMAIN_MACHINE):
@@ -115,8 +123,7 @@ def send_due_notices():
 
     now = timezone.now()
     sent = skipped = errors = 0
-    for settings_row in enabled:
-        company = settings_row.company
+    for company in enabled:
         templates = {
             t.name: t for t in WhatsAppTemplate.objects.filter(
                 company=company, is_active=True,
@@ -139,7 +146,11 @@ def send_due_notices():
             )
             continue
 
-        scopes = load_scopes(company)
+        # Solo los destinatarios con su interruptor encendido (S126).
+        scopes = [
+            scope for scope in load_scopes(company)
+            if scope.whatsapp_enabled
+        ]
         deliveries = {
             (d.company_user_id, d.notice_key): d
             for d in NoticeDelivery.objects.filter(

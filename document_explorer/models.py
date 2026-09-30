@@ -3116,6 +3116,14 @@ class NoticeRecipientScope(models.Model):
         related_name="excluded_in_notice_scopes",
         verbose_name="Documentos excluidos",
     )
+    whatsapp_enabled = models.BooleanField(
+        default=False,
+        verbose_name="Recibe sus avisos por WhatsApp",
+        help_text=(
+            "H30 (S126). Interruptor de cada destinatario: encenderlo solo "
+            "afecta a sus propios avisos, nunca a los de los demás."
+        ),
+    )
     updated_by = models.ForeignKey(
         "ivr_config.CompanyUser",
         null=True,

@@ -14,9 +14,9 @@ los documentos que va a llevar cada requisito y los avisos que vamos
 a asignar a esos documentos". La creación de requisitos sigue en su
 propia pestaña, sin cambios.
 
-Aquí vive también el interruptor del envío automático por WhatsApp
-(`DocumentAlertSettings`), apagado mientras la documentación no esté
-al día.
+Aquí vive también el interruptor del envío automático por WhatsApp:
+desde S126 uno por destinatario (`NoticeRecipientScope.
+whatsapp_enabled`), cada usuario enciende solo el suyo.
 """
 import json
 from urllib.parse import urlencode
@@ -39,11 +39,10 @@ from document_explorer.notice_recipients import (
     RECIPIENT_ROLES, CompanyKeyResolver, docs_supervisors, load_scopes,
     recipients_for,
 )
-from document_management.models import DocumentAlertSettings
 from fleet.models import MachineAsset
 from ivr_config.models import CompanyUser
 from panel.mixins import (
-    CompanyUserRequiredMixin, DocsUploadAccessMixin, SupervisorAccessMixin,
+    CompanyUserRequiredMixin, DocsUploadAccessMixin,
 )
 from panel.models import PanelNavigationState
 
@@ -56,11 +55,6 @@ MONTH_NAMES = (
 # H30 (S125): quién da luz verde para pedir documentación al trabajador.
 DOC_REQUEST_ROLES = {
     CompanyUser.ROLE_DOCS_SUPERVISOR,
-    CompanyUser.ROLE_ADMIN,
-}
-WHATSAPP_TOGGLE_ROLES = {
-    CompanyUser.ROLE_SUPERVISOR,
-    CompanyUser.ROLE_WORKSHOPBOSS,
     CompanyUser.ROLE_ADMIN,
 }
 
@@ -343,6 +337,10 @@ def _recipients_context(editor):
                 ),
                 "can_edit": _can_edit_scope(editor, supervisor),
                 "is_me": supervisor.pk == editor.pk,
+                "whatsapp": bool(
+                    scopes.get(supervisor.pk)
+                    and scopes[supervisor.pk].whatsapp_enabled
+                ),
                 "scope": _scope_to_dict(
                     scopes.get(supervisor.pk), company_options, resolver,
                 ),
@@ -470,12 +468,10 @@ class DocumentAlertsPaneView(CompanyUserRequiredMixin, View):
                     if value
                 }),
             ),
-            "whatsapp_enabled": DocumentAlertSettings.is_whatsapp_enabled(
-                company_user.company,
-            ),
-            "can_toggle_whatsapp": (
-                company_user.role in WHATSAPP_TOGGLE_ROLES
-            ),
+            "whatsapp_enabled": NoticeRecipientScope.objects.filter(
+                company_user=company_user, whatsapp_enabled=True,
+            ).exists(),
+            "can_toggle_whatsapp": company_user.role in RECIPIENT_ROLES,
             "recipients_data": _recipients_context(company_user),
         })
 
@@ -524,27 +520,34 @@ class DocumentAlertRulesSaveView(CompanyUserRequiredMixin, View):
         return JsonResponse({"ok": True, "rules": saved})
 
 
-class DocumentAlertWhatsAppToggleView(SupervisorAccessMixin, View):
+class DocumentAlertWhatsAppToggleView(CompanyUserRequiredMixin, View):
     """
-    POST: switch the automatic WhatsApp sending on or off.
+    POST: switch the user's own WhatsApp notices on or off.
 
     ---
 
-    POST: enciende o apaga el envío automático por WhatsApp de los
-    avisos de la empresa del usuario (`enabled` = "1" o "0").
+    POST: enciende o apaga el envío por WhatsApp de los avisos del
+    PROPIO usuario (`enabled` = "1" o "0"). Desde S126 cada
+    destinatario tiene el suyo -- Miguel Ángel: "el hecho de que yo
+    conecte el aviso por WhatsApp debería de afectarme solamente a
+    mí". Antes era uno por empresa y encenderlo mandaba a todos.
     """
 
     def post(self, request):
         company_user = request.user.company_user
-        enabled = request.POST.get("enabled") == "1"
-        settings_row, _created = (
-            DocumentAlertSettings.objects.get_or_create(
-                company=company_user.company,
+        if company_user.role not in RECIPIENT_ROLES:
+            return JsonResponse(
+                {"ok": False, "error": "Solo los supervisores de "
+                 "documentación y los administradores reciben avisos."},
+                status=403,
             )
+        enabled = request.POST.get("enabled") == "1"
+        scope, _created = NoticeRecipientScope.objects.get_or_create(
+            company_user=company_user,
         )
-        settings_row.whatsapp_enabled = enabled
-        settings_row.updated_by = company_user
-        settings_row.save(
+        scope.whatsapp_enabled = enabled
+        scope.updated_by = company_user
+        scope.save(
             update_fields=["whatsapp_enabled", "updated_by", "updated_at"],
         )
         return JsonResponse({"ok": True, "enabled": enabled})

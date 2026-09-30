@@ -73,10 +73,10 @@ window.saveDocAlertsNav = function (patch) {
                        {% if whatsapp_enabled %}checked{% endif %}
                        {% if not can_toggle_whatsapp %}disabled{% endif %}
                        onchange="toggleAlertsWhatsApp(this)">
-                <label class="form-check-label fw-bold" for="alertsWhatsAppSwitch">Envío automático por WhatsApp</label>
+                <label class="form-check-label fw-bold" for="alertsWhatsAppSwitch">Recibir mis avisos por WhatsApp</label>
             </div>
             <span class="small text-muted" id="alertsWhatsAppState">
-                {% if whatsapp_enabled %}Activo: los avisos se envían cada día a las 8:00.{% else %}Apagado: no se envía ningún aviso por WhatsApp.{% endif %}
+                {% if whatsapp_enabled %}Activo: tus avisos te llegan cada día a las 8:00. Solo te afecta a ti.{% else %}Apagado: no te llega ningún aviso por WhatsApp. Solo te afecta a ti.{% endif %}
             </span>
         </div>
     </div>
@@ -360,7 +360,7 @@ window.saveDocAlertsNav = function (patch) {
 
     window.toggleAlertsWhatsApp = function (input) {
         const enabled = input.checked;
-        if (enabled && !confirm('¿Activar el envío automático por WhatsApp? En el próximo envío diario de las 8:00 saldrán todos los avisos que correspondan.')) {
+        if (enabled && !confirm('¿Recibir tus avisos por WhatsApp? En el próximo envío diario de las 8:00 te llegarán todos los de tu ámbito. A los demás destinatarios no les afecta.')) {
             input.checked = false;
             return;
         }
@@ -370,14 +370,15 @@ window.saveDocAlertsNav = function (patch) {
             method: 'POST', body: formData,
             headers: {'X-CSRFToken': csrfToken()},
         }).then(r => r.json()).then(data => {
-            if (!data.ok) throw new Error();
+            if (!data.ok) throw new Error(data.error || '');
             document.getElementById('alertsWhatsAppState').textContent = data.enabled
-                ? 'Activo: los avisos se envían cada día a las 8:00.'
-                : 'Apagado: no se envía ningún aviso por WhatsApp.';
-            showToast(data.enabled ? 'Envío automático por WhatsApp ACTIVADO.' : 'Envío automático por WhatsApp apagado.', false);
-        }).catch(() => {
+                ? 'Activo: tus avisos te llegan cada día a las 8:00. Solo te afecta a ti.'
+                : 'Apagado: no te llega ningún aviso por WhatsApp. Solo te afecta a ti.';
+            showToast(data.enabled ? 'Tus avisos por WhatsApp: ACTIVADOS.' : 'Tus avisos por WhatsApp: apagados.', false);
+            if (window.docAlertsSetMyWhatsApp) window.docAlertsSetMyWhatsApp(data.enabled);
+        }).catch(err => {
             input.checked = !enabled;
-            showToast('No se pudo cambiar el envío por WhatsApp.', true);
+            showToast('No se pudo cambiar el envío por WhatsApp.' + (err && err.message ? ' ' + err.message : ''), true);
         });
     };
 
@@ -433,7 +434,7 @@ window.saveDocAlertsNav = function (patch) {
                     .every(key => !scope[key].length);
             return `<button type="button" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center ${current && current.id === sup.id ? 'active' : ''}" onclick="selectRecipient(${sup.id})">
                 <span>${escapeHtml(sup.name)}${sup.is_me ? ' (tú)' : ''}</span>
-                ${empty ? '<span class="badge text-bg-secondary">No recibe nada</span>' : ''}
+                <span>${sup.whatsapp ? '<span class="badge text-bg-success me-1"><i class="bi bi-whatsapp"></i> WhatsApp</span>' : ''}${empty ? '<span class="badge text-bg-secondary">No recibe nada</span>' : ''}</span>
             </button>`;
         }).join('');
     }
@@ -496,6 +497,13 @@ window.saveDocAlertsNav = function (patch) {
     function setDirty(isDirty) {
         document.getElementById('recipientsDirtyBadge').classList.toggle('d-none', !isDirty);
     }
+
+    // S126: el interruptor de arriba cambia el WhatsApp del propio
+    // usuario; la lista de destinatarios lo refleja al momento.
+    window.docAlertsSetMyWhatsApp = function (enabled) {
+        const me = data.supervisors.find(sup => sup.is_me);
+        if (me) { me.whatsapp = enabled; renderList(); }
+    };
 
     window.selectRecipient = function (supervisorId) {
         current = data.supervisors.find(sup => sup.id === supervisorId) || null;
