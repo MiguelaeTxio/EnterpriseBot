@@ -2097,6 +2097,9 @@ def _person_employment_periods(person):
         domain_object_id=person.pk,
         entry_kind=DocumentIndexEntry.KIND_FILE,
         deleted_at__isnull=True, purged_at__isnull=True,
+        # S125: un obsoleto (duplicado exacto, carpeta "obsoleto") no
+        # es un periodo -- salía como "Alta sin fecha".
+        is_obsolete=False,
         document_type__code__in=periods.PERIOD_CODES,
     ).select_related("document_type"):
         by_code[entry.document_type.code].append(entry)

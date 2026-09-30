@@ -190,6 +190,7 @@ def person_contracts(person, codes=CONTRACT_TYPE_CODES):
         ),
         domain_object_id=person.pk,
         document_type__code__in=codes,
+        is_obsolete=False,  # S125: nunca un duplicado exacto obsoleto.
         deleted_at__isnull=True,
         purged_at__isnull=True,
     ).select_related("document_type").order_by(
