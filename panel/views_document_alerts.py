@@ -801,8 +801,9 @@ class NoticeScopeSaveView(CompanyUserRequiredMixin, View):
 
     ---
 
-    POST: guarda el ámbito de avisos de un supervisor de documentación
-    (JSON `scope`). Solo el propio supervisor o el administrador.
+    POST: guarda el ámbito de avisos de un destinatario (supervisor de
+    documentación o administrador, S126) (JSON `scope`). Solo el propio
+    destinatario o el administrador.
     Valores fuera de las opciones reales se descartan.
     """
 
@@ -810,7 +811,7 @@ class NoticeScopeSaveView(CompanyUserRequiredMixin, View):
         editor = request.user.company_user
         supervisor = get_object_or_404(
             CompanyUser, pk=supervisor_pk, company=editor.company,
-            role=CompanyUser.ROLE_DOCS_SUPERVISOR,
+            role__in=RECIPIENT_ROLES,
         )
         if not _can_edit_scope(editor, supervisor):
             return JsonResponse(
