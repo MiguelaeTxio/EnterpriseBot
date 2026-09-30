@@ -477,6 +477,8 @@ def _recent_accepted(person):
         processed_at__gte=since,
         entry__isnull=False,
         entry__is_obsolete=False,
+        entry__deleted_at__isnull=True,
+        entry__purged_at__isnull=True,
         entry__document_type__isnull=False,
     ).select_related(
         "entry", "entry__document_type", "request",
@@ -535,11 +537,17 @@ def process_submission(submission_id):
     submission.content_sha256 = hashlib.sha256(data).hexdigest()
     submission.save(update_fields=["content_sha256"])
     context = _Delivery(submission, person, data, content_type, extension)
+    # Solo es repetido si el documento que contiene esa foto sigue vivo
+    # en la ficha (S125: Miguel Ángel borró su permiso y al reenviarlo
+    # se le contestó "ya la teníamos").
     same_file = WorkerDocumentSubmission.objects.filter(
         person=person,
         content_sha256=submission.content_sha256,
         status=WorkerDocumentSubmission.STATUS_ACCEPTED,
         entry__document_type__isnull=False,
+        entry__is_obsolete=False,
+        entry__deleted_at__isnull=True,
+        entry__purged_at__isnull=True,
     ).exclude(pk=submission.pk).select_related(
         "entry__document_type",
     ).order_by("-processed_at").first()
@@ -918,6 +926,11 @@ def _append(context, prior, verdict):
                 "aceptado en un solo PDF."
             ),
         )
+    # Las entregas cuyo contenido está ahora en el PDF unido apuntan a
+    # él: si ese PDF se borra, sus caras dejan de contar como repetidas.
+    WorkerDocumentSubmission.objects.filter(
+        entry=old_entry, status=WorkerDocumentSubmission.STATUS_ACCEPTED,
+    ).update(entry=new_entry)
     if prior.request and prior.request.received_entry_id == old_entry.pk:
         prior.request.received_entry = new_entry
         prior.request.save(update_fields=["received_entry"])
