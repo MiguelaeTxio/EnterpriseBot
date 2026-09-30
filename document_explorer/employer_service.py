@@ -39,7 +39,9 @@ from django.contrib.contenttypes.models import ContentType
 from google.genai.types import GenerateContentConfig, HttpOptions, Part
 
 from ai_services.gemini_client import DEFAULT_MODEL, get_gemini_client
-from ai_services.gemini_rate_limiter import acquire_gemini_slot
+from document_explorer.classification_service import (
+    _generate_content_with_retry,
+)
 from document_explorer.models import (
     CompanyFiscalProfile, DocumentIndexEntry, PersonIdentity,
 )
@@ -153,8 +155,8 @@ def company_from_file(entry):
     ) % (options, NONE_CODE)
     data = download_bytes(entry.bucket, entry.blob_name)
     client = get_gemini_client()
-    acquire_gemini_slot()
-    response = client.models.generate_content(
+    response = _generate_content_with_retry(
+        client,
         model=DEFAULT_MODEL,
         contents=[Part.from_bytes(data=data, mime_type=content_type), prompt],
         config=GenerateContentConfig(

@@ -48,7 +48,9 @@ from django.utils import timezone
 from google.genai.types import GenerateContentConfig, HttpOptions, Part
 
 from ai_services.gemini_client import DEFAULT_MODEL, get_gemini_client
-from ai_services.gemini_rate_limiter import acquire_gemini_slot
+from document_explorer.classification_service import (
+    _generate_content_with_retry,
+)
 from document_explorer import index_writer, naming_service
 from document_explorer.buckets import NO_CONFORMES_PREFIX
 from document_explorer.models import (
@@ -489,7 +491,83 @@ def _recent_accepted(person):
     return recent
 
 
-def process_submission(submission_id):
+class TransientGeminiError(Exception):
+    """
+    Gemini saturated/unavailable after its own retries: try later.
+
+    ---
+
+    Gemini saturado o caído tras sus propios reintentos: se vuelve a
+    intentar más tarde desde la tarea (S125, 429 real en la prueba de
+    cuatro fotos a la vez).
+    """
+
+
+def _is_transient(exc):
+    """
+    Whether a Gemini failure is transient (quota, timeout, unavailable).
+
+    ---
+
+    Si el fallo de Gemini es pasajero (cuota, tiempo agotado, caído).
+    """
+    text = str(exc)
+    return any(mark in text for mark in (
+        "429", "RESOURCE_EXHAUSTED", "503", "UNAVAILABLE", "504",
+        "DEADLINE_EXCEEDED",
+    ))
+
+
+def _looks_like_other_side(verdict, doc_type):
+    """
+    The side of a card without holder nor expiry (typically the back).
+
+    ---
+
+    La cara de un documento sin titular ni caducidad legibles (lo
+    normal en un reverso), de un tipo que sí tiene caducidad.
+    """
+    return bool(
+        doc_type.tracks_expiry
+        and _parse_iso(verdict.get("expiry_date")) is None
+        and not _holder_read(verdict)
+    )
+
+
+def _only_other_side(doc_type):
+    """
+    Rejection reason for a side that never got its front.
+
+    ---
+
+    Motivo para una cara que nunca recibió su anverso: no es "de otra
+    persona", es que falta la cara con los datos.
+    """
+    return (
+        "solo una cara de su %s, sin la cara donde figuran sus datos y "
+        "la caducidad. Envíe también esa cara" % doc_type.label
+    )
+
+
+def _wait_for_other_side(context, verdict):
+    """
+    Park a side that arrived before its front; the task retries it.
+
+    ---
+
+    Aparca una cara que ha llegado antes que su anverso; la tarea la
+    reintenta en unos segundos. No bloquea a las demás fotos de la
+    persona (solo espera PROCESSING, no WAITING).
+    """
+    submission = context.submission
+    submission.status = WorkerDocumentSubmission.STATUS_WAITING
+    submission.verdict = verdict
+    submission.reason = "Esperando la otra cara del documento."
+    submission.save(update_fields=["status", "verdict", "reason"])
+    return WorkerDocumentSubmission.STATUS_WAITING
+
+
+def process_submission(submission_id, final=False):
     """
     Check one attachment and act.
 
@@ -515,8 +593,12 @@ def process_submission(submission_id):
     submission = WorkerDocumentSubmission.objects.select_related(
         "person",
     ).get(pk=submission_id)
-    if submission.status != WorkerDocumentSubmission.STATUS_PROCESSING:
+    if submission.status not in (
+        WorkerDocumentSubmission.STATUS_PROCESSING,
+        WorkerDocumentSubmission.STATUS_WAITING,
+    ):
         return submission.status
+    waited = submission.status == WorkerDocumentSubmission.STATUS_WAITING
     person = submission.person
     content_type = (submission.media_content_type or "").split(";")[0]
     content_type = content_type.lower()
@@ -564,11 +646,21 @@ def process_submission(submission_id):
             context, queue, "un archivo que no es una foto ni un PDF", {},
         )
     candidates = _candidate_types(queue, recent)
-    try:
-        verdict = _read_with_gemini(data, content_type, candidates)
-    except Exception as exc:
-        logger.exception("# [DOC REQUEST] Gemini falló (%s)", submission.pk)
-        return _fail(context, "Gemini no pudo leer el archivo: %s" % exc)
+    if waited and submission.verdict:
+        # Ya leída: solo se esperaba a su anverso.
+        verdict = submission.verdict
+    else:
+        try:
+            verdict = _read_with_gemini(data, content_type, candidates)
+        except Exception as exc:
+            if _is_transient(exc) and not final:
+                raise TransientGeminiError(str(exc)) from exc
+            logger.exception(
+                "# [DOC REQUEST] Gemini falló (%s)", submission.pk,
+            )
+            return _fail(
+                context, "Gemini no pudo leer el archivo: %s" % exc,
+            )
 
     code = (verdict.get("detected_type_code") or "").strip().upper()
     described = (verdict.get("detected_description") or "").strip()
@@ -577,6 +669,12 @@ def process_submission(submission_id):
     )
     if requested is not None:
         problem = _check_document(verdict, person, requested.document_type)
+        if problem and _looks_like_other_side(
+            verdict, requested.document_type,
+        ):
+            if not final:
+                return _wait_for_other_side(context, verdict)
+            problem = _only_other_side(requested.document_type)
         if problem:
             return _refuse(context, queue, problem, verdict)
         return _accept(context, requested.document_type, verdict, requested)
@@ -598,6 +696,10 @@ def process_submission(submission_id):
             verdict,
         )
     problem = _check_document(verdict, person, chosen)
+    if problem and _looks_like_other_side(verdict, chosen):
+        if not final:
+            return _wait_for_other_side(context, verdict)
+        problem = _only_other_side(chosen)
     if problem:
         return _refuse(context, queue, problem, verdict)
     return _accept(context, chosen, verdict, None)
@@ -655,8 +757,8 @@ def _read_with_gemini(data, content_type, candidates):
         "no se leen. No inventes ninguna fecha."
     ) % (types_text, OTHER_CODE)
     client = get_gemini_client()
-    acquire_gemini_slot()
-    response = client.models.generate_content(
+    response = _generate_content_with_retry(
+        client,
         model=DEFAULT_MODEL,
         contents=[Part.from_bytes(data=data, mime_type=content_type), prompt],
         config=GenerateContentConfig(
@@ -994,8 +1096,8 @@ def _already_included(old_data, old_entry, context):
         "cara o página repetida, false si es una cara o página nueva."
     )
     client = get_gemini_client()
-    acquire_gemini_slot()
-    response = client.models.generate_content(
+    response = _generate_content_with_retry(
+        client,
         model=DEFAULT_MODEL,
         contents=[
             Part.from_bytes(

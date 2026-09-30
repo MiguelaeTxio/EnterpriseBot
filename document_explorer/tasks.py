@@ -852,6 +852,11 @@ def check_system_agents_task(self) -> None:
     check_agents()
 
 
+# Intento (0-based de Celery) a partir del cual un adjunto de WhatsApp se
+# decide sin esperar más a su otra cara ni a Gemini (S125).
+FINAL_SUBMISSION_ATTEMPT = 10
+
+
 @app.task(base=DjangoTask, bind=True, max_retries=60)
 def process_worker_submission_task(self, submission_id: int) -> str:
     """
@@ -873,7 +878,9 @@ def process_worker_submission_task(self, submission_id: int) -> str:
     dos se archivaron (ninguno veía todavía al otro).
     """
     from .models import WorkerDocumentSubmission
-    from .worker_request_service import process_submission
+    from .worker_request_service import (
+        TransientGeminiError, process_submission,
+    )
 
     submission = WorkerDocumentSubmission.objects.filter(
         pk=submission_id,
@@ -887,7 +894,18 @@ def process_worker_submission_task(self, submission_id: int) -> str:
     ).exists()
     if earlier_pending and self.request.retries < self.max_retries:
         raise self.retry(countdown=10)
-    return process_submission(submission_id)
+    # Último intento a los ~5 min de reintentos: se decide sin esperar
+    # más (rechazo o error visibles, nunca en silencio).
+    final = self.request.retries >= FINAL_SUBMISSION_ATTEMPT
+    try:
+        result = process_submission(submission_id, final=final)
+    except TransientGeminiError:
+        # Gemini saturado (429) tras sus propios reintentos: más tarde.
+        raise self.retry(countdown=60)
+    if result == WorkerDocumentSubmission.STATUS_WAITING:
+        # Otra cara llegada antes que su anverso: se espera a que entre.
+        raise self.retry(countdown=30)
+    return result
 
 
 @app.task(base=DjangoTask, bind=True, max_retries=0)

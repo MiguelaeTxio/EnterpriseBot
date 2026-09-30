@@ -3888,12 +3888,14 @@ class WorkerDocumentSubmission(models.Model):
     STATUS_REJECTED = "REJECTED"
     STATUS_ERROR = "ERROR"
     STATUS_DUPLICATE = "DUPLICATE"
+    STATUS_WAITING = "WAITING"
     STATUS_CHOICES = [
         (STATUS_PROCESSING, "Revisando"),
         (STATUS_ACCEPTED, "Aceptado"),
         (STATUS_REJECTED, "No conforme"),
         (STATUS_ERROR, "Error"),
         (STATUS_DUPLICATE, "Repetido (ya lo teníamos)"),
+        (STATUS_WAITING, "Esperando la otra cara"),
     ]
 
     person = models.ForeignKey(
