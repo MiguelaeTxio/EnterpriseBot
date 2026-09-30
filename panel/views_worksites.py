@@ -1,13 +1,15 @@
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/views_worksites.py
 """
-H31 (S115). CRUD mínimo de Obras -- listado + alta simple, sin
-edición ni borrado todavía (primer alcance, ver deuda técnica 4.23
-del documento maestro para el diseño completo previsto). Suficiente
-para que "Generar documento" y el envío de circulares por WhatsApp
-tengan obras reales entre las que elegir hoy mismo.
+H31 (S115). CRUD mínimo de Obras -- listado + alta simple (primer
+alcance, ver deuda técnica 4.23 del documento maestro para el diseño
+completo previsto: cliente real, coordenadas...). Suficiente para que
+"Generar documento" y el envío de circulares por WhatsApp tengan obras
+reales entre las que elegir hoy mismo. H30 (S126): borrado, pedido por
+Miguel Ángel.
 """
 from django.contrib import messages
-from django.shortcuts import redirect, render
+from django.db.models import Count
+from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views import View
 
@@ -29,7 +31,9 @@ class WorksiteListView(AdminRoleRequiredMixin, View):
     template_name = "panel/worksites/worksite_list.html"
 
     def get(self, request):
-        worksites = Worksite.objects.all().select_related("managing_company")
+        worksites = Worksite.objects.all().select_related(
+            "managing_company",
+        ).annotate(n_circulars=Count("document_acknowledgments"))
         return render(request, self.template_name, {
             "worksites": worksites,
             "active_nav": "worksites",
@@ -54,4 +58,28 @@ class WorksiteListView(AdminRoleRequiredMixin, View):
         worksite.save(update_fields=["code"])
 
         messages.success(request, "Obra «%s» dada de alta con código %s." % (name, worksite.code))
+        return redirect(reverse("panel:worksites_list"))
+
+
+class WorksiteDeleteView(AdminRoleRequiredMixin, View):
+    """
+    POST: delete one worksite.
+
+    ---
+
+    POST: elimina una obra (H30, S126, pedido por Miguel Ángel). Las
+    circulares ya enviadas que la tuvieran se conservan, sin obra
+    (`DocumentAcknowledgment.worksite` es SET_NULL); la pantalla avisa
+    de cuántas son antes de confirmar.
+    """
+
+    def post(self, request, pk):
+        worksite = get_object_or_404(Worksite, pk=pk)
+        label = "%s (%s)" % (worksite.name, worksite.code)
+        linked = worksite.document_acknowledgments.count()
+        worksite.delete()
+        message = "Obra %s eliminada." % label
+        if linked:
+            message += " %d circular(es) enviada(s) quedan sin obra." % linked
+        messages.success(request, message)
         return redirect(reverse("panel:worksites_list"))

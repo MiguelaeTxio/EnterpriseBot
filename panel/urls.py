@@ -15,7 +15,7 @@ from panel.views_task_photos import (
     TaskPhotoUploadView,
     TaskPhotoWidgetView,
 )
-from panel.views_worksites import WorksiteListView
+from panel.views_worksites import WorksiteDeleteView, WorksiteListView
 from panel.views_circulars_h31 import (
     CircularCreateView,
     CircularEditView,
@@ -599,6 +599,7 @@ urlpatterns = [
     path("documentacion/circulares/", CircularListView.as_view(), name="circulars_list"),
     path("documentacion/circulares/firma/", CircularBulkSignatureView.as_view(), name="circulars_bulk_signature"),
     path("obras/", WorksiteListView.as_view(), name="worksites_list"),
+    path("obras/<int:pk>/eliminar/", WorksiteDeleteView.as_view(), name="worksite_delete"),
     path("documentacion/circulares/nueva/", CircularCreateView.as_view(), name="circulars_create"),
     path("documentacion/circulares/<int:pk>/", CircularEditView.as_view(), name="circulars_edit"),
     path("documentacion/circulares/<int:pk>/guardar-contenido/", CircularSaveContentView.as_view(), name="circulars_save_content"),
