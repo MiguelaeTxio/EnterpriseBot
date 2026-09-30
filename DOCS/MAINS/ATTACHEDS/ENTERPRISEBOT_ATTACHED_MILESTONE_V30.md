@@ -9000,107 +9000,177 @@ revisar el anexo H27 y el código. El `--apply` del Plan de calor (008) no
 se llegó a lanzar (se relanzó el dry-run 007); se repitió como 010.
 La release `relevo-imagenes` se vació tras su uso (datos personales).
 
-## Hoja de Ruta para la Siguiente Sesión (S125) -- REESCRITA al cierre,
-## sustituye por completo a la de S124
+### COMPLETADAS EN S125 (29-30/09/2026, PEE PC; H30 -- puntos 1-4 de la
+### hoja de ruta hechos, ingesta de documentos de trabajadores por
+### WhatsApp validada con pruebas reales, empresa y contratos de activos)
+
+**Punto 1 -- Plantillas de solicitud al trabajador.** Comando
+`create_document_request_whatsapp_templates` (reutiliza el de S122):
+`document_request_missing` (`HX6bbc01772d16ab0a649d4970a3438caa`) y
+`document_request_expiry` (`HX5cd20818b24971f3e42d59d12657de8e`), UTILITY,
+las dos con "Responda a este mensaje con una foto o un PDF del
+documento.". Creadas y enviadas a Meta el 29/09 ~13:48; a 30/09 seguían
+`pending` (Meta las aprueba en torno a las 13:00 del 30/09 según Miguel
+Ángel). **Queda el cierre real en el punto 1 de S126.**
+
+**Punto 2 -- "Lo aporta el trabajador" (CERRADO, verificado en BD).**
+`DocumentTypeCatalog.worker_provides` (0165), marcados DNI,
+CARNET_CONDUCIR, TACOGRAFO ("Tarjeta de Conductor"), SEG_SOCIAL y
+TARJETA_SANITARIA; CONTRATO y RECONOCIMIENTO_MEDICO sin marcar. El
+Catálogo de tipos pasa al formato único 4.24 (casilla por fila con
+Guardando/Guardado/error, filtro, orden múltiple, selección persistida,
+acciones masivas).
+
+**Punto 3 -- Ingesta de documentos de trabajadores por WhatsApp
+(construido y validado con pruebas reales de Miguel Ángel).** Diseño de
+Miguel Ángel, que sustituye al de S124:
+- **Solicitud desde Avisos > Pendientes** (ADMIN/supervisor de
+  documentación): casilla en los avisos de Personal cuyo tipo aporta el
+  trabajador, con móvil válido y **acceso al panel**; "Pedir por WhatsApp
+  al trabajador". Cola por trabajador: una solicitud activa; al aceptarse
+  se pide la siguiente. `WorkerDocumentRequest` / `WorkerDocumentSubmission`
+  (0166-0169, 0173).
+- **Nada va a la cuarentena.** Gemini lee cada adjunto contra lo pedido o,
+  sin solicitud, contra el catálogo de Personal (sin la familia Media):
+  conforme (suyo, no caducado, más reciente que el vigente) -> directo a
+  la ficha con nombre canónico; no conforme -> `NO CONFORMES/` y aviso
+  "El archivo entregado no es el solicitado. Hemos solicitado X y usted
+  ha entregado Y" / "no se ha podido archivar: usted ha entregado ...".
+- **Segunda entrega** (otra cara) en 24 h: se une al aceptado en un PDF;
+  **repetido** (misma huella SHA-256, o Gemini dice que esa cara ya está):
+  "Esta cara de su X ya la teníamos"; solo cuenta si el documento que la
+  contiene sigue vivo. **Varias fotos a la vez:** una persona se procesa
+  en orden; un reverso que llega antes que su anverso espera (WAITING) y
+  se une al llegar; 429/504 de Gemini se reintentan.
+- **Solo trabajadores dados de alta con acceso al panel** (Miguel Ángel:
+  sin acceso "lo tratamos como si no estuviese en la empresa").
+- **Permiso de conducción:** al entrar por cualquier vía se lee su matriz
+  de clases (`driving_licence_service`, reglas del lote de S120).
+- Pruebas reales (teléfono de Miguel Ángel): rechazo de fotos que no son
+  documentos, repetidos, anverso+reverso unidos, borrar y reenviar, cuatro
+  fotos a la vez en desorden. Su permiso vigente: entrada 52250, PDF de 2
+  páginas, clase B hasta 12/01/2031.
+
+**Punto 4 -- Carpeta ACTIVOS/{EMPRESA}/ (CERRADO, verificado en BD).**
+`person_folder_service` (compartido con baja/reactivación): un activo que
+se activa o cambia de empresa pasa solo a su carpeta. Farraces (254):
+TRANSGRUAL SL (por su alta), 14 archivos en
+`ACTIVOS/TRANSGRUAL_SL/FARRACES_GOMEZ_FRANCISCO`.
+
+**Empresa y contratos de los activos (pedido en sesión).** Reglas de
+Miguel Ángel (S125): el Excel es histórico y no se consulta; nunca se
+toca ni se reactiva a un inactivo; lo de los activos sí se relee.
+- `contract_service.read_contract` (Gemini, solo las 3 primeras páginas):
+  empresa por CIF del grupo, fecha de inicio y fin si es temporal.
+- Comando `reread_active_contracts` (solo activos; `--dry-run`,
+  `--cache-file`, `--shard N --shards 4` numerados desde 1): **aplicado**.
+  Resultado en BD: 0 activos fuera de `ACTIVOS/`; 105 contratos con fecha
+  de fin (antes solo las 52 prórrogas); activos por empresa: Adolfo
+  Álvarez 34, Transgrual 34, Grualdi 3, Asistencia y Grúas Granada 2,
+  sin empresa 3 (sin ningún contrato en el sistema). Miguel Ángel (250):
+  GRUAS ADOLFO ALVAREZ SL.
+- Enganche (Celery): todo contrato/alta de un activo que entra se lee y
+  recalcula empresa y carpeta.
+- Nombre normalizado en pantalla (`employer_legal_name`); en BD la forma
+  canónica del sistema.
+- **Avisos del contrato vigente** (ficha y listado de Personal): >1 año
+  amarillo, >2 naranja, >3 rojo; temporal con fin pasado, caducado.
+  Botón "Correcto" (contador a cero, `contract_reviewed_at/_by`, 0174),
+  "Deshacer" al momento y "Anular revisión".
+- `mark_duplicate_documents` (**aplicado**): 10 copias exactas (MD5)
+  obsoletas, 8 de ellas de Miguel Ángel (indexadas dos veces el 15/09).
+
+**Otros cambios pedidos en sesión:**
+- Laboral en la ficha: solo el vigente de cada tipo (el resto al
+  historial); sustituye la excepción de S123 de dejar a la vista los sin
+  fecha.
+- Familia "Circulación" se llama "Conducción" en contexto de persona y
+  reúne permiso, autorización temporal y CAP (0172).
+- Listado de circulares: al volver de Editar ya no sale sin panel; formato
+  4.24; "Descargar en Word" arreglado (daba 500).
+- "Selección de documentos" ya no cuenta documentos inexistentes.
+- Parte de prueba 303 (15/07/2026, "dafasdf"/"Vacaciones") borrado con su
+  Excel, a petición de Miguel Ángel.
+
+**Hallazgos corregidos (4.9 y pruebas reales):** `import os` que faltaba
+en el webhook (500 en opt_in); teléfonos: la ficha guarda 9 dígitos y
+Twilio usa +34 ("Leer aquí" no encontraba a nadie; envíos a EPI/circular/
+agente sin E.164); 11 activos sin `PersonIdentity.company` (0168; el
+WhatsApp no los reconocía); `upload_subject_document` guardaba toda foto
+como `application/octet-stream`; MySQL cerraba la conexión en lecturas
+largas; `move_entries` restaba sobre contadores desfasados (ahora
+recuenta).
+
+**Migraciones aplicadas y verificadas:** 0165-0174 (document_explorer).
+
+## Hoja de Ruta para la Siguiente Sesión (S126) -- REESCRITA al cierre,
+## sustituye por completo a la de S125
 
 **Arranque directo por el punto 1, sin preguntar.**
 
-**Decisión de Miguel Ángel que rige los puntos 1-3 (S124):** desde el
-panel, el supervisor da luz verde para pedir por WhatsApp al trabajador
-(con móvil y WhatsApp) la documentación que falta **y que el propio
-trabajador puede aportar**: DNI, permiso de conducir, tarjeta de
-conductor, tarjeta de la Seguridad Social, tarjeta sanitaria y
-similares. Nunca lo que depende de la empresa (contrato; reconocimiento
-médico, que exige cita de la empresa y lo suele enviar el propio centro
-médico). El trabajador lo entrega **contestando al WhatsApp con una foto
-o un PDF**, y el sistema tiene que aceptarlo aunque no conteste en el
-momento, escriba antes otras cosas o abra antes un ticket de avería.
-
-1. **Plantillas WhatsApp nuevas para pedir documentación al
-   trabajador** (las `document_*_notice` son para el aviso diario a
-   supervisores y dicen "consulte el panel"): comando de alta con la
-   misma filosofía que `create_document_notice_whatsapp_templates`
-   (UTILITY, preámbulo, variables de ejemplo, alta en BD, envío a Meta).
-   Una para documento que falta y otra para documento caducado, las dos
-   con la frase exacta de Miguel Ángel: **"Responda a este mensaje con
-   una foto o un PDF del documento."** **Cierre:** creadas y enviadas a
-   Meta en la sesión; aprobación comprobada con
-   `check_whatsapp_template_approvals` ("approved"); si Meta tarda, se
-   anota el estado con fecha y se sigue con los puntos 2-3, que no
-   dependen de la aprobación para construirse.
-2. **Marca "lo aporta el trabajador" en el catálogo** (campo booleano
-   nuevo en `DocumentTypeCatalog` + migración; casilla editable en el
-   catálogo). Marcados de inicio: DNI, permiso de conducir, tarjeta de
-   conductor, tarjeta de la Seguridad Social y tarjeta sanitaria, con
-   los códigos reales del catálogo verificados por consulta al ejecutar
-   (candidatos vistos: `DNI`, `CARNET_CONDUCIR`,
-   `TARJETA_CUALIF_CONDUCTOR`, `TARJETA_SANITARIA`). **Cierre:**
-   consulta a BD con esos tipos marcados y CONTRATO y
-   RECONOCIMIENTO_MEDICO sin marcar.
-3. **Pedir documentación desde Avisos, con luz verde del supervisor, y
-   recoger la respuesta:**
-   - En Avisos > Pendientes, acción del supervisor para pedir al
-     trabajador los documentos que faltan o caducan de tipos marcados
-     (punto 2), solo si tiene móvil válido. Registro de cada solicitud
-     (persona, tipo, quién la aprobó, cuándo, SID, estado
-     pendiente/recibida).
-   - Pipeline de adjuntos del WhatsApp: todo mensaje entrante con
-     adjunto de un teléfono que corresponda a una persona se descarga
-     de Twilio y entra en la cuarentena como cualquier otro documento
-     (se clasifica y vincula por el camino del punto 1 de S124), EN
-     CUALQUIER MOMENTO y en cualquier estado de la conversación
-     (respuesta tardía, mensajes intermedios, ticket de avería abierto
-     antes). Cuando el documento clasificado es de un tipo con solicitud
-     pendiente de esa persona, la solicitud pasa a recibida y el
-     trabajador recibe confirmación. Ningún adjunto se pierde.
-   - **Cierre (prueba real con el teléfono de Miguel Ángel):** se le pide
-     un documento; escribe antes un mensaje cualquiera y abre un ticket
-     de avería; después manda la foto del documento -> el documento
-     aparece en su ficha con tipo y vínculo, y la solicitud consta como
-     recibida (consulta a BD).
-4. **Trabajador activado que sigue en PTE CONTRATACION:** Farraces (254)
-   está activo pero su carpeta sigue en `PERSONAL/PTE CONTRATACION/` y
-   sin `employer_company`. Al activarse por contrato o alta, la persona
-   toma la empresa del propio documento y su carpeta pasa a
-   `ACTIVOS/{EMPRESA}/`. **Cierre:** la ficha y la carpeta de Farraces
-   bajo `ACTIVOS/` con su empresa (consulta a BD), y el mismo paso
-   automático para las siguientes activaciones.
-5. **Prueba de Docuten (Miguel Ángel):** generar desde Personal >
-   Información una circular con firma para varios activos y subir el CSV
-   en "Nuevo envío de firma" de Docuten. **Cierre:** la tabla de procesos
-   detectados no marca ningún error de formato. Si marca error en el
-   móvil (formato de 9 dígitos sin prefijo) o en las líneas sin email,
-   se corrige el formato en `panel/docuten_export.py` en la misma sesión.
+1. **Solicitud de documentación al trabajador desde Avisos, prueba
+   real.** `check_whatsapp_template_approvals --name
+   document_request_missing --name document_request_expiry` -> las dos
+   `approved`. Después, desde Avisos > Pendientes, pedir a Miguel Ángel
+   (pk 250, con acceso al panel) un documento de tipo marcado que le
+   falte; recibe la plantilla y contesta con la foto. **Cierre:** consulta
+   a BD con su `WorkerDocumentRequest` en `RECEIVED` y `received_entry`
+   no nulo, y el documento en su ficha.
+2. **Documentación que aporta la empresa (no el trabajador) en Avisos >
+   Pendientes.** Para los avisos de tipos sin "lo aporta el trabajador"
+   (contrato, reconocimiento médico, etc.): subir el documento
+   directamente desde la fila del aviso a la ficha de la persona (mismo
+   `upload_subject_document`, con enganches de contrato y carné); y para
+   RECONOCIMIENTO_MEDICO, acción "Cita solicitada" que registra quién y
+   cuándo y deja el aviso en ese estado hasta que entra el certificado.
+   **Cierre:** en local y en producción, subir un contrato desde un aviso
+   "Falta" de una persona de prueba -> el aviso desaparece y el contrato
+   está en su ficha (consulta a BD); marcar "Cita solicitada" en un aviso
+   de reconocimiento médico -> el aviso lo muestra y el registro existe
+   en BD.
+3. **Avisos de revisiones de accesorios de elevación (eslingas...) y de
+   EPIs.** Hoy `document_notice_service` (Avisos) no usa
+   `LiftingAccessoryReview` ni `EpiReview`. Incorporar sus fechas de
+   próxima revisión/caducidad a Avisos (Pendientes: caducados,
+   próximos y sin revisión) con el mismo criterio de días que los
+   documentos. **Cierre:** consulta a BD con los accesorios y EPIs de
+   revisión vencida o en <=30 días, y los mismos aparecen en Avisos >
+   Pendientes con su fecha.
+4. **Prueba de Docuten (Miguel Ángel) (arrastrado 1.ª sesión sin
+   avanzar):** generar desde Personal > Información una circular con
+   firma para varios activos y subir el CSV en "Nuevo envío de firma" de
+   Docuten. **Cierre:** la tabla de procesos detectados no marca ningún
+   error de formato; si lo marca (móvil de 9 dígitos, líneas sin email),
+   se corrige `panel/docuten_export.py` en la misma sesión.
 
 **Decisiones de Miguel Ángel que el modelo NO debe tocar por su
 cuenta:**
-- Envío automático diario por WhatsApp de avisos a supervisores
+- **Excel de plantilla:** histórico, no se consulta. Nunca un barrido
+  hacia atrás ni reactivar inactivos. Hacia delante y solo activos: un
+  contrato nuevo fija la empresa (el más reciente manda; si queda mal, el
+  supervisor sube el que falta). Los nuevos se dan de alta con lo que
+  digan sus documentos. La activación por cuarentena de S124 se queda.
+- **WhatsApp y solicitudes:** solo trabajadores con acceso al panel.
+- **Procesos largos:** nunca un comando de 80-90 minutos; se reparten en
+  trozos (`--shard N --shards 4`, desde 1) para las 4 consolas, con caché.
+- Envío automático diario de avisos a supervisores
   (`notice_delivery_service`): **sigue apagado** hasta que Miguel Ángel
-  lo encienda desde Avisos > Configuración.
-- Requisitos de maquinaria: los definen los supervisores; el modelo no
-  crea ninguno.
-- **Entregas de accesorios de elevación** y **cabrestante VIME 03210**:
-  sin cambios respecto a S121.
-- **Excel de plantilla:** histórico; ya no decide quién es activo. Las 48
-  personas False del histórico no se activan sin instrucción de Miguel
-  Ángel (lista en el log `EnterpriseBot_004.txt` de S124: 15 sin ninguna
-  baja, 33 con BAJA_PERSONAL sin fecha).
-- **Agente H28:** con latido; si se reempaqueta, sale con `heartbeat.py`.
-- **Circulares:** solo las marcadas "Requiere firma" van a Docuten; las
-  4 CIRCULAR_* vacías se redactan desde Editar (no las redacta el modelo
-  sin texto de Miguel Ángel).
+  lo encienda.
+- Requisitos de maquinaria: los definen los supervisores.
+- Entregas de accesorios y cabrestante VIME 03210: sin cambios.
+- Agente H28: con latido; si se reempaqueta, sale con `heartbeat.py`.
+- Circulares: solo las marcadas "Requiere firma" van a Docuten; las 4
+  CIRCULAR_* vacías las redacta Miguel Ángel.
 
 **Trabajo de Miguel Ángel y de los supervisores en el panel (no
-bloquea la hoja de ruta):** configurar la ficha de Destinatarios de
-Yolanda Bandera (hoy no recibe nada); subir de nuevo, escribiendo la
-fecha, los 36 Modelos 145 y 9 contratos que quedaron sin fecha legible;
-localizar y subir los contratos que faltan (Avisos > Pendientes >
-Faltan); separar el dosier de Burgos (30574) si se quiere; marcar clases
-de permiso en los requisitos y subir los carnés pendientes; redactar las
-4 circulares informativas vacías.
+bloquea la hoja de ruta):** revisar con "Correcto" los avisos de
+contrato que estén bien; subir los contratos de los 3 activos sin
+empresa; configurar la ficha de Destinatarios de Yolanda Bandera; subir
+de nuevo con fecha los 36 Modelos 145 y 9 contratos sin fecha legible;
+marcar clases de permiso en los requisitos; redactar las 4 circulares
+vacías.
 
-**Pendiente técnico heredado, sin cambios:** los 18 combinados
-FICHA+ITV que no se pueden partir se corrigen a mano desde la ficha
-con el botón "Tipo". 13 migraciones antiguas no se aplican sobre una
-BD vacía (solo afecta a montar el proyecto desde cero; para probar en
-local se usa `migrate --run-syncdb` con `MIGRATION_MODULES` vacío).
+**Pendiente técnico heredado, sin cambios:** los 18 combinados FICHA+ITV
+que no se pueden partir se corrigen a mano con el botón "Tipo". 13
+migraciones antiguas no se aplican sobre una BD vacía (para probar en
+local: `migrate --run-syncdb` con `MIGRATION_MODULES` vacío).
