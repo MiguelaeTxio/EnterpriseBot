@@ -1558,6 +1558,11 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
         selected_document_ids = _document_selection.get(str(pk)) or []
         if not isinstance(selected_document_ids, list):
             selected_document_ids = []
+        # S125: mismo filtro que la vista previa -- el contador decía 2
+        # con la lista vacía (documentos ya en la papelera o retirados).
+        selected_document_ids = _alive_selected_ids(
+            selected_document_ids, PersonIdentity, pk,
+        )
 
         person = get_object_or_404(
             PersonIdentity.objects.select_related(
@@ -3010,7 +3015,34 @@ def _machine_selected_ids(request, pk):
     if not isinstance(selection, dict):
         return []
     selected = selection.get(str(pk)) or []
-    return selected if isinstance(selected, list) else []
+    if not isinstance(selected, list):
+        return []
+    # S125: solo lo que sigue vivo y vinculado (mismo filtro que la
+    # vista previa), para que contador y casillas no mientan.
+    return _alive_selected_ids(selected, MachineAsset, pk)
+
+
+def _alive_selected_ids(selected_ids, subject_model, subject_pk):
+    """
+    Selected ids that still exist and belong to the subject.
+
+    ---
+
+    Ids seleccionados que siguen vivos (ni papelera ni purgados) y
+    vinculados al sujeto -- el mismo filtro que aplica la vista previa
+    de la selección. Conserva el orden de selección.
+    """
+    wanted = [
+        int(value) for value in selected_ids if str(value).isdigit()
+    ]
+    alive = set(DocumentIndexEntry.objects.filter(
+        pk__in=wanted, bucket=BUCKET,
+        domain_content_type=ContentType.objects.get_for_model(subject_model),
+        domain_object_id=subject_pk,
+        entry_kind=DocumentIndexEntry.KIND_FILE,
+        deleted_at__isnull=True, purged_at__isnull=True,
+    ).values_list("pk", flat=True))
+    return [pk for pk in wanted if pk in alive]
 
 
 def _resolve_machine_document_selection(request, pk):
