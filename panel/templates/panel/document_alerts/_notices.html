@@ -42,7 +42,7 @@ desaparece solo en cuanto se sube el documento que lo resuelve.
                 {% endfor %}
             </select>
             <select class="form-select form-select-sm alerts-filter-select" name="who" aria-label="Destinatario">
-                {% if is_supervisor %}<option value="mine" {% if who == 'mine' %}selected{% endif %}>Solo mis avisos</option>{% endif %}
+                {% if can_filter_mine %}<option value="mine" {% if who == 'mine' %}selected{% endif %}>Solo mis avisos</option>{% endif %}
                 <option value="all" {% if who == 'all' %}selected{% endif %}>Todos los avisos</option>
                 <option value="none" {% if who == 'none' %}selected{% endif %}>Sin destinatario</option>
             </select>

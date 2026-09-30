@@ -141,14 +141,14 @@ window.saveDocAlertsNav = function (patch) {
             <div class="card alerts-cfg-card alerts-cfg-narrow">
                 <div class="card-header">
                     <div class="fw-bold">Destinatarios de los avisos</div>
-                    <div class="small text-muted">Cada supervisor recibe solo lo de su ámbito. Sin nada marcado, no recibe ningún aviso.</div>
+                    <div class="small text-muted">Supervisores de documentación y administradores. Cada uno recibe solo lo de su ámbito; sin nada marcado, no recibe ningún aviso.</div>
                 </div>
                 <div class="list-group list-group-flush alerts-cfg-scroll" id="recipientsList"></div>
             </div>
 
             <div class="card alerts-cfg-card alerts-cfg-wide">
                 <div class="card-header d-flex justify-content-between align-items-center gap-2">
-                    <span class="fw-bold" id="recipientsTitle">Elige un supervisor</span>
+                    <span class="fw-bold" id="recipientsTitle">Elige un destinatario</span>
                     <span class="d-flex align-items-center gap-2">
                         <span class="badge text-bg-warning d-none" id="recipientsDirtyBadge">Cambios sin guardar</span>
                         <button type="button" class="btn btn-sm btn-primary d-none" id="recipientsSaveBtn" onclick="saveRecipientScope()">Guardar destinatario</button>
@@ -464,7 +464,7 @@ window.saveDocAlertsNav = function (patch) {
         document.getElementById('recipientsResult').classList.add('d-none');
         setDirty(false);
         if (!current) {
-            document.getElementById('recipientsTitle').textContent = 'Elige un supervisor';
+            document.getElementById('recipientsTitle').textContent = 'Elige un destinatario';
             saveBtn.classList.add('d-none');
             editor.innerHTML = '';
             return;

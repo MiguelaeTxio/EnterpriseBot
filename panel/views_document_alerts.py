@@ -36,7 +36,7 @@ from document_explorer.models import (
 from document_explorer.person_phone_service import mobile_of
 from document_explorer.worker_request_service import create_requests
 from document_explorer.notice_recipients import (
-    docs_supervisors, load_scopes, recipients_for,
+    RECIPIENT_ROLES, docs_supervisors, load_scopes, recipients_for,
 )
 from document_management.models import DocumentAlertSettings
 from fleet.models import MachineAsset
@@ -642,13 +642,15 @@ class DocumentNoticesView(CompanyUserRequiredMixin, View):
         doc_type_pk = _int_or_none(request.GET.get("doc_type"))
         query = (request.GET.get("q") or "").strip()
         # H30 (S122): a quién va cada aviso. Un supervisor de
-        # documentación ve por defecto solo los suyos.
+        # documentación ve por defecto solo los suyos; el administrador
+        # también puede recibirlos y filtrar los suyos (S126).
         company_user = request.user.company_user
         is_supervisor = (
             company_user.role == CompanyUser.ROLE_DOCS_SUPERVISOR
         )
+        can_filter_mine = company_user.role in RECIPIENT_ROLES
         who = request.GET.get("who")
-        valid_who = ("mine", "all", "none") if is_supervisor else (
+        valid_who = ("mine", "all", "none") if can_filter_mine else (
             "all", "none",
         )
         if who not in valid_who:
@@ -788,7 +790,7 @@ class DocumentNoticesView(CompanyUserRequiredMixin, View):
             "has_any_rules": RequirementAlertRule.objects.exists(),
             "has_subjects": has_subjects,
             "who": who,
-            "is_supervisor": is_supervisor,
+            "can_filter_mine": can_filter_mine,
             "can_request_docs": can_request_docs,
         })
 

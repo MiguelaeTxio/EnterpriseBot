@@ -15,13 +15,18 @@ de los criterios del dominio (personal: todo, empresa, grupo de
 reparto o persona; centros de gasto: todo, familia, empresa o
 máquina) y no está excluido por requisito ni por tipo de documento.
 Sin ficha, o con la ficha vacía, no recibe nada. Solo cuentan los
-usuarios activos con rol de supervisor de documentación.
+usuarios activos con rol de supervisor de documentación o de
+administrador (S126, Miguel Ángel: el administrador configura los
+avisos que quiere recibir y prueba el circuito de extremo a extremo
+sin depender de un supervisor).
 """
 from dataclasses import dataclass, field
 
 from document_explorer.document_notice_service import DOMAIN_PERSONAL
 
 DOCS_SUPERVISOR_ROLE = "DOCS_SUPERVISOR"
+ADMIN_ROLE = "ADMIN"
+RECIPIENT_ROLES = (DOCS_SUPERVISOR_ROLE, ADMIN_ROLE)
 
 
 @dataclass
@@ -74,16 +79,18 @@ class ScopeSnapshot:
 
 def docs_supervisors(company=None):
     """
-    Active documentation supervisors, ordered by name.
+    Active notice recipients (documentation supervisors and
+    administrators), ordered by name.
 
     ---
 
-    Supervisores de documentación activos, por nombre.
+    Destinatarios posibles de avisos activos (supervisores de
+    documentación y administradores, S126), por nombre.
     """
     from ivr_config.models import CompanyUser
 
     queryset = CompanyUser.objects.filter(
-        role=DOCS_SUPERVISOR_ROLE, is_active=True,
+        role__in=RECIPIENT_ROLES, is_active=True,
     ).select_related("user")
     if company is not None:
         queryset = queryset.filter(company=company)
