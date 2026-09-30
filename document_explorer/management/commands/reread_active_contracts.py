@@ -34,7 +34,7 @@ import time
 from datetime import datetime
 
 from django.core.management.base import BaseCommand, CommandError
-from django.db import transaction
+from django.db import connection, transaction
 
 from document_explorer.contract_service import (
     apply_reading, dates_to_write, read_contract,
@@ -151,6 +151,11 @@ class Command(BaseCommand):
         from document_explorer.models import CompanyFiscalProfile
         from document_explorer.worker_request_service import _parse_iso
 
+        # MySQL de PythonAnywhere cierra las conexiones inactivas y cada
+        # lectura de Gemini deja la de este proceso parada: 2013 "Lost
+        # connection" en los trozos 1 y 2 (S125). Se cierra y Django
+        # abre una nueva al primer uso.
+        connection.close()
         key = str(document.pk)
         if key in self._cache:
             cached = self._cache[key]
@@ -233,6 +238,7 @@ class Command(BaseCommand):
             readings.append((
                 reading["start_date"] or document.issue_date, reading,
             ))
+        connection.close()  # Tras las lecturas, conexión nueva (S125).
         dated = [item for item in readings if item[0] and item[1]["profile"]]
         if not dated:
             self._log("   Empresa: ningún contrato la identifica -- "
