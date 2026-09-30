@@ -1987,7 +1987,13 @@ def _contract_alert(person):
     un contrato más reciente. Miguel Ángel: más de 1 año amarillo, más
     de 2 naranja, más de 3 rojo; un temporal con fin ya pasado,
     caducado. El vigente es el contrato, prórroga o modificación de
-    fecha más reciente. Devuelve {level, css, text} o None.
+    fecha más reciente.
+
+    Revisión (S125): si el supervisor pulsa "Correcto", la antigüedad
+    cuenta desde ese día (contador a cero) y un temporal caducado
+    revisado después de su fin deja de salir como caducado. Un contrato
+    nuevo cuenta desde su propia fecha. Devuelve {level, css, text,
+    reviewed_text} o None.
     """
     from datetime import date
 
@@ -1999,17 +2005,31 @@ def _contract_alert(person):
     if latest is None:
         return None
     today = date.today()
-    if latest.expiry_date and latest.expiry_date < today:
+    reviewed = person.contract_reviewed_at
+    reviewed_text = ""
+    if reviewed:
+        reviewer = person.contract_reviewed_by
+        reviewed_text = "Revisado el %s%s" % (
+            reviewed.strftime("%d/%m/%Y"),
+            " por %s" % (
+                reviewer.user.get_full_name() or reviewer.user.username
+            ) if reviewer and reviewer.user_id else "",
+        )
+    expired = latest.expiry_date and latest.expiry_date < today
+    if expired and not (reviewed and reviewed >= latest.expiry_date):
         return {
             "level": 3, "css": "text-bg-danger",
             "text": "Contrato caducado el %s" % (
                 latest.expiry_date.strftime("%d/%m/%Y")
             ),
+            "reviewed_text": reviewed_text,
         }
-    if latest.issue_date is None:
+    since = max(
+        (d for d in (latest.issue_date, reviewed) if d), default=None,
+    )
+    if since is None:
         return None
-    age_days = (today - latest.issue_date).days
-    since = latest.issue_date.strftime("%d/%m/%Y")
+    age_days = (today - since).days
     for years, level, css in (
         (3, 3, "text-bg-danger"),
         (2, 2, "contract-alert-orange"),
@@ -2018,12 +2038,41 @@ def _contract_alert(person):
         if age_days > 365 * years:
             return {
                 "level": level, "css": css,
-                "text": "Contrato de hace más de %d año%s (%s): revisar "
-                        "si hay uno más reciente" % (
-                            years, "" if years == 1 else "s", since,
+                "text": "Contrato sin revisar desde hace más de %d año%s "
+                        "(%s): comprobar si hay uno más reciente" % (
+                            years, "" if years == 1 else "s",
+                            since.strftime("%d/%m/%Y"),
                         ),
+                "reviewed_text": reviewed_text,
             }
     return None
+
+
+class PersonalContractReviewedView(DocsUploadAccessMixin, View):
+    """
+    POST: the supervisor confirms the current contract (JSON answer).
+
+    ---
+
+    POST: el supervisor confirma que el contrato vigente es el correcto
+    (H30, S125). El aviso de antigüedad vuelve a contar desde hoy.
+    Responde JSON para que el botón muestre el resultado real.
+    """
+
+    def post(self, request, pk):
+        from datetime import date
+
+        person = PersonIdentity.objects.filter(pk=pk).first()
+        if person is None:
+            return JsonResponse(
+                {"ok": False, "error": "La persona no existe."}, status=404,
+            )
+        person.contract_reviewed_at = date.today()
+        person.contract_reviewed_by = request.user.company_user
+        person.save(update_fields=[
+            "contract_reviewed_at", "contract_reviewed_by", "updated_at",
+        ])
+        return JsonResponse({"ok": True})
 
 
 def _keep_latest_laboral_per_type(current, obsolete):

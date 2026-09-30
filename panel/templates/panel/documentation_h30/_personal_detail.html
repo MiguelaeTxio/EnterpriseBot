@@ -291,7 +291,7 @@ y se habilita "Guardar".
         <h2 class="accordion-header">
             <button class="accordion-button{% if main_accordion_open != 'collapseLaboralMain' %} collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#collapseLaboralMain">
                 <i class="bi bi-briefcase me-2"></i>Laboral
-                {% if contract_alert %}<span class="badge {{ contract_alert.css }} ms-2" title="{{ contract_alert.text }}"><i class="bi bi-clock-history"></i></span>{% endif %}
+                {% if contract_alert %}<span class="badge {{ contract_alert.css }} ms-2" id="contractAlertHeaderBadge" title="{{ contract_alert.text }}"><i class="bi bi-clock-history"></i></span>{% endif %}
                 {% if missing_required_types_by_family.LABORAL or attention_types_by_family.LABORAL %}
                 <i class="bi bi-exclamation-triangle-fill text-danger ms-2"
                    title="{% if missing_required_types_by_family.LABORAL %}Falta: {{ missing_required_types_by_family.LABORAL|join:", " }}. {% endif %}{% if attention_types_by_family.LABORAL %}Caducado: {{ attention_types_by_family.LABORAL|join:", " }}{% endif %}"></i>
@@ -347,7 +347,12 @@ arriba (title=...) se queda para cuando el acordeón está cerrado.
                        {% if entry.pk in selected_document_ids %}checked{% endif %}
                        onchange="toggleDocumentSelection(this)">
             </td>
-            <td>{{ entry.document_type.label }}{% if entry.contract_alert %}<div><span class="badge {{ entry.contract_alert.css }} text-wrap text-start">{{ entry.contract_alert.text }}</span></div>{% endif %}</td>
+            <td>{{ entry.document_type.label }}{% if entry.contract_alert %}<div class="contract-alert-box"><span class="badge {{ entry.contract_alert.css }} text-wrap text-start">{{ entry.contract_alert.text }}</span>
+                <button type="button" class="btn btn-sm btn-outline-success py-0 ms-1 contract-review-button"
+                        data-url="{% url 'panel:documentation_personal_contract_reviewed' pk=person.pk %}"
+                        title="El contrato vigente es el correcto: el aviso vuelve a contar desde hoy">Correcto</button>
+                <span class="small ms-1 contract-review-status"></span>
+                {% if entry.contract_alert.reviewed_text %}<div class="small text-muted">{{ entry.contract_alert.reviewed_text }}</div>{% endif %}</div>{% endif %}</td>
             <td>
                 {% if entry.needs_attention %}<i class="bi bi-exclamation-triangle-fill text-danger me-1" title="Sin fecha vigente -- necesita atención"></i>{% endif %}
                 {% if entry.expiry_date %}{{ entry.expiry_date }}{% elif entry.issue_date %}<span class="text-muted small">Emisión:</span> {{ entry.issue_date }}{% else %}—{% endif %}
@@ -1579,6 +1584,34 @@ function openEpiHistory(epiId) {
 // (/panel/navegacion/estado/personal_ficha/, ver bloque IIFE más
 // abajo) -- nunca sessionStorage/localStorage, mismo criterio de
 // Miguel Ángel que el resto de la ficha.
+// H30 (S125): "Correcto" en el aviso del contrato -- el supervisor
+// confirma el contrato vigente y el contador de antigüedad vuelve a cero.
+document.querySelectorAll('.contract-review-button').forEach(function (button) {
+    button.addEventListener('click', function () {
+        const box = button.closest('.contract-alert-box');
+        const status = box.querySelector('.contract-review-status');
+        button.disabled = true;
+        status.className = 'small ms-1 contract-review-status text-muted';
+        status.textContent = 'Guardando…';
+        fetch(button.dataset.url, {
+            method: 'POST',
+            headers: {'X-CSRFToken': getCookie('csrftoken')},
+        }).then(function (resp) {
+            return resp.json().then(function (data) {
+                if (!resp.ok || !data.ok) { throw new Error(data.error || ('HTTP ' + resp.status)); }
+            });
+        }).then(function () {
+            box.innerHTML = '<span class="small text-success"><i class="bi bi-check-circle me-1"></i>Revisado hoy: el aviso vuelve a contar desde hoy.</span>';
+            const header = document.getElementById('contractAlertHeaderBadge');
+            if (header) { header.remove(); }
+        }).catch(function (err) {
+            button.disabled = false;
+            status.className = 'small ms-1 contract-review-status text-danger';
+            status.textContent = 'No se ha guardado: ' + err.message;
+        });
+    });
+});
+
 let selectedDocumentIds = new Set([
     {% for doc_pk in selected_document_ids %}{{ doc_pk }},{% endfor %}
 ]);

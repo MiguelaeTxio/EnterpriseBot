@@ -83,6 +83,7 @@ from panel.views_documentation_h30 import (
     MachineDossierTemplateListView,
     PersonalDetailView,
     PersonalDocumentSelectionPdfView,
+    PersonalContractReviewedView,
     PersonalDocumentSelectionPreviewView,
     PersonalDocumentSelectionZipView,
     PersonalDocumentTypeHistoryView,
@@ -175,8 +176,6 @@ from panel.views import (
     OperatorDashboardView,
     WorkshopAssetAutocompleteView,
     WorkshopAssetDetailView,
-    WorkOrderEntryUploadView,
-    WorkOrderEntryConfirmView,
     WorkOrderEntryFormView,
     WorkOrderEntryPartsReviewView,
     WorkOrderDetailView,
@@ -506,6 +505,8 @@ urlpatterns = [
     path("documentacion/personal/<int:pk>/historial/<str:type_code>/", PersonalDocumentTypeHistoryView.as_view(), name="documentation_personal_type_history"),
     # H31 (S103): vista previa de la selección de documentos (checkboxes) para dossieres/adjuntos.
     path("documentacion/personal/<int:pk>/seleccion/", PersonalDocumentSelectionPreviewView.as_view(), name="documentation_personal_document_selection_preview"),
+    # H30 (S125): el supervisor confirma el contrato vigente (aviso a cero).
+    path("documentacion/personal/<int:pk>/contrato-revisado/", PersonalContractReviewedView.as_view(), name="documentation_personal_contract_reviewed"),
     # H30 (S119), punto 6: selección y plantillas de dossier en la ficha de máquina (mismo mecanismo que Personal).
     path("documentacion/maquinaria/<int:pk>/seleccion/", MachineDocumentSelectionPreviewView.as_view(), name="documentation_machine_document_selection_preview"),
     path("documentacion/maquinaria/<int:pk>/seleccion/pdf/", MachineDocumentSelectionPdfView.as_view(), name="documentation_machine_document_selection_pdf"),

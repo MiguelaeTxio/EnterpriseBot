@@ -1757,6 +1757,24 @@ class PersonIdentity(models.Model):
         related_name="+",
         verbose_name="Documento-imagen usado como foto de perfil",
     )
+    contract_reviewed_at = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name="Contrato revisado el",
+        help_text=(
+            "H30 (S125). Día en que un supervisor confirmó que el "
+            "contrato vigente es el correcto: el aviso de antigüedad "
+            "(1/2/3 años) vuelve a contar desde aquí."
+        ),
+    )
+    contract_reviewed_by = models.ForeignKey(
+        "ivr_config.CompanyUser",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+        verbose_name="Contrato revisado por",
+    )
 
     class Meta:
         verbose_name = "Identidad de personal"
