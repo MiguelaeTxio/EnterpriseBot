@@ -660,6 +660,38 @@ class DocumentTypeCatalog(models.Model):
             "Media (imagen, vídeo, audio)",
         ),
     ]
+    # H30 (S125). Nombre de la familia cuando se pinta para una PERSONA.
+    # Miguel Ángel: "Circulación" en la ficha de un trabajador agrupa lo
+    # que le habilita para conducir (permiso, autorización temporal, CAP,
+    # tarjeta de conductor, tacógrafo) -- "Conducción". En máquinas sigue
+    # siendo "Circulación".
+    PERSON_FAMILY_LABELS = {
+        FAMILY_CIRCULACION: "Conducción",
+    }
+
+    @classmethod
+    def family_label(cls, family_code, for_person=False):
+        """
+        Display label of a family code (person wording if asked).
+
+        ---
+
+        Nombre visible de una familia; con `for_person`, el de la ficha
+        de persona ("Conducción" en vez de "Circulación").
+        """
+        if for_person and family_code in cls.PERSON_FAMILY_LABELS:
+            return cls.PERSON_FAMILY_LABELS[family_code]
+        return dict(cls.FAMILY_CHOICES).get(family_code, "Sin familia")
+
+    def get_person_family_display(self):
+        """
+        Family label as shown for a person.
+
+        ---
+
+        Nombre de la familia tal como se ve en la ficha de una persona.
+        """
+        return self.family_label(self.family, for_person=True)
 
     code = models.CharField(
         max_length=40,

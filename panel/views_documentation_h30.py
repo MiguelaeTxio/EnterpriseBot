@@ -1112,7 +1112,7 @@ class PersonalResultsFragmentView(CompanyUserRequiredMixin, View):
         return render(request, "panel/documentation_h30/_personal_results.html", ctx)
 
 
-def _group_current_by_family(current_entries, exclude_family_codes=(), include_empty_families=()):
+def _group_current_by_family(current_entries, exclude_family_codes=(), include_empty_families=(), for_person=False):
     """
     H31 (S76). Agrupa los documentos vigentes por la `family` real del
     catálogo -- campo que ya existía exactamente para esto desde H30
@@ -1164,9 +1164,11 @@ def _group_current_by_family(current_entries, exclude_family_codes=(), include_e
         by_family.setdefault(family_code, []).append(entry)
 
     ordered = []
-    for code, label in DocumentTypeCatalog.FAMILY_CHOICES:
+    for code, _label in DocumentTypeCatalog.FAMILY_CHOICES:
         if code in exclude_family_codes:
             continue
+        # S125: en la ficha de persona, Circulación se llama Conducción.
+        label = DocumentTypeCatalog.family_label(code, for_person=for_person)
         if code in by_family:
             ordered.append({
                 "code": code, "label": label, "documents": by_family[code],
@@ -1676,6 +1678,7 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
         families = _group_current_by_family(
             current, exclude_family_codes=_laboral_salud_codes,
             include_empty_families=missing_types_by_family.keys(),
+            for_person=True,
         )
         # H31 (S109). Miguel Ángel, con captura de pantalla real: el
         # triángulo de "Identidad y personal (base)" (dentro del
@@ -2228,7 +2231,7 @@ def _build_dossier_pdf_bytes(person, entries, epi_deliveries=None):
         extension = entry.name.rsplit(".", 1)[-1] if "." in entry.name else ""
         label = entry.document_type.label if entry.document_type_id else entry.name
         family = (
-            entry.document_type.get_family_display()
+            entry.document_type.get_person_family_display()
             if entry.document_type_id else "—"
         )
         data = download_bytes(entry.bucket, entry.blob_name)
@@ -2338,7 +2341,7 @@ def _build_dossier_zip_bytes(person, entries, epi_deliveries=None):
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
         for entry in all_entries:
             family_folder = (
-                slugify(entry.document_type.get_family_display())
+                slugify(entry.document_type.get_person_family_display())
                 if entry.document_type_id else "sin-familia"
             )
             # H31 (S103), corregido tras revisión de Miguel Ángel sobre
@@ -2671,11 +2674,13 @@ class DossierTemplateManageView(CompanyUserRequiredMixin, View):
                 else ["PERSONAL", "BOTH"]
             ),
         ).order_by("family", "label")
-        family_labels = dict(DocumentTypeCatalog.FAMILY_CHOICES)
         for dt in doc_types:
             family_code = dt.family or ""
             group = types_by_family.setdefault(family_code, {
-                "label": family_labels.get(family_code, "Sin familia"),
+                # S125: con ámbito Personal, Circulación es Conducción.
+                "label": DocumentTypeCatalog.family_label(
+                    family_code, for_person=not is_machine_scope,
+                ),
                 "color": _DOSSIER_FAMILY_COLORS.get(family_code, "#f5f5f5"),
                 "types": [],
             })

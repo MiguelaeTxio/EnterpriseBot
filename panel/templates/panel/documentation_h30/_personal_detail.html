@@ -1032,7 +1032,7 @@ Salud, acordeón genérico) -- mismo patrón que documentHistoryModal.
                 <input type="hidden" id="changeTypeEntryPk" value="">
                 <label class="form-label small mb-1">Tipo actual: <strong id="changeTypeCurrentLabel"></strong></label>
                 <select id="changeTypeNewCode" class="form-select form-select-sm">
-                    {% regroup all_document_types by get_family_display as type_families %}
+                    {% regroup all_document_types by get_person_family_display as type_families %}
                     {% for group in type_families %}
                     <optgroup label="{{ group.grouper }}">
                         {% for dt in group.list %}
