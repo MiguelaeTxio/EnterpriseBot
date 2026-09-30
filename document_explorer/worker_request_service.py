@@ -32,6 +32,7 @@ pedido. Diseño de Miguel Ángel (S125), tal cual:
   adjunto de trabajador va a la cuarentena; ninguno se pierde (lo que
   no encaja va a NO CONFORMES/ con aviso al trabajador).
 """
+import hashlib
 import json
 import logging
 import os
@@ -492,6 +493,10 @@ def process_submission(submission_id):
 
     1. Es uno de los documentos pedidos -> se valida contra lo pedido;
        conforme a la ficha, no conforme a NO CONFORMES/ con aviso.
+    0. Es el mismo archivo que uno ya aceptado (huella SHA-256), o
+       -- en el paso 2 -- una cara que ya está en el documento aceptado
+       (Gemini compara): repetido, no se añade nada y se le dice al
+       trabajador (S125: el anverso enviado dos veces).
     2. Es otra parte de un documento aceptado por WhatsApp en las
        últimas 24 h (misma persona, mismo tipo) -> se añade a él.
     3. Hay solicitudes abiertas y no es nada de lo anterior -> no
@@ -523,9 +528,25 @@ def process_submission(submission_id):
             "No se pudo descargar de Twilio: %s" % exc,
         )
 
+    submission.content_sha256 = hashlib.sha256(data).hexdigest()
+    submission.save(update_fields=["content_sha256"])
+    context = _Delivery(submission, person, data, content_type, extension)
+    same_file = WorkerDocumentSubmission.objects.filter(
+        person=person,
+        content_sha256=submission.content_sha256,
+        status=WorkerDocumentSubmission.STATUS_ACCEPTED,
+        entry__document_type__isnull=False,
+    ).exclude(pk=submission.pk).select_related(
+        "entry__document_type",
+    ).order_by("-processed_at").first()
+    if same_file is not None:
+        return _duplicate(
+            context, same_file.entry.document_type.label,
+            "mismo archivo que el adjunto %s" % same_file.pk,
+        )
+
     queue = open_requests(person)
     recent = _recent_accepted(person)
-    context = _Delivery(submission, person, data, content_type, extension)
     if content_type not in GEMINI_MIME_TYPES:
         return _refuse(
             context, queue, "un archivo que no es una foto ni un PDF", {},
@@ -793,13 +814,15 @@ def _accept(context, doc_type, verdict, request_obj):
         ])
         submission.request = request_obj
         _reply(submission.from_phone, (
-            "Documento recibido y aceptado: %s. Gracias." % doc_type.label
+            "Documento recibido y aceptado: %s. Si el documento tiene "
+            "otra cara, envíela ahora. Gracias." % doc_type.label
         ))
         advance_queue(context.person, free_text=True)
         reason = "Aceptado como %s (solicitud)." % doc_type.code
     else:
         _reply(submission.from_phone, (
-            "Documento recibido y archivado: %s. Gracias." % doc_type.label
+            "Documento recibido y archivado: %s. Si el documento tiene "
+            "otra cara, envíela ahora. Gracias." % doc_type.label
         ))
         reason = "Archivado como %s (sin solicitud)." % doc_type.code
     return _finish(
@@ -850,6 +873,11 @@ def _append(context, prior, verdict):
     doc_type = old_entry.document_type
     try:
         old_data = download_bytes(BUCKET, old_entry.blob_name)
+        if _already_included(old_data, old_entry, context):
+            return _duplicate(
+                context, doc_type.label,
+                "esa cara o página ya está en %s" % old_entry.name,
+            )
         merged = _merge_into_pdf([
             (old_data, (old_entry.content_type or "").lower()),
             (context.data, context.content_type),
@@ -897,6 +925,88 @@ def _append(context, prior, verdict):
         submission, WorkerDocumentSubmission.STATUS_ACCEPTED,
         "Añadido a %s (segunda entrega)." % old_entry.name,
         verdict=verdict, entry=new_entry,
+    )
+
+
+_SAME_PAGE_SCHEMA = {
+    "type": "object",
+    "properties": {"already_included": {"type": "boolean"}},
+    "required": ["already_included"],
+}
+
+
+def _content_type_of_bytes(data, fallback):
+    """
+    PDF by magic bytes, otherwise the fallback image type.
+
+    ---
+
+    PDF por los propios bytes; si no, el tipo de imagen de reserva.
+    """
+    return "application/pdf" if data[:5] == b"%PDF-" else fallback
+
+
+def _already_included(old_data, old_entry, context):
+    """
+    Whether the new photo shows a side/page already in the document.
+
+    ---
+
+    Si la foto nueva muestra una cara o página que ya está en el
+    documento aceptado (aunque sea otra foto de la misma cara). Gemini
+    compara los dos archivos; el trabajador que repite el anverso no
+    debe acabar con un PDF de dos anversos y sin reverso (S125).
+    """
+    prompt = (
+        "El PRIMER archivo es un documento ya archivado (una o varias "
+        "caras o páginas). El SEGUNDO es una foto nueva del mismo tipo "
+        "de documento. ¿La foto nueva muestra una cara o página que YA "
+        "está en el primer archivo (aunque la foto sea distinta: otro "
+        "encuadre, otra luz)? Responde already_included=true si es una "
+        "cara o página repetida, false si es una cara o página nueva."
+    )
+    client = get_gemini_client()
+    acquire_gemini_slot()
+    response = client.models.generate_content(
+        model=DEFAULT_MODEL,
+        contents=[
+            Part.from_bytes(
+                data=old_data,
+                mime_type=_content_type_of_bytes(
+                    old_data, (old_entry.content_type or "image/jpeg"),
+                ),
+            ),
+            Part.from_bytes(
+                data=context.data, mime_type=context.content_type,
+            ),
+            prompt,
+        ],
+        config=GenerateContentConfig(
+            http_options=HttpOptions(timeout=90_000),
+            response_mime_type="application/json",
+            response_schema=_SAME_PAGE_SCHEMA,
+            temperature=0.0,
+        ),
+    )
+    return bool(json.loads(response.text.strip()).get("already_included"))
+
+
+def _duplicate(context, label, reason):
+    """
+    The worker sent again something we already have.
+
+    ---
+
+    El trabajador ha vuelto a enviar algo que ya teníamos: no se añade
+    nada a la ficha y se le dice, por si le falta la otra cara.
+    """
+    _reply(context.submission.from_phone, (
+        "Esta cara de su %s ya la teníamos. Si le falta enviar la otra "
+        "cara, envíela ahora." % label
+    ))
+    return _finish(
+        context.submission, WorkerDocumentSubmission.STATUS_DUPLICATE,
+        "Repetido: %s." % reason,
     )
 
 

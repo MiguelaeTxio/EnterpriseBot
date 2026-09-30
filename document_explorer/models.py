@@ -3855,11 +3855,13 @@ class WorkerDocumentSubmission(models.Model):
     STATUS_ACCEPTED = "ACCEPTED"
     STATUS_REJECTED = "REJECTED"
     STATUS_ERROR = "ERROR"
+    STATUS_DUPLICATE = "DUPLICATE"
     STATUS_CHOICES = [
         (STATUS_PROCESSING, "Revisando"),
         (STATUS_ACCEPTED, "Aceptado"),
         (STATUS_REJECTED, "No conforme"),
         (STATUS_ERROR, "Error"),
+        (STATUS_DUPLICATE, "Repetido (ya lo teníamos)"),
     ]
 
     person = models.ForeignKey(
@@ -3887,6 +3889,14 @@ class WorkerDocumentSubmission(models.Model):
     )
     media_content_type = models.CharField(
         max_length=100, blank=True, verbose_name="Tipo de contenido",
+    )
+    content_sha256 = models.CharField(
+        max_length=64, blank=True, db_index=True,
+        verbose_name="Huella SHA-256 del adjunto",
+        help_text=(
+            "H30 (S125). Detecta el mismo archivo enviado dos veces "
+            "(p. ej. el anverso repetido) sin llamar a Gemini."
+        ),
     )
     status = models.CharField(
         max_length=12, choices=STATUS_CHOICES, default=STATUS_PROCESSING,
