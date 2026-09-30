@@ -1,0 +1,460 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/inbox/_pane.html #}
+{% comment %}
+H30 (S126). Pestaña "Bandeja de entrada" del hub de Documentación
+(diseño de Miguel Ángel: la supervisora sube los firmados de Docuten,
+o cualquier documento de un trabajador, sin agente en su PC).
+Directriz 4.24:
+- #inbox-top-panel (fijo): zona de arrastrar y soltar con "Elegir
+  archivos" / "Elegir carpeta", avance de la subida, filtros y la
+  acción sobre la selección, siempre visible.
+- #inbox-bottom-panel: la lista con scroll propio.
+Los archivos se mandan de uno en uno (se ve el avance de cada uno); la
+lista se refresca sola mientras queda algo en cola o clasificándose.
+Filtros, orden y selección persistidos por usuario (screen_key
+"inbox").
+{% endcomment %}
+<div class="border rounded p-2 mb-2" id="inbox-top-panel">
+    <div class="row g-2">
+        <div class="col-lg-6">
+            <div class="border rounded p-2 h-100 d-flex flex-column">
+                <div class="fw-bold small mb-1">Subir documentos</div>
+                <div id="inbox-drop-zone" class="inbox-drop-zone rounded text-center p-3 mb-2">
+                    <i class="bi bi-cloud-arrow-up fs-3 d-block"></i>
+                    <div class="small">Arrastra aquí los archivos o una carpeta (PDF, imágenes o ZIP)</div>
+                    <div class="d-flex justify-content-center gap-2 mt-2">
+                        <button type="button" class="btn btn-sm btn-primary" id="inbox-pick-files">
+                            <i class="bi bi-file-earmark-arrow-up me-1"></i>Elegir archivos
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-primary" id="inbox-pick-folder">
+                            <i class="bi bi-folder2-open me-1"></i>Elegir carpeta
+                        </button>
+                    </div>
+                    <input type="file" id="inbox-file-input" class="d-none" multiple
+                           accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.zip">
+                    <input type="file" id="inbox-folder-input" class="d-none" webkitdirectory multiple>
+                </div>
+                <div id="inbox-progress" class="small d-none">
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                        <span id="inbox-progress-text"></span>
+                    </div>
+                    <div class="progress mt-1" style="height: 6px;">
+                        <div class="progress-bar" id="inbox-progress-bar" style="width: 0%"></div>
+                    </div>
+                </div>
+                <ul class="small mb-0 mt-1 ps-3 text-danger d-none" id="inbox-upload-errors"></ul>
+            </div>
+        </div>
+        <div class="col-lg-6">
+            <div class="border rounded p-2 h-100">
+                <div class="fw-bold small mb-1">Buscar y filtrar</div>
+                <div class="d-flex gap-2 mb-2">
+                    <input id="inbox-filter-search" type="search" name="search"
+                           class="form-control form-control-sm"
+                           placeholder="Buscar por archivo, trabajador, tipo o resultado…"
+                           value="{{ filter_search }}" autocomplete="off"
+                           hx-get="{% url 'panel:inbox_results' %}"
+                           hx-target="#inbox-table-container"
+                           hx-include="#inbox-filter-search, #inbox-filter-status, #inbox-only-selected, #inbox-selected-ids, #inbox-sort-inputs"
+                           hx-trigger="input changed delay:300ms, search">
+                    <select id="inbox-filter-status" name="status" class="form-select form-select-sm w-auto" autocomplete="off"
+                            hx-get="{% url 'panel:inbox_results' %}"
+                            hx-target="#inbox-table-container"
+                            hx-include="#inbox-filter-search, #inbox-filter-status, #inbox-only-selected, #inbox-selected-ids, #inbox-sort-inputs"
+                            hx-trigger="change">
+                        <option value="">Todos los estados</option>
+                        <option value="attention" {% if filter_status == 'attention' %}selected{% endif %}>No conformes y errores</option>
+                        {% for code, label in status_choices %}
+                        <option value="{{ code }}" {% if filter_status == code %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
+                    <div class="form-check mb-0">
+                        <input class="form-check-input" type="checkbox" id="inbox-only-selected" name="only_selected" value="1" autocomplete="off"
+                               hx-get="{% url 'panel:inbox_results' %}"
+                               hx-target="#inbox-table-container"
+                               hx-include="#inbox-filter-search, #inbox-filter-status, #inbox-only-selected, #inbox-selected-ids, #inbox-sort-inputs"
+                               hx-trigger="change, inbox-selection-refresh">
+                        <label class="form-check-label small" for="inbox-only-selected">Mostrar solo la selección actual</label>
+                    </div>
+                    <input type="hidden" id="inbox-selected-ids" name="selected_ids" value="">
+                    <button type="button"
+                            class="btn btn-sm btn-outline-secondary{% if not sort_active %} d-none{% endif %}"
+                            id="inbox-clear-sort"
+                            hx-get="{% url 'panel:inbox_results' %}"
+                            hx-target="#inbox-table-container"
+                            hx-include="#inbox-filter-search, #inbox-filter-status, #inbox-only-selected, #inbox-selected-ids"
+                            hx-vals='{"sort": ""}'
+                            title="Deshacer todos los órdenes aplicados">
+                        <i class="bi bi-x-circle me-1"></i>Quitar orden
+                    </button>
+                </div>
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                    <strong class="small"><span id="inbox-mass-count">0</span> seleccionados</strong>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="inbox-mass-clear">Limpiar</button>
+                    <button type="button" class="btn btn-sm btn-outline-primary inbox-needs-selection" id="inbox-mass-retry" disabled>
+                        <i class="bi bi-arrow-repeat me-1"></i>Volver a clasificar
+                    </button>
+                </div>
+                <div class="form-text small mt-1">
+                    "Volver a clasificar" solo actúa sobre los no conformes y los que dieron error (p. ej. después de corregir la ficha del trabajador).
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="border rounded p-2" id="inbox-bottom-panel">
+    <div class="h-100 d-flex flex-column">
+        <div class="fw-bold small mb-1">
+            <span id="inbox-row-count">{{ items|length }}</span> archivos
+            <span id="inbox-row-filtered" class="text-muted fw-normal{% if not is_filtered %} d-none{% endif %}">(filtrado)</span>
+        </div>
+        <div id="inbox-results-scroll" class="fixed-list-scroll inbox-fill inbox-scroll-both">
+            <div id="inbox-table-container">
+                {% include "panel/inbox/_table.html" %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="inbox-live-filters" class="d-none">
+    <input type="hidden" name="_f_search" value="{{ filter_search }}">
+    <input type="hidden" name="_f_status" value="{{ filter_status }}">
+    <input type="hidden" name="_f_sort" value="{{ current_sort }}">
+</div>
+
+<style>
+#inbox-results-scroll table td,
+#inbox-results-scroll table th { white-space: nowrap; }
+#inbox-results-scroll td.inbox-reason { white-space: normal; min-width: 20rem; }
+.inbox-fill { flex: 1 1 auto; min-height: 0; }
+.inbox-scroll-both { overflow: auto; }
+.inbox-check-col { width: 2rem; }
+.inbox-drop-zone { border: 2px dashed #adb5bd; background-color: #f8f9fa; }
+.inbox-drop-zone.inbox-drag-over { border-color: #0d6efd; background-color: #e7f1ff; }
+</style>
+
+<div class="toast-container position-fixed bottom-0 end-0 p-3">
+    <div id="inbox-toast" class="toast align-items-center text-bg-dark border-0"
+         role="alert" aria-live="assertive" aria-atomic="true" data-bs-delay="3500">
+        <div class="d-flex">
+            <div class="toast-body" id="inbox-toast-msg"></div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+        </div>
+    </div>
+</div>
+{{ saved_selection|json_script:"inbox-saved-selection" }}
+{% include "panel/_fixed_list_layout.html" with top_id="inbox-top-panel" bottom_id="inbox-bottom-panel" %}
+<script>
+(function () {
+    "use strict";
+
+    const container = document.getElementById("inbox-table-container");
+    const liveFilters = document.getElementById("inbox-live-filters");
+    const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute("content");
+    const SCREEN_KEY = "{{ screen_key|escapejs }}";
+    const UPLOAD_URL = "{% url 'panel:inbox_upload' %}";
+    const RESULTS_URL = "{% url 'panel:inbox_results' %}";
+    const RETRY_URL = "{% url 'panel:inbox_retry' %}";
+    const ALLOWED = ["pdf", "jpg", "jpeg", "png", "webp", "heic", "zip"];
+    const POLL_MS = 4000;
+
+    function showToast(text, danger) {
+        const toast = document.getElementById("inbox-toast");
+        toast.classList.toggle("text-bg-danger", !!danger);
+        toast.classList.toggle("text-bg-dark", !danger);
+        document.getElementById("inbox-toast-msg").textContent = text;
+        new bootstrap.Toast(toast).show();
+    }
+
+    // ---------------------------------------------------------------
+    // Selección (pk -> nombre), persistida por usuario.
+    // ---------------------------------------------------------------
+    const selection = new Map();
+    try {
+        JSON.parse(document.getElementById("inbox-saved-selection").textContent).forEach(function (item) {
+            if (item && item.pk) selection.set(String(item.pk), item.label || "");
+        });
+    } catch (e) { /* estado ilegible: se empieza sin selección */ }
+    let lastSaved = null;
+    let saveTimer = null;
+    function saveSelection() {
+        const payload = Array.from(selection.entries()).map(function ([pk, label]) {
+            return {pk: pk, label: label};
+        });
+        const serialized = JSON.stringify(payload);
+        if (serialized === lastSaved) return;
+        lastSaved = serialized;
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(function () {
+            fetch("/panel/navegacion/estado/" + SCREEN_KEY + "/", {
+                method: "POST",
+                headers: {"X-CSRFToken": csrfToken, "Content-Type": "application/json"},
+                body: JSON.stringify({selection: payload}),
+            });
+        }, 400);
+    }
+
+    function setLive(name, value) {
+        const input = liveFilters.querySelector('input[name="' + name + '"]');
+        if (input) input.value = value;
+    }
+
+    function updateSelectionUi() {
+        saveSelection();
+        document.getElementById("inbox-mass-count").textContent = selection.size;
+        const idsInput = document.getElementById("inbox-selected-ids");
+        const newIds = Array.from(selection.keys()).join(",");
+        if (idsInput.value !== newIds) {
+            idsInput.value = newIds;
+            const onlySel = document.getElementById("inbox-only-selected");
+            if (onlySel.checked) htmx.trigger(onlySel, "inbox-selection-refresh");
+        }
+        document.querySelectorAll(".inbox-needs-selection").forEach(function (btn) {
+            btn.disabled = selection.size === 0;
+        });
+        const all = document.getElementById("inbox-check-all");
+        if (!all) return;
+        const rows = container.querySelectorAll(".inbox-row-check");
+        const checked = container.querySelectorAll(".inbox-row-check:checked");
+        all.checked = rows.length > 0 && checked.length === rows.length;
+        all.indeterminate = checked.length > 0 && checked.length < rows.length;
+    }
+
+    // ---------------------------------------------------------------
+    // Refresco de la lista: al terminar una subida y, mientras quede
+    // algo en cola o clasificándose, cada POLL_MS.
+    // ---------------------------------------------------------------
+    let pollTimer = null;
+    function refreshTable() {
+        const params = new URLSearchParams();
+        params.set("search", document.getElementById("inbox-filter-search").value);
+        params.set("status", document.getElementById("inbox-filter-status").value);
+        params.set("sort", liveFilters.querySelector('input[name="_f_sort"]').value);
+        if (document.getElementById("inbox-only-selected").checked) {
+            params.set("only_selected", "1");
+            params.set("selected_ids", document.getElementById("inbox-selected-ids").value);
+        }
+        htmx.ajax("GET", RESULTS_URL + "?" + params.toString(), {target: "#inbox-table-container"});
+    }
+
+    function refreshFromFragment() {
+        const state = document.getElementById("inbox-fragment-state");
+        clearTimeout(pollTimer);
+        if (state) {
+            document.getElementById("inbox-row-count").textContent = state.dataset.count;
+            document.getElementById("inbox-row-filtered").classList.toggle("d-none", !state.dataset.filtered);
+            document.getElementById("inbox-clear-sort").classList.toggle("d-none", !state.dataset.sortActive);
+            setLive("_f_sort", state.dataset.sort || "");
+            if (state.dataset.hasOpen && container.isConnected) {
+                pollTimer = setTimeout(refreshTable, POLL_MS);
+            }
+        }
+        setLive("_f_search", document.getElementById("inbox-filter-search").value);
+        setLive("_f_status", document.getElementById("inbox-filter-status").value);
+        container.querySelectorAll(".inbox-row-check").forEach(function (cb) {
+            cb.checked = selection.has(cb.dataset.pk);
+        });
+        updateSelectionUi();
+    }
+
+    container.addEventListener("change", function (evt) {
+        const target = evt.target;
+        if (target.classList.contains("inbox-row-check")) {
+            if (target.checked) selection.set(target.dataset.pk, target.dataset.label);
+            else selection.delete(target.dataset.pk);
+            updateSelectionUi();
+        } else if (target.id === "inbox-check-all") {
+            container.querySelectorAll(".inbox-row-check").forEach(function (cb) {
+                cb.checked = target.checked;
+                if (target.checked) selection.set(cb.dataset.pk, cb.dataset.label);
+                else selection.delete(cb.dataset.pk);
+            });
+            updateSelectionUi();
+        }
+    });
+
+    document.getElementById("inbox-mass-clear").addEventListener("click", function () {
+        selection.clear();
+        container.querySelectorAll(".inbox-row-check").forEach(function (cb) { cb.checked = false; });
+        updateSelectionUi();
+    });
+
+    document.getElementById("inbox-mass-retry").addEventListener("click", function () {
+        const btn = this;
+        btn.disabled = true;
+        const original = btn.innerHTML;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Enviando…';
+        fetch(RETRY_URL, {
+            method: "POST",
+            headers: {"X-CSRFToken": csrfToken, "Content-Type": "application/json"},
+            body: JSON.stringify({selected: Array.from(selection.keys())}),
+        }).then(function (r) {
+            return r.json().catch(function () {
+                return {ok: false, error: "El servidor respondió con un error (HTTP " + r.status + ")."};
+            });
+        }).then(function (data) {
+            btn.innerHTML = original;
+            updateSelectionUi();
+            if (!data.ok) { showToast(data.error || "No se pudo volver a clasificar.", true); return; }
+            showToast(data.message, false);
+            refreshTable();
+        }).catch(function () {
+            btn.innerHTML = original;
+            updateSelectionUi();
+            showToast("Sin conexión con el servidor.", true);
+        });
+    });
+
+    // ---------------------------------------------------------------
+    // Subida: arrastrar y soltar (archivos o carpetas) o diálogos. Se
+    // manda un archivo por petición, en orden, mostrando el avance.
+    // ---------------------------------------------------------------
+    const dropZone = document.getElementById("inbox-drop-zone");
+    const fileInput = document.getElementById("inbox-file-input");
+    const folderInput = document.getElementById("inbox-folder-input");
+    const errorsList = document.getElementById("inbox-upload-errors");
+    let uploading = false;
+
+    function extensionOf(name) {
+        const parts = name.split(".");
+        return parts.length > 1 ? parts.pop().toLowerCase() : "";
+    }
+
+    function addError(text) {
+        errorsList.classList.remove("d-none");
+        const li = document.createElement("li");
+        li.textContent = text;
+        errorsList.appendChild(li);
+    }
+
+    function setProgress(done, total, name) {
+        const box = document.getElementById("inbox-progress");
+        box.classList.toggle("d-none", total === 0 || done >= total);
+        document.getElementById("inbox-progress-text").textContent =
+            "Subiendo " + (done + 1) + " de " + total + ": " + name;
+        document.getElementById("inbox-progress-bar").style.width =
+            (total ? Math.round(done * 100 / total) : 0) + "%";
+    }
+
+    function uploadOne(file) {
+        const formData = new FormData();
+        formData.append("file", file, file.name);
+        return fetch(UPLOAD_URL, {
+            method: "POST", body: formData,
+            headers: {"X-CSRFToken": csrfToken},
+        }).then(function (r) {
+            return r.json().catch(function () {
+                return {ok: false, error: file.name + ": el servidor respondió con un error (HTTP " + r.status + ")."};
+            });
+        }).catch(function () {
+            return {ok: false, error: file.name + ": sin conexión con el servidor."};
+        });
+    }
+
+    async function uploadAll(files) {
+        if (uploading) { showToast("Espera a que termine la subida en curso.", true); return; }
+        const accepted = [];
+        files.forEach(function (file) {
+            if (file.name.startsWith(".")) return;
+            if (ALLOWED.indexOf(extensionOf(file.name)) === -1) {
+                addError(file.name + ": solo se admiten PDF, imágenes y ZIP.");
+            } else {
+                accepted.push(file);
+            }
+        });
+        if (!accepted.length) return;
+        uploading = true;
+        errorsList.innerHTML = "";
+        errorsList.classList.add("d-none");
+        let queued = 0, repeated = 0, failed = 0;
+        for (let i = 0; i < accepted.length; i++) {
+            setProgress(i, accepted.length, accepted[i].name);
+            const data = await uploadOne(accepted[i]);
+            if (!data.ok) {
+                failed += 1;
+                addError(data.error || accepted[i].name + ": no se pudo subir.");
+                continue;
+            }
+            (data.warnings || []).forEach(addError);
+            (data.items || []).forEach(function (item) {
+                if (item.note) repeated += 1; else queued += 1;
+            });
+            refreshTable();
+        }
+        setProgress(accepted.length, accepted.length, "");
+        uploading = false;
+        let message = queued + " archivo(s) en cola para clasificar.";
+        if (repeated) message += " " + repeated + " ya se habían subido.";
+        if (failed) message += " " + failed + " no se pudieron subir.";
+        showToast(message, failed > 0);
+        refreshTable();
+    }
+
+    // Lectura recursiva de carpetas arrastradas (webkitGetAsEntry).
+    function readEntry(entry) {
+        return new Promise(function (resolve) {
+            if (entry.isFile) {
+                entry.file(function (file) { resolve([file]); }, function () { resolve([]); });
+                return;
+            }
+            if (!entry.isDirectory) { resolve([]); return; }
+            const reader = entry.createReader();
+            const collected = [];
+            (function readBatch() {
+                reader.readEntries(async function (entries) {
+                    if (!entries.length) {
+                        const nested = await Promise.all(collected.map(readEntry));
+                        resolve([].concat.apply([], nested));
+                        return;
+                    }
+                    collected.push.apply(collected, entries);
+                    readBatch();
+                }, function () { resolve([]); });
+            })();
+        });
+    }
+
+    ["dragenter", "dragover"].forEach(function (name) {
+        dropZone.addEventListener(name, function (evt) {
+            evt.preventDefault();
+            dropZone.classList.add("inbox-drag-over");
+        });
+    });
+    ["dragleave", "drop"].forEach(function (name) {
+        dropZone.addEventListener(name, function (evt) {
+            evt.preventDefault();
+            dropZone.classList.remove("inbox-drag-over");
+        });
+    });
+    dropZone.addEventListener("drop", async function (evt) {
+        const items = evt.dataTransfer.items;
+        let files = [];
+        if (items && items.length && items[0].webkitGetAsEntry) {
+            const entries = Array.from(items).map(function (it) { return it.webkitGetAsEntry(); }).filter(Boolean);
+            const nested = await Promise.all(entries.map(readEntry));
+            files = [].concat.apply([], nested);
+        } else {
+            files = Array.from(evt.dataTransfer.files || []);
+        }
+        uploadAll(files);
+    });
+    document.getElementById("inbox-pick-files").addEventListener("click", function () { fileInput.click(); });
+    document.getElementById("inbox-pick-folder").addEventListener("click", function () { folderInput.click(); });
+    [fileInput, folderInput].forEach(function (input) {
+        input.addEventListener("change", function () {
+            uploadAll(Array.from(input.files || []));
+            input.value = "";
+        });
+    });
+
+    document.body.addEventListener("htmx:afterSwap", function (evt) {
+        if (!evt.detail.target || evt.detail.target.id !== "inbox-table-container") return;
+        refreshFromFragment();
+    });
+
+    refreshFromFragment();
+}());
+</script>

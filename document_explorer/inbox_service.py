@@ -435,8 +435,17 @@ def _finish(item, status, reason, **fields):
     ---
 
     Cierra el archivo con su estado y motivo y borra la copia temporal
-    de _BANDEJA_ENTRADA/.
+    de _BANDEJA_ENTRADA/ -- salvo en un error, que la conserva para
+    poder volver a clasificarlo sin volver a subirlo.
     """
+    if status == InboxItem.STATUS_ERROR:
+        item.status = status
+        item.reason = reason[:2000]
+        item.processed_at = timezone.now()
+        for name, value in fields.items():
+            setattr(item, name, value)
+        item.save()
+        return status
     if item.staging_blob:
         try:
             delete_file(BUCKET, item.staging_blob)
@@ -662,3 +671,53 @@ def _archive(item, data, verdict, person, doc_type):
         person=person, document_type=doc_type, entry=entry,
         acknowledgment=acknowledgment,
     )
+
+
+def requeue_items(items, uploaded_by):
+    """
+    Classify again non-conforming or failed items.
+
+    Returns (requeued, skipped) counts.
+
+    ---
+
+    Vuelve a clasificar los archivos no conformes o con error (p. ej.
+    tras corregir la ficha del trabajador), sin volver a subirlos: un
+    error conserva su copia temporal; un no conforme se relee de su
+    copia en NO CONFORMES BANDEJA DE ENTRADA/. El resto se salta.
+    Devuelve (encolados, saltados).
+    """
+    from document_explorer.tasks import process_inbox_item_task
+
+    requeued = skipped = 0
+    for item in items:
+        if item.status not in InboxItem.RETRYABLE_STATUSES:
+            skipped += 1
+            continue
+        if not item.staging_blob:
+            if item.entry is None:
+                skipped += 1
+                continue
+            data = download_bytes(item.entry.bucket, item.entry.blob_name)
+            item.staging_blob = "%s%s.%s" % (
+                INBOX_STAGING_PREFIX, item.sha256,
+                _extension_of(item.original_name) or "bin",
+            )
+            upload_bytes(
+                BUCKET, item.staging_blob, data,
+                content_type=item.content_type or "application/octet-stream",
+            )
+        item.status = InboxItem.STATUS_PENDING
+        item.reason = ""
+        item.processed_at = None
+        item.uploaded_by = uploaded_by
+        item.save(update_fields=[
+            "staging_blob", "status", "reason", "processed_at",
+            "uploaded_by",
+        ])
+        item_pk = item.pk
+        transaction.on_commit(
+            lambda pk=item_pk: process_inbox_item_task.delay(pk),
+        )
+        requeued += 1
+    return requeued, skipped

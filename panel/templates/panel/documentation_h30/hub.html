@@ -138,6 +138,21 @@
             <i class="bi bi-bell me-1"></i>Avisos
         </a>
     </li>
+    {% if can_use_inbox %}
+    <li class="nav-item">
+        {% comment %}
+        H30 (S126): la supervisora sube aquí los firmados de Docuten (o
+        cualquier documento de un trabajador) y se archivan solos en la
+        ficha -- decisión de Miguel Ángel, sin agente en su PC.
+        {% endcomment %}
+        <a class="nav-link {% if persisted_active_tab == 'bandeja' %}active{% endif %}" id="tab-bandeja" data-bs-toggle="tab" href="#pane-bandeja"
+           hx-get="{% url 'panel:inbox_tab' %}"
+           hx-target="#pane-bandeja"
+           hx-trigger="{% if persisted_active_tab == 'bandeja' %}load once{% else %}click once{% endif %}">
+            <i class="bi bi-inbox me-1"></i>Bandeja de entrada
+        </a>
+    </li>
+    {% endif %}
 </ul>
 
 <div class="tab-content">
@@ -171,6 +186,11 @@
     <div class="tab-pane fade {% if persisted_active_tab == 'plantillas' %}show active{% endif %}" id="pane-plantillas">
         <div class="text-muted small py-3">Cargando…</div>
     </div>
+    {% if can_use_inbox %}
+    <div class="tab-pane fade {% if persisted_active_tab == 'bandeja' %}show active{% endif %}" id="pane-bandeja">
+        <div class="text-muted small py-3">Cargando…</div>
+    </div>
+    {% endif %}
 </div>
 {% endwith %}
 

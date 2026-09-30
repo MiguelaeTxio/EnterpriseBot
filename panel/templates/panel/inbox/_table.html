@@ -1,0 +1,84 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/inbox/_table.html #}
+{% comment %}
+H30 (S126). Tabla de la pestaña "Bandeja de entrada": la devuelven la
+carga inicial, cada filtro/orden y cada refresco mientras quedan
+archivos en cola. Todo llega resuelto desde la vista (plantillas
+tontas); la selección vive en el JS de _pane.html.
+{% endcomment %}
+<div id="inbox-fragment-state" class="d-none"
+     data-count="{{ items|length }}"
+     data-filtered="{% if is_filtered %}1{% endif %}"
+     data-sort-active="{% if sort_active %}1{% endif %}"
+     data-sort="{{ current_sort }}"
+     data-has-open="{% if has_open %}1{% endif %}"></div>
+<span id="inbox-sort-inputs" class="d-none">
+    <input type="hidden" name="sort" value="{{ current_sort }}">
+</span>
+{% if items %}
+<table class="table table-sm table-hover align-middle mb-0" id="inbox-table">
+    <thead class="table-light">
+        <tr>
+            <th class="inbox-check-col">
+                <input class="form-check-input" type="checkbox" id="inbox-check-all"
+                       title="Marcar/desmarcar todos los visibles">
+            </th>
+            {% for column in sort_columns %}
+            <th>
+                <a class="text-decoration-none text-reset d-flex align-items-center gap-1 user-select-none"
+                   hx-get="{% url 'panel:inbox_results' %}"
+                   hx-target="#inbox-table-container"
+                   hx-include="#inbox-filter-search, #inbox-filter-status, #inbox-only-selected, #inbox-selected-ids"
+                   hx-trigger="click"
+                   hx-vals='{"sort": "{{ column.next }}"}'>
+                    {{ column.label }}
+                    {% if column.arrow %}
+                        <i class="bi bi-arrow-{{ column.arrow }}-short"></i>{% if column.priority %}<sup class="small">{{ column.priority }}</sup>{% endif %}
+                    {% else %}
+                        <i class="bi bi-arrow-down-up text-muted opacity-50 small"></i>
+                    {% endif %}
+                </a>
+            </th>
+            {% endfor %}
+            <th>Resultado</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for item in items %}
+        <tr>
+            <td>
+                <input class="form-check-input inbox-row-check" type="checkbox"
+                       data-pk="{{ item.pk }}" data-label="{{ item.original_name }}">
+            </td>
+            <td>{{ item.created_at|date:"d/m/Y H:i" }}</td>
+            <td>
+                {% if item.document_url %}
+                <a href="{{ item.document_url }}" target="_blank" rel="noopener">{{ item.original_name }}</a>
+                {% else %}
+                {{ item.original_name }}
+                {% endif %}
+                {% if item.container_name %}<div class="small text-muted">en {{ item.container_name }}</div>{% endif %}
+            </td>
+            <td>
+                <span class="badge {{ item.status_badge }}">
+                    {% if item.is_open %}<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>{% endif %}{{ item.get_status_display }}
+                </span>
+            </td>
+            <td>
+                {% if item.person_url %}
+                <a href="{{ item.person_url }}">{{ item.person_label }}</a>
+                {% else %}
+                <span class="text-muted">—</span>
+                {% endif %}
+            </td>
+            <td>{% if item.document_type %}{{ item.document_type.label }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+            <td>{{ item.uploaded_by_label|default:"—" }}</td>
+            <td class="inbox-reason">{{ item.reason|default:"" }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<div class="text-muted small p-3">
+    {% if is_filtered %}Ningún archivo coincide con el filtro.{% else %}Todavía no se ha subido nada.{% endif %}
+</div>
+{% endif %}

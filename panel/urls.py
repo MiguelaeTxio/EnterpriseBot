@@ -37,6 +37,13 @@ from panel.views_document_alerts import (
     DocumentNoticesView,
     NoticeScopeSaveView,
 )
+from panel.views_inbox import (
+    InboxResultsView,
+    InboxRetryView,
+    InboxStatusView,
+    InboxTabView,
+    InboxUploadView,
+)
 from panel.views_navigation_state import NavigationStateSaveView
 from panel.views_lifting_accessories import (
     LiftingAccessoryAssignView,
@@ -539,6 +546,12 @@ urlpatterns = [
     path("documentacion/avisos/pendientes/", DocumentNoticesView.as_view(), name="document_notices"),
     path("documentacion/avisos/destinatarios/<int:supervisor_pk>/guardar/", NoticeScopeSaveView.as_view(), name="notice_scope_save"),
     path("documentacion/avisos/whatsapp/", DocumentAlertWhatsAppToggleView.as_view(), name="document_alerts_whatsapp_toggle"),
+    # H30 (S126). Pestaña "Bandeja de entrada": subida de firmados de Docuten y otros documentos.
+    path("documentacion/bandeja/", InboxTabView.as_view(), name="inbox_tab"),
+    path("documentacion/bandeja/resultados/", InboxResultsView.as_view(), name="inbox_results"),
+    path("documentacion/bandeja/subir/", InboxUploadView.as_view(), name="inbox_upload"),
+    path("documentacion/bandeja/estado/", InboxStatusView.as_view(), name="inbox_status"),
+    path("documentacion/bandeja/reclasificar/", InboxRetryView.as_view(), name="inbox_retry"),
     # H30 (S125): pedir documentación al trabajador por WhatsApp.
     path("documentacion/avisos/pedir-al-trabajador/", DocumentRequestCreateView.as_view(), name="document_request_create"),
     path("documentacion/puestos/guardar/", JobPositionSaveView.as_view(), name="job_position_create"),

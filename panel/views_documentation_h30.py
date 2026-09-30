@@ -492,8 +492,15 @@ class DocumentationHubV2View(CompanyUserRequiredMixin, View):
         valid_tabs = (
             "maquinaria", "personal", "epis", "accesorios", "vacaciones",
             "calendario", "requisitos", "avisos", "circulares",
-            "plantillas",
+            "plantillas", "bandeja",
         )
+        # H30 (S126): "Bandeja de entrada" solo para quien puede subir
+        # documentación (mismos roles que DocsUploadAccessMixin).
+        can_use_inbox = request.user.company_user.role in (
+            CompanyUser.ROLE_ADMIN, CompanyUser.ROLE_DOCS_SUPERVISOR,
+        )
+        if not can_use_inbox:
+            valid_tabs = tuple(t for t in valid_tabs if t != "bandeja")
         # H30 (S119): "Circulares", "Plantillas" y "Requisitos" pasan
         # de botones "Gestionar..." en la barra de acción de Personal a
         # pestañas propias del hub -- Miguel Ángel: "las gestiones
@@ -532,6 +539,7 @@ class DocumentationHubV2View(CompanyUserRequiredMixin, View):
             "persisted_active_tab": active_tab,
             "persisted_filters": filters,
             "personal_tab_qs": _build_personal_tab_querystring(filters),
+            "can_use_inbox": can_use_inbox,
         })
 
 
