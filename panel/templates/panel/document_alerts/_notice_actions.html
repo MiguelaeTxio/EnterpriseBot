@@ -1,0 +1,33 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/document_alerts/_notice_actions.html #}
+{% comment %}
+H30 (S126), punto 2. Acciones de una fila de Avisos > Pendientes cuyo
+documento aporta la empresa: "Subir" a la ficha y, en el
+reconocimiento médico, "Cita solicitada" / "Anular cita". Flags y
+textos llegan resueltos de la vista.
+{% endcomment %}
+{% if notice.can_upload %}
+<div class="d-flex flex-column gap-1 flex-shrink-0">
+    <button type="button" class="btn btn-sm btn-outline-primary py-0 notice-upload-btn"
+            data-key="{{ notice.upload_key }}"
+            data-title="{{ notice.document_label }} — {{ notice.subject_label }}"
+            data-date-label="{{ notice.upload_date_label }}"
+            title="Subir el documento a la ficha del trabajador">
+        <i class="bi bi-upload me-1"></i>Subir
+    </button>
+    {% if notice.can_mark_appointment %}
+        {% if notice.appointment_state %}
+        <button type="button" class="btn btn-sm btn-outline-secondary py-0 notice-appointment-btn"
+                data-key="{{ notice.upload_key }}" data-action="cancel"
+                title="Anular la cita solicitada">
+            <i class="bi bi-x-circle me-1"></i>Anular cita
+        </button>
+        {% else %}
+        <button type="button" class="btn btn-sm btn-outline-success py-0 notice-appointment-btn"
+                data-key="{{ notice.upload_key }}" data-action="mark"
+                title="Anotar que ya se ha pedido cita">
+            <i class="bi bi-calendar-check me-1"></i>Cita solicitada
+        </button>
+        {% endif %}
+    {% endif %}
+</div>
+{% endif %}

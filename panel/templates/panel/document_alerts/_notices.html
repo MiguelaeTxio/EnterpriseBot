@@ -85,7 +85,9 @@ desaparece solo en cuanto se sube el documento que lo resuelve.
                         <div>{{ notice.document_label }} — caducó el {{ notice.expiry_date|date:"d/m/Y" }}</div>
                         <div class="small">{% if notice.recipient_names %}<span class="text-muted"><i class="bi bi-person-check me-1"></i>{{ notice.recipient_names }}</span>{% else %}<span class="badge text-bg-danger">Sin destinatario</span>{% endif %}</div>
                             {% if notice.request_state %}<div><span class="badge {{ notice.request_state_class }} text-wrap text-start">{{ notice.request_state }}</span></div>{% endif %}
+                            {% if notice.appointment_state %}<div><span class="badge text-bg-primary text-wrap text-start">{{ notice.appointment_state }}</span></div>{% endif %}
                         </a>
+                        {% include "panel/document_alerts/_notice_actions.html" %}
                     </div>
                     {% empty %}
                     <div class="list-group-item small text-muted">Ningún documento caducado.</div>
@@ -103,7 +105,9 @@ desaparece solo en cuanto se sube el documento que lo resuelve.
                         <div>{{ notice.document_label }} — caduca el {{ notice.expiry_date|date:"d/m/Y" }} <span class="text-muted">(aviso de {{ notice.reached_step.label }})</span></div>
                         <div class="small">{% if notice.recipient_names %}<span class="text-muted"><i class="bi bi-person-check me-1"></i>{{ notice.recipient_names }}</span>{% else %}<span class="badge text-bg-danger">Sin destinatario</span>{% endif %}</div>
                             {% if notice.request_state %}<div><span class="badge {{ notice.request_state_class }} text-wrap text-start">{{ notice.request_state }}</span></div>{% endif %}
+                            {% if notice.appointment_state %}<div><span class="badge text-bg-primary text-wrap text-start">{{ notice.appointment_state }}</span></div>{% endif %}
                         </a>
+                        {% include "panel/document_alerts/_notice_actions.html" %}
                     </div>
                     {% empty %}
                     <div class="list-group-item small text-muted">Ningún aviso de caducidad ha llegado todavía.</div>
@@ -121,7 +125,9 @@ desaparece solo en cuanto se sube el documento que lo resuelve.
                         <div>Falta: {{ notice.document_label }}</div>
                         <div class="small">{% if notice.recipient_names %}<span class="text-muted"><i class="bi bi-person-check me-1"></i>{{ notice.recipient_names }}</span>{% else %}<span class="badge text-bg-danger">Sin destinatario</span>{% endif %}</div>
                             {% if notice.request_state %}<div><span class="badge {{ notice.request_state_class }} text-wrap text-start">{{ notice.request_state }}</span></div>{% endif %}
+                            {% if notice.appointment_state %}<div><span class="badge text-bg-primary text-wrap text-start">{{ notice.appointment_state }}</span></div>{% endif %}
                         </a>
+                        {% include "panel/document_alerts/_notice_actions.html" %}
                     </div>
                     {% empty %}
                     <div class="list-group-item small text-muted">No falta ningún documento con aviso configurado.</div>
@@ -153,6 +159,41 @@ desaparece solo en cuanto se sube el documento que lo resuelve.
         </div>
     </div>
 </div>
+
+{% if can_request_docs %}
+{% comment %}
+H30 (S126), punto 2: subir a la ficha, desde la fila del aviso, el
+documento que aporta la empresa. Un solo modal para toda la lista; el
+botón de cada fila le pasa trabajador, tipo y etiqueta de la fecha.
+{% endcomment %}
+<div class="modal fade" id="noticeUploadModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header py-2">
+                <h6 class="modal-title" id="noticeUploadTitle">Subir documento</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="noticeUploadKey" value="">
+                <div class="mb-2">
+                    <label class="form-label small fw-bold" for="noticeUploadFile">Archivo (PDF o imagen)</label>
+                    <input type="file" class="form-control form-control-sm" id="noticeUploadFile" accept=".pdf,.jpg,.jpeg,.png,.webp,.heic">
+                </div>
+                <div>
+                    <label class="form-label small fw-bold" for="noticeUploadDate" id="noticeUploadDateLabel">Fecha</label>
+                    <input type="date" class="form-control form-control-sm" id="noticeUploadDate">
+                    <div class="form-text small">Opcional: si la dejas vacía, se lee del propio documento.</div>
+                </div>
+                <div class="alert alert-danger small py-1 mt-2 mb-0 d-none" id="noticeUploadError"></div>
+            </div>
+            <div class="modal-footer py-2">
+                <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-sm btn-primary" id="noticeUploadSend">Subir a la ficha</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
 
 <script>
 (function () {
@@ -234,6 +275,91 @@ desaparece solo en cuanto se sube el documento que lo resuelve.
             });
         });
         refresh();
+
+        // H30 (S126), punto 2: "Subir" y "Cita solicitada" en las filas
+        // de documentos que aporta la empresa. Tras cada acción se
+        // repinta la lista con el mensaje (nunca en silencio).
+        const uploadModalEl = document.getElementById('noticeUploadModal');
+        const uploadModal = uploadModalEl ? bootstrap.Modal.getOrCreateInstance(uploadModalEl) : null;
+        const uploadError = document.getElementById('noticeUploadError');
+        function reloadWith(message, kind) {
+            window.docRequestLastMessage = {text: message, kind: kind};
+            htmx.trigger(document.getElementById('alertsNoticesFilters'), 'change');
+        }
+        document.querySelectorAll('.notice-upload-btn').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                document.getElementById('noticeUploadKey').value = btn.dataset.key;
+                document.getElementById('noticeUploadTitle').textContent = btn.dataset.title;
+                document.getElementById('noticeUploadDateLabel').textContent = btn.dataset.dateLabel;
+                document.getElementById('noticeUploadFile').value = '';
+                document.getElementById('noticeUploadDate').value = '';
+                uploadError.classList.add('d-none');
+                uploadModal.show();
+            });
+        });
+        const uploadSend = document.getElementById('noticeUploadSend');
+        if (uploadSend) {
+            uploadSend.addEventListener('click', function () {
+                const file = document.getElementById('noticeUploadFile').files[0];
+                if (!file) {
+                    uploadError.textContent = 'Elige el archivo.';
+                    uploadError.classList.remove('d-none');
+                    return;
+                }
+                const parts = document.getElementById('noticeUploadKey').value.split(':');
+                const formData = new FormData();
+                formData.append('person', parts[0]);
+                formData.append('doc_type', parts[1]);
+                formData.append('file', file, file.name);
+                formData.append('date', document.getElementById('noticeUploadDate').value);
+                uploadSend.disabled = true;
+                const original = uploadSend.innerHTML;
+                uploadSend.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Subiendo…';
+                fetch("{% url 'panel:notice_upload' %}", {
+                    method: 'POST', body: formData,
+                    headers: {'X-CSRFToken': csrfToken()},
+                }).then(function (resp) {
+                    return resp.json().catch(function () {
+                        return {ok: false, error: 'El servidor respondió con un error (HTTP ' + resp.status + ').'};
+                    });
+                }).then(function (data) {
+                    uploadSend.disabled = false;
+                    uploadSend.innerHTML = original;
+                    if (!data.ok) {
+                        uploadError.textContent = 'No se ha subido: ' + data.error;
+                        uploadError.classList.remove('d-none');
+                        return;
+                    }
+                    uploadModal.hide();
+                    reloadWith(data.message, 'success');
+                }).catch(function () {
+                    uploadSend.disabled = false;
+                    uploadSend.innerHTML = original;
+                    uploadError.textContent = 'No se ha subido: sin conexión con el servidor.';
+                    uploadError.classList.remove('d-none');
+                });
+            });
+        }
+        document.querySelectorAll('.notice-appointment-btn').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                const parts = btn.dataset.key.split(':');
+                btn.disabled = true;
+                btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+                fetch("{% url 'panel:notice_appointment' %}", {
+                    method: 'POST',
+                    headers: {'X-CSRFToken': csrfToken(), 'Content-Type': 'application/json'},
+                    body: JSON.stringify({person: parts[0], doc_type: parts[1], action: btn.dataset.action}),
+                }).then(function (resp) {
+                    return resp.json().catch(function () {
+                        return {ok: false, error: 'El servidor respondió con un error (HTTP ' + resp.status + ').'};
+                    });
+                }).then(function (data) {
+                    reloadWith(data.ok ? data.message : 'No se ha guardado: ' + data.error, data.ok ? 'success' : 'danger');
+                }).catch(function () {
+                    reloadWith('No se ha guardado: sin conexión con el servidor.', 'danger');
+                });
+            });
+        });
     }
 
     // Directriz 4.24: los paneles ocupan lo que queda de pantalla y

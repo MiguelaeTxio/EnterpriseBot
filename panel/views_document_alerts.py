@@ -19,19 +19,26 @@ desde S126 uno por destinatario (`NoticeRecipientScope.
 whatsapp_enabled`), cada usuario enciende solo el suyo.
 """
 import json
+from datetime import date
 from urllib.parse import urlencode
 
+from django.contrib.contenttypes.models import ContentType
 from django.db import transaction
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
+from django.utils import timezone
 from django.views import View
 
 from document_explorer import document_notice_service as notices
 from document_explorer.models import (
-    DocumentTypeCatalog, JobPosition, NoticeRecipientScope,
-    PersonGroupTemplate, PersonIdentity, RequirementAlertRule,
-    WorkerDocumentRequest, WorkerDocumentSubmission,
+    DocumentIndexEntry, DocumentTypeCatalog, JobPosition,
+    NoticeAppointmentRequest, NoticeRecipientScope, PersonGroupTemplate,
+    PersonIdentity, RequirementAlertRule, WorkerDocumentRequest,
+    WorkerDocumentSubmission,
+)
+from document_explorer.subject_upload_service import (
+    SubjectUploadError, upload_subject_document,
 )
 from document_explorer.person_phone_service import mobile_of
 from document_explorer.worker_request_service import create_requests
@@ -48,6 +55,11 @@ from panel.models import PanelNavigationState
 
 NAV_SCREEN_KEY = "documentation_hub"
 NAV_TAB_KEY = "avisos"
+# H30 (S126), punto 2: tipos que aporta la empresa con acción "Cita
+# solicitada" en su aviso (hay que pedir cita antes de tener el
+# documento).
+APPOINTMENT_TYPE_CODES = ("RECONOCIMIENTO_MEDICO",)
+NOTICE_UPLOAD_EXTENSIONS = ("pdf", "jpg", "jpeg", "png", "webp", "heic")
 MONTH_NAMES = (
     "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio",
     "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
@@ -620,6 +632,260 @@ def _annotate_worker_requests(pending, can_request_docs):
             and notice.document_type_id in worker_type_ids
             and person is not None and mobile_of(person)
         )
+    _annotate_company_documents(pending, people, can_request_docs)
+
+
+def _open_appointments(pending):
+    """
+    Open "appointment requested" marks of the pending notices.
+
+    ---
+
+    Marcas "Cita solicitada" abiertas de los avisos pendientes, por
+    (persona, tipo): la más reciente sin anular y sin un documento de
+    ese tipo de la persona entrado después de pedirla (entonces la cita
+    ya tuvo respuesta y la marca se cierra sola).
+    """
+    person_ids = {notice.subject_id for notice in pending}
+    person_ct = ContentType.objects.get_for_model(PersonIdentity)
+    latest = {}
+    for appointment in NoticeAppointmentRequest.objects.filter(
+        person_id__in=person_ids, cancelled_at__isnull=True,
+    ).select_related("requested_by__user"):
+        key = (appointment.person_id, appointment.document_type_id)
+        if key not in latest:
+            latest[key] = appointment
+    open_marks = {}
+    for key, appointment in latest.items():
+        answered = DocumentIndexEntry.objects.filter(
+            domain_content_type=person_ct,
+            domain_object_id=appointment.person_id,
+            document_type_id=appointment.document_type_id,
+            indexed_at__gte=appointment.requested_at,
+            deleted_at__isnull=True,
+            purged_at__isnull=True,
+        ).exists()
+        if not answered:
+            open_marks[key] = appointment
+    return open_marks
+
+
+def _annotate_company_documents(pending, people, can_manage):
+    """
+    Upload and "appointment requested" data of each personal notice.
+
+    ---
+
+    Datos de las acciones de los avisos de documentos que aporta la
+    EMPRESA, no el trabajador (H30, S126, punto 2): "Subir" el documento
+    directamente a la ficha desde la fila del aviso y, en el
+    reconocimiento médico, "Cita solicitada" con quién y cuándo.
+    Plantillas tontas: textos y flags se deciden aquí.
+    """
+    types = DocumentTypeCatalog.objects.in_bulk({
+        notice.document_type_id for notice in pending
+        if notice.document_type_id
+    })
+    appointments = _open_appointments(pending)
+    for notice in pending:
+        doc_type = types.get(notice.document_type_id)
+        company_provided = bool(
+            doc_type is not None and not doc_type.worker_provides
+        )
+        notice.can_upload = bool(
+            can_manage and company_provided
+            and people.get(notice.subject_id) is not None
+        )
+        notice.upload_key = "%s:%s" % (
+            notice.subject_id, notice.document_type_id,
+        )
+        notice.upload_date_label = (
+            "Fecha de caducidad" if doc_type and doc_type.tracks_expiry
+            else "Fecha del documento"
+        )
+        notice.can_mark_appointment = bool(
+            notice.can_upload and doc_type.code in APPOINTMENT_TYPE_CODES
+        )
+        appointment = appointments.get(
+            (notice.subject_id, notice.document_type_id),
+        )
+        notice.appointment_state = ""
+        if notice.can_mark_appointment and appointment is not None:
+            who = appointment.requested_by
+            notice.appointment_state = "Cita solicitada el %s%s" % (
+                timezone.localtime(appointment.requested_at).strftime(
+                    "%d/%m/%Y %H:%M",
+                ),
+                " por %s" % (
+                    who.user.get_full_name() or who.user.username
+                ) if who else "",
+            )
+
+
+def _person_and_type(person_pk, type_pk):
+    """
+    The worker and document type of a notice action, or None.
+
+    ---
+
+    Trabajador y tipo documental de una acción sobre un aviso, o None
+    si alguno no existe.
+    """
+    person = PersonIdentity.objects.filter(pk=person_pk).first()
+    doc_type = DocumentTypeCatalog.objects.filter(pk=type_pk).first()
+    if person is None or doc_type is None:
+        return None
+    return person, doc_type
+
+
+def _person_label(person):
+    """
+    "SURNAMES, Name" of a worker.
+
+    ---
+
+    "APELLIDOS, Nombre" del trabajador.
+    """
+    surnames = " ".join(
+        part for part in (person.first_surname, person.second_surname)
+        if part
+    )
+    return "%s, %s" % (surnames, person.given_name)
+
+
+class NoticeUploadView(DocsUploadAccessMixin, View):
+    """
+    POST: upload a company-provided document from its notice row.
+
+    ---
+
+    POST: sube a la ficha del trabajador, desde la fila del aviso, el
+    documento que aporta la empresa (contrato, reconocimiento
+    médico...) -- H30 (S126), punto 2. Mismo `upload_subject_document`
+    que la ficha (tipo, nombre canónico, fechas, sustitución del
+    vigente y enganches de contrato y carné). Campos: `person`,
+    `doc_type`, `file` y, opcional, `date` (caducidad si el tipo
+    caduca; si no, fecha del documento). Responde JSON, nunca en
+    silencio.
+    """
+
+    def post(self, request):
+        found = _person_and_type(
+            request.POST.get("person"), request.POST.get("doc_type"),
+        )
+        upload = request.FILES.get("file")
+        if found is None or upload is None:
+            return JsonResponse(
+                {"ok": False, "error": "Falta el trabajador, el tipo o el "
+                 "archivo."}, status=400,
+            )
+        person, doc_type = found
+        extension = upload.name.rsplit(".", 1)[-1].lower() if (
+            "." in upload.name
+        ) else ""
+        if extension not in NOTICE_UPLOAD_EXTENSIONS:
+            return JsonResponse(
+                {"ok": False, "error": "Solo se admiten PDF e imágenes."},
+                status=400,
+            )
+        typed = None
+        raw_date = (request.POST.get("date") or "").strip()
+        if raw_date:
+            try:
+                typed = date.fromisoformat(raw_date)
+            except ValueError:
+                return JsonResponse(
+                    {"ok": False, "error": "La fecha no es válida."},
+                    status=400,
+                )
+        try:
+            with transaction.atomic():
+                result = upload_subject_document(
+                    subject=person,
+                    domain_content_type=ContentType.objects.get_for_model(
+                        PersonIdentity,
+                    ),
+                    document_type=doc_type,
+                    data=upload.read(),
+                    original_filename=upload.name,
+                    typed_date=typed if doc_type.tracks_expiry else None,
+                    typed_issue_date=(
+                        None if doc_type.tracks_expiry else typed
+                    ),
+                    subject_label=_person_label(person),
+                    uploaded_by=request.user.company_user,
+                )
+        except SubjectUploadError as exc:
+            return JsonResponse(
+                {"ok": False, "error": "No se pudo archivar: %s" % exc},
+                status=400,
+            )
+        message = "%s subido a la ficha de %s." % (
+            doc_type.label, _person_label(person),
+        )
+        warning = result.get("warning")
+        if warning:
+            message += (
+                " Ojo: el documento dice %s y escribiste %s; se ha "
+                "guardado la tuya." % (
+                    warning["system_date"].strftime("%d/%m/%Y"),
+                    warning["typed_date"].strftime("%d/%m/%Y"),
+                )
+            )
+        return JsonResponse({"ok": True, "message": message})
+
+
+class NoticeAppointmentView(DocsUploadAccessMixin, View):
+    """
+    POST: mark or cancel "appointment requested" on a notice.
+
+    ---
+
+    POST: marca o anula "Cita solicitada" en el aviso de un documento
+    que aporta la empresa (reconocimiento médico) -- H30 (S126), punto
+    2. JSON {"person", "doc_type", "action": "mark" | "cancel"}.
+    """
+
+    def post(self, request):
+        try:
+            payload = json.loads(request.body.decode("utf-8") or "{}")
+        except (ValueError, UnicodeDecodeError):
+            payload = {}
+        found = _person_and_type(
+            payload.get("person"), payload.get("doc_type"),
+        )
+        action = payload.get("action")
+        if found is None or action not in ("mark", "cancel"):
+            return JsonResponse(
+                {"ok": False, "error": "Petición no válida."}, status=400,
+            )
+        person, doc_type = found
+        if doc_type.code not in APPOINTMENT_TYPE_CODES:
+            return JsonResponse(
+                {"ok": False, "error": "Este documento no lleva cita."},
+                status=400,
+            )
+        company_user = request.user.company_user
+        open_marks = NoticeAppointmentRequest.objects.filter(
+            person=person, document_type=doc_type,
+            cancelled_at__isnull=True,
+        )
+        if action == "mark":
+            NoticeAppointmentRequest.objects.create(
+                person=person, document_type=doc_type,
+                requested_by=company_user,
+            )
+            message = "Cita solicitada anotada para %s." % (
+                _person_label(person),
+            )
+        else:
+            open_marks.update(
+                cancelled_at=timezone.now(), cancelled_by=company_user,
+            )
+            message = "Cita solicitada anulada para %s." % (
+                _person_label(person),
+            )
+        return JsonResponse({"ok": True, "message": message})
 
 
 class DocumentRequestCreateView(DocsUploadAccessMixin, View):

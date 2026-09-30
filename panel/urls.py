@@ -35,7 +35,9 @@ from panel.views_document_alerts import (
     DocumentAlertWhatsAppToggleView,
     DocumentRequestCreateView,
     DocumentNoticesView,
+    NoticeAppointmentView,
     NoticeScopeSaveView,
+    NoticeUploadView,
 )
 from panel.views_inbox import (
     InboxResultsView,
@@ -546,6 +548,9 @@ urlpatterns = [
     path("documentacion/avisos/pendientes/", DocumentNoticesView.as_view(), name="document_notices"),
     path("documentacion/avisos/destinatarios/<int:supervisor_pk>/guardar/", NoticeScopeSaveView.as_view(), name="notice_scope_save"),
     path("documentacion/avisos/whatsapp/", DocumentAlertWhatsAppToggleView.as_view(), name="document_alerts_whatsapp_toggle"),
+    # H30 (S126), punto 2: subir desde el aviso lo que aporta la empresa y "Cita solicitada".
+    path("documentacion/avisos/subir/", NoticeUploadView.as_view(), name="notice_upload"),
+    path("documentacion/avisos/cita/", NoticeAppointmentView.as_view(), name="notice_appointment"),
     # H30 (S126). Pestaña "Bandeja de entrada": subida de firmados de Docuten y otros documentos.
     path("documentacion/bandeja/", InboxTabView.as_view(), name="inbox_tab"),
     path("documentacion/bandeja/resultados/", InboxResultsView.as_view(), name="inbox_results"),

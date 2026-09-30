@@ -4119,3 +4119,64 @@ class InboxItem(models.Model):
 
     def __str__(self):
         return "%s (%s)" % (self.original_name, self.status)
+
+
+class NoticeAppointmentRequest(models.Model):
+    """
+    H30 (S126). "Appointment requested" mark on a notice of a document
+    the company provides (medical check-up), until the new one enters.
+
+    ---
+
+    H30 (S126), punto 2 de la hoja de ruta. Marca "Cita solicitada" de
+    un aviso de Avisos > Pendientes cuyo documento aporta la empresa
+    (reconocimiento médico): quién y cuándo pidió la cita. El aviso la
+    muestra mientras siga abierta: se cierra sola en cuanto entra un
+    documento de ese tipo de la persona posterior a la solicitud, o al
+    anularla.
+    """
+
+    person = models.ForeignKey(
+        "PersonIdentity",
+        on_delete=models.CASCADE,
+        related_name="notice_appointments",
+        verbose_name="Trabajador",
+    )
+    document_type = models.ForeignKey(
+        "DocumentTypeCatalog",
+        on_delete=models.CASCADE,
+        related_name="notice_appointments",
+        verbose_name="Tipo documental",
+    )
+    requested_at = models.DateTimeField(
+        auto_now_add=True, verbose_name="Cita solicitada el",
+    )
+    requested_by = models.ForeignKey(
+        "ivr_config.CompanyUser",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="notice_appointments",
+        verbose_name="Solicitada por",
+    )
+    cancelled_at = models.DateTimeField(
+        null=True, blank=True, verbose_name="Anulada el",
+    )
+    cancelled_by = models.ForeignKey(
+        "ivr_config.CompanyUser",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+        verbose_name="Anulada por",
+    )
+
+    class Meta:
+        verbose_name = "Cita solicitada (aviso)"
+        verbose_name_plural = "Citas solicitadas (avisos)"
+        ordering = ["-requested_at", "-pk"]
+
+    def __str__(self):
+        return "%s -- %s (%s)" % (
+            self.person, self.document_type.code, self.requested_at,
+        )
