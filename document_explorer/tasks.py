@@ -852,19 +852,39 @@ def check_system_agents_task(self) -> None:
     check_agents()
 
 
-@app.task(base=DjangoTask, bind=True, max_retries=0)
+@app.task(base=DjangoTask, bind=True, max_retries=60)
 def process_worker_submission_task(self, submission_id: int) -> str:
     """
     H30 (S125). Checks one WhatsApp attachment against the worker's
     open requests (Gemini) and files it, outside the webhook (Twilio
-    only waits 15 s).
+    only waits 15 s). One worker's attachments are processed strictly
+    in arrival order.
 
     ---
 
     H30 (S125). Comprueba un adjunto de WhatsApp contra las solicitudes
     abiertas del trabajador (Gemini) y lo archiva, fuera del webhook
     (Twilio solo espera 15 s a la respuesta).
+
+    Los adjuntos de una misma persona se procesan de uno en uno y en
+    orden de llegada: si hay uno anterior suyo todavía en proceso, este
+    espera y lo reintenta. Prueba real de S125: WhatsApp entregó dos
+    anversos con segundos de diferencia, se procesaron a la vez y los
+    dos se archivaron (ninguno veía todavía al otro).
     """
+    from .models import WorkerDocumentSubmission
     from .worker_request_service import process_submission
 
+    submission = WorkerDocumentSubmission.objects.filter(
+        pk=submission_id,
+    ).first()
+    if submission is None:
+        return "missing"
+    earlier_pending = WorkerDocumentSubmission.objects.filter(
+        person_id=submission.person_id,
+        pk__lt=submission.pk,
+        status=WorkerDocumentSubmission.STATUS_PROCESSING,
+    ).exists()
+    if earlier_pending and self.request.retries < self.max_retries:
+        raise self.retry(countdown=10)
     return process_submission(submission_id)

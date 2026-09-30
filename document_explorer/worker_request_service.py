@@ -449,6 +449,10 @@ def _candidate_types(queue, recent):
                 DocumentTypeCatalog.DOMAIN_PERSONAL,
                 DocumentTypeCatalog.DOMAIN_BOTH,
             ),
+        ).exclude(
+            # Imagen/vídeo/audio genéricos no son un documento: con
+            # ellos Gemini "clasificaba" cualquier foto (S125).
+            family=DocumentTypeCatalog.FAMILY_MEDIA,
         ).order_by("label"):
             add(doc_type)
     return types
@@ -843,12 +847,13 @@ def _merge_into_pdf(parts):
     for data, content_type in parts:
         # El formato se decide por los propios bytes: el content_type
         # guardado puede no reflejar lo que hay (p. ej. un PDF ya unido).
-        if data[:5] == b"%PDF-":
+        real_type = _content_type_of_bytes(data, content_type)
+        if real_type == "application/pdf":
             source = fitz.open(stream=data, filetype="pdf")
         else:
             image = fitz.open(
                 stream=data,
-                filetype=MEDIA_EXTENSIONS.get(content_type, "jpg"),
+                filetype=MEDIA_EXTENSIONS.get(real_type, "jpg"),
             )
             source = fitz.open("pdf", image.convert_to_pdf())
         merged.insert_pdf(source)
@@ -935,15 +940,25 @@ _SAME_PAGE_SCHEMA = {
 }
 
 
-def _content_type_of_bytes(data, fallback):
+def _content_type_of_bytes(data, fallback="image/jpeg"):
     """
-    PDF by magic bytes, otherwise the fallback image type.
+    Real MIME type from the bytes (PDF, PNG, JPEG, WebP).
 
     ---
 
-    PDF por los propios bytes; si no, el tipo de imagen de reserva.
+    Tipo real sacado de los propios bytes (PDF, PNG, JPEG, WebP). El
+    guardado en el índice puede ser application/octet-stream, que
+    Gemini rechaza (400 en la prueba real de S125).
     """
-    return "application/pdf" if data[:5] == b"%PDF-" else fallback
+    if data[:5] == b"%PDF-":
+        return "application/pdf"
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    if data[:3] == b"\xff\xd8\xff":
+        return "image/jpeg"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return fallback
 
 
 def _already_included(old_data, old_entry, context):
@@ -972,9 +987,7 @@ def _already_included(old_data, old_entry, context):
         contents=[
             Part.from_bytes(
                 data=old_data,
-                mime_type=_content_type_of_bytes(
-                    old_data, (old_entry.content_type or "image/jpeg"),
-                ),
+                mime_type=_content_type_of_bytes(old_data),
             ),
             Part.from_bytes(
                 data=context.data, mime_type=context.content_type,
