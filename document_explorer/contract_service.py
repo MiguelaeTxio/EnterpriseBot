@@ -24,6 +24,7 @@ un temporal ya vencido no se podía avisar como caducado.
 import json
 import logging
 
+import fitz
 from google.genai.types import GenerateContentConfig, HttpOptions, Part
 
 from ai_services.gemini_client import DEFAULT_MODEL, get_gemini_client
@@ -38,6 +39,7 @@ from spare_parts.gcs_service import download_bytes
 logger = logging.getLogger(__name__)
 
 NONE_CODE = "NINGUNA"
+CONTRACT_PAGES = 3
 _GEMINI_TYPES = {"application/pdf", "image/jpeg", "image/png", "image/webp"}
 _CONTRACT_SCHEMA = {
     "type": "object",
@@ -57,6 +59,29 @@ def _squash(value):
     return "".join(ch for ch in (value or "").upper() if ch.isalnum())
 
 
+def _first_pages(data, pages=CONTRACT_PAGES):
+    """
+    Only the first pages of a PDF (where the contract data is).
+
+    ---
+
+    Solo las primeras páginas de un PDF: empresa, fecha de inicio y
+    duración o fin están en la primera o las dos primeras. S125: los
+    contratos escaneados de muchas páginas (más de 1 MB) agotaban el
+    tiempo de Gemini (504 DEADLINE_EXCEEDED) tres veces seguidas. Si el
+    PDF no se puede abrir, se manda tal cual.
+    """
+    try:
+        source = fitz.open(stream=data, filetype="pdf")
+    except Exception:  # noqa: BLE001 -- PDF raro: se manda entero.
+        return data
+    if source.page_count <= pages:
+        return data
+    trimmed = fitz.open()
+    trimmed.insert_pdf(source, from_page=0, to_page=pages - 1)
+    return trimmed.tobytes(garbage=3, deflate=True)
+
+
 def read_contract(entry):
     """
     Read employer, start and end date of one contract document.
@@ -72,6 +97,8 @@ def read_contract(entry):
     mime = content_type_of(data, entry.name)
     if mime not in _GEMINI_TYPES:
         return None
+    if mime == "application/pdf":
+        data = _first_pages(data)
     profiles = list(CompanyFiscalProfile.objects.all())
     options = "\n".join(
         "- %s: %s" % (profile.tax_id, profile.legal_name)
