@@ -72,7 +72,7 @@ from document_management.vigencia_service import (
 )
 from fleet.models import MachineAsset
 from hr_calendar.models import VacationPeriod
-from ivr_config.models import Company, WorkPeriod
+from ivr_config.models import Company, CompanyUser, WorkPeriod
 from panel.mixins import (
     CompanyUserRequiredMixin, DocsUploadAccessMixin, SupervisorAccessMixin,
 )
@@ -1726,11 +1726,11 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
         ]
         # S125: aviso por antigüedad (o caducidad) del contrato vigente.
         contract_alert = _contract_alert(person)
+        contract_review = _contract_review_info(person)
         for entry in laboral_documents:
-            entry.contract_alert = (
-                contract_alert
-                if entry.document_type.code == "CONTRATO" else None
-            )
+            is_contract = entry.document_type.code == "CONTRATO"
+            entry.contract_alert = contract_alert if is_contract else None
+            entry.contract_review = contract_review if is_contract else ""
         salud_documents = [
             entry for entry in current
             if entry.document_type
@@ -2050,13 +2050,23 @@ def _contract_alert(person):
 
 class PersonalContractReviewedView(DocsUploadAccessMixin, View):
     """
-    POST: the supervisor confirms the current contract (JSON answer).
+    POST: review, restore or clear the current contract review (JSON).
 
     ---
 
-    POST: el supervisor confirma que el contrato vigente es el correcto
-    (H30, S125). El aviso de antigüedad vuelve a contar desde hoy.
-    Responde JSON para que el botón muestre el resultado real.
+    POST: revisión del contrato vigente (H30, S125). Respuesta JSON para
+    que el botón muestre el resultado real.
+
+    - action=review (por defecto): "Correcto" -- el aviso de antigüedad
+      vuelve a contar desde hoy. Devuelve la revisión anterior para
+      poder deshacer al momento.
+    - action=restore (+ previous_date AAAA-MM-DD o vacío, previous_by):
+      "Deshacer" -- deja exactamente la revisión anterior al clic.
+    - action=clear: "Anular revisión" -- quita la revisión; el aviso
+      vuelve a calcularse desde la fecha del contrato (en el peor caso
+      reaparece un aviso, nunca se esconde uno).
+    Miguel Ángel (S125): "si pulso correcto, ¿hay algún botón para
+    revertir por si pulso sin querer?"
     """
 
     def post(self, request, pk):
@@ -2067,12 +2077,67 @@ class PersonalContractReviewedView(DocsUploadAccessMixin, View):
             return JsonResponse(
                 {"ok": False, "error": "La persona no existe."}, status=404,
             )
-        person.contract_reviewed_at = date.today()
-        person.contract_reviewed_by = request.user.company_user
+        action = request.POST.get("action", "review")
+        previous = {
+            "previous_date": (
+                person.contract_reviewed_at.isoformat()
+                if person.contract_reviewed_at else ""
+            ),
+            "previous_by": person.contract_reviewed_by_id or "",
+        }
+        if action == "review":
+            person.contract_reviewed_at = date.today()
+            person.contract_reviewed_by = request.user.company_user
+        elif action == "restore":
+            raw_date = request.POST.get("previous_date", "")
+            raw_by = request.POST.get("previous_by", "")
+            try:
+                person.contract_reviewed_at = (
+                    date.fromisoformat(raw_date) if raw_date else None
+                )
+            except ValueError:
+                return JsonResponse(
+                    {"ok": False, "error": "Fecha anterior no válida."},
+                    status=400,
+                )
+            person.contract_reviewed_by = (
+                CompanyUser.objects.filter(
+                    pk=int(raw_by), company=request.user.company_user.company,
+                ).first() if str(raw_by).isdigit() else None
+            )
+        elif action == "clear":
+            person.contract_reviewed_at = None
+            person.contract_reviewed_by = None
+        else:
+            return JsonResponse(
+                {"ok": False, "error": "Acción no válida."}, status=400,
+            )
         person.save(update_fields=[
             "contract_reviewed_at", "contract_reviewed_by", "updated_at",
         ])
-        return JsonResponse({"ok": True})
+        return JsonResponse({"ok": True, **previous})
+
+
+def _contract_review_info(person):
+    """
+    "Reviewed on ... by ..." line for the contract row, or "".
+
+    ---
+
+    Línea "Revisado el ... por ..." para la fila del contrato, con o
+    sin aviso activo -- para poder anular una revisión hecha sin querer
+    aunque el aviso ya no se vea.
+    """
+    reviewed = person.contract_reviewed_at
+    if not reviewed:
+        return ""
+    reviewer = person.contract_reviewed_by
+    return "Revisado el %s%s" % (
+        reviewed.strftime("%d/%m/%Y"),
+        " por %s" % (
+            reviewer.user.get_full_name() or reviewer.user.username
+        ) if reviewer and reviewer.user_id else "",
+    )
 
 
 def _keep_latest_laboral_per_type(current, obsolete):

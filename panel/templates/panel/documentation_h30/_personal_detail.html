@@ -347,12 +347,14 @@ arriba (title=...) se queda para cuando el acordeón está cerrado.
                        {% if entry.pk in selected_document_ids %}checked{% endif %}
                        onchange="toggleDocumentSelection(this)">
             </td>
-            <td>{{ entry.document_type.label }}{% if entry.contract_alert %}<div class="contract-alert-box"><span class="badge {{ entry.contract_alert.css }} text-wrap text-start">{{ entry.contract_alert.text }}</span>
-                <button type="button" class="btn btn-sm btn-outline-success py-0 ms-1 contract-review-button"
-                        data-url="{% url 'panel:documentation_personal_contract_reviewed' pk=person.pk %}"
-                        title="El contrato vigente es el correcto: el aviso vuelve a contar desde hoy">Correcto</button>
-                <span class="small ms-1 contract-review-status"></span>
-                {% if entry.contract_alert.reviewed_text %}<div class="small text-muted">{{ entry.contract_alert.reviewed_text }}</div>{% endif %}</div>{% endif %}</td>
+            <td>{{ entry.document_type.label }}{% if entry.contract_alert or entry.contract_review %}<div class="contract-alert-box" data-url="{% url 'panel:documentation_personal_contract_reviewed' pk=person.pk %}">
+                {% if entry.contract_alert %}<span class="badge {{ entry.contract_alert.css }} text-wrap text-start">{{ entry.contract_alert.text }}</span>
+                <button type="button" class="btn btn-sm btn-outline-success py-0 ms-1 contract-review-button" data-action="review"
+                        title="El contrato vigente es el correcto: el aviso vuelve a contar desde hoy">Correcto</button>{% endif %}
+                {% if entry.contract_review %}<div class="small text-muted">{{ entry.contract_review }}
+                <button type="button" class="btn btn-sm btn-link py-0 px-1 contract-review-button" data-action="clear"
+                        title="Quitar la revisión: el aviso vuelve a calcularse desde la fecha del contrato">Anular revisión</button></div>{% endif %}
+                <span class="small ms-1 contract-review-status"></span></div>{% endif %}</td>
             <td>
                 {% if entry.needs_attention %}<i class="bi bi-exclamation-triangle-fill text-danger me-1" title="Sin fecha vigente -- necesita atención"></i>{% endif %}
                 {% if entry.expiry_date %}{{ entry.expiry_date }}{% elif entry.issue_date %}<span class="text-muted small">Emisión:</span> {{ entry.issue_date }}{% else %}—{% endif %}
@@ -1584,32 +1586,56 @@ function openEpiHistory(epiId) {
 // (/panel/navegacion/estado/personal_ficha/, ver bloque IIFE más
 // abajo) -- nunca sessionStorage/localStorage, mismo criterio de
 // Miguel Ángel que el resto de la ficha.
-// H30 (S125): "Correcto" en el aviso del contrato -- el supervisor
-// confirma el contrato vigente y el contador de antigüedad vuelve a cero.
-document.querySelectorAll('.contract-review-button').forEach(function (button) {
-    button.addEventListener('click', function () {
-        const box = button.closest('.contract-alert-box');
-        const status = box.querySelector('.contract-review-status');
-        button.disabled = true;
-        status.className = 'small ms-1 contract-review-status text-muted';
-        status.textContent = 'Guardando…';
-        fetch(button.dataset.url, {
-            method: 'POST',
-            headers: {'X-CSRFToken': getCookie('csrftoken')},
-        }).then(function (resp) {
-            return resp.json().then(function (data) {
-                if (!resp.ok || !data.ok) { throw new Error(data.error || ('HTTP ' + resp.status)); }
-            });
-        }).then(function () {
-            box.innerHTML = '<span class="small text-success"><i class="bi bi-check-circle me-1"></i>Revisado hoy: el aviso vuelve a contar desde hoy.</span>';
-            const header = document.getElementById('contractAlertHeaderBadge');
-            if (header) { header.remove(); }
-        }).catch(function (err) {
-            button.disabled = false;
-            status.className = 'small ms-1 contract-review-status text-danger';
-            status.textContent = 'No se ha guardado: ' + err.message;
+// H30 (S125): revisión del contrato vigente. "Correcto" pone el
+// contador de antigüedad a cero (con "Deshacer" al momento); "Anular
+// revisión" la quita. Nada en silencio: Guardando / resultado / error.
+function postContractReview(box, params) {
+    const status = box.querySelector('.contract-review-status');
+    box.querySelectorAll('button').forEach(function (b) { b.disabled = true; });
+    status.className = 'small ms-1 contract-review-status text-muted';
+    status.textContent = 'Guardando…';
+    return fetch(box.dataset.url, {
+        method: 'POST',
+        headers: {'X-CSRFToken': getCookie('csrftoken')},
+        body: new URLSearchParams(params),
+    }).then(function (resp) {
+        return resp.json().then(function (data) {
+            if (!resp.ok || !data.ok) { throw new Error(data.error || ('HTTP ' + resp.status)); }
+            return data;
         });
+    }).catch(function (err) {
+        box.querySelectorAll('button').forEach(function (b) { b.disabled = false; });
+        status.className = 'small ms-1 contract-review-status text-danger';
+        status.textContent = 'No se ha guardado: ' + err.message;
+        throw err;
     });
+}
+
+document.addEventListener('click', function (ev) {
+    const button = ev.target.closest('.contract-review-button');
+    if (!button) { return; }
+    const box = button.closest('.contract-alert-box');
+    const action = button.dataset.action;
+    if (action === 'review') {
+        postContractReview(box, {action: 'review'}).then(function (data) {
+            box.dataset.previousDate = data.previous_date;
+            box.dataset.previousBy = data.previous_by;
+            box.innerHTML = '<span class="small text-success"><i class="bi bi-check-circle me-1"></i>Revisado hoy: el aviso vuelve a contar desde hoy.</span>'
+                + ' <button type="button" class="btn btn-sm btn-link py-0 px-1 contract-review-button" data-action="restore">Deshacer</button>'
+                + '<span class="small ms-1 contract-review-status"></span>';
+            const header = document.getElementById('contractAlertHeaderBadge');
+            if (header) { header.classList.add('d-none'); }
+        }).catch(function () {});
+    } else if (action === 'restore') {
+        postContractReview(box, {
+            action: 'restore', previous_date: box.dataset.previousDate || '',
+            previous_by: box.dataset.previousBy || '',
+        }).then(function () { location.reload(); }).catch(function () {});
+    } else if (action === 'clear') {
+        postContractReview(box, {action: 'clear'}).then(function () {
+            location.reload();
+        }).catch(function () {});
+    }
 });
 
 let selectedDocumentIds = new Set([
