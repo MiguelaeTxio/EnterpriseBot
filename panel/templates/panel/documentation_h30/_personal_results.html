@@ -10,8 +10,8 @@ en la selección recordada por ese JS al reconstruir la tabla.
     <thead class="table-light">
         <tr>
             <th class="sticky-col sticky-col-1"><input type="checkbox" class="form-check-input" id="person-select-all-page" title="Seleccionar todos los que cumplen el filtro actual"></th>
-            <th class="sticky-col sticky-col-2"></th>
-            <th class="sticky-col sticky-col-3 sticky-col-last">
+            <th class="sticky-col sticky-col-2 sticky-col-2-wide"></th>
+            <th class="sticky-col sticky-col-3 sticky-col-3-after-wide sticky-col-last">
                 <a href="#"
                    hx-get="{% url 'panel:documentation_personal_results' %}?sort=first_surname&dir={% if sort_key == 'first_surname' and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&q={{ search }}{% for a in active_filter %}&active={{ a }}{% endfor %}{% for c in company_filter %}&company={{ c }}{% endfor %}{% if requirement_filter %}&requirement={{ requirement_filter }}{% endif %}"
                    hx-target="#personal-results" class="text-decoration-none text-dark">
@@ -52,8 +52,8 @@ en la selección recordada por ese JS al reconstruir la tabla.
         {% for person in page %}
         <tr>
             <td class="sticky-col sticky-col-1"><input type="checkbox" class="form-check-input person-select-checkbox" value="{{ person.pk }}" data-name="{{ person.first_surname }} {{ person.second_surname }}, {{ person.given_name }}"></td>
-            <td class="sticky-col sticky-col-2">{% if person.has_alert %}<i class="bi bi-exclamation-triangle-fill text-danger" title="{{ person.alert_labels|join:", " }}"></i>{% endif %}{% if person.contract_alert %}<span class="badge {{ person.contract_alert.css }} ms-1" title="{{ person.contract_alert.text }}"><i class="bi bi-clock-history"></i></span>{% endif %}</td>
-            <td class="sticky-col sticky-col-3 sticky-col-last">{% if person.avatar_entry_id %}<img src="{% url 'panel:documentation_document_view' pk=person.avatar_entry_id %}" alt="" width="28" height="28" loading="lazy" class="rounded border me-1 person-avatar-thumb">{% endif %}<a href="{% url 'panel:documentation_personal_detail' pk=person.pk %}">{{ person.first_surname }} {{ person.second_surname }}, {{ person.given_name }}</a></td>
+            <td class="sticky-col sticky-col-2 sticky-col-2-wide">{% if person.has_alert %}<i class="bi bi-exclamation-triangle-fill text-danger" title="{{ person.alert_labels|join:", " }}"></i>{% endif %}{% if person.contract_alert %}<span class="badge {{ person.contract_alert.css }} ms-1" title="{{ person.contract_alert.text }}"><i class="bi bi-clock-history"></i></span>{% endif %}</td>
+            <td class="sticky-col sticky-col-3 sticky-col-3-after-wide sticky-col-last">{% if person.avatar_entry_id %}<img src="{% url 'panel:documentation_document_view' pk=person.avatar_entry_id %}" alt="" width="28" height="28" loading="lazy" class="rounded border me-1 person-avatar-thumb">{% endif %}<a href="{% url 'panel:documentation_personal_detail' pk=person.pk %}">{{ person.first_surname }} {{ person.second_surname }}, {{ person.given_name }}</a></td>
             <td>{{ person.dni }}</td>
             <td>{{ person.hire_date|date:"d/m/Y"|default_if_none:"" }}</td>
             <td>{{ person.doc_count }}</td>

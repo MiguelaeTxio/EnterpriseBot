@@ -1294,6 +1294,20 @@ table.table #toll-thead ~ tbody tr:nth-child(even):not(.table-secondary) td {
     left: 64px;
 }
 
+/* S125: en el listado de Personal la columna de avisos lleva dos iconos
+   (triángulo del requisito y reloj del contrato); con 28px el reloj
+   quedaba tapado por la foto. Solo esta tabla (Flota lleva uno). */
+.table .sticky-col-2.sticky-col-2-wide {
+    width: 56px;
+    min-width: 56px;
+    max-width: 56px;
+    white-space: nowrap;
+}
+
+.table .sticky-col-3.sticky-col-3-after-wide {
+    left: 92px;
+}
+
 /* Línea de separación a la derecha de la última columna fija. */
 .table .sticky-col-last::after {
     content: "";
