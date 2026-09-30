@@ -18,7 +18,14 @@ activa a nadie (Miguel Ángel, S125) -- y deja en BD:
 Una fecha existente nunca se borra por no poder leerla. Con --dry-run
 no guarda nada: informa de lo que cambiaría. Salida en pantalla y en
 archivo a la vez (--log-file), con progreso.
+
+--cache-file (S125): cada lectura de Gemini se guarda en un JSON en
+cuanto se hace. La ejecución real reutiliza lo leído en la simulación
+sin volver a llamar a Gemini (258 contratos, más de una hora), y si se
+corta, al relanzarlo continúa donde iba.
 """
+import json
+import os
 import time
 from datetime import datetime
 
@@ -55,6 +62,7 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("--dry-run", action="store_true")
         parser.add_argument("--log-file", default="")
+        parser.add_argument("--cache-file", default="")
 
     def _log(self, message):
         line = "[%s] %s" % (datetime.now().strftime("%H:%M:%S"), message)
@@ -68,6 +76,11 @@ class Command(BaseCommand):
             open(options["log_file"], "w", encoding="utf-8")
             if options["log_file"] else None
         )
+        self._cache_path = options["cache_file"]
+        self._cache = {}
+        if self._cache_path and os.path.exists(self._cache_path):
+            with open(self._cache_path, encoding="utf-8") as handle:
+                self._cache = json.load(handle)
         try:
             self._run(options["dry_run"])
         finally:
@@ -104,6 +117,49 @@ class Command(BaseCommand):
             )
         )
 
+    def _reading(self, document):
+        """
+        Reading of one contract: from the cache, or Gemini (and cached).
+
+        ---
+
+        Lectura de un contrato: de la caché si ya se leyó, o de Gemini
+        (y se guarda en la caché al momento).
+        """
+        from document_explorer.models import CompanyFiscalProfile
+        from document_explorer.worker_request_service import _parse_iso
+
+        key = str(document.pk)
+        if key in self._cache:
+            cached = self._cache[key]
+            if cached is None:
+                return None
+            return {
+                "profile": CompanyFiscalProfile.objects.filter(
+                    pk=cached["profile"],
+                ).first() if cached["profile"] else None,
+                "start_date": _parse_iso(cached["start_date"]),
+                "end_date": _parse_iso(cached["end_date"]),
+                "is_indefinite": cached["is_indefinite"],
+            }
+        reading = read_contract(document)
+        self._cache[key] = None if reading is None else {
+            "profile": reading["profile"].pk if reading["profile"] else None,
+            "start_date": (
+                reading["start_date"].isoformat()
+                if reading["start_date"] else ""
+            ),
+            "end_date": (
+                reading["end_date"].isoformat()
+                if reading["end_date"] else ""
+            ),
+            "is_indefinite": reading["is_indefinite"],
+        }
+        if self._cache_path:
+            with open(self._cache_path, "w", encoding="utf-8") as handle:
+                json.dump(self._cache, handle)
+        return reading
+
     def _person(self, position, person, dry_run, totals):
         name = "%s %s, %s (pk %s)" % (
             person.first_surname, person.second_surname,
@@ -120,7 +176,7 @@ class Command(BaseCommand):
         for document in documents:
             totals["docs"] += 1
             try:
-                reading = read_contract(document)
+                reading = self._reading(document)
             except Exception as exc:  # noqa: BLE001 -- se registra
                 totals["errors"] += 1
                 self._log("   %s %s: ERROR de lectura: %s" % (
