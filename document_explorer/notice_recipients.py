@@ -20,6 +20,8 @@ administrador (S126, Miguel Ángel: el administrador configura los
 avisos que quiere recibir y prueba el circuito de extremo a extremo
 sin depender de un supervisor).
 """
+import re
+import unicodedata
 from dataclasses import dataclass, field
 
 from document_explorer.document_notice_service import DOMAIN_PERSONAL
@@ -27,6 +29,72 @@ from document_explorer.document_notice_service import DOMAIN_PERSONAL
 DOCS_SUPERVISOR_ROLE = "DOCS_SUPERVISOR"
 ADMIN_ROLE = "ADMIN"
 RECIPIENT_ROLES = (DOCS_SUPERVISOR_ROLE, ADMIN_ROLE)
+
+
+def _squash_company(value):
+    """
+    Uppercase letters and digits only, without accents.
+
+    ---
+
+    Solo letras y dígitos en mayúsculas, sin acentos: "TRANSGRUAL
+    S.L." y "TRANSGRUAL SL" quedan iguales.
+    """
+    value = unicodedata.normalize("NFD", value or "")
+    value = "".join(ch for ch in value if unicodedata.category(ch) != "Mn")
+    return re.sub(r"[^A-Z0-9]", "", value.upper())
+
+
+class CompanyKeyResolver:
+    """
+    Same key for every spelling of the same group company.
+
+    ---
+
+    Misma clave para todas las grafías de una misma empresa del grupo
+    (S126). El ámbito de un destinatario guarda el texto de
+    `employer_company` que había al guardarlo, y ese texto cambia
+    cuando el sistema normaliza la empresa (S125: "TRANSGRUAL S.L." ->
+    "TRANSGRUAL SL"); comparando por texto literal el aviso dejaba de
+    llegar y la casilla no salía marcada. Se compara por el
+    `CompanyFiscalProfile` cuyo nombre o alias casa sin puntos,
+    espacios ni acentos; si no casa ninguno, por el texto así
+    compactado.
+    """
+
+    def __init__(self):
+        from document_explorer.models import CompanyFiscalProfile
+
+        self._profiles = []
+        for profile in CompanyFiscalProfile.objects.all():
+            names = {
+                _squash_company(line)
+                for line in profile.name_aliases.splitlines()
+                if line.strip()
+            }
+            names.add(_squash_company(profile.legal_name))
+            names.discard("")
+            self._profiles.append((profile.pk, names))
+        self._cache = {}
+
+    def key(self, value):
+        """
+        Comparison key of a company text.
+
+        ---
+
+        Clave de comparación de un texto de empresa.
+        """
+        if value not in self._cache:
+            squashed = _squash_company(value)
+            self._cache[value] = next(
+                (
+                    "P%d" % pk for pk, names in self._profiles
+                    if squashed in names
+                ),
+                "T:" + squashed,
+            )
+        return self._cache[value]
 
 
 @dataclass
@@ -50,6 +118,7 @@ class ScopeSnapshot:
     machine_ids: set = field(default_factory=set)
     excluded_requirement_ids: set = field(default_factory=set)
     excluded_type_ids: set = field(default_factory=set)
+    company_key: object = None
 
     def covers(self, notice):
         """
@@ -64,9 +133,12 @@ class ScopeSnapshot:
         if notice.document_type_id in self.excluded_type_ids:
             return False
         if notice.domain == DOMAIN_PERSONAL:
+            company = notice.subject_company
+            if self.company_key is not None:
+                company = self.company_key(company)
             return (
                 self.personal_all
-                or notice.subject_company in self.personal_companies
+                or company in self.personal_companies
                 or notice.subject_id in self.personal_person_ids
             )
         return (
@@ -112,6 +184,7 @@ def load_scopes(company=None):
     from document_explorer.models import NoticeRecipientScope
 
     supervisors = docs_supervisors(company)
+    resolver = CompanyKeyResolver()
     scopes_by_user = {
         scope.company_user_id: scope
         for scope in NoticeRecipientScope.objects.filter(
@@ -124,13 +197,17 @@ def load_scopes(company=None):
     snapshots = []
     for company_user in supervisors:
         scope = scopes_by_user.get(company_user.pk)
-        snapshot = ScopeSnapshot(company_user=company_user)
+        snapshot = ScopeSnapshot(
+            company_user=company_user, company_key=resolver.key,
+        )
         if scope is not None:
             person_ids = {p.pk for p in scope.personal_persons.all()}
             for group in scope.personal_groups.all():
                 person_ids |= {p.pk for p in group.members.all()}
             snapshot.personal_all = scope.personal_all
-            snapshot.personal_companies = set(scope.personal_companies)
+            snapshot.personal_companies = {
+                resolver.key(value) for value in scope.personal_companies
+            }
             snapshot.personal_person_ids = person_ids
             snapshot.machine_all = scope.machine_all
             snapshot.machine_families = set(scope.machine_families)

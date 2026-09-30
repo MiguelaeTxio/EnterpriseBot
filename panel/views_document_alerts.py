@@ -36,7 +36,8 @@ from document_explorer.models import (
 from document_explorer.person_phone_service import mobile_of
 from document_explorer.worker_request_service import create_requests
 from document_explorer.notice_recipients import (
-    RECIPIENT_ROLES, docs_supervisors, load_scopes, recipients_for,
+    RECIPIENT_ROLES, CompanyKeyResolver, docs_supervisors, load_scopes,
+    recipients_for,
 )
 from document_management.models import DocumentAlertSettings
 from fleet.models import MachineAsset
@@ -221,14 +222,55 @@ def _can_edit_scope(editor, supervisor):
     )
 
 
-def _scope_to_dict(scope):
+def _personal_company_options():
+    """
+    Employer companies of the active workers, sorted.
+
+    ---
+
+    Empresas empleadoras de los trabajadores activos, ordenadas (las
+    opciones de "Empresas" en Personal).
+    """
+    return sorted(
+        value for value in set(
+            PersonIdentity.objects.filter(
+                is_active_employee=True,
+            ).values_list("employer_company", flat=True),
+        ) if value
+    )
+
+
+def _current_companies(values, options, resolver):
+    """
+    Stored company texts translated to the current option spelling.
+
+    ---
+
+    Traduce las empresas guardadas en el ámbito a la grafía de la
+    opción actual de la misma empresa (S126: "TRANSGRUAL S.L." guardado
+    antes de normalizar -> "TRANSGRUAL SL"), para que la casilla salga
+    marcada y al guardar quede la grafía vigente. Lo que no casa con
+    ninguna opción se devuelve tal cual (la pantalla lo muestra aparte,
+    nunca oculto).
+    """
+    by_key = {resolver.key(option): option for option in options}
+    result = []
+    for value in values:
+        current = by_key.get(resolver.key(value), value)
+        if current not in result:
+            result.append(current)
+    return result
+
+
+def _scope_to_dict(scope, company_options=None, resolver=None):
     """
     Serialize one NoticeRecipientScope (or None) for the client.
 
     ---
 
     Serializa el ámbito de un supervisor para el cliente; sin ficha,
-    todo vacío (no recibe nada).
+    todo vacío (no recibe nada). Con `company_options` y `resolver`,
+    las empresas salen en la grafía de las opciones actuales.
     """
     if scope is None:
         return {
@@ -240,7 +282,12 @@ def _scope_to_dict(scope):
         }
     return {
         "personal_all": scope.personal_all,
-        "personal_companies": list(scope.personal_companies),
+        "personal_companies": (
+            _current_companies(
+                scope.personal_companies, company_options, resolver,
+            ) if resolver is not None
+            else list(scope.personal_companies)
+        ),
         "personal_groups": [g.pk for g in scope.personal_groups.all()],
         "personal_persons": [p.pk for p in scope.personal_persons.all()],
         "machine_all": scope.machine_all,
@@ -268,6 +315,8 @@ def _recipients_context(editor):
     requisitos y documentos).
     """
     supervisors = docs_supervisors(editor.company)
+    resolver = CompanyKeyResolver()
+    company_options = _personal_company_options()
     scopes = {
         scope.company_user_id: scope
         for scope in NoticeRecipientScope.objects.filter(
@@ -294,18 +343,14 @@ def _recipients_context(editor):
                 ),
                 "can_edit": _can_edit_scope(editor, supervisor),
                 "is_me": supervisor.pk == editor.pk,
-                "scope": _scope_to_dict(scopes.get(supervisor.pk)),
+                "scope": _scope_to_dict(
+                    scopes.get(supervisor.pk), company_options, resolver,
+                ),
             }
             for supervisor in supervisors
         ],
         "options": {
-            "personal_companies": sorted(
-                value for value in set(
-                    active_people.values_list(
-                        "employer_company", flat=True,
-                    ),
-                ) if value
-            ),
+            "personal_companies": company_options,
             "personal_groups": [
                 {"id": g.pk, "label": g.name}
                 for g in PersonGroupTemplate.objects.order_by("name")
@@ -878,4 +923,6 @@ class NoticeScopeSaveView(CompanyUserRequiredMixin, View):
             "personal_groups", "personal_persons", "machines",
             "excluded_requirements", "excluded_document_types",
         ).get(pk=scope.pk)
-        return JsonResponse({"ok": True, "scope": _scope_to_dict(scope)})
+        return JsonResponse({"ok": True, "scope": _scope_to_dict(
+            scope, _personal_company_options(), CompanyKeyResolver(),
+        )})

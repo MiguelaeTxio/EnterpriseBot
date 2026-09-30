@@ -440,8 +440,14 @@ window.saveDocAlertsNav = function (patch) {
 
     function checklist(list, disabled) {
         const selected = new Set((draft[list.key] || []).map(String));
-        const items = (options[list.key] || []).map(option => {
-            const value = optionValue(option);
+        // S126: un valor guardado que ya no está entre las opciones
+        // (empresa renombrada, máquina o persona que dejó de estar
+        // activa) se muestra marcado y señalado, nunca oculto.
+        const known = new Set((options[list.key] || []).map(optionValue).map(String));
+        const stale = Array.from(selected).filter(value => !known.has(value))
+            .map(value => ({id: value, label: value + ' (ya no está en la lista)'}));
+        const items = (options[list.key] || []).concat(stale).map(option => {
+            const value = String(optionValue(option));
             const id = `rcpt_${list.key}_${value}`.replace(/[^A-Za-z0-9_-]/g, '_');
             return `<div class="form-check recipients-item" data-label="${escapeHtml(optionLabel(option).toLowerCase())}">
                 <input class="form-check-input" type="checkbox" id="${id}" data-list="${list.key}" value="${escapeHtml(value)}" ${selected.has(value) ? 'checked' : ''} ${disabled ? 'disabled' : ''}>
