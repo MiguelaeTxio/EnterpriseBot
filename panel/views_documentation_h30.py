@@ -1063,8 +1063,12 @@ class PersonalListFragmentView(CompanyUserRequiredMixin, View):
         ctx["epi_items"] = EpiItemCatalog.objects.filter(
             is_active=True,
         ).order_by("family", "label")
+        # S126: las que requieren firma NO van por aquí (solo por
+        # "Preparar para Docuten", decisión de S124) -- antes salían en
+        # los dos desplegables y parecían el mismo.
         ctx["notification_types"] = DocumentTypeCatalog.objects.filter(
             is_active=True, is_notification_template=True,
+            requires_signature=False,
         ).exclude(content_html="").order_by("label")
         # H30 (S124): solo las circulares que requieren firma
         # certificada se preparan para Docuten.
@@ -1865,8 +1869,10 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
         doc_types = DocumentTypeCatalog.objects.filter(
             is_active=True, domain__in=["PERSONAL", "BOTH"],
         ).order_by("label")
+        # S126: las que requieren firma van solo por Docuten (S124).
         notification_types = DocumentTypeCatalog.objects.filter(
             is_active=True, is_notification_template=True,
+            requires_signature=False,
         ).exclude(content_html="").order_by("label")
         epi_deliveries = EpiDelivery.objects.filter(
             person=person,
