@@ -4131,6 +4131,9 @@ class PersonalCreateView(DocsUploadAccessMixin, View):
         folder_path = "%s/%s" % (folder_root, folder_name)
 
         person = PersonIdentity(
+            # S125: sin este vínculo la ficha queda fuera de WhatsApp
+            # (adjuntos, "Leer aquí", envíos), que resuelven por Company.
+            company=request.user.company_user.company,
             dni=data["dni"],
             first_surname=data["first_surname"],
             second_surname=data["second_surname"],

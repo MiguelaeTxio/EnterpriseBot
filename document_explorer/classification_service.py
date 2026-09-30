@@ -1604,7 +1604,13 @@ def resolve_or_create_person_identity(
         if second_surname
         else "%s, %s" % (first_surname, given_name)
     )
+    from ivr_config.models import Company
+
     identity = PersonIdentity.objects.create(
+        # S125: una sola Company en la plataforma (mismo criterio que
+        # subject_upload_service._resolve_company); sin ella la ficha
+        # queda fuera de WhatsApp, que resuelve por Company.
+        company=Company.objects.first(),
         dni=dni,
         first_surname=first_surname,
         second_surname=second_surname,
