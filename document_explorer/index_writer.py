@@ -433,15 +433,19 @@ def recount_children(bucket_name, folder_paths=None):
     Nunca un COUNT por carpeta: ese es el N+1 que este campo existe
     para evitar.
     """
-    counts = dict(
-        DocumentIndexEntry.objects
-        .filter(
-            bucket=bucket_name,
-            deleted_at__isnull=True,
-            purged_at__isnull=True,
+    children = DocumentIndexEntry.objects.filter(
+        bucket=bucket_name,
+        deleted_at__isnull=True,
+        purged_at__isnull=True,
+    )
+    if folder_paths is not None:
+        # S125: con carpetas concretas se cuentan solo sus hijos, no el
+        # cubo entero (lo usa ahora cada traslado de move_entries).
+        children = children.filter(
+            parent_path_hash__in=[path_digest(p) for p in folder_paths],
         )
-        .values_list("parent_path_hash")
-        .annotate(total=Count("id"))
+    counts = dict(
+        children.values_list("parent_path_hash").annotate(total=Count("id"))
     )
 
     folders = DocumentIndexEntry.objects.filter(

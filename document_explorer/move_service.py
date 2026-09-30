@@ -125,7 +125,7 @@ from django.db import transaction
 from django.db.models import Case, F, Q, Value, When
 
 from document_explorer.index_writer import (
-    _adjust_total_size, ancestors_of, ensure_folder_chain,
+    _adjust_total_size, ancestors_of, ensure_folder_chain, recount_children,
 )
 from document_explorer.models import DocumentIndexEntry, path_digest
 
@@ -502,7 +502,14 @@ def move_entries(entries, destination_folder):
             batch_size=500,
         )
         _bulk_adjust(bucket, "total_size_bytes", size_deltas)
-        _bulk_adjust(bucket, "child_count", count_deltas)
+        # S125: el contador de hijos se recuenta de verdad en vez de
+        # sumar/restar -- en carpetas con el contador desfasado la resta
+        # daba negativo y MySQL (sin signo) tumbaba el traslado entero
+        # ("BIGINT UNSIGNED value is out of range ... child_count + -12").
+        recount_children(bucket, folder_paths=[
+            folder_path for folder_path, delta in count_deltas.items()
+            if delta and folder_path
+        ])
 
     return results
 
