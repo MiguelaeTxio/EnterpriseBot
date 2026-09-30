@@ -19,6 +19,10 @@ Una fecha existente nunca se borra por no poder leerla. Con --dry-run
 no guarda nada: informa de lo que cambiaría. Salida en pantalla y en
 archivo a la vez (--log-file), con progreso.
 
+--shard N --shards M (S125): reparte los activos en M trozos (N desde
+1) para lanzar M consolas en paralelo, cada una con su --log-file y su
+--cache-file. Sin ellos, todos los activos en una sola ejecución.
+
 --cache-file (S125): cada lectura de Gemini se guarda en un JSON en
 cuanto se hace. La ejecución real reutiliza lo leído en la simulación
 sin volver a llamar a Gemini (258 contratos, más de una hora), y si se
@@ -29,7 +33,7 @@ import os
 import time
 from datetime import datetime
 
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
 from document_explorer.contract_service import (
@@ -63,6 +67,14 @@ class Command(BaseCommand):
         parser.add_argument("--dry-run", action="store_true")
         parser.add_argument("--log-file", default="")
         parser.add_argument("--cache-file", default="")
+        parser.add_argument(
+            "--shard", type=int, default=1,
+            help="Trozo a procesar, desde 1.",
+        )
+        parser.add_argument(
+            "--shards", type=int, default=1,
+            help="Número total de trozos.",
+        )
 
     def _log(self, message):
         line = "[%s] %s" % (datetime.now().strftime("%H:%M:%S"), message)
@@ -81,6 +93,11 @@ class Command(BaseCommand):
         if self._cache_path and os.path.exists(self._cache_path):
             with open(self._cache_path, encoding="utf-8") as handle:
                 self._cache = json.load(handle)
+        self._shard, self._shards = options["shard"], options["shards"]
+        if not 1 <= self._shard <= self._shards:
+            raise CommandError(
+                "--shard tiene que ir de 1 a %d." % self._shards,
+            )
         try:
             self._run(options["dry_run"])
         finally:
@@ -88,13 +105,18 @@ class Command(BaseCommand):
                 self._log_handle.close()
 
     def _run(self, dry_run):
-        people = list(PersonIdentity.objects.filter(
+        everyone = list(PersonIdentity.objects.filter(
             is_active_employee=True,
-        ).order_by("first_surname", "second_surname", "given_name"))
-        self._log("Inicio%s: %d trabajadores ACTIVOS." % (
-            " (SIMULACIÓN, no se guarda nada)" if dry_run else "",
-            len(people),
-        ))
+        ).order_by("first_surname", "second_surname", "given_name", "pk"))
+        people = [
+            person for index, person in enumerate(everyone)
+            if index % self._shards == self._shard - 1
+        ]
+        self._log("Inicio%s: trozo %d de %d -- %d de %d trabajadores "
+                  "ACTIVOS." % (
+                      " (SIMULACIÓN, no se guarda nada)" if dry_run else "",
+                      self._shard, self._shards, len(people), len(everyone),
+                  ))
         totals = {
             "docs": 0, "dates": 0, "ends": 0, "errors": 0,
             "employer": 0, "moved": 0,
