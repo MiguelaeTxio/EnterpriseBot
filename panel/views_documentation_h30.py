@@ -1003,6 +1003,7 @@ def _person_list_page(request):
         list(page.object_list), person_ct,
     )
     page.object_list = _attach_person_avatars(page.object_list, person_ct)
+    page.object_list = _attach_contract_alerts(page.object_list)
     return {
         "page": page, "sort_key": sort_key, "sort_dir": sort_dir,
         "search": search, "sort_columns_person": sort_columns,
@@ -1995,13 +1996,25 @@ def _contract_alert(person):
     nuevo cuenta desde su propia fecha. Devuelve {level, css, text,
     reviewed_text} o None.
     """
-    from datetime import date
-
     from document_explorer.employer_service import person_contracts
 
     if person.is_active_employee is not True:
         return None
-    latest = person_contracts(person).first()
+    return _contract_alert_for(person, person_contracts(person).first())
+
+
+def _contract_alert_for(person, latest):
+    """
+    Contract alert of a person given their latest contract document.
+
+    ---
+
+    Aviso del contrato de una persona dado su contrato vigente ya
+    resuelto -- la ficha lo busca de uno en uno y el listado de todos a
+    la vez (`_attach_contract_alerts`), con la misma regla.
+    """
+    from datetime import date
+
     if latest is None:
         return None
     today = date.today()
@@ -2138,6 +2151,42 @@ def _contract_review_info(person):
             reviewer.user.get_full_name() or reviewer.user.username
         ) if reviewer and reviewer.user_id else "",
     )
+
+
+def _attach_contract_alerts(objects):
+    """
+    Contract alert of every active person of a listing, in one query.
+
+    ---
+
+    Aviso del contrato de cada activo de un listado, con una sola
+    consulta (H30, S125). Independiente del requisito de documentación:
+    Miguel Ángel, "deberían de aparecer también en el listado de
+    trabajadores". Pone `contract_alert` en cada objeto (None si no hay).
+    """
+    from document_explorer.employer_service import CONTRACT_TYPE_CODES
+
+    active_ids = [
+        obj.pk for obj in objects if obj.is_active_employee is True
+    ]
+    latest_by_person = {}
+    for entry in DocumentIndexEntry.objects.filter(
+        entry_kind=DocumentIndexEntry.KIND_FILE,
+        domain_content_type=ContentType.objects.get_for_model(PersonIdentity),
+        domain_object_id__in=active_ids,
+        document_type__code__in=CONTRACT_TYPE_CODES,
+        is_obsolete=False, deleted_at__isnull=True, purged_at__isnull=True,
+    ).order_by(
+        "domain_object_id", "-issue_date", "-period_start_date",
+        "-indexed_at", "-pk",
+    ):
+        latest_by_person.setdefault(entry.domain_object_id, entry)
+    for obj in objects:
+        obj.contract_alert = (
+            _contract_alert_for(obj, latest_by_person.get(obj.pk))
+            if obj.is_active_employee is True else None
+        )
+    return objects
 
 
 def _keep_latest_laboral_per_type(current, obsolete):

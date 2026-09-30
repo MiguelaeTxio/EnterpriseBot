@@ -1495,3 +1495,11 @@ table.table #toll-thead ~ tbody tr:nth-child(even):not(.table-secondary) td {
     background-color: #fd7e14;
     color: #fff;
 }
+
+/* H30 (S125, 4.9): miniatura de la foto en el listado de Personal (antes
+   estilo en línea). */
+.person-avatar-thumb {
+    width: 28px;
+    height: 28px;
+    object-fit: cover;
+}
