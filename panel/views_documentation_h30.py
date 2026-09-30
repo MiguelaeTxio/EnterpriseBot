@@ -1590,6 +1590,9 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
         current, obsolete = _move_previous_period_documents(
             current, obsolete, employment["periods"],
         )
+        # S125: en Laboral, solo el vigente de cada tipo; el resto (con
+        # o sin fecha) al historial del tipo.
+        current, obsolete = _keep_latest_laboral_per_type(current, obsolete)
         # H30 (S120). Matriz de clases del carné de conducir (columnas
         # 9-12 del reverso) colgada de cada carné vigente, para la
         # tabla de clases de su fila -- ver attach_driving_grants.
@@ -1956,6 +1959,61 @@ def _move_previous_period_documents(current, obsolete, periods_newest_first):
             and entry.issue_date < cutoff
         )
         (moved if is_previous else kept).append(entry)
+    return kept, obsolete + moved
+
+
+def _keep_latest_laboral_per_type(current, obsolete):
+    """
+    Only the current document of each cumulative LABORAL type stays in
+    the person detail page; the rest goes to that type's history.
+
+    ---
+
+    H30 (S125). En Laboral, de cada tipo acumulable solo queda a la
+    vista el vigente: el de fecha de emisión más reciente; un documento
+    sin fecha nunca gana a uno con fecha; a igualdad, el último subido
+    (y si ninguno tiene fecha, el último subido). El resto, con o sin
+    fecha, pasa al historial de su tipo. Solo cambia dónde se pinta en
+    la ficha de persona: en BD nada queda obsoleto y la subida sigue sin
+    sustituir contratos/altas/IDC entre sí (S122).
+
+    Miguel Ángel, S125, con captura real: "si metemos 50 altas, se van
+    a ver las 50 altas, no mostramos la vigente [...] una persona que
+    lleve 40 años [...] va a tener 80 altas, 80 contratos". Sustituye la
+    excepción de S123 que dejaba a la vista los documentos sin fecha
+    "para poder corregirlos": ahora se corrigen desde el historial.
+    """
+    from datetime import date
+
+    def recency(entry):
+        return (
+            entry.issue_date is not None,
+            entry.issue_date or date.min,
+            entry.indexed_at.timestamp() if entry.indexed_at else 0,
+            entry.pk,
+        )
+
+    latest = {}
+    for entry in current:
+        document_type = entry.document_type if entry.document_type_id else None
+        if (
+            document_type is None
+            or not document_type.is_cumulative
+            or document_type.family != DocumentTypeCatalog.FAMILY_LABORAL
+        ):
+            continue
+        best = latest.get(document_type.pk)
+        if best is None or recency(entry) > recency(best):
+            latest[document_type.pk] = entry
+    kept, moved = [], []
+    for entry in current:
+        document_type = entry.document_type if entry.document_type_id else None
+        is_older = (
+            document_type is not None
+            and document_type.pk in latest
+            and latest[document_type.pk] is not entry
+        )
+        (moved if is_older else kept).append(entry)
     return kept, obsolete + moved
 
 
@@ -3204,6 +3262,11 @@ def _document_type_history_response(request, subject_model, subject_pk,
         current, _obsolete = _move_previous_period_documents(
             current, _obsolete,
             _person_employment_periods(subject)["periods"],
+        )
+        # S125: mismo criterio que la ficha -- en Laboral un solo
+        # vigente por tipo.
+        current, _obsolete = _keep_latest_laboral_per_type(
+            current, _obsolete,
         )
     current_pks = {entry.pk for entry in current}
     for entry in entries:
