@@ -3364,6 +3364,10 @@ def apply_quarantine_classification(entry) -> dict:
         employer = refresh_after_contract(
             identity, result.get("document_type_code"),
         )
+        # H30 (S125): permiso de conducción -> matriz de clases.
+        from document_explorer.driving_licence_service import queue_harvest
+
+        queue_harvest(entry)
         if employer and employer["changed"]:
             result["person_identity_note"] = " -- ".join(filter(None, [
                 result.get("person_identity_note"),

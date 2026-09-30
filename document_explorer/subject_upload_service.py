@@ -49,6 +49,8 @@ Flujo:
    `is_obsolete=True` -- NUNCA se mueven ni se borran (4.12), y queda
    registro en `DocumentSubstitutionLog` para trazabilidad real.
 """
+import mimetypes
+
 from django.contrib.contenttypes.models import ContentType
 from django.utils import timezone
 
@@ -79,6 +81,30 @@ BUCKET = "cgs_grupo_alvarez"
 
 class SubjectUploadError(Exception):
     pass
+
+
+def content_type_of(data, filename=""):
+    """
+    Real MIME type from the bytes, then from the file name.
+
+    ---
+
+    Tipo real del archivo: por sus propios bytes (PDF, PNG, JPEG, WebP)
+    y, si no, por la extensión. S125: antes todo lo que no era PDF se
+    guardaba como application/octet-stream -- las fotos subidas desde
+    la ficha o por WhatsApp no se podían pasar a Gemini (400) ni verse
+    como imagen.
+    """
+    if data[:5] == b"%PDF-":
+        return "application/pdf"
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    if data[:3] == b"\xff\xd8\xff":
+        return "image/jpeg"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    guessed, _encoding = mimetypes.guess_type(filename or "")
+    return guessed or "application/octet-stream"
 
 
 def _resolve_company():
@@ -113,7 +139,8 @@ def _resolve_target_folder(domain_content_type, domain_object_id, subject):
     """
     existing = DocumentIndexEntry.objects.filter(
         bucket=BUCKET, domain_content_type=domain_content_type,
-        domain_object_id=domain_object_id, entry_kind=DocumentIndexEntry.KIND_FILE,
+        domain_object_id=domain_object_id,
+        entry_kind=DocumentIndexEntry.KIND_FILE,
         deleted_at__isnull=True, purged_at__isnull=True,
     ).order_by("-id").first()
     if existing:
@@ -130,7 +157,8 @@ def _resolve_target_folder(domain_content_type, domain_object_id, subject):
     )
 
 
-def _build_filename(subject, document_type_code, upload_date, extension, ordinal=None):
+def _build_filename(subject, document_type_code, upload_date, extension,
+                    ordinal=None):
     if isinstance(subject, MachineAsset):
         return naming_service.build_filename_machine(
             subject.code, document_type_code, upload_date,
@@ -143,7 +171,8 @@ def _build_filename(subject, document_type_code, upload_date, extension, ordinal
     )
 
 
-def _resolve_free_filename(subject, document_type_code, upload_date, extension, target_folder):
+def _resolve_free_filename(subject, document_type_code, upload_date,
+                           extension, target_folder):
     """
     Igual que `_build_filename`, pero a salvo de colisiones (S102):
     si el nombre "base" (sin ordinal) ya está en uso por una entrada
@@ -155,7 +184,9 @@ def _resolve_free_filename(subject, document_type_code, upload_date, extension, 
     existente -- ver incidente real S102 (subida silenciosa
     sobrescribiendo el blob real 4 veces seguidas).
     """
-    filename = _build_filename(subject, document_type_code, upload_date, extension)
+    filename = _build_filename(
+        subject, document_type_code, upload_date, extension,
+    )
     ordinal = 1
     while _virtual_location_taken(BUCKET, target_folder, filename):
         filename = _build_filename(
@@ -260,7 +291,10 @@ def upload_subject_document(
     `typed_date` para la caducidad -- en S122 el OCR cogía la fecha de
     nacimiento de los contratos y los dejaba fuera de su periodo.
     """
-    extension = original_filename.rsplit(".", 1)[-1] if "." in original_filename else "pdf"
+    extension = (
+        original_filename.rsplit(".", 1)[-1]
+        if "." in original_filename else "pdf"
+    )
     target_folder = _resolve_target_folder(
         domain_content_type, subject.pk, subject,
     )
@@ -270,10 +304,7 @@ def upload_subject_document(
         subject, document_type.code, today, extension, target_folder,
     )
     blob_name = "%s/%s" % (target_folder, filename)
-    content_type = (
-        "application/pdf" if extension.lower() == "pdf"
-        else "application/octet-stream"
-    )
+    content_type = content_type_of(data, filename)
     upload_bytes(BUCKET, blob_name, data, content_type=content_type)
 
     entry = DocumentIndexEntry.objects.create(
@@ -416,6 +447,12 @@ def upload_subject_document(
                 reasoning=result.reasoning,
             )
             superseded_count += 1
+
+    # H30 (S125): un permiso de conducción que entra se lee su matriz de
+    # clases (Celery, tras confirmar la transacción).
+    from document_explorer.driving_licence_service import queue_harvest
+
+    queue_harvest(entry)
 
     # H30 (S125): un contrato que entra puede cambiar la empresa de la
     # persona (manda el más reciente que la identifique).

@@ -888,3 +888,19 @@ def process_worker_submission_task(self, submission_id: int) -> str:
     if earlier_pending and self.request.retries < self.max_retries:
         raise self.retry(countdown=10)
     return process_submission(submission_id)
+
+
+@app.task(base=DjangoTask, bind=True, max_retries=0)
+def harvest_driving_licence_task(self, entry_pk: int) -> str:
+    """
+    H30 (S125). Reads the class matrix of one driving licence card
+    that has just entered (any route).
+
+    ---
+
+    H30 (S125). Lee la matriz de clases de un permiso de conducción
+    recién entrado, por cualquier vía (ver driving_licence_service).
+    """
+    from .driving_licence_service import harvest_card
+
+    return harvest_card(entry_pk)
