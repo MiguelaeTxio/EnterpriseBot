@@ -488,3 +488,61 @@ class WhatsAppTemplate(models.Model):
 
     def __str__(self):
         return f"{self.company.name} — {self.name} [{self.category}]"
+
+
+# ---------------------------------------------------------------------------
+# 4. WHATSAPP CUSTOMER WINDOW — Meta 24-hour customer service window.
+#    Ventana de atención de 24 horas de Meta por teléfono.
+# ---------------------------------------------------------------------------
+
+class WhatsAppCustomerWindow(models.Model):
+    """
+    H30 (S127). Last inbound message of each phone, per company: the Meta
+    24-hour customer service window. Recorded for EVERY inbound message
+    at the very start of the webhook (attachments included, which never
+    reach WhatsAppMessage). Notifications read it to send plain text
+    instead of a template while the window is open.
+
+    ---
+
+    H30 (S127). Último mensaje entrante de cada teléfono, por empresa:
+    la ventana de atención de 24 horas de Meta. Se anota para TODO
+    mensaje entrante al principio del webhook (adjuntos incluidos, que
+    nunca llegan a WhatsAppMessage). Las notificaciones lo consultan para
+    enviar texto libre en vez de plantilla mientras la ventana está
+    abierta (Miguel Ángel, S127: desde el 01/10/2026 Meta cobra también
+    las plantillas de utilidad dentro de la ventana; el texto libre
+    sigue siendo gratuito).
+    """
+
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.CASCADE,
+        related_name="whatsapp_customer_windows",
+        verbose_name="Empresa",
+    )
+    phone_number = models.CharField(
+        max_length=20,
+        verbose_name="Número de teléfono",
+        help_text="Teléfono del remitente en formato E.164 (+34XXXXXXXXX).",
+    )
+    last_inbound_at = models.DateTimeField(
+        verbose_name="Último mensaje entrante",
+        help_text=(
+            "Fecha y hora del último mensaje recibido de este teléfono. "
+            "La ventana de 24 horas de Meta se cuenta desde aquí."
+        ),
+    )
+
+    class Meta:
+        verbose_name = "Ventana de atención de WhatsApp"
+        verbose_name_plural = "Ventanas de atención de WhatsApp"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company", "phone_number"],
+                name="unique_whatsapp_customer_window",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.company.name} — {self.phone_number} ({self.last_inbound_at:%Y-%m-%d %H:%M})"

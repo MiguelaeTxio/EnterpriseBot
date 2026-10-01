@@ -210,10 +210,12 @@ def check_in_meeting_reminders() -> str:
         # Enviar el recordatorio vía plantilla ContentSid de Twilio (producción).
         # Los valores ContentSid son ahora HX SIDs reales aprobados por Meta (Paso 22).
         try:
-            twilio_client.messages.create(
-                from_=f"whatsapp:{sender_number}",
-                to=f"whatsapp:{contact.phone_number}",
-                content_sid=template.content_sid,
+            # H30 (S127): dentro de la ventana de 24 h, texto libre.
+            from whatsapp.window_service import send_notification
+
+            send_notification(
+                twilio_client, sender_number, company,
+                contact.phone_number, template.content_sid,
             )
 
             # Mark reminder as sent to prevent duplicate dispatch.

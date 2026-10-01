@@ -25,7 +25,6 @@ Destinatarios: las personas de `settings.SYSTEM_AGENT_ALERT_PERSON_IDS`
 registra y se reintenta en la siguiente pasada, porque la marca de
 "avisado" solo se escribe si al menos un envío tuvo éxito.
 """
-import json
 import logging
 from datetime import timedelta
 
@@ -80,6 +79,7 @@ def _send_to_recipients(template_name, heartbeat, moment):
     from whatsapp.models import WhatsAppTemplate
     from whatsapp.services import _build_twilio_client
     from whatsapp.tasks import _get_whatsapp_sender
+    from whatsapp.window_service import send_notification
 
     sender = _get_whatsapp_sender()
     if not sender:
@@ -108,11 +108,10 @@ def _send_to_recipients(template_name, heartbeat, moment):
             "3": timezone.localtime(moment).strftime("%d/%m/%Y %H:%M"),
         }
         try:
-            message = _build_twilio_client().messages.create(
-                from_="whatsapp:%s" % sender,
-                to="whatsapp:%s" % phone,
-                content_sid=template.content_sid,
-                content_variables=json.dumps(variables),
+            # Dentro de la ventana de 24 h, texto libre (S127).
+            message = send_notification(
+                _build_twilio_client(), sender, company, phone,
+                template.content_sid, variables,
             )
         except Exception as exc:  # noqa: BLE001 -- se reintenta luego
             logger.error(

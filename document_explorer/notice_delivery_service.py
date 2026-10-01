@@ -18,8 +18,10 @@ empresa, `DocumentAlertSettings`: encenderlo mandaba a todos; Miguel
 - Próximo a caducar: una vez por cada aviso alcanzado.
 - Caducado y falta: al aparecer y después un recordatorio cada 7
   días mientras sigan sin resolverse (decisión de Miguel Ángel, S122).
+Sábados y domingos no se envía nada (S127). Dentro de la ventana de
+24 h de Meta salen como texto libre, no como plantilla (S127,
+`whatsapp.window_service`).
 """
-import json
 import logging
 from datetime import timedelta
 
@@ -104,6 +106,12 @@ def send_due_notices():
     )
     from ivr_config.models import Company
     from whatsapp.models import WhatsAppTemplate
+    from whatsapp.window_service import send_notification
+
+    # Fines de semana sin avisos (Miguel Ángel, S127): lo pendiente sale
+    # el lunes a las 8:00, que lo recalcula todo desde cero.
+    if timezone.localdate().weekday() >= 5:
+        return "Fin de semana: no se envían avisos."
 
     company_ids = set(
         NoticeRecipientScope.objects.filter(
@@ -178,13 +186,11 @@ def send_due_notices():
                     else EXPIRY_TEMPLATE_NAME
                 ]
                 try:
-                    client.messages.create(
-                        from_="whatsapp:%s" % sender,
-                        to="whatsapp:%s" % phone,
-                        content_sid=template.content_sid,
-                        content_variables=json.dumps(
-                            _content_variables(notice, company_user),
-                        ),
+                    # Dentro de la ventana de 24 h, texto libre (S127).
+                    send_notification(
+                        client, sender, company, phone,
+                        template.content_sid,
+                        _content_variables(notice, company_user),
                     )
                 except Exception as exc:
                     errors += 1

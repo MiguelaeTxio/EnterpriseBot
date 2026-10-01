@@ -36,7 +36,6 @@ Actualizado en el Paso 21 (2026-04-20): detección y registro de sección destin
 
 import json
 import logging
-import os
 import re
 from decimal import Decimal, InvalidOperation
 
@@ -171,6 +170,17 @@ class IncomingWhatsAppView(View):
                 to_number,
             )
             return HttpResponse(status=200)
+
+        # --- Step 2a (H30, S127): 24-hour window, for EVERY inbound message. ---
+        # Before any early return (attachments never reach WhatsAppMessage):
+        # notifications read it to send plain text instead of a template.
+        # --- Paso 2a (H30, S127): ventana de 24 h, para TODO entrante. ---
+        # Antes de cualquier salida temprana (los adjuntos nunca llegan a
+        # WhatsAppMessage): las notificaciones la leen para enviar texto
+        # libre en vez de plantilla.
+        from whatsapp.window_service import record_inbound
+
+        record_inbound(company, from_number)
 
         # --- Step 2b (H30, S125): worker attachments, before anything else. ---
         # Every attachment from a phone that belongs to a worker is recorded
@@ -357,17 +367,8 @@ class IncomingWhatsAppView(View):
                             _unit = _WAU.objects.select_related(
                                 "work_order__insurer",
                             ).get(pk=_unit_pk)
-                            _albaran_url = (
-                                f"{os.environ.get('PLATFORM_BASE_URL', '').rstrip('/')}"
-                                f"/panel/budgets/work-orders/units/{_unit.pk}/albaran/"
-                            )
-                            _msg = (
-                                "\U0001f4cb Albar\u00e1n asignado:\n"
-                                f"Orden: {_unit.work_order.work_order_number}"
-                                f"-{_unit.unit_number:02d}\n"
-                                f"Aseguradora: {_unit.work_order.insurer.name}\n"
-                                f"Accede aqu\u00ed: {_albaran_url}"
-                            )
+                            from whatsapp.services import albaran_link_text
+                            _msg = albaran_link_text(_unit)
                             WhatsAppChatService.send_reply(
                                 from_number=to_number,
                                 to_number=from_number,

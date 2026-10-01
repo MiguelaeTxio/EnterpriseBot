@@ -16,7 +16,6 @@ PersonalDocument -- quien llama (machine_documents.tasks/
 personal_documents.tasks) ya resuelve document_label/subject_label/
 expiry_date/company/default_contact antes de invocar esto.
 """
-import json
 import logging
 import os
 
@@ -105,6 +104,7 @@ def send_alert_now(alert: DocumentAlert) -> tuple[bool, str]:
     """
     from ivr_config.models import Contact
     from whatsapp.models import WhatsAppTemplate
+    from whatsapp.window_service import send_notification
 
     try:
         template = WhatsAppTemplate.objects.get(
@@ -162,24 +162,16 @@ def send_alert_now(alert: DocumentAlert) -> tuple[bool, str]:
             skipped.append(f"{company_user} (sin teléfono)")
             continue
         try:
-            twilio_client.messages.create(
-                from_=f"whatsapp:{sender_number}",
-                to=f"whatsapp:{contact.phone_number}",
-                content_sid=template.content_sid,
-                # json.dumps() obligatorio -- la API REST de Twilio
-                # espera este parámetro como cadena JSON codificada,
-                # nunca un dict de Python en crudo (S025, hallazgo
-                # real: error 21656 "The Content Variables parameter
-                # is invalid" confirmado en el log real de Twilio al
-                # pasarlo sin codificar). Mismo patrón exacto que
-                # whatsapp.services (líneas 667/714), que sí envía
-                # correctamente en producción.
-                content_variables=json.dumps({
+            # Dentro de la ventana de 24 h, texto libre (H30, S127).
+            send_notification(
+                twilio_client, sender_number, company_user.company,
+                contact.phone_number, template.content_sid,
+                {
                     "1": company_user.user.get_full_name() or company_user.user.username,
                     "2": alert.document_label,
                     "3": alert.subject_label,
                     "4": alert.expiry_date.strftime("%d/%m/%Y"),
-                }),
+                },
             )
             notified.append(company_user)
         except Exception as exc:

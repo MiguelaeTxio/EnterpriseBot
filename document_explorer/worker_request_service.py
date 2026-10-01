@@ -317,6 +317,7 @@ def _send_request_message(request_obj, free_text):
     """
     from whatsapp.models import WhatsAppTemplate
     from whatsapp.tasks import _build_twilio_client, _get_whatsapp_sender
+    from whatsapp.window_service import send_notification
 
     person = request_obj.person
     phone = mobile_of(person)
@@ -353,11 +354,10 @@ def _send_request_message(request_obj, free_text):
     if is_expiry:
         variables["3"] = current.expiry_date.strftime("%d/%m/%Y")
     try:
-        message = client.messages.create(
-            from_="whatsapp:%s" % sender,
-            to="whatsapp:%s" % phone,
-            content_sid=template.content_sid,
-            content_variables=json.dumps(variables),
+        # Dentro de la ventana de 24 h, el texto libre de siempre (S127).
+        message = send_notification(
+            client, sender, person.company, phone, template.content_sid,
+            variables, text=_request_text(request_obj),
         )
     except Exception as exc:  # Twilio: el motivo real va al panel.
         raise RequestError("Twilio: %s" % exc) from exc

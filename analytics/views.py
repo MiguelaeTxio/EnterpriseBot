@@ -3942,8 +3942,6 @@ class BotManagementView(CompanyUserRequiredMixin, View):
                 )
 
             from django.utils.timezone import now as _now
-            from datetime import timedelta as _td
-            window_threshold = _now() - _td(hours=24)
             created_at_iso = _now().isoformat()
             total_sent = 0
             total_pending = 0
@@ -3963,19 +3961,12 @@ class BotManagementView(CompanyUserRequiredMixin, View):
 
                 room_sent = 0
                 for contact in room_contacts:
-                    active_session = (
-                        WhatsAppSession.objects
-                        .filter(
-                            company=company,
-                            phone_number=contact.phone_number,
-                            is_active=True,
-                            last_message_at__gte=window_threshold,
-                        )
-                        .order_by("-last_message_at")
-                        .first()
-                    )
+                    # H30 (S127): la ventana real de Meta (último
+                    # entrante del teléfono), no `last_message_at` de la
+                    # sesión, que también lo mueven los salientes.
+                    from whatsapp.window_service import window_open
 
-                    if active_session is not None:
+                    if window_open(company, contact.phone_number):
                         try:
                             WhatsAppChatService.send_reply(
                                 from_number=bot_number,

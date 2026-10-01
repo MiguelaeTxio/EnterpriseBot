@@ -14,7 +14,6 @@ Ambos servicios son sin estado — todo el estado se persiste en la base de dato
 y se reconstruye en cada invocación del webhook.
 """
 
-import json
 import logging
 import os
 from datetime import timedelta
@@ -725,15 +724,15 @@ class WhatsAppChatService:
 
         Devuelve el SID del mensaje Twilio en caso de éxito.
         """
-        import json
+        from whatsapp.window_service import send_notification
 
         twilio_client = _build_twilio_client()
 
-        message = twilio_client.messages.create(
-            from_=f"whatsapp:{from_number}",
-            to=f"whatsapp:{to_number}",
-            content_sid=content_sid,
-            content_variables=json.dumps(content_variables),
+        # H30 (S127): dentro de la ventana de 24 h, texto libre si la
+        # plantilla es de texto puro; con botones, sigue la plantilla.
+        message = send_notification(
+            twilio_client, from_number, None, to_number, content_sid,
+            content_variables,
         )
         logger.info(
             "# [WHATSAPP] Template enviado a %s — SID: %s",
@@ -1111,20 +1110,20 @@ def send_capture_notification(
     # nadie había comprobado en producción si esta notificación
     # concreta (tras captura de datos IVR) llegaba a enviarse de
     # verdad.
-    import json
+    from whatsapp.window_service import send_notification
 
     try:
         twilio_client = _build_twilio_client()
-        message = twilio_client.messages.create(
-            from_=f"whatsapp:{whatsapp_sender}",
-            to=f"whatsapp:{contact.phone_number}",
-            content_sid=template.content_sid,
-            content_variables=json.dumps({
+        # H30 (S127): dentro de la ventana de 24 h, texto libre.
+        message = send_notification(
+            twilio_client, whatsapp_sender, contact.company,
+            contact.phone_number, template.content_sid,
+            {
                 "1": section_name,
                 "2": captured_name,
                 "3": captured_phone,
                 "4": captured_motive,
-            }),
+            },
         )
         logger.info(
             "# [CAPTURE NOTIFY] Notificacion enviada a %s — SID: %s",
@@ -1160,6 +1159,29 @@ def send_capture_notification(
 # la rama opt_in del webhook pueda entregar el enlace al albarán cuando el
 # operario responda.
 # ---------------------------------------------------------------------------
+
+def albaran_link_text(unit) -> str:
+    """
+    WhatsApp text with the albarán link of a WorkOrderAssistanceUnit.
+
+    ---
+
+    Texto de WhatsApp con el enlace al albarán de una unidad (H30, S127:
+    compartido por la entrega tras opt_in y por el envío directo dentro
+    de la ventana de 24 h, mismas frases).
+    """
+    albaran_url = (
+        f"{os.environ.get('PLATFORM_BASE_URL', '').rstrip('/')}"
+        f"/panel/budgets/work-orders/units/{unit.pk}/albaran/"
+    )
+    return (
+        "\U0001f4cb Albar\u00e1n asignado:\n"
+        f"Orden: {unit.work_order.work_order_number}"
+        f"-{unit.unit_number:02d}\n"
+        f"Aseguradora: {unit.work_order.insurer.name}\n"
+        f"Accede aqu\u00ed: {albaran_url}"
+    )
+
 
 def send_operator_albaran_notification(
     unit_pk: int,
@@ -1231,6 +1253,37 @@ def send_operator_albaran_notification(
             company.name,
         )
         return False
+
+    # ── H30 (S127): window open -> the albarán link directly, no template ──
+    # Dentro de la ventana de 24 h no hace falta reabrirla con la
+    # plantilla: el enlace sale ya, como texto libre, y la unidad pasa
+    # directamente a DOWNLOADED (lo mismo que tras el opt_in).
+    from whatsapp.window_service import window_open
+
+    if window_open(company, operator_phone):
+        try:
+            WhatsAppChatService.send_reply(
+                from_number=whatsapp_sender,
+                to_number=operator_phone,
+                reply_text=albaran_link_text(unit),
+            )
+        except Exception as exc:
+            logger.error(
+                "# [ALBARAN NOTIFY] Error enviando el enlace a %s: %s",
+                operator_phone,
+                exc,
+            )
+            return False
+        unit.status        = WorkOrderAssistanceUnit.STATUS_DOWNLOADED
+        unit.notified_at   = now()
+        unit.downloaded_at = unit.notified_at
+        unit.save(update_fields=["status", "notified_at", "downloaded_at"])
+        logger.info(
+            "# [ALBARAN NOTIFY] Unidad pk=%s: enlace enviado sin plantilla "
+            "(ventana de 24 h abierta).",
+            unit_pk,
+        )
+        return True
 
     # ── Send template via Twilio ─────────────────────────────────────────────
     try:
@@ -2353,12 +2406,14 @@ def send_epi_delivery_whatsapp_confirmation(delivery) -> bool:
     }
 
     try:
+        from whatsapp.window_service import send_notification
+
         twilio_client = _build_twilio_client()
-        message = twilio_client.messages.create(
-            from_=f"whatsapp:{whatsapp_sender}",
-            to=f"whatsapp:{phone}",
-            content_sid=template.content_sid,
-            content_variables=json.dumps(content_variables),
+        # H30 (S127): dentro de la ventana de 24 h, texto libre si la
+        # plantilla es de texto puro; con botones, sigue la plantilla.
+        message = send_notification(
+            twilio_client, whatsapp_sender, person.company, phone,
+            template.content_sid, content_variables,
         )
         logger.info(
             "# [EPI WHATSAPP] Confirmación enviada a %s (%s) por "
@@ -2450,12 +2505,14 @@ def send_circular_notification_whatsapp(ack) -> bool:
     }
 
     try:
+        from whatsapp.window_service import send_notification
+
         twilio_client = _build_twilio_client()
-        message = twilio_client.messages.create(
-            from_=f"whatsapp:{whatsapp_sender}",
-            to=f"whatsapp:{phone}",
-            content_sid=template.content_sid,
-            content_variables=json.dumps(content_variables),
+        # H30 (S127): dentro de la ventana de 24 h, texto libre si la
+        # plantilla es de texto puro; con botones, sigue la plantilla.
+        message = send_notification(
+            twilio_client, whatsapp_sender, person.company, phone,
+            template.content_sid, content_variables,
         )
         logger.info(
             "# [CIRCULAR WHATSAPP] Notificación enviada a %s (%s) por "
