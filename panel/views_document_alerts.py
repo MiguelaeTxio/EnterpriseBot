@@ -574,9 +574,9 @@ def _annotate_worker_requests(pending, can_request_docs):
     Estado de la solicitud al trabajador y marca "se puede pedir" de
     cada aviso de Personal (H30, S125). Se puede pedir si quien mira
     puede dar luz verde, el tipo lo aporta el trabajador, la persona
-    tiene móvil válido y acceso al panel, y no hay ya una solicitud
-    abierta. Plantillas
-    tontas: el texto del estado se decide aquí.
+    tiene móvil válido y no hay ya una solicitud abierta. Pedir no
+    exige acceso al panel (Miguel Ángel, S126). Plantillas tontas: el
+    texto del estado se decide aquí.
     """
     person_ids = {notice.subject_id for notice in pending}
     people = PersonIdentity.objects.select_related(
