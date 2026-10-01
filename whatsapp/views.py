@@ -57,6 +57,14 @@ from .services import (
 logger = logging.getLogger(__name__)
 
 
+# Nombre de archivo que WhatsApp pone en Body al enviar un adjunto como
+# documento (S127): una sola línea terminada en extensión de foto o PDF.
+_ATTACHMENT_NAME_RE = re.compile(
+    r"^[^\r\n]{1,200}\.(jpe?g|png|gif|webp|heic|heif|bmp|tiff?|pdf)$",
+    re.IGNORECASE,
+)
+
+
 # ---------------------------------------------------------------------------
 # INCOMING WHATSAPP VIEW
 # Handles inbound user messages and dispatches chatbot replies via Gemini.
@@ -214,6 +222,17 @@ class IncomingWhatsAppView(View):
                     if _media_person
                     else "el teléfono no es de ningún trabajador",
                 )
+            # S127, incidente real: un adjunto enviado como documento trae
+            # su nombre de archivo en Body ("anverso.jpg"), y ese "texto"
+            # llegaba al chatbot, que contestaba "¿a qué máquina
+            # corresponden estas imágenes?" encima de la solicitud. El
+            # nombre de archivo no es texto del trabajador: se descarta.
+            if body and _ATTACHMENT_NAME_RE.match(body):
+                logger.info(
+                    "# [WHATSAPP] Body de %s es el nombre del adjunto (%r) "
+                    "-- no se pasa al chatbot.", from_number, body,
+                )
+                body = ""
             if not body and not is_location_msg:
                 return HttpResponse(status=200)
 
