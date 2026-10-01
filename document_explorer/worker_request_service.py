@@ -635,7 +635,9 @@ def process_submission(submission_id, final=False):
 
     submission.content_sha256 = hashlib.sha256(data).hexdigest()
     submission.save(update_fields=["content_sha256"])
-    context = _Delivery(submission, person, data, content_type, extension)
+    context = _Delivery(
+        submission, person, data, content_type, extension, final=final,
+    )
     # Solo es repetido si el documento que contiene esa foto sigue vivo
     # en la ficha (S125: Miguel Ángel borró su permiso y al reenviarlo
     # se le contestó "ya la teníamos").
@@ -737,12 +739,17 @@ class _Delivery:
     Un adjunto en proceso (mantiene cortas las firmas de las funciones).
     """
 
-    def __init__(self, submission, person, data, content_type, extension):
+    def __init__(
+        self, submission, person, data, content_type, extension, final=False,
+    ):
         self.submission = submission
         self.person = person
         self.data = data
         self.content_type = content_type
         self.extension = extension
+        # Último intento de la tarea: un fallo pasajero de Gemini ya no
+        # se reintenta (S127).
+        self.final = final
 
 
 def _read_with_gemini(data, content_type, candidates):
@@ -1026,6 +1033,13 @@ def _append(context, prior, verdict):
             prior.request.approved_by if prior.request else None,
         )
     except Exception as exc:
+        # S127, prueba real (y ya visto en S125, adjunto 5): un 504 de
+        # Gemini al comparar la otra cara acababa en error y en NO
+        # CONFORMES. Pasajero -> se reintenta como la primera lectura;
+        # todo lo que hay antes del archivado es de solo lectura, así
+        # que repetirlo no deja nada a medias.
+        if _is_transient(exc) and not context.final:
+            raise TransientGeminiError(str(exc)) from exc
         logger.exception("# [DOC REQUEST] No se pudo unir (%s)", submission.pk)
         return _fail(
             context, "No se pudo añadir al documento aceptado: %s" % exc,
