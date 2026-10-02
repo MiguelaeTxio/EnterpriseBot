@@ -3432,3 +3432,76 @@ def apply_quarantine_classification(entry) -> dict:
     result["relocated"] = True
     result["new_parent_path"] = target_parent_path
     return result
+
+
+def file_entry_manually(entry, subject, type_code, date_hint="",
+                        apply_changes=False):
+    """
+    Place an entry on a known person or machine, like the pipeline.
+
+    ---
+
+    H30 (S127). Coloca un archivo en la ficha de una persona o máquina
+    YA identificada por un humano (revisión de NO CONFORMES), con los
+    mismos pasos que `apply_quarantine_classification` tras resolver al
+    dueño: nombre canónico, carpeta de la persona
+    (`PersonIdentity.folder_path`) o de la máquina
+    (`build_machine_folder_path`), movimiento virtual, tipo y vínculo
+    (`_persist_type_and_subject`) y, en personal, las colas de contrato
+    y de permiso de conducción. Sin Gemini: el tipo y la fecha los da
+    quien revisa.
+
+    `apply_changes=False` (por defecto) solo calcula destino y nombre.
+    Devuelve `{"new_name", "new_parent_path", "reason"}`; `reason` solo
+    si no se pudo (tipo fuera del catálogo, sin carpeta...).
+    """
+    if not DocumentTypeCatalog.objects.filter(code=type_code).exists():
+        return {"new_name": None, "new_parent_path": None,
+                "reason": "tipo %s no está en el catálogo" % type_code}
+    result = {"document_type_code": type_code, "date_hint": date_hint or ""}
+    if isinstance(subject, PersonIdentity):
+        domain = "PERSONAL"
+        result.update(
+            dni_hint=subject.dni or "",
+            first_surname_hint=subject.first_surname or "",
+            second_surname_hint=subject.second_surname or "",
+            given_name_hint=subject.given_name or "",
+        )
+        target = (subject.folder_path or "").strip("/")
+        if not target:
+            return {"new_name": None, "new_parent_path": None,
+                    "reason": "la persona no tiene carpeta"}
+        asset = None
+    else:
+        domain = "MACHINE"
+        asset = subject
+        target = naming_service.build_machine_folder_path(
+            asset.code, asset.family, asset.is_active,
+        )
+    name = build_new_name(entry, domain, result, asset=asset)
+    if not name:
+        return {"new_name": None, "new_parent_path": target,
+                "reason": "no se pudo construir el nombre"}
+    ordinal = 1
+    while _virtual_location_taken(
+        entry.bucket, target, name, exclude_pk=entry.pk,
+    ):
+        name = build_new_name(
+            entry, domain, result, ordinal=ordinal, asset=asset,
+        )
+        ordinal += 1
+    if apply_changes:
+        entry.name = name
+        move_entry(entry, target)
+        _persist_type_and_subject(entry, result, subject)
+        if domain == "PERSONAL":
+            from document_explorer.driving_licence_service import (
+                queue_harvest,
+            )
+            from document_explorer.employer_service import (
+                queue_contract_refresh,
+            )
+
+            queue_contract_refresh(subject, type_code, entry)
+            queue_harvest(entry)
+    return {"new_name": name, "new_parent_path": target, "reason": None}
