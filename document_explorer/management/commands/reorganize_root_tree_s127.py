@@ -23,8 +23,11 @@ H30 (S127). Reorganización del árbol raíz del cubo principal (Miguel
 Movimiento VIRTUAL (regla 4.12 de move_service): solo cambian
 `parent_path`/`name` en el índice; `blob_name` y Google Cloud Storage no
 se tocan. Usa las mismas primitivas que el panel (`merge_folders`,
-`move_entries`). Una carpeta origen sin ningún archivo (ni vivo ni en
-la papelera) solo se borra del índice.
+`move_entries`). Los archivos de la papelera bajo una carpeta origen
+se llevan también a su sitio nuevo (solo `parent_path`: los contadores
+de carpeta no cuentan la papelera), para que al restaurarlos vuelvan al
+árbol nuevo y no a una carpeta que ya no existe. Una carpeta origen sin
+ningún archivo solo se borra del índice.
 
 Sin --apply no escribe nada: informe de lo que haría. Idempotente: una
 segunda ejecución no encuentra nada que mover.
@@ -37,8 +40,9 @@ from document_explorer.buckets import (
     LIFTING_REVIEWS_FOLDER, MANUAL_USO_FOLDER, NO_CONFORMES_PREFIX,
     NO_CONFORMES_ROOT, PRIMARY_BUCKET, WHATSAPP_NO_CONFORMES_PREFIX,
 )
+from document_explorer.index_writer import ensure_folder_chain
 from document_explorer.models import (
-    DocumentIndexEntry, WorkerDocumentSubmission,
+    DocumentIndexEntry, WorkerDocumentSubmission, path_digest,
 )
 from document_explorer.move_service import merge_folders, move_entries
 
@@ -85,6 +89,37 @@ def _folder_rows(folder):
     ).filter(_tree_q("blob_name", folder))
 
 
+def _move_trashed(source, destination):
+    """
+    Re-home the trashed files under `source` (index only).
+
+    ---
+
+    Lleva los archivos de la papelera de `source` a la misma ruta
+    relativa bajo `destination`, solo cambiando `parent_path` (y su
+    hash). Crea la cadena de carpetas para que una restauración caiga
+    en una carpeta que existe.
+    """
+    rows = list(DocumentIndexEntry.objects.filter(
+        bucket=BUCKET, entry_kind=DocumentIndexEntry.KIND_FILE,
+        deleted_at__isnull=False, purged_at__isnull=True,
+    ).filter(_tree_q("parent_path", source)))
+    targets = set()
+    for entry in rows:
+        relative = entry.parent_path[len(source):].lstrip("/")
+        entry.parent_path = (
+            "%s/%s" % (destination, relative) if relative else destination
+        )
+        entry.parent_path_hash = path_digest(entry.parent_path)
+        targets.add(entry.parent_path)
+    for target in targets:
+        ensure_folder_chain(BUCKET, target)
+    DocumentIndexEntry.objects.bulk_update(
+        rows, ["parent_path", "parent_path_hash"], batch_size=500,
+    )
+    return len(rows)
+
+
 class Command(BaseCommand):
     help = (
         "S127: reorganiza el árbol raíz del cubo principal (movimiento "
@@ -120,18 +155,16 @@ class Command(BaseCommand):
                     number, source, destination, live, trashed, folders,
                 )
             )
-            if trashed:
-                # merge_folders solo mueve los vivos y borra las filas de
-                # carpeta: los de la papelera quedarían colgando.
-                problems += 1
-                self.stdout.write(
-                    "   [PARADA] Hay archivos en la papelera bajo %s: se "
-                    "salta esta carpeta (restaurarlos o purgarlos antes)."
-                    % source
-                )
-                continue
             if not apply:
                 continue
+            if trashed:
+                # merge_folders solo mueve los vivos y borra las filas de
+                # carpeta: los de la papelera se llevan antes, a mano.
+                moved_trash = _move_trashed(source, destination)
+                self.stdout.write(
+                    "   [OK] %d archivo(s) de la papelera llevados a %s."
+                    % (moved_trash, destination)
+                )
             if live:
                 results, removed = merge_folders(BUCKET, source, destination)
                 renamed = sum(
