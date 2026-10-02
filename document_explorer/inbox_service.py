@@ -28,7 +28,7 @@ documento de un trabajador) -- sin agente vigilando su PC. Aquí:
   firmada queda además registrada como firmada
   (`DocumentAcknowledgment`, canal DOCUTEN o PAPER, con el PDF firmado
   como documento de origen).
-- No conforme -> "NO CONFORMES BANDEJA DE ENTRADA/" con su motivo,
+- No conforme -> "NO CONFORMES/BANDEJA DE ENTRADA/" con su motivo,
   separado del NO CONFORMES del H28.
 """
 import base64
@@ -470,7 +470,7 @@ def _store_no_conforme(item, data, person):
 
     ---
 
-    Guarda un archivo no conforme en "NO CONFORMES BANDEJA DE
+    Guarda un archivo no conforme en "NO CONFORMES/BANDEJA DE
     ENTRADA/" y lo indexa (ningún archivo se pierde). El nombre lleva
     el principio de la huella: nunca pisa un objeto existente.
     """
@@ -684,7 +684,7 @@ def requeue_items(items, uploaded_by):
     Vuelve a clasificar los archivos no conformes o con error (p. ej.
     tras corregir la ficha del trabajador), sin volver a subirlos: un
     error conserva su copia temporal; un no conforme se relee de su
-    copia en NO CONFORMES BANDEJA DE ENTRADA/. El resto se salta.
+    copia en NO CONFORMES/BANDEJA DE ENTRADA/. El resto se salta.
     Devuelve (encolados, saltados).
     """
     from document_explorer.tasks import process_inbox_item_task

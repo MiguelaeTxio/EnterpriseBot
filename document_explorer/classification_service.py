@@ -79,8 +79,8 @@ from spare_parts.gcs_service import download_bytes
 
 from . import archive_service, naming_service
 from .buckets import (
-    MANUAL_USO_FOLDER, NO_CONFORMES_PREFIX, QUARANTINE_PREFIX,
-    quarantine_scope_q,
+    MANUAL_USO_FOLDER, QUARANTINE_PREFIX, in_machine_non_asset_folder,
+    no_conformes_scope_q, quarantine_scope_q,
 )
 from .heuristic_type_service import resolve_document_type_heuristic
 from .move_service import _virtual_location_taken, move_entry
@@ -538,6 +538,11 @@ def resolve_machine_asset(entry) -> MachineAsset | None:
     -- quien llama debe tratarlo como "no se puede comprobar", nunca
     como "no hay discrepancia".
     """
+    # S127: manuales de uso y accesorios de elevación viven en DOC.
+    # MAQUINAS pero no son de ninguna máquina: no se buscan códigos de
+    # flota en su ruta.
+    if in_machine_non_asset_folder(entry.parent_path):
+        return None
     for segment in entry.parent_path.split("/"):
         asset = _machine_from_text(segment)
         if asset:
@@ -1127,7 +1132,7 @@ def resolve_duplicate_of_filed_document(entry) -> bool:
         )
         .exclude(pk=entry.pk)
         .exclude(quarantine_scope_q())
-        .exclude(parent_path=NO_CONFORMES_PREFIX.rstrip("/"))
+        .exclude(no_conformes_scope_q())
         .exists()
     )
 
@@ -1241,7 +1246,7 @@ def resolve_archive_redundancy(entry) -> dict | None:
                 deleted_at__isnull=True, purged_at__isnull=True,
             )
             .exclude(quarantine_scope_q())
-            .exclude(parent_path=NO_CONFORMES_PREFIX.rstrip("/"))
+            .exclude(no_conformes_scope_q())
             .exists()
         )
         if not real_match:
@@ -3116,7 +3121,7 @@ def apply_quarantine_classification(entry) -> dict:
     **Second interception, S042 -- `document_type_code == "MANUAL_USO"`
     (closed-vocabulary type, seeded since 0004_seed_closed_vocabulary,
     domain MACHINE) always relocates straight to the real
-    `MANUAL_USO_FOLDER` ("MANUALES DE USO"), regardless of domain or
+    `MANUAL_USO_FOLDER` ("DOC. MAQUINAS/MANUALES DE USO"), regardless of domain or
     machine resolution.** Root cause this fixes, confirmed against a
     real batch: a generic operator manual almost never sits under a
     per-machine quarantine subfolder, so `resolve_machine_asset()`
@@ -3199,7 +3204,7 @@ def apply_quarantine_classification(entry) -> dict:
     **Segunda intercepción, S042 -- `document_type_code == "MANUAL_USO"`
     (tipo de vocabulario cerrado, sembrado desde 0004_seed_closed_
     vocabulary, dominio MÁQUINA) se reubica siempre directamente a la
-    carpeta real `MANUAL_USO_FOLDER` ("MANUALES DE USO"), sea cual sea
+    carpeta real `MANUAL_USO_FOLDER` ("DOC. MAQUINAS/MANUALES DE USO"), sea cual sea
     el dominio o si se resuelve la máquina.** Causa raíz que esto
     corrige, confirmada contra un lote real: un manual de operador
     genérico casi nunca vive bajo una subcarpeta de cuarentena por

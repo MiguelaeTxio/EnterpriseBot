@@ -116,32 +116,81 @@ def quarantine_scope_q(field="parent_path"):
         | Q(**{"%s__startswith" % field: QUARANTINE_PREFIX})
     )
 
-# Carpeta real (no un cajón técnico) en la raíz de "Directorio
-# Principal", hermana de DOC. MAQUINAS/DOC. PERSONAL -- decisión 3.14
-# del anexo H29, corregida en S041 y construida en S042. Destino de un
-# archivo de cuarentena que Gemini no pudo clasificar/reubicar con
-# certeza en su ÚNICA pasada (N=1, Miguel Ángel: "con que entre una
-# vez y no se pueda clasificar ya es suficiente") -- sale del prefijo
-# de cuarentena, así que `consume_quarantine_task` deja de
-# reprocesarlo para siempre hasta que un humano lo reencole a mano.
-NO_CONFORMES_PREFIX = "NO CONFORMES/"
-# H30 (S126): Bandeja de entrada del panel. Sus no conformes van a una
-# carpeta propia, separada del NO CONFORMES del H28 (Miguel Ángel: que
-# no se mezclen), y la copia temporal mientras se clasifica vive en
-# _BANDEJA_ENTRADA/ (nunca indexada; se borra al terminar).
-INBOX_NO_CONFORMES_PREFIX = "NO CONFORMES BANDEJA DE ENTRADA/"
+# H30 (S127) -- árbol raíz ordenado (Miguel Ángel: "hicimos esto para
+# tener un orden y que no fuese una selva"). Raíces visibles: DOC.
+# EMPRESA, DOC. MAQUINAS, DOC. PERSONAL y NO CONFORMES; _CUARENTENA es
+# interna. Nada nuevo cuelga suelto de la raíz.
+#
+# NO CONFORMES agrupa tres subcarpetas que no se mezclan (Miguel Ángel:
+# el no conforme de la subida de documentos va aparte del de la
+# clasificación):
+# - CLASIFICACION: el del H28 (decisión 3.14 del anexo H29, S041/S042)
+#   -- archivo de cuarentena que Gemini no pudo clasificar en su ÚNICA
+#   pasada; sale del prefijo de cuarentena y `consume_quarantine_task`
+#   no lo reprocesa hasta que un humano lo reencole. Las vistas de
+#   anotar/reencolar trabajan sobre esta carpeta exacta.
+# - WHATSAPP: lo que un trabajador entrega por WhatsApp y no se puede
+#   archivar (worker_request_service, S125).
+# - BANDEJA DE ENTRADA: lo que la Bandeja de entrada no identifica con
+#   certeza (inbox_service, S126).
+NO_CONFORMES_ROOT = "NO CONFORMES"
+NO_CONFORMES_PREFIX = "NO CONFORMES/CLASIFICACION/"
+WHATSAPP_NO_CONFORMES_PREFIX = "NO CONFORMES/WHATSAPP/"
+INBOX_NO_CONFORMES_PREFIX = "NO CONFORMES/BANDEJA DE ENTRADA/"
+# Copia temporal mientras la Bandeja clasifica: nunca indexada, se
+# borra al terminar.
 INBOX_STAGING_PREFIX = "_BANDEJA_ENTRADA/"
 
-# Carpeta real de nivel superior, hermana de DOC. MAQUINAS/DOC.
-# PERSONAL -- destino fijo para el tipo documental MANUAL_USO
-# (catálogo cerrado, sembrado ya en 0004_seed_closed_vocabulary),
-# decisión de Miguel Ángel en S042: un manual de uso es genérico al
-# modelo, no específico de un activo concreto, así que no tiene
-# sentido enrutarlo por máquina como el resto de DOC. MAQUINAS -- va
-# directo a su propia carpeta, con el nombre que ya traía y un
-# ordinal solo si hay colisión (ver classification_service.
-# apply_quarantine_classification, caso especial MANUAL_USO).
-MANUAL_USO_FOLDER = "MANUALES DE USO"
+
+def no_conformes_scope_q(field="parent_path"):
+    """
+    Q matching anything inside NO CONFORMES (any of its subfolders).
+
+    ---
+
+    Q de todo lo que está dentro de NO CONFORMES, en cualquiera de sus
+    tres subcarpetas (S127).
+    """
+    return (
+        Q(**{field: NO_CONFORMES_ROOT})
+        | Q(**{"%s__startswith" % field: NO_CONFORMES_ROOT + "/"})
+    )
+
+
+# Destino fijo del tipo MANUAL_USO (decisión S042: un manual de uso es
+# genérico al modelo, no de un activo concreto, así que no se enruta por
+# máquina): desde S127 dentro de DOC. MAQUINAS, no en la raíz. Ver
+# classification_service.apply_quarantine_classification, caso
+# especial MANUAL_USO.
+MANUAL_USO_FOLDER = "DOC. MAQUINAS/MANUALES DE USO"
+
+# Accesorios de elevación (H30, S121): certificados y revisiones, por
+# tipo de accesorio, dentro de DOC. MAQUINAS desde S127.
+LIFTING_ACCESSORIES_FOLDER = "DOC. MAQUINAS/ACCESORIOS DE ELEVACION"
+LIFTING_CERTIFICATES_FOLDER = LIFTING_ACCESSORIES_FOLDER + "/CERTIFICADOS"
+LIFTING_REVIEWS_FOLDER = LIFTING_ACCESSORIES_FOLDER + "/REVISIONES"
+
+# Carpetas de DOC. MAQUINAS que NO son familias ni máquinas: la lógica
+# que deduce una máquina por la ruta no debe buscar códigos de flota en
+# ellas (S127).
+MACHINE_NON_ASSET_FOLDERS = (MANUAL_USO_FOLDER, LIFTING_ACCESSORIES_FOLDER)
+
+
+def in_machine_non_asset_folder(path):
+    """
+    True if `path` is (or is inside) a DOC. MAQUINAS folder that is not
+    a machine family.
+
+    ---
+
+    True si `path` es, o está dentro de, una carpeta de DOC. MAQUINAS
+    que no es de máquinas (manuales de uso, accesorios de elevación).
+    """
+    return any(
+        path == folder or path.startswith(folder + "/")
+        for folder in MACHINE_NON_ASSET_FOLDERS
+    )
+
 
 INDEXED_BUCKETS = (
     TASK_PHOTOS_BUCKET,

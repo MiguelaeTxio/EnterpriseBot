@@ -22,7 +22,7 @@ pedido. Diseño de Miguel Ángel (S125), tal cual:
   (caducado, o no más reciente que el vigente que ya tenemos).
   Conforme -> se clasifica directamente en su ficha
   (`upload_subject_document`: tipo, vínculo, nombre canónico, fechas y
-  sustitución del vigente). No conforme -> se guarda en NO CONFORMES/
+  sustitución del vigente). No conforme -> se guarda en NO CONFORMES/WHATSAPP/
   y se avisa al trabajador: "El archivo entregado no es el
   solicitado. Hemos solicitado X y usted ha entregado Y."
 - Segunda entrega (la otra cara, más páginas) de un documento aceptado
@@ -33,7 +33,7 @@ pedido. Diseño de Miguel Ángel (S125), tal cual:
   Personal, se valida igual y se archiva con su nombre canónico. Solo
   para trabajadores con acceso al panel (S126); sin acceso no se
   archiva. Ningún adjunto de trabajador va a la cuarentena; ninguno se
-  pierde (lo que no encaja va a NO CONFORMES/ con aviso al
+  pierde (lo que no encaja va a NO CONFORMES/WHATSAPP/ con aviso al
   trabajador).
 """
 import hashlib
@@ -56,7 +56,7 @@ from document_explorer.classification_service import (
     _generate_content_with_retry,
 )
 from document_explorer import index_writer, naming_service
-from document_explorer.buckets import NO_CONFORMES_PREFIX
+from document_explorer.buckets import WHATSAPP_NO_CONFORMES_PREFIX
 from document_explorer.models import (
     DocumentIndexEntry, DocumentTypeCatalog, PersonIdentity,
     WorkerDocumentRequest, WorkerDocumentSubmission,
@@ -592,7 +592,7 @@ def process_submission(submission_id, final=False):
     Comprueba un adjunto y actúa (decisiones de Miguel Ángel, S125):
 
     1. Es uno de los documentos pedidos -> se valida contra lo pedido;
-       conforme a la ficha, no conforme a NO CONFORMES/ con aviso.
+       conforme a la ficha, no conforme a NO CONFORMES/WHATSAPP/ con aviso.
     0. Es el mismo archivo que uno ya aceptado (huella SHA-256), o
        -- en el paso 2 -- una cara que ya está en el documento aceptado
        (Gemini compara): repetido, no se añade nada y se le dice al
@@ -603,8 +603,8 @@ def process_submission(submission_id, final=False):
        conforme ("Hemos solicitado X y usted ha entregado Y").
     4. Sin solicitudes -> actualización o primera subida por iniciativa
        del trabajador: se clasifica contra el catálogo, se valida y se
-       archiva con su nombre canónico; si no encaja, NO CONFORMES/ y
-       aviso. Solo con acceso al panel (S126): sin él, NO CONFORMES/.
+       archiva con su nombre canónico; si no encaja, NO CONFORMES/WHATSAPP/ y
+       aviso. Solo con acceso al panel (S126): sin él, NO CONFORMES/WHATSAPP/.
        Ningún adjunto de trabajador va a la cuarentena.
     """
     submission = WorkerDocumentSubmission.objects.select_related(
@@ -1182,13 +1182,13 @@ def _fail(context, reason, verdict=None):
     ---
 
     Algo ha fallado después de descargar (Gemini, archivado, unión):
-    el archivo se guarda en NO CONFORMES/ para revisión humana y el
+    el archivo se guarda en NO CONFORMES/WHATSAPP/ para revisión humana y el
     trabajador lo sabe -- ni se pierde ni se queda en silencio.
     """
     submission = context.submission
     try:
         entry = _store_loose_object(
-            NO_CONFORMES_PREFIX.rstrip("/"), context.person, submission,
+            WHATSAPP_NO_CONFORMES_PREFIX.rstrip("/"), context.person, submission,
             context.data, context.content_type, context.extension,
         )
     except Exception:
@@ -1212,13 +1212,13 @@ def _refuse(context, queue, delivered, verdict):
 
     ---
 
-    Guarda el archivo en NO CONFORMES/ (ningún adjunto se pierde) y le
+    Guarda el archivo en NO CONFORMES/WHATSAPP/ (ningún adjunto se pierde) y le
     dice al trabajador por qué. Con una solicitud abierta, con la frase
     de Miguel Ángel; la solicitud sigue abierta para que lo reenvíe.
     """
     submission = context.submission
     entry = _store_loose_object(
-        NO_CONFORMES_PREFIX.rstrip("/"), context.person, submission,
+        WHATSAPP_NO_CONFORMES_PREFIX.rstrip("/"), context.person, submission,
         context.data, context.content_type, context.extension,
     )
     if queue:

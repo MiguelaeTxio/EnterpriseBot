@@ -17,9 +17,8 @@ al estado real de la máquina.
 import datetime
 
 from django.contrib.contenttypes.models import ContentType
-from django.db.models import Q
 
-from document_explorer.buckets import NO_CONFORMES_PREFIX, quarantine_scope_q
+from document_explorer.buckets import no_conformes_scope_q, quarantine_scope_q
 from document_explorer.models import DocumentIndexEntry
 from document_explorer.move_service import move_entries
 from document_explorer.naming_service import build_machine_folder_path
@@ -49,11 +48,8 @@ def outside_intake_q():
     Excluye lo que sigue en `_CUARENTENA` o en `NO CONFORMES`: esos los
     reubica el propio flujo de clasificación, nunca esta vía.
     """
-    no_conformes = NO_CONFORMES_PREFIX.rstrip("/")
-    return ~quarantine_scope_q() & ~(
-        Q(parent_path=no_conformes)
-        | Q(parent_path__startswith=NO_CONFORMES_PREFIX)
-    )
+    # S127: las tres subcarpetas de NO CONFORMES, no solo la del H28.
+    return ~quarantine_scope_q() & ~no_conformes_scope_q()
 
 
 def machine_entries_to_move(asset):

@@ -21,6 +21,9 @@ from django.contrib.contenttypes.models import ContentType
 from django.db import transaction
 from django.utils import timezone
 
+from document_explorer.buckets import (
+    LIFTING_CERTIFICATES_FOLDER, LIFTING_REVIEWS_FOLDER,
+)
 from document_explorer.index_writer import ensure_folder_chain
 from document_explorer.models import (
     DocumentIndexEntry,
@@ -44,8 +47,9 @@ REVIEW_TYPE_CODE = "REVISION_ESLINGAS"
 
 # Carpetas de lo subido desde el panel, una subcarpeta por tipo de
 # accesorio -- mismo patrón que _FICHAS_TECNICAS_EPI/<código>.
-CERTIFICATES_ROOT = "_CERTIFICADOS_ACCESORIOS_ELEVACION"
-REVIEWS_ROOT = "_REVISIONES_ACCESORIOS_ELEVACION"
+# S127: dentro de DOC. MAQUINAS/ACCESORIOS DE ELEVACION (buckets.py).
+CERTIFICATES_ROOT = LIFTING_CERTIFICATES_FOLDER
+REVIEWS_ROOT = LIFTING_REVIEWS_FOLDER
 _CONTENT_TYPES = {
     "pdf": "application/pdf",
     "jpg": "image/jpeg",
