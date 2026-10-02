@@ -288,10 +288,20 @@ def _adjust_child_count(bucket, folder_path, delta):
     """
     if not folder_path:
         return
-    DocumentIndexEntry.objects.filter(
+    folders = DocumentIndexEntry.objects.filter(
         bucket=bucket, blob_name_hash=path_digest(folder_path),
         deleted_at__isnull=True, purged_at__isnull=True,
-    ).update(child_count=F("child_count") + delta)
+    )
+    if delta < 0:
+        # S127, incidente real: `child_count` es UNSIGNED; una carpeta
+        # cuyo contador ya está en 0 (la de _CUARENTENA de un archivo
+        # reencolado virtualmente, que el refresco de la cuarentena
+        # recuenta por objetos reales) hacía saltar "BIGINT UNSIGNED
+        # value is out of range" y tumbaba la pasada entera del H28.
+        # Nunca por debajo de 0.
+        folders.filter(child_count__lt=-delta).update(child_count=0)
+        folders = folders.filter(child_count__gte=-delta)
+    folders.update(child_count=F("child_count") + delta)
 
 
 def _bulk_adjust(bucket, field_name, deltas):
@@ -349,13 +359,24 @@ def _bulk_adjust(bucket, field_name, deltas):
     # output_field, tanto en cada Value() como en el Case(), lo deja
     # sin ambigüedad.
     field = DocumentIndexEntry._meta.get_field(field_name)
-    whens = [
-        When(
-            blob_name_hash=digest,
-            then=F(field_name) + Value(delta, output_field=field),
-        )
-        for digest, delta in hash_to_delta.items()
-    ]
+    whens = []
+    for digest, delta in hash_to_delta.items():
+        if delta < 0:
+            # S127: campos UNSIGNED -- nunca por debajo de 0 (ver
+            # _adjust_child_count).
+            whens.append(When(
+                Q(blob_name_hash=digest)
+                & Q(**{"%s__gte" % field_name: -delta}),
+                then=F(field_name) + Value(delta, output_field=field),
+            ))
+            whens.append(When(
+                blob_name_hash=digest, then=Value(0, output_field=field),
+            ))
+        else:
+            whens.append(When(
+                blob_name_hash=digest,
+                then=F(field_name) + Value(delta, output_field=field),
+            ))
     DocumentIndexEntry.objects.filter(
         bucket=bucket, blob_name_hash__in=list(hash_to_delta.keys()),
         deleted_at__isnull=True, purged_at__isnull=True,
