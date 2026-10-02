@@ -55,6 +55,11 @@ MOVES = {
     52174: COMPANY + "/SEGUROS",                 # Contrato Mapfre Transgrual
     49932: COMPANY + "/TACOGRAFOS",              # Descargas de tarjetas
     42905: MANUAL_USO_FOLDER,                    # Especificaciones JLG 520AJ
+    # Segunda revisión (S127, primera página abierta):
+    42660: COMPANY + "/SEGUROS",       # Recibo Mapfre a cargo de GRA
+    43183: COMPANY + "/FORMACION",     # Temario camión grúa autocargante
+    43813: COMPANY + "/PLANTILLAS",    # Carta de baja voluntaria en blanco
+    43981: COMPANY + "/PLANTILLAS",    # Certificado del taller en blanco
 }
 
 # Lo que ya estaba suelto en DOC. EMPRESA, a su subcarpeta.
@@ -133,6 +138,9 @@ PERSONAL = [
     (51643, 193, "ENTREGA_INFORMACION", ""),
     (52150, 185, "TACOGRAFO", "2030-11-30"),
     (52162, 185, "TACOGRAFO", "2030-11-30"),
+    # Segunda revisión: el autorizado es Cruces Heredia (el nombre del
+    # archivo decía Cabello Sánchez, la primera página no).
+    (51601, 49, "AUTORIZACION_GENERICA", "2026-09-25"),
 ]
 
 # pk -> (máquina pk, tipo, fecha).
@@ -158,6 +166,13 @@ MACHINE = [
     (43062, 207, "SOLICITUD_ADMINISTRATIVA", "2026-09-01"),
     (43063, 207, "SOLICITUD_ADMINISTRATIVA", "2026-09-01"),
     (50968, 207, "SOLICITUD_ADMINISTRATIVA", "2026-09-01"),
+    # Segunda revisión: certificado del taller de la Sprinter 4542KGD
+    # (máquina 311) y transporte de la Liebherr LTF1060 (A68, 572).
+    (45493, 311, "REFORMA_VEHICULO", "2026-09-01"),
+    (43997, 311, "REFORMA_VEHICULO", "2026-09-01"),
+    (49929, 572, "ALBARAN_ENTREGA", "2026-09-21"),
+    (49930, 572, "ALBARAN_ENTREGA", "2026-09-21"),
+    (51885, 572, "ALBARAN_ENTREGA", "2026-09-21"),
 ]
 
 
