@@ -71,6 +71,31 @@ def _content_variables(notice, company_user):
     return variables
 
 
+def _notice_text(notice):
+    """
+    Plain text of a notice, for the 24-hour window.
+
+    ---
+
+    Texto libre del aviso para la ventana de 24 h (S127): sin el
+    preámbulo que Meta exige en la plantilla ("Hola X. Usted recibe
+    este mensaje porque consta como trabajador..."), que dentro de la
+    ventana sobra y hacía parecer que había salido la plantilla.
+    """
+    if notice.kind == notices.KIND_MISSING:
+        return "Falta el documento obligatorio %s de %s." % (
+            notice.document_label, notice.subject_label,
+        )
+    date = notice.expiry_date.strftime("%d/%m/%Y")
+    if notice.kind == notices.KIND_EXPIRED:
+        return "El documento %s de %s caducó el %s." % (
+            notice.document_label, notice.subject_label, date,
+        )
+    return "El documento %s de %s caduca el %s." % (
+        notice.document_label, notice.subject_label, date,
+    )
+
+
 def _phone_of(company_user):
     """
     WhatsApp phone of an internal contact, or "".
@@ -191,6 +216,7 @@ def send_due_notices():
                         client, sender, company, phone,
                         template.content_sid,
                         _content_variables(notice, company_user),
+                        text=_notice_text(notice),
                     )
                 except Exception as exc:
                     errors += 1

@@ -172,6 +172,11 @@ def send_alert_now(alert: DocumentAlert) -> tuple[bool, str]:
                     "3": alert.subject_label,
                     "4": alert.expiry_date.strftime("%d/%m/%Y"),
                 },
+                # Dentro de la ventana, sin el preámbulo de la plantilla.
+                text="El documento %s de %s caduca el %s." % (
+                    alert.document_label, alert.subject_label,
+                    alert.expiry_date.strftime("%d/%m/%Y"),
+                ),
             )
             notified.append(company_user)
         except Exception as exc:
