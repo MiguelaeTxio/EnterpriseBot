@@ -25,6 +25,8 @@ Lo que no aparece aquí se queda en NO CONFORMES/CLASIFICACION para la
 siguiente revisión. Sin --apply solo informa; idempotente (solo toca
 archivos que siguen vivos en su carpeta de origen).
 """
+from datetime import date
+
 from django.contrib.contenttypes.models import ContentType
 from django.core.management.base import BaseCommand
 
@@ -33,9 +35,11 @@ from document_explorer.buckets import (
 )
 from document_explorer import archive_service
 from document_explorer.classification_service import (
-    file_entry_manually, resolve_duplicate_of_filed_document,
-    resolve_or_create_person_identity, trash_dossier_entry,
+    apply_personal_canonical_rename, file_entry_manually,
+    resolve_duplicate_of_filed_document, resolve_or_create_person_identity,
+    trash_dossier_entry,
 )
+from document_explorer.person_folder_service import relocate_if_needed
 from document_explorer.models import (
     DocumentIndexEntry, DocumentTypeCatalog, PersonIdentity,
 )
@@ -200,6 +204,12 @@ NEW_PEOPLE = [
     },
 ]
 
+# Errata en una ficha existente: Rosas Sánchez se dio de alta como "ROSA"
+# (pk 177, mismo DNI 25695295V); DNI, contrato e informe de alta dicen
+# ROSAS. Se corrige antes de archivar, se reubica su carpeta y se
+# renombran con el apellido bueno los documentos que ya tenía.
+CORRECTIONS = {177: {"first_surname": "ROSAS"}}
+
 # Comprimido Z-100.rar: tres de sus cuatro archivos ya estaban archivados
 # por separado; el cuarto (manual de uso de la plataforma, serie
 # MULL1513051801) se sube a la ficha de la Z100 y el .rar a la papelera.
@@ -345,6 +355,45 @@ class Command(BaseCommand):
                 self._say("   - pk=%s %s -> %s/%s" % (
                     pk, entry.name, outcome["new_parent_path"],
                     outcome["new_name"]))
+
+        # 3b) Erratas de ficha.
+        self._say("3b. Erratas de ficha:")
+        for person_pk, fields in CORRECTIONS.items():
+            person = PersonIdentity.objects.filter(pk=person_pk).first()
+            if person is None:
+                continue
+            changes = {
+                field: value for field, value in fields.items()
+                if getattr(person, field) != value
+            }
+            if not changes:
+                self._say("   - pk=%s: ya corregida." % person_pk)
+                continue
+            self._say("   - pk=%s %s %s, %s: %s" % (
+                person_pk, person.first_surname, person.second_surname,
+                person.given_name, changes))
+            if not apply:
+                continue
+            for field, value in changes.items():
+                setattr(person, field, value)
+            person.save(update_fields=list(changes) + ["updated_at"])
+            moved, folder, count = relocate_if_needed(person)
+            self._say("     carpeta: %s (%d archivo(s) movido(s))." % (
+                folder, count))
+            renamed = 0
+            for entry in DocumentIndexEntry.objects.filter(
+                domain_content_type=ContentType.objects.get_for_model(
+                    PersonIdentity),
+                domain_object_id=person.pk,
+                entry_kind=DocumentIndexEntry.KIND_FILE,
+                deleted_at__isnull=True, purged_at__isnull=True,
+            ):
+                outcome = apply_personal_canonical_rename(
+                    entry, fictitious_date=date(2021, 1, 1),
+                    apply_changes=True,
+                )
+                renamed += int(bool(outcome.get("renamed")))
+            self._say("     %d documento(s) renombrado(s)." % renamed)
 
         # 4) Altas desapercibidas.
         self._say("4. Altas que pasaron desapercibidas:")
