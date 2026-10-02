@@ -25,18 +25,24 @@ Lo que no aparece aquí se queda en NO CONFORMES/CLASIFICACION para la
 siguiente revisión. Sin --apply solo informa; idempotente (solo toca
 archivos que siguen vivos en su carpeta de origen).
 """
+from django.contrib.contenttypes.models import ContentType
 from django.core.management.base import BaseCommand
 
 from document_explorer.buckets import (
     MANUAL_USO_FOLDER, NO_CONFORMES_PREFIX, PRIMARY_BUCKET,
 )
+from document_explorer import archive_service
 from document_explorer.classification_service import (
     file_entry_manually, resolve_duplicate_of_filed_document,
-    trash_dossier_entry,
+    resolve_or_create_person_identity, trash_dossier_entry,
 )
-from document_explorer.models import DocumentIndexEntry, PersonIdentity
+from document_explorer.models import (
+    DocumentIndexEntry, DocumentTypeCatalog, PersonIdentity,
+)
+from document_explorer.subject_upload_service import upload_subject_document
 from document_explorer.move_service import move_entries
 from fleet.models import MachineAsset
+from spare_parts.gcs_service import download_bytes
 
 SOURCE = NO_CONFORMES_PREFIX.rstrip("/")
 COMPANY = "DOC. EMPRESA"
@@ -70,7 +76,14 @@ COMPANY_TIDY = {
     19986: COMPANY + "/RELACIONES LABORALES",
 }
 
-TRASH = {42871, 42413, 52204}
+TRASH = {
+    42871, 42413, 52204,
+    # Tercera revisión (Miguel Ángel: "Papelera"): huérfanos sin dueño
+    # posible -- 4 copias de una página interior de reconocimiento sin
+    # nombre, 2 reversos de certificado de formación sin nombre, 2
+    # números de cuenta sin titular y un PDF que no se puede abrir.
+    42792, 42795, 43962, 44368, 44465, 45902, 48066, 49190, 52201,
+}
 
 # pk -> (persona pk, tipo, fecha). Originales antes que sus copias.
 PERSONAL = [
@@ -141,7 +154,58 @@ PERSONAL = [
     # Segunda revisión: el autorizado es Cruces Heredia (el nombre del
     # archivo decía Cabello Sánchez, la primera página no).
     (51601, 49, "AUTORIZACION_GENERICA", "2026-09-25"),
+    # Tercera revisión, tipos nuevos (migración 0179, aprobados).
+    (49925, 197, "EXTINCION_CONTRATO", "2026-09-22"),
+    (51607, 197, "EXTINCION_CONTRATO", "2026-09-22"),
+    (51620, 197, "EXTINCION_CONTRATO", "2026-09-22"),
+    (49213, 252, "PRESTACION_NACIMIENTO", "2025-09-29"),
 ]
+
+# Altas que pasaron desapercibidas: documentos subidos por la vigilancia
+# del H28 (no de la carga inicial de julio) de personas sin ficha. Se
+# crean con el mismo mecanismo del pipeline
+# (`resolve_or_create_person_identity`, carpeta PTE CONTRATACION) y se
+# les archiva su documentación. pk -> (tipo, fecha), cualquier carpeta.
+NEW_PEOPLE = [
+    {
+        "dni_hint": "X8250328K", "first_surname_hint": "KOITA",
+        "second_surname_hint": "", "given_name_hint": "IBREHIM",
+        "documents": [(43214, "NIE", "2035-11-02")],
+    },
+    {
+        # Alta 22/06/2026 en TRANSGRUAL (informe de alta, contrato y DNI
+        # leídos en su primera página).
+        "dni_hint": "25695295V", "first_surname_hint": "ROSAS",
+        "second_surname_hint": "SANCHEZ",
+        "given_name_hint": "FRANCISCO JOSE",
+        "documents": [
+            (37439, "CONTRATO", "2026-06-22"),
+            (37446, "ALTA", "2026-06-22"),
+            (37445, "IDC", "2026-06-22"),
+            (37441, "DNI", "2036-03-06"),
+            (37435, "CARNET_CONDUCIR", "2031-07-29"),
+            (37436, "TACOGRAFO", "2031-02-06"),
+            (37437, "TARJETA_CUALIF_CONDUCTOR", "2031-01-18"),
+            (37438, "CERTIFICADO_BANCARIO", "2026-06-22"),
+            (37447, "MOD_145", "2026-06-22"),
+            (37448, "RECONOCIMIENTO_MEDICO", "2027-06-22"),
+            (37440, "FORMACION_OPERADOR_APARATOS_ELEVACION", "2026-06-22"),
+            (41189, "FORMACION_PRL_ART_18_19", "2026-06-22"),
+            (42832, "FORMACION_PRL_60H", "2026-08-14"),
+            (42833, "FORMACION_PRL_60H", "2026-08-14"),
+            (37444, "EPIS", "2026-06-18"),
+            (41329, "EPIS", "2026-06-18"),
+            (44020, "PARTE_BAJA_MEDICA", "2026-09-15"),
+        ],
+    },
+]
+
+# Comprimido Z-100.rar: tres de sus cuatro archivos ya estaban archivados
+# por separado; el cuarto (manual de uso de la plataforma, serie
+# MULL1513051801) se sube a la ficha de la Z100 y el .rar a la papelera.
+RAR_ENTRY = 43190
+RAR_MACHINE = 79
+RAR_MEMBER_HINT = "Manual"
 
 # pk -> (máquina pk, tipo, fecha).
 MACHINE = [
@@ -174,6 +238,13 @@ MACHINE = [
     (49930, 572, "ALBARAN_ENTREGA", "2026-09-21"),
     (51885, 572, "ALBARAN_ENTREGA", "2026-09-21"),
 ]
+
+
+def _live_anywhere(pk):
+    return DocumentIndexEntry.objects.filter(
+        pk=pk, entry_kind=DocumentIndexEntry.KIND_FILE,
+        deleted_at__isnull=True, purged_at__isnull=True,
+    ).first()
 
 
 def _live(pk, parent_path):
@@ -274,6 +345,101 @@ class Command(BaseCommand):
                 self._say("   - pk=%s %s -> %s/%s" % (
                     pk, entry.name, outcome["new_parent_path"],
                     outcome["new_name"]))
+
+        # 4) Altas desapercibidas.
+        self._say("4. Altas que pasaron desapercibidas:")
+        for person in NEW_PEOPLE:
+            label = "%s %s, %s (%s)" % (
+                person["first_surname_hint"], person["second_surname_hint"],
+                person["given_name_hint"], person["dni_hint"])
+            existing = PersonIdentity.objects.filter(
+                dni=person["dni_hint"]).first()
+            if existing is not None:
+                identity = existing
+                self._say("   - %s: ya existe (pk=%s)." % (label, existing.pk))
+            elif apply:
+                first_live = _live_anywhere(person["documents"][0][0])
+                hints = {k: v for k, v in person.items() if k != "documents"}
+                identity = resolve_or_create_person_identity(
+                    hints, first_live)
+                if identity is None:
+                    self._say("   - %s [SALTADO] %s" % (
+                        label, hints.get("person_identity_note", "")))
+                    counts["saltado"] += 1
+                    continue
+                self._say("   - %s: creada (pk=%s) en %s." % (
+                    label, identity.pk, identity.folder_path))
+            else:
+                identity = None
+                self._say("   - %s: se crearía en PTE CONTRATACION." % label)
+            for pk, type_code, date_hint in person["documents"]:
+                entry = _live_anywhere(pk)
+                if entry is None:
+                    counts["saltado"] += 1
+                    self._say("     - pk=%s: no está vivo." % pk)
+                    continue
+                if identity is None:
+                    self._say("     - pk=%s %s -> %s (%s)" % (
+                        pk, entry.name, type_code, date_hint))
+                    continue
+                if apply and resolve_duplicate_of_filed_document(entry):
+                    counts["duplicado"] += 1
+                    self._say("     - pk=%s %s: copia exacta -> papelera."
+                              % (pk, entry.name))
+                    trash_dossier_entry(entry)
+                    continue
+                outcome = file_entry_manually(
+                    entry, identity, type_code, date_hint,
+                    apply_changes=apply,
+                )
+                if outcome["reason"]:
+                    counts["saltado"] += 1
+                    self._say("     - pk=%s [SALTADO] %s" % (
+                        pk, outcome["reason"]))
+                    continue
+                counts["ficha"] += 1
+                self._say("     - pk=%s -> %s/%s" % (
+                    pk, outcome["new_parent_path"], outcome["new_name"]))
+
+        # 5) Comprimido Z-100.rar.
+        self._say("5. Comprimido Z-100.rar:")
+        rar = _live(RAR_ENTRY, SOURCE)
+        if rar is None:
+            self._say("   - ya no está en %s." % SOURCE)
+        else:
+            content = download_bytes(rar.bucket, rar.blob_name)
+            members = archive_service.list_entries(content, "rar") or []
+            manual = next((
+                m["path"] for m in members
+                if RAR_MEMBER_HINT.lower() in m["path"].lower()
+            ), None)
+            self._say("   - contenido: %s" % ", ".join(
+                m["path"] for m in members))
+            if manual is None:
+                counts["saltado"] += 1
+                self._say("   [SALTADO] no aparece el manual.")
+            elif apply:
+                data = archive_service.extract_entry(content, "rar", manual)
+                asset = MachineAsset.objects.get(pk=RAR_MACHINE)
+                uploaded = upload_subject_document(
+                    subject=asset,
+                    domain_content_type=ContentType.objects.get_for_model(
+                        MachineAsset),
+                    document_type=DocumentTypeCatalog.objects.get(
+                        code="MANUAL_USO"),
+                    data=data, original_filename=manual.rsplit("/", 1)[-1],
+                    typed_date=None, subject_label=asset.code,
+                )
+                trash_dossier_entry(rar)
+                counts["ficha"] += 1
+                counts["papelera"] += 1
+                self._say("   - %s -> %s/%s; .rar a la papelera." % (
+                    manual, uploaded["entry"].parent_path,
+                    uploaded["entry"].name))
+            else:
+                self._say("   - subiría %s a la ficha de la máquina %s y "
+                          "mandaría el .rar a la papelera." % (
+                              manual, RAR_MACHINE))
 
         remaining = DocumentIndexEntry.objects.filter(
             bucket=PRIMARY_BUCKET, entry_kind=DocumentIndexEntry.KIND_FILE,
