@@ -446,6 +446,27 @@ def _resolve_expiry_for_relocated_entry(entry) -> None:
     )
 
 
+# S127: fallos pasajeros de Gemini en la cuarentena -> se reintenta en la
+# siguiente pasada (marca en el registro) hasta este número de pasadas.
+_TRANSIENT_MARK = "[PASAJERO]"
+_TRANSIENT_MAX_PASSES = 3
+
+
+def _is_transient_gemini_error(text):
+    """
+    Whether a classification error text is a transient Gemini failure.
+
+    ---
+
+    Si el texto de error es un fallo pasajero de Gemini (cuota, tiempo
+    agotado, servicio caído).
+    """
+    return any(mark in (text or "") for mark in (
+        "429", "RESOURCE_EXHAUSTED", "503", "UNAVAILABLE", "504",
+        "DEADLINE_EXCEEDED",
+    ))
+
+
 @app.task(base=DjangoTask, bind=True, max_retries=0)
 def consume_quarantine_task(self) -> None:
     """
@@ -739,7 +760,21 @@ def consume_quarantine_task(self) -> None:
                         .apply_quarantine_classification(entry)
                     )
 
-            if "error" in result:
+            if "error" in result and _is_transient_gemini_error(
+                result["error"],
+            ) and DataOperationLogEntry.objects.filter(
+                index_entry=entry,
+                action=DataOperationLogEntry.ACTION_NOT_CLASSIFIED,
+                detail__startswith=_TRANSIENT_MARK,
+            ).count() < _TRANSIENT_MAX_PASSES:
+                # S127 (aprobado por Miguel Ángel): un 429/503/504 de
+                # Gemini es pasajero -- el archivo se queda en la
+                # cuarentena para la siguiente pasada en vez de ir a NO
+                # CONFORMES (7 casos reales). Tras _TRANSIENT_MAX_PASSES
+                # pasadas seguidas fallando, sí va a NO CONFORMES.
+                action = DataOperationLogEntry.ACTION_NOT_CLASSIFIED
+                detail = "%s Error: %s" % (_TRANSIENT_MARK, result["error"])
+            elif "error" in result:
                 pending_count += 1
                 action = DataOperationLogEntry.ACTION_SENT_TO_NO_CONFORMES
                 detail = "Error: %s" % result["error"]
