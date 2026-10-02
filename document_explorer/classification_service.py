@@ -961,7 +961,7 @@ def resolve_or_create_machine_asset(
 # archivo genuinamente ambiguo. Miguel Ángel, verbatim (S043),
 # confirmando que es basura real, no un caso a revisar: "No debería de
 # enviarse a Gemini, hay que borrarlo."
-_JUNK_EXTENSIONS = {"log"}
+_JUNK_EXTENSIONS = {"log", "lnk"}  # S127: .lnk, acceso directo de Windows
 
 
 def is_known_junk_extension(entry) -> bool:
@@ -1478,6 +1478,54 @@ def resolve_person_by_name_count(given_name, first_surname, second_surname=None)
 _NEW_WORKER_STAGING_FOLDER = "DOC. PERSONAL/PERSONAL/PTE CONTRATACION"
 
 
+# S127: diferencias de caracteres que se aceptan como error de lectura
+# del DNI cuando el nombre es exacto y único.
+_DNI_MAX_READ_ERRORS = 2
+
+
+def _dni_distance(read, registered):
+    """
+    Edit distance between two DNIs (letters and digits only).
+
+    ---
+
+    Distancia de edición entre dos DNI (solo letras y dígitos): un
+    dígito cambiado, una letra que falta o un carácter de más cuentan 1.
+    """
+    a = re.sub(r"[^0-9A-Z]", "", (read or "").upper())
+    b = re.sub(r"[^0-9A-Z]", "", (registered or "").upper())
+    previous = list(range(len(b) + 1))
+    for i, char_a in enumerate(a, 1):
+        current = [i]
+        for j, char_b in enumerate(b, 1):
+            current.append(min(
+                previous[j] + 1, current[j - 1] + 1,
+                previous[j - 1] + (char_a != char_b),
+            ))
+        previous = current
+    return previous[-1]
+
+
+def _unique_name_match(first_surname, second_surname, given_name):
+    """
+    The only PersonIdentity with exactly this name, or None.
+
+    ---
+
+    La ÚNICA persona con exactamente estos apellidos y nombre, o None
+    (ninguna o varias). Sin primer apellido o nombre, None.
+    """
+    if not first_surname or not given_name:
+        return None
+    matches = PersonIdentity.objects.filter(
+        first_surname__iexact=first_surname, given_name__iexact=given_name,
+    )
+    if second_surname:
+        matches = matches.filter(second_surname__iexact=second_surname)
+    found = list(matches[:2])
+    return found[0] if len(found) == 1 else None
+
+
 def resolve_or_create_person_identity(
     result: dict, entry=None,
 ) -> PersonIdentity | None:
@@ -1572,12 +1620,24 @@ def resolve_or_create_person_identity(
     identity = resolve_person_identity(dni_hint)
     if identity:
         return identity
-    if not dni_hint:
-        return None
 
     first_surname = (result.get("first_surname_hint") or "").strip()
     second_surname = (result.get("second_surname_hint") or "").strip()
     given_name = (result.get("given_name_hint") or "").strip()
+    if not dni_hint:
+        # S127 (aprobado por Miguel Ángel): sin DNI legible, el nombre
+        # exacto de UNA sola persona basta (vacaciones, nóminas, cartas
+        # de baja... que no llevan DNI). Dos o más -> revisión.
+        unique = _unique_name_match(first_surname, second_surname, given_name)
+        if unique is not None:
+            result["person_identity_note"] = (
+                "Sin DNI legible; asignado por nombre exacto y único "
+                "(%s %s, %s)." % (
+                    unique.first_surname, unique.second_surname,
+                    unique.given_name,
+                )
+            )
+        return unique
     if not first_surname or not given_name:
         return None
 
@@ -1589,6 +1649,19 @@ def resolve_or_create_person_identity(
     if second_surname:
         name_match = name_match.filter(second_surname__iexact=second_surname)
     suspect = name_match.exclude(dni=dni).first()
+    if suspect and name_match.count() == 1 and (
+        _dni_distance(dni, suspect.dni or "") <= _DNI_MAX_READ_ERRORS
+    ):
+        # S127 (aprobado por Miguel Ángel): nombre exacto y único y un
+        # DNI que solo difiere en uno o dos caracteres es un error de
+        # lectura, no otra persona -- 16 casos reales en NO CONFORMES.
+        result["person_identity_note"] = (
+            "DNI leído %s difiere en %d carácter(es) del registrado %s; "
+            "asignado por nombre exacto y único." % (
+                dni, _dni_distance(dni, suspect.dni or ""), suspect.dni,
+            )
+        )
+        return suspect
     if suspect:
         result["person_identity_note"] = (
             "Posible error de lectura del DNI: el nombre coincide "
@@ -2284,6 +2357,28 @@ def classify_entry(entry, domain: str | None = None) -> dict:
                             % extension
                         ),
                     }
+            elif extension == "msg":
+                # S127: correo de Outlook -> asunto y cuerpo como texto
+                # (mismo lector que date_verification_service, S92).
+                from document_explorer.date_verification_service import (
+                    msg_to_text,
+                )
+
+                content_bytes = download_bytes(entry.bucket, entry.blob_name)
+                try:
+                    text = msg_to_text(content_bytes)
+                except Exception as exc:
+                    text = ""
+                    logger.warning(
+                        "# [classify_entry] .msg ilegible (%s): %s",
+                        entry.pk, exc,
+                    )
+                if not (text or "").strip():
+                    return {
+                        "error": "No se pudo leer el texto del correo .msg.",
+                    }
+                converted = None
+                file_part = Part.from_text(text=text)
             else:
                 return {
                     "error": (
@@ -2292,9 +2387,10 @@ def classify_entry(entry, domain: str | None = None) -> dict:
                         "la extensión .%s." % (mime_type, extension)
                     ),
                 }
-            file_part = Part.from_bytes(
-                data=converted, mime_type="application/pdf",
-            )
+            if converted is not None:
+                file_part = Part.from_bytes(
+                    data=converted, mime_type="application/pdf",
+                )
             is_partial_excerpt = False
 
         client = get_gemini_client()
@@ -3062,6 +3158,47 @@ def _activate_person_on_hiring_document(identity, result) -> None:
     ]))
 
 
+def _document_domain_override(folder_domain, result, entry):
+    """
+    (domain, owner) when the document clearly belongs to the other domain.
+
+    ---
+
+    S127. Devuelve (dominio, dueño) cuando el documento es claramente
+    del OTRO dominio que el que fija su carpeta: Gemini con confianza
+    ALTA, el tipo devuelto es de ese dominio en el catálogo, y el dueño
+    ya existe sin ambigüedad (persona por DNI o por nombre exacto y
+    único; máquina existente, sin crear ninguna). Si algo falta, None y
+    manda la carpeta, como siempre (incidente S043: DNI de comprador en
+    carpeta de máquina -- su tipo es de MÁQUINA, así que nunca cambia).
+    """
+    gemini_domain = result.get("domain")
+    if (
+        not folder_domain or gemini_domain == folder_domain
+        or gemini_domain not in ("PERSONAL", "MACHINE")
+        or result.get("confidence") != "ALTA"
+    ):
+        return None
+    document_type = DocumentTypeCatalog.objects.filter(
+        code=result.get("document_type_code") or "",
+    ).first()
+    if document_type is None or document_type.domain != gemini_domain:
+        return None
+    if gemini_domain == "PERSONAL":
+        owner = resolve_person_identity(result.get("dni_hint")) or (
+            _unique_name_match(
+                (result.get("first_surname_hint") or "").strip(),
+                (result.get("second_surname_hint") or "").strip(),
+                (result.get("given_name_hint") or "").strip(),
+            )
+        )
+    else:
+        owner = resolve_or_create_machine_asset(
+            entry, result, allow_create=False,
+        )
+    return (gemini_domain, owner) if owner is not None else None
+
+
 def apply_quarantine_classification(entry) -> dict:
     """
     Full pipeline for ONE quarantine file (H29, S040 -- the "Always-on
@@ -3299,7 +3436,24 @@ def apply_quarantine_classification(entry) -> dict:
         return result
 
     effective_domain = domain or result.get("domain")
-    if domain and result.get("domain") and result.get("domain") != domain:
+    override = _document_domain_override(domain, result, entry)
+    if override is not None:
+        # S127 (aprobado por Miguel Ángel): el documento manda sobre la
+        # carpeta cuando Gemini está seguro (ALTA), el tipo es del otro
+        # dominio y su dueño ya existe sin ambigüedad -- p. ej. la
+        # tarjeta ITV del P09 en una carpeta de personal, o el carnet
+        # de Adolfo en una de máquinas. Nunca crea persona ni máquina.
+        effective_domain, owner = override
+        result["_override_owner"] = owner
+        result["reasoning"] = (
+            "%s -- Carpeta de dominio %s, pero el documento es de %s "
+            "(confianza ALTA, tipo %s, dueño existente): se usa %s."
+            % (
+                result.get("reasoning", ""), domain, effective_domain,
+                result.get("document_type_code"), effective_domain,
+            )
+        )
+    elif domain and result.get("domain") and result.get("domain") != domain:
         # Incidente real S043: Gemini devolvió "domain": "PERSONAL"
         # para un DNI de comprador que vivía bajo una carpeta ya
         # deterministamente MÁQUINA (`quarantine_domain_for_entry()`,
@@ -3328,7 +3482,9 @@ def apply_quarantine_classification(entry) -> dict:
     )
 
     if effective_domain == "PERSONAL":
-        identity = resolve_or_create_person_identity(result, entry)
+        identity = result.pop("_override_owner", None) or (
+            resolve_or_create_person_identity(result, entry)
+        )
         if not identity:
             result.update(
                 new_name=None, classified=False,
@@ -3388,7 +3544,9 @@ def apply_quarantine_classification(entry) -> dict:
         )
         return result
 
-    asset = resolve_or_create_machine_asset(entry, result)
+    asset = result.pop("_override_owner", None) or (
+        resolve_or_create_machine_asset(entry, result)
+    )
     if not asset:
         result.update(
             new_name=None, classified=False,
