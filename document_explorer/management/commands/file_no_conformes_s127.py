@@ -89,6 +89,16 @@ TRASH = {
     42792, 42795, 43962, 44368, 44465, 45902, 48066, 49190, 52201,
 }
 
+# Papelera fuera de NO CONFORMES/CLASIFICACION (cualquier carpeta):
+# - 52320: copia comprimida del manual de la Z100 que ya estaba
+#   (12953, mismo MULL1513051801); la subí yo desde el Z-100.rar.
+# - NO CONFORMES/WHATSAPP: las 10 son pruebas de Miguel Ángel del 30/09
+#   y 01/10 (Miguel Ángel: "1", todo a la papelera).
+TRASH_ANYWHERE = {
+    52320,
+    52240, 52241, 52243, 52244, 52246, 52247, 52248, 52251, 52252, 52299,
+}
+
 # pk -> (persona pk, tipo, fecha). Originales antes que sus copias.
 PERSONAL = [
     (42801, 151, "VACACIONES", "2026-07-09"),
@@ -312,6 +322,18 @@ class Command(BaseCommand):
                 counts["saltado"] += 1
                 continue
             self._say("   - pk=%s %s" % (pk, entry.name))
+            counts["papelera"] += 1
+            if apply and not trash_dossier_entry(entry):
+                self._say("     [ERROR] no se pudo mandar a la papelera.")
+
+        # 2b) Papelera en cualquier carpeta.
+        self._say("2b. A la papelera (cualquier carpeta):")
+        for pk in sorted(TRASH_ANYWHERE):
+            entry = _live_anywhere(pk)
+            if entry is None:
+                counts["saltado"] += 1
+                continue
+            self._say("   - pk=%s %s/%s" % (pk, entry.parent_path, entry.name))
             counts["papelera"] += 1
             if apply and not trash_dossier_entry(entry):
                 self._say("     [ERROR] no se pudo mandar a la papelera.")
