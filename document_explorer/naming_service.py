@@ -164,6 +164,20 @@ def build_filename_machine(
     )
 
 
+def build_filename_company(
+    document_type_code: str, date, ordinal=None, extension="pdf",
+) -> str:
+    """
+    Canonical filename of a company document: {TIPO}_{FECHA}.
+
+    ---
+
+    H30 (S127). Nombre canónico de un documento de empresa:
+    {TIPO}_{AAAAMMDD}[_{ordinal}].{ext} -- sin persona ni máquina.
+    """
+    return _build_filename([document_type_code], date, ordinal, extension)
+
+
 def build_person_folder_name(
     first_surname: str,
     second_surname: str,

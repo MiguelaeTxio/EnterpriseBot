@@ -79,8 +79,8 @@ from spare_parts.gcs_service import download_bytes
 
 from . import archive_service, naming_service
 from .buckets import (
-    MANUAL_USO_FOLDER, QUARANTINE_PREFIX, in_machine_non_asset_folder,
-    no_conformes_scope_q, quarantine_scope_q,
+    COMPANY_ROOT, MANUAL_USO_FOLDER, QUARANTINE_PREFIX, company_folder_for,
+    in_machine_non_asset_folder, no_conformes_scope_q, quarantine_scope_q,
 )
 from .heuristic_type_service import resolve_document_type_heuristic
 from .move_service import _virtual_location_taken, move_entry
@@ -159,7 +159,7 @@ _RESPONSE_SCHEMA = {
     "properties": {
         "domain": {
             "type": "string",
-            "enum": ["MACHINE", "PERSONAL", "DESCONOCIDO"],
+            "enum": ["MACHINE", "PERSONAL", "COMPANY", "DESCONOCIDO"],
         },
         "document_type_code": {"type": "string"},
         "confidence": {"type": "string", "enum": ["ALTA", "MEDIA", "BAJA"]},
@@ -281,6 +281,7 @@ Responde ÚNICAMENTE el JSON solicitado, sin texto adicional."""
 _DOMAIN_LABELS = {
     "MACHINE": "MÁQUINA / VEHÍCULO",
     "PERSONAL": "PERSONAL / TRABAJADOR",
+    "COMPANY": "EMPRESA (documentación de la propia empresa)",
 }
 
 
@@ -361,26 +362,33 @@ def _build_prompt(
         "(ver is_dossier más abajo).\n"
         if is_partial_excerpt else ""
     )
+    # S127: el catálogo va SIEMPRE completo. Antes, con el dominio
+    # fijado por la carpeta, solo se listaban sus tipos, y un documento
+    # de otro dominio (la ITV del P09 en una carpeta de personal, un
+    # balance en una de máquinas) no tenía ni tipo posible -- la regla
+    # "manda el documento" (_document_domain_override) nunca podía
+    # dispararse.
+    catalog_entries = (
+        DocumentTypeCatalog.objects.filter(is_active=True).order_by("code")
+    )
+    domains_help = (
+        '"MACHINE" (máquina/vehículo), "PERSONAL" (trabajador) o '
+        '"COMPANY" (documentación de la propia empresa: fiscal, '
+        'societaria, bancaria, seguros de empresa, listados, circulares, '
+        'plantillas...)'
+    )
     if domain:
-        catalog_entries = (
-            DocumentTypeCatalog.objects
-            .filter(is_active=True)
-            .filter(domain__in=[domain, DocumentTypeCatalog.DOMAIN_BOTH])
-            .order_by("code")
-        )
         domain_instruction = (
-            "DOMINIO (ya conocido, no lo cambies): %s"
-            % _DOMAIN_LABELS.get(domain, domain)
+            "DOMINIO PROBABLE por la carpeta de origen: %s. Úsalo salvo que "
+            "el documento sea CLARAMENTE de otro dominio; en ese caso pon el "
+            'dominio real en el campo "domain" (%s) y un tipo de ese '
+            "dominio." % (_DOMAIN_LABELS.get(domain, domain), domains_help)
         )
     else:
-        catalog_entries = (
-            DocumentTypeCatalog.objects.filter(is_active=True).order_by("code")
-        )
         domain_instruction = (
-            "DOMINIO: desconocido -- decide tú si el documento es de "
-            "MÁQUINA/VEHÍCULO o de PERSONAL/TRABAJADOR y ponlo en el campo "
-            "\"domain\" (\"MACHINE\" o \"PERSONAL\"; \"DESCONOCIDO\" solo si "
-            "de verdad no se puede determinar)."
+            "DOMINIO: desconocido -- decide tú el dominio del documento y "
+            'ponlo en el campo "domain": %s; "DESCONOCIDO" solo si de '
+            "verdad no se puede determinar." % domains_help
         )
     catalog_lines = "\n".join(
         "- %s -- %s" % (entry.code, entry.label) for entry in catalog_entries
@@ -2573,6 +2581,10 @@ def build_new_name(
         return naming_service.build_filename_machine(
             machine_code, code, date, ordinal=ordinal, extension=extension,
         )
+    if domain == "COMPANY":
+        return naming_service.build_filename_company(
+            code, date, ordinal=ordinal, extension=extension,
+        )
     if domain == "PERSONAL":
         # Corrección S040, mismo principio que 3.27 para máquina: si
         # el DNI leído en este documento concreto resuelve a una
@@ -2966,6 +2978,8 @@ def quarantine_domain_for_entry(entry) -> str | None:
         return DocumentTypeCatalog.DOMAIN_MACHINE
     if relative.startswith("DOC. PERSONAL/"):
         return DocumentTypeCatalog.DOMAIN_PERSONAL
+    if relative.startswith(COMPANY_ROOT + "/"):
+        return DocumentTypeCatalog.DOMAIN_COMPANY
     return None
 
 
@@ -3175,7 +3189,7 @@ def _document_domain_override(folder_domain, result, entry):
     gemini_domain = result.get("domain")
     if (
         not folder_domain or gemini_domain == folder_domain
-        or gemini_domain not in ("PERSONAL", "MACHINE")
+        or gemini_domain not in ("PERSONAL", "MACHINE", "COMPANY")
         or result.get("confidence") != "ALTA"
     ):
         return None
@@ -3184,7 +3198,15 @@ def _document_domain_override(folder_domain, result, entry):
     ).first()
     if document_type is None or document_type.domain != gemini_domain:
         return None
-    if gemini_domain == "PERSONAL":
+    if gemini_domain == "COMPANY":
+        # Una circular firmada es del trabajador que la firma: nunca se
+        # saca de su ficha hacia DOC. EMPRESA.
+        if document_type.code.startswith("CIRCULAR_"):
+            return None
+        from ivr_config.models import Company
+
+        owner = Company.objects.first()
+    elif gemini_domain == "PERSONAL":
         owner = resolve_person_identity(result.get("dni_hint")) or (
             _unique_name_match(
                 (result.get("first_surname_hint") or "").strip(),
@@ -3197,6 +3219,48 @@ def _document_domain_override(folder_domain, result, entry):
             entry, result, allow_create=False,
         )
     return (gemini_domain, owner) if owner is not None else None
+
+
+def _apply_company_classification(entry, result):
+    """
+    File a company document under DOC. EMPRESA/<subfolder>.
+
+    ---
+
+    H30 (S127, regla 4). Archiva un documento de empresa en su
+    subcarpeta fija de DOC. EMPRESA (`buckets.company_folder_for`), con
+    nombre {TIPO}_{FECHA}, tipo guardado y vinculado a la Company. Tipo
+    que no es de empresa o desconocido -> sin clasificar (NO CONFORMES).
+    """
+    from ivr_config.models import Company
+
+    code = result.get("document_type_code") or ""
+    document_type = DocumentTypeCatalog.objects.filter(code=code).first()
+    company = result.pop("_override_owner", None) or Company.objects.first()
+    if (
+        document_type is None or company is None
+        or document_type.domain != DocumentTypeCatalog.DOMAIN_COMPANY
+    ):
+        result.update(
+            new_name=None, classified=False, renamed=False, relocated=False,
+        )
+        return result
+    target = company_folder_for(code)
+    name = build_new_name(entry, "COMPANY", result)
+    ordinal = 1
+    while _virtual_location_taken(
+        entry.bucket, target, name, exclude_pk=entry.pk,
+    ):
+        name = build_new_name(entry, "COMPANY", result, ordinal=ordinal)
+        ordinal += 1
+    entry.name = name
+    move_entry(entry, target)
+    _persist_type_and_subject(entry, result, company)
+    result.update(
+        new_name=name, classified=True, renamed=True, relocated=True,
+        new_parent_path=target,
+    )
+    return result
 
 
 def apply_quarantine_classification(entry) -> dict:
@@ -3536,6 +3600,9 @@ def apply_quarantine_classification(entry) -> dict:
         result["relocated"] = True
         result["new_parent_path"] = target_parent_path
         return result
+
+    if effective_domain == "COMPANY":
+        return _apply_company_classification(entry, result)
 
     if effective_domain != "MACHINE":
         result.update(

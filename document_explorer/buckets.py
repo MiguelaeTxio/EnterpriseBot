@@ -157,6 +157,54 @@ def no_conformes_scope_q(field="parent_path"):
     )
 
 
+# H30 (S127) -- dominio EMPRESA (regla 4, aprobada por Miguel Ángel):
+# el H28 archiva la documentación de la propia empresa en DOC. EMPRESA,
+# cada tipo en su subcarpeta fija, con nombre {TIPO}_{FECHA}.
+COMPANY_ROOT = "DOC. EMPRESA"
+_COMPANY_SUBFOLDERS = {
+    "FISCAL Y CONTABILIDAD": (
+        "IMPUESTO_SOCIEDADES", "IVA_TRIMESTRAL", "IVA_RESUMEN_ANUAL",
+        "CUENTAS_ANUALES", "RETENCIONES",
+    ),
+    "SOCIETARIO": ("ESCRITURA_SOCIETARIA", "NIF_EMPRESA"),
+    "BANCOS Y FINANCIACION": (
+        "CERTIFICADO_CUENTA_EMPRESA", "FINANCIACION_EMPRESA",
+        "PAGO_CORRIENTE",
+    ),
+    "SEGUROS": ("POLIZA_SEGURO_EMPRESA", "RECIBO_SEGURO_EMPRESA"),
+    "TACOGRAFOS": ("DESCARGA_TACOGRAFOS",),
+    "FORMACION": ("MATERIAL_FORMACION", "CONVENIO_FORMACION_BONIFICADA"),
+    "PLANTILLAS": ("PLANTILLA",),
+    "CIRCULARES": (
+        "CIRCULAR_CAMBIO_HORARIO", "CIRCULAR_CIERRE_INSTALACIONES",
+        "CIRCULAR_EVENTO_EMPRESA", "CIRCULAR_INFORMATIVA",
+        "CIRCULAR_PROTOCOLO_ACTUACION",
+    ),
+    "RELACIONES LABORALES": (
+        "ACTA_ELECCIONES_SINDICALES", "INFORME_ACCIDENTES_EMPRESA",
+        "LISTADO_PERSONAL_MAQUINARIA_OBRA", "DECLARACION_EMPRESA",
+        "CERTIFICADO_JUSTIFICACION_DESPLAZAMIENTO",
+    ),
+    "FACTURAS": ("FACTURA_SERVICIOS_EMPRESA",),
+}
+COMPANY_TYPE_FOLDERS = {
+    code: "%s/%s" % (COMPANY_ROOT, folder)
+    for folder, codes in _COMPANY_SUBFOLDERS.items() for code in codes
+}
+
+
+def company_folder_for(type_code):
+    """
+    DOC. EMPRESA subfolder of a company document type.
+
+    ---
+
+    Subcarpeta de DOC. EMPRESA de un tipo de empresa; la raíz si el tipo
+    no tiene una asignada.
+    """
+    return COMPANY_TYPE_FOLDERS.get(type_code, COMPANY_ROOT)
+
+
 # Destino fijo del tipo MANUAL_USO (decisión S042: un manual de uso es
 # genérico al modelo, no de un activo concreto, así que no se enruta por
 # máquina): desde S127 dentro de DOC. MAQUINAS, no en la raíz. Ver
