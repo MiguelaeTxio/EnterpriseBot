@@ -655,7 +655,17 @@ def consume_quarantine_task(self) -> None:
         pending_count = 0
         dossier_trashed_count = 0
 
+        # S127, caso real (fotos de WhatsApp de García Rubiales): en una
+        # misma pasada, documentos de una persona que todavía no existe
+        # llegan antes que el documento que la crea (su CAP, con DNI) y
+        # acaban en NO CONFORMES por "persona no encontrada". Si en la
+        # pasada se crea alguien, esos vuelven a la cuarentena al final
+        # y la siguiente pasada ya los encuentra.
+        people_created = False
+        person_misses = []
+
         for group_number, entry in enumerate(entries, start=1):
+            entry_original_parent = entry.parent_path
             # S127, incidente real (pasada #727): con 40 archivos y
             # ~10 s de Gemini cada uno, una pasada dura más que el
             # tiempo de inactividad de MySQL en PythonAnywhere y la
@@ -879,6 +889,10 @@ def consume_quarantine_task(self) -> None:
                         " -- %s" % machine_note if machine_note else "",
                     )
                 )
+                if "Trabajador nuevo creado" in (
+                    result.get("person_identity_note") or ""
+                ):
+                    people_created = True
                 if result.get("relocated"):
                     relocated_count += 1
                     action = DataOperationLogEntry.ACTION_RELOCATED
@@ -894,6 +908,8 @@ def consume_quarantine_task(self) -> None:
                 else:
                     pending_count += 1
                     action = DataOperationLogEntry.ACTION_SENT_TO_NO_CONFORMES
+                    if result.get("domain") == "PERSONAL":
+                        person_misses.append((entry, entry_original_parent))
 
             if action == DataOperationLogEntry.ACTION_SENT_TO_NO_CONFORMES:
                 # Decisión 3.14 (S041, ampliada S042), Miguel Ángel:
@@ -921,6 +937,16 @@ def consume_quarantine_task(self) -> None:
                 size_bytes=entry.size_bytes,
                 crc32c=entry.crc32c,
                 detail=detail,
+            )
+
+        if people_created and person_misses:
+            for missed, original_parent in person_misses:
+                move_service.move_entry(missed, original_parent)
+                pending_count -= 1
+            logger.info(
+                "# [consume_quarantine_task] %d archivo(s) personales sin "
+                "persona vuelven a la cuarentena: en esta pasada se ha "
+                "creado al menos una persona nueva.", len(person_misses),
             )
 
         with transaction.atomic():
