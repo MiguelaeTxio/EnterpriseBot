@@ -57,7 +57,10 @@ rastro de auditoría de lo que ya había pasado.
 import logging
 
 from celery.contrib.django.task import DjangoTask
+from datetime import timedelta
+
 from django.db import close_old_connections, transaction
+from django.utils import timezone
 from enterprise_core.celery import app
 
 from . import classification_service
@@ -467,7 +470,16 @@ def _is_transient_gemini_error(text):
     ))
 
 
-@app.task(base=DjangoTask, bind=True, max_retries=0)
+# S127: tiempo máximo de una pasada (40 archivos a ~10 s suelen ser 7-8
+# min; Gemini lleva 90 s de tope por llamada y 3 intentos). Pasado esto
+# Celery mata la pasada y la siguiente la cierra como huérfana.
+_PASS_MAX_SECONDS = 1800
+
+
+@app.task(
+    base=DjangoTask, bind=True, max_retries=0,
+    soft_time_limit=_PASS_MAX_SECONDS - 60, time_limit=_PASS_MAX_SECONDS,
+)
 def consume_quarantine_task(self) -> None:
     """
     Periodic (Celery Beat) Always-on Task that classifies the real
@@ -587,10 +599,27 @@ def consume_quarantine_task(self) -> None:
     # siga existiendo al arrancar una pasada nueva solo puede ser
     # exactamente eso -- se cierra como FAILED con una nota, nunca se
     # deja acumulando confusión en el panel de estado (3.33).
-    orphaned = DataOperationLog.objects.filter(
+    #
+    # S127, dos incidentes reales: el worker ya no es concurrency=1
+    # (ForkPoolWorker-1..3), así que un RUNNING reciente NO es huérfano
+    # sino otra pasada viva -- cerrarla como FAILED y arrancar otra
+    # dejaba dos pasadas sobre los mismos 40 archivos (#754 y #755,
+    # 03/10). Ahora: RUNNING de menos de _PASS_MAX_SECONDS -> esta
+    # pasada no arranca; más antiguo -> huérfano (el time_limit del
+    # decorador garantiza que ninguna viva dura más que eso: la #753 se
+    # quedó colgada 12 horas el 02/10).
+    window_start = timezone.now() - timedelta(seconds=_PASS_MAX_SECONDS)
+    running = DataOperationLog.objects.filter(
         operation_type=DataOperationLog.OPERATION_QUARANTINE_CONSUME,
         status=DataOperationLog.STATUS_RUNNING,
     )
+    if running.filter(performed_at__gte=window_start).exists():
+        logger.info(
+            "# [consume_quarantine_task] Otra pasada sigue en curso -- "
+            "esta no arranca."
+        )
+        return
+    orphaned = running.filter(performed_at__lt=window_start)
     for stale_log in orphaned:
         stale_log.status = DataOperationLog.STATUS_FAILED
         stale_log.save(update_fields=["status"])
@@ -606,6 +635,20 @@ def consume_quarantine_task(self) -> None:
         path_prefix=QUARANTINE_PREFIX.rstrip("/"),
         status=DataOperationLog.STATUS_RUNNING,
     )
+    # Dos disparos a la vez (p. ej. los acumulados al reiniciar el
+    # worker) pueden pasar los dos la comprobación anterior: gana la
+    # fila más antigua y la otra se retira sin tocar nada.
+    if DataOperationLog.objects.filter(
+        operation_type=DataOperationLog.OPERATION_QUARANTINE_CONSUME,
+        status=DataOperationLog.STATUS_RUNNING,
+        performed_at__gte=window_start, pk__lt=log.pk,
+    ).exists():
+        log.delete()
+        logger.info(
+            "# [consume_quarantine_task] Disparo simultáneo -- se retira "
+            "sin procesar nada."
+        )
+        return
 
     try:
         relocated_count = 0
