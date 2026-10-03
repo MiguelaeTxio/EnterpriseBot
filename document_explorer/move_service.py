@@ -250,6 +250,20 @@ def move_entry(entry, destination_folder, ensure_folder=True):
     """
     destination_folder = destination_folder.strip("/")
     if destination_folder == entry.parent_path:
+        # S127, fallo real: quien cambia `entry.name` y llama aquí para
+        # el mismo destino (re-archivar en su sitio con un nombre nuevo,
+        # p. ej. _SINFECHA) recibía un "ok" sin que el nombre se
+        # guardara. Mismo destino + nombre nuevo -> se guarda el nombre,
+        # con el mismo control de colisión que un movimiento.
+        stored_name = DocumentIndexEntry.objects.filter(
+            pk=entry.pk,
+        ).values_list("name", flat=True).first()
+        if stored_name is not None and stored_name != entry.name:
+            entry.name = _resolve_free_name(
+                entry.bucket, destination_folder, entry.name,
+                exclude_pk=entry.pk,
+            )
+            entry.save(update_fields=["name"])
         return
 
     if ensure_folder:
