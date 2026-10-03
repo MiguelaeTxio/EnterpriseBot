@@ -17,7 +17,7 @@ Sin --apply solo informa; idempotente (renombra al mismo destino).
 from django.core.management.base import BaseCommand
 
 from document_explorer.classification_service import (
-    _apply_company_classification, file_entry_manually,
+    _apply_company_classification, file_entry_manually, trash_dossier_entry,
 )
 from document_explorer.models import DocumentIndexEntry, PersonIdentity
 
@@ -29,7 +29,14 @@ COMPANY = {
     24844: "LISTADO_EXAMEN_OFICIAL", 24845: "LISTADO_EXAMEN_OFICIAL",
     24864: "LISTADO_EXAMEN_OFICIAL", 24865: "LISTADO_EXAMEN_OFICIAL",
     35719: "MATERIAL_FORMACION",
+    # Plantillas .docx en blanco (leídas por su texto tras ae4afb15; el
+    # H28 las vio como nombramientos personales sin persona).
+    42919: "PLANTILLA", 42920: "PLANTILLA", 42921: "PLANTILLA",
+    42922: "PLANTILLA",
 }
+
+# Miguel Ángel: de su contrato de 2025, "solo original" (52189).
+TRASH = {36608, 36609}
 
 # pk -> (persona, tipo, fecha).
 PERSONAL = [
@@ -84,4 +91,11 @@ class Command(BaseCommand):
             )
             self.stdout.write("   - pk=%s %s -> %s" % (
                 pk, before, outcome["new_name"] or outcome["reason"]))
+        for pk in sorted(TRASH):
+            entry = _live(pk)
+            if entry is None:
+                continue
+            self.stdout.write("   - pk=%s %s -> papelera" % (pk, entry.name))
+            if apply:
+                trash_dossier_entry(entry)
         self.stdout.write("# [S127] Fin.")
