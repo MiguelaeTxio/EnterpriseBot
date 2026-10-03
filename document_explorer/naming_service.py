@@ -136,7 +136,8 @@ def _build_filename(parts, date, ordinal, extension):
     + extensión.
     """
     tokens = [_sanitize_token(part) for part in parts]
-    tokens.append(date.strftime("%Y%m%d"))
+    # S127: sin fecha legible -> "SINFECHA", nunca una fecha inventada.
+    tokens.append(date.strftime("%Y%m%d") if date else "SINFECHA")
     if ordinal is not None:
         tokens.append(str(ordinal))
     return "_".join(token for token in tokens if token) + (

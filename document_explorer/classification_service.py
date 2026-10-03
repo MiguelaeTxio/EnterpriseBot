@@ -60,6 +60,7 @@ mismo principio que `move_service` (v2, puntero puro, S039). Ver
 """
 import datetime
 import logging
+import mimetypes
 import os
 import re
 import subprocess
@@ -1266,6 +1267,101 @@ def resolve_archive_redundancy(entry) -> dict | None:
     return {"fully_redundant": True, "matched_paths": matched_paths}
 
 
+# S127: miembros de un comprimido que nunca son documentos.
+_ARCHIVE_JUNK_NAMES = {"thumbs.db", ".ds_store", "desktop.ini"}
+
+
+def explode_archive(entry) -> dict | None:
+    """
+    Extract the new members of a .zip/.rar into the quarantine.
+
+    ---
+
+    H30 (S127, aprobado por Miguel Ángel). Saca de un comprimido de la
+    cuarentena cada archivo que NO esté ya archivado (misma huella
+    CRC32C y tamaño fuera de cuarentena y NO CONFORMES, mismo criterio
+    que `resolve_archive_redundancy`) y lo sube como archivo propio a la
+    cuarentena, en una subcarpeta con el nombre del comprimido, para
+    que el H28 lo clasifique en su siguiente pasada. Hereda la nota de
+    supervisor del comprimido (la pista de la persona) más su origen.
+    Antes, un comprimido con contenido nuevo iba a NO CONFORMES pidiendo
+    revisión manual (4 casos reales en la pasada de DOC. PERSONAL).
+
+    Devuelve {"extracted": [...], "matched": [...], "skipped": [...]}, o
+    None si el comprimido no se puede leer entero (quien llama lo deja
+    en NO CONFORMES, como antes).
+    """
+    from django.db import transaction
+
+    from spare_parts.gcs_service import get_storage_client, upload_bytes
+
+    from . import index_writer
+
+    extension = (
+        entry.name.rsplit(".", 1)[-1].lower() if "." in entry.name else ""
+    )
+    if extension not in archive_service.ARCHIVE_EXTENSIONS:
+        return None
+    content = download_bytes(entry.bucket, entry.blob_name)
+    items = archive_service.list_entries(content, extension)
+    if not items:
+        return None
+    stem = naming_service._sanitize_token(entry.name.rsplit(".", 1)[0])
+    target = "%s/%s" % (entry.parent_path.rstrip("/"), stem or "COMPRIMIDO")
+    note = "Extraído de %s. %s" % (entry.name, entry.curator_note or "")
+    outcome = {"extracted": [], "matched": [], "skipped": []}
+    for item in items:
+        path = item["path"]
+        base = path.rstrip("/").rsplit("/", 1)[-1]
+        if path.endswith("/") or not base or base.lower() in (
+            _ARCHIVE_JUNK_NAMES
+        ) or "__MACOSX" in path:
+            outcome["skipped"].append(path)
+            continue
+        data = archive_service.extract_entry(content, extension, path)
+        if data is None:
+            return None
+        if not data:
+            outcome["skipped"].append(path)
+            continue
+        crc32c = archive_service.compute_crc32c(data)
+        same = DocumentIndexEntry.objects.filter(
+            bucket=entry.bucket, crc32c=crc32c, size_bytes=len(data),
+            deleted_at__isnull=True, purged_at__isnull=True,
+        )
+        if same.exclude(quarantine_scope_q()).exclude(
+            no_conformes_scope_q(),
+        ).exists():
+            outcome["matched"].append(path)
+            continue
+        if same.filter(quarantine_scope_q()).exclude(pk=entry.pk).exists():
+            # Ya extraído en una pasada anterior y pendiente de clasificar.
+            outcome["skipped"].append(path)
+            continue
+        blob_name = "%s/%s" % (target, base)
+        upload_bytes(
+            entry.bucket, blob_name, data,
+            content_type=(
+                mimetypes.guess_type(base)[0] or "application/octet-stream"
+            ),
+        )
+        blob = get_storage_client().bucket(entry.bucket).get_blob(blob_name)
+        with transaction.atomic():
+            index_writer.ensure_folder_chain(entry.bucket, target)
+            index_writer.persist_rows(
+                entry.bucket, [index_writer.file_row(blob)],
+            )
+            index_writer.recount_children(
+                entry.bucket,
+                folder_paths=index_writer.ancestors_of(target),
+            )
+        DocumentIndexEntry.objects.filter(
+            bucket=entry.bucket, blob_name=blob_name,
+        ).update(curator_note=note.strip())
+        outcome["extracted"].append(path)
+    return outcome
+
+
 _DNI_NORMALIZE_RE = re.compile(r"[^A-Z0-9]")
 
 # Letra de control real del DNI/NIE español -- algoritmo público y
@@ -2096,6 +2192,52 @@ def _convert_to_pdf(content_bytes: bytes, extension: str) -> bytes | None:
             return f.read()
 
 
+# S127: extensiones que se clasifican por su texto (no por imagen/PDF).
+_TEXT_EXTENSIONS = {"html", "htm", "xml"}
+# Tope de texto que se manda a Gemini (un .xml de remesa puede ser largo).
+_TEXT_MAX_CHARS = 60_000
+
+
+def _document_text(content_bytes: bytes, extension: str) -> str:
+    """
+    Plain text of a .docx/.html/.xml file, or "".
+
+    ---
+
+    H30 (S127). Texto plano de un .docx (python-docx, párrafos y
+    tablas), .html (BeautifulSoup) o .xml (tal cual, decodificado), con
+    tope de `_TEXT_MAX_CHARS`. "" si no se puede leer.
+    """
+    try:
+        if extension == "docx":
+            import io
+
+            import docx
+
+            document = docx.Document(io.BytesIO(content_bytes))
+            parts = [paragraph.text for paragraph in document.paragraphs]
+            for table in document.tables:
+                for row in table.rows:
+                    parts.append(" | ".join(cell.text for cell in row.cells))
+            text = "\n".join(part for part in parts if part.strip())
+        else:
+            raw = content_bytes.decode("utf-8", errors="replace")
+            if extension in ("html", "htm"):
+                from bs4 import BeautifulSoup
+
+                text = BeautifulSoup(raw, "html.parser").get_text("\n")
+            else:
+                text = raw
+    except Exception as exc:
+        logger.warning(
+            "# [_document_text] No se pudo leer el texto del .%s: %s",
+            extension, exc,
+        )
+        return ""
+    text = re.sub(r"\n\s*\n+", "\n", text or "").strip()
+    return text[:_TEXT_MAX_CHARS]
+
+
 def _convert_xps_to_pdf(content_bytes: bytes, extension: str) -> bytes | None:
     """
     Converts an XPS/OpenXPS document to PDF using `fitz` (PyMuPDF) --
@@ -2356,7 +2498,16 @@ def classify_entry(entry, domain: str | None = None) -> dict:
             elif extension in _LIBREOFFICE_CONVERTIBLE_EXTENSIONS:
                 content_bytes = download_bytes(entry.bucket, entry.blob_name)
                 converted = _convert_to_pdf(content_bytes, extension)
-                if converted is None:
+                # S127: 4 plantillas .docx reales que LibreOffice no
+                # convirtió acabaron en NO CONFORMES -- si falla, se lee
+                # su texto (python-docx) en vez de rendirse.
+                fallback_text = (
+                    _document_text(content_bytes, extension)
+                    if converted is None else ""
+                )
+                if converted is None and fallback_text:
+                    file_part = Part.from_text(text=fallback_text)
+                elif converted is None:
                     return {
                         "error": (
                             "No se pudo convertir .%s a PDF con "
@@ -2365,6 +2516,17 @@ def classify_entry(entry, domain: str | None = None) -> dict:
                             % extension
                         ),
                     }
+            elif extension in _TEXT_EXTENSIONS:
+                # S127: .html (correos guardados) y .xml (remesas de la
+                # Seguridad Social) -> su texto.
+                content_bytes = download_bytes(entry.bucket, entry.blob_name)
+                text = _document_text(content_bytes, extension)
+                if not text:
+                    return {
+                        "error": "No se pudo leer el texto del .%s." % extension,
+                    }
+                converted = None
+                file_part = Part.from_text(text=text)
             elif extension == "msg":
                 # S127: correo de Outlook -> asunto y cuerpo como texto
                 # (mismo lector que date_verification_service, S92).
@@ -2479,9 +2641,11 @@ def _resolve_date(entry, result) -> datetime.date:
             return datetime.date.fromisoformat(date_hint)
         except ValueError:
             pass
-    if entry.gcs_updated_at:
-        return entry.gcs_updated_at.date()
-    return datetime.date.today()
+    # S127 (Miguel Ángel: arreglar para los casos futuros): sin fecha
+    # legible el nombre lo dice (_SINFECHA) en vez de llevar la fecha de
+    # subida a GCS, que se confundía con la del documento (acta de
+    # matrimonio "_20260724", informe médico "_20260724"...).
+    return None
 
 
 def build_new_name(

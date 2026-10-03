@@ -788,22 +788,44 @@ def consume_quarantine_task(self) -> None:
                         "relocated": False,
                     }
                 elif redundancy is not None:
-                    matched = redundancy["matched_paths"]
-                    result = {
-                        "error": (
-                            "Archivo comprimido -- %d de sus archivos "
-                            "ya existen archivados por separado (%s), "
-                            "pero el resto es contenido nuevo. Gemini "
-                            "no puede leer archivos comprimidos; "
-                            "extraer y archivar lo nuevo requiere "
-                            "revisión manual."
-                            % (
-                                len(matched),
-                                ", ".join(matched)
-                                if matched else "ninguno",
-                            )
-                        ),
-                    }
+                    # S127 (aprobado por Miguel Ángel): el contenido nuevo
+                    # se extrae a la cuarentena para que el H28 lo
+                    # clasifique archivo a archivo; el comprimido va a la
+                    # papelera. Antes iba a NO CONFORMES ("revisión
+                    # manual"). Si no se puede leer entero, como antes.
+                    exploded = classification_service.explode_archive(entry)
+                    if exploded is None:
+                        result = {
+                            "error": (
+                                "Archivo comprimido con contenido nuevo que "
+                                "no se ha podido extraer entero (ver logs "
+                                "del servidor)."
+                            ),
+                        }
+                    else:
+                        trashed_ok = (
+                            classification_service.trash_dossier_entry(entry)
+                        )
+                        result = {
+                            "domain": "N/A", "document_type_code": "N/A",
+                            "confidence": "N/A",
+                            "reasoning": (
+                                "Comprimido extraído: %d archivo(s) nuevos "
+                                "a la cuarentena (%s), %d ya archivados, "
+                                "%d omitidos. El comprimido va a la "
+                                "papelera."
+                                % (
+                                    len(exploded["extracted"]),
+                                    ", ".join(exploded["extracted"])
+                                    or "ninguno",
+                                    len(exploded["matched"]),
+                                    len(exploded["skipped"]),
+                                )
+                            ),
+                            "trashed": trashed_ok,
+                            "trash_reason": "COMPRIMIDO EXTRAÍDO",
+                            "relocated": False,
+                        }
                 else:
                     result = (
                         classification_service
