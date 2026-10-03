@@ -57,7 +57,7 @@ rastro de auditoría de lo que ya había pasado.
 import logging
 
 from celery.contrib.django.task import DjangoTask
-from django.db import transaction
+from django.db import close_old_connections, transaction
 from enterprise_core.celery import app
 
 from . import classification_service
@@ -613,6 +613,13 @@ def consume_quarantine_task(self) -> None:
         dossier_trashed_count = 0
 
         for group_number, entry in enumerate(entries, start=1):
+            # S127, incidente real (pasada #727): con 40 archivos y
+            # ~10 s de Gemini cada uno, una pasada dura más que el
+            # tiempo de inactividad de MySQL en PythonAnywhere y la
+            # conexión caía a mitad ("Lost connection to MySQL server
+            # during query"), tumbando la pasada. Antes de cada archivo
+            # se descarta la conexión caducada o rota y Django abre otra.
+            close_old_connections()
             original_name = entry.name
 
             # S042, Miguel Ángel: "no podemos nosotros borrar
