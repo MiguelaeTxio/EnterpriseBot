@@ -376,7 +376,10 @@ def _build_prompt(
         '"MACHINE" (máquina/vehículo), "PERSONAL" (trabajador) o '
         '"COMPANY" (documentación de la propia empresa: fiscal, '
         'societaria, bancaria, seguros de empresa, listados, circulares, '
-        'plantillas...)'
+        'plantillas...). Un formulario o plantilla EN BLANCO, sin los '
+        'datos de una persona o máquina concreta, es siempre "COMPANY" '
+        'con tipo PLANTILLA, aunque su título sea el de un documento '
+        'personal (nombramiento, designación, información...)'
     )
     if domain:
         domain_instruction = (
