@@ -14,8 +14,10 @@ para detectar esto?".
 Reglas (decididas por Miguel Ángel en S122):
 - Cada alta con fecha abre un periodo. Dos altas a menos de
   `MATCH_WINDOW_DAYS` días son la misma (copias escaneadas dos veces).
-- Cada periodo exige un contrato fechado a ±`MATCH_WINDOW_DAYS` días
-  de alguna de sus altas ("más menos 15 días y aseguramos").
+- Cada periodo exige un contrato fechado de `CONTRACT_DAYS_BEFORE` días
+  antes a `CONTRACT_DAYS_AFTER` días después de alguna de sus altas
+  (S127, Miguel Ángel: el contrato se firma antes del alta; con ±15
+  quedaban fuera contratos reales a 16, 24 y 32 días).
 - El periodo termina con la primera baja (Seguridad Social) fechada
   después de su inicio y antes del periodo siguiente.
 - Un alta sin fecha no se puede emparejar: se cuenta aparte.
@@ -31,6 +33,9 @@ from dataclasses import dataclass, field
 from datetime import timedelta
 
 MATCH_WINDOW_DAYS = 15
+# S127 (aprobado por Miguel Ángel): ventana asimétrica contrato-alta.
+CONTRACT_DAYS_BEFORE = 45
+CONTRACT_DAYS_AFTER = MATCH_WINDOW_DAYS
 ALTA_CODE = "ALTA"
 CONTRACT_CODE = "CONTRATO"
 BAJA_CODE = "BAJA_PERSONAL"
@@ -93,6 +98,19 @@ def _within(date_a, date_b):
     return abs((date_a - date_b).days) <= MATCH_WINDOW_DAYS
 
 
+def contract_covers(contract_date, alta_date):
+    """
+    True if a contract dated `contract_date` covers an alta.
+
+    ---
+
+    True si un contrato con esa fecha cubre el alta: firmado hasta
+    `CONTRACT_DAYS_BEFORE` días antes o `CONTRACT_DAYS_AFTER` después.
+    """
+    gap = (contract_date - alta_date).days
+    return -CONTRACT_DAYS_BEFORE <= gap <= CONTRACT_DAYS_AFTER
+
+
 def build_periods(altas, contracts, bajas, extensions=()):
     """
     Employment periods from ALTA/CONTRATO/BAJA entries of one person.
@@ -122,7 +140,8 @@ def build_periods(altas, contracts, bajas, extensions=()):
         period.contracts = sorted(
             (
                 contract for contract in dated_contracts
-                if any(_within(contract.issue_date, d) for d in alta_dates)
+                if any(contract_covers(contract.issue_date, d)
+                       for d in alta_dates)
             ),
             key=lambda entry: (entry.issue_date, entry.pk),
         )
@@ -199,5 +218,7 @@ def missing_contract_window(period):
     """
     first = period.altas[0].issue_date
     last = period.altas[-1].issue_date
-    window = timedelta(days=MATCH_WINDOW_DAYS)
-    return first - window, last + window
+    return (
+        first - timedelta(days=CONTRACT_DAYS_BEFORE),
+        last + timedelta(days=CONTRACT_DAYS_AFTER),
+    )

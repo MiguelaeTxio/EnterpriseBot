@@ -40,6 +40,7 @@ from datetime import date, timedelta
 from django.contrib.contenttypes.models import ContentType
 
 from document_explorer import employment_period_service as periods
+from document_explorer.naming_service import is_gerencia
 
 BUCKET = "cgs_grupo_alvarez"
 IDENTITY_CODES = ("DNI", "NIE")
@@ -433,6 +434,13 @@ def compute_notices(domain):
                 "kind": None,
             }
             docs = by_type.get(type_id, [])
+            if doc_type.code == periods.CONTRACT_CODE and is_gerencia(
+                subject.first_surname, subject.second_surname,
+            ):
+                # S127 (Miguel Ángel): los socios y administradores de la
+                # familia propietaria (ACTIVOS/GERENCIA) no tienen
+                # contrato laboral -- exentos.
+                continue
             if (
                 doc_type.code == periods.CONTRACT_CODE
                 and altas_by_subject.get(subject.pk)
@@ -489,7 +497,10 @@ def _missing_contract_notices(base, altas, contracts):
     """
     built, _undated = periods.build_periods(altas, contracts, [])
     notices_out = []
-    for period in built:
+    # S127 (Miguel Ángel, opción b): solo se pide el contrato del periodo
+    # ACTUAL (la última alta); los periodos antiguos ya no avisan -- eran
+    # ~30 avisos de contratos de hace años que no se van a conseguir.
+    for period in built[-1:]:
         if period.has_contract:
             continue
         period_base = dict(base)

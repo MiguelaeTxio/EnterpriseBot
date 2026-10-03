@@ -311,6 +311,21 @@ def build_machine_folder_path(code: str, family: str, is_active) -> str:
     return "%s/%s/%s" % (MACHINE_ACTIVE_ROOT, family_folder, code_folder)
 
 
+def is_gerencia(first_surname, second_surname):
+    """
+    True for the owning family (ACTIVOS/GERENCIA).
+
+    ---
+
+    True para la familia propietaria (ACTIVOS/GERENCIA): mismo criterio
+    que `build_person_category_root`.
+    """
+    return (
+        (first_surname or "").strip().upper() == GERENCIA_FIRST_SURNAME
+        and (second_surname or "").strip().upper() == GERENCIA_SECOND_SURNAME
+    )
+
+
 def build_person_category_root(
     first_surname: str,
     second_surname: str,
