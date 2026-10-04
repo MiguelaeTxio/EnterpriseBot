@@ -29,6 +29,7 @@ from collections import defaultdict
 from datetime import date, datetime
 
 from django.core.management.base import BaseCommand
+from django.db import close_old_connections
 
 from document_explorer import document_notice_service as notices
 from document_explorer.employment_period_service import contract_covers
@@ -116,6 +117,11 @@ class Command(BaseCommand):
                       sum(len(w) for w in wanted_by_person.values())))
         totals = defaultdict(int)
         for person_pk in sorted(wanted_by_person):
+            # Las lecturas de Gemini de una persona duran más que el
+            # wait_timeout de MySQL en PythonAnywhere (EnterpriseBot_022:
+            # "disconnected by the server because of inactivity"): se
+            # reabre la conexión antes de cada consulta, como en el H28.
+            close_old_connections()
             person = people[person_pk]
             files = candidate_files(person)
             self._say("\n== pk=%s %s %s, %s -- %d archivo(s) candidatos" % (
