@@ -168,6 +168,29 @@ def _pdf_chunks(data):
     return chunks
 
 
+def _spreadsheet_text(data, max_chars=60_000):
+    """Text of an .xlsx (every sheet, cell values), or ""."""
+    try:
+        import openpyxl
+
+        book = openpyxl.load_workbook(
+            io.BytesIO(data), read_only=True, data_only=True,
+        )
+        lines = []
+        for sheet in book.worksheets:
+            lines.append("# Hoja: %s" % sheet.title)
+            for row in sheet.iter_rows(values_only=True):
+                cells = [str(value) for value in row if value is not None]
+                if cells:
+                    lines.append(" | ".join(cells))
+                if sum(len(line) for line in lines) > max_chars:
+                    break
+        return "\n".join(lines)[:max_chars]
+    except Exception as exc:
+        logger.warning("# [audit] Excel ilegible: %s", exc)
+        return ""
+
+
 def _parts_for(entry):
     """
     Gemini parts for the WHOLE file: [(first_page, Part)] or an error.
@@ -193,6 +216,12 @@ def _parts_for(entry):
         return [(1, Part.from_bytes(
             data=data, mime_type=_IMAGE_MIME[extension],
         ))], None
+    if extension in ("xlsx", "xlsm"):
+        # S127: un Excel convertido a PDF hacía caer a Gemini (504 tres
+        # veces); su texto basta para saber qué es.
+        text = _spreadsheet_text(data)
+        if text:
+            return [(1, Part.from_text(text=text))], None
     if extension in _LIBREOFFICE_CONVERTIBLE_EXTENSIONS:
         converted = _convert_to_pdf(data, extension)
         if converted:

@@ -126,7 +126,9 @@ class Command(BaseCommand):
                 for entry in files:
                     key = "%s:%s" % (entry.pk, wanted)
                     result = cache.get(key)
-                    if result is None:
+                    # Un error guardado (timeout, formato) se reintenta:
+                    # solo se reutiliza una lectura buena.
+                    if result is None or result.get("error"):
                         result = find_in_file(entry, person, wanted)
                         cache[key] = result
                         with open(cache_path, "w", encoding="utf-8") as out:
@@ -161,6 +163,17 @@ class Command(BaseCommand):
                             result.get("evidence"),
                         )
                     )
+                # Lo leído en CADA archivo, para que "falta confirmado" se
+                # pueda comprobar a ojo (Miguel Ángel: nada por supuesto).
+                for entry in files:
+                    result = cache.get("%s:%s" % (entry.pk, wanted)) or {}
+                    if result.get("error") or result.get("found"):
+                        continue
+                    self._say("        leído pk=%s [%s] %s -> %s" % (
+                        entry.pk,
+                        entry.document_type.code
+                        if entry.document_type else "sin tipo",
+                        entry.name, result.get("what") or "-"))
                 for entry, problem in unreadable:
                     self._say("     ILEGIBLE pk=%s %s/%s -- %s" % (
                         entry.pk, entry.parent_path, entry.name, problem))
