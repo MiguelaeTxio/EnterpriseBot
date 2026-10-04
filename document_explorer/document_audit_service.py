@@ -1,0 +1,262 @@
+# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/document_explorer/document_audit_service.py
+"""
+H30 (S127). Does this file contain THAT person's document? -- read whole.
+
+---
+
+H30 (S127). Auditoría sin heurísticas, pedida por Miguel Ángel: "una
+persona que le falta el DNI, que tiene una carpeta, vamos a comprobar
+todos los documentos de esa persona. Cuando hayamos comprobado que en
+todos los documentos no es el DNI, entonces podremos decir: a esta
+persona le falta el DNI". Origen: su segundo contrato se daba por
+inexistente "con total seguridad" y estaba en su carpeta con un nombre
+que no casaba.
+
+- `candidate_files(person)`: TODOS los archivos que pueden ser de la
+  persona -- vinculados a ella (cualquier tipo), los de su carpeta, los
+  de cualquier carpeta con su nombre, y los de la papelera vinculados o
+  en esas carpetas.
+- `find_in_file(entry, person, wanted)`: Gemini lee el archivo ENTERO
+  (los PDF largos por tramos, sin el recorte de bordes del H28: un DNI
+  en la página 17 de un dossier es justo lo que se busca) y responde a
+  una pregunta cerrada: ¿contiene el `wanted` de esta persona?
+
+Solo lectura: no escribe nada en la BD.
+"""
+import io
+import json
+import logging
+
+from django.db.models import Q
+from google.genai.types import GenerateContentConfig, HttpOptions, Part
+
+from ai_services.gemini_client import DEFAULT_MODEL, get_gemini_client
+from document_explorer.classification_service import (
+    _LIBREOFFICE_CONVERTIBLE_EXTENSIONS, _TEXT_EXTENSIONS, _convert_to_pdf,
+    _document_text, _generate_content_with_retry,
+)
+from document_explorer.models import DocumentIndexEntry, PersonIdentity
+from spare_parts.gcs_service import download_bytes
+
+logger = logging.getLogger(__name__)
+
+# Qué se busca, en palabras para Gemini.
+WANTED_LABELS = {
+    "IDENTIDAD": "su DNI o su NIE / permiso de residencia (cualquier cara)",
+    "PERMISO_CONDUCIR": (
+        "su permiso de conducción (carnet de conducir, cualquier cara)"
+    ),
+    "CONTRATO": (
+        "su contrato de trabajo, o una conversión de contrato temporal en "
+        "indefinido, o una carta de subrogación de su relación laboral"
+    ),
+}
+_IMAGE_MIME = {
+    "jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png",
+    "webp": "image/webp", "heic": "image/heic", "heif": "image/heif",
+    "gif": "image/gif", "bmp": "image/bmp", "tif": "image/tiff",
+    "tiff": "image/tiff",
+}
+# PDF largos: tramos de este número de páginas (un dossier escaneado de
+# 30 páginas va en dos llamadas).
+_CHUNK_PAGES = 20
+
+_RESPONSE_SCHEMA = {
+    "type": "OBJECT",
+    "properties": {
+        "found": {"type": "BOOLEAN"},
+        "pages": {"type": "ARRAY", "items": {"type": "INTEGER"}},
+        "what": {"type": "STRING"},
+        "holder_name": {"type": "STRING"},
+        "holder_id": {"type": "STRING"},
+        "key_date": {"type": "STRING"},
+        "evidence": {"type": "STRING"},
+    },
+    "required": ["found", "what", "evidence"],
+}
+
+
+def _prompt(person, wanted, first_page=1):
+    return (
+        "Eres auditor de documentación laboral de una empresa española. "
+        "Lee TODAS las páginas del archivo adjunto, sin saltarte ninguna.\n"
+        "Pregunta: ¿contiene este archivo %s de esta persona: %s %s, %s "
+        "(DNI/NIE registrado: %s)? Puede venir dentro de un dossier con "
+        "otros documentos, con el nombre abreviado o el DNI con algún "
+        "dígito mal escaneado.\n"
+        "Responde SOLO JSON:\n"
+        "- found: true solo si el documento buscado de ESA persona está "
+        "en el archivo.\n"
+        "- pages: páginas donde aparece (la primera de este archivo es la "
+        "%d).\n"
+        "- what: qué es exactamente lo que contiene el archivo (aunque no "
+        "sea lo buscado), en pocas palabras.\n"
+        "- holder_name / holder_id: titular y número de documento leídos.\n"
+        "- key_date: AAAA-MM-DD -- caducidad para DNI/NIE/permiso; para "
+        "un contrato, la fecha de inicio (para una conversión, la de "
+        "celebración del contrato original; para una subrogación, la de "
+        "efectos).\n"
+        "- evidence: una frase con lo que lo demuestra."
+        % (
+            WANTED_LABELS[wanted], person.first_surname,
+            person.second_surname or "", person.given_name,
+            person.dni or "desconocido", first_page,
+        )
+    )
+
+
+def candidate_files(person, include_trash=True):
+    """
+    Every file that may belong to the person.
+
+    ---
+
+    Todos los archivos que pueden ser de la persona: vinculados a ella
+    (cualquier tipo), en su carpeta actual, en cualquier carpeta cuya
+    ruta lleve su nombre (carpetas antiguas), y -- si `include_trash` --
+    los de la papelera en esos mismos sitios. Sin carpetas.
+    """
+    from django.contrib.contenttypes.models import ContentType
+
+    person_ct = ContentType.objects.get_for_model(PersonIdentity)
+    where = Q(domain_content_type=person_ct, domain_object_id=person.pk)
+    if person.folder_path:
+        where |= Q(parent_path=person.folder_path) | Q(
+            parent_path__startswith=person.folder_path + "/",
+        )
+    surnames = " ".join(
+        part for part in (person.first_surname, person.second_surname)
+        if part
+    ).strip()
+    if surnames and person.given_name:
+        # Carpetas antiguas: "OPERARIOS/DIAZ QUINTERO, ANTONIO JESUS (GR)",
+        # "RENOVACION CARNE/DIAZ QUINTERO ANTONIO"...
+        where |= Q(parent_path__icontains=surnames) & Q(
+            parent_path__icontains=person.given_name.split()[0],
+        )
+    files = DocumentIndexEntry.objects.filter(where).filter(
+        entry_kind=DocumentIndexEntry.KIND_FILE, purged_at__isnull=True,
+    )
+    if not include_trash:
+        files = files.filter(deleted_at__isnull=True)
+    return list(files.select_related("document_type").order_by("pk"))
+
+
+def _pdf_chunks(data):
+    """PDF -> list of (first_page, bytes) chunks of _CHUNK_PAGES pages."""
+    import fitz
+
+    try:
+        source = fitz.open(stream=data, filetype="pdf")
+    except Exception:
+        return [(1, data)]
+    if source.page_count <= _CHUNK_PAGES:
+        source.close()
+        return [(1, data)]
+    chunks = []
+    for start in range(0, source.page_count, _CHUNK_PAGES):
+        part = fitz.open()
+        part.insert_pdf(
+            source, from_page=start,
+            to_page=min(start + _CHUNK_PAGES, source.page_count) - 1,
+        )
+        buffer = io.BytesIO()
+        part.save(buffer)
+        part.close()
+        chunks.append((start + 1, buffer.getvalue()))
+    source.close()
+    return chunks
+
+
+def _parts_for(entry):
+    """
+    Gemini parts for the WHOLE file: [(first_page, Part)] or an error.
+
+    ---
+
+    Partes para Gemini del archivo ENTERO: PDF (por tramos), imágenes,
+    documentos de oficina (convertidos o por texto), .html/.xml/.msg por
+    texto. ([], "motivo") si no se puede leer.
+    """
+    extension = (
+        entry.name.rsplit(".", 1)[-1].lower() if "." in entry.name else ""
+    )
+    data = download_bytes(entry.bucket, entry.blob_name)
+    if not data:
+        return [], "archivo vacío"
+    if extension == "pdf":
+        return [
+            (first, Part.from_bytes(data=chunk, mime_type="application/pdf"))
+            for first, chunk in _pdf_chunks(data)
+        ], None
+    if extension in _IMAGE_MIME:
+        return [(1, Part.from_bytes(
+            data=data, mime_type=_IMAGE_MIME[extension],
+        ))], None
+    if extension in _LIBREOFFICE_CONVERTIBLE_EXTENSIONS:
+        converted = _convert_to_pdf(data, extension)
+        if converted:
+            return [
+                (first, Part.from_bytes(
+                    data=chunk, mime_type="application/pdf",
+                ))
+                for first, chunk in _pdf_chunks(converted)
+            ], None
+    if extension in _TEXT_EXTENSIONS or extension == "docx":
+        text = _document_text(data, extension)
+        if text:
+            return [(1, Part.from_text(text=text))], None
+    if extension == "msg":
+        from document_explorer.date_verification_service import msg_to_text
+
+        text = msg_to_text(data)
+        if text:
+            return [(1, Part.from_text(text=text))], None
+    return [], "formato .%s no legible" % extension
+
+
+def find_in_file(entry, person, wanted):
+    """
+    Read the whole file and say whether it holds the wanted document.
+
+    ---
+
+    Lee el archivo entero y dice si contiene el documento buscado de la
+    persona. Devuelve el dict de Gemini (found, pages, what, holder_*,
+    key_date, evidence) o {"error": ...}. Nunca lanza.
+    """
+    try:
+        parts, problem = _parts_for(entry)
+    except Exception as exc:
+        return {"error": "no se pudo descargar/preparar: %s" % exc}
+    if problem:
+        return {"error": problem}
+    client = get_gemini_client()
+    merged = {"found": False, "pages": [], "what": [], "evidence": []}
+    for first_page, part in parts:
+        try:
+            response = _generate_content_with_retry(
+                client, model=DEFAULT_MODEL,
+                contents=[part, _prompt(person, wanted, first_page)],
+                config=GenerateContentConfig(
+                    http_options=HttpOptions(timeout=120_000),
+                    response_mime_type="application/json",
+                    response_schema=_RESPONSE_SCHEMA, temperature=0.0,
+                ),
+            )
+            data = json.loads(response.text)
+        except Exception as exc:
+            return {"error": "Gemini: %s" % exc}
+        merged["what"].append(data.get("what", ""))
+        if data.get("found"):
+            merged["found"] = True
+            merged["pages"].extend(data.get("pages") or [first_page])
+            merged["evidence"].append(data.get("evidence", ""))
+            for key in ("holder_name", "holder_id", "key_date"):
+                if data.get(key) and not merged.get(key):
+                    merged[key] = data[key]
+    merged["what"] = " / ".join(text for text in merged["what"] if text)
+    merged["evidence"] = " / ".join(
+        text for text in merged["evidence"] if text
+    )
+    return merged
