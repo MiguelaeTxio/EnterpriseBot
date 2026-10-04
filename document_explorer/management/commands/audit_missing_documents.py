@@ -34,7 +34,7 @@ from django.db import close_old_connections
 from document_explorer import document_notice_service as notices
 from document_explorer.employment_period_service import contract_covers
 from document_explorer.document_audit_service import (
-    candidate_files, find_in_file,
+    candidate_files, content_key, find_in_file,
 )
 from document_explorer.models import PersonIdentity
 
@@ -129,9 +129,20 @@ class Command(BaseCommand):
                 person.given_name, len(files)))
             for wanted, labels in wanted_by_person[person_pk].items():
                 found, unreadable, read = [], [], 0
+                by_content = {}
                 for entry in files:
                     key = "%s:%s" % (entry.pk, wanted)
                     result = cache.get(key)
+                    same = content_key(entry)
+                    if (
+                        (result is None or result.get("error"))
+                        and same in by_content
+                    ):
+                        # Copia exacta (misma huella y tamaño) de un
+                        # archivo ya leído en esta persona: mismo
+                        # contenido, misma respuesta.
+                        result = dict(by_content[same])
+                        cache[key] = result
                     # Un error guardado (timeout, formato) se reintenta:
                     # solo se reutiliza una lectura buena.
                     if result is None or result.get("error"):
@@ -139,6 +150,8 @@ class Command(BaseCommand):
                         cache[key] = result
                         with open(cache_path, "w", encoding="utf-8") as out:
                             json.dump(cache, out, ensure_ascii=False)
+                    if same and not result.get("error"):
+                        by_content.setdefault(same, result)
                     if result.get("error"):
                         unreadable.append((entry, result["error"]))
                         continue

@@ -146,7 +146,25 @@ def candidate_files(person, include_trash=True):
     )
     if not include_trash:
         files = files.filter(deleted_at__isnull=True)
-    return list(files.select_related("document_type").order_by("pk"))
+    return list(files.select_related("document_type").order_by(
+        "deleted_at", "pk",
+    ))
+
+
+def content_key(entry):
+    """
+    Identity of a file's content (CRC32C + size), or None.
+
+    ---
+
+    Identidad del CONTENIDO (huella CRC32C y tamaño): dos archivos con la
+    misma son el mismo contenido byte a byte, así que una sola lectura
+    vale para los dos (S127: Álvarez Serrano tenía ~360 copias exactas en
+    la papelera de la cuarentena). None si falta la huella: se lee.
+    """
+    if not entry.crc32c or entry.size_bytes is None:
+        return None
+    return "%s:%s" % (entry.crc32c, entry.size_bytes)
 
 
 def _pdf_chunks(data):
