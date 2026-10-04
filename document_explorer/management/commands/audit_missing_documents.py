@@ -18,6 +18,13 @@ contrato) el informe dice:
   que no se pudieron leer, aparte: mientras haya ilegibles no es
   "confirmado").
 
+Verbosidad (com-standards 0bis, S127: la primera versión solo hacía
+print() con redirección y Miguel Ángel pasó una tarde sin saber si hacía
+algo): log propio con `--log-file`, pantalla y archivo a la vez con
+flush en cada línea, una línea por archivo (leído / caché / copia
+idéntica, y qué es), latido cada 20 archivos con avance y ETA con hora
+de reloj.
+
 SOLO LECTURA: no cambia nada en la BD. `--cache` guarda cada lectura
 (archivo + documento buscado) para poder repetir o retomar sin volver a
 pagar a Gemini. `--person` limita a una persona (pk).
@@ -25,8 +32,9 @@ pagar a Gemini. `--person` limita a una persona (pk).
 import json
 import os
 import re
+import time
 from collections import defaultdict
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from django.core.management.base import BaseCommand
 from django.db import close_old_connections
@@ -81,13 +89,32 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument("--cache", required=True)
+        parser.add_argument("--log-file", required=True)
         parser.add_argument("--person", type=int)
 
     def _say(self, text):
+        # Pantalla y archivo a la vez, con flush (com-standards 0bis).
         self.stdout.write(text)
         self.stdout.flush()
+        self._log.write(text + "\n")
+        self._log.flush()
+
+    def _heartbeat(self, done, total):
+        elapsed = time.monotonic() - self._started
+        rate = elapsed / done if done else 0
+        left = rate * (total - done)
+        finish = datetime.now() + timedelta(seconds=left)
+        self._say(
+            "   ... avance %d/%d archivos (%d%%) -- quedan ~%d min, fin "
+            "estimado a las %s" % (
+                done, total, 100 * done // max(total, 1), left // 60,
+                finish.strftime("%H:%M"),
+            )
+        )
 
     def handle(self, *args, **options):
+        self._log = open(options["log_file"], "a", encoding="utf-8")
+        self._started = time.monotonic()
         cache_path = options["cache"]
         cache = {}
         if os.path.exists(cache_path):
@@ -111,6 +138,18 @@ class Command(BaseCommand):
                 notice.document_label,
             )
         people = PersonIdentity.objects.in_bulk(list(wanted_by_person))
+        self._say("# [AUDITORÍA] Reuniendo los archivos de cada persona...")
+        files_of = {
+            pk: candidate_files(people[pk]) for pk in sorted(wanted_by_person)
+        }
+        total = sum(
+            len(files_of[pk]) * len(wanted_by_person[pk])
+            for pk in files_of
+        )
+        done = 0
+        self._say("# [AUDITORÍA] %d lecturas posibles (archivo x documento "
+                  "buscado); las de la caché y las copias idénticas no "
+                  "llaman a Gemini." % total)
         self._say("# [AUDITORÍA] %d persona(s) con %d documento(s) "
                   "supuestamente ausentes." % (
                       len(people),
@@ -123,17 +162,18 @@ class Command(BaseCommand):
             # reabre la conexión antes de cada consulta, como en el H28.
             close_old_connections()
             person = people[person_pk]
-            files = candidate_files(person)
+            files = files_of[person_pk]
             self._say("\n== pk=%s %s %s, %s -- %d archivo(s) candidatos" % (
                 person.pk, person.first_surname, person.second_surname or "",
                 person.given_name, len(files)))
             for wanted, labels in wanted_by_person[person_pk].items():
                 found, unreadable, read = [], [], 0
                 by_content = {}
-                for entry in files:
+                for position, entry in enumerate(files, 1):
                     key = "%s:%s" % (entry.pk, wanted)
                     result = cache.get(key)
                     same = content_key(entry)
+                    source = "caché"
                     if (
                         (result is None or result.get("error"))
                         and same in by_content
@@ -143,15 +183,26 @@ class Command(BaseCommand):
                         # contenido, misma respuesta.
                         result = dict(by_content[same])
                         cache[key] = result
+                        source = "copia idéntica"
                     # Un error guardado (timeout, formato) se reintenta:
                     # solo se reutiliza una lectura buena.
                     if result is None or result.get("error"):
+                        source = "leído"
                         result = find_in_file(entry, person, wanted)
                         cache[key] = result
                         with open(cache_path, "w", encoding="utf-8") as out:
                             json.dump(cache, out, ensure_ascii=False)
                     if same and not result.get("error"):
                         by_content.setdefault(same, result)
+                    done += 1
+                    self._say("     [%s %d/%d] pk=%s %s (%s) -> %s" % (
+                        wanted, position, len(files), entry.pk, entry.name,
+                        source,
+                        result.get("error") and "ERROR " + result["error"]
+                        or ("SÍ ES" if result.get("found") else "no es")
+                        + " -- " + (result.get("what") or "-")))
+                    if done % 20 == 0:
+                        self._heartbeat(done, total)
                     if result.get("error"):
                         unreadable.append((entry, result["error"]))
                         continue

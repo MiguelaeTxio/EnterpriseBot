@@ -1103,22 +1103,3 @@ def refresh_contract_task(self, person_pk, document_type_code, entry_pk):
     result = refresh_after_contract(person, document_type_code, entry)
     return "ok" if result is not None else "sin cambios"
 
-
-@app.task(base=DjangoTask, bind=True, max_retries=0)
-def audit_missing_documents_task(self, cache_path, report_path) -> None:
-    """
-    Run `audit_missing_documents` in the always-on worker.
-
-    ---
-
-    H30 (S127). La auditoría de documentos ausentes dura horas y la
-    consola de PythonAnywhere se reinicia (EnterpriseBot_023 se cortó a
-    mitad): corre en el worker, siempre encendido, y escribe el informe
-    en `report_path`. La caché permite relanzarla y seguir.
-    """
-    from django.core.management import call_command
-
-    with open(report_path, "w", encoding="utf-8") as report:
-        call_command(
-            "audit_missing_documents", cache=cache_path, stdout=report,
-        )
