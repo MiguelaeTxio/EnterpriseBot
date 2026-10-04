@@ -44,7 +44,15 @@ MODIFICATION_CODE = "MODIFICACION_CONTRATO"
 # Subtipos de contrato que se ven dentro de su periodo y nunca cuentan
 # como contrato del alta (prórrogas y modificaciones, S122).
 CONTRACT_SUBTYPE_CODES = (EXTENSION_CODE, MODIFICATION_CODE)
-PERIOD_CODES = (ALTA_CODE, CONTRACT_CODE, BAJA_CODE) + CONTRACT_SUBTYPE_CODES
+# S127 (Miguel Ángel, opción a): subrogación y conversión a indefinido
+# no son el contrato, pero demuestran que lo hubo y CUBREN el alta, con
+# su propia fecha (efectos / celebración del contrato original).
+SUBROGATION_CODE = "SUBROGACION_CONTRATO"
+CONVERSION_CODE = "CONVERSION_CONTRATO"
+CONTRACT_COVER_CODES = (CONTRACT_CODE, SUBROGATION_CODE, CONVERSION_CODE)
+PERIOD_CODES = (
+    (ALTA_CODE, BAJA_CODE) + CONTRACT_COVER_CODES + CONTRACT_SUBTYPE_CODES
+)
 
 
 @dataclass

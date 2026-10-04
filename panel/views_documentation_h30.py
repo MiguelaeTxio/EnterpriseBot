@@ -2287,7 +2287,11 @@ def _person_employment_periods(person):
         by_code[entry.document_type.code].append(entry)
 
     built, undated_altas = periods.build_periods(
-        by_code[periods.ALTA_CODE], by_code[periods.CONTRACT_CODE],
+        by_code[periods.ALTA_CODE],
+        [
+            entry for code in periods.CONTRACT_COVER_CODES
+            for entry in by_code[code]
+        ],
         by_code[periods.BAJA_CODE],
         [
             entry for code in periods.CONTRACT_SUBTYPE_CODES

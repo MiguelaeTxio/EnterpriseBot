@@ -306,7 +306,8 @@ def compute_notices(domain):
     - `calendar`: todas las fechas de aviso futuras (> hoy), ordenadas.
     """
     from document_explorer.models import (
-        DocumentIndexEntry, DrivingLicenceGrant, JobPosition,
+        DocumentIndexEntry, DocumentTypeCatalog, DrivingLicenceGrant,
+        JobPosition,
         PersonIdentity, RequirementAlertRule,
     )
     from fleet.models import MachineAsset
@@ -355,6 +356,11 @@ def compute_notices(domain):
     type_ids = {
         type_id for by_type in rules.values() for type_id in by_type
     }
+    # S127: subrogaciones y conversiones también cubren el alta.
+    cover_ids = set(DocumentTypeCatalog.objects.filter(
+        code__in=periods.CONTRACT_COVER_CODES,
+    ).exclude(code=periods.CONTRACT_CODE).values_list("pk", flat=True))
+    type_ids |= cover_ids
     content_type = ContentType.objects.get_for_model(subject_model)
     entries_by_subject = {}
     for entry in DocumentIndexEntry.objects.filter(
@@ -448,8 +454,12 @@ def compute_notices(domain):
                 # H30 (S122): con altas registradas, un contrato POR
                 # periodo de contratación, no "tiene o no tiene".
                 if rule.notify_missing:
+                    covers = docs + [
+                        entry for cover_id in cover_ids
+                        for entry in by_type.get(cover_id, [])
+                    ]
                     pending.extend(_missing_contract_notices(
-                        base, altas_by_subject[subject.pk], docs,
+                        base, altas_by_subject[subject.pk], covers,
                     ))
                 continue
             if not docs:
