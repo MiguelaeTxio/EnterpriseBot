@@ -33,7 +33,7 @@ from document_explorer.models import DocumentIndexEntry, PersonIdentity
 
 FIXES = [
     # (pk, persona, tipo, fecha)
-    (35077, 3, "SUBROGACION_CONTRATO", "2008-10-31"),
+    (35077, 3, "CAMBIO_EMPRESA_SUBROGACION", "2008-10-31"),
     (38036, 192, "CONVERSION_CONTRATO", "2007-06-01"),
     (28580, 30, "CONVERSION_CONTRATO", "2019-12-02"),
     (39305, 198, "CONVERSION_CONTRATO", "2021-09-07"),

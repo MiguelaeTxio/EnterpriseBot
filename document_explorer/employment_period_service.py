@@ -47,7 +47,7 @@ CONTRACT_SUBTYPE_CODES = (EXTENSION_CODE, MODIFICATION_CODE)
 # S127 (Miguel Ángel, opción a): subrogación y conversión a indefinido
 # no son el contrato, pero demuestran que lo hubo y CUBREN el alta, con
 # su propia fecha (efectos / celebración del contrato original).
-SUBROGATION_CODE = "SUBROGACION_CONTRATO"
+SUBROGATION_CODE = "CAMBIO_EMPRESA_SUBROGACION"  # S127: fusionado (0183)
 CONVERSION_CODE = "CONVERSION_CONTRATO"
 CONTRACT_COVER_CODES = (CONTRACT_CODE, SUBROGATION_CODE, CONVERSION_CODE)
 PERIOD_CODES = (
