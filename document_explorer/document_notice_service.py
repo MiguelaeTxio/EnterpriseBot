@@ -414,6 +414,7 @@ def compute_notices(domain):
             by_type.setdefault(entry.document_type_id, []).append(entry)
         present_codes = {entry.document_type.code for entry in entries}
         has_identity = bool(set(IDENTITY_CODES) & present_codes)
+        identity_notified = False
         categories = categories_of.get(requirement.pk, [])
         label = _subject_label(subject, domain)
         # H30 (S122): datos del sujeto que usan los ámbitos de avisos
@@ -465,6 +466,14 @@ def compute_notices(domain):
             if not docs:
                 if doc_type.code in IDENTITY_CODES and has_identity:
                     continue
+                if doc_type.code in IDENTITY_CODES:
+                    # S127: sin DNI ni NIE salían DOS avisos ("Falta DNI"
+                    # y "Falta NIE") para un solo documento que falta.
+                    # Uno solo, "DNI o NIE", con el tipo del primero.
+                    if identity_notified:
+                        continue
+                    identity_notified = True
+                    base["document_label"] = "DNI o NIE"
                 if rule.notify_missing:
                     notice = DocumentNotice(**base)
                     notice.kind = KIND_MISSING
