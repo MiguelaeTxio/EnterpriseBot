@@ -169,6 +169,18 @@ class Command(BaseCommand):
                     result = cache.get("%s:%s" % (entry.pk, wanted)) or {}
                     if result.get("error") or result.get("found"):
                         continue
+                    if result.get("is_this_person") is False:
+                        self._say(
+                            "     DE OTRA PERSONA pk=%s [%s] %s/%s -> %s "
+                            "(titular: %s)" % (
+                                entry.pk,
+                                entry.document_type.code
+                                if entry.document_type else "sin tipo",
+                                entry.parent_path, entry.name,
+                                result.get("what") or "-",
+                                result.get("file_owner") or "?"))
+                        totals["de_otra_persona"] += 1
+                        continue
                     self._say("        leído pk=%s [%s] %s -> %s" % (
                         entry.pk,
                         entry.document_type.code
@@ -189,4 +201,5 @@ class Command(BaseCommand):
                               "archivo(s) lo contiene." % read)
         self._say("\n# [AUDITORÍA] Fin. Encontrados: %(encontrado)d. Falta "
                   "confirmado: %(falta_confirmado)d. Sin confirmar: "
-                  "%(sin_confirmar)d." % defaultdict(int, totals))
+                  "%(sin_confirmar)d. Archivos de otra persona: "
+                  "%(de_otra_persona)d." % defaultdict(int, totals))

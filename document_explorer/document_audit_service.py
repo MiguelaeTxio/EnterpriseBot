@@ -71,6 +71,8 @@ _RESPONSE_SCHEMA = {
         "holder_id": {"type": "STRING"},
         "key_date": {"type": "STRING"},
         "evidence": {"type": "STRING"},
+        "file_owner": {"type": "STRING"},
+        "is_this_person": {"type": "BOOLEAN"},
     },
     "required": ["found", "what", "evidence"],
 }
@@ -96,7 +98,12 @@ def _prompt(person, wanted, first_page=1):
         "un contrato, la fecha de inicio (para una conversión, la de "
         "celebración del contrato original; para una subrogación, la de "
         "efectos).\n"
-        "- evidence: una frase con lo que lo demuestra."
+        "- evidence: una frase con lo que lo demuestra.\n"
+        "- file_owner: de quién es el archivo (nombre que aparece como "
+        "titular o interesado), aunque no sea lo buscado.\n"
+        "- is_this_person: false si el archivo es claramente de OTRA "
+        "persona distinta de la indicada; true si es suyo o no se puede "
+        "saber."
         % (
             WANTED_LABELS[wanted], person.first_surname,
             person.second_surname or "", person.given_name,
@@ -261,7 +268,10 @@ def find_in_file(entry, person, wanted):
     if problem:
         return {"error": problem}
     client = get_gemini_client()
-    merged = {"found": False, "pages": [], "what": [], "evidence": []}
+    merged = {
+        "found": False, "pages": [], "what": [], "evidence": [],
+        "is_this_person": True, "file_owner": "",
+    }
     for first_page, part in parts:
         try:
             response = _generate_content_with_retry(
@@ -277,6 +287,10 @@ def find_in_file(entry, person, wanted):
         except Exception as exc:
             return {"error": "Gemini: %s" % exc}
         merged["what"].append(data.get("what", ""))
+        if data.get("is_this_person") is False:
+            merged["is_this_person"] = False
+        if data.get("file_owner") and not merged["file_owner"]:
+            merged["file_owner"] = data["file_owner"]
         if data.get("found"):
             merged["found"] = True
             merged["pages"].extend(data.get("pages") or [first_page])
