@@ -288,3 +288,98 @@ def extract_text_for_dates(filename: str, data: bytes):
                 return text_ampliado, expiry2, issue2, other2, 4
 
     return text, expiry, issue, other, 2
+
+
+# H30 (S127) -- OCR COMPLETO de un archivo, página a página, para guardar
+# en DocumentIndexEntry.ocr_text (auditoría de documentos ausentes: un
+# dossier puede llevar el DNI en la página 17). Marca de cabecera para
+# saber que el texto es completo (antes solo se extraían 2 páginas).
+FULL_OCR_MARKER = "## OCR COMPLETO (S127)"
+# Cloud Vision admite como máximo 5 páginas por petición síncrona.
+_VISION_PAGES_PER_REQUEST = 5
+# Por debajo de esto el texto incrustado de una página no vale (página
+# escaneada con un pie de impresora, etc.) y se pasa por Cloud Vision.
+_MIN_EMBEDDED_CHARS = 40
+
+
+def _vision_pdf_pages(data: bytes, first: int, last: int) -> list[str]:
+    """Cloud Vision text of PDF pages first..last (1-based), per page."""
+    from google.cloud import vision
+
+    ensure_gcp_credentials()
+    client = vision.ImageAnnotatorClient()
+    chunk = _pdf_page_subset(data, first, last)
+    request = vision.AnnotateFileRequest(
+        input_config=vision.InputConfig(
+            content=chunk, mime_type="application/pdf",
+        ),
+        features=[vision.Feature(
+            type_=vision.Feature.Type.DOCUMENT_TEXT_DETECTION,
+        )],
+        pages=list(range(1, last - first + 2)),
+    )
+    response = client.batch_annotate_files(requests=[request])
+    texts = []
+    for file_response in response.responses:
+        for page_response in file_response.responses:
+            texts.append(
+                "" if page_response.error.message
+                else page_response.full_text_annotation.text or ""
+            )
+    return texts
+
+
+def full_text_pages(filename: str, data: bytes) -> tuple[list[str], int]:
+    """
+    Whole-file text, page by page, and how many pages went to Vision.
+
+    ---
+
+    Texto del archivo ENTERO, página a página: texto incrustado del PDF
+    si la página lo trae (gratis), Cloud Vision si no (en tramos de 5
+    páginas). Imágenes: una página por Cloud Vision. Devuelve (páginas,
+    páginas_pagadas_a_vision). Formatos no soportados: ([], 0).
+    """
+    name = (filename or "").lower()
+    if name.endswith((".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp",
+                      ".tif", ".tiff")):
+        return [cloud_vision_image_text(data)], 1
+    if not name.endswith(".pdf"):
+        return [], 0
+    import fitz
+
+    try:
+        document = fitz.open(stream=data, filetype="pdf")
+    except Exception:
+        return [], 0
+    pages = [page.get_text().strip() for page in document]
+    document.close()
+    missing = [
+        number for number, text in enumerate(pages, 1)
+        if len(text) < _MIN_EMBEDDED_CHARS
+    ]
+    # Tramos de páginas consecutivas sin texto, de hasta 5 cada uno.
+    chunks = []
+    for number in missing:
+        if (
+            chunks and number == chunks[-1][-1] + 1
+            and len(chunks[-1]) < _VISION_PAGES_PER_REQUEST
+        ):
+            chunks[-1].append(number)
+        else:
+            chunks.append([number])
+    paid = 0
+    for chunk in chunks:
+        texts = _vision_pdf_pages(data, chunk[0], chunk[-1])
+        for number, text in zip(chunk, texts):
+            pages[number - 1] = text.strip()
+        paid += len(chunk)
+    return pages, paid
+
+
+def format_full_text(pages: list[str]) -> str:
+    """Pages -> ocr_text with the full marker and a header per page."""
+    return FULL_OCR_MARKER + "\n" + "\n".join(
+        "=== Página %d ===\n%s" % (number, text)
+        for number, text in enumerate(pages, 1)
+    )
