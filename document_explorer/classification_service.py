@@ -3331,6 +3331,24 @@ def _activate_person_on_hiring_document(identity, result) -> None:
         return
     if identity.is_active_employee is True:
         return
+    if identity.termination_date:
+        # S127, incidente real: la pasada de DOC. PERSONAL procesó el alta
+        # de mayo de 2025 de Ruiz Portillo, dado de baja el 23/09/2026, y
+        # lo volvió a marcar como activo. Con fecha de baja, solo una
+        # recontratación (documento fechado DESPUÉS de la baja) reactiva;
+        # un documento antiguo o sin fecha legible no toca su estado.
+        try:
+            document_date = datetime.date.fromisoformat(
+                (result.get("date_hint") or "")[:10],
+            )
+        except ValueError:
+            document_date = None
+        if document_date is None or document_date <= identity.termination_date:
+            return
+    elif identity.is_active_employee is False:
+        # Inactivo sin fecha de baja (p. ej. carga inicial): no hay con
+        # qué comparar, así que tampoco se reactiva solo.
+        return
     identity.is_active_employee = True
     identity.save(update_fields=["is_active_employee", "updated_at"])
     result["person_identity_note"] = " -- ".join(filter(None, [
