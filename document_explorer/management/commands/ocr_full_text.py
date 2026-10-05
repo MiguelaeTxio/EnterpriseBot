@@ -31,7 +31,9 @@ from django.core.management.base import BaseCommand
 from django.db import close_old_connections
 
 from document_explorer import document_notice_service as notices
-from document_explorer.classification_service import _document_text
+from document_explorer.classification_service import (
+    _LIBREOFFICE_CONVERTIBLE_EXTENSIONS, _convert_to_pdf, _document_text,
+)
 from document_explorer.cloud_vision_service import (
     FULL_OCR_MARKER, format_full_text, full_text_pages,
 )
@@ -90,6 +92,13 @@ class Command(BaseCommand):
             return [_document_text(data, extension)], 0
         if extension in ("xlsx", "xlsm"):
             return [_spreadsheet_text(data)], 0
+        if extension in _LIBREOFFICE_CONVERTIBLE_EXTENSIONS:
+            # S127: los .doc antiguos (Núñez, EnterpriseBot_026) quedaban
+            # "sin OCR": a PDF con LibreOffice y el mismo OCR completo.
+            converted = _convert_to_pdf(data, extension)
+            if converted:
+                return full_text_pages("convertido.pdf", converted)
+            return [], 0
         return full_text_pages(entry.name, data)
 
     def handle(self, *args, **options):

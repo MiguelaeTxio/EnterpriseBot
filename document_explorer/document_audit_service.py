@@ -26,6 +26,7 @@ Solo lectura: no escribe nada en la BD.
 import io
 import json
 import logging
+import re
 
 from django.db.models import Q
 from google.genai.types import GenerateContentConfig, HttpOptions, Part
@@ -269,6 +270,97 @@ def _parts_for(entry):
     return [], "formato .%s no legible" % extension
 
 
+def _normalized_id(value):
+    return re.sub(r"[^0-9A-Z]", "", (value or "").upper())
+
+
+def _pages_of(ocr_text):
+    """ocr_text with FULL_OCR_MARKER -> [(page_number, text)]."""
+    pages = []
+    for block in re.split(r"^=== Página (\d+) ===$", ocr_text, flags=re.M)[1:]:
+        if block.strip().isdigit() and len(block.strip()) < 5:
+            pages.append([int(block.strip()), ""])
+        elif pages:
+            pages[-1][1] = block
+    return [(number, text) for number, text in pages]
+
+
+def _identity_by_number(person, pages):
+    """
+    Exact check: the person's DNI/NIE number printed in a page.
+
+    ---
+
+    Comprobación exacta (no heurística): el número de DNI/NIE registrado
+    de la persona aparece en la página, con o sin letra, con o sin
+    separadores, o en la zona legible por máquina (IDESP...). Devuelve
+    las páginas donde aparece.
+    """
+    number = _normalized_id(person.dni)
+    # Solo el número COMPLETO con su letra de control: los 8 dígitos
+    # sueltos aparecen en otras cosas (una cuenta "2510-0961" casaba con
+    # el DNI 25100961A en la prueba). La zona legible por máquina
+    # (IDESP...25100961A<<<) también lo trae completo.
+    if len(number) < 9 or not number[-1].isalpha():
+        return []
+    return [
+        page_number for page_number, text in pages
+        if number in _normalized_id(text)
+    ]
+
+
+def find_in_text(entry, person, wanted):
+    """
+    Same question as find_in_file, answered on the stored full OCR text.
+
+    ---
+
+    H30 (S127). La misma pregunta que `find_in_file`, pero sobre el texto
+    completo guardado por `ocr_full_text` (Cloud Vision / texto
+    incrustado): Gemini sobre texto, rápido y sin saturar la cuota. None
+    si el archivo aún no tiene OCR completo (el llamador usa la imagen).
+    """
+    from document_explorer.cloud_vision_service import FULL_OCR_MARKER
+
+    text = entry.ocr_text or ""
+    if not text.startswith(FULL_OCR_MARKER):
+        return None
+    pages = _pages_of(text)
+    if not any(page_text.strip() for _, page_text in pages):
+        return None
+    client = get_gemini_client()
+    try:
+        response = _generate_content_with_retry(
+            client, model=DEFAULT_MODEL,
+            contents=[
+                "Texto completo del archivo, página a página, obtenido por "
+                "OCR:\n\n" + text[:120_000],
+                _prompt(person, wanted),
+            ],
+            config=GenerateContentConfig(
+                http_options=HttpOptions(timeout=90_000),
+                response_mime_type="application/json",
+                response_schema=_RESPONSE_SCHEMA, temperature=0.0,
+            ),
+        )
+        result = json.loads(response.text)
+    except Exception as exc:
+        return {"error": "Gemini (texto): %s" % exc}
+    result["source"] = "texto OCR"
+    if wanted == "IDENTIDAD":
+        exact = _identity_by_number(person, pages)
+        if exact:
+            # El número exacto de la persona está impreso: es suyo,
+            # diga lo que diga la lectura (que queda como contexto).
+            result.update(
+                found=True, pages=exact,
+                evidence="Número de documento %s impreso en la(s) "
+                         "página(s) %s. %s" % (
+                             person.dni, exact, result.get("evidence", "")),
+            )
+    return result
+
+
 def find_in_file(entry, person, wanted):
     """
     Read the whole file and say whether it holds the wanted document.
@@ -279,6 +371,9 @@ def find_in_file(entry, person, wanted):
     persona. Devuelve el dict de Gemini (found, pages, what, holder_*,
     key_date, evidence) o {"error": ...}. Nunca lanza.
     """
+    from_text = find_in_text(entry, person, wanted)
+    if from_text is not None and not from_text.get("error"):
+        return from_text
     try:
         parts, problem = _parts_for(entry)
     except Exception as exc:
