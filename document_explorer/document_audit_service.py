@@ -285,6 +285,15 @@ def _pages_of(ocr_text):
     return [(number, text) for number, text in pages]
 
 
+_IDENTITY_CARD_RE = re.compile(
+    r"DOCUMENTO NACIONAL DE IDENTIDAD|NATIONAL IDENTITY CARD|IDESP|"
+    r"PERMISO DE RESIDENCIA|RESIDENCE PERMIT|TARJETA DE IDENTIDAD DE "
+    r"EXTRANJERO|N\.?I\.?E\b.*CERTIFICADO|CERTIFICADO DE REGISTRO DE "
+    r"CIUDADANO",
+    re.IGNORECASE,
+)
+
+
 def _identity_by_number(person, pages):
     """
     Exact check: the person's DNI/NIE number printed in a page.
@@ -303,9 +312,14 @@ def _identity_by_number(person, pages):
     # (IDESP...25100961A<<<) también lo trae completo.
     if len(number) < 9 or not number[-1].isalpha():
         return []
+    # S127: el número sale también en un alta, un contrato o una
+    # autorización (falsos positivos reales: Gutiérrez Mateo, Gutiérrez
+    # Santiago). Solo cuenta si en ESA página hay además las marcas de un
+    # documento de identidad.
     return [
         page_number for page_number, text in pages
         if number in _normalized_id(text)
+        and _IDENTITY_CARD_RE.search(text or "")
     ]
 
 
@@ -347,6 +361,7 @@ def find_in_text(entry, person, wanted):
     except Exception as exc:
         return {"error": "Gemini (texto): %s" % exc}
     result["source"] = "texto OCR"
+    result["gemini_found"] = bool(result.get("found"))
     if wanted == "IDENTIDAD":
         exact = _identity_by_number(person, pages)
         if exact:

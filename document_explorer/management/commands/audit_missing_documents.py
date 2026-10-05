@@ -58,6 +58,32 @@ def _wanted_for(notice):
     return None
 
 
+def _in_own_record(entry, person):
+    """
+    True if the file is linked to the person or inside their folder.
+
+    ---
+
+    S127: "de otra persona" solo tiene sentido si el archivo está en la
+    ficha de la auditada (vinculado o en su carpeta). Un archivo de otra
+    persona con nombre parecido que entró en la búsqueda por su carpeta
+    (Gutiérrez Nicolás Omar / Gutiérrez Santiago Nicolás) está en su
+    sitio.
+    """
+    from django.contrib.contenttypes.models import ContentType
+
+    if entry.domain_object_id == person.pk and (
+        entry.domain_content_type_id
+        == ContentType.objects.get_for_model(PersonIdentity).pk
+    ):
+        return True
+    folder = (person.folder_path or "").rstrip("/")
+    return bool(folder) and (
+        entry.parent_path == folder
+        or entry.parent_path.startswith(folder + "/")
+    )
+
+
 def _alta_dates(labels):
     """Alta dates named in 'Contrato laboral (alta del dd/mm/aaaa)'."""
     found = []
@@ -186,6 +212,12 @@ class Command(BaseCommand):
                         source = "copia idéntica"
                     # Un error guardado (timeout, formato) se reintenta:
                     # solo se reutiliza una lectura buena.
+                    if result is not None and (
+                        result.get("evidence") or ""
+                    ).startswith("Número de documento"):
+                        # Veredicto de la regla del número sin marcas de
+                        # documento de identidad (S127): se rehace.
+                        result = None
                     if result is None or result.get("error"):
                         source = "leído"
                         result = find_in_file(entry, person, wanted)
@@ -209,9 +241,25 @@ class Command(BaseCommand):
                     read += 1
                     if result.get("found"):
                         found.append((entry, result))
+                altas = _alta_dates(labels) if wanted == "CONTRATO" else []
+                if altas:
+                    # S127: un contrato de OTRO periodo no resuelve el
+                    # aviso del alta actual (Ramírez, Triviño, Correa).
+                    other_period = [
+                        (entry, result) for entry, result in found
+                        if not _covers(result, altas).startswith("CUBRE")
+                    ]
+                    found = [
+                        pair for pair in found if pair not in other_period
+                    ]
+                    for entry, result in other_period:
+                        self._say(
+                            "     OTRO PERIODO pk=%s %s -> %s, fecha %s "
+                            "(no cubre el alta del aviso)" % (
+                                entry.pk, entry.name, result.get("what"),
+                                result.get("key_date") or "-"))
                 self._say("  -- %s (%s): %d leído(s), %d ilegible(s)" % (
                     wanted, "; ".join(labels), read, len(unreadable)))
-                altas = _alta_dates(labels) if wanted == "CONTRATO" else []
                 for entry, result in found:
                     if altas:
                         result = dict(result, evidence="%s [%s]" % (
@@ -239,7 +287,9 @@ class Command(BaseCommand):
                     result = cache.get("%s:%s" % (entry.pk, wanted)) or {}
                     if result.get("error") or result.get("found"):
                         continue
-                    if result.get("is_this_person") is False:
+                    if result.get("is_this_person") is False and (
+                        _in_own_record(entry, person)
+                    ):
                         self._say(
                             "     DE OTRA PERSONA pk=%s [%s] %s/%s -> %s "
                             "(titular: %s)" % (
