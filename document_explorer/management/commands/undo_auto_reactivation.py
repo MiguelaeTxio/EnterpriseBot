@@ -57,7 +57,11 @@ class Command(BaseCommand):
                                   "por el barrido).")
                 return
             new_state = None
-        target = expected_base_folder(person, is_active=new_state)
+        # None ("sin cruzar") vive en INACTIVOS igual que False (S76); se
+        # pasa False porque expected_base_folder trata None como "el
+        # estado actual de la persona" (la prueba de Palliotti mostraba su
+        # carpeta de activos).
+        target = expected_base_folder(person, is_active=False)
         self.stdout.write("   queda: activo=%s, misma alta y baja, "
                           "carpeta=%s" % (new_state, target))
         if not options["apply"]:
