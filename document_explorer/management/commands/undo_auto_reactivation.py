@@ -13,7 +13,11 @@ pulsado el de alta"). Caso real: Ruiz Portillo, dado de baja el
 Solo restaura lo que tocó el pipeline: `is_active_employee=False` y su
 documentación de vuelta a la carpeta que le corresponde
 (`relocate_if_needed`). La fecha de baja, la de alta y la cuenta del
-panel no se tocan. Se niega si la persona no tiene fecha de baja.
+panel no se tocan. Se niega si la persona no tiene fecha de baja, salvo
+con `--sin-cruzar`: persona CREADA y activada por el barrido hacia atrás
+(caso Palliotti, creado el 02/10/2026 desde un contrato de 2025), que
+vuelve a "sin cruzar" (`None`, como el histórico desde S76) sin fecha de
+alta ni de baja inventadas.
 
 Sin --apply solo informa.
 """
@@ -31,6 +35,7 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("--person", type=int, required=True)
         parser.add_argument("--apply", action="store_true")
+        parser.add_argument("--sin-cruzar", action="store_true")
 
     def handle(self, *args, **options):
         person = PersonIdentity.objects.get(pk=options["person"])
@@ -43,16 +48,21 @@ class Command(BaseCommand):
             "   ahora: activo=%s, alta=%s, baja=%s, carpeta=%s" % (
                 person.is_active_employee, person.hire_date,
                 person.termination_date, person.folder_path))
+        new_state = False
         if not person.termination_date:
-            self.stdout.write("   [PARADA] Sin fecha de baja: no es una "
-                              "reactivación que deshacer.")
-            return
-        target = expected_base_folder(person, is_active=False)
-        self.stdout.write("   queda: activo=False, misma alta y baja, "
-                          "carpeta=%s" % target)
+            if not options["sin_cruzar"]:
+                self.stdout.write("   [PARADA] Sin fecha de baja: no es una "
+                                  "reactivación que deshacer (usar "
+                                  "--sin-cruzar solo para una persona creada "
+                                  "por el barrido).")
+                return
+            new_state = None
+        target = expected_base_folder(person, is_active=new_state)
+        self.stdout.write("   queda: activo=%s, misma alta y baja, "
+                          "carpeta=%s" % (new_state, target))
         if not options["apply"]:
             return
-        person.is_active_employee = False
+        person.is_active_employee = new_state
         person.save(update_fields=["is_active_employee", "updated_at"])
         moved, folder, count = relocate_if_needed(person)
         person.refresh_from_db()
