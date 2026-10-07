@@ -508,7 +508,8 @@ def consume_quarantine_task(self) -> None:
     Miguel Ángel: "cuando tenemos la seguridad de que es un dossier
     (...) hay que eliminarlo directamente") are soft-deleted to
     `_DOSSIER_TRASH_USERNAME`'s papelera and logged as `ACTION_TRASHED`
-    -- never a guess. **Extended S042 (decision 3.14, N=1 -- Miguel
+    -- never a guess (S127: only after their documents are extracted,
+    see `classification_service._handle_dossier`). **Extended S042 (decision 3.14, N=1 -- Miguel
     Ángel: "con que entre una vez y no se pueda clasificar ya es
     suficiente")**: everything else (identity/machine not resolved
     with certainty, a plain `DESCONOCIDO`, or even a technical
@@ -553,7 +554,8 @@ def consume_quarantine_task(self) -> None:
     (`is_dossier`, S041 -- Miguel Ángel: "cuando tenemos la certeza
     de que es un dossier (...) hay que eliminarlo directamente") se
     reubican a la papelera de `_DOSSIER_TRASH_USERNAME` y quedan como
-    `ACTION_TRASHED` -- nunca una sospecha. **Ampliado en S042
+    `ACTION_TRASHED` -- nunca una sospecha (S127: solo después de sacar
+    sus documentos, ver `classification_service._handle_dossier`). **Ampliado en S042
     (decisión 3.14, N=1 -- Miguel Ángel: "con que entre una vez y no
     se pueda clasificar ya es suficiente")**: todo lo demás (identidad
     /máquina sin resolver con certeza, un `DESCONOCIDO` simple, o
@@ -876,8 +878,9 @@ def consume_quarantine_task(self) -> None:
                 mismatch = result.get("machine_mismatch_warning")
                 person_note = result.get("person_identity_note")
                 machine_note = result.get("machine_asset_note")
+                dossier_note = result.get("dossier_note")
                 detail = (
-                    "Dominio: %s -- Tipo: %s (%s) -- %s%s%s%s%s"
+                    "Dominio: %s -- Tipo: %s (%s) -- %s%s%s%s%s%s"
                     % (
                         result.get("domain", "?"),
                         result.get("document_type_code", "?"),
@@ -887,6 +890,7 @@ def consume_quarantine_task(self) -> None:
                         " -- %s" % mismatch if mismatch else "",
                         " -- %s" % person_note if person_note else "",
                         " -- %s" % machine_note if machine_note else "",
+                        " -- %s" % dossier_note if dossier_note else "",
                     )
                 )
                 if "Trabajador nuevo creado" in (

@@ -174,13 +174,33 @@ _RESPONSE_SCHEMA = {
         "date_hint": {"type": "string"},
         "is_dossier": {"type": "boolean"},
         "is_photo": {"type": "boolean"},
+        # S127: lo que lleva dentro un dossier, para sacarlo a su propio
+        # archivo (dossier_service) en vez de perderlo en la papelera.
+        "contained_documents": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "document_type_code": {"type": "string"},
+                    "pages": {
+                        "type": "array", "items": {"type": "integer"},
+                    },
+                    "issue_date": {"type": "string"},
+                    "expiry_date": {"type": "string"},
+                },
+                "required": [
+                    "document_type_code", "pages", "issue_date",
+                    "expiry_date",
+                ],
+            },
+        },
     },
     "required": [
         "domain", "document_type_code", "confidence", "reasoning",
         "machine_code_hint", "brand_model_hint",
         "first_surname_hint", "second_surname_hint",
         "given_name_hint", "dni_hint", "date_hint", "is_dossier",
-        "is_photo",
+        "is_photo", "contained_documents",
     ],
 }
 
@@ -227,7 +247,20 @@ del archivo. Si el propio extracto que te doy avisa de que le faltan \
 páginas intermedias, un cambio claro de membrete, formato o tipo de \
 documento entre el bloque inicial y el final es motivo suficiente para \
 marcar is_dossier=true con certeza -- no hace falta ver las páginas de \
-en medio para saber que hay dos documentos distintos cosidos juntos.
+en medio para saber que hay dos documentos distintos cosidos juntos. \
+Una hoja o fotografía con VARIAS TARJETAS distintas de la misma persona \
+(DNI, permiso de conducción, tarjeta de conductor, CAP, carnet de \
+gruista...) ES un dossier, aunque sea una sola página.
+
+contained_documents: cuando is_dossier=true, un elemento por CADA \
+documento distinto que veas dentro, incluido el que hayas puesto en \
+document_type_code: su código de la lista (document_type_code), las \
+páginas del archivo donde aparece (pages, numeradas desde 1; si varias \
+tarjetas comparten página, todas llevan esa misma página), y sus fechas \
+de expedición (issue_date) y de caducidad o validez (expiry_date) en \
+formato AAAA-MM-DD tal como aparecen impresas en ESE documento -- "" si \
+no se leen con claridad, nunca la fecha de otro documento del dossier. \
+Si is_dossier=false, lista vacía.
 
 is_photo: true SOLO cuando el archivo es, en esencia, una FOTOGRAFÍA (de una \
 máquina, un vehículo, una escena de trabajo, un daño, etc.) y no un \
@@ -3448,6 +3481,82 @@ def _apply_company_classification(entry, result):
     return result
 
 
+def _handle_dossier(entry, result, domain):
+    """
+    Extract a dossier's documents; trash it only when all are filed.
+
+    ---
+
+    H30 (S127, aprobado por Miguel Ángel). Sustituye a la regla S041
+    ("dossier con certeza -> papelera"), que tiraba la única copia de
+    los escaneos de tarjetas (ver `dossier_service`). En personal:
+    resuelve a la persona y saca a su propio archivo cada documento del
+    dossier que no tenga ya archivado. Devuelve el resultado final
+    cuando el original ya no sigue el flujo normal (papelera o NO
+    CONFORMES), o None para que el original se archive con su tipo como
+    siempre (llevando ya resuelta a su persona).
+
+    Fuera de personal, un dossier sin tipo va a NO CONFORMES para
+    revisión en vez de a la papelera: nada garantiza que lo que lleva
+    ya esté archivado.
+    """
+    from document_explorer import dossier_service
+
+    unknown_main = result.get("document_type_code") == "DESCONOCIDO"
+    finished = dict(
+        new_name=None, classified=False, renamed=False, relocated=False,
+    )
+    if (domain or result.get("domain")) != "PERSONAL":
+        if not unknown_main:
+            return None
+        result["reasoning"] = (
+            "%s -- Dossier sin tipo fuera de personal: a revisión, nunca "
+            "a la papelera sin saber si lo que lleva ya está archivado "
+            "(S127)." % result.get("reasoning", "")
+        )
+        result.update(finished)
+        return result
+
+    person = dossier_service.resolve_dossier_person(entry, result)
+    if person is None:
+        if not unknown_main:
+            return None
+        result.update(finished)
+        return result
+
+    try:
+        extracted, covered, unknown = dossier_service.extract_contained(
+            entry, person, result.get("contained_documents"),
+            skip_codes=() if unknown_main else (
+                result.get("document_type_code"),
+            ),
+        )
+    except Exception as exc:
+        logger.exception(
+            "# [_handle_dossier] Fallo sacando documentos de #%d.",
+            entry.pk,
+        )
+        extracted, covered, unknown = [], [], [
+            "error al sacar los documentos: %s" % exc,
+        ]
+    result["dossier_note"] = dossier_service.dossier_note(
+        extracted, covered, unknown,
+    )
+    if not unknown_main:
+        result["_override_owner"] = person
+        return None
+    if unknown or not (extracted or covered):
+        result.update(finished)
+        return result
+    if trash_dossier_entry(entry):
+        result.update(finished)
+        result.update(trashed=True, trash_reason="DOSSIER YA ARCHIVADO")
+        return result
+    result.update(finished)
+    result["trashed"] = False
+    return result
+
+
 def apply_quarantine_classification(entry) -> dict:
     """
     Full pipeline for ONE quarantine file (H29, S040 -- the "Always-on
@@ -3502,7 +3611,9 @@ def apply_quarantine_classification(entry) -> dict:
     review. `is_dossier` is a certainty signal, never a guess --
     "DESCONOCIDO" alone (couldn't recognise a single document, e.g.
     an uncatalogued type) never triggers this, only stays flagged as
-    before.
+    before. **Replaced in S127 by `_handle_dossier`**: the documents
+    inside are extracted first, and the dossier is trashed only when
+    all of them end up filed.
 
     **Second interception, S042 -- `document_type_code == "MANUAL_USO"`
     (closed-vocabulary type, seeded since 0004_seed_closed_vocabulary,
@@ -3585,7 +3696,9 @@ def apply_quarantine_classification(entry) -> dict:
     `is_dossier` es una señal de certeza, nunca una sospecha --
     "DESCONOCIDO" a secas (no se reconoce un único documento, p. ej.
     un tipo sin catalogar) nunca dispara esto, sigue quedando
-    marcado como antes.
+    marcado como antes. **Sustituido en S127 por `_handle_dossier`**:
+    primero se saca cada documento del dossier a su propio archivo, y
+    el dossier solo va a la papelera cuando todo queda archivado.
 
     **Segunda intercepción, S042 -- `document_type_code == "MANUAL_USO"`
     (tipo de vocabulario cerrado, sembrado desde 0004_seed_closed_
@@ -3621,15 +3734,10 @@ def apply_quarantine_classification(entry) -> dict:
         )
         return result
 
-    if result.get("document_type_code") == "DESCONOCIDO" \
-            and result.get("is_dossier"):
-        if trash_dossier_entry(entry):
-            result.update(
-                new_name=None, classified=False,
-                renamed=False, relocated=False, trashed=True,
-            )
-            return result
-        result["trashed"] = False
+    if result.get("is_dossier"):
+        handled = _handle_dossier(entry, result, domain)
+        if handled is not None:
+            return handled
 
     if result.get("is_photo"):
         # S043, Miguel Ángel, verbatim, tras dos fotografías reales de

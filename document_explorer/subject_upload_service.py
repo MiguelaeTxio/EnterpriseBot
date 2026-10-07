@@ -294,6 +294,7 @@ def _queue_entry_hooks(subject, document_type, entry):
 def upload_subject_document(
     *, subject, domain_content_type, document_type, data, original_filename,
     typed_date, subject_label, uploaded_by=None, typed_issue_date=None,
+    filename_date=None,
 ):
     """
     Ejecuta el flujo completo. Devuelve un dict:
@@ -316,6 +317,11 @@ def upload_subject_document(
     inicio). Manda sobre la de Cloud Vision/Gemini, igual que
     `typed_date` para la caducidad -- en S122 el OCR cogía la fecha de
     nacimiento de los contratos y los dejaba fuera de su periodo.
+
+    `filename_date` (H30 S127): fecha del nombre de archivo cuando se
+    conoce la del propio documento (documentos sacados de un dossier,
+    `dossier_service`). Sin ella, el nombre lleva la fecha de subida,
+    como desde la ficha.
     """
     extension = (
         original_filename.rsplit(".", 1)[-1]
@@ -327,7 +333,8 @@ def upload_subject_document(
     today = timezone.now().date()
     ensure_folder_chain(BUCKET, target_folder)
     filename = _resolve_free_filename(
-        subject, document_type.code, today, extension, target_folder,
+        subject, document_type.code, filename_date or today, extension,
+        target_folder,
     )
     blob_name = "%s/%s" % (target_folder, filename)
     content_type = content_type_of(data, filename)
