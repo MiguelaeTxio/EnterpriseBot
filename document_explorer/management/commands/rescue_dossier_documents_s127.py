@@ -64,6 +64,35 @@ CASES = (
     # desde el borrado del árbol antiguo del 31/07.
     (RESTORE, 39202, 190, "CARNET_GRUISTA", None, "2022-06-24",
      "2027-06-23", "habilitación de gruista en la papelera"),
+    # Dossiers "DOCUMENTACION ..." tirados por la regla S041 (OCR de
+    # EnterpriseBot_042, búsqueda 043, cada página vista a mano). Las
+    # habilitaciones de gruista de la Junta valen 5 años desde la
+    # resolución (lo dice su punto SEGUNDO).
+    (EXTRACT, 47392, 164, "DNI", [9], "2024-04-12", "2034-04-12",
+     "DNI en el dossier de Gutiérrez Mateo Alejandro"),
+    (EXTRACT, 47392, 164, "CARNET_CONDUCIR", [11], "2022-05-16",
+     "2032-04-27", "permiso de conducción en el mismo dossier"),
+    (EXTRACT, 47392, 164, "TARJETA_CUALIF_CONDUCTOR", [12], "2021-10-10",
+     "2026-10-10", "CAP en el mismo dossier"),
+    (EXTRACT, 37301, 74, "TARJETA_CUALIF_CONDUCTOR", [15], "2024-07-14",
+     "2029-07-14", "CAP en el dossier de Rebollo"),
+    (EXTRACT, 41188, 177, "TACOGRAFO", [3], "2026-02-06", "2031-02-06",
+     "tarjeta de conductor en el dossier de Rosas"),
+    (EXTRACT, 41188, 177, "TARJETA_CUALIF_CONDUCTOR", [5], "2026-01-18",
+     "2031-01-18", "CAP en el dossier de Rosas"),
+    (EXTRACT, 42127, 161, "CARNET_GRUISTA", [13, 14, 15], "2022-01-04",
+     "2027-01-04", "renovación de gruista A en el dossier de Gómez "
+     "Rivero"),
+    (EXTRACT, 43251, 152, "CARNET_GRUISTA", [10, 11], "2026-06-15",
+     "2031-06-15", "renovación de gruista B de junio de 2026"),
+    (EXTRACT, 43088, 157, "CARNET_GRUISTA", [11, 12, 13], "2024-06-26",
+     "2029-06-26", "renovación de gruista A de junio de 2024"),
+    (EXTRACT, 41185, 168, "CARNET_GRUISTA", [11, 12, 13], "2024-01-05",
+     "2029-01-05", "renovación de gruista B de enero de 2024"),
+    (EXTRACT, 43977, 39, "CARNET_GRUISTA", [13, 14, 15, 16], "2021-09-27",
+     "2026-09-27", "renovación de gruista torre de 2021"),
+    (EXTRACT, 37080, 175, "CARNET_GRUISTA", [16, 17, 18], "2018-11-19",
+     "2023-11-19", "habilitación de gruista B de 2018"),
 )
 
 
@@ -137,7 +166,7 @@ class Command(BaseCommand):
 
         if action == EXTRACT:
             existing = dossier_service.already_filed(
-                person, document_type, expiry,
+                person, document_type, expiry, issue,
             )
             if existing is not None:
                 self._log("%s -- ya archivado (#%d %s)."

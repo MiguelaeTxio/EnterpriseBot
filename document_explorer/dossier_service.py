@@ -78,7 +78,8 @@ def person_type(type_code):
     ).first()
 
 
-def already_filed(person, document_type, expiry_date=None):
+def already_filed(person, document_type, expiry_date=None,
+                  issue_date=None):
     """
     Live document of this type on the person that covers the one found.
 
@@ -86,9 +87,11 @@ def already_filed(person, document_type, expiry_date=None):
 
     Documento vivo de ese tipo en la ficha de la persona que ya cubre
     el encontrado en el dossier: con fecha de caducidad igual o
-    posterior, o cualquiera si el del dossier no trae caducidad. Un
-    vigente sin caducidad no cubre a uno que sí la trae (se extrae: es
-    mejor un duplicado que un documento escondido).
+    posterior; si el del dossier no trae caducidad pero sí fecha de
+    expedición, con expedición igual o posterior (una renovación de
+    2026 no la cubre un carnet de 2021); sin ninguna fecha, cualquiera.
+    Un vigente sin fecha no cubre a uno fechado (se extrae: es mejor un
+    duplicado que un documento escondido).
     """
     live = DocumentIndexEntry.objects.filter(
         document_type=document_type,
@@ -97,9 +100,11 @@ def already_filed(person, document_type, expiry_date=None):
         entry_kind=DocumentIndexEntry.KIND_FILE,
         deleted_at__isnull=True, purged_at__isnull=True,
     )
-    if expiry_date is None:
-        return live.order_by("-id").first()
-    return live.filter(expiry_date__gte=expiry_date).order_by("-id").first()
+    if expiry_date is not None:
+        live = live.filter(expiry_date__gte=expiry_date)
+    elif issue_date is not None:
+        live = live.filter(issue_date__gte=issue_date)
+    return live.order_by("-id").first()
 
 
 def page_subset(data, filename, pages):
@@ -213,11 +218,12 @@ def extract_contained(source, person, contained, skip_codes=(), data=None):
             unknown.append(code or "?")
             continue
         expiry = parse_date(item.get("expiry_date"))
-        key = (code, expiry)
+        issue = parse_date(item.get("issue_date"))
+        key = (code, expiry, issue)
         if code in skip_codes or key in seen:
             continue
         seen.add(key)
-        existing = already_filed(person, document_type, expiry)
+        existing = already_filed(person, document_type, expiry, issue)
         if existing is not None:
             covered.append("%s (ya archivado #%d)" % (code, existing.pk))
             continue
@@ -226,8 +232,7 @@ def extract_contained(source, person, contained, skip_codes=(), data=None):
         new_entry = extract_document(
             source, person, document_type,
             pages=item.get("pages") or None,
-            issue_date=parse_date(item.get("issue_date")),
-            expiry_date=expiry, data=data,
+            issue_date=issue, expiry_date=expiry, data=data,
         )
         extracted.append("%s -> #%d" % (code, new_entry.pk))
     return extracted, covered, unknown
