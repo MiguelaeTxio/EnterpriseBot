@@ -114,6 +114,11 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("--log-file", required=True)
         parser.add_argument("--person", type=int, action="append")
+        parser.add_argument(
+            "--entry", action="append", default=[],
+            help="ARCHIVO:PERSONA (pks). Solo esos archivos de esa persona, "
+                 "también de la papelera (S127: dossiers tirados).",
+        )
 
     def _say(self, text):
         self.stdout.write(text)
@@ -124,7 +129,14 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         self._log = open(options["log_file"], "a", encoding="utf-8")
         person_ct = ContentType.objects.get_for_model(PersonIdentity)
-        if options["person"]:
+        only = {}
+        for pair in options["entry"]:
+            entry_pk, person_pk = (int(part) for part in pair.split(":"))
+            only.setdefault(person_pk, []).append(entry_pk)
+        if only:
+            people = list(PersonIdentity.objects.filter(
+                pk__in=only).order_by("first_surname", "given_name"))
+        elif options["person"]:
             people = list(PersonIdentity.objects.filter(
                 pk__in=options["person"]))
         else:
@@ -142,7 +154,12 @@ class Command(BaseCommand):
                   len(people))
         for number, person in enumerate(people, 1):
             close_old_connections()
-            files = candidate_files(person)
+            files = (
+                list(DocumentIndexEntry.objects.filter(
+                    pk__in=only[person.pk], purged_at__isnull=True,
+                ))
+                if only else candidate_files(person)
+            )
             self._say("\n== [%d/%d] pk=%s %s %s, %s (doc %s) -- %d archivo(s)"
                       % (number, len(people), person.pk, person.first_surname,
                          person.second_surname or "", person.given_name,

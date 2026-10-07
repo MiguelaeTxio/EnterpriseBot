@@ -55,6 +55,11 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("--person", type=int, action="append")
         parser.add_argument("--audit", action="store_true")
+        parser.add_argument(
+            "--entry", action="append", default=[],
+            help="ARCHIVO:PERSONA (pks). Archivos concretos, también de la "
+                 "papelera (S127: dossiers tirados por la regla S041).",
+        )
         parser.add_argument("--log-file", required=True)
 
     def _say(self, text):
@@ -108,6 +113,15 @@ class Command(BaseCommand):
         self._say("# [OCR] %d persona(s). Reuniendo archivos..." % len(people))
         files = []
         seen = set()
+        for pair in options["entry"]:
+            entry_pk, person_pk = (int(part) for part in pair.split(":"))
+            entry = DocumentIndexEntry.objects.filter(
+                pk=entry_pk, purged_at__isnull=True,
+            ).first()
+            person = PersonIdentity.objects.filter(pk=person_pk).first()
+            if entry and person and entry.pk not in seen:
+                seen.add(entry.pk)
+                files.append((person, entry))
         for person in people:
             for entry in candidate_files(person):
                 if entry.pk not in seen:
