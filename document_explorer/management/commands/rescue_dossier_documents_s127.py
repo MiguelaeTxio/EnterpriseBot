@@ -93,6 +93,13 @@ CASES = (
      "2026-09-27", "renovación de gruista torre de 2021"),
     (EXTRACT, 37080, 175, "CARNET_GRUISTA", [16, 17, 18], "2018-11-19",
      "2023-11-19", "habilitación de gruista B de 2018"),
+    # Borrado del árbol antiguo del 31/07: archivos sin copia viva de
+    # trabajadores activos (EnterpriseBot_045/046, vistos a mano).
+    (EXTRACT, 36933, 174, "CARNET_GRUISTA", [27, 28, 29], "2023-09-12",
+     "2028-09-12", "habilitación de gruista A de Ramos Jiménez"),
+    (EXTRACT, 39040, 113, "CONTRATO", None, "2022-01-01", None,
+     "contrato indefinido + comunicación de 01/01/2022 de Martín "
+     "González"),
 )
 
 
