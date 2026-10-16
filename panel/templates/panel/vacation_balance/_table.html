@@ -1,77 +1,48 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/vacation_balance/_table.html #}
 {% comment %}
-H24 (S129). Tabla de saldos de vacaciones -- la devuelven la carga
-inicial, cada filtro/orden y cada acción masiva. Todo llega calculado
-desde la vista (hr_calendar.balance): aquí solo se pinta. La selección
-vive en el JS de _pane.html y sobrevive a cada repintado.
+H24 (S129). Tabla de Vacaciones, hecha sobre la de Personal: casilla,
+aviso y "Apellidos, Nombre" fijos a la izquierda (sticky-col), una
+fila por trabajador (_row.html) y móvil en tarjetas (stack-mobile).
+Todo llega calculado desde la vista; la selección vive en el JS de
+_pane.html y sobrevive a cada repintado.
 {% endcomment %}
 <div id="vbal-fragment-state" class="d-none"
      data-count="{{ rows|length }}"
-     data-filtered="{% if is_filtered %}1{% endif %}"
      data-sort-active="{% if sort_active %}1{% endif %}"
      data-sort="{{ current_sort }}"></div>
 <span id="vbal-sort-inputs" class="d-none">
     <input type="hidden" name="sort" value="{{ current_sort }}">
 </span>
-{% if rows %}
-<table class="table table-sm table-hover align-middle mb-0 stack-mobile" id="vbal-table">
+<table class="table table-hover table-light align-middle stack-mobile" id="vbal-table">
     <thead class="table-light">
         <tr>
-            <th class="vbal-check-col">
-                <input class="form-check-input" type="checkbox" id="vbal-check-all"
-                       title="Marcar/desmarcar todos los visibles">
-            </th>
+            <th class="sticky-col sticky-col-1"><input type="checkbox" class="form-check-input" id="vbal-check-all" title="Seleccionar todos los que cumplen el filtro actual"></th>
+            <th class="sticky-col sticky-col-2"></th>
             {% for column in sort_columns %}
-            <th{% if column.key != 'person' and column.key != 'section' %} class="text-end"{% endif %}>
-                <a class="text-decoration-none text-reset d-inline-flex align-items-center gap-1 user-select-none vbal-sort-link"
+            <th class="{% if column.key == 'person' %}sticky-col sticky-col-3 sticky-col-last{% elif column.key == 'taken' or column.key == 'pending' %}text-end{% endif %}">
+                <a href="#" class="text-decoration-none text-dark vbal-sort-link"
                    hx-get="{% url 'panel:vacation_balance_results' %}"
-                   hx-target="#vbal-table-container"
-                   hx-include="#vbal-filter-year, #vbal-filter-search, #vbal-filter-section, #vbal-filter-negative, #vbal-only-selected, #vbal-selected-ids"
-                   hx-trigger="click"
+                   hx-target="#vbal-results"
+                   hx-include="#vbal-filters"
                    hx-vals='{"sort": "{{ column.next }}"}'>
                     {{ column.label }}
-                    {% if column.arrow %}
-                        <i class="bi bi-arrow-{{ column.arrow }}-short"></i>{% if column.priority %}<sup class="small">{{ column.priority }}</sup>{% endif %}
-                    {% else %}
-                        <i class="bi bi-arrow-down-up text-muted opacity-50 small"></i>
-                    {% endif %}
+                    {% if column.arrow %}<i class="bi bi-chevron-{% if column.arrow == 'up' %}up{% else %}down{% endif %}"></i>{% if column.priority %}<sup>{{ column.priority }}</sup>{% endif %}{% endif %}
                 </a>
             </th>
+            {% if column.key == 'section' and can_manage %}
+            <th>Fecha de inicio</th>
+            <th>Fecha de fin</th>
+            <th></th>
+            {% endif %}
             {% endfor %}
+            <th>Año</th>
         </tr>
     </thead>
     <tbody>
         {% for row in rows %}
-        <tr class="vbal-row" data-pk="{{ row.person.pk }}">
-            <td class="stack-mobile-check">
-                <input class="form-check-input vbal-row-check" type="checkbox"
-                       data-pk="{{ row.person.pk }}" data-label="{{ row.label }}">
-            </td>
-            <td class="stack-mobile-title">
-                <a href="#" class="fw-semibold vbal-open-detail"
-                   hx-get="{% url 'panel:vacation_balance_detail' row.person.pk %}?year={{ filter_year }}"
-                   hx-target="#vbal-detail-container">{{ row.label }}</a>
-                {% if row.balance.warnings %}
-                <i class="bi bi-info-circle text-warning ms-1" title="{{ row.balance.warnings|join:' ' }}"></i>
-                {% endif %}
-            </td>
-            <td data-label="Sección">{{ row.balance.current_section_name|default:"—" }}</td>
-            <td class="text-end" data-label="Corresponden">{{ row.balance.entitled|floatformat:"-1" }}</td>
-            <td class="text-end" data-label="Ajustes">{% if row.balance.manual %}{{ row.balance.manual|floatformat:"-1" }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
-            <td class="text-end" data-label="Año anterior">
-                {% if row.balance.carryover %}{{ row.balance.carryover|floatformat:"-1" }}{% else %}<span class="text-muted">—</span>{% endif %}
-                {% if row.balance.carryover_lost %}<div class="small text-danger">{{ row.balance.carryover_lost|floatformat:"-1" }} perdidos</div>{% endif %}
-            </td>
-            <td class="text-end" data-label="Consumidos">{{ row.balance.taken|floatformat:"-1" }}</td>
-            <td class="text-end fw-semibold{% if row.balance.is_negative %} text-danger{% endif %}" data-label="Pendientes">
-                {% if row.balance.is_negative %}<i class="bi bi-exclamation-triangle-fill me-1" title="Saldo negativo"></i>{% endif %}{{ row.balance.pending|floatformat:"-1" }}
-            </td>
-        </tr>
+        {% include "panel/vacation_balance/_row.html" %}
+        {% empty %}
+        <tr><td colspan="11" class="text-muted small py-3">No se encontró personal.</td></tr>
         {% endfor %}
     </tbody>
 </table>
-{% else %}
-<div class="text-muted small py-3">
-    {% if is_filtered %}Ningún trabajador coincide con el filtro.{% else %}No hay trabajadores activos.{% endif %}
-</div>
-{% endif %}

@@ -6,8 +6,6 @@ ajustes e historial de secciones. Todo calculado en la vista
 (hr_calendar.balance); las acciones repintan este mismo fragmento con
 su mensaje y la tabla se refresca sola (HX-Trigger).
 {% endcomment %}
-<div class="d-none" hx-get="{% url 'panel:vacation_balance_detail' person.pk %}?year={{ year }}"
-     hx-target="#vbal-detail-container" hx-trigger="vacation-detail-refresh from:body"></div>
 <div class="d-flex align-items-baseline justify-content-between mb-1">
     <div class="fw-bold">{{ person_label }}</div>
     <div class="small text-muted">{{ person.dni }} · {{ year }}</div>

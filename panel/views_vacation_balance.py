@@ -70,7 +70,9 @@ from panel.navigation_persistence import (
 logger = logging.getLogger(__name__)
 
 SCREEN_KEY = "vacation_balance"
-FILTER_KEYS = ("search", "section", "year", "only_negative", "sort")
+# Mismos filtros que la pestaña Personal (Estado y Empresa, aquí como
+# listas separadas por comas para poder persistirlas) + sección y año.
+FILTER_KEYS = ("search", "active", "company", "section", "year", "sort")
 MANAGE_ROLES = {
     CompanyUser.ROLE_ADMIN,
     CompanyUser.ROLE_SUPERVISOR,
@@ -81,19 +83,15 @@ _MAX_SORT_KEYS = 4
 
 _SORT_VALUES = {
     "person": lambda r: r.sort_name,
+    "dni": lambda r: r.person.dni,
     "section": lambda r: r.balance.current_section_name.upper() or None,
-    "entitled": lambda r: r.balance.entitled,
-    "manual": lambda r: r.balance.manual,
-    "carryover": lambda r: r.balance.carryover,
     "taken": lambda r: r.balance.taken,
     "pending": lambda r: r.balance.pending,
 }
 _COLUMNS = (
-    ("person", "Trabajador"),
+    ("person", "Apellidos, Nombre"),
+    ("dni", "DNI"),
     ("section", "Sección"),
-    ("entitled", "Corresponden"),
-    ("manual", "Ajustes"),
-    ("carryover", "Año anterior"),
     ("taken", "Consumidos"),
     ("pending", "Pendientes"),
 )
@@ -110,18 +108,6 @@ def can_manage(request):
     SupervisorAccessMixin).
     """
     return request.user.company_user.role in MANAGE_ROLES
-
-
-def _people():
-    """
-    Workers listed in the tab: the active ones.
-    ---
-    Trabajadores del listado: los activos (mismo criterio que el alta
-    de vacaciones, S94).
-    """
-    return PersonIdentity.objects.select_related(
-        "company_user__base",
-    ).filter(is_active_employee=True)
 
 
 def _person_or_404(pk):
@@ -271,27 +257,79 @@ def _sort_rows(rows, sort_keys):
     return rows
 
 
+def _csv_param(request, key, default):
+    """
+    Comma-separated list filter; the default only when never sent.
+    ---
+    Filtro de lista separada por comas. Si nunca se ha enviado (primera
+    visita) vale el valor por defecto; si se envía vacío, vacío (como
+    en Personal: ninguna casilla marcada = ningún resultado).
+    """
+    if key in request.GET or ("_f_" + key) in request.POST:
+        raw = _param(request, key)
+        return [v for v in raw.split(",") if v]
+    return list(default)
+
+
+def _filtered_people(request):
+    """
+    Workers matching the filters of the Personal tab.
+    ---
+    Trabajadores que cumplen los filtros de la pestaña Personal
+    (Estado y Empresa con la misma lógica, _apply_personal_filters) y
+    la búsqueda por palabras de Personal (cada palabra en algún campo).
+    Por defecto: activos de todas las empresas.
+    """
+    from django.db.models import Q
+    from django.http import QueryDict
+
+    from panel.views_documentation_h30 import (
+        COMPANY_FILTER_CHOICES,
+        _apply_personal_filters,
+    )
+
+    active = _csv_param(request, "active", ["true"])
+    companies = _csv_param(
+        request, "company", [slug for slug, _l, _r in COMPANY_FILTER_CHOICES],
+    )
+    fake = QueryDict(mutable=True)
+    fake.setlist("active", active)
+    fake.setlist("company", companies)
+    proxy = type("FilterRequest", (), {"GET": fake})()
+    qs = _apply_personal_filters(
+        PersonIdentity.objects.select_related("company_user__base"), proxy,
+    )
+    search = _param(request, "search").strip()
+    for word in search.split():
+        qs = qs.filter(
+            Q(first_surname__icontains=word)
+            | Q(second_surname__icontains=word)
+            | Q(given_name__icontains=word) | Q(dni__icontains=word),
+        )
+    return list(qs), active, companies, search
+
+
 def _list_context(request):
     """
-    Context of the balance table: filtered, computed, sorted rows.
+    Context of the vacation table: filtered, computed, sorted rows.
     ---
-    Contexto de la tabla de saldos: filas filtradas, calculadas y
+    Contexto de la tabla de vacaciones: filas filtradas, calculadas y
     ordenadas.
     """
     company = request.user.company_user.company
     year = _year(_param(request, "year"))
-    search = _param(request, "search").strip()
     section = _param(request, "section")
-    only_negative = _param(request, "only_negative") == "1"
-    people = list(_people())
-    if search:
-        needle = search.upper()
-        people = [
-            p for p in people
-            if needle in " ".join((
-                p.dni, p.given_name, p.first_surname, p.second_surname,
-            )).upper()
+    if request.GET.get("only_selected") == "1":
+        wanted_ids = [
+            pk for pk in request.GET.get("selected_ids", "").split(",")
+            if pk.isdigit()
         ]
+        people = list(PersonIdentity.objects.select_related(
+            "company_user__base",
+        ).filter(pk__in=wanted_ids))
+        _all, active, companies, search = _filtered_people(request)
+    else:
+        people, active, companies, search = _filtered_people(request)
     calculator = BalanceCalculator(company, people)
     rows = [_Row(p, calculator.balance(p, year)) for p in people]
     if section == NO_SECTION:
@@ -304,23 +342,16 @@ def _list_context(request):
             pk=int(section), company=company,
         ).values_list("name", flat=True).first()
         rows = [r for r in rows if r.balance.current_section_name == wanted]
-    if only_negative:
-        rows = [r for r in rows if r.balance.is_negative]
-    if request.GET.get("only_selected") == "1":
-        wanted_ids = {
-            pk for pk in request.GET.get("selected_ids", "").split(",")
-            if pk.isdigit()
-        }
-        rows = [r for r in rows if str(r.person.pk) in wanted_ids]
     rows = _sort_rows(rows, _parse_sort(_param(request, "sort")))
     return {
         "rows": rows,
         "filter_year": year,
         "filter_search": search,
+        "filter_active": active,
+        "filter_company": companies,
         "filter_section": section,
-        "filter_only_negative": only_negative,
-        "is_filtered": bool(search or section or only_negative),
         "can_manage": can_manage(request),
+        "today": datetime.date.today(),
         **_sort_controls(_param(request, "sort")),
     }
 
@@ -365,6 +396,8 @@ class VacationBalanceTabView(CompanyUserRequiredMixin, View):
         saved_selection = get_saved_state_key(cu, SCREEN_KEY, "selection", [])
         if not isinstance(saved_selection, list):
             saved_selection = []
+        from panel.views_documentation_h30 import COMPANY_FILTER_CHOICES
+
         today = datetime.date.today()
         context = {
             **_list_context(request),
@@ -373,7 +406,7 @@ class VacationBalanceTabView(CompanyUserRequiredMixin, View):
             "sections": _sections(cu.company),
             "no_section": NO_SECTION,
             "years": range(today.year - 2, today.year + 2),
-            "today": today,
+            "company_filter_choices": COMPANY_FILTER_CHOICES,
         }
         return render(request, "panel/vacation_balance/_pane.html", context)
 
@@ -548,65 +581,68 @@ class VacationAdjustmentDeleteView(SupervisorAccessMixin, View):
 # ------------------------------------------------------------------
 # Periodos de vacaciones
 # ------------------------------------------------------------------
-class VacationPeriodBulkCreateView(SupervisorAccessMixin, View):
+class VacationRowRegisterView(SupervisorAccessMixin, View):
     """
-    POST: register the same vacation period for the marked workers.
+    POST: register a vacation period from a worker's row.
     ---
-    POST: da de alta el mismo periodo (fecha de inicio y de fin del
-    panel fijo, con medio día opcional) a los trabajadores marcados.
-    Cada alta es la de siempre (hr_calendar.services
-    .create_vacation_period, con su tarea fantasma si el trabajador
-    tiene cuenta de panel); si una falla, las demás siguen y el
-    mensaje dice cuáles no se registraron.
+    POST: da de alta un periodo con la fecha de inicio y la de fin
+    escritas en la fila del trabajador (con media jornada opcional) y
+    devuelve esa misma fila recalculada, con el resultado en la
+    cabecera (aviso flotante: ninguna acción en silencio). El alta es
+    la de siempre (hr_calendar.services.create_vacation_period, con su
+    tarea fantasma si el trabajador tiene cuenta de panel).
     """
 
-    def post(self, request):
+    def post(self, request, pk):
         from hr_calendar.services import create_vacation_period
 
         cu = request.user.company_user
+        person = _person_or_404(pk)
+        year = _year(request.POST.get("year"))
         date_start = _parse_date(request.POST.get("date_start"))
         date_end = _parse_date(request.POST.get("date_end"))
-        half_start = request.POST.get("half_day_start") == "1"
-        half_end = request.POST.get("half_day_end") == "1"
-        ids = [pk for pk in request.POST.getlist("selected") if pk.isdigit()]
-        people = list(PersonIdentity.objects.filter(pk__in=ids).order_by(
-            "first_surname", "second_surname", "given_name",
-        ))
-        if not people or date_start is None or date_end is None:
-            return _table_response(
-                request, "Marca al menos un trabajador e indica la fecha "
-                         "de inicio y la de fin.", error=True,
+        message, error = "", False
+        if date_start is None or date_end is None:
+            message, error = (
+                "Indica la fecha de inicio y la de fin.", True,
             )
-        created, failed = 0, []
-        for person in people:
+        else:
             try:
                 create_vacation_period(
                     person=person, company=cu.company, created_by=cu,
                     date_start=date_start, date_end=date_end,
-                    half_day_start=half_start, half_day_end=half_end,
+                    half_day_start=request.POST.get("half_day_start") == "1",
+                    half_day_end=request.POST.get("half_day_end") == "1",
                 )
-                created += 1
+                message = (
+                    f"Vacaciones de {_person_label(person)} registradas: "
+                    f"{date_start:%d/%m/%Y} a {date_end:%d/%m/%Y}."
+                )
             except ValueError as exc:
-                return _table_response(request, str(exc), error=True)
+                message, error = str(exc), True
             except Exception as exc:
                 logger.error(
                     "# [vacation_balance] Error registrando vacaciones "
                     "de person_pk=%s (%s a %s): %s",
                     person.pk, date_start, date_end, exc, exc_info=True,
                 )
-                failed.append(_person_label(person))
-        message = (
-            f"Vacaciones del {date_start:%d/%m/%Y} al {date_end:%d/%m/%Y} "
-            f"registradas a {created} trabajador(es)."
-        )
-        if failed:
-            message += (
-                " No se pudieron registrar a: " + "; ".join(failed)
-                + ". Falta configuración de la tarea automática (centro "
-                "de gasto PERSONAL o categoría Vacaciones); avisa al "
-                "administrador."
-            )
-        return _table_response(request, message, error=bool(failed))
+                message, error = (
+                    "No se han podido registrar: falta configuración de "
+                    "la tarea automática (centro de gasto PERSONAL o "
+                    "categoría Vacaciones). Avisa al administrador.",
+                    True,
+                )
+        calculator = BalanceCalculator(cu.company, [person])
+        response = render(request, "panel/vacation_balance/_row.html", {
+            "row": _Row(person, calculator.balance(person, year)),
+            "filter_year": year,
+            "can_manage": can_manage(request),
+            "today": datetime.date.today(),
+        })
+        response["X-Vacation-Message"] = quote(message)
+        if error:
+            response["X-Vacation-Error"] = "1"
+        return response
 
 
 def _period_or_404(request, pk):
