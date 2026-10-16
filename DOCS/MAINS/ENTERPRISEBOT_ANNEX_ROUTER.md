@@ -84,7 +84,7 @@ S127 (01-16/10/2026): WhatsApp en texto libre dentro de la ventana de
 EMPRESA en el H28, auditoría de documentos ausentes con OCR completo,
 documentos esenciales escondidos en dossiers rescatados (y regla S041
 sustituida) y cotejo exacto de archivos de otra persona. Se pausa
-porque las pruebas de su hoja de ruta esperan a que Miguel Ángel cotele
+porque las pruebas de su hoja de ruta esperan a que Miguel Ángel coteje
 con Yolanda los avisos de falta de documentación. Ver "COMPLETADAS EN
 S127" y "Al retomar H30" en su anexo.
 
