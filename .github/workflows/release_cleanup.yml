@@ -1,0 +1,53 @@
+# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/.github/workflows/release_cleanup.yml
+name: Vaciar la release relevo-imagenes (cierre de sesión)
+
+# H24 (S127). Paso 7bis de nfs-enterprisebot-pcs: las páginas que deja
+# file_fetch.yml (modo gcs_image) como adjuntos de la release privada
+# relevo-imagenes -- documentos reales de personas -- se borran al
+# cerrar cada sesión. Desde S127 la API devuelve 403 ("Creating,
+# editing, or deleting releases is not permitted for this session
+# type") al token de sesión del modelo, así que el borrado lo hace este
+# workflow con el GITHUB_TOKEN del propio repositorio. Lo dispara el
+# modelo (workflow_dispatch), igual que db_query.yml.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: enterprisebot-release-cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Borrar todos los adjuntos de relevo-imagenes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          RELEASE_ID=$(gh api "repos/$REPO/releases/tags/relevo-imagenes" --jq '.id')
+          TOTAL=0
+          while true; do
+            IDS=$(gh api "repos/$REPO/releases/$RELEASE_ID/assets?per_page=100" --jq '.[].id')
+            if [ -z "$IDS" ]; then
+              break
+            fi
+            for ASSET_ID in $IDS; do
+              gh api -X DELETE "repos/$REPO/releases/assets/$ASSET_ID"
+              TOTAL=$((TOTAL + 1))
+              if [ $((TOTAL % 100)) -eq 0 ]; then
+                echo "[$(date +%H:%M:%S)] Borrados: $TOTAL"
+              fi
+            done
+          done
+          LEFT=$(gh api "repos/$REPO/releases/$RELEASE_ID/assets?per_page=100" --jq 'length')
+          echo "Adjuntos borrados: $TOTAL. Quedan: $LEFT."
+          echo "Adjuntos borrados: $TOTAL. Quedan: $LEFT." >> "$GITHUB_STEP_SUMMARY"
+          if [ "$LEFT" != "0" ]; then
+            exit 1
+          fi
