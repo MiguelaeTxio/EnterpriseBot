@@ -2706,20 +2706,9 @@ class PersonalDossierTemplate(models.Model):
         related_name="created_dossier_templates",
         verbose_name="Creada por",
     )
-    is_active = models.BooleanField(
-        default=False,
-        verbose_name="Plantilla activa",
-        help_text=(
-            "S106. Marca cuál es la plantilla que el supervisor tiene "
-            "seleccionada ahora mismo para previsualizar y usar, "
-            "dentro del gestor de plantillas -- Miguel Ángel, "
-            "verbatim: 'no hay forma de decir: esta plantilla es la "
-            "que quiero usar y voy a previsualizar'. Solo una activa "
-            "por empresa a la vez -- "
-            "PersonalDossierTemplateSetActiveView desmarca las demás "
-            "de la misma empresa al marcar una nueva."
-        ),
-    )
+    # S128: `is_active` ("Plantilla activa", S106) retirado a petición
+    # de Miguel Ángel -- en el gestor se pulsa la plantilla y se carga,
+    # sin marcarla. Migración 0185_remove_dossiertemplate_is_active_s128.
     created_at = models.DateTimeField(
         auto_now_add=True,
         verbose_name="Fecha de creación",
@@ -2907,6 +2896,16 @@ class JobPosition(models.Model):
             "exige este requisito. Cada una se comprueba contra la "
             "matriz del carné vigente del sujeto: si no la tiene, "
             "falta; si su fecha ya pasó, caducada."
+        ),
+    )
+    is_active = models.BooleanField(
+        default=True,
+        verbose_name="Activo",
+        help_text=(
+            "H30 (S128). Un requisito desactivado no genera avisos "
+            "(ni de falta ni de caducidad, ni en el panel ni por "
+            "WhatsApp), pero sigue asignado a quien lo tenga. Se "
+            "activa y desactiva desde el gestor de Requisitos."
         ),
     )
     created_by = models.ForeignKey(

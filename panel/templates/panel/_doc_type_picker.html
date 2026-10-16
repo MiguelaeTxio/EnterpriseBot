@@ -1,0 +1,162 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/_doc_type_picker.html #}
+{% comment %}
+H30 (S128). Gestor común de "Requisitos de documentación" y "Dosieres"
+-- un solo diseño para las dos pantallas, que Miguel Ángel pidió unificar
+("son muy parecidas [...] tenemos que unificar el criterio [...] me
+gusta más cómo está funcionando la de los avisos").
+
+Funcionamiento (Miguel Ángel, S128): se pulsa una fila de la lista y sus
+documentos salen marcados en la lista grande y en el visor; se marca o
+desmarca al vuelo y se guarda; con otro nombre se crea uno nuevo sin
+tocar el original. Sin "Marcar como activa". Casilla por fila, "todos",
+eliminar varios con cuenta atrás de 5 s y, en requisitos,
+activar/desactivar (hoja de ruta S128, punto 1). Pantalla fija con
+scroll solo en las tres listas (directriz 4.24).
+
+Todo cuelga de la raíz con atributos `data-tp-*`, sin ids repetibles:
+antes las dos pantallas compartían ids y variables globales en el mismo
+hub y la segunda en cargarse no ejecutaba su JavaScript (S128). El
+comportamiento vive en `panel/static/panel/js/doc_type_picker.js`,
+cargado una vez por hub.html.
+
+Contexto: `picker` (ver `_build_type_picker_context` en
+panel/views_documentation_h30.py).
+{% endcomment %}
+<div class="tp-root" id="{{ picker.dom_id }}" data-tp-root
+     data-tp-create-url="{{ picker.create_url }}"
+     data-tp-update-url="{{ picker.update_url }}"
+     data-tp-delete-url="{{ picker.delete_url }}"
+     data-tp-active-url="{{ picker.active_url }}"
+     data-tp-scope="{{ picker.scope }}"
+     data-tp-nav-key="{{ picker.nav_key }}"
+     data-tp-initial-pk="{{ picker.initial_pk|default_if_none:'' }}"
+     data-tp-item-kinds="{{ picker.item_kinds }}"
+     data-tp-field-type="document_type_ids"
+     data-tp-field-epi="epi_item_ids"
+     data-tp-field-category="driving_category_ids"
+     data-tp-require-name="{% if picker.require_name %}1{% else %}0{% endif %}"
+     data-tp-require-items="{% if picker.require_items %}1{% else %}0{% endif %}"
+     data-tp-noun-new="{{ picker.noun_new }}"
+     data-tp-saved-event="{{ picker.saved_event }}"
+     data-tp-deleted-event="{{ picker.deleted_event }}">
+
+    <div class="tp-head">
+        <p class="text-muted small mb-2">{{ picker.help_text }}</p>
+        <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+            <div class="input-group input-group-sm tp-name-group">
+                <span class="input-group-text">Nombre</span>
+                <input type="text" class="form-control" data-tp="name" placeholder="{{ picker.name_placeholder }}">
+                <button type="button" class="btn btn-primary" data-tp-action="save">Guardar</button>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-tp-action="new">{{ picker.noun_new }}</button>
+            <span class="vr d-none d-lg-inline-block"></span>
+            <span class="small text-muted">Seleccionados: <strong data-tp="selection-count">0</strong></span>
+            {% if picker.can_toggle_active %}
+            <button type="button" class="btn btn-sm btn-outline-success" data-tp-action="activate" data-tp-needs-selection disabled>Activar</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-tp-action="deactivate" data-tp-needs-selection disabled>Desactivar</button>
+            {% endif %}
+            <button type="button" class="btn btn-sm btn-outline-danger" data-tp-action="delete" data-tp-needs-selection disabled>Eliminar</button>
+        </div>
+        <div class="small text-danger mb-1" data-tp="result" role="alert"></div>
+    </div>
+
+    <div class="tp-body">
+        <div class="card tp-col">
+            <div class="card-header py-1 small fw-bold">{{ picker.list_title }}</div>
+            <div class="tp-scroll">
+                <table class="table table-sm table-hover mb-0 tp-table">
+                    <thead>
+                        <tr>
+                            <th class="tp-check-col"><input class="form-check-input" type="checkbox" data-tp="select-all" aria-label="Seleccionar todos"></th>
+                            <th>Nombre</th>
+                            <th class="text-end">Docs</th>
+                            {% if picker.can_toggle_active %}<th>Estado</th>{% endif %}
+                        </tr>
+                    </thead>
+                    <tbody data-tp="rows">
+                        {% for row in picker.rows %}
+                        <tr data-pk="{{ row.pk }}" data-name="{{ row.name }}" data-active="{% if row.active %}1{% else %}0{% endif %}"
+                            data-idstype="{{ row.type_ids }}" data-idsepi="{{ row.epi_ids }}" data-idscategory="{{ row.category_ids }}">
+                            <td class="tp-check-col"><input class="form-check-input" type="checkbox" data-tp="row-check" value="{{ row.pk }}" aria-label="Seleccionar {{ row.name }}"></td>
+                            <td class="tp-row-main">
+                                <div class="fw-semibold" data-tp="row-name">{{ row.name }}</div>
+                                <div class="small text-muted tp-ellipsis" data-tp="row-summary"></div>
+                            </td>
+                            <td class="text-end" data-tp="row-count"></td>
+                            {% if picker.can_toggle_active %}<td><span data-tp="row-state"></span></td>{% endif %}
+                        </tr>
+                        {% empty %}
+                        <tr data-tp="empty-row"><td colspan="4" class="text-muted small py-3">{{ picker.empty_text }}</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="card tp-col">
+            <div class="card-header py-1 small fw-bold">Documentos (marca o desmarca al vuelo)</div>
+            <div class="tp-scroll p-2">
+                {% for section in picker.sections %}
+                <div class="mb-2 p-2 rounded{% if not section.color %} border{% endif %}"{% if section.color %} data-tp-bg="{{ section.color }}"{% endif %}>
+                    <div class="fw-bold small mb-1">{{ section.title }}</div>
+                    {% if section.note %}<div class="alert alert-warning py-1 px-2 small mb-2">{{ section.note }}</div>{% endif %}
+                    <div class="{% if section.inline %}d-flex flex-wrap gap-3{% else %}tp-columns{% endif %}">
+                        {% for item in section.items %}
+                        <label class="form-check tp-item small"{% if item.title %} title="{{ item.title }}"{% endif %}>
+                            <input class="form-check-input" type="checkbox" data-tp-item="{{ section.kind }}" value="{{ item.pk }}" data-tp-label="{{ item.label }}">
+                            <span class="form-check-label">{{ item.text }}</span>
+                        </label>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="card tp-col">
+            <div class="card-header py-1 small fw-bold d-flex justify-content-between">
+                <span data-tp="title">{{ picker.noun_new }}</span>
+                <span class="badge bg-secondary" data-tp="preview-count">0</span>
+            </div>
+            <div class="tp-scroll p-2">
+                <ul class="mb-0 small" data-tp="preview-list"></ul>
+            </div>
+        </div>
+    </div>
+
+    <template data-tp="row-template">
+        <tr data-pk="" data-name="" data-active="1" data-idstype="" data-idsepi="" data-idscategory="">
+            <td class="tp-check-col"><input class="form-check-input" type="checkbox" data-tp="row-check" value="" aria-label="Seleccionar"></td>
+            <td class="tp-row-main">
+                <div class="fw-semibold" data-tp="row-name"></div>
+                <div class="small text-muted tp-ellipsis" data-tp="row-summary"></div>
+            </td>
+            <td class="text-end" data-tp="row-count"></td>
+            {% if picker.can_toggle_active %}<td><span data-tp="row-state"></span></td>{% endif %}
+        </tr>
+    </template>
+    <template data-tp="empty-template">
+        <tr data-tp="empty-row"><td colspan="4" class="text-muted small py-3">{{ picker.empty_text }}</td></tr>
+    </template>
+
+    <div class="modal fade" tabindex="-1" data-tp="delete-modal" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Eliminar</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-1">Se van a eliminar:</p>
+                    <ul class="small mb-2" data-tp="delete-list"></ul>
+                    <p class="small text-muted mb-0">{{ picker.delete_note }}</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-danger" data-tp="delete-confirm" disabled>Eliminar <span data-tp="delete-countdown"></span></button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<script>window.EbTypePicker.init(document.getElementById('{{ picker.dom_id }}'));</script>

@@ -317,6 +317,8 @@ def compute_notices(domain):
         subjects = list(
             PersonIdentity.objects.filter(
                 is_active_employee=True, job_position__isnull=False,
+                # S128: requisito desactivado, sin avisos.
+                job_position__is_active=True,
             ).select_related("job_position"),
         )
         requirement_of = {s.pk: s.job_position for s in subjects}
@@ -325,6 +327,7 @@ def compute_notices(domain):
         subjects = list(
             MachineAsset.objects.filter(
                 is_active=True, document_requirement__isnull=False,
+                document_requirement__is_active=True,
             ).select_related("document_requirement"),
         )
         requirement_of = {s.pk: s.document_requirement for s in subjects}

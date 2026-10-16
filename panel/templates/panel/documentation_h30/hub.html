@@ -1,10 +1,17 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation_h30/hub.html #}
 {% extends "panel/base.html" %}
+{% load static %}
 
 {% block title %}Documentación{% endblock %}
 {% block page_title %}Documentación{% endblock %}
 
 {% block extra_head %}
+{% comment %}
+H30 (S128). Gestor común de Requisitos y Dosieres, cargado una sola vez
+aquí: los fragmentos de esas pestañas solo llaman a
+EbTypePicker.init() (ver panel/_doc_type_picker.html).
+{% endcomment %}
+<script src="{% static 'panel/js/doc_type_picker.js' %}"></script>
 <style>
     .doc-h30-search { max-width: 400px; }
     .doc-h30-toast { z-index: 1080; }

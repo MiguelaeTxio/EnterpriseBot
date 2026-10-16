@@ -1341,39 +1341,106 @@ table.table #toll-thead ~ tbody tr:nth-child(even):not(.table-secondary) td {
 }
 
 /* ------------------------------------------------------------------
-   H30 (S122) -- Gestor de Requisitos de documentación: estilos
-   sacados de la plantilla (antes inline, avisos H021 de djlint --
-   directriz 4.9).
+   H30 (S128) -- Gestor común de Requisitos de documentación y
+   Dosieres (panel/_doc_type_picker.html + js/doc_type_picker.js).
+   Directriz 4.24: cabecera fija y tres listas con scroll propio. La
+   altura de .tp-root la fija el JS en pantallas grandes; en móvil las
+   columnas se apilan y cada lista tiene su propia altura máxima.
+   Sustituye a las clases .jp-* de S122.
    ------------------------------------------------------------------ */
-.jp-types-scroll {
-    max-height: 55vh;
-    overflow-y: auto;
-    border: 1px solid #dee2e6;
-    border-radius: 0.25rem;
-    padding: 0.5rem;
+.tp-root {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    padding: 0.75rem 1rem 0;
 }
 
-.jp-type-columns {
-    columns: 3;
+.tp-head {
+    flex: 0 0 auto;
+}
+
+.tp-name-group {
+    max-width: 32rem;
+}
+
+.tp-body {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+    padding-bottom: 0.75rem;
+}
+
+.tp-col {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.tp-scroll {
+    max-height: 50vh;
+    overflow: auto;
+}
+
+.tp-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background-color: #f8f9fa;
+}
+
+.tp-table tbody tr {
+    cursor: pointer;
+}
+
+.tp-check-col {
+    width: 2rem;
+}
+
+.tp-row-main {
+    max-width: 0;
+}
+
+.tp-ellipsis {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.tp-columns {
+    columns: 1;
     column-gap: 1.5rem;
 }
 
-.jp-type-item {
+.tp-item {
     break-inside: avoid;
+    display: block;
+    cursor: pointer;
 }
 
-.jp-preview-card {
-    position: sticky;
-    top: 1rem;
+@media (min-width: 576px) {
+    .tp-columns {
+        columns: 2;
+    }
 }
 
-.jp-preview-body {
-    max-height: 420px;
-    overflow-y: auto;
+@media (min-width: 992px) {
+    .tp-body {
+        flex: 1 1 auto;
+        min-height: 0;
+        grid-template-columns: minmax(15rem, 1fr) minmax(0, 2fr) minmax(13rem, 1fr);
+    }
+
+    .tp-scroll {
+        flex: 1 1 auto;
+        min-height: 0;
+        max-height: none;
+    }
 }
 
-.jp-toast-container {
-    z-index: 1080;
+@media (min-width: 1400px) {
+    .tp-columns {
+        columns: 3;
+    }
 }
 
 /* ------------------------------------------------------------------

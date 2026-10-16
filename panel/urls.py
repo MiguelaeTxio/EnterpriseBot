@@ -99,17 +99,17 @@ from panel.views_documentation_h30 import (
     MachineDocumentTypeHistoryView,
     MachineSetAvatarView,
     PersonalDossierEmailSendView,
+    DossierTemplateBulkDeleteView,
     DossierTemplateManageView,
     DossierTemplateMissingCheckView,
     DossierTemplateSaveView,
-    JobPositionDeleteView,
+    JobPositionBulkActiveView,
+    JobPositionBulkDeleteView,
     JobPositionManageView,
     JobPositionSaveView,
     PersonalDossierMassGenerateView,
     PersonalDossierTemplateApplyView,
-    PersonalDossierTemplateDeleteView,
     PersonalDossierTemplateListView,
-    PersonalDossierTemplateSetActiveView,
     PersonalEpiItemHistoryView,
     PersonalCreateView,
     PersonalTerminateView,
@@ -533,9 +533,8 @@ urlpatterns = [
     # H31 (S103): aplicar una plantilla de empresa sobre esta persona -- resuelve el vigente de cada tipo + la selección actual, descarga en el formato guardado.
     path("documentacion/personal/<int:pk>/plantillas/<int:template_pk>/aplicar/", PersonalDossierTemplateApplyView.as_view(), name="documentation_personal_dossier_template_apply"),
     # (S106: duplicar quedó sin propósito al dejar de existir un formato por plantilla -- eliminado con PersonalDossierTemplateDuplicateView)
-    # H31 (S103): borrar una plantilla de dossier.
-    path("documentacion/personal/plantillas/<int:template_pk>/eliminar/", PersonalDossierTemplateDeleteView.as_view(), name="documentation_personal_dossier_template_delete"),
-    path("documentacion/plantillas-dosier/<int:template_pk>/activar/", PersonalDossierTemplateSetActiveView.as_view(), name="dossier_template_set_active"),
+    # H30 (S128): borrar varias plantillas de dosier (modal con cuenta atrás); "Marcar como activa" retirada.
+    path("documentacion/plantillas-dosier/eliminar/", DossierTemplateBulkDeleteView.as_view(), name="dossier_templates_bulk_delete"),
     # H35 (S105): página completa de gestión de plantillas -- crear/editar, todos los tipos agrupados por familia y coloreados.
     path("documentacion/plantillas-dosier/", DossierTemplateManageView.as_view(), name="dossier_templates_manage"),
     path("documentacion/plantillas-dosier/guardar/", DossierTemplateSaveView.as_view(), name="dossier_template_create"),
@@ -561,7 +560,9 @@ urlpatterns = [
     path("documentacion/avisos/pedir-al-trabajador/", DocumentRequestCreateView.as_view(), name="document_request_create"),
     path("documentacion/puestos/guardar/", JobPositionSaveView.as_view(), name="job_position_create"),
     path("documentacion/puestos/<int:position_pk>/guardar/", JobPositionSaveView.as_view(), name="job_position_update"),
-    path("documentacion/puestos/<int:position_pk>/eliminar/", JobPositionDeleteView.as_view(), name="job_position_delete"),
+    # H30 (S128), punto 1: borrar varios requisitos (cuenta atrás) y activar/desactivar.
+    path("documentacion/puestos/eliminar/", JobPositionBulkDeleteView.as_view(), name="job_positions_bulk_delete"),
+    path("documentacion/puestos/activar/", JobPositionBulkActiveView.as_view(), name="job_positions_bulk_active"),
     # H30 (S119): gestión de requisitos de documentación de máquina -- misma mecánica, filtro de tipos MACHINE/BOTH.
     # H35 (S105): generar dosieres para varios trabajadores seleccionados a la vez, a partir de una plantilla -- descarga o envío por correo.
     path("documentacion/personal/dosieres-masivo/", PersonalDossierMassGenerateView.as_view(), name="documentation_personal_dossier_mass_generate"),

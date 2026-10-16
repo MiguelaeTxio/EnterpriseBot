@@ -1072,10 +1072,12 @@ class DocumentNoticesView(CompanyUserRequiredMixin, View):
         if domain == notices.DOMAIN_PERSONAL:
             has_subjects = PersonIdentity.objects.filter(
                 is_active_employee=True, job_position__isnull=False,
+                job_position__is_active=True,
             ).exists()
         else:
             has_subjects = MachineAsset.objects.filter(
                 is_active=True, document_requirement__isnull=False,
+                document_requirement__is_active=True,
             ).exists()
 
         can_request_docs = (

@@ -87,12 +87,18 @@ def get_requirement(subject):
     ---
     H30 (S120). Requisito asignado al sujeto
     (`PersonIdentity.job_position` o `MachineAsset.
-    document_requirement`), o None.
+    document_requirement`), o None. S128: None también si el requisito
+    está desactivado (`JobPosition.is_active`).
     """
-    return (
+    requirement = (
         getattr(subject, "job_position", None)
         or getattr(subject, "document_requirement", None)
     )
+    # S128: un requisito desactivado no genera avisos -- para todo lo
+    # que pasa por este servicio es como no tener requisito.
+    if requirement is not None and not requirement.is_active:
+        return None
+    return requirement
 
 
 def latest_driving_card(cards, card_ids_with_grants=frozenset()):

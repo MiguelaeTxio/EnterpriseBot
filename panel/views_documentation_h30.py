@@ -338,8 +338,10 @@ def _attach_required_document_alerts(
     if not objects_by_requirement:
         return objects
 
+    # S128: un requisito desactivado no genera avisos -- sus sujetos
+    # quedan sin tipos exigidos (los `.get(..., [])` de abajo).
     requirements = list(JobPosition.objects.filter(
-        pk__in=objects_by_requirement.keys(),
+        pk__in=objects_by_requirement.keys(), is_active=True,
     ).prefetch_related(
         "required_document_types", "required_driving_categories",
     ))
@@ -2970,9 +2972,8 @@ class DossierTemplateManageView(CompanyUserRequiredMixin, View):
             scope=scope,
         ).prefetch_related(
             "document_types", "epi_items",
-        ).order_by("created_at")
+        ).order_by("name")
 
-        types_by_family = {}
         doc_types = DocumentTypeCatalog.objects.filter(
             is_active=True,
             domain__in=(
@@ -2980,42 +2981,159 @@ class DossierTemplateManageView(CompanyUserRequiredMixin, View):
                 else ["PERSONAL", "BOTH"]
             ),
         ).order_by("family", "label")
-        for dt in doc_types:
-            family_code = dt.family or ""
-            group = types_by_family.setdefault(family_code, {
-                # S125: con ámbito Personal, Circulación es Conducción.
-                "label": DocumentTypeCatalog.family_label(
-                    family_code, for_person=not is_machine_scope,
-                ),
-                "color": _DOSSIER_FAMILY_COLORS.get(family_code, "#f5f5f5"),
-                "types": [],
-            })
-            group["types"].append(dt)
-        # Orden estable: el mismo de FAMILY_CHOICES, "Sin familia" al final.
-        ordered_families = [
-            types_by_family[code]
-            for code, _ in DocumentTypeCatalog.FAMILY_CHOICES
-            if code in types_by_family
-        ]
-        if "" in types_by_family:
-            ordered_families.append(types_by_family[""])
-
-        return render(request, "panel/dossier_templates_h35/manage.html", {
-            "templates": templates,
-            "families": ordered_families,
-            "scope": scope,
-            "is_machine_scope": is_machine_scope,
-            # H31/H36 (S109): catálogo de EPIs para la sección propia
-            # de la plantilla -- mismo criterio de "todos los activos,
-            # agrupados", pero por familia de EpiItemCatalog (distinta
-            # de la de DocumentTypeCatalog, nunca mezclarlas).
-            # S119: los EPIs son solo de Personal.
-            "epi_items": [] if is_machine_scope else (
-                EpiItemCatalog.objects.filter(
-                    is_active=True,
-                ).order_by("family", "label")
+        # S125: con ámbito Personal, Circulación es Conducción.
+        sections = _type_family_sections(
+            doc_types,
+            lambda code: DocumentTypeCatalog.family_label(
+                code, for_person=not is_machine_scope,
             ),
+        )
+        # H31/H36 (S109): EPIs como sección propia (entregas reales,
+        # familia de EpiItemCatalog, nunca mezclada con la de tipos).
+        # S119: los EPIs son solo de Personal.
+        item_kinds = "type"
+        if not is_machine_scope:
+            epi_items = EpiItemCatalog.objects.filter(
+                is_active=True,
+            ).order_by("family", "label")
+            epi_groups = {}
+            for epi in epi_items:
+                epi_groups.setdefault(epi.family, []).append(epi)
+            for family, items in epi_groups.items():
+                sections.append({
+                    "title": "EPIs -- %s" % family,
+                    "color": "",
+                    "kind": "epi",
+                    "inline": False,
+                    "note": (
+                        "Entregas reales registradas en el panel, sin "
+                        "bloque de firma todavía (pendiente de un "
+                        "proveedor de firma eIDAS)."
+                    ),
+                    "items": [
+                        {"pk": epi.pk, "label": "EPI: %s" % epi.label,
+                         "text": epi.label, "title": ""}
+                        for epi in items
+                    ],
+                })
+            item_kinds = "type,epi"
+
+        rows = [
+            {
+                "pk": template.pk,
+                "name": template.name,
+                "active": True,
+                "type_ids": _joined_pks(template.document_types.all()),
+                "epi_ids": _joined_pks(template.epi_items.all()),
+                "category_ids": "",
+            }
+            for template in templates
+        ]
+        nav_key = "dossier_templates_%s" % scope
+        picker = {
+            "dom_id": "tp-dosieres",
+            "create_url": reverse("panel:dossier_template_create"),
+            "update_url": reverse(
+                "panel:dossier_template_update", args=[0],
+            ).replace("/0/", "/{pk}/"),
+            "delete_url": reverse("panel:dossier_templates_bulk_delete"),
+            "active_url": "",
+            "scope": scope,
+            "nav_key": nav_key,
+            "initial_pk": _picker_initial_pk(request, nav_key),
+            "item_kinds": item_kinds,
+            "require_name": False,
+            "require_items": True,
+            "can_toggle_active": False,
+            "noun_new": "Nueva plantilla",
+            "name_placeholder": "Dossier N (automático si se deja en blanco)",
+            "list_title": "Plantillas de dosier",
+            "empty_text": "Sin plantillas guardadas todavía.",
+            "help_text": (
+                "Pulsa una plantilla para ver y editar sus documentos. "
+                "Guarda con el mismo nombre para editarla; con otro "
+                "nombre se crea una nueva y la original no se toca. Al "
+                "aplicarla a un trabajador siempre se usa el documento "
+                "vigente de cada tipo, y el formato (PDF o ZIP) se "
+                "pregunta en ese momento."
+            ),
+            "delete_note": (
+                "Solo se borra la plantilla, nunca los documentos."
+            ),
+            "saved_event": "",
+            "deleted_event": "",
+            "rows": rows,
+            "sections": sections,
+        }
+        return render(request, "panel/dossier_templates_h35/manage.html", {
+            "picker": picker,
+            "is_machine_scope": is_machine_scope,
         })
+
+
+def _joined_pks(objects):
+    """
+    Comma-separated pks, for the picker's data- attributes.
+    ---
+    Pks separados por comas, para los atributos data- del gestor común
+    (panel/_doc_type_picker.html, S128).
+    """
+    return ",".join(str(obj.pk) for obj in objects)
+
+
+def _type_family_sections(doc_types, label_for):
+    """
+    Group catalog types by family, in FAMILY_CHOICES order, as picker
+    sections ("Sin familia" last).
+    ---
+    H30 (S128). Agrupa los tipos del catálogo por familia, en el orden
+    de FAMILY_CHOICES ("Sin familia" al final), con el color de cada
+    familia -- secciones del gestor común de Requisitos y Dosieres.
+    `label_for(code)` da el rótulo de la familia (cada pantalla tiene
+    el suyo, ver S125).
+    """
+    by_family = {}
+    for dt in doc_types:
+        by_family.setdefault(dt.family or "", []).append(dt)
+    known = [code for code, _ in DocumentTypeCatalog.FAMILY_CHOICES]
+    codes = [code for code in known if code in by_family]
+    # Una familia fuera de FAMILY_CHOICES nunca esconde sus tipos.
+    codes += sorted(
+        code for code in by_family if code and code not in known
+    )
+    if "" in by_family:
+        codes.append("")
+    return [
+        {
+            "title": label_for(code) if code else "Sin familia",
+            "color": _DOSSIER_FAMILY_COLORS.get(code, "#f5f5f5"),
+            "kind": "type",
+            "inline": False,
+            "note": "",
+            "items": [
+                {"pk": dt.pk, "label": dt.label, "text": dt.label,
+                 "title": ""}
+                for dt in by_family[code]
+            ],
+        }
+        for code in codes
+    ]
+
+
+def _picker_initial_pk(request, nav_key):
+    """
+    Last row the user loaded in this picker, from PanelNavigationState.
+    ---
+    H30 (S128). Última fila cargada por este usuario en el gestor
+    (directriz 4.15): al volver a la pestaña sigue en la misma
+    plantilla o requisito. La guarda el propio JS en `loaded_pk`.
+    """
+    nav_state = PanelNavigationState.objects.filter(
+        company_user=request.user.company_user, screen_key=nav_key,
+    ).first()
+    if nav_state is None or not isinstance(nav_state.state, dict):
+        return None
+    return nav_state.state.get("loaded_pk")
 
 
 class DossierTemplateSaveView(CompanyUserRequiredMixin, View):
@@ -3137,34 +3255,24 @@ class PersonalDossierTemplateApplyView(CompanyUserRequiredMixin, View):
         )
 
 
-class PersonalDossierTemplateDeleteView(CompanyUserRequiredMixin, View):
-    """H31 (S103). POST: borra una plantilla de dossier (sin papelera -- es solo metadato de configuración, no un documento real)."""
-
-    def post(self, request, template_pk):
-        template = get_object_or_404(PersonalDossierTemplate, pk=template_pk)
-        template.delete()
-        return JsonResponse({"ok": True})
-
-
-class PersonalDossierTemplateSetActiveView(CompanyUserRequiredMixin, View):
+class DossierTemplateBulkDeleteView(CompanyUserRequiredMixin, View):
     """
-    S106. POST: marca UNA plantilla de dosier como "activa" (la que
-    el supervisor tiene seleccionada para previsualizar/usar ahora
-    mismo dentro del gestor) -- solo una activa por empresa a la vez,
-    desmarca las demás. Ver `PersonalDossierTemplate.is_active`.
+    H30 (S128). POST `ids`: borra varias plantillas de dosier de la
+    empresa (sin papelera -- es configuración, nunca un documento), tras
+    el modal con cuenta atrás del gestor común. Sustituye al borrado de
+    una en una (`PersonalDossierTemplateDeleteView`, que además no
+    comprobaba la empresa) y a "Marcar como activa"
+    (`PersonalDossierTemplateSetActiveView`), retirada a petición de
+    Miguel Ángel.
     """
 
-    def post(self, request, template_pk):
+    def post(self, request):
         company = request.user.company_user.company
-        template = get_object_or_404(
-            PersonalDossierTemplate, pk=template_pk, company=company,
-        )
-        company.dossier_templates.filter(scope=template.scope).exclude(
-            pk=template.pk,
-        ).update(is_active=False)
-        template.is_active = True
-        template.save(update_fields=["is_active"])
-        return JsonResponse({"ok": True})
+        ids = [i for i in request.POST.getlist("ids") if i.isdigit()]
+        deleted, _detail = company.dossier_templates.filter(
+            pk__in=ids,
+        ).delete()
+        return JsonResponse({"ok": True, "count": len(ids) if deleted else 0})
 
 
 # ---------------------------------------------------------------------------
@@ -3412,35 +3520,84 @@ class JobPositionManageView(CompanyUserRequiredMixin, View):
             "required_document_types", "required_driving_categories",
         ).order_by("name")
 
-        types_by_family = {}
         # S119: catálogo completo, sin filtro de dominio (ver
         # docstring de la clase).
         doc_types = DocumentTypeCatalog.objects.filter(
             is_active=True,
         ).order_by("family", "label")
         family_labels = dict(DocumentTypeCatalog.FAMILY_CHOICES)
-        for dt in doc_types:
-            family_code = dt.family or ""
-            group = types_by_family.setdefault(family_code, {
-                "label": family_labels.get(family_code, "Sin familia"),
-                "color": _DOSSIER_FAMILY_COLORS.get(family_code, "#f5f5f5"),
-                "types": [],
-            })
-            group["types"].append(dt)
-        ordered_families = [
-            types_by_family[code]
-            for code, _ in DocumentTypeCatalog.FAMILY_CHOICES
-            if code in types_by_family
-        ]
-        if "" in types_by_family:
-            ordered_families.append(types_by_family[""])
+        # H30 (S120). Clases concretas del permiso de conducción --
+        # Miguel Ángel: "esto en realidad es una matriz". Con alguna
+        # clase marcada, "Carnet de conducir" (si también se marca)
+        # solo avisa si falta el carné, nunca por caducidad.
+        sections = [{
+            "title": "Permiso de conducción -- clases exigidas",
+            "color": "",
+            "kind": "category",
+            "inline": True,
+            "note": "",
+            "items": [
+                {"pk": cat.pk, "label": "Permiso %s" % cat.code,
+                 "text": cat.code, "title": cat.label}
+                for cat in DrivingLicenceCategory.objects.all()
+            ],
+        }] + _type_family_sections(
+            doc_types, lambda code: family_labels.get(code, "Sin familia"),
+        )
 
+        rows = [
+            {
+                "pk": position.pk,
+                "name": position.name,
+                "active": position.is_active,
+                "type_ids": _joined_pks(
+                    position.required_document_types.all(),
+                ),
+                "epi_ids": "",
+                "category_ids": _joined_pks(
+                    position.required_driving_categories.all(),
+                ),
+            }
+            for position in positions
+        ]
+        nav_key = "job_positions_manager"
+        picker = {
+            "dom_id": "tp-requisitos",
+            "create_url": reverse("panel:job_position_create"),
+            "update_url": reverse(
+                "panel:job_position_update", args=[0],
+            ).replace("/0/", "/{pk}/"),
+            "delete_url": reverse("panel:job_positions_bulk_delete"),
+            "active_url": reverse("panel:job_positions_bulk_active"),
+            "scope": "",
+            "nav_key": nav_key,
+            "initial_pk": _picker_initial_pk(request, nav_key),
+            "item_kinds": "category,type",
+            "require_name": True,
+            "require_items": False,
+            "can_toggle_active": True,
+            "noun_new": "Nuevo requisito",
+            "name_placeholder": "p. ej. Gruista, Administrativo...",
+            "list_title": "Requisitos de documentación",
+            "empty_text": "Sin requisitos guardados todavía.",
+            "help_text": (
+                "Pulsa un requisito para ver y editar sus documentos "
+                "obligatorios (disparan los avisos de falta y de "
+                "caducidad). Guarda con el mismo nombre para editarlo; "
+                "con otro nombre se crea uno nuevo y el original no se "
+                "toca. Un requisito desactivado no genera avisos."
+            ),
+            "delete_note": (
+                "Quien lo tenga asignado (personas o máquinas) se queda "
+                "sin requisito."
+            ),
+            "saved_event": "eb:requirement-saved",
+            "deleted_event": "eb:requirement-deleted",
+            "rows": rows,
+            "sections": sections,
+        }
         return render(request, "panel/job_positions/manage.html", {
-            "positions": positions,
-            "families": ordered_families,
-            # H30 (S120). Las 14 clases del catálogo, para exigir
-            # clases concretas del carné en un requisito.
-            "driving_categories": DrivingLicenceCategory.objects.all(),
+            "picker": picker,
         })
 
 
@@ -3487,17 +3644,38 @@ class JobPositionSaveView(CompanyUserRequiredMixin, View):
         return JsonResponse({"ok": True, "id": position.pk, "name": position.name})
 
 
-class JobPositionDeleteView(CompanyUserRequiredMixin, View):
+class JobPositionBulkDeleteView(CompanyUserRequiredMixin, View):
     """
-    H31 (S109). POST: borra un puesto -- las personas que lo tuvieran
-    asignado quedan con `job_position=NULL` (on_delete=SET_NULL, ver
-    models.py), nunca se borran ni se tocan ellas.
+    H30 (S128), hoja de ruta punto 1. POST `ids`: borra varios
+    requisitos a la vez, tras el modal con cuenta atrás de 5 s del
+    gestor común. Las personas y máquinas que lo tuvieran asignado
+    quedan sin requisito (on_delete=SET_NULL), nunca se borran ni se
+    tocan ellas. Sustituye al borrado de uno en uno (S109).
     """
 
-    def post(self, request, position_pk):
-        position = get_object_or_404(JobPosition, pk=position_pk)
-        position.delete()
-        return JsonResponse({"ok": True})
+    def post(self, request):
+        ids = [i for i in request.POST.getlist("ids") if i.isdigit()]
+        positions = JobPosition.objects.filter(pk__in=ids)
+        count = positions.count()
+        positions.delete()
+        return JsonResponse({"ok": True, "count": count})
+
+
+class JobPositionBulkActiveView(CompanyUserRequiredMixin, View):
+    """
+    H30 (S128), hoja de ruta punto 1. POST `ids` + `active` (1/0):
+    activa o desactiva varios requisitos. Un requisito desactivado no
+    genera avisos (`required_documentation_service.get_requirement` y
+    `document_notice_service`), pero sigue asignado a quien lo tenga.
+    """
+
+    def post(self, request):
+        ids = [i for i in request.POST.getlist("ids") if i.isdigit()]
+        active = request.POST.get("active") == "1"
+        count = JobPosition.objects.filter(pk__in=ids).update(
+            is_active=active,
+        )
+        return JsonResponse({"ok": True, "count": count})
 
 
 def _document_type_history_response(request, subject_model, subject_pk,
