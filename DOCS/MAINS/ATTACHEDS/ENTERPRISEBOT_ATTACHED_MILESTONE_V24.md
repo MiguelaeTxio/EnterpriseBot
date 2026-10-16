@@ -655,6 +655,47 @@ nuevo (ver `ENTERPRISEBOT_ANNEX_ROUTER.md`, sección 6, entrada S127).
 - Orden: primero terminar vacaciones, después ausencias, después
   fichajes.
 
+**Reglas de vacaciones (Miguel Ángel, tras hablar con Carolina,
+responsable de RRHH):**
+- Los días que corresponden son un **dato que introduce la empresa,
+  por sección**: 30 naturales o 22 laborables (Huelva, por ejemplo,
+  22).
+- Quien entra o sale a mitad de año tiene la **parte proporcional**.
+- Los días que sobran **pasan al año siguiente, anotados como del año
+  anterior**. Esto puede cambiar (que no se acumulen), así que también
+  es **variable y por sección**.
+- Migrar si hace falta, pero **recogiendo todos los supuestos**.
+
+**Secciones:** son las de `ivr_config.Section` que ya existen (a
+16/10/2026: Elevación, Asistencia, Informática,
+Administración-Proveedores, Taller Mecánico, Taller Huelva, Guardas).
+No se crean secciones nuevas para esto: crear o guardar una `Section`
+genera o regenera su flujo de la centralita (señal
+`auto_manage_section_call_flow`), así que la regla de vacaciones vive
+en un modelo aparte enlazado a la sección y nunca se guarda la
+`Section`. Hoy ningún trabajador está unido a una sección (los
+`SectionContact` son a quién pasa las llamadas la centralita, no
+pertenencia): la sección de cada trabajador se asigna desde el panel;
+la lista la verá Miguel Ángel con Carolina.
+
+**Saldo de partida:** lo ya disfrutado en 2026 y lo que sobró de 2025
+se cargan **desde un Excel** (Carolina lo tiene en hoja de cálculo).
+
+**Supuestos aceptados por Miguel Ángel (propuestos por el modelo, sin
+objeción):** cambio de sección a mitad de año, cada tramo con su
+regla; año natural; proporcional = días/año × días de alta en el año
+÷ días del año, sumando varias altas, redondeo al medio día hacia
+arriba; laborables = lunes a viernes sin festivos; naturales = todos
+los días; los del año anterior se gastan primero y, si la sección fija
+plazo y vence, se pierden con constancia; los días de baja médica
+dentro de unas vacaciones no se gastan (art. 38.3 ET, con
+`MedicalLeavePeriod`); medios días; ajustes manuales del supervisor con
+motivo obligatorio; saldo negativo avisa pero se permite; el
+supervisor gestiona a todos y cada trabajador ve solo lo suyo.
+
+**Datos reales a 16/10/2026:** 75 trabajadores activos, 10 con usuario
+del panel, 8 con base (Maqueda), 1 solo `VacationPeriod` registrado.
+
 ### 7.4. Contexto legal (consultado en S127, a confirmar antes de diseñar)
 
 - Vigente (art. 34.9 del Estatuto de los Trabajadores): registro diario
@@ -667,32 +708,56 @@ nuevo (ver `ENTERPRISEBOT_ANNEX_ROUTER.md`, sección 6, entrada S127).
   y consulta del propio trabajador. Comprobar en el BOE su estado y su
   texto antes de diseñar el punto 3.
 
-### 7.5. Hoja de Ruta para la Siguiente Sesión
+### 7.5. Hoja de Ruta para la Siguiente Sesión (S128)
+
+**Primera línea -- incidencia del agente H28 (desvío a H28).** Tras
+7-10 días con OneDrive en pausa, el agente arrancó y está poniendo al
+día la carpeta: Miguel Ángel ve muchos errores y el historial vacío.
+A 16/10 10:51 su latido llegaba al servidor y no había subido nada ni
+corrido ninguna pasada de la cuarentena. Miguel Ángel adjunta al
+empezar `h28_migration_agent\dist\h28_migration_agent.log` (su PC no
+puede usar la app de escritorio para enlazarlo). Leer el log y
+separar los avisos de "descargando de OneDrive" de los errores reales;
+el historial (`history.py`) solo escribe al terminar cada carpeta, y
+devuelve vacío si `history.json` está ilegible (en el log: "No se pudo
+leer el historial"). **Cierre:** causa de cada error del log
+identificada y corregida (o explicada como esperable), historial con
+eventos de la puesta al día, y consulta a BD con archivos subidos por
+el agente después de la puesta al día (`DocumentIndexEntry` en
+`_CUARENTENA` con `indexed_at` posterior al arranque).
 
 1. **Vacaciones: días que corresponden, disfrutados y pendientes.**
-   Al empezar, preguntar a Miguel Ángel (dato de negocio, bloqueante):
-   cuántos días corresponden al año y cómo se cuentan (naturales o
-   laborables, según convenio), qué pasa con quien entra o sale a mitad
-   de año, y si los días que sobran pasan al año siguiente. Con eso:
-   dato de días por trabajador y año ligado a `PersonIdentity`, cálculo
-   de disfrutados a partir de `VacationPeriod` y pendientes, y consulta
-   por trabajador en el panel. **Cierre:** consulta a BD de un
-   trabajador real con sus periodos, y la pantalla muestra los mismos
-   días disfrutados y pendientes.
-2. **Ausencias.** Registrar las ausencias que no son vacaciones ni baja
-   (permisos, asuntos propios...) por trabajador y con fechas, con el
-   mismo mecanismo que vacaciones, y que el calendario y la consulta
-   por trabajador las muestren. Los tipos se acuerdan con Miguel Ángel
-   al empezar el punto. **Cierre:** una ausencia real dada de alta en
-   el panel, en BD y en el calendario de ese trabajador.
+   Modelos y migración en `hr_calendar`:
+   - asignación de sección al trabajador (`PersonIdentity` ->
+     `ivr_config.Section`, con fecha desde para los cambios);
+   - regla de vacaciones por sección con "vigente desde" (días al
+     año, naturales o laborables, si se arrastran los sobrantes y
+     plazo para gastarlos), más una regla general de la empresa para
+     quien aún no tiene sección;
+   - ajustes por trabajador y año (saldo de partida importado,
+     ajuste manual con motivo);
+   - medio día en `VacationPeriod`.
+   Servicio de saldo con todos los supuestos de 7.3, la pantalla de
+   saldos por trabajador en la pestaña Vacaciones del hub, la gestión
+   de reglas por sección, la asignación de sección, y la importación
+   del Excel (plantilla descargable por DNI con disfrutados en 2026 y
+   sobrantes de 2025; informe de filas no casadas). **Cierre:**
+   consulta a BD de un trabajador real con sus periodos y ajustes, y
+   la pantalla muestra los mismos días que corresponden, del año
+   anterior, disfrutados y pendientes; una importación de prueba con
+   la plantilla deja los ajustes en BD.
+2. **Ausencias.** Registrar las ausencias que no son vacaciones ni
+   baja (permisos, asuntos propios...) por trabajador y con fechas,
+   con el mismo mecanismo que vacaciones, y que el calendario y la
+   consulta por trabajador las muestren. Tipos: los del catálogo
+   `AbsenceCategory` de la empresa. **Cierre:** una ausencia real dada
+   de alta en el panel, en BD y en el calendario de ese trabajador.
 3. **Fichaje de entrada y salida desde el móvil y consulta de
-   registros.** Comprobar primero el estado del Real Decreto (7.4) y
-   cuántos trabajadores activos tienen usuario. El trabajador ficha
-   desde la web con su usuario; el marcaje guarda hora y coordenadas
-   GPS tomadas en el móvil y, sin cobertura, se guarda en el móvil y se
-   envía al volver la conexión; los marcajes se ven en el mapa. Las
-   pantallas del trabajador se diseñan para el móvil. Consulta de los
-   registros por trabajador. **Cierre:** fichaje real de entrada y
-   salida de Miguel Ángel desde su móvil, en BD con hora y
-   coordenadas, y visible en la consulta de registros.
-
+   registros.** Comprobar primero en el BOE el estado del Real Decreto
+   (7.4). El trabajador ficha desde la web con su usuario; el marcaje
+   guarda hora y coordenadas GPS tomadas en el móvil y, sin cobertura,
+   se guarda en el móvil y se envía al volver la conexión; los
+   marcajes se ven en el mapa. Las pantallas del trabajador se diseñan
+   para el móvil. Consulta de los registros por trabajador. **Cierre:**
+   fichaje real de entrada y salida de Miguel Ángel desde su móvil, en
+   BD con hora y coordenadas, y visible en la consulta de registros.
