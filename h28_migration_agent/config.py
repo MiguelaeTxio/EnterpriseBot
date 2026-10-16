@@ -306,6 +306,15 @@ LOG_FILE_NAME = "h28_migration_agent.log"
 LOG_MAX_BYTES = 20 * 1024 * 1024
 LOG_BACKUP_COUNT = 5
 
+# How long the listing of contents already in GCS (known_contents.py)
+# stays valid before the whole bucket is listed again. Only refreshed
+# when there is something to upload, never on a quiet sweep.
+# ---
+# Cuanto vale el listado de contenido ya en GCS (known_contents.py)
+# antes de volver a listar el cubo entero. Solo se refresca cuando hay
+# algo que subir, nunca en un barrido sin novedades.
+KNOWN_CONTENTS_REFRESH_SECONDS = 30 * 60
+
 
 def get_agent_root_dir():
     """Return the directory the agent (script or .exe) runs from.

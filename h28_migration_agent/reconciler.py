@@ -30,20 +30,22 @@ size-mismatched, and clearly records whatever still cannot be
 uploaded.
 """
 
-import base64
-import hashlib
 import logging
 import os
 import time
 
 from config import (
-    HASH_CHUNK_SIZE_BYTES,
     QUARANTINE_PREFIX,
     RECONCILE_MAX_RETRIES,
     RECONCILE_PROGRESS_EVERY_FILES,
     RECONCILE_RETRY_DELAYS_SECONDS,
 )
 from fs_utils import is_cloud_only, request_hydration, to_long_path
+from known_contents import (
+    compute_md5_base64,
+    find_known_md5,
+    remember_upload,
+)
 from server_notify import notify_server_of_upload
 from uploader import (
     build_blob_name,
@@ -52,34 +54,6 @@ from uploader import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-def compute_md5_base64(local_path):
-    """Return the base64-encoded MD5 of a local file, GCS style.
-
-    ---
-    Devuelve el MD5 en base64 de un archivo local, en el mismo
-    formato que usa GCS.
-
-    Verificado en linea el 2026-07-27 (directriz 4.4) contra la
-    documentacion oficial de google-cloud-storage: `blob.md5_hash`
-    viene codificado en BASE64, no en hexadecimal -- comparar contra
-    un `hexdigest()` daria distinto siempre, aunque el contenido
-    fuese identico.
-    ---
-    Verified online on 2026-07-27 (directive 4.4) against the
-    official google-cloud-storage documentation: `blob.md5_hash` is
-    BASE64-encoded, not hexadecimal -- comparing it against a
-    `hexdigest()` would always differ, even for identical content.
-    """
-    digest = hashlib.md5()
-    with open(to_long_path(local_path), "rb") as file_handle:
-        while True:
-            chunk = file_handle.read(HASH_CHUNK_SIZE_BYTES)
-            if not chunk:
-                break
-            digest.update(chunk)
-    return base64.b64encode(digest.digest()).decode("ascii")
 
 
 def _list_remote_info(bucket, blob_name_prefix):
@@ -330,9 +304,42 @@ def _upload_with_retries(bucket, relative_path, blob_name, local_path):
     return False
 
 
+def _already_in_gcs(client, bucket_name, relative_path, local_path,
+                    local_size, unrecoverable_relative_paths):
+    """Return True when the file's content is already in the bucket.
+    ---
+    Devuelve True cuando el contenido del archivo ya esta en el cubo.
+
+    S128 (ver `known_contents.py`). Si la comprobacion falla (listado
+    del cubo o lectura local), el archivo se apunta como irrecuperable
+    en esta pasada y devuelve False; quien llama no debe subirlo.
+    ---
+    S128. If the check fails, the file is recorded as unrecoverable
+    for this pass and False is returned; the caller must not upload.
+    """
+    try:
+        known_md5 = find_known_md5(
+            client, bucket_name, local_path, local_size,
+        )
+    except Exception as error:  # noqa: BLE001 -- nunca subir a ciegas
+        unrecoverable_relative_paths.append(relative_path)
+        logger.error(
+            "Reconciliacion: no se pudo comprobar si %s ya esta en GCS "
+            "(no se sube): %s", relative_path, error,
+        )
+        return False
+    if known_md5 is None:
+        return False
+    logger.info(
+        "Reconciliacion: %s ya esta en GCS con el mismo contenido "
+        "(MD5 %s). No se sube.", relative_path, known_md5,
+    )
+    return True
+
+
 def reconcile_folder(client, bucket_name, selected_folder,
-                      progress_callback=None,
-                      scan_progress_callback=None):
+                     progress_callback=None,
+                     scan_progress_callback=None):
     """Compare selected_folder against the dirty bucket and send any
     gap to quarantine.
     ---
@@ -402,8 +409,8 @@ def reconcile_folder(client, bucket_name, selected_folder,
 
     Returns
     -------
-    tuple[int, int, list[str], list[str], list[str]]
-        (quarantined_count, already_queued_count,
+    tuple[int, int, int, list[str], list[str], list[str]]
+        (quarantined_count, already_queued_count, already_in_gcs_count,
         needs_decision_relative_paths,
         pending_hydration_relative_paths,
         unrecoverable_relative_paths)
@@ -458,6 +465,7 @@ def reconcile_folder(client, bucket_name, selected_folder,
 
     quarantined_count = 0
     already_queued_count = 0
+    already_in_gcs_count = 0
     needs_decision_paths = []
     unrecoverable_relative_paths = []
     for checked_count, (
@@ -512,10 +520,27 @@ def reconcile_folder(client, bucket_name, selected_folder,
                 "cuarentena %d bytes). No se sobrescribe.",
                 relative_path, local_size, quarantined_size,
             )
+        elif _already_in_gcs(
+            client, bucket_name, relative_path, local_path, local_size,
+            unrecoverable_relative_paths,
+        ):
+            # S128: el contenido ya esta en el cubo (en cualquier
+            # sitio, papelera incluida). No se sube ni se clasifica.
+            # ---
+            # S128: the content is already in the bucket. Neither
+            # uploaded nor classified.
+            already_in_gcs_count += 1
+        elif relative_path in unrecoverable_relative_paths:
+            # La comprobacion de contenido fallo (ya registrado en
+            # `_already_in_gcs`): nunca se sube sin comprobar.
+            # ---
+            # The content check failed: never uploaded unchecked.
+            pass
         elif _upload_with_retries(
             bucket, relative_path, quarantine_blob_name, local_path,
         ):
             quarantined_count += 1
+            remember_upload(local_path, local_size)
         else:
             unrecoverable_relative_paths.append(relative_path)
             logger.error(
@@ -527,13 +552,15 @@ def reconcile_folder(client, bucket_name, selected_folder,
 
     logger.info(
         "Reconciliacion completada en %s: %d a cuarentena, %d ya en "
-        "cola, %d pendientes de decision, %d pendientes de descarga, "
-        "%d irrecuperables. El cubo sucio no se ha modificado.",
+        "cola, %d ya en GCS (no se suben), %d pendientes de decision, "
+        "%d pendientes de descarga, %d irrecuperables. El cubo sucio "
+        "no se ha modificado.",
         selected_folder, quarantined_count, already_queued_count,
-        len(needs_decision_paths), len(pending_hydration_paths),
-        len(unrecoverable_relative_paths),
+        already_in_gcs_count, len(needs_decision_paths),
+        len(pending_hydration_paths), len(unrecoverable_relative_paths),
     )
     return (
-        quarantined_count, already_queued_count, needs_decision_paths,
-        pending_hydration_paths, unrecoverable_relative_paths,
+        quarantined_count, already_queued_count, already_in_gcs_count,
+        needs_decision_paths, pending_hydration_paths,
+        unrecoverable_relative_paths,
     )

@@ -259,14 +259,17 @@ def _run_reconciliation(icon, client, selected_folder):
             hashed_bytes // (1024 * 1024),
         )
 
-    quarantined_count, already_queued_count, needs_decision_paths, \
-        pending_hydration_paths, unrecoverable_paths = reconcile_folder(
-            client, DIRTY_BUCKET_NAME, selected_folder,
-            _log_reconcile_progress, _log_scan_progress,
-        )
+    (
+        quarantined_count, already_queued_count, already_in_gcs_count,
+        needs_decision_paths, pending_hydration_paths,
+        unrecoverable_paths,
+    ) = reconcile_folder(
+        client, DIRTY_BUCKET_NAME, selected_folder,
+        _log_reconcile_progress, _log_scan_progress,
+    )
 
     if not any((
-        quarantined_count, already_queued_count,
+        quarantined_count, already_queued_count, already_in_gcs_count,
         needs_decision_paths, pending_hydration_paths,
         unrecoverable_paths,
     )):
@@ -275,6 +278,10 @@ def _run_reconciliation(icon, client, selected_folder):
         parts = [f"{quarantined_count} a cuarentena"]
         if already_queued_count:
             parts.append(f"{already_queued_count} ya en cola")
+        if already_in_gcs_count:
+            parts.append(
+                f"{already_in_gcs_count} ya en GCS (no se suben)"
+            )
         if needs_decision_paths:
             parts.append(
                 f"{len(needs_decision_paths)} pendiente(s) de decisión"
@@ -956,7 +963,8 @@ def _run_catchup_pass(icon, client):
             continue
 
         if not (resumen["uploaded"] or resumen["failed"]
-                or resumen["hydration_requested"]):
+                or resumen["hydration_requested"]
+                or resumen["already_in_gcs"]):
             continue
 
         had_news = True
@@ -964,6 +972,10 @@ def _run_catchup_pass(icon, client):
         partes = []
         if resumen["uploaded"]:
             partes.append(f"{resumen['uploaded']} a cuarentena")
+        if resumen["already_in_gcs"]:
+            partes.append(
+                f"{resumen['already_in_gcs']} ya en GCS (no se suben)"
+            )
         if resumen["hydration_requested"]:
             partes.append(
                 f"{resumen['hydration_requested']} descargando de "

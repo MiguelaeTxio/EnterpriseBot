@@ -87,6 +87,7 @@ from fs_utils import (
     to_long_path,
     to_safe_name,
 )
+from known_contents import find_known_md5, remember_upload
 from uploader import (
     iter_relative_file_paths,
     upload_single_file_to_quarantine,
@@ -377,7 +378,7 @@ def sweep_folder(client, selected_folder):
     -------
     dict
         Resumen con `seeded`, `hydration_requested`, `uploaded`,
-        `failed` y `total`.
+        `already_in_gcs`, `failed` y `total`.
     ---
     **First sweep with no previous index uploads nothing**: it just
     seeds the index from disk. Treating the 37,500 already-migrated
@@ -419,6 +420,7 @@ def sweep_folder(client, selected_folder):
             "seeded": True,
             "hydration_requested": hydration_requested,
             "uploaded": 0,
+            "already_in_gcs": 0,
             "failed": 0,
             "total": len(fingerprint),
         }
@@ -440,15 +442,37 @@ def sweep_folder(client, selected_folder):
             "seeded": False,
             "hydration_requested": 0,
             "uploaded": 0,
+            "already_in_gcs": 0,
             "failed": 0,
             "total": len(fingerprint),
         }
 
     uploaded_count = 0
+    already_in_gcs_count = 0
     failed_paths = []
     for relative_path in changed_paths:
         absolute_path = os.path.join(selected_folder, relative_path)
+        local_size = fingerprint[relative_path][0]
         try:
+            # S128 (ver `known_contents.py`): si el contenido ya esta
+            # en el cubo, en cualquier sitio y papelera incluida, no se
+            # sube ni se clasifica. Se queda apuntado en el indice para
+            # no volver a comprobarlo en cada barrido.
+            # ---
+            # S128: content already in the bucket is neither uploaded
+            # nor classified, and stays in the index so it is not
+            # rechecked every sweep.
+            known_md5 = find_known_md5(
+                client, DIRTY_BUCKET_NAME, absolute_path, local_size,
+            )
+            if known_md5 is not None:
+                already_in_gcs_count += 1
+                logger.info(
+                    "Puesta al dia: %s ya esta en GCS con el mismo "
+                    "contenido (MD5 %s). No se sube.",
+                    absolute_path, known_md5,
+                )
+                continue
             upload_single_file_to_quarantine(
                 client,
                 DIRTY_BUCKET_NAME,
@@ -498,19 +522,21 @@ def sweep_folder(client, selected_folder):
             )
         else:
             uploaded_count += 1
+            remember_upload(absolute_path, local_size)
 
     save_index(selected_folder, fingerprint)
     logger.info(
         "Puesta al dia completada en %s: %d subido(s) a cuarentena, "
-        "%d fallido(s), %d anclado(s) para descarga, sobre %d "
-        "archivo(s).",
-        selected_folder, uploaded_count, len(failed_paths),
-        hydration_requested, len(fingerprint),
+        "%d ya en GCS (no se suben), %d fallido(s), %d anclado(s) para "
+        "descarga, sobre %d archivo(s).",
+        selected_folder, uploaded_count, already_in_gcs_count,
+        len(failed_paths), hydration_requested, len(fingerprint),
     )
     return {
         "seeded": False,
         "hydration_requested": hydration_requested,
         "uploaded": uploaded_count,
+        "already_in_gcs": already_in_gcs_count,
         "failed": len(failed_paths),
         "total": len(fingerprint),
     }
