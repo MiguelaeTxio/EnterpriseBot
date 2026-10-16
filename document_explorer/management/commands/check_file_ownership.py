@@ -27,6 +27,7 @@ los no activos, solo lo que resulte ser de un activo. Sin --apply no
 mueve nada.
 """
 import time
+import zlib
 from collections import defaultdict
 from datetime import datetime, timedelta
 
@@ -55,6 +56,12 @@ class Command(BaseCommand):
         parser.add_argument("--log-file", required=True)
         parser.add_argument("--ocr", action="store_true")
         parser.add_argument("--apply", action="store_true")
+        parser.add_argument(
+            "--shard", type=int, default=0,
+            help="Con --ocr y --shards: esta consola hace solo la parte N "
+                 "(desde 1) del OCR y termina, sin veredictos.",
+        )
+        parser.add_argument("--shards", type=int, default=0)
 
     def _say(self, text, stamp=True):
         line = ("[%s] %s" % (datetime.now().strftime("%H:%M:%S"), text)
@@ -150,6 +157,24 @@ class Command(BaseCommand):
         self._say("# %d persona(s) en el registro, %d archivo(s) en "
                   "fichas." % (len(people), len(files)))
         if options["ocr"]:
+            shards = options["shards"]
+            if shards:
+                shard = options["shard"]
+                # Reparto por contenido: las copias idénticas caen en la
+                # misma consola y se leen una sola vez.
+                files = [
+                    entry for entry in files
+                    if zlib.crc32(
+                        (content_key(entry) or str(entry.pk)).encode()
+                    ) % shards == shard - 1
+                ]
+                self._say("# Parte %d de %d: %d archivo(s)." % (
+                    shard, shards, len(files)))
+                self._ocr(files)
+                self._say("# Parte %d de %d terminada. Los veredictos se "
+                          "sacan con una pasada sin --shards cuando "
+                          "terminen todas." % (shard, shards))
+                return
             self._ocr(files)
 
         self._say("# Fase 2 -- quién aparece en cada archivo.")
