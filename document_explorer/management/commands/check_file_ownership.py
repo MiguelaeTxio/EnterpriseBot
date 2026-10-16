@@ -62,6 +62,10 @@ class Command(BaseCommand):
                  "(desde 1) del OCR y termina, sin veredictos.",
         )
         parser.add_argument("--shards", type=int, default=0)
+        parser.add_argument(
+            "--exclude", type=int, action="append", default=[],
+            help="pk de archivo que --apply no toca (pendiente de decidir).",
+        )
 
     def _say(self, text, stamp=True):
         line = ("[%s] %s" % (datetime.now().strftime("%H:%M:%S"), text)
@@ -225,6 +229,10 @@ class Command(BaseCommand):
             self._say("   %s %s | es de %s (%s) -> %s" % (
                 "DE OTRA PERSONA" if proven else "PROBABLE (solo nombre)",
                 head, other.label(), evidence, action), stamp=False)
+            if entry.pk in options["exclude"]:
+                self._say("      -> apartado (--exclude), no se toca",
+                          stamp=False)
+                continue
             if apply and proven and action and not action.startswith("NO"):
                 moved += self._apply(entry, other, code)
         self._say("# Resumen: %s." % ", ".join(
