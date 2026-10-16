@@ -38,8 +38,8 @@ Filtros, orden y selección persistidos por usuario (screen_key
                         <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
                         <span id="inbox-progress-text"></span>
                     </div>
-                    <div class="progress mt-1" style="height: 6px;">
-                        <div class="progress-bar" id="inbox-progress-bar" style="width: 0%"></div>
+                    <div class="progress mt-1 inbox-progress">
+                        <div class="progress-bar" id="inbox-progress-bar"></div>
                     </div>
                 </div>
                 <ul class="small mb-0 mt-1 ps-3 text-danger d-none" id="inbox-upload-errors"></ul>
@@ -179,7 +179,6 @@ Filtros, orden y selección persistidos por usuario (screen_key
         });
     } catch (e) { /* estado ilegible: se empieza sin selección */ }
     let lastSaved = null;
-    let saveTimer = null;
     function saveSelection() {
         const payload = Array.from(selection.entries()).map(function ([pk, label]) {
             return {pk: pk, label: label};
@@ -187,14 +186,8 @@ Filtros, orden y selección persistidos por usuario (screen_key
         const serialized = JSON.stringify(payload);
         if (serialized === lastSaved) return;
         lastSaved = serialized;
-        clearTimeout(saveTimer);
-        saveTimer = setTimeout(function () {
-            fetch("/panel/navegacion/estado/" + SCREEN_KEY + "/", {
-                method: "POST",
-                headers: {"X-CSRFToken": csrfToken, "Content-Type": "application/json"},
-                body: JSON.stringify({selection: payload}),
-            });
-        }, 400);
+        // S128 (punto 2): guardado común, se envía también al salir.
+        window.EbNavState.save(SCREEN_KEY, {selection: payload});
     }
 
     function setLive(name, value) {

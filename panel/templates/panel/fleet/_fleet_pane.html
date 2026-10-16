@@ -222,7 +222,7 @@ la lista hace scroll. Dos paneles:
                         <div class="col-md-8">
                             <div class="small text-muted fw-bold">Requisito de documentación</div>
                             <div class="d-flex gap-1 flex-wrap">
-                                <select id="fleet-mass-document-requirement" data-requirement-select class="form-select form-select-sm" style="width:auto; max-width:100%; min-width:0;">
+                                <select id="fleet-mass-document-requirement" data-requirement-select class="form-select form-select-sm fleet-requirement-select">
                                     <option value="">— Sin requisito (quitar) —</option>
                                     {% for requirement in job_positions %}
                                     <option value="{{ requirement.pk }}">{{ requirement.name }}</option>
@@ -251,7 +251,7 @@ la lista hace scroll. Dos paneles:
                         <span id="fleet-row-count">{{ assets|length }}</span> centros de gasto
                         <span id="fleet-row-filtered" class="text-muted fw-normal{% if not filter_search and not filter_family and not filter_is_active %} d-none{% endif %}">(filtrado)</span>
                     </div>
-                    <div id="fleet-results-scroll" class="fixed-list-scroll" style="flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: auto;">
+                    <div id="fleet-results-scroll" class="fixed-list-scroll flex-scroll-xy">
                         <div id="fleet-table-container">
                             {% include "panel/fleet/_table_fragment.html" %}
                         </div>
@@ -261,7 +261,7 @@ la lista hace scroll. Dos paneles:
             <div class="col-lg-4 h-100">
                 <div class="border rounded p-2 h-100 d-flex flex-column">
                     <div class="fw-bold small mb-1">Selección actual (<span id="fleet-selection-count">0</span>)</div>
-                    <div style="flex: 1 1 auto; min-height: 0; overflow-y: auto;">
+                    <div class="flex-scroll-y">
                         <ul class="mb-0 small ps-0 list-unstyled" id="fleet-selection-list">
                             <li class="text-muted">Nada seleccionado todavía.</li>
                         </ul>
@@ -370,7 +370,6 @@ la lista hace scroll. Dos paneles:
             }
         });
     } catch (e) { /* estado guardado ilegible: se empieza sin selección */ }
-    let selectionSaveTimer = null;
     let lastSavedSelection = JSON.stringify(Array.from(selection.entries()).map(function ([pk, data]) {
         return {pk: pk, code: data.code, label: data.label};
     }));
@@ -381,14 +380,8 @@ la lista hace scroll. Dos paneles:
         const serialized = JSON.stringify(payload);
         if (serialized === lastSavedSelection) return;
         lastSavedSelection = serialized;
-        clearTimeout(selectionSaveTimer);
-        selectionSaveTimer = setTimeout(function () {
-            fetch("/panel/navegacion/estado/" + SELECTION_SCREEN_KEY + "/", {
-                method: "POST",
-                headers: {"X-CSRFToken": csrfToken, "Content-Type": "application/json"},
-                body: JSON.stringify({selection: payload}),
-            });
-        }, 400);
+        // S128 (punto 2): guardado común, se envía también al salir.
+        window.EbNavState.save(SELECTION_SCREEN_KEY, {selection: payload});
     }
 
     function showToast(text, danger) {

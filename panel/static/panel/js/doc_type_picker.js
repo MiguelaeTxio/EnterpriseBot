@@ -160,17 +160,11 @@
             });
         }
         function saveNavigation(pk) {
-            if (!cfg.tpNavKey) {
-                return;
+            if (cfg.tpNavKey && window.EbNavState) {
+                window.EbNavState.save(cfg.tpNavKey, {
+                    loaded_pk: pk ? Number(pk) : null,
+                });
             }
-            fetch('/panel/navegacion/estado/' + cfg.tpNavKey + '/', {
-                method: 'POST',
-                headers: {
-                    'X-CSRFToken': csrfToken(),
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({loaded_pk: pk ? Number(pk) : null}),
-            });
         }
         function confirmDiscard() {
             if (!isDirty()) {

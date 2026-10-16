@@ -1584,3 +1584,29 @@ table.table #toll-thead ~ tbody tr:nth-child(even):not(.table-secondary) td {
     height: 28px;
     object-fit: cover;
 }
+
+/* ------------------------------------------------------------------
+   S128 -- estilos sacados de las plantillas (avisos H021 de djlint en
+   archivos tocados en la sesión, directriz 4.9).
+   ------------------------------------------------------------------ */
+.fleet-requirement-select {
+    width: auto;
+    max-width: 100%;
+    min-width: 0;
+}
+
+.flex-scroll-y {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+}
+
+.flex-scroll-xy {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+}
+
+.inbox-progress {
+    height: 6px;
+}

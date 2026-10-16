@@ -829,19 +829,11 @@
     // y las clases/atributos condicionales de cada bloque de arriba)
     // -- este script solo GUARDA cada cambio futuro, igual criterio
     // que el hub de Documentación (hub.html).
-    var csrfMetaSidebar = document.querySelector('meta[name="csrf-token"]');
-    var csrfTokenSidebar = csrfMetaSidebar ? csrfMetaSidebar.getAttribute('content') : '';
-    var sidebarSaveTimer = null;
-
+    // S128 (punto 2): EbNavState suma los cambios pendientes (abrir
+    // dos secciones seguidas ya no pierde la primera) y los envía al
+    // salir de la página.
     function saveSidebarState(partialUpdate) {
-        clearTimeout(sidebarSaveTimer);
-        sidebarSaveTimer = setTimeout(function () {
-            fetch('/panel/navegacion/estado/sidebar/', {
-                method: 'POST',
-                headers: {'X-CSRFToken': csrfTokenSidebar, 'Content-Type': 'application/json'},
-                body: JSON.stringify(partialUpdate),
-            });
-        }, 400);
+        window.EbNavState.save('sidebar', partialUpdate);
     }
 
     // Detectar sección activa y abrirla SOLO si esta sesión nunca la

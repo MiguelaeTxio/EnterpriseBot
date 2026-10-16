@@ -232,19 +232,12 @@ id, indistinto de dónde viva en el DOM.
     // la restauración inicial (esa es 100% server-side, sin FOUC de
     // "vuelve a Centros de Gasto y luego salta a Personal").
     const SCREEN_KEY = 'documentation_hub';
-    const csrfMeta = document.querySelector('meta[name="csrf-token"]');
-    const csrfToken = csrfMeta ? csrfMeta.getAttribute('content') : '';
-    let saveTimer = null;
 
+    // S128 (punto 2): EbNavState suma los cambios pendientes en vez de
+    // que el último cancele al anterior, y los envía al salir de la
+    // página (panel/static/panel/js/nav_state.js).
     function saveState(partialUpdate) {
-        clearTimeout(saveTimer);
-        saveTimer = setTimeout(function () {
-            fetch('/panel/navegacion/estado/' + SCREEN_KEY + '/', {
-                method: 'POST',
-                headers: {'X-CSRFToken': csrfToken, 'Content-Type': 'application/json'},
-                body: JSON.stringify(partialUpdate),
-            });
-        }, 400);
+        window.EbNavState.save(SCREEN_KEY, partialUpdate);
     }
 
     // Cambio de pestaña (click del usuario) -- el usuario es el único
@@ -334,6 +327,28 @@ id, indistinto de dónde viva en el DOM.
             filters[hit.tab].company = parsed.searchParams.getAll('company');
             filters[hit.tab].requirement = parsed.searchParams.get('requirement') || '';
         }
+        lastFilters[hit.tab] = filters[hit.tab];
+        saveState({filters: filters});
+    });
+
+    // S128 (punto 2): el texto del buscador se guarda en el momento en
+    // que cambia, sin esperar a la búsqueda (htmx la lanza 300 ms
+    // después de la última tecla). Si se borraba el nombre y se salía
+    // de la página antes, la búsqueda vacía no llegaba a pedirse y el
+    // nombre volvía al regresar. Se parte de los últimos filtros
+    // guardados de esa pestaña: la fusión es por pestaña completa y
+    // guardar solo `q` borraría el resto (estado, empresa, requisito).
+    const lastFilters = {};
+    document.body.addEventListener('input', function (ev) {
+        const input = ev.target;
+        if (!input || input.name !== 'q') { return; }
+        const pane = input.closest('.tab-pane');
+        if (!pane) { return; }
+        const tab = pane.id.replace('pane-', '');
+        if (!lastFilters[tab]) { return; }
+        lastFilters[tab] = Object.assign({}, lastFilters[tab], {q: input.value});
+        const filters = {};
+        filters[tab] = lastFilters[tab];
         saveState({filters: filters});
     });
 

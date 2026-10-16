@@ -5,6 +5,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Panel de gestión de EnterpriseBot">
+    <meta name="keywords" content="EnterpriseBot, panel, documentación">
     <title>{% block title %}Panel de Administración{% endblock %} — {{ company.name }}</title>
     <!-- Bootstrap 5.3 — local static (vendor) — sin dependencia de CDN externo -->
     <link href="{% static 'panel/vendor/bootstrap.min.css' %}" rel="stylesheet">
@@ -16,6 +18,9 @@
     <!-- CSRF token meta tag — consumed by HTMX configRequest event -->
     <!-- Meta tag CSRF — consumido por el evento configRequest de HTMX -->
     <meta name="csrf-token" content="{{ csrf_token }}">
+    <!-- H30 (S128): guardado común de la navegación (EbNavState), en la
+         cabecera para que exista antes que cualquier script de página. -->
+    <script src="{% static 'panel/js/nav_state.js' %}"></script>
     {% block extra_head %}{% endblock %}
     {% if request.user.company_user.role == 'WORKSHOP' or request.user.company_user.role == 'ADMIN' %}
     {% include "panel/_tour_driver_cdn.html" %}
