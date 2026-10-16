@@ -1,6 +1,7 @@
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V24.md
 
-# Anexo de Hito V24 — Vacaciones y Calendario
+# Anexo de Hito V24 — Vacaciones, Ausencias y Control Horario
+# (título anterior: "Vacaciones y Calendario"; ampliado y renombrado en S127)
 # Proyecto: EnterpriseBot
 # Fecha de inicio: 2026-07-14 (S018)
 
@@ -600,3 +601,98 @@ explícitamente no abordada por decisión de Miguel Ángel.
 | S019 | 2026-07-15 | Pasos 1-3 de la hoja de ruta construidos, con corrección de flujo a mitad de sesión (directriz 4.8): la generación automática se deriva de la tarea real del operario, no de un CRUD de supervisor. Calendario con código de colores y agrupación por `WorkPeriodGroup` construido y desplegado. Ocho incidencias reales encontradas y corregidas en producción (dos `ImportError` que tumbaron el despliegue, `FieldError`, sidebar rota, dos bugs de validación que bloqueaban el flujo real, autorrelleno de H.C./H.F., patrón de errores en crudo en 17 sitios fuera de H24). Vista de detalle de solo lectura para Partes Digitales añadida (fuera de H24). Diagnosticados con datos reales dos casos de "parte no encontrado" sin causa técnica. Decidida la migración futura de Google Drive a Google Cloud Storage (sin implementar). Detectado al cierre un bug real en `WorkPeriodGroup` (activación automática sin control) que Miguel Ángel decide abordar en sesión nueva junto con un rediseño más amplio (cálculo de periodo 21-20 al vuelo, horas extra acumuladas, visor por periodo) — ver "COMPLETADAS EN S019" y la hoja de ruta arriba para el detalle completo. |
 | S020 | 2026-07-15 | Rediseño completo de `WorkPeriodGroup` cerrado (5/5 puntos de la tarea principal, commits `cd5d14b`/`205346e`); CRUD de vacaciones comprobado y confirmado correcto sin cambios; desvío puntual a H10 por incidencia real de albaranes (commit `2aa236c`, ver anexo H10 fila S020); bug real de comentarios Django `{# #}` multilínea rotos detectado y corregido tras el primer cierre (commit `d27fec1`, 3 sitios); nueva incidencia de sidebar reportada por Miguel Ángel, sin diagnosticar todavía -- primera tarea de la siguiente sesión. Ver "COMPLETADAS EN S020" arriba para el detalle completo. |
 | S021 | 2026-07-16 | Prioridad 1 resuelta (sidebar de `alvarez_admin`, commit `e2a5ecc` -- el bug vivía en `machine_documents`, app de H23). Sin más trabajo propio de H24: funcionalidad de vacaciones/calendario completa desde S020. **PCH ejecutado al cierre: H24 → H23** (confirmado explícitamente por Miguel Ángel). Migración Drive→GCS, anotada aquí desde S019 sin fecha, pasa a rastrearse en el anexo H23 como primera tarea de la sesión siguiente. Ver anexo H23 (S021) para el resto del trabajo real de esta sesión -- H24 solo tuvo el desvío puntual de arriba. |
+| S127 | 2026-10-16 | Hito reabierto desde H30, ampliado y renombrado a "Vacaciones, Ausencias y Control Horario" por los requisitos de Alejandro (ver sección 7 y `ENTERPRISEBOT_ANNEX_ROUTER.md`, sección 6). Sin código todavía: contexto real comprobado en el repositorio y hoja de ruta acordada con Miguel Ángel. |
+
+---
+
+## 7. Ampliación en S127 — Vacaciones, Ausencias y Control Horario
+
+### 7.1. Origen
+
+Requisitos que Alejandro trasladó a Miguel Ángel (verbatim):
+
+> - Gestionar vacaciones, ausencias y fichajes de entrada y salida.
+>   Permitir que los trabajadores fichen desde el móvil con su usuario.
+> - Poder consultar los registros y los días de vacaciones disfrutados
+>   y pendientes de cada trabajador.
+
+Miguel Ángel: *"Las vacaciones ya tenemos hecho algo. Tenemos que
+completarlo para hacerlo funcional."* Se decidió no abrir un hito
+nuevo (ver `ENTERPRISEBOT_ANNEX_ROUTER.md`, sección 6, entrada S127).
+
+### 7.2. Lo que ya existe (comprobado en el repositorio en S127)
+
+- `hr_calendar.VacationPeriod`: `person` (FK obligatoria a
+  `PersonIdentity`, rediseño de S94, migración 0004), `company`,
+  `operator` (FK opcional a `CompanyUser`, solo para la tarea
+  automática), `date_start`, `date_end`, `generated_entry_line`,
+  `created_by`. Alta, edición, borrado y listado por el supervisor
+  (`VacationPeriodListView/CreateView/UpdateView/DeleteView`).
+- `hr_calendar.MedicalLeavePeriod`: `person`, `source_document`,
+  `date_start`, `date_end` (puede quedar abierta), `contingency_type`.
+- Calendario (`VacationCalendarView`,
+  `services.compute_calendar_days`) con colores por día: vacaciones,
+  trabajado, incompleto, ausencia, festivo. Se calcula por
+  `CompanyUser` (operario con cuenta de panel), a partir de los partes
+  digitales (`WorkOrderEntryLine`) y de las lagunas justificadas
+  (`WorkdayGap` con `AbsenceCategory`, catálogo de `ivr_config`).
+- **No existe:** los días de vacaciones que corresponden a cada
+  trabajador, ni por tanto disfrutados y pendientes; ninguna consulta
+  de saldo por trabajador; ningún código de fichaje (entrada/salida,
+  registro de jornada).
+
+### 7.3. Decisiones de Miguel Ángel (S127)
+
+- **Fichaje desde la aplicación web, no app nativa.** En la plantilla
+  hay móviles Android y iPhone; la web llega a todos los dispositivos
+  y es lo estándar.
+- **Sin cobertura (grúa trabajando en la calle):** el GPS no necesita
+  internet. El marcaje se toma en el sitio con sus coordenadas y se
+  envía cuando vuelva la conexión; con las coordenadas se sitúa en el
+  mapa.
+- **La app de asistencia con tablets es otra cosa** (específica de
+  asistencia, se hará aparte) y no entra en este hito.
+- Orden: primero terminar vacaciones, después ausencias, después
+  fichajes.
+
+### 7.4. Contexto legal (consultado en S127, a confirmar antes de diseñar)
+
+- Vigente (art. 34.9 del Estatuto de los Trabajadores): registro diario
+  de inicio y fin de jornada de toda la plantilla, conservado 4 años y
+  a disposición de los trabajadores, sus representantes y la
+  Inspección.
+- Real Decreto de registro horario digital: sin aprobar a 5 de octubre
+  de 2026 según fuentes del sector; exigirá registro solo digital,
+  trazabilidad de cualquier corrección, acceso remoto de la Inspección
+  y consulta del propio trabajador. Comprobar en el BOE su estado y su
+  texto antes de diseñar el punto 3.
+
+### 7.5. Hoja de Ruta para la Siguiente Sesión
+
+1. **Vacaciones: días que corresponden, disfrutados y pendientes.**
+   Al empezar, preguntar a Miguel Ángel (dato de negocio, bloqueante):
+   cuántos días corresponden al año y cómo se cuentan (naturales o
+   laborables, según convenio), qué pasa con quien entra o sale a mitad
+   de año, y si los días que sobran pasan al año siguiente. Con eso:
+   dato de días por trabajador y año ligado a `PersonIdentity`, cálculo
+   de disfrutados a partir de `VacationPeriod` y pendientes, y consulta
+   por trabajador en el panel. **Cierre:** consulta a BD de un
+   trabajador real con sus periodos, y la pantalla muestra los mismos
+   días disfrutados y pendientes.
+2. **Ausencias.** Registrar las ausencias que no son vacaciones ni baja
+   (permisos, asuntos propios...) por trabajador y con fechas, con el
+   mismo mecanismo que vacaciones, y que el calendario y la consulta
+   por trabajador las muestren. Los tipos se acuerdan con Miguel Ángel
+   al empezar el punto. **Cierre:** una ausencia real dada de alta en
+   el panel, en BD y en el calendario de ese trabajador.
+3. **Fichaje de entrada y salida desde el móvil y consulta de
+   registros.** Comprobar primero el estado del Real Decreto (7.4) y
+   cuántos trabajadores activos tienen usuario. El trabajador ficha
+   desde la web con su usuario; el marcaje guarda hora y coordenadas
+   GPS tomadas en el móvil y, sin cobertura, se guarda en el móvil y se
+   envía al volver la conexión; los marcajes se ven en el mapa. Las
+   pantallas del trabajador se diseñan para el móvil. Consulta de los
+   registros por trabajador. **Cierre:** fichaje real de entrada y
+   salida de Miguel Ángel desde su móvil, en BD con hora y
+   coordenadas, y visible en la consulta de registros.
+

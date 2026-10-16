@@ -47,13 +47,13 @@ Cumple dos funciones inseparables:
 | H21 | Refactorización Arquitectónica Split views.py | `ENTERPRISEBOT_ATTACHED_MILESTONE_V21.md` |
 | H22 | Visor de Historial de Máquinas (Operario) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V22.md` |
 | H23 | Documentación de Centros de Gasto | `ENTERPRISEBOT_ATTACHED_MILESTONE_V23.md` |
-| H24 | Vacaciones y Calendario | `ENTERPRISEBOT_ATTACHED_MILESTONE_V24.md` |
+| H24 | Vacaciones, Ausencias y Control Horario (título anterior: "Vacaciones y Calendario"; ampliado y renombrado en S127) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V24.md` ← EN PROGRESO |
 | H25 | Documentación de Personal | `ENTERPRISEBOT_ATTACHED_MILESTONE_V25.md` |
 | H26 | Infraestructura Documental Compartida (Alertas, PDF, Email, Sustitución) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V26.md` |
 | H27 | Ingesta de Documentación vía Correo Electrónico | `ENTERPRISEBOT_ATTACHED_MILESTONE_V27.md` |
 | H28 | Migración y Reorganización de Documentación Histórica | `ENTERPRISEBOT_ATTACHED_MILESTONE_V28.md` |
 | H29 | Explorador de Archivos y Gobierno Documental del Panel sobre GCS | `ENTERPRISEBOT_ATTACHED_MILESTONE_V29.md` |
-| H30 | Vinculación Documental Real — Centros de Gasto y Personal | `ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md` ← EN PROGRESO |
+| H30 | Vinculación Documental Real — Centros de Gasto y Personal | `ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md` |
 | H31 | Interfaz de Gestión Documental de Personal — Altas, Bajas, Sustituciones, EPIs y Circulares (título anterior: "Interfaz de Ficha de Personal — EPIs y Notificaciones/Circulares"; ampliado en S99 al fusionar H33) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md` |
 | H32 | Migraciones de Infraestructura (Modelo IA, Python, Registro Android) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V32.md` |
 | ~~H33~~ | ~~Subida de Documentación en Tiempo Real desde el Panel~~ — **FUSIONADO EN H31 el 2026-09-10 (S99)**, ver sección 6 | `ENTERPRISEBOT_ATTACHED_MILESTONE_V33.md` (conservado íntegro como archivo histórico) |
@@ -67,7 +67,28 @@ Todos los anexos viven en `DOCS/MAINS/ATTACHEDS/`.
 
 ## 3. Resultado Actual
 
-**Hito EN PROGRESO:** H30 — Vinculación Documental Real: Centros de
+**Hito EN PROGRESO desde S127:** H24 — Vacaciones, Ausencias y Control
+Horario → `ENTERPRISEBOT_ATTACHED_MILESTONE_V24.md`. Reabierto, ampliado
+y renombrado (antes "Vacaciones y Calendario", pausado desde S021) por
+los requisitos que Alejandro trasladó a Miguel Ángel: gestionar
+vacaciones, ausencias y fichajes de entrada y salida, fichar desde el
+móvil con su usuario, y consultar registros y días de vacaciones
+disfrutados y pendientes de cada trabajador. Fichaje desde la
+aplicación web (trabajadores con Android y con iPhone), no app nativa.
+Ver "Ampliación en S127" y su hoja de ruta en el propio anexo.
+
+**Hito PAUSADO en S127:** H30 — Vinculación Documental Real: Centros de
+Gasto y Personal → `ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md`. Sesión
+S127 (01-16/10/2026): WhatsApp en texto libre dentro de la ventana de
+24 h, árbol raíz reordenado, NO CONFORMES revisados y vaciados, dominio
+EMPRESA en el H28, auditoría de documentos ausentes con OCR completo,
+documentos esenciales escondidos en dossiers rescatados (y regla S041
+sustituida) y cotejo exacto de archivos de otra persona. Se pausa
+porque las pruebas de su hoja de ruta esperan a que Miguel Ángel cotele
+con Yolanda los avisos de falta de documentación. Ver "COMPLETADAS EN
+S127" y "Al retomar H30" en su anexo.
+
+**Hito EN PROGRESO (histórico, hasta S127):** H30 — Vinculación Documental Real: Centros de
 Gasto y Personal → `ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md`.
 Dominio MÁQUINAS (los 7 puntos de la "Fase A de `DOC. MAQUINAS`")
 **cerrado y verificado con consulta real en S119** — fechado,
@@ -468,6 +489,28 @@ no, estamos totalmente perdidos."*
 **Qué NO cambió:** el número de hito H33 no se reutiliza para nada
 nuevo (queda marcado como fusionado, no libre); H29 sigue `PAUSADO`;
 no hubo ninguna otra fusión ni eliminación de hito en esta sesión.
+
+### 2026-10-16 (S127) — H24 ampliado y renombrado; sin hito nuevo
+
+**Origen:** requisitos de Alejandro trasladados por Miguel Ángel
+(verbatim): *"Gestionar vacaciones, ausencias y fichajes de entrada y
+salida. Permitir que los trabajadores fichen desde el móvil con su
+usuario. Poder consultar los registros y los días de vacaciones
+disfrutados y pendientes de cada trabajador."* Miguel Ángel: *"Las
+vacaciones ya tenemos hecho algo. Tenemos que completarlo para hacerlo
+funcional."*
+
+**Decisión (propuesta del modelo, aceptada por Miguel Ángel):** no se
+crea un hito nuevo. Todo es el tiempo de cada trabajador: el calendario
+de H24 ya pinta cada día (trabajado, vacaciones, ausencia...), y los
+fichajes son el dato real de "día trabajado"; el saldo de vacaciones y
+el fichaje necesitan la misma base (trabajador con su ficha y su
+usuario). H24 se renombra de "Vacaciones y Calendario" a
+"Vacaciones, Ausencias y Control Horario", en este archivo, en
+`ENTERPRISEBOT_MASTER_DOCUMENT.md` y en su propio anexo. El número H37
+no se usa.
+
+---
 
 ---
 

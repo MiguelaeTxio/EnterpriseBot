@@ -9185,6 +9185,113 @@ verde; relanzado el trabajo fallido, segundo intento verde completo.
 **Migraciones aplicadas y verificadas en BD:** 0175-0178
 (document_explorer).
 
+### COMPLETADAS EN S127 (01-16/10/2026, PEE PC; H30 -- WhatsApp en
+### texto libre, árbol raíz, NO CONFORMES vaciados, dominio EMPRESA,
+### auditoría de ausentes con OCR completo, dossiers rescatados y cotejo
+### exacto de archivos de otra persona)
+
+La hoja de ruta de S127 (abajo) no avanzó en sus pruebas: la sesión se
+fue entera a sanear la documentación que esas pruebas necesitan dar por
+buena. El punto 4 (avisos de las 8:00) sí queda comprobado: el aviso del
+02/10 llegó por texto libre (`165d953`) y Miguel Ángel confirma al pausar
+que los avisos le llegan bien y que los requisitos documentales
+funcionan.
+
+**WhatsApp dentro de la ventana de 24 h (`dd8bb75`, `165d953`).** Desde
+el 01/10 Meta cobra también las plantillas de utilidad dentro de la
+ventana: `WhatsAppCustomerWindow` (migración 0005 de `whatsapp`) anota
+el último entrante y `window_service.send_notification()` manda texto
+libre si la ventana está abierta (15 min de margen); los avisos llevan
+su propio texto corto. Sábados y domingos no se envían avisos. Prueba
+real de solicitud del DNI: el nombre del adjunto ya no llega al chatbot
+(`e5a6e7e`) y un 504/429 de Gemini al unir la otra cara se reintenta
+(`3712e75`).
+
+**Árbol raíz (`c4116a1`, `fb3e596`, `2c59db7`).** Accesorios de
+elevación y manuales de uso dentro de `DOC. MAQUINAS`; `NO CONFORMES/`
+con `CLASIFICACION`, `WHATSAPP` y `BANDEJA DE ENTRADA`. Movido con
+`reorganize_root_tree_s127` (solo índice, papelera incluida).
+
+**NO CONFORMES revisados y vaciados (`75fe520`, `657fb5c`, `7d1dc16`,
+`2532245`, `198ce12`, `6c78d08`).** Los 123 de clasificación, uno a
+uno: a `DOC. EMPRESA`, a la ficha de su persona o máquina con
+`file_entry_manually`, copias exactas y huérfanos a la papelera. Rosas
+Sánchez ya existía con el apellido mal escrito (corregido). Tipos
+nuevos aprobados: `EXTINCION_CONTRATO`, `PRESTACION_NACIMIENTO`,
+`LISTADO_EXAMEN_OFICIAL`, `EMBARGO_SALARIO`, `CERTIFICADO_MATRIMONIO`,
+`JUSTIFICANTE_ACOMPANAMIENTO`, `INFORME_MEDICO` y 12 tipos de EMPRESA
+(`69b3e62`). Causas corregidas en el H28: persona por nombre exacto y
+único o DNI con 1-2 caracteres mal leídos, el dominio del documento
+manda sobre la carpeta, `.msg` como texto (`87b99d2`); dominio EMPRESA
+con subcarpeta fija por tipo (`0045b02`); un 429/503/504 de Gemini deja
+el archivo en la cuarentena (`cf94a26`); comprimidos con contenido
+nuevo se extraen a la cuarentena, `.docx`/`.html`/`.xml` por su texto,
+`_SINFECHA` en vez de fecha inventada (`ae4afb1`, `8cf59be`,
+`b730b3b`); plantillas en blanco a PLANTILLAS de EMPRESA (`4341e5b`);
+personales sin persona vuelven a la cuarentena si la misma pasada crea
+a esa persona (`73b868c`).
+
+**Pasada de `DOC. PERSONAL` sin nutrir (`323d8d3`).** 449 archivos de
+carpetas antiguas reencolados en el H28. Destapó tres fallos de la
+cuarentena, corregidos: contadores UNSIGNED por debajo de 0
+(`d1adb57`), conexión MySQL perdida (`53dfb96`) y pasadas colgadas o
+duplicadas (`0b56447`: una sola a la vez, 30 min de tope).
+
+**Avisos de contrato (`dc00e80`, `29b31eb`, `23a699a`, `8de67a3`,
+`b68e3de`, `bcd795d`).** El contrato cubre su alta si se firmó hasta 45
+días antes o 15 después; solo se pide el del periodo actual; gerencia
+exenta. Cubren el alta también la conversión a indefinido, la
+subrogación (fusionada en `CAMBIO_EMPRESA_SUBROGACION`) y la
+comunicación Contrat@. 10 contratos/altas retipados y refechados. Un
+solo aviso "DNI o NIE".
+
+**Auditoría de documentos ausentes (`2a988a0` ... `bc91b13`).**
+`audit_missing_documents`: antes de decir que falta algo se leen todos
+los archivos de la persona. `ocr_full_text` (`32a40ff`) guarda el OCR
+completo página a página (texto incrustado + Cloud Vision) en
+`ocr_text`; la auditoría pregunta a Gemini sobre ese texto y el DNI/NIE
+solo cuenta con el número completo y su letra. Log propio con ETA.
+
+**Reactivaciones indebidas deshechas (`830616a`, `fc26293`, `1d3e452`,
+`6ccb700`).** Un ALTA o CONTRATO ya no reactiva a quien está de baja
+salvo documento posterior a la baja. `undo_auto_reactivation` devolvió
+a Ruiz Portillo a no activo y a Palliotti a "sin cruzar", sin baja
+nueva.
+
+**Documentos esenciales escondidos en dossiers (`23bfefb`, `13783af`,
+`8302401`, `2730ba2`, `0a0f89a`).** Causa de raíz: la regla S041 del
+H28 tiraba a la papelera todo dossier dando por hecho que su contenido
+ya estaba archivado, y un dossier con tipo solo archivaba ese tipo.
+Sustituida por `dossier_service` + `_handle_dossier`: Gemini enumera en
+la misma llamada los documentos contenidos (tipo, páginas, fechas), se
+saca a su propio archivo cada uno que la persona no tenga, y el dossier
+solo va a la papelera cuando todo queda archivado (si no, NO
+CONFORMES). Rescate con `rescue_dossier_documents_s127` (lista cerrada
+de 23 casos vistos a mano, sin Gemini, solo activos;
+EnterpriseBot_044/047): 22 documentos esenciales de 16 trabajadores
+activos salen a la luz (entradas 52506-52523 y 52528; restaurados o
+retipados 35943, 39202, 39306), incluido lo escondido en el borrado del
+árbol antiguo del 31/07 (gruista de Ramos Jiménez, contrato indefinido
+de 01/01/2022 de Martín González). Algunos salen como caducados en
+Avisos (permiso de Núñez de 2021, gruista de Ramos Zambrana de 2023) o
+caducan pronto (CAP de Gutiérrez Mateo Alejandro 10/10/2026, gruista de
+Álvarez Serrano 09/2026): es el estado real del documento.
+
+**Archivos de otra persona: cotejo exacto (`42a3c93`, `a000113`,
+`d75a4c6`).** La pregunta a Gemini no era fiable. `ownership_service`
+coteja sobre el OCR completo, página a página: prueba fuerte el DNI/NIE
+completo con su letra (también en la zona MRZ), prueba de nombre el
+nombre completo en orden de documento; al dueño le basta un rastro;
+firmantes (5 o más dueños) y gerencia no cuentan. OCR completo de las
+~9.680 fichas repartido en 6 consolas (`--shard N --shards 6`,
+EnterpriseBot_049-054). Veredicto (EnterpriseBot_056): 23 de otra
+persona, 6.735 del dueño, 228 sin pruebas, 13 sin OCR. Aplicada la
+regla de Miguel Ángel ("si son de persona y es activa a su persona, si
+no a empresa, y si no es de empresa a la papelera"), solo lo probado
+por número: 16 a la ficha de su dueño activo, 3 a la papelera, y los 4
+de Aranda Reyes (no activo, confirmado por Miguel Ángel) a la papelera
+(EnterpriseBot_057). Nada pendiente.
+
 ## Hoja de Ruta para la Siguiente Sesión (S127) -- REESCRITA al cierre,
 ## sustituye por completo a la de S126
 
@@ -9287,3 +9394,21 @@ vacías.
 que no se pueden partir se corrigen a mano con el botón "Tipo". 13
 migraciones antiguas no se aplican sobre una BD vacía (para probar en
 local: `migrate --run-syncdb` con `MIGRATION_MODULES` vacío).
+
+## Al retomar H30 (añadido al pausar en S127, concertado con Miguel Ángel)
+
+**Condición previa a las pruebas (orden de Miguel Ángel).** Las
+pruebas de la hoja de ruta de arriba (puntos 1, 2 y 3, y la primera
+línea de Docuten) no se hacen hasta que Miguel Ángel haya cotejado con
+Yolanda los avisos de falta de documentación: comprobar que lo que
+falta falta de verdad (puede estar en otras carpetas) y cerrar a mano
+los huecos que se puedan. Con la documentación comprobada, se retoma
+por el punto 1.
+
+**Punto 4 (avisos de las 8:00): hecho.** Ver "COMPLETADAS EN S127".
+
+**Interfaz en el móvil (reportado por Miguel Ángel y confirmado por
+Alejandro).** Las vistas del panel no se ven bien en el móvil y no se
+puede trabajar desde él: hay que mejorar la experiencia y que la
+aplicación sea realmente adaptable al móvil. Anotado para verlo al
+volver.

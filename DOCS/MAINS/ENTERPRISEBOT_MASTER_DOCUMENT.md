@@ -40,7 +40,7 @@ sesión — actualizar esta lista cada vez que se instale o retire una app:
 | `history` | Visor de Historial de Máquinas de solo lectura para rol WORKSHOP (H22), incluye galería de fotos (H7) y sección de documentación (H23). |
 | `delivery_notes` | CRUD de administración de albaranes de proveedor (gap detectado 2026-07-08). |
 | `machine_documents` | Documentación oficial de centros de gasto vía Gemini Vision + GCS (H23). |
-| `hr_calendar` | Vacaciones y calendario de operario/chófer (H24). |
+| `hr_calendar` | Vacaciones, ausencias y calendario de los trabajadores (H24). |
 | `personal_documents` | Documentación oficial de personal vía Gemini Vision + GCS (H25). |
 | `document_ingestion` | Ingesta de documentación y enrutado (H23/H25, S024): `IngestedFile` — staging de un archivo subido antes de saber a qué dominio y entidad pertenece — y `LearnedDocumentTypeKeyword`. Incluye `entity_matching_service.py` y la tarea periódica `self_heal_unassigned_personal_documents`. **Ausente de este mapa hasta S037.** |
 | `document_management` | Infraestructura Documental Compartida (H26): `EmailTemplate`, `DocumentAlert`, `DocumentSubstitutionLog`. Aquí vive la tarea periódica `send_document_expiry_alerts`. **Ausente de este mapa hasta S037.** |
@@ -262,8 +262,9 @@ app de dominio.
   y recuperación rápida sin que el usuario necesite saber dónde está
   guardado cada archivo.
 
-#### Hito 24: Vacaciones y Calendario
-(Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V24.md`)
+#### Hito 24: Vacaciones, Ausencias y Control Horario
+(Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V24.md`; título anterior
+"Vacaciones y Calendario", ampliado en S127)
 - Generación automática de tarea de vacaciones (bloque de ausencia, centro
   de gasto PERSONAL, categoría VACATION) en la última jornada laboral
   antes del periodo vacacional del operario/chófer.
@@ -273,6 +274,11 @@ app de dominio.
   vacaciones, baja, ausencia no justificada, festivo), visible para todos
   los roles autenticados, con filtro por operario/chófer para
   ADMIN/SUPERVISOR y vista propia sin selector para WORKSHOP/DRIVER.
+- Ampliación S127 (requisitos de Alejandro): días de vacaciones que
+  corresponden a cada trabajador, disfrutados y pendientes; gestión de
+  ausencias; fichaje de entrada y salida desde el móvil con el usuario
+  del trabajador (aplicación web, Android e iPhone, con la ubicación
+  GPS del marcaje) y consulta de los registros de jornada.
 
 #### Hito 25: Documentación de Personal
 (Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V25.md`)
