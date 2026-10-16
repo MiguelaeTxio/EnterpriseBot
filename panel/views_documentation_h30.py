@@ -3079,6 +3079,7 @@ class DossierTemplateManageView(CompanyUserRequiredMixin, View):
             ),
             "saved_event": "",
             "deleted_event": "",
+            "changed_event": "",
             "rows": rows,
             "sections": sections,
         }
@@ -3610,6 +3611,7 @@ class JobPositionManageView(CompanyUserRequiredMixin, View):
             ),
             "saved_event": "eb:requirement-saved",
             "deleted_event": "eb:requirement-deleted",
+            "changed_event": "eb:requirements-changed",
             "rows": rows,
             "sections": sections,
         }

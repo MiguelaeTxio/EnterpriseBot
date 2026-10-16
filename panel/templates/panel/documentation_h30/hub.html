@@ -360,7 +360,8 @@ id, indistinto de dónde viva en el DOM.
     });
 
     // H30 (S123). Un requisito guardado o borrado en la pestaña
-    // Requisitos aparece al momento en el resto del hub, sin recargar
+    // Requisitos aparece al momento en el resto del hub (S128: la
+    // recarga de Avisos la hace 'eb:requirements-changed', más abajo), sin recargar
     // la página: se actualizan los desplegables de asignación
     // (Personal, Centros de gasto: `select[data-requirement-select]`)
     // y se vuelve a pedir la pestaña Avisos si ya estaba cargada (su
@@ -383,6 +384,27 @@ id, indistinto de dónde viva en el DOM.
         const url = document.getElementById('tab-avisos').getAttribute('hx-get');
         htmx.ajax('GET', url, {target: '#pane-avisos', swap: 'innerHTML'});
     }
+
+    // S128. Activar, desactivar, guardar o borrar un requisito cambia
+    // las insignias de los listados (solo cuentan los requisitos
+    // activos): se vuelven a pedir Personal y Centros de gasto, si ya
+    // estaban cargados, con sus filtros actuales, y Avisos. Antes había
+    // que recargar la página para verlo (Miguel Ángel, S128).
+    function reloadRequirementLists() {
+        const personalForm = document.getElementById('personal-search-form');
+        if (personalForm && window.htmx) {
+            htmx.trigger(personalForm, 'submit');
+        }
+        const fleetSearch = document.getElementById('fleet-filter-search');
+        if (fleetSearch && window.htmx) {
+            htmx.trigger(fleetSearch, 'search');
+        }
+    }
+
+    document.addEventListener('eb:requirements-changed', function () {
+        reloadRequirementLists();
+        reloadAlertsPane();
+    });
 
     document.addEventListener('eb:requirement-saved', function (ev) {
         const id = String(ev.detail.id);
@@ -407,7 +429,6 @@ id, indistinto de dónde viva en el DOM.
             });
             items.forEach(function (opt) { select.appendChild(opt); });
         });
-        reloadAlertsPane();
     });
 
     document.addEventListener('eb:requirement-deleted', function (ev) {
@@ -417,7 +438,6 @@ id, indistinto de dónde viva en el DOM.
                 if (opt.value === id) { opt.remove(); }
             });
         });
-        reloadAlertsPane();
     });
 })();
 </script>

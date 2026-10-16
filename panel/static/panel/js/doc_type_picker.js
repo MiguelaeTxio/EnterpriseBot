@@ -296,6 +296,16 @@
             refreshSelection();
         }
 
+        // S128: cualquier cambio (guardar, borrar, activar/desactivar)
+        // avisa al resto del hub para que refresque los listados que
+        // dependen de estos datos (insignias de Personal y Centros de
+        // gasto, Avisos) sin recargar la página.
+        function notifyChanged() {
+            if (cfg.tpChangedEvent) {
+                document.dispatchEvent(new CustomEvent(cfg.tpChangedEvent));
+            }
+        }
+
         function toast(message) {
             var el = document.getElementById('personGroupToast');
             var body = document.getElementById('personGroupToastBody');
@@ -359,6 +369,7 @@
                         detail: {id: data.id, name: data.name},
                     }));
                 }
+                notifyChanged();
             }).catch(function () {
                 showError('Error de red al guardar.');
             });
@@ -386,6 +397,7 @@
                     }
                 });
                 toast((active ? 'Activados: ' : 'Desactivados: ') + data.count);
+                notifyChanged();
             }).catch(function () {
                 showError('Error de red.');
             });
@@ -451,6 +463,7 @@
                         }));
                     });
                 }
+                notifyChanged();
             }).catch(function () {
                 window.bootstrap.Modal.getOrCreateInstance(modalEl).hide();
                 showError('Error de red al eliminar.');
