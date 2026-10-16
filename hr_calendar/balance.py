@@ -13,7 +13,7 @@ Rules agreed by Miguel Ángel with Carolina (HR), annex V24 section
   into stretches, each with its own rule.
 - Calendar year. Workers who join or leave mid-year get the pro rata
   share: days per year x days employed in the year / days of the year,
-  rounded up to the next half day.
+  rounded up to the next whole day.
 - Natural days count every day; working days count Monday to Friday
   except public holidays (the rule's holiday base, else the base of the
   worker's panel account, else weekends only).
@@ -22,7 +22,6 @@ Rules agreed by Miguel Ángel with Carolina (HR), annex V24 section
   sets a deadline and it passes, the rest are lost and shown as lost.
 - Days of medical leave inside a vacation period are not spent
   (art. 38.3 of the Workers' Statute, MedicalLeavePeriod).
-- Half days (VacationPeriod.half_day_start/half_day_end).
 - Manual adjustments by a supervisor, always with a reason.
 - A negative balance is allowed and flagged.
 - The starting balance (days already taken in the year and leftovers
@@ -49,7 +48,7 @@ sección 7.3, todas implementadas aquí:
   mitad de año parte el año en tramos, cada uno con su regla.
 - Año natural. Quien entra o sale a mitad de año tiene la parte
   proporcional: días al año x días de alta en el año / días del año,
-  redondeado al medio día hacia arriba.
+  redondeado al día entero hacia arriba.
 - Naturales cuenta todos los días; laborables, de lunes a viernes
   salvo festivos (calendario de la regla; si no, el de la base de la
   cuenta de panel del trabajador; si no, solo fines de semana).
@@ -59,7 +58,6 @@ sección 7.3, todas implementadas aquí:
   perdido.
 - Los días de baja médica dentro de unas vacaciones no se gastan
   (art. 38.3 ET, MedicalLeavePeriod).
-- Medios días (VacationPeriod.half_day_start/half_day_end).
 - Ajustes manuales del supervisor, siempre con motivo.
 - El saldo negativo se permite y se avisa.
 - El saldo de partida (disfrutados del año y sobrantes del anterior)
@@ -92,21 +90,22 @@ from hr_calendar.models import (
 logger = logging.getLogger(__name__)
 
 ZERO = Decimal("0")
-HALF = Decimal("0.5")
 ONE = Decimal("1")
 NO_SECTION_LABEL = "Sin sección (regla general)"
 
 
-def round_up_half(value):
+def round_up_day(value):
     """
-    Round a positive amount of days up to the next half day.
+    Round a positive amount of days up to the next whole day.
     ---
-    Redondea una cantidad de días al medio día hacia arriba (los
-    valores negativos o cero se dejan como están).
+    Redondea una cantidad de días al día entero hacia arriba (los
+    valores negativos o cero se dejan como están). H24 (S129): la
+    empresa no da medios días (Miguel Ángel), así que la parte
+    proporcional tampoco deja medios días.
     """
     if value <= 0:
         return value
-    return Decimal(math.ceil(value * 2)) / 2
+    return Decimal(math.ceil(value))
 
 
 def _year_bounds(year):
@@ -436,7 +435,7 @@ class BalanceCalculator:
                 share = rule.days_per_year / _days_in_year(year)
                 segment.entitled += share
                 per_day_total += share
-            result.entitled = round_up_half(per_day_total)
+            result.entitled = round_up_day(per_day_total)
             for seg in result.segments:
                 seg.entitled = seg.entitled.quantize(Decimal("0.01"))
         if without_rule:
@@ -506,10 +505,6 @@ class BalanceCalculator:
                     if _is_holiday(day, self._holiday_base(person, rule)):
                         continue
                 weight = ONE
-                if day == period.date_start and period.half_day_start:
-                    weight = HALF
-                if day == period.date_end and period.half_day_end:
-                    weight = HALF
                 if self._in_medical_leave(person.pk, day):
                     use.medical_days += weight
                     continue

@@ -113,9 +113,9 @@ def build_template(company, year, as_of):
         ])
     last_row = sheet.max_row
     validation = DataValidation(
-        type="decimal", operator="between", formula1="-366",
+        type="whole", operator="between", formula1="-366",
         formula2="366", allow_blank=True,
-        error="Escribe un número de días (admite medios días, p. ej. 3,5).",
+        error="Escribe un número entero de días.",
     )
     sheet.add_data_validation(validation)
     if last_row >= 2:
@@ -154,8 +154,8 @@ def _parse_days(value):
     Cell value -> Decimal days, None for an empty cell.
     ---
     Valor de celda -> días (Decimal), None si está vacía. Acepta coma
-    decimal. Lanza ValueError si no es un número o no es múltiplo de
-    medio día.
+    decimal. Lanza ValueError si no es un número de días entero (la
+    empresa no da medios días, S129).
     """
     if value is None or (isinstance(value, str) and not value.strip()):
         return None
@@ -163,8 +163,8 @@ def _parse_days(value):
         days = Decimal(str(value).strip().replace(",", "."))
     except InvalidOperation as exc:
         raise ValueError("no es un número") from exc
-    if (days * 2) != (days * 2).to_integral_value():
-        raise ValueError("solo admite días enteros o medios días")
+    if days != days.to_integral_value():
+        raise ValueError("solo admite días enteros")
     return days.quantize(Decimal("0.1"))
 
 

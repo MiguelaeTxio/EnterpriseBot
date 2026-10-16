@@ -535,11 +535,11 @@ class VacationAdjustmentCreateView(SupervisorAccessMixin, View):
         person = _person_or_404(pk)
         year = _year(request.POST.get("year"))
         days = _parse_decimal(request.POST.get("days"))
-        if days is None or (days * 2) != (days * 2).to_integral_value():
+        if days is None or days != days.to_integral_value():
             return _detail_response(
                 request, person, year,
-                "Los días deben ser un número entero o con medio día "
-                "(p. ej. 2 o -1,5).", error=True,
+                "Los días deben ser un número entero (p. ej. 2 o -1).",
+                error=True,
             )
         try:
             add_manual_adjustment(
@@ -586,7 +586,7 @@ class VacationRowRegisterView(SupervisorAccessMixin, View):
     POST: register a vacation period from a worker's row.
     ---
     POST: da de alta un periodo con la fecha de inicio y la de fin
-    escritas en la fila del trabajador (con media jornada opcional) y
+    escritas en la fila del trabajador y
     devuelve esa misma fila recalculada, con el resultado en la
     cabecera (aviso flotante: ninguna acción en silencio). El alta es
     la de siempre (hr_calendar.services.create_vacation_period, con su
@@ -611,8 +611,6 @@ class VacationRowRegisterView(SupervisorAccessMixin, View):
                 create_vacation_period(
                     person=person, company=cu.company, created_by=cu,
                     date_start=date_start, date_end=date_end,
-                    half_day_start=request.POST.get("half_day_start") == "1",
-                    half_day_end=request.POST.get("half_day_end") == "1",
                 )
                 message = (
                     f"Vacaciones de {_person_label(person)} registradas: "
@@ -658,7 +656,7 @@ class VacationPeriodEditView(SupervisorAccessMixin, View):
     """
     POST: change the dates (and half days) of a period.
     ---
-    POST: cambia las fechas (y medios días) de un periodo desde el
+    POST: cambia las fechas de un periodo desde el
     desglose del trabajador (hr_calendar.services
     .update_vacation_period, que rehace la tarea fantasma si cambia el
     inicio).
@@ -677,11 +675,7 @@ class VacationPeriodEditView(SupervisorAccessMixin, View):
                 "Indica la fecha de inicio y la de fin.", error=True,
             )
         try:
-            update_vacation_period(
-                period, date_start, date_end,
-                half_day_start=request.POST.get("half_day_start") == "1",
-                half_day_end=request.POST.get("half_day_end") == "1",
-            )
+            update_vacation_period(period, date_start, date_end)
         except ValueError as exc:
             return _detail_response(request, period.person, year, str(exc),
                                     error=True)

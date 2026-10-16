@@ -79,21 +79,13 @@ CRUD de S94): cada botón envía su fila con hx-include="closest tr".
             <td>
                 <input type="hidden" name="year" value="{{ year }}">
                 <input type="date" name="date_start" value="{{ use.period.date_start|date:'Y-m-d' }}" class="form-control form-control-sm">
-                <div class="form-check small mb-0">
-                    <input class="form-check-input" type="checkbox" name="half_day_start" value="1" id="vbal-hs-{{ use.period.pk }}" {% if use.period.half_day_start %}checked{% endif %}>
-                    <label class="form-check-label" for="vbal-hs-{{ use.period.pk }}">½</label>
-                </div>
             </td>
             <td>
                 <input type="date" name="date_end" value="{{ use.period.date_end|date:'Y-m-d' }}" class="form-control form-control-sm">
-                <div class="form-check small mb-0">
-                    <input class="form-check-input" type="checkbox" name="half_day_end" value="1" id="vbal-he-{{ use.period.pk }}" {% if use.period.half_day_end %}checked{% endif %}>
-                    <label class="form-check-label" for="vbal-he-{{ use.period.pk }}">½</label>
-                </div>
             </td>
             {% else %}
-            <td>{{ use.period.date_start|date:"d/m/Y" }}{% if use.period.half_day_start %} <span class="badge text-bg-light">½</span>{% endif %}</td>
-            <td>{{ use.period.date_end|date:"d/m/Y" }}{% if use.period.half_day_end %} <span class="badge text-bg-light">½</span>{% endif %}</td>
+            <td>{{ use.period.date_start|date:"d/m/Y" }}</td>
+            <td>{{ use.period.date_end|date:"d/m/Y" }}</td>
             {% endif %}
             <td class="text-end">{{ use.days|floatformat:"-1" }}{% if use.medical_days %}<div class="text-muted">{{ use.medical_days|floatformat:"-1" }} de baja, no se gastan</div>{% endif %}</td>
             {% if can_manage %}
@@ -152,7 +144,7 @@ CRUD de S94): cada botón envía su fila con hx-include="closest tr".
     <div class="small fw-bold mb-1">Ajuste manual en {{ year }}</div>
     <div class="d-flex gap-2 mb-1">
         <input type="text" name="days" class="form-control form-control-sm w-25" placeholder="Días" required
-               title="Positivo suma días, negativo los resta. Admite medio día (p. ej. -1,5).">
+               title="Positivo suma días, negativo los resta (p. ej. -1).">
         <input type="text" name="reason" class="form-control form-control-sm" placeholder="Motivo (obligatorio)" required>
     </div>
     <button type="submit" class="btn btn-sm btn-primary">

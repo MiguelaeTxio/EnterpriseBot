@@ -237,25 +237,6 @@ class VacationPeriod(models.Model):
                   "campo de texto libre.",
     )
 
-    # ------------------------------------------------------------------
-    # H24 (S129). Medios días: el primer día y/o el último del periodo
-    # pueden ser de media jornada (0,5 días en el saldo). En un periodo
-    # de un solo día basta con una de las dos casillas.
-    # ---
-    # H24 (S129). Half days: the first and/or last day of the period
-    # may be half a working day (0.5 days in the balance).
-    # ------------------------------------------------------------------
-    half_day_start = models.BooleanField(
-        default=False,
-        verbose_name="Primer día de media jornada",
-        help_text="El primer día del periodo cuenta como medio día.",
-    )
-    half_day_end = models.BooleanField(
-        default=False,
-        verbose_name="Último día de media jornada",
-        help_text="El último día del periodo cuenta como medio día.",
-    )
-
     created_at = models.DateTimeField(
         auto_now_add=True,
         verbose_name="Fecha de creación",
@@ -269,14 +250,6 @@ class VacationPeriod(models.Model):
             models.CheckConstraint(
                 condition=models.Q(date_end__gte=models.F("date_start")),
                 name="vacationperiod_date_end_gte_date_start",
-            ),
-            models.CheckConstraint(
-                condition=~(
-                    models.Q(date_start=models.F("date_end"))
-                    & models.Q(half_day_start=True)
-                    & models.Q(half_day_end=True)
-                ),
-                name="vacationperiod_single_day_one_half_flag",
             ),
         ]
 
