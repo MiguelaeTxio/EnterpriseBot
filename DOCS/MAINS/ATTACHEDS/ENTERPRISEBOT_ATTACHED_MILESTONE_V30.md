@@ -9314,6 +9314,113 @@ de Aranda Reyes (no activo, confirmado por Miguel Ángel) a la papelera
   ve muchos errores y el historial vacío. A las 10:51 su latido llegaba
   al servidor, sin subidas ni pasadas de la cuarentena ese día.
 
+### COMPLETADAS EN S128 (16/10/2026, PEE PC; H30 -- incidencia del
+### agente H28 resuelta, puntos 1-6 de la hoja de ruta de S128 hechos,
+### Requisitos y Dosieres sobre un gestor común, panel en el móvil)
+
+**Primera línea -- agente H28 (desvío a H28, detalle en el anexo V28,
+"DESVÍO EN S128").** El log de Miguel Ángel mostraba que el `.exe`
+onefile se extraía en `%TEMP%` y Windows le borraba piezas a medio
+uso (bundle TLS de certifi, Tcl): de ahí los errores en cadena.
+- `80711ae`: empaquetado con `--runtime-tmpdir` en
+  `%LOCALAPPDATA%\EnterpriseBot\H28MigrationAgent\runtime` (comando en
+  el README del agente y en `SESSION_VARIABLES.md`, con borrado de los
+  `_MEI*` viejos), aviso en el log si aun así se extrae en `%TEMP%`, y
+  log rotativo (`RotatingFileHandler`, `LOG_MAX_BYTES`/`LOG_BACKUP_COUNT`).
+- `10e7935` (petición explícita de Miguel Ángel: *"si el archivo está
+  en GCS, no podemos volver a subirlo ni a clasificarlo"*): módulo
+  nuevo `known_contents.py`. Antes de subir a `_CUARENTENA/`, el agente
+  compara MD5 y tamaño con todo el cubo (papelera incluida), cacheado
+  `KNOWN_CONTENTS_REFRESH_SECONDS=1800`; si el listado falla, no sube
+  nada (nunca a ciegas). `catchup.py` y `reconciler.py` lo usan; el
+  resumen de la reconciliación cuenta "ya en GCS (no se suben)".
+- Resultado real tras reempaquetar (solo `git pull` + build en su PC):
+  notificación del agente con 123 a cuarentena, 602 ya en cola, 3.354
+  ya en GCS sin subir y 1 decisión pendiente. Consulta a BD (relevo):
+  311 `DocumentIndexEntry` en `_CUARENTENA` desde el arranque, 0
+  duplicados de contenido. Historial con eventos. **Cerrada.**
+
+**Punto 1 -- Requisitos (`2cdb067`).** Requisitos de documentación y
+Dosieres pasan a un gestor común: `panel/_doc_type_picker.html` +
+`panel/static/panel/js/doc_type_picker.js` (cargado una vez en
+hub.html; todo bajo atributos `data-tp-*`, sin ids ni variables
+globales). Como pidió Miguel Ángel: se pulsa un requisito o dosier y
+sus documentos salen marcados en la lista y en el visor; se marca o
+desmarca al vuelo y se guarda; con otro nombre se crea uno nuevo sin
+tocar el original. "Plantilla activa"/"Marcar como activa" eliminado.
+Casilla por fila y "todos", eliminar varios con modal y cuenta atrás de
+5 s, y en requisitos activar/desactivar.
+- Modelo: `JobPosition.is_active` (default True, migración
+  `0184_jobposition_is_active_s128`); `PersonalDossierTemplate.is_active`
+  eliminado (`0185_remove_dossiertemplate_is_active_s128`). Las dos
+  aplicadas en producción a las 11:17 UTC (consulta a
+  `django_migrations` por el relevo).
+- Vistas nuevas: `DossierTemplateBulkDeleteView` (acotada a la
+  empresa), `JobPositionBulkDeleteView`, `JobPositionBulkActiveView`
+  (actualiza también `updated_at`, `5a4b7c8`); URLs
+  `documentacion/plantillas-dosier/eliminar/`,
+  `documentacion/puestos/eliminar/`, `documentacion/puestos/activar/`.
+  Retiradas las vistas de borrado uno a uno y de "activa".
+- Un requisito desactivado no genera avisos:
+  `required_documentation_service.get_requirement` devuelve None,
+  `document_notice_service` y `views_document_alerts` filtran
+  `job_position__is_active`/`document_requirement__is_active`.
+- `6560177`: activar/desactivar lanza `eb:requirements-changed` y
+  hub.html recarga Personal, Centros de gasto y Avisos sin recargar la
+  página (lo detectó Miguel Ángel probando).
+- Miguel Ángel lo probó en producción y le gustó; dice que los dos
+  requisitos que hay ("general" y "REQUISITO DE PRUEBA", ambos
+  desactivados) **son de prueba**: que estén desactivados es correcto.
+
+**Puntos 4 y 5 -- dosieres y colores.** Misma causa que el punto 1: las
+dos pantallas compartían ids y `let` globales en el mismo hub, y la
+segunda en cargarse no ejecutaba su JavaScript (ni creaba conjuntos ni
+pintaba los colores de familia hasta recargar). Resueltos con el gestor
+común; un barrido de los fragmentos del hub ya no encuentra colisiones.
+
+**Punto 3 -- insignias (`c009a66`), redefinido por Miguel Ángel en
+sesión:** sin interruptor. Las insignias del listado salen **solo** de
+los documentos del requisito de la persona o máquina; sin requisito, o
+con el requisito desactivado, ninguna insignia. Los avisos de contrato
+solo si el requisito activo pide CONTRATO/PRORROGA/MODIFICACION.
+
+**Punto 2 -- filtros que volvían (`46274b9`).** Causa: cada pantalla
+guardaba la navegación con su propio temporizador y `clearTimeout`, y un
+guardado nuevo cancelaba el anterior. `panel/static/panel/js/nav_state.js`
+(nuevo, en el head de base.html): `EbNavState.save` fusiona lo
+pendiente (como el servidor) y lo envía con `keepalive` al salir u
+ocultar la página. Lo usan hub, menú, accesorios, bandeja, centros de
+gasto y el gestor común; el campo de búsqueda vacío se guarda al
+momento.
+
+**Punto 6 -- móvil (`f265c93`, `5a4b7c8`, `bb348d3`).** Pestañas del
+hub desplazables, botón "Filtros y acciones" plegable en la parte fija
+(`_fixed_list_layout.html`; en escritorio la parte fija queda limitada
+al 45% de la altura), y tablas en tarjetas en el móvil (clase
+`stack-mobile` con `data-label`) en Personal, Centros de gasto,
+Accesorios, Bandeja, Circulares, EPIs, Vacaciones y las 16 tablas de
+las fichas de persona y máquina. Sin scroll lateral a 390 px en local.
+Miguel Ángel: *"en el móvil perfecto"*. En escritorio no cambia nada.
+
+**Estado de la hoja de ruta de S128 al pausar H30** (la hoja de ruta de
+abajo se conserva tal cual, com-pch):
+- Primera línea (H28) y puntos 1 a 6: hechos.
+- Punto 7 (Docuten para EPIs): sin empezar. Miguel Ángel lo hará con
+  Yolanda, que es quien tiene acceso a Docuten.
+- Punto 8 (avisos de revisiones de accesorios y EPIs): sin empezar.
+- Punto 9: sigue bloqueado hasta el cotejo con Yolanda.
+
+**Notas técnicas:**
+- `panel/static/panel/js/countdown_confirm.js` ya no lo usa ningún
+  archivo (lo sustituyó el modal del gestor común); se puede borrar.
+- Verificación local: venv de pruebas con sqlite
+  (`local_test_settings`, `MIGRATION_MODULES` vacío), `runserver
+  --noreload` y Playwright con Chromium. Nada de eso se despliega.
+- `relevo-imagenes`: 0 adjuntos al cierre (no se usó `gcs_image`).
+
+**Cierre de S128 (PCH, Miguel Ángel):** la siguiente sesión se abre en
+H24; H30 queda pausado.
+
 ## Hoja de Ruta para la Siguiente Sesión (S128) -- REESCRITA al cierre
 ## de S127, sustituye por completo a la de S127
 

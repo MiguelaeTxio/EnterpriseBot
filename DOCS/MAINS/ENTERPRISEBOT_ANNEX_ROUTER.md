@@ -47,13 +47,13 @@ Cumple dos funciones inseparables:
 | H21 | Refactorización Arquitectónica Split views.py | `ENTERPRISEBOT_ATTACHED_MILESTONE_V21.md` |
 | H22 | Visor de Historial de Máquinas (Operario) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V22.md` |
 | H23 | Documentación de Centros de Gasto | `ENTERPRISEBOT_ATTACHED_MILESTONE_V23.md` |
-| H24 | Vacaciones, Ausencias y Control Horario (título anterior: "Vacaciones y Calendario"; ampliado y renombrado en S127) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V24.md` |
+| H24 | Vacaciones, Ausencias y Control Horario (título anterior: "Vacaciones y Calendario"; ampliado y renombrado en S127) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V24.md` ← EN PROGRESO |
 | H25 | Documentación de Personal | `ENTERPRISEBOT_ATTACHED_MILESTONE_V25.md` |
 | H26 | Infraestructura Documental Compartida (Alertas, PDF, Email, Sustitución) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V26.md` |
 | H27 | Ingesta de Documentación vía Correo Electrónico | `ENTERPRISEBOT_ATTACHED_MILESTONE_V27.md` |
 | H28 | Migración y Reorganización de Documentación Histórica | `ENTERPRISEBOT_ATTACHED_MILESTONE_V28.md` |
 | H29 | Explorador de Archivos y Gobierno Documental del Panel sobre GCS | `ENTERPRISEBOT_ATTACHED_MILESTONE_V29.md` |
-| H30 | Vinculación Documental Real — Centros de Gasto y Personal | `ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md` ← EN PROGRESO |
+| H30 | Vinculación Documental Real — Centros de Gasto y Personal | `ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md` |
 | H31 | Interfaz de Gestión Documental de Personal — Altas, Bajas, Sustituciones, EPIs y Circulares (título anterior: "Interfaz de Ficha de Personal — EPIs y Notificaciones/Circulares"; ampliado en S99 al fusionar H33) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md` |
 | H32 | Migraciones de Infraestructura (Modelo IA, Python, Registro Android) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V32.md` |
 | ~~H33~~ | ~~Subida de Documentación en Tiempo Real desde el Panel~~ — **FUSIONADO EN H31 el 2026-09-10 (S99)**, ver sección 6 | `ENTERPRISEBOT_ATTACHED_MILESTONE_V33.md` (conservado íntegro como archivo histórico) |
@@ -67,28 +67,25 @@ Todos los anexos viven en `DOCS/MAINS/ATTACHEDS/`.
 
 ## 3. Resultado Actual
 
-**Hito EN PROGRESO:** H30 — Vinculación Documental Real: Centros de
-Gasto y Personal → `ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md`. Al final
-de S127 se cambió a H24 y, en la misma sesión y antes de trabajar en
-él, Miguel Ángel lo devolvió a H30: revisando el panel con Yolanda
-salieron varios fallos de H30 (Requisitos sin selección múltiple ni
-activar/desactivar, filtros borrados que vuelven, avisos sin elegir
-entre todos los faltantes o solo los del requisito, regresión al crear
-dosieres, colores de tipos documentales que no cargan). Ver "COMPLETADAS
-EN S127" y la "Hoja de Ruta para la Siguiente Sesión (S128)" en su
-anexo. Las pruebas reales siguen esperando a que Miguel Ángel coteje con
-Yolanda los avisos de falta de documentación.
+**Hito EN PROGRESO:** H24 — Vacaciones, Ausencias y Control Horario →
+`ENTERPRISEBOT_ATTACHED_MILESTONE_V24.md`. Reactivado al cierre de S128
+por Miguel Ángel (PCH desde H30). Se empieza por el punto 1 de su
+sección 7.5 ("Hoja de Ruta al reactivar H24": días de vacaciones que
+corresponden, disfrutados y pendientes), con las reglas de vacaciones
+de 7.3 ya decididas con Carolina.
 
-**Hito PAUSADO en S127 (abierto y pausado en la misma sesión, sin
-trabajo de código):** H24 — Vacaciones, Ausencias y Control Horario →
-`ENTERPRISEBOT_ATTACHED_MILESTONE_V24.md`. Reabierto, ampliado y
-renombrado (antes "Vacaciones y Calendario") por los requisitos que
-Alejandro trasladó a Miguel Ángel: vacaciones disfrutadas y pendientes
-por trabajador, ausencias, fichaje desde el móvil (aplicación web, con
-GPS y envío al volver la cobertura) y consulta de registros. Reglas de
-vacaciones ya decididas con Carolina y hoja de ruta lista en su sección
-7 ("Hoja de Ruta al reactivar H24"); se retoma cuando Miguel Ángel lo
-pida.
+**Hito PAUSADO en S128:** H30 — Vinculación Documental Real: Centros de
+Gasto y Personal → `ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md`. En S128 se
+cerraron la incidencia del agente H28 y los puntos 1 a 6 de su hoja de
+ruta (ver "COMPLETADAS EN S128"). Al reactivarlo quedan los puntos 7
+(firmas de Docuten para la entrega de EPIs: Miguel Ángel lo hace con
+Yolanda, que es quien tiene acceso a Docuten), 8 (avisos de revisiones
+de accesorios y EPIs) y 9 (pruebas reales, bloqueadas hasta que Miguel
+Ángel coteje con Yolanda los avisos de falta de documentación).
+
+**Histórico S127:** H30 en progreso; al final de S127 se cambió a H24 y,
+en la misma sesión y antes de trabajar en él, Miguel Ángel lo devolvió
+a H30 por los fallos que salieron revisando el panel con Yolanda.
 
 **Hito EN PROGRESO (histórico, estado hasta S119):** H30 — Vinculación Documental Real: Centros de
 Gasto y Personal → `ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md`.

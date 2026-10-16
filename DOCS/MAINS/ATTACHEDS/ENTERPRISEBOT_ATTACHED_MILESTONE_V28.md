@@ -2074,3 +2074,28 @@ de las 06:37, cuando el `.exe` era todavía el antiguo, así que fueron
 revisión. No es grave, porque la Fase 2 repasa el espejo entero, pero
 es un caso real de documentos que se saltaron el paso de clasificación
 y conviene tenerlo presente al diseñar el clasificador.
+
+---
+
+### DESVÍO EN S128 (16/10/2026, desde H30) -- agente extraído en %TEMP% y contenidos ya en GCS
+
+Tras 7-10 días con OneDrive en pausa, el agente se ponía al día con
+errores en cadena y el historial vacío. Causa: el `.exe` onefile se
+extraía en `%TEMP%` y Windows le borraba piezas a medio uso (bundle TLS
+de certifi, Tcl).
+
+- `80711ae`: `--runtime-tmpdir
+  "$env:LOCALAPPDATA\EnterpriseBot\H28MigrationAgent\runtime"` en el
+  comando de empaquetado (README del agente y `SESSION_VARIABLES.md`,
+  con borrado de los `_MEI*` viejos), aviso en el log si se extrae en
+  `%TEMP%`, y log rotativo (`LOG_MAX_BYTES`, `LOG_BACKUP_COUNT`).
+- `10e7935`, decisión de Miguel Ángel: **un contenido que ya está en
+  GCS (en cualquier carpeta, papelera incluida) no se sube ni se
+  clasifica.** `known_contents.py` compara MD5 y tamaño con el cubo
+  entero (caché de 30 min, `KNOWN_CONTENTS_REFRESH_SECONDS`); si el
+  listado falla, no sube nada. Lo usan `catchup.py` y `reconciler.py`.
+- Reempaquetado por Miguel Ángel (`git pull` + build). Notificación:
+  123 a cuarentena, 602 ya en cola, 3.354 ya en GCS sin subir, 1
+  decisión pendiente. BD: 311 `DocumentIndexEntry` en `_CUARENTENA`
+  desde el arranque, 0 duplicados de contenido. Historial con eventos.
+  Incidencia cerrada; detalle en el anexo V30, "COMPLETADAS EN S128".
