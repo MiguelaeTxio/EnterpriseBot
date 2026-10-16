@@ -377,7 +377,8 @@ def generate_vacation_task(vacation_period):
     return line
 
 
-def create_vacation_period(person, company, created_by, date_start, date_end):
+def create_vacation_period(person, company, created_by, date_start, date_end,
+                           half_day_start=False, half_day_end=False):
     """
     Shared creation logic for VacationPeriod, extracted in H31 (S94) so
     the panel CRUD (hr_calendar/views.py, full-page redirect) and the
@@ -436,10 +437,7 @@ def create_vacation_period(person, company, created_by, date_start, date_end):
     """
     from hr_calendar.models import VacationPeriod
 
-    if date_start > date_end:
-        raise ValueError(
-            "La fecha de inicio no puede ser posterior a la fecha de fin."
-        )
+    _validate_period_dates(date_start, date_end, half_day_start, half_day_end)
 
     return VacationPeriod.objects.create(
         person=person,
@@ -448,10 +446,34 @@ def create_vacation_period(person, company, created_by, date_start, date_end):
         created_by=created_by,
         date_start=date_start,
         date_end=date_end,
+        half_day_start=half_day_start,
+        half_day_end=half_day_end,
     )
 
 
-def update_vacation_period(period, date_start, date_end):
+def _validate_period_dates(date_start, date_end, half_day_start,
+                           half_day_end):
+    """
+    Raise ValueError (user-facing message) for invalid period dates.
+    ---
+    Lanza ValueError (mensaje para el usuario) si las fechas del
+    periodo no son válidas. H24 (S129): un periodo de un solo día no
+    puede llevar las dos medias jornadas marcadas (eso es medio día:
+    basta una).
+    """
+    if date_start > date_end:
+        raise ValueError(
+            "La fecha de inicio no puede ser posterior a la fecha de fin."
+        )
+    if date_start == date_end and half_day_start and half_day_end:
+        raise ValueError(
+            "Un periodo de un solo día es de media jornada con una sola "
+            "casilla marcada, no con las dos."
+        )
+
+
+def update_vacation_period(period, date_start, date_end,
+                           half_day_start=None, half_day_end=None):
     """
     Shared update logic for VacationPeriod (see create_vacation_period
     docstring for why this was extracted in S94). Mirrors exactly the
@@ -465,7 +487,8 @@ def update_vacation_period(period, date_start, date_end):
         human-readable repair_notes (nothing parses it).
 
     Validates date_start <= date_end (ValueError otherwise). Returns
-    the same period instance, refreshed.
+    the same period instance, refreshed. half_day_start/half_day_end
+    (H24, S129) keep their current value when passed as None.
     ---
     Lógica de actualización compartida de VacationPeriod (ver docstring
     de create_vacation_period para el motivo de esta extracción en
@@ -482,10 +505,11 @@ def update_vacation_period(period, date_start, date_end):
     Valida date_start <= date_end (ValueError en caso contrario).
     Devuelve la misma instancia de periodo, refrescada.
     """
-    if date_start > date_end:
-        raise ValueError(
-            "La fecha de inicio no puede ser posterior a la fecha de fin."
-        )
+    if half_day_start is None:
+        half_day_start = period.half_day_start
+    if half_day_end is None:
+        half_day_end = period.half_day_end
+    _validate_period_dates(date_start, date_end, half_day_start, half_day_end)
 
     start_changed = date_start != period.date_start
     end_changed = date_end != period.date_end
@@ -499,7 +523,11 @@ def update_vacation_period(period, date_start, date_end):
 
         period.date_start = date_start
         period.date_end = date_end
-        period.save(update_fields=["date_start", "date_end"])
+        period.half_day_start = half_day_start
+        period.half_day_end = half_day_end
+        period.save(update_fields=[
+            "date_start", "date_end", "half_day_start", "half_day_end",
+        ])
 
         if start_changed and period.generated_entry_line_id is None:
             generate_vacation_task(period)

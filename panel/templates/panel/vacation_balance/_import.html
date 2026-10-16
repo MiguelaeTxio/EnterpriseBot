@@ -1,0 +1,44 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/vacation_balance/_import.html #}
+{% comment %}
+H24 (S129). Saldo de partida desde la hoja de cálculo de Carolina:
+plantilla por DNI con lo disfrutado en el año y lo que sobró del
+anterior; al subirla, informe de filas cargadas y no casadas
+(hr_calendar.balance_import).
+{% endcomment %}
+<div class="row g-3">
+    <div class="col-lg-5">
+        <div class="border rounded p-2 mb-3">
+            <div class="fw-bold small mb-1">1. Descargar la plantilla</div>
+            <p class="small mb-2">
+                Lista a los trabajadores activos por DNI, con su sección y lo ya cargado de ese año. Rellena
+                «Disfrutados» (días ya disfrutados en el año) y «Sobrantes» (días que sobraron del año anterior).
+                Admite medios días. Una celda vacía deja ese dato como estaba.
+            </p>
+            <form class="d-flex gap-2" method="get" action="{% url 'panel:vacation_import_template' %}">
+                <select name="year" class="form-select form-select-sm w-auto">
+                    {% for year in years %}
+                    <option value="{{ year }}" {% if year == current_year %}selected{% endif %}>{{ year }}</option>
+                    {% endfor %}
+                </select>
+                <button type="submit" class="btn btn-sm btn-outline-primary"><i class="bi bi-download me-1"></i>Descargar plantilla</button>
+            </form>
+        </div>
+        <form class="border rounded p-2"
+              hx-post="{% url 'panel:vacation_import_upload' %}"
+              hx-target="#vimport-report"
+              hx-encoding="multipart/form-data"
+              hx-disabled-elt="find button">
+            <div class="fw-bold small mb-1">2. Subir la plantilla rellenada</div>
+            <input type="file" name="file" accept=".xlsx" class="form-control form-control-sm mb-2" required>
+            <div class="form-text small mb-2">El año se lee de las cabeceras de la propia plantilla: no se cambian.</div>
+            <button type="submit" class="btn btn-sm btn-primary">
+                <span class="htmx-indicator spinner-border spinner-border-sm me-1"></span>Importar
+            </button>
+        </form>
+    </div>
+    <div class="col-lg-7">
+        <div id="vimport-report">
+            <div class="text-muted small">Aquí aparecerá el resultado de la importación.</div>
+        </div>
+    </div>
+</div>

@@ -1,54 +1,66 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation_h30/_vacation_pane.html #}
 {% comment %}
-H31 (S94). Pestana Vacaciones del hub de Documentacion -- CRUD real en
-htmx, adaptado de hr_calendar/views.py (antes paginas completas con
-redirect). Ver panel/views_documentation_h30.py para la logica de
-dominio compartida (hr_calendar.services.create/update/delete_vacation_period).
+H24 (S129). Pestaña Vacaciones del hub de Documentación, en
+subpestañas: Saldos (días que corresponden, del año anterior,
+disfrutados y pendientes de cada trabajador), Periodos (el CRUD de
+periodos que ya existía, S94), Reglas por sección e Importar saldos
+(solo quien gestiona). La subpestaña abierta se recuerda por usuario
+(screen_key "vacation_hub", clave "subtab", directriz 4.15); cada una
+carga por htmx la primera vez que se abre.
 {% endcomment %}
-<div class="row">
-    <div class="col-md-4">
-        <h6>Nuevo periodo de vacaciones</h6>
-        <form hx-post="{% url 'panel:documentation_vacation_create' %}" hx-target="#vacation-results"
-              hx-on::after-request="if(event.detail.successful) this.reset()"
-              class="mb-4">
-            <div class="mb-2 position-relative">
-                <label class="form-label small">Trabajador (nombre o DNI)</label>
-                <input type="text" id="vacation-person-input" name="vacation_person_query" class="form-control form-control-sm"
-                       placeholder="Escribe para buscar…" autocomplete="off" required
-                       hx-get="{% url 'panel:documentation_vacation_person_autocomplete' %}"
-                       hx-trigger="keyup changed delay:300ms"
-                       hx-target="#vacation-person-options"
-                       hx-vals='js:{"q": document.getElementById("vacation-person-input").value}'
-                       hx-on:keyup="document.getElementById('vacation-person-pk').value=''">
-                <input type="hidden" name="person_pk" id="vacation-person-pk">
-                <div id="vacation-person-options"></div>
-                <div class="form-text">
-                    Solo trabajadores activos. Selecciona uno de la lista de sugerencias --
-                    escribir el nombre no basta si no se elige de la lista.
-                </div>
-            </div>
-            <div class="mb-2">
-                <label class="form-label small">Fecha de inicio</label>
-                <input type="date" name="date_start" class="form-control form-control-sm" required>
-            </div>
-            <div class="mb-2">
-                <label class="form-label small">Fecha de fin</label>
-                <input type="date" name="date_end" class="form-control form-control-sm" required>
-            </div>
-            <button type="submit" class="btn btn-sm btn-primary">Registrar periodo</button>
-        </form>
-        <p class="text-muted small">
-            Al registrar un periodo se genera automáticamente la tarea de vacaciones
-            en la última jornada laboral anterior al inicio -- solo si el trabajador
-            tiene cuenta de panel. Si no la tiene, el periodo se registra igual, sin
-            tarea automática.
-        </p>
+<ul class="nav nav-pills nav-sm mb-2" id="vacSubTabs">
+    <li class="nav-item">
+        <a class="nav-link py-1 {% if subtab == 'saldos' %}active{% endif %}" data-subtab="saldos" data-bs-toggle="pill" href="#vac-sub-saldos"
+           hx-get="{% url 'panel:vacation_balance_tab' %}" hx-target="#vac-sub-saldos"
+           hx-trigger="{% if subtab == 'saldos' %}load once{% else %}click once{% endif %}">
+            <i class="bi bi-calculator me-1"></i>Saldos
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link py-1 {% if subtab == 'periodos' %}active{% endif %}" data-subtab="periodos" data-bs-toggle="pill" href="#vac-sub-periodos">
+            <i class="bi bi-calendar-range me-1"></i>Periodos
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link py-1 {% if subtab == 'reglas' %}active{% endif %}" data-subtab="reglas" data-bs-toggle="pill" href="#vac-sub-reglas"
+           hx-get="{% url 'panel:vacation_rules_pane' %}" hx-target="#vac-sub-reglas"
+           hx-trigger="{% if subtab == 'reglas' %}load once{% else %}click once{% endif %}">
+            <i class="bi bi-sliders me-1"></i>Reglas por sección
+        </a>
+    </li>
+    {% if can_manage %}
+    <li class="nav-item">
+        <a class="nav-link py-1 {% if subtab == 'importar' %}active{% endif %}" data-subtab="importar" data-bs-toggle="pill" href="#vac-sub-importar"
+           hx-get="{% url 'panel:vacation_import_pane' %}" hx-target="#vac-sub-importar"
+           hx-trigger="{% if subtab == 'importar' %}load once{% else %}click once{% endif %}">
+            <i class="bi bi-file-earmark-spreadsheet me-1"></i>Importar saldos
+        </a>
+    </li>
+    {% endif %}
+</ul>
+<div class="tab-content">
+    <div class="tab-pane fade {% if subtab == 'saldos' %}show active{% endif %}" id="vac-sub-saldos">
+        <div class="text-muted small py-3">Cargando…</div>
     </div>
-
-    <div class="col-md-8">
-        {% include "panel/documentation_h30/_vacation_search_form.html" with search=search %}
-        <div id="vacation-results">
-            {% include "panel/documentation_h30/_vacation_results.html" with page=page sort_key=sort_key sort_dir=sort_dir search=search sort_columns_vacation=sort_columns_vacation %}
-        </div>
+    <div class="tab-pane fade {% if subtab == 'periodos' %}show active{% endif %}" id="vac-sub-periodos">
+        {% include "panel/documentation_h30/_vacation_periods_pane.html" %}
     </div>
+    <div class="tab-pane fade {% if subtab == 'reglas' %}show active{% endif %}" id="vac-sub-reglas">
+        <div class="text-muted small py-3">Cargando…</div>
+    </div>
+    {% if can_manage %}
+    <div class="tab-pane fade {% if subtab == 'importar' %}show active{% endif %}" id="vac-sub-importar">
+        <div class="text-muted small py-3">Cargando…</div>
+    </div>
+    {% endif %}
 </div>
+<script>
+(function () {
+    "use strict";
+    document.querySelectorAll("#vacSubTabs [data-subtab]").forEach(function (link) {
+        link.addEventListener("shown.bs.tab", function () {
+            if (window.EbNavState) window.EbNavState.save("vacation_hub", {subtab: link.dataset.subtab});
+        });
+    });
+}());
+</script>

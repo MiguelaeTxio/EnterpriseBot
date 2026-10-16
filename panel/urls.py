@@ -47,6 +47,21 @@ from panel.views_inbox import (
     InboxUploadView,
 )
 from panel.views_navigation_state import NavigationStateSaveView
+from panel.views_vacation_balance import (
+    VacationAdjustmentCreateView,
+    VacationAdjustmentDeleteView,
+    VacationBalanceDetailView,
+    VacationBalanceResultsView,
+    VacationBalanceTabView,
+    VacationImportPaneView,
+    VacationImportTemplateView,
+    VacationImportUploadView,
+    VacationRuleCreateView,
+    VacationRuleDeleteView,
+    VacationRulesPaneView,
+    VacationSectionAssignmentDeleteView,
+    VacationSectionAssignView,
+)
 from panel.views_lifting_accessories import (
     LiftingAccessoryAssignView,
     LiftingAccessoryBulkReviewView,
@@ -641,6 +656,20 @@ urlpatterns = [
     path("documentacion/vacaciones/crear/", VacationPeriodCreateFragmentView.as_view(), name="documentation_vacation_create"),
     path("documentacion/vacaciones/<int:pk>/editar/", VacationPeriodUpdateFragmentView.as_view(), name="documentation_vacation_update"),
     path("documentacion/vacaciones/<int:pk>/eliminar/", VacationPeriodDeleteFragmentView.as_view(), name="documentation_vacation_delete"),
+    # H24 (S129). Saldos, secciones, reglas e importación de vacaciones -- ver panel/views_vacation_balance.py.
+    path("documentacion/vacaciones/saldos/", VacationBalanceTabView.as_view(), name="vacation_balance_tab"),
+    path("documentacion/vacaciones/saldos/resultados/", VacationBalanceResultsView.as_view(), name="vacation_balance_results"),
+    path("documentacion/vacaciones/saldos/<int:pk>/", VacationBalanceDetailView.as_view(), name="vacation_balance_detail"),
+    path("documentacion/vacaciones/saldos/asignar-seccion/", VacationSectionAssignView.as_view(), name="vacation_balance_assign_section"),
+    path("documentacion/vacaciones/saldos/seccion/<int:pk>/borrar/", VacationSectionAssignmentDeleteView.as_view(), name="vacation_balance_assignment_delete"),
+    path("documentacion/vacaciones/saldos/<int:pk>/ajuste/", VacationAdjustmentCreateView.as_view(), name="vacation_balance_adjustment_create"),
+    path("documentacion/vacaciones/saldos/ajuste/<int:pk>/borrar/", VacationAdjustmentDeleteView.as_view(), name="vacation_balance_adjustment_delete"),
+    path("documentacion/vacaciones/reglas/", VacationRulesPaneView.as_view(), name="vacation_rules_pane"),
+    path("documentacion/vacaciones/reglas/nueva/", VacationRuleCreateView.as_view(), name="vacation_rule_create"),
+    path("documentacion/vacaciones/reglas/<int:pk>/borrar/", VacationRuleDeleteView.as_view(), name="vacation_rule_delete"),
+    path("documentacion/vacaciones/importar/", VacationImportPaneView.as_view(), name="vacation_import_pane"),
+    path("documentacion/vacaciones/importar/plantilla/", VacationImportTemplateView.as_view(), name="vacation_import_template"),
+    path("documentacion/vacaciones/importar/subir/", VacationImportUploadView.as_view(), name="vacation_import_upload"),
     # H31 (S94). Pestaña Calendario htmx del hub -- ver panel/views_documentation_h30.py.
     path("documentacion/calendario/", CalendarTabFragmentView.as_view(), name="documentation_calendar_tab"),
     path("documentacion/calendario/resultados/", CalendarResultsFragmentView.as_view(), name="documentation_calendar_results"),

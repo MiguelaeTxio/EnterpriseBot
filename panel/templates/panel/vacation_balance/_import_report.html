@@ -1,0 +1,27 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/vacation_balance/_import_report.html #}
+{% if error %}
+<div class="alert alert-danger py-1 px-2 small">{{ error }}</div>
+{% elif report.errors %}
+<div class="alert alert-danger py-1 px-2 small">
+    {% for message in report.errors %}<div>{{ message }}</div>{% endfor %}
+    <div>No se ha cargado nada.</div>
+</div>
+{% else %}
+<div class="alert alert-{% if report.unmatched %}warning{% else %}success{% endif %} py-1 px-2 small">
+    Saldos de {{ report.year }}: {{ report.loaded }} trabajador(es) cargados
+    ({{ report.created_rows }} datos nuevos, {{ report.updated_rows }} sobrescritos){% if report.unchanged %},
+    {{ report.unchanged }} sin datos (celdas vacías){% endif %}{% if report.unmatched %},
+    {{ report.unmatched|length }} fila(s) sin cargar{% endif %}.
+</div>
+{% if report.unmatched %}
+<div class="fw-bold small mb-1">Filas sin cargar</div>
+<table class="table table-sm small">
+    <thead class="table-light"><tr><th>Fila</th><th>DNI</th><th>Motivo</th></tr></thead>
+    <tbody>
+        {% for row, dni, reason in report.unmatched %}
+        <tr><td>{{ row }}</td><td>{{ dni|default:"—" }}</td><td>{{ reason }}</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+{% endif %}

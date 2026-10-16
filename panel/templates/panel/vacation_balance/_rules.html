@@ -1,0 +1,127 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/vacation_balance/_rules.html #}
+{% comment %}
+H24 (S129). Reglas de vacaciones por sección (decisión de Miguel Ángel
+con Carolina, anexo V24 7.3): días al año, naturales o laborables, si
+los sobrantes pasan al año siguiente y hasta cuándo, y qué calendario
+de festivos descuenta. Un cambio de regla es siempre una fila nueva
+con su fecha -- nunca se edita la anterior, así los años pasados se
+calculan con la que tenían. La regla general (sin sección) cubre a
+quien aún no tiene sección.
+{% endcomment %}
+<div id="vrules-container">
+{% if message %}
+<div class="alert alert-{% if message_is_error %}danger{% else %}success{% endif %} py-1 px-2 small" role="alert">{{ message }}</div>
+{% endif %}
+<div class="row g-3">
+    {% if can_manage %}
+    <div class="col-lg-4">
+        <form class="border rounded p-2"
+              hx-post="{% url 'panel:vacation_rule_create' %}"
+              hx-target="#vrules-container" hx-swap="outerHTML"
+              hx-disabled-elt="find button[type='submit']">
+            <div class="fw-bold small mb-2">Nueva regla</div>
+            {% if errors %}
+            <div class="alert alert-danger py-1 px-2 small">
+                {% for error in errors %}<div>{{ error }}</div>{% endfor %}
+            </div>
+            {% endif %}
+            <div class="mb-2">
+                <label class="form-label small mb-0" for="vrule-section">Sección</label>
+                <select id="vrule-section" name="section_id" class="form-select form-select-sm">
+                    <option value="">General de la empresa (sin sección)</option>
+                    {% for section in sections %}
+                    <option value="{{ section.pk }}" {% if form.section_id == section.pk|stringformat:"d" %}selected{% endif %}>{{ section.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="mb-2">
+                <label class="form-label small mb-0" for="vrule-from">Vigente desde <span class="text-danger">*</span></label>
+                <input type="date" id="vrule-from" name="valid_from" class="form-control form-control-sm" value="{{ form.valid_from }}" required>
+            </div>
+            <div class="d-flex gap-2 mb-2">
+                <div class="w-50">
+                    <label class="form-label small mb-0" for="vrule-days">Días al año <span class="text-danger">*</span></label>
+                    <input type="text" id="vrule-days" name="days_per_year" class="form-control form-control-sm" value="{{ form.days_per_year|default:'' }}" placeholder="30 o 22" required>
+                </div>
+                <div class="w-50">
+                    <label class="form-label small mb-0" for="vrule-kind">Tipo de días <span class="text-danger">*</span></label>
+                    <select id="vrule-kind" name="day_kind" class="form-select form-select-sm" required>
+                        <option value="">--</option>
+                        {% for value, label in day_kinds %}
+                        <option value="{{ value }}" {% if form.day_kind == value %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div class="form-check mb-1">
+                <input class="form-check-input" type="checkbox" id="vrule-carry" name="carry_over" value="1" {% if form.carry_over %}checked{% endif %}>
+                <label class="form-check-label small" for="vrule-carry">Los sobrantes pasan al año siguiente</label>
+            </div>
+            <div class="small mb-1">Plazo para gastar los sobrantes (día y mes del año siguiente, vacío = sin plazo)</div>
+            <div class="d-flex gap-2 mb-2">
+                <input type="number" min="1" max="31" name="deadline_day" class="form-control form-control-sm" placeholder="Día" value="{{ form.deadline_day|default:'' }}">
+                <input type="number" min="1" max="12" name="deadline_month" class="form-control form-control-sm" placeholder="Mes" value="{{ form.deadline_month|default:'' }}">
+            </div>
+            <div class="mb-2">
+                <label class="form-label small mb-0" for="vrule-base">Calendario de festivos (laborables)</label>
+                <select id="vrule-base" name="holiday_base_id" class="form-select form-select-sm">
+                    <option value="">El de la base del trabajador</option>
+                    {% for base in bases %}
+                    <option value="{{ base.pk }}" {% if form.holiday_base_id == base.pk|stringformat:"d" %}selected{% endif %}>{{ base.name }}</option>
+                    {% endfor %}
+                </select>
+                <div class="form-text small">Solo cuenta con días laborables. Sin calendario solo se descuentan sábados y domingos.</div>
+            </div>
+            <button type="submit" class="btn btn-sm btn-primary">
+                <span class="htmx-indicator spinner-border spinner-border-sm me-1"></span>Guardar regla
+            </button>
+        </form>
+    </div>
+    {% endif %}
+    <div class="{% if can_manage %}col-lg-8{% else %}col-12{% endif %}">
+        <div class="fw-bold small mb-1">Reglas</div>
+        {% if rules %}
+        <table class="table table-sm table-hover align-middle small stack-mobile">
+            <thead class="table-light">
+                <tr>
+                    <th>Sección</th><th>Desde</th><th class="text-end">Días/año</th><th>Tipo</th>
+                    <th>Sobrantes</th><th>Festivos</th>{% if can_manage %}<th></th>{% endif %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for rule in rules %}
+                <tr class="{% if not rule.is_in_force %}text-muted{% endif %}">
+                    <td class="stack-mobile-title">
+                        {% if rule.section %}{{ rule.section.name }}{% else %}<em>General de la empresa</em>{% endif %}
+                        {% if rule.is_in_force %}<span class="badge text-bg-success ms-1">Vigente</span>{% endif %}
+                    </td>
+                    <td data-label="Desde">{{ rule.valid_from|date:"d/m/Y" }}</td>
+                    <td class="text-end" data-label="Días/año">{{ rule.days_per_year|floatformat:"-1" }}</td>
+                    <td data-label="Tipo">{{ rule.get_day_kind_display }}</td>
+                    <td data-label="Sobrantes">
+                        {% if rule.carry_over %}Pasan{% if rule.carry_over_deadline_month %} hasta el {{ rule.carry_over_deadline_day }}/{{ rule.carry_over_deadline_month }}{% endif %}{% else %}No pasan{% endif %}
+                    </td>
+                    <td data-label="Festivos">{% if rule.holiday_base %}{{ rule.holiday_base.name }}{% else %}<span class="text-muted">Base del trabajador</span>{% endif %}</td>
+                    {% if can_manage %}
+                    <td class="text-end">
+                        <button type="button" class="btn btn-sm btn-outline-danger py-0"
+                                hx-post="{% url 'panel:vacation_rule_delete' rule.pk %}"
+                                hx-target="#vrules-container" hx-swap="outerHTML"
+                                hx-disabled-elt="this"
+                                hx-confirm="¿Borrar la regla {{ rule }}? Los saldos se recalculan con las que queden."
+                                title="Borrar regla"><i class="bi bi-trash"></i></button>
+                    </td>
+                    {% endif %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="text-muted small">
+            Todavía no hay reglas: sin regla no corresponde ningún día. Empieza por la regla general de la empresa y
+            después la de cada sección que sea distinta (p. ej. Taller Huelva, 22 laborables).
+        </div>
+        {% endif %}
+    </div>
+</div>
+</div>

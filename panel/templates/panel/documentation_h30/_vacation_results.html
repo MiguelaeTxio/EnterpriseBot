@@ -32,12 +32,32 @@ misma fila, sin necesidad de un <form> real.
     <tbody>
         {% for period in page %}
         <tr>
-            <td data-label="Inicio"><input type="date" name="date_start" value="{{ period.date_start|date:'Y-m-d' }}" class="form-control form-control-sm"></td>
+            <td data-label="Inicio">
+                {% if can_manage %}
+                <input type="date" name="date_start" value="{{ period.date_start|date:'Y-m-d' }}" class="form-control form-control-sm">
+                <div class="form-check small mt-1">
+                    <input class="form-check-input" type="checkbox" name="half_day_start" value="1" id="vac-hs-{{ period.pk }}" {% if period.half_day_start %}checked{% endif %}>
+                    <label class="form-check-label" for="vac-hs-{{ period.pk }}">½ jornada</label>
+                </div>
+                {% else %}
+                {{ period.date_start|date:"d/m/Y" }}{% if period.half_day_start %} (½){% endif %}
+                {% endif %}
+            </td>
             <td class="stack-mobile-title">
                 {{ period.person.given_name }} {{ period.person.first_surname }} {{ period.person.second_surname }}
                 <span class="text-muted small d-block">{{ period.person.dni }}</span>
             </td>
-            <td data-label="Fin"><input type="date" name="date_end" value="{{ period.date_end|date:'Y-m-d' }}" class="form-control form-control-sm"></td>
+            <td data-label="Fin">
+                {% if can_manage %}
+                <input type="date" name="date_end" value="{{ period.date_end|date:'Y-m-d' }}" class="form-control form-control-sm">
+                <div class="form-check small mt-1">
+                    <input class="form-check-input" type="checkbox" name="half_day_end" value="1" id="vac-he-{{ period.pk }}" {% if period.half_day_end %}checked{% endif %}>
+                    <label class="form-check-label" for="vac-he-{{ period.pk }}">½ jornada</label>
+                </div>
+                {% else %}
+                {{ period.date_end|date:"d/m/Y" }}{% if period.half_day_end %} (½){% endif %}
+                {% endif %}
+            </td>
             <td data-label="Tarea automática">
                 {% if period.generated_entry_line_id %}
                 <span class="badge bg-success">Generada</span>
@@ -48,6 +68,7 @@ misma fila, sin necesidad de un <form> real.
                 {% endif %}
             </td>
             <td class="text-end stack-mobile-full">
+                {% if can_manage %}
                 <button type="button" class="btn btn-sm btn-outline-primary"
                         hx-post="{% url 'panel:documentation_vacation_update' pk=period.pk %}"
                         hx-include="closest tr" hx-target="#vacation-results">Guardar</button>
@@ -55,6 +76,7 @@ misma fila, sin necesidad de un <form> real.
                         hx-post="{% url 'panel:documentation_vacation_delete' pk=period.pk %}"
                         hx-confirm="¿Eliminar el periodo de vacaciones de {{ period.person.given_name }} {{ period.person.first_surname }}?"
                         hx-target="#vacation-results">Eliminar</button>
+                {% endif %}
             </td>
         </tr>
         {% empty %}

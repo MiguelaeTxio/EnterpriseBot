@@ -1,0 +1,147 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/vacation_balance/_detail.html #}
+{% comment %}
+H24 (S129). Desglose del saldo de un trabajador en un año: cifras,
+avisos, tramos (sección y regla), periodos con los días que gastan,
+ajustes e historial de secciones. Todo calculado en la vista
+(hr_calendar.balance); las acciones repintan este mismo fragmento con
+su mensaje y la tabla se refresca sola (HX-Trigger).
+{% endcomment %}
+<div class="d-flex align-items-baseline justify-content-between mb-1">
+    <div class="fw-bold">{{ person_label }}</div>
+    <div class="small text-muted">{{ person.dni }} · {{ year }}</div>
+</div>
+
+{% if message %}
+<div class="alert alert-{% if message_is_error %}danger{% else %}success{% endif %} py-1 px-2 small mb-2" role="alert">{{ message }}</div>
+{% endif %}
+
+<table class="table table-sm small mb-2">
+    <tbody>
+        <tr><td>Corresponden en {{ year }}</td><td class="text-end">{{ balance.entitled|floatformat:"-1" }}</td></tr>
+        <tr><td>Ajustes manuales</td><td class="text-end">{{ balance.manual|floatformat:"-1" }}</td></tr>
+        <tr>
+            <td>Del año anterior
+                {% if balance.carryover_from_import %}<span class="text-muted">(importado)</span>{% endif %}
+                {% if balance.carryover_deadline %}<div class="text-muted">Plazo para gastarlos: {{ balance.carryover_deadline|date:"d/m/Y" }}</div>{% endif %}
+            </td>
+            <td class="text-end">{{ balance.carryover|floatformat:"-1" }}</td>
+        </tr>
+        {% if balance.carryover_lost %}
+        <tr class="text-danger"><td>Perdidos por plazo vencido</td><td class="text-end">-{{ balance.carryover_lost|floatformat:"-1" }}</td></tr>
+        {% endif %}
+        <tr>
+            <td>Disfrutados
+                <div class="text-muted">Periodos {{ balance.taken_periods|floatformat:"-1" }}{% if balance.taken_opening %} · saldo de partida {{ balance.taken_opening|floatformat:"-1" }}{% endif %}{% if balance.taken_from_carryover %} · {{ balance.taken_from_carryover|floatformat:"-1" }} del año anterior{% endif %}</div>
+            </td>
+            <td class="text-end">-{{ balance.taken|floatformat:"-1" }}</td>
+        </tr>
+        <tr class="fw-bold{% if balance.is_negative %} text-danger{% endif %}">
+            <td>Pendientes</td><td class="text-end">{{ balance.pending|floatformat:"-1" }}</td>
+        </tr>
+    </tbody>
+</table>
+
+{% for warning in balance.warnings %}
+<div class="small text-warning-emphasis"><i class="bi bi-info-circle me-1"></i>{{ warning }}</div>
+{% endfor %}
+
+<div class="fw-bold small mt-2">Tramos del año</div>
+{% if balance.segments %}
+<table class="table table-sm small mb-2">
+    <thead><tr><th>Desde</th><th>Hasta</th><th>Sección · regla</th><th class="text-end">Días</th></tr></thead>
+    <tbody>
+        {% for segment in balance.segments %}
+        <tr>
+            <td>{{ segment.date_from|date:"d/m" }}</td>
+            <td>{{ segment.date_to|date:"d/m" }}</td>
+            <td>{{ segment.section_name }} · {% if segment.rule %}{{ segment.rule.days_per_year|floatformat:"-1" }} {{ segment.rule.get_day_kind_display|lower }}/año{% else %}<span class="text-danger">sin regla</span>{% endif %}</td>
+            <td class="text-end">{{ segment.entitled|floatformat:"-2" }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<div class="small text-muted mb-2">No estuvo de alta ningún día de {{ year }}.</div>
+{% endif %}
+
+<div class="fw-bold small">Periodos de vacaciones</div>
+{% if balance.period_uses %}
+<table class="table table-sm small mb-2">
+    <thead><tr><th>Del</th><th>Al</th><th class="text-end">Gasta</th></tr></thead>
+    <tbody>
+        {% for use in balance.period_uses %}
+        <tr>
+            <td>{{ use.period.date_start|date:"d/m/Y" }}{% if use.period.half_day_start %} <span class="badge text-bg-light">½</span>{% endif %}</td>
+            <td>{{ use.period.date_end|date:"d/m/Y" }}{% if use.period.half_day_end %} <span class="badge text-bg-light">½</span>{% endif %}</td>
+            <td class="text-end">{{ use.days|floatformat:"-1" }}{% if use.medical_days %}<div class="text-muted">{{ use.medical_days|floatformat:"-1" }} de baja, no se gastan</div>{% endif %}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<div class="small text-muted mb-2">Ninguno en {{ year }}.</div>
+{% endif %}
+
+<div class="fw-bold small">Ajustes de {{ year }}</div>
+{% if balance.adjustments %}
+<ul class="list-unstyled small mb-2">
+    {% for adjustment in balance.adjustments %}
+    <li class="d-flex align-items-start gap-2 border-bottom py-1">
+        <div class="flex-grow-1">
+            <span class="fw-semibold">{{ adjustment.days|floatformat:"-1" }}</span> · {{ adjustment.get_kind_display }}
+            {% if adjustment.reason %}<div class="text-muted">{{ adjustment.reason }}</div>{% endif %}
+            <div class="text-muted">{{ adjustment.created_at|date:"d/m/Y H:i" }}{% if adjustment.created_by %} · {{ adjustment.created_by.user.get_full_name|default:adjustment.created_by.user.username }}{% endif %}</div>
+        </div>
+        {% if can_manage %}
+        <button type="button" class="btn btn-sm btn-outline-danger py-0"
+                hx-post="{% url 'panel:vacation_balance_adjustment_delete' adjustment.pk %}"
+                hx-target="#vbal-detail-container"
+                hx-disabled-elt="this"
+                hx-confirm="¿Borrar este ajuste ({{ adjustment.days|floatformat:'-1' }} días, {{ adjustment.get_kind_display|lower }})?"
+                title="Borrar ajuste"><i class="bi bi-trash"></i></button>
+        {% endif %}
+    </li>
+    {% endfor %}
+</ul>
+{% else %}
+<div class="small text-muted mb-2">Ninguno.</div>
+{% endif %}
+
+{% if can_manage %}
+<form class="border rounded p-2 mb-2"
+      hx-post="{% url 'panel:vacation_balance_adjustment_create' person.pk %}"
+      hx-target="#vbal-detail-container"
+      hx-disabled-elt="find button">
+    <input type="hidden" name="year" value="{{ year }}">
+    <div class="small fw-bold mb-1">Ajuste manual en {{ year }}</div>
+    <div class="d-flex gap-2 mb-1">
+        <input type="text" name="days" class="form-control form-control-sm w-25" placeholder="Días" required
+               title="Positivo suma días, negativo los resta. Admite medio día (p. ej. -1,5).">
+        <input type="text" name="reason" class="form-control form-control-sm" placeholder="Motivo (obligatorio)" required>
+    </div>
+    <button type="submit" class="btn btn-sm btn-primary">
+        <span class="htmx-indicator spinner-border spinner-border-sm me-1"></span>Registrar ajuste
+    </button>
+</form>
+{% endif %}
+
+<div class="fw-bold small">Historial de secciones</div>
+{% if assignments %}
+<ul class="list-unstyled small mb-0">
+    {% for assignment in assignments %}
+    <li class="d-flex align-items-center gap-2 border-bottom py-1">
+        <div class="flex-grow-1">{{ assignment.section.name }} <span class="text-muted">desde {{ assignment.valid_from|date:"d/m/Y" }}</span></div>
+        {% if can_manage %}
+        <form hx-post="{% url 'panel:vacation_balance_assignment_delete' assignment.pk %}"
+              hx-target="#vbal-detail-container"
+              hx-confirm="¿Borrar la asignación a {{ assignment.section.name }} desde {{ assignment.valid_from|date:'d/m/Y' }}?">
+            <input type="hidden" name="year" value="{{ year }}">
+            <button type="submit" class="btn btn-sm btn-outline-danger py-0" title="Borrar asignación"><i class="bi bi-trash"></i></button>
+        </form>
+        {% endif %}
+    </li>
+    {% endfor %}
+</ul>
+{% else %}
+<div class="small text-muted">Sin sección asignada: se le aplica la regla general de la empresa.</div>
+{% endif %}

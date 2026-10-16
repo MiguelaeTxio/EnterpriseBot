@@ -74,7 +74,7 @@ dentro de esa línea de tarea, discutidos explícitamente con Miguel
      al estilo de H23) necesitan un VacationPeriod.objects.filter(...)
      plano, no un join a través de
      WorkOrder -> WorkOrderEntry -> WorkOrderEntryLine cada vez.
-  3. WorkOrderEntryLine.repair_notes es texto libre (TextField) -- 
+  3. WorkOrderEntryLine.repair_notes es texto libre (TextField) --
      usarlo para codificar una fecha de fin estructurada implicaría
      parsear una fecha de texto libre para gobernar la lógica del
      calendario, exactamente el tipo de fragilidad que este proyecto ha
@@ -237,6 +237,25 @@ class VacationPeriod(models.Model):
                   "campo de texto libre.",
     )
 
+    # ------------------------------------------------------------------
+    # H24 (S129). Medios días: el primer día y/o el último del periodo
+    # pueden ser de media jornada (0,5 días en el saldo). En un periodo
+    # de un solo día basta con una de las dos casillas.
+    # ---
+    # H24 (S129). Half days: the first and/or last day of the period
+    # may be half a working day (0.5 days in the balance).
+    # ------------------------------------------------------------------
+    half_day_start = models.BooleanField(
+        default=False,
+        verbose_name="Primer día de media jornada",
+        help_text="El primer día del periodo cuenta como medio día.",
+    )
+    half_day_end = models.BooleanField(
+        default=False,
+        verbose_name="Último día de media jornada",
+        help_text="El último día del periodo cuenta como medio día.",
+    )
+
     created_at = models.DateTimeField(
         auto_now_add=True,
         verbose_name="Fecha de creación",
@@ -248,13 +267,24 @@ class VacationPeriod(models.Model):
         ordering = ["-date_start"]
         constraints = [
             models.CheckConstraint(
-                check=models.Q(date_end__gte=models.F("date_start")),
+                condition=models.Q(date_end__gte=models.F("date_start")),
                 name="vacationperiod_date_end_gte_date_start",
+            ),
+            models.CheckConstraint(
+                condition=~(
+                    models.Q(date_start=models.F("date_end"))
+                    & models.Q(half_day_start=True)
+                    & models.Q(half_day_end=True)
+                ),
+                name="vacationperiod_single_day_one_half_flag",
             ),
         ]
 
     def __str__(self) -> str:
-        return f"{self.person} — {self.date_start:%d/%m/%Y} a {self.date_end:%d/%m/%Y}"
+        return (
+            f"{self.person} — {self.date_start:%d/%m/%Y} a "
+            f"{self.date_end:%d/%m/%Y}"
+        )
 
     def save(self, *args, **kwargs):
         """
@@ -436,7 +466,7 @@ class MedicalLeavePeriod(models.Model):
         ordering = ["-date_start"]
         constraints = [
             models.CheckConstraint(
-                check=(
+                condition=(
                     models.Q(date_end__isnull=True)
                     | models.Q(date_end__gte=models.F("date_start"))
                 ),
@@ -447,3 +477,284 @@ class MedicalLeavePeriod(models.Model):
     def __str__(self) -> str:
         fin = f"{self.date_end:%d/%m/%Y}" if self.date_end else "en curso"
         return f"{self.person} — {self.date_start:%d/%m/%Y} a {fin}"
+
+
+class VacationRule(models.Model):
+    """
+    Vacation entitlement rule of a section (or the company-wide rule
+    for workers without a section), in force from `valid_from` until
+    the next rule of the same section. H24 (S129), decided by Miguel
+    Ángel with Carolina (HR): days per year set by the company per
+    section, natural or working days, whether leftover days carry over
+    and until when. A change of rule is a new row with its own
+    `valid_from`, never an edit of the old one: past years keep being
+    computed with the rule that applied then.
+
+    Lives apart from ivr_config.Section on purpose: saving a Section
+    regenerates its switchboard call flow (signal
+    auto_manage_section_call_flow), so vacation settings never touch
+    the Section row.
+
+    ---
+
+    Regla de vacaciones de una sección (o la general de la empresa
+    para quien aún no tiene sección), vigente desde `valid_from` hasta
+    la siguiente regla de la misma sección. H24 (S129), decidido por
+    Miguel Ángel con Carolina (RRHH): días al año que fija la empresa
+    por sección, naturales o laborables, si los sobrantes pasan al año
+    siguiente y hasta cuándo. Un cambio de regla es una fila nueva con
+    su propia fecha, nunca la edición de la anterior: los años pasados
+    se siguen calculando con la regla que tenían.
+
+    Vive aparte de ivr_config.Section a propósito: guardar una Section
+    regenera su flujo de la centralita (señal
+    auto_manage_section_call_flow), así que la configuración de
+    vacaciones nunca toca la fila de la sección.
+    """
+
+    class DayKind(models.TextChoices):
+        NATURAL = "NATURAL", "Naturales"
+        WORKING = "WORKING", "Laborables"
+
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.CASCADE,
+        related_name="vacation_rules",
+        verbose_name="Empresa",
+    )
+    section = models.ForeignKey(
+        "ivr_config.Section",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="vacation_rules",
+        verbose_name="Sección",
+        help_text="Vacío = regla general de la empresa, para los "
+                  "trabajadores que aún no tienen sección asignada.",
+    )
+    valid_from = models.DateField(
+        verbose_name="Vigente desde",
+    )
+    days_per_year = models.DecimalField(
+        max_digits=4,
+        decimal_places=1,
+        verbose_name="Días al año",
+        help_text="Días de vacaciones de un año completo (p. ej. 30 "
+                  "naturales o 22 laborables).",
+    )
+    day_kind = models.CharField(
+        max_length=8,
+        choices=DayKind.choices,
+        verbose_name="Tipo de días",
+        help_text="Naturales: cuenta cualquier día. Laborables: solo de "
+                  "lunes a viernes que no sean festivo.",
+    )
+    carry_over = models.BooleanField(
+        default=True,
+        verbose_name="Los sobrantes pasan al año siguiente",
+    )
+    carry_over_deadline_month = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        verbose_name="Plazo de los sobrantes (mes)",
+        help_text="Mes del año siguiente hasta el que se pueden gastar "
+                  "los sobrantes. Vacío = sin plazo.",
+    )
+    carry_over_deadline_day = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        verbose_name="Plazo de los sobrantes (día)",
+        help_text="Día de ese mes (inclusive). Vacío = sin plazo.",
+    )
+    holiday_base = models.ForeignKey(
+        "budgets.Base",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="vacation_rules",
+        verbose_name="Calendario de festivos",
+        help_text="Base cuyos festivos no cuentan como laborables. Vacío "
+                  "= la base de la cuenta de panel del trabajador, si "
+                  "la tiene; si no, solo se descuentan los fines de "
+                  "semana.",
+    )
+    created_by = models.ForeignKey(
+        CompanyUser,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+        verbose_name="Creada por",
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Fecha de creación",
+    )
+
+    class Meta:
+        verbose_name = "Regla de vacaciones"
+        verbose_name_plural = "Reglas de vacaciones"
+        ordering = ["section__name", "-valid_from"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=("company", "section", "valid_from"),
+                name="vacationrule_unique_section_valid_from",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        section = self.section.name if self.section_id else "General"
+        return (
+            f"{section} desde {self.valid_from:%d/%m/%Y}: "
+            f"{self.days_per_year} {self.get_day_kind_display().lower()}"
+        )
+
+
+class PersonSectionAssignment(models.Model):
+    """
+    Section a worker belongs to from `valid_from` on (H24, S129). The
+    section in force on a given day is the assignment with the latest
+    `valid_from` not after that day, so a change mid-year is just a new
+    row and each stretch of the year keeps its own vacation rule.
+    Sections here are membership; ivr_config.SectionContact is who the
+    switchboard transfers calls to, an unrelated concept.
+
+    ---
+
+    Sección a la que pertenece un trabajador desde `valid_from` (H24,
+    S129). La vigente un día dado es la asignación con la fecha más
+    reciente que no sea posterior a ese día, así que un cambio a mitad
+    de año es solo una fila nueva y cada tramo del año conserva su
+    regla. Aquí la sección es pertenencia; ivr_config.SectionContact es
+    a quién pasa las llamadas la centralita, otra cosa.
+    """
+
+    person = models.ForeignKey(
+        PersonIdentity,
+        on_delete=models.CASCADE,
+        related_name="section_assignments",
+        verbose_name="Persona",
+    )
+    section = models.ForeignKey(
+        "ivr_config.Section",
+        on_delete=models.CASCADE,
+        related_name="person_assignments",
+        verbose_name="Sección",
+    )
+    valid_from = models.DateField(
+        verbose_name="Desde",
+    )
+    created_by = models.ForeignKey(
+        CompanyUser,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+        verbose_name="Asignada por",
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Fecha de creación",
+    )
+
+    class Meta:
+        verbose_name = "Sección de un trabajador"
+        verbose_name_plural = "Secciones de los trabajadores"
+        ordering = ["person", "-valid_from"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=("person", "valid_from"),
+                name="personsectionassignment_unique_valid_from",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.person} — {self.section} desde {self.valid_from}"
+
+
+class VacationBalanceAdjustment(models.Model):
+    """
+    Correction of a worker's vacation balance for one year (H24,
+    S129). Two kinds come from Carolina's spreadsheet (one row per
+    worker, year and kind, overwritten by a later import): days already
+    taken that year before the system tracked them, and days left over
+    from the previous year. The third kind is a manual adjustment by a
+    supervisor, signed, always with a reason.
+
+    ---
+
+    Corrección del saldo de vacaciones de un trabajador en un año (H24,
+    S129). Dos tipos vienen de la hoja de cálculo de Carolina (una fila
+    por trabajador, año y tipo, que una importación posterior
+    sobrescribe): días ya disfrutados ese año antes de que el sistema
+    los registrara, y días que sobraron del año anterior. El tercero es
+    un ajuste manual de un supervisor, con signo y siempre con motivo.
+    """
+
+    class Kind(models.TextChoices):
+        OPENING_TAKEN = "OPENING_TAKEN", "Disfrutados (saldo de partida)"
+        OPENING_CARRYOVER = (
+            "OPENING_CARRYOVER", "Del año anterior (saldo de partida)"
+        )
+        MANUAL = "MANUAL", "Ajuste manual"
+
+    person = models.ForeignKey(
+        PersonIdentity,
+        on_delete=models.CASCADE,
+        related_name="vacation_adjustments",
+        verbose_name="Persona",
+    )
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.CASCADE,
+        related_name="vacation_adjustments",
+        verbose_name="Empresa",
+    )
+    year = models.PositiveSmallIntegerField(
+        verbose_name="Año",
+    )
+    kind = models.CharField(
+        max_length=20,
+        choices=Kind.choices,
+        verbose_name="Tipo",
+    )
+    days = models.DecimalField(
+        max_digits=5,
+        decimal_places=1,
+        verbose_name="Días",
+        help_text="En un ajuste manual, positivo suma días al saldo y "
+                  "negativo los resta.",
+    )
+    reason = models.TextField(
+        blank=True,
+        verbose_name="Motivo",
+    )
+    created_by = models.ForeignKey(
+        CompanyUser,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+        verbose_name="Registrado por",
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Fecha de creación",
+    )
+
+    class Meta:
+        verbose_name = "Ajuste de saldo de vacaciones"
+        verbose_name_plural = "Ajustes de saldo de vacaciones"
+        ordering = ["-year", "person", "kind", "-created_at"]
+        constraints = [
+            models.CheckConstraint(
+                condition=~models.Q(kind="MANUAL") | ~models.Q(reason=""),
+                name="vacationadjustment_manual_needs_reason",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return (
+            f"{self.person} — {self.year} "
+            f"{self.get_kind_display()}: {self.days}"
+        )

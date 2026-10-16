@@ -5941,10 +5941,20 @@ def _vacation_list_page(request, company):
     operator (CompanyUser) -- ver docstring de VacationPeriod para el
     porqué completo. Mismo patrón de paginación/orden que
     _epi_list_page.
+
+    H24 (S129): quien no gestiona vacaciones solo ve sus propios
+    periodos (anexo V24, 7.3: "cada trabajador ve solo lo suyo"), y la
+    plantilla solo le muestra el alta y la edición a quien gestiona.
     """
+    from panel.views_vacation_balance import _own_person, can_manage
+
     qs = VacationPeriod.objects.filter(company=company).select_related(
         "person", "operator__user", "generated_entry_line",
     )
+    manager = can_manage(request)
+    if not manager:
+        own = _own_person(request)
+        qs = qs.filter(person=own) if own else qs.none()
     search = request.GET.get("q", "").strip()
     if search:
         qs = qs.filter(
@@ -5965,6 +5975,7 @@ def _vacation_list_page(request, company):
     return {
         "page": page, "sort_key": sort_key, "sort_dir": sort_dir,
         "search": search, "sort_columns_vacation": sort_columns,
+        "can_manage": manager,
     }
 
 
@@ -6020,9 +6031,18 @@ class VacationTabFragmentView(CompanyUserRequiredMixin, View):
     """
 
     def get(self, request):
+        from panel.navigation_persistence import get_saved_state_key
+
         cu = request.user.company_user
         company = cu.company
         ctx = _vacation_list_page(request, company)
+        # H24 (S129): subpestaña abierta, recordada por usuario; la de
+        # importar solo existe para quien gestiona.
+        subtab = get_saved_state_key(cu, "vacation_hub", "subtab", "saldos")
+        allowed = {"saldos", "periodos", "reglas"}
+        if ctx["can_manage"]:
+            allowed.add("importar")
+        ctx["subtab"] = subtab if subtab in allowed else "saldos"
         return render(
             request, "panel/documentation_h30/_vacation_pane.html", ctx,
         )
@@ -6091,6 +6111,8 @@ class VacationPeriodCreateFragmentView(SupervisorAccessMixin, View):
 
         date_start = _parse_iso_date(request.POST.get("date_start", ""))
         date_end = _parse_iso_date(request.POST.get("date_end", ""))
+        half_day_start = request.POST.get("half_day_start") == "1"
+        half_day_end = request.POST.get("half_day_end") == "1"
         if person is not None and (not date_start or not date_end):
             message = (
                 "Las fechas de inicio y fin son obligatorias y deben "
@@ -6099,11 +6121,15 @@ class VacationPeriodCreateFragmentView(SupervisorAccessMixin, View):
             message_kind = "error"
 
         if person is not None and date_start and date_end and message is None:
-            person_name = f"{person.given_name} {person.first_surname}".strip()
+            person_name = (
+                f"{person.given_name} {person.first_surname}".strip()
+            )
             try:
                 create_vacation_period(
                     person=person, company=company, created_by=cu,
                     date_start=date_start, date_end=date_end,
+                    half_day_start=half_day_start,
+                    half_day_end=half_day_end,
                 )
                 if person.company_user_id:
                     message = (
@@ -6119,11 +6145,8 @@ class VacationPeriodCreateFragmentView(SupervisorAccessMixin, View):
                         f"{date_end:%d/%m/%Y}). Sin tarea automática -- "
                         "esta persona no tiene cuenta de panel."
                     )
-            except ValueError:
-                message = (
-                    "La fecha de inicio no puede ser posterior a la "
-                    "fecha de fin."
-                )
+            except ValueError as exc:
+                message = str(exc)
                 message_kind = "error"
             except Exception as exc:
                 from fleet.models import MachineAsset as _MachineAsset
@@ -6160,9 +6183,13 @@ class VacationPeriodCreateFragmentView(SupervisorAccessMixin, View):
         ctx = _vacation_list_page(request, company)
         ctx["message"] = message
         ctx["message_kind"] = message_kind
-        return render(
+        response = render(
             request, "panel/documentation_h30/_vacation_results.html", ctx,
         )
+        if message_kind == "success":
+            # H24 (S129): la tabla de Saldos se recalcula sola.
+            response["HX-Trigger"] = "vacation-balance-refresh"
+        return response
 
 
 class VacationPeriodUpdateFragmentView(SupervisorAccessMixin, View):
@@ -6212,17 +6239,20 @@ class VacationPeriodUpdateFragmentView(SupervisorAccessMixin, View):
                 f"{period.person.given_name} {period.person.first_surname}"
             ).strip()
             try:
-                update_vacation_period(period, date_start, date_end)
+                update_vacation_period(
+                    period, date_start, date_end,
+                    half_day_start=(
+                        request.POST.get("half_day_start") == "1"
+                    ),
+                    half_day_end=request.POST.get("half_day_end") == "1",
+                )
                 message = (
                     f"Periodo de vacaciones de {person_name} "
                     f"actualizado correctamente ({date_start:%d/%m/%Y} – "
                     f"{date_end:%d/%m/%Y})."
                 )
-            except ValueError:
-                message = (
-                    "La fecha de inicio no puede ser posterior a la "
-                    "fecha de fin."
-                )
+            except ValueError as exc:
+                message = str(exc)
                 message_kind = "error"
             except Exception as exc:
                 logger.error(
@@ -6241,9 +6271,13 @@ class VacationPeriodUpdateFragmentView(SupervisorAccessMixin, View):
         ctx = _vacation_list_page(request, company)
         ctx["message"] = message
         ctx["message_kind"] = message_kind
-        return render(
+        response = render(
             request, "panel/documentation_h30/_vacation_results.html", ctx,
         )
+        if message_kind == "success":
+            # H24 (S129): la tabla de Saldos se recalcula sola.
+            response["HX-Trigger"] = "vacation-balance-refresh"
+        return response
 
 
 class VacationPeriodDeleteFragmentView(SupervisorAccessMixin, View):
@@ -6291,9 +6325,13 @@ class VacationPeriodDeleteFragmentView(SupervisorAccessMixin, View):
         ctx = _vacation_list_page(request, company)
         ctx["message"] = message
         ctx["message_kind"] = message_kind
-        return render(
+        response = render(
             request, "panel/documentation_h30/_vacation_results.html", ctx,
         )
+        if message_kind == "success":
+            # H24 (S129): la tabla de Saldos se recalcula sola.
+            response["HX-Trigger"] = "vacation-balance-refresh"
+        return response
 
 
 class CalendarTabFragmentView(CompanyUserRequiredMixin, View):
